@@ -1,5 +1,15 @@
 # Backlog Queue
 
+**Updated 2026-07-02 (session 5) — FOLLOW-451 DONE (PR #416, merge commit 0e99415); two residual
+follow-ups filed and promoted to Sprint 22b as READY: FOLLOW-472 (P3, demo-JWT path tenant_id-claim
+mismatch not checked) and FOLLOW-473 (P2, GET /api/adapt presence-only auth now weaker than the
+hardened POST path). FOLLOW-450's `depends_on` loosened from `[FOLLOW-449]` to `[]` — the
+bandit/feedback subsystem is Postgres-only with no code dependency on the ClickHouse migration in
+FOLLOW-449; only FOLLOW-450's production go-live flip is operator-gated, not its code. FOLLOW-452
+and FOLLOW-453 delegated IN_PROGRESS to backend-engineer, running concurrently in ISOLATED WORKTREES
+(shared-working-directory hazard flagged by the FOLLOW-451/RETRO-146 near-miss). IN_PROGRESS count:
+FOLLOW-452 + FOLLOW-453 + stale TICKET-PILOT-001 = 3 (at the 3-ticket cap).**
+
 **Updated 2026-07-02 — CEO DECISIONS Q1/Q2/Q3 recorded for Sprint 22b.** Q1: BOTH PATHS mandated for
 POST /api/adapt (demo-JWT AND real tenant API key via ADR-0015 resolveApiKey) — FOLLOW-451 confirmed
 P0, not deferrable. Q2: SHADOW-ONLY for this pilot — live chat→archetype adaptation is OUT of scope;
@@ -8016,7 +8026,7 @@ gate) closes the epic and must be last.
   status: READY
   priority: P0
   estimated_hours: 2
-  depends_on: [FOLLOW-449]
+  depends_on: []
   source: >-
     2026-07-01 audit F-06 — feedback/route.ts 503-gated (FEEDBACK_ENDPOINT_ENABLED!=='true') per
     ADR-0015 interim; SDK swallows the 503 → ab_bandit_weights frozen at Beta(1,1) → Thompson
@@ -8025,14 +8035,16 @@ gate) closes the epic and must be last.
   notes: |
     CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (enable feedback/bandit
     loop) is a CONFIRMED P0 go-live blocker. DECISION-GATED note resolved.
-    depends_on note: PM-reviewed 2026-07-02 — the feedback/bandit subsystem (ab_bandit_weights)
-    reads/writes Postgres only and has NO code dependency on intent_events (ClickHouse). The
-    depends_on:[FOLLOW-449] link is an OPERATOR-SEQUENCING convenience (both need a Doppler prd
-    touch), not a technical blocker. Recommend loosening to depends_on:[] so backend-engineer can
-    start the AC1 code/canary work now; the only truly-blocking piece is the OPS_TENANT_ID +
-    ADAPT_API_KEY Doppler prd provisioning (operator action, same class as FOLLOW-449's operator
-    leg — can be scheduled together but is not a code dependency). Left as historical dependency
-    marker below pending explicit confirmation; flagging for whoever picks this up next.
+    DECOUPLED 2026-07-02 (pm-orchestrator): depends_on changed from [FOLLOW-449] to [] — confirmed
+    the bandit/feedback subsystem (ab_bandit_weights, conversion_labels) is Postgres-only and has NO
+    code dependency on intent_events / ClickHouse migration 0015 (FOLLOW-449's scope). The prior
+    link was an operator-sequencing convenience (both eventually need a Doppler prd touch), not a
+    technical blocker. CODE for this ticket (AC1 canary wiring, AC2 SDK Sentry breadcrumb, AC3
+    end-to-end verification harness) can proceed now, independent of FOLLOW-449's prod-migration
+    status. Only the PRODUCTION GO-LIVE leg (FEEDBACK_ENDPOINT_ENABLED=true flip +
+    OPS_TENANT_ID/ADAPT_API_KEY Doppler prd provisioning) is an operator-gated step, same class as
+    FOLLOW-449's own operator leg — the two operator actions may still be scheduled together, but
+    that is a scheduling choice, not a dependency.
     AC:
     - [ ] Provision OPS_TENANT_ID + ADAPT_API_KEY in Doppler prd; set FEEDBACK_ENDPOINT_ENABLED=true.
     - [ ] Add a prod canary: a signed test ping increments a Beta counter (real ab_bandit_weights
@@ -8045,10 +8057,13 @@ gate) closes the epic and must be last.
   title: >-
     Add real API-key auth path to POST /api/adapt (currently demo-JWT-only) (F-05)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
   branch: backend-engineer/FOLLOW-451-adapt-api-key-auth
+  pr: '#416'
+  merge_commit: 0e99415
+  completed_at: '2026-07-01T23:37:35Z'
   priority: P0
   estimated_hours: 4
   depends_on: []
@@ -8062,17 +8077,39 @@ gate) closes the epic and must be last.
     AND a real tenant API key (reuse ADR-0015 resolveApiKey, same pattern as feedback/route.ts).
     Confirmed P0, not deferrable. DECISION-GATED note resolved: "both paths mandated."
     AC:
-    - [ ] POST /api/adapt accepts EITHER a demo JWT OR a tenant API key resolved via the shared
+    - [x] POST /api/adapt accepts EITHER a demo JWT OR a tenant API key resolved via the shared
           resolveApiKey() (SHA-256 → api_keys) added in ADR-0015; tenant_id derived server-side.
-    - [ ] body.tenant_id mismatch vs resolved tenant → 403 (parity with feedback route).
-    - [ ] SDK path documented: which credential the pilot snippet ships; a real-key integration test
+    - [x] body.tenant_id mismatch vs resolved tenant → 403 (parity with feedback route) — scoped to
+          the API-key path (see scope decision below).
+    - [x] SDK path documented: which credential the pilot snippet ships; a real-key integration test
           returns 200 directives (not 401→null).
-    - [ ] No regression to the demo-JWT path (existing tests green).
+    - [x] No regression to the demo-JWT path (existing tests green).
+
+    DONE 2026-07-02 (PM-validated). PR #416 MERGED at commit 0e99415 (2026-07-01T23:37:35Z). Real
+    API-key auth added to POST /api/adapt alongside the existing demo-JWT path: handler tries
+    verifyDemoJwt() first, falls back to the shared ADR-0015 resolveApiKey() (SHA-256(bearer) →
+    api_keys, constant-time compare) — same helper feedback/route.ts already uses. 403 returned on
+    an API-key-path body.tenant_id mismatch (parity with feedback route); demo-JWT path's
+    pre-existing FOLLOW-260 supersede-only behavior intentionally preserved (see scope decision 1
+    below — do not conflate with FOLLOW-472). resolveApiKey() DB error fails loud: 401 + Sentry
+    capture (tags: area=adapt, kind=api_key_auth_db_error), never fabricates a tenant, per Rule K.2.
+    13 new/updated tests pass (6 in route.follow451.test.ts covering the full auth matrix + 7
+    unmodified route.demo-auth.test.ts regressions, all green). CI: 0/5 checks used (green on first
+    run per PR body); fix-iterations 0/3.
+
+    Two residuals surfaced during validation, deliberately NOT closed by this ticket (both filed as
+    new follow-ups, see Sprint 22b below): (1) demo-JWT path still has no tenant_id-claim-vs-body
+    mismatch check when the JWT carries no tenant_id claim (FOLLOW-472); (2) GET /api/adapt's
+    ADAPT_API_KEY auth is presence-only and materially weaker than the now-hardened POST path
+    (FOLLOW-473).
 - id: FOLLOW-452
   title: >-
     Fix per-archetype holdout logging + GET holdout default so lift is measurable (F-08)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T00:00:00Z'
+  branch: backend-engineer/FOLLOW-452-holdout-archetype-logging
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -8085,6 +8122,12 @@ gate) closes the epic and must be last.
     CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (per-archetype holdout
     logging so lift is measurable) is CONFIRMED as a go-live blocker at its stated P1. No gating
     note to resolve (priority was already P1, un-gated); recorded for the decision trail.
+    DELEGATED 2026-07-02 (table row: "ingest worker, control-plane, decision-api, Postgres/RLS,
+    auth, onboarding HTTP, billing, webhooks -> backend-engineer"). Runs CONCURRENTLY with
+    FOLLOW-453 in an ISOLATED WORKTREE — do NOT share a single working directory between the two
+    workers (FOLLOW-451/RETRO-146 shared-tree hazard: a concurrent-branch-switch in one working
+    directory stranded a commit on main). Each worker must have its own `git worktree` checkout on
+    its own branch before touching any file.
     AC:
     - [ ] Holdout rows log the would-be archetype/confidence (the classification the session would
           have received), not a hardcoded 'neutral', so lift/route per-archetype arms populate.
@@ -8097,7 +8140,10 @@ gate) closes the epic and must be last.
     Stop the analytics UI rendering fabricated zeros on error; retire /api/analytics mock; fail-loud
     quiz/config (F-07)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T00:00:00Z'
+  branch: backend-engineer/FOLLOW-453-analytics-fail-loud-ui
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -8111,6 +8157,12 @@ gate) closes the epic and must be last.
     CEO DECISION (Q3, 2026-07-02): MEASURED pilot confirmed — this ticket (dashboard fail-loud,
     no fabricated zeros) is CONFIRMED as a go-live blocker at its stated P1. No gating note to
     resolve (priority was already P1, un-gated); recorded for the decision trail.
+    DELEGATED 2026-07-02 (table row: "ingest worker, control-plane, decision-api, Postgres/RLS,
+    auth, onboarding HTTP, billing, webhooks -> backend-engineer"). Runs CONCURRENTLY with
+    FOLLOW-452 in an ISOLATED WORKTREE — do NOT share a single working directory between the two
+    workers (FOLLOW-451/RETRO-146 shared-tree hazard: a concurrent-branch-switch in one working
+    directory stranded a commit on main). Each worker must have its own `git worktree` checkout on
+    its own branch before touching any file.
     AC:
     - [ ] analytics/page.tsx surfaces an explicit error state on non-2xx (no zero coercion), and
           renders a MockDataBadge when data_source==='mock' (parity with /dashboard/pilot).
@@ -8118,6 +8170,59 @@ gate) closes the epic and must be last.
           add JWT tenant scoping + data_source and a real query.
     - [ ] quiz/config GET fails loud (500) when a configured DB throws instead of returning
           enabled defaults.
+- id: FOLLOW-472
+  title: >-
+    Demo-JWT path on POST /api/adapt has no tenant_id-claim-vs-body mismatch check
+  agent: backend-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    FOLLOW-451 (PR #416) validation, 2026-07-02 — audit F-05 sub-case, deliberately NOT closed by
+    FOLLOW-451, which scoped its 403-on-mismatch check to the API-key path only (PR #416 "Scope
+    decisions" §1) to avoid breaking the existing FOLLOW-260 supersede-only demo-JWT test.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-472; PR #416 "Scope decisions" §1
+  notes: |
+    Promoted 2026-07-02 (pm-orchestrator) directly to Sprint 22b as READY. Low-risk (demo JWTs are
+    server-minted and today always carry the tenant_id claim, so the exploit window is theoretical)
+    — hence P3, override if you judge the risk higher. NOT a re-open of FOLLOW-451 — a fresh
+    residual, and FOLLOW-451 is DONE.
+    AC:
+    - [ ] A demo JWT with a tenant_id claim + mismatched body.tenant_id still supersedes silently
+          (FOLLOW-260 regression test stays green) — behavior unchanged for the claim-present case.
+    - [ ] A demo JWT with NO tenant_id claim + a body.tenant_id no longer silently trusts the body
+          value with zero verification (reject, or apply an equivalent 403/claim-requirement).
+    - [ ] New test covers the claim-absent case explicitly (this gap has no existing test today).
+- id: FOLLOW-473
+  title: >-
+    GET /api/adapt auth is presence-only + spoofable x-tenant-id fallback, now weaker than the
+    hardened POST path
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    FOLLOW-451 (PR #416) validation, 2026-07-02 — PR #416 "Scope decisions" §2 explicitly flagged
+    this as a follow-up: FOLLOW-451's AC items only covered POST; GET's separate, weaker
+    ADAPT_API_KEY auth axis was out of scope for that ticket.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-473; PR #416 "Scope decisions" §2
+  notes: |
+    Promoted 2026-07-02 (pm-orchestrator) directly to Sprint 22b as READY. GET is now the visibly
+    weaker of the two /api/adapt auth paths (ADAPT_API_KEY env-var presence-only comparison,
+    degrading to "any non-empty bearer accepted" when the env var is unset; tenant derived from a
+    caller-supplied x-tenant-id header with zero verification) — asymmetric hardening vs the
+    now-hardened POST path is itself a reason to close before pilot go-live. P2, not P0/P1, because
+    the audit did not flag live exploitation and this is hardening, not a confirmed-active leak.
+    AC:
+    - [ ] GET /api/adapt no longer accepts "any non-empty bearer" when ADAPT_API_KEY is unset — a
+          missing/misconfigured key fails closed (401), never fails open.
+    - [ ] Tenant resolution for GET no longer trusts a raw x-tenant-id header with zero
+          verification — either derived from resolveApiKey() or a documented, narrower
+          internal-only trust boundary if GET truly has different callers than POST.
+    - [ ] Test matrix parity with FOLLOW-451's route.follow451.test.ts (valid key/tenant, missing
+          key, wrong tenant, DB error fails loud) applied to the GET handler.
 - id: FOLLOW-454
   title: >-
     Fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs (F-01)

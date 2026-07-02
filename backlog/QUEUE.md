@@ -19,17 +19,26 @@ SEQUENTIALLY, one at a time with review between): started FOLLOW-460 (ml-enginee
 description cache) IN_PROGRESS in an isolated worktree; FOLLOW-459 then FOLLOW-456 follow after each
 clears. The two operator-only go-live actions (FOLLOW-449 CH migration apply, FOLLOW-450 AC1
 feedback flip) stay deferred on the pilot go-live checklist per Rule AA — revisit with Piotr/Rafał.
-FOLLOW-450 → PR #426 (commits `8d6543d` feature + `1ca735e` a path-scoped `.gitleaks.toml` allowlist
-for two test-fixture false positives in the new PGlite e2e file — same Rule V exemption class the
-repo already applies to sibling `*route-driven-pglite.test.ts`; feature code byte-for-byte
-unchanged). FOLLOW-457 → PR #425 (commit `a3123ab`, zero defects — passed every gate on first run).
-Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI GREEN on every real gate on BOTH (Typecheck, Test
-Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Gitleaks, all Python, Demo integration,
-Vercel, Rule H/J) — independently re-confirmed via `gh pr checks`, not trusted from the agent
-summaries; only the pre-existing non-blocking "Rule I — wired-or-dead" is red on each (neither diff
-adds a dead symbol: FOLLOW-450's `reportFeedbackPingRejected` + canary exports and FOLLOW-457's
-fact-check helpers are all wired to consumers). FOLLOW-457's ticket `branch:` field corrected from
-the stale `ml-engineer/FOLLOW-457-grounding-integrity` to the branch actually used,
+SEQUENTIAL PROGRESS (session 9): FOLLOW-460 → PR #428 (READY_FOR_REVIEW, CI green; wired the
+previously-dead /api/internal/description-cache endpoint to the Modal job; NEW operator go-live item
+per Rule AA — provision DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET in Modal
+`estalara-secrets`, else the cache write silently no-ops). FOLLOW-459 → PR #429 (READY_FOR_REVIEW,
+CI green; ACK-before-CH via ctx.waitUntil; durable retry deferred to FOLLOW-482). FOLLOW-456
+(tenant-isolation) IN_PROGRESS. NOTE the FOLLOW-459 worker mis-numbered its deferral FOLLOW-475
+(collided with RETRO-151's 475 on this PM branch, invisible to its origin/main worktree) —
+renumbered to FOLLOW-482 + its FOLLOW_UPS.md edit reverted (PR #429 commit `c87073b`) so this PM
+branch is the single writer of FOLLOW_UPS.md; the FOLLOW-456 worker was pre-instructed NOT to touch
+backlog files. FOLLOW-450 → PR #426 (commits `8d6543d` feature + `1ca735e` a path-scoped
+`.gitleaks.toml` allowlist for two test-fixture false positives in the new PGlite e2e file — same
+Rule V exemption class the repo already applies to sibling `*route-driven-pglite.test.ts`; feature
+code byte-for-byte unchanged). FOLLOW-457 → PR #425 (commit `a3123ab`, zero defects — passed every
+gate on first run). Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI GREEN on every real gate on BOTH
+(Typecheck, Test Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Gitleaks, all Python,
+Demo integration, Vercel, Rule H/J) — independently re-confirmed via `gh pr checks`, not trusted
+from the agent summaries; only the pre-existing non-blocking "Rule I — wired-or-dead" is red on each
+(neither diff adds a dead symbol: FOLLOW-450's `reportFeedbackPingRejected` + canary exports and
+FOLLOW-457's fact-check helpers are all wired to consumers). FOLLOW-457's ticket `branch:` field
+corrected from the stale `ml-engineer/FOLLOW-457-grounding-integrity` to the branch actually used,
 `ml-engineer/FOLLOW-457-llm-grounding-integrity`. FOLLOW-450 remains CODE_COMPLETE_OPERATOR_PENDING:
 its AC1 (Doppler prd `FEEDBACK_ENDPOINT_ENABLED=true` flip + `ADAPT_API_KEY`/`OPS_TENANT_ID`/
 `DATABASE_URL_ADMIN` provisioning) is operator-only and stays on the pilot go-live checklist, not
@@ -8547,7 +8556,10 @@ gate) closes the epic and must be last.
   title: >-
     Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T19:25:00Z'
+  branch: backend-engineer/FOLLOW-456-tenant-isolation-holes
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -8639,7 +8651,19 @@ gate) closes the epic and must be last.
   title: >-
     Ingest: ACK before the ClickHouse insert to meet the <50ms p95 budget (F-09)
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T17:40:00Z'
+  completed_at: '2026-07-02T19:20:00Z'
+  branch: backend-engineer/FOLLOW-459-ingest-ack-before-insert
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/429'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  notes_pm: >-
+    ACK now returns after Redpanda success; CH insert runs post-ACK in ctx.waitUntil (same 3x
+    backoff). Terminal CH failure after ACK → Sentry-captured (not durably re-queued). Durable
+    Cloudflare-Queues retry deferred to FOLLOW-482 (new-infra ADR required). Worker had mis-numbered
+    that deferral 475 (collided with RETRO-151) — renumbered to 482 and its FOLLOW_UPS.md edit
+    reverted so this session's PM branch is the single writer of FOLLOW_UPS.md (commit c87073b).
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8658,10 +8682,18 @@ gate) closes the epic and must be last.
   title: >-
     Finish the v2.0 permanent description cache: Modal writes Postgres, drop TTL/tier (F-10)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: ml-engineer
   started_at: '2026-07-02T16:20:00Z'
+  completed_at: '2026-07-02T18:40:00Z'
   branch: ml-engineer/FOLLOW-460-permanent-description-cache
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/428'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  operator_action: >-
+    Provision two vars in the Modal secret `estalara-secrets` before this activates in prod:
+    DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET (same pattern as FOLLOW-436
+    embed-seed). Until then the Modal→Postgres cache write silently no-ops (logs a warning, does not
+    crash). On the pilot go-live checklist per Rule AA.
   priority: P1
   estimated_hours: 4
   depends_on: []

@@ -727,11 +727,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const confidenceRaw = params.get('confidence');
   const similarityRaw = params.get('similarity');
   const tierRaw = params.get('tier');
-  // Optional: holdout assignment passed by the caller (decision-api Worker).
-  // Populated from assignHoldout() — see TICKET-AB-001 (PR #80).
-  const holdoutGroupRaw = params.get('holdout_group');
-  const holdoutGroup =
-    holdoutGroupRaw === 'true' ? true : holdoutGroupRaw === 'false' ? false : false;
 
   // ── FOLLOW-369: consent-skip parity with POST handler ────────────────────
   // Optional consent params passed by the decision-api Worker (mirrors POST
@@ -867,6 +862,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 200 },
     );
   }
+
+  // ── FOLLOW-452 (audit F-08): compute holdout server-side via the shared
+  // assignHoldout() helper — the SAME algorithm POST uses (HMAC-SHA-256 keyed
+  // on tenant_id, deterministic per session_id) — instead of trusting a
+  // caller-supplied `holdout_group` query param. That param had no real
+  // producer (the only caller that ever populated it, the decision-api
+  // Worker's POST /api/adapt path, was retired to 410 Gone by ADR-0006) and
+  // silently defaulted to `false` whenever absent, meaning every GET session
+  // was treated as treatment — the holdout arm was permanently empty and
+  // lift was unmeasurable via this path.
+  //
+  // Consent-based skip is already handled by the FOLLOW-369 gate above (which
+  // returns early), so `assignment.skipped` is not expected here; it is
+  // handled defensively by falling back to non-holdout.
+  const holdoutAssignment = await assignHoldout({
+    tenant_id: tenantId,
+    session_id: sessionId,
+    ...(consentState !== undefined ? { consent_state: consentState } : {}),
+    consent_mode_enabled: consentModeEnabled,
+  });
+  const holdoutGroup = holdoutAssignment.skipped ? false : holdoutAssignment.holdout_group;
 
   // ── FOLLOW-360: holdout gate — mirrors POST's early-return ordering ──────
   // A holdout session MUST be served control copy and logged with variant='control'.
@@ -1207,6 +1223,64 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // logged to ClickHouse so a response body can be cross-correlated with its row.
   const adaptDecisionId = crypto.randomUUID();
 
+  // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────
+  // Load the per-tenant demo override. When enabled, ignore the SDK's
+  // archetype_hint/confidence/similarity and substitute the operator-chosen values
+  // so the full playbook + LLM path runs, generating with the chosen model.
+  // Fail behaviour: if the DB throws (configured-but-failed), log a Sentry-style
+  // error, set demoActive=false, and continue with the normal SDK hint. This avoids
+  // silently serving wrong copy while not blocking the response.
+  //
+  // FOLLOW-452 (audit F-08): this resolution MUST happen BEFORE the A/B holdout
+  // gate below — not after, as it previously did — so that a held-out session's
+  // WOULD-BE archetype/confidence (what it would have received had it not been
+  // held out) is available to log on the holdout adaptation_decisions row.
+  // Without this, every holdout row was logged with a hardcoded 'neutral'/0.5,
+  // starving the per-archetype lift query's holdout arm for every real archetype.
+  // The RESPONSE BODY returned to a held-out caller is unaffected — it stays
+  // hardcoded 'neutral'/empty directives (locked-in product behavior); only the
+  // ClickHouse-logged row uses the resolved values below.
+  let demoActive = false;
+  let demoForceModel: string | undefined;
+  // F-16 (FOLLOW-194): store the single getDemoOverride() result and reuse it below.
+  // The original code called getDemoOverride() a second time inside the demoActive branch,
+  // causing a duplicate DB/Redis round-trip on every adapt request in demo mode.
+  let demoOverrideArchetype: string | null = null;
+
+  try {
+    const demoOverrideState = await getDemoOverride(tenantId);
+    if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
+      demoActive = true;
+      demoOverrideArchetype = demoOverrideState.overrideArchetype;
+      demoForceModel = demoOverrideState.overrideModel;
+    }
+  } catch (err: unknown) {
+    // Configured DB threw — fail loud in logs, degrade to normal path (Rule K.2).
+    console.error(
+      '[adapt POST] demo override DB read failed — falling back to SDK hint:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // Resolve effective archetype + confidence + similarity.
+  // When DEMO MODE is active we always use the override archetype at high confidence
+  // and medium similarity (0.75) so Branch 3 (LLM tweak) runs with chosen model.
+  let archetypeId: ArchetypeId;
+  let confidence: number;
+  let similarity: number;
+
+  if (demoActive && demoOverrideArchetype) {
+    // Reuse the result from the single getDemoOverride() call above (F-16).
+    archetypeId = demoOverrideArchetype as ArchetypeId;
+    confidence = DEMO_OVERRIDE_CONFIDENCE;
+    similarity = DEMO_OVERRIDE_SIMILARITY;
+  } else {
+    archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
+    confidence = body.confidence ?? 0.5;
+    similarity = body.similarity ?? 0.5;
+    demoActive = false;
+  }
+
   // ── A/B holdout gate (TICKET-AB-010) ─────────────────────────────────────
   // Run before any directive building. Returns early with empty directives
   // when the session is held-out or consent-skipped.
@@ -1254,6 +1328,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // holdoutGroup=true, variant='control' (no bandit consulted on the holdout
     // path — matches GET's holdout logging convention), and directiveCount=0
     // (no directives are built on this branch).
+    //
+    // FOLLOW-452 (audit F-08): log the WOULD-BE archetype/confidence/similarity
+    // (archetypeId/confidence/similarity, resolved above BEFORE the holdout gate
+    // from body.archetype_hint/body.confidence/the demo-override) instead of a
+    // hardcoded 'neutral'/0.5 — otherwise the per-archetype lift query's holdout
+    // arm is starved for every real archetype and lift is unmeasurable. The
+    // RESPONSE returned to the caller below is unaffected — still 'neutral'.
     // FOLLOW-431 / ESC-033: registered via after() so the async write (and its
     // fail-loud .then/.catch → Sentry) completes after the response is sent
     // before instance suspension.
@@ -1261,16 +1342,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       logDecisionAsync(
         body.session_id,
         tenantId,
-        'neutral',
-        0.5,
-        body.similarity ?? 0.5,
+        archetypeId,
+        confidence,
+        similarity,
         'default',
         pageCtx,
         0, // directiveCount — no directives built on the holdout path
         true, // holdoutGroup
         'control', // variant — bandit not consulted on holdout path
         adaptDecisionId,
-        false, // demoOverride — holdout path bypasses demo override
+        demoActive, // demoOverride — reflects the would-be resolution (FOLLOW-452)
         'rulebased-bandit-v1', // modelVersion
         '', // leadId — not wired via POST body yet (FOLLOW-170)
         'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
@@ -1305,53 +1386,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }),
   );
 
-  // ── DEMO MODE override (DEMO-001 / AC4) ─────────────────────────────────────
-  // Load the per-tenant demo override. When enabled, ignore the SDK's
-  // archetype_hint/confidence/similarity and substitute the operator-chosen values
-  // so the full playbook + LLM path runs, generating with the chosen model.
-  // Fail behaviour: if the DB throws (configured-but-failed), log a Sentry-style
-  // error, set demoActive=false, and continue with the normal SDK hint. This avoids
-  // silently serving wrong copy while not blocking the response.
-  let demoActive = false;
-  let demoForceModel: string | undefined;
-  // F-16 (FOLLOW-194): store the single getDemoOverride() result and reuse it below.
-  // The original code called getDemoOverride() a second time inside the demoActive branch,
-  // causing a duplicate DB/Redis round-trip on every adapt request in demo mode.
-  let demoOverrideArchetype: string | null = null;
-
-  try {
-    const demoOverrideState = await getDemoOverride(tenantId);
-    if (demoOverrideState.enabled && demoOverrideState.overrideArchetype) {
-      demoActive = true;
-      demoOverrideArchetype = demoOverrideState.overrideArchetype;
-      demoForceModel = demoOverrideState.overrideModel;
-    }
-  } catch (err: unknown) {
-    // Configured DB threw — fail loud in logs, degrade to normal path (Rule K.2).
-    console.error(
-      '[adapt POST] demo override DB read failed — falling back to SDK hint:',
-      err instanceof Error ? err.message : err,
-    );
-  }
-
-  // Resolve effective archetype + confidence + similarity.
-  // When DEMO MODE is active we always use the override archetype at high confidence
-  // and medium similarity (0.75) so Branch 3 (LLM tweak) runs with chosen model.
-  let archetypeId: ArchetypeId;
-  let confidence: number;
-  let similarity: number;
-
-  if (demoActive && demoOverrideArchetype) {
-    // Reuse the result from the single getDemoOverride() call above (F-16).
-    archetypeId = demoOverrideArchetype as ArchetypeId;
-    confidence = DEMO_OVERRIDE_CONFIDENCE;
-    similarity = DEMO_OVERRIDE_SIMILARITY;
-  } else {
-    archetypeId = (body.archetype_hint ?? 'neutral') as ArchetypeId;
-    confidence = body.confidence ?? 0.5;
-    similarity = body.similarity ?? 0.5;
-    demoActive = false;
-  }
+  // NOTE (FOLLOW-452): demoActive/demoForceModel/archetypeId/confidence/similarity
+  // are resolved earlier, BEFORE the A/B holdout gate above — see the "DEMO MODE
+  // override" block preceding `assignHoldout()` — so the holdout branch can log
+  // the would-be values. Nothing to resolve here for the treatment arm.
 
   // TICKET-AGENCY-001: RAG retrieval — fetch top-3 FAQ answers for this listing.
   // Fail-open: retrieveListingContext never throws; returns {} on any failure.

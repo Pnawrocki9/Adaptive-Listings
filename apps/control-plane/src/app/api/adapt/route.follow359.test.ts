@@ -87,6 +87,7 @@ vi.mock('@estalara/shared', async () => {
 });
 
 import { GET } from './route.js';
+import { assignHoldout } from '@estalara/shared';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ describe('GET /api/adapt — FOLLOW-359: variant in response body', () => {
   // holdout session must equal 'control' (the same value logged to ClickHouse).
 
   it(
-    'HOLDOUT COMPAT: holdout_group=true GET response variant=control AND ' +
+    'HOLDOUT COMPAT: assignHoldout()=true GET response variant=control AND ' +
       'ClickHouse param_p_variant=control (FOLLOW-360 compatibility)',
     async () => {
       let capturedUrl: URL | null = null;
@@ -201,7 +202,16 @@ describe('GET /api/adapt — FOLLOW-359: variant in response body', () => {
         }),
       );
 
-      const res = await GET(makeGetRequest({ ...BASE_PARAMS, holdout_group: 'true' }));
+      // FOLLOW-452: holdout is now computed server-side via assignHoldout() —
+      // drive the holdout branch by overriding the mock, not a query param.
+      vi.mocked(assignHoldout).mockResolvedValueOnce({
+        skipped: false,
+        holdout_group: true,
+        holdout_pct: 0.1,
+        assigned_at: new Date().toISOString(),
+      });
+
+      const res = await GET(makeGetRequest(BASE_PARAMS));
       expect(res.status).toBe(200);
 
       const body = (await res.json()) as Record<string, unknown>;

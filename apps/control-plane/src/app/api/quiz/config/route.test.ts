@@ -229,6 +229,28 @@ describe('GET /api/quiz/config', () => {
     expect(body.language).toBe('pl');
     expect(body.quiz_enabled).toBe(true);
   });
+
+  // FOLLOW-453 / Rule K.2 — a configured DB that throws must fail loud (500), never
+  // silently return "enabled" defaults that lie about the tenant's real quiz state.
+  it('returns 500 (not enabled defaults) when the DB query throws', async () => {
+    vi.mocked(getAuthClaims).mockResolvedValue(TENANT_CLAIMS);
+    vi.mocked(createAdminClient).mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockRejectedValue(new Error('connection refused')),
+          }),
+        }),
+      }),
+    } as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await GET(makeGetRequest(TENANT_ID));
+    expect(res.status).toBe(500);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // Must NOT be the enabled-defaults shape — no quiz_enabled: true fabrication.
+    expect(body).not.toHaveProperty('quiz_enabled');
+    expect(body).toHaveProperty('error');
+  });
 });
 
 describe('POST /api/quiz/config', () => {

@@ -2,7 +2,9 @@
  * GET/POST /api/quiz/config — quiz widget configuration per tenant.
  *
  * Auth: JWT-verified tenant claims required.
- *   GET  — requires valid JWT (getAuthClaims); falls back to defaults if missing.
+ *   GET  — requires valid JWT (getAuthClaims). Defaults apply only when the tenant
+ *     row exists but has no stored config (legitimate no-exception case); a thrown
+ *     DB error returns HTTP 500 instead of enabled defaults (Rule K.2, FOLLOW-453).
  *   POST — requires agency:viewer or higher (requireTenantAccess).
  *
  * Persists to tenants.quiz_config JSONB column via createAdminClient().
@@ -83,9 +85,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // quizEnabled defaults to true when the row is missing (DB unavailable path below).
     const quizEnabled: boolean = rows[0]?.quizEnabled ?? true;
     return NextResponse.json({ ...config, quiz_enabled: quizEnabled, tenant_id: tenantId });
-  } catch {
-    // Fallback to defaults if DB unavailable
-    return NextResponse.json({ ...QUIZ_DEFAULT_CONFIG, quiz_enabled: true, tenant_id: tenantId });
+  } catch (err: unknown) {
+    // Rule K.2 — fail loud: the DB is configured (createAdminClient() succeeded in
+    // reaching the query) but the query threw. Returning "enabled" defaults here
+    // would silently tell the dashboard/SDK the quiz is on when we don't actually
+    // know the tenant's real config (FOLLOW-453). Surface a 500 instead.
+    console.error('[quiz/config GET] DB error:', err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: 'Failed to load quiz configuration' }, { status: 500 });
   }
 }
 

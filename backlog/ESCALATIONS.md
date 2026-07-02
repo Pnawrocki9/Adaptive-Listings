@@ -1957,3 +1957,49 @@ other's functions from the live app. Fix: the single shared `app` is now in
 
 **Resolution:** Code fix complete (FOLLOW-437 / PR #393 merged 2026-06-30). Awaiting operator
 go-live (Step 1-3 above). Escalation closes when smoke verification passes.
+
+---
+
+## OPEN — Modal ML layer never deployed to prod (no apps/secrets in the only account, no CI deploy) [FOLLOW-436]
+
+**Filed by:** pm-orchestrator (session 9) **Date:** 2026-07-02T21:30:00Z **Affects:** FOLLOW-436,
+FOLLOW-458, FOLLOW-460 (Modal legs), pilot go-live, core AI-description feature **Type:**
+architectural | vendor (infra)
+
+**Description:** While preparing the FOLLOW-460 operator step (add `DESCRIPTION_CACHE_*` keys to the
+Modal `estalara-secrets` secret), discovered the Modal ML layer is not deployed to prod at all:
+
+- The only Modal account available (CEO's `pnawrocki9`, the sole profile in `~/.modal.toml`) has **0
+  deployed apps and 0 secrets** (`modal app list` / `modal secret list` both empty; only the `main`
+  environment exists). CEO confirmed there is no separate Estalara/org Modal account.
+- **No CI workflow deploys Modal** (`grep 'modal deploy'` over `.github/workflows` = 0). There is no
+  automated deploy path for any Modal app.
+- `estalara-secrets` therefore does not exist; FOLLOW-436's "provision estalara-secrets + deploy
+  llm-gateway" operator step was never completed. FOLLOW-458 (deploy stream-consumer + data-quality)
+  likewise never done.
+- Prod `description_cache_persistent` = 0 rows (consistent, though also expected pre-#428).
+
+**Impact reconciliation (what works vs. what is dark in prod):**
+
+- ✅ WORKS without Modal: archetype decision + playbook directives + the directive-level LLM tweak
+  (headline/CTA/feature) — `apps/control-plane/src/lib/llm-gateway.ts` calls `@anthropic-ai/sdk`
+  (`new Anthropic()`) DIRECTLY from the control-plane, needing only `ANTHROPIC_API_KEY` (set in
+  prod). This is why DOM adaptation worked on localhost and works in prod.
+- ❌ DARK without Modal: full per-listing AI description-body rewrite (`/api/adapt/description`
+  publishes `description.requested` to Redpanda `estalara.descriptions`; the consumer is a Modal
+  `@app.function` in `generate_description.py` that is not deployed → events unconsumed → only
+  `template_fallback` served). Also dark: intent-engine NLP, embeddings/embed-seed, stream-consumer
+  (live chat NLP), data-quality drift cron — all Modal. On localhost these ran via the local mock
+  harness (:9100), masking that prod Modal was never stood up.
+
+**Required action (CEO/devops decision — do NOT auto-provision):** Decide and execute the prod Modal
+stand-up: (1) confirm `pnawrocki9` is the canonical prod Modal account (or create an org account);
+(2) assemble the full `estalara-secrets` inventory from Doppler/Vercel (ANTHROPIC*API_KEY, all
+REDPANDA*_, UPSTASH*REDIS*_, SENTRY_DSN, EMBED_API_BASE_URL, INTERNAL_API_SECRET, plus FOLLOW-460's
+DESCRIPTION_CACHE_INTERNAL_SECRET + DESCRIPTION_CACHE_API_BASE_URL); (3)
+`modal secret create estalara-secrets ...`; (4) `modal deploy` the llm-gateway (+ intent-engine /
+stream-consumer / data-quality per FOLLOW-458 scope); (5) add a CI deploy workflow so it doesn't
+drift again. Until then, FOLLOW-460's Postgres-cache write and full AI description generation are
+inert in prod; the code PRs (#428/#429/#430) can still merge — this gap is infra, not code.
+
+**Resolution:** <empty until resolved>

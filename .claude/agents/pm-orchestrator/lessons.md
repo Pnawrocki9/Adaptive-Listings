@@ -1674,3 +1674,28 @@ independent occurrence, even if it references the same pattern by name.
   truth for follow-up filing — do not re-derive gaps from the diff independently first, since the
   worker's own documented tradeoffs are higher-fidelity than an after-the-fact re-audit and save a
   full re-read of the route logic.
+
+---
+
+- **Date / ticket:** 2026-07-02 — FOLLOW-452/453 close-out + retro write + FOLLOW-454/455
+  delegation, PR #421
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (FOLLOW-454); "DPIA/ROPA/consent/DSR
+  rules/fair-housing/AI-Act docs -> compliance-engineer" (FOLLOW-455).
+- **What validation caught (or missed):** This session's tool surface had no Task/Agent-spawn
+  mechanism for `retrospective-analyst` — performed the 10-section retro algorithm directly
+  (Read/Grep/Bash only) rather than skip it or fake a spawn. Re-verified BOTH merged PRs'
+  runtime-wiring independently rather than trusting their PR-body claims: grepped for the real
+  `assignHoldout()`/`GROUP BY ad.archetype` producer→consumer chain (FOLLOW-452) and confirmed
+  `/api/analytics` had genuinely zero remaining source references post-deletion, not just
+  `.next/`-build-artifact noise that could masquerade as a false-positive orphan (FOLLOW-453). Also
+  caught and killed a broken background monitoring command mid-session (`gh pr checks --json` isn't
+  supported by this repo's installed `gh` version — the correct, already-running `--watch` variant
+  was left alone; the `--json` one looped forever printing usage errors every 15s until killed) — a
+  reminder to sanity-check a monitoring command's actual output before trusting an until-loop to
+  self-terminate.
+- **A delegation/validation rule I'd add:** Before relying on `gh <subcommand> --json`, confirm the
+  installed `gh` CLI version actually supports it for that subcommand (`gh pr checks --json` errors
+  on this repo's gh version even though `gh pr view --json` works fine) — an until-loop gating on a
+  command that silently errors every iteration never terminates and burns time; grep the plain-text
+  `gh pr checks` output for `pending`/`in_progress` instead when in doubt.

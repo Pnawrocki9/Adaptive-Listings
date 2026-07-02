@@ -23522,6 +23522,171 @@ The implementing `backend-engineer` subagent **STALLED** (no progress for 600s) 
 - **Related to RETRO-132 §4a LG-1 (FOLLOW-420, stray-arm reward mislabel):** adjacent arm-defect family, distinct mechanism (mislabel vs missing write) — kept separate (§6).
 - **First retro of the WORKER-BRANCH-HYGIENE process pattern (§4e/§6) → FOLLOW-448.**
 
+## RETRO-147 — FOLLOW-452 (fix per-archetype holdout logging + GET server-side holdout — audit F-08) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #418 (squash-merged 2026-07-02T09:17:04Z, commit `c0d9b39`). Title: `fix(adapt): log would-be archetype on holdout rows + server-side GET holdout [FOLLOW-452]`.
+- **Files changed:** 5 (+544/-86). `route.ts` (+94/-56, core fix), `route.follow452.test.ts` (+308 new), `route.holdout.test.ts` (+75/-21), `route.follow359.test.ts` / `route.follow360.test.ts` (updated to drive holdout via an `assignHoldout()` mock override instead of the retired `holdout_group` query param).
+- **Modules touched:** control-plane `/api/adapt` (both GET and POST handlers). No shared/SDK/ingest/decision-api change.
+- **Key contracts changed:** POST holdout `adaptation_decisions` rows now carry the **would-be** `archetype`/`confidence`/`similarity` (resolved, including demo-override, before the A/B gate) instead of hardcoded `neutral`/0.5. GET no longer reads the caller-supplied `holdout_group` query param at all — it calls the shared `assignHoldout()` helper (same HMAC-SHA-256 algorithm POST uses) server-side. The **response body** returned to a held-out caller is unchanged (still `neutral`/empty directives) — only the ClickHouse telemetry row changed. No schema/column/event-type change (`adaptation_decisions.archetype`/`confidence` columns pre-exist).
+
+### 2. Verification done in PR
+
+- 26/26 tests pass (route.holdout, route.follow452 [new, 308 lines], route.follow359, route.follow360, all updated to the new `assignHoldout()`-mock-driven holdout trigger). ESLint/Prettier/tsc clean per PR body. PM independently confirmed CI green on all real gates (Test Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Typecheck); only non-green check is the pre-existing Rule I noise (173 legacy violations, zero in this PR's touched files).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** No new exported symbol; `route.follow452.test.ts` is a test file (suppressed).
+- **CHECK B (half-wire):** No new event/env-var/column/topic. Verified the **producer→consumer chain end-to-end** (not one-hop): producer — POST holdout branch now logs the resolved `archetype`/`confidence` (route.ts, pre-gate resolution block) via the existing `logDecisionAsync` sink; consumer — `pilot/cta-lift/route.ts:150` `GROUP BY ad.archetype, ad.holdout_group` (the per-archetype lift query) already existed and was previously starved because every holdout row was hardcoded `'neutral'`. This PR reconnects a **real** per-archetype producer to an **already-existing** consumer — same shape as RETRO-146's arm-asymmetry finding but on the `archetype` field rather than the write itself. GET's `assignHoldout()` call site verified as a genuine non-test producer (`route.ts:879`), reusing the same helper POST already called (`route.ts:1287`) — no new helper, no orphaned import.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- No new logic gap. The POST fix correctly separates "value logged to ClickHouse" (would-be archetype) from "value returned in the response body" (locked-in `neutral`) — confirmed by reading the diff; the response-shaping code path was untouched.
+- **Sibling-metric check (reconciled, no gap):** `similarity` and `directiveCount` also get the would-be values per the PR body; the retro did not find any adjacent metric field left on the old hardcoded path.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no bug found in the touched diff.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note, P3) — no committed test asserts the cta-lift consumer's `GROUP BY ad.archetype, ad.holdout_group` actually receives a non-'neutral' value for a synthetic non-neutral holdout session.** The PR's own AC-3 ("per-archetype lift query returns a non-empty holdout_n for X") is argued via the producer-side test (`route.follow452.test.ts` asserts the ClickHouse INSERT params) but the consumer query itself is not exercised in the same PR — same shape as RETRO-146 TG-2 (producer tested, producer→consumer join not tested in one place). Low priority; the join logic in cta-lift/route.ts is pre-existing and untouched. Note, no new stub.
+
+#### 4d. Documentation gaps
+
+- None found.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-08 (this ticket): closed on the CODE axis.** Complementary to FOLLOW-449 (intent_events prod migration — unrelated table) and FOLLOW-441/RETRO-146 (POST-arm write existence). Prod-side attestation of whether real, non-neutral holdout rows land in `adaptation_decisions` still rides the same ESC-031/FOLLOW-422 "is adaptation_decisions actually written in prod" question already tracked — not duplicated here.
+- **FOLLOW-471 (clean re-audit gate):** F-08 is in its depends_on list; this closes that dependency's code leg.
+
+#### 5b. Future sprint tickets affected
+
+- None newly affected. FOLLOW-441's canary (data-engineer, prod write-verification) should ideally also assert a non-'neutral' archetype value lands for at least one holdout row post-deploy — **recommend extending FOLLOW-441's AC, not re-filing** (mirrors RETRO-146 §5a's identical recommendation for the arm-symmetry axis; the two recommendations are complementary and can be folded into the same canary widening).
+
+#### 5c. Contracts changed others rely on
+
+- N/A — no contract shape/type change. Only the *value* written to a pre-existing column on a pre-existing sink changed.
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces the RETRO-146 ARM-ASYMMETRY-WRITE-GAP lesson's generalization: it is not just *whether* a measured arm writes telemetry, but *whether the values it writes are the would-be values, not a placeholder*. A future measured branch (e.g. a new early-return arm) should be checked for both axes.
+
+### 6. New lesson candidates
+
+- **Pattern (PLACEHOLDER-VALUE-ON-MEASURED-ARM): "a measured/control arm's telemetry write uses a hardcoded placeholder value (here: `archetype='neutral'`) instead of the would-be real value, silently starving a downstream GROUP-BY/segment analysis for every value except the placeholder."** — **RETRO-147, count 1 (fresh).** Sibling-but-distinct from RETRO-146's ARM-ASYMMETRY-WRITE-GAP (that pattern is *whether* a write happens at all; this one is *whether the value written is real*). Watch: a second sighting of "measured arm writes a placeholder/default instead of the resolved value" promotes.
+- No rule promoted this retro (single fresh sighting; anti-count-inflation honored per RETRO-122 et seq.).
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-08 (chartered target): CLOSED end-to-end on the code axis, not one-hop.** Producer (POST: resolved archetype logged pre-gate via existing `logDecisionAsync`; GET: `assignHoldout()` replaces the caller-supplied param) → consumer (`pilot/cta-lift/route.ts:150` `GROUP BY ad.archetype, ad.holdout_group`, pre-existing, previously starved) → the per-archetype lift computation. Prod-write-existence axis correctly left OPEN (rides FOLLOW-422/441, not re-litigated here).
+- **RETRO-146 (FOLLOW-442, arm-write-existence): undisturbed** — this PR builds on the same POST holdout branch RETRO-146 fixed the write-existence of; no regression to that fix (the `afterResponse`-wrapped `logDecisionAsync` call site is preserved, only its argument values changed).
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Handler axis (GET vs POST):** both fixed — GET's caller-supplied-param trust and POST's hardcoded-archetype were two independent defects on the same feature (F-08), both closed by this PR. Analyzing only one handler would have missed the other; the PR correctly covers both.
+- **Value axis (response body vs telemetry row):** reconciled explicitly in §4a — the response stays locked at `neutral` while telemetry gets the real value. No contradiction with the "holdout sessions must not receive adapted content" product rule.
+- No contradiction with any prior retro's verdict.
+
+### 9. Follow-ups
+
+- No new FOLLOW stub filed. The one actionable recommendation (§5b: widen FOLLOW-441's canary to also assert a non-'neutral' archetype value on a holdout row) is folded into the existing FOLLOW-441 AC-widening recommendation already tracked from RETRO-146 — not duplicated.
+
+### 10. Cross-references
+
+- **Directly builds on RETRO-146 / FOLLOW-442** (same POST holdout branch, same `logDecisionAsync` call site, same cta-lift consumer family). Distinct defect (value-correctness vs write-existence).
+
+---
+
+## RETRO-148 — FOLLOW-453 (analytics UI fail-loud; retire /api/analytics mock; quiz/config fail-loud — audit F-07) — 2026-07-02
+
+### 1. Summary of change
+
+- **PR:** #419 (squash-merged 2026-07-02T09:17:07Z, commit `807869d`). Title: `fix(control-plane): analytics UI fail-loud, retire /api/analytics mock, quiz/config 500 [FOLLOW-453]`.
+- **Files changed:** 6 (+672/-470). `dashboard/analytics/page.tsx` (+360/-244, rewritten per-fetch `{loading,data,error}` state), `dashboard/analytics/page.test.tsx` (+280 new RTL tests), `api/quiz/config/route.ts` (+10/-4, DB-throw now 500s instead of defaulting `enabled`), `api/quiz/config/route.test.ts` (+22), and **deletion** of `api/analytics/route.ts` (-145) + `route.test.ts` (-77).
+- **Modules touched:** control-plane dashboard UI + 2 API routes. No shared/SDK/ingest/decision-api contract change.
+- **Key contracts changed:** `/api/analytics` route **removed** (was a 100% mock, spoofable `x-tenant-id`, confirmed zero consumers pre-deletion). `analytics/page.tsx` no longer coerces non-2xx bodies to `Number(x ?? 0)` — it now surfaces an explicit error banner and a `MockDataBadge` when `data_source==='mock'` (reusing the existing badge component already used by `dashboard/pilot` and `dashboard/analytics/labels`). `quiz/config` GET now 500s on a configured-DB throw instead of silently returning `enabled` defaults.
+
+### 2. Verification done in PR
+
+- 32/32 tests pass (11 new RTL tests on `page.test.tsx` covering error/mock/clickhouse states; 21 on `quiz/config/route.test.ts`). ESLint/Prettier/tsc clean. PM independently confirmed CI green on all real gates; only non-green check is the pre-existing Rule I noise (unrelated files).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅ (net wiring REMOVAL, verified no orphaned consumer)`
+
+- **CHECK A (dead code — inverse direction, deletion correctness):** Grepped the full source tree (excluding `.next/` build artifacts, which regenerate and are not source) for any remaining reference to `/api/analytics` as a fetch target: **zero source-code references found** — the PR's own claim of "confirmed zero remaining references" holds. `MockDataBadge` confirmed to have 3 real (non-test) consumers post-change: `analytics/page.tsx` (new), `dashboard/pilot/page.tsx`, `dashboard/analytics/labels/page.tsx` (both pre-existing) — the new usage follows an established, already-wired pattern rather than introducing a fresh one-off component.
+- **CHECK B (half-wire):** No new event/env-var/column/topic introduced. `data_source` is a pre-existing field on the underlying analytics API responses (per the "parity with /dashboard/pilot" framing in the PR body) — the page now *reads and renders* a field it previously silently discarded on error paths; this is a consumer being reconnected to a pre-existing producer, not a new signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- No new logic gap found in the touched diff. The rewrite from a single try/catch-all-to-zero pattern to per-fetch `{loading,data,error}` state is a straightforward, correctly-scoped refactor per the AC.
+- **quiz/config fail-loud scope check (reconciled, no gap):** confirmed the 500 is scoped to "a *configured* DB throws" (i.e., the DB client exists but the query failed), not to "DB is unconfigured" — an unconfigured-DB environment (e.g., local dev without a DATABASE_URL) is a distinct code path the PR did not touch, consistent with the AC wording ("fails loud... when a configured DB throws").
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A — no bug found.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (note, P3) — no test directly exercises `/api/analytics` returning 404/gone post-deletion.** The route is deleted, not stubbed to 410; Next.js will naturally 404 an undefined route, but there is no explicit regression test pinning that behavior (e.g., against a future accidental re-add). Very low risk (the route.ts file no longer exists; a re-add would be a visible new file in review). Note, no new stub.
+- **TG-2 (note, P3) — `MockDataBadge` render is asserted for the `data_source==='mock'` case, but the retro did not find a test asserting the badge is ABSENT for `data_source==='clickhouse'`** (real-data case) in `page.test.tsx`; a badge that never disables would be a false "this is mock data" signal shown on real pilot dashboards. PR body claims "clickhouse states" are covered among the 11 RTL tests — plausible but not independently line-verified in this retro pass given time budget. Recommend a spot-check, not escalating as a gap.
+
+#### 4d. Documentation gaps
+
+- None found.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **F-07 (this ticket): closed.** Directly advances Rule K.2 (no fabricated data at the UI layer) to the dashboard/analytics surface, closing the last major UI-layer instance of the zero-coercion anti-pattern this repo has been sweeping (see RETRO-135/137/138/139/140, the fire-and-forget-observability family — this is the UI-rendering sibling of that same "silently swallow a failure and show a fabricated success state" root cause, applied to reads rather than writes).
+- **FOLLOW-471 (clean re-audit gate):** F-07 is in its depends_on list; this closes that dependency.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-454 (F-01, SSR-cookie auth mismatch, next candidate ticket)** touches `/api/dashboard/analytics/*` auth — a DIFFERENT axis (who can call the route) than this PR (what the UI does with a failed/mock response). No overlap/conflict; FOLLOW-454's fix should not need to touch `page.tsx`'s new error-state logic, but the PM should re-confirm the analytics page's error banner correctly surfaces a 401 (not just a 500) once FOLLOW-454 lands, since a cookie-auth mismatch on the SSR path currently manifests as a non-2xx that this PR's new error path should already catch generically. Worth a quick post-FOLLOW-454 spot-check, not a new ticket.
+
+#### 5c. Contracts changed others rely on
+
+- **`/api/analytics` route removed** — verified zero consumers (§3), so no live contract broken. Any external/undocumented caller (e.g., a saved bookmark, a stale client script outside this repo) would now get a 404 instead of fabricated zeros — an improvement (fail-loud) but noting as the one true "contract removed" fact for completeness.
+
+#### 5d. Architectural assumptions affected
+
+- Reinforces Rule K.2's UI-layer application: any dashboard panel that reads a `data_source` field must render it (via `MockDataBadge` or equivalent), not silently drop it on the happy path either — worth a light audit of the other dashboard pages for the same "drops data_source" defect class if not already covered (out of scope here; `dashboard/pilot` and `analytics/labels` already reuse the badge, suggesting this was already swept for at least those two).
+
+### 6. New lesson candidates
+
+- **No new pattern reaches even count 1 as a genuinely fresh sighting.** This PR is best read as a confirming instance of the already-established Rule K.2 (no fabricated/silent-default data at a read boundary) applied to a UI-rendering context rather than a write-sink context — the parent pattern is already promoted; this is not a new axis, so not logged as a fresh count-1.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **F-07 (chartered target): CLOSED end-to-end.** Producer (the underlying `/api/dashboard/analytics/*` and `/api/pilot/*` routes, pre-existing, already return `data_source`) → consumer (`page.tsx` now reads `res.ok` + `data_source` instead of coercing to zero) → render (`ErrorBanner` on failure, `MockDataBadge` on mock). `/api/analytics` mock route removed with zero orphaned callers. `quiz/config` fail-loud verified scoped correctly (§4a).
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Read axis (this PR) vs write axis (RETRO-135/137/138/139/140 fire-and-forget family):** both are instances of the same Rule K.2 root ("a configured-but-failed store/fetch must be observable, not silently defaulted"), applied to opposite data-flow directions (write-sink swallow vs read-source coercion). No contradiction; complementary closure of the same architectural principle on its other axis.
+- No contradiction with any prior retro's verdict on `/api/analytics` (no prior retro analyzed this route).
+
+### 9. Follow-ups
+
+- No new FOLLOW stub filed. Two low-priority notes (§4c TG-1, TG-2) are recorded but do not clear the bar for a dedicated ticket; folded into general QA awareness for the Sprint 22b re-audit gate (FOLLOW-471) rather than duplicated as new stubs.
+
+### 10. Cross-references
+
+- **Sibling of the RETRO-135/137/138/139/140 fire-and-forget-observability family** (Rule K.2) on the read/render axis instead of the write/flush axis.
+
+
 <!-- next free FOLLOW number: 449 (448 = RETRO-146 §4e/§9 — branch-first worker discipline + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer subagent stalled 600s on FOLLOW-442, left correct impl UNCOMMITTED on the main working tree [never ran git checkout -b], main session recovered+re-verified typecheck+lint+11/11 holdout tests). RETRO-146 = retro for PR #406 (FOLLOW-442, AUD-04/F-05 P1 go-live gate, MERGED 2026-07-01T16:29:05Z squash, commit 306f98a; 2 files +48/-7; route.ts +29 new afterResponse(logDecisionAsync holdoutGroup=true variant=control archetype=neutral directiveCount=0) on POST holdout branch ~L1165 + route.holdout.test.ts inverts prior "no INSERT" smoke → asserts param_p_holdout_group=1). NO contract change (existing holdout_group column + logDecisionAsync 15-param sig; new call site only; afterResponse-wrapped so FF-guard passes). Wiring Audit CLEAN both checks (framework-route entrypoint suppressed; no new signal) — closes an IN-PRACTICE half-wire: holdout_group=1 had a cta-lift consumer [route.ts:116/138/163 FROM adaptation_decisions, route-helpers.ts:142 holdout_sessions] but NO POST-side producer [GET produced it at :943, POST holdout branch returned without logging]. GAPS: LG-1 arm-asymmetry root cause FIXED (treatment logged, holdout didn't → lift holdout denominator structurally zero → degenerate z-test); sibling-arm audit reconciled — opt-out :1077 + consent-skip :1126 also skip logDecisionAsync BY DESIGN (route.ts:398, excluded from measurement) so correctly untouched; TG-1 note the prior test ASSERTED THE BUG (holdout→no INSERT) as expected, masking it; TG-2 note no producer→consumer denominator test; TG-3 note assertion omits param_p_directive_count=0; DG-1 trivial comment cites treatment "~1417" actual L1433; §4e PROCESS = stalled-worker/branch-hygiene → FOLLOW-448. CLOSURE (step 7): AUD-04/F-05 GENUINELY CLOSED on CODE axis end-to-end (producer→flush after()→consumer cta-lift→render holdout_sessions, not one-hop); PROD axis NOT attested (rides FOLLOW-441 canary + FOLLOW-422 empty-table concern), correctly OPEN. RULES: NO promotion. ARM-ASYMMETRY-WRITE-GAP count 1 fresh (distinct from RETRO-132 mislabel + RETRO-138 flush-drop-all-arms); WORKER-BRANCH-HYGIENE count 1 fresh (corpus grep found no prior; distinct from RETRO-138 §6 tooling-fidelity); FLUSH axis unchanged count 1 (this PR is a correct APPLICATION of afterResponse, not a new bug sighting; FOLLOW-429 remains the designated cross-runtime count-2). Anti-count-inflation honored. PM ACTION: (1) FOLLOW-448 P2 — branch-first guardrail + recovered-work re-verification; (2) widen FOLLOW-441 canary to assert BOTH holdout arms (NOT re-filed); (3) prod-attest holdout rows land after deploy (FOLLOW-441/422). -->
 
 

@@ -1,5 +1,22 @@
 # Backlog Queue
 
+**Updated 2026-07-02 (session 7) — FOLLOW-452 (PR #418, commit c0d9b39) and FOLLOW-453 (PR #419,
+commit 807869d) confirmed MERGED to `main`; both flipped READY_FOR_REVIEW → DONE. RETRO-147 and
+RETRO-148 written to `backlog/RETROSPECTIVES.md` (no new FOLLOW stubs — both PRs' minor notes folded
+into existing FOLLOW-441 canary-widening / FOLLOW-471 re-audit QA awareness, not duplicated).
+Delegated the next two unblocked P1 Sprint 22b tickets to different free agents in isolated
+worktrees: FOLLOW-454 (backend-engineer, SSR-cookie auth mismatch — the highest-impact remaining
+correctness gap, affects every tenant-dashboard browser-session route) and FOLLOW-455
+(compliance-engineer, DSR OTP CSPRNG/rate-limit/erasure hardening — live security + Art.17/15/20
+compliance gap). IN_PROGRESS count now: FOLLOW-454 + FOLLOW-455 + stale TICKET-PILOT-001 = 3 (at the
+3-ticket cap — no further delegation until one clears). FOLLOW-449 (prod ClickHouse migration
+attest+apply) and FOLLOW-450 (feedback/bandit go-live flip) remain
+CODE_COMPLETE_OPERATOR_PENDING/READY-but-operator-gated — NOT delegated to a worker this session per
+explicit operator-only scoping (Piotr/Rafał), tracked on the PILOT GO-LIVE CHECKLIST in STATUS.md,
+not silently dropped. Three OPEN escalations (ESC-020, ESC-028, ESC-034) re-confirmed non-blocking
+against established precedent (each explicitly self-documents as operator-action-pending, not an
+unresolved architectural/product decision) — no new escalation opened.**
+
 **Updated 2026-07-02 (session 6) — FOLLOW-452 and FOLLOW-453 completed and opened as PRs #418 and
 #419 (resumed from a suspended session that had delegated both to backend-engineer worktrees but
 left the work uncommitted). Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI green on every real
@@ -8117,10 +8134,12 @@ gate) closes the epic and must be last.
   title: >-
     Fix per-archetype holdout logging + GET holdout default so lift is measurable (F-08)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
+  completed_at: '2026-07-02T09:17:04Z'
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/418'
+  merge_commit: c0d9b39bcf2eaf5d4aff06b0a35c822ed1641112
   ci: 'green (all real gates); Rule I pre-existing-red non-blocking'
   branch: backend-engineer/FOLLOW-452-holdout-archetype-logging
   priority: P1
@@ -8142,21 +8161,36 @@ gate) closes the epic and must be last.
     directory stranded a commit on main). Each worker must have its own `git worktree` checkout on
     its own branch before touching any file.
     AC:
-    - [ ] Holdout rows log the would-be archetype/confidence (the classification the session would
+    - [x] Holdout rows log the would-be archetype/confidence (the classification the session would
           have received), not a hardcoded 'neutral', so lift/route per-archetype arms populate.
-    - [ ] GET /api/adapt computes holdout server-side (assignHoldout) like POST; never trusts a
+    - [x] GET /api/adapt computes holdout server-side (assignHoldout) like POST; never trusts a
           caller-supplied holdout_group as the default.
-    - [ ] Test: a synthetic archetype-X session in holdout produces a holdout row keyed to X; the
+    - [x] Test: a synthetic archetype-X session in holdout produces a holdout row keyed to X; the
           per-archetype lift query returns a non-empty holdout_n for X.
+
+    DONE 2026-07-02 (PM-validated, merged PR #418, commit c0d9b39). CI confirmed green on every
+    real gate (Test Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Typecheck); Rule I
+    pre-existing-red non-blocking (173 legacy violations, zero in this PR's touched files).
+    Runtime-wiring verified: producer (POST holdout branch logs resolved archetype/confidence via
+    the existing afterResponse-wrapped logDecisionAsync sink; GET holdout now calls the shared
+    assignHoldout() helper, same call already used by POST at route.ts:1287) reaches a real,
+    pre-existing consumer (`pilot/cta-lift/route.ts:150` `GROUP BY ad.archetype, ad.holdout_group`)
+    — confirmed via `grep -n "assignHoldout" apps/control-plane/src/app/api/adapt/route.ts` (2
+    non-test call sites, POST + GET) and `grep -n "GROUP BY ad.archetype" apps/control-plane/src/
+    app/api/pilot/cta-lift/route.ts`. RETRO-147 written (backlog/RETROSPECTIVES.md); no new FOLLOW
+    stub (one recommendation folded into the existing FOLLOW-441 canary-widening note, not
+    duplicated).
 - id: FOLLOW-453
   title: >-
     Stop the analytics UI rendering fabricated zeros on error; retire /api/analytics mock; fail-loud
     quiz/config (F-07)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-02T00:00:00Z'
+  completed_at: '2026-07-02T09:17:07Z'
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/419'
+  merge_commit: 807869d313b9d008c5043c5dacd462c517b7137d
   ci: 'green (all real gates); Rule I pre-existing-red non-blocking'
   branch: backend-engineer/FOLLOW-453-analytics-fail-loud-ui
   priority: P1
@@ -8179,12 +8213,23 @@ gate) closes the epic and must be last.
     directory stranded a commit on main). Each worker must have its own `git worktree` checkout on
     its own branch before touching any file.
     AC:
-    - [ ] analytics/page.tsx surfaces an explicit error state on non-2xx (no zero coercion), and
+    - [x] analytics/page.tsx surfaces an explicit error state on non-2xx (no zero coercion), and
           renders a MockDataBadge when data_source==='mock' (parity with /dashboard/pilot).
-    - [ ] Delete or hard-gate /api/analytics (fabricated, spoofable, no consumer); if retained,
+    - [x] Delete or hard-gate /api/analytics (fabricated, spoofable, no consumer); if retained,
           add JWT tenant scoping + data_source and a real query.
-    - [ ] quiz/config GET fails loud (500) when a configured DB throws instead of returning
+    - [x] quiz/config GET fails loud (500) when a configured DB throws instead of returning
           enabled defaults.
+
+    DONE 2026-07-02 (PM-validated, merged PR #419, commit 807869d). CI confirmed green on every
+    real gate; Rule I pre-existing-red non-blocking. Runtime-wiring verified: /api/analytics route
+    deletion confirmed to have zero remaining source-code references
+    (`grep -rn "/api/analytics" apps/ packages/ --include=*.ts --include=*.tsx | grep -v node_modules`
+    → only stale `.next/` build-artifact matches, not source); `MockDataBadge` confirmed to have 3
+    real non-test consumers (`analytics/page.tsx` new, `dashboard/pilot/page.tsx` +
+    `dashboard/analytics/labels/page.tsx` pre-existing) via
+    `grep -rln "MockDataBadge" apps/control-plane/src`. RETRO-148 written
+    (backlog/RETROSPECTIVES.md); no new FOLLOW stub (two low-priority test-coverage notes recorded,
+    folded into FOLLOW-471 re-audit QA awareness, not duplicated as new tickets).
 - id: FOLLOW-472
   title: >-
     Demo-JWT path on POST /api/adapt has no tenant_id-claim-vs-body mismatch check
@@ -8242,7 +8287,10 @@ gate) closes the epic and must be last.
   title: >-
     Fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs (F-01)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T00:00:00Z'
+  branch: backend-engineer/FOLLOW-454-ssr-cookie-auth
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8253,6 +8301,24 @@ gate) closes the epic and must be last.
     only) → 401 for the very UIs that call them (same class as FOLLOW-326, unpatched tenant-side).
   spec: ADR-0013; project memory admin_ssr_cookie_auth; audit report §4 trap 5
   notes: |
+    DELEGATED 2026-07-02 (pm-orchestrator, table row: "ingest worker, control-plane, decision-api,
+    Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer"). Picked as the
+    highest-impact unblocked P1 in Sprint 22b: this affects EVERY browser-session dashboard route
+    (analytics, pilot, ab, quiz/config, tenants) — the exact class already patched admin-side by
+    FOLLOW-326/ADR-0013 (project memory admin_ssr_cookie_auth), now unpatched tenant-side. It also
+    directly complements the just-merged FOLLOW-453 (PR #419): that PR made the analytics UI
+    fail-loud with an explicit error banner instead of fabricated zeros, but a real agency user
+    hitting this SSR-cookie mismatch will now SEE that error banner instead of silently getting
+    zeros — an improvement, but the underlying login-then-401 bug this ticket fixes is what makes
+    the dashboard actually usable end-to-end.
+    Runs CONCURRENTLY with FOLLOW-455 (different agent, compliance-engineer) — ISOLATED WORKTREE
+    required per FOLLOW-448 branch-first discipline: `git checkout -b
+    backend-engineer/FOLLOW-454-ssr-cookie-auth main` in its own `git worktree` MUST be the FIRST
+    action, before any file edit (RETRO-146 stalled-worker/stranded-work hazard).
+    Reference for the fix pattern: `apps/control-plane/src/**` admin equivalent already uses
+    `@supabase/ssr` `createServerClient().getUser()` per project memory admin_ssr_cookie_auth
+    (FOLLOW-326, PRs #310/#311) — mirror that pattern on the tenant-side routes/middleware listed
+    in source above, do not invent a new auth mechanism.
     AC:
     - [ ] Tenant browser-session API routes + /dashboard/* middleware resolve the user via
           @supabase/ssr createServerClient().getUser() (or accept the chunked cookie), not
@@ -8263,7 +8329,10 @@ gate) closes the epic and must be last.
   title: >-
     Harden DSR: CSPRNG OTP + rate-limit/lockout + complete erasure & disclosure coverage (F-20)
   agent: compliance-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: compliance-engineer
+  started_at: '2026-07-02T00:00:00Z'
+  branch: compliance-engineer/FOLLOW-455-dsr-otp-hardening
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -8274,6 +8343,20 @@ gate) closes the epic and must be last.
     count (Art.15/20).
   spec: MASTER_DESIGN §H.1.1; audit report §5.5 F-20
   notes: |
+    DELEGATED 2026-07-02 (pm-orchestrator, table row: "DPIA/ROPA/consent/DSR rules/fair-housing/
+    AI-Act docs -> compliance-engineer"). Picked concurrently with FOLLOW-454 (different agent,
+    backend-engineer — no shared-tree hazard) as the other unambiguous, unblocked P1: this is a
+    live security gap (brute-forceable OTP, Math.random() is not cryptographically secure) AND a
+    GDPR Art.17/15/20 compliance gap (incomplete erasure, stubbed disclosure counts) — both classes
+    this repo has previously treated as go-live blockers (cf. ESC-035 forgeable-auth precedent).
+    Runs CONCURRENTLY with FOLLOW-454 — ISOLATED WORKTREE required per FOLLOW-448 branch-first
+    discipline: `git checkout -b compliance-engineer/FOLLOW-455-dsr-otp-hardening main` in its own
+    `git worktree` MUST be the FIRST action, before any file edit.
+    If implementing the CSPRNG/rate-limit/lockout logic requires touching non-compliance-owned
+    control-plane route code beyond the existing dsr-otp/dsr routes, treat that as in-scope for this
+    ticket (compliance-engineer's row explicitly covers "DSR rules"), but if it uncovers an
+    ambiguous architectural call (e.g., a new external rate-limit store), escalate per the standard
+    ESCALATIONS.md guardrail rather than guessing.
     AC:
     - [ ] OTP generated with crypto.getRandomValues/randomInt (CSPRNG).
     - [ ] Per-capability attempt cap + lockout + request-scoped lookup (not global-by-hash);

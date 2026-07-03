@@ -55,6 +55,31 @@ function errorBody(
   };
 }
 
+/**
+ * Hono v4's generic `Context` type doesn't expose `executionCtx` in its public type surface,
+ * even though Cloudflare Workers' `ExecutionContext.waitUntil()` lets a Worker keep running
+ * background work after the `Response` has been sent, without delaying the client-visible ACK.
+ * This narrow typed accessor is the single place that reaches for it via an unofficial cast, so
+ * every fire-and-forget sink below (intent-snapshot dual-write, and — as of FOLLOW-459 — the
+ * ClickHouse events insert) shares one accessor instead of duplicating the cast.
+ *
+ * `Context#executionCtx` is a getter that THROWS (not `undefined`) when the Worker `fetch`
+ * handler wasn't given a third `ExecutionContext` argument (e.g. `app.fetch(request, env)` with
+ * no `ctx` — every non-FOLLOW-459 test in this app, and any environment without a real Worker
+ * runtime). The try/catch below is required, not optional.
+ */
+interface HonoWithExecCtx {
+  executionCtx?: { waitUntil?: (p: Promise<unknown>) => void };
+}
+
+function getWaitUntil(c: unknown): ((p: Promise<unknown>) => void) | undefined {
+  try {
+    return (c as HonoWithExecCtx).executionCtx?.waitUntil;
+  } catch {
+    return undefined;
+  }
+}
+
 export const events = new Hono<{ Bindings: Env }>();
 
 events.post('/', async (c) => {
@@ -204,13 +229,7 @@ events.post('/', async (c) => {
       // LG-4 fix (FOLLOW-286): use canonical IntentSnapshotPayload imported from @estalara/shared
       // instead of an inline type redeclaration that could silently drift.
       const payload = evt.payload as IntentSnapshotPayload;
-      // Hono v4 CF Workers context exposes executionCtx.waitUntil() for background tasks.
-      // Hono's type definitions don't expose executionCtx on the generic Context type;
-      // we reach it through a typed intermediary that's only needed for fire-and-forget writes.
-      interface HonoWithExecCtx {
-        executionCtx?: { waitUntil?: (p: Promise<unknown>) => void };
-      }
-      const ctx = (c as unknown as HonoWithExecCtx).executionCtx;
+      const waitUntil = getWaitUntil(c);
       const crossSessionId =
         typeof evt.cross_session_id === 'string' ? evt.cross_session_id : undefined;
       const sessionIdStr =
@@ -229,7 +248,7 @@ events.post('/', async (c) => {
         },
         c.env,
       );
-      if (ctx?.waitUntil) {
+      if (waitUntil) {
         // FOLLOW-449 defensive backstop: `handleIntentSnapshot`'s own Promise.allSettled
         // branches already capture every ClickHouse/Supabase write rejection to Sentry
         // (see intent-snapshot.ts). This `.catch()` only fires if `handleIntentSnapshot`
@@ -237,7 +256,7 @@ events.post('/', async (c) => {
         // without it, that would be an unhandled rejection inside `ctx.waitUntil` that the
         // CF Workers runtime drops silently (no Sentry event, no log). Stays fire-and-forget:
         // no `await`, so no added ACK latency.
-        ctx.waitUntil(
+        waitUntil(
           writePromise.catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
             console.error(
@@ -262,22 +281,43 @@ events.post('/', async (c) => {
 
   // 7. Push to downstream sinks (skip if everything was rejected).
   //
-  // Two sinks, run in parallel because both no-op when their respective env
-  // vars are unset:
-  //   - Redpanda Pandaproxy (Phase-3 destination — currently empty URL in
-  //     prd, so its producer returns `{ok:true, attempts:0}`).
-  //   - ClickHouse Cloud HTTPS interface (ESC-017 pilot path — replaces the
-  //     missing Pandaproxy hop on Redpanda Cloud Serverless).
+  // Redpanda Pandaproxy stays on the synchronous ACK path and keeps its existing
+  // 503/retry contract UNCHANGED by this ticket: it's currently a no-op in production
+  // (REDPANDA_REST_URL is empty — Redpanda Cloud Serverless doesn't expose Pandaproxy,
+  // ESC-017) so it resolves instantly; a 5xx-exhausted-retries or bare-4xx failure
+  // returns 503 so the SDK retries the whole batch (idempotency.ts caches only 2xx
+  // responses, so a 503 is safely re-processed on the client's next attempt).
   //
-  // 5xx-class failure in EITHER sink that's configured returns 503 so the
-  // SDK retries; 4xx fails fast. The Phase-1 no-op return path is `ok:true`
-  // for both, so an unconfigured sink can never short-circuit the other.
+  // ClickHouse (FOLLOW-459 / 2026-07-01 audit F-09): previously awaited alongside
+  // Redpanda via `Promise.all`, so a struggling/unreachable ClickHouse endpoint blocked
+  // the ACK for up to ~12s (3 attempts x 4s per-attempt timeout) + ~3.1s backoff
+  // (100+500+2500ms) BEFORE the Worker could even return a 503 — violating the <50ms
+  // p95 ACK budget stated at index.ts:10. The insert now runs in `ctx.waitUntil()`
+  // AFTER the Response has already been sent, using the SAME 3-attempt/backoff retry
+  // policy (`pushToClickHouse`, unchanged) — only its position in the request
+  // lifecycle moved.
+  //
+  // RETRY-CONTRACT CHANGE — read before touching this block again:
+  //   BEFORE: a terminal ClickHouse failure (all retries exhausted, or a 4xx) returned
+  //   HTTP 503 to the SDK; the SDK retried the whole batch (Idempotency-Key not yet
+  //   cached, since only 2xx responses are cached — idempotency.ts).
+  //   AFTER: the SDK receives 200 as soon as Redpanda succeeds, *before* ClickHouse's
+  //   outcome is known. That 200 is idempotency-cached, so a client retry with the same
+  //   Idempotency-Key now replays the cached 200 instead of re-attempting the insert.
+  //   A terminal ClickHouse failure is therefore no longer visible to the client and no
+  //   longer retried by the SDK.
+  //   PRESERVED: at-least-once delivery up to the existing in-process retry policy (3
+  //   attempts / exponential backoff) — unchanged, it just runs post-ACK now. A terminal
+  //   failure (after those 3 attempts, or a 4xx) is captured to Sentry (see the `.then()`
+  //   handler below) so it stays observable and can be manually replayed/backfilled —
+  //   Rule K.2: a configured-but-failed store must never be silently swallowed.
+  //   NOT preserved: client-driven re-delivery specifically for a ClickHouse-only
+  //   terminal failure. Closing that gap fully needs a durable, crash-survivable retry
+  //   queue (e.g. Cloudflare Queues) — new infrastructure outside this ticket's scope
+  //   (see FOLLOW-482 in backlog/FOLLOW_UPS.md).
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
-    const [redpandaPush, clickhousePush] = await Promise.all([
-      pushToRedpanda(validated, c.env),
-      pushToClickHouse(validated, c.env),
-    ]);
+    const redpandaPush = await pushToRedpanda(validated, c.env);
 
     if (!redpandaPush.ok) {
       logger.error(
@@ -298,27 +338,60 @@ events.post('/', async (c) => {
       );
     }
 
-    if (!clickhousePush.ok) {
-      logger.error(
-        {
-          tenant_id: tenantId,
-          batch_size: eventsField.length,
-          attempts: clickhousePush.attempts,
-          upstream_status: clickhousePush.status,
-          error: clickhousePush.error,
-        },
-        'clickhouse_push_failed',
-      );
-      return c.json(
-        errorBody(requestId, 'clickhouse_unavailable', 'Failed to persist events to ClickHouse', {
-          attempts: clickhousePush.attempts,
-          ...(clickhousePush.status !== undefined
-            ? { upstream_status: clickhousePush.status }
-            : {}),
+    // FOLLOW-459: fire ClickHouse off the ACK critical path. `pushToClickHouse` never
+    // throws (it always resolves with `{ ok: false, ... }` on terminal failure — see
+    // clickhouse-producer.ts), so the `.then()` below is the only place a failure
+    // surfaces; `.catch()` is a defensive backstop for an unexpected bug in that handler.
+    const waitUntilCh = getWaitUntil(c);
+    const chPromise = pushToClickHouse(validated, c.env).then((clickhousePush) => {
+      if (!clickhousePush.ok) {
+        logger.error(
+          {
+            tenant_id: tenantId,
+            batch_size: eventsField.length,
+            attempts: clickhousePush.attempts,
+            upstream_status: clickhousePush.status,
+            error: clickhousePush.error,
+          },
+          'clickhouse_push_failed_post_ack',
+        );
+        // Rule K.2: a configured store that failed AFTER the ACK must stay observable,
+        // not silently dropped — this is the terminal-failure signal for FOLLOW-482's
+        // durable-retry-queue follow-up until that infra exists.
+        Sentry.captureException(
+          new Error(`clickhouse_push_failed_post_ack: ${clickhousePush.error}`),
+          {
+            tags: { area: 'events', sink: 'clickhouse', kind: 'insert_failed' },
+            extra: {
+              tenant_id: tenantId,
+              batch_size: eventsField.length,
+              attempts: clickhousePush.attempts,
+              upstream_status: clickhousePush.status,
+            },
+          },
+        );
+      }
+    });
+    if (waitUntilCh) {
+      waitUntilCh(
+        chPromise.catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            JSON.stringify({
+              event: 'clickhouse_push_threw_post_ack',
+              tenant_id: tenantId,
+              error: msg,
+            }),
+          );
+          Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+            tags: { area: 'events', sink: 'clickhouse', kind: 'unexpected_throw' },
+            extra: { tenant_id: tenantId },
+          });
         }),
-        503,
       );
     }
+    // If waitUntil is unavailable (e.g. some test environments), chPromise still runs
+    // as a dangling microtask — production Workers always provide executionCtx.
   }
 
   span?.setAttributes({

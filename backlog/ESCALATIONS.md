@@ -1960,7 +1960,7 @@ go-live (Step 1-3 above). Escalation closes when smoke verification passes.
 
 ---
 
-## OPEN — Modal ML layer never deployed to prod (no apps/secrets in the only account, no CI deploy) [FOLLOW-436]
+## RESOLVED — Modal ML layer never deployed to prod (no apps/secrets in the only account, no CI deploy) [FOLLOW-436]
 
 **Filed by:** pm-orchestrator (session 9) **Date:** 2026-07-02T21:30:00Z **Affects:** FOLLOW-436,
 FOLLOW-458, FOLLOW-460 (Modal legs), pilot go-live, core AI-description feature **Type:**
@@ -2014,4 +2014,20 @@ work: create the `estalara` Modal workspace + provision `estalara-secrets` (minu
 - add a CI deploy workflow. Operator guide + `MODAL_PROD_STANDUP.md` updated to the no-Redpanda
   flow.
 
-**Resolution:** <empty until resolved>
+**Resolution (2026-07-03, RESOLVED — Modal ML layer LIVE in prod):** Operator (Piotr) executed the
+ESC-036 Modal stand-up per `docs/runbooks/MODAL_PROD_STANDUP.md`: created the `estalara` Modal
+workspace, provisioned `estalara-secrets` (no Redpanda, per ADR-0016), deployed
+`estalara-description-generator` (`apps/llm-gateway`), set
+`MODAL_DESCRIPTION_URL`/`MODAL_EMBED_SEED_URL` in Vercel prod, and redeployed the control-plane. A
+`.github/workflows/modal-deploy.yml` deploy pipeline was added (PR #432) so it can't silently drift
+again. ATTESTATION: a real Sonnet-4.6 family_buyer description (1060 chars) was generated and
+written to prod `description_cache_persistent` via the deployed direct-Modal web endpoint. Two
+deploy bugs were found + fixed during stand-up: (1) the consumer modules read the shared contract
+fixtures at import time but they weren't in the Modal image → container crashed on import → **PR
+#433** bakes them in; (2) a stray **leading space** in the manually-pasted `ANTHROPIC_API_KEY`
+secret value produced an "Illegal header value" that surfaced as a misleading
+`APIConnectionError: Connection error.` → corrected in `estalara-secrets`. RESIDUAL (not blocking,
+tracked separately): the full browser→SDK→control-plane→Modal leg + the ESC-019 listing-fetch hop
+still want a real-listing confirmation; Modal Phases B (intent-engine) and C (data-quality /
+stream-consumer, FOLLOW-458) remain deferred; and a `.strip()` hardening on secret-env reads is
+filed as FOLLOW-488 to prevent the leading-space class of bug recurring.

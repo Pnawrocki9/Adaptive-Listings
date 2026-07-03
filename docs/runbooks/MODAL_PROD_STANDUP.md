@@ -238,5 +238,32 @@ for prod throughput. Confirm billing before go-live.
 
 ## 10. Attestation
 
-_(Append after Phase A go-live: date, operator, Modal app URL, first `description_cache_persistent`
-row id, verdict. Then PM marks FOLLOW-436 + FOLLOW-460 operator legs DONE and resolves ESC-036.)_
+**Date:** 2026-07-03 · **Operator:** Piotr (CEO) · **Environment:** production · **Verdict:** ✅
+LIVE
+
+Phase A stood up end-to-end. Modal workspace `estalara` created; `estalara-secrets` provisioned (no
+Redpanda, per ADR-0016); `estalara-description-generator` (`apps/llm-gateway`) deployed;
+`MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` set in Vercel prod; control-plane redeployed.
+`.github/workflows/modal-deploy.yml` added (PR #432) for future auto-deploys.
+
+**Proof:** a POST to the deployed `description_requested_endpoint` (Bearer `INTERNAL_API_SECRET`)
+spawned `generate_description` → Sonnet 4.6 → a real 1060-char `family_buyer`-adapted description
+written to prod `description_cache_persistent`.
+
+**Two deploy bugs fixed during stand-up:**
+
+1. The consumer modules read the shared contract fixtures
+   (`packages/shared/contracts/*.required.json`) at import time, but they were not in the Modal
+   image → container crashed on import (`FileNotFoundError`), so the deployed endpoints only ever
+   returned Modal's container-boot errors (`303`/`400`/`bad redirect method`). **Fix: PR #433** —
+   `add_local_file(copy=True)` bakes them into the image in `_app.py`.
+2. A stray **leading space** in the manually-pasted `ANTHROPIC_API_KEY` value in `estalara-secrets`
+   produced an "Illegal header value" that the Anthropic SDK surfaced as a misleading
+   `APIConnectionError: Connection error.` — corrected in the Modal secret (no code change).
+   Follow-up **FOLLOW-488** adds a `.strip()` hardening on secret-env reads.
+
+**Residual (not blocking):** the full browser→SDK→control-plane→Modal path (and the ESC-019
+listing-fetch hop) still wants a real-listing confirmation; Phases B (intent-engine) and C
+(data-quality / stream-consumer, FOLLOW-458) remain deferred.
+
+FOLLOW-436 / FOLLOW-460 / FOLLOW-485 marked DONE; ESC-036 RESOLVED.

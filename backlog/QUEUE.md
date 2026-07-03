@@ -1,5 +1,56 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-04 (end of 2026-07-03 session)
+
+**MILESTONE 2026-07-03: the Modal ML layer is LIVE in prod for the first time — AI description
+generation works end-to-end.** From "nothing deployed" (ESC-036) to a working, auto-deploying
+pipeline. Attested: a real Sonnet-4.6 `family_buyer` description (1060 chars) was generated via the
+deployed direct-Modal web endpoint and written to prod `description_cache_persistent`.
+
+**All merged to `main`:** #425 FOLLOW-457, #426 FOLLOW-450, #427/#434 PM bookkeeping, #428
+FOLLOW-460, #429 FOLLOW-459, #430 FOLLOW-456, #431 FOLLOW-485 (ADR-0016 direct-Modal), #432
+modal-deploy workflow, #433 (Modal image contract-fixture fix), #435 (workflow httpx/fastapi fix).
+FOLLOW-436/460/485 = DONE; ESC-036 = RESOLVED. Modal auto-deploy CI is armed and GREEN
+(`.github/workflows/modal-deploy.yml`, MODAL*TOKEN*\* GitHub secrets set).
+
+**What's live now:** control-plane → direct HTTPS → Modal `estalara-description-generator`
+(`description_requested_endpoint`) → Sonnet 4.6 → Redis + Postgres `description_cache_persistent`.
+Modal workspace = `estalara`; secret = `estalara-secrets` (9 keys, no Redpanda per ADR-0016). Vercel
+prod has `MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` + the fail-closed secrets from FOLLOW-456.
+
+**3 deploy bugs found + fixed on the way (context if anything regresses):** (1) contract fixtures
+missing from the Modal image → import crash → PR #433; (2) `pip install modal` only in the deploy
+workflow → `ModuleNotFoundError: httpx` → PR #435 (`modal httpx fastapi`); (3) a stray LEADING SPACE
+in the manually-pasted `ANTHROPIC_API_KEY` secret value → misleading
+`APIConnectionError: Connection error.` → corrected in `estalara-secrets` (hardening filed as
+FOLLOW-488).
+
+**▶️ NEXT (do tomorrow, in priority order):**
+
+1. **Real-listing E2E confirmation (the ONE remaining product proof).** Go-live was attested by
+   POSTing the Modal endpoint DIRECTLY. Not yet exercised: browser → SDK on a real pilot listing →
+   `GET /api/adapt/description` (control-plane) → dispatch to Modal → row + adapted copy on the
+   page. This also exercises the ESC-019 listing-fetch hop (may return '' → FOLLOW-457 skip). Open a
+   real pilot listing, then check `SELECT count(*) FROM description_cache_persistent` (was reset to
+   0 after the smoke test). Watch: headline came back null in the smoke test — check if it generates
+   on a real listing.
+2. **Modal Phase B/C** (deferred): `estalara-intent-engine` (P1) and `estalara-schema-validation` /
+   `estalara-stream-consumer-events` (FOLLOW-458, chat = shadow-only). Same stand-up pattern
+   (runbook `docs/runbooks/MODAL_PROD_STANDUP.md` §1); each needs its keys in `estalara-secrets`
+   (stream-consumer also needs `redpanda-creds`/`clickhouse-creds` — but Redpanda is out of pilot
+   budget, so re-decide per ADR-0016 before B/C).
+3. **Two older pilot-measurement operator legs still OPEN:** FOLLOW-449 (apply ClickHouse migration
+   0015 `intent_events.session_id` to prod — CH does NOT auto-apply) and FOLLOW-450 AC1 (flip
+   `FEEDBACK_ENDPOINT_ENABLED=true` + provision `OPS_TENANT_ID`/`ADAPT_API_KEY`/`DATABASE_URL_ADMIN`
+   in Doppler prd, then `pnpm feedback:canary` to attest). These gate a MEASURED pilot; separate
+   from the Modal/descriptions thread above.
+4. **Small hardening follow-ups filed:** FOLLOW-486 (CI smoke for fastapi*endpoints), FOLLOW-487
+   (.env.example REDPANDA_TOPIC*\* cleanup), FOLLOW-488 (`.strip()` on secret-env reads), plus the
+   Sprint-22b P2/P3 tail (461–473). Full Modal stand-up runbook:
+   `docs/runbooks/MODAL_PROD_STANDUP.md`.
+
+---
+
 **Updated 2026-07-02 (session 9) — Recovered from a crashed session 8 that had delegated FOLLOW-450
 (backend-engineer) and FOLLOW-457 (ml-engineer) to isolated worktrees and then died mid-flight. Both
 workers had FINISHED their code but the terminal ended before committing — the complete work sat

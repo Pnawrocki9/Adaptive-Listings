@@ -8735,10 +8735,21 @@ gate) closes the epic and must be last.
     Pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed
     (ADR-0016)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: ml-engineer
   started_at: '2026-07-03T10:00:00Z'
+  completed_at: '2026-07-03T10:50:00Z'
   branch: ml-engineer/FOLLOW-485-direct-modal-invocation
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/431'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  notes_pm: >-
+    @modal.fastapi_endpoint(method="POST") + hmac.compare_digest bearer (INTERNAL_API_SECRET);
+    reuses existing REQUIRED_FIELDS validation; pollers unscheduled (code retained). control-plane
+    publishers swapped to MODAL_DESCRIPTION_URL / MODAL_EMBED_SEED_URL, fail-loud on non-2xx. Worker
+    additionally drove the real modal-1.4.2 endpoint via get_raw_f()+FastAPI TestClient
+    (401/400/202). Additive vs #428 (no conflict). MERGE ORDER: after #428 (FOLLOW-460). Two
+    follow-ups filed: FOLLOW-486 (CI fastapi_endpoint smoke), FOLLOW-487 (.env.example REDPANDA
+    topic cleanup).
   priority: P1
   estimated_hours: 6
   depends_on: []

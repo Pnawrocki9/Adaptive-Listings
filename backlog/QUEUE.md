@@ -8702,18 +8702,22 @@ gate) closes the epic and must be last.
   title: >-
     Finish the v2.0 permanent description cache: Modal writes Postgres, drop TTL/tier (F-10)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-02T16:20:00Z'
-  completed_at: '2026-07-02T18:40:00Z'
+  completed_at: '2026-07-03T13:00:00Z'
   branch: ml-engineer/FOLLOW-460-permanent-description-cache
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/428'
+  merge_commit: 9a5e649
   ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
-  operator_action: >-
-    Provision two vars in the Modal secret `estalara-secrets` before this activates in prod:
-    DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET (same pattern as FOLLOW-436
-    embed-seed). Until then the Modal→Postgres cache write silently no-ops (logs a warning, does not
-    crash). On the pilot go-live checklist per Rule AA.
+  operator_action_DONE: >-
+    2026-07-03 GO-LIVE ATTESTED. Operator (Piotr) provisioned DESCRIPTION_CACHE_API_BASE_URL +
+    DESCRIPTION_CACHE_INTERNAL_SECRET in Modal `estalara-secrets` (via the ESC-036 Modal stand-up),
+    deployed apps/llm-gateway, and a real Sonnet-generated family_buyer description (1060 chars) was
+    written to prod `description_cache_persistent` — verified via direct Modal web-endpoint smoke
+    test. The v2.0 permanent Postgres cache write is LIVE. (Two deploy bugs fixed en route: missing
+    contract fixture in the Modal image → PR #433; a stray leading space in the ANTHROPIC_API_KEY
+    secret value → corrected in `estalara-secrets`.)
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8735,13 +8739,21 @@ gate) closes the epic and must be last.
     Pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed
     (ADR-0016)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-03T10:00:00Z'
-  completed_at: '2026-07-03T10:50:00Z'
+  completed_at: '2026-07-03T13:00:00Z'
   branch: ml-engineer/FOLLOW-485-direct-modal-invocation
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/431'
+  merge_commit: 7b707c3
   ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  golive_attestation: >-
+    2026-07-03 PROVEN in prod: control-plane→Modal direct-HTTPS path stood up; a POST to the
+    deployed `description_requested_endpoint` (Bearer INTERNAL_API_SECRET) spawned
+    generate_description → Sonnet → a real row in `description_cache_persistent`. Redpanda fully
+    bypassed for this flow (no account). NOTE: the smoke test hit the Modal endpoint directly; the
+    full browser→SDK→control-plane →Modal leg (and the ESC-019 listing-fetch hop) still wants a
+    real-listing confirmation.
   notes_pm: >-
     @modal.fastapi_endpoint(method="POST") + hmac.compare_digest bearer (INTERNAL_API_SECRET);
     reuses existing REQUIRED_FIELDS validation; pollers unscheduled (code retained). control-plane

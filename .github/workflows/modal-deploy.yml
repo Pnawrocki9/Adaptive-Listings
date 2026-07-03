@@ -57,8 +57,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Modal CLI
-        run: pip install modal
+      # `modal deploy` imports the app modules LOCALLY (on this runner) to register the
+      # @app.function decorators. generate_description.py / consume_embed_seed_requests.py
+      # import httpx + fastapi at module level, so those must be present here too — even
+      # though the Modal container image installs them separately for runtime. Without
+      # them the deploy fails with ModuleNotFoundError during registration.
+      - name: Install Modal CLI + deploy-time module deps
+        run: pip install modal httpx fastapi
 
       # Soft-skip ONLY when the Modal token for the estalara workspace is absent
       # (dependency not configured — ESC-036). A present-but-invalid token is a

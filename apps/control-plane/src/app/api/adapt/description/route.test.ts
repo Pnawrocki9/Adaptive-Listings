@@ -231,7 +231,7 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     expect(body.locale).toBe('en');
   });
 
-  it('Redpanda is NOT published on cache hit', async () => {
+  it('Modal is NOT dispatched on cache hit', async () => {
     const cachedValue = {
       text: 'Cached description.',
       generated_at: '2026-05-14T12:00:00.000Z',
@@ -239,7 +239,7 @@ describe('GET /api/adapt/description — cache hit (AC-2)', () => {
     mockGetCachedDescription.mockResolvedValueOnce(cachedValue);
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
 
@@ -286,7 +286,7 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
       return Promise.resolve(new Response('', { status: 200 }));
     });
     vi.stubGlobal('fetch', mockFetch);
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -298,25 +298,22 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     // Allow fire-and-forget to complete
     await new Promise((r) => setTimeout(r, 10));
 
-    // Redpanda publish must have been called
+    // Modal dispatch must have been called
     expect(mockFetch).toHaveBeenCalled();
 
     // Verify the published payload shape
     const firstPostBody = publishedBodies[0];
     expect(firstPostBody).toBeDefined();
-    const envelope = JSON.parse(firstPostBody!) as {
-      records: { value: Record<string, unknown> }[];
-    };
-    const event = envelope.records[0]?.value;
-    expect(event?.archetype).toBe('yield_hunter');
-    expect(event?.listing_id).toBe('prop-123');
+    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    expect(event.archetype).toBe('yield_hunter');
+    expect(event.listing_id).toBe('prop-123');
     // FOLLOW-203: tier and ttl_seconds are no longer emitted by the route
-    expect(event?.tier).toBeUndefined();
-    expect(event?.ttl_seconds).toBeUndefined();
-    expect(String(event?.cache_key)).toContain('yield_hunter');
+    expect(event.tier).toBeUndefined();
+    expect(event.ttl_seconds).toBeUndefined();
+    expect(String(event.cache_key)).toContain('yield_hunter');
     // ESC-018: original_description key must always be present
     expect(event).toHaveProperty('original_description');
-    expect(typeof event?.original_description).toBe('string');
+    expect(typeof event.original_description).toBe('string');
   });
 
   it('event payload includes max_tokens: 500 for all requests (AC-7 / FOLLOW-203)', async () => {
@@ -341,7 +338,7 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -350,20 +347,17 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
 
     const firstPostBody = publishedBodies[0];
     expect(firstPostBody).toBeDefined();
-    const envelope = JSON.parse(firstPostBody!) as {
-      records: { value: Record<string, unknown> }[];
-    };
-    const event = envelope.records[0]?.value;
+    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
     // Single constant — no tier branching
-    expect(event?.max_tokens).toBe(500);
+    expect(event.max_tokens).toBe(500);
     // priority is no longer emitted
-    expect(event?.priority).toBeUndefined();
+    expect(event.priority).toBeUndefined();
   });
 
   it('threads original_description fetched from the Estalara backend into the event (ESC-018)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
     vi.stubEnv('ESTALARA_BACKEND_URL', 'https://backend.test');
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const publishedBodies: string[] = [];
     const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
@@ -392,17 +386,15 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
     );
     expect(listingCall).toBeDefined();
 
-    const event = (
-      JSON.parse(publishedBodies[0]!) as { records: { value: Record<string, unknown> }[] }
-    ).records[0]?.value;
-    expect(event?.original_description).toBe('The agent original copy.');
+    const event = JSON.parse(publishedBodies[0]!) as Record<string, unknown>;
+    expect(event.original_description).toBe('The agent original copy.');
   });
 
-  it('does not block response on Redpanda publish failure (fire-and-forget)', async () => {
+  it('does not block response on Modal dispatch failure (fire-and-forget)', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
 
     // FOLLOW-457 AC1: listing-details must succeed (non-empty original) so this
-    // test still exercises the Redpanda-publish-fails branch rather than the
+    // test still exercises the Modal-dispatch-fails branch rather than the
     // separate empty-original skip-generation branch.
     vi.stubGlobal(
       'fetch',
@@ -415,10 +407,10 @@ describe('GET /api/adapt/description — cache miss (AC-3)', () => {
             }),
           );
         }
-        return Promise.reject(new Error('Redpanda down'));
+        return Promise.reject(new Error('Modal down'));
       }),
     );
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -503,7 +495,7 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -512,18 +504,15 @@ describe('GET /api/adapt/description — FOLLOW-161 global model wiring', () => 
 
     const firstPostBody = publishedBodies[0];
     expect(firstPostBody).toBeDefined();
-    const envelope = JSON.parse(firstPostBody!) as {
-      records: { value: Record<string, unknown> }[];
-    };
-    const event = envelope.records[0]?.value;
-    expect(event?.generation_model).toBe('claude-opus-4-8');
-    expect(event?.override_model).toBeUndefined();
+    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    expect(event.generation_model).toBe('claude-opus-4-8');
+    expect(event.override_model).toBeUndefined();
   });
 
   it('getGlobalGenerationModel is called on cache miss', async () => {
     mockGetCachedDescription.mockResolvedValueOnce(null);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
     await new Promise((r) => setTimeout(r, 10));
@@ -568,18 +557,15 @@ describe('GET /api/adapt/description — FOLLOW-161 cache key includes model', (
         return Promise.resolve(new Response('', { status: 200 }));
       }),
     );
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://modal.test/description');
 
     await GET(makeRequest(VALID_PARAMS));
     await new Promise((r) => setTimeout(r, 10));
 
     const firstPostBody = publishedBodies[0];
     expect(firstPostBody).toBeDefined();
-    const envelope = JSON.parse(firstPostBody!) as {
-      records: { value: Record<string, unknown> }[];
-    };
-    const event = envelope.records[0]?.value;
-    expect(String(event?.cache_key)).toContain('claude-haiku-4-5-20251001');
+    const event = JSON.parse(firstPostBody!) as Record<string, unknown>;
+    expect(String(event.cache_key)).toContain('claude-haiku-4-5-20251001');
   });
 
   it('different global models produce different cache keys', () => {

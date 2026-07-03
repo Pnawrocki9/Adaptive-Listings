@@ -4,12 +4,21 @@ Estalara llm-gateway — Modal deploy entrypoint.
 Running ``modal deploy apps/llm-gateway/src/main.py`` discovers every
 @app.function registered across the llm-gateway by importing this module, which
 in turn imports both consumer modules.  Modal registers functions at import time,
-so all three functions are registered under the single shared modal.App defined
+so every function below is registered under the single shared modal.App defined
 in jobs/_app.py:
 
-  - generate_description         (jobs/generate_description.py)
-  - consume_description_requests (jobs/generate_description.py)
-  - consume_embed_seed_requests  (jobs/consume_embed_seed_requests.py)
+  - generate_description               (jobs/generate_description.py)
+  - description_requested_endpoint     (jobs/generate_description.py) — ADR-0016 / FOLLOW-485
+    direct Modal HTTPS web endpoint; the current dispatch path for description.requested.
+  - consume_description_requests       (jobs/generate_description.py) — Redpanda poller,
+    superseded by the endpoint above (unscheduled; retained for reference).
+  - process_embed_seed_request         (jobs/consume_embed_seed_requests.py) — ADR-0016 /
+    FOLLOW-485 spawn()-able job dispatched by the endpoint below.
+  - listing_embed_seed_requested_endpoint (jobs/consume_embed_seed_requests.py) — ADR-0016 /
+    FOLLOW-485 direct Modal HTTPS web endpoint; the current dispatch path for
+    listing-embed-seed.requested.
+  - consume_embed_seed_requests        (jobs/consume_embed_seed_requests.py) — Redpanda poller,
+    superseded by the endpoint above (unscheduled; retained for reference).
 
 Background: previously this file was an empty placeholder (no ``modal`` import,
 no modal.App, no consumer imports), so ``modal deploy main.py`` registered zero

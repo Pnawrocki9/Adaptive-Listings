@@ -1,5 +1,60 @@
 # Backlog Queue
 
+**Updated 2026-07-02 (session 9) — Recovered from a crashed session 8 that had delegated FOLLOW-450
+(backend-engineer) and FOLLOW-457 (ml-engineer) to isolated worktrees and then died mid-flight. Both
+workers had FINISHED their code but the terminal ended before committing — the complete work sat
+uncommitted in `.claude/worktrees/wt-follow450` and `wt-follow457`. This session validated each
+(prettier/lint/typecheck + targeted vitest + `next build` per the FOLLOW-474 gate), committed on the
+worker branches, pushed, and opened PRs; no feature logic was changed. BOTH PRs SUBSEQUENTLY MERGED
+to `main` this session (FOLLOW-457 PR #425 → merge `0b9b7ad` 15:58:59Z; FOLLOW-450 PR #426 → merge
+`2460457` 15:59:24Z) and flipped READY_FOR_REVIEW → DONE. RETRO-151 (FOLLOW-457,
+gaps-no-shipped-bug: directive fact-whitelist over-suppression risk; stubs FOLLOW-475/476/477) and
+RETRO-152 (FOLLOW-450, clean PASS; stubs FOLLOW-480/481) written to RETROSPECTIVES.md; stubs
+appended to FOLLOW_UPS.md (next-free now 482). RETRO-152 promoted a permanent rule — the first
+double-letter **Rule AA** (CODE-VS-PROD-AXIS: operator-gated tickets are
+CODE_COMPLETE_OPERATOR_PENDING not DONE; count 3 with RETRO-146+150 prior) to CONVENTIONS_PATCH.md
+(letter-scheme flagged for human review). Neither PR carried a DB migration, so no db-migrate.yml
+prod-apply was triggered by these merges. NEXT (CEO directive 2026-07-02: do the 3 remaining P1s
+SEQUENTIALLY, one at a time with review between): started FOLLOW-460 (ml-engineer, permanent
+description cache) IN_PROGRESS in an isolated worktree; FOLLOW-459 then FOLLOW-456 follow after each
+clears. The two operator-only go-live actions (FOLLOW-449 CH migration apply, FOLLOW-450 AC1
+feedback flip) stay deferred on the pilot go-live checklist per Rule AA — revisit with Piotr/Rafał.
+SEQUENTIAL PROGRESS (session 9): FOLLOW-460 → PR #428 (READY_FOR_REVIEW, CI green; wired the
+previously-dead /api/internal/description-cache endpoint to the Modal job; NEW operator go-live item
+per Rule AA — provision DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET in Modal
+`estalara-secrets`, else the cache write silently no-ops). FOLLOW-459 → PR #429 (READY_FOR_REVIEW,
+CI green; ACK-before-CH via ctx.waitUntil; durable retry deferred to FOLLOW-482). FOLLOW-456 → PR
+#430 (READY_FOR_REVIEW, CI green; JWT-derived demo revoke, estalara_staff-gated generation-model,
+new secret-compare.ts fail-closed + timingSafeEqual on 3 routes). ⚠️ FOLLOW-456 MERGE RISK:
+/api/tenants now fails closed → verify ADMIN_API_SECRET is set in Vercel prod BEFORE merging #430 or
+onboarding 401s (FOLLOW-483 filed, P1; FOLLOW-484 grep-lint filed P3). All three CEO-directed P1s
+now READY_FOR_REVIEW. NOTE the FOLLOW-459 worker mis-numbered its deferral FOLLOW-475 (collided with
+RETRO-151's 475 on this PM branch, invisible to its origin/main worktree) — renumbered to
+FOLLOW-482 + its FOLLOW_UPS.md edit reverted (PR #429 commit `c87073b`) so this PM branch is the
+single writer of FOLLOW_UPS.md; the FOLLOW-456 worker was pre-instructed NOT to touch backlog files.
+FOLLOW-450 → PR #426 (commits `8d6543d` feature + `1ca735e` a path-scoped `.gitleaks.toml` allowlist
+for two test-fixture false positives in the new PGlite e2e file — same Rule V exemption class the
+repo already applies to sibling `*route-driven-pglite.test.ts`; feature code byte-for-byte
+unchanged). FOLLOW-457 → PR #425 (commit `a3123ab`, zero defects — passed every gate on first run).
+Both flipped IN_PROGRESS → READY_FOR_REVIEW. CI GREEN on every real gate on BOTH (Typecheck, Test
+Node 22, SDK E2E, Build, Build control-plane, Lint, Format, Gitleaks, all Python, Demo integration,
+Vercel, Rule H/J) — independently re-confirmed via `gh pr checks`, not trusted from the agent
+summaries; only the pre-existing non-blocking "Rule I — wired-or-dead" is red on each (neither diff
+adds a dead symbol: FOLLOW-450's `reportFeedbackPingRejected` + canary exports and FOLLOW-457's
+fact-check helpers are all wired to consumers). FOLLOW-457's ticket `branch:` field corrected from
+the stale `ml-engineer/FOLLOW-457-grounding-integrity` to the branch actually used,
+`ml-engineer/FOLLOW-457-llm-grounding-integrity`. FOLLOW-450 remains CODE_COMPLETE_OPERATOR_PENDING:
+its AC1 (Doppler prd `FEEDBACK_ENDPOINT_ENABLED=true` flip + `ADAPT_API_KEY`/`OPS_TENANT_ID`/
+`DATABASE_URL_ADMIN` provisioning) is operator-only and stays on the pilot go-live checklist, not
+closed by the code PR. ALSO CONFIRMED CLOSED this session: FOLLOW-455's migration
+`0032_dsr_verifications_attempt_count.sql` (whose auto-triggered db-migrate run `28586941940` was
+CANCELLED at session-8 end) DID reach prod — a manual `workflow_dispatch` run (`28592368063`,
+SUCCESS on `0e9ee1b`) applied it; verified directly against prod Supabase (project
+yhmivuqeqkmzpxpyrsvc): `dsr_verifications.attempt_count` column AND the
+`dsr_verifications_tenant_email_created_idx` rate-limit index both present. No new escalation
+opened; the three standing OPEN escalations (ESC-020, ESC-028, ESC-034) remain non-blocking
+(operator-action-pending).**
+
 **Updated 2026-07-02 (session 8) — Recovered from a crashed session 7 that had delegated FOLLOW-454
 and FOLLOW-455 to isolated worktrees and then ended mid-flight. Both confirmed MERGED to `main`:
 FOLLOW-454 (PR #422, commit `c060a69`, SSR-cookie auth on tenant dashboard) and FOLLOW-455 (PR #423,
@@ -8073,10 +8128,20 @@ gate) closes the epic and must be last.
   title: >-
     Enable feedback endpoint in prod so the bandit learning loop is live (F-06)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-02T12:00:00Z'
+  completed_at: '2026-07-02T15:59:24Z'
   branch: backend-engineer/FOLLOW-450-feedback-loop-golive
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/426'
+  merge_commit: 2460457fe0b55beefcef6d86f450c85af112bc4f
+  ci: 'green (57 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  code_status: CODE_COMPLETE_OPERATOR_PENDING
+  operator_action: >-
+    AC1 go-live is operator-only (Piotr/Rafał): in Doppler prd set FEEDBACK_ENDPOINT_ENABLED=true
+    and provision ADAPT_API_KEY + OPS_TENANT_ID + DATABASE_URL_ADMIN, then run `pnpm
+    feedback:canary` (doppler run --config prd) to prove a real ab_bandit_weights delta. On the
+    pilot go-live checklist.
   priority: P0
   estimated_hours: 2
   depends_on: []
@@ -8495,7 +8560,26 @@ gate) closes the epic and must be last.
   title: >-
     Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T19:25:00Z'
+  completed_at: '2026-07-02T20:30:00Z'
+  branch: backend-engineer/FOLLOW-456-tenant-isolation-holes
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/430'
+  ci: 'green (57 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  merge_risk: >-
+    ⚠️ MERGE-ORDER RISK (VERIFIED 2026-07-02 via `vercel env ls`): this PR makes THREE routes FAIL
+    CLOSED when their secret is unset (each previously ran with NO auth — real holes). ALL THREE
+    secrets are confirmed MISSING in BOTH Vercel prod AND preview: ADMIN_API_SECRET (POST
+    /api/tenants — onboarding), LISTING_UPDATED_WEBHOOK_SECRET (POST /api/webhooks/listing-updated),
+    DESCRIPTION_CACHE_INTERNAL_SECRET (POST /api/internal/description-cache — also FOLLOW-460's
+    Modal callback). So merging #430 as-is makes all three 401 in prod until each secret is
+    provisioned AND its legitimate caller sends it. OPEN QUESTION: is /api/tenants a
+    server-to-server (secret-bearing) or browser-session endpoint — if browser, requiring a server
+    secret needs a JWT/session rethink, not just provisioning. Full detail + AC in FOLLOW-483 (P1).
+    New shared helper secret-compare.ts (SHA-256 + timingSafeEqual) guards all three;
+    DESCRIPTION_CACHE_INTERNAL_SECRET name unchanged so FOLLOW-460's Modal callback contract is
+    intact (proven by a new 201 test).
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -8517,10 +8601,14 @@ gate) closes the epic and must be last.
     LLM grounding integrity: fail-loud on empty original + fact whitelist on the directive path
     (F-11)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-02T12:00:00Z'
-  branch: ml-engineer/FOLLOW-457-grounding-integrity
+  completed_at: '2026-07-02T15:58:59Z'
+  branch: ml-engineer/FOLLOW-457-llm-grounding-integrity
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/425'
+  merge_commit: 0b9b7adf488a8b7a1804a1d881d6d4852917c940
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
   priority: P1
   estimated_hours: 5
   depends_on: []
@@ -8583,7 +8671,19 @@ gate) closes the epic and must be last.
   title: >-
     Ingest: ACK before the ClickHouse insert to meet the <50ms p95 budget (F-09)
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-07-02T17:40:00Z'
+  completed_at: '2026-07-02T19:20:00Z'
+  branch: backend-engineer/FOLLOW-459-ingest-ack-before-insert
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/429'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  notes_pm: >-
+    ACK now returns after Redpanda success; CH insert runs post-ACK in ctx.waitUntil (same 3x
+    backoff). Terminal CH failure after ACK → Sentry-captured (not durably re-queued). Durable
+    Cloudflare-Queues retry deferred to FOLLOW-482 (new-infra ADR required). Worker had mis-numbered
+    that deferral 475 (collided with RETRO-151) — renumbered to 482 and its FOLLOW_UPS.md edit
+    reverted so this session's PM branch is the single writer of FOLLOW_UPS.md (commit c87073b).
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8602,7 +8702,18 @@ gate) closes the epic and must be last.
   title: >-
     Finish the v2.0 permanent description cache: Modal writes Postgres, drop TTL/tier (F-10)
   agent: ml-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: ml-engineer
+  started_at: '2026-07-02T16:20:00Z'
+  completed_at: '2026-07-02T18:40:00Z'
+  branch: ml-engineer/FOLLOW-460-permanent-description-cache
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/428'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  operator_action: >-
+    Provision two vars in the Modal secret `estalara-secrets` before this activates in prod:
+    DESCRIPTION_CACHE_API_BASE_URL + DESCRIPTION_CACHE_INTERNAL_SECRET (same pattern as FOLLOW-436
+    embed-seed). Until then the Modal→Postgres cache write silently no-ops (logs a warning, does not
+    crash). On the pilot go-live checklist per Rule AA.
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -8619,6 +8730,61 @@ gate) closes the epic and must be last.
     - [ ] Lookup order description_cache_persistent → Redis → template_fallback holds end-to-end.
     - [ ] Test: a generated description survives a >72h simulated gap (present in Postgres, no
           re-enqueue).
+- id: FOLLOW-485
+  title: >-
+    Pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed
+    (ADR-0016)
+  agent: ml-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: ml-engineer
+  started_at: '2026-07-03T10:00:00Z'
+  completed_at: '2026-07-03T10:50:00Z'
+  branch: ml-engineer/FOLLOW-485-direct-modal-invocation
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/431'
+  ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
+  notes_pm: >-
+    @modal.fastapi_endpoint(method="POST") + hmac.compare_digest bearer (INTERNAL_API_SECRET);
+    reuses existing REQUIRED_FIELDS validation; pollers unscheduled (code retained). control-plane
+    publishers swapped to MODAL_DESCRIPTION_URL / MODAL_EMBED_SEED_URL, fail-loud on non-2xx. Worker
+    additionally drove the real modal-1.4.2 endpoint via get_raw_f()+FastAPI TestClient
+    (401/400/202). Additive vs #428 (no conflict). MERGE ORDER: after #428 (FOLLOW-460). Two
+    follow-ups filed: FOLLOW-486 (CI fastapi_endpoint smoke), FOLLOW-487 (.env.example REDPANDA
+    topic cleanup).
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    ESC-036 stand-up finding: prod Redpanda is Serverless, whose HTTP Proxy (the REST endpoint the
+    edge/serverless producers publish through) is BYOC/Dedicated-only; a Dedicated cluster
+    (~$500/mo) is out of pilot budget (CEO 2026-07-03). The bus's only job in these two flows is to
+    hand a request from the control-plane (Vercel) to Modal — Modal supports authenticated HTTPS
+    invocation natively, so the bus can be dropped for the pilot.
+  spec: ADR-0016 (pilot direct Modal invocation); ESC-036; ADR-0005; FOLLOW-458 precedent
+  notes: |
+    CEO DECISION 2026-07-03: adopt ADR-0016 — direct Modal web endpoint, no Redpanda for the pilot
+    description + embed-seed flows. Cross-agent: touches Modal Python (ml-engineer, owns llm-gateway)
+    AND the control-plane publisher seam (TS). Assigned ml-engineer as primary; the control-plane
+    swap is small and in scope. ISOLATED WORKTREE per FOLLOW-448.
+    AC:
+    - [ ] Modal (apps/llm-gateway): add one authenticated web endpoint per flow (POST, Bearer =
+          INTERNAL_API_SECRET) that validates the payload and calls generate_description.spawn(event)
+          / the embed job's .spawn(...). Use the current Modal decorator (fastapi_endpoint/web_endpoint
+          for modal 1.4.x). Retire consume_description_requests / consume_embed_seed_requests from the
+          deploy (remove the schedule; keep the code, clearly commented as superseded by ADR-0016).
+    - [ ] control-plane: publishDescriptionRequested → POST MODAL_DESCRIPTION_URL (Bearer
+          INTERNAL_API_SECRET), inside the existing afterResponse() fail-loud wrapper; same for the
+          listing-embed-seed publisher → MODAL_EMBED_SEED_URL. On non-2xx, fail loud (Sentry), do not
+          throw.
+    - [ ] Config: MODAL_DESCRIPTION_URL + MODAL_EMBED_SEED_URL documented in .env.example; the
+          Phase-A path no longer requires any REDPANDA_* var. estalara-secrets loses REDPANDA_* for
+          description generation (keep ANTHROPIC/UPSTASH/DESCRIPTION_CACHE_*/SENTRY/INTERNAL_API_SECRET).
+    - [ ] Tests: a poisoned/unauthorized POST to the Modal endpoint is rejected; a valid POST spawns
+          generation; control-plane publisher posts to the Modal URL with the Bearer and handles
+          non-2xx fail-loud. next build + full gates green.
+    - [ ] OUT OF SCOPE (documented in ADR-0016, not this ticket): ab-events + ingest Redpanda mirror
+          — they no-op without REDPANDA_REST_URL; pilot metrics come from direct ClickHouse/Postgres
+          writes. A separate follow-up decides their fate.
+    - [ ] Update docs/runbooks/MODAL_PROD_STANDUP.md + the operator guide to the no-Redpanda flow.
 - id: FOLLOW-461
   title: >-
     Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced

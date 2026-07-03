@@ -1,0 +1,85 @@
+# modal-deploy.yml
+#
+# Deploys the Modal ML apps automatically on every push to main that touches
+# their source. Phase A (ESC-036 / ADR-0016): apps/llm-gateway
+# (estalara-description-generator — the description + embed-seed HTTPS web
+# endpoints). intent-engine / data-quality deploys are added here as Phases
+# B / C go live (see docs/runbooks/MODAL_PROD_STANDUP.md §7 and §1 phasing).
+#
+# WHY THIS EXISTS (ESC-036): the Modal layer had no deploy pipeline at all, so
+# it was never stood up in prod. This workflow makes `apps/llm-gateway`
+# redeploy on merge so a code change (e.g. FOLLOW-485's web endpoints) reaches
+# the running app instead of silently drifting.
+#
+# SECRETS REQUIRED:
+#   MODAL_TOKEN_ID     — Modal token id     for the `estalara` workspace
+#   MODAL_TOKEN_SECRET — Modal token secret for the `estalara` workspace
+#   Provision both as GitHub Actions repo secrets (and mirror into Doppler prd).
+#   The `estalara-secrets` Modal secret itself is provisioned separately by the
+#   operator (MODAL_PROD_STANDUP.md Faza 5) — this workflow only ships code.
+#
+# SOFT-SKIP CONTRACT (mirrors db-migrate.yml / ESC-023):
+#   Until MODAL_TOKEN_ID is provisioned this workflow emits a clear ::notice::
+#   and exits 0 — the ONLY allowed soft-skip ("dependency not configured"). If
+#   the token IS present but `modal deploy` fails (bad token, missing
+#   estalara-secrets, import error), the deploy step exits non-zero — a HARD
+#   fail, CI goes red, and the deploy must be fixed. There is no secondary skip.
+#
+# MANUAL FALLBACK:
+#   modal token set --token-id <id> --token-secret <secret>
+#   modal deploy apps/llm-gateway/src/main.py
+
+name: Modal Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/llm-gateway/**"
+  workflow_dispatch:
+
+# Never let two deploys of the same app race; never cancel one already running.
+concurrency:
+  group: modal-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-llm-gateway:
+    name: Deploy llm-gateway (estalara-description-generator)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Modal CLI
+        run: pip install modal
+
+      # Soft-skip ONLY when the Modal token for the estalara workspace is absent
+      # (dependency not configured — ESC-036). A present-but-invalid token is a
+      # hard failure at the deploy step, not a second skip.
+      - name: Check MODAL_TOKEN_ID presence
+        id: token-check
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        run: |
+          if [ -z "${MODAL_TOKEN_ID}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MODAL_TOKEN_ID is not set — skipping Modal deploy."
+            echo "This workflow is INERT until MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are provisioned."
+            echo "See backlog/ESCALATIONS.md ESC-036 and docs/runbooks/MODAL_PROD_STANDUP.md."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy apps/llm-gateway
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy apps/llm-gateway/src/main.py

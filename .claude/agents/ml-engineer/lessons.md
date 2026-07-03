@@ -164,3 +164,32 @@
   escalation needed; there was no real taxonomy ambiguity. · **Guardrail I'd add:** a small CI check
   that greps the §D.6 table's Status column and asserts the coverage-summary sentence's counts match
   would catch this class of prose/table drift before it reaches a retro.
+
+- **2026-07-02 / FOLLOW-460** · Closed audit F-10: `generate_description.py` was still SETting Redis
+  with `EX 72h/48h` and tier-derived `max_tokens` floors years after Master Design §E.7 v2.0
+  declared "no Tiers, no TTL" — durability of a generation silently depended on a read landing
+  within the old TTL window to trigger the read-path's Postgres backfill. Fix: removed
+  `tier`/`ttl_seconds` entirely from the Python job (both event fields are now ignored, not just
+  defaulted), collapsed the per-Tier `max_tokens` floor into one `_MAX_TOKENS_FLOOR`, dropped the
+  Redis `SET`'s `EX` arg, and added `_write_to_postgres_cache()` — a new HTTP callback to the
+  control-plane's `POST /api/internal/description-cache` (which already existed, unused, built for
+  exactly this) that writes `description_cache_persistent` immediately after every successful
+  generation. Verified the read path (`getPgCachedDescription` → `getCachedDescription` →
+  template_fallback) already matched the ordering in Master Design and needed no change; added a
+  control-plane test (`route.follow460.test.ts`) proving a Postgres row generated 100h ago is served
+  as `ai_cached` with zero Redis lookup and zero Modal re-enqueue. · **Judgment call:** Modal
+  functions have no direct Postgres connection — rather than bolt on a new
+  `psycopg`/Drizzle-over-HTTP pattern, I reused the exact HTTP-callback shape
+  `consume_embed_seed_requests.py` already established for the same problem
+  (`POST /api/listings/embed`), including a dedicated `DESCRIPTION_CACHE_API_BASE_URL` /
+  `DESCRIPTION_CACHE_INTERNAL_SECRET` env-var pair mirroring `EMBED_API_BASE_URL` /
+  `INTERNAL_API_SECRET`. Documented both in `.env.example`, but **the Modal secret
+  `estalara-secrets` in the actual Modal workspace still needs these two keys added** (devops
+  action, same runbook shape as `docs/runbooks/modal-embed-seed-consumer-golive.md`) before the fix
+  takes effect in production — until then `_write_to_postgres_cache` silently no-ops (logged
+  warning, not a crash) and durability regresses to the pre-fix read-path-only backfill. · **A
+  guardrail I'd add:** a "new Modal env var pair added" check that cross-references `.env.example`
+  entries introduced in a diff against a checklist item in the PR body confirming the paired Modal
+  secret provisioning step was filed — this is the second time (after FOLLOW-436) a Modal HTTP
+  callback shipped code-complete but secret-unprovisioned; two occurrences now meets the
+  promote-to-rule bar per CONVENTIONS_PATCH.md.

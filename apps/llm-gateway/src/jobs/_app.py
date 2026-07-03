@@ -26,15 +26,40 @@ The image contains the union of all packages required by both consumer modules:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import modal
 
 app = modal.App("estalara-description-generator")
 
-_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "anthropic>=0.28",
-    "httpx>=0.27",
-    "confluent-kafka>=2.4",
-    "sentry-sdk>=2.0",
-    "structlog>=24.0",
-    "fastapi>=0.110",
+# ESC-036 deploy fix: generate_description.py / consume_embed_seed_requests.py read
+# their cross-runtime contract fixtures (packages/shared/contracts/*.required.json)
+# AT IMPORT TIME via a path relative to the module — which resolves to
+# /packages/shared/contracts/... inside the Modal container. Only the `jobs` package
+# is auto-mounted, so those fixtures are absent and the module import crashes with
+# FileNotFoundError (every function fails to load). Bake them into the image at the
+# exact path the code computes. `copy=True` puts them in an image layer so they are
+# present during the import phase, not just at runtime.
+_CONTRACTS = Path(__file__).parent / "../../../../packages/shared/contracts"
+
+_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install(
+        "anthropic>=0.28",
+        "httpx>=0.27",
+        "confluent-kafka>=2.4",
+        "sentry-sdk>=2.0",
+        "structlog>=24.0",
+        "fastapi>=0.110",
+    )
+    .add_local_file(
+        str((_CONTRACTS / "description-event.required.json").resolve()),
+        "/packages/shared/contracts/description-event.required.json",
+        copy=True,
+    )
+    .add_local_file(
+        str((_CONTRACTS / "listing-embed-seed-event.required.json").resolve()),
+        "/packages/shared/contracts/listing-embed-seed-event.required.json",
+        copy=True,
+    )
 )

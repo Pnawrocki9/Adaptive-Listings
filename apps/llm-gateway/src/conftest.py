@@ -24,6 +24,7 @@ def _make_modal_stub() -> MagicMock:
       - modal.Image (with .debian_slim() and .pip_install() chain)
       - modal.Secret.from_name()
       - modal.Period
+      - modal.fastapi_endpoint() — passthrough decorator (ADR-0016 / FOLLOW-485)
     """
     modal_stub = MagicMock(name="modal")
 
@@ -55,6 +56,11 @@ def _make_modal_stub() -> MagicMock:
 
     # modal.Period(seconds=30) → a sentinel
     modal_stub.Period = MagicMock(return_value=MagicMock(name="Period"))
+
+    # modal.fastapi_endpoint(method="POST") → passthrough decorator (no-op), so the
+    # decorated function under test is the plain Python async function, callable
+    # directly with keyword args in tests (bypassing FastAPI's request-parsing).
+    modal_stub.fastapi_endpoint = MagicMock(side_effect=lambda *a, **kw: (lambda fn: fn))
 
     return modal_stub
 

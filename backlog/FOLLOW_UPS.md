@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 475 (474 = RETRO-150 §9 — codify mandatory pre-PR local gate sequence [next build + worktree workspace-dts bootstrap] for control-plane workers; P3 devops-engineer/pm-orchestrator ~2h; source: compliance-engineer subagent for FOLLOW-455 died mid-ticket, correctly branch-isolated but left 4 gate-class defects uncaught, recovered by pm-orchestrator session 8. Promoted directly to Sprint 22b as READY.) 472 = FOLLOW-451 residual — demo-JWT path tenant_id-claim-vs-body mismatch not checked when JWT lacks a tenant_id claim, P3 backend-engineer ~2h; 473 = FOLLOW-451 residual — GET /api/adapt presence-only ADAPT_API_KEY auth + spoofable x-tenant-id fallback now weaker than hardened POST path, P2 backend-engineer ~3h. Both promoted directly to Sprint 22b as READY, 2026-07-02.) (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
+<!-- next free FOLLOW number: 488 (487 = FOLLOW-485 residual — remove REDPANDA_TOPIC_* from apps/control-plane/.env.example once Redpanda is fully decommissioned for the description + embed-seed flows [left in place per surgical-changes discipline]; P3 ml-engineer ~0.5h. 486 = FOLLOW-485 residual — permanent CI smoke that mounts each @modal.fastapi_endpoint via get_raw_f()+fastapi.TestClient so a param-binding/auth regression is caught automatically instead of the ad-hoc manual check; P3 ml-engineer/devops ~2h. 485 = ADR-0016 impl — pilot: replace Redpanda with direct Modal HTTPS invocation for description + embed-seed [Serverless Redpanda has no HTTP Proxy; Dedicated ~$500/mo out of pilot budget]; P1 ml-engineer ~6h; chartered directly into QUEUE.md Sprint 22b as READY, 2026-07-03. 484 = FOLLOW-456 §rec2 — add a CI grep-lint for the fail-open secret shape `if (secretVar) { if (provided !== secretVar) reject }` so a 4th route cannot regress the F-13 fix; P3 devops-engineer ~2h. 483 = FOLLOW-456 §rec1 — OPERATOR/RISK: verify ADMIN_API_SECRET is set in Vercel prod BEFORE merging PR #430, else POST /api/tenants onboarding 401s once it fails closed (previously ran with NO auth); relates to never-promoted FOLLOW-155; P1 devops-engineer + operator ~1h. 482 = FOLLOW-459 F-09 durable-retry deferral — Cloudflare Queues crash-survivable retry for the post-ACK ClickHouse insert [a terminal CH failure after ACK is Sentry-captured but NOT re-queued → lost from the CH-direct pilot path if CH is down > the ~3.1s in-process retry window]; P2 backend-engineer ~6h; new-infra ADR required per CLAUDE.md "new third-party service" rule; filed inline per FOLLOW-459 AC2, RENUMBERED from the worker's original 475 to dedup vs RETRO-151's 475. 481 = RETRO-152 §9 — make feedback-canary.mts revert interrupt-safe [finally-guarded / run before every early exit]; P3 backend-engineer ~1h. 480 = RETRO-152 §9 — harden FOLLOW-450 feedback route-driven e2e fire-and-forget drain [single setImmediate → bounded vi.waitFor/poll]; P3 qa-engineer ~2h. 477 = RETRO-151 §5d — label paid-but-suppressed directive LLM calls distinctly in the llm_calls spend log so cost/served attribution stops counting discarded generations as served; P3 data-engineer ~2h. 476 = RETRO-151 §4a LG-2/LG-3 — harden directive fact-whitelist for EU/UAE locale number formats + region currency codes to cut false positives; P3 ml-engineer ~2h. 475 = RETRO-151 §4a LG-1 — reduce directive fact-whitelist over-fallback: ground the /api/adapt directive path on real listing facts + per-directive (not whole-batch) suppression; P2 ml-engineer ~3h.) (474 = RETRO-150 §9 — codify mandatory pre-PR local gate sequence [next build + worktree workspace-dts bootstrap] for control-plane workers; P3 devops-engineer/pm-orchestrator ~2h; source: compliance-engineer subagent for FOLLOW-455 died mid-ticket, correctly branch-isolated but left 4 gate-class defects uncaught, recovered by pm-orchestrator session 8. Promoted directly to Sprint 22b as READY.) 472 = FOLLOW-451 residual — demo-JWT path tenant_id-claim-vs-body mismatch not checked when JWT lacks a tenant_id claim, P3 backend-engineer ~2h; 473 = FOLLOW-451 residual — GET /api/adapt presence-only ADAPT_API_KEY auth + spoofable x-tenant-id fallback now weaker than hardened POST path, P2 backend-engineer ~3h. Both promoted directly to Sprint 22b as READY, 2026-07-02.) (449–471 = 2026-07-01 Full-Stack Audit Remediation epic, chartered directly into backlog/QUEUE.md "Sprint 22b" as READY/BACKLOG tickets rather than as stubs here — FOLLOW-449 F-02 intent_events prod migration+de-silence [P0], 450 F-06 enable feedback/bandit loop [P0], 451 F-05 real API-key adapt auth [P0], 452 F-08 holdout archetype logging [P1], 453 F-07 analytics UI fail-loud + kill /api/analytics mock [P1], 454 F-01 SSR-cookie auth on tenant dashboard/analytics APIs [P1], 455 F-20 DSR OTP CSPRNG+rate-limit+erasure coverage [P1], 456 F-13 tenant-isolation holes [P1], 457 F-11 grounding fail-loud + directive whitelist [P1], 458 F-03 deploy stream-consumer + data-quality cron [P1], 459 F-09 ingest ACK-before-insert [P1], 460 F-10 finish v2.0 permanent description cache [P1], 461 F-04 event-schema reconciliation [P2], 462 F-14 CH DSR param-binding [P2], 463 F-17 verified_facts_used writer [P2], 464 F-15 pg description cache model-key [P2], 465 F-18 NEUTRAL negative-cache [P2], 466 F-21 feedback HMAC replay + timingSafeEqual [P2], 467 F-12 dead-scaffold cleanup [P3], 468 F-16 adapt-description buildEndpoint+encode [P3], 469 F-19 bundle headroom [P3], 470 refresh §Snapshot.1/README/CLAUDE.md + promote FOLLOW-380 [P2], 471 clean re-audit acceptance gate [P1, depends on all]). Original pointer: 448 = RETRO-146 §4e/§9 — branch-first worker discipline [git checkout -b as the worker's FIRST action before any edit] + mechanical guardrail [pre-edit/SessionStart hook refusing edits or auto-branching when HEAD==main so a stalled worker can't strand uncommitted work on the main working tree, where a later branch-from-main silently absorbs/discards it] + orchestrator "recovered/handed-off work must be independently re-verified, not trusted" checklist; P2 devops-engineer/pm-orchestrator ~3h; source: backend-engineer stalled 600s on FOLLOW-442/PR #406, left correct impl UNCOMMITTED on the main working tree, main session recovered+re-verified typecheck+lint+11/11 holdout tests). 447 = audit sibling ci.yml gates for the 3 INERT-GATE failure modes [#1 build-without-@estalara/shared, #2 bare-specifier-from-repo-root, #3 socket-hang] + add defense-in-depth timeout-minutes to ALL jobs [only archetype-embeddings-not-null has one]; optional negative-control for the archetype gate; P3 devops-engineer ~2h; source RETRO-145 §4a LG-3/§5b; continue-on-error scoping is SEPARATE = FOLLOW-446). 446 = harden archetype-embeddings-not-NULL CI gate against silent blind-spots [shared-build-order fixed PR #402/#403 follow-up + continue-on-error swallows gate-broken vs soft-skip]; P3 devops-engineer ~1h. 445 = p95 latency tile restore via llm_calls join; P2 backend-engineer ~2h). 443 = AUD-04/F-05 — POST adapt holdout missing logDecisionAsync;
 P1 backend-engineer ~1h). 441 = AUD-03/F-06 — prod CH write-verification canary; P0 data-engineer
 ~3h). 440 = AUD-02/F-02 — fix assigned_at→ts + latency_ms phantom columns; P0 backend-engineer
 ~2h). 439 = AUD-01/F-01 — fix lift route buildMockLiftRows fabrication + dqsUnavailable=false;
@@ -12956,3 +12956,214 @@ P1 ml-engineer ~1h; DONE PR #393 09084f3). 436 = RETRO-142 §9 — operator go-l
 Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed consumer; P2 devops-engineer
 ~1h. 435 = RETRO-141 §4a LG-1 — replace FOLLOW-434 overflow Sentry stub with durable Modal seed
 job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RETRO-139 §4a LG-2 + §4d DG-1 — bound seedListingEmbeddingsForActivation after() budget for large real-tenant catalogs [schema.listing_ids is discovery source #1, JSDoc anticipates 100+ listings, ~100×~200ms≈20s > 15s Hobby after() budget → mid-loop kill → ungrounded tail]; cap inline loop + offload overflow to Modal/queue; fix stale :10 JSDoc; P2 backend-engineer ~4h. 433 = RETRO-139 §4a LG-1 / §4c TG-1 — sweep the 3 remaining control-plane request-path fire-and-forget sinks [feedback/route.ts:368 void updateArmAsync bandit-REWARD write P2 driver, feedback/route.ts:380 void upsertConversionLabelAsync durable conversion-label P2, dsr/erase/route.ts:540 void deleteSessionFromRedis Art.17 Redis erasure P2] into afterResponse() + add a committed CI grep-guard so the "verify by grep" AC can't over-claim a 3rd time; P2 backend-engineer ~2.5h. NOTE for PM: still WIDEN existing FOLLOW-429 to add ctx.waitUntil [decision-api CF-Worker flush analogue, reorder.ts:204] — NOT re-filed, extend its AC. FOLLOW-432 was the prior next-free pointer's 433 slot; RETRO-139 is its retro and re-charters the residual as 433/434.); 432 = RETRO-138 §4a LG-1 / §4c TG-1 — sweep the ≥5 remaining un-wrapped control-plane request-path fire-and-forget sinks [seedListingEmbeddingsForActivation activate:211/238 P2 (may need Modal/queue not after() due to function-duration budget), tenant-schema redisSet :234 P3, description warm-redis :285 P3 + insertPgCachedDescription :331 P3, checkPilotFrozenAsync route.ts:145 P3] into afterResponse + add a direct after-response.ts unit test; P2 backend-engineer ~3h; FOLLOW-431 AC-1 "no remaining un-awaited bare fetch sink in control-plane" was over-claimed. NOTE for PM: separately WIDEN existing FOLLOW-429 to add ctx.waitUntil to decision-api redisSet — the CF-Worker flush-axis analogue; its res.ok+Sentry alert is itself dropped without waitUntil — NOT re-filed here, extend FOLLOW-429's AC.); 431 = ESC-033 fix / wrap the 5 control-plane fire-and-forget sinks [logDecisionAsync, logLlmCallAsync, publishAbAssignmentEvent, publishDescriptionRequested, writeDsrAuditLog] in next/server after() so writes + fail-loud Sentry captures survive Vercel instance suspension — root cause of only 1/8 burst writes landing; P1 backend-engineer, DONE this session, PR pending; 430 = RETRO-137 §4b CB-2 / SDK dispatchEvents events.ts:85 ingest-beacon res.ok debug-log, P3 sdk-engineer; 429 = RETRO-137 §4b CB-1 / decision-api redisSet reorder.ts:128 Upstash-Redis-REST fire-and-forget res.ok+Sentry, P2 backend-engineer — the 2 completeness-sweep survivors of the fire-and-forget-HTTP-rejection family after FOLLOW-425/426/427/428; 428 = ESC-032 Phase 1 / writeDsrAuditLog dsr_audit_log INSERT bare-fetch hardening; 427 = ESC-032 Phase 1 / logLlmCallAsync llm_calls INSERT catch-only hardening; 426 = RETRO-135 / PR #374 / FOLLOW-425 Redpanda fire-and-forget sibling-sink hardening — the 2 control-plane publishers that share the res.ok-blind silent-failure FOLLOW-425 fixed for the CH sink; P1, threshold-2 promoted Rule K.2 fire-and-forget amendment. 425 = field-spawned ClickHouse fail-loud hotfix, no stub, reconciled by RETRO-135 §4d DG-1; 424 = RETRO-133 / PR #372 / FOLLOW-404 ingest_worker grant-breadth reconcile; 423 = system.grants Code-497 quirk runbook doc; 422 = live adaptation_decisions write attestation). RETRO-133 = retro for PR #372 (FOLLOW-404, MERGED 2026-06-26 17:51:00Z, mergeCommit bab4a66; +55/-0, docs/runbooks/clickhouse-migrations.md ONLY — doc-only one-time prod attestation for CH migration 0019 page_context_source). Wiring Audit clean BOTH checks (no new file/export/event/env-var/column/topic/signal; the attested column was added by PR #357/migration 0019, not this PR; the page_context_source consumer half-wire stays under EXISTING FOLLOW-395, NOT re-filed). PRIOR-FOLLOW-UP CLOSURE CHECK (step 7): FOLLOW-404 closes 3 of 4 chartered ACs end-to-end — AC-1 schema-exists CLOSED (DESCRIBE TABLE: page_context_source is col 18/18 LowCardinality DEFAULT 'legacy'), AC-3 grant CLOSED via SHOW GRANTS FOR fallback (INSERT on default.* covers adaptation_decisions), AC-4 runbook CLOSED — BUT AC-2 producer-write leg NOT CLOSED: SELECT DISTINCT returned ZERO ROWS (table fully empty), which the PR reinterprets as "consistent with ESC-031" but a fully-empty table is NOT explained by an 80-min window → logDecisionAsync may have NEVER successfully written to prod adaptation_decisions; gap moved one hop (column-existence-unverified → column-exists-but-no-row-ever-written). PM: FOLLOW-404 DONE for schema/grant/doc scope; DO NOT retire ESC-031/RETRO-118 §4a LG-1 write-verification axis — owned by FOLLOW-422 (P1, escalate as P0 prod outage if writes confirmed broken). Gaps: CLOSURE-1 P1 zero-row write-leg (FOLLOW-422), LG-1 P2 over-broad ingest_worker default.* grant vs MASTER_DESIGN:44 default.events least-privilege + design drift (FOLLOW-424, PM-escalate security), DG-1 P3 system.grants Code-497 quirk + SHOW GRANTS FOR primary-method not in committed runbook (FOLLOW-423). NO rule promoted: 2 fresh patterns at count 1 (zero-row-read-masquerading-as-write-verification; restricted-writer-can't-read-system.grants-method-constraint) + confirming instances of step-7 "gap moved one hop" discipline + Pattern C (code/CI-leg-closed/prod-leg-unverified, RETRO-113/121) — none reaches fresh ≥2 threshold; anti-count-inflation (RETRO-122/125/126/128/129/131/132) honored. PM ACTION: mark FOLLOW-404 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail); PRIORITIZE FOLLOW-422 (potential silent prod decision-logging outage — the whole adaptation_decisions + bandit-reward pipeline may be empty in prod); escalate FOLLOW-424 security-posture decision to Piotr. RETRO-132 = retro for PR #371 (FOLLOW-405, MERGED 2026-06-26 17:38:04Z, mergeCommit 0824db1; +126/-5 across variant-index.parity.test.ts +104/-0 [new, 4 tests] + route.ts +22/-5 [AC-3 stray-arm doc + AC-4 JSDoc, COMMENTS ONLY]). No contract value/shape change; a NEW cross-package STRUCTURAL coupling (SEED_VARIANTS↔SlotDirective.variants.en) is now test-enforced on the `en` axis. Wiring Audit clean BOTH checks (only new file is a __tests__ test → suppressed; no new non-test export/event/env-var/column/topic/SDK-signal; getAllPlaybooks/VARIANT_INDEX/SEED_VARIANTS all pre-existing non-test importers). Closure check: FOLLOW-342→397→405 chain CLOSED end-to-end on the `en` axis (producer SEED_VARIANTS → derive VARIANT_INDEX → consume route.ts:307 → gate playbook data) BUT NOT closed on the locale axis (LG-2: route.ts:320 reads only variants.en; variants.pl/es are a dead type surface, zero populated) nor against prod `dist` (TG-3: gate validates src via vitest alias, prod loads dist per sdk package.json exports). Gaps: LG-1 P2 stray-arm served=base/logged=raw reward-attribution contamination (FOLLOW-420), LG-2/TG-2 P3 locale dead-wire (FOLLOW-419), TG-1 P2 length-but-not-content blank-copy hole + TG-4 no committed negative-control (FOLLOW-418), TG-3 P2 src-vs-dist (FOLLOW-421). Rule Y citation CLEAN (types.ts:27 verifiably states "Index 0 mirrors en"). NO rule promoted: 3 fresh patterns at count 1 each (content-vs-length gate hole; src-vs-dist test-alias blindness; missing gate negative-control) + confirming instances of already-promoted Rule S (every-locale, count 1 on test-gate sub-shape) / Rule K.2 (LG-1 spirit); anti-count-inflation (RETRO-122/125/126/128/129/131) honored. PM: FOLLOW-405 DONE for its 4 ACs (parity gate AC-1 + order-pin AC-2 + stray-arm doc AC-3 + JSDoc AC-4); FOLLOW-418/419/420/421 are fresh residuals, NOT re-opens. PM ACTION: mark FOLLOW-405 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail) + run the PR's stated negative-control manual check (add 'v3' to SEED_VARIANTS, confirm parity test reds) before closing, since no committed self-test proves the gate fires (FOLLOW-418 AC). --> — sweep the ≥5 remaining un-wrapped control-plane request-path fire-and-forget sinks [seedListingEmbeddingsForActivation activate:211/238 P2 (may need Modal/queue not after() due to function-duration budget), tenant-schema redisSet :234 P3, description warm-redis :285 P3 + insertPgCachedDescription :331 P3, checkPilotFrozenAsync route.ts:145 P3] into afterResponse + add a direct after-response.ts unit test; P2 backend-engineer ~3h; FOLLOW-431 AC-1 "no remaining un-awaited bare fetch sink in control-plane" was over-claimed. NOTE for PM: separately WIDEN existing FOLLOW-429 to add ctx.waitUntil to decision-api redisSet — the CF-Worker flush-axis analogue; its res.ok+Sentry alert is itself dropped without waitUntil — NOT re-filed here, extend FOLLOW-429's AC.); 431 = ESC-033 fix / wrap the 5 control-plane fire-and-forget sinks [logDecisionAsync, logLlmCallAsync, publishAbAssignmentEvent, publishDescriptionRequested, writeDsrAuditLog] in next/server after() so writes + fail-loud Sentry captures survive Vercel instance suspension — root cause of only 1/8 burst writes landing; P1 backend-engineer, DONE this session, PR pending; 430 = RETRO-137 §4b CB-2 / SDK dispatchEvents events.ts:85 ingest-beacon res.ok debug-log, P3 sdk-engineer; 429 = RETRO-137 §4b CB-1 / decision-api redisSet reorder.ts:128 Upstash-Redis-REST fire-and-forget res.ok+Sentry, P2 backend-engineer — the 2 completeness-sweep survivors of the fire-and-forget-HTTP-rejection family after FOLLOW-425/426/427/428; 428 = ESC-032 Phase 1 / writeDsrAuditLog dsr_audit_log INSERT bare-fetch hardening; 427 = ESC-032 Phase 1 / logLlmCallAsync llm_calls INSERT catch-only hardening; 426 = RETRO-135 / PR #374 / FOLLOW-425 Redpanda fire-and-forget sibling-sink hardening — the 2 control-plane publishers that share the res.ok-blind silent-failure FOLLOW-425 fixed for the CH sink; P1, threshold-2 promoted Rule K.2 fire-and-forget amendment. 425 = field-spawned ClickHouse fail-loud hotfix, no stub, reconciled by RETRO-135 §4d DG-1; 424 = RETRO-133 / PR #372 / FOLLOW-404 ingest_worker grant-breadth reconcile; 423 = system.grants Code-497 quirk runbook doc; 422 = live adaptation_decisions write attestation). RETRO-133 = retro for PR #372 (FOLLOW-404, MERGED 2026-06-26 17:51:00Z, mergeCommit bab4a66; +55/-0, docs/runbooks/clickhouse-migrations.md ONLY — doc-only one-time prod attestation for CH migration 0019 page_context_source). Wiring Audit clean BOTH checks (no new file/export/event/env-var/column/topic/signal; the attested column was added by PR #357/migration 0019, not this PR; the page_context_source consumer half-wire stays under EXISTING FOLLOW-395, NOT re-filed). PRIOR-FOLLOW-UP CLOSURE CHECK (step 7): FOLLOW-404 closes 3 of 4 chartered ACs end-to-end — AC-1 schema-exists CLOSED (DESCRIBE TABLE: page_context_source is col 18/18 LowCardinality DEFAULT 'legacy'), AC-3 grant CLOSED via SHOW GRANTS FOR fallback (INSERT on default.* covers adaptation_decisions), AC-4 runbook CLOSED — BUT AC-2 producer-write leg NOT CLOSED: SELECT DISTINCT returned ZERO ROWS (table fully empty), which the PR reinterprets as "consistent with ESC-031" but a fully-empty table is NOT explained by an 80-min window → logDecisionAsync may have NEVER successfully written to prod adaptation_decisions; gap moved one hop (column-existence-unverified → column-exists-but-no-row-ever-written). PM: FOLLOW-404 DONE for schema/grant/doc scope; DO NOT retire ESC-031/RETRO-118 §4a LG-1 write-verification axis — owned by FOLLOW-422 (P1, escalate as P0 prod outage if writes confirmed broken). Gaps: CLOSURE-1 P1 zero-row write-leg (FOLLOW-422), LG-1 P2 over-broad ingest_worker default.* grant vs MASTER_DESIGN:44 default.events least-privilege + design drift (FOLLOW-424, PM-escalate security), DG-1 P3 system.grants Code-497 quirk + SHOW GRANTS FOR primary-method not in committed runbook (FOLLOW-423). NO rule promoted: 2 fresh patterns at count 1 (zero-row-read-masquerading-as-write-verification; restricted-writer-can't-read-system.grants-method-constraint) + confirming instances of step-7 "gap moved one hop" discipline + Pattern C (code/CI-leg-closed/prod-leg-unverified, RETRO-113/121) — none reaches fresh ≥2 threshold; anti-count-inflation (RETRO-122/125/126/128/129/131/132) honored. PM ACTION: mark FOLLOW-404 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail); PRIORITIZE FOLLOW-422 (potential silent prod decision-logging outage — the whole adaptation_decisions + bandit-reward pipeline may be empty in prod); escalate FOLLOW-424 security-posture decision to Piotr. RETRO-132 = retro for PR #371 (FOLLOW-405, MERGED 2026-06-26 17:38:04Z, mergeCommit 0824db1; +126/-5 across variant-index.parity.test.ts +104/-0 [new, 4 tests] + route.ts +22/-5 [AC-3 stray-arm doc + AC-4 JSDoc, COMMENTS ONLY]). No contract value/shape change; a NEW cross-package STRUCTURAL coupling (SEED_VARIANTS↔SlotDirective.variants.en) is now test-enforced on the `en` axis. Wiring Audit clean BOTH checks (only new file is a __tests__ test → suppressed; no new non-test export/event/env-var/column/topic/SDK-signal; getAllPlaybooks/VARIANT_INDEX/SEED_VARIANTS all pre-existing non-test importers). Closure check: FOLLOW-342→397→405 chain CLOSED end-to-end on the `en` axis (producer SEED_VARIANTS → derive VARIANT_INDEX → consume route.ts:307 → gate playbook data) BUT NOT closed on the locale axis (LG-2: route.ts:320 reads only variants.en; variants.pl/es are a dead type surface, zero populated) nor against prod `dist` (TG-3: gate validates src via vitest alias, prod loads dist per sdk package.json exports). Gaps: LG-1 P2 stray-arm served=base/logged=raw reward-attribution contamination (FOLLOW-420), LG-2/TG-2 P3 locale dead-wire (FOLLOW-419), TG-1 P2 length-but-not-content blank-copy hole + TG-4 no committed negative-control (FOLLOW-418), TG-3 P2 src-vs-dist (FOLLOW-421). Rule Y citation CLEAN (types.ts:27 verifiably states "Index 0 mirrors en"). NO rule promoted: 3 fresh patterns at count 1 each (content-vs-length gate hole; src-vs-dist test-alias blindness; missing gate negative-control) + confirming instances of already-promoted Rule S (every-locale, count 1 on test-gate sub-shape) / Rule K.2 (LG-1 spirit); anti-count-inflation (RETRO-122/125/126/128/129/131) honored. PM: FOLLOW-405 DONE for its 4 ACs (parity gate AC-1 + order-pin AC-2 + stray-arm doc AC-3 + JSDoc AC-4); FOLLOW-418/419/420/421 are fresh residuals, NOT re-opens. PM ACTION: mark FOLLOW-405 DONE in QUEUE.md (retro-analyst is QUEUE-read-only per role guardrail) + run the PR's stated negative-control manual check (add 'v3' to SEED_VARIANTS, confirm parity test reds) before closing, since no committed self-test proves the gate fires (FOLLOW-418 AC). -->
+
+<!-- RETRO-151 stubs (FOLLOW-475/476/477) appended 2026-07-02 pm-orchestrator session 9 -->
+
+- id: FOLLOW-475 title: >- Reduce directive fact-whitelist over-fallback: ground the /api/adapt
+  directive path against real listing facts + per-directive (not whole-batch) suppression (RETRO-151
+  §4a LG-1) source_retro: RETRO-151 source_ticket: FOLLOW-457 recommended_sprint: 22b agent:
+  ml-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false scope: >- checkDirectiveFacts
+  (apps/control-plane/src/lib/llm-gateway.ts) mirrors the description path's algorithm but grounds
+  against generic archetype playbook seed copy (buildDirectiveGroundingText) because there is no
+  original_description on the directive path, and listingContext is optional. When listingContext is
+  thin/absent, legitimate listing-specific numbers/proper-nouns in a directive are FALSELY flagged,
+  and the FIRST violation nulls the WHOLE batch → over-fallback to playbook (empty [] on the
+  full-gen branch). Feed the directive path a real listing grounding source (original_description or
+  the verified-facts inventory the description job already extracts) and/or switch whole-batch
+  rejection to per-directive suppression so one flagged slot does not discard correctly-grounded
+  siblings. Add the DG-1 grounding-source caveat to the docstring. ac:
+  - Directive fact-check grounds against a real per-listing source (original_description or the
+    description job's extracted verified-facts), not only playbook seed copy + optional
+    listingContext.
+  - A single hallucinated directive no longer discards correctly-grounded sibling directives
+    (per-directive suppression), OR the whole-batch behaviour is documented as intentional.
+  - New test: a legitimately listing-grounded directive with thin/absent listingContext is NOT
+    suppressed (false-positive regression guard).
+  - New test: whole-batch vs per-directive rejection semantics are asserted explicitly.
+  - checkDirectiveFacts docstring notes the grounding-source difference vs the description path.
+
+- id: FOLLOW-476 title: >- Harden the directive fact-whitelist for EU/UAE locale number formats +
+  region currency codes to cut false positives (RETRO-151 §4a LG-2/LG-3) source_retro: RETRO-151
+  source_ticket: FOLLOW-457 recommended_sprint: 22b agent: ml-engineer priority: P3 estimated_hours:
+  2 promoted_to_queue: false scope: >- FACT_CHECK_DIGIT_RE tokenizes on digit runs, so a
+  space-grouped EU/UAE thousands figure "1 500 000" splits into "1"/"500"/"000" — each checked
+  independently and "1" never matches as a standalone numeric unit → false hallucinated_number.
+  Region currency codes (AED/GBP/EUR/USD) satisfy the proper-noun test and are not in
+  FACT_CHECK_STOP_CAPS → falsely flagged unless the code appears verbatim in grounding. Both cause
+  whole-batch suppression on legitimate directives across the four regions (EU/US/UK/UAE). Normalise
+  locale number grouping before tokenizing and add currency codes / common units to the stop set (or
+  match them structurally). ac:
+  - Space/period-grouped thousands (e.g. "1 500 000", "1.500.000") are treated as a single numeric
+    unit and not falsely flagged when the equivalent figure is grounded.
+  - Region currency codes (AED, GBP, EUR, USD) are not flagged as hallucinated proper names.
+  - Locale-specific regression tests cover EU/UAE number formats and currency codes on the directive
+    path.
+
+- id: FOLLOW-477 title: >- Label paid-but-suppressed directive LLM calls distinctly in the llm_calls
+  spend log so cost/served attribution stops counting discarded generations as served (RETRO-151
+  §5d) source_retro: RETRO-151 source_ticket: FOLLOW-457 recommended_sprint: 22b agent:
+  data-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false scope: >- On a directive
+  fact-check violation, callLlmGateway still logs the spend via afterResponse(logLlmCallAsync{
+  source: 'llm_full' | 'llm_tweaked' }) even though the directives were DISCARDED and playbook copy
+  was served. Analytics reading llm_calls will count a paid-but-discarded generation as served. Emit
+  a distinct source (e.g. 'llm_full_suppressed' / 'llm_tweaked_suppressed') on the suppression path
+  so cost and served-adaptation attribution can separate them. Rhymes with the RETRO-132/146
+  telemetry-mislabel family. ac:
+  - Fact-check-suppressed calls are logged with a source value distinct from served calls.
+  - Existing cost dashboards/queries either read the new value or are documented to include it.
+  - A test asserts the suppressed path logs the distinct source and still records the incurred spend
+    (cost is not lost).
+
+<!-- RETRO-152 stubs (FOLLOW-480/481) appended 2026-07-02 pm-orchestrator session 9 -->
+
+- id: FOLLOW-480 title: >- Harden the FOLLOW-450 feedback e2e fire-and-forget drain — replace single
+  setImmediate with a bounded poll/vi.waitFor so the adapt→feedback write assertions cannot flake
+  under CPU contention source_retro: RETRO-152 source_ticket: FOLLOW-450 recommended_sprint: Sprint
+  22b recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+  scope: >- In apps/control-plane/src/app/api/adapt/feedback/route.follow450-e2e.test.ts, the two
+  afterResponse-registered writes (updateArmAsync + upsertConversionLabelAsync, feedback/route.ts
+  :439/:453) are flushed by a single `setImmediate` (drainMicrotasks). Each write is a separate
+  async chain with its own DB round-trips; under the concurrent-PGlite-suite CPU contention the
+  file's own 30s hookTimeout comment acknowledges, one tick may not flush both → the
+  ab_bandit_weights/conversion_labels assertions can flake RED (fail-safe direction, but CI noise).
+  Replace drainMicrotasks with a bounded poll-until-rows-present (mirror the canary's own poll loop)
+  or `vi.waitFor(() => expect(getBanditRow(...)).toBeDefined())` with a small retry budget. ac:
+  - Both AC4 e2e cases pass deterministically across ≥50 consecutive runs and under `--no-threads`/
+    full-suite concurrency (no reliance on a single microtask tick).
+  - The cross-tenant 403 "writes nothing" negative assertion retains a positive control (the request
+    was actually processed) so it cannot pass trivially if the write harness regresses.
+  - No production code change; test-only.
+
+- id: FOLLOW-481 title: >- Make feedback-canary.mts revert interrupt-safe (finally-guarded) +
+  document the bounded self-healing canary-row drift on a killed/errored run source_retro: RETRO-152
+  source_ticket: FOLLOW-450 recommended_sprint: Sprint 22b recommended_agent: backend-engineer
+  priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >-
+  apps/control-plane/scripts/feedback-canary.mts reverts the dedicated (OPS_TENANT_ID,
+  estalara_ops_canary, estalara_ops_canary_v1) row after observing the delta, but the revert is not
+  in a `finally`: if a poll `readRow` throws or the operator kills the process mid-run, the revert
+  never executes and the canary row is left drifted. It is bounded/self-healing (dedicated ops row
+  only, never a real Thompson arm; next successful run re-reads `before` and restores) — but make it
+  robust: move the revert into a `finally` (or run it before every early `process.exit`) and add a
+  one-line note in the .mts header + docs that a hard-killed run may leave a harmless self-healing
+  drift on the canary row. ac:
+  - The revert UPDATE/DELETE runs on every exit path including a thrown poll read and a caught fatal
+    error, before process.exit.
+  - Header/doc note states the canary never mutates a real tenant arm and that any residual drift is
+    confined to the dedicated estalara_ops_canary row and self-heals on the next run.
+  - Pure helper tests (expectedAfter/deltaObserved) remain green; add a small unit test for the
+    revert-path selection (before===null → delete vs before!==null → restore) if feasible without
+    live DB.
+
+<!-- FOLLOW-482 relocated from the FOLLOW-459 worker's inline stub (originally mis-numbered 475, which RETRO-151 had already claimed) — moved here so FOLLOW_UPS.md has a single writer this session; events.ts comments reference FOLLOW-482. 2026-07-02 pm-orchestrator session 9 -->
+
+- id: FOLLOW-482 title: >- Durable, crash-survivable retry queue for the post-ACK ClickHouse insert
+  (Cloudflare Queues) source_retro: none (filed inline by the FOLLOW-459 implementation per its own
+  AC2) source_ticket: FOLLOW-459 recommended_sprint: next available recommended_agent:
+  backend-engineer priority: P2 estimated_hours: 6 promoted_to_queue: false scope: >- FOLLOW-459
+  moved the ClickHouse `events` insert off the ACK critical path via `ctx.waitUntil()`, preserving
+  its existing 3-attempt/backoff in-process retry policy. A terminal failure (all 3 attempts
+  exhausted, or a 4xx) after that point is captured to Sentry (`events.ts`, tags
+  `{ area: 'events', sink: 'clickhouse', kind: 'insert_failed' }`) but the batch itself is NOT
+  re-queued anywhere — if ClickHouse is down longer than the in-process retry window (~3.1s), those
+  events are permanently lost from ClickHouse (they DID reach Redpanda, so not lost from the system
+  as a whole, only from the ClickHouse-direct pilot path — ESC-017). This follow-up adds a
+  Cloudflare Queue (or equivalent durable buffer) that the ClickHouse producer pushes a failed batch
+  to on terminal failure, plus a consumer Worker/cron that drains the queue with its own backoff, so
+  failed batches survive past the Worker's request lifecycle instead of only being observable via
+  Sentry. Cloudflare Queues is a NEW binding/cost surface for apps/ingest → needs an ADR +
+  escalation sign-off before adding the binding (CLAUDE.md "new third-party service" rule), even
+  though it is same-vendor as the rest of the Worker stack. ac:
+  - ADR proposal (docs/adr/PROPOSED-XXX.md) for adding Cloudflare Queues to apps/ingest, incl. cost
+    estimate (escalate if >€100/mo per CLAUDE.md).
+  - On terminal ClickHouse failure (post-ACK), the failed batch is enqueued (not just
+    Sentry-captured) with enough context to replay the exact INSERT body.
+  - A consumer path (Queue consumer Worker, or a scheduled Worker) drains the retry queue with its
+    own bounded backoff and DLQs (or re-captures to Sentry) after N further failed attempts.
+  - Integration test: simulate a terminal ClickHouse failure, assert the batch lands in the retry
+    queue, assert the consumer eventually re-attempts the insert.
+  - Runbook entry documenting how an operator inspects/replays the DLQ.
+
+<!-- FOLLOW-483/484 filed from the FOLLOW-456 worker's recommendations (worker was instructed not to touch backlog files). 2026-07-02 pm-orchestrator session 9 -->
+
+- id: FOLLOW-483 title: >- OPERATOR/RISK — verify ADMIN_API_SECRET is provisioned in Vercel prod
+  before PR #430 merges source_ticket: FOLLOW-456 recommended_sprint: 22b recommended_agent:
+  devops-engineer priority: P1 estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-456 (PR
+  #430) makes POST /api/tenants FAIL CLOSED when its admin secret is unset — previously it ran with
+  NO auth at all (a real hole). If ADMIN_API_SECRET is not set in Vercel prod, tenant onboarding
+  (POST /api/tenants) starts returning 401 the moment #430 merges. This is a
+  security-for-availability tradeoff that must be sequenced: confirm the secret is set (or set it)
+  BEFORE merge. Relates to the never-promoted FOLLOW-155 stub which already flagged ADMIN_API_SECRET
+  as possibly unset. Also re-verify /api/admin/generation-model (now verifyTracerAdminAuth) and the
+  webhook/internal-cache routes have their secrets set in every environment that must reach them.
+  VERIFIED 2026-07-02 (pm-orchestrator, `vercel env ls production/preview`): ALL THREE fail-closed
+  secrets are MISSING in BOTH prod and preview — ADMIN_API_SECRET (/api/tenants),
+  LISTING_UPDATED_WEBHOOK_SECRET (/api/webhooks/listing-updated), DESCRIPTION_CACHE_INTERNAL_SECRET
+  (/api/internal/description-cache; also FOLLOW-460's Modal callback). So merging #430 as-is will
+  make all three routes 401 in prod until each secret is provisioned AND its legitimate caller is
+  configured to send it. OPEN QUESTION for the owner: is POST /api/tenants meant to be called
+  server-to-server (bearing ADMIN_API_SECRET) or from a browser onboarding session? If browser, a
+  server secret can't be shipped client-side — that path needs a session/JWT gate rethink, not just
+  provisioning. Same question applies to whichever system posts listing-updated webhooks. RESOLVED +
+  PROVISIONED 2026-07-02 (pm-orchestrator): (1) /api/tenants caller question ANSWERED — it is a
+  server-to-server INTERNAL-ADMIN endpoint (route docstring: "Not exposed to tenant dashboard
+  users"), authed by the `x-admin-secret` header; grep confirms ZERO in-repo callers (tenants are
+  created by a manual/ops admin call), so NO browser rethink is needed. #430 keeps the same
+  `x-admin-secret` header. (2) All THREE secrets GENERATED (openssl rand -hex 32) and SET in Vercel
+  PRODUCTION via `vercel env add`, verified present: ADMIN_API_SECRET,
+  DESCRIPTION_CACHE_INTERNAL_SECRET, LISTING_UPDATED_WEBHOOK_SECRET. Values delivered to the
+  operator out-of-band (NOT stored here — never commit secrets). Vercel env changes take effect on
+  the NEXT prod deployment (i.e. when #428/#430 merge), so current running prod is unchanged.
+  REMAINING external coordination (not Vercel): (a) Modal `estalara-secrets` must get
+  DESCRIPTION_CACHE_INTERNAL_SECRET = the SAME value + set DESCRIPTION_CACHE_API_BASE_URL = the
+  control-plane prod base (per .env.example: https://admin.estalara.com) — NOT done here because
+  Modal secret updates are replace-on-create and could clobber existing keys; devops action
+  (FOLLOW-460 operator leg). (b) If a LIVE external listing-updated webhook sender exists,
+  reconfigure it to send `X-Webhook-Secret: <value>` before #430 deploys (header is
+  X-Webhook-Secret); if none exists (likely in pilot), no action. (c) Optionally mirror the three
+  secrets into Vercel PREVIEW if onboarding/webhook/cache flows are exercised there. (d) Ops
+  runbook: tenant creation now requires the `x-admin-secret` header. ac:
+  - ADMIN_API_SECRET confirmed set in Vercel prod (and preview if onboarding is exercised there).
+  - LISTING_UPDATED_WEBHOOK_SECRET + DESCRIPTION_CACHE_INTERNAL_SECRET confirmed set in prod, with
+    their callers (MLS/webhook sender; FOLLOW-460 Modal job) configured to send the matching value.
+  - The server-to-server-vs-browser caller question for /api/tenants is resolved and documented.
+  - A documented decision on merge sequencing for #430 relative to that provisioning.
+  - FOLLOW-155 reconciled (promoted or closed) so this operational check has one owner.
+
+- id: FOLLOW-484 title: >- CI grep-lint for the fail-open secret shape so a 4th route cannot regress
+  the F-13 fix source_ticket: FOLLOW-456 recommended_sprint: 22b recommended_agent: devops-engineer
+  priority: P3 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-456 closed three routes
+  that used the fail-open shape `if (secretVar) { if (provided !==   secretVar) reject }` — which
+  allows every request when the env var is falsy. Add a committed CI grep-guard (sibling of the
+  Rule-H/J/FOLLOW-433 guards) that flags any new occurrence of that shape, or any secret comparison
+  not routed through the new secret-compare.ts `secretEquals` helper (SHA-256 + timingSafeEqual), so
+  a future route cannot silently reintroduce the hole. ac:
+  - A CI check reds on a newly-introduced fail-open secret comparison or a raw `===` secret compare
+    in apps/control-plane request handlers.
+  - The three routes fixed by FOLLOW-456 (+ any existing legitimate exceptions) pass the guard.
+  - Guard documented alongside the existing Rule H/J/FOLLOW-433 grep-guards.
+
+<!-- FOLLOW-486/487 from the FOLLOW-485 worker's recommendations. 2026-07-03 pm-orchestrator session 9 -->
+
+- id: FOLLOW-486 title: >- Permanent CI smoke for Modal fastapi_endpoints (mount via get_raw_f +
+  FastAPI TestClient) source_ticket: FOLLOW-485 recommended_sprint: 22b recommended_agent:
+  ml-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-485 added
+  @modal.fastapi_endpoint web endpoints whose parameter binding + bearer auth are only exercised by
+  the worker's ad-hoc "mount endpoint.get_raw_f() into a real fastapi.FastAPI() and drive it with
+  TestClient" check (the modal-stub unit tests can't see the real FastAPI request routing because
+  @app.function wraps the callable into an opaque modal.Function). Codify that check as a committed
+  CI test so a future param-binding/auth regression is caught automatically. ac:
+  - A committed test mounts each fastapi_endpoint via get_raw_f() + fastapi.TestClient and asserts
+    401 (bad/missing bearer), 400 (invalid payload), 202 (valid) against the REAL installed modal.
+  - Runs in the existing Python CI job for apps/llm-gateway.
+
+- id: FOLLOW-487 title: >- Remove REDPANDA*TOPIC*_ from control-plane .env.example once Redpanda is
+  decommissioned for these flows source*ticket: FOLLOW-485 recommended_sprint: 22b
+  recommended_agent: ml-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >-
+  FOLLOW-485 left REDPANDA_TOPIC_DESCRIPTIONS / REDPANDA_TOPIC_LISTING_EMBEDDINGS in
+  apps/control-plane/.env.example (surgical-changes discipline — the swap only touched the publisher
+  bodies). Once ADR-0016 is fully adopted and the ab-events/ingest Redpanda usage is resolved
+  (separate decision), prune the now-unused REDPANDA*_ doc entries so .env.example stops implying a
+  Redpanda dependency for the description path. ac:
+  - REDPANDA*TOPIC*\* (and any other Redpanda vars unused after ADR-0016) removed from
+    apps/control-plane/.env.example, gated on the ab-events/ingest Redpanda decision.
+  - MODAL_DESCRIPTION_URL / MODAL_EMBED_SEED_URL documented (done in FOLLOW-485) remain.

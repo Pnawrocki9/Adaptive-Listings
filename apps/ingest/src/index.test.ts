@@ -4,7 +4,14 @@
  * `@cloudflare/vitest-pool-workers`).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// FOLLOW-459: mocked so the post-ACK ClickHouse-failure test can assert
+// `Sentry.captureException` was called, without needing a real Sentry init
+// (matches the pattern in handlers/__tests__/intent-snapshot.test.ts).
+vi.mock('@sentry/cloudflare', () => ({ captureException: vi.fn() }));
+
+import * as Sentry from '@sentry/cloudflare';
 
 import { createApp } from './router.js';
 import type { Env } from './types.js';
@@ -39,6 +46,9 @@ interface MakeEnvOptions {
   /** Override the ENVIRONMENT binding (default: 'test'). Pass 'production' to exercise
    *  the production CORS allow-list (no localhost origins). */
   environment?: string;
+  /** Override CLICKHOUSE_URL (default: '' — no-cred guard, CH producer skipped).
+   *  FOLLOW-459: set to a mock URL to exercise the post-ACK ClickHouse write path. */
+  clickhouseUrl?: string;
 }
 
 interface RateCheckResponse {
@@ -91,8 +101,9 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
     REDPANDA_TOPIC_EVENTS: 'events',
     // CLICKHOUSE_URL empty → no-cred guard fires; existing handler tests stay
     // pinned to the Redpanda path. CH-specific paths are exercised in
-    // clickhouse-producer.test.ts.
-    CLICKHOUSE_URL: '',
+    // clickhouse-producer.test.ts. FOLLOW-459's ACK-latency test overrides this
+    // via `clickhouseUrl` to exercise the post-ACK write path.
+    CLICKHOUSE_URL: options.clickhouseUrl ?? '',
     CLICKHOUSE_DATABASE: 'default',
     KV_API_KEYS: mockKv({
       store: options.kvStore ?? {},
@@ -452,6 +463,155 @@ describe('POST /v1/events — Redpanda failure', () => {
       stub.restore();
     }
   });
+});
+
+// ─── FOLLOW-459 — ACK returns before the ClickHouse insert settles ────────────
+//
+// Distinguishes Redpanda vs. ClickHouse by URL so ClickHouse can be made slow/failing
+// independently of Redpanda (which stays instant, per the makeEnv default).
+function stubFetchByHost(behavior: {
+  clickhouse: 'ok' | 'slow_ok' | 'error_5xx';
+  clickhouseDelayMs?: number;
+}): {
+  restore: () => void;
+  clickhouseCallCount: () => number;
+} {
+  const original = globalThis.fetch;
+  let chCalls = 0;
+  globalThis.fetch = (input: string | URL | Request, _init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes('mock-clickhouse')) {
+      chCalls++;
+      if (behavior.clickhouse === 'error_5xx') {
+        return Promise.resolve(new Response('boom', { status: 503 }));
+      }
+      const respond = (): Response => new Response('', { status: 200 });
+      if (behavior.clickhouse === 'slow_ok') {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(respond());
+          }, behavior.clickhouseDelayMs ?? 300);
+        });
+      }
+      return Promise.resolve(respond());
+    }
+    // Redpanda (or anything else) resolves instantly — same shape as `stubFetch('ok')`.
+    return Promise.resolve(
+      new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+      }),
+    );
+  };
+  return {
+    restore: () => {
+      globalThis.fetch = original;
+    },
+    clickhouseCallCount: () => chCalls,
+  };
+}
+
+/** Minimal `ExecutionContext`-shaped mock that records `waitUntil()` promises for draining. */
+function mockExecutionCtx(): {
+  ctx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void };
+  drain: () => Promise<void>;
+} {
+  const tasks: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (p: Promise<unknown>) => {
+        tasks.push(p);
+      },
+      passThroughOnException: () => {
+        // no-op — required by the ExecutionContext shape, unused by the handler.
+      },
+    },
+    drain: () => Promise.all(tasks).then(() => undefined),
+  };
+}
+
+describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
+  it('returns the ACK well before a slow ClickHouse insert settles', async () => {
+    const CH_DELAY_MS = 300;
+    const stub = stubFetchByHost({ clickhouse: 'slow_ok', clickhouseDelayMs: CH_DELAY_MS });
+    const { ctx, drain } = mockExecutionCtx();
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+      });
+
+      const start = performance.now();
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+      const elapsedMs = performance.now() - start;
+
+      expect(res.status).toBe(200);
+      // The budget check: the ACK must not have waited for the artificially slow
+      // ClickHouse insert (AC1/AC3 — the whole point of FOLLOW-459). A generous
+      // half-of-the-artificial-delay margin keeps this robust on slow CI runners
+      // while still failing hard if ClickHouse ever gets back onto the ACK path.
+      expect(elapsedMs).toBeLessThan(CH_DELAY_MS / 2);
+
+      // Let the fire-and-forget ClickHouse write actually finish before the test
+      // exits, so it doesn't leak a dangling timer into the next test.
+      await drain();
+      expect(stub.clickhouseCallCount()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('a terminal ClickHouse failure after the ACK is captured to Sentry, not surfaced to the client', async () => {
+    const stub = stubFetchByHost({ clickhouse: 'error_5xx' });
+    const { ctx, drain } = mockExecutionCtx();
+    const captureSpy = vi.mocked(Sentry.captureException);
+    captureSpy.mockClear();
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+      });
+
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+
+      // The client still gets the ACK — Redpanda succeeded, and ClickHouse's
+      // outcome is no longer on the critical path (RETRY-CONTRACT CHANGE, events.ts).
+      expect(res.status).toBe(200);
+
+      await drain();
+
+      // Terminal ClickHouse failure (3 exhausted retries, each a 503) must be
+      // observable — Rule K.2 — even though the client never sees it.
+      expect(captureSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('clickhouse_push_failed_post_ack'),
+        }),
+        expect.objectContaining({
+          tags: expect.objectContaining({ area: 'events', sink: 'clickhouse' }),
+        }),
+      );
+    } finally {
+      stub.restore();
+    }
+  }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits (same policy as Redpanda's)
 });
 
 describe('GET unmatched route', () => {

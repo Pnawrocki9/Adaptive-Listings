@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 # Ensure the src/ directory is importable
@@ -54,14 +55,11 @@ if str(_SRC_DIR) not in sys.path:
 # Import only the pure Python helpers — not the Modal-decorated functions.
 # This avoids requiring the Modal library and a live Modal token in CI.
 from jobs.generate_description import (
-    TTL_TIER_2,
-    TTL_TIER_3,
     _ARCHETYPE_GUIDANCE,
     _DEFAULT_GENERATION_MODEL,
     _HEADLINE_SYSTEM_PROMPT,
     _MAX_TOKENS_CEILING,
-    _MAX_TOKENS_FLOOR_TIER_2,
-    _MAX_TOKENS_FLOOR_TIER_3,
+    _MAX_TOKENS_FLOOR,
     _body_violates_contract,
     _check_headline_facts,
     _generate_headline,
@@ -70,6 +68,7 @@ from jobs.generate_description import (
     _parse_adaptation_verdict,
     _parse_verified_facts,
     _resolve_generation_model,
+    _write_to_postgres_cache,
     _write_to_redis,
 )
 
@@ -83,11 +82,9 @@ _BASE_EVENT: dict[str, Any] = {
     "archetype": "yield_hunter",
     "cache_key": "desc:tenant-abc:listing-123:yield_hunter:en",
     "locale": "en",
-    "tier": 2,
     "copy_template": "This income-producing property has a 6.2% gross yield.",
     "listing_context": {"bedrooms": 3, "price": 350000, "yield_pct": 6.2},
     "original_description": "3-bed property with sitting tenant in central area.",
-    "ttl_seconds": 259200,
 }
 
 
@@ -101,28 +98,29 @@ def _run_job(event: dict[str, Any]) -> None:
 
     Replicates the job body in pure Python so tests run without Modal infra.
     This mirrors generate_description() exactly so that any change to the job
-    body must be reflected here too (including ADR-0009 headline generation).
+    body must be reflected here too (including ADR-0009 headline generation and
+    the FOLLOW-460 Postgres write).
     """
     import logging
 
     from jobs.generate_description import (
         _generate_headline,
         _generate_with_sonnet,
+        _write_to_postgres_cache,
         _write_to_redis,
     )
 
     log = logging.getLogger(__name__)
 
+    tenant_id: str = event["tenant_id"]
+    listing_id: str = event["listing_id"]
     archetype: str = event["archetype"]
     locale: str = event.get("locale", "en")
-    tier: int = int(event.get("tier", 2))
     copy_template: str = event.get("copy_template", "")
     listing_context: dict[str, Any] = event.get("listing_context", {})
     # v1.7.1: original_description is required (may be empty string).
     original_description: str = event["original_description"]
     cache_key: str = event["cache_key"]
-    default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
-    ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
     # FOLLOW-166 / FOLLOW-161: mirror generate_description() — precedence chain.
     model: str = _resolve_generation_model(
         event.get("override_model"),
@@ -134,7 +132,6 @@ def _run_job(event: dict[str, Any]) -> None:
             archetype=archetype,
             copy_template=copy_template,
             listing_context=listing_context,
-            tier=tier,
             locale=locale,
             original_description=original_description,
             model=model,
@@ -157,7 +154,16 @@ def _run_job(event: dict[str, Any]) -> None:
         verified_facts=verified_facts if verified_facts else None,
     )
 
-    _write_to_redis(cache_key, description, ttl_seconds, verified_facts, headline)
+    _write_to_redis(cache_key, description, verified_facts, headline)
+    _write_to_postgres_cache(
+        tenant_id=tenant_id,
+        listing_id=listing_id,
+        archetype=archetype,
+        locale=locale,
+        description=description,
+        headline=headline,
+        model=model,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +212,7 @@ def mock_redis_post() -> MagicMock:
 
 
 def test_happy_path_redis_written(mock_sonnet: MagicMock, mock_redis_post: MagicMock) -> None:
-    """Sonnet returns text → Redis pipeline SET called once with correct key and TTL."""
+    """Sonnet returns text → Redis pipeline SET called once with correct key, no TTL."""
     with (
         patch("anthropic.Anthropic") as mock_anthropic_cls,
         patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
@@ -217,6 +223,9 @@ def test_happy_path_redis_written(mock_sonnet: MagicMock, mock_redis_post: Magic
 
         _run_job(_make_event())
 
+        # The Postgres write is skipped in this test (DESCRIPTION_CACHE_API_BASE_URL /
+        # DESCRIPTION_CACHE_INTERNAL_SECRET are unset), so httpx.post is called exactly
+        # once — for the Redis write.
         mock_httpx.assert_called_once()
         call_kwargs = mock_httpx.call_args
 
@@ -224,14 +233,13 @@ def test_happy_path_redis_written(mock_sonnet: MagicMock, mock_redis_post: Magic
         url_arg = call_kwargs[0][0]
         assert "/pipeline" in url_arg
 
-        # JSON body: [[SET, key, value, EX, ttl]]
+        # JSON body: [[SET, key, value]] — FOLLOW-460: no "EX" arg, no TTL.
         body = call_kwargs[1]["json"]
         assert isinstance(body, list) and len(body) == 1
         cmd = body[0]
         assert cmd[0] == "SET"
         assert cmd[1] == "desc:tenant-abc:listing-123:yield_hunter:en"
-        assert cmd[3] == "EX"
-        assert cmd[4] == TTL_TIER_2
+        assert len(cmd) == 3, f"Redis SET must carry no TTL/EX args, got: {cmd}"
 
 
 # ---------------------------------------------------------------------------
@@ -287,15 +295,17 @@ def test_sonnet_raises_no_redis_write_no_crash(mock_redis_post: MagicMock) -> No
 
 
 # ---------------------------------------------------------------------------
-# TC-4: Tier 2 → max_tokens=450, TTL=259200
+# TC-4/TC-5 (FOLLOW-460): Tiers removed — single max_tokens floor, no Redis TTL.
 # ---------------------------------------------------------------------------
 
 
-def test_tier2_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: MagicMock) -> None:
-    """Tier 2: description Sonnet call uses max_tokens=450; Redis SET uses TTL=259200.
+def test_default_max_tokens_floor_and_no_redis_ttl(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock
+) -> None:
+    """A short original uses the single _MAX_TOKENS_FLOOR; Redis SET carries no TTL.
 
-    The job now makes two Anthropic calls: the first (description) must use 450 tokens;
-    the second (headline, ADR-0009) uses _HEADLINE_MAX_TOKENS=60.
+    The job now makes two Anthropic calls: the first (description) must use the
+    floor; the second (headline, ADR-0009) uses _HEADLINE_MAX_TOKENS=60.
     We assert on the first call's max_tokens.
     """
     with (
@@ -306,27 +316,22 @@ def test_tier2_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: Magic
         mock_anthropic_cls.return_value = mock_client
         mock_client.messages.create.return_value = mock_sonnet
 
-        _run_job(_make_event(tier=2, ttl_seconds=TTL_TIER_2))
+        _run_job(_make_event())
 
         # call_args_list[0] is the description call; [1] is the headline call.
         description_call_kwargs = mock_client.messages.create.call_args_list[0][1]
-        assert description_call_kwargs["max_tokens"] == 450
+        assert description_call_kwargs["max_tokens"] == _MAX_TOKENS_FLOOR
 
         redis_body = mock_httpx.call_args[1]["json"]
-        assert redis_body[0][4] == TTL_TIER_2
+        assert len(redis_body[0]) == 3, "Redis SET must carry no TTL/EX args"
 
 
-# ---------------------------------------------------------------------------
-# TC-5: Tier 3 → max_tokens=600, TTL=172800
-# ---------------------------------------------------------------------------
-
-
-def test_tier3_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: MagicMock) -> None:
-    """Tier 3: description Sonnet call uses max_tokens=600; Redis SET uses TTL=172800.
-
-    The job now makes two Anthropic calls: the first (description) must use 600 tokens;
-    the second (headline, ADR-0009) uses _HEADLINE_MAX_TOKENS=60.
-    We assert on the first call's max_tokens.
+def test_legacy_tier_and_ttl_fields_in_event_are_ignored(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock
+) -> None:
+    """A `tier`/`ttl_seconds` field on an inbound event (legacy/in-flight message
+    format, FOLLOW-203/FOLLOW-460 deprecated) has zero effect: max_tokens still
+    uses the single floor and the Redis SET still carries no TTL.
     """
     with (
         patch("anthropic.Anthropic") as mock_anthropic_cls,
@@ -336,14 +341,13 @@ def test_tier3_max_tokens_and_ttl(mock_sonnet: MagicMock, mock_redis_post: Magic
         mock_anthropic_cls.return_value = mock_client
         mock_client.messages.create.return_value = mock_sonnet
 
-        _run_job(_make_event(tier=3, ttl_seconds=TTL_TIER_3))
+        _run_job(_make_event(tier=3, ttl_seconds=172800))
 
-        # call_args_list[0] is the description call; [1] is the headline call.
         description_call_kwargs = mock_client.messages.create.call_args_list[0][1]
-        assert description_call_kwargs["max_tokens"] == 600
+        assert description_call_kwargs["max_tokens"] == _MAX_TOKENS_FLOOR
 
         redis_body = mock_httpx.call_args[1]["json"]
-        assert redis_body[0][4] == TTL_TIER_3
+        assert len(redis_body[0]) == 3, "Redis SET must carry no TTL/EX args"
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +365,7 @@ def test_copy_template_in_prompt() -> None:
         mock_client.messages.create.return_value = MagicMock(content=[content_block])
 
         seed = "This property has a 6.2% gross yield, making it ideal for investors."
-        _generate_with_sonnet("yield_hunter", seed, {}, 2, "en")
+        _generate_with_sonnet("yield_hunter", seed, {}, "en")
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         assert seed in user_content
@@ -381,7 +385,7 @@ def test_locale_in_prompt() -> None:
         content_block.text = "Tekst po polsku."
         mock_client.messages.create.return_value = MagicMock(content=[content_block])
 
-        _generate_with_sonnet("family_buyer", "", {}, 2, "pl")
+        _generate_with_sonnet("family_buyer", "", {}, "pl")
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         assert "pl" in user_content
@@ -402,7 +406,7 @@ def test_listing_context_in_prompt() -> None:
         mock_client.messages.create.return_value = MagicMock(content=[content_block])
 
         context = {"bedrooms": 4, "price": 450000}
-        _generate_with_sonnet("family_buyer", "", context, 2, "en")
+        _generate_with_sonnet("family_buyer", "", context, "en")
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         assert '"bedrooms": 4' in user_content
@@ -423,7 +427,7 @@ def test_known_archetype_guidance_in_prompt() -> None:
         content_block.text = "Yield-focused description."
         mock_client.messages.create.return_value = MagicMock(content=[content_block])
 
-        _generate_with_sonnet("yield_hunter", "", {}, 2, "en")
+        _generate_with_sonnet("yield_hunter", "", {}, "en")
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         # The yield_hunter guidance explicitly mentions "gross yield"
@@ -444,7 +448,7 @@ def test_unknown_archetype_fallback_guidance() -> None:
         content_block.text = "Generic description."
         mock_client.messages.create.return_value = MagicMock(content=[content_block])
 
-        _generate_with_sonnet("unknown_archetype_xyz", "", {}, 2, "en")
+        _generate_with_sonnet("unknown_archetype_xyz", "", {}, "en")
 
         user_content = mock_client.messages.create.call_args[1]["messages"][0]["content"]
         assert "motivated buyer" in user_content.lower()
@@ -456,16 +460,17 @@ def test_unknown_archetype_fallback_guidance() -> None:
 
 
 def test_redis_value_structure() -> None:
-    """_write_to_redis stores JSON with 'text' and 'generated_at' keys."""
+    """_write_to_redis stores JSON with 'text' and 'generated_at' keys; SET has no TTL."""
     with patch("httpx.post") as mock_httpx:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_httpx.return_value = mock_resp
 
-        _write_to_redis("desc:t:l:a:en", "A lovely property in a quiet area.", 259200)
+        _write_to_redis("desc:t:l:a:en", "A lovely property in a quiet area.")
 
         body = mock_httpx.call_args[1]["json"]
-        # body is [[SET, key, value_str, EX, ttl]]
+        # body is [[SET, key, value_str]] — FOLLOW-460: no EX/ttl args.
+        assert len(body[0]) == 3
         value_str = body[0][2]
         value = json.loads(value_str)
         assert "text" in value
@@ -507,14 +512,17 @@ def test_cache_key_from_event(mock_sonnet: MagicMock, mock_redis_post: MagicMock
 
 
 # ---------------------------------------------------------------------------
-# TC-13: TTL constants match documented values
+# TC-13 (FOLLOW-460): no Redis TTL constants remain — Redis SET carries no EX.
 # ---------------------------------------------------------------------------
 
 
-def test_ttl_constants() -> None:
-    """TTL_TIER_2 = 72h = 259200s; TTL_TIER_3 = 48h = 172800s."""
-    assert TTL_TIER_2 == 259200
-    assert TTL_TIER_3 == 172800
+def test_no_ttl_constants_remain() -> None:
+    """FOLLOW-460: TTL_TIER_2 / TTL_TIER_3 must no longer exist on the module —
+    the Redis cache has no TTL (Master Design §E.7 v2.0)."""
+    import jobs.generate_description as gd
+
+    assert not hasattr(gd, "TTL_TIER_2")
+    assert not hasattr(gd, "TTL_TIER_3")
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +600,6 @@ def test_hallucination_resistance() -> None:
             copy_template=yield_hunter_voice,
             original_description=minimal_original,
             listing_context=minimal_context,
-            tier=2,
             locale="en",
         )
 
@@ -659,22 +666,21 @@ def test_verified_facts_missing_falls_back_gracefully() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_max_tokens_for_short_original_uses_tier_floor() -> None:
-    """Short/empty originals keep the historical tier budget (floor 450/600)."""
-    assert _max_tokens_for("", 2) == _MAX_TOKENS_FLOOR_TIER_2
-    assert _max_tokens_for("", 3) == _MAX_TOKENS_FLOOR_TIER_3
+def test_max_tokens_for_short_original_uses_floor() -> None:
+    """Short/empty originals keep the historical budget floor (FOLLOW-460: no
+    per-Tier distinction — a single floor applies to every description)."""
+    assert _max_tokens_for("") == _MAX_TOKENS_FLOOR
     short = "3-bed property with sitting tenant in central area."  # 9 words
-    assert _max_tokens_for(short, 2) == _MAX_TOKENS_FLOOR_TIER_2
-    assert _max_tokens_for(short, 3) == _MAX_TOKENS_FLOOR_TIER_3
+    assert _max_tokens_for(short) == _MAX_TOKENS_FLOOR
 
 
 def test_max_tokens_for_long_original_scales_above_floor_and_caps() -> None:
     """A long original scales max_tokens above the floor, bounded by the ceiling."""
-    scaled = _max_tokens_for("word " * 400, 2)
-    assert scaled > _MAX_TOKENS_FLOOR_TIER_2
+    scaled = _max_tokens_for("word " * 400)
+    assert scaled > _MAX_TOKENS_FLOOR
     assert scaled <= _MAX_TOKENS_CEILING
     # An absurdly long original is clamped to the ceiling, not unbounded.
-    assert _max_tokens_for("word " * 5000, 2) == _MAX_TOKENS_CEILING
+    assert _max_tokens_for("word " * 5000) == _MAX_TOKENS_CEILING
 
 
 def test_long_original_raises_sonnet_max_tokens() -> None:
@@ -688,10 +694,10 @@ def test_long_original_raises_sonnet_max_tokens() -> None:
         resp.stop_reason = "end_turn"
         mock_client.messages.create.return_value = resp
 
-        _generate_with_sonnet("yield_hunter", "", {}, 2, "en", original_description="word " * 400)
+        _generate_with_sonnet("yield_hunter", "", {}, "en", original_description="word " * 400)
 
         max_tokens = mock_client.messages.create.call_args[1]["max_tokens"]
-        assert max_tokens > _MAX_TOKENS_FLOOR_TIER_2
+        assert max_tokens > _MAX_TOKENS_FLOOR
         assert max_tokens <= _MAX_TOKENS_CEILING
 
 
@@ -708,7 +714,7 @@ def test_truncated_max_tokens_response_returns_empty() -> None:
         mock_client.messages.create.return_value = resp
 
         description, facts = _generate_with_sonnet(
-            "yield_hunter", "", {}, 2, "en", original_description="x"
+            "yield_hunter", "", {}, "en", original_description="x"
         )
 
     assert description == ""
@@ -730,7 +736,7 @@ def test_dangling_audit_tag_returns_empty() -> None:
         mock_client.messages.create.return_value = resp
 
         description, facts = _generate_with_sonnet(
-            "yield_hunter", "", {}, 2, "en", original_description="x"
+            "yield_hunter", "", {}, "en", original_description="x"
         )
 
     assert description == ""
@@ -782,7 +788,7 @@ def test_generate_with_sonnet_passes_model_to_anthropic() -> None:
         resp.stop_reason = "end_turn"
         mock_client.messages.create.return_value = resp
 
-        _generate_with_sonnet("yield_hunter", "", {}, 2, "en", model="claude-opus-4-8")
+        _generate_with_sonnet("yield_hunter", "", {}, "en", model="claude-opus-4-8")
 
         assert mock_client.messages.create.call_args[1]["model"] == "claude-opus-4-8"
 
@@ -1119,7 +1125,6 @@ def test_write_to_redis_stores_headline() -> None:
         _write_to_redis(
             "desc:t:l:a:en",
             "A lovely property.",
-            259200,
             ["bedrooms: 3"],
             "Solid buy-to-let in a prime location",
         )
@@ -1137,7 +1142,7 @@ def test_write_to_redis_headline_none_stored_as_null() -> None:
         mock_resp.raise_for_status = MagicMock()
         mock_httpx.return_value = mock_resp
 
-        _write_to_redis("desc:t:l:a:en", "A property.", 259200, [], None)
+        _write_to_redis("desc:t:l:a:en", "A property.", [], None)
 
         value = json.loads(mock_httpx.call_args[1]["json"][0][2])
         # 'headline' key must be present and its value must be None (JSON null).
@@ -1214,7 +1219,6 @@ def test_generate_with_sonnet_fit_returns_description() -> None:
             copy_template="",
             original_description="A 3-bed home in Marbella Old Town with a garden.",
             listing_context={"bedrooms": 3},
-            tier=2,
             locale="en",
         )
 
@@ -1246,7 +1250,6 @@ def test_generate_with_sonnet_neutral_returns_empty() -> None:
             copy_template="",
             original_description="A 2-bed 32nd-floor investment condo, no outdoor space.",
             listing_context={"bedrooms": 2, "floor": 32},
-            tier=2,
             locale="en",
         )
 
@@ -1382,7 +1385,6 @@ def test_generate_with_sonnet_leak_marker_returns_empty() -> None:
             copy_template="",
             original_description="3-bed in Marbella Old Town with garden.",
             listing_context={"bedrooms": 3},
-            tier=2,
             locale="en",
         )
 
@@ -1408,7 +1410,6 @@ def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
             copy_template="",
             original_description="3-bed in Marbella Old Town.",
             listing_context={"bedrooms": 3},
-            tier=2,
             locale="en",
         )
 
@@ -1470,7 +1471,6 @@ def test_generate_with_sonnet_neutral_after_follow188_still_returns_empty() -> N
             copy_template="",
             original_description="A 2-bed investment condo.",
             listing_context={"bedrooms": 2, "floor": 32},
-            tier=2,
             locale="en",
         )
 
@@ -1817,3 +1817,180 @@ def test_check_headline_facts_hyphenated_bed_count_passes() -> None:
     )
     # "3" token is grounded in both original_description and listing_context
     assert violation is None
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-460: _write_to_postgres_cache — the Modal job's only path to the
+# durable Postgres description_cache_persistent table (via the control-plane's
+# internal HTTP callback; Modal functions have no direct DB connection).
+# ---------------------------------------------------------------------------
+
+
+def test_write_to_postgres_cache_posts_correct_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When configured, _write_to_postgres_cache POSTs the exact fields the internal
+    endpoint expects (see apps/control-plane .../api/internal/description-cache),
+    with the shared-secret Bearer token and JSON content type."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with patch("httpx.post") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+
+        _write_to_postgres_cache(
+            tenant_id="tenant-abc",
+            listing_id="listing-123",
+            archetype="yield_hunter",
+            locale="en",
+            description="A great income property.",
+            headline="Strong yield play",
+            model="claude-sonnet-4-6",
+        )
+
+        mock_httpx.assert_called_once()
+        url_arg = mock_httpx.call_args[0][0]
+        assert url_arg == "https://admin.estalara.test/api/internal/description-cache"
+
+        call_kwargs = mock_httpx.call_args[1]
+        assert call_kwargs["headers"]["Authorization"] == "Bearer test-shared-secret"
+        assert call_kwargs["headers"]["Content-Type"] == "application/json"
+
+        body = call_kwargs["json"]
+        assert body == {
+            "tenant_id": "tenant-abc",
+            "listing_id": "listing-123",
+            "archetype": "yield_hunter",
+            "locale": "en",
+            "description": "A great income property.",
+            "headline": "Strong yield play",
+            "model": "claude-sonnet-4-6",
+        }
+
+
+def test_write_to_postgres_cache_headline_none_forwarded_as_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A None headline is forwarded as JSON null (not omitted) — the internal
+    endpoint's Zod schema accepts null."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with patch("httpx.post") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+
+        _write_to_postgres_cache(
+            tenant_id="tenant-abc",
+            listing_id="listing-123",
+            archetype="yield_hunter",
+            locale="en",
+            description="A great income property.",
+            headline=None,
+            model="claude-sonnet-4-6",
+        )
+
+        body = mock_httpx.call_args[1]["json"]
+        assert body["headline"] is None
+
+
+def test_write_to_postgres_cache_skipped_when_config_missing() -> None:
+    """When DESCRIPTION_CACHE_API_BASE_URL / _INTERNAL_SECRET are unset (dev/CI),
+    the function is a no-op — no httpx call, no exception."""
+    with patch("httpx.post") as mock_httpx:
+        _write_to_postgres_cache(
+            tenant_id="tenant-abc",
+            listing_id="listing-123",
+            archetype="yield_hunter",
+            locale="en",
+            description="A great income property.",
+            headline=None,
+            model="claude-sonnet-4-6",
+        )
+        mock_httpx.assert_not_called()
+
+
+def test_write_to_postgres_cache_failure_is_non_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-2xx response (or network error) from the internal endpoint must not
+    raise — the Redis write already completed and is the source of truth for
+    this attempt; the read-path backfill is the second chance."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with patch("httpx.post") as mock_httpx:
+        mock_httpx.side_effect = httpx.ConnectError("connection refused")
+
+        # Must not raise.
+        _write_to_postgres_cache(
+            tenant_id="tenant-abc",
+            listing_id="listing-123",
+            archetype="yield_hunter",
+            locale="en",
+            description="A great income property.",
+            headline=None,
+            model="claude-sonnet-4-6",
+        )
+
+
+def test_generate_description_job_writes_both_redis_and_postgres(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end (FOLLOW-460 AC1): a successful generation writes to Redis (no
+    TTL) AND POSTs to the Postgres internal endpoint, in that order, with the
+    same description/headline/model."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_sonnet
+
+        _run_job(_make_event())
+
+        # Two httpx.post calls: [0] Redis SET, [1] Postgres internal endpoint POST.
+        assert mock_httpx.call_count == 2
+
+        redis_call = mock_httpx.call_args_list[0]
+        assert "/pipeline" in redis_call[0][0]
+        redis_cmd = redis_call[1]["json"][0]
+        assert len(redis_cmd) == 3, "Redis SET must carry no TTL/EX args"
+
+        pg_call = mock_httpx.call_args_list[1]
+        assert pg_call[0][0] == "https://admin.estalara.test/api/internal/description-cache"
+        pg_body = pg_call[1]["json"]
+        assert pg_body["tenant_id"] == "tenant-abc"
+        assert pg_body["listing_id"] == "listing-123"
+        assert pg_body["archetype"] == "yield_hunter"
+        assert pg_body["locale"] == "en"
+        # The same description text reached both sinks.
+        redis_value = json.loads(redis_cmd[2])
+        assert pg_body["description"] == redis_value["text"]
+
+
+def test_postgres_write_skipped_does_not_block_redis_write(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock
+) -> None:
+    """When Postgres config is absent, the Redis write still completes normally
+    (durability regresses to the pre-FOLLOW-460 read-path backfill, but nothing
+    crashes and the hot-path cache is unaffected)."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_sonnet
+
+        _run_job(_make_event())
+
+        # Only the Redis call happens — Postgres write is skipped (missing config).
+        mock_httpx.assert_called_once()

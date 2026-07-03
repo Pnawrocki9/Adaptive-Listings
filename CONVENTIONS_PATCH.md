@@ -1608,6 +1608,52 @@ grep -nE "pnpm --filter @estalara/(shared|db|sdk) build" .github/workflows/ci.ym
 
 ---
 
+## Rule AA — An operator-gated go-live / audit-remediation ticket is `CODE_COMPLETE_OPERATOR_PENDING`, never `DONE` on code alone; the retro/PM verdict MUST split the code axis from the prod/operator axis and keep the prod-measurement axis OPEN with a fail-loud proof step
+
+**Pattern (CODE-VS-PROD-AXIS):** A P0/P1 go-live or audit-remediation ticket ships its full code +
+CI + test axis, but the production effect is gated behind a privileged operator-only action
+(Doppler-prd flag flip, migration apply, or credential provisioning) that the merged code cannot —
+and must not — perform. Marking such a ticket plainly `DONE` on the merged PR over-claims the
+finding closed: the code is in `main`, but the invariant the ticket exists to guarantee (a measured
+feedback loop, a populated table, a live adaptation) is NOT yet true in prod, and nothing observable
+proves it until the operator acts.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-146 §5a/§7 (count 1)** — FOLLOW-442 code axis closed (holdout `logDecisionAsync` added);
+  the prod holdout-write attestation was explicitly left open.
+- **RETRO-150 §3/§5a (count 2)** — FOLLOW-455 code axis closed (DSR OTP hardening); its sibling
+  FOLLOW-449's ClickHouse migration apply named as an operator-only Doppler-prd step, not code.
+- **RETRO-152 (the 3rd sighting / promotion trigger)** — FOLLOW-450 entire ticket
+  `CODE_COMPLETE_OPERATOR_PENDING`: canary + SDK observability + route-driven e2e shipped and
+  merged, but the bandit loop is not live until an operator flips `FEEDBACK_ENDPOINT_ENABLED=true`
+  and provisions `ADAPT_API_KEY`/`OPS_TENANT_ID`/`DATABASE_URL_ADMIN` in Doppler prd.
+
+**Rule:** For any ticket whose production effect is gated on an operator-only action:
+
+1. Set the ticket to `CODE_COMPLETE_OPERATOR_PENDING`, NOT `DONE`, when its PR merges.
+2. The retro/PM verdict MUST split the CODE axis from the PROD/OPERATOR axis, mark ONLY the code
+   axis closed, and keep the prod/measurement axis explicitly OPEN on the pilot go-live checklist
+   (STATUS.md), named by the exact operator step.
+3. The operator leg MUST have a fail-loud proof step (a canary run, an attestation stub, a query
+   transcript) whose output is pasted as the finding's closure evidence. The audit finding is not
+   "closed with proof" until that proof exists.
+4. Any retro on an operator-gated ticket cites BOTH the code-axis closure chain AND the still-open
+   operator hop by name — never claims the finding `DONE` on code alone. FOLLOW-471's re-audit gate
+   requires the operator proof transcript per finding.
+
+**Verification:**
+
+```bash
+# Every ticket whose notes name a Doppler-prd flip / migration apply / credential provisioning as an
+# AC must NOT be status: DONE on code-merge alone.
+grep -nE "CODE_COMPLETE_OPERATOR_PENDING|FEEDBACK_ENDPOINT_ENABLED|operator-only|Doppler prd" backlog/QUEUE.md
+# Each such ticket must appear on the STATUS.md pilot go-live checklist with a named proof step.
+```
+
+---
+
+<!-- Rule AA added 2026-07-02 — RETRO-152 §9. First double-letter rule: single letters A–Z are exhausted (A–P, R–Z used; M/V reclaimed/backfilled; Q is the retro-analyst INERT-GATE rule) so the retro-analyst promotion continues into the AA… sequence. Evidence (≥2 prior numbered retros): RETRO-146 §5a/§7 (FOLLOW-442 code axis closed, prod holdout-write attestation left open, count 1) + RETRO-150 §3/§5a (FOLLOW-455 code axis closed; FOLLOW-449's ClickHouse apply named operator-only, count 2). Promotion trigger: RETRO-152 (FOLLOW-450/PR #426) — entire ticket CODE_COMPLETE_OPERATOR_PENDING; the 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rules V/Q). DISTINCT axis from Rule A (PM must verify CI-green before READY_FOR_REVIEW — governs the review-status gate, not the code-vs-prod split), Rule M (a job CLAIMED to auto-apply must actually target prod — governs a false automation claim, whereas AA governs a ticket HONESTLY marked operator-pending being wrongly closed DONE), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — AA is the ticket-status/verdict discipline for that class). Cross-refs the F-06 operator attestation folded into the pilot go-live checklist / FOLLOW-471 DoD. LETTER CHOICE FLAGGED FOR HUMAN REVIEW: first use of a double-letter rule id — adjust if a different scheme is preferred. -->
 <!-- Rule Q added 2026-07-01 — RETRO-145 §6. Evidence: RETRO-006 §Pattern C (PR #130 E2E spec opt-in-behind-a-flag-CI-never-sets, assertion never runs, count 1 — RETRO-006 explicitly pre-authorized "promote on a 2nd 'test exists but doesn't run' sighting") + RETRO-007 §4b CB-1 (PR #137 demo-integration.yml "soft-skip inception — structurally present but never actually runs against a real DB", P2 → FOLLOW-079, count 2; distinct PR/file/mechanism AND the failed remediation of RETRO-006's gap). Promotion trigger: RETRO-145 (PR #403/FOLLOW-446) — archetype-embeddings-not-null gate had three stacked blindnesses (TS2307 build-order / ERR_MODULE_NOT_FOUND bare-specifier / postgres-js socket-hang no-exit no-timeout) all masked by continue-on-error; the gate never ran its assertion until this fix. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rule V). Letter Q: the placeholder explicitly reserved for exactly this retro-analyst promotion (see the "Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met" note and the Q-reservation references in the Rule M/V provenance comments). DISTINCT axis from Rule A (PM must watch CI-green before READY_FOR_REVIEW — governs whether the human/PM verifies status, not whether the gate's own assertion ran), Rule Y (a docstring/test-header CITATION must be verified against the cited file — governs claims-about-a-check, whereas Q governs a check that reports a status but never executes), Rule L (prod install path must PRODUCE the config a consumer reads), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — the inverse: Q is CI-leg-reports-status-but-never-runs). Filed FOLLOW-447 (audit sibling ci.yml gates for the 3 failure modes + add defense-in-depth timeout-minutes to all jobs); the continue-on-error scoping for the archetype gate is FOLLOW-446 (pre-existing, not re-filed). -->
 <!-- Rule V added 2026-06-26 — RETRO-123 §6. Evidence: RETRO-118 §6 Pattern B (PR #357/FOLLOW-358 file-wide route.ts paths exemption, BAD shape, count 1) + RETRO-121 §6 Pattern B (PR #360/FOLLOW-394 token-scoped regexes for the migration filename in script+runbook, GOOD shape, count 2 — RETRO-121 pre-authorized "promote on the NEXT (3rd) sighting"). Promotion trigger: RETRO-123 (PR #362/FOLLOW-396) performed the strip-the-superseded delete; the 2 banked occurrences are both PRIOR retros, ≥2-prior threshold met (the promoting PR is itself a remediation and does NOT inflate the count — the discipline RETRO-122 guarded is respected; the count came from 118+121, adjudicated independent by RETRO-121 via different trigger sites + remediation shapes). DISTINCT axis from Rule U (typed-column-vs-JSONB strip-on-supersede — a data-modeling rule; Rule V is the secret-scanning-config sibling of U's strip-the-superseded clause) and from Pattern G / FOLLOW-083 (legitimate test-fixture/doc paths exemptions, which Rule V explicitly excludes). Filed FOLLOW-406 (negative-control attestation for route.ts) + FOLLOW-407 (apply Rule V to the live 2nd instance: the FOLLOW-374 consent platform-registration paths exemption). Letter choice: single letters A–Z were exhausted (Q reserved as the retro-analyst placeholder); V had been "intentionally skipped" only as a 2026-06-13 sequencing artifact (per the Rule W note) with no semantic reservation, and is now the sole remaining single letter once M was consumed — so V is RECLAIMED here on the same backfill logic Rule M used ("the sole genuinely-unused letter"). -->
 <!-- Rule M added 2026-06-25 by CEO directive (Piotr) — threshold also met independently: RETRO-076 §6 (FOLLOW-307 migrations-don't-auto-apply-in-prod, count 1) + RETRO-113 §6 (FOLLOW-341/PR #352 archetype-seeder post-migrate-seed.yml dev-only → prod archetype_embeddings stay NULL → §F cosine inactive in prod, count 2). DISTINCT axis from Rule H (wired-or-dead, gates source-importers) and Rule O (migration-journal monotonicity, gates the journal): Rule M governs the CLAIM that automation reaches PROD when the workflow only targets dev. Filed/cross-refs FOLLOW-392 (operator seed prod archetype_embeddings) + FOLLOW-308. Letter choice: single letters A–Z are exhausted except M (the sole genuinely-unused letter — Q is the reserved `Rule Q+` retro-analyst placeholder; V is intentionally skipped per the Rule W note), so the backfilled M is assigned here. -->

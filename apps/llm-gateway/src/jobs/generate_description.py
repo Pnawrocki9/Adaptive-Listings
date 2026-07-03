@@ -1,21 +1,38 @@
 """
 Modal async job: generate archetype-adapted listing description AND headline using Sonnet 4.6.
 
-Flow:
-  1. A description.requested event arrives on the estalara.descriptions Redpanda topic.
-  2. consume_description_requests() polls the topic every 30s and calls
-     generate_description.spawn() for each message (fire-and-forget).
-  3. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
+Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
+  1. The control-plane POSTs a description.requested event directly to
+     description_requested_endpoint (an authenticated Modal web endpoint below),
+     which validates the payload and calls generate_description.spawn() (fire-and-forget).
+  2. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
      this is Python, independent of the TypeScript control-plane).
-  4. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
+  3. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
      "verified_facts_used": [...]} as a JSON string to Upstash Redis at key
      desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}
      (for DEMO MODE: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:demo:{model}).
      Key format includes the model suffix added by FOLLOW-161 (DG-1 / FOLLOW-169).
      The headline field is optional — if headline generation fails the description write
-     still proceeds (headline omitted / null in that case).
-  5. On empty description response or exception, does NOT write to Redis; the next HTTP
-     request will trigger another attempt (idempotent by design).
+     still proceeds (headline omitted / null in that case). The Redis SET carries NO TTL
+     (FOLLOW-460 / Master Design §E.7 v2.0) — Redis is a hot-path accelerator, not the
+     durable store.
+  5. Immediately after the Redis write, POSTs the same result to the control-plane's
+     internal endpoint (POST /api/internal/description-cache), which writes the durable
+     `description_cache_persistent` Postgres row (FOLLOW-460, closing the gap where a
+     generation was only durable if a request happened to land within the Redis TTL and
+     trigger the read-path backfill). This HTTP callback is the job's only path to
+     Postgres — Modal functions have no direct DB connection, mirroring the pattern
+     already used by consume_embed_seed_requests.py's POST /api/listings/embed callback.
+     Failure to write Postgres is logged but non-fatal: the Redis entry is unaffected,
+     and the next Redis-hit request still triggers the read path's own async backfill
+     (Master Design §E.7.2 step 2) as a second chance.
+  6. On empty description response or exception, does NOT write to Redis or Postgres;
+     the next HTTP request will trigger another attempt (idempotent by design).
+
+Historical flow (pre-ADR-0016): a description.requested event arrived on the
+estalara.descriptions Redpanda topic and consume_description_requests() polled it every
+30s, calling generate_description.spawn() per message. That poller is retained below
+(unscheduled) for reference / possible Redpanda re-adoption at scale — see its docstring.
 
 v1.8 — adaptive-listing prompt (CEO 2026-06-01):
   Same anti-hallucination contract as v1.7.x — the Sonnet system prompt enforces a strict
@@ -59,16 +76,19 @@ Per-listing headline (ADR-0009):
   superseding the playbook headline directive (the cold-start fallback) once warmed.
   Headline generation failure is non-fatal: the description is still written, headline is null.
 
-TTL:
-  - Tier 2: TTL 72h (259200s).
-  - Tier 3: TTL 48h (172800s).
+TTL / Tiers (FOLLOW-460, Master Design §E.7 v2.0):
+  Adaptive Listings has no integration Tiers and the description cache has no TTL.
+  The Redis SET carries no expiry — Redis is a hot-path accelerator only. The durable
+  truth is the Postgres `description_cache_persistent` table, invalidated (not expired)
+  by a `listing.updated` webhook. Any `tier` / `ttl_seconds` fields on an inbound event
+  are ignored — both were deprecated by FOLLOW-203 and this job no longer reads them.
 
-max_tokens (v1.8): no longer a fixed 450/600. Because v1.8 sizes the body to ±10% of
+max_tokens (v1.8): no longer a fixed value. Because v1.8 sizes the body to ±10% of
   original_description, max_tokens scales with the original's word count via
-  _max_tokens_for() — a tier floor (450/600) for short originals up to a ceiling
-  (_MAX_TOKENS_CEILING) — so the trailing <verified_facts_used> block is never starved
-  for long listings (FOLLOW-162). A response truncated at max_tokens is discarded (no
-  Redis write) and retried.
+  _max_tokens_for() — a single floor (_MAX_TOKENS_FLOOR) for short originals up to a
+  ceiling (_MAX_TOKENS_CEILING) — so the trailing <verified_facts_used> block is never
+  starved for long listings (FOLLOW-162). A response truncated at max_tokens is
+  discarded (no Redis write) and retried.
 
 Cost: ~$0.01–$0.03 per Sonnet 4.6 call for typical originals; bounded above by the
   _MAX_TOKENS_CEILING budget for very long originals.
@@ -82,6 +102,7 @@ Cost: ~$0.01–$0.03 per Sonnet 4.6 call for typical originals; bounded above by
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -94,6 +115,8 @@ from typing import Any
 
 import httpx
 import modal
+from fastapi import Body, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
@@ -199,10 +222,6 @@ _ARCHETYPE_GUIDANCE: dict[str, str] = {
     ),
 }
 
-# TTL constants (seconds) — must match the backend's Redis client
-TTL_TIER_2: int = 259200  # 72 hours
-TTL_TIER_3: int = 172800  # 48 hours
-
 # ---------------------------------------------------------------------------
 # Modal app definition — shared with all llm-gateway consumers (FOLLOW-437)
 #
@@ -232,12 +251,17 @@ def generate_description(event: dict[str, Any]) -> None:
     Process a description.requested event from Redpanda.
 
     Accepts the payload forwarded by consume_description_requests(). Generates
-    a buyer-persona-adapted description via Sonnet 4.6 and writes it to Upstash
-    Redis. On failure (empty response or exception), exits cleanly without
-    writing; the next HTTP request will retry.
+    a buyer-persona-adapted description via Sonnet 4.6, writes it to Upstash
+    Redis (hot-path cache, no TTL), then writes it to the durable Postgres
+    `description_cache_persistent` table via the control-plane's internal
+    callback endpoint (FOLLOW-460, Master Design §E.7 v2.0). On failure (empty
+    response or exception), exits cleanly without writing; the next HTTP
+    request will retry.
 
     The job is idempotent: calling twice for the same cache_key is safe —
-    the Redis SET overwrites the previous value (last-write-wins).
+    the Redis SET overwrites the previous value (last-write-wins), and the
+    Postgres write invalidates any prior active row for the same
+    (tenant, listing, archetype, locale) combination before inserting.
 
     Args:
         event: Payload dict with fields:
@@ -248,26 +272,25 @@ def generate_description(event: dict[str, Any]) -> None:
             original_description (str) — required (v1.7.1); agent's original copy
                                          (may be empty string but the key must be present)
             locale (str)               — optional, default "en"
-            tier (int)                 — optional, default 2
             copy_template (str)        — optional; seed text from
                                          PlaybookEntry.copy_template.en. Now parsed for
                                          "VOICE PATTERN:" / "HARD RULES:" sections.
             listing_context (dict)     — optional; listing key-value pairs for factual
                                          grounding
-            ttl_seconds (int)          — optional; overrides tier-derived default
+
+        Any `tier` / `ttl_seconds` fields present on the event are ignored — both were
+        deprecated by FOLLOW-203 (no Tiers) and removed from this job's logic by
+        FOLLOW-460 (no TTL).
     """
     tenant_id: str = event["tenant_id"]
     listing_id: str = event["listing_id"]
     archetype: str = event["archetype"]
     locale: str = event.get("locale", "en")
-    tier: int = int(event.get("tier", 2))
     copy_template: str = event.get("copy_template", "")
     listing_context: dict[str, Any] = event.get("listing_context", {})
     # v1.7.1: original_description is the agent's factual source. Required key (may be "").
     original_description: str = event["original_description"]
     cache_key: str = event["cache_key"]
-    default_ttl = TTL_TIER_2 if tier == 2 else TTL_TIER_3
-    ttl_seconds: int = int(event.get("ttl_seconds", default_ttl))
     # Precedence chain (FOLLOW-166 / FOLLOW-161):
     #   override_model (DEMO MODE) > generation_model (global admin default) > static default.
     # Both are validated against the allow-list by _resolve_generation_model.
@@ -277,12 +300,11 @@ def generate_description(event: dict[str, Any]) -> None:
     )
 
     log.info(
-        "generate_description.start tenant=%s listing=%s archetype=%s locale=%s tier=%d model=%s",
+        "generate_description.start tenant=%s listing=%s archetype=%s locale=%s model=%s",
         tenant_id,
         listing_id,
         archetype,
         locale,
-        tier,
         model,
     )
 
@@ -291,7 +313,6 @@ def generate_description(event: dict[str, Any]) -> None:
             archetype=archetype,
             copy_template=copy_template,
             listing_context=listing_context,
-            tier=tier,
             locale=locale,
             original_description=original_description,
             model=model,
@@ -340,11 +361,25 @@ def generate_description(event: dict[str, Any]) -> None:
             cache_key,
         )
 
-    _write_to_redis(cache_key, description, ttl_seconds, verified_facts, headline)
+    _write_to_redis(cache_key, description, verified_facts, headline)
+
+    # FOLLOW-460 / Master Design §E.7 v2.0: write the durable Postgres cache.
+    # Non-fatal on failure — the Redis entry above already serves reads; a failed
+    # Postgres write here only means durability again depends on the read-path's
+    # own async backfill (§E.7.2 step 2) as a second chance.
+    _write_to_postgres_cache(
+        tenant_id=tenant_id,
+        listing_id=listing_id,
+        archetype=archetype,
+        locale=locale,
+        description=description,
+        headline=headline,
+        model=model,
+    )
+
     log.info(
-        "generate_description.done cache_key=%s ttl=%d verified_facts_count=%d has_headline=%s",
+        "generate_description.done cache_key=%s verified_facts_count=%d has_headline=%s",
         cache_key,
-        ttl_seconds,
         len(verified_facts),
         headline is not None,
     )
@@ -858,14 +893,14 @@ def _parse_verified_facts(sonnet_output: str) -> tuple[str, list[str]]:
 #
 # v1.8 tells Sonnet to keep the description body within ±10% of original_description
 # by word count, so a long agent original needs a correspondingly larger output budget.
-# A fixed budget (the pre-v1.8 450/600) truncates the trailing <verified_facts_used>
-# audit block for long originals — leaving a dangling tag in the buyer-visible copy and
-# an empty audit trail in ClickHouse. We therefore size max_tokens from the original's
-# word count: a tier floor (so short originals keep the historical budget) plus a per-word
-# estimate plus a fixed reserve for the audit block, all bounded by a ceiling that caps
-# worst-case cost.
-_MAX_TOKENS_FLOOR_TIER_2 = 450
-_MAX_TOKENS_FLOOR_TIER_3 = 600
+# A fixed budget truncates the trailing <verified_facts_used> audit block for long
+# originals — leaving a dangling tag in the buyer-visible copy and an empty audit
+# trail in ClickHouse. We therefore size max_tokens from the original's word count: a
+# floor (so short originals keep the historical budget) plus a per-word estimate plus
+# a fixed reserve for the audit block, all bounded by a ceiling that caps worst-case
+# cost. FOLLOW-460: the floor no longer varies by Tier (Tiers were removed by
+# FOLLOW-203) — a single floor applies to every description.
+_MAX_TOKENS_FLOOR = 450
 _MAX_TOKENS_CEILING = 2000
 # Conservative across en/es/pl (non-English tokenizes to more tokens/word) + Sonnet's
 # tendency to run slightly long. The body targets ~110% of the original word count.
@@ -875,15 +910,15 @@ _BODY_LENGTH_HEADROOM = 1.1
 _AUDIT_BLOCK_TOKEN_RESERVE = 220
 
 
-def _max_tokens_for(original_description: str, tier: int) -> int:
+def _max_tokens_for(original_description: str) -> int:
     """
     Size the Sonnet output budget so the body AND the trailing <verified_facts_used>
     block both fit, scaling with the agent original (FOLLOW-162).
 
-    Returns the tier floor for short/empty originals, scales up with word count, and is
-    clamped to a ceiling to bound cost.
+    Returns _MAX_TOKENS_FLOOR for short/empty originals, scales up with word count,
+    and is clamped to a ceiling to bound cost.
     """
-    floor = _MAX_TOKENS_FLOOR_TIER_3 if tier >= 3 else _MAX_TOKENS_FLOOR_TIER_2
+    floor = _MAX_TOKENS_FLOOR
     word_count = len(original_description.split())
     estimated = (
         ceil(word_count * _BODY_LENGTH_HEADROOM * _TOKENS_PER_WORD) + _AUDIT_BLOCK_TOKEN_RESERVE
@@ -950,7 +985,6 @@ def _generate_with_sonnet(
     archetype: str,
     copy_template: str,
     listing_context: dict[str, Any],
-    tier: int,
     locale: str = "en",
     original_description: str = "",
     model: str = _DEFAULT_GENERATION_MODEL,
@@ -969,10 +1003,11 @@ def _generate_with_sonnet(
 
     v1.8 tells Sonnet to keep the body within ±10% of original_description by word
     count (rather than a fixed ~140 words), so max_tokens scales with the original
-    via _max_tokens_for: a tier floor (450 for Tier 2, 600 for Tier 3) for short
-    originals, scaling up with word count and capped at _MAX_TOKENS_CEILING. A
-    response truncated at max_tokens (or carrying an unclosed audit tag) is treated
-    as a failed/empty response so the caller skips the Redis write and retries.
+    via _max_tokens_for: a single floor (_MAX_TOKENS_FLOOR — FOLLOW-460 removed the
+    per-Tier distinction) for short originals, scaling up with word count and capped
+    at _MAX_TOKENS_CEILING. A response truncated at max_tokens (or carrying an
+    unclosed audit tag) is treated as a failed/empty response so the caller skips
+    the Redis write and retries.
 
     Args:
         archetype:            One of the 18 archetype IDs (e.g. "yield_hunter").
@@ -980,7 +1015,6 @@ def _generate_with_sonnet(
                               May contain "VOICE PATTERN:" / "HARD RULES:" sections.
         listing_context:      Key-value pairs from the listing (bedrooms, price, etc.).
                               Factual source of truth for Sonnet.
-        tier:                 Integration tier (2 or 3).
         locale:               Target locale code (e.g. "en", "pl", "es").
         original_description: Agent's original listing copy. Factual source of truth.
                               May be an empty string when no agent copy exists.
@@ -1004,7 +1038,7 @@ def _generate_with_sonnet(
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    max_tokens = _max_tokens_for(original_description, tier)
+    max_tokens = _max_tokens_for(original_description)
 
     voice_pattern, hard_rules = _parse_copy_template_sections(copy_template)
 
@@ -1072,9 +1106,8 @@ def _generate_with_sonnet(
     verdict, neutral_reason, body = _parse_adaptation_verdict(raw_text)
     if verdict == "NEUTRAL":
         log.info(
-            "generate_description.neutral_verdict archetype=%s tier=%d reason=%s",
+            "generate_description.neutral_verdict archetype=%s reason=%s",
             archetype,
-            tier,
             neutral_reason or "(none)",
         )
         return "", []
@@ -1105,9 +1138,8 @@ def _generate_with_sonnet(
     stop_reason = getattr(response, "stop_reason", None)
     if stop_reason == "max_tokens" or "<verified_facts_used" in description:
         log.warning(
-            "generate_description.truncated archetype=%s tier=%d stop_reason=%s max_tokens=%d",
+            "generate_description.truncated archetype=%s stop_reason=%s max_tokens=%d",
             archetype,
-            tier,
             stop_reason,
             max_tokens,
         )
@@ -1414,7 +1446,6 @@ def _generate_headline(
 def _write_to_redis(
     cache_key: str,
     description: str,
-    ttl_seconds: int,
     verified_facts: list[str] | None = None,
     headline: str | None = None,
 ) -> None:
@@ -1424,6 +1455,13 @@ def _write_to_redis(
 
     Uses POST /pipeline (JSON array of commands) rather than the URL-path format
     to avoid URL-encoding issues with long description text containing special chars.
+
+    FOLLOW-460 / Master Design §E.7 v2.0: the SET carries NO expiry (no "EX" arg).
+    Redis is a hot-path accelerator only; the durable store is the Postgres
+    `description_cache_persistent` table, written by _write_to_postgres_cache
+    immediately after this call. A key set here without a TTL is only ever removed
+    by Redis's own eviction policy under memory pressure, never by time — that is
+    fine because Postgres, not Redis, is the source of truth for durability.
 
     Stored value format (JSON string):
         {
@@ -1445,7 +1483,6 @@ def _write_to_redis(
                         (format: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model};
                         FOLLOW-161 / FOLLOW-169 DG-1 — includes :{model} suffix).
         description:    AI-generated description text.
-        ttl_seconds:    Key expiry in seconds (259200 for Tier 2, 172800 for Tier 3).
         verified_facts: Audit list of facts Sonnet self-reported as used.
                         Defaults to an empty list when absent.
         headline:       AI-generated per-listing headline (ADR-0009). None when headline
@@ -1468,32 +1505,122 @@ def _write_to_redis(
 
     # Upstash pipeline: POST /pipeline with [[cmd, ...args], ...]
     # Docs: https://upstash.com/docs/redis/features/restapi#pipeline
+    # FOLLOW-460: no "EX" arg — the key never expires by time (see docstring above).
     response = httpx.post(
         f"{redis_url}/pipeline",
         headers={
             "Authorization": f"Bearer {redis_token}",
             "Content-Type": "application/json",
         },
-        json=[["SET", cache_key, payload_value, "EX", ttl_seconds]],
+        json=[["SET", cache_key, payload_value]],
         timeout=10.0,
     )
     response.raise_for_status()
 
 
 # ---------------------------------------------------------------------------
+# Postgres durable-cache write (FOLLOW-460, Master Design §E.7 v2.0)
+# ---------------------------------------------------------------------------
+#
+# Modal functions have no direct Postgres connection — this HTTP callback is the
+# job's only path to Postgres, mirroring the pattern already established by
+# consume_embed_seed_requests.py's _embed_one_listing() (POST /api/listings/embed).
+# The control-plane endpoint (POST /api/internal/description-cache) performs the
+# actual `description_cache_persistent` insert using the Drizzle client it already
+# holds; this function is purely the HTTP transport side.
+
+
+def _write_to_postgres_cache(
+    tenant_id: str,
+    listing_id: str,
+    archetype: str,
+    locale: str,
+    description: str,
+    headline: str | None,
+    model: str,
+) -> None:
+    """
+    POST a generated description (and headline) to the control-plane's internal
+    description-cache endpoint, which writes the durable Postgres
+    `description_cache_persistent` row (FOLLOW-460, closing the gap where a
+    generation's durability depended on a read landing within the old Redis TTL).
+
+    Non-fatal on any failure (missing config, network error, non-2xx response):
+    logged and swallowed so a Postgres outage never breaks the Redis write this
+    job already completed. Rule K.2: failures are observable via the log line
+    below (and, in production, propagate to whatever log sink Modal is wired to).
+
+    Args:
+        tenant_id:   Tenant UUID.
+        listing_id:  Listing external identifier.
+        archetype:   Archetype ID (e.g. "yield_hunter").
+        locale:      Locale code ("en" | "pl" | "es").
+        description: AI-generated description text.
+        headline:    AI-generated headline, or None.
+        model:       Anthropic model id that generated this entry.
+    """
+    base_url = os.environ.get("DESCRIPTION_CACHE_API_BASE_URL")
+    secret = os.environ.get("DESCRIPTION_CACHE_INTERNAL_SECRET")
+    if not base_url or not secret:
+        log.warning(
+            "generate_description.postgres_write_skipped tenant=%s listing=%s "
+            "reason=missing_config",
+            tenant_id,
+            listing_id,
+        )
+        return
+
+    try:
+        response = httpx.post(
+            f"{base_url.rstrip('/')}/api/internal/description-cache",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {secret}",
+            },
+            json={
+                "tenant_id": tenant_id,
+                "listing_id": listing_id,
+                "archetype": archetype,
+                "locale": locale,
+                "description": description,
+                "headline": headline,
+                "model": model,
+            },
+            timeout=10.0,
+        )
+        response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 — never let a Postgres-write failure crash the job
+        log.error(
+            "generate_description.postgres_write_failed tenant=%s listing=%s error=%s",
+            tenant_id,
+            listing_id,
+            str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Redpanda consumer — polls estalara.descriptions topic every 30 seconds
+#
+# Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — retained for
+# reference / possible Redpanda re-adoption at scale; not scheduled. The prod
+# Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/Dedicated-only (out of
+# pilot budget), so the control-plane now dispatches directly to
+# description_requested_endpoint below instead of publishing to this topic.
 # ---------------------------------------------------------------------------
 
 
 @app.function(
     image=_image,
     secrets=[modal.Secret.from_name("estalara-secrets")],
-    schedule=modal.Period(seconds=30),
     timeout=120,
 )
 def consume_description_requests() -> None:
     """
     Poll the estalara.descriptions Redpanda topic for description.requested events.
+
+    Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — not scheduled (the
+    `schedule=modal.Period(seconds=30)` kwarg was removed from the decorator above).
+    Retained for reference / possible Redpanda re-adoption at scale.
 
     Reads messages during a 25-second window (leaving headroom within the 30s schedule),
     dispatches each valid message to generate_description.spawn() as a fire-and-forget call.
@@ -1588,3 +1715,83 @@ def consume_description_requests() -> None:
     finally:
         consumer.close()
         log.info("consume_description_requests.done dispatched=%d", dispatched)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0016 / FOLLOW-485 — direct Modal HTTPS web endpoint
+#
+# Replaces the Redpanda poller above as the description.requested dispatch path.
+# The prod Redpanda cluster is Serverless, whose HTTP Proxy (the REST endpoint
+# edge/serverless producers publish through) is BYOC/Dedicated-only (~$500/mo,
+# out of pilot budget), so the control-plane now POSTs the event JSON directly to
+# this authenticated endpoint instead of publishing to Redpanda.
+# ---------------------------------------------------------------------------
+
+
+def _valid_bearer(authorization: str | None) -> bool:
+    """
+    Validate an ``Authorization: Bearer <token>`` header against INTERNAL_API_SECRET.
+
+    Uses ``hmac.compare_digest`` for a constant-time comparison so response timing
+    cannot be used to guess the secret.
+
+    Args:
+        authorization: The raw ``Authorization`` header value, or None if absent.
+
+    Returns:
+        True when authorization is exactly ``Bearer <INTERNAL_API_SECRET>`` and the
+        secret is configured (non-empty). False on a missing header, wrong scheme,
+        empty token, or unset/empty secret (fails closed).
+    """
+    expected = os.environ.get("INTERNAL_API_SECRET", "")
+    if not expected or not authorization:
+        return False
+    scheme, _, token = authorization.partition(" ")
+    if scheme != "Bearer" or not token:
+        return False
+    return hmac.compare_digest(token, expected)
+
+
+@app.function(
+    image=_image,
+    secrets=[modal.Secret.from_name("estalara-secrets")],
+    timeout=30,
+)
+@modal.fastapi_endpoint(method="POST")
+async def description_requested_endpoint(
+    body: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """
+    POST — direct-invocation replacement for the estalara.descriptions Redpanda topic.
+
+    Validates the same payload shape consume_description_requests() validated
+    (REQUIRED_FIELDS, derived from the shared contract fixture — see module docstring),
+    then dispatches generate_description.spawn(body) fire-and-forget, mirroring the
+    poller's dispatch call above.
+
+    Auth: requires ``Authorization: Bearer <INTERNAL_API_SECRET>`` (constant-time
+    compare via _valid_bearer). INTERNAL_API_SECRET is read from the estalara-secrets
+    Modal secret — no REDPANDA_* environment variables are required by this endpoint.
+
+    Args:
+        body:          The description.requested event payload (same shape as before).
+        authorization: The raw Authorization header value.
+
+    Returns:
+        202 JSONResponse on accept (spawn dispatched).
+
+    Raises:
+        fastapi.HTTPException: 401 on a missing/invalid bearer token; 400 when
+            body is missing any REQUIRED_FIELDS key.
+    """
+    if not _valid_bearer(authorization):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    missing = REQUIRED_FIELDS - set(body.keys())
+    if missing:
+        raise HTTPException(status_code=400, detail=f"missing required fields: {sorted(missing)}")
+
+    # Fire-and-forget: spawn does not block; Modal manages concurrency.
+    generate_description.spawn(body)
+    return JSONResponse(status_code=202, content={"status": "accepted"})

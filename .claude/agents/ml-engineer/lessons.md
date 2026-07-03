@@ -1,5 +1,35 @@
 # ml-engineer lessons
 
+- **2026-07-03 / FOLLOW-485** · Implemented ADR-0016: replaced the Redpanda poller dispatch path for
+  description.requested and listing-embed-seed.requested with direct authenticated Modal HTTPS web
+  endpoints (`@modal.fastapi_endpoint(method="POST")`, modal 1.4.2 — the older `@modal.web_endpoint`
+  is deprecated). Added `description_requested_endpoint` (generate_description.py) and
+  `listing_embed_seed_requested_endpoint` + a new spawn()-able `process_embed_seed_request` job
+  (consume_embed_seed_requests.py, since the old poller processed listings inline with no existing
+  per-event function to `.spawn()`). Both endpoints validate the same REQUIRED_FIELDS contract the
+  retired pollers used and check `Authorization: Bearer <INTERNAL_API_SECRET>` via
+  `hmac.compare_digest`. control-plane `publishDescriptionRequested` and
+  `publishListingEmbeddingSeed` now POST the raw event JSON (no more Redpanda `records` envelope) to
+  `MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` with the Bearer header; unset URL is a fail-open
+  no-op (Sentry breadcrumb, not capture); non-2xx/network failures capture to Sentry with
+  `kind: 'dispatch_failed', sink: 'modal'`. Pollers kept, just unscheduled (`schedule=` removed),
+  with a top comment marking them superseded-but-retained. · **Where real vs placeholder logic was a
+  judgment call:** pytest can't easily instantiate Modal's actual FastAPI-wrapped route (the
+  `@app.function` decorator returns an opaque `modal.Function`, not the raw callable), so the unit
+  tests call the plain async endpoint function directly via the existing modal-stub convention
+  (`conftest.py`'s stub makes `@modal.fastapi_endpoint` a no-op passthrough). To verify this
+  actually matches Modal's real runtime behavior (not just my assumption), I additionally ran a
+  manual sanity script against the REAL installed `modal` package: extracted
+  `endpoint_fn.get_raw_f()` and mounted it into a genuine `fastapi.FastAPI().add_api_route(...)` —
+  the exact mechanism Modal's own `_runtime/asgi.py::magic_fastapi_app` uses internally — and drove
+  it through `TestClient` for all four cases (401/401/400/202). This is evidence, not a guess, that
+  the endpoint will behave correctly once actually deployed via `modal deploy`. · **Guardrail I'd
+  add:** when adding a Modal `@modal.fastapi_endpoint`, the PR should include (or CI should run) the
+  `get_raw_f()` + `fastapi.TestClient` sanity check as a permanent test, not just an ad-hoc one-off
+  verification — today nothing catches a future dependency-injection regression (e.g. someone
+  switching `Body(...)` for a raw `Request` param) because the stubbed unit tests bypass FastAPI's
+  parameter binding entirely.
+
 - **2026-06-30 / FOLLOW-437** · Fixed two Modal deployment bugs (ESC-034): (1) `main.py` was an
   empty placeholder that registered zero functions on `modal deploy main.py`; (2) both
   `generate_description.py` and `consume_embed_seed_requests.py` each independently declared
@@ -164,3 +194,32 @@
   escalation needed; there was no real taxonomy ambiguity. · **Guardrail I'd add:** a small CI check
   that greps the §D.6 table's Status column and asserts the coverage-summary sentence's counts match
   would catch this class of prose/table drift before it reaches a retro.
+
+- **2026-07-02 / FOLLOW-460** · Closed audit F-10: `generate_description.py` was still SETting Redis
+  with `EX 72h/48h` and tier-derived `max_tokens` floors years after Master Design §E.7 v2.0
+  declared "no Tiers, no TTL" — durability of a generation silently depended on a read landing
+  within the old TTL window to trigger the read-path's Postgres backfill. Fix: removed
+  `tier`/`ttl_seconds` entirely from the Python job (both event fields are now ignored, not just
+  defaulted), collapsed the per-Tier `max_tokens` floor into one `_MAX_TOKENS_FLOOR`, dropped the
+  Redis `SET`'s `EX` arg, and added `_write_to_postgres_cache()` — a new HTTP callback to the
+  control-plane's `POST /api/internal/description-cache` (which already existed, unused, built for
+  exactly this) that writes `description_cache_persistent` immediately after every successful
+  generation. Verified the read path (`getPgCachedDescription` → `getCachedDescription` →
+  template_fallback) already matched the ordering in Master Design and needed no change; added a
+  control-plane test (`route.follow460.test.ts`) proving a Postgres row generated 100h ago is served
+  as `ai_cached` with zero Redis lookup and zero Modal re-enqueue. · **Judgment call:** Modal
+  functions have no direct Postgres connection — rather than bolt on a new
+  `psycopg`/Drizzle-over-HTTP pattern, I reused the exact HTTP-callback shape
+  `consume_embed_seed_requests.py` already established for the same problem
+  (`POST /api/listings/embed`), including a dedicated `DESCRIPTION_CACHE_API_BASE_URL` /
+  `DESCRIPTION_CACHE_INTERNAL_SECRET` env-var pair mirroring `EMBED_API_BASE_URL` /
+  `INTERNAL_API_SECRET`. Documented both in `.env.example`, but **the Modal secret
+  `estalara-secrets` in the actual Modal workspace still needs these two keys added** (devops
+  action, same runbook shape as `docs/runbooks/modal-embed-seed-consumer-golive.md`) before the fix
+  takes effect in production — until then `_write_to_postgres_cache` silently no-ops (logged
+  warning, not a crash) and durability regresses to the pre-fix read-path-only backfill. · **A
+  guardrail I'd add:** a "new Modal env var pair added" check that cross-references `.env.example`
+  entries introduced in a diff against a checklist item in the PR body confirming the paired Modal
+  secret provisioning step was filed — this is the second time (after FOLLOW-436) a Modal HTTP
+  callback shipped code-complete but secret-unprovisioned; two occurrences now meets the
+  promote-to-rule bar per CONVENTIONS_PATCH.md.

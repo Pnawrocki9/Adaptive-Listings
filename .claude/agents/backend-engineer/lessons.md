@@ -1415,3 +1415,30 @@ unrequested scope expansion.
 unset `secret` short-circuits the inner check) — worth a grep-based CI lint rule flagging any
 `if (\`process.env\` truthiness gate) { ...!== comparison }` shape around an auth check, so this
 class of bug can't reappear on a 4th route.
+
+---
+
+## 2026-07-02 / FOLLOW-459
+
+**What I built:** Moved the ClickHouse `events` insert in `apps/ingest/src/handlers/events.ts` off
+the ACK critical path via `ctx.waitUntil()`, so the ACK no longer blocks on ClickHouse's 3-attempt/
+backoff retry (was up to ~15s worst case, violating the <50ms p95 budget). Redpanda stayed on the
+synchronous ACK path unchanged (its 503/retry contract untouched). Documented the resulting
+retry-contract change inline (terminal CH failure no longer 503s the client post-ACK) and filed
+FOLLOW-475 for the durable-retry-queue gap that Sentry-capture-only doesn't close.
+
+**Wiring/auth/fail-loud risks I weighed:** No new schema/event/exported symbol — only a
+module-private `getWaitUntil()` helper reused at its two call sites in the same file (Rule H clean).
+No auth surface touched (read-only sink reorder, not a new mutating endpoint). Fail-loud: a post-ACK
+ClickHouse terminal failure is captured to `Sentry.captureException` with a dedicated tag, matching
+the existing intent-snapshot fire-and-forget pattern in the same file — verified with a test that
+stubs a terminal 5xx and asserts the Sentry call, not just that the ACK still returns 200.
+
+**A guardrail I'd add:** Hono v4's `Context#executionCtx` getter **throws** (not `undefined`) when
+`app.fetch()` is called without a third `ExecutionContext` argument — a property-access idiom
+(`c.executionCtx?.waitUntil`) that looks like safe optional chaining is NOT safe here; it must be
+wrapped in try/catch. This was a pre-existing latent bug in this same file (the intent-snapshot
+fire-and-forget block used the same unguarded access) that only surfaced because my new code path
+runs unconditionally on every batch, while the old one only ran for `intent.snapshot` events, which
+no existing test exercised end-to-end. Any future `ctx.waitUntil` fire-and-forget wiring in a CF
+Worker built on Hono should reuse a guarded accessor, not re-derive the cast inline.

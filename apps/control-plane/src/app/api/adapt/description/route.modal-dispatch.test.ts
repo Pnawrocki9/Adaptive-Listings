@@ -1,22 +1,25 @@
 /**
- * FOLLOW-426: fail-loud tests for publishDescriptionRequested (via GET handler).
+ * ADR-0016 / FOLLOW-485: fail-loud tests for publishDescriptionRequested (via GET handler).
  *
- * Verifies that an HTTP-level rejection from the Redpanda REST proxy (non-ok
- * response: 4xx/5xx, auth failure, missing topic, quota) is captured to Sentry —
- * NOT silently swallowed. Before FOLLOW-426, publishDescriptionRequested used a bare
- * `await fetch()` with no `res.ok` check; the outer `.catch()` at the call site was
- * completely blind to these HTTP-level rejections because `fetch` resolves on 4xx/5xx.
+ * Verifies that an HTTP-level rejection from the Modal web endpoint (non-ok
+ * response: 4xx/5xx, auth failure, validation failure) is captured to Sentry —
+ * NOT silently swallowed. publishDescriptionRequested now POSTs the event JSON
+ * directly to `MODAL_DESCRIPTION_URL` with an `Authorization: Bearer
+ * INTERNAL_API_SECRET` header (ADR-0016 replaces the Redpanda REST publish —
+ * FOLLOW-426's fail-loud contract carries over unchanged).
  *
  * Tests exercise the cache-miss path (getCachedDescription → null) so that
- * publishDescriptionRequested is invoked on every request. Three tests per AC-3:
- *   (a) non-ok HTTP response → Sentry captured with kind='insert_rejected'
- *   (b) network / thrown error → Sentry captured with kind='network'
- *   (c) happy path (ok response) → Sentry NOT called, caller unaffected
+ * publishDescriptionRequested is invoked on every request. Four tests:
+ *   (a) non-ok HTTP response → Sentry captured with kind='dispatch_failed'
+ *   (b) network / thrown error → Sentry captured with kind='dispatch_failed'
+ *   (c) happy path (ok response) → Sentry NOT called, caller unaffected,
+ *       request carries the Authorization: Bearer INTERNAL_API_SECRET header
+ *   (d) unset MODAL_DESCRIPTION_URL → no fetch call, no Sentry capture (no-op)
  *
  * FOLLOW-431: also asserts that publishDescriptionRequested is registered via after()
  * so it completes after the response on Vercel (AC-4).
  *
- * @module apps/control-plane/src/app/api/adapt/description/route.redpanda.test
+ * @module apps/control-plane/src/app/api/adapt/description/route.modal-dispatch.test
  */
 
 // ─── next/server mock (must be before all imports) ───────────────────────────
@@ -37,7 +40,7 @@ import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Sentry mock (must be hoisted before the module import) ──────────────────
-vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), addBreadcrumb: vi.fn() }));
 
 // ─── Hoisted stubs ────────────────────────────────────────────────────────────
 //
@@ -90,10 +93,10 @@ vi.mock('@/lib/demo-override-store', () => ({
   }),
 }));
 
-// Mock listing-details so only the Redpanda publish triggers a real fetch call.
+// Mock listing-details so only the Modal dispatch triggers a real fetch call.
 // FOLLOW-457 AC1: publish is now gated on a non-empty original_description
-// (empty → skip generation entirely, tested separately) — this suite exercises
-// the Redpanda publish mechanics, so the mock must resolve to real copy.
+// (empty → skip generation, tested separately) — this suite exercises
+// the Modal dispatch mechanics, so the mock must resolve to real copy.
 vi.mock('@/lib/listing-details', () => ({
   fetchListingOriginalDescription: vi.fn().mockResolvedValue('The agent original copy.'),
 }));
@@ -112,7 +115,7 @@ import { GET } from './route';
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const VALID_PARAMS = {
-  listing_id: 'prop-follow426-test',
+  listing_id: 'prop-follow485-test',
   archetype: 'yield_hunter',
   locale: 'en',
 };
@@ -129,7 +132,7 @@ function makeRequest(params: Record<string, string>): NextRequest {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP rejection', () => {
+describe('publishDescriptionRequested — ADR-0016 fail loud on Modal HTTP rejection', () => {
   let captureException: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -137,7 +140,8 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
     captureException.mockReset();
     // Cache miss on every test so the route reaches publishDescriptionRequested
     mockGetCachedDescription.mockResolvedValue(null);
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://estalara--description-generator.modal.run');
+    vi.stubEnv('INTERNAL_API_SECRET', 'test-internal-secret');
   });
 
   afterEach(() => {
@@ -146,13 +150,13 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
     vi.clearAllMocks();
   });
 
-  it('FOLLOW-426 (a): non-ok HTTP response → captureException called with kind=insert_rejected, route returns 200', async () => {
+  it('non-ok HTTP response → captureException called with kind=dispatch_failed, route returns 200', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
-        text: () => Promise.resolve('Authentication failed. Invalid credentials.'),
+        text: () => Promise.resolve('Unauthorized: bad bearer token.'),
       }),
     );
 
@@ -170,15 +174,15 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
     ];
     expect(capturedErr).toBeInstanceOf(Error);
     expect(capturedErr.message).toContain('401');
-    expect(capturedErr.message).toContain('Authentication failed');
-    expect(capturedCtx.tags.kind).toBe('insert_rejected');
-    expect(capturedCtx.tags.sink).toBe('redpanda');
+    expect(capturedErr.message).toContain('Unauthorized');
+    expect(capturedCtx.tags.kind).toBe('dispatch_failed');
+    expect(capturedCtx.tags.sink).toBe('modal');
     expect(capturedCtx.tags.area).toBe('description');
     expect(capturedCtx.extra.status).toBe(401);
   });
 
-  it('FOLLOW-426 (b): network-level rejection → captureException called with kind=network, route returns 200', async () => {
-    const networkErr = new Error('connect ECONNREFUSED redpanda.test:443');
+  it('network-level rejection → captureException called with kind=dispatch_failed, route returns 200', async () => {
+    const networkErr = new Error('connect ECONNREFUSED modal.run:443');
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(networkErr));
 
     const res = await GET(makeRequest(VALID_PARAMS));
@@ -193,13 +197,14 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
     ];
     expect(capturedErr).toBeInstanceOf(Error);
     expect(capturedErr.message).toContain('ECONNREFUSED');
-    expect(capturedCtx.tags.kind).toBe('network');
-    expect(capturedCtx.tags.sink).toBe('redpanda');
+    expect(capturedCtx.tags.kind).toBe('dispatch_failed');
+    expect(capturedCtx.tags.sink).toBe('modal');
     expect(capturedCtx.tags.area).toBe('description');
   });
 
-  it('FOLLOW-426 (c): successful HTTP 200 → captureException NOT called, route returns 200 template_fallback', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+  it('successful HTTP 200 → captureException NOT called, request carries Bearer auth, route returns 200 template_fallback', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 202 });
+    vi.stubGlobal('fetch', mockFetch);
 
     const res = await GET(makeRequest(VALID_PARAMS));
     expect(res.status).toBe(200);
@@ -208,6 +213,39 @@ describe('publishDescriptionRequested — FOLLOW-426 fail loud on Redpanda HTTP 
 
     await new Promise((r) => setTimeout(r, 10));
 
+    expect(captureException).not.toHaveBeenCalled();
+
+    // Find the Modal dispatch call (the other fetch call is listing-details, which is mocked
+    // at the module level, not via global fetch — so this is the only POST expected here).
+    const dispatchCall = mockFetch.mock.calls.find(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(dispatchCall).toBeDefined();
+    const [url, init] = dispatchCall as [string, RequestInit];
+    expect(url).toBe('https://estalara--description-generator.modal.run');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer test-internal-secret');
+    expect(headers['Content-Type']).toBe('application/json');
+    // Body is the raw event JSON, not wrapped in a Redpanda `records` envelope.
+    const event = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(event.archetype).toBe('yield_hunter');
+    expect(event).not.toHaveProperty('records');
+  });
+
+  it('unset MODAL_DESCRIPTION_URL → no fetch dispatch, no Sentry capture (no-op)', async () => {
+    vi.stubEnv('MODAL_DESCRIPTION_URL', '');
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const res = await GET(makeRequest(VALID_PARAMS));
+    expect(res.status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const dispatchCall = mockFetch.mock.calls.find(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(dispatchCall).toBeUndefined();
     expect(captureException).not.toHaveBeenCalled();
   });
 });
@@ -227,8 +265,9 @@ describe('FOLLOW-431: publishDescriptionRequested registered via after() in GET 
       void fn();
     });
     mockGetCachedDescription.mockResolvedValue(null);
-    vi.stubEnv('REDPANDA_REST_URL', 'https://redpanda.test');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+    vi.stubEnv('MODAL_DESCRIPTION_URL', 'https://estalara--description-generator.modal.run');
+    vi.stubEnv('INTERNAL_API_SECRET', 'test-internal-secret');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 202 }));
   });
 
   afterEach(() => {

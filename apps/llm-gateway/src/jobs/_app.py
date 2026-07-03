@@ -21,6 +21,7 @@ ESC-034 / FOLLOW-437.
 The image contains the union of all packages required by both consumer modules:
 - anthropic (generate_description only)
 - httpx, confluent-kafka, sentry-sdk, structlog (both consumers)
+- fastapi (ADR-0016 / FOLLOW-485 — required by @modal.fastapi_endpoint web endpoints)
 """
 
 from __future__ import annotations
@@ -35,4 +36,5 @@ _image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "confluent-kafka>=2.4",
     "sentry-sdk>=2.0",
     "structlog>=24.0",
+    "fastapi>=0.110",
 )

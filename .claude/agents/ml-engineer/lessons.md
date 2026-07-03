@@ -1,5 +1,35 @@
 # ml-engineer lessons
 
+- **2026-07-03 / FOLLOW-485** · Implemented ADR-0016: replaced the Redpanda poller dispatch path for
+  description.requested and listing-embed-seed.requested with direct authenticated Modal HTTPS web
+  endpoints (`@modal.fastapi_endpoint(method="POST")`, modal 1.4.2 — the older `@modal.web_endpoint`
+  is deprecated). Added `description_requested_endpoint` (generate_description.py) and
+  `listing_embed_seed_requested_endpoint` + a new spawn()-able `process_embed_seed_request` job
+  (consume_embed_seed_requests.py, since the old poller processed listings inline with no existing
+  per-event function to `.spawn()`). Both endpoints validate the same REQUIRED_FIELDS contract the
+  retired pollers used and check `Authorization: Bearer <INTERNAL_API_SECRET>` via
+  `hmac.compare_digest`. control-plane `publishDescriptionRequested` and
+  `publishListingEmbeddingSeed` now POST the raw event JSON (no more Redpanda `records` envelope) to
+  `MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` with the Bearer header; unset URL is a fail-open
+  no-op (Sentry breadcrumb, not capture); non-2xx/network failures capture to Sentry with
+  `kind: 'dispatch_failed', sink: 'modal'`. Pollers kept, just unscheduled (`schedule=` removed),
+  with a top comment marking them superseded-but-retained. · **Where real vs placeholder logic was a
+  judgment call:** pytest can't easily instantiate Modal's actual FastAPI-wrapped route (the
+  `@app.function` decorator returns an opaque `modal.Function`, not the raw callable), so the unit
+  tests call the plain async endpoint function directly via the existing modal-stub convention
+  (`conftest.py`'s stub makes `@modal.fastapi_endpoint` a no-op passthrough). To verify this
+  actually matches Modal's real runtime behavior (not just my assumption), I additionally ran a
+  manual sanity script against the REAL installed `modal` package: extracted
+  `endpoint_fn.get_raw_f()` and mounted it into a genuine `fastapi.FastAPI().add_api_route(...)` —
+  the exact mechanism Modal's own `_runtime/asgi.py::magic_fastapi_app` uses internally — and drove
+  it through `TestClient` for all four cases (401/401/400/202). This is evidence, not a guess, that
+  the endpoint will behave correctly once actually deployed via `modal deploy`. · **Guardrail I'd
+  add:** when adding a Modal `@modal.fastapi_endpoint`, the PR should include (or CI should run) the
+  `get_raw_f()` + `fastapi.TestClient` sanity check as a permanent test, not just an ad-hoc one-off
+  verification — today nothing catches a future dependency-injection regression (e.g. someone
+  switching `Body(...)` for a raw `Request` param) because the stubbed unit tests bypass FastAPI's
+  parameter binding entirely.
+
 - **2026-06-30 / FOLLOW-437** · Fixed two Modal deployment bugs (ESC-034): (1) `main.py` was an
   empty placeholder that registered zero functions on `modal deploy main.py`; (2) both
   `generate_description.py` and `consume_embed_seed_requests.py` each independently declared

@@ -79,60 +79,62 @@ const QueryParamsSchema = z.object({
   locale: z.enum(['en', 'pl', 'es']).default('en'),
 });
 
-// ─── Redpanda publisher ────────────────────────────────────────────────────────
+// ─── Modal direct-invocation publisher (ADR-0016 / FOLLOW-485) ────────────────
 
 /**
- * Publish a `description.requested` event to the Redpanda topic `estalara.descriptions`.
+ * Dispatch a `description.requested` event directly to the Modal HTTPS web endpoint.
+ *
+ * ADR-0016: the prod Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/
+ * Dedicated-only (out of pilot budget), so the description pipeline no longer
+ * publishes to Redpanda. Instead this POSTs the same event JSON straight to the
+ * Modal function's authenticated web endpoint (`MODAL_DESCRIPTION_URL`), which
+ * validates the payload and calls `generate_description.spawn(event)`.
  *
  * Fire-and-forget — this function returns immediately and never throws. The HTTP
- * request runs in the background; both HTTP-rejection (non-ok response) and network
- * failures are captured to Sentry with distinguishing `kind` tags
- * (`insert_rejected` vs `network`) so dashboards can group them (FOLLOW-426 /
- * Rule K.2 fire-and-forget amendment).
+ * request runs in the background; both a non-2xx response and a network failure
+ * are captured to Sentry with `kind: 'dispatch_failed'` so dashboards can group
+ * them (FOLLOW-426 / Rule K.2 fire-and-forget amendment, carried over to Modal).
  *
- * The ml-engineer's Modal job subscribes to this topic and generates the description
- * asynchronously, then writes the result to Upstash Redis.
- *
- * @param event - The event payload to publish.
+ * @param event - The event payload to dispatch.
  */
 function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<void> {
   // Returns a promise so callers can register it via after() and guarantee
   // completion after the response is sent (FOLLOW-431 / ESC-033).
-  const redpandaUrl = process.env.REDPANDA_REST_URL;
-  if (!redpandaUrl) return Promise.resolve();
-
-  const topic = process.env.REDPANDA_TOPIC_DESCRIPTIONS ?? 'estalara.descriptions';
-  const url = `${redpandaUrl.replace(/\/$/, '')}/topics/${topic}`;
-
-  const username = process.env.REDPANDA_REST_USERNAME;
-  const password = process.env.REDPANDA_REST_PASSWORD;
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/vnd.kafka.json.v2+json',
-    Accept: 'application/vnd.kafka.v2+json',
-  };
-  if (username && password) {
-    headers.Authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  const modalUrl = process.env.MODAL_DESCRIPTION_URL;
+  if (!modalUrl) {
+    const msg = '[description] MODAL_DESCRIPTION_URL not set — skipping Modal dispatch (ADR-0016)';
+    console.warn(msg);
+    Sentry.addBreadcrumb({
+      category: 'description',
+      message: msg,
+      level: 'warning',
+    });
+    return Promise.resolve();
   }
 
+  const internalApiSecret = process.env.INTERNAL_API_SECRET ?? '';
+
   // Returns the fetch promise so after() can await it for guaranteed completion
-  // (FOLLOW-431 / ESC-033). Both failure paths capture to Sentry so a Redpanda
-  // auth / missing-topic / quota rejection is observable (FOLLOW-426 /
-  // Rule K.2 fire-and-forget amendment). The .catch() handler covers network-layer
+  // (FOLLOW-431 / ESC-033). Both failure paths capture to Sentry so a Modal
+  // auth / validation / outage rejection is observable (FOLLOW-426 / Rule K.2
+  // fire-and-forget amendment). The .catch() handler covers network-layer
   // failures; the .then() handler covers HTTP-level rejections (4xx/5xx), which
   // `fetch` resolves (not rejects) and a bare `.catch()` would be blind to.
-  return fetch(url, {
+  return fetch(modalUrl, {
     method: 'POST',
-    headers,
-    body: JSON.stringify({ records: [{ value: event }] }),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${internalApiSecret}`,
+    },
+    body: JSON.stringify(event),
   })
     .then(async (res) => {
       if (!res.ok) {
         const body = await res.text().catch(() => '<unreadable body>');
-        const msg = `[description] Redpanda publish rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+        const msg = `[description] Modal dispatch rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
         console.error(msg);
         Sentry.captureException(new Error(msg), {
-          tags: { area: 'description', sink: 'redpanda', kind: 'insert_rejected' },
+          tags: { area: 'description', sink: 'modal', kind: 'dispatch_failed' },
           extra: { status: res.status },
         });
       }
@@ -140,9 +142,9 @@ function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<
     .catch((err: unknown) => {
       // Network-layer failure (DNS, connection refused, malformed URL, timeout).
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('[description] Redpanda publish failed:', msg);
+      console.error('[description] Modal dispatch failed:', msg);
       Sentry.captureException(err instanceof Error ? err : new Error(msg), {
-        tags: { area: 'description', sink: 'redpanda', kind: 'network' },
+        tags: { area: 'description', sink: 'modal', kind: 'dispatch_failed' },
       });
     });
 }

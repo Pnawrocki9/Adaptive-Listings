@@ -1,13 +1,13 @@
 """
 Modal async job: generate archetype-adapted listing description AND headline using Sonnet 4.6.
 
-Flow:
-  1. A description.requested event arrives on the estalara.descriptions Redpanda topic.
-  2. consume_description_requests() polls the topic every 30s and calls
-     generate_description.spawn() for each message (fire-and-forget).
-  3. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
+Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
+  1. The control-plane POSTs a description.requested event directly to
+     description_requested_endpoint (an authenticated Modal web endpoint below),
+     which validates the payload and calls generate_description.spawn() (fire-and-forget).
+  2. generate_description() calls Anthropic Sonnet 4.6 directly (NOT via llm-gateway.ts —
      this is Python, independent of the TypeScript control-plane).
-  4. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
+  3. On success, writes {"text": "...", "headline": "...", "generated_at": "<ISO>",
      "verified_facts_used": [...]} as a JSON string to Upstash Redis at key
      desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model}
      (for DEMO MODE: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:demo:{model}).
@@ -28,6 +28,11 @@ Flow:
      (Master Design §E.7.2 step 2) as a second chance.
   6. On empty description response or exception, does NOT write to Redis or Postgres;
      the next HTTP request will trigger another attempt (idempotent by design).
+
+Historical flow (pre-ADR-0016): a description.requested event arrived on the
+estalara.descriptions Redpanda topic and consume_description_requests() polled it every
+30s, calling generate_description.spawn() per message. That poller is retained below
+(unscheduled) for reference / possible Redpanda re-adoption at scale — see its docstring.
 
 v1.8 — adaptive-listing prompt (CEO 2026-06-01):
   Same anti-hallucination contract as v1.7.x — the Sonnet system prompt enforces a strict
@@ -97,6 +102,7 @@ Cost: ~$0.01–$0.03 per Sonnet 4.6 call for typical originals; bounded above by
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -109,6 +115,8 @@ from typing import Any
 
 import httpx
 import modal
+from fastapi import Body, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
@@ -1592,18 +1600,27 @@ def _write_to_postgres_cache(
 
 # ---------------------------------------------------------------------------
 # Redpanda consumer — polls estalara.descriptions topic every 30 seconds
+#
+# Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — retained for
+# reference / possible Redpanda re-adoption at scale; not scheduled. The prod
+# Redpanda cluster is Serverless, whose HTTP Proxy is BYOC/Dedicated-only (out of
+# pilot budget), so the control-plane now dispatches directly to
+# description_requested_endpoint below instead of publishing to this topic.
 # ---------------------------------------------------------------------------
 
 
 @app.function(
     image=_image,
     secrets=[modal.Secret.from_name("estalara-secrets")],
-    schedule=modal.Period(seconds=30),
     timeout=120,
 )
 def consume_description_requests() -> None:
     """
     Poll the estalara.descriptions Redpanda topic for description.requested events.
+
+    Superseded by ADR-0016 direct web endpoint (FOLLOW-485) — not scheduled (the
+    `schedule=modal.Period(seconds=30)` kwarg was removed from the decorator above).
+    Retained for reference / possible Redpanda re-adoption at scale.
 
     Reads messages during a 25-second window (leaving headroom within the 30s schedule),
     dispatches each valid message to generate_description.spawn() as a fire-and-forget call.
@@ -1698,3 +1715,83 @@ def consume_description_requests() -> None:
     finally:
         consumer.close()
         log.info("consume_description_requests.done dispatched=%d", dispatched)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0016 / FOLLOW-485 — direct Modal HTTPS web endpoint
+#
+# Replaces the Redpanda poller above as the description.requested dispatch path.
+# The prod Redpanda cluster is Serverless, whose HTTP Proxy (the REST endpoint
+# edge/serverless producers publish through) is BYOC/Dedicated-only (~$500/mo,
+# out of pilot budget), so the control-plane now POSTs the event JSON directly to
+# this authenticated endpoint instead of publishing to Redpanda.
+# ---------------------------------------------------------------------------
+
+
+def _valid_bearer(authorization: str | None) -> bool:
+    """
+    Validate an ``Authorization: Bearer <token>`` header against INTERNAL_API_SECRET.
+
+    Uses ``hmac.compare_digest`` for a constant-time comparison so response timing
+    cannot be used to guess the secret.
+
+    Args:
+        authorization: The raw ``Authorization`` header value, or None if absent.
+
+    Returns:
+        True when authorization is exactly ``Bearer <INTERNAL_API_SECRET>`` and the
+        secret is configured (non-empty). False on a missing header, wrong scheme,
+        empty token, or unset/empty secret (fails closed).
+    """
+    expected = os.environ.get("INTERNAL_API_SECRET", "")
+    if not expected or not authorization:
+        return False
+    scheme, _, token = authorization.partition(" ")
+    if scheme != "Bearer" or not token:
+        return False
+    return hmac.compare_digest(token, expected)
+
+
+@app.function(
+    image=_image,
+    secrets=[modal.Secret.from_name("estalara-secrets")],
+    timeout=30,
+)
+@modal.fastapi_endpoint(method="POST")
+async def description_requested_endpoint(
+    body: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """
+    POST — direct-invocation replacement for the estalara.descriptions Redpanda topic.
+
+    Validates the same payload shape consume_description_requests() validated
+    (REQUIRED_FIELDS, derived from the shared contract fixture — see module docstring),
+    then dispatches generate_description.spawn(body) fire-and-forget, mirroring the
+    poller's dispatch call above.
+
+    Auth: requires ``Authorization: Bearer <INTERNAL_API_SECRET>`` (constant-time
+    compare via _valid_bearer). INTERNAL_API_SECRET is read from the estalara-secrets
+    Modal secret — no REDPANDA_* environment variables are required by this endpoint.
+
+    Args:
+        body:          The description.requested event payload (same shape as before).
+        authorization: The raw Authorization header value.
+
+    Returns:
+        202 JSONResponse on accept (spawn dispatched).
+
+    Raises:
+        fastapi.HTTPException: 401 on a missing/invalid bearer token; 400 when
+            body is missing any REQUIRED_FIELDS key.
+    """
+    if not _valid_bearer(authorization):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    missing = REQUIRED_FIELDS - set(body.keys())
+    if missing:
+        raise HTTPException(status_code=400, detail=f"missing required fields: {sorted(missing)}")
+
+    # Fire-and-forget: spawn does not block; Modal manages concurrency.
+    generate_description.spawn(body)
+    return JSONResponse(status_code=202, content={"status": "accepted"})

@@ -6,7 +6,12 @@
  * bandit always has arms to sample on first request. — TICKET-AB-006.
  *
  * Auth: admin-only. Requires `x-admin-secret` header matching `ADMIN_API_SECRET`
- * env var. Not exposed to tenant dashboard users.
+ * env var, compared constant-time via `secretEquals`. Not exposed to tenant
+ * dashboard users.
+ *
+ * Fail-closed (FOLLOW-456 / audit F-13): when `ADMIN_API_SECRET` is unset, every
+ * request is rejected with 401 — previously an unset secret skipped auth
+ * entirely, allowing anyone to create tenants.
  *
  * @module apps/control-plane/src/app/api/tenants/route
  */
@@ -16,6 +21,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient, tenants } from '@estalara/db';
 import { seedBanditWeightsForTenant } from '@/lib/bandit-seed';
+import { secretEquals } from '@/lib/secret-compare';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
 
@@ -46,12 +52,13 @@ const CreateTenantSchema = z.object({
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Admin auth ────────────────────────────────────────────────────────────
+  // Fail CLOSED: an unset ADMIN_API_SECRET denies every request rather than
+  // skipping auth (FOLLOW-456 / audit F-13 — the prior `if (adminSecret)` guard
+  // let anyone create tenants when the secret was simply not configured).
   const adminSecret = process.env.ADMIN_API_SECRET;
-  if (adminSecret) {
-    const provided = req.headers.get('x-admin-secret');
-    if (provided !== adminSecret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const provided = req.headers.get('x-admin-secret');
+  if (!adminSecret || !provided || !secretEquals(adminSecret, provided)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // ── Parse body ────────────────────────────────────────────────────────────

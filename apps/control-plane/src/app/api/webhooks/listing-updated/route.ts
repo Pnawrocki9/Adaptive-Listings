@@ -16,8 +16,12 @@
  * DEL on non-existent keys is a Redis no-op.
  *
  * Auth:
- *   Requires the `X-Webhook-Secret` header to match LISTING_UPDATED_WEBHOOK_SECRET env var.
- *   When the env var is unset (dev/test), auth is skipped.
+ *   Requires the `X-Webhook-Secret` header to match `LISTING_UPDATED_WEBHOOK_SECRET`
+ *   env var, compared constant-time via `secretEquals`.
+ *
+ *   Fail-closed (FOLLOW-456 / audit F-13): when the env var is unset, every
+ *   request is rejected with 401 — previously an unset secret skipped auth
+ *   entirely, allowing anyone to invalidate any tenant's description cache.
  *
  * @module apps/control-plane/src/app/api/webhooks/listing-updated/route
  */
@@ -27,6 +31,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { invalidateDescriptionCache } from '@/lib/description-cache';
 import { invalidatePgDescriptionCache } from '@/lib/description-pg-cache';
+import { secretEquals } from '@/lib/secret-compare';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -50,12 +55,12 @@ const ListingUpdatedBodySchema = z.object({
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Webhook secret auth ───────────────────────────────────────────────────
+  // Fail CLOSED: an unset LISTING_UPDATED_WEBHOOK_SECRET denies every request
+  // rather than skipping auth (FOLLOW-456 / audit F-13).
   const expectedSecret = process.env.LISTING_UPDATED_WEBHOOK_SECRET;
-  if (expectedSecret) {
-    const providedSecret = req.headers.get('X-Webhook-Secret');
-    if (providedSecret !== expectedSecret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const providedSecret = req.headers.get('X-Webhook-Secret');
+  if (!expectedSecret || !providedSecret || !secretEquals(expectedSecret, providedSecret)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // ── Parse body ────────────────────────────────────────────────────────────

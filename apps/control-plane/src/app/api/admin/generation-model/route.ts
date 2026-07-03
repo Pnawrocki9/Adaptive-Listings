@@ -7,17 +7,31 @@
  *
  * Auth:
  *   GET — agency:admin or agency:owner minimum (global admin setting, not viewer-visible)
- *   PUT — agency:admin or agency:owner (mutating; production-grade JWT via requireTenantAccess)
+ *   PUT — Estalara platform staff ONLY (FOLLOW-456 / audit F-13). This setting is
+ *         PLATFORM-GLOBAL (no per-tenant override — locked CEO decision 2026-06-01),
+ *         so a tenant's own `agency:admin`/`agency:owner` role must NOT be sufficient
+ *         to mutate it: that would let any tenant's admin change the model every other
+ *         tenant is generated with. Gated via `verifyTracerAdminAuth` (same staff gate
+ *         as the K.3.6 tracer admin routes / FOLLOW-267) — Bearer <ADMIN_API_SECRET>
+ *         (constant-time compare) OR a verified Supabase JWT/SSR session with
+ *         `estalara_staff: true`.
  *
  * Auth mechanism:
- *   - requireTenantAccess() verifies the Supabase JWT (HMAC-signed RS256),
- *     extracts agency_role from verified claims, and throws on invalid/expired tokens.
- *   - Tenant claims come from the JWT — never from the request body.
- *   - The PUT body carries only the new model value; all authorization comes from JWT claims.
+ *   - GET: requireTenantAccess() verifies the Supabase JWT (HMAC-signed), extracts
+ *     agency_role from verified claims, and throws on invalid/expired tokens.
+ *   - PUT: verifyTracerAdminAuth() requires either a constant-time-compared
+ *     ADMIN_API_SECRET Bearer token, or a verified Supabase JWT/session whose
+ *     app_metadata/claims carry `estalara_staff: true`. Tenant `agency:admin` JWTs
+ *     are explicitly rejected (403) by this guard, not merely unauthenticated (401).
+ *   - The PUT body carries only the new model value; all authorization comes from
+ *     the verified staff auth above, never from the request body.
  *
  * Replay defence:
- *   - Supabase JWTs carry an `exp` claim (typ HS256 HMAC). requireTenantAccess verifies
- *     expiry on every call. Replaying an expired token fails.
+ *   - Supabase JWTs carry an `exp` claim (HMAC-signed). Both requireTenantAccess and
+ *     verifyTracerAdminAuth's JWT path verify expiry on every call. Replaying an
+ *     expired token fails. ADMIN_API_SECRET is a long-lived bearer secret; replay
+ *     protection is TLS + the operation being idempotent (setting the same model
+ *     twice is a no-op state-wise).
  *
  * Allow-list validation:
  *   - model must be one of ALLOWED_GENERATION_MODELS; setGlobalGenerationModel rejects
@@ -42,6 +56,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireTenantAccess } from '@estalara/auth';
+import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 import {
   getGlobalGenerationModel,
   setGlobalGenerationModel,
@@ -143,27 +158,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * PUT /api/admin/generation-model
  *
  * Updates the global default LLM generation model.
- * Requires agency:admin or agency:owner role.
+ *
+ * Estalara platform staff ONLY (FOLLOW-456 / audit F-13) — this is a
+ * platform-global setting with no per-tenant override, so a tenant's own
+ * agency:admin/agency:owner role must not authorize the write. See
+ * `verifyTracerAdminAuth` (`@/lib/tracer-auth`) for the accepted auth paths.
  *
  * Body: { "generation_model": "claude-sonnet-4-6" }
  */
 export async function PUT(req: NextRequest): Promise<NextResponse> {
-  let claims;
-  try {
-    claims = await requireTenantAccess(req, 'agency:admin');
-  } catch {
+  const authResult = await verifyTracerAdminAuth(req);
+  if (!authResult.ok) {
     return NextResponse.json(
-      {
-        error: {
-          code: 'unauthorized',
-          message: 'Valid JWT with agency:admin or agency:owner role is required',
-        },
-      },
-      { status: 401 },
+      { error: { code: 'unauthorized', message: authResult.message } },
+      { status: authResult.status },
     );
   }
 
-  const updatedBy = claims.sub;
+  // `claims` is null on the ADMIN_API_SECRET path (no user identity attached to
+  // a shared secret) and a real Supabase user id on the staff_jwt/staff_session
+  // paths. `updated_by` is a nullable uuid column — null is safe (never a
+  // sentinel string in a uuid column, per CONVENTIONS_PATCH.md).
+  const updatedBy = authResult.claims?.sub ?? null;
 
   let rawBody: unknown;
   try {

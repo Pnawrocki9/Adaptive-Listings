@@ -1378,6 +1378,46 @@ silently degrades to "RLS disabled" for the exact same request that now successf
 
 ---
 
+## 2026-07-02 / FOLLOW-456
+
+**What I built:** Closed 3 tenant-isolation holes from the 2026-07-01 audit (F-13): (1)
+`POST /api/demo/sessions/:id/revoke` derived `tenant_id` from a caller-supplied `x-tenant-id` header
+(spoofable, real mutation) — switched to `requireTenantAccess` (matching sibling POST/GET in the
+same file) and made a _mismatching_ `x-tenant-id` header an explicit 403 rather than silently
+ignoring it, so spoofing attempts are observable instead of blending into an ambiguous 404. (2)
+`PUT /api/admin/generation-model` let any tenant `agency:admin` mutate the platform-global
+generation model — switched to `verifyTracerAdminAuth` (`@/lib/tracer-auth`, already built for the
+K.3.6 tracer admin routes/FOLLOW-267): `ADMIN_API_SECRET` Bearer (constant-time) OR a verified
+`estalara_staff:true` JWT/session; a tenant JWT now gets 403, not silent success. `updated_by`
+(nullable uuid) is `claims?.sub ?? null` — never a sentinel string. (3) `/api/tenants`,
+`/api/webhooks/listing-updated`, `/api/internal/description-cache` all had the
+`if (secret) { if (provided !== secret) reject }` fail-open bug — an unset secret env skipped auth
+entirely. Extracted one shared `secretEquals()` helper (`@/lib/secret-compare.ts`,
+SHA-256-hash-then-`timingSafeEqual` — sidesteps the equal-length-buffer requirement without a
+raw-length branch that would itself leak a timing signal) and used it in all three, now fail-closed
+(401) when the secret is unset.
+
+**Wiring/auth/fail-loud risks I weighed:** (a) For the demo-revoke 403 vs 404 question: the ticket's
+AC4 explicitly wants a 403 test for spoofed `x-tenant-id`, but ignoring the header entirely would
+naturally produce 404 (row not found under the real tenant scope) — chose to explicitly compare and
+reject on mismatch so the signal is unambiguous and testable, without ever using the header for
+actual authorization. (b) For `/api/tenants`, fail-closed means the endpoint 401s in any environment
+where `ADMIN_API_SECRET` isn't set in Vercel — I confirmed via `docs/ops/DOPPLER_SECRETS_MATRIX.md`
+and the still-open `FOLLOW-155` stub that this secret is _supposed_ to be configured in prod but
+could not confirm it currently is; flagged as an operational follow-up rather than silently
+softening the fix, since fail-open here is exactly the audited vulnerability. (c) Left
+`GET /api/admin/generation-model` on `requireTenantAccess('agency:admin')` unchanged — the audit
+finding and AC only named the _write_ path; changing the read gate too would have been an
+unrequested scope expansion.
+
+**A guardrail I'd add:** When a route reads a secret env var with the pattern
+`if (secret) { if (provided !== secret) return 401 }`, that shape itself is the fail-open bug (an
+unset `secret` short-circuits the inner check) — worth a grep-based CI lint rule flagging any
+`if (\`process.env\` truthiness gate) { ...!== comparison }` shape around an auth check, so this
+class of bug can't reappear on a 4th route.
+
+---
+
 ## 2026-07-02 / FOLLOW-459
 
 **What I built:** Moved the ClickHouse `events` insert in `apps/ingest/src/handlers/events.ts` off

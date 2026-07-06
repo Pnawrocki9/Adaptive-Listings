@@ -26,8 +26,18 @@ Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
      Failure to write Postgres is logged but non-fatal: the Redis entry is unaffected,
      and the next Redis-hit request still triggers the read path's own async backfill
      (Master Design §E.7.2 step 2) as a second chance.
-  6. On empty description response or exception, does NOT write to Redis or Postgres;
-     the next HTTP request will trigger another attempt (idempotent by design).
+  6. On a genuine failure (empty description response, exception, contract violation, or
+     truncation), does NOT write to Redis or Postgres; the next HTTP request will trigger
+     another attempt (idempotent by design).
+  7. FOLLOW-465 / audit F-18: on a NEUTRAL archetype-fit verdict (ADR-0010), WRITES a
+     negative-cache marker to both Redis and Postgres — `text`/`description` "" and
+     `headline` None, tagged `verdict: "NEUTRAL"` — using the SAME cache_key shape a FIT
+     write uses. This is DELIBERATELY different from step 6: before this fix, NEUTRAL was
+     handled identically to a genuine failure (write nothing), so every repeat request for
+     the same (tenant, listing, archetype, locale, model) was a permanent cache MISS that
+     re-enqueued another (uncapped) Sonnet 4.6 call, forever. The read path
+     (GET /api/adapt/description) recognises the NEUTRAL marker and serves
+     template_fallback without re-enqueuing.
 
 Historical flow (pre-ADR-0016): a description.requested event arrived on the
 estalara.descriptions Redpanda topic and consume_description_requests() polled it every
@@ -56,8 +66,9 @@ v1.9 — archetype-fit gate (ADR-0010):
   optional <neutral_reason> snake_case code for analytics). We parse that verdict
   (_parse_adaptation_verdict): on NEUTRAL we generate NO description (and therefore no
   headline) so the DOM stays in its neutral, unmodified state and the endpoint serves the
-  agent's original copy — handled exactly like an empty response (no Redis write, idempotent
-  retry-safe). On FIT we strip the verdict tag and parse the body + <verified_facts_used> as
+  agent's original copy. FOLLOW-465 / audit F-18: NEUTRAL is now NEGATIVE-CACHED (a marker
+  row/key is written) rather than handled like an empty response — see generate_description()
+  step 7 above. On FIT we strip the verdict tag and parse the body + <verified_facts_used> as
   before. A missing verdict tag defaults to FIT (backward-safe). The anti-hallucination fact
   whitelist and the length policy are unchanged from v1.8.
 
@@ -309,7 +320,7 @@ def generate_description(event: dict[str, Any]) -> None:
     )
 
     try:
-        description, verified_facts = _generate_with_sonnet(
+        description, verified_facts, verdict = _generate_with_sonnet(
             archetype=archetype,
             copy_template=copy_template,
             listing_context=listing_context,
@@ -324,17 +335,49 @@ def generate_description(event: dict[str, Any]) -> None:
             listing_id,
             str(exc),
         )
-        # Do not write to Redis; next request triggers a new attempt.
+        # Genuine failure — do not write to Redis/Postgres; next request retries.
+        return
+
+    # FOLLOW-465 / audit F-18: a NEUTRAL verdict (ADR-0010 archetype-fit gate declined
+    # to adapt) is NEGATIVE-CACHED — branched separately from a genuine failure. Before
+    # this fix, NEUTRAL and a genuine failure were both handled by "write nothing",
+    # making them indistinguishable to the cache: every repeat request for the same
+    # (tenant, listing, archetype, locale, model) was a permanent MISS that re-enqueued
+    # another (uncapped) Sonnet 4.6 call, forever. Writing a NEUTRAL marker with the
+    # SAME cache_key shape a FIT write uses means the existing listing.updated
+    # invalidation (Redis SCAN desc:{tenant}:{listing}:* wildcard delete, Postgres
+    # tenant+listing WHERE) covers it for free.
+    if verdict == "NEUTRAL":
+        _write_to_redis(cache_key, "", [], None, verdict="NEUTRAL")
+        _write_to_postgres_cache(
+            tenant_id=tenant_id,
+            listing_id=listing_id,
+            archetype=archetype,
+            locale=locale,
+            description="",
+            headline=None,
+            model=model,
+            verdict="NEUTRAL",
+        )
+        log.info(
+            "generate_description.neutral_verdict_negative_cached tenant=%s listing=%s "
+            "archetype=%s cache_key=%s",
+            tenant_id,
+            listing_id,
+            archetype,
+            cache_key,
+        )
         return
 
     if not description:
+        # Genuine failure (verdict == "FAILED"): do not write to Redis/Postgres —
+        # unchanged behaviour, the next request retries from scratch.
         log.warning(
             "generate_description.empty_response tenant=%s listing=%s archetype=%s",
             tenant_id,
             listing_id,
             archetype,
         )
-        # Do not write to Redis.
         return
 
     # ADR-0009 / FOLLOW-169: generate a per-listing headline alongside the description.
@@ -988,7 +1031,7 @@ def _generate_with_sonnet(
     locale: str = "en",
     original_description: str = "",
     model: str = _DEFAULT_GENERATION_MODEL,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], str]:
     """
     Call the Anthropic generation model to produce a buyer-adapted listing description.
 
@@ -1022,14 +1065,25 @@ def _generate_with_sonnet(
                               workhorse; callers pass an allow-listed override (DEMO-001).
 
     Returns:
-        Tuple of (description_text, verified_facts_used).
+        Tuple of (description_text, verified_facts_used, verdict).
 
         - description_text is the body of the description, stripped of the audit
-          block. Empty string if Anthropic returns no content; in that case the
-          caller MUST NOT write to Redis.
+          block. Empty string when verdict is not "FIT".
         - verified_facts_used is a list of strings parsed from the
-          <verified_facts_used> JSON block. Empty list if the block is missing
-          or malformed.
+          <verified_facts_used> JSON block. Empty list if the block is missing,
+          malformed, or verdict is not "FIT".
+        - verdict (FOLLOW-465) tells the caller WHY description_text is empty, so it
+          can branch the NEGATIVE-CACHE case (verdict == "NEUTRAL") separately from a
+          genuine failure (verdict == "FAILED"). One of:
+            - "FIT"     — a description was generated successfully.
+            - "NEUTRAL" — the archetype-fit gate (ADR-0010) declined to adapt this
+              (listing, archetype) pair. The caller MUST negative-cache this outcome
+              (write a NEUTRAL marker to Redis + Postgres) so a repeat request
+              short-circuits instead of re-enqueuing another Sonnet call forever.
+            - "FAILED"  — a genuine failure (empty raw response, a FOLLOW-188
+              contract violation, or a FOLLOW-162 truncation). The caller MUST NOT
+              write anything — the next request retries from scratch (unchanged
+              behaviour, idempotent by design).
 
     Raises:
         anthropic.APIError: on API-level errors (rate limit, auth, server error).
@@ -1096,13 +1150,18 @@ def _generate_with_sonnet(
         raw_text = response.content[0].text
 
     if not raw_text.strip():
-        return "", []
+        # Genuine failure (verdict "FAILED"): the caller must write nothing so the
+        # next request retries from scratch (unchanged, idempotent-by-design behaviour).
+        return "", [], "FAILED"
 
     # v1.9 archetype-fit gate (ADR-0010): read the <adaptation_verdict> first.
     # NEUTRAL = the property fundamentally does not fit this archetype → produce NO
-    # description so the DOM stays neutral (caller skips the Redis write, the endpoint
-    # serves the agent's original copy). This also suppresses the per-listing headline,
-    # because the caller early-returns on an empty description before _generate_headline.
+    # description so the DOM stays neutral. FOLLOW-465: this is now a DISTINCT
+    # outcome from a genuine failure (verdict "FAILED") — the caller negative-caches
+    # a NEUTRAL verdict (writes a NEUTRAL marker to Redis + Postgres) instead of
+    # writing nothing, so a repeat request short-circuits rather than re-enqueuing
+    # another Sonnet call forever. This also suppresses the per-listing headline,
+    # because the caller returns before _generate_headline on both NEUTRAL and FAILED.
     verdict, neutral_reason, body = _parse_adaptation_verdict(raw_text)
     if verdict == "NEUTRAL":
         log.info(
@@ -1110,14 +1169,15 @@ def _generate_with_sonnet(
             archetype,
             neutral_reason or "(none)",
         )
-        return "", []
+        return "", [], "NEUTRAL"
 
     description, facts = _parse_verified_facts(body)
 
     # FOLLOW-188: leak/format fail-safe — second line of defence on the FIT path.
     # After _parse_verified_facts strips the audit block, guard the body against residual
     # XML tags, markdown formatting, and leaked reasoning text before storing anything.
-    # Any violation → suppress (return "", []) so no bad copy reaches Redis or the user.
+    # Any violation → suppress (genuine failure, verdict "FAILED") so no bad copy
+    # reaches Redis or the user.
     contract_violation = _body_violates_contract(description)
     if contract_violation:
         log.warning(
@@ -1125,16 +1185,16 @@ def _generate_with_sonnet(
             archetype,
             contract_violation,
         )
-        return "", []
+        return "", [], "FAILED"
 
     # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
     # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation
     # tells: stop_reason == "max_tokens", or an opening "<verified_facts_used" tag that
     # _parse_verified_facts could not close (so it survived in the description). Either
     # way the response is untrustworthy — never store a description with a dangling audit
-    # tag or an empty audit trail for what should be an audited generation. Returning
-    # ("", []) makes the caller skip the Redis write so the next request retries
-    # (idempotent by design), now with a larger max_tokens via _max_tokens_for.
+    # tag or an empty audit trail for what should be an audited generation. This is a
+    # genuine failure (verdict "FAILED"): the caller writes nothing so the next request
+    # retries (idempotent by design), now with a larger max_tokens via _max_tokens_for.
     stop_reason = getattr(response, "stop_reason", None)
     if stop_reason == "max_tokens" or "<verified_facts_used" in description:
         log.warning(
@@ -1143,9 +1203,9 @@ def _generate_with_sonnet(
             stop_reason,
             max_tokens,
         )
-        return "", []
+        return "", [], "FAILED"
 
-    return description, facts
+    return description, facts, "FIT"
 
 
 # ---------------------------------------------------------------------------
@@ -1448,6 +1508,7 @@ def _write_to_redis(
     description: str,
     verified_facts: list[str] | None = None,
     headline: str | None = None,
+    verdict: str | None = None,
 ) -> None:
     """
     Write a generated description (and optional headline) to Upstash Redis via
@@ -1482,11 +1543,16 @@ def _write_to_redis(
         cache_key:      Redis key, e.g. "desc:tenant123:listing456:yield_hunter:en:claude-sonnet-4-6"
                         (format: desc:{tenant_id}:{listing_id}:{archetype}:{locale}:{model};
                         FOLLOW-161 / FOLLOW-169 DG-1 — includes :{model} suffix).
-        description:    AI-generated description text.
+        description:    AI-generated description text. '' for a FOLLOW-465 NEUTRAL
+                        negative-cache marker (verdict="NEUTRAL").
         verified_facts: Audit list of facts Sonnet self-reported as used.
                         Defaults to an empty list when absent.
         headline:       AI-generated per-listing headline (ADR-0009). None when headline
                         generation failed or was skipped — written as null in the JSON.
+        verdict:        Archetype-fit verdict (ADR-0010 / FOLLOW-465): "FIT" or "NEUTRAL".
+                        Omitted (None, the default) from the JSON payload when absent —
+                        every entry written before FOLLOW-465 lacks the key and the read
+                        path treats an absent key as the implicit "FIT".
 
     Raises:
         httpx.HTTPStatusError: if the Upstash REST API returns a non-2xx response.
@@ -1494,14 +1560,15 @@ def _write_to_redis(
     redis_url: str = os.environ["UPSTASH_REDIS_URL"].rstrip("/")
     redis_token: str = os.environ["UPSTASH_REDIS_TOKEN"]
 
-    payload_value = json.dumps(
-        {
-            "text": description,
-            "headline": headline,  # None serialises to JSON null
-            "generated_at": datetime.now(UTC).isoformat(),
-            "verified_facts_used": verified_facts if verified_facts is not None else [],
-        }
-    )
+    payload_dict: dict[str, Any] = {
+        "text": description,
+        "headline": headline,  # None serialises to JSON null
+        "generated_at": datetime.now(UTC).isoformat(),
+        "verified_facts_used": verified_facts if verified_facts is not None else [],
+    }
+    if verdict is not None:
+        payload_dict["verdict"] = verdict
+    payload_value = json.dumps(payload_dict)
 
     # Upstash pipeline: POST /pipeline with [[cmd, ...args], ...]
     # Docs: https://upstash.com/docs/redis/features/restapi#pipeline
@@ -1538,6 +1605,7 @@ def _write_to_postgres_cache(
     description: str,
     headline: str | None,
     model: str,
+    verdict: str | None = None,
 ) -> None:
     """
     POST a generated description (and headline) to the control-plane's internal
@@ -1555,9 +1623,14 @@ def _write_to_postgres_cache(
         listing_id:  Listing external identifier.
         archetype:   Archetype ID (e.g. "yield_hunter").
         locale:      Locale code ("en" | "pl" | "es").
-        description: AI-generated description text.
+        description: AI-generated description text. '' for a FOLLOW-465 NEUTRAL
+                     negative-cache marker (verdict="NEUTRAL").
         headline:    AI-generated headline, or None.
         model:       Anthropic model id that generated this entry.
+        verdict:     Archetype-fit verdict (ADR-0010 / FOLLOW-465): "FIT" or "NEUTRAL".
+                     Omitted (None, the default) from the POST body when absent — the
+                     internal endpoint's Zod schema treats an absent `verdict` as the
+                     implicit "FIT", matching every pre-FOLLOW-465 caller.
     """
     base_url = os.environ.get("DESCRIPTION_CACHE_API_BASE_URL")
     secret = os.environ.get("DESCRIPTION_CACHE_INTERNAL_SECRET")
@@ -1570,6 +1643,18 @@ def _write_to_postgres_cache(
         )
         return
 
+    payload: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "listing_id": listing_id,
+        "archetype": archetype,
+        "locale": locale,
+        "description": description,
+        "headline": headline,
+        "model": model,
+    }
+    if verdict is not None:
+        payload["verdict"] = verdict
+
     try:
         response = httpx.post(
             f"{base_url.rstrip('/')}/api/internal/description-cache",
@@ -1577,15 +1662,7 @@ def _write_to_postgres_cache(
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {secret}",
             },
-            json={
-                "tenant_id": tenant_id,
-                "listing_id": listing_id,
-                "archetype": archetype,
-                "locale": locale,
-                "description": description,
-                "headline": headline,
-                "model": model,
-            },
+            json=payload,
             timeout=10.0,
         )
         response.raise_for_status()

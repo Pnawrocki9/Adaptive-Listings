@@ -257,18 +257,59 @@ export const DescriptionRequestedEventSchema = z.object({
 
 export type DescriptionRequestedEvent = z.infer<typeof DescriptionRequestedEventSchema>;
 
-/** Upstash Redis value shape stored by the Modal job. */
-export const DescriptionCacheValueSchema = z.object({
-  /** The AI-generated description text. */
-  text: z.string().min(1),
-  /**
-   * Per-listing LLM-generated headline (ADR-0009).
-   * Null when headline generation failed; absent in entries written before ADR-0009.
-   * Optional so existing cache entries without the field remain valid.
-   */
-  headline: z.string().nullable().optional(),
-  /** ISO 8601 timestamp of generation. */
-  generated_at: z.string().datetime(),
-});
+/**
+ * The archetype-fit gate verdict (ADR-0010) attached to a cache entry.
+ *
+ * - `FIT`     — a description was generated; `text`/`description` is non-empty.
+ * - `NEUTRAL` — the archetype-fit gate declined to adapt this (listing, archetype)
+ *   pair (FOLLOW-465 negative cache). `text`/`description` is `''` and `headline`
+ *   is `null`. A consumer that sees `NEUTRAL` must serve `template_fallback` and
+ *   must NOT re-enqueue a new Sonnet generation.
+ *
+ * Absent/undefined on a cache entry means the implicit `FIT` verdict — every row
+ * written before FOLLOW-465 lacks this field and is treated as FIT for full
+ * backward compatibility.
+ */
+export const DescriptionVerdictSchema = z.enum(['FIT', 'NEUTRAL']);
+export type DescriptionVerdict = z.infer<typeof DescriptionVerdictSchema>;
+
+/**
+ * Upstash Redis value shape stored by the Modal job.
+ *
+ * FOLLOW-465: `text` is normally non-empty, but a `NEUTRAL` verdict is a
+ * negative-cache marker whose `text` is deliberately `''` (no description was
+ * generated — the archetype-fit gate, ADR-0010, declined to adapt). The `.min(1)`
+ * constraint on `text` is therefore relaxed via `superRefine` to apply only when
+ * `verdict !== 'NEUTRAL'`, rather than overloading `''` as an undocumented silent
+ * sentinel for every caller.
+ */
+export const DescriptionCacheValueSchema = z
+  .object({
+    /** The AI-generated description text. `''` only when verdict is `NEUTRAL`. */
+    text: z.string(),
+    /**
+     * Per-listing LLM-generated headline (ADR-0009).
+     * Null when headline generation failed, when generation was skipped, or when
+     * verdict is `NEUTRAL`; absent in entries written before ADR-0009.
+     * Optional so existing cache entries without the field remain valid.
+     */
+    headline: z.string().nullable().optional(),
+    /** ISO 8601 timestamp of generation. */
+    generated_at: z.string().datetime(),
+    /** Archetype-fit verdict (ADR-0010 / FOLLOW-465). Absent ⇒ implicit `FIT`. */
+    verdict: DescriptionVerdictSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.verdict !== 'NEUTRAL' && val.text.length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_small,
+        minimum: 1,
+        type: 'string',
+        inclusive: true,
+        path: ['text'],
+        message: 'text must be non-empty unless verdict is NEUTRAL',
+      });
+    }
+  });
 
 export type DescriptionCacheValue = z.infer<typeof DescriptionCacheValueSchema>;

@@ -232,6 +232,13 @@
       "when": 1782987109000,
       "tag": "0032_dsr_verifications_attempt_count",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783355674493,
+      "tag": "0033_description_cache_verdict",
+      "breakpoints": true
     }
   ]
 }

@@ -140,3 +140,42 @@ describe('POST /api/internal/description-cache — validation + fail-loud', () =
     expect(body.written).toBe(false);
   });
 });
+
+describe('POST /api/internal/description-cache — FOLLOW-465 NEUTRAL negative cache', () => {
+  beforeEach(() => {
+    vi.stubEnv('DESCRIPTION_CACHE_INTERNAL_SECRET', SECRET);
+  });
+
+  it('rejects an empty description when verdict is absent (implicit FIT)', async () => {
+    const res = await POST(
+      makeRequest({ bearer: SECRET, body: { ...VALID_BODY, description: '' } }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an empty description when verdict is explicitly FIT', async () => {
+    const res = await POST(
+      makeRequest({ bearer: SECRET, body: { ...VALID_BODY, description: '', verdict: 'FIT' } }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts an empty description (negative-cache marker) when verdict is NEUTRAL', async () => {
+    const res = await POST(
+      makeRequest({
+        bearer: SECRET,
+        body: { ...VALID_BODY, description: '', headline: null, verdict: 'NEUTRAL' },
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await parseBody<{ written: boolean }>(res);
+    expect(body.written).toBe(true);
+  });
+
+  it('rejects an unknown verdict value', async () => {
+    const res = await POST(
+      makeRequest({ bearer: SECRET, body: { ...VALID_BODY, verdict: 'MAYBE' } }),
+    );
+    expect(res.status).toBe(400);
+  });
+});

@@ -33,6 +33,14 @@
  * waits for AI generation — it always returns immediately. The `ai_cached` source is used
  * once Redis is populated, regardless of whether the caller is the first or Nth after generation.
  *
+ * FOLLOW-465 (negative-cache NEUTRAL verdicts): a cache hit (Postgres or Redis) whose
+ * `verdict` is `'NEUTRAL'` (ADR-0010 archetype-fit gate declined to adapt) is served as
+ * `template_fallback` — the SAME shape a cold-start cache miss returns — and does NOT
+ * re-enqueue a Modal generation. This is an internal cache-shape distinction only: the
+ * wire contract never gains a new `source` value, and the SDK sees no change. Without
+ * this short-circuit a NEUTRAL verdict was indistinguishable on the wire from "nothing
+ * cached yet", so every repeat request re-triggered a fresh (uncapped) Sonnet 4.6 call.
+ *
  * @module apps/control-plane/src/app/api/adapt/description/route
  */
 
@@ -78,6 +86,25 @@ const QueryParamsSchema = z.object({
   ]),
   locale: z.enum(['en', 'pl', 'es']).default('en'),
 });
+
+type Locale = z.infer<typeof QueryParamsSchema>['locale'];
+
+/**
+ * Build the `template_fallback` response shape (FOLLOW-465).
+ *
+ * Used both for a genuine cache miss AND for a NEUTRAL negative-cache hit
+ * (ADR-0010 archetype-fit gate) — from the wire's perspective the two cases are
+ * identical: the caller gets the agent's static copy and no headline.
+ */
+function templateFallbackResponse(templateText: string, localeCode: Locale): DescriptionResponse {
+  return {
+    description: templateText,
+    headline: null,
+    source: 'template_fallback',
+    locale: localeCode,
+    generated_at: null,
+  };
+}
 
 // ─── Modal direct-invocation publisher (ADR-0016 / FOLLOW-485) ────────────────
 
@@ -277,6 +304,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // On a Postgres miss or DB error (fail-open) we fall through to Redis.
   const pgHit = await getPgCachedDescription(tenantId, listing_id, archetypeId, localeCode);
   if (pgHit !== null) {
+    // FOLLOW-465: a NEUTRAL row is a negative-cache marker (ADR-0010 archetype-fit
+    // gate declined to adapt this listing/archetype pair) — short-circuit to
+    // template_fallback (identical shape to a cache miss) and skip BOTH the Redis
+    // warm-up (nothing useful to warm — the Modal job already wrote the same
+    // NEUTRAL marker directly to Redis) and the Modal re-enqueue below. This is the
+    // fix: without it, a NEUTRAL verdict was indistinguishable from "nothing
+    // cached yet" and every repeat request re-triggered a fresh Sonnet 4.6 call.
+    if (pgHit.verdict === 'NEUTRAL') {
+      return NextResponse.json(templateFallbackResponse(templateText, localeCode), {
+        status: 200,
+      });
+    }
+
     // Postgres HIT — warm Redis with the cached value (fire-and-forget).
     // Build the Redis key the same way the Modal job would so the hot path is primed.
     const baseCacheKeyForWarm = descriptionKey(tenantId, listing_id, archetypeId, localeCode);
@@ -330,6 +370,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const cached = await getCachedDescription(cacheKey);
 
   if (cached !== null) {
+    // FOLLOW-465: a NEUTRAL row is a negative-cache marker — same short-circuit as
+    // the Postgres-hit branch above. Skip the Postgres backfill (the Modal job
+    // already wrote the NEUTRAL marker directly to Postgres — FOLLOW-460 path) and
+    // skip the Modal re-enqueue below.
+    if (cached.verdict === 'NEUTRAL') {
+      return NextResponse.json(templateFallbackResponse(templateText, localeCode), {
+        status: 200,
+      });
+    }
+
     // Redis HIT — return AI-generated description (and headline when present).
     // Async backfill to Postgres so the durable cache is populated (FOLLOW-204 §E.7.2 step 2).
     // FOLLOW-432 / Rule K.2: wrapped in afterResponse() so the Postgres write completes
@@ -425,12 +475,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).
-  const response: DescriptionResponse = {
-    description: templateText,
-    headline: null,
-    source: 'template_fallback',
-    locale: localeCode,
-    generated_at: null,
-  };
-  return NextResponse.json(response, { status: 200 });
+  return NextResponse.json(templateFallbackResponse(templateText, localeCode), { status: 200 });
 }

@@ -1,4 +1,48 @@
-# Status — 2026-07-02 (Sprint 22b OPEN — FOLLOW-452/453/454/455 DONE; FOLLOW-450/457 IN_PROGRESS)
+# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-462 IN_PROGRESS)
+
+## SESSION 10 (2026-07-06) — bookkeeping fix (FOLLOW-456/459 DONE flip), retro debt flagged, FOLLOW-462 delegated
+
+**Read state first (step 1):** `backlog/QUEUE.md` (START HERE resume note dated 2026-07-04),
+`backlog/ESCALATIONS.md` (4 `## OPEN` headers: 1 is the format template, 3 real — ESC-020/ESC-028/
+ESC-034, all previously confirmed non-blocking operator-action-pending, re-confirmed unchanged this
+session, no new escalation opened), `backlog/HANDOFFS.md`, `git log --oneline -20` (HEAD `b3c2de6`,
+matches the resume note exactly), `gh pr list --state open` → **0 open PRs** (nothing to validate
+this round).
+
+**Bookkeeping-hygiene finding (not a code defect):** cross-checked the resume note's own claim that
+PR #429 (FOLLOW-459) and PR #430 (FOLLOW-456) are merged against
+`gh pr view 429/430 --json state,mergedAt` → both `state: MERGED` confirmed (`2026-07-03T09:14:42Z`,
+`2026-07-03T09:42:22Z`). Their individual Sprint 22b ticket entries in QUEUE.md were still
+`status: READY_FOR_REVIEW` — never flipped to DONE by the prior session. Corrected both to `DONE`
+with real `completed_at` timestamps and `pr: ... (MERGED)` annotations. **Retro debt:**
+`backlog/RETROSPECTIVES.md` tops out at RETRO-152 (FOLLOW-450) — FOLLOW-456, FOLLOW-459, FOLLOW-460,
+and FOLLOW-485 are ALL merged with NO retrospective entry. This session's tool inventory
+(Read/Write/Edit/Bash only, no Task/Agent-spawn tool) could not itself invoke the
+`retrospective-analyst` subagent — flagged in QUEUE.md's new session-10 note for the next invocation
+with subagent-spawn capability to write RETRO-153..156 before any sprint-close activity.
+
+**Ticket delegated:** FOLLOW-462 (P2, data-engineer, table row: "ClickHouse, Redpanda, ETL,
+archetype pipeline, drift cron, DSR delete → data-engineer") — bind ClickHouse DSR `session_id` as a
+bound param instead of quote-only escaping, so a trailing backslash can't silently defeat an Art.17
+erasure DELETE. Chosen because: no P1 is READY in Sprint 22b (FOLLOW-471, the epic's P1 gate ticket,
+is `BACKLOG`, blocked on the full ticket list); among the READY P2 tail
+(461/462/463/464/465/466/473/474/467/468/469) FOLLOW-462 is the highest real-world-severity item — a
+live GDPR Art.17 compliance-erasure correctness bug, not hardening/cost/bundle cleanup. Flipped
+`READY → IN_PROGRESS`, `assigned_to: data-engineer`,
+`branch: data-engineer/FOLLOW-462-clickhouse-dsr-param-binding`. **This session could not itself run
+the worker subagent** (no Task tool) — only the QUEUE.md state change was performed; the actual
+isolated-worktree implementation must be run by an invocation with subagent-spawn capability, using
+this ticket's YAML block + `docs/MASTER_DESIGN.md` §Snapshot.1 + `CONVENTIONS_PATCH.md` + this note
+as context, per delegation protocol.
+
+IN_PROGRESS count: FOLLOW-462 + stale `TICKET-PILOT-001` (ancient, sdk-engineer,
+`TICKET-PILOT-001-pilot-launch-shadow`, started 2026-05-29 — still never cleared across 10 sessions;
+worth a hygiene pass to confirm it's genuinely dead or close it) = 2 (cap 3).
+
+**CI-check counter:** 0/5 (no PR opened this session, nothing to check). **Fix-iteration counter:**
+0/3.
+
+---
 
 ## SESSION 8 (2026-07-02) — recovered crashed session 7; FOLLOW-454/455 DONE + retros written, FOLLOW-450/457 delegated
 

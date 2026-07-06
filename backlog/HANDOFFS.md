@@ -3,6 +3,84 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-464 (ml-engineer) — folds FOLLOW-523, RETRO-162 P1 fast-follow
+
+**From:** pm-orchestrator (session 13 cont'd, RETRO-162 close-out) **To:** ml-engineer **Date:**
+2026-07-07 **Branch:** `ml-engineer/FOLLOW-464-model-key-pg-cache` (create as your FIRST action, off
+`main` at `d90cdfa` or later — branch-first per Rule AA; never commit to `main`).
+
+**Why this is P1 and why it's you (not the originally-filed backend-engineer):** FOLLOW-465 (which
+YOU just shipped, PR #463 / commit `5acc055`) negative-caches a NEUTRAL archetype-fit verdict. Its
+read-path short-circuit fires on the Postgres Step-1 read `getPgCachedDescription`, which per the
+long-known-open FOLLOW-464 bug omits `model` from its WHERE clause. RETRO-162 LG-1 verified in code
+that this turns a bounded stale-model quality bug into a cross-model CORRECTNESS regression: a
+NEUTRAL row written under model A now permanently suppresses generation under model B (and defeats
+the DEMO `override_model` preview) until `listing.updated`. You own this read path — hence the
+reassignment. FOLLOW-523 (the model-scoping fix) is FOLDED into this ticket.
+
+**The bug (verified, not guessed):**
+
+- `apps/control-plane/src/lib/description-pg-cache.ts:~103-111` — `getPgCachedDescription`'s WHERE
+  filters `tenantId, listingId, archetype, locale, invalidatedAt IS NULL` and takes
+  `ORDER BY generatedAt DESC LIMIT 1` — **no `model`**. It even SELECTs `model` (and now `verdict`)
+  but never filters on it.
+- `apps/control-plane/src/app/api/adapt/description/route.ts` — the Postgres Step-1 hit branch
+  (~`:305→314/318`, the FIT `ai_cached` return AND the FOLLOW-465 `verdict==='NEUTRAL'`
+  short-circuit) runs BEFORE the model-scoped Redis Step-2 (`:365-369`, key `:{model}` /
+  `:demo:{model}`). So the model-blind Step-1 wins first.
+
+**Required fix (AC in QUEUE.md FOLLOW-464, incl. the folded FOLLOW-523 items):**
+
+1. Add `model` to the `getPgCachedDescription` WHERE clause so a (tenant,listing,archetype,locale,
+   **model**) request only matches a row written under that same model. This fixes BOTH the FIT read
+   (original F-15) and the FOLLOW-465 NEUTRAL short-circuit (RETRO-162 LG-1) in one place, since
+   both go through this reader.
+2. Confirm the signature already threads `model` in (the route passes it / the Redis key already has
+   it) — if `getPgCachedDescription` doesn't currently receive `model`, add the param and pass it
+   from the route's Step-1 call. Keep the change surgical.
+3. **Demo path:** ensure a non-demo NEUTRAL row does not short-circuit a DEMO `override_model`
+   request. Check how the demo model is represented in the cache key/`model` column (`:demo:{model}`
+   in Redis) and mirror that discrimination on the pg read so the demo preview always re-dispatches
+   past a non-demo NEUTRAL. If the pg cache doesn't distinguish demo at all, state that and scope
+   the guard to "demo requests bypass the pg NEUTRAL short-circuit" — do NOT silently let a prod
+   NEUTRAL leak into the demo preview.
+4. **Out of scope (leave alone):** the P3 items RETRO-162 filed separately —
+   `listPgDescriptionCache` verdict wiring (FOLLOW-524), shared-enum binding (FOLLOW-525), NEUTRAL
+   metrics (FOLLOW-526), worktree autosave (FOLLOW-527). Surgical changes only.
+
+**Tests (AC):**
+
+- Model-switch cache-busting on the pg path for the FIT case (a FIT row under model A does not
+  satisfy a model-B request).
+- **RETRO-162 LG-1 regression guard:** a NEUTRAL row written under model A does NOT short-circuit a
+  model-B request (nor a DEMO `override_model` request) — assert model B re-dispatches /
+  re-generates (the `publishDescriptionRequested` spy IS called for model B) instead of serving
+  `template_fallback`.
+- Reuse the FOLLOW-465 test harness (`route.follow465.test.ts`) patterns for the NEUTRAL/dispatch
+  spies.
+
+**Files most likely touched:** `apps/control-plane/src/lib/description-pg-cache.ts`,
+`apps/control-plane/src/app/api/adapt/description/route.ts` (+ its test files). Likely NO Python /
+migration / schema change (the `verdict` column + `model` column already exist post-FOLLOW-465).
+
+**Read before starting:** `docs/MASTER_DESIGN.md` §Snapshot.1; `CONVENTIONS_PATCH.md` (Rule AA);
+`backlog/RETROSPECTIVES.md` RETRO-162 §4a LG-1; the FOLLOW-465 diff (`git show 5acc055`) so you
+build on the read-path shape you just shipped.
+
+**Validation the orchestrator will require before READY_FOR_REVIEW:**
+
+- `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` all green + the
+  FOLLOW-474 gate `pnpm --filter control-plane build`.
+- CI green on every real gate (`gh pr checks <pr> --watch`, then confirm the only reds are the
+  documented pre-existing "Rule I — wired-or-dead" baseline — name them, prove they're not new).
+- Runtime-wiring: paste the `getPgCachedDescription` WHERE now including `model`, AND a test proving
+  the NEUTRAL cross-model re-dispatch.
+
+**Open a PR when done; do not merge.** Report status, PR link, CI result back to me (the
+orchestrator) — do NOT edit `backlog/QUEUE.md` yourself (single-writer).
+
+---
+
 ## Delegation brief — FOLLOW-465 (ml-engineer)
 
 **From:** pm-orchestrator (session 13) **To:** ml-engineer **Date:** 2026-07-06T00:00:00Z

@@ -13917,3 +13917,106 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     to fail-open.
   - The lint passes only once FOLLOW-519 (dsr/mutation-poll) is migrated to secretEquals. cross_ref:
     [FOLLOW-484, FOLLOW-519, RETRO-153, RETRO-158]
+
+- id: FOLLOW-523 title: >- Make the NEUTRAL negative-cache short-circuit model-scoped (and
+  demo-aware); co-schedule with / fold into FOLLOW-464 source_retro: RETRO-162 source_ticket:
+  FOLLOW-465 recommended_sprint: 22b recommended_agent: ml-engineer + backend-engineer priority: P1
+  estimated_hours: 2 promoted_to_queue: true status: FOLDED_INTO_FOLLOW-464 folded_note: >-
+  2026-07-07 (pm-orchestrator, RETRO-162 close-out): FOLDED into FOLLOW-464 (promoted P2→P1) per the
+  retro's own recommendation — its model-scoping AC + NEUTRAL-cross-model regression-guard test are
+  now FOLLOW-464 AC items. Do NOT promote FOLLOW-523 as a separate queue ticket; track under
+  FOLLOW-464. scope: >- FOLLOW-465 negative-caches a NEUTRAL archetype-fit verdict, but the read
+  path's Postgres Step-1 lookup (getPgCachedDescription in
+  apps/control-plane/src/lib/description-pg-cache.ts) omits `model` from its WHERE clause (the
+  KNOWN-open FOLLOW-464 bug) and returns the most-recent row for (tenant,listing,archetype,locale)
+  regardless of model. Step-1 runs BEFORE the model-scoped Redis Step-2 and returns on a NEUTRAL hit
+  (route.ts:305->314). Consequence: a NEUTRAL written under model A permanently short-circuits
+  (serves template_fallback, skips generation for) a request under model B — including a DEMO
+  override_model preview (DEMO-001) and a post-model-upgrade global model — until listing.updated
+  invalidation. This is a behavioral REGRESSION vs pre-FOLLOW-465 (a model switch used to re-attempt
+  via the model-scoped Redis miss + re-dispatch, and a better model could return FIT). FOLLOW-465
+  thus amplifies FOLLOW-464 from a stale-model quality bug into a cross-model correctness bug and
+  defeats the demo switcher for NEUTRAL listings. Fix: add `model` to the getPgCachedDescription
+  WHERE (the FOLLOW-464 fix) so BOTH the FIT read and the NEUTRAL short-circuit are model-scoped,
+  and ensure the demo override_model path is not short-circuited by a non-demo NEUTRAL row. ac:
+  - getPgCachedDescription filters by `model` so a NEUTRAL (and FIT) row for one model does not
+    satisfy a request for a different model.
+  - A test asserts a NEUTRAL row written under model A does NOT short-circuit a request under model
+    B (nor a DEMO override_model request) — model B re-dispatches / re-generates.
+  - The PR-message / docstring framing of the leak scope as (tenant,listing,archetype,locale,model)
+    is corrected to be accurate for the Postgres read (DG-2).
+  - Recommend PM promote FOLLOW-464 to P1 and fold this AC into it (or land jointly). cross_ref:
+    [FOLLOW-464, FOLLOW-465, RETRO-162]
+
+- id: FOLLOW-524 title: >- Wire the NEUTRAL sentinel into the dashboard descriptions-history reader
+  when FOLLOW-204 AC5 is built (listPgDescriptionCache must SELECT + label verdict) source_retro:
+  RETRO-162 source_ticket: FOLLOW-465 recommended_sprint: backlog recommended_agent:
+  backend-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-465
+  writes a NEW sentinel row shape to description_cache_persistent (description='', headline=NULL,
+  verdict='NEUTRAL'). The hot read path (getPgCachedDescription) handles it, but the secondary
+  reader listPgDescriptionCache (apps/control-plane/src/lib/description-pg-cache.ts:233 — the
+  FOLLOW-204 AC5 descriptions-history reader) does NOT SELECT `verdict`, so it would render NEUTRAL
+  markers as blank/failed-description history rows. Currently LATENT: listPgDescriptionCache has
+  ZERO non-test callers (the AC5 page was never built). This is the FOLLOW-097->114->127->141
+  sentinel-render half-wire class caught one hop early. When the AC5 page is built,
+  listPgDescriptionCache must SELECT `verdict` and the UI must label/filter NEUTRAL marker rows. ac:
+  - listPgDescriptionCache SELECTs `verdict` and returns it to callers.
+  - The AC5 descriptions-history UI labels or filters NEUTRAL (archetype-fit-declined) rows so they
+    are not shown as empty/failed descriptions.
+  - A test covers a NEUTRAL row appearing in the history list with the correct label/filtering.
+    cross_ref: [FOLLOW-465, FOLLOW-204, RETRO-162]
+
+- id: FOLLOW-525 title: >- Bind the four hand-rolled verdict enums to the shared DescriptionVerdict
+  type + document the persisted FIT|NEUTRAL vs transient FAILED split source_retro: RETRO-162
+  source_ticket: FOLLOW-465 recommended_sprint: backlog recommended_agent: ml-engineer priority: P3
+  estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-465 added the canonical
+  DescriptionVerdictSchema / DescriptionVerdict to packages/shared, but no consumer imports it:
+  PgDescriptionCacheHit.verdict hand-rolls 'FIT'|'NEUTRAL' (description-pg-cache.ts:41), the
+  internal /api/internal/description-cache BodySchema re-declares z.enum(['FIT','NEUTRAL']), the
+  route compares a string literal, and the Python job uses "FIT"/"NEUTRAL"/"FAILED" literals. The
+  shared enum is source-of-truth in name only; a future 3rd persisted verdict would drift across
+  four sites. Also the deliberate asymmetry — FAILED exists ONLY in Python (transient, never
+  persisted) while the shared/DB enum is FIT|NEUTRAL — is undocumented. Import the shared type at
+  the TS sites and document the split. ac:
+  - PgDescriptionCacheHit.verdict, the internal BodySchema, and the route reference the shared
+    DescriptionVerdict / DescriptionVerdictSchema rather than re-declaring the literals.
+  - A comment (shared schema + Python job) documents persisted=FIT|NEUTRAL, transient=FAILED (never
+    written to Redis/Postgres). cross_ref: [FOLLOW-465, RETRO-162]
+
+- id: FOLLOW-526 title: >- Make the NEUTRAL negative-cache effectiveness observable
+  (metric/breadcrumb on write + read short-circuit, not just log.info) + real-getCachedDescription
+  NEUTRAL test source_retro: RETRO-162 source_ticket: FOLLOW-465 recommended_sprint: next
+  recommended_agent: ml-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >-
+  The whole point of F-18 is a Sonnet cost reduction, yet the NEUTRAL negative-cache WRITE is
+  log.info-only (generate_description.py:361 "generate_description.neutral_verdict_negative_cached")
+  and the read-path NEUTRAL short-circuit (route.ts, both hit branches) emits nothing. So neither
+  the cost saved nor a REGRESSION (re-spend returning — e.g. the FOLLOW-523 model interaction or a
+  deploy-order race) is observable in prod. Emit a counter/metric (or Sentry breadcrumb) on the
+  NEUTRAL write and the read short-circuit, tagged so ops can see negative-cache hit-rate. Also add
+  the TG-1 coverage gap: a test that drives the REAL getCachedDescription (not a mocked return) with
+  a NEUTRAL/empty-text value and asserts verdict surfaces + text:'' is tolerated. Same "log is not
+  observability" family as RETRO-156/159/160/161 (HELD from rule-promotion — the vehicle is this
+  per-surface follow-up). ac:
+  - A counter/metric or Sentry breadcrumb fires on the NEUTRAL negative-cache write (Modal) and the
+    read-path NEUTRAL short-circuit (control-plane), tagged for negative-cache hit-rate.
+  - A test drives the real getCachedDescription with a NEUTRAL value and asserts verdict + text:''
+    handling.
+  - No behavior change beyond the added signal. cross_ref: [FOLLOW-465, RETRO-156, RETRO-159,
+    RETRO-160, RETRO-161, RETRO-162]
+
+- id: FOLLOW-527 title: >- Process safeguard: periodic WIP auto-commit in agent worktrees so a
+  pre-commit terminal crash does not lose completed worker output source_retro: RETRO-162
+  source_ticket: FOLLOW-465 recommended_sprint: backlog recommended_agent: devops-engineer +
+  pm-orchestrator priority: P3 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-465 was
+  fully implemented, then the terminal crashed BEFORE commit/push/PR; a resumed session recovered
+  the intact uncommitted worktree diff and shipped it — a near-total-loss of completed worker output
+  that only an intact worktree averted. Introduce a periodic WIP auto-commit (or autosave/stash) in
+  the .claude/worktrees agent worktrees (e.g. a timer/hook that
+  `git add -A && git commit -m "wip: autosave" --no-verify` on a cadence, or an editor-level
+  autosave) so a crash before the worker's own commit does not discard the work. Keep it out of the
+  PR history (squash/reset the wip commits before opening the PR). ac:
+  - A mechanism periodically persists uncommitted worktree changes so a terminal/agent crash before
+    the worker's explicit commit does not lose the work.
+  - The wip commits are excluded from the final PR (reset/squashed) so they do not pollute history.
+  - Documented in the agent workflow so workers/PM know the recovery path. cross_ref: [FOLLOW-465,
+    RETRO-162]

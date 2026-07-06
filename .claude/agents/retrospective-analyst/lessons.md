@@ -2118,3 +2118,40 @@
   whenever the PR's provenance (not just its diff) reveals a workflow footgun. Filed FOLLOW-448;
   held at count 1 (no prior corpus instance — grepped checkout-b/uncommitted/wrong-branch/stalled →
   none). If a second stranded-work-on-main episode appears, promote a branch-first Rule.
+
+## 2026-07-06 · RETRO-162 (FOLLOW-465 — negative-cache NEUTRAL verdicts, audit F-18)
+
+- **A finding I almost missed and why:** the P1 was NOT in the diff — it was in the INTERACTION
+  between the diff and an ADJACENT open ticket (FOLLOW-464). The PR's Redis key comment says
+  `:{model}` and its tests pass, so on the diff alone the negative cache looks model-correct. The
+  bug only appears when you trace WHICH read fires FIRST: Postgres Step-1 (`getPgCachedDescription`,
+  no model filter — the open FOLLOW-464 bug) returns the NEUTRAL row BEFORE the model-scoped Redis
+  Step-2 is ever consulted. A negative cache AMPLIFIES a pre-existing cache-key-scoping bug from a
+  quality bug (serve wrong-model description) into a correctness bug (suppress re-generation across
+  models + break the demo switcher). Lesson: when a PR ADDS a cache/short-circuit, always trace the
+  FULL read-precedence order and check the FIRST hop's key scoping against the write key — and
+  ALWAYS read the deferred sibling ticket the PR names, because "we shipped X over Y" often means X
+  now depends on Y's bug.
+- **An axis/chain I had to trace twice:** the model axis. First pass I accepted "Redis key includes
+  model ⇒ model-scoped." Second pass (reading route.ts:305 vs :365) showed Step-1 PG precedes and
+  ignores model — reversing the verdict. Also the demo axis: `getPgCachedDescription` takes the same
+  4 args regardless of `demoActive`, so a non-demo NEUTRAL defeats a DEMO override_model preview —
+  only visible by reading the arg list, not the happy-path test.
+- **A meta-pattern in how gaps recur across agents:** the FOLLOW-097→141 sentinel-render class
+  showed up AGAIN — a new marker row (verdict='NEUTRAL', description='') handled by the hot read but
+  NOT by the secondary table reader (`listPgDescriptionCache`). Caught it ONE HOP EARLY this time
+  (the render consumer isn't built yet — listPgDescriptionCache is currently dead). The grep
+  discipline "who ELSE reads this table/key?" is what surfaces these; the diff never shows the
+  unwired reader.
+- **My OWN blind spot (process, count 2 — arming a Rule):** the crash-before-commit near-loss is the
+  SECOND provenance-footgun episode I've logged (RETRO-146 was stranded-work-on-main; this is
+  work-lost-to-crash-because-never-committed). Different mechanism, same class: "the PR's
+  provenance, not its diff, reveals a workflow footgun." Filed FOLLOW-527 (periodic WIP autosave in
+  worktrees). Still distinct enough from RETRO-146's branch-first issue that I held both at count 1
+  of their own sub-shapes — but "worktree/commit-hygiene footguns" is now a standing provenance axis
+  I check on every retro regardless of the diff.
+- **Rule-promotion restraint I'm proud of:** the "log is not observability" family is at ≥2 prior
+  numbered retros (156/159/160/161) and I had a fresh sighting (DG-1, cache-effectiveness metric) —
+  but those retros DELIBERATELY held it as heterogeneous with a per-surface follow-up as the
+  vehicle. Promoting would contradict the corpus's own accumulated reasoning. Held; filed FOLLOW-526
+  instead. Consistency with prior held-verdicts > count-mechanical promotion.

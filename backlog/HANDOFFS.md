@@ -3,6 +3,98 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-466 (backend-engineer)
+
+**From:** pm-orchestrator (session 12) **To:** backend-engineer **Date:** 2026-07-06T00:00:00Z
+**Branch:** `backend-engineer/FOLLOW-466-feedback-hmac-replay-protection` (branch off `main`, tip
+`a704516`). Delegation-table row used: "ingest worker, control-plane, decision-api, Postgres/RLS,
+auth, onboarding HTTP, billing, webhooks" → backend-engineer.
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-466` — "Add replay protection to feedback HMAC + unify
+secret comparisons on timingSafeEqual (F-21)". P2, depends_on `FOLLOW-450` (DONE, verified in
+QUEUE.md). Source: 2026-07-01 audit finding F-21 (`audit report §5.5`), ADR-0015.
+
+**Read first (in order):** `docs/MASTER_DESIGN.md` §Snapshot.1, `docs/ops/OPERATING_PRINCIPLES.md`,
+`docs/AGENT_WORKFLOW.md`, `CONVENTIONS_PATCH.md` (esp. Rule K.1/K.2 on parity + fail-loud
+observability, and the general secret-comparison conventions — grep `timingSafeEqual` /
+`constantTimeEqual` for the established pattern before inventing a new one), this brief.
+
+**Problem (independently re-confirmed by pm-orchestrator, not just trusting the audit stub):**
+
+1. `apps/control-plane/src/app/api/adapt/feedback/route.ts` computes
+   `expectedHex = await hmacSha256Hex(bearerToken, rawBody)` (HMAC-SHA256 over the raw body only —
+   no timestamp, no nonce) and compares with `constantTimeEqual` (already timing-safe — that half of
+   F-21 is NOT broken here). Because the signature covers only `(key, body)`, any observer of a
+   single valid `(body, X-Estalara-Signature)` pair (e.g. a MITM on a non-TLS-terminated hop, a
+   logging pipeline, a compromised analytics proxy) can replay that exact POST indefinitely — each
+   replay re-invokes `updateArmAsync` (Thompson-sampling bandit alpha/beta update) and, if
+   `prediction_id` is present, re-invokes `upsertConversionLabelAsync`. This is a bounded but real
+   bandit-integrity issue (an attacker who captures one `converted:true` ping for an
+   under-performing variant can inflate its win-rate indefinitely).
+2. Two other secret-compared routes still use plain string equality instead of `timingSafeEqual`:
+   - `apps/control-plane/src/app/api/internal/retention/conversion-labels/route.ts:55` —
+     `return authHeader === \`Bearer ${secret}\`;` (CRON_SECRET)
+   - `apps/control-plane/src/app/api/canary/adaptation-writes/route.ts:91` — same pattern
+     (CRON_SECRET) Contrast with the already-correct pattern in
+     `apps/control-plane/src/lib/tracer-auth.ts` (uses `timingSafeEqual` from `crypto`) and
+     `apps/control-plane/src/app/api/webhooks/listing-updated/route.ts` (uses `secretEquals` from
+     `@/lib/secret-compare.ts`, itself `timingSafeEqual`-backed). Reuse one of those two existing
+     helpers — do not write a third comparison primitive.
+
+**Scope (per ticket AC — do not gold-plate beyond this):**
+
+- [ ] Feedback signature (`X-Estalara-Signature` on `POST /api/adapt/feedback`) covers a timestamp
+      with a bounded acceptance window; a replayed old `(body, sig)` pair outside the window is
+      rejected with 401. Decide and document the window (ADR-0015 doesn't specify one — a few
+      minutes is the conventional HMAC-freshness window; pick one, state the rationale in the PR,
+      escalate only if you believe this needs a product/compliance call, not because you're unsure
+      of a number). - **SDK wire-contract note:** the route's docstring says "SDK wire contract
+      (unchanged — no SDK re-deployment required)". Adding a timestamp requirement to the HMAC WILL
+      change the wire contract (the signed message must now include a timestamp the caller sends).
+      If the chosen approach requires an SDK change, that is a public-API-surface change per
+      CLAUDE.md's escalation rules ("public APIs... ingest event schema, decision API contract") —
+      STOP and write an ESCALATIONS.md entry (sequential ESC-NNN) rather than silently changing the
+      SDK→control-plane feedback contract. A design that adds the timestamp as a NEW header (e.g.
+      `X-Estalara-Timestamp`) folded into the HMAC message alongside the existing signature header,
+      with a documented graceful-degradation path for callers not yet sending it, may avoid a
+      breaking change — your call, but flag the tradeoff explicitly in the PR description either
+      way. - Optional nonce store (Redis, TTL'd) is explicitly marked optional in the ticket AC —
+      only add it if the timestamp window alone doesn't close the replay window to your and the
+      auto-verifier's satisfaction; don't over-build.
+- [ ] All shared-secret comparisons migrate to `timingSafeEqual` — concretely, fix the two
+      `CRON_SECRET` call sites named above (grep for other `===`/`!==` string secret comparisons
+      before declaring this AC done; the two named here are the ones independently found, but do
+      your own sweep since the audit finding says "INTERNAL_API_SECRET/CRON_SECRET/webhook" plural).
+- [ ] Test: a replayed ping outside the acceptance window is rejected (401), and a fresh ping inside
+      the window is accepted — cover both in `route.test.ts` (extend the existing suite, don't
+      duplicate it). Also add/extend a unit test for each `CRON_SECRET` route confirming
+      `timingSafeEqual` is actually exercised (not just imported).
+
+**Validation gates (non-negotiable, run all before opening the PR):**
+
+1. `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` — local, full monorepo.
+2. **FOLLOW-474 gate (mandatory for any `apps/control-plane` change):** run `next build` for
+   `apps/control-plane` specifically, not just `tsc --noEmit` / `vitest run` — RETRO-150 found
+   `next build`'s webpack import resolution catches defects the other two gates miss. If you're
+   working in a fresh git worktree, build `@estalara/{shared,db,auth,sdk}` BEFORE your first
+   lint/typecheck pass (worktree bootstrap note, same RETRO-150 finding).
+3. Push to the named branch, open the PR, then `gh pr checks <pr> --watch` — CI green is
+   non-negotiable; PM will independently re-run
+   `gh pr checks <pr> --json state,name | jq '[.[]|select(.state!="SUCCESS")]|length'` and expects
+   `0` for every real gate (pre-existing-red Rule I / Vercel / Python-test checks are the only
+   accepted non-zero per the standing CI-gate landscape note).
+4. Runtime-wiring: for the new timestamp/header (if added), grep for a non-test producer (SDK or
+   ops-caller emitting the header) AND a non-test consumer (the route reading/validating it) — paste
+   both in the PR description. For the `CRON_SECRET` fix, grep confirms the same route file is both
+   where the secret is read (producer = env) and where `timingSafeEqual` is invoked (consumer).
+5. Commit message: Conventional Commits, ticket ref `[FOLLOW-466]`, scope `control-plane`.
+
+**Do NOT:** touch `FOLLOW-464`/`FOLLOW-465`/`FOLLOW-491` (separate tickets, separate agents/no
+shared-tree hazard expected but don't preempt); do NOT flip `FEEDBACK_ENDPOINT_ENABLED` or any other
+operator-gated flag; do NOT silently change the SDK wire contract (see escalation note above).
+
+---
+
 ## Format
 
 ```markdown

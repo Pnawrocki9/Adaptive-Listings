@@ -1,4 +1,65 @@
-# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-513 IN_PROGRESS)
+# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-466 IN_PROGRESS)
+
+## SESSION 12 (2026-07-06) — FOLLOW-466 delegated (P2, backend-engineer, feedback-HMAC replay protection)
+
+**Read state first (step 1):** `backlog/QUEUE.md` (banner headed "resume 2026-07-06 (session 11)" at
+session start; corrected with a fresh superseding banner this session), `backlog/ESCALATIONS.md` (3
+real `## OPEN` entries re-read in full: ESC-020, ESC-028, ESC-034 — content unchanged since last
+confirmation, all previously-established non-blocking operator-action-pending per documented
+precedent; no new escalation opened, none block picking a ticket), `backlog/HANDOFFS.md`,
+`git log --oneline -20` (HEAD `a704516`, matches the launching context: FOLLOW-462/490/482/513/516
+all closed per prior sessions), `gh pr list --state open` → **0 open PRs** (nothing to validate this
+round — went straight to ticket selection).
+
+**Ticket picked:** FOLLOW-466 (P2, backend-engineer — replay protection on the `/api/adapt/feedback`
+HMAC + unify the two remaining plain-`===` `CRON_SECRET` comparisons onto `timingSafeEqual`).
+Considered against the other 3 fresh worker-implementable READY Sprint 22b candidates: FOLLOW-464
+(P2, backend, stale-Postgres-description-cache correctness, `depends_on FOLLOW-460` DONE),
+FOLLOW-465 (P2, ml-engineer, negative-cache NEUTRAL verdicts to stop Sonnet re-spend, no deps), and
+FOLLOW-491 (P2, backend, spoofable-header sweep on `/api/config` + `/api/audit`). Picked FOLLOW-466
+as the highest real-world-severity clean delegate: it is a security-integrity gap (a captured
+`(body, signature)` pair is replayable indefinitely, letting an observer inflate a bandit arm's
+measured win-rate) versus FOLLOW-464's pure cache-correctness bug and FOLLOW-465's cost-efficiency
+gap — both real but lower-severity than an auth/replay hole. `depends_on: [FOLLOW-450]` verified
+DONE in QUEUE.md before picking. Independently re-confirmed the finding in the repo (not just
+trusting the audit-report prose): read `apps/control-plane/src/app/api/adapt/feedback/route.ts` in
+full (HMAC covers `(key, body)` only, no timestamp/nonce, `constantTimeEqual` compare — so the
+_replay_ half of F-21 is live even though the _timing-safety_ half is already correct there);
+grepped `INTERNAL_API_SECRET|CRON_SECRET|WEBHOOK_SECRET|webhook` across `apps/control-plane/src` and
+found the two concrete plain-`===` `CRON_SECRET` call sites
+(`api/internal/retention/conversion-labels/route.ts:55`,
+`api/canary/adaptation-writes/route.ts:91`), confirming the second half of F-21 against
+`apps/control-plane/src/app/api/webhooks/listing-updated/route.ts` (already correct, uses
+`secretEquals`/`timingSafeEqual`) and `apps/control-plane/src/lib/tracer-auth.ts` (already correct)
+as the reference pattern to reuse.
+
+Promoted FOLLOW-466 in `backlog/QUEUE.md` (single writer): flipped `READY -> IN_PROGRESS`,
+`assigned_to: backend-engineer`, `started_at: 2026-07-06T00:00:00Z`,
+`branch: backend-engineer/FOLLOW-466-feedback-hmac-replay-protection`. Full delegation brief written
+to `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-466 (backend-engineer)"), including an explicit
+flag that adding a timestamp to the HMAC message may change the SDK→control-plane wire contract and,
+if so, MUST go through an ESCALATIONS.md entry per CLAUDE.md's public-API-surface rule rather than
+being silently shipped — left this call to the worker with instructions to escalate, not decide
+unilaterally. Delegation-table row used: "ingest worker, control-plane, decision-api, Postgres/RLS,
+auth, onboarding HTTP, billing, webhooks → backend-engineer".
+
+FOLLOW-464/465/491 remain `READY` for a future session pick (not started this session — only 1
+ticket picked, keeping IN_PROGRESS count at 1, well under the 3-concurrent cap). FOLLOW-471 (clean
+re-audit gate) confirmed still correctly `BACKLOG` — its `depends_on` list includes
+FOLLOW-464/465/466 among others, none yet DONE.
+
+**This session has no subagent-spawn tool** — only the QUEUE.md/HANDOFFS.md/STATUS.md state changes
+were performed; the main orchestrator must actually invoke the backend-engineer worker on the branch
+above using this ticket's YAML block, `docs/MASTER_DESIGN.md` §Snapshot.1, `CONVENTIONS_PATCH.md`,
+and the HANDOFFS.md brief as context.
+
+**CI-check counter:** 0/5 (no PR opened yet this session — nothing to validate). **Escalation
+ages:** ESC-020 open since 2026-06-06 (~30 days, operator/CTO-deploy-gated, non-blocking per
+established precedent); ESC-028 open since 2026-06-23 (~13 days, GH-secrets-provisioning,
+non-blocking); ESC-034 open since 2026-06-30 (~6 days, corrected 2026-07-06, operator go-live only,
+non-blocking).
+
+---
 
 ## SESSION 11 (2026-07-06) — FOLLOW-513 delegated (P1, backend-engineer, ingest Sentry-on-queue-path)
 

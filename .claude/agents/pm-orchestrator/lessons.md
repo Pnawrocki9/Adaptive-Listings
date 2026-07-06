@@ -1758,3 +1758,22 @@ independent occurrence, even if it references the same pattern by name.
   outside a required wrapper," always add an explicit AC line requiring the NEW test exercise the
   REAL default-export wiring (not a direct function call) — a wrapper fix validated only by calling
   the wrapped function directly can pass CI while remaining exactly as broken as before.
+
+- **Date / ticket:** 2026-07-06 — FOLLOW-466
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (FOLLOW-466).
+- **What validation caught (or missed):** Before delegating, independently re-read
+  `apps/adapt/feedback/route.ts` and grepped for `CRON_SECRET`/`INTERNAL_API_SECRET`/`webhook`
+  string comparisons rather than trusting the audit-report F-21 one-liner — confirmed the finding
+  splits into two genuinely distinct sub-issues (HMAC has no replay window at all vs. two call sites
+  still use plain `===`) and that most of the codebase already migrated to `timingSafeEqual`/
+  `constantTimeEqual` (so the AC's "all shared-secret comparisons" is narrower in practice than it
+  reads — only 2 stragglers). Flagged a real risk the ticket text doesn't call out: adding a
+  timestamp to the HMAC message is a wire-contract change to the SDK, which CLAUDE.md requires to go
+  through an escalation before shipping — wrote that trap explicitly into the delegation brief so
+  the worker doesn't silently ship a breaking SDK contract change under a P2 security-hardening
+  ticket.
+- **A delegation/validation rule I'd add:** When a ticket's AC says "all X migrate to Y," do the
+  sweep yourself before delegating and name the exact remaining call sites in the brief — it
+  prevents the worker from either under-scoping (missing a straggler) or over-scoping (needlessly
+  touching already-correct call sites) and gives the PM a concrete diff to check at validation time.

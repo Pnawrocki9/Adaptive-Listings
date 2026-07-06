@@ -128,7 +128,7 @@ def _run_job(event: dict[str, Any]) -> None:
     )
 
     try:
-        description, verified_facts = _generate_with_sonnet(
+        description, verified_facts, verdict = _generate_with_sonnet(
             archetype=archetype,
             copy_template=copy_template,
             listing_context=listing_context,
@@ -138,6 +138,22 @@ def _run_job(event: dict[str, Any]) -> None:
         )
     except Exception as exc:
         log.error("test_job.sonnet_error error=%s", str(exc))
+        return
+
+    # FOLLOW-465: mirrors generate_description() — a NEUTRAL verdict is negative-cached
+    # (branched separately from a genuine failure), not treated as "write nothing".
+    if verdict == "NEUTRAL":
+        _write_to_redis(cache_key, "", [], None, verdict="NEUTRAL")
+        _write_to_postgres_cache(
+            tenant_id=tenant_id,
+            listing_id=listing_id,
+            archetype=archetype,
+            locale=locale,
+            description="",
+            headline=None,
+            model=model,
+            verdict="NEUTRAL",
+        )
         return
 
     if not description:
@@ -603,7 +619,8 @@ def test_hallucination_resistance() -> None:
             locale="en",
         )
 
-    description, verified_facts = result
+    description, verified_facts, verdict = result
+    assert verdict == "FIT"
 
     forbidden_patterns = [
         r"\d+\.\d+%",
@@ -713,12 +730,13 @@ def test_truncated_max_tokens_response_returns_empty() -> None:
         resp.stop_reason = "max_tokens"
         mock_client.messages.create.return_value = resp
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             "yield_hunter", "", {}, "en", original_description="x"
         )
 
     assert description == ""
     assert facts == []
+    assert verdict == "FAILED"
 
 
 def test_dangling_audit_tag_returns_empty() -> None:
@@ -735,12 +753,13 @@ def test_dangling_audit_tag_returns_empty() -> None:
         resp.stop_reason = "end_turn"  # even if the API did not flag it, the open tag does
         mock_client.messages.create.return_value = resp
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             "yield_hunter", "", {}, "en", original_description="x"
         )
 
     assert description == ""
     assert facts == []
+    assert verdict == "FAILED"
 
 
 def test_truncated_response_no_redis_write(mock_redis_post: MagicMock) -> None:
@@ -1214,7 +1233,7 @@ def test_generate_with_sonnet_fit_returns_description() -> None:
         mock_client.messages.create.return_value = mock_response
         mock_anthropic_cls.return_value = mock_client
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             archetype="family_buyer",
             copy_template="",
             original_description="A 3-bed home in Marbella Old Town with a garden.",
@@ -1225,10 +1244,12 @@ def test_generate_with_sonnet_fit_returns_description() -> None:
     assert "<adaptation_verdict>" not in description
     assert "Marbella Old Town" in description
     assert "bedrooms: 3" in facts
+    assert verdict == "FIT"
 
 
 def test_generate_with_sonnet_neutral_returns_empty() -> None:
-    """A NEUTRAL verdict yields no description (caller skips the Redis write)."""
+    """A NEUTRAL verdict yields no description; verdict "NEUTRAL" tells the caller
+    to negative-cache this outcome (FOLLOW-465), distinct from a genuine failure."""
     mock_response = MagicMock()
     mock_response.stop_reason = "end_turn"
     mock_response.content = [
@@ -1245,7 +1266,7 @@ def test_generate_with_sonnet_neutral_returns_empty() -> None:
         mock_client.messages.create.return_value = mock_response
         mock_anthropic_cls.return_value = mock_client
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             archetype="family_buyer",
             copy_template="",
             original_description="A 2-bed 32nd-floor investment condo, no outdoor space.",
@@ -1255,6 +1276,156 @@ def test_generate_with_sonnet_neutral_returns_empty() -> None:
 
     assert description == ""
     assert facts == []
+    assert verdict == "NEUTRAL"
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-465 / audit F-18: NEUTRAL negative-cache — write side
+#
+# A NEUTRAL verdict must be written as a negative-cache marker (Redis + Postgres,
+# text/description "", headline None, verdict "NEUTRAL") — NOT treated as "write
+# nothing" like a genuine failure. This is what stops the perpetual Sonnet
+# re-spend a NEUTRAL verdict otherwise causes (every repeat request re-enqueuing
+# another Sonnet 4.6 call because a NEUTRAL row was indistinguishable from "never
+# generated").
+# ---------------------------------------------------------------------------
+
+
+def _neutral_sonnet_response() -> MagicMock:
+    resp = MagicMock()
+    resp.stop_reason = "end_turn"
+    resp.content = [
+        MagicMock(
+            text=(
+                "<adaptation_verdict>NEUTRAL</adaptation_verdict>\n"
+                "<neutral_reason>core_need_contradiction</neutral_reason>"
+            )
+        )
+    ]
+    return resp
+
+
+def test_neutral_verdict_writes_negative_cache_marker_to_redis(
+    mock_redis_post: MagicMock,
+) -> None:
+    """A NEUTRAL verdict WRITES to Redis (unlike a genuine failure) — an empty
+    text/'' marker tagged verdict='NEUTRAL', headline null, at the SAME cache_key
+    a FIT write would use."""
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _neutral_sonnet_response()
+
+        _run_job(_make_event())
+
+        # Redis IS written (the whole point of the fix) — exactly one call, no
+        # Postgres callback because DESCRIPTION_CACHE_API_BASE_URL is unset here.
+        mock_httpx.assert_called_once()
+        call_kwargs = mock_httpx.call_args
+        assert "/pipeline" in call_kwargs[0][0]
+
+        body = call_kwargs[1]["json"]
+        cmd = body[0]
+        assert cmd[0] == "SET"
+        assert cmd[1] == "desc:tenant-abc:listing-123:yield_hunter:en"
+
+        value = json.loads(cmd[2])
+        assert value["text"] == ""
+        assert value["headline"] is None
+        assert value["verdict"] == "NEUTRAL"
+
+
+def test_neutral_verdict_writes_negative_cache_marker_to_postgres(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A NEUTRAL verdict also POSTs a negative-cache marker to the Postgres internal
+    endpoint (description='', headline=null, verdict='NEUTRAL') — same shape as a
+    FIT write reaches the SAME (tenant, listing, archetype, locale) row, so the
+    existing listing.updated invalidation covers it for free."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post") as mock_httpx,
+    ):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+        mock_anthropic_cls.return_value = MagicMock(
+            messages=MagicMock(create=MagicMock(return_value=_neutral_sonnet_response()))
+        )
+
+        _run_job(_make_event())
+
+        # Two httpx.post calls: [0] Redis SET, [1] Postgres internal endpoint POST.
+        assert mock_httpx.call_count == 2
+
+        pg_call = mock_httpx.call_args_list[1]
+        assert pg_call[0][0] == "https://admin.estalara.test/api/internal/description-cache"
+        pg_body = pg_call[1]["json"]
+        assert pg_body["tenant_id"] == "tenant-abc"
+        assert pg_body["listing_id"] == "listing-123"
+        assert pg_body["archetype"] == "yield_hunter"
+        assert pg_body["locale"] == "en"
+        assert pg_body["description"] == ""
+        assert pg_body["headline"] is None
+        assert pg_body["verdict"] == "NEUTRAL"
+
+
+def test_generic_failure_still_writes_nothing_unlike_neutral(mock_redis_post: MagicMock) -> None:
+    """
+    Regression guard distinguishing the two "empty description" causes: a genuine
+    failure (empty Sonnet response) must still write NOTHING — only a NEUTRAL
+    verdict is negative-cached.
+    """
+    empty_block = MagicMock()
+    empty_block.text = ""
+    empty_response = MagicMock()
+    empty_response.content = [empty_block]
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = empty_response
+
+        _run_job(_make_event())
+
+        mock_httpx.assert_not_called()
+
+
+def test_neutral_verdict_end_to_end_via_production_job(mock_redis_post: MagicMock) -> None:
+    """
+    End-to-end regression guard against the production generate_description()
+    function (not the test-only _run_job replica) — proves the real job body
+    negative-caches a NEUTRAL verdict via a direct __wrapped__ call, bypassing the
+    Modal decorator (mirrors the pattern _run_job avoids Modal infra with).
+    """
+    from jobs.generate_description import generate_description
+
+    with (
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = _neutral_sonnet_response()
+
+        # Modal-decorated functions expose the raw function via .local() (Modal's
+        # synchronous local-invocation API) for testing without Modal infra.
+        generate_description.local(_make_event())
+
+        mock_httpx.assert_called_once()
+        cmd = mock_httpx.call_args[1]["json"][0]
+        value = json.loads(cmd[2])
+        assert value["verdict"] == "NEUTRAL"
+        assert value["text"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -1380,7 +1551,7 @@ def test_generate_with_sonnet_leak_marker_returns_empty() -> None:
         mock_cls.return_value = mock_client
         mock_client.messages.create.return_value = resp
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             archetype="yield_hunter",
             copy_template="",
             original_description="3-bed in Marbella Old Town with garden.",
@@ -1389,7 +1560,8 @@ def test_generate_with_sonnet_leak_marker_returns_empty() -> None:
         )
 
     assert description == ""
-    assert facts == [], "NEUTRAL after FOLLOW-188 should still return empty facts"
+    assert facts == [], "a leak-marker FIT body should still return empty facts"
+    assert verdict == "FAILED", "a contract violation is a genuine failure, not NEUTRAL"
 
 
 def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
@@ -1405,7 +1577,7 @@ def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
         mock_cls.return_value = mock_client
         mock_client.messages.create.return_value = resp
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             archetype="yield_hunter",
             copy_template="",
             original_description="3-bed in Marbella Old Town.",
@@ -1415,6 +1587,7 @@ def test_generate_with_sonnet_bold_markdown_returns_empty() -> None:
 
     assert description == ""
     assert facts == []
+    assert verdict == "FAILED"
 
 
 def test_generate_with_sonnet_contract_violation_no_redis_write(
@@ -1466,7 +1639,7 @@ def test_generate_with_sonnet_neutral_after_follow188_still_returns_empty() -> N
         mock_cls.return_value = mock_client
         mock_client.messages.create.return_value = mock_response
 
-        description, facts = _generate_with_sonnet(
+        description, facts, verdict = _generate_with_sonnet(
             archetype="family_buyer",
             copy_template="",
             original_description="A 2-bed investment condo.",
@@ -1476,6 +1649,7 @@ def test_generate_with_sonnet_neutral_after_follow188_still_returns_empty() -> N
 
     assert description == ""
     assert facts == []
+    assert verdict == "NEUTRAL"
 
 
 # ---------------------------------------------------------------------------

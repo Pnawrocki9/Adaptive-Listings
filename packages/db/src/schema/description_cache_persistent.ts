@@ -50,6 +50,19 @@ export const descriptionCachePersistent = pgTable(
     /** Anthropic model id that generated this entry, e.g. 'claude-sonnet-4-6'. */
     model: text('model').notNull(),
 
+    /**
+     * Archetype-fit gate verdict (ADR-0010 / FOLLOW-465). NULL on every row written
+     * before this column existed — readers treat NULL as the implicit 'FIT' verdict.
+     * 'NEUTRAL' marks a negative-cache row: the archetype-fit gate declined to adapt
+     * this (listing, archetype) pair, so `description` is '' and `headline` is NULL.
+     * The read path (GET /api/adapt/description) short-circuits a NEUTRAL row by
+     * serving template_fallback and skipping the Modal re-enqueue, instead of
+     * treating it as a genuine ai_cached row — this is what stops the perpetual
+     * Sonnet re-spend a NEUTRAL verdict previously caused (it was indistinguishable
+     * from a genuine generation failure, and both wrote nothing).
+     */
+    verdict: text('verdict'),
+
     /** When the AI generation completed. */
     generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
 

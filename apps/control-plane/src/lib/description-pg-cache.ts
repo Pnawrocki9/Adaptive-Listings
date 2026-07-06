@@ -33,6 +33,12 @@ export interface PgDescriptionCacheHit {
   headline: string | null;
   generatedAt: string; // ISO 8601 UTC
   model: string;
+  /**
+   * Archetype-fit verdict (ADR-0010 / FOLLOW-465). Always normalised to a concrete
+   * value here — a NULL `verdict` column (every row written before FOLLOW-465) is
+   * normalised to `'FIT'`, the implicit verdict for pre-existing rows.
+   */
+  verdict: 'FIT' | 'NEUTRAL';
 }
 
 // ─── Internal DB factory ──────────────────────────────────────────────────────
@@ -84,13 +90,14 @@ export async function getPgCachedDescription(
   try {
     const rows: Pick<
       DescriptionCachePersistent,
-      'description' | 'headline' | 'generatedAt' | 'model'
+      'description' | 'headline' | 'generatedAt' | 'model' | 'verdict'
     >[] = await db
       .select({
         description: descriptionCachePersistent.description,
         headline: descriptionCachePersistent.headline,
         generatedAt: descriptionCachePersistent.generatedAt,
         model: descriptionCachePersistent.model,
+        verdict: descriptionCachePersistent.verdict,
       })
       .from(descriptionCachePersistent)
       .where(
@@ -113,6 +120,8 @@ export async function getPgCachedDescription(
       headline: row.headline ?? null,
       generatedAt: toIso(row.generatedAt) ?? new Date().toISOString(),
       model: row.model,
+      // FOLLOW-465: NULL (every pre-existing row) normalises to the implicit 'FIT'.
+      verdict: row.verdict === 'NEUTRAL' ? 'NEUTRAL' : 'FIT',
     };
   } catch (err: unknown) {
     // Configured DB threw — log (observable) and fall through (K.2).

@@ -29,9 +29,15 @@
  *   listing_id  — Listing external identifier
  *   archetype   — Archetype ID (e.g. 'yield_hunter')
  *   locale      — Locale code ('en' | 'pl' | 'es')
- *   description — AI-generated description text
+ *   description — AI-generated description text. Only required to be non-empty when
+ *                 `verdict` is absent or `'FIT'` — a `'NEUTRAL'` negative-cache marker
+ *                 (FOLLOW-465) carries `''`.
  *   headline    — AI-generated headline (string | null)
  *   model       — Anthropic model id used
+ *   verdict     — Optional archetype-fit verdict (ADR-0010): `'FIT' | 'NEUTRAL'`.
+ *                 Absent ⇒ implicit `'FIT'` (full back-compat with every pre-FOLLOW-465
+ *                 caller). `'NEUTRAL'` negative-caches the archetype-fit gate's decision
+ *                 to decline adaptation so the read path stops re-enqueuing Sonnet.
  *
  * Responses:
  *   201 { written: true }
@@ -52,15 +58,34 @@ import { secretEquals } from '@/lib/secret-compare';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
-const BodySchema = z.object({
-  tenant_id: z.string().uuid(),
-  listing_id: z.string().min(1).max(256),
-  archetype: z.string().min(1).max(64),
-  locale: z.enum(['en', 'pl', 'es']),
-  description: z.string().min(1),
-  headline: z.string().max(200).nullable().optional(),
-  model: z.string().min(1).max(128),
-});
+const BodySchema = z
+  .object({
+    tenant_id: z.string().uuid(),
+    listing_id: z.string().min(1).max(256),
+    archetype: z.string().min(1).max(64),
+    locale: z.enum(['en', 'pl', 'es']),
+    description: z.string(),
+    headline: z.string().max(200).nullable().optional(),
+    model: z.string().min(1).max(128),
+    // FOLLOW-465: archetype-fit verdict (ADR-0010). Absent ⇒ implicit 'FIT'.
+    verdict: z.enum(['FIT', 'NEUTRAL']).optional(),
+  })
+  .superRefine((val, ctx) => {
+    // `description` must be non-empty UNLESS this is a NEUTRAL negative-cache marker
+    // (FOLLOW-465) — relaxing `.min(1)` unconditionally would let a genuine caller
+    // silently write an empty description; scoping the relaxation to verdict==='NEUTRAL'
+    // keeps '' from becoming an undocumented sentinel for every caller.
+    if (val.verdict !== 'NEUTRAL' && val.description.length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_small,
+        minimum: 1,
+        type: 'string',
+        inclusive: true,
+        path: ['description'],
+        message: 'description must be non-empty unless verdict is NEUTRAL',
+      });
+    }
+  });
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
@@ -104,7 +129,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { tenant_id, listing_id, archetype, locale, description, headline, model } = parsed.data;
+  const { tenant_id, listing_id, archetype, locale, description, headline, model, verdict } =
+    parsed.data;
 
   // ── Write to Postgres permanent cache ─────────────────────────────────────
   // insertPgCachedDescription is fail-open (logs internally) — but for this
@@ -123,6 +149,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       description,
       headline ?? null,
       model,
+      verdict ?? null,
     );
   } catch (err: unknown) {
     console.error(
@@ -152,6 +179,7 @@ async function insertPgCachedDescriptionStrict(
   description: string,
   headline: string | null,
   model: string,
+  verdict: 'FIT' | 'NEUTRAL' | null = null,
 ): Promise<void> {
   if (!process.env.DATABASE_URL) return; // Not configured — dev/CI OK
 
@@ -184,5 +212,7 @@ async function insertPgCachedDescriptionStrict(
     description,
     headline,
     model,
+    // FOLLOW-465: NULL (the default) is the implicit 'FIT' verdict.
+    verdict,
   });
 }

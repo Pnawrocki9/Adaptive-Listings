@@ -13198,10 +13198,10 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-490 title: >- Fix the 4th live fail-open route — /api/internal/schema accepts any
   non-empty bearer when SCHEMA_API_TOKEN is unset (the original FOLLOW-456's description-cache fix
   was copied from) source_retro: RETRO-153 source_ticket: FOLLOW-456 recommended_sprint: 22b
-  recommended_agent: backend-engineer priority: P1 estimated_hours: 1 promoted_to_queue: false
-  scope: >- FOLLOW-456 (PR #430) closed the `if (secret) { if (provided !== secret) reject }`
-  fail-open shape on three routes — but LEFT the original it was copied from.
-  `api/internal/schema/route.ts:39-42` still runs
+  recommended_agent: backend-engineer priority: P1 estimated_hours: 1 promoted_to_queue: true (QUEUE
+  FOLLOW-490 IN_PROGRESS 2026-07-06 session 10) scope: >- FOLLOW-456 (PR #430) closed the
+  `if (secret) { if (provided !== secret) reject }` fail-open shape on three routes — but LEFT the
+  original it was copied from. `api/internal/schema/route.ts:39-42` still runs
   `const schemaApiToken = process.env.SCHEMA_API_TOKEN; if (schemaApiToken && token !==   schemaApiToken) { 401 }`,
   so when SCHEMA_API_TOKEN is unset every non-empty bearer token is accepted. The description-cache
   route this PR DID fix stated in its removed docstring it was "matching the pattern used by

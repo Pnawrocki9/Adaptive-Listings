@@ -13704,14 +13704,15 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-513 title: >- Ingest: the queue() consumer runs outside withSentry so its
   retry_reinsert_failed / malformed_retry_message captures likely no-op — bind Sentry on the queue
   path source_retro: RETRO-159 source_ticket: FOLLOW-482 recommended_sprint: next recommended_agent:
-  backend-engineer priority: P1 estimated_hours: 2 promoted_to_queue: false scope: >- index.ts
-  passes only { fetch } through withSentry (Sentry.withSentry from @sentry/cloudflare, which inits
-  the client per-invocation) then reassembles export default { fetch, queue }. The queue path never
-  runs inside withSentry, so no Sentry client is bound when handleEventsRetryQueue calls
-  captureException — @sentry/cloudflare no-ops captureException without a client. Queue invocations
-  frequently land on fresh isolates that never served a fetch, so the consumer's terminal-loss
-  signals (retry_reinsert_failed) and malformed_retry_message are structurally likely to be DROPPED
-  in prod, blinding the "even durable retry failed" case. The index.ts:40 comment asserting
+  backend-engineer priority: P1 estimated_hours: 2 promoted_to_queue: '2026-07-06 (session 11,
+  IN_PROGRESS, branch backend-engineer/FOLLOW-513-queue-sentry-binding)' scope: >- index.ts passes
+  only { fetch } through withSentry (Sentry.withSentry from @sentry/cloudflare, which inits the
+  client per-invocation) then reassembles export default { fetch, queue }. The queue path never runs
+  inside withSentry, so no Sentry client is bound when handleEventsRetryQueue calls captureException
+  — @sentry/cloudflare no-ops captureException without a client. Queue invocations frequently land
+  on fresh isolates that never served a fetch, so the consumer's terminal-loss signals
+  (retry_reinsert_failed) and malformed_retry_message are structurally likely to be DROPPED in prod,
+  blinding the "even durable retry failed" case. The index.ts:40 comment asserting
   observability-is-not-lost is wrong for this wrapper model. ac:
   - The queue() handler runs with a bound Sentry client (wrap the whole ExportedHandler { fetch,
     queue } in withSentry per its documented usage, or Sentry.init at the top of

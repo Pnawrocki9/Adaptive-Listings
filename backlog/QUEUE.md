@@ -1,6 +1,25 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-04 (end of 2026-07-03 session)
+## ▶️ START HERE — resume 2026-07-06 (session 11, after session 10 closed FOLLOW-462/490/482)
+
+**Since the banner below (last touched end of session 9, 2026-07-03):** session 10 closed FOLLOW-462
+(DONE — PR #438, ClickHouse DSR param-binding), FOLLOW-490 (DONE — PR #442, `/api/internal/schema`
+fail-closed), and FOLLOW-482 (`CODE_COMPLETE_OPERATOR_PENDING` — PR #449, ADR-0017 Cloudflare Queues
+durable retry; code merged `f53c3ba` but queues are UNPROVISIONED, devops deploy-time handoff, not
+worker-delegable). ADR-0017 ACCEPTED, ESC-037 RESOLVED. Retros RETRO-153..159 filed. `main` tip is
+`2083e07` at the start of this session; 0 open PRs. `backlog/STATUS.md`'s "SESSION 10" entry only
+narrates the FOLLOW-462 half of that work — treat this banner + the git log as the source of truth,
+not that stale STATUS.md paragraph.
+
+**This session (11):** re-confirmed the 3 standing OPEN escalations (ESC-020/ESC-028/ESC-034)
+unchanged and non-blocking (established precedent: code-complete-awaiting-operator-action). Promoted
+FOLLOW-513 (P1, backend-engineer) from `backlog/FOLLOW_UPS.md` stub to this queue, flipped
+`READY -> IN_PROGRESS`, branch `backend-engineer/FOLLOW-513-queue-sentry-binding`. Full delegation
+brief in `backlog/HANDOFFS.md`. See the FOLLOW-513 ticket block (after FOLLOW-482) for AC.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-04 (end of 2026-07-03 session)
 
 **MILESTONE 2026-07-03: the Modal ML layer is LIVE in prod for the first time — AI description
 generation works end-to-end.** From "nothing deployed" (ESC-036) to a working, auto-deploying
@@ -9031,6 +9050,50 @@ gate) closes the epic and must be last.
           added (duplicate risk accepted per ADR-0017).
     - [ ] Tests cover produce-on-terminal-failure and consumer re-insert. Actual CF Queue/DLQ +
           Terraform provisioning is a devops/operator deploy-time step (flag as handoff, not blocker).
+- id: FOLLOW-513
+  title: >-
+    Ingest: the queue() consumer runs outside withSentry so its retry_reinsert_failed /
+    malformed_retry_message captures likely no-op — bind Sentry on the queue path
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-06T18:00:00Z'
+  branch: backend-engineer/FOLLOW-513-queue-sentry-binding
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    RETRO-159 §4b BUG-1 / §4c TG-1 / §4a LG-1 / §7 hop-2 (FOLLOW-482 follow-up) — index.ts wraps
+    only { fetch } in withSentry (Sentry.withSentry inits the client per-invocation); the queue
+    export is a plain sibling never passed through that wrapper, so handleEventsRetryQueue's
+    Sentry.captureException calls run with no bound client and @sentry/cloudflare no-ops them. Queue
+    invocations frequently land on fresh isolates that never served a fetch, so this is a structural
+    (not occasional) blind spot for the "durable retry also failed" signal — the exact observability
+    floor ADR-0017/FOLLOW-482 was supposed to guarantee.
+  spec: docs/adr/ADR-0017-durable-post-ack-clickhouse-retry-queue.md; RETRO-159
+  notes: |
+    Delegated 2026-07-06 (table row: ingest worker, control-plane, decision-api, Postgres/RLS,
+    auth, onboarding HTTP, billing, webhooks -> backend-engineer). Branch-first (FOLLOW-448):
+    first action must be
+    `git checkout -b backend-engineer/FOLLOW-513-queue-sentry-binding main`.
+    Full delegation brief in backlog/HANDOFFS.md.
+    AC:
+    - [ ] The queue() handler runs with a bound Sentry client (wrap the whole
+          `ExportedHandler { fetch, queue }` object in `withSentry` per its documented usage —
+          i.e. `withSentry({ fetch: instrumentedFetch, queue: handleEventsRetryQueue })` — or an
+          equivalent that guarantees `Sentry.init` has run before `handleEventsRetryQueue` executes
+          on a fresh isolate that never served a fetch).
+    - [ ] A test asserts a Sentry client is BOUND (not merely that `captureException` was called
+          against an unbound/no-op client) when the queue handler runs via the REAL default-export
+          wiring in index.ts (not just by calling `handleEventsRetryQueue` directly, which is the
+          existing test's blind spot).
+    - [ ] (fold-in, LG-1) On a future `EventsRetryMessage` `schema_version` bump, the consumer must
+          NOT ack-drop a well-formed-but-unknown-version message (Cloudflare holds in-flight
+          messages across deploys) — replace the current `z.literal(1)` + ack-drop-on-mismatch
+          behavior with a version union / route-by-version so a version bump can't silently lose
+          in-flight retries.
+    - [ ] No regression to the existing produce-on-terminal-failure / consumer-re-insert tests
+          (FOLLOW-482, PR #449).
 - id: FOLLOW-463
   title: >-
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)

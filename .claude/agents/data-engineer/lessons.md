@@ -2,6 +2,54 @@
 
 ---
 
+## 2026-07-06 / FOLLOW-462
+
+**What I built:** Closed audit F-14 — `apps/control-plane/src/lib/clickhouse-dsr.ts` built every DSR
+ClickHouse statement (`ALTER TABLE ... DELETE WHERE`, `system.mutations` lookups, the
+`dsr_audit_log` status UPDATE) by quote-only escaping (`s.replace(/'/g, "''")`) arbitrary id values
+into the SQL text — defeated by a trailing backslash (`'...\'` re-opens the ClickHouse string
+literal because backslash is itself an escape char there), silently malforming/no-op'ing the erasure
+mutation while the DSR route still reported success. Migrated every id value (`session_id`,
+`intent_session_id`, `tenant_id`, `mutation_id`, DSR marker token) to real ClickHouse HTTP parameter
+binding (`{name:Type}` placeholders
+
+- `param_<name>` URL query args), mirroring the existing `chTracerQuery`/`chTracerCount` convention
+  in `clickhouse-tracer.ts` (FOLLOW-261) rather than inventing a second mechanism. Table/column
+  identifiers and the marker token can't be parameter-bound (ClickHouse params only substitute
+  values, never bare identifiers/comments) so those stay allowlist-regex-validated, as before.
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column — pure internal SQL-transport fix. No Rule H writer/seed obligation triggered.
+- Verified via ClickHouse's own docs (TabSeparated "Escaped" format spec) that the param-value
+  encoding only requires escaping backslash/tab/newline/CR/NUL — single quotes are plain data in
+  that format (not a delimiter), so no quote-escaping is needed once the value leaves the SQL text
+  entirely.
+- Caught my own bug via the test suite before it shipped: `/\b/g` in a JS regex outside a character
+  class means "word boundary," not the backspace character — it silently corrupted every string in
+  my first draft of the param-encoder. `/\x08/g` (later simplified to `.split('\b').join('\\b')` to
+  dodge eslint's `no-control-regex`) is correct. This is exactly the "test the actual behavior,
+  don't trust the mental model" lesson the ticket itself is about, one level deeper.
+- Real-world test-fixture check saved me from the wrong fix: an existing regression test in
+  `erase/route.test.ts` (FOLLOW-455) asserted the literal id value inside the outgoing ALTER SQL
+  body for `intent_events` vs `session_id`. Grepping for this BEFORE choosing param-binding vs.
+  allowlist is what surfaced that a strict allowlist (session_id must be 64-hex, tenant_id must be
+  UUID) would have broken that pre-existing, unrelated, currently-green test (its fixtures use
+  human-readable placeholder ids like `sess-abc123`) — param binding accepts ANY string unchanged,
+  so it didn't need touching test fixtures elsewhere, only assertions that inspected SQL-text
+  content directly.
+- No retention claim touched.
+
+**A guardrail I'd add:** Any new `escapeXParamValue`-style helper touching regex character classes
+for control characters should have a unit test asserting round-trip fidelity
+(`decode(encode(x)) === x` for a fixed adversarial fixture set: trailing backslash, embedded quote,
+embedded backslash, tab, newline) BEFORE it's wired into a security-sensitive path — I only caught
+the `\b` word-boundary bug because I wrote that test first. A lint rule flagging bare `\b`/`\B`
+inside `.replace()` calls (as opposed to inside a `[...]` character class) would catch this exact
+mistake class automatically.
+
+---
+
 ## 2026-07-01 / FOLLOW-449
 
 **What I built:** F-02 remediation (audit finding: `intent_events` count=0 in prod). Three

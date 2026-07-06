@@ -441,8 +441,8 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
     mockResolveIntentSessionId.mockResolvedValueOnce('intent-session-uuid-999');
 
-    const alterSqls: string[] = [];
-    const fetchMock = vi.fn((_input: string | URL, init?: RequestInit) => {
+    const alterCalls: { sql: string; url: URL }[] = [];
+    const fetchMock = vi.fn((input: string | URL, init?: RequestInit) => {
       const requestBody = typeof init?.body === 'string' ? init.body : '';
       if (requestBody.includes('system.mutations')) {
         return Promise.resolve(
@@ -451,7 +451,7 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
           }),
         );
       }
-      alterSqls.push(requestBody);
+      alterCalls.push({ sql: requestBody, url: new URL(String(input)) });
       return Promise.resolve(new Response('', { status: 200 }));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -460,12 +460,19 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     const res = await POST(makeRequest({ token: '123456' }));
 
     expect(res.status).toBe(200);
-    const intentEventsSql = alterSqls.find((sql) => sql.includes('ALTER TABLE intent_events'));
-    expect(intentEventsSql).toBeDefined();
-    expect(intentEventsSql).toContain('WHERE intent_session_id IN');
-    expect(intentEventsSql).toContain("'intent-session-uuid-999'");
+    const intentEventsCall = alterCalls.find((c) => c.sql.includes('ALTER TABLE intent_events'));
+    expect(intentEventsCall).toBeDefined();
+    expect(intentEventsCall?.sql).toContain('WHERE intent_session_id IN');
+    // FOLLOW-462: the id VALUE is bound as a ClickHouse param, not embedded
+    // in the SQL text — assert the placeholder shape and the param value
+    // separately instead of a literal quoted substring in the SQL.
+    expect(intentEventsCall?.sql).toContain('{dsr_id_0:String}');
+    expect(intentEventsCall?.sql).not.toContain('intent-session-uuid-999');
+    expect(intentEventsCall?.url.searchParams.get('param_dsr_id_0')).toBe(
+      'intent-session-uuid-999',
+    );
     // Must NOT filter on the SDK session_id for this table.
-    expect(intentEventsSql).not.toContain("'sess-abc123'");
+    expect(intentEventsCall?.url.searchParams.get('param_dsr_id_0')).not.toBe('sess-abc123');
   });
 });
 

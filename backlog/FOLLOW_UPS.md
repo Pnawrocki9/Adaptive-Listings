@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 504 (503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 505 (504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13475,3 +13475,17 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     re-issue POST).
   - A regression test asserts the control-plane→Modal dispatch is not silently dropped when the
     endpoint responds 303 on cold start.
+
+- id: FOLLOW-504 title: >- ClickHouse tracer: escape param values in chTracerQuery/chTracerCount
+  before searchParams.set() (defense-in-depth, same class as FOLLOW-462) source_ticket: FOLLOW-462
+  recommended_sprint: next recommended_agent: data-engineer priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- FOLLOW-462 hardened clickhouse-dsr.ts by mirroring the
+  param-binding convention in apps/control-plane/src/lib/clickhouse-tracer.ts
+  (chTracerQuery/chTracerCount). But that source pattern itself does NOT run its param values
+  through an escapeClickHouseParamValue before url.searchParams.set() — currently SAFE there because
+  those helpers are only ever bound with UUID/hex values, but it is the same latent backslash gap
+  class as F-14. Add the equivalent escaping for defense-in-depth so a future non-hex binding can't
+  reintroduce the hole. ac:
+  - chTracerQuery/chTracerCount pass param values through the same escaping helper FOLLOW-462 used
+    (or the shared one, if extracted) before searchParams.set().
+  - A regression test binds a trailing-backslash value and asserts a well-formed request.

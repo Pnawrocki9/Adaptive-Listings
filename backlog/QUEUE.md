@@ -8920,10 +8920,21 @@ gate) closes the epic and must be last.
     ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail
     (F-14)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: data-engineer
   started_at: '2026-07-06T00:00:00Z'
+  completed_at: '2026-07-06T12:00:00Z'
   branch: data-engineer/FOLLOW-462-clickhouse-dsr-param-binding
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/438'
+  ci:
+    'green (56 real gates, independently verified); Rule I wired-or-dead pre-existing-red
+    non-blocking'
+  notes_pm: >-
+    Param-binding (not allowlist) — mirrors the existing chTracerQuery/chTracerCount convention
+    (clickhouse-tracer.ts, FOLLOW-261). Hardened every id site incl. resolveMutationIdByMarker
+    (previously UNESCAPED). Backslash/quote golden-query tests added. Worker flagged FOLLOW-504:
+    chTracerQuery/chTracerCount don't escape param values before searchParams.set() — same latent
+    class, currently safe (UUID/hex only), defense-in-depth follow-up.
   priority: P2
   estimated_hours: 2
   depends_on: []

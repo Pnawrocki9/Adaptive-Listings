@@ -1,6 +1,29 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-06 (session 11, after session 10 closed FOLLOW-462/490/482)
+## ▶️ START HERE — resume 2026-07-06 (session 12, after session 11 delegated FOLLOW-513/closed it DONE)
+
+**Since the banner below (session 11, same day):** session 11 closed FOLLOW-513 (DONE — PR #453,
+Sentry binding on the queue-consumer path) and FOLLOW-516 (DONE — corrected a wrong lessons.md
+entry). `main` tip is `a704516`; 0 open PRs at hand-off. FOLLOW-482 stays
+`CODE_COMPLETE_OPERATOR_PENDING` (queues still unprovisioned; its flanking hops
+FOLLOW-512/FOLLOW-515 are devops/operator-shaped, not clean worker delegates). Retros RETRO-153..160
+all filed, no retro debt owed.
+
+**This session (12):** re-confirmed the 3 standing OPEN escalations (ESC-020/ESC-028/ESC-034)
+unchanged and non-blocking (same established precedent). Of the 4 fresh worker-implementable READY
+Sprint 22b candidates (FOLLOW-464/465/466/491), picked **FOLLOW-466** (replay protection on the
+feedback HMAC + unify secret comparisons on `timingSafeEqual`) — a security-hardening ticket
+(bounded bandit-arm-inflation via HMAC replay is a real, if bounded, integrity issue;
+`depends_on FOLLOW-450` is DONE) over FOLLOW-464 (cache-staleness correctness bug, no security
+angle) as the higher real-world-severity clean delegate. Promoted to IN_PROGRESS, branch
+`backend-engineer/FOLLOW-466-feedback-hmac-replay-protection`. Full delegation brief in
+`backlog/HANDOFFS.md`. See the FOLLOW-466 ticket block (Sprint 22b, after FOLLOW-463) for AC.
+FOLLOW-464/465/491 remain READY for a future session; FOLLOW-471 (clean re-audit gate) stays BACKLOG
+until every depends_on ticket is DONE.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-06 (session 11, after session 10 closed FOLLOW-462/490/482)
 
 **Since the banner below (last touched end of session 9, 2026-07-03):** session 10 closed FOLLOW-462
 (DONE — PR #438, ClickHouse DSR param-binding), FOLLOW-490 (DONE — PR #442, `/api/internal/schema`
@@ -9167,7 +9190,10 @@ gate) closes the epic and must be last.
   title: >-
     Add replay protection to feedback HMAC + unify secret comparisons on timingSafeEqual (F-21)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: 2026-07-06T00:00:00Z
+  branch: backend-engineer/FOLLOW-466-feedback-hmac-replay-protection
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-450]
@@ -9182,6 +9208,10 @@ gate) closes the epic and must be last.
           rejected); optional nonce store.
     - [ ] All shared-secret comparisons migrate to timingSafeEqual.
     - [ ] Test: replayed ping outside the window → rejected.
+    Delegated 2026-07-06 (pm-orchestrator session 12). Table row used: "a contract between two
+    modules" does NOT apply here — this is a straight backend/auth hardening ticket → decision-table
+    row "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing,
+    webhooks" -> backend-engineer.
 - id: FOLLOW-474
   title: >-
     Codify a mandatory pre-PR local gate sequence (incl. next build) for control-plane workers +

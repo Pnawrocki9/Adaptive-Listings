@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 520 (519 = FOLLOW-466 fast-follow — migrate the 3rd timing-unsafe CRON_SECRET compare (dsr/mutation-poll) to secretEquals [P3, foldable into FOLLOW-484]. 518 = FOLLOW-466 Option-B successor — timestamp-in-HMAC + window; SDK+control-plane WIRE-CONTRACT change, requires_escalation + rollout window, DEFERRED [P3]. 516/517 = RETRO-160 (FOLLOW-513): 516 = P1 land the permission-blocked correction to the WRONG FOLLOW-482 backend-engineer lessons.md:1503 entry ("consumer already captures its own Sentry events") that root-caused BUG-1 — a wrong lesson is worse than none; 517 = P3 codify+test the index.ts handler-wrapping invariant so a future scheduled/email/tail handler can't repeat the withSentry asymmetry. 518 intentionally UNUSED (the unknown_schema_version producer-only signal folds into FOLLOW-515's alert AC). Sources in RETROSPECTIVES.md RETRO-160. 512/513/514/515 = RETRO-159 (FOLLOW-482): 512 = P1 deploy-time queue-binding-provisioned assertion + Rule AA status correction; 513 = P1 bind Sentry on the queue() path (consumer runs outside withSentry → retry_reinsert_failed/malformed captures no-op in prod); 514 = P2 staging/dev queue-binding parity; 515 = P2 re-scope FOLLOW-495 alert to retry_reinsert_failed/DLQ-depth + close ADR-0017 dlq_terminal deviation. Sources in RETROSPECTIVES.md RETRO-159. 511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 523 (520/521/522 = RETRO-161 (FOLLOW-466): 520 P3 observability on nonce fail-open; 521 P3 nonce-before-bandit-write at-most-once; 522 P2 elevate+broaden FOLLOW-484 grep-lint to the timing-unsafe `=== Bearer` shape (class hit a 3rd straggler post-RETRO-158). Sources RETROSPECTIVES.md RETRO-161. 519 = FOLLOW-466 fast-follow — migrate the 3rd timing-unsafe CRON_SECRET compare (dsr/mutation-poll) to secretEquals [P3, foldable into FOLLOW-484]. 518 = FOLLOW-466 Option-B successor — timestamp-in-HMAC + window; SDK+control-plane WIRE-CONTRACT change, requires_escalation + rollout window, DEFERRED [P3]. 516/517 = RETRO-160 (FOLLOW-513): 516 = P1 land the permission-blocked correction to the WRONG FOLLOW-482 backend-engineer lessons.md:1503 entry ("consumer already captures its own Sentry events") that root-caused BUG-1 — a wrong lesson is worse than none; 517 = P3 codify+test the index.ts handler-wrapping invariant so a future scheduled/email/tail handler can't repeat the withSentry asymmetry. 518 intentionally UNUSED (the unknown_schema_version producer-only signal folds into FOLLOW-515's alert AC). Sources in RETROSPECTIVES.md RETRO-160. 512/513/514/515 = RETRO-159 (FOLLOW-482): 512 = P1 deploy-time queue-binding-provisioned assertion + Rule AA status correction; 513 = P1 bind Sentry on the queue() path (consumer runs outside withSentry → retry_reinsert_failed/malformed captures no-op in prod); 514 = P2 staging/dev queue-binding parity; 515 = P2 re-scope FOLLOW-495 alert to retry_reinsert_failed/DLQ-depth + close ADR-0017 dlq_terminal deviation. Sources in RETROSPECTIVES.md RETRO-159. 511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13860,3 +13860,60 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - dsr/mutation-poll compares CRON_SECRET via secretEquals (constant-time), not raw ===.
   - Repo-wide grep confirms no remaining `authHeader === \`Bearer ${secret}\`` timing-unsafe
     compares in apps/control-plane (hands off cleanly to FOLLOW-484).
+
+- id: FOLLOW-520 title: >- Make the feedback-nonce fail-open degradation observable (Sentry/metric,
+  not just console.warn) source_retro: RETRO-161 source_ticket: FOLLOW-466 recommended_sprint: next
+  recommended_agent: backend-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+  scope: >- apps/control-plane/src/lib/feedback-nonce.ts currently degrades to fail-open (allow the
+  feedback ping through, no replay dedup) on a Redis outage — unset URL, non-2xx response, or a
+  thrown fetch — emitting ONLY console.warn. There is no Sentry capture, metric, or alert, so an
+  outage that silently DISABLES the replay-protection control (widening the auth-gated replay window
+  to unbounded for its duration) is invisible to ops. Emit a Sentry capture and/or a counter metric
+  on both fail-open branches (non-2xx + throw), tagged so ops can see "feedback replay protection
+  degraded". KEEP the fail-open behavior (still process the ping) — add ONLY the signal. Same
+  "console.warn is not observability" family flagged in RETRO-156/159/160. ac:
+  - Non-2xx Redis response fail-open path emits a Sentry capture (or metric) in addition to
+    processing the ping.
+  - Thrown/network-error fail-open path emits the same signal.
+  - The unset-URL (dev/CI) path stays silent (not a configured-but-failed dependency).
+  - Fail-open behavior (ping still processed) is unchanged; a test asserts the signal fires on error
+    and NOT on the happy path. cross_ref: [FOLLOW-466, FOLLOW-519, RETRO-159, RETRO-160]
+
+- id: FOLLOW-521 title: >- Resolve feedback-nonce at-most-once ordering: nonce recorded before the
+  async bandit/label write source_retro: RETRO-161 source_ticket: FOLLOW-466 recommended_sprint:
+  next recommended_agent: backend-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+  scope: >- In apps/control-plane/src/app/api/adapt/feedback/route.ts the replay nonce is committed
+  at Step 5b (SET NX) BEFORE the mutating side-effects, which run via afterResponse() AFTER the 202
+  return (bandit updateBanditArm + upsertConversionLabelAsync). This makes the semantics
+  at-most-once, not the "idempotent retry" the docstring implies: if request-1 records the nonce but
+  its afterResponse() write is DROPPED or throws (the ESC-033/FOLLOW-433 Vercel after()
+  fire-and-forget class), a legitimate SDK retry of the identical ping within the 600s TTL is
+  deduped (200 deduplicated) and the conversion signal is permanently lost — a recovery path that
+  existed BEFORE this PR. Either (a) record the nonce only after the side-effect is durably
+  enqueued/succeeded, or (b) accept it as at-most-once and re-word the docstring accordingly. Low
+  severity (best-effort bandit signal) but a real new failure mode introduced by the ordering. ac:
+  - A decision is recorded: record-after-durable-success, OR accept at-most-once with corrected
+    docstring wording.
+  - If (a) chosen, the nonce SET is moved/gated so a dropped/failed side-effect does NOT leave the
+    signature marked "seen".
+  - A test covers the write-fail-then-retry-within-TTL intersection (the currently-untested LG-1
+    loss path). cross_ref: [FOLLOW-466, FOLLOW-433, FOLLOW-518]
+
+- id: FOLLOW-522 title: >- Reassess + broaden FOLLOW-484 grep-lint (P3->P2) to also catch
+  timing-unsafe plain-=== secret compares source_retro: RETRO-161 source_ticket: FOLLOW-466
+  recommended_sprint: next recommended_agent: pm-orchestrator priority: P2 estimated_hours: 1
+  promoted_to_queue: false scope: >- FOLLOW-484 (currently P3) lints only the fail-OPEN secret shape
+  (if (secret && provided !== secret)). It does NOT cover the timing-unsafe plain-=== shape
+  (authHeader === `Bearer ${secret}`) that FOLLOW-466 just swept from two CRON routes. A 3rd
+  straggler of that shape (api/dsr/mutation-poll/ route.ts:78 -> FOLLOW-519) surfaced AFTER
+  RETRO-158 §5a declared the secret-hardening class "fully enumerated" — direct evidence that manual
+  sweeps chronically miss sites and the durable sink is the CI lint. (1) Elevate FOLLOW-484 P3->P2.
+  (2) Extend its grep to ALSO catch === `Bearer ${secret}` / timing-unsafe secret compares across
+  apps/control-plane request handlers, so a 4th site cannot regress in either shape. This is the
+  retro-consistent action per RETRO-153/158's own conclusion that the lint (not a prose rule) is the
+  correct codification vehicle for these shapes. ac:
+  - FOLLOW-484 reprioritized P3->P2 (or a decision recorded declining, with rationale).
+  - FOLLOW-484's lint scope extended to the timing-unsafe plain-=== secret-compare shape in addition
+    to fail-open.
+  - The lint passes only once FOLLOW-519 (dsr/mutation-poll) is migrated to secretEquals. cross_ref:
+    [FOLLOW-484, FOLLOW-519, RETRO-153, RETRO-158]

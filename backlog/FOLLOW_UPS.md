@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 516 (512/513/514/515 = RETRO-159 (FOLLOW-482): 512 = P1 deploy-time queue-binding-provisioned assertion + Rule AA status correction; 513 = P1 bind Sentry on the queue() path (consumer runs outside withSentry → retry_reinsert_failed/malformed captures no-op in prod); 514 = P2 staging/dev queue-binding parity; 515 = P2 re-scope FOLLOW-495 alert to retry_reinsert_failed/DLQ-depth + close ADR-0017 dlq_terminal deviation. Sources in RETROSPECTIVES.md RETRO-159. 511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 518 (516/517 = RETRO-160 (FOLLOW-513): 516 = P1 land the permission-blocked correction to the WRONG FOLLOW-482 backend-engineer lessons.md:1503 entry ("consumer already captures its own Sentry events") that root-caused BUG-1 — a wrong lesson is worse than none; 517 = P3 codify+test the index.ts handler-wrapping invariant so a future scheduled/email/tail handler can't repeat the withSentry asymmetry. 518 intentionally UNUSED (the unknown_schema_version producer-only signal folds into FOLLOW-515's alert AC). Sources in RETROSPECTIVES.md RETRO-160. 512/513/514/515 = RETRO-159 (FOLLOW-482): 512 = P1 deploy-time queue-binding-provisioned assertion + Rule AA status correction; 513 = P1 bind Sentry on the queue() path (consumer runs outside withSentry → retry_reinsert_failed/malformed captures no-op in prod); 514 = P2 staging/dev queue-binding parity; 515 = P2 re-scope FOLLOW-495 alert to retry_reinsert_failed/DLQ-depth + close ADR-0017 dlq_terminal deviation. Sources in RETROSPECTIVES.md RETRO-159. 511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13759,3 +13759,70 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     why dlq_terminal was dropped.
   - A runbook step documents DLQ inspection/replay (wrangler queues consumer / dashboard) as the
     manual recovery path for poison batches. source_sections: RETRO-159 §3 / §4d DG-1 / §5b
+
+- id: FOLLOW-516 title: >- Correct the mistaken FOLLOW-482 backend-engineer lessons.md entry (the
+  permission-blocked corrective the FOLLOW-513 worker could not land) — the wrong lesson that CAUSED
+  RETRO-159 BUG-1 still stands on disk source_retro: RETRO-160 source_ticket: FOLLOW-513
+  recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 0.5
+  promoted_to_queue: false scope: >- .claude/agents/backend-engineer/lessons.md:1503 (the
+  `## 2026-07-06 / FOLLOW-482` entry, point (2)) still asserts the queue handler was "deliberately
+  NOT routed through withSentry/instrument … for no real benefit since the consumer already captures
+  its own Sentry events explicitly." That rationale is the EXACT wrong assumption that caused
+  RETRO-159 §4b BUG-1: Sentry.captureException is a silent no-op without an initialized client, and
+  @sentry/cloudflare's withSentry DOES wrap the queue handler (its JSDoc mentioning only fetch is
+  stale — verified against the installed @sentry/cloudflare@10.50.0 source by FOLLOW-513). Verified
+  2026-07-06 that line 1503 is unchanged and NO `## …/FOLLOW-513` correction entry exists (last
+  header is FOLLOW-482). The FOLLOW-513 worker was BLOCKED by the permission system from writing its
+  own corrective entry, so the wrong lesson still stands and will mislead the next backend task that
+  reads lessons.md — a wrong lesson is worse than no lesson because it is trusted and short-circuits
+  investigation. This is the learning-loop's own failure mode (RETRO-160 §5d / §6 Candidate A). ac:
+  - A dated `## 2026-07-06 / FOLLOW-513` corrective entry is appended to
+    .claude/agents/backend-engineer/lessons.md (and/or point (2) of the FOLLOW-482 entry is struck
+    through) recording the corrected facts, WITH a source citation to @sentry/cloudflare@10.50.0.
+  - The corrective explicitly states (a) Sentry.captureException no-ops without a bound client, (b)
+    withSentry instruments queue/scheduled/email/tail (not just fetch — JSDoc is stale), and (c)
+    pass the whole { fetch, queue } ExportedHandler through withSentry in one call.
+  - The correction cross-references FOLLOW-513 (the code fix), RETRO-159, and RETRO-160.
+    source_sections: RETRO-160 §4d DG-1 / §5d / §6 Candidate A / §9
+
+- id: FOLLOW-517 title: >- Ingest: codify + test the index.ts handler-wrapping invariant so a future
+  3rd Worker handler (scheduled/email/tail) can't silently repeat the fetch/queue Sentry-binding +
+  OTel-leak asymmetry source_retro: RETRO-160 source_ticket: FOLLOW-513 recommended_sprint: backlog
+  recommended_agent: backend-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+  scope: >- FOLLOW-513 fixed the queue path but the invariant that makes it correct lives only in an
+  apps/ingest/src/index.ts:37-64 comment: (1) every handler on the default export must run inside
+  withSentry, and (2) instrument() from @microlabs/otel-cf-workers mutates its input object IN PLACE
+  and wraps whatever handlers it finds, so it must only ever be handed a FRESH single-surface ({
+  fetch }-only) object, never the shared sentryWrapped ref, or OTel spans silently leak onto
+  non-fetch surfaces. Any future third handler (scheduled/email/tail) added to the default export
+  inherits this trap. Contained today (grep confirms apps/ingest is the ONLY instrument()/withSentry
+  call site in the repo — decision-api and other Workers don't use otel-cf-workers), so this is a
+  regression guardrail, not a live bug. ac:
+  - A test asserts EVERY handler key on the real index.ts default export runs with a bound Sentry
+    client (extend the real-wiring index-queue-sentry.test.ts pattern; unmocked @sentry/cloudflare).
+  - An assertion or committed comment-backed invariant ensures instrument() is only ever passed a
+    fresh single-surface object (never the shared sentryWrapped reference), so OTel cannot attach to
+    a non-fetch surface via in-place mutation.
+  - If/when a scheduled/email/tail handler is added, the above test fails loud until that handler is
+    routed through withSentry and deliberately included-in/excluded-from the instrument() object.
+    source_sections: RETRO-160 §5d / §9 (cross-ref RETRO-159 §5d)
+
+# FOLLOW-518 intentionally NOT allocated (reserved). The one remaining CHECK-B finding — the new
+
+# producer-only `events_retry_unknown_schema_version` Sentry signal with no alert consumer
+
+# (RETRO-160 §3 HALF_WIRE_P) — is the SAME class already ticketed by FOLLOW-515. Fold it in as an AC
+
+# extension to FOLLOW-515 (alert on retry_reinsert_failed + native DLQ depth + unknown_schema_version),
+
+# NOT a new number. Filing 518 would be ledger noise.
+
+# NOTE for PM (carry-forward, NOT re-filed): the RETRO-159 durability-observability chain still has
+
+# two open flanking hops — FOLLOW-512 (provision the estalara-events-retry + -dlq queues so the
+
+# consumer ever runs, + correct FOLLOW-482 status DONE -> CODE_COMPLETE_OPERATOR_PENDING per Rule AA)
+
+# and FOLLOW-515 (alert consumer for the now-bound queue-path signals + ADR-0017 §3 dlq_terminal
+
+# deviation). FOLLOW-513 closed the MIDDLE hop (observability binding) only.

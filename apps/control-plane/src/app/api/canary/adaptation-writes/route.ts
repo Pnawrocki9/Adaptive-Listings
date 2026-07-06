@@ -67,6 +67,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
+import { secretEquals } from '@/lib/secret-compare';
 
 // ─── Migration-0019 sentinel column ──────────────────────────────────────────
 
@@ -87,8 +88,10 @@ function isAuthorized(req: NextRequest): boolean {
   // Reject when CRON_SECRET is not set — unconfigured secret is an
   // infrastructure misconfiguration, not a valid dev/CI bypass.
   if (!secret) return false;
-  const authHeader = req.headers.get('authorization');
-  return authHeader === `Bearer ${secret}`;
+  const authHeader = req.headers.get('authorization') ?? '';
+  // FOLLOW-466 / audit F-21: constant-time compare (was plain `===`).
+  const providedToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return secretEquals(secret, providedToken);
 }
 
 // ─── ClickHouse config ────────────────────────────────────────────────────────

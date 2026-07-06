@@ -53,6 +53,14 @@ vi.mock('@estalara/db', () => ({
   lt: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'lt' })),
 }));
 
+// FOLLOW-466 / audit F-21: spy on the real secretEquals so we can assert it is
+// actually exercised (constant-time compare), not just imported.
+vi.mock('@/lib/secret-compare', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+  const real = await importOriginal<typeof import('@/lib/secret-compare')>();
+  return { ...real, secretEquals: vi.fn(real.secretEquals) };
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeRequest(authHeader?: string): NextRequest {
@@ -118,6 +126,25 @@ describe('GET /api/internal/retention/conversion-labels', () => {
     const res = await GET(req);
 
     expect(res.status).toBe(401);
+  });
+
+  it('FOLLOW-466: compares the bearer token via secretEquals (constant-time), not raw ===', async () => {
+    process.env.CRON_SECRET = 'test-secret';
+    delete process.env.DATABASE_URL_ADMIN;
+    delete process.env.DATABASE_URL_DIRECT;
+
+    const { secretEquals } = await import('@/lib/secret-compare');
+    const spy = vi.mocked(secretEquals);
+
+    const { GET } = await import('./route');
+    await GET(makeRequest('Bearer test-secret'));
+    expect(spy).toHaveBeenCalledWith('test-secret', 'test-secret');
+    expect(spy).toHaveReturnedWith(true);
+
+    spy.mockClear();
+    await GET(makeRequest('Bearer wrong-secret'));
+    expect(spy).toHaveBeenCalledWith('test-secret', 'wrong-secret');
+    expect(spy).toHaveReturnedWith(false);
   });
 
   // ── No-op when DB not configured ───────────────────────────────────────────

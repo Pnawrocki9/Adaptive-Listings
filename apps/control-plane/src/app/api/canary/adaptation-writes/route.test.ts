@@ -37,8 +37,18 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
 }));
 
+// FOLLOW-466 / audit F-21: spy on the real secretEquals so we can assert it is
+// actually exercised (constant-time compare), not just imported.
+vi.mock('@/lib/secret-compare', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+  const real = await importOriginal<typeof import('@/lib/secret-compare')>();
+  return { ...real, secretEquals: vi.fn(real.secretEquals) };
+});
+
 import * as Sentry from '@sentry/nextjs';
+import { secretEquals } from '@/lib/secret-compare';
 const mockCaptureException = vi.mocked(Sentry.captureException);
+const mockSecretEquals = vi.mocked(secretEquals);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -144,6 +154,19 @@ describe('GET /api/canary/adaptation-writes', () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('UNAUTHORIZED');
     expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('FOLLOW-466: compares the bearer token via secretEquals (constant-time), not raw ===', async () => {
+    const { GET } = await import('./route.js');
+
+    await GET(makeRequest({ auth: `Bearer ${CRON_SECRET}` }));
+    expect(mockSecretEquals).toHaveBeenCalledWith(CRON_SECRET, CRON_SECRET);
+    expect(mockSecretEquals).toHaveReturnedWith(true);
+
+    mockSecretEquals.mockClear();
+    await GET(makeRequest({ auth: 'Bearer wrong-secret' }));
+    expect(mockSecretEquals).toHaveBeenCalledWith(CRON_SECRET, 'wrong-secret');
+    expect(mockSecretEquals).toHaveReturnedWith(false);
   });
 
   // ─── Unconfigured (dev / CI) ───────────────────────────────────────────────

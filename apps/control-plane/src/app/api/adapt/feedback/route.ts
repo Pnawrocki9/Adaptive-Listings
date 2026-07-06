@@ -23,6 +23,14 @@
  *   Step 5 — HMAC body signature (defense-in-depth):
  *              X-Estalara-Signature = HMAC-SHA256(bearerToken, rawBody).
  *              Missing / malformed / mismatch → 401.
+ *   Step 5b — Replay protection (FOLLOW-466 / audit F-21, HMAC path only):
+ *              Redis `SET nonce:feedback:{providedHex} 1 NX EX 600`. NX failure
+ *              (signature already seen within the TTL) → this ping is a
+ *              replay/duplicate — skip Steps 6-8 entirely and return 200
+ *              `{ ok: true, deduplicated: true }` (idempotent ack, no
+ *              double-counted bandit/label write). Fail-open on Redis
+ *              unavailability (see @/lib/feedback-nonce). Does not apply to
+ *              the ops-key path (Step 2), which has no signature.
  *   Step 6 — Parse body JSON (Zod).  Failure → 400.
  *   Step 7 — Cross-tenant enforcement:
  *              body.tenant_id !== resolvedTenantId → 403.
@@ -34,6 +42,12 @@
  *   X-Estalara-Signature: HMAC_SHA256(rawApiKey, rawBodyText)
  *   Body: { session_id, tenant_id, archetype, variant, converted,
  *           [prediction_id], [lead_id] }
+ *
+ * FOLLOW-466 (audit F-21) note: replay protection (Step 5b) is enforced
+ * SERVER-SIDE via a Redis nonce cache keyed on the verified signature — the
+ * signed message and wire contract above are UNCHANGED. A timestamp/nonce in
+ * the signed payload was considered and explicitly deferred (would require an
+ * SDK re-deploy); see @/lib/feedback-nonce for the full rationale.
  *
  * FEEDBACK_ENDPOINT_ENABLED gate: The 503 block (Step 1) is NOT removed in
  * this PR. Ops sets FEEDBACK_ENDPOINT_ENABLED=true at pilot go-live only after
@@ -49,6 +63,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { afterResponse } from '@/lib/after-response';
 import { resolveApiKey, constantTimeEqual, type ApiKeyAuthResult } from '@/lib/api-key-auth';
+import { checkAndRecordFeedbackNonce } from '@/lib/feedback-nonce';
 
 import { errorBody, ErrorCode, updateBanditArm, outcomeClassFromConverted } from '@estalara/shared';
 import { createAdminClient, abBanditWeights, upsertConversionLabel } from '@estalara/db';
@@ -228,6 +243,8 @@ async function upsertConversionLabelAsync(args: {
  *
  * Responses:
  *   202 Accepted  — feedback acknowledged; DB update happens asynchronously.
+ *   200 { ok: true, deduplicated: true } — replayed/duplicate signature
+ *     (FOLLOW-466); idempotent ack, no bandit/label write performed.
  *   400 VALIDATION_ERROR — invalid body.
  *   401 AUTH_REQUIRED / FORBIDDEN — missing bearer, unknown/revoked key, bad HMAC sig.
  *   403 FORBIDDEN — body.tenant_id does not match the API key's tenant.
@@ -386,6 +403,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }),
         { status: 401 },
       );
+    }
+
+    // ── Step 5b: Replay protection (FOLLOW-466 / audit F-21) ─────────────
+    // The signature is deterministic over (key, body) — no timestamp/nonce
+    // in the signed payload (SDK wire contract unchanged, @/lib/feedback-nonce
+    // has the full rationale). Record providedHex in Redis; a repeated POST
+    // bearing the identical signature within the TTL window is a
+    // replay/duplicate — no-op it (do not double-count against the bandit /
+    // conversion-label store) but still ack it idempotently. HMAC-path only;
+    // the ops-key path (Step 2) has no signature and is not subject to this
+    // check.
+    const { isReplay } = await checkAndRecordFeedbackNonce(providedHex);
+    if (isReplay) {
+      return NextResponse.json({ ok: true, deduplicated: true }, { status: 200 });
     }
   }
 

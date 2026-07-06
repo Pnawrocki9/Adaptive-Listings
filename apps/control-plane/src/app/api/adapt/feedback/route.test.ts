@@ -560,6 +560,114 @@ describe('T12: resolveApiKey shared lib parity', () => {
   });
 });
 
+// ─── FOLLOW-466: replay protection (Redis nonce cache) ───────────────────────
+
+describe('FOLLOW-466 / audit F-21: replay protection (nonce cache, HMAC path only)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('FEEDBACK_ENDPOINT_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
+    vi.stubEnv('ADAPT_API_KEY', ''); // force non-ops (HMAC) path
+    vi.stubEnv('UPSTASH_REDIS_URL', 'https://redis.test.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_TOKEN', 'test-token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('a replayed (body, signature) pair within the TTL is deduplicated: second POST returns 200 { deduplicated: true } and the bandit is updated only once', async () => {
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    // Two resolveApiKey lookups (one per request) + one bandit-weights lookup
+    // (only the first request reaches Step 8 — the second short-circuits at
+    // the nonce check before any bandit DB call).
+    mockSelectLimit
+      .mockResolvedValueOnce([keyRow]) // request 1: resolveApiKey
+      .mockResolvedValueOnce([]) // request 1: ab_bandit_weights lookup
+      .mockResolvedValueOnce([keyRow]); // request 2 (replay): resolveApiKey
+
+    // Redis SET NX: first call succeeds ("OK" — first sighting), second call
+    // fails (null — the signature is already recorded, i.e. a replay).
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: 'OK' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: null }), { status: 200 }));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const req1 = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res1 = await POST(req1);
+    expect(res1.status).toBe(202);
+    await flushMicrotasks();
+
+    // Re-issue the IDENTICAL signed request (same body → same signature).
+    const req2 = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res2 = await POST(req2);
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as { ok: boolean; deduplicated: boolean };
+    expect(body2.ok).toBe(true);
+    expect(body2.deduplicated).toBe(true);
+    await flushMicrotasks();
+
+    // The bandit arm was written exactly once — the replay did NOT
+    // double-count against ab_bandit_weights.
+    expect(mockInsertValues).toHaveBeenCalledOnce();
+  });
+
+  it('fails open when Redis is unavailable (fetch throws): the feedback ping is still processed normally', async () => {
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit
+      .mockResolvedValueOnce([keyRow]) // resolveApiKey
+      .mockResolvedValueOnce([]); // ab_bandit_weights lookup
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res = await POST(req);
+    // Redis is down but this is NOT treated as a replay — the ping proceeds.
+    expect(res.status).toBe(202);
+    await flushMicrotasks();
+
+    expect(mockInsertValues).toHaveBeenCalledOnce();
+  });
+
+  it('proceeds normally when UPSTASH_REDIS_URL is unset (dev/CI — unconfigured, not configured-but-failed)', async () => {
+    vi.stubEnv('UPSTASH_REDIS_URL', '');
+    const keyRow = await makeApiKeyRow(VALID_API_KEY, TENANT_ID);
+    mockSelectLimit.mockResolvedValueOnce([keyRow]).mockResolvedValueOnce([]);
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const req = await makeSignedRequest(VALID_BODY, VALID_API_KEY);
+    const res = await POST(req);
+    expect(res.status).toBe(202);
+    await flushMicrotasks();
+
+    // No nonce-cache Redis call was attempted (unconfigured).
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockInsertValues).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT apply nonce dedup to the ops-key path (no signature to key the nonce on)', async () => {
+    vi.stubEnv('ADAPT_API_KEY', 'ops-key');
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
+    mockSelectLimit.mockResolvedValue([]); // bandit arm lookup (no key-row lookup on ops path)
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const opsBody = { ...VALID_BODY, tenant_id: TENANT_ID };
+    const res1 = await POST(makePostRequest(opsBody, 'Bearer ops-key'));
+    expect(res1.status).toBe(202);
+    const res2 = await POST(makePostRequest(opsBody, 'Bearer ops-key'));
+    expect(res2.status).toBe(202); // repeated ops-path ping is NOT deduplicated (no HMAC sig)
+
+    // The ops path never touches the nonce cache.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Auth gate (existing tests, updated for new auth flow) ───────────────────
 
 describe('POST /api/adapt/feedback — auth gate (ADR-0015)', () => {

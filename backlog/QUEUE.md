@@ -9055,10 +9055,23 @@ gate) closes the epic and must be last.
     Ingest: the queue() consumer runs outside withSentry so its retry_reinsert_failed /
     malformed_retry_message captures likely no-op — bind Sentry on the queue path
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-06T18:00:00Z'
+  completed_at: '2026-07-06T19:00:00Z'
+  merge_commit: ef2d6dc
   branch: backend-engineer/FOLLOW-513-queue-sentry-binding
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/453'
+  ci:
+    'green (56 real gates, independently verified); Rule I wired-or-dead pre-existing-red
+    non-blocking'
+  notes_pm: >-
+    Pure code fix, no operator dependency → genuinely DONE (contrast FOLLOW-482). Whole { fetch,
+    queue } now wrapped in withSentry (verified @sentry/cloudflare@10.50.0 does instrument queue
+    despite stale JSDoc). Worker also caught that @microlabs/otel-cf-workers instrument()
+    mutates+wraps queue → fed it a fresh {fetch}-only object. LG-1 folded in: unknown schema_version
+    now retried (not ack-dropped). New test drives the REAL index.ts default export (git-stash
+    regression-verified fail-pre/pass-post) — closes the direct-call blind spot. 204/204 tests.
   priority: P1
   estimated_hours: 2
   depends_on: []

@@ -9190,10 +9190,22 @@ gate) closes the epic and must be last.
   title: >-
     Add replay protection to feedback HMAC + unify secret comparisons on timingSafeEqual (F-21)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: 2026-07-06T00:00:00Z
+  completed_at: 2026-07-06T20:00:00Z
+  merge_commit: 7540c22
   branch: backend-engineer/FOLLOW-466-feedback-hmac-replay-protection
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/459'
+  ci:
+    'green (57 real gates, independently verified); Rule I wired-or-dead pre-existing-red
+    non-blocking'
+  notes_pm: >-
+    Shipped Option A (no SDK/wire-contract change). New lib/feedback-nonce.ts: Upstash SET NX EX 600
+    keyed on the HMAC signature; replay → 200 {deduplicated:true} (no bandit double-count);
+    fail-open on Redis unavailability; HMAC-path only. 2 timingSafeEqual sites → secretEquals.
+    Worker flagged a 3rd identical timing-unsafe site (dsr/mutation-poll) → FOLLOW-519 fast-follow.
+    1529 CP tests pass.
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-450]
@@ -9210,11 +9222,12 @@ gate) closes the epic and must be last.
     not timingSafeEqual.
   spec: ADR-0015; audit report §5.5 F-21
   notes: |
-    AC:
-    - [ ] Feedback signature covers a timestamp with a bounded acceptance window (replayed old ping
-          rejected); optional nonce store.
-    - [ ] All shared-secret comparisons migrate to timingSafeEqual.
-    - [ ] Test: replayed ping outside the window → rejected.
+    AC (shipped as Option A per scope_decision — server-side nonce cache, NOT the deferred timestamp path):
+    - [x] Replayed feedback ping (same body+sig within TTL) deduplicated server-side (Upstash nonce
+          cache, fail-open, HMAC-path-only) → no bandit double-count. Timestamp+window path = FOLLOW-518.
+    - [x] The 2 in-scope shared-secret comparisons (conversion-labels, adaptation-writes) → secretEquals
+          (constant-time). 3rd site dsr/mutation-poll = FOLLOW-519 fast-follow.
+    - [x] Tests: replay dedup, Redis-down fail-open, timingSafeEqual sites (1529 CP tests green).
     Delegated 2026-07-06 (pm-orchestrator session 12). Table row used: "a contract between two
     modules" does NOT apply here — this is a straight backend/auth hardening ticket → decision-table
     row "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing,

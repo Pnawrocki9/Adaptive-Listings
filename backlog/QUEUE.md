@@ -9197,6 +9197,13 @@ gate) closes the epic and must be last.
   priority: P2
   estimated_hours: 3
   depends_on: [FOLLOW-450]
+  scope_decision: >-
+    CEO 2026-07-06 (verify-not-guess: confirmed the SDK signs feedback client-side in
+    packages/sdk/src/core/adapt.ts, so a timestamp-in-HMAC is an SDK↔API WIRE-CONTRACT change).
+    LOCKED to Option A — server-side nonce cache (Upstash Redis SET NX EX ~600s keyed on the HMAC
+    signature, fail-open, HMAC-path-only) + the timingSafeEqual sweep. Explicitly NO SDK change / no
+    timestamp / no wire-contract change. The stronger timestamp+SDK+window path is DEFERRED to
+    FOLLOW-518 (needs a rollout window + escalation).
   source: >-
     2026-07-01 audit F-21 — feedback HMAC has no timestamp/nonce → an observed (body,sig) pair is
     replayable (bounded bandit inflation); INTERNAL_API_SECRET/CRON_SECRET/webhook use plain ===/!==

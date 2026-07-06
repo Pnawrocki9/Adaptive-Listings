@@ -1442,3 +1442,34 @@ fire-and-forget block used the same unguarded access) that only surfaced because
 runs unconditionally on every batch, while the old one only ran for `intent.snapshot` events, which
 no existing test exercised end-to-end. Any future `ctx.waitUntil` fire-and-forget wiring in a CF
 Worker built on Hono should reuse a guarded accessor, not re-derive the cast inline.
+
+---
+
+## 2026-07-06 / FOLLOW-490
+
+**What I built:** Fixed `/api/internal/schema`'s auth gate —
+`if (schemaApiToken && token !== schemaApiToken)` fails open (accepts any non-empty bearer) when
+`SCHEMA_API_TOKEN` is unset. Replaced with the exact `secretEquals()` fail-closed pattern FOLLOW-456
+already applied to `/api/tenants`, `/api/webhooks/listing-updated`, and
+`/api/internal/description-cache`: `!token || !secret || !secretEquals(secret, token)` → 401. Added
+`route.test.ts` asserting the unset/wrong/correct-secret matrix (6 tests). Updated
+`secret-compare.ts`'s shared docstring to list this 4th consumer.
+
+**Wiring/auth/fail-loud risks I weighed:** This was literally the "one route FOLLOW-456 forgot to
+clone-fix" — same bug shape, same file family, same tenant/blast-radius class (internal cron-only,
+not customer-facing), so a surgical one-line-pattern swap was clearly correct with no new judgment
+calls needed. The harder call was AC4's repo-wide grep: it surfaced two more identical-shape hits
+(`ADAPT_API_KEY` on `GET /api/adapt` and `GET /api/adapt/description`). I did NOT fix those — they
+already have a dedicated ticket (FOLLOW-473) that scopes a materially bigger, riskier change (those
+are live SDK-facing decision-API paths hit on every pageview, and also trust a spoofable
+`x-tenant-id` header — flipping to fail-closed blind, without confirming `ADAPT_API_KEY` is actually
+set in prod, risks an SDK-wide outage vs. this ticket's low-blast-radius internal cron endpoint).
+Silently expanding a "fix the obvious bug" PR into "also harden the primary decision endpoint" would
+have been scope creep into another ticket's territory and a much bigger unreviewed risk to bundle
+in.
+
+**A guardrail I'd add:** A repo-wide `scripts/check-rule-h.sh`-style lint for the literal
+`if (\w+(Secret|Token|Key) && ... !== ...)` shape (mentioned as FOLLOW-484's future grep-lint in
+this ticket) would have caught all 4 FOLLOW-456/490 instances at PR time on the FIRST route, instead
+of needing 2 separate tickets across 2 sprints to close 4 near-identical copies of the same bug.
+Worth promoting from ticket-time grep to a permanent CI check.

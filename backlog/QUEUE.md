@@ -8920,10 +8920,11 @@ gate) closes the epic and must be last.
     ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail
     (F-14)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: data-engineer
   started_at: '2026-07-06T00:00:00Z'
   completed_at: '2026-07-06T12:00:00Z'
+  merge_commit: 7880a1e
   branch: data-engineer/FOLLOW-462-clickhouse-dsr-param-binding
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/438'
   ci:
@@ -8947,6 +8948,36 @@ gate) closes the epic and must be last.
     - [ ] DSR erase/status SQL uses ClickHouse param_* binding (or a strict hex/uuid allowlist) for
           session_id/tenant/mutation IDs — no raw quote-only escaping.
     - [ ] Test: a session_id containing a trailing backslash produces a well-formed, executed DELETE.
+- id: FOLLOW-490
+  title: >-
+    Fix the 4th live fail-open route — /api/internal/schema accepts any non-empty bearer when
+    SCHEMA_API_TOKEN is unset (the original FOLLOW-456's fix was cloned from)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-06T13:00:00Z'
+  branch: backend-engineer/FOLLOW-490-schema-fail-open
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-153 (FOLLOW-456) — PR #430 closed the `if (secret) { if (provided !== secret) reject }`
+    fail-open shape on three routes but LEFT the original it was copied from.
+    api/internal/schema/route.ts:39-42 still accepts any non-empty bearer when SCHEMA_API_TOKEN is
+    unset. Since all three sibling secrets were confirmed MISSING in Vercel prod (FOLLOW-483),
+    SCHEMA_API_TOKEN is plausibly unset too → likely a LIVE auth hole on the per-tenant schema-drift
+    endpoint (data-engineer daily cron, Master Design B.6). Promoted from FOLLOW_UPS stub
+    2026-07-06.
+  spec: RETRO-153; Master Design B.6; must land before FOLLOW-484 grep-lint
+  notes: |
+    AC:
+    - [ ] /api/internal/schema returns 401 when SCHEMA_API_TOKEN is unset, even with a non-empty
+          bearer (fail CLOSED).
+    - [ ] 401 on wrong secret, success on correct secret, via secretEquals (constant-time), never a
+          raw !== compare.
+    - [ ] route.test.ts asserts the unset→401 / wrong→401 / correct→200 matrix.
+    - [ ] Repo-wide grep confirms no remaining fail-open secret shape in apps/control-plane handlers
+          (clean hand-off to FOLLOW-484).
 - id: FOLLOW-463
   title: >-
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)

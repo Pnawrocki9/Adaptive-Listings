@@ -7,6 +7,10 @@
  *
  * `GET /health` returns liveness for uptime checks.
  *
+ * `queue()` (FOLLOW-482 / ADR-0017) consumes the `estalara-events-retry` Cloudflare Queue —
+ * durable retry buffer for a post-ACK ClickHouse insert that failed all its in-process attempts
+ * (see `handlers/events.ts` and `handlers/events-retry-consumer.ts`).
+ *
  * Latency target: p95 < 50ms in production. Bundle stays <200 KB after observability.
  *
  * Observability stack (TICKET-018):
@@ -19,6 +23,7 @@
 
 import { instrument } from '@microlabs/otel-cf-workers';
 
+import { handleEventsRetryQueue } from './handlers/events-retry-consumer.js';
 import { withSentry } from './observability.js';
 import { otelConfig } from './observability/spans.js';
 import { createApp } from './router.js';
@@ -32,8 +37,18 @@ const app = createApp();
  * trace_id matches the OTel trace_id.
  */
 const sentryWrapped = withSentry({ fetch: (request, env, ctx) => app.fetch(request, env, ctx) });
+const instrumentedFetch = instrument(sentryWrapped, otelConfig).fetch;
 
-export default instrument(sentryWrapped, otelConfig);
+/**
+ * Cloudflare Worker default export. `queue` is a plain sibling of `fetch` — it is not routed
+ * through `withSentry`/`instrument` (both are typed/configured for the fetch surface only in
+ * this app); `handleEventsRetryQueue` captures its own Sentry events explicitly (Rule K.2), so
+ * observability is not lost by staying outside that wrapper.
+ */
+export default {
+  fetch: instrumentedFetch,
+  queue: handleEventsRetryQueue,
+};
 
 /**
  * Re-exported so Cloudflare can register the binding declared in `wrangler.toml`. The DO runtime

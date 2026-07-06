@@ -49,6 +49,9 @@ interface MakeEnvOptions {
   /** Override CLICKHOUSE_URL (default: '' — no-cred guard, CH producer skipped).
    *  FOLLOW-459: set to a mock URL to exercise the post-ACK ClickHouse write path. */
   clickhouseUrl?: string;
+  /** Provide a mock EVENTS_RETRY_QUEUE binding (FOLLOW-482). Absent by default — matches an
+   *  environment that hasn't provisioned the queue (the "not configured" guard in events.ts). */
+  eventsRetryQueue?: Env['EVENTS_RETRY_QUEUE'];
 }
 
 interface RateCheckResponse {
@@ -111,6 +114,35 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
     }),
     KV_IDEMPOTENCY: mockKv(),
     RATE_LIMITER: mockRateLimiter(options.rateLimit ?? 'allow'),
+    ...(options.eventsRetryQueue !== undefined
+      ? { EVENTS_RETRY_QUEUE: options.eventsRetryQueue }
+      : {}),
+  };
+}
+
+/** Mock `EVENTS_RETRY_QUEUE` binding (FOLLOW-482) — records every `.send()` call. */
+function mockEventsRetryQueue(): {
+  queue: Env['EVENTS_RETRY_QUEUE'];
+  sent: () => unknown[];
+} {
+  const messages: unknown[] = [];
+  const queue = {
+    send: (message: unknown) => {
+      messages.push(message);
+      return Promise.resolve();
+    },
+    sendBatch: () => Promise.resolve(),
+    metrics: () => Promise.resolve({ backlogCount: 0, backlogBytes: 0 }),
+  } as unknown as Env['EVENTS_RETRY_QUEUE'];
+  return { queue, sent: () => messages };
+}
+
+/** A `.send()` that always rejects — simulates the retry queue itself being unavailable. */
+function failingEventsRetryQueue(): Env['EVENTS_RETRY_QUEUE'] {
+  return {
+    send: () => Promise.reject(new Error('queue_send_failed_test')),
+    sendBatch: () => Promise.reject(new Error('queue_send_failed_test')),
+    metrics: () => Promise.resolve({ backlogCount: 0, backlogBytes: 0 }),
   };
 }
 
@@ -612,6 +644,145 @@ describe('POST /v1/events — ClickHouse ACK latency (FOLLOW-459)', () => {
       stub.restore();
     }
   }, 20_000); // backoff 100+500+2500 ms = ~3.1s of real waits (same policy as Redpanda's)
+});
+
+// ─── FOLLOW-482 / ADR-0017 — durable retry queue on terminal ClickHouse failure ────
+describe('POST /v1/events — durable retry queue on terminal ClickHouse failure (FOLLOW-482)', () => {
+  it('enqueues the failed batch to EVENTS_RETRY_QUEUE in addition to the Sentry capture', async () => {
+    const stub = stubFetchByHost({ clickhouse: 'error_5xx' });
+    const { ctx, drain } = mockExecutionCtx();
+    const { queue, sent } = mockEventsRetryQueue();
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+        eventsRetryQueue: queue,
+      });
+
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+
+      expect(res.status).toBe(200);
+      await drain();
+
+      expect(sent()).toHaveLength(1);
+      const message = sent()[0] as {
+        schema_version: number;
+        tenant_id: string;
+        records: unknown[];
+      };
+      expect(message.schema_version).toBe(1);
+      expect(message.tenant_id).toBe('tenant-uuid-1');
+      expect(message.records).toHaveLength(1);
+    } finally {
+      stub.restore();
+    }
+  }, 20_000);
+
+  it('does NOT enqueue when ClickHouse succeeds', async () => {
+    const stub = stubFetchByHost({ clickhouse: 'ok' });
+    const { ctx, drain } = mockExecutionCtx();
+    const { queue, sent } = mockEventsRetryQueue();
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+        eventsRetryQueue: queue,
+      });
+
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+
+      expect(res.status).toBe(200);
+      await drain();
+      expect(sent()).toHaveLength(0);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('skips the enqueue with a warn log (not a throw) when EVENTS_RETRY_QUEUE is not configured', async () => {
+    const stub = stubFetchByHost({ clickhouse: 'error_5xx' });
+    const { ctx, drain } = mockExecutionCtx();
+    try {
+      const app = createApp();
+      // No `eventsRetryQueue` override — matches an environment that hasn't provisioned
+      // the queue binding yet.
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+      });
+
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+
+      expect(res.status).toBe(200);
+      await drain();
+      // No assertion beyond "did not throw" — the guard branch (events.ts) only logs.
+    } finally {
+      stub.restore();
+    }
+  }, 20_000);
+
+  it('captures a distinct Sentry event when the retry-queue send itself fails', async () => {
+    const stub = stubFetchByHost({ clickhouse: 'error_5xx' });
+    const { ctx, drain } = mockExecutionCtx();
+    const captureSpy = vi.mocked(Sentry.captureException);
+    captureSpy.mockClear();
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        clickhouseUrl: 'https://mock-clickhouse:8443',
+        eventsRetryQueue: failingEventsRetryQueue(),
+      });
+
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+        ctx as never,
+      );
+
+      expect(res.status).toBe(200);
+      await drain();
+
+      expect(captureSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'queue_send_failed_test' }),
+        expect.objectContaining({
+          tags: expect.objectContaining({ kind: 'retry_enqueue_failed' }),
+        }),
+      );
+    } finally {
+      stub.restore();
+    }
+  }, 20_000);
 });
 
 describe('GET unmatched route', () => {

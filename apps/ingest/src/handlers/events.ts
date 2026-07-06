@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
+import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
 import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
@@ -311,10 +312,17 @@ events.post('/', async (c) => {
   //   failure (after those 3 attempts, or a 4xx) is captured to Sentry (see the `.then()`
   //   handler below) so it stays observable and can be manually replayed/backfilled —
   //   Rule K.2: a configured-but-failed store must never be silently swallowed.
-  //   NOT preserved: client-driven re-delivery specifically for a ClickHouse-only
-  //   terminal failure. Closing that gap fully needs a durable, crash-survivable retry
-  //   queue (e.g. Cloudflare Queues) — new infrastructure outside this ticket's scope
-  //   (see FOLLOW-482 in backlog/FOLLOW_UPS.md).
+  //   FOLLOW-482 / ADR-0017 (2026-07-06): a terminal ClickHouse failure is no longer only
+  //   Sentry-captured — the failed batch is ALSO durably re-queued to the
+  //   `estalara-events-retry` Cloudflare Queue (chunked by byte size — see
+  //   `events-retry-queue.ts`), consumed by the `queue()` handler in `index.ts`, which
+  //   re-inserts via this SAME `pushToClickHouse` path and lands in the native
+  //   `estalara-events-retry-dlq` only after exhausting Cloudflare's own per-message
+  //   retry budget. This closes the "NOT preserved" gap named above: client-driven
+  //   re-delivery is replaced by a Worker-side durable retry, so a ClickHouse outage
+  //   longer than the ~3.1s in-process window no longer permanently drops events.
+  //   Duplicate-row risk is a known, accepted consequence (no dedup key — ADR-0017 §4),
+  //   not a new one introduced by this change.
   const batchId = crypto.randomUUID();
   if (validated.length > 0) {
     const redpandaPush = await pushToRedpanda(validated, c.env);
@@ -343,7 +351,7 @@ events.post('/', async (c) => {
     // clickhouse-producer.ts), so the `.then()` below is the only place a failure
     // surfaces; `.catch()` is a defensive backstop for an unexpected bug in that handler.
     const waitUntilCh = getWaitUntil(c);
-    const chPromise = pushToClickHouse(validated, c.env).then((clickhousePush) => {
+    const chPromise = pushToClickHouse(validated, c.env).then(async (clickhousePush) => {
       if (!clickhousePush.ok) {
         logger.error(
           {
@@ -356,8 +364,7 @@ events.post('/', async (c) => {
           'clickhouse_push_failed_post_ack',
         );
         // Rule K.2: a configured store that failed AFTER the ACK must stay observable,
-        // not silently dropped — this is the terminal-failure signal for FOLLOW-482's
-        // durable-retry-queue follow-up until that infra exists.
+        // not silently dropped.
         Sentry.captureException(
           new Error(`clickhouse_push_failed_post_ack: ${clickhousePush.error}`),
           {
@@ -370,6 +377,45 @@ events.post('/', async (c) => {
             },
           },
         );
+
+        // FOLLOW-482 / ADR-0017: durably re-queue the failed batch instead of only
+        // Sentry-capturing it. `env.EVENTS_RETRY_QUEUE` is optional (same "not configured"
+        // guard shape as CLICKHOUSE_URL/REDPANDA_REST_URL) — an environment that hasn't
+        // provisioned the queue yet skips the enqueue with a warn log rather than throwing.
+        if (c.env.EVENTS_RETRY_QUEUE) {
+          const retryMessages = chunkRecordsForRetryQueue(validated, {
+            tenant_id: tenantId,
+            batch_id: batchId,
+            first_failed_at: Date.now(),
+            attempt: 0,
+          });
+          try {
+            // Sequential, not `Promise.all` — ordering doesn't matter (the queue is
+            // order-tolerant, ADR-0017), but a `.send()` failure must be attributable to its
+            // own chunk rather than racing all sends and losing per-chunk error context.
+            for (const retryMessage of retryMessages) {
+              await c.env.EVENTS_RETRY_QUEUE.send(retryMessage);
+            }
+          } catch (enqueueErr) {
+            const msg = enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+            logger.error(
+              { tenant_id: tenantId, batch_id: batchId, error: msg },
+              'events_retry_enqueue_failed',
+            );
+            // Distinct tag from `insert_failed` above: this is the retry SAFETY NET itself
+            // failing (queue misconfigured/outage), not the primary insert — Rule K.2, this
+            // must stay as observable as the primary failure it was meant to backstop.
+            Sentry.captureException(enqueueErr instanceof Error ? enqueueErr : new Error(msg), {
+              tags: { area: 'events', sink: 'clickhouse', kind: 'retry_enqueue_failed' },
+              extra: { tenant_id: tenantId, batch_id: batchId },
+            });
+          }
+        } else {
+          logger.warn(
+            { tenant_id: tenantId, batch_id: batchId },
+            'events_retry_queue_not_configured',
+          );
+        }
       }
     });
     if (waitUntilCh) {

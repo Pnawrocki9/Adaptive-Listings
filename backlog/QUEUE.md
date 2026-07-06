@@ -8953,10 +8953,11 @@ gate) closes the epic and must be last.
     Fix the 4th live fail-open route — /api/internal/schema accepts any non-empty bearer when
     SCHEMA_API_TOKEN is unset (the original FOLLOW-456's fix was cloned from)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-06T13:00:00Z'
   completed_at: '2026-07-06T14:00:00Z'
+  merge_commit: 154d684
   branch: backend-engineer/FOLLOW-490-schema-fail-open
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/442'
   ci:

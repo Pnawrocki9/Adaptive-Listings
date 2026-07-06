@@ -8996,10 +8996,23 @@ gate) closes the epic and must be last.
     Durable, crash-survivable retry queue (Cloudflare Queues) for the post-ACK ClickHouse insert
     (ADR-0017)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-06T15:00:00Z'
+  completed_at: '2026-07-06T17:00:00Z'
+  merge_commit: f53c3ba
   branch: backend-engineer/FOLLOW-482-clickhouse-retry-queue
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/449'
+  ci:
+    'green (56 real gates, independently verified); Rule I wired-or-dead pre-existing-red
+    non-blocking'
+  operator_action: >-
+    DEPLOY-TIME DEVOPS HANDOFF before the queue actually retries: create the Cloudflare queues
+    `estalara-events-retry` + `estalara-events-retry-dlq` (`wrangler queues create` or Terraform in
+    infra/terraform/cloudflare/) per env; names must match apps/ingest/wrangler.toml. Code is
+    merge/deploy-safe BEFORE provisioning — the EVENTS_RETRY_QUEUE binding is optional and degrades
+    to pre-FOLLOW-482 behavior (Sentry-capture-only + warn) if absent. DLQ alert/runbook owner =
+    devops (FOLLOW-495; alert should also key off the new Sentry tag kind:'retry_reinsert_failed').
   priority: P1
   estimated_hours: 6
   depends_on: []

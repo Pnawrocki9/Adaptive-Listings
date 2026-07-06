@@ -13764,18 +13764,20 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   permission-blocked corrective the FOLLOW-513 worker could not land) — the wrong lesson that CAUSED
   RETRO-159 BUG-1 still stands on disk source_retro: RETRO-160 source_ticket: FOLLOW-513
   recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 0.5
-  promoted_to_queue: false scope: >- .claude/agents/backend-engineer/lessons.md:1503 (the
-  `## 2026-07-06 / FOLLOW-482` entry, point (2)) still asserts the queue handler was "deliberately
-  NOT routed through withSentry/instrument … for no real benefit since the consumer already captures
-  its own Sentry events explicitly." That rationale is the EXACT wrong assumption that caused
-  RETRO-159 §4b BUG-1: Sentry.captureException is a silent no-op without an initialized client, and
-  @sentry/cloudflare's withSentry DOES wrap the queue handler (its JSDoc mentioning only fetch is
-  stale — verified against the installed @sentry/cloudflare@10.50.0 source by FOLLOW-513). Verified
-  2026-07-06 that line 1503 is unchanged and NO `## …/FOLLOW-513` correction entry exists (last
-  header is FOLLOW-482). The FOLLOW-513 worker was BLOCKED by the permission system from writing its
-  own corrective entry, so the wrong lesson still stands and will mislead the next backend task that
-  reads lessons.md — a wrong lesson is worse than no lesson because it is trusted and short-circuits
-  investigation. This is the learning-loop's own failure mode (RETRO-160 §5d / §6 Candidate A). ac:
+  promoted_to_queue: false status: DONE (2026-07-06 — correction appended inline at lessons.md:1503
+  as a ⚠️ CORRECTION block; the wrong entry is retained for history but now flagged) scope: >-
+  .claude/agents/backend-engineer/lessons.md:1503 (the `## 2026-07-06 / FOLLOW-482` entry, point
+  (2)) still asserts the queue handler was "deliberately NOT routed through withSentry/instrument …
+  for no real benefit since the consumer already captures its own Sentry events explicitly." That
+  rationale is the EXACT wrong assumption that caused RETRO-159 §4b BUG-1: Sentry.captureException
+  is a silent no-op without an initialized client, and @sentry/cloudflare's withSentry DOES wrap the
+  queue handler (its JSDoc mentioning only fetch is stale — verified against the installed
+  @sentry/cloudflare@10.50.0 source by FOLLOW-513). Verified 2026-07-06 that line 1503 is unchanged
+  and NO `## …/FOLLOW-513` correction entry exists (last header is FOLLOW-482). The FOLLOW-513
+  worker was BLOCKED by the permission system from writing its own corrective entry, so the wrong
+  lesson still stands and will mislead the next backend task that reads lessons.md — a wrong lesson
+  is worse than no lesson because it is trusted and short-circuits investigation. This is the
+  learning-loop's own failure mode (RETRO-160 §5d / §6 Candidate A). ac:
   - A dated `## 2026-07-06 / FOLLOW-513` corrective entry is appended to
     .claude/agents/backend-engineer/lessons.md (and/or point (2) of the FOLLOW-482 entry is struck
     through) recording the corrected facts, WITH a source citation to @sentry/cloudflare@10.50.0.

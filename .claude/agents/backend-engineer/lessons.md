@@ -1503,9 +1503,21 @@ distinct Sentry tag (`retry_enqueue_failed`), not silently folded into the gener
 Rule K.2. (2) Deliberately did NOT route the `queue` handler through `withSentry`/`instrument` —
 those are typed/wired for the `fetch` surface only in this app's usage, and forcing a second generic
 type param through them risked a `strictFunctionTypes` variance fight for no real benefit since the
-consumer already captures its own Sentry events explicitly. (3) No dedup key added — CEO-accepted
-risk (ESC-037); confirmed the `events` table DDL still lacks `event_id` in its `ORDER BY` before
-treating that as settled rather than re-litigating it.
+consumer already captures its own Sentry events explicitly.
+
+> **⚠️ CORRECTION (FOLLOW-513 / RETRO-160, 2026-07-06 — point (2) above was WRONG and directly
+> caused a P1 bug):** `Sentry.captureException` from `@sentry/cloudflare` **silently no-ops when no
+> client is initialized**, and `withSentry` is exactly what runs `Sentry.init()` per invocation.
+> Because the `queue` handler bypassed `withSentry`, and queue invocations frequently land on fresh
+> isolates that never served a `fetch`, the consumer's `retry_reinsert_failed` /
+> `malformed_retry_message` captures were **blind in prod** — defeating the exact observability
+> guarantee FOLLOW-482 existed to provide. Fix (PR #453): pass the WHOLE `{ fetch, queue }` object
+> through `withSentry` (verified `@sentry/cloudflare@10.50.0` DOES instrument `queue`, despite a
+> stale JSDoc that only mentions `fetch`). **Lesson: never assume `captureException` works without a
+> bound client — a confidently-worded wrong lesson is worse than none because it is trusted.**
+
+(3) No dedup key added — CEO-accepted risk (ESC-037); confirmed the `events` table DDL still lacks
+`event_id` in its `ORDER BY` before treating that as settled rather than re-litigating it.
 
 **A guardrail I'd add:** `pnpm install` after adding a new direct dependency (`zod`, needed for the
 colocated schema) is easy to skip if `tsc --noEmit` happens to still pass — it silently resolved

@@ -8996,10 +8996,9 @@ gate) closes the epic and must be last.
     Durable, crash-survivable retry queue (Cloudflare Queues) for the post-ACK ClickHouse insert
     (ADR-0017)
   agent: backend-engineer
-  status: DONE
+  status: CODE_COMPLETE_OPERATOR_PENDING # RETRO-159 Rule AA fix: code merged (f53c3ba) but the durable retry is INERT until devops provisions the queues (see operator_action); over-marked DONE in error, corrected 2026-07-06.
   assigned_to: backend-engineer
-  started_at: '2026-07-06T15:00:00Z'
-  completed_at: '2026-07-06T17:00:00Z'
+  code_completed_at: '2026-07-06T17:00:00Z'
   merge_commit: f53c3ba
   branch: backend-engineer/FOLLOW-482-clickhouse-retry-queue
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/449'

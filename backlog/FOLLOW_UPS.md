@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 512 (511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 516 (512/513/514/515 = RETRO-159 (FOLLOW-482): 512 = P1 deploy-time queue-binding-provisioned assertion + Rule AA status correction; 513 = P1 bind Sentry on the queue() path (consumer runs outside withSentry → retry_reinsert_failed/malformed captures no-op in prod); 514 = P2 staging/dev queue-binding parity; 515 = P2 re-scope FOLLOW-495 alert to retry_reinsert_failed/DLQ-depth + close ADR-0017 dlq_terminal deviation. Sources in RETROSPECTIVES.md RETRO-159. 511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13679,3 +13679,82 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - If yes: SCHEMA_API_URL (= https://admin.estalara.com/api/internal/schema) + a SCHEMA_API_TOKEN
     MATCHING the Vercel-prod control-plane value are set as secrets on
     estalara-decision-api-production (via Doppler/wrangler), and a live GET returns 200 (not 401).
+
+- id: FOLLOW-512 title: >- Ingest: deploy-time assertion that the estalara-events-retry queue + DLQ
+  bindings are actually provisioned in prod (catch the "shipped but inert" durable retry) + correct
+  FOLLOW-482 status source_retro: RETRO-159 source_ticket: FOLLOW-482 recommended_sprint: next
+  recommended_agent: devops-engineer priority: P1 estimated_hours: 1.5 promoted_to_queue: false
+  scope: >- FOLLOW-482 (PR #449) added a durable Cloudflare-Queue retry for the post-ACK ClickHouse
+  insert, but EVENTS_RETRY_QUEUE is an OPTIONAL binding that degrades to Sentry-capture-only (==
+  pre-FOLLOW-482 behavior) when the queue isn't provisioned. The queues estalara-events-retry +
+  estalara-events-retry-dlq are NOT yet created (`wrangler queues create` / Terraform in
+  infra/terraform/cloudflare/), so the durability the PR advertises is INERT in prod while CI +
+  `wrangler dry-run` are green. This is a Rule AA "shipped-but-inert-until-provisioned" instance
+  (lineage RETRO-152 / RETRO-155 / RETRO-156); QUEUE currently mis-marks FOLLOW-482 status: DONE
+  with an open operator_action. ac:
+  - A CI/Terraform-plan check or post-deploy smoke asserts the estalara-events-retry +
+    estalara-events-retry-dlq queues exist and the EVENTS_RETRY_QUEUE/EVENTS_RETRY_DLQ bindings
+    resolve on the prod Worker; it fails loud if they don't.
+  - Operator provisions both queues (wrangler queues create / Terraform) per env; names match
+    apps/ingest/wrangler.toml.
+  - PM corrects QUEUE FOLLOW-482 status DONE -> CODE_COMPLETE_OPERATOR_PENDING per Rule AA until a
+    real terminal-CH-failure batch is observed to survive via the queue (prod-axis proof step).
+    source_sections: RETRO-159 §5a / §6 / §7 hop-1
+
+- id: FOLLOW-513 title: >- Ingest: the queue() consumer runs outside withSentry so its
+  retry_reinsert_failed / malformed_retry_message captures likely no-op — bind Sentry on the queue
+  path source_retro: RETRO-159 source_ticket: FOLLOW-482 recommended_sprint: next recommended_agent:
+  backend-engineer priority: P1 estimated_hours: 2 promoted_to_queue: false scope: >- index.ts
+  passes only { fetch } through withSentry (Sentry.withSentry from @sentry/cloudflare, which inits
+  the client per-invocation) then reassembles export default { fetch, queue }. The queue path never
+  runs inside withSentry, so no Sentry client is bound when handleEventsRetryQueue calls
+  captureException — @sentry/cloudflare no-ops captureException without a client. Queue invocations
+  frequently land on fresh isolates that never served a fetch, so the consumer's terminal-loss
+  signals (retry_reinsert_failed) and malformed_retry_message are structurally likely to be DROPPED
+  in prod, blinding the "even durable retry failed" case. The index.ts:40 comment asserting
+  observability-is-not-lost is wrong for this wrapper model. ac:
+  - The queue() handler runs with a bound Sentry client (wrap the whole ExportedHandler { fetch,
+    queue } in withSentry per its documented usage, or Sentry.init at the top of
+    handleEventsRetryQueue).
+  - A test asserts a Sentry client is bound (not merely that captureException was called) when the
+    queue handler runs via the real default-export wiring.
+  - (fold-in, LG-1) On any future EventsRetryMessage schema_version bump, the consumer must NOT
+    ack-drop a well-formed but unknown-version message (CF holds in-flight messages across deploys)
+    — accept a version union / route by version instead of z.literal(1) + ack-drop. source_sections:
+    RETRO-159 §4b BUG-1 / §4c TG-1 / §4a LG-1 / §7 hop-2
+
+- id: FOLLOW-514 title: >- Ingest: staging/dev queue-binding parity — the durable retry is
+  structurally absent outside prod (CF queue bindings aren't inherited by named envs) source_retro:
+  RETRO-159 source_ticket: FOLLOW-482 recommended_sprint: next recommended_agent: backend-engineer
+  priority: P2 estimated_hours: 1.5 promoted_to_queue: false scope: >- wrangler.toml declares the
+  queue producer/consumer/DLQ bindings at top-level and mirrored under [[env.production.queues.*]],
+  but [env.dev]/[env.staging] do not redeclare them. Cloudflare Worker queue bindings are NOT
+  inherited by named environments, so estalara-ingest-staging/-dev deploy with no EVENTS_RETRY_QUEUE
+  producer and no queue() consumer registration. Effect is safe (producer degrades to warn; no
+  consumer to mis-fire) but means the durable retry is silently prod-only and cannot be validated in
+  staging before prod. The implementing worker flagged this as matching a pre-existing per-env gap.
+  ac:
+  - Either [env.staging] (and [env.dev] as appropriate) redeclare the queue producer/consumer/DLQ
+    bindings AND a staging queue is provisioned, so the retry path can be exercised in staging;
+  - OR the prod-only-by-design decision is documented in wrangler.toml + the ingest runbook with the
+    rationale. source_sections: RETRO-159 §5c
+
+- id: FOLLOW-515 title: >- Ingest: re-scope FOLLOW-495's CH-loss alert for the post-FOLLOW-482
+  reality + close the ADR-0017 §3 dlq_terminal observability deviation source_retro: RETRO-159
+  source_ticket: FOLLOW-482 recommended_sprint: next recommended_agent: devops-engineer priority: P2
+  estimated_hours: 2 promoted_to_queue: false scope: >- Post-FOLLOW-482 the insert_failed /
+  clickhouse_push_failed_post_ack tag (which FOLLOW-495 keys off) no longer means "batch lost" — it
+  means "first attempt failed, now being durably retried." The real loss signal is
+  retry_reinsert_failed (repeated) -> DLQ. Additionally, ADR-0017 §3 specified a Sentry capture tag
+  kind:'dlq_terminal' on terminal DLQ landing as the exact signal 495 should alert on, but the
+  implementation never emits it — the DLQ (estalara-events-retry-dlq) is code-unreferenced
+  (inspect-only per ADR §1), so no code produces dlq_terminal and the DLQ has zero code-side
+  observability. Cross-references FOLLOW-495; does not duplicate it. ac:
+  - FOLLOW-495's alert is re-scoped to fire on retry_reinsert_failed (rate indicating real re-insert
+    failure on the sole prod events sink) and/or native estalara-events-retry-dlq depth, not the
+    now-benign insert_failed.
+  - The ADR-0017 §3 dlq_terminal deviation is resolved: either add a thin DLQ consumer that emits
+    the dlq_terminal Sentry signal, or amend ADR-0017 + FOLLOW-495 to alert on DLQ depth and record
+    why dlq_terminal was dropped.
+  - A runbook step documents DLQ inspection/replay (wrangler queues consumer / dashboard) as the
+    manual recovery path for poison batches. source_sections: RETRO-159 §3 / §4d DG-1 / §5b

@@ -57,6 +57,34 @@ class_name = "RateLimiter"
 tag = "v1"
 new_sqlite_classes = ["RateLimiter"]
 
+# Cloudflare Queue — durable retry buffer for the post-ACK ClickHouse `events` insert
+# (FOLLOW-482 / ADR-0017, ACCEPTED by CEO 2026-07-06, ESC-037). Producer:
+# `handlers/events.ts` enqueues a chunked `EventsRetryMessage` on terminal ClickHouse failure
+# (after the in-process 3-attempt retry is exhausted). Consumer: the `queue()` handler exported
+# from `src/index.ts` re-inserts via the same `pushToClickHouse` path used on the primary
+# insert; ack on success, `retry()` on failure — Cloudflare's native per-message retry
+# (`max_retries` below) and DLQ take it from there, no bespoke backoff/DLQ code.
+# `estalara-events-retry` + `estalara-events-retry-dlq` are provisioned via
+# `wrangler queues create` / Terraform (infra/terraform/cloudflare/) — a devops/operator
+# deploy-time step, not created by this file.
+[[queues.producers]]
+binding = "EVENTS_RETRY_QUEUE"
+queue = "estalara-events-retry"
+
+# DLQ producer binding — not consumed by code (ADR-0017 Decision §1); inspected/replayed via
+# `wrangler queues consumer` or the Cloudflare dashboard. Alert/runbook ownership: devops
+# (FOLLOW-495).
+[[queues.producers]]
+binding = "EVENTS_RETRY_DLQ"
+queue = "estalara-events-retry-dlq"
+
+[[queues.consumers]]
+queue = "estalara-events-retry"
+max_retries = 5
+dead_letter_queue = "estalara-events-retry-dlq"
+max_batch_size = 25
+max_batch_timeout = 5
+
 # Development environment (local wrangler dev)
 [env.dev]
 name = "estalara-ingest-dev"
@@ -93,6 +121,21 @@ preview_id = "0603c2833a7a46e2890fb885319d813c"
 [[env.production.durable_objects.bindings]]
 name = "RATE_LIMITER"
 class_name = "RateLimiter"
+
+[[env.production.queues.producers]]
+binding = "EVENTS_RETRY_QUEUE"
+queue = "estalara-events-retry"
+
+[[env.production.queues.producers]]
+binding = "EVENTS_RETRY_DLQ"
+queue = "estalara-events-retry-dlq"
+
+[[env.production.queues.consumers]]
+queue = "estalara-events-retry"
+max_retries = 5
+dead_letter_queue = "estalara-events-retry-dlq"
+max_batch_size = 25
+max_batch_timeout = 5
 
 # Production configuration is managed via Terraform in infra/terraform/cloudflare/
 # Secrets are managed via Doppler — never commit .env files

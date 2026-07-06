@@ -1473,3 +1473,45 @@ in.
 this ticket) would have caught all 4 FOLLOW-456/490 instances at PR time on the FIRST route, instead
 of needing 2 separate tickets across 2 sprints to close 4 near-identical copies of the same bug.
 Worth promoting from ticket-time grep to a permanent CI check.
+
+---
+
+## 2026-07-06 / FOLLOW-482
+
+**What I built:** Durable Cloudflare Queue retry buffer for the post-ACK ClickHouse `events` insert
+per ADR-0017 (ACCEPTED, ESC-037 — confirmed via the not-yet-merged
+`architect/ADR-0017-accepted-follow482-ready` branch, since the ADR file on `main` still read
+PROPOSED). Producer: `events.ts`'s existing terminal-CH-failure `.then()` (kept the existing
+`logger.error` + `Sentry.captureException`) now also chunks `validated` records by serialized byte
+size (`chunkRecordsForRetryQueue`, ~100 KB threshold under CF's 128 KB/message cap) and `.send()`s
+each chunk to `env.EVENTS_RETRY_QUEUE`, wrapped in the SAME `getWaitUntil`/`.catch` pattern
+FOLLOW-459 built (no new unguarded fire-and-forget). Consumer: a new
+`handlers/events-retry-consumer.ts` exports `handleEventsRetryQueue`, wired as `queue` alongside
+`fetch` in `index.ts`'s default export; it re-validates the message body with a colocated Zod schema
+(`EventsRetryMessageSchema` — internal to this Worker, not `packages/shared`, per ADR-0017 §5),
+re-inserts via the unchanged `pushToClickHouse`, and calls `message.ack()`/`message.retry()` per
+message (not a batch-level throw) so Cloudflare's native `max_retries`/DLQ do the rest.
+`wrangler.toml` mirrors the exact per-env pattern already used for KV/DO bindings (top-level +
+explicit `env.production` redeclare; `env.dev`/`env.staging` inherit, matching the pre-existing
+KV/DO gap rather than inventing a new convention).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Made `EVENTS_RETRY_QUEUE` optional in `Env` with a
+guard-and-warn-log branch (same shape as `CLICKHOUSE_URL`'s no-cred guard) rather than a hard
+requirement, so an environment that hasn't provisioned the queue yet degrades to "same as
+pre-FOLLOW-482" instead of throwing — but a `.send()` failure on a _configured_ queue gets its own
+distinct Sentry tag (`retry_enqueue_failed`), not silently folded into the generic backstop, per
+Rule K.2. (2) Deliberately did NOT route the `queue` handler through `withSentry`/`instrument` —
+those are typed/wired for the `fetch` surface only in this app's usage, and forcing a second generic
+type param through them risked a `strictFunctionTypes` variance fight for no real benefit since the
+consumer already captures its own Sentry events explicitly. (3) No dedup key added — CEO-accepted
+risk (ESC-037); confirmed the `events` table DDL still lacks `event_id` in its `ORDER BY` before
+treating that as settled rather than re-litigating it.
+
+**A guardrail I'd add:** `pnpm install` after adding a new direct dependency (`zod`, needed for the
+colocated schema) is easy to skip if `tsc --noEmit` happens to still pass — it silently resolved
+against a stray global `~/node_modules/zod` instead of the workspace-pinned version until I re-ran
+install and checked `tsc --listFiles` for the actual resolved path. Worth a repo-wide note: after
+adding any new `dependencies` entry, verify `--listFiles` (or equivalent) resolves inside the
+workspace `node_modules/.pnpm`, not a machine-global fallback — a bundler-mode `moduleResolution`
+can mask this in local dev while CI (no stray global node_modules) would fail the exact same import
+cleanly, but for the wrong file.

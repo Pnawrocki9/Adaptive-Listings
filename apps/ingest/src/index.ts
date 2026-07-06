@@ -21,12 +21,14 @@
  * @module apps/ingest/src/index
  */
 
+import type { ExecutionContext } from '@cloudflare/workers-types';
 import { instrument } from '@microlabs/otel-cf-workers';
 
 import { handleEventsRetryQueue } from './handlers/events-retry-consumer.js';
 import { withSentry } from './observability.js';
 import { otelConfig } from './observability/spans.js';
 import { createApp } from './router.js';
+import type { Env } from './types.js';
 
 const app = createApp();
 
@@ -35,19 +37,59 @@ const app = createApp();
  * `instrument()` (outermost).  OTel creates the root span for the entire
  * request lifecycle; Sentry operates inside that span so the Sentry transaction
  * trace_id matches the OTel trace_id.
+ *
+ * `queue` is passed into `withSentry` in the SAME call as `fetch` (FOLLOW-513) —
+ * `@sentry/cloudflare`'s `withSentry` instruments `fetch`, `scheduled`, `email`, `queue`, and
+ * `tail` on the handler object it's given (verified against the installed `^10.50.0`
+ * `instrumentExportedHandlerQueue`; its JSDoc only mentions `fetch` but the implementation
+ * also wraps `queue`, initializing a bound Sentry client per invocation before
+ * `handleEventsRetryQueue` runs). Passing only `{ fetch }` — as this used to do — left `queue` a
+ * plain sibling that never got a bound client, so `Sentry.captureException` inside
+ * `handleEventsRetryQueue` silently no-op'd on any isolate that hadn't already served a `fetch`.
+ * `queue` is NOT routed through OTel `instrument()` here (unchanged from before FOLLOW-513) —
+ * only the Sentry gap is in scope for this fix.
  */
-const sentryWrapped = withSentry({ fetch: (request, env, ctx) => app.fetch(request, env, ctx) });
-const instrumentedFetch = instrument(sentryWrapped, otelConfig).fetch;
+const sentryWrapped = withSentry<Env>({
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
+  queue: handleEventsRetryQueue,
+});
 
 /**
- * Cloudflare Worker default export. `queue` is a plain sibling of `fetch` — it is not routed
- * through `withSentry`/`instrument` (both are typed/configured for the fetch surface only in
- * this app); `handleEventsRetryQueue` captures its own Sentry events explicitly (Rule K.2), so
- * observability is not lost by staying outside that wrapper.
+ * `instrument()` (like `withSentry`) mutates the handler object it's given IN PLACE and, if that
+ * object has a `.queue` property, wraps it too (verified against the installed
+ * `@microlabs/otel-cf-workers@1.0.0-rc.52` `instrument()` — it wraps `fetch`/`scheduled`/`queue`/
+ * `email` on whatever object is passed). Passing `sentryWrapped` directly here would silently add
+ * OTel span instrumentation to the queue path as a side effect — out of scope for FOLLOW-513
+ * (Sentry-binding only) and not something this fix should introduce. `sentryWrapped.queue` is
+ * captured on its own line, and `instrument()` is given a FRESH object containing only `.fetch`,
+ * so it can only ever touch the fetch surface — same behavior as before this fix.
+ *
+ * `assertBound` below replaces a non-null assertion with a real (if-this-ever-fails-fail-loud)
+ * runtime check: `sentryWrapped` was constructed from a literal that always defines `fetch` and
+ * `queue` (this is the SAME object reference `withSentry`/`instrument` mutate in place — see
+ * `@sentry/cloudflare`'s `instrumentExportedHandlerFetch`/`...Queue`, which only ever replace an
+ * existing property, never delete one); `ExportedHandler`'s fields are typed optional only because
+ * the interface is shared with handlers that don't implement every trigger. If a future library
+ * upgrade ever changed that contract, this throws at Worker module-init instead of silently
+ * shipping an undefined `queue`/`fetch` handler.
  */
+function assertBound<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`FOLLOW-513: withSentry/instrument did not return a ${label} handler`);
+  }
+  return value;
+}
+
+const sentryWrappedQueue = assertBound(sentryWrapped.queue, 'queue');
+const instrumentedFetch = assertBound(
+  instrument({ fetch: assertBound(sentryWrapped.fetch, 'fetch') }, otelConfig).fetch,
+  'instrumented fetch',
+);
+
+/** Cloudflare Worker default export. */
 export default {
   fetch: instrumentedFetch,
-  queue: handleEventsRetryQueue,
+  queue: sentryWrappedQueue,
 };
 
 /**

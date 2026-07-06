@@ -16,6 +16,15 @@
  * shape that can never parse would only burn the Queue's retry budget before landing in the DLQ
  * anyway, so there is no point Waiting for that.
  *
+ * A message that parses the loose `schema_version` envelope but carries a version this build
+ * doesn't know how to handle (`schema_version !== CURRENT_EVENTS_RETRY_SCHEMA_VERSION`) is treated
+ * as retry-worthy, NOT malformed (FOLLOW-513 / LG-1): Cloudflare holds in-flight Queue messages
+ * across deploys, so a future `schema_version` bump would otherwise ack-drop (permanently lose)
+ * every message already in flight the moment the producer starts emitting the new version. Letting
+ * it retry means it either gets picked up by a consumer deploy that adds support for that version,
+ * or — worst case — lands in the native DLQ once retries are exhausted, where it is still
+ * recoverable, instead of being silently discarded here.
+ *
  * @module apps/ingest/src/handlers/events-retry-consumer
  */
 
@@ -23,7 +32,11 @@ import * as Sentry from '@sentry/cloudflare';
 
 import type { Env } from '../types.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
-import { EventsRetryMessageSchema } from '../events-retry-queue.js';
+import {
+  CURRENT_EVENTS_RETRY_SCHEMA_VERSION,
+  EventsRetryMessageEnvelopeSchema,
+  EventsRetryMessageSchema,
+} from '../events-retry-queue.js';
 import { logger } from '../observability/logger.js';
 
 /**
@@ -32,6 +45,47 @@ import { logger } from '../observability/logger.js';
  */
 export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Promise<void> {
   for (const message of batch.messages) {
+    const envelope = EventsRetryMessageEnvelopeSchema.safeParse(message.body);
+
+    if (!envelope.success) {
+      logger.error(
+        { message_id: message.id, message_attempts: message.attempts },
+        'events_retry_message_malformed',
+      );
+      Sentry.captureException(new Error('events_retry_message_malformed'), {
+        tags: { area: 'events', sink: 'clickhouse', kind: 'malformed_retry_message' },
+        extra: { message_id: message.id, message_attempts: message.attempts },
+      });
+      message.ack();
+      continue;
+    }
+
+    if (envelope.data.schema_version !== CURRENT_EVENTS_RETRY_SCHEMA_VERSION) {
+      // Well-formed envelope, but a schema_version this build doesn't know how to process yet.
+      // Retry (not ack) so an in-flight message from a future producer version survives until a
+      // consumer that understands it deploys, or it lands in the native DLQ — never silently lost.
+      logger.error(
+        {
+          message_id: message.id,
+          message_attempts: message.attempts,
+          received_schema_version: envelope.data.schema_version,
+          expected_schema_version: CURRENT_EVENTS_RETRY_SCHEMA_VERSION,
+        },
+        'events_retry_unknown_schema_version',
+      );
+      Sentry.captureException(new Error('events_retry_unknown_schema_version'), {
+        tags: { area: 'events', sink: 'clickhouse', kind: 'unknown_schema_version' },
+        extra: {
+          message_id: message.id,
+          message_attempts: message.attempts,
+          received_schema_version: envelope.data.schema_version,
+          expected_schema_version: CURRENT_EVENTS_RETRY_SCHEMA_VERSION,
+        },
+      });
+      message.retry();
+      continue;
+    }
+
     const parsed = EventsRetryMessageSchema.safeParse(message.body);
 
     if (!parsed.success) {

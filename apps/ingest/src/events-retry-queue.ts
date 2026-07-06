@@ -30,9 +30,29 @@ import { toClickHouseRow } from './clickhouse-producer.js';
  */
 export const MAX_RETRY_MESSAGE_BYTES = 100_000;
 
-/** Zod schema for a retry-queue message. Colocated (not `packages/shared`) — see module doc. */
+/**
+ * The `schema_version` this Worker script's producer/consumer pair currently reads and writes.
+ * Bump this (and add a new version branch in `handlers/events-retry-consumer.ts`) when the message
+ * shape changes — never just widen `EventsRetryMessageSchema` in place (FOLLOW-513 / LG-1).
+ */
+export const CURRENT_EVENTS_RETRY_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Loose envelope schema — validates only that `schema_version` is present and is a non-negative
+ * integer, without asserting anything about the rest of the shape. The consumer parses with this
+ * FIRST to decide how to route the message (FOLLOW-513 / LG-1): a message whose `schema_version`
+ * doesn't even parse this far is genuinely malformed (ack-drop, unchanged behavior); a message
+ * that parses this far but carries a `schema_version` this build doesn't know how to handle yet
+ * must NOT be ack-dropped — Cloudflare holds in-flight messages across deploys, so ack-dropping an
+ * unknown-but-well-formed version would silently lose retries the day a version bump ships.
+ */
+export const EventsRetryMessageEnvelopeSchema = z.object({
+  schema_version: z.number().int().nonnegative(),
+});
+
+/** Zod schema for a `schema_version: 1` retry-queue message. Colocated (not `packages/shared`) — see module doc. */
 export const EventsRetryMessageSchema = z.object({
-  schema_version: z.literal(1),
+  schema_version: z.literal(CURRENT_EVENTS_RETRY_SCHEMA_VERSION),
   batch_id: z.string(),
   tenant_id: z.string(),
   /** Epoch ms of the first terminal ClickHouse failure that produced this message. */
@@ -88,7 +108,7 @@ export function chunkRecordsForRetryQueue(
   const flush = (): void => {
     if (current.length === 0) return;
     chunks.push({
-      schema_version: 1,
+      schema_version: CURRENT_EVENTS_RETRY_SCHEMA_VERSION,
       batch_id: meta.batch_id,
       tenant_id: meta.tenant_id,
       first_failed_at: meta.first_failed_at,

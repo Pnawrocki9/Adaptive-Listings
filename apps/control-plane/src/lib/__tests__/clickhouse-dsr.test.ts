@@ -3,8 +3,13 @@
  *
  * Coverage:
  *   - buildEraseMutationSql:
- *       * generates ALTER TABLE DELETE WHERE session_id IN (...)
- *       * escapes single-quotes in session IDs
+ *       * generates ALTER TABLE DELETE WHERE session_id IN (...) with
+ *         `{dsr_id_N:String}` placeholders (FOLLOW-462 parameter binding —
+ *         session id VALUES never appear in the SQL text)
+ *       * binds session IDs containing a trailing backslash, an embedded
+ *         quote, and an embedded backslash as safe param values (FOLLOW-462
+ *         regression: quote-only escaping was defeated by a trailing
+ *         backslash, which re-opened the ClickHouse string literal)
  *       * embeds DSR marker comment
  *       * rejects empty session list, invalid table/column/marker names
  *   - aggregateMutationStatus:
@@ -21,6 +26,12 @@
  *   - getSessionEventSummary (FOLLOW-455 / audit F-20):
  *       * returns the real count/first_at/last_at from ClickHouse
  *       * returns count:0 with null timestamps when no rows match
+ *   - resolveMutationIdByMarker / pollMutationStatus /
+ *     updateDsrAuditLogClickHouseStatus (FOLLOW-462):
+ *       * golden-query SQL-shape regression — canonical `{name:Type}`
+ *         placeholders present, raw id values absent from the SQL text,
+ *         values instead sent as `param_<name>` query args
+ *       * invalid table names rejected before any SQL is built
  *
  * @module apps/control-plane/src/lib/__tests__/clickhouse-dsr.test
  */
@@ -33,32 +44,78 @@ import {
   DSR_CLICKHOUSE_TABLES,
   getSessionEventSummary,
   MAX_MUTATION_RETRIES,
+  pollMutationStatus,
+  resolveMutationIdByMarker,
+  updateDsrAuditLogClickHouseStatus,
 } from '../clickhouse-dsr.js';
 
 // ─── buildEraseMutationSql ────────────────────────────────────────────────────
 
 describe('buildEraseMutationSql', () => {
-  it('generates ALTER TABLE DELETE WHERE for a single session_id', () => {
-    const sql = buildEraseMutationSql('events', 'session_id', ['abc123'], 'marker001');
+  it('generates ALTER TABLE DELETE WHERE with a param placeholder for a single session_id', () => {
+    const { sql, params } = buildEraseMutationSql('events', 'session_id', ['abc123'], 'marker001');
     expect(sql).toContain('ALTER TABLE events DELETE WHERE session_id IN');
-    expect(sql).toContain("'abc123'");
+    expect(sql).toContain('{dsr_id_0:String}');
+    expect(sql).not.toContain('abc123'); // the value must never appear in the SQL text
+    expect(params).toEqual({ dsr_id_0: 'abc123' });
     expect(sql).toContain('/* DSR:marker001 */');
   });
 
-  it('joins multiple session IDs with comma-space separator', () => {
-    const sql = buildEraseMutationSql(
+  it('binds multiple session IDs as separate named params', () => {
+    const { sql, params } = buildEraseMutationSql(
       'adaptation_decisions',
       'session_id',
       ['s1', 's2', 's3'],
       'm',
     );
-    expect(sql).toContain("'s1', 's2', 's3'");
+    expect(sql).toContain('IN ({dsr_id_0:String}, {dsr_id_1:String}, {dsr_id_2:String})');
+    expect(params).toEqual({ dsr_id_0: 's1', dsr_id_1: 's2', dsr_id_2: 's3' });
   });
 
-  it('escapes embedded single quotes in session IDs (ANSI doubling)', () => {
-    // SHA-256 hex never contains quotes; defensive test.
-    const sql = buildEraseMutationSql('events', 'session_id', ["it's"], 'marker');
-    expect(sql).toContain("'it''s'");
+  // ─── FOLLOW-462: backslash-safe parameter binding ──────────────────────────
+  //
+  // Audit F-14: quote-only escaping (`s.replace(/'/g, "''")`) was defeated by
+  // a trailing backslash — `'...\'` re-opens the ClickHouse string literal
+  // because backslash is itself an escape character in ClickHouse SQL string
+  // syntax, silently malforming the DELETE (or making it match nothing) while
+  // the DSR erase route still reported success. Parameter binding removes
+  // the id value from the SQL text entirely, so the value can never
+  // influence the statement's shape regardless of its content.
+
+  it('never embeds a session id containing a trailing backslash in the SQL text', () => {
+    const trailingBackslashId = 'abc\\';
+    const { sql, params } = buildEraseMutationSql(
+      'events',
+      'session_id',
+      [trailingBackslashId],
+      'marker',
+    );
+    // The SQL text is well-formed regardless of the id's content: it only
+    // ever contains the placeholder, never the raw value.
+    expect(sql).toBe(
+      'ALTER TABLE events DELETE WHERE session_id IN ({dsr_id_0:String}) /* DSR:marker */',
+    );
+    // The bound param, once decoded by ClickHouse's "Escaped" param format,
+    // reconstructs the exact original value — the backslash is doubled so it
+    // round-trips instead of being consumed as an (incomplete) escape.
+    expect(params.dsr_id_0).toBe('abc\\\\');
+  });
+
+  it('never embeds a session id containing an embedded single quote in the SQL text', () => {
+    const quoteId = "it's-a-session";
+    const { sql, params } = buildEraseMutationSql('events', 'session_id', [quoteId], 'marker');
+    expect(sql).not.toContain("'");
+    expect(sql).toContain('{dsr_id_0:String}');
+    // Quotes are plain data in the param-value "Escaped" format (not a
+    // delimiter there), so no escaping is needed or applied.
+    expect(params.dsr_id_0).toBe(quoteId);
+  });
+
+  it('never embeds a session id containing an embedded backslash in the SQL text', () => {
+    const backslashId = 'sess\\with\\backslashes';
+    const { sql, params } = buildEraseMutationSql('events', 'session_id', [backslashId], 'marker');
+    expect(sql).not.toContain('\\');
+    expect(params.dsr_id_0).toBe('sess\\\\with\\\\backslashes');
   });
 
   it('throws on empty session ID list', () => {
@@ -87,7 +144,7 @@ describe('buildEraseMutationSql', () => {
 
   it('builds SQL for each canonical DSR table', () => {
     for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
-      const sql = buildEraseMutationSql(table, column, ['sess-001'], 'abc123');
+      const { sql } = buildEraseMutationSql(table, column, ['sess-001'], 'abc123');
       expect(sql).toContain(`ALTER TABLE ${table}`);
       expect(sql).toContain(`WHERE ${column} IN`);
     }
@@ -256,5 +313,136 @@ describe('getSessionEventSummary', () => {
 
     const summary = await getSessionEventSummary(cfg, 'tenant-1', 'sess-42');
     expect(summary.count).toBe(42);
+  });
+
+  it('binds tenant_id/session_id as ClickHouse params, never as raw SQL text (FOLLOW-462)', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [{ cnt: '0', first_at: '', last_at: '' }] }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getSessionEventSummary(cfg, 'tenant\\evil', 'sess\\evil');
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_tenant_id')).toBe('tenant\\\\evil');
+    expect(url.searchParams.get('param_session_id')).toBe('sess\\\\evil');
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('{tenant_id:String}');
+    expect(body).toContain('{session_id:String}');
+    expect(body).not.toContain('tenant\\evil');
+    expect(body).not.toContain('sess\\evil');
+  });
+});
+
+// ─── resolveMutationIdByMarker / pollMutationStatus / updateDsrAuditLogClickHouseStatus (FOLLOW-462) ──
+
+describe('resolveMutationIdByMarker (FOLLOW-462 golden-query shape)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const cfg = { url: 'http://clickhouse.test:8123', user: 'default', password: '' };
+
+  it('sends the marker as a param, never interpolated into the SQL text', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await resolveMutationIdByMarker(cfg, 'events', 'marker-abc123');
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_marker')).toBe('marker-abc123');
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain("concat('%DSR:', {marker:String}, '%')");
+    expect(body).not.toContain('marker-abc123');
+  });
+
+  it('rejects an invalid table name before issuing any query', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(resolveMutationIdByMarker(cfg, 'events; DROP TABLE x', 'marker')).rejects.toThrow(
+      'invalid table name',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('pollMutationStatus (FOLLOW-462 golden-query shape)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const cfg = { url: 'http://clickhouse.test:8123', user: 'default', password: '' };
+
+  it('sends mutation_id as a param, never interpolated into the SQL text', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await pollMutationStatus(cfg, 'events', "mut'id\\evil");
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_mutation_id')).toBe("mut'id\\\\evil");
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('{mutation_id:String}');
+    expect(body).not.toContain("mut'id");
+  });
+
+  it('rejects an invalid table name before issuing any query', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(pollMutationStatus(cfg, "events' OR '1'='1", 'mut-1')).rejects.toThrow(
+      'invalid table name',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateDsrAuditLogClickHouseStatus (FOLLOW-462 golden-query shape)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const cfg = { url: 'http://clickhouse.test:8123', user: 'default', password: '' };
+
+  it('binds every id/value as a ClickHouse param, never as raw SQL text', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(new Response('', { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await updateDsrAuditLogClickHouseStatus(cfg, {
+      tenant_id: 'tenant\\1',
+      session_id: 'sess\\1',
+      clickhouse_mutation_id: 'mut_1,mut_2', // comma-joined composite (_finalise.ts)
+      clickhouse_mutation_status: 'done',
+      completed: true,
+    });
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_tenant_id')).toBe('tenant\\\\1');
+    expect(url.searchParams.get('param_session_id')).toBe('sess\\\\1');
+    expect(url.searchParams.get('param_mutation_id')).toBe('mut_1,mut_2');
+    expect(url.searchParams.get('param_status')).toBe('done');
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('{tenant_id:String}');
+    expect(body).toContain('{session_id:String}');
+    expect(body).toContain('{mutation_id:String}');
+    expect(body).toContain('{status:String}');
+    expect(body).not.toContain('tenant\\1');
+    expect(body).not.toContain('sess\\1');
+    expect(body).not.toContain('mut_1,mut_2');
   });
 });

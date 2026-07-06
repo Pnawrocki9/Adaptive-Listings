@@ -79,52 +79,126 @@ export const DSR_CLICKHOUSE_TABLES: readonly {
 
 export type DsrTableName = (typeof DSR_CLICKHOUSE_TABLES)[number]['table'];
 
+// ─── Identifier allowlists (FOLLOW-462) ────────────────────────────────────────
+//
+// ClickHouse table/column identifiers and SQL comment markers cannot be bound
+// via HTTP `param_*` parameter binding — parameters only substitute *values*
+// inside `{name:Type}` placeholders, never bare identifiers or raw SQL text.
+// These are therefore validated with a strict allowlist BEFORE any string
+// concatenation, exactly as before this fix. Session/tenant/mutation id
+// *values* (the part that was vulnerable, see below) are now bound as real
+// ClickHouse parameters instead of being concatenated into the SQL text.
+
+const TABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const COLUMN_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const MARKER_TOKEN_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function assertValidIdentifier(value: string, pattern: RegExp, label: string, fn: string): void {
+  if (!pattern.test(value)) {
+    throw new Error(`${fn}: invalid ${label} '${value}'`);
+  }
+}
+
+// ─── ClickHouse HTTP parameter encoding (FOLLOW-462) ──────────────────────────
+
+/**
+ * Encode a raw string for transport as a ClickHouse HTTP `param_<name>` query
+ * argument.
+ *
+ * ClickHouse parses `param_*` values using its "Escaped" text format (the
+ * same escaping TabSeparated/TSV cells use), NOT SQL string-literal syntax —
+ * the value is never embedded in the SQL text at all, so there is no quote
+ * delimiter to escape. The only bytes that are structurally significant in
+ * this format are backslash (the escape character itself) and the control
+ * characters ClickHouse recognises escape sequences for; per the
+ * TabSeparated format spec the minimum required escapes are backslash, tab,
+ * and line feed — https://clickhouse.com/docs/interfaces/formats/TabSeparated
+ * ("escape sequences used for output: \b \f \r \n \t \0 \' \\"). Backslash
+ * MUST be escaped first so this function doesn't double-escape the
+ * backslashes it just inserted for the other sequences.
+ *
+ * This is what makes a trailing backslash in a session_id safe: the
+ * backslash never reaches the SQL text, so it cannot combine with the
+ * surrounding SQL quote to reopen the string literal (the FOLLOW-462 bug).
+ */
+function escapeClickHouseParamValue(raw: string): string {
+  return raw
+    .replace(/\\/g, '\\\\')
+    .replace(/\t/g, '\\t')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\0/g, '\\0')
+    .replace(/\f/g, '\\f')
+    .split('\b') // \b in a regex is a word-boundary assertion, not the backspace char — use split/join instead
+    .join('\\b');
+}
+
 // ─── SQL builder ──────────────────────────────────────────────────────────────
+
+/** A parameterized ClickHouse statement: SQL text plus its bound param values. */
+export interface ParameterizedSql {
+  /** SQL text with `{name:Type}` placeholders — never contains raw id values. */
+  sql: string;
+  /** Values to bind, keyed by placeholder name (sent as `param_<name>`). */
+  params: Record<string, string>;
+}
 
 /**
  * Build an `ALTER TABLE ... DELETE WHERE session_id IN (...)` statement.
  *
+ * FOLLOW-462: session IDs are bound as ClickHouse HTTP parameters
+ * (`{dsr_id_N:String}` placeholders + `param_dsr_id_N=...`), not concatenated
+ * into the SQL text. Quote-only escaping of arbitrary id values was defeated
+ * by a trailing backslash (`'...\'` re-opens the string literal because
+ * backslash is itself an escape character in ClickHouse string literals) —
+ * parameter binding removes the id value from the SQL text entirely, so no
+ * amount of quotes/backslashes in the value can alter the statement's shape.
+ *
  * The returned SQL embeds a per-request marker comment so the mutation can be
  * uniquely identified in `system.mutations` after issuing. The marker is the
  * value of `markerToken` wrapped in `/* DSR:<token> *\/` SQL comment syntax.
- *
- * Session IDs are SQL-string-quoted with single quotes; embedded single
- * quotes are doubled per ANSI SQL escaping. session IDs in this codebase are
- * SHA-256 hex digests (64 hex chars) — see
- * `apps/ingest/src/middleware/idempotency.ts` — so embedded quotes are not
- * expected, but we escape defensively.
+ * `table`, `column`, and `markerToken` cannot be parameter-bound (ClickHouse
+ * parameters only substitute values inside `{name:Type}`, never identifiers
+ * or raw SQL/comment text) so they are validated against a strict allowlist
+ * instead — table/column must look like ClickHouse identifiers, and
+ * markerToken must be alphanumeric/`_`/`-` (we generate it ourselves as a
+ * UUID with hyphens stripped).
  *
  * @param table - ClickHouse table name. Caller must restrict to known PII tables.
  * @param column - Column to filter on (typically `session_id`).
  * @param sessionIds - Non-empty array of session IDs to erase.
  * @param markerToken - Caller-supplied identifier (e.g. a UUID) embedded as a
  *   SQL comment so we can find the mutation in `system.mutations` later.
- * @returns The SQL string ready to POST to ClickHouse.
- * @throws Error if `sessionIds` is empty (caller should short-circuit instead).
+ * @returns `{ sql, params }` ready to POST to ClickHouse via `executeClickHouseSql`.
+ * @throws Error if `sessionIds` is empty, or if `table`/`column`/`markerToken`
+ *   fail their allowlist checks (caller should short-circuit instead).
  */
 export function buildEraseMutationSql(
   table: string,
   column: string,
   sessionIds: readonly string[],
   markerToken: string,
-): string {
+): ParameterizedSql {
   if (sessionIds.length === 0) {
     throw new Error('buildEraseMutationSql: sessionIds must be non-empty');
   }
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)) {
-    throw new Error(`buildEraseMutationSql: invalid table name '${table}'`);
-  }
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column)) {
-    throw new Error(`buildEraseMutationSql: invalid column name '${column}'`);
-  }
-  if (!/^[a-zA-Z0-9_-]+$/.test(markerToken)) {
+  assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'buildEraseMutationSql');
+  assertValidIdentifier(column, COLUMN_NAME_PATTERN, 'column name', 'buildEraseMutationSql');
+  if (!MARKER_TOKEN_PATTERN.test(markerToken)) {
     throw new Error(`buildEraseMutationSql: marker token must be alphanumeric+_-`);
   }
 
-  const escaped = sessionIds.map((s) => `'${s.replace(/'/g, "''")}'`).join(', ');
+  const params: Record<string, string> = {};
+  const placeholders = sessionIds.map((id, i) => {
+    const paramName = `dsr_id_${String(i)}`;
+    params[paramName] = escapeClickHouseParamValue(id);
+    return `{${paramName}:String}`;
+  });
   // The /* DSR:<token> */ comment is preserved verbatim in
-  // system.mutations.command — we'll look it up by substring.
-  return `ALTER TABLE ${table} DELETE WHERE ${column} IN (${escaped}) /* DSR:${markerToken} */`;
+  // system.mutations.command — we'll look it up by substring. markerToken is
+  // allowlist-validated above, so embedding it directly is safe.
+  const sql = `ALTER TABLE ${table} DELETE WHERE ${column} IN (${placeholders.join(', ')}) /* DSR:${markerToken} */`;
+  return { sql, params };
 }
 
 // ─── HTTP transport ───────────────────────────────────────────────────────────
@@ -155,9 +229,26 @@ export function readClickHouseConfig(): ClickHouseConfig | null {
 /**
  * Execute an arbitrary SQL statement against ClickHouse via the HTTP
  * interface. Errors thrown on non-2xx response.
+ *
+ * `params`, if given, are sent as `param_<name>` URL query arguments — the
+ * ClickHouse HTTP interface's parameterized-query binding mechanism. `sql`
+ * must reference them via `{name:Type}` placeholders (see
+ * `buildEraseMutationSql`); this mirrors the existing `chTracerQuery` /
+ * `chTracerCount` pattern in `apps/control-plane/src/lib/clickhouse-tracer.ts`
+ * (FOLLOW-261) so the control plane has one parameter-binding convention.
  */
-export async function executeClickHouseSql(cfg: ClickHouseConfig, sql: string): Promise<string> {
-  const res = await fetch(cfg.url, {
+export async function executeClickHouseSql(
+  cfg: ClickHouseConfig,
+  sql: string,
+  params?: Record<string, string>,
+): Promise<string> {
+  const url = new URL(cfg.url);
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      url.searchParams.set(`param_${name}`, value);
+    }
+  }
+  const res = await fetch(url.toString(), {
     method: 'POST',
     headers: {
       ...clickhouseAuthHeaders(cfg),
@@ -182,8 +273,9 @@ export async function executeClickHouseSql(cfg: ClickHouseConfig, sql: string): 
 export async function queryClickHouseJson<T = unknown>(
   cfg: ClickHouseConfig,
   sql: string,
+  params?: Record<string, string>,
 ): Promise<T[]> {
-  const text = await executeClickHouseSql(cfg, `${sql} FORMAT JSON`);
+  const text = await executeClickHouseSql(cfg, `${sql} FORMAT JSON`, params);
   const parsed = JSON.parse(text) as { data?: T[] };
   return parsed.data ?? [];
 }
@@ -214,20 +306,25 @@ export async function getSessionEventSummary(
   tenantId: string,
   sessionId: string,
 ): Promise<SessionEventSummary> {
-  const escTenant = tenantId.replace(/'/g, "''");
-  const escSession = sessionId.replace(/'/g, "''");
+  // FOLLOW-462: tenant_id/session_id bound as ClickHouse params, not
+  // string-concatenated — see buildEraseMutationSql for the backslash-safety
+  // rationale.
   const sql = `
     SELECT
       count() AS cnt,
       toString(min(ts)) AS first_at,
       toString(max(ts)) AS last_at
     FROM events
-    WHERE tenant_id = '${escTenant}'
-      AND session_id = '${escSession}'
+    WHERE tenant_id = {tenant_id:String}
+      AND session_id = {session_id:String}
   `;
   const rows = await queryClickHouseJson<{ cnt: string; first_at: string; last_at: string }>(
     cfg,
     sql,
+    {
+      tenant_id: escapeClickHouseParamValue(tenantId),
+      session_id: escapeClickHouseParamValue(sessionId),
+    },
   );
   const row = rows[0];
   if (!row || Number(row.cnt) === 0) {
@@ -277,9 +374,14 @@ export async function issueEraseMutation(
     throw new Error('issueEraseMutation: sessionIds must be non-empty');
   }
   const markerToken = randomUUID().replace(/-/g, '');
-  const alterSql = buildEraseMutationSql(input.table, input.column, input.sessionIds, markerToken);
+  const { sql: alterSql, params } = buildEraseMutationSql(
+    input.table,
+    input.column,
+    input.sessionIds,
+    markerToken,
+  );
 
-  await executeClickHouseSql(cfg, alterSql);
+  await executeClickHouseSql(cfg, alterSql, params);
 
   // Resolve mutation_id by marker. ClickHouse system.mutations.command
   // preserves SQL comments verbatim.
@@ -297,18 +399,27 @@ export async function resolveMutationIdByMarker(
   table: string,
   markerToken: string,
 ): Promise<string | null> {
-  // Escape marker for SQL substring. Marker is alphanumeric (validated in
-  // builder) so safe to embed directly, but we use parameterised form via
-  // the `query` URL trick to be defensive.
+  // FOLLOW-462: `table` is a bare identifier (cannot be parameter-bound) so
+  // it is allowlist-validated instead of quote-escaped. `markerToken` is
+  // validated too (this export is not guaranteed to receive an already
+  // builder-validated token — see the mutation-poll retry path, which
+  // recovers it via regex from stored SQL) and bound as a ClickHouse param
+  // via `concat()` rather than being embedded in the `LIKE` pattern text.
+  assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'resolveMutationIdByMarker');
+  if (!MARKER_TOKEN_PATTERN.test(markerToken)) {
+    throw new Error(`resolveMutationIdByMarker: invalid marker token '${markerToken}'`);
+  }
   const sql = `
     SELECT mutation_id
     FROM system.mutations
-    WHERE table = '${table.replace(/'/g, "''")}'
-      AND command LIKE '%DSR:${markerToken}%'
+    WHERE table = '${table}'
+      AND command LIKE concat('%DSR:', {marker:String}, '%')
     ORDER BY create_time DESC
     LIMIT 1
   `;
-  const rows = await queryClickHouseJson<{ mutation_id: string }>(cfg, sql);
+  const rows = await queryClickHouseJson<{ mutation_id: string }>(cfg, sql, {
+    marker: escapeClickHouseParamValue(markerToken),
+  });
   const first = rows[0];
   return first ? first.mutation_id : null;
 }
@@ -332,6 +443,9 @@ export async function pollMutationStatus(
   table: string,
   mutationId: string,
 ): Promise<MutationStatusRow | null> {
+  // FOLLOW-462: `table` is a bare identifier, allowlist-validated (cannot be
+  // parameter-bound); `mutationId` is bound as a ClickHouse param.
+  assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'pollMutationStatus');
   const sql = `
     SELECT
       mutation_id,
@@ -340,12 +454,14 @@ export async function pollMutationStatus(
       coalesce(latest_failed_reason, '') AS latest_failed_reason,
       toString(create_time) AS create_time
     FROM system.mutations
-    WHERE table = '${table.replace(/'/g, "''")}'
-      AND mutation_id = '${mutationId.replace(/'/g, "''")}'
+    WHERE table = '${table}'
+      AND mutation_id = {mutation_id:String}
     ORDER BY create_time DESC
     LIMIT 1
   `;
-  const rows = await queryClickHouseJson<MutationStatusRow>(cfg, sql);
+  const rows = await queryClickHouseJson<MutationStatusRow>(cfg, sql, {
+    mutation_id: escapeClickHouseParamValue(mutationId),
+  });
   return rows[0] ?? null;
 }
 
@@ -413,11 +529,11 @@ export async function updateDsrAuditLogClickHouseStatus(
     completed: boolean;
   },
 ): Promise<void> {
-  const escTenant = args.tenant_id.replace(/'/g, "''");
-  const escSession = args.session_id.replace(/'/g, "''");
-  const escMutationId = args.clickhouse_mutation_id.replace(/'/g, "''");
-  const escStatus = args.clickhouse_mutation_status.replace(/'/g, "''");
-
+  // FOLLOW-462: every id/value below is bound as a ClickHouse param instead
+  // of quote-escaped and concatenated. Note `clickhouse_mutation_id` can be
+  // a comma-joined composite of several mutation ids (see
+  // `_finalise.ts` `maybeFinaliseAuditLog`) — parameter binding handles that
+  // transparently since the comma is just data, not SQL syntax.
   const completedAtClause = args.completed
     ? `, clickhouse_mutation_completed_at = now64(3, 'UTC')`
     : '';
@@ -425,13 +541,18 @@ export async function updateDsrAuditLogClickHouseStatus(
   const sql = `
     ALTER TABLE dsr_audit_log
     UPDATE
-      clickhouse_mutation_id = '${escMutationId}',
-      clickhouse_mutation_status = '${escStatus}'
+      clickhouse_mutation_id = {mutation_id:String},
+      clickhouse_mutation_status = {status:String}
       ${completedAtClause}
-    WHERE tenant_id = '${escTenant}'
-      AND session_id = '${escSession}'
+    WHERE tenant_id = {tenant_id:String}
+      AND session_id = {session_id:String}
       AND dsr_type = 'erase'
       AND action = 'completed'
   `;
-  await executeClickHouseSql(cfg, sql);
+  await executeClickHouseSql(cfg, sql, {
+    mutation_id: escapeClickHouseParamValue(args.clickhouse_mutation_id),
+    status: escapeClickHouseParamValue(args.clickhouse_mutation_status),
+    tenant_id: escapeClickHouseParamValue(args.tenant_id),
+    session_id: escapeClickHouseParamValue(args.session_id),
+  });
 }

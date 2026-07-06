@@ -51,6 +51,51 @@ FOLLOW-488).
 
 ---
 
+**Updated 2026-07-06 (session 10) — Bookkeeping-hygiene fix + next P2 delegated.** Confirmed via
+`gh pr list --state open` there are NO open PRs to validate this round. Confirmed via `gh pr view`
+that PR #429 (FOLLOW-459) and PR #430 (FOLLOW-456) are MERGED (2026-07-03T09:14:42Z and
+2026-07-03T09:42:22Z respectively) — both were already correctly listed as merged in this file's own
+prose resume note, but their individual ticket `status:` fields in Sprint 22b were never flipped
+past `READY_FOR_REVIEW` by the prior session (a pure bookkeeping miss, not a code issue). CORRECTED
+both to `status: DONE` with `completed_at` set from the actual merge timestamp and `pr:` annotated
+`(MERGED)`. **RETRO DEBT FOUND:** neither FOLLOW-456 nor FOLLOW-459 has a RETRO-NNN entry in
+`backlog/RETROSPECTIVES.md` (last entry is RETRO-152 / FOLLOW-450); FOLLOW-460 and FOLLOW-485 (both
+already correctly `DONE`) are ALSO missing their retrospectives — 4 merged tickets with no retro:
+FOLLOW-456, FOLLOW-459, FOLLOW-460, FOLLOW-485. This orchestrator invocation has no
+subagent-spawning tool available in this session (Read/Write/Edit/Bash only) so the
+`retrospective-analyst` spawn could not be executed here — flagging for the next invocation that
+does have Task/Agent access to spawn RETRO-153 (FOLLOW-456), RETRO-154 (FOLLOW-459), RETRO-155
+(FOLLOW-460), RETRO-156 (FOLLOW-485) before any further sprint-close activity, per CLAUDE.md "Per-
+ticket retrospective loop." Re-confirmed the three standing OPEN escalations (ESC-020, ESC-028,
+ESC-034) are unchanged and remain non-blocking per established precedent (each self-documents as
+operator-action-pending, not an unresolved architectural/product decision) — no new escalation
+opened. **Ticket picked:** FOLLOW-462 (P2, data-engineer — ClickHouse DSR SQL: bind `session_id` as
+a param so a trailing backslash can't silently defeat an Art.17 erasure, F-14). Rationale: it is the
+highest real-world-severity item among the READY, unblocked, worker-delegable Sprint 22b P2 tail
+(FOLLOW-461/462/463/464/465/466/473/474/467/468/469 all READY, no P1 is READY —FOLLOW-471 the P1
+gate ticket is BACKLOG, blocked on the whole epic); F-14 is a live GDPR Art.17 compliance-erasure
+correctness bug (silent failure on `session_id` values containing a backslash), a materially higher
+stakes finding than the hardening/cost/bundle items on the same P2 tier. Flipped FOLLOW-462
+`READY → IN_PROGRESS`, `assigned_to: data-engineer`,
+`branch: data-engineer/FOLLOW-462-clickhouse-dsr-param-binding`. Delegation-table row used:
+"ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete → data-engineer." IN_PROGRESS
+count now: FOLLOW-462 + stale TICKET-PILOT-001 = 2 (cap 3, room for one more). No PR opened yet by
+this session — the actual worker invocation (isolated worktree `data-engineer/FOLLOW-462-...`,
+ticket context = this ticket's YAML block + docs/MASTER_DESIGN.md §Snapshot.1 +
+CONVENTIONS_PATCH.md + this HANDOFFS note) must be run by whatever mechanism in the outer harness
+has subagent-spawn capability; this session could only perform the queue-state and file-based
+portion of delegation.\*\*
+
+**CI CONFIRMATION for this session's own bookkeeping PR #437** (docs-only: QUEUE.md/STATUS.md/
+HANDOFFS.md/ESCALATIONS.md/FOLLOW_UPS.md/lessons.md — no application code touched):
+`gh pr checks 437` → 55 pass / 2 fail across both matrix legs; the 2 failures are both "Rule I —
+wired-or-dead check", the documented pre-existing non-blocking baseline (see project memory "CI gate
+landscape" — this gate has ~175 pre-existing violations unrelated to any diff and is not a real
+merge gate). Non-Rule-I non-success count: **0**. Human may merge #437 whenever convenient; it
+carries no functional risk.
+
+---
+
 **Updated 2026-07-02 (session 9) — Recovered from a crashed session 8 that had delegated FOLLOW-450
 (backend-engineer) and FOLLOW-457 (ml-engineer) to isolated worktrees and then died mid-flight. Both
 workers had FINISHED their code but the terminal ended before committing — the complete work sat
@@ -8611,12 +8656,12 @@ gate) closes the epic and must be last.
   title: >-
     Close tenant-isolation holes: demo revoke, global generation-model, fail-open secrets (F-13)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE # corrected 2026-07-06 (pm-orchestrator) — PR #430 confirmed MERGED 2026-07-03T09:42:22Z via `gh pr view`; this flip was missed by the prior session. RETRO-153 pending spawn.
   assigned_to: backend-engineer
   started_at: '2026-07-02T19:25:00Z'
-  completed_at: '2026-07-02T20:30:00Z'
+  completed_at: '2026-07-03T09:42:22Z'
   branch: backend-engineer/FOLLOW-456-tenant-isolation-holes
-  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/430'
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/430 (MERGED)'
   ci: 'green (57 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
   merge_risk: >-
     ⚠️ MERGE-ORDER RISK (VERIFIED 2026-07-02 via `vercel env ls`): this PR makes THREE routes FAIL
@@ -8722,12 +8767,12 @@ gate) closes the epic and must be last.
   title: >-
     Ingest: ACK before the ClickHouse insert to meet the <50ms p95 budget (F-09)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE # corrected 2026-07-06 (pm-orchestrator) — PR #429 confirmed MERGED 2026-07-03T09:14:42Z via `gh pr view`; this flip was missed by the prior session. RETRO-154 pending spawn.
   assigned_to: backend-engineer
   started_at: '2026-07-02T17:40:00Z'
-  completed_at: '2026-07-02T19:20:00Z'
+  completed_at: '2026-07-03T09:14:42Z'
   branch: backend-engineer/FOLLOW-459-ingest-ack-before-insert
-  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/429'
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/429 (MERGED)'
   ci: 'green (56 real gates); Rule I wired-or-dead pre-existing-red non-blocking'
   notes_pm: >-
     ACK now returns after Redpanda success; CH insert runs post-ACK in ctx.waitUntil (same 3x
@@ -8875,7 +8920,10 @@ gate) closes the epic and must be last.
     ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail
     (F-14)
   agent: data-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-07-06T00:00:00Z'
+  branch: data-engineer/FOLLOW-462-clickhouse-dsr-param-binding
   priority: P2
   estimated_hours: 2
   depends_on: []

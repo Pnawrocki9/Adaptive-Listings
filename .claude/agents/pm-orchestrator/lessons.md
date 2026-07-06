@@ -1724,3 +1724,20 @@ independent occurrence, even if it references the same pattern by name.
   Postgres/Drizzle migrations under `packages/db/migrations/**`, and conflating the two either
   creates a false blocker (treating a self-applying migration as operator-gated) or a false
   all-clear (assuming a still-running workflow already completed).
+
+- **Date / ticket:** 2026-07-06 — FOLLOW-462 (also: bookkeeping fix on FOLLOW-456/FOLLOW-459)
+- **Delegation row used:** "ClickHouse, Redpanda, ETL, archetype pipeline, drift cron, DSR delete ->
+  data-engineer" (FOLLOW-462).
+- **What validation caught (or missed):** A resume note can list a PR as "all merged to main" in its
+  own prose while the _individual ticket's_ `status:` field is never actually flipped past
+  `READY_FOR_REVIEW` — two tickets (FOLLOW-456, FOLLOW-459) sat silently stale in QUEUE.md for 3+
+  days despite the merge being confirmed and even narrated. Caught only by re-running
+  `gh pr view --json state,mergedAt` against every PR number mentioned in prose, not trusting the
+  prose summary itself. Same sweep surfaced a retro debt: 4 merged tickets (456/459/460/485) with
+  zero `RETRO-NNN` entries — the per-ticket retrospective loop had silently stopped being invoked
+  despite the queue narrative implying "done, retros written" for adjacent tickets.
+- **A delegation/validation rule I'd add:** When resuming from a "START HERE" note, don't just trust
+  its "all merged" list — grep the merged PR numbers against each PR's _own ticket entry_ status
+  field in QUEUE.md and against RETROSPECTIVES.md's RETRO-NNN coverage; a session can correctly
+  narrate a merge and still forget the two mechanical follow-through steps (status flip + retro
+  spawn) for a subset of the PRs it just merged.

@@ -1873,3 +1873,50 @@ functions).
 - All 104 llm-gateway Python tests pass (including cross-language contract gates).
 
 ---
+
+## PM orchestrator (session 10) → data-engineer, FOLLOW-462
+
+**Date:** 2026-07-06 | **Branch:** `data-engineer/FOLLOW-462-clickhouse-dsr-param-binding` (isolated
+worktree; branch-first per FOLLOW-448/Rule AA discipline — create the branch as your FIRST action,
+before any edit)
+
+**Ticket:** backlog/QUEUE.md → Sprint 22b → `FOLLOW-462` ("ClickHouse DSR SQL: bind session_id as a
+param (backslash-safe) so erasure can't silently fail", audit finding F-14, P2, ~2h).
+
+**Read before starting:**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read per Operating Principle
+  1 before any non-trivial task)
+- `CONVENTIONS_PATCH.md` (current permanent rules — includes Rule AA CODE-VS-PROD-AXIS and the
+  branch-first-worker rule from FOLLOW-448)
+- This ticket's full YAML block in `backlog/QUEUE.md` (source F-14, spec, AC checklist)
+
+**The bug:** `clickhouse-dsr.ts` builds its erase/status `ALTER TABLE ... DELETE` SQL by escaping
+only `'` in the `session_id`/tenant/mutation-ID values. ClickHouse SQL also treats `\` as an escape
+character; a `session_id` ending in a literal backslash malforms the statement, so DSR erasure can
+silently fail — a GDPR Art.17 compliance-erasure correctness bug, not merely hardening.
+
+**Required fix (per ticket AC):**
+
+- Use ClickHouse's native `param_*` query-parameter binding (or, if the client library in use
+  doesn't support it cleanly for `ALTER ... DELETE`, a strict hex/UUID-shaped allowlist validated
+  before interpolation) for `session_id`/tenant/mutation IDs — no raw quote-only escaping.
+- Add a test: a `session_id` containing a trailing backslash still produces a well-formed, executed
+  DELETE (not a malformed/no-op statement).
+
+**Validation the orchestrator will require before READY_FOR_REVIEW (do not skip):**
+
+- Local: lint, typecheck, targeted data-engineer test suite, and the existing ClickHouse migrations/
+  DSR test suites all green.
+- CI green on every real gate (`gh pr checks <pr> --watch`, then the `jq` non-success-count check —
+  paste the `0`).
+- Runtime-wiring grep: a non-test producer (the erase/status route calling into the fixed
+  `clickhouse-dsr.ts` binder) AND a non-test consumer (the actual ClickHouse DELETE executing) —
+  paste both grep lines per the evidence requirements.
+- This is a single-agent ticket, no step-5d co-assignment check needed.
+
+**Open a PR when done; do not merge.** Update `backlog/QUEUE.md` FOLLOW-462 status only via the
+orchestrator (single writer) — report back status, PR link, and CI result instead of editing the
+queue yourself.
+
+---

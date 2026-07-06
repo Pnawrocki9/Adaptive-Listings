@@ -1958,6 +1958,22 @@ other's functions from the live app. Fix: the single shared `app` is now in
 **Resolution:** Code fix complete (FOLLOW-437 / PR #393 merged 2026-06-30). Awaiting operator
 go-live (Step 1-3 above). Escalation closes when smoke verification passes.
 
+**CORRECTION 2026-07-06 (pm-orchestrator session 10) — the runbook above is now STALE, do not follow
+Step 1-3 as written.** FOLLOW-485 (PR #431, ADR-0016, merged 2026-07-03) replaced the
+Redpanda-poller embed-seed consumer entirely with a direct-HTTPS Modal endpoint
+(`listing_embed_seed_requested_endpoint`, same pattern as the now-live description flow). The old
+`consume_embed_seed_requests` poller code is retained in the repo but its `modal.Period(seconds=30)`
+schedule was removed — it is dead/unscheduled, not the live path. **Corrected operator go-live
+path:** provision `MODAL_EMBED_SEED_URL` in Vercel prod (mirroring `MODAL_DESCRIPTION_URL`; both
+consumed by `apps/control-plane/src/lib/listing-embed-seed-publisher.ts` via
+`publishListingEmbeddingSeed`), confirm `INTERNAL_API_SECRET` (bearer, `hmac.compare_digest`) is set
+in Modal `estalara-secrets` (same secret already required for the description endpoint), then smoke
+by triggering an onboarding-overflow embed-seed event and checking Modal logs / Sentry
+`tags.area:onboarding tags.sink:modal-embed-seed`. No `REDPANDA_TOPIC_LISTING_EMBEDDINGS` step is
+needed. `docs/runbooks/modal-embed-seed-consumer-golive.md` needs an update pass to match (not done
+by this session — flagging for devops-engineer or the next doc-sync ticket). Escalation stays OPEN,
+still operator-action-pending, just against the corrected target.
+
 ---
 
 ## RESOLVED — Modal ML layer never deployed to prod (no apps/secrets in the only account, no CI deploy) [FOLLOW-436]

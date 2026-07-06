@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 490 (489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 505 (504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13194,3 +13194,298 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     read time; a value with surrounding whitespace still authenticates.
   - A unit test asserts a whitespace-padded key is accepted (or normalized) rather than producing an
     illegal-header crash.
+
+- id: FOLLOW-490 title: >- Fix the 4th live fail-open route — /api/internal/schema accepts any
+  non-empty bearer when SCHEMA_API_TOKEN is unset (the original FOLLOW-456's description-cache fix
+  was copied from) source_retro: RETRO-153 source_ticket: FOLLOW-456 recommended_sprint: 22b
+  recommended_agent: backend-engineer priority: P1 estimated_hours: 1 promoted_to_queue: false
+  scope: >- FOLLOW-456 (PR #430) closed the `if (secret) { if (provided !== secret) reject }`
+  fail-open shape on three routes — but LEFT the original it was copied from.
+  `api/internal/schema/route.ts:39-42` still runs
+  `const schemaApiToken = process.env.SCHEMA_API_TOKEN; if (schemaApiToken && token !==   schemaApiToken) { 401 }`,
+  so when SCHEMA_API_TOKEN is unset every non-empty bearer token is accepted. The description-cache
+  route this PR DID fix stated in its removed docstring it was "matching the pattern used by
+  /api/internal/schema" — i.e. the copy was fixed, the source was not. /api/internal/schema is the
+  live per-tenant schema-drift endpoint (data-engineer daily cron, Master Design B.6); since all
+  three sibling secrets were confirmed MISSING in Vercel prod (FOLLOW-483), SCHEMA_API_TOKEN is
+  plausibly unset too → the route is likely accepting any non-empty bearer in prod today. Route it
+  through the shared `secretEquals` helper (`@/lib/secret-compare`, SHA-256 + timingSafeEqual) and
+  fail CLOSED (401 when the secret is unset), matching the three FOLLOW-456 routes. MUST land BEFORE
+  FOLLOW-484 (whose grep-lint would otherwise RED on this pre-existing violation). ac:
+  - /api/internal/schema returns 401 when SCHEMA_API_TOKEN is unset, even with a non-empty bearer.
+  - /api/internal/schema returns 401 on a wrong secret and 200 on the correct secret, via
+    `secretEquals` (constant-time), never a raw `!==` compare.
+  - A route.test.ts asserts the unset-secret→401, wrong→401, correct→200 matrix.
+  - Repo-wide grep confirms no remaining `if (<secretEnv>) { ... !== ... }` fail-open shape in
+    apps/control-plane request handlers (hands off cleanly to FOLLOW-484).
+
+- id: FOLLOW-491 title: >- Sweep the F-13-class spoofable-header siblings the audit didn't name —
+  /api/config (GET+PATCH) and /api/audit (GET) trust x-tenant-id / x-agency-role as auth
+  source_retro: RETRO-153 source_ticket: FOLLOW-456 recommended_sprint: 22b recommended_agent:
+  backend-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-456
+  closed the "trust a spoofable header on a mutation" hole on /api/demo/sessions/[id]/revoke, but
+  the identical-shape siblings were not swept. `api/config/route.ts` (GET :89, PATCH :101) and
+  `api/audit/route.ts` (GET :99) authorize the tenant from a client-supplied `x-tenant-id` header;
+  worse, `config` PATCH additionally reads the caller ROLE from a spoofable `x-agency-role` header
+  (:110) to gate a mutation — a caller can set `x-tenant-id: <victim>` +
+  `x-agency-role: agency:owner` and mutate config for any tenant. Severity is P2 (not P1) ONLY
+  because both are MVP in-memory stubs today (`config` writes an in-process `configStore` Map;
+  `audit` returns MOCK_ENTRIES) — no real cross-tenant data is exposed. But `config/route.ts:6`
+  carries `// TODO Sprint 5: read/write tenants table via   createTenantClient()`: the hole ships
+  the moment the stub is wired to real data. Move both onto `requireTenantAccess` (deriving tenant +
+  role from the verified JWT), OR add a fail-loud guard that blocks wiring these routes to a real
+  store while they remain header-authed. ac:
+  - /api/config GET+PATCH and /api/audit GET derive tenant_id (and config PATCH the role) from
+    verified JWT claims via requireTenantAccess, never from x-tenant-id / x-agency-role headers.
+  - A spoofed x-tenant-id / x-agency-role that disagrees with (or substitutes for) the JWT is
+    rejected (401 no JWT / 403 mismatch), with a test asserting the mock store / MOCK_ENTRIES are
+    not touched on rejection.
+  - If the routes stay stubs for now, a committed guard or CI note prevents wiring them to a real
+    createTenantClient() store while header-authed (references the Sprint 5 TODO).
+
+- id: FOLLOW-492 title: >- Deploy-time preflight for the now-mandatory internal secrets + reconcile
+  the Modal description-cache secret, so a fail-closed hardening fails loud at deploy not on live
+  traffic source_retro: RETRO-153 source_ticket: FOLLOW-456 recommended_sprint: 22b
+  recommended_agent: devops-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false
+  scope: >- FOLLOW-456 flipped three routes from fail-open to fail-closed, which silently made
+  ADMIN_API_SECRET, LISTING_UPDATED_WEBHOOK_SECRET, and DESCRIPTION_CACHE_INTERNAL_SECRET
+  REQUIRED-in-prod — all three were confirmed MISSING in Vercel prod at merge and would have 401'd
+  live traffic (onboarding, listing-updated webhook, FOLLOW-460 Modal callback). FOLLOW-483
+  provisioned them one-time; this stub adds the STANDING protection so the next such hardening can't
+  repeat the near-miss: (1) a deploy-time / startup preflight assertion that these mandatory
+  internal secrets are present, failing LOUD at deploy rather than on the first live request; (2)
+  reconcile the Modal `estalara-secrets` side — DESCRIPTION_CACHE_INTERNAL_SECRET must be set to the
+  SAME provisioned value (FOLLOW-460 operator leg) and DESCRIPTION_CACHE_API_BASE_URL to the
+  control-plane prod base, or the Modal description-cache callback 401s once #430 is live; (3)
+  confirm any live listing-updated webhook sender is configured to send X-Webhook-Secret. ac:
+  - A deploy-time or app-startup check fails loud (blocks deploy / logs a fatal) when any of the
+    three mandatory internal secrets is unset in a prod-class environment.
+  - Modal estalara-secrets carries DESCRIPTION_CACHE_INTERNAL_SECRET matching Vercel prod, verified
+    by a successful 201 from the real Modal callback against prod (or a documented dry-run).
+  - Listing-updated webhook sender (if any exists in pilot) confirmed sending X-Webhook-Secret, or
+    documented as "no live sender in pilot".
+  - Runbook note: adding a new fail-closed secret-gated route requires provisioning the secret in
+    every environment that must reach it BEFORE (or atomically with) merge.
+
+- id: FOLLOW-493 title: >- Unify verifyTracerAdminAuth onto secretEquals (remove the length-leak
+  branch) + fix the secret-compare.ts "mirrors verifyTracerAdminAuth" docstring source_retro:
+  RETRO-153 source_ticket: FOLLOW-456 recommended_sprint: 22b recommended_agent: backend-engineer
+  priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >- The new `secret-compare.ts:15`
+  docstring claims `secretEquals` "Mirrors the existing pattern in …
+  tracer-auth.ts#verifyTracerAdminAuth" — but it does not: `tracer-auth.ts:102-109` compares raw
+  UTF-8 buffers behind an `if (secretBuf.length === tokenBuf.length)` branch, which leaks the
+  secret's LENGTH and only runs timingSafeEqual on a length match — exactly the timing/length signal
+  secretEquals was built to remove via SHA-256. Migrate verifyTracerAdminAuth's ADMIN_API_SECRET
+  Bearer compare onto secretEquals (dropping the length-equality branch), and correct the docstring.
+  Optionally add the direct secretEquals length-mismatch unit test (proves unequal-length inputs
+  return false, never throw — currently only implicitly covered by the routes' wrong-secret cases).
+  ac:
+  - verifyTracerAdminAuth's ADMIN_API_SECRET path calls secretEquals (no raw length-branch buffer
+    compare); existing tracer-auth tests still pass (secret / staff-jwt / staff-session / tenant-jwt
+    → 403 / unauth → 401).
+  - secret-compare.ts docstring no longer claims parity with verifyTracerAdminAuth's raw-buffer
+    approach (states it SUPERSEDES it).
+  - A direct unit test asserts secretEquals returns false (not throws) on length-mismatched inputs.
+
+- id: FOLLOW-494 title: >- Ingest: regression-test + harden the getWaitUntil throwing-getter guard
+  and the no-waitUntil fallback branch source_retro: RETRO-154 source_ticket: FOLLOW-459
+  recommended_sprint: next recommended_agent: backend-engineer priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- In apps/ingest/src/handlers/events.ts, the executionCtx-throws
+  bug fixed by getWaitUntil is only covered indirectly (existing 2-arg app.fetch tests). Add a
+  dedicated regression test, and harden the strictly-less-safe no-waitUntil fallback path (LG-2):
+  the CH insert chPromise runs as a dangling microtask with NO .catch attached when getWaitUntil
+  returns undefined, so an unexpected throw in the .then Sentry-capture handler becomes an unhandled
+  rejection with no capture. ac:
+  - Unit test: getWaitUntil({ get executionCtx(){ throw new Error('no ctx') } }) returns undefined
+    and does NOT throw (reproduces the Hono v4 Context#executionCtx-throws latent bug).
+  - Unit/route test: with no ExecutionContext passed to app.fetch, the ClickHouse insert still fires
+    (pushToClickHouse called) and no unhandled rejection is produced.
+  - Code: attach a .catch (structured Sentry capture, kind:'unexpected_throw') to chPromise in the
+    no-waitUntil branch too, so the fallback path matches the flushed path's fail-loud guarantee.
+
+- id: FOLLOW-495 title: >- Ingest: alert (not just capture) on clickhouse_push_failed_post_ack +
+  document the CH-only no-client-retry contract change source_retro: RETRO-154 source_ticket:
+  FOLLOW-459 recommended_sprint: next recommended_agent: devops-engineer priority: P2
+  estimated_hours: 2 promoted_to_queue: false scope: >- Post-FOLLOW-459, ClickHouse is the SOLE real
+  events sink in prod (Redpanda is a no-op while REDPANDA_REST_URL is empty, ESC-017), and a
+  terminal CH insert failure is now best-effort: Sentry-captured only, no client re-delivery, no
+  durable retry until FOLLOW-482. The Sentry capture is the ONLY signal that the sole store dropped
+  a batch, and it is not alerted; and the retry-contract change is documented only inline in
+  events.ts, not on the SDK/operator surface. ac:
+  - A Sentry alert rule / SLO threshold fires on clickhouse_push_failed_post_ack (tags
+    sink:clickhouse, kind:insert_failed) at a rate indicating real event loss on the sole prod
+    events sink.
+  - The SDK ingest beacon docs + the ingest runbook state that a ClickHouse-only terminal failure no
+    longer returns 503 and is therefore not client-retried (at-least-once for the events store is
+    best-effort until FOLLOW-482 ships a durable retry queue).
+  - Cross-references FOLLOW-482 and recommends its elevation to P1 given the sole-store posture.
+
+- id: FOLLOW-496 title: >- Extract a shared guarded getWaitUntil (executionCtx-throws-safe) into
+  @estalara/shared for CF Worker fire-and-forget sinks source_retro: RETRO-154 source_ticket:
+  FOLLOW-459 recommended_sprint: next recommended_agent: architect priority: P3 estimated_hours: 2
+  promoted_to_queue: false scope: >- The guarded getWaitUntil accessor (with the Hono v4
+  Context#executionCtx-throws try/catch) is currently module-private in
+  apps/ingest/src/handlers/events.ts. The forthcoming decision-api ctx.waitUntil wiring (FOLLOW-429,
+  the FLUSH-axis count-2) needs the same guard; re-deriving the unsafe HonoWithExecCtx cast per
+  Worker is exactly the anti-pattern the backend-engineer lesson.md entry warns against. Extract one
+  guarded accessor so both CF Workers share it. ac:
+  - A guarded getWaitUntil (returns the executionCtx.waitUntil fn or undefined, try/catch around the
+    throwing getter) lives in @estalara/shared with a doc-comment explaining the throw.
+  - apps/ingest/src/handlers/events.ts consumes the shared accessor (no behavior change; tests still
+    green).
+  - FOLLOW-429's decision-api ctx.waitUntil wiring is directed to reuse it rather than re-derive the
+    cast inline.
+
+- id: FOLLOW-497 title: >- Modal durable-cache write must honor the endpoint's fail-loud-for-retry
+  contract (retry + Sentry on 500, not swallow-and-log) source_retro: RETRO-155 source_ticket:
+  FOLLOW-460 recommended_sprint: next recommended_agent: ml-engineer priority: P2 estimated_hours: 3
+  promoted_to_queue: false scope: >- `_write_to_postgres_cache`
+  (apps/llm-gateway/src/jobs/generate_description.py:1524) swallows every failure (missing config,
+  network, non-2xx) with only a `log.error` — no retry, no Sentry, no re-enqueue. But POST
+  /api/internal/description-cache deliberately returns 500 "so the Modal job can retry" (its
+  docstring + the [internal/description-cache] DB-write-failed log say exactly this). The caller
+  never retries, so on a persistent Postgres outage the durable write is silently dropped and
+  durability regresses to the pre-fix read-path-backfill posture — the exact F-10 gap this ticket
+  closed — observable only via a weak Modal log line. Fail-open is correct for NOT crashing the
+  completed Redis write; it is wrong for the durable store's observability/retry. Split the two
+  concerns. ac:
+  - Add bounded retry (or re-enqueue) on a 5xx from POST /api/internal/description-cache; do not
+    retry on 400/401 (permanent).
+  - Route persistent-failure observability to Sentry (mirroring the control-plane Rule K.2
+    amendment), not just log.error; keep the job non-crashing.
+  - Add a test asserting the caller RETRIES/ALERTS on a 500 (the current suite codifies the swallow,
+    TG-1) — replace/extend that assertion.
+  - Correct the `_write_to_postgres_cache` docstring's "Rule K.2 observable via the log line"
+    overstatement (DG-1).
+
+- id: FOLLOW-498 title: >- Investigate headline-null in the FOLLOW-460 go-live smoke; verify
+  headline-generation reliability + add a headline-null-rate metric source_retro: RETRO-155
+  source_ticket: FOLLOW-460 recommended_sprint: next recommended_agent: ml-engineer priority: P2
+  estimated_hours: 2 promoted_to_queue: false scope: >- In the 2026-07-03 go-live smoke a real
+  1060-char family_buyer description landed in prod description_cache_persistent, but `headline`
+  came back null. Headline generation is non-fatal by design (description writes even when
+  \_generate_headline returns null), so a silent headline failure is currently tolerated and
+  unmeasured. Since the description call succeeded (the API key worked), the null headline points to
+  \_generate_headline itself (prompt/parse/model), not auth. ac:
+  - Reproduce/diagnose why \_generate_headline returned null in the go-live run (prod prompt + model
+    path).
+  - Add a headline-null-rate metric/observability so silent headline-generation failure is measured,
+    not just tolerated.
+  - Confirm whether the null-headline row should trigger a re-generation attempt or is acceptable
+    as-is (ADR-0009 cold-start playbook headline still renders).
+
+- id: FOLLOW-499 title: >- Harden generate_description.py's import-time contract-fixture read (the
+  PR #433 deploy-crash class) + add a Modal-image fixture-present smoke source_retro: RETRO-155
+  source_ticket: FOLLOW-460 recommended_sprint: next recommended_agent: ml-engineer priority: P3
+  estimated_hours: 2 promoted_to_queue: false scope: >- generate_description.py:129-131 reads
+  packages/shared/contracts/description-event.required.json at MODULE IMPORT time (REQUIRED_FIELDS =
+  frozenset(json.loads(\_CONTRACT_FIXTURE.read_text()))). It passes pytest/CI (file present in the
+  repo tree) but crashed at import in the Modal image (file not packaged) on first real deploy —
+  fixed reactively under FOLLOW-436/PR #433. The import-time repo-relative file read is a latent
+  deploy-time landmine: any contract-path change, new Modal app, or image-packaging regression
+  silently re-breaks at import, invisible to pytest. ac:
+  - Package the contract fixture as importable data OR lazy-load it with a clear, actionable error
+    instead of an import-time crash.
+  - Add a deploy-image smoke (or CI check) that proves the fixture ships inside the Modal artifact.
+  - Sweep sibling Modal jobs for the same import-time repo-relative read pattern.
+
+<!-- FOLLOW-500..503 from RETRO-156 (FOLLOW-485 / ADR-0016 direct-Modal go-live). retrospective-analyst. Cross-ref existing FOLLOW-486 (local get_raw_f smoke), FOLLOW-487 (env cleanup), FOLLOW-488 (.strip secret hygiene) — do NOT duplicate. -->
+
+- id: FOLLOW-500 title: >- Post-deploy SMOKE for Modal web endpoints —
+  deploy-then-POST-live-.modal.run-and-assert-202 (would have caught the FOLLOW-485 import-crash +
+  secret + 303 deploy bugs) source_retro: RETRO-156 source_ticket: FOLLOW-485 recommended_sprint:
+  22b recommended_agent: ml-engineer priority: P1 estimated_hours: 4 promoted_to_queue: false
+  scope: >- FOLLOW-485 merged CI-green, but its first real deploy exposed three deploy-time bugs no
+  unit test could catch: (DB-1) contract fixtures read at IMPORT time were absent from the Modal
+  image → container crashed on import → endpoints returned 303/400/"bad redirect method", never 202
+  (fixed PR #433); (DB-2) the deploy runner had only `pip install modal` while the modules import
+  httpx+fastapi at module level → ModuleNotFoundError on `modal deploy` (fixed PR #435); (DB-3) a
+  stray leading space in the pasted ANTHROPIC_API_KEY secret → misleading APIConnectionError. All
+  three fired because nothing invokes the LIVE deployed endpoint. Add a post-deploy smoke to
+  .github/workflows/modal-deploy.yml that, after `modal deploy` succeeds, POSTs a real TS-serialized
+  event body (Authorization: Bearer $INTERNAL_API_SECRET) to each deployed `.modal.run` endpoint and
+  asserts 202 — handling Modal's cold-start 303→poll (see FOLLOW-503). DISTINCT from FOLLOW-486,
+  which mounts endpoint.get_raw_f() into a LOCAL fastapi.TestClient in PR CI (fixtures present, real
+  image/runtime absent) and therefore cannot catch DB-1/DB-2/DB-3. Reusable as the go-live gate for
+  Modal Phase B/C stand-ups (intent-engine, schema-validation, stream-consumer). ac:
+  - After `modal deploy` in modal-deploy.yml, a smoke step POSTs each deployed .modal.run endpoint
+    with a valid bearer + real event body and asserts HTTP 202 (completing/handling the cold-start
+    303→poll), failing the deploy hard on any non-202.
+  - The smoke uses a genuinely TS-shaped event payload so it also exercises the cross-runtime
+    contract at the HTTP boundary (RETRO-156 TG-2).
+  - Documented in docs/runbooks/MODAL_PROD_STANDUP.md as the mandatory go-live evidence for every
+    never-before-deployed Modal endpoint (Phase A/B/C).
+
+- id: FOLLOW-501 title: >- Deploy-time dependency-completeness guard — assert import-time-read files
+  are in the Modal image AND the deploy-runner install-list ⊇ modules' module-level imports
+  source_retro: RETRO-156 source_ticket: FOLLOW-485 recommended_sprint: 22b recommended_agent:
+  ml-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false scope: >- Structural
+  prevention for RETRO-156 DB-1 + DB-2. (a) generate_description.py / consume_embed_seed_requests.py
+  derive REQUIRED_FIELDS at IMPORT time from packages/shared/contracts/\*.required.json via a
+  module-relative path; these MUST be copied into the Modal image (add_local_file, copy=True in
+  \_app.py — added by PR #433). Add a guard/test that asserts every file the jobs read at import
+  time is present in the image spec, so an import-time file dependency can't silently drop from the
+  image again. (b) `modal deploy` imports the app modules locally on the CI runner to register
+  @app.function; the runner install-list in modal-deploy.yml (now `pip install modal httpx fastapi`,
+  PR #435) must remain a superset of the modules' module-level third-party imports — a new top-level
+  import would re-break the deploy with ModuleNotFoundError. Prefer installing the app's own
+  declared deps (`pip install   apps/llm-gateway` / from pyproject) on the runner, or add a grep
+  guard comparing top-level imports to the install-list. Both legs matter for Phase B/C, which will
+  re-hit this class. ac:
+  - A CI/guard step fails if a file read at module-import time by any apps/llm-gateway job is not
+    included in the Modal image (add_local_file).
+  - The modal-deploy.yml deploy-runner installs (or is asserted to cover) every module-level
+    third-party import of the apps it deploys; a new top-level import cannot silently break the
+    deploy.
+
+- id: FOLLOW-502 title: >- De-duplicate `_valid_bearer` (byte-identical across two llm-gateway
+  modules) into one shared auth helper with a single test — Rule K decision-grade surface, no parity
+  gate source_retro: RETRO-156 source_ticket: FOLLOW-485 recommended_sprint: 22b recommended_agent:
+  ml-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-485 added
+  `_valid_bearer` (constant-time hmac.compare_digest bearer check) byte-identically in BOTH
+  apps/llm-gateway/src/jobs/generate_description.py AND consume_embed_seed_requests.py. Both run in
+  the same Python runtime, so Rule J (cross-runtime FILE mirror) does not apply — this is a Rule K
+  "duplicate business logic without a parity gate; decision-grade surface" instance on a
+  security-relevant auth check. A fix to one copy (notably the FOLLOW-488 `.strip()` hardening, or a
+  Bearer scheme-casing normalization) will silently skip the other → one endpoint accepts a
+  malformed/whitespace-padded secret the other rejects. Extract to a single shared definition
+  (jobs/\_app.py or a shared auth helper module) imported by both endpoints, with ONE unit test; or,
+  if kept duplicated, add a parity gate asserting the two copies are identical. Coordinate with
+  FOLLOW-488 so its `.strip()` lands in the single/shared copy (not just one file). ac:
+  - `_valid_bearer` exists in exactly one place, imported by both endpoint modules (or a parity gate
+    asserts the copies are byte-identical).
+  - A single test covers missing header, wrong scheme, empty token, unset/empty secret (all → False)
+    and a valid bearer (→ True); FOLLOW-488's `.strip()` hardening applies to the one copy.
+
+- id: FOLLOW-503 title: >- Document + regression-test the Modal cold-start 303 integration contract
+  for the control-plane→Modal fire-and-forget fetch source_retro: RETRO-156 source_ticket:
+  FOLLOW-485 recommended_sprint: 22b recommended_agent: ml-engineer priority: P2 estimated_hours: 2
+  promoted_to_queue: false scope: >- A deployed @modal.fastapi_endpoint returns a 303 to a poll URL
+  on cold start; a naive fetch/curl (which converts POST→GET on a 303) cannot complete it. The
+  control-plane publishers use fetch() with the default `redirect:'follow'`. For these
+  fire-and-forget dispatches this is PROBABLY safe (the endpoint `.spawn()`s before returning, and
+  the control-plane only awaits the promise for after()-sequencing, not the body) — but it is
+  UNVERIFIED and undocumented, and it cost a long debug loop at go-live. Verify empirically whether
+  the cold-start 303 drops or completes the dispatch (does the spawn fire before the 303?), document
+  the Modal-web-endpoint 303 behavior in docs/runbooks/MODAL_PROD_STANDUP.md as an integration note,
+  and add a regression test asserting a 303 response from the endpoint does not silently drop the
+  dispatch. ac:
+  - docs/runbooks/MODAL_PROD_STANDUP.md documents the Modal cold-start 303→poll behavior and how the
+    control-plane fetch handles it (and how a manual curl smoke must handle it: --location or
+    re-issue POST).
+  - A regression test asserts the control-plane→Modal dispatch is not silently dropped when the
+    endpoint responds 303 on cold start.
+
+- id: FOLLOW-504 title: >- ClickHouse tracer: escape param values in chTracerQuery/chTracerCount
+  before searchParams.set() (defense-in-depth, same class as FOLLOW-462) source_ticket: FOLLOW-462
+  recommended_sprint: next recommended_agent: data-engineer priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- FOLLOW-462 hardened clickhouse-dsr.ts by mirroring the
+  param-binding convention in apps/control-plane/src/lib/clickhouse-tracer.ts
+  (chTracerQuery/chTracerCount). But that source pattern itself does NOT run its param values
+  through an escapeClickHouseParamValue before url.searchParams.set() — currently SAFE there because
+  those helpers are only ever bound with UUID/hex values, but it is the same latent backslash gap
+  class as F-14. Add the equivalent escaping for defense-in-depth so a future non-hex binding can't
+  reintroduce the hole. ac:
+  - chTracerQuery/chTracerCount pass param values through the same escaping helper FOLLOW-462 used
+    (or the shared one, if extracted) before searchParams.set().
+  - A regression test binds a trailing-backslash value and asserts a well-formed request.

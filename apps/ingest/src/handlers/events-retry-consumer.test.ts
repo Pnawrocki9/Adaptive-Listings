@@ -132,6 +132,40 @@ describe('handleEventsRetryQueue — malformed message', () => {
   });
 });
 
+// ─── FOLLOW-513 / LG-1 — well-formed-but-unknown schema_version must not be ack-dropped ──
+describe('handleEventsRetryQueue — unknown schema_version', () => {
+  it('retries (does not ack) a well-formed message carrying a schema_version this build does not know', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = () => {
+      fetchCalls++;
+      return Promise.resolve(new Response('', { status: 200 }));
+    };
+    const captureSpy = vi.mocked(Sentry.captureException);
+    captureSpy.mockClear();
+    try {
+      const futureVersionBody = { ...validMessageBody, schema_version: 2 };
+      const { message, ack, retry } = makeMessage(futureVersionBody);
+      await handleEventsRetryQueue(makeBatch([message]) as never, env as never);
+
+      // Must NOT be ack-dropped — Cloudflare holds in-flight messages across deploys, so
+      // ack-dropping an unknown-but-well-formed version would silently lose it forever.
+      expect(ack).not.toHaveBeenCalled();
+      expect(retry).toHaveBeenCalledTimes(1);
+      // Never reaches the ClickHouse re-insert path for a version it doesn't understand.
+      expect(fetchCalls).toBe(0);
+      expect(captureSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'events_retry_unknown_schema_version' }),
+        expect.objectContaining({
+          tags: expect.objectContaining({ kind: 'unknown_schema_version' }),
+        }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('handleEventsRetryQueue — batch with multiple messages', () => {
   it('processes each message independently (one ack, one retry)', async () => {
     const originalFetch = globalThis.fetch;

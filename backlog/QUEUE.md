@@ -1,6 +1,49 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-06 (session 12, after session 11 delegated FOLLOW-513/closed it DONE)
+## ▶️ START HERE — resume 2026-07-06 (session 13, after session 12 closed FOLLOW-466 DONE)
+
+**Since the banner below (session 12, same day):** session 12 closed FOLLOW-466 (DONE — PR #459,
+feedback-HMAC replay nonce cache + `secretEquals` sweep; fast-follow FOLLOW-519 filed for a 3rd
+timing-unsafe site) and filed RETRO-161 + stubs FOLLOW-520/521/522. `main` tip is `d79d800`; 0 open
+PRs at hand-off. Standing ops posture unchanged: FOLLOW-482 stays `CODE_COMPLETE_OPERATOR_PENDING`
+(queues unprovisioned); FEEDBACK_ENDPOINT_ENABLED operator flip (FOLLOW-450 AC1) still not thrown,
+so the bandit/feedback path (incl. this session's dedup work) is code-complete but latent in prod
+(RETRO-161). Retros RETRO-153..161 all filed, no retro debt owed.
+
+**This session (13):** re-confirmed the 3 standing OPEN escalations (ESC-020/ESC-028/ESC-034)
+unchanged and non-blocking (established precedent: code-complete-awaiting-operator-action).
+Re-verified `depends_on` for the remaining fresh P2 candidates in the repo (not from stub prose):
+`getPgCachedDescription` (`apps/control-plane/src/lib/description-pg-cache.ts:75-125`) confirmed to
+omit `model` from its WHERE clause (FOLLOW-464 real bug, dep FOLLOW-460 DONE); the NEUTRAL-verdict
+early-return in `generate_description()`
+(`apps/llm-gateway/src/jobs/generate_description.py:330-338`) confirmed to write NOTHING to
+Redis/Postgres, so a NEUTRAL (tenant,listing,archetype,locale) pair re-invokes Sonnet 4.6 on every
+single repeat request forever, uncapped by any invalidation — a live, unbounded-with-traffic cost
+leak on the description-generation path that went live in prod 2026-07-03 (FOLLOW-465, no deps).
+Picked **FOLLOW-465** over FOLLOW-464: FOLLOW-464's staleness window is bounded (closes on the next
+`listing.updated` webhook invalidation) and only bites during the narrow period around an explicit
+model switch; FOLLOW-465's leak is unbounded and compounds with organic traffic on a path already
+serving live users, and it burns real Sonnet-4.6 spend during a budget-conscious pilot (cf. ADR-0016
+dropping Redpanda specifically over cost). FOLLOW-491 was skipped per the standing note that its
+target routes (`/api/config`, `/api/audit`) are in-memory MVP stubs, not live data paths — real
+severity is deferred until they're wired to a real store (already flagged by the ticket's own text).
+FOLLOW-519 (P3, one-line `secretEquals` swap) and FOLLOW-522 (P2, but
+`recommended_agent: pm-orchestrator` — a re-prioritization decision on FOLLOW-484, not a worker
+deliverable) were left for a future pass; a P2 real-correctness/cost bug with clean deps beats a P3
+fast-follow and a non-worker meta-ticket on priority.
+
+Promoted FOLLOW-465 to this queue, flipped `READY -> IN_PROGRESS`, branch
+`ml-engineer/FOLLOW-465-neutral-verdict-negative-cache`. Full delegation brief (incl. the concrete
+schema/wire-contract design constraints found by reading `description-pg-cache.ts`,
+`description-cache.ts`, `packages/shared/src/schemas/description.ts`, and the
+`/api/internal/description-cache` route before writing the brief) is in `backlog/HANDOFFS.md`. See
+the FOLLOW-465 ticket block (Sprint 22b) for AC. FOLLOW-464/491/519/522 remain READY/BACKLOG for a
+future session; FOLLOW-471 (clean re-audit gate) stays BACKLOG until every depends_on ticket is
+DONE.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-06 (session 12, after session 11 delegated FOLLOW-513/closed it DONE)
 
 **Since the banner below (session 11, same day):** session 11 closed FOLLOW-513 (DONE — PR #453,
 Sentry binding on the queue-consumer path) and FOLLOW-516 (DONE — corrected a wrong lessons.md
@@ -9172,7 +9215,10 @@ gate) closes the epic and must be last.
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)
   agent: ml-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-06T00:00:00Z'
+  branch: ml-engineer/FOLLOW-465-neutral-verdict-negative-cache
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -9186,6 +9232,10 @@ gate) closes the epic and must be last.
           locale,model); a repeat request short-circuits without a new Sonnet call until listing.
           updated invalidation.
     - [ ] Test: two identical neutral requests trigger exactly one generation enqueue.
+    Delegated 2026-07-06 (pm-orchestrator session 13). Table row used: "intent/adapt logic,
+    embeddings, LLM gateway, auto-detect, ontology, platform-templates -> ml-engineer". Full
+    delegation brief (incl. the exact schema/wire-contract constraints already found in the repo)
+    in backlog/HANDOFFS.md.
 - id: FOLLOW-466
   title: >-
     Add replay protection to feedback HMAC + unify secret comparisons on timingSafeEqual (F-21)

@@ -1,4 +1,73 @@
-# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-466 IN_PROGRESS)
+# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-465 IN_PROGRESS)
+
+## SESSION 13 (2026-07-06) — FOLLOW-465 delegated (P2, ml-engineer, NEUTRAL-verdict negative cache)
+
+**Read state first (step 1):** `backlog/QUEUE.md` (banner headed "resume 2026-07-06 (session 12)" at
+session start; superseded with a fresh banner this session), `backlog/ESCALATIONS.md` (3 real
+`## OPEN` entries re-read in full: ESC-020, ESC-028, ESC-034 — content unchanged, all
+previously-established non-blocking operator-action-pending; no new escalation opened),
+`backlog/HANDOFFS.md`, `git log --oneline -20` (HEAD `d79d800`, matches: FOLLOW-466 closed DONE, PR
+#457-461 merged, RETRO-161 filed), `gh pr list --state open` → **0 open PRs** (nothing to validate
+this round — went straight to ticket selection).
+
+**Ticket picked:** FOLLOW-465 (P2, ml-engineer — negative-cache NEUTRAL archetype-fit verdicts so a
+repeat request for the same (tenant,listing,archetype,locale,model) doesn't re-invoke Sonnet 4.6
+forever). Considered against the other fresh worker-implementable READY Sprint 22b candidates:
+FOLLOW-464 (P2, backend-engineer, stale-Postgres-description-cache correctness,
+`depends_on FOLLOW-460` DONE) and FOLLOW-491 (P2, backend-engineer, spoofable-header sweep on
+`/api/config` + `/api/audit`, but both target routes confirmed still in-memory MVP stubs per its own
+ticket text — deferred real severity). Independently verified (not trusted from audit-report prose):
+read `apps/control-plane/src/lib/description-pg-cache.ts:75-125` — confirmed
+`getPgCachedDescription` omits `model` from its WHERE clause (the FOLLOW-464 bug, real but bounded —
+closes on the next `listing.updated` webhook invalidation); read
+`apps/llm-gateway/src/jobs/generate_description.py:330-338` and `:1101-1113` — confirmed the NEUTRAL
+branch of `_generate_with_sonnet` is structurally identical to a genuine failure and writes NOTHING
+to Redis/Postgres, so a NEUTRAL verdict re-triggers a full Sonnet 4.6 call on every single repeat
+request, uncapped. Picked FOLLOW-465 over FOLLOW-464 because its leak is unbounded and compounds
+with live traffic on a path that went live in prod 2026-07-03 (Modal description generation,
+ADR-0016), whereas FOLLOW-464's staleness window is bounded and narrow (only during a model switch);
+also weighed that ADR-0016 explicitly dropped a ~$500/mo Redpanda tier over pilot budget, making an
+uncapped recurring-Sonnet-call leak the higher real-world-cost bug of the two.
+
+Also read the full surrounding cache infrastructure before writing the brief (not left to the worker
+to re-discover): `DescriptionResponseSchema`/`DescriptionCacheValueSchema`
+(`packages/shared/src/schemas/description.ts`), the `/api/internal/description-cache` route's
+`BodySchema` (`description: z.string().min(1)`), and `description_cache_persistent`'s Postgres
+schema — confirmed a naive empty-string sentinel for "NEUTRAL, don't regenerate" would be rejected
+by two existing Zod validators (though the DB `NOT NULL` column itself permits `''`). Wrote the
+concrete design constraint into the brief: add an optional `verdict: 'FIT'|'NEUTRAL'` field to both
+schemas (back-compat default `'FIT'`), reuse the EXISTING Redis-key/Postgres-row shape so the
+already-shipped `listing.updated` invalidation (Redis wildcard SCAN + Postgres tenant+listing WHERE)
+invalidates a NEUTRAL marker for free, and explicitly confirmed this stays an internal-cache-shape
+change — NOT a wire-contract change to `DescriptionResponseSchema` (SDK-facing), so no escalation is
+triggered by this ticket as scoped.
+
+Promoted FOLLOW-465 in `backlog/QUEUE.md` (single writer): flipped `READY -> IN_PROGRESS`,
+`assigned_to: ml-engineer`, `started_at: 2026-07-06T00:00:00Z`,
+`branch: ml-engineer/FOLLOW-465-neutral-verdict-negative-cache`. Full delegation brief written to
+`backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-465 (ml-engineer)"), including explicit AC that
+the write-side (Python) and read-side (control-plane route short-circuit) BOTH must land — a
+write-only half-wire would look done but do nothing, mirroring the FOLLOW-097→114→127→141 half-wire
+pattern this PM is required to check for at validation step 5c. Delegation-table row used:
+"intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology, platform-templates →
+ml-engineer".
+
+FOLLOW-464/491/519/522 remain `READY`/stub for a future session pick (not started this session —
+only 1 ticket picked, keeping IN_PROGRESS count at 1, well under the 3-concurrent cap). FOLLOW-471
+(clean re-audit gate) confirmed still correctly `BACKLOG` — its `depends_on` list includes
+FOLLOW-464/465 among others, none yet DONE.
+
+**This session has no subagent-spawn tool** — only the QUEUE.md/HANDOFFS.md/STATUS.md state changes
+were performed; the main orchestrator must actually invoke the ml-engineer worker on the branch
+above using this ticket's YAML block, `docs/MASTER_DESIGN.md` §Snapshot.1, `CONVENTIONS_PATCH.md`,
+and the HANDOFFS.md brief as context.
+
+**CI-check counter:** 0/5 (no PR opened yet this session — nothing to validate). **Escalation
+ages:** ESC-020 open since 2026-06-06 (~30 days, operator/CTO-deploy-gated, non-blocking per
+established precedent); ESC-028 open since 2026-06-23 (~13 days, GH-secrets-provisioning,
+non-blocking); ESC-034 open since 2026-06-30 (~6 days, operator go-live only, non-blocking).
+
+---
 
 ## SESSION 12 (2026-07-06) — FOLLOW-466 delegated (P2, backend-engineer, feedback-HMAC replay protection)
 

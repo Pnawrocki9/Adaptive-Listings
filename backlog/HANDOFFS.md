@@ -3,6 +3,152 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-465 (ml-engineer)
+
+**From:** pm-orchestrator (session 13) **To:** ml-engineer **Date:** 2026-07-06T00:00:00Z
+**Branch:** `ml-engineer/FOLLOW-465-neutral-verdict-negative-cache` (create as your FIRST action,
+off `main` at `d79d800` or later — branch-first per FOLLOW-448/Rule AA discipline; never commit to
+`main`). Delegation-table row used: "intent/adapt logic, embeddings, LLM gateway, auto-detect,
+ontology, platform-templates" → ml-engineer.
+
+**Read before starting:**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — Operating Principle 1)
+- `CONVENTIONS_PATCH.md` (current permanent rules, incl. Rule K.2 fire-and-forget-observability and
+  the newer Rule AA CODE-VS-PROD-AXIS)
+- This ticket's YAML block in `backlog/QUEUE.md` → Sprint 22b → `FOLLOW-465` (source: 2026-07-01
+  audit F-18, ADR-0010, audit report §5.4)
+- `docs/adr/ADR-0010-archetype-fit-gate-neutral-verdict.md` (why a NEUTRAL verdict exists at all —
+  do not weaken or bypass the gate itself; this ticket only changes what happens to its OUTPUT)
+
+**The bug (verified in repo, not guessed from the audit one-liner):**
+
+- `apps/llm-gateway/src/jobs/generate_description.py:1101-1113` — `_generate_with_sonnet` parses
+  `<adaptation_verdict>` (ADR-0010); on `NEUTRAL` it logs and `return "", []` — identical to the
+  contract-violation failure path at `:1121-1128` and structurally indistinguishable to the caller.
+- `generate_description()` (`:330-338`): `if not description: ... # Do not write to Redis. return` —
+  a NEUTRAL verdict and a genuine Sonnet failure both hit this branch and BOTH result in **zero**
+  writes to Redis or `description_cache_persistent`.
+- Consequence: `GET /api/adapt/description`
+  (`apps/control-plane/src/app/api/adapt/description/route.ts`) never gets a cache hit for a NEUTRAL
+  (tenant,listing,archetype,locale,model) combination. Every single subsequent request for that
+  exact combination — which will recur constantly, e.g. every page view by every visitor the
+  archetype-detector classifies into that non-fitting archetype — re-runs the full miss path:
+  `retrieveListingContext` + `fetchListingOriginalDescription` + a fresh
+  `publishDescriptionRequested` dispatch to Modal, i.e. a brand-new Sonnet 4.6 API call, forever,
+  with NO cap. This is live in prod today: the description-generation pipeline went live 2026-07-03
+  (Modal `estalara-description-generator`, ADR-0016 direct-HTTPS dispatch), and NEUTRAL verdicts are
+  an expected, not rare, output of the archetype-fit gate whenever the visitor's detected archetype
+  doesn't genuinely fit the listing. Given the pilot is explicitly cost-conscious (ADR-0016 dropped
+  a ~$500/mo Redpanda tier over budget), an uncapped repeat-Sonnet-call leak on a live path is a
+  real, compounding-with-traffic cost bug, not a theoretical one.
+
+**Required fix (per ticket AC in QUEUE.md) — design constraints found by reading the surrounding
+infra BEFORE this brief was written, so you don't have to re-discover them:**
+
+1. **This is an internal-cache-shape change, NOT a wire-contract change — keep it that way.**
+   `DescriptionResponseSchema` (`packages/shared/src/schemas/description.ts:106-132`, the actual
+   HTTP response to the SDK) and its `description: z.string().min(1)` must NOT change, and the SDK
+   must never see a new `source` value. The existing response for a "known-NEUTRAL, short-circuited"
+   request should remain `source: 'template_fallback'` with the non-empty playbook `templateText` —
+   exactly what the miss path already returns — you are only changing whether the Modal
+   dispatch/enqueue happens, not the HTTP contract. If you find yourself needing a new `source`
+   value or a schema change the SDK consumes, STOP and escalate per CLAUDE.md (public API surface
+   change) rather than shipping it under a P2 ticket.
+2. **Two internal schemas currently reject the obvious "empty string" sentinel — don't fight them,
+   extend them:**
+   - `DescriptionCacheValueSchema` (`packages/shared/src/schemas/description.ts:261-274`):
+     `text: z.string().min(1)`.
+   - `/api/internal/description-cache` `BodySchema`
+     (`apps/control-plane/src/app/api/internal/description-cache/route.ts:55-63`):
+     `description: z.string().min(1)`.
+   - `description_cache_persistent.description`
+     (`packages/db/src/schema/description_cache_persistent.ts:42`) is a Postgres `text NOT NULL`
+     column — NOT NULL permits `''` at the DB layer, it's the Zod validators above that actually
+     block an empty sentinel. Recommended shape (your call, but state your reasoning if you
+     diverge): add an optional `verdict: z.enum(['FIT', 'NEUTRAL']).optional()` field
+     (absent/undefined ⇒ implicit `'FIT'` for full backward compat with every existing
+     row/cache-entry) to both schemas, and relax the `min(1)` constraint on `text`/`description` to
+     only apply when `verdict !== 'NEUTRAL'` (e.g. `.superRefine` or a discriminated union —
+     whichever is more idiomatic given the rest of the file). This avoids overloading an empty
+     string as a silent, undocumented sentinel that a future reader could easily misinterpret as
+     "generation succeeded with blank text."
+3. **Postgres migration.** If you add a `verdict` column to `description_cache_persistent`, write a
+   new sequential migration in `packages/db/migrations/` (latest is
+   `0032_dsr_verifications_attempt_count.sql`, so yours is `0033_...`), nullable, matching the
+   existing Drizzle-schema-vs-SQL-migration pattern already used for this table (see
+   `0023_description_cache_persistent.sql` for the pattern this table follows). Confirm CI's
+   ClickHouse/Postgres migration-journal-monotonicity gate stays green.
+4. **Wire the write side.** In `generate_description()`, branch the NEUTRAL case (verdict ==
+   `'NEUTRAL'`) separately from the genuine-failure/contract-violation case (empty response,
+   exception, or `_body_violates_contract`). On NEUTRAL: call `_write_to_redis` and
+   `_write_to_postgres_cache` (or new thin variants) with the negative-cache marker
+   (`verdict='NEUTRAL'`, empty/placeholder text, `headline=None`) using the SAME `cache_key` /
+   (tenant,listing,archetype,locale,model) shape the FIT path already uses — this is what lets the
+   EXISTING invalidation infra (Redis `SCAN desc:{tenant}:{listing}:*` wildcard delete in
+   `description-cache.ts`, and Postgres `invalidatePgDescriptionCache`'s tenant+listing WHERE clause
+   in `description-pg-cache.ts:191-209`) invalidate a NEUTRAL marker automatically on the next
+   `listing.updated` webhook, with zero changes to the webhook route. On genuine failure/contract
+   violation: KEEP the current behavior (no write, retry next request) — do NOT scope-creep into
+   caching those; that's a different failure class and out of this ticket's AC.
+5. **Wire the read side.** In `GET /api/adapt/description`
+   (`apps/control-plane/src/app/api/adapt/description/route.ts`), both the Step-1 Postgres hit
+   branch (`:278-313`) and the Step-2 Redis hit branch (`:325-364`) need a new check: if the hit is
+   a NEUTRAL marker (not a real description), skip the `ai_cached` response entirely, skip the
+   RAG/original- description fetch AND the Modal dispatch
+   (`publishDescriptionRequested`/`afterResponse`), and return the same `template_fallback` shape
+   the miss path already builds (`:426-435` — reuse `templateText`, do not duplicate it). This is
+   the actual mechanism that stops the re-spend; without this half of the wire, the write-side
+   change alone does nothing (this is exactly the class of half-wire flagged by
+   FOLLOW-097→114→127→141 and re-checked at PM validation step 5c — expect the PM to grep for both
+   the negative-cache WRITE (Python) and the negative-cache READ/short-circuit (control-plane route)
+   before accepting this as done).
+6. **Explicitly out of scope (do not touch):** `getPgCachedDescription`'s missing `model` filter
+   (`description-pg-cache.ts:96-104`) is a real, separate bug — that's FOLLOW-464, not this ticket.
+   Leave it alone; do not "fix it while you're in there" (CLAUDE.md "Surgical Changes").
+7. **Test (AC2):** two identical NEUTRAL requests for the same
+   (tenant,listing,archetype,locale,model) trigger exactly ONE Modal dispatch/Sonnet-eligible
+   enqueue (assert the mock/spy for `publishDescriptionRequested` or the equivalent Modal-job
+   entrypoint is called exactly once across both requests, second request short-circuits to
+   `template_fallback` with no dispatch). Also add/ update a Python-side test asserting the NEUTRAL
+   branch in `generate_description()` writes the marker (not silently returns).
+
+**Files most likely touched:** `apps/llm-gateway/src/jobs/generate_description.py` (+ its test
+file), `apps/control-plane/src/app/api/adapt/description/route.ts` (+ its test file),
+`apps/control-plane/src/lib/description-pg-cache.ts`,
+`apps/control-plane/src/lib/description-cache.ts`,
+`apps/control-plane/src/app/api/internal/description-cache/route.ts` (+ its test file),
+`packages/shared/src/schemas/description.ts`,
+`packages/db/src/schema/description_cache_persistent.ts`, a new `packages/db/migrations/0033_*.sql`
+(if you add the `verdict` column).
+
+**Validation the orchestrator will require before READY_FOR_REVIEW (do not skip):**
+
+- Local: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` all green, PLUS
+  the FOLLOW-474 control-plane gate: `pnpm --filter control-plane build` (or `next build`) since
+  this ticket touches `apps/control-plane` routes/lib.
+- CI green on every real gate (`gh pr checks <pr> --watch`, then
+  `jq '[.[]|select(.state!="SUCCESS")]|length'` — paste the `0`). Only the pre-existing "Rule I —
+  wired-or-dead" red (baseline noise, unrelated to this diff) and any pre-existing SDK-bundle
+  `Build` red are acceptable — confirm they are the SAME baseline failures, not new ones.
+- Runtime-wiring grep (step 5c) — paste both:
+  - A non-test PRODUCER: the Python `generate_description()` NEUTRAL branch actually calling the
+    negative-cache write (not just a docstring/comment).
+  - A non-test CONSUMER: the control-plane route's Step-1/Step-2 hit branches actually checking the
+    verdict/marker and skipping Modal dispatch on it (not just the write path landing with nothing
+    ever reading it back).
+- Confirm the migration (if any) doesn't regress the migration-journal-monotonicity CI gate.
+- Single-agent ticket, no step-5d co-assignment check needed (though this ticket crosses
+  Python/llm-gateway and TS/control-plane files within one agent — mirrors the FOLLOW-460 precedent
+  where ml-engineer already legitimately touched `description-pg-cache.ts`).
+- Cite the audit report §5.4 F-18 and ADR-0010 in the PR description as the source pattern.
+
+**Open a PR when done; do not merge.** Update `backlog/QUEUE.md` FOLLOW-465 status only via the
+orchestrator (single writer) — report back status, PR link, and CI result instead of editing the
+queue yourself.
+
+---
+
 ## Delegation brief — FOLLOW-466 (backend-engineer)
 
 **From:** pm-orchestrator (session 12) **To:** backend-engineer **Date:** 2026-07-06T00:00:00Z

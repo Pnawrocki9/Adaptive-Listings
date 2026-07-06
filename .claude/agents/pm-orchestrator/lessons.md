@@ -1777,3 +1777,19 @@ independent occurrence, even if it references the same pattern by name.
   sweep yourself before delegating and name the exact remaining call sites in the brief — it
   prevents the worker from either under-scoping (missing a straggler) or over-scoping (needlessly
   touching already-correct call sites) and gives the PM a concrete diff to check at validation time.
+
+- **Date / ticket:** 2026-07-06 — FOLLOW-465
+- **Delegation row used:** "intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates -> ml-engineer" (FOLLOW-465).
+- **What validation caught (or missed):** Before delegating, read past the audit one-liner into the
+  actual cache infra (`description-pg-cache.ts`, `description-cache.ts`,
+  `packages/shared/src/schemas/description.ts`, `/api/internal/description-cache/route.ts`) and
+  found that the obvious fix ("just cache the empty NEUTRAL result") is blocked by TWO existing Zod
+  `min(1)` validators plus the SDK-facing `DescriptionResponseSchema` — a naive implementation could
+  easily have turned into a silent wire-contract change or an empty-string sentinel nobody could
+  read back safely. Wrote the schema-extension design (optional `verdict` field, back-compat
+  default) directly into the brief instead of leaving the worker to discover the trap mid-PR.
+- **A delegation/validation rule I'd add:** When a ticket's fix implies "cache a negative/empty
+  result," always check whether ANY existing schema in the read/write path enforces non-emptiness
+  (`.min(1)`, `NOT NULL`, etc.) before delegating — a negative-cache ticket is structurally prone to
+  silently becoming a wire-contract change if the sentinel isn't designed explicitly.

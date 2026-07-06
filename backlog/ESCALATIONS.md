@@ -21,6 +21,40 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — Approve ADR-0017 (Cloudflare Queues durable retry) before FOLLOW-482 (P1) is worked [FOLLOW-482]
+
+**Filed by:** pm-orchestrator (session 10) **Date:** 2026-07-06T00:00:00Z **Affects:** FOLLOW-482
+(P1), apps/ingest, ADR-0017 **Type:** architectural | vendor
+
+FOLLOW-482 was elevated to P1 (RETRO-154): ClickHouse is the SOLE prod `events` sink (Redpanda is a
+no-op, ESC-017), so FOLLOW-459's post-ACK move made at-least-once **best-effort** — a terminal CH
+failure after the ~3.1s in-process retry window loses events. The architect wrote
+`docs/adr/ADR-0017-durable-post-ack-clickhouse-retry-queue.md` (Status: **PROPOSED**) recommending a
+**Cloudflare Queue** (`estalara-events-retry` + native DLQ `estalara-events-retry-dlq`) produced-to
+on terminal CH failure and consumed by a new `queue()` handler in the same `apps/ingest` Worker (no
+new deployable; reuses `pushToClickHouse`). Est. recurring cost **< $10/mo** at pilot volume (below
+the €100/mo threshold — cost is not the blocker). Per CLAUDE.md (new third-party service / vendor
+lock-in), this needs CEO sign-off before FOLLOW-482 is scheduled to a worker.
+
+**Decisions needed from Piotr (PROPOSED → ACCEPTED):**
+
+1. **Adopt Cloudflare Queues** as a new bound resource type on `apps/ingest` (new Terraform
+   resource, new outage surface, new ops ownership)? Same-vendor as the existing Worker/KV/DO stack,
+   but still a new service.
+2. **Cloudflare Queues over Upstash Redis** (already a paid vendor in the stack) — architect
+   recommends CF (fewer moving parts, native push-consumer, no extra cross-service hop); confirm the
+   trade-off is accepted.
+3. **Owner of the DLQ replay / pager runbook** (`estalara-events-retry-dlq` non-empty alert) —
+   needed before FOLLOW-495's alerting AC can close.
+4. **Accept the named duplicate-row risk:** the `events` CH table has **no dedup key**
+   (ReplicatedMergeTree, ORDER BY excludes `event_id`); a queue-level retry compounds (additively)
+   the pre-existing in-process-retry duplicate risk. ADR-0017 does NOT add dedup — accept as a named
+   risk, or require a dedup key (ReplacingMergeTree / idempotency key) as part of FOLLOW-482 scope?
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — commitlint ticket-reference rule rejects the `TICKET-PILOT-` prefix [TICKET-PILOT-003]
 
 **Filed by:** data-engineer **Date:** 2026-05-24T00:00:00Z **Affects:** TICKET-PILOT-003 (and any

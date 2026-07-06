@@ -48,11 +48,11 @@ against AC + the 7 brief constraints (found complete, no gaps), ran the full gat
 typecheck/test/build 17/17, control-plane next build, Python pytest 132 passed, prettier clean,
 migration journal monotonic), committed `abff5c3`, pushed, and opened **PR #463**. CI: 56/58 pass;
 the only 2 reds are the standing pre-existing "Rule I — wired-or-dead" baseline (181 violations,
-zero FOLLOW-465 symbols — reconfirmed locally). PR MERGEABLE, **not merged** — FOLLOW-465 is now
-`READY_FOR_REVIEW` awaiting human review + merge. On merge, spawn `retrospective-analyst` for
-RETRO-162. Next clean worker-delegable candidate after this: **FOLLOW-464** (the
-`getPgCachedDescription` missing-`model`-filter staleness bug, deliberately left out of FOLLOW-465's
-scope — dep FOLLOW-460 DONE).
+zero FOLLOW-465 symbols — reconfirmed locally). **PR #463 squash-merged 2026-07-06 (main tip
+`5acc055`); FOLLOW-465 is DONE.** Worktree `wt-follow465` + its branch cleaned up. Post-merge
+retrospective (RETRO-162) still owed — spawn `retrospective-analyst`. Next clean worker-delegable
+candidate: **FOLLOW-464** (the `getPgCachedDescription` missing-`model`-filter staleness bug,
+deliberately left out of FOLLOW-465's scope — dep FOLLOW-460 DONE).
 
 ---
 
@@ -9228,11 +9228,13 @@ gate) closes the epic and must be last.
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-06T00:00:00Z'
+  completed_at: '2026-07-06T00:00:00Z'
   branch: ml-engineer/FOLLOW-465-neutral-verdict-negative-cache
   pr: 463
+  merged_commit: '5acc055'
   priority: P2
   estimated_hours: 2
   depends_on: []

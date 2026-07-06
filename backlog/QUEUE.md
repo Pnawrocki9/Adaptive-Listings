@@ -86,6 +86,14 @@ CONVENTIONS_PATCH.md + this HANDOFFS note) must be run by whatever mechanism in 
 has subagent-spawn capability; this session could only perform the queue-state and file-based
 portion of delegation.\*\*
 
+**CI CONFIRMATION for this session's own bookkeeping PR #437** (docs-only: QUEUE.md/STATUS.md/
+HANDOFFS.md/ESCALATIONS.md/FOLLOW_UPS.md/lessons.md — no application code touched):
+`gh pr checks 437` → 55 pass / 2 fail across both matrix legs; the 2 failures are both "Rule I —
+wired-or-dead check", the documented pre-existing non-blocking baseline (see project memory "CI gate
+landscape" — this gate has ~175 pre-existing violations unrelated to any diff and is not a real
+merge gate). Non-Rule-I non-success count: **0**. Human may merge #437 whenever convenient; it
+carries no functional risk.
+
 ---
 
 **Updated 2026-07-02 (session 9) — Recovered from a crashed session 8 that had delegated FOLLOW-450

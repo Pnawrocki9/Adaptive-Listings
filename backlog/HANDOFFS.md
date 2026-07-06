@@ -1920,3 +1920,100 @@ orchestrator (single writer) — report back status, PR link, and CI result inst
 queue yourself.
 
 ---
+
+## PM orchestrator (session 11) → backend-engineer, FOLLOW-513
+
+**Date:** 2026-07-06 | **Branch:** `backend-engineer/FOLLOW-513-queue-sentry-binding` (isolated
+worktree; branch-first per FOLLOW-448/Rule AA discipline — create the branch as your FIRST action,
+before any edit, off `main` at `2083e07` or later)
+
+**Ticket:** `backlog/QUEUE.md` → Sprint 22b → `FOLLOW-513` ("the queue() consumer runs outside
+withSentry so its retry_reinsert_failed/malformed_retry_message captures likely no-op — bind Sentry
+on the queue path", P1, ~2h, `apps/ingest`). Delegation-table row used: "ingest worker,
+control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks →
+backend-engineer".
+
+**Read before starting:**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — Operating Principle 1)
+- `CONVENTIONS_PATCH.md` (current permanent rules — Rule K.2/K.2-amendment on fire-and-forget
+  observability is directly relevant: "a configured-but-failed store must be observable" — this
+  ticket is that same obligation applied to a Cloudflare Queue consumer instead of an HTTP sink)
+- This ticket's full YAML block in `backlog/QUEUE.md` (source RETRO-159, AC checklist)
+- `backlog/RETROSPECTIVES.md` RETRO-159 §4b BUG-1 / §4c TG-1 / §4a LG-1 / §7 hop-2 for the full
+  finding writeup
+
+**The bug (verified in repo, not guessed):**
+
+- `apps/ingest/src/index.ts:39-51` — only `{ fetch }` is passed through `withSentry(...)`
+  (`const sentryWrapped = withSentry({ fetch: ... })`); the final default export is
+  `{ fetch: instrumentedFetch, queue: handleEventsRetryQueue }` — `queue` is a plain sibling that
+  never goes through `withSentry`.
+- `apps/ingest/src/observability.ts` — `withSentry` wraps `Sentry.withSentry(configFn, handler)`,
+  which is what actually calls `Sentry.init()` per-invocation. Because `queue` bypasses this, no
+  Sentry client is ever initialized before `handleEventsRetryQueue` runs.
+- `apps/ingest/src/handlers/events-retry-consumer.ts:42,70` calls `Sentry.captureException(...)`
+  directly (imported as `import * as Sentry from '@sentry/cloudflare'`) for both
+  `malformed_retry_message` and `retry_reinsert_failed` — with no client bound, `@sentry/cloudflare`
+  no-ops these calls. Cloudflare Queue consumer invocations frequently run on fresh isolates that
+  never served a `fetch`, so this isn't an edge case — it's the structural default. This defeats the
+  exact "even the durable retry failed" observability guarantee ADR-0017/FOLLOW-482 exists to
+  provide.
+- Secondary fold-in (LG-1): `apps/ingest/src/events-retry-queue.ts:35` —
+  `schema_version: z.literal(1)`. `events-retry-consumer.ts` ack-drops (not retries) any message
+  that fails `EventsRetryMessageSchema` parsing, including a hypothetical future
+  `schema_version: 2`. Cloudflare holds in-flight queue messages across deploys, so a version bump
+  would silently lose in-flight retries the day it ships.
+
+**Required fix (per ticket AC — see the FOLLOW-513 YAML block in QUEUE.md for the authoritative
+list):**
+
+1. Make the `queue` handler run with a bound Sentry client. The straightforward fix is to pass the
+   WHOLE `ExportedHandler<Env>` object
+   (`{ fetch: instrumentedFetch, queue: handleEventsRetryQueue }`) through `withSentry` once,
+   instead of wrapping only `{ fetch }` and re-assembling afterward — confirm `Sentry.withSentry`
+   from `@sentry/cloudflare` supports wrapping both `fetch` and `queue` on the same handler object
+   (check the installed `@sentry/cloudflare` version's docs/types before assuming; if it does NOT
+   support `queue`, the acceptable alternative is an explicit `Sentry.init({...})` call at the top
+   of `handleEventsRetryQueue` using the same `env.SENTRY_DSN_INGEST` config shape already in
+   `observability.ts`, but prefer the wrap if the library supports it — less duplicated config).
+2. Add a test that asserts a Sentry client is BOUND when the queue handler runs via the REAL
+   default-export wiring in `index.ts` (i.e. exercise `export default {...}` from `index.ts`, not
+   just call `handleEventsRetryQueue` directly — the existing `events-retry-consumer.test.ts` only
+   does the latter, which is exactly the blind spot that let this ship). Don't just assert
+   `captureException` was called — that call no-ops silently today too and would still pass a naive
+   test; assert a client is actually configured/bound (e.g. via `Sentry.getClient()` or equivalent
+   `@sentry/cloudflare` API — check what's available in the installed version).
+3. Fold in the `schema_version` hardening: replace `z.literal(1)` with a shape that can route by
+   version (e.g. a discriminated union keyed on `schema_version`, or at minimum treat an
+   unknown-but-higher version as retry-worthy rather than ack-drop) so a future version bump can't
+   silently lose in-flight messages. Keep this scoped — don't invent a v2 schema, just make the
+   consumer's failure mode for "message doesn't match what I expect" not be "permanent ack-drop, no
+   code changes needed".
+4. No regression to the existing produce-on-terminal-failure / consumer-re-insert tests from
+   FOLLOW-482 (PR #449) — `events-retry-queue.test.ts` and `events-retry-consumer.test.ts`.
+
+**Files most likely touched:** `apps/ingest/src/index.ts`, `apps/ingest/src/observability.ts`,
+`apps/ingest/src/handlers/events-retry-consumer.ts`,
+`apps/ingest/src/handlers/events-retry-consumer.test.ts`, `apps/ingest/src/events-retry-queue.ts`
+(schema_version), `apps/ingest/src/events-retry-queue.test.ts`.
+
+**Validation the orchestrator will require before READY_FOR_REVIEW (do not skip):**
+
+- Local: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` all green.
+- CI green on every real gate (`gh pr checks <pr> --watch`, then the
+  `jq '[.[]|select(.state!="SUCCESS")]|length'` check — paste the `0`). Only the pre-existing "Rule
+  I — wired-or-dead" red (baseline noise, unrelated to `apps/ingest`) is acceptable.
+- Runtime-wiring grep (step 5c): a non-test producer (the real `export default { fetch, queue }` in
+  `index.ts` actually passing `queue` through the Sentry-binding path) AND a non-test consumer (the
+  bound-client assertion exercised through that real wiring, not a direct handler call) — paste both
+  grep lines.
+- Single-agent ticket, no step-5d co-assignment check needed.
+- Cite RETRO-159 and Rule K.2/its fire-and-forget-observability amendment in the PR description as
+  the source pattern.
+
+**Open a PR when done; do not merge.** Update `backlog/QUEUE.md` FOLLOW-513 status only via the
+orchestrator (single writer) — report back status, PR link, and CI result instead of editing the
+queue yourself.
+
+---

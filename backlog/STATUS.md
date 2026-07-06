@@ -1,4 +1,52 @@
-# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-462 IN_PROGRESS)
+# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-513 IN_PROGRESS)
+
+## SESSION 11 (2026-07-06) — FOLLOW-513 delegated (P1, backend-engineer, ingest Sentry-on-queue-path)
+
+**Read state first (step 1):** `backlog/QUEUE.md` (banner still headed "resume 2026-07-04" at
+session start — stale; corrected with a fresh superseding banner this session),
+`backlog/ESCALATIONS.md` (3 real `## OPEN` entries: ESC-020, ESC-028, ESC-034 — all re-read in full,
+content unchanged since last confirmation, all previously-established non-blocking
+operator-action-pending per documented precedent; no new escalation opened, none block picking a
+ticket), `backlog/HANDOFFS.md`, `git log --oneline -20` (HEAD `2083e07`, matches the launching
+context's session-10 close-out: FOLLOW-462/490 DONE, FOLLOW-482 CODE_COMPLETE_OPERATOR_PENDING,
+ADR-0017 ACCEPTED, ESC-037 RESOLVED, RETRO-153..159 filed), `gh pr list --state open` → **0 open
+PRs** (nothing to validate this round).
+
+**Bookkeeping note:** `backlog/STATUS.md`'s own prior "SESSION 10" entry (below) only narrates the
+FOLLOW-462 half of session 10's actual work — FOLLOW-490 and FOLLOW-482 also closed in that session
+per `git log` and `backlog/QUEUE.md`'s own ticket blocks, but this file was never updated to say so.
+Not fixing that retroactively (out of scope, no code/queue impact) — flagging so the next reader
+trusts `git log` + `QUEUE.md` ticket YAML over this file's prose when they disagree.
+
+**Ticket picked:** FOLLOW-513 (P1, backend-engineer, `apps/ingest` — bind Sentry on the `queue()`
+consumer path so `retry_reinsert_failed`/`malformed_retry_message` captures aren't structural
+no-ops). Chosen over the other fresh RETRO-159 stubs (FOLLOW-512/514/515, all P1/P2 but
+devops/operator-provisioning-shaped, not cleanly worker-delegable) and over FOLLOW-500 (P1, real
+post-deploy Modal smoke — devops/ml, also legitimate but FOLLOW-513 is a clean, fully-specified,
+single-file-family backend-engineer fix with no operator dependency) and over the FOLLOW-490 P2/P3
+sweep tail (FOLLOW-473 explicitly flagged risky/needs-preflight, FOLLOW-491/484 lower priority).
+Verified the finding directly in the repo before delegating (`apps/ingest/src/index.ts:39-51`,
+`observability.ts`, `handlers/events-retry-consumer.ts:42,70`) rather than trusting the retro prose
+alone. Promoted the FOLLOW-513 stub from `backlog/FOLLOW_UPS.md` into `backlog/QUEUE.md` (single
+writer), flipped `READY -> IN_PROGRESS`, `assigned_to: backend-engineer`,
+`branch: backend-engineer/FOLLOW-513-queue-sentry-binding`. Full delegation brief written to
+`backlog/HANDOFFS.md` ("PM orchestrator (session 11) → backend-engineer, FOLLOW-513").
+Delegation-table row used: "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer".
+
+**This session has no subagent-spawn tool** — only the QUEUE.md/HANDOFFS.md state changes were
+performed; the main orchestrator must actually invoke the backend-engineer worker on the branch
+above using this ticket's YAML block, `docs/MASTER_DESIGN.md` §Snapshot.1, `CONVENTIONS_PATCH.md`,
+and the HANDOFFS.md brief as context.
+
+**IN_PROGRESS count:** FOLLOW-513 + stale `TICKET-PILOT-001` (ancient, sdk-engineer, started
+2026-05-29, still never cleared across 11 sessions — worth a hygiene pass) = 2 (cap 3, room for one
+more).
+
+**CI-check counter:** 0/5 (no PR opened this session, nothing to check). **Fix-iteration counter:**
+0/3.
+
+---
 
 ## SESSION 10 (2026-07-06) — bookkeeping fix (FOLLOW-456/459 DONE flip), retro debt flagged, FOLLOW-462 delegated
 

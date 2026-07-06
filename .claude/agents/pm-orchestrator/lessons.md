@@ -1741,3 +1741,20 @@ independent occurrence, even if it references the same pattern by name.
   field in QUEUE.md and against RETROSPECTIVES.md's RETRO-NNN coverage; a session can correctly
   narrate a merge and still forget the two mechanical follow-through steps (status flip + retro
   spawn) for a subset of the PRs it just merged.
+
+- **Date / ticket:** 2026-07-06 — FOLLOW-513
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (FOLLOW-513).
+- **What validation caught (or missed):** Before delegating, independently re-read the actual source
+  (`index.ts`, `observability.ts`, `events-retry-consumer.ts`) rather than trusting the
+  FOLLOW_UPS.md stub prose alone — confirmed the `queue` export genuinely bypasses `withSentry` and
+  that the existing test (`events-retry-consumer.test.ts`) calls the handler directly, which is
+  exactly the blind spot that would let a worker "fix" the wrapper but ship a test that still can't
+  detect an unbound Sentry client. Wrote that exact trap into the AC so the worker can't pass CI
+  with a same-shaped no-op test. Also found the QUEUE.md "START HERE" banner and STATUS.md's own
+  session-10 entry had drifted out of sync with git log/ticket-YAML reality (both under-reported
+  what session 10 actually closed) — corrected both rather than propagating stale prose forward.
+- **A delegation/validation rule I'd add:** When a retro finding centers on "a consumer/handler runs
+  outside a required wrapper," always add an explicit AC line requiring the NEW test exercise the
+  REAL default-export wiring (not a direct function call) — a wrapper fix validated only by calling
+  the wrapped function directly can pass CI while remaining exactly as broken as before.

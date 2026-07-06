@@ -8,8 +8,12 @@
  *   tenant_id — required, tenant UUID (or 'est_demo_tenant')
  *
  * Auth:
- *   Authorization: Bearer <SCHEMA_API_TOKEN>
- *   When SCHEMA_API_TOKEN is not configured, presence-only auth is used.
+ *   Authorization: Bearer <SCHEMA_API_TOKEN>, compared constant-time via
+ *   `secretEquals`.
+ *
+ *   Fail-closed (FOLLOW-490 / FOLLOW-456 / audit F-13): when the env var is
+ *   unset, every request is rejected with 401 — previously an unset secret
+ *   accepted ANY non-empty bearer token.
  *
  * Response:
  *   200 — TenantSiteSchemaMin | null (JSON)
@@ -22,6 +26,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getTenantSchema } from '@/lib/tenant-schema';
+import { secretEquals } from '@/lib/secret-compare';
 
 /**
  * GET /api/internal/schema?tenant_id=<id>
@@ -31,13 +36,12 @@ import { getTenantSchema } from '@/lib/tenant-schema';
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // Auth gate
+  // Fail CLOSED: an unset SCHEMA_API_TOKEN denies every request rather than
+  // accepting any non-empty bearer (FOLLOW-490 / FOLLOW-456 / audit F-13).
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
   const schemaApiToken = process.env.SCHEMA_API_TOKEN;
-  if (schemaApiToken && token !== schemaApiToken) {
+  if (!token || !schemaApiToken || !secretEquals(schemaApiToken, token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

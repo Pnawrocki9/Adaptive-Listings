@@ -8953,10 +8953,22 @@ gate) closes the epic and must be last.
     Fix the 4th live fail-open route — /api/internal/schema accepts any non-empty bearer when
     SCHEMA_API_TOKEN is unset (the original FOLLOW-456's fix was cloned from)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-06T13:00:00Z'
+  completed_at: '2026-07-06T14:00:00Z'
   branch: backend-engineer/FOLLOW-490-schema-fail-open
+  pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/442'
+  ci:
+    'green (57 real gates, independently verified); Rule I wired-or-dead pre-existing-red
+    non-blocking'
+  notes_pm: >-
+    Fail-closed via secretEquals (constant-time); 6-case unset/wrong/correct auth-matrix test. AC4
+    grep found 2 MORE identical fail-open sites — ADAPT_API_KEY in GET /api/adapt:703 and GET
+    /api/adapt/description:183 — deliberately NOT fixed here: they are live SDK-facing decision
+    paths that also trust a spoofable x-tenant-id and are already scoped by FOLLOW-473 (flipping
+    them fail-closed needs ADAPT_API_KEY confirmed in Vercel prod first, else SDK-wide outage). No
+    new follow-up needed; FOLLOW-473 covers them.
   priority: P1
   estimated_hours: 1
   depends_on: []

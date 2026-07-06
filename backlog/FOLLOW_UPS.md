@@ -12943,7 +12943,7 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
 
 ---
 
-<!-- next free FOLLOW number: 511 (507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
+<!-- next free FOLLOW number: 512 (511 = FOLLOW-490/FOLLOW-508 verification residual — decide+provision the decision-api Worker schema-API fallback (SCHEMA_API_URL + matching token), currently dark in prod [P3]. 507 SKIPPED/unused. 505/506 = RETRO-157 (FOLLOW-462): 505 CH escaper round-trip test [P2], 506 centralize escaper in clickhouse-http [P3, discharges FOLLOW-504]. 508/509/510 = RETRO-158 (FOLLOW-490): 508 = P1 operator-verify SCHEMA_API_TOKEN on BOTH Vercel + decision-api Cloudflare Worker planes (fail-closed now degrades reorder silently if unset), 509 extend FOLLOW-492 preflight two-plane-aware [P2], 510 reassess FOLLOW-473 P2->P1 + ADAPT_API_KEY two-sided preflight [P2]. Sources in RETROSPECTIVES.md RETRO-157/158. 504 = FOLLOW-462 residual — escape param values in clickhouse-tracer.ts chTracerQuery/chTracerCount [same backslash class as F-14, currently safe UUID/hex-only]; P3 data-engineer. 503–490 = RETRO-153..156 follow-ups, filed 2026-07-06 session 10; stub blocks at end of file, sources in RETROSPECTIVES.md RETRO-153..156. 490 = P1 fix /api/internal/schema fail-open (the un-swept F-13 original); 491/492/493 = FOLLOW-456 sweep/preflight/unify; 494/495/496 = FOLLOW-459 (495 also recommends elevating FOLLOW-482 to P1); 497/498/499 = FOLLOW-460 (497 fail-open Modal→PG write, 498 headline-null metric); 500 = P1 real post-deploy smoke, 501/502/503 = FOLLOW-485 deploy-dep guard/dedup _valid_bearer/303 contract. 489 = ESC-034 correction, 2026-07-06 pm-orchestrator session 10 —
 `docs/runbooks/modal-embed-seed-consumer-golive.md` still documents the RETIRED
 Redpanda-poller embed-seed go-live path (REDPANDA_TOPIC_LISTING_EMBEDDINGS provisioning + a
 `modal.Period(seconds=30)` schedule); FOLLOW-485/ADR-0016 replaced it with a direct-HTTPS Modal
@@ -13584,15 +13584,22 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-508 title: >- OPERATOR/RISK — verify SCHEMA_API_TOKEN is provisioned AND matching on
   BOTH the Vercel-prod control-plane side and the decision-api Cloudflare Worker side, now that
   FOLLOW-490 fail-closes /api/internal/schema source_retro: RETRO-158 source_ticket: FOLLOW-490
-  recommended_sprint: 22b recommended_agent: devops-engineer priority: P1 estimated_hours: 1
-  promoted_to_queue: false scope: >- FOLLOW-490 (PR #442) flipped GET /api/internal/schema from
-  fail-open (accept any non-empty bearer when SCHEMA_API_TOKEN is unset) to fail-closed (401 when
-  unset/wrong). This makes SCHEMA_API_TOKEN merge-time-mandatory AND two-sided: the sole in-repo
-  consumer is the decision-api Cloudflare Worker at apps/decision-api/src/lib/reorder.ts:153, which
-  sends `Authorization: Bearer <env.SCHEMA_API_TOKEN>` ONLY when its own env var is set (else sends
-  no auth header). So the reorder DB-fallback call now 401s in prod unless SCHEMA_API_TOKEN is set
-  on the Vercel control-plane side AND set to the SAME value on the Cloudflare Worker side. This
-  secret was NOT part of FOLLOW-483 (which provisioned only ADMIN_API_SECRET,
+  recommended_sprint: 22b recommended_agent: devops-engineer priority: P3 estimated_hours: 1
+  verified: "2026-07-06 pm-orchestrator — VERIFIED, no regression. Control-plane (Vercel prod) has
+  SCHEMA_API_TOKEN set (route validates, does not 401-all). decision-api prod Worker (deployed
+  2026-05-19) has an EMPTY secret list — SCHEMA_API_TOKEN and SCHEMA_API_URL both unset — but
+  fetchSchemaFromApi short-circuits on `if (!apiUrl) return null` and handles !res.ok/throw as null,
+  so FOLLOW-490's fail-closed flip introduced NO regression (the Worker's schema-API fallback was
+  already dark in prod; reorder uses demo-schema + Upstash cache only). Downgraded P1->P3. Residual
+  is now a separate product/ops decision (below), NOT a FOLLOW-490 risk." promoted_to_queue: false
+  scope: >- FOLLOW-490 (PR #442) flipped GET /api/internal/schema from fail-open (accept any
+  non-empty bearer when SCHEMA_API_TOKEN is unset) to fail-closed (401 when unset/wrong). This makes
+  SCHEMA_API_TOKEN merge-time-mandatory AND two-sided: the sole in-repo consumer is the decision-api
+  Cloudflare Worker at apps/decision-api/src/lib/reorder.ts:153, which sends
+  `Authorization: Bearer <env.SCHEMA_API_TOKEN>` ONLY when its own env var is set (else sends no
+  auth header). So the reorder DB-fallback call now 401s in prod unless SCHEMA_API_TOKEN is set on
+  the Vercel control-plane side AND set to the SAME value on the Cloudflare Worker side. This secret
+  was NOT part of FOLLOW-483 (which provisioned only ADMIN_API_SECRET,
   LISTING_UPDATED_WEBHOOK_SECRET, DESCRIPTION_CACHE_INTERNAL_SECRET) and is NOT in FOLLOW-492's
   preflight set. RETRO-153 confirmed the sibling secrets were all MISSING in Vercel prod, so
   SCHEMA_API_TOKEN is plausibly unset/mismatched on one or both planes → likely SILENT
@@ -13654,3 +13661,20 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     is deployed, so a missing/mismatched key cannot 401 live SDK traffic.
   - FOLLOW-484's sequencing note is updated to require both FOLLOW-473 and FOLLOW-490 merged (or a
     documented allow-list exception for the two ADAPT lines) before the grep-lint is enabled.
+
+- id: FOLLOW-511 title: >- Decide + (if yes) provision the decision-api Worker schema-API fallback
+  in prod (SCHEMA_API_URL + matching SCHEMA_API_TOKEN) — currently dark source_ticket: FOLLOW-490
+  recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- Verification for FOLLOW-508 (2026-07-06) found the decision-api
+  prod Cloudflare Worker has an EMPTY secret list: SCHEMA_API_URL and SCHEMA_API_TOKEN are both
+  unset, so reorder's resolution step 3 (fetchSchemaFromApi → control-plane /api/internal/schema)
+  never runs in prod — fetchSchemaFromApi short-circuits on `if (!apiUrl) return null`. Reorder
+  therefore relies only on demo-schema + the Upstash Redis cache (step 2). This is NOT a FOLLOW-490
+  regression (see FOLLOW-508), but a pre-existing product/ops gap: the schema-API fallback was
+  designed (TICKET-AB-011) and is dark. Decide whether it should be live for the pilot; if yes,
+  provision on the Worker. ac:
+  - Product/ops decision recorded: is the schema-API fallback (control-plane → Worker) in scope for
+    the pilot, or is Upstash-cache-only sufficient?
+  - If yes: SCHEMA_API_URL (= https://admin.estalara.com/api/internal/schema) + a SCHEMA_API_TOKEN
+    MATCHING the Vercel-prod control-plane value are set as secrets on
+    estalara-decision-api-production (via Doppler/wrangler), and a live GET returns 200 (not 401).

@@ -41,6 +41,19 @@ the FOLLOW-465 ticket block (Sprint 22b) for AC. FOLLOW-464/491/519/522 remain R
 future session; FOLLOW-471 (clean re-audit gate) stays BACKLOG until every depends_on ticket is
 DONE.
 
+**Terminal crashed mid-session; resumed 2026-07-06.** The ml-engineer worker had finished the
+FOLLOW-465 implementation in worktree `wt-follow465` but the crash hit BEFORE commit/push/PR — all
+work was intact as uncommitted changes (12 files), nothing lost. On resume: re-validated the diff
+against AC + the 7 brief constraints (found complete, no gaps), ran the full gate set green (lint/
+typecheck/test/build 17/17, control-plane next build, Python pytest 132 passed, prettier clean,
+migration journal monotonic), committed `abff5c3`, pushed, and opened **PR #463**. CI: 56/58 pass;
+the only 2 reds are the standing pre-existing "Rule I — wired-or-dead" baseline (181 violations,
+zero FOLLOW-465 symbols — reconfirmed locally). **PR #463 squash-merged 2026-07-06 (main tip
+`5acc055`); FOLLOW-465 is DONE.** Worktree `wt-follow465` + its branch cleaned up. Post-merge
+retrospective (RETRO-162) still owed — spawn `retrospective-analyst`. Next clean worker-delegable
+candidate: **FOLLOW-464** (the `getPgCachedDescription` missing-`model`-filter staleness bug,
+deliberately left out of FOLLOW-465's scope — dep FOLLOW-460 DONE).
+
 ---
 
 ## ▶️ (superseded) START HERE — resume 2026-07-06 (session 12, after session 11 delegated FOLLOW-513/closed it DONE)
@@ -9215,10 +9228,13 @@ gate) closes the epic and must be last.
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-06T00:00:00Z'
+  completed_at: '2026-07-06T00:00:00Z'
   branch: ml-engineer/FOLLOW-465-neutral-verdict-negative-cache
+  pr: 463
+  merged_commit: '5acc055'
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -9228,14 +9244,28 @@ gate) closes the epic and must be last.
   spec: ADR-0010; audit report §5.4 F-18
   notes: |
     AC:
-    - [ ] A NEUTRAL verdict is negative-cached (persistent) keyed by (tenant,listing,archetype,
+    - [x] A NEUTRAL verdict is negative-cached (persistent) keyed by (tenant,listing,archetype,
           locale,model); a repeat request short-circuits without a new Sonnet call until listing.
           updated invalidation.
-    - [ ] Test: two identical neutral requests trigger exactly one generation enqueue.
+    - [x] Test: two identical neutral requests trigger exactly one generation enqueue.
     Delegated 2026-07-06 (pm-orchestrator session 13). Table row used: "intent/adapt logic,
     embeddings, LLM gateway, auto-detect, ontology, platform-templates -> ml-engineer". Full
     delegation brief (incl. the exact schema/wire-contract constraints already found in the repo)
     in backlog/HANDOFFS.md.
+    READY_FOR_REVIEW 2026-07-06 (session 13, resumed after terminal crash): PR #463, commit abff5c3.
+    Impl was already complete in worktree wt-follow465 when the crash hit; resumed session validated,
+    committed, pushed, opened PR. verdict enum (optional, absent=>FIT) added to
+    DescriptionCacheValueSchema + internal-route BodySchema with superRefine scoping the min(1)
+    relaxation to NEUTRAL only; migration 0033 (nullable verdict col + CHECK, journal idx 33);
+    Python _generate_with_sonnet now 3-way FIT|NEUTRAL|FAILED, generate_description() negative-caches
+    only NEUTRAL (genuine failure still writes nothing); route.ts short-circuits BOTH pg Step-1 and
+    redis Step-2 hits on verdict=NEUTRAL to template_fallback, skipping RAG + Modal dispatch. Wire
+    contract (DescriptionResponseSchema/DescriptionSourceSchema) UNCHANGED. FOLLOW-464 model-filter
+    bug left untouched (separate ticket). Validation: pnpm lint/typecheck/test/build 17/17 +
+    control-plane next build + Python pytest 132 passed + prettier clean + migration-journal
+    monotonic (34 entries) + fire-and-forget guard PASS. CI: 56/58 pass; the only 2 reds are the
+    documented pre-existing "Rule I — wired-or-dead" baseline (181 violations, none FOLLOW-465
+    symbols). PR MERGEABLE, not merged (awaiting human review).
 - id: FOLLOW-466
   title: >-
     Add replay protection to feedback HMAC + unify secret comparisons on timingSafeEqual (F-21)

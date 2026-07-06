@@ -8991,6 +8991,34 @@ gate) closes the epic and must be last.
     - [ ] route.test.ts asserts the unset→401 / wrong→401 / correct→200 matrix.
     - [ ] Repo-wide grep confirms no remaining fail-open secret shape in apps/control-plane handlers
           (clean hand-off to FOLLOW-484).
+- id: FOLLOW-482
+  title: >-
+    Durable, crash-survivable retry queue (Cloudflare Queues) for the post-ACK ClickHouse insert
+    (ADR-0017)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-06T15:00:00Z'
+  branch: backend-engineer/FOLLOW-482-clickhouse-retry-queue
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    RETRO-154/FOLLOW-459 — ClickHouse is the SOLE prod events sink (Redpanda no-op, ESC-017); a
+    terminal CH insert failure after the ~3.1s in-process retry window is Sentry-captured but the
+    batch is not re-queued → events LOST. ADR-0017 ACCEPTED (CEO 2026-07-06, ESC-037): Cloudflare
+    Queues over Upstash; duplicate-row risk ACCEPTED (no dedup key); DLQ runbook owner = devops.
+  spec: docs/adr/ADR-0017-durable-post-ack-clickhouse-retry-queue.md (ACCEPTED)
+  notes: |
+    AC:
+    - [ ] apps/ingest produces the failed batch to a Cloudflare Queue (estalara-events-retry) on
+          terminal CH failure (after the in-process retries), replacing Sentry-capture-only.
+    - [ ] A queue() consumer handler in the SAME apps/ingest Worker re-inserts via the existing
+          pushToClickHouse path; native DLQ (estalara-events-retry-dlq) for poison batches.
+    - [ ] wrangler.toml declares the producer + consumer + DLQ bindings (all envs); no dedup key
+          added (duplicate risk accepted per ADR-0017).
+    - [ ] Tests cover produce-on-terminal-failure and consumer re-insert. Actual CF Queue/DLQ +
+          Terraform provisioning is a devops/operator deploy-time step (flag as handoff, not blocker).
 - id: FOLLOW-463
   title: >-
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)

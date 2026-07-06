@@ -13068,23 +13068,24 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-482 title: >- Durable, crash-survivable retry queue for the post-ACK ClickHouse insert
   (Cloudflare Queues) source_retro: none (filed inline by the FOLLOW-459 implementation per its own
   AC2) source_ticket: FOLLOW-459 recommended_sprint: next available recommended_agent:
-  backend-engineer priority: P1 estimated_hours: 6 promoted_to_queue: false priority_history:
-  "P2->P1 2026-07-06 per RETRO-154 — with Redpanda a prod no-op (ESC-017) ClickHouse is the SOLE
-  events sink, so the post-ACK move made at-least-once best-effort; durable retry is now
-  load-bearing. NOTE: still gated on a new-infra ADR (Cloudflare Queues) per CLAUDE.md before it can
-  be worked." scope: >- FOLLOW-459 moved the ClickHouse `events` insert off the ACK critical path
-  via `ctx.waitUntil()`, preserving its existing 3-attempt/backoff in-process retry policy. A
-  terminal failure (all 3 attempts exhausted, or a 4xx) after that point is captured to Sentry
-  (`events.ts`, tags `{ area: 'events', sink: 'clickhouse', kind: 'insert_failed' }`) but the batch
-  itself is NOT re-queued anywhere — if ClickHouse is down longer than the in-process retry window
-  (~3.1s), those events are permanently lost from ClickHouse (they DID reach Redpanda, so not lost
-  from the system as a whole, only from the ClickHouse-direct pilot path — ESC-017). This follow-up
-  adds a Cloudflare Queue (or equivalent durable buffer) that the ClickHouse producer pushes a
-  failed batch to on terminal failure, plus a consumer Worker/cron that drains the queue with its
-  own backoff, so failed batches survive past the Worker's request lifecycle instead of only being
-  observable via Sentry. Cloudflare Queues is a NEW binding/cost surface for apps/ingest → needs an
-  ADR + escalation sign-off before adding the binding (CLAUDE.md "new third-party service" rule),
-  even though it is same-vendor as the rest of the Worker stack. ac:
+  backend-engineer priority: P1 estimated_hours: 6 promoted_to_queue: true (QUEUE FOLLOW-482
+  IN_PROGRESS 2026-07-06, ADR-0017 ACCEPTED) priority_history: "P2->P1 2026-07-06 per RETRO-154 —
+  with Redpanda a prod no-op (ESC-017) ClickHouse is the SOLE events sink, so the post-ACK move made
+  at-least-once best-effort; durable retry is now load-bearing. NOTE: still gated on a new-infra ADR
+  (Cloudflare Queues) per CLAUDE.md before it can be worked." scope: >- FOLLOW-459 moved the
+  ClickHouse `events` insert off the ACK critical path via `ctx.waitUntil()`, preserving its
+  existing 3-attempt/backoff in-process retry policy. A terminal failure (all 3 attempts exhausted,
+  or a 4xx) after that point is captured to Sentry (`events.ts`, tags
+  `{ area: 'events', sink: 'clickhouse', kind: 'insert_failed' }`) but the batch itself is NOT
+  re-queued anywhere — if ClickHouse is down longer than the in-process retry window (~3.1s), those
+  events are permanently lost from ClickHouse (they DID reach Redpanda, so not lost from the system
+  as a whole, only from the ClickHouse-direct pilot path — ESC-017). This follow-up adds a
+  Cloudflare Queue (or equivalent durable buffer) that the ClickHouse producer pushes a failed batch
+  to on terminal failure, plus a consumer Worker/cron that drains the queue with its own backoff, so
+  failed batches survive past the Worker's request lifecycle instead of only being observable via
+  Sentry. Cloudflare Queues is a NEW binding/cost surface for apps/ingest → needs an ADR +
+  escalation sign-off before adding the binding (CLAUDE.md "new third-party service" rule), even
+  though it is same-vendor as the rest of the Worker stack. ac:
   - ADR proposal (docs/adr/PROPOSED-XXX.md) for adding Cloudflare Queues to apps/ingest, incl. cost
     estimate (escalate if >€100/mo per CLAUDE.md).
   - On terminal ClickHouse failure (post-ACK), the failed batch is enqueued (not just

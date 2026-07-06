@@ -1,9 +1,12 @@
 # ADR-0017 — Durable, crash-survivable retry for the post-ACK ClickHouse `events` insert (Cloudflare Queues)
 
-**Status:** PROPOSED (2026-07-06) — **requires human/CEO sign-off before FOLLOW-482 is worked.**
-This ADR adds a new Cloudflare product surface (a new binding + a new deployable consumer) to
-`apps/ingest`, which is a "new third-party service" / new recurring-cost surface under CLAUDE.md's
-escalation rules even though it is same-vendor as the rest of the Worker stack — see the
+**Status:** ACCEPTED (2026-07-06, CEO Piotr). Decision: adopt **Cloudflare Queues** (over Upstash
+Redis); **accept the duplicate-row risk** — no dedup key required in FOLLOW-482 scope (the `events`
+table stays ReplicatedMergeTree without `event_id` in ORDER BY); DLQ replay/alert runbook owner =
+**devops-engineer** (discharged via FOLLOW-495). FOLLOW-482 is unblocked and promoted to QUEUE. See
+ESC-037 (RESOLVED). This ADR adds a new Cloudflare product surface (a new binding + a new deployable
+consumer) to `apps/ingest`, which is a "new third-party service" / new recurring-cost surface under
+CLAUDE.md's escalation rules even though it is same-vendor as the rest of the Worker stack — see the
 **Escalation** section below for exactly what needs a founder decision. · **References:** FOLLOW-459
 (PR #429), FOLLOW-482 (`backlog/FOLLOW_UPS.md`), RETRO-154 (`backlog/RETROSPECTIVES.md`), ESC-017,
 ADR-0016 (Redpanda dropped for the Modal pilot flows), ADR-0003 (event schema/versioning)

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — Approve ADR-0017 (Cloudflare Queues durable retry) before FOLLOW-482 (P1) is worked [FOLLOW-482]
+## RESOLVED — Approve ADR-0017 (Cloudflare Queues durable retry) before FOLLOW-482 (P1) is worked [FOLLOW-482]
 
 **Filed by:** pm-orchestrator (session 10) **Date:** 2026-07-06T00:00:00Z **Affects:** FOLLOW-482
 (P1), apps/ingest, ADR-0017 **Type:** architectural | vendor
@@ -51,7 +51,13 @@ lock-in), this needs CEO sign-off before FOLLOW-482 is scheduled to a worker.
    the pre-existing in-process-retry duplicate risk. ADR-0017 does NOT add dedup — accept as a named
    risk, or require a dedup key (ReplacingMergeTree / idempotency key) as part of FOLLOW-482 scope?
 
-**Resolution:** <empty until resolved>
+**Resolution (2026-07-06, CEO Piotr — ACCEPTED):** (1) **Adopt Cloudflare Queues.** (2) **Cloudflare
+Queues over Upstash Redis** — confirmed. (3) DLQ replay/alert runbook owner = **devops-engineer**
+(discharged via FOLLOW-495's alerting work). (4) **Duplicate-row risk ACCEPTED as a named risk** —
+no dedup key required; FOLLOW-482 does NOT add a `ReplacingMergeTree`/idempotency key. ADR-0017
+flipped PROPOSED → ACCEPTED; FOLLOW-482 promoted to QUEUE (P1) and delegated to backend-engineer for
+the Worker producer + `queue()` consumer + wrangler binding (actual CF Queue/DLQ + Terraform
+provisioning is a devops/operator deploy-time step).
 
 ---
 

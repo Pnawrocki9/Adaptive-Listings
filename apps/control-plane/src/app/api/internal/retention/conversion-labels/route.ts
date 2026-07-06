@@ -42,6 +42,7 @@ import type { NextRequest } from 'next/server';
 import { lt } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, conversionLabels } from '@estalara/db';
+import { secretEquals } from '@/lib/secret-compare';
 import { thirteenMonthsAgo } from './_utils';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -51,8 +52,10 @@ function isAuthorized(req: NextRequest): boolean {
   // Reject when CRON_SECRET is not set — unconfigured secret is an
   // infrastructure misconfiguration, not a valid dev/CI bypass.
   if (!secret) return false;
-  const authHeader = req.headers.get('authorization');
-  return authHeader === `Bearer ${secret}`;
+  const authHeader = req.headers.get('authorization') ?? '';
+  // FOLLOW-466 / audit F-21: constant-time compare (was plain `===`).
+  const providedToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  return secretEquals(secret, providedToken);
 }
 
 // ─── GET handler ────────────────────────────────────────────────────────────

@@ -1,6 +1,30 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-06 (session 13, after session 12 closed FOLLOW-466 DONE)
+## ▶️ START HERE — resume 2026-07-07 (session 13 cont'd, after crash-recovery closed FOLLOW-465 DONE + RETRO-162 fast-follow)
+
+**Session 13 was interrupted by a terminal crash and resumed.** FOLLOW-465 (negative-cache NEUTRAL
+archetype-fit verdicts, F-18) shipped: the ml-engineer worker's implementation was intact-but-
+uncommitted in worktree `wt-follow465` when the crash hit; the resumed session validated it (full
+gate set green, Python pytest 132 passed), committed, and merged **PR #463** (`main` tip through
+`d90cdfa`, incl. docs PRs #464/#465). FOLLOW-465 = DONE.
+
+**RETRO-162 surfaced a P1 (LG-1) that reopens the axis FOLLOW-465 didn't cover.** The FOLLOW-465
+NEUTRAL negative cache short-circuits on the model-BLIND Postgres Step-1 read
+(`getPgCachedDescription`, `description-pg-cache.ts:103-111` — the known-open FOLLOW-464 bug, no
+`model` in WHERE), which runs BEFORE the model-scoped Redis Step-2. So a NEUTRAL written under model
+A now permanently suppresses generation under model B (incl. the DEMO `override_model` preview)
+until `listing.updated` — FOLLOW-465 amplified FOLLOW-464 from a stale-model quality bug into a
+cross-model correctness regression on freshly-shipped code. Verified against the code, not just the
+audit prose. **Action taken this close-out:** promoted **FOLLOW-464 P2→P1**, folded FOLLOW-523's
+model-scoping AC into it (incl. a NEUTRAL-cross-model regression-guard test + demo-path guard),
+reassigned to ml-engineer (owns the FOLLOW-465 read path + sibling FOLLOW-460), flipped
+`READY→IN_PROGRESS`, branch `ml-engineer/FOLLOW-464-model-key-pg-cache`. Delegation brief in
+`backlog/HANDOFFS.md`. RETRO-162 + FOLLOW-523..527 filed. FOLLOW-524/525/526/527 remain BACKLOG
+(P3). FOLLOW-471 (clean re-audit gate) stays BACKLOG until every depends_on ticket is DONE.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-06 (session 13, after session 12 closed FOLLOW-466 DONE)
 
 **Since the banner below (session 12, same day):** session 12 closed FOLLOW-466 (DONE — PR #459,
 feedback-HMAC replay nonce cache + `secretEquals` sweep; fast-follow FOLLOW-519 filed for a 3rd
@@ -9207,23 +9231,44 @@ gate) closes the epic and must be last.
     - [ ] A query proves the audit trail is durable (survives Redis TTL).
 - id: FOLLOW-464
   title: >-
-    Model-key the Postgres description cache so a model switch isn't defeated by a stale pg hit
-    (F-15)
-  agent: backend-engineer
-  status: READY
-  priority: P2
+    Model-key the Postgres description cache so a model switch isn't defeated by a stale pg hit —
+    incl. the NEUTRAL cross-model short-circuit regression (F-15 + RETRO-162 LG-1 / folds
+    FOLLOW-523)
+  agent: ml-engineer
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-07T00:00:00Z'
+  branch: ml-engineer/FOLLOW-464-model-key-pg-cache
+  priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-460]
+  folds: [FOLLOW-523]
   source: >-
     2026-07-01 audit F-15 — getPgCachedDescription lookup omits model though Redis key includes it;
     Step-1 pg hit runs before the model-suffixed Redis key, so a global/demo model switch serves
-    stale copy until webhook invalidation.
-  spec: audit report §5.2 F-15
+    stale copy until webhook invalidation. PROMOTED P2→P1 2026-07-07 (RETRO-162 LG-1): FOLLOW-465's
+    NEUTRAL negative cache short-circuits on this same model-blind Step-1 read, so a NEUTRAL written
+    under model A now permanently suppresses generation under model B (incl. the DEMO override_model
+    preview) — amplifying F-15 from a stale-model quality bug into a cross-model correctness bug on
+    freshly-shipped code. FOLLOW-523's model-scoping AC folded in here.
+  spec:
+    audit report §5.2 F-15; backlog/RETROSPECTIVES.md RETRO-162 LG-1; backlog/FOLLOW_UPS.md
+    FOLLOW-523
   notes: |
     AC:
-    - [ ] description_cache_persistent lookup filters on model; a model change yields a miss→regen,
-          not a stale pg hit.
-    - [ ] Test covering model-switch cache-busting on the pg path.
+    - [ ] description_cache_persistent lookup (getPgCachedDescription) filters on model; a model
+          change yields a miss→regen, not a stale pg hit — for BOTH the FIT read AND the FOLLOW-465
+          NEUTRAL short-circuit.
+    - [ ] Test covering model-switch cache-busting on the pg path (FIT case).
+    - [ ] Test: a NEUTRAL row written under model A does NOT short-circuit a request under model B
+          (nor a DEMO override_model request) — model B re-dispatches/re-generates instead of serving
+          template_fallback. This is the RETRO-162 LG-1 regression guard.
+    - [ ] The demo override_model path is not short-circuited by a non-demo NEUTRAL row.
+    Promoted + folded 2026-07-07 (pm-orchestrator, RETRO-162 close-out). Assigned ml-engineer (not
+    the original backend-engineer): FOLLOW-523's model-scoping is the model-correctness of the
+    FOLLOW-465 NEUTRAL read path that ml-engineer just authored (route.ts + description-pg-cache.ts),
+    and the sibling FOLLOW-460 pg-cache work was also ml-engineer — continuity + adapt-read-path
+    ownership. Full delegation brief in backlog/HANDOFFS.md.
 - id: FOLLOW-465
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)

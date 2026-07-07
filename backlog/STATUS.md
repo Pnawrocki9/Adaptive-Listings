@@ -1,4 +1,32 @@
-# Status — 2026-07-07 (Sprint 22b OPEN — FOLLOW-464 READY_FOR_REVIEW, PR #468)
+# Status — 2026-07-07 (Sprint 22b OPEN — FOLLOW-464 DONE, PRs #468/#469 merged)
+
+## SESSION 16 CLOSE-OUT (2026-07-07) — PRs #468/#469 merged; FOLLOW-464 DONE; worktree/branches cleaned
+
+**Human confirmed:** PR #468 (FOLLOW-464 code fix) and PR #469 (docs bookkeeping) both merged.
+
+**Actions taken:**
+
+1. `git checkout main && git pull origin main` — fast-forward `42e2821..acf87bb` (commits `bc3b1ea`
+   #468, then `acf87bb` #469). Verified via `git log --oneline` that both merge commits are present
+   on local `main`.
+2. `backlog/QUEUE.md`: `FOLLOW-464` flipped `READY_FOR_REVIEW → DONE`,
+   `completed_at: '2026-07-07T00:00:00Z'`, `merged_commit: bc3b1ea` added; DONE close-out note
+   appended documenting both merges and the cleanup performed.
+3. `backlog/STATUS.md` (this entry) refreshed.
+4. Cleanup: `git worktree remove .claude/worktrees/wt-follow464` (worktree was clean, no dangling
+   changes — confirmed via `git status --short` before removal); deleted local + remote branch
+   `ml-engineer/FOLLOW-464-model-key-pg-cache` and local + remote branch
+   `pm-orchestrator/session16-follow464-recovery` (both fully merged into `main`, confirmed via
+   `git branch --merged main` before deletion).
+
+**Did NOT spawn `retrospective-analyst`** per explicit instruction — the main/coordinating session
+will invoke it after this close-out. RETRO-163 (FOLLOW-464) is owed on the next retro pass.
+
+**Hand-off:** 0 open PRs. 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged,
+non-blocking. 0 tickets IN_PROGRESS (only the stale `TICKET-PILOT-001` record, well under the
+3-ticket cap).
+
+---
 
 ## SESSION 16 (2026-07-07) — recovered stalled ml-engineer FOLLOW-464 work, opened PR #468, READY_FOR_REVIEW
 

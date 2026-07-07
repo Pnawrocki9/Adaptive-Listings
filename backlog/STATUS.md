@@ -1,4 +1,47 @@
-# Status — 2026-07-07 (Sprint 22b OPEN — FOLLOW-464 DONE, PRs #468/#469 merged)
+# Status — 2026-07-08 (Sprint 22b OPEN — RETRO-163 filed for FOLLOW-464, PR #471 open)
+
+## SESSION 16 RETRO (2026-07-08) — RETRO-163 packaged + PR #471 opened; FOLLOW-528/529/530 stubbed
+
+**Coordinator update:** PR #470 (session-16 DONE close-out) merged (main `acf87bb → 2785191`);
+`retrospective-analyst` completed RETRO-163 for FOLLOW-464 but left its edits uncommitted on the
+(now-merged) close-out branch working tree.
+
+**Actions taken:**
+
+1. `git stash push -u` the uncommitted retro edits (`backlog/RETROSPECTIVES.md`,
+   `backlog/FOLLOW_UPS.md`, `.claude/agents/retrospective-analyst/lessons.md`).
+2. `git checkout main && git pull` (confirmed `main` had moved to `2785191`, past the PR #470 the
+   coordinator's message had described as still-open — it had since merged).
+3. `git checkout -b retrospective-analyst/retro-163-follow464` off fresh `main` (independent of the
+   already-merged close-out branch, per instruction).
+4. `git stash pop`, reviewed the retro content in full (RETRO-163 §1-10, the 3 FOLLOW-528/529/530
+   stubs, the 2 lessons.md entries) for internal consistency and quality — clean, no red flags.
+5. `prettier --check` flagged 2 of 3 files; `prettier --write` on those 2 (confirmed via
+   `git diff --stat` the reformat was additions-only, no reflow of pre-existing content).
+6. Committed, pushed, opened **PR #471**.
+7. `gh pr checks 471 --watch` to completion: all real gates green; only the standing pre-existing
+   "Rule I — wired-or-dead check" baseline red (1 leg this run). Posted PM-validated comment. Not
+   merged (human-only).
+
+**Registered planning note (per coordinator instruction):** FOLLOW-528 (P2, stubbed, not yet
+promoted) requires rebuilding the `description_cache_persistent_active_uniq` partial unique index to
+add `model`. Per the standing MEMORY fact (FOLLOW-308 `db-migrate.yml`), Postgres migrations
+auto-apply staging→prod with NO human gate — so when FOLLOW-528 is promoted to the queue and
+delegated, its delegation brief MUST explicitly require an additive/safe migration ordering (new
+index created before the old one is dropped, no window where the constraint is absent or a valid
+insert could be rejected). Recorded in the QUEUE.md banner as a standing reminder for whoever
+promotes FOLLOW-528.
+
+**CI-check counter this session (cumulative across the FOLLOW-464 code PR + 2 docs PRs):** PR #468:
+2 checks (watch + json confirm). PR #469: 2 checks. PR #470: 3 checks (initial watch + 2 follow-up
+settle polls due to a slow Test-Node-22 leg). PR #471: 2 checks (watch + settle poll). 0 fix
+iterations across all four — every push was green on first CI run.
+
+**Hand-off:** 1 open PR (#471, RETRO-163 docs, awaiting human merge). 0 tickets IN_PROGRESS (only
+the stale `TICKET-PILOT-001` record). 3 standing OPEN escalations (ESC-020/ESC-028/ESC-034)
+unchanged, non-blocking.
+
+---
 
 ## SESSION 16 CLOSE-OUT (2026-07-07) — PRs #468/#469 merged; FOLLOW-464 DONE; worktree/branches cleaned
 

@@ -1841,3 +1841,20 @@ independent occurrence, even if it references the same pattern by name.
   check, always pass `--force` (or equivalent cache-bust) to the task runner — a plain re-run can
   silently return a `cache hit` from the STALLED agent's own earlier run, which is exactly the kind
   of unverified "worker said tests pass" evidence the rule exists to prevent.
+
+- **Date / ticket:** 2026-07-08 — FOLLOW-464 close-out + RETRO-163 packaging (session 16)
+- **Delegation row used:** N/A (close-out + retro packaging, no new worker delegation).
+- **What validation caught (or missed):** Coordinator's status message about PR #470 ("still open")
+  was stale by the time I acted — `git pull` showed it had already merged (`acf87bb → 2785191`).
+  Always re-verify a coordinator-relayed PR state against `git log`/`gh pr list` before branching
+  off an assumption about what's merged vs. open, even when the instruction is explicit and recent.
+  Separately, `retrospective-analyst` left its RETRO-163 edits uncommitted in the working tree of an
+  already-merged PM branch — correctly stashed, branched fresh off `main`, and popped, keeping the
+  retro docs PR fully independent of the merged close-out branch per instruction. Also verified
+  squash-merge content-identity (`git diff <branch> main -- <files>`, empty) before deleting local
+  branch refs post-cleanup — confirms the "don't trust it's safe to delete just because GitHub shows
+  merged" caution applies even when the merge itself is uncontested.
+- **A delegation/validation rule I'd add:** When a coordinator relays "PR #N is still open" as
+  context for a new instruction, treat it as a hint to re-check, not a fact to act on directly —
+  `gh pr list`/`git log` is one tool call and PRs can merge between the coordinator's message being
+  composed and the agent resuming.

@@ -67,22 +67,37 @@ function toIso(v: Date | string | null | undefined): string | null {
 /**
  * Look up a description from description_cache_persistent.
  *
- * Returns the most recent non-invalidated row for (tenant, listing, archetype, locale),
- * or null when:
- *   - No valid row exists (expected on cold start)
+ * Returns the most recent non-invalidated row for (tenant, listing, archetype, locale,
+ * model), or null when:
+ *   - No valid row exists (expected on cold start, or when a row exists for a
+ *     DIFFERENT model — a model switch must yield a miss, not a stale-model hit)
  *   - DATABASE_URL is not configured (dev/CI)
  *   - A configured DB threw — logs and returns null (route falls through to Redis)
+ *
+ * The `model` filter (F-15 / FOLLOW-464) is required so this Step-1 read stays in sync
+ * with the model-scoped Redis Step-2 key (`route.ts` cacheKey `:{model}` /
+ * `:demo:{model}`). Without it, this Step-1 read — which runs BEFORE Redis and
+ * short-circuits on both a FIT hit and a NEUTRAL negative-cache marker (FOLLOW-465,
+ * ADR-0010) — could serve a stale-model FIT description or, worse, let a NEUTRAL
+ * verdict recorded under one model permanently suppress generation under a different
+ * model (including the DEMO `override_model` preview), since a NEUTRAL row would never
+ * be superseded until `listing.updated` invalidation (RETRO-162 LG-1).
  *
  * @param tenantId  - Tenant UUID string.
  * @param listingId - Listing external identifier.
  * @param archetype - Archetype ID (e.g. 'yield_hunter').
  * @param locale    - Locale code (e.g. 'en').
+ * @param model     - The effective generation model for this request (demo
+ *                    `override_model` when DEMO MODE is active, else the global
+ *                    `generation_model`) — must match the model the row was written
+ *                    under, or this call must miss.
  */
 export async function getPgCachedDescription(
   tenantId: string,
   listingId: string,
   archetype: string,
   locale: string,
+  model: string,
 ): Promise<PgDescriptionCacheHit | null> {
   const db = getDb();
   if (!db) return null; // DATABASE_URL not configured — dev/CI fallthrough OK
@@ -106,6 +121,7 @@ export async function getPgCachedDescription(
           eq(descriptionCachePersistent.listingId, listingId),
           eq(descriptionCachePersistent.archetype, archetype),
           eq(descriptionCachePersistent.locale, locale),
+          eq(descriptionCachePersistent.model, model),
           isNull(descriptionCachePersistent.invalidatedAt),
         ),
       )

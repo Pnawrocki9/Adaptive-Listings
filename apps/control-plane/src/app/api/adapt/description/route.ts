@@ -302,7 +302,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Postgres is the durable truth; Redis is the hot-path cache.
   // On a Postgres hit we warm Redis (fire-and-forget) and return immediately.
   // On a Postgres miss or DB error (fail-open) we fall through to Redis.
-  const pgHit = await getPgCachedDescription(tenantId, listing_id, archetypeId, localeCode);
+  // The lookup is model-scoped (F-15 / FOLLOW-464): pass effectiveModel — the SAME
+  // precedence-chain value (demo override_model > global generation_model) used to
+  // build the Redis Step-2 cacheKey below — so a model switch (including the DEMO
+  // override_model preview) yields a miss here rather than a stale-model FIT hit or
+  // a cross-model NEUTRAL negative-cache short-circuit (RETRO-162 LG-1).
+  const pgHit = await getPgCachedDescription(
+    tenantId,
+    listing_id,
+    archetypeId,
+    localeCode,
+    effectiveModel,
+  );
   if (pgHit !== null) {
     // FOLLOW-465: a NEUTRAL row is a negative-cache marker (ADR-0010 archetype-fit
     // gate declined to adapt this listing/archetype pair) — short-circuit to

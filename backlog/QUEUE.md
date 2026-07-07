@@ -1,6 +1,28 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-07 (session 16 — FOLLOW-464 recovered from stalled ml-engineer session, PR #468 opened READY_FOR_REVIEW)
+## ▶️ START HERE — resume 2026-07-07 (session 16 close-out — PRs #468/#469 merged, FOLLOW-464 DONE)
+
+**Human confirmed both PRs merged.** Close-out actions taken this pass:
+
+1. `git checkout main && git pull origin main` — fast-forwarded `42e2821 → acf87bb` (through #468
+   `bc3b1ea` fix(adapt) commit, then #469 `acf87bb` docs commit). Local `main` now matches remote.
+2. Flipped `FOLLOW-464` `READY_FOR_REVIEW → DONE` in `backlog/QUEUE.md`
+   (`completed_at`/`merged_commit: bc3b1ea` added), with a DONE close-out note appended to its
+   `notes:` block.
+3. Refreshed `backlog/STATUS.md` with a close-out entry.
+4. Removed the now-merged worktree `.claude/worktrees/wt-follow464` and deleted the two fully-merged
+   branches (`ml-engineer/FOLLOW-464-model-key-pg-cache`, local + remote;
+   `pm-orchestrator/session16-follow464-recovery`, local + remote).
+
+**Per explicit instruction, did NOT spawn `retrospective-analyst` this pass** — the main session
+will invoke it after this close-out. RETRO-163 (FOLLOW-464) is owed.
+
+0 open PRs at hand-off. 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged,
+non-blocking. 0 tickets IN_PROGRESS (only the stale `TICKET-PILOT-001` record).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-07 (session 16 — FOLLOW-464 recovered from stalled ml-engineer session, PR #468 opened READY_FOR_REVIEW)
 
 **On entry this session:** found TWO pieces of stranded state from the prior session (15), neither
 committed:
@@ -9324,11 +9346,13 @@ gate) closes the epic and must be last.
     incl. the NEUTRAL cross-model short-circuit regression (F-15 + RETRO-162 LG-1 / folds
     FOLLOW-523)
   agent: ml-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: ml-engineer
   started_at: '2026-07-07T00:00:00Z'
+  completed_at: '2026-07-07T00:00:00Z'
   branch: ml-engineer/FOLLOW-464-model-key-pg-cache
   pr: 468
+  merged_commit: bc3b1ea
   priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-460]
@@ -9376,7 +9400,13 @@ gate) closes the epic and must be last.
     wiring confirmed: producer `route.ts:310` (`getPgCachedDescription(..., effectiveModel)`) reaches
     consumer `description-pg-cache.ts:127` (`eq(descriptionCachePersistent.model, model)`), both
     non-test production code; only one call site in the repo. PM-validated comment posted on PR #468.
-    PR MERGEABLE, not merged (awaiting human review).
+
+    DONE 2026-07-07: PR #468 merged (commit `bc3b1ea`), and the companion docs bookkeeping PR #469
+    (`pm-orchestrator/session16-follow464-recovery`) also merged (commit `acf87bb`). Local `main`
+    synced (`git pull` fast-forward `42e2821..acf87bb`). Worktree `wt-follow464` and branches
+    `ml-engineer/FOLLOW-464-model-key-pg-cache` + `pm-orchestrator/session16-follow464-recovery`
+    removed post-merge. Retrospective owed — to be spawned by the main session (not this
+    close-out pass) per RETRO-162 precedent.
 - id: FOLLOW-465
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)

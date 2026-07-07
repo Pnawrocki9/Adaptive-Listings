@@ -1,4 +1,109 @@
-# Status — 2026-07-07 (Sprint 22b OPEN — PR #466 validated, awaiting human merge)
+# Status — 2026-07-07 (Sprint 22b OPEN — FOLLOW-464 READY_FOR_REVIEW, PR #468)
+
+## SESSION 16 (2026-07-07) — recovered stalled ml-engineer FOLLOW-464 work, opened PR #468, READY_FOR_REVIEW
+
+**Read state (step 1):** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (3 standing `## OPEN`:
+ESC-020, ESC-028, ESC-034 — unchanged, previously-established non-blocking), `backlog/HANDOFFS.md`,
+`git log --oneline -20` (`main` tip `42e2821`), `gh pr list --state open` → 0 open PRs.
+
+**Found two pieces of stranded state on entry (neither committed by session 15):**
+
+1. `git status --short` on `main` showed uncommitted modifications to
+   `.claude/agents/pm-orchestrator/lessons.md`, `backlog/QUEUE.md`, `backlog/STATUS.md` — session
+   15's own banner/lessons write, never committed before the session ended.
+2. `git worktree list` surfaced `.claude/worktrees/wt-follow464` on branch
+   `ml-engineer/FOLLOW-464-model-key-pg-cache` at commit `d90cdfa` (== the pre-dispatch base, no
+   drift) with **uncommitted-but-complete** changes: `description-pg-cache.ts` + `route.ts`
+   modified, 2 new test files. The dispatched ml-engineer subagent had done the work but
+   stalled/handed off before commit/push/PR.
+
+**Ran the mandatory recovered-work re-verification (docs/AGENT_WORKFLOW.md "Recovered-work
+re-verification") before committing anything:**
+
+1. Confirmed branch: work was on `ml-engineer/FOLLOW-464-model-key-pg-cache`, never `main`. Good.
+2. Confirmed nothing else was stranded / kept the two diffs separate: the docs diff on `main` is
+   unrelated PM bookkeeping — moved it off `main` onto its own branch
+   (`pm-orchestrator/session16-follow464-recovery`) rather than sweeping it into the ticket's
+   commit.
+3. Independently re-ran verification myself (did NOT trust the stalled session's implicit "done"
+   state): `pnpm turbo run lint typecheck test --filter=@estalara/control-plane --force` (cache
+   bypassed) — **8/8 tasks green**, 137 test files / 1544 tests passed, 0 failures. Targeted run of
+   the 2 new test files (`description-pg-cache.test.ts`, `route.follow464.test.ts`): **6/6 passed**.
+   `prettier --check` on all 4 changed files: clean.
+4. Reviewed the diff against all 4 FOLLOW-464 AC items in QUEUE.md — all covered: model-scoped WHERE
+   filter added to `getPgCachedDescription`; FIT model-switch cache-busting test; NEUTRAL
+   cross-model regression-guard test (RETRO-162 LG-1); demo `override_model` non-short-circuit test.
+   Confirmed only one call site of `getPgCachedDescription` in the repo (`route.ts`), and existing
+   mocked tests (`route.follow465.test.ts`, `route.follow460.test.ts`) have no strict arity
+   assertions that would break from the added parameter (confirmed both pass in the full run).
+
+**Committed `94cce4c`, pushed, opened PR #468** (with a "Recovered-work note" in the PR description
+per AGENT_WORKFLOW.md step 4). `gh pr checks 468 --watch`: all real gates pass; the only non-success
+is the standing pre-existing "Rule I — wired-or-dead check" (2x, one per matrix leg) — confirmed via
+`gh api .../logs` this is the baseline **181 violations** (identical count to every recent merged
+PR), containing zero FOLLOW-464 symbols. `gh pr view 468 --json statusCheckRollup` confirms exactly
+these 2 non-SUCCESS entries out of 58 total checks. **CI non-success count for REAL gates: 0.**
+
+**Runtime-wiring grep (evidence_requirements item 2):** producer
+`apps/control-plane/src/app/api/adapt/description/route.ts:310` —
+`getPgCachedDescription(tenantId, listing_id, archetypeId, localeCode, effectiveModel)` — reaches
+consumer `apps/control-plane/src/lib/description-pg-cache.ts:127` —
+`eq(descriptionCachePersistent.model, model)` in the WHERE clause. Both non-test production code.
+
+Posted the "PM-validated. CI green. Runtime wiring confirmed. Ready for human review." comment on PR
+#468. Flipped FOLLOW-464 `IN_PROGRESS → READY_FOR_REVIEW` in QUEUE.md, added `pr: 468`. Did NOT
+merge (human-only). Not co-assigned (single-agent ticket) — step 5d N/A.
+
+**CI-check counter this session:** 2/5 (`gh pr checks 468 --watch` + 1 `gh pr view --json`
+confirmation read). 0/3 fix iterations — nothing needed fixing, all real gates were green on first
+push.
+
+**Hand-off:** 1 open PR (#468, FOLLOW-464, READY_FOR_REVIEW, awaiting human merge). Separately, a
+small docs-only PR is still owed for the `pm-orchestrator/session16-follow464-recovery` branch
+(session-15's original banner + this session's lessons/STATUS/QUEUE updates) — to be opened
+immediately following this entry. 0 tickets IN_PROGRESS besides the stale `TICKET-PILOT-001` record.
+3 standing OPEN escalations (ESC-020/ESC-028/ESC-034) unchanged, non-blocking.
+
+---
+
+## SESSION 15 (2026-07-07) — PRs #466/#467 confirmed merged; FOLLOW-464 dispatched to ml-engineer
+
+**Read state:** `git fetch`+`git pull` (`main` tip `42e2821`, fast-forwarded from `d90cdfa` through
+#466/#467), `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (3 standing `## OPEN`: ESC-020, ESC-028,
+ESC-034 — unchanged, previously-established non-blocking), `backlog/HANDOFFS.md` (FOLLOW-464 brief
+present, now natively on `main`, no longer only in an unmerged PR diff), `gh pr list --state open` →
+**0 open PRs**.
+
+**Confirmed** `backlog/QUEUE.md`'s `FOLLOW-464` entry (Sprint 22b) is live on `main` with
+`status: IN_PROGRESS`, `assigned_to: ml-engineer`,
+`branch: ml-engineer/FOLLOW-464-model-key-pg-cache`, `priority: P1`, `depends_on: [FOLLOW-460]`
+(DONE), `folds: [FOLLOW-523]`. Only 1 other real `IN_PROGRESS` row exists (`TICKET-PILOT-001`, a
+stale unrelated 2026-05-29 record) — well under the 3-ticket cap.
+
+**Ran the 4-point pre-delegation check (feedback_ticket_analysis_discipline)** independently against
+the live code, not trusting the HANDOFFS.md brief's prose:
+
+1. Hallucination risk: none — every cited file/symbol verified to exist as described.
+2. Data/dependency access: verified `getPgCachedDescription`
+   (`apps/control-plane/src/lib/description-pg-cache.ts:87-124`) omits `model` from its WHERE;
+   `route.ts:296,305` computes `effectiveModel` BEFORE the model-blind call; migration
+   `0033_description_cache_verdict.sql` present + journal-monotonic; `model` column `NOT NULL` (safe
+   to filter on for every pre-existing row).
+3. Backward chain: `depends_on FOLLOW-460` DONE; `folds FOLLOW-523` marked `FOLDED_INTO_FOLLOW-464`;
+   no other IN_PROGRESS ticket touches the same files.
+4. Second-pass: the route's existing `effectiveModel` already unifies demo/global model
+   discrimination, so passing it straight into the new `model` param covers the brief's demo-path
+   guard (AC item 3) without a separate code path — flagged in the QUEUE.md banner so the worker
+   doesn't over-build.
+
+No blockers. **Dispatched FOLLOW-464 to ml-engineer** this session using the existing delegation
+brief in `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-464 (ml-engineer)"). No QUEUE.md field
+edit needed (already correct from #466); added a superseding `START HERE` banner instead.
+
+**CI-check counter this session:** 0/5 (no PR opened yet by the worker; nothing to check). No fix
+iterations.
+
+---
 
 ## SESSION 14 (2026-07-07) — validated PR #466 (RETRO-162 close-out / FOLLOW-464 promotion), no new delegation
 

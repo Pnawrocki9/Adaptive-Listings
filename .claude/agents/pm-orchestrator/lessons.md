@@ -1809,3 +1809,35 @@ independent occurrence, even if it references the same pattern by name.
   itself edits QUEUE.md/HANDOFFS.md with a fresh delegation, do NOT start that delegation until the
   PR merges — treat "the brief exists in an unmerged PR" as equivalent to "the brief doesn't exist
   yet" for the purpose of picking the next ticket.
+
+- **Date / ticket:** 2026-07-07 — FOLLOW-464 (dispatch, session 15)
+- **Delegation row used:** intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates -> ml-engineer.
+- **What validation caught (or missed):** The prior session's caution (don't delegate off an
+  unmerged PR's diff) paid off — this session simply had to confirm #466/#467 landed on `main`
+  before firing. Independently re-verified the brief's code claims (WHERE clause, line ordering of
+  `effectiveModel` vs. the pg-cache call, migration monotonicity, NOT NULL column) rather than
+  trusting the already-written HANDOFFS.md brief — all checked out exactly as described, no
+  hallucination found.
+- **A delegation/validation rule I'd add:** When a docs-only PM PR promotes/reassigns a ticket
+  in-flight, treat "brief exists in HANDOFFS.md" and "brief is live on main" as two different gates
+  — re-check `git log`/`gh pr list` at the top of the NEXT session even if the brief looks complete,
+  since the previous session may have correctly deferred exactly because of this race.
+
+- **Date / ticket:** 2026-07-07 — FOLLOW-464 (recovered-work, session 16)
+- **Delegation row used:** N/A this entry (recovery + validation, not a fresh delegation) — original
+  dispatch was intent/adapt logic, embeddings, LLM gateway, auto-detect, ontology,
+  platform-templates -> ml-engineer.
+- **What validation caught (or missed):** On entry, `git status --short` on `main` showed an
+  uncommitted docs diff (session 15's own banner/lessons write) AND `git worktree list` surfaced a
+  second, separate stalled artifact: the ml-engineer FOLLOW-464 implementation, complete but
+  uncommitted, no PR opened. Ran the full recovered-work checklist (confirm branch / confirm nothing
+  else stranded / independently re-run verification) instead of just trusting that "dispatched" in
+  the banner meant "done" — forced a no-cache `lint typecheck test` run myself (turbo showed a stale
+  cache hit on the first pass, which would NOT have counted as independent evidence per the rule;
+  had to re-run with `--force` to get a genuine fresh result). Kept the two stranded diffs on
+  completely separate branches rather than folding the unrelated docs diff into the ticket's commit.
+- **A delegation/validation rule I'd add:** When re-running verification during a recovered-work
+  check, always pass `--force` (or equivalent cache-bust) to the task runner — a plain re-run can
+  silently return a `cache hit` from the STALLED agent's own earlier run, which is exactly the kind
+  of unverified "worker said tests pass" evidence the rule exists to prevent.

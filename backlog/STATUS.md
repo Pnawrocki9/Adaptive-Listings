@@ -1,4 +1,36 @@
-# Status — 2026-07-06 (Sprint 22b OPEN — Modal ML layer LIVE in prod; FOLLOW-465 IN_PROGRESS)
+# Status — 2026-07-07 (Sprint 22b OPEN — PR #466 validated, awaiting human merge)
+
+## SESSION 14 (2026-07-07) — validated PR #466 (RETRO-162 close-out / FOLLOW-464 promotion), no new delegation
+
+**Read state (step 1):** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`,
+`git log --oneline -20` (HEAD `d90cdfa`), `gh pr list --state open` → **1 open PR: #466**
+(`pm-orchestrator/retro-162-follow464-p1-fastfollow`, docs-only bookkeeping). Re-confirmed the 3
+standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, previously-established
+non-blocking (ESC-020 explicitly says "does NOT block the PM pipeline"; ESC-028 is a soft-skip CI
+canary; ESC-034 is code-complete/operator-pending) — did not re-litigate, did not stop the pipeline.
+
+**Validated PR #466** (RETRO-162 retro close-out for FOLLOW-465 + P2→P1 promotion of FOLLOW-464,
+folding FOLLOW-523): confirmed 0 code files in the diff (only
+`.claude/agents/retrospective-analyst/ lessons.md`,
+`backlog/{FOLLOW_UPS,HANDOFFS,QUEUE,RETROSPECTIVES}.md`) so step 5c (runtime-wiring grep) and 5d
+(co-assigned integration check) are N/A. Ran `gh pr checks 466`: all real gates PASS; only
+`Rule I — wired-or-dead check` (2x) is non-success — confirmed this is the standing pre-existing-red
+baseline (unaffected by a docs-only diff). CI non-success count for REAL gates: **0**. Diffed the
+QUEUE.md/HANDOFFS.md content against the PR's own commit message and found it internally consistent
+(FOLLOW-464: P2→P1, reassigned ml-engineer, branch `ml-engineer/FOLLOW-464-model-key-pg-cache`,
+folds FOLLOW-523's model-scoping AC + NEUTRAL cross-model regression-guard test; FOLLOW-523 marked
+`FOLDED_INTO_FOLLOW-464`). Posted PM-validated comment on PR #466. **Did not merge** (human-only).
+Did not start a new delegation this session: `main`'s `QUEUE.md`/`HANDOFFS.md` do not yet contain
+the FOLLOW-464 reassignment/brief (that content only exists in the unmerged PR #466 diff) — starting
+the `ml-engineer/FOLLOW-464-model-key-pg-cache` branch now would race an unmerged docs PR that
+itself edits QUEUE.md, and could also state the delegation twice (once in the merged QUEUE.md, once
+in the still-open PR). Correct next action is for the human to merge #466 first; the FOLLOW-464
+delegation is ready to fire the moment it lands.
+
+**CI-check counter this session:** 1/5 (single `gh pr checks 466` read, no fix iterations — nothing
+to fix, all real gates already green from the prior session's push).
+
+---
 
 ## SESSION 13 (2026-07-06) — FOLLOW-465 delegated (P2, ml-engineer, NEUTRAL-verdict negative cache)
 

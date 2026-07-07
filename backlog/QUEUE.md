@@ -1,6 +1,95 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-07 (session 13 cont'd, after crash-recovery closed FOLLOW-465 DONE + RETRO-162 fast-follow)
+## ▶️ START HERE — resume 2026-07-07 (session 16 — FOLLOW-464 recovered from stalled ml-engineer session, PR #468 opened READY_FOR_REVIEW)
+
+**On entry this session:** found TWO pieces of stranded state from the prior session (15), neither
+committed:
+
+1. A docs-only diff sitting **uncommitted directly on `main`**
+   (`.claude/agents/pm-orchestrator/ lessons.md` + `backlog/QUEUE.md` + `backlog/STATUS.md`) —
+   session 15's own banner/lessons entry recording that it dispatched FOLLOW-464, written but never
+   committed before the session ended.
+2. The **ml-engineer FOLLOW-464 implementation itself**, complete but uncommitted (no PR opened) in
+   worktree `.claude/worktrees/wt-follow464`, still correctly on branch
+   `ml-engineer/FOLLOW-464-model-key-pg-cache` at base commit `d90cdfa` — the worker session had
+   stalled/handed off mid-ticket with the code done but never committed/pushed.
+
+**Ran the mandatory recovered-work re-verification (docs/AGENT_WORKFLOW.md) before touching
+anything:** (1) confirmed the code was on the correct ticket branch, never `main`; (2) confirmed the
+two stranded diffs were unrelated to each other and kept them separate — moved the docs diff to its
+own branch (`pm-orchestrator/session16-follow464-recovery`) rather than sweeping it into the code
+commit; (3) independently re-ran (forced, no-cache)
+`pnpm turbo run lint typecheck test --filter=@estalara/control-plane` myself rather than trusting
+the stalled session's implicit "done" state — 8/8 tasks green, 137 files / 1544 tests passed, plus a
+targeted 6/6 pass on the 2 new test files and a clean `prettier --check`. Read the diff against all
+4 FOLLOW-464 AC items (QUEUE.md) and confirmed complete coverage (model-scoped WHERE filter; FIT
+model-switch test; NEUTRAL cross-model regression-guard test per RETRO-162 LG-1; demo
+`override_model` non-short-circuit test). Verified runtime wiring: producer `route.ts:310` →
+consumer `description-pg-cache.ts:127`, non-test on both ends, only call site in the repo.
+
+**Committed `94cce4c`, pushed, opened PR #468.** `gh pr checks 468 --watch` → all real gates green;
+only the standing pre-existing "Rule I — wired-or-dead" baseline (181 violations, confirmed via job
+log to contain zero FOLLOW-464 symbols) is red, matching every prior PR this sprint. Posted
+PM-validated comment on PR #468 with full evidence. **FOLLOW-464 flipped IN_PROGRESS →
+READY_FOR_REVIEW.** Not merged (human-only).
+
+Re-confirmed the 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged and
+non-blocking. 1 open PR at hand-off (#468). IN_PROGRESS count: 0 real tickets (only the stale
+`TICKET-PILOT-001` record) — well under the 3-ticket cap.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-07 (session 15 — PRs #466/#467 merged, FOLLOW-464 dispatch confirmed)
+
+**Since the banner below (session 14, same day):** session 14 validated PR #466 (RETRO-162
+close-out + FOLLOW-464 P2→P1 promotion/reassignment, docs-only) but deliberately did NOT start the
+FOLLOW-464 worker because the reassignment only existed in the unmerged PR diff at that point. #466
+was then merged, and a follow-up docs-bookkeeping PR **#467** (STATUS.md refresh) also merged.
+`main` tip is now `42e2821`.
+
+**This session (15):** confirmed via `git log`/`gh pr list` that #466 and #467 are merged and
+`backlog/QUEUE.md` on `main` now natively carries `FOLLOW-464` as
+`status: IN_PROGRESS, assigned_to: ml-engineer, branch: ml-engineer/FOLLOW-464-model-key-pg-cache`
+(no docs-PR race remains — this is no longer speculative). Re-confirmed the 3 standing `## OPEN`
+escalations (ESC-020, ESC-028, ESC-034) unchanged and non-blocking; confirmed 0 P0 tickets exist in
+the live `QUEUE.md` (only historical `FOLLOW_UPS.md` stub noise, irrelevant since nothing is being
+closed this session). 0 open PRs; only 1 real `IN_PROGRESS` entry besides FOLLOW-464
+(`TICKET-PILOT-001`, a stale record from 2026-05-29, different agents/files, non-conflicting) — well
+under the 3-ticket cap.
+
+**Ran the 4-point pre-delegation check on FOLLOW-464 (feedback_ticket_analysis_discipline) before
+dispatch, independently re-verifying the HANDOFFS.md brief against the live code (not trusting the
+brief's prose):**
+
+1. **Hallucination risk** — none found. Every file/symbol the brief cites was independently read and
+   confirmed to exist exactly as described.
+2. **Data/dependency access** — verified directly: `getPgCachedDescription`
+   (`apps/control-plane/src/lib/description-pg-cache.ts:87-124`) confirmed to omit `model` from its
+   `.where(and(...))` clause; the route
+   (`apps/control-plane/src/app/api/adapt/description/route.ts:296,305`) confirmed to compute
+   `effectiveModel` at line 296 BEFORE calling `getPgCachedDescription` at line 305 without passing
+   it; migration `0033_description_cache_verdict.sql` confirmed present and monotonic in
+   `packages/db/migrations/meta/_journal.json`; `description_cache_persistent.model` confirmed
+   `NOT NULL` (`packages/db/src/schema/description_cache_persistent.ts:51`), so adding a `model`
+   filter is safe for every pre-existing row (no backfill/nullability edge case).
+3. **Backward dependency chain** — `depends_on: [FOLLOW-460]` confirmed DONE; `folds: [FOLLOW-523]`
+   confirmed marked `FOLDED_INTO_FOLLOW-464` in `FOLLOW_UPS.md`; no other IN_PROGRESS ticket touches
+   `description-pg-cache.ts` or the description route.
+4. **Second-pass gotcha check** — the route's existing `effectiveModel` computation
+   (`demoActive && demoOverrideModel ? demoOverrideModel : globalModel`) already unifies the
+   demo/global model discrimination used by the Redis Step-2 key, so passing `effectiveModel`
+   straight into the new `getPgCachedDescription` `model` param covers the demo-path guard (AC item
+   3 in the brief) for free — flagging this so the worker doesn't over-build a separate
+   demo-specific code path.
+
+**No blockers found — dispatching FOLLOW-464 to ml-engineer this session** per the existing brief in
+`backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-464 (ml-engineer)"). No QUEUE.md edit needed
+beyond this banner — the ticket's `IN_PROGRESS`/`assigned_to`/`branch` fields already reflect the
+correct delegation state from the merged PR #466.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-07 (session 13 cont'd, after crash-recovery closed FOLLOW-465 DONE + RETRO-162 fast-follow)
 
 **Session 13 was interrupted by a terminal crash and resumed.** FOLLOW-465 (negative-cache NEUTRAL
 archetype-fit verdicts, F-18) shipped: the ml-engineer worker's implementation was intact-but-
@@ -9235,10 +9324,11 @@ gate) closes the epic and must be last.
     incl. the NEUTRAL cross-model short-circuit regression (F-15 + RETRO-162 LG-1 / folds
     FOLLOW-523)
   agent: ml-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: ml-engineer
   started_at: '2026-07-07T00:00:00Z'
   branch: ml-engineer/FOLLOW-464-model-key-pg-cache
+  pr: 468
   priority: P1
   estimated_hours: 2
   depends_on: [FOLLOW-460]
@@ -9256,19 +9346,37 @@ gate) closes the epic and must be last.
     FOLLOW-523
   notes: |
     AC:
-    - [ ] description_cache_persistent lookup (getPgCachedDescription) filters on model; a model
+    - [x] description_cache_persistent lookup (getPgCachedDescription) filters on model; a model
           change yields a miss→regen, not a stale pg hit — for BOTH the FIT read AND the FOLLOW-465
           NEUTRAL short-circuit.
-    - [ ] Test covering model-switch cache-busting on the pg path (FIT case).
-    - [ ] Test: a NEUTRAL row written under model A does NOT short-circuit a request under model B
+    - [x] Test covering model-switch cache-busting on the pg path (FIT case).
+    - [x] Test: a NEUTRAL row written under model A does NOT short-circuit a request under model B
           (nor a DEMO override_model request) — model B re-dispatches/re-generates instead of serving
           template_fallback. This is the RETRO-162 LG-1 regression guard.
-    - [ ] The demo override_model path is not short-circuited by a non-demo NEUTRAL row.
+    - [x] The demo override_model path is not short-circuited by a non-demo NEUTRAL row.
     Promoted + folded 2026-07-07 (pm-orchestrator, RETRO-162 close-out). Assigned ml-engineer (not
     the original backend-engineer): FOLLOW-523's model-scoping is the model-correctness of the
     FOLLOW-465 NEUTRAL read path that ml-engineer just authored (route.ts + description-pg-cache.ts),
     and the sibling FOLLOW-460 pg-cache work was also ml-engineer — continuity + adapt-read-path
     ownership. Full delegation brief in backlog/HANDOFFS.md.
+
+    READY_FOR_REVIEW 2026-07-07 (session 16 — recovered-work path): the ml-engineer subagent
+    dispatched last session had stalled/handed off mid-ticket — implementation was complete but
+    uncommitted (no PR opened) in worktree `wt-follow464`, still on the correct branch, at base
+    commit `d90cdfa` (no drift). Per docs/AGENT_WORKFLOW.md "Recovered-work re-verification":
+    confirmed branch correctness, confirmed no unrelated diff was swept in (a separate stray
+    QUEUE.md/STATUS.md/lessons.md docs diff was sitting uncommitted on `main` from the *previous*
+    session's own bookkeeping — moved to its own `pm-orchestrator/session16-follow464-recovery`
+    branch, kept fully separate from this ticket's commit), and independently re-ran (forced,
+    no-cache) `pnpm turbo run lint typecheck test --filter=@estalara/control-plane`: 8/8 tasks green,
+    137 test files / 1544 tests passed; targeted run of the 2 new test files 6/6 passed; `prettier
+    --check` clean. Committed `94cce4c`, pushed, opened **PR #468**. CI: all real gates green; only
+    the standing pre-existing "Rule I — wired-or-dead" baseline (181 violations, none from this diff
+    — confirmed via job log) is red, matching precedent from every prior PR this sprint. Runtime
+    wiring confirmed: producer `route.ts:310` (`getPgCachedDescription(..., effectiveModel)`) reaches
+    consumer `description-pg-cache.ts:127` (`eq(descriptionCachePersistent.model, model)`), both
+    non-test production code; only one call site in the repo. PM-validated comment posted on PR #468.
+    PR MERGEABLE, not merged (awaiting human review).
 - id: FOLLOW-465
   title: >-
     Negative-cache NEUTRAL archetype-fit verdicts to stop perpetual Sonnet re-spend (F-18)

@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-07 (session 16 close-out — PRs #468/#469 merged, FOLLOW-464 DONE)
+## ▶️ START HERE — resume 2026-07-08 (session 16 retro — RETRO-163 filed, PR #471 opened, FOLLOW-528/529/530 stubbed)
+
+**Coordinator confirmed PR #470 (session-16 DONE close-out) also merged** (main fast-forwarded
+`acf87bb → 2785191`) and that `retrospective-analyst` completed **RETRO-163** for FOLLOW-464,
+leaving uncommitted edits (`backlog/RETROSPECTIVES.md`, `backlog/FOLLOW_UPS.md`,
+`.claude/agents/ retrospective-analyst/lessons.md`) in the working tree on the (already-merged)
+session-16 close-out branch. Per guardrails, packaged these onto a **fresh branch based on latest
+`main`** (`retrospective-analyst/retro-163-follow464`), independent of the merged close-out branch:
+stashed, checked out `main`, pulled, created the branch, popped the stash, ran `prettier --write` on
+the 2 files that needed it (additions only, no reflow of pre-existing content — confirmed via
+`git diff --stat`), committed, pushed, opened **PR #471**. `gh pr checks 471 --watch` → all real
+gates green; only the standing pre-existing "Rule I — wired-or-dead check" baseline (this run showed
+1 matrix leg red, not 2 — consistent with the established non-blocking pattern) is red. Posted
+PM-validated comment. Not merged (human-only).
+
+**RETRO-163 key finding (LG-1):** FOLLOW-464 model-scoped the Postgres cache READ correctly (closes
+audit F-15 + RETRO-162 LG-1 on the correctness axis), but the store's ACTIVE-ROW invariant — the
+migration-0023 partial unique index `(tenant_id,listing_id,archetype,locale)` and the pre-insert
+invalidation in `insertPgCachedDescriptionStrict` — remain model-BLIND, so the model-scoped read can
+never cache more than one model at a time; every effective-model toggle re-dispatches a fresh
+generation (bounded P2 cost regression, not a correctness reopen). Filed **FOLLOW-528** (P2, fix) +
+**FOLLOW-529** (P2, demo/prod Postgres isolation) + **FOLLOW-530** (P3, AGENT_WORKFLOW checklist
+cache-bust amendment) as stubs in `backlog/FOLLOW_UPS.md` (`promoted_to_queue: false` — not yet real
+tickets; promote at next sprint planning).
+
+**Planning note to carry forward — FOLLOW-528's migration ordering:** FOLLOW-528 requires rebuilding
+the `description_cache_persistent_active_uniq` partial unique index to include `model`. Per the
+standing MEMORY fact (FOLLOW-308 `db-migrate.yml`), **Postgres migrations auto-apply staging→prod on
+merge with NO human gate.** When FOLLOW-528 is promoted and delegated, the migration MUST be ordered
+additive/safe (e.g. `CREATE UNIQUE INDEX CONCURRENTLY` on the new wider key BEFORE `DROP` of the old
+one) — no window may exist where a duplicate-4-tuple insert is rejected or where the constraint is
+briefly absent. Flag this explicitly in FOLLOW-528's delegation brief when promoted; do not let it
+ship as a naive `ALTER`/single-step index swap.
+
+0 open PRs at hand-off besides #471. 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034)
+unchanged, non-blocking. 0 tickets IN_PROGRESS (only the stale `TICKET-PILOT-001` record).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-07 (session 16 close-out — PRs #468/#469 merged, FOLLOW-464 DONE)
 
 **Human confirmed both PRs merged.** Close-out actions taken this pass:
 

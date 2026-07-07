@@ -147,6 +147,27 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 
 Each agent is defined in `.claude/agents/<name>.md`.
 
+## Model-fit rule (mandatory, before every launch)
+
+The `Model` column above is only the **default**. Every time you are about to launch a piece of work
+or spawn a subagent, first decide which Claude model fits the task best — **Sonnet**, **Opus**, or
+**Fable** — and set it explicitly (the `model` option on the Agent/Task tool overrides the agent
+definition). State the choice and a one-line justification in the delegation brief so retros can
+evaluate routing quality.
+
+| Model  | Fit                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sonnet | Routine implementation inside a well-defined ticket scope, tests, docs/backlog bookkeeping, mechanical refactors, CI fixes                                                      |
+| Opus   | Complex single-domain reasoning: cross-module debugging, retrospectives, ambiguous acceptance criteria, security-sensitive changes, non-trivial design                          |
+| Fable  | Highest-stakes or highest-ambiguity work: architecture audits, Master_Design revisions, forensic multi-system debugging, sprint planning, recovery of stranded/conflicting work |
+
+Rules of thumb:
+
+- Escalate one tier when the task already failed once at the lower tier.
+- Never argue a P0 down a tier on cost grounds.
+- When genuinely unsure between two tiers, take the higher one for irreversible or prod-touching
+  work and the lower one for reversible, PR-gated work.
+
 ## Human review boundary (autonomy rules)
 
 Piotr has 2h/day for review. Agents have wide autonomy within limits:

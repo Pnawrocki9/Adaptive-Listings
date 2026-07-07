@@ -2155,3 +2155,39 @@
   but those retros DELIBERATELY held it as heterogeneous with a per-surface follow-up as the
   vehicle. Promoting would contradict the corpus's own accumulated reasoning. Held; filed FOLLOW-526
   instead. Consistency with prior held-verdicts > count-mechanical promotion.
+
+## 2026-07-08 · RETRO-163 (FOLLOW-464 — model-key the Postgres description cache read)
+
+- **A finding I almost missed and why:** the PR's diff is entirely on the READ leg
+  (`getPgCachedDescription` WHERE gains `eq(model)`) and it is CORRECT — every test passes, F-15's
+  stale-read is genuinely closed. A read-leg-only review would have declared closure. The
+  load-bearing catch (LG-1) lives in two files the PR NEVER TOUCHED: the pre-insert invalidation
+  (`insertPgCachedDescriptionStrict`, model-blind WHERE) and the partial UNIQUE INDEX from migration
+  0023 (`(tenant,listing,archetype,locale)`, no `model`). The DB constraint physically forbids two
+  active model rows per 4-tuple — so the read's new `model` filter can never observe more than one
+  row. The gap moved ONE HOP from the read the PR fixed to the store's active-row key. Lesson that's
+  now a standing check: **when a PR adds a scoping dimension to a cache READ, immediately open the
+  store's WRITE-side invalidation AND its unique/uniqueness constraint — a read key more specific
+  than the store's active-row key is inert for caching.** Read the migration, not just the diff.
+- **An axis/chain I had to trace twice:** the demo axis. First pass I credited FOLLOW-464 with
+  closing the DEMO-switcher (it threads `override_model`). Second pass, chasing "does demo persist
+  to Postgres?", I found `_write_to_postgres_cache` posts NO demo flag while the Redis key
+  namespaces demo via `:demo:` — so an equal-model demo/prod Postgres collision survives (LG-2). The
+  Redis namespace lulled me; Postgres has a different, coarser key. Always check each store's key
+  INDEPENDENTLY — two caches for the "same" value can key differently.
+- **A meta-pattern in how gaps recur across agents:** the read/write-key asymmetry is a fresh
+  instance of the ALREADY-PROMOTED Rule S (symmetric-sibling-set). I resisted minting a new rule and
+  instead cited Rule S — and noted a Rule-S review of FOLLOW-464's read/write sibling set WOULD have
+  caught it. The learning loop is working when an existing rule already names the class; the job is
+  to APPLY it, not re-coin it. Same restraint on the stale-turbo-cache-defeats-reverification
+  finding (Rule Q/T family, count-1 on the local-cache surface → checklist amendment FOLLOW-530, not
+  prose).
+- **Rule-promotion restraint (continuing the corpus's posture):** the stalled-worker recovered-work
+  family is now ≥4 sightings (RETRO-146/150/162/163) — arithmetically past threshold — but
+  RETRO-146/150 deliberately vehicled it as an EXECUTABLE checklist (FOLLOW-448 →
+  AGENT_WORKFLOW.md), that checklist now EXISTS and was FOLLOWED cleanly here, and RETRO-162 filed
+  FOLLOW-527 for the residual crash-loss window. Promoting a prose rule would duplicate a working
+  checklist and contradict the accumulated RETRO-146/150 reasoning. The sharp NEW increment this
+  episode adds — the re-verification itself can be defeated by a stale turbo cache — I captured as a
+  targeted checklist amendment (FOLLOW-530), the one edge step 3 was missing. Count-past-threshold
+  does NOT override a corpus's deliberate vehicle choice.

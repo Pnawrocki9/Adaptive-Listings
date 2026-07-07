@@ -14020,3 +14020,78 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - The wip commits are excluded from the final PR (reset/squashed) so they do not pollute history.
   - Documented in the agent workflow so workers/PM know the recovery path. cross_ref: [FOLLOW-465,
     RETRO-162]
+
+- id: FOLLOW-528 title: >- Complete the `model` dimension on the description-cache WRITE/constraint
+  leg (unique index + pre-insert invalidation) so the FOLLOW-464 model-scoped read realizes
+  cross-model caching instead of re-dispatching on every effective-model toggle source_retro:
+  RETRO-163 source_ticket: FOLLOW-464 recommended_sprint: backlog recommended_agent: ml-engineer +
+  backend-engineer + data-engineer priority: P2 estimated_hours: 4 promoted_to_queue: false
+  scope: >- FOLLOW-464 added `model` to the Postgres Step-1 READ WHERE (`getPgCachedDescription`),
+  but the store's active-row invariant is model-BLIND: the partial unique index
+  `description_cache_persistent_active_uniq` is on
+  `(tenant_id,listing_id,archetype,locale) WHERE invalidated_at IS NULL` (migration 0023:34-36, no
+  `model`) so the DB cannot hold a model-A and a model-B active row for the same 4-tuple, and the
+  Modal write path's pre-insert invalidation (`insertPgCachedDescriptionStrict`,
+  apps/control-plane/src/app/api/internal/description-cache/route.ts:194-205) invalidates all models
+  before inserting (it must, to satisfy that index). Net: the model-scoped read can never cache more
+  than one model at a time, so every effective-model toggle (DEMO `override_model` switching, admin
+  global generation_model change) re-dispatches a fresh Sonnet generation — re-paying, on the
+  model-toggle axis, the uncapped re-spend FOLLOW-465 exists to stop. F-15 stale-read correctness IS
+  closed; this is the residual cost/coexistence leg (P2, bounded to one call per
+  toggle×listing×archetype×locale). NOTE: the index migration auto-applies to prod (FOLLOW-308
+  db-migrate.yml, no human gate) so it MUST be additive/safe — order the CREATE-new / DROP-old so no
+  window can reject a valid insert. ac:
+  - The partial unique index `description_cache_persistent_active_uniq` includes `model` (rebuilt
+    additive/safe; a model-A and a model-B active row coexist for the same 4-tuple).
+  - `insertPgCachedDescriptionStrict`'s pre-insert invalidation filters on `model` (and the
+    fail-open route.ts:399 backfill insert is deduped) so a model-B write does not evict the model-A
+    active row.
+  - A round-trip test (A→B→A) proves both rows persist and no re-dispatch fires on the return toggle
+    (closes RETRO-163 TG-1).
+  - A cache-miss-cause tag (or metric) distinguishes a model-toggle re-dispatch from a cold miss
+    (RETRO-163 DG-1; cross-ref FOLLOW-526).
+  - The `getPgCachedDescription` docstring no longer implies per-model rows coexist without this fix
+    (RETRO-163 DG-2). cross_ref: [FOLLOW-464, FOLLOW-465, FOLLOW-460, FOLLOW-526, RETRO-162,
+    RETRO-163]
+
+- id: FOLLOW-529 title: >- Isolate DEMO-preview generations from the standard Postgres description
+  cache (the `:demo:` Redis namespace has no Postgres equivalent) source_retro: RETRO-163
+  source_ticket: FOLLOW-464 recommended_sprint: backlog recommended_agent: backend-engineer +
+  ml-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false scope: >- The Redis Step-2
+  key namespaces demo (`desc:...:demo:{model}`) vs standard (`desc:...:{model}`), but Postgres has
+  no demo dimension: `_write_to_postgres_cache`
+  (apps/llm-gateway/src/jobs/generate_description.py:1646) posts
+  `{tenant,listing,archetype,locale,model,verdict}` with no demo flag, and `getPgCachedDescription`
+  is called with the same args regardless of `demoActive`. When DEMO
+  `override_model === global generation_model`, a standard prod request reads the demo-generated
+  Postgres row (PG Step-1 runs before the demo-separated Redis key is consulted) — demo copy or a
+  demo NEUTRAL leaks to a real buyer for that archetype/locale; and independently, a demo preview
+  evicts the prod active row via the demo/model-blind pre-insert invalidation (see FOLLOW-528).
+  FOLLOW-464 narrows this (override≠global → PG miss) but does not close the equal-model case.
+  Bounded to the demo-forced archetype/locale. ac:
+  - Either (a) add a `demo`/`origin` dimension to `description_cache_persistent` + the active-row
+    unique index + `getPgCachedDescription`, mirroring the Redis `:demo:` namespace, OR (b) skip
+    `_write_to_postgres_cache` for demo events (demo previews are ephemeral — the Redis entry
+    suffices).
+  - A test asserts a demo-preview generation under the SAME model as the global default is NOT
+    served to a standard prod request (closes RETRO-163 TG-2).
+  - Co-scheduled with FOLLOW-528 (shared unique-index migration) and FOLLOW-524. cross_ref:
+    [FOLLOW-464, FOLLOW-528, FOLLOW-524, RETRO-162, RETRO-163]
+
+- id: FOLLOW-530 title: >- Amend the AGENT_WORKFLOW "Recovered-work re-verification" checklist to
+  require cache-busting the independent re-run (a stale turbo/test cache can report green for code
+  never re-run) source_retro: RETRO-163 source_ticket: FOLLOW-464 recommended_sprint: backlog
+  recommended_agent: devops-engineer + pm-orchestrator priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- The recovered-work re-verification checklist
+  (docs/AGENT_WORKFLOW.md, born of FOLLOW-448) step 3 mandates re-running typecheck+lint+tests but
+  does NOT mandate cache-busting. FOLLOW-464's recovery only survived because the operator manually
+  forced past a STALE turbo cache hit — without `--force`, turbo could have returned a green result
+  the recovering session never actually re-ran, defeating the whole point of independent
+  re-verification. Fresh application of the already-promoted Rule Q / Rule T family ("a green /
+  non-blocking status is NOT evidence the assertion ran") on the local build/test-cache surface. No
+  new CONVENTIONS_PATCH rule (Rule Q covers the principle; count-1 on this surface) — the vehicle is
+  the checklist amendment. ac:
+  - AGENT_WORKFLOW.md "Recovered-work re-verification" step 3 requires cache-busting the re-run
+    (`turbo run … --force` or equivalent no-cache) with a one-line rationale.
+  - The rationale cites that a stalled worker's stale cache can report green for un-run code.
+    cross_ref: [FOLLOW-448, RETRO-146, RETRO-150, RETRO-162, RETRO-163]

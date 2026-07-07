@@ -1793,3 +1793,19 @@ independent occurrence, even if it references the same pattern by name.
   result," always check whether ANY existing schema in the read/write path enforces non-emptiness
   (`.min(1)`, `NOT NULL`, etc.) before delegating — a negative-cache ticket is structurally prone to
   silently becoming a wire-contract change if the sentinel isn't designed explicitly.
+
+- **Date / ticket:** 2026-07-07 — PR #466 (RETRO-162 close-out / FOLLOW-464 promotion)
+- **Delegation row used:** none — no new delegation this session; only validated an already-open
+  PM-authored docs PR.
+- **What validation caught (or missed):** Confirmed a docs-only bookkeeping PR needs step 5c/5d
+  skipped (no exported symbols/code changed) but still requires the full CI-green check (Rule I is
+  the only non-success and is the known baseline). More importantly: recognized that starting the
+  FOLLOW-464 delegation this session — even though the brief already exists in HANDOFFS.md — would
+  be premature, because that brief only exists inside the unmerged PR #466 diff. `main`'s QUEUE.md
+  and HANDOFFS.md don't have it yet. Delegating against content that isn't on `main` risks a worker
+  branching before the reassignment/branch-name is actually the source of truth, and risks a double
+  edit to QUEUE.md (PM session vs. the still-open bookkeeping PR).
+- **A delegation/validation rule I'd add:** When a PM-authored bookkeeping PR is still open and
+  itself edits QUEUE.md/HANDOFFS.md with a fresh delegation, do NOT start that delegation until the
+  PR merges — treat "the brief exists in an unmerged PR" as equivalent to "the brief doesn't exist
+  yet" for the purpose of picking the next ticket.

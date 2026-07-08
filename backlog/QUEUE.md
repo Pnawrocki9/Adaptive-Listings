@@ -9344,10 +9344,27 @@ gate) closes the epic and must be last.
     Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced
     types (F-04)
   agent: sdk-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: sdk-engineer
   started_at: '2026-07-08T00:00:00Z'
   branch: sdk-engineer/FOLLOW-461-event-schema-reconcile
+  pr: 481
+  ci_status: green # all real gates pass (gitleaks fixed); only standing pre-existing Rule I baseline red (181 symbols, new symbols confirmed absent)
+  validated: |
+    Session 18 (2026-07-08) — sdk-engineer PR #481. AC1: 6 adapt.description.* types
+    (applied/skipped/error/re + headline.applied/headline.re) registered in a new
+    packages/shared/src/schemas/events/adapt-description.ts, wired into the EventSchema union +
+    EVENT_TYPES (46→52), payloads verified field-by-field at the real emit sites
+    (packages/sdk/src/core/adapt-description.ts) — closes the live F-04 drop where the ingest
+    consumer (apps/ingest/src/handlers/events.ts:210 EventSchema.safeParse) silently rejected them.
+    AC3: round-trip tests green (events.test.ts validates each SDK payload against EventSchema; the
+    sdk test drives the real apply/fetch paths). AC2 reconciliation: pruned NOTHING — all 23
+    unproduced types trace to Master Design §C.1 / ADR-0005 / TICKET-AB-001 / TICKET-037, so none
+    were clearly-dead; no ambiguous deletion → no escalation (correct conservative outcome).
+    Gitleaks false-positive on the 42–46-char AdaptDescriptionHeadline* identifiers fixed with a
+    token-scoped .gitleaks.toml allowlist (FOLLOW-435 precedent). Independently verified: gitleaks
+    now green, Rule I unchanged (splitParagraphs pre-existing WARN only, new symbols absent). Local:
+    tsc/eslint/prettier clean, shared 279 + sdk 1510 tests pass. Human merge only.
   priority: P2
   estimated_hours: 4
   depends_on: []

@@ -9,6 +9,9 @@
  *     proving a correctly-signed Modal callback (FOLLOW-460) still succeeds.
  *   - 400 on invalid body.
  *   - 500 when the configured-DB write throws (fail-loud, Rule K.2).
+ *   - FOLLOW-463 / audit F-17: the ClickHouse `description_generations` audit
+ *     trail write (verified_facts_used durability, NEUTRAL skip, fail-loud-but-
+ *     non-blocking Sentry capture on a rejected/failed insert).
  *
  * @module apps/control-plane/src/app/api/internal/description-cache/route.test
  */
@@ -41,6 +44,12 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((a: unknown) => ({ op: 'isNull', a })),
 }));
 
+// FOLLOW-463: writeDescriptionGenerationAudit calls Sentry.captureException on a
+// failed/rejected ClickHouse INSERT. Mocked so the fail-loud-but-non-blocking
+// tests below can assert on it without a real Sentry SDK.
+vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
+
+import * as Sentry from '@sentry/nextjs';
 import { POST } from './route';
 
 const SECRET = 'test-description-cache-secret-xyz';
@@ -177,5 +186,99 @@ describe('POST /api/internal/description-cache — FOLLOW-465 NEUTRAL negative c
       makeRequest({ bearer: SECRET, body: { ...VALID_BODY, verdict: 'MAYBE' } }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/internal/description-cache — ClickHouse audit trail (FOLLOW-463 / F-17)', () => {
+  const CLICKHOUSE_URL = 'http://ch.internal.test:8123';
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('DESCRIPTION_CACHE_INTERNAL_SECRET', SECRET);
+    vi.stubEnv('CLICKHOUSE_URL', CLICKHOUSE_URL);
+    mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('inserts a description_generations row with verified_facts_used, description_chars, model, archetype, listing, locale on a FIT write', async () => {
+    const res = await POST(
+      makeRequest({
+        bearer: SECRET,
+        body: { ...VALID_BODY, verified_facts_used: ['bedrooms: 3', 'location: Marbella'] },
+      }),
+    );
+    expect(res.status).toBe(201);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [fetchUrl, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const parsedUrl = new URL(fetchUrl);
+    expect(parsedUrl.origin).toBe(CLICKHOUSE_URL);
+    expect(parsedUrl.searchParams.get('query')).toBe(
+      'INSERT INTO description_generations FORMAT JSONEachRow',
+    );
+
+    const row = JSON.parse(options.body as string) as Record<string, unknown>;
+    expect(row.tenant_id).toBe(TENANT_ID);
+    expect(row.listing_id).toBe('listing-1');
+    expect(row.archetype).toBe('yield_hunter');
+    expect(row.locale).toBe('en');
+    expect(row.model).toBe('claude-sonnet-4-6');
+    expect(row.description_chars).toBe(VALID_BODY.description.length);
+    expect(row.verified_facts_used).toEqual(['bedrooms: 3', 'location: Marbella']);
+    expect(row.source).toBe('modal_generation');
+  });
+
+  it('defaults verified_facts_used to [] when the caller omits it (back-compat)', async () => {
+    const res = await POST(makeRequest({ bearer: SECRET, body: VALID_BODY }));
+    expect(res.status).toBe(201);
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const row = JSON.parse(options.body as string) as Record<string, unknown>;
+    expect(row.verified_facts_used).toEqual([]);
+  });
+
+  it('does NOT insert a description_generations row for a NEUTRAL negative-cache marker (empty description)', async () => {
+    const res = await POST(
+      makeRequest({
+        bearer: SECRET,
+        body: { ...VALID_BODY, description: '', headline: null, verdict: 'NEUTRAL' },
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('captures a Sentry exception but still returns 201 when ClickHouse rejects the insert', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve('insert rejected'),
+    });
+
+    const res = await POST(makeRequest({ bearer: SECRET, body: VALID_BODY }));
+
+    expect(res.status).toBe(201);
+    const body = await parseBody<{ written: boolean }>(res);
+    expect(body.written).toBe(true);
+    expect(Sentry.captureException).toHaveBeenCalledOnce();
+    const [, context] = (Sentry.captureException as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      Error,
+      { tags: Record<string, string> },
+    ];
+    expect(context.tags.kind).toBe('description_generations_write_failed');
+    expect(context.tags.table).toBe('description_generations');
+  });
+
+  it('captures a Sentry exception but still returns 201 when the ClickHouse fetch throws (network error)', async () => {
+    mockFetch.mockRejectedValue(new Error('connection refused'));
+
+    const res = await POST(makeRequest({ bearer: SECRET, body: VALID_BODY }));
+
+    expect(res.status).toBe(201);
+    expect(Sentry.captureException).toHaveBeenCalledOnce();
   });
 });

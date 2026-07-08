@@ -16,15 +16,18 @@ Flow (ADR-0016 / FOLLOW-485 — direct Modal invocation, current):
      still proceeds (headline omitted / null in that case). The Redis SET carries NO TTL
      (FOLLOW-460 / Master Design §E.7 v2.0) — Redis is a hot-path accelerator, not the
      durable store.
-  5. Immediately after the Redis write, POSTs the same result to the control-plane's
-     internal endpoint (POST /api/internal/description-cache), which writes the durable
+  5. Immediately after the Redis write, POSTs the same result (including
+     verified_facts_used) to the control-plane's internal endpoint
+     (POST /api/internal/description-cache), which writes the durable
      `description_cache_persistent` Postgres row (FOLLOW-460, closing the gap where a
      generation was only durable if a request happened to land within the Redis TTL and
-     trigger the read-path backfill). This HTTP callback is the job's only path to
-     Postgres — Modal functions have no direct DB connection, mirroring the pattern
-     already used by consume_embed_seed_requests.py's POST /api/listings/embed callback.
-     Failure to write Postgres is logged but non-fatal: the Redis entry is unaffected,
-     and the next Redis-hit request still triggers the read path's own async backfill
+     trigger the read-path backfill) AND, as of FOLLOW-463 / audit F-17, a
+     `description_generations` ClickHouse audit-trail row keyed on the same
+     verified_facts_used. This HTTP callback is the job's only path to Postgres/ClickHouse
+     — Modal functions have no direct DB connection, mirroring the pattern already used
+     by consume_embed_seed_requests.py's POST /api/listings/embed callback.
+     Failure to write Postgres/ClickHouse is logged but non-fatal: the Redis entry is
+     unaffected, and the next Redis-hit request still triggers the read path's own async backfill
      (Master Design §E.7.2 step 2) as a second chance.
   6. On a genuine failure (empty description response, exception, contract violation, or
      truncation), does NOT write to Redis or Postgres; the next HTTP request will trigger
@@ -418,6 +421,7 @@ def generate_description(event: dict[str, Any]) -> None:
         description=description,
         headline=headline,
         model=model,
+        verified_facts=verified_facts,
     )
 
     log.info(
@@ -1605,13 +1609,16 @@ def _write_to_postgres_cache(
     description: str,
     headline: str | None,
     model: str,
+    verified_facts: list[str] | None = None,
     verdict: str | None = None,
 ) -> None:
     """
     POST a generated description (and headline) to the control-plane's internal
     description-cache endpoint, which writes the durable Postgres
     `description_cache_persistent` row (FOLLOW-460, closing the gap where a
-    generation's durability depended on a read landing within the old Redis TTL).
+    generation's durability depended on a read landing within the old Redis TTL)
+    AND, as of FOLLOW-463 / audit F-17, the `description_generations` ClickHouse
+    audit-trail row keyed on the same `verified_facts_used` this function forwards.
 
     Non-fatal on any failure (missing config, network error, non-2xx response):
     logged and swallowed so a Postgres outage never breaks the Redis write this
@@ -1627,6 +1634,14 @@ def _write_to_postgres_cache(
                      negative-cache marker (verdict="NEUTRAL").
         headline:    AI-generated headline, or None.
         model:       Anthropic model id that generated this entry.
+        verified_facts: Audit list of facts Sonnet self-reported as used (the
+                     same list `_write_to_redis` receives). FOLLOW-463 / audit
+                     F-17: forwarded so the internal endpoint can persist it to
+                     the `description_generations` ClickHouse anti-hallucination
+                     audit trail. None/omitted (e.g. the NEUTRAL negative-cache
+                     path, which has no real generation to audit) serialises to
+                     an empty list — the internal endpoint's Zod schema treats
+                     an absent `verified_facts_used` the same way.
         verdict:     Archetype-fit verdict (ADR-0010 / FOLLOW-465): "FIT" or "NEUTRAL".
                      Omitted (None, the default) from the POST body when absent — the
                      internal endpoint's Zod schema treats an absent `verdict` as the
@@ -1651,6 +1666,7 @@ def _write_to_postgres_cache(
         "description": description,
         "headline": headline,
         "model": model,
+        "verified_facts_used": verified_facts if verified_facts is not None else [],
     }
     if verdict is not None:
         payload["verdict"] = verdict

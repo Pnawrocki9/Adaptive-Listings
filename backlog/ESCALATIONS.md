@@ -21,6 +21,46 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — prod `ingest_worker` ClickHouse user has NO grant on `description_generations`, blocking FOLLOW-463's audit-trail write [FOLLOW-463]
+
+**Filed by:** ml-engineer (session, FOLLOW-463) **Date:** 2026-07-08T00:00:00Z **Affects:**
+FOLLOW-463 (P2, audit F-17), `apps/control-plane/src/app/api/internal/description-cache/route.ts`,
+prod ClickHouse **Type:** other (infra/ops — grant)
+
+**Description:** FOLLOW-463 makes `POST /api/internal/description-cache` write a
+`description_generations` audit row (via `writeDescriptionGenerationAudit`, using the same
+`ingest_worker` credentials — `CLICKHOUSE_USER`/`CLICKHOUSE_PASSWORD` — every other control-plane
+ClickHouse sink in this app uses). Per `docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`
+(ESC-032 / FOLLOW-424, executed 2026-06-29), the prod `ingest_worker` grant was deliberately
+**narrowed to exclude `description_generations` entirely** — the runbook's Confirmed Table Access
+table lists it as "**none** (no writer) — intentionally dropped", and the prod attestation's
+negative control (`SELECT ... FROM default.description_generations`) was confirmed `ACCESS_DENIED`
+(Code 497). That premise is no longer true: FOLLOW-463 is the writer ESC-032 didn't anticipate.
+
+**Impact if not fixed:** the code is fail-loud-but-non-blocking by design (matches the ticket's AC —
+a CH failure must not fail the Modal callback), so nothing breaks. But every insert attempt in prod
+will get HTTP 403/497 `ACCESS_DENIED`, captured to Sentry as
+`kind: 'description_generations_write_failed'`, and the `description_generations` table will stay
+empty in prod — i.e. FOLLOW-463's actual goal (a durable §E.7.5 anti-hallucination audit trail) will
+silently not be achieved until the grant is added, even though CI/local tests are green and the PR
+looks fully functional. This is the exact RETRO-021 failure shape (measured-in-fixture,
+not-reachable-in-prod) the ml-engineer guardrails require flagging up front.
+
+**Required action:** A ClickHouse Cloud admin (per the runbook, `default` via the Cloud SQL console
+— `ingest_worker` has no `GRANT OPTION`) must run:
+
+```sql
+GRANT INSERT ON default.description_generations TO ingest_worker;
+```
+
+and update the grant-narrowing runbook's Confirmed Table Access table (`description_generations`
+row) to reflect the new writer, replacing "none (no writer) — intentionally dropped" with the
+FOLLOW-463 write path. Re-run the runbook's Step 3 smoke test (INSERT + cleanup) to confirm.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — Approve ADR-0017 (Cloudflare Queues durable retry) before FOLLOW-482 (P1) is worked [FOLLOW-482]
 
 **Filed by:** pm-orchestrator (session 10) **Date:** 2026-07-06T00:00:00Z **Affects:** FOLLOW-482

@@ -14178,3 +14178,95 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - If >1 diverge, adjudicate by comparing test coverage + behavioral parity BEFORE landing one and
     discarding the rest, and record the decision. cross_ref: [FOLLOW-448, FOLLOW-527, FOLLOW-530,
     RETRO-146, RETRO-150, RETRO-162, RETRO-163, RETRO-164]
+
+## FOLLOW-535 — `description_generations` has no TTL/retention policy and now grows unbounded (writer added by FOLLOW-463)
+
+- source_retro: RETRO-165 §4a LG-1
+- source_ticket: FOLLOW-463
+- recommended_sprint: next data sprint
+- recommended_agent: data-engineer
+- priority: P2
+- estimated_hours: 2
+- promoted_to_queue: false
+- scope: `infra/clickhouse/migrations/0007_description_generations_verified_facts.sql` defines the
+  table with `PARTITION BY toYYYYMM(created_at)` but NO `TTL` clause. Zero writers made this inert;
+  FOLLOW-463 added the first writer, so every non-NEUTRAL generation now appends a never-deduped row
+  indefinitely. Siblings have retention (`events` TTL 13 MONTH — 0001:46; `intent_events` 90-day —
+  0014:34-37); this table has none. Amplified by RETRO-163/FOLLOW-528 (model-toggle re-dispatch
+  appends a row per toggle).
+- ac:
+  - Add a TTL migration on `description_generations` (e.g.
+    `TTL toDateTime(created_at) + INTERVAL 13 MONTH` to match `events`, or a compliance-agreed
+    window) — additive, applied via the CH migration path.
+  - Confirm the chosen window with compliance (audit-trail retention vs storage cost).
+  - Optionally add an apply-time smoke asserting the TTL is present in prod.
+- cross_ref: [FOLLOW-463, FOLLOW-528, RETRO-165, RETRO-163]
+
+## FOLLOW-536 — `description_generations` audit trail is write-only: producer exists (FOLLOW-463), no in-repo reader (HALF_WIRE_P)
+
+- source_retro: RETRO-165 §3 / §5b
+- source_ticket: FOLLOW-463
+- recommended_sprint: when K.3 Internal Ops is scheduled
+- recommended_agent: backend-engineer (or ml-engineer)
+- priority: P2
+- estimated_hours: 3
+- promoted_to_queue: false
+- scope: FOLLOW-463 makes `POST /api/internal/description-cache` WRITE `description_generations`,
+  but nothing reads it back. Grep (`grep -rn description_generations --include=*.ts`) finds only the
+  writer + the DSR module (which excludes it) + tests. MASTER_DESIGN §K.3/§2588 says the table
+  "should be available in Internal Ops for per-tenant hallucination audit" — that surface does not
+  exist. The migration ships only a commented example Grafana query. So the whole purpose of the
+  audit trail (auditors reading which facts Sonnet used) is unrealized even once the grant lands.
+- ac:
+  - Build a reader surface: either a K.3 Internal Ops endpoint/UI that queries
+    `description_generations` per (tenant, listing, archetype, locale) OR a provisioned Grafana
+    dashboard (not just a comment).
+  - The reader must use parameter-bound ClickHouse queries (mirror `clickhouse-dsr.ts` /
+    `clickhouse-tracer.ts`).
+  - At least one test asserts the reader returns the `verified_facts_used` array for a seeded row.
+- cross_ref: [FOLLOW-463, RETRO-165]
+
+## FOLLOW-537 — Reconcile the DSR/audit-inventory contradiction on `description_generations` + document the session_id ⇒ Art.17 tripwire
+
+- source_retro: RETRO-165 §4d DG-1 / §5d
+- source_ticket: FOLLOW-463
+- recommended_sprint: next compliance sprint
+- recommended_agent: compliance-engineer
+- priority: P3
+- estimated_hours: 2
+- promoted_to_queue: false
+- scope: `apps/control-plane/src/lib/clickhouse-dsr.ts:44` lists `description_generations` as
+  intentionally NOT erased (listing-scoped, no `session_id`). `AUDIT_RISK_MATRIX.md:21` (risk #3 /
+  FOLLOW-039) and `AUDIT_TEST_GAPS.md:251` name it as a table the erase route SHOULD hard-delete for
+  Art.17. The new writer makes this dormant contradiction live. Analysis (RETRO-165 §5d): as shipped
+  the table carries NO user/session identifier, so it is non-PII and DSR-exempt —
+  `clickhouse-dsr.ts` is right, the risk-matrix line is stale.
+- ac:
+  - Confirm with compliance that `description_generations` (no session key) is non-PII / DSR-exempt.
+  - Correct `AUDIT_RISK_MATRIX.md#3` and `AUDIT_TEST_GAPS.md` to drop `description_generations` from
+    the erase set.
+  - Document the tripwire: if a future ticket adds a `session_id`/buyer key for per-buyer
+    hallucination audit, the table becomes an Art.17 erase target and MUST be appended to
+    `DSR_CLICKHOUSE_TABLES` in the same PR.
+- cross_ref: [FOLLOW-463, FOLLOW-039, RETRO-165]
+
+## FOLLOW-538 — Suppress the pre-grant Sentry flood from `description_generations_write_failed`
+
+- source_retro: RETRO-165 §4a LG-2
+- source_ticket: FOLLOW-463
+- recommended_sprint: alongside the grant escalation resolution
+- recommended_agent: ml-engineer
+- priority: P3
+- estimated_hours: 1.5
+- promoted_to_queue: false
+- scope: The CH write is fail-loud-but-non-blocking, so until the prod grant lands (ESCALATIONS.md,
+  ESC-032 premise invalidated) EVERY successful FIT generation emits a
+  `description_generations_write_failed` Sentry event on the 403/497 ACCESS_DENIED — potentially one
+  per generation, indefinitely — flooding alerting on a known/expected condition.
+- ac:
+  - Either flag-gate the `writeDescriptionGenerationAudit` call until the grant is confirmed live,
+    OR add a Sentry fingerprint + rate-limit so the known pre-grant window does not drown real
+    signal.
+  - Ensure the suppression auto-clears (or is removed) once the grant lands so a NEW failure class
+    is still visible.
+- cross_ref: [FOLLOW-463, RETRO-165]

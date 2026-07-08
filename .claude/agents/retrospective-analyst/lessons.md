@@ -2227,3 +2227,30 @@
   deciding to promote, name WHICH kind of hold applies — "not enough priors" vs "the corpus already
   chose a better vehicle" — they look identical on the counter but reason differently, and
   conflating them would eventually mis-promote.
+
+- **2026-07-08 / RETRO-165 (FOLLOW-463 — verified_facts_used → description_generations CH audit
+  trail)** · **A finding I almost missed:** the retention/TTL gap. The escalation, the PR body, and
+  the parent brief all pulled attention to the GRANT blocker (already filed) and the DSR question
+  (the parent's headlined "high-value finding"). The genuinely NEW load-bearing gap was quieter:
+  migration 0007 ships NO `TTL`, and the whole reason it never mattered is that the table had zero
+  writers — the exact fact this PR changes. The meta-move: when a PR "adds the first writer to a
+  pre-existing table," re-read the CREATE TABLE for everything that was inert-because-unwritten
+  (TTL, RLS-equivalent, partitioning, dedup) — those become live the instant a writer lands. · **An
+  axis I had to trace twice:** the DSR/erasure axis. The parent framed it as a probable Art.17
+  obligation ("high-value finding"). First pass I nearly wrote it up as a gap; second pass I
+  actually read the row columns + `clickhouse-dsr.ts:44` and found NO session/user key ⇒ non-PII ⇒
+  DSR-exempt ⇒ the existing exclusion is correct. The valuable output was the RECONCILIATION
+  (analyzed-and- cleared with evidence) PLUS the tripwire (add session*id ⇒ instantly an erase
+  target) PLUS catching that `AUDIT_RISK_MATRIX#3` already contradicts `clickhouse-dsr.ts`. Lesson:
+  a parent's "this is probably a big finding" is a hypothesis to TEST, not a conclusion to
+  transcribe — and "clean, here's why" can be more valuable than a false-positive ticket. · **A
+  meta-pattern in how gaps recur across agents:** the "inert-until-provisioned" family keeps
+  mutating one hop outward — RETRO-152 (Modal flag), RETRO-156 (Modal secret never provisioned),
+  RETRO-159 (Cloudflare queue not created), and now RETRO-165 (CH grant DELIBERATELY narrowed away
+  then re-needed). Rule AA already governs the STATUS discipline for all of them. The NEW sub-shape
+  here — a prior \_deliberate scope-narrowing* invalidated by a later writer — is distinct from
+  "never provisioned" and from RETRO-021 "missing seed"; I held it at count 1 (no prior numbered
+  retro matches) rather than inflate the counter by lumping it with the never-provisioned cases.
+  Meta-lesson: resist merging superficially-similar operator-pending shapes into one count —
+  "removed then re-needed" reasons differently from "never existed," and conflating them would
+  mis-promote. Named the exact count-2 trigger to watch.

@@ -1,6 +1,31 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-08 (session 18 — recovered interrupted FOLLOW-473, landed PR #475)
+## ▶️ START HERE — resume 2026-07-08 (session 18 cont'd — FOLLOW-473 DONE+retro, FOLLOW-463 code-complete+retro)
+
+**State at this point (all merged to `main`, 0 open PRs):**
+
+- **FOLLOW-473** (fail-closed GET /api/adapt auth) — recovered from the interrupted session, merged
+  **#475**, **RETRO-164** filed & merged (**#477**), stubs FOLLOW-531/532/533/534 opened.
+- **FOLLOW-463** (persist `verified_facts_used` CH audit trail, F-17) — picked next (CEO),
+  reassigned data→ml after repo verification, implemented & merged (**#479** code, **#478**
+  dispatch/validate). Status **`CODE_COMPLETE_OPERATOR_PENDING`** — go-live blocked on a prod
+  ClickHouse grant: `GRANT INSERT ON default.description_generations TO ingest_worker;`
+  (ESC-032/FOLLOW-424 had narrowed it out on a "no writer exists" premise this PR invalidates; OPEN
+  escalation filed in ESCALATIONS.md). Code is fail-loud-non-blocking so nothing breaks; the audit
+  table just stays empty in prod until the grant lands. **RETRO-165 for FOLLOW-463 is running**
+  (this banner predates its landing — package it + its stubs when it completes).
+
+**NEXT:** after RETRO-165 lands & is packaged, pick the next READY Sprint 22b ticket. Candidates
+with `depends_on: []`: **FOLLOW-461** (event-schema reconciliation F-04, sdk), **FOLLOW-470** (stale
+status-doc refresh, pm) — both already promoted/READY (P2); plus retro stubs FOLLOW-531
+(decision-api sibling auth, staging-only) / FOLLOW-532 (pin the two GET adapt call sites vs drift)
+needing PM promotion. FOLLOW-458 stays BLOCKED on FOLLOW-449 (operator-pending). 3 standing
+`## OPEN` escalations (ESC-020/028/034) unchanged, non-blocking; **+ the new FOLLOW-463 CH-grant
+escalation**.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-08 (session 18 — recovered interrupted FOLLOW-473, landed PR #475)
 
 **Session 17 was interrupted** (terminal closed) mid-way: the dispatched backend-engineer had done
 the full FOLLOW-473 implementation but the work was **uncommitted** in its worktree — nothing on
@@ -9319,7 +9344,27 @@ gate) closes the epic and must be last.
     Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced
     types (F-04)
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-07-08T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-461-event-schema-reconcile
+  pr: 481
+  ci_status: green # all real gates pass (gitleaks fixed); only standing pre-existing Rule I baseline red (181 symbols, new symbols confirmed absent)
+  validated: |
+    Session 18 (2026-07-08) — sdk-engineer PR #481. AC1: 6 adapt.description.* types
+    (applied/skipped/error/re + headline.applied/headline.re) registered in a new
+    packages/shared/src/schemas/events/adapt-description.ts, wired into the EventSchema union +
+    EVENT_TYPES (46→52), payloads verified field-by-field at the real emit sites
+    (packages/sdk/src/core/adapt-description.ts) — closes the live F-04 drop where the ingest
+    consumer (apps/ingest/src/handlers/events.ts:210 EventSchema.safeParse) silently rejected them.
+    AC3: round-trip tests green (events.test.ts validates each SDK payload against EventSchema; the
+    sdk test drives the real apply/fetch paths). AC2 reconciliation: pruned NOTHING — all 23
+    unproduced types trace to Master Design §C.1 / ADR-0005 / TICKET-AB-001 / TICKET-037, so none
+    were clearly-dead; no ambiguous deletion → no escalation (correct conservative outcome).
+    Gitleaks false-positive on the 42–46-char AdaptDescriptionHeadline* identifiers fixed with a
+    token-scoped .gitleaks.toml allowlist (FOLLOW-435 precedent). Independently verified: gitleaks
+    now green, Rule I unchanged (splitParagraphs pre-existing WARN only, new symbols absent). Local:
+    tsc/eslint/prettier clean, shared 279 + sdk 1510 tests pass. Human merge only.
   priority: P2
   estimated_hours: 4
   depends_on: []
@@ -9514,11 +9559,13 @@ gate) closes the epic and must be last.
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)
     (F-17)
   agent: ml-engineer # reassigned from data-engineer 2026-07-08 (session 18) — see notes
-  status: READY_FOR_REVIEW
+  status: CODE_COMPLETE_OPERATOR_PENDING # PR #479 merged (4d1db35); go-live blocked on the prod CH grant below — not DONE (same class as FOLLOW-449)
   assigned_to: ml-engineer
   started_at: '2026-07-08T00:00:00Z'
+  completed_at: '2026-07-08T00:00:00Z'
   branch: ml-engineer/FOLLOW-463-verified-facts-ch-audit
   pr: 479
+  merged_commit: 4d1db35
   ci_status: green # all real gates pass; only standing pre-existing Rule I baseline red (new symbols confirmed absent from --log-failed)
   go_live_blocked_on:
     ESC (OPEN) — prod ingest_worker CH grant on description_generations (see below)

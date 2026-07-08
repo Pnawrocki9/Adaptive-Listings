@@ -2492,3 +2492,54 @@ on the payload extension (grep first).
 proof, and CI result. Do NOT edit `backlog/QUEUE.md` (orchestrator is the single writer).
 
 ---
+
+## PM orchestrator (session 18) → sdk-engineer, FOLLOW-461
+
+**From:** pm-orchestrator (session 18) **To:** sdk-engineer **Date:** 2026-07-08 **Branch:**
+`sdk-engineer/FOLLOW-461-event-schema-reconcile` (agent-prefix required or push-CI won't run).
+
+**Ticket:** Reconcile the event schema to reality (audit F-04). Two distinct sub-problems — treat
+the first as MUST (it fixes a LIVE data-loss) and the second as bounded reconciliation, NOT a
+build-25-producers project.
+
+**MUST (the live bug):** the SDK emits `adapt.description.*` events that are NOT in the shared
+`EventSchema`, so ingest silently rejects them — description-adaptation observability is blind in
+prod right now.
+
+- First step: enumerate the exact `adapt.description.*` type strings the SDK actually emits from
+  `packages/sdk/src/index.ts` (adapt-description emit sites — at least `applied`, `skipped`,
+  `reapplied`, `error`; confirm the real strings, don't guess).
+- Add those types to the shared schema under `packages/shared/src/schemas/events/` (new
+  `adapt-description.ts` following the existing per-domain file pattern — see `chat.ts`, `live.ts`,
+  `floorplan.ts`) and register them in the central `packages/shared/src/schemas/event.ts` union.
+  Payload fields: match what the SDK actually sends at each emit site (verify, Zod-validate).
+- **Round-trip test (AC3):** assert every defined event type validates at ingest — i.e. each
+  `adapt.description.*` payload the SDK emits passes the shared schema. Extend the existing
+  cross-runtime event-contract test if one covers this.
+
+**BOUNDED reconciliation (Rule H — no schema type without a producer/consumer):** 25 of 46 defined
+types have no SDK producer (floorplan, mouse.\*, photo open/zoom, search/sort, tour,
+inquiry.completed, ab.assignment, sidebar.closed, …).
+
+- Produce a documented **defined-vs-producible matrix** (each defined type → has-SDK-producer? y/n).
+- Do NOT implement new producers — that's out of scope (each would be its own ticket). For the
+  unproduced set: **prune only the types that are clearly dead** (no producer, no consumer, no
+  roadmap reference). For any type that looks reserved/planned (referenced in Master_Design, an ADR,
+  or an open ticket), leave it and mark it "reserved — <ref>" in the matrix rather than deleting.
+- **Escalate (backlog/ESCALATIONS.md), do not unilaterally delete,** if pruning a type would change
+  a contract another module/agent relies on, or if you can't tell reserved-vs-dead — list those
+  types and ask. Removing an ingest event type is a public-contract change (CLAUDE.md escalation
+  boundary); the schema reconciliation itself is in-scope, but ambiguous deletions are not.
+
+**Standards:** prettier every touched file; `tsc --noEmit` + eslint clean; zero `any` without inline
+reason; keep `packages/shared` + `packages/sdk` suites green; coverage ≥80% for packages. Commit
+`fix(sdk): register adapt.description.* events + reconcile defined-vs-producible schema [FOLLOW-461]`
+(or `feat`/`refactor` scope as fits). Reference FOLLOW-461.
+
+**Open a PR when done; do not merge.** Report: the exact adapt.description.\* types registered, the
+defined-vs-producible matrix, what you pruned vs left-reserved, any escalation, and CI result (a red
+`Rule I — wired-or-dead check` is the known pre-existing non-blocking baseline — confirm none of
+your new symbols appear in its `--log-failed`). Do NOT edit `backlog/QUEUE.md` (orchestrator single
+writer).
+
+---

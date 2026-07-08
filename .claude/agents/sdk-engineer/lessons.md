@@ -475,3 +475,25 @@ minimise delta, but the constraint is architectural (legally required compliance
 current `main` to verify the budget isn't already violated. If it is, file ESC immediately and don't
 proceed until the CEO/CTO rules on the budget. Discovering the violation at the end wastes
 optimisation effort on symptoms instead of the root cause.
+
+## 2026-07-08 / FOLLOW-461
+
+**What I built:** Registered the 6 `adapt.description.*` event types the SDK already emits from
+`core/adapt-description.ts` (applied, skipped, error, re, headline.applied, headline.re) into the
+shared `EventSchema` union — new file `packages/shared/src/schemas/events/adapt-description.ts` +
+wired into `events/index.ts` union + EVENT_TYPES (46→52). These were being silently dropped by
+`apps/ingest/.../events.ts` `EventSchema.safeParse` (audit F-04 live data-loss). Added an ingest
+round-trip test in shared `events.test.ts` and a real-emit-path round-trip test in the SDK
+`adapt-description.test.ts` (drives `applyDescriptionAdaptation`, wraps each emitted event in the
+envelope, asserts the ingest schema accepts it). Produced a defined-vs-producible matrix; pruned
+NOTHING — all 23 unproduced types trace to Master Design §C.1 taxonomy (or TICKET-037 for
+sidebar.closed), so all are "reserved", none "clearly dead".
+
+**What was uncertain:** Whether `sidebar.closed` (only unproduced type with no MASTER_DESIGN
+reference) was dead. Resolved: it traces to TICKET-037 (sprint-3) + RUNTIME_READINESS_AUDIT
+(intended producer at index.ts:250) → reserved, not deleted. Removing an ingest event type is a
+public-contract change, so the bar for deletion is "clearly dead + no ref", which nothing met.
+
+**A guardrail I'd add:** When adding an SDK emit site with a new `type` string literal, a CI check
+should assert the literal exists in shared `EVENT_TYPES` — a producer whose type is absent from the
+union is a silent ingest drop (the exact F-04 failure mode).

@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-08 (session 17 — FOLLOW-473 elevated P2→P1 + dispatched to backend-engineer)
+## ▶️ START HERE — resume 2026-07-08 (session 18 — recovered interrupted FOLLOW-473, landed PR #475)
+
+**Session 17 was interrupted** (terminal closed) mid-way: the dispatched backend-engineer had done
+the full FOLLOW-473 implementation but the work was **uncommitted** in its worktree — nothing on
+`origin`, no PR. Session 18 recovered it:
+
+- Found TWO divergent, uncommitted FOLLOW-473 attempts in parallel worktrees (same helper + tests,
+  **different `route.ts` + helper designs**). Adjudicated by verification, not by eye: ran both full
+  adapt suites (WT-official **325** tests vs WT-fork **309**; 17 vs 14 dedicated follow473 auth
+  cases), and confirmed the official branch's thinner-helper design is drift-safe (both call sites
+  handle the `resolveApiKey` DB-throw symmetrically — verified in source). **Landed the official,
+  more-covered branch; discarded the losing fork.**
+- Ran prettier (clean) + `tsc --noEmit` (clean) + eslint (clean), committed `7c9e67c`, pushed,
+  opened **PR #475**.
+- `gh pr checks 475`: **all real gates green**. Only red = the standing pre-existing
+  `Rule I — wired-or-dead check` baseline — confirmed via `--log-failed` that none of this PR's new
+  symbols (`resolveAdaptGetAuth`, `AdaptGetAuthResult`, `adapt-get-auth.ts`) appear in it (the new
+  helper is correctly wired, imported by both routes). Non-blocking per multi-session precedent.
+- FOLLOW-473 flipped `IN_PROGRESS → READY_FOR_REVIEW` (pr: 475, ci_status: green). Posted the
+  PM-validated PR comment. **Human merge only.**
+
+**CLEANUP DONE this session:** removed the two stranded worktrees (`agent-a5857a01…` FOLLOW-473
+official — after push; `agent-a628105…` the discarded fork) and the merged/stale
+`pm-orchestrator/session17-follow473-dispatch` local+remote branch.
+
+**NEXT (session 19):** after a human merges PR #475, spawn `retrospective-analyst` for FOLLOW-473
+(per the per-ticket retro loop), then pick the next READY Sprint 22b ticket
+(FOLLOW-461/463/467/469/470/472/474 are READY with `depends_on: []`; FOLLOW-458 stays BLOCKED on
+FOLLOW-449 operator-pending; FOLLOW-471 re-audit gate still BACKLOG). 3 standing `## OPEN`
+escalations (ESC-020/028/034) unchanged, non-blocking.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-08 (session 17 — FOLLOW-473 elevated P2→P1 + dispatched to backend-engineer)
 
 **Since the banner below (session 16, same day):** confirmed via `git log` that PR #471 (RETRO-163
 
@@ -8784,10 +8817,19 @@ gate) closes the epic and must be last.
     GET /api/adapt auth is presence-only + spoofable x-tenant-id fallback, now weaker than the
     hardened POST path
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-08T00:00:00Z'
   branch: backend-engineer/FOLLOW-473-adapt-get-auth-hardening
+  pr: 475
+  ci_status: green # session 18: all real gates pass; only standing pre-existing Rule I baseline red (not this change — new symbols absent from --log-failed)
+  validated: |
+    Session 18 (2026-07-08) recovered this from an interrupted session-17 worktree (uncommitted).
+    A second divergent uncommitted attempt existed in a parallel worktree; adjudicated by test
+    coverage + design and discarded the losing fork — landed the more-covered tracked-branch impl.
+    Committed 7c9e67c, opened PR #475. Full adapt suite green (325 tests, incl. 17 dedicated
+    follow473 auth cases); tsc + eslint + prettier clean; both call sites verified symmetric on the
+    resolveApiKey DB-throw (Rule K.2 → Sentry → 401, tenant always server-derived). Human merge only.
   priority: P1 # elevated 2026-07-08 (pm-orchestrator, session 17) from P2 per FOLLOW-510 (RETRO-158) recommendation — see notes below
   estimated_hours: 3
   depends_on: []

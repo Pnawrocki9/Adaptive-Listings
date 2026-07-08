@@ -14099,3 +14099,82 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     (`turbo run … --force` or equivalent no-cache) with a one-line rationale.
   - The rationale cites that a stalled worker's stale cache can report green for un-run code.
     cross_ref: [FOLLOW-448, RETRO-146, RETRO-150, RETRO-162, RETRO-163]
+
+- id: FOLLOW-531 title: >- Sweep the SIBLING — the estalara-decision-api Worker POST /api/adapt
+  enforces NO inbound bearer auth and its ADAPT_API_KEY env var is a declared-but-never-consumed
+  phantom source_retro: RETRO-164 source_ticket: FOLLOW-473 recommended_sprint: backlog
+  recommended_agent: backend-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+  scope: >- FOLLOW-473 hardened the two control-plane GET adapt routes to fail-closed two-step auth,
+  but the cross-consumer grep surfaced that the estalara-decision-api Cloudflare Worker POST
+  /api/adapt (apps/decision-api/src/index.ts:84 → handleAdaptRequest) enforces NO inbound bearer
+  check at all, and its ADAPT_API_KEY env var (Env-type declaration + docstring "every request's
+  Bearer token must match this value exactly … presence-only when absent") is never consumed
+  anywhere in apps/decision-api/src. It is strictly worse than the fail-open shape FOLLOW-473 fixed
+  (no gate at all). Blast-radius bound: deploy-staging.yml deploys it only `--env staging`
+  (api-staging.estalara.io, NO prod deploy step) and the live SDK targets the control-plane
+  (admin.estalara.com/api, per packages/sdk/src/core/endpoint.ts), NOT this Worker — hence P2, a
+  staging-only off-prod-path unauthenticated decision endpoint. This is a SIBLING-NOT-SWEPT instance
+  (RETRO-153 family, held count 1). ac:
+  - Decide: enforce the Rule-S two-step (or a constant-time ADAPT_API_KEY gate) on decision-api POST
+    /api/adapt so it matches the hardened control-plane routes, OR confirm decision-api is
+    decommissioned / Cloudflare-Access-gated.
+  - If enforcing: an unauthenticated request → 401; a valid bearer → resolved tenant server-side.
+  - If decommissioning/Access-gating: remove the phantom ADAPT_API_KEY env var and fix the stale
+    "presence-only auth is used" docstring so no future reader assumes auth exists.
+  - Co-schedule with the existing decision-api two-plane stubs FOLLOW-508 / FOLLOW-511. cross_ref:
+    [FOLLOW-473, RETRO-164, RETRO-153, FOLLOW-508, FOLLOW-511]
+
+- id: FOLLOW-532 title: >- Pin the two GET adapt call sites against future drift — the fail-loud
+  DB-throw contract lives OUTSIDE the shared resolveAdaptGetAuth helper as an unenforced caller
+  obligation source_retro: RETRO-164 source_ticket: FOLLOW-473 recommended_sprint: backlog
+  recommended_agent: backend-engineer + qa-engineer priority: P2 estimated_hours: 2
+  promoted_to_queue: false scope: >- resolveAdaptGetAuth (adapt-get-auth.ts) deliberately does NOT
+  catch the resolveApiKey throw (Rule K.2 configured-but-failed DB); its docstring says the caller
+  MUST wrap the call in try/catch, Sentry-capture, and fail loud (401). Both GET /api/adapt and GET
+  /api/adapt/description currently do this identically, but each owns its OWN try/catch +
+  Sentry.captureException + 401 construction and nothing pins the two together. Each route's
+  follow473 suite tests its own DB-throw→401 in isolation; there is no SHARED parity assertion. An
+  edit dropping/altering one route's catch would surface the throw as an unhandled 500 on that route
+  only — a silent asymmetry the green CI on the untouched route would not reveal. The discarded fork
+  (fatter self-contained helper owning the try/catch) would have made this drift structurally
+  impossible; the adjudication correctly chose the more-tested branch but inherited this seam. ac:
+  - Either a SHARED parity test asserting BOTH routes map a resolveApiKey throw to 401 + a Sentry
+    capture identically, OR fold the throw-handling into the helper as a third AdaptGetAuthResult
+    disposition ({ok:false,status:401,dbError:true}) so both call sites cannot diverge.
+  - The chosen mechanism fails CI if one call site's DB-throw disposition drifts from the other.
+    cross_ref: [FOLLOW-473, RETRO-164, ADR-0015]
+
+- id: FOLLOW-533 title: >- Consolidate the ops-tenant env var — OPS_TENANT_ID (adapt GET routes +
+  feedback) vs ADAPT_TENANT_ID (crm/outcome + quiz/completion) name the SAME concept and drift on
+  provisioning source_retro: RETRO-164 source_ticket: FOLLOW-473 recommended_sprint: backlog
+  recommended_agent: backend-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+  scope: >- The ADAPT_API_KEY ops-bypass resolves its tenant from OPS_TENANT_ID in
+  resolveAdaptGetAuth + feedback/route.ts, but from ADAPT_TENANT_ID in crm/outcome/route.ts:172 and
+  quiz/completion/route.ts:120 — two names for one "ops tenant" concept across five auth surfaces.
+  An operator provisioning one name silently leaves the other family mis-scoped (500 on the ops
+  path). Not a bug in FOLLOW-473 (it correctly matched feedback's OPS_TENANT_ID) but a config-drift
+  hazard the consumer map exposed. ac:
+  - Pick one canonical env var name (alias the other for back-compat) OR document the split as
+    intentional in .env.example with the exact route list under each name.
+  - .env.example reflects the decision so an operator cannot mis-provision one family. cross_ref:
+    [FOLLOW-473, RETRO-164]
+
+- id: FOLLOW-534 title: >- Amend the AGENT_WORKFLOW "Recovered-work re-verification" checklist to
+  scan-for-and-adjudicate DIVERGENT DUPLICATE worktrees for the same ticket before landing one
+  source_retro: RETRO-164 source_ticket: FOLLOW-473 recommended_sprint: backlog recommended_agent:
+  devops-engineer + pm-orchestrator priority: P3 estimated_hours: 1 promoted_to_queue: false
+  scope: >- FOLLOW-473's interrupted session left TWO divergent uncommitted attempts in parallel
+  worktrees (official 325 tests / 17 auth cases / thinner helper; fork 309 / 14 / fatter helper).
+  The recovering coordinator adjudicated ad hoc — ran both suites + verified symmetric DB-throw
+  handling, landed the more-covered branch, discarded the fork — but the existing "Recovered-work
+  re-verification" checklist (docs/AGENT_WORKFLOW.md, FOLLOW-448) assumes ONE stranded diff and does
+  not mandate scanning for multiples. Without the step, the next recovery could silently land the
+  wrong fork or leave a diverged sibling worktree lurking. This is the NEW divergent-duplicate
+  sub-shape of the RETRO-146/150/162/163 stalled-worker family; the vehicle is a checklist amendment
+  (like FOLLOW-530), NOT a CONVENTIONS_PATCH prose rule — consistent with the family's deliberate
+  "executable checklist beats prose" choice. ac:
+  - AGENT_WORKFLOW.md "Recovered-work re-verification" adds a step: on resume, enumerate ALL
+    worktrees/branches carrying uncommitted work for the ticket (not just the first found).
+  - If >1 diverge, adjudicate by comparing test coverage + behavioral parity BEFORE landing one and
+    discarding the rest, and record the decision. cross_ref: [FOLLOW-448, FOLLOW-527, FOLLOW-530,
+    RETRO-146, RETRO-150, RETRO-162, RETRO-163, RETRO-164]

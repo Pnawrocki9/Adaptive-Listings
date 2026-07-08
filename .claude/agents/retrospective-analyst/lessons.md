@@ -2191,3 +2191,39 @@
   episode adds — the re-verification itself can be defeated by a stale turbo cache — I captured as a
   targeted checklist amendment (FOLLOW-530), the one edge step 3 was missing. Count-past-threshold
   does NOT override a corpus's deliberate vehicle choice.
+
+---
+
+## 2026-07-08 · RETRO-164 (FOLLOW-473 — fail-closed two-step auth on GET /api/adapt + description)
+
+- **A finding I almost missed and why:** the cross-consumer grep (step 2) is what caught the
+  load-bearing finding, NOT the diff. The PR diff is clean and correct for its stated scope (the two
+  control-plane GET routes). Had I retro'd only the diff, I'd have recorded a clean sweep. Grepping
+  every `ADAPT_API_KEY` consumer across ALL apps surfaced that the `estalara-decision-api` Worker's
+  `POST /api/adapt` sibling enforces NO inbound auth at all and its `ADAPT_API_KEY` env var is a
+  declared-but-never-consumed phantom — the fail-open CLASS hopped one app over (SIBLING-NOT-SWEPT).
+  Lesson reinforced: for any auth/secret hardening, the mandatory move is
+  `grep <symbol> across ALL apps` — the gap loves to sit in a sibling app the ticket's scope didn't
+  name. Then bound the blast radius BEFORE assigning severity (checked deploy-staging.yml =
+  staging-only, and the SDK endpoint = control-plane not the Worker → P2 not P0). Severity without
+  the deploy/target check would have been wrong in either direction.
+- **An axis/chain I had to trace twice:** the "thinner-helper" design axis. First pass I saw both
+  call sites wrap `resolveAdaptGetAuth` in an identical try/catch→Sentry→401 and called it
+  symmetric. Second pass, asking "what ENFORCES that symmetry?", I found the fail-loud DB-throw
+  contract lives OUTSIDE the shared helper as a docstring "MUST" with no test/lint pin — so the
+  helper does NOT guarantee both routes fail-loud symmetrically; a future edit to one catch would
+  silently 500 that route only. The discarded fork (fatter, owned the try/catch) would have made
+  this structurally impossible. "Currently identical" is not "cannot drift" — always ask what pins a
+  symmetry, not just whether it holds today (TG-1 → FOLLOW-532).
+- **A meta-pattern in how gaps recur across agents:** two families collided this episode and both
+  correctly resolved to HOLD/no-new-rule, for DIFFERENT reasons — worth keeping distinct. (1) The
+  SIBLING-NOT-SWEPT code pattern is count-2-across-retros but only 1 PRIOR (RETRO-153), so the
+  algorithm's ≥2-PRIOR bar genuinely isn't met — a numeric hold. (2) The stalled-worker
+  recovered-work PROCESS family is now 5 sightings (RETRO-146/150/162/163 + this) — arithmetically
+  way past threshold — but the corpus deliberately vehicles it as an executable checklist, so the
+  hold is a VEHICLE-CHOICE hold, not a numeric one. The new wrinkle here (TWO divergent uncommitted
+  worktrees, a silent duplicate) is a genuinely new sub-shape the checklist didn't cover → I filed a
+  checklist amendment (FOLLOW-534), same vehicle as FOLLOW-530, NOT a prose rule. Meta-lesson: when
+  deciding to promote, name WHICH kind of hold applies — "not enough priors" vs "the corpus already
+  chose a better vehicle" — they look identical on the counter but reason differently, and
+  conflating them would eventually mis-promote.

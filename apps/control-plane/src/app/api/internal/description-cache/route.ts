@@ -9,6 +9,12 @@
  * This endpoint writes to the permanent Postgres table so the description
  * survives Redis eviction (FOLLOW-204, Master Design §E.7.3 v4.0).
  *
+ * FOLLOW-463 / audit F-17: this endpoint also persists the §E.7.5 anti-hallucination
+ * audit trail — a `description_generations` ClickHouse row carrying
+ * `verified_facts_used` — so the facts Sonnet self-reported as used are durable
+ * beyond the Redis TTL, not just present in the hot-path cache value. See
+ * `writeDescriptionGenerationAudit` below.
+ *
  * Auth:
  *   Bearer <DESCRIPTION_CACHE_INTERNAL_SECRET> (HMAC-grade shared secret),
  *   compared constant-time via `secretEquals`.
@@ -38,6 +44,11 @@
  *                 Absent ⇒ implicit `'FIT'` (full back-compat with every pre-FOLLOW-465
  *                 caller). `'NEUTRAL'` negative-caches the archetype-fit gate's decision
  *                 to decline adaptation so the read path stops re-enqueuing Sonnet.
+ *   verified_facts_used — Optional list of facts Sonnet self-reported as used
+ *                 (FOLLOW-463 / audit F-17). Absent ⇒ `[]` (full back-compat with
+ *                 every pre-FOLLOW-463 caller). Persisted to the ClickHouse
+ *                 `description_generations` audit trail — never written when
+ *                 `description === ''` (a NEUTRAL marker has no generation to audit).
  *
  * Responses:
  *   201 { written: true }
@@ -51,7 +62,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 import { secretEquals } from '@/lib/secret-compare';
+import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 // Note: insertPgCachedDescription (fail-open) is intentionally not used here.
 // This internal endpoint uses insertPgCachedDescriptionStrict (defined below)
 // which re-throws on configured-DB errors so the Modal job can retry.
@@ -69,6 +82,12 @@ const BodySchema = z
     model: z.string().min(1).max(128),
     // FOLLOW-465: archetype-fit verdict (ADR-0010). Absent ⇒ implicit 'FIT'.
     verdict: z.enum(['FIT', 'NEUTRAL']).optional(),
+    // FOLLOW-463 / audit F-17: facts Sonnet self-reported as used, for the
+    // description_generations ClickHouse audit trail. Absent ⇒ `[]` (back-compat
+    // with every pre-FOLLOW-463 caller). Capped at 100 — a description's fact
+    // whitelist is a handful of short "key: value" strings; 100 is generous
+    // headroom while still bounding the ClickHouse row size.
+    verified_facts_used: z.array(z.string()).max(100).optional().default([]),
   })
   .superRefine((val, ctx) => {
     // `description` must be non-empty UNLESS this is a NEUTRAL negative-cache marker
@@ -129,8 +148,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { tenant_id, listing_id, archetype, locale, description, headline, model, verdict } =
-    parsed.data;
+  const {
+    tenant_id,
+    listing_id,
+    archetype,
+    locale,
+    description,
+    headline,
+    model,
+    verdict,
+    verified_facts_used,
+  } = parsed.data;
 
   // ── Write to Postgres permanent cache ─────────────────────────────────────
   // insertPgCachedDescription is fail-open (logs internally) — but for this
@@ -157,6 +185,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       err instanceof Error ? err.message : err,
     );
     return NextResponse.json({ error: 'Database write failed', written: false }, { status: 500 });
+  }
+
+  // ── Write the ClickHouse audit trail (FOLLOW-463 / audit F-17) ────────────
+  // description_generations is the durable §E.7.5 anti-hallucination audit
+  // trail. A FOLLOW-465 NEUTRAL negative-cache marker carries description === ''
+  // — there is no generation to audit, so it is deliberately skipped here (the
+  // Postgres negative-cache row above is still written; only the CH audit row
+  // is conditional). The Postgres write above is already the durability
+  // source-of-truth for reads, so a CH failure here must NOT fail the request —
+  // it is captured to Sentry and swallowed (mirrors the llm_calls /
+  // dsr_audit_log fire-and-forget sinks elsewhere in this app).
+  if (description !== '') {
+    await writeDescriptionGenerationAudit({
+      tenant_id,
+      listing_id,
+      archetype,
+      locale,
+      model,
+      description_chars: description.length,
+      verified_facts_used,
+    });
   }
 
   return NextResponse.json({ written: true }, { status: 201 });
@@ -215,4 +264,102 @@ async function insertPgCachedDescriptionStrict(
     // FOLLOW-465: NULL (the default) is the implicit 'FIT' verdict.
     verdict,
   });
+}
+
+// ─── ClickHouse audit trail write (FOLLOW-463 / audit F-17) ───────────────────
+
+/**
+ * Write a `description_generations` audit row to ClickHouse (migration 0007).
+ *
+ * Mirrors the `writeDsrAuditLog` fire-and-forget pattern in
+ * `apps/control-plane/src/app/api/dsr/_clickhouse.ts`: uses the shared
+ * `clickhouseAuthHeaders` helper (`@/lib/clickhouse-http`) and an
+ * `X-ClickHouse-Format: JSONEachRow` POST body — values are transported as the
+ * JSON body, never string-interpolated into SQL, so there is no injection
+ * surface to reason about.
+ *
+ * Never throws: a ClickHouse outage must not fail the Modal job's callback —
+ * the Postgres write in `insertPgCachedDescriptionStrict` above is already the
+ * read-path durability source-of-truth. Failures are logged and captured to
+ * Sentry with `kind: 'description_generations_write_failed'` so they are
+ * observable without blocking the caller (Rule K.2 fail-loud-but-non-blocking).
+ *
+ * `tier` is fixed at 0 — Adaptive Listings has no Tiers concept (MASTER_DESIGN
+ * §E.7); the column predates that decision and is kept only because the table
+ * schema (migration 0007) already defines it as non-nullable. Do NOT infer a
+ * tier from tenant config; there is none to infer.
+ */
+async function writeDescriptionGenerationAudit(entry: {
+  tenant_id: string;
+  listing_id: string;
+  archetype: string;
+  locale: string;
+  model: string;
+  description_chars: number;
+  verified_facts_used: readonly string[];
+}): Promise<void> {
+  const clickhouseUrl = process.env.CLICKHOUSE_URL;
+  if (!clickhouseUrl) return; // Not configured — dev/CI OK
+
+  const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
+
+  const row = {
+    tenant_id: entry.tenant_id,
+    listing_id: entry.listing_id,
+    archetype: entry.archetype,
+    locale: entry.locale,
+    tier: 0,
+    model: entry.model,
+    source: 'modal_generation',
+    description_chars: entry.description_chars,
+    verified_facts_used: entry.verified_facts_used,
+    generated_at: now,
+    created_at: now,
+  };
+
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
+  const password = process.env.CLICKHOUSE_PASSWORD ?? '';
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/plain',
+    'X-ClickHouse-Format': 'JSONEachRow',
+    ...clickhouseAuthHeaders({ user, password }),
+  };
+
+  const url = new URL(clickhouseUrl.replace(/\/$/, ''));
+  url.searchParams.set('query', 'INSERT INTO description_generations FORMAT JSONEachRow');
+
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '<unreadable body>');
+      const msg = `[internal/description-cache] ClickHouse INSERT rejected: HTTP ${String(res.status)} — ${body.slice(0, 500)}`;
+      console.error(msg);
+      Sentry.captureException(new Error(msg), {
+        tags: {
+          area: 'description-cache',
+          sink: 'clickhouse',
+          kind: 'description_generations_write_failed',
+          table: 'description_generations',
+        },
+        extra: { status: res.status },
+      });
+    }
+  } catch (err: unknown) {
+    // Network-layer failure (DNS, connection refused, malformed URL, timeout).
+    // Audit-trail failures must not surface to the Modal caller — log + Sentry only.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[internal/description-cache] ClickHouse audit write failed:', msg);
+    Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+      tags: {
+        area: 'description-cache',
+        sink: 'clickhouse',
+        kind: 'description_generations_write_failed',
+        table: 'description_generations',
+      },
+    });
+  }
 }

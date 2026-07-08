@@ -2041,7 +2041,37 @@ def test_write_to_postgres_cache_posts_correct_payload(
             "description": "A great income property.",
             "headline": "Strong yield play",
             "model": "claude-sonnet-4-6",
+            "verified_facts_used": [],
         }
+
+
+def test_write_to_postgres_cache_forwards_verified_facts_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FOLLOW-463 / audit F-17: when verified_facts is passed, it is forwarded
+    verbatim as `verified_facts_used` so the internal endpoint can persist the
+    ClickHouse `description_generations` anti-hallucination audit trail."""
+    monkeypatch.setenv("DESCRIPTION_CACHE_API_BASE_URL", "https://admin.estalara.test")
+    monkeypatch.setenv("DESCRIPTION_CACHE_INTERNAL_SECRET", "test-shared-secret")
+
+    with patch("httpx.post") as mock_httpx:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_httpx.return_value = mock_resp
+
+        _write_to_postgres_cache(
+            tenant_id="tenant-abc",
+            listing_id="listing-123",
+            archetype="yield_hunter",
+            locale="en",
+            description="A great income property.",
+            headline="Strong yield play",
+            model="claude-sonnet-4-6",
+            verified_facts=["bedrooms: 3", "location: Marbella"],
+        )
+
+        body = mock_httpx.call_args[1]["json"]
+        assert body["verified_facts_used"] == ["bedrooms: 3", "location: Marbella"]
 
 
 def test_write_to_postgres_cache_headline_none_forwarded_as_null(
@@ -2145,9 +2175,10 @@ def test_generate_description_job_writes_both_redis_and_postgres(
         assert pg_body["listing_id"] == "listing-123"
         assert pg_body["archetype"] == "yield_hunter"
         assert pg_body["locale"] == "en"
-        # The same description text reached both sinks.
+        # The same description text and verified_facts_used reached both sinks.
         redis_value = json.loads(redis_cmd[2])
         assert pg_body["description"] == redis_value["text"]
+        assert pg_body["verified_facts_used"] == redis_value["verified_facts_used"]
 
 
 def test_postgres_write_skipped_does_not_block_redis_write(

@@ -223,3 +223,28 @@
   secret provisioning step was filed — this is the second time (after FOLLOW-436) a Modal HTTP
   callback shipped code-complete but secret-unprovisioned; two occurrences now meets the
   promote-to-rule bar per CONVENTIONS_PATCH.md.
+
+- **2026-07-08 / FOLLOW-463** · Closed audit F-17: `description_generations` (migration 0007) had
+  zero writers — `verified_facts_used` only ever lived in the Redis cache value and expired with it.
+  Fix: forwarded `verified_facts` from `generate_description.py`'s existing
+  `POST /api/internal/description-cache` callback (payload previously omitted it), and added a
+  `writeDescriptionGenerationAudit` ClickHouse insert to that route, gated on `description !== ''`
+  (a FOLLOW-465 NEUTRAL marker has no generation to audit) and fail-loud-but-non-blocking on CH
+  failure (Sentry, PG write is the durability source-of-truth). Reused the existing
+  `clickhouse-http.ts` client + the `writeDsrAuditLog`/`logLlmCallAsync` JSONEachRow-POST pattern —
+  no new client, no new migration. · **Judgment call:** while verifying reachability I found the
+  prod `ingest_worker` ClickHouse grant was _deliberately_ narrowed (ESC-032/FOLLOW-424, 2026-06-29)
+  to **exclude** `description_generations` on the premise "no writer exists" — a premise this exact
+  ticket invalidates. The code is correct and will self-heal the moment the grant is added (no
+  redeploy needed), so I shipped it rather than blocking on the grant, but filed an OPEN escalation
+  (`backlog/ESCALATIONS.md`) — without it the audit trail stays empty in prod indefinitely while
+  every signal (green CI, green tests, Sentry silent because nothing calls the route in test/CI)
+  looks like success. This is the RETRO-021 shape almost repeating (measured-in-fixture,
+  unreachable-in-prod) but for a permission grant instead of a missing seed. · **A guardrail I'd
+  add:** when a PR adds a new writer to a ClickHouse table, grep
+  `docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`'s Confirmed Table Access list for that
+  table name — if it's listed "no writer / intentionally dropped," the PR must either update the
+  runbook+file a grant escalation (what I did) or the write path is dead on arrival in prod with no
+  local signal. Same pattern class as the FOLLOW-460 unprovisioned-secret lesson above (Modal
+  env-var pairs) — this is grant provisioning's analogue; worth promoting to a CONVENTIONS_PATCH
+  rule if a third instance appears.

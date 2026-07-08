@@ -1,6 +1,62 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-08 (session 16 retro — RETRO-163 filed, PR #471 opened, FOLLOW-528/529/530 stubbed)
+## ▶️ START HERE — resume 2026-07-08 (session 17 — FOLLOW-473 elevated P2→P1 + dispatched to backend-engineer)
+
+**Since the banner below (session 16, same day):** confirmed via `git log` that PR #471 (RETRO-163
+
+- FOLLOW-528/529/530 stubs) merged, plus two further docs PRs already landed on `main` after that:
+  `#472` (banner/status refresh) and `#473` (TICKET-PROCESS-002, mandatory model-fit rule doc).
+  `main` tip is now `9210400`. `gh pr list --state open` returns 0 — the "besides #471" caveat in
+  the prior banner is stale; there are 0 open PRs at the start of this session.
+
+**This session (17):** re-confirmed the 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034)
+unchanged, non-blocking (established multi-session precedent: code-complete-awaiting-
+operator-action). Read the full Sprint 22b tail for READY, unblocked, worker-delegable candidates:
+FOLLOW-461/463/467/468/469/470/472/473/474 are all READY with `depends_on: []`; FOLLOW-458 is READY
+but BLOCKED on FOLLOW-449 (`CODE_COMPLETE_OPERATOR_PENDING`, not DONE); FOLLOW-471 (the epic-closing
+re-audit gate) is BACKLOG, blocked on ~7 of the above still being open.
+
+Found and actioned an un-promoted stub, **FOLLOW-510** (`backlog/FOLLOW_UPS.md`, source RETRO-158,
+`recommended_agent: pm-orchestrator`, `promoted_to_queue: false`): it recommends PM reassess
+FOLLOW-473's priority P2→P1 (GET /api/adapt + GET /api/adapt/description are the two
+highest-blast-radius fail-open routes in the repo, hit on every live SDK pageview — a strictly worse
+exposure than the internal-cron FOLLOW-490 route already fixed at P1) and requires pairing the
+fail-closed flip with an `ADAPT_API_KEY`/`OPS_TENANT_ID` provisioning preflight so the flip itself
+can't cause an SDK-wide outage. This is a priority-triage decision within normal PM authority (not
+architectural/pricing/compliance), so **elevated FOLLOW-473 P2→P1** and ran the preflight myself:
+`vercel env ls production` against `adaptive-listings-control-plane` (read-only, no secret values
+fetched) shows `ADAPT_API_KEY` present (Production+Preview) and `OPS_TENANT_ID` ABSENT. Net effect:
+real tenant SDK traffic (sends its own per-tenant `config.apiKey`) is unaffected either way; the
+ops-bypass branch will hit the same "OPS_TENANT_ID must be set alongside ADAPT_API_KEY" 500 that
+`feedback/route.ts` already returns in prod today (FOLLOW-450, live) — no new failure mode. Folded
+this finding into FOLLOW-473's QUEUE.md `notes:` block and marked FOLLOW-510 actioned (not a
+separate queue ticket) in FOLLOW_UPS.md.
+
+Verified the target fix pattern directly in the repo before delegating (not guessed): both GET
+handlers (`apps/control-plane/src/app/api/adapt/route.ts:703`,
+`apps/control-plane/src/app/api/adapt/description/route.ts:183`) have the identical
+`if (adaptApiKey && token !== adaptApiKey)` fail-open shape;
+`apps/control-plane/src/app/api/adapt/feedback/route.ts` already implements the target two-step
+pattern (`resolveApiKey()` primary + `ADAPT_API_KEY`/`OPS_TENANT_ID`-scoped `secretEquals()`
+ops-bypass) that these two GET routes should mirror; the SDK already sends real per-tenant
+`config.apiKey` bearers on these GET calls (`packages/sdk/src/core/adapt-description.ts:231`,
+`adapt.ts:169/267/800`).
+
+**Dispatched FOLLOW-473 to backend-engineer** (table row: "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer"), flipped
+`READY → IN_PROGRESS`, branch `backend-engineer/FOLLOW-473-adapt-get-auth-hardening`. **Model:
+Opus** (live-production auth change on the highest-blast-radius routes in the repo, with a
+previously-flagged outage risk and a cross-file symmetric fix — exceeds routine in-scope
+implementation per the mandatory model-fit rule). Full delegation brief in `backlog/HANDOFFS.md`
+("PM orchestrator (session 17) → backend-engineer, FOLLOW-473").
+
+0 open PRs at hand-off. 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged,
+non-blocking. 1 ticket IN_PROGRESS (FOLLOW-473; the stale `TICKET-PILOT-001` record is the other) —
+under the 3-ticket cap.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-08 (session 16 retro — RETRO-163 filed, PR #471 opened, FOLLOW-528/529/530 stubbed)
 
 **Coordinator confirmed PR #470 (session-16 DONE close-out) also merged** (main fast-forwarded
 `acf87bb → 2785191`) and that `retrospective-analyst` completed **RETRO-163** for FOLLOW-464,
@@ -8728,30 +8784,81 @@ gate) closes the epic and must be last.
     GET /api/adapt auth is presence-only + spoofable x-tenant-id fallback, now weaker than the
     hardened POST path
   agent: backend-engineer
-  status: READY
-  priority: P2
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-08T00:00:00Z'
+  branch: backend-engineer/FOLLOW-473-adapt-get-auth-hardening
+  priority: P1 # elevated 2026-07-08 (pm-orchestrator, session 17) from P2 per FOLLOW-510 (RETRO-158) recommendation — see notes below
   estimated_hours: 3
   depends_on: []
   source: >-
     FOLLOW-451 (PR #416) validation, 2026-07-02 — PR #416 "Scope decisions" §2 explicitly flagged
     this as a follow-up: FOLLOW-451's AC items only covered POST; GET's separate, weaker
     ADAPT_API_KEY auth axis was out of scope for that ticket.
-  spec: backlog/FOLLOW_UPS.md FOLLOW-473; PR #416 "Scope decisions" §2
+  spec: backlog/FOLLOW_UPS.md FOLLOW-473, FOLLOW-510; PR #416 "Scope decisions" §2; RETRO-158
   notes: |
     Promoted 2026-07-02 (pm-orchestrator) directly to Sprint 22b as READY. GET is now the visibly
     weaker of the two /api/adapt auth paths (ADAPT_API_KEY env-var presence-only comparison,
     degrading to "any non-empty bearer accepted" when the env var is unset; tenant derived from a
     caller-supplied x-tenant-id header with zero verification) — asymmetric hardening vs the
-    now-hardened POST path is itself a reason to close before pilot go-live. P2, not P0/P1, because
-    the audit did not flag live exploitation and this is hardening, not a confirmed-active leak.
+    now-hardened POST path is itself a reason to close before pilot go-live.
+
+    PRIORITY ELEVATED P2->P1 2026-07-08 (pm-orchestrator, session 17), per the recommendation filed
+    as FOLLOW-510 (backlog/FOLLOW_UPS.md, source RETRO-158): GET /api/adapt AND GET
+    /api/adapt/description (apps/control-plane/src/app/api/adapt/route.ts:703,
+    apps/control-plane/src/app/api/adapt/description/route.ts:183 — confirmed via direct read, both
+    identical `if (adaptApiKey && token !== adaptApiKey)` fail-open shapes) are the two
+    highest-blast-radius routes in the repo (hit on every live SDK pageview) and are KNOWN-live
+    fail-open TODAY — a strictly worse exposure than the internal-cron FOLLOW-490 route already
+    fixed at P1. This is a priority reassessment within normal PM backlog-triage authority (not an
+    architectural/pricing/compliance call requiring CEO sign-off) — recorded per FOLLOW-510's own
+    AC ("FOLLOW-473's priority is re-evaluated by PM with a recorded decision"). FOLLOW-510 itself
+    is now actioned/folded into this ticket (not separately promoted).
+
+    SCOPE ADDED (from FOLLOW-510, mandatory — do not skip): the fail-closed flip MUST be paired
+    with an ADAPT_API_KEY / OPS_TENANT_ID provisioning-preflight check so the flip cannot itself
+    cause an SDK-wide outage if the ops secret is unprovisioned in prod (same fail-dangerous class
+    as FOLLOW-508/509). PREFLIGHT ALREADY RUN by pm-orchestrator 2026-07-08 (`vercel env ls
+    production`, apps/control-plane project `adaptive-listings-control-plane`, read-only, no VALUES
+    fetched): `ADAPT_API_KEY` IS present (Production + Preview, added ~50d ago). `OPS_TENANT_ID` is
+    ABSENT from the full 28-row prod env list. This means: (a) real tenant SDK traffic (which sends
+    its own per-tenant `config.apiKey` via `resolveApiKey()`, see fix-pattern below) is UNAFFECTED
+    by this flip either way — no outage risk there; (b) the ops-bypass branch (only reachable by a
+    caller presenting the shared ADAPT_API_KEY) will hit the SAME "OPS_TENANT_ID must be set
+    alongside ADAPT_API_KEY (server misconfiguration)" 500 that feedback/route.ts already returns
+    in prod today for that exact case (FOLLOW-450, already merged/live) — i.e. this ticket
+    introduces NO NEW failure mode versus the already-accepted feedback-route precedent, it only
+    extends the identical existing behavior to GET /api/adapt(+/description). No further preflight
+    needed before merge; do not re-run `vercel env ls` yourself (worker worktrees should not assume
+    Vercel CLI auth) — cite this paragraph as the preflight evidence in the PR description instead.
+
+    FIX PATTERN TO MIRROR (do not invent a new auth mechanism — confirmed in repo by pm-orchestrator
+    before delegating): apps/control-plane/src/app/api/adapt/feedback/route.ts already implements
+    the exact target shape for this pair of GET routes — Step 1: resolveApiKey(req) (SHA-256 bearer
+    -> api_keys row -> real tenantId, the same helper POST /api/adapt uses since FOLLOW-451); Step 2
+    (fallback only): ADAPT_API_KEY ops bypass via secretEquals()
+    (apps/control-plane/src/lib/secret-compare.ts), scoped to OPS_TENANT_ID, 500
+    "server misconfiguration" if OPS_TENANT_ID is unset while ADAPT_API_KEY is set. The SDK already
+    sends `Bearer ${config.apiKey}` (packages/sdk/src/core/adapt-description.ts:231,
+    packages/sdk/src/core/adapt.ts:169/267/800) — i.e. real per-tenant keys, not the shared
+    ADAPT_API_KEY — so routing GET through resolveApiKey() as the primary path should NOT itself be
+    an outage risk for real tenant SDK traffic (only the ops-bypass secondary path needs the
+    provisioning preflight above).
     AC:
     - [ ] GET /api/adapt no longer accepts "any non-empty bearer" when ADAPT_API_KEY is unset — a
           missing/misconfigured key fails closed (401), never fails open.
     - [ ] Tenant resolution for GET no longer trusts a raw x-tenant-id header with zero
-          verification — either derived from resolveApiKey() or a documented, narrower
-          internal-only trust boundary if GET truly has different callers than POST.
+          verification — mirror feedback/route.ts's resolveApiKey() (Step 1) + ADAPT_API_KEY/
+          OPS_TENANT_ID scoped ops-bypass (Step 2) pattern (or a documented, narrower internal-only
+          trust boundary if GET truly needs different callers than POST — escalate if so).
+    - [ ] Apply the SAME fix to GET /api/adapt/description (identical fail-open shape,
+          description/route.ts:183) — Rule S (symmetric siblings fixed at the same tier).
     - [ ] Test matrix parity with FOLLOW-451's route.follow451.test.ts (valid key/tenant, missing
-          key, wrong tenant, DB error fails loud) applied to the GET handler.
+          key, wrong tenant, DB error fails loud, ops-bypass valid/invalid/misconfigured) applied to
+          BOTH GET handlers.
+    - [ ] PR description cites the pm-orchestrator preflight finding above (ADAPT_API_KEY present /
+          OPS_TENANT_ID absent in prod — no new failure mode vs. the already-live feedback-route
+          precedent).
 - id: FOLLOW-454
   title: >-
     Fix SSR-cookie auth mismatch on tenant dashboard + analytics/pilot/ab APIs (F-01)

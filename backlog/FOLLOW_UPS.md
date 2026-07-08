@@ -13640,10 +13640,14 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   fail-open paths are the highest-blast-radius routes in the repo — and require it to pair the
   fail-closed flip with an ADAPT_API_KEY two-sided provisioning preflight source_retro: RETRO-158
   source_ticket: FOLLOW-490 recommended_sprint: 22b recommended_agent: pm-orchestrator priority: P2
-  estimated_hours: 3 promoted_to_queue: false scope: >- The FOLLOW-490 worker correctly DEFERRED the
-  two identical-shape fail-open siblings it found via the AC4 repo-wide grep — GET /api/adapt
-  (apps/control-plane/src/app/api/adapt/route.ts:703) and GET /api/adapt/description
-  (apps/control-plane/src/app/api/adapt/description/route.ts:183), both
+  estimated_hours: 3 promoted_to_queue: true # ACTIONED 2026-07-08 (pm-orchestrator, session 17) —
+  folded directly into FOLLOW-473 rather than a separate queue entry. FOLLOW-473 elevated P2->P1;
+  scope note + `vercel env ls production` preflight (ADAPT_API_KEY present, OPS_TENANT_ID absent in
+  prod — no new failure mode vs. the already-live feedback-route precedent) recorded in
+  backlog/QUEUE.md FOLLOW-473 notes. No further action needed on this stub. scope: >- The FOLLOW-490
+  worker correctly DEFERRED the two identical-shape fail-open siblings it found via the AC4
+  repo-wide grep — GET /api/adapt (apps/control-plane/src/app/api/adapt/route.ts:703) and GET
+  /api/adapt/description (apps/control-plane/src/app/api/adapt/description/route.ts:183), both
   `if (adaptApiKey && token !== adaptApiKey)` fail-open + spoofable x-tenant-id — to the existing
   FOLLOW-473, avoiding scope-creep into a materially riskier change (live SDK-facing decision-API
   paths hit on every pageview; flipping fail-closed blind risks an SDK-wide outage if ADAPT_API_KEY

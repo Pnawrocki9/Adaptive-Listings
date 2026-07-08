@@ -2333,3 +2333,114 @@ orchestrator (single writer) — report back status, PR link, and CI result inst
 queue yourself.
 
 ---
+
+## PM orchestrator (session 17) → backend-engineer, FOLLOW-473
+
+**Date:** 2026-07-08 | **Model:** Opus (justification: this is a live-production auth change on the
+two highest-blast-radius routes in the repo — GET /api/adapt and GET /api/adapt/description, hit on
+every SDK pageview — with a real prior "SDK-wide outage" risk flagged by FOLLOW-510/RETRO-158; it
+also requires reasoning across a cross-file symmetric fix (Rule S) and correctly reproducing an
+existing nuanced auth pattern without introducing a regression. This exceeds routine in-scope-ticket
+implementation, so per the mandatory model-fit rule this is escalated one tier from the agent's
+Sonnet default.) | **Branch:** `backend-engineer/FOLLOW-473-adapt-get-auth-hardening` (branch-first,
+FOLLOW-448: `git checkout -b backend-engineer/FOLLOW-473-adapt-get-auth-hardening main` in its own
+isolated `git worktree` MUST be your first action, before any file edit)
+
+**Ticket:** `backlog/QUEUE.md` → Sprint 22b → `FOLLOW-473` ("GET /api/adapt auth is presence-only +
+spoofable x-tenant-id fallback, now weaker than the hardened POST path", **P1** — elevated from P2
+this session per FOLLOW-510/RETRO-158, see the ticket's full `notes:` block in QUEUE.md for the
+complete rationale, the pm-orchestrator-run `vercel env ls production` preflight finding, and the
+full AC checklist). Delegation-table row used: "ingest worker, control-plane, decision-api,
+Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer".
+
+**Read before starting:**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — Operating Principle 1). Note:
+  this section is dated 2026-05-24 and is known-stale (tracked separately as FOLLOW-470, P2,
+  pm-orchestrator-owned) — do not treat its "next priorities" prose as current; QUEUE.md is the live
+  source of truth for ticket state.
+- `CONVENTIONS_PATCH.md` — Rule S (a fix to one verb/branch of a symmetric set must be applied to
+  ALL siblings at the same tier — directly applicable: GET /api/adapt and GET /api/adapt/description
+  have the IDENTICAL fail-open bug and both must be fixed, not just one); Rule Q (a CI/auth gate
+  that can soft-skip must emit positive proof, not just green); Rule Y (a test-citation must be
+  verified against the real file).
+- The full FOLLOW-473 YAML block in `backlog/QUEUE.md` (Sprint 22b) — READ THE ENTIRE `notes:`
+  field, it contains the exact fix pattern to mirror and the already-completed provisioning
+  preflight (do not re-derive or re-run it).
+- `backlog/FOLLOW_UPS.md` FOLLOW-473 and FOLLOW-510 stub entries for additional context (both now
+  folded into the QUEUE.md ticket, informational only).
+
+**The bug (verified in repo by pm-orchestrator before delegating, not guessed):**
+
+- `apps/control-plane/src/app/api/adapt/route.ts:703` (GET handler) and
+  `apps/control-plane/src/app/api/adapt/description/route.ts:183` (GET handler) both do:
+  ```
+  const adaptApiKey = process.env.ADAPT_API_KEY;
+  if (adaptApiKey && token !== adaptApiKey) { ...401... }
+  // When ADAPT_API_KEY is unset: presence-only auth (any non-empty bearer accepted)
+  ```
+  — a fail-OPEN shape (the exact class FOLLOW-456/FOLLOW-490 already eliminated on 4 other routes).
+  Tenant is then resolved from a caller-supplied `x-tenant-id` header (GET /api/adapt) with zero
+  verification — fully spoofable.
+- The ALREADY-HARDENED reference pattern lives in
+  `apps/control-plane/src/app/api/adapt/feedback/route.ts` (FOLLOW-450/ADR-0015): Step 1 —
+  `resolveApiKey(req)` (`apps/control-plane/src/lib/api-key-auth.ts`, SHA-256 bearer → `api_keys`
+  row → real `tenantId`, the SAME helper `POST /api/adapt` already uses per FOLLOW-451). Step 2
+  (fallback only, scoped) — `ADAPT_API_KEY` ops bypass via `secretEquals()`
+  (`apps/control-plane/src/lib/secret-compare.ts`, constant-time), requiring `OPS_TENANT_ID` to also
+  be set (500 "server misconfiguration" if `ADAPT_API_KEY` is set but `OPS_TENANT_ID` is not).
+- The SDK already sends `Bearer ${config.apiKey}` (real per-tenant keys) on these GET calls
+  (`packages/sdk/src/core/adapt-description.ts:231`, `packages/sdk/src/core/adapt.ts:169/267/800`),
+  so routing GET through `resolveApiKey()` as the PRIMARY path is not a risk to real tenant traffic.
+
+**Preflight already done (do not repeat):** pm-orchestrator ran `vercel env ls production` against
+`adaptive-listings-control-plane` 2026-07-08 (read-only, no secret values fetched): `ADAPT_API_KEY`
+IS present (Production + Preview). `OPS_TENANT_ID` is ABSENT from the full prod env list. This means
+the ops-bypass branch will hit the exact same "OPS_TENANT_ID must be set alongside ADAPT_API_KEY"
+500 that `feedback/route.ts` already returns in prod TODAY (FOLLOW-450, live) — no new failure mode
+is introduced by this fix versus the already-accepted feedback-route precedent.
+
+**Required fix (per ticket AC — see the FOLLOW-473 YAML block in QUEUE.md for the authoritative
+list):**
+
+1. Both GET handlers (`adapt/route.ts` and `adapt/description/route.ts`) adopt the
+   `feedback/route.ts` two-step pattern: `resolveApiKey()` first (derives `tenantId` server-side,
+   replacing the `x-tenant-id` header trust), `ADAPT_API_KEY`/`OPS_TENANT_ID` scoped ops-bypass
+   second, fail CLOSED (401) when `ADAPT_API_KEY` is set and the token doesn't match — never fail
+   open when unset.
+2. Do not invent a new auth mechanism. If GET truly needs a materially different caller set than
+   POST (e.g. a legitimate internal-only caller that can't carry a per-tenant key), that is an
+   architecture question — escalate via ESCALATIONS.md rather than guessing.
+3. Test matrix parity with `route.follow451.test.ts` (valid key/tenant, missing key, wrong tenant,
+   DB error fails loud, ops-bypass valid/invalid/misconfigured) applied to BOTH GET handlers.
+4. No regression to any existing GET /api/adapt or GET /api/adapt/description consumer (SDK, demo
+   harness, existing tests).
+
+**Files most likely touched:** `apps/control-plane/src/app/api/adapt/route.ts`,
+`apps/control-plane/src/app/api/adapt/description/route.ts`, their `.test.ts` files, possibly a
+shared helper if the two-step pattern is worth extracting (evaluate — `feedback/route.ts` currently
+inlines it; don't force an extraction that isn't clearly justified, per Simplicity First).
+
+**Validation the orchestrator will require before READY_FOR_REVIEW (do not skip):**
+
+- Local: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` (and `next build`
+  per FOLLOW-474/RETRO-150 — webpack import-resolution catches defects `tsc`/`vitest` don't) all
+  green.
+- CI green on every real gate (`gh pr checks <pr> --watch`, then the
+  `jq '[.[]|select(.state!="SUCCESS")]|length'` check — paste the `0`). Only the pre-existing "Rule
+  I — wired-or-dead" red is acceptable.
+- Runtime-wiring grep (step 5c): a non-test producer (the real GET handlers calling
+  `resolveApiKey()`) AND a non-test consumer (the `api_keys` DB lookup actually executing) — paste
+  both grep lines. Also confirm via grep that `x-tenant-id` is no longer trusted as an authority in
+  either GET handler's tenant-resolution branch (only as a documented, narrower fallback if you end
+  up keeping it at all — flag explicitly if so).
+- Single-agent ticket, no step-5d co-assignment check needed.
+- PR description MUST cite: RETRO-158/FOLLOW-510 as the source of the P1 elevation, the
+  pm-orchestrator preflight finding (ADAPT_API_KEY present / OPS_TENANT_ID absent in prod — no new
+  failure mode), and Rule S (both GET routes fixed at the same tier).
+
+**Open a PR when done; do not merge.** Update `backlog/QUEUE.md` FOLLOW-473 status only via the
+orchestrator (single writer) — report back status, PR link, and CI result instead of editing the
+queue yourself.
+
+---

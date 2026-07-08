@@ -9513,8 +9513,11 @@ gate) closes the epic and must be last.
   title: >-
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)
     (F-17)
-  agent: data-engineer
-  status: READY
+  agent: ml-engineer # reassigned from data-engineer 2026-07-08 (session 18) — see notes
+  status: IN_PROGRESS
+  assigned_to: ml-engineer
+  started_at: '2026-07-08T00:00:00Z'
+  branch: ml-engineer/FOLLOW-463-verified-facts-ch-audit
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -9528,6 +9531,21 @@ gate) closes the epic and must be last.
     - [ ] The Modal description job writes verified_facts_used + model_version + archetype/listing to
           description_generations (or a Postgres column) on every generation.
     - [ ] A query proves the audit trail is durable (survives Redis TTL).
+
+    REASSIGNED data-engineer -> ml-engineer 2026-07-08 (session 18, model-fit/agent-fit routing
+    after repo verification). The ticket was authored assuming a CH-schema/writer task
+    (data-engineer), but verification shows the durable-write path is the existing
+    generate_description.py -> POST /api/internal/description-cache handler, both authored by
+    ml-engineer (FOLLOW-460/464/465). The CH table already exists (migration 0007); no new schema.
+    The actual edits: (1) add verified_facts_used to the job's POST payload
+    (apps/llm-gateway/src/jobs/generate_description.py, ~line 1650) — currently the payload omits it;
+    (2) dual-write a description_generations row from the internal endpoint
+    (apps/control-plane/.../internal/description-cache/route.ts) alongside the existing PG write,
+    reusing clickhouse-http.ts. Continuity + file-ownership => ml-engineer. Model: Sonnet
+    (well-defined in-scope implementation on an established write path; escalate to Opus only on a
+    stumble). Full delegation brief in backlog/HANDOFFS.md (session 18 -> ml-engineer, FOLLOW-463).
+    Design decision delegated: skip the CH audit row on NEUTRAL (description=="") — no generation to
+    audit; CH-write failure captures to Sentry but does not fail the PG-durable POST.
 - id: FOLLOW-464
   title: >-
     Model-key the Postgres description cache so a model switch isn't defeated by a stale pg hit —

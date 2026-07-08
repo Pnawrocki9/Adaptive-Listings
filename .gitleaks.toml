@@ -286,4 +286,9 @@ regexes = [
   # `<agent>/<ticket>-<kebab>` branch-name pattern (Rule V: never file-scope backlog/*.md, which
   # are decision-grade prose stores that must stay scanned for real secrets). Not a secret.
   '''(?i)(architect|backend-engineer|compliance-engineer|data-engineer|devops-engineer|ml-engineer|pm-orchestrator|qa-engineer|sdk-engineer)/[a-z0-9._-]{3,}''',
+  # FOLLOW-461: the adapt.description headline event/payload export identifiers are 40–46
+  # chars and false-positive on the broad cloudflare-api-token heuristic (same class as
+  # ListingEmbeddingSeedRequestedEventSchema above). TS symbols, not secrets. Token-scoped
+  # to the AdaptDescriptionHeadline* prefix.
+  '''AdaptDescriptionHeadline[A-Za-z]+''',
 ]

@@ -27,6 +27,7 @@ import {
 } from '../core/adapt-description.js';
 import type { SdkConfig } from '../core/config.js';
 import type { CollectedEvent } from '../core/events.js';
+import { EventSchema } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -853,5 +854,103 @@ describe('applyDescriptionAdaptation — FOLLOW-169 AC3: headline only on ai_cac
 
     // Headline must be applied — source === 'ai_cached' is satisfied
     expect(headlineSlot.textContent).toBe('Per-listing LLM headline for yield hunter');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-461 / audit F-04 — ingest round-trip: the events the SDK ACTUALLY
+// emits from the real emit paths must validate against the shared EventSchema.
+// This is not a value-injecting test — it drives applyDescriptionAdaptation /
+// fetchDescription and wraps each collected event in the canonical envelope,
+// then asserts the ingest schema accepts it (before FOLLOW-461 ingest rejected
+// these types silently → description-adaptation observability was blind in prod).
+// ---------------------------------------------------------------------------
+
+describe('adapt.description.* → shared EventSchema round-trip (FOLLOW-461)', () => {
+  /** Wrap a CollectedEvent in a valid ingest envelope for schema validation. */
+  function toEnvelope(e: CollectedEvent): Record<string, unknown> {
+    return {
+      event_id: '01928f00-7000-7000-8000-123456789abc',
+      tenant_id: '01928f00-7000-7000-8000-aaaaaaaaaaaa',
+      session_id: 'a'.repeat(40),
+      ts: e.ts,
+      region: 'eu',
+      consent_state: 'legitimate-interest',
+      schema_version: 1,
+      type: e.type,
+      payload: e.payload,
+    };
+  }
+
+  function assertAllValidateAtIngest(): void {
+    const adaptEvents = testEventQueue.filter((e) => e.type.startsWith('adapt.description.'));
+    expect(adaptEvents.length).toBeGreaterThan(0);
+    for (const e of adaptEvents) {
+      const result = EventSchema.safeParse(toEnvelope(e));
+      expect(
+        result.success,
+        `SDK-emitted "${e.type}" (${JSON.stringify(e.payload)}) was REJECTED by the ingest EventSchema`,
+      ).toBe(true);
+    }
+  }
+
+  it('applied + headline.applied emitted by the real path validate at ingest', async () => {
+    buildSlot('listing-042');
+    const headlineSlot = document.createElement('h1');
+    headlineSlot.setAttribute('data-estalara-slot', 'headline');
+    document.body.appendChild(headlineSlot);
+    mockFetchOk({
+      description: ADAPTED_DESCRIPTION,
+      headline: 'Per-listing LLM headline',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-06-11T00:00:00.000Z',
+    });
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(testEventQueue.some((e) => e.type === 'adapt.description.applied')).toBe(true);
+    expect(testEventQueue.some((e) => e.type === 'adapt.description.headline.applied')).toBe(true);
+    assertAllValidateAtIngest();
+  });
+
+  it('skipped (neutral archetype) emitted by the real path validates at ingest', async () => {
+    buildSlot();
+    await applyDescriptionAdaptation(BASE_CONFIG, 'neutral');
+    await flushAll();
+
+    expect(testEventQueue.some((e) => e.type === 'adapt.description.skipped')).toBe(true);
+    assertAllValidateAtIngest();
+  });
+
+  it('error (HTTP 500) emitted by the real path validates at ingest', async () => {
+    buildSlot();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })),
+    );
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    const errEvents = testEventQueue.filter((e) => e.type === 'adapt.description.error');
+    expect(errEvents).toHaveLength(1);
+    expect(errEvents[0]!.payload).toMatchObject({ reason: 'http_err', status: 500 });
+    assertAllValidateAtIngest();
+  });
+
+  it('error (network failure) emitted by the real path validates at ingest', async () => {
+    buildSlot();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('network down'))),
+    );
+
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await flushAll();
+
+    expect(testEventQueue.some((e) => e.type === 'adapt.description.error')).toBe(true);
+    assertAllValidateAtIngest();
   });
 });

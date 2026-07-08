@@ -53,7 +53,7 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 46 unique event type literals', () => {
+  it('has exactly 52 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
@@ -62,8 +62,11 @@ describe('EVENT_TYPES tuple', () => {
     //   live.signup
     // + 1 K.3.6 Archetype Identification Tracer (FOLLOW-266 / 2026-06-12):
     //   intent.snapshot
-    expect(EVENT_TYPES.length).toBe(46);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(46);
+    // + 6 description-adaptation observability (FOLLOW-461 / audit F-04):
+    //   adapt.description.applied, adapt.description.skipped, adapt.description.error,
+    //   adapt.description.re, adapt.description.headline.applied, adapt.description.headline.re
+    expect(EVENT_TYPES.length).toBe(52);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(52);
   });
 });
 
@@ -599,5 +602,57 @@ describe('live.signup events (FOLLOW-195)', () => {
 
   it('LiveSignup is accepted by the canonical EventSchema discriminated union', () => {
     expect(() => EventSchema.parse(ev('live.signup', { slot_uuid: validSlotUuid }))).not.toThrow();
+  });
+});
+
+describe('adapt.description.* events (FOLLOW-461 / audit F-04) — ingest round-trip', () => {
+  // AC3: every adapt.description.* payload the SDK actually emits from
+  // packages/sdk/src/core/adapt-description.ts MUST validate against the canonical
+  // `EventSchema` used at the ingest boundary. Before FOLLOW-461 these types were absent
+  // from the union, so ingest silently rejected them (description-adaptation observability
+  // was blind in prod). Each case below mirrors a real emit site, verified field-by-field.
+  const SDK_EMITTED_EVENTS: Record<string, unknown>[] = [
+    // applyDescriptionAdaptation final emit — { listing_id, archetype }
+    ev('adapt.description.applied', { listing_id: 'listing-001', archetype: 'yield_hunter' }),
+    // skipped: neutral archetype path — { reason: 'neutral' }
+    ev('adapt.description.skipped', { reason: 'neutral' }),
+    // skipped: non-adaptable fetch result — {}
+    ev('adapt.description.skipped', {}),
+    // fetchDescription network error — { reason: 'ne' }
+    ev('adapt.description.error', { reason: 'ne' }),
+    // fetchDescription HTTP error — { reason: 'http_err', status }
+    ev('adapt.description.error', { reason: 'http_err', status: 500 }),
+    // fetchDescription bad-response — { reason: 'br' }
+    ev('adapt.description.error', { reason: 'br' }),
+    // description slot reapply after framework revert — {}
+    ev('adapt.description.re', {}),
+    // headline slot final emit — { listing_id, archetype }
+    ev('adapt.description.headline.applied', {
+      listing_id: 'listing-001',
+      archetype: 'yield_hunter',
+    }),
+    // headline slot reapply after framework revert — {}
+    ev('adapt.description.headline.re', {}),
+  ];
+
+  it.each(SDK_EMITTED_EVENTS)(
+    'canonical EventSchema accepts SDK-emitted %#: type=$type',
+    (event) => {
+      const result = EventSchema.safeParse(event);
+      expect(result.success).toBe(true);
+    },
+  );
+
+  it('adapt.description.error requires a reason (schema actually validates the field)', () => {
+    // Proves the schema is not a rubber stamp: a missing required field is rejected.
+    const result = EventSchema.safeParse(ev('adapt.description.error', {}));
+    expect(result.success).toBe(false);
+  });
+
+  it('adapt.description.applied requires listing_id + archetype', () => {
+    expect(EventSchema.safeParse(ev('adapt.description.applied', {})).success).toBe(false);
+    expect(
+      EventSchema.safeParse(ev('adapt.description.applied', { listing_id: 'x' })).success,
+    ).toBe(false);
   });
 });

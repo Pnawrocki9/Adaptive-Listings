@@ -14187,7 +14187,8 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - recommended_agent: data-engineer
 - priority: P2
 - estimated_hours: 2
-- promoted_to_queue: false
+- promoted_to_queue: true # promoted + dispatched 2026-07-08 (session 18); QUEUE.md FOLLOW-535
+  IN_PROGRESS, branch data-engineer/FOLLOW-535-description-generations-ttl
 - scope: `infra/clickhouse/migrations/0007_description_generations_verified_facts.sql` defines the
   table with `PARTITION BY toYYYYMM(created_at)` but NO `TTL` clause. Zero writers made this inert;
   FOLLOW-463 added the first writer, so every non-NEUTRAL generation now appends a never-deduped row
@@ -14270,3 +14271,63 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - Ensure the suppression auto-clears (or is removed) once the grant lands so a NEW failure class
     is still visible.
 - cross_ref: [FOLLOW-463, RETRO-165]
+
+## FOLLOW-539 — Realize `adapt.description.*` observability: a purpose-built reader/aggregation, not just queryability
+
+- source_retro: RETRO-166 §3 / §4a LG-2 / §7
+- source_ticket: FOLLOW-461
+- recommended_sprint: next data/observability sprint (co-schedule with FOLLOW-536 and FOLLOW-204
+  AC5)
+- recommended_agent: data-engineer (+ backend-engineer for any dashboard/analytics endpoint)
+- priority: P3
+- estimated_hours: 3
+- promoted_to_queue: false
+- scope: FOLLOW-461 registered the 6 `adapt.description.*` event types so ingest
+  (`apps/ingest/src/handlers/events.ts:210`) now ACCEPTS + stores them in the canonical ClickHouse
+  `events` table (they were silently rejected before — audit F-04). The DROP is closed end-to-end
+  and the events are now QUERYABLE (ad-hoc SQL / Grafana / `session_summary_mv` / DSR-erasable). But
+  NO purpose-built reader surfaces the F-04 GOAL — applied/skipped/error/reapply RATES: the
+  type-filtered readers (`pilot/cta-lift`, `dashboard/analytics/lift`) whitelist
+  `cta.clicked`/funnel types and ignore `adapt.description.*`; `session_summary_mv` folds them only
+  into generic `last_event_type`/bounds. Same shape as FOLLOW-536 (RETRO-165
+  `description_generations` write-only), one degree SOFTER because the sink here is the heavily-read
+  canonical `events` table.
+- ac:
+  - Add a `countIf`-per-type aggregation over `adapt.description.*` — a ClickHouse materialized view
+    (or an extension of `session_summary`) and/or a dashboard/analytics endpoint or provisioned
+    Grafana panel — that surfaces applied vs skipped vs error vs reapply RATES per tenant.
+  - Decide whether the high-frequency empty-payload convergence events `adapt.description.re` /
+    `adapt.description.headline.re` (one per framework-revert burst) should be sampled/aggregated
+    rather than stored raw; document the choice.
+  - Confirm the panel/query reads from the TTL-bounded `events` table (13-month retention, no new
+    unbounded store introduced).
+- cross_ref: [FOLLOW-461, FOLLOW-536, FOLLOW-204, RETRO-166, RETRO-165]
+
+## FOLLOW-540 — Formalize the "reserved / no-producer-yet" event-type category so the defined-vs-producible reconciliation cannot silently rot
+
+- source_retro: RETRO-166 §4a LG-1 / §1
+- source_ticket: FOLLOW-461
+- recommended_sprint: next architecture/hardening sprint
+- recommended_agent: architect (+ sdk-engineer for the emit-site inventory)
+- priority: P3
+- estimated_hours: 2
+- promoted_to_queue: false
+- scope: FOLLOW-461 correctly RETAINED 23 of the 52 defined event types that have no SDK producer
+  ("reserved" per Master Design §C.1 / ADR-0005 / TICKET-AB-001 / TICKET-037). But the "reserved (no
+  producer yet)" category is not formalized anywhere durable: `index.ts:124-197` annotates the union
+  by category with ticket provenance, yet there is no single tracked list of which types
+  intentionally lack a producer and WHY, and no Rule-H carve-out for a registered-type-without-a-
+  producer. Rule I does not flag them (the schemas are imported into the union). F-04 itself is
+  evidence this axis rots undetected — a produced-but-unregistered type was silently rejected and
+  only a manual audit caught it; the inverse (registered-but-unproduced) is equally invisible to CI
+  and equally re-litigable by the next audit or a "remove unused schemas" cleanup. The in-PR matrix
+  is an ephemeral PR artifact that does not survive into the repo.
+- ac:
+  - Enumerate the ~23 producer-less registered event types with their provenance in a tracked
+    location — an ADR-0003 amendment or a `RESERVED_EVENT_TYPES` doc-block adjacent to `EVENT_TYPES`
+    in `packages/shared/src/schemas/events/index.ts`.
+  - Add a Rule-H carve-out note so future wiring audits / manual sweeps treat a registered type with
+    no producer as intentional-reserved rather than dead/half-wired.
+  - (Optional) note a lightweight check idea (e.g. a comment-linked assertion) that a NEW registered
+    type either has a producer or is added to the reserved list in the same PR.
+- cross_ref: [FOLLOW-461, RETRO-166]

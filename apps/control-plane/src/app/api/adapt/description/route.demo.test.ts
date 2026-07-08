@@ -47,6 +47,14 @@ vi.mock('@/lib/demo-override-store', () => ({
   getDemoOverride: mockGetDemoOverride,
 }));
 
+// FOLLOW-473: GET auth is now the shared two-step resolver (resolveAdaptGetAuth),
+// which also derives the tenant (replacing getAuthClaims/x-tenant-id). Mock it to
+// the deterministic tenant this suite exercises — the real auth mechanics are
+// covered end-to-end in description/route.follow473.test.ts.
+vi.mock('@/lib/adapt-get-auth', () => ({
+  resolveAdaptGetAuth: vi.fn().mockResolvedValue({ ok: true, tenantId: 'demo-tenant-uuid' }),
+}));
+
 import { GET } from './route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

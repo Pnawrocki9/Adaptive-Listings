@@ -2,8 +2,9 @@
  * Tests for GET /api/adapt and POST /api/adapt — Decision API real logic.
  *
  * Coverage:
- *   - Auth gate: missing header → 401, wrong key → 401, correct key → 200
- *   - Auth gate: ADAPT_API_KEY unset → presence-only (empty → 401, non-empty → 200)
+ *   - Auth gate (FOLLOW-473): missing/empty header → 401; resolver rejects → 401
+ *     (fails closed); ops misconfig → 500; resolver DB throw → 401; resolver ok → 200.
+ *     Tenant is derived by the resolver, never from x-tenant-id.
  *   - Decision tree: all 4 branches (with and without LLM gateway)
  *   - AdaptationDirectives shape validation
  *   - Valid GET request → correct AdaptationDirectives
@@ -15,7 +16,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
 
 // Mock the LLM gateway module — by default returns null (no API key in test env)
@@ -47,10 +48,28 @@ vi.mock('@/lib/bandit-query', () => ({
   ]),
 }));
 
+// FOLLOW-473: GET auth is the shared two-step resolver (resolveAdaptGetAuth),
+// which also derives the tenant server-side (replacing the removed
+// getAuthClaims/x-tenant-id trust). A controllable hoisted mock drives the
+// handler-glue tests below; the resolver's own mechanics (ops-bypass,
+// resolveApiKey, DB-error) are covered end-to-end in route.follow473.test.ts.
+const { mockResolveAdaptGetAuth } = vi.hoisted(() => ({
+  mockResolveAdaptGetAuth: vi.fn(),
+}));
+vi.mock('@/lib/adapt-get-auth', () => ({
+  resolveAdaptGetAuth: mockResolveAdaptGetAuth,
+}));
+
 import { GET, POST } from './route';
 import { callLlmGateway } from '@/lib/llm-gateway';
 
 const mockCallLlmGateway = vi.mocked(callLlmGateway);
+
+// Default: every GET resolves to a valid tenant (tenant-abc matches the legacy
+// x-tenant-id default so tenant-dependent assertions in other blocks still hold).
+beforeEach(() => {
+  mockResolveAdaptGetAuth.mockReset().mockResolvedValue({ ok: true, tenantId: 'tenant-abc' });
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,64 +152,70 @@ const AdaptationDirectivesSchema = z.object({
 
 // ─── Auth gate tests ──────────────────────────────────────────────────────────
 
-describe('GET /api/adapt — auth gate', () => {
+describe('GET /api/adapt — auth gate (FOLLOW-473: fail-closed, resolver-derived tenant)', () => {
   beforeEach(() => {
     mockCallLlmGateway.mockClear();
     mockCallLlmGateway.mockResolvedValue(null);
   });
 
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('missing Authorization header → 401 AUTH_REQUIRED', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+  it('missing Authorization header → 401 AUTH_REQUIRED (resolver never consulted)', async () => {
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
     expect(body.error.code).toBe('AUTH_REQUIRED');
     expect(body.error.message).toContain('Authorization');
+    expect(mockResolveAdaptGetAuth).not.toHaveBeenCalled();
   });
 
-  it('empty Bearer token → 401 AUTH_REQUIRED', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
+  it('empty Bearer token → 401 AUTH_REQUIRED (resolver never consulted)', async () => {
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(mockResolveAdaptGetAuth).not.toHaveBeenCalled();
   });
 
-  it('wrong key when ADAPT_API_KEY is set → 401 FORBIDDEN', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
-    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer wrong_key'));
+  it('resolver rejects the key (unknown/invalid/revoked) → 401 FORBIDDEN (fails closed)', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({
+      ok: false,
+      status: 401,
+      message: 'Invalid API key',
+    });
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer whatever'));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
     expect(body.error.code).toBe('FORBIDDEN');
     expect(body.error.message).toContain('Invalid API key');
   });
 
-  it('correct key when ADAPT_API_KEY is set → 200', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
-    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer test_adapt_key'));
-    expect(res.status).toBe(200);
+  it('resolver reports ops misconfiguration (ADAPT_API_KEY set, OPS_TENANT_ID unset) → 500 INTERNAL_ERROR', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({
+      ok: false,
+      status: 500,
+      message: 'OPS_TENANT_ID must be set alongside ADAPT_API_KEY (server misconfiguration).',
+    });
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer ops_key'));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(body.error.message).toContain('OPS_TENANT_ID');
   });
 
-  it('ADAPT_API_KEY unset + empty token → 401 (presence-only: empty token rejected)', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
-    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer '));
+  it('resolver throws (configured-but-failed DB, Rule K.2) → 401 FORBIDDEN, never fabricates a tenant', async () => {
+    mockResolveAdaptGetAuth.mockRejectedValue(new Error('connection refused'));
+    const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer whatever'));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  it('ADAPT_API_KEY unset + non-empty token → 200 (presence-only auth)', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
+  it('resolver resolves a tenant → 200 (no reliance on x-tenant-id / ADAPT_API_KEY presence)', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({ ok: true, tenantId: 'tenant-abc' });
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer any_token_will_do'));
     expect(res.status).toBe(200);
   });
 
   it('auth error response includes request_id', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'test_adapt_key');
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
     const body = await parseBody<{ error: { request_id: string } }>(res);
     expect(typeof body.error.request_id).toBe('string');

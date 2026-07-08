@@ -2,6 +2,52 @@
 
 ---
 
+## 2026-07-08 / FOLLOW-535
+
+**What I built:** Migration 0020 —
+`ALTER TABLE description_generations MODIFY TTL toDateTime(created_at) + INTERVAL 13 MONTH`, closing
+the retention gap RETRO-165 flagged: migration 0007 created the table with
+`PARTITION BY toYYYYMM(created_at)` but no TTL clause, which was inert until FOLLOW-463 (merged same
+day) added the table's first writer. Every non-NEUTRAL description generation — amplified by the
+FOLLOW-528 model-toggle re-dispatch — now appends a row that would otherwise never expire. Verified
+the exact ALTER syntax against a live local ClickHouse container (`SHOW CREATE TABLE` confirms
+ClickHouse normalizes `INTERVAL 13 MONTH` to `toIntervalMonth(13)`), confirmed `MODIFY TTL` is
+idempotent on re-apply (matches `migrate.sh`'s re-apply-every-file model), and ran the full CI
+`clickhouse-smoke` job sequence locally end-to-end (contract test → migrate.sh → smoke-test.sh → new
+ttl-golden-test.sh) against a clean container before opening the PR. Added
+`infra/clickhouse/scripts/ttl-golden-test.sh` (static grep assertions on the migration file + a live
+`SHOW CREATE TABLE` check against an isolated DB) as the golden-query-shape regression test since
+this ticket has no application query code to capture SQL from (RETRO-014's model assumes a TS route;
+a DDL-only ticket needs the DDL-file equivalent). Also added the table's first-ever
+`docs/DATA_DICTIONARY.md` section (FOLLOW-463 shipped the writer without one).
+
+**Vocabulary/seed/retention risks I weighed:**
+
+- No new table/column — Rule H writer/seed obligation does not apply; the writer already exists
+  (FOLLOW-463, merged `4d1db35`, confirmed via grep on `writeDescriptionGenerationAudit` /
+  `apps/control-plane/src/app/api/internal/description-cache/route.ts`).
+- Retention choice (13 months, not `intent_events`' 90 days) is a reasoned default per the ticket
+  brief, not a compliance round-trip: this table is an anti-hallucination AUDIT trail
+  (`verified_facts_used`), so I matched the `events` audit-table horizon. Documented the rationale
+  inline in the migration and in DATA*DICTIONARY.md rather than escalating, since the brief was
+  explicit that only a \_specific different* mandated retention would warrant escalation.
+- Confirmed via `backlog/ESCALATIONS.md` that prod `ingest_worker` still lacks
+  `GRANT INSERT ON default.description_generations` (FOLLOW-463's own open escalation) — flagged in
+  the PR that the TTL apply should be bundled with that grant so retention is live before the table
+  starts receiving prod writes, rather than filing a duplicate escalation.
+- Did not touch migration 0007 (append-only migration discipline) or the pre-existing inaccuracies
+  in `AUDIT_RISK_MATRIX.md`/`AUDIT_TEST_GAPS.md` that reference a nonexistent
+  `description_generations_verified_facts` table name — out of surgical-change scope for this
+  ticket.
+
+**A guardrail I'd add:** A repo-wide CI check that flags any `CREATE TABLE` migration with
+`PARTITION BY toYYYYMM(<col>)` or similar time-partition key but no `TTL` clause in the same file OR
+a tracked "Pending" row in `DATA_DICTIONARY.md`'s retention table — would have caught migration
+0007's silent gap at merge time (2026-05-15, PR #115) instead of waiting for a retro to notice it
+after the first writer landed 7 weeks later.
+
+---
+
 ## 2026-07-06 / FOLLOW-462
 
 **What I built:** Closed audit F-14 — `apps/control-plane/src/lib/clickhouse-dsr.ts` built every DSR

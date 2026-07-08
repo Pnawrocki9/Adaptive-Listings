@@ -1,6 +1,6 @@
 # Data Dictionary — Estalara Adaptive Listings
 
-**Owner:** data-engineer **Last updated:** 2026-07-01 (FOLLOW-441)
+**Owner:** data-engineer **Last updated:** 2026-07-08 (FOLLOW-535)
 
 This document is the canonical reference for every ClickHouse table and column. It is updated in the
 same PR as any DDL change. All analytics queries MUST use the vocabulary defined here; divergent
@@ -137,6 +137,39 @@ enforced, out of FOLLOW-449 scope).
 
 ---
 
+## Table: `description_generations`
+
+Anti-hallucination audit trail: one row per Sonnet-generated listing description, recording the
+facts Sonnet self-reported as actually used (`verified_facts_used`). Written by
+`generate_description` (`apps/llm-gateway/src/jobs/generate_description.py`) via
+`apps/control-plane/src/app/api/internal/description-cache/route.ts` for every non-NEUTRAL
+generation (FOLLOW-463). Read by `apps/control-plane/src/lib/clickhouse-dsr.ts` (DSR hard-delete)
+and per-tenant hallucination audit queries.
+
+**Engine:** MergeTree() **Partition:** `toYYYYMM(created_at)` **Order by:**
+`(tenant_id, listing_id, archetype, locale, created_at)` **Migrations:** 0007, 0020
+
+| Column                | Type                     | Description                                                                        |
+| --------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| `tenant_id`           | `String`                 | Tenant UUID.                                                                       |
+| `listing_id`          | `String`                 | Listing identifier.                                                                |
+| `archetype`           | `LowCardinality(String)` | Archetype the description was generated for.                                       |
+| `locale`              | `LowCardinality(String)` | Locale of the generated copy.                                                      |
+| `tier`                | `UInt8`                  | Legacy page-context style discriminator (see `adaptation_decisions.page_context`). |
+| `model`               | `LowCardinality(String)` | LLM model used for generation.                                                     |
+| `source`              | `LowCardinality(String)` | Generation trigger source.                                                         |
+| `description_chars`   | `UInt32`                 | Length of the generated description.                                               |
+| `verified_facts_used` | `Array(String)`          | Facts Sonnet self-reported as used — hallucination-audit signal.                   |
+| `generated_at`        | `DateTime64(3, 'UTC')`   | When the LLM produced the description.                                             |
+| `created_at`          | `DateTime64(3, 'UTC')`   | Row insert timestamp. Partition/TTL key.                                           |
+
+**Retention:** 13 months, `TTL toDateTime(created_at) + INTERVAL 13 MONTH` (migration 0020,
+FOLLOW-535). Matches the `events` audit-table horizon rather than `intent_events`' 90 days, since
+this table is an anti-hallucination AUDIT trail that per-tenant reviews may need to reference over a
+similar window to the raw event log.
+
+---
+
 ## Table: `dsr_audit_log`
 
 GDPR/DSR audit trail. TTL enforced.
@@ -173,9 +206,10 @@ Time column is always `ts`. NOT `assigned_at` (non-existent, vocabulary bug).
 
 ## Retention / TTL promises
 
-| Table                  | TTL                                                                                         | Mechanism             | Status             |
-| ---------------------- | ------------------------------------------------------------------------------------------- | --------------------- | ------------------ |
-| `events`               | Per-tenant override (Sprint 9 TODO)                                                         | ClickHouse TTL clause | Pending            |
-| `adaptation_decisions` | No explicit TTL (inherits cluster default)                                                  | —                     | Pending            |
-| `intent_events`        | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending            |
-| `dsr_audit_log`        | Per-compliance requirement                                                                  | TTL column            | See migration 0011 |
+| Table                     | TTL                                                                                         | Mechanism             | Status             |
+| ------------------------- | ------------------------------------------------------------------------------------------- | --------------------- | ------------------ |
+| `events`                  | Per-tenant override (Sprint 9 TODO)                                                         | ClickHouse TTL clause | Pending            |
+| `adaptation_decisions`    | No explicit TTL (inherits cluster default)                                                  | —                     | Pending            |
+| `intent_events`           | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending            |
+| `dsr_audit_log`           | Per-compliance requirement                                                                  | TTL column            | See migration 0011 |
+| `description_generations` | 13 months, `toDateTime(created_at) + INTERVAL 13 MONTH`                                     | ClickHouse TTL clause | Enforced (0020)    |

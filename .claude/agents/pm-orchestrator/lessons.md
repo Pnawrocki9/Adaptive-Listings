@@ -1858,3 +1858,21 @@ independent occurrence, even if it references the same pattern by name.
   context for a new instruction, treat it as a hint to re-check, not a fact to act on directly —
   `gh pr list`/`git log` is one tool call and PRs can merge between the coordinator's message being
   composed and the agent resuming.
+
+- **Date / ticket:** 2026-07-08 — FOLLOW-473 dispatch (session 17)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer".
+- **What validation caught (or missed):** Found an un-promoted FOLLOW_UPS.md stub (FOLLOW-510,
+  `recommended_agent: pm-orchestrator`) recommending FOLLOW-473 be elevated P2->P1 and requiring an
+  ADAPT_API_KEY/OPS_TENANT_ID provisioning preflight before its fail-closed flip (to avoid an
+  SDK-wide outage). Rather than delegating that preflight to the worker (who likely lacks my Vercel
+  CLI auth in an isolated worktree), I ran `vercel env ls production` myself BEFORE writing the
+  delegation brief — found ADAPT_API_KEY present / OPS_TENANT_ID absent in prod, which de-risked the
+  flip to "no new failure mode vs. the already-live feedback-route precedent" instead of a
+  theoretical outage risk. This is exactly the kind of ambiguous-but-checkable fact a PM should
+  verify directly rather than pushing onto the worker or leaving as an open question in the brief.
+- **A delegation/validation rule I'd add:** When a stub ticket's own scope requires a prod-state
+  preflight check that only the orchestrator has credentials/session context for (e.g.
+  `vercel env ls`), run it BEFORE writing the delegation brief and paste the real finding into the
+  brief — don't defer a checkable fact to the worker just because the ticket text phrased it as an
+  AC item.

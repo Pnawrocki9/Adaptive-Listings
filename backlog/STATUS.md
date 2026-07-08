@@ -1,4 +1,53 @@
-# Status — 2026-07-08 (Sprint 22b OPEN — RETRO-163 filed for FOLLOW-464, PR #471 open)
+# Status — 2026-07-08 (Sprint 22b OPEN — FOLLOW-473 elevated P2→P1 + dispatched to backend-engineer)
+
+## SESSION 17 (2026-07-08) — FOLLOW-473 elevated P2→P1 + dispatched (Opus) to backend-engineer
+
+**On entry:** confirmed via `git log`/`gh pr list` that PR #471 (RETRO-163 docs) plus two further
+docs PRs (#472, #473 "mandatory model-fit rule") merged since the session-16 banner; `main` tip
+`9210400`; 0 open PRs. 3 standing `## OPEN` escalations (ESC-020/ESC-028/ESC-034) re-confirmed
+unchanged and non-blocking (established multi-session precedent).
+
+**Ticket selection:** read the full Sprint 22b tail. READY+unblocked worker-delegable candidates:
+FOLLOW-461 (P2 sdk-engineer), FOLLOW-463 (P2 data-engineer), FOLLOW-467/468/469/474 (P3),
+FOLLOW-472/473 (backend-engineer). FOLLOW-458 READY but blocked on FOLLOW-449
+(CODE_COMPLETE_OPERATOR_PENDING, not DONE). FOLLOW-471 (epic gate) BACKLOG, blocked on ~7 open
+tickets.
+
+**Found + actioned an un-promoted stub, FOLLOW-510** (`backlog/FOLLOW_UPS.md`, source RETRO-158,
+`recommended_agent: pm-orchestrator`): recommends reassessing FOLLOW-473 P2→P1 (GET /api/adapt + GET
+/api/adapt/description are the two highest-blast-radius fail-open routes in the repo — hit on every
+live SDK pageview, KNOWN-live-fail-open today) and requires an ADAPT_API_KEY/OPS_TENANT_ID
+provisioning preflight paired with the fail-closed flip so it can't itself cause an SDK-wide outage.
+This is ordinary PM priority-triage (not an architectural/pricing/compliance call) — **elevated
+FOLLOW-473 P2→P1**, ran the preflight myself: `vercel env ls production` against
+`adaptive-listings-control-plane` (read-only) shows `ADAPT_API_KEY` present (Production+Preview),
+`OPS_TENANT_ID` absent. Conclusion: real tenant SDK traffic (sends its own per-tenant
+`config.apiKey`) is unaffected; the ops-bypass branch will hit the same "OPS_TENANT_ID must be set
+alongside ADAPT_API_KEY" 500 that `feedback/route.ts` already returns in prod today (FOLLOW-450,
+live) — no new failure mode. Folded into FOLLOW-473's QUEUE.md notes; marked FOLLOW-510 actioned
+(not a separate queue ticket).
+
+**Verified the fix pattern directly in the repo** before delegating: both GET handlers
+(`apps/control-plane/src/app/api/adapt/route.ts:703`,
+`apps/control-plane/src/app/api/adapt/description/route.ts:183`) share the identical
+`if (adaptApiKey && token !== adaptApiKey)` fail-open shape; `feedback/route.ts` already implements
+the target two-step pattern (`resolveApiKey()` primary + `ADAPT_API_KEY`/`OPS_TENANT_ID`-scoped
+`secretEquals()` ops-bypass); the SDK already sends real per-tenant `config.apiKey` bearers on these
+GET calls (`packages/sdk/src/core/adapt-description.ts:231`, `adapt.ts:169/267/800`).
+
+**Dispatched FOLLOW-473 to backend-engineer**, table row "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks -> backend-engineer". Flipped
+`READY → IN_PROGRESS`, branch `backend-engineer/FOLLOW-473-adapt-get-auth-hardening`. **Model:
+Opus** — live-production auth change on the highest-blast-radius routes, prior outage-risk flag,
+cross-file symmetric fix (Rule S); exceeds routine in-scope implementation per the mandatory
+model-fit rule. Full delegation brief in `backlog/HANDOFFS.md` ("PM orchestrator (session 17) →
+backend-engineer, FOLLOW-473").
+
+**Hand-off:** 0 open PRs. 3 standing OPEN escalations unchanged, non-blocking. 1 real ticket
+IN_PROGRESS (FOLLOW-473; `TICKET-PILOT-001` stale record is the other) — under the 3-ticket cap.
+CI-check counter: 0/5 (no PR opened yet this session). Fix-iterations: 0/3.
+
+---
 
 ## SESSION 16 RETRO (2026-07-08) — RETRO-163 packaged + PR #471 opened; FOLLOW-528/529/530 stubbed
 

@@ -77,7 +77,24 @@ vi.mock('@/lib/demo-override-store', () => ({
   }),
 }));
 
+// FOLLOW-473: GET auth is the shared two-step resolver (resolveAdaptGetAuth),
+// which also derives the tenant server-side (replacing the removed
+// getAuthClaims/x-tenant-id trust). A controllable hoisted mock drives the
+// handler-glue auth tests below; the resolver's own mechanics are covered
+// end-to-end in description/route.follow473.test.ts.
+const { mockResolveAdaptGetAuth } = vi.hoisted(() => ({
+  mockResolveAdaptGetAuth: vi.fn(),
+}));
+vi.mock('@/lib/adapt-get-auth', () => ({
+  resolveAdaptGetAuth: mockResolveAdaptGetAuth,
+}));
+
 import { GET } from './route';
+
+// Default: every GET resolves to the tenant this suite asserts on.
+beforeEach(() => {
+  mockResolveAdaptGetAuth.mockReset().mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' });
+});
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -109,40 +126,61 @@ const VALID_PARAMS = {
 
 // ─── Auth gate tests ──────────────────────────────────────────────────────────
 
-describe('GET /api/adapt/description — auth', () => {
+describe('GET /api/adapt/description — auth (FOLLOW-473: fail-closed, resolver-derived tenant)', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
 
-  it('returns 401 when Authorization header is missing', async () => {
+  it('returns 401 when Authorization header is missing (resolver never consulted)', async () => {
     const res = await GET(makeRequest(VALID_PARAMS, null));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(mockResolveAdaptGetAuth).not.toHaveBeenCalled();
   });
 
-  it('returns 401 when Bearer token is empty', async () => {
+  it('returns 401 when Bearer token is empty (resolver never consulted)', async () => {
     const res = await GET(makeRequest(VALID_PARAMS, 'Bearer '));
     expect(res.status).toBe(401);
+    expect(mockResolveAdaptGetAuth).not.toHaveBeenCalled();
   });
 
-  it('returns 401 when ADAPT_API_KEY is set and token does not match', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'correct_key');
+  it('resolver rejects the key (unknown/invalid/revoked) → 401 FORBIDDEN (fails closed)', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({
+      ok: false,
+      status: 401,
+      message: 'Invalid API key',
+    });
     const res = await GET(makeRequest(VALID_PARAMS, 'Bearer wrong_key'));
     expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  it('returns 200 when ADAPT_API_KEY is set and token matches', async () => {
-    vi.stubEnv('ADAPT_API_KEY', 'correct_key');
-    mockGetCachedDescription.mockResolvedValueOnce(null);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
-    const res = await GET(makeRequest(VALID_PARAMS, 'Bearer correct_key'));
-    expect(res.status).toBe(200);
+  it('resolver reports ops misconfiguration (ADAPT_API_KEY set, OPS_TENANT_ID unset) → 500', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({
+      ok: false,
+      status: 500,
+      message: 'OPS_TENANT_ID must be set alongside ADAPT_API_KEY (server misconfiguration).',
+    });
+    const res = await GET(makeRequest(VALID_PARAMS, 'Bearer ops_key'));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string; message: string } }>(res);
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(body.error.message).toContain('OPS_TENANT_ID');
   });
 
-  it('returns 200 with any non-empty token when ADAPT_API_KEY is unset', async () => {
-    vi.stubEnv('ADAPT_API_KEY', '');
+  it('resolver throws (configured-but-failed DB, Rule K.2) → 401 FORBIDDEN, never fabricates a tenant', async () => {
+    mockResolveAdaptGetAuth.mockRejectedValue(new Error('connection refused'));
+    const res = await GET(makeRequest(VALID_PARAMS, 'Bearer wrong_key'));
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('resolver resolves a tenant → 200 (no reliance on x-tenant-id / ADAPT_API_KEY presence)', async () => {
+    mockResolveAdaptGetAuth.mockResolvedValue({ ok: true, tenantId: 'test-tenant-uuid' });
     mockGetCachedDescription.mockResolvedValueOnce(null);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
     const res = await GET(makeRequest(VALID_PARAMS, 'Bearer any_key'));

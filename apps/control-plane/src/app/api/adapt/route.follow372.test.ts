@@ -80,6 +80,13 @@ vi.mock('@estalara/shared', async () => {
   };
 });
 
+// FOLLOW-473: GET auth is now the shared two-step resolver (resolveAdaptGetAuth).
+// Mock it to the deterministic tenant this suite exercises — the real auth
+// mechanics are covered end-to-end in route.follow473.test.ts.
+vi.mock('@/lib/adapt-get-auth', () => ({
+  resolveAdaptGetAuth: vi.fn().mockResolvedValue({ ok: true, tenantId: 'tenant-follow372' }),
+}));
+
 import { GET } from './route.js';
 import { getBanditArms } from '@/lib/bandit-query';
 import { thompsonSample } from '@estalara/shared';

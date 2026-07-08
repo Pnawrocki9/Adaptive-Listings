@@ -55,7 +55,7 @@ import { getPlaybook } from '@estalara/sdk/playbooks';
 import { descriptionKey, getCachedDescription } from '@/lib/description-cache';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { fetchListingOriginalDescription } from '@/lib/listing-details';
-import { getAuthClaims } from '@estalara/auth';
+import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { getPgCachedDescription, insertPgCachedDescription } from '@/lib/description-pg-cache';
@@ -193,7 +193,12 @@ function publishDescriptionRequested(event: DescriptionRequestedEvent): Promise<
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ── Auth gate — same pattern as GET /api/adapt ────────────────────────────
+  // ── Auth gate — FOLLOW-473 (RETRO-158 / FOLLOW-510): fail-closed, tenant
+  // derived server-side. SAME two-step resolver as GET /api/adapt (Rule S —
+  // symmetric siblings): ADAPT_API_KEY ops-bypass scoped to OPS_TENANT_ID OR
+  // resolveApiKey() SHA-256 bearer → api_keys → real tenant. Replaces the prior
+  // presence-only ADAPT_API_KEY check (fail-open when unset) and the spoofable
+  // x-tenant-id header trust. x-tenant-id is NO LONGER a tenant authority.
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token) {
@@ -206,22 +211,35 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
-  const adaptApiKey = process.env.ADAPT_API_KEY;
-  if (adaptApiKey && token !== adaptApiKey) {
+
+  let authResult: AdaptGetAuthResult;
+  try {
+    authResult = await resolveAdaptGetAuth(req, token);
+  } catch (err) {
+    // Configured-but-failed DB lookup during resolveApiKey (Rule K.2) — fail loud
+    // to Sentry and 401; never fabricate a tenant or fall open.
+    console.error('[description] GET auth DB error', err);
+    Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { area: 'description', kind: 'api_key_auth_db_error' },
+    });
     return NextResponse.json(
-      errorBody({
-        code: ErrorCode.FORBIDDEN,
-        message: 'Invalid API key',
-        requestId,
-      }),
+      errorBody({ code: ErrorCode.FORBIDDEN, message: 'Invalid API key', requestId }),
       { status: 401 },
     );
   }
-  // When ADAPT_API_KEY is unset: presence-only auth — backward compat with dev.
-
-  // ── Extract tenant_id from JWT (best-effort) ──────────────────────────────
-  const claims = await getAuthClaims(req);
-  const tenantId = claims?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
+  if (!authResult.ok) {
+    return NextResponse.json(
+      errorBody({
+        code: authResult.status === 500 ? ErrorCode.INTERNAL_ERROR : ErrorCode.FORBIDDEN,
+        message: authResult.message,
+        requestId,
+      }),
+      { status: authResult.status },
+    );
+  }
+  // Tenant is ALWAYS the server-derived value (ops secret → OPS_TENANT_ID, or the
+  // authenticated api_keys row) — never a caller-supplied header (F-05 invariant).
+  const tenantId = authResult.tenantId;
 
   // ── Parse and validate query params ──────────────────────────────────────
   const rawParams = Object.fromEntries(req.nextUrl.searchParams.entries());

@@ -50,7 +50,6 @@ import { getPlaybook } from '@estalara/sdk/playbooks';
 import type { SlotDirective } from '@estalara/sdk/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
-import { getAuthClaims } from '@estalara/auth';
 import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { publishAbAssignmentEvent } from '@/lib/ab-events';
 import { afterResponse } from '@/lib/after-response';
@@ -75,6 +74,7 @@ import {
   type DemoJwtClaims,
 } from '@/lib/demo-jwt-verify';
 import { resolveApiKey } from '@/lib/api-key-auth';
+import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
 import * as Sentry from '@sentry/nextjs';
@@ -686,7 +686,13 @@ function buildReorderDirective(
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ── Auth gate — same pattern as decision-api Worker ───────────────────────
+  // ── Auth gate — FOLLOW-473 (RETRO-158 / FOLLOW-510): fail-closed, tenant
+  // derived server-side. Two-step resolver (resolveAdaptGetAuth): ADAPT_API_KEY
+  // ops-bypass scoped to OPS_TENANT_ID (Step 1) OR resolveApiKey() SHA-256
+  // bearer → api_keys → real tenant (Step 2). Replaces the prior presence-only
+  // ADAPT_API_KEY check (which failed OPEN — "any non-empty bearer" — when the
+  // env var was unset) and the spoofable x-tenant-id header trust. Mirrors
+  // POST /api/adapt/feedback (ADR-0015). x-tenant-id is NO LONGER an authority.
   const auth = req.headers.get('Authorization') ?? req.headers.get('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   if (!token) {
@@ -699,25 +705,39 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
-  const adaptApiKey = process.env.ADAPT_API_KEY;
-  if (adaptApiKey && token !== adaptApiKey) {
+
+  let authResult: AdaptGetAuthResult;
+  try {
+    authResult = await resolveAdaptGetAuth(req, token);
+  } catch (err) {
+    // Configured-but-failed DB lookup during resolveApiKey (Rule K.2) — fail loud
+    // to Sentry and 401; never fabricate a tenant or fall open.
+    console.error('[adapt] GET auth DB error', err);
+    Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { area: 'adapt', kind: 'api_key_auth_db_error' },
+    });
     return NextResponse.json(
-      errorBody({
-        code: ErrorCode.FORBIDDEN,
-        message: 'Invalid API key',
-        requestId,
-      }),
+      errorBody({ code: ErrorCode.FORBIDDEN, message: 'Invalid API key', requestId }),
       { status: 401 },
     );
   }
-  // When ADAPT_API_KEY is unset: presence-only auth (non-empty token is sufficient — backward compat with dev)
+  if (!authResult.ok) {
+    return NextResponse.json(
+      errorBody({
+        code: authResult.status === 500 ? ErrorCode.INTERNAL_ERROR : ErrorCode.FORBIDDEN,
+        message: authResult.message,
+        requestId,
+      }),
+      { status: authResult.status },
+    );
+  }
+  // Tenant is ALWAYS the server-derived value (ops secret → OPS_TENANT_ID, or the
+  // authenticated api_keys row) — never a caller-supplied header (F-05 invariant).
+  const tenantId: string = authResult.tenantId;
 
   const params = req.nextUrl.searchParams;
 
-  // ── Tenant + locale resolution (before decision tree for attribution) ─────
-  // Prefer JWT-verified tenant_id; fall back to x-tenant-id for SDK calls without JWT.
-  const tenantId: string =
-    (await getAuthClaims(req))?.tenant_id ?? req.headers.get('x-tenant-id') ?? 'unknown';
+  // ── Locale resolution (before decision tree for attribution) ──────────────
   const rawLocale = params.get('locale');
   const locale: 'en' | 'pl' | 'es' = rawLocale === 'pl' ? 'pl' : rawLocale === 'es' ? 'es' : 'en';
 

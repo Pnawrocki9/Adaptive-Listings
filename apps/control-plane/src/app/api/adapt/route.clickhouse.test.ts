@@ -114,6 +114,15 @@ vi.mock('@estalara/shared', async () => {
 
 import * as Sentry from '@sentry/nextjs';
 import { after } from 'next/server';
+// FOLLOW-473: GET auth is now the shared two-step resolver (resolveAdaptGetAuth).
+// Mock it to the deterministic tenant this suite exercises (TENANT_ID) — the real
+// auth mechanics are covered end-to-end in route.follow473.test.ts.
+vi.mock('@/lib/adapt-get-auth', () => ({
+  resolveAdaptGetAuth: vi
+    .fn()
+    .mockResolvedValue({ ok: true, tenantId: '550e8400-e29b-41d4-a716-446655440001' }),
+}));
+
 import { GET, POST } from './route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

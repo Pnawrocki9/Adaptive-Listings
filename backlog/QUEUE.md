@@ -9513,8 +9513,35 @@ gate) closes the epic and must be last.
   title: >-
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)
     (F-17)
-  agent: data-engineer
-  status: READY
+  agent: ml-engineer # reassigned from data-engineer 2026-07-08 (session 18) — see notes
+  status: READY_FOR_REVIEW
+  assigned_to: ml-engineer
+  started_at: '2026-07-08T00:00:00Z'
+  branch: ml-engineer/FOLLOW-463-verified-facts-ch-audit
+  pr: 479
+  ci_status: green # all real gates pass; only standing pre-existing Rule I baseline red (new symbols confirmed absent from --log-failed)
+  go_live_blocked_on:
+    ESC (OPEN) — prod ingest_worker CH grant on description_generations (see below)
+  validated: |
+    Session 18 (2026-07-08) — ml-engineer PR #479. Both ACs met: (1) POST /api/internal/description-cache
+    now dual-writes a description_generations CH row (verified_facts_used + model + archetype/listing/
+    locale + description_chars, tier=0 NO-Tiers, source=modal_generation) alongside the existing PG
+    write, reusing clickhouse-http.ts (JSONEachRow body → no SQL-injection surface); (2) durability
+    proven by a route.test.ts block asserting the CH INSERT fires independent of Redis, + a Python test
+    proving verified_facts is forwarded in the POST payload. NEUTRAL (description=='') skips the audit
+    row (tested). CH-write failure → Sentry kind:'description_generations_write_failed', non-blocking
+    (PG write stays the read SoT; mirrors writeDsrAuditLog fire-and-forget). Independently verified:
+    row is complete (11 cols), Rule I failure carries none of this PR's new symbols. Human merge only.
+
+    GO-LIVE OPERATOR ACTION (new OPEN escalation, filed in PR #479's ESCALATIONS.md): ESC-032/
+    FOLLOW-424 (2026-06-29) deliberately NARROWED the prod ingest_worker CH grant to EXCLUDE
+    description_generations on the "no writer exists" premise — which this PR invalidates. Code is
+    fail-loud-non-blocking so nothing breaks, but the audit table stays EMPTY in prod (every insert →
+    403/497 ACCESS_DENIED, Sentry-captured) until a ClickHouse Cloud admin runs
+    `GRANT INSERT ON default.description_generations TO ingest_worker;` and updates the
+    grant-narrowing runbook. This is the RETRO-021 measured-in-fixture / not-reachable-in-prod shape —
+    merging the PR does NOT complete the ticket's goal on its own. Same CODE_COMPLETE_OPERATOR_PENDING
+    class as FOLLOW-449.
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -9528,6 +9555,21 @@ gate) closes the epic and must be last.
     - [ ] The Modal description job writes verified_facts_used + model_version + archetype/listing to
           description_generations (or a Postgres column) on every generation.
     - [ ] A query proves the audit trail is durable (survives Redis TTL).
+
+    REASSIGNED data-engineer -> ml-engineer 2026-07-08 (session 18, model-fit/agent-fit routing
+    after repo verification). The ticket was authored assuming a CH-schema/writer task
+    (data-engineer), but verification shows the durable-write path is the existing
+    generate_description.py -> POST /api/internal/description-cache handler, both authored by
+    ml-engineer (FOLLOW-460/464/465). The CH table already exists (migration 0007); no new schema.
+    The actual edits: (1) add verified_facts_used to the job's POST payload
+    (apps/llm-gateway/src/jobs/generate_description.py, ~line 1650) — currently the payload omits it;
+    (2) dual-write a description_generations row from the internal endpoint
+    (apps/control-plane/.../internal/description-cache/route.ts) alongside the existing PG write,
+    reusing clickhouse-http.ts. Continuity + file-ownership => ml-engineer. Model: Sonnet
+    (well-defined in-scope implementation on an established write path; escalate to Opus only on a
+    stumble). Full delegation brief in backlog/HANDOFFS.md (session 18 -> ml-engineer, FOLLOW-463).
+    Design decision delegated: skip the CH audit row on NEUTRAL (description=="") — no generation to
+    audit; CH-write failure captures to Sentry but does not fail the PG-durable POST.
 - id: FOLLOW-464
   title: >-
     Model-key the Postgres description cache so a model switch isn't defeated by a stale pg hit —

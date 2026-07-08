@@ -2444,3 +2444,51 @@ orchestrator (single writer) — report back status, PR link, and CI result inst
 queue yourself.
 
 ---
+
+## PM orchestrator (session 18) → ml-engineer, FOLLOW-463
+
+**From:** pm-orchestrator (session 18) **To:** ml-engineer **Date:** 2026-07-08 **Branch:**
+`ml-engineer/FOLLOW-463-verified-facts-ch-audit` (agent-prefix required or push-CI won't run).
+
+**Why you (reassigned from the originally-filed data-engineer):** the ticket reads like a
+CH-schema/writer task, but repo verification shows the CH table `description_generations` already
+exists (migration 0007) and the durable-write path is `generate_description.py` →
+`POST /api/internal/description-cache` — both of which YOU authored (FOLLOW-460/464/465). This is an
+add-a-sink on your existing path, not new schema. Continuity + file ownership → ml-engineer.
+
+**The gap (F-17):** `description_generations` has zero writers. `generate_description.py` produces
+`verified_facts`, writes them to Redis, and POSTs to the internal endpoint (which persists a
+Postgres `description_cache_persistent` row) — but the POST payload OMITS `verified_facts_used` and
+the endpoint never writes ClickHouse. So the §E.7.5 anti-hallucination audit trail is not durable.
+
+**Do (surgical):**
+
+1. `apps/llm-gateway/src/jobs/generate_description.py` — add `"verified_facts_used": verified_facts`
+   to the POST `payload` (~line 1650); keep the write non-fatal (Rule K.2). Update the docstring +
+   `test_generate_description.py` payload assertions.
+2. `apps/control-plane/src/app/api/internal/description-cache/route.ts` — extend the Zod schema
+   (~L62-69) with `verified_facts_used: z.array(z.string()).optional().default([])` (backward
+   compatible); after the existing `insertPgCachedDescriptionStrict(...)`, insert one
+   `description_generations` row via the existing `clickhouse-http.ts` client (see
+   `clickhouse-tracer.ts`/`clickhouse-dsr.ts` for usage — no new client). Map:
+   `description_chars = description.length`, `source = "modal_generation"`, `tier = 0` (NO-Tiers,
+   §E.7 — don't invent a tier), `generated_at`/`created_at = now`. **Skip the CH row when
+   `description === ""`** (NEUTRAL — nothing to audit); test it. CH-write failure → Sentry
+   (`kind: 'description_generations_write_failed'`), do NOT fail the PG-durable POST; if emitting
+   after the response, wrap in `next/server` `after()` (repo lost-write rule) — else inline before
+   return.
+3. `route.test.ts` — prove AC2: a FIT POST triggers the CH insert with the right row; a NEUTRAL POST
+   does not.
+
+**Standards:** prettier on every touched file, `tsc --noEmit` + eslint clean, no new migration, keep
+the full control-plane adapt/internal suites green. Commit
+`feat(data): persist verified_facts_used to description_generations CH audit trail [FOLLOW-463]`.
+
+**Escalate (backlog/ESCALATIONS.md) if:** prod CH user lacks INSERT grant on
+`description_generations`; or another non-test consumer of `/api/internal/description-cache` breaks
+on the payload extension (grep first).
+
+**Open a PR when done; do not merge.** Report status, PR link, NEUTRAL-handling decision, durability
+proof, and CI result. Do NOT edit `backlog/QUEUE.md` (orchestrator is the single writer).
+
+---

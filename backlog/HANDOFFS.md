@@ -2543,3 +2543,34 @@ your new symbols appear in its `--log-failed`). Do NOT edit `backlog/QUEUE.md` (
 writer).
 
 ---
+
+## PM orchestrator (session 18) → data-engineer, FOLLOW-535
+
+**From:** pm-orchestrator (session 18) **To:** data-engineer **Date:** 2026-07-08 **Branch:**
+`data-engineer/FOLLOW-535-description-generations-ttl` (agent-prefix required or push-CI won't run).
+
+**Why now:** tight continuation of FOLLOW-463 — that ticket added the FIRST writer to
+`description_generations`, and RETRO-165 flagged (load-bearing) that the table has **no TTL**, so it
+now grows unbounded (amplified by the RETRO-163/FOLLOW-528 model-toggle re-dispatch that appends a
+row per toggle). Every sibling has retention (`events` 13 MONTH `0001:46`; `intent_events` 90-day
+`0014`); this one has none.
+
+**Do:** add a NEW migration (**next number 0020** — dir tops out at `0019_...`),
+`ALTER TABLE description_generations MODIFY TTL <expr>`. `created_at` is `DateTime64(3,'UTC')` —
+mirror the events pattern (`toDateTime(created_at) + INTERVAL 13 MONTH`; verify the exact DateTime64
+TTL syntax). **Retention = 13 MONTH** default (anti-hallucination audit trail → align with the
+longer `events` audit sibling, not intent_events' 90 days); treat as a reasoned default, escalate
+ONLY on concrete compliance evidence for a different value — don't block. Do NOT alter 0007. Follow
+`0007`/`0001` conventions (LOCAL=1 MergeTree note, idempotency, journal/numbering). Must pass the
+**"ClickHouse migrations smoke"** CI gate.
+
+**Operator note (put in the PR body):** CH migrations don't auto-apply to prod — this lands
+CODE_COMPLETE; a CH admin applies it, ideally BUNDLED with the pending FOLLOW-463
+`GRANT INSERT ON default.description_generations TO ingest_worker;` so the TTL is in place before
+the table receives its first prod write.
+
+**Open a PR when done; do not merge.** Report the migration filename, exact TTL expression, chosen
+retention, migrations-smoke gate result, and any escalation. Do NOT edit `backlog/QUEUE.md`
+(orchestrator single writer).
+
+---

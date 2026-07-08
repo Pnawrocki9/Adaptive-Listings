@@ -2254,3 +2254,36 @@
   Meta-lesson: resist merging superficially-similar operator-pending shapes into one count —
   "removed then re-needed" reasons differently from "never existed," and conflating them would
   mis-promote. Named the exact count-2 trigger to watch.
+
+- **2026-07-08 / RETRO-166 (FOLLOW-461 — register 6 `adapt.description.*` event types; audit F-04
+  ingest-drop)** · **A finding I almost missed and why:** the parent HEADLINED the accept-but-no-
+  consumer gap as "likely the key finding" and explicitly primed me to classify it HALF_WIRE by
+  analogy to RETRO-165 FOLLOW-536. First pass I nearly transcribed that verdict. Second pass I
+  traced where an accepted event actually GOES — `pushToClickHouse` → the canonical `events` table —
+  and read its readers (`session_summary_mv` fires on every INSERT, `clickhouse-dsr.ts` erases by
+  session, type-filtered analytics whitelist other types). The honest call is NOT a strict
+  HALF_WIRE_P: the wire connects to a heavily-read, TTL-bounded, DSR-covered sink. The RIGHT finding
+  was the SOFTER one — no purpose-built reader realizes the RATE the observability goal implied —
+  filed P3, not P1. Meta-move confirmed again (same as RETRO-165's DSR axis): a parent's "this is
+  the key finding, it's a HALF_WIRE" is a hypothesis to TEST by tracing the sink, not a verdict to
+  transcribe. The discriminating variable turned out to be the SINK TYPE (dedicated-zero-reader
+  table vs canonical-generically-read table) — I made that the explicit reconciliation so the two
+  retros don't read as contradictory. · **An axis/chain I had to trace twice:** payload fidelity. I
+  verified all 6 emit sites by hand against the Zod schemas (clean), THEN almost filed a "no test
+  cross-validates emit-vs-schema" coverage gap — until I actually opened the SDK test and found a
+  REAL-emit-path round-trip (`adapt-description.test.ts:889` captures from the emit paths and
+  `safeParse`s against the shared `EventSchema`). The would-be gap was already closed, and better
+  than I'd have asked (real emit path, not a hand-built fixture). Lesson: before filing a
+  coverage-gap ticket, open the test file — the guard the parent's framing implies is missing may
+  already exist. · **A meta-pattern in how gaps recur across agents:** the DEFINED-VS-PRODUCIBLE
+  contract rots in BOTH directions and CI catches NEITHER — F-04 was produced-but-unregistered
+  (silent ingest reject), and the 23 "reserved" types are registered-but-unproduced. Rule I only
+  guards exported-symbol importers, so a type-literal-vs-producer mismatch is invisible until a
+  manual audit rediscovers it (exactly how F-04 surfaced). That's a genuine blind spot in the
+  wiring-audit toolchain, not just this ticket — filed FOLLOW-540 to formalize the reserved category
+  - a Rule-H carve-out. Watch: if a 3rd "registered/accepted-but-no-realized-consumer" or a 2nd
+    "produced-but-unregistered" surfaces, the reserved-list-plus-carve-out may deserve promotion to
+    a Rule-H amendment rather than staying a per-ticket follow-up. · **Rule-count discipline held:**
+    the accepted-but-no-reader shape is 2nd sighting but 1 PRIOR (RETRO-165) — HELD, and I named
+    BOTH hold reasons (count AND vehicle-is-a-follow-up), per my own RETRO-165 note to distinguish
+    "not enough priors" from "corpus already chose a better vehicle." No rule promoted.

@@ -1,27 +1,32 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-08 (session 18 cont'd — FOLLOW-473 DONE+retro, FOLLOW-463 code-complete+retro)
+## ▶️ START HERE — resume 2026-07-08 (session 18 cont'd — 3 tickets DONE + 3 retros; FOLLOW-535 dispatched)
 
-**State at this point (all merged to `main`, 0 open PRs):**
+**This session's completed loop (all merged to `main`):** FOLLOW-473 (auth) → FOLLOW-463 (CH audit
+trail) → FOLLOW-461 (event schema), each with its retrospective (RETRO-164/165/166). Retros produced
+stubs FOLLOW-528..540. Ticket status:
 
-- **FOLLOW-473** (fail-closed GET /api/adapt auth) — recovered from the interrupted session, merged
-  **#475**, **RETRO-164** filed & merged (**#477**), stubs FOLLOW-531/532/533/534 opened.
-- **FOLLOW-463** (persist `verified_facts_used` CH audit trail, F-17) — picked next (CEO),
-  reassigned data→ml after repo verification, implemented & merged (**#479** code, **#478**
-  dispatch/validate). Status **`CODE_COMPLETE_OPERATOR_PENDING`** — go-live blocked on a prod
-  ClickHouse grant: `GRANT INSERT ON default.description_generations TO ingest_worker;`
-  (ESC-032/FOLLOW-424 had narrowed it out on a "no writer exists" premise this PR invalidates; OPEN
-  escalation filed in ESCALATIONS.md). Code is fail-loud-non-blocking so nothing breaks; the audit
-  table just stays empty in prod until the grant lands. **RETRO-165 for FOLLOW-463 is running**
-  (this banner predates its landing — package it + its stubs when it completes).
+- **FOLLOW-473** DONE (#475) — RETRO-164 (#477).
+- **FOLLOW-463** `CODE_COMPLETE_OPERATOR_PENDING` (#479) — RETRO-165. Go-live blocked on the prod
+  ClickHouse grant `GRANT INSERT ON default.description_generations TO ingest_worker;`
+  (ESC-032/FOLLOW-424 narrowed it out on a "no writer" premise this PR invalidates; OPEN
+  escalation). Fail-loud-non-blocking, so nothing breaks — the audit table just stays empty in prod
+  until granted.
+- **FOLLOW-461** DONE (#481) — RETRO-166. F-04 closed at the queryable level; payload fidelity
+  verified clean; no operator dependency.
+- **FOLLOW-535** IN_PROGRESS (this turn) — add a 13-month TTL to `description_generations`
+  (RETRO-165 load-bearing finding: the FOLLOW-463 writer makes the TTL-less table grow unbounded).
+  data-engineer, Sonnet, branch `data-engineer/FOLLOW-535-description-generations-ttl`. **Lands
+  CODE_COMPLETE** — a CH admin applies the migration, ideally BUNDLED with the FOLLOW-463 grant
+  above so the TTL is set before the table's first prod write.
 
-**NEXT:** after RETRO-165 lands & is packaged, pick the next READY Sprint 22b ticket. Candidates
-with `depends_on: []`: **FOLLOW-461** (event-schema reconciliation F-04, sdk), **FOLLOW-470** (stale
-status-doc refresh, pm) — both already promoted/READY (P2); plus retro stubs FOLLOW-531
-(decision-api sibling auth, staging-only) / FOLLOW-532 (pin the two GET adapt call sites vs drift)
-needing PM promotion. FOLLOW-458 stays BLOCKED on FOLLOW-449 (operator-pending). 3 standing
-`## OPEN` escalations (ESC-020/028/034) unchanged, non-blocking; **+ the new FOLLOW-463 CH-grant
-escalation**.
+**NEXT:** validate FOLLOW-535's PR when the worker reports; then RETRO-167 + next ticket. Standing
+READY/stub candidates: FOLLOW-470 (status-doc refresh, pm, READY), FOLLOW-532 (pin FOLLOW-473 call
+sites, fully-completes-on-merge), FOLLOW-531 (decision-api sibling auth, staging), FOLLOW-536
+(description_generations reader), FOLLOW-539/540 (P3). FOLLOW-458 BLOCKED on FOLLOW-449.
+
+**Operator/human backlog:** (1) the FOLLOW-463 CH grant [+ bundle FOLLOW-535's TTL migration once
+merged]; (2) 3 standing `## OPEN` escalations ESC-020/028/034 unchanged, non-blocking.
 
 ---
 
@@ -9344,8 +9349,10 @@ gate) closes the epic and must be last.
     Reconcile the event schema to reality: register adapt.description.* + prune/wire unproduced
     types (F-04)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE # merged 63e48d4 (#481); RETRO-166 filed. F-04 closed at the queryable level (payload fidelity verified clean, no operator dependency)
   assigned_to: sdk-engineer
+  completed_at: '2026-07-08T00:00:00Z'
+  merged_commit: 63e48d4
   started_at: '2026-07-08T00:00:00Z'
   branch: sdk-engineer/FOLLOW-461-event-schema-reconcile
   pr: 481
@@ -9381,6 +9388,38 @@ gate) closes the epic and must be last.
     - [ ] Each unproduced event type is either wired to an SDK producer or removed from the schema;
           document the final defined==producible set (Rule H: no schema without a consumer/producer).
     - [ ] A round-trip test asserts every defined event type validates at ingest.
+- id: FOLLOW-535
+  title: >-
+    description_generations has no TTL/retention policy and now grows unbounded (writer added by
+    FOLLOW-463)
+  agent: data-engineer
+  status: IN_PROGRESS
+  assigned_to: data-engineer
+  started_at: '2026-07-08T00:00:00Z'
+  branch: data-engineer/FOLLOW-535-description-generations-ttl
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    RETRO-165 §4a LG-1 (source_ticket FOLLOW-463) — 0007 defines description_generations with
+    PARTITION BY toYYYYMM(created_at) but NO TTL; inert while zero-writer, but FOLLOW-463 added the
+    first writer so every non-NEUTRAL generation now appends a never-deduped row indefinitely
+    (amplified by RETRO-163/FOLLOW-528 model-toggle re-dispatch). Siblings have retention (events
+    TTL 13 MONTH 0001:46; intent_events 90-day 0014).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-535; RETRO-165 §4a
+  notes: |
+    Promoted stub -> queue 2026-07-08 (pm-orchestrator, session 18) and dispatched immediately —
+    tight continuation of FOLLOW-463 (the table we just added the first writer to), and the retro
+    flagged the missing TTL as load-bearing. Model: Sonnet (routine, well-defined CH migration).
+    Full brief in backlog/HANDOFFS.md (session 18 -> data-engineer, FOLLOW-535).
+    AC:
+    - [ ] New migration (0020) adds a TTL to description_generations — default 13 MONTH on created_at
+          (align with the events audit sibling; anti-hallucination audit record warrants the longer
+          retention over intent_events' 90 days). Does NOT alter 0007.
+    - [ ] Passes the "ClickHouse migrations smoke" CI gate.
+    OPERATOR NOTE: CH migrations don't auto-apply to prod — lands CODE_COMPLETE; a CH admin applies
+    it in prod, ideally BUNDLED with the pending FOLLOW-463 GRANT so the TTL is in place before the
+    table receives its first prod write.
 - id: FOLLOW-462
   title: >-
     ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail

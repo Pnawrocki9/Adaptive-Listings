@@ -27,6 +27,26 @@ communicate through files in this repo. The orchestration is built around that c
 
 Each lives in `.claude/agents/<n>.md`.
 
+## Model-fit decision (before every delegation)
+
+Mandatory step, established 2026-07-08: before launching any piece of work or spawning any subagent,
+the launcher (human session, PM, or hook-driven flow) decides which Claude model fits the task best
+— **Sonnet**, **Opus**, or **Fable** — and sets it explicitly instead of silently inheriting the
+agent definition's default. The decision and a one-line justification go into the delegation brief
+(or the session log for inline work), so retrospectives can evaluate routing quality.
+
+Routing rubric (canonical copy lives in `CLAUDE.md` §Model-fit rule):
+
+- **Sonnet** — routine implementation inside a defined ticket scope, tests, bookkeeping, mechanical
+  refactors, CI fixes.
+- **Opus** — complex single-domain reasoning: cross-module debugging, retrospectives, ambiguous
+  acceptance criteria, security-sensitive changes, non-trivial design.
+- **Fable** — highest-stakes or highest-ambiguity work: architecture audits, Master_Design
+  revisions, forensic multi-system debugging, sprint planning, recovery of stranded or conflicting
+  work.
+
+Escalate one tier after a failed attempt at the lower tier; never downgrade a P0 on cost grounds.
+
 ## The state files
 
 These files are the single source of truth. Agents read and write them; humans read and occasionally

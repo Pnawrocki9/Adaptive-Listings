@@ -2287,3 +2287,27 @@
     the accepted-but-no-reader shape is 2nd sighting but 1 PRIOR (RETRO-165) — HELD, and I named
     BOTH hold reasons (count AND vehicle-is-a-follow-up), per my own RETRO-165 note to distinguish
     "not enough priors" from "corpus already chose a better vehicle." No rule promoted.
+
+- **2026-07-09 / RETRO-167 (FOLLOW-535 — 13-month TTL on `description_generations`)**
+  - **A finding I almost missed and why:** the LOAD-BEARING finding here is not the TTL itself
+    (clean, idempotent, well-tested) but the OPERATOR-SEQUENCING coupling — migration 0020's TTL and
+    FOLLOW-463's `GRANT INSERT` are two DDL actions in the SAME prod CH-admin session, and a
+    grant-FIRST apply reopens the exact unbounded-growth gap FOLLOW-535 closes. I nearly filed this
+    as a routine Rule-AA operator-pending case and moved on; the second look was realizing Rule AA
+    covers ONE leg's status, not the ORDERING of two coupled legs, and that the "bundle them"
+    mitigation lives only in ephemeral PR/QUEUE prose, not the durable runbook. That is a genuinely
+    new sub-shape (COUPLED-OPERATOR-LEGS, held at count 1).
+  - **An axis/chain I had to trace twice:** the parent's explicit question — "does any consumer
+    assume the TTL is active?" I first reasoned about correctness risk abstractly, then re-grepped
+    and realized `description_generations` has ZERO in-repo consumers (write-only, FOLLOW-536) —
+    which is exactly what BOUNDS the risk to operational-growth-only, no correctness exposure. The
+    write-only property (a RETRO-165 negative) became the reconciling evidence for RETRO-167's
+    parent question. Also had to trace the table-EXISTENCE dependency (0020 ALTER needs 0007 applied
+    in prod) that the local golden test masks by applying both to a fresh container — a
+    CI-green-hides-a-prod-precondition trap.
+  - **A meta-pattern in how gaps recur across agents:** the ClickHouse-doesn't-auto-apply reality
+    (Rule M) keeps generating operator-pending tails that CI cannot see, and each one tempts a
+    "code-green ⇒ done" read — here it even leaked into a DATA_DICTIONARY Status column ("Enforced
+    (0020)" when prod is unapplied). The durable fix is always a runbook/doc that splits code-axis
+    from prod-axis; the ephemeral PR-body mitigation is where these gaps hide. Watch for a 2nd
+    COUPLED-OPERATOR-LEGS sighting to promote past Rule AA.

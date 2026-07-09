@@ -14331,3 +14331,66 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - (Optional) note a lightweight check idea (e.g. a comment-linked assertion) that a NEW registered
     type either has a producer or is added to the reserved list in the same PR.
 - cross_ref: [FOLLOW-461, RETRO-166]
+
+## FOLLOW-541 — DATA_DICTIONARY retention row overstates prod reality: `description_generations` marked "Enforced (0020)" while the TTL is operator-pending in prod
+
+- source_retro: RETRO-167 §4d DG-1
+- source_ticket: FOLLOW-535
+- recommended_sprint: next docs/hardening sprint
+- recommended_agent: data-engineer
+- priority: P3
+- estimated_hours: 1
+- promoted_to_queue: false
+- scope: `docs/DATA_DICTIONARY.md`'s "Retention / TTL promises" table (updated by FOLLOW-535) marks
+  `description_generations` Status = "Enforced (0020)". But ClickHouse does NOT auto-apply
+  migrations, so in prod the TTL is NOT yet enforced (migration 0020 is operator-pending, a CH Cloud
+  admin must apply it) and the table is not even receiving writes yet (the FOLLOW-463 `GRANT INSERT`
+  is still an OPEN escalation). Every sibling row in that table is honestly `Pending` /
+  `See migration 0011`; "Enforced (0020)" is code-defined / CI-verified but prod-unapplied — the
+  same CI-green-but-prod- not-reached shape RETRO-165 §4b BUG-1 flagged, now leaking into a doc's
+  Status column. This is a doc-form miniature of the Rule-AA code-vs-prod axis split.
+- ac:
+  - Replace "Enforced (0020)" with a code-vs-prod split, e.g. "Enforced in code (0020); prod apply
+    operator-pending — bundle with the FOLLOW-463 grant".
+  - Add a one-line convention to the retention table (or its heading) that for any ClickHouse table
+    the Status column MUST distinguish code-defined from prod-applied, because CH migrations do not
+    auto-apply (Rule M).
+  - Flip the row to a plain "Enforced" only after the operator confirms migration 0020 is applied in
+    prod (the runbook Step-3 SHOW CREATE TABLE proof).
+- cross_ref: [FOLLOW-535, RETRO-167, RETRO-165, Rule AA, Rule M]
+
+## FOLLOW-542 — Make the coupled CH operator legs (apply 0020 TTL + FOLLOW-463 GRANT INSERT) order-safe & durable so a wrong-order apply cannot reopen the unbounded-growth gap
+
+- source_retro: RETRO-167 §4a LG-1 / §4a LG-2 / §5a
+- source_ticket: FOLLOW-535
+- recommended_sprint: bundle with the next CH Cloud-admin operator session
+- recommended_agent: data-engineer (+ devops/operator for the apply)
+- priority: P2
+- estimated_hours: 2
+- promoted_to_queue: false
+- scope: FOLLOW-535's TTL takes effect in prod only when a CH admin applies migration 0020;
+  FOLLOW-463's writer takes effect only when the same admin runs
+  `GRANT INSERT ON default.description_generations TO ingest_worker;` (OPEN escalation,
+  `ESCALATIONS.md:24`). The two legs are COUPLED and ORDER- DEPENDENT: if the GRANT lands
+  before/without 0020, the table resumes exactly the unbounded growth RETRO-165 §4a LG-1 flagged
+  (never-expiring rows, amplified by the FOLLOW-528 model-toggle re- dispatch) until 0020 is
+  applied. Today the "bundle them" mitigation lives ONLY in ephemeral PR prose + the transient QUEUE
+  start-here, NOT in the durable grant-narrowing runbook the operator actually follows
+  (`docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md`, which still lists the table as "none
+  — no writer — intentionally dropped"). Additionally, migration 0020 (ALTER TABLE … MODIFY TTL)
+  requires the table to EXIST in prod, i.e. migration 0007 to have been applied there; ClickHouse
+  does not auto-apply, so this is not guaranteed — applying 0020 against a missing table fails with
+  Code 60 UNKNOWN_TABLE (weak positive evidence the table exists: the FOLLOW-424 attestation's
+  negative-control SELECT returned ACCESS_DENIED/497, not UNKNOWN_TABLE, but that is not
+  conclusive).
+- ac:
+  - Add an explicit sequencing precondition to the migration 0020 header AND the grant-narrowing
+    runbook: apply migration 0020 (TTL) BEFORE/WITH the `GRANT INSERT`, in the same CH Cloud-admin
+    session, so the TTL is set before the first prod write.
+  - Add a runbook step to confirm migration 0007's `description_generations` table EXISTS in prod
+    (or apply it) before running the 0020 ALTER — guarding Code 60 UNKNOWN_TABLE.
+  - Re-run the runbook's Step-3 smoke (INSERT + `SHOW CREATE TABLE` TTL assertion + cleanup) as the
+    fail-loud proof that both legs landed correctly and in order.
+  - Update the runbook's "Confirmed Table Access" row for `description_generations` from "none — no
+    writer — intentionally dropped" to the FOLLOW-463 write path + the FOLLOW-535 TTL.
+- cross_ref: [FOLLOW-535, FOLLOW-463, RETRO-167, RETRO-165, ESC (FOLLOW-463 grant)]

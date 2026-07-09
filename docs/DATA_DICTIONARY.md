@@ -206,10 +206,10 @@ Time column is always `ts`. NOT `assigned_at` (non-existent, vocabulary bug).
 
 ## Retention / TTL promises
 
-| Table                     | TTL                                                                                         | Mechanism             | Status             |
-| ------------------------- | ------------------------------------------------------------------------------------------- | --------------------- | ------------------ |
-| `events`                  | Per-tenant override (Sprint 9 TODO)                                                         | ClickHouse TTL clause | Pending            |
-| `adaptation_decisions`    | No explicit TTL (inherits cluster default)                                                  | —                     | Pending            |
-| `intent_events`           | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending            |
-| `dsr_audit_log`           | Per-compliance requirement                                                                  | TTL column            | See migration 0011 |
-| `description_generations` | 13 months, `toDateTime(created_at) + INTERVAL 13 MONTH`                                     | ClickHouse TTL clause | Enforced (0020)    |
+| Table                     | TTL                                                                                         | Mechanism             | Status                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `events`                  | Per-tenant override (Sprint 9 TODO)                                                         | ClickHouse TTL clause | Pending                                                                                                                          |
+| `adaptation_decisions`    | No explicit TTL (inherits cluster default)                                                  | —                     | Pending                                                                                                                          |
+| `intent_events`           | 90 days documented intent (migration 0014 header, matches §13.2) — no TTL clause in DDL yet | —                     | Pending                                                                                                                          |
+| `dsr_audit_log`           | Per-compliance requirement                                                                  | TTL column            | See migration 0011                                                                                                               |
+| `description_generations` | 13 months, `toDateTime(created_at) + INTERVAL 13 MONTH`                                     | ClickHouse TTL clause | Enforced — 0020 verbatim-verified prod 2026-07-09 (`SHOW CREATE` shows `TTL … + toIntervalMonth(13)`; writer grant CLI-verified) |

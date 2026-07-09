@@ -35,6 +35,7 @@ import {
   persistResolvedArchetype,
   readResolvedArchetype,
 } from './core/session.js';
+import type { ResolvedArchetype } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
 import { renderConsentBanner } from './ui/consent-banner.js';
@@ -702,7 +703,7 @@ async function init(): Promise<IntentState | null> {
       // acceptable per the CEO cross-listing SoT ruling (quiz-disabled stays functional) — the
       // restore below is deliberately NOT gated on `quiz_answered` so it works for both.
       if (currentIntentState.archetype === 'neutral') {
-        const sot = readResolvedArchetype(currentSession.sessionId);
+        const sot: ResolvedArchetype | null = readResolvedArchetype(currentSession.sessionId);
         if (sot && sot.archetype !== 'neutral') {
           // FOLLOW-380 bug (c) / RETRO-105 LG-3: re-pin the archetype AND the confidence it
           // was resolved at. `body.confidence = currentIntentState.confidence` (adapt.ts:762)

@@ -1942,3 +1942,20 @@ independent occurrence, even if it references the same pattern by name.
   ticket's `status:` field can silently drift out of sync with `depends_on` reality (as FOLLOW-458
   shows), and a merged-PR ticket's `status:` can silently lag its true DONE state (as FOLLOW-473
   shows) when a session ends mid-flip. Neither is caught by reading the top banner alone.
+
+- **Date / ticket:** 2026-07-09 — FOLLOW-470 (validation of PR #488)
+- **Delegation row used:** architect (from prior turn; this entry covers the validation step).
+- **What validation caught (or missed):** The coordinator's own summary was accurate on CI (55/2,
+  Rule I baseline) and I independently re-derived the same numbers rather than trusting the report
+  (re-ran `gh pr view --json statusCheckRollup`, pulled `--log-failed`, confirmed 181 pre-existing
+  violations and a 100%-docs file list). One real discrepancy surfaced only by reading the actual
+  diff, not the ticket's own progress notes: the architect's QUEUE.md notes said CLAUDE.md's Tier
+  language was "flagged... NOT edited," but `gh pr diff 488` showed the top-level orchestrator had
+  in fact edited it (to satisfy the AC) — a stale self-report baked into the ticket notes that would
+  have gone uncorrected if I'd trusted the notes instead of the diff. Also independently re-derived
+  the "27 rules" claim via a fresh grep rather than accepting the stated count, and it matched.
+- **A delegation/validation rule I'd add:** When a worker's own `notes:` describe what they PLANNED
+  or DIDN'T do (e.g. "flagged, not edited"), always diff that claim against the actual PR content —
+  a second party (here, the top-level orchestrator doing the commit on the architect's behalf) can
+  silently change the plan between "content written" and "PR pushed," and the ticket's prose is the
+  last place that gets updated.

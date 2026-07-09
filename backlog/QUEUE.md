@@ -1,6 +1,30 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-09 (session 21 — queue-hygiene fix + FOLLOW-470 dispatched to architect)
+## ▶️ START HERE — resume 2026-07-09 (session 21 close-out — PR #488 MERGED, FOLLOW-470 DONE, RETRO pending)
+
+**PR #488 MERGED** to `main` as squash commit `8275e23` (2026-07-09T21:28:52Z). Local `main` synced
+& clean. FOLLOW-470 flipped `DONE` (`completed_at: 2026-07-09`, `merged_pr: 488`,
+`merge_commit: 8275e23`) on branch `pm-orchestrator/FOLLOW-470-close` (agent-prefix, branch-first).
+This bookkeeping is a **fresh PR, not merged into #488** — do NOT merge it yet: the coordinator will
+spawn `retrospective-analyst` onto this SAME branch to append RETRO-NNN + any follow-up stubs before
+human review (bundling convention, matching PRs #486/#487).
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, `backlog/FOLLOW_UPS.md`,
+`promoted_to_queue: false`) — deferred §Snapshot.2/.3/.5 narrative refresh + §B.1 body Tier-prose
+rename, does not block FOLLOW-471. FOLLOW-458's `status: READY` label is still inconsistent with its
+own unmet `depends_on: [FOLLOW-449]` — flagged again, not yet fixed (a one-line correction is worth
+doing whenever this ticket is next touched). 3 standing `## OPEN` escalations (ESC-020, ESC-028,
+ESC-034) unchanged, non-blocking.
+
+**NEXT (after this branch is pushed):** coordinator spawns `retrospective-analyst` on
+`pm-orchestrator/FOLLOW-470-close`; once that lands, PM validates the bundled PR (RETRO content +
+this DONE-flip) and hands to human review. After THAT merges, pick the next ticket — candidates
+unchanged from the prior banner: FOLLOW-458 (blocked), FOLLOW-467/468/469/472/474 (P3, unblocked),
+FOLLOW-543 (P3, new).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-09 (session 21 — queue-hygiene fix + FOLLOW-470 dispatched to architect)
 
 **On entry:** `main` tip `a4a2224` (through #487). 0 open PRs (`gh pr list --state open` empty). 3
 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) re-confirmed unchanged — all
@@ -10106,11 +10130,14 @@ gate) closes the epic and must be last.
     # an exact fit for cross-repo doc/governance reconciliation (Master_Design SoT + README +
     # CLAUDE.md); "architect" (cross-cutting contracts / ADRs) is the closest specialist fit and
     # keeps PM out of doc-authoring, per PM's own guardrail scope. See delegation note in HANDOFFS.md.
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: architect
   started_at: '2026-07-09T00:00:00Z'
+  completed_at: '2026-07-09'
   branch: architect/FOLLOW-470-snapshot1-doc-refresh
   pr: 488
+  merged_pr: 488
+  merge_commit: 8275e23
   ci_status: >-
     green (55 pass / 2 fail; both failures are the SAME pre-existing "Rule I — wired-or-dead check"
     gate duplicated across 2 matrix legs, 181 violations — independently re-verified by
@@ -10179,6 +10206,12 @@ gate) closes the epic and must be last.
     - [x] README status corrected (not "Sprint 0"); CLAUDE.md Tier language flagged/removed per the
           no-Tiers ruling.
     - [x] FOLLOW-380 promoted into a QUEUE ticket; §Snapshot.6 rule-count corrected.
+
+    MERGED 2026-07-09: PR #488 squash-merged to `main` as commit `8275e23`. Ticket closed DONE.
+    retrospective-analyst to be spawned by the coordinator on branch `pm-orchestrator/FOLLOW-470-
+    close` (this same bookkeeping PR) per the repo's bundling convention (RETRO + DONE-flip in one
+    PR, matching PRs #486/#487) — NOT run by pm-orchestrator itself (no subagent-spawn capability in
+    this tool surface).
 - id: FOLLOW-380
   title: >-
     Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin)

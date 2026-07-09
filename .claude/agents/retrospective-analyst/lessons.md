@@ -2311,3 +2311,29 @@
     (0020)" when prod is unapplied). The durable fix is always a runbook/doc that splits code-axis
     from prod-axis; the ephemeral PR-body mitigation is where these gaps hide. Watch for a 2nd
     COUPLED-OPERATOR-LEGS sighting to promote past Rule AA.
+
+## 2026-07-09 · RETRO-168 (PR #488, FOLLOW-470 — truth-reconciliation of the ~5-week-stale SoT §Snapshot.1; docs-only; NO rule promoted)
+
+- **A finding I almost missed and why:** the load-bearing finding (DG-1) was NOT in any code and NOT
+  in the reconciled table — it was in the reconciliation doc's OWN Changelog v4.3, which durably
+  states CLAUDE.md was "flagged not edited" while the same PR edited it. On a docs-only ticket the
+  reflex is to spot-check the reconciled CLAIMS against HEAD (which I did — all 5 matched exactly)
+  and call it clean. The defect was one meta-level up: the changelog's self-description of what the
+  PR did contradicted the diff. Lesson: on a truth-reconciliation ticket, verify the changelog
+  against the diff, not just the reconciled facts against the code — the doc can be right about the
+  world and wrong about itself.
+- **An axis/chain I had to trace twice:** the freshness axis WITHIN the one document. First read:
+  "§Snapshot.1 refreshed ⇒ SoT accurate." Second read: the header still says 2026-05-24 and
+  §Snapshot.2/.3/.5 still cite `archetype-pipeline`/`adaptation-engine` apps that `ls apps/` proves
+  gone — so the doc is at MIXED freshness under one date, which is worse than uniform staleness
+  because a future session can't tell which axis to trust. A partial reconciliation is a distinct
+  hazard class from a stale one.
+- **A meta-pattern in how gaps recur across agents:** the SoT-drift the retro loop exists to prevent
+  recurred INSIDE the very ticket that fixes it — a plan-vs-executed divergence (architect planned
+  to flag; orchestrator edited) got caught in the TRANSIENT QUEUE note but leaked, permanent, into
+  the DURABLE changelog. Root cause was an agent-tooling-capability gap (architect has no Bash tool,
+  so the orchestrator became a silent second author). This is the same shape as the verify-not-trust
+  family (OP5 / RETRO-149/150/164) but one level deeper: the self-report doesn't just need
+  re-verifying at handoff — it can live on WRONG in the SoT forever unless someone reconciles the
+  deviation across the durable artifacts, not just the queue. Held all 3 candidates at count-1 (no
+  ≥2 bar); filed FOLLOW-544 (fix the changelog) + FOLLOW-545 (close the bashless-agent author-blur).

@@ -1,4 +1,28 @@
-# Status — 2026-07-09 (Sprint 22b OPEN — FOLLOW-470 validated, PR #488 READY_FOR_REVIEW; FOLLOW-473 queue-hygiene fix)
+# Status — 2026-07-09 (Sprint 22b OPEN — PR #488 MERGED, FOLLOW-470 DONE; RETRO-NNN pending on pm-orchestrator/FOLLOW-470-close)
+
+## SESSION 21 CLOSE-OUT (2026-07-09) — PR #488 MERGED (8275e23), FOLLOW-470 DONE, RETRO pending
+
+PR #488 (`architect/FOLLOW-470-snapshot1-doc-refresh`) confirmed MERGED via
+`gh pr view 488 --json state,mergeCommit,mergedAt` → `state: MERGED`, `mergeCommit: 8275e23`,
+`mergedAt: 2026-07-09T21:28:52Z`. Local `main` synced (`git log --oneline -1` → `8275e23`), clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-470-close`** (agent-prefix, branch-first):
+FOLLOW-470 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-09`,
+`merged_pr: 488`, `merge_commit: 8275e23`). Re-appended the FOLLOW-470 _validation_ lessons.md entry
+that was lost in a post-merge `git stash pop` conflict during the coordinator's `main` sync (the
+coordinator reset to clean merged HEAD rather than hand-resolving conflict markers in the prose file
+— correct per the guidance logged in the PRIOR lessons.md entry on this exact topic; the delegation
+entry survived, only the validation entry needed restoring).
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-470-close` to append RETRO-NNN +
+any follow-up stubs, bundling RETRO + DONE-flip into one PR (matches PRs #486/#487 convention). PM
+will validate that bundled PR once the coordinator confirms it's ready.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting the retrospective content to
+land on the same branch first.
+
+---
 
 ## SESSION 21 VALIDATION (2026-07-09) — PR #488 (FOLLOW-470) validated, READY_FOR_REVIEW
 

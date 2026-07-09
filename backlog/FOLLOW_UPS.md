@@ -14434,6 +14434,11 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 
 ## FOLLOW-544 — Fix the Changelog v4.3 self-contradiction: MASTER_DESIGN says CLAUDE.md Tier language was "flagged not edited" but PR #488 edited it
 
+- status: RESOLVED_INLINE (fixed on branch `pm-orchestrator/FOLLOW-470-close` / PR #489, same bundle
+  as RETRO-168 — the changelog v4.3 CLAUDE.md clause now describes the ACTUAL edit; the
+  `> Update 2026-07-09` §Snapshot block was checked and does not repeat the false claim; the §B.1
+  verdict row's "flagged, not renamed" wording is about the Master_Design section BODY, which is
+  genuinely unchanged, so it was correctly left. No queue promotion needed.)
 - source_retro: RETRO-168 (§4d DG-1)
 - source_ticket: FOLLOW-470
 - recommended_sprint: next docs/hardening sprint (cheap; sequence before FOLLOW-471 clean-re-audit)

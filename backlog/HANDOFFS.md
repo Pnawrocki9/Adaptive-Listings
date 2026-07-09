@@ -2658,3 +2658,167 @@ banner (orchestrator single writer for that section) — your ticket-status/FOLL
 inside the ticket bodies are fine and expected.
 
 ---
+
+## PM orchestrator (session 22) → sdk-engineer, FOLLOW-380
+
+**From:** pm-orchestrator (session 22) **To:** sdk-engineer **Date:** 2026-07-10 **Branch:**
+`sdk-engineer/FOLLOW-380-cross-listing-hardening` (agent-prefix required — branch-first, or push-CI
+won't run; see memory `project_follow105_branch_ci_trigger`). **Model: Opus** — this ticket is
+concurrency/interleaving + shared-mutable-state coherence reasoning (designing an in-flight guard
+for overlapping async `refreshDirectives()` calls with no existing AbortController, plus a subtle
+confidence-floor interaction with FOLLOW-343's DOM gate), which the mandatory model-fit rule
+classifies as "complex single-domain reasoning ... non-trivial design" — above the sdk-engineer
+Sonnet default. (Confirms the coordinator's own Opus lean.)
+
+**Read first (in this order, per CLAUDE.md/OPERATING_PRINCIPLES):**
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 (per-section verdict table, freshly reconciled 2026-07-09 by
+   FOLLOW-470/PR #488 — row **D** "Intent Engine" is the most relevant to this ticket's domain).
+2. `docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md` — the design this ticket
+   hardens. Read it fully before touching code; FOLLOW-380 must NOT contradict its model (SoT drifts
+   only to non-neutral, never to neutral; works with or without the quiz).
+3. `CONVENTIONS_PATCH.md` current rules — cite any that apply (Rule H wired-or-dead, Rule S
+   symmetric-siblings, Rule R rehydrate-boundary idempotency — this ticket sits adjacent to Rule R
+   but is a distinct axis, concurrency not rehydration, per RETRO-105's own note).
+4. `backlog/RETROSPECTIVES.md` **RETRO-105** in full (search `## RETRO-105`) — the source retro for
+   this ticket; §4a LG-1/LG-2/LG-3, §4b CB-1, §4c TG-1 are the exact findings this ticket closes.
+5. `backlog/FOLLOW_UPS.md` **FOLLOW-375**'s stub (search `## FOLLOW-375 —`) — confirms FOLLOW-375's
+   own test AC was left OPEN (see "cross_ref" section below — this matters for how you structure
+   tests).
+
+**Ticket:** FOLLOW-380 (`backlog/QUEUE.md`, Sprint 22b tail, P1, 4h estimate). Three bugs + one doc
+gap + tests, all in `packages/sdk/src/`:
+
+### Bug (a) — no in-flight guard on overlapping `refreshDirectives()`
+
+`packages/sdk/src/index.ts:640` `async function refreshDirectives()`. The SoT restore is at
+`:658-663` (reads `readResolvedArchetype`, re-pins `currentIntentState.archetype` if the live state
+has decayed to `neutral`); the persist-back-to-SoT is at `:685-687` (only when the post-fetch
+archetype is non-neutral). Multiple call sites fire `void refreshDirectives()` fire-and-forget with
+**no in-flight tracking**, most importantly the rapid-nav race site at `:1050` (inside the
+`listing.viewed` handler, fires whenever `viewedListingId` changes — i.e. on every SPA in-place
+navigation). Two overlapping invocations can interleave: the later call's SoT restore (`:658-663`)
+may read a `currentIntentState`/SoT value the earlier call is about to overwrite via its own persist
+(`:685-687`) or its own `currentIntentState = ...` reassignment (`:661`, `:677`).
+`currentIntentState` is a module-level mutable variable (declared with `let` near the top of the
+IIFE in `index.ts`) — there is no lock, mutex, or `AbortController` anywhere in this file today
+(`grep -n AbortController packages/sdk/src/index.ts` returns nothing).
+
+**Fix direction (do not invent an unrelated pattern):** add an in-flight guard — either (1) a
+module-level `AbortController` that the next `refreshDirectives()` call aborts/replaces before
+starting its own async work, with an early-return/abort-check after each `await` inside the function
+body, or (2) a simpler serialization primitive (e.g. a promise-chain / "latest call wins" guard
+keyed by a monotonic call-id, comparing `myCallId === latestCallId` after each `await` before
+committing state) if that's a smaller, more surgical change for this codebase's style. Either way:
+**the LAST navigation's result must always win** (a stale in-flight call's late-arriving state must
+never clobber a newer navigation's state) — write the rapid-nav test to assert this explicitly (fire
+two `listing.viewed` events back-to-back with different listing ids, assert the FINAL
+`currentIntentState`/DOM reflects only the second navigation, never a mix or the first's stale
+state).
+
+### Bug (b) — `originalHeadlineText` captured once globally, restored to all listings
+
+`packages/sdk/src/index.ts:571` declares `let originalHeadlineText: string | null = null;`; captured
+ONCE at `:926-931` (before the first `refreshDirectives()` call, reading
+`[data-estalara-slot="headline"]` from the live DOM); restored at `:1043-1049` inside the
+`listing.viewed` handler whenever the listing id changes, unconditionally writing the SAME
+`originalHeadlineText` string to every headline slot. Real listings have DIFFERENT titles — if the
+archetype fits listing-1 (adapted headline shown) then the buyer navigates to listing-2 which does
+NOT fit (neutral/no directive), the restore stamps **listing-1's original title** onto
+**listing-2's** headline slot, which is wrong (listing-2 has its own real title).
+
+**Fix direction:** capture original headline text PER-LISTING, not once globally. The exact
+mechanism is your call — options include (i) keying a `Map<listingId, string>` populated the first
+time each listing's headline is seen (before any adaptation touches it), or (ii) reading the
+framework's freshly-rendered title directly at restore time IF the SPA has already re-rendered it by
+the time `refreshDirectives()`'s teardown runs (verify this ordering empirically — the existing
+comment at `:1034-1041` explains the teardown-before-restore ordering was already carefully tuned to
+avoid the headline loop-guard observer treating the restore as a revert; do not break that
+ordering). Write the test to assert: listing-1 (fits, adapted) → navigate to listing-2 (a different
+real title, does NOT fit) → listing-2's headline slot shows listing-2's OWN original title, never
+listing-1's.
+
+### Bug (c) — SoT restore re-pins `archetype` but not `confidence`
+
+`packages/sdk/src/index.ts:661` —
+`currentIntentState = { ...currentIntentState, archetype: sot as Archetype }` — pins `archetype` to
+the SoT value but leaves `confidence` untouched, which is whatever the decayed-to-neutral state had
+(likely low, since decay is what triggered the neutral state in the first place). The DOM-adaptation
+gate at `:720-722` (`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` in `packages/sdk/src/core/adapt-floor.ts:34`,
+`DOM_ADAPT_MIN_SIGNAL_COUNT = 2` at `:44`) checks
+`resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR || currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT`
+— a restored archetype with neutral-era low confidence AND low signal_count can fall below both, so
+the restore re-pins the archetype but the adaptation may still be silently suppressed by the floor.
+
+**Fix direction:** when re-pinning `archetype` at `:661`, also re-pin `confidence` to a value that
+clears the floor (e.g. re-derive it the same way `applyQuizLeaf()` does — high confidence,
+`packages/sdk/src/core/intent.ts:1310` — or track/persist the confidence the SoT archetype was
+ORIGINALLY resolved at, alongside the archetype string, in the same sessionStorage write — your call
+which is more correct; note the persisted SoT today is JUST the archetype string, see
+`persistResolvedArchetype` (`packages/sdk/src/core/session.ts:470`) / `readResolvedArchetype`
+(`:483`) — extending the persisted shape to include confidence is in scope if that's the cleanest
+fix). Test: after a SoT restore fires, assert `applyDirectives` actually runs (adaptation is NOT
+suppressed by the floor) even when the state was decayed to low confidence/signal_count before the
+restore.
+
+### Doc gap — quiz vs quiz-disabled stickiness asymmetry
+
+Document (a docstring/comment near the SoT restore logic in `index.ts`, or in ADR-0014 itself if
+that's the more natural home — your call) that: for a QUIZ tenant, `intent.ts`'s hysteresis
+mechanism (`classifyFromProbabilities`, guarded call sites documented at `intent.ts:747-779`, gated
+in part on `state.quiz_answered`) provides an additional layer preventing `neutral` from overtaking
+mid-classify; for a QUIZ-DISABLED tenant, there is no quiz answer, so the archetype can freely decay
+to `neutral` and the ONLY protection is the `index.ts:658-663` restore-after-decay mechanism — i.e.
+quiz-disabled tenants get a weaker guarantee (decay-then-restore) vs quiz tenants
+(prevent-decay-in-the-first-place + restore). This is acceptable (per CEO's cross-listing SoT
+ruling, memory `project_cross_listing_sot_archetype` — quiz-disabled stays functional) but was
+previously undocumented; just make it explicit, no behavior change required for this bullet.
+
+### cross_ref — FOLLOW-375's OPEN test AC (read before writing any tests)
+
+**Important nuance:** FOLLOW-375 (PR #340, the original cross-listing fix) shipped WITHOUT its own
+dedicated test file — `backlog/FOLLOW_UPS.md`'s FOLLOW-375 stub lists 3 test items it left open: (a)
+`packages/sdk/src/core/observer.ts:501-520` (the `navMutObs` MutationObserver) emits
+`listing.viewed` on in-place `data-estalara-listing-id` attribute mutation (SPA re-render reusing
+the same DOM node); (b) `refreshDirectives` restores the SoT archetype on neutral-decay and updates
+it on non-neutral resolution (the `:658-663` / `:685-687` logic above); (c) `eraseIntentState`
+(`packages/sdk/src/core/session.ts:430`) clears `estalara_resolved_archetype_*`
+(`resolvedArchetypeStorageKey`) alongside the intent-state key. FOLLOW-380's own AC bullet 5 repeats
+this same list PLUS two more: (d) `intent.ts` quiz-stickiness (the hysteresis/`quiz_answered`
+interaction documented above) and (e) `packages/sdk/src/core/ adapt.ts:541-549` empty-value skip
+(`reason: 'empty_value'`, the defensive "never blank a slot" guard). **There is currently NO
+existing test file to duplicate for (a)/(b)/(c) — do NOT write two separate/overlapping test suites
+(one for "FOLLOW-375's deferred tests," a second for "FOLLOW-380's new hardening tests").** Write
+ONE consolidated new test file (e.g. `packages/sdk/src/__tests__/follow-380.test.ts`, following the
+existing `follow-NNN.test.ts` naming convention in that directory) that covers (a)–(e) above AND the
+new (a)/(b)/(c) hardening tests from this ticket's own bugs, in one coherent suite. Close out
+FOLLOW-375's stub items as part of this same PR (note it explicitly in the PR description —
+FOLLOW-375 stays `DONE` in QUEUE.md, this just retires its lingering FOLLOW_UPS.md test-debt note).
+
+**Standards:** branch-first (your literal first action:
+`git checkout -b sdk-engineer/FOLLOW-380-cross-listing-hardening main`); prettier every touched
+file, every time; Zod for any new schema surface (none expected here — this is behavioral/state
+logic, not a new wire contract, but flag it if you find you need one); `packages/*` coverage ≥80%;
+zero `any` without inline `// eslint-disable` + reason; `tsc --noEmit` + eslint clean; keep the full
+`packages/sdk` suite green (do not break any of the existing 184+ SDK unit tests referenced in
+FOLLOW-375's notes). Confirm the SDK bundle stays within budget (42KB gzip per ESC-028/FOLLOW-469 —
+this ticket is unlikely to add meaningful bytes, but check `pnpm build` output).
+
+**Do NOT:**
+
+- Touch `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md` — out of scope for this ticket.
+- Re-litigate ADR-0014's model (SoT drift direction, quiz-vs-behavioral precedence) — this ticket
+  hardens the existing design, it does not redesign it. If you find ADR-0014 itself needs to change,
+  stop and escalate (`backlog/ESCALATIONS.md`) rather than silently diverging.
+- Edit `backlog/QUEUE.md` (orchestrator single writer) — report your results in the PR description
+  instead.
+
+**Open a PR when done; do not merge.** Report: which in-flight-guard mechanism you chose for bug (a)
+and why; how you implemented per-listing headline capture for bug (b); how you re-derived/ persisted
+confidence for bug (c); confirmation the consolidated test file covers all 5 cross_ref items (a)-(e)
+plus the 3 new hardening tests; CI result (the standing pre-existing "Rule I — wired-or-dead check"
+baseline is non-blocking — confirm any NEW exported symbol you add, e.g. if you extend the persisted
+SoT shape, has a real producer AND consumer, not just a test importer); and any place ADR-0014's
+model felt like it needed to change (escalate, don't silently diverge).
+
+---

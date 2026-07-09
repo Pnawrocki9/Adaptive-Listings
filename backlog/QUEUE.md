@@ -1,6 +1,41 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-09 (session 21 close-out — PR #488 MERGED, FOLLOW-470 DONE, RETRO pending)
+## ▶️ START HERE — resume 2026-07-10 (session 22 — PR #489 MERGED, FOLLOW-380 dispatched to sdk-engineer)
+
+**PR #489 MERGED** to `main` as squash commit `a90a072` (2026-07-09T22:19:41Z) — FOLLOW-470 fully
+closed (DONE), RETRO-168 landed, FOLLOW-544 resolved inline. Local `main` synced & clean, verified
+via `gh pr view 489 --json state,mergeCommit,mergedAt`. 0 tickets IN_PROGRESS on entry (well under
+the 3-ticket cap).
+
+**Dispatched by human direction (relayed via coordinator): FOLLOW-380** (P1, `agent: sdk-engineer`,
+`depends_on: []`) — harden the FOLLOW-375 cross-listing SPA re-adaptation fix (RETRO-105 §4a
+LG-1/LG-2/LG-3, §4b CB-1, §4c TG-1): (a) no in-flight guard/AbortController on overlapping
+`refreshDirectives()` under rapid SPA nav; (b) `originalHeadlineText` captured once globally,
+mis-restored across listings with different real titles; (c) SoT restore re-pins `archetype` but not
+`confidence`, so the FOLLOW-343 DOM floor can still suppress the restored adaptation; plus the
+FOLLOW-375 open test-AC debt (no dedicated test file exists yet for the original cross-listing
+paths). QUEUE.md flipped `IN_PROGRESS`, `assigned_to: sdk-engineer`, branch
+`sdk-engineer/FOLLOW-380-cross-listing-hardening`. **Model: Opus** — concurrency/interleaving +
+shared-mutable-state coherence reasoning (in-flight guard design, confidence re-pin interaction),
+model-fit table "complex single-domain reasoning ... non-trivial design"; confirms the coordinator's
+own lean. Full delegation brief with exact file/line evidence posted to `backlog/HANDOFFS.md` ("PM
+orchestrator (session 22) → sdk-engineer, FOLLOW-380").
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename, does not block FOLLOW-471). FOLLOW-458's `status: READY` label is still
+inconsistent with its own unmet `depends_on: [FOLLOW-449]` — flagged again, still not fixed.
+FOLLOW-545 (process stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing
+`## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator launches the `sdk-engineer` subagent (Opus) on FOLLOW-380 per the HANDOFFS.md
+brief. On completion: PM runs full validation (step 5) incl. runtime-wiring grep for any new
+exported symbol (AbortController wiring, per-listing headline map) and confirms the consolidated
+test suite covers both FOLLOW-375's originally-deferred paths and FOLLOW-380's new hardening before
+READY_FOR_REVIEW.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-09 (session 21 close-out — PR #488 MERGED, FOLLOW-470 DONE, RETRO pending)
 
 **PR #488 MERGED** to `main` as squash commit `8275e23` (2026-07-09T21:28:52Z). Local `main` synced
 & clean. FOLLOW-470 flipped `DONE` (`completed_at: 2026-07-09`, `merged_pr: 488`,
@@ -10217,7 +10252,16 @@ gate) closes the epic and must be last.
     Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin)
     + unit tests
   agent: sdk-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-380-cross-listing-hardening
+  model:
+    Opus # concurrency/interleaving + shared-mutable-state coherence reasoning under async
+    # overlapping refreshDirectives() calls with no existing AbortController, plus a subtle
+    # confidence-floor interaction (FOLLOW-343) — model-fit table: "Opus — complex single-domain
+    # reasoning ... non-trivial design." Confirmed with the coordinator's lean; see delegation
+    # brief in backlog/HANDOFFS.md ("PM orchestrator (session 22) -> sdk-engineer, FOLLOW-380").
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -10236,6 +10280,21 @@ gate) closes the epic and must be last.
     RETRO-105 but never promoted (audit §6.4). NOT on the FOLLOW-471 clean-re-audit critical path
     (SDK robustness hardening, not a listed F-01…F-21 finding). cross_ref: extends FOLLOW-375's open
     test AC — do NOT duplicate.
+
+    DISPATCHED 2026-07-10 (pm-orchestrator, session 22), per human direction relayed via
+    coordinator: PR #489 (FOLLOW-470 close-out + RETRO-168) confirmed MERGED (`a90a072`), main
+    synced & clean, 0 tickets IN_PROGRESS on entry (well under the 3-ticket cap). Full delegation
+    brief posted to `backlog/HANDOFFS.md` ("PM orchestrator (session 22) → sdk-engineer,
+    FOLLOW-380") — covers all 3 AC bugs with exact file/line evidence
+    (`packages/sdk/src/index.ts` refreshDirectives L640-786, SoT restore L658-663, race site L1050,
+    originalHeadlineText capture L926-931 + restore L1043-1049; `packages/sdk/src/core/session.ts`
+    eraseIntentState/persistResolvedArchetype/SoT keys; `packages/sdk/src/core/adapt-floor.ts`
+    DOM_ADAPT_CONFIDENCE_FLOOR; `packages/sdk/src/core/intent.ts` classifyFromProbabilities
+    hysteresis + quiz_answered; `packages/sdk/src/core/adapt.ts:541-549` empty-value skip;
+    `packages/sdk/src/core/observer.ts:501-520` in-place listing-id mutation observer) and the
+    FOLLOW-375 cross_ref nuance (FOLLOW-375's own test AC was left OPEN — no prior test file exists
+    to duplicate; write ONE consolidated suite covering both FOLLOW-375's deferred paths AND
+    FOLLOW-380's new hardening, not two overlapping ones).
     AC:
     - [ ] In-flight guard / AbortController prevents overlapping refreshDirectives from interleaving
           on session state; a rapid-nav test asserts a single coherent final archetype.

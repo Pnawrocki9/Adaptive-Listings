@@ -1,32 +1,47 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-08 (session 18 cont'd — 3 tickets DONE + 3 retros; FOLLOW-535 dispatched)
+## ▶️ START HERE — session 18 PAUSED 2026-07-08 (4 tickets landed + 3 retros; resume with RETRO-167 + next ticket)
 
-**This session's completed loop (all merged to `main`):** FOLLOW-473 (auth) → FOLLOW-463 (CH audit
-trail) → FOLLOW-461 (event schema), each with its retrospective (RETRO-164/165/166). Retros produced
-stubs FOLLOW-528..540. Ticket status:
+**Session 18 is paused by the CEO for a break** — everything below is merged to `main` (tip after
+#484), 0 open PRs, 0 worktrees, tree clean. **To resume in a fresh session: (1) run RETRO-167 for
+FOLLOW-535, package it, then (2) pick the next ticket from the candidates listed under NEXT.**
 
-- **FOLLOW-473** DONE (#475) — RETRO-164 (#477).
-- **FOLLOW-463** `CODE_COMPLETE_OPERATOR_PENDING` (#479) — RETRO-165. Go-live blocked on the prod
-  ClickHouse grant `GRANT INSERT ON default.description_generations TO ingest_worker;`
-  (ESC-032/FOLLOW-424 narrowed it out on a "no writer" premise this PR invalidates; OPEN
-  escalation). Fail-loud-non-blocking, so nothing breaks — the audit table just stays empty in prod
-  until granted.
-- **FOLLOW-461** DONE (#481) — RETRO-166. F-04 closed at the queryable level; payload fidelity
-  verified clean; no operator dependency.
-- **FOLLOW-535** IN_PROGRESS (this turn) — add a 13-month TTL to `description_generations`
-  (RETRO-165 load-bearing finding: the FOLLOW-463 writer makes the TTL-less table grow unbounded).
-  data-engineer, Sonnet, branch `data-engineer/FOLLOW-535-description-generations-ttl`. **Lands
-  CODE_COMPLETE** — a CH admin applies the migration, ideally BUNDLED with the FOLLOW-463 grant
-  above so the TTL is set before the table's first prod write.
+**Completed loop this session** — FOLLOW-473 → FOLLOW-463 → FOLLOW-461 → FOLLOW-535, each recovered/
+dispatched, PM-validated (CI green bar the standing Rule I baseline), and merged. Retros produced
+stubs FOLLOW-528..540.
 
-**NEXT:** validate FOLLOW-535's PR when the worker reports; then RETRO-167 + next ticket. Standing
-READY/stub candidates: FOLLOW-470 (status-doc refresh, pm, READY), FOLLOW-532 (pin FOLLOW-473 call
-sites, fully-completes-on-merge), FOLLOW-531 (decision-api sibling auth, staging), FOLLOW-536
-(description_generations reader), FOLLOW-539/540 (P3). FOLLOW-458 BLOCKED on FOLLOW-449.
+- **FOLLOW-473** DONE (#475) — RETRO-164 (#477). Fail-closed two-step auth on GET /api/adapt +
+  /description. (Recovered from the interrupted session-17 worktree; adjudicated between two
+  divergent uncommitted attempts.)
+- **FOLLOW-463** `CODE_COMPLETE_OPERATOR_PENDING` (#479) — RETRO-165. Persists verified_facts_used
+  to the CH `description_generations` audit trail. ⚠️ Go-live blocked on the prod CH grant (see
+  Operator backlog).
+- **FOLLOW-461** DONE (#481) — RETRO-166. Registered adapt.description.\* in EventSchema; closed the
+  live F-04 ingest drop. Payload fidelity verified clean.
+- **FOLLOW-535** `CODE_COMPLETE_OPERATOR_PENDING` (#483, validate #484) — **RETRO-167 NOT YET RUN**
+  (do this first on resume). 13-month TTL on description_generations (migration 0020) + a golden-DDL
+  CI regression test. ⚠️ Prod-apply pending (see Operator backlog).
 
-**Operator/human backlog:** (1) the FOLLOW-463 CH grant [+ bundle FOLLOW-535's TTL migration once
-merged]; (2) 3 standing `## OPEN` escalations ESC-020/028/034 unchanged, non-blocking.
+**NEXT (on resume):** RETRO-167 for FOLLOW-535 first, then pick a ticket. Candidates
+(`depends_on: []`): **FOLLOW-532** (pin the two GET /api/adapt call sites vs drift — fully completes
+on merge, NO operator dependency; strong pick), **FOLLOW-470** (stale status-doc refresh:
+Master_Design §Snapshot.1 + README + CLAUDE.md + promote orphaned FOLLOW-380 — pm, READY),
+**FOLLOW-531** (decision-api sibling auth, staging-only), **FOLLOW-536** (description_generations
+reader/dashboard), **FOLLOW-539/540** (P3). FOLLOW-458 BLOCKED on FOLLOW-449. Retro stubs
+531/532/536/539/540 need PM promotion before dispatch.
+
+**⚠️ Operator/human backlog (carries across sessions):**
+
+1. **One ClickHouse Cloud admin session closes two go-lives at once** (do the grant + the TTL
+   together, in this order, BEFORE the table takes its first prod write):
+   - `GRANT INSERT ON default.description_generations TO ingest_worker;` (FOLLOW-463 — OPEN
+     escalation in ESCALATIONS.md; ESC-032/FOLLOW-424 had narrowed this grant out on a "no writer"
+     premise that FOLLOW-463 invalidates)
+   - apply migration `infra/clickhouse/migrations/0020_description_generations_ttl.sql` to prod CH
+     (FOLLOW-535 — CH migrations do NOT auto-apply; Cloud console only)
+   - then update `docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md` (the writer now
+     exists).
+2. 3 standing `## OPEN` escalations ESC-020/028/034 unchanged, non-blocking.
 
 ---
 
@@ -9393,8 +9408,10 @@ gate) closes the epic and must be last.
     description_generations has no TTL/retention policy and now grows unbounded (writer added by
     FOLLOW-463)
   agent: data-engineer
-  status: READY_FOR_REVIEW
+  status: CODE_COMPLETE_OPERATOR_PENDING # PR #483 merged (8931618); go-live blocked on the CH admin applying migration 0020 to prod (bundle with the FOLLOW-463 grant). RETRO-167 not yet run.
   assigned_to: data-engineer
+  completed_at: '2026-07-08T00:00:00Z'
+  merged_commit: 8931618
   started_at: '2026-07-08T00:00:00Z'
   branch: data-engineer/FOLLOW-535-description-generations-ttl
   pr: 483

@@ -10429,7 +10429,9 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
         empty-value skip).
 - **cross_ref:** extends FOLLOW-375's open test AC (do not duplicate).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (promoted 2026-07-09 by FOLLOW-470 into `backlog/QUEUE.md` Sprint 22b
+  as a real ticket block, `status: READY`, `agent: sdk-engineer`, `depends_on: []`; stub retained as
+  cross-reference per convention)
 
 ---
 

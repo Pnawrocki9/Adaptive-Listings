@@ -2574,3 +2574,87 @@ retention, migrations-smoke gate result, and any escalation. Do NOT edit `backlo
 (orchestrator single writer).
 
 ---
+
+## PM orchestrator (session 21) → architect, FOLLOW-470
+
+**From:** pm-orchestrator (session 21) **To:** architect **Date:** 2026-07-09 **Branch:**
+`architect/FOLLOW-470-snapshot1-doc-refresh` (agent-prefix required or push-CI won't run — see
+project memory `project_follow105_branch_ci_trigger`). **Model: Opus** — this is a whole-repo,
+cross-module verification/reconciliation task (re-derive ~25 Snapshot.1 row verdicts against actual
+current code, not a single-domain implementation), closer to an architecture audit than routine doc
+editing; per CLAUDE.md's mandatory model-fit rule this earns Opus even though the deliverable is
+prose, because the failure mode of getting it wrong (a stale/inaccurate SoT) is exactly what caused
+the 2026-05-20 six-hour-duplicated-work incident documented in CLAUDE.md's Document Versioning
+Policy.
+
+**Read first (in this order, per CLAUDE.md/OPERATING_PRINCIPLES):**
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 (`### §Snapshot.1 — Per-section verdict (collapsed)`, line
+   ~426) — the table you are correcting. Note the table currently shows things like "SDK IIFE 93.3
+   KB (over-budget)" which is itself stale (FOLLOW-469's 2026-07-01 audit measured 39.86KB against a
+   42KB budget) — a live example of the drift you're fixing.
+2. `docs/ops/OPERATING_PRINCIPLES.md` Rule 1 (Master_Design = SoT).
+3. `CONVENTIONS_PATCH.md` current rules (cite any that apply to your changes).
+4. `backlog/FOLLOW_UPS.md` the full `FOLLOW-380` entry (search `## FOLLOW-380 —`, ~line 10403) — the
+   orphaned P1 ticket you must promote into a real `backlog/QUEUE.md` entry as part of this ticket.
+5. The 2026-07-01 audit findings referenced across Sprint 22b tickets (FOLLOW-449 through FOLLOW-471
+   in `backlog/QUEUE.md`) — these are your primary source for "what does §6.4 mean by 5-weeks-stale
+   and 25 rules vs claimed 8" and for the current real per-section state (intent-engine real/Modal,
+   21/46 SDK event types produced, chat NLP code-complete-but-dead-in-prod [CEO Q2 shadow-only
+   decision], bandit loop, etc.). Do NOT re-run the audit — the Sprint 22b ticket bodies + their
+   `notes:`/`source:` fields already contain the verified current-state facts; your job is
+   reconciliation, not re-discovery, though spot-verify anything you cite with a grep before writing
+   it down (verify-not-guess, Operating Principle 5).
+
+**Ticket:** FOLLOW-470 (`backlog/QUEUE.md`, Sprint 22b, P2). Full AC is in the ticket block — three
+parts:
+
+1. **§Snapshot.1 re-date + per-section verdict reconciliation.** Header currently dated 2026-05-24.
+   Walk every row (A.1…, through whatever the table currently enumerates) and correct any verdict
+   that no longer matches shipped code — grep the actual symbol/file for each row before changing
+   its verdict (do not eyeball). Where a row is genuinely unchanged, leave it. Where
+   CONVENTIONS_PATCH rule-count is cited as "8 rules A–H" vs the actual current count, correct it
+   (count the actual rules in `CONVENTIONS_PATCH.md` — expect ~25, per the ticket source, but verify
+   the true count yourself rather than trusting that number).
+2. **README.md + CLAUDE.md correction.** README currently says "Sprint 0" — fix to reflect actual
+   current sprint state (Sprint 22b, in progress, per `backlog/QUEUE.md`). CLAUDE.md still describes
+   Tiers 1/2/3 as if live — the CEO ruling (memory `project_no_tiers_single_model`, 2026-06-05,
+   MASTER_DESIGN §E.7) retired Tiers entirely; find every Tier 1/Tier 2/Tier 3 reference in
+   `CLAUDE.md` and either remove it or flag it explicitly as historical/retired language (do not
+   silently rewrite CLAUDE.md's `## Three integration tiers` framing without flagging the
+   discrepancy — CLAUDE.md is also read as ground truth by every future session, so get this one
+   right; if genuinely ambiguous whether a Tier reference is describing history vs. current
+   architecture, note it rather than guessing).
+3. **Promote FOLLOW-380 into QUEUE.md.** Copy/adapt the full `FOLLOW-380` stub from
+   `backlog/FOLLOW_UPS.md` into a real `backlog/QUEUE.md` ticket block (`status: READY`,
+   `depends_on: []`, `recommended_agent: sdk-engineer` per the stub — keep as
+   `agent: sdk-engineer`), placed in whichever sprint/section is the current convention for
+   freshly-promoted P1 follow-ups (Sprint 22b tail, matching how FOLLOW-467/468/469/472/474 were
+   promoted — same pattern). Mark `promoted_to_queue: true` on the FOLLOW_UPS.md stub (do not delete
+   the stub — leave it as a cross-reference per existing convention).
+
+**Do NOT:**
+
+- Touch any `.ts`/`.py`/`.sql` file — this ticket is docs-only.
+- Silently rename any Master_Design section (§Y.2 propagation rule — if a rename is genuinely
+  warranted, flag it in the PR description instead of doing it unilaterally).
+- Re-run the 2026-07-01 audit yourself (that's FOLLOW-471's job, later, after the whole epic is
+  done) — you are reconciling docs against ALREADY-VERIFIED Sprint 22b ticket facts, not
+  re-verifying prod state from scratch.
+- Edit `backlog/QUEUE.md`'s `## ▶️ START HERE` banner (orchestrator-owned) — you may add/edit the
+  FOLLOW-380 ticket block and FOLLOW-470's own `notes:`/`status:` progress, but leave the top banner
+  to the orchestrator.
+
+**Bump Master Design version** per your own findings (this is a real content change, not a
+mechanical one) — add a `Changelog v4.3` line following the existing changelog convention seen at
+the top of the file, dated 2026-07-09, summarizing what you corrected. Do not invent new decisions —
+this is a truth-reconciliation pass, not a ratification of anything new.
+
+**Open a PR when done; do not merge.** Report: the exact §Snapshot.1 rows you changed (before/after
+verdict) with the grep/file evidence for each, the README/CLAUDE.md Tier-language findings + your
+resolution, confirmation FOLLOW-380 is now a real QUEUE.md ticket block, and any place you found
+something genuinely ambiguous and left a note instead of guessing. Do NOT edit `backlog/QUEUE.md`'s
+banner (orchestrator single writer for that section) — your ticket-status/FOLLOW-380 promotion edits
+inside the ticket bodies are fine and expected.
+
+---

@@ -8,7 +8,12 @@ This file is loaded automatically into every Claude Code session in this repo. R
 website serve listings adapted in real time to each anonymous buyer based on chat, behavior,
 questions, and cross-listing journey.
 
-Three integration tiers:
+> **Historical — Tiers retired 2026-06-05 (CEO ruling, MASTER_DESIGN §E.7).** Adaptive Listings now
+> ships a single experience for all tenants; there are no Tier 1/2/3 product boundaries. The three
+> tiers below are kept only to explain legacy naming still present in older code/comments. Never
+> write "Tier 1/2/3" in new code. See memory `project_no_tiers_single_model`.
+
+Three (retired) integration tiers:
 
 - **Tier 1 Observer** — read-only sidebar widget, no DOM mutation
 - **Tier 2 Augment** — declarative DOM slots, light mutation (headline, photo order, features)
@@ -30,8 +35,8 @@ Repository scale (current target):
 - 7 apps (apps/ingest, apps/control-plane, apps/decision-api, plus 4 Modal Python apps)
 - 10 packages (packages/sdk through packages/platform-templates)
 
-Three integration tiers (Observer / Augment / Native), four regions (EU/US/UK/UAE), 12-week MVP
-timeline.
+Four regions (EU/US/UK/UAE), 12-week MVP timeline. (The former three integration tiers — Observer /
+Augment / Native — were retired 2026-06-05; see the note above and §E.7.)
 
 Read these in order before doing anything:
 
@@ -253,7 +258,7 @@ Examples:
 - All ingest events validated with Zod schemas
 - All Postgres tables have RLS policies (or documented exception)
 - p95 latency budget: <100ms for Decision API, <50ms for ingest ACK
-- SDK bundle: <40KB gzip for Tier 1+2 combined
+- SDK bundle: <42KB gzip (raised from 40KB per ESC-028; measured 39.86KB at 2026-07-01 audit)
 - Zero `any` in TypeScript without inline `// eslint-disable` + reason
 - Zero secrets in code; use `.env.example` + Doppler in CI
 

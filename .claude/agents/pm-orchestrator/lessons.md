@@ -1924,3 +1924,21 @@ independent occurrence, even if it references the same pattern by name.
   conflicts, prefer `git reset --hard HEAD` + re-editing the fresh files over manually resolving
   conflict markers in prose/YAML backlog files, since a hand-resolved conflict marker is a much
   easier way to silently corrupt QUEUE.md than a clean re-edit.
+
+- **Date / ticket:** 2026-07-09 — FOLLOW-470 (delegation) / FOLLOW-473 (queue-hygiene fix)
+- **Delegation row used:** none exactly fits ("a contract between two modules, a new dependency, an
+  ADR" — architect, closest fit for cross-repo doc/SoT reconciliation; the ticket's own
+  `agent: pm-orchestrator` field was overridden since PM's operating loop is delegate-and-validate,
+  not author-the-SoT-itself).
+- **What validation caught (or missed):** Before picking a new ticket, a routine `depends_on` sanity
+  pass over Sprint 22b caught that FOLLOW-473 was DONE in every load-bearing sense (PR #475 merged,
+  RETRO-164 already filed with follow-up stubs) but QUEUE.md still showed `READY_FOR_REVIEW` with no
+  `completed_at` — a stale status left over from session 18's close. Separately caught that
+  FOLLOW-458 carries a `status: READY` label while its own `depends_on: [FOLLOW-449]` is still only
+  CODE_COMPLETE_OPERATOR_PENDING — i.e. it LOOKS pickable at a glance but isn't; flagged, not fixed
+  this session (out of scope for a pure bookkeeping-plus-one-dispatch turn).
+- **A delegation/validation rule I'd add:** Before "pick the next ticket," grep every
+  `status: READY` ticket's OWN `depends_on` list against the actual status of those dependencies — a
+  ticket's `status:` field can silently drift out of sync with `depends_on` reality (as FOLLOW-458
+  shows), and a merged-PR ticket's `status:` can silently lag its true DONE state (as FOLLOW-473
+  shows) when a session ends mid-flip. Neither is caught by reading the top banner alone.

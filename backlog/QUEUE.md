@@ -9393,10 +9393,24 @@ gate) closes the epic and must be last.
     description_generations has no TTL/retention policy and now grows unbounded (writer added by
     FOLLOW-463)
   agent: data-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: data-engineer
   started_at: '2026-07-08T00:00:00Z'
   branch: data-engineer/FOLLOW-535-description-generations-ttl
+  pr: 483
+  ci_status: green # gitleaks fixed (squash); CH migrations smoke + golden-DDL test green; only standing Rule I baseline red (PR adds no TS → Rule I unaffected)
+  go_live_blocked_on: operator applies migration 0020 to prod CH (bundle with the FOLLOW-463 grant)
+  validated: |
+    Session 18 (2026-07-08) — data-engineer PR #483. Migration 0020: MODIFY TTL
+    toDateTime(created_at) + INTERVAL 13 MONTH (mirrors events 0001:46; 13mo chosen for an
+    anti-hallucination audit trail vs intent_events 90d). Verified live against a local CH container;
+    idempotent. Bonus: a golden-DDL regression test (ttl-golden-test.sh) wired as a step in the
+    existing CH CI job. Independently verified: CH-migrations-smoke + journal-monotonicity green;
+    gitleaks now green (earlier fail was a cloudflare-api-token false-positive on the 43-char 0007
+    migration-filename reference — resolved by squashing the fix into the original commit, since
+    gitleaks scans each historical patch); Rule I unaffected (PR adds no TS). Human merge only.
+    OPERATOR: lands CODE_COMPLETE — CH migrations don't auto-apply to prod. A CH admin applies 0020
+    BUNDLED with the pending FOLLOW-463 GRANT so the TTL is set before the table's first prod write.
   priority: P2
   estimated_hours: 2
   depends_on: []

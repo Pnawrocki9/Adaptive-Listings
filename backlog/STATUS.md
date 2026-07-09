@@ -1,4 +1,78 @@
-# Status — 2026-07-09 (Sprint 22b OPEN — FOLLOW-535 + FOLLOW-463 flipped DONE, bookkeeping-only session)
+# Status — 2026-07-09 (Sprint 22b OPEN — FOLLOW-470 validated, PR #488 READY_FOR_REVIEW; FOLLOW-473 queue-hygiene fix)
+
+## SESSION 21 VALIDATION (2026-07-09) — PR #488 (FOLLOW-470) validated, READY_FOR_REVIEW
+
+**Independently re-verified (not taken on the worker's word):**
+`gh pr view 488 --json statusCheckRollup` → non-success count = 2, both "Rule I — wired-or-dead
+check" (matrix- duplicated same check). Pulled `--log-failed`: 181 violations, all pre-existing
+symbols in `apps/control-plane/src/lib/*` and `src/app/*` — confirmed pre-existing (not introduced
+by this diff) both by count (181, matches the standing baseline cited across PR #486/session-20
+validation) and by content (PR #488's file list, independently pulled via `gh pr view --json files`,
+is 100% docs: `.claude/agents/pm-orchestrator/lessons.md`, `CLAUDE.md`, `README.md`,
+`backlog/FOLLOW_UPS.md`, `backlog/HANDOFFS.md`, `backlog/QUEUE.md`, `backlog/STATUS.md`,
+`docs/MASTER_DESIGN.md` — zero `.ts`/`.py`/`.sql`). Every other real gate (Format, Typecheck, Lint,
+all Node/Python test suites, Build, Build (control-plane), Vercel, Rule H, Rule J, Redis shadow
+round-trip, ClickHouse migrations smoke, Cross-language event contract, Gitleaks, etc.) green.
+
+**AC spot-checks (independent, not self-report):**
+
+- §Snapshot.1 rows: read the actual diff hunk for docs/MASTER_DESIGN.md; confirmed 9 rows corrected
+  (A.1, B.1, B.2, C, D, E.1–E.3, E.4, E.7, H) each with grep-citable file/symbol evidence inline.
+- Rule count 8→27: independently re-derived via
+  `grep -oE "Rule [A-Z]{1,2}" CONVENTIONS_PATCH.md | sort -u` in CONVENTIONS_PATCH.md → 26 lettered
+  rules A–Z + Rule AA = **27**. Matches the PR's claim exactly.
+- FOLLOW-380 promotion: confirmed `id: FOLLOW-380` now exists as a real ticket block in
+  `backlog/QUEUE.md` (status READY, agent sdk-engineer, depends_on []), AND its
+  `backlog/FOLLOW_UPS.md` stub confirmed flipped `promoted_to_queue: true` (was `false`).
+- README: confirmed "Sprint 0"→"Sprint 22b" correction in the diff.
+- CLAUDE.md: confirmed Tier 1/2/3 language actually edited (historical callout + heading + budget
+  line corrected <40KB→<42KB) — note this diverges from the architect's stated PLAN (flag-only, not
+  edit); the top-level orchestrator executed the edit directly on the architect's behalf since the
+  architect had no shell tool. Recorded as a correction on the FOLLOW-470 ticket block rather than
+  silently absorbed, per the coordinator's explicit ask.
+
+**Deferred scope filed as follow-up, not silently dropped:** FOLLOW-470 explicitly left
+§Snapshot.2/.3/.5 narrative refresh and §B.1's section-body Tier-prose rename out of scope (flagged
+inline in the PR). Filed **FOLLOW-543** (P3, architect, `backlog/FOLLOW_UPS.md`,
+`promoted_to_queue: false`) — does not block FOLLOW-471 (the epic gate only cites §Snapshot.1).
+
+**Result:** FOLLOW-470 flipped `IN_PROGRESS` → `READY_FOR_REVIEW` in `backlog/QUEUE.md`, `pr: 488`
+recorded with the full CI evidence trail inline. CI-check counter for FOLLOW-470: 1/5. Fix-iteration
+counter: 0/3. Not merged — human review only.
+
+---
+
+## SESSION 21 (2026-07-09) — queue-hygiene fix (FOLLOW-473 DONE flip); FOLLOW-470 delegated to architect (Opus)
+
+**On entry:** `main` tip `a4a2224` (#487). 0 open PRs. 3 standing `## OPEN` escalations (ESC-020,
+ESC-028, ESC-034) re-confirmed non-blocking, unchanged.
+
+**Queue-hygiene fix:** FOLLOW-473 was stuck at `status: READY_FOR_REVIEW` despite PR #475 being
+confirmed MERGED 2026-07-08T19:03:53Z (`511fbbe`) and RETRO-164 already filed (commit `c5be497`).
+Corrected to `DONE`, `completed_at` set. No re-retro needed.
+
+**Delegated:** FOLLOW-470 (P2, Master_Design §Snapshot.1 + README + CLAUDE.md staleness refresh +
+promote orphaned FOLLOW-380) — reassigned from its own `agent: pm-orchestrator` field to
+**architect** (closest decision-table fit for cross-repo doc/SoT reconciliation; PM does not author
+the canonical architecture doc itself). **Model: Opus** — whole-repo verification/reconciliation
+task, not single-domain implementation. Full brief in `backlog/HANDOFFS.md` ("PM orchestrator
+(session 21) → architect, FOLLOW-470"). QUEUE.md flipped `IN_PROGRESS`, branch
+`architect/FOLLOW-470-snapshot1-doc-refresh`.
+
+**Why this ticket over other READY candidates:** FOLLOW-458 (READY-labeled but
+`depends_on: [FOLLOW-449]` which is only CODE_COMPLETE_OPERATOR_PENDING, not DONE — effectively
+blocked despite its own stale label, flagged for a follow-on QUEUE.md correction) was skipped;
+FOLLOW- 467/468/469/472/474 are all P3. FOLLOW-470 is the highest-priority (P2) truly-unblocked
+candidate and is itself in FOLLOW-471's (the Sprint-22b epic-closing gate) `depends_on` list.
+
+**1 ticket IN_PROGRESS** (FOLLOW-470), 0 PRs opened this turn (worker not yet launched — that
+happens in a separate subagent-invocation turn; this session's tool surface is bookkeeping-only).
+CI-check counter: 0/5. Fix-iterations: 0/3.
+
+**NEXT:** launch `architect` subagent on FOLLOW-470 per the HANDOFFS.md brief, then run full PM
+validation (step 5; docs-only diff so 5c/5d are N/A, but AC verification + CI still apply).
+
+---
 
 ## SESSION 20 (2026-07-09) — validated PR #486, flipped FOLLOW-535/FOLLOW-463 DONE, no new dispatch
 
@@ -1080,7 +1154,7 @@ FOLLOW-392 (devops+ml, P1, promoted).
 | FOLLOW-452     | 0/5            | 0/3                 | DONE — PR #418 merged 2026-07-02T09:17:04Z (commit c0d9b39). RETRO-147 DONE.                                                                                   |
 | FOLLOW-453     | 0/5            | 0/3                 | DONE — PR #419 merged 2026-07-02T09:17:07Z (commit 807869d). RETRO-148 DONE.                                                                                   |
 | FOLLOW-472     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, demo-JWT mismatch check).                                                                            |
-| FOLLOW-473     | 0/5            | 0/3                 | READY — filed + promoted 2026-07-02 (FOLLOW-451 residual, GET auth parity).                                                                                    |
+| FOLLOW-473     | 1/5            | 0/3                 | DONE — PR #475 merged 2026-07-08T19:03:53Z (511fbbe). RETRO-164 DONE. (QUEUE.md status flip corrected 2026-07-09, session 21 — was stuck at READY_FOR_REVIEW.) |
 | FOLLOW-454     | 0/5            | 0/3                 | IN_PROGRESS — delegated to backend-engineer 2026-07-02 (session 7), isolated worktree.                                                                         |
 | FOLLOW-455     | 0/5            | 0/3                 | IN_PROGRESS — delegated to compliance-engineer 2026-07-02 (session 7), isolated worktree.                                                                      |
 

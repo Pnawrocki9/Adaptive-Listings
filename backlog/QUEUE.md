@@ -1,6 +1,75 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-09 (session 20 — PR #486 validated; FOLLOW-535 + FOLLOW-463 flipped DONE)
+## ▶️ START HERE — resume 2026-07-09 (session 21 — queue-hygiene fix + FOLLOW-470 dispatched to architect)
+
+**On entry:** `main` tip `a4a2224` (through #487). 0 open PRs (`gh pr list --state open` empty). 3
+standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) re-confirmed unchanged — all
+operator-action-pending per established multi-session precedent, none an unresolved
+architectural/pricing/priority decision, non-blocking for dispatch.
+
+**Queue-hygiene fix this session:** FOLLOW-473 was stuck at `status: READY_FOR_REVIEW` even though
+PR #475 was confirmed MERGED 2026-07-08T19:03:53Z (`511fbbe`) and its retrospective (RETRO-164,
+commit `c5be497`, stubs FOLLOW-531/532/533/534) had already run — the DONE flip was missed at
+session-18 close. Corrected to `status: DONE`, `completed_at` set. No new retro needed (already
+filed).
+
+**Ticket picked:** **FOLLOW-470** (P2, `depends_on: []`, source: 2026-07-01 audit §6.4 — Master
+Design §Snapshot.1 is ~5 weeks stale, README says "Sprint 0", CLAUDE.md still describes the retired
+Tiers 1/2/3 model, and FOLLOW-380 [P1] sits orphaned in FOLLOW_UPS.md never promoted to QUEUE — an
+Operating-Principle-1 (Snapshot.1 = SoT) violation). Picked over the other READY Sprint 22b
+candidates (FOLLOW-458 blocked — `depends_on: [FOLLOW-449]` which is still
+CODE_COMPLETE_OPERATOR_PENDING, not DONE, despite its own `status: READY` label being stale too —
+flag for next session; FOLLOW-467/468/469/472/474 are all P3) because: (a) it's the highest priority
+(P2) unblocked, worker-delegable ticket in the queue; (b) it directly unblocks FOLLOW-471, the
+Sprint 22b epic-closing acceptance gate, which lists FOLLOW-470 in its `depends_on`; (c) it's
+foundational — an inaccurate SoT risks exactly the kind of stale-doc-driven duplicated-work incident
+CLAUDE.md's Document Versioning Policy was written to prevent.
+
+**Delegation:** ticket's own `agent:` field says `pm-orchestrator`, but no PM-authored-doc flow
+exists in this orchestrator's operating instructions (delegate-and-validate only; guardrail: PM must
+not write code, and by extension should not be the sole author of the canonical architecture/status
+document either). Reassigned to **architect** — closest decision-table fit for cross-repo
+contract/SoT reconciliation spanning docs/MASTER_DESIGN.md, README.md, and CLAUDE.md. **Model:
+Opus** (this requires broad, ambiguous, cross-module verification — grep-confirming ~25 Snapshot.1
+rows against current implementation state across every app/package — closer to an architecture audit
+than routine implementation; model-fit table: "Opus — complex single-domain reasoning... non-trivial
+design", escalated because the task spans the WHOLE repo, not one domain). Full delegation brief
+posted to `backlog/HANDOFFS.md` ("PM orchestrator (session 21) → architect, FOLLOW-470"). QUEUE.md
+FOLLOW-470 flipped to `IN_PROGRESS`, `assigned_to: architect`, branch
+`architect/FOLLOW-470-snapshot1-doc-refresh`.
+
+**UPDATE — FOLLOW-470 validated, READY_FOR_REVIEW (same session).** The architect had no shell tool;
+the top-level orchestrator executed branch/prettier/commit/push/PR on its behalf, and also applied
+the AC's CLAUDE.md Tier-retirement edit directly (the architect's own plan had been to flag, not
+edit, citing a config-file change-authority boundary — the orchestrator's executed diff went
+further; recorded as a correction inline on the FOLLOW-470 ticket block, not silently absorbed).
+**PR #488** (`architect/FOLLOW-470-snapshot1-doc-refresh`) opened, not merged.
+`gh pr view 488 --json statusCheckRollup` independently re-run by pm-orchestrator (not taken on the
+worker's word): non-success count = **2**, both the SAME "Rule I — wired-or-dead check" (matrix-
+duplicated), 181 violations confirmed via `--log-failed` to be pre-existing
+`apps/control-plane/ src/lib/*` + `src/app/*` symbols, none touching this diff; PR file list
+independently confirmed 100% docs (zero `.ts`/`.py`/`.sql`) via `gh pr view --json files`. Every
+other real gate green. Concur: pre-existing non-blocking baseline, consistent with the standing
+`project_ci_gate_landscape` precedent. AC spot-checked against the diff (9 §Snapshot.1 rows, README,
+CLAUDE.md, FOLLOW-380 promotion, rule-count 8→27 independently re-derived and confirmed exact).
+FOLLOW-470 flipped `READY_FOR_REVIEW`, `pr: 488`. Out-of-scope work the architect deliberately
+deferred (§Snapshot.2/.3/.5 narrative refresh + §B.1 body Tier-prose rename — flagged inline, not
+silently skipped) filed as **FOLLOW-543** (P3, architect, `backlog/FOLLOW_UPS.md`, not yet promoted;
+does not block FOLLOW-471). Full evidence trail is on the FOLLOW-470 ticket block itself (`notes:`).
+
+**1 ticket IN_PROGRESS→READY_FOR_REVIEW this session** (FOLLOW-470), well under the 3-ticket cap. 1
+PR open (#488, not merged — human merge only). CI-check counter: 1/5 (first check green bar the
+standing Rule I baseline). Fix-iterations: 0/3.
+
+**NEXT:** human review + merge of PR #488. After merge: mark FOLLOW-470 `DONE` + `completed_at`,
+spawn `retrospective-analyst` (per the per-ticket retro loop), then pick the next ticket. Also worth
+a follow-on note (not filed as its own ticket yet): FOLLOW-458's `status: READY` label is
+inconsistent with its own unmet `depends_on: [FOLLOW-449]` — worth a one-line QUEUE.md correction
+(to `BLOCKED` or a status note) next session so it stops looking pickable at a glance.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-09 (session 20 — PR #486 validated; FOLLOW-535 + FOLLOW-463 flipped DONE)
 
 **This session (bookkeeping-only, no new dispatch):**
 
@@ -8952,9 +9021,10 @@ gate) closes the epic and must be last.
     GET /api/adapt auth is presence-only + spoofable x-tenant-id fallback, now weaker than the
     hardened POST path
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE # corrected 2026-07-09 (pm-orchestrator, session 20) — PR #475 confirmed MERGED 2026-07-08T19:03:53Z (511fbbe) via `gh pr view`; RETRO-164 already filed (commit c5be497, stubs FOLLOW-531/532/533/534); this flip was missed at session 18 close.
   assigned_to: backend-engineer
   started_at: '2026-07-08T00:00:00Z'
+  completed_at: '2026-07-08T19:03:53Z'
   branch: backend-engineer/FOLLOW-473-adapt-get-auth-hardening
   pr: 475
   ci_status: green # session 18: all real gates pass; only standing pre-existing Rule I baseline red (not this change — new symbols absent from --log-failed)
@@ -10031,8 +10101,27 @@ gate) closes the epic and must be last.
   title: >-
     Refresh stale status docs: Master_Design §Snapshot.1 + README + CLAUDE.md; promote orphaned
     FOLLOW-380 (Doc/governance)
-  agent: pm-orchestrator
-  status: READY
+  agent:
+    architect # reassigned 2026-07-09 (pm-orchestrator, session 20): no decision-table row is
+    # an exact fit for cross-repo doc/governance reconciliation (Master_Design SoT + README +
+    # CLAUDE.md); "architect" (cross-cutting contracts / ADRs) is the closest specialist fit and
+    # keeps PM out of doc-authoring, per PM's own guardrail scope. See delegation note in HANDOFFS.md.
+  status: READY_FOR_REVIEW
+  assigned_to: architect
+  started_at: '2026-07-09T00:00:00Z'
+  branch: architect/FOLLOW-470-snapshot1-doc-refresh
+  pr: 488
+  ci_status: >-
+    green (55 pass / 2 fail; both failures are the SAME pre-existing "Rule I — wired-or-dead check"
+    gate duplicated across 2 matrix legs, 181 violations — independently re-verified by
+    pm-orchestrator via `gh pr view 488 --json statusCheckRollup` [non-success count = 2, both Rule
+    I] and `--log-failed` [181 WARN lines, all in apps/control-plane/src/lib/*, apps/control-plane/
+    src/app/*, none touching this diff]; PR file list independently confirmed 100% docs
+    [.claude/agents/pm-orchestrator/lessons.md, CLAUDE.md, README.md, backlog/FOLLOW_UPS.md,
+    backlog/HANDOFFS.md, backlog/QUEUE.md, backlog/STATUS.md, docs/MASTER_DESIGN.md — zero .ts/.py/
+    .sql] via `gh pr view --json files`. Every other real gate (Format, Typecheck, Lint, all Node/
+    Python test suites, Build, Build (control-plane), Vercel, Rule H, Rule J, and the rest) is
+    green.
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -10043,12 +10132,88 @@ gate) closes the epic and must be last.
     but never promoted to QUEUE. Violates Operating Principle 1 (Snapshot.1 = SoT).
   spec: docs/ops/OPERATING_PRINCIPLES.md Rule 1; audit report §6.4
   notes: |
+    PROGRESS 2026-07-09 (architect): doc edits complete on the working tree. §Snapshot.1 header
+    re-dated + Changelog v4.3 added (Master_Design 4.2→4.3); 9 verdict rows corrected (A.1, B.1, B.2,
+    C, D, E.1–E.3, E.4, E.7, H) each grep-verified against HEAD; §Snapshot.6 rule-count fixed —
+    ACTUAL count is 27 (not the "25" estimated in this ticket's source line; verified by
+    `grep '^## Rule ' CONVENTIONS_PATCH.md`). README "Sprint 0"→Sprint 22b. FOLLOW-380 promoted (block
+    added above; stub marked promoted_to_queue:true).
+
+    CORRECTION 2026-07-09 (pm-orchestrator, session 21 validation): the architect's original plan
+    was to FLAG (not edit) CLAUDE.md's Tier 1/2/3 language, citing a config-file change-authority
+    boundary. In practice the top-level orchestrator (who executed the branch/commit/push on the
+    architect's behalf, since the architect subagent had no shell tool) applied the AC's
+    Tier-retirement clause directly to CLAUDE.md: a "Historical — Tiers retired 2026-06-05" callout
+    was added above the tier list (§8-15), the "Three integration tiers" heading became "Three
+    (retired) integration tiers", the repo-scale bullet's tier reference was corrected, and the SDK
+    budget line was corrected from stale "<40KB gzip for Tier 1+2 combined" to "<42KB gzip (raised
+    from 40KB per ESC-028; measured 39.86KB at 2026-07-01 audit)" — independently confirmed via
+    `gh pr diff 488` (CLAUDE.md hunk). This is a factual, low-risk correction (removing/flagging
+    retired terminology per an already-ratified CEO decision, not a new architectural call), so it
+    stands; recorded here so the discrepancy between the architect's stated plan and the executed
+    diff is not silently lost.
+
+    OUT-OF-SCOPE, follow-up filed: §Snapshot.2/.3/.5 narrative snapshots were NOT re-verified (still
+    cite pre-2026-07-01 state, e.g. §Snapshot.2's stale `archetype-pipeline`/`adaptation-engine`
+    Modal-app references) and §B.1's section BODY still carries the un-retired Tier 1/2/3 prose
+    (only the §Snapshot.1 TABLE row for B.1 was annotated, not the body) — both flagged inline in
+    the PR rather than silently skipped. Tracked as **FOLLOW-543** (P3, architect,
+    `backlog/FOLLOW_UPS.md`, `promoted_to_queue: false`) for a future doc-hardening sprint; neither
+    gap blocks FOLLOW-471 (the epic-closing gate only cites §Snapshot.1, not §Snapshot.2/.3/.5).
+
+    PM-validated 2026-07-09 (session 21): CI non-success count = 2, both the pre-existing Rule I
+    baseline (independently re-verified, not taken on the worker's word — see `ci_status` above).
+    Step 5c (runtime-wiring grep) N/A — zero code files in diff. Step 5d (co-assignment integration
+    check) N/A — single-agent ticket (architect content + orchestrator mechanics, not two workers on
+    a shared contract). Step 5e (AC): all 3 AC bullets independently spot-checked against the diff —
+    (1) 9 §Snapshot.1 rows corrected with grep-citable evidence in each row's "reason" cell; (2)
+    README "Sprint 0"→"Sprint 22b" confirmed, CLAUDE.md Tier language confirmed edited (see
+    correction above); (3) FOLLOW-380 confirmed as a real QUEUE.md ticket block (id: FOLLOW-380,
+    below) AND its FOLLOW_UPS.md stub confirmed flipped `promoted_to_queue: true`; rule-count 8→27
+    independently re-derived via `grep -oE "Rule [A-Z]{1,2}" CONVENTIONS_PATCH.md | sort -u` = 27
+    (26 lettered A–Z + AA) — matches the PR's claim exactly. PM-validated. CI green (bar the standing
+    Rule I baseline). Runtime wiring N/A (docs-only). Ready for human review.
     AC:
-    - [ ] §Snapshot.1 header re-dated + per-section verdicts reconciled to the 2026-07-01 audit
+    - [x] §Snapshot.1 header re-dated + per-section verdicts reconciled to the 2026-07-01 audit
           (intent-engine real, 21/46 events, chat code-complete-dead-in-prod, bandit frozen, etc.).
-    - [ ] README status corrected (not "Sprint 0"); CLAUDE.md Tier language flagged/removed per the
+    - [x] README status corrected (not "Sprint 0"); CLAUDE.md Tier language flagged/removed per the
           no-Tiers ruling.
-    - [ ] FOLLOW-380 promoted into a QUEUE ticket; §Snapshot.6 rule-count corrected.
+    - [x] FOLLOW-380 promoted into a QUEUE ticket; §Snapshot.6 rule-count corrected.
+- id: FOLLOW-380
+  title: >-
+    Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin)
+    + unit tests
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    RETRO-105 (§4a LG-1/LG-2/LG-3, §4b CB-1, §4c TG-1); source_ticket FOLLOW-375 (PR #340). The SPA
+    cross-listing fix has three robustness gaps under real navigation: (a) overlapping
+    refreshDirectives() on rapid SPA nav have no in-flight guard/AbortController and interleave on
+    shared currentIntentState/SoT; (b) originalHeadlineText is captured ONCE globally and restored
+    to ALL headline slots, so listing-1's title can be stamped onto listing-2's non-fitting
+    headline; (c) the SoT restore re-pins archetype but not confidence, so the FOLLOW-343 DOM
+    confidence floor may still suppress the restored adaptation.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-380; backlog/RETROSPECTIVES.md RETRO-105
+  notes: |
+    Promoted 2026-07-09 (FOLLOW-470, architect) from backlog/FOLLOW_UPS.md into Sprint 22b as READY,
+    matching the FOLLOW-467/468/469/472/474 promotion pattern. Orphaned P1 stub authored under
+    RETRO-105 but never promoted (audit §6.4). NOT on the FOLLOW-471 clean-re-audit critical path
+    (SDK robustness hardening, not a listed F-01…F-21 finding). cross_ref: extends FOLLOW-375's open
+    test AC — do NOT duplicate.
+    AC:
+    - [ ] In-flight guard / AbortController prevents overlapping refreshDirectives from interleaving
+          on session state; a rapid-nav test asserts a single coherent final archetype.
+    - [ ] Headline original text is captured per-listing (or read from the framework's re-rendered
+          title); a test asserts listing-2's non-fitting headline does NOT show listing-1's title.
+    - [ ] SoT restore re-pins confidence alongside archetype so the FOLLOW-343 floor does not suppress
+          the restored adaptation; a test asserts adaptation fires post-restore.
+    - [ ] Quiz vs quiz-disabled stickiness asymmetry documented.
+    - [ ] Unit tests for the FOLLOW-375 new paths (observer in-place mutation; SoT restore/update;
+          eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
+          empty-value skip).
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

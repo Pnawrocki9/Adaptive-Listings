@@ -9,12 +9,18 @@ escalations.
 
 ## Status
 
-**Pre-MVP / Sprint 0 / Repository scaffolding phase.**
+**Active development — Sprint 22b (Full-Stack Audit Remediation) in progress.**
 
-| Sprint | Theme                 | State       |
-| ------ | --------------------- | ----------- |
-| 0      | Foundation            | In Progress |
-| 1-11   | Per AGENT_WORKFLOW.md | Pending     |
+The 12-week MVP scaffold is built and a shadow-mode pilot is live on `app.estalara.com`; current
+work closes the 2026-07-01 full-stack audit findings (F-01…F-21) before a _measured_ pilot. The
+canonical, per-feature implementation status is **`docs/MASTER_DESIGN.md` §Snapshot.1** (single
+source of truth per OPERATING_PRINCIPLES Rule 1) and live ticket state is **`backlog/QUEUE.md`** —
+the table below is a pointer, not a status of record.
+
+| Sprint | Theme                                    | State                             |
+| ------ | ---------------------------------------- | --------------------------------- |
+| 0–22a  | Foundation → shadow-mode pilot           | Shipped (with tracked follow-ups) |
+| 22b    | Full-Stack Audit Remediation (F-01…F-21) | In Progress                       |
 
 ---
 

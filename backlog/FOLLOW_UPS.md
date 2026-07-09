@@ -10429,7 +10429,9 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
         eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
         empty-value skip).
 - **cross_ref:** extends FOLLOW-375's open test AC (do not duplicate).
-- **promoted_to_queue:** false
+- **promoted_to_queue:** true (promoted 2026-07-09 by FOLLOW-470 into `backlog/QUEUE.md` Sprint 22b
+  as a real ticket block, `status: READY`, `agent: sdk-engineer`, `depends_on: []`; stub retained as
+  cross-reference per convention)
 
 ---
 
@@ -14394,3 +14396,38 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - Update the runbook's "Confirmed Table Access" row for `description_generations` from "none — no
     writer — intentionally dropped" to the FOLLOW-463 write path + the FOLLOW-535 TTL.
 - cross_ref: [FOLLOW-535, FOLLOW-463, RETRO-167, RETRO-165, ESC (FOLLOW-463 grant)]
+
+## FOLLOW-543 — Finish the Master_Design narrative refresh FOLLOW-470 deliberately deferred: §Snapshot.2/.3/.5 prose + §B.1 body Tier-prose rename
+
+- source_retro: (none yet — filed directly by pm-orchestrator at FOLLOW-470 validation, not from a
+  retro pass)
+- source_ticket: FOLLOW-470
+- recommended_sprint: next docs/hardening sprint
+- recommended_agent: architect
+- priority: P3
+- estimated_hours: 2
+- promoted_to_queue: false
+- scope: FOLLOW-470 (PR #488) re-verified and corrected the §Snapshot.1 COLLAPSED per-section
+  verdict table against HEAD, but explicitly left two things out of scope (both flagged inline in
+  the PR, not silently skipped): (1) **§Snapshot.2/.3/.5 narrative snapshots are NOT re-verified**
+  and still cite pre-2026-07-01 state — e.g. §Snapshot.2 still lists `intent-engine` as a 27-line
+  placeholder and references `archetype-pipeline`/`adaptation-engine` Modal apps that no longer
+  exist (per the corrected §Snapshot.1 row A.1/D, the real services are `intent-engine` [Haiku
+  chat-NLP] + `llm-gateway` [description job] + `stream-consumer` + `data-quality`). (2) **§B.1's
+  section BODY still carries full Tier 1/2/3 prose** — FOLLOW-470 only flagged/annotated the
+  §Snapshot.1 TABLE row for B.1 (`~~Tier 1/2/3~~ — Tiers RETIRED` + an inline explanation), it did
+  not touch the §B.1 body itself, which was judged out of "docs-reconciliation" scope (a body rename
+  is a bigger prose edit, not a status-table correction) per the CEO's 2026-06-05 no-Tiers ruling
+  (MASTER_DESIGN §E.7 / memory `project_no_tiers_single_model`). Neither gap blocks FOLLOW-471 (the
+  Sprint 22b clean-re-audit gate only cites §Snapshot.1) but both are known, load-bearing doc drift
+  that will re-surface at the next full audit if left long enough.
+- ac:
+  - §Snapshot.2 (and .3/.5 if similarly stale — verify each) narrative updated to match the
+    corrected §Snapshot.1 A.1/D verdicts (real `intent-engine`/`llm-gateway`/`stream-consumer`/
+    `data-quality` Modal services; no `archetype-pipeline`/`adaptation-engine`).
+  - §B.1 body rewritten to describe the single-experience (no-Tiers) model as primary, with the
+    historical Tier 1/2/3 naming demoted to an explicitly-labeled "legacy naming" aside (mirroring
+    the CLAUDE.md pattern FOLLOW-470 already applied there) — grep-verify no other Master_Design
+    section body still asserts Tiers as live architecture before closing.
+  - §Y.2 propagation note added if any section is renamed (do not silently rename).
+- cross_ref: [FOLLOW-470, PR #488, MASTER_DESIGN §E.7, ADR (no-Tiers ruling)]

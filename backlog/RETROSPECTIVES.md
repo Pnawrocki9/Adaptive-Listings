@@ -25701,3 +25701,98 @@ FOLLOW-464 explicitly claims to close **audit F-15** AND **RETRO-162 LG-1** (wit
 - **Related to RETRO-162 / RETRO-163 (Postgres auto-apply CONTRAST):** those siblings went live on merge (migration 0033 auto-applied via `db-migrate.yml`); this ClickHouse ticket cannot — the store, not the ticket, determines whether "merged" means "live" (§5d).
 - **Related to RETRO-163 / FOLLOW-528 (model-toggle re-dispatch):** the row-amplifier RETRO-165 named — now bounded in code by the 13-month TTL, realized in prod once 0020 applies (§5a).
 - **Related to RETRO-014 (golden-query-comparison test — the MODEL for `ttl-golden-test.sh`):** adapted from a TS-route SQL-capture guard to a DDL-file + live-`SHOW CREATE` guard for a DDL-only ticket. A pattern reuse, not a closure.
+
+## RETRO-168 — FOLLOW-470 (truth-reconciliation of the ~5-week-stale SoT — refresh Master_Design §Snapshot.1 per-section verdicts + README/CLAUDE.md status + promote orphaned FOLLOW-380; the reconciliation is ACCURATE end-to-end, but it leaves a MIXED-FRESHNESS SoT and its own Changelog v4.3 durably misdescribes the CLAUDE.md edit as "flagged not edited") — 2026-07-09
+
+### 1. Summary of change
+
+- **PR:** #488 (merged 2026-07-09T21:28:52Z UTC, commit `8275e23`). Title: `docs(FOLLOW-470): §Snapshot.1 truth-reconciliation + FOLLOW-380 promotion`. This RETRO + the FOLLOW-470 DONE-flip land on branch `pm-orchestrator/FOLLOW-470-close` (PR #489), bundled per the PR #486/#487 convention.
+- **Files changed:** 8 (+436 / -38). All docs/backlog, **zero `.ts`/`.py`/`.sql`**: `docs/MASTER_DESIGN.md` (v4.2→4.3, §Snapshot.1 table refresh, Changelog v4.3, §Snapshot.6 rule-count 8→27), `CLAUDE.md` (Tier-retirement callout + heading + SDK budget `<40KB`→`<42KB`), `README.md` (Sprint 0→22b), `backlog/QUEUE.md` (FOLLOW-380 promoted to a real ticket block + FOLLOW-473 queue-hygiene fix + session-21 banner), `backlog/FOLLOW_UPS.md` (FOLLOW-380 stub `promoted_to_queue:true`; FOLLOW-543 filed), `backlog/HANDOFFS.md` (delegation brief), `backlog/STATUS.md` (session-21 validation), `.claude/agents/pm-orchestrator/lessons.md`.
+- **Modules touched:** docs / backlog only. No SDK / ingest / control-plane / decision-api / Modal / Postgres / ClickHouse / config change.
+- **Key contracts changed:** none in code. The changed "contract" is **documentary**: `docs/MASTER_DESIGN.md §Snapshot.1` (the single source of implementation truth per OP Rule 1) + `CLAUDE.md` — both consumed by **every future session's boot sequence**, so an inaccurate reconciliation cascades to every downstream task. Master_Design **v4.2 → v4.3** (docs-only, no new decision ratified). — breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: none (docs-only — nothing unit-testable). The reconciliation's "verification" was grep-against-HEAD (verify-not-guess, OP5). **I independently re-ran the load-bearing grep-checks** (§4c): `EVENT_TYPES` tuple = **52** (matches the corrected §C claim), `applyQuizLeaf` referenced in **13** SDK files (matches §E.4), `apps/` = `control-plane data-quality decision-api ingest intent-engine llm-gateway stream-consumer` (no `archetype-pipeline`/`adaptation-engine` — matches §A.1), `generate_description.py` present (matches §E.7), `grep -oE '^## Rule [A-Z]{1,2}' CONVENTIONS_PATCH.md | sort -u | wc -l` = **27** (matches §Snapshot.6). All reconciled claims verify exactly. Coverage delta: N/A.
+- CI checks: per PM's independent re-verification (`gh pr view 488 --json statusCheckRollup`), non-success = 2, both the SAME standing "Rule I — wired-or-dead check" baseline (181 pre-existing `apps/control-plane` violations, none in this diff — docs-only ⇒ Rule I structurally unaffected). Every real gate green. Consistent with `project_ci_gate_landscape`. This read-only retro did not re-watch CI; PM-attested + spot-confirmed the diff is 100% docs via `gh pr diff 488 --name-only`.
+
+### 3. Wiring Audit
+
+**Both checks run. Docs-only PR — no new code symbol, event, env-var, column, topic, or SDK-signal. The one "wire" present is the FOLLOW-380 stub→QUEUE promotion, verified connected end-to-end.**
+
+- **CHECK A (dead code):** clean. No new code file/export exists to orphan. The nearest analogue of a "new export with an importer" is the **FOLLOW-380 promotion**: the `FOLLOW_UPS.md` stub (producer) is now wired to a real `backlog/QUEUE.md` ticket block (`id: FOLLOW-380`, `status: READY`, `agent: sdk-engineer`, `depends_on: []`, all 5 AC intact — `QUEUE.md:10215`), and the stub is flipped `promoted_to_queue: true` with a back-reference (`FOLLOW_UPS.md`). Both ends present and cross-referenced — not a dangling stub. The doc sections (README, CLAUDE.md callout, §Snapshot.1 rows) are documentation, exempt.
+- **CHECK B (half-wire):** N/A — this PR introduces no new event / env-var / column / topic / SDK-signal requiring a producer↔consumer pair.
+- **Result: Wiring Audit — clean ✅** (docs-only; FOLLOW-380 promotion-wire verified connected).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, the load-bearing structural finding — MIXED-FRESHNESS SoT; owned by the pre-existing FOLLOW-543, no new stub): the reconciliation refreshed the §Snapshot.1 collapsed TABLE accurately, but left the §Snapshot.2/.3/.5 NARRATIVE snapshots at pre-2026-07-01 staleness inside the SAME document.** The doc header still reads `## Implementation Status Snapshot (2026-05-24; §Snapshot.1 per-section verdicts refreshed 2026-07-09 …)` (`MASTER_DESIGN.md:329`), and §Snapshot.2 still cites `intent-engine` as a 27-line placeholder and `archetype-pipeline`/`adaptation-engine` Modal apps that **no longer exist** (`ls apps/` confirms). A future session that reads §Snapshot.2 (not the table) will boot on retired facts. A *partially* reconciled SoT is arguably MORE hazardous than a uniformly-stale one, because a reader cannot tell which axis is fresh from the single header date. This is **honestly flagged inline** in the merged doc (the new `> …§Snapshot.2/.3/.5 narrative snapshots are NOT yet re-verified…` block) and tracked as **FOLLOW-543** (pre-existing, P3) — recorded here, no duplicate stub. It is the one-hop-relocation risk (§7): the gap moved from "table stale" to "narrative stale," but NAMED, not buried.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — zero code in the diff.** No shipped code defect possible.
+
+#### 4c. Test coverage gaps
+
+- **N/A — docs-only.** The correct "coverage" for a truth-reconciliation ticket is independent grep re-verification of every reconciled claim, which I ran in §2 (all 5 load-bearing claims — 52 event types, 13 applyQuizLeaf files, apps list, description job, 27 rules — match HEAD exactly). No residual coverage gap.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3 effort / SoT-cascade severity, NEW → FOLLOW-544 — the "stale-self-report leaked into the durable SoT" finding): `docs/MASTER_DESIGN.md`'s Changelog v4.3 durably states "`CLAUDE.md` Tier 1/2/3 language (lines 13–15, 256) FLAGGED for human review rather than edited (config-file change-authority boundary…)" — but CLAUDE.md was in fact EDITED in the SAME PR #488.** Verified: `grep -c 'retired' CLAUDE.md` = 3 (historical callout + "Three (retired) integration tiers" heading), and `CLAUDE.md:261` now reads `<42KB gzip (raised from 40KB per ESC-028…)`. The truth-reconciliation changelog — whose entire purpose is accuracy — contradicts its own merged diff. The plan-vs-executed divergence WAS caught, but only in the **transient** QUEUE `CORRECTION` note (`QUEUE.md:10169`); it never propagated into the **durable** Changelog v4.3 that every future session reads. This is exactly the doc-drift class FOLLOW-470 was chartered to eliminate, re-introduced by FOLLOW-470's own changelog. Effort is a one-line wording fix, but the cascade surface is the SoT itself. → **FOLLOW-544**.
+- **DG-2 (P3, NEW → FOLLOW-545 — process/tooling gap, first sighting; the ROOT of DG-1): the `architect` subagent has NO Bash tool, so it structurally cannot branch/prettier/commit/push/PR.** For FOLLOW-470 the top-level orchestrator executed all mechanics on the architect's behalf AND authored a content edit (the CLAUDE.md Tier-retirement) the architect had planned only to *flag* (`QUEUE.md:10169-10181`). That tool-capability gap is what blurred the author boundary and produced DG-1: the architect authored a changelog line describing "flagged," while the orchestrator's hands actually "edited," and no single actor owned reconciling the two in the durable doc. Every doc/PR-producing ticket routed to `architect` inherits this friction. → **FOLLOW-545**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-471 (Sprint 22b epic-closing "clean re-audit" gate; lists FOLLOW-470 in `depends_on`) — dependency satisfied for the §Snapshot.1 TABLE axis, but the gate RE-RUNS the full audit and will re-encounter both residuals** — the §Snapshot.2/.3/.5 narrative staleness (FOLLOW-543) and the Changelog v4.3 self-contradiction (DG-1/FOLLOW-544) — if they are still open. **Surfaced to the PM (I do not write QUEUE/ESCALATIONS):** consider sequencing FOLLOW-544 (cheap) and at least a scoped FOLLOW-543 before FOLLOW-471, so the epic's DoD is not re-opened by a doc that half-reconciled. Severity: P3, non-blocking, but directly on the epic-close critical path.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-543 (P3, architect — pre-existing):** the deferred §Snapshot.2/.3/.5 narrative + §B.1-body Tier-prose rename. Now the durable owner of LG-1.
+- **FOLLOW-380 (P1, sdk-engineer — now READY via this PR's promotion):** the cross-listing re-adaptation hardening is UNBLOCKED for scheduling (promotion wire connected, §3), but the actual SDK work is unstarted — promotion ≠ closure (§7).
+
+#### 5c. Contracts changed others rely on
+
+- **The SoT itself is the contract.** Every future session boots from §Snapshot.1 + CLAUDE.md (OP Rule 1). Net positive: the §Snapshot.1 table + CLAUDE.md Tier-retirement + README are now ACCURATE (independently grep-verified, §2). The ONE durable inaccuracy others will rely on is Changelog v4.3's CLAUDE.md self-description (DG-1/FOLLOW-544) — a reader auditing "what did v4.3 change" is told CLAUDE.md was flagged-not-edited, which is false.
+
+#### 5d. Architectural assumptions affected
+
+- **OP Rule 1 (§Snapshot.1 = SoT) is RESTORED for the collapsed verdict table** (the audit §6.4 finding this ticket targeted) — the ~5-week staleness and the "8 rules A–H"/"Sprint 0"/"93.3 KB over-budget" drift are corrected. **But OP Rule 1 is only PARTIALLY restored for the document as a whole** (LG-1). The Tiers elimination (§E.7, CEO 2026-06-05) is now propagated to CLAUDE.md — closing the CLAUDE.md side of RETRO-092's P-RESURRECTED-ELIMINATED-CONCEPT — yet the MASTER_DESIGN §B.1 section BODY still asserts Tiers as live architecture (FOLLOW-543), so the elimination is not fully propagated across the SoT.
+
+### 6. New lesson candidates
+
+- **Pattern (PARTIAL-SOT-RECONCILIATION / mixed-freshness): "a truth-reconciliation pass refreshes one axis of the SoT (the §Snapshot.1 table) accurately but leaves a sibling axis (the §Snapshot.2/.3/.5 narrative) stale inside the same document under one header date, producing a doc where a reader cannot tell which part is fresh — arguably more dangerous than uniform staleness."** — seen in: **RETRO-168 (this).** Count 1. **HELD — NO PROMOTION.** Watch: a 2nd partial-reconciliation that leaves undated mixed-freshness in a boot-critical doc is the promotion trigger (a rule "any SoT reconciliation must either refresh all cited axes or per-axis-date the stale ones").
+- **Pattern (DURABLE-SELF-REPORT-DRIFT): "an agent's own changelog/status note in a DURABLE doc misdescribes its own merged change (here: 'CLAUDE.md flagged not edited' while the same PR edited it); the divergence is caught only in a TRANSIENT artifact (a QUEUE correction note) and never propagated to the durable one."** — seen in: **RETRO-168 (this).** Count 1. Adjacent to — but distinct from — the already-codified OP5 / verify-not-trust discipline exercised in RETRO-149/150/164 (those re-verify a worker's CI/count *self-report against reality*; this is the self-report living permanently WRONG in the SoT). **HELD — NO PROMOTION** (and even a 2nd instance would fold into OP5, not a new rule).
+- **Pattern (BASHLESS-AGENT-AUTHOR-BLUR): "delegating a PR-producing doc ticket to a shell-less agent (`architect`) forces the orchestrator to execute all mechanics and can silently make it a SECOND author whose executed edits diverge from the delegate's stated plan."** — seen in: **RETRO-168 (this).** Count 1 (first sighting of an agent-tooling-capability gap in the retro record — grep of prior retros for "no shell/bash tool" returned nothing). **HELD — NO PROMOTION.** Vehicle is the process stub FOLLOW-545.
+- **Net: NO rule promoted this retro.** All three candidates are count-1; the ≥2-prior threshold is respected. RETRO-092's P-RESURRECTED-ELIMINATED-CONCEPT (§E.7 Tiers) is a related but distinct sub-shape (code-derivation, not doc-reconciliation) and is not a matching 2nd instance.
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **FOLLOW-470 (chartered target — audit §6.4 stale-SoT finding): CLOSED for the §Snapshot.1 TABLE axis END-TO-END and VERIFIED; the broader "SoT is now accurate" closure is deliberately PARTIAL, and both residuals are NAMED, not relocated into obscurity.**
+  - **Chain traced:** audit §6.4 (§Snapshot.1 ~5wk stale, README "Sprint 0", CLAUDE.md live-Tiers, 8-vs-27 rule count, FOLLOW-380 orphaned) → this PR grep-verifies each §Snapshot.1 row against HEAD and corrects 9 (A.1/B.1/B.2/C/D/E.1–E.3/E.4/E.7/H) → **I independently re-ran the falsifiable ones** (§2) and every one matches HEAD. Table axis: genuinely, verifiably closed.
+  - **Honest verdict:** the closure did NOT fully land — it moved one hop from "the table is stale" to "the narrative §Snapshot.2/.3/.5 is stale (FOLLOW-543) + the changelog self-contradicts (FOLLOW-544)." This is the FOLLOW-097→114→127→141 `inquiry_submit_selector` relocation shape, caught early: the residuals are explicitly flagged inline in the merged doc and tracked as FOLLOW-543/544, NOT quietly pushed downstream. Recorded as partial, not declared clean.
+- **FOLLOW-380 (promoted, NOT closed):** the promotion wire is connected (§3 — real QUEUE block, stub flipped), but the cross-listing hardening WORK is unstarted (correctly, a `READY` ticket). "Promoted to READY" is not "closed" — the P1 SDK robustness gaps (RETRO-105 §4a) remain open under FOLLOW-380.
+- **No OTHER prior FOLLOW is claimed closed.** FOLLOW-473's DONE-flip in this PR is a queue-hygiene bookkeeping correction (RETRO-164 already filed for it — not re-retro'd here).
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Freshness axes within the ONE document:** TABLE axis (§Snapshot.1 — reconciled + accurate), NARRATIVE axis (§Snapshot.2/.3/.5 — stale, FOLLOW-543), CHANGELOG axis (v4.3 — internally self-contradictory re: CLAUDE.md, FOLLOW-544). All three analyzed; the doc is now at MIXED freshness under a single header date (the load-bearing structural finding, §4a LG-1).
+- **Plan axis vs executed axis:** architect planned to FLAG CLAUDE.md; orchestrator EDITED it. Diverged. Caught in the transient QUEUE note, NOT in the durable changelog (§4d DG-1). The tooling root is §4d DG-2 (bashless agent).
+- **Producer axis (doc author) vs consumer axis (every future session):** the consumer is the cascade point; the reconciled table is safe to consume, the Changelog v4.3 CLAUDE.md line is not.
+- **CLAUDE.md content axis:** the Tier-retirement edit is CORRECT and consistent with §E.7 / memory `project_no_tiers_single_model` — a positive that advances RETRO-092's Tiers-elimination on the CLAUDE.md side. Still open in MASTER_DESIGN §B.1 body (FOLLOW-543).
+- **Contradiction with a prior "clean" verdict:** NONE — no prior retro declared these docs clean, so there is nothing to overturn. RETRO-092's §E.7-elimination pattern is PARTIALLY ADVANCED (CLAUDE.md side closed here; §B.1 body still open) — an update, not a contradiction.
+
+### 9. Follow-ups
+
+- **FOLLOW-544 (P3, architect or pm-orchestrator, ~0.5h)** — Correct `docs/MASTER_DESIGN.md`'s Changelog v4.3 (and the `> Update 2026-07-09 (FOLLOW-470…)` block if it repeats the claim) where it states CLAUDE.md's Tier language was "FLAGGED for human review rather than edited": CLAUDE.md was in fact EDITED in PR #488 (retired-callout + heading + `<42KB` budget line). Propagate the transient QUEUE `CORRECTION` note into the durable SoT changelog so the reconciliation doc no longer contradicts its own merged diff. Source: §4d DG-1.
+- **FOLLOW-545 (P3, pm-orchestrator + devops-engineer, ~1–2h)** — Close the bashless-agent author-blur: the `architect` subagent has no shell/PR tool, so any doc/PR-producing ticket routed to it forces the orchestrator to execute mechanics AND can silently make it a second author whose executed edits diverge from the delegate's stated plan (the root of §4d DG-1). Codify one of: (a) route doc-authoring/PR-producing tickets to a shell-capable agent; or (b) require the orchestrator, whenever it executes an edit beyond a delegate's stated plan, to reconcile that deviation in ALL durable artifacts (changelog/SoT), not only the transient QUEUE note; or (c) grant `architect` a scoped commit/PR path. Source: §4d DG-2.
+- (Pre-existing, referenced not duplicated: **FOLLOW-543** owns §4a LG-1 — the §Snapshot.2/.3/.5 narrative + §B.1-body Tier-prose refresh.)
+
+### 10. Cross-references
+
+- **Related to RETRO-092 (P-RESURRECTED-ELIMINATED-CONCEPT — the §E.7 no-Tiers CEO elimination):** this retro PARTIALLY ADVANCES that pattern's doc-side — CLAUDE.md's live-Tier language is now retired/flagged, but MASTER_DESIGN §B.1 body still asserts Tiers (FOLLOW-543). Not a matching 2nd instance for promotion (RETRO-092 is code-derivation, this is doc-reconciliation).
+- **Related to RETRO-149 / RETRO-150 / RETRO-164 (verify-not-trust vs a worker's self-reported CI/count, OP5):** DG-1 is the DURABLE-DOC analogue — a self-report that drifted from the diff and lived on in the SoT; independent grep re-verification (§2) is what surfaced both the accuracy of the table AND the changelog contradiction.
+- **First retro on a pure truth-reconciliation / SoT-refresh ticket (docs-only, zero code).** No direct predecessor of this ticket TYPE; the closest lineage is the OP Rule 1 discipline the 2026-05-20 stale-doc incident established (CLAUDE.md Document Versioning Policy).

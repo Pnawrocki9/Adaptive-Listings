@@ -14431,3 +14431,58 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     section body still asserts Tiers as live architecture before closing.
   - §Y.2 propagation note added if any section is renamed (do not silently rename).
 - cross_ref: [FOLLOW-470, PR #488, MASTER_DESIGN §E.7, ADR (no-Tiers ruling)]
+
+## FOLLOW-544 — Fix the Changelog v4.3 self-contradiction: MASTER_DESIGN says CLAUDE.md Tier language was "flagged not edited" but PR #488 edited it
+
+- source_retro: RETRO-168 (§4d DG-1)
+- source_ticket: FOLLOW-470
+- recommended_sprint: next docs/hardening sprint (cheap; sequence before FOLLOW-471 clean-re-audit)
+- recommended_agent: architect (or pm-orchestrator — one-line durable-doc fix)
+- priority: P3
+- estimated_hours: 0.5
+- promoted_to_queue: false
+- scope: `docs/MASTER_DESIGN.md`'s Changelog v4.3 entry durably states "`CLAUDE.md` Tier 1/2/3
+  language (lines 13–15, 256) FLAGGED for human review rather than edited (config-file
+  change-authority boundary; also §Y.2 no-silent-rename)." This is FALSE for the merged change: PR
+  #488 (commit `8275e23`) EDITED CLAUDE.md — added a "Historical — Tiers retired 2026-06-05"
+  callout, changed the heading to "Three (retired) integration tiers", corrected the repo-scale tier
+  bullet, and corrected the SDK budget line to `<42KB gzip (raised from 40KB per ESC-028…)`
+  (`CLAUDE.md:261`; `grep -c retired CLAUDE.md` = 3). The plan-vs-executed divergence was caught
+  only in the TRANSIENT `backlog/QUEUE.md` CORRECTION note (`QUEUE.md:10169`) — it never propagated
+  into the DURABLE Changelog v4.3 that every future session reads. A truth-reconciliation pass whose
+  own changelog contradicts its merged diff re-introduces exactly the doc-drift FOLLOW-470 was
+  chartered to eliminate. Low effort, but the cascade surface is the SoT itself (OP Rule 1).
+- ac:
+  - Changelog v4.3's CLAUDE.md clause corrected to describe the ACTUAL change (edited: retirement
+    callout + heading + `<42KB` budget line), not "flagged rather than edited".
+  - The `> Update 2026-07-09 (FOLLOW-470 …)` §Snapshot block checked for the same claim and
+    corrected if it repeats it (grep `FLAGGED` in `docs/MASTER_DESIGN.md`).
+  - No new decision introduced — a factual correction of the self-description only (do NOT re-open
+    the CLAUDE.md edit itself, which is correct and consistent with §E.7).
+- cross_ref: [RETRO-168, FOLLOW-470, PR #488, CLAUDE.md:261, QUEUE.md:10169, FOLLOW-545]
+
+## FOLLOW-545 — Close the bashless-agent author-blur: shell-less `architect` delegated a PR-producing doc ticket forces the orchestrator to become a second author whose executed edits can diverge from the delegate's plan
+
+- source_retro: RETRO-168 (§4d DG-2)
+- source_ticket: FOLLOW-470
+- recommended_sprint: next process/hardening sprint
+- recommended_agent: pm-orchestrator + devops-engineer
+- priority: P3
+- estimated_hours: 1.5
+- promoted_to_queue: false
+- scope: The `architect` subagent has NO Bash tool, so it cannot branch/prettier/commit/push/PR. For
+  FOLLOW-470 the top-level orchestrator executed all mechanics on the architect's behalf AND
+  authored a content edit (the CLAUDE.md Tier-retirement) the architect had planned only to _flag_
+  (`QUEUE.md:10169-10181`). That tool-capability gap blurred the author boundary and is the ROOT of
+  FOLLOW-544 (the architect authored a changelog line saying "flagged," while the orchestrator's
+  hands "edited," and no single actor owned reconciling the two in the durable doc). Every
+  doc/PR-producing ticket routed to `architect` inherits this friction. First sighting of an
+  agent-tooling-capability gap in the retro record.
+- ac:
+  - Codify ONE of: (a) route doc-authoring / PR-producing tickets to a shell-capable agent by
+    default; or (b) require the orchestrator, whenever it executes an edit BEYOND a delegate's
+    stated plan, to reconcile that deviation across ALL durable artifacts (Changelog/SoT/AC), not
+    only the transient QUEUE note; or (c) grant `architect` a scoped commit/PR path.
+  - Whichever is chosen, add it to `docs/AGENT_WORKFLOW.md` (or CONVENTIONS_PATCH.md if it recurs)
+    so the author-blur that produced FOLLOW-544 cannot recur silently.
+- cross_ref: [RETRO-168, FOLLOW-470, FOLLOW-544, PR #488, docs/AGENT_WORKFLOW.md]

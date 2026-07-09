@@ -1,0 +1,31 @@
+-- Migration: 0020_description_generations_ttl
+-- FOLLOW-535 (P2, source RETRO-165 / FOLLOW-463) — add retention TTL to
+-- description_generations.
+--
+-- Gap: migration 0007 created description_generations with
+-- `PARTITION BY toYYYYMM(created_at)` but no TTL clause. That was inert while
+-- the table had zero writers, but FOLLOW-463 (merged 4d1db35) added the first
+-- writer -- every non-NEUTRAL description generation now appends a row that
+-- was never expiring, amplified further by the RETRO-163/FOLLOW-528
+-- model-toggle re-dispatch (one row per toggle). Every sibling table has
+-- retention: events -> 13 months (0001_create_events.sql), intent_events ->
+-- 90 days (0014_intent_events.sql, cron-enforced).
+--
+-- Retention choice: 13 months, matching the `events` audit table rather than
+-- intent_events' 90-day window, because description_generations is an
+-- anti-hallucination AUDIT trail (verified_facts_used) that per-tenant
+-- reviews may need to reference over a similar horizon to the raw event log.
+--
+-- created_at is DateTime64(3, 'UTC'); toDateTime(created_at) casts it down to
+-- DateTime precision for the TTL expression, mirroring the events table
+-- pattern (0001_create_events.sql:46 -- TTL toDateTime(ts) + INTERVAL 13 MONTH).
+--
+-- Idempotent: MODIFY TTL is safe to re-run (it overwrites the table's TTL
+-- expression with an identical one on re-apply; migrate.sh re-applies every
+-- migration file on every run).
+--
+-- Runner note: LOCAL=1 substitutes MergeTree for ReplicatedMergeTree (see
+-- migration 0001) -- MODIFY TTL applies identically to both.
+
+ALTER TABLE description_generations
+    MODIFY TTL toDateTime(created_at) + INTERVAL 13 MONTH;

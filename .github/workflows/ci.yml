@@ -333,6 +333,13 @@ jobs:
           LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
             ./infra/clickhouse/scripts/smoke-test.sh
 
+      - name: TTL golden-DDL regression test (FOLLOW-535)
+        env:
+          CLICKHOUSE_PASSWORD: clickhouse
+        run: |
+          LOCAL=1 CLICKHOUSE_URL=http://localhost:8123 \
+            ./infra/clickhouse/scripts/ttl-golden-test.sh
+
   # ── Tracer query-builders live ClickHouse guard (FOLLOW-316) ────────────
   # Submits each K.3.6 tracer builder against a real ClickHouse engine so a
   # query-analysis error (Code 386 NO_COMMON_TYPE — the class fixed by

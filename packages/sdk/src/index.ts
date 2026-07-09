@@ -564,11 +564,34 @@ async function init(): Promise<IntentState | null> {
     // listing (navigate listing → browse → same listing back) — a NEW node carrying the same id —
     // is still detected as a fresh listing that needs re-adaptation.
     let previousListingEl: HTMLElement | null = null;
-    // Captured original (pre-adaptation) text of the headline slot — the tenant's generic
-    // placeholder, identical across listings. Restored on cross-listing navigation so a listing
-    // the archetype does not fit (neutral / archetype-fit gate) shows the original copy instead
-    // of the previous listing's adapted headline. Captured once, before the first adaptation.
-    let originalHeadlineText: string | null = null;
+    // FOLLOW-380 bug (b) / RETRO-105 LG-2: captured original (pre-adaptation) headline text,
+    // keyed PER LISTING. Real listings have DIFFERENT titles, so a single global capture would
+    // stamp listing-1's title onto listing-2 on cross-listing navigation. Each listing's
+    // original is captured the first time that listing id is seen (before any adaptation
+    // touches its headline) and restored on cross-listing navigation so a listing the archetype
+    // does not fit (neutral / archetype-fit gate) shows ITS OWN original copy — never the
+    // previous listing's adapted (or original) headline.
+    const originalHeadlineByListing = new Map<string, string>();
+    /**
+     * Capture the current headline-slot text for `listingId` the FIRST time it is seen.
+     *
+     * Ordering note (bug (b)): the `listing.viewed` handler runs synchronously inside the
+     * `navMutObs` MutationObserver callback, which was created at init — BEFORE the per-listing
+     * headline loop-guard observers (created during adaptation). MutationObserver callbacks fire
+     * in creation order, so at capture time the framework's freshly-rendered per-listing title
+     * is still present (the stale loop-guard has not yet re-asserted the previous listing's
+     * adapted copy), and `teardownDescriptionObservers()` in the handler then disconnects that
+     * loop-guard before it can clobber. Idempotent per listing (skips if already captured), so
+     * a later view of the same listing never overwrites its true pre-adaptation original.
+     */
+    function captureOriginalHeadline(listingId: string | undefined): void {
+      if (!listingId || originalHeadlineByListing.has(listingId)) return;
+      const headlineEl = document.querySelector<HTMLElement>('[data-estalara-slot="headline"]');
+      const text = headlineEl?.textContent;
+      if (typeof text === 'string') {
+        originalHeadlineByListing.set(listingId, text);
+      }
+    }
 
     // Declared here so refreshDirectives() can reference it without TDZ error.
     // Populated by the observer callback after step 6 below.
@@ -636,9 +659,21 @@ async function init(): Promise<IntentState | null> {
         }
       }, DWELL_TICK_MS);
     }
+    // FOLLOW-380 bug (a) / RETRO-105 LG-1: monotonic in-flight guard for overlapping
+    // `refreshDirectives()` calls. Rapid SPA navigation fires `void refreshDirectives()`
+    // fire-and-forget (the `listing.viewed` handler below, ~:1050) with no lock or
+    // AbortController, so two invocations can interleave on the shared mutable
+    // `currentIntentState` / SoT. Each invocation claims the next id; after its async fetch
+    // resolves it commits state ONLY if it is still the latest — so a stale in-flight call
+    // whose fetch arrives after a newer navigation started can never clobber the newer
+    // navigation's state/DOM. The LAST navigation always wins.
+    let latestRefreshId = 0;
     /** Re-fetch directives and apply them with the latest intent state. */
     async function refreshDirectives(): Promise<void> {
       if (!config.decisionApiUrl) return;
+
+      // Claim this invocation's id (see `latestRefreshId` note above).
+      const myRefreshId = ++latestRefreshId;
 
       // F-08 (FOLLOW-194): detect pageType from URL / data-page-type attribute.
       // F-13 (FOLLOW-194): read the current listing ID for per-listing RAG context.
@@ -655,10 +690,34 @@ async function init(): Promise<IntentState | null> {
       // *non-neutral* switch (e.g. chat reveals investor intent → yield_hunter) is left
       // untouched — drift away from the declared archetype is legitimate, but ONLY toward
       // another non-neutral archetype, never to `neutral`. Works with OR without the quiz.
+      //
+      // FOLLOW-380 doc gap (RETRO-105 CB-1) — quiz vs quiz-disabled stickiness asymmetry:
+      // For a QUIZ tenant there are TWO layers of anti-neutral-decay protection: (1) intent.ts
+      // hysteresis (`classifyFromProbabilities`, gated in part on `state.quiz_answered`,
+      // intent.ts:~747-779) PREVENTS `neutral` from overtaking the argmax mid-classify, and
+      // (2) this restore-after-decay. For a QUIZ-DISABLED tenant there is no quiz answer, so
+      // layer (1) does not engage — the archetype can freely decay all the way to `neutral`
+      // and the ONLY protection is THIS restore. Net: quiz-disabled tenants get a weaker
+      // guarantee (decay-then-restore) than quiz tenants (prevent-decay + restore). This is
+      // acceptable per the CEO cross-listing SoT ruling (quiz-disabled stays functional) — the
+      // restore below is deliberately NOT gated on `quiz_answered` so it works for both.
       if (currentIntentState.archetype === 'neutral') {
         const sot = readResolvedArchetype(currentSession.sessionId);
-        if (sot && sot !== 'neutral') {
-          currentIntentState = { ...currentIntentState, archetype: sot as Archetype };
+        if (sot && sot.archetype !== 'neutral') {
+          // FOLLOW-380 bug (c) / RETRO-105 LG-3: re-pin the archetype AND the confidence it
+          // was resolved at. `body.confidence = currentIntentState.confidence` (adapt.ts:762)
+          // is sent to the Decision API, which BOTH gates directives server-side
+          // (`confidence <= 0.6 → no directives`, route.ts) AND echoes the value into
+          // `resp.confidence` — the value the FOLLOW-343 DOM floor checks (~:720 below). If we
+          // pinned only the archetype and left the neutral-era low confidence in place, the
+          // server would return no directives and the floor would suppress the restored
+          // adaptation, silently defeating the restore. Pinning `sot.confidence` keeps
+          // cross-listing re-adaptation working.
+          currentIntentState = {
+            ...currentIntentState,
+            archetype: sot.archetype as Archetype,
+            confidence: sot.confidence,
+          };
         }
       }
 
@@ -670,6 +729,11 @@ async function init(): Promise<IntentState | null> {
         listingId,
         profilingOptedOut,
       );
+
+      // FOLLOW-380 bug (a): a newer navigation superseded this call while the fetch was in
+      // flight — discard this stale result so it cannot clobber the newer navigation's state
+      // or re-apply stale directives/description onto the newer listing's DOM.
+      if (myRefreshId !== latestRefreshId) return;
 
       // FOLLOW-101: if the chat-intent prior was applied, update currentIntentState
       // and notify the DQS tracker. The persist already happened inside fetchDirectives.
@@ -683,7 +747,13 @@ async function init(): Promise<IntentState | null> {
       // the quiz answer when the buyer's true need becomes evident: the SoT always tracks the
       // most recent non-neutral archetype, and the neutral-decay restore above pins to it.
       if (currentIntentState.archetype !== 'neutral') {
-        persistResolvedArchetype(currentSession.sessionId, currentIntentState.archetype);
+        // FOLLOW-380 bug (c): persist the confidence alongside the archetype so the
+        // neutral-decay restore above can re-pin both.
+        persistResolvedArchetype(
+          currentSession.sessionId,
+          currentIntentState.archetype,
+          currentIntentState.confidence,
+        );
       }
 
       if (resp) {
@@ -923,12 +993,10 @@ async function init(): Promise<IntentState | null> {
       persistIntentState(currentSession.sessionId, currentIntentState);
     }
 
-    // Capture the original headline text BEFORE the first adaptation so cross-listing
-    // navigation can restore it on a non-fitting (neutral) listing. Read from the live DOM.
-    {
-      const headlineEl = document.querySelector<HTMLElement>('[data-estalara-slot="headline"]');
-      if (headlineEl) originalHeadlineText = headlineEl.textContent;
-    }
+    // FOLLOW-380 bug (b): capture the FIRST listing's original headline text BEFORE the first
+    // adaptation (refreshDirectives below), keyed by its listing id, so cross-listing
+    // navigation can restore each listing's OWN original on a non-fitting (neutral) listing.
+    captureOriginalHeadline(detectListingId());
 
     // 4b. Fetch personalization directives from Decision API (Tier 1+ feature).
     // FOLLOW-372 / §H.9: skip when opted out — returns to tenant default DOM.
@@ -1030,6 +1098,10 @@ async function init(): Promise<IntentState | null> {
           ) {
             previousListingId = viewedListingId;
             previousListingEl = rootEl;
+            // FOLLOW-380 bug (b): capture THIS listing's own original headline (before teardown
+            // and before refreshDirectives adapts it) so the restore below uses the correct
+            // per-listing title. See captureOriginalHeadline's ordering note.
+            captureOriginalHeadline(viewedListingId);
             resetAdaptState();
             // Revert adapted slots to their original copy before re-adapting, so a listing the
             // archetype does NOT fit (the decision API returns neutral / no directive) shows the
@@ -1040,11 +1112,13 @@ async function init(): Promise<IntentState | null> {
             // as a revert and re-assert the previous listing's adapted copy. refreshDirectives()
             // re-applies + re-observes if the new listing IS a fit.
             teardownDescriptionObservers();
-            if (originalHeadlineText !== null) {
+            // FOLLOW-380 bug (b): restore THIS listing's own captured original, not a global one.
+            const originalHeadline = originalHeadlineByListing.get(viewedListingId);
+            if (originalHeadline !== undefined) {
               document
                 .querySelectorAll<HTMLElement>('[data-estalara-slot="headline"]')
                 .forEach((el) => {
-                  el.textContent = originalHeadlineText;
+                  el.textContent = originalHeadline;
                 });
             }
             void refreshDirectives();
@@ -1129,7 +1203,13 @@ async function init(): Promise<IntentState | null> {
               // refreshDirectives() can restore it if behavioral drift later decays the live
               // archetype to neutral. Chat / sustained behavioral evidence may later overwrite
               // this SoT with a different non-neutral archetype (see refreshDirectives).
-              persistResolvedArchetype(currentSession.sessionId, resolvedArchetype);
+              // FOLLOW-380 bug (c): persist the (high) quiz-leaf confidence alongside the
+              // archetype so the neutral-decay restore re-pins both above the DOM floor.
+              persistResolvedArchetype(
+                currentSession.sessionId,
+                resolvedArchetype,
+                currentIntentState.confidence,
+              );
               onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
               if (config.debug) {
                 console.log(

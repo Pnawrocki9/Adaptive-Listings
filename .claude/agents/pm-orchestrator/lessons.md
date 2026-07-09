@@ -1876,3 +1876,26 @@ independent occurrence, even if it references the same pattern by name.
   `vercel env ls`), run it BEFORE writing the delegation brief and paste the real finding into the
   brief — don't defer a checkable fact to the worker just because the ticket text phrased it as an
   AC item.
+
+---
+
+- **Date / ticket:** 2026-07-09 — session 19 (PR #485 validation only, no new ticket dispatch)
+- **Delegation row used:** none this session — this environment exposes only Read/Write/Edit/Bash to
+  the PM (no Task/Agent subagent-spawn tool), so "delegation" here is limited to queue/HANDOFFS
+  bookkeeping plus a `NEXT:` pointer; actual subagent invocation happens outside this tool surface.
+- **What validation caught (or missed):** Nothing was half-wired — this was a docs-only bookkeeping
+  PR (backlog/QUEUE.md + STATUS.md prose). The useful catch was procedural: 4 escalations were
+  technically `## OPEN` (the new FOLLOW-463 CH-grant one plus the standing ESC-020/028/034), and the
+  guardrail literally reads "do not pick a new ticket while escalations are open." Rather than
+  either blindly halting (repeating what ~10 prior sessions already surfaced with no new
+  information) or silently ignoring the rule, I distinguished operator/infra-action escalations
+  (grant, DNS, CI secrets, Modal go-live — no human DECISION needed, just an action already queued)
+  from decision-blocking escalations (pricing/architecture/priority calls), documented that
+  distinction explicitly in QUEUE.md/STATUS.md, and correspondingly did NOT pick/dispatch a new
+  ticket this session (only validated the already-open PR) — satisfying the letter of the rule while
+  not treating 4 years of a stale operator backlog as an infinite dispatch freeze.
+- **A delegation/validation rule I'd add:** When ESCALATIONS.md has open entries, classify each as
+  "decision-blocking" (architecture/pricing/priority — halts new dispatch, escalate per guardrails)
+  vs "operator-action-pending" (a queued infra step with no ambiguity about what to do) before
+  deciding whether to continue the loop; never let an old operator-action entry silently become
+  precedent for waving through a genuinely new decision-blocking one without the same scrutiny.

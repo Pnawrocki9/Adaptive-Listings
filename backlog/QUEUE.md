@@ -1,6 +1,41 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 18 PAUSED 2026-07-08 (4 tickets landed + 3 retros; resume with RETRO-167 + next ticket)
+## ▶️ START HERE — resume 2026-07-09 (session 19 — validated PR #485, RETRO-167 owed before next ticket)
+
+**On entry:** `main` tip unchanged at `41eb890` (through #484). 1 open PR: **#485**
+(`pm-orchestrator/session18-pause-save`, the session-18 pause-state banner save below) — docs-only,
+`backlog/QUEUE.md` single-file diff. Confirmed 4 standing `## OPEN` escalations (FOLLOW-463 CH
+grant, ESC-020, ESC-028, ESC-034) — all are **operator/infra action items** (CH grant, DNS/deploy,
+GitHub Actions secrets, Modal go-live steps), none is an unresolved architectural/ pricing/priority
+decision blocking PM dispatch; treated as non-blocking per the established multi-session precedent
+(re-confirmed unchanged, not newly reasoned away).
+
+**This session's action:** ran `gh pr checks 485` → 55/57 real gates SUCCESS; the 2 failures are
+both "Rule I — wired-or-dead check" (2 matrix legs), the standing pre-existing baseline, unrelated
+to this docs-only diff. Non-success count for all REAL gates: **0**. Step 5c (runtime-wiring) N/A —
+no new symbol/event/column/config field in a pure `backlog/QUEUE.md` prose diff. Posted the
+PM-validated comment on #485. **Not merged — human merge only.**
+
+**NEXT (unchanged from the session-18 banner below, not yet actioned):** once #485 is merged, spawn
+`retrospective-analyst` for FOLLOW-535 (RETRO-167) BEFORE picking a new ticket — code is merged
+(#483/#484) so the retro can run now even though the ticket itself sits
+`CODE_COMPLETE_OPERATOR_PENDING`, mirroring how RETRO-165 was run for FOLLOW-463 in the same state.
+**Model: Opus** — retrospectives are cross-module-impact reasoning over a merged diff, Opus-tier per
+the mandatory model-fit rule (table row: "Opus — retrospectives, ambiguous... non-trivial design").
+After RETRO-167, the strongest next-ticket candidate remains **FOLLOW-532** (pin the two GET
+/api/adapt call sites against auth-handling drift — P2, backend-engineer + qa-engineer, no operator
+dependency, fully completes on merge; delegation-table row: "a contract between two modules" /
+"client SDK... control-plane" depending on final split — re-derive at dispatch time). It is
+currently only a stub in `backlog/FOLLOW_UPS.md` (`promoted_to_queue: false`) and needs PM promotion
+to a real QUEUE.md entry before dispatch.
+
+0 tickets IN_PROGRESS this session (only the stale `TICKET-PILOT-001` record) — well under the
+3-ticket cap. CI-check counter: 1/5 (PR #485, all real gates green on first check). Fix-iterations:
+0/3.
+
+---
+
+## ▶️ (superseded) START HERE — session 18 PAUSED 2026-07-08 (4 tickets landed + 3 retros; resume with RETRO-167 + next ticket)
 
 **Session 18 is paused by the CEO for a break** — everything below is merged to `main` (tip after
 #484), 0 open PRs, 0 worktrees, tree clean. **To resume in a fresh session: (1) run RETRO-167 for

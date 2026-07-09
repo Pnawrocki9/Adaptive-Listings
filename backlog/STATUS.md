@@ -1,4 +1,31 @@
-# Status — 2026-07-08 (Sprint 22b OPEN — FOLLOW-473 elevated P2→P1 + dispatched to backend-engineer)
+# Status — 2026-07-09 (Sprint 22b OPEN — PR #485 validated, RETRO-167 owed before next dispatch)
+
+## SESSION 19 (2026-07-09) — validated PR #485 (session-18 pause banner); RETRO-167 next
+
+**On entry:** `main` tip `41eb890` (unchanged since session 18). 1 open PR (#485, docs-only banner
+save). Re-confirmed 4 standing `## OPEN` escalations: the new FOLLOW-463 CH-grant escalation plus
+ESC-020/028/034 — all operator/infra action items (ClickHouse grant, DNS/deploy, GH Actions secrets,
+Modal go-live), none an unresolved architectural/pricing/priority decision. Continued the loop per
+established multi-session precedent rather than halting on these standing, already-surfaced,
+non-decision escalations.
+
+**Validated PR #485:** `gh pr checks 485` → 55/57 real gates SUCCESS; only "Rule I — wired-or-dead
+check" (2 matrix legs) red — the standing pre-existing baseline, unrelated (docs-only single-file
+diff). Non-success count for all REAL gates: 0. Step 5c N/A (no new symbol/event/column in a prose
+diff). Posted PM-validated comment. Not merged (human-only).
+
+**Did not spawn a new ticket this session** — per the session-18 banner's explicit resume order,
+RETRO-167 (FOLLOW-535) must run before picking the next ticket, and this session's tool access is
+bookkeeping/validation only (no direct subagent-spawn tool available) — ends with a NEXT: pointer
+for the harness/human to invoke `retrospective-analyst` for FOLLOW-535. Teed up **FOLLOW-532** (P2,
+backend-engineer + qa-engineer, no operator dependency) as the strongest next-ticket candidate after
+the retro, still only a stub (`promoted_to_queue: false`) pending PM promotion.
+
+**Hand-off:** 1 open PR (#485, validated, human-merge pending). 4 standing OPEN escalations
+unchanged, non-blocking. 0 tickets IN_PROGRESS (only stale `TICKET-PILOT-001`). CI-check counter:
+1/5. Fix-iterations: 0/3.
+
+---
 
 ## SESSION 17 (2026-07-08) — FOLLOW-473 elevated P2→P1 + dispatched (Opus) to backend-engineer
 

@@ -1,6 +1,61 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-09 (session 19 — validated PR #485, RETRO-167 owed before next ticket)
+## ▶️ START HERE — resume 2026-07-09 (session 20 — PR #486 validated; FOLLOW-535 + FOLLOW-463 flipped DONE)
+
+**This session (bookkeeping-only, no new dispatch):**
+
+1. **Validated PR #486** (`data-engineer/FOLLOW-535-ttl-grant-prod-attestation`, docs-only —
+   RETRO-167 + prod attestation of migration 0020 TTL and the FOLLOW-463 grant).
+   `gh pr checks 486 --watch` ran to completion: all real gates green; non-success count via
+   `gh pr view --json statusCheckRollup` = 2, both the pre-existing `Rule I — wired-or-dead check`
+   baseline (confirmed via `--log-failed`: 181 pre-existing SDK/shared-symbol violations, none
+   introduced by this PR since it touches zero `.ts` files — confirmed via
+   `gh pr view --json files`). Posted the PM-validated comment. **Human merged it (#486) while this
+   validation was in flight** — confirmed via `gh pr view 486 --json state` = MERGED before this
+   banner was written.
+2. **Flipped FOLLOW-535** `CODE_COMPLETE_OPERATOR_PENDING -> DONE` and **FOLLOW-463**
+   `CODE_COMPLETE_OPERATOR_PENDING -> DONE` in this file. Both were the last two operator-pending
+   legs standing from session 18. Evidence for the flip (attested in PR #486, CLI-verified by the
+   operator against prod ClickHouse, not self-reported):
+   `SHOW CREATE TABLE default.description_generations` shows
+   `TTL toDateTime(created_at) + toIntervalMonth(13)`; `SHOW GRANTS` (as `ingest_worker`) shows
+   `GRANT INSERT ON default.description_generations TO ingest_worker`. Two operator typos (an
+   `INTERNAL`/`INTERVAL` TTL keyword slip, and an initial grant landed on a misspelled
+   `descriptions_generations` table) were caught and corrected in the same operator session — 0
+   occurrences of either typo remain. FOLLOW-463's go-live ESC is now RESOLVED in
+   `backlog/ESCALATIONS.md`.
+3. **RETRO-167** for FOLLOW-535 was already filed (bundled into PR #486 rather than a separate
+   `retrospective-analyst` spawn — not re-run this session, per instruction) — 0 bug / 3 logic / 1
+   test / 1 docs gaps, no CONVENTIONS_PATCH promotion (pattern count 1). It confirmed
+   `description_generations` still has **zero in-repo reader** — the table is a well-formed,
+   retained (13mo TTL), grant-correct write-only audit sink today. That reader gap is tracked as
+   **FOLLOW-536** (stub in `backlog/FOLLOW_UPS.md`, `promoted_to_queue: false` — not yet a real
+   ticket). FOLLOW-541 (DATA_DICTIONARY wording) and FOLLOW-542 (durable order-safe CH operator
+   runbook) are further RETRO-167 stubs, also unpromoted.
+
+**No new ticket dispatched this session** (scope was bookkeeping-only, per instruction — do not
+spawn workers).
+
+**Recommended next ticket: FOLLOW-532** (P2, backend-engineer + qa-engineer,
+`promoted_to_queue: false` in FOLLOW_UPS.md, source RETRO-164/FOLLOW-473) — pin the two GET
+`/api/adapt*` call sites' DB-throw→401 disposition so they can't silently drift apart; has **no
+operator dependency** (pure code + CI gate) and no `depends_on`, so it's cleanly delegable next
+session (needs PM promotion to a real QUEUE.md entry first). Other standing READY/stub candidates
+unchanged from the prior banner: FOLLOW-470 (status-doc refresh), FOLLOW-531 (decision-api sibling
+auth, staging), FOLLOW-536 (description_generations reader, needs promotion first), FOLLOW-539/540
+(P3). FOLLOW-458 stays BLOCKED on FOLLOW-449 (`CODE_COMPLETE_OPERATOR_PENDING`).
+
+**Escalations:** 3 standing `## OPEN` entries remain — ESC-020, ESC-028, ESC-034 — all re-confirmed
+unchanged, non-blocking, established multi-session precedent
+(code-complete-awaiting-operator-action, none gating this session's bookkeeping tasks). FOLLOW-463's
+grant escalation is now RESOLVED (see above) — no longer part of that standing set.
+
+**CI-check counter this session:** 1/5. **Fix-iteration counter:** 0/3. 0 PRs delegated by PM this
+session (PR #486 was opened by data-engineer last session, validated and merged this session).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-09 (session 19 — validated PR #485, RETRO-167 owed before next ticket)
 
 **On entry:** `main` tip unchanged at `41eb890` (through #484). 1 open PR: **#485**
 (`pm-orchestrator/session18-pause-save`, the session-18 pause-state banner save below) — docs-only,
@@ -9443,15 +9498,14 @@ gate) closes the epic and must be last.
     description_generations has no TTL/retention policy and now grows unbounded (writer added by
     FOLLOW-463)
   agent: data-engineer
-  status: CODE_COMPLETE_OPERATOR_PENDING # PR #483 merged (8931618); go-live blocked on the CH admin applying migration 0020 to prod (bundle with the FOLLOW-463 grant). RETRO-167 not yet run.
+  status: DONE # PR #483 merged (8931618); prod-applied and CLI-verified via PR #486 (2026-07-09); RETRO-167 filed
   assigned_to: data-engineer
-  completed_at: '2026-07-08T00:00:00Z'
+  completed_at: '2026-07-09T00:00:00Z'
   merged_commit: 8931618
   started_at: '2026-07-08T00:00:00Z'
   branch: data-engineer/FOLLOW-535-description-generations-ttl
   pr: 483
   ci_status: green # gitleaks fixed (squash); CH migrations smoke + golden-DDL test green; only standing Rule I baseline red (PR adds no TS → Rule I unaffected)
-  go_live_blocked_on: operator applies migration 0020 to prod CH (bundle with the FOLLOW-463 grant)
   validated: |
     Session 18 (2026-07-08) — data-engineer PR #483. Migration 0020: MODIFY TTL
     toDateTime(created_at) + INTERVAL 13 MONTH (mirrors events 0001:46; 13mo chosen for an
@@ -9461,8 +9515,16 @@ gate) closes the epic and must be last.
     gitleaks now green (earlier fail was a cloudflare-api-token false-positive on the 43-char 0007
     migration-filename reference — resolved by squashing the fix into the original commit, since
     gitleaks scans each historical patch); Rule I unaffected (PR adds no TS). Human merge only.
-    OPERATOR: lands CODE_COMPLETE — CH migrations don't auto-apply to prod. A CH admin applies 0020
-    BUNDLED with the pending FOLLOW-463 GRANT so the TTL is set before the table's first prod write.
+
+    PROD ATTESTATION (2026-07-09, PR #486, docs-only, merged): CH operator session applied migration
+    0020 to prod, then the FOLLOW-463 grant (TTL first, per RETRO-167's recommended order). Verbatim
+    CLI verification via Doppler `prd` `ingest_worker` creds: `SHOW CREATE TABLE
+    default.description_generations` shows `TTL toDateTime(created_at) + toIntervalMonth(13)`. Two
+    operator typos caught and corrected during the session (an `INTERNAL`/`INTERVAL` keyword typo
+    in the TTL ALTER, and a misspelled-table grant — see FOLLOW-463 below) — final state
+    CLI-reverified clean. Flipping CODE_COMPLETE_OPERATOR_PENDING -> DONE: code merged (#483),
+    prod-applied and verified (#486), RETRO-167 filed (FOLLOW-541/542 stubbed). No open blocker
+    remains for this ticket.
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -9479,13 +9541,19 @@ gate) closes the epic and must be last.
     flagged the missing TTL as load-bearing. Model: Sonnet (routine, well-defined CH migration).
     Full brief in backlog/HANDOFFS.md (session 18 -> data-engineer, FOLLOW-535).
     AC:
-    - [ ] New migration (0020) adds a TTL to description_generations — default 13 MONTH on created_at
+    - [x] New migration (0020) adds a TTL to description_generations — default 13 MONTH on created_at
           (align with the events audit sibling; anti-hallucination audit record warrants the longer
           retention over intent_events' 90 days). Does NOT alter 0007.
-    - [ ] Passes the "ClickHouse migrations smoke" CI gate.
-    OPERATOR NOTE: CH migrations don't auto-apply to prod — lands CODE_COMPLETE; a CH admin applies
-    it in prod, ideally BUNDLED with the pending FOLLOW-463 GRANT so the TTL is in place before the
-    table receives its first prod write.
+    - [x] Passes the "ClickHouse migrations smoke" CI gate.
+    - [x] Prod-applied and CLI-verified (PR #486, 2026-07-09): `SHOW CREATE TABLE` shows the TTL
+          expression verbatim.
+    RETRO-167 filed for this ticket (source PRs #483/#484); no bug/logic gap found, table confirmed
+    to have zero in-repo reader (see FOLLOW-536 stub below) so the TTL carried zero correctness
+    risk while dormant. Follow-up stubs FOLLOW-541 (DATA_DICTIONARY wording) + FOLLOW-542 (durable
+    order-safe CH operator runbook) filed in backlog/FOLLOW_UPS.md, not yet promoted.
+    REMAINING OPEN HOP (not this ticket's scope): FOLLOW-536 (stub, not yet promoted) —
+    description_generations has a producer (FOLLOW-463) and a TTL (this ticket) but still zero
+    in-repo reader/consumer. Table is a well-formed, retained write-only audit sink today.
 - id: FOLLOW-462
   title: >-
     ClickHouse DSR SQL: bind session_id as a param (backslash-safe) so erasure can't silently fail
@@ -9664,16 +9732,14 @@ gate) closes the epic and must be last.
     Persist the verified_facts_used anti-hallucination audit trail (table exists, zero writers)
     (F-17)
   agent: ml-engineer # reassigned from data-engineer 2026-07-08 (session 18) — see notes
-  status: CODE_COMPLETE_OPERATOR_PENDING # PR #479 merged (4d1db35); go-live blocked on the prod CH grant below — not DONE (same class as FOLLOW-449)
+  status: DONE # PR #479 merged (4d1db35); prod grant applied + CLI-verified via PR #486 (2026-07-09)
   assigned_to: ml-engineer
   started_at: '2026-07-08T00:00:00Z'
-  completed_at: '2026-07-08T00:00:00Z'
+  completed_at: '2026-07-09T00:00:00Z'
   branch: ml-engineer/FOLLOW-463-verified-facts-ch-audit
   pr: 479
   merged_commit: 4d1db35
   ci_status: green # all real gates pass; only standing pre-existing Rule I baseline red (new symbols confirmed absent from --log-failed)
-  go_live_blocked_on:
-    ESC (OPEN) — prod ingest_worker CH grant on description_generations (see below)
   validated: |
     Session 18 (2026-07-08) — ml-engineer PR #479. Both ACs met: (1) POST /api/internal/description-cache
     now dual-writes a description_generations CH row (verified_facts_used + model + archetype/listing/
@@ -9685,15 +9751,16 @@ gate) closes the epic and must be last.
     (PG write stays the read SoT; mirrors writeDsrAuditLog fire-and-forget). Independently verified:
     row is complete (11 cols), Rule I failure carries none of this PR's new symbols. Human merge only.
 
-    GO-LIVE OPERATOR ACTION (new OPEN escalation, filed in PR #479's ESCALATIONS.md): ESC-032/
-    FOLLOW-424 (2026-06-29) deliberately NARROWED the prod ingest_worker CH grant to EXCLUDE
-    description_generations on the "no writer exists" premise — which this PR invalidates. Code is
-    fail-loud-non-blocking so nothing breaks, but the audit table stays EMPTY in prod (every insert →
-    403/497 ACCESS_DENIED, Sentry-captured) until a ClickHouse Cloud admin runs
-    `GRANT INSERT ON default.description_generations TO ingest_worker;` and updates the
-    grant-narrowing runbook. This is the RETRO-021 measured-in-fixture / not-reachable-in-prod shape —
-    merging the PR does NOT complete the ticket's goal on its own. Same CODE_COMPLETE_OPERATOR_PENDING
-    class as FOLLOW-449.
+    GO-LIVE OPERATOR ACTION (filed in PR #479's ESCALATIONS.md, RESOLVED 2026-07-09 via PR #486):
+    ESC-032/FOLLOW-424 (2026-06-29) deliberately NARROWED the prod ingest_worker CH grant to EXCLUDE
+    description_generations on the "no writer exists" premise — which this PR invalidated. A
+    ClickHouse Cloud admin session (2026-07-09) ran `GRANT INSERT ON default.description_generations
+    TO ingest_worker;` and updated the grant-narrowing runbook. CLI-verified via `SHOW GRANTS` (as
+    `ingest_worker`): grant present on the correctly-spelled table (an initial attempt landed on a
+    misspelled `descriptions_generations` table and was REVOKEd + re-GRANTed — 0 occurrences of the
+    typo remain). Escalation flipped RESOLVED in backlog/ESCALATIONS.md. Flipping
+    CODE_COMPLETE_OPERATOR_PENDING -> DONE: code merged (#479), prod grant applied and verified
+    (#486), RETRO-167 covers the paired FOLLOW-535 ticket. No open blocker remains.
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -9704,9 +9771,11 @@ gate) closes the epic and must be last.
   spec: MASTER_DESIGN §E.7.5; audit report §5.3 F-17
   notes: |
     AC:
-    - [ ] The Modal description job writes verified_facts_used + model_version + archetype/listing to
+    - [x] The Modal description job writes verified_facts_used + model_version + archetype/listing to
           description_generations (or a Postgres column) on every generation.
-    - [ ] A query proves the audit trail is durable (survives Redis TTL).
+    - [x] A query proves the audit trail is durable (survives Redis TTL).
+    - [x] Prod grant applied and CLI-verified (PR #486, 2026-07-09): `SHOW GRANTS` shows
+          `GRANT INSERT ON default.description_generations TO ingest_worker`.
 
     REASSIGNED data-engineer -> ml-engineer 2026-07-08 (session 18, model-fit/agent-fit routing
     after repo verification). The ticket was authored assuming a CH-schema/writer task

@@ -1,4 +1,62 @@
-# Status — 2026-07-09 (Sprint 22b OPEN — PR #485 validated, RETRO-167 owed before next dispatch)
+# Status — 2026-07-09 (Sprint 22b OPEN — FOLLOW-535 + FOLLOW-463 flipped DONE, bookkeeping-only session)
+
+## SESSION 20 (2026-07-09) — validated PR #486, flipped FOLLOW-535/FOLLOW-463 DONE, no new dispatch
+
+**Scope:** two bookkeeping tasks only, per explicit instruction — validate PR #486, reconcile
+QUEUE.md for the completed CH operator action (migration 0020 TTL + FOLLOW-463 grant, both applied
+and CLI-verified in prod 2026-07-09). No workers spawned, no retro re-run (RETRO-167 already filed,
+bundled into PR #486 by the data-engineer session rather than a separate `retrospective-analyst`
+spawn).
+
+**On entry:** `main` tip was `41eb890` through PR #484; pulling fast-forwarded to `4895d6b`,
+discovering PR #485 (session-19 pause-banner save) AND PR #486 (RETRO-167 + prod attestation) had
+both already merged. FOLLOW-535 and FOLLOW-463 QUEUE.md entries still showed
+`CODE_COMPLETE_OPERATOR_PENDING` (PR #486 deliberately left the QUEUE.md status flip to the PM, per
+its own PR body) — this session closes that gap.
+
+**PR #486 validation:**
+
+- `gh pr checks 486 --watch` → completion. `gh pr view --json statusCheckRollup` non-success count:
+  **2**, both `Rule I — wired-or-dead check` (pre-existing baseline, 181 violations, all
+  pre-existing SDK/shared symbols — confirmed via `--log-failed` none are new; confirmed via
+  `gh pr view --json files` the PR is 100% docs, 0 `.ts` files touched). All other 45+ real gates
+  SUCCESS (Lint, Typecheck, Build ×2, Test Node 22, SDK E2E, ClickHouse migrations smoke,
+  Cross-language event contract, Gitleaks, Format check, Doppler verify, Rule H/J, Modal singleton
+  guard, Fire-and-forget sink guard, K.3.6 live smoke, Redis shadow round-trip, Archetype gates,
+  Auto-Detection corpus gate, Tracer query-builders, Vercel deploy).
+- Posted PM-validated comment on PR #486 with the evidence above. Human merged it independently
+  while this validation was in flight (confirmed via `gh pr view 486 --json state` = MERGED).
+- CI-check counter: 1/5. Fix-iteration counter: 0/3 (zero fixes needed — docs-only PR, CI green on
+  first watch).
+
+**QUEUE.md reconciliation:**
+
+- **FOLLOW-535**: `CODE_COMPLETE_OPERATOR_PENDING -> DONE`, `completed_at: 2026-07-09`. Evidence: PR
+  #486's verbatim `SHOW CREATE TABLE description_generations` shows the TTL expression live in prod.
+  AC checkboxes flipped `[x]`.
+- **FOLLOW-463**: `CODE_COMPLETE_OPERATOR_PENDING -> DONE`, `completed_at: 2026-07-09`. Evidence: PR
+  #486's verbatim `SHOW GRANTS` (as `ingest_worker`) shows the INSERT grant live in prod, correct
+  table name (typo `descriptions_generations` REVOKEd + re-GRANTed correctly, 0 occurrences of the
+  typo remain). AC checkboxes flipped `[x]`. Its go-live escalation is RESOLVED in
+  `backlog/ESCALATIONS.md`.
+- Noted **FOLLOW-536** (write-only reader gap — `description_generations` has a producer
+  (FOLLOW-463) and now a TTL (FOLLOW-535) but zero in-repo consumer) as the only remaining open hop
+  for that table. It's an unpromoted stub in `backlog/FOLLOW_UPS.md` (`promoted_to_queue: false`),
+  not yet a QUEUE ticket.
+- Rewrote the START HERE banner (top of `backlog/QUEUE.md`) to reflect the above and recommend
+  **FOLLOW-532** (P2, backend+qa, no operator dependency, no `depends_on`) as the next
+  worker-delegable pick.
+
+**Escalations:** re-confirmed the 3 standing `## OPEN` entries (ESC-020, ESC-028, ESC-034)
+unchanged, non-blocking, established multi-session precedent — none gate this session's
+bookkeeping-only scope. No P0/P1 before-go-live FOLLOW is open; not writing "sprint closed" this
+session (Sprint 22b remains open, FOLLOW-471's re-audit gate still BACKLOG pending its full
+`depends_on` list).
+
+**Hand-off:** 0 open PRs (PR #486 merged during this session). 0 tickets IN_PROGRESS dispatched by
+PM this session. CI-check counter: 1/5. Fix-iterations: 0/3.
+
+---
 
 ## SESSION 19 (2026-07-09) — validated PR #485 (session-18 pause banner); RETRO-167 next
 

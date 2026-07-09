@@ -1899,3 +1899,28 @@ independent occurrence, even if it references the same pattern by name.
   vs "operator-action-pending" (a queued infra step with no ambiguity about what to do) before
   deciding whether to continue the loop; never let an old operator-action entry silently become
   precedent for waving through a genuinely new decision-blocking one without the same scrutiny.
+
+- **Date / ticket:** 2026-07-09 — session 20 (FOLLOW-535 + FOLLOW-463 close-out, bookkeeping-only)
+- **Delegation row used:** none — no new delegation this session, only PR validation + queue
+  reconciliation per explicit user scope.
+- **What validation caught (or missed):** Confirmed the CI-green check was real, not assumed: ran
+  `gh pr checks 486 --watch` to actual completion (an early snapshot showed 3 checks still pending —
+  waited rather than reading the non-terminal snapshot as final), then cross-checked with
+  `gh pr view --json statusCheckRollup` for the authoritative non-success count (2, both the known
+  pre-existing Rule I baseline). Independently verified the Rule I failures were pre-existing (not
+  caused by this PR) by (a) confirming the PR's file list is 100% `.md`/docs with zero `.ts` files
+  via `gh pr view --json files`, and (b) pulling `--log-failed` and checking the 181 flagged symbols
+  are all long-standing SDK/shared exports, not anything from this diff — didn't just trust the
+  "docs-only, CI unaffected" claim in the PR body. Separately, discovered mid-session that the human
+  had merged PR #486 (and #485) while I was still validating — `git pull --ff-only` on `main`
+  surfaced content I didn't expect, and a naive `git stash pop` against the new tip produced 3-file
+  merge conflicts. Recovered cleanly by `git reset --hard HEAD` back to the fresh pulled `main` and
+  re-applying my edits fresh against the current file content rather than fighting the conflict
+  markers — safer than resolving a stash-pop conflict by hand on backlog prose files.
+- **A delegation/validation rule I'd add:** For a PR claimed "docs-only, CI should be unaffected,"
+  still pull the actual file list (`gh pr view --json files`) before asserting that. Separately:
+  when stashing edits to switch to a fresh `main` mid-session, expect the remote may have advanced
+  past what `git log` showed at session start (a human can merge concurrently) — if `stash pop`
+  conflicts, prefer `git reset --hard HEAD` + re-editing the fresh files over manually resolving
+  conflict markers in prose/YAML backlog files, since a hand-resolved conflict marker is a much
+  easier way to silently corrupt QUEUE.md than a clean re-edit.

@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — prod `ingest_worker` ClickHouse user has NO grant on `description_generations`, blocking FOLLOW-463's audit-trail write [FOLLOW-463]
+## RESOLVED — prod `ingest_worker` ClickHouse user has NO grant on `description_generations`, blocking FOLLOW-463's audit-trail write [FOLLOW-463]
 
 **Filed by:** ml-engineer (session, FOLLOW-463) **Date:** 2026-07-08T00:00:00Z **Affects:**
 FOLLOW-463 (P2, audit F-17), `apps/control-plane/src/app/api/internal/description-cache/route.ts`,
@@ -57,7 +57,38 @@ and update the grant-narrowing runbook's Confirmed Table Access table (`descript
 row) to reflect the new writer, replacing "none (no writer) — intentionally dropped" with the
 FOLLOW-463 write path. Re-run the runbook's Step 3 smoke test (INSERT + cleanup) to confirm.
 
-**Resolution:** <empty until resolved>
+**Resolution:** 2026-07-09 — resolved by Piotr (CEO) via the ClickHouse Cloud SQL console (admin
+`default`), service `hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443`, bundled with FOLLOW-535's
+migration 0020 (TTL) in RETRO-167 order (TTL first, then GRANT).
+
+**Near-miss caught by CLI verification (RETRO-167 verify discipline).** The first attempt granted a
+**misspelled** table — `descriptions_generations` (extra "s"). A CLI check (`SHOW GRANTS` as
+`ingest_worker` via Doppler `prd` creds) exposed it: the real table `description_generations` still
+returned `Code: 497 ACCESS_DENIED`. Corrected in a second admin pass:
+
+```sql
+REVOKE INSERT ON default.descriptions_generations FROM ingest_worker;   -- drop the typo
+GRANT  INSERT ON default.description_generations  TO ingest_worker;     -- correct table
+```
+
+**Verified from CLI 2026-07-09** — `SHOW GRANTS` (as `ingest_worker`) now includes, and the typo
+table is gone (0 occurrences):
+
+```
+GRANT INSERT ON default.description_generations TO ingest_worker
+```
+
+The grant is **INSERT only** — `ingest_worker` retains NO SELECT on this table (write-only audit
+sink; the reader is the still-open FOLLOW-536). The FOLLOW-535 TTL leg is **verbatim-verified**: an
+admin `SHOW CREATE TABLE default.description_generations` shows
+`TTL toDateTime(created_at) + toIntervalMonth(13)` on the correct table (an initial `INTERNAL` typo
+was corrected to `INTERVAL` first; full DDL archived in `docs/runbooks/clickhouse-migrations.md`).
+Attested in `docs/runbooks/clickhouse-ingest-worker-grant-narrowing.md` and
+`docs/runbooks/clickhouse-migrations.md`. Two operator typos in one session (`descriptions_` grant,
+`INTERNAL` TTL) are fresh evidence for FOLLOW-542 (durable, copy-safe, CLI-verified runbook). See
+RETRO-167, FOLLOW-542.
+
+See RETRO-167, FOLLOW-542.
 
 ---
 

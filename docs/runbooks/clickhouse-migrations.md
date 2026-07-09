@@ -426,3 +426,67 @@ least one real row is confirmed queryable)._
 **Cross-reference:** FOLLOW-449 (this ticket) is data/code-complete without prod access per the
 ESC-022/ESC-031 privileged-operator-action precedent; this stub is the handoff artifact. FOLLOW-308
 is the standing prod-apply mechanism (different scope, still open per the Sprint 22b backlog note).
+
+---
+
+## Prod Attestation — migration 0020 (`description_generations` TTL) [FOLLOW-535]
+
+**Date:** 2026-07-09 **Operator:** Piotr (CEO) — `ALTER … MODIFY TTL` via ClickHouse Cloud SQL
+console (admin `default`; `ingest_worker` has no `ALTER` privilege) **Service:**
+`hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443`
+
+**Background:** Migration 0007 created `description_generations` with
+`PARTITION BY toYYYYMM(created_at)` but **no TTL**. Inert while the table had zero writers;
+FOLLOW-463 added the first writer, so rows began accumulating with no expiry (amplified by the
+RETRO-163/FOLLOW-528 model-toggle re-dispatch — one row per toggle). Migration 0020 adds a 13-month
+TTL matching the `events` audit table. ClickHouse does **not** auto-apply migrations (RETRO-076 /
+Rule M), so this required a manual privileged apply.
+
+**Order (RETRO-167 LG-1):** applied the TTL **before** the FOLLOW-463 `GRANT INSERT` in the same
+admin session, so no live write window opened against an un-TTL'd table. Pre-flight confirmed the
+0007 table exists (RETRO-167 LG-2 — `EXISTS TABLE` guard against Code 60 UNKNOWN_TABLE).
+
+**Applied:**
+
+```sql
+ALTER TABLE default.description_generations
+    MODIFY TTL toDateTime(created_at) + INTERVAL 13 MONTH;
+```
+
+**Verdict: PASS — verbatim-verified 2026-07-09.** The operator ran the `ALTER` on the
+correctly-named table (after correcting an initial `INTERNAL` → `INTERVAL` keyword typo — the
+`INTERNAL` mis-token parsed as an identifier and threw `Code: 62 SYNTAX_ERROR`; the correct
+`INTERVAL 13 MONTH` form then applied cleanly, matching the CI golden-DDL test). The admin
+`SHOW CREATE TABLE default.description_generations` confirms the TTL clause is present on the
+correct table:
+
+```sql
+CREATE TABLE default.description_generations
+(
+    `tenant_id` String,
+    `listing_id` String,
+    `archetype` LowCardinality(String),
+    `locale` LowCardinality(String),
+    `tier` UInt8,
+    `model` LowCardinality(String),
+    `source` LowCardinality(String),
+    `description_chars` UInt32,
+    `verified_facts_used` Array(String),
+    `generated_at` DateTime64(3, 'UTC'),
+    `created_at` DateTime64(3, 'UTC')
+)
+ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (tenant_id, listing_id, archetype, locale, created_at)
+TTL toDateTime(created_at) + toIntervalMonth(13)
+SETTINGS index_granularity = 8192
+```
+
+(`SharedMergeTree` is the ClickHouse Cloud engine substituted for the migration's `MergeTree` — TTL
+semantics are identical.) The sibling FOLLOW-463 grant from the same session is also CLI-verified
+correct (see the grant-narrowing runbook addendum).
+
+**Cross-reference:** FOLLOW-535 (this migration), FOLLOW-463 grant (bundled, see the grant-narrowing
+runbook addendum), RETRO-167 (§ order-safety + follow-ups FOLLOW-541/542), FOLLOW-536 (the
+still-open reader — table remains write-only). The golden-DDL CI regression test added by FOLLOW-535
+(`ci.yml`) enforces the TTL clause is present in `dist`/migration source going forward.

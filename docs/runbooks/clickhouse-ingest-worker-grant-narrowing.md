@@ -43,16 +43,16 @@ This is a **correctness + narrowing** operation, not a pure narrowing:
 
 ## Confirmed table access (ESC-032 Phase 1 enumeration)
 
-| Table                             | Need                           | Driven by                                      |
-| --------------------------------- | ------------------------------ | ---------------------------------------------- |
-| `default.events`                  | INSERT + ALTER DELETE          | ingest Worker / stream-consumer; DSR erase     |
-| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                    |
-| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase |
-| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase  |
-| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater              |
-| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)             |
-| `system.mutations`                | SELECT                         | DSR mutation status poll                       |
-| `default.description_generations` | **none** (no writer)           | — intentionally dropped                        |
+| Table                             | Need                           | Driven by                                                                                |
+| --------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `default.events`                  | INSERT + ALTER DELETE          | ingest Worker / stream-consumer; DSR erase                                               |
+| `default.intent_events`           | INSERT + SELECT                | ingest Worker; tracer K.3.6                                                              |
+| `default.adaptation_decisions`    | INSERT + SELECT + ALTER DELETE | `logDecisionAsync`; pilot/analytics; DSR erase                                           |
+| `default.llm_calls`               | INSERT + SELECT + ALTER DELETE | `logLlmCallAsync`; circuit breaker; DSR erase                                            |
+| `default.dsr_audit_log`           | INSERT + ALTER UPDATE          | DSR audit writer + status updater                                                        |
+| `default.session_quality`         | ALTER DELETE only              | DSR erase (no INSERT path in code)                                                       |
+| `system.mutations`                | SELECT                         | DSR mutation status poll                                                                 |
+| `default.description_generations` | INSERT (no SELECT)             | `writeDescriptionGenerationAudit` (FOLLOW-463 writer, granted + CLI-verified 2026-07-09) |
 
 ---
 
@@ -186,3 +186,49 @@ INSERT/SELECT/ALTER on its required set.
 **NOT** confirmed flowing. Two end-to-end smokes during this attestation returned HTTP 200 but did
 not persist a row, while direct `ingest_worker` INSERT succeeded — a **separate, grant-independent
 prod regression** tracked as **ESC-033 (P1)**. This runbook attests the grant only.
+
+---
+
+## Addendum — `description_generations` INSERT added (FOLLOW-463 writer)
+
+**Date:** 2026-07-09 **Operator:** Piotr (CEO) — GRANT via ClickHouse Cloud SQL console (admin
+`default`) **Service:** `hl0kc83gt4.eu-west-1.aws.clickhouse.cloud:8443`
+
+**Why:** ESC-032 (2026-06-29) narrowed the grant to _exclude_ `description_generations` because it
+had no writer. FOLLOW-463 later added the first writer (`writeDescriptionGenerationAudit`, the
+§E.7.5 anti-hallucination audit sink), so the negative-control table above became a real write
+target. Escalation resolved 2026-07-09 (`backlog/ESCALATIONS.md`).
+
+**Intended grant (INSERT only — `ingest_worker` deliberately retains NO SELECT; write-only audit
+sink, reader is the still-open FOLLOW-536):**
+
+```sql
+GRANT INSERT ON default.description_generations TO ingest_worker;
+```
+
+**Near-miss (RETRO-167 verify discipline):** the first admin pass granted a **misspelled** table
+(`descriptions_generations`, extra "s"). A CLI check caught it — the real `description_generations`
+still returned `Code: 497 ACCESS_DENIED`. Corrected in a second pass:
+
+```sql
+REVOKE INSERT ON default.descriptions_generations FROM ingest_worker;
+GRANT  INSERT ON default.description_generations  TO ingest_worker;
+```
+
+**Verdict: effective — CLI-verified 2026-07-09.** `SHOW GRANTS` (as `ingest_worker`, Doppler `prd`
+creds) after correction — typo table gone (0 occurrences), correct grant present:
+
+```
+GRANT SELECT, INSERT, ALTER DELETE ON default.adaptation_decisions TO ingest_worker
+GRANT INSERT ON default.description_generations TO ingest_worker
+GRANT INSERT, ALTER UPDATE ON default.dsr_audit_log TO ingest_worker
+GRANT INSERT, ALTER DELETE ON default.events TO ingest_worker
+GRANT SELECT, INSERT ON default.intent_events TO ingest_worker
+GRANT SELECT, INSERT, ALTER DELETE ON default.llm_calls TO ingest_worker
+GRANT ALTER DELETE ON default.session_quality TO ingest_worker
+GRANT SELECT ON system.mutations TO ingest_worker
+```
+
+The grant is INSERT only (no SELECT — write-only audit sink; reader is the still-open FOLLOW-536).
+Cross-ref: RETRO-167, FOLLOW-542 (durable order-safe, copy-safe runbook — the two operator typos
+this session, `descriptions_` and `INTERNAL`, are fresh evidence for it).

@@ -10239,11 +10239,16 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   [ADR-0014](../docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md). Implemented in
   `packages/sdk/src/core/{observer,session,intent}.ts` and `packages/sdk/src/index.ts`; 184 SDK unit
   tests pass; verified end-to-end in a real browser. Open follow-ups:
-  - [ ] **Add SDK unit tests** for the new paths: (a) `observer` emits `listing.viewed` on in-place
+  - [x] **Add SDK unit tests** for the new paths: (a) `observer` emits `listing.viewed` on in-place
         `data-estalara-listing-id` mutation; (b) `refreshDirectives` restores the SoT archetype on
         neutral-decay and updates it on non-neutral resolution; (c) `eraseIntentState` clears
         `estalara_resolved_archetype_*`. (Rule H — currently verified only by browser + existing
-        intent/session suites.)
+        intent/session suites.) **RESOLVED 2026-07-10 by FOLLOW-380 (PR #491,
+        `packages/sdk/src/__tests__/follow-380.test.ts`)** — the consolidated suite's
+        `cross_ref (a)`, `cross_ref (b) + hardening (c)`, and `cross_ref (c)` describe blocks cover
+        exactly these three items (verified by pm-orchestrator against the merged diff before
+        flipping; each block name-matches the (a)/(b)/(c) split above). The other two open bullets
+        below (platform/Rafał production-delivery actions) are unrelated and remain OPEN.
   - [ ] **[PLATFORM/Rafał]** Serve the production SDK bundle from a versioned/content-hashed URL so
         a redeploy reaches single-page sessions (the `<script async>` loader is not re-fetched on
         SPA nav). See `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §3.
@@ -14491,3 +14496,72 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - Whichever is chosen, add it to `docs/AGENT_WORKFLOW.md` (or CONVENTIONS_PATCH.md if it recurs)
     so the author-blur that produced FOLLOW-544 cannot recur silently.
 - cross_ref: [RETRO-168, FOLLOW-470, FOLLOW-544, PR #488, docs/AGENT_WORKFLOW.md]
+
+## FOLLOW-546 — Extend the FOLLOW-380 latest-wins in-flight guard over the fire-and-forget description tail: the guard is a single post-fetch checkpoint and does NOT cover `applyDescriptionAdaptation`, so a superseded rapid-nav refresh can paint a stale-archetype description onto the newer listing
+
+- source_retro: RETRO-169 (§4a LG-1 / §7 / §4c TG-1)
+- source_ticket: FOLLOW-380
+- recommended_sprint: next SDK-hardening sprint (before FOLLOW-471 re-audit closes the cross-listing
+  line)
+- recommended_agent: sdk-engineer
+- priority: P2
+- estimated_hours: 2.5
+- promoted_to_queue: false
+- scope: FOLLOW-380 bug (a) added a monotonic latest-wins guard (`myRefreshId !== latestRefreshId`)
+  as a SINGLE checkpoint at `packages/sdk/src/index.ts:737`, right after `fetchDirectives`. But the
+  description adaptation is dispatched fire-and-forget AFTER that checkpoint —
+  `void applyDescriptionAdaptation(config, resp.archetype)` at `index.ts:805` — in a SEPARATE module
+  (`packages/sdk/src/core/adapt-description.ts:265`) that cannot see
+  `myRefreshId`/`latestRefreshId`. It re-reads `listingId` fresh (`adapt-description.ts:279-283`)
+  then `await fetchDescription(...)` (`:285`) with the STALE `resp.archetype` from the superseded
+  refresh. On rapid cross-listing nav where the new listing resolves a DIFFERENT archetype
+  (neutral-fit → SoT restore, or FOLLOW-201 drift), the stale invocation paints the correct
+  (freshly-read) listing's description slot with the WRONG archetype's copy — the exact
+  async-interleave class RETRO-105 LG-1 / FOLLOW-380 bug (a) set out to close, relocated one hop to
+  the description path. Same-archetype navs are unaffected (narrows but does not close the window).
+  This is the 2nd sighting of the async-interleave pattern (RETRO-105 §6 + RETRO-169 §6); a 3rd
+  sighting promotes a CONVENTIONS_PATCH rule.
+- ac:
+  - `applyDescriptionAdaptation` receives a staleness check from the caller (an `isStale()` callback
+    or a `callId` snapshot compared against `latestRefreshId`) and bails BEFORE mutating any DOM
+    slot when it has been superseded — both before AND after its own `await fetchDescription`.
+  - Add a non-vacuous jsdom test (retires RETRO-169 §4c TG-1): stub IntersectionObserver, drive a
+    rapid cross-listing `listing.viewed` with an archetype change across the nav, and assert the
+    stale description is discarded (RED without the guard extension).
+  - No regression to the same-archetype fast-path (no added latency / no dropped legitimate
+    description).
+- cross_ref: [RETRO-169, RETRO-105, FOLLOW-380, FOLLOW-375, packages/sdk/src/index.ts:737,
+  packages/sdk/src/index.ts:805, packages/sdk/src/core/adapt-description.ts:265, FOLLOW-471]
+
+## FOLLOW-547 — Version + instrument the client-side SoT sessionStorage schema: the FOLLOW-380 JSON write is unversioned, so a rolled-back / staggered-CDN old bundle mis-parses the new `{archetype,confidence}` shape and survives only by three coincidental fail-safes
+
+- source_retro: RETRO-169 (§4a LG-2 / §4c TG-2)
+- source_ticket: FOLLOW-380
+- recommended_sprint: SDK hygiene / observability sprint
+- recommended_agent: sdk-engineer
+- priority: P3
+- estimated_hours: 1.5
+- promoted_to_queue: false
+- scope: FOLLOW-380 changed the SoT sessionStorage entry `estalara:resolved-archetype:<sid>` from a
+  bare archetype string to `{"archetype","confidence"}` JSON. The legacy direction (old plain-string
+  read by the new bundle) is correctly handled by the 0.85 fallback in `readResolvedArchetype`
+  (`packages/sdk/src/core/session.ts:524-548`) — RETRO-169 verified 0.85 clears both the 0.6 server
+  gate and the 0.5 DOM floor, so that reasoning HOLDS. The RESIDUAL is the REVERSE: a NEW JSON entry
+  read by an OLD (pre-FOLLOW-380) bundle after an SDK rollback or during a staggered-CDN redeploy in
+  a session that spans the flip in-tab. The old `readResolvedArchetype` returns the raw JSON string
+  AS the archetype (an invalid value). It fails safe only by coincidence on three independent legs:
+  (1) the old bundle also lacks bug-(c)'s confidence re-pin → neutral-era low confidence → server
+  0.6 gate returns no directives; (2) `archetype_hint` is `z.string().optional()` (adapt
+  `route.ts:203`), not enum-validated, so no crash; (3) self-heals on the old bundle's next
+  non-neutral persist. Blast radius bounded by sessionStorage ephemerality (per-tab), but unmeasured
+  and fragile.
+- ac:
+  - Add a schema-version marker to the SoT JSON payload (e.g. `{v:1,archetype,confidence}`) OR, at
+    minimum, emit a `pushEvent` telemetry counter when `readResolvedArchetype` falls through to the
+    legacy plain-string branch, so the redeploy-window forward-incompat is measurable.
+  - Document (SDK code + runbook) the forward-incompat window + the fail-safe legs so a future SoT
+    field addition evolves without a silent mis-parse.
+  - If a version marker is added, `readResolvedArchetype` treats an unknown/absent version as legacy
+    and applies the 0.85 fallback (no behavior change for existing entries).
+- cross_ref: [RETRO-169, FOLLOW-380, packages/sdk/src/core/session.ts:524,
+  apps/control-plane/src/app/api/adapt/route.ts:203]

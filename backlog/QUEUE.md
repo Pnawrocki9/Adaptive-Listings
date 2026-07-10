@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 22 — FOLLOW-380 validated, PR #491 READY_FOR_REVIEW; PR #490 still unmerged)
+## ▶️ START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
+
+**PR #491 MERGED** to `main` as squash commit `4cc5ba5` (2026-07-10T07:16:20Z); PM-validation
+bookkeeping PR #492 merged immediately after (`57a0116`). PR #490 (superseded dispatch-record PR)
+was CLOSED unmerged per human decision — its content is fully folded into FOLLOW-380's DONE trail in
+`backlog/QUEUE.md`, nothing lost. The human merged PR #491 (the code) directly, so review is
+effectively complete. Local `main` synced & clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-380-close`** (agent-prefix, branch-first):
+FOLLOW-380 flipped `READY_FOR_REVIEW` → `DONE` (`completed_at: 2026-07-10`, `merged_pr: 491`,
+`merge_commit: 4cc5ba5`). Also retired FOLLOW-375's lingering `backlog/FOLLOW_UPS.md` test-debt
+bullet — verified the consolidated `follow-380.test.ts` genuinely covers all 3 of its deferred items
+(observer in-place mutation, refreshDirectives SoT restore/update, eraseIntentState clears the
+resolved-archetype key) by name-matching its `cross_ref (a)/(b)/(c)` describe blocks — checked `[x]`
+with a resolution note; the two unrelated platform/Rafał bullets in that same stub stay OPEN.
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-380-close` to append **RETRO-169**
+and any follow-up stubs, bundling RETRO + DONE-flip into one PR (matches PRs #486/#487/#489
+convention). PM will validate that bundled PR once the coordinator confirms it's ready.
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). FOLLOW-458's `status: READY` label is still inconsistent with its own
+unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed; worth a one-line correction
+next time this ticket is touched. FOLLOW-545 (process stub, RETRO-168, bashless-agent-author-blur —
+not yet promoted). 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged,
+non-blocking.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-169 content to land on
+the same branch first.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 22 — FOLLOW-380 validated, PR #491 READY_FOR_REVIEW; PR #490 still unmerged)
 
 **Two PRs from this session are in flight, in this order:**
 
@@ -10256,11 +10289,14 @@ gate) closes the epic and must be last.
     Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin)
     + unit tests
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
   branch: sdk-engineer/FOLLOW-380-cross-listing-hardening
   pr: 491
+  merged_pr: 491
+  merge_commit: 4cc5ba5
   model:
     Opus # concurrency/interleaving + shared-mutable-state coherence reasoning; model-fit
     # table "complex single-domain reasoning ... non-trivial design". See dispatch brief in
@@ -10378,6 +10414,26 @@ gate) closes the epic and must be last.
     - [x] Unit tests for the FOLLOW-375 new paths (observer in-place mutation; SoT restore/update;
           eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
           empty-value skip).
+
+    MERGED 2026-07-10: PR #491 squash-merged to `main` as commit `4cc5ba5` (2026-07-10T07:16:20Z),
+    the PM-validation bookkeeping PR #492 merged immediately after as `57a0116`. PR #490 (the
+    superseded dispatch-record PR) was CLOSED unmerged per human decision — its content is fully
+    folded into this ticket block's DONE trail, nothing lost. Ticket closed DONE.
+
+    FOLLOW-375 test-debt retired: `backlog/FOLLOW_UPS.md`'s FOLLOW-375 stub had one open bullet —
+    "Add SDK unit tests for the new paths (a) observer in-place mutation, (b) refreshDirectives
+    SoT restore/update, (c) eraseIntentState clears resolved-archetype key" — checked `[x]` and
+    marked RESOLVED 2026-07-10 by this ticket's consolidated `follow-380.test.ts`
+    (`cross_ref (a)`/`cross_ref (b) + hardening (c)`/`cross_ref (c)` describe blocks name-match
+    exactly). The other two FOLLOW-375 bullets (platform/Rafał production-delivery actions:
+    versioned SDK bundle URL, `chat_intent_dimensions` prod confirmation) are unrelated to this
+    ticket and remain OPEN — FOLLOW-375 itself stays `DONE` in QUEUE.md (its stub in
+    FOLLOW_UPS.md is a doc-follow-up tracker, not a re-open of the ticket).
+
+    retrospective-analyst to be spawned by the coordinator on branch
+    `pm-orchestrator/FOLLOW-380-close` (this same bookkeeping PR, RETRO-169) per the repo's
+    RETRO+DONE bundling convention (matches PRs #486/#487, #489) — NOT run by pm-orchestrator
+    itself (no subagent-spawn capability in this tool surface).
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

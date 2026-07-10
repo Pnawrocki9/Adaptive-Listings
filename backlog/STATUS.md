@@ -1,4 +1,37 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #509 PM-validated READY_FOR_REVIEW, FOLLOW-550 near-closed, session 25 cont'd)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #508+#509 MERGED, FOLLOW-550 DONE, RETRO-174 pending, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — #508/#509 MERGED, FOLLOW-550 DONE, RETRO-174 dispatch prepared
+
+Both PRs merged by the human: PR #509 (`architect/FOLLOW-550-bookkeeping-pr-sequencing`, the content
+— `docs/AGENT_WORKFLOW.md`) as commit `66f8e76`; PR #508 (`pm-orchestrator/FOLLOW-550-dispatch`, the
+bookkeeping — dispatch + this session's own validation) as commit `c02b96b`. Local sync:
+`git checkout main && git pull` fast-forwarded `e0a11b3..66f8e76`. Confirmed
+`docs/AGENT_WORKFLOW.md`'s "Bookkeeping-PR sequencing" section is live on `main`; confirmed
+FOLLOW-550 showed `status: READY_FOR_REVIEW` in `backlog/QUEUE.md` before this edit.
+
+**#508 merging (not closing) is CORRECT**, verified against the new section's own rule (a): #508's
+dispatch-record content was never duplicated/re-included in a later PR — the validation was folded
+into #508 IN PLACE (an extra commit, per rule (d), dogfooded last turn) rather than a new PR, so
+#508 had genuine non-redundant content to merge. This is the key structural difference from
+FOLLOW-549's #504 (whose content WAS about to be duplicated by the separate #506) — confirms the new
+rule's own logic holds up against a real case immediately.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-550-done`** (agent-prefix, branch-first):
+FOLLOW-550 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-10`,
+`merged_pr:` citing #509 as content + #508 as bookkeeping, `merge_commit: 66f8e76`). Confirmed
+exactly ONE `FOLLOW-550` block, no duplication from the two merges.
+
+**Retro brief prepared** in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-550") for
+RETRO-174 — model **Opus** (matches `retrospective-analyst`'s own agent-file default) — to be
+appended onto `pm-orchestrator/FOLLOW-550-done` so DONE + RETRO ship as ONE bundled PR (dogfooding
+rule (d) one more time). Flagged three specific angles per the coordinator: (a) did the dogfooding
+of FOLLOW-550's own bundle shape actually hold, or did sprawl leak back in; (b) is FOLLOW-551
+correctly scoped, and are there OTHER agents with a similar tool/role mismatch worth sweeping in
+now; (c) confirm the Rule AB ARMED trigger from RETRO-173 is still correctly pending (count 1) and
+not accidentally tripped by FOLLOW-550's mere existence — codifying guidance is not itself a second
+retro sighting. Not spawned by pm-orchestrator; reported back to the coordinator to dispatch.
+
+---
 
 ## SESSION 25 cont'd (2026-07-10) — PR #509 validated (folded into #508, no separate validation PR)
 

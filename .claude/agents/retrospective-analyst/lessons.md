@@ -2435,3 +2435,38 @@
   path must be mandatory, not optional"). Process defects and concurrency defects rhyme: presenting
   a risky option as co-equal-safe is the process analog of guarding only the first await boundary.
   Worth watching whether other close-out conventions carry the same "either order is safe" framing.
+
+- **Date / RETRO-174** (FOLLOW-550 — codify bookkeeping-PR sequencing into docs/AGENT_WORKFLOW.md;
+  the META-ticket RETRO-173 §9 spun out).
+  - **A finding I almost missed and why (DG-1):** the naive read of a docs-codification ticket is
+    "is the new section CORRECT?" — and it was, so I nearly wrote a clean §3/§4 and moved on. The
+    real gap only surfaced when I ran the wiring-audit analog on a DOC convention: producer (new
+    §Bookkeeping-PR sequencing at :163) exists, but I forced myself to ask "who is ROUTED to it?"
+    Grepping for inbound cross-references + reading the pre-existing recovery playbook
+    (`### "Two PRs conflict on the same files"` :350) revealed it (i) never links to :163 and (ii)
+    says "Close the later PR" — which is exactly BACKWARDS for the bookkeeping sub-case rule (a)
+    governs (the LATER validation PR #506 was the casualty; the EARLIER #504 should have been
+    closed). The gap relocated one hop (RETRO-173 "convention ambiguous" → RETRO-174 "convention
+    unambiguous but un-wired + locally contradicted"). LESSON: for a docs/convention ticket, CHECK
+    A/B means "does the new convention have an inbound consumer entry point, and does that entry
+    point AGREE with it?" — not just "is the prose right?" Analyzing only the producer axis would
+    have missed it.
+  - **An axis/chain I had to trace twice:** rule (d)'s dogfooding. First pass I wrote "FOLLOW-550
+    obeyed rule (d)." Second pass I checked #508's actual commits and saw the validation was folded
+    into the PROMOTION PR (#508 commit 2e2a486), not the DONE+RETRO bundle rule (d) literally names.
+    Had to re-classify from "clean" to "harmless generalization of (d)'s spirit" (DG-2, folded) — a
+    reminder to verify the ACTUAL PR/commit shape against the rule's LETTER, not just its intent,
+    before grading a self-dogfooding meta-ticket.
+  - **A meta-pattern in how gaps recur across agents:** convention/doc gaps rhyme with concurrency
+    gaps in the SAME way RETRO-169/170/171's async arc did — a safeguard (guard, or convention) is
+    only effective where the actor actually ARRIVES. The async arc: guard must sit at the last sync
+    instant before EVERY deferred write. The doc arc: the convention must sit at (or link from) the
+    recovery/close-out section a PM actually reads mid-incident, not 187 lines up under its own
+    heading. Both failure modes are "correct-but-not-where-it's-needed." Watch for this whenever a
+    fix/convention is ADDED rather than wired into the existing hot path.
+  - **On the ARMED trigger (angle c) — the trap I avoided:** it was tempting to treat "FOLLOW-550
+    codified the pattern" as movement toward promotion. It is NOT — codifying guidance is not a NEW
+    SIGHTING of the runtime pattern recurring. I independently verified FOLLOW-550's own lifecycle
+    was clean (no merged-not-closed bookkeeping PR) before affirming count stays 1. A clean fix / a
+    codification landing is not a bug sighting — same discipline as RETRO-170's "a clean fix is not
+    a 3rd sighting" note on Rule AB.

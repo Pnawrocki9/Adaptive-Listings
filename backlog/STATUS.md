@@ -1,4 +1,84 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #505 MERGED, FOLLOW-549 DONE, RETRO-173 pending, session 25 cont'd)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #509 PM-validated READY_FOR_REVIEW, FOLLOW-550 near-closed, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — PR #509 validated (folded into #508, no separate validation PR)
+
+architect drafted FOLLOW-550's content; the coordinator applied the git mechanics (branch, commit
+`5025edd`, push, open PR #509) since the architect subagent has **no Bash tool** (manifest:
+Read/Write/Edit/Glob/Grep/WebSearch/WebFetch). The architect correctly REFUSED to `Edit`
+`docs/AGENT_WORKFLOW.md` directly rather than risk stranding the change on `main` (the exact
+FOLLOW-448/RETRO-146 failure mode) — drafted full content + insertion point + rationale and
+escalated the tooling gap instead. **Recorded as a routing/process finding** (not a numbered retro
+finding — no retro triggered for this): future implement-with-git docs-codification tickets should
+NOT be dispatched to architect without a plan for who applies the git mechanics. **FOLLOW-551
+filed** (P3, pm-orchestrator, ~1h) to formalize the resolution — concrete recurrence risk flagged:
+FOLLOW-543 (Master_Design narrative refresh, still unpromoted, `recommended_agent: architect`) will
+hit the identical wall when dispatched.
+
+**Validated PR #509** per the non-negotiable checklist:
+
+1. **CI:** `gh pr checks 509 --watch` → green except the standing 2-leg "Rule I — wired-or-dead"
+   gate. Independently computed non-success count via `gh pr view 509 --json statusCheckRollup` →
+   **2**. Cross-checked via `gh run view --log-failed` → **180 WARN lines**, identical to the
+   FOLLOW-532/546/548/549 baseline (expected — docs-only diff, confirmed via
+   `gh pr view 509 --json files` → exactly one file, `docs/AGENT_WORKFLOW.md`;
+   `CONVENTIONS_PATCH.md` untouched).
+2. **AC:** read the full 53-line diff directly — new section correctly placed between
+   "Recovered-work re-verification" and "The retrospective loop"; all four rules (a)-(d) present;
+   cites RETRO-173 §5a/§6/§9 and the #504/#505/#506 incident with the correct causal chain; contains
+   the required "workflow guidance, not a `CONVENTIONS_PATCH.md` Rule — Rule AB /
+   ≥2-prior-numbered-retro threshold genuinely unmet" statement, citing RETRO-153/158/169/170 by
+   name as the promotion-discipline precedent.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.** PR comment posted with the full evidence
+trail.
+
+**Dogfooding FOLLOW-550's own rule (d):** this validation was folded directly into the EXISTING
+promotion PR #508 (extra commit on branch `pm-orchestrator/FOLLOW-550-dispatch`) rather than opened
+as a separate validation PR — `backlog/QUEUE.md` FOLLOW-550 flipped `IN_PROGRESS` ->
+`READY_FOR_REVIEW` in place. **Confirmed PR #508 is still correct to MERGE, not close-superseded**,
+per rule (a): its content (the dispatch record) is not being duplicated/re-included in a later PR —
+this validation commit only extends #508 in place, so #508 remains the sole, non-redundant source of
+FOLLOW-550's bookkeeping trail. The eventual DONE+RETRO bundle will be a fresh PR cut from `main`
+AFTER both #508 and #509 merge, per rule (c).
+
+---
+
+## SESSION 25 cont'd (2026-07-10) — PR #507 MERGED, FOLLOW-550 promoted + dispatched to architect
+
+PR #507 (`pm-orchestrator/FOLLOW-549-done`, DONE-flip + RETRO-173 bundled) confirmed MERGED as
+commit `e0a11b3`. Local sync: `git checkout main && git pull` fast-forwarded `f541f37..e0a11b3`;
+confirmed FOLLOW-549 shows `status: DONE` on `main`, RETRO-173 present in
+`backlog/RETROSPECTIVES.md` (1 occurrence of `## RETRO-173`), FOLLOW-550 stub present in
+`backlog/FOLLOW_UPS.md` (1 occurrence). FOLLOW-549's loop is now FULLY closed — no open PRs, no
+pending retro, no residual sprawl.
+
+**Promoted FOLLOW-550** (P3, RETRO-173 §5d/§6/§9, source_ticket FOLLOW-549) into Sprint 22b.
+Human-approved reassignment to **architect** (cross-cutting process/convention change, not a worker
+deliverable — overrides the FOLLOW_UPS.md stub's original `recommended_agent: pm-orchestrator`,
+which didn't map onto the decision table). Delegation-table row: "a contract between two modules, a
+new dependency, an ADR" -> architect. Model: **Sonnet** (routine docs codification with ready-made
+Rule text from the retro; not the ambiguous-design Opus tier). AC pulled directly from RETRO-173's
+ready-made text: (a) bookkeeping PRs whose content a later PR folds in are ALWAYS closed-superseded,
+never merged; (b) never two QUEUE.md-touching PRs in flight; (c) validation/DONE PRs cut from `main`
+AFTER the code PR merges; (d) fold validation into the DONE+RETRO bundle rather than a separate PR.
+Home decided: `docs/AGENT_WORKFLOW.md` (new subsection, recommended placement between
+"Recovered-work re-verification" and "The retrospective loop") — **explicitly NOT
+`CONVENTIONS_PATCH.md`**, since RETRO-173 held the pattern at count 1 (≥2-PRIOR-numbered-retro
+threshold unmet, Rule AB discipline) and did not promote it; the AC requires the architect's new
+section to say so explicitly, and routes any disagreement to `backlog/ESCALATIONS.md` rather than a
+silent Rule add. Branch: `architect/FOLLOW-550-bookkeeping-pr-sequencing`. Full brief in
+`backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-550").
+
+**Anti-sprawl applied to THIS ticket's own lifecycle:** ONE promotion bookkeeping PR (this one,
+human merges it), later ONE DONE+RETRO bundle — no separate validation PR, per the coordinator's
+explicit instruction to apply FOLLOW-550's own lesson to itself. Queue edits on branch
+`pm-orchestrator/FOLLOW-550-dispatch` (branch-first, never committed to `main`).
+
+**Not spawned by pm-orchestrator** — brief reported back to the coordinator to dispatch (coordinator
+will pass it inline so architect can start off `main` in parallel, without waiting for this
+promotion PR to merge).
+
+---
 
 ## SESSION 25 cont'd (2026-07-10) — #504/#505 MERGED, #506 superseded/closed, FOLLOW-549 DONE
 

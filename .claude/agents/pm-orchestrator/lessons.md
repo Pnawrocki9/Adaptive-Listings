@@ -2043,3 +2043,40 @@ independent occurrence, even if it references the same pattern by name.
   it as superseded" choice, phrase it more directly as a recommendation ("recommend closing #N
   unmerged") rather than a neutral either/or — a neutral framing invites the costlier option
   (merging both) with no signal that one path avoids a guaranteed conflict on the sibling PR.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-550 (promotion + dispatch)
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" -> architect
+  (human-approved override of the stub's own `recommended_agent: pm-orchestrator`, which didn't map
+  onto the decision table — a process/workflow-doc ticket isn't a worker deliverable).
+- **What validation caught (or missed):** The ticket itself is a live test of the ≥2-prior-numbered-
+  retro promotion discipline (Rule AB): RETRO-173 correctly held its finding at count 1 and did NOT
+  promote a CONVENTIONS_PATCH Rule, so the AC had to be written carefully to make FOLLOW-550 a
+  workflow-doc codification, not a back-door Rule promotion — spelled this out explicitly in both
+  the ticket AC and the delegation brief, with an explicit escalation path (not silent Rule-add) if
+  the architect disagrees. Also applied this session's own just-learned lesson (anti-sprawl) to THIS
+  ticket's dispatch: one promotion PR, one later DONE+RETRO bundle, no separate validation PR —
+  practicing what FOLLOW-550 itself will codify, before it's even written.
+- **A delegation/validation rule I'd add:** When a retro explicitly declines to promote a
+  CONVENTIONS_PATCH Rule (HELD/ARMED), any downstream ticket that codifies the same finding
+  elsewhere (e.g. a workflow doc) MUST state in its own AC that it is NOT a Rule promotion and why —
+  otherwise a future reader (or the implementing agent) can't tell whether the ≥2-prior threshold
+  was silently bypassed via a different document.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-550 (validation of PR #509)
+- **Delegation row used:** architect (from prior turn; this entry covers validation + a routing
+  finding).
+- **What validation caught (or missed):** Confirmed a real, well-behaved failure-avoidance: the
+  architect subagent has NO Bash tool and correctly REFUSED to edit `docs/AGENT_WORKFLOW.md`
+  directly rather than risk stranding the change on `main` (exactly the FOLLOW-448/RETRO-146 pattern
+  its own new section documents) — it drafted content + insertion point for a Bash-capable party
+  instead. This is the delegation-table's blind spot: nothing in the model-fit or decision-table
+  rows flags that a ticket's ARTIFACT (docs/workflow codification) needs git mechanics that the
+  assigned agent's tool manifest doesn't have. Filed FOLLOW-551 rather than letting it pass as a
+  one-off, since FOLLOW-543 (another architect-assigned docs ticket) will hit the identical wall.
+  Also successfully dogfooded FOLLOW-550's own rule (d) by folding this validation into the existing
+  #508 PR instead of opening a new one — first real-world application of the rule the ticket itself
+  was about, immediately after drafting it.
+- **A delegation/validation rule I'd add:** Before dispatching ANY ticket, check the target agent's
+  tool manifest (`.claude/agents/<name>.md` frontmatter) against whether the AC requires committing/
+  pushing — not just whether the AGENT is the right domain fit. A domain-correct agent can still be
+  tool-incapable of executing its own ticket.

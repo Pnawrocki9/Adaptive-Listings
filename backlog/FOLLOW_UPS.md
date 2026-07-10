@@ -14655,22 +14655,26 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-550 title: >- Codify bookkeeping-PR sequencing to prevent QUEUE.md-conflict sprawl
   (single close-superseded default; never two QUEUE.md-touching PRs in flight) source_retro:
   RETRO-173 source_ticket: FOLLOW-549 recommended_sprint: backlog recommended_agent: pm-orchestrator
-  priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-549 (a 1h P3 test/docs
-  ticket) produced THREE PRs (#504 dispatch-record, #505 code, #506 validation) where FOLLOW-532
-  minutes earlier achieved a tight 2-PR shape (code #502 + single DONE+RETRO bundle #503). #506 was
-  cut from `main` BEFORE #504/#505 merged; the human merged BOTH #504 (the redundant
-  dispatch-record) AND #505 (code), so #506 developed an unresolvable `backlog/QUEUE.md` merge
-  conflict and was closed unmerged (evidence re-derived fresh, no data loss). Root cause = the PM's
-  own recurring close-out guidance presents "merge #N first" and "close it as superseded" as
-  CO-EQUAL safe options (FOLLOW-380/532/546/548 all carried a note like "when merging, merge #N
-  first OR accept it's superseded and close it — human's call"). They are NOT symmetric in
-  downstream risk: merging the redundant bookkeeping PR guarantees any in-flight validation PR a
-  QUEUE.md conflict; closing it does not. The safe path must be the DEFAULT, not one of two
-  sanctioned options. This is a HELD pattern (RETRO-173 §6, count 1 as a numbered-retro finding —
-  the two-PRs-in-flight shape recurred ~4x this session at the PM/QUEUE -notes level, but only
-  #504/#506 is the merged-not-closed sub-mode, and no prior numbered retro documented it); this stub
-  is the durable fix AND the ready-made CONVENTIONS_PATCH Rule text for when a 2nd numbered-retro
-  occurrence arms the ≥2-PRIOR threshold. ac:
+  priority: P3 estimated_hours: 1 promoted_to_queue: >- true # promoted 2026-07-10 (pm-orchestrator,
+  session 25 cont'd), human-approved reassignment to architect (cross-cutting process/convention
+  change, not a worker deliverable — overrides this stub's original recommended_agent:
+  pm-orchestrator). QUEUE.md FOLLOW-550 IN_PROGRESS, branch
+  architect/FOLLOW-550-bookkeeping-pr-sequencing. scope: >- FOLLOW-549 (a 1h P3 test/docs ticket)
+  produced THREE PRs (#504 dispatch-record, #505 code, #506 validation) where FOLLOW-532 minutes
+  earlier achieved a tight 2-PR shape (code #502 + single DONE+RETRO bundle #503). #506 was cut from
+  `main` BEFORE #504/#505 merged; the human merged BOTH #504 (the redundant dispatch-record) AND
+  #505 (code), so #506 developed an unresolvable `backlog/QUEUE.md` merge conflict and was closed
+  unmerged (evidence re-derived fresh, no data loss). Root cause = the PM's own recurring close-out
+  guidance presents "merge #N first" and "close it as superseded" as CO-EQUAL safe options
+  (FOLLOW-380/532/546/548 all carried a note like "when merging, merge #N first OR accept it's
+  superseded and close it — human's call"). They are NOT symmetric in downstream risk: merging the
+  redundant bookkeeping PR guarantees any in-flight validation PR a QUEUE.md conflict; closing it
+  does not. The safe path must be the DEFAULT, not one of two sanctioned options. This is a HELD
+  pattern (RETRO-173 §6, count 1 as a numbered-retro finding — the two-PRs-in-flight shape recurred
+  ~4x this session at the PM/QUEUE -notes level, but only #504/#506 is the merged-not-closed
+  sub-mode, and no prior numbered retro documented it); this stub is the durable fix AND the
+  ready-made CONVENTIONS_PATCH Rule text for when a 2nd numbered-retro occurrence arms the ≥2-PRIOR
+  threshold. ac:
   - The PM close-out convention text (workflow doc / QUEUE close-out template) states a SINGLE
     default — a bookkeeping/dispatch PR that only touches backlog files (QUEUE.md/FOLLOW_UPS/
     RETROSPECTIVES) and whose content a later PR folds in is ALWAYS closed-as-superseded, never
@@ -14680,3 +14684,34 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - The convention states a validation PR must be cut from `main` AFTER the code PR merges (or
     rebased before merge), so it never carries a stale QUEUE.md base. cross_ref: [RETRO-173,
     RETRO-172, FOLLOW-549, FOLLOW-532, FOLLOW-380, FOLLOW-546, FOLLOW-548]
+
+- id: FOLLOW-551 title: >- Route implement-with-git docs-codification tickets away from architect
+  (no Bash tool) — draft-then-apply handoff, or reassign to a Bash-capable agent source_retro: n/a
+  (PM-filed process observation, not a numbered retro finding) source_ticket: FOLLOW-550
+  recommended_sprint: backlog recommended_agent: pm-orchestrator priority: P3 estimated_hours: 1
+  promoted_to_queue: false scope: >- FOLLOW-550 (docs(workflow) codification, dispatched to
+  architect per human direction) surfaced a tool-manifest gap: the architect subagent's tool
+  manifest is Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — no Bash. It correctly REFUSED to Edit
+  docs/AGENT_WORKFLOW.md directly (without git it could not branch/commit, and would have stranded
+  the change on `main` — the exact FOLLOW-448/RETRO-146 failure mode "Branch-first worker
+  discipline" exists to prevent). It drafted the full content + insertion point + mechanics and
+  escalated; the coordinator applied it manually (branch, commit, push, PR). This worked this time
+  because a human/coordinator was available to apply the draft, but is a recurring-risk gap, not a
+  one-off — FOLLOW-543 (Master_Design narrative refresh, still unpromoted,
+  `recommended_agent: architect`) is a CONCRETE near-term instance that will hit the identical wall
+  when dispatched. Options to evaluate: (1) any ticket whose AC requires committing/pushing a change
+  should route to a Bash-capable agent
+  (backend-engineer/devops-engineer/qa-engineer/compliance-engineer/
+  sdk-engineer/ml-engineer/data-engineer) even if the CONTENT is architectural/cross-cutting, with
+  architect consulted for the design only; (2) formalize the draft-then-apply pattern FOLLOW-550
+  organically used (architect drafts exact content + insertion point + rationale in a structured
+  handoff note, a Bash-capable party — PM or another agent — applies it verbatim) as a documented
+  fallback in docs/AGENT_WORKFLOW.md's agent-capability table; (3) give architect a Bash tool
+  (bigger change, more surface for the agent to accidentally act outside its design-only remit —
+  probably NOT recommended without a stronger case). ac:
+  - docs/AGENT_WORKFLOW.md's "The 9 agents" / model-fit section notes architect's tool manifest has
+    no Bash, and states which of options (1)/(2)/(3) above is the chosen resolution.
+  - The PM delegation-table decision guidance (CLAUDE.md and/or AGENT_WORKFLOW.md) reflects the
+    chosen resolution so a future PM session doesn't repeat the FOLLOW-550 dispatch-then-discover
+    pattern for FOLLOW-543 or any future architect-assigned docs-codification ticket. cross_ref:
+    [FOLLOW-550, FOLLOW-543, FOLLOW-448, RETRO-146]

@@ -14506,7 +14506,9 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - recommended_agent: sdk-engineer
 - priority: P2
 - estimated_hours: 2.5
-- promoted_to_queue: false
+- promoted_to_queue: true (promoted 2026-07-10 by pm-orchestrator, session 23, into
+  `backlog/QUEUE.md` Sprint 22b as a real ticket block; dispatched to sdk-engineer same session, PR
+  #495 opened and PM-validated `status: READY_FOR_REVIEW`; stub retained as cross-reference)
 - scope: FOLLOW-380 bug (a) added a monotonic latest-wins guard (`myRefreshId !== latestRefreshId`)
   as a SINGLE checkpoint at `packages/sdk/src/index.ts:737`, right after `fetchDirectives`. But the
   description adaptation is dispatched fire-and-forget AFTER that checkpoint —

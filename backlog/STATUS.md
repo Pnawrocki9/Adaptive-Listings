@@ -1,4 +1,86 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #495 MERGED, FOLLOW-546 DONE; RETRO-170 pending on pm-orchestrator/FOLLOW-546-close)
+# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-548 validated, PR #499 READY_FOR_REVIEW; PR #498 dispatch record still unmerged)
+
+## SESSION 24 VALIDATION (2026-07-10) — PR #499 (FOLLOW-548) validated, READY_FOR_REVIEW
+
+**Context:** PR #498 (FOLLOW-548 promotion + dispatch record) is still UNMERGED (awaiting human,
+same pattern as FOLLOW-380/#490 and FOLLOW-546/#494) — `main` has no FOLLOW-548 ticket block at all
+yet. This session's QUEUE.md edit promotes FOLLOW-548 straight into a real ticket block at
+`READY_FOR_REVIEW`, folding the full trail into one edit rather than assuming #498 landed.
+
+**Independently re-verified (not taken on the worker's self-report):**
+
+- `gh pr checks 499 --watch` run to completion; `gh pr view 499 --json statusCheckRollup` →
+  non-success count = **2**, both "Rule I — wired-or-dead check" (matrix-duplicated). Pulled
+  `--log-failed`: 180 violations — IDENTICAL count to the FOLLOW-546 baseline, zero new flags.
+- Pulled the full `Test (Node 22)` job log: `@estalara/sdk:test` ran fresh — **69 files / 1524
+  tests, 100% pass** (up from FOLLOW-546's 1521 by exactly the 3 new tests: TG-1, TG-2, headline).
+- Bundle-size gate: **40.49KB gzip vs 42KB budget** — passed, exact match to the self-report this
+  time (no discrepancy, unlike FOLLOW-546's 40.25 vs 40.47).
+- `gh pr view 499 --json files` → exactly 4 files: `.claude/agents/sdk-engineer/lessons.md`,
+  `packages/sdk/src/__tests__/adapt-description.test.ts`,
+  `packages/sdk/src/core/adapt-description.ts`,
+  `packages/shared/src/schemas/events/adapt-description.ts`. Zero edits to `backlog/QUEUE.md`,
+  `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md`. Confirmed `index.ts` correctly ABSENT from
+  the diff (unchanged, already correct).
+
+**The required-param / prod-caller check (item 2):**
+
+- `grep -rn "applyDescriptionAdaptation" packages/sdk/src --include=*.ts | grep -v test` → confirmed
+  exactly ONE production call site (`index.ts:809`), unchanged in this diff, already passing the
+  real predicate `() => myRefreshId !== latestRefreshId` — read directly, not assumed. No other prod
+  caller exists that could silently compile-break or mis-wire.
+- `grep -c "() => false"` in the test file → 32 occurrences (the ~31 pre-existing call sites plus
+  the new tests' literal), confirming the unit-test sites were mechanically updated to pass an
+  explicit never-stale predicate rather than relying on a removed default.
+
+**Runtime-wiring verification (read the full function bodies, not just grep for the check):**
+
+- `reapply()`'s `if (isStale())` appears FIRST (before the `descFingerprint` comparison); on the
+  stale path it calls `s.obs.disconnect()` then `pushEvent(EVT + 'skipped', {reason:'stale'})` then
+  returns — confirmed this genuinely precedes the `render`/`obs.observe` statements further down
+  (unreachable once this early-returns). The `disconnect()` kills the persistence leg by retiring
+  the watchdog entirely.
+- A second `if (isStale())` at entry (defense-in-depth) also confirmed to precede the "Initial
+  write" `render`/`obs.observe` pair.
+- `AdaptDescriptionSkippedPayloadSchema.reason` unchanged (`z.string().min(1).optional()`) — the
+  `{reason:'stale'}` payload is schema-valid without any contract change; JSDoc updated to document
+  it (DG-1 confirmed).
+
+**Both new tests independently read (not just re-run) and confirmed non-vacuous:** TG-1 drives a
+fresh paint → a simulated DOM revert (arming the observer's internal rAF) → sets the supersession
+flag IN THE GAP between arming and firing → fires the deferred reapply via `vi.runAllTimers()` →
+asserts the slot keeps the newer content and that a SUBSEQUENT revert is no longer re-asserted
+(proving `disconnect()` genuinely ran). TG-2 covers the persistence leg: the superseding nav's own
+fetch resolves non-adaptable (`template_fallback`), so it bails before its own write — the stale
+watchdog, once fired, still must not resurrect the stale copy. A third test mirrors TG-1 for the
+headline path. Without the fix, `reapply()`'s unconditional repaint on a fingerprint mismatch would
+resurrect the stale content in all three — these tests are structurally guaranteed to fail without
+the guard.
+
+**AC spot-check:** all 5 items (a: reapply-watchdog guard + entry defense-in-depth; b: TG-1; c:
+TG-2; d: LG-2 required param; e: DG-1 JSDoc) confirmed present in the diff.
+
+**SEPARATE — permanent-record accuracy recommendation (per the coordinator's explicit ask, not
+actioned, just recommended):** RETRO-170 §4a LG-1's prose and Rule AB's evidence footnote in
+`CONVENTIONS_PATCH.md` cite `:323`/`:333` as "the unguarded write," but — as both the PM dispatch
+brief and the worker's independent re-confirmation established — that line runs synchronously and
+was already guarded by the pre-existing `:309` check; the real gap is the `reapply` closure fired
+via the observer's internal `:155` rAF. **Recommendation: (a)** fold a small, surgical
+evidence-citation correction into Rule AB's `CONVENTIONS_PATCH.md` footnote as part of the eventual
+FOLLOW-548 close PR (mirrors the FOLLOW-544 precedent — Rule AB is live/forward-looking and benefits
+most from an accurate citation for future engineers). Do NOT edit RETRO-170's own text (append-only
+convention for retro entries, per the RETRO-168 DURABLE-SELF-REPORT-DRIFT pattern — propagate
+corrections to durable/live docs, don't rewrite history); the eventual RETRO-171 will naturally
+reconcile this as part of its own analysis. The Rule AB PRINCIPLE itself is correct and needs no
+change — only the specific line citation in its supporting evidence.
+
+**Result:** FOLLOW-548 promoted directly to `READY_FOR_REVIEW` in `backlog/QUEUE.md` (no separate
+IN_PROGRESS commit landed on `main` first, since #498 is still unmerged — the full trail is folded
+into the ticket's `notes:`), `pr: 499` recorded with the full evidence trail inline. CI-check
+counter: 1/5. Fix-iteration counter: 0/3. Branch `pm-orchestrator/FOLLOW-548-validate` (based on
+current `main`, NOT stacked on the still-unmerged #498) — opened as a new PR, not merged.
+
+---
 
 ## SESSION 23 CLOSE-OUT (2026-07-10) — PR #495 MERGED (118bdd8), FOLLOW-546 DONE, RETRO-170 pending
 

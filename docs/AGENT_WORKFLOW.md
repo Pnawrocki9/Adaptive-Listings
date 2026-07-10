@@ -352,7 +352,11 @@ Check `git log` and CI history. If you see >3 commits on the same ticket attempt
 Two agents shouldn't have been picking those tickets. PM should have detected the conflict via
 `produces`/`affects` lists in tickets. If it didn't:
 
-- Close the later PR
+- **Two genuine code PRs** (mis-scheduled overlapping tickets): close the later PR.
+- **One of the two is a bookkeeping/dispatch PR whose content a later PR folds in** (e.g. a
+  dispatch-record PR later re-included in a code or DONE+RETRO PR): close the EARLIER PR instead —
+  see **§Bookkeeping-PR sequencing** above, rule (a). Closing the later PR in this sub-case is
+  backwards; it was the proximate cause of the #504/#506 incident (RETRO-173 §5a / RETRO-174 §4d).
 - Move that ticket back to `READY`
 - Add escalation about ticket dependency graph correctness
 

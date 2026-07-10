@@ -3,6 +3,74 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-549 (backend-engineer) — pin each GET adapt route's `area` literal
+
+**From:** pm-orchestrator (session 25 cont'd) **To:** backend-engineer **Date:** 2026-07-10
+**Branch:** `backend-engineer/FOLLOW-549-adapt-get-auth-area-pin` (create as your FIRST action, off
+`main` at `f1f9646` or later — branch-first, never commit to `main`).
+
+**Model: Sonnet** — routine, mechanical, well-scoped (add 2 spy assertions + 1 docstring sentence to
+a file you likely just touched in FOLLOW-532); no cross-module ambiguity or design judgment call.
+Model-fit table row: "Routine implementation inside a well-defined ticket scope ... tests,
+docs/backlog bookkeeping, mechanical refactors, CI fixes" -> Sonnet.
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read
+before any non-trivial task, OPERATING_PRINCIPLES Rule 1), the current `CONVENTIONS_PATCH.md` (Rule
+S — symmetric siblings, the axis this ticket strengthens), and the ticket source
+`backlog/FOLLOW_UPS.md` FOLLOW-549 / `backlog/RETROSPECTIVES.md` RETRO-172 §4c TG-1 / §4d DG-1 / §7
+(the retro that flagged this residual immediately after your own FOLLOW-532 PR #502 merged).
+
+**Table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding
+HTTP, billing, webhooks" -> backend-engineer.
+
+**Why this exists (verified in code, not guessed):** FOLLOW-532 (your own prior PR) folded the
+`resolveApiKey` DB-throw handling into `resolveAdaptGetAuth` and gave it a required 3rd
+`area: 'adapt' | 'description'` param, tagged onto the internal `Sentry.captureException` call. Both
+`GET /api/adapt` and `GET /api/adapt/description` now pass their own literal
+(`apps/control-plane/src/app/api/adapt/route.ts:714` passes `'adapt'`;
+`.../adapt/description/route.ts:220` passes `'description'`). **Nothing pins each route to its own
+literal today:** `apps/control-plane/src/lib/__tests__/adapt-get-auth.parity.test.ts` drives
+`resolveAdaptGetAuth` directly (bypassing the routes entirely), and BOTH
+`apps/control-plane/src/app/api/adapt/route.test.ts` and `.../adapt/description/route.test.ts` mock
+`resolveAdaptGetAuth` wholesale via a hoisted `mockResolveAdaptGetAuth = vi.fn()` (confirmed:
+`grep -n "mockResolveAdaptGetAuth"` in both files shows the mock is asserted on for call-COUNT in a
+few places, e.g. `.not.toHaveBeenCalled()`, but never for call-ARGUMENTS). A future clone of either
+route (or a copy-paste refactor) that passed the WRONG literal would silently mislabel the Sentry
+`tags.area` on a real DB outage — the disposition and `tags.kind` would still be correct, so this is
+a cosmetic observability mislabel, not a fail-open/correctness risk (hence P3, not P2 like the
+original FOLLOW-532 seam).
+
+**Required fix (both items, per the ticket AC in `backlog/QUEUE.md` FOLLOW-549):**
+
+1. **Pin the literal per route.** In `apps/control-plane/src/app/api/adapt/route.test.ts`, add (or
+   extend an existing happy-path test) an assertion like
+   `expect(mockResolveAdaptGetAuth).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'adapt')`.
+   Mirror it in `.../adapt/description/route.test.ts` with `'description'`. This is intentionally
+   lightweight — no new test file, no new describe block required; folding it into an existing test
+   that already exercises the happy path
+   (`mockResolveAdaptGetAuth.mockReset() .mockResolvedValue({ ok: true, tenantId: ... })` is already
+   the `beforeEach` default in both files) is sufficient and keeps the diff minimal (Rule 3,
+   surgical changes).
+2. **Strengthen the docstring.** `apps/control-plane/src/lib/adapt-get-auth.ts:13-14` currently
+   reads:
+   `"Both MUST call this helper (never re-implement the two-step inline). A third consumer added later MUST be appended here."`
+   Add a sentence stating that a third consumer must ALSO widen the `area: 'adapt' | 'description'`
+   union type (name the resulting TypeScript compile error as the forcing function — so a future
+   reader understands this part is enforced by the compiler, unlike the inventory-list sentence
+   itself, which is only convention).
+
+**Scope guardrails (Rule 3, surgical changes):** Do not touch the DB-throw disposition shape, the
+Sentry-capture logic, or the `AdaptGetAuthResult` type itself — those are FOLLOW-532's already-
+merged, already-validated work. This ticket is purely: (a) 2 small test assertions, (b) 1 docstring
+sentence. No wire-contract change, no new exported symbol.
+
+**Validation before opening the PR:** `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
+(control-plane `next build` too, per the FOLLOW-474/RETRO-150 worktree-bootstrap convention if
+working in a fresh worktree — build `@estalara/{db,shared,auth,sdk}` first or `tsc` will 2307 on
+those packages). Re-run prettier on every file you touch.
+
+---
+
 ## Retro delegation brief — FOLLOW-532 (retrospective-analyst)
 
 **From:** pm-orchestrator (session 25 close-out) **To:** retrospective-analyst (to be spawned by the

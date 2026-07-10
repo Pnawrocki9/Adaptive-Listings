@@ -1,6 +1,41 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 close-out — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending)
+## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — PR #503 MERGED, FOLLOW-549 promoted + dispatched)
+
+**PR #503 MERGED** to `main` as commit `f1f9646` (per coordinator report). Local `main` synced
+(`git checkout main && git pull`, fast-forward `a934adf..f1f9646`), confirmed via
+`git log --oneline -8`. FOLLOW-532 confirmed `status: DONE` on `main`; RETRO-172 and the FOLLOW-549
+stub confirmed present in `backlog/RETROSPECTIVES.md` / `backlog/FOLLOW_UPS.md`.
+
+**Picked FOLLOW-549** (P3, RETRO-172 §4c TG-1/§4d DG-1, source_ticket FOLLOW-532) — the retro's own
+follow-up, promoted immediately per the coordinator's instruction. Delegation-table row: "ingest
+worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" ->
+backend-engineer. Model: **Sonnet** (routine, mechanical: 2 spy assertions + 1 docstring sentence,
+no cross-module ambiguity or design judgment call — unlike the retro's own Opus tier). AC filled in
+directly from RETRO-172 §4c/§4d: (1) pin each route's own `area` literal via a
+`toHaveBeenCalledWith(..., 'adapt'|'description')` spy assertion added to each route's EXISTING test
+suite (both already have a hoisted `mockResolveAdaptGetAuth` — confirmed via grep, no new test file
+needed); (2) strengthen the `adapt-get-auth.ts:13-14` call-site-inventory docstring to name the
+`area`-union-widening compile error as the forcing function for a genuine third consumer. Branch:
+`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`. Full brief in `backlog/HANDOFFS.md`
+("Delegation brief — FOLLOW-549"). Queue edits on branch `pm-orchestrator/FOLLOW-549-dispatch`
+(branch-first, never committed to `main`). **Not spawned by pm-orchestrator** — brief reported back
+to the coordinator to dispatch.
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema —
+not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). FOLLOW-533/534 (P3, not yet promoted). 4
+already-`READY` P3 tickets remain queued behind this one: FOLLOW-467/468/469/474. 3 standing
+`## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator dispatches backend-engineer per the brief; PM validates the resulting PR (CI +
+runtime wiring + AC) once opened.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 close-out — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending)
 
 **PR #502 MERGED** to `main` as commit `a934adf` (`a934adfd2359d4f12aa6538923e08ce351112025`,
 2026-07-10T14:36:48Z, confirmed via `gh pr view 502 --json state,mergeCommit,mergedAt`). Local
@@ -11071,6 +11106,56 @@ gate) closes the epic and must be last.
     retrospective loop) — NOT run by pm-orchestrator itself (no subagent-spawn capability in this
     tool surface). Delegation brief prepared in `backlog/HANDOFFS.md` ("Retro delegation brief —
     FOLLOW-532").
+- id: FOLLOW-549
+  title: >-
+    Pin each GET adapt route's own `area` literal + close the call-site-inventory doc lag introduced
+    by FOLLOW-532's fold
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: backend-engineer/FOLLOW-549-adapt-get-auth-area-pin
+  model:
+    Sonnet # routine, mechanical, well-scoped (add 2 spy assertions + 1 docstring sentence to a
+    # file the repo just finished working in); no cross-module ambiguity, no design judgment
+    # call. Model-fit table row "Routine implementation inside a well-defined ticket scope ...
+    # tests, docs/backlog bookkeeping, mechanical refactors" -> Sonnet.
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-172 §4c TG-1 / §4d DG-1 / §7 (source_ticket FOLLOW-532) — FOLLOW-532 folded the DB-throw
+    try/catch INTO resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'`
+    param, the ONLY per-call-site obligation the fold left. Nothing pins each route to its own
+    literal: the parity test drives the helper directly, and both route.test.ts files mock
+    resolveAdaptGetAuth wholesale, so no test asserts GET /api/adapt passes 'adapt' and GET
+    /api/adapt/description passes 'description'. A future clone that passed the wrong literal would
+    mislabel the Sentry `tags.area` with NO CI signal (disposition + `tags.kind` stay correct —
+    cosmetic observability mislabel only, hence P3, a degrade from FOLLOW-532's original
+    P2-correctness seam per RETRO-172 §7's one-hop check). Separately, the helper's call-site-
+    inventory note (`adapt-get-auth.ts:13-14`) still says only "a third consumer added later MUST be
+    appended here" and doesn't mention that a genuinely new third route must ALSO widen the `area`
+    union (a compile error — a good forcing function, but undocumented at the inventory site).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-549; backlog/RETROSPECTIVES.md RETRO-172 §4c/§4d/§7; Rule S
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 25 cont'd) from backlog/FOLLOW_UPS.md into
+    Sprint 22b, matching the FOLLOW-380/546/467/468/469/472/474/532/548 promotion pattern.
+    `promoted_to_queue: true` set on the FOLLOW_UPS.md stub. Dispatched same-session to
+    backend-engineer (Sonnet). Full delegation brief in `backlog/HANDOFFS.md` ("Delegation brief —
+    FOLLOW-549").
+    AC:
+    - [ ] A lightweight assertion (spy on the existing `mockResolveAdaptGetAuth` — already a
+          `vi.fn()` in both `route.test.ts` and `description/route.test.ts` — or a helper-level
+          check) in EACH route's own suite reds CI if `GET /api/adapt` is not called with `'adapt'`
+          or `GET /api/adapt/description` is not called with `'description'`
+          (`toHaveBeenCalledWith(expect.anything(), expect.anything(), 'adapt' | 'description')`
+          on an existing happy-path test is sufficient — no new test file required).
+    - [ ] The `adapt-get-auth.ts` call-site-inventory docstring (currently lines 13-14: "Both MUST
+          call this helper... A third consumer added later MUST be appended here") states that a
+          third consumer must ALSO widen the `area: 'adapt' | 'description'` union type — naming
+          the resulting compile error as the forcing function, so a future reader understands WHY
+          forgetting to widen the union is safe (it won't compile) rather than assuming it's an
+          unenforced convention like the inventory list itself.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

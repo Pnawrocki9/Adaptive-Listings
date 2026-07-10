@@ -1,6 +1,51 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — PR #509 PM-validated, folded into #508, no separate validation PR)
+## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — #508/#509 MERGED, FOLLOW-550 DONE, RETRO-174 pending)
+
+**Both PRs merged by the human:** #509 (`architect/FOLLOW-550-bookkeeping-pr-sequencing`, the
+content — `docs/AGENT_WORKFLOW.md`) as commit `66f8e76`; #508
+(`pm-orchestrator/FOLLOW-550-dispatch`, the bookkeeping — dispatch + validation) as commit
+`c02b96b`. Local sync confirmed both present; `docs/AGENT_WORKFLOW.md`'s "Bookkeeping-PR sequencing"
+section confirmed LIVE on `main`; `backlog/QUEUE.md` confirmed to have exactly ONE `FOLLOW-550`
+block before this edit.
+
+**#508 merging (not closing) confirmed CORRECT** against the new section's own rule (a): #508's
+dispatch-record content was never duplicated/re-included in a later PR — the validation was folded
+into #508 in place (an extra commit, per rule (d)) rather than a separate PR, so #508 had genuine
+non-redundant content. Structurally different from FOLLOW-549's #504 (whose content WAS about to be
+duplicated by the separate #506) — the new rule's own logic held up against a real case immediately.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-550-done`** (agent-prefix, branch-first):
+FOLLOW-550 flipped `READY_FOR_REVIEW` → `DONE` (`completed_at: 2026-07-10`, `merged_pr:` citing #509
+as content + #508 as bookkeeping, `merge_commit: 66f8e76`).
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator (delegation brief prepared in `backlog/HANDOFFS.md`, "Retro delegation
+brief — FOLLOW-550") — NOT run by pm-orchestrator itself (no subagent-spawn capability in this tool
+surface). Model recommendation: **Opus** (matches the analyst's own agent-file default). Flagged
+angles for the analyst: (a) did FOLLOW-550's own dogfooded bundle shape (one promotion PR #508
+absorbing validation via rule (d), one content PR #509) actually hold, or did sprawl leak back in
+anywhere; (b) is FOLLOW-551 (the architect-has-no-Bash routing gap) correctly scoped, and are there
+OTHER agents with a similar tool/role mismatch worth sweeping in now rather than discovering them
+one-by-one; (c) confirm the Rule AB ARMED trigger from RETRO-173 (count 1, pending a 2nd numbered-
+retro sighting) is NOT accidentally tripped by FOLLOW-550's mere existence — codifying the guidance
+is not itself a second retro sighting of the underlying pattern.
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename — flagged as a concrete FOLLOW-551 recurrence risk). FOLLOW-547 (P3, sdk-engineer,
+RETRO-169, unversioned client SoT storage schema — not yet promoted). FOLLOW-458's `status: READY`
+label is still inconsistent with its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly,
+still not fixed. FOLLOW-545 (process stub, RETRO-168, bashless-agent-author-blur — not yet
+promoted). FOLLOW-533/534, FOLLOW-551 (P3, not yet promoted). 4 already-`READY` P3 tickets remain
+queued: FOLLOW-467/468/469/474. 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034)
+unchanged, non-blocking.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-174 content to land on
+the same branch first (dogfooding rule (d) once more).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 cont'd — PR #509 PM-validated, folded into #508, no separate validation PR)
 
 **FOLLOW-550 (P3, architect, Sonnet) is PM-validated, READY_FOR_REVIEW.** PR **#509**
 (`architect/FOLLOW-550-bookkeeping-pr-sequencing`, off `main`, not merged). **Routing/process
@@ -11324,11 +11369,17 @@ gate) closes the epic and must be last.
     Codify bookkeeping-PR sequencing to prevent QUEUE.md-conflict sprawl (single close-superseded
     default; never two QUEUE.md-touching PRs in flight)
   agent: architect
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: architect
   started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
   branch: architect/FOLLOW-550-bookkeeping-pr-sequencing
   pr: 509
+  merged_pr: >-
+    509 (content — docs/AGENT_WORKFLOW.md, the ticket's deliverable) + 508 (bookkeeping — the
+    dispatch+validation PR, correctly merged not closed per its own rule (a): its content was never
+    duplicated/folded into a later PR)
+  merge_commit: 66f8e76
   ci_status: >-
     green (independently re-verified via `gh pr view 509 --json statusCheckRollup`): non-success
     count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
@@ -11424,6 +11475,28 @@ gate) closes the epic and must be last.
           prose.
     - [x] Explicitly states this is workflow guidance, not a `CONVENTIONS_PATCH.md` Rule promotion,
           citing Rule AB and the RETRO-153/158/169/170 promotion-discipline precedent by name.
+
+    MERGED 2026-07-10: BOTH PRs merged by the human. PR #509 (`architect/FOLLOW-550-bookkeeping-pr-
+    sequencing`, the content — `docs/AGENT_WORKFLOW.md`) merged to `main` as commit `66f8e76`
+    (`66f8e76930dd31bb8f9c3dadac2b5ed21900e96c`, `mergedAt: 2026-07-10T19:42:37Z`). PR #508
+    (`pm-orchestrator/FOLLOW-550-dispatch`, the bookkeeping — dispatch record + this validation)
+    merged as commit `c02b96b` (`mergedAt: 2026-07-10T19:42:10Z`), both per `gh pr view
+    508/509 --json state,mergeCommit,mergedAt`. #508 merging (not closing) is CORRECT per the new
+    section's own rule (a): #508's dispatch-record content was never duplicated/re-included in a
+    later PR — the validation commit EXTENDED #508 in place rather than opening a new PR (this
+    very ticket's rule (d), dogfooded), so #508 is the sole, non-redundant source of the
+    bookkeeping trail and had genuine content to merge, unlike FOLLOW-549's #504 (whose content
+    WAS about to be duplicated by a separate #506). `git checkout main && git pull` confirmed both
+    commits present (`git log --oneline` shows `66f8e76 ... (#509)` then `c02b96b ... (#508)`);
+    `grep -n "Bookkeeping-PR sequencing" docs/AGENT_WORKFLOW.md` confirms the section is live on
+    `main`; `backlog/QUEUE.md` confirmed to have exactly ONE FOLLOW-550 block (no duplication from
+    the two merges) before this edit. Ticket closed DONE.
+
+    retrospective-analyst to be spawned by the coordinator (per CLAUDE.md's per-ticket
+    retrospective loop) — NOT run by pm-orchestrator itself (no subagent-spawn capability in this
+    tool surface) — to append RETRO-174 onto this SAME `pm-orchestrator/FOLLOW-550-done` branch, so
+    DONE + RETRO bundle into ONE PR (dogfooding rule (d), matching the FOLLOW-532/#503 pattern).
+    Delegation brief in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-550").
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

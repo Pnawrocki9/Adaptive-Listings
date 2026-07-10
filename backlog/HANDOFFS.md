@@ -3,6 +3,82 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Retro delegation brief — FOLLOW-550 (retrospective-analyst)
+
+**From:** pm-orchestrator (session 25 cont'd, post #508/#509 close-out) **To:**
+retrospective-analyst (to be spawned by the coordinator — pm-orchestrator has no subagent-spawn
+capability in this tool surface) **Date:** 2026-07-10 **Branch:** `pm-orchestrator/FOLLOW-550-done`
+(already created off `main` at `66f8e76`, carries the DONE-flip; append RETRO-174 content on this
+SAME branch — do NOT open a new PR, the PM will open ONE bundled PR after this lands, dogfooding
+rule (d) one more time). **Model: Opus** — matches `retrospective-analyst`'s own agent-file default
+(`model: opus`).
+
+**What merged:** PR #509 (`architect/FOLLOW-550-bookkeeping-pr-sequencing`, commit `66f8e76`) — a
+new "Bookkeeping-PR sequencing (workflow guidance — RETRO-173 / FOLLOW-550)" section in
+`docs/AGENT_WORKFLOW.md`, stating 4 rules: (a) redundant bookkeeping PRs always closed-superseded,
+never merged; (b) never two `QUEUE.md`-touching PRs in flight; (c) validation/DONE PRs cut from
+`main` after the code PR merges; (d) fold validation into the DONE+RETRO bundle. Explicitly NOT a
+`CONVENTIONS_PATCH.md` Rule (Rule AB threshold unmet). Also PR #508
+(`pm-orchestrator/FOLLOW-550-dispatch`, commit `c02b96b`) — the dispatch-record + this session's own
+PM-validation of #509, folded into #508 as a second commit rather than opened as a separate PR.
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1; `docs/AGENT_WORKFLOW.md`'s new
+"Bookkeeping-PR sequencing" section (the artifact itself); `backlog/RETROSPECTIVES.md` RETRO-173
+(the direct source); `backlog/FOLLOW_UPS.md` FOLLOW-551 (the architect-no-Bash routing-gap stub
+filed this session); `.claude/agents/architect.md` and the other 8 agent definition files' tool
+manifests (needed for angle (b) below).
+
+**Three specific angles the coordinator asked to be flagged — investigate each, don't just
+restate:**
+
+**(a) Did FOLLOW-550's own dogfooding actually hold, or did sprawl leak back in?** Trace the ACTUAL
+PR count and shape for FOLLOW-550 end-to-end: #508 (promotion, later extended in-place with
+validation — 2 commits, 1 PR) + #509 (content, 1 PR) = 2 PRs total, the SAME tight shape as
+FOLLOW-532's #502+#503. Verify this claim independently (don't take the ticket notes' self-report):
+`gh pr list --search "FOLLOW-550 in:title"` or equivalent, confirm exactly 2 PRs exist for this
+ticket (not counting this eventual DONE+RETRO PR itself, which will be a 3rd — is a 3rd PR here
+actually consistent with rule (d), or does rule (d) itself imply FOLLOW-550 should have had
+validation
+
+- DONE + RETRO all in ONE PR with the ORIGINAL promotion, i.e. was even 2 PRs already one more than
+  the theoretical minimum? Adjudicate honestly — rule (d) says "fold validation into the DONE+RETRO
+  bundle," which is about the VALIDATION/DONE/RETRO trio, not about merging the ORIGINAL dispatch PR
+  into that same bundle too; confirm your reading of the rule's own scope before grading FOLLOW-550
+  against it).
+
+**(b) Is FOLLOW-551 correctly scoped? Are there OTHER agents with a similar tool/role mismatch?**
+Read `backlog/FOLLOW_UPS.md` FOLLOW-551 in full. Then independently check EVERY agent's tool
+manifest in `.claude/agents/*.md` frontmatter against whether their typical ticket ACs require git
+mechanics (commit/push/PR). Architect (Read/Write/Edit/Glob/Grep/WebSearch/WebFetch, no Bash) is the
+confirmed instance. Are there other DESIGN/REVIEW-shaped agents (vs. IMPLEMENTATION-shaped agents)
+in this repo's 9-agent roster with the same gap? If you find another, name it concretely in your
+findings (don't just say "check for more" — either confirm none exist, with the grep/read evidence,
+or name the specific agent + ticket-shape risk). Judge whether FOLLOW-551's proposed options (route
+away from architect / formalize draft-then-apply / give architect Bash) are complete or missing an
+option a 2nd instance would reveal.
+
+**(c) Confirm the Rule AB ARMED trigger is NOT accidentally tripped.** RETRO-173 held the
+bookkeeping-PR-sequencing pattern at count 1 (numbered-retro finding), explicitly ARMED for a 2nd
+numbered-retro SIGHTING of the underlying pattern (a NEW instance of "merged-not-closed bookkeeping
+PR → downstream conflict," not a re-statement of the same one). FOLLOW-550 CODIFIED the guidance —
+it did not observe the pattern recurring. Explicitly confirm in RETRO-174 that codifying a workflow
+doc section is not itself the "2nd sighting" RETRO-173 pre-authorized, and that the count remains 1
+unless THIS retro (RETRO-174) independently observes a NEW instance of the pattern in FOLLOW-550's
+own execution (see angle (a) — if you find sprawl DID leak back in somewhere, that could genuinely
+be the 2nd sighting; be precise about which finding, if any, triggers promotion).
+
+**Standard retro deliverables per CLAUDE.md's per-ticket retrospective loop:** read the merged PR
+#509 diff (single file, `docs/AGENT_WORKFLOW.md`) and PR #508's diff, map any changed symbols (none
+— this is a docs-only ticket, so "map to consumers" means: confirm no other doc/rule
+cross-references the new section incorrectly), check the last 5 retro entries (RETRO-169–173) for
+repeating patterns, check adjacent QUEUE.md tickets (FOLLOW-551, FOLLOW-543, FOLLOW-533/534) for
+cascading assumptions, append a structured RETRO-174 entry to `backlog/RETROSPECTIVES.md`, generate
+FOLLOW_UPS stubs for any gap found, and promote a finding to a permanent `CONVENTIONS_PATCH.md` Rule
+ONLY if the same pattern appeared in ≥2 PRIOR numbered retros (per angle (c) above, this threshold
+is almost certainly still unmet — verify, don't assume).
+
+---
+
 ## Delegation brief — FOLLOW-550 (architect) — codify bookkeeping-PR sequencing discipline
 
 **From:** pm-orchestrator (session 25 cont'd) **To:** architect **Date:** 2026-07-10 **Branch:**

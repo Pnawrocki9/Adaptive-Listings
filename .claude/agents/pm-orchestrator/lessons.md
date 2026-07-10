@@ -2080,3 +2080,20 @@ independent occurrence, even if it references the same pattern by name.
   tool manifest (`.claude/agents/<name>.md` frontmatter) against whether the AC requires committing/
   pushing — not just whether the AGENT is the right domain fit. A domain-correct agent can still be
   tool-incapable of executing its own ticket.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-550 (post-merge close-out)
+- **Delegation row used:** n/a (bookkeeping close-out + retro-brief prep, not a new delegation).
+- **What validation caught (or missed):** Confirmed #508's merge (not close) was correct by checking
+  it against the NEW rule (a) it's subject to — #508 had genuine non-redundant content because I'd
+  folded validation into it in-place last turn rather than opening #506-style separate PR, so the
+  rule's own logic held up on its first real test. Also caught, while drafting the retro brief, that
+  rule (d) ("fold validation into the DONE+RETRO bundle") is scoped to the validation/DONE/RETRO
+  trio — NOT a claim that the original dispatch PR must also merge into that same bundle — so
+  FOLLOW-550's own 2-PR shape (#508 promotion-extended-with-validation + #509 content) is consistent
+  with the rule's actual scope, not a violation of it. Flagged this precise-reading requirement
+  explicitly in the retro brief so the analyst doesn't grade FOLLOW-550 against a broader rule than
+  what was actually written.
+- **A delegation/validation rule I'd add:** When a ticket's own AC is later used to grade the
+  ticket's OWN execution (dogfooding), always re-read the rule's literal scope before judging
+  compliance — it's easy to unconsciously grade against the SPIRIT of a rule rather than its written
+  boundary, especially when you're both the rule's implementer and its first user.

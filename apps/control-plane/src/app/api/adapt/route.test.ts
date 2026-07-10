@@ -201,8 +201,17 @@ describe('GET /api/adapt — auth gate (FOLLOW-473: fail-closed, resolver-derive
     expect(body.error.message).toContain('OPS_TENANT_ID');
   });
 
-  it('resolver throws (configured-but-failed DB, Rule K.2) → 401 FORBIDDEN, never fabricates a tenant', async () => {
-    mockResolveAdaptGetAuth.mockRejectedValue(new Error('connection refused'));
+  it('resolver reports a DB-throw disposition (configured-but-failed DB, Rule K.2 / FOLLOW-532) → 401 FORBIDDEN, never fabricates a tenant', async () => {
+    // FOLLOW-532: resolveAdaptGetAuth no longer THROWS on a configured-but-failed
+    // DB lookup — it catches internally and resolves with a `dbError: true`
+    // disposition (Sentry-captured inside the helper). The route's generic
+    // `if (!authResult.ok)` branch renders this identically to any other 401.
+    mockResolveAdaptGetAuth.mockResolvedValue({
+      ok: false,
+      status: 401,
+      message: 'Invalid API key',
+      dbError: true,
+    });
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer whatever'));
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);

@@ -1,6 +1,52 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 23 — FOLLOW-546 promoted, dispatched, and validated; PR #495 READY_FOR_REVIEW; PR #494 dispatch record still unmerged)
+
+**Two PRs from this session are in flight, in this order (same pattern as FOLLOW-380/#490/#492):**
+
+1. **PR #494** (`pm-orchestrator/FOLLOW-546-dispatch`) — the FOLLOW-546 promotion + dispatch record
+   (READY → IN_PROGRESS flip + the delegation brief in `backlog/HANDOFFS.md`). **STILL UNMERGED**
+   (awaiting human). Because of this, `main` currently has NO FOLLOW-546 ticket block at all — it
+   was dispatched out-of-band by the coordinator relaying the brief content directly.
+2. **PR #496** (this validation, `pm-orchestrator/FOLLOW-546-validate`, based on current `main` —
+   NOT stacked on #494) — promotes FOLLOW-546 straight into `backlog/QUEUE.md` at
+   `status: READY_FOR_REVIEW`, folding the full READY→IN_PROGRESS→READY_FOR_REVIEW trail into one
+   ticket-block edit. **When merging, merge #494 first (or accept its content is
+   superseded/duplicated by #496's fold-in and can be closed without merging — human's call).**
+
+**FOLLOW-546 (P2, sdk-engineer, Opus) is PM-validated, READY_FOR_REVIEW.** PR **#495**
+(`sdk-engineer/FOLLOW-546-description-staleness-guard`, off `main`, not merged). Independently
+verified (not taken on the worker's self-report) — full evidence trail on the ticket block's
+`notes:`/`ci_status:` fields: CI non-success count = 2, both the standing Rule I baseline (180
+violations, identical count to FOLLOW-380, zero new flags); full `@estalara/sdk` suite (69
+files/1521 tests) green in CI's fresh Node 22 build; bundle 40.47KB/42KB; exactly 4 files touched
+(one extended, not duplicated, test file), zero backlog/doc edits; the `isStale()` predicate traced
+producer (`index.ts:805`) → consumer (`adapt-description.ts:288` and `:309`, both genuinely
+pre-mutation) end-to-end; the new hardening (d) test independently inspected and confirmed
+non-vacuous (deliberately resolves the stale fetch last, asserts the fresh copy wins and the discard
+is observably event-logged). **One claim in the self-report did NOT hold up literally** ("4
+pre-existing local failures... RED on main too") — see the ticket's `ci_status:` note for the full
+independent re-verification (ran the specific test files locally on both branches under a fresh
+build: 100% green on both; CI is 100% green; the schema field in question is `z.string()` not
+`z.enum()` by design, so it structurally cannot break). The SUBSTANCE of the claim (no regression)
+holds on every independent check that matters for merge-gating; only the "RED on main" framing was
+imprecise, most likely a transient local stale-build artifact of the same class already documented
+in the sdk-engineer's own lessons.md from the FOLLOW-380 session.
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
+storage schema — not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with
+its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process
+stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** human reviews/merges #494 (or closes it as superseded) and #495 (the actual code) and #496
+(this validation). After FOLLOW-546 merges: mark `DONE` + `completed_at`, spawn
+`retrospective-analyst`, then pick the next ticket.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
 
 **PR #491 MERGED** to `main` as squash commit `4cc5ba5` (2026-07-10T07:16:20Z); PM-validation
 bookkeeping PR #492 merged immediately after (`57a0116`). PR #490 (superseded dispatch-record PR)
@@ -10434,6 +10480,131 @@ gate) closes the epic and must be last.
     `pm-orchestrator/FOLLOW-380-close` (this same bookkeeping PR, RETRO-169) per the repo's
     RETRO+DONE bundling convention (matches PRs #486/#487, #489) — NOT run by pm-orchestrator
     itself (no subagent-spawn capability in this tool surface).
+- id: FOLLOW-546
+  title: >-
+    Extend the FOLLOW-380 latest-wins in-flight guard over the fire-and-forget description tail
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-546-description-staleness-guard
+  pr: 495
+  model:
+    Opus # same cross-module async-staleness-coherence class as FOLLOW-380; model-fit table
+    # "complex single-domain reasoning ... non-trivial design". See dispatch brief in
+    # backlog/HANDOFFS.md ("PM orchestrator (session 23) -> sdk-engineer, FOLLOW-546") — note
+    # that brief currently lives on unmerged PR #494 (bookkeeping-only, blocked awaiting human as
+    # of this validation), NOT yet on `main`; relayed to the worker out of band by the
+    # coordinator, same pattern as FOLLOW-380/#490.
+  ci_status: >-
+    green (independently re-verified via `gh pr view 495 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated), 180 violations via `--log-failed` — IDENTICAL to the FOLLOW-380 baseline, zero new
+    flags (confirmed no new `export` statement in either touched source file's diff). Test (Node 22)
+    green — pulled the full job log: `@estalara/sdk:test` ran the ENTIRE suite fresh (69 files /
+    **1521** tests, all passed — up from FOLLOW-380's 1520 by exactly the 1 new `follow-380.test.ts`
+    hardening (d) case). Typecheck, Lint, Format check, Build, Build (control-plane), SDK E2E tests,
+    all Python suites, Demo integration, Rule H, Rule J — all green. SDK bundle-size gate (embedded
+    in `Build`): **40.47KB gzip vs the 42KB budget** (ESC-028) — PASSED (worker self-reported
+    40.25KB; CI's actual figure is 40.47KB, a minor self-report discrepancy, still comfortably under
+    budget). PR file list independently confirmed exactly 4 files:
+    `.claude/agents/sdk-engineer/lessons.md`, `packages/sdk/src/__tests__/follow-380.test.ts`
+    (EXTENDED, not a new/duplicate file — now 11 tests, was 10),
+    `packages/sdk/src/core/adapt-description.ts`, `packages/sdk/src/index.ts` — zero edits to
+    `backlog/QUEUE.md`, `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md`.
+
+    "4 pre-existing local failures" claim: could NOT be literally reproduced. Independently ran both
+    `packages/sdk/src/__tests__/adapt-description.test.ts` (35/35 pass) and
+    `packages/shared/src/schemas/events/events.test.ts` (67/67 pass, incl. the exact
+    "adapt.description.* events (FOLLOW-461 / audit F-04) — ingest round-trip" describe block)
+    locally on THIS branch after a fresh `@estalara/shared` build, AND separately on `main` under
+    the identical fresh-build condition — 100% green on BOTH. The worker's own lessons.md phrase
+    "RED on main too" does not literally hold under a fresh build; the SUBSTANCE of the claim (no
+    regression introduced) DOES hold, confirmed three independent ways: (1) CI is 100% green on this
+    PR (1521/1521); (2) local reruns of the specific files are 100% green on both branches under
+    equivalent conditions; (3) structurally, `AdaptDescriptionSkippedPayloadSchema.reason` is
+    `z.string().min(1).optional()` — deliberately NOT `z.enum` per its own doc comment ("keeps
+    forward-compat with new reason codes") — so a new `reason: 'stale'` value cannot possibly break
+    the round-trip validation regardless of build state. Most likely explanation: the worker's local
+    "4 failures" were the same class of transient stale-`@estalara/shared`-build artifact already
+    documented in this exact lessons.md file from the FOLLOW-380 session — a property of a local dev
+    environment, not of either branch's code.
+  priority: P2
+  estimated_hours: 2.5
+  depends_on: []
+  source: >-
+    RETRO-169 (§4a LG-1 / §7 / §4c TG-1); source_ticket FOLLOW-380. FOLLOW-380 bug (a) added a
+    monotonic latest-wins guard (`myRefreshId !== latestRefreshId`) as a SINGLE checkpoint at
+    `packages/sdk/src/index.ts:737`, right after `fetchDirectives`. But the description adaptation
+    is dispatched fire-and-forget AFTER that checkpoint — `void applyDescriptionAdaptation(config,
+    resp.archetype)` at `index.ts:805` — in a SEPARATE module
+    (`packages/sdk/src/core/adapt-description.ts:265`) that cannot see
+    `myRefreshId`/`latestRefreshId`. It re-reads `listingId` fresh (`adapt-description.ts:279-283`)
+    then `await fetchDescription(...)` (`:285`) with the STALE `resp.archetype` from the superseded
+    refresh. On rapid cross-listing nav where the new listing resolves a DIFFERENT archetype, the
+    stale invocation paints the correct (freshly-read) listing's description slot with the WRONG
+    archetype's copy — the exact async-interleave class RETRO-105 LG-1 / FOLLOW-380 bug (a) set out
+    to close, relocated one hop to the description path. 2nd sighting of the async-interleave
+    pattern (RETRO-105 §6 + RETRO-169 §6, HELD not promoted — a 3rd sighting promotes a
+    CONVENTIONS_PATCH rule).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-546; backlog/RETROSPECTIVES.md RETRO-169
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 23) from backlog/FOLLOW_UPS.md into Sprint 22b,
+    matching the FOLLOW-380/467/468/469/472/474 promotion pattern. `promoted_to_queue: true` set
+    on the FOLLOW_UPS.md stub. Dispatched same-session to sdk-engineer (Opus). Full delegation
+    brief in `backlog/HANDOFFS.md` ("PM orchestrator (session 23) → sdk-engineer, FOLLOW-546") —
+    see `model:` field caveat above re: that brief's unmerged-PR-#494 status (mirrors the
+    FOLLOW-380/#490 precedent).
+
+    PM-VALIDATED 2026-07-10 (pm-orchestrator, session 23) — PR #495
+    (`sdk-engineer/FOLLOW-546-description-staleness-guard`, off `main`). Independently verified
+    (not taken on the worker's self-report), reading the actual `git diff main...HEAD`:
+
+    - **Fix shape:** `applyDescriptionAdaptation` gained a THIRD, OPTIONAL parameter
+      `isStale: () => boolean = () => false` (`adapt-description.ts:276`) — the default preserves
+      the ~30 existing 2-arg test call sites unchanged (confirmed via
+      `grep -rn "applyDescriptionAdaptation(" packages/sdk/src/__tests__` — all still 2-arg, still
+      passing). The REAL production call site (`index.ts:805`) passes a live predicate:
+      `() => myRefreshId !== latestRefreshId` — reusing the exact same closure variables as the
+      FOLLOW-380 `:737` checkpoint. This is the `isStale()` callback shape the brief offered as
+      option 1 — avoids exporting `latestRefreshId` across the module boundary (confirmed via
+      `git diff` that neither file adds a new `export`).
+    - **Both checkpoints confirmed, both genuinely pre-mutation:** `adapt-description.ts:288`
+      (entry-time, before the `document.querySelectorAll` slot lookup) and `:309` (immediately
+      after `await fetchDescription` resolves, BEFORE the `:314` `if (!resp)` handling and BEFORE
+      the `:323` `slots.forEach(...)` paragraph mutation and the headline-slot mutation further
+      down). Read the full function body to confirm ordering — both checks unambiguously precede
+      every DOM-mutating statement.
+    - **Non-vacuous test, independently inspected (not just re-run):** the new hardening (d) case
+      in `follow-380.test.ts` deliberately resolves the NEWER navigation's description fetch
+      FIRST and the STALE one LAST (mirroring FOLLOW-380's own race-guard test pattern), then
+      asserts the description slot keeps the fresh copy and NEVER shows the stale archetype's
+      text — this would fail without the `:309` post-await check. Also asserts the discard is
+      OBSERVABLE (`adapt.description.skipped {reason:'stale'}` fires exactly once, `applied` never
+      fires for the stale archetype) — confirms the "not a silent catch" claim.
+    - **Rule I / no new exported symbol:** confirmed via `git diff` (no new `export` in either
+      touched file) AND the CI Rule I log (180 violations, identical count to the FOLLOW-380
+      baseline — zero new flags).
+    - **CI green**, bundle 40.47KB/42KB, file list exactly 4 (no backlog/doc edits).
+    - **"4 pre-existing failures" claim:** see `ci_status:` above for the full independent
+      re-verification — could not literally reproduce "RED on main too," but confirmed via CI +
+      two independent local reruns on both branches + schema-design analysis that this PR
+      introduces ZERO test regression, which is the load-bearing conclusion that matters for
+      merge-gating.
+
+    PM-validated. CI green (bar the standing Rule I baseline). Runtime wiring confirmed
+    end-to-end (producer at `index.ts:805`, consumer at both `adapt-description.ts` checkpoints).
+    No regression (CI + independent local verification on both branches). Ready for human review.
+    AC:
+    - [x] `applyDescriptionAdaptation` receives a staleness check from the caller (an `isStale()`
+          callback) and bails BEFORE mutating any DOM slot when superseded — both before AND
+          after its own `await fetchDescription`.
+    - [x] Non-vacuous jsdom test (retires RETRO-169 §4c TG-1) — stubs `IntersectionObserver`,
+          drives a rapid cross-listing `listing.viewed` with an archetype change, asserts the
+          stale description is discarded.
+    - [x] No regression to the same-archetype fast-path — the `isStale` default/live-predicate
+          shape is structurally non-invasive (unchanged behavior when never superseded); the full
+          `packages/sdk` suite (1521 tests, incl. all pre-existing description tests) stays green.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

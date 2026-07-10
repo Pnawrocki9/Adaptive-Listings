@@ -1,4 +1,75 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #491 MERGED, FOLLOW-380 DONE; RETRO-169 pending on pm-orchestrator/FOLLOW-380-close)
+# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-546 validated, PR #495 READY_FOR_REVIEW; PR #494 dispatch record still unmerged)
+
+## SESSION 23 VALIDATION (2026-07-10) — PR #495 (FOLLOW-546) validated, READY_FOR_REVIEW
+
+**Context:** PR #494 (FOLLOW-546 promotion + dispatch record) is still UNMERGED (awaiting human,
+same pattern as FOLLOW-380/#490) — `main` has no FOLLOW-546 ticket block at all yet. This session's
+QUEUE.md edit promotes FOLLOW-546 straight into a real ticket block at `READY_FOR_REVIEW`, folding
+the full trail into one edit rather than assuming #494 landed.
+
+**Independently re-verified (not taken on the worker's self-report):**
+
+- `gh pr checks 495 --watch` run to completion; `gh pr view 495 --json statusCheckRollup` →
+  non-success count = **2**, both "Rule I — wired-or-dead check" (matrix-duplicated). Pulled
+  `--log-failed`: 180 violations — IDENTICAL count to the FOLLOW-380 baseline, zero new flags,
+  confirmed via `git diff` that neither touched file adds a new `export`.
+- Pulled the full `Test (Node 22)` job log: `@estalara/sdk:test` ran fresh — **69 files / 1521
+  tests, 100% pass** (up from FOLLOW-380's 1520 by exactly the 1 new hardening (d) test).
+- Bundle-size gate (embedded in `Build`): **40.47KB gzip vs 42KB budget** — passed (worker
+  self-reported 40.25KB — a minor discrepancy, still comfortably under budget).
+- `gh pr view 495 --json files` → exactly 4 files, one of which (`follow-380.test.ts`) is EXTENDED
+  (11 tests, was 10), not a new/duplicate file. Zero edits to `backlog/QUEUE.md`,
+  `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md`.
+
+**Runtime-wiring verification (read the actual diff):**
+
+- `applyDescriptionAdaptation` gained a third, OPTIONAL parameter
+  `isStale: () => boolean = () => false` (`adapt-description.ts:276`) — default preserves the ~30
+  existing 2-arg test call sites (both `adapt-description.test.ts` and `follow-354.test.ts` are
+  UNTOUCHED in this diff, confirmed via the 4-file list above, so they keep compiling/passing purely
+  off the default). The real production call site (`index.ts:805`) passes a live predicate
+  `() => myRefreshId !== latestRefreshId`, reusing the FOLLOW-380 `:737` checkpoint's closure vars —
+  confirmed genuinely wired, not left defaulting in prod.
+- Both checkpoints (`adapt-description.ts:288` entry, `:309` post-`await fetchDescription`) read in
+  full context — both unambiguously precede every DOM-mutating statement (`:323` `slots.forEach`,
+  and the headline-slot mutation further down).
+- Non-vacuous test independently inspected: the new hardening (d) case in `follow-380.test.ts`
+  deliberately resolves a NEWER-navigation description fetch first and a STALE one last, then
+  asserts the DOM keeps the fresh copy and an `adapt.description.skipped {reason:'stale'}` event
+  fires exactly once (observable discard, not silent) — this would fail without the `:309` guard.
+
+**The load-bearing claim ("4 pre-existing failures, RED on main too") — thoroughly re-verified, did
+NOT hold up literally, but the substance does:**
+
+- Ran `packages/sdk/src/__tests__/adapt-description.test.ts` (35/35 pass) and
+  `packages/shared/src/schemas/events/events.test.ts` (67/67 pass, incl. the exact
+  "adapt.description.\* events (FOLLOW-461 / audit F-04) — ingest round-trip" describe block)
+  locally on the PR branch after a fresh `@estalara/shared` build — 100% green.
+- Repeated the SAME two local runs on `main` itself under the identical fresh-build condition — also
+  100% green. Could not reproduce "RED on main" as stated.
+- Structural confirmation: `AdaptDescriptionSkippedPayloadSchema.reason` is
+  `z.string().min(1).optional()` — its own doc comment says this is deliberate ("keeps
+  forward-compat with new reason codes"), so a new `reason: 'stale'` value cannot possibly break the
+  round-trip regardless of build state.
+- **Conclusion:** the worker's "RED on main too" framing is not literally accurate under my testing,
+  but the conclusion that matters for merge-gating — this PR introduces ZERO test regression — is
+  independently confirmed three ways (CI green, local reruns green on both branches, structural
+  schema analysis). Most likely explanation: the worker's local "4 failures" were the same transient
+  stale-`@estalara/shared`-build-artifact class already documented in their own lessons.md from the
+  FOLLOW-380 session — an environment property, not a code defect.
+
+**AC spot-check:** guard before+after fetch (confirmed at `:288`/`:309`); non-vacuous test
+(confirmed); no regression to the same-archetype fast-path (structurally guaranteed by the
+never-stale default + confirmed via the full green suite); no QUEUE/MASTER_DESIGN/README/CLAUDE
+edits (confirmed).
+
+**Result:** FOLLOW-546 promoted directly to `READY_FOR_REVIEW` in `backlog/QUEUE.md` (no separate
+IN_PROGRESS commit landed on `main` first, since #494 is still unmerged — the full trail is folded
+into the ticket's `notes:`), `pr: 495` recorded with the full evidence trail inline. CI-check
+counter: 1/5. Fix-iteration counter: 0/3. Branch `pm-orchestrator/FOLLOW-546-validate` (based on
+current `main`, NOT stacked on the still-unmerged #494) — opened as a new PR, not merged.
+
+---
 
 ## SESSION 22 CLOSE-OUT (2026-07-10) — PR #491 MERGED (4cc5ba5), FOLLOW-380 DONE, RETRO-169 pending
 

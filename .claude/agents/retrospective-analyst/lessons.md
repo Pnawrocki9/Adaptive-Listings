@@ -2337,3 +2337,34 @@
   re-verifying at handoff — it can live on WRONG in the SoT forever unless someone reconciles the
   deviation across the durable artifacts, not just the queue. Held all 3 candidates at count-1 (no
   ≥2 bar); filed FOLLOW-544 (fix the changelog) + FOLLOW-545 (close the bashless-agent author-blur).
+
+## 2026-07-10 · RETRO-171 (FOLLOW-548 — 3rd/final hop of the async-interleave class)
+
+- **A finding I almost missed and why:** I nearly recorded the headline RESTORE at
+  `index.ts:1126-1132` as a possible 4th hop because it's a `textContent` write reachable from a nav
+  event. It is NOT in-class: it runs SYNCHRONOUSLY inside the `navMutObs` callback and writes the
+  NEW listing's OWN captured original (teardown-ordered), never a stale archetype's adapted copy.
+  Lesson: "is it a DOM write reachable from a nav?" is the wrong filter — the class filter is "is it
+  a DEFERRED write that could paint a SUPERSEDED archetype's ADAPTED copy onto a newer listing?"
+  Synchronous own-original restores fail that test. I confirmed the distinction by tracing
+  capture→teardown→restore→guarded-refresh ordering, not by pattern-matching the write primitive.
+- **An axis/chain I had to trace twice:** the eager-argument-evaluation point. RETRO-170 (and the
+  stub) cited `:323`/`:333` `requestAnimationFrame(applyAndObserveSlot(...))` as the deferred write;
+  I had to re-derive that `f(g())` evaluates `g()` synchronously BEFORE the rAF schedules `f`, so
+  the real deferred write is the `reapply` closure re-invoked via the observer's OWN internal rAF —
+  a different indirection entirely. The principle (guard the deferred write) was right in the source
+  retro; only the line pointer was off by one indirection. Verify the ACTUAL mutation instant, never
+  the scheduler expression that looks deferred.
+- **A meta-pattern in how gaps recur across agents:** serial single-hop relocation
+  (RETRO-105→169→170→171, mirroring FOLLOW-097→114→127→141). Each fix genuinely closed its named
+  window but left the guard one continuation too early relative to the true mutation instant. The
+  termination signal this time: an EXHAUSTIVE deferred-primitive grep + per-writer
+  in-class/out-of-class adjudication returned NEGATIVE for a next hop, AND the fix made the guard
+  param REQUIRED (compiler-enforced) so a future caller can't silently re-open it. A class is only
+  safely declarable "closed" when BOTH the current instant is guarded AND the footgun that would
+  re-open it is structurally removed.
+- **My own blind-spot watch:** I banked the citation-precision meta at count 1 and REFUSED to
+  promote (the imprecise `:323`/`:333` citation appears 3x but all within ONE retro's analysis = one
+  episode, not ≥2 independent). Resisting the temptation to inflate a single-episode observation
+  into a rule is the same discipline Rule AB/AA/V enforce on the count. Pre-authorized a 3rd
+  INDEPENDENT-subsystem sighting as the real trigger.

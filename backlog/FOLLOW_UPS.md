@@ -14627,3 +14627,25 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - cross_ref: [RETRO-170, RETRO-169, RETRO-105, FOLLOW-546, FOLLOW-380, Rule AB,
   packages/sdk/src/core/adapt-description.ts:309, packages/sdk/src/core/adapt-description.ts:323,
   packages/sdk/src/index.ts:809]
+
+- id: FOLLOW-549 title: >- Pin each GET adapt route's own `area` literal + close the
+  call-site-inventory doc lag introduced by FOLLOW-532's fold source_retro: RETRO-172 source_ticket:
+  FOLLOW-532 recommended_sprint: backlog recommended_agent: backend-engineer priority: P3
+  estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-532 folded the DB-throw try/catch
+  INTO resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'` param — the
+  ONLY per-call-site obligation the fold left. Nothing pins each route to its own literal: the
+  parity test drives the helper directly, and both route.test.ts files mock resolveAdaptGetAuth
+  wholesale, so NO test asserts that GET /api/adapt passes 'adapt' and GET /api/adapt/description
+  passes 'description'. A future clone that passes the wrong literal would mislabel the Sentry
+  `tags.area` with NO CI signal (disposition
+  - tags.kind stay correct — cosmetic observability mislabel only, hence P3). Separately, the
+    helper's call-site-inventory note (adapt-get-auth.ts:13-14) still says only "a third consumer
+    added later MUST be appended here" and does not mention that a genuinely new third route must
+    ALSO widen the `area` union (a compile error — a GOOD forcing function, but undocumented at the
+    inventory site). ac:
+  * A lightweight assertion (spy on the existing mockResolveAdaptGetAuth, or a helper-level check)
+    in each route's suite reds CI if GET /api/adapt is not called with 'adapt' or GET
+    /api/adapt/description is not called with 'description'.
+  * The adapt-get-auth.ts call-site-inventory docstring states that a third consumer must ALSO widen
+    the `area: 'adapt'|'description'` union (naming the compile error as the forcing function).
+    cross_ref: [FOLLOW-532, RETRO-172, RETRO-164, Rule S]

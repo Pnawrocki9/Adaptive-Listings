@@ -2368,3 +2368,39 @@
   episode, not ≥2 independent). Resisting the temptation to inflate a single-episode observation
   into a rule is the same discipline Rule AB/AA/V enforce on the count. Pre-authorized a 3rd
   INDEPENDENT-subsystem sighting as the real trigger.
+
+---
+
+## 2026-07-10 / RETRO-172 (FOLLOW-532 — fold DB-throw parity into resolveAdaptGetAuth)
+
+- **A finding I almost missed and why:** I nearly wrote off angle (a) as "under-observability
+  regression" at face value. The trap: the brief framed `dbError` as "now invisible to production
+  branching — only Sentry `tags.kind` remains observable," which READS like a loss. The verify step
+  (diffing the two DELETED per-route catch blocks against the folded helper block) showed the Sentry
+  capture is byte-identical — same `tags.area`, same `tags.kind`, same `console.error` prefix — so
+  the discriminant is a NET-NEW test-only capability, not a lost one. Lesson: when a brief phrases a
+  change as a loss, diff the before/after emission sites literally before agreeing; "invisible to
+  production branching" is only a regression if production EVER branched on it (it never did — no
+  in-repo alert config reads `tags.kind` anywhere, confirmed by grep).
+- **An axis/chain I had to trace twice:** the one-hop closure check (§7). First pass said "seam
+  closed, done." Second pass forced the question the async-interleave family (RETRO-169/170/171)
+  trained me to ask — "did the fix RELOCATE the gap?" — and yes, it did introduce a thin new
+  obligation (the per-call-site `area` literal, unpinned by any test). The nuance I had to get
+  right: it is NOT the SAME class relocating at equal severity (that would be the RETRO-105 failure
+  mode); the severity DROPPED from P2-correctness (silent 500 on DB outage) to P3-cosmetic (Sentry
+  tag mislabel). Naming that severity-drop explicitly (rather than either "fully closed" or
+  "relocated one hop") is the honest verdict → FOLLOW-549.
+- **A meta-pattern in how gaps recur across agents:** the "fold the obligation into the shared
+  helper so drift is impossible-by-construction" move (FOLLOW-532) is the CODE-level twin of the
+  process family's "an executable guard/checklist beats a prose rule" (RETRO-146/150/163/164). Same
+  underlying principle — structural impossibility beats after-the-fact detection — surfacing in a
+  new domain (a TS helper). I deliberately did NOT let that kinship inflate the count: the process
+  family cannot lend its ≥2 count to a fresh code-domain pattern. HELD at count 1 with a
+  2nd-code-sighting trigger. This is the recurring temptation I keep having to resist (cf. RETRO-171
+  note): a strong ANALOGY to an existing promoted rule is not a second OCCURRENCE of the new
+  pattern.
+- **On the fold being the right call:** the source stub (FOLLOW-532) co-assigned qa-engineer and
+  offered option-1 (parity-test-only) OR option-2 (fold). The worker dropped qa and chose option-2.
+  I independently judged this SOUND — the change is entirely within backend-engineer's two route
+  files + one lib (no QA harness surface), and option-2 is strictly stronger than option-1
+  (construction vs detection). Recording that I checked the override rather than rubber-stamping it.

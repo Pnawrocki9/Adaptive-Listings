@@ -447,7 +447,29 @@ export function resolvedArchetypeStorageKey(sessionId: string): string {
 }
 
 /**
- * Persist the latest *non-neutral* archetype the engine has resolved for `sessionId`.
+ * The session's resolved source-of-truth archetype together with the confidence it was
+ * resolved at (FOLLOW-380 bug (c) / RETRO-105 LG-3).
+ */
+export interface ResolvedArchetype {
+  /** The resolved non-neutral archetype string (e.g. `family_buyer`). */
+  archetype: string;
+  /** The confidence the archetype was resolved at, re-pinned on neutral-decay restore. */
+  confidence: number;
+}
+
+/**
+ * Fallback confidence for a legacy SoT entry persisted in the pre-FOLLOW-380 plain-string
+ * format (archetype only, no confidence). Chosen above BOTH the server directive gate
+ * (`CONFIDENCE_THRESHOLD = 0.6`, route.ts) AND the SDK DOM-adaptation floor
+ * (`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`, FOLLOW-343) so a restored legacy SoT archetype is not
+ * silently suppressed by either gate. Matches quiz-leaf confidence semantics (a resolved SoT
+ * archetype is a deliberate high-confidence assertion, not a cold-start guess).
+ */
+const RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE = 0.85;
+
+/**
+ * Persist the latest *non-neutral* archetype the engine has resolved for `sessionId`,
+ * together with the confidence it was resolved at.
  *
  * This is the session's source-of-truth (SoT) archetype. It is seeded by the quiz answer
  * (§D.6 / FOLLOW-344 — the quiz is the primary explicit signal) and then UPDATED whenever a
@@ -463,26 +485,68 @@ export function resolvedArchetypeStorageKey(sessionId: string): string {
  * decayed to `neutral`, so every subsequent listing keeps adapting. Works WITH or WITHOUT the
  * quiz (a quiz-disabled tenant seeds the SoT from behavioral/chat resolution instead).
  *
+ * The `confidence` is persisted (FOLLOW-380 bug (c)) so the neutral-decay restore can re-pin
+ * BOTH the archetype and the confidence it was resolved at — otherwise the restore leaves the
+ * decayed neutral-era low confidence in place, which flows to `body.confidence` and causes the
+ * server (`confidence <= 0.6 → no directives`) and the SDK DOM floor to suppress the restored
+ * adaptation (RETRO-105 LG-3).
+ *
  * Survives in-tab navigation AND full reload (sessionStorage); erased together with the intent
  * state on consent denial (Mode A compliance). Callers MUST gate on consent (mirrors
  * persistIntentState). Fails silently — storage unavailability must never reach the host page.
  */
-export function persistResolvedArchetype(sessionId: string, archetype: string): void {
+export function persistResolvedArchetype(
+  sessionId: string,
+  archetype: string,
+  confidence: number,
+): void {
   try {
-    sessionStorage.setItem(resolvedArchetypeStorageKey(sessionId), archetype);
+    sessionStorage.setItem(
+      resolvedArchetypeStorageKey(sessionId),
+      JSON.stringify({ archetype, confidence }),
+    );
   } catch {
     // sessionStorage unavailable — continue in-memory only
   }
 }
 
 /**
- * Read the session's resolved source-of-truth archetype, or `null` if none persisted.
+ * Read the session's resolved source-of-truth archetype + confidence, or `null` if none
+ * persisted.
+ *
+ * Backward-compatible with the pre-FOLLOW-380 plain-string format (a bare archetype string
+ * with no confidence): such a value is returned with `RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE`
+ * so a session persisted by an older bundle before an in-session redeploy still restores
+ * above both gates.
  *
  * Fails silently to `null` when sessionStorage is unavailable.
  */
-export function readResolvedArchetype(sessionId: string): string | null {
+export function readResolvedArchetype(sessionId: string): ResolvedArchetype | null {
   try {
-    return sessionStorage.getItem(resolvedArchetypeStorageKey(sessionId));
+    const raw = sessionStorage.getItem(resolvedArchetypeStorageKey(sessionId));
+    if (raw === null) return null;
+    // Current format (FOLLOW-380): JSON `{ archetype, confidence }`.
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        typeof (parsed as { archetype?: unknown }).archetype === 'string'
+      ) {
+        const obj = parsed as { archetype: string; confidence?: unknown };
+        return {
+          archetype: obj.archetype,
+          confidence:
+            typeof obj.confidence === 'number'
+              ? obj.confidence
+              : RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE,
+        };
+      }
+    } catch {
+      // Not JSON — fall through to legacy plain-string handling below.
+    }
+    // Legacy format: bare archetype string persisted before FOLLOW-380 added confidence.
+    return { archetype: raw, confidence: RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE };
   } catch {
     return null;
   }

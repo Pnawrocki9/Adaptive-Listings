@@ -497,3 +497,30 @@ public-contract change, so the bar for deletion is "clearly dead + no ref", whic
 **A guardrail I'd add:** When adding an SDK emit site with a new `type` string literal, a CI check
 should assert the literal exists in shared `EVENT_TYPES` — a producer whose type is absent from the
 union is a silent ingest drop (the exact F-04 failure mode).
+
+---
+
+**2026-07-10 / FOLLOW-380** · Hardened cross-listing re-adaptation (ADR-0014 / RETRO-105): (a)
+monotonic "latest-call-wins" in-flight guard for overlapping `refreshDirectives()` on rapid SPA nav
+(no AbortController — `fetchDirectives` has no signal, and we want to DISCARD stale results, not
+cancel the network); (b) per-listing headline capture (`Map<listingId,string>`) replacing a single
+global `originalHeadlineText`; (c) persist+re-pin `confidence` alongside the SoT archetype so the
+FOLLOW-343 DOM floor (which gates on `resp.confidence`, echoed from
+`body.confidence = currentIntentState.confidence`) doesn't suppress the restored adaptation. One
+consolidated `follow-380.test.ts` covering FOLLOW-375's 5 deferred items + 3 hardening tests.
+
+**What was uncertain (wiring/perf/compat):** (1) Whether the per-listing headline capture could read
+the fresh framework title before the stale loop-guard re-asserts — resolved by MutationObserver
+creation-order (navMutObs created at init fires before adaptation-time headline observers;
+`teardownDescriptionObservers()` then cancels the pending clobber). (2) That `resp.confidence`
+echoes `body.confidence` in the real route (confirmed in `/api/adapt/route.ts`) — this is what makes
+bug (c) observable end-to-end. (3) jsdom lacks `IntersectionObserver`, and the whole
+listing-observer block (incl. `navMutObs`) is gated on its presence — tests driving `listing.viewed`
+MUST stub a no-op IO.
+
+**A guardrail I'd add:** NEVER `git checkout <file>` to revert a non-vacuousness simulation while
+unstaged ticket work lives in that same file — it silently wipes the real fix. Use a scratchpad
+backup copy (`cp`) instead. (Cost me a full re-apply of index.ts this ticket.) Also: when an
+integration test targets a hardcoded selector (`[data-estalara-slot="headline"]`), the fixture MUST
+use that exact literal or the code-under-test is never exercised — assert non-vacuousness by
+reverting the fix and confirming RED.

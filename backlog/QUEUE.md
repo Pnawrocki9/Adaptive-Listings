@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 23 — PR #493 MERGED, FOLLOW-380 DONE + RETRO-169 landed; FOLLOW-546 promoted + dispatched to sdk-engineer)
+
+**PR #493 MERGED** to `main` as squash commit `602d098` — FOLLOW-380 confirmed `DONE`, RETRO-169
+landed. `gh pr list --state open` → 0 open PRs. Local `main` synced & clean.
+
+**Dispatched by human direction (relayed via coordinator): FOLLOW-546** (P2, `agent: sdk-engineer`,
+`depends_on: []`) — RETRO-169's direct follow-up: FOLLOW-380's `myRefreshId !== latestRefreshId`
+latest-wins guard (`index.ts:737`) is a single post-fetch checkpoint that does NOT cover the
+fire-and-forget `applyDescriptionAdaptation` tail (`index.ts:805` → `adapt-description.ts:265`), so
+a superseded rapid-nav refresh can still paint a stale-archetype description onto the newer
+(correctly-identified) listing — the exact async-interleave class FOLLOW-380 set out to close,
+relocated one hop downstream (2nd sighting of the pattern across RETRO-105 + RETRO-169; held, not
+yet promoted to a CONVENTIONS_PATCH rule). Promoted from `backlog/FOLLOW_UPS.md`
+(`promoted_to_queue: true`) into `backlog/QUEUE.md` Sprint 22b, flipped straight to `IN_PROGRESS`,
+`assigned_to: sdk-engineer`, branch `sdk-engineer/FOLLOW-546-description-staleness-guard`. **Model:
+Opus** — same cross-module async-staleness-coherence class as FOLLOW-380 (propagating a
+call-id/`isStale` guard across the `index.ts` → `adapt-description.ts` module boundary,
+prod-touching), model-fit table "complex single-domain reasoning ... non-trivial design"; confirms
+the coordinator's own lean. All 4 stub citations independently re-verified against current `main`
+HEAD before delegating (verify-not-guess) — all exact. Full delegation brief with wiring analysis
+(no `await` between the 737 checkpoint and the 805 dispatch; exactly ONE production call site; ~30
+existing test call sites flagged for a backward-compatible optional-parameter approach) posted to
+`backlog/HANDOFFS.md` ("PM orchestrator (session 23) → sdk-engineer, FOLLOW-546").
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
+storage schema — not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with
+its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process
+stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator launches the `sdk-engineer` subagent (Opus) on FOLLOW-546 per the HANDOFFS.md
+brief. On completion: PM runs full validation (step 5) incl. runtime-wiring grep for the new
+staleness-check parameter/callback (producer at the `index.ts:805` call site, consumer inside
+`applyDescriptionAdaptation`'s post-await guards) and confirms the new jsdom test is genuinely
+non-vacuous (RED without the fix) before READY_FOR_REVIEW.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
 
 **PR #491 MERGED** to `main` as squash commit `4cc5ba5` (2026-07-10T07:16:20Z); PM-validation
 bookkeeping PR #492 merged immediately after (`57a0116`). PR #490 (superseded dispatch-record PR)
@@ -10434,6 +10473,75 @@ gate) closes the epic and must be last.
     `pm-orchestrator/FOLLOW-380-close` (this same bookkeeping PR, RETRO-169) per the repo's
     RETRO+DONE bundling convention (matches PRs #486/#487, #489) — NOT run by pm-orchestrator
     itself (no subagent-spawn capability in this tool surface).
+- id: FOLLOW-546
+  title: >-
+    Extend the FOLLOW-380 latest-wins in-flight guard over the fire-and-forget description tail
+  agent: sdk-engineer
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-546-description-staleness-guard
+  model:
+    Opus # same cross-module async-staleness-coherence class as FOLLOW-380 (propagating a
+    # call-id/isStale guard across the index.ts -> adapt-description.ts module boundary,
+    # prod-touching) -- model-fit table: "Opus -- complex single-domain reasoning ... non-trivial
+    # design", one tier above the sdk-engineer Sonnet default. Confirmed with the coordinator's
+    # own lean. See dispatch brief in backlog/HANDOFFS.md ("PM orchestrator (session 23) ->
+    # sdk-engineer, FOLLOW-546").
+  priority: P2
+  estimated_hours: 2.5
+  depends_on: []
+  source: >-
+    RETRO-169 (§4a LG-1 / §7 / §4c TG-1); source_ticket FOLLOW-380. FOLLOW-380 bug (a) added a
+    monotonic latest-wins guard (`myRefreshId !== latestRefreshId`) as a SINGLE checkpoint at
+    `packages/sdk/src/index.ts:737`, right after `fetchDirectives`. But the description adaptation
+    is dispatched fire-and-forget AFTER that checkpoint — `void applyDescriptionAdaptation(config,
+    resp.archetype)` at `index.ts:805` — in a SEPARATE module
+    (`packages/sdk/src/core/adapt-description.ts:265`) that cannot see
+    `myRefreshId`/`latestRefreshId`. It re-reads `listingId` fresh (`adapt-description.ts:279-283`)
+    then `await fetchDescription(...)` (`:285`) with the STALE `resp.archetype` from the superseded
+    refresh. On rapid cross-listing nav where the new listing resolves a DIFFERENT archetype, the
+    stale invocation paints the correct (freshly-read) listing's description slot with the WRONG
+    archetype's copy — the exact async-interleave class RETRO-105 LG-1 / FOLLOW-380 bug (a) set out
+    to close, relocated one hop to the description path. 2nd sighting of the async-interleave
+    pattern (RETRO-105 §6 + RETRO-169 §6, HELD not promoted — a 3rd sighting promotes a
+    CONVENTIONS_PATCH rule).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-546; backlog/RETROSPECTIVES.md RETRO-169
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 23) from backlog/FOLLOW_UPS.md into Sprint 22b as
+    IN_PROGRESS (dispatched same-session), matching the FOLLOW-380/467/468/469/472/474 promotion
+    pattern. `promoted_to_queue: true` set on the FOLLOW_UPS.md stub (stub retained as
+    cross-reference, not deleted). NOT on the FOLLOW-471 clean-re-audit critical path (SDK
+    robustness hardening, not a listed F-01…F-21 finding — same standing as FOLLOW-380).
+
+    DISPATCHED 2026-07-10 (pm-orchestrator, session 23) to sdk-engineer (Opus), per human direction
+    relayed via coordinator. All 4 stub citations independently re-verified against current `main`
+    HEAD before delegating (verify-not-guess, OP Rule 5) — confirmed exact:
+    `index.ts:737` (`if (myRefreshId !== latestRefreshId) return;`), `index.ts:805`
+    (`void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);`),
+    `adapt-description.ts:265` (`export async function applyDescriptionAdaptation(`),
+    `adapt-description.ts:279-283` (fresh `listingId` DOM re-read) / `:285`
+    (`await fetchDescription(config, listingId, archetype)`). Also independently confirmed: (1) no
+    `await` exists between the `index.ts:737` checkpoint and the `index.ts:805` dispatch (same
+    synchronous continuation — the ONLY interleave window is `applyDescriptionAdaptation`'s own
+    internal `await fetchDescription`); (2) exactly ONE production call site
+    (`index.ts:805`) — low blast-radius signature change; (3) ~30 existing call sites across
+    `adapt-description.test.ts` + `follow-354.test.ts` use the current 2-arg signature — flagged in
+    the brief that a new 3rd parameter should default to non-stale so those don't need mechanical
+    updates unless the worker judges an explicit update is cleaner.
+
+    Full delegation brief posted to `backlog/HANDOFFS.md` ("PM orchestrator (session 23) →
+    sdk-engineer, FOLLOW-546").
+    AC:
+    - [ ] `applyDescriptionAdaptation` receives a staleness check from the caller (an `isStale()`
+          callback or a `callId` snapshot compared against `latestRefreshId`) and bails BEFORE
+          mutating any DOM slot when it has been superseded — both before AND after its own
+          `await fetchDescription`.
+    - [ ] Add a non-vacuous jsdom test (retires RETRO-169 §4c TG-1): stub IntersectionObserver,
+          drive a rapid cross-listing `listing.viewed` with an archetype change across the nav, and
+          assert the stale description is discarded (RED without the guard extension).
+    - [ ] No regression to the same-archetype fast-path (no added latency / no dropped legitimate
+          description).
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

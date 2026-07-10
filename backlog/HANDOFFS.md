@@ -2658,3 +2658,147 @@ banner (orchestrator single writer for that section) — your ticket-status/FOLL
 inside the ticket bodies are fine and expected.
 
 ---
+
+## PM orchestrator (session 23) → sdk-engineer, FOLLOW-546
+
+**From:** pm-orchestrator (session 23) **To:** sdk-engineer **Date:** 2026-07-10 **Branch:**
+`sdk-engineer/FOLLOW-546-description-staleness-guard` (agent-prefix required — branch-first, or
+push-CI won't run). **Model: Opus** — this is the same cross-module async-staleness-coherence class
+as FOLLOW-380 (propagating a call-id/`isStale` guard across the `index.ts` → `adapt-description.ts`
+module boundary, prod-touching), which the mandatory model-fit rule puts above the sdk-engineer
+Sonnet default.
+
+**Read first:**
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 row **D** (Intent Engine) — closest section to this domain.
+2. `backlog/RETROSPECTIVES.md` **RETRO-169** in full (search `## RETRO-169 —`) — the source retro.
+   §4a LG-1, §7, and §4c TG-1 are the exact findings this ticket closes.
+3. `docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md` — the design FOLLOW-380
+   hardened and this ticket extends. Do not contradict its model.
+4. The merged FOLLOW-380 diff itself (`packages/sdk/src/index.ts`, commit `4cc5ba5`) and its test
+   file `packages/sdk/src/__tests__/follow-380.test.ts` — this ticket's fix and test should follow
+   the SAME patterns (the `latestRefreshId` guard shape, the `_initForTest()`/`insertListingDom()`/
+   `MockIntersectionObserver` test harness), not invent new ones.
+
+**Ticket:** FOLLOW-546 (`backlog/QUEUE.md`, Sprint 22b tail, P2, 2.5h estimate). RETRO-169 found
+that FOLLOW-380's in-flight guard is a single checkpoint that doesn't cover the description tail.
+
+### The gap, precisely (all citations independently re-verified against current `main` HEAD)
+
+`packages/sdk/src/index.ts:737` — inside `refreshDirectives()`, right after
+`await fetchDirectives(...)` resolves:
+
+```ts
+if (myRefreshId !== latestRefreshId) return;
+```
+
+This correctly discards a stale `refreshDirectives()` continuation. But `index.ts:805` — a few dozen
+lines later, still inside the SAME (now-confirmed-fresh) continuation — fires the description
+adaptation **fire-and-forget**:
+
+```ts
+void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);
+```
+
+`applyDescriptionAdaptation` (`packages/sdk/src/core/adapt-description.ts:265`) is a SEPARATE async
+function in a SEPARATE module. It has no visibility into `myRefreshId`/`latestRefreshId` (both are
+`index.ts`-local closure variables, not exported). Inside it:
+
+- `:279-283` re-reads `listingId` **fresh** from the live DOM
+  (`document.querySelector('[data-estalara-listing-id]')`).
+- `:285` — `const resp = await fetchDescription(config, listingId, archetype);` — note `archetype`
+  is the value CAPTURED AT DISPATCH TIME (`resp.archetype` from `index.ts:805`), not re-read.
+- `:295` and `:303-306` mutate DOM slots (`slots.forEach(...)` for the description paragraphs,
+  `headlineSlots.forEach(...)` for the ADR-0009 per-listing headline override) — AFTER the
+  `await fetchDescription` at `:285`.
+
+**The bug:** if a SECOND rapid navigation happens while this `await fetchDescription` is in flight,
+`index.ts`'s own `latestRefreshId` guard has ALREADY passed (it ran once, synchronously, at `:737`,
+before this fire-and-forget call was even dispatched at `:805` — confirmed via
+`sed -n '737,806p' index.ts | grep await` returning nothing, i.e. there is no `await` between the
+`:737` checkpoint and the `:805` dispatch, so that checkpoint is stale by the time
+`applyDescriptionAdaptation`'s own internal await resolves). The function then paints the CORRECT
+(freshly re-read) listing's description slot with the WRONG (stale) archetype's copy. This is
+narrower than FOLLOW-380's bug (a) — same-archetype navigations are unaffected — but on a
+different-archetype rapid nav it silently mis-paints exactly the wrong listing.
+
+### Fix direction
+
+`applyDescriptionAdaptation` needs a staleness check it can consult BEFORE mutating any DOM slot —
+both defensively at entry AND, critically, immediately after its own `await fetchDescription`
+resolves (that's the actual interleave window; there's no meaningful interleave window before the
+first `await` in a synchronously-dispatched fire-and-forget call, but check at entry anyway for
+defense-in-depth / future-proofing against a caller change). Two implementation shapes, your call
+which is cleaner for this codebase:
+
+1. **`isStale(): boolean` callback** — `index.ts:805` constructs a closure at dispatch time (e.g.
+   `const myId = myRefreshId; const isStale = () => myId !== latestRefreshId;`) and passes it in;
+   `applyDescriptionAdaptation` calls `if (isStale()) return;` before each DOM-mutation block. This
+   avoids exporting `latestRefreshId` across the module boundary (keeps it `index.ts`-private,
+   avoids a new cross-module mutable-state export that would itself be a design smell / Rule I
+   risk).
+2. **`callId: number` snapshot + an exported getter** — `index.ts` would need to export something
+   like `getLatestRefreshId()` for `adapt-description.ts` to compare against; more mechanical but
+   creates a new cross-module coupling. Only pick this if you have a concrete reason the callback
+   shape doesn't fit.
+
+**Signature/blast-radius note (verified, not assumed):** `applyDescriptionAdaptation` has exactly
+ONE production call site (`index.ts:805` — confirmed via
+`grep -rn "applyDescriptionAdaptation" packages/sdk/src --include=*.ts | grep -v test`), so changing
+its signature is low blast-radius in PRODUCTION code. However
+`packages/sdk/src/__tests__/ adapt-description.test.ts` has **~30 existing direct calls** with the
+current 2-arg signature (`applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter')` etc.), plus
+`follow-354.test.ts` references it in comments. **Strongly recommend making the new parameter
+OPTIONAL with a non-stale default** (e.g. `isStale: () => boolean = () => false`) so those ~30
+existing calls keep compiling and passing without a mechanical signature update at every call site —
+this is also the semantically correct default (a caller that doesn't pass a staleness check has no
+in-flight-guard concept and should behave as it does today). Only update `adapt-description.test.ts`
+call sites if you're adding NEW test cases that specifically need to exercise staleness.
+
+### AC
+
+- [ ] `applyDescriptionAdaptation` receives a staleness check from the caller (`isStale()` callback
+      or `callId` snapshot — your call, see above) and bails BEFORE mutating any DOM slot when
+      superseded — both before AND after its own `await fetchDescription`.
+- [ ] Non-vacuous jsdom test (retires RETRO-169 §4c TG-1): stub `IntersectionObserver`
+      (`MockIntersectionObserver` pattern in `follow-380.test.ts:182-197`), drive a rapid
+      cross-listing `listing.viewed` where the NEW listing resolves a DIFFERENT archetype than the
+      stale in-flight one, and assert the stale description is discarded — the description slot
+      shows either nothing (if the new listing's own fetch hasn't resolved yet) or the NEW listing's
+      correct copy, never the stale archetype's copy. Confirm this test is RED without the guard
+      extension (temporarily revert your fix locally, confirm the test fails, then restore — do NOT
+      use `git checkout <file>` to do this reversion if it would touch other uncommitted work in the
+      same file; a prior FOLLOW-380 lessons.md entry (`.claude/agents/sdk-engineer/lessons.md`,
+      2026-07-10 entry) flags exactly this trap — use a scratchpad copy instead).
+- [ ] No regression to the same-archetype fast-path: a navigation where the archetype does NOT
+      change must still show its description with no added latency and no dropped legitimate
+      adaptation.
+- [ ] Placement: either extend `follow-380.test.ts` (it already has the rapid-nav +
+      `_initForTest()`/`insertListingDom()`/`stubEchoFetch`-style harness this test needs) or add a
+      new `follow-546.test.ts` following the same harness pattern — your call, but do NOT duplicate
+      the harness setup wholesale if extending is cleaner.
+
+**Standards:** branch-first (first action:
+`git checkout -b sdk-engineer/FOLLOW-546-description-staleness-guard main`); prettier every touched
+file, every time; Zod for any new schema surface (none expected — this is control-flow, not a new
+wire contract); `packages/*` coverage ≥80%; zero `any` without inline reason; `tsc --noEmit` +
+eslint clean; keep the full `packages/sdk` suite green (1520+ tests as of FOLLOW-380); SDK bundle
+stays ≤42KB gzip (ESC-028/FOLLOW-469 — this is a small control-flow change, unlikely to move the
+needle, but check `pnpm build` output; last measured 40.43KB).
+
+**Do NOT:**
+
+- Touch `backlog/QUEUE.md`, `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md` — out of scope.
+- Re-litigate ADR-0014 or FOLLOW-380's guard design — this ticket extends the existing pattern, it
+  does not redesign it. If you find the `isStale`/`callId` approach genuinely doesn't fit, stop and
+  escalate (`backlog/ESCALATIONS.md`) rather than inventing something unrelated.
+- Touch FOLLOW-547 (unversioned SoT storage schema) — separate, unpromoted stub, not in scope here.
+
+**Open a PR when done; do not merge.** Report: which staleness-check shape you chose (`isStale`
+callback vs `callId` snapshot) and why; whether you extended `follow-380.test.ts` or added a new
+file; confirmation the new test is genuinely non-vacuous (RED-without-fix evidence, per FOLLOW-380's
+own lessons.md precedent for how to verify this safely); CI result (Rule I baseline non-blocking —
+confirm any NEW exported symbol has a real producer AND consumer, not just a test importer); and any
+place you found ambiguous and escalated rather than guessed.
+
+---

@@ -1,6 +1,50 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-11 (session 25 cont'd — PR #510 MERGED, FOLLOW-550 fully closed, FOLLOW-551 dispatched DRAFT-ONLY)
+## ▶️ START HERE — resume 2026-07-11 (session 25 cont'd — PR #512 PM-validated, folded into #511, no separate validation PR)
+
+**FOLLOW-551 (P3, architect DRAFT-ONLY, Sonnet) is PM-validated, READY_FOR_REVIEW.** architect
+drafted the content (no git); the coordinator applied it verbatim as commit `a8421e7`, PR **#512**
+(`architect/FOLLOW-551-tool-capability-routing`, off `main`, not merged). Independently verified
+(not taken on the coordinator's summary): CI non-success count = 2 (both the standing pre-existing
+"Rule I — wired-or-dead" gate, 180 WARN lines identical to the FOLLOW-532/546/548/549/550 baseline);
+file list confirmed exactly 2 files (`docs/AGENT_WORKFLOW.md`, `.claude/agents/architect.md`,
+`CONVENTIONS_PATCH.md` untouched); full 96-line diff read directly — new "Agent tool-capability
+routing" section correctly placed after "Model-fit decision", both routing options present, both
+precedents cited by number with a verbatim Changelog v4.3 quote, explicit non-Rule-promotion
+statement present (with a notable nuance: acknowledges the raw `CLAUDE.md` threshold is technically
+met but correctly defers the actual promotion call to FOLLOW-551's own retro rather than deciding it
+inline), FOLLOW-545 bullet 2 explicitly confirmed to stay open (not silently absorbed), and
+`architect.md`'s "First action" section confirmed fixed (no longer instructs `git checkout -b`,
+replaced with a no-Bash note cross-referencing the new section).
+
+**No two-`QUEUE.md`-PRs-in-flight collision:** PR #511 (FOLLOW-551's promotion) touches
+`backlog/QUEUE.md`; PR #512 touches only the two docs files above — disjoint sets. Per the new rule
+(b)/(d) and the FOLLOW-550/#508 precedent, this validation was folded as an additional commit onto
+#511's own branch (`pm-orchestrator/FOLLOW-551-dispatch`) rather than requiring #511 to merge first
+or opening a new PR. `backlog/QUEUE.md` FOLLOW-551 flipped `IN_PROGRESS` -> `READY_FOR_REVIEW` in
+place. **Confirmed #511 remains correct to MERGE** (not close-superseded) — its dispatch-record
+content is not duplicated/re-included elsewhere; this validation commit only extends it. **#511 and
+#512 have no merge-order constraint** (disjoint files); once BOTH are merged, the DONE+RETRO bundle
+will be cut fresh from post-merge `main` (rule (c)), matching the FOLLOW-550/#508+#509→#510
+precedent exactly.
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename — per RETRO-174 §5b, should be dispatched using FOLLOW-551's newly-codified
+draft-then-apply resolution once FOLLOW-551 lands, not before). FOLLOW-552 (P3, doc-wiring fix —
+next natural pick after FOLLOW-551). FOLLOW-545 (re-scope to bullet-2-only at next review, see
+above). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema — not yet
+promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-533/534 (P3, not yet
+promoted). 4 already-`READY` P3 tickets remain queued: FOLLOW-467/468/469/474. 3 standing `## OPEN`
+escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** human reviews/merges #511 (promotion+validation bundle) and #512 (the actual content) —
+either order is safe. After both merge: mark FOLLOW-551 `DONE` + `completed_at`, spawn
+`retrospective-analyst` for RETRO-175, bundled as one DONE+RETRO PR per rule (d).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-11 (session 25 cont'd — PR #510 MERGED, FOLLOW-550 fully closed, FOLLOW-551 dispatched DRAFT-ONLY)
 
 **PR #510 MERGED** (`146de2f`) — FOLLOW-550's DONE-flip + RETRO-174 bundle landed cleanly on `main`.
 Local sync confirmed: FOLLOW-550 `status: DONE`, RETRO-174 present, FOLLOW-551 + FOLLOW-552 stubs
@@ -11553,18 +11597,25 @@ gate) closes the epic and must be last.
     Codify the architect-has-no-Bash routing gap: mandate draft-then-apply (or route to a
     Bash-capable agent) for any architect-assigned ticket requiring git/PR mechanics
   agent: architect
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: architect
   started_at: '2026-07-11T00:00:00Z'
-  branch: n/a — DRAFT-ONLY EXECUTION MODE, see note below
+  branch: architect/FOLLOW-551-tool-capability-routing
+  pr: 512
   execution_mode: >-
     DRAFT-ONLY (dogfooding the very pattern this ticket codifies). Architect's tool manifest is
-    Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — NO Bash. Architect does NOT create a branch, does
-    NOT Edit any file, does NOT attempt git of any kind. Architect produces the exact markdown
-    content + insertion point(s) + rationale, in full, in its final report back to the coordinator.
-    The coordinator (Bash-capable) applies it verbatim: branch, prettier, commit, push, open the
-    promotion-side PR. See full mechanics in the delegation brief (`backlog/HANDOFFS.md`,
-    "Delegation brief — FOLLOW-551 (DRAFT-ONLY)").
+    Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — NO Bash. Architect did NOT create a branch, did
+    NOT Edit any file, did NOT attempt git of any kind. Architect produced the exact markdown
+    content + insertion point(s) + rationale in its final report; the coordinator applied it
+    verbatim (branch, commit `a8421e7`, push, PR #512). See full mechanics in the delegation brief
+    (`backlog/HANDOFFS.md`, "Delegation brief — FOLLOW-551 (DRAFT-ONLY)").
+  ci_status: >-
+    green (independently re-verified via `gh pr view 512 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated); confirmed via `--log-failed` on run 29128704472 — 180 WARN lines, IDENTICAL to the
+    FOLLOW-532/546/548/549/550 baseline (expected, docs-only diff — 2 files,
+    `docs/AGENT_WORKFLOW.md` + `.claude/agents/architect.md`; `CONVENTIONS_PATCH.md` NOT touched,
+    confirmed via `gh pr view 512 --json files`). CI-check counter: 1/5. Fix-iteration counter: 0/3.
   model:
     Sonnet # routine workflow-doc codification with a fully-specified AC and two named ≥2×
     # precedent instances already gathered (no open design question) — model-fit table "routine
@@ -11631,7 +11682,7 @@ gate) closes the epic and must be last.
     `CONVENTIONS_PATCH.md` Rule despite the count, that is an ESCALATION/ADR question for the
     human — write it to `backlog/ESCALATIONS.md`, do not silently add the Rule.
     AC:
-    - [ ] Home: primary location is `docs/AGENT_WORKFLOW.md`, near "The 9 agents" table (:14-28)
+    - [x] Home: primary location is `docs/AGENT_WORKFLOW.md`, near "The 9 agents" table (:14-28)
           and/or the "Model-fit decision" section (:30-48) — mirror the structure/citation style of
           the existing "Bookkeeping-PR sequencing" section (:163) and "Branch-first worker
           discipline" section (:108). States: architect's tool manifest has no Bash; any ticket
@@ -11640,22 +11691,63 @@ gate) closes the epic and must be last.
           point + rationale in its final report; a Bash-capable party (PM or another agent) applies
           it verbatim — UNLESS the ticket is reassigned to a Bash-capable agent from the start
           (also an acceptable resolution, at the delegator's discretion).
-    - [ ] Cites BOTH precedent instances by ticket/retro number: FOLLOW-470/RETRO-168 and
+    - [x] Cites BOTH precedent instances by ticket/retro number: FOLLOW-470/RETRO-168 and
           FOLLOW-550/RETRO-174, stating this is a ≥2× recurrence (not a one-off risk).
-    - [ ] Explicitly states this is workflow guidance, not a `CONVENTIONS_PATCH.md` Rule promotion,
+    - [x] Explicitly states this is workflow guidance, not a `CONVENTIONS_PATCH.md` Rule promotion,
           and states the precise 2-banked/no-3rd-sighting count from the note above (so a future
           reader — or retro — has the exact citation trail to evaluate a future 3rd-sighting
           promotion without re-deriving it).
-    - [ ] Architect's own judgment call (explicitly asked, not prescribed): does a companion note
+    - [x] Architect's own judgment call (explicitly asked, not prescribed): does a companion note
           belong in `.claude/agents/architect.md` itself (e.g. "this agent has no Bash; any
           ticket requiring git/PR mechanics must use draft-then-apply, see
           docs/AGENT_WORKFLOW.md") — state the decision and reasoning either way in the final
           report, and include the exact content if the answer is yes.
-    - [ ] The PM delegation-table decision guidance (CLAUDE.md and/or AGENT_WORKFLOW.md) reflects
+    - [x] The PM delegation-table decision guidance (CLAUDE.md and/or AGENT_WORKFLOW.md) reflects
           the chosen resolution so a future PM session doesn't repeat the FOLLOW-550
           dispatch-then-discover round-trip for FOLLOW-543 or any future architect-assigned
           git-touching ticket. Per RETRO-174 §5b, **FOLLOW-543 should be dispatched using this
           newly-codified draft-then-apply resolution once FOLLOW-551 lands** — not before.
+
+    PM-VALIDATED 2026-07-11 (pm-orchestrator, session 25 cont'd) — PR #512
+    (`architect/FOLLOW-551-tool-capability-routing`, off `main`, not merged). Coordinator applied
+    architect's DRAFT-ONLY report verbatim as commit `a8421e7`. Independently verified (not taken
+    on the coordinator's summary): read the full diff (2 files, +69/-5) directly.
+    - **New "Agent tool-capability routing" section confirmed** inserted immediately after
+      "Model-fit decision" (matching the AC's recommended placement), mirroring the citation style
+      of "Bookkeeping-PR sequencing" and "Branch-first worker discipline". States both routing
+      options (route-away-from-architect / draft-then-apply, numbered 1/2) with option (2) named
+      the default for architect-assigned docs/ADR tickets needing a PR. Cites both precedents by
+      exact ticket/retro number with a direct quote from `docs/MASTER_DESIGN.md` Changelog v4.3 for
+      FOLLOW-470/RETRO-168, and FOLLOW-550/RETRO-174 §5a/§7. Contains the explicit "This is
+      workflow guidance, not a codified `CONVENTIONS_PATCH.md` Rule" statement — notably, it
+      surfaces a nuance worth recording: the RAW `CLAUDE.md`/`CONVENTIONS_PATCH.md` "≥2 retros"
+      wording is technically met at face value, but the section correctly defers to this repo's
+      established 2-banked-plus-3rd-sighting adjudication discipline (citing RETRO-153/158,
+      RETRO-169/170) and explicitly leaves the actual promotion call to FOLLOW-551's own
+      retrospective rather than deciding it inline — satisfies "do not add a Rule" without
+      overreach.
+    - **FOLLOW-545 bullet 2 confirmed NOT silently absorbed:** the section's closing paragraph
+      explicitly states FOLLOW-545's second bullet (orchestrator-edits-beyond-plan reconciliation)
+      "is a broader authorship-integrity problem that this section does not resolve... That remains
+      open under FOLLOW-545" — matches the duplicate-risk note recorded at promotion time.
+    - **`.claude/agents/architect.md` confirmed fixed:** the "First action on any ticket" section
+      no longer instructs `git checkout -b`; replaced with a note stating architect has no Bash,
+      cross-referencing the new `docs/AGENT_WORKFLOW.md` section by name, and directing
+      draft-then-apply as the default with a design-consultation-only carve-out. The
+      `pre-edit-branch-guard.sh` hook is correctly reframed as a backstop-to-stop-and-draft rather
+      than a branch reminder.
+    - **CI:** `gh pr view 512 --json files` confirms exactly 2 files
+      (`docs/AGENT_WORKFLOW.md`, `.claude/agents/architect.md`) — `CONVENTIONS_PATCH.md` NOT
+      touched. Non-success count independently re-derived = 2, both the standing Rule I baseline
+      (180 WARN lines, identical to prior baseline, zero new hits — see `ci_status:` above).
+    - **No two-`QUEUE.md`-PRs-in-flight collision:** PR #511 (this ticket's promotion, still open)
+      touches `backlog/QUEUE.md`; PR #512 touches only the two docs files above — disjoint file
+      sets, so this validation is safely folded as an ADDITIONAL COMMIT onto #511's own branch
+      (`pm-orchestrator/FOLLOW-551-dispatch`) rather than requiring #511 to merge first or opening
+      a new PR — matches the FOLLOW-550/#508 precedent and rule (b)/(d).
+
+    PM-validated. CI green (bar the standing Rule I baseline). AC verified by direct read of the
+    merged diff, not assumed from the coordinator's summary. Ready for human review.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

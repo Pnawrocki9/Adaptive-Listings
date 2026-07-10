@@ -2116,3 +2116,20 @@ independent occurrence, even if it references the same pattern by name.
   `backlog/FOLLOW_UPS.md` for the same `source_retro:` value and any thematically-adjacent title — a
   stub's own `promoted_to_queue: false` siblings from the SAME retro are exactly where duplicate or
   overlapping tickets hide, since retros often file multiple related stubs from one finding.
+
+- **Date / ticket:** 2026-07-11 — FOLLOW-551 (validation of PR #512)
+- **Delegation row used:** architect DRAFT-ONLY (from prior turn; this entry covers validation).
+- **What validation caught (or missed):** Confirmed the architect's DRAFT-ONLY output was applied
+  faithfully and satisfied every AC item by direct read, including a genuinely nuanced treatment of
+  the Rule-promotion question (the drafted content noticed the raw CLAUDE.md wording technically
+  meets a "≥2 retros" threshold, but correctly deferred to the repo's established
+  2-banked-plus-3rd-sighting adjudication discipline rather than either ignoring the tension or
+  self-promoting a Rule) — better than what I'd specified, worth recording as evidence the
+  draft-then-apply pattern preserves judgment quality, not just mechanical output. Also confirmed PR
+  #511 and #512 have disjoint file sets before deciding how to sequence validation — avoided
+  defaulting to "wait for #511 to merge first" out of caution when checking the actual file lists
+  showed no real risk of a two-QUEUE.md-PRs-in-flight collision.
+- **A delegation/validation rule I'd add:** When two sibling PRs for the same ticket both need to
+  land (a promotion/bookkeeping PR + a content PR), always check `gh pr view <N> --json files` for
+  BOTH before deciding whether they can merge in any order or need sequencing — don't assume from
+  the ticket type alone.

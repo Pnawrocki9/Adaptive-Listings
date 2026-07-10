@@ -1,4 +1,47 @@
-# Status — 2026-07-11 (Sprint 22b OPEN — PR #510 MERGED, FOLLOW-550 fully closed, FOLLOW-551 dispatched DRAFT-ONLY, session 25 cont'd)
+# Status — 2026-07-11 (Sprint 22b OPEN — PR #512 PM-validated, folded into #511, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-11) — PR #512 validated (folded into #511, no separate validation PR)
+
+architect drafted FOLLOW-551's content in DRAFT-ONLY mode (no git; returned exact markdown +
+insertion points + rationale in its report); the coordinator applied it verbatim as commit `a8421e7`
+on branch `architect/FOLLOW-551-tool-capability-routing`, opened as PR #512 (2 files, +69/-5: new
+"Agent tool-capability routing" section in `docs/AGENT_WORKFLOW.md`, and a fix to
+`.claude/agents/architect.md`'s "First action" section which previously instructed a
+`git checkout -b` command the agent has no tool to run).
+
+**Validated PR #512** per the non-negotiable checklist:
+
+1. **CI:** `gh pr checks 512 --watch` → green except the standing 2-leg "Rule I — wired-or-dead"
+   gate. Independently computed non-success count via `gh pr view 512 --json statusCheckRollup` →
+   **2**. Cross-checked via `gh run view --log-failed` → **180 WARN lines**, identical to the
+   FOLLOW-532/546/548/549/550 baseline (expected — docs-only diff, confirmed via
+   `gh pr view 512 --json files` → exactly 2 files; `CONVENTIONS_PATCH.md` untouched).
+2. **AC:** read the full 96-line diff directly — new section correctly placed after "Model-fit
+   decision"; both routing options present, option (2) named default; both precedents cited by exact
+   number with a verbatim Changelog v4.3 quote; explicit non-Rule-promotion statement present with a
+   notable nuance (acknowledges the raw `CLAUDE.md` threshold is technically met but correctly
+   defers the actual call to FOLLOW-551's own retro rather than deciding it inline); FOLLOW-545
+   bullet 2 explicitly confirmed to stay open, not silently absorbed; `architect.md`'s "First
+   action" section confirmed fixed with a no-Bash note cross-referencing the new section.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.** PR comment posted with the full evidence
+trail.
+
+**No two-`QUEUE.md`-PRs-in-flight collision confirmed:** PR #511 (FOLLOW-551's promotion) touches
+`backlog/QUEUE.md`; PR #512 touches only the two docs files above — disjoint file sets. Per the new
+rule (b)/(d) and the FOLLOW-550/#508 precedent, this validation was folded as an additional commit
+onto #511's own branch (`pm-orchestrator/FOLLOW-551-dispatch`) rather than requiring #511 to merge
+first or opening a new PR. `backlog/QUEUE.md` FOLLOW-551 flipped `IN_PROGRESS` -> `READY_FOR_REVIEW`
+in place, with `pr: 512` recorded (the content PR) alongside the existing promotion PR context.
+**#511 remains correct to MERGE, not close-superseded**, once ready — its dispatch-record content is
+not duplicated/re-included elsewhere; this validation commit only extends it, matching the
+FOLLOW-550/#508 pattern exactly.
+
+**Merge-order note (no ordering constraint):** #511 and #512 touch disjoint files, so either can
+merge first without breaking the other. Once BOTH are merged, the DONE+RETRO bundle will be cut
+fresh from post-merge `main` (rule (c)), matching the FOLLOW-550 precedent (#508+#509 -> #510).
+
+---
 
 ## SESSION 25 cont'd (2026-07-11) — PR #510 MERGED, FOLLOW-551 promoted + dispatched DRAFT-ONLY
 

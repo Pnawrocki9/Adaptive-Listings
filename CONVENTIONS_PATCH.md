@@ -1653,6 +1653,69 @@ grep -nE "CODE_COMPLETE_OPERATOR_PENDING|FEEDBACK_ENDPOINT_ENABLED|operator-only
 
 ---
 
+## Rule AB — A latest-wins / in-flight staleness guard on a rapid-nav re-adaptation MUST be consulted at the LAST synchronous instant before EVERY host-DOM write it protects — including fire-and-forget sub-adaptations in other modules AND rAF/microtask-deferred writes; a single synchronous checkpoint or a single post-fetch checkpoint is insufficient
+
+**Pattern (ASYNC-READAPT-NO-INFLIGHT-GUARD):** An async re-adaptation triggered by a rapid-fire
+DOM/navigation event (rapid cross-listing SPA nav) commits or paints through an async tail with more
+than one continuation. A staleness/latest-wins guard placed at ONE point in that tail (the first
+`await` boundary, or a single post-fetch checkpoint) leaves every LATER continuation unguarded, so a
+superseded invocation's continuation still interleaves on shared state / paints the stale
+archetype's copy onto the NEWER listing's DOM. The gap serially RELOCATES one hop downstream with
+each partial fix — from a synchronous checkpoint, to a fire-and-forget sub-adaptation in another
+module, to a `requestAnimationFrame`/microtask-deferred write — because each fix guards the point it
+can see, not the actual mutation instant.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-105 §6 LG-1 (count 1)** — overlapping `refreshDirectives()` on rapid SPA nav had no
+  in-flight guard; a stale invocation could clobber the newer navigation's state/DOM. Held →
+  FOLLOW-380.
+- **RETRO-169 §4a LG-1 (count 2)** — FOLLOW-380 added a single synchronous `latestRefreshId`
+  checkpoint (`index.ts:737`) that guarded the directive/headline path but NOT the fire-and-forget
+  `applyDescriptionAdaptation` tail dispatched after it; the async-interleave class relocated one
+  hop to the description path. Held → FOLLOW-546, with promotion PRE-AUTHORIZED on a 3rd sighting OR
+  on the discovery that FOLLOW-546's fix itself re-relocates the guard gap.
+- **RETRO-170 §4a LG-1 (the promotion trigger)** — FOLLOW-546 threaded an `isStale()` predicate and
+  re-checked it post-`await fetchDescription` (`adapt-description.ts:309`), closing the
+  fetch-in-flight window — but the actual DOM write is rAF-DEFERRED (`:323`/`:333`), so the guard
+  covers the rAF SCHEDULING, not the deferred write. A supersession in the intra-frame gap still
+  paints the stale copy, and the self-reinforcing `MutationObserver` makes it PERSIST when the
+  superseding listing is uncached. The SAME class re-relocated a THIRD hop — exactly the
+  pre-authorized trigger. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met;
+  the promoting retro fires on the discovered re-relocation (NOT on FOLLOW-546 merging, which is a
+  fix landing, not a new sighting) and does NOT inflate the count (same adjudication as Rules
+  AA/V/Q). → FOLLOW-548.
+
+**Rule:** For any re-adaptation whose trigger can fire faster than its own async tail completes
+(rapid cross-listing nav, overlapping refresh, any fire-and-forget sub-adaptation):
+
+1. Thread a latest-wins / staleness predicate (`isStale()` / a claimed `callId` vs a monotonic
+   `latest`) through EVERY async continuation that mutates host DOM — including sub-adaptations
+   dispatched fire-and-forget into OTHER modules (pass the predicate as a param; do not assume the
+   caller's synchronous checkpoint covers them).
+2. Consult the predicate at the LAST synchronous instant BEFORE each DOM write — not merely after
+   the fetch. If the write is deferred (`requestAnimationFrame`, `queueMicrotask`, `setTimeout`, a
+   MutationObserver callback), re-check INSIDE the deferred callback (or capture a snapshot the
+   callback re-reads), because a checkpoint before the defer does not cover the write inside it.
+3. Make the discard observable (a `skipped {reason:'stale'}`-class event), never a silent return, so
+   the guard's decisions are measurable in prod.
+4. A staleness predicate passed as an OPTIONAL param with a never-stale default is a footgun: any
+   future prod call site that omits it silently loses the guard with no compile/lint error. Prefer a
+   required param (give test sites an explicit no-op) or a guard/lint at the prod call site.
+
+**Verification:**
+
+```bash
+# Every fire-and-forget sub-adaptation dispatched after an in-flight checkpoint must forward the guard.
+grep -nE "void +apply[A-Z][A-Za-z]*Adaptation" packages/sdk/src/index.ts
+# Every rAF/microtask-deferred DOM write in an adaptation module must re-check staleness inside the
+# deferred callback, not only before scheduling it.
+grep -nE "requestAnimationFrame|queueMicrotask|setTimeout" packages/sdk/src/core/adapt-*.ts
+```
+
+---
+
+<!-- Rule AB added 2026-07-10 — RETRO-170 §6. Second double-letter rule (continues the AA… sequence; single letters A–Z exhausted per the Rule AA note). Evidence (≥2 PRIOR numbered retros): RETRO-105 §6 LG-1 (refreshDirectives overlap, no in-flight guard, count 1, held → FOLLOW-380) + RETRO-169 §4a LG-1 (FOLLOW-380's single synchronous :737 checkpoint left the fire-and-forget applyDescriptionAdaptation tail uncovered, count 2, held → FOLLOW-546). Promotion trigger: RETRO-170 (FOLLOW-546/PR #495) — the fix closed the fetch-in-flight window (isStale re-check at adapt-description.ts:309) but the DOM write is rAF-DEFERRED (:323/:333), so the guard covers the rAF scheduling not the deferred write; the class re-relocated a THIRD hop (sync-checkpoint → fire-and-forget tail → rAF-deferred write) with a persistent-stale leg (uncached superseding listing + self-reinforcing MutationObserver). This is EXACTLY RETRO-169 §6's pre-authorized "the discovery that FOLLOW-546's fix itself re-relocates the guard gap" trigger — NOT the naive "FOLLOW-546 merged = 3rd sighting" (a clean fix landing is not a new bug sighting; had the fix been fully clean I would have banked at count 2 and NOT promoted). The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/V/Q). DISTINCT axis from Rule R (rehydrate-boundary idempotency — governs re-run-safety across a rehydrate, not concurrency across overlapping navs; RETRO-105 explicitly noted the adjacency-but-distinctness), Rule K.2 / its fire-and-forget amendment (governs OBSERVABILITY of a failed sink, whereas AB governs the CORRECTNESS of a latest-wins guard across an async tail), and Rule AA (code-vs-prod verdict axis). Filed FOLLOW-548 (guard the rAF-deferred write + close the never-stale-default footgun + fix the adapt.description.skipped JSDoc). LETTER CHOICE: AB is the next in the double-letter sequence after AA; flag for human review if a different scheme is preferred. -->
 <!-- Rule AA added 2026-07-02 — RETRO-152 §9. First double-letter rule: single letters A–Z are exhausted (A–P, R–Z used; M/V reclaimed/backfilled; Q is the retro-analyst INERT-GATE rule) so the retro-analyst promotion continues into the AA… sequence. Evidence (≥2 prior numbered retros): RETRO-146 §5a/§7 (FOLLOW-442 code axis closed, prod holdout-write attestation left open, count 1) + RETRO-150 §3/§5a (FOLLOW-455 code axis closed; FOLLOW-449's ClickHouse apply named operator-only, count 2). Promotion trigger: RETRO-152 (FOLLOW-450/PR #426) — entire ticket CODE_COMPLETE_OPERATOR_PENDING; the 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rules V/Q). DISTINCT axis from Rule A (PM must verify CI-green before READY_FOR_REVIEW — governs the review-status gate, not the code-vs-prod split), Rule M (a job CLAIMED to auto-apply must actually target prod — governs a false automation claim, whereas AA governs a ticket HONESTLY marked operator-pending being wrongly closed DONE), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — AA is the ticket-status/verdict discipline for that class). Cross-refs the F-06 operator attestation folded into the pilot go-live checklist / FOLLOW-471 DoD. LETTER CHOICE FLAGGED FOR HUMAN REVIEW: first use of a double-letter rule id — adjust if a different scheme is preferred. -->
 <!-- Rule Q added 2026-07-01 — RETRO-145 §6. Evidence: RETRO-006 §Pattern C (PR #130 E2E spec opt-in-behind-a-flag-CI-never-sets, assertion never runs, count 1 — RETRO-006 explicitly pre-authorized "promote on a 2nd 'test exists but doesn't run' sighting") + RETRO-007 §4b CB-1 (PR #137 demo-integration.yml "soft-skip inception — structurally present but never actually runs against a real DB", P2 → FOLLOW-079, count 2; distinct PR/file/mechanism AND the failed remediation of RETRO-006's gap). Promotion trigger: RETRO-145 (PR #403/FOLLOW-446) — archetype-embeddings-not-null gate had three stacked blindnesses (TS2307 build-order / ERR_MODULE_NOT_FOUND bare-specifier / postgres-js socket-hang no-exit no-timeout) all masked by continue-on-error; the gate never ran its assertion until this fix. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rule V). Letter Q: the placeholder explicitly reserved for exactly this retro-analyst promotion (see the "Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met" note and the Q-reservation references in the Rule M/V provenance comments). DISTINCT axis from Rule A (PM must watch CI-green before READY_FOR_REVIEW — governs whether the human/PM verifies status, not whether the gate's own assertion ran), Rule Y (a docstring/test-header CITATION must be verified against the cited file — governs claims-about-a-check, whereas Q governs a check that reports a status but never executes), Rule L (prod install path must PRODUCE the config a consumer reads), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — the inverse: Q is CI-leg-reports-status-but-never-runs). Filed FOLLOW-447 (audit sibling ci.yml gates for the 3 failure modes + add defense-in-depth timeout-minutes to all jobs); the continue-on-error scoping for the archetype gate is FOLLOW-446 (pre-existing, not re-filed). -->
 <!-- Rule V added 2026-06-26 — RETRO-123 §6. Evidence: RETRO-118 §6 Pattern B (PR #357/FOLLOW-358 file-wide route.ts paths exemption, BAD shape, count 1) + RETRO-121 §6 Pattern B (PR #360/FOLLOW-394 token-scoped regexes for the migration filename in script+runbook, GOOD shape, count 2 — RETRO-121 pre-authorized "promote on the NEXT (3rd) sighting"). Promotion trigger: RETRO-123 (PR #362/FOLLOW-396) performed the strip-the-superseded delete; the 2 banked occurrences are both PRIOR retros, ≥2-prior threshold met (the promoting PR is itself a remediation and does NOT inflate the count — the discipline RETRO-122 guarded is respected; the count came from 118+121, adjudicated independent by RETRO-121 via different trigger sites + remediation shapes). DISTINCT axis from Rule U (typed-column-vs-JSONB strip-on-supersede — a data-modeling rule; Rule V is the secret-scanning-config sibling of U's strip-the-superseded clause) and from Pattern G / FOLLOW-083 (legitimate test-fixture/doc paths exemptions, which Rule V explicitly excludes). Filed FOLLOW-406 (negative-control attestation for route.ts) + FOLLOW-407 (apply Rule V to the live 2nd instance: the FOLLOW-374 consent platform-registration paths exemption). Letter choice: single letters A–Z were exhausted (Q reserved as the retro-analyst placeholder); V had been "intentionally skipped" only as a 2026-06-13 sequencing artifact (per the Rule W note) with no semantic reservation, and is now the sole remaining single letter once M was consumed — so V is RECLAIMED here on the same backfill logic Rule M used ("the sole genuinely-unused letter"). -->

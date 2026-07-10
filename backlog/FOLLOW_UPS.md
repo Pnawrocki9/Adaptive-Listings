@@ -14567,3 +14567,58 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     and applies the 0.85 fallback (no behavior change for existing entries).
 - cross_ref: [RETRO-169, FOLLOW-380, packages/sdk/src/core/session.ts:524,
   apps/control-plane/src/app/api/adapt/route.ts:203]
+
+## FOLLOW-548 — Guard the rAF-DEFERRED description write, not just its scheduling: FOLLOW-546's `isStale()` re-check at `adapt-description.ts:309` is consulted BEFORE the requestAnimationFrame paint, so a supersession in the intra-frame gap still paints the stale archetype's copy — and the self-reinforcing MutationObserver makes it PERSIST when the newer listing is uncached
+
+- source_retro: RETRO-170 (§4a LG-1/LG-2 / §4c TG-1/TG-2 / §4d DG-1 / §7)
+- source_ticket: FOLLOW-546
+- recommended_sprint: SDK hygiene / cross-listing correctness sprint
+- recommended_agent: sdk-engineer
+- priority: P3
+- estimated_hours: 2.5
+- promoted_to_queue: false
+- governed_by: Rule AB (the staleness predicate must be consulted at the LAST synchronous instant
+  before EACH host-DOM write, including inside rAF/microtask-deferred callbacks)
+- scope: FOLLOW-546 threaded an `isStale()` latest-wins predicate into `applyDescriptionAdaptation`
+  (`packages/sdk/src/core/adapt-description.ts`) and re-checks it at `:288` (entry) and `:309`
+  (post-`await fetchDescription`). That correctly closes the hundreds-of-ms FETCH-IN-FLIGHT window
+  RETRO-169 LG-1 targeted. The RESIDUAL (RETRO-170 LG-1): the `:309` check is synchronous, but the
+  actual DOM write is DEFERRED —
+  `slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot( slot, paragraphs)))` (`:323`)
+  and the headline rAF (`:333`). So `isStale()` guards the SCHEDULING of the rAF, not the write
+  inside `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` (which call `render(el, …)` +
+  `obs.observe(…)` at `:161-163`). In the ~1-animation-frame gap between the `:309` check and the
+  rAF firing, a superseding `listing.viewed` → `void refreshDirectives()` can run synchronously to
+  completion (bump `latestRefreshId`, paint the new listing), after which the stale rAF still paints
+  the stale archetype's description onto the newer listing. PERSISTENCE leg (turns a transient
+  flicker into a durable bug): if the superseding nav's own `fetchDescription` returns null
+  (uncached listing, `source !== 'ai_cached'`), the newer `applyDescriptionAdaptation` bails at
+  `if (!resp) return` (`:314`) BEFORE reaching its own rAF/observe, so it never overwrites the stale
+  slot — and the stale `MutationObserver` actively re-asserts the stale copy against host
+  re-renders. This is the THIRD relocation hop of the RETRO-105 async-interleave gap
+  (sync-checkpoint → fire-and-forget tail → rAF-deferred write). ALSO in scope: (LG-2) the
+  never-stale default `isStale: () => boolean = () => false` is safe today (the sole prod caller
+  `index.ts:809` passes the real predicate) but is a latent footgun — a future prod caller that
+  forgets the 3rd arg silently reverts to never-stale with no compile/lint error; and (DG-1) the
+  `adapt.description. skipped` schema JSDoc
+  (`packages/shared/src/schemas/events/adapt-description.ts:57`/`:66-67`) still says the reason is
+  "Currently only 'neutral'" but FOLLOW-546 now emits `reason:'stale'`.
+- ac:
+  - Re-consult the staleness predicate INSIDE the rAF callback (or thread a captured snapshot
+    through `applyAndObserveSlot`/`applyAndObserveHeadlineSlot`) so the DEFERRED write bails when
+    superseded — guarding the write at its last synchronous instant, not merely its scheduling. The
+    stale rAF must neither `render` nor `obs.observe` when stale.
+  - Add a non-vacuous test that supersedes AFTER the `:309` check passes but BEFORE the rAF fires
+    (manually drain jsdom's `requestAnimationFrame` queue between the two), asserting the stale copy
+    never paints and no stale observer is attached (TG-1).
+  - Add a test for the uncached-superseding-listing PERSISTENCE leg: the newer nav's
+    `fetchDescription` returns null, assert the stale rAF did NOT leave a surviving/self-reasserting
+    stale slot (TG-2).
+  - LG-2: add a guard, lint, or at minimum an inline comment at the sole prod call site
+    (`packages/sdk/src/index.ts:809`) so a future caller cannot silently inherit the never-stale
+    default; consider making the param required and giving test sites an explicit `() => false`.
+  - DG-1: update the `adapt.description.skipped` schema JSDoc to list `'stale'` alongside
+    `'neutral'`.
+- cross_ref: [RETRO-170, RETRO-169, RETRO-105, FOLLOW-546, FOLLOW-380, Rule AB,
+  packages/sdk/src/core/adapt-description.ts:309, packages/sdk/src/core/adapt-description.ts:323,
+  packages/sdk/src/index.ts:809]

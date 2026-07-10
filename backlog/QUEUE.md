@@ -1,37 +1,21 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 23 — FOLLOW-546 promoted, dispatched, and validated; PR #495 READY_FOR_REVIEW; PR #494 dispatch record still unmerged)
+## ▶️ START HERE — resume 2026-07-10 (session 23 close-out — PR #495 MERGED, FOLLOW-546 DONE, RETRO-170 pending)
 
-**Two PRs from this session are in flight, in this order (same pattern as FOLLOW-380/#490/#492):**
+**PR #495 MERGED** to `main` as squash commit `118bdd8` (2026-07-10T08:30:32Z); PM-validation
+bookkeeping PR #496 merged immediately after (`4a5c2ba`). PR #494 (superseded promotion/dispatch-
+record PR) was CLOSED unmerged per human decision — its content is fully folded into FOLLOW-546's
+DONE trail in `backlog/QUEUE.md`, nothing lost. The human merged PR #495 (the code) directly, so
+review is effectively complete. Local `main` synced & clean.
 
-1. **PR #494** (`pm-orchestrator/FOLLOW-546-dispatch`) — the FOLLOW-546 promotion + dispatch record
-   (READY → IN_PROGRESS flip + the delegation brief in `backlog/HANDOFFS.md`). **STILL UNMERGED**
-   (awaiting human). Because of this, `main` currently has NO FOLLOW-546 ticket block at all — it
-   was dispatched out-of-band by the coordinator relaying the brief content directly.
-2. **PR #496** (this validation, `pm-orchestrator/FOLLOW-546-validate`, based on current `main` —
-   NOT stacked on #494) — promotes FOLLOW-546 straight into `backlog/QUEUE.md` at
-   `status: READY_FOR_REVIEW`, folding the full READY→IN_PROGRESS→READY_FOR_REVIEW trail into one
-   ticket-block edit. **When merging, merge #494 first (or accept its content is
-   superseded/duplicated by #496's fold-in and can be closed without merging — human's call).**
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-546-close`** (agent-prefix, branch-first):
+FOLLOW-546 flipped `READY_FOR_REVIEW` → `DONE` (`completed_at: 2026-07-10`, `merged_pr: 495`,
+`merge_commit: 118bdd8`).
 
-**FOLLOW-546 (P2, sdk-engineer, Opus) is PM-validated, READY_FOR_REVIEW.** PR **#495**
-(`sdk-engineer/FOLLOW-546-description-staleness-guard`, off `main`, not merged). Independently
-verified (not taken on the worker's self-report) — full evidence trail on the ticket block's
-`notes:`/`ci_status:` fields: CI non-success count = 2, both the standing Rule I baseline (180
-violations, identical count to FOLLOW-380, zero new flags); full `@estalara/sdk` suite (69
-files/1521 tests) green in CI's fresh Node 22 build; bundle 40.47KB/42KB; exactly 4 files touched
-(one extended, not duplicated, test file), zero backlog/doc edits; the `isStale()` predicate traced
-producer (`index.ts:805`) → consumer (`adapt-description.ts:288` and `:309`, both genuinely
-pre-mutation) end-to-end; the new hardening (d) test independently inspected and confirmed
-non-vacuous (deliberately resolves the stale fetch last, asserts the fresh copy wins and the discard
-is observably event-logged). **One claim in the self-report did NOT hold up literally** ("4
-pre-existing local failures... RED on main too") — see the ticket's `ci_status:` note for the full
-independent re-verification (ran the specific test files locally on both branches under a fresh
-build: 100% green on both; CI is 100% green; the schema field in question is `z.string()` not
-`z.enum()` by design, so it structurally cannot break). The SUBSTANCE of the claim (no regression)
-holds on every independent check that matters for merge-gating; only the "RED on main" framing was
-imprecise, most likely a transient local stale-build artifact of the same class already documented
-in the sdk-engineer's own lessons.md from the FOLLOW-380 session.
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-546-close` to append **RETRO-170**,
+bundling RETRO + DONE-flip into one PR (matches PRs #486/#487/#489/#493 convention). PM will
+validate that bundled PR once the coordinator confirms it's ready.
 
 **Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
 §B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
@@ -40,13 +24,12 @@ its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed
 stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
 (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
 
-**NEXT:** human reviews/merges #494 (or closes it as superseded) and #495 (the actual code) and #496
-(this validation). After FOLLOW-546 merges: mark `DONE` + `completed_at`, spawn
-`retrospective-analyst`, then pick the next ticket.
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-170 content to land on
+the same branch first.
 
 ---
 
-## ▶️ (superseded) START HERE — resume 2026-07-10 (session 22 close-out — PR #491 MERGED, FOLLOW-380 DONE, RETRO-169 pending)
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 23 — FOLLOW-546 promoted, dispatched, and validated; PR #495 READY_FOR_REVIEW; PR #494 dispatch record still unmerged)
 
 **PR #491 MERGED** to `main` as squash commit `4cc5ba5` (2026-07-10T07:16:20Z); PM-validation
 bookkeeping PR #492 merged immediately after (`57a0116`). PR #490 (superseded dispatch-record PR)
@@ -10484,11 +10467,14 @@ gate) closes the epic and must be last.
   title: >-
     Extend the FOLLOW-380 latest-wins in-flight guard over the fire-and-forget description tail
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
   branch: sdk-engineer/FOLLOW-546-description-staleness-guard
   pr: 495
+  merged_pr: 495
+  merge_commit: 118bdd8
   model:
     Opus # same cross-module async-staleness-coherence class as FOLLOW-380; model-fit table
     # "complex single-domain reasoning ... non-trivial design". See dispatch brief in
@@ -10605,6 +10591,16 @@ gate) closes the epic and must be last.
     - [x] No regression to the same-archetype fast-path — the `isStale` default/live-predicate
           shape is structurally non-invasive (unchanged behavior when never superseded); the full
           `packages/sdk` suite (1521 tests, incl. all pre-existing description tests) stays green.
+
+    MERGED 2026-07-10: PR #495 squash-merged to `main` as commit `118bdd8` (2026-07-10T08:30:32Z);
+    the PM-validation bookkeeping PR #496 merged immediately after as `4a5c2ba`. PR #494 (the
+    superseded promotion/dispatch-record PR) was CLOSED unmerged per human decision — its content
+    is fully folded into this ticket block's DONE trail, nothing lost. Ticket closed DONE.
+
+    retrospective-analyst to be spawned by the coordinator on branch
+    `pm-orchestrator/FOLLOW-546-close` (this same bookkeeping PR, RETRO-170) per the repo's
+    RETRO+DONE bundling convention (matches PRs #486/#487, #489, #493) — NOT run by
+    pm-orchestrator itself (no subagent-spawn capability in this tool surface).
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

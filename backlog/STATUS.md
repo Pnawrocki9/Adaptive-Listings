@@ -1,4 +1,28 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-546 validated, PR #495 READY_FOR_REVIEW; PR #494 dispatch record still unmerged)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #495 MERGED, FOLLOW-546 DONE; RETRO-170 pending on pm-orchestrator/FOLLOW-546-close)
+
+## SESSION 23 CLOSE-OUT (2026-07-10) — PR #495 MERGED (118bdd8), FOLLOW-546 DONE, RETRO-170 pending
+
+PR #495 (`sdk-engineer/FOLLOW-546-description-staleness-guard`) confirmed MERGED via
+`gh pr view 495 --json state,mergeCommit,mergedAt` → `state: MERGED`, `mergeCommit: 118bdd8`,
+`mergedAt: 2026-07-10T08:30:32Z`. PR #496 (PM validation) confirmed MERGED (`4a5c2ba`, immediately
+after). PR #494 (superseded promotion/dispatch-record PR) confirmed `CLOSED` (not merged) via
+`gh pr view 494 --json state` — per human decision, its content already lives fully folded into
+FOLLOW-546's DONE trail (no data lost). `gh pr list --state open` → 0 open PRs. Local `main` synced
+(`git log --oneline -1` → `4a5c2ba`), clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-546-close`** (agent-prefix, branch-first):
+FOLLOW-546 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-10`,
+`merged_pr: 495`, `merge_commit: 118bdd8`).
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-546-close` to append **RETRO-170**,
+bundling RETRO + DONE-flip into one PR (matches PRs #486/#487/#489/#493 convention). PM will
+validate that bundled PR once the coordinator confirms it's ready.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-170 content to land on
+the same branch first.
+
+---
 
 ## SESSION 23 VALIDATION (2026-07-10) — PR #495 (FOLLOW-546) validated, READY_FOR_REVIEW
 

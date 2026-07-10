@@ -1,4 +1,29 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending, session 25)
+# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-549 dispatched to backend-engineer, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — PR #503 MERGED, FOLLOW-549 promoted + dispatched
+
+PR #503 (`pm-orchestrator/FOLLOW-532-close`) confirmed MERGED via `gh pr view`/coordinator report as
+commit `f1f9646`. Local sync: `git checkout main && git pull` fast-forwarded `a934adf..f1f9646`;
+confirmed FOLLOW-532 shows `status: DONE` on `main` (`backlog/QUEUE.md` line ~10970-10982,
+`merged_pr: 502`, `merge_commit: a934adf`) and RETRO-172 + the FOLLOW-549 stub are present
+(`backlog/RETROSPECTIVES.md`, `backlog/FOLLOW_UPS.md`).
+
+**Promoted FOLLOW-549** (P3, RETRO-172 §4c TG-1/§4d DG-1, source_ticket FOLLOW-532) from
+`backlog/FOLLOW_UPS.md` into Sprint 22b. Delegation-table row: "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" -> backend-engineer. Model:
+**Sonnet** (routine, mechanical — 2 spy assertions + 1 docstring sentence, no design judgment).
+Branch: `backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`. AC filled in directly from the retro:
+(1) a lightweight `toHaveBeenCalledWith(..., 'adapt'|'description')` assertion in each route's
+EXISTING test suite (both already have a hoisted `mockResolveAdaptGetAuth` spy — confirmed via grep,
+no new test file needed); (2) strengthen the `adapt-get-auth.ts:13-14` call-site-inventory docstring
+to name the `area`-union-widening compile error as the forcing function for a genuine third
+consumer. Full brief in `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-549"). Queue edits done on
+branch `pm-orchestrator/FOLLOW-549-dispatch` (branch-first, never committed to `main`).
+
+**Not spawned by pm-orchestrator** — brief reported back to the coordinator to dispatch
+backend-engineer.
+
+---
 
 ## SESSION 25 close-out (2026-07-10) — PR #502 MERGED (a934adf), FOLLOW-532 DONE, RETRO pending
 

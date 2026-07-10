@@ -2012,3 +2012,17 @@ independent occurrence, even if it references the same pattern by name.
   `git branch --show-current` first — if it's `main`, create the working branch BEFORE the first
   Edit/Write call, not after. Editing-then-branching works by luck (nothing got committed to main),
   not by design.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-549 (promotion + dispatch)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" -> backend-engineer.
+- **What validation caught (or missed):** Cross-checked the FOLLOW_UPS.md stub's line citation
+  (`adapt-get-auth.ts:13-14`) against the actual current file before writing the AC — still accurate
+  (no drift since RETRO-172 was filed minutes earlier). Also grepped both route test files to
+  confirm the exact mechanism the AC prescribes (spy on the EXISTING `mockResolveAdaptGetAuth`) is
+  genuinely already present and call-argument-assertable, rather than assuming the retro's suggested
+  fix was mechanically available without checking.
+- **A delegation/validation rule I'd add:** When a retro's own follow-up stub cites specific line
+  numbers in a file that PR just touched, always re-read those exact lines before writing the
+  downstream ticket's AC — a fast-follow ticket is exactly where a line-citation could have drifted
+  by the time it's promoted (even minutes later), and the check is cheap.

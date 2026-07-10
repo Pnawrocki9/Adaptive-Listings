@@ -261,15 +261,32 @@ async function fetchDescription(
  * Gated on config.decisionApiUrl and archetype !== 'neutral'.
  * Listing ID from first [data-estalara-listing-id] on the page.
  * Attaches a MutationObserver per slot for resilience. Never throws.
+ *
+ * @param isStale FOLLOW-546 / RETRO-169: latest-wins staleness predicate propagated from the
+ *   caller's in-flight guard (index.ts `latestRefreshId`). Consulted BEFORE any DOM slot
+ *   mutation — both at entry and, critically, immediately after `fetchDescription` resolves —
+ *   so a rapid cross-listing navigation that supersedes this fire-and-forget call while its
+ *   own fetch is in flight cannot paint the stale archetype's copy onto the newer listing.
+ *   Defaults to a never-stale predicate so callers with no in-flight-guard concept (e.g. the
+ *   ~30 unit-test call sites) behave exactly as before.
  */
 export async function applyDescriptionAdaptation(
   config: SdkConfig,
   archetype: ArchetypeId | 'neutral',
+  isStale: () => boolean = () => false,
 ): Promise<void> {
   if (typeof document === 'undefined' || !config.decisionApiUrl) return;
 
   if (archetype === 'neutral') {
     pushEvent(EVT + 'skipped', { reason: 'neutral' });
+    return;
+  }
+
+  // FOLLOW-546: defense-in-depth. There is no meaningful interleave window before the first
+  // await in the synchronously-dispatched fire-and-forget call site (index.ts:805), but a
+  // future caller that awaits before dispatch could make an entry-time supersession real.
+  if (isStale()) {
+    pushEvent(EVT + 'skipped', { reason: 'stale' });
     return;
   }
 
@@ -283,6 +300,17 @@ export async function applyDescriptionAdaptation(
   if (!listingId) return;
 
   const resp = await fetchDescription(config, listingId, archetype);
+
+  // FOLLOW-546 / RETRO-169 LG-1: THE interleave window. The caller's `latestRefreshId` guard
+  // (index.ts:737) already passed synchronously BEFORE this call was dispatched at :805, so it
+  // cannot catch a navigation that supersedes us while `fetchDescription` above is in flight.
+  // Re-check here — before mutating any description/headline slot — so a superseded rapid-nav
+  // refresh can never paint this stale archetype's copy onto the newer listing's DOM.
+  if (isStale()) {
+    pushEvent(EVT + 'skipped', { reason: 'stale' });
+    return;
+  }
+
   if (!resp) {
     pushEvent(EVT + 'skipped', {});
     return;

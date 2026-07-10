@@ -802,7 +802,15 @@ async function init(): Promise<IntentState | null> {
           // Fetch + apply long-form description adaptation (FOLLOW-159).
           // Fire-and-forget — description errors are observable via adapt.description.error events;
           // a failure here must never block the directive/headline path or sidebar update.
-          void applyDescriptionAdaptation(config, resp.archetype as ArchetypeId);
+          // FOLLOW-546 / RETRO-169: the :737 latestRefreshId checkpoint above ran synchronously
+          // and cannot catch a supersession that lands while applyDescriptionAdaptation awaits its
+          // own fetchDescription. Propagate the same latest-wins predicate so the description tail
+          // bails before mutating any slot on the newer listing when a rapid nav supersedes us.
+          void applyDescriptionAdaptation(
+            config,
+            resp.archetype as ArchetypeId,
+            () => myRefreshId !== latestRefreshId,
+          );
         }
 
         if (config.debug) {

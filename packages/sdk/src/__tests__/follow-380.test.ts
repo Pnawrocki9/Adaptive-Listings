@@ -41,6 +41,7 @@ import {
   type ArchetypeProbabilities,
 } from '../core/intent.js';
 import { applyDirectives, resetAdaptState, setEventQueueRef } from '../core/adapt.js';
+import { setDescriptionEventQueueRef } from '../core/adapt-description.js';
 import { setupObservers } from '../core/observer.js';
 import {
   persistIntentState,
@@ -539,5 +540,140 @@ describe('hardening (a) — overlapping refreshDirectives: the LAST navigation a
 
     // The stale L2 result arrived last but must NOT win — the guard discards it.
     expect(headlineEl.textContent).toBe('ADAPTED_L3');
+  });
+});
+
+// ===========================================================================
+// hardening (d) — FOLLOW-546 / RETRO-169: description-tail staleness guard
+// ===========================================================================
+//
+// FOLLOW-380's in-flight guard (index.ts:737) is a SINGLE synchronous checkpoint that runs
+// BEFORE the fire-and-forget description dispatch (index.ts:805). It cannot catch a rapid
+// cross-listing navigation that supersedes the call while applyDescriptionAdaptation is awaiting
+// its OWN fetchDescription. FOLLOW-546 propagates a latest-wins `isStale()` predicate into
+// applyDescriptionAdaptation so a superseded refresh's description tail bails before mutating any
+// slot. This test retires RETRO-169 §4c TG-1: it is RED without the guard extension (the stale
+// yield_hunter copy paints over the newer family_buyer listing, and no skipped:stale event fires).
+
+describe('hardening (d) — FOLLOW-546: a superseded description tail cannot paint the stale archetype', () => {
+  interface DeferredDesc {
+    listingId: string;
+    archetype: string;
+    resolve: (r: unknown) => void;
+  }
+
+  function descResponse(archetype: string): {
+    source: 'ai_cached';
+    description: string;
+    headline: null;
+    locale: string;
+    generated_at: string;
+  } {
+    return {
+      source: 'ai_cached',
+      description: `DESC ${archetype}`,
+      headline: null,
+      locale: 'en',
+      generated_at: '2026-07-10T00:00:00.000Z',
+    };
+  }
+
+  function insertDescriptionSlot(): HTMLElement {
+    const descEl = document.createElement('div');
+    descEl.setAttribute('data-estalara-slot', 'description');
+    descEl.innerHTML = '<p>Original description</p>';
+    document.body.appendChild(descEl);
+    return descEl;
+  }
+
+  it('discards the stale in-flight description whose fetch resolves LAST after a different-archetype nav', async () => {
+    // /adapt resolves immediately (keyed by listing_id); /adapt/description is DEFERRED so we
+    // control resolution order and can release the newer nav first, the stale one last.
+    let pendingDesc: DeferredDesc[] = [];
+    const releaseDesc = (listingId: string, archetype: string): void => {
+      const matches = pendingDesc.filter((d) => d.listingId === listingId);
+      pendingDesc = pendingDesc.filter((d) => d.listingId !== listingId);
+      matches.forEach((d) => {
+        d.resolve(descResponse(archetype));
+      });
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        // NB: /adapt/description also matches /adapt — check the description path FIRST.
+        if (typeof url === 'string' && url.includes('/adapt/description')) {
+          const parsed = new URL(url);
+          const listingId = parsed.searchParams.get('listing_id') ?? '';
+          const archetype = parsed.searchParams.get('archetype') ?? '';
+          return new Promise((resolve) => {
+            pendingDesc.push({
+              listingId,
+              archetype,
+              resolve: (r) => {
+                resolve(okJson(r));
+              },
+            });
+          });
+        }
+        if (typeof url === 'string' && url.includes('/adapt')) {
+          const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+          const body = JSON.parse(rawBody) as Record<string, unknown>;
+          const listingId = typeof body.listing_id === 'string' ? body.listing_id : '';
+          // L1 → yield_hunter, any other listing → family_buyer (the different-archetype nav).
+          const archetype = listingId === 'L1' ? 'yield_hunter' : 'family_buyer';
+          return Promise.resolve(okJson(makeAdaptResponse(archetype, 'HL', 0.8)));
+        }
+        return Promise.resolve(okJson({}));
+      }),
+    );
+
+    const { listingEl } = insertListingDom('L1', 'Listing 1 Title');
+    const descEl = insertDescriptionSlot();
+    seedSession();
+    localStorage.setItem('estalara_consent', 'granted');
+    insertScriptTag();
+
+    // Observe the description-tail events (the SDK's own queue ref is set at module load;
+    // point it at our array so we can assert the guard's skipped:stale decision directly).
+    const descEvents: CollectedEvent[] = [];
+    setDescriptionEventQueueRef(descEvents);
+
+    await _initForTest();
+    await flush();
+
+    // L1's description fetch is parked (yield_hunter), dispatched with isStale bound to refresh #1.
+    expect(pendingDesc.map((d) => d.listingId)).toContain('L1');
+
+    // Rapid cross-listing nav L1 → L2 (a DIFFERENT archetype: family_buyer). This bumps
+    // latestRefreshId, making L1's in-flight description tail stale.
+    listingEl.setAttribute('data-estalara-listing-id', 'L2');
+    await flush();
+
+    expect(pendingDesc.map((d) => d.listingId).sort()).toEqual(['L1', 'L2']);
+
+    // Resolve the NEWER navigation (L2 / family_buyer) FIRST → it is fresh, so it paints.
+    releaseDesc('L2', 'family_buyer');
+    await flush();
+    expect(descEl.textContent).toBe('DESC family_buyer');
+
+    // Resolve the STALE navigation (L1 / yield_hunter) LAST. Without the guard extension this
+    // repaints the slot with the stale archetype's copy; with it, the tail bails pre-mutation.
+    releaseDesc('L1', 'yield_hunter');
+    await flush();
+
+    // The stale L1 copy must NOT win — the description slot keeps the newer L2 copy.
+    expect(descEl.textContent).toBe('DESC family_buyer');
+    expect(descEl.textContent).not.toContain('yield_hunter');
+
+    // …and the discard is observable, not silent (guardrail K.2): the stale tail emitted
+    // skipped:stale, while the fresh L2 tail emitted applied.
+    const skippedStale = descEvents.filter(
+      (e) => e.type === 'adapt.description.skipped' && e.payload.reason === 'stale',
+    );
+    expect(skippedStale.length).toBe(1);
+    const applied = descEvents.filter((e) => e.type === 'adapt.description.applied');
+    expect(applied.some((e) => e.payload.archetype === 'family_buyer')).toBe(true);
+    expect(applied.some((e) => e.payload.archetype === 'yield_hunter')).toBe(false);
   });
 });

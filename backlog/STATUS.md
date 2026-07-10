@@ -1,4 +1,47 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending, session 25)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #505 PM-validated, READY_FOR_REVIEW, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — FOLLOW-549 promoted + dispatched + validated, PR #505 READY_FOR_REVIEW
+
+**Recovered from a mid-turn API interruption** — re-verified state before proceeding (per the
+coordinator's explicit instruction): confirmed branch `pm-orchestrator/FOLLOW-549-validate` was
+clean and identical to `main` (no partial/corrupted edit had landed from the interrupted turn),
+confirmed PR #504 (the original dispatch-record PR) is still OPEN/unmerged, confirmed PR #505's head
+commit (`849fb11`) matches what had already been independently validated pre-interruption (CI, diff,
+swap-fails re-proof) — none of that work needed to be redone.
+
+backend-engineer opened PR #505 (`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`) for
+FOLLOW-549. Validated per the non-negotiable checklist:
+
+1. **CI:** `gh pr checks 505 --watch` → green except the standing 2-leg "Rule I — wired-or-dead"
+   gate. Independently computed non-success count via `gh pr view 505 --json statusCheckRollup` →
+   **2** (a 3rd apparent non-success row is a `StatusContext` Vercel entry with no `conclusion`
+   field — a query-shape artifact, not a real failure — confirmed by inspecting the raw JSON).
+   Cross-checked via `gh run view --log-failed` → **180 WARN lines**, identical to the
+   FOLLOW-532/546/548 baseline; grepped for `adapt-get-auth`/`resolveAdaptGetAuth`/
+   `AdaptGetAuthResult`/`mockResolveAdaptGetAuth` → **0 hits**.
+2. **File list:** `gh pr view 505 --json files` → 2 test files + 1 docstring-only lib change (read
+   the full diff — confirmed comment-only, no executable code) + 1 agent lessons file. Neither
+   production route.ts touched. Test/docs-only, zero production behavior change.
+3. **AC — independently re-proven from scratch (not trusted from the worker's self-report, per Rule
+   4e/FOLLOW-448):** fresh `git worktree` off the PR branch, rebuilt
+   `@estalara/{db,shared,auth,sdk}` first (FOLLOW-474/RETRO-150 gotcha), confirmed 91/91 green
+   as-shipped, then independently swapped each route's `area` literal in turn and re-ran the new pin
+   test: `adapt/route.ts` (`'adapt'`→`'description'`) genuinely FAILED; reverted;
+   `adapt/description/route.ts` (`'description'`→`'adapt'`) genuinely FAILED; reverted; full suite
+   back to 91/91. Both directions of the swap-fails property hold — load-bearing, not decorative.
+   Docstring change confirmed present, names the `area`-union compile error as the forcing function,
+   matches the AC. Targeted eslint + prettier --check + `tsc --noEmit` all clean.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.** PR comment posted with the full evidence
+trail. `backlog/QUEUE.md` FOLLOW-549 entry written directly at `READY_FOR_REVIEW`, folding the
+dispatch (IN_PROGRESS) and validation trail into one ticket block because PR #504 (the original
+dispatch-record PR) is STILL UNMERGED — same two-PR-in-flight resolution as the FOLLOW-380/546/548
+precedent (this validation PR is based on current `main`, not stacked on #504). Flagged for human:
+#504 can be closed unmerged without data loss, or merged first — either order is safe.
+`backlog/FOLLOW_UPS.md` FOLLOW-549 stub marked `promoted_to_queue: true`. Not merged (human reviews
+PRs).
+
+---
 
 ## SESSION 25 close-out (2026-07-10) — PR #502 MERGED (a934adf), FOLLOW-532 DONE, RETRO pending
 

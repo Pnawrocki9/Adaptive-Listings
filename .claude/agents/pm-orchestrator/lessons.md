@@ -2012,3 +2012,20 @@ independent occurrence, even if it references the same pattern by name.
   `git branch --show-current` first — if it's `main`, create the working branch BEFORE the first
   Edit/Write call, not after. Editing-then-branching works by luck (nothing got committed to main),
   not by design.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-549 (validation of PR #505, recovered mid-turn crash)
+- **Delegation row used:** backend-engineer (from prior turn; this entry covers validation +
+  recovery).
+- **What validation caught (or missed):** A mid-turn API interruption hit right as I was about to
+  insert the FOLLOW-549 ticket block into QUEUE.md — re-verifying `git status`/`git diff` before
+  continuing (per the coordinator's explicit instruction) confirmed the branch was still clean and
+  identical to `main`, so nothing corrupted landed; the interruption cost zero rework because I
+  hadn't yet called Edit when it hit. Separately, independently re-proved the worker's claimed
+  "swap-fails" property from scratch (swapped each route's `area` literal, watched the new pin test
+  genuinely fail both ways, reverted) rather than accepting the worker's own report of having done
+  the same check — this is exactly the shape Rule 4e/FOLLOW-448 warns about (a worker's self-report
+  of a verification step is not evidence the step was done correctly).
+- **A delegation/validation rule I'd add:** After ANY tool-call interruption/crash mid-edit, the
+  FIRST action on resume must be `git status` + `git diff` against the base branch (not just against
+  HEAD) — comparing to HEAD alone would have missed a partial edit if one had committed partially;
+  diffing against `main` confirms whether ANY of the intended edit actually landed.

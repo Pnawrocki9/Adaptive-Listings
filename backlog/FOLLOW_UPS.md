@@ -14631,13 +14631,15 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-549 title: >- Pin each GET adapt route's own `area` literal + close the
   call-site-inventory doc lag introduced by FOLLOW-532's fold source_retro: RETRO-172 source_ticket:
   FOLLOW-532 recommended_sprint: backlog recommended_agent: backend-engineer priority: P3
-  estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-532 folded the DB-throw try/catch
-  INTO resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'` param — the
-  ONLY per-call-site obligation the fold left. Nothing pins each route to its own literal: the
-  parity test drives the helper directly, and both route.test.ts files mock resolveAdaptGetAuth
-  wholesale, so NO test asserts that GET /api/adapt passes 'adapt' and GET /api/adapt/description
-  passes 'description'. A future clone that passes the wrong literal would mislabel the Sentry
-  `tags.area` with NO CI signal (disposition
+  estimated_hours: 1 promoted_to_queue: >- true # promoted + dispatched 2026-07-10 (pm-orchestrator,
+  session 25 cont'd) to backend-engineer (Sonnet); PM-validated same session, PR #505
+  READY_FOR_REVIEW. QUEUE.md FOLLOW-549 branch backend-engineer/FOLLOW-549-adapt-get-auth-area-pin.
+  scope: >- FOLLOW-532 folded the DB-throw try/catch INTO resolveAdaptGetAuth and gave it a required
+  3rd `area: 'adapt' | 'description'` param — the ONLY per-call-site obligation the fold left.
+  Nothing pins each route to its own literal: the parity test drives the helper directly, and both
+  route.test.ts files mock resolveAdaptGetAuth wholesale, so NO test asserts that GET /api/adapt
+  passes 'adapt' and GET /api/adapt/description passes 'description'. A future clone that passes the
+  wrong literal would mislabel the Sentry `tags.area` with NO CI signal (disposition
   - tags.kind stay correct — cosmetic observability mislabel only, hence P3). Separately, the
     helper's call-site-inventory note (adapt-get-auth.ts:13-14) still says only "a third consumer
     added later MUST be appended here" and does not mention that a genuinely new third route must

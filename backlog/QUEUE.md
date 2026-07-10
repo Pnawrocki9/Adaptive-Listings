@@ -1,6 +1,47 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 close-out — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending)
+## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — FOLLOW-549 promoted + dispatched + validated, PR #505 READY_FOR_REVIEW)
+
+**FOLLOW-549 (P3, backend-engineer, Sonnet) is PM-validated, READY_FOR_REVIEW.** PR **#505**
+(`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`, off `main`, not merged). Recovered from a
+mid-turn API interruption during this promotion — re-verified state before proceeding (confirmed no
+partial/corrupted edit had landed, confirmed PR #505's head commit matched what had already been
+independently validated pre-interruption). Test/docs-only diff: 2 spy assertions (one per GET route
+suite) pinning `resolveAdaptGetAuth(req, token, 'adapt'|'description')`'s 3rd arg + 1 docstring
+sentence on `adapt-get-auth.ts` naming the `area`-union-widening compile error as the forcing
+function for a genuine 3rd consumer. Independently verified (not taken on the worker's self-report):
+CI non-success count = 2 (both the standing pre-existing "Rule I — wired-or-dead" gate, 180 WARN
+lines identical to the FOLLOW-532/546/548 baseline, zero hits for this diff's symbols); file list
+confirmed test/docs-only (no production route.ts touched); **independently re-proved the swap-fails
+property from scratch** in a fresh worktree — swapped each route's `area` literal in turn, confirmed
+the new pin test genuinely FAILS both ways, reverted, confirmed back to 91/91 green — not merely
+trusted from the worker's own claimed swap-test. Full evidence trail on the FOLLOW-549 ticket
+block's `notes:`/`ci_status:` and as a PR comment.
+
+**Bookkeeping note:** this validation is written directly at `READY_FOR_REVIEW`, folding the
+dispatch (IN_PROGRESS) and validation trail into ONE ticket-block entry, because PR #504
+(`pm-orchestrator/FOLLOW-549-dispatch`, the original dispatch-record PR) is STILL UNMERGED — same
+two-PR-in-flight resolution as the FOLLOW-380/546/548 precedent. **When merging, merge #504 first
+(or accept its content is superseded/duplicated by this validation's fold-in and can be closed
+without merging — human's call.)**
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema —
+not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). FOLLOW-533/534 (P3, not yet promoted). 4
+already-`READY` P3 tickets remain queued behind this one: FOLLOW-467/468/469/474. 3 standing
+`## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking. RETRO-172's own retro
+loop for FOLLOW-532 is closed (RETRO-172 filed, no rule promoted, HELD watch-items logged) — no
+further retro action pending from that ticket.
+
+**NEXT:** human reviews/merges PR #505 (and resolves the #504 redundancy per the note above). After
+#505 merges: mark FOLLOW-549 `DONE` + `completed_at`, spawn `retrospective-analyst`, then pick from
+the 4 queued P3 tickets (FOLLOW-467/468/469/474).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 close-out — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending)
 
 **PR #502 MERGED** to `main` as commit `a934adf` (`a934adfd2359d4f12aa6538923e08ce351112025`,
 2026-07-10T14:36:48Z, confirmed via `gh pr view 502 --json state,mergeCommit,mergedAt`). Local
@@ -11071,6 +11112,115 @@ gate) closes the epic and must be last.
     retrospective loop) — NOT run by pm-orchestrator itself (no subagent-spawn capability in this
     tool surface). Delegation brief prepared in `backlog/HANDOFFS.md` ("Retro delegation brief —
     FOLLOW-532").
+- id: FOLLOW-549
+  title: >-
+    Pin each GET adapt route's own `area` literal + close the call-site-inventory doc lag introduced
+    by FOLLOW-532's fold
+  agent: backend-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: backend-engineer/FOLLOW-549-adapt-get-auth-area-pin
+  pr: 505
+  ci_status: >-
+    green (independently re-verified via `gh pr view 505 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated); confirmed via `--log-failed` on run 29106380666 — 180 WARN lines, IDENTICAL to the
+    FOLLOW-532/546/548 baseline, zero hits on grep for `adapt-get-auth`/`resolveAdaptGetAuth`/
+    `AdaptGetAuthResult`/`mockResolveAdaptGetAuth` in that log (none of the 180 are from this diff).
+    Typecheck, Lint, Format, Build, Build (control-plane), Test (Node 22 full suite), SDK E2E, all
+    Python suites, Vercel, Rule H, Rule J, and every other real gate green. CI-check counter: 1/5.
+    Fix-iteration counter: 0/3.
+  model:
+    Sonnet # routine, mechanical (2 spy assertions + 1 docstring sentence), no cross-module
+    # ambiguity or design judgment call. Model-fit table row "Routine implementation inside a
+    # well-defined ticket scope ... tests, docs/backlog bookkeeping, mechanical refactors" ->
+    # Sonnet.
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-172 §4c TG-1 / §4d DG-1 / §7 (source_ticket FOLLOW-532) — FOLLOW-532 folded the DB-throw
+    try/catch INTO resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'`
+    param, the ONLY per-call-site obligation the fold left. Nothing pinned each route to its own
+    literal: the parity test drives the helper directly, and both route.test.ts files mocked
+    resolveAdaptGetAuth wholesale, so no test asserted GET /api/adapt passes 'adapt' and GET
+    /api/adapt/description passes 'description'. A future clone that passed the wrong literal would
+    mislabel the Sentry `tags.area` with NO CI signal (disposition + `tags.kind` stay correct —
+    cosmetic observability mislabel only, hence P3). Separately, the helper's call-site-inventory
+    note (`adapt-get-auth.ts:13-14`) said only "a third consumer added later MUST be appended here"
+    and didn't mention that a genuinely new third route must ALSO widen the `area` union (a compile
+    error — a good forcing function, but undocumented at the inventory site).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-549; backlog/RETROSPECTIVES.md RETRO-172 §4c/§4d/§7; Rule S
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 25 cont'd) from backlog/FOLLOW_UPS.md into
+    Sprint 22b, matching the FOLLOW-380/546/467/468/469/472/474/532/548 promotion pattern.
+    `promoted_to_queue: true` set on the FOLLOW_UPS.md stub. Dispatched same-session to
+    backend-engineer (Sonnet). This ticket-block edit folds the dispatch (IN_PROGRESS) and
+    validation (READY_FOR_REVIEW) trail into one entry because the earlier dispatch-record PR
+    (#504, `pm-orchestrator/FOLLOW-549-dispatch`) is STILL UNMERGED as of this validation — same
+    "two-PRs-in-flight" shape as the FOLLOW-380/#490+#492, FOLLOW-546/#494+#496,
+    FOLLOW-548/#498+#500 precedent. **When merging, merge #504 first (or accept its content is
+    superseded/duplicated by this validation's fold-in and can be closed without merging —
+    human's call, flag the redundancy).** Full delegation brief in `backlog/HANDOFFS.md`
+    ("Delegation brief — FOLLOW-549").
+
+    PM-VALIDATED 2026-07-10 (pm-orchestrator, session 25 cont'd) — PR #505
+    (`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`, off `main`, not merged). Independently
+    verified (not taken on the worker's self-report):
+    - **File list confirmed test/docs-only:** `gh pr view 505 --json files` -> exactly
+      `.claude/agents/backend-engineer/lessons.md`,
+      `apps/control-plane/src/app/api/adapt/route.test.ts`,
+      `apps/control-plane/src/app/api/adapt/description/route.test.ts`,
+      `apps/control-plane/src/lib/adapt-get-auth.ts` — the LAST file's diff read in full and
+      confirmed to touch ONLY the docstring comment block (no executable code, no logic change).
+      Neither production route.ts file is in this diff. No wire-contract change.
+    - **AC-1 (pin the literal) — independently re-ran the worker's own claimed swap-fails check,
+      not trusted from the report:** checked out the PR branch into a fresh `git worktree`, rebuilt
+      `@estalara/{db,shared,auth,sdk}` first (FOLLOW-474/RETRO-150 worktree-bootstrap gotcha),
+      confirmed 91/91 green as-shipped, then (a) mutated `adapt/route.ts`'s call from `'adapt'` to
+      `'description'` and re-ran the new pin test in isolation — it FAILED with the actual wrong
+      literal (`"description"`) printed in the assertion diff; (b) reverted, mutated
+      `adapt/description/route.ts`'s call from `'description'` to `'adapt'` and re-ran that route's
+      pin test — it ALSO genuinely FAILED; (c) reverted both (confirmed clean `git status` after),
+      re-ran the full 2-file suite — back to 91/91 green. Both directions of the swap-fails
+      property hold — these are load-bearing, not decorative.
+    - **AC-2 (docstring)** — `adapt-get-auth.ts`'s call-site-inventory note (originally lines
+      13-14) now reads: "...A third consumer added later MUST be appended here, AND must widen the
+      `area` union below (a real third route cannot reuse `'adapt'`/`'description'` as its own
+      tag) — the resulting compile error at every existing call site is the forcing function that
+      surfaces this docstring (RETRO-172 DG-1)." Matches the AC exactly — names the compile error
+      as the forcing function, as required.
+    - **Local re-verification:** targeted `eslint` on both test files + `adapt-get-auth.ts`, and
+      `prettier --check` on the same 3 files — both clean. `tsc --noEmit` control-plane clean.
+    - **CI:** `gh pr checks 505` all pass except the standing 2-leg "Rule I — wired-or-dead" gate;
+      independently re-derived via `gh pr view --json statusCheckRollup` (count=2, the apparent 3rd
+      "non-success" entry is a `StatusContext`-type Vercel row with `state:SUCCESS`/no `conclusion`
+      field — a query-shape artifact, not a real failure) and `gh run view --log-failed` (180 WARN
+      lines, identical to the FOLLOW-532/546/548 baseline, zero hits for this diff's symbols).
+      CI-check counter: 1/5. Fix-iteration counter: 0/3.
+
+    PM-validated. CI green (bar the standing Rule I baseline). Confirmed test/docs-only — zero
+    production behavior change. AC verified against the actual diff AND independently re-run (the
+    swap-fails property re-proven from scratch, not trusted from the worker's report). Ready for
+    human review.
+    AC:
+    - [x] A lightweight assertion (spy on the existing `mockResolveAdaptGetAuth`) in EACH route's
+          own suite reds CI if `GET /api/adapt` is not called with `'adapt'` or `GET
+          /api/adapt/description` is not called with `'description'` — independently re-proven by
+          swapping each literal in a fresh worktree and confirming a genuine failure both ways.
+    - [x] The `adapt-get-auth.ts` call-site-inventory docstring states that a third consumer must
+          ALSO widen the `area: 'adapt' | 'description'` union type, naming the compile error as
+          the forcing function.
+
+    **Note on PR #504 (bookkeeping collision risk):** #504 (`pm-orchestrator/FOLLOW-549-dispatch`)
+    remains OPEN/unmerged as of this validation and contains only the ORIGINAL dispatch-record
+    edit (READY-stub -> IN_PROGRESS). This validation PR is based on current `main` (NOT stacked on
+    #504) and folds BOTH transitions (dispatch + validation) into this single ticket-block entry —
+    same resolution as every prior two-PR collision this session (FOLLOW-380, FOLLOW-546,
+    FOLLOW-548). Flagging for the human: #504 can be closed unmerged without data loss once this
+    PR merges, or merged first if preferred — either order is safe since this edit's content
+    supersedes it.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

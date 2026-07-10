@@ -1,6 +1,59 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 23 close-out — PR #495 MERGED, FOLLOW-546 DONE, RETRO-170 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 24 — FOLLOW-548 promoted, dispatched, and validated; PR #499 READY_FOR_REVIEW; PR #498 dispatch record still unmerged)
+
+**Two PRs from this session are in flight, in this order (same pattern as FOLLOW-380/#490/#492 and
+FOLLOW-546/#494/#496):**
+
+1. **PR #498** (`pm-orchestrator/FOLLOW-548-dispatch`) — the FOLLOW-548 promotion + dispatch record
+   (READY → IN_PROGRESS flip + the delegation brief in `backlog/HANDOFFS.md`). **STILL UNMERGED**
+   (awaiting human). Because of this, `main` currently has NO FOLLOW-548 ticket block at all — it
+   was dispatched out-of-band by the coordinator relaying the brief content directly.
+2. **PR #500** (this validation, `pm-orchestrator/FOLLOW-548-validate`, based on current `main` —
+   NOT stacked on #498) — promotes FOLLOW-548 straight into `backlog/QUEUE.md` at
+   `status: READY_FOR_REVIEW`, folding the full READY→IN_PROGRESS→READY_FOR_REVIEW trail into one
+   ticket-block edit. **When merging, merge #498 first (or accept its content is
+   superseded/duplicated by #500's fold-in and can be closed without merging — human's call).**
+
+**FOLLOW-548 (P3, sdk-engineer, Opus) is PM-validated, READY_FOR_REVIEW.** PR **#499**
+(`sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard`, off `main`, not merged). Independently
+verified (not taken on the worker's self-report) — full evidence trail on the ticket block's
+`notes:`/`ci_status:` fields: CI non-success count = 2, both the standing Rule I baseline (180
+violations, identical count, zero new flags); full `@estalara/sdk` suite (69 files/1524 tests) green
+in CI's fresh Node 22 build; bundle 40.49KB/42KB (exact match to the self-report); exactly 4 files
+touched, `index.ts` correctly absent from the diff, zero backlog/doc edits. The worker INDEPENDENTLY
+CONFIRMED the PM timing-analysis finding from the dispatch brief before implementing (the real
+deferred-write gap is the `reapply` closure, not the `:323` rAF scheduling itself). Both guard sites
+(`reapply()`'s internal check + entry defense-in-depth) read in full and confirmed to genuinely
+precede both `render` and `obs.observe`, with `disconnect()` confirmed to actually run on the stale
+path (killing the persistence leg). The two new non-vacuous tests (TG-1, TG-2) plus a headline-path
+test independently read and confirmed to be structurally guaranteed to fail without the fix. LG-2
+(required param, no silent never-stale fallback) and DG-1 (JSDoc) both confirmed.
+
+**PM recommendation on the permanent-record accuracy issue (RETRO-170 §4a LG-1 / Rule AB's evidence
+footnote cite `:323`/`:333` as "the unguarded write," but the real gap is the deferred `reapply`
+closure — the PRINCIPLE is correct, only the line citation is imprecise):** fold a small, surgical
+evidence-citation correction into Rule AB's `CONVENTIONS_PATCH.md` footnote as part of THIS ticket's
+eventual close PR (mirrors the FOLLOW-544 precedent — a live, forward-looking rule benefits most
+from accuracy). Do NOT edit RETRO-170's own historical text (append-only convention for retro
+entries); let the eventual RETRO-171 naturally reconcile it. Full reasoning on the FOLLOW-548 ticket
+block's `notes:`. Not actioned — awaiting human/coordinator direction.
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
+storage schema — not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with
+its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process
+stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** human reviews/merges #498 (or closes it as superseded) and #499 (the actual code) and #500
+(this validation), and decides on the Rule AB citation-correction recommendation above. After
+FOLLOW-548 merges: mark `DONE` + `completed_at`, spawn `retrospective-analyst`, then pick the next
+ticket.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 23 close-out — PR #495 MERGED, FOLLOW-546 DONE, RETRO-170 pending)
 
 **PR #495 MERGED** to `main` as squash commit `118bdd8` (2026-07-10T08:30:32Z); PM-validation
 bookkeeping PR #496 merged immediately after (`4a5c2ba`). PR #494 (superseded promotion/dispatch-
@@ -10601,6 +10654,147 @@ gate) closes the epic and must be last.
     `pm-orchestrator/FOLLOW-546-close` (this same bookkeeping PR, RETRO-170) per the repo's
     RETRO+DONE bundling convention (matches PRs #486/#487, #489, #493) — NOT run by
     pm-orchestrator itself (no subagent-spawn capability in this tool surface).
+- id: FOLLOW-548
+  title: >-
+    Guard the rAF-deferred description write per Rule AB (third relocation hop of the cross-listing
+    async-interleave gap)
+  agent: sdk-engineer
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard
+  pr: 499
+  model:
+    Opus # rAF/microtask ordering + supersession-timing reasoning, prod-touching, same class
+    # as FOLLOW-380/546; model-fit table "complex single-domain reasoning ... non-trivial design".
+    # See dispatch brief in backlog/HANDOFFS.md ("PM orchestrator (session 24) -> sdk-engineer,
+    # FOLLOW-548") — that brief currently lives on unmerged PR #498 (bookkeeping-only, awaiting
+    # human as of this validation), relayed to the worker out of band, same pattern as
+    # FOLLOW-380/#490 and FOLLOW-546/#494.
+  ci_status: >-
+    green (independently re-verified via `gh pr view 499 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated), 180 violations via `--log-failed` — IDENTICAL to the FOLLOW-546 baseline, zero new
+    flags. Test (Node 22) green — pulled the full job log: `@estalara/sdk:test` ran the ENTIRE suite
+    fresh (69 files / **1524** tests, all passed — up from FOLLOW-546's 1521 by exactly the 3 new
+    tests: TG-1, TG-2, headline case). Typecheck, Lint, Format check, Build, Build (control-plane),
+    SDK E2E tests, all Python suites, Demo integration, Rule H, Rule J — all green. SDK bundle-size
+    gate (embedded in `Build`): **40.49KB gzip vs the 42KB budget** (ESC-028) — PASSED, matching the
+    worker's self-report exactly this time. PR file list independently confirmed exactly 4 files:
+    `.claude/agents/sdk-engineer/lessons.md`,
+    `packages/sdk/src/__tests__/adapt-description.test.ts`,
+    `packages/sdk/src/core/adapt-description.ts`,
+    `packages/shared/src/schemas/events/adapt-description.ts` — zero edits to `backlog/QUEUE.md`,
+    `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md`, and `index.ts` is NOT in this diff
+    (unchanged — confirmed correct, since it already passed the real predicate).
+  priority: P3
+  estimated_hours: 2.5
+  depends_on: []
+  source: >-
+    RETRO-170 (§4a LG-1/LG-2 / §4c TG-1/TG-2 / §4d DG-1 / §7); source_ticket FOLLOW-546. Governed by
+    Rule AB (CONVENTIONS_PATCH.md — promoted by RETRO-170 §6): a latest-wins staleness guard on a
+    rapid-nav re-adaptation MUST be consulted at the LAST synchronous instant before EVERY host-DOM
+    write it protects, including deferred writes — a single checkpoint is insufficient. This is the
+    THIRD relocation hop of the RETRO-105 async-interleave class (sync-checkpoint [FOLLOW-380] →
+    fire-and-forget tail [FOLLOW-546] → the write path this ticket covers).
+  spec:
+    backlog/FOLLOW_UPS.md FOLLOW-548; backlog/RETROSPECTIVES.md RETRO-170; CONVENTIONS_PATCH.md Rule
+    AB
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 24) from backlog/FOLLOW_UPS.md into Sprint 22b,
+    matching the FOLLOW-380/546/467/468/469/472/474 promotion pattern. `promoted_to_queue: true`
+    set on the FOLLOW_UPS.md stub. Dispatched same-session to sdk-engineer (Opus). Full delegation
+    brief (incl. a PM-verified timing-analysis correction to the stub's own premise) in
+    `backlog/HANDOFFS.md` ("PM orchestrator (session 24) → sdk-engineer, FOLLOW-548") — see
+    `model:` field caveat above re: that brief's unmerged-PR-#498 status.
+
+    PM-VALIDATED 2026-07-10 (pm-orchestrator, session 24) — PR #499
+    (`sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard`, off `main`). Independently verified
+    (not taken on the worker's self-report), reading the actual `git diff main...HEAD` for
+    `packages/sdk/src/core/adapt-description.ts` and `packages/shared/src/schemas/events/
+    adapt-description.ts`:
+
+    - **Worker independently confirmed the PM timing-analysis finding** (the dispatch brief
+      flagged that the stub's LG-1 premise — ":323 rAF defers the write" — does not hold for the
+      initial paint; the real gap is the `reapply` closure). Their PR report states they re-ran an
+      equivalent repro before implementing. This closes the delegation-brief's explicit
+      "independently re-confirm before implementing" instruction.
+    - **Fix, traced end-to-end:** `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` gained a
+      REQUIRED third param `isStale: () => boolean` (no default — closes LG-2). Two guard sites
+      confirmed by reading the full function bodies: (1) inside `reapply()` — `if (isStale())`
+      appears FIRST, before the `descFingerprint` check, and on the stale path calls
+      `s.obs.disconnect()` then `pushEvent(EVT + 'skipped', {reason:'stale'})` then returns —
+      confirmed this genuinely precedes the `render`/`obs.observe` calls further down in the
+      function (they're unreachable once this early-returns) — the disconnect kills the
+      persistence leg by retiring the watchdog entirely; (2) entry defense-in-depth — a second
+      `if (isStale())` check before the "Initial write," also confirmed to precede `render`/
+      `obs.observe`. LG-2 confirmed: `index.ts` is UNCHANGED in this diff (not in the file list)
+      and its existing call (`index.ts:809`) already passes the real predicate
+      `() => myRefreshId !== latestRefreshId` — independently re-grepped
+      (`grep -rn "applyDescriptionAdaptation" packages/sdk/src --include=*.ts | grep -v test`)
+      and confirmed it is the ONLY production call site, so the required-param change cannot
+      silently compile-break or mis-wire any other prod caller. Confirmed via
+      `grep -c "() => false"` that the ~31 unit-test call sites (`adapt-description.test.ts`)
+      all pass an explicit never-stale predicate (32 occurrences — close enough to the claimed 31
+      given the new tests also use the literal). DG-1 confirmed: the schema JSDoc
+      (`packages/shared/src/schemas/events/adapt-description.ts:57`/`:66-67`) now lists `'stale'`
+      alongside `'neutral'`; the Zod shape itself is unchanged (`z.string().min(1).optional()`),
+      so `{reason:'stale'}` is schema-valid without any contract change.
+    - **Both new tests independently read and confirmed non-vacuous, not just re-run:** TG-1
+      (`adapt-description.test.ts` — search `TG-1:`) drives a fresh paint → a framework-simulated
+      DOM revert (arming the observer's internal rAF) → supersession set to `true` IN THE GAP
+      between arming and firing → fires the deferred reapply via `vi.runAllTimers()` → asserts the
+      slot keeps the NEWER content, never the stale copy, AND that a subsequent revert is no
+      longer re-asserted (proves `disconnect()` genuinely ran). TG-2 (search `TG-2:`) is the
+      persistence leg: the superseding nav's OWN fetch resolves `template_fallback` (non-
+      adaptable), so it bails at `:314` before its own write — confirms the stale L1 watchdog,
+      once fired, still does not resurrect the stale copy and is disconnected. A third test
+      mirrors TG-1 for the headline path. All three assert the `skipped:stale` event fires
+      (observable discard, not silent). Without the fix, `reapply()`'s unconditional
+      `render`/`renderHeadline` call on a fingerprint mismatch would resurrect the stale content
+      in both TG-1/TG-2/headline — these tests are structurally guaranteed to fail without the
+      guard, matching the worker's scratchpad-cp-verified RED/GREEN claim.
+    - **CI green**, bundle 40.49KB/42KB (exact match to self-report this time), Rule I 180
+      (identical baseline, zero new flags), file list exactly 4 (no backlog/doc edits, `index.ts`
+      correctly absent).
+
+    PM-validated. CI green (bar the standing Rule I baseline). Runtime wiring confirmed
+    end-to-end (required-param threading, both guard sites precede both DOM-mutating calls,
+    persistence leg killed via `disconnect()`). Ready for human review.
+    AC:
+    - [x] Re-consult the staleness predicate at the LAST synchronous instant before EACH host-DOM
+          write — both the `reapply`/MutationObserver watchdog path (the real gap) and the
+          initial-write defense-in-depth. Neither `render` NOR `obs.observe` (nor a stale
+          `reapply` firing) occurs when superseded.
+    - [x] Non-vacuous test (TG-1) — supersedes at the actual deferred-write boundary (a
+          MutationObserver-armed `reapply`, drained via `vi.runAllTimers()`); asserts the stale
+          copy never paints.
+    - [x] Non-vacuous test (TG-2, persistence leg) — the newer nav's `fetchDescription` returns a
+          non-adaptable result and bails before its own write; asserts no surviving/
+          self-reasserting stale slot.
+    - [x] LG-2: closed the never-stale-default footgun — `isStale` is now a REQUIRED param, no
+          silent-revert-to-never-stale possible; sole prod caller unaffected (already passed the
+          real predicate); ~31 test call sites updated to pass an explicit `() => false`.
+    - [x] DG-1: `adapt.description.skipped` schema JSDoc updated to list `'stale'` alongside
+          `'neutral'`.
+
+    **PM RECOMMENDATION re: the permanent-record accuracy issue (flagged in the delegation brief,
+    independently confirmed by the worker too) — RETRO-170 §4a LG-1's own prose and Rule AB's
+    evidence footnote in `CONVENTIONS_PATCH.md` cite `:323`/`:333` as "the unguarded write," but
+    that line runs synchronously and was already guarded by the pre-existing `:309` check; the
+    real unguarded write is the `reapply` closure (fired via the observer's internal `:155` rAF).
+    The Rule AB PRINCIPLE is correct and does not need to change. Recommend: fold a small,
+    surgical evidence-citation correction into Rule AB's existing footnote comment in
+    `CONVENTIONS_PATCH.md` as part of THIS ticket's close PR (mirroring the FOLLOW-544 precedent
+    of fixing a durable-doc inaccuracy inline with the closing PR of the ticket that surfaced it)
+    — because Rule AB is a LIVE, forward-looking rule future tickets will actually consult, and an
+    imprecise citation could mislead a future engineer investigating a similarly-shaped bug at the
+    wrong line. Do NOT edit RETRO-170's own historical text — this repo's convention is
+    append-only for retro entries (per the RETRO-168 DURABLE-SELF-REPORT-DRIFT pattern: propagate
+    corrections to durable/live docs, don't rewrite history); the eventual RETRO-171 for this
+    ticket will naturally reconcile/note the finding as part of its own analysis, which is the
+    established pattern for how this repo's retro loop handles evolving understanding. Not
+    actioning this myself — awaiting human/coordinator direction per instruction.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

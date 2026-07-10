@@ -1,4 +1,41 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #508+#509 MERGED, FOLLOW-550 DONE, RETRO-174 pending, session 25 cont'd)
+# Status — 2026-07-11 (Sprint 22b OPEN — PR #510 MERGED, FOLLOW-550 fully closed, FOLLOW-551 dispatched DRAFT-ONLY, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-11) — PR #510 MERGED, FOLLOW-551 promoted + dispatched DRAFT-ONLY
+
+PR #510 (`pm-orchestrator/FOLLOW-550-done`, DONE-flip + RETRO-174 bundled) confirmed MERGED as
+commit `146de2f`. Local sync: `git checkout main && git pull` fast-forwarded `66f8e76..146de2f`;
+confirmed FOLLOW-550 shows `status: DONE` on `main`, RETRO-174 present in
+`backlog/RETROSPECTIVES.md`, and both FOLLOW-551 + FOLLOW-552 stubs present in
+`backlog/FOLLOW_UPS.md`. No QUEUE.md-touching PR in flight — rule (b) satisfied, safe to promote.
+
+**Promoted FOLLOW-551** (P3, source_ticket FOLLOW-550, RETRO-174 §5a) into Sprint 22b. Human
+decision: resolve via option (2) from the stub — formalize draft-then-apply as the standing
+resolution (not route-away, not give-architect-Bash). **Dispatched to architect in DRAFT-ONLY
+execution mode** (dogfooding the very pattern being codified): architect does not branch, Edit, or
+touch `git` — it returns the exact content + insertion points + rationale in its report; the
+coordinator applies it. Delegation-table row: "a contract between two modules, a new dependency, an
+ADR" -> architect. Model: **Sonnet** (routine codification, fully-specified AC, no open design
+question). AC pulled from the FOLLOW-551 stub + a concrete NEW finding surfaced while drafting this
+brief: **`.claude/agents/architect.md`'s own "First action on any ticket" section instructs
+`git checkout -b ...` — a command architect has no tool to run.** Flagged for architect to fix as
+part of this ticket, alongside the primary `docs/AGENT_WORKFLOW.md` addition.
+
+**Rule-AB-discipline precision (stated explicitly in the ticket, not hand-waved):** the
+architect-no-Bash pattern has exactly 2 banked prior numbered-retro sightings (RETRO-168/FOLLOW-470,
+RETRO-174/FOLLOW-550) and no 3rd sighting yet. FOLLOW-551 is the FIX, not a fresh occurrence —
+implementing it does not itself satisfy the ≥2-PRIOR-plus-3rd-sighting promotion threshold this
+repo's Rules Q/V/X/AA/AB all follow. This stays workflow guidance (`docs/AGENT_WORKFLOW.md` +
+possibly `architect.md`), explicitly NOT a `CONVENTIONS_PATCH.md` Rule promotion.
+
+Full brief in `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-551 (architect) — DRAFT-ONLY").
+Queue edits on branch `pm-orchestrator/FOLLOW-551-dispatch` (branch-first, never committed to
+`main`). **Anti-sprawl applied to this ticket's own lifecycle** (per explicit instruction): ONE
+promotion PR (this one, human merges it), later ONE DONE+RETRO bundle — no separate validation PR
+(there is nothing to "validate" via CI for a draft — the coordinator's application of the draft is
+itself the deliverable that gets validated, at DONE-flip time). **Not spawned by pm-orchestrator** —
+brief reported to the coordinator to dispatch.
+
+---
 
 ## SESSION 25 cont'd (2026-07-10) — #508/#509 MERGED, FOLLOW-550 DONE, RETRO-174 dispatch prepared
 

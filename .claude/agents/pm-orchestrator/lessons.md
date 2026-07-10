@@ -2097,3 +2097,22 @@ independent occurrence, even if it references the same pattern by name.
   ticket's OWN execution (dogfooding), always re-read the rule's literal scope before judging
   compliance — it's easy to unconsciously grade against the SPIRIT of a rule rather than its written
   boundary, especially when you're both the rule's implementer and its first user.
+
+- **Date / ticket:** 2026-07-11 — FOLLOW-551 (promotion + DRAFT-ONLY dispatch)
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" -> architect
+  (DRAFT-ONLY execution mode — architect has no Bash, dogfooding the very pattern being codified).
+- **What validation caught (or missed):** Before dispatching, checked the "still open / carried
+  forward" list in my own banner and found FOLLOW-545 — an unpromoted stub filed from the SAME
+  source retro (RETRO-168) that FOLLOW-551 cites as its own precedent, never cross-referenced by
+  FOLLOW-551 when it was originally filed. Nearly dispatched a near-duplicate ticket without
+  noticing. Cross-referenced both stubs and scoped the overlap precisely (FOLLOW-551 discharges
+  FOLLOW-545's AC bullet 1; bullet 2 — the broader "orchestrator edits beyond a delegate's plan"
+  problem — stays open and distinct) rather than either silently duplicating work or silently
+  dropping FOLLOW-545's still-relevant half. Also found a concrete, previously-unnoticed bug while
+  reading `.claude/agents/architect.md` for context: its own "First action on any ticket" section
+  instructs a `git checkout -b` command the agent has no tool to run — folded into the ticket's
+  required deliverables rather than treated as out of scope.
+- **A delegation/validation rule I'd add:** Before promoting ANY FOLLOW_UPS stub, grep
+  `backlog/FOLLOW_UPS.md` for the same `source_retro:` value and any thematically-adjacent title — a
+  stub's own `promoted_to_queue: false` siblings from the SAME retro are exactly where duplicate or
+  overlapping tickets hide, since retros often file multiple related stubs from one finding.

@@ -1,6 +1,57 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — #508/#509 MERGED, FOLLOW-550 DONE, RETRO-174 pending)
+## ▶️ START HERE — resume 2026-07-11 (session 25 cont'd — PR #510 MERGED, FOLLOW-550 fully closed, FOLLOW-551 dispatched DRAFT-ONLY)
+
+**PR #510 MERGED** (`146de2f`) — FOLLOW-550's DONE-flip + RETRO-174 bundle landed cleanly on `main`.
+Local sync confirmed: FOLLOW-550 `status: DONE`, RETRO-174 present, FOLLOW-551 + FOLLOW-552 stubs
+present. No QUEUE.md-touching PR in flight — rule (b) satisfied, safe to promote.
+
+**Promoted + dispatched FOLLOW-551** (P3, source_ticket FOLLOW-550, RETRO-174 §5a) to **architect in
+DRAFT-ONLY execution mode** — human-approved resolution: formalize draft-then-apply (option 2) as
+the standing fix for the architect-has-no-Bash routing gap, dogfooding the pattern itself (architect
+drafts, coordinator applies via git — no branch/Edit/git attempted by architect). Delegation-table
+row: "a contract between two modules, a new dependency, an ADR" -> architect. Model: **Sonnet**
+(routine codification, fully-specified AC, no open design question). Cites the ≥2× precedent by
+number: FOLLOW-470/RETRO-168 + FOLLOW-550/RETRO-174. **Rule-AB-discipline stated precisely:**
+exactly 2 banked prior numbered-retro sightings, no 3rd yet — FOLLOW-551 is the FIX, not a fresh
+occurrence, so it does NOT itself satisfy the promotion threshold; stays workflow guidance,
+explicitly NOT a `CONVENTIONS_PATCH.md` Rule.
+
+**Duplicate-risk catch before dispatch (verify-not-guess):** `backlog/FOLLOW_UPS.md` already
+contained an unpromoted, never-cross-referenced near-duplicate — **FOLLOW-545** ("bashless-agent
+author-blur," filed from the SAME RETRO-168 this ticket cites as precedent #1). FOLLOW-551's
+resolution substantially discharges FOLLOW-545's AC bullet 1; FOLLOW-545's AC bullet 2 (the broader
+"orchestrator edits beyond a delegate's plan" reconciliation problem, root of FOLLOW-544) is
+DISTINCT and remains open — cross-referenced both stubs so FOLLOW-545 isn't silently duplicated or
+lost; it should be re-scoped to bullet-2-only at its next promotion review, not promoted wholesale.
+
+**Concrete bug found and flagged for the architect to fix as part of this ticket:**
+`.claude/agents/architect.md`'s own "First action on any ticket" section instructs
+`git checkout -b ...` — a command architect has no tool to execute. Included in the delegation brief
+as a required deliverable, not just the primary `docs/AGENT_WORKFLOW.md` addition.
+
+Full brief in `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-551 (architect) — DRAFT-ONLY").
+Queue edits on branch `pm-orchestrator/FOLLOW-551-dispatch` (branch-first, never committed to
+`main`). **Anti-sprawl applied to this ticket's own lifecycle:** ONE promotion PR (this one), later
+ONE DONE+RETRO bundle — no separate validation PR. **Not spawned by pm-orchestrator** — brief
+reported to the coordinator to dispatch.
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename — per RETRO-174 §5b, should be dispatched using FOLLOW-551's newly-codified
+draft-then-apply resolution once FOLLOW-551 lands, not before). FOLLOW-552 (P3, doc-wiring fix —
+next natural pick after FOLLOW-551). FOLLOW-545 (re-scope to bullet-2-only at next review, see
+above). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema — not yet
+promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-533/534 (P3, not yet
+promoted). 4 already-`READY` P3 tickets remain queued: FOLLOW-467/468/469/474. 3 standing `## OPEN`
+escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator dispatches architect per the brief (DRAFT-ONLY); PM applies the returned draft
+via git once the architect's report comes back, then validates + closes out FOLLOW-551.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 cont'd — #508/#509 MERGED, FOLLOW-550 DONE, RETRO-174 pending)
 
 **Both PRs merged by the human:** #509 (`architect/FOLLOW-550-bookkeeping-pr-sequencing`, the
 content — `docs/AGENT_WORKFLOW.md`) as commit `66f8e76`; #508
@@ -11497,6 +11548,114 @@ gate) closes the epic and must be last.
     tool surface) — to append RETRO-174 onto this SAME `pm-orchestrator/FOLLOW-550-done` branch, so
     DONE + RETRO bundle into ONE PR (dogfooding rule (d), matching the FOLLOW-532/#503 pattern).
     Delegation brief in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-550").
+- id: FOLLOW-551
+  title: >-
+    Codify the architect-has-no-Bash routing gap: mandate draft-then-apply (or route to a
+    Bash-capable agent) for any architect-assigned ticket requiring git/PR mechanics
+  agent: architect
+  status: IN_PROGRESS
+  assigned_to: architect
+  started_at: '2026-07-11T00:00:00Z'
+  branch: n/a — DRAFT-ONLY EXECUTION MODE, see note below
+  execution_mode: >-
+    DRAFT-ONLY (dogfooding the very pattern this ticket codifies). Architect's tool manifest is
+    Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — NO Bash. Architect does NOT create a branch, does
+    NOT Edit any file, does NOT attempt git of any kind. Architect produces the exact markdown
+    content + insertion point(s) + rationale, in full, in its final report back to the coordinator.
+    The coordinator (Bash-capable) applies it verbatim: branch, prettier, commit, push, open the
+    promotion-side PR. See full mechanics in the delegation brief (`backlog/HANDOFFS.md`,
+    "Delegation brief — FOLLOW-551 (DRAFT-ONLY)").
+  model:
+    Sonnet # routine workflow-doc codification with a fully-specified AC and two named ≥2×
+    # precedent instances already gathered (no open design question) — model-fit table "routine
+    # implementation inside a well-defined ticket scope ... docs/backlog bookkeeping" row, not the
+    # ambiguous-design Opus row. The one open judgment call (architect.md vs AGENT_WORKFLOW.md
+    # placement, see AC) is bounded and doesn't need heavier reasoning.
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    FOLLOW-550 (RETRO-174 §5a) — dispatching FOLLOW-550 (a docs(workflow) codification ticket) to
+    architect surfaced that architect's tool manifest has no Bash; it correctly refused to Edit
+    `docs/AGENT_WORKFLOW.md` directly (would have stranded the change on `main`, the exact
+    FOLLOW-448/RETRO-146 failure mode) and instead drafted the content for the coordinator to apply.
+    RETRO-174 §5a additionally found this workaround is NOT a one-off: the SAME draft-then-apply
+    pattern already fired once before, on FOLLOW-470 (RETRO-168, `docs/MASTER_DESIGN.md` Changelog
+    v4.3 — "the edit was applied by the top-level orchestrator on the architect's behalf [the
+    architect subagent has no shell tool]"). Human decision (2026-07-11): resolve via option (2)
+    from the FOLLOW-551 stub — formalize draft-then-apply as the standing, documented resolution
+    (not option 1, route-away-from-architect entirely; not option 3, give architect Bash).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-551; backlog/RETROSPECTIVES.md RETRO-174 §5a; RETRO-168
+  notes: |
+    Promoted 2026-07-11 (pm-orchestrator, session 25 cont'd) from backlog/FOLLOW_UPS.md into
+    Sprint 22b, matching the FOLLOW-380/546/467/468/469/472/474/532/548/549/550 promotion pattern.
+    `promoted_to_queue: true` set on the FOLLOW_UPS.md stub. Dispatched same-session to architect
+    in DRAFT-ONLY mode (see `execution_mode:` above) per human direction — resolving the routing
+    gap using the very mechanism it will codify. Full delegation brief in `backlog/HANDOFFS.md`
+    ("Delegation brief — FOLLOW-551 (DRAFT-ONLY)").
+
+    **PRE-EXISTING DUPLICATE-RISK CATCH (found before dispatch, not after — verify-not-guess):**
+    `backlog/FOLLOW_UPS.md` ALREADY contains an unpromoted, near-identical stub — **FOLLOW-545**
+    ("Close the bashless-agent author-blur," `source_retro: RETRO-168 §4d DG-2`,
+    `source_ticket: FOLLOW-470`, filed the SAME retro FOLLOW-551 cites as precedent #1, but never
+    cross-referenced by FOLLOW-551's own stub when it was filed). FOLLOW-545's AC option (a)
+    ("route doc-authoring / PR-producing tickets to a shell-capable agent by default") and this
+    ticket's chosen resolution (draft-then-apply) are NOT identical but are answering the same
+    underlying question — this ticket's human-approved resolution (draft-then-apply, option (2))
+    substantially discharges FOLLOW-545's AC bullet 1. **FOLLOW-545's AC bullet 2 is a DISTINCT,
+    still-open angle this ticket does NOT cover:** "require the orchestrator, whenever it executes
+    an edit BEYOND a delegate's stated plan, to reconcile that deviation across ALL durable
+    artifacts (Changelog/SoT/AC), not only the transient QUEUE note" (the FOLLOW-544 root cause —
+    already RESOLVED_INLINE as a one-off instance, but the general discipline was never codified).
+    Cross-referenced FOLLOW-545's own stub with a pointer back to this ticket (see
+    `backlog/FOLLOW_UPS.md`) so FOLLOW-545 is not silently duplicated or forgotten — it should be
+    reviewed at next promotion, scoped down to ONLY its still-open bullet 2, not re-promoted
+    wholesale. This ticket proceeds as human-directed; the duplicate-risk is recorded, not blocking.
+
+    **Rule-AB-discipline precision (read before drafting) — this is workflow guidance, NOT a
+    `CONVENTIONS_PATCH.md` Rule, and here is the precise count, not a hand-wave:** the
+    architect-has-no-Bash / draft-then-apply pattern has been independently OBSERVED in exactly
+    TWO prior numbered retros — RETRO-168 (FOLLOW-470, first occurrence) and RETRO-174 (FOLLOW-550,
+    second occurrence, which explicitly cross-referenced RETRO-168 as "≥2× recurrence"). Per this
+    repo's own consistent ≥2-PRIOR-numbered-retro promotion discipline (Rule Q/V/X/AA/AB's own
+    provenance footnotes: promotion requires 2 BANKED prior sightings PLUS a THIRD, independent
+    sighting that serves as the promoting retro — the promoting retro does not inflate its own
+    count), this pattern currently sits at exactly 2 banked sightings with NO third sighting yet.
+    **FOLLOW-551 is the FIX for the gap, not a fresh occurrence of it — implementing this ticket is
+    NOT the 3rd sighting and must not be treated as satisfying the threshold.** Do not add a
+    `CONVENTIONS_PATCH.md` Rule as part of this ticket. If a THIRD independent numbered retro later
+    observes a fresh instance of an agent hitting a tool-manifest gap on a git-touching ticket
+    (whether architect again, hypothetically, or a newly-discovered case), THAT retro is the
+    legitimate promotion trigger, citing RETRO-168 + RETRO-174 as the 2 banked priors — not this
+    ticket. If you (the architect) believe this genuinely warrants an immediate
+    `CONVENTIONS_PATCH.md` Rule despite the count, that is an ESCALATION/ADR question for the
+    human — write it to `backlog/ESCALATIONS.md`, do not silently add the Rule.
+    AC:
+    - [ ] Home: primary location is `docs/AGENT_WORKFLOW.md`, near "The 9 agents" table (:14-28)
+          and/or the "Model-fit decision" section (:30-48) — mirror the structure/citation style of
+          the existing "Bookkeeping-PR sequencing" section (:163) and "Branch-first worker
+          discipline" section (:108). States: architect's tool manifest has no Bash; any ticket
+          whose AC requires git/PR mechanics (commit, push, branch, open a PR) and is assigned to
+          architect MUST use draft-then-apply — architect produces the exact content + insertion
+          point + rationale in its final report; a Bash-capable party (PM or another agent) applies
+          it verbatim — UNLESS the ticket is reassigned to a Bash-capable agent from the start
+          (also an acceptable resolution, at the delegator's discretion).
+    - [ ] Cites BOTH precedent instances by ticket/retro number: FOLLOW-470/RETRO-168 and
+          FOLLOW-550/RETRO-174, stating this is a ≥2× recurrence (not a one-off risk).
+    - [ ] Explicitly states this is workflow guidance, not a `CONVENTIONS_PATCH.md` Rule promotion,
+          and states the precise 2-banked/no-3rd-sighting count from the note above (so a future
+          reader — or retro — has the exact citation trail to evaluate a future 3rd-sighting
+          promotion without re-deriving it).
+    - [ ] Architect's own judgment call (explicitly asked, not prescribed): does a companion note
+          belong in `.claude/agents/architect.md` itself (e.g. "this agent has no Bash; any
+          ticket requiring git/PR mechanics must use draft-then-apply, see
+          docs/AGENT_WORKFLOW.md") — state the decision and reasoning either way in the final
+          report, and include the exact content if the answer is yes.
+    - [ ] The PM delegation-table decision guidance (CLAUDE.md and/or AGENT_WORKFLOW.md) reflects
+          the chosen resolution so a future PM session doesn't repeat the FOLLOW-550
+          dispatch-then-discover round-trip for FOLLOW-543 or any future architect-assigned
+          git-touching ticket. Per RETRO-174 §5b, **FOLLOW-543 should be dispatched using this
+          newly-codified draft-then-apply resolution once FOLLOW-551 lands** — not before.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

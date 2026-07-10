@@ -2404,3 +2404,34 @@
   I independently judged this SOUND — the change is entirely within backend-engineer's two route
   files + one lib (no QA harness surface), and option-2 is strictly stronger than option-1
   (construction vs detection). Recording that I checked the override rather than rubber-stamping it.
+
+## 2026-07-10 · RETRO-173 (FOLLOW-549 — area-literal pin, test/docs-only fast-follow off RETRO-172)
+
+- **A finding I almost missed and why:** the CODE is trivially clean (2 test assertions + 1
+  docstring, zero prod logic) — the temptation was to write a 3-line "clean, closes TG-1/DG-1" retro
+  and move on. The actual load-bearing finding was entirely in the PROCESS: a 1h ticket spawned 3
+  PRs (#504/#505/#506) and #506 died on a QUEUE.md conflict because the redundant dispatch-record
+  #504 was MERGED, not closed-superseded. The brief flagged it, but the lesson for me is that a
+  test/docs-only diff does NOT mean a low-signal retro — the signal migrated from the code axis to
+  the process axis. Always ask "what happened AROUND this merge," not just "what's in the diff."
+- **An axis/chain I had to trace twice — the occurrence count:** the two-PRs-in-flight shape
+  recurred ~4x THIS session (#490/#492, #494/#496, #498/#500, #504/#506), which FELT like an obvious
+  ≥2 → promote. I had to stop and separate (a) raw in-session recurrence at the PM/QUEUE -notes
+  level from (b) documentation as a finding in ≥2 PRIOR NUMBERED retros. Only (b) counts for
+  RULE_PROMOTION_THRESHOLD. Grepped RETROSPECTIVES for #490/#494/#498/#506 + "two PR"/"conflict"/
+  "cut before": the only prior hits were RETRO-067/117's code-DIFF-bundling notes — a RELATED but
+  DISTINCT phenomenon (diff attribution, not QUEUE.md bookkeeping-PR conflict). So this is count 1
+  as a numbered-retro finding → HELD/ARMED, not promoted. Same discipline as RETRO-158/153. The
+  in-session count is a trap that inflates the promotion count if you don't gate on "numbered
+  retro."
+- **The distinct-sub-mode distinction:** three of the four in-session occurrences resolved cleanly
+  (stale PR CLOSED); only #504/#506 is the merged-not-closed → downstream-conflict sub-mode. Naming
+  the sub-mode (not just "another two-PR case") is what made the a/b/c verdict crisp and kept me
+  from either over-counting (calling it the 4th of a class) or under-counting (calling it a
+  one-off).
+- **A meta-pattern in how gaps recur across agents:** the PM's fragile default ("merge OR close —
+  either is safe") is the SAME shape as the async-interleave code arc's own lesson
+  (RETRO-169/170/171: "a single checkpoint / one of two sanctioned paths is insufficient — the safe
+  path must be mandatory, not optional"). Process defects and concurrency defects rhyme: presenting
+  a risky option as co-equal-safe is the process analog of guarding only the first await boundary.
+  Worth watching whether other close-out conventions carry the same "either order is safe" framing.

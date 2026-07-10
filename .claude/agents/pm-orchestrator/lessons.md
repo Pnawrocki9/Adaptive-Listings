@@ -2061,3 +2061,22 @@ independent occurrence, even if it references the same pattern by name.
   elsewhere (e.g. a workflow doc) MUST state in its own AC that it is NOT a Rule promotion and why —
   otherwise a future reader (or the implementing agent) can't tell whether the ≥2-prior threshold
   was silently bypassed via a different document.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-550 (validation of PR #509)
+- **Delegation row used:** architect (from prior turn; this entry covers validation + a routing
+  finding).
+- **What validation caught (or missed):** Confirmed a real, well-behaved failure-avoidance: the
+  architect subagent has NO Bash tool and correctly REFUSED to edit `docs/AGENT_WORKFLOW.md`
+  directly rather than risk stranding the change on `main` (exactly the FOLLOW-448/RETRO-146 pattern
+  its own new section documents) — it drafted content + insertion point for a Bash-capable party
+  instead. This is the delegation-table's blind spot: nothing in the model-fit or decision-table
+  rows flags that a ticket's ARTIFACT (docs/workflow codification) needs git mechanics that the
+  assigned agent's tool manifest doesn't have. Filed FOLLOW-551 rather than letting it pass as a
+  one-off, since FOLLOW-543 (another architect-assigned docs ticket) will hit the identical wall.
+  Also successfully dogfooded FOLLOW-550's own rule (d) by folding this validation into the existing
+  #508 PR instead of opening a new one — first real-world application of the rule the ticket itself
+  was about, immediately after drafting it.
+- **A delegation/validation rule I'd add:** Before dispatching ANY ticket, check the target agent's
+  tool manifest (`.claude/agents/<name>.md` frontmatter) against whether the AC requires committing/
+  pushing — not just whether the AGENT is the right domain fit. A domain-correct agent can still be
+  tool-incapable of executing its own ticket.

@@ -1,4 +1,70 @@
-# Status — 2026-07-09 (Sprint 22b OPEN — PR #488 MERGED, FOLLOW-470 DONE; RETRO-NNN pending on pm-orchestrator/FOLLOW-470-close)
+# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-380 validated, PR #491 READY_FOR_REVIEW; PR #490 dispatch record still unmerged)
+
+## SESSION 22 VALIDATION (2026-07-10) — PR #491 (FOLLOW-380) validated, READY_FOR_REVIEW
+
+**Context:** PR #490 (FOLLOW-380 dispatch record: READY→IN_PROGRESS flip + HANDOFFS.md brief) is
+still UNMERGED (blocked on a merge-guard, awaiting human) — the sdk-engineer worker was launched
+with the brief content relayed out-of-band by the coordinator, not via `main` state. This session's
+QUEUE.md edit works from current `main` (which still shows FOLLOW-380 as `READY`, no brief) and
+folds the full READY→IN_PROGRESS→READY_FOR_REVIEW trail into one ticket-block edit rather than
+assuming #490 landed.
+
+**Independently re-verified (not taken on the worker's self-report):**
+
+- `gh pr checks 491 --watch` run to completion; `gh pr view 491 --json statusCheckRollup` →
+  non-success count = **2**, both "Rule I — wired-or-dead check" (matrix-duplicated). Pulled
+  `--log-failed`: 180 violations (stable vs. the ~180-181 baseline across recent PRs) — confirmed
+  the NEW `ResolvedArchetype` interface is NOT among them.
+- Pulled the full `Test (Node 22)` job log directly (not the PR-checks summary line): the
+  `@estalara/sdk:test` step ran the ENTIRE suite fresh — **69 test files / 1520 tests, 100% pass** —
+  including `follow-380.test.ts (10 tests)` and, notably, `adapt-description.test.ts (35 tests)`,
+  the file the worker's self-report flagged 4 LOCAL failures on as a stale `@estalara/shared` build
+  artifact. CI's fresh-build job shows it fully green, corroborating that explanation rather than
+  taking it on faith.
+- Pulled the `Build` job log for the SDK bundle-size gate (there is no separate "bundle-size" CI
+  check — it's embedded inside `Build`): **40.43KB gzip vs the 42KB budget (ESC-028)** — passed,
+  +0.57KB over the pre-ticket 39.86KB baseline.
+- `gh pr view 491 --json files` → exactly 4 files: `.claude/agents/sdk-engineer/lessons.md`,
+  `packages/sdk/src/__tests__/follow-380.test.ts`, `packages/sdk/src/core/session.ts`,
+  `packages/sdk/src/index.ts`. Zero edits to `backlog/QUEUE.md`, `docs/MASTER_DESIGN.md`,
+  `README.md`, or `CLAUDE.md`.
+
+**Runtime-wiring verification (read the actual diff, not the self-report):**
+
+- Bug (a) in-flight guard: `let latestRefreshId = 0` module-level; each `refreshDirectives()` call
+  claims `++latestRefreshId`, checks `myRefreshId !== latestRefreshId` after its `await` and bails
+  if superseded. Confirmed non-vacuous by reading the dedicated test — it resolves a stale L2 fetch
+  AFTER a fresh L3 fetch and asserts the DOM reflects L3, not L2 (would fail without the guard).
+- Bug (b) per-listing headline: `Map<listingId, string>` replaces the single global
+  `originalHeadlineText`; capture + restore sites both keyed by listing id. Confirmed non-vacuous
+  via the dedicated test (listing-2's own title shows on a non-fitting listing-2, never
+  listing-1's).
+- Bug (c) confidence re-pin — full chain traced: new `ResolvedArchetype { archetype, confidence }`
+  interface in `session.ts`; `persistResolvedArchetype` now writes JSON `{archetype, confidence}`
+  (backward-compatible with legacy bare-string entries via a documented
+  `RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE = 0.85`, chosen above both gates); `readResolvedArchetype`
+  returns the typed interface; `index.ts`'s SoT-restore site re-pins BOTH `archetype` AND
+  `confidence` on `currentIntentState`; both `persistResolvedArchetype` call sites updated to pass
+  `currentIntentState.confidence`. Independently confirmed the server gate this feeds:
+  `apps/control-plane/src/app/api/adapt/route.ts:84` `CONFIDENCE_THRESHOLD = 0.6`, `:287` the gate
+  check — matches the worker's comment citation exactly.
+- `ResolvedArchetype` Rule I claim:
+  `grep -rn "ResolvedArchetype" packages/sdk/src --include=*.ts | grep -v test` shows a genuine
+  non-test producer (`readResolvedArchetype`, session.ts) AND consumer
+  (`const sot: ResolvedArchetype | null = ...`, index.ts) — confirmed absent from the 180 Rule I
+  violations.
+
+**AC spot-check:** all 3 bugs fixed per the diff; quiz vs quiz-disabled stickiness doc gap closed
+(new inline comment in `refreshDirectives`); ONE consolidated test file (`follow-380.test.ts`, 543
+lines, 10 `it()` across 8 `describe` blocks) covering all 5 cross_ref items (a–e) + 3 new hardening
+tests — confirmed via file list this is the only new test file (no duplicate/competing suite).
+
+**Result:** FOLLOW-380 flipped `IN_PROGRESS`(folded-in)→`READY_FOR_REVIEW` in `backlog/QUEUE.md`,
+`pr: 491` recorded with the full evidence trail inline. CI-check counter: 1/5. Fix-iteration
+counter: 0/3. Branch `pm-orchestrator/FOLLOW-380-validate` (based on current `main`, NOT stacked on
+the still-unmerged #490) — opened as a new PR, not merged.
+
+---
 
 ## SESSION 21 CLOSE-OUT (2026-07-09) — PR #488 MERGED (8275e23), FOLLOW-470 DONE, RETRO pending
 

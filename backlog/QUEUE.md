@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-09 (session 21 close-out — PR #488 MERGED, FOLLOW-470 DONE, RETRO pending)
+## ▶️ START HERE — resume 2026-07-10 (session 22 — FOLLOW-380 validated, PR #491 READY_FOR_REVIEW; PR #490 still unmerged)
+
+**Two PRs from this session are in flight, in this order:**
+
+1. **PR #490** (`pm-orchestrator/FOLLOW-380-dispatch`) — the FOLLOW-380 dispatch record (READY →
+   IN_PROGRESS flip + the delegation brief in `backlog/HANDOFFS.md`). **STILL UNMERGED** as of this
+   banner (a merge-guard blocked the coordinator; awaiting human). Because of this, `main` currently
+   has NO IN_PROGRESS record and NO brief for FOLLOW-380 — the worker was dispatched out-of-band by
+   the coordinator relaying the brief content directly, not by `main` state.
+2. **PR #492** (this validation, `pm-orchestrator/FOLLOW-380-validate`, based on current `main` —
+   NOT stacked on #490) — flips FOLLOW-380 straight to `READY_FOR_REVIEW` with the full dispatch
+   trail folded in retroactively (both `status:` transitions recorded in one ticket-block edit, so
+   there's no phantom READY→READY_FOR_REVIEW jump with zero paper trail once #490 eventually lands).
+   **When merging, merge #490 first (or accept its content is superseded/duplicated by #492's fold-
+   in and can be closed without merging — human's call, flag the redundancy).**
+
+**FOLLOW-380 (P1, sdk-engineer, Opus) is PM-validated, READY_FOR_REVIEW.** PR **#491**
+(`sdk-engineer/FOLLOW-380-cross-listing-hardening`, off `main`, not merged). Independently verified
+(not taken on the worker's self-report) — full evidence trail is on the FOLLOW-380 ticket block's
+`notes:`/`ci_status:` fields: CI non-success count = 2, both the standing pre-existing "Rule I"
+baseline (180 violations, `ResolvedArchetype` confirmed absent from the flagged list); full
+`@estalara/sdk` suite (69 files/1520 tests) green in CI's fresh Node 22 build; bundle size 40.43KB
+gzip vs 42KB budget; exactly 4 files touched, zero backlog/doc edits; all 3 AC bugs (in-flight
+guard, per-listing headline, confidence re-pin) traced producer→consumer in the actual diff, not
+assumed; one consolidated 10-test suite (not two overlapping); 2 hardening tests spot-checked as
+genuinely non-vacuous (would fail without the fix).
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). FOLLOW-458's `status: READY` label is still inconsistent with its own
+unmet `depends_on: [FOLLOW-449]` — flagged again, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** human reviews/merges #490 (or closes it as superseded) and #491 (the actual code) and #492
+(this validation). After FOLLOW-380 merges: mark `DONE` + `completed_at`, spawn
+`retrospective-analyst`, then pick the next ticket.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-09 (session 21 close-out — PR #488 MERGED, FOLLOW-470 DONE, RETRO pending)
 
 **PR #488 MERGED** to `main` as squash commit `8275e23` (2026-07-09T21:28:52Z). Local `main` synced
 & clean. FOLLOW-470 flipped `DONE` (`completed_at: 2026-07-09`, `merged_pr: 488`,
@@ -10217,7 +10256,37 @@ gate) closes the epic and must be last.
     Harden cross-listing re-adaptation (concurrency guard, per-listing headline, confidence re-pin)
     + unit tests
   agent: sdk-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-380-cross-listing-hardening
+  pr: 491
+  model:
+    Opus # concurrency/interleaving + shared-mutable-state coherence reasoning; model-fit
+    # table "complex single-domain reasoning ... non-trivial design". See dispatch brief in
+    # backlog/HANDOFFS.md ("PM orchestrator (session 22) -> sdk-engineer, FOLLOW-380") — note
+    # that brief currently lives on unmerged PR #490 (bookkeeping-only, blocked on a merge-guard
+    # awaiting human as of this validation), NOT yet on `main`; it was relayed to the worker out
+    # of band by the coordinator. This DONE-trail edit folds the dispatch record in retroactively
+    # since #490 had not landed when #491 was validated — avoids a phantom READY->READY_FOR_REVIEW
+    # jump with no IN_PROGRESS record on `main`.
+  ci_status: >-
+    green (independently re-verified via `gh pr view 491 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated), 180 violations via `--log-failed` (stable vs. the ~180-181 baseline cited across
+    PRs #486/#488/#490) — confirmed the NEW `ResolvedArchetype` interface/producer/consumer is NOT
+    among them. Test (Node 22) 7m10s/6m21s green — pulled the full job log: `@estalara/sdk:test` ran
+    the ENTIRE suite fresh (69 files / 1520 tests, all passed, incl. `follow-380.test.ts (10 tests)`
+    and `adapt-description.test.ts (35 tests)` — the file the worker flagged 4 LOCAL failures on as
+    a stale `@estalara/shared` build artifact; CI's fresh-build job shows it fully green, consistent
+    with that explanation). Typecheck, Lint, Format check, Build, Build (control-plane), SDK E2E
+    tests, all Python suites, Demo integration, Rule H, Rule J — all green. SDK bundle-size gate
+    (embedded in the `Build` job, not a separate check): 40.43KB gzip vs the 42KB budget (ESC-028) —
+    PASSED, +0.57KB over the pre-ticket 39.86KB baseline, still comfortable headroom. PR file list
+    independently confirmed exactly 4 files: `.claude/agents/sdk-engineer/lessons.md`,
+    `packages/sdk/src/__tests__/follow-380.test.ts`, `packages/sdk/src/core/session.ts`,
+    `packages/sdk/src/index.ts` — zero edits to `backlog/QUEUE.md`, `docs/MASTER_DESIGN.md`,
+    `README.md`, or `CLAUDE.md`.
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -10236,15 +10305,77 @@ gate) closes the epic and must be last.
     RETRO-105 but never promoted (audit §6.4). NOT on the FOLLOW-471 clean-re-audit critical path
     (SDK robustness hardening, not a listed F-01…F-21 finding). cross_ref: extends FOLLOW-375's open
     test AC — do NOT duplicate.
+
+    DISPATCHED 2026-07-10 (pm-orchestrator, session 22) to sdk-engineer (Opus), branch
+    `sdk-engineer/FOLLOW-380-cross-listing-hardening`. Full brief in `backlog/HANDOFFS.md` ("PM
+    orchestrator (session 22) → sdk-engineer, FOLLOW-380") — see `model:` field caveat above re:
+    the brief's unmerged-PR-#490 status.
+
+    PM-VALIDATED 2026-07-10 (pm-orchestrator, session 22) — PR #491
+    (`sdk-engineer/FOLLOW-380-cross-listing-hardening`, off `main`). Independently verified (not
+    taken on the worker's self-report), reading the actual `git diff main...HEAD` for
+    `packages/sdk/src/core/session.ts` and `packages/sdk/src/index.ts`:
+
+    - **Bug (a) — in-flight guard:** `index.ts` adds a module-level `let latestRefreshId = 0`;
+      `refreshDirectives()` claims `const myRefreshId = ++latestRefreshId` on entry and, after the
+      `await fetchDirectives(...)` resolves, checks `if (myRefreshId !== latestRefreshId) return;`
+      before committing any state — a stale in-flight call whose fetch resolves after a newer
+      navigation started can never clobber it. Confirmed non-vacuous by reading the dedicated
+      hardening test: it deliberately resolves a STALE L2 fetch AFTER a fresher L3 fetch and
+      asserts the final DOM shows L3's adapted copy, not L2's — this would fail without the guard.
+    - **Bug (b) — per-listing headline:** the single global `let originalHeadlineText` is replaced
+      with `const originalHeadlineByListing = new Map<string, string>()` + a
+      `captureOriginalHeadline(listingId)` helper (idempotent, called on init AND on every
+      `listing.viewed` navigation, before `refreshDirectives()` re-adapts). The restore site reads
+      `originalHeadlineByListing.get(viewedListingId)` instead of the old global. Confirmed
+      non-vacuous via the dedicated test (listing-2's own captured title shows on a non-fitting
+      listing-2, not listing-1's title or adapted copy).
+    - **Bug (c) — confidence re-pin, full producer→consumer chain traced:** `session.ts` adds a
+      new exported `ResolvedArchetype { archetype: string; confidence: number }` interface;
+      `persistResolvedArchetype(sessionId, archetype, confidence)` now writes
+      `JSON.stringify({archetype, confidence})` (backward-compatible: `readResolvedArchetype`
+      still parses a legacy bare-string entry, falling back to a documented
+      `RESOLVED_ARCHETYPE_FALLBACK_CONFIDENCE = 0.85` chosen above BOTH the server's
+      `CONFIDENCE_THRESHOLD = 0.6` gate — independently confirmed present at
+      `apps/control-plane/src/app/api/adapt/route.ts:84/287` — AND the SDK's
+      `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`). `index.ts`'s SoT-restore site now does
+      `currentIntentState = { ...currentIntentState, archetype: sot.archetype, confidence:
+      sot.confidence }` (both fields, not just archetype), and BOTH call sites of
+      `persistResolvedArchetype` were updated to pass `currentIntentState.confidence` alongside
+      the archetype. Full chain confirmed producer (session.ts) → consumer (index.ts) → the wire
+      (`body.confidence` sent to `/api/adapt`) → the gate (server 0.6 threshold, echoed into
+      `resp.confidence`) → the DOM floor (0.5) — genuinely wired end-to-end, not a half-wire.
+      Confirmed non-vacuous via the dedicated test (a decayed neutral/low-confidence session with
+      a high-confidence SoT still adapts post-restore because 0.85 clears both gates).
+    - **`ResolvedArchetype` Rule I claim verified:** `grep -rn "ResolvedArchetype"
+      packages/sdk/src --include=*.ts | grep -v test` shows a genuine non-test producer
+      (`readResolvedArchetype` returns it, session.ts) AND consumer (`const sot: ResolvedArchetype
+      | null = ...`, index.ts) — independently pulled the Rule I `--log-failed` output and
+      confirmed `ResolvedArchetype` is absent from the 180 flagged symbols.
+    - **Doc gap (quiz vs quiz-disabled stickiness):** confirmed a new inline comment block in
+      `refreshDirectives()` documenting the two-layer (hysteresis + restore) vs one-layer
+      (restore-only) asymmetry, matching the AC bullet.
+    - **One consolidated test suite, not two:** `packages/sdk/src/__tests__/follow-380.test.ts`
+      (543 lines, the ONLY new test file in the diff) has exactly 10 `it()` cases across 8
+      `describe` blocks, covering all 5 cross_ref items (a: observer in-place mutation → b+c:
+      combined SoT-restore/confidence describe → d: quiz-stickiness both branches → e: adapt.ts
+      empty-value skip → c: eraseIntentState) PLUS the 3 new hardening tests (a: race guard, b:
+      per-listing headline, c: confidence floor) — confirmed via `gh pr view --json files` this
+      is the only test file touched (no second/competing suite).
+    - Full local `@estalara/sdk` suite in CI's fresh Node 22 build: 69 files / 1520 tests, 100%
+      pass — no regression introduced.
+
+    PM-validated. CI green (bar the standing Rule I baseline). Runtime wiring confirmed
+    end-to-end (producer/consumer grep pasted above). Ready for human review.
     AC:
-    - [ ] In-flight guard / AbortController prevents overlapping refreshDirectives from interleaving
+    - [x] In-flight guard / AbortController prevents overlapping refreshDirectives from interleaving
           on session state; a rapid-nav test asserts a single coherent final archetype.
-    - [ ] Headline original text is captured per-listing (or read from the framework's re-rendered
+    - [x] Headline original text is captured per-listing (or read from the framework's re-rendered
           title); a test asserts listing-2's non-fitting headline does NOT show listing-1's title.
-    - [ ] SoT restore re-pins confidence alongside archetype so the FOLLOW-343 floor does not suppress
+    - [x] SoT restore re-pins confidence alongside archetype so the FOLLOW-343 floor does not suppress
           the restored adaptation; a test asserts adaptation fires post-restore.
-    - [ ] Quiz vs quiz-disabled stickiness asymmetry documented.
-    - [ ] Unit tests for the FOLLOW-375 new paths (observer in-place mutation; SoT restore/update;
+    - [x] Quiz vs quiz-disabled stickiness asymmetry documented.
+    - [x] Unit tests for the FOLLOW-375 new paths (observer in-place mutation; SoT restore/update;
           eraseIntentState clears resolved-archetype key; intent.ts quiz-stickiness; adapt.ts
           empty-value skip).
 - id: FOLLOW-471

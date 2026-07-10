@@ -2026,3 +2026,20 @@ independent occurrence, even if it references the same pattern by name.
   numbers in a file that PR just touched, always re-read those exact lines before writing the
   downstream ticket's AC — a fast-follow ticket is exactly where a line-citation could have drifted
   by the time it's promoted (even minutes later), and the check is cheap.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-549 (recovery: #504+#505 both merged, #506 conflict
+  close-out)
+- **Delegation row used:** n/a (bookkeeping recovery, not a new delegation).
+- **What validation caught (or missed):** The human merged BOTH the dispatch-record PR (#504) and
+  the code PR (#505), instead of the "close as superseded" half of the option I'd flagged in the
+  banner/notes — this produced a 3rd PR (#506) with an unresolvable QUEUE.md conflict once both
+  landed on a branch cut before either merged. Followed the explicit instruction to NOT
+  rebase/resolve the conflict, and instead closed #506 and rebuilt the DONE-flip fresh on a new
+  branch off current main, independently re-confirming (not copy-pasting) the code/CI evidence
+  against post-merge main. Also lost my own crash-recovery lessons.md entry from the prior turn
+  since it lived only on the now-closed #506 branch — a reminder that bookkeeping content on an
+  abandoned branch is genuinely gone unless re-added on whatever branch survives.
+- **A delegation/validation rule I'd add:** When presenting a human with a "merge #N first, or close
+  it as superseded" choice, phrase it more directly as a recommendation ("recommend closing #N
+  unmerged") rather than a neutral either/or — a neutral framing invites the costlier option
+  (merging both) with no signal that one path avoids a guaranteed conflict on the sibling PR.

@@ -14631,15 +14631,15 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - id: FOLLOW-549 title: >- Pin each GET adapt route's own `area` literal + close the
   call-site-inventory doc lag introduced by FOLLOW-532's fold source_retro: RETRO-172 source_ticket:
   FOLLOW-532 recommended_sprint: backlog recommended_agent: backend-engineer priority: P3
-  estimated_hours: 1 promoted_to_queue: >- true # promoted + dispatched 2026-07-10 (pm-orchestrator,
-  session 25 cont'd) to backend-engineer (Sonnet). QUEUE.md FOLLOW-549 IN_PROGRESS, branch
-  backend-engineer/FOLLOW-549-adapt-get-auth-area-pin. scope: >- FOLLOW-532 folded the DB-throw
-  try/catch INTO resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'`
-  param — the ONLY per-call-site obligation the fold left. Nothing pins each route to its own
-  literal: the parity test drives the helper directly, and both route.test.ts files mock
-  resolveAdaptGetAuth wholesale, so NO test asserts that GET /api/adapt passes 'adapt' and GET
-  /api/adapt/description passes 'description'. A future clone that passes the wrong literal would
-  mislabel the Sentry `tags.area` with NO CI signal (disposition
+  estimated_hours: 1 promoted_to_queue: >- true # promoted+dispatched 2026-07-10 (pm-orchestrator,
+  session 25 cont'd) to backend-engineer (Sonnet); DONE same session — PR #505 merged (f541f37).
+  QUEUE.md FOLLOW-549 status: DONE. scope: >- FOLLOW-532 folded the DB-throw try/catch INTO
+  resolveAdaptGetAuth and gave it a required 3rd `area: 'adapt' | 'description'` param — the ONLY
+  per-call-site obligation the fold left. Nothing pins each route to its own literal: the parity
+  test drives the helper directly, and both route.test.ts files mock resolveAdaptGetAuth wholesale,
+  so NO test asserts that GET /api/adapt passes 'adapt' and GET /api/adapt/description passes
+  'description'. A future clone that passes the wrong literal would mislabel the Sentry `tags.area`
+  with NO CI signal (disposition
   - tags.kind stay correct — cosmetic observability mislabel only, hence P3). Separately, the
     helper's call-site-inventory note (adapt-get-auth.ts:13-14) still says only "a third consumer
     added later MUST be appended here" and does not mention that a genuinely new third route must
@@ -14651,3 +14651,32 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   * The adapt-get-auth.ts call-site-inventory docstring states that a third consumer must ALSO widen
     the `area: 'adapt'|'description'` union (naming the compile error as the forcing function).
     cross_ref: [FOLLOW-532, RETRO-172, RETRO-164, Rule S]
+
+- id: FOLLOW-550 title: >- Codify bookkeeping-PR sequencing to prevent QUEUE.md-conflict sprawl
+  (single close-superseded default; never two QUEUE.md-touching PRs in flight) source_retro:
+  RETRO-173 source_ticket: FOLLOW-549 recommended_sprint: backlog recommended_agent: pm-orchestrator
+  priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-549 (a 1h P3 test/docs
+  ticket) produced THREE PRs (#504 dispatch-record, #505 code, #506 validation) where FOLLOW-532
+  minutes earlier achieved a tight 2-PR shape (code #502 + single DONE+RETRO bundle #503). #506 was
+  cut from `main` BEFORE #504/#505 merged; the human merged BOTH #504 (the redundant
+  dispatch-record) AND #505 (code), so #506 developed an unresolvable `backlog/QUEUE.md` merge
+  conflict and was closed unmerged (evidence re-derived fresh, no data loss). Root cause = the PM's
+  own recurring close-out guidance presents "merge #N first" and "close it as superseded" as
+  CO-EQUAL safe options (FOLLOW-380/532/546/548 all carried a note like "when merging, merge #N
+  first OR accept it's superseded and close it — human's call"). They are NOT symmetric in
+  downstream risk: merging the redundant bookkeeping PR guarantees any in-flight validation PR a
+  QUEUE.md conflict; closing it does not. The safe path must be the DEFAULT, not one of two
+  sanctioned options. This is a HELD pattern (RETRO-173 §6, count 1 as a numbered-retro finding —
+  the two-PRs-in-flight shape recurred ~4x this session at the PM/QUEUE -notes level, but only
+  #504/#506 is the merged-not-closed sub-mode, and no prior numbered retro documented it); this stub
+  is the durable fix AND the ready-made CONVENTIONS_PATCH Rule text for when a 2nd numbered-retro
+  occurrence arms the ≥2-PRIOR threshold. ac:
+  - The PM close-out convention text (workflow doc / QUEUE close-out template) states a SINGLE
+    default — a bookkeeping/dispatch PR that only touches backlog files (QUEUE.md/FOLLOW_UPS/
+    RETROSPECTIVES) and whose content a later PR folds in is ALWAYS closed-as-superseded, never
+    merged — with no co-equal "merge it" option.
+  - The convention states never keep two QUEUE.md-touching PRs open in parallel: serialize them, or
+    bundle DONE+RETRO onto one branch cut from CURRENT `main` (the FOLLOW-532/#503 pattern).
+  - The convention states a validation PR must be cut from `main` AFTER the code PR merges (or
+    rebased before merge), so it never carries a stale QUEUE.md base. cross_ref: [RETRO-173,
+    RETRO-172, FOLLOW-549, FOLLOW-532, FOLLOW-380, FOLLOW-546, FOLLOW-548]

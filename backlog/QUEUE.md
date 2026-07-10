@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — PR #503 MERGED, FOLLOW-549 promoted + dispatched)
+## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — #504/#505 MERGED, #506 closed/superseded, FOLLOW-549 DONE, RETRO-173 pending)
+
+**SEQUENCING — read before touching this branch:** `pm-orchestrator/FOLLOW-549-done` has the
+DONE-flip committed + pushed but **NO PR opened yet**. Wait for `retrospective-analyst` to append
+RETRO-173 onto this SAME branch, THEN open ONE bundled PR (matches the FOLLOW-532/#503 pattern).
+
+**What happened:** the human merged BOTH PR #504 (dispatch-record, commit `857e069`) AND PR #505
+(the code, commit `f541f37`) instead of closing #504 as superseded. This gave the PM's already-open
+validation PR #506 (`pm-orchestrator/FOLLOW-549-validate`, cut before #504/#505 merged) an
+unresolvable `backlog/QUEUE.md` conflict once both landed. Per explicit instruction: did NOT
+rebase/resolve #506 — closed it unmerged (no data loss, its evidence independently re-confirmed
+against `main` post-merge instead of copy-pasted) and deleted its branch + the already-merged
+`pm-orchestrator/FOLLOW-549-dispatch` branch.
+
+**Recovery:** synced `main` (`f541f37` present), confirmed exactly ONE `FOLLOW-549` block in
+`backlog/QUEUE.md` (no duplication from the two merges), confirmed the #505 code is genuinely live
+on `main` (docstring + both `RETRO-172 TG-1` pin tests grep-matched directly). Since the code is
+already merged, FOLLOW-549 skipped a separate `READY_FOR_REVIEW` state and went straight
+`IN_PROGRESS` → `DONE` on this fresh branch, with `merged_pr: 505`, `merge_commit: f541f37`, and the
+full independently-derived CI/AC evidence folded into `notes:`/`ci_status:`.
+
+**Retro brief prepared** in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-549") — model
+**Opus** (matches `retrospective-analyst`'s own agent-file default) — to append RETRO-173 onto this
+branch. Not spawned by pm-orchestrator; reported to the coordinator to dispatch.
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema —
+not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). FOLLOW-533/534 (P3, not yet promoted). 4
+already-`READY` P3 tickets remain queued: FOLLOW-467/468/469/474. 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator dispatches `retrospective-analyst` (Opus) per the brief onto
+`pm-orchestrator/FOLLOW-549-done` to append RETRO-173; PM opens ONE bundled PR once that lands and
+validates it.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 cont'd — PR #503 MERGED, FOLLOW-549 promoted + dispatched)
 
 **PR #503 MERGED** to `main` as commit `f1f9646` (per coordinator report). Local `main` synced
 (`git checkout main && git pull`, fast-forward `a934adf..f1f9646`), confirmed via
@@ -11111,10 +11150,32 @@ gate) closes the epic and must be last.
     Pin each GET adapt route's own `area` literal + close the call-site-inventory doc lag introduced
     by FOLLOW-532's fold
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
   branch: backend-engineer/FOLLOW-549-adapt-get-auth-area-pin
+  pr: 505
+  merged_pr: 505
+  merge_commit: f541f37
+  ci_status: >-
+    green (independently re-verified pre-merge via `gh pr view 505 --json statusCheckRollup`):
+    non-success count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check"
+    (matrix-duplicated); confirmed via `--log-failed` on run 29106380666 — 180 WARN lines, IDENTICAL
+    to the FOLLOW-532/546/548 baseline, zero hits on grep for `adapt-get-auth`/
+    `resolveAdaptGetAuth`/`AdaptGetAuthResult`/`mockResolveAdaptGetAuth` in that log. File list
+    confirmed test/docs-only via `gh pr view 505 --json files`: 2 test files + 1 docstring-only lib
+    change (read in full — comment-only, no executable code) + 1 agent lessons file; neither
+    production route.ts touched. AC independently re-proven from scratch (not trusted from the
+    worker's self-report, per Rule 4e/FOLLOW-448): fresh `git worktree`, rebuilt
+    `@estalara/{db,shared,auth,sdk}` (FOLLOW-474/RETRO-150 gotcha), confirmed 91/91 green
+    as-shipped, then swapped each route's `area` literal in turn — `adapt/route.ts`
+    (`'adapt'`→`'description'`) genuinely FAILED the new pin test; reverted;
+    `adapt/description/route.ts` (`'description'`→`'adapt'`) genuinely FAILED too; reverted; full
+    suite back to 91/91. Both directions of the swap-fails property hold. Docstring change
+    independently confirmed present on `main` post-merge (`adapt-get-auth.ts` lines 13-16, names the
+    `area`-union-widening compile error as the forcing function). Merged 2026-07-10T16:48:49Z per
+    `gh pr view 505 --json state,mergeCommit,mergedAt`.
   model:
     Sonnet # routine, mechanical, well-scoped (add 2 spy assertions + 1 docstring sentence to a
     # file the repo just finished working in); no cross-module ambiguity, no design judgment
@@ -11144,18 +11205,36 @@ gate) closes the epic and must be last.
     backend-engineer (Sonnet). Full delegation brief in `backlog/HANDOFFS.md` ("Delegation brief —
     FOLLOW-549").
     AC:
-    - [ ] A lightweight assertion (spy on the existing `mockResolveAdaptGetAuth` — already a
-          `vi.fn()` in both `route.test.ts` and `description/route.test.ts` — or a helper-level
-          check) in EACH route's own suite reds CI if `GET /api/adapt` is not called with `'adapt'`
-          or `GET /api/adapt/description` is not called with `'description'`
-          (`toHaveBeenCalledWith(expect.anything(), expect.anything(), 'adapt' | 'description')`
-          on an existing happy-path test is sufficient — no new test file required).
-    - [ ] The `adapt-get-auth.ts` call-site-inventory docstring (currently lines 13-14: "Both MUST
-          call this helper... A third consumer added later MUST be appended here") states that a
-          third consumer must ALSO widen the `area: 'adapt' | 'description'` union type — naming
-          the resulting compile error as the forcing function, so a future reader understands WHY
-          forgetting to widen the union is safe (it won't compile) rather than assuming it's an
-          unenforced convention like the inventory list itself.
+    - [x] A lightweight assertion (spy on the existing `mockResolveAdaptGetAuth`) in EACH route's
+          own suite reds CI if `GET /api/adapt` is not called with `'adapt'` or `GET
+          /api/adapt/description` is not called with `'description'` — independently re-proven by
+          swapping each literal in a fresh worktree and confirming a genuine failure both ways
+          (see `ci_status:` above).
+    - [x] The `adapt-get-auth.ts` call-site-inventory docstring states that a third consumer must
+          ALSO widen the `area: 'adapt' | 'description'` union type, naming the compile error as
+          the forcing function — confirmed present on `main` post-merge.
+
+    MERGED 2026-07-10: PR #505 (`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`) merged to
+    `main` as commit `f541f37` (`f541f371ace5286bfd2afcadca041bb4d949c9d3`,
+    `mergedAt: 2026-07-10T16:48:49Z` per `gh pr view 505 --json state,mergeCommit,mergedAt`). The
+    human ALSO merged PR #504 (`pm-orchestrator/FOLLOW-549-dispatch`, commit `857e069`) — the
+    original dispatch-record content (this IN_PROGRESS block) — rather than closing it as
+    superseded, which is why this ticket skipped a separate `READY_FOR_REVIEW` state on `main`: the
+    PM's intended validation PR (#506, `pm-orchestrator/FOLLOW-549-validate`) was cut BEFORE #504/
+    #505 merged and developed an unresolvable `backlog/QUEUE.md` merge conflict once both landed;
+    #506 was closed unmerged (no data loss — its validation evidence is reproduced in full here,
+    independently re-confirmed against `main` post-merge, not copy-pasted blind) and this DONE-flip
+    was written fresh on `pm-orchestrator/FOLLOW-549-done` off current `main`. `git checkout main
+    && git pull` confirmed both merge commits present (`git log --oneline` shows `f541f37 ...
+    (#505)` then `857e069 ... (#504)`); `backlog/QUEUE.md` confirmed to have exactly ONE FOLLOW-549
+    block (no duplication from the two merges) before this edit. Ticket closed DONE.
+
+    retrospective-analyst to be spawned by the coordinator (per CLAUDE.md's per-ticket
+    retrospective loop) — NOT run by pm-orchestrator itself (no subagent-spawn capability in this
+    tool surface) — to append RETRO-173 onto this SAME `pm-orchestrator/FOLLOW-549-done` branch, so
+    DONE + RETRO bundle into ONE PR (matches the FOLLOW-532/#503 pattern) rather than the 3-PR
+    sprawl (#504/#505/#506) this ticket just produced. Delegation brief in `backlog/HANDOFFS.md`
+    ("Retro delegation brief — FOLLOW-549").
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

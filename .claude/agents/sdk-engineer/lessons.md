@@ -524,3 +524,29 @@ backup copy (`cp`) instead. (Cost me a full re-apply of index.ts this ticket.) A
 integration test targets a hardcoded selector (`[data-estalara-slot="headline"]`), the fixture MUST
 use that exact literal or the code-under-test is never exercised — assert non-vacuousness by
 reverting the fix and confirming RED.
+
+---
+
+**Date / ticket:** 2026-07-10 · FOLLOW-546 (RETRO-169 follow-up to FOLLOW-380)
+
+**What I built:** Extended the FOLLOW-380 latest-wins in-flight guard across the fire-and-forget
+description tail. `applyDescriptionAdaptation` now takes an optional `isStale: () => boolean`
+predicate (default never-stale, so the ~30 existing 2-arg test call sites keep compiling) and bails
+before mutating any slot — both at entry AND, critically, immediately after its own
+`await fetchDescription`. `index.ts:805` passes `() => myRefreshId !== latestRefreshId`, reusing the
+same closure vars as the `:737` checkpoint. Test extends `follow-380.test.ts` (harness reuse):
+deferred `/adapt/description` fetches, release the newer nav first + stale one last, assert the slot
+keeps the newer archetype's copy and a `skipped:stale` event fires.
+
+**What was uncertain:** (1) chose `isStale` callback over an exported `getLatestRefreshId()` getter
+— the callback keeps `latestRefreshId` private to `index.ts` and adds NO new cross-module export (no
+Rule I surface). (2) The whole `adapt.description.*` event family is already rejected by the shared
+ingest EventSchema (pre-existing FOLLOW-461 gap, RED on main too) — my `skipped:stale` reuses the
+existing `skipped` type so it neither introduces nor widens that gap; it IS observable in the client
+event queue (satisfies K.2). Verified non-vacuous via scratchpad `cp` revert → RED
+(`'DESC yield_hunter'` painted) → restore → GREEN.
+
+**A guardrail I'd add:** A single-checkpoint in-flight guard is a smell whenever the guarded
+continuation then dispatches ANOTHER fire-and-forget async with its own internal `await` — the
+checkpoint is stale by the time the inner await resolves. Propagate the latest-wins predicate into
+every async tail that mutates shared DOM/state, not just the first await.

@@ -3,6 +3,97 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-550 (architect) — codify bookkeeping-PR sequencing discipline
+
+**From:** pm-orchestrator (session 25 cont'd) **To:** architect **Date:** 2026-07-10 **Branch:**
+`architect/FOLLOW-550-bookkeeping-pr-sequencing` (create as your FIRST action, off `main` at
+`e0a11b3` or later — branch-first, never commit to `main`). You can start immediately off `main`;
+you don't need to wait for the QUEUE.md promotion bookkeeping PR to merge.
+
+**Model: Sonnet** — this is cross-cutting PROCESS/convention codification (a workflow-doc
+subsection + rationale prose, no code, and the retro already did the hard analysis and left
+ready-made Rule text — see below), which fits the model-fit table's "routine implementation inside a
+well-defined ticket scope ... docs/backlog bookkeeping" row better than the "ambiguous acceptance
+criteria / non-trivial design" Opus row. Escalate yourself to a heavier pass only if, while
+drafting, the CONVENTIONS_PATCH-vs-AGENT_WORKFLOW placement question (below) turns out to be
+genuinely contested in a way this brief's answer doesn't already resolve.
+
+**Table row used:** "a contract between two modules, a new dependency, an ADR" -> architect (the
+closest fit for a cross-cutting process-convention change that isn't a single-agent's module work —
+human-approved override of the FOLLOW-550 stub's original `recommended_agent: pm-orchestrator`,
+which didn't map cleanly onto the decision table since it's PM editing its own workflow doc, not a
+worker deliverable).
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read
+before any non-trivial task, OPERATING_PRINCIPLES Rule 1), the current `CONVENTIONS_PATCH.md` (skim
+the Rule-promotion-discipline pattern — Rules Q/AA/AB's provenance footnotes are the canonical
+examples of "≥2 PRIOR numbered retros" adjudication you must NOT bypass here),
+`docs/AGENT_WORKFLOW.md` in full (you're adding a subsection to it), and the ticket source
+`backlog/FOLLOW_UPS.md` FOLLOW-550 / `backlog/RETROSPECTIVES.md` RETRO-173 §5d/§6/§9 (the retro that
+diagnosed this and left the ready-made Rule text you should draw from).
+
+**What happened (the concrete incident this codifies, verified in the repo's own history, not
+guessed):** FOLLOW-549 (RETRO-172's own 1h P3 fast-follow) produced **three** PRs — #504
+(dispatch-record bookkeeping), #505 (the actual code), #506 (PM validation) — where the ticket
+immediately before it, FOLLOW-532, achieved a tight **two**-PR shape (code #502 + one bundled
+DONE+RETRO PR #503). #506 was cut from `main` BEFORE #504/#505 merged. The human then merged BOTH
+#504 (redundant once folded) AND #505, instead of closing #504 as superseded — so #506 developed an
+unresolvable `backlog/QUEUE.md` merge conflict (too large for the GitHub web editor) and had to be
+closed unmerged; the close-out was rebuilt from scratch on a fresh branch
+(`pm-orchestrator/ FOLLOW-549-done`), independently re-deriving all evidence against post-merge
+`main` rather than losing it. **Root cause, per RETRO-173 §5d:** the PM's own recurring close-out
+notes on FOLLOW-380/532/546/548 all phrased the choice as "when merging, merge #N first (OR accept
+its content is superseded and close it — human's call)" — presenting two options as CO-EQUAL-SAFE
+when they are not: merging the redundant PR GUARANTEES a conflict on any in-flight sibling; closing
+it does not.
+
+**Required fix (per the ticket AC in `backlog/QUEUE.md` FOLLOW-550 — follow it precisely, it is
+already fully specified):**
+
+1. Add a new `docs/AGENT_WORKFLOW.md` subsection (recommended placement: between "Recovered-work
+   re-verification" — ends ~line 162 — and "The retrospective loop" — starts ~line 163 — mirroring
+   that section's "mandatory (...)" heading style and citation format, e.g. how "Branch-first worker
+   discipline" at line 108 cites FOLLOW-448/RETRO-146 inline).
+2. The section must state, as a single unambiguous default (not one of two options):
+   - (a) A bookkeeping/dispatch PR touching ONLY backlog files whose content a later PR folds in is
+     ALWAYS closed-as-superseded, never merged.
+   - (b) Never keep two `QUEUE.md`-touching PRs open in parallel — serialize them.
+   - (c) A validation/DONE PR must be cut from `main` AFTER the code PR merges (or rebased
+     immediately before opening) — never carry a stale `QUEUE.md` base.
+   - (d) Prefer folding validation directly into the DONE+RETRO bundle (one PR, cut from current
+     `main` after the code merges) over a separate validation PR — the FOLLOW-532/#503 pattern.
+3. Cite RETRO-173 (§5d/§6/§9) and the FOLLOW-549 PR numbers (#504/#505/#506) as the concrete
+   precedent in the rationale prose.
+
+**CRITICAL — do NOT add a `CONVENTIONS_PATCH.md` Rule as part of this ticket.** RETRO-173 explicitly
+held this pattern at count 1 as a NUMBERED-RETRO finding and did NOT promote it — the
+≥2-PRIOR-numbered-retro threshold (Rule AB / the RETRO-153/158/169/170 promotion discipline) is
+genuinely unmet. The raw ~4x in-session recurrence of the two-PRs-in-flight SHAPE this session does
+NOT count toward that threshold — only documented findings in PRIOR NUMBERED retros do. FOLLOW-550
+is a deliberate `docs/AGENT_WORKFLOW.md` workflow-guidance codification, explicitly NOT a back-door
+route to a `CONVENTIONS_PATCH.md` Rule that would bypass the threshold. Your new section should
+itself say (1-2 sentences) that this is workflow guidance, not a promoted Rule, and briefly why — so
+a future reader doesn't mistake it for one or wonder why `CONVENTIONS_PATCH.md` doesn't
+cross-reference it. **If, while drafting, you genuinely believe this warrants an immediate
+`CONVENTIONS_PATCH.md` Rule despite the count** — that is an ESCALATION/ADR question for the human,
+not something to add silently. Write it to `backlog/ESCALATIONS.md` with your reasoning and stop
+there; do not add the Rule yourself.
+
+**Scope guardrails (Rule 3, surgical changes):** This is a docs-only ticket. No code changes. Do not
+touch `CONVENTIONS_PATCH.md`. Do not rewrite unrelated sections of `docs/AGENT_WORKFLOW.md` — a
+single new subsection, surgically inserted.
+
+**Anti-sprawl instruction for THIS ticket's own lifecycle (apply the lesson to itself):** the PM
+will open exactly ONE bookkeeping PR to promote this ticket (human merges it), and later exactly ONE
+DONE+RETRO bundle PR — no separate validation PR. Please keep your own PR to a single, clean commit
+if practical.
+
+**Validation before opening the PR:** this is a markdown-only change; `pnpm lint` (markdown linting,
+if configured) is the main gate. No `pnpm test`/`pnpm build` impact expected, but run the standard
+local gate sequence anyway per convention.
+
+---
+
 ## Retro delegation brief — FOLLOW-549 (retrospective-analyst)
 
 **From:** pm-orchestrator (session 25 cont'd, post #504/#505/#506 close-out) **To:**

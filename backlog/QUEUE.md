@@ -1,6 +1,47 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — #504/#505 MERGED, #506 closed/superseded, FOLLOW-549 DONE, RETRO-173 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 25 cont'd — PR #507 MERGED, FOLLOW-549 fully closed, FOLLOW-550 dispatched to architect)
+
+**PR #507 MERGED** (`e0a11b3`) — FOLLOW-549's DONE-flip + RETRO-173 bundle landed cleanly on `main`.
+Local sync confirmed: FOLLOW-549 `status: DONE`, RETRO-173 present (1 occurrence), FOLLOW-550 stub
+present (1 occurrence). No open PRs, no pending retro — FOLLOW-549's loop is FULLY closed.
+
+**Promoted + dispatched FOLLOW-550** (P3, RETRO-173 §5d/§6/§9, source_ticket FOLLOW-549) to
+**architect** — human-approved reassignment (cross-cutting process/convention change, not a worker
+deliverable; overrides the stub's original `recommended_agent: pm-orchestrator`). Delegation-table
+row: "a contract between two modules, a new dependency, an ADR" -> architect. Model: **Sonnet**
+(routine docs codification, ready-made Rule text from the retro). AC pulled directly from
+RETRO-173's ready-made text: (a) bookkeeping PRs ALWAYS closed-superseded, never merged; (b) never
+two `QUEUE.md`-touching PRs in flight; (c) validation/DONE PRs cut from `main` AFTER the code PR
+merges; (d) fold validation into the DONE+RETRO bundle. **Home: `docs/AGENT_WORKFLOW.md` (new
+subsection), explicitly NOT `CONVENTIONS_PATCH.md`** — RETRO-173 held the pattern at count 1
+(≥2-PRIOR-numbered-retro threshold unmet, Rule AB discipline); the AC requires the architect's new
+section to say so explicitly and routes any disagreement to `backlog/ESCALATIONS.md`, not a silent
+Rule add. Branch: `architect/FOLLOW-550-bookkeeping-pr-sequencing`. Full brief in
+`backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-550"). **Not spawned by pm-orchestrator** — brief
+reported to the coordinator to dispatch (will be passed inline so architect can start off `main` in
+parallel, without waiting for this promotion PR to merge).
+
+**Anti-sprawl applied to FOLLOW-550's own lifecycle** (per explicit instruction — dogfooding the
+lesson before it's even codified): ONE promotion bookkeeping PR (this one), later ONE DONE+RETRO
+bundle — no separate validation PR. Queue edits on branch `pm-orchestrator/FOLLOW-550-dispatch`
+(branch-first, never committed to `main`).
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema —
+not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). FOLLOW-533/534 (P3, not yet promoted). 4
+already-`READY` P3 tickets remain queued behind this one: FOLLOW-467/468/469/474. 3 standing
+`## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator dispatches architect per the brief; PM validates the resulting PR (CI +
+content correctness — is this docs-only? does it match the AC exactly, incl. the explicit
+non-CONVENTIONS_PATCH statement?) once opened.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 cont'd — #504/#505 MERGED, #506 closed/superseded, FOLLOW-549 DONE, RETRO-173 pending)
 
 **SEQUENCING — read before touching this branch:** `pm-orchestrator/FOLLOW-549-done` has the
 DONE-flip committed + pushed but **NO PR opened yet**. Wait for `retrospective-analyst` to append
@@ -11235,6 +11276,82 @@ gate) closes the epic and must be last.
     DONE + RETRO bundle into ONE PR (matches the FOLLOW-532/#503 pattern) rather than the 3-PR
     sprawl (#504/#505/#506) this ticket just produced. Delegation brief in `backlog/HANDOFFS.md`
     ("Retro delegation brief — FOLLOW-549").
+- id: FOLLOW-550
+  title: >-
+    Codify bookkeeping-PR sequencing to prevent QUEUE.md-conflict sprawl (single close-superseded
+    default; never two QUEUE.md-touching PRs in flight)
+  agent: architect
+  status: IN_PROGRESS
+  assigned_to: architect
+  started_at: '2026-07-10T00:00:00Z'
+  branch: architect/FOLLOW-550-bookkeeping-pr-sequencing
+  model:
+    Sonnet # cross-cutting PROCESS/convention codification (workflow doc + rationale, no code, no
+    # ambiguous tradeoff to adjudicate — the retro already did the analysis and left ready-made
+    # Rule text) fits the model-fit table's "routine implementation inside a well-defined ticket
+    # scope ... docs/backlog bookkeeping" row more than the "ambiguous acceptance criteria /
+    # non-trivial design" Opus row. Escalate to Opus only if, while drafting, the architect finds
+    # the CONVENTIONS_PATCH-vs-AGENT_WORKFLOW placement question (see AC) is genuinely contested
+    # and needs deeper cross-cutting reasoning than the ticket's explicit answer already resolves.
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-173 §6/§9 (source_ticket FOLLOW-549) — FOLLOW-549 (a 1h P3 test/docs ticket) produced
+    THREE PRs (#504 dispatch-record, #505 code, #506 validation) where FOLLOW-532 minutes earlier
+    achieved a tight 2-PR shape. #506 was cut from `main` BEFORE #504/#505 merged; the human merged
+    BOTH #504 (the redundant dispatch-record) AND #505 (code) instead of closing #504 as superseded,
+    so #506 developed an unresolvable `backlog/QUEUE.md` merge conflict and was closed unmerged
+    (recovered via a fresh DONE+RETRO bundle, #507). Root cause: the PM's own recurring close-out
+    guidance presented "merge #N first" and "close it as superseded" as CO-EQUAL safe options across
+    FOLLOW-380/532/546/548's close-out notes — they are NOT symmetric in downstream risk (merging
+    the redundant bookkeeping PR guarantees any in-flight validation PR a QUEUE.md conflict; closing
+    it does not).
+  spec: backlog/FOLLOW_UPS.md FOLLOW-550; backlog/RETROSPECTIVES.md RETRO-173 §5d/§6/§9
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 25 cont'd) from backlog/FOLLOW_UPS.md, human-
+    approved dispatch to architect (cross-cutting process/convention change, not a worker
+    deliverable — per human direction, overriding the stub's original "recommended_agent:
+    pm-orchestrator", which didn't map cleanly onto the decision table). Full delegation brief in
+    `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-550").
+
+    **IMPORTANT — Rule AB / ≥2-prior-numbered-retro promotion discipline (read before drafting):**
+    RETRO-173 explicitly did NOT promote this finding to a `CONVENTIONS_PATCH.md` Rule — the
+    pattern is count 1 as a NUMBERED-RETRO finding (the ≥2-PRIOR-numbered-retro threshold that
+    gates `CONVENTIONS_PATCH.md` promotion is genuinely unmet; the raw ~4x in-session recurrence of
+    the two-PRs-in-flight SHAPE does NOT count toward that threshold — only documented findings in
+    PRIOR numbered retros do, per the RETRO-153/158/169/170 precedent). **FOLLOW-550 is therefore a
+    DELIBERATE workflow-doc codification (`docs/AGENT_WORKFLOW.md` guidance), NOT a back-door
+    `CONVENTIONS_PATCH.md` Rule promotion that would bypass the threshold.** Do not add a
+    `CONVENTIONS_PATCH.md` Rule as part of this ticket. If you (the architect) believe this finding
+    genuinely warrants an immediate `CONVENTIONS_PATCH.md` Rule despite the count, that is an
+    ESCALATION/ADR question for the human — write it to `backlog/ESCALATIONS.md`, do not silently
+    add the Rule.
+    AC:
+    - [ ] Home: add a new subsection to `docs/AGENT_WORKFLOW.md` (recommended placement: after
+          "Recovered-work re-verification", before "The retrospective loop" — mirrors that
+          section's "mandatory" framing/structure) titled along the lines of "Bookkeeping-PR
+          sequencing discipline (mandatory — FOLLOW-550 / RETRO-173)". Do NOT add a
+          `CONVENTIONS_PATCH.md` Rule (see IMPORTANT note above).
+    - [ ] (a) States a SINGLE default: a bookkeeping/dispatch PR that only touches backlog files
+          (`QUEUE.md`/`FOLLOW_UPS.md`/`RETROSPECTIVES.md`/`STATUS.md`/`HANDOFFS.md`) and whose
+          content a LATER PR folds in is ALWAYS closed-as-superseded, never merged — no co-equal
+          "merge it first" option presented.
+    - [ ] (b) States: never keep two `QUEUE.md`-touching PRs open in parallel — serialize them.
+    - [ ] (c) States: a validation/DONE PR must be cut from `main` AFTER the code PR merges (or
+          rebased immediately before opening), so it never carries a stale `QUEUE.md` base that can
+          conflict with a sibling bookkeeping PR.
+    - [ ] (d) States the preferred shape: fold validation directly into the DONE+RETRO bundle
+          (one PR cut from current `main` after the code merges) rather than opening a separate
+          validation PR — matching the FOLLOW-532/#503 tight pattern this ticket's own source retro
+          cites as the model to restore.
+    - [ ] Cites RETRO-173 (§5d/§6/§9) and FOLLOW-549 (#504/#505/#506) as the concrete precedent/
+          evidence in the new section's rationale prose, mirroring how "Branch-first worker
+          discipline" cites FOLLOW-442/RETRO-146.
+    - [ ] Explicitly states (1-2 sentences) that this is workflow-doc guidance, NOT a
+          `CONVENTIONS_PATCH.md` Rule promotion, and why (ties back to the Rule AB /
+          ≥2-prior-numbered-retro discipline) — so a future reader doesn't mistake this section for
+          a promoted Rule or wonder why it isn't cross-referenced from `CONVENTIONS_PATCH.md`.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

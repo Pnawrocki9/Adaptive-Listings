@@ -1,4 +1,41 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #505 MERGED, FOLLOW-549 DONE, RETRO-173 pending, session 25 cont'd)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #507 MERGED, FOLLOW-549 fully closed, FOLLOW-550 dispatched to architect, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — PR #507 MERGED, FOLLOW-550 promoted + dispatched to architect
+
+PR #507 (`pm-orchestrator/FOLLOW-549-done`, DONE-flip + RETRO-173 bundled) confirmed MERGED as
+commit `e0a11b3`. Local sync: `git checkout main && git pull` fast-forwarded `f541f37..e0a11b3`;
+confirmed FOLLOW-549 shows `status: DONE` on `main`, RETRO-173 present in
+`backlog/RETROSPECTIVES.md` (1 occurrence of `## RETRO-173`), FOLLOW-550 stub present in
+`backlog/FOLLOW_UPS.md` (1 occurrence). FOLLOW-549's loop is now FULLY closed — no open PRs, no
+pending retro, no residual sprawl.
+
+**Promoted FOLLOW-550** (P3, RETRO-173 §5d/§6/§9, source_ticket FOLLOW-549) into Sprint 22b.
+Human-approved reassignment to **architect** (cross-cutting process/convention change, not a worker
+deliverable — overrides the FOLLOW_UPS.md stub's original `recommended_agent: pm-orchestrator`,
+which didn't map onto the decision table). Delegation-table row: "a contract between two modules, a
+new dependency, an ADR" -> architect. Model: **Sonnet** (routine docs codification with ready-made
+Rule text from the retro; not the ambiguous-design Opus tier). AC pulled directly from RETRO-173's
+ready-made text: (a) bookkeeping PRs whose content a later PR folds in are ALWAYS closed-superseded,
+never merged; (b) never two QUEUE.md-touching PRs in flight; (c) validation/DONE PRs cut from `main`
+AFTER the code PR merges; (d) fold validation into the DONE+RETRO bundle rather than a separate PR.
+Home decided: `docs/AGENT_WORKFLOW.md` (new subsection, recommended placement between
+"Recovered-work re-verification" and "The retrospective loop") — **explicitly NOT
+`CONVENTIONS_PATCH.md`**, since RETRO-173 held the pattern at count 1 (≥2-PRIOR-numbered-retro
+threshold unmet, Rule AB discipline) and did not promote it; the AC requires the architect's new
+section to say so explicitly, and routes any disagreement to `backlog/ESCALATIONS.md` rather than a
+silent Rule add. Branch: `architect/FOLLOW-550-bookkeeping-pr-sequencing`. Full brief in
+`backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-550").
+
+**Anti-sprawl applied to THIS ticket's own lifecycle:** ONE promotion bookkeeping PR (this one,
+human merges it), later ONE DONE+RETRO bundle — no separate validation PR, per the coordinator's
+explicit instruction to apply FOLLOW-550's own lesson to itself. Queue edits on branch
+`pm-orchestrator/FOLLOW-550-dispatch` (branch-first, never committed to `main`).
+
+**Not spawned by pm-orchestrator** — brief reported back to the coordinator to dispatch (coordinator
+will pass it inline so architect can start off `main` in parallel, without waiting for this
+promotion PR to merge).
+
+---
 
 ## SESSION 25 cont'd (2026-07-10) — #504/#505 MERGED, #506 superseded/closed, FOLLOW-549 DONE
 

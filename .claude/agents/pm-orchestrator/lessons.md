@@ -2043,3 +2043,21 @@ independent occurrence, even if it references the same pattern by name.
   it as superseded" choice, phrase it more directly as a recommendation ("recommend closing #N
   unmerged") rather than a neutral either/or — a neutral framing invites the costlier option
   (merging both) with no signal that one path avoids a guaranteed conflict on the sibling PR.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-550 (promotion + dispatch)
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" -> architect
+  (human-approved override of the stub's own `recommended_agent: pm-orchestrator`, which didn't map
+  onto the decision table — a process/workflow-doc ticket isn't a worker deliverable).
+- **What validation caught (or missed):** The ticket itself is a live test of the ≥2-prior-numbered-
+  retro promotion discipline (Rule AB): RETRO-173 correctly held its finding at count 1 and did NOT
+  promote a CONVENTIONS_PATCH Rule, so the AC had to be written carefully to make FOLLOW-550 a
+  workflow-doc codification, not a back-door Rule promotion — spelled this out explicitly in both
+  the ticket AC and the delegation brief, with an explicit escalation path (not silent Rule-add) if
+  the architect disagrees. Also applied this session's own just-learned lesson (anti-sprawl) to THIS
+  ticket's dispatch: one promotion PR, one later DONE+RETRO bundle, no separate validation PR —
+  practicing what FOLLOW-550 itself will codify, before it's even written.
+- **A delegation/validation rule I'd add:** When a retro explicitly declines to promote a
+  CONVENTIONS_PATCH Rule (HELD/ARMED), any downstream ticket that codifies the same finding
+  elsewhere (e.g. a workflow doc) MUST state in its own AC that it is NOT a Rule promotion and why —
+  otherwise a future reader (or the implementing agent) can't tell whether the ≥2-prior threshold
+  was silently bypassed via a different document.

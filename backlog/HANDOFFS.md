@@ -3,6 +3,146 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Retro delegation brief — FOLLOW-532 (retrospective-analyst)
+
+**From:** pm-orchestrator (session 25 close-out) **To:** retrospective-analyst (to be spawned by the
+coordinator — pm-orchestrator has no subagent-spawn capability in this tool surface) **Date:**
+2026-07-10 **Branch:** `pm-orchestrator/FOLLOW-532-close` (already created off `main` at `a934adf`,
+carries the DONE-flip; append RETRO-172 content on this SAME branch per the repo's RETRO+DONE
+bundling convention — matches PRs #486/#487/#489/#493/#497/#501). **Model: Opus** — matches
+`retrospective-analyst`'s own agent-file default (`model: opus`); also genuinely warranted: this is
+the first retro on a shared-auth-helper SIGNATURE change (a required param added to a function whose
+docstring maintains an explicit call-site inventory — "a third consumer added later MUST be appended
+here"), and it must independently judge whether overriding the source stub's co-assignment
+recommendation (qa-engineer dropped) was sound — both are cross-module precedent calls, not routine
+mechanical analysis.
+
+**What merged:** PR #502 (`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`), commit
+`a934adf`. Diff: `apps/control-plane/src/lib/adapt-get-auth.ts` (resolveAdaptGetAuth gained a
+required 3rd `area: 'adapt'|'description'` param, now catches the `resolveApiKey` configured-but-
+failed-DB throw internally — Rule K.2 — Sentry-captures, and returns a new third
+`AdaptGetAuthResult` disposition `{ok:false,status:401,message,dbError:true}`); both
+`apps/control-plane/src/app/api/adapt/route.ts` and `.../adapt/description/route.ts` deleted their
+duplicated try/catch+Sentry blocks and now call the shared helper directly with the new 3-arg
+signature; new `apps/control-plane/src/lib/__tests__/adapt-get-auth.parity.test.ts` (cross-area
+`.toEqual` parity assertion); the two pre-existing `follow473` route test suites updated from
+`mockRejectedValue` to `mockResolvedValue({...dbError:true})` to match the new no-throw contract.
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1; `backlog/RETROSPECTIVES.md`
+RETRO-164 (the source retro — search for FOLLOW-532's origin, §4a LG-1, source_ticket FOLLOW-473)
+and its 2 sibling stubs still sitting unpromoted in `backlog/FOLLOW_UPS.md`: **FOLLOW-533** (the
+`OPS_TENANT_ID` vs `ADAPT_TENANT_ID` env-var-naming-drift finding — same RETRO-164/FOLLOW-473
+source, adjacent auth surface, NOT touched by this PR — worth checking whether FOLLOW-532's fix
+pattern (fold into the shared helper) suggests the same treatment) and **FOLLOW-534** (the
+divergent-duplicate-worktree AGENT_WORKFLOW checklist amendment — same source, unrelated code path).
+Last 5 retros (RETRO-167–171) are ALL on the RETRO-105 async-interleave class (SDK cross-listing
+nav) — a different domain/module than this ticket (control-plane auth); read them primarily to
+confirm there's no cross-cutting pattern (e.g. "guard/contract folded into a shared helper only
+after 2+ duplicated call sites drifted" as its own recurring shape) rather than expecting direct
+overlap.
+
+**Specific angles this retro should check (not exhaustive — use your own judgment too):**
+
+1. **Was folding into the helper (option 2) actually the better choice, or does it hide a NEW
+   risk?** Before this PR, a DB-throw was OBSERVABLE as a distinct code path per route (each had its
+   own try/catch). Now both routes' `if (!authResult.ok)` branch treats `dbError:true` identically
+   to any other 401 — the discriminant exists ONLY for test assertions (confirmed: no production
+   code branches on `.dbError`). Is that a latent under-observability regression (e.g. would ops
+   actually WANT to alert differently on "DB is down" vs "bad API key" at the route/dashboard level,
+   not just via the internal Sentry `tags.kind`), or is `tags.kind: 'api_key_auth_db_error'`
+   sufficient observability on its own (it was, pre-PR, at each call site)? Check whether any
+   dashboard/alert config reads `tags.kind` today.
+2. **Call-site-inventory discipline:** `adapt-get-auth.ts`'s docstring literally says "A third
+   consumer added later MUST be appended here" (line ~14) — verify this obligation is still
+   satisfiable / not weakened by the new `area: 'adapt'|'description'` union type (a genuinely NEW
+   third route would need a type-level change too, which is arguably a GOOD forcing function — but
+   confirm the docstring's inventory list itself was updated to describe the new param, not just the
+   throw-handling change).
+3. **FOLLOW-533 adjacency:** does the `area` param's introduction suggest the SAME "fold a
+   duplicated caller obligation into a shared helper" pattern should apply to FOLLOW-533's
+   `OPS_TENANT_ID`/ `ADAPT_TENANT_ID` drift (structurally different — that's an env-var-name split
+   across 5 routes, not a throw-handling duplication — but worth an explicit yes/no in the retro
+   rather than silence).
+4. **Test-debt check:** the `dbError: true` field's ONLY consumer today is the new parity test and
+   the 2 updated `follow473` mocks. Confirm this isn't a Rule-I-shaped half-wire (Rule I's own CI
+   run this session showed 180 pre-existing violations, none on this diff's symbols — but Rule I
+   checks EXPORTED SYMBOLS/functions, not object-literal discriminant fields, so it would NOT have
+   caught a genuinely dead `dbError` field either way; this needs a human-judgment check, not just
+   re-trusting the green gate).
+
+**Standard retro deliverables per CLAUDE.md's per-ticket retrospective loop:** read the merged PR
+#502 diff, map changed symbols (`resolveAdaptGetAuth`, `AdaptGetAuthResult`) to ALL consumers in the
+repo (already confirmed exactly 2 production + 1 new test file by pm-orchestrator's validation pass
+— re-verify independently), check the last 5 retro entries for repeating patterns, check adjacent
+QUEUE.md tickets (FOLLOW-473, FOLLOW-533, FOLLOW-534, FOLLOW-450/ADR-0015 sibling auth work) for
+cascading assumptions, append a structured RETRO-172 entry to `backlog/RETROSPECTIVES.md`, generate
+FOLLOW_UPS stubs for any gap found, and promote a finding to a permanent `CONVENTIONS_PATCH.md` Rule
+ONLY if the same pattern appeared in ≥2 PRIOR numbered retros (not this one).
+
+---
+
+## Delegation brief — FOLLOW-532 (backend-engineer) — pin the two GET adapt call sites' DB-throw parity
+
+**From:** pm-orchestrator (session 25) **To:** backend-engineer **Date:** 2026-07-10 **Branch:**
+`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity` (create as your FIRST action, off `main`
+at `e429524` or later — branch-first, never commit to `main`).
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read
+before any non-trivial task, OPERATING_PRINCIPLES Rule 1), the current `CONVENTIONS_PATCH.md`
+(especially Rule K.2 and its fire-and-forget amendment — "a configured-but- failed store must be
+observable/fail loud", the same family this ticket pins), and the ticket source
+`backlog/FOLLOW_UPS.md` FOLLOW-532 / `backlog/RETROSPECTIVES.md` RETRO-164 §4a LG-1.
+
+**Table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding
+HTTP, billing, webhooks" -> backend-engineer. **Model: Sonnet** — routine, well-scoped
+implementation inside one existing ticket family (FOLLOW-473's own two routes), no cross-module
+ambiguity, no prod-irreversible risk (model-fit table: "Routine implementation inside a well-defined
+ticket scope ... mechanical refactors, CI fixes").
+
+**Why this exists (verified in code, not guessed):**
+
+- `apps/control-plane/src/lib/adapt-get-auth.ts:29-32/61-62` — `resolveAdaptGetAuth`'s docstring
+  says `resolveApiKey` THROWS on a configured-but-failed DB lookup (Rule K.2) and that the helper
+  deliberately does NOT catch it — "the caller MUST wrap the call in try/catch, capture to Sentry,
+  and fail loud (401)."
+- Both call sites duplicate this obligation identically today:
+  `apps/control-plane/src/app/api/adapt/route.ts:708-721` and
+  `apps/control-plane/src/app/api/adapt/description/route.ts:215-228` — same
+  `try { authResult = await resolveAdaptGetAuth(...) } catch (err) { ...Sentry.captureException... return 401 }`
+  shape, only the `tags.area` value (`'adapt'` vs `'description'`) differs.
+- Each route's own `follow473` test suite asserts its own DB-throw→401 in isolation. Nothing pins
+  the two together — if a future edit dropped or altered ONE route's catch (e.g. during an unrelated
+  refactor), that route would 500 on a DB outage instead of 401, and the OTHER route's still-green
+  CI would give no signal of the drift.
+
+**Required fix (pick ONE, per the ticket AC in `backlog/QUEUE.md` FOLLOW-532):**
+
+1. **Shared parity test** — a new test (co-located wherever makes sense, e.g.
+   `apps/control-plane/src/lib/__tests__/adapt-get-auth.test.ts` or a small shared spec) that drives
+   BOTH `GET /api/adapt` and `GET /api/adapt/description` through a forced `resolveApiKey` throw and
+   asserts BOTH map it to 401 with an identical Sentry-capture shape (same `tags.kind`), so the two
+   routes cannot silently diverge — OR
+2. **Fold into the helper** — add a third `AdaptGetAuthResult` disposition (e.g.
+   `{ ok: false; status: 401; dbError: true }`) so `resolveAdaptGetAuth` itself catches the throw
+   and returns a normalized result, eliminating the duplicated try/catch at both call sites
+   entirely.
+
+Either way, the mechanism must be load-bearing: **the chosen test must fail CI if one call site's
+disposition drifts from the other** (not a decorative assertion that would stay green even if only
+one route regressed). State which option you chose and why in your PR description — either is
+acceptable, this is an implementation-detail choice, not an escalation.
+
+**Scope guardrails (Rule 3, surgical changes):** Do not touch the Step 1 (ops-bypass) or Step 2
+(`resolveApiKey`) logic itself — this ticket is only about the DB-throw→401 CONTRACT parity between
+the two callers. Do not rename `AdaptGetAuthResult`'s existing two variants if you choose option 2;
+only add the third. No wire-contract change (SDK/adapt response shape untouched either way).
+
+**Validation before opening the PR:** `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
+(control-plane `next build` too — per FOLLOW-474/RETRO-150, `next build`'s webpack import resolution
+catches defects `tsc`/`vitest` don't). Re-run prettier on every file you touch.
+
+---
+
 ## Delegation brief — FOLLOW-464 (ml-engineer) — folds FOLLOW-523, RETRO-162 P1 fast-follow
 
 **From:** pm-orchestrator (session 13 cont'd, RETRO-162 close-out) **To:** ml-engineer **Date:**

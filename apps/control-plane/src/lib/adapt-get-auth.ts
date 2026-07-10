@@ -11,7 +11,10 @@
  *   - `GET /api/adapt`             (app/api/adapt/route.ts)             — primary SDK pageview path
  *   - `GET /api/adapt/description` (app/api/adapt/description/route.ts) — long-form description path
  * Both MUST call this helper (never re-implement the two-step inline). A third
- * consumer added later MUST be appended here.
+ * consumer added later MUST be appended here, AND must widen the `area` union
+ * below (a real third route cannot reuse `'adapt'`/`'description'` as its own
+ * tag) — the resulting compile error at every existing call site is the
+ * forcing function that surfaces this docstring (RETRO-172 DG-1).
  *
  * Algorithm (fail CLOSED — never fabricate a tenant, never trust a header):
  *   Step 1 — Ops bypass (`ADAPT_API_KEY`): if the bearer constant-time-equals the

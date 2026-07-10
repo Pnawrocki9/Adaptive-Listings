@@ -195,6 +195,18 @@ describe('GET /api/adapt/description — auth (FOLLOW-473: fail-closed, resolver
     const res = await GET(makeRequest(VALID_PARAMS, 'Bearer any_key'));
     expect(res.status).toBe(200);
   });
+
+  it('calls resolveAdaptGetAuth with area "description" (RETRO-172 TG-1: pins this route to its own literal)', async () => {
+    mockGetCachedDescription.mockResolvedValueOnce(null);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
+    await GET(makeRequest(VALID_PARAMS, 'Bearer any_key'));
+    expect(mockResolveAdaptGetAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'description',
+    );
+    vi.unstubAllGlobals();
+  });
 });
 
 // ─── Validation tests ─────────────────────────────────────────────────────────

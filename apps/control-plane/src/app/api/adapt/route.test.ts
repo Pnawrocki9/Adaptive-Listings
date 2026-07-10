@@ -224,6 +224,15 @@ describe('GET /api/adapt — auth gate (FOLLOW-473: fail-closed, resolver-derive
     expect(res.status).toBe(200);
   });
 
+  it('calls resolveAdaptGetAuth with area "adapt" (RETRO-172 TG-1: pins this route to its own literal)', async () => {
+    await GET(makeRequest(VALID_PARAMS, 'tenant-abc', 'Bearer any_token_will_do'));
+    expect(mockResolveAdaptGetAuth).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'adapt',
+    );
+  });
+
   it('auth error response includes request_id', async () => {
     const res = await GET(makeRequest(VALID_PARAMS, 'tenant-abc', null));
     const body = await parseBody<{ error: { request_id: string } }>(res);

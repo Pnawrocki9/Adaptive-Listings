@@ -1569,3 +1569,27 @@ from throw-based to return-based. A CI lint or comment convention flagging
 `mock<HelperName>.mockRejectedValue` next to a helper whose JSDoc says "does NOT throw" would catch
 this class of drift before a human has to trace a hook-timeout-adjacent test failure back to a
 contract change three files away.
+
+## 2026-07-10 · FOLLOW-549 (RETRO-172 TG-1/DG-1, fast-follow off FOLLOW-532/PR #502)
+
+**What I built:** Two spy assertions (one per GET route test file) pinning
+`resolveAdaptGetAuth(req, token, 'adapt')` / `(..., 'description')` to its own literal, plus one
+docstring sentence on `adapt-get-auth.ts` noting a genuine third consumer must widen the `area`
+union and that the resulting compile error is the forcing function. No production logic touched —
+purely additive test-tightening per RETRO-172's finding that both route test files mocked
+`resolveAdaptGetAuth` wholesale, so a copy-paste swap of the `area` literal (mislabeling `tags.area`
+in Sentry) had zero CI signal.
+
+**Wiring/auth/fail-loud risks I weighed:** The whole point of a "pin" test is that it must actually
+fail on the exact regression it targets — an assertion that only checks call count or shape (not the
+literal) would give false confidence. I verified this concretely: swapped each literal in turn
+(`'adapt'`→`'description'` and vice versa), reran the single test in isolation, confirmed a real
+failure with the wrong-literal call args printed in the diff, then reverted. Only after seeing the
+red run did I trust the green one.
+
+**A guardrail I'd add:** none — this ticket's guardrail (RETRO-172's own recommendation) is now the
+fix. General pattern worth generalizing later: any test that exists solely to catch a copy-paste
+literal swap across near-identical siblings should have its "does this test actually fail on the
+swap" check documented as part of the PR evidence, not just asserted from the author's confidence —
+codifying "verify the test can fail" as a lint-doc convention for spy-based sibling-parity tests
+would generalize this beyond just `adapt-get-auth`.

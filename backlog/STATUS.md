@@ -1,4 +1,39 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-380 validated, PR #491 READY_FOR_REVIEW; PR #490 dispatch record still unmerged)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #491 MERGED, FOLLOW-380 DONE; RETRO-169 pending on pm-orchestrator/FOLLOW-380-close)
+
+## SESSION 22 CLOSE-OUT (2026-07-10) — PR #491 MERGED (4cc5ba5), FOLLOW-380 DONE, RETRO-169 pending
+
+PR #491 (`sdk-engineer/FOLLOW-380-cross-listing-hardening`) confirmed MERGED via
+`gh pr view 491 --json state,mergeCommit,mergedAt` → `state: MERGED`, `mergeCommit: 4cc5ba5`,
+`mergedAt: 2026-07-10T07:16:20Z`. PR #492 (the PM-validation bookkeeping) confirmed MERGED
+(`57a0116`, immediately after). PR #490 (superseded dispatch-record PR) confirmed `CLOSED` (not
+merged) via `gh pr view 490 --json state` — per human decision, its content already lives fully
+folded into FOLLOW-380's DONE trail (no data lost). Local `main` synced (`git log --oneline -1` →
+`57a0116`), clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-380-close`** (agent-prefix, branch-first):
+FOLLOW-380 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-10`,
+`merged_pr: 491`, `merge_commit: 4cc5ba5`).
+
+**FOLLOW-375 test-debt retirement (verified, not assumed):** `backlog/FOLLOW_UPS.md`'s FOLLOW-375
+stub carried one open bullet — "Add SDK unit tests for the new paths (a) observer in-place mutation,
+(b) refreshDirectives SoT restore/update, (c) eraseIntentState clears resolved-archetype key."
+Re-checked the merged `follow-380.test.ts` describe-block names against this exact list:
+`cross_ref (a) — navMutObs emits listing.viewed...` /
+`cross_ref (b) + hardening (c) — SoT restore re-pins archetype + confidence...` /
+`cross_ref (c) — eraseIntentState clears...` — a clean 1:1 match on all three items. Checked `[x]`
+with a resolution note citing PR #491. The stub's other two bullets (platform/Rafał
+production-delivery actions — versioned SDK bundle URL, `chat_intent_dimensions` prod confirmation)
+are unrelated to this ticket and were left OPEN untouched.
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-380-close` to append **RETRO-169**
+and any follow-up stubs, bundling RETRO + DONE-flip into one PR (matches PRs #486/#487, #489
+convention). PM will validate that bundled PR once the coordinator confirms it's ready.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-169 content to land on
+the same branch first.
+
+---
 
 ## SESSION 22 VALIDATION (2026-07-10) — PR #491 (FOLLOW-380) validated, READY_FOR_REVIEW
 

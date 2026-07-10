@@ -10239,11 +10239,16 @@ getAdminToken()+?token= from EventSource URL (cookie-only, ADR-0013). 309 = RETR
   [ADR-0014](../docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md). Implemented in
   `packages/sdk/src/core/{observer,session,intent}.ts` and `packages/sdk/src/index.ts`; 184 SDK unit
   tests pass; verified end-to-end in a real browser. Open follow-ups:
-  - [ ] **Add SDK unit tests** for the new paths: (a) `observer` emits `listing.viewed` on in-place
+  - [x] **Add SDK unit tests** for the new paths: (a) `observer` emits `listing.viewed` on in-place
         `data-estalara-listing-id` mutation; (b) `refreshDirectives` restores the SoT archetype on
         neutral-decay and updates it on non-neutral resolution; (c) `eraseIntentState` clears
         `estalara_resolved_archetype_*`. (Rule H — currently verified only by browser + existing
-        intent/session suites.)
+        intent/session suites.) **RESOLVED 2026-07-10 by FOLLOW-380 (PR #491,
+        `packages/sdk/src/__tests__/follow-380.test.ts`)** — the consolidated suite's
+        `cross_ref (a)`, `cross_ref (b) + hardening (c)`, and `cross_ref (c)` describe blocks cover
+        exactly these three items (verified by pm-orchestrator against the merged diff before
+        flipping; each block name-matches the (a)/(b)/(c) split above). The other two open bullets
+        below (platform/Rafał production-delivery actions) are unrelated and remain OPEN.
   - [ ] **[PLATFORM/Rafał]** Serve the production SDK bundle from a versioned/content-hashed URL so
         a redeploy reaches single-page sessions (the `<script async>` loader is not re-fetched on
         SPA nav). See `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` §3.

@@ -1959,3 +1959,56 @@ independent occurrence, even if it references the same pattern by name.
   a second party (here, the top-level orchestrator doing the commit on the architect's behalf) can
   silently change the plan between "content written" and "PR pushed," and the ticket's prose is the
   last place that gets updated.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-532 (promotion + dispatch)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" -> backend-engineer.
+- **What validation caught (or missed):** The FOLLOW_UPS.md stub recommended co-assigning
+  backend-engineer + qa-engineer; on inspection the actual scope (a shared parity test or a 3rd
+  `AdaptGetAuthResult` disposition, confined to two files backend-engineer already owns from
+  FOLLOW-473) doesn't warrant a second agent — co-assigning would have forced an unneeded step-5d
+  cross-agent integration check at validation time for what is an intra-module change. Also caught
+  that the prior session's STATUS.md/QUEUE.md banner claimed RETRO-171 was "pending" when
+  `backlog/RETROSPECTIVES.md` showed it was already filed and merged (commit `e429524`) — a stale
+  claim that would have propagated if I'd trusted the banner instead of grepping the actual file.
+  Also surfaced (without acting on, since none block this ticket): several old Sprint 2.5/3
+  `status: READY` tickets (TICKET-030/038 etc.) are years-stale fossils whose deps resolve DONE but
+  whose scope (e.g. a 40KB bundle gate later raised to 42KB) is superseded — queue hygiene debt, not
+  actioned this session.
+- **A delegation/validation rule I'd add:** Before accepting a FOLLOW_UPS stub's `recommended_agent`
+  co-assignment at face value, re-check whether the described AC actually spans two agents' owned
+  files/modules, or just one — a stub's suggested staffing can be broader than the scope it
+  describes.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-532 (validation of PR #502)
+- **Delegation row used:** backend-engineer (from prior turn; this entry covers validation).
+- **What validation caught (or missed):** Worker's CI/test claims all held up under independent
+  re-derivation (non-success count, 180 WARN baseline, 89/89+4/4 test counts). The one thing worth
+  noting: the worker's own local run reported clean typecheck, but a truly independent re-run in a
+  FRESH worktree hit the known FOLLOW-474 gotcha (control-plane `tsc` 2307s on `@estalara/*` until
+  those packages are built) — a reminder that "worker says local passed" and "I independently
+  reproduced local passing" are different claims, and the worktree-bootstrap step is easy to skip
+  silently if you don't already know the gotcha exists. No half-wire found this time; the chosen
+  option (fold into helper) is structurally stronger than the AC's minimum bar (parity test only).
+- **A delegation/validation rule I'd add:** When independently re-running a worker's local suite in
+  a fresh worktree, always build workspace `@estalara/*` deps FIRST as a matter of routine (not only
+  when typecheck fails) — it's cheap and avoids a false-negative "worker's typecheck claim doesn't
+  reproduce" scare.
+
+- **Date / ticket:** 2026-07-10 — FOLLOW-532 (post-merge close-out)
+- **Delegation row used:** n/a (bookkeeping close-out + retro-brief prep, not a new delegation).
+- **What validation caught (or missed):** Caught my own process slip: the FOLLOW-532
+  promotion/validation edits earlier this session were made directly in the working tree without
+  first creating a branch (violates the repo's own branch-first convention — "never commit to
+  main"). No harm done since nothing was committed/pushed while on `main`, but I corrected it by
+  moving the uncommitted changes onto `pm-orchestrator/FOLLOW-532-close` before committing, rather
+  than treating "I haven't run `git commit` yet" as safe. Also worth noting for the retro: the
+  merged fix chose to fold a discriminant field (`dbError: true`) into a shared result type whose
+  ONLY consumer is test code, by design (production code branches on `.status`/`.message`, not
+  `.dbError`) — flagged this explicitly in the retro brief as a "confirm this isn't a Rule-I-shaped
+  half-wire" angle, since Rule I's own linter only checks exported symbols/functions, not
+  object-literal fields, so it structurally cannot catch a dead discriminant field either way.
+- **A delegation/validation rule I'd add:** Before making ANY edit to backlog/\*.md files, check
+  `git branch --show-current` first — if it's `main`, create the working branch BEFORE the first
+  Edit/Write call, not after. Editing-then-branching works by luck (nothing got committed to main),
+  not by design.

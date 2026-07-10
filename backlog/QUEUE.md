@@ -1,6 +1,116 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 24 close-out — PR #499 MERGED, FOLLOW-548 DONE, Rule AB citation fixed, RETRO-171 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 25 close-out — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending)
+
+**PR #502 MERGED** to `main` as commit `a934adf` (`a934adfd2359d4f12aa6538923e08ce351112025`,
+2026-07-10T14:36:48Z, confirmed via `gh pr view 502 --json state,mergeCommit,mergedAt`). Local
+`main` synced (`git checkout main && git pull`, fast-forward `e429524..a934adf`), confirmed present
+via `git log --oneline -1`.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-532-close`** (agent-prefix, branch-first —
+these edits were made directly in the working tree during the validation pass before the merge
+landed; moved onto this branch immediately upon resuming, never committed to `main`): FOLLOW-532
+flipped `READY_FOR_REVIEW` → `DONE` (`completed_at: 2026-07-10`, `merged_pr: 502`,
+`merge_commit: a934adf`).
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator (delegation brief prepared in `backlog/HANDOFFS.md`, "Retro delegation
+brief — FOLLOW-532") — NOT run by pm-orchestrator itself (no subagent-spawn capability in this tool
+surface). Model recommendation: **Opus** — this is the FIRST retro on a shared-auth-helper contract
+change (resolveAdaptGetAuth's signature grew a required param, a call-site inventory the docstring
+explicitly says "a third consumer MUST be appended here"), and its own source ticket (RETRO-164) is
+itself a retro-derived follow-up — cross-module reasoning about whether the FOLLOW_UPS stub's
+originally-recommended qa-engineer co-assignment should have been honored, and whether folding a
+throw into a shared auth helper (vs. duplicating a catch) sets a precedent worth codifying, both
+warrant Opus over Sonnet per the model-fit table ("ambiguous acceptance criteria... non-trivial
+design" territory, not routine).
+
+**Still open / carried forward:** FOLLOW-543 (P3, architect, deferred §Snapshot.2/.3/.5 + §B.1-body
+Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169, unversioned client SoT storage schema —
+not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with its own unmet
+`depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process stub,
+RETRO-168, bashless-agent-author-blur — not yet promoted). FOLLOW-533/534 (P3, not yet promoted). 3
+standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting the coordinator to spawn
+retrospective-analyst; PM will validate that bundled PR once the coordinator confirms it's ready
+(matches PRs #486/#487/#489/#493/#497/#501 RETRO+DONE bundling convention). After that lands, next
+ticket candidates: FOLLOW-467/468/469/474 (all P3, already `READY`).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 — FOLLOW-532 PM-validated, PR #502 READY_FOR_REVIEW)
+
+**FOLLOW-532 (P2, backend-engineer, Sonnet) is PM-validated, READY_FOR_REVIEW.** PR **#502**
+(`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`, off `main`, not merged). Worker chose
+option 2 from the AC (fold the DB-throw handling into `resolveAdaptGetAuth` itself as a third
+`AdaptGetAuthResult` disposition, `{ok:false,status:401,message,dbError:true}`, keyed on a new
+required `area: 'adapt'|'description'` param) rather than a bolt-on parity test — both GET routes
+now share the exact same code path, making the drift RETRO-164 flagged structurally impossible, not
+just test-covered. Independently verified (not taken on the worker's self-report): CI non-success
+count = 2 (both the standing pre-existing "Rule I — wired-or-dead" gate, 180 WARN lines identical to
+the FOLLOW-546/548 baseline, zero hits for this diff's symbols); wiring grep confirms exactly the 2
+production call sites reach the helper (no orphan caller, no stray old 2-arg signature, `Sentry`
+import still genuinely used elsewhere in both routes); independently re-ran the suite in a FRESH
+`git worktree` (not trusting the worker's local-pass claim, per Rule 4e/FOLLOW-448) after rebuilding
+`@estalara/{db,shared,auth,sdk}` first (the known FOLLOW-474 worktree-bootstrap gotcha) — typecheck
+clean, new parity test 4/4, both pre-existing route suites 89/89, targeted eslint+prettier clean.
+Full evidence trail on the FOLLOW-532 ticket block's `notes:`/`ci_status:` and as a PR comment.
+
+**Still open / carried forward (unchanged):** FOLLOW-543 (P3, architect, deferred
+§Snapshot.2/.3/.5 + §B.1-body Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169,
+unversioned client SoT storage schema — not yet promoted). FOLLOW-458's `status: READY` label is
+still inconsistent with its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not
+fixed. FOLLOW-545 (process stub, RETRO-168, bashless-agent-author-blur — not yet promoted).
+FOLLOW-533/534 (P3, not yet promoted). 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034)
+unchanged, non-blocking.
+
+**NEXT:** human reviews/merges PR #502. After it merges: mark FOLLOW-532 `DONE` + `completed_at`,
+spawn `retrospective-analyst`, then pick the next ticket (candidates: FOLLOW-467/468/469/474, all P3
+and already `READY`).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 25 — FOLLOW-532 promoted + dispatched to backend-engineer)
+
+**No open PRs at session start** (`gh pr list --state open` empty); `main` clean at `e429524`.
+**Escalations:** 3 standing `## OPEN` entries (ESC-020, ESC-028, ESC-034) — all previously triaged
+as human-owned/operator-pending and explicitly non-blocking for the PM pipeline (ESC-020's own
+`Resolution:` field states "does NOT block the PM pipeline for other tickets"; ESC-028/ESC-034 are
+soft-skip/operator-gated, both logged non-blocking in `backlog/STATUS.md`'s ESCALATION STATUS
+table). Consistent with every prior session since their filing — not re-litigated.
+
+**Picked FOLLOW-532** (P2, promoted from `backlog/FOLLOW_UPS.md`, RETRO-164 §4a LG-1 / source_ticket
+FOLLOW-473) — the highest-priority actually-ready item: the 4 P3 items already sitting `READY`
+in-queue (FOLLOW-467/468/469/474) are all lower priority, and FOLLOW-458 (P2) is blocked
+(`depends_on: [FOLLOW-449]`, still `CODE_COMPLETE_OPERATOR_PENDING`). FOLLOW-532 has
+`depends_on: []` and its owning agent (backend-engineer) is free. Delegation-table row used: "ingest
+worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" ->
+backend- engineer (row cited per instructions). Dispatched to backend-engineer ALONE (not
+co-assigned with qa-engineer as the FOLLOW_UPS stub suggested — scope is a shared parity
+test/helper-disposition change confined to backend-engineer's own two route files; co-assigning
+would trigger an unwarranted step-5d cross-agent integration check for what is an intra-module
+change). Model: Sonnet (routine, well-scoped, no cross-module ambiguity). QUEUE.md flipped
+READY(FOLLOW_UPS stub)->IN_PROGRESS; `backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity` is
+the branch name given in the dispatch brief (worker creates it as their first action, off `main`).
+Full delegation brief in `backlog/HANDOFFS.md`.
+
+**Still open / carried forward (unchanged):** FOLLOW-543 (P3, architect, deferred
+§Snapshot.2/.3/.5 + §B.1-body Tier-prose rename). FOLLOW-547 (P3, sdk-engineer, RETRO-169,
+unversioned client SoT storage schema — not yet promoted). FOLLOW-458's `status: READY` label is
+still inconsistent with its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not
+fixed. FOLLOW-545 (process stub, RETRO-168, bashless-agent-author-blur — not yet promoted).
+FOLLOW-533/534 (P3, backend-engineer/devops+pm, not yet promoted). RETRO-171 (FOLLOW-548 close-out,
+including the async-interleave-class-fully-closed verdict) is CONFIRMED FILED — commit `e429524`,
+already merged to `main` at session start; no action needed here. 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking (see above).
+
+**NEXT:** wait for backend-engineer to open a PR for FOLLOW-532; then PM validates (CI green +
+runtime-wiring grep for the parity mechanism + AC check) before READY_FOR_REVIEW.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 24 close-out — PR #499 MERGED, FOLLOW-548 DONE, Rule AB citation fixed, RETRO-171 pending)
 
 **PR #499 MERGED** to `main` as squash commit `ae1bc67` (2026-07-10T10:24:35Z); PM-validation
 bookkeeping PR #500 merged immediately after (`b3770f6`). PR #498 (superseded promotion/dispatch-
@@ -10857,6 +10967,110 @@ gate) closes the epic and must be last.
     relocation hops [FOLLOW-380 → FOLLOW-546 → FOLLOW-548] or whether a 4th hop exists) per the
     repo's RETRO+DONE bundling convention (matches PRs #486/#487, #489, #493, #497) — NOT run by
     pm-orchestrator itself (no subagent-spawn capability in this tool surface).
+- id: FOLLOW-532
+  title: >-
+    Pin the two GET adapt call sites against future drift — the fail-loud DB-throw contract lives
+    OUTSIDE the shared resolveAdaptGetAuth helper as an unenforced caller obligation
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
+  branch: backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity
+  pr: 502
+  merged_pr: 502
+  merge_commit: a934adf
+  ci_status: >-
+    green (independently re-verified via `gh pr view 502 --json statusCheckRollup`): non-success
+    count = 2, both the SAME standing pre-existing "Rule I — wired-or-dead check" (matrix-
+    duplicated); confirmed via `--log-failed` on run 29097226725 — 180 WARN lines, IDENTICAL to the
+    FOLLOW-546/548 baseline, zero hits on grep for `adapt-get-auth`/`AdaptGetAuthResult`/
+    `resolveAdaptGetAuth` in that log (none of the 180 are from this diff). Typecheck, Lint, Format,
+    Build, Build (control-plane), Test (Node 22 full suite), SDK E2E, all Python suites, Vercel,
+    Rule H, Rule J, and every other real gate green. CI-check counter: 1/5. Fix-iteration counter:
+    0/3.
+  model:
+    Sonnet # routine, well-scoped implementation inside an existing ticket family (FOLLOW-473's
+    # own routes/tests) — either a shared parity test or a 3rd AdaptGetAuthResult disposition;
+    # no cross-module ambiguity or prod-irreversible risk. Model-fit table row "Routine
+    # implementation inside a well-defined ticket scope ... mechanical refactors" -> Sonnet.
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    RETRO-164 §4a LG-1 (source_ticket FOLLOW-473) — resolveAdaptGetAuth (adapt-get-auth.ts)
+    deliberately does NOT catch the resolveApiKey throw (Rule K.2 configured-but-failed DB); its
+    docstring requires the CALLER to try/catch + Sentry-capture + fail loud (401). Both GET
+    /api/adapt and GET /api/adapt/description do this identically today but each owns its own
+    try/catch + 401 construction, with no shared parity assertion pinning the two together — an edit
+    dropping one route's catch would surface as an unhandled 500 on that route only, invisible to
+    the untouched route's green CI.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-532; backlog/RETROSPECTIVES.md RETRO-164 §4a LG-1; ADR-0015
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 25) from backlog/FOLLOW_UPS.md into Sprint 22b,
+    matching the FOLLOW-380/546/467/468/469/472/474/548 promotion pattern. `promoted_to_queue: true`
+    set on the FOLLOW_UPS.md stub. Dispatched same-session to backend-engineer ALONE (not
+    co-assigned with qa-engineer as the stub originally suggested — see `promoted_to_queue:` note
+    on the stub for reasoning). Full delegation brief in `backlog/HANDOFFS.md` ("PM orchestrator
+    (session 25) -> backend-engineer, FOLLOW-532").
+
+    PM-VALIDATED 2026-07-10 (pm-orchestrator, session 25) — PR #502
+    (`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`, off `main`, not merged).
+    Independently verified (not taken on the worker's self-report):
+    - **Chosen mechanism:** option 2 (fold into helper) — `resolveAdaptGetAuth` gained a required
+      3rd `area: 'adapt' | 'description'` param, now catches the `resolveApiKey` DB-throw itself,
+      Sentry-captures internally (`tags: {area, kind: 'api_key_auth_db_error'}`), and returns a
+      third `AdaptGetAuthResult` disposition `{ok:false,status:401,message,dbError:true}`. Read the
+      full diff, not the summary: both `apps/control-plane/src/app/api/adapt/route.ts:714` and
+      `.../adapt/description/route.ts:220` deleted their duplicated try/catch+Sentry blocks and now
+      call the shared helper directly — both routes are now structurally incapable of diverging
+      (stronger than a parity-test-only approach).
+    - **Wiring grep** (non-test producer -> non-test consumer):
+      `grep -rn "resolveAdaptGetAuth(" apps/ --include=*.ts | grep -v node_modules | grep -v test` ->
+      exactly the helper's own export (`adapt-get-auth.ts:79`) plus the 2 production call sites
+      above — no orphan 3rd caller, no stray old 2-arg call left behind. `Sentry` import confirmed
+      still genuinely used elsewhere in both route files (not orphaned).
+    - **New parity test** `apps/control-plane/src/lib/__tests__/adapt-get-auth.parity.test.ts` read
+      in full: drives BOTH `area` values through a forced `resolveApiKey` throw and asserts
+      `adaptResult).toEqual(descriptionResult)` (load-bearing, not decorative — would fail if either
+      branch special-cased differently) plus the Sentry-capture shape. Two pre-existing route tests
+      (`adapt/route.test.ts`, `description/route.test.ts`) correctly updated from
+      `mockRejectedValue` to `mockResolvedValue({...dbError:true})` to match the new no-throw
+      contract.
+    - **Independently re-ran locally** (fresh `git worktree`, NOT trusting the worker's self-report
+      per Rule 4e/FOLLOW-448): `pnpm install`, rebuilt `@estalara/{db,shared,auth,sdk}` first (the
+      documented FOLLOW-474/RETRO-150 worktree-bootstrap gotcha — control-plane typecheck 2307s on
+      workspace packages otherwise), then `tsc --noEmit` control-plane = clean;
+      `vitest run adapt-get-auth.parity.test.ts` = 4/4 pass; `vitest run adapt/route.test.ts
+      adapt/description/route.test.ts` = 89/89 pass; targeted `eslint` + `prettier --check` on all 6
+      touched files = clean. Worktree removed after.
+    - **CI:** `gh pr checks 502` all pass except the standing 2-leg "Rule I — wired-or-dead" gate;
+      independently re-derived via `gh pr view --json statusCheckRollup` (count=2) and
+      `gh run view --log-failed` (180 WARN lines, identical to the FOLLOW-546/548 baseline, zero
+      hits for this diff's symbols). CI-check counter: 1/5. Fix-iteration counter: 0/3.
+
+    PM-validated. CI green (bar the standing Rule I baseline). Runtime wiring confirmed
+    end-to-end (shared code path, both production call sites traced, no orphan callers/imports).
+    AC verified against the actual diff, not the worker's summary. Ready for human review.
+    AC:
+    - [x] Chose option 2: fold the throw-handling into resolveAdaptGetAuth as a third
+          AdaptGetAuthResult disposition (`{ok:false,status:401,message,dbError:true}`) — both call
+          sites now share the SAME branch, making divergence structurally impossible.
+    - [x] The mechanism fails CI if one call site's DB-throw disposition drifts from the other: the
+          shared-helper design makes drift structurally impossible, and the new parity test's
+          `.toEqual` cross-area comparison would additionally red on any behavioral asymmetry
+          (load-bearing, not decorative — independently confirmed by reading + re-running it).
+
+    MERGED 2026-07-10: PR #502 (`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`) merged
+    to `main` as commit `a934adf` (`a934adfd2359d4f12aa6538923e08ce351112025`,
+    `mergedAt: 2026-07-10T14:36:48Z` per `gh pr view 502 --json state,mergeCommit,mergedAt`).
+    `git checkout main && git pull` confirmed the commit is present locally
+    (`git log --oneline -1` -> `a934adf ... [FOLLOW-532] (#502)`). Ticket closed DONE.
+
+    retrospective-analyst to be spawned by the coordinator (per CLAUDE.md's per-ticket
+    retrospective loop) — NOT run by pm-orchestrator itself (no subagent-spawn capability in this
+    tool surface). Delegation brief prepared in `backlog/HANDOFFS.md` ("Retro delegation brief —
+    FOLLOW-532").
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

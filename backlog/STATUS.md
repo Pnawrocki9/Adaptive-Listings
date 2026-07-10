@@ -1,4 +1,102 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — PR #499 MERGED, FOLLOW-548 DONE, Rule AB citation fixed; RETRO-171 pending on pm-orchestrator/FOLLOW-548-close)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #502 MERGED, FOLLOW-532 DONE, RETRO pending, session 25)
+
+## SESSION 25 close-out (2026-07-10) — PR #502 MERGED (a934adf), FOLLOW-532 DONE, RETRO pending
+
+PR #502 (`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`) confirmed MERGED via
+`gh pr view 502 --json state,mergeCommit,mergedAt` → `state: MERGED`, `mergeCommit: a934adf`
+(`a934adfd2359d4f12aa6538923e08ce351112025`), `mergedAt: 2026-07-10T14:36:48Z`. Local sync:
+`git checkout main && git pull` fast-forwarded `e429524..a934adf`; `git log --oneline -1` confirms
+`a934adf ... [FOLLOW-532] (#502)` present.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-532-close`** (agent-prefix, branch-first —
+the QUEUE/STATUS/HANDOFFS/FOLLOW_UPS edits from the validation pass were made directly in the
+working tree before the merge landed; moved onto this branch on resume, never committed to `main`):
+FOLLOW-532 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-10`,
+`merged_pr: 502`, `merge_commit: a934adf`).
+
+**Retro delegation brief prepared** in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-532")
+per CLAUDE.md's per-ticket retrospective loop — **not spawned by pm-orchestrator** (no
+subagent-spawn capability in this tool surface); reported back to the coordinator to dispatch. Model
+recommendation: **Opus** (matches `retrospective-analyst`'s own agent-file default; also genuinely
+warranted here — first retro on a shared-auth-helper signature change with an explicit "3rd consumer
+must be appended here" call-site inventory, plus RETRO-164's own co-assignment recommendation being
+overridden this session, both cross-module/precedent-setting judgment calls, not routine).
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO content to land on the
+same branch first (matches PRs #486/#487/#489/#493/#497/#501 RETRO+DONE bundling convention).
+
+---
+
+## SESSION 25 cont'd (2026-07-10) — PR #502 validated, FOLLOW-532 READY_FOR_REVIEW
+
+backend-engineer opened PR #502 for FOLLOW-532. Validated per the non-negotiable checklist:
+
+1. **CI:** `gh pr checks 502 --watch` → all pass except the standing 2-leg "Rule I — wired-or-dead"
+   gate. Independently computed non-success count via `gh pr view 502 --json statusCheckRollup` →
+   **2**, both Rule I. Cross-checked via `gh run view 29097226725 --log-failed` → **180 WARN
+   lines**, identical to the FOLLOW-546/548 baseline; grepped for `adapt-get-auth` /
+   `AdaptGetAuthResult` / `resolveAdaptGetAuth` in that log → **0 hits** (worker's "none of mine"
+   claim independently confirmed, not taken on faith).
+2. **Wiring:**
+   `grep -rn "resolveAdaptGetAuth(" apps/ --include=*.ts | grep -v node_modules | grep -v test` →
+   exactly the helper's own export + the 2 production call sites (`adapt/route.ts:714`,
+   `adapt/description/route.ts:220`) — no orphan caller, `Sentry` import confirmed still used
+   elsewhere in both files (not orphaned by the removed try/catch).
+3. **AC:** worker chose option 2 (fold into helper as a 3rd `AdaptGetAuthResult` disposition,
+   `dbError: true`, keyed on a new required `area` param) — both routes now share one code path,
+   structurally stronger than the option-1 test-only parity the ticket also allowed. New parity
+   test's `.toEqual` cross-area assertion independently read and confirmed load-bearing.
+4. **Local re-verification (not trusting the worker's self-report, per Rule 4e/FOLLOW-448):** fresh
+   `git worktree` off the PR branch, `pnpm install`, rebuilt `@estalara/{db,shared,auth,sdk}` first
+   (FOLLOW-474/RETRO-150's documented worktree-bootstrap gotcha — control-plane `tsc` 2307s on those
+   packages otherwise), then `tsc --noEmit` = clean; `vitest run adapt-get-auth.parity.test.ts` =
+   4/4; `vitest run adapt/route.test.ts adapt/description/route.test.ts` = 89/89; targeted
+   `eslint` + `prettier --check` on all 6 touched files = clean. Worktree removed after.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.** PR comment posted with the full evidence
+trail. `backlog/QUEUE.md` FOLLOW-532 flipped `IN_PROGRESS` -> `READY_FOR_REVIEW`. Not merged (human
+reviews PRs).
+
+---
+
+## SESSION 25 (2026-07-10) — FOLLOW-532 promoted + dispatched; RETRO-171 confirmed already merged
+
+**State read at session start:** `git log --oneline -20` clean at `e429524`;
+`gh pr list --state open` → 0 open PRs. `backlog/RETROSPECTIVES.md` confirmed **RETRO-171 IS filed
+and merged** (commit `e429524` — the prior session's STATUS.md header calling it "pending" was
+stale; corrected here). 3 standing `## OPEN` escalations (ESC-020, ESC-028, ESC-034) re-read in full
+— all carry explicit non-blocking resolutions/status from prior human decisions (ESC-020's own
+`Resolution:` field, `backlog/STATUS.md` ESCALATION STATUS table) — not re-litigated, pipeline
+proceeds per established precedent across ~10+ prior sessions.
+
+**Ticket selection:** 4 tickets already `READY` in-queue (FOLLOW-467/468/469/474) are all P3.
+FOLLOW-458 (P2) is blocked (`depends_on: [FOLLOW-449]`, still `CODE_COMPLETE_OPERATOR_PENDING`).
+**FOLLOW-532** (P2, `backlog/FOLLOW_UPS.md`, RETRO-164 §4a LG-1, source_ticket FOLLOW-473,
+`depends_on: []`) is the highest-priority genuinely-unblocked item — promoted to `backlog/QUEUE.md`
+and dispatched. Delegation-table row: "ingest worker, control-plane, decision-api, Postgres/RLS,
+auth, onboarding HTTP, billing, webhooks" -> backend-engineer. Model: **Sonnet** (routine,
+well-scoped, no cross-module ambiguity — model-fit table). Assigned to backend-engineer ALONE, not
+co-assigned with qa-engineer as the stub suggested (scope is confined to backend-engineer's own two
+route files; avoids an unwarranted step-5d cross-agent integration check). Branch:
+`backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity`. Full brief in `backlog/HANDOFFS.md`.
+
+**CI-check counter:** 0/5 (not yet started — worker has not opened a PR). **Fix-iteration counter:**
+0/3.
+
+**Queue hygiene:** `backlog/QUEUE.md` FOLLOW-532 ticket block added, `status: IN_PROGRESS`.
+`backlog/FOLLOW_UPS.md` FOLLOW-532 stub `promoted_to_queue: true` with the co-assignment-deviation
+rationale noted inline.
+
+**Not touched this session (explicitly out of scope, no new information changes their status):**
+FOLLOW-543/545/547/533/534 (unpromoted stubs), FOLLOW-458 (still blocked), TICKET-PILOT-001 and the
+old Sprint 2.5/3 `READY` fossils (TICKET-030/038, FOLLOW-065/071/073/074/355/356/367/370/388/395/
+399/400/401/447/472) — pre-dates the current Sprint 22b active work, several superseded (e.g.
+TICKET-038's <40KB gzip bundle gate superseded by the 42KB ESC-028 raise; TICKET-030/040 Magic Link
+wizard superseded by later onboarding-HTTP work); not re-litigated this session, flagging for a
+future queue-hygiene pass rather than silently actioning without confirming which are genuinely dead
+vs. genuinely forgotten.
+
+---
 
 ## SESSION 24 CLOSE-OUT (2026-07-10) — PR #499 MERGED (ae1bc67), FOLLOW-548 DONE, Rule AB citation fixed, RETRO-171 pending
 

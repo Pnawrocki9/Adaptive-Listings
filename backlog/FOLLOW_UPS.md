@@ -14135,16 +14135,21 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   DB-throw contract lives OUTSIDE the shared resolveAdaptGetAuth helper as an unenforced caller
   obligation source_retro: RETRO-164 source_ticket: FOLLOW-473 recommended_sprint: backlog
   recommended_agent: backend-engineer + qa-engineer priority: P2 estimated_hours: 2
-  promoted_to_queue: false scope: >- resolveAdaptGetAuth (adapt-get-auth.ts) deliberately does NOT
-  catch the resolveApiKey throw (Rule K.2 configured-but-failed DB); its docstring says the caller
-  MUST wrap the call in try/catch, Sentry-capture, and fail loud (401). Both GET /api/adapt and GET
-  /api/adapt/description currently do this identically, but each owns its OWN try/catch +
-  Sentry.captureException + 401 construction and nothing pins the two together. Each route's
-  follow473 suite tests its own DB-throw→401 in isolation; there is no SHARED parity assertion. An
-  edit dropping/altering one route's catch would surface the throw as an unhandled 500 on that route
-  only — a silent asymmetry the green CI on the untouched route would not reveal. The discarded fork
-  (fatter self-contained helper owning the try/catch) would have made this drift structurally
-  impossible; the adjudication correctly chose the more-tested branch but inherited this seam. ac:
+  promoted_to_queue: >- true # promoted + dispatched 2026-07-10 (pm-orchestrator, session 25)
+  directly to backend-engineer alone (not co-assigned with qa-engineer as originally suggested —
+  scope is a shared parity test/helper-disposition change within backend-engineer's own two route
+  files, not a QA harness/fixture ticket; avoids an unwarranted step-5d integration check). QUEUE.md
+  FOLLOW-532 IN_PROGRESS, branch backend-engineer/FOLLOW-532-adapt-get-auth-dbthrow-parity.
+  scope: >- resolveAdaptGetAuth (adapt-get-auth.ts) deliberately does NOT catch the resolveApiKey
+  throw (Rule K.2 configured-but-failed DB); its docstring says the caller MUST wrap the call in
+  try/catch, Sentry-capture, and fail loud (401). Both GET /api/adapt and GET /api/adapt/description
+  currently do this identically, but each owns its OWN try/catch + Sentry.captureException + 401
+  construction and nothing pins the two together. Each route's follow473 suite tests its own
+  DB-throw→401 in isolation; there is no SHARED parity assertion. An edit dropping/altering one
+  route's catch would surface the throw as an unhandled 500 on that route only — a silent asymmetry
+  the green CI on the untouched route would not reveal. The discarded fork (fatter self-contained
+  helper owning the try/catch) would have made this drift structurally impossible; the adjudication
+  correctly chose the more-tested branch but inherited this seam. ac:
   - Either a SHARED parity test asserting BOTH routes map a resolveApiKey throw to 401 + a Sentry
     capture identically, OR fold the throw-handling into the helper as a third AdaptGetAuthResult
     disposition ({ok:false,status:401,dbError:true}) so both call sites cannot diverge.

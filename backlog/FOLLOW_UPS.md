@@ -14715,3 +14715,32 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     chosen resolution so a future PM session doesn't repeat the FOLLOW-550 dispatch-then-discover
     pattern for FOLLOW-543 or any future architect-assigned docs-codification ticket. cross_ref:
     [FOLLOW-550, FOLLOW-543, FOLLOW-448, RETRO-146]
+
+- id: FOLLOW-552 title: >- Wire the new §Bookkeeping-PR sequencing convention into its recovery
+  entry points + remove the "close the later PR" contradiction source_retro: RETRO-174 (§4d DG-1 /
+  §7 one-hop relocation) source_ticket: FOLLOW-550 recommended_sprint: backlog recommended_agent:
+  pm-orchestrator priority: P3 estimated_hours: 1 promoted_to_queue: false scope: >- FOLLOW-550 (PR
+  #509) added a new `## Bookkeeping-PR sequencing` section to `docs/AGENT_WORKFLOW.md:163` stating
+  the single-default close-out rules, but purely additively (+42/-0). RETRO-174 §4d DG-1 found the
+  section is a partially-orphaned doc export: (i) it has ZERO inbound cross-references from the
+  sections a PM actually reads mid-incident — notably `### "Two PRs conflict on the same files"`
+  (:350), the control-loop close-out, and `## Sprint-close checklist`; and (ii) that recovery
+  section's generic step `- Close the later PR` (:355) is BACKWARDS for the bookkeeping sub-case —
+  in the #504/#506 incident new rule (a) governs, the EARLIER redundant bookkeeping PR (#504) should
+  have been closed-as-superseded and the LATER validation PR (#506) preserved. A PM following
+  :350-357 verbatim on a bookkeeping-PR conflict would take the wrong action with no pointer to the
+  prevention rule 187 lines above. "Close the later PR" stays correct for the section's ORIGINAL
+  scenario (two CODE PRs from mis-scheduled overlapping tickets), so the fix is disambiguation +
+  cross-link, NOT deletion. This is the one-hop-downstream relocation of the gap
+  RETRO-173→FOLLOW-550 set out to close (RETRO-174 §7). NOT a code change; NOT a
+  CONVENTIONS_PATCH.md Rule (the bookkeeping-PR runtime pattern remains occurrence count 1). ac:
+  - docs/AGENT_WORKFLOW.md's `### "Two PRs conflict on the same files"` cross-references
+    `## Bookkeeping-PR sequencing` and disambiguates its "Close the later PR" step (close the LATER
+    PR for two overlapping CODE-ticket PRs; close the EARLIER superseded bookkeeping/dispatch PR per
+    rule (a) when one of the two is a fold-in bookkeeping PR).
+  - The control-loop close-out and/or `## Sprint-close checklist` gain a one-line pointer to §
+    Bookkeeping-PR sequencing so a PM is routed to it during close-out, not only if it already knows
+    to read it.
+  - OPTIONAL — rule (d)'s wording widened to sanction folding validation into whichever adjacent
+    QUEUE.md-touching bundle is already open (promotion OR DONE+RETRO), matching FOLLOW-550's own
+    #508 application (RETRO-174 §4d DG-2). cross_ref: [FOLLOW-550, FOLLOW-549, RETRO-174, RETRO-173]

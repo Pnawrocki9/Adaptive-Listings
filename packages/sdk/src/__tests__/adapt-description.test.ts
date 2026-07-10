@@ -160,7 +160,7 @@ describe('applyDescriptionAdaptation — ai_cached', () => {
     const container = buildSlot();
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const paragraphs = getSlotParagraphs(container);
@@ -174,7 +174,7 @@ describe('applyDescriptionAdaptation — ai_cached', () => {
     buildSlot('listing-042');
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const applied = testEventQueue.filter((e) => e.type === 'adapt.description.applied');
@@ -191,7 +191,7 @@ describe('applyDescriptionAdaptation — ai_cached', () => {
     );
     vi.stubGlobal('fetch', mockFetch);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'family_buyer');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'family_buyer', () => false);
     await flushAll();
 
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -218,7 +218,7 @@ describe('applyDescriptionAdaptation — source: original', () => {
 
     mockFetchOk({ description: 'Some text', source: 'original', locale: 'en', generated_at: null });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const slot = container.querySelector('[data-estalara-slot="description"]')!;
@@ -229,7 +229,7 @@ describe('applyDescriptionAdaptation — source: original', () => {
     buildSlot();
     mockFetchOk({ description: 'Some text', source: 'original', locale: 'en', generated_at: null });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const skipped = testEventQueue.filter((e) => e.type === 'adapt.description.skipped');
@@ -247,7 +247,7 @@ describe('applyDescriptionAdaptation — source: original', () => {
       generated_at: null,
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const slot = container.querySelector('[data-estalara-slot="description"]')!;
@@ -260,7 +260,7 @@ describe('applyDescriptionAdaptation — source: original', () => {
 
     mockFetchOk({ description: null, source: 'ai_cached', locale: 'en', generated_at: null });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const slot = container.querySelector('[data-estalara-slot="description"]')!;
@@ -278,7 +278,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     // Flush initial apply
     await Promise.resolve();
     await Promise.resolve();
@@ -336,7 +336,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     buildSlot();
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await Promise.resolve();
     await Promise.resolve();
     vi.runAllTimers();
@@ -383,7 +383,7 @@ describe('applyDescriptionAdaptation — MutationObserver resilience', () => {
     const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     // Flush microtasks (fetch resolve) and initial rAF (applyAndObserveSlot is called inside rAF).
     await Promise.resolve();
     await Promise.resolve();
@@ -472,7 +472,7 @@ describe('applyDescriptionAdaptation — neutral archetype', () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'neutral');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'neutral', () => false);
     await flushAll();
 
     expect(mockFetch).not.toHaveBeenCalled();
@@ -492,7 +492,7 @@ describe('applyDescriptionAdaptation — no slot elements', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     // No DOM elements added
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     // Early return — no fetch, no skipped event for no-slot (not a failure condition)
@@ -514,7 +514,7 @@ describe('applyDescriptionAdaptation — HTTP error', () => {
       vi.fn(() => Promise.resolve({ ok: false, status: 500 })),
     );
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const errorEvents = testEventQueue.filter((e) => e.type === 'adapt.description.error');
@@ -535,7 +535,7 @@ describe('applyDescriptionAdaptation — HTTP error', () => {
       vi.fn(() => Promise.reject(new Error('network down'))),
     );
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const errorEvents = testEventQueue.filter((e) => e.type === 'adapt.description.error');
@@ -557,7 +557,7 @@ describe('teardownDescriptionObservers', () => {
     const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await Promise.resolve();
     await Promise.resolve();
     vi.runAllTimers();
@@ -598,7 +598,7 @@ describe('applyDescriptionAdaptation — no decisionApiUrl', () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit decisionApiUrl
     const { decisionApiUrl: _omit, ...configNoUrl } = BASE_CONFIG;
 
-    await applyDescriptionAdaptation(configNoUrl, 'yield_hunter');
+    await applyDescriptionAdaptation(configNoUrl, 'yield_hunter', () => false);
     await flushAll();
 
     expect(mockFetch).not.toHaveBeenCalled();
@@ -640,7 +640,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: 'Strong buy-to-let in a prime location',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(headlineSlot.textContent).toBe('Strong buy-to-let in a prime location');
@@ -654,7 +654,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: '<script>alert(1)</script> Great property',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     // textContent must not parse the string as HTML
@@ -672,7 +672,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: null,
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     // Playbook headline must remain unchanged
@@ -686,7 +686,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
     // Response without 'headline' key (pre-ADR-0009 cache entry)
     mockFetchOk(AI_CACHED_RESPONSE);
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(headlineSlot.textContent).toBe(originalText);
@@ -701,7 +701,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: '',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(headlineSlot.textContent).toBe(originalText);
@@ -715,7 +715,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: 'Prime investment in Lisbon',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const events = testEventQueue.filter((e) => e.type === 'adapt.description.headline.applied');
@@ -731,7 +731,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: 'Per-listing headline text',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     // Flush initial apply
     await Promise.resolve();
     await Promise.resolve();
@@ -768,7 +768,7 @@ describe('applyDescriptionAdaptation — ADR-0009 per-listing headline', () => {
       headline: 'Per-listing headline',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await Promise.resolve();
     await Promise.resolve();
     vi.runAllTimers();
@@ -812,7 +812,7 @@ describe('applyDescriptionAdaptation — FOLLOW-169 AC3: headline only on ai_cac
       generated_at: null,
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     // Headline slot must be unchanged — the headline is gated via source !== 'ai_cached'
@@ -832,7 +832,7 @@ describe('applyDescriptionAdaptation — FOLLOW-169 AC3: headline only on ai_cac
       generated_at: null,
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(headlineSlot.textContent).toBe(originalText);
@@ -849,7 +849,7 @@ describe('applyDescriptionAdaptation — FOLLOW-169 AC3: headline only on ai_cac
       generated_at: '2026-06-11T00:00:00.000Z',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     // Headline must be applied — source === 'ai_cached' is satisfied
@@ -907,7 +907,7 @@ describe('adapt.description.* → shared EventSchema round-trip (FOLLOW-461)', (
       generated_at: '2026-06-11T00:00:00.000Z',
     });
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(testEventQueue.some((e) => e.type === 'adapt.description.applied')).toBe(true);
@@ -917,7 +917,7 @@ describe('adapt.description.* → shared EventSchema round-trip (FOLLOW-461)', (
 
   it('skipped (neutral archetype) emitted by the real path validates at ingest', async () => {
     buildSlot();
-    await applyDescriptionAdaptation(BASE_CONFIG, 'neutral');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'neutral', () => false);
     await flushAll();
 
     expect(testEventQueue.some((e) => e.type === 'adapt.description.skipped')).toBe(true);
@@ -931,7 +931,7 @@ describe('adapt.description.* → shared EventSchema round-trip (FOLLOW-461)', (
       vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })),
     );
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     const errEvents = testEventQueue.filter((e) => e.type === 'adapt.description.error');
@@ -947,10 +947,169 @@ describe('adapt.description.* → shared EventSchema round-trip (FOLLOW-461)', (
       vi.fn(() => Promise.reject(new Error('network down'))),
     );
 
-    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter');
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => false);
     await flushAll();
 
     expect(testEventQueue.some((e) => e.type === 'adapt.description.error')).toBe(true);
     assertAllValidateAtIngest();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-548 / RETRO-170 §4a LG-1 / §4c TG-1/TG-2 — Rule AB: the staleness guard
+// must be consulted at the LAST synchronous instant before the rAF-DEFERRED write,
+// not merely before the rAF is scheduled.
+//
+// Timing (independently verified, matches the PM's finding): JS evaluates call
+// arguments EAGERLY, so `requestAnimationFrame(applyAndObserveSlot(slot, ps, isStale))`
+// runs `applyAndObserveSlot` SYNCHRONOUSLY — its initial render+observe fire immediately,
+// already gated by the :309 check. The genuinely deferred, unguarded write is the
+// `reapply` CLOSURE it returns, which fires LATER off a rAF (the :323 schedule AND the
+// MutationObserver's own internal rAF). These tests drive that deferred write directly:
+// supersession lands AFTER the observer arms reapply but BEFORE reapply fires.
+// ---------------------------------------------------------------------------
+
+describe('applyDescriptionAdaptation — FOLLOW-548: rAF-deferred write staleness guard (Rule AB)', () => {
+  it('TG-1: a supersession in the intra-frame gap does NOT let the deferred reapply repaint the stale copy, and disconnects the watchdog', async () => {
+    const container = buildSlot('listing-548a');
+    const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
+    mockFetchOk(AI_CACHED_RESPONSE);
+
+    let stale = false;
+    // Dispatch with a fresh (not-yet-stale) predicate → passes :309, paints synchronously.
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => stale);
+    await flushAll();
+
+    // Initial paint landed (eager arg eval ran applyAndObserveSlot synchronously); the :323 rAF
+    // fired as a no-op during flushAll (content already matches).
+    expect(getSlotParagraphs(container)).toEqual([
+      'First paragraph for the yield hunter.',
+      'Second paragraph with rental income details.',
+      'Third paragraph about location.',
+    ]);
+
+    // A framework re-render reverts the slot to the NEWER listing's content → the observer
+    // schedules a deferred `reapply` on its internal rAF.
+    slot.innerHTML = '<p>Newer listing content</p>';
+    // Let the MutationObserver callback run (microtask) and SCHEDULE the reapply rAF...
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // ...then a rapid cross-listing nav supersedes THIS adaptation — in the intra-frame gap
+    // AFTER reapply is armed but BEFORE it fires. This is the exact window the :309 check misses.
+    stale = true;
+
+    // Fire the deferred reapply. With the FOLLOW-548 guard it must NOT re-assert the stale copy.
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(slot.textContent).toBe('Newer listing content');
+    expect(slot.textContent).not.toContain('yield hunter');
+
+    // The discard is observable (Rule AB §3 / guardrail K.2), not silent.
+    const skippedStale = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.skipped' && e.payload.reason === 'stale',
+    );
+    expect(skippedStale.length).toBeGreaterThanOrEqual(1);
+
+    // The watchdog was disconnected — a subsequent revert is NOT re-asserted either.
+    slot.innerHTML = '<p>Yet another content</p>';
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    expect(slot.textContent).toBe('Yet another content');
+  });
+
+  it('TG-2: persistence leg — a superseding nav that bails (fetch null) never overwrites the stale watchdog, which must NOT self-reassert the stale copy', async () => {
+    const container = buildSlot('listing-548b');
+    const slot = container.querySelector<HTMLElement>('[data-estalara-slot="description"]')!;
+    mockFetchOk(AI_CACHED_RESPONSE);
+
+    let staleL1 = false;
+    // L1 (yield_hunter) paints and arms its watchdog.
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => staleL1);
+    await flushAll();
+    expect(slot.textContent).toContain('yield hunter');
+
+    // Framework reverts the slot to the newer listing's own (unadapted) copy → arms L1's reapply.
+    slot.innerHTML = '<p>L2 original copy</p>';
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The superseding L2 nav supersedes L1 (staleL1 → true) and runs its OWN adaptation, but its
+    // description fetch is non-adaptable (template_fallback → fetchDescription returns null), so it
+    // bails at :314 BEFORE its own write — it never overwrites L1's slot/observer. (No runAllTimers
+    // here, so L1's armed reapply stays pending until we fire it explicitly below.)
+    staleL1 = true;
+    mockFetchOk({
+      description: 'Ignored fallback copy.',
+      source: 'template_fallback' as const,
+      locale: 'en',
+      generated_at: null,
+    });
+    await applyDescriptionAdaptation(BASE_CONFIG, 'family_buyer', () => false);
+    await Promise.resolve();
+    await Promise.resolve();
+    // L2 wrote nothing (bailed) — the slot still holds the reverted L2 original copy.
+    expect(slot.textContent).toBe('L2 original copy');
+
+    // Now L1's stale reapply fires. WITHOUT the guard it repaints yield_hunter and — via the
+    // self-reinforcing observer — PERSISTS it. WITH the guard it bails and disconnects.
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(slot.textContent).toBe('L2 original copy');
+    expect(slot.textContent).not.toContain('yield hunter');
+
+    // No self-reasserting watchdog remains: a further revert is not re-asserted.
+    slot.innerHTML = '<p>L2 edited copy</p>';
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.runAllTimers();
+    await Promise.resolve();
+    expect(slot.textContent).toBe('L2 edited copy');
+
+    const skippedStale = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.skipped' && e.payload.reason === 'stale',
+    );
+    expect(skippedStale.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('headline: a superseded deferred headline reapply does NOT repaint the stale headline', async () => {
+    const container = document.createElement('div');
+    container.setAttribute('data-estalara-listing', '');
+    container.setAttribute('data-estalara-listing-id', 'listing-548c');
+    const descSlot = document.createElement('div');
+    descSlot.setAttribute('data-estalara-slot', 'description');
+    descSlot.innerHTML = '<p>Original</p>';
+    const headlineSlot = document.createElement('h2');
+    headlineSlot.setAttribute('data-estalara-slot', 'headline');
+    headlineSlot.textContent = 'Original headline';
+    container.appendChild(descSlot);
+    container.appendChild(headlineSlot);
+    document.body.appendChild(container);
+
+    mockFetchOk({ ...AI_CACHED_RESPONSE, headline: 'Stale per-listing headline' });
+
+    let stale = false;
+    await applyDescriptionAdaptation(BASE_CONFIG, 'yield_hunter', () => stale);
+    await flushAll();
+    expect(headlineSlot.textContent).toBe('Stale per-listing headline');
+
+    // Newer listing's headline overwrites the slot → arms the headline reapply.
+    headlineSlot.textContent = 'Newer listing headline';
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Supersession in the intra-frame gap.
+    stale = true;
+    vi.runAllTimers();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(headlineSlot.textContent).toBe('Newer listing headline');
+    expect(headlineSlot.textContent).not.toBe('Stale per-listing headline');
   });
 });

@@ -550,3 +550,29 @@ event queue (satisfies K.2). Verified non-vacuous via scratchpad `cp` revert →
 continuation then dispatches ANOTHER fire-and-forget async with its own internal `await` — the
 checkpoint is stale by the time the inner await resolves. Propagate the latest-wins predicate into
 every async tail that mutates shared DOM/state, not just the first await.
+
+## 2026-07-10 · FOLLOW-548 · rAF-deferred write staleness guard (Rule AB, 3rd relocation hop)
+
+**What I built:** Closed the THIRD relocation of the cross-listing async-interleave gap. The
+FOLLOW-546 `isStale()` re-check at `adapt-description.ts:309` guards the SCHEDULING of the rAF, not
+the deferred write. Threaded `isStale` into `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` and
+re-consulted it INSIDE the `reapply` closure (the genuinely deferred write), disconnecting the
+watchdog when superseded. Added entry defense-in-depth. Made the `isStale` param REQUIRED (removed
+the never-stale default; updated 31 test call sites to `() => false`) — LG-2. Fixed the DG-1 schema
+JSDoc to list `'stale'`.
+
+**What was uncertain (and how I resolved it):** The stub AND RETRO-170 prose both cite `:323`/`:333`
+(`requestAnimationFrame(applyAndObserveSlot(...))`) as "the deferred unguarded write." I
+independently re-ran the eager-arg-eval repro: `f(g())` evaluates `g()` SYNCHRONOUSLY, so
+`applyAndObserveSlot`'s initial `render`+`observe` (`:161-163`) fire immediately, already gated by
+`:309`. The ONLY thing passed to rAF is the RETURNED `reapply` closure — which ALSO gets re-invoked
+by the MutationObserver's own internal rAF (`:155`) on every subsequent host mutation. So the real
+unguarded write is `reapply`, invoked via TWO rAF paths; guarding it once covers both. This is the
+mechanism behind RETRO-170's "self-reinforcing MutationObserver persistence" concern. NOTED in the
+PR report that the retro's `:323`/`:333` line citation is imprecise (the principle is right, the
+line is wrong) — did NOT self-edit Rule AB / RETRO-170 per scope.
+
+**A guardrail I'd add:** When a value is passed as a function-call ARGUMENT to a defer primitive
+(`requestAnimationFrame(fn(x))`, `setTimeout(fn(x))`), remember the argument is evaluated NOW, not
+on the deferred tick — the deferred thing is only what `fn` RETURNS. Audit the returned closure (and
+any observer that re-invokes it), not the call expression, when reasoning about "what runs later."

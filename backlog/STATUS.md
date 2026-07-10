@@ -1,4 +1,42 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-549 dispatched to backend-engineer, session 25 cont'd)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #505 MERGED, FOLLOW-549 DONE, RETRO-173 pending, session 25 cont'd)
+
+## SESSION 25 cont'd (2026-07-10) — #504/#505 MERGED, #506 superseded/closed, FOLLOW-549 DONE
+
+**Sequencing note for the human/coordinator, per explicit instruction:** this branch
+(`pm-orchestrator/FOLLOW-549-done`) has the DONE-flip committed and pushed but **NO PR opened yet**.
+Wait until `retrospective-analyst` appends RETRO-173 onto this SAME branch, THEN open ONE bundled PR
+(matches the FOLLOW-532/#503 pattern) — do not open a PR now.
+
+**What happened:** the human merged BOTH PR #504 (`pm-orchestrator/FOLLOW-549-dispatch`, the
+original dispatch-record/IN_PROGRESS block, commit `857e069`) AND PR #505 (the actual code,
+`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`, commit `f541f37`) — rather than closing #504
+as superseded. This made the PM's already-open validation PR #506
+(`pm-orchestrator/FOLLOW-549-validate`, cut from `main` BEFORE #504/#505 merged) develop an
+unresolvable `backlog/QUEUE.md` merge conflict once both landed (too large for the web editor). Per
+the coordinator's explicit instruction: did NOT attempt to rebase/resolve #506 — closed it unmerged
+instead (`gh pr close 506 --comment "..."`, no data loss — its evidence is independently
+re-confirmed against `main` post-merge below, not copy-pasted blind) and deleted its branch plus the
+already-merged `pm-orchestrator/FOLLOW-549-dispatch` branch.
+
+**Recovery:** `git checkout main && git pull` confirmed both merge commits present (`f541f37 (#505)`
+then `857e069 (#504)` in `git log --oneline`). Confirmed `backlog/QUEUE.md` has exactly ONE
+`FOLLOW-549` block (no duplication from the two merges — read the region in full before editing).
+Confirmed the #505 code is genuinely on `main`: `adapt-get-auth.ts`'s docstring (lines 13-16) and
+both route test files' `RETRO-172 TG-1` pin tests all present and grep-matched directly against the
+live file, not assumed from the PR diff. Since the code is already merged, FOLLOW-549 skips a
+separate `READY_FOR_REVIEW` state and goes straight `IN_PROGRESS` → `DONE` on a fresh branch
+`pm-orchestrator/FOLLOW-549-done` (off current `main`), with `merged_pr: 505`,
+`merge_commit: f541f37`, `completed_at: 2026-07-10`, and the full CI/AC evidence trail
+(independently re-derived pre-close-out — see the FOLLOW-549 ticket block's `ci_status:`) folded
+into `notes:`. `backlog/FOLLOW_UPS.md` stub note updated to reflect DONE.
+
+**Retro brief prepared** in `backlog/HANDOFFS.md` ("Retro delegation brief — FOLLOW-549") for
+RETRO-173 — model **Opus** (matches `retrospective-analyst`'s own agent-file default) — to be
+appended onto `pm-orchestrator/FOLLOW-549-done` so DONE + RETRO ship as ONE bundled PR, explicitly
+to stop the 3-PR-per-ticket sprawl (#504/#505/#506) this ticket produced. Not spawned by
+pm-orchestrator; reported back to the coordinator to dispatch.
+
+---
 
 ## SESSION 25 cont'd (2026-07-10) — PR #503 MERGED, FOLLOW-549 promoted + dispatched
 

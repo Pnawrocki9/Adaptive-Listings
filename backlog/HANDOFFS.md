@@ -3,6 +3,75 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Retro delegation brief — FOLLOW-549 (retrospective-analyst)
+
+**From:** pm-orchestrator (session 25 cont'd, post #504/#505/#506 close-out) **To:**
+retrospective-analyst (to be spawned by the coordinator — pm-orchestrator has no subagent-spawn
+capability in this tool surface) **Date:** 2026-07-10 **Branch:** `pm-orchestrator/FOLLOW-549-done`
+(already created off `main` at `f541f37`, carries the DONE-flip; append RETRO-173 content on this
+SAME branch — do NOT open a new PR, the PM will open ONE bundled PR after this lands, matching the
+FOLLOW-532/#503 pattern). **Model: Opus** — matches `retrospective-analyst`'s own agent-file default
+(`model: opus`).
+
+**What merged:** PR #505 (`backend-engineer/FOLLOW-549-adapt-get-auth-area-pin`, commit `f541f37`) —
+2 spy assertions (`toHaveBeenCalledWith(..., 'adapt'|'description')`) pinning each GET route's own
+`area` literal to `resolveAdaptGetAuth`'s 3rd param, plus 1 docstring sentence on
+`adapt-get-auth.ts`'s call-site-inventory naming the `area`-union-widening compile error as the
+forcing function for a genuine 3rd consumer. Test/docs-only — zero production logic touched. This
+closes RETRO-172's own §4c TG-1 / §4d DG-1 residual findings.
+
+**Unusual process wrinkle this retro should analyze (the actual interesting finding here, arguably
+more than the code itself):** this ticket produced **3 PRs (#504, #505, #506)** instead of the usual
+2 (dispatch-record + code) or the tighter 1 (when folded). #504 (dispatch-record) and #505 (the
+code) were BOTH merged by the human — #504 was expected to be closed-as-superseded once a validation
+PR folded its content, per the established convention from FOLLOW-380/546/548 (see
+`backlog/QUEUE.md`'s own historical notes on those tickets — "when merging, merge #504 first (or
+accept its content is superseded/duplicated by this validation's fold-in and can be closed without
+merging — human's call, flag the redundancy)"). Because the human merged BOTH #504 and #505, the
+PM's already-open validation PR #506 (`pm-orchestrator/FOLLOW-549-validate`, cut from `main` BEFORE
+#504/#505 merged) developed an unresolvable `backlog/QUEUE.md` merge conflict once both landed (too
+large for the GitHub web editor). Per explicit coordinator instruction, #506 was NOT rebased/
+resolved — it was closed unmerged (no data loss: its validation evidence — CI non-success count,
+Rule I baseline check, and an independently-reproduced swap-fails property check in a fresh worktree
+— was re-derived fresh against `main` post-merge rather than copy-pasted from the stale PR) and a
+clean DONE-flip was written on a NEW branch (`pm-orchestrator/FOLLOW-549-done`).
+
+**Specific angles this retro should check:**
+
+1. **Is "merge #504, don't close it" actually the wrong human instinct, or is the PM's own
+   established convention (leave a redundant dispatch-record PR open, expecting it to be closed
+   later) the fragile part?** Three prior tickets (FOLLOW-380, FOLLOW-546, FOLLOW-548) all left a
+   note like "when merging, merge #N first (or accept superseded/closable)" — ALL THREE were
+   apparently closed-not-merged by the human successfully; THIS is the first time the human merged
+   both. Is this a one-off (human simply chose the other valid option, both are "safe" per the PM's
+   own notes), or does the repeated PM-authored guidance itself invite this outcome by presenting
+   "merge it" as an explicitly sanctioned option rather than a discouraged one? If the latter, is a
+   CONVENTIONS_PATCH rule warranted (count check: this is the 4th occurrence of the two-PR-in-flight
+   shape, but the FIRST occurrence where the redundant PR was merged rather than closed — check
+   whether that's a NEW failure mode or just variance within an already-tolerated ambiguity).
+2. **Cost of the resulting 3-PR sprawl vs. the tighter FOLLOW-532 1-PR-per-hop pattern this same
+   session achieved for the PRIOR ticket.** FOLLOW-532 itself was dispatched+validated+closed with
+   exactly one bookkeeping PR per phase, ending clean. FOLLOW-549 (dispatched by the SAME session,
+   minutes later) regressed to the older, messier 3-PR shape. Is there a structural reason (the
+   validation PR being cut mid-flight before the dispatch PR merged) or is this pure timing luck?
+3. **Verify no residual QUEUE.md corruption:** confirm (independently, not by trusting this brief)
+   that `backlog/QUEUE.md` has exactly ONE `FOLLOW-549` block on `pm-orchestrator/FOLLOW-549-done`,
+   with `status: DONE`, `merged_pr: 505`, `merge_commit: f541f37`, and both AC checkboxes `[x]`.
+4. **Confirm FOLLOW-549's own AC is genuinely closed** — re-verify the swap-fails property yourself
+   (don't just re-read the PM's report) if you have the tooling to do so; if not, note that the PM's
+   evidence trail should be treated as one independent check, not the only one.
+
+**Standard retro deliverables per CLAUDE.md's per-ticket retrospective loop:** read the merged PR
+#505 diff, map changed symbols to consumers (already confirmed: `resolveAdaptGetAuth`'s `area` param
+has exactly 2 production call sites, unchanged from FOLLOW-532), check the last 5 retro entries
+(RETRO-168–172) for repeating patterns — RETRO-172 is the DIRECT source and worth re-reading in full
+— check adjacent QUEUE.md tickets (FOLLOW-533/534, the other RETRO-164 stubs, still unpromoted) for
+cascading assumptions, append a structured RETRO-173 entry to `backlog/RETROSPECTIVES.md`, generate
+FOLLOW_UPS stubs for any gap found, and promote a finding to a permanent `CONVENTIONS_PATCH.md` Rule
+ONLY if the same pattern appeared in ≥2 PRIOR numbered retros.
+
+---
+
 ## Delegation brief — FOLLOW-549 (backend-engineer) — pin each GET adapt route's `area` literal
 
 **From:** pm-orchestrator (session 25 cont'd) **To:** backend-engineer **Date:** 2026-07-10

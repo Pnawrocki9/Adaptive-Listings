@@ -160,6 +160,48 @@ opening a PR:
 This mirrors OPERATING_PRINCIPLE 5 (verify-not-guess) applied to intra-session handoff. Source:
 RETRO-146 §4e / FOLLOW-448.
 
+## Bookkeeping-PR sequencing (workflow guidance — RETRO-173 / FOLLOW-550)
+
+RETRO-173 (FOLLOW-549, 2026-07-10) traced a 3-PR sprawl: a 1h P3 ticket produced three PRs (#504
+dispatch-record, #505 code, #506 validation) where an adjacent ticket minutes earlier (FOLLOW-532,
+#502 code + #503 single DONE+RETRO bundle) achieved a tight 2-PR shape. #506 was cut from `main`
+before #504/#505 merged; when the human merged BOTH #504 and #505, #506 developed an unresolvable
+`backlog/QUEUE.md` merge conflict and had to be closed unmerged (its evidence was re-derived fresh
+against post-merge `main` — no data loss, but avoidable manual recovery). The proximate cause was
+merging the redundant dispatch-record PR (#504) instead of closing it as superseded — the prior
+close-out convention presented "merge it" and "close it" as co-equal options, which are not
+symmetric in downstream risk once a validation PR is already in flight.
+
+Until a durable fix lands, apply these four rules whenever a ticket's bookkeeping produces more than
+one PR:
+
+(a) **A bookkeeping/dispatch PR whose content a later PR folds in is ALWAYS closed-as-superseded,
+never merged.** If a dispatch-record PR's diff is going to be re-included (folded) in a subsequent
+code or DONE+RETRO PR, close the earlier one — do not merge it "for the record."
+
+(b) **Never have two `backlog/QUEUE.md`-touching PRs open in flight simultaneously.** Serialize
+them. A validation/close-out PR cut from `main` while a sibling QUEUE.md-touching PR is still open
+will conflict the moment both land.
+
+(c) **Validation/DONE bookkeeping PRs are cut from `main` AFTER the code PR merges** — never from a
+stale pre-merge branch. Cutting early guarantees the branch's QUEUE.md base drifts the instant the
+code PR (which also touches QUEUE.md) merges.
+
+(d) **Prefer folding validation into the DONE+RETRO bundle** rather than opening a separate
+validation PR at all — this is the FOLLOW-532/#503 tight pattern RETRO-173 explicitly holds up as
+the model to restore.
+
+**This is workflow guidance, not a codified `CONVENTIONS_PATCH.md` Rule.** RETRO-173 explicitly held
+this finding at occurrence count 1 as a NUMBERED-RETRO finding — the repo's ≥2-prior-numbered-retro
+promotion threshold (Rule AB) is genuinely unmet, even though the raw two-PRs-in-flight shape
+recurred ~4× in one session at the PM/QUEUE-notes level (three of those four were resolved cleanly
+by closing the stale PR; #504/#506 is the first to exhibit the merged-not-closed failure sub-mode).
+Promotion to a permanent Rule awaits a second NUMBERED retro documenting the same pattern, per the
+repo's own adjudication discipline (RETRO-153/158, RETRO-169/170 Rule AB). If that second sighting
+occurs, this section is the ready-made source text for the `CONVENTIONS_PATCH.md` Rule.
+
+Source: RETRO-173 §5a/§6/§9 / FOLLOW-550.
+
 ## The retrospective loop (learning loop)
 
 After every PR is merged, the PM spawns a second subagent that runs in parallel with the next

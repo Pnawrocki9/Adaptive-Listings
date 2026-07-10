@@ -122,8 +122,20 @@ function descFingerprint(el: HTMLElement): string {
  *   queued per revert burst. The fingerprint check in the rAF callback short-circuits
  *   if the content already matches (e.g. two rapid Svelte frames where the second
  *   one loses its race to the rAF).
+ *
+ * FOLLOW-548 / Rule AB: `isStale` is consulted at the LAST synchronous instant before
+ *   EACH host-DOM write — both the synchronous initial write below AND, critically, the
+ *   DEFERRED `reapply` write which fires LATER on its own `requestAnimationFrame` (both
+ *   the caller's `:323` rAF and this observer's internal rAF re-run `reapply` after this
+ *   function has already returned). A rapid cross-listing nav that supersedes us in that
+ *   intra-frame gap must not let the self-reinforcing watchdog re-paint this stale
+ *   archetype's copy onto the newer listing.
  */
-function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void {
+function applyAndObserveSlot(
+  el: HTMLElement,
+  paragraphs: string[],
+  isStale: () => boolean,
+): () => void {
   _slotMap.get(el)?.obs.disconnect();
 
   const desiredFp = paragraphs.join('\x00');
@@ -139,6 +151,20 @@ function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void 
    * own DOM mutations are invisible to the observer (no infinite loop).
    */
   const reapply = (): void => {
+    // FOLLOW-548 / Rule AB: THE deferred-write guard. This closure runs later, off a rAF
+    // (the caller's `:323` schedule and this observer's `:155` schedule), with no `await`
+    // or checkpoint between the schedule and here — so a supersession that lands after the
+    // caller's `:309` check still reaches this point. Re-consult staleness at the last
+    // synchronous instant before the write; when stale, do NEITHER `render` NOR
+    // `obs.observe` — and disconnect the watchdog entirely, since a superseded slot's
+    // observer serves no purpose and would otherwise keep re-asserting the stale copy
+    // (RETRO-170's self-reinforcing-MutationObserver persistence leg). Observable discard,
+    // never silent (Rule AB §3 / guardrail K.2).
+    if (isStale()) {
+      s.obs.disconnect();
+      pushEvent(EVT + 'skipped', { reason: 'stale' });
+      return;
+    }
     if (descFingerprint(el) === s.fp) return;
     s.obs.disconnect();
     render(el, paragraphs);
@@ -157,11 +183,20 @@ function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void 
       reapply();
     });
   });
+  s.obs = obs;
 
-  // Initial write: observer not yet active, no loop risk.
+  // FOLLOW-548 defense-in-depth: the initial write is already gated by the caller's `:309`
+  // check (same synchronous continuation, no yield between it and the `.forEach` dispatch),
+  // but re-check here so the guarantee survives a future refactor that inserts a delay. When
+  // stale, skip the initial paint AND observer arming; the returned `reapply` re-checks and
+  // stays inert.
+  if (isStale()) {
+    pushEvent(EVT + 'skipped', { reason: 'stale' });
+    return reapply;
+  }
+
   render(el, paragraphs);
   obs.observe(el, { childList: true, subtree: true });
-  s.obs = obs;
   _slotMap.set(el, s);
   return reapply;
 }
@@ -174,8 +209,19 @@ function renderHeadline(el: HTMLElement, text: string): void {
   el.textContent = text;
 }
 
-/** Write headline into slot, attach MutationObserver for framework-revert resilience. */
-function applyAndObserveHeadlineSlot(el: HTMLElement, text: string): () => void {
+/**
+ * Write headline into slot, attach MutationObserver for framework-revert resilience.
+ *
+ * FOLLOW-548 / Rule AB: same deferred-write guard as `applyAndObserveSlot` — the `reapply`
+ * closure fires later off a rAF (the caller's `:333` schedule and this observer's internal
+ * schedule) after this function has returned, so it re-consults `isStale` before writing and
+ * disconnects the watchdog when superseded.
+ */
+function applyAndObserveHeadlineSlot(
+  el: HTMLElement,
+  text: string,
+  isStale: () => boolean,
+): () => void {
   _headlineSlotMap.get(el)?.obs.disconnect();
 
   const s: HeadlineSlotState = {
@@ -185,6 +231,13 @@ function applyAndObserveHeadlineSlot(el: HTMLElement, text: string): () => void 
   };
 
   const reapply = (): void => {
+    // FOLLOW-548 / Rule AB: deferred-write guard (see applyAndObserveSlot). Bail + disconnect
+    // the watchdog when a newer nav has superseded this headline write; observable, not silent.
+    if (isStale()) {
+      s.obs.disconnect();
+      pushEvent(EVT + 'skipped', { reason: 'stale' });
+      return;
+    }
     if (s.f & 1 || el.textContent === s.dt) return;
     s.f |= 1;
     renderHeadline(el, text);
@@ -202,10 +255,16 @@ function applyAndObserveHeadlineSlot(el: HTMLElement, text: string): () => void 
       reapply();
     });
   });
+  s.obs = obs;
+
+  // FOLLOW-548 defense-in-depth: skip the initial headline write + observer arming when stale.
+  if (isStale()) {
+    pushEvent(EVT + 'skipped', { reason: 'stale' });
+    return reapply;
+  }
 
   renderHeadline(el, text);
   obs.observe(el, { childList: true, characterData: true, subtree: true });
-  s.obs = obs;
   _headlineSlotMap.set(el, s);
   return reapply;
 }
@@ -262,18 +321,25 @@ async function fetchDescription(
  * Listing ID from first [data-estalara-listing-id] on the page.
  * Attaches a MutationObserver per slot for resilience. Never throws.
  *
- * @param isStale FOLLOW-546 / RETRO-169: latest-wins staleness predicate propagated from the
- *   caller's in-flight guard (index.ts `latestRefreshId`). Consulted BEFORE any DOM slot
- *   mutation — both at entry and, critically, immediately after `fetchDescription` resolves —
- *   so a rapid cross-listing navigation that supersedes this fire-and-forget call while its
- *   own fetch is in flight cannot paint the stale archetype's copy onto the newer listing.
- *   Defaults to a never-stale predicate so callers with no in-flight-guard concept (e.g. the
- *   ~30 unit-test call sites) behave exactly as before.
+ * @param isStale FOLLOW-546 / FOLLOW-548 / RETRO-169 / RETRO-170: latest-wins staleness
+ *   predicate propagated from the caller's in-flight guard (index.ts `latestRefreshId`).
+ *   Consulted at the LAST synchronous instant before EVERY host-DOM write it protects (Rule AB):
+ *   at entry, immediately after `fetchDescription` resolves, AND — via the per-slot
+ *   `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` closures — inside each rAF-DEFERRED
+ *   `reapply` write, so a rapid cross-listing navigation that supersedes this fire-and-forget
+ *   call cannot paint (or, through the self-reinforcing MutationObserver watchdog, PERSIST) the
+ *   stale archetype's copy onto the newer listing.
+ *
+ *   FOLLOW-548 / LG-2: this param is REQUIRED (no never-stale default). A never-stale default
+ *   was a latent footgun — a future prod caller that omitted the argument would silently lose
+ *   the guard with no compile/lint signal (Rule AB §4). The sole prod call site (index.ts:809)
+ *   passes `() => myRefreshId !== latestRefreshId`; unit-test call sites pass an explicit
+ *   `() => false` (never-stale) to opt out.
  */
 export async function applyDescriptionAdaptation(
   config: SdkConfig,
   archetype: ArchetypeId | 'neutral',
-  isStale: () => boolean = () => false,
+  isStale: () => boolean,
 ): Promise<void> {
   if (typeof document === 'undefined' || !config.decisionApiUrl) return;
 
@@ -320,7 +386,7 @@ export async function applyDescriptionAdaptation(
   const paragraphs = splitParagraphs(resp.description!);
   if (!paragraphs.length) return;
 
-  slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot, paragraphs)));
+  slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot, paragraphs, isStale)));
 
   // ADR-0009: apply per-listing headline when present and non-empty.
   // Supersedes the playbook headline directive (applied earlier by /api/adapt).
@@ -330,7 +396,7 @@ export async function applyDescriptionAdaptation(
   if (headlineText) {
     const headlineSlots = document.querySelectorAll<HTMLElement>('[data-estalara-slot="headline"]');
     headlineSlots.forEach((slot) =>
-      requestAnimationFrame(applyAndObserveHeadlineSlot(slot, headlineText)),
+      requestAnimationFrame(applyAndObserveHeadlineSlot(slot, headlineText, isStale)),
     );
     pushEvent(EVT + 'headline.applied', { listing_id: listingId, archetype });
   }

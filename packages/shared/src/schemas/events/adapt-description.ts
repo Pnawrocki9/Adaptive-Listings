@@ -54,17 +54,22 @@ export type AdaptDescriptionAppliedPayload = z.infer<typeof AdaptDescriptionAppl
 /**
  * `adapt.description.skipped` — description adaptation was intentionally not applied.
  *
- * Emitted with `{ reason: 'neutral' }` when the archetype is 'neutral', or with `{}` when
- * the fetch returned a non-adaptable response (source !== 'ai_cached' or empty description).
+ * Emitted with `{ reason: 'neutral' }` when the archetype is 'neutral', with
+ * `{ reason: 'stale' }` when a rapid cross-listing navigation superseded the in-flight
+ * adaptation before it could write (FOLLOW-546 / FOLLOW-548 latest-wins guard — at entry,
+ * post-fetch, or inside the rAF-deferred slot/headline reapply), or with `{}` when the fetch
+ * returned a non-adaptable response (source !== 'ai_cached' or empty description).
  *
- * Emitted by: packages/sdk/src/core/adapt-description.ts (applyDescriptionAdaptation).
+ * Emitted by: packages/sdk/src/core/adapt-description.ts (applyDescriptionAdaptation,
+ * applyAndObserveSlot, applyAndObserveHeadlineSlot).
  *
  * @example
  * { type: 'adapt.description.skipped', payload: { reason: 'neutral' } }
  */
 export const AdaptDescriptionSkippedPayloadSchema = z.object({
-  /** Optional machine-readable reason. Currently only 'neutral'; absent for a non-adaptable
-   * fetch result. z.string() (not z.enum) keeps forward-compat with new reason codes. */
+  /** Optional machine-readable reason. 'neutral' (neutral archetype) | 'stale' (superseded by a
+   * newer cross-listing nav, FOLLOW-546/FOLLOW-548); absent for a non-adaptable fetch result.
+   * z.string() (not z.enum) keeps forward-compat with new reason codes. */
   reason: z.string().min(1).optional(),
 });
 export const AdaptDescriptionSkippedEventSchema = EventEnvelopeBaseSchema.extend({

@@ -2658,3 +2658,160 @@ banner (orchestrator single writer for that section) — your ticket-status/FOLL
 inside the ticket bodies are fine and expected.
 
 ---
+
+## PM orchestrator (session 24) → sdk-engineer, FOLLOW-548
+
+**From:** pm-orchestrator (session 24) **To:** sdk-engineer **Date:** 2026-07-10 **Branch:**
+`sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard` (agent-prefix required — branch-first, or
+push-CI won't run). **Model: Opus** — rAF/microtask ordering + supersession-timing reasoning,
+prod-touching, same class as FOLLOW-380/FOLLOW-546; the mandatory model-fit rule puts this above the
+sdk-engineer Sonnet default.
+
+**Read first:**
+
+1. `backlog/RETROSPECTIVES.md` **RETRO-170** in full (search `## RETRO-170 —`) — the source retro.
+   §4a LG-1/LG-2, §4c TG-1/TG-2, §4d DG-1, §7 are the exact findings this ticket closes.
+2. `CONVENTIONS_PATCH.md` **Rule AB** (search `## Rule AB —`) — this ticket is explicitly governed
+   by it: _"a latest-wins / in-flight staleness guard on a rapid-nav re-adaptation MUST be consulted
+   at the LAST synchronous instant before EVERY host-DOM write it protects — including
+   fire-and-forget sub-adaptations in other modules AND rAF/microtask-deferred writes."_ Make your
+   fix satisfy this principle, not just the letter of the stub's original citations (see the timing
+   finding below — the principle is right, one of its supporting citations needs a second look).
+3. `docs/adr/ADR-0014-cross-listing-adaptation-and-sot-archetype.md` — the design this whole chain
+   (FOLLOW-380 → FOLLOW-546 → FOLLOW-548) hardens. Do not contradict its model.
+4. The merged FOLLOW-546 diff (`packages/sdk/src/core/adapt-description.ts`, commit `118bdd8`) and
+   `packages/sdk/src/__tests__/follow-380.test.ts`'s `hardening (d)` describe block — this ticket's
+   fix and test should extend the SAME file/patterns, not invent new ones.
+
+**Ticket:** FOLLOW-548 (`backlog/QUEUE.md`, Sprint 22b tail, P3, 2.5h estimate).
+
+### ⚠️ Read this section before anything else — a material correction to the stub's own premise
+
+The original FOLLOW-548 stub (and RETRO-170's own prose) states: \*"FOLLOW-546's `isStale()`
+re-check at `adapt-description.ts:309` is consulted BEFORE the requestAnimationFrame paint, so the
+actual DOM write is DEFERRED —
+`slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot( slot, paragraphs)))` (`:323`)
+... `isStale()` guards the SCHEDULING of the rAF, not the write inside `applyAndObserveSlot`."\*\*
+
+**I independently verified this claim before delegating and it does NOT hold for the initial
+paint.** Proof (ran this exact repro before writing this brief):
+
+```js
+node -e "
+let log = [];
+function applyAndObserveSlot(x) {
+  log.push('sync-write:' + x);
+  return () => log.push('rAF-callback:' + x);
+}
+function requestAnimationFrame(fn) { log.push('scheduled'); setTimeout(fn, 0); }
+[1,2].forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot)));
+console.log('immediately:', JSON.stringify(log));
+"
+# → immediately: ["sync-write:1","scheduled","sync-write:2","scheduled"]
+```
+
+JavaScript evaluates function-call arguments EAGERLY, before the outer call — `f(g())` always runs
+`g()` synchronously first. So `requestAnimationFrame(applyAndObserveSlot(slot, paragraphs))` calls
+`applyAndObserveSlot(slot, paragraphs)` **synchronously**, right now, in the same continuation as
+the `:309` `isStale()` check that precedes it (there is no `await` or yield point between `:309` and
+`:323`). `applyAndObserveSlot`'s body (`adapt-description.ts:126-167`) does its "Initial write" —
+`render(el, paragraphs)` + `obs.observe(...)` at **`:161-163`**, per its own line-161 comment
+"Initial write: observer not yet active, no loop risk" — IMMEDIATELY, synchronously. **Only the
+function `applyAndObserveSlot` RETURNS** (the `reapply` closure defined at `:141-147`,
+`return reapply;` at `:166`) is what actually gets passed to `requestAnimationFrame` and fires
+later, on the next frame.
+
+**What this means for your fix:** the INITIAL paint is ALREADY correctly gated by the `:309`
+`isStale()` check today — there is no real bug in the initial-write path as literally described. The
+GENUINELY deferred and unguarded write is the **`reapply` loop-guard closure**
+(`adapt-description.ts:141-147`): it is invoked later, from inside the `MutationObserver` callback
+(`:149-159`, which itself schedules `reapply` via its OWN internal `requestAnimationFrame` at
+`:155`) — i.e. WHENEVER the slot's DOM subsequently mutates (e.g. the host framework re-renders and
+"reverts" the SDK's write — the exact scenario this loop-guard exists to counter). `reapply` has
+**no `isStale` visibility at all** — `isStale` is not threaded into `applyAndObserveSlot`'s
+signature (`function applyAndObserveSlot(el: HTMLElement, paragraphs: string[]): () => void`), so
+`reapply`'s closure only captures `el` and `paragraphs`. It unconditionally re-writes when
+`descFingerprint(el) !== s.fp` (`:142`) — a check that cannot distinguish "framework reverted our
+write back to the original" from "a NEWER navigation already painted its own different content into
+this same DOM node." **This ongoing watchdog mechanism is very likely what RETRO-170's
+persistence-leg concern ("the self-reinforcing MutationObserver ... actively re-asserts the stale
+copy") is actually describing** — the general Rule AB principle is correct, it just applies to a
+different specific code path than the retro's own `:323`/`:333` line citation literally states.
+
+**Before implementing anything: re-run my repro yourself (or an equivalent one against the real
+`applyAndObserveSlot`) and confirm this independently.** If you reach a different conclusion, STOP
+and escalate (`backlog/ESCALATIONS.md`) rather than silently building against my analysis or the
+stub's original (possibly imprecise) framing — this determines which code path actually needs the
+fix. Do not edit `CONVENTIONS_PATCH.md` Rule AB or `backlog/RETROSPECTIVES.md` RETRO-170 yourself to
+"correct" this — that's out of scope for this ticket; note the discrepancy in your PR report instead
+so a future retrospective/human pass can reconcile the permanent record.
+
+### The gap (adjusted per the finding above) + AC
+
+1. **(a) — the real deferred-write gap.** Thread staleness awareness into the `reapply` closure /
+   `MutationObserver` watchdog (`adapt-description.ts:126-167` for the paragraph slot, `:178`-onward
+   for the headline slot — re-read the headline function's equivalent structure yourself, don't
+   assume it's identical). The closure needs either (i) a captured `isStale` predicate consulted at
+   the top of `reapply`, bailing (and probably `disconnect()`-ing the watchdog entirely, since a
+   superseded slot's watchdog serves no purpose going forward) before `render`/`obs.observe` fire
+   again, or (ii) some other mechanism that achieves the same guarantee — your call, but neither
+   `render` NOR `obs.observe`/re-arm may execute when stale. As defense-in-depth (cheap, and correct
+   regardless of the finding above), ALSO thread `isStale` into
+   `applyAndObserveSlot`/`applyAndObserveHeadlineSlot`'s signatures and check it at entry — this
+   costs little and keeps the guarantee correct even if a future refactor introduces an actual delay
+   between `:309` and the `.forEach` call.
+2. **(b) — TG-1, non-vacuous test for the deferred-write window.** Given the finding above, the
+   actual race window is: initial paint happens (fresh archetype) → SOMETHING mutates the slot's DOM
+   (triggering the `MutationObserver`) → a supersession happens BEFORE `reapply`'s internal rAF
+   (`:155`) fires → assert the stale `reapply` does NOT repaint stale content and/or does not
+   re-arm. Drive this in jsdom by manually dispatching a DOM mutation on the slot after the initial
+   paint, then draining the queued rAF, with a supersession (`listing.viewed` archetype change)
+   interposed at the right point — mirror `follow-380.test.ts`'s `hardening (a)`/`(d)` patterns for
+   controlling async/rAF ordering via deferred promises and `flush()`.
+3. **(c) — TG-2, persistence leg.** The newer nav's own `fetchDescription` resolves with a
+   non-adaptable result (`resp === null` or `source !== 'ai_cached'`), so ITS
+   `applyDescriptionAdaptation` bails at `:314` (`if (!resp) return`) BEFORE reaching its own
+   `.forEach`/rAF — meaning it never overwrites the stale slot/observer. Assert that after this
+   scenario, no stale slot content survives and no stale watchdog is still capable of
+   self-reasserting old content.
+4. **(d) — LG-2, close the never-stale-default footgun.** `isStale: () => boolean = () => false` is
+   safe TODAY (the sole prod call site, `index.ts:809`, always passes the real predicate — grep
+   confirms no other production caller exists), but a future caller that forgets the 3rd argument
+   would silently revert to never-stale with zero compile/lint signal. Either make the parameter
+   REQUIRED (updating all ~30 existing 2-arg test call sites in `adapt-description.test.ts` +
+   `follow-354.test.ts` to pass an explicit `() => false` — larger mechanical diff, but closes the
+   footgun completely) OR add a narrower guard/lint/comment at the sole prod call site
+   (`index.ts:809`) that would catch a regression there specifically — your call on which is the
+   better cost/benefit tradeoff for this codebase; state your reasoning in the PR.
+5. **(e) — DG-1, JSDoc fix.** `packages/shared/src/schemas/events/adapt-description.ts:57` ("Emitted
+   with `{ reason: 'neutral' }` ... or with `{}`") and `:66-67` ("Optional machine-readable reason.
+   Currently only 'neutral'...") both predate FOLLOW-546's `reason: 'stale'` emission — update both
+   to list `'stale'` alongside `'neutral'`. This is docs-only inside a `packages/shared` schema file
+   — no Zod shape change needed (the field is already `z.string()`, not `z.enum`).
+
+**Standards:** branch-first (first action:
+`git checkout -b sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard main`); prettier every touched
+file, every time; Zod for any new schema surface (none expected beyond the JSDoc-only fix in item
+(e)); `packages/*` coverage ≥80%; zero `any` without inline reason; `tsc --noEmit` + eslint clean;
+keep the full `packages/sdk` suite green (1521+ tests as of FOLLOW-546); SDK bundle stays ≤42KB gzip
+(ESC-028/FOLLOW-469 — last measured 40.47KB).
+
+**Do NOT:**
+
+- Touch `backlog/QUEUE.md`, `docs/MASTER_DESIGN.md`, `README.md`, or `CLAUDE.md` — out of scope.
+- Edit `CONVENTIONS_PATCH.md` Rule AB or `backlog/RETROSPECTIVES.md` RETRO-170 to "fix" the citation
+  discrepancy noted above — flag it in your PR report instead.
+- `git checkout <file>` on a file holding unstaged ticket work as a revert-to-RED technique — this
+  is a documented FOLLOW-380 trap (`.claude/agents/sdk-engineer/lessons.md`, 2026-07-10 entry: "cost
+  me a full re-apply of index.ts"). Use a scratchpad copy (`cp`) instead.
+- Touch FOLLOW-547 (unversioned SoT storage schema) — separate, unpromoted stub, not in scope here.
+
+**Open a PR when done; do not merge.** Report: whether you independently confirmed or disagreed with
+the timing-analysis finding above (and your evidence either way); which code path(s) you guarded
+(`reapply` watchdog, initial-write defense-in-depth, or both); your LG-2 approach (required-param vs
+guard-at-call-site) and why; confirmation the two new tests are genuinely non-vacuous
+(RED-without-fix evidence, safely obtained per the FOLLOW-380 lessons.md precedent); CI result (Rule
+I baseline non-blocking — confirm any NEW exported symbol has a real producer AND consumer); and any
+place you found ambiguous and escalated rather than guessed.
+
+---

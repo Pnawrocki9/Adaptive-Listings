@@ -14576,7 +14576,11 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
 - recommended_agent: sdk-engineer
 - priority: P3
 - estimated_hours: 2.5
-- promoted_to_queue: false
+- promoted_to_queue: true (promoted 2026-07-10 by pm-orchestrator, session 24, into
+  `backlog/QUEUE.md` Sprint 22b as a real ticket block, `status: IN_PROGRESS`,
+  `agent: sdk-engineer`, `depends_on: []`; dispatched same session; stub retained as
+  cross-reference. PM verification surfaced a timing-analysis correction to this stub's own LG-1
+  premise — see the QUEUE.md ticket block `notes:` for detail — flagging, not editing, this stub)
 - governed_by: Rule AB (the staleness predicate must be consulted at the LAST synchronous instant
   before EACH host-DOM write, including inside rAF/microtask-deferred callbacks)
 - scope: FOLLOW-546 threaded an `isStale()` latest-wins predicate into `applyDescriptionAdaptation`

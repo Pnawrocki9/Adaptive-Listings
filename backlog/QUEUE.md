@@ -1,6 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 23 close-out — PR #495 MERGED, FOLLOW-546 DONE, RETRO-170 pending)
+## ▶️ START HERE — resume 2026-07-10 (session 24 — PR #497 MERGED, FOLLOW-546 DONE + RETRO-170/Rule AB landed; FOLLOW-548 promoted + dispatched to sdk-engineer)
+
+**PR #497 MERGED** to `main` as squash commit `9037c85` — FOLLOW-546 confirmed `DONE`, RETRO-170
+landed, **Rule AB** (staleness guard must cover every deferred DOM write, not just synchronous
+checkpoints) now permanent in `CONVENTIONS_PATCH.md`. `gh pr list --state open` → 0 open PRs. Local
+`main` synced & clean.
+
+**Dispatched by human direction: FOLLOW-548** (P3, `agent: sdk-engineer`, `depends_on: []`) — the
+THIRD relocation hop of the RETRO-105 cross-listing async-interleave gap (sync-checkpoint
+[FOLLOW-380] → fire-and-forget tail [FOLLOW-546] → this ticket's write-path guard), governed by Rule
+AB. Promoted from `backlog/FOLLOW_UPS.md` (`promoted_to_queue: true`) into `backlog/QUEUE.md` Sprint
+22b, flipped straight to `IN_PROGRESS`, `assigned_to: sdk-engineer`, branch
+`sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard`. **Model: Opus** — rAF/microtask ordering +
+supersession-timing reasoning, prod-touching, same class as FOLLOW-380/546; confirms the
+coordinator's own lean.
+
+**IMPORTANT — PM verification surfaced a material timing-analysis correction to the stub's own LG-1
+premise before dispatch (verify-not-guess, not silently propagated):** proved via a standalone
+Node.js repro that `requestAnimationFrame(applyAndObserveSlot(slot, paragraphs))`
+(`adapt-description.ts:323`) evaluates `applyAndObserveSlot(...)` SYNCHRONOUSLY (JS eager argument
+evaluation) — its "Initial write" (`render`+`observe` at `:161-163`) therefore runs IMMEDIATELY
+after the `:309` `isStale()` check, NOT deferred to the next animation frame as the stub states. The
+GENUINELY deferred, unguarded write is the `reapply` loop-guard closure (fired later via its OWN
+internal rAF inside the `MutationObserver` callback), which has no staleness visibility at all —
+this is very likely what RETRO-170's "self-reinforcing MutationObserver ... persists the stale copy"
+concern actually describes. Rule AB's general principle stands; only the specific `:323`/`:333`
+citation in RETRO-170's own prose does not literally hold for the initial paint. Not unilaterally
+correcting the permanent record (out of PM scope) — flagged prominently in the delegation brief with
+an explicit instruction for the worker to independently re-confirm before choosing the fix shape.
+Full brief posted to `backlog/HANDOFFS.md` ("PM orchestrator (session 24) → sdk-engineer,
+FOLLOW-548").
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
+storage schema — not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with
+its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process
+stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**NEXT:** coordinator launches the `sdk-engineer` subagent (Opus) on FOLLOW-548 per the HANDOFFS.md
+brief — worker must independently re-confirm the timing-analysis finding above before choosing the
+fix shape. On completion: PM runs full validation (step 5) incl. runtime-wiring grep for any new
+staleness-check threading and confirms the new tests are genuinely non-vacuous before
+READY_FOR_REVIEW.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 23 close-out — PR #495 MERGED, FOLLOW-546 DONE, RETRO-170 pending)
 
 **PR #495 MERGED** to `main` as squash commit `118bdd8` (2026-07-10T08:30:32Z); PM-validation
 bookkeeping PR #496 merged immediately after (`4a5c2ba`). PR #494 (superseded promotion/dispatch-
@@ -10601,6 +10648,98 @@ gate) closes the epic and must be last.
     `pm-orchestrator/FOLLOW-546-close` (this same bookkeeping PR, RETRO-170) per the repo's
     RETRO+DONE bundling convention (matches PRs #486/#487, #489, #493) — NOT run by
     pm-orchestrator itself (no subagent-spawn capability in this tool surface).
+- id: FOLLOW-548
+  title: >-
+    Guard the rAF-deferred description write per Rule AB (third relocation hop of the cross-listing
+    async-interleave gap)
+  agent: sdk-engineer
+  status: IN_PROGRESS
+  assigned_to: sdk-engineer
+  started_at: '2026-07-10T00:00:00Z'
+  branch: sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard
+  model:
+    Opus # rAF/microtask ordering + supersession-timing reasoning, prod-touching, same class
+    # as FOLLOW-380/FOLLOW-546; model-fit table "complex single-domain reasoning ... non-trivial
+    # design", one tier above the sdk-engineer Sonnet default. See dispatch brief in
+    # backlog/HANDOFFS.md ("PM orchestrator (session 24) -> sdk-engineer, FOLLOW-548") — INCLUDES
+    # a PM-verified timing-analysis correction to the stub's own premise (see notes below); the
+    # worker must independently re-confirm before choosing the fix shape.
+  priority: P3
+  estimated_hours: 2.5
+  depends_on: []
+  source: >-
+    RETRO-170 (§4a LG-1/LG-2 / §4c TG-1/TG-2 / §4d DG-1 / §7); source_ticket FOLLOW-546. Governed by
+    Rule AB (CONVENTIONS_PATCH.md — promoted by RETRO-170 §6): a latest-wins staleness guard on a
+    rapid-nav re-adaptation MUST be consulted at the LAST synchronous instant before EVERY host-DOM
+    write it protects, including deferred writes — a single checkpoint is insufficient. This is the
+    THIRD relocation hop of the RETRO-105 async-interleave class (sync-checkpoint [FOLLOW-380] →
+    fire-and-forget tail [FOLLOW-546] → the write path this ticket covers).
+  spec:
+    backlog/FOLLOW_UPS.md FOLLOW-548; backlog/RETROSPECTIVES.md RETRO-170; CONVENTIONS_PATCH.md Rule
+    AB
+  notes: |
+    Promoted 2026-07-10 (pm-orchestrator, session 24) from backlog/FOLLOW_UPS.md into Sprint 22b,
+    matching the FOLLOW-380/546/467/468/469/472/474 promotion pattern. `promoted_to_queue: true`
+    set on the FOLLOW_UPS.md stub. Dispatched same-session to sdk-engineer (Opus).
+
+    All stub citations independently re-verified against current `main` HEAD before delegating
+    (verify-not-guess, OP Rule 5) — confirmed exact: `adapt-description.ts:309` (`if (isStale())`
+    post-fetch check), `:314` (`if (!resp) return` persistence-leg bail), `:323`/`:333`
+    (`requestAnimationFrame(applyAndObserveSlot(...))` / `applyAndObserveHeadlineSlot(...)`),
+    `:161-163` (`render(el, paragraphs)` + `obs.observe(...)`), sole prod caller `index.ts:809`,
+    schema JSDoc at `packages/shared/src/schemas/events/adapt-description.ts:57`/`:66-67`
+    (confirmed still says "Currently only 'neutral'" — DG-1 accurate).
+
+    **MATERIAL TIMING-ANALYSIS FINDING (PM verification, not in the original stub) — flagged for
+    the worker to independently re-confirm before choosing a fix shape:** proved via a standalone
+    Node.js repro (`f(g())` argument-evaluation semantics) that
+    `slots.forEach((slot) => requestAnimationFrame(applyAndObserveSlot(slot, paragraphs)))`
+    (`:323`) calls `applyAndObserveSlot(slot, paragraphs)` SYNCHRONOUSLY to produce the argument
+    — JS evaluates call arguments eagerly, before the outer call. `applyAndObserveSlot`'s body
+    (including the "Initial write" `render(el, paragraphs)` + `obs.observe(...)` at `:161-163`,
+    per its own line-161 comment "Initial write: observer not yet active, no loop risk") therefore
+    runs IMMEDIATELY, in the same synchronous continuation as the `:309` isStale() check that
+    precedes it — NOT deferred to the next animation frame as the stub's LG-1 prose states. ONLY
+    the function `applyAndObserveSlot` RETURNS (`reapply`, the loop-guard closure at `:141-147`)
+    is what actually gets passed to `requestAnimationFrame` and genuinely fires later. So: the
+    INITIAL paint is already correctly gated by `:309` today (no real bug there); the GENUINELY
+    deferred and unguarded write is the `reapply` closure — fired later, from inside the
+    `MutationObserver` callback (`:149-159`, itself scheduling ITS OWN internal rAF at `:155`),
+    whenever the slot's DOM mutates. `reapply` has no `isStale` visibility at all (not threaded
+    into `applyAndObserveSlot`'s signature) and unconditionally repaints the CLOSURE-CAPTURED
+    (potentially stale) `paragraphs` whenever `descFingerprint(el) !== s.fp` — a check that cannot
+    distinguish "framework reverted our write" from "a newer navigation already painted its own
+    different content here." This ongoing watchdog mechanism is very likely what RETRO-170's
+    PERSISTENCE-leg concern ("the self-reinforcing MutationObserver ... actively re-asserts the
+    stale copy") is actually describing, even though the ":323/:333 rAF defers the write" framing
+    in the retro's own prose does not literally hold for the INITIAL paint. This does NOT
+    invalidate Rule AB's general principle (a staleness guard must cover every deferred write) —
+    it means the principle applies to a different specific code path (`reapply`/the
+    MutationObserver watchdog) than the retro's own line-323/333 citation literally describes.
+    NOT unilaterally correcting Rule AB's or RETRO-170's text (out of PM's authority/scope) — flag
+    only, worker + a future retrospective pass should reconcile the permanent record.
+
+    Full delegation brief (incl. the AC items, the timing-analysis finding above, and explicit
+    instruction to independently re-confirm before implementing) posted to `backlog/HANDOFFS.md`
+    ("PM orchestrator (session 24) → sdk-engineer, FOLLOW-548").
+    AC:
+    - [ ] Re-consult the staleness predicate at the LAST synchronous instant before EACH host-DOM
+          write this ticket covers — worker to determine (after independent re-verification of the
+          timing finding above) whether that means the `reapply`/MutationObserver watchdog path,
+          the initial `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` writes as defense-in-depth,
+          or both. Neither `render` NOR `obs.observe` (nor a stale `reapply` firing) may occur when
+          superseded.
+    - [ ] Non-vacuous test (TG-1): supersede at the actual deferred-write boundary (worker to
+          confirm, per the finding above, whether this requires draining a MutationObserver-
+          triggered rAF rather than the literal `:323` one) — assert the stale copy never paints.
+    - [ ] Non-vacuous test (TG-2, persistence leg): the newer nav's `fetchDescription` returns null
+          (uncached listing) — assert no surviving/self-reasserting stale slot.
+    - [ ] LG-2: close the never-stale-default footgun at `index.ts:809` — make the param required
+          with explicit `() => false` at test sites, or add a guard/comment preventing silent
+          reversion.
+    - [ ] DG-1: update the `adapt.description.skipped` schema JSDoc
+          (`packages/shared/src/schemas/events/adapt-description.ts:57`/`:66-67`) to list `'stale'`
+          alongside `'neutral'`.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

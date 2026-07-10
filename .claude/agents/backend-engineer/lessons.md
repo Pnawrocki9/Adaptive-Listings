@@ -1527,3 +1527,45 @@ adding any new `dependencies` entry, verify `--listFiles` (or equivalent) resolv
 workspace `node_modules/.pnpm`, not a machine-global fallback — a bundler-mode `moduleResolution`
 can mask this in local dev while CI (no stray global node_modules) would fail the exact same import
 cleanly, but for the wrong file.
+
+---
+
+## 2026-07-10 / FOLLOW-532
+
+**What I built:** Closed RETRO-164 §4c TG-1: `resolveAdaptGetAuth` (adapt-get-auth.ts) used to leave
+the `resolveApiKey` configured-but-failed-DB throw (Rule K.2) as an unenforced CALLER obligation —
+both `GET /api/adapt` and `GET /api/adapt/description` owned identical try/catch +
+`Sentry.captureException` + 401 blocks with nothing pinning them together. Chose the "fold into the
+helper" option over "add a parity test only": added a third `AdaptGetAuthResult` disposition
+(`{ ok: false, status: 401, message, dbError: true }`), moved the try/catch + Sentry-capture INSIDE
+`resolveAdaptGetAuth` itself (now takes a third `area: 'adapt' | 'description'` param for the Sentry
+tag), and deleted the duplicated try/catch at both call sites — they now share the literal same
+branch, so divergence is structurally impossible, not just test-detected. Added a helper-level
+parity test (`adapt-get-auth.parity.test.ts`) proving both areas produce an identical disposition
+and Sentry-capture shape for the same forced DB throw.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Branch-first discipline slip — edited the helper file
+BEFORE running `git checkout -b`, on `main`; the pre-edit-branch-guard hook caught it and I created
+the branch immediately after with the edit carried over in the working tree, so no work was lost,
+but it's a discipline gap worth flagging on myself. (2) Two PRE-EXISTING route tests
+(`route.test.ts`/`description/route.test.ts`, NOT the `route.follow473.test.ts` files) mocked
+`resolveAdaptGetAuth` to REJECT to simulate the old "helper throws" contract — after the fold those
+mocks no longer match reality (the mock now needs to RESOLVE with `dbError: true`), so I updated
+both to the new contract; a bare `pnpm --filter control-plane lint` run (bypassing turbo's `^build`
+dependency step) produced a false-positive type-aware ESLint error in an unrelated file
+(`description-pg-cache.ts`, last touched by the unrelated, already-merged FOLLOW-464) — confirmed
+pre-existing/unrelated by diffing against `main` and by the fact `pnpm turbo run lint` (the actual
+CI invocation) passed clean. (3) A full `pnpm --filter control-plane test` run flaked once on
+`feedback/route.follow450-e2e.test.ts` (PGlite WASM cold-start hook timeout under heavy parallel
+system load from concurrent background builds) — confirmed as an environmental flake, not a
+regression, by re-running that file in isolation (passes in ~5.7s) and by a second full-suite run
+showing the exact same isolated flake with everything else green (1569 passed / 2 skipped).
+
+**A guardrail I'd add:** When a shared auth/resolver helper is changed from "throws on internal
+failure" to "catches and returns a disposition," grep for EVERY mock of that helper across the repo
+(not just the dedicated `*.follow473.test.ts`/ticket-named suites) — a `mockRejectedValue` on a
+helper mock is exactly the shape that silently goes stale when the real function's contract changes
+from throw-based to return-based. A CI lint or comment convention flagging
+`mock<HelperName>.mockRejectedValue` next to a helper whose JSDoc says "does NOT throw" would catch
+this class of drift before a human has to trace a hook-timeout-adjacent test failure back to a
+contract change three files away.

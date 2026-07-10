@@ -27,13 +27,20 @@
  *            per-tenant key).
  *
  * `resolveApiKey` THROWS when a configured DB lookup fails (Rule K.2,
- * configured-but-failed). This helper does NOT catch it — the caller MUST wrap
- * the call in try/catch, capture to Sentry, and fail loud (401), so a DB outage
- * is observable and never silently fabricates a tenant.
+ * configured-but-failed). FOLLOW-532 (RETRO-164 §4a LG-1): this helper now
+ * catches that throw ITSELF — Sentry-capturing and returning a normalized
+ * `dbError: true` disposition — instead of leaving the try/catch + Sentry-tag
+ * shape as an unenforced obligation duplicated at every call site. Before
+ * FOLLOW-532, each of the two call sites owned its own identical try/catch;
+ * an edit that dropped or altered ONE route's catch would silently regress
+ * that route to an unhandled 500 on a DB outage, with the untouched sibling's
+ * green CI giving no signal. Folding the catch in here makes divergence
+ * structurally impossible: both callers now go through the SAME branch.
  *
  * @module apps/control-plane/src/lib/adapt-get-auth
  */
 
+import * as Sentry from '@sentry/nextjs';
 import type { NextRequest } from 'next/server';
 
 import { resolveApiKey } from '@/lib/api-key-auth';
@@ -44,10 +51,14 @@ import { secretEquals } from '@/lib/secret-compare';
  *
  * On failure the caller renders `errorBody({ code, message, requestId })` with
  * the supplied HTTP `status` (401 for auth failures, 500 for the misconfiguration).
+ * The `dbError: true` disposition (FOLLOW-532) is a 401 like any other invalid-key
+ * failure to the caller/wire contract; it exists as a distinct discriminant purely
+ * so tests can assert the DB-outage path was taken (vs. an ordinary unknown key).
  */
 export type AdaptGetAuthResult =
   | { ok: true; tenantId: string }
-  | { ok: false; status: 401 | 500; message: string };
+  | { ok: false; status: 401 | 500; message: string }
+  | { ok: false; status: 401; message: string; dbError: true };
 
 /**
  * Resolve the authoritative tenant for a GET adaptation request.
@@ -55,15 +66,20 @@ export type AdaptGetAuthResult =
  * @param req         - The incoming request (passed to `resolveApiKey` for the bearer).
  * @param bearerToken - The already-extracted, trimmed bearer token (non-empty; the
  *                      caller has already rejected a missing/empty Authorization header).
+ * @param area        - Sentry/log tag identifying the calling route (e.g. `'adapt'` /
+ *                      `'description'') — the ONLY thing the call site still supplies;
+ *                      everything else about the DB-throw disposition lives here now.
  * @returns `{ ok: true, tenantId }` — tenant derived server-side (ops secret or api_keys row).
  * @returns `{ ok: false, status: 401, message }` — invalid/unknown/revoked key.
  * @returns `{ ok: false, status: 500, message }` — `ADAPT_API_KEY` set without `OPS_TENANT_ID`.
- * @throws  Propagates any error thrown by `resolveApiKey` (configured DB failure) — the
- *          caller MUST catch, Sentry-capture, and fail loud (401).
+ * @returns `{ ok: false, status: 401, message, dbError: true }` — `resolveApiKey` threw on a
+ *          configured-but-failed DB lookup (Rule K.2); already Sentry-captured here. Never
+ *          fabricates a tenant. Does NOT throw — the caller no longer needs try/catch.
  */
 export async function resolveAdaptGetAuth(
   req: NextRequest,
   bearerToken: string,
+  area: 'adapt' | 'description',
 ): Promise<AdaptGetAuthResult> {
   // ── Step 1: Ops bypass (ADAPT_API_KEY) — scoped to OPS_TENANT_ID ─────────────
   // Constant-time compare (secret-compare.ts) so the shared secret is not exposed
@@ -82,8 +98,18 @@ export async function resolveAdaptGetAuth(
   }
 
   // ── Step 2: resolveApiKey — SHA-256(bearer) → api_keys row → real tenantId ───
-  // Throws on configured-but-failed DB (Rule K.2) — caller catches + fails loud.
-  const keyAuth = await resolveApiKey(req);
+  // FOLLOW-532: the throw on a configured-but-failed DB (Rule K.2) is caught
+  // HERE (not left to the caller) so both call sites share one fail-loud path.
+  let keyAuth: Awaited<ReturnType<typeof resolveApiKey>>;
+  try {
+    keyAuth = await resolveApiKey(req);
+  } catch (err) {
+    console.error(`[${area}] GET auth DB error`, err);
+    Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { area, kind: 'api_key_auth_db_error' },
+    });
+    return { ok: false, status: 401, message: 'Invalid API key', dbError: true };
+  }
   if (!keyAuth.ok) {
     // Normalize 404 (key not found) → 401 so this endpoint is not a key-existence oracle.
     return { ok: false, status: 401, message: 'Invalid API key' };

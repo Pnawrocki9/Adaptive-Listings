@@ -706,21 +706,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let authResult: AdaptGetAuthResult;
-  try {
-    authResult = await resolveAdaptGetAuth(req, token);
-  } catch (err) {
-    // Configured-but-failed DB lookup during resolveApiKey (Rule K.2) — fail loud
-    // to Sentry and 401; never fabricate a tenant or fall open.
-    console.error('[adapt] GET auth DB error', err);
-    Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
-      tags: { area: 'adapt', kind: 'api_key_auth_db_error' },
-    });
-    return NextResponse.json(
-      errorBody({ code: ErrorCode.FORBIDDEN, message: 'Invalid API key', requestId }),
-      { status: 401 },
-    );
-  }
+  // FOLLOW-532: resolveAdaptGetAuth no longer throws on a configured-but-failed
+  // DB lookup — it catches internally and returns a `dbError: true` disposition
+  // (Sentry-captured inside the helper), so this call site no longer needs its
+  // own try/catch. This pins parity with the sibling route in ./description —
+  // both now share the exact same fail-loud branch instead of duplicating it.
+  const authResult: AdaptGetAuthResult = await resolveAdaptGetAuth(req, token, 'adapt');
   if (!authResult.ok) {
     return NextResponse.json(
       errorBody({

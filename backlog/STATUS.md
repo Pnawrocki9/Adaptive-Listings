@@ -1,4 +1,43 @@
-# Status — 2026-07-10 (Sprint 22b OPEN — FOLLOW-548 validated, PR #499 READY_FOR_REVIEW; PR #498 dispatch record still unmerged)
+# Status — 2026-07-10 (Sprint 22b OPEN — PR #499 MERGED, FOLLOW-548 DONE, Rule AB citation fixed; RETRO-171 pending on pm-orchestrator/FOLLOW-548-close)
+
+## SESSION 24 CLOSE-OUT (2026-07-10) — PR #499 MERGED (ae1bc67), FOLLOW-548 DONE, Rule AB citation fixed, RETRO-171 pending
+
+PR #499 (`sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard`) confirmed MERGED via
+`gh pr view 499 --json state,mergeCommit,mergedAt` → `state: MERGED`, `mergeCommit: ae1bc67`,
+`mergedAt: 2026-07-10T10:24:35Z`. PR #500 (PM validation) confirmed MERGED (`b3770f6`, immediately
+after). PR #498 (superseded promotion/dispatch-record PR) confirmed `CLOSED` (not merged) via
+`gh pr view 498 --json state` — per human decision, its content already lives fully folded into
+FOLLOW-548's DONE trail (no data lost). `gh pr list --state open` → 0 open PRs. Local `main` synced
+(`git log --oneline -1` → `b3770f6`), clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-548-close`** (agent-prefix, branch-first):
+FOLLOW-548 flipped `READY_FOR_REVIEW` → `DONE` in `backlog/QUEUE.md` (`completed_at: 2026-07-10`,
+`merged_pr: 499`, `merge_commit: ae1bc67`).
+
+**Rule AB citation fix folded in (human-approved recommendation, option (a)):**
+`CONVENTIONS_PATCH.md` Rule AB — corrected both the "Evidence" bullet's RETRO-170 sub-entry and the
+HTML provenance footnote. Both originally attributed the residual gap to `:323`/`:333`
+(`requestAnimationFrame(applyAndObserveSlot(...))`) being "rAF-deferred"; corrected to point at the
+actual genuinely-deferred write — the `reapply` loop-guard closure, re-invoked via the
+`MutationObserver`'s OWN internal `requestAnimationFrame`, independent of the caller's initial rAF
+schedule — with FOLLOW-548 (PR #499) cited as the proof. Rule AB's normative "Rule:" list (the
+numbered principle text, which never cited specific line numbers) is UNCHANGED — verified it was
+already generically correct ("if the write is deferred ... re-check INSIDE the deferred callback").
+`backlog/RETROSPECTIVES.md` RETRO-170's own historical text was NOT touched (append-only convention
+for retro entries, per the RETRO-168 DURABLE-SELF-REPORT-DRIFT pattern).
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-548-close` to append **RETRO-171**
+— also tasked with assessing whether the RETRO-105 cross-listing async-interleave class is now FULLY
+closed after three relocation hops (FOLLOW-380 → FOLLOW-546 → FOLLOW-548) or whether a 4th hop
+exists — bundling RETRO + DONE-flip + the Rule AB fix into one PR (matches PRs
+#486/#487/#489/#493/#497 convention). PM will validate that bundled PR once the coordinator confirms
+it's ready.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-171 content to land on
+the same branch first.
+
+---
 
 ## SESSION 24 VALIDATION (2026-07-10) — PR #499 (FOLLOW-548) validated, READY_FOR_REVIEW
 

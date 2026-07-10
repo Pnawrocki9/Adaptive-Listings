@@ -1,6 +1,46 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-10 (session 24 — FOLLOW-548 promoted, dispatched, and validated; PR #499 READY_FOR_REVIEW; PR #498 dispatch record still unmerged)
+## ▶️ START HERE — resume 2026-07-10 (session 24 close-out — PR #499 MERGED, FOLLOW-548 DONE, Rule AB citation fixed, RETRO-171 pending)
+
+**PR #499 MERGED** to `main` as squash commit `ae1bc67` (2026-07-10T10:24:35Z); PM-validation
+bookkeeping PR #500 merged immediately after (`b3770f6`). PR #498 (superseded promotion/dispatch-
+record PR) was CLOSED unmerged per human decision — its content is fully folded into FOLLOW-548's
+DONE trail in `backlog/QUEUE.md`, nothing lost. The human merged PR #499 (the code) directly, so
+review is effectively complete. Local `main` synced & clean.
+
+**Post-merge close done on branch `pm-orchestrator/FOLLOW-548-close`** (agent-prefix, branch-first):
+FOLLOW-548 flipped `READY_FOR_REVIEW` → `DONE` (`completed_at: 2026-07-10`, `merged_pr: 499`,
+`merge_commit: ae1bc67`).
+
+**Rule AB citation fix folded in (human-approved option (a)):** `CONVENTIONS_PATCH.md`'s Rule AB
+evidence bullet and its HTML provenance footnote both corrected — the supporting line citation now
+points at the `reapply`/observer-rAF closure (the genuinely deferred, unguarded write FOLLOW-548
+fixed), not the synchronously-evaluated `:323`/`:333` lines, with FOLLOW-548 cited as the proof.
+Rule AB's PRINCIPLE text (the numbered "Rule:" list, generic, no line citations) is UNCHANGED — it
+was already correct. `backlog/RETROSPECTIVES.md` RETRO-170's own historical text was NOT touched
+(append-only convention) — RETRO-171 will reconcile.
+
+**Not run this pass (per explicit instruction):** the retrospective. `retrospective-analyst` will be
+spawned by the coordinator directly onto `pm-orchestrator/FOLLOW-548-close` to append **RETRO-171**
+— also asked to assess whether the RETRO-105 cross-listing async-interleave class is now FULLY
+closed after three relocation hops (FOLLOW-380 → FOLLOW-546 → FOLLOW-548) or whether a 4th hop
+exists — bundling RETRO + DONE-flip + the Rule AB fix into one PR (matches PRs
+#486/#487/#489/#493/#497 convention). PM will validate that bundled PR once the coordinator confirms
+it's ready.
+
+**Still open / carried forward:** **FOLLOW-543** (P3, architect, deferred §Snapshot.2/.3/.5 +
+§B.1-body Tier-prose rename). **FOLLOW-547** (P3, sdk-engineer, RETRO-169, unversioned client SoT
+storage schema — not yet promoted). FOLLOW-458's `status: READY` label is still inconsistent with
+its own unmet `depends_on: [FOLLOW-449]` — flagged repeatedly, still not fixed. FOLLOW-545 (process
+stub, RETRO-168, bashless-agent-author-blur — not yet promoted). 3 standing `## OPEN` escalations
+(ESC-020, ESC-028, ESC-034) unchanged, non-blocking.
+
+**This is a fresh bookkeeping PR, opened but NOT merged** — awaiting RETRO-171 content to land on
+the same branch first.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-10 (session 24 — FOLLOW-548 promoted, dispatched, and validated; PR #499 READY_FOR_REVIEW; PR #498 dispatch record still unmerged)
 
 **Two PRs from this session are in flight, in this order (same pattern as FOLLOW-380/#490/#492 and
 FOLLOW-546/#494/#496):**
@@ -10659,11 +10699,14 @@ gate) closes the epic and must be last.
     Guard the rAF-deferred description write per Rule AB (third relocation hop of the cross-listing
     async-interleave gap)
   agent: sdk-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: sdk-engineer
   started_at: '2026-07-10T00:00:00Z'
+  completed_at: '2026-07-10'
   branch: sdk-engineer/FOLLOW-548-raf-deferred-staleness-guard
   pr: 499
+  merged_pr: 499
+  merge_commit: ae1bc67
   model:
     Opus # rAF/microtask ordering + supersession-timing reasoning, prod-touching, same class
     # as FOLLOW-380/546; model-fit table "complex single-domain reasoning ... non-trivial design".
@@ -10795,6 +10838,25 @@ gate) closes the epic and must be last.
     ticket will naturally reconcile/note the finding as part of its own analysis, which is the
     established pattern for how this repo's retro loop handles evolving understanding. Not
     actioning this myself — awaiting human/coordinator direction per instruction.
+
+    MERGED 2026-07-10: PR #499 squash-merged to `main` as commit `ae1bc67` (2026-07-10T10:24:35Z);
+    the PM-validation bookkeeping PR #500 merged immediately after as `b3770f6`. PR #498 (the
+    superseded promotion/dispatch-record PR) was CLOSED unmerged per human decision — its content
+    is fully folded into this ticket block's DONE trail, nothing lost. Ticket closed DONE.
+
+    RULE AB CITATION FIX (human-approved recommendation, option (a) above): the evidence footnote
+    in `CONVENTIONS_PATCH.md` Rule AB has been corrected in this same PR — the supporting line
+    citation now points at the `reapply`/observer-rAF write (the genuinely deferred, unguarded
+    write FOLLOW-548 fixed), not the synchronously-evaluated `:323`/`:333` line. Rule AB's
+    PRINCIPLE text is unchanged (it was correct). `backlog/RETROSPECTIVES.md` RETRO-170's own
+    historical text was NOT edited (append-only convention) — RETRO-171 will reconcile.
+
+    retrospective-analyst to be spawned by the coordinator on branch
+    `pm-orchestrator/FOLLOW-548-close` (this same bookkeeping PR, RETRO-171 — also asked to assess
+    whether the RETRO-105 cross-listing async-interleave class is now FULLY closed after three
+    relocation hops [FOLLOW-380 → FOLLOW-546 → FOLLOW-548] or whether a 4th hop exists) per the
+    repo's RETRO+DONE bundling convention (matches PRs #486/#487, #489, #493, #497) — NOT run by
+    pm-orchestrator itself (no subagent-spawn capability in this tool surface).
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with

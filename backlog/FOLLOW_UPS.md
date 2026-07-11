@@ -14500,7 +14500,16 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
     only the transient QUEUE note; or (c) grant `architect` a scoped commit/PR path.
   - Whichever is chosen, add it to `docs/AGENT_WORKFLOW.md` (or CONVENTIONS_PATCH.md if it recurs)
     so the author-blur that produced FOLLOW-544 cannot recur silently.
-- cross_ref: [RETRO-168, FOLLOW-470, FOLLOW-544, PR #488, docs/AGENT_WORKFLOW.md]
+- **UPDATE 2026-07-11 (pm-orchestrator, session 25 cont'd):** AC bullet 1 (option (a),
+  route/formalize-git-mechanics-for-shell-less-agents) is SUBSTANTIALLY DISCHARGED by **FOLLOW-551**
+  (promoted+dispatched same session, human-approved resolution = draft-then-apply, the same class of
+  answer as this bullet's option). **AC bullet 2 remains OPEN and is NOT covered by FOLLOW-551** —
+  the broader "orchestrator silently edits beyond a delegate's stated plan, no single actor owns
+  reconciling the deviation across ALL durable docs" problem (the FOLLOW-544 root cause; FOLLOW-544
+  itself was RESOLVED_INLINE as a one-off, but the general discipline was never codified). When this
+  stub is next reviewed for promotion, scope it DOWN to bullet 2 only, cross-referencing FOLLOW-551
+  for bullet 1 rather than re-promoting the whole stub wholesale.
+- cross_ref: [RETRO-168, FOLLOW-470, FOLLOW-544, FOLLOW-551, PR #488, docs/AGENT_WORKFLOW.md]
 
 ## FOLLOW-546 — Extend the FOLLOW-380 latest-wins in-flight guard over the fire-and-forget description tail: the guard is a single post-fetch checkpoint and does NOT cover `applyDescriptionAdaptation`, so a superseded rapid-nav refresh can paint a stale-archetype description onto the newer listing
 
@@ -14689,9 +14698,12 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   (no Bash tool) — draft-then-apply handoff, or reassign to a Bash-capable agent source_retro: n/a
   (PM-filed process observation, not a numbered retro finding) source_ticket: FOLLOW-550
   recommended_sprint: backlog recommended_agent: pm-orchestrator priority: P3 estimated_hours: 1
-  promoted_to_queue: false scope: >- FOLLOW-550 (docs(workflow) codification, dispatched to
-  architect per human direction) surfaced a tool-manifest gap: the architect subagent's tool
-  manifest is Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — no Bash. It correctly REFUSED to Edit
+  promoted_to_queue: >- true # promoted 2026-07-11 (pm-orchestrator, session 25 cont'd),
+  human-approved DRAFT-ONLY dispatch to architect (dogfooding option (2), draft-then-apply).
+  QUEUE.md FOLLOW-551 IN_PROGRESS, execution_mode: DRAFT-ONLY (no branch — coordinator applies via
+  git). scope: >- FOLLOW-550 (docs(workflow) codification, dispatched to architect per human
+  direction) surfaced a tool-manifest gap: the architect subagent's tool manifest is
+  Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — no Bash. It correctly REFUSED to Edit
   docs/AGENT_WORKFLOW.md directly (without git it could not branch/commit, and would have stranded
   the change on `main` — the exact FOLLOW-448/RETRO-146 failure mode "Branch-first worker
   discipline" exists to prevent). It drafted the full content + insertion point + mechanics and

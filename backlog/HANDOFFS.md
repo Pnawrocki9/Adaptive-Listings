@@ -3,6 +3,111 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-551 (architect) — DRAFT-ONLY — codify the architect-has-no-Bash routing gap
+
+**From:** pm-orchestrator (session 25 cont'd) **To:** architect **Date:** 2026-07-11
+
+**⚠️ EXECUTION MODE: DRAFT-ONLY. Read this section first, it overrides the normal worker workflow.**
+You do **NOT** create a branch. You do **NOT** call `Edit` or `Write` on any file in this repo. You
+do **NOT** attempt `git` of any kind — you have no Bash tool, and attempting to fake it (e.g.
+writing directly to a file on `main`) would strand the change on `main`, exactly the FOLLOW-448/
+RETRO-146 failure mode this very ticket exists to prevent, and exactly what you correctly refused to
+do on FOLLOW-550. Instead: **produce the complete, ready-to-apply content in your final report** —
+the exact markdown to add, the exact file(s) and line/insertion-point citations, and the rationale
+prose, written so a Bash-capable party (the coordinator) can copy it in verbatim without having to
+make any editorial judgment calls of their own. If you use `Read`/`Glob`/`Grep` to verify line
+numbers or existing content, cite what you found (line numbers, exact surrounding text) so the
+applier can verify placement before committing — do not describe "roughly where" something goes.
+
+**Model: Sonnet** — routine workflow-doc codification with a fully-specified AC and two named ≥2×
+precedent instances already gathered (no open design question to resolve from scratch). Model-fit
+table row: "routine implementation inside a well-defined ticket scope ... docs/backlog bookkeeping"
+-> Sonnet, not the ambiguous-design Opus row. The one open judgment call (architect.md vs
+AGENT_WORKFLOW.md placement, see AC below) is bounded and doesn't need heavier reasoning.
+
+**Table row used:** "a contract between two modules, a new dependency, an ADR" -> architect (this is
+a process/workflow codification about architect's OWN routing, human-approved — same category as
+FOLLOW-550).
+
+**Context to read first:** `docs/MASTER_DESIGN.md` §Snapshot.1; the current `CONVENTIONS_PATCH.md`
+(skim the Rule-promotion-discipline pattern — Rules Q/V/X/AA/AB's provenance footnotes are the
+canonical examples of "2 banked prior sightings + a 3rd independent sighting triggers promotion"
+that you must NOT bypass here); `docs/AGENT_WORKFLOW.md` in full (you're adding to it);
+`backlog/RETROSPECTIVES.md` RETRO-168 (FOLLOW-470, the first occurrence) and RETRO-174 §5a
+(FOLLOW-550, the second occurrence, which cross-references RETRO-168);
+`.claude/agents/ architect.md` (your own definition file — see the concrete bug flagged below); the
+ticket source `backlog/FOLLOW_UPS.md` FOLLOW-551 and `backlog/QUEUE.md` FOLLOW-551's `notes:`
+(already contains the precise Rule-AB-discipline count you must not contradict).
+
+**What happened (verified, not guessed):** dispatching FOLLOW-550 (a `docs(workflow)` codification
+ticket) to you surfaced that your tool manifest —
+`Read, Write, Edit, Glob, Grep, WebSearch, WebFetch` — has no `Bash`. You correctly refused to
+`Edit` `docs/AGENT_WORKFLOW.md` directly (no `git` means no branch/commit, which would have stranded
+the change on `main`) and instead drafted the content for the coordinator to apply. This was NOT a
+one-off: `backlog/RETROSPECTIVES.md` RETRO-174 §5a found the SAME workaround already fired once
+before, on FOLLOW-470 (RETRO-168, `docs/MASTER_DESIGN.md` Changelog v4.3 — "the edit was applied by
+the top-level orchestrator on the architect's behalf [the architect subagent has no shell tool]").
+**Human decision (2026-07-11):** resolve via option (2) — formalize draft-then-apply as the
+standing, documented resolution (not option 1, routing every git-touching ticket away from architect
+entirely; not option 3, giving architect a Bash tool).
+
+**A concrete bug in your own agent definition, found while preparing this brief — fix it as part of
+this ticket:** `.claude/agents/architect.md`'s "First action on any ticket (mandatory)" section
+(lines 20-26) currently reads:
+`"Before touching a single file: git checkout -b <agent>/<ticket-id>-<kebab-summary>. This is the FIRST action..."`
+— **this instructs you to run a `git` command you have no tool to execute.** Every ticket you're
+assigned that writes a file (ADRs, interface specs, Master Design edits, workflow-doc codifications)
+needs this fixed or it will keep silently producing the FOLLOW-550 dispatch-then-discover
+round-trip. Draft the corrected text for this section as part of your report (see AC below).
+
+**Required content (per the ticket AC in `backlog/QUEUE.md` FOLLOW-551 — follow it precisely, the
+full AC list with the exact promotion-discipline count is already written there; do not re-derive or
+contradict it):**
+
+1. **Primary home: `docs/AGENT_WORKFLOW.md`**, near "The 9 agents" table (currently lines 14-28)
+   and/or the "Model-fit decision" section (currently lines 30-48) — mirror the structure/citation
+   style of the existing "Bookkeeping-PR sequencing" section (currently line 163) and "Branch-first
+   worker discipline" section (currently line 108). States: your tool manifest has no Bash; any
+   ticket whose AC requires git/PR mechanics and is assigned to architect MUST use draft-then-apply
+   (you produce content + insertion point + rationale in your final report; a Bash-capable party
+   applies it verbatim) — UNLESS the delegator reassigns the ticket to a Bash-capable agent from the
+   start (also acceptable).
+2. **Cite BOTH precedents by number:** FOLLOW-470/RETRO-168 and FOLLOW-550/RETRO-174, stating this
+   is a ≥2× recurrence.
+3. **State the exact Rule-AB-discipline count** (already written for you in the ticket's `notes:` in
+   `backlog/QUEUE.md` — copy/adapt it, don't redo the analysis): this pattern has exactly 2 banked
+   prior numbered-retro sightings (RETRO-168, RETRO-174) and no 3rd sighting yet; FOLLOW-551 itself
+   is the FIX, not a fresh occurrence, so implementing it does not satisfy the promotion threshold.
+   This is workflow guidance, explicitly NOT a `CONVENTIONS_PATCH.md` Rule.
+4. **Fix `.claude/agents/architect.md`'s "First action on any ticket" section** (see the concrete
+   bug above) — draft the corrected text. Your own judgment call, explicitly asked (state your
+   answer + reasoning in your report either way): should this section instead say "you have no Bash
+   — see docs/AGENT_WORKFLOW.md's draft-then-apply guidance for any git-touching ticket," or is
+   there a class of architect ticket that doesn't need git at all (e.g., pure design review/
+   feedback with no file written) where the original branch-first instruction still correctly
+   applies? Draft precisely, don't hand-wave.
+5. **Note for CLAUDE.md/AGENT_WORKFLOW.md's PM delegation-table guidance** to reflect the resolution
+   so a future PM session doesn't repeat the round-trip — draft the exact sentence(s) to add, and
+   where.
+
+**CRITICAL — do NOT add a `CONVENTIONS_PATCH.md` Rule as part of this ticket** (see point 3 above).
+If you believe this genuinely warrants an immediate Rule despite the count, that is an
+ESCALATION/ADR question for the human — describe it in your report as a recommendation, do not draft
+the Rule text yourself as part of this deliverable.
+
+**Scope guardrails (Rule 3, surgical changes):** Content only — you are not touching code. Don't
+rewrite unrelated sections of `docs/AGENT_WORKFLOW.md` or `.claude/agents/architect.md`.
+
+**What happens next:** report back with (a) the exact `docs/AGENT_WORKFLOW.md` addition + insertion
+point, (b) the exact `.claude/agents/architect.md` fix + insertion point, (c) your judgment call on
+point 4 above with reasoning, (d) the exact CLAUDE.md/AGENT_WORKFLOW.md delegation-guidance
+sentence(s) + where. The coordinator applies all of it on branch `pm-orchestrator/FOLLOW-551-done`
+(or similar), runs prettier, commits, pushes, and the PM validates
+
+- opens the promotion PR. You do not open a PR.
+
+---
+
 ## Retro delegation brief — FOLLOW-550 (retrospective-analyst)
 
 **From:** pm-orchestrator (session 25 cont'd, post #508/#509 close-out) **To:**

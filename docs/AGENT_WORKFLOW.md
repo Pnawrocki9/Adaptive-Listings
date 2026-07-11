@@ -47,6 +47,60 @@ Routing rubric (canonical copy lives in `CLAUDE.md` §Model-fit rule):
 
 Escalate one tier after a failed attempt at the lower tier; never downgrade a P0 on cost grounds.
 
+## Agent tool-capability routing (architect has no Bash — RETRO-168 / RETRO-174 / FOLLOW-551)
+
+The `architect` subagent's tool manifest is `Read, Write, Edit, Glob, Grep, WebSearch, WebFetch` —
+**no `Bash`**. A sweep of all 9 agent definitions (`grep -Li "Bash" .claude/agents/*.md`, RETRO-174
+§5a) confirms architect is the **sole** agent lacking git mechanics; every other agent — including
+`retrospective-analyst`, `compliance-engineer`, and `pm-orchestrator` — is Bash-capable. This is a
+singleton gap in the current roster, not a role-family pattern.
+
+Any ticket dispatched to `architect` whose acceptance criteria require `git checkout -b`, a commit,
+a push, or opening a PR **cannot be completed by architect alone**: it has no tool to branch, and
+per "Branch-first worker discipline" above, calling `Edit`/`Write` while `HEAD == main` risks
+stranding the change — the exact FOLLOW-448/RETRO-146 failure mode that rule exists to prevent.
+Before dispatching such a ticket, the delegator (PM or human) picks one of:
+
+1. **Route it away from architect from the start.** Assign the ticket to a Bash-capable agent
+   (`backend-engineer`, `devops-engineer`, `qa-engineer`, `compliance-engineer`, `sdk-engineer`,
+   `ml-engineer`, `data-engineer`) even when the content is architectural/cross-cutting, and consult
+   `architect` for the design only, as a separate non-branching invocation.
+2. **Draft-then-apply.** Dispatch `architect` in an explicit DRAFT-ONLY mode: it reads what it
+   needs, drafts the exact final content plus precise insertion anchors and rationale, and makes no
+   `Edit`/`Write`/git call on the target file. A Bash-capable party (the PM orchestrator, or another
+   agent) then applies the draft verbatim (branch → edit → commit → push → PR).
+
+Option (2) is the default for architect-assigned docs/ADR tickets that need a PR. It has now fired
+twice: FOLLOW-470 (RETRO-168 — the top-level orchestrator applied the architect's Tier-retirement
+edit on its behalf; `docs/MASTER_DESIGN.md` Changelog v4.3: _"The edit was applied by the top-level
+orchestrator on the architect's behalf (the `architect` subagent has no shell tool)"_) and
+FOLLOW-550/FOLLOW-551 (RETRO-174 §5a/§7 — architect correctly refused to `Edit`
+`docs/AGENT_WORKFLOW.md` directly and instead drafted the content + anchor for the coordinator to
+apply; this section is that draft's own output). Option (3), giving `architect` a Bash tool, was
+considered and is **not recommended** without a stronger case — it would widen a deliberately
+design-only agent's surface to act outside its remit (see architect's scope boundary in its own
+definition).
+
+**This is workflow guidance, not a codified `CONVENTIONS_PATCH.md` Rule.** The underlying "architect
+dispatched for a git-touching ticket, discovered mid-flight to lack Bash" pattern has 2 prior
+numbered-retro sightings banked (RETRO-168, RETRO-174) — meeting, in raw count, the repo's general
+promotion bar ("a pattern must appear in ≥2 retros to be codified," `CLAUDE.md` /
+`CONVENTIONS_PATCH.md`). But per the adjudication discipline those same retros established
+(RETRO-153/158, RETRO-169/170, and RETRO-174's own precision note that _codifying_ a fix is not
+itself a new sighting), the party that closes a gap does not self-promote a Rule for it — that call
+belongs to the retrospective that reviews this change (this section is FOLLOW-551's own
+deliverable). Leave the promotion decision to FOLLOW-551's retrospective rather than declaring a
+Rule here.
+
+Related but distinct: FOLLOW-545's second bullet (an orchestrator that edits _beyond_ a delegate's
+stated plan must reconcile the deviation across all durable docs, not just the transient QUEUE.md
+note) is a broader authorship-integrity problem that this section does not resolve —
+draft-then-apply narrows who is _allowed_ to touch git, it does not by itself guarantee the applying
+party's edit matches the drafting party's plan exactly. That remains open under FOLLOW-545.
+
+Source: RETRO-168 (FOLLOW-470) / RETRO-174 §5a, §7, §8 (FOLLOW-550, FOLLOW-551) / FOLLOW-545 (bullet
+2 stays open, distinct problem).
+
 ## The state files
 
 These files are the single source of truth. Agents read and write them; humans read and occasionally
@@ -352,7 +406,11 @@ Check `git log` and CI history. If you see >3 commits on the same ticket attempt
 Two agents shouldn't have been picking those tickets. PM should have detected the conflict via
 `produces`/`affects` lists in tickets. If it didn't:
 
-- Close the later PR
+- **Two genuine code PRs** (mis-scheduled overlapping tickets): close the later PR.
+- **One of the two is a bookkeeping/dispatch PR whose content a later PR folds in** (e.g. a
+  dispatch-record PR later re-included in a code or DONE+RETRO PR): close the EARLIER PR instead —
+  see **§Bookkeeping-PR sequencing** above, rule (a). Closing the later PR in this sub-case is
+  backwards; it was the proximate cause of the #504/#506 incident (RETRO-173 §5a / RETRO-174 §4d).
 - Move that ticket back to `READY`
 - Add escalation about ticket dependency graph correctness
 

@@ -2097,3 +2097,39 @@ independent occurrence, even if it references the same pattern by name.
   ticket's OWN execution (dogfooding), always re-read the rule's literal scope before judging
   compliance — it's easy to unconsciously grade against the SPIRIT of a rule rather than its written
   boundary, especially when you're both the rule's implementer and its first user.
+
+- **Date / ticket:** 2026-07-11 — FOLLOW-551 (promotion + DRAFT-ONLY dispatch)
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" -> architect
+  (DRAFT-ONLY execution mode — architect has no Bash, dogfooding the very pattern being codified).
+- **What validation caught (or missed):** Before dispatching, checked the "still open / carried
+  forward" list in my own banner and found FOLLOW-545 — an unpromoted stub filed from the SAME
+  source retro (RETRO-168) that FOLLOW-551 cites as its own precedent, never cross-referenced by
+  FOLLOW-551 when it was originally filed. Nearly dispatched a near-duplicate ticket without
+  noticing. Cross-referenced both stubs and scoped the overlap precisely (FOLLOW-551 discharges
+  FOLLOW-545's AC bullet 1; bullet 2 — the broader "orchestrator edits beyond a delegate's plan"
+  problem — stays open and distinct) rather than either silently duplicating work or silently
+  dropping FOLLOW-545's still-relevant half. Also found a concrete, previously-unnoticed bug while
+  reading `.claude/agents/architect.md` for context: its own "First action on any ticket" section
+  instructs a `git checkout -b` command the agent has no tool to run — folded into the ticket's
+  required deliverables rather than treated as out of scope.
+- **A delegation/validation rule I'd add:** Before promoting ANY FOLLOW_UPS stub, grep
+  `backlog/FOLLOW_UPS.md` for the same `source_retro:` value and any thematically-adjacent title — a
+  stub's own `promoted_to_queue: false` siblings from the SAME retro are exactly where duplicate or
+  overlapping tickets hide, since retros often file multiple related stubs from one finding.
+
+- **Date / ticket:** 2026-07-11 — FOLLOW-551 (validation of PR #512)
+- **Delegation row used:** architect DRAFT-ONLY (from prior turn; this entry covers validation).
+- **What validation caught (or missed):** Confirmed the architect's DRAFT-ONLY output was applied
+  faithfully and satisfied every AC item by direct read, including a genuinely nuanced treatment of
+  the Rule-promotion question (the drafted content noticed the raw CLAUDE.md wording technically
+  meets a "≥2 retros" threshold, but correctly deferred to the repo's established
+  2-banked-plus-3rd-sighting adjudication discipline rather than either ignoring the tension or
+  self-promoting a Rule) — better than what I'd specified, worth recording as evidence the
+  draft-then-apply pattern preserves judgment quality, not just mechanical output. Also confirmed PR
+  #511 and #512 have disjoint file sets before deciding how to sequence validation — avoided
+  defaulting to "wait for #511 to merge first" out of caution when checking the actual file lists
+  showed no real risk of a two-QUEUE.md-PRs-in-flight collision.
+- **A delegation/validation rule I'd add:** When two sibling PRs for the same ticket both need to
+  land (a promotion/bookkeeping PR + a content PR), always check `gh pr view <N> --json files` for
+  BOTH before deciding whether they can merge in any order or need sequencing — don't assume from
+  the ticket type alone.

@@ -1,6 +1,44 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-11 (session 25 cont'd — PR #512 PM-validated, folded into #511, no separate validation PR)
+## ▶️ START HERE — resume 2026-07-11 (session 26 — Full-Stack Audit #3 delivered; Sprint 23 OPENED; pilot gated on OPERATOR Wave 0)
+
+**A third full-stack audit ran 2026-07-11 (CEO-commissioned, 6 parallel tracks) against HEAD
+`146de2f`. Verdict: 🟡 YELLOW — the codebase is sound and NOT scaffold-theater (Sprint 22b code legs
+independently re-verified as genuinely done), but the pilot's learning + measurement loops are all
+inert in prod because the operator go-live checklist is 0/6 complete.** The audit also found 3 new
+High-severity code defects no existing ticket covers. Full remediation plan = **`Sprint 23` at the
+bottom of this file (FOLLOW-553…FOLLOW-566)**, organized into Waves 0–3.
+
+**THE ONE THING THAT UNBLOCKS EVERYTHING: Wave 0 = FOLLOW-553, a single consolidated OPERATOR
+session (Piotr + Rafał, ~2–4h).** It executes, in order: CH migration 0015 attest+apply (FOLLOW-449
+AC1/AC2), `FEEDBACK_ENDPOINT_ENABLED` + `ADAPT_API_KEY`/`OPS_TENANT_ID` Doppler prd +
+`pnpm feedback:canary` (FOLLOW-450 operator leg), ESC-034 embed-seed go-live (corrected direct-HTTPS
+path), pilot-tenant `listing_embeddings` seed, ESC-028 secrets, and hands ESC-020 (Estalara-app DOM
+hooks deploy) to Rafał. Step-by-step operator instructions:
+`docs/runbooks/OPERATOR_SESSION_2026-07-11.md`. Until Wave 0 runs, FOLLOW-471 (Sprint 22b's clean
+re-audit gate) stays blocked and no lift can be measured.
+
+**Queue-truth fixes applied this session (2026-07-11 audit §6.4):** (1) FOLLOW-450 `status: DONE` →
+`CODE_COMPLETE_OPERATOR_PENDING` — its own `operator_action` block was unresolved; the DONE label
+violated Rule AA. (2) FOLLOW-458 `status: READY` → `BLOCKED` — its `depends_on: [FOLLOW-449]` is
+unmet (flagged repeatedly across sessions, now actually fixed).
+
+**Wave 1 (code, delegable NOW, parallel with Wave 0):** FOLLOW-554 (P1, sdk-engineer — quiz-skip
+writes `neutral` into the SoT archetype, ADR-0014 violation), FOLLOW-555 (P1, backend-engineer — 6
+browser-session routes still on `getAuthClaims` → 401, incl. the onboarding wizard), FOLLOW-556 (P1,
+ml-engineer — no daily LLM spend cap on the Modal description/headline path; public API key =
+cost-DoS surface). See Sprint 23 blocks for AC + delegation notes.
+
+**Waves 2–3 and the mapping of every remaining audit finding to a ticket (new or pre-existing
+FOLLOW-467/468/469/472/458/471) are in the Sprint 23 section header.** Merge-reconciliation note
+(this branch merged origin/main after PRs #511–#513 landed in parallel): FOLLOW-551 (architect
+tool-capability routing) and FOLLOW-552 (doc cross-link) content is on `main`; their DONE-flip +
+RETRO bundle, if still owed per the session-25 blocks below, is unaffected by this Sprint-23 opening
+(disjoint QUEUE regions — the FOLLOW-551/552 ticket blocks were not touched by this change).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-11 (session 25 cont'd — PR #512 PM-validated, folded into #511, no separate validation PR)
 
 **FOLLOW-551 (P3, architect DRAFT-ONLY, Sonnet) is PM-validated, READY_FOR_REVIEW.** architect
 drafted the content (no git); the coordinator applied it verbatim as commit `a8421e7`, PR **#512**
@@ -9415,10 +9453,10 @@ gate) closes the epic and must be last.
   title: >-
     Enable feedback endpoint in prod so the bandit learning loop is live (F-06)
   agent: backend-engineer
-  status: DONE
+  status: CODE_COMPLETE_OPERATOR_PENDING # corrected 2026-07-11 (audit #3 §6.4 / Rule AA): was DONE, but the operator_action block below is unresolved — "an operator-gated go-live ticket is CODE_COMPLETE_OPERATOR_PENDING, never DONE on code alone." Operator leg consolidated into FOLLOW-553 (Sprint 23 Wave 0).
   assigned_to: backend-engineer
   started_at: '2026-07-02T12:00:00Z'
-  completed_at: '2026-07-02T15:59:24Z'
+  completed_code_at: '2026-07-02T15:59:24Z'
   branch: backend-engineer/FOLLOW-450-feedback-loop-golive
   pr: 'https://github.com/Pnawrocki9/Adaptive-Listings/pull/426'
   merge_commit: 2460457fe0b55beefcef6d86f450c85af112bc4f
@@ -9992,7 +10030,7 @@ gate) closes the epic and must be last.
     Deploy stream-consumer + data-quality cron so live chat NLP and drift detection actually run
     (F-03)
   agent: devops-engineer
-  status: READY
+  status: BLOCKED # corrected 2026-07-11 (audit #3 §6.4): was READY with unmet depends_on [FOLLOW-449] — inconsistency flagged across multiple sessions, now fixed. Un-blocks when FOLLOW-553 (Sprint 23 Wave 0 operator session) completes the FOLLOW-449 prod-apply leg. Scheduled as Sprint 23 Wave 2 (shadow-only deploy per CEO Q2 2026-07-02).
   priority: P2
   estimated_hours: 6
   depends_on: [FOLLOW-449]
@@ -11797,4 +11835,380 @@ gate) closes the epic and must be last.
     - [ ] Baseline gates green (typecheck/lint/test incl. the e2e-smoke against a live wrangler);
           bundle within budget; Rule H + Rule I violation counts at zero for touched surfaces.
     - [ ] Verdict recorded in a new docs/AUDIT-2026-07-XX.md; only GREEN closes the epic.
+```
+
+## Sprint 23 — Audit 2026-07-11 Remediation + Pilot Ignition (OPEN)
+
+**Source:** Full-Stack Audit #3, 2026-07-11 (CEO-commissioned, 6 parallel tracks: SDK / ingest+data
+/ intent-engine / control-plane+LLM / compliance+security / plan-reconciliation) against HEAD
+`146de2f`. Verdict 🟡 YELLOW: code foundation independently re-verified as sound (Sprint 22b code
+legs genuinely done; anti-hallucination guards, fail-loud analytics, consent/opt-out, dual adapt
+auth all confirmed at file:line) — but the measured-pilot capability is 0% live in prod because the
+operator go-live checklist was 0/6 complete, and 3 new High-severity code defects were found.
+Finding IDs `A3-F-NN` below are LOCAL to the 2026-07-11 audit report (session 26), NOT the
+2026-07-01 F-01…F-21 set.
+
+**Wave structure (ordering is the plan — do not cherry-pick P3s before Waves 0–1):**
+
+- **Wave 0 — OPERATOR (Piotr/Rafał), highest leverage, blocks all measurement:** FOLLOW-553.
+  Instructions: `docs/runbooks/OPERATOR_SESSION_2026-07-11.md`.
+- **Wave 1 — code, delegable NOW, parallel with Wave 0:** FOLLOW-554 (quiz-skip SoT bug), FOLLOW-555
+  (browser-session auth 401s), FOLLOW-556 (LLM spend cap).
+- **Wave 2 — after Wave 0 lands:** FOLLOW-458 (shadow deploy, un-blocked by FOLLOW-449 leg),
+  FOLLOW-557/558 (DSR completeness), FOLLOW-559 (ingest consent gate), FOLLOW-560 (scoring-path
+  telemetry), FOLLOW-565 (signal enrichment wave 2 — gated on first real lift data).
+- **Wave 3 — closing:** FOLLOW-471 (Sprint 22b clean re-audit gate — un-blocked once 449/450
+  operator legs close; its AC already includes the differentiator e2e = A3-F-11), then P3 tail:
+  FOLLOW-467/468/469/472/474 (pre-existing READY) + FOLLOW-561/562/563/564/566 (below).
+
+**Audit-finding → ticket map (complete):** A3-F-01→FOLLOW-553 (+ESC-020 Rafał); A3-F-02→556;
+A3-F-03→554; A3-F-04→555; A3-F-05→557; A3-F-06→558; A3-F-08→559; A3-F-09→560; A3-F-10→561;
+A3-F-11→FOLLOW-471 AC (pre-existing); A3-F-12→FOLLOW-472 (pre-existing); A3-F-13→FOLLOW-468
+(pre-existing); A3-F-14→566 (DECISION-GATED); A3-F-15→FOLLOW-467 (pre-existing); A3-F-17→562;
+A3-F-18→563; A3-F-19→564; A3-F-07→565. Queue-label corrections (FOLLOW-450, FOLLOW-458) applied
+in-place in Sprint 22b above.
+
+```yaml
+- id: FOLLOW-553
+  title: >-
+    Pilot ignition — consolidated OPERATOR go-live session executing the 0/6 checklist (A3-F-01)
+  agent: OPERATOR (Piotr + Rafał; devops-engineer on standby for verification support)
+  status: READY_OPERATOR
+  priority: P0
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-01 — every learning/measurement loop dead in prod on operator gaps:
+    intent_events count=0 (CH 0015 unapplied), bandit frozen Beta(1,1) (feedback 503-gated), cosine
+    unreachable (listing_embeddings empty), embed-seed not live (ESC-034), pilot-site DOM hooks not
+    deployed (ESC-020, 35 days), CI smoke soft-skipping (ESC-028).
+  spec: docs/runbooks/OPERATOR_SESSION_2026-07-11.md (step-by-step, with attestation paste-points)
+  notes: |
+    Consolidates and, on completion, CLOSES: FOLLOW-449 AC1/AC2, FOLLOW-450 operator leg
+    (both flip to DONE), ESC-034, ESC-028; hands ESC-020 to Rafał with the exact deploy contract.
+    NOT delegable to a worker agent — requires Doppler prd, Vercel prod, Modal console, GitHub
+    admin. Rule AA applies: this ticket is the ONLY thing that may flip 449/450 to DONE, and only
+    with real pasted prod output in the runbook attestation stubs.
+    AC:
+    - [ ] CH migration 0015 attested+applied to prod; DESCRIBE TABLE proof pasted into
+          docs/runbooks/clickhouse-migrations.md stub; intent_events count() > 0 after a live
+          intent.snapshot.
+    - [ ] Doppler prd: FEEDBACK_ENDPOINT_ENABLED=true + ADAPT_API_KEY + OPS_TENANT_ID +
+          DATABASE_URL_ADMIN set; `doppler run --config prd -- pnpm feedback:canary` shows a real
+          ab_bandit_weights delta (paste output in ticket close note).
+    - [ ] ESC-034 corrected path executed: MODAL_EMBED_SEED_URL in Vercel prod,
+          INTERNAL_API_SECRET confirmed in Modal estalara-secrets, smoke via onboarding-overflow
+          event → Modal logs / Sentry tags.area:onboarding. ESC-034 marked RESOLVED.
+    - [ ] listing_embeddings seeded for the pilot tenant (count() > 0 for tenant); cosine path
+          verified reachable on one real GET /api/adapt reorder (console/log evidence until
+          FOLLOW-560 lands structured telemetry).
+    - [ ] ESC-028: 4 Upstash secrets in GitHub Actions + Doppler; redis-shadow-smoke.yml flips to
+          hard-fail mode and passes. ESC-028 marked RESOLVED.
+    - [ ] ESC-020 handed to Rafał with the SDK_PRODUCTION_INTEGRATION.md contract; deploy date
+          committed (may complete after this session — the ONLY checklist item allowed to trail).
+    - [ ] FOLLOW-449 + FOLLOW-450 statuses flipped to DONE with attestation links; STATUS.md
+          go-live checklist table refreshed.
+- id: FOLLOW-554
+  title: >-
+    SDK: quiz-skip must not persist `neutral` into the SoT archetype (ADR-0014 invariant) (A3-F-03)
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-03 — packages/sdk/src/index.ts:1210-1221 calls persistResolvedArchetype()
+    unconditionally in the quiz onComplete callback; quiz-widget.ts Q1 option D resolves to
+    'neutral' (quiz-widget.ts:572-574) → a buyer with an established non-neutral archetype who opens
+    the quiz and skips gets the session SoT wiped to neutral, violating the documented invariant at
+    session.ts:478-479 ("never to neutral", CEO 2026-06-22).
+  spec: ADR-0014; packages/sdk/src/core/session.ts:478-479
+  notes: |
+    Model-fit: sonnet (well-bounded single-file fix + test). Suggested fix: gate the persist call
+    on resolvedArchetype !== 'neutral' (mirror the refreshDirectives() guard at index.ts:750-758).
+    Rule R applies (idempotent across rehydrate boundary).
+    AC:
+    - [ ] Quiz-skip (Q1-D) no longer writes to the resolvedArchetype sessionStorage key; an
+          existing non-neutral SoT survives a quiz skip.
+    - [ ] Non-neutral quiz leaves still persist exactly as today (regression-guard existing
+          follow-380.test.ts cases).
+    - [ ] New test covers the skip path explicitly (the gap the audit found in follow-380.test.ts).
+- id: FOLLOW-555
+  title: >-
+    Migrate the 6 remaining browser-session routes off getAuthClaims to session-auth (A3-F-04)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-04 — same bug class FOLLOW-326/454 fixed elsewhere, 6 routes missed: GET
+    /api/admin/labels (route.ts:260), PATCH /api/admin/labels/[id] (:75), GET
+    /api/admin/generation-model (:117, PUT already fixed), PUT+GET /api/demo/override (:68,:113),
+    POST /api/detect (:199), POST /api/schema/activate (:94). Each has a confirmed browser fetch()
+    caller (labels page, settings page, demo override page, onboarding DetectWizard +
+    DetectionPreview) → real logged-in users 401. The onboarding wizard is broken for SSR sessions;
+    DetectWizard.tsx:141-143 comment incorrectly claims the cookie works.
+  spec: apps/control-plane/src/lib/session-auth.ts (FOLLOW-454 pattern); ADR-0013
+  notes: |
+    Model-fit: sonnet (mechanical replication of the FOLLOW-454 pattern across 6 routes). Rule S
+    applies (fix ALL siblings, same tier — that is this ticket's entire point; do a final grep to
+    prove no 7th sibling remains). Delete the false cookie comment in DetectWizard.tsx.
+    AC:
+    - [ ] All 6 routes accept a real @supabase/ssr browser session (getSessionAuth /
+          requireTenantSessionAccess) AND keep their existing Bearer-token path working.
+    - [ ] A repo-wide grep proves no route with a dashboard/admin-page fetch() caller still uses
+          bare getAuthClaims (list the checked callers in the PR description).
+    - [ ] CI guard: lint rule or grep-gate failing on new getAuthClaims imports in route files
+          under app/api/{admin,demo,detect,schema}/** (prevent the 3rd recurrence of this class).
+    - [ ] Real-handler tests per route (FOLLOW-389/409 pattern) for the session path.
+- id: FOLLOW-556
+  title: >-
+    Daily LLM spend cap on the Modal description/headline generation path (A3-F-02)
+  agent: ml-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-02 — generate_description.py calls Anthropic directly with NO daily spend
+    circuit breaker (only _MAX_TOKENS_CEILING=2000 per call); the $100/day rolling cap in
+    llm-gateway.ts:99,569-577 guards ONLY the inline adapt path. The description GET is
+    authenticated by the tenant API key, which is public by design (embedded in the site snippet) →
+    anyone can scrape a key and drive unbounded unique (listing × 17 archetypes × 3 locales) Sonnet
+    generations. Cost-DoS surface on a real-money path.
+  spec: apps/control-plane/src/lib/llm-gateway.ts (existing cap semantics); ADR-0016
+  notes: |
+    Model-fit: sonnet; escalate to opus only if the CH-read-from-Modal plumbing gets hairy.
+    Suggested shape: before the Anthropic call in generate_description.py, check rolling-24h spend
+    against the ClickHouse llm_calls table (same source the TS cap reads); on breach, return the
+    NEUTRAL/skip path (request keeps serving template_fallback — fail-safe, never fail-broken).
+    Consider a per-tenant daily generation-count quota as defense-in-depth (CEO open question Q5
+    from the audit — if unanswered by implementation time, ship the global cap only).
+    AC:
+    - [ ] A breach of the daily cap makes generate_description return without calling Anthropic
+          and without writing caches; Sentry event tagged kind:spend_cap.
+    - [ ] Cap value shared/configurable via env (default parity with DAILY_SPEND_CAP_USD).
+    - [ ] Headline path covered by the same breaker (both calls in the job).
+    - [ ] Test: mocked spend-over-cap → no model call, template_fallback still served end-to-end.
+- id: FOLLOW-557
+  title: >-
+    DSR erase: delete the chat-intent shadow Redis key namespace (A3-F-05)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-05 — erase/route.ts:87 SCANs session:{sessionId}:* but the chat-intent
+    shadow prior lives at shadow:{tenant_id}:{session_id}:chat_intent (redis_writer.py:35-37) → not
+    matched, not deleted. 24h TTL softens it; Art. 17 expects prompt erasure. Currently moot in prod
+    (stream-consumer undeployed) — becomes live the day FOLLOW-458 deploys.
+  notes: |
+    Model-fit: sonnet. Add the shadow:* pattern (tenant-scoped) to deleteSessionFromRedis();
+    cross-runtime key-format parity test against redis_writer.py's literal (Rule Z).
+    AC:
+    - [ ] Erase deletes shadow:{tenant}:{session}:chat_intent; test with a seeded key.
+    - [ ] Key-format fixture shared/checked against the Python writer (Rule Z).
+- id: FOLLOW-558
+  title: >-
+    DSR access + portability must disclose quiz_completions and intent_sessions (Art. 15/20)
+    (A3-F-06)
+  agent: compliance-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-06 — dsr/access/route.ts:27-38 and dsr/portability read only
+    session_embeddings, consent_records, conversion_labels; erasure (Art. 17) already covers
+    quiz_completions + intent_sessions (FOLLOW-455) but access/portability omit them → a data
+    subject's access report would omit stores we demonstrably hold. New finding, no prior ticket.
+  notes: |
+    Model-fit: sonnet. Mirror the FOLLOW-455 table set into both read routes; update the DPIA §
+    listing disclosed stores if it enumerates them (Rule N).
+    AC:
+    - [ ] Access + portability payloads include quiz_completions + intent_sessions rows for the
+          verified (tenant, session/email) scope.
+    - [ ] Parity test: the erase table-set and the access table-set are asserted equal (minus
+          documented exceptions) so the next new store cannot drift them apart again.
+- id: FOLLOW-559
+  title: >-
+    Ingest: server-side consent gate for profiling-class events (defense-in-depth) (A3-F-08)
+  agent: backend-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-08 — apps/ingest validates consent_state for shape only and stores
+    whatever arrives; the §H.8 gate is enforced exclusively client-side in the SDK. A broken
+    integration or malicious client can post consent_state:'none' profiling events and they persist.
+    GDPR posture wants the storage boundary to enforce, not just record.
+  spec: MASTER_DESIGN §H.8; packages/shared/src/schemas/event.ts:29-74
+  notes: |
+    Model-fit: opus (policy-shaped: needs a correct event-class → allowed-consent-states matrix,
+    and must NOT break the §H.9 ruling that opted-out users' §H.8 events still flow). Reject or
+    quarantine — CEO preference unknown; default reject-with-4xx + Sentry counter, escalate if
+    ambiguity bites (agent coding standards §1).
+    AC:
+    - [ ] Profiling-class events with consent_state not in {consented, legitimate-interest} are
+          rejected (or quarantined) at events.ts validation, with a structured Sentry counter.
+    - [ ] consent.granted/consent.denied audit events + §H.9 opt-out-flagged events still ingest
+          (explicit tests — do not regress the CEO 2026-06-23 §H.9 ruling).
+    - [ ] Contract test enumerates every EVENT_TYPES entry into a consent-class map so new event
+          types must declare their class (Rule H-adjacent: no unclassified type ships).
+- id: FOLLOW-560
+  title: >-
+    Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 3
+  depends_on: [FOLLOW-553]
+  source: >-
+    2026-07-11 audit A3-F-09 — adapt/route.ts:597-623,1470-1482 logs cosine/djb2 fallback only via
+    console.debug/warn; no structured metric. In prod today 100% of reorders are djb2 and nobody can
+    see it; after FOLLOW-553 seeds embeddings, nobody can PROVE cosine went live.
+  notes: |
+    Model-fit: sonnet. Preferred: add scoring_path LowCardinality(String) to
+    adaptation_decisions via CH migration 0021 — Rules W (prod sort-key check) + M (no auto-apply;
+    the migration rides the FOLLOW-553-established attestation flow, hence depends_on) + extend
+    the migration-contract test. Fallback if migration friction: OTel counter only.
+    AC:
+    - [ ] Every adapt decision records scoring_path ∈ {cosine, djb2_fallback, djb2_guard} in
+          adaptation_decisions (or an OTel metric if CEO defers the migration).
+    - [ ] Migration-contract test extended (FOLLOW-402 pattern); runbook attestation stub added.
+    - [ ] Dashboard/tracer surface shows the split (even a single-number panel).
+- id: FOLLOW-561
+  title: >-
+    Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
+  agent: qa-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-10 — the 18-archetype set is consistent today, but parity is test-enforced
+    only sdk↔shared (intent-weights-drift.test.ts); apps/intent-engine/src/nlp.py _ARCHETYPES
+    (:58-77), packages/db/src/seed/archetype-seeds.ts and migration 0005 are hand-maintained
+    literals with no guard — the exact "divergent sets" failure the 2026-05 audit (wrongly, then)
+    alleged can silently become true.
+  notes: |
+    Model-fit: sonnet. Rule J (mirror-code sync gate). Parse nlp.py's literal + the seed file in
+    a vitest (regex or JSON fixture export) and assert set-equality with ARCHETYPE_NAMES.
+    AC:
+    - [ ] Drift test covers nlp.py + archetype-seeds.ts + migration 0005 against ARCHETYPE_NAMES.
+    - [ ] Deliberate-subset archetype-hints.ts documented as exempt in the test.
+- id: FOLLOW-562
+  title: >-
+    Dashboard Panel 5 (/api/ab/weights) must surface fetch errors, not render an empty state
+    (A3-F-17)
+  agent: backend-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-17 — dashboard/analytics/page.tsx:639-641 swallows Panel 5 fetch errors
+    into an honest-but-silent "no anomalies" empty state; masks a real backend failure from the
+    operator. Not the F-07 fabrication class (no fake numbers), but the same UX blind spot.
+  notes: |
+    Model-fit: sonnet. Reuse the existing ErrorBanner (page.tsx:141-151) exactly as the other 4
+    panels do (Rule S — last sibling of the FOLLOW-453 fix).
+    AC:
+    - [ ] Panel 5 renders ErrorBanner on !res.ok / fetch throw; test added.
+- id: FOLLOW-563
+  title: >-
+    Test hygiene: smoke-ingest soft-skip without live endpoint + mutation-poll cadence comment
+    (A3-F-18)
+  agent: qa-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-18 — tests/e2e/smoke-ingest.test.ts hard-fails `pnpm test` locally with
+    "fetch failed" when no live ingest endpoint exists (verified in the audit run) instead of
+    soft-skipping with positive proof (Rule Q pattern); dsr/mutation-poll/route.ts:7 comment says
+    5-min cron, vercel.json:8-11 says */10.
+  notes: |
+    Model-fit: sonnet. Mirror the redis-shadow-smoke soft-skip contract (env-gated REQUIRE_*
+    flag + ::notice:: emission). Fix the stale comment to match vercel.json.
+    AC:
+    - [ ] `pnpm test` passes on a clean machine with no live services; CI with secrets still
+          hard-fails on real regressions (Rule Q positive proof emitted either way).
+    - [ ] mutation-poll comment matches the actual schedule.
+- id: FOLLOW-564
+  title: >-
+    Reconcile the p95 latency quality bar with ADR-0004's bifurcated SLA (A3-F-19)
+  agent: architect
+  status: READY
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-19 — CLAUDE.md/Master Design quality bar still says "p95 <100ms for
+    Decision API" while ADR-0004:51-63 bifurcates (deterministic <300ms / RAG <800ms / LLM <2000ms)
+    and POST /api/adapt makes an inline LLM call on similarity branches 3-4 (route.ts:340-376). The
+    two documents disagree; agents optimizing to the wrong number will make bad calls.
+  notes: |
+    Model-fit: sonnet. Docs-only. NOTE FOLLOW-551 (architect has no Bash): per the RETRO-168/DG-1
+    precedent the top-level orchestrator applies the edits on the architect's plan — or reassign
+    to backend-engineer if FOLLOW-551 lands first. §Y.2 propagation: CLAUDE.md quality-bar line +
+    Master Design §Snapshot/§B.2-adjacent prose in the same change.
+    AC:
+    - [ ] One SLA truth stated in CLAUDE.md + Master Design, citing ADR-0004; no residual <100ms
+          claim for the LLM-branch path.
+- id: FOLLOW-565
+  title: >-
+    Signal enrichment wave 2 — wire the 4-6 highest-discrimination schema-only event types
+    end-to-end (A3-F-07)
+  agent: ml-engineer
+  status: BLOCKED
+  priority: P2
+  estimated_hours: 10
+  depends_on: [FOLLOW-553]
+  source: >-
+    2026-07-11 audit A3-F-07 — 25 of 52 event types are schema-only (incl. photo.opened,
+    chat.opened, price.hovered, mouse.exit_intent, search.query); 8 of 18 archetypes are
+    quiz/chat-only per §D.6 while chat is shadow+undeployed → behavioral-only discrimination rests
+    on 14 signal types and archetype accuracy is the product's perceived quality.
+  spec:
+    MASTER_DESIGN §C.1 signal taxonomy; §D.7 damping calibration; 2026-06-05 enrichment precedent
+    (FOLLOW-207…211)
+  notes: |
+    Model-fit: opus (signal-selection reasoning + likelihood calibration; the emit plumbing itself
+    is sonnet-grade — consider a split brief). DELIBERATELY BLOCKED on FOLLOW-553: pick the 4-6
+    types using the FIRST real per-archetype lift/starvation data from the ignited pilot, not
+    intuition (verify-not-guess). Do NOT wire all 25 — Rule H requires each shipped type to have
+    an emit site AND a SIGNAL_LIKELIHOODS consumer; types not selected get explicitly annotated
+    or removed under FOLLOW-467's sweep.
+    AC:
+    - [ ] 4-6 selected types emit from the SDK, ingest, and carry SIGNAL_LIKELIHOODS entries
+          (end-to-end round-trip test each, FOLLOW-471-e2e pattern).
+    - [ ] Selection rationale documented against real pilot data (which archetypes were starved).
+    - [ ] Bundle stays within the 42KB gzip budget (FOLLOW-469 headroom note — check BEFORE merge).
+- id: FOLLOW-566
+  title: >-
+    DECISION-GATED: per-tenant origin allowlist on ingest (public-API-key self-poisoning) (A3-F-14)
+  agent: backend-engineer
+  status: BLOCKED
+  priority: P3
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    2026-07-11 audit A3-F-14 — the tenant API key is public by design (embedded in the site
+    snippet); anyone can scrape it and inject garbage events attributed to that tenant
+    (self-poisoning of archetype/bandit training data; no cross-tenant break — tenant is resolved
+    server-side, events.ts:128). No origin/referrer check exists in apps/ingest.
+  notes: |
+    BLOCKED on a CEO decision (audit open question Q3): accept the trade-off for the pilot
+    (document in Master Design §V and close), or implement a per-tenant Origin allowlist checked
+    in the Worker (KV-stored, defaulting open for tenants without a configured list). If
+    implemented: model-fit sonnet. Escalate via ESCALATIONS.md if unanswered when Wave 3 opens.
+    AC (if CEO says implement):
+    - [ ] Origin allowlist per tenant enforced at ingest for browser-originated requests; signed
+          server-adapter requests (HMAC path, auth.ts:86-96) exempt.
+    - [ ] Master Design §V documents the model either way.
 ```

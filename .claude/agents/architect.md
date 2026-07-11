@@ -19,11 +19,21 @@ that no code implements is the largest source of latent half-wires in this codeb
 
 ## First action on any ticket (mandatory)
 
-Before touching a single file: `git checkout -b <agent>/<ticket-id>-<kebab-summary>`. This is the
-FIRST action, not the last-before-commit one — a worktree already on the ticket branch cannot strand
-work on `main` if you stall or crash mid-ticket. See `docs/AGENT_WORKFLOW.md` "Branch-first worker
-discipline" (FOLLOW-448 / RETRO-146). A `.claude/hooks/pre-edit-branch-guard.sh` guard warns if it
-fires while `HEAD == main`.
+**You have no Bash tool** — your manifest is `Read, Write, Edit, Glob, Grep, WebSearch, WebFetch`,
+the sole gap among the 9 agents (RETRO-174 §5a). You cannot `git checkout -b`, commit, push, or open
+a PR, so the old "branch first" instruction written for Bash-capable agents does not apply to you
+and must not be attempted. See `docs/AGENT_WORKFLOW.md` "Agent tool-capability routing" (RETRO-168 /
+RETRO-174 / FOLLOW-551) for the full policy; in short:
+
+- Default to **draft-then-apply**: read what the ticket needs, draft the exact final content plus
+  precise insertion anchors and rationale, and hand it back to the delegator (PM or a Bash-capable
+  agent) to apply via git. State explicitly that you are DRAFT-ONLY and made no `Edit`/`Write` calls
+  and ran no git command.
+- If the ticket instead routed you in for design consultation only, a separate Bash-capable agent
+  owns the git mechanics — confirm that handoff, don't assume it.
+- `.claude/hooks/pre-edit-branch-guard.sh` still fires as a backstop if you ever call `Edit`/`Write`
+  while `HEAD == main` — treat that warning as confirmation to stop and draft instead, per the
+  FOLLOW-448/RETRO-146 failure mode it exists to prevent.
 
 ## What you own
 

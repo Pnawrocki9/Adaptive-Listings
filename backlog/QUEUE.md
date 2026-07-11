@@ -12211,4 +12211,66 @@ in-place in Sprint 22b above.
     - [ ] Origin allowlist per tenant enforced at ingest for browser-originated requests; signed
           server-adapter requests (HMAC path, auth.ts:86-96) exempt.
     - [ ] Master Design §V documents the model either way.
+- id: FOLLOW-567
+  title: >-
+    Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but
+    never sent)
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: [FOLLOW-568]
+  source: >-
+    Wave-0 operator session 2026-07-11 (FOLLOW-553 step 4) — _embed_one_listing
+    (apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:135) intentionally omits text_fields,
+    its comment claims "the endpoint fetches listing text from its own DB when text_fields is
+    absent" — FALSE: apps/control-plane/src/app/api/listings/embed/route.ts:75 requires text_fields
+    (Zod, non-empty refinement, no fetch fallback). Every ADR-0016 embed-seed dispatch 400s per
+    listing. The existing cross-runtime contract test covers only the EVENT fields
+    (tenant_id+listing_ids), not the downstream per-listing POST body — exactly the Rule Z gap
+    class.
+  spec: ADR-0016; packages/shared/contracts/listing-embed-seed-event.required.json (extend)
+  notes: |
+    Model-fit: sonnet. Preferred fix (matches the Modal comment's intent, unblocked by
+    FOLLOW-568's backend-host rename): make the embed route fetch title/description/price/location
+    via the existing listing-details helper when text_fields is absent, keeping the explicit
+    text_fields path for direct callers. Alternative (rejected unless fetch proves flaky): have
+    Modal send text_fields — it does not have them.
+    AC:
+    - [ ] A Modal-shaped POST (tenant_id+listing_id, NO text_fields) returns 200 and upserts a
+          real embedding (integration test with mocked backend fetch).
+    - [ ] Cross-runtime contract fixture extended to the per-listing POST body (Rule Z) so the
+          two runtimes cannot drift again.
+    - [ ] End-to-end smoke: one real listing seeded through the live Modal endpoint (the ESC-034
+          smoke that Wave 0 could not run) — evidence in the PR.
+- id: FOLLOW-568
+  title: >-
+    Estalara backend host renamed api.estalara.com -> api.app.estalara.com — propagate through repo,
+    Doppler prd, Vercel prod
+  agent: pm-orchestrator
+  status: DONE
+  completed_at: '2026-07-11'
+  pr: 'recorded on merge (same-branch bookkeeping per AGENT_WORKFLOW rule (d))'
+  priority: P1
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    CEO direction 2026-07-11 (Wave-0 operator session): Estalara infra renamed the Spring backend
+    host ~2026-06-30 (new Let's Encrypt cert dated 2026-06-30; old host now serves Traefik default
+    cert + universal 404). Verified live: /api/v1/listing/details on the new host answers
+    application JSON with NO login redirect (ESC-019 symptom gone).
+  notes: |
+    Applied: Doppler prd ESTALARA_BACKEND_URL updated; Vercel prod env var ADDED (was entirely
+    missing — prod control-plane silently defaulted to http://localhost:8081, so grounding
+    fetches could never succeed from Vercel; FOLLOW-457 fail-safe meant template_fallback, no
+    hallucination risk); .env.example + DOPPLER_SECRETS_MATRIX.md corrected (matrix also
+    misstated ESTALARA_DECISION_API_URL as api.estalara.com — actual: decision.estalara.com);
+    MASTER_DESIGN Update 2026-07-11 block + §B.4.5 example URL; HANDOFF.md historical-note.
+    Historical records (ESC-019, FOLLOW-192, QUEUE PR #196 mentions) left verbatim by design.
+    Control-plane redeploy after env add = done in-session.
+    AC:
+    - [x] Repo references updated (live docs/env-example) or annotated (historical snapshots).
+    - [x] Doppler prd value updated; Vercel prod var added.
+    - [x] MASTER_DESIGN documents the rename (Update 2026-07-11).
+    - [x] Live verification: new host answers listing-details with application-level JSON.
 ```

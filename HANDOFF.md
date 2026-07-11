@@ -109,6 +109,11 @@ Memo. Jeśli nie approved — zadaje tylko pytania blokujące.
 | Ingest (custom domain) | `https://ingest.estalara.com`                                    | ⏳ DNS propagacja |
 | API (custom domain)    | `https://api.estalara.com`                                       | ⏳ DNS propagacja |
 
+> ⚠️ **Historical snapshot — host renamed (FOLLOW-568, 2026-07-11).** `api.estalara.com` later
+> became the Estalara-app Spring backend host (ESC-019/PR #196) and was renamed by Estalara infra to
+> **`api.app.estalara.com`** ~2026-06-30; the old name is no longer routed. Current values live in
+> `docs/ops/DOPPLER_SECRETS_MATRIX.md`; this table is left as written for the historical record.
+
 **Health endpoints:**
 
 ```bash

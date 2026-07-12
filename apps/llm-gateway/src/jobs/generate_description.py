@@ -249,6 +249,183 @@ _ARCHETYPE_GUIDANCE: dict[str, str] = {
 
 from jobs._app import _image, app  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# FOLLOW-556 (audit A3-F-02) — daily LLM spend circuit breaker
+#
+# The description/headline path called Anthropic directly with NO daily cap, and
+# its spend was never even logged to `llm_calls` — so a scraped tenant API key
+# (public by design, embedded in the site snippet) could drive unbounded
+# (listing x archetype x locale) Sonnet generations on a real-money path. Mirrors
+# the control-plane cap (apps/control-plane/src/lib/llm-gateway.ts): we now
+#   (a) log every description/headline call to `llm_calls` so the rolling-24h sum
+#       reflects THIS path (without it the breaker could never trip from description
+#       traffic — Rule H), and
+#   (b) refuse to call Anthropic once that sum crosses the cap (fail-safe: the job
+#       returns without writing caches, so the endpoint keeps serving
+#       template_fallback — never fail-broken).
+#
+# Requires CLICKHOUSE_URL / CLICKHOUSE_USER / CLICKHOUSE_PASSWORD in the Modal
+# `estalara-secrets` bundle. Absent → both read and write fail-open (breaker off),
+# same degrade-open contract as the TS cap.
+# ---------------------------------------------------------------------------
+
+# Default parity with llm-gateway.ts DAILY_SPEND_CAP_USD. Env-overridable.
+_DAILY_SPEND_CAP_USD: float = float(os.environ.get("LLM_DAILY_SPEND_CAP_USD", "100"))
+
+# Per-1k-token USD list prices, mirrored from llm-gateway.ts COST_PER_1K_*.
+# Matched by substring so version suffixes (…-4-6, …-4-5-2025…) hit. Unknown
+# models fall back to the Sonnet rate (never under-bills the breaker vs Haiku).
+_COST_PER_1K: dict[str, tuple[float, float]] = {
+    "haiku": (0.00025, 0.00125),
+    "sonnet": (0.003, 0.015),
+}
+
+
+def _llm_cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:
+    """Estimate the USD cost of one Anthropic call from its token usage."""
+    rate_in, rate_out = _COST_PER_1K["sonnet"]  # conservative default
+    lowered = model.lower()
+    for key, rates in _COST_PER_1K.items():
+        if key in lowered:
+            rate_in, rate_out = rates
+            break
+    return (tokens_in / 1000.0) * rate_in + (tokens_out / 1000.0) * rate_out
+
+
+def _clickhouse_env() -> tuple[str | None, str, str]:
+    return (
+        os.environ.get("CLICKHOUSE_URL"),
+        os.environ.get("CLICKHOUSE_USER", "default"),
+        os.environ.get("CLICKHOUSE_PASSWORD", ""),
+    )
+
+
+def _clickhouse_auth_headers(user: str, password: str) -> dict[str, str]:
+    # Mirror clickhouse-http.ts: send X-ClickHouse-User/Key; omit when no user.
+    if not user:
+        return {}
+    return {"X-ClickHouse-User": user, "X-ClickHouse-Key": password}
+
+
+def _get_rolling_24h_spend() -> float:
+    """
+    Rolling 24h sum(cost_usd) from the shared `llm_calls` table (same source the
+    control-plane cap reads). Fails OPEN (returns 0.0) on any error / missing
+    config — a CH hiccup must never block legitimate generation.
+    """
+    url, user, password = _clickhouse_env()
+    if not url:
+        return 0.0
+    query = (
+        "SELECT sum(cost_usd) AS total FROM llm_calls "
+        "WHERE ts >= now() - INTERVAL 1 DAY FORMAT JSON"
+    )
+    try:
+        resp = httpx.post(
+            url,
+            content=query,
+            headers={"Content-Type": "text/plain", **_clickhouse_auth_headers(user, password)},
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return 0.0
+        rows = resp.json().get("data", [])
+        return float(rows[0].get("total") or 0.0) if rows else 0.0
+    except Exception:
+        return 0.0
+
+
+def _log_llm_call(
+    *,
+    tenant_id: str,
+    listing_id: str,
+    archetype: str,
+    model: str,
+    tokens_in: int,
+    tokens_out: int,
+    latency_ms: int,
+    source: str = "description",
+) -> None:
+    """
+    Record one description/headline Anthropic call in `llm_calls` so the rolling-24h
+    spend reflects this path (making the breaker self-limiting). Fire-and-forget,
+    fail-safe: a failed insert is logged and swallowed, never blocks the response.
+    Parameterized INSERT (no string interpolation), mirroring llm-gateway.ts.
+    """
+    url, user, password = _clickhouse_env()
+    if not url:
+        return
+    cost = _llm_cost_usd(model, tokens_in, tokens_out)
+    ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    query = (
+        "INSERT INTO llm_calls "
+        "(session_id, tenant_id, archetype, model, tokens_in, tokens_out, cost_usd, "
+        "latency_ms, source, ts) VALUES "
+        "({p_session_id:String}, {p_tenant_id:String}, {p_archetype:String}, {p_model:String}, "
+        "{p_tokens_in:UInt32}, {p_tokens_out:UInt32}, {p_cost_usd:Float64}, {p_latency_ms:UInt32}, "
+        "{p_source:String}, {p_ts:String})"
+    )
+    params = {
+        # No session on the description path — group by listing for the ORDER BY key.
+        "param_p_session_id": listing_id or "desc",
+        "param_p_tenant_id": tenant_id,
+        "param_p_archetype": archetype,
+        "param_p_model": model,
+        "param_p_tokens_in": str(tokens_in),
+        "param_p_tokens_out": str(tokens_out),
+        "param_p_cost_usd": str(cost),
+        "param_p_latency_ms": str(latency_ms),
+        "param_p_source": source,
+        "param_p_ts": ts,
+    }
+    try:
+        resp = httpx.post(
+            url,
+            params=params,
+            content=query,
+            headers={"Content-Type": "text/plain", **_clickhouse_auth_headers(user, password)},
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            log.warning(
+                "generate_description.llm_calls_log_rejected status=%d body=%s",
+                resp.status_code,
+                resp.text[:200],
+            )
+    except Exception as exc:  # noqa: BLE001 — fire-and-forget telemetry, never fatal
+        log.warning("generate_description.llm_calls_log_failed error=%s", str(exc))
+
+
+def _spend_cap_exceeded() -> bool:
+    """
+    True when the rolling-24h llm_calls spend is at/over the daily cap. On breach the
+    caller must return without calling Anthropic (fail-safe → template_fallback) and
+    emit a Sentry event tagged kind=spend_cap.
+    """
+    spend = _get_rolling_24h_spend()
+    if spend >= _DAILY_SPEND_CAP_USD:
+        log.warning(
+            "generate_description.spend_cap_reached spend=%.2f cap=%.2f — serving template_fallback",
+            spend,
+            _DAILY_SPEND_CAP_USD,
+        )
+        try:
+            import sentry_sdk
+
+            # sentry-sdk >= 2.0 API (push_scope removed). new_scope is the replacement.
+            with sentry_sdk.new_scope() as scope:
+                scope.set_tag("kind", "spend_cap")
+                scope.set_tag("area", "description")
+                scope.set_extra("rolling_24h_spend_usd", round(spend, 2))
+                scope.set_extra("cap_usd", _DAILY_SPEND_CAP_USD)
+                sentry_sdk.capture_message(
+                    "generate_description daily LLM spend cap reached", level="warning"
+                )
+        except Exception:  # noqa: BLE001 — Sentry optional; never fatal
+            pass
+        return True
+    return False
+
 
 # ---------------------------------------------------------------------------
 # Core job function
@@ -322,6 +499,19 @@ def generate_description(event: dict[str, Any]) -> None:
         model,
     )
 
+    # FOLLOW-556 (A3-F-02): daily LLM spend circuit breaker. Gating here — BEFORE
+    # _generate_with_sonnet — covers BOTH the description and the (later) headline call.
+    # On breach we return without calling Anthropic and without writing any cache, so the
+    # endpoint keeps serving template_fallback (fail-safe, never fail-broken).
+    if _spend_cap_exceeded():
+        log.warning(
+            "generate_description.skipped_spend_cap tenant=%s listing=%s archetype=%s",
+            tenant_id,
+            listing_id,
+            archetype,
+        )
+        return
+
     try:
         description, verified_facts, verdict = _generate_with_sonnet(
             archetype=archetype,
@@ -330,6 +520,8 @@ def generate_description(event: dict[str, Any]) -> None:
             locale=locale,
             original_description=original_description,
             model=model,
+            tenant_id=tenant_id,
+            listing_id=listing_id,
         )
     except Exception as exc:
         log.error(
@@ -394,6 +586,8 @@ def generate_description(event: dict[str, Any]) -> None:
         listing_context=listing_context,
         model=model,
         verified_facts=verified_facts if verified_facts else None,
+        tenant_id=tenant_id,
+        listing_id=listing_id,
     )
     if headline:
         log.info(
@@ -1035,6 +1229,8 @@ def _generate_with_sonnet(
     locale: str = "en",
     original_description: str = "",
     model: str = _DEFAULT_GENERATION_MODEL,
+    tenant_id: str = "",
+    listing_id: str = "",
 ) -> tuple[str, list[str], str]:
     """
     Call the Anthropic generation model to produce a buyer-adapted listing description.
@@ -1142,11 +1338,25 @@ def _generate_with_sonnet(
 
     user_prompt = "\n".join(user_prompt_parts)
 
+    _call_start = time.time()
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
+    )
+    # FOLLOW-556: record the call in llm_calls so the rolling-24h spend the breaker
+    # reads reflects the description path. Fail-safe (no-op without CLICKHOUSE_URL).
+    _usage = getattr(response, "usage", None)
+    _log_llm_call(
+        tenant_id=tenant_id,
+        listing_id=listing_id,
+        archetype=archetype,
+        model=model,
+        tokens_in=getattr(_usage, "input_tokens", 0) or 0,
+        tokens_out=getattr(_usage, "output_tokens", 0) or 0,
+        latency_ms=int((time.time() - _call_start) * 1000),
+        source="description",
     )
 
     raw_text: str = ""
@@ -1298,19 +1508,83 @@ _HEADLINE_DIGIT_RE: re.Pattern[str] = re.compile(r"\d")
 _HEADLINE_STOP_CAPS: frozenset[str] = frozenset(
     {
         # Articles, prepositions, conjunctions
-        "A", "An", "The", "In", "On", "At", "Of", "For", "To", "And", "Or", "But",
-        "With", "From", "By", "As", "Its", "Is", "Are", "Was", "Be", "Has", "Have",
-        "This", "That", "These", "Those", "Your", "Our", "Their",
+        "A",
+        "An",
+        "The",
+        "In",
+        "On",
+        "At",
+        "Of",
+        "For",
+        "To",
+        "And",
+        "Or",
+        "But",
+        "With",
+        "From",
+        "By",
+        "As",
+        "Its",
+        "Is",
+        "Are",
+        "Was",
+        "Be",
+        "Has",
+        "Have",
+        "This",
+        "That",
+        "These",
+        "Those",
+        "Your",
+        "Our",
+        "Their",
         # Common real-estate descriptive adjectives / openers (NOT proper names)
-        "Ideal", "Prime", "Strong", "Stunning", "Spacious", "Modern", "Elegant",
-        "Bright", "Charming", "Impressive", "Exceptional", "Superb", "Excellent",
-        "Beautiful", "Luxury", "Luxurious", "Attractive", "Unique", "Rare",
-        "Perfect", "Classic", "Contemporary", "Traditional", "Cosy", "Cozy",
-        "Quiet", "Peaceful", "Vibrant", "Sought", "Desirable", "Prestigious",
-        "Newly", "Well", "Fully", "Tastefully", "Beautifully", "Recently",
-        "Lovingly", "Generously", "Conveniently",
+        "Ideal",
+        "Prime",
+        "Strong",
+        "Stunning",
+        "Spacious",
+        "Modern",
+        "Elegant",
+        "Bright",
+        "Charming",
+        "Impressive",
+        "Exceptional",
+        "Superb",
+        "Excellent",
+        "Beautiful",
+        "Luxury",
+        "Luxurious",
+        "Attractive",
+        "Unique",
+        "Rare",
+        "Perfect",
+        "Classic",
+        "Contemporary",
+        "Traditional",
+        "Cosy",
+        "Cozy",
+        "Quiet",
+        "Peaceful",
+        "Vibrant",
+        "Sought",
+        "Desirable",
+        "Prestigious",
+        "Newly",
+        "Well",
+        "Fully",
+        "Tastefully",
+        "Beautifully",
+        "Recently",
+        "Lovingly",
+        "Generously",
+        "Conveniently",
         # Archetype framing words that open adapted headlines
-        "Investor", "Family", "Investment", "Lifestyle", "Portfolio",
+        "Investor",
+        "Family",
+        "Investment",
+        "Lifestyle",
+        "Portfolio",
     }
 )
 _HEADLINE_CAPS_WORD_RE: re.Pattern[str] = re.compile(r"\b([A-Z][a-z]+)\b")
@@ -1367,9 +1641,7 @@ def _check_headline_facts(
     #    by non-numeric, non-decimal characters — i.e. it is a complete numeric unit.
     for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", headline, re.IGNORECASE):
         token_lower = token.lower()
-        boundary_pattern = re.compile(
-            r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])"
-        )
+        boundary_pattern = re.compile(r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])")
         if not boundary_pattern.search(grounding):
             return "hallucinated_number"
 
@@ -1399,6 +1671,8 @@ def _generate_headline(
     listing_context: dict[str, Any],
     model: str,
     verified_facts: list[str] | None = None,
+    tenant_id: str = "",
+    listing_id: str = "",
 ) -> str | None:
     """
     Generate a single per-listing headline (~max 90 chars) grounded in the
@@ -1469,11 +1743,24 @@ def _generate_headline(
 
     try:
         client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        _call_start = time.time()
         response = client.messages.create(
             model=model,
             max_tokens=_HEADLINE_MAX_TOKENS,
             system=_HEADLINE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+        )
+        # FOLLOW-556: log the headline call to llm_calls too (both calls in the job).
+        _usage = getattr(response, "usage", None)
+        _log_llm_call(
+            tenant_id=tenant_id,
+            listing_id=listing_id,
+            archetype=archetype,
+            model=model,
+            tokens_in=getattr(_usage, "input_tokens", 0) or 0,
+            tokens_out=getattr(_usage, "output_tokens", 0) or 0,
+            latency_ms=int((time.time() - _call_start) * 1000),
+            source="headline",
         )
         raw: str = ""
         if response.content and hasattr(response.content[0], "text"):

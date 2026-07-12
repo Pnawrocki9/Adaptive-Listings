@@ -14756,3 +14756,25 @@ job for large-catalog embedding; P2 backend-engineer+ml-engineer ~6h). 434 = RET
   - OPTIONAL — rule (d)'s wording widened to sanction folding validation into whichever adjacent
     QUEUE.md-touching bundle is already open (promotion OR DONE+RETRO), matching FOLLOW-550's own
     #508 application (RETRO-174 §4d DG-2). cross_ref: [FOLLOW-550, FOLLOW-549, RETRO-174, RETRO-173]
+
+## FOLLOW-569 — Audit F-01: `inquiry.completed` reaches only the bandit feedback ping, never ingest, so the cta-lift conversion-analytics leg JOINed on it is permanently empty (holdout AND variant)
+
+Source: `docs/AUDIT-2026-07-12.md` finding F-01 (High). `registerFeedbackListener` (adapt.ts) fired
+`postFeedbackPing` on `inquiry.completed` but nothing ever queued it for `/v1/events`, while
+`apps/control-plane/src/app/api/pilot/cta-lift/route.ts:172` JOINs on `inquiry.completed` — so the
+conversion leg counted zero for every session. `live.signup` already had a dedicated ingest listener
+in `index.ts`; `inquiry.completed` did not.
+
+Fix (this PR, sdk-engineer): added a dedicated `inquiry.completed` ingest listener in
+`packages/sdk/src/index.ts` mirroring the `live.signup` one — fires for every session (holdout +
+variant) so lift is measurable, drops `is_agent` signals, and maps only the no-PII
+`InquiryCompletedPayloadSchema` fields. Unit test:
+`packages/sdk/src/__tests__/follow569-inquiry-completed-ingest.test.ts`.
+
+status: CODE_COMPLETE (PR open) · ticket number provisional — PM to confirm/formalize in QUEUE. ac:
+
+- [x] SDK queues `inquiry.completed` to ingest for holdout AND variant sessions
+- [x] payload limited to InquiryCompletedPayloadSchema (no PII); invalid fields filtered
+- [x] `is_agent=true` dropped; unit test green; bundle in budget (40.67 KB gzip)
+- [ ] PM: assign/confirm the ticket id and fold into the Sprint 23 wave bookkeeping cross_ref:
+      [FOLLOW-471, FOLLOW-565]

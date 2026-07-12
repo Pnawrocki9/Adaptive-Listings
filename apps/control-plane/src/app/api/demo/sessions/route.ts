@@ -19,7 +19,9 @@ import { and, desc, gt } from 'drizzle-orm';
 
 import type { DemoDuration, DemoScope, DemoVisibility } from '@estalara/shared';
 import { createAdminClient, demoSessions } from '@estalara/db';
-import { requireTenantAccess } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): browser-called demo dashboard route — accept the @supabase/ssr
+// session in addition to Bearer/legacy cookie (Rule S: whole demo group session-aware).
+import { requireTenantSessionAccess } from '@/lib/session-auth';
 import { eq } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,7 +84,7 @@ const VALID_DURATIONS: DemoDuration[] = ['session', '24h', '7d'];
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:viewer');
+    claims = await requireTenantSessionAccess(req, 'agency:viewer');
   } catch {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },
@@ -205,7 +207,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:viewer');
+    claims = await requireTenantSessionAccess(req, 'agency:viewer');
   } catch {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },

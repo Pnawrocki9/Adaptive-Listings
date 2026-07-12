@@ -4,6 +4,8 @@ pre-push:
       run: bash scripts/check-rule-h.sh origin/main
     rule-j:
       run: bash scripts/check-mirror-files.sh
+    follow555-session-auth:
+      run: bash scripts/check-follow555-session-auth.sh
 
 pre-commit:
   parallel: true

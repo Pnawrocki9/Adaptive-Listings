@@ -9,7 +9,8 @@
  * after the admin reviews the detected schema and clicks "Save & Activate".
  *
  * Key behaviours (TICKET-AUTO-006-POLISH):
- *  - JWT authentication via getAuthClaims() — same pattern as POST /api/detect
+ *  - Auth via getSessionAuthClaims() — Bearer JWT OR @supabase/ssr browser session
+ *    (FOLLOW-555); same pattern as POST /api/detect
  *  - Upserts schema to tenant_site_schemas using tenant_domain_uniq constraint
  *  - Conditionally promotes tenant.status from 'pending' → 'active'
  *  - Looks up existing active public API key; generates a new one if absent
@@ -25,7 +26,9 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { eq, and, isNull, or, gt, desc } from 'drizzle-orm';
 import { createAdminClient, tenantSiteSchemas, tenants, apiKeys } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): POST is called by the onboarding DetectionPreview component, so it
+// must accept the @supabase/ssr browser session in addition to the Bearer/legacy-cookie path.
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import type { TenantSiteSchema } from '@estalara/shared';
 import { errorBody, ErrorCode } from '@estalara/shared';
 import { invalidateTenantSchemaCache } from '@/lib/tenant-schema';
@@ -91,7 +94,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
   // ── JWT authentication ────────────────────────────────────────────────────
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json(
       {

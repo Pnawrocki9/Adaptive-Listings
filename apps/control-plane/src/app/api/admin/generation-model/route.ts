@@ -17,8 +17,9 @@
  *         `estalara_staff: true`.
  *
  * Auth mechanism:
- *   - GET: requireTenantAccess() verifies the Supabase JWT (HMAC-signed), extracts
- *     agency_role from verified claims, and throws on invalid/expired tokens.
+ *   - GET: requireTenantSessionAccess() accepts a Bearer JWT / legacy cookie OR the
+ *     @supabase/ssr browser session (FOLLOW-555), verifies it, extracts agency_role
+ *     from the resolved claims, and throws on invalid/expired/absent auth.
  *   - PUT: verifyTracerAdminAuth() requires either a constant-time-compared
  *     ADMIN_API_SECRET Bearer token, or a verified Supabase JWT/session whose
  *     app_metadata/claims carry `estalara_staff: true`. Tenant `agency:admin` JWTs
@@ -27,7 +28,7 @@
  *     the verified staff auth above, never from the request body.
  *
  * Replay defence:
- *   - Supabase JWTs carry an `exp` claim (HMAC-signed). Both requireTenantAccess and
+ *   - Supabase JWTs carry an `exp` claim (HMAC-signed). Both requireTenantSessionAccess and
  *     verifyTracerAdminAuth's JWT path verify expiry on every call. Replaying an
  *     expired token fails. ADMIN_API_SECRET is a long-lived bearer secret; replay
  *     protection is TLS + the operation being idempotent (setting the same model
@@ -55,7 +56,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireTenantAccess } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): GET is called by the settings dashboard page, so it must accept
+// the @supabase/ssr browser session (not just Bearer/legacy cookie). PUT stays on
+// verifyTracerAdminAuth (staff-only, already session-aware).
+import { requireTenantSessionAccess } from '@/lib/session-auth';
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 import {
   getGlobalGenerationModel,
@@ -114,7 +118,7 @@ async function readConfigRow(): Promise<{
 export async function GET(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:admin');
+    claims = await requireTenantSessionAccess(req, 'agency:admin');
   } catch {
     return NextResponse.json(
       {

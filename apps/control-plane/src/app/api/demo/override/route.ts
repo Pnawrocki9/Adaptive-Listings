@@ -32,7 +32,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireTenantAccess } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): both methods are called by the demo-override dashboard page, so
+// they must accept the @supabase/ssr browser session in addition to Bearer/legacy cookie.
+import { requireTenantSessionAccess } from '@/lib/session-auth';
 import {
   getDemoOverride,
   upsertDemoOverride,
@@ -65,7 +67,7 @@ const PutBodySchema = z.object({
 export async function GET(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:viewer');
+    claims = await requireTenantSessionAccess(req, 'agency:viewer');
   } catch {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },
@@ -110,7 +112,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function PUT(req: NextRequest): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:admin');
+    claims = await requireTenantSessionAccess(req, 'agency:admin');
   } catch {
     return NextResponse.json(
       {

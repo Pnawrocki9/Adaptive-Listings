@@ -6,7 +6,8 @@
  * response for the Magic Link onboarding wizard (TICKET-030).
  *
  * Key behaviours (TICKET-033):
- *  - JWT authentication via getAuthClaims() — tenant_id extracted from JWT claims
+ *  - Auth via getSessionAuthClaims() — Bearer JWT OR @supabase/ssr browser session
+ *    (FOLLOW-555); tenant_id extracted from the resolved claims
  *  - SSRF protection — blocks private IPs, IPv6 loopback/private, localhost, bare hostnames
  *  - 60-second detection cache guard — avoids burning AI Vision quota on rapid retries
  *  - Wizard-ready response shape with flattened `fields[]` array
@@ -34,7 +35,10 @@ import { eq, and } from 'drizzle-orm';
 import { detectSiteSchema } from '@estalara/sdk/auto-detect';
 import type { DetectionResult } from '@estalara/sdk/auto-detect';
 import { createAdminClient, tenantSiteSchemas } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): POST is called by the detection dashboard page and the onboarding
+// DetectWizard, so it must accept the @supabase/ssr browser session in addition to the
+// Bearer/legacy-cookie path (getSessionAuthClaims tries Bearer first, unchanged for API callers).
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import type {
   TenantSiteSchema,
   CardFieldMappings,
@@ -196,7 +200,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
   // ── JWT authentication ────────────────────────────────────────────────────
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json(
       {

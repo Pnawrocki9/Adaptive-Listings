@@ -35,7 +35,11 @@ import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { eq } from 'drizzle-orm';
 
-import { getAuthClaims, isStaffClaims } from '@estalara/auth';
+import { isStaffClaims } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): accept the @supabase/ssr browser session in addition to
+// Bearer/legacy cookie so a logged-in staff export no longer 401s (Rule S: keep the
+// whole admin route group session-aware).
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { createAdminClient, conversionLabels, staffAuditLog } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import { afterResponse } from '@/lib/after-response';
@@ -338,7 +342,7 @@ function buildMockExportRows(): ExportRow[] {
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid Bearer JWT is required' } },

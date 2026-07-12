@@ -1489,6 +1489,45 @@ async function init(): Promise<IntentState | null> {
       })();
     });
 
+    // F-01 (audit 2026-07-12, FOLLOW-569): inquiry.completed ingest listener.
+    // Mirrors the live.signup listener above. registerFeedbackListener (adapt.ts) already sends the
+    // bandit feedback ping on inquiry.completed, but nothing ever queued it for INGEST — so the
+    // cta-lift conversion-analytics leg that JOINs on inquiry.completed was permanently empty for
+    // holdout AND variant sessions alike (audit finding F-01). This queues the ingest telemetry
+    // event for every session so conversion lift can actually be measured. Payload is limited to
+    // InquiryCompletedPayloadSchema (no PII); session/variant attribution rides the event
+    // envelope's session_id, not the payload.
+    document.addEventListener('inquiry.completed', (e: Event) => {
+      // detail may be absent (plain Event) — cast to a nullable shape so the guards are honest.
+      const detail = (e as CustomEvent).detail as Record<string, unknown> | null;
+      if (detail?.is_agent === true) return;
+
+      const payload: Record<string, unknown> = {};
+      if (typeof detail?.has_phone === 'boolean') payload.has_phone = detail.has_phone;
+      if (
+        typeof detail?.message_length === 'number' &&
+        Number.isInteger(detail.message_length) &&
+        detail.message_length >= 0
+      ) {
+        payload.message_length = detail.message_length;
+      }
+      if (
+        typeof detail?.channel === 'string' &&
+        ['email', 'phone', 'whatsapp', 'sms', 'in_person'].includes(detail.channel)
+      ) {
+        payload.channel = detail.channel;
+      }
+      if (
+        typeof detail?.timeline === 'string' &&
+        ['0-3m', '3-6m', '6-12m', '12m+'].includes(detail.timeline)
+      ) {
+        payload.timeline = detail.timeline;
+      }
+      if (typeof detail?.budget_hint === 'string') payload.budget_hint = detail.budget_hint;
+
+      eventQueue.push({ type: 'inquiry.completed', payload, ts: Date.now() });
+    });
+
     // FOLLOW-210: Favorites/bookmark signal bridge.
     // Listens for estalara:listing:favorited / estalara:listing:unfavorited CustomEvents
     // dispatched by app.estalara.com (window) on successful save/unsave.

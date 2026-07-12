@@ -106,6 +106,7 @@ def _run_job(event: dict[str, Any]) -> None:
     from jobs.generate_description import (
         _generate_headline,
         _generate_with_sonnet,
+        _spend_cap_exceeded,
         _write_to_postgres_cache,
         _write_to_redis,
     )
@@ -127,6 +128,10 @@ def _run_job(event: dict[str, Any]) -> None:
         event.get("generation_model"),
     )
 
+    # FOLLOW-556: mirror generate_description() — daily spend circuit breaker.
+    if _spend_cap_exceeded():
+        return
+
     try:
         description, verified_facts, verdict = _generate_with_sonnet(
             archetype=archetype,
@@ -135,6 +140,8 @@ def _run_job(event: dict[str, Any]) -> None:
             locale=locale,
             original_description=original_description,
             model=model,
+            tenant_id=tenant_id,
+            listing_id=listing_id,
         )
     except Exception as exc:
         log.error("test_job.sonnet_error error=%s", str(exc))
@@ -168,6 +175,8 @@ def _run_job(event: dict[str, Any]) -> None:
         listing_context=listing_context,
         model=model,
         verified_facts=verified_facts if verified_facts else None,
+        tenant_id=tenant_id,
+        listing_id=listing_id,
     )
 
     _write_to_redis(cache_key, description, verified_facts, headline)
@@ -631,9 +640,9 @@ def test_hallucination_resistance() -> None:
         r"Airbnb",
     ]
     for pattern in forbidden_patterns:
-        assert not re.search(
-            pattern, description, re.IGNORECASE
-        ), f"Hallucinated forbidden pattern '{pattern}' in: {description}"
+        assert not re.search(pattern, description, re.IGNORECASE), (
+            f"Hallucinated forbidden pattern '{pattern}' in: {description}"
+        )
 
     assert isinstance(verified_facts, list)
     assert "bedrooms: 3" in verified_facts
@@ -1428,6 +1437,60 @@ def test_neutral_verdict_end_to_end_via_production_job(mock_redis_post: MagicMoc
         assert value["text"] == ""
 
 
+def test_spend_cap_breach_skips_generation_end_to_end() -> None:
+    """
+    FOLLOW-556 (A3-F-02) AC: when the rolling-24h llm_calls spend is at/over the daily
+    cap, the REAL generate_description() job returns WITHOUT calling Anthropic and WITHOUT
+    writing any cache — so the endpoint keeps serving template_fallback (fail-safe). Drives
+    the production job via .local(), patching only the CH spend read to simulate a breach.
+    """
+    from jobs.generate_description import generate_description
+
+    with (
+        # Simulate a breach without any real ClickHouse call.
+        patch(
+            "jobs.generate_description._get_rolling_24h_spend",
+            return_value=150.0,  # over the default $100 cap
+        ),
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post") as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+
+        generate_description.local(_make_event())
+
+        # No Anthropic call (zero spend added) and no cache write (Redis/Postgres go
+        # through httpx.post) → the endpoint keeps serving template_fallback.
+        mock_client.messages.create.assert_not_called()
+        mock_httpx.assert_not_called()
+
+
+def test_under_cap_allows_generation_end_to_end(
+    mock_sonnet: MagicMock, mock_redis_post: MagicMock
+) -> None:
+    """
+    FOLLOW-556 regression guard: below the cap, generation proceeds exactly as before —
+    Anthropic is called and the result is cached. Proves the breaker does not block
+    legitimate traffic.
+    """
+    from jobs.generate_description import generate_description
+
+    with (
+        patch("jobs.generate_description._get_rolling_24h_spend", return_value=1.0),
+        patch("anthropic.Anthropic") as mock_anthropic_cls,
+        patch("httpx.post", return_value=mock_redis_post) as mock_httpx,
+    ):
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        mock_client.messages.create.return_value = mock_sonnet
+
+        generate_description.local(_make_event())
+
+        mock_client.messages.create.assert_called()
+        mock_httpx.assert_called()
+
+
 # ---------------------------------------------------------------------------
 # FOLLOW-188: leak/format fail-safe — _body_violates_contract unit tests
 # ---------------------------------------------------------------------------
@@ -1473,9 +1536,7 @@ def test_body_violates_contract_heading_markdown_suppressed() -> None:
 def test_body_violates_contract_residual_verified_facts_tag_suppressed() -> None:
     """A residual <verified_facts_used opening tag in the body -> suppressed as residual_tag."""
     with_tag = (
-        "A great property in Lisbon. Good transport links.\n"
-        "<verified_facts_used>\n"
-        '["bedrooms: 2"'
+        'A great property in Lisbon. Good transport links.\n<verified_facts_used>\n["bedrooms: 2"'
     )
     assert _body_violates_contract(with_tag) == "residual_tag"
 

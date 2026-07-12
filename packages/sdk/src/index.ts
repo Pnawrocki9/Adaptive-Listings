@@ -1214,11 +1214,19 @@ async function init(): Promise<IntentState | null> {
               // this SoT with a different non-neutral archetype (see refreshDirectives).
               // FOLLOW-380 bug (c): persist the (high) quiz-leaf confidence alongside the
               // archetype so the neutral-decay restore re-pins both above the DOM floor.
-              persistResolvedArchetype(
-                currentSession.sessionId,
-                resolvedArchetype,
-                currentIntentState.confidence,
-              );
+              //
+              // FOLLOW-554 (A3-F-03): a quiz SKIP (Q1 option D) resolves to `neutral`. Persisting
+              // that would WIPE an already-established non-neutral SoT, violating the ADR-0014
+              // invariant "never to neutral" (session.ts). Only seed the SoT from a non-neutral
+              // quiz leaf — mirror the refreshDirectives() guard above. Rule R: idempotent across
+              // rehydrate (a skip is a no-op on the SoT key, so an existing SoT survives).
+              if (resolvedArchetype !== 'neutral') {
+                persistResolvedArchetype(
+                  currentSession.sessionId,
+                  resolvedArchetype,
+                  currentIntentState.confidence,
+                );
+              }
               onIntentUpdate(currentIntentState.archetype, currentIntentState.confidence);
               if (config.debug) {
                 console.log(

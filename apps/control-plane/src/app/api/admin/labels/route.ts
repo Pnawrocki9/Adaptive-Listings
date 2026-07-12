@@ -40,7 +40,10 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { and, eq, gte, lte } from 'drizzle-orm';
 
-import { getAuthClaims, isStaffClaims } from '@estalara/auth';
+import { isStaffClaims } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): accept the @supabase/ssr browser session in addition to the
+// Bearer/legacy-cookie path so a logged-in labels-page fetch() no longer 401s.
+import { getSessionAuthClaims } from '@/lib/session-auth';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import { ConversionOutcomeClassSchema, type ConversionOutcomeClass } from '@estalara/shared';
 
@@ -257,7 +260,7 @@ async function fetchLabels(
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  const claims = await getAuthClaims(req);
+  const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid Bearer JWT is required' } },

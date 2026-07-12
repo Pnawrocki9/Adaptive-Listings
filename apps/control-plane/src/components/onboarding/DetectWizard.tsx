@@ -138,9 +138,11 @@ export function DetectWizard() {
       const res = await fetch('/api/detect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // The browser automatically sends the sb-access-token cookie on same-origin
-        // requests. getAuthClaims() in the route handler reads it from the cookie header.
-        // credentials: 'include' is the default for same-origin requests.
+        // Same-origin request: the browser sends the @supabase/ssr session cookie
+        // (chunked `sb-<ref>-auth-token`) automatically. The route reads it via
+        // getSessionAuthClaims() (FOLLOW-555) — the legacy `sb-access-token` /
+        // getAuthClaims() path did NOT read this cookie, which is why logged-in
+        // SSR sessions previously 401'd here.
         body: JSON.stringify({ url }),
       });
 

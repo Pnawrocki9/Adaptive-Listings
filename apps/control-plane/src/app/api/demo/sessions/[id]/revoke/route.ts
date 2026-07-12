@@ -22,7 +22,9 @@ import type { NextRequest } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 
 import { createAdminClient, demoSessions } from '@estalara/db';
-import { requireTenantAccess } from '@estalara/auth';
+// FOLLOW-555 (A3-F-04): browser-called demo dashboard route — accept the @supabase/ssr
+// session in addition to Bearer/legacy cookie (Rule S: whole demo group session-aware).
+import { requireTenantSessionAccess } from '@/lib/session-auth';
 
 export async function POST(
   req: NextRequest,
@@ -30,7 +32,7 @@ export async function POST(
 ): Promise<NextResponse> {
   let claims;
   try {
-    claims = await requireTenantAccess(req, 'agency:viewer');
+    claims = await requireTenantSessionAccess(req, 'agency:viewer');
   } catch {
     return NextResponse.json(
       { error: { code: 'unauthorized', message: 'Valid JWT with tenant access is required' } },

@@ -30,7 +30,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Module mocks (must be at top level, before any imports that use them) ──────
 
@@ -60,6 +60,18 @@ vi.mock('drizzle-orm', () => ({
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
+}));
+
+// FOLLOW-555: @supabase/ssr is called by the REAL getSessionAuthClaims() fallback
+// (session-auth.ts) when the legacy getAuthClaims path finds nothing — i.e. a
+// same-origin browser session with the chunked sb-<ref>-auth-token cookie and no
+// Authorization header. mockGetUser lets the SSR-session test drive that path.
+const mockGetUser = vi.fn();
+const mockGetSession = vi.fn();
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn().mockImplementation(() => ({
+    auth: { getUser: mockGetUser, getSession: mockGetSession },
+  })),
 }));
 
 // ── Actual module imports ──────────────────────────────────────────────────────
@@ -287,6 +299,69 @@ describe('POST /api/detect — JWT authentication (TICKET-033)', () => {
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
     expect(body.error.code).toBe('STAFF_TENANT_CONTEXT_MISSING');
     expect(typeof body.error.message).toBe('string');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW-555 (A3-F-04): @supabase/ssr browser-session fallback
+//
+// Drives the REAL POST handler with NO Authorization header — the legacy
+// getAuthClaims path (mocked → null) finds nothing, forcing the real
+// getSessionAuthClaims() fallback to authorize via the Supabase SSR session
+// cookie (@supabase/ssr mocked above). This is exactly what a logged-in onboarding
+// DetectWizard fetch() hits; before FOLLOW-555 it 401'd.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/detect — @supabase/ssr session fallback (FOLLOW-555)', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+    // Legacy Bearer/cookie path finds nothing → forces the SSR fallback.
+    mockGetAuthClaims.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('browser session (SSR cookie), agency tenant user, no Bearer header → past auth (not 401)', async () => {
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'user-uuid',
+          email: 'agent@agency.com',
+          app_metadata: { tenant_id: DEFAULT_CLAIMS.tenant_id, agency_role: 'agency:admin' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
+    });
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: 'ssr-session-jwt' } },
+      error: null,
+    });
+    // Auth should pass via the SSR session; fetch then fails → FETCH_FAILED, proving
+    // we got PAST the 401 auth gate purely on the browser session.
+    mockFetchError('connection refused');
+
+    const res = await POST(makeUnauthRequest({ url: 'https://example.com' }));
+
+    expect(res.status).not.toBe(401);
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FETCH_FAILED');
+  });
+
+  it('no Bearer AND no SSR session (getUser → null) → 401', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    const res = await POST(makeUnauthRequest({ url: 'https://example.com' }));
+
+    expect(res.status).toBe(401);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('UNAUTHORIZED');
   });
 });
 

@@ -160,6 +160,28 @@ Then load one listing page and confirm a cosine-path log line (`adapt/route.ts`;
 telemetry lands with FOLLOW-560). **Rollback:** none needed (seeding is additive; djb2 remains the
 safe fallback if empty).
 
+> **✅ DONE 2026-07-13.** `listing_embeddings` for pilot tenant
+> `cbc51cfa-1056-40aa-b0a9-6e982b52b1de` (`000-app-estalara`) went **0 → 6**. Seeded via
+> `POST /api/listings/embed` on `admin.estalara.com` with the `x-internal-api-secret` header and
+> body `{tenant_id, listing_id}` only — the route self-fetches text from `api.app.estalara.com`
+> (FOLLOW-567). Smoke returned `200 {ok:true}` after the `OPENAI_API_KEY` fix (see trap below). Seed
+> loop: `ok=6 fail=0`.
+>
+> ⚠️ **Catalog count is 6, not the 13 the 07-11 plan assumed.** `GET /api/v1/listing/all?locale=EN`
+> returns 6 UUIDs today (the first is `isLive:false`). We embedded 100% of what the backend serves,
+> but confirm whether 6 is the intended pilot-catalog size before treating "13" as ground truth
+> anywhere else.
+>
+> ⚠️ **Trap — `OPENAI_API_KEY` was in Doppler prd but NOT in Vercel prod**, so the first smoke
+> returned `503 "OpenAI not configured (OPENAI_API_KEY missing)"`. **Vercel env is a separate store
+> from Doppler and does NOT auto-sync** — every secret the control-plane reads at runtime must be
+> added to Vercel directly and the project **redeployed** to pick it up. Same failure class as
+> `CLICKHOUSE_URL` in Step 0. When a control-plane route 503s on a "missing" config that IS in
+> Doppler, check Vercel env first.
+>
+> `count > 0` attestation ✅. "Cosine reorder reached once" still needs a live listing-page load —
+> that arrives with SDK traffic in Step 6.
+
 ## Step 5 — ESC-028: 4 Upstash CI secrets (~10 min)
 
 1. Create ONE test Upstash Redis instance (free tier).
@@ -195,7 +217,8 @@ only when it lands.
 - [ ] Step 1: `intent_events` `session_id` column present; `count() > 0` after a live snapshot.
 - [ ] Step 2: `feedback:canary` shows a real `ab_bandit_weights` delta (bandit learning).
 - [ ] Step 3: ESC-034 smoke green → RESOLVED.
-- [ ] Step 4: `listing_embeddings count > 0` for the pilot tenant; cosine reorder reached once.
+- [x] Step 4: `listing_embeddings count > 0` for the pilot tenant (0 → 6, 2026-07-13). Cosine
+      reorder "reached once" still pending live SDK traffic (Step 6).
 - [ ] Step 5: `redis-shadow-smoke.yml` hard-fail mode passes → ESC-028 RESOLVED.
 - [ ] Step 6: `data-estalara` count > 0 on prod `app.estalara.com` (may trail; Rafał's date
       committed).

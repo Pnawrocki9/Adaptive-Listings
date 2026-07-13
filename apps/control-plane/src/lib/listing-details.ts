@@ -36,17 +36,21 @@ const DEFAULT_BACKEND_URL = 'http://localhost:8081';
 const FETCH_TIMEOUT_MS = 2000;
 
 /**
- * Fetch the original description text for a listing from the Estalara backend.
+ * Fetch the raw listing-details JSON object from the Estalara backend.
+ *
+ * Shared by {@link fetchListingOriginalDescription} (grounding) and
+ * {@link fetchListingTextFields} (FOLLOW-567 embed self-fetch). Fail-open:
+ * returns `null` on missing env, redirect (frontend/auth-gate misconfiguration),
+ * non-2xx, timeout, or malformed JSON — callers decide their own empty default.
  *
  * @param listingId - The tenant's listing identifier (UUID or slug).
- * @param locale    - Description locale ('en' | 'pl' | 'es'); upper-cased for the
- *                    backend `locale` query param (e.g. 'EN').
- * @returns The listing's `description` string, or '' when unavailable (fail-open).
+ * @param locale    - Locale ('en' | 'pl' | 'es'); upper-cased for the backend
+ *                    `locale` query param (e.g. 'EN').
  */
-export async function fetchListingOriginalDescription(
+async function fetchListingJson(
   listingId: string,
   locale: string,
-): Promise<string> {
+): Promise<Record<string, unknown> | null> {
   const base = (process.env.ESTALARA_BACKEND_URL ?? DEFAULT_BACKEND_URL).replace(/\/$/, '');
   const loc = encodeURIComponent(locale.toUpperCase());
   const id = encodeURIComponent(listingId);
@@ -70,27 +74,93 @@ export async function fetchListingOriginalDescription(
         res.status,
         url,
       );
-      return '';
+      return null;
     }
-    if (!res.ok) return '';
+    if (!res.ok) return null;
     const listing = (await res.json()) as unknown;
-    if (
-      typeof listing === 'object' &&
-      listing !== null &&
-      typeof (listing as Record<string, unknown>).description === 'string'
-    ) {
-      return (listing as Record<string, unknown>).description as string;
+    if (typeof listing === 'object' && listing !== null) {
+      return listing as Record<string, unknown>;
     }
-    return '';
+    return null;
   } catch (err: unknown) {
-    // Fail-open: grounding is best-effort. An empty original still produces a
-    // (thinner) generation rather than dropping the job at consumer validation.
-    console.error(
-      '[listing-details] fetch failed (returning empty original_description):',
-      err instanceof Error ? err.message : err,
-    );
-    return '';
+    // Fail-open: the fetch is best-effort. Callers substitute their own empty default.
+    console.error('[listing-details] fetch failed:', err instanceof Error ? err.message : err);
+    return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Fetch the original description text for a listing from the Estalara backend.
+ *
+ * @param listingId - The tenant's listing identifier (UUID or slug).
+ * @param locale    - Description locale ('en' | 'pl' | 'es').
+ * @returns The listing's `description` string, or '' when unavailable (fail-open).
+ */
+export async function fetchListingOriginalDescription(
+  listingId: string,
+  locale: string,
+): Promise<string> {
+  const listing = await fetchListingJson(listingId, locale);
+  if (listing && typeof listing.description === 'string') {
+    return listing.description;
+  }
+  return '';
+}
+
+/** Text fields used to build a listing's embedding (see /api/listings/embed). */
+export interface ListingTextFields {
+  title?: string;
+  description?: string;
+  price?: string;
+  location?: string;
+}
+
+/**
+ * FOLLOW-567: fetch a listing's embed text fields from the Estalara backend, for
+ * the Modal embed-seed path that sends only `{ tenant_id, listing_id }` (no
+ * text_fields). Maps the backend listing shape to the embed endpoint's
+ * `{ title, description, price, location }` contract.
+ *
+ * Fail-open: returns `null` when the listing cannot be fetched; the caller then
+ * returns a 400 (nothing to embed) rather than upserting an empty vector.
+ *
+ * @param listingId - The tenant's listing identifier (UUID or slug).
+ * @param locale    - Locale ('en' | 'pl' | 'es'); default 'en' at the call site.
+ * @returns Non-empty `{ title?, description?, price?, location? }`, or `null`.
+ */
+export async function fetchListingTextFields(
+  listingId: string,
+  locale: string,
+): Promise<ListingTextFields | null> {
+  const listing = await fetchListingJson(listingId, locale);
+  if (!listing) return null;
+
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim().length > 0 ? v : undefined;
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+
+  const fields: ListingTextFields = {};
+
+  const title = str(listing.headline);
+  if (title) fields.title = title;
+
+  const description = str(listing.description);
+  if (description) fields.description = description;
+
+  const priceNum = num(listing.price);
+  if (priceNum !== undefined) {
+    const currency = str(listing.currency);
+    fields.price = currency ? `${String(priceNum)} ${currency}` : String(priceNum);
+  }
+
+  const location = [str(listing.streetAddress), str(listing.city), str(listing.region)]
+    .filter((s): s is string => Boolean(s))
+    .join(', ');
+  if (location) fields.location = location;
+
+  // Nothing usable on the listing → treat as a fetch miss so the caller 400s.
+  return Object.keys(fields).length > 0 ? fields : null;
 }

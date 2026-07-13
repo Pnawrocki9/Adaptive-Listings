@@ -43,6 +43,7 @@ import { sql } from 'drizzle-orm';
 import { createAdminClient, listingEmbeddings } from '@estalara/db';
 import { getAuthClaims } from '@estalara/auth';
 import { embedTextWithDimensions } from '@/lib/openai-client';
+import { fetchListingTextFields } from '@/lib/listing-details';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -72,7 +73,12 @@ const TextFieldsSchema = z
 const PostBodySchema = z.object({
   tenant_id: z.string().uuid(),
   listing_id: z.string().min(1).max(256),
-  text_fields: TextFieldsSchema,
+  // FOLLOW-567: optional. The Modal embed-seed path (ADR-0016) sends only
+  // { tenant_id, listing_id } — when text_fields is absent the handler self-fetches
+  // the listing's title/description/price/location from the Estalara backend.
+  text_fields: TextFieldsSchema.optional(),
+  // Locale for the self-fetch (backend `locale` param). Modal omits it → default 'en'.
+  locale: z.string().min(2).max(8).optional(),
 });
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -126,11 +132,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { tenant_id: tenantId, listing_id: listingId, text_fields: textFields } = parsed.data;
+  const { tenant_id: tenantId, listing_id: listingId } = parsed.data;
 
   // Auth — must come after body parse so we know the body's tenant_id.
   const authResult = await authenticate(req, tenantId);
   if (authResult instanceof NextResponse) return authResult;
+
+  // FOLLOW-567: the Modal embed-seed path sends only { tenant_id, listing_id }.
+  // Self-fetch the listing's text from the Estalara backend when text_fields is
+  // absent, matching the contract the Modal consumer always assumed. Direct
+  // callers (demo seed scripts, JWT clients) still pass explicit text_fields.
+  let textFields = parsed.data.text_fields;
+  if (!textFields) {
+    const fetched = await fetchListingTextFields(listingId, parsed.data.locale ?? 'en');
+    if (!fetched) {
+      return NextResponse.json(
+        {
+          error:
+            'No text_fields supplied and the listing text could not be fetched from the backend',
+        },
+        { status: 400 },
+      );
+    }
+    textFields = fetched;
+  }
 
   // Pre-check OPENAI_API_KEY — return 503 (not 5xx) for missing config.
   if (!process.env.OPENAI_API_KEY) {

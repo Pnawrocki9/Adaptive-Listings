@@ -38,6 +38,12 @@ vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
 }));
 
+// FOLLOW-567: the route self-fetches listing text when text_fields is absent.
+const mockFetchListingTextFields = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/listing-details', () => ({
+  fetchListingTextFields: mockFetchListingTextFields,
+}));
+
 vi.mock('drizzle-orm', () => ({
   sql: vi.fn(() => 'sql-tag'),
 }));
@@ -331,5 +337,69 @@ describe('POST /api/listings/embed — OpenAI / DB failure paths', () => {
     const req = makeRequest({ body: VALID_BODY, authHeader: 'Bearer test-token' });
     const res = await POST(req);
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /api/listings/embed — FOLLOW-567 self-fetch when text_fields absent', () => {
+  it('Modal-shaped POST (tenant_id+listing_id, no text_fields) self-fetches → 200 + upsert', async () => {
+    process.env.INTERNAL_API_SECRET = 'internal-secret-token';
+    mockFetchListingTextFields.mockResolvedValue({
+      title: '2-bed Lisbon apartment',
+      description: 'Tenant in place, sound energy performance',
+      price: '320000 EUR',
+      location: 'Alvalade, Lisbon',
+    });
+    const dbMock = makeDbMock();
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    // Exactly what the Modal embed-seed consumer sends: no text_fields.
+    const req = makeRequest({
+      body: { tenant_id: TENANT_A, listing_id: LISTING_ID },
+      internalSecret: 'internal-secret-token',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    // Self-fetch invoked for this listing (Modal omits locale → default 'en').
+    expect(mockFetchListingTextFields).toHaveBeenCalledWith(LISTING_ID, 'en');
+    // Fetched text was concatenated into the embedding input.
+    const [embedInput] = mockEmbedTextWithDimensions.mock.calls[0] ?? [];
+    expect(embedInput).toContain('2-bed Lisbon apartment');
+    expect(embedInput).toContain('Alvalade, Lisbon');
+    // Upsert happened.
+    expect(dbMock._spies.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('no text_fields AND backend fetch returns null → 400, does not embed or upsert', async () => {
+    process.env.INTERNAL_API_SECRET = 'internal-secret-token';
+    mockFetchListingTextFields.mockResolvedValue(null);
+    const dbMock = makeDbMock();
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const req = makeRequest({
+      body: { tenant_id: TENANT_A, listing_id: LISTING_ID },
+      internalSecret: 'internal-secret-token',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(mockEmbedTextWithDimensions).not.toHaveBeenCalled();
+    expect(dbMock._spies.onConflictDoUpdate).not.toHaveBeenCalled();
+  });
+
+  it('explicit text_fields present → does NOT self-fetch (direct-caller path unchanged)', async () => {
+    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    const dbMock = makeDbMock();
+    vi.mocked(createAdminClient).mockReturnValue(
+      dbMock as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const req = makeRequest({ body: VALID_BODY, authHeader: 'Bearer test-token' });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(mockFetchListingTextFields).not.toHaveBeenCalled();
   });
 });

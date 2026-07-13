@@ -1,5 +1,10 @@
 # OPERATOR SESSION — Pilot Ignition (FOLLOW-553, Sprint 23 Wave 0)
 
+> ⚠️ **SUPERSEDED by [`OPERATOR_SESSION_2026-07-12.md`](./OPERATOR_SESSION_2026-07-12.md)** — the
+> refresh adds Step 0 (FOLLOW-556 Modal ClickHouse secret, merged 2026-07-12), a pre-flight access
+> checklist, per-step rollbacks, and the now-merged Wave 1 context. Execute from the 07-12 version;
+> this file is kept for history.
+
 **Owner:** Piotr (steps 1–5) + Rafał (step 6). **Estimated time:** 2–4h total (steps 1–5 ≈ 90 min,
 step 6 is Rafał's deploy). **Source:** Full-Stack Audit 2026-07-11 finding A3-F-01 — the pilot
 go-live checklist was 0/6 complete; every learning/measurement loop is dead in prod until this

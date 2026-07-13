@@ -2038,7 +2038,25 @@ FOLLOW ticket.
 
 ---
 
-## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
+## RESOLVED — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
+
+**RESOLVED 2026-07-13.** The direct-HTTPS embed-seed path (ADR-0016, post-Redpanda) is live and
+proven **end-to-end**. Direct smoke on the deployed Modal web endpoint
+`https://estalara--estalara-description-generator-listing-embed-s-e2dcc5.modal.run`: `POST` with
+`Authorization: Bearer <INTERNAL_API_SECRET>` + `{tenant_id, listing_ids:[…]}` → **202
+`{"status":"accepted"}`**; no-auth → **401**. The spawn's callback landed — the target listing's
+`listing_embeddings.updated_at` bumped to ~now (SQL-verified). So Modal endpoint →
+`process_embed_seed_request.spawn` → `POST /api/listings/embed` → OpenAI → DB upsert all work, and
+`INTERNAL_API_SECRET` in Modal `estalara-secrets` matches control-plane. `MODAL_EMBED_SEED_URL`
+present in Vercel prod (re-set to the confirmed URL + redeployed). Traps: the Modal URL is
+truncated+hashed (copy from the dashboard, never derive from `MODAL_DESCRIPTION_URL`);
+`MODAL_DESCRIPTION_URL` is Vercel-Sensitive (unreadable). Onboarding-overflow trigger itself not
+exercised (heavy) but every leg proven. Full attestation:
+`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 3.
+
+---
+
+### Original escalation (for reference)
 
 **Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435,
 FOLLOW-437 **Type:** other (privileged operator action — code bugs now resolved)

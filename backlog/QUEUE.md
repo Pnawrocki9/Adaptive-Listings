@@ -1,6 +1,56 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-14 (session 27 — recovered stranded FOLLOW-553 branch; PR #525 READY_FOR_REVIEW; queue-truth corrections)
+## ▶️ START HERE — resume 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections; Sprint 23 Wave 2 P2s dispatched)
+
+**PR #525 confirmed MERGED** (`196d431`, into `main`) — the Step 3/5 attestation + queue corrections
+from the prior sub-session are live. Verified via `git log --oneline main` and `git status` (clean,
+up to date with `origin/main`).
+
+**3 more stale-bookkeeping corrections applied** (flagged but not fixed by the prior sub-session),
+on branch `pm-orchestrator/FOLLOW-553-queue-truth-corrections` off current `main`:
+
+- **FOLLOW-551 → DONE** (was `READY_FOR_REVIEW` despite PR #512 confirmed MERGED
+  2026-07-11T09:02:26Z, commit `c2670b2`; the ticket's own validation section already had a full
+  PM-verified evidence trail from merge time, so no AC re-check was needed beyond confirming the
+  merge itself).
+- **FOLLOW-436 → DONE** (was `BLOCKED_ON_HUMAN`). ESC-034 (`backlog/ESCALATIONS.md`) is RESOLVED
+  2026-07-13 with an end-to-end attestation (`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 3):
+  live Modal endpoint smoke → `202 accepted` with auth / `401` without, async callback confirmed
+  (`listing_embeddings.updated_at` bumped, SQL-verified). **AC-supersession note:** the ticket's
+  literal 3-step checklist (Redpanda-topic secret + polling-cron `modal deploy`) describes the
+  PRE-ADR-0016 design; ADR-0016 replaced it with direct-HTTPS invocation before this went live. The
+  Step-3 attestation verifies the CURRENT design's equivalent requirements, discharging the ticket's
+  actual intent (embed-seed path live in prod). Documented in-ticket so a future reader doesn't
+  mistake the literal checklist for the operative one.
+- **FOLLOW-569 → added retroactively as DONE** (previously had NO `QUEUE.md` block at all — an
+  ad-hoc ticket ID coined in PR #517/commit `b0d77a6` only, flagged but not fixed by the prior
+  sub-session). PR #517 merged 2026-07-12T13:52:50Z; its own PR body explicitly asked PM to
+  "confirm/formalize the ticket id." Delegation-table row used retroactively: "client SDK, Shadow
+  DOM, tiers, browser code -> sdk-engineer" (matches `packages/sdk/src/index.ts`, the actual diff).
+  `backlog/FOLLOW_UPS.md` stub also updated (`status: DONE`, `promoted_to_queue: true`).
+
+None of these three flips is independently AC-re-validated beyond the cited attestations/PR evidence
+— git-log/attestation-confirmed only, consistent with the FOLLOW-554/555/556/567 flags from the
+prior sub-session. Flagged for a future retro pass.
+
+**Sprint 23 Wave 2 P2 pool dispatched** (CEO direction: proceed now, Step 6/ESC-020 is Rafał-side
+and non-blocking to this pipeline): **FOLLOW-557** (backend-engineer — DSR erase Redis
+shadow-namespace gap) and **FOLLOW-558** (compliance-engineer — DSR access/portability disclosure
+gap) delegated this session (table rows: "ingest worker, control-plane... auth" -> backend-engineer;
+"DPIA/ROPA/consent/DSR rules..." -> compliance-engineer). **FOLLOW-559** and **FOLLOW-560** held
+back this round to respect the "≤3 tickets IN_PROGRESS" guardrail — FOLLOW-559 next backend-engineer
+pick once one of 557/558 completes; **FOLLOW-560 depends_on FOLLOW-553**, which is not literally
+`DONE` (Step 6 open) — its own notes describe the dependency as riding "the FOLLOW-553-established
+attestation flow" (i.e., the Steps 3-5 attestation pattern, already present) with an explicit
+fallback (OTel counter, no CH migration) if migration friction bites, so the dependency is judged
+satisfied-in-spirit but NOT literally DONE-gated; held back this round on the concurrency cap, not
+on the dependency question — pick it up next after a slot frees.
+
+Full detail: `backlog/STATUS.md` session 27 (cont'd) entry.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-14 (session 27 — recovered stranded FOLLOW-553 branch; PR #525 READY_FOR_REVIEW; queue-truth corrections)
 
 **Recovered a stranded/conflicting branch.** `pm-orchestrator/FOLLOW-553-step4-attestation` (PR
 #524) reported `mergeable: CONFLICTING`; a real `git merge --no-commit` test (not just GitHub's
@@ -8776,7 +8826,8 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     Operator go-live: provision Modal estalara-secrets + re-deploy apps/llm-gateway for embed-seed
     consumer (RETRO-142 §9)
   agent: devops-engineer
-  status: BLOCKED_ON_HUMAN
+  status: DONE
+  completed_at: '2026-07-13T00:00:00Z'
   priority: P2
   estimated_hours: 1
   depends_on: [FOLLOW-435, FOLLOW-437]
@@ -8800,7 +8851,28 @@ items remain (DPO sign-off, QA verification) — these are human-action items, n
     3. Smoke verification per docs/runbooks/modal-embed-seed-consumer-golive.md.
 
     Runbook: docs/runbooks/modal-embed-seed-consumer-golive.md
-    ESC-034: OPEN (reduced to operator go-live steps only; code bugs fixed by FOLLOW-437).
+    ESC-034: RESOLVED 2026-07-13 (backlog/ESCALATIONS.md).
+
+    **Queue-truth correction / DONE flip 2026-07-14 (pm-orchestrator, session 27):** ESC-034 was
+    marked RESOLVED 2026-07-13 with an end-to-end attestation
+    (`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 3): direct smoke on the deployed Modal web
+    endpoint returned `202 {"status":"accepted"}` with valid auth / `401` with none, and the async
+    callback landed (`listing_embeddings.updated_at` bumped, SQL-verified). This ticket's own
+    `BLOCKED_ON_HUMAN` status is therefore stale.
+
+    **AC-supersession note (read before treating the literal checklist above as ground truth):** the
+    3 numbered steps and the `FOLLOW_UPS.md` stub's original AC (`REDPANDA_TOPIC_LISTING_EMBEDDINGS`
+    Modal secret + `modal deploy` registering a polling cron) describe the PRE-ADR-0016 design. Per
+    ADR-0016 (`docs/adr/ADR-0016-pilot-direct-modal-invocation.md`) and the ESC-034 correction dated
+    2026-07-06, the Redpanda-poller path was dropped in favor of direct-HTTPS invocation — the same
+    pattern already live for the description flow. The Step-3 attestation verifies the CURRENT
+    (correct) design's equivalent requirements: `MODAL_EMBED_SEED_URL` set in Vercel prod,
+    `INTERNAL_API_SECRET` present and matching in Modal `estalara-secrets` (confirmed by the 202, not
+    just the 401), and the full async path (Modal endpoint → `process_embed_seed_request.spawn` →
+    `POST /api/listings/embed` → OpenAI → DB upsert) proven live. This discharges the ticket's
+    intent (operator go-live, embed-seed path live in prod) even though 3 of the literal checklist
+    lines reference a superseded architecture. Not independently re-verified beyond the cited
+    attestation — flagged for the ticket's own retrospective.
 
 - id: FOLLOW-437
   title: >-
@@ -11668,11 +11740,13 @@ gate) closes the epic and must be last.
     Codify the architect-has-no-Bash routing gap: mandate draft-then-apply (or route to a
     Bash-capable agent) for any architect-assigned ticket requiring git/PR mechanics
   agent: architect
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: architect
   started_at: '2026-07-11T00:00:00Z'
+  completed_at: '2026-07-11T09:02:26Z'
   branch: architect/FOLLOW-551-tool-capability-routing
   pr: 512
+  merge_commit: c2670b2
   execution_mode: >-
     DRAFT-ONLY (dogfooding the very pattern this ticket codifies). Architect's tool manifest is
     Read/Write/Edit/Glob/Grep/WebSearch/WebFetch — NO Bash. Architect did NOT create a branch, did
@@ -11819,6 +11893,13 @@ gate) closes the epic and must be last.
 
     PM-validated. CI green (bar the standing Rule I baseline). AC verified by direct read of the
     merged diff, not assumed from the coordinator's summary. Ready for human review.
+
+    **Queue-truth correction 2026-07-14 (pm-orchestrator, session 27):** `pr: 512` was independently
+    confirmed MERGED (`gh pr view 512 --json state,mergedAt` → `MERGED`, `2026-07-11T09:02:26Z`,
+    merge commit `c2670b2`, present in `main`'s `git log`) but the status field was never flipped
+    from stale `READY_FOR_REVIEW`. Flipped to `DONE`, `completed_at` set to the merge timestamp. The
+    PM-validated evidence trail above (direct diff read, AC verified against the merged content) was
+    already independently re-verified at merge time — no new AC re-check required.
 - id: FOLLOW-471
   title: >-
     Clean re-audit gate — re-run the 2026-07-01 full audit; every finding F-01…F-21 closed with
@@ -12037,7 +12118,10 @@ in-place in Sprint 22b above.
   title: >-
     DSR erase: delete the chat-intent shadow Redis key namespace (A3-F-05)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-14T00:00:00Z'
+  branch: backend-engineer/FOLLOW-557-dsr-erase-shadow-redis
   priority: P2
   estimated_hours: 1
   depends_on: []
@@ -12057,7 +12141,10 @@ in-place in Sprint 22b above.
     DSR access + portability must disclose quiz_completions and intent_sessions (Art. 15/20)
     (A3-F-06)
   agent: compliance-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: compliance-engineer
+  started_at: '2026-07-14T00:00:00Z'
+  branch: compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -12318,4 +12405,46 @@ in-place in Sprint 22b above.
     - [x] Doppler prd value updated; Vercel prod var added.
     - [x] MASTER_DESIGN documents the rename (Update 2026-07-11).
     - [x] Live verification: new host answers listing-details with application-level JSON.
+- id: FOLLOW-569
+  title: >-
+    Audit F-01: `inquiry.completed` reaches only the bandit feedback ping, never ingest, so the
+    cta-lift conversion-analytics leg JOINed on it is permanently empty (holdout AND variant)
+  agent: sdk-engineer
+  status: DONE # queue-truth correction 2026-07-14 (session 27): no QUEUE.md block existed at all — ticket ID was ad-hoc, coined in the PR/commit only, never promoted through the normal FOLLOW_UPS.md->QUEUE.md flow. Added retroactively from the merged PR; not independently AC-re-validated by this correction pass.
+  completed_at: '2026-07-12'
+  pr: 517
+  merge_commit: b0d77a6
+  priority: P1
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    Audit finding F-01 (docs/AUDIT-2026-07-12.md, High). The SDK routed inquiry.completed only to
+    the bandit feedback ping (registerFeedbackListener in adapt.ts) and never queued it for ingest
+    (/v1/events). apps/control-plane/src/app/api/pilot/cta-lift/route.ts JOINs on inquiry.completed,
+    so the conversion-analytics leg counted zero for every session (holdout and variant).
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-569 entry, added same-PR per PR #517's own "Notes")
+  notes: |
+    **Queue-truth correction 2026-07-14 (pm-orchestrator, session 27):** PR #517
+    (`fix(sdk): queue inquiry.completed for ingest so cta-lift conversion leg populates
+    [FOLLOW-569]`) merged 2026-07-12T13:52:50Z (commit `b0d77a6`) but this ticket had NO block in
+    `QUEUE.md` at all — the ticket ID was coined ad hoc inside the PR/commit and its own
+    `FOLLOW_UPS.md` stub, never promoted through the normal `backlog/FOLLOW_UPS.md` ->
+    `backlog/QUEUE.md` promotion flow. PR body's own "Notes" section flagged this explicitly:
+    "FOLLOW-569 and its FOLLOW_UPS.md stub are provisional — PM to confirm/formalize the ticket id
+    and fold into the Sprint 23 wave bookkeeping." Added retroactively here, delegation-table row:
+    "client SDK, Shadow DOM, tiers, browser code -> sdk-engineer" (matches the PR's actual author
+    role — `packages/sdk/src/index.ts`). Diff: `packages/sdk/src/index.ts` (+39), new test
+    `packages/sdk/src/__tests__/follow569-inquiry-completed-ingest.test.ts` (+123, 5 cases: valid
+    mapping, empty detail, agent-drop, invalid-field filtering, mixed subset), `backlog/FOLLOW_UPS.md`
+    (+22, the stub itself). PR-stated verification: eslint + tsc clean, SDK bundle 40.67 KB gzip
+    (under the 42 KB budget), local pilot round-trip confirmed (`inquiry.completed` -> `/v1/events`
+    on `app.estalara.com` + mock decision server). Not independently AC-re-validated by this
+    correction pass (git-log-confirmed merge only, same flag applied to the FOLLOW-551/436/554/555/
+    556/567 corrections this session) — flagged for a future retro pass.
+    AC:
+    - [x] `inquiry.completed` queued for ingest (`/v1/events`) for every session (holdout + variant),
+          not only routed to the bandit feedback ping.
+    - [x] No-PII payload mapping only (`channel`, `has_phone`, `budget_hint`, `timeline`,
+          `message_length`); `is_agent=true` signals dropped; invalid-schema fields filtered.
+    - [x] Test coverage for the mapping/drop/filter behavior (5 cases, see notes).
 ```

@@ -14771,10 +14771,13 @@ variant) so lift is measurable, drops `is_agent` signals, and maps only the no-P
 `InquiryCompletedPayloadSchema` fields. Unit test:
 `packages/sdk/src/__tests__/follow569-inquiry-completed-ingest.test.ts`.
 
-status: CODE_COMPLETE (PR open) · ticket number provisional — PM to confirm/formalize in QUEUE. ac:
+status: DONE (PR #517 merged 2026-07-12T13:52:50Z, commit b0d77a6). ac:
 
 - [x] SDK queues `inquiry.completed` to ingest for holdout AND variant sessions
 - [x] payload limited to InquiryCompletedPayloadSchema (no PII); invalid fields filtered
 - [x] `is_agent=true` dropped; unit test green; bundle in budget (40.67 KB gzip)
-- [ ] PM: assign/confirm the ticket id and fold into the Sprint 23 wave bookkeeping cross_ref:
-      [FOLLOW-471, FOLLOW-565]
+- [x] PM: ticket id confirmed/formalized, promoted to `backlog/QUEUE.md` retroactively 2026-07-14
+      (session 27 — was merged with no QUEUE.md block at all) cross_ref: [FOLLOW-471, FOLLOW-565]
+
+promoted_to_queue: true (2026-07-14, retroactive — see backlog/QUEUE.md FOLLOW-569 block's
+"Queue-truth correction" note)

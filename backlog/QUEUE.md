@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-11 (session 26 — Full-Stack Audit #3 delivered; Sprint 23 OPENED; pilot gated on OPERATOR Wave 0)
+## ▶️ START HERE — resume 2026-07-14 (session 27 — recovered stranded FOLLOW-553 branch; PR #525 READY_FOR_REVIEW; queue-truth corrections)
+
+**Recovered a stranded/conflicting branch.** `pm-orchestrator/FOLLOW-553-step4-attestation` (PR
+#524) reported `mergeable: CONFLICTING`; a real `git merge --no-commit` test (not just GitHub's
+flag) confirmed a genuine conflict in `docs/runbooks/OPERATOR_SESSION_2026-07-12.md` — its own
+Step-4 commit duplicated content already merged separately via PR #523. Closed #524 as superseded
+(no data loss), rebuilt the net-new content (Step 3 ESC-034 + Step 5 ESC-028 attestation blocks,
+`backlog/ESCALATIONS.md` RESOLVED flips) cleanly on a fresh branch off current `main`, verified
+byte-identical via diff, opened **PR #525**. CI independently verified green for all real gates
+(only the standing pre-existing "Rule I" baseline fails, 181 violations, unrelated — this PR is
+docs-only). PM-validated comment posted on #525 with full evidence trail. **Status:
+READY_FOR_REVIEW, awaiting human merge.**
+
+**Queue-truth corrections applied this session** (git-log-confirmed merges whose `QUEUE.md` status
+was never flipped from stale `READY`): **FOLLOW-554 → DONE** (PR #518), **FOLLOW-555 → DONE** (PR
+#519), **FOLLOW-556 → DONE** (PR #520), **FOLLOW-567 → DONE** (PR #522). All four were merged
+2026-07-12/13 but still showed `READY` — a future PM session would otherwise have re-delegated
+already-shipped work. Flips are git-log-confirmed only, not independently AC-re-validated (flagged
+per-ticket for a future retro pass). FOLLOW-569 (PR #517) has no `QUEUE.md` ticket block at all
+(ad-hoc ticket ID in a commit message only) — flagged, not fabricated.
+
+**Wave 0 (FOLLOW-553) state unchanged by this session except the two attestations above:** Steps 3,
+4, 5 all attested RESOLVED/DONE (ESC-034, embeddings 0→6, ESC-028). **Step 6 (ESC-020, Rafał — DOM
+hooks deploy) remains the only open item** — non-blocking to the PM pipeline per its own
+CEO-approved resolution note. Did NOT flip FOLLOW-449/450 to DONE — Rule AA restricts that to
+FOLLOW-553 itself with real pasted prod output, which was not available this session.
+
+**No new ticket delegated this session** — pure recovered-work re-verification + queue hygiene.
+
+Full detail: `backlog/STATUS.md` session 27 entry.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-11 (session 26 — Full-Stack Audit #3 delivered; Sprint 23 OPENED; pilot gated on OPERATOR Wave 0)
 
 **A third full-stack audit ran 2026-07-11 (CEO-commissioned, 6 parallel tracks) against HEAD
 `146de2f`. Verdict: 🟡 YELLOW — the codebase is sound and NOT scaffold-theater (Sprint 22b code legs
@@ -11912,7 +11945,10 @@ in-place in Sprint 22b above.
   title: >-
     SDK: quiz-skip must not persist `neutral` into the SoT archetype (ADR-0014 invariant) (A3-F-03)
   agent: sdk-engineer
-  status: READY
+  status: DONE # queue-truth correction 2026-07-14 (session 27): merged PR #518 (28a915c, 2026-07-12) — was stale READY despite being merged 2 days prior. Not independently re-validated by this correction pass; flip is git-log-confirmed only.
+  completed_at: '2026-07-12'
+  merged_pr: 518
+  merge_commit: 28a915c
   priority: P1
   estimated_hours: 2
   depends_on: []
@@ -11937,7 +11973,10 @@ in-place in Sprint 22b above.
   title: >-
     Migrate the 6 remaining browser-session routes off getAuthClaims to session-auth (A3-F-04)
   agent: backend-engineer
-  status: READY
+  status: DONE # queue-truth correction 2026-07-14 (session 27): merged PR #519 (386f58d, 2026-07-12) — was stale READY despite being merged 2 days prior. Not independently re-validated by this correction pass; flip is git-log-confirmed only.
+  completed_at: '2026-07-12'
+  merged_pr: 519
+  merge_commit: 386f58d
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -11966,7 +12005,10 @@ in-place in Sprint 22b above.
   title: >-
     Daily LLM spend cap on the Modal description/headline generation path (A3-F-02)
   agent: ml-engineer
-  status: READY
+  status: DONE # queue-truth correction 2026-07-14 (session 27): merged PR #520 (c78af84, 2026-07-12) — was stale READY despite being merged 2 days prior. Not independently re-validated by this correction pass; flip is git-log-confirmed only.
+  completed_at: '2026-07-12'
+  merged_pr: 520
+  merge_commit: c78af84
   priority: P1
   estimated_hours: 4
   depends_on: []
@@ -12216,7 +12258,10 @@ in-place in Sprint 22b above.
     Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but
     never sent)
   agent: backend-engineer
-  status: READY
+  status: DONE # queue-truth correction 2026-07-14 (session 27): merged PR #522 (e48f9ec, 2026-07-13) — was stale READY despite being merged the day before. Not independently re-validated by this correction pass; flip is git-log-confirmed only.
+  completed_at: '2026-07-13'
+  merged_pr: 522
+  merge_commit: e48f9ec
   priority: P1
   estimated_hours: 3
   depends_on: [FOLLOW-568]

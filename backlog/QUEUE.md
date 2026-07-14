@@ -7,7 +7,12 @@ from the prior sub-session are live. Verified via `git log --oneline main` and `
 up to date with `origin/main`).
 
 **3 more stale-bookkeeping corrections applied** (flagged but not fixed by the prior sub-session),
-on branch `pm-orchestrator/FOLLOW-553-queue-truth-corrections` off current `main`:
+on branch `pm-orchestrator/FOLLOW-553-queue-truth-corrections`, **PR #526**, off current `main`. CI
+independently verified green for all real gates: `gh pr view 526 --json statusCheckRollup | jq`
+non-success count = **2**, both the standing pre-existing `Rule I — wired-or-dead check` baseline
+(181 WARN lines, `gh run view --log-failed`, identical to the FOLLOW-551/525 baseline — expected,
+docs-only diff, 4 `backlog/*.md` files, zero code touched). PM-validated comment posted on PR #526
+with full evidence trail. **Status: READY_FOR_REVIEW, awaiting human merge.**
 
 - **FOLLOW-551 → DONE** (was `READY_FOR_REVIEW` despite PR #512 confirmed MERGED
   2026-07-11T09:02:26Z, commit `c2670b2`; the ticket's own validation section already had a full

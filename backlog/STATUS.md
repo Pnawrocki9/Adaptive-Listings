@@ -56,9 +56,15 @@ attestation flow" (i.e. the Steps 3-5 attestation pattern, already present) with
 fallback (OTel counter, skip the CH migration) if migration friction bites — judged
 satisfied-in-spirit, not DONE-gated, but held back this round on the concurrency cap regardless.
 
-**CI on PR #526:** in progress at time of writing — watch loop running; will paste the jq
-non-success-count evidence once green. **CI-check counter: 1/5 (first watch pass). Fix-iteration
-counter: 0/3.**
+**CI on PR #526: GREEN.** `gh pr checks 526 --watch` run to completion (2 watch cycles — first
+interrupted by a follow-up commit pushed mid-watch, re-watched to completion on the final commit).
+`gh pr view 526 --json statusCheckRollup | jq '[.statusCheckRollup[] | select(.conclusion != "SUCCESS" and .conclusion != null)] | length'`
+= **2**, both `Rule I — wired-or-dead check` (matrix-duplicated). Confirmed pre-existing baseline
+via `gh run view <run> --log-failed | grep -c WARN` = **181**, identical to the standing baseline —
+expected, docs-only diff (`backlog/{QUEUE, FOLLOW_UPS,HANDOFFS,STATUS}.md`,
+`gh pr view 526 --json files`), zero code touched. 5c/5d N/A (no new symbols/wires, not
+co-assigned). PM-validated comment posted on PR #526 with full evidence trail. **Status:
+READY_FOR_REVIEW, awaiting human merge. CI-check counter: 2/5. Fix-iteration counter: 0/3.**
 
 ---
 

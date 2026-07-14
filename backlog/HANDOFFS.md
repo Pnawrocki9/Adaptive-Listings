@@ -3,6 +3,127 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Delegation brief — FOLLOW-557 (backend-engineer) — DSR erase: delete the chat-intent shadow Redis key namespace
+
+**From:** pm-orchestrator (session 27 cont'd) **To:** backend-engineer **Date:** 2026-07-14
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-557` (P2, Sprint 23 Wave 2, source: audit finding A3-F-05,
+2026-07-11 audit). **Branch:** `backend-engineer/FOLLOW-557-dsr-erase-shadow-redis` (branch-first —
+create it before any Edit, per repo convention; never commit to `main`).
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" -> `backend-engineer` (the fix touches
+`apps/control-plane/src/app/api/dsr/erase/route.ts`, a control-plane HTTP route).
+
+**Model: Sonnet** — routine implementation inside a well-defined ticket scope (add one Redis
+SCAN/DEL pattern + one cross-runtime fixture test); no open design question. Model-fit table row:
+"routine implementation inside a well-defined ticket scope ... tests" -> Sonnet.
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (Implementation Status Snapshot, line 329) — read before any
+  non-trivial task per Operating Principle 1. §H covers DSR/compliance status; note FOLLOW-455
+  (DONE, PR #423) is the ticket that most recently touched DSR erase coverage — mirror its pattern,
+  don't re-derive from scratch.
+- `CONVENTIONS_PATCH.md` Rule Z (line 1388) applies directly: this is a cross-runtime consumer (TS
+  erase route reading a Redis key namespace whose canonical format is defined in Python
+  `apps/intent-engine/src/redis_writer.py`). A mock/fixture hand-authored in the TS side's assumed
+  shape is FORBIDDEN as sole evidence — the AC explicitly requires a fixture checked against the
+  Python writer's literal key format, not just a TS-side assertion.
+- No prior HANDOFFS note exists for this ticket; this is the full brief.
+
+**Verified starting facts (do not re-derive, but do verify against current HEAD before editing):**
+
+- `apps/control-plane/src/app/api/dsr/erase/route.ts:84-85` — the existing erase logic:
+  `// SCAN for session:{sessionId}:* keys then DEL them`,
+  `matchPattern = \`session:${sessionId}:\*\``.
+- `apps/intent-engine/src/redis_writer.py:37` — the shadow-key format function returns
+  `f"shadow:{tenant_id}:{session_id}:chat_intent"` (comment at line 5: "NEVER the main intent
+  namespace").
+- These two do not match — `session:{sessionId}:*` never matches `shadow:{tenant}:{session}:*` — so
+  erase silently misses the shadow chat-intent key. Currently non-live in prod (stream-consumer
+  undeployed per Q2/FOLLOW-458 shadow-only ruling) but becomes live the day FOLLOW-458 deploys —
+  this is a pre-emptive fix, not a live-incident fix.
+
+**AC (from the ticket, verbatim):**
+
+- [ ] Erase deletes `shadow:{tenant}:{session}:chat_intent`; test with a seeded key.
+- [ ] Key-format fixture shared/checked against the Python writer's literal (Rule Z).
+
+**Scope discipline (per CLAUDE.md Agent coding standards §3):** touch only the erase route's
+Redis-deletion logic + its test. Do not refactor unrelated erase-route code (e.g. the Postgres/
+ClickHouse legs of the same route) even if you notice something odd — mention it, don't fix it
+unless it's your own newly-introduced orphan.
+
+**On completion:** open a PR from the branch above, run local
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, and report back. Do not
+mark your own ticket DONE — PM validates (CI green + runtime wiring + AC) before READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-558 (compliance-engineer) — DSR access + portability must disclose quiz_completions and intent_sessions
+
+**From:** pm-orchestrator (session 27 cont'd) **To:** compliance-engineer **Date:** 2026-07-14
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-558` (P2, Sprint 23 Wave 2, source: audit finding A3-F-06,
+2026-07-11 audit). **Branch:** `compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure`
+(branch-first — create it before any Edit, per repo convention; never commit to `main`).
+
+**Delegation-table row used:** "DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs" ->
+`compliance-engineer` (Art. 15/20 DSR-disclosure completeness — also touches the two DSR HTTP
+routes' query logic, but the finding is a compliance-completeness gap, not a plumbing bug).
+
+**Model: Sonnet** — routine implementation inside a well-defined ticket scope: mirror an
+already-established table set (FOLLOW-455's erase coverage) into two read routes, plus a parity
+test. No open design/legal-interpretation question. Model-fit table row: "routine implementation
+inside a well-defined ticket scope ... docs/backlog bookkeeping" -> Sonnet, not the Opus
+ambiguous-legal-interpretation row (the DPIA cross-check is mechanical, not novel legal reasoning).
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (line 329) and §H (Compliance & Privacy — Multi-Jurisdiction,
+  line 2743) — read before any non-trivial task per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` Rule N (line 712) applies directly: if the DPIA or any compliance doc
+  enumerates the specific data stores disclosed in a DSR access/portability response, that
+  enumeration MUST be updated in the same PR to match the new code — a doc-only or code-only fix
+  that leaves the other out of sync is exactly the ABSENCE/inaccurate-disclosure failure mode Rule N
+  exists to prevent.
+- `FOLLOW-455` (DONE, PR #423, `backlog/QUEUE.md` line ~9961) is the direct precedent: it fixed the
+  erasure (Art. 17) table-set gap for `quiz_completions` + `intent_sessions`. This ticket closes the
+  matching access/portability (Art. 15/20) gap — same table set, different routes. Read #423's diff
+  for the erasure table list before writing the access/portability fix so the sets are provably
+  identical, not independently re-derived (that's also the AC's explicit ask: a parity test).
+
+**Files to start from (verify against current HEAD, do not assume unchanged):**
+
+- `apps/control-plane/src/app/api/dsr/access/route.ts` (per the ticket source, currently reads only
+  `session_embeddings`, `consent_records`, `conversion_labels` around lines 27-38).
+- `apps/control-plane/src/app/api/dsr/portability/route.ts` (same gap, per ticket source).
+- `apps/control-plane/src/app/api/dsr/erase/route.ts` (FOLLOW-455's reference table set — the erase
+  side already covers `quiz_completions` + `intent_sessions`).
+
+**AC (from the ticket, verbatim):**
+
+- [ ] Access + portability payloads include `quiz_completions` + `intent_sessions` rows for the
+      verified (tenant, session/email) scope.
+- [ ] Parity test: the erase table-set and the access table-set are asserted equal (minus documented
+      exceptions) so the next new store cannot drift them apart again.
+- [ ] (Rule N, added by this brief, not in the original stub — verify before closing) If the DPIA
+      (`docs/MASTER_DESIGN.md` §H or a dedicated DPIA doc, check which is canonical) enumerates the
+      stores disclosed in a DSR access/portability response, update that enumeration in the same PR.
+      If no such doc-level enumeration exists, state that explicitly in the PR body so Rule N is
+      provably satisfied by absence-of-claim, not silently skipped.
+
+**Scope discipline (per CLAUDE.md Agent coding standards §3):** touch only the access/portability
+routes' table-read logic + the new parity test + the DPIA enumeration if one exists. Do not refactor
+unrelated DSR logic.
+
+**On completion:** open a PR from the branch above, run local
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, and report back. Do not
+mark your own ticket DONE — PM validates (CI green + runtime wiring + AC) before READY_FOR_REVIEW.
+
+---
+
 ## Delegation brief — FOLLOW-551 (architect) — DRAFT-ONLY — codify the architect-has-no-Bash routing gap
 
 **From:** pm-orchestrator (session 25 cont'd) **To:** architect **Date:** 2026-07-11

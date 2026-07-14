@@ -1,3 +1,73 @@
+# Status — 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections + Sprint 23 Wave 2 P2 dispatch)
+
+## SESSION 27 cont'd (2026-07-14) — PR #525 merged; FOLLOW-551/436/569 queue-truth corrections; FOLLOW-557/558 dispatched
+
+**PR #525 confirmed MERGED** (`196d431`, verified via `git log --oneline main` + `git status` clean
+on `main`).
+
+**3 more stale-bookkeeping items** (flagged by the prior sub-session but not fixed) corrected on
+branch `pm-orchestrator/FOLLOW-553-queue-truth-corrections` (PR **#526**):
+
+- **FOLLOW-551 → DONE.** `pr: 512` independently re-confirmed MERGED
+  (`gh pr view 512 --json state,mergedAt` → `MERGED`, `2026-07-11T09:02:26Z`, merge commit
+  `c2670b2`). Status was stuck at stale `READY_FOR_REVIEW`. No AC re-check needed beyond confirming
+  the merge — the ticket's own notes already carry a full PM-validated evidence trail from the
+  original merge session.
+- **FOLLOW-436 → DONE.** Was `BLOCKED_ON_HUMAN`. `backlog/ESCALATIONS.md` ESC-034 is RESOLVED
+  2026-07-13 with an end-to-end attestation (`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 3):
+  live Modal endpoint smoke returned `202 accepted` with valid auth / `401` without; the async
+  callback landed (`listing_embeddings.updated_at` bumped, SQL-verified). **Important nuance
+  documented in-ticket:** the ticket's own literal 3-step checklist (provision a Redpanda-topic
+  Modal secret + `modal deploy` registering a polling cron) describes the PRE-ADR-0016 design.
+  ADR-0016 (`docs/adr/ADR-0016-pilot-direct-modal-invocation.md`) replaced that with direct-HTTPS
+  invocation before go-live happened. The Step-3 attestation verifies the CURRENT design's
+  equivalent requirements (`MODAL_EMBED_SEED_URL` set, `INTERNAL_API_SECRET` confirmed matching,
+  full async path proven live) — this discharges the ticket's actual intent even though 3 literal
+  checklist lines are now describing a superseded architecture. Recorded so a future reader doesn't
+  mistake the stale checklist for the operative one.
+- **FOLLOW-569 → added retroactively as DONE.** Previously had **no** `QUEUE.md` block at all — an
+  ad-hoc ticket ID coined only in commit `b0d77a6` / PR #517 (merged 2026-07-12T13:52:50Z), whose
+  own PR body explicitly asked PM to "confirm/formalize the ticket id." `backlog/FOLLOW_UPS.md` stub
+  updated in lockstep (`status: DONE`, `promoted_to_queue: true`).
+
+None of the three is independently AC-re-validated beyond the cited attestations/PR evidence — same
+flagging discipline as the FOLLOW-554/555/556/567 corrections from the prior sub-session.
+
+**Dispatch — Sprint 23 Wave 2 P2s (CEO direction: proceed now, Step 6/ESC-020 is Rafał-side and
+non-blocking to this pipeline):**
+
+- **FOLLOW-557** (backend-engineer, table row: "ingest worker, control-plane... auth" ->
+  backend-engineer; model: Sonnet, routine well-scoped fix) — DSR erase misses the
+  `shadow:{tenant}:{session}:chat_intent` Redis key namespace (audit A3-F-05).
+  `READY -> IN_PROGRESS`, branch `backend-engineer/FOLLOW-557-dsr-erase-shadow-redis`. Full
+  delegation brief in `backlog/HANDOFFS.md`.
+- **FOLLOW-558** (compliance-engineer, table row: "DPIA/ROPA/consent/DSR rules..." ->
+  compliance-engineer; model: Sonnet, mechanical table-set mirror + parity test, not novel legal
+  interpretation) — DSR access/portability responses omit `quiz_completions` + `intent_sessions`
+  (audit A3-F-06), even though erasure already covers them (FOLLOW-455). `READY -> IN_PROGRESS`,
+  branch `compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure`. Full delegation brief
+  in `backlog/HANDOFFS.md`. Brief adds a Rule N (compliance-docs-must-match-code) check not in the
+  ticket's original AC — verify/update the DPIA's store enumeration if one exists.
+
+**FOLLOW-559/FOLLOW-560 intentionally held back this round** — the ≤3-tickets-IN_PROGRESS guardrail
+is now at 2/3. FOLLOW-560 additionally `depends_on: [FOLLOW-553]`, which is not literally `DONE`
+(Step 6 open); its own notes describe the dependency as riding "the FOLLOW-553-established
+attestation flow" (i.e. the Steps 3-5 attestation pattern, already present) with an explicit
+fallback (OTel counter, skip the CH migration) if migration friction bites — judged
+satisfied-in-spirit, not DONE-gated, but held back this round on the concurrency cap regardless.
+
+**CI on PR #526: GREEN.** `gh pr checks 526 --watch` run to completion (2 watch cycles — first
+interrupted by a follow-up commit pushed mid-watch, re-watched to completion on the final commit).
+`gh pr view 526 --json statusCheckRollup | jq '[.statusCheckRollup[] | select(.conclusion != "SUCCESS" and .conclusion != null)] | length'`
+= **2**, both `Rule I — wired-or-dead check` (matrix-duplicated). Confirmed pre-existing baseline
+via `gh run view <run> --log-failed | grep -c WARN` = **181**, identical to the standing baseline —
+expected, docs-only diff (`backlog/{QUEUE, FOLLOW_UPS,HANDOFFS,STATUS}.md`,
+`gh pr view 526 --json files`), zero code touched. 5c/5d N/A (no new symbols/wires, not
+co-assigned). PM-validated comment posted on PR #526 with full evidence trail. **Status:
+READY_FOR_REVIEW, awaiting human merge. CI-check counter: 2/5. Fix-iteration counter: 0/3.**
+
+---
+
 # Status — 2026-07-14 (session 27 — recovered stranded FOLLOW-553 attestation branch, PR #525 READY_FOR_REVIEW; queue-truth corrections)
 
 ## SESSION 27 (2026-07-14) — recovered-work re-verification + queue-truth corrections

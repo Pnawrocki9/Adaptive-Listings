@@ -2150,3 +2150,23 @@ independent occurrence, even if it references the same pattern by name.
   recover — `merge-tree` diffs and GitHub's cached flag can both mislead. Also: whenever recovering
   a stranded branch, run a `git log --oneline` vs. `QUEUE.md` status spot-check across the whole
   active sprint, not just the ticket at hand — stale-READY-after-merge is a silent, compounding bug.
+
+---
+
+**Date / ticket:** 2026-07-14 — FOLLOW-553 session 27 cont'd (queue-truth corrections +
+FOLLOW-557/558 dispatch). **Delegation row used:** "ingest worker, control-plane... auth" ->
+backend-engineer (FOLLOW-557); "DPIA/ROPA/consent/DSR rules..." -> compliance-engineer (FOLLOW-558).
+**What validation caught (or missed):** the PRIOR sub-session's own START HERE note explicitly
+flagged 3 stale-bookkeeping items (FOLLOW-551 merged-but-not-flipped, FOLLOW-436
+blocked-but-actually-resolved, FOLLOW-569 missing entirely) and then didn't fix them — flagging
+without fixing is still a form of drift if the next session doesn't pick it up. Caught by re-reading
+the prior START HERE note as a literal action list, not just context. Also caught: FOLLOW-436's own
+literal AC checklist referenced a superseded pre-ADR-0016 design (Redpanda-poller secrets + cron
+deploy); flipping to DONE required cross-checking ADR-0016 + the ESC-034 resolution text to confirm
+the CURRENT design's equivalent requirements were actually proven, not just eyeballing "ESC-034
+RESOLVED" and rubber-stamping the ticket. A shallower pass would have either left it stuck
+BLOCKED_ON_HUMAN forever or wrongly closed it against a checklist nobody could satisfy anymore. **A
+delegation/validation rule I'd add:** when a prior session's START HERE note says "flagged, not
+fixed," treat that as an explicit action item for the current session, not background color — grep
+the note for "flagged"/"not fixed"/"not fabricated" phrasing at the start of every session, before
+picking a new ticket.

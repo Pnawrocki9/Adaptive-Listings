@@ -1544,7 +1544,22 @@ current 41.17KB) — durable trim via lazy-loaded i18n (option B) deferred to a 
 
 ---
 
-## OPEN — ESC-028: GitHub Actions secrets required for FOLLOW-368 Redis shadow round-trip smoke [FOLLOW-368]
+## RESOLVED — ESC-028: GitHub Actions secrets required for FOLLOW-368 Redis shadow round-trip smoke [FOLLOW-368]
+
+**RESOLVED 2026-07-13.** All four GH Actions secrets provisioned against the existing project
+Upstash DB `sacred-crawdad-106876` (`Adaptive-Listings`, eu-central-1) — reused rather than a
+throwaway because the smoke writes one uniquely-namespaced self-expiring key (no FLUSH), so reuse is
+collision-safe and matches the "one shared parity instance" intent. `redis-shadow-smoke.yml` ran in
+hard-fail mode (`REQUIRE_REDIS_SMOKE=1`) and **passed** — run 29257991341. Gotcha caught during
+provisioning: the token must be the Upstash **REST** token, not the TCP `redis://` password (first
+attempt failed hard with `WRONGPASS` / TTL HTTP 401 — the hard-fail did its job). **Non-blocking
+remainder:** Doppler dev/stg/prd wiring (step 3 below) for local-dev parity — not needed for the CI
+gate or prod (Modal uses its own `estalara-secrets` bundle). Full attestation in
+`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 5.
+
+---
+
+### Original escalation (for reference)
 
 **Filed by:** devops-engineer **Date:** 2026-06-23 **Affects:** FOLLOW-368 (P1), FOLLOW-346 AC-1
 (chat-intent bridge end-to-end), FOLLOW-384 (redis_writer opt-out skip), K.3.6 D-2 chat panel
@@ -2023,7 +2038,25 @@ FOLLOW ticket.
 
 ---
 
-## OPEN — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
+## RESOLVED — ESC-034: FOLLOW-436 embed-seed Modal consumer awaiting operator go-live — code bugs fixed by FOLLOW-437, operator steps remain [FOLLOW-436]
+
+**RESOLVED 2026-07-13.** The direct-HTTPS embed-seed path (ADR-0016, post-Redpanda) is live and
+proven **end-to-end**. Direct smoke on the deployed Modal web endpoint
+`https://estalara--estalara-description-generator-listing-embed-s-e2dcc5.modal.run`: `POST` with
+`Authorization: Bearer <INTERNAL_API_SECRET>` + `{tenant_id, listing_ids:[…]}` → **202
+`{"status":"accepted"}`**; no-auth → **401**. The spawn's callback landed — the target listing's
+`listing_embeddings.updated_at` bumped to ~now (SQL-verified). So Modal endpoint →
+`process_embed_seed_request.spawn` → `POST /api/listings/embed` → OpenAI → DB upsert all work, and
+`INTERNAL_API_SECRET` in Modal `estalara-secrets` matches control-plane. `MODAL_EMBED_SEED_URL`
+present in Vercel prod (re-set to the confirmed URL + redeployed). Traps: the Modal URL is
+truncated+hashed (copy from the dashboard, never derive from `MODAL_DESCRIPTION_URL`);
+`MODAL_DESCRIPTION_URL` is Vercel-Sensitive (unreadable). Onboarding-overflow trigger itself not
+exercised (heavy) but every leg proven. Full attestation:
+`docs/runbooks/OPERATOR_SESSION_2026-07-12.md` Step 3.
+
+---
+
+### Original escalation (for reference)
 
 **Filed by:** devops-engineer **Date:** 2026-06-30T00:00:00Z **Affects:** FOLLOW-436, FOLLOW-435,
 FOLLOW-437 **Type:** other (privileged operator action — code bugs now resolved)

@@ -142,6 +142,26 @@ the live path is direct HTTPS (same as the description flow).
    `tags.area:onboarding tags.sink:modal-embed-seed`.
 4. Mark **ESC-034 RESOLVED** in `backlog/ESCALATIONS.md` with the smoke evidence.
 
+> **✅ DONE 2026-07-13.** Modal embed-seed web endpoint proven **end-to-end** by direct smoke:
+> `POST https://estalara--estalara-description-generator-listing-embed-s-e2dcc5.modal.run` with
+> `Authorization: Bearer <INTERNAL_API_SECRET>` + `{tenant_id, listing_ids:[…]}` → **202
+> `{"status":"accepted"}`**; a no-auth POST → **401** (auth enforced). The fire-and-forget spawn's
+> callback landed: the target listing's `listing_embeddings.updated_at` bumped to ~now (verified via
+> SQL, age ~26 s). So the full async path — Modal endpoint → `process_embed_seed_request.spawn` →
+> `POST /api/listings/embed` → OpenAI embed → DB upsert — is live and `INTERNAL_API_SECRET` in Modal
+> `estalara-secrets` matches (step 2 confirmed by the 202, not the 401). `MODAL_EMBED_SEED_URL`
+> already existed in Vercel prod (Sensitive/unreadable) and was re-set to the confirmed URL +
+> redeployed to remove doubt.
+>
+> ⚠️ **The Modal endpoint URL is truncated + hashed** (`listing-embed-s-e2dcc5`) — do NOT derive it
+> by string-swapping `MODAL_DESCRIPTION_URL`; copy the exact URL from the Modal dashboard. And
+> `MODAL_DESCRIPTION_URL` is marked **Sensitive** in Vercel (write-only, cannot be revealed) — same
+> trap class as `CLICKHOUSE_URL` / `OPENAI_API_KEY`.
+>
+> **Not exercised this session:** the onboarding-overflow trigger itself (heavy — needs a
+> schema-activation event). Every leg it depends on is proven above, so this is a wiring-complete,
+> path-verified close.
+
 ## Step 4 — Seed `listing_embeddings` for the pilot tenant (un-djb2s the reorder path)
 
 With Step 3 live: trigger the embed-seed for the pilot tenant (re-run schema activation for the
@@ -192,6 +212,27 @@ safe fallback if empty).
 4. Re-run `redis-shadow-smoke.yml` — it auto-switches to hard-fail mode and must pass. Mark
    **ESC-028 RESOLVED**.
 
+> **✅ DONE 2026-07-13 (CI gate).** Reused the existing project Upstash DB `sacred-crawdad-106876`
+> (`Adaptive-Listings`, eu-central-1) rather than a throwaway — the smoke writes ONE
+> uniquely-namespaced self-expiring key (`shadow:smoke-tenant-368:smoke-session-368:chat_intent`, 24
+> h TTL, no FLUSH), so reuse is collision-safe and matches ESC-028's "one shared parity instance"
+> intent. All four GH Actions secrets set (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_URL` →
+> `https://sacred-crawdad-106876.upstash.io`; `UPSTASH_REDIS_REST_TOKEN` + `UPSTASH_REDIS_TOKEN` →
+> the **REST** token). `redis-shadow-smoke.yml` ran hard-fail (`REQUIRE_REDIS_SMOKE=1`) and
+> **passed** (run 29257991341).
+>
+> ⚠️ **Trap — must be the REST token, not the TCP password.** First run failed hard with
+> `WRONGPASS invalid or missing auth token` + `TTL check HTTP 401`: the token first pasted was not
+> the Upstash **REST** token (the smoke uses the REST API). Copy the token from the console's
+> **REST** tab (`UPSTASH_REDIS_REST_TOKEN` in the env-var snippet), not the `redis://default:****@`
+> TCP password or the READONLY token. The hard-fail correctly caught it — this is exactly what
+> FOLLOW-368 exists for.
+>
+> **Remaining (non-blocking):** the same 4 values in Doppler dev/stg/prd (ESC-028 step 3) for
+> local-dev parity. Not required for the CI gate or prod (Modal reads Redis creds from its own
+> `estalara-secrets` bundle, not Doppler). Do via the Doppler dashboard when convenient: URL ×2
+> names = the endpoint above, token ×2 names = the same REST token.
+
 ## Step 6 — ESC-020: Estalara-app DOM hooks deploy (RAFAŁ)
 
 Hand-off contract (ESC-020 + `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`):
@@ -216,10 +257,12 @@ only when it lands.
 - [ ] Step 0: `llm_calls` records `source IN ('description','headline')` rows (cap active).
 - [ ] Step 1: `intent_events` `session_id` column present; `count() > 0` after a live snapshot.
 - [ ] Step 2: `feedback:canary` shows a real `ab_bandit_weights` delta (bandit learning).
-- [ ] Step 3: ESC-034 smoke green → RESOLVED.
+- [x] Step 3: ESC-034 Modal embed-seed endpoint proven end-to-end (2026-07-13) +
+      `MODAL_EMBED_SEED_URL` present in Vercel prod → RESOLVED.
 - [x] Step 4: `listing_embeddings count > 0` for the pilot tenant (0 → 6, 2026-07-13). Cosine
       reorder "reached once" still pending live SDK traffic (Step 6).
-- [ ] Step 5: `redis-shadow-smoke.yml` hard-fail mode passes → ESC-028 RESOLVED.
+- [x] Step 5: `redis-shadow-smoke.yml` hard-fail mode passes → ESC-028 RESOLVED (2026-07-13, run
+      29257991341). Doppler dev/stg/prd wiring is a noted non-blocking follow-up (see Step 5 block).
 - [ ] Step 6: `data-estalara` count > 0 on prod `app.estalara.com` (may trail; Rafał's date
       committed).
 

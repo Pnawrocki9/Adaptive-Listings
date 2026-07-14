@@ -1,3 +1,56 @@
+# Status — 2026-07-14 (session 27 — recovered stranded FOLLOW-553 attestation branch, PR #525 READY_FOR_REVIEW; queue-truth corrections)
+
+## SESSION 27 (2026-07-14) — recovered-work re-verification + queue-truth corrections
+
+**Starting state:** current branch `pm-orchestrator/FOLLOW-553-step4-attestation` had 3 attestation
+commits (Step 3 ESC-034, Step 4 embeddings, Step 5 ESC-028) open as PR #524, reported
+`mergeable: CONFLICTING` by GitHub. `git merge-tree` alone looked clean, but a REAL local
+`git merge --no-commit` test (per Recovered-work re-verification checklist,
+`docs/AGENT_WORKFLOW.md`) confirmed a genuine conflict in
+`docs/runbooks/OPERATOR_SESSION_2026-07-12.md`: the branch's own Step-4 attestation commit
+(`c064f51`) duplicated content already merged separately as PR #523 (`0335484`, same content
+different SHA) — a rebase/sync gap from working across two branches for overlapping Wave-0 steps.
+
+**Fix:** closed PR #524 as superseded (no data loss — confirmed nothing else was stranded on `main`;
+content preserved). Rebuilt a fresh branch `pm-orchestrator/FOLLOW-553-step3-step5-attestation` off
+current `main`, containing ONLY the two net-new pieces (Step 3 ESC-034-resolved + Step 5
+ESC-028-resolved attestation blocks + `backlog/ESCALATIONS.md` RESOLVED flips) — Step 4's content
+was left untouched since it's already on `main` via #523. Verified via direct `diff` that both
+reconstructed files are byte-identical to the superseded branch's intended end-state before
+committing. Opened PR **#525**.
+
+**CI (independently verified, not self-reported):** `gh pr view 525 --json statusCheckRollup` → all
+real gates PASS across both duplicate-triggered workflow runs; only "Rule I — wired-or-dead check"
+fails, confirmed via `gh run view --log` to be the standing pre-existing baseline (**181
+violations**, identical symbol set to the FOLLOW-532/546/548/549/550/551 baseline — expected since
+this PR is docs-only, 2 `.md` files, zero code touched). CI non-success count for real gates =
+**0**. No new symbols/wires in the diff (5c N/A). PM-validated comment posted on PR #525 with full
+evidence trail. **CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+**Queue-truth corrections applied** (git-log-confirmed merges that never got their `QUEUE.md` status
+flipped from `READY` → `DONE`): FOLLOW-554 (PR #518, `28a915c`), FOLLOW-555 (PR #519, `386f58d`),
+FOLLOW-556 (PR #520, `c78af84`), FOLLOW-567 (PR #522, `e48f9ec`) — all four were merged
+2026-07-12/13 but still showed stale `status: READY` in `backlog/QUEUE.md`, which would have caused
+a future PM session to re-delegate already-shipped work. Flips are git-log-confirmed only, NOT
+independently re-validated against each ticket's own AC in this pass — flagged in each ticket's own
+status comment for a future retro/audit pass to double-check if desired. Note: FOLLOW-569 (PR #517,
+`b0d77a6`, "queue inquiry.completed for ingest") has no `QUEUE.md` ticket block at all (ad-hoc
+ticket ID used in a commit message only) — not fabricated one; flagging here for whoever owns Sprint
+23 bookkeeping.
+
+**Wave 0 (FOLLOW-553) state:** Steps 3, 4, 5 attested DONE this session + previous session (ESC-034,
+embeddings 0→6, ESC-028 all RESOLVED). Step 6 (ESC-020, Rafał — DOM hooks deploy) remains the only
+open item; **not touched or claimed done** — no pasted prod evidence was available this session, and
+Rule AA (FOLLOW-553's own notes) restricts FOLLOW-449/450's DONE-flip to real pasted prod output,
+which I do not have. Left FOLLOW-449/450 at `CODE_COMPLETE_OPERATOR_PENDING` — did NOT flip.
+
+**No new ticket delegated this session** — this iteration was entirely recovered-work
+re-verification + queue hygiene, not new development. Once PR #525 merges: no further QUEUE.md
+action needed for it (bookkeeping-only ticket, folds into FOLLOW-553's own Wave-0 tracking, no
+separate DONE-flip ticket block exists for the Step-3/Step-5 attestation itself).
+
+---
+
 # Status — 2026-07-11 (Sprint 22b OPEN — PR #512 PM-validated, folded into #511, session 25 cont'd)
 
 ## SESSION 25 cont'd (2026-07-11) — PR #512 validated (folded into #511, no separate validation PR)

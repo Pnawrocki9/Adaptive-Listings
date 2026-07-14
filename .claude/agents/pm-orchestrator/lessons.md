@@ -2133,3 +2133,20 @@ independent occurrence, even if it references the same pattern by name.
   land (a promotion/bookkeeping PR + a content PR), always check `gh pr view <N> --json files` for
   BOTH before deciding whether they can merge in any order or need sequencing — don't assume from
   the ticket type alone.
+
+- **Date / ticket:** 2026-07-14 — FOLLOW-553 (PR #524 → #525 recovery)
+- **Delegation row used:** N/A — recovered-work re-verification pass, no new delegation.
+- **What validation caught (or missed):** `gh pr view --json mergeable` reported `CONFLICTING` for
+  PR #524, but `git merge-tree` alone looked clean — only a real local `git merge --no-commit` test
+  surfaced the actual conflict (a duplicate Step-4 attestation commit colliding with an already
+  separately-merged PR #523, same content different SHA). Trusting the GitHub `mergeable` flag or a
+  three-way `merge-tree` diff without an actual merge attempt would have either wasted more cycles
+  arguing with a false negative or masked a genuine conflict. Separately, a full `git log`
+  cross-check against `QUEUE.md` status fields caught 4 tickets (FOLLOW-554/555/556/567) merged days
+  earlier but still marked `READY` — stale queue truth that would have caused re-delegation of
+  already-shipped work.
+- **A delegation/validation rule I'd add:** When `gh pr view --json mergeable` says `CONFLICTING`,
+  always confirm with a real `git merge --no-commit` (or worktree merge) before deciding how to
+  recover — `merge-tree` diffs and GitHub's cached flag can both mislead. Also: whenever recovering
+  a stranded branch, run a `git log --oneline` vs. `QUEUE.md` status spot-check across the whole
+  active sprint, not just the ticket at hand — stale-READY-after-merge is a silent, compounding bug.

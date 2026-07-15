@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.8 **Date:** 2026-06-21 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.9 **Date:** 2026-07-15 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -768,7 +768,16 @@ is responsible for verifying the identity of the requestor.
    `llm_calls`, and `dsr_tokens` tables).
 5. For **Access** and **Portability**: the worker compiles a structured export (JSON) of all
    session-level records associated with the identifier and delivers via the tenant's verified
-   channel (one-time download link, OTP-protected).
+   channel (one-time download link, OTP-protected). The Postgres tables read at
+   `GET /api/dsr/access` and `GET /api/dsr/portability` are: `session_embeddings`,
+   `consent_records`, `conversion_labels` (both `lead_id` namespaces — FOLLOW-246), and, as of
+   FOLLOW-558, `engagement_scores`, `quiz_completions`, and `intent_sessions` — the same three
+   tables that were already part of the Erasure cascade in step 6 below (`engagement_scores` via
+   FOLLOW-193, `quiz_completions` + `intent_sessions` via FOLLOW-455) but were previously omitted
+   from the Access/Portability disclosure (Art. 15/20 completeness gap, audit finding A3-F-06). A
+   parity test (`apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts`,
+   "FOLLOW-558 PARITY" describe block) asserts the Access/Portability table set matches the Erasure
+   table set so a future new store cannot silently drift the two apart again.
 6. For **Erasure**: the worker executes a cascade deletion across all in-region stores: Postgres
    (`session_embeddings`, `consent_records`, `engagement_scores`, `answers`) synchronously inside a
    single transaction, ClickHouse (`events`, `adaptation_decisions`, `llm_calls`, `session_quality`)
@@ -903,6 +912,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.6     | 2026-06-08 | Compliance Engineering | FOLLOW-235: TTL enforcement gap closed — cron shipped in FOLLOW-234 (PR #230, `c97fd50`). §2.5 `conversion_labels` retention row updated: "policy only; not yet enforced" notice removed; replaced with live enforcement statement referencing daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 2.7     | 2026-06-08 | Compliance Engineering | FOLLOW-187 conditions 8 and 9 CONFIRMED SATISFIED. §2.3 (System Components) and §2.5 (Data Types and Retention) are complete for CRM Deep-Outcome Ingest. TTL cron is live (FOLLOW-234 / PR #230, `c97fd50`). ROPA Activity 15 complete (ROPA v2.5). CRM go-live compliance gate is now SATISFIABLE for Conditions 8+9. §8 (Data Subject Rights) updated with open-gap note: DSR cascade for `conversion_labels` via `lead_id` identifier resolution (FOLLOW-184) is a separate OPEN gap tracked as FOLLOW-184 — CRM-integrated tenants must not go live until FOLLOW-184 is DONE (code implementation shipped via FOLLOW-239 / PR #234; PG-harness integration test FOLLOW-185 not yet merged). This is separate from Conditions 8+9 which are confirmed.                                                                                                                          |
 | 2.8     | 2026-06-21 | Compliance Engineering | FOLLOW-373: Platform-wide consent umbrella (CEO decision 2026-06-21). §3.1 updated: six processing purposes (a)–(f) enumerated; C-07 boundary re-asserted with grep-verified code evidence. §7 (Consent Strategy) updated: mandatory-at-registration consent for app.estalara.com pilot (Mode B); `consent_type = 'platform_registration'`; `consent_records` binary-grant schema confirmed sufficient. §13.4 added: LIA for buying-intent identification (purpose d) and lead ranking (purpose e) — dual lawful basis (Art. 6(1)(a) consent + LI proportionality framework); balancing test PASSES subject to three conditions. §13.5 added: FOLLOW-372 suspend-not-erase sufficiency addendum — suspend is sufficient for AL-DOM-only opt-out; no new PII created; Art. 21 objection right satisfied; Art. 17 erasure path unchanged. DPO gate extended to cover §13.4 and §13.5. |
+| 2.9     | 2026-07-15 | Compliance Engineering | FOLLOW-558 (audit A3-F-06): §8 (Data Subject Rights) step 5 updated to disclose the exact Postgres table set read by `GET /api/dsr/access` and `GET /api/dsr/portability` — `engagement_scores`, `quiz_completions`, and `intent_sessions` were already part of the Erasure cascade (`engagement_scores` FOLLOW-193, `quiz_completions` + `intent_sessions` FOLLOW-455) but had been omitted from the Access/Portability disclosure, an Art. 15/20 completeness gap. Code fix + a route-driven parity test (`disclosure-route-driven-pglite.test.ts`, "FOLLOW-558 PARITY") ship in the same PR, per Rule N.                                                                                                                                                                                                                                                                         |
 
 ---
 

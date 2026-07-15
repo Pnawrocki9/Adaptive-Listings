@@ -48,9 +48,18 @@ independently confirmed `shadowChatIntentKey` is exported (`chat-intent-cache.ts
 test's regex actually matches the current `shadow_key()` source in `redis_writer.py` before
 committing.
 
-**NEXT:** validate CI on #528/#529 → READY_FOR_REVIEW. Confirm the `Rule I — wired-or-dead check`
-red matches the known pre-existing baseline rather than assuming it does. FOLLOW-559 is the correct
-next backend pick once 557 lands.
+**Merged (CEO-approved, 2026-07-15):** FOLLOW-557 → `7b83f39` (PR #528), FOLLOW-558 → `797b8ab` (PR
+#529). Both `DONE`. Pre-merge check: neither PR carried a migration, so the `db-migrate.yml` prod
+auto-apply path was not triggered; both do redeploy control-plane to Vercel prod (intended).
+
+**NEXT:** (1) **FOLLOW-559** — backend-engineer lane is free, correct next pick. (2) **FOLLOW-356**
+— still needs the CEO priority call flagged in session 29 (P1 with a free sdk lane, but outside
+Sprint 23; active-sprint-first vs P1-first is not the PM's call). (3) **RETROs owed for FOLLOW-557
+and FOLLOW-558** — deferred at merge, not skipped. The worktree-stranding miss is itself
+retro-grade: it is the second occurrence of the stranded-work shape (RETRO-146 §4e / FOLLOW-448 was
+the first, on `main`), so a `CONVENTIONS_PATCH.md` rule may now be justified under the ≥2-occurrence
+bar — that promotion decision belongs to the retrospective-analyst, not to this session's ad-hoc
+judgement.
 
 ---
 

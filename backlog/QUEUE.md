@@ -1,6 +1,50 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections; Sprint 23 Wave 2 P2s dispatched)
+## ▶️ START HERE — resume 2026-07-15 (session 29 — THE BOTTLENECK IS WORKER EXECUTION, NOT DISPATCH)
+
+**Read this before picking anything.** PR #526 is **MERGED** (`9bef30b`) — the session-27 banner
+below saying "READY_FOR_REVIEW, awaiting human merge" is stale and superseded by this block. There
+are **zero open PRs** and **zero blocking escalations** (ESC-020 is OPEN but explicitly non-blocking
+per its own CEO resolution 2026-06-10: "This escalation does NOT block the PM pipeline for other
+tickets").
+
+**⚠️ FOLLOW-557 and FOLLOW-558 have been `IN_PROGRESS` since 2026-07-14 with ZERO commits.** Both
+branches exist and both have complete delegation briefs in `backlog/HANDOFFS.md`, but
+`git diff main..<branch> --stat` is **empty** for both — the branches sit at `main` HEAD. Session 28
+found this and handed back; session 29 re-verified and found it **unchanged**. The assigned
+subagents have never been run.
+
+**This is now the single thing gating Sprint 23 Wave 2.** The PM tool surface cannot spawn subagents
+(a long-standing constraint noted across many sessions in `backlog/STATUS.md`) — dispatch happens
+when the coordinator/human actually invokes the worker off the `NEXT:` line. Two fully-briefed
+tickets are queued and waiting. **Writing more briefs will not move the backlog; running the workers
+will.**
+
+- **Do NOT dispatch a third ticket** until 557 or 558 produces a commit. Three of three
+  `IN_PROGRESS` slots would then be occupied by un-executed paperwork.
+- **Next action:** run the `backend-engineer` subagent on FOLLOW-557 (brief: `backlog/HANDOFFS.md`),
+  then `compliance-engineer` on FOLLOW-558.
+
+**Queue-truth notes from this session (verified, not assumed):**
+
+- **FOLLOW-553 is literally `READY_OPERATOR`, not `DONE`** (only Step 6 / ESC-020, Rafał-side DOM
+  hooks deploy, remains). Therefore **FOLLOW-560** (`depends_on: [FOLLOW-553]`) and **FOLLOW-565**
+  are **not** dependency-eligible under the strict `depends_on` rule, whatever the session-27 note
+  argued about the dependency being "satisfied in spirit". Do not dispatch them on that reasoning
+  without a CEO call.
+- **FOLLOW-559** (P2, backend-engineer, `deps: []`) is **not** eligible while FOLLOW-557 holds the
+  backend-engineer lane — it is the correct next backend pick the moment 557 lands.
+- **FOLLOW-356 (P1, sdk-engineer, `deps: []`, READY) is the highest-priority genuinely-eligible
+  ticket in the queue and its agent lane is free.** It is P1 vs the Sprint 23 P2 pool, but it is not
+  a Sprint 23 ticket. Prior sessions have not picked it. **Flagged for the human:** if Sprint 23
+  Wave 2 is stalled on worker execution anyway, FOLLOW-356 is the better use of an open lane — needs
+  a priority call (active-sprint-first vs P1-first), which is not the PM's to make.
+
+Full detail: `backlog/STATUS.md` session 29 entry.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections; Sprint 23 Wave 2 P2s dispatched)
 
 **PR #525 confirmed MERGED** (`196d431`, into `main`) — the Step 3/5 attestation + queue corrections
 from the prior sub-session are live. Verified via `git log --oneline main` and `git status` (clean,

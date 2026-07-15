@@ -2470,3 +2470,141 @@
     was clean (no merged-not-closed bookkeeping PR) before affirming count stays 1. A clean fix / a
     codification landing is not a bug sighting — same discipline as RETRO-170's "a clean fix is not
     a 3rd sighting" note on Rule AB.
+
+## 2026-07-15 — RETRO-175 (FOLLOW-557, PR #528, DSR erase → shadow Redis key)
+
+**A finding I almost missed and why.** The headline (§5a) was invisible from inside the ticket. PR
+#528 is a clean, correct, well-tested fix; reading it against its own AC yields a clean retro. The
+gap only exists in the **3-second gap between two merge commits**: #528 added a Redis store to the
+Art. 17 erase set, and #529 (merged 3s later) asserts access-set == erase-set but scopes that
+invariant to Postgres. Both authors were right; nobody owned the union. **Lesson: when two PRs merge
+in the same window, diff them against EACH OTHER, not just each against `main`.**
+`git log --oneline` adjacency is a cascade signal in its own right — I should read the sibling
+merge's test invariants before writing any §5. Near-miss: I nearly recorded §4d "DPIA correctly not
+updated (erase ≠ disclosure)" as a clean note — that framing is exactly the trap that produced the
+bug.
+
+**An axis/chain I had to trace twice.** Two. (1) The `session:*` SCAN. First pass I read it as
+pre-existing background. Second pass — grepping for the namespace's PRODUCER rather than its
+consumers — returned six hits, all inside the erase route itself, **not one a write**. That reframed
+the whole retro: the audit finding's root isn't a forgotten namespace, it's that the erase path was
+written against an ASSUMED namespace list (the leg that existed matched nothing; the leg that
+mattered was absent), and it made LG-1 land — the phantom leg can THROW and veto the real one.
+**Always grep the producer, not just the consumers, of any namespace/key/topic a diff touches.** (2)
+The Rule Z regex. First pass: "regex-parsing another runtime's source is fragile" — the obvious
+take, and mostly wrong. The regex is fine and beats hand-typing. Tracing it twice found the real
+issue one layer down (the file is outside the package → turbo doesn't hash it → remote cache replays
+the assertion green on the drift commit) AND the honest mitigation (the shared `shadowChatIntentKey`
+builder means the live FOLLOW-368 smoke already covers it transitively — so P3, not P1). **Both
+passes were load-bearing: the second found the real mechanism, the third found why it barely
+matters.** Severity honesty is part of the finding, not a softening of it.
+
+**A meta-pattern in how gaps recur across agents.** Three surfaces in ONE merge showed the same
+shape: _the obligation is documented/enforced somewhere other than where the actor arrives._ Rule
+K.2 is cited at `erase/route.ts:520` and violated at `:604` in the same file. The disclosure
+obligation is pinned in a Postgres-scoped parity test, not over the union. The worktree-detection
+lesson is in a 169KB private `lessons.md` + an explicitly-superseded QUEUE banner, not in the
+playbook a PM reads. This rhymes with RETRO-174 §5d — but I deliberately did NOT count it as a
+promotion, because family resemblance across three different rules is not a repeat sighting of one
+pattern. **Watch that temptation: "this rhymes" is how count-inflation starts.**
+
+**My own blind spot, recorded.** I came within one paragraph of promoting a merged "crashed worker"
+rule at count 3 (RETRO-146 + 150 + 175). What stopped it was reading RETRO-150 §6 closely enough to
+notice it had faced the identical fusion question against RETRO-146 and **explicitly refused** —
+promoting now would have overturned a prior adjudication _in order to_ promote. **The corpus's own
+prior refusals are evidence, and they bind. Check whether a prior retro already declined the exact
+merge you're contemplating before you count.** Second-order: the prior session's "possibly
+promotion-grade" flag created real pull toward a decision it had explicitly deferred to me — a
+handoff note's framing is not evidence, and I should discount it to zero rather than treat it as a
+prior.
+
+**Process note for the next retro.** The `next free FOLLOW number` markers at the bottom of
+RETROSPECTIVES.md are STALE (they say 448 / 474; actual next free was 570). I derived the real
+number by grepping max FOLLOW-NNN across QUEUE.md + FOLLOW_UPS.md and confirming 570-573 unused.
+Don't trust those trailers.
+
+---
+
+## 2026-07-15 · RETRO-176 (FOLLOW-558 / PR #529 — DSR access+portability disclosure; sibling of RETRO-175)
+
+**A finding I almost missed, and why.** The ClickHouse axis (§4a LG-1 — four erased PII tables
+disclosed to nobody, `events` disclosed as a count not a copy). I almost missed it because
+**RETRO-175 had already framed the union as a two-axis problem** (Postgres closed / Redis open), and
+that framing is _complete-sounding_. Inheriting a sibling retro's axis list is the same error as
+inheriting a PR's own framing — it just feels more authoritative because a peer did the work. What
+saved it: I enumerated storage classes from the **erase route's code** rather than from RETRO-175's
+prose, and `erase/route.ts:32-40` has a fifth step nobody's narrative mentioned. **Lesson: when a
+prior retro hands you an axis list, treat it as a hypothesis and re-derive the list from the
+artifact. A sibling retro is a source, not an inventory.**
+
+**An axis/chain I had to trace twice.** Two, and both mattered.
+
+1. **The parity test.** First pass I read its docstring — accurate, honest, even self-deprecating
+   ("must be updated by hand") — and nearly recorded "parity test present, scope-limited per
+   RETRO-175". Second pass I read the **assertion body** and the **import list**, and the test never
+   imports `erase/route.ts` at all: it asserts `disclosure ⊇ {6 hardcoded literals}`, not
+   `access-set == erase-set`. **The docstring was honest and the test was inert; I had to read the
+   code to learn the code was better-described than it was implemented.** This is exactly Rule Y's
+   third clause pointed at me, and it is the single highest-yield instruction in
+   `CONVENTIONS_PATCH.md` for a retro: _open the cited file and confirm it performs the cited
+   assertion._ RETRO-175 didn't, and it QUOTED the disproof of its own claim in the same sentence
+   ("a parity test that fails when the sets diverge — and its own header concedes … must be updated
+   by hand"). **Two clauses, mutually exclusive, one sentence, unnoticed.** That is what
+   reading-for-gist does to a retro. Read assertions, not docstrings.
+2. **The producer sweep.** `grep "insert(intentSessions)"` → zero hits. I was one keystroke from
+   recording a second phantom store. The real producer UPSERTs via **PostgREST**
+   (`intent-snapshot.ts:249`) and is invisible to any Drizzle-shaped grep. **This directly changed a
+   promotion decision** (§6): it proved the grep class that produced _both_ phantom sightings
+   under-reports, which is why PHANTOM-STORE is held at count 1 as unconfirmed rather than promoted
+   at 2. **A negative grep is not evidence of absence until you know what the writers look like.**
+
+**A meta-pattern in how gaps recur across agents.** _The honest statement and the false statement
+ship in the same PR, and the false one lands where the decision-maker reads._ The #529 author wrote
+an accurate, self-limiting docstring in the test — and then claimed the opposite in the commit
+message, the DPIA §8, and the AC checkbox. Note the structure: **the truth went where engineers look
+after CI is green; the falsehood went where the DPO, the auditor and the PM look instead.** This is
+RETRO-174 §5d's "the guard must sit where the actor arrives" re-rendered on the _claim_ rather than
+the _guard_, and it rhymes precisely with RETRO-175's CB-1 (a Rule K.2 violation 80 lines below a
+Rule K.2 citation in the same file). I recorded the rhyme and **did not count it** — three different
+rules with a family resemblance is not one pattern, and matching at that altitude is how the bar
+rots. But as a _search heuristic_ for future retros it is excellent: **when a PR's code is honest
+about a limitation, go read what its doc/commit/AC say about the same thing — the gap between them
+is where the finding is.**
+
+**My own blind spot, recorded.** I had a genuinely strong case for promoting PHANTOM-STORE at count
+2: two different stores, two storage classes, two originating tickets, two independent discoveries —
+emphatically _not_ one incident (unlike the parity pattern, where #528/#529 are one incident viewed
+twice and the "one incident cannot self-promote by being retro'd twice" test disposes of it
+cleanly). The pull was real, and it was _sharpened_ by having just spent an hour proving RETRO-175
+wrong on a different point — **being right once creates appetite to be right again, and that
+appetite looks exactly like evidence.** What stopped it was asking "what if this rule is wrong?"
+rather than "does it clear the bar?": both sightings are explicitly _unconfirmed_ (out-of-repo
+writers possible; see the PostgREST trap above), and a rule promoted on two hypotheses lands in
+`CONVENTIONS_PATCH.md` **actively wrong**, which is worse than absent. Second-order: RETRO-175 held
+that phantom in its hand and _chose_ not to register it as a pattern — registering it on its behalf
+**and** promoting on it in one stroke would have been the re-labelling-to-reach-threshold move
+RETRO-175 itself refused against RETRO-150. **New rule for me: the count is necessary, not
+sufficient. Before promoting, ask what the rule would say and whether the evidence could be false.
+An unconfirmed observation is not a sighting — it is a lead.**
+
+**Where I disagreed with a sibling retro, and how it went.** RETRO-175 is excellent and its headline
+(§5a, the Redis disclosure cascade) is **correct** — I re-verified it independently rather than
+inheriting it, which was the right call in both directions: it confirmed the finding _and_ it was
+the habit that made me re-verify §5d, which turned out to be wrong. **Verify the claims you agree
+with too; that's where the habit is built.** Two corrections landed (§5d's "parity test that fails
+when the sets diverge"; §4d's "FOLLOW-557 had no Rule N obligation" — false, because DPIA §8 **step
+6** enumerates _erased_ stores and RETRO-175 only checked step 5). Both were framed as refinements,
+both cite the evidence, and neither disturbs RETRO-175's conclusions — its "the union is unowned"
+verdict gets _stronger_, not weaker. **A retro that silently inherits a sibling's "checked and
+cleared" is not doing the job.** But note the asymmetry that made this possible: I had RETRO-175 to
+check and it had nothing. The corpus compounds; my advantage was structural, not personal. **Say
+so.**
+
+**Process note (carried forward and re-verified).** The previous entry warned the
+`next free FOLLOW number` trailers are stale. RETRO-175 derived 570 and left a trailer saying
+**574**. I verified it independently rather than trusting it — max `FOLLOW-NNN` across QUEUE.md
+(569) + FOLLOW_UPS.md (573)
+
+- RETROSPECTIVES.md (573) → **574 correct**. Allocated 574-577; trailer now says **578.** The
+  trailer written by the immediately-preceding retro is the one trailer that _is_ reliable — but
+  check it anyway; it costs one grep.

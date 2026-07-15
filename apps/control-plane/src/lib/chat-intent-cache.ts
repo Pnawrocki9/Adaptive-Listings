@@ -132,6 +132,35 @@ export async function readShadowChatIntent(
 }
 
 /**
+ * Delete the shadow chat-intent entry from Upstash Redis (FOLLOW-557 / audit
+ * A3-F-05 — RODO/GDPR Art. 17 erasure completeness).
+ *
+ * Uses the SAME `shadowChatIntentKey()` builder as `readShadowChatIntent()`
+ * above, so the erase path and the read path can never drift on key format
+ * (both are pinned to one definition in this module).
+ *
+ * Structural no-op when `UPSTASH_REDIS_URL` is unset (dev/CI without Redis
+ * configured). Does NOT catch fetch/network errors — the caller (DSR erase
+ * route) wraps this in its own fire-and-forget `.catch()` and Sentry capture,
+ * matching the existing `deleteSessionFromRedis()` posture for the
+ * `session:{sessionId}:*` namespace.
+ *
+ * @param tenantId  - Tenant UUID.
+ * @param sessionId - Session identifier.
+ */
+export async function deleteShadowChatIntent(tenantId: string, sessionId: string): Promise<void> {
+  const base = getRedisBase();
+  if (!base) return;
+
+  const key = shadowChatIntentKey(tenantId, sessionId);
+  await fetch(`${base}/pipeline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getRedisHeaders() },
+    body: JSON.stringify([['DEL', key]]),
+  });
+}
+
+/**
  * Flatten `ShadowChatIntent.intent_dimensions` into a `Record<string, string>` suitable
  * for `applyChatIntentPrior`.
  *

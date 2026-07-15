@@ -23,7 +23,11 @@
  *        Same empty-key guard as above (GDPR Art. 17 completeness, RETRO-031 §4a LG-1).
  *      - DELETE FROM quiz_completions WHERE session_id AND tenant_id (FOLLOW-455)
  *      - DELETE FROM intent_sessions WHERE session_id AND tenant_id (FOLLOW-455)
- *   4. Redis DEL session:{session_id}:* (fire-and-forget).
+ *   4. Redis DEL session:{session_id}:* AND shadow:{tenant_id}:{session_id}:chat_intent
+ *      (fire-and-forget). The shadow key is the chat-intent shadow namespace
+ *      written by the Python `write_shadow_intent` (apps/intent-engine/src/
+ *      redis_writer.py) — a DIFFERENT prefix from `session:*` that the SCAN
+ *      above never matches (FOLLOW-557 / audit A3-F-05).
  *   5. **FOLLOW-039 — RODO Art. 17 hard-delete:**
  *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
  *      session_quality, intent_events) issue an `ALTER TABLE ... DELETE WHERE
@@ -57,6 +61,7 @@ import {
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
 import { resolveIntentSessionId } from '@/lib/intent-session-lookup';
+import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
   DSR_CLICKHOUSE_TABLES,
@@ -73,7 +78,7 @@ const EraseBodySchema = z.object({
 
 // ─── Redis session DEL (fire-and-forget) ─────────────────────────────────────
 
-async function deleteSessionFromRedis(sessionId: string): Promise<void> {
+async function deleteSessionFromRedis(tenantId: string, sessionId: string): Promise<void> {
   const base = process.env.UPSTASH_REDIS_URL?.replace(/\/$/, '');
   if (!base) return;
 
@@ -107,6 +112,16 @@ async function deleteSessionFromRedis(sessionId: string): Promise<void> {
       });
     }
   } while (cursor !== '0');
+
+  // FOLLOW-557 / audit A3-F-05: the chat-intent shadow namespace
+  // (`shadow:{tenant_id}:{session_id}:chat_intent`, written by the Python
+  // `write_shadow_intent` — apps/intent-engine/src/redis_writer.py) is a
+  // DIFFERENT key prefix that the `session:{sessionId}:*` SCAN above never
+  // matches. It is a single deterministic key (no SCAN needed) — deleted via
+  // the shared deleteShadowChatIntent() helper so both the erase path here
+  // and the /api/adapt read path (chat-intent-cache.ts) stay pinned to one
+  // key-format definition.
+  await deleteShadowChatIntent(tenantId, sessionId);
 }
 
 // ─── ClickHouse hard-delete (FOLLOW-039) ─────────────────────────────────────
@@ -586,7 +601,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (active erasure per RODO Art. 17) completes after the response before
   // Vercel instance suspension.
   afterResponse(() =>
-    deleteSessionFromRedis(record.sessionId).catch((err: unknown) => {
+    deleteSessionFromRedis(record.tenantId, record.sessionId).catch((err: unknown) => {
       console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
     }),
   );

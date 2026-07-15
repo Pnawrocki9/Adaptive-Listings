@@ -1,3 +1,167 @@
+# Status — 2026-07-15 (session 30 — FOLLOW-557/558 work found ALIVE in agent worktrees and rescued → PRs #528/#529)
+
+## SESSION 30 (2026-07-15) — the "execution gap" did not exist; both workers had run, their work was stranded uncommitted in worktrees
+
+**Headline: sessions 28 and 29 were both wrong, and this session found the work by looking one
+directory further.** FOLLOW-557 and FOLLOW-558 were never un-executed. Both subagents had run to
+completion and produced full, AC-satisfying implementations. The diffs were sitting **uncommitted**
+in `.claude/worktrees/agent-acb218b87d9630ff6/` and `.claude/worktrees/agent-ad875b8d6ec42ae9d/` —
+the prior session hung before either agent could commit.
+
+**Why two sessions missed it.** Both ran `git diff main..<branch> --stat`, got empty, and concluded
+"never ran". That command compares **committed branch tips**. Uncommitted work leaves the tip at
+`main` HEAD — so a worker that did everything except commit is indistinguishable from one that never
+started. Session 28 codified the faulty inference as a rule in
+`.claude/agents/pm-orchestrator/lessons.md` ("an empty diff means the dispatch never actually got
+executed"); session 29 applied it faithfully and repeated the error, then escalated a
+worker-execution crisis into the `QUEUE.md` START HERE banner. **The rule has been corrected at
+source** in `lessons.md` (session-30 entry supersedes the session-28 one) — otherwise session 31
+makes the same call again.
+
+**Cost of the miss:** two full PM sessions spent confirming a non-existent crisis, and a near-miss
+on re-dispatching both tickets — which would have discarded finished work and silently re-derived
+it.
+
+**Rescued (unmodified apart from commit messages), each validated locally BEFORE push:**
+
+| Ticket     | PR   | Commit    | Local validation                                            |
+| ---------- | ---- | --------- | ----------------------------------------------------------- |
+| FOLLOW-557 | #528 | `ce9125e` | vitest 3/3, prettier clean, `tsc --noEmit` clean            |
+| FOLLOW-558 | #529 | `1877722` | vitest 92/92 (17 route-driven pglite), prettier + tsc clean |
+
+**Quality note — the rescued work is good, not merely present.** Both hit the hard parts of their
+briefs rather than the easy reading of them:
+
+- **FOLLOW-557 / Rule Z:** the cross-runtime fixture is _mechanically parsed_ out of
+  `apps/intent-engine/src/redis_writer.py`'s `shadow_key()` f-string literal, not hand-typed in TS.
+  If the Python key format drifts, the test hard-fails or compares against the changed literal — it
+  cannot silently pass. That is Rule Z option (a) done properly.
+- **FOLLOW-558 / Rule N:** the DPIA _does_ enumerate the disclosed stores (§8 step 5), so the agent
+  updated it in the same PR (2.8 → 2.9 + changelog row) instead of taking the
+  satisfied-by-absence-of-claim escape hatch.
+- **FOLLOW-558 scope:** it added `engagement_scores` beyond the stub's two named tables. Correct
+  call, not scope creep — the parity AC asserts access-set == erase-set, and erase covers it, so
+  omitting it would have failed parity and left the same gap class open. Flagged in the PR body.
+
+**Verification discipline applied:** did not trust the rescued work because it looked complete —
+independently confirmed `shadowChatIntentKey` is exported (`chat-intent-cache.ts:62`) and that the
+test's regex actually matches the current `shadow_key()` source in `redis_writer.py` before
+committing.
+
+**Merged (CEO-approved, 2026-07-15):** FOLLOW-557 → `7b83f39` (PR #528), FOLLOW-558 → `797b8ab` (PR
+#529). Both `DONE`. Pre-merge check: neither PR carried a migration, so the `db-migrate.yml` prod
+auto-apply path was not triggered; both do redeploy control-plane to Vercel prod (intended).
+
+**NEXT:** (1) **FOLLOW-559** — backend-engineer lane is free, correct next pick. (2) **FOLLOW-356**
+— still needs the CEO priority call flagged in session 29 (P1 with a free sdk lane, but outside
+Sprint 23; active-sprint-first vs P1-first is not the PM's call). (3) **RETROs owed for FOLLOW-557
+and FOLLOW-558** — deferred at merge, not skipped. The worktree-stranding miss is itself
+retro-grade: it is the second occurrence of the stranded-work shape (RETRO-146 §4e / FOLLOW-448 was
+the first, on `main`), so a `CONVENTIONS_PATCH.md` rule may now be justified under the ≥2-occurrence
+bar — that promotion decision belongs to the retrospective-analyst, not to this session's ad-hoc
+judgement.
+
+---
+
+## (superseded — see session 30 above) SESSION 29 (2026-07-15) — re-verified session 28's findings independently; rescued stranded work; escalated the execution gap
+
+**Independently re-verified (did not trust session 28's STATUS.md write-up):**
+
+- `grep -c "^## OPEN" backlog/ESCALATIONS.md` → 2, of which one is the format template at line 8 and
+  one is **ESC-020** (line 1064). Read ESC-020 in full: OPEN, but its own **Resolution** block (CEO
+  clarification 2026-06-10) states verbatim "**This escalation does NOT block the PM pipeline for
+  other tickets.**" → not a stop condition. Proceeded.
+- `gh pr list --state open` → **empty**. `gh pr list --state all --limit 8` confirms **PR #526
+  MERGED**, matching `git log` HEAD `9bef30b`. The session-27 `START HERE` banner's
+  "READY_FOR_REVIEW, awaiting human merge" was stale → **fixed in `QUEUE.md` this session**.
+- `git diff main..backend-engineer/FOLLOW-557-dsr-erase-shadow-redis --stat` → **empty**.
+  `git diff main..compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure --stat` →
+  **empty**. Both branches exist at `main` HEAD with zero commits. **Session 28 was correct, and the
+  state is unchanged one session later.**
+
+**Finding (escalated into the `QUEUE.md` banner): the bottleneck is worker execution, not
+dispatch.** FOLLOW-557/558 were dispatched in session 27 with complete `HANDOFFS.md` briefs. Session
+28 found zero commits and handed back. Session 29 finds zero commits again. Two consecutive PM
+sessions have now been spent confirming that nothing happened. The PM tool surface has no
+subagent-spawn capability (long-standing; noted at `backlog/STATUS.md` lines 438/1334/1394/1441 and
+`backlog/HANDOFFS.md` 235/402/539), so dispatch only becomes work when the coordinator invokes the
+worker off the `NEXT:` line. The loop demonstrably works when that happens (PRs #517–#522 were all
+worker-produced). It simply has not happened for 557/558.
+
+**Deliberate decision: NO new dispatch this session.** Two of three `IN_PROGRESS` slots hold
+fully-briefed, un-executed tickets. Opening a third would consume the last slot with more paperwork
+that also would not run, and would make the eventual cleanup worse. Writing briefs is not the
+constraint; running workers is. Recorded rather than papered over.
+
+**Stranded-on-main rescue (recovered-work checklist, `docs/AGENT_WORKFLOW.md`).** Session 28's
+`backlog/STATUS.md` + `.claude/agents/pm-orchestrator/lessons.md` edits were sitting **uncommitted
+on `main`** — the exact shape RETRO-146 §4e / FOLLOW-448 warn about. Ran the checklist: confirmed
+via `git status --porcelain` that **only those two `.md` files** were stranded (no code, no
+untracked dirs), `git stash list` empty, `main` in sync with `origin/main`. Moved onto branch
+`pm-orchestrator/FOLLOW-553-session29-queue-truth` — nothing committed to `main`. Docs-only diff, so
+no typecheck/lint/test re-run is applicable (no code touched).
+
+**Queue-truth corrections applied to the `START HERE` banner (all verified against the ticket YAML,
+not inherited from prose):**
+
+- **FOLLOW-553 is `READY_OPERATOR`, not `DONE`.** Therefore FOLLOW-560 and FOLLOW-565
+  (`depends_on: [FOLLOW-553]`) are **not** dependency-eligible under the strict rule. Session 27's
+  note reasoned the dependency was "satisfied in spirit" and held 560 back on the concurrency cap
+  instead — recording the stricter, correct reason so a future session does not dispatch it on the
+  looser one.
+- **FOLLOW-559** is not eligible while FOLLOW-557 occupies the backend-engineer lane.
+- **FOLLOW-356 (P1, sdk-engineer, `deps: []`, READY, lane free)** is the highest-priority eligible
+  ticket in the queue and has been passed over by recent sessions in favour of the Sprint 23 P2
+  pool. Surfaced to the human as a **priority call** (active-sprint-first vs P1-first) rather than
+  decided unilaterally — priority sequencing across sprints is not the PM's call to make.
+
+**Counters:** CI checks this session **0/5**; fix iterations **0/3** (no code PR validated — nothing
+to validate). Open escalations: **ESC-020**, age **~39 days** (filed 2026-06-06), status OPEN,
+non-blocking by CEO ruling, awaiting Rafał-side production deploy (Wave 0 Step 6).
+
+---
+
+# Status — 2026-07-15 (session 28 — no new dispatch; confirmed FOLLOW-557/558 still awaiting worker execution)
+
+## SESSION 28 (2026-07-15) — state check, no PRs open, no escalations blocking, FOLLOW-557/558 handed back to workers
+
+**Read state fresh (Operating Principle 1 — verify, don't guess):** `docs/MASTER_DESIGN.md`
+§Snapshot.1 context assumed current per session-27 notes (not re-read line-by-line this pass — no
+code merged since session 27 that would move Snapshot.1); `backlog/QUEUE.md`,
+`backlog/ ESCALATIONS.md` (only one `## OPEN` entry: ESC-020, confirmed non-blocking per its own
+2026-06-10 CEO resolution text — "This escalation does NOT block the PM pipeline for other tickets"
+— consistent with every session since), `backlog/HANDOFFS.md`, `git log --oneline -20`,
+`gh pr list --state open` (empty — zero open PRs) and `gh pr list --state all --limit 20` (confirms
+PR #526 is MERGED, matching `git log`'s top commit `9bef30b` — the prior session's
+"READY_FOR_REVIEW, awaiting human merge" note at the top of QUEUE.md is now stale; human merged it
+since).
+
+**FOLLOW-557 (backend-engineer) and FOLLOW-558 (compliance-engineer) are still `IN_PROGRESS`** in
+`backlog/QUEUE.md`, with full delegation briefs already in `backlog/HANDOFFS.md` from session 27
+cont'd. Verified (not assumed) that no work has landed yet: both branches exist
+(`backend-engineer/FOLLOW-557-dsr-erase-shadow-redis`,
+`compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure`) but
+`git diff main..<branch> --stat` is **empty** for both — the branches are literally at `main` HEAD,
+zero commits. No PR exists for either (`gh pr list --state all` has no FOLLOW-557/558 entries). This
+confirms the assigned subagents have not yet executed against their briefs — this is not a
+stall/crash to recover from (nothing to re-verify per the Recovered-work checklist, since there is
+no work product at all yet), it is simply pending execution.
+
+**No new ticket picked this session** — 2 of the 3 allowed concurrent `IN_PROGRESS` slots are
+already occupied by fully-briefed, ready-to-execute tickets (FOLLOW-557, FOLLOW-558). Per this
+tool-surface's known constraint (repeatedly noted in `backlog/HANDOFFS.md` across prior sessions:
+"pm-orchestrator has no subagent-spawn capability in this tool surface"), this session cannot itself
+invoke the `backend-engineer`/`compliance-engineer` subagents — it can only confirm the dispatch is
+correctly queued and hand back control via the `NEXT:` line for the coordinator to actually run the
+worker.
+
+**QUEUE.md `START HERE` banner not rewritten this session** — no material state change beyond the PR
+#526 merge confirmation (which the existing banner already anticipated) and the FOLLOW-557/558
+non-execution finding. Leaving the existing banner as the substantive record; this STATUS.md entry
+is the delta.
+
+---
+
 # Status — 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections + Sprint 23 Wave 2 P2 dispatch)
 
 ## SESSION 27 cont'd (2026-07-14) — PR #525 merged; FOLLOW-551/436/569 queue-truth corrections; FOLLOW-557/558 dispatched

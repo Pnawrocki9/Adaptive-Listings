@@ -2170,3 +2170,68 @@ delegation/validation rule I'd add:** when a prior session's START HERE note say
 fixed," treat that as an explicit action item for the current session, not background color — grep
 the note for "flagged"/"not fixed"/"not fabricated" phrasing at the start of every session, before
 picking a new ticket.
+
+---
+
+**Date / ticket:** 2026-07-15 — session 28 (no new dispatch; FOLLOW-557/558 state check).
+**Delegation row used:** None — no new delegation this session; FOLLOW-557 (backend-engineer,
+"ingest worker, control-plane... auth") and FOLLOW-558 (compliance-engineer, "DPIA/ROPA/consent/DSR
+rules...") were already dispatched in session 27 cont'd and left as-is. **What validation caught (or
+missed):** confirmed via `git diff main..<branch> --stat` (empty for both) that two tickets marked
+`IN_PROGRESS` with full HANDOFFS.md briefs had zero actual commits — i.e. dispatched but never
+executed by the assigned subagent. A shallower pass (trusting `QUEUE.md` status alone) would have
+either re-dispatched them (duplicate work / branch collision risk) or assumed they were mid-flight
+and waited indefinitely. The right move was to verify the branch content directly, confirm nothing
+to validate yet, and hand back via NEXT: rather than inventing a new ticket to fill the turn. **A
+delegation/validation rule I'd add:** when a ticket shows `IN_PROGRESS` with a branch name, always
+diff that branch against `main` before assuming either "worker is still going" or "ready to
+validate" — an empty diff means the dispatch never actually got executed and the correct action is
+to re-surface it via NEXT:, not to silently pick a different ticket to look busy.
+
+---
+
+**Date / ticket:** 2026-07-15 — session 29 (no new dispatch; FOLLOW-557/558 un-executed 2nd session
+running; stranded-on-main rescue). **Delegation row used:** None — no new delegation. Deliberate:
+FOLLOW-557 ("ingest worker, control-plane... auth" -> backend-engineer) and FOLLOW-558
+("DPIA/ROPA/consent/DSR rules..." -> compliance-engineer) already hold 2 of 3 IN*PROGRESS slots with
+complete briefs and zero commits. **What validation caught (or missed):** (1) Re-ran session 28's
+checks rather than trusting its STATUS.md write-up — `git diff main..<branch> --stat` empty for both
+tickets, confirming the state is unchanged a second session running. The real finding is meta: the
+bottleneck is worker \_execution*, not brief-writing, and two PM sessions in a row burned a turn
+re-confirming it. Recorded it in the QUEUE.md START HERE banner so session 30 doesn't spend a third.
+(2) Caught session 28's own bookkeeping sitting **uncommitted on `main`** — the RETRO-146 §4e
+stranded-work shape, caught only because the recovered-work checklist says to check `main` for
+strays even when the "recovery" is your own predecessor's paperwork. (3) Caught that FOLLOW-553 is
+literally `READY_OPERATOR`, so FOLLOW-560/ 565's `depends_on` is unmet — session 27 had held 560
+back on the concurrency cap while reasoning the dependency was "satisfied in spirit"; right answer,
+wrong reason, and the wrong reason would have let a future session dispatch it once a slot freed.
+**A delegation/validation rule I'd add:** when the same ticket is found
+IN_PROGRESS-with-zero-commits for a second consecutive session, stop re-dispatching and stop opening
+new tickets — escalate the execution gap itself into the START HERE banner as the headline finding,
+because adding briefs to a queue nothing is draining converts a throughput problem into a
+concurrency-cap deadlock.
+
+---
+
+**Date / ticket:** 2026-07-15 — session 30 (FOLLOW-557/558 rescued from agent worktrees → PRs
+#528/#529). **Delegation row used:** None — no new delegation needed: the work already existed.
+**What validation caught (or missed):** it caught that **the two entries directly above this one are
+wrong, and the rule session 28 codified here actively caused the error.** Session 28 wrote: "an
+empty diff means the dispatch never actually got executed." Session 29 applied that rule faithfully
+and reached the same false conclusion. Both were wrong. The `backend-engineer` and
+`compliance-engineer` subagents **had run** and had produced complete, AC-satisfying work — it was
+sitting **uncommitted in their git worktrees** (`.claude/worktrees/agent-*/`) because the session
+hung before either could commit. `git diff main..<branch>` compares **committed branch tips**, so an
+agent that did everything-but-commit and an agent that never started are **byte-identical under that
+check**. The false negative cost two full PM sessions, produced an escalated "worker execution
+crisis" banner describing a crisis that did not exist, and came within one session of someone
+re-dispatching the tickets — which would have thrown the work away and silently re-derived it. **A
+delegation/validation rule I'd add (supersedes the session-28 rule above):** an empty
+`git diff main..<branch>` is **not** evidence that a worker never ran — it is evidence of nothing at
+all until you have also checked the worktree. Before concluding a dispatch didn't execute, run
+`git worktree list`, then `git -C <worktree> status --short` and
+`git -C <worktree> diff main --stat`. Only "no worktree AND empty branch diff" supports "never ran".
+Generalisation: the stranded-work shape (RETRO-146 §4e / FOLLOW-448) is not limited to `main` — a
+hung session strands work wherever the agent was standing, and for subagents that is a worktree, not
+`main`. **Check for the work before concluding there is none**; the cheap check
+(`git worktree list`) costs one command and this mistake cost two sessions.

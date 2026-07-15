@@ -1,6 +1,90 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections; Sprint 23 Wave 2 P2s dispatched)
+## ▶️ START HERE — resume 2026-07-15 (session 30 — 557/558 rescued from worktrees and MERGED; Sprint 23 Wave 2 is CLEAR)
+
+**Read this before picking anything.** **FOLLOW-557 and FOLLOW-558 are DONE — merged to `main`**
+(`7b83f39` / PR #528 and `797b8ab` / PR #529, CEO-approved merge 2026-07-15). Both
+`backend-engineer` and `compliance-engineer` lanes are **free**. Zero blocking escalations (ESC-020
+is OPEN but explicitly non-blocking per its own CEO resolution 2026-06-10: "This escalation does NOT
+block the PM pipeline for other tickets").
+
+**Next picks, in order:**
+
+1. **FOLLOW-559** (P2, backend-engineer, `deps: []`) — the correct next backend pick; its lane is
+   now free.
+2. **FOLLOW-356** (P1, sdk-engineer, `deps: []`, READY) — **still needs a CEO priority call**:
+   highest-priority genuinely-eligible ticket in the queue with a free lane, but not a Sprint 23
+   ticket. Active-sprint-first vs P1-first is not the PM's call to make. Flagged since session 29;
+   still unanswered.
+3. **Retrospectives owed:** per CLAUDE.md the `retrospective-analyst` runs after every PR merge →
+   DONE. **RETRO entries for FOLLOW-557 and FOLLOW-558 have NOT been written** (deferred at merge
+   time, not skipped). Worth pairing with the worktree-stranding finding below, which is retro-grade
+   material in its own right.
+
+**Deploy note:** #528/#529 changed control-plane routes → Vercel prod redeploy on merge. Neither PR
+carried a migration, so the `db-migrate.yml` prod auto-apply path was not triggered (verified before
+merge).
+
+**⚠️ CORRECTION — the session-29 headline below was WRONG, and the error cost two sessions.**
+Sessions 28 and 29 both concluded "the assigned subagents have never been run" for FOLLOW-557 and
+FOLLOW-558. **They had run.** Both agents had produced complete, AC-satisfying work. It was sitting
+**uncommitted in their git worktrees** under `.claude/worktrees/agent-*/` — the session hung before
+either could commit.
+
+**The diagnostic that failed:** `git diff main..<branch> --stat` reads the **committed branch tip**.
+Uncommitted work leaves the tip at `main` HEAD, so a fully-working agent and an agent that never
+started are **byte-identical under that check**. Two sessions read "empty diff" as "never ran",
+escalated a false throughput crisis, and deliberately withheld dispatch to protect a concurrency cap
+that was never under threat.
+
+**Rule going forward — when a branch looks empty, check the worktree before concluding anything:**
+
+```bash
+git worktree list                                  # agent worktrees live in .claude/worktrees/
+git -C <worktree> status --short                   # uncommitted work hides HERE
+git -C <worktree> diff main --stat                 # not in `git diff main..<branch>`
+```
+
+Rescued and merged, unmodified apart from commit messages — both green locally (prettier +
+`tsc --noEmit` + vitest) **before** push, then CI-validated:
+
+- **FOLLOW-557** → PR #528, merged `7b83f39`. DSR erase now deletes
+  `shadow:{tenant}:{session}:chat_intent`. Rule Z satisfied properly: the fixture is _parsed_ out of
+  `redis_writer.py`'s `shadow_key()` literal, so it cannot silently pass on cross-runtime drift.
+  vitest 3/3.
+- **FOLLOW-558** → PR #529, merged `797b8ab`. DSR access + portability disclose `quiz_completions`,
+  `intent_sessions` **and** `engagement_scores` (the third is beyond the stub's wording but required
+  by the parity AC — erase covers it, so omitting it would fail parity). Rule N satisfied by update:
+  DPIA §8 step 5 enumerated the disclosed stores, so it shipped updated in the same PR (2.8 → 2.9).
+  vitest 92/92 incl. 17 route-driven pglite tests.
+
+**On the `Rule I — wired-or-dead check` red both PRs carried:** it is the standing pre-existing
+baseline and was **verified, not assumed** — `scripts/check-rule-i.sh` run locally reports 181
+violations on `main` (561 symbols) and 181 on each branch; FOLLOW-557's branch scans 562 symbols,
+i.e. its new `deleteShadowChatIntent` **is** scanned and is **not** a violation (erase route imports
+it = wired). Zero new violations. Re-verify this way rather than waving the red through by
+reputation.
+
+**Queue-truth notes from this session (verified, not assumed):**
+
+- **FOLLOW-553 is literally `READY_OPERATOR`, not `DONE`** (only Step 6 / ESC-020, Rafał-side DOM
+  hooks deploy, remains). Therefore **FOLLOW-560** (`depends_on: [FOLLOW-553]`) and **FOLLOW-565**
+  are **not** dependency-eligible under the strict `depends_on` rule, whatever the session-27 note
+  argued about the dependency being "satisfied in spirit". Do not dispatch them on that reasoning
+  without a CEO call.
+- **FOLLOW-559** (P2, backend-engineer, `deps: []`) is **now eligible** — 557 landed (`7b83f39`) and
+  freed the backend-engineer lane. This is the next backend pick.
+- **FOLLOW-356 (P1, sdk-engineer, `deps: []`, READY) is the highest-priority genuinely-eligible
+  ticket in the queue and its agent lane is free.** It is P1 vs the Sprint 23 P2 pool, but it is not
+  a Sprint 23 ticket. Prior sessions have not picked it. **Flagged for the human:** if Sprint 23
+  Wave 2 is stalled on worker execution anyway, FOLLOW-356 is the better use of an open lane — needs
+  a priority call (active-sprint-first vs P1-first), which is not the PM's to make.
+
+Full detail: `backlog/STATUS.md` session 29 entry.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-14 (session 27 cont'd — PR #525 MERGED; 3 more queue-truth corrections; Sprint 23 Wave 2 P2s dispatched)
 
 **PR #525 confirmed MERGED** (`196d431`, into `main`) — the Step 3/5 attestation + queue corrections
 from the prior sub-session are live. Verified via `git log --oneline main` and `git status` (clean,
@@ -12123,10 +12207,22 @@ in-place in Sprint 22b above.
   title: >-
     DSR erase: delete the chat-intent shadow Redis key namespace (A3-F-05)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-14T00:00:00Z'
+  completed_at: '2026-07-15T00:00:00Z'
   branch: backend-engineer/FOLLOW-557-dsr-erase-shadow-redis
+  pr: 528
+  merge_commit: 7b83f39
+  pm_validated: >-
+    2026-07-15 session 30. Work was produced by the subagent but stranded uncommitted in its
+    worktree (sessions 28/29 misread the empty branch-tip diff as "never ran"); rescued and
+    committed as ce9125e. CI: every gate green except the standing Rule I baseline, which was
+    verified as pre-existing rather than assumed — scripts/check-rule-i.sh locally gives 181
+    violations on both main (561 symbols) and this branch (562 symbols), i.e. the new
+    deleteShadowChatIntent is scanned and is NOT a violation (erase route imports it = wired); zero
+    new violations. AC1 + AC2 (Rule Z) both met; the Rule Z fixture is parsed from redis_writer.py's
+    literal, not hand-typed, so it cannot pass silently on drift.
   priority: P2
   estimated_hours: 1
   depends_on: []
@@ -12139,17 +12235,29 @@ in-place in Sprint 22b above.
     Model-fit: sonnet. Add the shadow:* pattern (tenant-scoped) to deleteSessionFromRedis();
     cross-runtime key-format parity test against redis_writer.py's literal (Rule Z).
     AC:
-    - [ ] Erase deletes shadow:{tenant}:{session}:chat_intent; test with a seeded key.
-    - [ ] Key-format fixture shared/checked against the Python writer (Rule Z).
+    - [x] Erase deletes shadow:{tenant}:{session}:chat_intent; test with a seeded key.
+    - [x] Key-format fixture shared/checked against the Python writer (Rule Z).
 - id: FOLLOW-558
   title: >-
     DSR access + portability must disclose quiz_completions and intent_sessions (Art. 15/20)
     (A3-F-06)
   agent: compliance-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: compliance-engineer
   started_at: '2026-07-14T00:00:00Z'
+  completed_at: '2026-07-15T00:00:00Z'
   branch: compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure
+  pr: 529
+  merge_commit: 797b8ab
+  pm_validated: >-
+    2026-07-15 session 30. Same rescue as FOLLOW-557 — work existed uncommitted in the agent's
+    worktree; committed as 1877722. CI: all gates green except the standing Rule I baseline,
+    verified pre-existing (181 violations on both main and this branch, 561 symbols each — zero
+    new). AC1 + AC2 (parity) + AC3 (Rule N) met. Two reviewer notes: (1) engagement_scores was added
+    beyond the stub's two named tables — correct, since the parity AC asserts access-set ==
+    erase-set and erase covers it, so omitting it would fail parity; (2) Rule N was satisfied by
+    UPDATE not by absence-of-claim — DPIA §8 step 5 does enumerate the disclosed stores, so it ships
+    updated in the same PR (2.8 -> 2.9 + changelog row).
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -12162,9 +12270,9 @@ in-place in Sprint 22b above.
     Model-fit: sonnet. Mirror the FOLLOW-455 table set into both read routes; update the DPIA §
     listing disclosed stores if it enumerates them (Rule N).
     AC:
-    - [ ] Access + portability payloads include quiz_completions + intent_sessions rows for the
+    - [x] Access + portability payloads include quiz_completions + intent_sessions rows for the
           verified (tenant, session/email) scope.
-    - [ ] Parity test: the erase table-set and the access table-set are asserted equal (minus
+    - [x] Parity test: the erase table-set and the access table-set are asserted equal (minus
           documented exceptions) so the next new store cannot drift them apart again.
 - id: FOLLOW-559
   title: >-

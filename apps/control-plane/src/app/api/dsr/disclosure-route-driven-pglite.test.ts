@@ -33,6 +33,20 @@
  *   AC3 (FOLLOW-256): seed once, drive BOTH handlers, assert access and portability
  *     produce an identical conversion_labels set (true access/portability parity).
  *
+ *   FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, and
+ *     intent_sessions — all three already covered by the DSR erase cascade in
+ *     `apps/control-plane/src/app/api/dsr/erase/route.ts` (Postgres DELETE
+ *     targets, as of that file's docstring step 3, current HEAD:
+ *     session_embeddings, consent_records, conversion_labels,
+ *     engagement_scores, quiz_completions, intent_sessions) — must ALSO be
+ *     disclosed by GET /api/dsr/access and GET /api/dsr/portability. The
+ *     "PARITY" describe block below seeds one row per erased Postgres table
+ *     and asserts every one of them appears in both disclosure responses.
+ *     This file is READ-ONLY against `erase/route.ts` (do not edit it here —
+ *     see FOLLOW-557, a concurrent PR touching that file's Redis leg); if a
+ *     future change adds a new Postgres DELETE target to erase/route.ts, the
+ *     PARITY block's table list below must be updated by hand to match.
+ *
  * @module apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test
  */
 
@@ -174,6 +188,54 @@ const FIXTURE_DDL = /* sql */ `
 
   CREATE UNIQUE INDEX IF NOT EXISTS conversion_labels_tenant_prediction_unique
     ON conversion_labels (tenant_id, prediction_id);
+
+  -- FOLLOW-558 / audit A3-F-06: three additional erase-cascade tables that
+  -- must now also be disclosed by access/portability.
+  CREATE TABLE IF NOT EXISTS engagement_scores (
+    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id          uuid NOT NULL,
+    session_id         text NOT NULL,
+    engagement_score   numeric(6,5),
+    dwell_score        numeric(6,5),
+    interaction_score  numeric(6,5),
+    scroll_score       numeric(6,5),
+    computed_at        timestamptz NOT NULL DEFAULT now(),
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now()
+  );
+
+  CREATE TABLE IF NOT EXISTS quiz_completions (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_id          text NOT NULL,
+    resolved_archetype  text NOT NULL,
+    branch              text,
+    q1_answer           integer,
+    q2_answer           integer,
+    q3_answer           integer,
+    language            text NOT NULL DEFAULT 'en',
+    created_at          timestamptz NOT NULL DEFAULT now()
+  );
+
+  CREATE TABLE IF NOT EXISTS intent_sessions (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    session_id        text NOT NULL,
+    cross_session_id  text,
+    started_at        timestamptz NOT NULL DEFAULT now(),
+    last_event_at     timestamptz NOT NULL DEFAULT now(),
+    finalized_at      timestamptz,
+    final_archetype   text,
+    final_confidence  numeric(4,3),
+    signal_count      integer NOT NULL DEFAULT 0,
+    quiz_completed    boolean NOT NULL DEFAULT false,
+    quiz_leaf         text,
+    chat_turns        integer NOT NULL DEFAULT 0,
+    intent_state      jsonb
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS intent_sessions_tenant_session_unique
+    ON intent_sessions (tenant_id, session_id);
 `;
 
 // ─── Suite globals ─────────────────────────────────────────────────────────────
@@ -222,6 +284,9 @@ beforeEach(async () => {
   await pg.exec('DELETE FROM consent_records');
   await pg.exec('DELETE FROM session_embeddings');
   await pg.exec('DELETE FROM dsr_verifications');
+  await pg.exec('DELETE FROM engagement_scores');
+  await pg.exec('DELETE FROM quiz_completions');
+  await pg.exec('DELETE FROM intent_sessions');
 });
 
 afterEach(() => {
@@ -285,6 +350,44 @@ async function insertLabel(opts: {
   const row = res.rows[0];
   if (!row) throw new Error('INSERT did not return id');
   return row.id;
+}
+
+/** Insert an engagement_scores row (FOLLOW-558). */
+async function insertEngagementScore(opts: { tenantId: string; sessionId: string }): Promise<void> {
+  await pg.query(
+    `INSERT INTO engagement_scores
+       (tenant_id, session_id, engagement_score, dwell_score, interaction_score, scroll_score)
+     VALUES ($1, $2, 0.75, 0.60, 0.80, 0.90)`,
+    [opts.tenantId, opts.sessionId],
+  );
+}
+
+/** Insert a quiz_completions row (FOLLOW-558). */
+async function insertQuizCompletion(opts: {
+  tenantId: string;
+  sessionId: string;
+  resolvedArchetype: string;
+}): Promise<void> {
+  await pg.query(
+    `INSERT INTO quiz_completions
+       (tenant_id, session_id, resolved_archetype, branch, q1_answer, language)
+     VALUES ($1, $2, $3, 'INWESTOR', 0, 'en')`,
+    [opts.tenantId, opts.sessionId, opts.resolvedArchetype],
+  );
+}
+
+/** Insert an intent_sessions row (FOLLOW-558). */
+async function insertIntentSession(opts: {
+  tenantId: string;
+  sessionId: string;
+  finalArchetype: string;
+}): Promise<void> {
+  await pg.query(
+    `INSERT INTO intent_sessions
+       (tenant_id, session_id, final_archetype, final_confidence, signal_count)
+     VALUES ($1, $2, $3, 0.900, 5)`,
+    [opts.tenantId, opts.sessionId, opts.finalArchetype],
+  );
 }
 
 function makeAccessRequest(otp: string, requestId: string): NextRequest {
@@ -732,5 +835,240 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
     const labels = await getPortabilityLabels(res);
     expect(labels).toHaveLength(1);
     expect(labels[0]!.lead_id).toBe(CRM_LEAD);
+  });
+});
+
+// ─── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
+//
+// PARITY: the erase route's Postgres DELETE targets, as of `erase/route.ts`
+// current HEAD (this file is READ-ONLY against that route — see FOLLOW-557),
+// are: session_embeddings, consent_records, conversion_labels,
+// engagement_scores, quiz_completions, intent_sessions. session_embeddings /
+// consent_records / conversion_labels disclosure is already covered above
+// (AC1-AC3, LG-2). This block proves the remaining three ALSO round-trip
+// through both disclosure routes — closing the Art. 15/20 gap this ticket
+// exists to fix, and giving a future erase/route.ts table addition a test
+// that must be updated in lockstep (documented exception: none — every
+// erased Postgres table is disclosed).
+
+interface DisclosedEngagementScore {
+  engagement_score: string | null;
+  dwell_score: string | null;
+  interaction_score: string | null;
+  scroll_score: string | null;
+  computed_at: string;
+}
+
+interface DisclosedQuizCompletion {
+  id: string;
+  resolved_archetype: string;
+  branch: string | null;
+}
+
+interface DisclosedIntentSession {
+  id: string;
+  final_archetype: string | null;
+  signal_count: number;
+}
+
+interface FullDisclosureBody {
+  engagement_score: DisclosedEngagementScore | null;
+  quiz_completions: DisclosedQuizCompletion[];
+  intent_session: DisclosedIntentSession | null;
+}
+
+async function getAccessDisclosure(res: Response): Promise<FullDisclosureBody> {
+  return (await res.json()) as FullDisclosureBody;
+}
+
+async function getPortabilityDisclosure(res: Response): Promise<FullDisclosureBody> {
+  const text = await res.text();
+  return JSON.parse(text) as FullDisclosureBody;
+}
+
+describe('FOLLOW-558: access handler discloses engagement_scores, quiz_completions, intent_sessions', () => {
+  it('includes all three stores when rows exist for the subject', async () => {
+    const SESSION_ID = 'sess-558-access-full';
+
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+
+    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
+    await insertQuizCompletion({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      resolvedArchetype: 'family_upsizer',
+    });
+    await insertIntentSession({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      finalArchetype: 'family_upsizer',
+    });
+
+    const res = await getAccess(makeAccessRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const body = await getAccessDisclosure(res);
+
+    expect(body.engagement_score).not.toBeNull();
+    expect(body.engagement_score?.engagement_score).toBe('0.75000');
+
+    expect(body.quiz_completions).toHaveLength(1);
+    expect(body.quiz_completions[0]!.resolved_archetype).toBe('family_upsizer');
+
+    expect(body.intent_session).not.toBeNull();
+    expect(body.intent_session?.final_archetype).toBe('family_upsizer');
+    expect(body.intent_session?.signal_count).toBe(5);
+  });
+
+  it('reports null / empty when no rows exist for the subject (never fabricates)', async () => {
+    const SESSION_ID = 'sess-558-access-empty';
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+
+    const res = await getAccess(makeAccessRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const body = await getAccessDisclosure(res);
+    expect(body.engagement_score).toBeNull();
+    expect(body.quiz_completions).toHaveLength(0);
+    expect(body.intent_session).toBeNull();
+  });
+
+  it('excludes a second tenant rows with the same session_id (tenant isolation)', async () => {
+    const SESSION_ID = 'sess-558-iso';
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+
+    // Tenant 1 row.
+    await insertQuizCompletion({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      resolvedArchetype: 'investor_cashflow',
+    });
+    // Tenant 2 row — same session_id, different tenant. Must NOT appear.
+    await insertQuizCompletion({
+      tenantId: TENANT_ID_2,
+      sessionId: SESSION_ID,
+      resolvedArchetype: 'family_upsizer',
+    });
+
+    const res = await getAccess(makeAccessRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const body = await getAccessDisclosure(res);
+    expect(body.quiz_completions).toHaveLength(1);
+    expect(body.quiz_completions[0]!.resolved_archetype).toBe('investor_cashflow');
+  });
+});
+
+describe('FOLLOW-558: portability handler discloses engagement_scores, quiz_completions, intent_sessions', () => {
+  it('includes all three stores when rows exist for the subject', async () => {
+    const SESSION_ID = 'sess-558-port-full';
+
+    const { otp, requestId } = await seedVerification({
+      sessionId: SESSION_ID,
+      dsrType: 'portability',
+    });
+
+    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
+    await insertQuizCompletion({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      resolvedArchetype: 'cross_border_diversifier',
+    });
+    await insertIntentSession({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      finalArchetype: 'cross_border_diversifier',
+    });
+
+    const res = await getPortability(makePortabilityRequest(otp, requestId));
+    expect(res.status).toBe(200);
+
+    const body = await getPortabilityDisclosure(res);
+
+    expect(body.engagement_score).not.toBeNull();
+    expect(body.quiz_completions).toHaveLength(1);
+    expect(body.quiz_completions[0]!.resolved_archetype).toBe('cross_border_diversifier');
+    expect(body.intent_session).not.toBeNull();
+    expect(body.intent_session?.final_archetype).toBe('cross_border_diversifier');
+  });
+});
+
+describe('FOLLOW-558 PARITY: access and portability disclose the identical erase Postgres table set', () => {
+  it('seeds one row per erased Postgres table and both routes disclose all six', async () => {
+    const SESSION_ID = 'sess-558-parity';
+    const CRM_LEAD = 'crm-558-parity';
+
+    // Seed one row in EVERY Postgres table the erase route deletes
+    // (erase/route.ts current HEAD, step 3 of its docstring):
+    //   session_embeddings, consent_records, conversion_labels,
+    //   engagement_scores, quiz_completions, intent_sessions.
+    await pg.query(
+      `INSERT INTO session_embeddings (tenant_id, session_id, final_archetype)
+       VALUES ($1, $2, 'family_upsizer')`,
+      [TENANT_ID, SESSION_ID],
+    );
+    await pg.query(
+      `INSERT INTO consent_records (session_id, consent_type, granted)
+       VALUES ($1, 'behavioral_tracking', true)`,
+      [SESSION_ID],
+    );
+    await insertLabel({
+      tenantId: TENANT_ID,
+      predictionId: 'pred-558-parity',
+      leadId: SESSION_ID,
+      outcomeClass: 'viewing_booked',
+    });
+    await insertEngagementScore({ tenantId: TENANT_ID, sessionId: SESSION_ID });
+    await insertQuizCompletion({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      resolvedArchetype: 'family_upsizer',
+    });
+    await insertIntentSession({
+      tenantId: TENANT_ID,
+      sessionId: SESSION_ID,
+      finalArchetype: 'family_upsizer',
+    });
+
+    const { otp: accessOtp, requestId: accessRequestId } = await seedVerification({
+      sessionId: SESSION_ID,
+      dsrType: 'access',
+      durableLeadId: CRM_LEAD,
+    });
+    const { otp: portOtp, requestId: portRequestId } = await seedVerification({
+      sessionId: SESSION_ID,
+      dsrType: 'portability',
+      durableLeadId: CRM_LEAD,
+    });
+
+    const accessRes = await getAccess(makeAccessRequest(accessOtp, accessRequestId));
+    const portabilityRes = await getPortability(makePortabilityRequest(portOtp, portRequestId));
+    expect(accessRes.status).toBe(200);
+    expect(portabilityRes.status).toBe(200);
+
+    interface ParityBody extends FullDisclosureBody {
+      matched_archetype: string | null;
+      consent_records: unknown[];
+      conversion_labels: unknown[];
+    }
+
+    const accessBody = (await accessRes.json()) as ParityBody;
+    const portabilityText = await portabilityRes.text();
+    const portabilityBody = JSON.parse(portabilityText) as ParityBody;
+
+    for (const body of [accessBody, portabilityBody]) {
+      // session_embeddings (surfaced as matched_archetype).
+      expect(body.matched_archetype).toBe('family_upsizer');
+      // consent_records.
+      expect(body.consent_records).toHaveLength(1);
+      // conversion_labels.
+      expect(body.conversion_labels).toHaveLength(1);
+      // engagement_scores (FOLLOW-558).
+      expect(body.engagement_score).not.toBeNull();
+      // quiz_completions (FOLLOW-558).
+      expect(body.quiz_completions).toHaveLength(1);
+      // intent_sessions (FOLLOW-558).
+      expect(body.intent_session).not.toBeNull();
+    }
   });
 });

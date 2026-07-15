@@ -15,11 +15,18 @@
  *      - Pass B: lead_id = durable_lead_id (CRM deep-outcome labels), when non-null/non-empty/!=
  *        session_id; empty-key guard on both passes (FOLLOW-180/LG-2).
  *      Rows are union-merged and deduplicated by primary key (id).
- *   4. Query the REAL ClickHouse behavioral event count for the session
+ *   4. Query engagement_scores, quiz_completions, and intent_sessions
+ *      (FOLLOW-558 / audit A3-F-06). All three are already covered by the
+ *      DSR erasure cascade in `apps/control-plane/src/app/api/dsr/erase/route.ts`
+ *      (engagement_scores via FOLLOW-193, quiz_completions + intent_sessions via
+ *      FOLLOW-455) but were previously omitted from Access disclosure — an
+ *      Art. 15 completeness gap (a data subject's access report must not omit
+ *      a store the controller demonstrably holds and erases).
+ *   5. Query the REAL ClickHouse behavioral event count for the session
  *      (FOLLOW-455 / audit F-20 — replaces the previous `count = 1` stub).
  *      When ClickHouse is not configured, count is reported as `null`
  *      (Rule K.2 — never fabricate a number).
- *   5. Return data summary.
+ *   6. Return data summary.
  *
  * @module apps/control-plane/src/app/api/dsr/access/route
  */
@@ -33,6 +40,9 @@ import {
   sessionEmbeddings,
   consentRecords,
   conversionLabels,
+  engagementScores,
+  quizCompletions,
+  intentSessions,
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
 import { getSessionEventSummary, readClickHouseConfig } from '@/lib/clickhouse-dsr';
@@ -95,6 +105,75 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     })
     .from(consentRecords)
     .where(eq(consentRecords.sessionId, record.sessionId));
+
+  // ── FOLLOW-558 / audit A3-F-06: engagement_scores, quiz_completions, intent_sessions ──
+  //
+  // These three tables are already in the DSR erase cascade
+  // (apps/control-plane/src/app/api/dsr/erase/route.ts) but were previously
+  // undisclosed here — Art. 15 requires the access report to cover every
+  // store the controller demonstrably holds. See parity test:
+  // apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
+  // ("FOLLOW-558 PARITY" describe block).
+
+  const [engagementScore] = await db
+    .select({
+      engagementScore: engagementScores.engagementScore,
+      dwellScore: engagementScores.dwellScore,
+      interactionScore: engagementScores.interactionScore,
+      scrollScore: engagementScores.scrollScore,
+      computedAt: engagementScores.computedAt,
+    })
+    .from(engagementScores)
+    .where(
+      and(
+        eq(engagementScores.sessionId, record.sessionId),
+        eq(engagementScores.tenantId, record.tenantId),
+      ),
+    )
+    .limit(1);
+
+  const quizCompletionRows = await db
+    .select({
+      id: quizCompletions.id,
+      resolvedArchetype: quizCompletions.resolvedArchetype,
+      branch: quizCompletions.branch,
+      q1Answer: quizCompletions.q1Answer,
+      q2Answer: quizCompletions.q2Answer,
+      q3Answer: quizCompletions.q3Answer,
+      language: quizCompletions.language,
+      createdAt: quizCompletions.createdAt,
+    })
+    .from(quizCompletions)
+    .where(
+      and(
+        eq(quizCompletions.sessionId, record.sessionId),
+        eq(quizCompletions.tenantId, record.tenantId),
+      ),
+    );
+
+  const [intentSession] = await db
+    .select({
+      id: intentSessions.id,
+      crossSessionId: intentSessions.crossSessionId,
+      startedAt: intentSessions.startedAt,
+      lastEventAt: intentSessions.lastEventAt,
+      finalizedAt: intentSessions.finalizedAt,
+      finalArchetype: intentSessions.finalArchetype,
+      finalConfidence: intentSessions.finalConfidence,
+      signalCount: intentSessions.signalCount,
+      quizCompleted: intentSessions.quizCompleted,
+      quizLeaf: intentSessions.quizLeaf,
+      chatTurns: intentSessions.chatTurns,
+      intentState: intentSessions.intentState,
+    })
+    .from(intentSessions)
+    .where(
+      and(
+        eq(intentSessions.sessionId, record.sessionId),
+        eq(intentSessions.tenantId, record.tenantId),
+      ),
+    )
+    .limit(1);
 
   // ── FOLLOW-246: conversion_labels — both identifier namespaces (Art. 15 completeness) ──
   //
@@ -252,6 +331,48 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         granted_at: c.grantedAt.toISOString(),
         revoked_at: c.revokedAt?.toISOString() ?? null,
       })),
+      // FOLLOW-558 / audit A3-F-06: engagement_scores (single row per
+      // (tenant_id, session_id), null when never computed).
+      engagement_score: engagementScore
+        ? {
+            engagement_score: engagementScore.engagementScore ?? null,
+            dwell_score: engagementScore.dwellScore ?? null,
+            interaction_score: engagementScore.interactionScore ?? null,
+            scroll_score: engagementScore.scrollScore ?? null,
+            computed_at: engagementScore.computedAt.toISOString(),
+          }
+        : null,
+      // FOLLOW-558 / audit A3-F-06: quiz_completions (0..n rows per session —
+      // one per quiz completion event).
+      quiz_completions: quizCompletionRows.map((q) => ({
+        id: q.id,
+        resolved_archetype: q.resolvedArchetype,
+        branch: q.branch,
+        q1_answer: q.q1Answer,
+        q2_answer: q.q2Answer,
+        q3_answer: q.q3Answer,
+        language: q.language,
+        created_at: q.createdAt.toISOString(),
+      })),
+      // FOLLOW-558 / audit A3-F-06: intent_sessions (single row per
+      // (tenant_id, session_id) — unique constraint — null when the K.3.6
+      // archetype tracer never ran for this session).
+      intent_session: intentSession
+        ? {
+            id: intentSession.id,
+            cross_session_id: intentSession.crossSessionId,
+            started_at: intentSession.startedAt.toISOString(),
+            last_event_at: intentSession.lastEventAt.toISOString(),
+            finalized_at: intentSession.finalizedAt?.toISOString() ?? null,
+            final_archetype: intentSession.finalArchetype,
+            final_confidence: intentSession.finalConfidence,
+            signal_count: intentSession.signalCount,
+            quiz_completed: intentSession.quizCompleted,
+            quiz_leaf: intentSession.quizLeaf,
+            chat_turns: intentSession.chatTurns,
+            intent_state: intentSession.intentState,
+          }
+        : null,
       // FOLLOW-246: conversion_labels disclosed on BOTH identifier namespaces (Art. 15).
       // Fields: id, prediction_id, lead_id, outcome_class, label_source, confidence,
       // labeled_at, notes. Keyed by lead_id (session_id OR durable_lead_id).

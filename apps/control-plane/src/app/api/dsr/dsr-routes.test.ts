@@ -700,10 +700,14 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     // Call order (OTP verification handled by mocked verifyAndConsumeOtp):
-    // session → consents → labels Pass A (SDK rows) → (no Pass B)
+    // session → consents → engagement_score → quiz_completions → intent_session
+    // (FOLLOW-558) → labels Pass A (SDK rows) → (no Pass B)
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session (absent — that's fine)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A: SDK labels
 
     const { GET } = await import('./access/route.js');
@@ -724,10 +728,14 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-001');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    // Call order: session → consents → Pass A (empty, no sdk labels) → Pass B (CRM labels)
+    // Call order: session → consents → engagement_score → quiz_completions →
+    // intent_session (FOLLOW-558) → Pass A (empty, no sdk labels) → Pass B (CRM labels)
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session (absent)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels for this session
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
 
@@ -753,6 +761,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])) // Pass A: SDK label
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM label
 
@@ -779,6 +790,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])); // Pass A: no SDK labels
     // Pass B must NOT be called when durableLeadId is null.
 
@@ -792,9 +806,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const body = (await res.json()) as { conversion_labels: unknown[] };
     // No labels but no error — graceful skip.
     expect(body.conversion_labels).toHaveLength(0);
-    // Pass B (4th select call) must NOT have been made. OTP verification is
+    // Pass B (7th select call) must NOT have been made. OTP verification is
     // now handled by the mocked verifyAndConsumeOtp, not mockSelect.
-    expect(mockSelect).toHaveBeenCalledTimes(3);
+    expect(mockSelect).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -813,6 +827,9 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([sdkLabel])); // Pass A
 
     const { GET } = await import('./portability/route.js');
@@ -839,6 +856,9 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockSelect
       .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
+      .mockReturnValueOnce(buildChain([])) // engagement_score (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
+      .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // Pass A: no SDK labels
       .mockReturnValueOnce(buildChain([crmLabel])); // Pass B: CRM labels
 

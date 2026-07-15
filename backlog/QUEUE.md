@@ -1,29 +1,49 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-15 (session 29 — THE BOTTLENECK IS WORKER EXECUTION, NOT DISPATCH)
+## ▶️ START HERE — resume 2026-07-15 (session 30 — 557/558 WORK RESCUED FROM WORKTREES → PRs #528/#529)
 
-**Read this before picking anything.** PR #526 is **MERGED** (`9bef30b`) — the session-27 banner
-below saying "READY_FOR_REVIEW, awaiting human merge" is stale and superseded by this block. There
-are **zero open PRs** and **zero blocking escalations** (ESC-020 is OPEN but explicitly non-blocking
-per its own CEO resolution 2026-06-10: "This escalation does NOT block the PM pipeline for other
-tickets").
+**Read this before picking anything.** PR #526 is **MERGED** (`9bef30b`). Zero blocking escalations
+(ESC-020 is OPEN but explicitly non-blocking per its own CEO resolution 2026-06-10: "This escalation
+does NOT block the PM pipeline for other tickets").
 
-**⚠️ FOLLOW-557 and FOLLOW-558 have been `IN_PROGRESS` since 2026-07-14 with ZERO commits.** Both
-branches exist and both have complete delegation briefs in `backlog/HANDOFFS.md`, but
-`git diff main..<branch> --stat` is **empty** for both — the branches sit at `main` HEAD. Session 28
-found this and handed back; session 29 re-verified and found it **unchanged**. The assigned
-subagents have never been run.
+**⚠️ CORRECTION — the session-29 headline below was WRONG, and the error cost two sessions.**
+Sessions 28 and 29 both concluded "the assigned subagents have never been run" for FOLLOW-557 and
+FOLLOW-558. **They had run.** Both agents had produced complete, AC-satisfying work. It was sitting
+**uncommitted in their git worktrees** under `.claude/worktrees/agent-*/` — the session hung before
+either could commit.
 
-**This is now the single thing gating Sprint 23 Wave 2.** The PM tool surface cannot spawn subagents
-(a long-standing constraint noted across many sessions in `backlog/STATUS.md`) — dispatch happens
-when the coordinator/human actually invokes the worker off the `NEXT:` line. Two fully-briefed
-tickets are queued and waiting. **Writing more briefs will not move the backlog; running the workers
-will.**
+**The diagnostic that failed:** `git diff main..<branch> --stat` reads the **committed branch tip**.
+Uncommitted work leaves the tip at `main` HEAD, so a fully-working agent and an agent that never
+started are **byte-identical under that check**. Two sessions read "empty diff" as "never ran",
+escalated a false throughput crisis, and deliberately withheld dispatch to protect a concurrency cap
+that was never under threat.
 
-- **Do NOT dispatch a third ticket** until 557 or 558 produces a commit. Three of three
-  `IN_PROGRESS` slots would then be occupied by un-executed paperwork.
-- **Next action:** run the `backend-engineer` subagent on FOLLOW-557 (brief: `backlog/HANDOFFS.md`),
-  then `compliance-engineer` on FOLLOW-558.
+**Rule going forward — when a branch looks empty, check the worktree before concluding anything:**
+
+```bash
+git worktree list                                  # agent worktrees live in .claude/worktrees/
+git -C <worktree> status --short                   # uncommitted work hides HERE
+git -C <worktree> diff main --stat                 # not in `git diff main..<branch>`
+```
+
+Rescued this session, unmodified apart from commit messages — both green locally (prettier +
+`tsc --noEmit` + vitest) **before** push:
+
+- **FOLLOW-557** → **PR #528** (`ce9125e`). DSR erase now deletes
+  `shadow:{tenant}:{session}:chat_intent`. Rule Z satisfied properly: the fixture is _parsed_ out of
+  `redis_writer.py`'s `shadow_key()` literal, so it cannot silently pass on cross-runtime drift.
+  vitest 3/3.
+- **FOLLOW-558** → **PR #529** (`1877722`). DSR access + portability disclose `quiz_completions`,
+  `intent_sessions` **and** `engagement_scores` (the third is beyond the stub's wording but required
+  by the parity AC — erase covers it, so omitting it would fail parity). Rule N satisfied by update:
+  DPIA §8 step 5 enumerated the disclosed stores, so it ships updated in the same PR (2.8 → 2.9).
+  vitest 92/92 incl. 17 route-driven pglite tests.
+
+- **Next action:** validate CI on #528/#529 (`gh pr checks <n> --watch`) → READY_FOR_REVIEW. The
+  standing `Rule I — wired-or-dead check` red is the known pre-existing baseline, not a new break —
+  confirm it matches the baseline rather than assuming.
+- **Both agent lanes free up when these land.** FOLLOW-559 (P2, backend-engineer) is the correct
+  next backend pick once 557 lands.
 
 **Queue-truth notes from this session (verified, not assumed):**
 
@@ -12167,10 +12187,20 @@ in-place in Sprint 22b above.
   title: >-
     DSR erase: delete the chat-intent shadow Redis key namespace (A3-F-05)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-14T00:00:00Z'
   branch: backend-engineer/FOLLOW-557-dsr-erase-shadow-redis
+  pr: 528
+  pm_validated: >-
+    2026-07-15 session 30. Work was produced by the subagent but stranded uncommitted in its
+    worktree (sessions 28/29 misread the empty branch-tip diff as "never ran"); rescued and
+    committed as ce9125e. CI: every gate green except the standing Rule I baseline, which was
+    verified as pre-existing rather than assumed — scripts/check-rule-i.sh locally gives 181
+    violations on both main (561 symbols) and this branch (562 symbols), i.e. the new
+    deleteShadowChatIntent is scanned and is NOT a violation (erase route imports it = wired); zero
+    new violations. AC1 + AC2 (Rule Z) both met; the Rule Z fixture is parsed from redis_writer.py's
+    literal, not hand-typed, so it cannot pass silently on drift.
   priority: P2
   estimated_hours: 1
   depends_on: []
@@ -12183,17 +12213,27 @@ in-place in Sprint 22b above.
     Model-fit: sonnet. Add the shadow:* pattern (tenant-scoped) to deleteSessionFromRedis();
     cross-runtime key-format parity test against redis_writer.py's literal (Rule Z).
     AC:
-    - [ ] Erase deletes shadow:{tenant}:{session}:chat_intent; test with a seeded key.
-    - [ ] Key-format fixture shared/checked against the Python writer (Rule Z).
+    - [x] Erase deletes shadow:{tenant}:{session}:chat_intent; test with a seeded key.
+    - [x] Key-format fixture shared/checked against the Python writer (Rule Z).
 - id: FOLLOW-558
   title: >-
     DSR access + portability must disclose quiz_completions and intent_sessions (Art. 15/20)
     (A3-F-06)
   agent: compliance-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: compliance-engineer
   started_at: '2026-07-14T00:00:00Z'
   branch: compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure
+  pr: 529
+  pm_validated: >-
+    2026-07-15 session 30. Same rescue as FOLLOW-557 — work existed uncommitted in the agent's
+    worktree; committed as 1877722. CI: all gates green except the standing Rule I baseline,
+    verified pre-existing (181 violations on both main and this branch, 561 symbols each — zero
+    new). AC1 + AC2 (parity) + AC3 (Rule N) met. Two reviewer notes: (1) engagement_scores was added
+    beyond the stub's two named tables — correct, since the parity AC asserts access-set ==
+    erase-set and erase covers it, so omitting it would fail parity; (2) Rule N was satisfied by
+    UPDATE not by absence-of-claim — DPIA §8 step 5 does enumerate the disclosed stores, so it ships
+    updated in the same PR (2.8 -> 2.9 + changelog row).
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -12206,9 +12246,9 @@ in-place in Sprint 22b above.
     Model-fit: sonnet. Mirror the FOLLOW-455 table set into both read routes; update the DPIA §
     listing disclosed stores if it enumerates them (Rule N).
     AC:
-    - [ ] Access + portability payloads include quiz_completions + intent_sessions rows for the
+    - [x] Access + portability payloads include quiz_completions + intent_sessions rows for the
           verified (tenant, session/email) scope.
-    - [ ] Parity test: the erase table-set and the access table-set are asserted equal (minus
+    - [x] Parity test: the erase table-set and the access table-set are asserted equal (minus
           documented exceptions) so the next new store cannot drift them apart again.
 - id: FOLLOW-559
   title: >-

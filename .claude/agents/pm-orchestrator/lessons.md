@@ -2210,3 +2210,28 @@ IN_PROGRESS-with-zero-commits for a second consecutive session, stop re-dispatch
 new tickets — escalate the execution gap itself into the START HERE banner as the headline finding,
 because adding briefs to a queue nothing is draining converts a throughput problem into a
 concurrency-cap deadlock.
+
+---
+
+**Date / ticket:** 2026-07-15 — session 30 (FOLLOW-557/558 rescued from agent worktrees → PRs
+#528/#529). **Delegation row used:** None — no new delegation needed: the work already existed.
+**What validation caught (or missed):** it caught that **the two entries directly above this one are
+wrong, and the rule session 28 codified here actively caused the error.** Session 28 wrote: "an
+empty diff means the dispatch never actually got executed." Session 29 applied that rule faithfully
+and reached the same false conclusion. Both were wrong. The `backend-engineer` and
+`compliance-engineer` subagents **had run** and had produced complete, AC-satisfying work — it was
+sitting **uncommitted in their git worktrees** (`.claude/worktrees/agent-*/`) because the session
+hung before either could commit. `git diff main..<branch>` compares **committed branch tips**, so an
+agent that did everything-but-commit and an agent that never started are **byte-identical under that
+check**. The false negative cost two full PM sessions, produced an escalated "worker execution
+crisis" banner describing a crisis that did not exist, and came within one session of someone
+re-dispatching the tickets — which would have thrown the work away and silently re-derived it. **A
+delegation/validation rule I'd add (supersedes the session-28 rule above):** an empty
+`git diff main..<branch>` is **not** evidence that a worker never ran — it is evidence of nothing at
+all until you have also checked the worktree. Before concluding a dispatch didn't execute, run
+`git worktree list`, then `git -C <worktree> status --short` and
+`git -C <worktree> diff main --stat`. Only "no worktree AND empty branch diff" supports "never ran".
+Generalisation: the stranded-work shape (RETRO-146 §4e / FOLLOW-448) is not limited to `main` — a
+hung session strands work wherever the agent was standing, and for subagents that is a worktree, not
+`main`. **Check for the work before concluding there is none**; the cheap check
+(`git worktree list`) costs one command and this mistake cost two sessions.

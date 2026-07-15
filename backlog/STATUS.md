@@ -1,6 +1,60 @@
-# Status — 2026-07-15 (session 29 — FOLLOW-557/558 un-executed for a 2nd consecutive session; stranded-on-main bookkeeping rescued)
+# Status — 2026-07-15 (session 30 — FOLLOW-557/558 work found ALIVE in agent worktrees and rescued → PRs #528/#529)
 
-## SESSION 29 (2026-07-15) — re-verified session 28's findings independently; rescued stranded work; escalated the execution gap
+## SESSION 30 (2026-07-15) — the "execution gap" did not exist; both workers had run, their work was stranded uncommitted in worktrees
+
+**Headline: sessions 28 and 29 were both wrong, and this session found the work by looking one
+directory further.** FOLLOW-557 and FOLLOW-558 were never un-executed. Both subagents had run to
+completion and produced full, AC-satisfying implementations. The diffs were sitting **uncommitted**
+in `.claude/worktrees/agent-acb218b87d9630ff6/` and `.claude/worktrees/agent-ad875b8d6ec42ae9d/` —
+the prior session hung before either agent could commit.
+
+**Why two sessions missed it.** Both ran `git diff main..<branch> --stat`, got empty, and concluded
+"never ran". That command compares **committed branch tips**. Uncommitted work leaves the tip at
+`main` HEAD — so a worker that did everything except commit is indistinguishable from one that never
+started. Session 28 codified the faulty inference as a rule in
+`.claude/agents/pm-orchestrator/lessons.md` ("an empty diff means the dispatch never actually got
+executed"); session 29 applied it faithfully and repeated the error, then escalated a
+worker-execution crisis into the `QUEUE.md` START HERE banner. **The rule has been corrected at
+source** in `lessons.md` (session-30 entry supersedes the session-28 one) — otherwise session 31
+makes the same call again.
+
+**Cost of the miss:** two full PM sessions spent confirming a non-existent crisis, and a near-miss
+on re-dispatching both tickets — which would have discarded finished work and silently re-derived
+it.
+
+**Rescued (unmodified apart from commit messages), each validated locally BEFORE push:**
+
+| Ticket     | PR   | Commit    | Local validation                                            |
+| ---------- | ---- | --------- | ----------------------------------------------------------- |
+| FOLLOW-557 | #528 | `ce9125e` | vitest 3/3, prettier clean, `tsc --noEmit` clean            |
+| FOLLOW-558 | #529 | `1877722` | vitest 92/92 (17 route-driven pglite), prettier + tsc clean |
+
+**Quality note — the rescued work is good, not merely present.** Both hit the hard parts of their
+briefs rather than the easy reading of them:
+
+- **FOLLOW-557 / Rule Z:** the cross-runtime fixture is _mechanically parsed_ out of
+  `apps/intent-engine/src/redis_writer.py`'s `shadow_key()` f-string literal, not hand-typed in TS.
+  If the Python key format drifts, the test hard-fails or compares against the changed literal — it
+  cannot silently pass. That is Rule Z option (a) done properly.
+- **FOLLOW-558 / Rule N:** the DPIA _does_ enumerate the disclosed stores (§8 step 5), so the agent
+  updated it in the same PR (2.8 → 2.9 + changelog row) instead of taking the
+  satisfied-by-absence-of-claim escape hatch.
+- **FOLLOW-558 scope:** it added `engagement_scores` beyond the stub's two named tables. Correct
+  call, not scope creep — the parity AC asserts access-set == erase-set, and erase covers it, so
+  omitting it would have failed parity and left the same gap class open. Flagged in the PR body.
+
+**Verification discipline applied:** did not trust the rescued work because it looked complete —
+independently confirmed `shadowChatIntentKey` is exported (`chat-intent-cache.ts:62`) and that the
+test's regex actually matches the current `shadow_key()` source in `redis_writer.py` before
+committing.
+
+**NEXT:** validate CI on #528/#529 → READY_FOR_REVIEW. Confirm the `Rule I — wired-or-dead check`
+red matches the known pre-existing baseline rather than assuming it does. FOLLOW-559 is the correct
+next backend pick once 557 lands.
+
+---
+
+## (superseded — see session 30 above) SESSION 29 (2026-07-15) — re-verified session 28's findings independently; rescued stranded work; escalated the execution gap
 
 **Independently re-verified (did not trust session 28's STATUS.md write-up):**
 

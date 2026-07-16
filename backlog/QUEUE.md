@@ -12,10 +12,15 @@ CEO/DPO ruling** (ESC-020 also OPEN but explicitly non-blocking per its own CEO 
 them — neither PR was wrong alone; nobody owned the union.** RETRO-175 and RETRO-176 (2026-07-16,
 Opus) agree on the shape and disagree productively on the detail:
 
-- **FOLLOW-574 (P1) — live in prod TODAY, no deploy needed to arm it.** Erase deletes **five**
-  ClickHouse PII tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose **one aggregate over
-  one of them**. `adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events` are erased
-  but disclosed to nobody. PM re-verified independently before escalating. → **ESC-037**.
+- **FOLLOW-574 (P1) — real, but LATENT: prod exposure is ZERO (verified 2026-07-16).** Erase deletes
+  **five** ClickHouse PII tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose **one
+  aggregate over one of them**. `adaptation_decisions`, `llm_calls`, `session_quality`,
+  `intent_events` are erased but disclosed to nobody. A direct prod read
+  (`SELECT count(*) FROM dsr_verifications` = **0**, user-authorized) shows **no DSR has ever been
+  served in prod**, so this is a gap to close **before the first real DSR**, not a live incident —
+  no notification duty. The gap arms the moment the first request lands, so re-check the count (or
+  add a monitor) before any tenant is told DSR is live. → **ESC-037** (exposure item now ANSWERED;
+  sequencing + `events` disclosure-shape items still need the CEO/DPO).
 - **FOLLOW-570 (P2)** — same asymmetry on the **Redis** axis: FOLLOW-557 added
   `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Arms the
   day **FOLLOW-458** deploys → treat 570 as a pre-condition of that deploy.

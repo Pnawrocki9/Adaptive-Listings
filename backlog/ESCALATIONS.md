@@ -2238,10 +2238,21 @@ escalated):
 
 **Required action (CEO / DPO):**
 
-1. **Rule on exposure.** Has any DSR access/portability request been served in prod to date? If yes,
-   were the reports materially incomplete, and does that trigger a notification/remediation duty?
-   (Pilot traffic is thin — the honest answer may be "zero requests, zero exposure" — but that must
-   be established, not assumed.)
+1. **Rule on exposure. ANSWERED 2026-07-16 by direct prod read — exposure is ZERO; no notification
+   duty is triggered.** `SELECT count(*) FROM dsr_verifications` against prod Postgres (via
+   `doppler run --config prd`, admin creds, user-authorized read) returned **0**. That table is the
+   front door of every DSR flow — access, portability AND erase all begin with an `initiate` that
+   writes a `dsr_verifications` row — so zero rows means **no DSR request of any type has ever been
+   served in prod**. No incomplete report was delivered because no report was delivered. This makes
+   FOLLOW-574 a **latent** gap to close before the first real DSR, not a live incident with a
+   remediation/notification clock. The CEO/DPO decision this item asked for is therefore moot; the
+   remaining two are not. **Caveat — re-check before first pilot DSR:** this is a point-in-time
+   count; it must be re-run (or a monitor added) before any tenant is told DSR is live, since the
+   gap arms the moment the first request lands. **Side finding worth a ticket:** the prod
+   `dsr_audit_log` ClickHouse read was _not_ usable for this — the Doppler-prd `ingest_worker`
+   credentials have **no SELECT grant** on `dsr_audit_log` (`ACCESS_DENIED`), diverging from the
+   `INSERT,SELECT ON default.*` recorded at ESC-032. The Postgres front-door count is the reliable
+   exposure signal; the CH audit trail is currently unreadable by ops creds.
 2. **Sequence FOLLOW-574 against Wave 0.** RETRO-176 recommends 574 **before** FOLLOW-570 on the
    grounds that 574 is live and 570 is deploy-gated. That inverts the Sprint 23 order and competes
    with the FOLLOW-559/FOLLOW-356 lane decision still open from session 29.

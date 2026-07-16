@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
+import { evaluateConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
@@ -205,6 +206,8 @@ events.post('/', async (c) => {
   const validated: Record<string, unknown>[] = [];
   const rejected: RejectedEvent[] = [];
 
+  let consentRejectedCount = 0;
+
   for (let i = 0; i < eventsField.length; i++) {
     const incoming: unknown = eventsField[i];
     const parsed = EventSchema.safeParse(incoming);
@@ -212,6 +215,47 @@ events.post('/', async (c) => {
       rejected.push({ index: i, errors: parsed.error.flatten() });
       continue;
     }
+
+    // FOLLOW-559 / audit A3-F-08 — server-side consent gate at the STORAGE boundary.
+    // The shared `ConsentStateSchema` validates `consent_state` for shape only; nothing gates
+    // on the value, so a profiling event with `consent_state: 'none'` would otherwise persist.
+    // Rejection is PER-EVENT (not a whole-batch 4xx) so a batch mixing a `consent.granted`
+    // audit event with a `none` profiling event still records the audit event — required by
+    // AC2 / §H.9 (the ingest stream must keep flowing). Keys on `consent_state` ONLY, never on
+    // opt-out state (§H.9 ruling 2026-06-23).
+    const consent = evaluateConsent(parsed.data.type, parsed.data.consent_state);
+    if (!consent.allowed) {
+      consentRejectedCount += 1;
+      rejected.push({
+        index: i,
+        errors: {
+          code: consent.code,
+          message:
+            consent.code === 'consent_not_granted'
+              ? 'Profiling-class event rejected: consent_state does not grant a lawful basis for persistence'
+              : 'Event type is not classified by the consent gate and was rejected fail-closed',
+          consent_class: consent.consent_class,
+          consent_state: consent.consent_state,
+          event_type: consent.event_type,
+        },
+      });
+      // Structured Sentry counter — each rejection is a tagged, filterable/aggregatable signal
+      // (Rule K.2: a policy-driven drop must stay observable, never silently swallowed).
+      Sentry.captureMessage('consent_gate_rejected', {
+        level: 'warning',
+        tags: {
+          area: 'events',
+          gate: 'consent',
+          code: consent.code,
+          event_type: consent.event_type,
+          consent_class: consent.consent_class,
+          consent_state: consent.consent_state,
+        },
+        extra: { tenant_id: tenantId },
+      });
+      continue;
+    }
+
     validated.push({
       ...parsed.data,
       tenant_id: tenantId,
@@ -445,6 +489,7 @@ events.post('/', async (c) => {
     'estalara.batch_size': eventsField.length,
     'estalara.region': region,
     'estalara.validation_failures': rejected.length,
+    'estalara.consent_rejected': consentRejectedCount,
     'estalara.rate_limited': false,
   });
 
@@ -455,6 +500,7 @@ events.post('/', async (c) => {
       batch_size: eventsField.length,
       accepted: validated.length,
       rejected: rejected.length,
+      consent_rejected: consentRejectedCount,
       region,
     },
     'events_accepted',

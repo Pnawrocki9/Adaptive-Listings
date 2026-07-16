@@ -9,7 +9,9 @@ import { describe, expect, it, vi } from 'vitest';
 // FOLLOW-459: mocked so the post-ACK ClickHouse-failure test can assert
 // `Sentry.captureException` was called, without needing a real Sentry init
 // (matches the pattern in handlers/__tests__/intent-snapshot.test.ts).
-vi.mock('@sentry/cloudflare', () => ({ captureException: vi.fn() }));
+// FOLLOW-559: consent-gate rejections emit `Sentry.captureMessage` (structured counter), so the
+// mock must expose it alongside `captureException`.
+vi.mock('@sentry/cloudflare', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
 
 import * as Sentry from '@sentry/cloudflare';
 
@@ -446,6 +448,139 @@ describe('POST /v1/events — happy path', () => {
       expect(body.accepted).toBe(0);
       expect(body.rejected).toBe(1);
       expect(stub.callCount()).toBe(0);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+// ─── FOLLOW-559 / audit A3-F-08 — server-side consent gate at the storage boundary ───────────
+// End-to-end proof that the gate runs INSIDE the events handler (not just as a pure unit): a
+// profiling event with consent_state=none is rejected per-event and never reaches Redpanda,
+// while audit/operational events in the SAME batch still ingest (§H.9 non-regression).
+describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
+  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+
+  it('rejects a profiling event with consent_state=none and skips Redpanda', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const profilingNone = { ...validEvent, consent_state: 'none' as const };
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [profilingNone] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{
+        accepted: number;
+        rejected: number;
+        errors: { index: number; errors: { code: string; consent_class: string } }[];
+      }>(res);
+      expect(body.accepted).toBe(0);
+      expect(body.rejected).toBe(1);
+      expect(body.errors[0]?.errors.code).toBe('consent_not_granted');
+      expect(body.errors[0]?.errors.consent_class).toBe('profiling');
+      // Never pushed to Redpanda (every event rejected → sink skipped).
+      expect(stub.callCount()).toBe(0);
+      // Structured Sentry counter fired.
+      expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
+        'consent_gate_rejected',
+        expect.objectContaining({
+          level: 'warning',
+          tags: expect.objectContaining({ gate: 'consent', code: 'consent_not_granted' }),
+        }),
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('§H.9: consent.denied audit event ingests even with consent_state=none', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const consentDenied = {
+        ...validEvent,
+        consent_state: 'none' as const,
+        type: 'consent.denied',
+        payload: { language: 'en', method: 'banner' },
+      };
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [consentDenied] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      expect(body.accepted).toBe(1);
+      expect(body.rejected).toBe(0);
+      expect(stub.callCount()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('§H.9: mixed batch — audit event survives while sibling profiling(none) is dropped', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const consentGranted = {
+        ...validEvent,
+        consent_state: 'none' as const,
+        type: 'consent.granted',
+        payload: { language: 'en', method: 'banner' },
+      };
+      const profilingNone = { ...validEvent, consent_state: 'none' as const };
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [consentGranted, profilingNone] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      // Audit event survives (1 accepted); profiling(none) is dropped (1 rejected). A whole-batch
+      // 4xx would have lost the consent.granted audit event — the exact §H.9 regression this guards.
+      expect(body.accepted).toBe(1);
+      expect(body.rejected).toBe(1);
+      expect(stub.callCount()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('§H.9: profiling event WITH consent (legitimate-interest) still ingests for opted-out users', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      // An opted-out user still carries a valid consent_state (§H.8 registration consent) — the
+      // stream must keep flowing. `validEvent` already uses consent_state='legitimate-interest'.
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      expect(body.accepted).toBe(1);
+      expect(body.rejected).toBe(0);
+      expect(stub.callCount()).toBe(1);
     } finally {
       stub.restore();
     }

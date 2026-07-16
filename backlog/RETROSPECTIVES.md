@@ -26406,3 +26406,1508 @@ FOLLOW-464 explicitly claims to close **audit F-15** AND **RETRO-162 LG-1** (wit
 ### RETRO-174 — Rule promotion decision
 
 **NO rule promoted.** Two candidates, both below threshold: (1) the BOOKKEEPING-PR-SPRAWL pattern REMAINS at occurrence count 1 (RETRO-173 only) — codifying workflow guidance (FOLLOW-550) is explicitly NOT the 2nd numbered-retro SIGHTING RETRO-173 armed for, and RETRO-174 independently verified FOLLOW-550's own lifecycle produced NO new instance (clean 2-PR shape #508/#509; no merged-not-closed bookkeeping PR; DONE branch cut post-merge per rule (c)). The ARMED trigger remains correctly PENDING — a future numbered retro observing a genuinely NEW "merged-not-closed bookkeeping PR → downstream QUEUE.md conflict" cites RETRO-173 + that one → ≥2 PRIOR → promote (ready-made source text already lives in `docs/AGENT_WORKFLOW.md` §Bookkeeping-PR sequencing). (2) The new CONVENTION-ADDED-BUT-NOT-WIRED-INTO-ITS-RECOVERY-ENTRY-POINT candidate (§6) is count 1, HELD. `CONVENTIONS_PATCH.md` UNTOUCHED. **NB — "Rule AB" precision:** the codified Rule AB in `CONVENTIONS_PATCH.md` is the async-interleave latest-wins guard (RETRO-170), a DIFFERENT, already-promoted rule; the bookkeeping-PR pattern is an unnamed HELD candidate, not Rule AB — the two share only the promotion-adjudication DISCIPLINE, not identity.
+
+## RETRO-175 — FOLLOW-557 (DSR erase now deletes the chat-intent shadow Redis key `shadow:{tenant}:{session}:chat_intent` the `session:{sessionId}:*` SCAN never matched — audit A3-F-05, GDPR Art. 17 completeness; the key-format fix is correct and Rule-Z-compliant, but it lands the new erasure leg on a Redis path that is res.ok-blind and Sentry-less (Rule K.2 non-compliance in a file that cites Rule K.2 80 lines later), sequentially vetoable by a SCAN of a namespace with ZERO producers repo-wide, and — the headline — it expands the Art. 17 erase set with a store that PR #529's Art. 15/20 parity invariant, merged 3 SECONDS later, is Postgres-scoped and therefore structurally blind to) — 2026-07-15
+
+### 1. Summary of change
+
+- **PR:** #528 (merged 2026-07-15T19:24:54Z, merge commit `7b83f39`; branch
+  `backend-engineer/FOLLOW-557-dsr-erase-shadow-redis`; content commit `ce9125e`, rescued from a
+  stranded agent worktree — see §4e). **Merged 3 seconds before PR #529 (`797b8ab`, FOLLOW-558)**,
+  which is the load-bearing fact of §5a.
+- **Files changed:** 3 (+164 / -3) — verified via `gh pr view 528 --json additions,deletions,changedFiles`
+  (matches `git show 7b83f39 --stat`, no discrepancy between self-report and artifact).
+- **Modules touched:** control-plane ONLY (`api/dsr/erase/route.ts` +21/-3, `lib/chat-intent-cache.ts`
+  +29 new export, `lib/__tests__/chat-intent-cache.test.ts` +117 new). Zero SDK / ingest /
+  decision-api / shared / Modal / migration / docs-of-record. **Read-only** against
+  `apps/intent-engine/src/redis_writer.py` (the test parses it; the Python is untouched).
+- **Key contracts changed:**
+  - `deleteSessionFromRedis(sessionId)` → `deleteSessionFromRedis(tenantId, sessionId)` — **breaking:
+    NO** (module-private to `erase/route.ts`, exactly ONE call site, updated; grep-verified §5c).
+  - `chat-intent-cache.deleteShadowChatIntent(tenantId, sessionId)` — **NEW public export**;
+    breaking: no (additive).
+  - **The Art. 17 erase set is extended with a non-Postgres store** (the Redis shadow key). This is
+    the contract change with the cascade (§5a) — and the ONE the PR body does not name as a contract
+    change at all.
+
+### 2. Verification done in PR
+
+- Test files changed: 1 NEW (`lib/__tests__/chat-intent-cache.test.ts`, 117 lines, 3 tests). ·
+  Assertions added: 11 across 3 `it()` blocks (AC1 request-shape ×6, AC1b no-op ×1, AC2 Rule Z ×4). ·
+  Coverage delta: unknown (not measured in PR; the new export is 100% line-covered by construction —
+  both branches of its single `if (!base)` guard are exercised).
+- CI checks: **verified independently, not trusted from the PR body** (`gh pr checks 528` → 59
+  checks). **57 pass, 2 fail — both are the SAME check** (`Rule I — wired-or-dead check`, once per
+  run × 2 runs), the standing pre-existing baseline. I did NOT wave it through on reputation: the
+  QUEUE's `pm_validated` note records `scripts/check-rule-i.sh` giving **181 violations on `main`
+  (561 symbols) and 181 on this branch (562 symbols)** — i.e. the branch scans one MORE symbol
+  (`deleteShadowChatIntent`) with the SAME violation count, which is affirmative evidence the new
+  export is scanned and is NOT a violation. Zero new violations. This is the correct form of that
+  attestation and I am recording it as sound.
+- **Notable passes that matter to this retro's findings:** `Redis shadow round-trip
+  (write_shadow_intent → readShadowChatIntent)` **PASS, 57s** — a LIVE Upstash round-trip, not a
+  soft-skip (§4c TG-2 turns on this). `Fire-and-forget sink guard (FOLLOW-433)` PASS (but see §4b
+  CB-1 — that gate is structurally blind to the defect found). `Cross-language event contract` PASS
+  (irrelevant to this key — see §4c TG-2, it is exactly the mechanism this PR did not use).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` **for every symbol/signal this merge introduces** — with ONE pre-existing
+phantom-namespace observation surfaced BY the audit and recorded below as WA-NOTE (explicitly NOT
+classified as a DEAD_CODE/HALF_WIRE finding against this merge, since this PR did not introduce it).
+
+- **CHECK A (dead code) — clean.** The one new export, `deleteShadowChatIntent`
+  (`chat-intent-cache.ts:151`), has a **non-test importer**: `erase/route.ts:64`
+  (`import { deleteShadowChatIntent } from '@/lib/chat-intent-cache'`), called at `:124`. Grep:
+  `grep -rn "deleteShadowChatIntent" --include=*.ts . | grep -v node_modules` → 3 non-test hits (the
+  definition, the import, the call) + 5 test/comment hits. The one new FILE
+  (`lib/__tests__/chat-intent-cache.test.ts`) is a test file → suppressed per the check's own
+  carve-out. Independently corroborated by the `check-rule-i.sh` symbol-count delta in §2 (562 vs
+  561 symbols, same 181 violations). NOT dead.
+- **CHECK B (half-wire) — clean.** The signal is the Redis key
+  `shadow:{tenant_id}:{session_id}:chat_intent`. **Producer EXISTS:** `write_shadow_intent`
+  (`apps/intent-engine/src/redis_writer.py:57`, via `shadow_key()` :35-37), reached from
+  `main.py:62` and `jobs/batch_enrich.py:52` and `apps/stream-consumer/src/consumers/events.py:106`.
+  **Consumers EXIST (now two):** `readShadowChatIntent` → `adapt/route.ts:1510` (pre-existing) and
+  `deleteShadowChatIntent` → `erase/route.ts:124` (NEW). Both ends present → **neither HALF_WIRE_P
+  nor HALF_WIRE_C**. No new env var (reuses the existing `UPSTASH_REDIS_URL`/`UPSTASH_REDIS_TOKEN`
+  pair — §5c), no new column, no new topic, no new SDK signal.
+  - **Producer-is-undeployed is NOT a half-wire here, and I checked rather than assumed.** The
+    producer exists in code but its deployment (`apps/stream-consumer`) is gated on **FOLLOW-458**
+    (QUEUE.md:10222-10227, `status: BLOCKED`, un-blocks when FOLLOW-553 completes). A wire whose
+    producer is intentionally undeployed under an explicit CEO ruling (Q2 shadow-only) is a
+    scheduled deploy, not a dangling wire. The PR is honest about this in its own body. Correctly
+    classified.
+- **WA-NOTE (pre-existing, surfaced by CHECK B, NOT charged to this merge) — the OTHER leg of the
+  very function this PR edited targets a namespace with ZERO producers in the repository.** A
+  repo-wide hunt for any writer of `session:{sessionId}:*` —
+  `grep -rnE "session:\$\{|session:\{|f\"session:|'session:|\"session:|\`session:" apps packages tests`
+  (excluding `node_modules`/`.venv`/`.next`) — returns **6 hits, ALL of them inside
+  `erase/route.ts` (:26, :29, :89, :90, :119) and one comment in `chat-intent-cache.ts:146`. Not one
+  is a write.** Nothing in this codebase SETs a `session:*` key. So `deleteSessionFromRedis`'s
+  original SCAN/DEL leg is an eraser for a namespace no in-repo producer creates — either legacy
+  (the namespace was retired and the eraser outlived it) or written by an out-of-repo actor (the
+  Cloudflare ingest Worker/Durable Object, or the local-only Estalara-app). **I am not asserting it
+  is dead** — I cannot see out-of-repo writers from here — but it needs a decision, and it is
+  load-bearing for §4a LG-1 (the phantom leg can VETO the real one). → FOLLOW-571 AC3.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — a throw in the phantom `session:*` SCAN silently vetoes the shadow DEL, which is the
+  entire point of this ticket.** `erase/route.ts:81-125`. The function is strictly sequential: the
+  `do…while` SCAN loop (:91-115) runs to completion, THEN `await deleteShadowChatIntent(...)` (:124).
+  The loop handles a **non-OK response** gracefully (`if (!resp.ok) break;` :97 → falls through to
+  the shadow DEL — correct), but it does **not** handle a **rejected** `fetch`: a network error,
+  DNS failure, timeout, or a malformed-JSON `await resp.json()` (:100) propagates out of the loop,
+  out of `deleteSessionFromRedis`, and is swallowed by the caller's `.catch()` at `:604-606`. The
+  `await deleteShadowChatIntent(...)` line **never executes**. There is no `try/finally`, no
+  `Promise.allSettled`, and the two legs are independent erasure obligations with no ordering
+  dependency between them. Net: **a transient Upstash blip while SCANning a namespace that (per §3
+  WA-NOTE) nothing writes can suppress the only Redis erasure that actually has data behind it**,
+  and the sole trace is one `console.error` line (see CB-1 — not even Sentry). Impact: silent
+  partial Art. 17 erasure. Pre-existing code shape, but this PR is what put a load-bearing
+  obligation behind it. Ordering is also simply backwards: the deterministic single-key DEL should
+  precede the multi-round-trip SCAN. → FOLLOW-571 AC1.
+- **LG-2 (P3, folded) — the phantom namespace itself.** See §3 WA-NOTE. Not independently
+  actionable without a producer decision; folded into FOLLOW-571 AC3 rather than double-counted.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — the new DEL is `res.ok`-blind and its failure path terminates at `console.error`,
+  never Sentry: a Rule K.2 (as amended, RETRO-135) non-compliance shipped in a file that cites Rule
+  K.2 by name 80 lines below the defect.** `chat-intent-cache.ts:156-160` does a bare
+  `await fetch(\`${base}/pipeline\`, …)` and **never inspects the response**. Upstash answering
+  `401` (bad/rotated token), `429`, or `500` is indistinguishable from a successful DEL. The caller
+  (`erase/route.ts:604-606`) wraps it in `.catch((err) => console.error('[dsr/erase] Redis DEL
+  failed:', …))` — **`console.error` only, no `Sentry.captureException`**. The K.2 amendment
+  (CONVENTIONS_PATCH.md, added 2026-06-28 from RETRO-135) is verbatim on this shape: *"the
+  fire-and-forget sink can't fail loud by throwing, so the obligation is res.ok-in-.then + .catch,
+  both → Sentry."* The inconsistency is **intra-file and self-documenting**: the SAME route at
+  `:520` carries the comment `// ── Sentry warning (Rule K.2: capability gap must be observable)`
+  and calls `Sentry.captureMessage` (:533), and `:589` calls `Sentry.captureException` — so Sentry
+  is already imported, already used, and already understood in this file as the K.2 obligation for
+  the ClickHouse leg. The Redis leg alone terminates at stdout. **Why CI could not catch it:** the
+  `Fire-and-forget sink guard (FOLLOW-433)` gate passed, but per its own header (ci.yml:488-497) it
+  only asserts *"no bare `void fn(` / `void (async` request-path sinks"* — i.e. after()-registration
+  hygiene, which this PR gets RIGHT. It is structurally blind to res.ok-blindness — exactly as the
+  Rule K.2 amendment predicted of itself (*"The parent K.2 greps were themselves blind to this
+  sub-shape"*). Impact: a DSR erase can under-erase in prod, write `completed` to the DSR audit log,
+  and emit zero observable signal. This is a **violation of an already-promoted rule**, not a new
+  pattern — no promotion arithmetic applies; it is simply a defect. → FOLLOW-571 AC2.
+- **`afterResponse()` / ESC-033 posture: CORRECT — checked, not assumed.** The user-facing concern
+  that the Vercel `after()` rule might have been broken does not hold up: `:601-607` still registers
+  via `afterResponse(() => deleteSessionFromRedis(...).catch(...))`, the diff changed only the
+  ARGUMENTS (`record.sessionId` → `record.tenantId, record.sessionId`), no bare `void` sink was
+  introduced, `record.tenantId` is on the same record as `record.sessionId`, and both the
+  FOLLOW-433 after()-registration test (`dsr-routes.test.ts:930-944`) and the FF CI gate pass. **No
+  finding.**
+- **The `UPSTASH_REDIS_URL` guard: CORRECT, and the premise that the DEL is "unconditional" is
+  false — I verified rather than accepted it.** The DEL is **double-guarded**: `deleteSessionFromRedis`
+  returns early at `:82-83` (`if (!base) return;`) BEFORE reaching `:124`, and
+  `deleteShadowChatIntent` independently guards via `getRedisBase()` (`:152-153`). When
+  `UPSTASH_REDIS_URL` is unset the whole path is a structural no-op with zero fetches — which is the
+  deliberate, documented posture (`route-driven-pglite.test.ts:29`; `invalidateDescriptionCache`
+  parity) and is explicitly pinned by the new AC1b test. Silent-no-op-on-unconfigured-Redis is a
+  real Art. 17 question in the abstract, but it is **inherited, unchanged by this PR, and moot in
+  prod** (ESC-028 resolved; the live Upstash smoke passed on this very PR at 57s, proving the creds
+  are provisioned). **No finding.**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the AC1 test proves the REQUEST was issued, not that the key was ERASED; its
+  "seeded key" framing over-promises.** `chat-intent-cache.test.ts:44-70`. The mock returns
+  `[{ result: 1 }]` with the comment *"Simulate a seeded (pre-existing) shadow key: Upstash DEL
+  returns 1 (one key removed) rather than 0 (key absent)"* — but **production never reads
+  `result`** (CB-1), so the assertion set (`toHaveBeenCalledOnce`, URL contains `/pipeline`, body
+  `[['DEL', key]]`) would pass **identically** if the mock returned `{ result: 0 }`. The test cannot
+  distinguish DEL-hit from DEL-miss. The ticket AC reads *"Erase deletes
+  `shadow:{tenant}:{session}:chat_intent`; **test with a seeded key**"* — the delivered test seeds a
+  MOCK's return value that the code ignores, which is not the same claim. This is fine as a unit
+  test of a fire-and-forget helper; the gap is the **wording gap between AC and artifact**. Closing
+  CB-1 (read `res.ok`/result) is what would make the seeded-key assertion mean what it says. Noted;
+  folded into FOLLOW-571 AC2 rather than stubbed separately.
+- **TG-2 (P3) — the Rule Z parity test reads a file Turbo does not know is an input, so it can be
+  replayed green from remote cache on the exact commit class it exists to catch.** This is the
+  answer to the "is the regex-parse itself a fragile coupling?" question, and the fragility is **not
+  primarily the regex**. Chain of evidence, each link verified:
+  1. The test (`chat-intent-cache.test.ts:86-95`) `readFileSync`s
+     `../../../../intent-engine/src/redis_writer.py` — a path **outside its own package**.
+  2. `turbo.json`'s `test` task declares **no `inputs`**, and the file has **no `globalDependencies`**
+     (`grep -c "globalDependencies\|inputs" turbo.json` → **0**). Turbo's default input set is the
+     package's own git-tracked files + its dependency graph.
+  3. `apps/intent-engine` is **not in the JS dependency graph at all** — it has `pyproject.toml` and
+     no `package.json` (`ls apps/intent-engine/` → `README.md  pyproject.toml  src`), so
+     `pnpm-workspace.yaml`'s `apps/*` glob never picks it up.
+  4. CI runs `pnpm turbo run test --filter='@estalara/control-plane'` (ci.yml:167) **with
+     `TURBO_TOKEN`/`TURBO_TEAM` set** (ci.yml:141-142) → **remote caching is live**.
+  → A commit touching **only** `redis_writer.py` leaves `@estalara/control-plane#test`'s hash
+  **unchanged** → full cache hit → the parity assertion is **replayed, not executed**. Meanwhile the
+  Python side's own guard (`test_intent_engine.py:147
+  test_write_shadow_intent_key_format`) asserts Python's OWN key and would be updated in lockstep by
+  whoever does the rename (self-consistent → green), and per ci.yml:538 the `test-python` matrix runs
+  **`continue-on-error` on individual pytest runs** anyway. So the docstring's central claim — *"it
+  cannot silently pass on drift"* — is **over-stated**: it cannot silently pass *when it runs*.
+  - **Severity is genuinely LOW, and I am not inflating it:** the wire is **independently guarded by
+    Rule Z option (b)**. `shadowChatIntentKey()` is shared by `readShadowChatIntent` and
+    `deleteShadowChatIntent`, and the read path is covered by the **live** FOLLOW-368 round-trip
+    smoke, which triggers on `pull_request → main` and every agent branch (redis-shadow-smoke.yml:24-43,
+    incl. `ml-engineer/**`, the branch prefix that would own an intent-engine change) and **passed
+    on this PR against real Upstash in 57s** (§2). A real Python key-format drift would make the
+    Python writer write one key and the TS reader look up another → that smoke fails. **The erase
+    leg inherits that live proof transitively via the shared builder.** So the regex test is
+    belt-and-braces on a wire already held by a live gate; the finding is that the belt is weaker
+    than its own docstring claims, not that the wire is unguarded.
+  - **The repo already has the canonical mechanism and this PR did not use it (nor say why).**
+    `packages/shared/contracts/` holds `description-event.required.json`,
+    `listing-embed-post.required.json`, `listing-embed-seed-event.required.json` — a single
+    source-of-truth contract file both runtimes are tested against, enforced by the **dedicated,
+    always-blocking** `cross-language-contract` job whose own header (ci.yml:532-539) says: *"This
+    is a HARD gate — no continue-on-error. Drift on either side fails the merge. The existing
+    test-python matrix is NOT used here because it has continue-on-error."* That job is **not
+    turbo-cached** and is immune to (2)-(4) above. Three contracts already ride it. → FOLLOW-572.
+- **TG-3 (note) — no test pins LG-1** (SCAN-throw → shadow DEL skipped). The new suite mocks a clean
+  fetch; `route-driven-pglite.test.ts` covers only the unset-URL no-op. Folded into FOLLOW-571 AC1.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, folded) — the refreshed header comment entrenches the phantom.** `erase/route.ts:26-30`
+  now reads *"Redis DEL `session:{session_id}:*` AND `shadow:{tenant_id}:{session_id}:chat_intent`"*,
+  presenting both namespaces as co-equal live erasure targets. Per §3 WA-NOTE, nothing in the repo
+  writes the first. The PR improved this comment and still left the reader with a false picture of
+  the first leg. Folded into FOLLOW-571 AC3 (the comment should be fixed by the same change that
+  decides the namespace's fate). Not separately stubbed.
+- The DPIA was **correctly** not updated here, and I checked before flagging: `docs/compliance/dpia.md`
+  §8 step 5 enumerates the stores disclosed in an **access/portability** response (Rule N's trigger,
+  which is why PR #529 rightly bumped it 2.8→2.9). FOLLOW-557 touches **erasure**, not disclosure,
+  so it has no Rule N obligation *on its own terms* — but that framing is exactly what §5a shows to
+  be the trap. **No finding here; the finding is in §5a.**
+
+#### 4e. Process finding — the work was complete, correct, and invisible for two sessions
+
+The implementing `backend-engineer` subagent **produced complete, AC-satisfying work and then hung
+before committing**. The diff sat uncommitted in its isolated worktree
+(`.claude/worktrees/agent-acb218b87d9630ff6/`). **Sessions 28 and 29 each independently concluded
+the subagent "had never been run"**, because `git diff main..<branch> --stat` was empty — that
+command reads the **committed branch tip**, so a worker that did everything-but-commit is
+**byte-identical to one that never started**. Session 28 codified that faulty inference as a rule in
+`.claude/agents/pm-orchestrator/lessons.md`; session 29 applied the rule, reproduced the error, and
+escalated a non-existent "worker execution crisis" into the QUEUE.md START HERE banner. **Cost: two
+full PM sessions, plus a near-miss on re-dispatching the ticket** — which would have discarded
+finished work and silently re-derived it. Session 30 found the work, rescued it (`ce9125e`),
+independently re-verified it, and corrected the rule at source (`d39bb0a` / PR #527). The merged
+diff is the rescued work **unmodified apart from the commit message**, and it is sound (§2/§3).
+
+This is the third numbered retro in the crashed-worker family and **the first in which detection
+failed**. Its adjudication against RETRO-146/150 is §6 / §8; its durable fix is FOLLOW-573; the
+reason it needs one is that **the correction currently lives nowhere durable** — `d39bb0a` touched
+exactly three files (`.claude/agents/pm-orchestrator/lessons.md`, `backlog/QUEUE.md`,
+`backlog/STATUS.md`) and **not `docs/AGENT_WORKFLOW.md`**, whose §Recovered-work re-verification
+(:193-215) is the canonical playbook a PM lands on for precisely this incident and which has **no
+detection step at all** (its step 1 presupposes you already know work exists). Worse, its neighbour
+at **:171 affirmatively codifies the un-costed half**: *"A worktree that is already on the ticket
+branch cannot strand work on `main` no matter when the worker stalls, crashes, or is interrupted."*
+That sentence is **true on the contamination axis and is the belief that made the invisibility
+invisible** (§8).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-558 / PR #529 (`797b8ab`, MERGED 2026-07-15T19:24:57Z — THREE SECONDS after this PR):
+  its Art. 15/20 parity invariant is Postgres-scoped, and FOLLOW-557 just extended the Art. 17 erase
+  set with a store that lives outside that scope. The asymmetry #529 exists to close is REOPENED on
+  a new axis, by its sibling, in the same merge window. Neither PR could see it — both were stranded
+  in separate worktrees and merged seconds apart.**
+  - #529's stated principle (its own commit message): *"Disclosing less than the controller
+    demonstrably holds **and erases** is an Art. 15/20 completeness gap."* Its parity test asserts
+    **access-set == erase-set**.
+  - But that test's scope is explicit and Postgres-only
+    (`disclosure-route-driven-pglite.test.ts:843-852`): *"the erase route's Postgres DELETE targets
+    … are: session_embeddings, consent_records, conversion_labels, engagement_scores,
+    quiz_completions, intent_sessions"*, and it closes with *"documented exception: none — **every
+    erased Postgres table is disclosed**."* That claim remains TRUE. It is also, as of `7b83f39`,
+    **no longer the same claim as "every erased store is disclosed."**
+  - Verified absence: `grep -rniE "shadow|redis|chat_intent"` across `dsr/access/route.ts` and
+    `dsr/portability/route.ts` → **zero hits**. The chat-intent shadow prior (chat-derived
+    `intent_dimensions`, `archetype_hint`, `confidence`, keyed to `session_id`) is now **erased
+    under Art. 17 and never disclosed under Art. 15/20**.
+  - The data is the **same class** #529 just ruled disclosable: it is the chat-derived sibling of
+    `intent_sessions`. And FOLLOW-557 supplies the decisive evidence by its own existence — **we
+    demonstrably erase it**, which is #529's own stated test for disclosability.
+  - **The two authors each did their job correctly.** #529's author even *saw* the collision and
+    handled it conservatively — the test header (`:45-48`) reads: *"This file is READ-ONLY against
+    `erase/route.ts` (do not edit it here — see **FOLLOW-557, a concurrent PR touching that file's
+    Redis leg**)"*. It knew about the Redis leg, scoped around it to avoid a merge conflict, and
+    **nobody owned the union**. That is a PM/sequencing gap, not an author gap.
+  - **Severity: P2, not P1** — symmetric with FOLLOW-557's own posture: no shadow keys exist in prod
+    today (producer undeployed), so this is pre-emptive. It must land **before** FOLLOW-458 deploys,
+    exactly like the ticket that caused it. → **FOLLOW-570**.
+- **FOLLOW-559 (P2, backend-engineer, `deps: []`)** — the QUEUE's designated next backend pick,
+  UNAFFECTED by this merge (ingest consent gate; different surface). But FOLLOW-571 and FOLLOW-570
+  now compete for that lane; both are pre-FOLLOW-458 gated. Sequencing is the PM's call — flagged,
+  not decided.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-458 (P2, devops-engineer, `status: BLOCKED`, QUEUE.md:10222-10227 — "Deploy
+  stream-consumer + data-quality cron so live chat NLP and drift detection actually run (F-03)",
+  Sprint 23 Wave 2, un-blocks when FOLLOW-553 completes) is the single trigger that arms EVERY
+  finding in this retro.** The day it deploys, `write_shadow_intent` starts writing real
+  chat-derived personal data to prod Redis, and simultaneously: FOLLOW-557's fix becomes
+  load-bearing (good), CB-1's blind DEL becomes a silent-under-erasure risk (bad), LG-1's veto
+  becomes reachable (bad), and §5a's disclosure gap becomes a **live Art. 15/20 non-compliance**
+  (worst). FOLLOW-553 is `READY_OPERATOR` with only Step 6 (ESC-020, Rafał-side) outstanding — so
+  this is **near-term, not hypothetical**. **Recommendation for the PM (surfaced per my read-only
+  remit — I do not escalate): treat FOLLOW-570 + FOLLOW-571 as pre-conditions of FOLLOW-458's
+  deploy, in the same way FOLLOW-557 itself was.** The PM decides whether that warrants an
+  ESCALATIONS.md entry; I am recording the dependency, not filing it.
+- **FOLLOW-552 (P3, unpromoted — RETRO-174's doc-wiring stub):** adjacent to FOLLOW-573 (both wire a
+  process convention into `docs/AGENT_WORKFLOW.md` at the entry point a PM actually arrives at). If
+  the PM promotes both, they are one natural bundle — but see §6, they are **distinct patterns** and
+  bundling them must not be read as merging their occurrence counts.
+
+#### 5c. Contracts changed others rely on
+
+- **`deleteSessionFromRedis(tenantId, sessionId)` — every caller updated; verified, not assumed.**
+  `grep -rn "deleteSessionFromRedis" --include=*.ts .` → the definition (`erase/route.ts:81`),
+  **exactly one** call site (`:604`, updated to pass `record.tenantId`), and 5 test/comment
+  references. The function is module-private (not exported), so the blast radius is one file. Clean.
+- **`shadowChatIntentKey()` now has two production consumers instead of one** — the read path
+  (`adapt/route.ts:1510`, adaptation quality) and the erase path (`erase/route.ts:124`, **legal
+  compliance**). The key format's failure mode has been silently upgraded from "chat prior doesn't
+  apply, page adapts slightly worse" to "**personal data survives an Art. 17 erasure request**".
+  Same symbol, same format, materially different stakes — which is precisely why TG-2's caching
+  observation is worth a stub even at low probability. The PR's decision to reuse the builder rather
+  than re-type the format is **correct and is the single best thing in this diff**.
+- **No new env var.** The delete path reuses `UPSTASH_REDIS_URL`/`UPSTASH_REDIS_TOKEN` via the
+  module's existing `getRedisBase()`/`getRedisHeaders()`. **The cross-runtime env-var name split is
+  real but already owned and NOT a finding here** — the Python writer uses
+  `UPSTASH_REDIS_REST_URL`/`_REST_TOKEN` while the TS side uses `UPSTASH_REDIS_URL`/`_TOKEN`
+  (`redis_writer.py:29-30` vs `chat-intent-cache.ts:69-74`); this is documented deliberately in
+  `.env.example:46-56` (*"SAME URL as REST_URL"*) and **actively enforced** by the FOLLOW-368 live
+  smoke, which writes with the Python creds and reads with the TS creds and so fails if they ever
+  point at different instances (redis-shadow-smoke.yml:87-90). The eraser inherits that guarantee by
+  sharing the reader's env accessors. Checked and cleared. (Aside, informational only: the *other*
+  Python app, `apps/llm-gateway/src/jobs/generate_description.py:1851-1852`, uses the **TS** names —
+  so the naming split is per-app, not per-language. Out of scope; no stub.)
+- **Complete Redis namespace inventory (the "under-count nothing" sweep — I looked for sibling
+  instances of A3-F-05's exact shape rather than accepting the one the audit named):** exactly three
+  namespaces exist repo-wide. (1) `shadow:{tenant}:{session}:chat_intent` — **now covered** by this
+  PR. (2) `desc:{tenantId}:{listingId}:{archetype}:{locale}` (`description-cache.ts:47`, written by
+  `generate_description.py`, **LIVE in prod**) — keyed by listing+archetype, **contains no
+  session identifier and is therefore correctly outside DSR session-scoped erasure**; not a gap. (3)
+  `session:{sessionId}:*` — the phantom (§3 WA-NOTE). **So A3-F-05 had exactly one instance and
+  FOLLOW-557 found it. No sibling under-count.** The audit finding was correctly scoped.
+
+#### 5d. Architectural assumptions affected
+
+- **"Erase by namespace enumeration" does not survive contact with a second runtime — the fix is
+  instance-level where the defect is class-level.** A3-F-05's root is not that someone forgot
+  `shadow:*`; it is that the erase path was written against an **assumed** namespace list rather
+  than an **inventory of actual producers**. The proof is in the shape of the bug: the leg that was
+  there matched a namespace **nothing writes** (§3 WA-NOTE), while the namespace that **is** written
+  by a different runtime was absent. FOLLOW-557 adds the missing instance and leaves the method
+  intact — so the **next** session-scoped Redis namespace (or the next runtime to write one) is
+  missed exactly the same way, silently, with a green CI. FOLLOW-558 solved the identical
+  class-level problem on the Postgres axis **properly** (a parity test that fails when the sets
+  diverge) — and its own header concedes the residual: *"the PARITY block's table list below **must
+  be updated by hand** to match."* The generalizable lesson: **an erasure/disclosure surface needs a
+  parity invariant over the union of stores, mechanically derived, not a hand-maintained list per
+  store class.** Both #528 and #529 are locally correct and jointly leave the union unowned (§5a).
+- **RETRO-174 §5d's meta-thread recurs on a third surface** — *"a single documented location is
+  insufficient; the guard must sit where the actor actually arrives."* Here, three times: the
+  observability obligation is documented at `erase/route.ts:520` but not at `:604` (CB-1); the
+  disclosure obligation is pinned in the Postgres parity test but not over the union (§5a); the
+  worktree-detection lesson is written where a PM only reads *after* it already knows (§4e).
+  Recorded as a meta-observation, **not** counted toward any promotion (§6).
+
+### 6. New lesson candidates
+
+- **Pattern (WORKTREE-STRANDED-WORK-IS-INVISIBLE-TO-THE-EXECUTION-CHECK): "a subagent that completes
+  its work but hangs before committing is byte-identical, under `git diff main..<branch>`, to a
+  subagent that never started — so branch-isolated work reads as NON-EXECUTION, and the PM's natural
+  next action (re-dispatch) silently discards finished work."** — **RETRO-175, count 1 (fresh).
+  HELD — NO PROMOTION.** Full adjudication in §8 and in the Rule-promotion block. **DISTINCT** from
+  RETRO-146's WORKER-BRANCH-HYGIENE (count 1, HELD — *where the work lands*: stranded on `main`,
+  contamination/loss) and from RETRO-150's RECOVERED-WORK-MULTI-GATE-DEFECT (count 1, HELD — *whether
+  correctly-isolated work is gate-clean*). This is a third axis: *whether the PM can see the work
+  exists at all.* Corpus grep for a prior sighting
+  (`git diff main\.\.|never ran|never been run|empty diff|branch tip|invisible`) → **no prior
+  numbered retro observes a DETECTION failure**; in RETRO-146 and RETRO-150 the stall/death was
+  observed live in-session and the work was found immediately — detection was never even exercised.
+  → **FOLLOW-573** is the durable fix (a diagnostic that executes beats a lesson in a private log).
+- **Pattern (TURBO-CACHE-REPLAY-AS-INERT-GATE): "a test that reads a file outside its own package
+  is invisible to the build cache's input hash, so on the very commit that changes that file the
+  task is a cache hit and the assertion is REPLAYED green without executing — a fourth mechanism of
+  Rule Q's root ('a green status is not evidence the assertion ran'), alongside opt-in-flag,
+  soft-skip and die-before-assert."** — **RETRO-175, count 1 (fresh). HELD — NO PROMOTION.** This is
+  a candidate **AMENDMENT to the already-promoted Rule Q**, not a new letter (it shares Q's root
+  exactly; cf. the K.2-amendment precedent, which was itself held to the ≥2 bar: RETRO-118 count 1 +
+  RETRO-135 count 2). Rule Q's promoted evidence (RETRO-006 opt-in-flag, RETRO-007 soft-skip
+  inception, RETRO-145 trigger) contains **no cache-replay sighting** — the mechanism is new to the
+  corpus. **ARMED: a second numbered-retro sighting of green-without-execution-via-cache promotes
+  the Q amendment.** → FOLLOW-572 is the instance fix.
+- **Pattern (PARITY-INVARIANT-NARROWER-THAN-THE-CONTRACT-IT-GUARDS): "a parity/completeness test
+  scoped to one store class (Postgres tables) is structurally blind to a sibling PR that extends the
+  same legal contract with a store of another class (a Redis key) — both PRs are locally correct,
+  the invariant stays green, and the union is unowned."** — **RETRO-175, count 1 (fresh). HELD.**
+  Adjacent to Rule S (symmetric siblings) but distinct: Rule S governs two call sites of the same
+  shape drifting; this governs an invariant whose SCOPE is narrower than the obligation it is
+  advertised to enforce. Watch for a 2nd sighting. → FOLLOW-570 is the instance fix.
+- **NOT counted, and I checked specifically because it looked like a promotion:** RETRO-174 §6's
+  CONVENTION-ADDED-BUT-NOT-WIRED-INTO-ITS-RECOVERY-ENTRY-POINT candidate (count 1) is **NOT
+  incremented by §4e**, though it superficially matches. RETRO-174's pattern requires a
+  **codification ticket to have DELIVERED an orphaned artifact** (FOLLOW-550's entire job was to
+  codify; it codified into `AGENT_WORKFLOW.md` and left the section un-cross-referenced and
+  contradicted). Session 30's job was to **rescue two tickets**, not to codify; the absence of a
+  durable rule in `AGENT_WORKFLOW.md` ten minutes after the incident is a **not-yet-written
+  follow-up — which is exactly what FOLLOW-573 IS** — not a defective deliverable. Counting "the fix
+  I am about to file hasn't been written yet" as a recurrence would make that pattern match nearly
+  every process finding in the corpus and would be count-inflation by over-broad matching. **If
+  FOLLOW-573 lands and lands orphaned, THAT is the 2nd sighting.** Count stays 1.
+- Anti-count-inflation honored (RETRO-146/150/153/158/173/174 discipline). **No rule promoted this
+  retro.**
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **FOLLOW-557 claims to close audit finding A3-F-05** (not a prior FOLLOW; A3-F-05 is a finding from
+  the 2026-07-11 audit, no predecessor ticket — so there is no prior-closure claim to audit for the
+  one-hop-relocation trap on THIS ticket's own lineage). **VERDICT on its chartered target: CLOSED
+  end-to-end on the key-format axis. Traced, not accepted:**
+  - **Producer** → `write_shadow_intent` (`redis_writer.py:57`) sets `shadow_key(tenant, session)` =
+    `f"shadow:{tenant_id}:{session_id}:chat_intent"` (`:35-37`), TTL 86400.
+  - **Consumer (read)** → `readShadowChatIntent` (`chat-intent-cache.ts:93-132`) via
+    `shadowChatIntentKey()` (`:62-64`) ← proven against the producer by the **live** FOLLOW-368
+    round-trip smoke, PASS 57s on this PR.
+  - **Consumer (erase)** → `deleteShadowChatIntent` (`chat-intent-cache.ts:151-161`) via the **same**
+    `shadowChatIntentKey()` builder ← `erase/route.ts:64` import → `:124` call ← `:604`
+    `afterResponse(deleteSessionFromRedis(record.tenantId, record.sessionId))` ← the verified,
+    OTP-gated POST handler.
+  - **The full chain is connected. The gap did not move one hop on this axis** — the fix reuses the
+    read path's builder rather than re-typing the format, which is exactly the mechanism that stops
+    the erase/read pair from drifting (the RETRO-169/170/171 async-interleave relocation pattern
+    does NOT recur here). Credit where due: this is the correct shape of fix.
+- **BUT the gap RELOCATED one hop on a DIFFERENT axis — Art. 17 → Art. 15/20 (§5a).** FOLLOW-557
+  closes "we hold it and fail to erase it" and thereby opens "we erase it and fail to disclose it."
+  This is the step-7 trap firing on the **legal-obligation axis** rather than the code axis, and it
+  is only visible if you analyze the erase-set expansion against the *sibling* PR's invariant rather
+  than against the ticket's own AC. Sealed by **FOLLOW-570**.
+- **A prior FOLLOW *is* transitively implicated and I checked it end-to-end rather than by hop:
+  FOLLOW-455 / RETRO-150's "complete erasure" claim.** RETRO-150 §7 recorded F-20 as *"CLOSED
+  end-to-end … the 3-store erasure cascade … → disclosure"*. That verdict was **correct on the
+  Postgres/ClickHouse axes it enumerated** and I am not overturning it — but the **Redis** leg of
+  that same "complete erasure" cascade was, at that moment, SCANning a namespace with no producer
+  (§3 WA-NOTE) and missing the one namespace another runtime writes. Neither RETRO-150 nor the
+  FOLLOW-455 work inspected the Redis leg's producer inventory; A3-F-05 found it three weeks later
+  in an external audit. **This is the chain FOLLOW-557 is a link in — and the reason §5d argues the
+  method, not the instance, is the defect.**
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **Erase-vs-disclose axis (the axis that mattered):** BOTH analyzed. Analyzing only the axis the
+  ticket names — "does erase now delete the key?" — yields a clean retro and misses §5a entirely.
+  The finding only appears when the erase-set expansion is checked against the **sibling PR merged 3
+  seconds later**, whose parity invariant is scoped one class narrower than the obligation. This is
+  the multi-axis payoff for this merge.
+- **Producer-vs-consumer axis:** both traced (§7). Producer exists-but-undeployed (FOLLOW-458);
+  consumers = read + erase, both wired. Not a half-wire.
+- **Both Redis legs (`session:*` AND `shadow:*`):** both analyzed — which is what surfaced the
+  phantom (§3 WA-NOTE) and LG-1's veto. Analyzing only the leg the PR ADDED would have missed both.
+- **Both failure modes of the SCAN (non-OK response vs. rejected fetch):** both analyzed —
+  `!resp.ok` is handled correctly and falls through; a **throw** is not (LG-1). The distinction is
+  the whole finding.
+- **Both runtimes' env-var names, and both Python apps:** analyzed and **cleared** (§5c) — the split
+  is deliberate, documented, and live-enforced. A retro that flagged it would be wrong.
+- **Test-vs-production axis:** analyzed — the mock returns `result: 1` that production never reads
+  (TG-1/CB-1). The test's *shape* implies a verification the code does not perform.
+- **CONTRADICTION WITH A PRIOR RETRO — stated explicitly and reconciled: RETRO-150 §4e/§6 recorded
+  worktree-isolation as an unqualified success ("the FOLLOW-448 guardrail worked exactly as designed
+  for the branch-hygiene axis"), and `docs/AGENT_WORKFLOW.md:171` codifies that verdict as "A
+  worktree that is already on the ticket branch cannot strand work on `main` no matter when the
+  worker stalls, crashes, or is interrupted." I do NOT overturn it. I QUALIFY it.**
+  - **What holds:** RETRO-150's verdict is correct **on the contamination axis it analyzed**, and it
+    held again here — nothing landed on `main`, nothing was absorbed into an unrelated branch,
+    nothing was `stash drop`ped, and the rescued work merged **unmodified apart from the commit
+    message**. The worktree did its job. `:171`'s sentence is **literally true**.
+  - **What RETRO-150 did not cost:** isolation trades **contamination risk** for **detection risk**.
+    Work that cannot be contaminated by the PM's `main` is also work the PM's `main`-relative
+    execution check **cannot see**. RETRO-150 costed only the first half, called it a success, and
+    that verdict was codified at `:171` in the very doc a PM consults — where it reads as
+    reassurance precisely when the PM is staring at an empty `git diff main..<branch>` and reaching
+    for the wrong conclusion. **The un-costed half is what made sessions 28/29's inference feel
+    safe.** So RETRO-150 was correct-but-incomplete, and its incompleteness was load-bearing.
+  - **This is a REFINEMENT, not a reversal** — the same shape as RETRO-174's refinement of RETRO-173
+    §5d. Both retros' clean verdicts stand on their own axes. → FOLLOW-573 AC2 fixes `:171` to state
+    **both** halves rather than deleting the (true) first one.
+- **The promotion axis — the question I was asked to decide on evidence, decided AGAINST promotion:
+  is §4e the same pattern as RETRO-146/150 (→ count 2 or 3 → promote) or a distinct DETECTION
+  pattern (→ count 1 → hold)? DISTINCT. Count 1. HOLD.** Four independent reasons, in descending
+  strength:
+  1. **The corpus already adjudicated this exact question and answered "distinct."** RETRO-150 §6
+     had the identical opportunity to claim count 2 on a parent "crashed worker strands uncommitted
+     work" family — RETRO-146 was right there, cited in its own §4e — and it **explicitly refused**:
+     *"Distinct axis from RETRO-146's WORKER-BRANCH-HYGIENE (that pattern is about STRANDING work on
+     the wrong branch; this pattern is about the CONTENT of correctly-isolated work being
+     under-verified). HELD at count 1 — no promotion."* Retroactively fusing 146+150+175 into a
+     parent family to reach count 3 would **overturn RETRO-150's adjudication in order to promote**,
+     which is count-inflation by re-labelling — the precise move RETRO-150, RETRO-173 and RETRO-174
+     each guard against.
+  2. **Three axes, three victims, three remedies — a Rule must be ONE verifiable check.** 146: work
+     lands on `main` → contamination/loss → remedy: *branch before the first edit* (FOLLOW-448, plus
+     a hook). 150: isolated work is under-verified → bad code could ship → remedy: *run the full
+     local gate suite before commit* (FOLLOW-474). 175: isolated work is invisible → false
+     "never ran" → wasted sessions + near-miss re-dispatch → remedy: *`git worktree list` before
+     concluding non-execution*. Every promoted rule in `CONVENTIONS_PATCH.md` is a single mechanical
+     check with a `Verification:` grep. A merged "crashed worker" rule would be a grab-bag of three
+     unrelated procedures — noise, not a rule.
+  3. **There is no prior sighting to count.** Detection did not merely go un-analyzed in 146/150 —
+     it was **never exercised**: both workers' stall/death was observed live, in-session, and the
+     work was found immediately. A pattern cannot have a 2nd sighting where its failure mode never
+     had a 1st opportunity to occur.
+  4. **The corpus's own bar on what counts.** RETRO-150 refused to count a rhyming session-6
+     QUEUE.md observation because *"it is a QUEUE.md observation, not a numbered prior RETRO … even
+     if the underlying theme rhymes."* By that same bar, sessions 28/29's false inference, the
+     `pm-orchestrator/lessons.md` rule, and the QUEUE.md banner are **PM-session artifacts, not
+     numbered retros** — they are the *incident*, not prior sightings of it. This retro is sighting
+     **one**.
+  - **I note the prior session flagged this as "possibly promotion-grade" and deferred the call.
+    That flag carries zero evidential weight and did not enter this decision** — a prior session's
+    intuition is not a corpus occurrence.
+- **Last-5-retros cross-cut (RETRO-170–174):** RETRO-170/171 = the SDK async-interleave arc (Rule
+  AB; cited only as the §7 CONTRAST — this fix does NOT relocate on its code axis, unlike that arc).
+  RETRO-172/173/174 = the control-plane auth-fold → bookkeeping-PR-sprawl → codification process
+  arc; their shared meta-thread (*"the guard must sit where the actor arrives"*, RETRO-174 §5d)
+  **recurs on three surfaces here** (§5d) but is recorded as a meta-observation, **not** counted —
+  it is a family resemblance across different rules, not a repeat sighting of one pattern.
+  RETRO-173/174's HELD/ARMED bookkeeping-PR pattern: **not incremented** (this ticket's lifecycle
+  produced 2 tight PRs, no two-QUEUE.md-PRs-in-flight conflict); its trigger remains correctly
+  PENDING. No pattern from the last 5 recurs un-closed here.
+
+### 9. Follow-ups
+
+- **FOLLOW-570 (P2, compliance-engineer, ~3h)** — **DSR access + portability must disclose the
+  chat-intent shadow Redis store, and #529's parity invariant must cover the UNION of erased stores,
+  not just Postgres tables.** Closes RETRO-175 §5a / §7's one-hop relocation. **Must land before
+  FOLLOW-458 deploys** (same pre-emptive posture as FOLLOW-557 itself; today no shadow keys exist in
+  prod, so this is not a live incident). AC: (a) `GET /api/dsr/access` and `GET /api/dsr/portability`
+  read and disclose `shadow:{tenant}:{session}:chat_intent` via a shared `chat-intent-cache` reader,
+  fail-open and tenant-scoped like the erase side; (b) the FOLLOW-558 PARITY block in
+  `disclosure-route-driven-pglite.test.ts:843+` is widened from "the erase route's **Postgres**
+  DELETE targets" to **every store the erase route touches, Redis included**, so the next non-Postgres
+  store added to erase cannot silently drift out of disclosure — and its *"documented exception:
+  none"* claim becomes true of the union; (c) Rule N — `docs/compliance/dpia.md` §8 step 5
+  enumerates the disclosed stores, so it ships updated in the SAME PR (2.9 → 2.10 + changelog row);
+  (d) if the CEO/DPO rules that a 24h-TTL shadow cache is out of Art. 15 scope, that ruling is
+  recorded IN the parity test as an explicit documented exception rather than left as silence.
+  Source: RETRO-175 §5a/§7. cross_ref: [FOLLOW-557, FOLLOW-558, FOLLOW-455, FOLLOW-458, RETRO-175,
+  RETRO-150].
+- **FOLLOW-571 (P2, backend-engineer, ~3h)** — **Harden the DSR erase Redis path: decouple the two
+  legs, make the DEL observable (Rule K.2), and resolve the phantom namespace.** Closes RETRO-175
+  §4a LG-1 + §4b CB-1 + §3 WA-NOTE/§4d DG-1. All three defects live in one function
+  (`deleteSessionFromRedis`, `erase/route.ts:81-125`) + its helper — one cohesive change. AC: (a)
+  the `session:*` SCAN leg and the `shadow:*` DEL leg are **independent** — a throw in either does
+  not suppress the other (`Promise.allSettled` or `try/finally`; deterministic single-key DEL first),
+  with a regression test that makes the SCAN `fetch` **reject** and asserts the shadow DEL still
+  fired (TG-3); (b) `deleteShadowChatIntent` checks `res.ok` and both it and the caller's `.catch()`
+  route to `Sentry.captureException` — Sentry is already imported and used in this file at :533/:589
+  under an explicit `Rule K.2` comment at :520; a DEL that returns 401/500 must not read as success
+  (this also makes TG-1's "seeded key" assertion mean what it claims); (c) **decide and document the
+  `session:{sessionId}:*` namespace**: repo-wide grep finds ZERO producers — either identify the
+  out-of-repo writer (ingest Worker / Estalara-app) and cite it in the header comment, or retire the
+  leg; either way `erase/route.ts:26-30` must stop presenting both namespaces as co-equal live
+  targets (DG-1). Source: RETRO-175 §4a/§4b/§3. cross_ref: [FOLLOW-557, FOLLOW-433, FOLLOW-458,
+  RETRO-175, RETRO-135].
+- **FOLLOW-572 (P3, backend-engineer or devops-engineer, ~2h)** — **Make the cross-runtime shadow-key
+  contract cache-proof by moving it onto the repo's existing shared-contract mechanism.** Closes
+  RETRO-175 §4c TG-2. **Low urgency, explicitly:** the wire is already independently held by the
+  live FOLLOW-368 round-trip smoke (Rule Z option (b), PASS 57s on PR #528) which shares the
+  `shadowChatIntentKey` builder — this closes a redundancy gap, not an open wire. AC: (a) the
+  `shadow:{tenant_id}:{session_id}:chat_intent` key format lives in ONE artifact both runtimes are
+  tested against — `packages/shared/contracts/shadow-chat-intent.key.json`, mirroring the three
+  contracts already there (`description-event.required.json`, `listing-embed-post.required.json`,
+  `listing-embed-seed-event.required.json`); (b) both sides are asserted against it in the
+  **dedicated, always-blocking, non-turbo-cached** `cross-language-contract` CI job (ci.yml:532-541
+  — *"HARD gate — no continue-on-error … the test-python matrix is NOT used here because it has
+  continue-on-error"*), NOT from inside `@estalara/control-plane#test`; (c) **acceptable alternative
+  if (a)/(b) are judged over-engineering for one key**: keep the regex-parse but declare the input
+  so the cache cannot replay it — add `redis_writer.py` to `turbo.json`'s `globalDependencies` (or an
+  explicit `inputs` on the `test` task) — AND soften the test docstring's *"it cannot silently pass
+  on drift"* claim to match what it actually guarantees; (d) either way the Python-side guard
+  (`test_intent_engine.py:147`) is cross-referenced to the shared artifact so a rename must touch it.
+  Source: RETRO-175 §4c TG-2. cross_ref: [FOLLOW-557, FOLLOW-368, FOLLOW-198, RETRO-175, Rule Z,
+  Rule Q].
+- **FOLLOW-573 (P2, pm-orchestrator, ~2h)** — **Put the worktree-detection check in the durable
+  playbook a PM actually reads, and correct the codified half-truth that made the false inference
+  feel safe.** Closes RETRO-175 §4e / §6's HELD count-1 pattern (this is the durable fix, NOT a rule
+  promotion — see the Rule-promotion block). P2 not P3 because the failure has **already cost two
+  full PM sessions and came within one dispatch of destroying finished work**, and the correction
+  currently survives only in two decaying artifacts. AC: (a)
+  `docs/AGENT_WORKFLOW.md` §Recovered-work re-verification (:193-215) gains a **step 0 —
+  DETECTION**, before its existing step 1 (which presupposes you already know work exists):
+  *"`git diff main..<branch> --stat` reads the COMMITTED branch tip. A worker that did everything
+  but commit is byte-identical to one that never started. Before concluding a worker did not run:
+  `git worktree list` → `git -C <worktree> status --short` → `git -C <worktree> diff main --stat`."*;
+  (b) `docs/AGENT_WORKFLOW.md:171`'s *"A worktree that is already on the ticket branch cannot strand
+  work on `main` no matter when the worker stalls, crashes, or is interrupted"* is amended to state
+  **both** axes — the sentence is true about contamination and is exactly why worktree work is
+  **invisible to a `main`-relative execution check**; cite RETRO-150 (contamination: correct) +
+  RETRO-175 (detection: the un-costed half); (c) the QUEUE.md START HERE banner's version of the
+  rule is replaced by a pointer to (a), since START HERE banners are explicitly superseded each
+  session (QUEUE.md already carries a *"(superseded) START HERE"* section) and
+  `.claude/agents/pm-orchestrator/lessons.md` is a 169KB append-only private log — neither is a
+  durable home for a rule that cost two sessions; (d) OPTIONAL/preferred — a mechanical check
+  (`git worktree list` in the PM's ticket-status routine or a SubagentStop hook surfacing a
+  non-empty worktree diff), since §6's own lesson is that a diagnostic that executes beats a lesson
+  in a log. Source: RETRO-175 §4e/§6/§8. NOT a code change. **NOTE: if FOLLOW-573 lands and its new
+  section is itself orphaned/un-cross-referenced, that IS the 2nd sighting of RETRO-174 §6's
+  CONVENTION-ADDED-BUT-NOT-WIRED pattern (currently count 1) → promotion-eligible.** cross_ref:
+  [FOLLOW-448, FOLLOW-474, FOLLOW-552, RETRO-146, RETRO-150, RETRO-174, RETRO-175].
+
+### 10. Cross-references
+
+- **Related to RETRO-150 (FOLLOW-455) — the DIRECT predecessor on BOTH of this retro's axes, and the
+  one verdict this retro qualifies.** (i) *Code:* FOLLOW-455 built the "complete erasure &
+  disclosure" cascade whose **Redis leg** A3-F-05 later found incomplete; RETRO-150 §7's "CLOSED
+  end-to-end" was correct on the Postgres/ClickHouse axes it enumerated and never inspected the
+  Redis leg's producer inventory (§7). (ii) *Process:* RETRO-150 is the prior worktree-stranding
+  incident, and its unqualified "worked exactly as designed" verdict — codified at
+  `AGENT_WORKFLOW.md:171` — is the belief this retro refines but does **not** overturn (§8).
+- **Related to RETRO-146 (FOLLOW-442 / FOLLOW-448) — the branch-hygiene sibling.** Its
+  count-1-HELD-no-promotion adjudication is both the **precedent this retro follows** and, via
+  RETRO-150's refusal to fuse the two into a parent family, the **decisive argument against**
+  promoting a merged "crashed worker" rule here (§8).
+- **Related to FOLLOW-558 / PR #529 (RETRO pending) — the SIBLING MERGE and this retro's headline.**
+  Merged 3 seconds after #528. Its Postgres-scoped parity invariant is structurally blind to #528's
+  Redis-store addition to the erase set (§5a). **The FOLLOW-558 retro should cross-reference
+  RETRO-175 §5a rather than re-derive it** — and should not record #529's parity invariant as
+  unqualifiedly "closing" A3-F-06 without noting FOLLOW-570.
+- **Related to Rule K.2 + its RETRO-135 fire-and-forget amendment — VIOLATED, not extended (§4b
+  CB-1).** The amendment's own note that *"the parent K.2 greps were themselves blind to this
+  sub-shape"* is confirmed again: the FOLLOW-433 CI gate passed on a res.ok-blind sink.
+- **Related to Rule Z (RETRO-098) — SATISFIED on the letter, qualified on the mechanism.** The
+  fixture is genuinely option-(a) "mechanically derived from the producing runtime's canonical
+  contract," and parsing beats hand-typing. The qualification is that Rule Z is silent on whether an
+  option-(a) fixture **executes** on the drift commit (§4c TG-2) — and that the wire's real
+  guarantee here is option (b) (the live FOLLOW-368 smoke), which already existed.
+- **Related to Rule Q (RETRO-006/007/145, promoted) — a candidate 4th mechanism.** "Green status is
+  not evidence the assertion ran" now has a cache-replay sub-shape alongside opt-in-flag, soft-skip
+  and die-before-assert. Count 1, ARMED for a Q amendment (§6).
+- **Related to RETRO-174 §5d/§6 — meta-thread recurrence, NOT a count.** *"The guard must sit where
+  the actor arrives"* recurs on three surfaces here (§5d); §6 states explicitly why §4e does **not**
+  increment RETRO-174's count-1 CONVENTION-NOT-WIRED pattern.
+- **Related to RETRO-169/170/171 (Rule AB async-interleave arc) — cited as the §7 CONTRAST only:**
+  those fixes each relocated the gap one hop downstream. FOLLOW-557 does **not** — it reuses the read
+  path's key builder, sealing the erase/read pair on the code axis. Its one-hop relocation is on the
+  **legal-obligation** axis instead (Art. 17 → Art. 15/20, §5a), which is a shape the arc's code-axis
+  framing would not have caught.
+
+### RETRO-175 — Rule promotion decision
+
+**NO rule promoted. `CONVENTIONS_PATCH.md` UNTOUCHED.** Three fresh candidates, all at occurrence
+count 1, all HELD:
+
+1. **WORKTREE-STRANDED-WORK-IS-INVISIBLE-TO-THE-EXECUTION-CHECK — the one I was asked to adjudicate.
+   HELD at count 1; it is a DISTINCT DETECTION pattern, not a 2nd/3rd sighting of RETRO-146 or
+   RETRO-150.** Reasoning in full at §8; in short: (a) RETRO-150 faced this exact fusion question
+   against RETRO-146 and **explicitly refused it**, holding both at count 1 as separate axes with
+   separate durable fixes (FOLLOW-448 vs FOLLOW-474) — fusing all three now to reach count 3 would
+   overturn a prior adjudication *in order to* promote, which is count-inflation by re-labelling;
+   (b) the three axes have three different victims and three different remedies (branch-before-edit
+   / run-the-gates / check-the-worktree), and every rule in `CONVENTIONS_PATCH.md` is a single
+   mechanical check with a `Verification:` grep — a merged rule would be a grab-bag; (c) detection
+   never **failed** in 146/150 because it was never **exercised** (both stalls were observed live,
+   in-session) — there is no prior sighting to count; (d) per RETRO-150's own bar, the sessions
+   28/29 inference, `pm-orchestrator/lessons.md` and the QUEUE banner are PM-session artifacts, not
+   numbered retros — they are the incident, not prior sightings of it. The durable fix is
+   **FOLLOW-573** (P2), which is the right vehicle regardless: this needs a diagnostic step in the
+   playbook and a hook, not a convention — and the repo's own lesson (RETRO-146 §6) is that *"a
+   guard that executes beats a prose rule."* **ARMED:** a 2nd numbered retro observing branch-tip
+   emptiness misread as non-execution cites RETRO-175 + that one → ≥2 → promote, with FOLLOW-573's
+   AC (a) text as the ready-made rule body.
+2. **TURBO-CACHE-REPLAY-AS-INERT-GATE** — count 1, HELD. A candidate **amendment to the
+   already-promoted Rule Q** (shares its root: *a green status is not evidence the assertion ran*),
+   not a new letter — following the K.2-amendment precedent, which was itself held to ≥2
+   (RETRO-118 + RETRO-135). Rule Q's promoted evidence contains no cache-replay sighting. ARMED.
+3. **PARITY-INVARIANT-NARROWER-THAN-THE-CONTRACT-IT-GUARDS** — count 1, HELD. Distinct from Rule S.
+   Instance fix: FOLLOW-570.
+
+**Explicitly NOT incremented:** RETRO-174 §6's CONVENTION-ADDED-BUT-NOT-WIRED pattern stays at count
+1 — §4e is an un-codified lesson awaiting FOLLOW-573, not a codification ticket that delivered an
+orphaned artifact (§6). RETRO-173/174's bookkeeping-PR pattern stays at count 1 — this ticket's
+2-PR lifecycle was clean. **§4b CB-1 is a violation of the ALREADY-PROMOTED Rule K.2 (as amended),
+which is a defect for FOLLOW-571, not promotion arithmetic — an existing rule being broken is not
+evidence for a new rule.**
+
+<!-- next free FOLLOW number: 574. RETRO-175 = retro for PR #528 (FOLLOW-557, audit A3-F-05, MERGED 2026-07-15T19:24:54Z, commit 7b83f39; 3 files +164/-3; new deleteShadowChatIntent export + erase-route wiring + cross-runtime Rule Z parity test; content commit ce9125e rescued from a stranded agent worktree). Wiring Audit CLEAN on both checks for all new symbols (CHECK A: deleteShadowChatIntent imported by erase/route.ts:64, corroborated by check-rule-i.sh 562-vs-561 symbol delta at constant 181 violations; CHECK B: shadow key has BOTH a producer [write_shadow_intent, undeployed under FOLLOW-458] and two consumers [read + erase]) + one pre-existing WA-NOTE (session:{sessionId}:* has ZERO producers repo-wide — the SCAN leg is an eraser for a namespace nothing writes). GAPS: LG-1 (P2) SCAN-throw vetoes the shadow DEL, no try/finally; CB-1 (P2) res.ok-blind DEL + console.error-only path = Rule K.2-as-amended violation in a file citing Rule K.2 at :520; TG-1 (P3) mock returns DEL result:1 that prod never reads → test proves the request not the erasure; TG-2 (P3) Rule Z fixture reads a cross-package file that turbo does not hash (no inputs/globalDependencies + TURBO_TOKEN remote cache) → replayable green on the drift commit, though mitigated transitively by the live FOLLOW-368 smoke via the shared shadowChatIntentKey builder; DG-1 (P3) header comment presents the phantom namespace as live. CASCADE (headline, §5a): PR #529/FOLLOW-558 merged 3 SECONDS later asserts access-set==erase-set but is Postgres-scoped, so FOLLOW-557's Redis addition to the Art.17 erase set reopens the Art.15/20 asymmetry #529 exists to close — both PRs locally correct, union unowned, arms the day FOLLOW-458 deploys. CLOSURE (step 7): A3-F-05 CLOSED end-to-end on the key-format axis (producer redis_writer.py:57 → readShadowChatIntent [live FOLLOW-368 smoke PASS 57s] → deleteShadowChatIntent via the SHARED builder → erase route :604; no code-axis hop), but RELOCATED one hop on the legal-obligation axis (Art.17 → Art.15/20) → FOLLOW-570. RULE: NO PROMOTION — 3 fresh candidates all count 1 HELD (worktree-invisible-to-detection = DISTINCT from RETRO-146 branch-hygiene / RETRO-150 content-verification, per RETRO-150's own refusal to fuse those two into a parent family; turbo-cache-replay = ARMED Rule Q amendment candidate; parity-invariant-narrower-than-its-contract). RETRO-174's CONVENTION-NOT-WIRED and RETRO-173's bookkeeping-PR patterns NOT incremented. FOLLOWS FILED: 570 (P2 compliance-engineer ~3h — disclose the shadow store + widen #529's parity to the union of erased stores + DPIA 2.9→2.10; must precede FOLLOW-458), 571 (P2 backend-engineer ~3h — decouple the two Redis legs + res.ok/Sentry per Rule K.2 + resolve the phantom namespace), 572 (P3 backend/devops ~2h — move the shadow-key contract onto packages/shared/contracts + the always-blocking cross-language-contract job, or declare turbo inputs), 573 (P2 pm-orchestrator ~2h — worktree DETECTION step 0 into AGENT_WORKFLOW.md §Recovered-work re-verification + amend :171's half-true "cannot strand work" claim). PM ACTION: FOLLOW-570 + FOLLOW-571 are pre-conditions of FOLLOW-458's deploy (§5b) — PM decides whether that warrants an ESCALATIONS.md entry; this retro records the dependency and does not escalate. -->
+
+## RETRO-176 — FOLLOW-558 (DSR access + portability now disclose `engagement_scores`, `quiz_completions` and `intent_sessions` — audit A3-F-06, GDPR Art. 15/20 completeness; the read-side mirror of FOLLOW-455. The three named tables genuinely round-trip and the route code is correct on every axis I checked (cardinality, tenant-scope, null-vs-fabricate), but the ticket's SECOND acceptance criterion — the parity invariant — is NOT implemented as specified: the "PARITY" test hand-types the erase set into a comment and never reads `erase/route.ts`, so it is structurally incapable of the drift-detection the PR body, the DPIA and the AC checkbox all claim for it. The test's own docstring says so, 800 lines from the commit message that denies it. And the gap CLASS the ticket exists to close is un-closed on TWO of THREE storage axes — RETRO-175 found the Redis one; the ClickHouse one, where four erased PII tables are disclosed to nobody and `events` is disclosed only as an aggregate count, is live in prod TODAY and is found here) — 2026-07-15
+
+### 1. Summary of change
+
+- **PR:** #529 (merged 2026-07-15T19:24:57Z, merge commit `797b8ab`; branch
+  `compliance-engineer/FOLLOW-558-dsr-access-portability-disclosure`; content commit `1877722`,
+  rescued from a stranded agent worktree — same incident as RETRO-175 §4e, not re-analyzed here).
+  **Merged 3 seconds after PR #528 (`7b83f39`, FOLLOW-557)** — the load-bearing fact of RETRO-175
+  §5a, adjudicated from this PR's side in §8.
+- **Files changed:** 5 (+616 / -8) — `git show 797b8ab --stat`. access/route.ts (+125/-6),
+  portability/route.ts (+119), disclosure-route-driven-pglite.test.ts (+338 NEW),
+  dsr-routes.test.ts (+28/-2), docs/compliance/dpia.md (+14/-2).
+- **Modules touched:** control-plane ONLY + docs-of-record (DPIA). Zero SDK / ingest / decision-api /
+  shared / Modal / migration. **Read-only** against `erase/route.ts` (deliberately — see §4c TG-1,
+  where that decision turns out to be the root cause of the inert invariant).
+- **Key contracts changed:**
+  - `GET /api/dsr/access` and `GET /api/dsr/portability` response bodies each gain **three new
+    fields**: `engagement_score` (object|null), `quiz_completions` (array), `intent_session`
+    (object|null) — **breaking: NO** (purely additive; §5c).
+  - **No new exported symbol** (`git show 797b8ab | grep -E "^\+.*export (const|function|class|interface|type)"` → **zero hits**). The new file is a test.
+  - `docs/compliance/dpia.md` 2.8 → 2.9 — a **compliance doc of record**, and the artifact carrying
+    this PR's most durable defect (§4d).
+
+### 2. Verification done in PR
+
+- Test files changed: 1 NEW (`disclosure-route-driven-pglite.test.ts`, 338 lines) + 1 amended
+  (`dsr-routes.test.ts`). · New `it()` blocks: **5** (3 access, 1 portability, 1 PARITY) in the new
+  file; the file totals **17** `it()` blocks (`grep -c "  it(" …` → 17), matching the PR body's
+  "17 route-driven pglite disclosure tests". · Assertions added: 21 across the 5 new blocks. ·
+  Coverage delta: unknown (not measured in PR).
+- CI checks: **verified independently, not trusted from the PR body** (`gh pr checks 529`). **2
+  fail — both are the SAME check** (`Rule I — wired-or-dead check`, once per run × 2 runs), the
+  standing pre-existing baseline; everything else passes. The QUEUE's `pm_validated` records **181
+  violations / 561 symbols on both `main` and this branch** — and unlike PR #528 (562 vs 561), the
+  symbol count is UNCHANGED here, which is exactly right: **this PR adds no exported symbol**, so a
+  constant symbol count is affirmative corroboration of the §3 CHECK A verdict rather than a gap in
+  it. Zero new violations.
+- **The tests assert the PAYLOAD, not merely the query — checked, because this was the specific
+  weakness of the sibling PR.** The new suite is route-driven against pglite: it imports the real
+  `GET` handlers (`:298-299`), seeds real rows, and asserts real values out of the real response
+  body (`expect(body.engagement_score?.engagement_score).toBe('0.75000')` `:918`;
+  `expect(body.intent_session?.signal_count).toBe(5)` `:930`). **This is materially stronger
+  verification than FOLLOW-557's mock-return-shape test (RETRO-175 §4c TG-1), and it is the best
+  thing in this diff.** The `dsr-routes.test.ts` amendment is the weaker sibling — it is
+  `mockSelect.mockReturnValueOnce`-ordering-coupled, so it pins the *order and count* of `db.select()`
+  calls (`expect(mockSelect).toHaveBeenCalledTimes(6)` `:811`) rather than any payload; a reorder of
+  the route's queries silently re-labels which mock feeds which store. Pre-existing shape, correctly
+  updated, not a finding.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` **for every symbol/signal this merge introduces** — with ONE pre-existing
+phantom-store observation surfaced BY the audit and recorded below as WA-NOTE (explicitly NOT
+classified as a DEAD_CODE/HALF_WIRE finding against this merge, since this PR did not introduce it).
+The structural symmetry with RETRO-175's WA-NOTE is analyzed in §6 and is deliberately NOT counted
+toward a promotion.
+
+- **CHECK A (dead code) — clean, and trivially so.** This PR introduces **no new exports at all**
+  (`git show 797b8ab | grep -E "^\+.*export (const|function|class|interface|type)"` → zero hits).
+  The one new FILE (`disclosure-route-driven-pglite.test.ts`) is a test file → suppressed per the
+  check's own carve-out. The two modified `route.ts` files are Next.js App Router framework
+  entrypoints → suppressed per the check's own carve-out. The new interfaces inside the test
+  (`DisclosedEngagementScore`, `FullDisclosureBody`, …) are file-local, not exported. Independently
+  corroborated by `check-rule-i.sh` holding at **561 symbols / 181 violations on both sides** (§2).
+  Nothing dead.
+- **CHECK B (half-wire) — clean.** No new event, **no new env var**, **no new column** (all three
+  tables pre-date this PR: migrations `0021_engagement_scores.sql`, `0028_intent_sessions.sql`, and
+  quiz_completions), no new topic, no new SDK signal. The new *signals* are the three response
+  fields; their **producer** is the route pair and their **consumer** is the data subject, via the
+  OTP-gated one-time download (DPIA §8 step 5) — a terminal human-facing payload at a framework-route
+  boundary, which is the suppressed case, not a HALF_WIRE_P. I checked for an in-repo typed consumer
+  of the access response shape that would need updating: none exists. Correctly classified.
+  - **Producer inventory for the three newly-disclosed tables — I checked each rather than assuming
+    the erase side's coverage implied a live store.** `intent_sessions`: **producer EXISTS** —
+    `apps/ingest/src/handlers/intent-snapshot.ts:249` UPSERTs via PostgREST (not Drizzle, which is
+    why an `insert(intentSessions)` grep misses it — worth recording as a grep trap).
+    `quiz_completions`: **producer EXISTS** —
+    `apps/control-plane/src/app/api/quiz/completion/route.ts:240`
+    (`txDb.insert(quizCompletions).values(insertData)`). `engagement_scores`: **NO PRODUCER** — see
+    WA-NOTE.
+- **WA-NOTE (pre-existing, surfaced by CHECK B, NOT charged to this merge) — `engagement_scores`,
+  the one table this PR added BEYOND its ticket stub, has ZERO producers anywhere in the
+  repository.** A repo-wide hunt for any writer —
+  `grep -rniE "engagement_scores|engagementScores" . | grep -v "node_modules|.next/|/dist/|.git/" | grep -iE "insert|upsert|INTO |\.values\(|POST"`
+  — returns **zero code hits** (only backlog/audit/DPIA/ROPA prose). The complete in-repo footprint
+  is: the schema (`packages/db/src/schema/engagement_scores.ts:20`), migration `0021`, two unrelated
+  schema comments citing it as an RLS *pattern*, the DSR **erase** cascade (FOLLOW-193), the DSR
+  **disclosure** routes (this PR), and tests. Its own schema docstring says *"Computed by the Modal
+  intent engine from dwell_score, interaction_score, and scroll_score"* — **no Modal code writes
+  it**; and `docs/compliance/ropa.md:408` names Modal as the live processor for it, while
+  `docs/compliance/dpia.md:198` gives it a 90-day retention row. So the controller's own documents
+  of record describe an active processing activity that **nothing in this repo performs**, and as of
+  this PR we now disclose it to data subjects — where it will read `engagement_score: null` forever.
+  **I am not asserting it is dead** — I cannot see out-of-repo writers (the Cloudflare ingest Worker,
+  the local-only Estalara-app, or an unbuilt Modal leg) from here — but it needs a decision. This is
+  the **exact structural mirror of RETRO-175 §3's WA-NOTE** (the erase route SCANs a Redis namespace
+  nothing writes; the access route now discloses a Postgres table nothing writes). → FOLLOW-574 AC4.
+  Its promotion arithmetic is adjudicated — and declined — in §6.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — THE HEADLINE. The ClickHouse axis of the union is un-closed: FOUR erased PII tables
+  are disclosed to nobody, and the fifth is disclosed only as an aggregate count. Unlike RETRO-175's
+  Redis axis, this data EXISTS IN PROD TODAY.** The erase route (`erase/route.ts:32-40`, FOLLOW-039)
+  issues `ALTER TABLE … DELETE` mutations against **five** ClickHouse tables, each annotated as PII
+  in the canonical inventory at `apps/control-plane/src/lib/clickhouse-dsr.ts:73-77`:
+  `events` *(PII: full behavioural events + payload)*, `adaptation_decisions` *(PII: archetype +
+  confidence per session)*, `llm_calls` *(PII: LLM cost per session)*, `session_quality` *(PII: DQS
+  metrics per session)*, `intent_events` *(FOLLOW-455: K.3.6 tracer per-signal trail)*. What
+  access/portability disclose from ClickHouse is **one aggregate over one of those five**:
+  `getSessionEventSummary` runs `SELECT count() AS cnt, min(…) AS first_at, max(…) AS last_at FROM
+  events WHERE session_id = …` (`clickhouse-dsr.ts:313-321`) and the routes emit it as
+  `events_summary: { count, first_at, last_at }` (`access/route.ts:326`). Net:
+  **`adaptation_decisions`, `llm_calls`, `session_quality` and `intent_events` are erased under
+  Art. 17 and never disclosed under Art. 15/20** — verbatim the gap class this ticket exists to
+  close, applying the PR's own stated test (*"disclosing less than the controller demonstrably holds
+  and erases"*); and `events` itself is disclosed as a **count, not a copy**, which is a separate and
+  genuinely arguable question under Art. 15(3) (*"a copy of the personal data undergoing
+  processing"*) and Art. 20 (*"structured, commonly used and machine-readable"* — a cardinality is
+  neither).
+  - **Prior art checked before filing (Rule P), and there is no ruling to rely on.** The nearest
+    thing is FOLLOW-455 / audit F-20, which replaced a hardcoded `count = 1` **stub** with the real
+    count; RETRO-150 §7 records that as *"disclosure (`access`/`portability` routes reading the real
+    event count)"*. That was a **stub-removal**, not a considered adjudication that an aggregate
+    satisfies Art. 15(3). No CEO/DPO ruling, no documented exception, no ADR. The parity test's
+    *"documented exception: none"* (`:852`) is literally true and reads as reassurance precisely
+    because its scope silently excludes this.
+  - **Severity P1, and I am deliberately rating it ABOVE RETRO-175's P2 Redis sibling rather than
+    matching it for symmetry.** RETRO-175 correctly rated FOLLOW-570 P2 on the ground that *"no
+    shadow keys exist in prod today (producer undeployed), so this is pre-emptive"*. That mitigation
+    **does not apply here**: `events` and `adaptation_decisions` are written by live prod code today,
+    the DSR routes are deployed, and no FOLLOW-458 deploy is needed to arm it. **Not P0** because
+    pilot traffic is ~0% and there is no evidence any DSR access request has ever been served to a
+    real data subject — so this is a deployed non-compliance with (so far) no victim, not an active
+    breach. → **FOLLOW-574**.
+- **LG-2 (P3, folded) — the `engagement_scores` phantom.** See §3 WA-NOTE. Not independently
+  actionable without a producer decision; folded into FOLLOW-574 AC4 rather than double-counted.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None. The route logic is correct on every axis I checked, and I checked the ones most likely to be
+wrong rather than accepting the diff's symmetry as evidence.** Recording the cleared checks, because
+several looked like defects and are not:
+
+- **Cardinality handling is CORRECT — verified against the real schemas, not the fixture.**
+  `engagement_scores` uses `.limit(1)` + a scalar `engagement_score` payload field; the real schema
+  carries `uniqueIndex('engagement_scores_tenant_session_idx').on(t.tenantId, t.sessionId)`
+  (`packages/db/src/schema/engagement_scores.ts:56`) → genuinely one row per (tenant, session) → the
+  `.limit(1)` cannot silently truncate. `intent_sessions` likewise: `.limit(1)` + scalar payload,
+  backed by `unique('intent_sessions_tenant_session_unique').on(t.tenantId, t.sessionId)`
+  (`intent-sessions.ts:105`). `quiz_completions` has **no** unique constraint (only three non-unique
+  indexes, `quiz_completions.ts:82-84`) → 0..n rows → and the route correctly issues **no `.limit()`**
+  and maps the full row set into an array. **The three cardinalities are each handled the way the
+  schema actually requires, and the inline comments state the right reason.** This is careful work.
+- **Access and portability payloads ARE genuinely consistent with each other** — byte-identical query
+  and mapping logic for all three stores, and the PARITY test drives BOTH handlers over one seeded
+  fixture and asserts the same predicates against both bodies (`:1043` `for (const body of
+  [accessBody, portabilityBody])`). The verification *tier* between them is not symmetric — that IS
+  a finding, but a test one (§4c TG-3), not a code one.
+- **Tenant scoping of the three NEW reads is correct** — all three use
+  `and(eq(…sessionId, record.sessionId), eq(…tenantId, record.tenantId))`, mirroring the erase side.
+- **`consent_records` is queried with NO tenant filter** (`access/route.ts:106` — `.where(eq(consentRecords.sessionId, record.sessionId))`) **despite the table having a `tenant_id`
+  column** (`consent_records.ts:25`). This looked like a cross-tenant disclosure bug. **It is NOT a
+  finding against this PR**: it is pre-existing, untouched by this diff, and — decisively — the
+  **erase** side is un-tenant-scoped in exactly the same way (`erase/route.ts:366`), so the two sides
+  are *consistent*, which is what the disclosure/erasure parity contract actually requires. Flagging
+  it here as an observation for whoever owns FOLLOW-574's inventory sweep; not stubbed separately,
+  not charged to FOLLOW-558.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — THE PARITY TEST IS NOT A PARITY TEST. It hand-types the erase set into a comment and
+  never reads `erase/route.ts`, so it cannot detect the drift it is named, documented and validated
+  for. AC2 is not met on its letter.** `disclosure-route-driven-pglite.test.ts:996-1054`. Chain of
+  evidence, each link verified:
+  1. The suite imports **exactly two** things under test: `import { GET as getAccess } from
+     './access/route'` (`:298`) and `import { GET as getPortability } from './portability/route'`
+     (`:299`). **It never imports, drives, parses or otherwise reads `erase/route.ts`** — `grep -n
+     "erase" …` on the file returns **only comments** (`:37, :38, :43, :45, :47, :192, :843, :850,
+     :852, :996, :1001-1002`), not one executable reference.
+  2. The "erase set" therefore exists in this test **only as English prose in a comment**
+     (`:843-848`: *"the erase route's Postgres DELETE targets, as of `erase/route.ts` current HEAD
+     … are: session_embeddings, consent_records, conversion_labels, engagement_scores,
+     quiz_completions, intent_sessions"*).
+  3. The assertion body is a **one-directional superset check against that hardcoded list**: seed six
+     tables, then assert six predicates on the response (`:1043-1053`). Formally it proves
+     `disclosure ⊇ {six literals}`. It does **not** prove `disclosure == erase-set`, because the
+     erase-set is never computed.
+  4. **Therefore: add a seventh Postgres DELETE target to `erase/route.ts` and this test stays
+     GREEN.** The exact drift it is advertised to catch is invisible to it.
+  - **The test's own docstring says all of this, honestly and in plain English** (`:45-48`): *"if a
+    future change adds a new Postgres DELETE target to erase/route.ts, the PARITY block's table list
+    below **must be updated by hand** to match."* A list a human must remember to update is the
+    definition of the thing a drift guard replaces. **The artifact is honest; three other artifacts
+    are not** — the commit message (*"asserting the erase table set and the access/portability table
+    set are equal — so the next store added to one side cannot silently drift from the other"*), the
+    DPIA (§4d DG-1), and the AC checkbox (`QUEUE.md:12275-12276`, marked `[x]`: *"Parity test: the
+    erase table-set and the access table-set are asserted equal (minus documented exceptions) so the
+    next new store cannot drift them apart again"*). **AC2 is met in substance for "the six tables
+    are disclosed today" and NOT met for "asserted equal" / "cannot drift".**
+  - **The root cause is the concurrency dodge, and this is the most useful thing in this retro.** The
+    test header (`:45-46`) explains the design: *"This file is READ-ONLY against `erase/route.ts` (do
+    not edit it here — see FOLLOW-557, a concurrent PR touching that file's Redis leg)."* Avoiding a
+    **merge conflict** with #528 was correct. But the author conflated *"do not EDIT erase/route.ts"*
+    (a sound sequencing decision) with *"do not IMPORT erase/route.ts"* (an unforced test-design
+    decision that costs the entire invariant). **You do not need to touch a route to drive it.** The
+    harness already route-drives two handlers against pglite; adding `import { POST as postErase }
+    from './erase/route'`, seeding all six tables, POSTing erase, and asserting *which tables emptied*
+    would have **derived** the erase set behaviourally — zero edits to `erase/route.ts`, zero merge
+    conflict with #528, and a real invariant. **The cost of the FOLLOW-557 concurrency dodge was not
+    just the unowned union (RETRO-175 §5a) — it was the invariant itself.**
+  - **The repo already has the canonical mechanism, in the module this route ALREADY IMPORTS, and the
+    PR did not use it (nor say why).** `apps/control-plane/src/lib/clickhouse-dsr.ts:59-77` exports
+    `DSR_CLICKHOUSE_TABLES` — *"The canonical inventory of ClickHouse PII tables erased on a
+    DSR-erase request. … If a new PII-bearing, session-scoped table is added, append it here"* —
+    with a derived `DsrTableName` type (`:80`). That is precisely the shared-inventory shape the
+    Postgres side needed. And `access/route.ts:48` **already imports from that exact module**
+    (`import { getSessionEventSummary, readClickHouseConfig } from '@/lib/clickhouse-dsr'`). The
+    pattern was one export away in a file already in the import statement. (Structurally identical
+    to RETRO-175 §4c TG-2's *"the repo already has the canonical mechanism and this PR did not use
+    it"* re `packages/shared/contracts/` — noted as a rhyme, **not** counted; different mechanism,
+    different rule, and see §6.) → **FOLLOW-576**.
+- **TG-2 (P3) — tenant isolation is tested for exactly ONE of the three new stores, and it is the one
+  where the failure mode is mildest.** The single new isolation test (`:936-957`) seeds
+  `quiz_completions` for `TENANT_ID` and `TENANT_ID_2` under the same `session_id` and asserts one
+  row back. **`engagement_scores` and `intent_sessions` have no isolation test at all** — and those
+  are precisely the two `.limit(1)` queries. The asymmetry matters because the failure modes are not
+  equivalent: drop the tenant predicate from `quiz_completions` and the subject sees *extra* rows
+  (visibly wrong, and their own data is still there); drop it from either `.limit(1)` query and the
+  subject is served **one arbitrary tenant's row in place of their own** — a cross-tenant disclosure
+  that is *invisible in the payload shape* (it looks exactly like a valid answer). The untested
+  stores are the dangerous ones. → FOLLOW-577 AC1.
+- **TG-3 (P3) — a Rule S verification-tier violation between the two symmetric routes.** The access
+  describe block has **three** tests (all-present `:900`, empty/never-fabricate `:922`, tenant
+  isolation `:936`); the portability describe block has **one** (all-present `:962`). Same three
+  stores, ~75 lines of **copy-pasted** query+mapping logic in each route, two verification tiers.
+  Rule S (promoted; `CONVENTIONS_PATCH.md:960`) is verbatim on this: *"A change made to one
+  verb/branch of a symmetric set MUST be applied to ALL siblings, at the SAME completeness AND
+  verification tier."* The **completeness** clause is satisfied (the code is genuinely identical);
+  the **verification tier** clause is not. This is a **violation of an already-promoted rule, not a
+  new pattern** — no promotion arithmetic applies (§6); it is simply a defect. Mitigation, stated
+  honestly: the PARITY test does drive portability once over the full fixture, so portability is not
+  unverified — it is under-verified relative to its sibling. → FOLLOW-577 AC2.
+- **TG-4 (P3, folded) — the fixture DDL is more permissive than production, asymmetrically.** The
+  test's `engagement_scores` DDL (`:194-205`) creates **no unique index**, while the same fixture's
+  `intent_sessions` DDL **does** (`:236-237`, `intent_sessions_tenant_session_unique`) and prod's
+  `engagement_scores` **does** (`engagement_scores.ts:56`). So the fixture would happily accept two
+  engagement rows per (tenant, session) — the one shape that would expose `.limit(1)` as lossy — and
+  no test seeds it. Harmless today (prod's constraint is the real guarantee); the gap is that the
+  fixture cannot corroborate the constraint the route depends on. Folded into FOLLOW-577 AC3.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — this PR's own DPIA edit ships TWO false statements into a compliance document of
+  record: a cross-reference that its target does not support, and a guard claim its own test
+  disclaims.** `docs/compliance/dpia.md:769-780` (the new step-5 text, DPIA 2.9):
+  1. **The false cross-reference.** The new sentence says the three tables are *"the same three
+     tables that were already part of the Erasure cascade **in step 6 below** (`engagement_scores`
+     via FOLLOW-193, `quiz_completions` + `intent_sessions` via FOLLOW-455)"*. **Step 6 does not say
+     that.** Step 6 (`:781-782`) enumerates the Postgres erasure set as *"(`session_embeddings`,
+     `consent_records`, `engagement_scores`, `answers`)"* — **`quiz_completions` and `intent_sessions`
+     do not appear in it**. The PR wrote a claim *about* step 6 without reading step 6. Two of its
+     three named tables are unsupported by the very cross-reference it invokes as authority.
+  2. **The guard overclaim.** The new sentence closes: *"A parity test (`…disclosure-route-driven-pglite.test.ts`, "FOLLOW-558 PARITY" describe block) **asserts the
+     Access/Portability table set matches the Erasure table set** so a future new store **cannot
+     silently drift** the two apart again."* Per §4c TG-1 that test performs neither half of that
+     claim — and the test's own docstring says the list *"must be updated by hand"*. **A compliance
+     doc of record now certifies, to a DPO and to any regulator reading it, a technical control that
+     does not exist.** Under Art. 5(2) accountability that is the worst place in the repo for this
+     particular sentence to live. → FOLLOW-575 AC1/AC2.
+  - **Rule Y adjudication — the letter is NOT violated; the code is clean and the doc is not covered.**
+    Rule Y (`CONVENTIONS_PATCH.md:1284`) binds *"a docstring/test-header … any comment that names a
+    test … as proof that an invariant is asserted"*. I checked every code comment this PR added: the
+    route comments (`access/route.ts:110-114`) merely *point* (*"See parity test: …"*) without
+    claiming what it asserts; the test header (`:43-48`) describes the block **accurately** and then
+    **states the gap as a gap** — which is precisely what Rule Y's remedy clause prescribes
+    (*"describe the gap as a gap … never as a guarantee"*). **So the agent was Rule-Y-compliant in
+    the code and made the forbidden claim only in the two artifacts Rule Y's letter does not reach —
+    a markdown compliance doc and a commit message.** Rule Y's own `Verification` grep confirms the
+    blind spot mechanically: it scans `packages --include='*.ts'` (`:1338-1339`) — blind to `apps/`
+    (where every artifact in this PR lives) and to `docs/` (where the false claim landed). This is a
+    **Rule Y AMENDMENT candidate at count 1, HELD** (§6) — not a violation to charge, and not a
+    promotion.
+- **DG-2 (P2) — DPIA §8 step 6 (the ERASURE enumeration) is stale in four independent ways, and this
+  PR's step-5 edit just made it load-bearing by citing it.** Pre-existing, NOT introduced here, but
+  now cross-referenced as authority (DG-1.1) and therefore no longer separable. `dpia.md:781-788`
+  vs the verified erase route:
+  1. **Postgres list OMITS `conversion_labels`** (erased in two passes — `erase/route.ts:390`, `:410`
+     — FOLLOW-172/184), **`quiz_completions`** (`:438`) and **`intent_sessions`** (`:452`), both
+     FOLLOW-455.
+  2. **Postgres list WRONGLY INCLUDES `answers`.** `grep -rn "answers" apps/control-plane/src/app/api/dsr/` → **zero hits**; the erase route has never deleted it. And it
+     **should not**: `packages/db/src/schema/answers.ts` is *"per-listing agency FAQ entries with
+     semantic embeddings"*, keyed on `(tenant_id, listing_id)` (`:29,:37,:55`) with **no
+     `session_id` column at all** — it is tenant content, not subject data. So the DPIA promises a
+     data subject an erasure that is neither performed nor appropriate. **The doc is wrong; the code
+     is right.**
+  3. **ClickHouse list OMITS `intent_events`** — four tables listed, five erased
+     (`clickhouse-dsr.ts:77`, FOLLOW-455).
+  4. **Redis leg lists only `session:{session_id}:*`** — omitting
+     `shadow:{tenant_id}:{session_id}:chat_intent`, which PR #528 added to the erase set **three
+     seconds before this PR merged**. See §8: this is where RETRO-175's Rule-N verdict needs
+     correcting.
+  → FOLLOW-575 AC3.
+- **DG-3 (P3) — the commit message's drift claim is now immutable in `main`'s history.** `797b8ab`'s
+  body asserts *"so the next store added to one side cannot silently drift from the other"*. Unlike
+  the DPIA (fixable) and the AC checkbox (fixable), a merged commit message is permanent. It sits
+  ~800 lines from the docstring that disclaims it. Recorded, not stubbed — the durable remedy is
+  FOLLOW-575/576 making the claim TRUE rather than editing history.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-570 (P2, compliance-engineer, ~3h — RETRO-175's stub, filed hours ago, UNPROMOTED):
+  its AC (b) is NECESSARY BUT NOT SUFFICIENT, and if implemented literally it would preserve the
+  defect it targets.** AC (b) reads: *"the FOLLOW-558 PARITY block … is **widened** from 'the erase
+  route's **Postgres** DELETE targets' to **every store the erase route touches, Redis included**"*.
+  That instruction is written on RETRO-175's premise that the block **is** a set-equality invariant
+  merely scoped too narrowly. Per §4c TG-1 it is a **hand-typed literal list**. Widening a hand-typed
+  list yields a **wider hand-typed list** — still inert, still green on the next drift, and now
+  carrying an even stronger "documented exception: none" claim over an even bigger union. **The
+  PM/implementer must read FOLLOW-570 AC (b) together with FOLLOW-576, or FOLLOW-570 will close its
+  ticket and not its gap** — the FOLLOW-097→114→127→141 relocation shape, pre-armed. Recorded here
+  rather than by editing FOLLOW-570 (read-only remit; RETRO-175's stub is its author's).
+- **The union has THREE axes, not two.** RETRO-175 identified Postgres (closed, #529) and Redis
+  (FOLLOW-570). **ClickHouse is a third** (§4a LG-1, FOLLOW-574) and it is the largest of the three:
+  4 undisclosed erased PII tables + 1 aggregate-only. Any "cover the union" work that scopes to
+  Postgres+Redis closes two thirds of a three-axis gap and will read as done.
+- **FOLLOW-559 (P2, backend-engineer, `deps: []`)** — the QUEUE's designated next backend pick,
+  UNAFFECTED (ingest consent gate; different surface). But the compliance lane now holds FOLLOW-570,
+  574, 575, 576 and 577 against one agent. Sequencing is the PM's call — flagged, not decided.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-458 (P2, devops-engineer, `status: BLOCKED`) — RETRO-175 framed FOLLOW-570 + FOLLOW-571 as
+  pre-conditions of its deploy. That framing is correct for the Redis axis and I affirm it. It is
+  ALSO, read alone, misleading — because it implies the DSR disclosure surface is otherwise sound
+  until FOLLOW-458 lands.** §4a LG-1 is **not gated on FOLLOW-458 at all**: `events` and
+  `adaptation_decisions` carry live prod data today, the routes are deployed today, and no deploy
+  arms it. **Recommendation for the PM (surfaced per my read-only remit — I do not escalate):
+  FOLLOW-574 should be sequenced on its own merits and BEFORE FOLLOW-570, not bundled behind
+  FOLLOW-458's gate.** It is the higher-severity, non-hypothetical member of the family. The PM
+  decides whether that warrants an ESCALATIONS.md entry; I am recording the dependency inversion,
+  not filing it.
+- **FOLLOW-455 / RETRO-150's "complete erasure & disclosure" lineage** — §7 traces why that verdict
+  needs the same qualification RETRO-175 gave it, on a second axis.
+
+#### 5c. Contracts changed others rely on
+
+- **Three new response fields, additive, non-breaking; no in-repo consumer to update — verified, not
+  assumed.** `engagement_score`, `quiz_completions`, `intent_session` are new keys on two JSON
+  bodies. No shared TS type describes these responses (each route builds its object literal inline),
+  no SDK/dashboard/worker parses them, and the terminal consumer is the data subject's downloaded
+  JSON. Blast radius: zero code, non-zero legal (the payload IS the Art. 15 deliverable).
+- **`DSR_CLICKHOUSE_TABLES` (`clickhouse-dsr.ts:68`) is the contract this PR should have been written
+  against and instead re-typed by hand in a comment.** It is exported, typed (`DsrTableName`, `:80`),
+  self-documenting (*"If a new PII-bearing, session-scoped table is added, append it here"*), and
+  imported-from by both routes already (`access/route.ts:48`). Its existence is also the **proof**
+  for §4a LG-1: the repo maintains a canonical, machine-readable list of the CH PII tables it erases,
+  and the disclosure routes read exactly one of them, in aggregate. **The evidence of the gap and the
+  mechanism to fix it are the same artifact.**
+- **No new env var, no new column, no migration.** All three tables pre-exist.
+
+#### 5d. Architectural assumptions affected
+
+- **RETRO-175 §5d's thesis is CONFIRMED on a second surface and EXTENDED — and this is the through-line
+  of both retros.** RETRO-175 argued: *"the erase path was written against an **assumed** namespace
+  list rather than an **inventory of actual producers** … the leg that was there matched a namespace
+  nothing writes, while the namespace that IS written by a different runtime was absent."* The
+  **disclosure** path has the identical defect, in mirror image: it now discloses
+  `engagement_scores` — a table **nothing writes** (§3 WA-NOTE) — while omitting four ClickHouse
+  tables that **are** written (§4a LG-1). Same method, same failure, opposite direction. The
+  generalizable statement RETRO-175 reached — *"an erasure/disclosure surface needs a parity
+  invariant over the union of stores, mechanically derived, not a hand-maintained list per store
+  class"* — is **exactly right**, and §4c TG-1 shows FOLLOW-558 did not achieve it even on the one
+  axis RETRO-175 credited it with.
+- **A parity test that cannot see a whole storage class is worse than no parity test — and I want to
+  answer that question directly rather than leave it rhetorical. YES, on balance, and for a specific
+  reason: it is the only artifact in the change that a future engineer will TRUST INSTEAD OF
+  CHECKING.** Absent a parity test, the next person adding a DELETE to `erase/route.ts` has no signal
+  and might think about disclosure. With this one, they get a **green CI run** on a test named
+  "PARITY", a DPIA certifying that drift "cannot" happen, and an AC checkbox recording that the
+  invariant is asserted. Every one of those is a reason not to look. The test's honest docstring is
+  the only thing standing against three confident artifacts pointing the other way — and docstrings
+  are what people read *after* CI is green. The false confidence is not a side effect of the gap; it
+  IS the gap. (Note the calibration: this is an argument about THIS test's advertising, not against
+  parity tests. FOLLOW-576 makes it real rather than deleting it.)
+- **RETRO-174 §5d's meta-thread recurs, on the doc-of-record surface** — *"a single documented
+  location is insufficient; the guard must sit where the actor actually arrives."* Here: the honest
+  statement of the parity block's limits sits in a test docstring (`:47`), while the DPO, the
+  auditor and the PM each arrive at the DPIA (`:778`) and the AC checkbox (`QUEUE.md:12275`) — both
+  of which say the opposite. Recorded as a meta-observation, **not** counted toward any promotion (§6).
+
+### 6. New lesson candidates
+
+- **Pattern (PARITY-INVARIANT-NARROWER-THAN-THE-CONTRACT-IT-GUARDS)** — RETRO-175 §6, count 1, HELD.
+  **NOT INCREMENTED BY THIS RETRO. Count stays 1.** This is the decision I was asked to make on
+  evidence and it is the easiest one in the file: **PR #528 and PR #529 are ONE incident** — one
+  merge window, one pair of stranded worktrees, one unowned union, seconds apart. RETRO-175 analyzed
+  it from #528's side; I analyzed it from #529's side. **A single incident cannot self-promote by
+  being retro'd twice.** Counting the second viewing as a second sighting would be count-inflation of
+  the purest kind — it would let any two-PR incident manufacture a rule by the arithmetic of how many
+  retros happened to look at it, and it would corrupt a bar the corpus has defended in RETRO-146,
+  150, 153, 158, 173, 174 and 175. **HELD at 1. ARMED unchanged.**
+  - **New evidence that REFINES the pattern's description without changing its count.** RETRO-175
+    framed the mechanism as *scope*: *"a parity/completeness test scoped to one store class (Postgres
+    tables) is structurally blind to a sibling PR that extends the same legal contract with a store
+    of another class."* §4c TG-1 shows the mechanism is **derivation**, and the scope failure is
+    downstream of it: the invariant is not narrow, it is **absent** — a hand-typed literal list that
+    is blind to drift *within* its own store class too, not merely across classes. **When this
+    pattern reaches a genuine 2nd sighting, it should be promoted with the DERIVATION framing, not
+    the SCOPE framing** — otherwise the resulting rule would bless a wider hand-typed list, which is
+    precisely the trap FOLLOW-570 AC (b) is currently walking into (§5a). Recorded here so the
+    promotion, whenever it comes, inherits the sharper statement.
+- **Pattern (PHANTOM-STORE-IN-A-COMPLIANCE-SURFACE): "a DSR erase/disclose surface carries a leg for
+  a store with ZERO producers repo-wide — the store inventory was assumed (from schemas, docs, or a
+  sibling surface) rather than derived from an inventory of actual writers — so the controller's
+  documents of record describe a live processing activity nothing performs."** — **RETRO-176, count
+  1 (fresh). HELD — NO PROMOTION.** This is the candidate I had to argue myself *out* of, and the
+  reasoning matters more than the verdict:
+  - **The case FOR count 2 is real and I want it on the record rather than buried.** RETRO-175 §3's
+    WA-NOTE (Redis `session:{sessionId}:*`, zero producers) and this retro's §3 WA-NOTE
+    (Postgres `engagement_scores`, zero producers) are **two different stores, in two different
+    storage classes, introduced by two different tickets at different times, discovered
+    independently** — they are emphatically **not** one incident (unlike the parity pattern above),
+    and both are recorded in numbered retros, which clears the bar RETRO-150 set (*"a QUEUE.md
+    observation, not a numbered prior RETRO"*). On a mechanical reading, that is 2, and 2 promotes.
+  - **Three reasons it does not, in descending strength.** (1) **Neither sighting is CONFIRMED, so
+    the evidence is not evidence-grade.** RETRO-175 §3 says explicitly of its phantom: *"I am not
+    asserting it is dead — I cannot see out-of-repo writers from here"*, and §3 above says the same
+    of `engagement_scores` (the ingest Worker, the local-only Estalara-app, or an unbuilt Modal leg
+    could each be the writer; note that `intent_sessions`' real producer UPSERTs via **PostgREST**
+    and is invisible to a Drizzle-shaped grep — direct proof that this class of grep under-reports).
+    A rule promoted on two *unconfirmed* observations would be codifying a hypothesis, and if either
+    store turns out to have an out-of-repo writer the rule would be **actively wrong** in
+    `CONVENTIONS_PATCH.md`, which is worse than absent. **Resolve FOLLOW-571 AC3 and FOLLOW-574 AC4
+    first; then the sightings are facts and the count is honest.** (2) **RETRO-175 held the phantom
+    in its hand and deliberately declined to register it as a §6 pattern** — it recorded it as a §3
+    WA-NOTE and a §5d architectural observation and folded it into FOLLOW-571 AC3. Registering it
+    retroactively *and* promoting on it in the same stroke would decide, on RETRO-175's behalf and
+    against its evident judgment, that its observation was a pattern-sighting — the same
+    re-labelling-to-reach-threshold move RETRO-175 §8 refused against RETRO-150, and which I am not
+    entitled to make for it. (3) **Both were surfaced by one analyst in one sweep, looking for one
+    shape.** The corpus's promoted rules record genuine recurrence across time and authors (Rule Y:
+    RETRO-084 → RETRO-089, weeks and two tickets apart). Two instances found by one person in one
+    afternoon *because they were looking* is a good audit, not proven recurrence.
+  - **ARMED, explicitly and with a testable trigger:** once FOLLOW-571 AC3 and/or FOLLOW-574 AC4
+    **confirm** either store is genuinely producerless, that sighting becomes evidence-grade; a
+    second confirmed sighting in any numbered retro → **≥2 → promote**, with the rule body being the
+    one mechanical check both instances share: *for every store in a DSR erase/disclose inventory,
+    grep for a writer; a store with no verified producer is retired or its producer is filed as a
+    ticket — the inventory is derived from writers, never from schemas or docs.*
+- **Candidate AMENDMENT to the already-promoted Rule Y (RETRO-084/089): "the citation-verification
+  obligation stops at the repo's code comments, but the false guard-claim lands in the artifacts a
+  regulator, a DPO and a PM actually read — a compliance doc of record, a commit message, an AC
+  checkbox — and Rule Y's own Verification grep scans only `packages/**/*.ts`, blind to `apps/` and
+  `docs/` entirely."** — **RETRO-176, count 1 (fresh). HELD — NO PROMOTION.** An amendment to an
+  existing letter, not a new one (it shares Y's root exactly: *a claim that a named artifact proves
+  an invariant must be true of that artifact*) — following the K.2-amendment precedent, which was
+  itself held to the ≥2 bar (RETRO-118 count 1 + RETRO-135 count 2). Rule Y's promoted evidence
+  (RETRO-084, RETRO-089) is **two `.ts` docstrings in `packages/`** — the doc-of-record sub-shape is
+  new to the corpus, and §4d DG-1 is its first sighting. **ARMED:** a 2nd numbered-retro sighting of
+  a compliance/architecture doc (or a commit message) certifying a guard the cited artifact does not
+  perform → promote the amendment, and extend Y's Verification grep to `apps/` + `docs/`.
+- **NOT counted, and I checked each specifically because each looked promotable:**
+  - **§4c TG-3 is a violation of the ALREADY-PROMOTED Rule S** (verification-tier clause), not a new
+    pattern. An existing rule being broken is a defect for FOLLOW-577 — **not evidence for a new
+    rule**. (Same adjudication RETRO-175 correctly made for its CB-1 / Rule K.2 violation.)
+  - **RETRO-175 §4c TG-2's "the repo already has the canonical mechanism and this PR did not use it"
+    rhymes loudly with §4c TG-1's `DSR_CLICKHOUSE_TABLES` observation — and is NOT incremented.** TG-2
+    is about a **cross-runtime contract** riding the wrong CI job (Rule Z / Rule Q territory); mine is
+    about a **shared inventory constant** not being imported (Rule S / derivation territory).
+    "Someone didn't reuse an existing mechanism" is a description of most engineering mistakes; it is
+    a family resemblance, not one pattern. Matching at that altitude is exactly how the bar gets
+    corrupted.
+  - **RETRO-175 §6's TURBO-CACHE-REPLAY-AS-INERT-GATE (count 1, ARMED) is NOT incremented.** §4c
+    TG-1's test is inert for a completely different reason — it *runs*, on every commit, and asserts
+    something true; it simply asserts less than advertised. Cache-replay is *green-without-executing*;
+    this is *executing-without-covering*. Superficially both are "an inert gate"; mechanically they
+    share nothing. Not a sighting.
+  - **RETRO-175 §6's WORKTREE-STRANDED-WORK pattern (count 1, HELD): NOT incremented, though this PR
+    was rescued from a worktree by the same session.** #528 and #529 were the **same rescue
+    incident** (`d39bb0a` / PR #527 covers both). Same-incident, second-viewing — see the parity
+    adjudication above. Count stays 1; FOLLOW-573 remains its durable fix.
+  - **RETRO-174 §6's CONVENTION-ADDED-BUT-NOT-WIRED (count 1): not incremented** — no codification
+    ticket here. **RETRO-173/174's bookkeeping-PR pattern (count 1): not incremented** — this
+    ticket's lifecycle was one clean PR.
+- Anti-count-inflation honored (RETRO-146/150/153/158/173/174/175 discipline). **No rule promoted
+  this retro.**
+
+### 7. Prior-follow-up closure check (step 7)
+
+- **FOLLOW-558 claims to close audit finding A3-F-06** (a 2026-07-11 audit finding, no predecessor
+  ticket — so no prior FOLLOW's closure claim is being inherited on this ticket's own lineage).
+  **VERDICT: SPLIT — the NAMED INSTANCE is closed end-to-end; the AC is not met; the gap CLASS is
+  un-closed on two of three axes.** Traced, not accepted:
+  - **The named instance (`quiz_completions` + `intent_sessions`) — CLOSED END-TO-END. Full chain,
+    each link verified:** **Producer** → `quiz_completions`: `api/quiz/completion/route.ts:240`
+    (`txDb.insert(quizCompletions).values(insertData)`); `intent_sessions`:
+    `apps/ingest/src/handlers/intent-snapshot.ts:249` (PostgREST UPSERT). **Store** → migrations
+    `0028_intent_sessions.sql` + quiz_completions, both with the constraints the routes rely on
+    (§4b). **Consumer (read)** → `access/route.ts:139/160` + `portability/route.ts:134/155`,
+    tenant-scoped on `(tenant_id, session_id)`, cardinality-correct per schema. **Render** → the
+    OTP-gated JSON body (`access/route.ts:347/362`), the actual Art. 15 deliverable. **Proof it
+    round-trips** → the route-driven pglite tests seed real rows and assert real values out of the
+    real handler (`:918-930`), not a mock's return shape. **The gap did not move one hop on this
+    axis.** Credit where due: this is a correct, well-verified fix of the thing the audit named.
+  - **AC2 (the parity invariant) — NOT MET on its letter**, and marked `[x]` in `QUEUE.md:12275-12276`
+    with PM validation. §4c TG-1 is the evidence: the test never reads the erase set. → FOLLOW-576.
+  - **The gap CLASS — un-closed on TWO of THREE storage axes, which is the step-7 trap firing
+    exactly as chartered.** The ticket's own principle is *"disclosing less than the controller
+    demonstrably holds **and erases**"*. Apply it to the full erase set: **Postgres** → closed ✅
+    (this PR). **Redis** → the `shadow:{tenant}:{session}:chat_intent` store is erased (PR #528, 3
+    seconds earlier) and never disclosed — RETRO-175 §5a, FOLLOW-570. **I independently verified the
+    claim rather than inheriting it:** `grep -rniE "shadow|redis|chat_intent" access/route.ts
+    portability/route.ts` → **zero hits. RETRO-175 is correct.** **ClickHouse** → four erased PII
+    tables never disclosed + `events` aggregate-only — §4a LG-1, FOLLOW-574, **found here, missed by
+    #529 and by RETRO-175.** This is the FOLLOW-097→114→127→141 shape my charter names: each fix
+    closes the hop it was pointed at, and the class survives one hop over.
+- **A prior FOLLOW *is* transitively implicated, and I traced it rather than accepting either its own
+  or RETRO-175's verdict: FOLLOW-455 / RETRO-150's "complete erasure & disclosure" claim.** RETRO-150
+  §7 recorded F-20 as *"CLOSED end-to-end … the 3-store erasure cascade … → disclosure (`access`/`portability` routes reading the real event count)"*. RETRO-175 already qualified that
+  verdict on the **Redis** axis. **It needs the same qualification on the ClickHouse axis, from its
+  own sentence:** *"reading the real event **count**"* is precisely the aggregate-only disclosure of
+  §4a LG-1, recorded as closure. FOLLOW-455 shipped `intent_events` into the CH **erase** inventory
+  (`clickhouse-dsr.ts:77`) and into **nothing** on the disclose side, in the same ticket that
+  RETRO-150 certified as closing "erasure & disclosure". **RETRO-150's verdict was correct on the
+  axes it enumerated and is now qualified on two.** Not overturned — the F-20 OTP/erasure work it
+  certified is real and stands.
+
+### 8. Multi-axis / contradiction reconciliation (step 8)
+
+- **CONTRADICTION WITH RETRO-175 — stated explicitly, reconciled, and it cuts BOTH ways: I affirm its
+  headline and overturn its characterization of this PR.**
+  - **What I AFFIRM, having verified it independently rather than inherited it:** RETRO-175 §5a's
+    core finding is **CORRECT**. The Redis shadow store is erased under Art. 17 (`erase/route.ts:124`)
+    and disclosed nowhere (`grep -rniE "shadow|redis|chat_intent"` on both disclosure routes → zero
+    hits). FOLLOW-570 is a real gap, correctly rated P2 (pre-emptive; no shadow keys in prod), and
+    correctly positioned as a pre-condition of FOLLOW-458's deploy. **I agree with the cascade and
+    would not have found it from this side without RETRO-175 — its 3-seconds-apart sibling analysis
+    is the reason FOLLOW-570 exists.**
+  - **What I OVERTURN:** RETRO-175 §5d states that *"FOLLOW-558 solved the identical class-level
+    problem on the Postgres axis **properly** (**a parity test that fails when the sets diverge**)"*.
+    **That is false.** The test does not fail when the sets diverge; it cannot see the erase set at
+    all (§4c TG-1). RETRO-175 §5a likewise characterizes it as *"Its parity test asserts
+    **access-set == erase-set**"* — it asserts `disclosure ⊇ {six hardcoded literals}`.
+  - **The reconciliation is the interesting part: RETRO-175 QUOTED THE DISPROOF OF ITS OWN CLAIM, in
+    the same sentence, and did not see it.** §5d reads in full: *"a parity test that fails when the
+    sets diverge — and its own header concedes the residual: 'the PARITY block's table list below
+    **must be updated by hand** to match.'"* Those two clauses cannot both be true: a list a human
+    must hand-update on divergence is a list that does not fail on divergence. RETRO-175 had the
+    decisive evidence, correctly extracted it, filed it as a "residual", and moved on. **The
+    mechanism of the miss is precise and worth naming: it read the test's DOCSTRING and not the test's
+    ASSERTION BODY** — the same trust-the-prose failure that Rule Y exists to prevent, committed by
+    the retro rather than by the code, and against a file it had open. (Rule Y's own third clause
+    binds me here: *"A retro for any PR that touches a 'drift guard' / 'parity guard' / 'asserted in
+    CI' docstring MUST open the cited file and confirm it performs the cited assertion."* That is why
+    I opened it.)
+  - **This is a REFINEMENT of RETRO-175's finding, not a reversal of it** — the same shape as
+    RETRO-175's own refinement of RETRO-150. RETRO-175 said the invariant is too narrow; the truth is
+    it is not an invariant. **Its conclusion (the union is unowned) survives intact and gets
+    STRONGER; only its estimate of what FOLLOW-570 must do changes** (§5a). Both retros' Redis
+    verdicts stand.
+  - **A SECOND, smaller correction to RETRO-175 — its Rule N verdict on FOLLOW-557 is wrong, and I
+    checked it only because §4d DG-2 forced me into step 6.** RETRO-175 §4d records: *"The DPIA was
+    **correctly** not updated here, and I checked before flagging: `docs/compliance/dpia.md` §8 step
+    5 enumerates the stores disclosed in an **access/portability** response (Rule N's trigger) …
+    FOLLOW-557 touches **erasure**, not disclosure, so it has no Rule N obligation *on its own
+    terms*."* **The premise is false: §8 step 6 (`dpia.md:781-788`) enumerates the ERASED stores too
+    — including, verbatim, the Redis leg: *"Upstash Redis (fire-and-forget SCAN + DEL of
+    `session:{session_id}:*`)"*.** FOLLOW-557 added `shadow:{tenant_id}:{session_id}:chat_intent` to
+    exactly that enumeration and did not update it. **FOLLOW-557 DID have a Rule N obligation — on
+    step 6, not step 5 — and did not discharge it.** RETRO-175 looked at the right document, verified
+    the right thing about the wrong section, and cleared it. Severity is low (a stale doc line, now
+    one of four in the same paragraph) and it does not disturb any other RETRO-175 finding; it is
+    folded into FOLLOW-575 AC3 rather than reopening FOLLOW-557. **Recorded because a retro that
+    silently inherits a sibling's "checked and cleared" is not doing the job — and because RETRO-175
+    asked me not to re-derive its §5a, which I honored, while this is a different claim.**
+- **Erase-vs-disclose axis:** BOTH analyzed — the whole ticket lives on it. Analyzing only the
+  disclose side ("do the three tables now appear?") yields a clean retro and misses §4a LG-1, §4c
+  TG-1 and §3's WA-NOTE entirely.
+- **All THREE storage-class axes:** Postgres (closed), Redis (RETRO-175), **ClickHouse (§4a LG-1 —
+  the axis nobody had checked)**. Analyzing only the two axes the sibling retro named would have
+  reproduced its blind spot one class over. **This is the multi-axis payoff for this merge.**
+- **Producer-vs-consumer axis on all three newly-disclosed tables:** traced individually (§3), which
+  is the only reason the `engagement_scores` phantom surfaced — the erase side's coverage was
+  presented (by the audit, the ticket, the PR and the DPIA) as sufficient evidence the store is live.
+  It is not: **erasure coverage proves a table was once believed to hold data, not that anything
+  writes it.** Note the grep trap I hit and had to correct: `intent_sessions`' producer UPSERTs via
+  **PostgREST**, so `grep "insert(intentSessions)"` returned nothing and I nearly recorded a second
+  phantom. Verified before claiming (§6 leans on this).
+- **Cardinality axis (1-row vs 0..n), per store, against the REAL schema not the fixture:** all three
+  correct (§4b) — and the fixture disagrees with prod on one of them (§4c TG-4). Checking only the
+  fixture would have produced a false clean; checking only the route would have missed TG-4.
+- **Access-vs-portability axis:** code identical (§4b, correct), verification tiers not (§4c TG-3,
+  Rule S violation). Analyzing only the code yields "symmetric ✅".
+- **Test-vs-production axis:** the tests assert the payload (§2 — genuinely strong, and materially
+  better than the sibling PR's). The AC/DPIA/commit-message assert something the tests do not
+  (§4c TG-1). **The claim gap here is between artifacts, not inside the test.**
+- **Tenant axis:** the three new reads are tenant-scoped (§4b, correct); only one of three is tested
+  for it, and it is the least dangerous one (§4c TG-2). `consent_records` is un-tenant-scoped on
+  BOTH sides — checked, symmetric, pre-existing, **not** a finding (§4b).
+- **The SCOPE question I was asked to adjudicate on merit — `engagement_scores` added beyond the
+  ticket stub's two named tables: CORRECT CALL, not scope creep. The ticket text and the AC text
+  genuinely disagreed, and the agent resolved in favor of the AC and said so in the PR body.** Four
+  reasons it is right: (1) **the AC governs** — AC2 demands access-set == erase-set, erase covers
+  `engagement_scores` (`erase/route.ts:426`, FOLLOW-193), so omitting it would leave AC2 unmet by
+  construction; (2) it is the **same defect class** the ticket exists to close, one table over —
+  fixing 2 of 3 knowingly would be the relocation trap, self-inflicted; (3) it is **additive,
+  reversible, PR-gated and P2** — CLAUDE.md's own tie-break ("the lower tier for reversible,
+  PR-gated work") points at *decide and document*, which is what happened, rather than at blocking a
+  P2 on an escalation; (4) it is **cheap and pre-wires correctly** — per §3's WA-NOTE nothing writes
+  the table today, so if a producer ever lands, disclosure is already there. **The deviation was
+  named explicitly in the PR body and in `pm_validated` — surfaced, not silent, which is exactly
+  CLAUDE.md §1's requirement.**
+  - **One flaw in the JUSTIFICATION, though the CALL is right — recorded because it is the same
+    reasoning error as §4c TG-1 and shows the parity illusion doing real work.** The PR body argues
+    *"omitting it would **fail parity**"*. It would not: the "parity" test is a list the same author
+    hand-types (§4c TG-1). Omitting `engagement_scores` would have failed **nothing** — the test
+    would have been written with five entries and passed green. The correct justification is **the AC
+    itself**, which is a real obligation; the cited mechanism is **circular** (the test fails only
+    because the author chose to make it fail). The agent reached the right decision via an
+    enforcement mechanism that does not exist — which is precisely the false confidence §5d argues
+    this test manufactures, visible here acting on its own author within the same PR.
+- **Last-5-retros cross-cut (RETRO-171–175):** RETRO-171 = the close of the Rule AB async-interleave
+  arc (cited only as the §7 CONTRAST: that arc's fixes relocated one hop *downstream in code*; this
+  ticket's class relocates *across storage classes*, which a code-axis framing would not catch).
+  RETRO-172/173/174 = the control-plane auth-fold → PR-sprawl → codification process arc; RETRO-174
+  §5d's *"the guard must sit where the actor arrives"* recurs here on the doc-of-record surface (§5d)
+  — recorded, **not** counted. RETRO-175 = the direct sibling, reconciled above. **No pattern from
+  the last 5 recurs un-closed here; the one that recurs (RETRO-175's assumed-vs-producer inventory,
+  §5d) is confirmed and extended, and its promotion is declined in §6 with reasons.**
+
+### 9. Follow-ups
+
+- **FOLLOW-574 (P1, compliance-engineer, ~4h)** — **Close the ClickHouse axis of the DSR disclosure
+  union: four erased PII tables are disclosed to nobody and `events` is disclosed only as an
+  aggregate count.** Closes RETRO-176 §4a LG-1 + §3 WA-NOTE. **P1 and NOT gated on FOLLOW-458** —
+  unlike FOLLOW-570's Redis sibling (pre-emptive, no prod data), `events`/`adaptation_decisions`
+  carry live prod data today and the routes are deployed; this is a deployed Art. 15/20
+  non-compliance whose only mitigation is that pilot traffic is ~0%. **Sequence it before
+  FOLLOW-570.** AC: (a) for each of the five tables in `DSR_CLICKHOUSE_TABLES`
+  (`apps/control-plane/src/lib/clickhouse-dsr.ts:73-77` — `events`, `adaptation_decisions`,
+  `llm_calls`, `session_quality`, `intent_events`, each annotated PII in that file), `GET
+  /api/dsr/access` and `GET /api/dsr/portability` either **disclose** the session-scoped rows or
+  carry an **explicit documented exception** naming the legal basis — silence is not an option, and
+  the disclosure set MUST be **derived from `DSR_CLICKHOUSE_TABLES`** (the exported canonical
+  inventory the access route already imports at `access/route.ts:48`), never re-typed; (b) **CEO/DPO
+  ruling required and is the ticket's first step, not its last** — does an aggregate
+  (`events_summary: {count, first_at, last_at}`) satisfy Art. 15(3) *"a copy of the personal data
+  undergoing processing"* and Art. 20 *"structured, commonly used, machine-readable"* for a
+  behavioural event log, or must rows be exported (with volume caps / Art. 15(4) considerations)?
+  This is a legal-interpretation call, NOT an engineering one — escalate, do not decide; record the
+  ruling in the DPIA and as an explicit exception in the parity test (FOLLOW-576), never as silence;
+  (c) Rule N — `docs/compliance/dpia.md` §8 step 5 ships updated in the SAME PR with whatever (a)/(b)
+  land on (coordinate with FOLLOW-575 — same paragraph, likely one PR); (d) **resolve the
+  `engagement_scores` phantom** (§3 WA-NOTE): repo-wide grep finds ZERO writers, while
+  `ropa.md:408` names Modal as its live processor and `dpia.md:198` gives it a 90-day retention row —
+  either identify the producer (check PostgREST/Supabase-client writers and out-of-repo actors: the
+  ingest Worker, Estalara-app; note `intent_sessions`' producer is invisible to a Drizzle grep for
+  exactly this reason), or file its absence as an unbuilt-producer ticket, or retire the table — and
+  reconcile ROPA + DPIA to whichever is true. **This AC's outcome is what arms or disarms §6's
+  PHANTOM-STORE pattern; record the verdict so the next retro can count it.** Source: RETRO-176 §4a/§3.
+  cross_ref: [FOLLOW-558, FOLLOW-455, FOLLOW-193, FOLLOW-570, RETRO-176, RETRO-175, RETRO-150].
+- **FOLLOW-575 (P2, compliance-engineer, ~3h)** — **Reconcile DPIA §8 (Data Subject Rights) with the
+  code that actually runs: step 5 ships two false statements, step 6 is stale in four ways, and step
+  5 now cites step 6 as authority.** Closes RETRO-176 §4d DG-1 + DG-2, and RETRO-175 §4d's incorrect
+  "FOLLOW-557 has no Rule N obligation" verdict (§8). **This is a doc-of-record defect, not
+  bookkeeping** — the DPIA is what a DPO and a regulator read, and it currently certifies a control
+  that does not exist. AC: (a) `dpia.md:778-780`'s claim that the parity test *"asserts the
+  Access/Portability table set matches the Erasure table set so a future new store cannot silently
+  drift the two apart again"* is **removed or made true** — it is false today (§4c TG-1); if
+  FOLLOW-576 lands first, re-word to what the test then actually does; if not, state the gap as a
+  gap per Rule Y's remedy clause (*"describe the gap as a gap … never as a guarantee"*); (b)
+  `dpia.md:773-777`'s *"the same three tables that were already part of the Erasure cascade **in step
+  6 below**"* is corrected — step 6 names only `engagement_scores` of the three; (c) **step 6's
+  erasure enumeration (`:781-788`) is reconciled against `erase/route.ts` + `clickhouse-dsr.ts`,
+  all four errors**: ADD `conversion_labels` (`:390`,`:410`), `quiz_completions` (`:438`),
+  `intent_sessions` (`:452`); REMOVE `answers` (never erased — `grep -rn "answers" api/dsr/` → zero
+  hits — and correctly so: it is per-listing agency FAQ content keyed `(tenant_id, listing_id)` with
+  no `session_id`, `schema/answers.ts:29-55`); ADD `intent_events` to the ClickHouse list
+  (`clickhouse-dsr.ts:77`); ADD `shadow:{tenant_id}:{session_id}:chat_intent` to the Redis leg
+  (FOLLOW-557 / PR #528 — **this is FOLLOW-557's undischarged Rule N obligation**, §8); (d) DPIA
+  2.9 → 2.10 + changelog row; (e) sanity-check §8 step 4's identifier-resolution table list against
+  the same sources while in the paragraph. **Consider merging with FOLLOW-574 AC(c) — same
+  paragraph, and two PRs touching §8 will conflict** (cf. RETRO-173's #504/#506 sprawl). Source:
+  RETRO-176 §4d. cross_ref: [FOLLOW-558, FOLLOW-557, FOLLOW-455, FOLLOW-574, RETRO-176, RETRO-175,
+  Rule N, Rule Y].
+- **FOLLOW-576 (P2, backend-engineer, ~3h)** — **Make the FOLLOW-558 "PARITY" test actually derive
+  the erase set, so it can fail on the drift it is named for. AC2 of FOLLOW-558 is not met.** Closes
+  RETRO-176 §4c TG-1. **Read this together with FOLLOW-570 AC (b), which is written on the premise
+  that the block IS a set-equality invariant merely scoped too narrowly — it is not, and widening a
+  hand-typed list yields a wider hand-typed list (§5a).** AC: (a) the erase-side table set is
+  **DERIVED, not hand-typed** — preferred: route-drive the erase handler in the SAME pglite harness
+  (`import { POST as postErase } from './erase/route'`), seed every store, POST erase, and assert the
+  set of tables that emptied EQUALS the set of stores the disclosure routes return; **note explicitly
+  that this requires ZERO edits to `erase/route.ts`** — the #529 author's "READ-ONLY against
+  erase/route.ts" constraint (`:45-46`) was about avoiding a merge conflict with the concurrent
+  #528 and never precluded *importing* it (§4c TG-1); acceptable alternative: both routes and the
+  erase route derive from ONE exported inventory constant, mirroring `DSR_CLICKHOUSE_TABLES`
+  (`clickhouse-dsr.ts:68`, already imported by `access/route.ts:48`), with the test asserting against
+  that constant; (b) the invariant covers the **UNION of stores across ALL storage classes** —
+  Postgres **+ Redis** (FOLLOW-570) **+ ClickHouse** (FOLLOW-574) — so *"documented exception: none"*
+  (`:852`) becomes true of the union or names its exceptions explicitly; (c) **proof the guard is
+  real, not asserted**: a mutation test — add a 7th DELETE target to a scratch copy of the erase
+  route and demonstrate the test goes RED (today it stays green; that demonstration IS the
+  acceptance evidence); (d) once (a)-(c) land, the DPIA sentence (FOLLOW-575 AC(a)) and the
+  FOLLOW-558 AC2 checkbox (`QUEUE.md:12275`) become true and should be re-stated rather than
+  silently left. Source: RETRO-176 §4c TG-1 / §5a. cross_ref: [FOLLOW-558, FOLLOW-557, FOLLOW-570,
+  FOLLOW-574, RETRO-176, RETRO-175, Rule S, Rule Y].
+- **FOLLOW-577 (P3, qa-engineer or compliance-engineer, ~2h)** — **Close the disclosure suite's
+  verification-tier asymmetries: the untested tenant axis is the dangerous one, and portability is
+  verified one tier below access (Rule S).** Closes RETRO-176 §4c TG-2 + TG-3 + TG-4. AC: (a)
+  **tenant-isolation tests for `engagement_scores` and `intent_sessions`** — today only
+  `quiz_completions` has one (`:936`), and it is the store where a missing tenant predicate merely
+  adds visible rows; the two `.limit(1)` queries (`access/route.ts:120`,`:145`) would instead
+  substitute **one arbitrary tenant's row for the subject's own**, a cross-tenant disclosure
+  invisible in the payload shape (§4c TG-2); (b) **the portability describe block reaches the same
+  verification tier as access** — it has 1 test to access's 3 (missing the empty/never-fabricate case
+  and tenant isolation) over ~75 lines of copy-pasted logic: a **Rule S violation**
+  (`CONVENTIONS_PATCH.md:960`, verification-tier clause), which is a defect against a promoted rule,
+  not a new pattern; (c) the fixture DDL's `engagement_scores` gains the
+  `uniqueIndex('engagement_scores_tenant_session_idx').on(tenantId, sessionId)` that **production
+  has** (`schema/engagement_scores.ts:56`) and the fixture omits (`:194-205`) — while the same
+  fixture DOES mirror `intent_sessions`' unique index (`:236-237`); a fixture more permissive than
+  prod cannot corroborate the `.limit(1)` the route depends on (§4c TG-4). Source: RETRO-176 §4c.
+  cross_ref: [FOLLOW-558, FOLLOW-256, RETRO-176, Rule S].
+
+### 10. Cross-references
+
+- **Related to RETRO-175 (FOLLOW-557 / PR #528) — the SIBLING MERGE, 3 seconds earlier, and the
+  retro this one both affirms and corrects.** (i) **Affirmed:** its §5a Redis-disclosure cascade is
+  real and independently re-verified here (§7/§8); FOLLOW-570 is a genuine gap and its
+  pre-FOLLOW-458 posture is right. (ii) **Corrected:** its §5d claim that #529 shipped *"a parity
+  test that fails when the sets diverge"* is disproved by the docstring §5d itself quotes (§8) — the
+  consequence is that its FOLLOW-570 AC (b) is necessary-but-insufficient (§5a) and FOLLOW-576 must
+  be read with it. (iii) **Corrected:** its §4d verdict that FOLLOW-557 had no Rule N obligation
+  rests on a false premise — DPIA §8 **step 6** enumerates the ERASED stores, including the Redis leg
+  FOLLOW-557 extended (§8, FOLLOW-575 AC3). (iv) **Confirmed and extended:** its §5d
+  assumed-inventory-vs-producer-inventory thesis holds on the disclose side too, in mirror image
+  (§5d) — its Redis phantom and this retro's `engagement_scores` phantom are the same shape, and §6
+  declines to promote on them and says exactly why.
+- **Related to RETRO-150 (FOLLOW-455) — the DIRECT predecessor on the disclosure axis, now qualified
+  twice.** Its §7 "CLOSED end-to-end … → disclosure (routes reading the real event **count**)" was
+  correct on the axes it enumerated; RETRO-175 qualified it on Redis, and §7 here qualifies it on
+  ClickHouse — the "real event count" it certified as disclosure IS §4a LG-1's aggregate-only gap,
+  and the same ticket added `intent_events` to the CH erase inventory and to nothing on the disclose
+  side. Not overturned.
+- **Related to Rule S (promoted) — VIOLATED on its verification-tier clause (§4c TG-3), not
+  extended.** The code is symmetric; the tests are not. A promoted rule being broken is a defect for
+  FOLLOW-577, not promotion arithmetic — the same adjudication RETRO-175 made for its Rule K.2
+  violation.
+- **Related to Rule Y (RETRO-084/089, promoted) — NOT violated, and the near-miss is the finding
+  (§4d DG-1).** Every code comment this PR added is Rule-Y-clean; the test header even states its own
+  gap as a gap, which is Y's prescribed remedy. The forbidden claim landed in the two artifacts Y's
+  letter does not reach (a compliance doc of record, a commit message) and that Y's Verification grep
+  cannot see (it scans `packages/**/*.ts`; this PR is entirely `apps/` + `docs/`). Count-1 amendment
+  candidate, ARMED (§6). **Y's third clause — "a retro … MUST open the cited file and confirm it
+  performs the cited assertion" — is what produced §4c TG-1 and §8's contradiction with RETRO-175;
+  it is the single highest-yield instruction in `CONVENTIONS_PATCH.md` for this retro.**
+- **Related to Rule N (promoted) — SATISFIED in form, defeated in substance, and the distinction is
+  the lesson.** The agent did the hard, correct thing: it found that DPIA §8 step 5 *does* enumerate
+  disclosed stores, declined the absence-of-claim escape hatch its own brief offered, and shipped the
+  doc in the same PR (2.8→2.9 + changelog). **Rule N asks that the doc be UPDATED; it does not ask
+  that the update be TRUE.** The updated enumeration is itself inaccurate (§4d DG-1: a false
+  cross-reference to a stale step 6, and a guard claim the test disclaims). **Rule N's letter is
+  met and its purpose — "compliance docs … MUST match shipped code" — is not.** Not filed as a Rule
+  N amendment: the gap is squarely the Rule Y root (a citation must be true of its artifact), and
+  manufacturing a second rule for it would be the over-broad matching §6 rejects elsewhere.
+- **Related to RETRO-174 §5d — meta-thread recurrence, NOT a count.** *"The guard must sit where the
+  actor arrives"*: the honest account of the parity block's limits lives in a test docstring; the
+  DPO, the auditor and the PM each arrive at the DPIA and the AC checkbox, which say the opposite.
+- **Related to the FOLLOW-097 → 114 → 127 → 141 `inquiry_submit_selector` chain (my charter's step-7
+  evidence) — the canonical precedent for §7's verdict.** That chain moved a gap producer→consumer→
+  detector→seed, one hop per "fix". A3-F-06 is the same shape rotated onto **storage classes**:
+  Postgres closed, Redis open (FOLLOW-570), ClickHouse open (FOLLOW-574). **The lesson that
+  transfers: declaring closure against the hop the ticket NAMED, rather than against the class the
+  ticket's own PRINCIPLE defines, is how a chain gets to four links.**
+
+### RETRO-176 — Rule promotion decision
+
+**NO rule promoted. `CONVENTIONS_PATCH.md` UNTOUCHED.** Two fresh candidates held at count 1, one
+prior candidate explicitly NOT incremented, two promoted-rule violations correctly classified as
+defects rather than evidence:
+
+1. **PARITY-INVARIANT-NARROWER-THAN-THE-CONTRACT-IT-GUARDS (RETRO-175 §6, count 1) — NOT
+   INCREMENTED. Stays count 1.** The decision I was asked to make: **PR #528 and PR #529 are ONE
+   incident** (one merge window, one rescue, one unowned union, 3 seconds apart), and RETRO-175 and
+   RETRO-176 are two viewings of it. **One incident cannot self-promote by being retro'd twice** —
+   that arithmetic would let any multi-PR incident mint a rule from the number of retros that
+   happened to look at it, and would corrupt a bar defended in RETRO-146/150/153/158/173/174/175. The
+   pattern's *description* is refined by new evidence (the mechanism is **absent derivation**, not
+   **narrow scope** — §6), so that a future genuine 2nd sighting promotes the right rule; the
+   *count* is untouched. RETRO-175's hold and its reasoning are respected, not re-litigated.
+2. **PHANTOM-STORE-IN-A-COMPLIANCE-SURFACE — fresh, count 1, HELD.** The candidate with a real case
+   for 2 (RETRO-175 §3's Redis `session:*` and this retro's §3 `engagement_scores` are genuinely
+   independent stores, classes, tickets and discoveries — **not** one incident). Declined because:
+   (a) **neither sighting is confirmed** — both retros explicitly cannot rule out out-of-repo writers,
+   and `intent_sessions`' PostgREST producer proves this grep class under-reports; a rule built on
+   two hypotheses could land in `CONVENTIONS_PATCH.md` **actively wrong**; (b) RETRO-175 held the
+   phantom and **deliberately declined to register it** as a §6 pattern — registering it on its
+   behalf *and* promoting in one stroke is the re-labelling-to-reach-threshold move RETRO-175 §8
+   itself refused; (c) both were surfaced by one analyst in one sweep looking for one shape, which is
+   a good audit, not proven recurrence across time and authors (cf. Rule Y: RETRO-084 → RETRO-089).
+   **ARMED with a testable trigger:** FOLLOW-571 AC3 / FOLLOW-574 AC4 confirm-or-refute; a confirmed
+   2nd sighting → ≥2 → promote, rule body ready (*derive a DSR store inventory from writers, never
+   from schemas or docs*).
+3. **Rule Y AMENDMENT candidate (doc-of-record + commit-message sub-shape; Y's Verification grep is
+   blind to `apps/` and `docs/`) — fresh, count 1, HELD, ARMED.** An amendment to a promoted letter,
+   not a new one — per the K.2-amendment precedent, itself held to ≥2 (RETRO-118 + RETRO-135). Y's
+   promoted evidence is two `.ts` docstrings in `packages/`; §4d DG-1 is the first sighting of the
+   doc-of-record shape.
+4. **Explicitly NOT incremented:** RETRO-175's TURBO-CACHE-REPLAY (count 1 — §4c TG-1's test
+   *executes* and asserts something true, it just asserts less than advertised; cache-replay is
+   green-without-executing, this is executing-without-covering — superficial rhyme, no shared
+   mechanism); RETRO-175's WORKTREE-STRANDED-WORK (count 1 — #528/#529 were the **same** rescue
+   incident, `d39bb0a`/PR #527); RETRO-175 §4c TG-2's "didn't reuse the existing mechanism" (a
+   description of most engineering mistakes, not a pattern — matching at that altitude is how the bar
+   gets corrupted); RETRO-174's CONVENTION-NOT-WIRED and RETRO-173's bookkeeping-PR (count 1 each —
+   no codification ticket here; one clean PR).
+5. **Two promoted rules were broken; NEITHER is promotion arithmetic.** **Rule S** — verification-tier
+   clause, access 3 tests vs portability 1 over copy-pasted logic (§4c TG-3) → defect, FOLLOW-577.
+   **Rule N** — satisfied in form (the DPIA WAS updated in-PR, correctly refusing the
+   absence-of-claim hatch) and defeated in substance (the update is false, §4d DG-1) → defect,
+   FOLLOW-575. **An existing rule being broken is not evidence for a new rule.**
+
+<!-- next free FOLLOW number: 578. RETRO-176 = retro for PR #529 (FOLLOW-558, audit A3-F-06, MERGED 2026-07-15T19:24:57Z, commit 797b8ab, 3 SECONDS after PR #528/FOLLOW-557; 5 files +616/-8; access+portability disclose engagement_scores/quiz_completions/intent_sessions + a 338-line route-driven pglite suite + DPIA 2.8->2.9; content commit 1877722 rescued from a stranded worktree, same incident as RETRO-175 §4e). Wiring Audit CLEAN on both checks (CHECK A: zero new exports — the one new file is a test, the two routes are framework entrypoints; corroborated by check-rule-i.sh holding at 561 symbols/181 violations both sides. CHECK B: no new event/env/column/topic/SDK-signal; the 3 new response fields are a terminal human-facing payload at a route boundary; producers verified individually for all 3 tables) + one WA-NOTE (engagement_scores — the table added BEYOND the ticket stub — has ZERO producers repo-wide, yet ropa.md:408 names Modal as its live processor and dpia.md:198 gives it a 90-day retention row; the exact mirror of RETRO-175 §3's Redis phantom). GAPS: LG-1 (P1, HEADLINE) the ClickHouse axis of the union is un-closed — erase covers 5 CH PII tables (clickhouse-dsr.ts:73-77) while disclosure returns ONE aggregate over ONE of them (SELECT count()/min/max FROM events), so adaptation_decisions/llm_calls/session_quality/intent_events are erased-but-never-disclosed and events is a count-not-a-copy; UNLIKE RETRO-175's P2 Redis sibling this data is LIVE IN PROD TODAY and is NOT gated on FOLLOW-458; TG-1 (P2) the "PARITY" test never imports/drives erase/route.ts — the erase set exists only as prose in a comment, so it asserts disclosure ⊇ {6 hardcoded literals}, NOT access-set == erase-set: add a 7th DELETE target and it stays GREEN; AC2 is NOT met on its letter yet is marked [x] in QUEUE.md:12275; root cause = the author conflated "do not EDIT erase/route.ts" (sound #528 merge-conflict avoidance) with "do not IMPORT it" (unforced, cost the whole invariant); TG-2/TG-3/TG-4 (P3) tenant isolation tested only for quiz_completions and NOT for the two .limit(1) stores where the failure mode is worst, portability has 1 test vs access's 3 over copy-pasted logic (Rule S verification-tier VIOLATION), fixture omits engagement_scores' prod unique index; DG-1 (P2) the DPIA edit ships TWO false statements into a doc of record — a cross-reference to step 6 that step 6 does not support, and a guard claim ("cannot silently drift") the test's own docstring disclaims; DG-2 (P2) DPIA §8 step 6 is stale FOUR ways (omits conversion_labels/quiz_completions/intent_sessions + intent_events; wrongly lists `answers`, which is per-listing FAQ content with no session_id and is correctly never erased; omits FOLLOW-557's shadow key). CODE: no defects — cardinality (.limit(1) vs 0..n) correct against the REAL schemas, tenant-scoping correct, consent_records' missing tenant filter is pre-existing AND symmetric with erase (checked, cleared). CLOSURE (step 7): SPLIT — A3-F-06's NAMED instance CLOSED end-to-end (producer quiz/completion/route.ts:240 + intent-snapshot.ts:249 PostgREST UPSERT → tables → tenant-scoped reads → OTP-gated JSON → payload-asserting route-driven tests), AC2 NOT met, and the gap CLASS un-closed on 2 of 3 storage axes (Redis=FOLLOW-570, ClickHouse=FOLLOW-574) — the FOLLOW-097→114→127→141 shape rotated onto storage classes. CONTRADICTIONS WITH RETRO-175 (§8): AFFIRMED its §5a Redis cascade (independently re-verified: grep shadow|redis|chat_intent on both disclosure routes → 0 hits); OVERTURNED its §5d "a parity test that fails when the sets diverge" — disproved by the docstring §5d itself quotes ("must be updated by hand"), i.e. it read the docstring not the assertion body; CORRECTED its §4d "FOLLOW-557 had no Rule N obligation" — DPIA §8 step 6 DOES enumerate ERASED stores incl. the Redis leg, so FOLLOW-557 had a step-6 obligation it did not discharge; CONFIRMED+EXTENDED its §5d assumed-vs-producer-inventory thesis onto the disclose side. CONSEQUENCE: FOLLOW-570 AC(b) ("widen the parity block") is necessary-but-INSUFFICIENT — widening a hand-typed list yields a wider hand-typed list; read it with FOLLOW-576. RULE: NO PROMOTION — PARITY-INVARIANT-NARROWER NOT incremented (#528/#529 are ONE incident viewed twice; one incident cannot self-promote by being retro'd twice) though its description is refined to DERIVATION-not-SCOPE for whenever it does promote; PHANTOM-STORE fresh count-1 HELD despite a real case for 2 (both sightings UNCONFIRMED — out-of-repo writers possible, and intent_sessions' PostgREST producer proves this grep class under-reports; plus RETRO-175 declined to register its own phantom, and registering-then-promoting in one stroke is re-labelling-to-threshold); Rule Y doc-of-record AMENDMENT candidate count-1 HELD/ARMED (Y's letter reaches comments not compliance docs; its Verification grep scans packages/**/*.ts only — blind to apps/ AND docs/, where this entire PR lives). Rule S (verification tier) and Rule N (updated-but-false) were BROKEN → defects for FOLLOW-577/575, NOT evidence for new rules. SCOPE VERDICT: adding engagement_scores beyond the stub's 2 tables was the CORRECT call (the AC governs and erase covers it; additive/reversible/P2/named-in-PR-body) — but its stated justification ("omitting it would fail parity") is CIRCULAR, since the test is a list the same author hand-types: the parity illusion acting on its own author inside its own PR. FOLLOWS FILED: 574 (P1 compliance-engineer ~4h — ClickHouse disclosure axis derived from DSR_CLICKHOUSE_TABLES + CEO/DPO ruling on aggregate-vs-copy REQUIRED FIRST + resolve the engagement_scores phantom; sequence BEFORE FOLLOW-570, not gated on FOLLOW-458), 575 (P2 compliance-engineer ~3h — DPIA §8 step 5 falsities + step 6's four staleness errors + DPIA 2.9→2.10; likely merge with 574 AC(c), same paragraph), 576 (P2 backend-engineer ~3h — DERIVE the erase set by route-driving erase/route.ts in the same pglite harness [zero edits to it needed], cover the 3-class union, prove with a mutation test that a 7th target goes RED), 577 (P3 qa/compliance ~2h — tenant-isolation for the two .limit(1) stores, portability to access's verification tier per Rule S, fixture unique-index parity). PM ACTION: FOLLOW-574 is P1, live in prod, and NOT gated on FOLLOW-458 — RETRO-175's "pre-condition of FOLLOW-458" framing is correct for Redis and UNDERSTATES the ClickHouse leg, which needs no deploy to arm. PM decides whether that warrants an ESCALATIONS.md entry; this retro records the dependency inversion and does not escalate. -->

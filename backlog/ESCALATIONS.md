@@ -2191,3 +2191,62 @@ tracked separately): the full browser→SDK→control-plane→Modal leg + the ES
 still want a real-listing confirmation; Modal Phases B (intent-engine) and C (data-quality /
 stream-consumer, FOLLOW-458) remain deferred; and a `.strip()` hardening on secret-env reads is
 filed as FOLLOW-488 to prevent the leading-space class of bug recurring.
+
+---
+
+## OPEN — ESC-037: four erased ClickHouse PII tables are disclosed to nobody — live Art. 15/20 gap in prod today (not gated on any deploy) [FOLLOW-574]
+
+**Filed by:** pm-orchestrator (session 30, off RETRO-176) **Date:** 2026-07-16T00:00:00Z
+**Affects:** FOLLOW-574 (P1), `apps/control-plane/src/app/api/dsr/access/route.ts`,
+`apps/control-plane/src/app/api/dsr/portability/route.ts`,
+`apps/control-plane/src/lib/clickhouse-dsr.ts`, prod ClickHouse **Type:** compliance
+
+**Description:** DSR erasure deletes **five** ClickHouse PII tables — `DSR_CLICKHOUSE_TABLES`
+(`clickhouse-dsr.ts:72-78`) lists `events`, `adaptation_decisions`, `llm_calls`, `session_quality`,
+`intent_events`. DSR access/portability disclose **one aggregate over one of them**: both routes
+call only `getSessionEventSummary()` and return `events_summary` (`access/route.ts:301,326`). So
+`adaptation_decisions`, `llm_calls`, `session_quality` and `intent_events` are **erased but
+disclosed to nobody**, and `events` is disclosed as a count rather than a copy of the data.
+
+Verified independently by the PM before filing (read `DSR_CLICKHOUSE_TABLES` and both routes'
+ClickHouse call sites), not taken on the retro's word.
+
+Same asymmetry class the 2026-07-11 audit raised as A3-F-06 and that FOLLOW-558 (PR #529, merged
+`797b8ab`) was supposed to close: **if the controller demonstrably holds and erases a store, an Art.
+15 access report and an Art. 20 export may not omit it.** FOLLOW-558 closed the gap on the Postgres
+axis only. Nobody owned the union across storage classes.
+
+**Why this is escalated rather than left as a queue ticket:** unlike the sibling Redis gap
+(FOLLOW-570, which arms only when FOLLOW-458 deploys), **this data is live in prod right now and
+needs no deploy to arm it.** Any DSR access/portability request served today returns an incomplete
+report. That is a compliance-posture question with a regulatory clock on it, and per CLAUDE.md
+compliance posture is not the PM's call.
+
+Two related findings from the same retro pair, for context (both filed as tickets, neither
+escalated):
+
+- **FOLLOW-576 — FOLLOW-558's AC2 is not met.** The `disclosure-route-driven-pglite.test.ts`
+  "PARITY" block never imports `erase/route.ts` (`grep` finds it only in comments; the file's own
+  docstring admits the list "must be updated by hand"). It asserts disclosure ⊇ 6 hardcoded
+  literals, so **adding a 7th DELETE target to erase keeps it green** — it cannot fail on the drift
+  it is named for. The PM ticked that AC on the strength of the test's name and docstring rather
+  than its assertion body, and merged on it; the tick is corrected in `QUEUE.md` this session.
+  Widening the hardcoded list (FOLLOW-570 AC(b)) yields a wider hardcoded list — FOLLOW-576 is the
+  real fix.
+- **FOLLOW-575 — DPIA §8 is out of sync with the code that runs**, so the disclosure enumeration
+  that Rule N exists to keep honest currently certifies behaviour the code does not implement.
+
+**Required action (CEO / DPO):**
+
+1. **Rule on exposure.** Has any DSR access/portability request been served in prod to date? If yes,
+   were the reports materially incomplete, and does that trigger a notification/remediation duty?
+   (Pilot traffic is thin — the honest answer may be "zero requests, zero exposure" — but that must
+   be established, not assumed.)
+2. **Sequence FOLLOW-574 against Wave 0.** RETRO-176 recommends 574 **before** FOLLOW-570 on the
+   grounds that 574 is live and 570 is deploy-gated. That inverts the Sprint 23 order and competes
+   with the FOLLOW-559/FOLLOW-356 lane decision still open from session 29.
+3. **Decide the disclosure shape for `events`** — a count is not the data. Full row export vs.
+   summary is a product/compliance judgement (volume vs. Art. 15 completeness), not an engineering
+   one.
+
+**Resolution:** <empty until resolved>

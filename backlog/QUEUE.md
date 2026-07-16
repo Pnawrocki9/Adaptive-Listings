@@ -1,25 +1,48 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-15 (session 30 — 557/558 rescued from worktrees and MERGED; Sprint 23 Wave 2 is CLEAR)
+## ▶️ START HERE — resume 2026-07-16 (session 30 — 557/558 rescued + MERGED; their retros found a LIVE prod compliance gap → ESC-037)
 
 **Read this before picking anything.** **FOLLOW-557 and FOLLOW-558 are DONE — merged to `main`**
 (`7b83f39` / PR #528 and `797b8ab` / PR #529, CEO-approved merge 2026-07-15). Both
-`backend-engineer` and `compliance-engineer` lanes are **free**. Zero blocking escalations (ESC-020
-is OPEN but explicitly non-blocking per its own CEO resolution 2026-06-10: "This escalation does NOT
-block the PM pipeline for other tickets").
+`backend-engineer` and `compliance-engineer` lanes are **free**. **ESC-037 is OPEN and awaiting a
+CEO/DPO ruling** (ESC-020 also OPEN but explicitly non-blocking per its own CEO resolution
+2026-06-10).
+
+**⚠️ The retros for 557/558 found a live prod compliance gap that the two merges created between
+them — neither PR was wrong alone; nobody owned the union.** RETRO-175 and RETRO-176 (2026-07-16,
+Opus) agree on the shape and disagree productively on the detail:
+
+- **FOLLOW-574 (P1) — live in prod TODAY, no deploy needed to arm it.** Erase deletes **five**
+  ClickHouse PII tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose **one aggregate over
+  one of them**. `adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events` are erased
+  but disclosed to nobody. PM re-verified independently before escalating. → **ESC-037**.
+- **FOLLOW-570 (P2)** — same asymmetry on the **Redis** axis: FOLLOW-557 added
+  `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Arms the
+  day **FOLLOW-458** deploys → treat 570 as a pre-condition of that deploy.
+- **FOLLOW-576 — FOLLOW-558's AC2 is NOT met, and this session's PM ticked it in error.** The
+  "PARITY" test never imports `erase/route.ts`; it asserts disclosure ⊇ 6 hardcoded literals, so a
+  7th DELETE target keeps it green. It cannot fail on the drift it is named for. **Do not trust
+  FOLLOW-570 AC(b) ("widen the parity block") as sufficient** — widening a hand-typed list yields a
+  wider hand-typed list. RETRO-176 overturned RETRO-175 §5d on exactly this point.
+- **FOLLOW-575** — DPIA §8 is out of sync with the code, so Rule N is satisfied on paper while the
+  doc certifies behaviour we do not implement.
+- **Rules promoted: NONE.** Both retros held every candidate at count 1 and left
+  `CONVENTIONS_PATCH.md` untouched. RETRO-176 specifically refused to count #528/#529 as two
+  sightings — they are **one incident** viewed from two sides, and one incident cannot self-promote
+  by being retro'd twice. Do not re-litigate that to reach the bar.
 
 **Next picks, in order:**
 
+0. **ESC-037 needs a CEO/DPO ruling first.** RETRO-176 recommends **FOLLOW-574 before FOLLOW-570**
+   (live beats deploy-gated), which inverts the Sprint 23 order and competes with the
+   FOLLOW-559/FOLLOW-356 lane call below.
 1. **FOLLOW-559** (P2, backend-engineer, `deps: []`) — the correct next backend pick; its lane is
    now free.
 2. **FOLLOW-356** (P1, sdk-engineer, `deps: []`, READY) — **still needs a CEO priority call**:
    highest-priority genuinely-eligible ticket in the queue with a free lane, but not a Sprint 23
    ticket. Active-sprint-first vs P1-first is not the PM's call to make. Flagged since session 29;
    still unanswered.
-3. **Retrospectives owed:** per CLAUDE.md the `retrospective-analyst` runs after every PR merge →
-   DONE. **RETRO entries for FOLLOW-557 and FOLLOW-558 have NOT been written** (deferred at merge
-   time, not skipped). Worth pairing with the worktree-stranding finding below, which is retro-grade
-   material in its own right.
+3. **Retros for 557/558: DONE** — RETRO-175 + RETRO-176, filing FOLLOW-570…577.
 
 **Deploy note:** #528/#529 changed control-plane routes → Vercel prod redeploy on merge. Neither PR
 carried a migration, so the `db-migrate.yml` prod auto-apply path was not triggered (verified before
@@ -12250,14 +12273,21 @@ in-place in Sprint 22b above.
   pr: 529
   merge_commit: 797b8ab
   pm_validated: >-
-    2026-07-15 session 30. Same rescue as FOLLOW-557 — work existed uncommitted in the agent's
-    worktree; committed as 1877722. CI: all gates green except the standing Rule I baseline,
+    2026-07-15 session 30 — PARTIALLY WRONG, corrected 2026-07-16 after RETRO-176. Read the
+    correction before trusting any of it. Rescue + CI legs stand: work existed uncommitted in the
+    agent's worktree, committed as 1877722; all gates green except the standing Rule I baseline,
     verified pre-existing (181 violations on both main and this branch, 561 symbols each — zero
-    new). AC1 + AC2 (parity) + AC3 (Rule N) met. Two reviewer notes: (1) engagement_scores was added
-    beyond the stub's two named tables — correct, since the parity AC asserts access-set ==
-    erase-set and erase covers it, so omitting it would fail parity; (2) Rule N was satisfied by
-    UPDATE not by absence-of-claim — DPIA §8 step 5 does enumerate the disclosed stores, so it ships
-    updated in the same PR (2.8 -> 2.9 + changelog row).
+    new). AC1 met; AC3 (Rule N) met in form but see FOLLOW-575 — the DPIA enumeration it added is
+    itself out of sync with the code, so Rule N was satisfied procedurally while the disclosure doc
+    still certifies behaviour we do not implement. AC2 (parity) is NOT met and was ticked in error —
+    the PM validated it from the test's name and docstring rather than its assertion body; the
+    "PARITY" block never imports erase/route.ts and asserts against 6 hardcoded literals, so it
+    cannot fail on drift (FOLLOW-576). Reviewer note (1) — engagement_scores added beyond the stub's
+    two named tables — stands as correct, but its stated justification ("the parity AC asserts
+    access-set == erase-set") was reasoning from an invariant that does not exist in the code. Also
+    unowned at merge: the union across storage classes — the Redis store FOLLOW-557 added to the
+    erase set (FOLLOW-570) and four erased-but-undisclosed ClickHouse PII tables that are LIVE in
+    prod today (FOLLOW-574 / ESC-037).
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -12272,8 +12302,16 @@ in-place in Sprint 22b above.
     AC:
     - [x] Access + portability payloads include quiz_completions + intent_sessions rows for the
           verified (tenant, session/email) scope.
-    - [x] Parity test: the erase table-set and the access table-set are asserted equal (minus
+    - [ ] Parity test: the erase table-set and the access table-set are asserted equal (minus
           documented exceptions) so the next new store cannot drift them apart again.
+          NOT MET — corrected 2026-07-16 (RETRO-176). This was ticked [x] and merged in error. The
+          "PARITY" block in disclosure-route-driven-pglite.test.ts never imports erase/route.ts
+          (grep finds it only in comments; the file's own docstring concedes the list "must be
+          updated by hand"). It asserts disclosure is a superset of 6 hardcoded literals, so adding
+          a 7th DELETE target to erase keeps it GREEN — it cannot fail on the drift it is named for.
+          The PM validated this AC from the test's NAME and DOCSTRING rather than its assertion
+          body. Real fix: FOLLOW-576. Do not treat FOLLOW-570 AC(b) ("widen the parity block") as
+          sufficient — widening a hand-typed list only yields a wider hand-typed list.
 - id: FOLLOW-559
   title: >-
     Ingest: server-side consent gate for profiling-class events (defense-in-depth) (A3-F-08)

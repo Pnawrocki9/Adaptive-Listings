@@ -31,10 +31,14 @@
  *   silently drop the primary conversion metric). ALWAYS ingest.
  *
  * The class map is `Record<EventType, ConsentClass>`, so adding a new event type to the shared
- * discriminated union that is NOT classified here fails `pnpm typecheck`, and the contract test
- * (`consent-gate.test.ts`) — which derives the canonical type set from the union at runtime —
- * fails if the map ever drifts from the union. No new event type can silently default to a
- * class (AC3).
+ * discriminated union that is NOT classified here fails `pnpm typecheck`. The contract test
+ * (`consent-gate.test.ts`) enumerates every union member at runtime through `evaluateConsent`
+ * (the sole exported surface): an unclassified type fails closed → the test fails. No new event
+ * type can silently default to a class (AC3).
+ *
+ * Only `evaluateConsent` is exported — the map, classifier, and allowed-set are module-internal
+ * (they have no production consumer outside this file; a future cross-app reuse would export
+ * them then, per Rule I "wired-or-dead").
  *
  * @module apps/ingest/src/consent-gate
  */
@@ -42,13 +46,13 @@
 import type { ConsentState, EventType } from '@estalara/shared';
 
 /** Privacy classification that decides whether an event is subject to the consent gate. */
-export type ConsentClass = 'profiling' | 'audit' | 'operational';
+type ConsentClass = 'profiling' | 'audit' | 'operational';
 
 /**
  * Consent states under which a profiling-class event has a lawful basis to be persisted.
  * Mirrors Master Design §H.8: consent (Art. 6.1(a)) or legitimate interest (LIA).
  */
-export const PROFILING_ALLOWED_CONSENT_STATES: ReadonlySet<ConsentState> = new Set<ConsentState>([
+const PROFILING_ALLOWED_CONSENT_STATES: ReadonlySet<ConsentState> = new Set<ConsentState>([
   'consented',
   'legitimate-interest',
 ]);
@@ -58,7 +62,7 @@ export const PROFILING_ALLOWED_CONSENT_STATES: ReadonlySet<ConsentState> = new S
  * MUST appear here (enforced at compile time by the `Record<EventType, ...>` shape and at
  * runtime by the contract test). See the module doc for the classification rationale.
  */
-export const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
+const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
   // ── profiling: §H.8(a) passive behavioral tracking ────────────────────────────────────────
   'page.view': 'profiling',
   'page.exit': 'profiling',
@@ -125,12 +129,12 @@ export const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
  * Classify an event type. Returns `undefined` for a type absent from the map — callers MUST
  * treat `undefined` as fail-closed (an unclassified type is not silently allowed).
  */
-export function classifyEvent(type: string): ConsentClass | undefined {
+function classifyEvent(type: string): ConsentClass | undefined {
   return CONSENT_CLASS_BY_EVENT_TYPE[type as EventType];
 }
 
 /** Structured reason a consent evaluation rejected an event. */
-export interface ConsentRejection {
+interface ConsentRejection {
   allowed: false;
   /** Machine-readable rejection code surfaced to the client + Sentry. */
   code: 'consent_not_granted' | 'unclassified_event_type';
@@ -139,7 +143,7 @@ export interface ConsentRejection {
   event_type: string;
 }
 
-export type ConsentEvaluation = { allowed: true } | ConsentRejection;
+type ConsentEvaluation = { allowed: true } | ConsentRejection;
 
 /**
  * Decide whether an already-shape-valid event may be persisted given its `consent_state`.

@@ -1593,3 +1593,17 @@ literal swap across near-identical siblings should have its "does this test actu
 swap" check documented as part of the PR evidence, not just asserted from the author's confidence —
 codifying "verify the test can fail" as a lint-doc convention for spy-based sibling-parity tests
 would generalize this beyond just `adapt-get-auth`.
+
+- **2026-07-16 / FOLLOW-559** · Built server-side consent gate at the `apps/ingest` storage boundary
+  (`consent-gate.ts` + wiring in `handlers/events.ts`): profiling-class events with
+  `consent_state ∉ {consented, legitimate-interest}` are rejected per-event with a structured
+  `Sentry.captureMessage` counter; audit/operational events always ingest. · **Risks weighed:** (1)
+  placement — chose ingest-boundary over a shared-schema Zod refinement to avoid mutating the public
+  ingest contract (would need architect escalation); (2) reject granularity — per-event not
+  whole-batch 4xx, because a whole-batch reject would drop a sibling `consent.granted` audit event
+  (§H.9 regression); (3) keyed on `consent_state` only, never opt-out (§H.9); (4) Rule I — first cut
+  exported the map/classifier which have only test importers → narrowed to `evaluateConsent` as sole
+  export, keeping the internal `Record<EventType, ConsentClass>` for compile-time exhaustiveness. ·
+  **Guardrail I'd add:** a CI/lint rule that an exported symbol whose ONLY importer is a `*.test.ts`
+  must either be un-exported or carry a FOLLOW deferral — catches the Rule-I "test-only export"
+  class before push, not after.

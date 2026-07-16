@@ -3328,3 +3328,85 @@ banner (orchestrator single writer for that section) — your ticket-status/FOLL
 inside the ticket bodies are fine and expected.
 
 ---
+
+---
+
+## Delegation brief — FOLLOW-559 (backend-engineer) — server-side consent gate for profiling-class events
+
+**From:** pm-orchestrator (session 30) **To:** backend-engineer **Date:** 2026-07-16
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-559` (P2, Sprint 23, audit finding A3-F-08). **Branch:**
+`backend-engineer/FOLLOW-559-consent-gate` (branch-first — create it before any Edit; never commit
+to `main`).
+
+**Model: Opus** — policy-shaped, not mechanical. It needs a correct event-class → allowed-
+consent-states matrix over the whole taxonomy, must not break a CEO ruling, and carries a real
+placement decision (see §Open decision). Per model-fit table: "complex single-domain reasoning …
+security-sensitive changes" → Opus, not the Sonnet implementation row.
+
+**Context — read first (Operating Principle 1):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1, then §H.8 (:2870) and §H.9 (:2907).
+- **The load-bearing constraint (do NOT get this wrong):** the CEO 2026-06-23 §H.9 scope ruling says
+  opt-out suppresses **client-side** AL profiling + quiz archetype persistence ONLY — **the ingest
+  stream rides §H.8 and must keep flowing**. So this gate keys on `consent_state`, NOT on opt-out
+  status. An opted-out user still sends events carrying a valid `consent_state` (they consented at
+  registration under §H.8); those events MUST still pass. Do not reach for opt-out state anywhere in
+  this gate. (Memory: `project_optout_enforcement_h9_scope`.)
+
+**Verified starting facts (I checked these against HEAD; re-verify before editing):**
+
+- `packages/shared/src/schemas/event.ts:29-34` —
+  `ConsentStateSchema = z.enum(['none', 'session-only', 'legitimate-interest', 'consented'])`. Today
+  it validates **shape only**; nothing gates on the value. That is the whole bug (A3-F-08):
+  `apps/ingest` stores whatever parses.
+- The event taxonomy is a discriminated union spread across
+  `packages/shared/src/schemas/events/*.ts` (~49 `type: z.literal(...)` members at HEAD — I counted
+  49; the ticket says 52 and the audit said 46, so **derive the canonical set from the union type at
+  build time, do NOT hardcode a count or a list**; that drift is exactly what AC3 exists to catch).
+- `consent.granted` / `consent.denied` are audit events, not profiling — they MUST always ingest
+  (you cannot record a consent-denial through a gate that rejects on consent-denial).
+
+**Deliverable — the consent-class matrix.** Every event type must be classified. At minimum:
+`profiling` (behavioral: `scroll.depth`, `mouse.dwell`, `page.view`, `chat.*`, `quiz.*`, `photo.*`,
+`floorplan.*`, `listing.*`, `price.*`, `search.query`, `filter.*`, etc. — §H.8(a) behavioral
+tracking) vs `audit`/`operational` (`consent.granted`, `consent.denied`, `adapt.*` server-outcome
+events, `ab.assignment`, `session.quality.snapshot`). You decide the exact classes; profiling-class
+is the one that gets gated. Profiling events with `consent_state` NOT in {`consented`,
+`legitimate-interest`} are rejected.
+
+**AC (verbatim from the ticket):**
+
+- [ ] Profiling-class events with `consent_state` not in {consented, legitimate-interest} are
+      rejected (or quarantined) at validation, with a structured Sentry counter.
+- [ ] `consent.granted`/`consent.denied` audit events + §H.9 opt-out-flagged events still ingest
+      (explicit tests — do not regress the CEO 2026-06-23 §H.9 ruling).
+- [ ] Contract test enumerates every event type into a consent-class map so a new event type must
+      declare its class (no unclassified type ships — Rule H-adjacent). Derive the enumeration from
+      the union, so an unclassified new type fails the test rather than silently defaulting.
+
+**⚠️ Open decision — RESOLVE EXPLICITLY, escalate if it's a contract change:** the ticket spec cites
+`event.ts` (shared schema) but the title says the `apps/ingest` **storage boundary**. These differ:
+a Zod refinement in the shared envelope enforces for **every** consumer (SDK, decision-api, ingest),
+which is stronger defense-in-depth but **mutates the shared ingest event contract** — and CLAUDE.md
+lists "ingest event schema" as a public API surface that requires escalation BEFORE the PR. A gate
+layered at the `apps/ingest` boundary (a separate validation pass after `safeParse`) keeps the
+shared shape contract untouched. **Prefer the ingest-boundary placement** unless you can show the
+shared-schema refinement is non-breaking (it rejects only inputs that were already policy-invalid).
+State your choice and reasoning in the PR body; if you land on mutating the shared envelope shape,
+write `backlog/ESCALATIONS.md` and escalate to architect BEFORE opening the PR (per CLAUDE.md
+"change a public API surface" rule).
+
+**reject vs quarantine:** CEO preference unknown. Default = **reject with 4xx + structured Sentry
+counter** (sanctioned in the ticket). If during implementation quarantine turns out materially
+better (e.g. you find a legitimate replay path that would lose data on reject), stop and escalate
+rather than silently choosing (agent coding standards §1).
+
+**Scope discipline (§3):** touch the gate + its tests + the class map. Do not refactor the event
+union, the ingest pipeline, or unrelated validation. If you spot the taxonomy-count drift (49/52/46)
+as a real doc bug, mention it — don't fix it here.
+
+**On completion:** open a PR from the branch, run local
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, report back. Do not mark
+your own ticket DONE — PM validates (CI green + runtime wiring + AC + the §H.9 non-regression)
+before READY_FOR_REVIEW.

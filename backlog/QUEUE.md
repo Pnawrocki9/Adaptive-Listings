@@ -12321,7 +12321,10 @@ in-place in Sprint 22b above.
   title: >-
     Ingest: server-side consent gate for profiling-class events (defense-in-depth) (A3-F-08)
   agent: backend-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-16T00:00:00Z'
+  branch: backend-engineer/FOLLOW-559-consent-gate
   priority: P2
   estimated_hours: 3
   depends_on: []

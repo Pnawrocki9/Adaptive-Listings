@@ -15192,3 +15192,62 @@ ac:
       more permissive than prod cannot corroborate the `.limit(1)` the route depends on.
 
 cross_ref: [FOLLOW-558, FOLLOW-256, FOLLOW-576, RETRO-176, Rule S]
+
+---
+
+## FOLLOW-578 — The FOLLOW-448 branch guard warns about files it cannot possibly protect (any path outside the repo, `/etc/hosts` included) — it violates the Rule Q scoping standard its own docstring cites
+
+source_retro: none — direct observation, session 30 (2026-07-16), while the guard fired on edits to
+the operator's Claude memory directory (outside the repo) source_ticket: FOLLOW-448
+(`.claude/hooks/pre-edit-branch-guard.sh`) recommended_sprint: Sprint 23 Wave 2 recommended_agent:
+devops-engineer priority: P3 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+scope: `pre-edit-branch-guard.sh` warns on **every** `Edit`/`Write` to **any path anywhere on disk**
+while `HEAD == main`, including paths that are **not in the repository at all**. Reproduced by
+feeding the hook synthetic payloads while on `main` (not inferred from reading it — the first
+attempt at this test was run from a feature branch and returned "no warning" for all cases, i.e. it
+proved nothing; re-run on `main` it gives):
+
+| payload `file_path`                                    | warns? | correct? |
+| ------------------------------------------------------ | ------ | -------- |
+| `~/.claude/projects/…/memory/MEMORY.md` (outside repo) | YES    | NO       |
+| `/etc/hosts` (outside repo)                            | YES    | NO       |
+| `apps/control-plane/src/lib/chat-intent-cache.ts`      | YES    | yes      |
+| `backlog/QUEUE.md` (exempt list)                       | no     | yes      |
+
+**Root cause — `:70`:** `REL_PATH="${FILE_PATH#"$REPO_ROOT"/}"` strips the repo-root prefix, but
+when `FILE_PATH` is **outside** `REPO_ROOT` the prefix simply does not match and `REL_PATH` silently
+stays **absolute**. The hook then tests that absolute path against `EXEMPT_FILES_RE`, misses, and
+warns. **The hook never checks containment at all** — and `REPO_ROOT` is derived from the _current
+working directory_ (`git rev-parse --show-toplevel`, `:54`), not from the file's own location. So
+the guard's scope is "whatever the shell's CWD happens to be", not "the repo this file belongs to".
+
+**Why this is worth an hour, despite being pure noise:** the guard's own docstring (`:68`) invokes
+**"Rule Q: a guard must be scoped to a real condition, not noise"** as the justification for its
+exempt list — and then violates that exact standard one line later. The failure mode is
+reputational, not functional: a guard that warns about stranding `/etc/hosts` on `main` teaches its
+readers (human AND agent) that its warnings are ambient noise to be dismissed. This guard exists
+**because work was actually lost** (RETRO-146 §4e), and RETRO-175 has since shown the
+work-loss/work-invisibility family is still live and still expensive (two sessions). Its
+signal-to-noise is a safety property, not a cosmetic one. **P3 and not higher** because the guard is
+**correct on every in-repo path** — its actual job is intact; only its blast radius is wrong. ac:
+
+- [ ] The hook `allow`s (silently) when `FILE_PATH` is not contained within `REPO_ROOT` — a file
+      outside the repo cannot be absorbed by `git checkout -b` nor discarded by `git checkout main`
+      / `git stash drop`, so there is nothing for this guard to protect. Prefer resolving
+      containment explicitly (e.g. compare against `realpath`-normalised `REPO_ROOT`) rather than
+      relying on the prefix-strip in `:70` silently no-op'ing.
+- [ ] Decide and document the intended behaviour when `FILE_PATH` is in a **different** git repo
+      than the CWD (today: warns, using the CWD repo's branch — a category error, since the target
+      repo's HEAD is what would matter).
+- [ ] A test that pins all four rows of the table above, run **on `main`** — the branch the guard
+      only speaks on. A test authored from a feature branch passes vacuously and proves nothing
+      (this happened once already while filing this stub).
+
+NOTE: natural bundle with **FOLLOW-573**'s optional AC (a mechanical `git worktree list` check in a
+SubagentStop hook) — same directory, same class of work, and the same underlying principle from
+RETRO-146 §6: _"a guard that executes beats a prose rule."_ Bundling is a scheduling convenience
+only and must NOT be read as merging their occurrence counts (see RETRO-175/176, which both refused
+exactly that move to reach a promotion bar).
+
+cross_ref: [FOLLOW-448, FOLLOW-573, RETRO-146, RETRO-150, RETRO-175]

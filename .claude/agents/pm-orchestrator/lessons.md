@@ -2235,3 +2235,18 @@ Generalisation: the stranded-work shape (RETRO-146 §4e / FOLLOW-448) is not lim
 hung session strands work wherever the agent was standing, and for subagents that is a worktree, not
 `main`. **Check for the work before concluding there is none**; the cheap check
 (`git worktree list`) costs one command and this mistake cost two sessions.
+
+- **Date / ticket:** 2026-07-17 — FOLLOW-563
+- **Delegation row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+  qa-engineer
+- **What validation caught (or missed):** Pre-delegation read confirmed the queue's own top-of-file
+  "START HERE" banner is now stale relative to HEAD (its listed "next picks" were all already
+  DONE/superseded by later merges same-day) — did not act on it, re-derived eligibility from
+  QUEUE.md ticket blocks + git log directly instead of trusting the banner prose. Also independently
+  verified the FOLLOW-563 defect claim by reading the actual test file rather than taking the ticket
+  source line on faith: confirmed `smoke-ingest.test.ts` has no env-gate and will hard-fail
+  `pnpm test` with no live services, exactly as described.
+- **A delegation/validation rule I'd add:** none new this session — reaffirms the existing repo rule
+  (verify-not-guess / Operating Principle 1): a stale START HERE banner is a common failure mode
+  once a queue file gets this long; always cross-check its claims against current ticket status
+  blocks and git log before acting on it.

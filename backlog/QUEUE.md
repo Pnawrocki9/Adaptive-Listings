@@ -12604,7 +12604,10 @@ in-place in Sprint 22b above.
     Test hygiene: smoke-ingest soft-skip without live endpoint + mutation-poll cadence comment
     (A3-F-18)
   agent: qa-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  branch: qa-engineer/FOLLOW-563-smoke-ingest-soft-skip
   priority: P3
   estimated_hours: 1
   depends_on: []

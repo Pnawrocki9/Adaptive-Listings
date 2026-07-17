@@ -4,7 +4,8 @@
  * Vercel Cron handler. Polls ClickHouse `system.mutations` for every
  * non-terminal row in `dsr_clickhouse_mutations` and updates state.
  *
- * **Polling strategy chosen: Vercel Cron** (every 5 minutes).
+ * **Polling strategy chosen: Vercel Cron** (every 10 minutes — see the
+ * `crons` entry for this path in `apps/control-plane/vercel.json`).
  *
  * Rationale documented in PR description:
  *   - Existing infra already on Vercel (control-plane is the only place to
@@ -12,7 +13,7 @@
  *   - Free tier on Hobby allows 2 cron jobs; this is the first one. We are on
  *     Vercel Pro per `apps/control-plane/vercel.json` so quota is not a
  *     concern (40 cron jobs / 1-min granularity available).
- *   - 5-minute granularity is well within the GDPR 30-day SLA and the
+ *   - 10-minute granularity is well within the GDPR 30-day SLA and the
  *     ClickHouse Cloud expected completion window (seconds to minutes per
  *     mutation in our row-volume regime).
  *   - No external scheduler dependency (Modal cron would couple us to

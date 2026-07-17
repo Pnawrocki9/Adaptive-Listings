@@ -12604,10 +12604,27 @@ in-place in Sprint 22b above.
     Test hygiene: smoke-ingest soft-skip without live endpoint + mutation-poll cadence comment
     (A3-F-18)
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: qa-engineer
   started_at: '2026-07-17T00:00:00Z'
+  completed_at: '2026-07-17T00:00:00Z'
   branch: qa-engineer/FOLLOW-563-smoke-ingest-soft-skip
+  pr: 549
+  merge_commit: 395fc9d
+  pm_validated: >-
+    2026-07-17 session 31 (resumed) — validated independently. smoke-ingest.test.ts gates its
+    live-service assertions behind REQUIRE_INGEST_SMOKE (mirrors the redis-shadow Rule Q contract):
+    unset on a clean machine -> it.skipIf soft-skips + a module-top-level ::notice:: fires (verified
+    locally: `pnpm --filter @estalara/e2e-smoke test` emits the notice and skips the file instead of
+    hard-failing "fetch failed"; 5 static contract tests still pass). ::notice:: is deliberately at
+    module top level, not in beforeAll — Vitest never runs beforeAll when every it is skipped, so a
+    hook-based notice would be an inert Rule Q gate. e2e-smoke.yml sets REQUIRE_INGEST_SMOKE=1 only
+    after its ClickHouse/wrangler health-checks, so CI still hard-fails on a real ingest->ClickHouse
+    regression (not skippable in CI). mutation-poll/route.ts comment corrected 5-min -> */10 to
+    match apps/control-plane/vercel.json. CI green on every real gate (Typecheck, Lint, Test Node
+    22, Python x8, Format, Gitleaks, ClickHouse migrations, Vercel); the only 2 reds are the
+    pre-existing non-blocking "Rule I — wired-or-dead check" — verified net-zero (180 on origin/main
+    == 180 on the branch; diff adds no new export). No new exported helper, so check-rule-i.sh N/A.
   priority: P3
   estimated_hours: 1
   depends_on: []
@@ -12620,9 +12637,9 @@ in-place in Sprint 22b above.
     Model-fit: sonnet. Mirror the redis-shadow-smoke soft-skip contract (env-gated REQUIRE_*
     flag + ::notice:: emission). Fix the stale comment to match vercel.json.
     AC:
-    - [ ] `pnpm test` passes on a clean machine with no live services; CI with secrets still
+    - [x] `pnpm test` passes on a clean machine with no live services; CI with secrets still
           hard-fails on real regressions (Rule Q positive proof emitted either way).
-    - [ ] mutation-poll comment matches the actual schedule.
+    - [x] mutation-poll comment matches the actual schedule.
 - id: FOLLOW-564
   title: >-
     Reconcile the p95 latency quality bar with ADR-0004's bifurcated SLA (A3-F-19)

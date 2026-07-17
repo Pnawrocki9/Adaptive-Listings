@@ -3410,3 +3410,82 @@ as a real doc bug, mention it — don't fix it here.
 `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, report back. Do not mark
 your own ticket DONE — PM validates (CI green + runtime wiring + AC + the §H.9 non-regression)
 before READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-574 (compliance-engineer) — close the ClickHouse axis of the DSR disclosure union
+
+**From:** pm-orchestrator (session 30) **To:** compliance-engineer **Date:** 2026-07-17
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-574 (P1, Sprint 23 Wave 2, audit RETRO-176 §LG-1).
+**Branch:** `compliance-engineer/FOLLOW-574-clickhouse-disclosure` (branch-first — create it before
+any Edit; never commit to `main`). Read the full stub in FOLLOW_UPS.md — it has the complete AC set
+(a)–(e); this brief grounds it and must not contradict it.
+
+**Model: Opus** — P1 GDPR compliance, security-sensitive, a cross-runtime id-resolution correctness
+trap, and a volume-safe delivery design. Per model-fit: "security-sensitive changes, non-trivial
+design" → Opus.
+
+**⚠️ COMMIT YOUR WORK BEFORE YOU FINISH.** A prior session hung with completed work stranded
+uncommitted in a worktree and two sessions wrongly concluded the agent never ran.
+`git add && git commit` as soon as the implementation works, then continue. An uncommitted diff is
+indistinguishable from no work.
+
+**The CEO ruling that unblocked this ticket (ESC-037 RESOLVED 2026-07-17) — do NOT re-open it:**
+
+1. **`events` = FULL ROW EXPORT, not an aggregate.** The current
+   `events_summary: {count, first_at, last_at}` does not satisfy Art. 15(3) "a copy of the personal
+   data". Export the actual rows.
+2. **Volume-safe delivery is required** (`events` is high-volume per session): pagination /
+   streaming / a size cap with a documented continuation token — NOT one unbounded in-memory
+   response. This is YOUR engineering design; the completeness requirement is fixed.
+3. This ticket sequences **before FOLLOW-570**.
+
+**Verified starting facts (checked against HEAD 2026-07-17; re-verify before editing):**
+
+- **The canonical 5 tables** — `DSR_CLICKHOUSE_TABLES`
+  (`apps/control-plane/src/lib/clickhouse-dsr.ts:71-78`): `events`, `adaptation_decisions`,
+  `llm_calls`, `session_quality` (all keyed on `session_id`), and `intent_events` (keyed on
+  **`intent_session_id`**, `idSource: 'intent_session_id'`). AC-(a) requires the disclosure set be
+  **derived from this constant**, never hand-typed (that is the FOLLOW-576 defect one storage-class
+  over — do not repeat it).
+- **Today's disclosure** is only `getSessionEventSummary()` (`clickhouse-dsr.ts:304`) → an aggregate
+  over `events` alone, emitted as `events_summary` at `access/route.ts:326` and
+  `portability/route.ts:321`. The other four tables are erased-but-undisclosed. **Both routes
+  disclose identically** — fix both, keep them in parity.
+- **⚠️ The `intent_events` correctness trap:** it is filtered by `intent_session_id`, NOT the SDK
+  `session_id`. The erase side resolves this via `resolveIntentSessionId()`
+  (`@/lib/intent-session-lookup`, used in `erase/route.ts:63`). Your disclosure query for
+  `intent_events` MUST do the same resolution — a raw `session_id` filter returns the wrong data
+  (empty or cross-session). Mirror the erase side exactly.
+- **`getSessionEventSummary` is your query template** — extend its param-bound pattern (FOLLOW-462:
+  `{tenant_id:String}` params, `escapeClickHouseParamValue`, never string-concat) for the new
+  row-export queries.
+
+**AC(d) — the `engagement_scores` phantom (verify, don't assume):** repo-wide grep for an
+`engagement_scores` writer (INSERT/UPSERT/.values) finds ZERO code hits — only the Drizzle type
+`$inferInsert` in `packages/db/src/schema/engagement_scores.ts`. BUT the stub warns this grep class
+under-reports: `intent_sessions` has a real PostgREST/Supabase-client UPSERT producer invisible to a
+Drizzle-shaped grep. So before declaring it a phantom, also check PostgREST/Supabase-client writers
+and note the out-of-repo actors (ingest Worker, local-only Estalara-app). Then do exactly one of:
+identify the producer, file its absence as an unbuilt-producer ticket, or retire the table — and
+reconcile `ropa.md:408` + `dpia.md:198` to whichever is true. Record the verdict in the PR body
+(AC-e: it arms/disarms RETRO-176's PHANTOM-STORE pattern).
+
+**AC(c) — Rule N / DPIA:** `docs/compliance/dpia.md` §8 step 5 ships updated in the SAME PR.
+**Coordinate with FOLLOW-575** (same DPIA paragraph — two PRs will conflict; cf. RETRO-173's
+#504/#506 sprawl). If FOLLOW-575 has not shipped, fold its §8 corrections into this PR or explicitly
+note the boundary.
+
+**Escape hatch (agent coding standards §1):** if the volume-safe pagination design turns into a
+backend-depth blocker you can't cleanly resolve, STOP and write `backlog/ESCALATIONS.md` / hand off
+rather than guessing a fragile export — a wrong DSR export shape is a compliance defect.
+
+**Scope discipline (§3):** touch the CH disclosure path (new row-export fns in clickhouse-dsr.ts +
+both routes' CH legs + tests) + the DPIA + the phantom reconciliation. Do NOT refactor the Postgres
+disclosure legs (FOLLOW-558, already shipped) or the erase route.
+
+**On completion:** open a PR, run local
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, report back. Do not mark
+the ticket DONE — PM validates (CI + AC + the intent_session_id resolution + the DPIA sync) before
+READY_FOR_REVIEW.

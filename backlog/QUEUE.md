@@ -12381,6 +12381,38 @@ in-place in Sprint 22b above.
           (explicit tests — do not regress the CEO 2026-06-23 §H.9 ruling).
     - [x] Contract test enumerates every EVENT_TYPES entry into a consent-class map so new event
           types must declare their class (Rule H-adjacent: no unclassified type ships).
+- id: FOLLOW-574
+  title: >-
+    Close the ClickHouse axis of the DSR disclosure union — export the 5 erased PII tables under
+    Art. 15/20 (events as full rows per CEO ruling), not an aggregate (RETRO-176 LG-1)
+  agent: compliance-engineer
+  status: IN_PROGRESS
+  assigned_to: compliance-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  branch: compliance-engineer/FOLLOW-574-clickhouse-disclosure
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    RETRO-176 §LG-1. Erase deletes 5 ClickHouse PII tables (DSR_CLICKHOUSE_TABLES) but disclosure
+    returns only an aggregate over events; 4 tables are erased-but-undisclosed and events is a
+    count-not-a-copy. Promoted from FOLLOW_UPS stub + dispatched 2026-07-17 after ESC-037 RESOLVED
+    (CEO: events = full row export; sequence BEFORE FOLLOW-570). Full brief: backlog/HANDOFFS.md.
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-574 stub — full AC set a–e); ESC-037 (resolved ruling)
+  notes: |
+    Model-fit: opus (P1 GDPR, security-sensitive, cross-runtime intent_session_id resolution trap,
+    volume-safe export design). Traps flagged in the brief: derive the disclosure set from
+    DSR_CLICKHOUSE_TABLES (not hand-typed — the FOLLOW-576 defect); intent_events is keyed on
+    intent_session_id and MUST use resolveIntentSessionId() like the erase side; fix access AND
+    portability in parity; DPIA §8 sync coordinates with FOLLOW-575.
+    AC (from FOLLOW_UPS stub):
+    - [ ] (a) All 5 DSR_CLICKHOUSE_TABLES disclosed (rows or documented exception), derived from the
+          constant, on both access + portability.
+    - [ ] (b) events = FULL ROW EXPORT, volume-safe (CEO ruling ESC-037 — decided, not re-opened).
+    - [ ] (c) DPIA §8 step 5 updated in the same PR (coordinate FOLLOW-575).
+    - [ ] (d) engagement_scores phantom resolved (identify producer / file unbuilt-producer / retire
+          + reconcile ROPA+DPIA).
+    - [ ] (e) phantom verdict recorded in PR body (arms/disarms RETRO-176 PHANTOM-STORE).
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

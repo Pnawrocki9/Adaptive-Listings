@@ -3489,3 +3489,82 @@ disclosure legs (FOLLOW-558, already shipped) or the erase route.
 `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, report back. Do not mark
 the ticket DONE — PM validates (CI + AC + the intent_session_id resolution + the DPIA sync) before
 READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-581 (backend-engineer) — fix the latent intent_events erase no-op (Art. 17)
+
+**From:** pm-orchestrator (session 30) **To:** backend-engineer **Date:** 2026-07-17
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-581 (P1, discovered during FOLLOW-574). **Branch:**
+`backend-engineer/FOLLOW-581-intent-events-erase-key` (branch-first — create it before any Edit;
+never commit to `main`). Read the full stub — it has the fix options + AC; this brief grounds the
+blast radius.
+
+**Model: Opus** — P1 GDPR Art. 17 correctness, security-sensitive, cross-cutting (touches a shared
+constant consumed by three call sites). Per model-fit: "security-sensitive changes, non-trivial
+design" → Opus.
+
+**⚠️ COMMIT YOUR WORK BEFORE YOU FINISH.** A prior session hung with completed work stranded
+uncommitted in a worktree; two later sessions wrongly concluded the agent never ran.
+`git add && git commit` as soon as it works. An uncommitted diff is indistinguishable from no work.
+
+**The bug (verified against HEAD):** `POST /api/dsr/erase` deletes `intent_events` with
+`ALTER TABLE intent_events DELETE WHERE intent_session_id IN (resolveIntentSessionId())`, but real
+rows are written with `intent_session_id` at its **zero-UUID default** (the ingest writer
+`apps/ingest/src/handlers/intent-snapshot.ts` omits it) and the SDK fingerprint in the String
+`session_id` column (migrations 0015/0016). `resolveIntentSessionId()` returns the Postgres
+`intent_sessions.id` UUID — which matches NO real row. So **erase never deletes intent_events** for
+any subject — a latent Art. 17 completeness bug. The authoritative reader `clickhouse-tracer.ts:8-9`
+confirms: "Join key: session_id … Do NOT use intent_session_id." FOLLOW-574 already discloses
+intent_events on `session_id` (the correct key); this ticket makes erase agree.
+
+**The fix (stub's preferred option) + its FULL blast radius (I traced it — the stub understated
+it):**
+
+1. **`DSR_CLICKHOUSE_TABLES`** (`apps/control-plane/src/lib/clickhouse-dsr.ts:73-78`): change the
+   `intent_events` entry to `{ table: 'intent_events', column: 'session_id' }` — drop
+   `idSource: 'intent_session_id'`. This is the shared constant BOTH erase and disclosure derive
+   from, so fixing it here is the root fix.
+2. **`erase/route.ts`** — remove the now-unnecessary `idSource === 'intent_session_id'` special
+   path: the skip-guard (~:228), the filter-value pick (~:247), the `resolveIntentSessionId()` call
+   (~:353), and the `intentSessionId` plumbing (~:159-160). intent_events now filters on
+   `session_id` like the other four tables.
+3. **⚠️ `mutation-poll/route.ts` — the stub MISSED this consumer.** It ALSO special-cases the
+   column: `resolveIntentSessionId()` at :176 and `column = 'intent_session_id'` at :191. The poller
+   re-issues / tracks mutations by (table, column), so it must be updated in lockstep or a re-issued
+   intent_events mutation will still target the wrong column. Fix both.
+4. **⚠️ Rule I — `resolveIntentSessionId` may become DEAD.** Its ONLY two callers are erase/route.ts
+   and mutation-poll/route.ts (I grepped — no others). If your fix removes both, the function +
+   `@/lib/intent-session-lookup` export is now unused → remove it (and both imports) rather than
+   leaving a new dead export. Run `scripts/check-rule-i.sh` and confirm you did NOT add violations
+   (baseline is now **180** on main — do not regress it; net-zero or better).
+5. **FOLLOW-574's disclosure special-case** — `getClickHouseDisclosure` in `clickhouse-dsr.ts` has
+   an `intent_events` note + branch that queries `session_id` DESPITE the constant saying
+   `intent_session_id`. Once the constant IS `session_id`, that special-case is redundant: simplify
+   it so intent_events derives from the constant like the others (AC-b: "remove the divergence note
+   once erase + disclosure key agree").
+
+**AC (from the stub):**
+
+- [ ] Erase of intent_events matches + deletes the subject's real rows — route-driven/mutation-SQL
+      test seeding rows with `session_id` populated + `intent_session_id` at zero-UUID, asserting
+      the DELETE targets `session_id` and empties them. (Harness: `clickhouse-dsr.test.ts` for the
+      mutation SQL, `dsr-routes.test.ts` for route behavior.)
+- [ ] FOLLOW-574's disclosure divergence note for intent_events removed (erase + disclosure now
+      agree).
+- [ ] DPIA §8 step 5 divergence note updated (it currently says intent_events disclosure diverges
+      from erase — that's now resolved).
+
+**Escape hatch (agent coding standards §1):** if removing the idSource machinery turns out to have a
+consumer I didn't find, or the ClickHouse ORDER BY constraint (migration 0016 — intent_session_id is
+in the ORDER BY key) blocks something, STOP and escalate rather than guessing. A DELETE-WHERE on the
+non-key `session_id` column is fine (the stub confirms), but flag anything unexpected.
+
+**Scope discipline:** touch the intent_events keying across the three consumers + the constant +
+tests + DPIA. Do NOT change how the other four tables are erased, or the ingest writer, or the
+tracer.
+
+**On completion:** open a PR, run local
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, confirm
+`scripts/check-rule-i.sh` ≤ 180, report back. Do not mark DONE — PM validates.

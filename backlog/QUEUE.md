@@ -41,13 +41,22 @@ Opus) agree on the shape and disagree productively on the detail:
 0. **ESC-037 needs a CEO/DPO ruling first.** RETRO-176 recommends **FOLLOW-574 before FOLLOW-570**
    (live beats deploy-gated), which inverts the Sprint 23 order and competes with the
    FOLLOW-559/FOLLOW-356 lane call below.
-1. **FOLLOW-559** (P2, backend-engineer, `deps: []`) — the correct next backend pick; its lane is
-   now free.
+1. **FOLLOW-559: DONE** — merged `0009c0f` (PR #533), consent gate at the ingest storage boundary;
+   PM-validated independently. **RETRO owed** (deferred at merge, not skipped). Backend-engineer
+   lane is free again.
 2. **FOLLOW-356** (P1, sdk-engineer, `deps: []`, READY) — **still needs a CEO priority call**:
    highest-priority genuinely-eligible ticket in the queue with a free lane, but not a Sprint 23
    ticket. Active-sprint-first vs P1-first is not the PM's call to make. Flagged since session 29;
    still unanswered.
-3. **Retros for 557/558: DONE** — RETRO-175 + RETRO-176, filing FOLLOW-570…577.
+3. **Retros for 557/558: DONE** — RETRO-175 + RETRO-176, filing FOLLOW-570…577. **RETRO for 559
+   owed.**
+
+**⚠️ Vercel went red on the control-plane deploy** between #532 (green) and #533/#534 (both fail
+it). Confirmed NOT caused by either PR — the docs-only #534 fails it identically, and neither PR
+touches control-plane (FOLLOW-559 is `apps/ingest` = Cloudflare Worker, deployed off Vercel). So it
+is a standing control-plane deploy breakage, independent of this work. Could not characterize
+further — the Vercel MCP is 403/unauthorized for this team scope. **Flagged for the human: check
+whether prod control-plane is actually broken, separate from the merge.**
 
 **Deploy note:** #528/#529 changed control-plane routes → Vercel prod redeploy on merge. Neither PR
 carried a migration, so the `db-migrate.yml` prod auto-apply path was not triggered (verified before
@@ -12321,11 +12330,13 @@ in-place in Sprint 22b above.
   title: >-
     Ingest: server-side consent gate for profiling-class events (defense-in-depth) (A3-F-08)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-16T00:00:00Z'
+  completed_at: '2026-07-17T00:00:00Z'
   branch: backend-engineer/FOLLOW-559-consent-gate
   pr: 533
+  merge_commit: 0009c0f
   pm_validated: >-
     2026-07-16 session 30, verified independently (not from the worker's self-report). Placement:
     ingest storage-boundary pass after EventSchema.safeParse in handlers/events.ts — shared envelope

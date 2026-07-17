@@ -236,16 +236,31 @@ describe('DSR_CLICKHOUSE_TABLES', () => {
     expect(names).not.toContain('description_generations');
   });
 
-  it('every entry uses session_id as the filter column, EXCEPT intent_events which uses intent_session_id', () => {
+  it('every entry — including intent_events (FOLLOW-581) — uses session_id as the filter column', () => {
     for (const t of DSR_CLICKHOUSE_TABLES) {
-      if (t.table === 'intent_events') {
-        expect(t.column).toBe('intent_session_id');
-        expect(t.idSource).toBe('intent_session_id');
-      } else {
-        expect(t.column).toBe('session_id');
-        expect(t.idSource).toBeUndefined();
-      }
+      expect(t.column).toBe('session_id');
     }
+  });
+
+  // FOLLOW-581: intent_events erase targets the SDK `session_id` fingerprint,
+  // NOT the zero-default `intent_session_id` UUID. Real intent_events rows are
+  // written with session_id populated and intent_session_id at zero-UUID
+  // (migrations 0015/0016; ingest writer omits it), so the pre-FOLLOW-581
+  // filter on intent_session_id matched no real row — a latent Art. 17 no-op.
+  // This asserts the built DELETE-WHERE now targets session_id.
+  it('builds an intent_events DELETE-WHERE on session_id (FOLLOW-581, not intent_session_id)', () => {
+    const intentEntry = DSR_CLICKHOUSE_TABLES.find((t) => t.table === 'intent_events');
+    expect(intentEntry?.column).toBe('session_id');
+    const { sql, params } = buildEraseMutationSql(
+      'intent_events',
+      intentEntry!.column,
+      ['sdk-fingerprint-abc'],
+      'marker581',
+    );
+    expect(sql).toContain('ALTER TABLE intent_events DELETE WHERE session_id IN');
+    expect(sql).not.toContain('intent_session_id');
+    // The subject's SDK session_id is bound as the delete filter value.
+    expect(params.dsr_id_0).toBe('sdk-fingerprint-abc');
   });
 });
 
@@ -458,7 +473,6 @@ describe('getClickHouseDisclosure (FOLLOW-574 — derived from DSR_CLICKHOUSE_TA
     const intent = disclosure.tables.find((t) => t.table === 'intent_events');
 
     expect(intent?.rows).toEqual([intentRow]);
-    expect(intent?.note).toMatch(/session_id/);
     // The intent_events query must NOT filter on the defunct intent_session_id.
     const intentCall = (fetchMock.mock.calls as [string, RequestInit][]).find(([, init]) =>
       (typeof init.body === 'string' ? init.body : '').includes('FROM intent_events'),

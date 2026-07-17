@@ -21,19 +21,18 @@ Opus) agree on the shape and disagree productively on the detail:
 - **FOLLOW-574 (P1) — DONE** (merged `3c78ea2`, PR #542). Access + portability now full-row-export
   all 5 `DSR_CLICKHOUSE_TABLES`, volume-safe (`events` keyset-paginated). PM-validated
   independently. **Two new tickets came out of it — both worth attention:**
-  - **FOLLOW-581 (P1) — a latent Art. 17 erase bug the worker found.** DSR erase filters
-    `intent_events` on `intent_session_id` (a zero-UUID default column), so it matches zero real
-    rows and **never actually erases `intent_events`**. Discovered because the worker correctly
-    refused my (wrong) brief instruction to disclose on that same column — real rows key on
-    `session_id` (migrations 0015/0016, `clickhouse-tracer.ts`). Erase route untouched (scope);
-    FOLLOW-581 fixes it. Recorded as a deliberate brief-deviation in **ESC-038**.
-  - **FOLLOW-582 (P2)** — `engagement_scores` phantom confirmed (no writer anywhere); ROPA/DPIA
-    reconciled to "planned, no producer." Re-check `dsr_verifications` count (or add a monitor)
-    before any tenant is told DSR is live.
-- **FOLLOW-570 (P2) — AFTER 574** (CEO-sequenced), and now with a **P1 sibling ahead of it**:
-  FOLLOW-581 (the erase no-op) is a live erasure gap. Same asymmetry on the **Redis** axis:
-  FOLLOW-557 added `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never
-  returns it. Also gated on the **FOLLOW-458** deploy → a pre-condition of that deploy.
+  - **FOLLOW-581 (P1) — DONE** (merged `85156db`, PR #544). The Art. 17 erase no-op: DSR erase
+    filtered `intent_events` on `intent_session_id` (a zero-UUID default column), never deleting a
+    real row. Fixed by keying the shared `DSR_CLICKHOUSE_TABLES` on `session_id` (erase +
+    mutation-poll + FOLLOW-574 disclosure all re-converged; `resolveIntentSessionId` deleted). Found
+    because the worker correctly refused my (wrong) brief instruction to mirror that column —
+    **ESC-038 RESOLVED**. PM-validated independently.
+  - **FOLLOW-582 (P2) — OPEN** — `engagement_scores` phantom confirmed (no writer anywhere);
+    ROPA/DPIA reconciled to "planned, no producer." Re-check `dsr_verifications` count (or add a
+    monitor) before any tenant is told DSR is live.
+- **FOLLOW-570 (P2) — AFTER 574** (CEO-sequenced). Same asymmetry on the **Redis** axis: FOLLOW-557
+  added `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Gated
+  on the **FOLLOW-458** deploy → a pre-condition of that deploy.
 - **FOLLOW-576 — FOLLOW-558's AC2 is NOT met, and this session's PM ticked it in error.** The
   "PARITY" test never imports `erase/route.ts`; it asserts disclosure ⊇ 6 hardcoded literals, so a
   7th DELETE target keeps it green. It cannot fail on the drift it is named for. **Do not trust
@@ -12443,10 +12442,26 @@ in-place in Sprint 22b above.
     Fix the latent intent_events erase no-op — DSR erase filters intent_session_id (zero-UUID),
     matching zero real rows, so intent_events is never erased (Art. 17)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-17T00:00:00Z'
+  completed_at: '2026-07-17T00:00:00Z'
   branch: backend-engineer/FOLLOW-581-intent-events-erase-key
+  pr: 544
+  merge_commit: 85156db
+  pm_validated: >-
+    2026-07-17 session 30, verified independently. Root fix in the shared constant
+    DSR_CLICKHOUSE_TABLES (intent_events column -> session_id, idSource dropped) propagated to all
+    three consumers: erase route (mutation SQL now DELETE WHERE session_id, verified via
+    clickhouse-dsr.test.ts + erase/route.test.ts asserting param_dsr_id_0 = the SDK session_id),
+    mutation-poll (column special-case removed — would otherwise re-target the wrong column on
+    retry), and FOLLOW-574's getClickHouseDisclosure (divergence note + branch removed; erase and
+    disclosure now key-agree). resolveIntentSessionId + intent-session-lookup.ts + its test deleted
+    (both callers gone); zero dangling refs; Rule I = 180 = baseline (net-zero). DPIA 2.10 -> 2.11.
+    CI all blocking gates green; I fixed one non-blocking miss myself pre-merge (the worker's
+    lessons.md failed Format check -> mechanical prettier commit c9b51d3). No escalation: the
+    migration-0016 ORDER BY constraint blocks only MODIFY/rename of key columns, not a DELETE-WHERE
+    on the non-key session_id. Closes the Art. 17 no-op that FOLLOW-574's validation surfaced.
   priority: P1
   estimated_hours: 3
   depends_on: []
@@ -12465,10 +12480,10 @@ in-place in Sprint 22b above.
     getClickHouseDisclosure special-case (simplify); and resolveIntentSessionId may go dead (both its
     callers removed) → remove it, don't leave a Rule I violation (baseline 180, don't regress).
     AC (from stub):
-    - [ ] Erase of intent_events targets session_id + deletes the subject's real rows (route-driven /
+    - [x] Erase of intent_events targets session_id + deletes the subject's real rows (route-driven /
           mutation-SQL test).
-    - [ ] FOLLOW-574's disclosure divergence note removed (erase + disclosure key now agree).
-    - [ ] DPIA §8 step 5 divergence note updated.
+    - [x] FOLLOW-574's disclosure divergence note removed (erase + disclosure key now agree).
+    - [x] DPIA §8 step 5 divergence note updated.
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

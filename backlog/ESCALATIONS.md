@@ -2284,7 +2284,7 @@ out as its own follow-up (FOLLOW-580) — an ops-grant hygiene item, not part of
 
 ---
 
-## OPEN — ESC-038: FOLLOW-574 diverged from its brief on `intent_events`: the erase filter targets a column that matches zero real rows (latent Art. 17 no-op) [FOLLOW-574]
+## RESOLVED — ESC-038: FOLLOW-574 diverged from its brief on `intent_events`: the erase filter targets a column that matches zero real rows (latent Art. 17 no-op) [FOLLOW-574]
 
 **Filed by:** compliance-engineer (session, FOLLOW-574) **Date:** 2026-07-17T00:00:00Z **Affects:**
 FOLLOW-574, FOLLOW-581, `apps/control-plane/src/app/api/dsr/erase/route.ts`,
@@ -2317,4 +2317,11 @@ disclosure + erasure re-converge and the divergence note is removed.
 (vs. mirroring the empty erase filter) and prioritise FOLLOW-581 (P1 erasure bug). No code change
 needed to accept; this entry documents the deviation so it is visible, not hidden.
 
-**Resolution:** <empty until resolved>
+**Resolution:** RESOLVED 2026-07-17 (pm-orchestrator, session 30). The deviation was CORRECT and is
+accepted: the PM independently verified against migrations 0015/0016, the production reader
+`clickhouse-tracer.ts`, and the schema that real `intent_events` rows key on `session_id` and
+`intent_session_id` is a zero-UUID default — so disclosing on `session_id` (not mirroring the erase
+filter) is the truthful Art. 15 behaviour, and mirroring erase would have shipped a false-empty
+disclosure. The underlying erase no-op it exposed is fixed in **FOLLOW-581 (DONE, PR #544,
+`85156db`)**: `DSR_CLICKHOUSE_TABLES` now keys `intent_events` on `session_id`, so erase +
+disclosure re-converged and the FOLLOW-574 divergence note was removed. Nothing further outstanding.

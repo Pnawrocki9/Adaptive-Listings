@@ -3698,3 +3698,63 @@ stale comment line. Do not touch FOLLOW-561/562/564's files.
 `scripts/check-rule-i.sh` if you add any new exported helper (net-zero against the current baseline
 — check current count on `main` first). Prettier on every touched file. Do not mark DONE — PM
 validates CI green + runtime wiring before READY_FOR_REVIEW.
+
+## Delegation brief — FOLLOW-561 (qa-engineer) — Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
+
+**From:** pm-orchestrator (session 32) **To:** qa-engineer **Date:** 2026-07-17
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-561` (P3, Sprint 23 Wave 3, source: 2026-07-11 audit
+finding A3-F-10). **Branch:** `qa-engineer/FOLLOW-561-archetype-parity-guard` (branch-first — create
+it before any Edit; never commit to `main`).
+
+**Delegation-table row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+`qa-engineer`.
+
+**Model: Sonnet** — routine implementation inside a well-defined ticket scope (write one vitest
+drift/parity test against existing literals); no open design question, no ambiguous AC. Model-fit
+table row: "routine implementation inside a well-defined ticket scope ... tests" -> Sonnet.
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (v4.3, §D — 18-archetype set confirmed consistent across code,
+  not "3 divergent places" as a stale 2026-05 audit once wrongly alleged). Read before any
+  non-trivial task per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` **Rule J — Mirror-code sync gate for cross-runtime duplicates** (line 382)
+  is the directly-governing rule: any hand-maintained literal copy of a canonical set across
+  runtimes (Python/TS/SQL) needs an automated parity/drift test, not eyeballing.
+- Canonical source of truth: `packages/sdk/src/core/intent.ts:49`
+  `export const ARCHETYPE_NAMES: readonly Archetype[] = [...]`.
+- The three hand-maintained copies this ticket must guard:
+  - `apps/intent-engine/src/nlp.py:58-77` `_ARCHETYPES: tuple[str, ...] = (...)` (Python).
+  - `packages/db/src/seed/archetype-seeds.ts` (TS seed literal).
+  - Migration `0005` (SQL) — locate via `packages/db` migrations directory; find the archetype
+    enum/seed values it originally inserted.
+  - Existing precedent test to mirror the pattern of:
+    `packages/sdk/src/__tests__/intent-weights-drift.test.ts` (already guards sdk<->shared; this
+    ticket extends the same style of guard to nlp.py/archetype-seeds.ts/migration 0005).
+- **Exemption to encode, per AC(b):** `packages/sdk/src/__tests__/intent-archetype-hints.test.ts` /
+  `archetype-hints.ts` is a deliberate SUBSET of `ARCHETYPE_NAMES`, not a full-parity copy — the new
+  drift test must explicitly document/skip it as exempt, not fail on it.
+- No HANDOFFS note exists for this ticket beyond this brief (first dispatch).
+
+**Task:** Write a vitest that parses `nlp.py`'s `_ARCHETYPES` literal (regex or a small Python-JSON
+export fixture — your call, document which) and `archetype-seeds.ts`'s literal, plus migration
+0005's inserted values, and asserts set-equality with `ARCHETYPE_NAMES` from
+`packages/sdk/src/core/intent.ts`. On any future addition/removal of an archetype in one copy but
+not the others, this test must fail loudly (Rule J).
+
+**AC (from QUEUE.md, verbatim):**
+
+- [ ] Drift test covers nlp.py + archetype-seeds.ts + migration 0005 against ARCHETYPE_NAMES.
+- [ ] Deliberate-subset archetype-hints.ts documented as exempt in the test.
+
+**Scope discipline:** touch only the new test file (+ a tiny parsing helper if truly needed) and, if
+absolutely required, an inline comment on `archetype-hints.ts` noting the exemption. Do not touch
+FOLLOW-562/564's files (dashboard Panel 5, SLA docs) — those are separate Wave-3 tickets awaiting
+dispatch.
+
+**On completion:** open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Do not mark DONE — PM validates CI green + runtime wiring (in this case: the test itself IS
+the "wiring" — the drift check must actually import/parse all three real files, not fixture-only
+copies of their content, or it is not evidence per Rule Z's spirit) before READY_FOR_REVIEW.

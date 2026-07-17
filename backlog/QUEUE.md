@@ -1,6 +1,29 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-16 (session 30 — 557/558 rescued + MERGED; their retros found a LIVE prod compliance gap → ESC-037)
+## ▶️ START HERE — resume 2026-07-17 (session 32 — FOLLOW-563 fully closed; FOLLOW-561 dispatched to qa-engineer)
+
+**Read this before picking anything.** Prior session (31) closed FOLLOW-563 (PR #549 merged
+`395fc9d`, DONE bookkeeping PR #550 merged `41f295a`). No open PRs, no open escalations except
+ESC-020 (Rafał-side DOM-hooks deploy, explicitly non-blocking per CEO 2026-06-10 ruling — do not
+treat as a gate). Working tree clean on `main`.
+
+**This session:** picked `FOLLOW-561` (P3, qa-engineer, Sprint 23 Wave 3, A3-F-10 — archetype-ID
+parity guard for `nlp.py` / `archetype-seeds.ts` / migration 0005 against SDK `ARCHETYPE_NAMES`,
+Rule J mirror-code sync gate). Delegation brief in `backlog/HANDOFFS.md`. Set `IN_PROGRESS`,
+`assigned_to: qa-engineer`, `branch: qa-engineer/FOLLOW-561-archetype-parity-guard`. Two other
+Wave-3 P3 tickets remain READY and unblocked for the next loop: `FOLLOW-562` (backend-engineer,
+dashboard Panel 5 error banner) and `FOLLOW-564` (architect, p95 SLA doc reconciliation).
+`FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553` (still `READY_OPERATOR`, not DONE).
+
+**Retro note:** FOLLOW-563 is a P3 test-hygiene ticket with minimal surface (soft-skip a smoke test
+
+- one comment fix) — no cross-module wiring, no cascading consumer. Deferring its
+  retrospective-analyst spawn is reasonable; if spawned later, batch it with FOLLOW-561's retro
+  rather than running one for each trivial P3.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-16 (session 30 — 557/558 rescued + MERGED; their retros found a LIVE prod compliance gap → ESC-037)
 
 **Read this before picking anything.** **FOLLOW-557 and FOLLOW-558 are DONE — merged to `main`**
 (`7b83f39` / PR #528 and `797b8ab` / PR #529, CEO-approved merge 2026-07-15). Both
@@ -12565,7 +12588,10 @@ in-place in Sprint 22b above.
   title: >-
     Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
   agent: qa-engineer
-  status: READY
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  branch: qa-engineer/FOLLOW-561-archetype-parity-guard
   priority: P3
   estimated_hours: 2
   depends_on: []

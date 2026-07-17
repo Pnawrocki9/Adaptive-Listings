@@ -1,3 +1,52 @@
+# Status — 2026-07-17 (session 32 — FOLLOW-563 confirmed closed, dispatched FOLLOW-561)
+
+## SESSION 32 (2026-07-17) — no open PRs, only ESC-020 open (non-blocking), dispatched FOLLOW-561
+
+**State check:** `git status` clean on `main` (up to date with origin, no stray uncommitted diff
+from session 31). `gh pr list --state open` = empty. `git log --oneline -20` confirms FOLLOW-563
+fully closed (`395fc9d` PR #549 merge, `41f295a` PR #550 DONE bookkeeping — both present on `main`
+HEAD). ESCALATIONS.md: exactly one `## OPEN` entry, ESC-020, whose own resolution text says it does
+NOT block the PM pipeline (CEO ruling 2026-06-10) — confirmed current, not re-litigated.
+
+**Ticket selection.** Sprint 23 Wave 3 remaining eligible P3 pool: FOLLOW-561 (qa-engineer),
+FOLLOW-562 (backend-engineer), FOLLOW-564 (architect) — all `status: READY`, `depends_on: []`, no
+unresolved deps, nothing depends on any of the three (checked via grep, no hits). FOLLOW-560/565
+stay `BLOCKED` (`depends_on: [FOLLOW-553]`, still `READY_OPERATOR` not `DONE`). Older `READY`
+entries found elsewhere in QUEUE.md (FOLLOW-065/071/073 under "Sprint 11 — COMPLETE", FOLLOW-355/367
+etc. under Sprint 20/22) are queue-hygiene debris in already-closed sprints — confirmed via
+`git log --all --grep` that zero commits ever reference them, i.e. genuinely untouched stale rows,
+not active work; not picked (criterion (b) active sprint — Sprint 23 is the active one).
+
+Picked **FOLLOW-561** (archetype-ID parity guard, A3-F-10, Rule J mirror-code sync gate): highest
+compliance-risk of the three P3s (a silent divergence between the SDK's `ARCHETYPE_NAMES`,
+`nlp.py`'s `_ARCHETYPES`, `archetype-seeds.ts`, and migration 0005 would corrupt intent
+classification/seed data with no test signal), and keeps the qa-engineer lane warm off the
+FOLLOW-563 close-out. FOLLOW-562/564 remain READY for the next loop iteration (up to 3 tickets may
+run IN_PROGRESS concurrently per guardrails — chose to dispatch one this iteration and re-evaluate
+after ).
+
+**Delegation-table row:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+qa-engineer. **Model: Sonnet** — routine implementation inside a well-defined ticket scope (one
+vitest parity/drift test against three existing literals), fully-specified AC, no open design
+question (model-fit table: "routine implementation... tests... mechanical refactors" row).
+
+QUEUE.md updated atomically before delegation: FOLLOW-561 `status: READY` -> `IN_PROGRESS`,
+`assigned_to: qa-engineer`, `started_at: 2026-07-17T00:00:00Z`,
+`branch: qa-engineer/FOLLOW-561-archetype-parity-guard`. Delegation brief written to
+`backlog/HANDOFFS.md` (cites Rule J, canonical source `intent.ts:49`, the 3 literal copies to guard,
+the archetype-hints.ts exemption, and the precedent test `intent-weights-drift.test.ts` to mirror).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3 (not yet dispatched work to validate — no
+PR exists yet for FOLLOW-561).
+
+**Retro note (FOLLOW-563):** P3 test-hygiene ticket, minimal surface, no cross-module wiring —
+retrospective-analyst spawn deferred; recommend batching with FOLLOW-561's retro rather than
+spawning one per trivial P3 (both are qa-engineer test-hygiene tickets in the same wave).
+
+No PR to validate this session (queue had none open). No new escalation filed.
+
+---
+
 # Status — 2026-07-17 (session 31 — queue read, no open PRs, dispatched FOLLOW-563)
 
 ## SESSION 31 (2026-07-17) — queue/escalation read; only ESC-020 open (non-blocking per its own resolution); no open PRs to validate; dispatched FOLLOW-563

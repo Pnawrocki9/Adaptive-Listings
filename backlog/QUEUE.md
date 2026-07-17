@@ -12,18 +12,21 @@ CEO/DPO ruling** (ESC-020 also OPEN but explicitly non-blocking per its own CEO 
 them — neither PR was wrong alone; nobody owned the union.** RETRO-175 and RETRO-176 (2026-07-16,
 Opus) agree on the shape and disagree productively on the detail:
 
-- **FOLLOW-574 (P1) — real, but LATENT: prod exposure is ZERO (verified 2026-07-16).** Erase deletes
-  **five** ClickHouse PII tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose **one
-  aggregate over one of them**. `adaptation_decisions`, `llm_calls`, `session_quality`,
-  `intent_events` are erased but disclosed to nobody. A direct prod read
-  (`SELECT count(*) FROM dsr_verifications` = **0**, user-authorized) shows **no DSR has ever been
-  served in prod**, so this is a gap to close **before the first real DSR**, not a live incident —
-  no notification duty. The gap arms the moment the first request lands, so re-check the count (or
-  add a monitor) before any tenant is told DSR is live. → **ESC-037** (exposure item now ANSWERED;
-  sequencing + `events` disclosure-shape items still need the CEO/DPO).
-- **FOLLOW-570 (P2)** — same asymmetry on the **Redis** axis: FOLLOW-557 added
-  `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Arms the
-  day **FOLLOW-458** deploys → treat 570 as a pre-condition of that deploy.
+- **ESC-037 RESOLVED (CEO, 2026-07-17) — the whole DSR-disclosure-union item is now unblocked and
+  sequenced.** Ruling: (1) **FOLLOW-574 BEFORE FOLLOW-570**; (2) `events` disclosed as **FULL ROW
+  EXPORT, not an aggregate** (Art. 15/20 completeness over payload economy — volume-safe delivery is
+  the worker's engineering detail); (3) exposure = ZERO (no DSR ever served in prod), so latent, no
+  notification duty. Side finding spun out as **FOLLOW-580** (P3: prod `ingest_worker` lacks SELECT
+  on `dsr_audit_log`, diverges from ESC-032).
+- **FOLLOW-574 (P1) — NOW THE TOP-PRIORITY ELIGIBLE TICKET.** Erase deletes **five** ClickHouse PII
+  tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose only an aggregate over `events`, so
+  `adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events` are erased-but-undisclosed
+  and `events` is a count-not-a-copy. The AC-(b) ruling is now given (full export), so the ticket is
+  fully actionable — `compliance-engineer`, sequence before 570. Re-check `dsr_verifications` count
+  (or add a monitor) before any tenant is told DSR is live, since the gap arms on the first request.
+- **FOLLOW-570 (P2) — AFTER 574** (CEO-sequenced). Same asymmetry on the **Redis** axis: FOLLOW-557
+  added `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Also
+  gated on the **FOLLOW-458** deploy → a pre-condition of that deploy.
 - **FOLLOW-576 — FOLLOW-558's AC2 is NOT met, and this session's PM ticked it in error.** The
   "PARITY" test never imports `erase/route.ts`; it asserts disclosure ⊇ 6 hardcoded literals, so a
   7th DELETE target keeps it green. It cannot fail on the drift it is named for. **Do not trust

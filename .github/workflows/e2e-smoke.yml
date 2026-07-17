@@ -94,6 +94,10 @@ jobs:
           INGEST_URL: http://localhost:8787
           CLICKHOUSE_URL: http://localhost:8123
           API_KEY: pk_test_smoke
+          # Set only here — after "Wait for ClickHouse" / "Wait for wrangler dev" have
+          # health-checked both services ready — so the smoke-ingest.test.ts assertions
+          # actually run instead of soft-skipping (FOLLOW-563, CONVENTIONS_PATCH.md Rule Q).
+          REQUIRE_INGEST_SMOKE: "1"
 
       - name: Teardown
         if: always()

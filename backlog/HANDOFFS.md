@@ -3645,3 +3645,56 @@ NOT reclassify other event types or change the other 51 classifications.
 
 **On completion:** PR + local `pnpm install && lint && typecheck && test && build`, Rule I ≤ 180,
 prettier on every touched file. Do not mark DONE — PM validates.
+
+## Delegation brief — FOLLOW-563 (qa-engineer) — smoke-ingest soft-skip + mutation-poll comment fix
+
+**From:** pm-orchestrator (session 31) **To:** qa-engineer **Date:** 2026-07-17
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-563` (P3, Sprint 23 Wave 3, source: 2026-07-11 audit
+finding A3-F-18). **Branch:** `qa-engineer/FOLLOW-563-smoke-ingest-soft-skip` (branch-first — create
+it before any Edit/Write, never commit to `main`).
+
+**Delegation-table row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+`qa-engineer`.
+
+**Model: Sonnet** — routine test-hygiene fix mirroring an existing in-repo pattern, fully-specified
+AC, no open design question (model-fit table: "routine implementation inside a well-defined ticket
+scope, tests... mechanical refactors" row).
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 (Implementation Status Snapshot) before any non-trivial task
+  per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` Rule Q (env-gated soft-skip with positive proof, not a silent no-op) — this
+  ticket is a direct instance of the Rule Q pattern. Mirror
+  `tests/integration/redis-shadow-round-trip.smoke.test.ts` (already in-repo, `REQUIRE_*` env-gate +
+  `::notice::` emission on skip) — do not invent a new soft-skip shape.
+- No open HANDOFFS note blocks this; independent of FOLLOW-561/562/564 (same Sprint 23 Wave 3 pool,
+  different files, no shared state).
+
+**Problem (verified directly by PM, not taken on the ticket's word):**
+`tests/e2e/smoke-ingest.test.ts` unconditionally `fetch`es `http://localhost:8787` (ingest) and
+`http://localhost:8123` (ClickHouse) with no env-gate — on any machine without
+`docker-compose up`/`wrangler dev` running, `pnpm test` hard-fails with a raw "fetch failed" instead
+of soft-skipping with positive proof. Separately,
+`apps/control-plane/src/app/api/dsr/mutation-poll/ route.ts:7`'s comment claims a 5-min cron while
+`vercel.json:8-11` schedules `*/10` — fix the stale comment to match the actual schedule.
+
+**AC:**
+
+- [ ] `pnpm test` passes on a clean machine with no live services (smoke-ingest soft-skips, emitting
+      positive proof it did so intentionally — Rule Q, mirror the redis-shadow-smoke contract:
+      env-gated `REQUIRE_*` flag, `::notice::` on skip).
+- [ ] CI (which sets the live-service env/secrets) still hard-fails on a real regression — do not
+      make the assertion itself skippable in CI, only the "no live endpoint available" branch.
+- [ ] `mutation-poll/route.ts:7` comment corrected to match `vercel.json`'s actual `*/10` schedule.
+
+**Scope discipline:** touch only `tests/e2e/smoke-ingest.test.ts` (+ its CI workflow env if the
+soft-skip needs a new `REQUIRE_*` var wired into `.github/workflows/e2e-smoke.yml`) and the one
+stale comment line. Do not touch FOLLOW-561/562/564's files.
+
+**On completion:** open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Run
+`scripts/check-rule-i.sh` if you add any new exported helper (net-zero against the current baseline
+— check current count on `main` first). Prettier on every touched file. Do not mark DONE — PM
+validates CI green + runtime wiring before READY_FOR_REVIEW.

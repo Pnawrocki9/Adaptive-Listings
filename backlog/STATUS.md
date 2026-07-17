@@ -1,3 +1,43 @@
+# Status — 2026-07-17 (session 31 — queue read, no open PRs, dispatched FOLLOW-563)
+
+## SESSION 31 (2026-07-17) — queue/escalation read; only ESC-020 open (non-blocking per its own resolution); no open PRs to validate; dispatched FOLLOW-563
+
+**State check:** `gh pr list --state open` = empty (nothing to validate this session).
+ESCALATIONS.md has exactly one `## OPEN` entry (ESC-020, Estalara-app DOM hooks deploy) and its own
+resolution note explicitly says "does NOT block the PM pipeline for other tickets" (CEO 2026-06-10)
+— confirmed current, not re-litigated. All other escalations RESOLVED, including ESC-037/ESC-038
+(both resolved 2026-07-17, same day, per git log e8b96e8..0b4f3f3). QUEUE.md top-of-file "START
+HERE" banner's own "next picks" are all already superseded by later commits (FOLLOW-559/574/579/581
+all DONE, FOLLOW-356 confirmed a stale duplicate of already-shipped work) — banner is stale relative
+to HEAD, did not re-litigate any of it.
+
+**Ticket selection.** Sprint 23 Wave 3 P3 pool (FOLLOW-560…564) is the active eligible set.
+FOLLOW-560/565 excluded: `depends_on: [FOLLOW-553]` and FOLLOW-553 is literally `READY_OPERATOR`,
+not `DONE` (Step 6/ESC-020 still open) — strict depends*on rule from prior sessions, not
+re-litigated. Of the remaining eligible (561, 562, 563, 564), picked **FOLLOW-563** (qa-engineer,
+P3): verified directly (not taken on the ticket's word) that `tests/e2e/smoke-ingest.test.ts`
+unconditionally `fetch`es `http://localhost:8787` / ClickHouse with no env-gated soft-skip — will
+hard-fail `pnpm test` on any machine without live services, i.e. it currently poisons step-5a local
+validation for every future ticket this session (or any PM session) runs. Highest-leverage of the
+four P3s: fixes a standing false-negative in the validation loop itself, not just a point defect.
+Reference soft-skip pattern to mirror confirmed present at
+`tests/integration/redis-shadow-round-trip.smoke.test.ts` (`REQUIRE*\*`env-gate +`::notice::`
+emission, per Rule Q).
+
+**Delegation-table row:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+qa-engineer. **Model: Sonnet** — routine test-hygiene fix mirroring an existing pattern in-repo,
+fully-specified AC, no open design question (model-fit table: "routine implementation... tests...
+mechanical refactors" row).
+
+QUEUE.md updated atomically before delegation: FOLLOW-563 `status: READY` -> `IN_PROGRESS`,
+`assigned_to: qa-engineer`, `branch: qa-engineer/FOLLOW-563-smoke-ingest-soft-skip`.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3 (not yet dispatched work to validate).
+
+No PR to validate this session (queue had none open). No new escalation filed.
+
+---
+
 # Status — 2026-07-15 (session 30 — FOLLOW-557/558 work found ALIVE in agent worktrees and rescued → PRs #528/#529)
 
 ## SESSION 30 (2026-07-15) — the "execution gap" did not exist; both workers had run, their work was stranded uncommitted in worktrees

@@ -3758,3 +3758,92 @@ dispatch.
 file. Do not mark DONE — PM validates CI green + runtime wiring (in this case: the test itself IS
 the "wiring" — the drift check must actually import/parse all three real files, not fixture-only
 copies of their content, or it is not evidence per Rule Z's spirit) before READY_FOR_REVIEW.
+
+## Delegation brief — FOLLOW-583 (qa-engineer) — extend the archetype-ID guard to the 4th production-live copy + 2 subset copies; fix the invalid `family_upsizer` mock id
+
+**From:** pm-orchestrator (session 35) **To:** qa-engineer **Date:** 2026-07-18
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-583` (P2, source: RETRO-178 on FOLLOW-561/PR #552).
+**Branch:** `qa-engineer/FOLLOW-583-archetype-guard-4th-copy` (branch-first — create it before any
+Edit; never commit to `main`).
+
+**Delegation-table row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+`qa-engineer`.
+
+**Model: Sonnet** — mechanical extension of the FOLLOW-561 pattern already merged to `main`: one
+more `assertExactParity` call + two `subset-validity` calls (mirroring the existing
+`archetype-hints.ts` exemption block) + two literal-string typo fixes. No new design surface, no
+ambiguous AC. The one thing that could tip this to Opus: the target dict (`_ARCHETYPE_GUIDANCE` in
+`generate_description.py`) has multi-line string values with nested parens/quotes, so confirm the
+FOLLOW-561 regex style transfers before assuming a one-line copy-paste works — if the parser
+genuinely can't be made robust with a regex tweak, stop and say so rather than writing a fragile
+parser that silently matches 0 or partial entries (the existing tests already guard against 0-match
+via `toBeGreaterThan(0)`; keep that pattern). Point 3 (the mock-file fix) touches `route-helpers.ts`
+/ `export/route.ts`, which are **mock/dev-CI-only** fixtures (`data_source: 'mock'`), not production
+runtime — do not conflate this with point 1, which reads (never writes) the actually-live
+`generate_description.py`.
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 before any non-trivial task per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` **Rule J** — mirror-code sync gate for cross-runtime duplicates (the
+  directly-governing rule, same as FOLLOW-561).
+- The guard file to extend: `tests/integration/archetype-id-parity.test.ts` (already in `main` as of
+  `a203b52`/PR #552) — read its doc comment and `assertExactParity`/subset-exemption helpers before
+  writing anything; you are extending this file, not writing a new one.
+- Canonical source of truth (unchanged): `packages/sdk/src/core/intent.ts:49` `ARCHETYPE_NAMES`.
+- **New full-parity target (AC-1):** `apps/llm-gateway/src/jobs/generate_description.py:161`
+  `_ARCHETYPE_GUIDANCE: dict[str, str] = {...}` — verified present, all 18 archetype keys currently
+  in sync. Feeds the live Modal AI-description prompt via `.get(archetype, "<generic fallback>")` at
+  `:1303`/`:1712`. Parse the real checked-in file (same `readRepoFile` + regex pattern as the
+  existing three parsers) — do not hand-copy the dict into a fixture.
+- **New subset target #1 (AC-2), legitimate subset — no fix needed:**
+  `apps/control-plane/src/lib/demo-override-store.ts:37` `REACHABLE_ARCHETYPES` (documented "13
+  reachable archetypes, Master Design §D.6"). Mirror the `archetype-hints.ts` subset-validity shape
+  already in the test file (every referenced id valid + proper subset, not full parity).
+- **New subset target #2 (AC-3), broken — fix required:**
+  `apps/control-plane/src/app/api/admin/labels/route-helpers.ts:87` `MOCK_ARCHETYPES` (a 5-element
+  array) AND `apps/control-plane/src/app/api/admin/labels/export/route.ts:311` (inline
+  `archetype: 'family_upsizer'` in `buildMockExportRows()`). Both currently contain
+  `'family_upsizer'`, which is **not** in `ARCHETYPE_NAMES` (verified — the real set has
+  `family_buyer` and `upsizer` as two separate archetypes). Both fields are typed
+  `archetype: string`, so TypeScript never caught it.
+- No HANDOFFS note beyond this brief blocks the ticket; independent of any other open ticket.
+
+**Task, in order (AC-3's ordering matters — do not skip the falsification step):**
+
+1. Write the AC-1 full-parity assertion for `_ARCHETYPE_GUIDANCE` (same `assertExactParity` helper,
+   real file, new parser function following the existing three parsers' style).
+2. Write the AC-2 subset-validity assertion for `REACHABLE_ARCHETYPES` (mirror the
+   `archetype-hints.ts` exemption block's two checks: every id valid, set is a proper subset).
+3. Write the AC-3 subset-validity assertion for `MOCK_ARCHETYPES` + `export/route.ts`'s inline
+   literals — **run it against the current `main` state first and confirm it fails red** on the
+   `'family_upsizer'` invalid id (this is the falsification proof the guard actually catches the bug
+   it's named for — screenshot/paste the red failure in your PR description, don't just assert it
+   happened).
+4. Only then fix `'family_upsizer'` -> a valid canonical id (`family_buyer` or `upsizer`, your
+   choice — mock data has no correctness requirement beyond validity; state which you picked and
+   why, one sentence) in both files, and confirm the assertion goes green.
+5. Confirm all 5 pre-existing assertions in the file still pass unaffected.
+
+**AC (from QUEUE.md, verbatim):**
+
+- [ ] Full-parity assertion added for `generate_description.py` `_ARCHETYPE_GUIDANCE` against
+      `ARCHETYPE_NAMES` (parses the real checked-in file).
+- [ ] Subset-validity assertion added for `demo-override-store.ts` `REACHABLE_ARCHETYPES`.
+- [ ] Subset-validity assertion added for `route-helpers.ts` `MOCK_ARCHETYPES` AND
+      `export/route.ts`'s inline mock archetype literals — shown failing red pre-fix, passing
+      post-fix.
+- [ ] `'family_upsizer'` fixed to a valid canonical id in both files.
+- [ ] All existing 5 assertions in `archetype-id-parity.test.ts` still pass unaffected.
+
+**Scope discipline:** touch only `tests/integration/archetype-id-parity.test.ts` (extend, don't
+rewrite), `route-helpers.ts`, and `export/route.ts` (the two-line typo fix only — no other changes
+to either file). Do not touch `generate_description.py` or `demo-override-store.ts` — both are
+read-only parse targets for this ticket, not edit targets.
+
+**On completion:** open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Include in the PR description: (a) the falsification-red output from AC-3 step 3, (b) a
+one-sentence rationale for the `family_upsizer` -> `family_buyer`/`upsizer` choice. Do not mark DONE
+— PM validates CI green + runtime wiring before READY_FOR_REVIEW.

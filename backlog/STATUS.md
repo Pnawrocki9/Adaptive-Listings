@@ -1,4 +1,44 @@
-# Status — 2026-07-18 (session 34 — FOLLOW-561 marked DONE post-merge, retrospective spawned)
+# Status — 2026-07-18 (session 35 — FOLLOW-583 promoted + dispatched to qa-engineer)
+
+## SESSION 35 (2026-07-18) — FOLLOW-583 promoted from FOLLOW_UPS.md, dispatched to qa-engineer
+
+**State check:** No open ESCALATIONS.md entries block picking a new ticket (ESC-020 is explicitly
+non-blocking). No open PRs (`gh pr list --state open` empty). `main` at `39f41c9` before this
+session's commits; working tree clean.
+
+**Pre-delegation ticket analysis (verified against real files, not the FOLLOW_UPS.md stub alone):**
+
+- Confirmed `apps/llm-gateway/src/jobs/generate_description.py:161` `_ARCHETYPE_GUIDANCE` exists, is
+  consumed at `:1303`/`:1712` via `.get(archetype, <fallback>)`, and all 18 archetype keys are
+  currently present (in sync) — this is a genuine 4th full-parity copy the FOLLOW-561 guard
+  (`tests/integration/archetype-id-parity.test.ts`) does not cover.
+- Confirmed `demo-override-store.ts:37` `REACHABLE_ARCHETYPES` is a 13-element documented subset
+  (§D.6), no `family_upsizer` issue.
+- Confirmed `route-helpers.ts:87` `MOCK_ARCHETYPES` and `export/route.ts:311` both hard-code the
+  invalid id `'family_upsizer'` — verified by direct grep, not taken on the retro's word.
+
+**Action taken:** Promoted FOLLOW-583 from `backlog/FOLLOW_UPS.md` (`promoted_to_queue: false` ->
+`true`) into `backlog/QUEUE.md` as a full ticket (P2, qa-engineer, status `IN_PROGRESS`,
+`assigned_to: qa-engineer`, `started_at: 2026-07-18`) with AC covering all 3 RETRO-178 points,
+ordered so the AC-3 falsification-red proof is required BEFORE the `family_upsizer` fix lands.
+Committed directly to `main` (docs-only bookkeeping, per established PM pattern) as `d3d113e`,
+pushed. Wrote the full delegation brief to `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-583"),
+model: **Sonnet** (mechanical extension of an already-merged pattern; flagged the one risk — the
+`_ARCHETYPE_GUIDANCE` dict's multi-line string values may need a regex tweak from FOLLOW-561's
+parsers, worker should escalate to Opus only if that proves non-trivial). Cited delegation-table
+row: "E2E/integration/load/a11y tests, fixtures, golden harness" -> qa-engineer.
+
+**Environment note (repeats session 34's finding):** this session's toolset is Read/Write/Edit/Bash
+only — no Task/Agent-spawn tool present. Per guardrails ("You MUST NOT write code... stop and
+delegate"), the actual implementation (writing the vitest extension, fixing the two typo files) is
+NOT performed by this PM session. The delegation brief is prepared and queue state is set to
+`IN_PROGRESS`/`assigned_to: qa-engineer` so the qa-engineer subagent can be invoked next (by the
+harness/human running the standard subagent-dispatch flow) with the branch, ticket path, Master
+Design §Snapshot.1, CONVENTIONS_PATCH.md, and the HANDOFFS.md brief as its inputs, per instruction
+step 3.
+
+**CI-check counter:** 0/5 this session (bookkeeping-only, no code change to validate yet — will
+apply once the qa-engineer worker opens a PR).
 
 ## SESSION 34 (2026-07-18) — FOLLOW-561 DONE transition + retrospective; no new dispatch
 

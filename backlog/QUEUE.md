@@ -1,6 +1,30 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
+## ▶️ START HERE — resume 2026-07-18 (session 35 — FOLLOW-583 promoted + dispatched to qa-engineer)
+
+**Read this before picking anything.** FOLLOW-561 is `DONE` (merged `a203b52`/PR #552 + `153ab0f`/PR
+#553; retrospective RETRO-178 filed). This session promoted RETRO-178's finding, **FOLLOW-583** (P2,
+qa-engineer — extend the archetype-ID parity guard to the 4th production-live full-parity copy
+`generate_description.py` `_ARCHETYPE_GUIDANCE` + 2 subset copies, one of which ships the invalid id
+`'family_upsizer'`), from `backlog/FOLLOW_UPS.md` into `backlog/QUEUE.md` (status `IN_PROGRESS`,
+`assigned_to: qa-engineer`, `started_at: 2026-07-18`). Verified against the real files before
+writing AC (not taken on the retro's word) — commit `d3d113e`. Full delegation brief in
+`backlog/HANDOFFS.md` under "Delegation brief — FOLLOW-583". **Branch:**
+`qa-engineer/FOLLOW-583-archetype-guard-4th-copy` — not yet created; the qa-engineer subagent still
+needs to be invoked to do the actual implementation. **Do not mark READY_FOR_REVIEW until PM
+independently confirms CI green (`gh pr checks <pr> --watch` + the jq non-success-count command) and
+the AC-3 falsification-red proof is real** (per the F-561-pattern precedent, don't take "tests pass"
+on the worker's word alone).
+
+No open escalations block this pick (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
+ruling). `FOLLOW-562`/`FOLLOW-564` remain `READY` and unblocked (not picked this session — see
+delegation-table row justification in the FOLLOW-583 brief for why 583 was prioritized: it directly
+extends work that JUST merged, same file/pattern, lowest context-switch cost). `FOLLOW-560`/
+`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553`.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
 
 **Read this before picking anything.** FOLLOW-561's qa-engineer worker phase opened PR #552
 (`221102d`, branch `qa-engineer/FOLLOW-561-archetype-parity-guard`). PM validated: CI green on all

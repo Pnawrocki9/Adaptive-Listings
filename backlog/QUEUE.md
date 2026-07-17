@@ -2271,7 +2271,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-030
   title: Magic Link onboarding wizard UI (NEW v1.1)
   agent: backend-engineer
-  status: READY
+  status: DONE
+  superseded_by: >-
+    This is the Sprint 2.5 planning snapshot. The work shipped and is tracked by the canonical DONE
+    entry for TICKET-030 in the Sprint 9.5 section (PR #124, completed 2026-05-21). Status flipped
+    READY -> DONE 2026-07-17 to remove an id->status conflict; the pre-completion snapshot is kept
+    for history.
   priority: P0
   estimated_hours: 8
   depends_on: [TICKET-024, TICKET-025]
@@ -2289,7 +2294,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
 - id: TICKET-033
   title: Schema Discovery API endpoint (POST /api/tenants/:id/schema-discover)
   agent: backend-engineer
-  status: BLOCKED
+  status: DONE
+  superseded_by: >-
+    This is the Sprint 2.5 planning snapshot. The work shipped and is tracked by the canonical DONE
+    entry for TICKET-033 in the Sprint 9.5 section (PR #121, completed 2026-05-21). Status flipped
+    BLOCKED -> DONE 2026-07-17 to remove an id->status conflict; the pre-completion snapshot is kept
+    for history.
   priority: P0
   estimated_hours: 6
   depends_on: [TICKET-032]
@@ -2638,7 +2648,12 @@ Detailed tickets for Sprints 0–3 in Paczka 2 (this delivery). Sprints 4–11 s
   title:
     Detection Preview UI — screenshot overlay + manual selector editing + Save & activate button
   agent: backend-engineer
-  status: BACKLOG
+  status: DONE
+  superseded_by: >-
+    This is the Polish/Carve-out planning snapshot. The work shipped and is tracked by the canonical
+    DONE entry for TICKET-AUTO-006-POLISH in the Sprint 9.5 section (PR #125, completed 2026-05-22).
+    Status flipped BACKLOG -> DONE 2026-07-17 to remove an id->status conflict; the pre-completion
+    snapshot is kept for history.
   priority: P2
   estimated_hours: 4
   depends_on: [TICKET-AUTO-006]

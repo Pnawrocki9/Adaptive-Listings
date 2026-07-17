@@ -15351,3 +15351,75 @@ ac:
       check doesn't rediscover the ACCESS_DENIED the hard way.
 
 cross_ref: [ESC-037, ESC-032, FOLLOW-574, project_postgres_migrations_no_autoapply]
+
+---
+
+## FOLLOW-577 — Fix the latent `intent_events` erase no-op: the DSR erase filter targets `intent_session_id` (zero-UUID default), matching zero real rows (Art. 17)
+
+source_retro: RETRO-176 follow-on (discovered during FOLLOW-574) source_ticket: FOLLOW-574
+recommended_sprint: Sprint 23 (Wave 2) recommended_agent: backend-engineer priority: P1
+estimated_hours: 3 promoted_to_queue: false
+
+**Scope.** `POST /api/dsr/erase` deletes `intent_events` with
+`ALTER TABLE intent_events DELETE WHERE intent_session_id IN (resolveIntentSessionId())`, where
+`resolveIntentSessionId()` returns the Postgres `intent_sessions.id` (`gen_random_uuid()`) UUID. But
+the ingest writer (`apps/ingest/src/handlers/intent-snapshot.ts`) **omits `intent_session_id` from
+the INSERT** — ClickHouse uses the zero-UUID default (00000000-…) — and writes the real SDK
+fingerprint to the String `session_id` column (migrations 0015/0016; the tracer
+`apps/control-plane/src/lib/clickhouse-tracer.ts` reads `intent_events` on `session_id` and its
+header says "Do NOT use intent_session_id"). Therefore the erase mutation's WHERE never matches a
+real row: **`intent_events` is never actually erased for any data subject** — an Art. 17 erasure
+completeness bug, latent since FOLLOW-455.
+
+**Discovered by FOLLOW-574.** The disclosure side (FOLLOW-574) deliberately diverges: it discloses
+`intent_events` on the authoritative `(tenant_id, session_id)` key so the Art. 15/20 disclosure is
+truthful (returns the subject's real rows). This makes disclosure ⊋ erasure for `intent_events`
+until the erase filter is fixed. See ESC-038.
+
+**Fix options (backend-engineer to choose; ClickHouse ORDER BY constraint applies):**
+
+- Change the `intent_events` erase filter to `session_id = {sdk_session_id}` + `tenant_id` (matches
+  how rows are actually written/read). This removes the `resolveIntentSessionId()` + null-guard
+  special path in `erase/route.ts` for `intent_events`. Note ClickHouse forbids MODIFY/rename on
+  ORDER BY key columns (migration 0016), but a DELETE-WHERE filter on the non-key `session_id`
+  column is fine.
+- Then update `DSR_CLICKHOUSE_TABLES` (`clickhouse-dsr.ts`) so `intent_events`'s `column` is
+  `session_id` and drop the `idSource: 'intent_session_id'` marker — which ALSO lets FOLLOW-574's
+  disclosure loop derive `intent_events`'s filter from the constant with no special case, closing
+  the disclosure/erasure divergence cleanly.
+
+ac:
+
+- [ ] Erase of `intent_events` matches and deletes the subject's real rows (route-driven test
+      seeding rows with `session_id` populated + `intent_session_id` at zero-UUID default, asserting
+      the DELETE empties them).
+- [ ] FOLLOW-574's disclosure divergence note for `intent_events` is removed once erase + disclosure
+      key agree.
+- [ ] DPIA §8 step 5 note about the divergence updated.
+
+cross_ref: [FOLLOW-574, FOLLOW-455, FOLLOW-286, FOLLOW-287, ESC-038, RETRO-176]
+
+---
+
+## FOLLOW-578 — `engagement_scores` is a phantom store: schema + retention + erase-cascade + disclosure exist, but nothing writes it (PHANTOM-STORE confirmed)
+
+source_retro: RETRO-176 (§3 WA-NOTE, §6 PHANTOM-STORE) source_ticket: FOLLOW-574 recommended_sprint:
+Sprint 23 (Wave 2) recommended_agent: backend-engineer / ml-engineer priority: P2 estimated_hours: 3
+promoted_to_queue: false
+
+**Verdict recorded by FOLLOW-574 AC(d)/(e): PHANTOM CONFIRMED — arms RETRO-176 §6 PHANTOM-STORE
+(count → 1).** A repo-wide search for any writer of `engagement_scores` / `engagementScores`
+(Drizzle `.insert().values()`, PostgREST `rest/v1 … on_conflict` upsert, `.py` Modal code, ingest
+Worker) returns ZERO producers — only the Drizzle `$inferInsert` type, the DSR erase-cascade DELETE
+(FOLLOW-193), the FOLLOW-558 disclosure read, and test fixtures. The stub's grep-under-report caveat
+(that `intent_sessions` has an invisible PostgREST producer) was checked and does **not** apply
+here: no PostgREST/Supabase-client writer exists either. So the table, its ROPA Activity
+("Engagement Score computation", naming Modal as processor), its DPIA §2.5 90-day retention row, its
+erase target and its Access/Portability disclosure all describe a store that is always empty.
+
+**Action (choose one):** build the producer (the ROPA/DPIA-specced engagement-scoring compute) OR
+retire the table + remove it from `DSR_CLICKHOUSE_TABLES`'s Postgres siblings / erase cascade /
+disclosure and delete the ROPA Activity + DPIA row. FOLLOW-574 has annotated ROPA:408 + DPIA §2.5 to
+"planned; no producer built as of 2026-07-17" so the docs no longer assert false current processing.
+
+cross_ref: [FOLLOW-574, FOLLOW-193, FOLLOW-558, RETRO-176]

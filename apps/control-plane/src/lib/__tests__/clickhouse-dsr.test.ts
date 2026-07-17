@@ -482,9 +482,7 @@ describe('exportSessionEvents (FOLLOW-574 volume-safe events export)', () => {
   });
 
   it('binds tenant/session as params and table-qualifies WHERE/ORDER BY (alias-shadow safe)', async () => {
-    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
-      Promise.resolve(chJson([])),
-    );
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve(chJson([])));
     vi.stubGlobal('fetch', fetchMock);
 
     await exportSessionEvents(DISCLOSURE_CFG, 'tenant\\evil', 'sess\\evil');
@@ -501,19 +499,16 @@ describe('exportSessionEvents (FOLLOW-574 volume-safe events export)', () => {
     expect(body).not.toContain('tenant\\evil');
   });
 
-  it('paginates by keyset and truncates at maxRows, returning a continuation cursor', async () => {
-    // maxRows=2, page size is DSR_EVENTS_EXPORT_PAGE_SIZE. To force multiple
-    // pages we return a full page then a partial page. With maxRows=2 the export
-    // must stop and mark truncated once it holds >2 rows.
+  it('truncates at maxRows and returns a continuation cursor when a full page exceeds the cap', async () => {
+    // A single full page (== DSR_EVENTS_EXPORT_PAGE_SIZE) already exceeds
+    // maxRows=2, so the exporter stops after ONE fetch, keeps the first 2 rows,
+    // marks truncated, and returns a cursor pointing at the 2nd kept row.
     const fullPage = Array.from({ length: DSR_EVENTS_EXPORT_PAGE_SIZE }, (_, i) => ({
       event_id: `e${String(i)}`,
       ts: `2026-06-01 10:00:${String(i % 60).padStart(2, '0')}.000`,
       type: 'view',
     }));
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(chJson(fullPage)) // page 1: full → more may exist
-      .mockResolvedValueOnce(chJson([{ event_id: 'z', ts: '2026-06-02 00:00:00.000', type: 'x' }]));
+    const fetchMock = vi.fn().mockResolvedValue(chJson(fullPage));
     vi.stubGlobal('fetch', fetchMock);
 
     const out = await exportSessionEvents(DISCLOSURE_CFG, 'tenant-1', 'sess-1', { maxRows: 2 });
@@ -522,11 +517,24 @@ describe('exportSessionEvents (FOLLOW-574 volume-safe events export)', () => {
     expect(out.rows).toHaveLength(2);
     expect(out.next_cursor).not.toBeNull();
     expect(out.next_cursor?.after_event_id).toBe('e1'); // 2nd kept row
-    // The 2nd fetch carries the keyset cursor params.
-    const [secondUrl] = fetchMock.mock.calls[1] as [string, RequestInit];
-    const url2 = new URL(secondUrl);
-    expect(url2.searchParams.get('param_after_event_id')).not.toBeNull();
-    expect(url2.searchParams.get('param_after_ts')).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // one full page already exceeds the cap
+  });
+
+  it('passes a supplied keyset cursor as after_ts/after_event_id params on the first fetch', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve(chJson([])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await exportSessionEvents(DISCLOSURE_CFG, 'tenant-1', 'sess-1', {
+      cursor: { after_ts: '2026-06-01 10:00:00.000', after_event_id: 'e1' },
+    });
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_after_event_id')).toBe('e1');
+    expect(url.searchParams.get('param_after_ts')).toBe('2026-06-01 10:00:00.000');
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('toDateTime64({after_ts:String}');
+    expect(body).toContain('toUUID({after_event_id:String})');
   });
 });
 
@@ -630,7 +638,8 @@ describe('getClickHouseDisclosure (FOLLOW-574 — derived from DSR_CLICKHOUSE_TA
   it('uses the keyset-paginated exporter for events (ORDER BY e.ts)', async () => {
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
       const body = typeof init?.body === 'string' ? init.body : '';
-      if (body.includes('FROM events AS e')) return Promise.resolve(chJson([{ event_id: 'e1', ts: '2026-06-01 10:00:00.000' }]));
+      if (body.includes('FROM events AS e'))
+        return Promise.resolve(chJson([{ event_id: 'e1', ts: '2026-06-01 10:00:00.000' }]));
       return Promise.resolve(chJson([]));
     });
     vi.stubGlobal('fetch', fetchMock);

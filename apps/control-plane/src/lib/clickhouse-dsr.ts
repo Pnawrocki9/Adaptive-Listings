@@ -468,7 +468,9 @@ export async function exportSessionEvents(
     );
     rows.push(...page);
     if (page.length < DSR_EVENTS_EXPORT_PAGE_SIZE) break; // exhausted
-    const last = rows[rows.length - 1];
+    // page is full here, so its last row exists; advance the keyset cursor.
+    const last = page[page.length - 1];
+    if (!last) break;
     cursor = { after_ts: last.ts, after_event_id: last.event_id };
     if (rows.length > maxRows) break; // exceeded cap — stop fetching
   }
@@ -479,7 +481,7 @@ export async function exportSessionEvents(
     return {
       rows: kept,
       truncated: true,
-      next_cursor: { after_ts: last.ts, after_event_id: last.event_id },
+      next_cursor: last ? { after_ts: last.ts, after_event_id: last.event_id } : null,
     };
   }
   return { rows, truncated: false, next_cursor: null };

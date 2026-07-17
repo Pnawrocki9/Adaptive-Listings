@@ -303,7 +303,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // continuation cursor). When ClickHouse is unconfigured (dev/CI) or the query
   // fails, we report `available: false` with a note — never a fabricated or
   // silently-empty disclosure (Rule K.2).
-  let clickhouse: ClickHouseDisclosure = { available: false, note: 'clickhouse_not_configured', tables: [] };
+  let clickhouse: ClickHouseDisclosure = {
+    available: false,
+    note: 'clickhouse_not_configured',
+    tables: [],
+  };
   const chConfig = readClickHouseConfig();
   if (chConfig) {
     try {

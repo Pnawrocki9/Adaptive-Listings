@@ -51,12 +51,25 @@ Opus) agree on the shape and disagree productively on the detail:
 3. **Retros for 557/558: DONE** — RETRO-175 + RETRO-176, filing FOLLOW-570…577. **RETRO for 559
    owed.**
 
-**⚠️ Vercel went red on the control-plane deploy** between #532 (green) and #533/#534 (both fail
-it). Confirmed NOT caused by either PR — the docs-only #534 fails it identically, and neither PR
-touches control-plane (FOLLOW-559 is `apps/ingest` = Cloudflare Worker, deployed off Vercel). So it
-is a standing control-plane deploy breakage, independent of this work. Could not characterize
-further — the Vercel MCP is 403/unauthorized for this team scope. **Flagged for the human: check
-whether prod control-plane is actually broken, separate from the merge.**
+**✅ Vercel red — DIAGNOSED, prod is HEALTHY (was a false alarm; correcting my own earlier
+banner).** An earlier version of this block (merged in #535) called the Vercel red a "standing
+control-plane deploy breakage" and asked the human to check whether prod was broken. **That was
+wrong — it was based on PR-check failures only, before I read the merge-commit statuses.** Full
+picture now:
+
+- **Every `main` merge-commit deployed successfully:** `b60c1bc`, `d0f86be`, `0009c0f` (#533),
+  `59ab555` (#534), `fa51fa3` (#535) all show Vercel `success`. Production control-plane is fine.
+- **Only some PR-HEAD preview deploys failed** (#533 head `cc146b2`, #534 head) — and they failed
+  with **`target_url = None`**, i.e. no deployment was ever created/built. A real build break yields
+  a URL with error logs; "failed, no URL" is the signature of a **transient Vercel integration
+  hiccup** at deployment creation, not a code fault.
+- **#535's preview deploy passed** on the same docs-only change class that #534's failed on —
+  confirming intermittency, not a persistent break.
+
+Conclusion: no prod issue, no code issue, nothing to fix — transient preview-deploy flakiness. The
+Vercel red on a PR is safe to ignore when (a) the diff doesn't touch `apps/control-plane` and (b)
+the failing status has no `target_url`. (Diagnosis done via `gh api commits/<sha>/statuses`; the
+Vercel MCP is 403 for this team scope, but the commit-status API was sufficient.)
 
 **Deploy note:** #528/#529 changed control-plane routes → Vercel prod redeploy on merge. Neither PR
 carried a migration, so the `db-migrate.yml` prod auto-apply path was not triggered (verified before

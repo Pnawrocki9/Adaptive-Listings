@@ -12489,6 +12489,38 @@ in-place in Sprint 22b above.
           mutation-SQL test).
     - [x] FOLLOW-574's disclosure divergence note removed (erase + disclosure key now agree).
     - [x] DPIA §8 step 5 divergence note updated.
+- id: FOLLOW-579
+  title: >-
+    Strip session.quality.snapshot derived-intent fields (final_archetype/confidence/stability) for
+    unconsented users — §H.8(d) under-gate (CEO ruling: strip, stays operational)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  branch: backend-engineer/FOLLOW-579-quality-snapshot-strip
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    RETRO-177 §LG-1. FOLLOW-559's consent gate classes session.quality.snapshot operational/
+    always-ingest, but its payload carries §H.8(d) derived intent (final_archetype/confidence/
+    stability) — the same class it gates as intent.snapshot. CEO ruling 2026-07-17: strip those
+    fields when consent not granted (stays operational). Dispatched 2026-07-17. Brief: HANDOFFS.md.
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-579 stub, ruling banner)
+  notes: |
+    Model-fit: opus (§H.8(d) GDPR-sensitive, conditional payload redaction at ingest boundary).
+    Grounded in brief: session.quality.snapshot currently lands in the GENERIC events table (payload
+    as JSON) via clickhouse-producer.ts:146 — the dedicated session_quality table has NO writer
+    (phantom), so the strip is a payload-key deletion, not a CH column concern. Strip in the
+    handler's validated[] loop (near the intent.snapshot special-case). AC-a ruling already
+    recorded; AC-c golden per-type fixture is the load-bearing test-quality leg (closes RETRO-177
+    exhaustiveness≠correctness). Rule I baseline 180, don't regress.
+    AC:
+    - [ ] (b) strip the 3 derived fields when consent_state not in {consented, legitimate-interest};
+          event still ingests; consented/LI users keep them.
+    - [ ] (c) golden per-type classification fixture (assert every type's ConsentClass).
+    - [ ] (d) end-to-end test: none→stripped, consented→kept.
+    - [ ] (a-docs) record ruling in gate module doc + ROPA/DPIA if posture changes (Rule N).
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

@@ -1,4 +1,40 @@
-# Status — 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
+# Status — 2026-07-18 (session 34 — FOLLOW-561 marked DONE post-merge, retrospective spawned)
+
+## SESSION 34 (2026-07-18) — FOLLOW-561 DONE transition + retrospective; no new dispatch
+
+**State check:** PR #552 (worker) and PR #553 (PM bookkeeping/validation) both merged to `main`
+(squash commits `a203b52` and `153ab0f`). `git log --oneline -5` confirms `153ab0f` at HEAD of
+`main`; working tree clean before starting.
+
+**Action taken:** QUEUE.md FOLLOW-561 transitioned `READY_FOR_REVIEW` -> `DONE`
+(`completed_at: '2026-07-18T00:00:00Z'`, `merge_commit: a203b52`, `pm_validated` note referencing
+both merge commits). Committed on fresh branch `pm-orchestrator/FOLLOW-561-mark-done` off `main`
+(not pushed to main directly) → PR #554.
+
+**Retrospective:** No Task/Agent-spawn tool was available in this session's toolset (Read/Write/
+Edit/Bash only) — logged as a process deviation. Rather than fake a subagent dispatch, I performed
+the retrospective-analyst's algorithm directly against `.claude/agents/retrospective-analyst.md`
+(model-fit: **opus**, per the model-fit table's explicit "retrospectives" row and the agent's own
+`model: opus` frontmatter — this analysis required cross-file grep reasoning across 4+ hand-
+maintained literal copies and a production-risk judgment call, not mechanical bookkeeping). Produced
+**RETRO-178** in `backlog/RETROSPECTIVES.md`: Wiring Audit clean on the diff as scoped (CHECK A/B),
+but an independent repo-wide grep found the guard itself under-scoped — a 4th, **production-live**
+full-parity archetype-literal copy (`generate_description.py` `_ARCHETYPE_GUIDANCE`, live Modal
+AI-description prompt, silent generic-fallback on a missing key, no alert) plus 2 subset copies, one
+of which already ships an **invalid archetype id** (`'family_upsizer'`, not a canonical member) in 2
+admin-labels mock-data files. Filed **FOLLOW-583** (qa-engineer, P2, 3h) to close all 3. Promoted
+**Rule AC** (CONVENTIONS_PATCH.md) — "guard-authoring tickets must be scoped by a repo-wide grep for
+the target signature, not just the source audit's named files" — ≥2-prior threshold met via
+RETRO-053→055 and RETRO-107→108.
+
+**CI-check counter:** 0/5 this session (bookkeeping-only, no code change to validate).
+**Fix-iteration counter:** 0/3.
+
+**Next dispatch candidates (not picked this session, per explicit instruction):** `FOLLOW-562`
+(backend-engineer, dashboard Panel 5 error banner), `FOLLOW-564` (architect, p95 SLA doc
+reconciliation) — both `READY`, unblocked, Sprint 23 Wave 3.
+
+---
 
 ## SESSION 33 (2026-07-17) — validated PR #552 (FOLLOW-561), moved READY_FOR_REVIEW; no new dispatch
 

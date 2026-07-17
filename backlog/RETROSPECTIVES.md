@@ -28145,4 +28145,140 @@ telemetry field, explicitly NOT charged as a HALF_WIRE_P per the RETRO-176 §3 t
 - **Related to RETRO-135:** its "a Sentry consumer is not a repo-internal half-wire" precedent is applied
   to the `consent_gate_rejected` counter (§3 CHECK B).
 
-<!-- next free FOLLOW number: 583 (581 = FOLLOW-581 + 582 = FOLLOW-582, filed by compliance-engineer session from FOLLOW-574: intent_events erase no-op [Art. 17] + engagement_scores phantom-store producer absence; NOT retro-sourced, increments no pattern. 580 = FOLLOW-580, filed 2026-07-17 from ESC-037's resolution — a P3 ops-grant item: prod ingest_worker lacks SELECT on dsr_audit_log, diverging from ESC-032; NOT retro-sourced, increments no pattern). 579 = FOLLOW-579, filed by RETRO-177. RETRO-177 = retro for PR #533 (FOLLOW-559, audit A3-F-08, MERGED 2026-07-17T07:19:20Z, commit 0009c0f; 5 files +515/-1; server-side consent gate at the apps/ingest storage boundary — new consent-gate.ts (sole export evaluateConsent) + per-event gate in handlers/events.ts + 132-line contract/§H.9 suite + 4 route-driven e2e it-blocks). Wiring Audit CLEAN on both checks (CHECK A: the one new file's sole export evaluateConsent is imported by handlers/events.ts:210 non-test — the map/classifier/allowed-set were export-narrowed to module-internal in commit 2 after Rule I flagged them test-only, so the check worked in-PR; corroborated by Rule I 181/563 branch vs 181/562 main = +1 symbol evaluateConsent, +0 violations = the sole new export is the wired one. CHECK B: no new event/env/column/topic/SDK-signal — gate keys on the existing consent_state + existing union; the Sentry consent_gate_rejected counter's consumer is Sentry, external, not a repo wire per RETRO-135) + one WA-NOTE (consent_rejected ACK body field + estalara.consent_rejected span attr + log field is producer-only, ZERO consumers repo-wide — SDK does not read the ingest ACK — a terminal operator/observability field at a framework-route boundary, the same suppressed case as RETRO-176 §3's disclosure response fields, NOT a HALF_WIRE_P). GAPS: LG-1 (P2) session.quality.snapshot is classed operational/always-ingest but its payload carries final_archetype+final_confidence+prediction_stability_score — the §H.8(d) derived-intent artifact, the SAME class the map GATES when it arrives as intent.snapshot; so a consent_state=none user's 12-dim vector is blocked at intent.snapshot while that user's final archetype IDENTITY rides through session.quality.snapshot; internal taxonomy inconsistency + genuine §H.8(d) under-gate; P2 not P1 because it needs a compliance/CEO-DPO ruling (gate/strip/confirm) and the SDK still sets consent_state client-side so none-profiling volume at ingest is low; the map is correct on 51 of 52 members (conversions inquiry/tour/live.signup AFFIRMED operational as Art 6.1(b) pre-contract lead records; adapt.*/ab.assignment server outcomes; session.started+intent.snapshot correctly profiling). TG-1 (P3, folded into FOLLOW-579) the contract test proves EXHAUSTIVENESS not CORRECTNESS — invoked with consent_state='consented' where profiling/operational/audit all return allowed:true, so it cannot distinguish a mis-classed member; that is why LG-1 shipped green; fix = a compliance-reviewed golden per-type class fixture. CODE: no defects — the gate is a REAL storage block not a counter (a rejected event never enters validated[] and both the sinks AND the intent.snapshot side-effect loop iterate validated[], so a gated intent.snapshot never reaches handleIntentSnapshot's ClickHouse intent_events + Supabase intent_sessions dual-write; consent_state envelope-required so no undefined-into-gate; unclassified fails closed). SECOND-PATH/CASCADE (§5d): CHECKED and CLOSED — grep EventSchema across control-plane+decision-api (excl tests) = ZERO, so no other app persists the ingest union; adapt/route.ts:494 INSERT adaptation_decisions + llm-gateway.ts:174 INSERT llm_calls are server-OUTCOME logs with no client consent_state to gate and are governed by decision-api's own §H.9 gate — NOT mirrors of A3-F-08; the class has ONE write path and this PR closes it. RECONCILE w/ RETRO-175/176 (§5d,§8): their multi-axis gap was UNDER-closed on 2 of 3 STORAGE axes; here the named path is FULLY closed and there is no 2nd path — the multi-axis lesson transferred not to storage paths but to event CLASSES (LG-1 = same derived-intent data classed two ways by carrier type). PLACEMENT VERDICT: ingest-boundary over shared-Zod-refinement was CORRECT (a shared refinement mutates a CLAUDE.md public API surface = architect escalation; the boundary pass keeps EventEnvelope untouched, additive/non-breaking, no consumer regressed). PROCESS ITEMS: (1) the PM's FOLLOW-559 validation is independently affirmed SOUND (behavior-verified: the e2e tests assert stub.callCount()/accepted/rejected, and I re-verified the validated[]-only sink path) — a COUNTER-EXAMPLE to RETRO-176 §4c TG-1's read-the-label-not-the-body miss, so that pattern is NOT incremented; (2) the Vercel flag-then-retract (banner #535→#536, within 2 commits, diagnosed as transient preview flakiness via target_url=None while every main merge-commit deployed green) is adjudicated a HEALTHY self-correction, not a smell — retracted before it drove a bad dispatch. RULE: NO PROMOTION — every candidate at count 1, consistent with RETRO-175/176's refusals: EXHAUSTIVENESS-GATE-PROVES-COMPLETENESS-NOT-CORRECTNESS (count 1 HELD; rhymes with RETRO-176's parity-membership-not-derivation but different mechanism — a derived enumeration with an untested per-member verdict vs a hand-typed list posing as derived; merging = matching at the bar-corrupting altitude 175/176 named), DERIVED-FIELD-RIDES-A-BENIGN-CLASS (count 1 HELD), FLAG-THEN-RETRACT-A-PROD-BREAKAGE (count 1 HELD, and a HEALTHY self-correction — the CI-red-baseline theme in 175/176 is "read CI right," a DIFFERENT shape, not a valid 2nd sighting). No promoted rule was broken. FOLLOWS FILED: 579 (P2 compliance-engineer + backend-engineer ~3h — settle session.quality.snapshot class [gate / strip derived fields / documented operational ruling; ruling REQUIRED FIRST] + golden per-type classification fixture; closes LG-1 + TG-1). PM ACTION: LG-1 is P2 defense-in-depth, not a live prod leak of high volume (SDK sets consent_state client-side) — no ESCALATIONS entry; this retro records the intra-taxonomy under-gate and defers the class ruling to FOLLOW-579's compliance leg. -->
+<!-- prior "next free FOLLOW number" note (579-583 provenance) superseded below RETRO-178; kept for history: 579 = FOLLOW-579, filed by RETRO-177 (session.quality.snapshot consent-class ruling). 580 = FOLLOW-580 (ESC-037 ops-grant, not retro-sourced). 581/582 = FOLLOW-581/582 (compliance-engineer session from FOLLOW-574, not retro-sourced). -->
+
+## RETRO-178 — FOLLOW-561 (archetype-ID parity guard for the Python + DB-seed literal copies — audit A3-F-10, Rule J-family mirror-sync guard) — 2026-07-18
+
+### 1. Summary of change
+
+- **PR:** #552 (merged 2026-07-17 23:59 UTC, commit `a203b52`) + bookkeeping PR #553 (merged, commit
+  `153ab0f`).
+- **Files changed:** 2 (+256 / -8) — `tests/integration/archetype-id-parity.test.ts` (new, 244 lines)
+  and `tests/integration/vitest.config.ts` (`include` widened `**/*.smoke.test.ts` → `**/*.test.ts`).
+- **Modules touched:** qa (tests/integration).
+- **Key contracts changed:** none — test-only addition, zero production exports.
+
+### 2. Verification done in PR
+
+- Test files changed: 1 new (`archetype-id-parity.test.ts`, 5 `it` blocks) · Assertions added: ~15
+  (3 duplicate/missing/extra `expect` triples × 3 full-parity files + 2 exemption assertions).
+- CI checks: PM-validated green on all real gates (PR #553 comment); independently re-run this
+  session — `pnpm --filter @estalara/integration-smoke test` → 5 passed, 5 skipped (the two live
+  smoke specs soft-skip cleanly, matching the PR's claimed local result).
+- I independently confirmed the guard actually triggers on every PR: `intent-weights-live-smoke.yml`
+  and `redis-shadow-smoke.yml` both fire on `pull_request: branches: [main]` with no `paths:` filter
+  and invoke `vitest run --config vitest.config.ts` (the former with no filename filter at all), so
+  the widened glob makes `archetype-id-parity.test.ts` run on every PR targeting `main`, not only
+  locally — this is a real CI wire, not a local-only guard.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): the sole new file is a test file consumed only by the Vitest runner /
+CI workflows above — framework-entrypoint exemption applies, not dead code.
+CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduced by this diff.
+`Wiring Audit — clean ✅` (both checks, on the diff as scoped).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the guard's own scope is incomplete relative to its stated purpose.** The ticket
+  (and its audit source, A3-F-10) enumerated exactly 3 hand-maintained literal copies of the
+  18-archetype set (`nlp.py`, `archetype-seeds.ts`, migration 0005). A repo-wide grep for a
+  distinctive canonical archetype name (`golden_visa_buyer`) surfaces a **4th full-parity copy the
+  guard does not touch**: `apps/llm-gateway/src/jobs/generate_description.py:161`
+  `_ARCHETYPE_GUIDANCE: dict[str, str]` — verified by direct read, all 18 canonical ids present today
+  (currently in sync, confirmed by manual diff against `packages/sdk/src/core/intent.ts:24-42`). This
+  dict feeds the **live production** Modal AI-description prompt (`generate_description.py:1303`,
+  `:1712` — `_ARCHETYPE_GUIDANCE.get(archetype, "Write a balanced property description for a
+  motivated buyer.")`). Because the lookup is `.get()` with a silent generic-string default (no
+  exception, no Sentry call visible at either call site), a future archetype rename/add that updates
+  `ARCHETYPE_NAMES` but misses this dict would not crash or alert — it would silently degrade one
+  persona's live AI description quality to generic copy, indefinitely, with zero observability. This
+  is the single most consequential instance of the exact failure class FOLLOW-561 exists to prevent,
+  and it sits in the one call path (Modal, live in prod per `project_session9_modal_golive`) where
+  drift has real user-facing cost, unlike the 3 guarded files (test/DB-seed/Python-NLP-prompt-hint).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P3) — an already-invalid archetype id shipped in mock/dev data, duplicated across 2 files.**
+  `apps/control-plane/src/app/api/admin/labels/route-helpers.ts:29` `MOCK_ARCHETYPES` and
+  `apps/control-plane/src/app/api/admin/labels/export/route.ts:311` `buildMockExportRows()` both
+  hard-code the string `'family_upsizer'` — **not a member of the canonical 18** (`ARCHETYPE_NAMES`
+  has `family_buyer` and `upsizer` as two *separate* archetypes; `family_upsizer` does not exist in
+  either the SDK type, `nlp.py`, `archetype-seeds.ts`, or migration 0005). Both consuming fields are
+  typed `archetype: string` (`route-helpers.ts:21`), so TypeScript cannot catch this — confirmed via
+  `pnpm typecheck` staying clean on `main` today despite the bad literal. Impact is scoped to the
+  admin `/api/admin/labels` dev/CI mock-data path (`data_source: 'mock'`, badge-flagged, per Rule
+  K.2), not a live prediction — genuinely P3, not P1/P0. But it is the exact class of "stale/typo id"
+  bug the archetype-hints.ts subset-validity assertion in THIS SAME PR was written to catch, applied
+  one file over. Two independent files carry the identical wrong literal — a Rule S (symmetric
+  sibling) sub-instance: `route-helpers.ts`'s `buildMockLabelsResponse` and `export/route.ts`'s
+  `buildMockExportRows` are siblings serving the same admin-labels feature's list vs. export views,
+  and both drifted the same way.
+
+#### 4c. Test coverage gaps
+
+- Same root as LG-1/CB-1: no test in the repo asserts subset-validity (every referenced archetype id
+  is a real `ARCHETYPE_NAMES` member) for `REACHABLE_ARCHETYPES`
+  (`apps/control-plane/src/lib/demo-override-store.ts:37`, the documented "13 reachable archetypes
+  (Master Design §D.6)" single-source-of-truth array for the demo-override admin API) or for
+  `MOCK_ARCHETYPES` (which would have caught CB-1 immediately, on the first run).
+
+#### 4d. Documentation gaps
+
+- N/A — the new test file's own doc comment is accurate about its 3-file scope; it does not
+  over-claim coverage of files outside that scope (no Rule Y citation issue).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- None of Sprint 23's other open tickets (FOLLOW-560/562/564) touch archetype literals.
+
+#### 5b. Future sprint tickets affected
+
+- Any future ticket that adds/renames/removes an archetype (last done for the 18-set per Master
+  Design §D) must now also touch `generate_description.py`, `demo-override-store.ts`, and the 2
+  admin-labels mock-data sites, or repeat this exact gap — captured in FOLLOW-583 below.
+
+#### 5c. Contracts changed others rely on
+
+- None (test-only diff).
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- **Pattern: "a guard-authoring ticket scoped by the source audit's named files, not a repo-wide grep
+  for its own target signature, misses live instances of the exact class it exists to guard."** Seen
+  in: RETRO-053 → RETRO-055 (FOLLOW-264's 3-limb Option-A removal; RETRO-055 found the SDK +
+  `LocaleSchema` axes the consolidation did not reach — count 1) + RETRO-107 §7 → RETRO-108
+  (FOLLOW-384's stub scoped HW-3 closure to the `redis_writer.py` hop only; RETRO-108 found the
+  SDK-chat-emit→ingest→`_spawn_chat_nlp` producer chain the stub never enumerated, so the ticket's
+  OWN ACs were met while the §H.9 behavior it existed to deliver was NOT — count 2). **Promotion
+  trigger: this retro (count 3)** — FOLLOW-561 scoped to 3 audit-named files; a repo-wide grep
+  (`golden_visa_buyer`) surfaces a 4th, production-live full-parity copy plus 2 subset copies, one of
+  which is already broken (CB-1). ≥2-prior threshold met (RETRO-053/055 and RETRO-107/108 are both
+  PRIOR retros); promoting **Rule AC** below (§ CONVENTIONS_PATCH.md).
+
+### 7. Follow-ups
+
+- FOLLOW-583: Extend the archetype-ID parity/subset-validity guard to the 4th full-parity copy
+  (`generate_description.py` `_ARCHETYPE_GUIDANCE`, production-live) and the 2 subset copies
+  (`REACHABLE_ARCHETYPES`, `MOCK_ARCHETYPES`); fix the `family_upsizer` typo in both mock-data sites
+  as part of the same change (qa-engineer, P2, 3h).
+
+### 8. Cross-references
+
+- **Related to RETRO-053/055 and RETRO-107/108:** promotion evidence for Rule AC (§6) — see there for
+  the two prior "ticket scope enumeration incomplete for its own target class" sightings.
+- **Related to RETRO-176/177:** continues the "the map/guard is correct on N of N+k members, the gap
+  is the k it never named" shape (there: consent-class taxonomy; here: literal-copy inventory) —
+  distinct axis (inventory completeness vs. classification correctness) but same discipline of
+  checking every member, not just the ones the source ticket named.
+- **First retro to analyze this specific ticket** — FOLLOW-561 is not a claimed-closure of any prior
+  FOLLOW (fresh 2026-07-11 audit finding, `depends_on: []`), so step 7 (prior-follow-up closure
+  check) is N/A.

@@ -1721,6 +1721,84 @@ grep -nE "requestAnimationFrame|queueMicrotask|setTimeout" packages/sdk/src/core
 
 ---
 
+## Rule AC — A guard-authoring ticket for a class of duplicated/hand-maintained literal MUST be scoped by a repo-wide grep for the target signature, not just the files the source audit named
+
+**Pattern (SCOPE-BY-AUDIT-NOT-BY-GREP):** A ticket is created to guard against drift in a "class" of
+hand-maintained duplicate (a literal ID set, an enum mirror, a config array) after an audit or a
+prior retro names N specific files carrying it. The implementation trusts that enumeration and
+writes a guard/test covering exactly those N files. A later retro's independent repo-wide grep for a
+distinctive member of the set finds additional, un-guarded instances — sometimes in a
+higher-consequence location (a live production code path) than any of the N the ticket covered, and
+sometimes already broken (proving the guard would have caught it on its first run had it existed).
+The ticket's own stated scope is not itself evidence the guard reaches every instance of what it
+exists to guard.
+
+**Evidence (≥2 prior retros):**
+
+- **RETRO-053 → RETRO-055 (count 1)** — FOLLOW-264's Option-A removal was scoped to 3 named limbs;
+  RETRO-055 found the SDK + `LocaleSchema` axes the consolidation did not reach.
+- **RETRO-107 §7 → RETRO-108 (count 2)** — the FOLLOW-384 stub scoped HW-3's closure to the
+  `redis_writer.py` hop only; RETRO-108 confirmed FOLLOW-384's own ACs were met while the §H.9
+  behavior it existed to deliver was NOT, because the SDK-chat-emit → ingest-schema →
+  `_spawn_chat_nlp` producer chain was never enumerated by the stub.
+- **RETRO-178 (the promotion trigger, count 3)** — FOLLOW-561's archetype-ID parity guard scoped to
+  the 3 files a 2026-07-11 audit named (`nlp.py`, `archetype-seeds.ts`, migration 0005). A repo-wide
+  grep for a distinctive canonical archetype name (`golden_visa_buyer`) surfaced a 4th,
+  **production- live** full-parity copy (`generate_description.py` `_ARCHETYPE_GUIDANCE`, feeding
+  the live Modal AI-description prompt with a silent generic-fallback on a missing key — no crash,
+  no alert) plus 2 subset copies the guard never touches, one of which (`MOCK_ARCHETYPES` /
+  `export/route.ts`'s inline mock literal) already contains an invalid id (`family_upsizer` — not a
+  member of the canonical 18) that a subset-validity check of the exact shape FOLLOW-561 already
+  wrote for `archetype-hints.ts` would have caught immediately, one file over. The 2 banked
+  occurrences are both PRIOR retros → ≥2-prior threshold met; this retro does not inflate the count
+  (same adjudication as Rules AA/AB/V/Q).
+
+**Rule:** When authoring a ticket (or a retro follow-up) whose job is to guard a class of duplicated
+hand-maintained literal:
+
+1. Before declaring the guard's file scope final, run a repo-wide grep for at least one distinctive
+   member of the set (a name unlikely to appear for unrelated reasons) across the whole tree
+   (excluding `node_modules`), not just the files the source audit/ticket named.
+2. Classify every hit: full-parity duplicate (must match the canonical set exactly), documented
+   subset (must be a subset-validity check — every referenced id is a real member — mirroring the
+   pattern this same repo already uses for deliberate-subset exemptions), or a false positive
+   (comment/doc-string example, unrelated string collision).
+3. If a hit reveals the literal is ALREADY wrong (a typo/stale id), that is independent evidence the
+   grep should have run before scoping the ticket, not after — file it as part of the SAME ticket,
+   not a separate one, so the new assertion's first run demonstrably goes red on the real bug before
+   the fix lands (proof the guard works, not just that it was written).
+4. Weight the found-but-unguarded instances by consequence, not just count: a copy on a live
+   production read/write path outranks a copy in test fixtures or dev/CI-only mock data, and should
+   be called out explicitly in the ticket/PR description even if it is currently in sync.
+
+**Verification:**
+
+```bash
+# Given a canonical literal-set constant, grep for a distinctive member's string value repo-wide to
+# find every hand-maintained copy, not just the ones a source audit enumerated.
+grep -rn '<distinctive_member_value>' apps/ packages/ --include=*.ts --include=*.py \
+  | grep -v node_modules
+```
+
+---
+
+<!-- Rule AC added 2026-07-18 — RETRO-178 §6. Evidence (≥2 PRIOR numbered retros): RETRO-053 →
+RETRO-055 (FOLLOW-264 3-limb scope missed the SDK + LocaleSchema axes, count 1) + RETRO-107 §7 →
+RETRO-108 (FOLLOW-384's HW-3 closure scoped to the redis_writer hop only; RETRO-108 found the
+un-enumerated SDK-chat-emit→ingest producer chain, count 2). Promotion trigger: RETRO-178
+(FOLLOW-561/PR #552) — the archetype-ID parity guard scoped to 3 audit-named files; a repo-wide grep
+found a 4th, production-live full-parity copy (generate_description.py _ARCHETYPE_GUIDANCE, silent
+fallback, no alert) plus 2 subset copies, one already broken (family_upsizer, not a canonical
+archetype). The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting
+retro does NOT inflate the count (same adjudication as Rules AA/AB/V/Q). DISTINCT axis from Rule J
+(byte-identical cross-runtime FILE mirror sync, enforced via a manifest + check-mirror-files.sh) — AC
+governs the TICKET-SCOPING discipline for enumerating every instance of a literal-set class before a
+guard is written, not the mechanism of the guard itself; and from Rule P (check docs/repo for prior
+art before proposing a ticket — governs not duplicating existing work, the inverse concern). Filed
+FOLLOW-583 (extend the FOLLOW-561 guard to the 4th full-parity copy + 2 subset copies + fix the
+family_upsizer typo) — qa-engineer, P2, 3h. LETTER CHOICE: AC is the next in the double-letter
+sequence after AB. -->
+
 <!-- Rule AB added 2026-07-10 — RETRO-170 §6. Second double-letter rule (continues the AA… sequence; single letters A–Z exhausted per the Rule AA note). Evidence (≥2 PRIOR numbered retros): RETRO-105 §6 LG-1 (refreshDirectives overlap, no in-flight guard, count 1, held → FOLLOW-380) + RETRO-169 §4a LG-1 (FOLLOW-380's single synchronous :737 checkpoint left the fire-and-forget applyDescriptionAdaptation tail uncovered, count 2, held → FOLLOW-546). Promotion trigger: RETRO-170 (FOLLOW-546/PR #495) — the fix closed the fetch-in-flight window (isStale re-check at adapt-description.ts:309) but a residual gap remained; the class re-relocated a THIRD hop (sync-checkpoint → fire-and-forget tail → the reapply-closure's deferred write) with a persistent-stale leg (uncached superseding listing + self-reinforcing MutationObserver). CITATION CORRECTION (FOLLOW-548, 2026-07-10, PR #501): this footnote originally attributed the residual gap to "the DOM write is rAF-DEFERRED (:323/:333), so the guard covers the rAF scheduling not the deferred write" — FOLLOW-548 proved `:323`/`:333` (`requestAnimationFrame(applyAndObserveSlot(...))`) evaluate their `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` argument SYNCHRONOUSLY (JS eager argument evaluation), so the initial write was already covered by the `:309` check; the genuinely deferred, unguarded write is the `reapply` loop-guard closure, re-invoked LATER via the MutationObserver's OWN internal requestAnimationFrame (independent of the caller's initial rAF schedule) — this is what the "persistent-stale leg" sentence above was actually describing. The promotion adjudication itself (2 banked prior retros, 3rd-hop re-relocation trigger) is unaffected by this correction. This is EXACTLY RETRO-169 §6's pre-authorized "the discovery that FOLLOW-546's fix itself re-relocates the guard gap" trigger — NOT the naive "FOLLOW-546 merged = 3rd sighting" (a clean fix landing is not a new bug sighting; had the fix been fully clean I would have banked at count 2 and NOT promoted). The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/V/Q). DISTINCT axis from Rule R (rehydrate-boundary idempotency — governs re-run-safety across a rehydrate, not concurrency across overlapping navs; RETRO-105 explicitly noted the adjacency-but-distinctness), Rule K.2 / its fire-and-forget amendment (governs OBSERVABILITY of a failed sink, whereas AB governs the CORRECTNESS of a latest-wins guard across an async tail), and Rule AA (code-vs-prod verdict axis). Filed FOLLOW-548 (guard the rAF-deferred write + close the never-stale-default footgun + fix the adapt.description.skipped JSDoc) — DONE, PR #499. LETTER CHOICE: AB is the next in the double-letter sequence after AA; flag for human review if a different scheme is preferred. -->
 <!-- Rule AA added 2026-07-02 — RETRO-152 §9. First double-letter rule: single letters A–Z are exhausted (A–P, R–Z used; M/V reclaimed/backfilled; Q is the retro-analyst INERT-GATE rule) so the retro-analyst promotion continues into the AA… sequence. Evidence (≥2 prior numbered retros): RETRO-146 §5a/§7 (FOLLOW-442 code axis closed, prod holdout-write attestation left open, count 1) + RETRO-150 §3/§5a (FOLLOW-455 code axis closed; FOLLOW-449's ClickHouse apply named operator-only, count 2). Promotion trigger: RETRO-152 (FOLLOW-450/PR #426) — entire ticket CODE_COMPLETE_OPERATOR_PENDING; the 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rules V/Q). DISTINCT axis from Rule A (PM must verify CI-green before READY_FOR_REVIEW — governs the review-status gate, not the code-vs-prod split), Rule M (a job CLAIMED to auto-apply must actually target prod — governs a false automation claim, whereas AA governs a ticket HONESTLY marked operator-pending being wrongly closed DONE), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — AA is the ticket-status/verdict discipline for that class). Cross-refs the F-06 operator attestation folded into the pilot go-live checklist / FOLLOW-471 DoD. LETTER CHOICE FLAGGED FOR HUMAN REVIEW: first use of a double-letter rule id — adjust if a different scheme is preferred. -->
 <!-- Rule Q added 2026-07-01 — RETRO-145 §6. Evidence: RETRO-006 §Pattern C (PR #130 E2E spec opt-in-behind-a-flag-CI-never-sets, assertion never runs, count 1 — RETRO-006 explicitly pre-authorized "promote on a 2nd 'test exists but doesn't run' sighting") + RETRO-007 §4b CB-1 (PR #137 demo-integration.yml "soft-skip inception — structurally present but never actually runs against a real DB", P2 → FOLLOW-079, count 2; distinct PR/file/mechanism AND the failed remediation of RETRO-006's gap). Promotion trigger: RETRO-145 (PR #403/FOLLOW-446) — archetype-embeddings-not-null gate had three stacked blindnesses (TS2307 build-order / ERR_MODULE_NOT_FOUND bare-specifier / postgres-js socket-hang no-exit no-timeout) all masked by continue-on-error; the gate never ran its assertion until this fix. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro is the 3rd sighting and does NOT inflate the count (same adjudication as Rule V). Letter Q: the placeholder explicitly reserved for exactly this retro-analyst promotion (see the "Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met" note and the Q-reservation references in the Rule M/V provenance comments). DISTINCT axis from Rule A (PM must watch CI-green before READY_FOR_REVIEW — governs whether the human/PM verifies status, not whether the gate's own assertion ran), Rule Y (a docstring/test-header CITATION must be verified against the cited file — governs claims-about-a-check, whereas Q governs a check that reports a status but never executes), Rule L (prod install path must PRODUCE the config a consumer reads), and RETRO-121 §6 Pattern C (CI-leg-runs-but-prod-state-unverified — the inverse: Q is CI-leg-reports-status-but-never-runs). Filed FOLLOW-447 (audit sibling ci.yml gates for the 3 failure modes + add defense-in-depth timeout-minutes to all jobs); the continue-on-error scoping for the archetype gate is FOLLOW-446 (pre-existing, not re-filed). -->

@@ -12438,6 +12438,37 @@ in-place in Sprint 22b above.
     - [x] (d) engagement_scores phantom resolved (identify producer / file unbuilt-producer / retire
           + reconcile ROPA+DPIA).
     - [x] (e) phantom verdict recorded in PR body (arms/disarms RETRO-176 PHANTOM-STORE).
+- id: FOLLOW-581
+  title: >-
+    Fix the latent intent_events erase no-op — DSR erase filters intent_session_id (zero-UUID),
+    matching zero real rows, so intent_events is never erased (Art. 17)
+  agent: backend-engineer
+  status: IN_PROGRESS
+  assigned_to: backend-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  branch: backend-engineer/FOLLOW-581-intent-events-erase-key
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    Discovered during FOLLOW-574 (ESC-038). Erase deletes intent_events on intent_session_id, but
+    real rows carry that column at zero-UUID and the fingerprint in session_id (migrations
+    0015/0016; clickhouse-tracer.ts). So erase matches nothing — a latent Art. 17 no-op since
+    FOLLOW-455. Promoted from FOLLOW_UPS stub + dispatched 2026-07-17. Full brief:
+    backlog/HANDOFFS.md.
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-581 stub); ESC-038
+  notes: |
+    Model-fit: opus (P1 GDPR Art. 17, security-sensitive, cross-cutting — a shared constant consumed
+    by 3 call sites). Blast radius traced in the brief (stub understated it): DSR_CLICKHOUSE_TABLES
+    (change intent_events column→session_id, drop idSource); erase/route.ts (remove idSource special
+    path); mutation-poll/route.ts (ALSO special-cases the column — stub missed this); FOLLOW-574's
+    getClickHouseDisclosure special-case (simplify); and resolveIntentSessionId may go dead (both its
+    callers removed) → remove it, don't leave a Rule I violation (baseline 180, don't regress).
+    AC (from stub):
+    - [ ] Erase of intent_events targets session_id + deletes the subject's real rows (route-driven /
+          mutation-SQL test).
+    - [ ] FOLLOW-574's disclosure divergence note removed (erase + disclosure key now agree).
+    - [ ] DPIA §8 step 5 divergence note updated.
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

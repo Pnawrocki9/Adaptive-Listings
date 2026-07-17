@@ -58,14 +58,15 @@ Opus) agree on the shape and disagree productively on the detail:
    it arrives as `intent.snapshot`. So an unconsented user's 12-dim vector is gated while that same
    user's final archetype IDENTITY rides through. Verified independently (consent-gate.ts:120 +
    session-quality.ts:46-48). P2 defense-in-depth (SDK sets `consent_state` client-side → low
-   `none`-volume at ingest), **not** a live high-volume leak → no escalation. **RULING GIVEN (CEO,
-   2026-07-17): STRIP THE DERIVED FIELDS** — `session.quality.snapshot` stays `operational`/
-   always-ingest, but `final_archetype` + `final_confidence` + `prediction_stability_score` are
-   stripped from the persisted record when consent is not granted (AC-(b) option (ii); strip at the
-   ingest boundary before the ClickHouse `session_quality` sink). **FOLLOW-579 is now fully
-   actionable** — compliance-engineer records the ruling in the docs of record + backend-engineer
-   implements the conditional strip + the golden per-type classification fixture (AC-c). Not yet
-   dispatched.
+   `none`-volume at ingest), **not** a live high-volume leak → no escalation. **DONE** (CEO ruling
+   2026-07-17 "strip the derived fields"; merged `d3911bf`, PR #547). `session.quality.snapshot`
+   stays `operational`/always-ingest, but `final_archetype` + `final_confidence` +
+   `prediction_stability_score` are stripped from the persisted payload when
+   `consent_state ∉ {consented, legitimate-interest}` (a pure `redactPersistedPayloadForConsent` at
+   the ingest boundary; the dedicated `session_quality` table is a phantom write-path, so it's a
+   payload-key deletion in the generic `events` flow). Shipped with the AC-c golden per-type
+   classification fixture that closes RETRO-177's exhaustiveness≠correctness gap. PM-validated
+   independently.
 2. **FOLLOW-356: already DONE — was a stale duplicate, NOT an eligible pick.** CEO green-lit
    P1-first 2026-07-17, so pre-delegation analysis pulled the ticket — and found the work was
    completed **2026-06-25**, folded into FOLLOW-357's rename PR **#354** (`d8d5cb8`). Verified in
@@ -12489,6 +12490,55 @@ in-place in Sprint 22b above.
           mutation-SQL test).
     - [x] FOLLOW-574's disclosure divergence note removed (erase + disclosure key now agree).
     - [x] DPIA §8 step 5 divergence note updated.
+- id: FOLLOW-579
+  title: >-
+    Strip session.quality.snapshot derived-intent fields (final_archetype/confidence/stability) for
+    unconsented users — §H.8(d) under-gate (CEO ruling: strip, stays operational)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  completed_at: '2026-07-17T00:00:00Z'
+  branch: backend-engineer/FOLLOW-579-quality-snapshot-strip
+  pr: 547
+  merge_commit: d3911bf
+  pm_validated: >-
+    2026-07-17 session 30, verified independently — clean pass, no round-trips. Implements the CEO
+    ruling (option ii): session.quality.snapshot stays operational (class unchanged at
+    consent-gate.ts:142, NOT reclassified); a new pure redactPersistedPayloadForConsent strips
+    final_archetype/final_confidence/prediction_stability_score when consent_state not in
+    {consented, legitimate-interest}, wired at the storage boundary (handlers/events.ts:266) before
+    validated.push so both sinks get the redacted payload; no-op for other types + consented/LI.
+    AC-c golden per-type fixture asserts every union member's ConsentClass (closes RETRO-177
+    exhaustiveness!=correctness); AC-d e2e proves none->stripped, consented->kept. Rule I = 180 =
+    baseline (net-zero; the new export is wired via the handler). 64 ingest tests pass. AC-a-docs:
+    ruling in the gate module doc; ROPA/DPIA don't enumerate session_quality at field level so
+    nothing to amend (stated in PR). Phantom write-path confirmed (session_quality has no producer;
+    strip is a payload-key deletion in the generic events flow) — flagged that a future dedicated
+    writer must apply the same strip.
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    RETRO-177 §LG-1. FOLLOW-559's consent gate classes session.quality.snapshot operational/
+    always-ingest, but its payload carries §H.8(d) derived intent (final_archetype/confidence/
+    stability) — the same class it gates as intent.snapshot. CEO ruling 2026-07-17: strip those
+    fields when consent not granted (stays operational). Dispatched 2026-07-17. Brief: HANDOFFS.md.
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-579 stub, ruling banner)
+  notes: |
+    Model-fit: opus (§H.8(d) GDPR-sensitive, conditional payload redaction at ingest boundary).
+    Grounded in brief: session.quality.snapshot currently lands in the GENERIC events table (payload
+    as JSON) via clickhouse-producer.ts:146 — the dedicated session_quality table has NO writer
+    (phantom), so the strip is a payload-key deletion, not a CH column concern. Strip in the
+    handler's validated[] loop (near the intent.snapshot special-case). AC-a ruling already
+    recorded; AC-c golden per-type fixture is the load-bearing test-quality leg (closes RETRO-177
+    exhaustiveness≠correctness). Rule I baseline 180, don't regress.
+    AC:
+    - [x] (b) strip the 3 derived fields when consent_state not in {consented, legitimate-interest};
+          event still ingests; consented/LI users keep them.
+    - [x] (c) golden per-type classification fixture (assert every type's ConsentClass).
+    - [x] (d) end-to-end test: none→stripped, consented→kept.
+    - [x] (a-docs) record ruling in gate module doc + ROPA/DPIA if posture changes (Rule N).
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

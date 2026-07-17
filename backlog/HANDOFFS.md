@@ -3568,3 +3568,80 @@ tracer.
 **On completion:** open a PR, run local
 `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, confirm
 `scripts/check-rule-i.sh` ≤ 180, report back. Do not mark DONE — PM validates.
+
+---
+
+## Delegation brief — FOLLOW-579 (backend-engineer) — strip session.quality.snapshot derived-intent fields for unconsented users
+
+**From:** pm-orchestrator (session 30) **To:** backend-engineer **Date:** 2026-07-17
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-579 (P2, RETRO-177 §LG-1). **Branch:**
+`backend-engineer/FOLLOW-579-quality-snapshot-strip` (branch-first — before any Edit; never `main`).
+Read the full stub — the CEO ruling banner + AC set. This brief grounds the persistence path.
+
+**Model: Opus** — §H.8(d) GDPR-sensitive, and a conditional payload-redaction at the ingest boundary
+that must NOT regress the operational always-ingest posture. Per model-fit: security-sensitive.
+
+**⚠️ COMMIT BEFORE YOU FINISH.** A prior session hung with completed work stranded uncommitted in a
+worktree; `git add && git commit` as soon as it works.
+
+**The ruling (CEO 2026-07-17 — decided, do NOT re-open):** `session.quality.snapshot` STAYS
+`operational`/always-ingest (its aggregate data-quality-score metric is a lawful operational
+record). But strip the §H.8(d) derived-intent fields — `final_archetype`, `final_confidence`,
+`prediction_stability_score` — from the persisted record when
+`consent_state ∉ {consented, legitimate-interest}`. Consented / legitimate-interest users keep them.
+
+**Verified persistence path (this simplifies the fix — the stub's "ClickHouse session_quality sink"
+phrasing was aspirational):**
+
+- The ingest ClickHouse producer (`apps/ingest/src/clickhouse-producer.ts:146`) writes **every**
+  event to the generic **`events`** table (`INSERT INTO events FORMAT JSONEachRow`), payload as
+  JSON.
+- The dedicated `session_quality` ClickHouse table (migration 0005, a DSR-erase target) has **NO
+  writer anywhere** — grep for `INSERT INTO session_quality` = zero. It is forward-designed.
+- So `session.quality.snapshot` lands in `events` with `final_archetype` etc. inside its JSON
+  `payload`. **The strip is therefore a payload-key deletion** (`delete payload.final_archetype`,
+  `final_confidence`, `prediction_stability_score`) before the event reaches the sinks — NOT a
+  ClickHouse column concern (no dedicated typed columns are written today).
+
+**Verified starting facts:**
+
+- Gate: `apps/ingest/src/consent-gate.ts:120` — `'session.quality.snapshot': 'operational'`. Leave
+  the CLASS as `operational` (ruling option ii — do NOT reclassify to profiling).
+- Payload schema: `packages/shared/src/schemas/events/session-quality.ts` — the three fields at
+  `:37,46,48`; the rest of the payload (DQS metrics) stays.
+- The handler `apps/ingest/src/handlers/events.ts` already has a per-event
+  `for (const evt of validated)` loop with a per-type special-case for `intent.snapshot` (~:272) —
+  the natural place to add the session.quality.snapshot conditional strip (or a redaction step right
+  after `evaluateConsent`). Your design choice; keep it localized and near the existing pattern.
+
+**AC (from the stub — (a) is already DONE, the ruling is recorded):**
+
+- [ ] **(b)** Strip `final_archetype` / `final_confidence` / `prediction_stability_score` from a
+      `session.quality.snapshot` payload when `consent_state ∉ {consented, legitimate-interest}`,
+      before the sinks. Event still ingests (operational); the other payload fields survive; for
+      consented/LI users nothing changes.
+- [ ] **(c)** **Golden per-type classification fixture** in `consent-gate.test.ts`: assert the
+      expected `ConsentClass` for EVERY union member (not just that it is classified). This closes
+      RETRO-177 §TG-1 (exhaustiveness ≠ correctness) — a future reclassification becomes a
+      deliberate fixture edit. This is the load-bearing test-quality AC; do not skip it.
+- [ ] **(d)** End-to-end test (route-driven through `handlers/events.ts`, `index.test.ts` style): a
+      `consent_state='none'` `session.quality.snapshot` ingests but its persisted payload has the
+      three derived fields removed; a `consent_state='consented'` one keeps them.
+- [ ] **(a-docs)** Record the ruling in the consent-gate module doc header. Check whether the ROPA
+      (`docs/compliance/ropa.md`) / DPIA (`docs/compliance/dpia.md`) posture for session_quality
+      changes (derived intent now conditionally omitted) — if a compliance doc of record enumerates
+      what session_quality holds, update it (Rule N). If none does, state so in the PR body.
+
+**Note for the PR body (not in scope to fix):** the `session_quality` dedicated table is a phantom
+write-path (no producer). If one is ever built, it must apply the same strip — flag this so the
+assumption is visible (ties to FOLLOW-582's phantom-store theme).
+
+**Rule I:** baseline is **180** on main — run `scripts/check-rule-i.sh`, land ≤ 180 (net-zero). If
+you add a helper, keep it module-internal unless a route imports it.
+
+**Scope discipline:** touch the strip logic + the gate/handler + the fixture + tests + the doc. Do
+NOT reclassify other event types or change the other 51 classifications.
+
+**On completion:** PR + local `pnpm install && lint && typecheck && test && build`, Rule I ≤ 180,
+prettier on every touched file. Do not mark DONE — PM validates.

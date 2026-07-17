@@ -42,6 +42,10 @@ import {
   buildEraseMutationSql,
   computeNextRetryAt,
   DSR_CLICKHOUSE_TABLES,
+  DSR_EVENTS_EXPORT_PAGE_SIZE,
+  exportSessionEvents,
+  exportSessionTableRows,
+  getClickHouseDisclosure,
   getSessionEventSummary,
   MAX_MUTATION_RETRIES,
   pollMutationStatus,
@@ -444,5 +448,196 @@ describe('updateDsrAuditLogClickHouseStatus (FOLLOW-462 golden-query shape)', ()
     expect(body).not.toContain('tenant\\1');
     expect(body).not.toContain('sess\\1');
     expect(body).not.toContain('mut_1,mut_2');
+  });
+});
+
+// ─── FOLLOW-574: full-row ClickHouse disclosure (Art. 15/20) ──────────────────
+
+const DISCLOSURE_CFG = { url: 'http://clickhouse.test:8123', user: 'default', password: '' };
+
+/** Build a ClickHouse FORMAT JSON response body. */
+function chJson(rows: unknown[]): Response {
+  return new Response(JSON.stringify({ data: rows }), { status: 200 });
+}
+
+describe('exportSessionEvents (FOLLOW-574 volume-safe events export)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns all rows in one page when fewer than a full page exist (no truncation)', async () => {
+    const eventRows = [
+      { event_id: 'e1', ts: '2026-06-01 10:00:00.000', type: 'view' },
+      { event_id: 'e2', ts: '2026-06-01 10:00:01.000', type: 'click' },
+    ];
+    const fetchMock = vi.fn(() => Promise.resolve(chJson(eventRows)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await exportSessionEvents(DISCLOSURE_CFG, 'tenant-1', 'sess-1');
+
+    expect(out.rows).toHaveLength(2);
+    expect(out.truncated).toBe(false);
+    expect(out.next_cursor).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // one page, exhausted
+  });
+
+  it('binds tenant/session as params and table-qualifies WHERE/ORDER BY (alias-shadow safe)', async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(chJson([])),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await exportSessionEvents(DISCLOSURE_CFG, 'tenant\\evil', 'sess\\evil');
+
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(calledUrl);
+    expect(url.searchParams.get('param_tenant_id')).toBe('tenant\\\\evil');
+    expect(url.searchParams.get('param_session_id')).toBe('sess\\\\evil');
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('{tenant_id:String}');
+    expect(body).toContain('{session_id:String}');
+    expect(body).toContain('e.ts ASC, e.event_id ASC'); // table-qualified ORDER BY
+    expect(body).toContain('WHERE e.tenant_id'); // table-qualified WHERE
+    expect(body).not.toContain('tenant\\evil');
+  });
+
+  it('paginates by keyset and truncates at maxRows, returning a continuation cursor', async () => {
+    // maxRows=2, page size is DSR_EVENTS_EXPORT_PAGE_SIZE. To force multiple
+    // pages we return a full page then a partial page. With maxRows=2 the export
+    // must stop and mark truncated once it holds >2 rows.
+    const fullPage = Array.from({ length: DSR_EVENTS_EXPORT_PAGE_SIZE }, (_, i) => ({
+      event_id: `e${String(i)}`,
+      ts: `2026-06-01 10:00:${String(i % 60).padStart(2, '0')}.000`,
+      type: 'view',
+    }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chJson(fullPage)) // page 1: full → more may exist
+      .mockResolvedValueOnce(chJson([{ event_id: 'z', ts: '2026-06-02 00:00:00.000', type: 'x' }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await exportSessionEvents(DISCLOSURE_CFG, 'tenant-1', 'sess-1', { maxRows: 2 });
+
+    expect(out.truncated).toBe(true);
+    expect(out.rows).toHaveLength(2);
+    expect(out.next_cursor).not.toBeNull();
+    expect(out.next_cursor?.after_event_id).toBe('e1'); // 2nd kept row
+    // The 2nd fetch carries the keyset cursor params.
+    const [secondUrl] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const url2 = new URL(secondUrl);
+    expect(url2.searchParams.get('param_after_event_id')).not.toBeNull();
+    expect(url2.searchParams.get('param_after_ts')).not.toBeNull();
+  });
+});
+
+describe('exportSessionTableRows (FOLLOW-574 per-session table export)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns rows filtered by (tenant_id, session_id) via SELECT *', async () => {
+    const rows = [{ session_id: 's', tenant_id: 't', archetype: 'yield_hunter' }];
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve(chJson(rows)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await exportSessionTableRows(DISCLOSURE_CFG, 'adaptation_decisions', 't', 's');
+
+    expect(out.rows).toEqual(rows);
+    expect(out.truncated).toBe(false);
+    const [, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = typeof calledInit.body === 'string' ? calledInit.body : '';
+    expect(body).toContain('SELECT');
+    expect(body).toContain('FROM adaptation_decisions');
+    expect(body).toContain('{tenant_id:String}');
+    expect(body).toContain('{session_id:String}');
+  });
+
+  it('flags truncated when more than maxRows rows are returned', async () => {
+    const rows = [{ a: 1 }, { a: 2 }, { a: 3 }]; // maxRows+1 = 3 when maxRows=2
+    const fetchMock = vi.fn(() => Promise.resolve(chJson(rows)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await exportSessionTableRows(DISCLOSURE_CFG, 'llm_calls', 't', 's', 2);
+
+    expect(out.rows).toHaveLength(2);
+    expect(out.truncated).toBe(true);
+  });
+
+  it('rejects a non-identifier table name before any query', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      exportSessionTableRows(DISCLOSURE_CFG, 'events; DROP TABLE x', 't', 's'),
+    ).rejects.toThrow(/invalid table name/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('getClickHouseDisclosure (FOLLOW-574 — derived from DSR_CLICKHOUSE_TABLES)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('discloses EXACTLY one export per DSR_CLICKHOUSE_TABLES entry (derived set, anti-drift)', async () => {
+    // Return an empty page for every query so exportSessionEvents stops after
+    // one page and each table issues exactly one query.
+    const bodies: string[] = [];
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      bodies.push(typeof init?.body === 'string' ? init.body : '');
+      return Promise.resolve(chJson([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const disclosure = await getClickHouseDisclosure(DISCLOSURE_CFG, 'tenant-1', 'sess-1');
+
+    expect(disclosure.available).toBe(true);
+    // One disclosed table object per canonical erase-set entry — the SET is
+    // derived from the constant, so a 6th erase table is disclosed with no edit.
+    expect(disclosure.tables.map((t) => t.table)).toEqual(
+      DSR_CLICKHOUSE_TABLES.map((t) => t.table),
+    );
+    // Every canonical table name appears in the issued SQL.
+    for (const { table } of DSR_CLICKHOUSE_TABLES) {
+      expect(bodies.some((b) => b.includes(`FROM ${table}`) || b.includes(`FROM ${table} `))).toBe(
+        true,
+      );
+    }
+  });
+
+  it('discloses intent_events on the authoritative (tenant_id, session_id) key, not intent_session_id', async () => {
+    const intentRow = { session_id: 'sess-1', tenant_id: 'tenant-1', event_type: 'chat_turn' };
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (body.includes('FROM intent_events')) return Promise.resolve(chJson([intentRow]));
+      return Promise.resolve(chJson([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const disclosure = await getClickHouseDisclosure(DISCLOSURE_CFG, 'tenant-1', 'sess-1');
+    const intent = disclosure.tables.find((t) => t.table === 'intent_events');
+
+    expect(intent?.rows).toEqual([intentRow]);
+    expect(intent?.note).toMatch(/session_id/);
+    // The intent_events query must NOT filter on the defunct intent_session_id.
+    const intentCall = (fetchMock.mock.calls as [string, RequestInit][]).find(([, init]) =>
+      (typeof init.body === 'string' ? init.body : '').includes('FROM intent_events'),
+    );
+    const intentBody = intentCall ? (intentCall[1].body as string) : '';
+    expect(intentBody).toContain('{session_id:String}');
+    expect(intentBody).not.toContain('intent_session_id');
+  });
+
+  it('uses the keyset-paginated exporter for events (ORDER BY e.ts)', async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (body.includes('FROM events AS e')) return Promise.resolve(chJson([{ event_id: 'e1', ts: '2026-06-01 10:00:00.000' }]));
+      return Promise.resolve(chJson([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const disclosure = await getClickHouseDisclosure(DISCLOSURE_CFG, 'tenant-1', 'sess-1');
+    const events = disclosure.tables.find((t) => t.table === 'events');
+    expect(events?.rows).toHaveLength(1);
+    expect(events).toHaveProperty('next_cursor');
   });
 });

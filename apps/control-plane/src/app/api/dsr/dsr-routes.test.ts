@@ -534,18 +534,21 @@ describe('GET /api/dsr/access', () => {
     const body = (await res.json()) as {
       session_id: string;
       tenant_id: string;
-      events_summary: { count: number | null };
+      clickhouse: { available: boolean; note?: string; tables: unknown[] };
       matched_archetype: string | null;
       consent_records: unknown[];
       conversion_labels: unknown[];
     };
     expect(body).toHaveProperty('session_id');
     expect(body).toHaveProperty('tenant_id');
-    expect(body).toHaveProperty('events_summary');
-    expect(body.events_summary).toHaveProperty('count');
-    // FOLLOW-455: no CLICKHOUSE_URL in the test env → count is null (Rule K.2:
-    // never fabricate a number), NOT the old hardcoded `1` stub.
-    expect(body.events_summary.count).toBeNull();
+    // FOLLOW-574: ClickHouse leg exports actual rows from every
+    // DSR_CLICKHOUSE_TABLES entry (derived set). No CLICKHOUSE_URL in the test
+    // env → available:false with a note (Rule K.2: never fabricate or silently
+    // omit), NOT the old aggregate count.
+    expect(body).toHaveProperty('clickhouse');
+    expect(body.clickhouse.available).toBe(false);
+    expect(body.clickhouse.note).toBe('clickhouse_not_configured');
+    expect(Array.isArray(body.clickhouse.tables)).toBe(true);
     expect(body).toHaveProperty('matched_archetype');
     expect(body).toHaveProperty('consent_records');
     expect(Array.isArray(body.consent_records)).toBe(true);

@@ -22,10 +22,14 @@
  *      FOLLOW-455) but were previously omitted from Access disclosure — an
  *      Art. 15 completeness gap (a data subject's access report must not omit
  *      a store the controller demonstrably holds and erases).
- *   5. Query the REAL ClickHouse behavioral event count for the session
- *      (FOLLOW-455 / audit F-20 — replaces the previous `count = 1` stub).
- *      When ClickHouse is not configured, count is reported as `null`
- *      (Rule K.2 — never fabricate a number).
+ *   5. Disclose the ACTUAL ROWS from every ClickHouse PII table in
+ *      DSR_CLICKHOUSE_TABLES (FOLLOW-574 / CEO ruling ESC-037 — Art. 15(3)
+ *      "a copy of the personal data", superseding the FOLLOW-455 aggregate
+ *      count). The disclosure set is DERIVED from DSR_CLICKHOUSE_TABLES so it
+ *      cannot drift below the erase set. `events` is volume-safe (keyset
+ *      pagination + row cap + continuation cursor). When ClickHouse is not
+ *      configured or the query fails, `clickhouse.available` is `false` with a
+ *      note (Rule K.2 — never fabricate or silently omit).
  *   6. Return data summary.
  *
  * @module apps/control-plane/src/app/api/dsr/access/route
@@ -45,7 +49,8 @@ import {
   intentSessions,
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
-import { getSessionEventSummary, readClickHouseConfig } from '@/lib/clickhouse-dsr';
+import { getClickHouseDisclosure, readClickHouseConfig } from '@/lib/clickhouse-dsr';
+import type { ClickHouseDisclosure } from '@/lib/clickhouse-dsr';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
@@ -290,40 +295,33 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }),
   );
 
-  // ── Real ClickHouse behavioral event count (FOLLOW-455 / audit F-20) ──────
-  // Replaces the previous `count = 1` stub — Art. 15 requires disclosure of
-  // the ACTUAL extent of processing. When ClickHouse is not configured
-  // (dev/CI), count is reported as `null` rather than fabricated (Rule K.2).
-  let eventsSummary: { count: number | null; first_at: string | null; last_at: string | null };
+  // ── ClickHouse full-row disclosure (FOLLOW-574 / CEO ruling ESC-037) ──────
+  // Art. 15/20 require "a copy of the personal data", not an aggregate: every
+  // ClickHouse PII table in DSR_CLICKHOUSE_TABLES is disclosed as ACTUAL ROWS
+  // (the derived set, so a new erase-set table cannot silently drift out of
+  // disclosure). `events` is volume-safe (keyset-paginated, capped, with a
+  // continuation cursor). When ClickHouse is unconfigured (dev/CI) or the query
+  // fails, we report `available: false` with a note — never a fabricated or
+  // silently-empty disclosure (Rule K.2).
+  let clickhouse: ClickHouseDisclosure = { available: false, note: 'clickhouse_not_configured', tables: [] };
   const chConfig = readClickHouseConfig();
   if (chConfig) {
     try {
-      const summary = await getSessionEventSummary(chConfig, record.tenantId, record.sessionId);
-      eventsSummary = { count: summary.count, first_at: summary.firstAt, last_at: summary.lastAt };
+      clickhouse = await getClickHouseDisclosure(chConfig, record.tenantId, record.sessionId);
     } catch (err: unknown) {
       console.error(
-        '[dsr/access] ClickHouse event count query failed:',
+        '[dsr/access] ClickHouse disclosure query failed:',
         err instanceof Error ? err.message : err,
       );
-      eventsSummary = {
-        count: null,
-        first_at: session?.createdAt ? session.createdAt.toISOString() : null,
-        last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
-      };
+      clickhouse = { available: false, note: 'clickhouse_query_failed', tables: [] };
     }
-  } else {
-    eventsSummary = {
-      count: null,
-      first_at: session?.createdAt ? session.createdAt.toISOString() : null,
-      last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
-    };
   }
 
   return NextResponse.json(
     {
       session_id: record.sessionId,
       tenant_id: record.tenantId,
-      events_summary: eventsSummary,
+      clickhouse,
       matched_archetype: session?.finalArchetype ?? session?.matchedArchetype ?? null,
       consent_records: consents.map((c) => ({
         consent_type: c.consentType,

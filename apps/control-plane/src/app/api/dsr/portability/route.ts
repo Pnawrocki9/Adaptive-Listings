@@ -15,8 +15,13 @@
  *   Rows are union-merged and deduplicated by primary key (id).
  *
  * FOLLOW-455 / audit F-20: verification is now request-scoped (see
- * apps/control-plane/src/lib/dsr-verify.ts) and events_summary.count is the
- * REAL ClickHouse count (replaces the previous `count = 1` stub).
+ * apps/control-plane/src/lib/dsr-verify.ts).
+ *
+ * FOLLOW-574 / CEO ruling ESC-037: the ClickHouse leg exports the ACTUAL ROWS
+ * of every PII table in DSR_CLICKHOUSE_TABLES (the derived set, kept in parity
+ * with GET /api/dsr/access), superseding the FOLLOW-455 aggregate count —
+ * Art. 20 requires "a copy of the personal data". `events` is volume-safe
+ * (keyset pagination + row cap + continuation cursor).
  *
  * FOLLOW-558 / audit A3-F-06: exports engagement_scores, quiz_completions, and
  * intent_sessions — all three already covered by the DSR erase cascade
@@ -40,7 +45,8 @@ import {
   intentSessions,
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
-import { getSessionEventSummary, readClickHouseConfig } from '@/lib/clickhouse-dsr';
+import { getClickHouseDisclosure, readClickHouseConfig } from '@/lib/clickhouse-dsr';
+import type { ClickHouseDisclosure } from '@/lib/clickhouse-dsr';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
@@ -284,41 +290,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }),
   );
 
-  // ── Real ClickHouse behavioral event count (FOLLOW-455 / audit F-20) ──────
-  // Replaces the previous `count = 1` stub — Art. 20 requires the exported
-  // machine-readable data to reflect the ACTUAL extent of processing. When
-  // ClickHouse is not configured, count is reported as `null` rather than
-  // fabricated (Rule K.2).
-  let eventsSummary: { count: number | null; first_at: string | null; last_at: string | null };
+  // ── ClickHouse full-row disclosure (FOLLOW-574 / CEO ruling ESC-037) ──────
+  // Art. 20 requires the exported machine-readable data to be "a copy of the
+  // personal data", not an aggregate: every ClickHouse PII table in
+  // DSR_CLICKHOUSE_TABLES is exported as ACTUAL ROWS (the derived set — kept in
+  // parity with GET /api/dsr/access). `events` is volume-safe (keyset
+  // pagination + cap + continuation cursor). When ClickHouse is unconfigured
+  // (dev/CI) or the query fails, `available` is `false` with a note — never a
+  // fabricated or silently-empty export (Rule K.2).
+  let clickhouse: ClickHouseDisclosure = {
+    available: false,
+    note: 'clickhouse_not_configured',
+    tables: [],
+  };
   const chConfig = readClickHouseConfig();
   if (chConfig) {
     try {
-      const summary = await getSessionEventSummary(chConfig, record.tenantId, record.sessionId);
-      eventsSummary = { count: summary.count, first_at: summary.firstAt, last_at: summary.lastAt };
+      clickhouse = await getClickHouseDisclosure(chConfig, record.tenantId, record.sessionId);
     } catch (err: unknown) {
       console.error(
-        '[dsr/portability] ClickHouse event count query failed:',
+        '[dsr/portability] ClickHouse disclosure query failed:',
         err instanceof Error ? err.message : err,
       );
-      eventsSummary = {
-        count: null,
-        first_at: session?.createdAt ? session.createdAt.toISOString() : null,
-        last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
-      };
+      clickhouse = { available: false, note: 'clickhouse_query_failed', tables: [] };
     }
-  } else {
-    eventsSummary = {
-      count: null,
-      first_at: session?.createdAt ? session.createdAt.toISOString() : null,
-      last_at: session?.updatedAt ? session.updatedAt.toISOString() : null,
-    };
   }
 
   const exportData = {
     session_id: record.sessionId,
     tenant_id: record.tenantId,
     exported_at: now.toISOString(),
-    events_summary: eventsSummary,
+    clickhouse,
     matched_archetype: session?.finalArchetype ?? session?.matchedArchetype ?? null,
     consent_records: consents.map((c) => ({
       consent_type: c.consentType,

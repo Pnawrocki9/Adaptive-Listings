@@ -98,3 +98,19 @@ model ARE and ARE NOT persisted. A "model_dump()-serializes-the-whole-object" pa
 a `messages` field is added to `ChatIntentDetectedPayload` later, raw chat text would silently start
 being written to Redis without any disclosure review. The schema contract should use an allowlist
 (serialize only named fields), not a full model dump.
+
+- **2026-07-17 / FOLLOW-574** · Closed the ClickHouse axis of the DSR Art. 15/20 disclosure:
+  full-row export of all 5 `DSR_CLICKHOUSE_TABLES` on access + portability, `events` volume-safe via
+  keyset pagination + cap + continuation cursor (CEO ESC-037); disclosure SET derived from the
+  constant so it can't drift below erasure. · **Where a disclosure could have drifted from shipped
+  behavior:** the brief told me to "mirror the erase side exactly" and filter `intent_events` on
+  `intent_session_id` via `resolveIntentSessionId()`. Re-verification (migrations 0015/0016 +
+  `clickhouse-tracer.ts`) showed real rows are keyed on the String `session_id` column and
+  `intent_session_id` is a zero-UUID default — so BOTH the erase filter AND a mirrored disclosure
+  filter match ZERO real rows. Following the brief's letter would have shipped a false-empty Art. 15
+  disclosure. I disclosed on the authoritative `(tenant_id, session_id)` key (truthful), filed the
+  erase no-op as FOLLOW-581, and logged the deviation in ESC-038. · **Guardrail I'd add:** when a
+  delegation brief pins a specific filter column/key, grep the actual WRITER (ingest/Modal) to
+  confirm what column real rows populate before trusting the brief's "correctness trap" note — a
+  brief can be built on a superseded migration model. (engagement_scores AC(d): PHANTOM CONFIRMED —
+  no writer in repo or out-of-repo actors; arms RETRO-176 PHANTOM-STORE count→1; FOLLOW-582.)

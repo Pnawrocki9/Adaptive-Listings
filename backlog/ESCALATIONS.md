@@ -2194,7 +2194,7 @@ filed as FOLLOW-488 to prevent the leading-space class of bug recurring.
 
 ---
 
-## OPEN — ESC-037: four erased ClickHouse PII tables are disclosed to nobody — live Art. 15/20 gap in prod today (not gated on any deploy) [FOLLOW-574]
+## RESOLVED — ESC-037: four erased ClickHouse PII tables are disclosed to nobody — live Art. 15/20 gap in prod today (not gated on any deploy) [FOLLOW-574]
 
 **Filed by:** pm-orchestrator (session 30, off RETRO-176) **Date:** 2026-07-16T00:00:00Z
 **Affects:** FOLLOW-574 (P1), `apps/control-plane/src/app/api/dsr/access/route.ts`,
@@ -2260,4 +2260,24 @@ escalated):
    summary is a product/compliance judgement (volume vs. Art. 15 completeness), not an engineering
    one.
 
-**Resolution:** <empty until resolved>
+**Resolution:** RESOLVED 2026-07-17 by Piotr (CEO).
+
+1. **Exposure** — already answered before this ruling: prod `dsr_verifications` count = 0, so zero
+   exposure, no notification/remediation duty. FOLLOW-574 is a latent gap to close before the first
+   real DSR. (Caveat stands: re-run the count or add a monitor before any tenant is told DSR is
+   live.)
+2. **Sequencing** — **FOLLOW-574 BEFORE FOLLOW-570.** Per RETRO-176's reasoning (574 is the
+   live-in-prod ClickHouse axis; 570 is deploy-gated on FOLLOW-458). This inverts the default Sprint
+   23 order for these two tickets.
+3. **`events` disclosure shape** — **FULL ROW EXPORT, not an aggregate count.** CEO chose Art. 15/20
+   completeness over payload economy. Access + portability must return the actual `events` rows for
+   the verified (tenant, session) scope, alongside the other four erased-but-undisclosed ClickHouse
+   tables (`adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events`).
+   **Implementation implication recorded for FOLLOW-574 (not a re-litigation of the ruling):**
+   `events` is potentially high-volume per session, so the full export needs a volume-safe delivery
+   path (pagination / streaming / a size cap with a documented continuation) rather than one
+   unbounded in-memory response. That is an engineering detail for the FOLLOW-574 worker; the
+   completeness requirement is fixed by this ruling.
+
+The side finding (`ingest_worker` lacks SELECT on `dsr_audit_log`, diverging from ESC-032) is spun
+out as its own follow-up (FOLLOW-580) — an ops-grant hygiene item, not part of this compliance gap.

@@ -14978,6 +14978,12 @@ source_retro: RETRO-176 (§4a LG-1, §3 WA-NOTE) source_ticket: FOLLOW-558 (PR #
 recommended_sprint: Sprint 23 (Wave 2) recommended_agent: compliance-engineer priority: P1
 estimated_hours: 4 promoted_to_queue: false
 
+**⚠️ CEO ruling 2026-07-17 (ESC-037 RESOLVED) — read before starting.** (1) Sequence **this ticket
+BEFORE FOLLOW-570** (574 is the live-in-prod ClickHouse axis; 570 is deploy-gated on FOLLOW-458).
+(2) The AC-(b) `events`-disclosure-shape question is **decided: FULL ROW EXPORT, not an aggregate**
+— see AC-(b) below, now recording the ruling rather than escalating it. The rest of the ticket (the
+four undisclosed tables, the DPIA sync, the `engagement_scores` phantom) is unchanged.
+
 **Scope.** FOLLOW-558 closed the Art. 15/20 completeness gap on the **Postgres** axis. The gap class
 its own commit message defines — _"disclosing less than the controller demonstrably holds **and
 erases**"_ — is un-closed on the **ClickHouse** axis. `POST /api/dsr/erase` issues
@@ -15013,12 +15019,15 @@ ac:
       option. The disclosure set MUST be **derived from `DSR_CLICKHOUSE_TABLES`** — the exported
       canonical inventory that `access/route.ts:48` **already imports from** — never re-typed by
       hand (that is the FOLLOW-576 defect, one storage class over).
-- [ ] **(b)** **CEO/DPO ruling — the ticket's FIRST step, not its last. Escalate; do not decide.**
-      Does an aggregate (`events_summary: {count, first_at, last_at}`) satisfy Art. 15(3) _"a copy
-      of the personal data undergoing processing"_ and Art. 20 _"structured, commonly used and
-      machine-readable"_ for a behavioural event log — or must rows be exported (with volume caps /
-      Art. 15(4) considerations)? This is legal interpretation, not engineering. Record the ruling
-      in the DPIA **and** as an explicit exception in the parity test (FOLLOW-576) — never as
+- [ ] **(b)** **CEO/DPO ruling — RESOLVED 2026-07-17 (Piotr, CEO), ESC-037. FULL ROW EXPORT, not an
+      aggregate.** The `events_summary: {count, first_at, last_at}` aggregate does NOT satisfy Art.
+      15(3) "a copy of the personal data" / Art. 20 machine-readable for the behavioural event log;
+      access + portability must export the actual `events` rows for the verified (tenant, session)
+      scope. **Engineering implication (fixed requirement, your job to implement):** `events` can be
+      high-volume per session, so deliver it volume-safely — pagination / streaming / a size cap
+      with a documented continuation token — NOT one unbounded in-memory response. Art. 15(4)
+      (rights of others) does not apply here (single-subject session scope). Record the ruling in
+      the DPIA (AC-c) **and** as the resolved basis in the parity test (FOLLOW-576) — never as
       silence.
 - [ ] **(c)** Rule N — `docs/compliance/dpia.md` §8 step 5 ships updated in the SAME PR with
       whatever (a)/(b) land on. **Coordinate with FOLLOW-575: same paragraph, two PRs will
@@ -15304,3 +15313,41 @@ ac:
       in the `index.test.ts` style.
 
 cross_ref: [FOLLOW-559, RETRO-177, MASTER_DESIGN §H.8(d)]
+
+---
+
+## FOLLOW-580 — Grant the prod ops-read creds SELECT on `dsr_audit_log` (ESC-032 divergence surfaced during ESC-037)
+
+source_retro: none — ops-hygiene finding surfaced 2026-07-17 during the ESC-037 exposure check
+source_ticket: ESC-037 (resolution item, spun out) recommended_sprint: Sprint 23 (Wave 2)
+recommended_agent: data-engineer priority: P3 estimated_hours: 1 depends_on: [] promoted_to_queue:
+false
+
+scope: While answering ESC-037's exposure question, the DSR audit trail could NOT be read from prod
+ClickHouse with the ops credentials in Doppler `prd`: `SELECT ... FROM dsr_audit_log` returns
+`Code: 497 ... ingest_worker: Not enough privileges ... GRANT SELECT ... ON default.dsr_audit_log`
+(`ACCESS_DENIED`). The Postgres front-door (`dsr_verifications` count) was the fallback exposure
+signal and it worked — but the ClickHouse DSR audit log, the canonical record of which DSR actions
+actually ran, is currently **unreadable by the credentials ops/scripts have**.
+
+This diverges from **ESC-032**, which recorded the prod `ingest_worker` grant as
+`INSERT,SELECT ON default.*` (all tables). Either the grant was since narrowed (a security-posture
+change worth confirming was intentional), or `dsr_audit_log` was created after the wildcard grant
+and never inherited it, or a row-level/table-level restriction applies. Verify which, then decide
+the right least-privilege grant so DSR audit reads are possible for compliance/ops without
+over-granting.
+
+ac:
+
+- [ ] Confirm the current prod grant for `ingest_worker` (or whichever principal ops scripts use) on
+      `dsr_audit_log`, and reconcile against ESC-032's recorded `INSERT,SELECT ON default.*`.
+- [ ] Decide + apply the correct grant: either restore SELECT on the DSR audit tables for the
+      ops-read principal, or (preferred, if the wildcard was intentionally narrowed) provision a
+      dedicated least-privilege read principal for compliance/DSR audit reads and put its creds in
+      Doppler. ClickHouse DDL does not auto-apply (memory
+      `project_postgres_migrations_no_autoapply`) → this is a Cloud-console/operator step, not a
+      merged migration.
+- [ ] A one-line ops note in the DSR runbook: which cred reads `dsr_audit_log`, so the next exposure
+      check doesn't rediscover the ACCESS_DENIED the hard way.
+
+cross_ref: [ESC-037, ESC-032, FOLLOW-574, project_postgres_migrations_no_autoapply]

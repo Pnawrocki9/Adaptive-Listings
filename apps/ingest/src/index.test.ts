@@ -587,6 +587,123 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
   });
 });
 
+// ─── FOLLOW-579 — strip §H.8(d) derived-intent fields from session.quality.snapshot payloads ───
+// Route-driven proof that the strip runs INSIDE the events handler before the sinks. We intercept
+// the Redpanda push (the synchronous sink — makeEnv keeps REDPANDA_REST_URL set) and read the
+// PERSISTED payload out of its request body: `{ records: [{ value: <validated record> }] }`.
+describe('POST /v1/events — session.quality.snapshot derived-intent strip (FOLLOW-579)', () => {
+  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+
+  /** Stub `fetch` to capture the LAST Redpanda request body while still returning a 200 ACK. */
+  function stubFetchCaptureRedpanda(): {
+    restore: () => void;
+    lastPersistedPayload: () => Record<string, unknown> | undefined;
+  } {
+    const original = globalThis.fetch;
+    let captured: Record<string, unknown> | undefined;
+    globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('mock-redpanda') && typeof init?.body === 'string') {
+        const parsed = JSON.parse(init.body) as {
+          records: { value: { payload: Record<string, unknown> } }[];
+        };
+        captured = parsed.records[0]?.value.payload;
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ offsets: [{ partition: 0, offset: 0 }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/vnd.kafka.v2+json' },
+        }),
+      );
+    };
+    return {
+      restore: () => {
+        globalThis.fetch = original;
+      },
+      lastPersistedPayload: () => captured,
+    };
+  }
+
+  const snapshotEvent = (consentState: 'none' | 'consented') => ({
+    ...validEvent,
+    consent_state: consentState,
+    type: 'session.quality.snapshot',
+    payload: {
+      session_id: 'a'.repeat(64),
+      prediction_stability_score: 0.8,
+      convergence_time_events: 5,
+      signal_density_per_min: 3,
+      final_archetype: 'family_buyer',
+      final_confidence: 0.72,
+      total_events: 10,
+      listing_view_rate: 1.5,
+    },
+  });
+
+  it('ingests but STRIPS the three derived fields for consent_state=none', async () => {
+    const stub = stubFetchCaptureRedpanda();
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [snapshotEvent('none')] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      // Still ingests — operational class, unchanged.
+      expect(body.accepted).toBe(1);
+      expect(body.rejected).toBe(0);
+
+      const persisted = stub.lastPersistedPayload();
+      expect(persisted).toBeDefined();
+      // Derived-intent artifact removed…
+      expect(persisted).not.toHaveProperty('final_archetype');
+      expect(persisted).not.toHaveProperty('final_confidence');
+      expect(persisted).not.toHaveProperty('prediction_stability_score');
+      // …but every other DQS metric survives.
+      expect(persisted?.session_id).toBe('a'.repeat(64));
+      expect(persisted?.convergence_time_events).toBe(5);
+      expect(persisted?.total_events).toBe(10);
+      expect(persisted?.listing_view_rate).toBe(1.5);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('KEEPS the three derived fields for consent_state=consented', async () => {
+    const stub = stubFetchCaptureRedpanda();
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [snapshotEvent('consented')] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{ accepted: number; rejected: number }>(res);
+      expect(body.accepted).toBe(1);
+      expect(body.rejected).toBe(0);
+
+      const persisted = stub.lastPersistedPayload();
+      expect(persisted).toBeDefined();
+      expect(persisted?.final_archetype).toBe('family_buyer');
+      expect(persisted?.final_confidence).toBe(0.72);
+      expect(persisted?.prediction_stability_score).toBe(0.8);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
 describe('POST /v1/events — Redpanda failure', () => {
   it('returns 503 when Redpanda exhausts all retries', async () => {
     const stub = stubFetch('error_5xx');

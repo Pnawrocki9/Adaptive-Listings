@@ -1614,11 +1614,11 @@ would generalize this beyond just `adapt-get-auth`.
   any subject. Realigned the shared `DSR_CLICKHOUSE_TABLES` constant → `session_id`, then propagated
   across all three consumers (erase route, mutation-poll retry path, disclosure) + removed the
   now-orphaned `resolveIntentSessionId` helper (Rule I). · **Risks weighed:** (a) the fix was a
-  shared-constant change with 3 divergent special-case call sites — the FOLLOW_UPS stub named only
+  shared-constant change with 3 divergent special-case call sites — the FOLLOW*UPS stub named only
   2, so I grep-traced every reader before editing (mutation-poll was the missed one); (b) a "green
   200 with fake completeness" compliance surface — the erase route returned `status: pending/done`
   while deleting nothing, exactly the class of bug the guardrails target; (c) removing the helper
   could strand a new dead export, so I deleted the module + test and re-verified Rule I stayed at
   baseline 180. · **Guardrail I'd add:** a test that asserts a ClickHouse DSR erase filter column
-  matches the column the _writer_ populates (writer-vs-eraser key parity), so a
+  matches the column the \_writer* populates (writer-vs-eraser key parity), so a
   keyed-on-the-wrong-column no-op fails CI instead of shipping latent for months.

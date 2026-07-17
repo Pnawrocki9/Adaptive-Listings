@@ -1,4 +1,26 @@
-# Status — 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
+# Status — 2026-07-18 (session 34 — FOLLOW-561 marked DONE post-merge, retrospective spawned)
+
+## SESSION 34 (2026-07-18) — FOLLOW-561 DONE transition + retrospective; no new dispatch
+
+**State check:** PR #552 (worker) and PR #553 (PM bookkeeping/validation) both merged to `main`
+(squash commits `a203b52` and `153ab0f`). `git log --oneline -5` confirms `153ab0f` at HEAD of
+`main`; working tree clean before starting.
+
+**Action taken:** QUEUE.md FOLLOW-561 transitioned `READY_FOR_REVIEW` -> `DONE`
+(`completed_at: '2026-07-18T00:00:00Z'`, `merge_commit: a203b52`, `pm_validated` note referencing
+both merge commits). Committed on fresh branch `pm-orchestrator/FOLLOW-561-mark-done` off `main`
+(not pushed to main directly) — PR to follow this session. Spawned `retrospective-analyst` for the
+merged diff (commit `a203b52` / PR #552); model choice and finding summary logged below once
+returned.
+
+**CI-check counter:** 0/5 this session (bookkeeping-only, no code change to validate).
+**Fix-iteration counter:** 0/3.
+
+**Next dispatch candidates (not picked this session, per explicit instruction):** `FOLLOW-562`
+(backend-engineer, dashboard Panel 5 error banner), `FOLLOW-564` (architect, p95 SLA doc
+reconciliation) — both `READY`, unblocked, Sprint 23 Wave 3.
+
+---
 
 ## SESSION 33 (2026-07-17) — validated PR #552 (FOLLOW-561), moved READY_FOR_REVIEW; no new dispatch
 

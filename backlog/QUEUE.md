@@ -12590,11 +12590,19 @@ in-place in Sprint 22b above.
   title: >-
     Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
   agent: qa-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: qa-engineer
   started_at: '2026-07-17T00:00:00Z'
+  completed_at: '2026-07-18T00:00:00Z'
   branch: qa-engineer/FOLLOW-561-archetype-parity-guard
   pr: 552
+  merge_commit: a203b52
+  pm_validated: >-
+    2026-07-17 session (PR #553) — CI green on every real gate, drift test parses nlp.py _ARCHETYPES
+    + archetype-seeds.ts + migration 0005 and asserts set-equality against ARCHETYPE_NAMES with
+    archetype-hints.ts documented as an exempt deliberate subset. Merged as a203b52 (worker PR #552)
+    + 153ab0f (PM bookkeeping/validation PR #553). Human-merged 2026-07-17/18; DONE transition +
+    retrospective in this session.
   priority: P3
   estimated_hours: 2
   depends_on: []

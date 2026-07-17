@@ -58,9 +58,14 @@ Opus) agree on the shape and disagree productively on the detail:
    it arrives as `intent.snapshot`. So an unconsented user's 12-dim vector is gated while that same
    user's final archetype IDENTITY rides through. Verified independently (consent-gate.ts:120 +
    session-quality.ts:46-48). P2 defense-in-depth (SDK sets `consent_state` client-side → low
-   `none`-volume at ingest), **not** a live high-volume leak → no escalation; but FOLLOW-579's fix
-   needs a **compliance ruling first** (gate / strip the derived fields / documented operational
-   justification) — a CEO/DPO call, same bucket as the ESC-037 items.
+   `none`-volume at ingest), **not** a live high-volume leak → no escalation. **RULING GIVEN (CEO,
+   2026-07-17): STRIP THE DERIVED FIELDS** — `session.quality.snapshot` stays `operational`/
+   always-ingest, but `final_archetype` + `final_confidence` + `prediction_stability_score` are
+   stripped from the persisted record when consent is not granted (AC-(b) option (ii); strip at the
+   ingest boundary before the ClickHouse `session_quality` sink). **FOLLOW-579 is now fully
+   actionable** — compliance-engineer records the ruling in the docs of record + backend-engineer
+   implements the conditional strip + the golden per-type classification fixture (AC-c). Not yet
+   dispatched.
 2. **FOLLOW-356: already DONE — was a stale duplicate, NOT an eligible pick.** CEO green-lit
    P1-first 2026-07-17, so pre-delegation analysis pulled the ticket — and found the work was
    completed **2026-06-25**, folded into FOLLOW-357's rename PR **#354** (`d8d5cb8`). Verified in

@@ -280,61 +280,287 @@ export async function queryClickHouseJson<T = unknown>(
   return parsed.data ?? [];
 }
 
-// ─── Real behavioral event count (FOLLOW-455 / audit F-20) ───────────────────
+// ─── DSR disclosure: full ClickHouse row export (FOLLOW-574) ─────────────────
+//
+// FOLLOW-574 Rule I note: this section supersedes the FOLLOW-455 aggregate
+// `getSessionEventSummary` (count/first_at/last_at over `events`) that used to
+// live here. Removing its own route callers (in favor of the full-row
+// `clickhouse` disclosure below) orphaned that function — a zero-non-test-
+// importer export — so it and its `SessionEventSummary` type were deleted
+// rather than left dead (CLAUDE.md "remove what your changes made unused";
+// Rule I). `getClickHouseDisclosure`'s per-table `events` export is a strict
+// superset of what it reported.
+//
+// FOLLOW-574 / CEO ruling ESC-037 (2026-07-17): GET /api/dsr/access and
+// GET /api/dsr/portability must disclose ACTUAL ROWS from every ClickHouse PII
+// table in `DSR_CLICKHOUSE_TABLES`, not an aggregate over one of them. The
+// disclosure SET is DERIVED from that constant (see `getClickHouseDisclosure`)
+// so a new erase-set table is disclosed automatically — disclosure can never
+// silently drift below erasure (Art. 15/20 completeness; anti-FOLLOW-576).
+//
+// `events` is high-volume per session, so its export is keyset-paginated with a
+// hard in-memory row cap + a continuation cursor (CEO ruling: "NOT one
+// unbounded in-memory response"). The lower-volume per-session tables use a
+// single capped SELECT.
 
-export interface SessionEventSummary {
-  count: number;
-  firstAt: string | null;
-  lastAt: string | null;
+/** Hard in-memory cap on rows exported for the high-volume `events` table. */
+const DSR_EVENTS_EXPORT_MAX_ROWS = 50_000;
+/** Per-round-trip page size for the keyset-paginated `events` export. */
+const DSR_EVENTS_EXPORT_PAGE_SIZE = 10_000;
+/** Hard cap on rows exported for the lower-volume per-session tables. */
+const DSR_TABLE_EXPORT_MAX_ROWS = 10_000;
+
+/** One exported `events` row (subset of columns; identifiers stringified). */
+interface ClickHouseEventRow {
+  event_id: string;
+  ts: string;
+  ingest_received_at: string;
+  region: string;
+  type: string;
+  schema_version: number;
+  consent_state: string;
+  listing_id: string;
+  archetype_hint: string;
+  payload: string;
+}
+
+/** Keyset continuation cursor for the paginated `events` export. */
+interface EventsExportCursor {
+  after_ts: string;
+  after_event_id: string;
+}
+
+interface EventsExport {
+  rows: ClickHouseEventRow[];
+  /** True when the export hit `maxRows` and more rows exist beyond the cursor. */
+  truncated: boolean;
+  /** Continuation cursor when `truncated`; null otherwise. */
+  next_cursor: EventsExportCursor | null;
 }
 
 /**
- * Query the real number of behavioral events ClickHouse holds for a given
- * (tenant_id, session_id), plus the first/last event timestamps.
+ * Fetch one keyset page of `events` rows for a (tenant_id, session_id).
  *
- * Replaces the previous `events_summary.count = 1` stub in
- * `GET /api/dsr/access` and `GET /api/dsr/portability` (Art. 15/20
- * completeness gap, audit F-20) — Art. 15/20 require the ACTUAL extent of
- * processing to be disclosed, not a placeholder.
- *
- * Callers must check `readClickHouseConfig()` first; when ClickHouse is not
- * configured this function is not reachable — the caller should report the
- * count as unavailable (`null`), never fabricate a number (Rule K.2).
+ * Column references in WHERE/ORDER BY are table-qualified (`e.ts`, `e.event_id`)
+ * to avoid the ClickHouse alias-shadowing trap where a bare `ts` in WHERE binds
+ * to the `toString(ts) AS ts` String alias and fails the `> DateTime64`
+ * comparison (see apps/control-plane/src/lib/clickhouse-tracer.ts). `pageSize`
+ * is an internally-computed integer (never user input) so it is interpolated
+ * after an integer check rather than parameter-bound (ClickHouse LIMIT).
  */
-export async function getSessionEventSummary(
+async function fetchEventsPage(
   cfg: ClickHouseConfig,
   tenantId: string,
   sessionId: string,
-): Promise<SessionEventSummary> {
-  // FOLLOW-462: tenant_id/session_id bound as ClickHouse params, not
-  // string-concatenated — see buildEraseMutationSql for the backslash-safety
-  // rationale.
+  cursor: EventsExportCursor | null,
+  pageSize: number,
+): Promise<ClickHouseEventRow[]> {
+  if (!Number.isInteger(pageSize) || pageSize <= 0) {
+    throw new Error('fetchEventsPage: pageSize must be a positive integer');
+  }
+  const cursorClause = cursor
+    ? `AND (e.ts, e.event_id) > (toDateTime64({after_ts:String}, 3, 'UTC'), toUUID({after_event_id:String}))`
+    : '';
   const sql = `
     SELECT
-      count() AS cnt,
-      toString(min(ts)) AS first_at,
-      toString(max(ts)) AS last_at
-    FROM events
+      toString(e.event_id)          AS event_id,
+      toString(e.ts)                AS ts,
+      toString(e.ingest_received_at) AS ingest_received_at,
+      e.region                      AS region,
+      e.type                        AS type,
+      e.schema_version              AS schema_version,
+      e.consent_state               AS consent_state,
+      e.listing_id                  AS listing_id,
+      e.archetype_hint              AS archetype_hint,
+      e.payload                     AS payload
+    FROM events AS e
+    WHERE e.tenant_id = {tenant_id:String}
+      AND e.session_id = {session_id:String}
+      ${cursorClause}
+    ORDER BY e.ts ASC, e.event_id ASC
+    LIMIT ${String(pageSize)}
+  `;
+  const params: Record<string, string> = {
+    tenant_id: escapeClickHouseParamValue(tenantId),
+    session_id: escapeClickHouseParamValue(sessionId),
+  };
+  if (cursor) {
+    params.after_ts = escapeClickHouseParamValue(cursor.after_ts);
+    params.after_event_id = escapeClickHouseParamValue(cursor.after_event_id);
+  }
+  return queryClickHouseJson<ClickHouseEventRow>(cfg, sql, params);
+}
+
+/**
+ * Export the subject's `events` rows for a (tenant_id, session_id) volume-safely.
+ *
+ * Keyset-paginates in pages of `DSR_EVENTS_EXPORT_PAGE_SIZE`, bounding total
+ * memory to `maxRows` (+ one page). When more rows exist beyond `maxRows` the
+ * result is `truncated` and carries a `next_cursor` the caller can surface as a
+ * documented continuation token. `event_id` is a UUID (strictly unique) so the
+ * keyset cursor always advances — no infinite loop.
+ *
+ * Module-internal (Rule I): the only external surface `access`/`portability`
+ * need is `getClickHouseDisclosure`, which calls this. Exercised in tests via
+ * that public function with a mocked ClickHouse client.
+ */
+async function exportSessionEvents(
+  cfg: ClickHouseConfig,
+  tenantId: string,
+  sessionId: string,
+  opts?: { maxRows?: number; cursor?: EventsExportCursor | null },
+): Promise<EventsExport> {
+  const maxRows = opts?.maxRows ?? DSR_EVENTS_EXPORT_MAX_ROWS;
+  const rows: ClickHouseEventRow[] = [];
+  let cursor: EventsExportCursor | null = opts?.cursor ?? null;
+
+  for (;;) {
+    const page = await fetchEventsPage(
+      cfg,
+      tenantId,
+      sessionId,
+      cursor,
+      DSR_EVENTS_EXPORT_PAGE_SIZE,
+    );
+    rows.push(...page);
+    if (page.length < DSR_EVENTS_EXPORT_PAGE_SIZE) break; // exhausted
+    // page is full here, so its last row exists; advance the keyset cursor.
+    const last = page[page.length - 1];
+    if (!last) break;
+    cursor = { after_ts: last.ts, after_event_id: last.event_id };
+    if (rows.length > maxRows) break; // exceeded cap — stop fetching
+  }
+
+  if (rows.length > maxRows) {
+    const kept = rows.slice(0, maxRows);
+    const last = kept[kept.length - 1];
+    return {
+      rows: kept,
+      truncated: true,
+      next_cursor: last ? { after_ts: last.ts, after_event_id: last.event_id } : null,
+    };
+  }
+  return { rows, truncated: false, next_cursor: null };
+}
+
+interface ClickHouseTableRowsExport {
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+}
+
+/**
+ * Export all rows of a lower-volume per-session ClickHouse table for a
+ * (tenant_id, session_id), capped at `maxRows`. `SELECT *` so a table added to
+ * `DSR_CLICKHOUSE_TABLES` is disclosed with no per-column code change. `table`
+ * is allowlist-validated (bare identifier, not parameter-bindable). Fetches
+ * `maxRows + 1` to detect truncation.
+ *
+ * Module-internal (Rule I): only `getClickHouseDisclosure` calls this.
+ * Exercised in tests via that public function with a mocked ClickHouse client.
+ */
+async function exportSessionTableRows(
+  cfg: ClickHouseConfig,
+  table: string,
+  tenantId: string,
+  sessionId: string,
+  maxRows: number = DSR_TABLE_EXPORT_MAX_ROWS,
+): Promise<ClickHouseTableRowsExport> {
+  assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'exportSessionTableRows');
+  if (!Number.isInteger(maxRows) || maxRows <= 0) {
+    throw new Error('exportSessionTableRows: maxRows must be a positive integer');
+  }
+  const sql = `
+    SELECT *
+    FROM ${table}
     WHERE tenant_id = {tenant_id:String}
       AND session_id = {session_id:String}
+    LIMIT ${String(maxRows + 1)}
   `;
-  const rows = await queryClickHouseJson<{ cnt: string; first_at: string; last_at: string }>(
-    cfg,
-    sql,
-    {
-      tenant_id: escapeClickHouseParamValue(tenantId),
-      session_id: escapeClickHouseParamValue(sessionId),
-    },
-  );
-  const row = rows[0];
-  if (!row || Number(row.cnt) === 0) {
-    return { count: 0, firstAt: null, lastAt: null };
+  const rows = await queryClickHouseJson<Record<string, unknown>>(cfg, sql, {
+    tenant_id: escapeClickHouseParamValue(tenantId),
+    session_id: escapeClickHouseParamValue(sessionId),
+  });
+  if (rows.length > maxRows) {
+    return { rows: rows.slice(0, maxRows), truncated: true };
   }
-  return {
-    count: Number(row.cnt),
-    firstAt: row.first_at ? new Date(`${row.first_at.replace(' ', 'T')}Z`).toISOString() : null,
-    lastAt: row.last_at ? new Date(`${row.last_at.replace(' ', 'T')}Z`).toISOString() : null,
-  };
+  return { rows, truncated: false };
+}
+
+interface ClickHouseTableDisclosure {
+  table: string;
+  rows: unknown[];
+  truncated: boolean;
+  next_cursor?: EventsExportCursor | null;
+  /** Provenance note (e.g. the intent_events subject-key divergence). */
+  note?: string;
+}
+
+export interface ClickHouseDisclosure {
+  /** False when ClickHouse is unconfigured or the query failed (see `note`). */
+  available: boolean;
+  note?: string;
+  tables: ClickHouseTableDisclosure[];
+}
+
+/**
+ * FOLLOW-574 — the ClickHouse axis of the DSR Art. 15/20 disclosure.
+ *
+ * Iterates `DSR_CLICKHOUSE_TABLES` (the SAME constant the erase route deletes
+ * from) and exports each table's rows for the (tenant_id, session_id) subject.
+ * Deriving the SET from that constant is the whole point: a table appended to
+ * the erase set is disclosed here automatically, so disclosure can never
+ * silently fall below erasure again (anti-FOLLOW-576).
+ *
+ * Subject key: every DSR ClickHouse PII table is identified by
+ * (tenant_id, session_id). `intent_events` is a documented exception to the
+ * constant's own `column` field — see the inline note below.
+ */
+export async function getClickHouseDisclosure(
+  cfg: ClickHouseConfig,
+  tenantId: string,
+  sessionId: string,
+): Promise<ClickHouseDisclosure> {
+  const tables: ClickHouseTableDisclosure[] = [];
+
+  for (const { table } of DSR_CLICKHOUSE_TABLES) {
+    if (table === 'events') {
+      const ev = await exportSessionEvents(cfg, tenantId, sessionId);
+      tables.push({
+        table,
+        rows: ev.rows,
+        truncated: ev.truncated,
+        next_cursor: ev.next_cursor,
+      });
+      continue;
+    }
+
+    // intent_events subject-key note (FOLLOW-574):
+    //   DSR_CLICKHOUSE_TABLES keys the ERASE filter on `intent_session_id`
+    //   (the UUID ORDER-BY column). Real rows are written with that column left
+    //   at its zero-UUID default and the raw SDK fingerprint in the String
+    //   `session_id` column (migrations 0015/0016; clickhouse-tracer.ts, which
+    //   the K.3.6 tracer UI reads via `session_id` and warns "Do NOT use
+    //   intent_session_id"). Filtering disclosure on intent_session_id would
+    //   therefore match NOTHING and produce a false-empty Art. 15 disclosure.
+    //   We disclose on the authoritative (tenant_id, session_id) key so the
+    //   subject's REAL rows are returned. This makes disclosure ⊋ erasure for
+    //   intent_events until the erase-side filter is fixed — tracked as a
+    //   latent erase no-op in FOLLOW-581 / ESCALATIONS ESC-038.
+    const note =
+      table === 'intent_events'
+        ? 'Filtered on (tenant_id, session_id) — the authoritative subject key (migrations 0015/0016; clickhouse-tracer.ts). The erase-side intent_session_id filter matches zero real rows; tracked as a latent no-op in FOLLOW-581.'
+        : undefined;
+
+    const res = await exportSessionTableRows(cfg, table, tenantId, sessionId);
+    tables.push({
+      table,
+      rows: res.rows,
+      truncated: res.truncated,
+      ...(note ? { note } : {}),
+    });
+  }
+
+  return { available: true, tables };
 }
 
 // ─── Mutation issue + poll ────────────────────────────────────────────────────

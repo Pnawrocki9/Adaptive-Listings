@@ -2281,3 +2281,40 @@ escalated):
 
 The side finding (`ingest_worker` lacks SELECT on `dsr_audit_log`, diverging from ESC-032) is spun
 out as its own follow-up (FOLLOW-580) — an ops-grant hygiene item, not part of this compliance gap.
+
+---
+
+## OPEN — ESC-038: FOLLOW-574 diverged from its brief on `intent_events`: the erase filter targets a column that matches zero real rows (latent Art. 17 no-op) [FOLLOW-574]
+
+**Filed by:** compliance-engineer (session, FOLLOW-574) **Date:** 2026-07-17T00:00:00Z **Affects:**
+FOLLOW-574, FOLLOW-581, `apps/control-plane/src/app/api/dsr/erase/route.ts`,
+`apps/control-plane/src/lib/clickhouse-dsr.ts` (`DSR_CLICKHOUSE_TABLES`) **Type:** compliance
+(non-blocking — flagging a deliberate brief deviation + a latent erasure bug for PM/human review)
+
+**Description.** The FOLLOW-574 delegation brief instructed the disclosure of `intent_events` to
+"mirror the erase side exactly" using `resolveIntentSessionId()` (filter on `intent_session_id`),
+warning that "a raw session_id filter returns the wrong data (empty or cross-session)." On
+re-verification (brief's own instruction) that premise is **inverted by migrations 0015/0016**:
+`intent_events` rows are written with `intent_session_id` left at its zero-UUID default and the real
+SDK fingerprint in the String `session_id` column. The production reader (`clickhouse-tracer.ts`)
+filters on `(tenant_id, session_id)` and its header explicitly says "Do NOT use intent_session_id".
+So:
+
+1. The erase-side filter `WHERE intent_session_id IN (resolveIntentSessionId())` matches **zero real
+   rows** — `intent_events` is a latent Art. 17 erasure no-op (tracked as FOLLOW-581).
+2. Mirroring that filter for disclosure would return an **empty** `intent_events` while the
+   subject's real rows exist in ClickHouse — a false Art. 15 disclosure, which violates the prime
+   directive ("never let shipped behavior claim what it does not do").
+
+**Decision I made (PR-gated, reversible).** FOLLOW-574 discloses `intent_events` on the
+authoritative `(tenant_id, session_id)` key so the disclosure is TRUTHFUL, and derives the
+disclosure SET (not the per-table filter column) from `DSR_CLICKHOUSE_TABLES`. This yields
+disclosure ⊋ erasure for `intent_events` until the erase filter is fixed. I did NOT touch the erase
+route (out of scope per the brief); I filed FOLLOW-581 to fix the erase filter, after which
+disclosure + erasure re-converge and the divergence note is removed.
+
+**Required action:** PM/human confirm the disclosure-by-`session_id` decision for `intent_events`
+(vs. mirroring the empty erase filter) and prioritise FOLLOW-581 (P1 erasure bug). No code change
+needed to accept; this entry documents the deviation so it is visible, not hidden.
+
+**Resolution:** <empty until resolved>

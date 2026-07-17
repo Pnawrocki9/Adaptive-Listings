@@ -15354,7 +15354,7 @@ cross_ref: [ESC-037, ESC-032, FOLLOW-574, project_postgres_migrations_no_autoapp
 
 ---
 
-## FOLLOW-577 — Fix the latent `intent_events` erase no-op: the DSR erase filter targets `intent_session_id` (zero-UUID default), matching zero real rows (Art. 17)
+## FOLLOW-581 — Fix the latent `intent_events` erase no-op: the DSR erase filter targets `intent_session_id` (zero-UUID default), matching zero real rows (Art. 17)
 
 source_retro: RETRO-176 follow-on (discovered during FOLLOW-574) source_ticket: FOLLOW-574
 recommended_sprint: Sprint 23 (Wave 2) recommended_agent: backend-engineer priority: P1
@@ -15401,7 +15401,7 @@ cross_ref: [FOLLOW-574, FOLLOW-455, FOLLOW-286, FOLLOW-287, ESC-038, RETRO-176]
 
 ---
 
-## FOLLOW-578 — `engagement_scores` is a phantom store: schema + retention + erase-cascade + disclosure exist, but nothing writes it (PHANTOM-STORE confirmed)
+## FOLLOW-582 — `engagement_scores` is a phantom store: schema + retention + erase-cascade + disclosure exist, but nothing writes it (PHANTOM-STORE confirmed)
 
 source_retro: RETRO-176 (§3 WA-NOTE, §6 PHANTOM-STORE) source_ticket: FOLLOW-574 recommended_sprint:
 Sprint 23 (Wave 2) recommended_agent: backend-engineer / ml-engineer priority: P2 estimated_hours: 3

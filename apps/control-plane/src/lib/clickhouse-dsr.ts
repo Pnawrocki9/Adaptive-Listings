@@ -586,10 +586,10 @@ export async function getClickHouseDisclosure(
     //   We disclose on the authoritative (tenant_id, session_id) key so the
     //   subject's REAL rows are returned. This makes disclosure ⊋ erasure for
     //   intent_events until the erase-side filter is fixed — tracked as a
-    //   latent erase no-op in FOLLOW-577 / ESCALATIONS ESC-038.
+    //   latent erase no-op in FOLLOW-581 / ESCALATIONS ESC-038.
     const note =
       table === 'intent_events'
-        ? 'Filtered on (tenant_id, session_id) — the authoritative subject key (migrations 0015/0016; clickhouse-tracer.ts). The erase-side intent_session_id filter matches zero real rows; tracked as a latent no-op in FOLLOW-577.'
+        ? 'Filtered on (tenant_id, session_id) — the authoritative subject key (migrations 0015/0016; clickhouse-tracer.ts). The erase-side intent_session_id filter matches zero real rows; tracked as a latent no-op in FOLLOW-581.'
         : undefined;
 
     const res = await exportSessionTableRows(cfg, table, tenantId, sessionId);

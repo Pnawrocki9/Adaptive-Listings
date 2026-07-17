@@ -109,8 +109,8 @@ being written to Redis without any disclosure review. The schema contract should
   `intent_session_id` is a zero-UUID default — so BOTH the erase filter AND a mirrored disclosure
   filter match ZERO real rows. Following the brief's letter would have shipped a false-empty Art. 15
   disclosure. I disclosed on the authoritative `(tenant_id, session_id)` key (truthful), filed the
-  erase no-op as FOLLOW-577, and logged the deviation in ESC-038. · **Guardrail I'd add:** when a
+  erase no-op as FOLLOW-581, and logged the deviation in ESC-038. · **Guardrail I'd add:** when a
   delegation brief pins a specific filter column/key, grep the actual WRITER (ingest/Modal) to
   confirm what column real rows populate before trusting the brief's "correctness trap" note — a
   brief can be built on a superseded migration model. (engagement_scores AC(d): PHANTOM CONFIRMED —
-  no writer in repo or out-of-repo actors; arms RETRO-176 PHANTOM-STORE count→1; FOLLOW-578.)
+  no writer in repo or out-of-repo actors; arms RETRO-176 PHANTOM-STORE count→1; FOLLOW-582.)

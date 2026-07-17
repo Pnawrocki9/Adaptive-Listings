@@ -1,84 +1,61 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-06-30 **Session:** FOLLOW-438 loop closure — FOLLOW-438 DONE (PR #395 f3ac878, merged
-2026-06-30T16:05:41Z), RETRO-144 written, FOLLOW-433→438 chain fully closed in code+bookkeeping.
-Only open item: FOLLOW-436 (BLOCKED_ON_HUMAN — operator go-live). 0/3 in flight.
+**Date:** 2026-07-18 **Session:** 36 — PM-validated FOLLOW-583 (PR #555), moved to
+`READY_FOR_REVIEW`. Awaiting human merge. 0/3 tickets IN_PROGRESS.
 
 ---
 
 ## Open Escalations (ages)
 
-| ESC     | Title                                                                         | Filed      | Age | Blocker?                                                                       |
-| ------- | ----------------------------------------------------------------------------- | ---------- | --- | ------------------------------------------------------------------------------ |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod                     | 2026-06-06 | 24d | Non-blocking per CEO 2026-06-10; Rafal (CTO) action required to deploy         |
-| ESC-028 | Redis shadow smoke secrets not provisioned                                    | 2026-06-23 | 7d  | Non-blocking (soft-skip, no CI failure); Piotr/Rafal action required           |
-| ESC-034 | FOLLOW-436 embed-seed consumer awaiting operator go-live (code bugs resolved) | 2026-06-30 | 0d  | Non-blocking to agent pipeline; operator must provision secrets + modal deploy |
+| ESC     | Title                                                     | Filed      | Age | Blocker?                                                            |
+| ------- | --------------------------------------------------------- | ---------- | --- | ------------------------------------------------------------------- |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 42d | Non-blocking per CEO 2026-06-10 ruling; Rafał (CTO) action required |
 
-All other escalations ESC-001 through ESC-033 RESOLVED (ESC-033 resolved by FOLLOW-431 + prod
-verification).
+All other escalations (ESC-001 through ESC-038, including ESC-028/034/037/038) RESOLVED. No open
+escalation blocks any pending ticket.
 
 ---
 
 ## IN_PROGRESS tickets (0/3 max)
 
-None. FOLLOW-438 loop-closure branch open for human review. Next candidates after merge: FOLLOW-436
-operator go-live (BLOCKED_ON_HUMAN — ESC-034), FOLLOW-429 (P2, backend-engineer, decision-api
-ctx.waitUntil), FOLLOW-417 (P2, data-engineer).
+None. FOLLOW-583 moved from IN_PROGRESS to READY_FOR_REVIEW this session (PR #555, awaiting human
+merge). Next candidates for the following loop: FOLLOW-562 (backend-engineer, dashboard Panel 5
+error banner, READY), FOLLOW-564 (architect, p95 SLA doc reconciliation, READY). FOLLOW-560/
+FOLLOW-565 remain BLOCKED on FOLLOW-553 (READY_OPERATOR).
 
 ---
 
-## CI check counter (current session)
+## CI check counter (this session)
 
-FOLLOW-438 (PR #395): DONE — CI verified green by devops-engineer before merge;
-modal-app-singleton-guard PASS; all real gates green. Counter: 1/5 CI checks, 0/3 fix iterations.
-
-This loop-closure pass (bookkeeping only): no code CI run needed.
+FOLLOW-583 (PR #555): validation-only session (no code fix iterations needed — PR was already
+correct on first pass). CI non-success count on real gates: **0** (only the confirmed
+pre-existing/net-zero `Rule I — wired-or-dead check` red, verified via worktree diff on `main` vs.
+branch — byte-identical output). Counter: 1/5 CI checks consumed (one `check-runs` read), 0/3 fix
+iterations (no fixes needed).
 
 ---
 
-## Recent merges (most recent first)
+## Recent merges (most recent first, pre-this-session)
 
-- PR #395 (FOLLOW-438, devops-engineer): Add modal.App singleton guard CI job +
-  check-modal-app-singleton.sh. All real gates green. Merged 2026-06-30T16:05:41Z (commit f3ac878).
-  RETRO-144 written. FOLLOW-433→438 chain fully closed.
-- PR #393 (FOLLOW-437, ml-engineer): Consolidate llm-gateway Modal app — fix BUG 1 orphan main.py
-  - BUG 2 modal.App name collision. 104 pytest pass. Merged 2026-06-30 (commit 09084f3). RETRO-143
-    written. FOLLOW-438 filed.
-- PR #392 (FOLLOW-436 runbook, devops-engineer): operator go-live runbook
-  docs/runbooks/modal-embed-seed-consumer-golive.md + .env.example fix + ESC-034. Merged 2026-06-30
-  (commit 3eb4705).
-- PR #391 (FOLLOW-435 loop closure, pm-orchestrator): FOLLOW-435 DONE + RETRO-142 + FOLLOW-436
-  filed. Merged 2026-06-30 (92c5609).
-- PR #390 (FOLLOW-435 LEG 2, ml-engineer): Modal embed-seed consumer + cross-language contract gate.
-  Python tests 26/26. Merged 2026-06-30 (squash b5acf73). RETRO-142 written.
-- PR #389 (FOLLOW-435 LEG 1, backend-engineer): listing-embed seed producer + event contract +
-  gitleaks allowlist. Merged 2026-06-30 (squash 8ea497c).
-- PR #383 (FOLLOW-433, backend-engineer): Wrapped 3 surviving ff sinks in afterResponse(). Added CI
-  hard-gate guard. Merged 2026-06-29T17:35:35Z. RETRO-140 written.
-- PR #381 (FOLLOW-432, backend-engineer): Swept 6 control-plane ff sinks into afterResponse().
-  Merged 2026-06-29. RETRO-139 written.
+- PR #552+#553 (FOLLOW-561, qa-engineer): archetype-ID parity guard for 3 hand-maintained copies.
+  DONE, merged `a203b52`. RETRO-178 written — found the 4th copy + 2 subset copies now closed by
+  FOLLOW-583.
+- PR #549+#550 (FOLLOW-563, qa-engineer): soft-skip smoke-ingest + cron comment fix. DONE.
+- PR #547+#548 (FOLLOW-579, ingest): strip derived-intent fields from unconsented snapshot. DONE.
+- PR #544+#545 (FOLLOW-581, backend-engineer): fix Art. 17 erase no-op on `intent_events`. DONE.
+  Resolved ESC-038.
+- PR #542+#543 (FOLLOW-574, compliance-engineer): full ClickHouse row disclosure on DSR
+  access/portability. DONE. Resolved ESC-037.
 
-## Queue state
+## Queue state (this session's delta)
 
-- FOLLOW-438: DONE (PR #395, commit f3ac878, merged 2026-06-30T16:05:41Z). CI lint guard
-  modal-app-singleton-guard + check-modal-app-singleton.sh. All real gates green. RETRO-144 written.
-- FOLLOW-437: DONE (PR #393, commit 09084f3, merged 2026-06-30). Fixed BUG 1 (orphan main.py) + BUG
-  2 (modal.App name collision). 104 pytest pass. RETRO-143 written.
-- FOLLOW-436: BLOCKED_ON_HUMAN. Code blockers fixed by FOLLOW-437. Remaining: operator must
-  provision Modal estalara-secrets + modal deploy apps/llm-gateway/src/main.py + smoke verification.
-  Runbook: docs/runbooks/modal-embed-seed-consumer-golive.md. ESC-034 OPEN.
-- FOLLOW-435: DONE (PRs #389 + #390, merged 2026-06-30). RETRO-142 written.
-- FOLLOW-434: DONE (PR #385, merged 2026-06-30). RETRO-141 written.
-- FOLLOW-433: DONE (PR #383, merged 2026-06-29T17:35:35Z). RETRO-140 written.
-- FOLLOW-432: DONE (PR #381, merged 2026-06-29). RETRO-139 written.
-- FOLLOW-431: DONE (PR #379, merged 2026-06-29, prod-verified 10/10 burst writes).
-- FOLLOW-433→438 chain: FULLY CLOSED in code+bookkeeping. Only FOLLOW-436 remains
-  (BLOCKED_ON_HUMAN).
-- Next free FOLLOW stub number: 439.
-- FOLLOW-429: READY in FOLLOW_UPS.md (not yet promoted; scope widened to include ctx.waitUntil — P2
-  backend-engineer, CF-Worker flush-axis analogue for decision-api reorder.ts:204).
-- FOLLOW-430: READY in FOLLOW_UPS.md (not yet promoted; P3 sdk-engineer, 2h).
-- P2 tickets READY (not yet promoted to QUEUE): FOLLOW-417, FOLLOW-418, FOLLOW-420, FOLLOW-421,
-  FOLLOW-429.
-- P3 tickets READY: FOLLOW-355, FOLLOW-399, FOLLOW-401, FOLLOW-408, FOLLOW-412, FOLLOW-413,
-  FOLLOW-416, FOLLOW-430.
+- FOLLOW-583: **READY_FOR_REVIEW** (PR #555, branch
+  `qa-engineer/FOLLOW-583-archetype-guard-4th-copy`). PM-validated: CI green (0 non-success on real
+  gates), AC-1 through AC-3 independently re-verified (own Python re-parse, own falsification
+  run+revert, own worktree-diff net-zero proof on Rule I, own semantic read of the
+  `family_upsizer`→`upsizer` mapping — accepted as defensible, not flagged). Bookkeeping done on
+  fresh branch `pm-orchestrator/FOLLOW-583-ready-for-review` (never committed to the worker's branch
+  or straight to `main`).
+- No other ticket status changed this session.
+- Next free FOLLOW stub number: unchanged from last session (not re-derived this pass — check
+  `backlog/FOLLOW_UPS.md` before minting a new one).

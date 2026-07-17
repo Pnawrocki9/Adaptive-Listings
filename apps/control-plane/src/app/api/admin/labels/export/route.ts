@@ -308,7 +308,7 @@ function buildMockExportRows(): ExportRow[] {
       features_snapshot: { archetype_score: 0.61, session_depth: 5 },
       model_version: 'rulebased-bandit-v1',
       confidence: 0.61,
-      archetype: 'family_upsizer',
+      archetype: 'upsizer',
       outcome_class: 'offer_made',
       label_source: 'manual_admin',
       labeled_at: '2026-06-02T14:30:00.000Z',

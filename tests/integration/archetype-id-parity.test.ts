@@ -58,6 +58,31 @@
  * rename), and the set it references must be a PROPER subset (never accidentally
  * grows to look like full parity, which would silently invalidate this exemption).
  *
+ * FOLLOW-583 (RETRO-178) additions — a repo-wide grep for `golden_visa_buyer`
+ * found a 4th hand-maintained full-parity copy the FOLLOW-561 guard missed, plus
+ * two more subset copies (one of them already broken):
+ *   - `apps/llm-gateway/src/jobs/generate_description.py` `_ARCHETYPE_GUIDANCE`
+ *     (full parity, production-live): feeds the live Modal AI-description/headline
+ *     prompt via `.get(archetype, "<generic fallback>")`. A missing key here does
+ *     NOT throw — it silently falls back to generic copy for that one archetype
+ *     forever, the exact failure class this whole guard file exists to prevent.
+ *     Parsed from the real checked-in `.py` file, same discipline as the three
+ *     parsers above (non-empty check, fail-loud regex).
+ *   - `apps/control-plane/src/lib/demo-override-store.ts` `REACHABLE_ARCHETYPES`
+ *     (subset, legitimate): a documented 13-of-18 "reachable archetypes" allow-list
+ *     (Master Design §D.6) for the demo-mode override UI. Guarded the same way as
+ *     the `archetype-hints.ts` exemption above — subset validity, not full parity.
+ *   - `apps/control-plane/src/app/api/admin/labels/route-helpers.ts`
+ *     `MOCK_ARCHETYPES` + `.../export/route.ts`'s inline `buildMockExportRows()`
+ *     literals (subset, dev/CI-only): both are `data_source: 'mock'` fixtures used
+ *     only when `CLICKHOUSE_URL`/`DATABASE_URL_ADMIN` are absent — never served to
+ *     real tenants. Guarded with subset validity (not full parity — a 5-row mock
+ *     fixture has no reason to cover all 18 archetypes). This is the copy that was
+ *     ALREADY BROKEN: both files hard-coded `'family_upsizer'`, which is not a
+ *     member of `ARCHETYPE_NAMES` (the canonical set has `family_buyer` and
+ *     `upsizer` as two separate archetypes) — TypeScript never caught it because
+ *     both fields are typed `archetype: string`, not the canonical union type.
+ *
  * @module tests/integration/archetype-id-parity
  */
 
@@ -134,6 +159,63 @@ function parseArchetypeHintsReferencedIds(source: string): Set<string> {
   return ids;
 }
 
+/**
+ * Parses the top-level keys of `_ARCHETYPE_GUIDANCE: dict[str, str] = {...}` out
+ * of the real `generate_description.py`. Each value is a multi-line parenthesised
+ * Python string (nested quotes/commas inside the prose), so the key regex is
+ * anchored to the exact 4-space indent + `"<key>": (` shape that only top-level
+ * dict entries use — a value line never starts a new statement at that indent
+ * with a trailing `": ("`, so this cannot accidentally match a substring inside
+ * one of the guidance strings.
+ */
+function parseArchetypeGuidancePyKeys(source: string): string[] {
+  const block = /_ARCHETYPE_GUIDANCE:\s*dict\[str,\s*str\]\s*=\s*\{([\s\S]*?)\n\}/.exec(source);
+  if (!block) {
+    throw new Error(
+      'archetype-id-parity: could not locate `_ARCHETYPE_GUIDANCE: dict[str, str] = {...}` in ' +
+        'apps/llm-gateway/src/jobs/generate_description.py — the literal was likely renamed or ' +
+        'reformatted; update this parser regex to match.',
+    );
+  }
+  return [...block[1].matchAll(/^\s{4}"([a-z_]+)":\s*\(/gm)].map((m) => m[1]!);
+}
+
+/** Parses the `REACHABLE_ARCHETYPES = [...] as const;` array literal. */
+function parseReachableArchetypes(source: string): Set<string> {
+  const block = /REACHABLE_ARCHETYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(source);
+  if (!block) {
+    throw new Error(
+      'archetype-id-parity: could not locate `REACHABLE_ARCHETYPES = [...] as const;` in ' +
+        'apps/control-plane/src/lib/demo-override-store.ts — the literal was likely renamed or ' +
+        'reformatted; update this parser regex to match.',
+    );
+  }
+  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
+/** Parses the `MOCK_ARCHETYPES = [...] as const;` array literal. */
+function parseMockArchetypes(source: string): Set<string> {
+  const block = /MOCK_ARCHETYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(source);
+  if (!block) {
+    throw new Error(
+      'archetype-id-parity: could not locate `MOCK_ARCHETYPES = [...] as const;` in ' +
+        'apps/control-plane/src/app/api/admin/labels/route-helpers.ts — the literal was likely ' +
+        'renamed or reformatted; update this parser regex to match.',
+    );
+  }
+  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
+/**
+ * Parses every quoted `archetype: '<id>'` object-literal value out of
+ * export/route.ts's `buildMockExportRows()`. Only matches quoted string values
+ * (the interface declaration uses `archetype: string;`, no quotes, so it can't
+ * be picked up here).
+ */
+function parseExportRouteMockArchetypes(source: string): Set<string> {
+  return new Set([...source.matchAll(/archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
 // ─── Set-equality assertion helper ────────────────────────────────────────────
 
 function assertExactParity(label: string, actual: string[], canonical: readonly string[]): void {
@@ -159,6 +241,37 @@ function assertExactParity(label: string, actual: string[], canonical: readonly 
       'Rule J violation — either this copy has a stale/typo id, or ARCHETYPE_NAMES itself ' +
       'is missing an archetype that was added here first.',
   ).toEqual([]);
+}
+
+/**
+ * Weaker "subset validity" assertion for deliberate, documented subsets of
+ * `ARCHETYPE_NAMES` (mirrors the archetype-hints.ts exemption shape, FOLLOW-583):
+ *   1. Every referenced id must be a real, spelled-correctly member of
+ *      `ARCHETYPE_NAMES` (catches typos / stale ids after a rename).
+ *   2. The referenced set must remain a PROPER subset — never silently grow to
+ *      cover all 18, which would mean the copy should be promoted to
+ *      `assertExactParity` instead of staying exempt.
+ */
+function assertSubsetValidity(
+  label: string,
+  referenced: Iterable<string>,
+  canonical: readonly string[],
+): void {
+  const referencedSet = new Set(referenced);
+  const canonicalSet = new Set(canonical);
+
+  const invalid = [...referencedSet].filter((id) => !canonicalSet.has(id));
+  expect(
+    invalid,
+    `${label}: references invalid archetype id(s) not in ARCHETYPE_NAMES: [${invalid.join(', ')}]. ` +
+      'Stale id after a rename, or a typo.',
+  ).toEqual([]);
+
+  expect(
+    referencedSet.size,
+    `${label}: now references ALL ${String(canonical.length)} archetypes — it is no longer a deliberate ` +
+      'subset. Revisit this exemption and consider requiring full parity.',
+  ).toBeLessThan(canonical.length);
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
@@ -207,6 +320,24 @@ describe('FOLLOW-561 — archetype-ID parity guard (Rule J)', () => {
       ARCHETYPE_NAMES,
     );
   });
+
+  it('apps/llm-gateway/src/jobs/generate_description.py _ARCHETYPE_GUIDANCE matches ARCHETYPE_NAMES exactly', () => {
+    // FOLLOW-583 (RETRO-178): this dict feeds the LIVE Modal AI-description/headline
+    // prompt via `.get(archetype, "<generic fallback>")` — a missing key does not
+    // throw, it silently degrades one archetype to generic copy forever. Highest
+    // production consequence of the four copies this file guards.
+    const source = readRepoFile('apps/llm-gateway/src/jobs/generate_description.py');
+    const parsed = parseArchetypeGuidancePyKeys(source);
+    expect(
+      parsed.length,
+      'parser matched 0 archetypes in generate_description.py _ARCHETYPE_GUIDANCE — regex is broken',
+    ).toBeGreaterThan(0);
+    assertExactParity(
+      'apps/llm-gateway/src/jobs/generate_description.py _ARCHETYPE_GUIDANCE',
+      parsed,
+      ARCHETYPE_NAMES,
+    );
+  });
 });
 
 describe('FOLLOW-561 — archetype-hints.ts exemption (AC-b: documented, not full parity)', () => {
@@ -240,5 +371,65 @@ describe('FOLLOW-561 — archetype-hints.ts exemption (AC-b: documented, not ful
       'archetype-hints.ts now references ALL 18 archetypes — it is no longer a deliberate ' +
         'subset. Revisit the AC-b exemption in this file and consider requiring full parity.',
     ).toBeLessThan(ARCHETYPE_NAMES.length);
+  });
+});
+
+describe('FOLLOW-583 — demo-override-store.ts REACHABLE_ARCHETYPES (documented subset, §D.6)', () => {
+  it('is a valid, proper subset of ARCHETYPE_NAMES: every referenced id is real, set stays partial', () => {
+    // REACHABLE_ARCHETYPES is a legitimate, documented 13-of-18 allow-list for the
+    // demo-mode override UI (Master Design §D.6) — NOT a bug, so this is
+    // subset-validity (like archetype-hints.ts above), not full parity.
+    const source = readRepoFile('apps/control-plane/src/lib/demo-override-store.ts');
+    const referenced = parseReachableArchetypes(source);
+
+    expect(
+      referenced.size,
+      'parser matched 0 archetypes in demo-override-store.ts REACHABLE_ARCHETYPES — regex is broken',
+    ).toBeGreaterThan(0);
+
+    assertSubsetValidity(
+      'apps/control-plane/src/lib/demo-override-store.ts REACHABLE_ARCHETYPES',
+      referenced,
+      ARCHETYPE_NAMES,
+    );
+  });
+});
+
+describe('FOLLOW-583 — admin/labels mock archetype fixtures (dev/CI-only, data_source: "mock")', () => {
+  // MOCK_ARCHETYPES (route-helpers.ts) and buildMockExportRows()'s inline literals
+  // (export/route.ts) are both dev/CI-only fixtures used only when
+  // CLICKHOUSE_URL/DATABASE_URL_ADMIN are absent — never served to real tenants
+  // (both responses carry data_source: 'mock', which the page must badge). A 5-row
+  // fixture has no reason to cover all 18 archetypes, so this is subset validity,
+  // not full parity — same shape as the two exemptions above. This is the copy
+  // RETRO-178 found ALREADY BROKEN: both files hard-coded 'family_upsizer', which
+  // is not a member of ARCHETYPE_NAMES.
+  it('MOCK_ARCHETYPES + export route inline literals are a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const routeHelpersSource = readRepoFile(
+      'apps/control-plane/src/app/api/admin/labels/route-helpers.ts',
+    );
+    const exportRouteSource = readRepoFile(
+      'apps/control-plane/src/app/api/admin/labels/export/route.ts',
+    );
+
+    const mockArchetypes = parseMockArchetypes(routeHelpersSource);
+    const exportRouteArchetypes = parseExportRouteMockArchetypes(exportRouteSource);
+
+    expect(
+      mockArchetypes.size,
+      'parser matched 0 archetypes in route-helpers.ts MOCK_ARCHETYPES — regex is broken',
+    ).toBeGreaterThan(0);
+    expect(
+      exportRouteArchetypes.size,
+      'parser matched 0 archetype literals in export/route.ts buildMockExportRows() — regex is broken',
+    ).toBeGreaterThan(0);
+
+    const combined = new Set([...mockArchetypes, ...exportRouteArchetypes]);
+
+    assertSubsetValidity(
+      'route-helpers.ts MOCK_ARCHETYPES + export/route.ts buildMockExportRows() literals',
+      combined,
+      ARCHETYPE_NAMES,
+    );
   });
 });

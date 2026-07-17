@@ -15443,7 +15443,7 @@ disclosure and delete the ROPA Activity + DPIA row. FOLLOW-574 has annotated ROP
 
 source_retro: RETRO-178 (§4a LG-1, §4b CB-1, §4c) source_ticket: FOLLOW-561 recommended_sprint:
 Sprint 23 (Wave 3) recommended_agent: qa-engineer priority: P2 estimated_hours: 3 promoted_to_queue:
-false
+true (2026-07-18, backlog/QUEUE.md id FOLLOW-583, status IN_PROGRESS)
 
 **Gap:** `tests/integration/archetype-id-parity.test.ts` (FOLLOW-561, PR #552) guards exactly 3
 hand-maintained literal copies of the 18-archetype set. A repo-wide grep for a distinctive canonical

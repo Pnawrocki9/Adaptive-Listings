@@ -12749,6 +12749,59 @@ in-place in Sprint 22b above.
     - [ ] Origin allowlist per tenant enforced at ingest for browser-originated requests; signed
           server-adapter requests (HMAC path, auth.ts:86-96) exempt.
     - [ ] Master Design §V documents the model either way.
+- id: FOLLOW-583
+  title: >-
+    Extend the archetype-ID guard to the 4th (production-live) full-parity copy + 2 subset copies
+    the FOLLOW-561 guard missed; fix the already-broken `family_upsizer` mock literal
+  agent: qa-engineer
+  status: IN_PROGRESS
+  assigned_to: qa-engineer
+  started_at: '2026-07-18T00:00:00Z'
+  priority: P2
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    RETRO-178 (§4a LG-1, §4b CB-1, §4c) on FOLLOW-561 (PR #552) — tests/integration/
+    archetype-id-parity.test.ts guards exactly 3 hand-maintained literal copies. A repo-wide grep
+    for `golden_visa_buyer` finds a 4th full-parity copy the guard misses:
+    apps/llm-gateway/src/jobs/generate_description.py:161 `_ARCHETYPE_GUIDANCE` — this feeds the
+    LIVE production Modal AI-description prompt (:1303/:1712, `.get(archetype, "<generic
+    fallback>")`). Currently in sync (verified by manual diff — all 18 present) but a future
+    archetype rename/add that misses this dict fails SILENTLY: no exception, no alert, just a
+    generic-copy fallback for one persona indefinitely — the highest-consequence instance of the
+    exact class FOLLOW-561 exists to prevent. Two more hand-maintained copies are documented subsets
+    with NO subset-validity guard: demo-override-store.ts:37 REACHABLE_ARCHETYPES (legitimate
+    13-reachable-archetype subset per §D.6), and route-helpers.ts:87 MOCK_ARCHETYPES +
+    export/route.ts:311 buildMockExportRows() (already BROKEN — both hard-code 'family_upsizer', not
+    a canonical ARCHETYPE_NAMES member; the real set has family_buyer and upsizer as two separate
+    archetypes; TS never caught it because both fields are typed `archetype: string`).
+  notes: |
+    Model-fit: sonnet — mechanical extension of the FOLLOW-561 pattern (one more assertExactParity
+    call + two subset-validity calls + two literal-string typo fixes), same shape/regex-parsing
+    style as the existing test, no new design surface. Elevated stakes noted (generate_description.py
+    is live-prod buyer-facing) but the change to that file is READ-ONLY (the guard parses it, never
+    edits its runtime logic) — production Python behavior is unchanged by this ticket. Escalate to
+    Opus only if the worker finds the _ARCHETYPE_GUIDANCE dict literal isn't cleanly regex-parseable
+    (multi-line dict values already contain nested parens/quotes — verify the parser against the
+    real file before assuming FOLLOW-561's regex style transfers unmodified).
+    Branch: qa-engineer/FOLLOW-583-archetype-guard-4th-copy
+    AC:
+    - [ ] Full-parity assertion added for apps/llm-gateway/src/jobs/generate_description.py
+          _ARCHETYPE_GUIDANCE against ARCHETYPE_NAMES (same assertExactParity helper, parses the
+          real checked-in file, not a fixture).
+    - [ ] Subset-validity assertion added for demo-override-store.ts REACHABLE_ARCHETYPES (every
+          referenced id is a real ARCHETYPE_NAMES member; proper subset — mirror the
+          archetype-hints.ts exemption shape already in the file).
+    - [ ] Subset-validity assertion added for route-helpers.ts MOCK_ARCHETYPES AND export/route.ts's
+          inline mock archetype literals — this assertion MUST be shown failing red against the
+          pre-fix state first (falsification proof the guard actually catches the family_upsizer
+          bug), then pass after the fix lands.
+    - [ ] Fix 'family_upsizer' -> a valid canonical archetype id in both route-helpers.ts
+          MOCK_ARCHETYPES and export/route.ts buildMockExportRows() (mock data has no correctness
+          requirement beyond validity — either family_buyer or upsizer is acceptable; document the
+          choice).
+    - [ ] All existing 5 assertions in archetype-id-parity.test.ts still pass unaffected.
+  cross_ref: [FOLLOW-561, RETRO-178]
 - id: FOLLOW-567
   title: >-
     Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but

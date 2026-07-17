@@ -28,3 +28,28 @@ class used by `NextRequest.headers` (from Node.js's native fetch) is not the sam
 route handlers), document that `@vitest-environment node` is required when the middleware calls
 `NextResponse.next({ request: req })`. A comment in the vitest.config.ts explaining this would
 prevent the next engineer from spending time on the same diagnosis.
+
+---
+
+## 2026-07-18 / FOLLOW-583
+
+**What I tested:** Extended the archetype-ID parity guard (FOLLOW-561) to a 4th hand-maintained
+full-parity copy (`generate_description.py` `_ARCHETYPE_GUIDANCE`, feeds the live Modal
+AI-description prompt) and 2 subset copies (`demo-override-store.ts` `REACHABLE_ARCHETYPES`,
+legitimate; `route-helpers.ts`/`export/route.ts` mock archetype fixtures, which had an already-live
+invalid id `family_upsizer`).
+
+**Where a test could have passed over a dead wire:** if I'd hand-typed the 18 keys expected in
+`_ARCHETYPE_GUIDANCE` into a fixture array instead of parsing the real `.py` file, the test would
+have passed forever regardless of what the file actually contains — the multi-line, nested-quote
+dict values made that shortcut tempting (a naive line-based split risks matching a substring inside
+a value string, e.g. any prose line that happens to end `": ("`... though in practice no value line
+does). Anchoring the key regex to `^\s{4}"([a-z_]+)":\s*\(` with the `m` flag and verifying it
+matched exactly 18 (not more, not fewer) against the real checked-in file before wiring it into the
+suite was the check that made this a real test rather than a restated fixture.
+
+**A guardrail I'd add:** when a "subset-validity" guard covers two files that logically describe one
+fixture set (here: `MOCK_ARCHETYPES` array + `buildMockExportRows()`'s inline literals), union them
+into one assertion rather than two — otherwise a future drift where one file is fixed and the other
+isn't goes undetected by whichever half-guard runs first. Did this here; worth calling out
+explicitly as the pattern for any future "two files, one dataset" guard.

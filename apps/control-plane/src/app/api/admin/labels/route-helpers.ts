@@ -86,7 +86,7 @@ const MOCK_OUTCOME_CLASSES = [
 
 const MOCK_ARCHETYPES = [
   'yield_hunter',
-  'family_upsizer',
+  'upsizer',
   'first_time_buyer',
   'luxury_buyer',
   'downsizer',

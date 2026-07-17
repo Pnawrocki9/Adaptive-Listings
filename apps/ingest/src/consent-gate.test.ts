@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { EventSchema } from '@estalara/shared';
 import type { ConsentState } from '@estalara/shared';
 
-import { evaluateConsent } from './consent-gate.js';
+import { evaluateConsent, redactPersistedPayloadForConsent } from './consent-gate.js';
 
 /**
  * Canonical event-type set, derived directly from the discriminated union at runtime by reading
@@ -31,6 +31,82 @@ const ALL_CONSENT_STATES: ConsentState[] = [
   'consented',
 ];
 
+/** The gate's three privacy classes (mirrors the module-internal `ConsentClass`). */
+type ExpectedConsentClass = 'profiling' | 'audit' | 'operational';
+
+/**
+ * GOLDEN per-type classification fixture (FOLLOW-579 / RETRO-177 TG-1).
+ *
+ * The pre-existing contract test proves EXHAUSTIVENESS (every union member is classified) but not
+ * CORRECTNESS: it runs with `consent_state='consented'`, where profiling / audit / operational all
+ * return `allowed:true`, so it cannot detect a MIS-classed member (that is how LG-1's under-gate
+ * shipped green). This fixture pins the EXPECTED class of EVERY union member and asserts the
+ * OBSERVABLE gate behavior that class implies. A future reclassification (e.g. flipping
+ * `session.quality.snapshot` operational→profiling, or vice versa) changes gate behavior and so
+ * MUST be a deliberate edit to this fixture — it can no longer slip in silently.
+ *
+ * Hand-maintained on purpose: this is an INDEPENDENT compliance-reviewed copy of the class map, not
+ * a derivation from it. Drift between this fixture and the map is the signal, so the two must be
+ * edited together.
+ */
+const EXPECTED_CLASS_BY_EVENT_TYPE: Record<string, ExpectedConsentClass> = {
+  // ── profiling: §H.8(a) behavioral tracking + §H.8(d) derived intent (gated) ──
+  'page.view': 'profiling',
+  'page.exit': 'profiling',
+  'tab.visible': 'profiling',
+  'tab.hidden': 'profiling',
+  'scroll.depth': 'profiling',
+  'mouse.dwell': 'profiling',
+  'mouse.rage_click': 'profiling',
+  'mouse.exit_intent': 'profiling',
+  'photo.opened': 'profiling',
+  'photo.gallery.next': 'profiling',
+  'photo.zoomed': 'profiling',
+  'photo.dwell': 'profiling',
+  'floorplan.opened': 'profiling',
+  'floorplan.zoom': 'profiling',
+  'floorplan.dwell': 'profiling',
+  'price.hovered': 'profiling',
+  'price.compared': 'profiling',
+  'feature.expanded': 'profiling',
+  'mortgage_calc.used': 'profiling',
+  'search.query': 'profiling',
+  'filter.applied': 'profiling',
+  'filter.removed': 'profiling',
+  'sort.changed': 'profiling',
+  'chat.opened': 'profiling',
+  'chat.message.sent': 'profiling',
+  'chat.intent.detected': 'profiling',
+  'listing.next': 'profiling',
+  'listing.compared': 'profiling',
+  'listing.bookmarked': 'profiling',
+  'listing.viewed': 'profiling',
+  'cta.clicked': 'profiling',
+  'quiz.event': 'profiling',
+  'quiz.mismatch': 'profiling',
+  'sidebar.closed': 'profiling',
+  'session.started': 'profiling',
+  'intent.snapshot': 'profiling',
+  // ── audit: consent trail (always ingest) ──
+  'consent.granted': 'audit',
+  'consent.denied': 'audit',
+  // ── operational: server outcomes, DQS snapshot, discrete conversions (always ingest) ──
+  'adapt.applied': 'operational',
+  'adapt.skipped': 'operational',
+  'adapt.description.applied': 'operational',
+  'adapt.description.skipped': 'operational',
+  'adapt.description.error': 'operational',
+  'adapt.description.re': 'operational',
+  'adapt.description.headline.applied': 'operational',
+  'adapt.description.headline.re': 'operational',
+  'ab.assignment': 'operational',
+  'session.quality.snapshot': 'operational',
+  'inquiry.started': 'operational',
+  'inquiry.completed': 'operational',
+  'tour.requested': 'operational',
+  'live.signup': 'operational',
+};
+
 describe('consent-gate — contract (every union member is classified)', () => {
   it('classifies EVERY event type in the discriminated union (unclassified fails closed)', () => {
     // With consent_state='consented', every CLASSIFIED type is allowed (profiling passes because
@@ -45,6 +121,46 @@ describe('consent-gate — contract (every union member is classified)', () => {
 
   it('the union has members (guards against an empty/mis-derived enumeration)', () => {
     expect(UNION_EVENT_TYPES.length).toBeGreaterThan(0);
+  });
+});
+
+describe('consent-gate — GOLDEN per-type class fixture (correctness, not just exhaustiveness)', () => {
+  it('the golden fixture keys EXACTLY match the discriminated union (no missing, no extra)', () => {
+    // If a new event type is added to the union without a fixture entry — or a fixture entry
+    // outlives its union member — this fails, forcing a deliberate compliance-reviewed edit.
+    expect([...Object.keys(EXPECTED_CLASS_BY_EVENT_TYPE)].sort()).toEqual(
+      [...UNION_EVENT_TYPES].sort(),
+    );
+  });
+
+  it('every union member behaves EXACTLY as its pinned class dictates', () => {
+    for (const type of UNION_EVENT_TYPES) {
+      const expected = EXPECTED_CLASS_BY_EVENT_TYPE[type];
+      // Sanity: the fixture must cover this member (redundant with the set-equality test above,
+      // but keeps the per-member assertion self-contained and its failure message precise).
+      expect(expected, `missing golden class for '${type}'`).toBeDefined();
+
+      if (expected === 'profiling') {
+        // Gated: rejected without a lawful basis, allowed with one.
+        const none = evaluateConsent(type, 'none');
+        expect(none.allowed, `${type} should be REJECTED under consent_state=none`).toBe(false);
+        if (!none.allowed) {
+          expect(none.code).toBe('consent_not_granted');
+          expect(none.consent_class).toBe('profiling');
+        }
+        expect(evaluateConsent(type, 'session-only').allowed).toBe(false);
+        expect(evaluateConsent(type, 'consented').allowed).toBe(true);
+        expect(evaluateConsent(type, 'legitimate-interest').allowed).toBe(true);
+      } else {
+        // audit / operational: ALWAYS ingest, under every consent_state (incl. none).
+        for (const cs of ALL_CONSENT_STATES) {
+          expect(
+            evaluateConsent(type, cs).allowed,
+            `${type} (${String(expected)}) should ALWAYS ingest — failed under consent_state=${cs}`,
+          ).toBe(true);
+        }
+      }
+    }
   });
 });
 
@@ -128,5 +244,86 @@ describe('consent-gate — fail-closed on unclassified type', () => {
       expect(result.code).toBe('unclassified_event_type');
       expect(result.consent_class).toBe('unknown');
     }
+  });
+});
+
+// ── FOLLOW-579 — strip §H.8(d) derived-intent fields from session.quality.snapshot payloads ──
+describe('consent-gate — redactPersistedPayloadForConsent (session.quality.snapshot strip)', () => {
+  const DERIVED_FIELDS = ['final_archetype', 'final_confidence', 'prediction_stability_score'];
+  const snapshotPayload = () => ({
+    session_id: 'a'.repeat(64),
+    prediction_stability_score: 0.8,
+    convergence_time_events: 5,
+    signal_density_per_min: 3,
+    final_archetype: 'family_buyer',
+    final_confidence: 0.72,
+    total_events: 10,
+    listing_view_rate: 1.5,
+  });
+
+  it('STRIPS the three derived-intent fields for a snapshot with no lawful basis (none)', () => {
+    const result = redactPersistedPayloadForConsent(
+      'session.quality.snapshot',
+      'none',
+      snapshotPayload(),
+    ) as Record<string, unknown>;
+    for (const f of DERIVED_FIELDS) expect(result).not.toHaveProperty(f);
+  });
+
+  it('STRIPS under consent_state=session-only too (also not a lawful basis)', () => {
+    const result = redactPersistedPayloadForConsent(
+      'session.quality.snapshot',
+      'session-only',
+      snapshotPayload(),
+    ) as Record<string, unknown>;
+    for (const f of DERIVED_FIELDS) expect(result).not.toHaveProperty(f);
+  });
+
+  it('KEEPS every non-derived DQS metric when stripping (operational record survives)', () => {
+    const result = redactPersistedPayloadForConsent(
+      'session.quality.snapshot',
+      'none',
+      snapshotPayload(),
+    ) as Record<string, unknown>;
+    expect(result.session_id).toBe('a'.repeat(64));
+    expect(result.convergence_time_events).toBe(5);
+    expect(result.signal_density_per_min).toBe(3);
+    expect(result.total_events).toBe(10);
+    expect(result.listing_view_rate).toBe(1.5);
+  });
+
+  it('KEEPS the three fields for consented / legitimate-interest users (unchanged)', () => {
+    for (const cs of ['consented', 'legitimate-interest']) {
+      const result = redactPersistedPayloadForConsent(
+        'session.quality.snapshot',
+        cs,
+        snapshotPayload(),
+      ) as Record<string, unknown>;
+      expect(result.final_archetype).toBe('family_buyer');
+      expect(result.final_confidence).toBe(0.72);
+      expect(result.prediction_stability_score).toBe(0.8);
+    }
+  });
+
+  it('is a NO-OP for other event types even under consent_state=none', () => {
+    const payload = { url: 'https://example.com', final_archetype: 'x' };
+    const result = redactPersistedPayloadForConsent('page.view', 'none', payload);
+    // Same content — page.view carries no derived-intent artifact this rule governs.
+    expect(result).toEqual(payload);
+  });
+
+  it('does NOT mutate the input payload (returns a copy)', () => {
+    const input = snapshotPayload();
+    redactPersistedPayloadForConsent('session.quality.snapshot', 'none', input);
+    expect(input.final_archetype).toBe('family_buyer');
+    expect(input.final_confidence).toBe(0.72);
+    expect(input.prediction_stability_score).toBe(0.8);
+  });
+
+  it('tolerates a non-object payload without throwing', () => {
+    expect(redactPersistedPayloadForConsent('session.quality.snapshot', 'none', null)).toBeNull();
+    expect(
+      redactPersistedPayloadForConsent('session.quality.snapshot', 'none', undefined),
+    ).toBeUndefined();
   });
 });

@@ -1622,3 +1622,18 @@ would generalize this beyond just `adapt-get-auth`.
   baseline 180. · **Guardrail I'd add:** a test that asserts a ClickHouse DSR erase filter column
   matches the column the \_writer* populates (writer-vs-eraser key parity), so a
   keyed-on-the-wrong-column no-op fails CI instead of shipping latent for months.
+
+- **2026-07-17 / FOLLOW-579** · Stripped §H.8(d) derived-intent fields
+  (final_archetype/final_confidence/prediction_stability_score) from unconsented
+  `session.quality.snapshot` payloads at the ingest storage boundary via a pure
+  `redactPersistedPayloadForConsent` in consent-gate.ts, wired into handlers/events.ts before the
+  sinks. Added a golden per-type ConsentClass fixture (RETRO-177 TG-1: exhaustiveness≠correctness —
+  the old contract test ran only under consent_state='consented' where all classes return allowed,
+  so a mis-class couldn't surface). · Wiring: new export has a non-test consumer in same PR (Rule
+  H/I net-zero, 180 violations). Fail-loud: strip is a real redaction, observable on the wire
+  (persisted payload demonstrably lacks the fields), event still ingests as operational — no
+  fabrication. Verified persistence path is the generic `events` table, not the phantom
+  `session_quality` table (no writer). · Guardrail I'd add: a lint/CI check that flags any event
+  payload field named like a derived-intent artifact (archetype/confidence/stability) riding a
+  non-`profiling` class — the LG-1 pattern was "derived field rides a benign class," and it took a
+  retro to catch it.

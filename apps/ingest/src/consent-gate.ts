@@ -36,8 +36,30 @@
  * (the sole exported surface): an unclassified type fails closed → the test fails. No new event
  * type can silently default to a class (AC3).
  *
- * Only `evaluateConsent` is exported — the map, classifier, and allowed-set are module-internal
- * (they have no production consumer outside this file; a future cross-app reuse would export
+ * ## `session.quality.snapshot` — derived-intent field strip (FOLLOW-579)
+ *
+ * CEO/DPO ruling 2026-07-17 (RETRO-177 LG-1): `session.quality.snapshot` STAYS
+ * `operational`/always-ingest — its aggregate data-quality-score metrics (convergence time,
+ * signal density, total events, listing-view rate) are a lawful operational record and must never
+ * be dropped. BUT its payload also carries the §H.8(d) derived-intent artifact
+ * (`final_archetype`, `final_confidence`, `prediction_stability_score`) — the same class the gate
+ * BLOCKS when it arrives as `intent.snapshot`. So a `consent_state=none` user's archetype IDENTITY
+ * would otherwise ride through the operational class that never gates.
+ *
+ * The chosen remedy (option ii, NOT reclassify to profiling) is a PAYLOAD-KEY STRIP:
+ * `redactPersistedPayloadForConsent` removes those three fields from the persisted record when
+ * `consent_state ∉ {consented, legitimate-interest}` — the same lawful-basis set the profiling
+ * gate uses. The event still ingests (operational); the DQS metrics survive; consented /
+ * legitimate-interest users keep the three fields unchanged. Applied at the ingest storage
+ * boundary (`handlers/events.ts`), before Redpanda + the ClickHouse `events` insert.
+ *
+ * NOTE (phantom write-path): the dedicated ClickHouse `session_quality` table (migration 0005)
+ * has NO producer today — `session.quality.snapshot` lands in the generic `events` table as JSON.
+ * If a dedicated `session_quality` writer is ever built it MUST apply this same strip.
+ *
+ * Only `evaluateConsent` and `redactPersistedPayloadForConsent` are exported (both imported by
+ * `handlers/events.ts`, a route) — the map, classifier, allowed-set, and field list are
+ * module-internal (no production consumer outside this file; a future cross-app reuse would export
  * them then, per Rule I "wired-or-dead").
  *
  * @module apps/ingest/src/consent-gate
@@ -184,4 +206,47 @@ export function evaluateConsent(type: string, consentState: string): ConsentEval
     consent_state: consentState,
     event_type: type,
   };
+}
+
+/**
+ * §H.8(d) derived-intent fields carried inside a `session.quality.snapshot` payload. These encode
+ * the user's archetype IDENTITY and confidence — the same artifact the gate BLOCKS when it arrives
+ * as an `intent.snapshot`. Stripped from the persisted record for users without a lawful basis
+ * (FOLLOW-579). The remaining DQS metrics (convergence, signal density, totals, view rate) are the
+ * lawful operational record and are never touched.
+ */
+const DERIVED_INTENT_SNAPSHOT_FIELDS = [
+  'final_archetype',
+  'final_confidence',
+  'prediction_stability_score',
+] as const;
+
+/**
+ * Redact §H.8(d) derived-intent fields from an event payload before it is persisted, when the
+ * carrier is `session.quality.snapshot` AND `consent_state` grants no lawful basis
+ * (`∉ {consented, legitimate-interest}`, the SAME set the profiling gate uses — FOLLOW-579).
+ *
+ * - Non-`session.quality.snapshot` events: returned unchanged (no derived-intent artifact here).
+ * - `session.quality.snapshot` with a lawful basis: returned unchanged (consented / LI users keep
+ *   the three fields).
+ * - `session.quality.snapshot` without a lawful basis: a shallow copy with the three fields
+ *   deleted; every other DQS metric survives so the event still ingests as an operational record.
+ *
+ * Pure — never mutates the input. Keys on `consent_state` only, never on opt-out state (§H.9).
+ */
+export function redactPersistedPayloadForConsent(
+  type: string,
+  consentState: string,
+  payload: unknown,
+): unknown {
+  if (type !== 'session.quality.snapshot') return payload;
+  if (PROFILING_ALLOWED_CONSENT_STATES.has(consentState as ConsentState)) return payload;
+  if (typeof payload !== 'object' || payload === null) return payload;
+
+  const stripped: ReadonlySet<string> = new Set(DERIVED_INTENT_SNAPSHOT_FIELDS);
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (!stripped.has(key)) redacted[key] = value;
+  }
+  return redacted;
 }

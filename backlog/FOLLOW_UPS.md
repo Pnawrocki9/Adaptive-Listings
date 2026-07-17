@@ -15270,6 +15270,21 @@ recommended_sprint: Sprint 23 (Wave 2) or next recommended_agent: compliance-eng
 
 - backend-engineer (code + fixture leg) priority: P2 estimated_hours: 3 promoted_to_queue: false
 
+**⚠️ CEO ruling 2026-07-17 — read before starting.** The AC-(a) class question is **decided: STRIP
+THE DERIVED FIELDS** — i.e. AC-(b) **option (ii)**. `session.quality.snapshot` **stays
+`operational`/always-ingest** (its aggregate data-quality-score metric is a lawful operational
+record), but the §H.8(d) derived-intent fields (`final_archetype`, `final_confidence`,
+`prediction_stability_score`) must be **stripped from the persisted record when
+`consent_state ∉ {consented, legitimate-interest}`** — so an unconsented user's archetype identity
+no longer rides through. For consented / legitimate-interest users the fields flow unchanged (they
+have a lawful basis). Options (i) reclassify-to-profiling and (iii) leave-as-is are NOT chosen.
+AC-(a) is satisfied by recording this ruling; AC-(b) is narrowed to (ii); AC-(c) golden fixture and
+AC-(d) end-to-end test are unchanged. **Engineering note (not a re-litigation):** the strip must
+happen at the ingest boundary where `consent_state` is evaluated (consent-gate /
+`handlers/events.ts`), before the record reaches its sinks — the derived-intent columns must not
+land in the ClickHouse `session_quality` table for unconsented users, while the quality-metric
+columns still do.
+
 **Scope.** FOLLOW-559's consent gate (`apps/ingest/src/consent-gate.ts`) is correct on 51 of 52
 event types. The lone gap is intra-taxonomy: `session.quality.snapshot` is classed **`operational`**
 (`consent-gate.ts:395`, always-ingest) but its payload
@@ -15291,17 +15306,19 @@ per-member golden fixture is required to make the class verdict itself testable.
 
 ac:
 
-- [ ] **(a)** **Compliance ruling FIRST (blocks the code leg).** compliance-engineer records a
-      decision (with CEO/DPO sign-off if needed) on `session.quality.snapshot`: is the aggregate DQS
-      metric a lawful **operational** record, or is `final_archetype`/`final_confidence` §H.8(d)
-      derived intent requiring a lawful basis? Document in the gate module doc + (if it changes the
-      ROPA/DPIA posture) the relevant compliance doc of record.
-- [ ] **(b)** **Implement the ruling.** Either (i) reclassify `session.quality.snapshot` to
-      `profiling` in `CONSENT_CLASS_BY_EVENT_TYPE` (gated), OR (ii) if it must stay `operational`,
-      strip the derived-intent fields (`final_archetype`, `final_confidence`,
-      `prediction_stability_score`) from the persisted record when
-      `consent_state ∉ {consented, legitimate-interest}`, OR (iii) leave as-is with the ruling from
-      (a) as the documented justification. No silent status quo.
+- [x] **(a)** **Compliance ruling — DONE (CEO, 2026-07-17): stays `operational`, strip the derived
+      fields for unconsented users.** The aggregate data-quality-score metric IS a lawful
+      operational record (so the event keeps always-ingesting), but `final_archetype` /
+      `final_confidence` / `prediction_stability_score` are §H.8(d) derived intent that requires a
+      lawful basis — strip them when consent is absent. Document in the gate module doc + the
+      relevant compliance doc of record if the ROPA/DPIA posture changes.
+- [ ] **(b)** **Implement the ruling — option (ii), decided.** Keep `session.quality.snapshot`
+      classed `operational` in `CONSENT_CLASS_BY_EVENT_TYPE`, and strip the derived-intent fields
+      (`final_archetype`, `final_confidence`, `prediction_stability_score`) from the persisted
+      record when `consent_state ∉ {consented, legitimate-interest}`, at the ingest boundary
+      (consent-gate / `handlers/events.ts`) before the sinks — the derived columns must not reach
+      the ClickHouse `session_quality` table for unconsented users; the quality-metric columns still
+      do. Options (i) reclassify-to-profiling and (iii) leave-as-is are NOT chosen (CEO ruling).
 - [ ] **(c)** **Golden per-type classification fixture** in `consent-gate.test.ts`: assert the
       expected `ConsentClass` for EVERY union member (not merely that it is classified), so a future
       reclassification is a deliberate, reviewed fixture edit. This closes RETRO-177 §4c TG-1

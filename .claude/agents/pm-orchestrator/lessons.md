@@ -2281,3 +2281,25 @@ hung session strands work wherever the agent was standing, and for subagents tha
   multi-point ticket is "the risky one," re-derive that claim from the ticket source text yourself
   before repeating it in the delegation brief — don't propagate an unverified risk attribution
   downstream, even if the overall ticket scope is otherwise correct.
+
+---
+
+- **Date / ticket:** 2026-07-18 — FOLLOW-583 (PM validation of PR #555)
+- **Delegation row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+  qa-engineer (validation-only session; delegation happened in the prior session).
+- **What validation caught (or missed):** Nothing wrong found — but ran the full independent-proof
+  checklist rather than trusting the PR description's claimed evidence: (1) re-parsed
+  `_ARCHETYPE_GUIDANCE` with a standalone Python script separate from the worker's TS parser, got
+  the same 18-key set-equality result; (2) re-ran the falsification myself (typo-injected the real
+  `generate_description.py`, confirmed loud red, reverted, confirmed `git status` clean) instead of
+  accepting the worker's pasted-in red/green transcript; (3) ran `scripts/check-rule-i.sh` in
+  isolated git worktrees on both `main` and the PR branch and diffed the raw output byte-for-byte to
+  prove net-zero on the one non-passing CI gate, rather than eyeballing "180 vs 180" style counts;
+  (4) read the mock-file context around `family_upsizer`→`upsizer` to confirm it's semantically
+  defensible (not just type-valid) before accepting AC-3, per the brief's explicit instruction not
+  to pass an ambiguous mapping silently.
+- **A delegation/validation rule I'd add:** For "confirm net-zero on a pre-existing-red CI gate"
+  checks, isolated worktrees + `diff` on raw script output is strictly stronger evidence than
+  comparing violation _counts_ between branches (equal counts could still mask a swap: N new
+  violations exactly offsetting N fixed ones) — make worktree-diff the default method, not just a
+  spot-check.

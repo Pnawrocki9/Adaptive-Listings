@@ -1,6 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-18 (session 35 — FOLLOW-583 promoted + dispatched to qa-engineer)
+## ▶️ START HERE — resume 2026-07-18 (session 36 — FOLLOW-583 PM-validated, READY_FOR_REVIEW on PR #555)
+
+**Read this before picking anything.** FOLLOW-583's qa-engineer worker phase opened PR #555 (commits
+`6bec7ea`..`a3916aa`, branch `qa-engineer/FOLLOW-583-archetype-guard-4th-copy`). PM independently
+validated (not taken on the worker's word):
+
+- **CI:** `gh api .../check-runs` shows only `Rule I — wired-or-dead check` (x2, both matrix legs)
+  non-success; every other real gate green (Lint, Typecheck, `Test (Node 22)`, `Build`,
+  `Build (control-plane)`, `Format check`, `Rule J — mirror-code sync check`, SDK E2E, all Python
+  suites, Vercel). Confirmed net-zero: ran `scripts/check-rule-i.sh` on both `main` (0dddb04) and
+  the PR branch in isolated worktrees — byte-identical 198-line output, `diff` exit 0. Non-success
+  count for real gates: **0**.
+- **AC-1 (4th full-parity copy):** independently re-parsed `_ARCHETYPE_GUIDANCE` from the real
+  `apps/llm-gateway/src/jobs/generate_description.py` with a standalone Python script (not the
+  worker's TS parser) — got exactly the same 18 keys as `ARCHETYPE_NAMES`, set-equal. Confirmed
+  `.get(archetype, "<generic fallback>")` production usage at `:1303`/`:1712`.
+- **Falsification (self-run, not trusted from PR description):** edited the real
+  `generate_description.py` (`"yield_hunter": (` → `"yield_hunter_typo": (`), ran
+  `pnpm vitest run tests/integration/archetype-id-parity.test.ts` directly — failed loudly
+  (`MISSING archetypes ... [yield_hunter]`), 7 passed / 1 failed as expected. Reverted via file
+  restore from a scratch backup; `git status`/`git diff --stat` confirmed zero stray diff. Re-ran →
+  8/8 green.
+- **AC-2 (`REACHABLE_ARCHETYPES` subset):** read the real 13-element array in
+  `demo-override-store.ts` — all 13 are canonical `ARCHETYPE_NAMES` members, proper subset (13 <
+  18). `assertSubsetValidity` helper reviewed line-by-line — not vacuous (checks invalid-id array
+  AND `size < canonical.length`).
+- **AC-3 (`family_upsizer` fix — scrutinized per brief):** confirmed `upsizer` (chosen over
+  `family_buyer`) IS a canonical `ARCHETYPE_NAMES` member (`packages/sdk/src/core/intent.ts:58`).
+  Read the surrounding mock context in both `route-helpers.ts` and `export/route.ts` —
+  `MOCK_ARCHETYPES`/`buildMockExportRows()` are dev/CI-only fixtures (`data_source: 'mock'`, gated
+  on absent `CLICKHOUSE_URL`/`DATABASE_URL_ADMIN`), never served to real tenants, with no semantic
+  requirement beyond validity. `upsizer` is a defensible, non-ambiguous replacement (a buyer moving
+  to a larger home for a growing family is literally what the canonical `upsizer` archetype means).
+  Mapping **passes** — not flagging to human.
+- All 5 pre-existing assertions still pass (8/8 total, matches AC).
+
+**PM-validated. CI green (0 non-success on real gates). Runtime wiring confirmed (no new production
+exported symbols — test extension + 2 literal fixes only; both fixed literals verified as canonical
+`ARCHETYPE_NAMES` members with real producer/consumer context checked). Ready for human review.**
+Moved to `READY_FOR_REVIEW` below — **awaiting human merge, not DONE yet.**
+
+No open escalations block anything (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
+ruling; ESC-037/ESC-038 both RESOLVED). `FOLLOW-562`/`FOLLOW-564` remain `READY` and unblocked for
+the next pick. `FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553`.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-18 (session 35 — FOLLOW-583 promoted + dispatched to qa-engineer)
 
 **Read this before picking anything.** FOLLOW-561 is `DONE` (merged `a203b52`/PR #552 + `153ab0f`/PR
 #553; retrospective RETRO-178 filed). This session promoted RETRO-178's finding, **FOLLOW-583** (P2,
@@ -12778,9 +12825,10 @@ in-place in Sprint 22b above.
     Extend the archetype-ID guard to the 4th (production-live) full-parity copy + 2 subset copies
     the FOLLOW-561 guard missed; fix the already-broken `family_upsizer` mock literal
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: qa-engineer
   started_at: '2026-07-18T00:00:00Z'
+  pr: 555
   priority: P2
   estimated_hours: 3
   depends_on: []

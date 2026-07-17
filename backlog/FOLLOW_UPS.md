@@ -15439,4 +15439,56 @@ retire the table + remove it from `DSR_CLICKHOUSE_TABLES`'s Postgres siblings / 
 disclosure and delete the ROPA Activity + DPIA row. FOLLOW-574 has annotated ROPA:408 + DPIA §2.5 to
 "planned; no producer built as of 2026-07-17" so the docs no longer assert false current processing.
 
+## FOLLOW-583 — Extend the archetype-ID guard to the 4th (production-live) full-parity copy + 2 subset copies the FOLLOW-561 guard missed; fix the already-broken `family_upsizer` mock literal
+
+source_retro: RETRO-178 (§4a LG-1, §4b CB-1, §4c) source_ticket: FOLLOW-561 recommended_sprint:
+Sprint 23 (Wave 3) recommended_agent: qa-engineer priority: P2 estimated_hours: 3 promoted_to_queue:
+false
+
+**Gap:** `tests/integration/archetype-id-parity.test.ts` (FOLLOW-561, PR #552) guards exactly 3
+hand-maintained literal copies of the 18-archetype set. A repo-wide grep for a distinctive canonical
+name (`golden_visa_buyer`) turns up a **4th full-parity copy the guard does not cover**:
+`apps/llm-gateway/src/jobs/generate_description.py:161` `_ARCHETYPE_GUIDANCE: dict[str, str]` — this
+feeds the **live production** Modal AI-description prompt (`generate_description.py:1303`/`:1712`,
+`.get(archetype, "Write a balanced property description for a motivated buyer.")`). It is currently
+in sync (all 18 present, verified by manual diff), but a future archetype rename/add that misses
+this dict fails **silently** — no exception, no alert, just a generic-copy fallback for one persona
+indefinitely. This is the highest-consequence instance of the exact class FOLLOW-561 exists to
+prevent, and the guard doesn't reach it.
+
+Two more hand-maintained copies are documented **subsets** (not full-parity targets, same shape as
+the `archetype-hints.ts` exemption FOLLOW-561 already wrote a subset-validity check for) with **no**
+subset-validity guard at all:
+
+- `apps/control-plane/src/lib/demo-override-store.ts:37` `REACHABLE_ARCHETYPES` (the documented "13
+  reachable archetypes (Master Design §D.6)" SoT array for the demo-override admin API).
+- `apps/control-plane/src/app/api/admin/labels/route-helpers.ts:29` `MOCK_ARCHETYPES` — and this one
+  is **already broken**: it (and an independent duplicate literal at
+  `apps/control-plane/src/app/api/admin/labels/export/route.ts:311` `buildMockExportRows()`)
+  hard-code `'family_upsizer'`, which is **not a member of the canonical 18** (the real set has
+  `family_buyer` and `upsizer` as two separate archetypes). Both fields are typed
+  `archetype: string`, so TypeScript never caught it. Mock/dev-CI-only impact
+  (`data_source: 'mock'`, badge-flagged), P3 on its own — but exactly the bug class this ticket's
+  guard-pattern is designed to catch, one file over.
+
+**AC:**
+
+- [ ] Full-parity assertion added for `apps/llm-gateway/src/jobs/generate_description.py`
+      `_ARCHETYPE_GUIDANCE` against `ARCHETYPE_NAMES` (same `assertExactParity` helper pattern as
+      the 3 existing checks; parse the real checked-in file, not a fixture).
+- [ ] Subset-validity assertion added for `demo-override-store.ts` `REACHABLE_ARCHETYPES` (every
+      referenced id is a real `ARCHETYPE_NAMES` member; proper-subset, mirroring the
+      `archetype-hints.ts` exemption test shape already in the file).
+- [ ] Subset-validity assertion added for `route-helpers.ts` `MOCK_ARCHETYPES` AND for
+      `export/route.ts`'s inline mock archetype literals — this assertion MUST fail red against
+      `main` today (proves the guard catches the `family_upsizer` bug on its first run) before the
+      fix lands.
+- [ ] Fix `'family_upsizer'` → the intended real archetype (confirm with whoever owns the
+      admin-labels mock fixtures which of `family_buyer` / `upsizer` was meant, or pick either —
+      mock data has no correctness requirement beyond being a valid id) in both `route-helpers.ts`
+      `MOCK_ARCHETYPES` and `export/route.ts` `buildMockExportRows()`.
+- [ ] New assertions all pass; existing 5 assertions unaffected.
+
+cross_ref: [FOLLOW-561, RETRO-178]
+
 cross_ref: [FOLLOW-574, FOLLOW-193, FOLLOW-558, RETRO-176]

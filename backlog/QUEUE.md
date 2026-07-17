@@ -52,10 +52,18 @@ Opus) agree on the shape and disagree productively on the detail:
    `none`-volume at ingest), **not** a live high-volume leak → no escalation; but FOLLOW-579's fix
    needs a **compliance ruling first** (gate / strip the derived fields / documented operational
    justification) — a CEO/DPO call, same bucket as the ESC-037 items.
-2. **FOLLOW-356** (P1, sdk-engineer, `deps: []`, READY) — **still needs a CEO priority call**:
-   highest-priority genuinely-eligible ticket in the queue with a free lane, but not a Sprint 23
-   ticket. Active-sprint-first vs P1-first is not the PM's call to make. Flagged since session 29;
-   still unanswered.
+2. **FOLLOW-356: already DONE — was a stale duplicate, NOT an eligible pick.** CEO green-lit
+   P1-first 2026-07-17, so pre-delegation analysis pulled the ticket — and found the work was
+   completed **2026-06-25**, folded into FOLLOW-357's rename PR **#354** (`d8d5cb8`). Verified in
+   code, not taken on the ticket's word: `AdaptResponse.tier` is removed, the field is
+   `page_context` (analytics-only per CEO 2026-06-25, memory `project_tier_field_rename_decision`),
+   and all four behavioral tests exist and are labeled — AC-1/AC-2 (`route.test.ts:1032,1051`:
+   `page_context` 1-vs-2 + headline present/absent) and AC-3 (`route.clickhouse.test.ts:255,269`:
+   `logDecisionAsync` gets the derived value). The QUEUE had **two** FOLLOW-356 entries — a `DONE`
+   one (correct) and a stale `READY` sdk-engineer duplicate that made it keep looking eligible; the
+   stale duplicate is removed this session. **No dispatch happened — the P1 was already shipped.**
+   The next genuinely- eligible pick is now a Sprint 23 P2, or one of the open CEO/DPO rulings
+   below.
 3. **Retros for 557/558/559: DONE** — RETRO-175 + RETRO-176 (filing FOLLOW-570…577) + RETRO-177
    (filing FOLLOW-579). All three held every rule candidate at count 1; `CONVENTIONS_PATCH.md`
    untouched.
@@ -7140,22 +7148,6 @@ others staged by priority; max 3 IN_PROGRESS at once.**
     Fixture must be grounded in ChatMessageSentPayloadSchema (Rule Z).
     Delegated 2026-06-20T00:00Z. CI check counter: 0/5. Fix iterations: 0/3.
     DONE: PR #332 merged (eaf31a9). RETRO-099 written (PR #335). FOLLOW-368 now unblocked.
-
-- id: FOLLOW-356
-  title:
-    /api/adapt response tier consumer + behavioral tests for page-type tier/directive derivation
-  agent: sdk-engineer
-  status: READY
-  priority: P1
-  estimated_hours: 4
-  depends_on: []
-  source: RETRO-092 (FOLLOW-345 / PR #323)
-  spec: backlog/FOLLOW_UPS.md (FOLLOW-356 stub)
-  branch: sdk-engineer/FOLLOW-356-adapt-tier-consumer
-  notes: |
-    HALF_WIRE_P — AdaptResponse.tier declared but no non-test consumer reads it.
-    Decide: wire real consumer OR mark analytics-only + fix type.
-    Add tests for tierFromPageType / filterDirectivesByPageType.
 
 - id: FOLLOW-357
   title: Reconcile /api/adapt page-type-derived tier with MASTER_DESIGN §E.7 no-Tiers

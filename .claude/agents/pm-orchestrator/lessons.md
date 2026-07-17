@@ -2263,3 +2263,21 @@ hung session strands work wherever the agent was standing, and for subagents tha
   under sprints already marked COMPLETE, don't assume "READY" == "actionable now" — cross-check
   `git log --all --grep <id>` before treating an old row as equally eligible to current-sprint work;
   a stale label surviving 10+ sprints is a queue-hygiene smell, not a priority signal.
+
+- **Date / ticket:** 2026-07-18 — FOLLOW-583
+- **Delegation row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+  qa-engineer
+- **What validation caught (or missed):** Pre-delegation verification caught a factual error in the
+  incoming brief: it claimed point 3 (the `family_upsizer` mock fix) "touches production-live
+  buyer-facing AI output," but the actual production-live touch is point 1
+  (`generate_description.py` `_ARCHETYPE_GUIDANCE`, read-only parse target); point 3's files
+  (`route-helpers.ts`/`export/route.ts`) are `data_source: 'mock'`, dev/CI-only. Corrected this
+  distinction explicitly in the delegation brief so the worker doesn't over-scope caution onto the
+  wrong file, or under-scope it on the real one. Also this session's toolset had no Task/Agent-spawn
+  tool (repeats session 34's finding) — prepared the full brief + queue state but could not actually
+  invoke the qa-engineer subagent; flagged as an environment constraint, not silently worked around
+  by writing the code myself (guardrail: PM must not write code).
+- **A delegation/validation rule I'd add:** When a dispatch instruction asserts which point in a
+  multi-point ticket is "the risky one," re-derive that claim from the ticket source text yourself
+  before repeating it in the delegation brief — don't propagate an unverified risk attribution
+  downstream, even if the overall ticket scope is otherwise correct.

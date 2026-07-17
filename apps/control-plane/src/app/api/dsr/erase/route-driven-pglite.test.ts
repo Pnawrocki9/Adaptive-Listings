@@ -81,11 +81,11 @@ vi.mock('@/lib/clickhouse-dsr', () => ({
     { table: 'adaptation_decisions', column: 'session_id' },
     { table: 'llm_calls', column: 'session_id' },
     { table: 'session_quality', column: 'session_id' },
-    // FOLLOW-455: intent_events omitted from this mocked inventory — this
-    // file's scope is the conversion_labels/engagement_scores cascades, not
-    // the intent_events identifier-resolution path (covered separately in
+    // intent_events omitted from this mocked inventory — this file's scope is
+    // the conversion_labels/engagement_scores cascades. Since FOLLOW-581,
+    // intent_events erases on `session_id` like every other table (covered in
     // apps/control-plane/src/app/api/dsr/erase/route.test.ts and
-    // apps/control-plane/src/lib/__tests__/intent-session-lookup.test.ts).
+    // apps/control-plane/src/lib/__tests__/clickhouse-dsr.test.ts).
   ],
   readClickHouseConfig: vi.fn().mockReturnValue(null), // unset → no-op path
   issueEraseMutation: vi.fn(),

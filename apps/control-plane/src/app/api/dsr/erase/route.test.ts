@@ -67,7 +67,6 @@ const {
   mockCaptureMessage,
   mockCaptureException,
   mockVerifyAndConsumeOtp,
-  mockResolveIntentSessionId,
   insertedRows,
   selectedRows,
 } = vi.hoisted(() => {
@@ -87,10 +86,6 @@ const {
     // FOLLOW-455: request-scoped OTP verification is a separately mocked
     // module — see apps/control-plane/src/lib/dsr-verify.ts.
     mockVerifyAndConsumeOtp: vi.fn(),
-    // Defaults to a non-null id so the uniform per-table status assertions in
-    // this file (all DSR_CLICKHOUSE_TABLES entries behave identically) hold
-    // for intent_events too. A dedicated test below covers the null case.
-    mockResolveIntentSessionId: vi.fn().mockResolvedValue('intent-session-uuid-001'),
     insertedRows,
     selectedRows,
   };
@@ -162,10 +157,6 @@ vi.mock('@/lib/dsr-verify', async (importOriginal) => {
     verifyAndConsumeOtp: mockVerifyAndConsumeOtp,
   };
 });
-
-vi.mock('@/lib/intent-session-lookup', () => ({
-  resolveIntentSessionId: mockResolveIntentSessionId,
-}));
 
 vi.mock('../_clickhouse', () => ({
   writeDsrAuditLog: mockWriteDsrAuditLog,
@@ -286,7 +277,6 @@ beforeEach(() => {
   // + atomic mark-used) is handled by the separately-mocked verifyAndConsumeOtp
   // — it no longer consumes a db.select() slot in this file's mockSelect queue.
   mockVerifyAndConsumeOtp.mockResolvedValue({ ok: true, record: makeValidRecord() });
-  mockResolveIntentSessionId.mockResolvedValue('intent-session-uuid-001');
 
   // Default: no pre-existing dsr_clickhouse_mutations rows.
   // Execution order of db.select() calls in the route:
@@ -413,33 +403,17 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     }
   });
 
-  // ─── FOLLOW-455 / audit F-20: intent_events keyed on intent_session_id ──────
+  // ─── FOLLOW-581: intent_events erase targets session_id (real subject key) ──
+  //
+  // Real intent_events rows carry the SDK fingerprint in the String
+  // `session_id` column with the UUID `intent_session_id` left at its zero
+  // default (migrations 0015/0016; ingest writer omits it). The pre-FOLLOW-581
+  // filter on intent_session_id matched no real row — a latent Art. 17 no-op.
+  // Erase now filters intent_events on the SDK session_id like every other
+  // table, deleting the subject's real rows.
 
-  it('marks intent_events "done" directly (no mutation issued) when no intent_sessions row exists', async () => {
+  it('filters intent_events on session_id (FOLLOW-581) with the subject SDK session_id, like every other table', async () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
-    mockResolveIntentSessionId.mockResolvedValueOnce(null);
-
-    const { POST } = await import('./route.js');
-    const res = await POST(makeRequest({ token: '123456' }));
-
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      clickhouse_deletion: { status: string; mutations: { table: string; status: string }[] };
-    };
-    const intentEventsMutation = body.clickhouse_deletion.mutations.find(
-      (m) => m.table === 'intent_events',
-    );
-    expect(intentEventsMutation?.status).toBe('done');
-    // The other 4 tables were still issued as real 'pending' mutations.
-    const otherStatuses = body.clickhouse_deletion.mutations
-      .filter((m) => m.table !== 'intent_events')
-      .map((m) => m.status);
-    expect(otherStatuses.every((s) => s === 'pending')).toBe(true);
-  });
-
-  it('filters intent_events on intent_session_id (not session_id) when a tracer row exists', async () => {
-    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
-    mockResolveIntentSessionId.mockResolvedValueOnce('intent-session-uuid-999');
 
     const alterCalls: { sql: string; url: URL }[] = [];
     const fetchMock = vi.fn((input: string | URL, init?: RequestInit) => {
@@ -462,17 +436,34 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     expect(res.status).toBe(200);
     const intentEventsCall = alterCalls.find((c) => c.sql.includes('ALTER TABLE intent_events'));
     expect(intentEventsCall).toBeDefined();
-    expect(intentEventsCall?.sql).toContain('WHERE intent_session_id IN');
+    // FOLLOW-581: filters on the String session_id column, NOT intent_session_id.
+    expect(intentEventsCall?.sql).toContain('WHERE session_id IN');
+    expect(intentEventsCall?.sql).not.toContain('intent_session_id');
     // FOLLOW-462: the id VALUE is bound as a ClickHouse param, not embedded
     // in the SQL text — assert the placeholder shape and the param value
-    // separately instead of a literal quoted substring in the SQL.
+    // separately.
     expect(intentEventsCall?.sql).toContain('{dsr_id_0:String}');
-    expect(intentEventsCall?.sql).not.toContain('intent-session-uuid-999');
-    expect(intentEventsCall?.url.searchParams.get('param_dsr_id_0')).toBe(
-      'intent-session-uuid-999',
+    // The bound delete filter value is the subject's SDK session_id — so the
+    // subject's REAL intent_events rows are targeted (no longer a no-op).
+    expect(intentEventsCall?.url.searchParams.get('param_dsr_id_0')).toBe('sess-abc123');
+  });
+
+  it('issues intent_events as a real pending mutation alongside the other tables (no done-skip)', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+
+    const { POST } = await import('./route.js');
+    const res = await POST(makeRequest({ token: '123456' }));
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      clickhouse_deletion: { status: string; mutations: { table: string; status: string }[] };
+    };
+    // Every table — including intent_events — is a real pending mutation now.
+    expect(body.clickhouse_deletion.mutations.every((m) => m.status === 'pending')).toBe(true);
+    const intentEventsMutation = body.clickhouse_deletion.mutations.find(
+      (m) => m.table === 'intent_events',
     );
-    // Must NOT filter on the SDK session_id for this table.
-    expect(intentEventsCall?.url.searchParams.get('param_dsr_id_0')).not.toBe('sess-abc123');
+    expect(intentEventsMutation?.status).toBe('pending');
   });
 });
 

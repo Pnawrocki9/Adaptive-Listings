@@ -55,7 +55,6 @@ import {
   readClickHouseConfig,
   resolveMutationIdByMarker,
 } from '@/lib/clickhouse-dsr';
-import { resolveIntentSessionId } from '@/lib/intent-session-lookup';
 import { maybeFinaliseAuditLog } from './_finalise';
 
 /**
@@ -162,39 +161,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         // Reissue the mutation. Use the existing alter_sql verbatim to
         // preserve the marker for traceability across retries.
         //
-        // FOLLOW-455 / audit F-20: `intent_events` is filtered on
-        // `intent_session_id` (the Postgres `intent_sessions.id` UUID), NOT
-        // `session_id` — it must be re-resolved on every retry, the same way
-        // the erase route resolves it before the first issuance. If the
-        // `intent_sessions` row no longer exists (already erased, or never
-        // existed), there is nothing left to erase — mark this row 'done'
-        // instead of reissuing with an empty filter value.
+        // FOLLOW-581: every table — including `intent_events` — is filtered on
+        // the SDK `session_id` key (see DSR_CLICKHOUSE_TABLES), so the reissue
+        // is uniform across tables.
         try {
-          let column = 'session_id';
-          let filterValue = row.sessionId;
-          if (row.tableName === 'intent_events') {
-            const intentSessionId = await resolveIntentSessionId(db, row.tenantId, row.sessionId);
-            if (!intentSessionId) {
-              await db
-                .update(dsrClickhouseMutations)
-                .set({
-                  status: 'done',
-                  completedAt: new Date(),
-                  updatedAt: new Date(),
-                  nextRetryAt: null,
-                  lastFailedReason: null,
-                })
-                .where(eq(dsrClickhouseMutations.id, row.id));
-              advanced += 1;
-              continue;
-            }
-            column = 'intent_session_id';
-            filterValue = intentSessionId;
-          }
           const result = await issueEraseMutation(cfg, {
             table: row.tableName,
-            column,
-            sessionIds: [filterValue],
+            column: 'session_id',
+            sessionIds: [row.sessionId],
           });
           await db
             .update(dsrClickhouseMutations)

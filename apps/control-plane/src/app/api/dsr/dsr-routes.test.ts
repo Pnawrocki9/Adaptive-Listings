@@ -60,7 +60,6 @@ const {
   mockIsTenantClaims,
   mockHashOtp,
   mockVerifyAndConsumeOtp,
-  mockResolveIntentSessionId,
   mockCheckInitiateRateLimit,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
@@ -77,7 +76,6 @@ const {
   // module so route tests don't need to fabricate the full select/update
   // chain for the OTP check — see apps/control-plane/src/lib/dsr-verify.ts.
   mockVerifyAndConsumeOtp: vi.fn(),
-  mockResolveIntentSessionId: vi.fn().mockResolvedValue(null),
   mockCheckInitiateRateLimit: vi.fn().mockResolvedValue({ allowed: true, count: 0 }),
 }));
 
@@ -172,10 +170,6 @@ vi.mock('@/lib/dsr-verify', async (importOriginal) => {
     verifyAndConsumeOtp: mockVerifyAndConsumeOtp,
   };
 });
-
-vi.mock('@/lib/intent-session-lookup', () => ({
-  resolveIntentSessionId: mockResolveIntentSessionId,
-}));
 
 vi.mock('@/lib/dsr-rate-limit', () => ({
   checkInitiateRateLimit: mockCheckInitiateRateLimit,
@@ -565,7 +559,6 @@ describe('POST /api/dsr/erase', () => {
     vi.clearAllMocks();
     mockHashOtp.mockImplementation((otp: string) => `hash_of_${otp}`);
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
-    mockResolveIntentSessionId.mockResolvedValue(null);
   });
 
   it('returns 400 when body is missing request_id or token', async () => {
@@ -947,7 +940,6 @@ describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase
   it('FOLLOW-433: POST /api/dsr/erase registers deleteSessionFromRedis via after()', async () => {
     const validRecord = makeValidRecord('erase');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
-    mockResolveIntentSessionId.mockResolvedValueOnce(null);
     mockSelect.mockReturnValueOnce(buildChain([])); // idempotency check (no prior CH mutations)
     mockUpdate.mockReturnValue(buildChain([]));
     mockInsert.mockReturnValue(buildChain([]));

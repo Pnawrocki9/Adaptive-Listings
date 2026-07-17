@@ -18,15 +18,22 @@ Opus) agree on the shape and disagree productively on the detail:
   the worker's engineering detail); (3) exposure = ZERO (no DSR ever served in prod), so latent, no
   notification duty. Side finding spun out as **FOLLOW-580** (P3: prod `ingest_worker` lacks SELECT
   on `dsr_audit_log`, diverges from ESC-032).
-- **FOLLOW-574 (P1) — NOW THE TOP-PRIORITY ELIGIBLE TICKET.** Erase deletes **five** ClickHouse PII
-  tables (`DSR_CLICKHOUSE_TABLES`); access/portability disclose only an aggregate over `events`, so
-  `adaptation_decisions`, `llm_calls`, `session_quality`, `intent_events` are erased-but-undisclosed
-  and `events` is a count-not-a-copy. The AC-(b) ruling is now given (full export), so the ticket is
-  fully actionable — `compliance-engineer`, sequence before 570. Re-check `dsr_verifications` count
-  (or add a monitor) before any tenant is told DSR is live, since the gap arms on the first request.
-- **FOLLOW-570 (P2) — AFTER 574** (CEO-sequenced). Same asymmetry on the **Redis** axis: FOLLOW-557
-  added `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never returns it. Also
-  gated on the **FOLLOW-458** deploy → a pre-condition of that deploy.
+- **FOLLOW-574 (P1) — DONE** (merged `3c78ea2`, PR #542). Access + portability now full-row-export
+  all 5 `DSR_CLICKHOUSE_TABLES`, volume-safe (`events` keyset-paginated). PM-validated
+  independently. **Two new tickets came out of it — both worth attention:**
+  - **FOLLOW-581 (P1) — a latent Art. 17 erase bug the worker found.** DSR erase filters
+    `intent_events` on `intent_session_id` (a zero-UUID default column), so it matches zero real
+    rows and **never actually erases `intent_events`**. Discovered because the worker correctly
+    refused my (wrong) brief instruction to disclose on that same column — real rows key on
+    `session_id` (migrations 0015/0016, `clickhouse-tracer.ts`). Erase route untouched (scope);
+    FOLLOW-581 fixes it. Recorded as a deliberate brief-deviation in **ESC-038**.
+  - **FOLLOW-582 (P2)** — `engagement_scores` phantom confirmed (no writer anywhere); ROPA/DPIA
+    reconciled to "planned, no producer." Re-check `dsr_verifications` count (or add a monitor)
+    before any tenant is told DSR is live.
+- **FOLLOW-570 (P2) — AFTER 574** (CEO-sequenced), and now with a **P1 sibling ahead of it**:
+  FOLLOW-581 (the erase no-op) is a live erasure gap. Same asymmetry on the **Redis** axis:
+  FOLLOW-557 added `shadow:{tenant}:{session}:chat_intent` to the erase set; disclosure never
+  returns it. Also gated on the **FOLLOW-458** deploy → a pre-condition of that deploy.
 - **FOLLOW-576 — FOLLOW-558's AC2 is NOT met, and this session's PM ticked it in error.** The
   "PARITY" test never imports `erase/route.ts`; it asserts disclosure ⊇ 6 hardcoded literals, so a
   7th DELETE target keeps it green. It cannot fail on the drift it is named for. **Do not trust
@@ -12381,6 +12388,56 @@ in-place in Sprint 22b above.
           (explicit tests — do not regress the CEO 2026-06-23 §H.9 ruling).
     - [x] Contract test enumerates every EVENT_TYPES entry into a consent-class map so new event
           types must declare their class (Rule H-adjacent: no unclassified type ships).
+- id: FOLLOW-574
+  title: >-
+    Close the ClickHouse axis of the DSR disclosure union — export the 5 erased PII tables under
+    Art. 15/20 (events as full rows per CEO ruling), not an aggregate (RETRO-176 LG-1)
+  agent: compliance-engineer
+  status: DONE
+  assigned_to: compliance-engineer
+  started_at: '2026-07-17T00:00:00Z'
+  completed_at: '2026-07-17T00:00:00Z'
+  branch: compliance-engineer/FOLLOW-574-clickhouse-disclosure
+  pr: 542
+  merge_commit: 3c78ea2
+  pm_validated: >-
+    2026-07-17 session 30, verified independently. Access + portability now full-row-export all 5
+    DSR_CLICKHOUSE_TABLES (derived from the constant, both routes in parity); events is a
+    volume-safe keyset-paginated full export (60k-row truncation test) replacing the deleted
+    FOLLOW-455 aggregate; DPIA 2.10 §8 synced (Rule N); engagement_scores phantom confirmed. CI: all
+    blocking gates green; Rule I is 180 vs the 181 baseline — a net -1 (the worker deleted the
+    now-dead getSessionEventSummary and declined to fake a symbol back to 181; verified no remaining
+    consumer). 127 DSR tests pass. THE KEY FINDING: the worker correctly DEVIATED from the PM brief
+    on intent_events — my brief said mirror the erase side (intent_session_id), but migrations
+    0015/0016 + clickhouse-tracer.ts show real rows key on session_id and intent_session_id is a
+    zero-UUID; mirroring erase would have shipped a false-empty Art. 15 disclosure. It disclosed on
+    session_id (verified against 3 sources) and flagged the deviation in ESC-038. Corollary: the
+    erase side has the same bug (never deletes intent_events) → FOLLOW-581 (P1, latent Art. 17
+    no-op). Also filed FOLLOW-582 (engagement_scores phantom). Numbering collision (worker's tickets
+    landed on the taken 577/578) caught + renumbered to 581/582 before merge.
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    RETRO-176 §LG-1. Erase deletes 5 ClickHouse PII tables (DSR_CLICKHOUSE_TABLES) but disclosure
+    returns only an aggregate over events; 4 tables are erased-but-undisclosed and events is a
+    count-not-a-copy. Promoted from FOLLOW_UPS stub + dispatched 2026-07-17 after ESC-037 RESOLVED
+    (CEO: events = full row export; sequence BEFORE FOLLOW-570). Full brief: backlog/HANDOFFS.md.
+  spec: backlog/FOLLOW_UPS.md (FOLLOW-574 stub — full AC set a–e); ESC-037 (resolved ruling)
+  notes: |
+    Model-fit: opus (P1 GDPR, security-sensitive, cross-runtime intent_session_id resolution trap,
+    volume-safe export design). Traps flagged in the brief: derive the disclosure set from
+    DSR_CLICKHOUSE_TABLES (not hand-typed — the FOLLOW-576 defect); intent_events is keyed on
+    intent_session_id and MUST use resolveIntentSessionId() like the erase side; fix access AND
+    portability in parity; DPIA §8 sync coordinates with FOLLOW-575.
+    AC (from FOLLOW_UPS stub):
+    - [x] (a) All 5 DSR_CLICKHOUSE_TABLES disclosed (rows or documented exception), derived from the
+          constant, on both access + portability.
+    - [x] (b) events = FULL ROW EXPORT, volume-safe (CEO ruling ESC-037 — decided, not re-opened).
+    - [x] (c) DPIA §8 step 5 updated in the same PR (coordinate FOLLOW-575).
+    - [x] (d) engagement_scores phantom resolved (identify producer / file unbuilt-producer / retire
+          + reconcile ROPA+DPIA).
+    - [x] (e) phantom verdict recorded in PR body (arms/disarms RETRO-176 PHANTOM-STORE).
 - id: FOLLOW-560
   title: >-
     Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)

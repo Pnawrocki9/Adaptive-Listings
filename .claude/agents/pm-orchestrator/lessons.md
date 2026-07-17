@@ -2250,3 +2250,16 @@ hung session strands work wherever the agent was standing, and for subagents tha
   (verify-not-guess / Operating Principle 1): a stale START HERE banner is a common failure mode
   once a queue file gets this long; always cross-check its claims against current ticket status
   blocks and git log before acting on it.
+
+- **Date / ticket:** 2026-07-17 — FOLLOW-561
+- **Delegation row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+  qa-engineer
+- **What validation caught (or missed):** Before picking, grepped `git log --all --grep` for the
+  older stray READY tickets (FOLLOW-065/071/073 under a sprint marked COMPLETE) to confirm they were
+  genuinely untouched debris and not silently-done duplicates masquerading as READY — zero hits,
+  confirmed stale-but-real backlog, correctly deprioritized under the "active sprint" criterion
+  rather than picked for being technically eligible.
+- **A delegation/validation rule I'd add:** When a long-lived QUEUE.md accumulates `READY` rows
+  under sprints already marked COMPLETE, don't assume "READY" == "actionable now" — cross-check
+  `git log --all --grep <id>` before treating an old row as equally eligible to current-sprint work;
+  a stale label surviving 10+ sprints is a queue-hygiene smell, not a priority signal.

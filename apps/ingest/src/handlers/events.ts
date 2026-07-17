@@ -24,7 +24,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
-import { evaluateConsent } from '../consent-gate.js';
+import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
@@ -256,8 +256,22 @@ events.post('/', async (c) => {
       continue;
     }
 
+    // FOLLOW-579 — strip §H.8(d) derived-intent fields (final_archetype / final_confidence /
+    // prediction_stability_score) from a `session.quality.snapshot` payload when consent_state
+    // grants no lawful basis. The event STILL ingests (operational class, unchanged); only the
+    // three derived-intent keys are removed from the persisted record, so an unconsented user's
+    // archetype identity cannot ride through the operational class the gate never blocks. A no-op
+    // for every other event type and for consented / legitimate-interest users. Applied here,
+    // before both sinks (Redpanda + the ClickHouse `events` insert).
+    const persistedPayload = redactPersistedPayloadForConsent(
+      parsed.data.type,
+      parsed.data.consent_state,
+      parsed.data.payload,
+    );
+
     validated.push({
       ...parsed.data,
+      payload: persistedPayload,
       tenant_id: tenantId,
       region,
       ingest_received_at: ingestReceivedAt,

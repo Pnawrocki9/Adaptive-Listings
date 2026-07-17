@@ -6626,31 +6626,6 @@ pending planning.**
     to Doppler stg/prd. Verified LIVE end-to-end (run 27513894932: staging + prod both green, real
     db:migrate, not soft-skip). FOLLOW-308 CLOSED IN FULL; ESC-022 + ESC-023 RESOLVED.
 
-- id: FOLLOW-293
-  title: >
-    K.3.6 D-1 live-network smoke: call real GET /api/intent/config and assert data_source:'live'
-    (proves migration 0030 + FOLLOW-307 are effective in production)
-  agent: qa-engineer
-  status: BLOCKED
-  priority: P2
-  estimated_hours: 3
-  depends_on: [FOLLOW-307]
-  block_reason: >
-    Implementation DONE (PR #307, commit 2c1b352, merged 2026-06-15). Smoke exists and soft-skips on
-    every CI run. BLOCKED on ESC-024: GitHub Actions secrets ESTALARA_SMOKE_API_KEY and
-    ESTALARA_SMOKE_DECISION_API_URL must be provisioned by Piotr before the hard-assert mode
-    activates. Once secrets are present, the job runs live assertions AC-LN1/LN2/LN3 automatically.
-  source_retro: ADR-0012 (D-1 closure gate)
-  spec: backlog/FOLLOW_UPS.md (FOLLOW-293 stub)
-  pr: '307'
-  merge_commit: 2c1b352
-  notes: |
-    Live-network smoke test implemented by qa-engineer (branch qa-engineer/FOLLOW-293-live-smoke,
-    PR #307, merged 2026-06-15). The smoke CI job (intent-weights-live-smoke.yml) soft-skips when
-    ESTALARA_SMOKE_API_KEY or ESTALARA_SMOKE_DECISION_API_URL are absent.
-    ESC-024 filed for Piotr to provision the 2 secrets. See ESCALATIONS.md ESC-024 for exact steps.
-    After secrets are provisioned: push any commit to main OR workflow_dispatch intent-weights-live-smoke.yml.
-
 - id: FOLLOW-324
   title: >
     SDK bundle size fix: split auto-detect pipeline into optional companion IIFE

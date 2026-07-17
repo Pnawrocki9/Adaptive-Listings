@@ -1,19 +1,21 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-17 (session 32 — FOLLOW-563 fully closed; FOLLOW-561 dispatched to qa-engineer)
+## ▶️ START HERE — resume 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
 
-**Read this before picking anything.** Prior session (31) closed FOLLOW-563 (PR #549 merged
-`395fc9d`, DONE bookkeeping PR #550 merged `41f295a`). No open PRs, no open escalations except
-ESC-020 (Rafał-side DOM-hooks deploy, explicitly non-blocking per CEO 2026-06-10 ruling — do not
-treat as a gate). Working tree clean on `main`.
+**Read this before picking anything.** FOLLOW-561's qa-engineer worker phase opened PR #552
+(`221102d`, branch `qa-engineer/FOLLOW-561-archetype-parity-guard`). PM validated: CI green on all
+real gates (only `Rule I — wired-or-dead check` is red, confirmed pre-existing/net-zero — 180
+violations on `main` and on the PR branch, identical set, diff adds zero new production exported
+symbols); AC(a)/(b) both verified, including an independent falsifiability check (injected a typo
+into the real `nlp.py`, confirmed the test fails loudly, reverted cleanly). Evidence posted as a PR
+comment. **Set `READY_FOR_REVIEW` below — awaiting human merge, not DONE yet.** No open escalations
+except ESC-020 (Rafał-side DOM-hooks deploy, explicitly non-blocking per CEO 2026-06-10 ruling — do
+not treat as a gate).
 
-**This session:** picked `FOLLOW-561` (P3, qa-engineer, Sprint 23 Wave 3, A3-F-10 — archetype-ID
-parity guard for `nlp.py` / `archetype-seeds.ts` / migration 0005 against SDK `ARCHETYPE_NAMES`,
-Rule J mirror-code sync gate). Delegation brief in `backlog/HANDOFFS.md`. Set `IN_PROGRESS`,
-`assigned_to: qa-engineer`, `branch: qa-engineer/FOLLOW-561-archetype-parity-guard`. Two other
-Wave-3 P3 tickets remain READY and unblocked for the next loop: `FOLLOW-562` (backend-engineer,
-dashboard Panel 5 error banner) and `FOLLOW-564` (architect, p95 SLA doc reconciliation).
-`FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553` (still `READY_OPERATOR`, not DONE).
+**Two other Wave-3 P3 tickets remain READY and unblocked for the next loop:** `FOLLOW-562`
+(backend-engineer, dashboard Panel 5 error banner) and `FOLLOW-564` (architect, p95 SLA doc
+reconciliation). `FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553` (still `READY_OPERATOR`,
+not DONE).
 
 **Retro note:** FOLLOW-563 is a P3 test-hygiene ticket with minimal surface (soft-skip a smoke test
 
@@ -12588,10 +12590,11 @@ in-place in Sprint 22b above.
   title: >-
     Archetype-ID parity guard for the Python and DB-seed literal copies (A3-F-10)
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: qa-engineer
   started_at: '2026-07-17T00:00:00Z'
   branch: qa-engineer/FOLLOW-561-archetype-parity-guard
+  pr: 552
   priority: P3
   estimated_hours: 2
   depends_on: []

@@ -1,3 +1,46 @@
+# Status — 2026-07-17 (session 33 — FOLLOW-561 PM-validated, READY_FOR_REVIEW on PR #552)
+
+## SESSION 33 (2026-07-17) — validated PR #552 (FOLLOW-561), moved READY_FOR_REVIEW; no new dispatch
+
+**State check:** No open ESCALATIONS.md entries (all `RESOLVED`). `gh pr list --state open` = PR
+#552 only. `git log --oneline -10` confirms `221102d` (FOLLOW-561 test commit) on top of `261cf3e`
+(session 32's dispatch bookkeeping) on `main`.
+
+**Validation performed (charter §5, all sub-steps):**
+
+- 5a local: `pnpm exec vitest run archetype-id-parity.test.ts --config vitest.config.ts` inside
+  `tests/integration/` -> 5/5 passed.
+- 5b CI: `gh pr view 552 --json statusCheckRollup` -> exactly 2 non-SUCCESS entries, both
+  `Rule I — wired-or-dead check` (duplicate push/PR triggers of one job). Independently ran
+  `bash scripts/check-rule-i.sh` on `main` (261cf3e) and on the PR branch: **180 violations on both,
+  identical set** — pre-existing repo debt, net-zero delta from this diff (test file + vitest config
+  only, zero new production exported symbols). All other real gates SUCCESS. Non-success count for
+  real gates: `0`.
+- 5c runtime wiring: this ticket's "wire" is the test's producer/consumer relationship with the 4
+  real checked-in files it parses (not fixtures). Confirmed all 4 paths exist on disk and are
+  `readFileSync`'d by path in the test. Independently falsified: injected a typo into the real
+  `apps/intent-engine/src/nlp.py` `_ARCHETYPES` tuple, reran the test, confirmed it fails loudly
+  with the expected Rule-J-style diagnostic, then reverted the file (`git status` clean after).
+- 5d co-assignment: N/A, single-agent ticket (qa-engineer only).
+- 5e AC: both items verified directly against test source
+  (`tests/integration/archetype-id-parity.test.ts`) — full-parity assertions for
+  nlp.py/archetype-seeds.ts/migration-0005, and a dedicated exemption block for `archetype-hints.ts`
+  (subset-validity, not full parity).
+- 5f repo-config: no new workflow/secrets/branch-protection dependency introduced.
+- 5g final: posted PM-validation comment with all evidence on PR #552
+  (`https://github.com/Pnawrocki9/Adaptive-Listings/pull/552#issuecomment-5007705613`).
+
+**QUEUE.md updated:** FOLLOW-561 `status: IN_PROGRESS` -> `READY_FOR_REVIEW`, `pr: 552` added. Not
+marked DONE — awaiting human merge per charter (PM never merges).
+
+**CI-check counter:** 1/5. **Fix-iteration counter:** 0/3 (no fixes needed — first-pass clean).
+
+**Next dispatch candidates (not picked this session, single-ticket-per-loop discipline honored):**
+`FOLLOW-562` (backend-engineer, dashboard Panel 5 error banner), `FOLLOW-564` (architect, p95 SLA
+doc reconciliation) — both `READY`, unblocked, Sprint 23 Wave 3.
+
+---
+
 # Status — 2026-07-17 (session 32 — FOLLOW-563 confirmed closed, dispatched FOLLOW-561)
 
 ## SESSION 32 (2026-07-17) — no open PRs, only ESC-020 open (non-blocking), dispatched FOLLOW-561

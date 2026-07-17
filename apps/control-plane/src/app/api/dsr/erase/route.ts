@@ -8,10 +8,7 @@
  *   1. Verify (request_id, token) via verifyAndConsumeOtp() — request-scoped
  *      lookup + per-capability attempt cap/lockout + atomic mark-used
  *      (FOLLOW-455 / audit F-20; see apps/control-plane/src/lib/dsr-verify.ts).
- *   2. Resolve the Postgres `intent_sessions.id` for this subject (if any) —
- *      required BEFORE the row is deleted, because ClickHouse `intent_events`
- *      is keyed on that id, not on session_id (FOLLOW-455).
- *   3. In a single transaction:
+ *   2. In a single transaction:
  *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
  *      - DELETE FROM consent_records WHERE session_id
  *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)
@@ -23,23 +20,23 @@
  *        Same empty-key guard as above (GDPR Art. 17 completeness, RETRO-031 §4a LG-1).
  *      - DELETE FROM quiz_completions WHERE session_id AND tenant_id (FOLLOW-455)
  *      - DELETE FROM intent_sessions WHERE session_id AND tenant_id (FOLLOW-455)
- *   4. Redis DEL session:{session_id}:* AND shadow:{tenant_id}:{session_id}:chat_intent
+ *   3. Redis DEL session:{session_id}:* AND shadow:{tenant_id}:{session_id}:chat_intent
  *      (fire-and-forget). The shadow key is the chat-intent shadow namespace
  *      written by the Python `write_shadow_intent` (apps/intent-engine/src/
  *      redis_writer.py) — a DIFFERENT prefix from `session:*` that the SCAN
  *      above never matches (FOLLOW-557 / audit A3-F-05).
- *   5. **FOLLOW-039 — RODO Art. 17 hard-delete:**
+ *   4. **FOLLOW-039 — RODO Art. 17 hard-delete:**
  *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
  *      session_quality, intent_events) issue an `ALTER TABLE ... DELETE WHERE
- *      ... IN (...)` mutation and persist a `dsr_clickhouse_mutations` Postgres
- *      row tracking its state. `intent_events` is filtered on the
- *      `intent_session_id` resolved in step 2 (FOLLOW-455) — when no
- *      `intent_sessions` row existed, the row is recorded 'done' directly
- *      (nothing to erase). The `/api/dsr/mutation-poll` Vercel Cron polls
- *      `system.mutations` and finalises the audit log.
- *   6. Idempotency: re-running for an already-erased session inspects
+ *      session_id IN (...)` mutation and persist a `dsr_clickhouse_mutations`
+ *      Postgres row tracking its state. FOLLOW-581: `intent_events` is filtered
+ *      on `session_id` like every other table — real rows carry the SDK
+ *      fingerprint there, with the UUID `intent_session_id` column left at its
+ *      zero default (migrations 0015/0016). The `/api/dsr/mutation-poll` Vercel
+ *      Cron polls `system.mutations` and finalises the audit log.
+ *   5. Idempotency: re-running for an already-erased session inspects
  *      `dsr_clickhouse_mutations` and returns current status without reissuing.
- *   7. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
+ *   6. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
  *
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
@@ -60,7 +57,6 @@ import {
   dsrClickhouseMutations,
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
-import { resolveIntentSessionId } from '@/lib/intent-session-lookup';
 import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
@@ -154,13 +150,6 @@ async function issueClickHouseEraseMutations(args: {
   dsrVerificationId: string;
   tenantId: string;
   sessionId: string;
-  /**
-   * The Postgres `intent_sessions.id` for this subject, resolved via
-   * `resolveIntentSessionId()` BEFORE the row was deleted. `null` when no
-   * `intent_sessions` row existed — the `intent_events` table entry is then
-   * recorded 'done' directly (nothing to erase) instead of issuing a mutation.
-   */
-  intentSessionId: string | null;
 }): Promise<{
   overallStatus: 'pending' | 'done' | 'failed' | 'no_data';
   mutations: MutationSummary[];
@@ -220,37 +209,14 @@ async function issueClickHouseEraseMutations(args: {
     return { overallStatus: 'done', mutations: summaries };
   }
 
-  for (const { table, column, idSource } of DSR_CLICKHOUSE_TABLES) {
-    // FOLLOW-455: intent_events is keyed on intent_session_id, not session_id.
-    // When no intent_sessions row existed for this subject, there is nothing
-    // to erase — record 'done' directly instead of issuing a mutation with an
-    // empty filter value.
-    if (idSource === 'intent_session_id' && !args.intentSessionId) {
-      await args.db.insert(dsrClickhouseMutations).values({
-        dsrVerificationId: args.dsrVerificationId,
-        tenantId: args.tenantId,
-        sessionId: args.sessionId,
-        tableName: table,
-        mutationId: '',
-        status: 'done',
-        retryCount: 0,
-        completedAt: new Date(),
-        alterSql: `-- no intent_sessions row for this subject; nothing to erase in ${table}`,
-      });
-      summaries.push({ table, status: 'done', mutation_id: null });
-      continue;
-    }
-
-    // The `idSource === 'intent_session_id' && !args.intentSessionId` guard above
-    // `continue`s, so intentSessionId is non-null here; the ?? keeps this lint-safe.
-    const filterValue =
-      idSource === 'intent_session_id' ? (args.intentSessionId ?? args.sessionId) : args.sessionId;
-
+  for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
+    // FOLLOW-581: every table — including intent_events — filters on the SDK
+    // session_id fingerprint (see DSR_CLICKHOUSE_TABLES / clickhouse-dsr.ts).
     try {
       const result = await issueEraseMutation(cfg, {
         table,
         column,
-        sessionIds: [filterValue],
+        sessionIds: [args.sessionId],
       });
       await args.db.insert(dsrClickhouseMutations).values({
         dsrVerificationId: args.dsrVerificationId,
@@ -347,11 +313,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const record = verification.record;
   const now = new Date();
 
-  // ── Resolve intent_sessions.id BEFORE it is deleted (FOLLOW-455) ──────────
-  // ClickHouse intent_events is keyed on intent_session_id, not session_id —
-  // this must be captured before the Postgres row is erased below.
-  const intentSessionId = await resolveIntentSessionId(db, record.tenantId, record.sessionId);
-
   // ── Delete session data in a transaction ──────────────────────────────────
   await db.transaction(async (tx) => {
     await tx
@@ -446,8 +407,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ── FOLLOW-455 / audit F-20: intent_sessions erasure cascade ─────────────
     // K.3.6 archetype tracer aggregate state (archetype weights, confidence,
     // quiz/chat signal counts). The matching ClickHouse intent_events rows are
-    // erased separately below via the intentSessionId resolved BEFORE this
-    // delete runs (issueClickHouseEraseMutations).
+    // erased separately below on the SDK session_id key (FOLLOW-581) —
+    // independent of this Postgres row, so ordering no longer matters.
     await tx
       .delete(intentSessions)
       .where(
@@ -620,7 +581,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       dsrVerificationId: record.id,
       tenantId: record.tenantId,
       sessionId: record.sessionId,
-      intentSessionId,
     });
     clickhouseDeletion = { status: result.overallStatus, mutations: result.mutations };
   } catch (err: unknown) {

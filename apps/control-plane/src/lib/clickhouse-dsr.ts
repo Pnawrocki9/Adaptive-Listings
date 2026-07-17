@@ -25,19 +25,20 @@
  *   - llm_calls               (PII: LLM cost per session)
  *   - session_quality         (PII: DQS metrics per session)
  *   - intent_events           (FOLLOW-455 / audit F-20: K.3.6 tracer per-signal
- *                              event trail. Keyed on `intent_session_id`, NOT
- *                              `session_id` — it is the Postgres
- *                              `intent_sessions.id` UUID, a DIFFERENT namespace
- *                              from the SDK session_id. The erase route resolves
- *                              it via `resolveIntentSessionId()`
- *                              (apps/control-plane/src/lib/intent-session-lookup.ts)
- *                              BEFORE the Postgres `intent_sessions` row is
- *                              deleted, and the mutation-poll retry path
- *                              re-resolves it on every retry for the same
- *                              reason. When no `intent_sessions` row exists for
- *                              the subject, there is nothing to erase and the
- *                              row is recorded 'done' directly (no mutation
- *                              issued).)
+ *                              event trail. FOLLOW-581: keyed on the String
+ *                              `session_id` column — the SDK fingerprint — like
+ *                              every other table here. Real rows are written
+ *                              with `session_id` populated and the UUID
+ *                              `intent_session_id` column left at its zero-UUID
+ *                              default (the ingest writer
+ *                              apps/ingest/src/handlers/intent-snapshot.ts omits
+ *                              it; migrations 0015/0016), so the authoritative
+ *                              subject key is `session_id` — confirmed by
+ *                              clickhouse-tracer.ts ("Do NOT use
+ *                              intent_session_id"). The pre-FOLLOW-581 erase
+ *                              filter on `intent_session_id` matched zero real
+ *                              rows — a latent Art. 17 no-op — now fixed so
+ *                              erase and disclosure agree on `session_id`.)
  *
  * Tables intentionally NOT erased:
  *   - dsr_audit_log           — retained for GDPR Art. 17(3)(b) legal claims
@@ -60,21 +61,19 @@ import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
  * request. Each entry has the table name and the column to filter on. If a
  * new PII-bearing, session-scoped table is added, append it here.
  *
- * `idSource` marks entries whose filter value is NOT the SDK `session_id`
- * directly. `intent_events` is filtered on `intent_session_id` — the
- * Postgres `intent_sessions.id` UUID — which callers must resolve via
- * `resolveIntentSessionId()` before issuing the mutation (FOLLOW-455).
+ * Every table — including `intent_events` (FOLLOW-581) — is keyed on the SDK
+ * `session_id` fingerprint. See the module header for why `intent_events` is
+ * NOT keyed on its zero-default `intent_session_id` UUID column.
  */
 export const DSR_CLICKHOUSE_TABLES: readonly {
   table: string;
   column: string;
-  idSource?: 'intent_session_id';
 }[] = [
   { table: 'events', column: 'session_id' },
   { table: 'adaptation_decisions', column: 'session_id' },
   { table: 'llm_calls', column: 'session_id' },
   { table: 'session_quality', column: 'session_id' },
-  { table: 'intent_events', column: 'intent_session_id', idSource: 'intent_session_id' },
+  { table: 'intent_events', column: 'session_id' },
 ];
 
 export type DsrTableName = (typeof DSR_CLICKHOUSE_TABLES)[number]['table'];
@@ -491,8 +490,6 @@ interface ClickHouseTableDisclosure {
   rows: unknown[];
   truncated: boolean;
   next_cursor?: EventsExportCursor | null;
-  /** Provenance note (e.g. the intent_events subject-key divergence). */
-  note?: string;
 }
 
 export interface ClickHouseDisclosure {
@@ -512,8 +509,8 @@ export interface ClickHouseDisclosure {
  * silently fall below erasure again (anti-FOLLOW-576).
  *
  * Subject key: every DSR ClickHouse PII table is identified by
- * (tenant_id, session_id). `intent_events` is a documented exception to the
- * constant's own `column` field — see the inline note below.
+ * (tenant_id, session_id) — including `intent_events` (FOLLOW-581 aligned the
+ * erase-side filter onto the same `session_id` key this disclosure uses).
  */
 export async function getClickHouseDisclosure(
   cfg: ClickHouseConfig,
@@ -534,29 +531,11 @@ export async function getClickHouseDisclosure(
       continue;
     }
 
-    // intent_events subject-key note (FOLLOW-574):
-    //   DSR_CLICKHOUSE_TABLES keys the ERASE filter on `intent_session_id`
-    //   (the UUID ORDER-BY column). Real rows are written with that column left
-    //   at its zero-UUID default and the raw SDK fingerprint in the String
-    //   `session_id` column (migrations 0015/0016; clickhouse-tracer.ts, which
-    //   the K.3.6 tracer UI reads via `session_id` and warns "Do NOT use
-    //   intent_session_id"). Filtering disclosure on intent_session_id would
-    //   therefore match NOTHING and produce a false-empty Art. 15 disclosure.
-    //   We disclose on the authoritative (tenant_id, session_id) key so the
-    //   subject's REAL rows are returned. This makes disclosure ⊋ erasure for
-    //   intent_events until the erase-side filter is fixed — tracked as a
-    //   latent erase no-op in FOLLOW-581 / ESCALATIONS ESC-038.
-    const note =
-      table === 'intent_events'
-        ? 'Filtered on (tenant_id, session_id) — the authoritative subject key (migrations 0015/0016; clickhouse-tracer.ts). The erase-side intent_session_id filter matches zero real rows; tracked as a latent no-op in FOLLOW-581.'
-        : undefined;
-
     const res = await exportSessionTableRows(cfg, table, tenantId, sessionId);
     tables.push({
       table,
       rows: res.rows,
       truncated: res.truncated,
-      ...(note ? { note } : {}),
     });
   }
 

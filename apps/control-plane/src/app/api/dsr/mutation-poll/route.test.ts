@@ -32,7 +32,6 @@ const {
   mockCaptureException,
   mockMaybeFinaliseAuditLog,
   mockIssueEraseMutation,
-  mockResolveIntentSessionId,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockUpdate: vi.fn(),
@@ -40,9 +39,7 @@ const {
   mockCaptureMessage: vi.fn(),
   mockCaptureException: vi.fn(),
   mockMaybeFinaliseAuditLog: vi.fn().mockResolvedValue(undefined),
-  // FOLLOW-455 / audit F-20: intent_events retry-path resolution.
   mockIssueEraseMutation: vi.fn(),
-  mockResolveIntentSessionId: vi.fn(),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
@@ -86,10 +83,6 @@ vi.mock('@/lib/clickhouse-dsr', () => ({
   MAX_MUTATION_RETRIES: 3,
   pollMutationStatus: vi.fn(),
   resolveMutationIdByMarker: vi.fn(),
-}));
-
-vi.mock('@/lib/intent-session-lookup', () => ({
-  resolveIntentSessionId: mockResolveIntentSessionId,
 }));
 
 vi.mock('./_finalise', () => ({
@@ -356,14 +349,15 @@ describe('GET /api/dsr/mutation-poll — stuck mutation detection (FOLLOW-078)',
   });
 });
 
-// ─── FOLLOW-455 / audit F-20: intent_events retry-path identifier resolution ──
+// ─── FOLLOW-581: intent_events retry-path reissues on session_id, uniformly ──
 //
-// intent_events is filtered on intent_session_id (Postgres intent_sessions.id),
-// NOT session_id. On every retry the poller must re-resolve it — reissuing
-// with the SDK session_id would silently no-op (or worse, target the wrong
-// rows) against ClickHouse.
+// intent_events is filtered on the SDK `session_id` fingerprint like every
+// other DSR table (real rows carry it there; the UUID `intent_session_id`
+// column is left at its zero default — migrations 0015/0016). The retry path
+// therefore reissues uniformly with column='session_id' and the row's own
+// session_id — no per-table identifier resolution.
 
-describe('GET /api/dsr/mutation-poll — intent_events retry-path resolution (FOLLOW-455)', () => {
+describe('GET /api/dsr/mutation-poll — intent_events retry-path reissue (FOLLOW-581)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
@@ -376,7 +370,7 @@ describe('GET /api/dsr/mutation-poll — intent_events retry-path resolution (FO
     mockUpdate.mockReturnValue(buildChain([]));
   });
 
-  it('reissues with column=intent_session_id and the resolved id when a tracer row exists', async () => {
+  it('reissues with column=session_id and the row session_id (no intent_session_id resolution)', async () => {
     const failedRow = makeRow({
       tableName: 'intent_events',
       status: 'failed',
@@ -389,12 +383,11 @@ describe('GET /api/dsr/mutation-poll — intent_events retry-path resolution (FO
       .mockReturnValueOnce(buildChain([failedRow])) // main polling query
       .mockReturnValueOnce(buildChain([])); // stuck check
 
-    mockResolveIntentSessionId.mockResolvedValueOnce('intent-session-uuid-resolved');
     mockIssueEraseMutation.mockResolvedValueOnce({
       table: 'intent_events',
       markerToken: 'marker-xyz',
       alterSql:
-        "ALTER TABLE intent_events DELETE WHERE intent_session_id IN ('intent-session-uuid-resolved') /* DSR:marker-xyz */",
+        "ALTER TABLE intent_events DELETE WHERE session_id IN ('sess-abc123') /* DSR:marker-xyz */",
       mutationId: 'mut-intent-002',
     });
 
@@ -402,46 +395,13 @@ describe('GET /api/dsr/mutation-poll — intent_events retry-path resolution (FO
     const res = await GET(makeRequest({ authorization: 'Bearer cron-test-secret' }));
 
     expect(res.status).toBe(200);
-    expect(mockResolveIntentSessionId).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-uuid-001',
-      'sess-abc123',
-    );
     expect(mockIssueEraseMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         table: 'intent_events',
-        column: 'intent_session_id',
-        sessionIds: ['intent-session-uuid-resolved'],
+        column: 'session_id',
+        sessionIds: ['sess-abc123'],
       }),
     );
-  });
-
-  it('marks the row "done" directly (no reissue) when no intent_sessions row exists', async () => {
-    const failedRow = makeRow({
-      tableName: 'intent_events',
-      status: 'failed',
-      retryCount: 0,
-      mutationId: 'mut-intent-001',
-      sessionId: 'sess-no-tracer',
-      tenantId: 'tenant-uuid-001',
-    });
-    mockSelect
-      .mockReturnValueOnce(buildChain([failedRow])) // main polling query
-      .mockReturnValueOnce(buildChain([])); // stuck check
-
-    mockResolveIntentSessionId.mockResolvedValueOnce(null);
-
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest({ authorization: 'Bearer cron-test-secret' }));
-
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { advanced: number };
-    expect(body.advanced).toBe(1);
-    // The mutation must NOT have been reissued — nothing left to erase.
-    expect(mockIssueEraseMutation).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalled();
-    const setCalls = mockUpdate.mock.results.length;
-    expect(setCalls).toBeGreaterThan(0);
   });
 });

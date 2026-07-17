@@ -42,14 +42,23 @@ Opus) agree on the shape and disagree productively on the detail:
    (live beats deploy-gated), which inverts the Sprint 23 order and competes with the
    FOLLOW-559/FOLLOW-356 lane call below.
 1. **FOLLOW-559: DONE** — merged `0009c0f` (PR #533), consent gate at the ingest storage boundary;
-   PM-validated independently. **RETRO owed** (deferred at merge, not skipped). Backend-engineer
-   lane is free again.
+   PM-validated independently (RETRO-177 affirmed the validation as sound). Backend-engineer lane is
+   free again. **But RETRO-177 found FOLLOW-579 (P2):** the gate classes `session.quality.snapshot`
+   as `operational`/always-ingest, yet its payload carries `final_archetype` + `final_confidence` +
+   `prediction_stability_score` — the §H.8(d) derived-intent artifact the gate correctly BLOCKS when
+   it arrives as `intent.snapshot`. So an unconsented user's 12-dim vector is gated while that same
+   user's final archetype IDENTITY rides through. Verified independently (consent-gate.ts:120 +
+   session-quality.ts:46-48). P2 defense-in-depth (SDK sets `consent_state` client-side → low
+   `none`-volume at ingest), **not** a live high-volume leak → no escalation; but FOLLOW-579's fix
+   needs a **compliance ruling first** (gate / strip the derived fields / documented operational
+   justification) — a CEO/DPO call, same bucket as the ESC-037 items.
 2. **FOLLOW-356** (P1, sdk-engineer, `deps: []`, READY) — **still needs a CEO priority call**:
    highest-priority genuinely-eligible ticket in the queue with a free lane, but not a Sprint 23
    ticket. Active-sprint-first vs P1-first is not the PM's call to make. Flagged since session 29;
    still unanswered.
-3. **Retros for 557/558: DONE** — RETRO-175 + RETRO-176, filing FOLLOW-570…577. **RETRO for 559
-   owed.**
+3. **Retros for 557/558/559: DONE** — RETRO-175 + RETRO-176 (filing FOLLOW-570…577) + RETRO-177
+   (filing FOLLOW-579). All three held every rule candidate at count 1; `CONVENTIONS_PATCH.md`
+   untouched.
 
 **✅ Vercel red — DIAGNOSED, prod is HEALTHY (was a false alarm; correcting my own earlier
 banner).** An earlier version of this block (merged in #535) called the Vercel red a "standing

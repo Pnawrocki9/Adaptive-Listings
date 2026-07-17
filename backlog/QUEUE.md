@@ -12321,7 +12321,26 @@ in-place in Sprint 22b above.
   title: >-
     Ingest: server-side consent gate for profiling-class events (defense-in-depth) (A3-F-08)
   agent: backend-engineer
-  status: READY
+  status: READY_FOR_REVIEW
+  assigned_to: backend-engineer
+  started_at: '2026-07-16T00:00:00Z'
+  branch: backend-engineer/FOLLOW-559-consent-gate
+  pr: 533
+  pm_validated: >-
+    2026-07-16 session 30, verified independently (not from the worker's self-report). Placement:
+    ingest storage-boundary pass after EventSchema.safeParse in handlers/events.ts — shared envelope
+    contract untouched, additive/non-breaking, so no architect escalation needed (confirmed the
+    shared schema is not mutated). Per-event reject (worker judgment call, correct + wiring
+    verified): rejected events go to rejected[] with code consent_not_granted + a Sentry counter,
+    only validated[] reaches the sinks — a whole-batch 4xx would have dropped a consent.granted
+    riding with a none profiling event (§H.9/AC2 violation). AC1/AC2/AC3 all met: profiling gated on
+    consent_state; consent.granted/denied + operational + conversions + opted-out §H.8 events ingest
+    under every consent_state incl none (explicit non-regression tests); contract test derives the
+    taxonomy from the union at runtime (unclassified fails closed) + compile-time Record<EventType>
+    exhaustiveness. CI: 53 relevant tests pass locally; the two reds are the standing pre-existing
+    baseline, verified not assumed — Rule I 181/563 vs main 181/562 (new evaluateConsent scanned,
+    NOT a violation = wired; net-zero), Vercel touches zero control-plane files. Gate keys on
+    consent_state, never opt-out state, per CEO 2026-06-23 §H.9.
   priority: P2
   estimated_hours: 3
   depends_on: []
@@ -12335,13 +12354,14 @@ in-place in Sprint 22b above.
     Model-fit: opus (policy-shaped: needs a correct event-class → allowed-consent-states matrix,
     and must NOT break the §H.9 ruling that opted-out users' §H.8 events still flow). Reject or
     quarantine — CEO preference unknown; default reject-with-4xx + Sentry counter, escalate if
-    ambiguity bites (agent coding standards §1).
+    ambiguity bites (agent coding standards §1). RESOLVED: per-event reject (not whole-batch), so a
+    consent.granted in a mixed batch survives; no escalation needed.
     AC:
-    - [ ] Profiling-class events with consent_state not in {consented, legitimate-interest} are
+    - [x] Profiling-class events with consent_state not in {consented, legitimate-interest} are
           rejected (or quarantined) at events.ts validation, with a structured Sentry counter.
-    - [ ] consent.granted/consent.denied audit events + §H.9 opt-out-flagged events still ingest
+    - [x] consent.granted/consent.denied audit events + §H.9 opt-out-flagged events still ingest
           (explicit tests — do not regress the CEO 2026-06-23 §H.9 ruling).
-    - [ ] Contract test enumerates every EVENT_TYPES entry into a consent-class map so new event
+    - [x] Contract test enumerates every EVENT_TYPES entry into a consent-class map so new event
           types must declare their class (Rule H-adjacent: no unclassified type ships).
 - id: FOLLOW-560
   title: >-

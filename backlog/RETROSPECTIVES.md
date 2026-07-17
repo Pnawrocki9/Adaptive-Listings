@@ -27911,3 +27911,238 @@ defects rather than evidence:
    FOLLOW-575. **An existing rule being broken is not evidence for a new rule.**
 
 <!-- next free FOLLOW number: 579 (578 = FOLLOW-578, filed directly by pm-orchestrator session 30 from a live observation while the guard fired on out-of-repo memory edits — NOT retro-sourced, so it increments no pattern count: the FOLLOW-448 branch guard warns on any path outside the repo, /etc/hosts included, because :70's prefix-strip silently no-ops and the hook never checks containment; P3, guard is correct on all in-repo paths). RETRO-176 = retro for PR #529 (FOLLOW-558, audit A3-F-06, MERGED 2026-07-15T19:24:57Z, commit 797b8ab, 3 SECONDS after PR #528/FOLLOW-557; 5 files +616/-8; access+portability disclose engagement_scores/quiz_completions/intent_sessions + a 338-line route-driven pglite suite + DPIA 2.8->2.9; content commit 1877722 rescued from a stranded worktree, same incident as RETRO-175 §4e). Wiring Audit CLEAN on both checks (CHECK A: zero new exports — the one new file is a test, the two routes are framework entrypoints; corroborated by check-rule-i.sh holding at 561 symbols/181 violations both sides. CHECK B: no new event/env/column/topic/SDK-signal; the 3 new response fields are a terminal human-facing payload at a route boundary; producers verified individually for all 3 tables) + one WA-NOTE (engagement_scores — the table added BEYOND the ticket stub — has ZERO producers repo-wide, yet ropa.md:408 names Modal as its live processor and dpia.md:198 gives it a 90-day retention row; the exact mirror of RETRO-175 §3's Redis phantom). GAPS: LG-1 (P1, HEADLINE) the ClickHouse axis of the union is un-closed — erase covers 5 CH PII tables (clickhouse-dsr.ts:73-77) while disclosure returns ONE aggregate over ONE of them (SELECT count()/min/max FROM events), so adaptation_decisions/llm_calls/session_quality/intent_events are erased-but-never-disclosed and events is a count-not-a-copy; UNLIKE RETRO-175's P2 Redis sibling this data is LIVE IN PROD TODAY and is NOT gated on FOLLOW-458; TG-1 (P2) the "PARITY" test never imports/drives erase/route.ts — the erase set exists only as prose in a comment, so it asserts disclosure ⊇ {6 hardcoded literals}, NOT access-set == erase-set: add a 7th DELETE target and it stays GREEN; AC2 is NOT met on its letter yet is marked [x] in QUEUE.md:12275; root cause = the author conflated "do not EDIT erase/route.ts" (sound #528 merge-conflict avoidance) with "do not IMPORT it" (unforced, cost the whole invariant); TG-2/TG-3/TG-4 (P3) tenant isolation tested only for quiz_completions and NOT for the two .limit(1) stores where the failure mode is worst, portability has 1 test vs access's 3 over copy-pasted logic (Rule S verification-tier VIOLATION), fixture omits engagement_scores' prod unique index; DG-1 (P2) the DPIA edit ships TWO false statements into a doc of record — a cross-reference to step 6 that step 6 does not support, and a guard claim ("cannot silently drift") the test's own docstring disclaims; DG-2 (P2) DPIA §8 step 6 is stale FOUR ways (omits conversion_labels/quiz_completions/intent_sessions + intent_events; wrongly lists `answers`, which is per-listing FAQ content with no session_id and is correctly never erased; omits FOLLOW-557's shadow key). CODE: no defects — cardinality (.limit(1) vs 0..n) correct against the REAL schemas, tenant-scoping correct, consent_records' missing tenant filter is pre-existing AND symmetric with erase (checked, cleared). CLOSURE (step 7): SPLIT — A3-F-06's NAMED instance CLOSED end-to-end (producer quiz/completion/route.ts:240 + intent-snapshot.ts:249 PostgREST UPSERT → tables → tenant-scoped reads → OTP-gated JSON → payload-asserting route-driven tests), AC2 NOT met, and the gap CLASS un-closed on 2 of 3 storage axes (Redis=FOLLOW-570, ClickHouse=FOLLOW-574) — the FOLLOW-097→114→127→141 shape rotated onto storage classes. CONTRADICTIONS WITH RETRO-175 (§8): AFFIRMED its §5a Redis cascade (independently re-verified: grep shadow|redis|chat_intent on both disclosure routes → 0 hits); OVERTURNED its §5d "a parity test that fails when the sets diverge" — disproved by the docstring §5d itself quotes ("must be updated by hand"), i.e. it read the docstring not the assertion body; CORRECTED its §4d "FOLLOW-557 had no Rule N obligation" — DPIA §8 step 6 DOES enumerate ERASED stores incl. the Redis leg, so FOLLOW-557 had a step-6 obligation it did not discharge; CONFIRMED+EXTENDED its §5d assumed-vs-producer-inventory thesis onto the disclose side. CONSEQUENCE: FOLLOW-570 AC(b) ("widen the parity block") is necessary-but-INSUFFICIENT — widening a hand-typed list yields a wider hand-typed list; read it with FOLLOW-576. RULE: NO PROMOTION — PARITY-INVARIANT-NARROWER NOT incremented (#528/#529 are ONE incident viewed twice; one incident cannot self-promote by being retro'd twice) though its description is refined to DERIVATION-not-SCOPE for whenever it does promote; PHANTOM-STORE fresh count-1 HELD despite a real case for 2 (both sightings UNCONFIRMED — out-of-repo writers possible, and intent_sessions' PostgREST producer proves this grep class under-reports; plus RETRO-175 declined to register its own phantom, and registering-then-promoting in one stroke is re-labelling-to-threshold); Rule Y doc-of-record AMENDMENT candidate count-1 HELD/ARMED (Y's letter reaches comments not compliance docs; its Verification grep scans packages/**/*.ts only — blind to apps/ AND docs/, where this entire PR lives). Rule S (verification tier) and Rule N (updated-but-false) were BROKEN → defects for FOLLOW-577/575, NOT evidence for new rules. SCOPE VERDICT: adding engagement_scores beyond the stub's 2 tables was the CORRECT call (the AC governs and erase covers it; additive/reversible/P2/named-in-PR-body) — but its stated justification ("omitting it would fail parity") is CIRCULAR, since the test is a list the same author hand-types: the parity illusion acting on its own author inside its own PR. FOLLOWS FILED: 574 (P1 compliance-engineer ~4h — ClickHouse disclosure axis derived from DSR_CLICKHOUSE_TABLES + CEO/DPO ruling on aggregate-vs-copy REQUIRED FIRST + resolve the engagement_scores phantom; sequence BEFORE FOLLOW-570, not gated on FOLLOW-458), 575 (P2 compliance-engineer ~3h — DPIA §8 step 5 falsities + step 6's four staleness errors + DPIA 2.9→2.10; likely merge with 574 AC(c), same paragraph), 576 (P2 backend-engineer ~3h — DERIVE the erase set by route-driving erase/route.ts in the same pglite harness [zero edits to it needed], cover the 3-class union, prove with a mutation test that a 7th target goes RED), 577 (P3 qa/compliance ~2h — tenant-isolation for the two .limit(1) stores, portability to access's verification tier per Rule S, fixture unique-index parity). PM ACTION: FOLLOW-574 is P1, live in prod, and NOT gated on FOLLOW-458 — RETRO-175's "pre-condition of FOLLOW-458" framing is correct for Redis and UNDERSTATES the ClickHouse leg, which needs no deploy to arm. PM decides whether that warrants an ESCALATIONS.md entry; this retro records the dependency inversion and does not escalate. -->
+
+## RETRO-177 — FOLLOW-559 (server-side consent gate for profiling-class events at the `apps/ingest` storage boundary — audit A3-F-08. The shared `ConsentStateSchema` validated `consent_state` for SHAPE only, so a broken/malicious client could POST `consent_state:'none'` profiling events and `apps/ingest` persisted them; the gate now enforces by VALUE at the storage boundary. The placement, the per-event-not-whole-batch reject, the §H.9 keys-on-consent-state-never-opt-out invariant, and the end-to-end wiring are all CORRECT — I verified the gate is a real block, not a counter: a gated `intent.snapshot` never reaches `handleIntentSnapshot`'s ClickHouse+Supabase dual-write because the side-effect loop iterates `validated[]`, which the rejected event never enters. The one real gap is INSIDE the taxonomy the PR authored: `session.quality.snapshot` is classed `operational` (always-ingest) yet its payload carries `final_archetype` + `final_confidence` + `prediction_stability_score` — the §H.8(d) derived-intent artifact, the SAME class the map gates when it arrives as `intent.snapshot`. So the 12-dim vector is blocked for an unconsented user while that user's final archetype IDENTITY rides through. And the contract test that "enumerates every union member" proves EXHAUSTIVENESS, not CORRECTNESS — invoked with `consent_state='consented'`, profiling/operational/audit all return `allowed:true`, so this mis-class ships green. The multi-axis lesson of RETRO-175/176 transferred here not to storage PATHS — I checked; A3-F-08 has a single write path and it is fully closed — but to event CLASSES within the one path) — 2026-07-17
+
+### 1. Summary of change
+
+- **PR:** #533 (merged 2026-07-17 07:19:20 UTC, commit `0009c0f`; branch
+  `backend-engineer/FOLLOW-559-consent-gate`). Three commits: the gate + tests, a Rule-I export-narrowing
+  refactor, and the backend-engineer lesson.
+- **Files changed:** 5 (+515 / -1) — `git show 0009c0f --stat`. `consent-gate.ts` (+187 NEW),
+  `consent-gate.test.ts` (+132 NEW), `handlers/events.ts` (+46/-0), `index.test.ts` (+137/-1),
+  `.claude/agents/backend-engineer/lessons.md` (+14).
+- **Modules touched:** `apps/ingest` ONLY, + the agent lessons file (meta). Zero SDK / control-plane /
+  decision-api / **shared** / Modal / migration / docs-of-record.
+- **Key contracts changed:**
+  - **The shared `EventEnvelope` / `EventSchema` contract is DELIBERATELY NOT mutated** — the worker
+    chose an ingest-boundary pass after `EventSchema.safeParse` over a shared-Zod refinement precisely
+    to avoid a public-contract change requiring architect escalation (per the brief's Open Decision).
+    The correct call: a shared refinement would enforce for every consumer but touches a CLAUDE.md
+    "public API surface" (ingest event schema). Ingest-boundary keeps the shape contract untouched.
+    **breaking: NO** (nothing rejected here was ever policy-valid).
+  - New module `apps/ingest/src/consent-gate.ts` — **sole export `evaluateConsent`** (§3 CHECK A).
+  - `POST /v1/events` ACK body gains `consent_rejected: number` — additive, no consumer today (§3
+    CHECK B / §5c); plus span attr `estalara.consent_rejected` and a `consent_rejected` log field.
+    **breaking: NO.**
+
+### 2. Verification done in PR
+
+- Test files changed: `consent-gate.test.ts` (NEW, 132 lines — contract + profiling-gated +
+  §H.9 non-regression + fail-closed) and `index.test.ts` (+137, **4 new route-driven `it()` blocks**).
+  Assertions added: ~30 across the two files.
+- **The e2e tests assert BEHAVIOR, not a label — checked specifically, because reading a test's NAME
+  instead of its ASSERTION BODY is exactly how the PM mis-validated the sibling FOLLOW-558 (RETRO-176
+  §4c TG-1 / §2).** The mixed-batch §H.9 test (`index.test.ts:642`) drives the real handler and asserts
+  `body.accepted===1`, `body.rejected===1`, AND `stub.callCount()===1` — i.e. it proves the Redpanda
+  sink was called exactly once (the audit event survived, the profiling(none) sibling was dropped).
+  That is a sink-behaviour assertion, materially stronger than a name/docstring read. The
+  `consent_state=none` rejection test additionally asserts `stub.callCount()===0` (never pushed) and
+  the exact Sentry `captureMessage` tag shape.
+- CI checks: passed per the QUEUE `pm_validated` block, **which I corroborate on the load-bearing
+  figure.** The two standing reds are the pre-existing baseline. Rule I: **181 violations / 563 symbols**
+  on the branch vs **181 / 562** on `main` — the **+1 symbol is `evaluateConsent`, scanned and NOT a
+  violation (= wired), +0 violations**. That arithmetic is affirmative corroboration of §3 CHECK A: the
+  one new export is the one that gained a consumer. The 2nd commit's export-narrowing is why the map /
+  `classifyEvent` / `PROFILING_ALLOWED_CONSENT_STATES` do NOT each show up as new test-only-export
+  violations. Vercel red touches zero control-plane files (§5d / process item 2).
+
+### 3. Wiring Audit
+
+Both checks run. `Wiring Audit — clean ✅` on both, with one WA-NOTE (a producer-only terminal
+telemetry field, explicitly NOT charged as a HALF_WIRE_P per the RETRO-176 §3 terminal-field precedent).
+
+- **CHECK A (dead code) — clean.** The one new file `consent-gate.ts` exports exactly one symbol,
+  `evaluateConsent`, imported by a non-test production consumer at `handlers/events.ts:210`
+  (`grep -rn "evaluateConsent" apps/ingest/src` → the export + the handler import + the test). WIRED.
+  The internal `CONSENT_CLASS_BY_EVENT_TYPE` / `classifyEvent` / `PROFILING_ALLOWED_CONSENT_STATES`
+  were export-narrowed to module-internal in the 2nd commit **specifically because Rule I flagged them
+  as test-only exports** — the wired-or-dead check did its job in-PR. `consent-gate.test.ts` is a test
+  file (suppressed). Nothing dead.
+- **CHECK B (half-wire) — clean.** No new event type, **no new env var**, **no new column** (no
+  migration in this PR), **no new topic**, **no new SDK signal**. The gate keys on an EXISTING field
+  (`consent_state`, envelope-required) and an EXISTING taxonomy (the shared union). New *signals*:
+  - The `Sentry.captureMessage('consent_gate_rejected', …)` counter — producer `handlers/events.ts:243`;
+    consumer is Sentry, an external prod dependency. **Not a repo half-wire** (RETRO-135 precedent:
+    a Sentry consumer is not a repo-internal wire). Producer + consumer both present.
+  - **WA-NOTE — `consent_rejected` (ACK body field + `estalara.consent_rejected` span attr +
+    `consent_rejected` structured-log field): producer-only in-repo, ZERO consumers.**
+    `grep -rn "consent_rejected" --include=*.ts . | grep -v node_modules` returns ONLY the two producer
+    lines in `events.ts` (:492 span, :503 body); the SDK does not read the ingest ACK body at all
+    (`grep -rn "\.rejected\|\.accepted\|consent_rejected" packages/sdk/src` → zero). This is a **terminal
+    operator/observability-facing telemetry field at a framework-route boundary** — the SAME suppressed
+    case RETRO-176 §3 recorded for the DSR disclosure response fields, NOT a HALF_WIRE_P. It is an
+    intentional monitoring surface, not a dangling internal wire. Recorded, not charged.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — THE FINDING. `session.quality.snapshot` is classed `operational` (always-ingest) but
+  its payload carries the derived-intent artifact §H.8(d) governs — the SAME class the map GATES as
+  profiling when it arrives as `intent.snapshot`.** The snapshot payload
+  (`packages/shared/src/schemas/events/session-quality.ts`; fixture in `events/events.test.ts`:
+  `final_archetype`, `final_confidence`, `prediction_stability_score`, `signal_density_per_min`,
+  `total_events`) is the archetype IDENTITY + confidence for the session — precisely the §H.8(d)
+  "buying-intent identification" output whose full 12-dim sibling (`intent.snapshot`) the map correctly
+  classes `profiling` and GATES (`consent-gate.ts:379`). Net: for a `consent_state='none'` user, the
+  gate blocks the 12-dim vector at `intent.snapshot` but lets that same user's **final archetype label +
+  confidence** persist via `session.quality.snapshot` (`consent-gate.ts:395`). It is an internal
+  inconsistency within the PR's own taxonomy and a genuine §H.8(d) under-gate. **P2, not P1**, because
+  (a) it is a policy/compliance JUDGMENT (gate it as profiling, OR strip the derived fields for
+  unconsented, OR obtain a ruling that an aggregate DQS metric is a lawful operational record) that
+  needs compliance-engineer ± CEO/DPO, not a unilateral code flip; and (b) the SDK still sets
+  `consent_state` client-side, so the volume of `none` profiling reaching ingest is low (this gate is
+  defense-in-depth for the broken/malicious-client case A3-F-08 names). → FOLLOW-579.
+- **Conversions and server-outcomes — AFFIRMED, not gaps.** I independently scrutinised the other
+  `operational` members flagged as suspect. `inquiry.*` / `tour.requested` / `live.signup`: discrete
+  user-INITIATED conversions — lead/business records arguably under Art. 6.1(b) pre-contract, not passive
+  §H.8(a) profiling; classing them always-ingest is defensible and the "never silently drop the primary
+  conversion metric" rationale is sound. `adapt.*` / `ab.assignment`: server-generated OUTCOME records,
+  not client behavioural signals. `session.started` (profiling) and `intent.snapshot` (profiling): both
+  on the correct — conservative — side. The map is correct on 51 of 52; LG-1 is the lone member on the
+  wrong side.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A — no code defects.** The gate is a REAL storage-boundary block, verified end-to-end (not merely
+  a counter): a rejected event `continue`s and never enters `validated[]`, and every downstream sink AND
+  the `intent.snapshot` side-effect handler iterate `validated[]` (`handlers/events.ts:271`
+  `for (const evt of validated)`), so a gated `intent.snapshot` never reaches `handleIntentSnapshot`'s
+  ClickHouse `intent_events` + Supabase `intent_sessions` dual-write. `consent_state` is envelope-required
+  (a valid enum always present), so no `undefined`-into-gate path. Unclassified type fails closed
+  (`allowed:false`, `code:'unclassified_event_type'`) — correct defense-in-depth backstop behind the
+  compile-time `Record<EventType>` + the contract test.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, fold into FOLLOW-579) — the contract test proves EXHAUSTIVENESS, not CORRECTNESS, and
+  that is why LG-1 shipped green.** `consent-gate.test.ts:172` invokes `evaluateConsent(t, 'consented')`
+  for every union member and asserts none is `unclassified_event_type`. But under `'consented'`,
+  profiling AND operational AND audit all return `allowed:true` — so the test cannot distinguish a
+  member classed `operational` from one classed `profiling`. A mis-class (session.quality.snapshot)
+  passes silently; adding a new profiling event to the map as `operational` would too. The fix is a
+  compliance-reviewed **golden per-type classification fixture** (expected `ConsentClass` per member),
+  so a reclassification becomes a deliberate fixture edit rather than an invisible default — this is the
+  correctness-not-exhaustiveness sibling of the AC3 mechanism, folded into FOLLOW-579.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The module and tests are well-documented; no doc-of-record (DPIA/ROPA/Master Design) was
+  touched or needed. The backend-engineer lesson (`lessons.md:1596`) is accurate and appropriately
+  scoped. Note (not a gap): the taxonomy-count drift the brief flagged (ticket said 52, brief counted
+  49, audit said 46) is real — the union is **52** at HEAD — but the worker correctly DERIVED the set
+  from the union at build+test time rather than hardcoding a count, which is exactly what AC3 exists to
+  make safe; no count is asserted anywhere, so no doc bug was introduced.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **N/A — none invalidated.** FOLLOW-560 (scoring-path telemetry), FOLLOW-561 (archetype-ID parity),
+  FOLLOW-562 (Panel 5 error banner), FOLLOW-563 (smoke-ingest hygiene) are all independent of the consent
+  gate. No IN_PROGRESS/READY assumption is broken.
+
+#### 5b. Future sprint tickets affected
+
+- **A new standing obligation:** every future event type added to the shared discriminated union now
+  MUST declare a consent class, enforced at BOTH compile time (`Record<EventType, ConsentClass>`) and
+  runtime (contract test fails closed on an unclassified type). Any ticket that extends the taxonomy
+  (sdk-engineer / shared-schema work) now carries a consent-classification sub-task. This is a healthy
+  gate, but it should be surfaced in the event-schema authoring docs so it is not discovered at CI.
+
+#### 5c. Contracts changed others rely on
+
+- The `POST /v1/events` ACK body gains `consent_rejected` (additive; no consumer today — §3 WA-NOTE).
+- **The shared `EventEnvelope` shape is UNCHANGED** — decision-api, the SDK, and every other union
+  consumer see no contract change. This is the whole point of the ingest-boundary placement and is
+  correct.
+
+#### 5d. Architectural assumptions affected — SECOND-PATH / CASCADE CHECK
+
+- **I checked the cascade the brief asked for: is there a SECOND unguarded event-storage path that
+  mirrors A3-F-08? Conclusion: NO — the A3-F-08 class has a single storage-boundary write path and this
+  PR closes it.** `grep -rn "EventSchema" apps/control-plane apps/decision-api --include=*.ts` (excl.
+  tests) → **zero**: no other app parses the ingest event union and persists it. The other write paths I
+  found are NOT mirrors of this gap: `apps/control-plane/.../adapt/route.ts:494` `INSERT INTO
+  adaptation_decisions` and `llm-gateway.ts:174` `INSERT INTO llm_calls` are **server-generated OUTCOME
+  logs** carrying no client-supplied `consent_state` to gate on; `adaptation_decisions` is `adapt.*`-class
+  (operational / always-ingest even under THIS gate's taxonomy) and is instead governed by decision-api's
+  own §H.9 `consent-gate.ts` (`profilingOptOut`). So there is no unguarded ingest mirror.
+- **Reconciliation with RETRO-175/176 (explicit).** Those two found a compliance-completeness gap
+  UNDER-closed on 2 of 3 STORAGE axes (Redis, ClickHouse). Here the opposite holds on storage paths:
+  the named path is fully closed and there is no second path. The multi-axis lesson did NOT vanish — it
+  **transferred from storage paths to event CLASSES within the one path**: LG-1 is the "second axis" of
+  this contract (the same derived-intent data classed two different ways depending on which event type
+  carries it). Same shape ("a policy applied on the obvious instance but not on a sibling instance of the
+  same underlying data"), different axis. That is the §8-style contradiction-reconciliation the algorithm
+  asks for: 175/176's storage-axis framing does not apply, but its underlying multi-axis discipline found
+  the gap it would otherwise have missed.
+
+### 6. New lesson candidates
+
+- **EXHAUSTIVENESS-GATE-PROVES-COMPLETENESS-NOT-CORRECTNESS** — "a test/type that enforces every member
+  of a set is CLASSIFIED can ship a member classified WRONGLY, because presence ≠ correct verdict"
+  (§4c TG-1). **Count 1, HELD.** It rhymes with RETRO-176's parity-test-checks-membership-not-derivation,
+  but the mechanism differs: there a hand-typed list masqueraded as a derived invariant; here a genuinely
+  derived enumeration has an untested per-member VERDICT. Merging them would be matching at the
+  "the test checks less than it claims" altitude — the exact bar-corrupting altitude RETRO-176 §4 and
+  RETRO-175 warned against. Not merged.
+- **DERIVED-FIELD-RIDES-A-BENIGN-CLASS** — "a summary/derived-intent field is classed by the benign
+  intent of its CARRIER event (a data-quality snapshot) and thereby escapes a gate its raw sibling is
+  subject to" (§4a LG-1). **Count 1, HELD.**
+- **FLAG-THEN-RETRACT-A-PROD-BREAKAGE (process item 2) — Count 1, HELD; and adjudicated a HEALTHY
+  self-correction, not a smell.** The PM flagged a Vercel red as possible standing prod breakage (banner
+  #535) then diagnosed it as transient preview flakiness (prod healthy: every `main` merge-commit
+  deployed green; failed previews had `target_url = None`) and corrected the banner in #536 within two
+  commits. This is the system working: the retraction landed BEFORE the false flag drove a bad dispatch
+  or an ESCALATIONS entry, and the diagnosis method (characterize via commit-status / merge-commit
+  target) is exactly right. A latent generalizable rule exists — *"characterize a CI red via
+  commit-status / merge-commit `target_url` before escalating it to a prod-breakage flag"* — but it is
+  **below the ≥2 bar**. I checked for a prior sighting: RETRO-175/176 both independently re-verified reds
+  as pre-existing baseline, but that is "read CI correctly," a DIFFERENT shape from "escalate-then-retract
+  a breakage claim." Not a valid 2nd sighting. HELD at 1, no rule, no follow-up (no code gap; the
+  behaviour was correct).
+- **NEGATIVE OBSERVATION — the RETRO-176 §4c TG-1 validation-depth pattern (PM ticked an AC by reading a
+  test's NAME/docstring, not its assertion body) did NOT recur here, so it is NOT incremented.** The PM's
+  FOLLOW-559 `pm_validated` claims ("only `validated[]` reaches the sinks", "explicit non-regression
+  tests", per-event reject "wiring verified") are BEHAVIORALLY TRUE against the code: the e2e tests drive
+  the real handler and assert `stub.callCount()` / `accepted` / `rejected` (§2), and I re-verified the
+  `validated[]`-only sink path independently (§4b). This ticket is a **counter-example** to the RETRO-176
+  pattern, not a second sighting — the count stays where RETRO-176 left it. (What the PM's validation did
+  NOT reach is LG-1 — but that is a classification-CORRECTNESS judgment beyond the AC letter, which only
+  requires every type be CLASSIFIED; the AC bar was met, and LG-1 is the retro's contribution, not a
+  validation miss.)
+
+### 7. Follow-ups
+
+- **FOLLOW-579** (P2, compliance-engineer + backend-engineer, ~3h): settle the `session.quality.snapshot`
+  consent class — reclassify as `profiling`, OR strip the derived-intent fields
+  (`final_archetype` / `final_confidence` / `prediction_stability_score`) for
+  `consent_state ∉ {consented, legitimate-interest}`, OR obtain a documented compliance ruling that an
+  aggregate DQS metric is a lawful operational record; AND add a compliance-reviewed golden per-type
+  classification fixture to the contract test so the class VERDICT (not just presence) is asserted
+  (closes §4a LG-1 + §4c TG-1 together). Compliance ruling REQUIRED FIRST — the code leg depends on it.
+- Process item 2 gets **no follow-up** (below the rule bar, healthy self-correction, no code gap).
+
+### 8. Cross-references
+
+- **Related to RETRO-176 / RETRO-175:** the multi-axis discipline those retros hardened on DSR storage
+  paths is applied here and — reconciled in §5d — transfers to event CLASSES rather than storage paths
+  (there is only one storage path here, and it is fully closed). This is also the first retro in the
+  557/558/559 run where the PM's own validation is independently affirmed **SOUND** (behavior-verified),
+  reversing the RETRO-176 §4c TG-1 finding for this specific ticket (§6 negative observation).
+- **Related to RETRO-135:** its "a Sentry consumer is not a repo-internal half-wire" precedent is applied
+  to the `consent_gate_rejected` counter (§3 CHECK B).
+
+<!-- next free FOLLOW number: 580 (579 = FOLLOW-579, filed by this retro). RETRO-177 = retro for PR #533 (FOLLOW-559, audit A3-F-08, MERGED 2026-07-17T07:19:20Z, commit 0009c0f; 5 files +515/-1; server-side consent gate at the apps/ingest storage boundary — new consent-gate.ts (sole export evaluateConsent) + per-event gate in handlers/events.ts + 132-line contract/§H.9 suite + 4 route-driven e2e it-blocks). Wiring Audit CLEAN on both checks (CHECK A: the one new file's sole export evaluateConsent is imported by handlers/events.ts:210 non-test — the map/classifier/allowed-set were export-narrowed to module-internal in commit 2 after Rule I flagged them test-only, so the check worked in-PR; corroborated by Rule I 181/563 branch vs 181/562 main = +1 symbol evaluateConsent, +0 violations = the sole new export is the wired one. CHECK B: no new event/env/column/topic/SDK-signal — gate keys on the existing consent_state + existing union; the Sentry consent_gate_rejected counter's consumer is Sentry, external, not a repo wire per RETRO-135) + one WA-NOTE (consent_rejected ACK body field + estalara.consent_rejected span attr + log field is producer-only, ZERO consumers repo-wide — SDK does not read the ingest ACK — a terminal operator/observability field at a framework-route boundary, the same suppressed case as RETRO-176 §3's disclosure response fields, NOT a HALF_WIRE_P). GAPS: LG-1 (P2) session.quality.snapshot is classed operational/always-ingest but its payload carries final_archetype+final_confidence+prediction_stability_score — the §H.8(d) derived-intent artifact, the SAME class the map GATES when it arrives as intent.snapshot; so a consent_state=none user's 12-dim vector is blocked at intent.snapshot while that user's final archetype IDENTITY rides through session.quality.snapshot; internal taxonomy inconsistency + genuine §H.8(d) under-gate; P2 not P1 because it needs a compliance/CEO-DPO ruling (gate/strip/confirm) and the SDK still sets consent_state client-side so none-profiling volume at ingest is low; the map is correct on 51 of 52 members (conversions inquiry/tour/live.signup AFFIRMED operational as Art 6.1(b) pre-contract lead records; adapt.*/ab.assignment server outcomes; session.started+intent.snapshot correctly profiling). TG-1 (P3, folded into FOLLOW-579) the contract test proves EXHAUSTIVENESS not CORRECTNESS — invoked with consent_state='consented' where profiling/operational/audit all return allowed:true, so it cannot distinguish a mis-classed member; that is why LG-1 shipped green; fix = a compliance-reviewed golden per-type class fixture. CODE: no defects — the gate is a REAL storage block not a counter (a rejected event never enters validated[] and both the sinks AND the intent.snapshot side-effect loop iterate validated[], so a gated intent.snapshot never reaches handleIntentSnapshot's ClickHouse intent_events + Supabase intent_sessions dual-write; consent_state envelope-required so no undefined-into-gate; unclassified fails closed). SECOND-PATH/CASCADE (§5d): CHECKED and CLOSED — grep EventSchema across control-plane+decision-api (excl tests) = ZERO, so no other app persists the ingest union; adapt/route.ts:494 INSERT adaptation_decisions + llm-gateway.ts:174 INSERT llm_calls are server-OUTCOME logs with no client consent_state to gate and are governed by decision-api's own §H.9 gate — NOT mirrors of A3-F-08; the class has ONE write path and this PR closes it. RECONCILE w/ RETRO-175/176 (§5d,§8): their multi-axis gap was UNDER-closed on 2 of 3 STORAGE axes; here the named path is FULLY closed and there is no 2nd path — the multi-axis lesson transferred not to storage paths but to event CLASSES (LG-1 = same derived-intent data classed two ways by carrier type). PLACEMENT VERDICT: ingest-boundary over shared-Zod-refinement was CORRECT (a shared refinement mutates a CLAUDE.md public API surface = architect escalation; the boundary pass keeps EventEnvelope untouched, additive/non-breaking, no consumer regressed). PROCESS ITEMS: (1) the PM's FOLLOW-559 validation is independently affirmed SOUND (behavior-verified: the e2e tests assert stub.callCount()/accepted/rejected, and I re-verified the validated[]-only sink path) — a COUNTER-EXAMPLE to RETRO-176 §4c TG-1's read-the-label-not-the-body miss, so that pattern is NOT incremented; (2) the Vercel flag-then-retract (banner #535→#536, within 2 commits, diagnosed as transient preview flakiness via target_url=None while every main merge-commit deployed green) is adjudicated a HEALTHY self-correction, not a smell — retracted before it drove a bad dispatch. RULE: NO PROMOTION — every candidate at count 1, consistent with RETRO-175/176's refusals: EXHAUSTIVENESS-GATE-PROVES-COMPLETENESS-NOT-CORRECTNESS (count 1 HELD; rhymes with RETRO-176's parity-membership-not-derivation but different mechanism — a derived enumeration with an untested per-member verdict vs a hand-typed list posing as derived; merging = matching at the bar-corrupting altitude 175/176 named), DERIVED-FIELD-RIDES-A-BENIGN-CLASS (count 1 HELD), FLAG-THEN-RETRACT-A-PROD-BREAKAGE (count 1 HELD, and a HEALTHY self-correction — the CI-red-baseline theme in 175/176 is "read CI right," a DIFFERENT shape, not a valid 2nd sighting). No promoted rule was broken. FOLLOWS FILED: 579 (P2 compliance-engineer + backend-engineer ~3h — settle session.quality.snapshot class [gate / strip derived fields / documented operational ruling; ruling REQUIRED FIRST] + golden per-type classification fixture; closes LG-1 + TG-1). PM ACTION: LG-1 is P2 defense-in-depth, not a live prod leak of high volume (SDK sets consent_state client-side) — no ESCALATIONS entry; this retro records the intra-taxonomy under-gate and defers the class ruling to FOLLOW-579's compliance leg. -->

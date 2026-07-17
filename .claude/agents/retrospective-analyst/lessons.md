@@ -2608,3 +2608,31 @@ so.**
 - RETROSPECTIVES.md (573) → **574 correct**. Allocated 574-577; trailer now says **578.** The
   trailer written by the immediately-preceding retro is the one trailer that _is_ reliable — but
   check it anyway; it costs one grep.
+
+- **2026-07-17 / RETRO-177 (FOLLOW-559)** · **Almost missed:** the whole gap lived INSIDE a taxonomy
+  that looked exhaustively verified. The map is a `Record<EventType,ConsentClass>` with a runtime
+  contract test over the union — a picture-of-completeness that reads as "done." I nearly wrote
+  "classification correct" off the exhaustiveness proof. The catch came from reading the ACTUAL
+  payload schema of a borderline `operational` member (`session.quality.snapshot`) and seeing
+  `final_archetype`/`final_confidence` — the same derived-intent data its `intent.snapshot` sibling
+  is gated for. Lesson: an exhaustiveness gate (every-member-classified) is NOT a correctness gate
+  (every-member-classified-RIGHTLY); when a PR authors a classification, read the hardest 2-3
+  members' actual data, don't trust the "every type has a class" green.
+- **Chain/axis I had to trace twice:** whether the gate is a REAL block or just a Sentry counter.
+  First pass I saw `rejected.push()` + counter and nearly logged it as observability-only. Second
+  pass I followed `validated[]` and found BOTH the sinks AND the `intent.snapshot` side-effect loop
+  iterate it — so a gated snapshot never reaches `handleIntentSnapshot`'s ClickHouse+Supabase
+  dual-write. The block is real end-to-end; the counter is the observable, not the mechanism. Always
+  trace the drop path to the actual writer, not to the log line next to it.
+- **Meta-pattern across agents:** the "test/type checks LESS than it advertises" family is now three
+  retros deep in different disguises — RETRO-175 (a mock-return-shape unit test), RETRO-176 (a
+  "PARITY" test that hand-types the set it claims to derive), RETRO-177 (an exhaustiveness contract
+  test that can't see a wrong verdict). They are NOT one promotable pattern: the mechanisms differ
+  (green-without-executing vs list-posing-as-invariant vs executing-without-discriminating), and
+  collapsing them to "the test is weak" is exactly the altitude that corrupts the ≥2 bar. But the
+  FAMILY is a standing retro-radar target: whenever a PR claims a test ENFORCES an invariant, read
+  the assertion body and ask "what edit would keep this green while breaking the claim?" · **Blind
+  spot to watch:** I affirmed the PM's validation as sound this time (behavior-verified) — but the
+  PM asked me to check that specifically, which primes a confirmation lean. I forced the check by
+  reading the e2e assertion bodies (`stub.callCount()`) myself rather than the PM's prose about
+  them. Keep doing that; the PM's self-report is an input to verify, never the verdict.

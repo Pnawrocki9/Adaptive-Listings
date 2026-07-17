@@ -15251,3 +15251,56 @@ only and must NOT be read as merging their occurrence counts (see RETRO-175/176,
 exactly that move to reach a promotion bar).
 
 cross_ref: [FOLLOW-448, FOLLOW-573, RETRO-146, RETRO-150, RETRO-175]
+
+---
+
+## FOLLOW-579 — Settle the `session.quality.snapshot` consent class: its payload carries the §H.8(d) derived-intent artifact (`final_archetype` + `final_confidence`) but it is classed `operational`/always-ingest, so an unconsented user's archetype IDENTITY rides through the gate that blocks their 12-dim vector
+
+source_retro: RETRO-177 (§4a LG-1, §4c TG-1) source_ticket: FOLLOW-559 (PR #533, `0009c0f`)
+recommended_sprint: Sprint 23 (Wave 2) or next recommended_agent: compliance-engineer (class ruling)
+
+- backend-engineer (code + fixture leg) priority: P2 estimated_hours: 3 promoted_to_queue: false
+
+**Scope.** FOLLOW-559's consent gate (`apps/ingest/src/consent-gate.ts`) is correct on 51 of 52
+event types. The lone gap is intra-taxonomy: `session.quality.snapshot` is classed **`operational`**
+(`consent-gate.ts:395`, always-ingest) but its payload
+(`packages/shared/src/schemas/events/session-quality.ts`) carries `final_archetype`,
+`final_confidence`, `prediction_stability_score` — the §H.8(d) "buying-intent identification"
+derived artifact, the **same class of data** the map correctly GATES as `profiling` when it arrives
+as `intent.snapshot` (`consent-gate.ts:379`, the full 12-dim vector). Consequence: for a
+`consent_state='none'` user the gate blocks the 12-dim vector but persists that same user's final
+archetype label + confidence via the quality snapshot. This is defense-in-depth (the SDK sets
+`consent_state` client-side, so `none`-profiling volume at ingest is low) — hence **P2, not P1** —
+but it is a genuine §H.8(d) under-gate and an internal inconsistency in the PR's own taxonomy. The
+class choice is a **compliance judgment, not a unilateral code flip**, so the ruling comes first.
+
+**Why the existing tests did not catch it.** The contract test (`consent-gate.test.ts:172`)
+enumerates every union member through `evaluateConsent(t, 'consented')` and asserts none is
+unclassified — but under `'consented'`, `profiling`/`operational`/`audit` all return `allowed:true`,
+so the test proves EXHAUSTIVENESS (every type has a class) and cannot detect an INCORRECT class. A
+per-member golden fixture is required to make the class verdict itself testable.
+
+ac:
+
+- [ ] **(a)** **Compliance ruling FIRST (blocks the code leg).** compliance-engineer records a
+      decision (with CEO/DPO sign-off if needed) on `session.quality.snapshot`: is the aggregate DQS
+      metric a lawful **operational** record, or is `final_archetype`/`final_confidence` §H.8(d)
+      derived intent requiring a lawful basis? Document in the gate module doc + (if it changes the
+      ROPA/DPIA posture) the relevant compliance doc of record.
+- [ ] **(b)** **Implement the ruling.** Either (i) reclassify `session.quality.snapshot` to
+      `profiling` in `CONSENT_CLASS_BY_EVENT_TYPE` (gated), OR (ii) if it must stay `operational`,
+      strip the derived-intent fields (`final_archetype`, `final_confidence`,
+      `prediction_stability_score`) from the persisted record when
+      `consent_state ∉ {consented, legitimate-interest}`, OR (iii) leave as-is with the ruling from
+      (a) as the documented justification. No silent status quo.
+- [ ] **(c)** **Golden per-type classification fixture** in `consent-gate.test.ts`: assert the
+      expected `ConsentClass` for EVERY union member (not merely that it is classified), so a future
+      reclassification is a deliberate, reviewed fixture edit. This closes RETRO-177 §4c TG-1
+      (exhaustiveness ≠ correctness) and is the correctness sibling of the AC3 exhaustiveness
+      mechanism.
+- [ ] **(d)** A test proving the chosen behaviour end-to-end for a `consent_state='none'`
+      `session.quality.snapshot` (rejected-and-not-sunk if gated; or
+      persisted-with-derived-fields-stripped if (b)(ii)), route-driven through `handlers/events.ts`
+      in the `index.test.ts` style.
+
+cross_ref: [FOLLOW-559, RETRO-177, MASTER_DESIGN §H.8(d)]

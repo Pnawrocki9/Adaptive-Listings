@@ -2303,3 +2303,25 @@ hung session strands work wherever the agent was standing, and for subagents tha
   comparing violation _counts_ between branches (equal counts could still mask a swap: N new
   violations exactly offsetting N fixed ones) — make worktree-diff the default method, not just a
   spot-check.
+
+- **Date / ticket:** 2026-07-18 — FOLLOW-583 (DONE transition + RETRO-179)
+- **Delegation row used:** N/A this session (no new delegation — DONE-transition bookkeeping +
+  retrospective only, per explicit operator scope).
+- **What validation caught (or missed):** The operator's special-attention instruction to
+  independently re-grep for remaining unguarded archetype-literal copies (rather than trusting
+  FOLLOW-561/FOLLOW-583's combined scope as "closure") caught a real, concrete gap: `bandit-seed.ts`
+  `CANONICAL_ARCHETYPES` was **inside the Rule AC anchor grep's own output** (`golden_visa_buyer`)
+  and was dropped from FOLLOW-583's scope anyway — Rule AC's own promoting ticket repeated the Rule
+  AC violation one cycle later. A second, structurally different gap (2 already-broken `'investor'`
+  literals in `MOCK_ARCHETYPES` arrays too short to contain the single anchor string) was invisible
+  to the anchor grep entirely and required a broader manual audit to find. Rule AC's own
+  "Verification" snippet (a single-anchor grep) is provably insufficient — flagged in RETRO-179 §6
+  as a candidate future amendment, not yet promoted (2nd sighting, threshold ≥2 PRIOR retros needed
+  for a NEW rule; amending an existing rule's verification step has no stated threshold, worth
+  asking the human whether that should require re-promotion evidence too).
+- **A delegation/validation rule I'd add:** When a retro/PM re-verifies a "guard now covers class X"
+  claim, don't stop at re-running the SAME anchor grep the closing ticket used — (a) check whether
+  every hit the anchor grep already returned was actually acted on (a scoping/triage failure is
+  distinct from a search failure and needs a different fix), and (b) run at least one structurally
+  different search (grep the construct name / a differently-sized member of the class) to catch
+  instances the single anchor is blind to by construction, not just by omission.

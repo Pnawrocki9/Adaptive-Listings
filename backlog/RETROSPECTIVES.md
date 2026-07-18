@@ -28282,3 +28282,230 @@ CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduced by 
 - **First retro to analyze this specific ticket** — FOLLOW-561 is not a claimed-closure of any prior
   FOLLOW (fresh 2026-07-11 audit finding, `depends_on: []`), so step 7 (prior-follow-up closure
   check) is N/A.
+
+---
+
+## RETRO-179 — FOLLOW-583 (extend the archetype-ID parity guard to the 4th full-parity copy + 2 subset copies RETRO-178 found; fix the `family_upsizer` mock typo) — 2026-07-18
+
+**Deviation note (per operator instruction, mirrors RETRO-178's precedent):** no Agent/Task-spawn
+tool was available in this session's toolset. I ran the retrospective-analyst's documented algorithm
+(`.claude/agents/retrospective-analyst.md`) directly rather than spawning the subagent. Model-fit
+call: the analyst's default is **Opus** (per CLAUDE.md's model-fit table — retrospectives are the
+explicit Opus example: "complex single-domain reasoning... retrospectives, ambiguous acceptance
+criteria"), which is what I would have set had a spawn tool been available; this run executed under
+the orchestrator's own model (Sonnet) instead. Flagged in STATUS.md and the PR comment per
+instruction.
+
+### 1. Summary of change
+
+- **PR:** #555 (merged 2026-07-17 23:07 UTC [sic — post-midnight commit timestamp reads
+  2026-07-18T01:07 local/CEST; `mergedAt` UTC is 2026-07-17T23:07:01Z], commit `4b527a4`) +
+  bookkeeping PR #556 (merged, commit `9776ce3`).
+- **Files changed:** 4 (+218 / −2) — `tests/integration/archetype-id-parity.test.ts` (extended: +4
+  parser functions, +1 helper `assertSubsetValidity`, +3 `describe` blocks), `route-helpers.ts`
+  (`'family_upsizer'` → `'upsizer'`, 1 line), `export/route.ts` (same fix, 1 line),
+  `.claude/agents/qa-engineer/lessons.md` (log entry).
+- **Modules touched:** qa (`tests/integration/`), control-plane (2-line mock-data typo fix in
+  `apps/control-plane/src/app/api/admin/labels/`).
+- **Key contracts changed:** none — test extension + 2 mock-literal string fixes, zero production
+  behavior change (both fixed fields are `data_source: 'mock'` dev/CI fixtures per Rule K.2, gated on
+  absent `CLICKHOUSE_URL`/`DATABASE_URL_ADMIN`, confirmed not served to real tenants).
+
+### 2. Verification done in PR
+
+- Test files changed: 1 extended (8 `it` blocks total, up from 5) · Assertions added: ~9 (1 new
+  full-parity triple + 2 new subset-validity pairs).
+- CI checks: PM-validated green on all real gates (session-36 note, top of QUEUE.md at merge time) —
+  non-success count **0**, with an independent `scripts/check-rule-i.sh` byte-diff net-zero check and
+  a self-run falsification (mutate `generate_description.py`, confirm the new assertion goes red,
+  revert, confirm green) rather than trusting the worker's PR-description claim. This is exactly the
+  evidence bar this loop requires; I re-verified the PM's own trail (not re-run myself, since it's
+  independently reproducible from the PR diff and matches `git show 4b527a4`'s content) rather than
+  re-doing PM's validation redundantly.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): no new production files; the extended test file remains CI-wired (same
+`vitest.config.ts` `include` glob RETRO-178 confirmed fires on every PR targeting `main`, unchanged
+this diff). The 2 fixed literals (`'upsizer'`) are read by existing, already-wired mock-response
+builders (`buildMockLabelsResponse` / `buildMockExportRows`) — not new wires, a value fix inside an
+existing wire. Not dead code.
+CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduced.
+`Wiring Audit — clean ✅` (both checks, on the diff as scoped).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Rule AC's own promoting ticket repeated the Rule AC violation on the SAME anchor grep
+  it was created to enforce.** Per operator instruction, I independently re-ran the Rule AC
+  verification command this PR's own doc-comment describes running
+  (`grep -rn 'golden_visa_buyer' apps/ packages/ --include=*.ts --include=*.py | grep -v
+  node_modules`). The real output (reproduced this session) includes
+  `apps/control-plane/src/lib/bandit-seed.ts:37: 'golden_visa_buyer',` — a **5th hand-maintained
+  full-parity copy**, `CANONICAL_ARCHETYPES: readonly string[]` (`as const`, 18 entries,
+  `bandit-seed.ts:32-50`), whose own doc comment (`bandit-seed.ts:23-29`) says: *"Mirrors `ArchetypeId`
+  in `packages/shared/src/directives.ts`. Both must be kept in sync when new archetypes are added...
+  FOLLOW-036 will move this to `packages/shared/src/archetypes.ts` as the single source of truth.
+  Until then, kept as a module-private constant."* It feeds `seedBanditWeightsForTenant` — **18
+  archetypes × 3 variants = 54 live production `ab_bandit_weights` rows per new tenant**
+  (`bandit-seed.ts:80-88`, confirmed live per RETRO-117/FOLLOW-361). It is `readonly string[]`, not
+  tied by any TS type import to `ARCHETYPE_NAMES`/`ArchetypeId`, so a future archetype rename/add here
+  would silently seed 51 rows instead of 54 for every subsequently-created tenant — a real Thompson
+  Sampling gap, one arm short, forever, with no crash, no alert, same silent-degradation shape as
+  RETRO-178's `generate_description.py` finding, on a **higher-cardinality blast radius** (every new
+  tenant, not one prompt fallback). **This file was IN the anchor grep's result set at ticket-scoping
+  time and was not picked up by FOLLOW-583's brief or its worker** — the exact SCOPE-BY-AUDIT-NOT-BY-
+  GREP pattern Rule AC exists to close, recurring one ticket after Rule AC was promoted specifically
+  to close it. Currently IN SYNC (verified by direct read — all 18 canonical ids present, no
+  extra/missing), so this is a drift-risk finding, not a live bug. → **FOLLOW-584** (promote the
+  already-existing, never-promoted `FOLLOW-036` — filed 2 sprints ago for this exact file, sitting at
+  `promoted_to_queue: false` since `recommended_sprint: 9` — and extend it with a guard-test AC so
+  this doesn't recur a 4th time).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P3) — two MORE already-invalid `archetype` mock literals exist, of the identical bug class
+  CB-1 (RETRO-178) just fixed, and the `golden_visa_buyer` anchor grep structurally cannot find
+  them.** Independent broader search (grepping for `MOCK_ARCHETYPES` naming + manual archetype-string
+  audit, since these arrays are short 5-element subsets that never happen to include
+  `golden_visa_buyer`) finds:
+  - `apps/control-plane/src/app/api/pilot/cta-lift/route-helpers.ts:87-91` (interface
+    `ChArchetypeCounts { archetype: string; ... }`) and its `MOCK_ARCHETYPES` array
+    (`pilot/cta-lift/route.ts:229-234`): `['yield_hunter', 'family_buyer', 'investor', 'downsizer',
+    'neutral']`.
+  - `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts:222-227` (interface `LiftRow {
+    archetype: string; ... }`, consumed by `apps/control-plane/src/app/dashboard/analytics/page.tsx`)
+    own `MOCK_ARCHETYPES` array: `['yield_hunter', 'family_buyer', 'investor', 'neutral',
+    'downsizer']`.
+  - **`'investor'` is not a member of `ARCHETYPE_NAMES`** (the canonical 18 has no bare `investor` —
+    the closest real ids are `yield_hunter`/`vacation_rental_investor`/`flip_investor`/
+    `portfolio_builder`/`commercial_investor`). Both fields are typed loose `string`, so TypeScript
+    cannot and does not catch it (confirmed `pnpm typecheck` stays clean on `main` today). Both arrays
+    are dev/CI-only mock fallbacks (activated when ClickHouse is unconfigured, same Rule K.2 trigger
+    class as the CB-1 fixture this PR fixed) feeding the pilot CTA-lift and dashboard analytics-lift
+    endpoints/pages. Genuinely P3 (mock-only, not a live prediction), but it is CB-1's sibling bug,
+    proving RETRO-178's own remediation (this PR) closed 1 of at least 3 currently-broken instances of
+    the class, because the ticket's search anchor (a single distinctive canonical id,
+    `golden_visa_buyer`) is structurally blind to short subset-array bugs that never reference that
+    particular id. → **FOLLOW-585** (fix both `'investor'` literals to a valid canonical id + add
+    subset-validity guard assertions for both arrays to `archetype-id-parity.test.ts`, mirroring the
+    `MOCK_ARCHETYPES`/`export/route.ts` shape this PR already established).
+
+#### 4c. Test coverage gaps
+
+- Same root as 4a/4b: no test asserts subset/full-parity validity for `bandit-seed.ts`
+  `CANONICAL_ARCHETYPES`, `pilot/cta-lift` `MOCK_ARCHETYPES`, or `dashboard/analytics/lift`
+  `MOCK_ARCHETYPES` — folded into FOLLOW-584/FOLLOW-585 above rather than restated as a separate
+  finding.
+- Lower-priority, noted but NOT spun into its own FOLLOW (Rule P — avoid duplicating existing
+  intent): `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` (zod `z.enum`, full
+  18-item hand copy) and `packages/shared/src/directives.ts` `ArchetypeId` (TS union type, full
+  18-item hand copy, its own doc comment says "Keep in sync... whenever archetypes change") are two
+  MORE independent hand-maintained full copies in `packages/shared`, plus
+  `apps/control-plane/src/app/api/adapt/description/route.ts`'s inline `z.enum([...])` (18-item,
+  QueryParamsSchema). None of the three are guarded by this test file either. Unlike 4a/4b these are
+  lower-urgency: a drift here is more likely to surface LOUDLY (a zod `.parse()` throw / a 400 on a
+  legitimate archetype query param) than silently, so I am not filing a 6th/7th/8th FOLLOW for them —
+  instead recommending FOLLOW-584 (already being promoted for `bandit-seed.ts`) be scoped broadly
+  enough to make `packages/shared` the actual single source these three (`directives.ts`,
+  `description.ts`, `bandit-seed.ts`) all import from, since FOLLOW-036's original vision
+  (`packages/shared/src/archetypes.ts` exporting `CANONICAL_ARCHETYPE_IDS`) already covers exactly
+  this shape and fixing the TYPE-level root cause is more durable than adding a 4th/5th/6th
+  independent runtime guard test.
+
+#### 4d. Documentation gaps
+
+- `tests/integration/archetype-id-parity.test.ts`'s own doc comment (top-of-file, FOLLOW-583 section)
+  is accurate about the 3 NEW copies it added — it does not over-claim total repo coverage, and does
+  not name itself as "the" guard for the class, so no Rule Y (over-claiming) violation. The gap is
+  scope-completeness (4a/4b), not documentation honesty.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- None of Sprint 23's remaining open tickets (`FOLLOW-560`/`562`/`564`/`565`) touch archetype
+  literals or `bandit-seed.ts`.
+
+#### 5b. Future sprint tickets affected
+
+- Any future archetype add/rename/removal must now ALSO touch `bandit-seed.ts`
+  `CANONICAL_ARCHETYPES`, `pilot/cta-lift` + `dashboard/analytics/lift` `MOCK_ARCHETYPES`,
+  `packages/shared/src/directives.ts` `ArchetypeId`, `packages/shared/src/schemas/description.ts`
+  `ArchetypeIdSchema`, and `apps/control-plane/.../adapt/description/route.ts`'s inline `z.enum` — or
+  repeat this gap a 3rd time. Captured in FOLLOW-584/FOLLOW-585.
+
+#### 5c. Contracts changed others rely on
+
+- None (this PR itself: test-only + 2 mock-string fixes).
+
+#### 5d. Architectural assumptions affected
+
+- **FOLLOW-561/RETRO-178's implicit closure claim — "the archetype-ID parity guard now covers all
+  hand-maintained copies" — does NOT hold repo-wide even after FOLLOW-583.** It holds for the 7
+  copies both tickets combined actually enumerated (3 full-parity: `nlp.py`, `archetype-seeds.ts`,
+  migration 0005; 1 full-parity: `generate_description.py`; 3 subset: `archetype-hints.ts`,
+  `demo-override-store.ts`, the admin-labels mock pair) — all 7 independently re-verified this session
+  as correctly guarded, non-vacuous, and currently green. It does NOT hold for at least 5 more
+  hand-maintained copies found this session (`bandit-seed.ts`, 2× lift-analytics `MOCK_ARCHETYPES`,
+  `directives.ts`, `description.ts`), 2 of which (the lift-analytics mocks) are **currently broken**
+  the same way `family_upsizer` was. Closure is a moving target for this literal-set class until the
+  root cause (no single canonical exported constant other packages import from — FOLLOW-036's
+  original, never-promoted proposal) is fixed, not just each individual copy patched reactively.
+
+### 6. New lesson candidates
+
+- **Pattern: "a guard-authoring ticket's own repo-wide grep, run correctly, still misses instances
+  that don't happen to contain the single distinctive anchor string chosen — and separately, hits
+  that DO appear in the grep output get silently dropped from the ticket's scope anyway."** This is
+  actually TWO related but distinct failure modes surfacing in one PR: (a) the anchor-grep's inherent
+  blind spot for short/asymmetric subset copies (the 2 `'investor'` bugs — CB-1 here), and (b) a hit
+  that WAS in the anchor-grep's result set (`bandit-seed.ts`) simply not being carried into the
+  ticket's final scope (LG-1 here) — a scoping/triage failure, not a search failure. Seen in: this is
+  the FIRST retro to explicitly separate these two sub-patterns; RETRO-178's Rule AC (§ below) already
+  covers failure mode (b) generically ("scoped by the source audit's named files, not a repo-wide
+  grep") but Rule AC's own **Verification** snippet (a single-anchor `grep -rn
+  '<distinctive_member_value>'`) does not itself guard against failure mode (a) — a single-anchor
+  grep is provably insufficient by this session's own findings (2 real bugs invisible to the
+  `golden_visa_buyer` anchor). **Not promoting a new Rule** — Rule AC is 1 retro old (promoted
+  RETRO-178, this is only its 2nd sighting) and RULE_PROMOTION_THRESHOLD requires ≥2 PRIOR retros
+  before this one; but flagging explicitly for the human/PM: **Rule AC's Verification step should be
+  amended to require multiple anchors (e.g. grep for ≥3 archetype ids spanning different "families" —
+  an investor-type, an own-use-type, and a special/cross-border-type) or a structural grep (search for
+  the array/enum/dict CONSTRUCT itself, e.g. `MOCK_ARCHETYPES`, `z.enum(\[`, `ArchetypeId`) unioned
+  with the single-anchor grep**, not amended as a full Rule promotion yet since this is only sighting
+  #2. If a 3rd sighting of the multi-anchor gap occurs, promote a Rule AD.
+
+### 7. Follow-ups
+
+- FOLLOW-584: Promote the existing (never-promoted, `promoted_to_queue: false` since
+  `recommended_sprint: 9`) `FOLLOW-036` from `backlog/FOLLOW_UPS.md` into `QUEUE.md`, and expand its
+  scope beyond `bandit-seed.ts` alone to also cover `packages/shared/src/directives.ts` `ArchetypeId`
+  and `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` importing from the same new
+  `packages/shared/src/archetypes.ts` `CANONICAL_ARCHETYPE_IDS` single source; add a guard-test AC
+  (full-parity assertion in `archetype-id-parity.test.ts` for whichever hand copies remain after
+  consolidation) so the closure is provable, not just structurally implied by the refactor
+  (architect + backend-engineer, P2, 4h — was 2h in the original stub, +2h for the widened scope).
+- FOLLOW-585: Fix the 2 already-invalid `'investor'` mock-archetype literals in
+  `apps/control-plane/src/app/api/pilot/cta-lift/route.ts` `MOCK_ARCHETYPES` and
+  `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES` (to a valid
+  canonical id — document the choice, same discipline as FOLLOW-583 AC-3), and add 2 new
+  subset-validity `describe` blocks to `tests/integration/archetype-id-parity.test.ts` mirroring the
+  admin-labels mock-pair shape this PR established, with the same falsification-red-first discipline
+  (qa-engineer, P2, 2h).
+
+### 8. Cross-references
+
+- **Related to RETRO-178:** this retro is FOLLOW-583's own (the ticket RETRO-178 spawned), closing
+  the loop — and finding the loop is not actually closed (§5d, §6).
+- **Related to Rule AC (promoted RETRO-178):** this is Rule AC's 2nd sighting since promotion,
+  finding a sub-pattern (multi-anchor blind spot) Rule AC's own Verification snippet does not yet
+  cover — flagged for a future amendment, not a new Rule (§6).
+- **Related to RETRO-053/055 and RETRO-107/108:** the underlying "ticket scope enumeration incomplete
+  relative to its own target class" pattern is now at its 4th sighting across 4 different tickets
+  (FOLLOW-264, FOLLOW-384, FOLLOW-561, and now FOLLOW-583 itself) — the most-repeated single pattern
+  in this project's retro history to date.
+- **Related to FOLLOW-036:** this retro is the first to re-discover FOLLOW-036's original 2-sprint-old
+  finding independently, from a completely different angle (Rule AC re-verification) and confirm it
+  is still open and still correct — see FOLLOW-584.

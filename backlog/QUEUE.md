@@ -1,6 +1,23 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-18 (session 36 — FOLLOW-583 PM-validated, READY_FOR_REVIEW on PR #555)
+## ▶️ START HERE — resume 2026-07-18 (session 37 — FOLLOW-583 DONE, merged; retrospective RETRO-179 filed)
+
+**Read this before picking anything.** FOLLOW-583 is `DONE`. Both PRs merged: worker PR #555
+(`4b527a4`, branch `qa-engineer/FOLLOW-583-archetype-guard-4th-copy`) and this session's bookkeeping
+PR (see below for its number/commit once opened). Retrospective RETRO-179 filed in
+`backlog/RETROSPECTIVES.md` covering the FOLLOW-561→RETRO-178→FOLLOW-583 chain, including an
+independent repo-wide re-grep for any remaining unguarded archetype-literal copies and a check on
+whether Rule AC (added in RETRO-178) is holding. See that entry for findings and any new FOLLOW
+stubs generated.
+
+No open escalations block anything (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
+ruling; ESC-037/ESC-038 both RESOLVED). `FOLLOW-562`/`FOLLOW-564` remain `READY` and unblocked —
+**not picked this session per explicit instruction** (this session was scoped to the FOLLOW-583 DONE
+transition + retrospective only). `FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on `FOLLOW-553`.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-18 (session 36 — FOLLOW-583 PM-validated, READY_FOR_REVIEW on PR #555)
 
 **Read this before picking anything.** FOLLOW-583's qa-engineer worker phase opened PR #555 (commits
 `6bec7ea`..`a3916aa`, branch `qa-engineer/FOLLOW-583-archetype-guard-4th-copy`). PM independently
@@ -12825,10 +12842,20 @@ in-place in Sprint 22b above.
     Extend the archetype-ID guard to the 4th (production-live) full-parity copy + 2 subset copies
     the FOLLOW-561 guard missed; fix the already-broken `family_upsizer` mock literal
   agent: qa-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: qa-engineer
   started_at: '2026-07-18T00:00:00Z'
+  completed_at: '2026-07-18T00:00:00Z'
+  branch: qa-engineer/FOLLOW-583-archetype-guard-4th-copy
   pr: 555
+  merge_commit: 4b527a4
+  pm_validated: >-
+    2026-07-18 session 36 — validated independently before READY_FOR_REVIEW (see superseded
+    session-36 START HERE note above for full evidence: CI real-gate non-success count 0, AC-1
+    full-parity re-parsed independently against the real generate_description.py, AC-2 subset
+    reviewed line-by-line, AC-3 falsification-red self-run + reverted + re-green, family_upsizer ->
+    upsizer confirmed canonical). PR #555 (worker) squash-merged as 4b527a4; PR #556 (this
+    bookkeeping) squash-merged as 9776ce3. DONE 2026-07-18.
   priority: P2
   estimated_hours: 3
   depends_on: []

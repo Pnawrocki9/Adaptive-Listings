@@ -983,6 +983,10 @@ the stub.
 
 ## FOLLOW-036 — Expose CANONICAL_ARCHETYPES from shared package (single source of truth)
 
+- **SUPERSEDED 2026-07-18 (RETRO-179):** folded into **FOLLOW-584**, which re-confirmed this exact
+  gap (independently, via a Rule AC verification re-run) and widened the scope to also cover
+  `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema`. Do not promote this entry
+  separately — promote FOLLOW-584 instead.
 - **source_retro:** TICKET-AB-006 (data-engineer — archetype list duplication)
 - **source_ticket:** TICKET-AB-006
 - **recommended_sprint:** 9
@@ -15492,3 +15496,124 @@ subset-validity guard at all:
 cross_ref: [FOLLOW-561, RETRO-178]
 
 cross_ref: [FOLLOW-574, FOLLOW-193, FOLLOW-558, RETRO-176]
+
+---
+
+## FOLLOW-584 — Promote + widen the existing (never-promoted) FOLLOW-036: consolidate `bandit-seed.ts` `CANONICAL_ARCHETYPES`, `directives.ts` `ArchetypeId`, and `description.ts` `ArchetypeIdSchema` onto one exported canonical constant
+
+source_retro: RETRO-179 (§4a LG-1, §4c, §5d) source_ticket: FOLLOW-583 (this is the retro on
+FOLLOW-583 itself) recommended_sprint: Sprint 24 recommended_agent: architect + backend-engineer
+priority: P2 estimated_hours: 4 promoted_to_queue: false
+
+**Gap:** `FOLLOW-036` (filed earlier, `recommended_sprint: 9`, still `promoted_to_queue: false`
+today) already identified that `apps/control-plane/src/lib/bandit-seed.ts` `CANONICAL_ARCHETYPES` is
+a hand-maintained 18-item full-parity copy with **no automated guard and no type tie** to the
+canonical `ARCHETYPE_NAMES`/`ArchetypeId`. It feeds `seedBanditWeightsForTenant` — 54 live
+production `ab_bandit_weights` rows (18 archetypes × 3 variants) written for every newly created
+tenant. Its own doc comment says "FOLLOW-036 will move this... kept as module-private constant" —
+i.e. the gap was self-documented as known-and-deferred.
+
+RETRO-179 independently re-confirmed this gap this session by re-running the exact Rule AC
+verification grep (`grep -rn 'golden_visa_buyer' apps/ packages/ --include=*.ts --include=*.py`)
+that FOLLOW-583 (the ticket that added `generate_description.py` + 2 other copies to the guard) used
+to scope itself — `bandit-seed.ts:37` is IN that grep's output and was NOT carried into FOLLOW-583's
+final scope. Currently in sync (18/18 present), so this is a drift-risk, not a live bug.
+
+Two more independent hand-maintained full copies exist in `packages/shared` that FOLLOW-036's
+original scope did not name (found this session, lower urgency — a drift here surfaces LOUDLY via a
+zod throw or a type error, not silently):
+
+- `packages/shared/src/directives.ts` `ArchetypeId` (TS union type, "Keep in sync... whenever
+  archetypes change" per its own doc comment).
+- `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` (zod `z.enum`, full 18-item).
+- (Lower priority still, not required for this ticket's AC but worth a look while in the file:
+  `apps/control-plane/src/app/api/adapt/description/route.ts`'s inline `QueryParamsSchema`
+  `archetype: z.enum([...])`, an 18-item hand copy that could import the same consolidated schema.)
+
+**Why now, and why widened from the original FOLLOW-036 scope:** the original FOLLOW-036 (2 sprints
+old) would only have fixed `bandit-seed.ts`. Doing that in isolation just adds a 5th place someone
+has to remember to update by hand (packages/shared already has 2 more). Consolidating onto one
+exported `packages/shared/src/archetypes.ts` `CANONICAL_ARCHETYPE_IDS` (FOLLOW-036's original
+proposed shape) that `directives.ts`, `description.ts`, and `bandit-seed.ts` all import from fixes
+the ROOT CAUSE instead of adding another reactive patch — and closes RETRO-179's finding that "the
+guard is a moving target until the underlying single-source-of-truth gap is fixed."
+
+**AC:**
+
+- [ ] `packages/shared/src/archetypes.ts` exports `CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]`
+      (or equivalent single canonical array), matching `ARCHETYPE_NAMES` in
+      `packages/sdk/src/core/intent.ts` (which remains the ultimate SoT per existing convention —
+      `packages/shared` may not depend on `packages/sdk`, so this is a parallel canonical export,
+      not an import from the SDK; document that constraint inline, same rationale `directives.ts`
+      currently states for its own inline declaration).
+- [ ] `packages/shared/src/directives.ts` `ArchetypeId` derived from `CANONICAL_ARCHETYPE_IDS`
+      (`typeof CANONICAL_ARCHETYPE_IDS[number]`) instead of an independent literal union.
+- [ ] `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` built from
+      `CANONICAL_ARCHETYPE_IDS` (`z.enum(CANONICAL_ARCHETYPE_IDS)` or equivalent) instead of an
+      independent literal array.
+- [ ] `apps/control-plane/src/lib/bandit-seed.ts` imports `CANONICAL_ARCHETYPE_IDS` from
+      `@estalara/shared` instead of declaring its own `CANONICAL_ARCHETYPES` — remove the
+      module-private constant and its "FOLLOW-036 will move this" comment.
+- [ ] A guard test (extend `tests/integration/archetype-id-parity.test.ts` or add a new
+      `packages/shared/src/__tests__/` test) asserts `CANONICAL_ARCHETYPE_IDS` (packages/shared) has
+      exact set-parity with `ARCHETYPE_NAMES` (packages/sdk) — the one drift axis that survives
+      consolidation (two independent packages, still hand-synced at the top).
+- [ ] `packages/db/migrations/0007_seed_ab_bandit_weights.sql` (or whichever migration seeds the
+      bandit table) is left as an explicit SQL literal with a comment explaining SQL cannot import
+      TS (per the original FOLLOW-036 AC) — not silently forgotten.
+- [ ] All existing tests pass unchanged; `pnpm typecheck` clean (this is largely a type-level
+      refactor, so a broken import surfaces immediately as a compile error, not silently).
+
+**Note to PM at promotion:** this supersedes/absorbs the original `FOLLOW-036` entry above (same
+root file, same root cause) — do not promote both `FOLLOW-036` and `FOLLOW-584` as separate queue
+tickets; promote `FOLLOW-584` and mark `FOLLOW-036` as folded-into-`FOLLOW-584` in this file.
+
+cross_ref: [FOLLOW-036, FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
+
+---
+
+## FOLLOW-585 — Fix the 2 already-invalid `'investor'` mock-archetype literals in the CTA-lift + dashboard-analytics mock fallbacks (same bug class as FOLLOW-583's `family_upsizer` fix); add subset-validity guards
+
+source_retro: RETRO-179 (§4b CB-1) source_ticket: FOLLOW-583 recommended_sprint: Sprint 24
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** FOLLOW-583 (PR #555) fixed one already-invalid mock-archetype literal (`'family_upsizer'`,
+in the admin-labels mock fixtures) and added a guard test for it. RETRO-179's independent
+scope-completeness re-check this session found **two more, identical-class, currently-broken**
+literals the same PR's anchor grep (`golden_visa_buyer`) structurally could not find, because both
+arrays are short 5-element subsets that happen not to reference that particular archetype:
+
+- `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:229-234` `MOCK_ARCHETYPES`:
+  `['yield_hunter', 'family_buyer', 'investor', 'downsizer', 'neutral']`
+- `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts:222-227` `MOCK_ARCHETYPES`:
+  `['yield_hunter', 'family_buyer', 'investor', 'neutral', 'downsizer']`
+
+`'investor'` is **not** a member of `ARCHETYPE_NAMES` (the canonical 18 has no bare `investor` — the
+closest real ids are `yield_hunter` / `vacation_rental_investor` / `flip_investor` /
+`portfolio_builder` / `commercial_investor`). Both consuming interfaces
+(`ChArchetypeCounts.archetype` in `pilot/cta-lift/route-helpers.ts:87`, `LiftRow.archetype` in
+`dashboard/analytics/lift/route.ts:60`) type the field as loose `string`, so TypeScript does not and
+cannot catch it — confirmed `pnpm typecheck` stays clean on `main` today despite the bad literal.
+Both are dev/CI-only mock fallbacks (same `data_source`/ClickHouse-unconfigured trigger class as the
+`family_upsizer` fixture FOLLOW-583 fixed) feeding the pilot CTA-lift endpoint and the dashboard
+analytics-lift page (`apps/control-plane/src/app/dashboard/analytics/page.tsx`) — P3 impact on its
+own (mock-only), P2 priority here because it is the second sibling instance of a pattern already
+proven to recur and worth closing in the same sweep rather than leaving a 3rd instance for a future
+retro to find.
+
+**AC:**
+
+- [ ] Fix `'investor'` → a valid canonical archetype id in both `pilot/cta-lift/route.ts`
+      `MOCK_ARCHETYPES` and `dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES` (mock data has no
+      correctness requirement beyond validity — document the choice, one sentence, same discipline
+      FOLLOW-583 AC-3 used for `family_upsizer` → `upsizer`).
+- [ ] Add a subset-validity assertion to `tests/integration/archetype-id-parity.test.ts` for
+      `pilot/cta-lift/route.ts` `MOCK_ARCHETYPES`, shown failing red against `main`'s current state
+      FIRST (falsification proof, same discipline as FOLLOW-583's AC-3), then passing after the fix.
+- [ ] Add a subset-validity assertion for `dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES`,
+      same red-then-green discipline.
+- [ ] All existing assertions in the file (8, post-FOLLOW-583) still pass unaffected.
+- [ ] Scope discipline: touch only the 2 named `MOCK_ARCHETYPES` arrays + the test file — do not
+      touch the ClickHouse-backed (non-mock) code paths in either route.
+
+cross_ref: [FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]

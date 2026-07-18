@@ -1,4 +1,69 @@
-# Status — 2026-07-18 (session 35 — FOLLOW-583 promoted + dispatched to qa-engineer)
+# Status — 2026-07-18 (session 37 — FOLLOW-583 DONE transition + retrospective RETRO-179)
+
+## SESSION 37 (2026-07-18) — FOLLOW-583 DONE transition + retrospective RETRO-179; no new dispatch
+
+**State check:** PR #555 (worker) and PR #556 (PM bookkeeping/validation) both merged to `main`
+(squash commits `4b527a4` and `9776ce3`). `git log --oneline -5` confirmed `9776ce3` at HEAD of
+`main`; working tree clean before starting. No open ESCALATIONS.md entries (ESC-020 explicitly
+non-blocking; ESC-037/ESC-038 both RESOLVED). No open PRs at session start.
+
+**Action taken:** `backlog/QUEUE.md` FOLLOW-583 transitioned `READY_FOR_REVIEW` -> `DONE`
+(`completed_at: '2026-07-18T00:00:00Z'`, `branch`, `pr: 555`, `merge_commit: 4b527a4`,
+`pm_validated` note referencing both merge commits). Prepended a new session-37 START HERE header,
+marked session-36's header superseded (existing pattern). Committed on fresh branch
+`pm-orchestrator/FOLLOW-583-mark-done` off `main` (never `main` directly) -> PR opened for the
+bookkeeping.
+
+**Retrospective:** No Task/Agent-spawn tool was available in this session's toolset (Read/Write/
+Edit/Bash only) — same environment constraint as sessions 34/35/36. Rather than fake a subagent
+dispatch, I performed the retrospective-analyst's algorithm directly against
+`.claude/agents/retrospective-analyst.md` (model-fit: **opus**, per the model-fit table's explicit
+"retrospectives" row and the agent's own `model: opus` frontmatter — this run required cross-file
+reasoning across ~8 hand-maintained literal copies and a severity/consequence judgment call, not
+mechanical bookkeeping; the analysis itself ran under the orchestrator's own Sonnet session since no
+spawn tool existed — flagging the deviation explicitly here and in the PR comment, per instruction).
+
+Produced **RETRO-179** in `backlog/RETROSPECTIVES.md`. Per the operator's special-attention
+instruction, I independently re-ran the exact Rule AC verification grep
+(`grep -rn 'golden_visa_buyer' apps/ packages/ --include=*.ts --include=*.py | grep -v node_modules`)
+this PR's own doc comment describes, plus a broader manual audit for other `MOCK_ARCHETYPES`-shaped
+literals. Findings:
+
+- **The 7 copies FOLLOW-561+FOLLOW-583 combined actually target ARE correctly guarded** —
+  re-verified each of the 4 full-parity (`nlp.py`, `archetype-seeds.ts`, migration 0005,
+  `generate_description.py`) and 3 subset (`archetype-hints.ts`, `demo-override-store.ts`,
+  admin-labels mock pair) assertions directly against the real checked-in files; all non-vacuous,
+  all currently green.
+- **Guard closure is NOT total repo-wide.** `apps/control-plane/src/lib/bandit-seed.ts:37`
+  `CANONICAL_ARCHETYPES` (18-item full-parity hand copy, feeds 54 live-prod `ab_bandit_weights` rows
+  per new tenant, self-documented as needing manual sync) was **in the Rule AC anchor grep's own
+  output** and was not carried into FOLLOW-583's scope — Rule AC's own promoting-ticket repeated the
+  Rule AC violation. This is also the exact file the long-dormant, never-promoted **FOLLOW-036**
+  (filed 2 sprints ago) already named — re-discovered independently this session.
+- **Two more, currently-BROKEN, sibling instances of the exact `family_upsizer` bug class** found in
+  `pilot/cta-lift/route.ts` and `dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES` (both
+  hard-code the invalid id `'investor'`, not a canonical `ARCHETYPE_NAMES` member) — invisible to
+  the `golden_visa_buyer` anchor grep because both arrays are short 5-element subsets that don't
+  happen to reference that particular id. This is a distinct sub-pattern (single-anchor grep blind
+  spot) from the "hit-in-grep-but-dropped-from-scope" pattern above; flagged in §6 as a candidate
+  future amendment to Rule AC's Verification snippet (not a new Rule — only 2nd sighting, threshold
+  is ≥2 PRIOR retros).
+
+Filed **FOLLOW-584** (architect + backend-engineer, P2, 4h — promotes + widens the existing
+never-promoted FOLLOW-036 to also cover `packages/shared`'s 2 more independent copies) and
+**FOLLOW-585** (qa-engineer, P2, 2h — fix the 2 `'investor'` literals + add subset-validity guards,
+same falsification-red-first discipline as FOLLOW-583). Marked the original `FOLLOW-036` entry
+SUPERSEDED (folded into FOLLOW-584) in `backlog/FOLLOW_UPS.md`. **No Rule promoted this session**
+(the multi-anchor blind-spot sub-pattern is only its 2nd sighting; RULE_PROMOTION_THRESHOLD is ≥2
+PRIOR retros, so this would need a 3rd sighting in a future retro before promotion).
+
+**CI-check counter:** 0/5 this session (bookkeeping + retro-analysis only, no code change to
+validate — FOLLOW-584/585 are stubs, not yet promoted to QUEUE.md). **Fix-iteration counter:** 0/3.
+
+**Explicitly NOT picked up this session, per operator instruction:** `FOLLOW-562`, `FOLLOW-564`
+(both `READY`, unblocked, Sprint 23 Wave 3) — scope was FOLLOW-583 DONE + retro only.
+
+---
 
 ## SESSION 35 (2026-07-18) — FOLLOW-583 promoted from FOLLOW_UPS.md, dispatched to qa-engineer
 

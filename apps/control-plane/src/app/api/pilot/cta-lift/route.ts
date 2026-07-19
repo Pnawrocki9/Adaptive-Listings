@@ -226,10 +226,13 @@ function seededRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
+// FOLLOW-585: the third entry was the invalid literal "investor" — replaced with
+// the most generic INVESTOR_ARCHETYPES member (no niche flip/vacation-rental/
+// golden-visa connotation); yield_hunter is already covered above.
 const MOCK_ARCHETYPES = [
   'yield_hunter',
   'family_buyer',
-  'investor',
+  'portfolio_builder',
   'downsizer',
   'neutral',
 ] as const;

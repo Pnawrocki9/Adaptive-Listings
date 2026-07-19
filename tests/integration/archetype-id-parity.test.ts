@@ -206,6 +206,19 @@ function parseMockArchetypes(source: string): Set<string> {
   return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
+/** Parses the `MOCK_ARCHETYPES = [...] as const;` array literal from a given source. */
+function parseMockArchetypesGeneric(source: string, sourceLabel: string): Set<string> {
+  const block = /MOCK_ARCHETYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(source);
+  if (!block) {
+    throw new Error(
+      `archetype-id-parity: could not locate \`MOCK_ARCHETYPES = [...] as const;\` in ` +
+        `${sourceLabel} — the literal was likely renamed or reformatted; update this parser ` +
+        'regex to match.',
+    );
+  }
+  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
 /**
  * Parses every quoted `archetype: '<id>'` object-literal value out of
  * export/route.ts's `buildMockExportRows()`. Only matches quoted string values
@@ -429,6 +442,54 @@ describe('FOLLOW-583 — admin/labels mock archetype fixtures (dev/CI-only, data
     assertSubsetValidity(
       'route-helpers.ts MOCK_ARCHETYPES + export/route.ts buildMockExportRows() literals',
       combined,
+      ARCHETYPE_NAMES,
+    );
+  });
+});
+
+describe('FOLLOW-585 — pilot/cta-lift + dashboard/analytics/lift mock archetype fixtures (dev/CI-only)', () => {
+  // Same shape as the FOLLOW-583 admin/labels guard above: both `MOCK_ARCHETYPES`
+  // arrays are dev/CI-only fallbacks used only when ClickHouse is not configured,
+  // fields are typed loose `string`, so `pnpm typecheck` cannot catch a bad literal.
+  // A repo-wide grep found both hard-coded 'investor', which is NOT a member of
+  // ARCHETYPE_NAMES (the canonical INVESTOR_ARCHETYPES sub-types are
+  // `yield_hunter`, `portfolio_builder`, `flip_investor`, `vacation_rental_investor`,
+  // `golden_visa_buyer`, `commercial_investor` — no bare `investor`).
+
+  it('pilot/cta-lift/route.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const source = readRepoFile('apps/control-plane/src/app/api/pilot/cta-lift/route.ts');
+    const mockArchetypes = parseMockArchetypesGeneric(
+      source,
+      'apps/control-plane/src/app/api/pilot/cta-lift/route.ts',
+    );
+
+    expect(
+      mockArchetypes.size,
+      'parser matched 0 archetypes in pilot/cta-lift/route.ts MOCK_ARCHETYPES — regex is broken',
+    ).toBeGreaterThan(0);
+
+    assertSubsetValidity(
+      'apps/control-plane/src/app/api/pilot/cta-lift/route.ts MOCK_ARCHETYPES',
+      mockArchetypes,
+      ARCHETYPE_NAMES,
+    );
+  });
+
+  it('dashboard/analytics/lift/route.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const source = readRepoFile('apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts');
+    const mockArchetypes = parseMockArchetypesGeneric(
+      source,
+      'apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts',
+    );
+
+    expect(
+      mockArchetypes.size,
+      'parser matched 0 archetypes in dashboard/analytics/lift/route.ts MOCK_ARCHETYPES — regex is broken',
+    ).toBeGreaterThan(0);
+
+    assertSubsetValidity(
+      'apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts MOCK_ARCHETYPES',
+      mockArchetypes,
       ARCHETYPE_NAMES,
     );
   });

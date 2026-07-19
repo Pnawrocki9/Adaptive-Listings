@@ -1,42 +1,26 @@
 /**
  * Adaptation directive types shared across Decision API and SDK.
  *
- * `ArchetypeId` is intentionally declared inline here (not imported from `@estalara/sdk`)
- * to prevent a circular workspace dependency. Keep in sync with the `Archetype` union in
- * `packages/sdk/src/core/intent.ts` whenever new archetypes are added.
+ * `ArchetypeId` is derived from `CANONICAL_ARCHETYPE_IDS` (`./archetypes.js`) rather than
+ * imported from `@estalara/sdk`, to prevent a circular workspace dependency (`@estalara/sdk`
+ * depends on `@estalara/shared`, not the other way around). Keep `CANONICAL_ARCHETYPE_IDS` in
+ * sync with the `Archetype` union in `packages/sdk/src/core/intent.ts` whenever new archetypes
+ * are added — `packages/shared/src/__tests__/archetype-canonical-parity.test.ts` guards this
+ * (FOLLOW-584).
  *
  * @module @estalara/shared/directives
  */
 
+import type { CANONICAL_ARCHETYPE_IDS } from './archetypes.js';
+
 /**
  * Canonical archetype identifiers — mirrors `Archetype` in `@estalara/sdk/core/intent`.
  *
- * Declared inline to avoid a circular workspace dependency (shared → sdk).
- * Keep in sync with `packages/sdk/src/core/intent.ts` whenever archetypes change.
+ * Derived from `CANONICAL_ARCHETYPE_IDS` (`./archetypes.js`) to avoid a circular workspace
+ * dependency (shared → sdk). Keep `CANONICAL_ARCHETYPE_IDS` in sync with
+ * `packages/sdk/src/core/intent.ts` whenever archetypes change.
  */
-export type ArchetypeId =
-  // Investors
-  | 'yield_hunter'
-  | 'vacation_rental_investor'
-  | 'flip_investor'
-  | 'portfolio_builder'
-  | 'golden_visa_buyer'
-  | 'commercial_investor'
-  // Own use
-  | 'family_buyer'
-  | 'first_time_buyer'
-  | 'upsizer'
-  | 'downsizer'
-  | 'luxury_buyer'
-  | 'remote_worker'
-  // Special / cross-border
-  | 'lifestyle_expat'
-  | 'retiree_relocator'
-  | 'diaspora_buyer'
-  | 'second_home_buyer'
-  | 'student_parent'
-  // Fallback
-  | 'neutral';
+export type ArchetypeId = (typeof CANONICAL_ARCHETYPE_IDS)[number];
 
 /**
  * Text slot directive — rewrites the text content of a slot element.

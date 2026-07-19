@@ -30,29 +30,18 @@
 
 import { z } from 'zod';
 
+import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { QUIZ_LANGUAGE_VALUES } from './quiz-config.js';
 
-/** Valid archetype IDs — mirrors ArchetypeId in @estalara/shared/directives. */
-export const ArchetypeIdSchema = z.enum([
-  'yield_hunter',
-  'vacation_rental_investor',
-  'flip_investor',
-  'portfolio_builder',
-  'golden_visa_buyer',
-  'commercial_investor',
-  'family_buyer',
-  'first_time_buyer',
-  'upsizer',
-  'downsizer',
-  'luxury_buyer',
-  'remote_worker',
-  'lifestyle_expat',
-  'retiree_relocator',
-  'diaspora_buyer',
-  'second_home_buyer',
-  'student_parent',
-  'neutral',
-]);
+/**
+ * Valid archetype IDs — mirrors `ArchetypeId` in `@estalara/shared/directives`.
+ *
+ * Built from `CANONICAL_ARCHETYPE_IDS` (`../archetypes.js`), the single canonical source
+ * of this list within `packages/shared` (FOLLOW-584). `z.enum()` requires a mutable,
+ * non-empty tuple (`[string, ...string[]]`), so the readonly `as const` array is spread
+ * into a fresh mutable array rather than passed directly.
+ */
+export const ArchetypeIdSchema = z.enum([...CANONICAL_ARCHETYPE_IDS]);
 
 /**
  * Supported locale codes for the description pipeline.

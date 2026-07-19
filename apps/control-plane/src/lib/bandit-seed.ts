@@ -11,44 +11,19 @@
  * convention (Rule K.1 / FOLLOW-361).  Do NOT maintain a separate copy of
  * the variant list here.
  *
- * The canonical archetype list mirrors `ArchetypeId` in
- * `packages/shared/src/directives.ts`. Both must be kept in sync when new
- * archetypes are added.
+ * The canonical archetype list is `CANONICAL_ARCHETYPE_IDS`, imported from
+ * `@estalara/shared` (FOLLOW-584 — supersedes the never-promoted FOLLOW-036,
+ * which this module-private constant's removal fulfills). That array is the
+ * single source of truth within `packages/shared` and is guarded against
+ * drift from `ARCHETYPE_NAMES` (`packages/sdk/src/core/intent.ts`) by
+ * `packages/shared/src/__tests__/archetype-canonical-parity.test.ts`.
  *
  * @module apps/control-plane/src/lib/bandit-seed
  */
 
 import { createAdminClient, abBanditWeights } from '@estalara/db';
+import { CANONICAL_ARCHETYPE_IDS } from '@estalara/shared';
 import { SEED_VARIANTS } from './bandit-query';
-
-/**
- * Canonical archetype identifiers for Thompson sampling bandit seeding.
- * Mirrors `ArchetypeId` in `packages/shared/src/directives.ts`.
- * Keep in sync with the shared type when adding new archetypes.
- *
- * FOLLOW-036 will move this to packages/shared/src/archetypes.ts as the single
- * source of truth. Until then, kept as a module-private constant.
- */
-const CANONICAL_ARCHETYPES = [
-  'yield_hunter',
-  'vacation_rental_investor',
-  'flip_investor',
-  'portfolio_builder',
-  'golden_visa_buyer',
-  'commercial_investor',
-  'family_buyer',
-  'first_time_buyer',
-  'upsizer',
-  'downsizer',
-  'luxury_buyer',
-  'remote_worker',
-  'lifestyle_expat',
-  'retiree_relocator',
-  'diaspora_buyer',
-  'second_home_buyer',
-  'student_parent',
-  'neutral',
-] as const;
 
 /**
  * Seeds 54 `ab_bandit_weights` rows for a newly created tenant.
@@ -77,7 +52,7 @@ export async function seedBanditWeightsForTenant(tenantId: string): Promise<void
 
   const db = createAdminClient();
 
-  const rows = CANONICAL_ARCHETYPES.flatMap((archetype) =>
+  const rows = CANONICAL_ARCHETYPE_IDS.flatMap((archetype) =>
     SEED_VARIANTS.map((variant) => ({
       tenantId,
       archetype,

@@ -2636,3 +2636,28 @@ so.**
   PM asked me to check that specifically, which primes a confirmation lean. I forced the check by
   reading the e2e assertion bodies (`stub.callCount()`) myself rather than the PM's prose about
   them. Keep doing that; the PM's self-report is an input to verify, never the verdict.
+
+- **Date / RETRO:** 2026-07-19 / RETRO-180 (FOLLOW-584 — archetype-ID canonical consolidation)
+- **A finding I almost missed and why:** `intent-weights.ts` `ARCHETYPE_KEYS` — a 4th full 18-entry
+  hand copy sitting INSIDE `packages/shared` itself, which none of RETRO-178, RETRO-179, or the
+  FOLLOW-584 ticket ever enumerated. I only caught it because I refused to trust the ticket's "3
+  named copies + 1 deferred 5th copy" framing and re-ran the raw `golden_visa_buyer` anchor grep
+  myself — it was line 39, in plain sight, the whole time. Lesson: when a consolidation ticket hands
+  me its own scope list, re-run the canonical anchor grep and diff MY hits against THEIR scope; the
+  gap is always the hit they saw and dropped, not the one nobody could see.
+- **An axis/chain I had to trace twice:** the Rule-promotion count. The task brief told me the
+  multi-anchor sub-pattern was "its 2nd sighting" per RETRO-179 and to check for a 3rd. Reading
+  RETRO-179 §6 literally, that "2nd sighting" was **Rule AC** (failure-mode b, already promoted),
+  not the multi-anchor gap (failure-mode a), which RETRO-179 called its 1st. And both my findings
+  turned out to CONTAIN the anchor (grep-visible) → failure-mode (b), not (a) → they add ZERO to the
+  multi-anchor count. So the "3rd sighting" the brief hinted at does not exist. Had I taken the
+  brief's paraphrase at face value I'd have wrongly promoted a Rule AD below threshold. Always
+  re-derive the count from the cited retros' own text, not the launching agent's summary of it.
+- **A meta-pattern in how gaps recur across agents:** "the ticket that closes a class re-commits the
+  class's own defining sin." FOLLOW-583 dropped a grep-visible copy (bandit-seed) → RETRO-179 caught
+  it → FOLLOW-584 (the fix) then dropped ANOTHER grep-visible copy (intent-weights) in the exact
+  same way. The consolidation that installs the SoT is itself the highest-risk site for an
+  incomplete inventory, because everyone (PM, worker, prior retro) is anchored on the SoT-creation
+  mechanics and stops enumerating. Retro discipline: for any "consolidate/guard a class" ticket, the
+  LAST check before writing the entry is a fresh repo-wide grep of the class signature minus the
+  files the ticket touched — whatever remains is the finding.

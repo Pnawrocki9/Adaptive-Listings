@@ -295,7 +295,7 @@ describe('GET /api/admin/tracer/sessions/[id] — live path (DB configured)', ()
         sessionId: SESSION_ID,
         tenantId: TENANT_ID,
         signalCount: 3,
-        intentState: { topArchetype: 'family_nester', confidence: 0.88, weights: {} },
+        intentState: { topArchetype: 'family_buyer', confidence: 0.88, weights: {} },
         lastEventAt: new Date('2026-01-01T00:00:00Z'),
         quizCompleted: true,
         chatTurns: 0,
@@ -306,7 +306,7 @@ describe('GET /api/admin/tracer/sessions/[id] — live path (DB configured)', ()
     const res = await GET(makeRequest({ bearer: ADMIN_SECRET }), { params: makeParams() });
     expect(res.status).toBe(200);
     const body = await parseBody<TracerSessionDetailResponse>(res);
-    expect(body.session.top_archetype).toBe('family_nester');
+    expect(body.session.top_archetype).toBe('family_buyer');
     expect(body.session.confidence).toBe(0.88);
     expect(body.session.quiz_completed).toBe(true);
   });

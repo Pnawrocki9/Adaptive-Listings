@@ -2325,3 +2325,45 @@ hung session strands work wherever the agent was standing, and for subagents tha
   distinct from a search failure and needs a different fix), and (b) run at least one structurally
   different search (grep the construct name / a differently-sized member of the class) to catch
   instances the single anchor is blind to by construction, not just by omission.
+
+- **Date / ticket:** 2026-07-18 — FOLLOW-584 + FOLLOW-585 (promoted + dispatched concurrently)
+- **Delegation row used:** FOLLOW-584 -> backend-engineer ("ingest worker, control-plane,
+  decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" row — anchor file
+  `bandit-seed.ts`). FOLLOW-585 -> qa-engineer ("E2E/integration/load/a11y tests, fixtures, golden
+  harness" row — extends `archetype-id-parity.test.ts`).
+- **What validation caught (or missed):** The operator brief asserted both tickets touch the same
+  file and asked me to choose combined-PR vs strict-sequence. Re-reading FOLLOW-584's own AC (not
+  the brief's summary of it) found the guard-test location was an explicit OR-choice
+  (`tests/integration/...` OR a new `packages/shared/src/__tests__/` test) — redirecting FOLLOW-584
+  to the second option produced genuinely zero file overlap, making both options in the brief
+  unnecessary and letting both tickets dispatch concurrently instead of one waiting on the other.
+  Also caught: the FOLLOW_UPS stub recommended architect+backend-engineer for FOLLOW-584, but its
+  own AC had already resolved the one open cross-package design question — dispatching architect too
+  would have added a review hop with no decision left to make. Also caught: 'investor' is a
+  genuinely ambiguous replacement (5 candidates, no anchor) unlike the FOLLOW-583 precedent
+  ('family_upsizer' was an unambiguous decomposition) — flagged explicitly in the ticket notes
+  rather than silently resolved, without gating dispatch since the ticket's own AC already treats
+  mock-data replacement as validity-only.
+- **A delegation/validation rule I'd add:** When an operator brief states a hard constraint ("both
+  tickets touch the same file, therefore X or Y"), re-verify the constraint's premise against the
+  real ticket ACs before accepting the brief's proposed remedy set — the premise itself may be
+  avoidable (here: one ticket's AC had a same-outcome alternate implementation path that sidestepped
+  the conflict entirely), which is a strictly better answer than picking between the two options
+  offered.
+
+- **Date / ticket:** 2026-07-19 — FOLLOW-584 (PM-validated, READY_FOR_REVIEW on PR #559)
+- **Delegation row used:** N/A this session (validation-only pass, not a new delegation) — original
+  dispatch was "ingest worker, control-plane... " -> backend-engineer (session 38, unchanged).
+- **What validation caught (or missed):** No half-wire this time — all 7 AC items and the
+  producer/consumer grep checked out clean on first pass. What the session DID catch was an
+  orchestration hazard, not a code defect: a sibling PR (#558, prior session's dispatch bookkeeping)
+  was still open and would have collided with this session's QUEUE.md edit at the exact same
+  insertion point (top-of-file START HERE + the FOLLOW-584 entry itself) the moment both merged
+  independently. Caught by running `gh pr list --state open` per step 1 instead of assuming the only
+  open PR was the one named in the task brief, then diffing both branches' file lists before writing
+  anything.
+- **A delegation/validation rule I'd add:** Before editing QUEUE.md/STATUS.md/FOLLOW_UPS.md as part
+  of validating one PR, always `gh pr list --state open` first and check whether any OTHER open PR
+  already touches the same backlog files for the same ticket family — a stale, unmerged dispatch PR
+  is an easy way to silently duplicate or conflict with bookkeeping that already happened, and it
+  won't show up just by reading the ticket's own worker PR.

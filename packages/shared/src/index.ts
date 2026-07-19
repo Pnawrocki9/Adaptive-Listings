@@ -13,6 +13,7 @@
 export * from './schemas/index.js';
 export * from './errors.js';
 export * from './demo.js';
+export * from './archetypes.js';
 export * from './directives.js';
 export * from './ab-holdout.js';
 export * from './bandit.js';

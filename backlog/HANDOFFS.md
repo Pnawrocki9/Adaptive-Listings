@@ -3,6 +3,319 @@
 When one agent's ticket produces output another agent needs, the producing agent appends a handoff
 note here. The PM reads this file before delegating downstream tickets.
 
+## Pre-delegation analysis + orchestration decision — FOLLOW-584 + FOLLOW-585 (session 38, 2026-07-18)
+
+**From:** pm-orchestrator (session 38) **Context:** closing the 3rd pass of the
+FOLLOW-561→RETRO-178→FOLLOW-583→RETRO-179 archetype-parity-guard chain. Both tickets read from real
+files before writing any AC (per Operating Principle "verify-not-guess" and the ticket-analysis-
+discipline memory), not taken on the operator brief's word alone.
+
+### 1. bandit-seed.ts sync status (brief item 1)
+
+Read `apps/control-plane/src/lib/bandit-seed.ts` `CANONICAL_ARCHETYPES` (18 entries),
+`packages/sdk/src/core/intent.ts` `ARCHETYPE_NAMES` (18 entries), and
+`packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` (18 entries) side by side. **All
+three are byte-for-byte identical, same order, 18/18.** Confirmed programmatically (list-equality
+check), not by eyeballing. **No live-prod defect** — FOLLOW-584 is guard/consolidation-ADD only, as
+RETRO-179 already stated. Nothing to flag prominently.
+
+### 2. 'investor' canonical replacement (brief item 2)
+
+Read `INVESTOR_ARCHETYPES` (`packages/sdk/src/core/intent.ts:70-77`): `yield_hunter`,
+`vacation_rental_investor`, `flip_investor`, `portfolio_builder`, `golden_visa_buyer`,
+`commercial_investor` (6 members). Both `MOCK_ARCHETYPES` arrays already contain `yield_hunter`, so
+the obvious candidate is excluded, leaving 5: `vacation_rental_investor`, `flip_investor`,
+`portfolio_builder`, `golden_visa_buyer`, `commercial_investor`.
+
+Searched for a disambiguating anchor the way `family_upsizer`→`upsizer` had one (that mapping was an
+unambiguous _decomposition_ — `family_upsizer` is literally `family_buyer` + `upsizer` fused, and
+the surrounding mock context made the intent legible). No equivalent anchor exists for `'investor'`:
+
+- Checked `apps/control-plane/src/lib/llm-gateway.ts:428` — a bare string `'Investor'` exists there,
+  but it's a fact-check whitelist entry for prompt framing words, not an id-to-archetype label map.
+  Does not resolve the ambiguity.
+- Checked `apps/control-plane/src/app/dashboard/demo/override/page.tsx:31-45` `ARCHETYPE_LABELS` —
+  has human-readable labels for `vacation_rental_investor` ("Vacation Rental Investor"),
+  `flip_investor` ("Flip Investor"), `portfolio_builder` ("Portfolio Builder") but does NOT include
+  `golden_visa_buyer` or `commercial_investor` (that map is itself a documented 13-of-18 subset). No
+  single entry stands out as "the" generic investor.
+
+**Verdict: genuinely ambiguous — not a guess.** Per instruction, NOT silently resolved here.
+However, unlike a production-behavior ambiguity, this is validity-only mock/CI-only data
+(`data_source: 'mock'`, gated on absent `CLICKHOUSE_URL`) with an AC that explicitly permits "mock
+data has no correctness requirement beyond validity" (mirroring the `family_upsizer` precedent,
+where the _worker_ made the final pick with a one-sentence rationale, not the PM upfront).
+Resolution: **not gating ticket dispatch on a human ruling**, but the ticket's `notes:` field in
+QUEUE.md carries an explicit **PM FLAG** instructing the worker to state their pick + one-sentence
+rationale prominently (not buried in a generic PR summary), so it's a visible, deliberate choice a
+human can review before merge — not a silent guess. Flagged again in this session's final summary
+for Piotr's awareness.
+
+### 3. Does FOLLOW-584 need architect involvement, or is it qa test-authoring? (brief item 3)
+
+**Independent re-assessment: backend-engineer ALONE (Sonnet), not architect+backend-engineer, and
+not qa.** Reasoning:
+
+- It is **not** qa test-authoring — the AC makes real production-code changes: a new
+  `packages/shared/src/archetypes.ts` export, `directives.ts`/`description.ts` type/schema
+  derivation, and `bandit-seed.ts` import-swap (removing a module-private constant feeding 54
+  live-prod `ab_bandit_weights` rows per tenant). That's `apps/control-plane` + `packages/shared`
+  production code, backend-engineer's domain per the delegation table ("ingest worker,
+  control-plane, decision-api, Postgres/RLS..." row — bandit-seed.ts is the anchor file).
+- It also does **not** need a separate architect pass. The delegation-table row "a contract between
+  two modules... an ADR" exists for _open_ design questions. This ticket has exactly one
+  cross-package design question (packages/shared cannot import packages/sdk — how does the parallel
+  canonical export avoid re-diverging?) and the FOLLOW-584 stub's own AC **already answers it**:
+  "packages/shared may not depend on packages/sdk, so this is a parallel canonical export, not an
+  import from the SDK; document that constraint inline." No new external dependency, no ADR-worthy
+  decision remains open — it is a mechanical (if multi-file) type-level refactor with a
+  fully-specified target shape. Escalating to architect for a decision that's already made would add
+  a review hop without adding a decision.
+- Guardrail respected: the QUEUE.md `notes:` field instructs the backend-engineer worker to escalate
+  to `ESCALATIONS.md` (not decide unilaterally) if they hit a cross-package question the AC does
+  _not_ already answer — so the architect safety valve stays open without gating dispatch on it now.
+
+**Model: Sonnet.** Justification: well-specified multi-file type refactor (derive a union type and a
+zod enum from one array, swap one import), no ambiguous AC, no security/pricing/architecture
+decision left open. Escalate to Opus only if the worker discovers `packages/shared`'s existing
+`directives.ts`/`description.ts` structure resists the described derivation pattern in a way the AC
+didn't anticipate (e.g., a circular-import trap) — that would be a genuine surprise worth heavier
+reasoning, not routine implementation.
+
+**FOLLOW-585 model/agent: qa-engineer, Sonnet** — unchanged from the stub's own recommendation.
+Mechanical, same shape as the just-merged FOLLOW-583 (2 literal fixes + 2 subset-validity test
+blocks in the same established pattern). No design surface.
+
+### 4. Same-file conflict — orchestration decision (the brief's CRITICAL constraint)
+
+The operator brief asserted both tickets add assertions to the same file
+(`tests/integration/archetype-id-parity.test.ts`) and asked me to choose (a) one combined PR or (b)
+strict sequencing (585 branches off 584's merged head).
+
+**I independently re-verified this premise rather than accepting it** (verify-not-guess). Re-reading
+FOLLOW-584's own AC in `backlog/FOLLOW_UPS.md`:
+
+> "A guard test (**extend `tests/integration/archetype-id-parity.test.ts` OR add a new
+> `packages/shared/src/__tests__/` test**)..."
+
+This is an explicit **OR**, not a mandate to touch the shared file. FOLLOW-585, by contrast, has no
+such choice — its AC names `tests/integration/archetype-id-parity.test.ts` directly (it is extending
+existing `MOCK_ARCHETYPES` subset-guard infrastructure that already lives there).
+
+**Decision: neither (a) nor (b). Redirect FOLLOW-584's guard test to
+`packages/shared/src/__tests__/`, eliminating the overlap at the root, and dispatch both tickets
+CONCURRENTLY as fully independent branches.** Verified zero file overlap by listing every file each
+AC touches:
+
+- FOLLOW-584 touches: `packages/shared/src/archetypes.ts` (new),
+  `packages/shared/src/directives.ts`, `packages/shared/src/schemas/description.ts`,
+  `apps/control-plane/src/lib/bandit-seed.ts`, `packages/shared/src/__tests__/*.test.ts` (new),
+  `packages/db/migrations/0007_seed_ab_bandit_weights.sql` (comment only).
+- FOLLOW-585 touches: `apps/control-plane/src/app/api/pilot/cta-lift/route.ts`,
+  `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts`,
+  `tests/integration/archetype-id-parity.test.ts`.
+
+No file appears in both lists. This is strictly better than either option the brief offered: (a)
+would have mixed a production-code refactor (backend-engineer risk profile) with a pure mock-data
+typo fix (qa risk profile) in one PR, harder to review/bisect and riskier if 584 hits the 5-check/
+3-iteration cap; (b) would have added a full round-trip of latency for no safety benefit once the
+overlap is eliminated at the source. The QUEUE.md `notes:` field for FOLLOW-584 carries an explicit
+"IMPORTANT — conflict-avoidance instruction (do not deviate)" telling the worker exactly where to
+put the guard test and to verify `git diff --stat` touches only the listed files before opening the
+PR — this is the one instruction in this pair most worth double-checking at PM validation time (step
+5d equivalent even though these are not formally co-assigned — it's the same failure mode).
+
+### 5. Rule AC assessment (brief item 4 — record only, do not promote)
+
+RETRO-179 found Rule AC (promoted in RETRO-178, this same chain, one ticket ago) was violated in its
+very next application: `bandit-seed.ts` was present in FOLLOW-583's own anchor-grep
+(`golden_visa_buyer`) output at scoping time and was dropped from the ticket's final scope anyway.
+This is a real, recorded observation — "a newly-promoted rule violated in its very next real-world
+application" — but it is the **first** occurrence of that specific meta-pattern I can find (as
+opposed to Rule AC itself, which had 3 prior occurrences of its own underlying pattern before
+promotion). Per the ≥2-prior-retro threshold, **not promoting a new rule this session.** If this
+meta-pattern (newly-promoted rule violated in its immediate next application) recurs on a future
+rule, that would be the second occurrence and would warrant a rule addressing it (something like:
+"the ticket that promotes a rule must itself re-run the rule's own verification step before closing,
+not just the retro that found the gap" — noted here for whoever writes that future retro, not
+codified now).
+
+---
+
+## Delegation brief — FOLLOW-584 (backend-engineer) — consolidate archetype-ID canonical constant onto `packages/shared`
+
+**From:** pm-orchestrator (session 38) **To:** backend-engineer **Date:** 2026-07-18
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-584` (P2, source: RETRO-179 §4a/§4c, supersedes the
+never-promoted `FOLLOW-036`). **Branch:**
+`backend-engineer/FOLLOW-584-archetype-canonical-consolidation` (branch-first — create before any
+Edit; never commit to `main`).
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" -> `backend-engineer` (anchor file
+`apps/control-plane/src/lib/bandit-seed.ts`; `packages/shared` is the type/schema package this
+control-plane lib and other consumers import from).
+
+**Model: Sonnet** — see full reasoning in "Pre-delegation analysis" §3 above. Well-specified
+multi-file type-level refactor, no open design question, no ADR needed. Escalate to Opus only if a
+genuine circular-import or structural surprise appears that the AC didn't anticipate.
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 before any non-trivial task per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` **Rule AC** (SCOPE-BY-AUDIT-NOT-BY-GREP) and **Rule J** (mirror-code sync
+  gate) — both directly govern this ticket's reason for existing.
+- Canonical SoT (unchanged, do not modify): `packages/sdk/src/core/intent.ts:49` `ARCHETYPE_NAMES`
+  (18 entries). `packages/shared` may **not** import `packages/sdk` (existing repo constraint,
+  already the reason `directives.ts` has its own inline copy today) — this ticket creates a
+  _parallel_ canonical export in `packages/shared`, not an import chain.
+- Files to read before editing: `packages/shared/src/directives.ts` (current `ArchetypeId` inline
+  union), `packages/shared/src/schemas/description.ts` (current `ArchetypeIdSchema` inline
+  `z.enum`), `apps/control-plane/src/lib/bandit-seed.ts` (current `CANONICAL_ARCHETYPES` + its own
+  "FOLLOW-036 will move this" doc comment),
+  `packages/db/migrations/0007_seed_ab_bandit_weights.sql`.
+- **PM pre-verified (do not re-litigate):** all three existing copies (`bandit-seed.ts`,
+  `directives.ts`, `description.ts`) are currently IN SYNC with `ARCHETYPE_NAMES` — 18/18, no
+  live-prod defect. This is a pure consolidation, not a data-fix.
+
+**Task, in order:**
+
+1. Create `packages/shared/src/archetypes.ts` exporting
+   `CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]` as a hand-maintained `as const` array matching
+   `ARCHETYPE_NAMES` exactly (18 entries) — document inline WHY it's a parallel copy and not an
+   import (`packages/shared` cannot depend on `packages/sdk`).
+2. Change `packages/shared/src/directives.ts` `ArchetypeId` to
+   `typeof CANONICAL_ARCHETYPE_IDS[number]`, importing from the new `archetypes.ts`. Remove the old
+   inline literal union.
+3. Change `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema` to
+   `z.enum(CANONICAL_ARCHETYPE_IDS)` (or the minimal equivalent zod requires — check zod's enum
+   signature accepts a readonly array directly; adapt if it needs a mutable tuple). Remove the old
+   inline literal array.
+4. Change `apps/control-plane/src/lib/bandit-seed.ts` to import `CANONICAL_ARCHETYPE_IDS` from
+   `@estalara/shared` instead of declaring its own `CANONICAL_ARCHETYPES`. Delete the module-private
+   constant and its "FOLLOW-036 will move this" comment (the move has happened).
+5. **Add the guard test in `packages/shared/src/__tests__/` — NOT
+   `tests/integration/archetype-id-parity.test.ts`.** This is a hard conflict-avoidance requirement
+   (FOLLOW-585 is being dispatched concurrently and owns that file exclusively this session — see
+   "Pre-delegation analysis" §4 above). The test imports `ARCHETYPE_NAMES` from
+   `packages/sdk/src/core/intent.ts` (same cross-package relative-import pattern already used
+   elsewhere — check `tests/integration/archetype-id-parity.test.ts`'s own doc comment for why a
+   direct relative import is necessary across the `composite`/`rootDir` boundary, and confirm
+   whether `packages/shared`'s own tsconfig has the same constraint before assuming the same trick
+   applies) and asserts set-equality against `CANONICAL_ARCHETYPE_IDS`.
+6. Add a one-line comment to `packages/db/migrations/0007_seed_ab_bandit_weights.sql` (or whichever
+   migration seeds `ab_bandit_weights`) noting it stays an explicit SQL literal because SQL cannot
+   import TS — do not attempt to template it.
+7. **Before opening the PR, run `git diff --stat main` and confirm the file list matches exactly**:
+   `packages/shared/src/archetypes.ts` (new), `packages/shared/src/directives.ts`,
+   `packages/shared/src/schemas/description.ts`, `apps/control-plane/src/lib/bandit-seed.ts`, one
+   new file under `packages/shared/src/__tests__/`, and the migration comment. If
+   `tests/integration/archetype-id-parity.test.ts` appears in that diff, you have violated the
+   conflict-avoidance constraint — revert that part before pushing.
+
+**AC (from QUEUE.md, verbatim):**
+
+- [ ] `packages/shared/src/archetypes.ts` exports `CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]`.
+- [ ] `directives.ts` `ArchetypeId` derived from `CANONICAL_ARCHETYPE_IDS`.
+- [ ] `description.ts` `ArchetypeIdSchema` built from `CANONICAL_ARCHETYPE_IDS`.
+- [ ] `bandit-seed.ts` imports from `@estalara/shared` instead of its own constant.
+- [ ] New guard test in `packages/shared/src/__tests__/` asserts exact set-parity with
+      `ARCHETYPE_NAMES`.
+- [ ] Migration 0007 left as explicit SQL with an explanatory comment.
+- [ ] All existing tests pass unchanged; `pnpm typecheck` clean.
+
+**Escalation instruction:** if you hit a cross-package boundary question this brief and the AC do
+not already answer (e.g., a circular import, a build-order problem `packages/shared`'s existing
+tooling can't handle), write it to `backlog/ESCALATIONS.md` and stop — do not improvise the shared
+package's contract unilaterally.
+
+**On completion:** open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Do not mark DONE — PM validates CI green + runtime wiring (grep for the new
+`CANONICAL_ARCHETYPE_IDS` producer/consumer chain across
+`directives.ts`/`description.ts`/`bandit-seed.ts`) before READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-585 (qa-engineer) — fix the 2 invalid `'investor'` mock literals + add subset-validity guards
+
+**From:** pm-orchestrator (session 38) **To:** qa-engineer **Date:** 2026-07-18
+
+**Ticket:** `backlog/QUEUE.md` id `FOLLOW-585` (P2, source: RETRO-179 §4b CB-1). **Branch:**
+`qa-engineer/FOLLOW-585-investor-literal-fix` (branch-first; never commit to `main`).
+
+**Delegation-table row used:** "E2E/integration/load/a11y tests, fixtures, golden harness" ->
+`qa-engineer` (extends `tests/integration/archetype-id-parity.test.ts`, the same file FOLLOW-561/583
+built; the 2-line literal fix is inside the mock/dev-CI-only fallback of two control-plane routes,
+same low-risk shape as FOLLOW-583's `family_upsizer` fix).
+
+**Model: Sonnet** — mechanical extension of the FOLLOW-583 pattern already merged to `main`: two
+`assertSubsetValidity` calls (mirroring the `route-helpers.ts`/`export/route.ts` block already in
+the file) + two literal-string fixes. No new design surface.
+
+**Context (read first):**
+
+- `docs/MASTER_DESIGN.md` §Snapshot.1 before any non-trivial task per Operating Principle 1.
+- `CONVENTIONS_PATCH.md` **Rule J** — the directly-governing rule (same as FOLLOW-561/583).
+- The guard file to extend: `tests/integration/archetype-id-parity.test.ts` (as of `main` `9c1ca46`
+  — read its full doc comment and the existing `assertSubsetValidity`/ `parseMockArchetypes`-style
+  helpers before writing anything; you are extending this file, not writing a new one; you own it
+  exclusively this session — FOLLOW-584 is dispatched concurrently but has been redirected to a
+  different file, verified zero overlap).
+- Canonical SoT (unchanged): `packages/sdk/src/core/intent.ts:49` `ARCHETYPE_NAMES`.
+- Target #1: `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:229-235` `MOCK_ARCHETYPES` —
+  `['yield_hunter', 'family_buyer', 'investor', 'downsizer', 'neutral']`.
+- Target #2: `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts:221-227`
+  `MOCK_ARCHETYPES` — `['yield_hunter', 'family_buyer', 'investor', 'neutral', 'downsizer']`.
+  `'investor'` is not a member of `ARCHETYPE_NAMES` in either file; both fields are typed loose
+  `string` (`ChArchetypeCounts.archetype`, `LiftRow.archetype`), so TypeScript does not catch it.
+
+**PM FLAG — read before picking a replacement id.** Unlike `family_upsizer`→`upsizer` (FOLLOW-583,
+an unambiguous decomposition), `'investor'`→? is **genuinely ambiguous**. PM checked: `yield_hunter`
+is already used in both arrays (excludes the obvious pick); the remaining `INVESTOR_ARCHETYPES`
+members (`packages/sdk/src/core/intent.ts:70-77`) are `vacation_rental_investor`, `flip_investor`,
+`portfolio_builder`, `golden_visa_buyer`, `commercial_investor` — no surrounding label/comment
+context favors one. Since this is validity-only mock data (no correctness requirement — same
+discipline as FOLLOW-583's AC-3), you MAY pick any valid member, but: **state your pick and a
+one-sentence rationale prominently in the PR description** (its own subsection, not folded into a
+general summary) — PM will surface it for a human read before merge. Do not silently pick without
+explaining why.
+
+**Task, in order (mirrors FOLLOW-583's AC-3 falsification-before-fix discipline — do not skip):**
+
+1. Write the subset-validity assertion for `pilot/cta-lift/route.ts` `MOCK_ARCHETYPES` — **run it
+   against the current `main` state first and confirm it fails red** on the `'investor'` invalid id.
+   Paste the red failure output in your PR description (falsification proof).
+2. Write the subset-validity assertion for `dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES`,
+   same red-then-green discipline.
+3. Only then fix `'investor'` -> your chosen valid canonical id in both files, and confirm both new
+   assertions go green.
+4. Confirm all 8 pre-existing assertions in the file still pass unaffected.
+
+**AC (from QUEUE.md, verbatim):**
+
+- [ ] Subset-validity assertion for `pilot/cta-lift/route.ts` `MOCK_ARCHETYPES`, shown failing red
+      pre-fix, passing post-fix.
+- [ ] Subset-validity assertion for `dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES`, same
+      red-then-green discipline.
+- [ ] `'investor'` fixed to a valid canonical id in both files, with pick + rationale stated
+      prominently in the PR (see PM FLAG above).
+- [ ] All existing 8 assertions in `archetype-id-parity.test.ts` still pass unaffected.
+
+**Scope discipline:** touch only `tests/integration/archetype-id-parity.test.ts` (extend, don't
+rewrite) and the two named `MOCK_ARCHETYPES` arrays. Do **not** touch the ClickHouse-backed
+(non-mock) code paths in either route, and do **not** touch any file under `packages/shared/`
+(that's FOLLOW-584's concurrent scope — touching it risks a conflict this session was specifically
+structured to avoid).
+
+**On completion:** open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Include in the PR description: (a) the falsification-red output from steps 1-2, (b) the
+`'investor'` pick + one-sentence rationale in its own clearly-labeled subsection. Do not mark DONE —
+PM validates CI green + the falsification proof before READY_FOR_REVIEW.
+
+---
+
 ## Delegation brief — FOLLOW-557 (backend-engineer) — DSR erase: delete the chat-intent shadow Redis key namespace
 
 **From:** pm-orchestrator (session 27 cont'd) **To:** backend-engineer **Date:** 2026-07-14

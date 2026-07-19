@@ -1,6 +1,32 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-18 (session 38 — FOLLOW-584 + FOLLOW-585 promoted + dispatched concurrently, closing the FOLLOW-561→583→179 archetype-parity chain)
+## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 PM-validated, READY_FOR_REVIEW on PR #559)
+
+**Read this before picking anything.** FOLLOW-584's backend-engineer worker phase opened **PR #559**
+(`9817f65`, branch `backend-engineer/FOLLOW-584-archetype-canonical-consolidation`). PM
+independently re-verified all 7 AC checkboxes against the real diff (not the worker's claim), the
+non-test producer/consumer wiring for the new `CANONICAL_ARCHETYPE_IDS` export, and CI (2/58
+non-SUCCESS, both the pre-existing-red "Rule I — wired-or-dead check" — confirmed identical on
+already-merged PRs #555/#557, so not introduced by this PR). Full evidence in `QUEUE.md`
+`FOLLOW-584.pm_validated` and `backlog/STATUS.md` session 39. Moved to `READY_FOR_REVIEW`. **Not
+merged — human review boundary** (adds a new public export `CANONICAL_ARCHETYPE_IDS` to
+`@estalara/shared`).
+
+**Housekeeping done this session:** sibling PR #558
+(`pm-orchestrator/FOLLOW-584-585-promote-dispatch`, opened 2026-07-18, never merged) duplicated the
+FOLLOW-584 promotion as `IN_PROGRESS`. Confirmed zero file overlap with PR #559 (code vs. backlog
+docs) and merged #558's branch into #559's (commit `d95c726`) rather than let both merge
+independently and conflict at the top of this file. **PR #558 is now superseded and should be closed
+without merging** — its FOLLOW-584 content is superseded by this entry, and its FOLLOW-585 dispatch
+content rides unmodified in #559's history. FOLLOW-585 itself is unaffected — still `IN_PROGRESS`,
+dispatched to qa-engineer, no worker PR yet (out of scope this session).
+
+No open escalations block this work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
+ruling). **1 ticket READY_FOR_REVIEW this session (584); FOLLOW-585 stays IN_PROGRESS, unpicked.**
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-18 (session 38 — FOLLOW-584 + FOLLOW-585 promoted + dispatched concurrently, closing the FOLLOW-561→583→179 archetype-parity chain)
 
 **Read this before picking anything.** This session promoted RETRO-179's two findings —
 **FOLLOW-584** (P2, backend-engineer — consolidate `bandit-seed.ts` `CANONICAL_ARCHETYPES`,
@@ -12953,10 +12979,47 @@ in-place in Sprint 22b above.
     ArchetypeId, and description.ts ArchetypeIdSchema onto one exported packages/shared canonical
     constant (RETRO-179)
   agent: backend-engineer
-  status: IN_PROGRESS
+  status: READY_FOR_REVIEW
   assigned_to: backend-engineer
   started_at: '2026-07-18T00:00:00Z'
   branch: backend-engineer/FOLLOW-584-archetype-canonical-consolidation
+  pr: 559
+  pm_validated: >-
+    2026-07-19 session 39 — validated independently before READY_FOR_REVIEW. All 7 AC checkboxes
+    re-verified against the real PR #559 diff (not the worker's claim): (1)
+    packages/shared/src/archetypes.ts exports CANONICAL_ARCHETYPE_IDS (18-item `as const satisfies
+    readonly string[]`) — confirmed by reading the file; (2) directives.ts ArchetypeId -> `(typeof
+    CANONICAL_ARCHETYPE_IDS)[number]`, old inline union removed — confirmed; (3) description.ts
+    ArchetypeIdSchema -> `z.enum([...CANONICAL_ARCHETYPE_IDS])`, old inline array removed —
+    confirmed; (4) bandit-seed.ts imports CANONICAL_ARCHETYPE_IDS from `@estalara/shared`,
+    module-private CANONICAL_ARCHETYPES + its "FOLLOW-036 will move this" comment deleted —
+    confirmed; (5) new guard test at
+    packages/shared/src/__tests__/archetype-canonical-parity.test.ts (NOT
+    tests/integration/archetype-id-parity.test.ts, per the conflict-avoidance instruction) parses
+    the real packages/sdk/src/core/intent.ts ARCHETYPE_NAMES via readFileSync + regex and asserts
+    exact set-parity — confirmed zero file overlap with the concurrently-dispatched FOLLOW-585 via
+    `git diff --stat`; (6) migration 0007 left as an explicit SQL literal with an explanatory
+    comment — confirmed; (7) all tests pass, pnpm typecheck clean per worker's local run — CI
+    independently re-verified green (see below), not taken on the worker's word. CI: `gh pr view 559
+    --json statusCheckRollup` -> 2/58 non-SUCCESS, both "Rule I — wired-or-dead check" — confirmed
+    pre-existing-red/non-blocking by checking the SAME check on already-merged PRs #555 and #557
+    (`gh pr checks 555|557`), which fail identically. Every other real gate SUCCESS (Lint,
+    Typecheck, Test Node 22, Test Python x4, Build, Build control-plane, SDK E2E, Format, Gitleaks,
+    and all ticket-specific guards). CI-check counter: 1/5. Fix-iteration counter: 0/3 (no fixes
+    needed). Runtime wiring (step 5c): `grep -rn 'CANONICAL_ARCHETYPE_IDS' apps/ packages/
+    --include=*.ts --include=*.py | grep -v node_modules | grep -v '\.test\.'` -> 1 non-test
+    producer (packages/shared/src/archetypes.ts:36 `export const CANONICAL_ARCHETYPE_IDS = [...]`)
+    and 3 non-test consumers (apps/control-plane/src/lib/bandit-seed.ts:25 import + :55 usage,
+    packages/shared/src/directives.ts:14 `import type`,
+    packages/shared/src/schemas/description.ts:33 import + :44 usage). Not co-assigned (single
+    agent, backend-engineer) — step 5d N/A. Reconciled with sibling PR #558
+    (pm-orchestrator/FOLLOW-584-585-promote-dispatch, opened 2026-07-18, never merged) by merging
+    its branch into this one (commit d95c726) — zero file overlap confirmed before merging (code vs.
+    backlog docs), so no content was lost or duplicated. PR #558 is now superseded for its
+    FOLLOW-584 portion and should be closed without merging; its FOLLOW-585 dispatch content already
+    rides in this branch's history unmodified. See STATUS.md session 39 entry for full detail. NOT
+    MERGED — human review boundary (adds a new public export `CANONICAL_ARCHETYPE_IDS` to
+    `@estalara/shared`).
   priority: P2
   estimated_hours: 4
   depends_on: []

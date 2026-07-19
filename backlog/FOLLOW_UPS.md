@@ -986,7 +986,9 @@ the stub.
 - **SUPERSEDED 2026-07-18 (RETRO-179):** folded into **FOLLOW-584**, which re-confirmed this exact
   gap (independently, via a Rule AC verification re-run) and widened the scope to also cover
   `packages/shared/src/schemas/description.ts` `ArchetypeIdSchema`. Do not promote this entry
-  separately — promote FOLLOW-584 instead.
+  separately — promote FOLLOW-584 instead. **Status update 2026-07-19 (session 39):** FOLLOW-584 is
+  promoted (`backlog/QUEUE.md`), implemented, and `READY_FOR_REVIEW` on PR #559 — see that entry for
+  full PM-validation evidence. This entry stays closed/superseded; no further action needed here.
 - **source_retro:** TICKET-AB-006 (data-engineer — archetype list duplication)
 - **source_ticket:** TICKET-AB-006
 - **recommended_sprint:** 9

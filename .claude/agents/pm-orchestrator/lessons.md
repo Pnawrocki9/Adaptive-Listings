@@ -2350,3 +2350,20 @@ hung session strands work wherever the agent was standing, and for subagents tha
   avoidable (here: one ticket's AC had a same-outcome alternate implementation path that sidestepped
   the conflict entirely), which is a strictly better answer than picking between the two options
   offered.
+
+- **Date / ticket:** 2026-07-19 — FOLLOW-584 (PM-validated, READY_FOR_REVIEW on PR #559)
+- **Delegation row used:** N/A this session (validation-only pass, not a new delegation) — original
+  dispatch was "ingest worker, control-plane... " -> backend-engineer (session 38, unchanged).
+- **What validation caught (or missed):** No half-wire this time — all 7 AC items and the
+  producer/consumer grep checked out clean on first pass. What the session DID catch was an
+  orchestration hazard, not a code defect: a sibling PR (#558, prior session's dispatch bookkeeping)
+  was still open and would have collided with this session's QUEUE.md edit at the exact same
+  insertion point (top-of-file START HERE + the FOLLOW-584 entry itself) the moment both merged
+  independently. Caught by running `gh pr list --state open` per step 1 instead of assuming the only
+  open PR was the one named in the task brief, then diffing both branches' file lists before writing
+  anything.
+- **A delegation/validation rule I'd add:** Before editing QUEUE.md/STATUS.md/FOLLOW_UPS.md as part
+  of validating one PR, always `gh pr list --state open` first and check whether any OTHER open PR
+  already touches the same backlog files for the same ticket family — a stale, unmerged dispatch PR
+  is an easy way to silently duplicate or conflict with bookkeeping that already happened, and it
+  won't show up just by reading the ticket's own worker PR.

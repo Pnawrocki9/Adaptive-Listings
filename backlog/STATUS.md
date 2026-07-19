@@ -1,4 +1,98 @@
-# Status — 2026-07-18 (session 38 — FOLLOW-584 + FOLLOW-585 promoted + dispatched concurrently)
+# Status — 2026-07-19 (session 39 — FOLLOW-584 PM-validated, READY_FOR_REVIEW on PR #559)
+
+## SESSION 39 (2026-07-19) — FOLLOW-584 independently validated; READY_FOR_REVIEW on PR #559; sibling PR #558 reconciled
+
+**State check:** on branch `backend-engineer/FOLLOW-584-archetype-canonical-consolidation` (PR #559,
+opened `2026-07-19T13:00:01Z`, commit `9817f65`). `git log --oneline -20` and
+`gh pr list --state open` at session start showed 2 open PRs: **#559** (this ticket's worker PR) and
+**#558** (`pm-orchestrator/FOLLOW-584-585-promote-dispatch`, session 38's dispatch bookkeeping,
+opened 2026-07-18, still unmerged). `backlog/ESCALATIONS.md` scanned end-to-end: no unresolved OPEN
+entries block this validation (ESC-020 is OPEN but explicitly non-blocking per CEO 2026-06-10 ruling
+and unrelated to this ticket).
+
+**Task scope this session (delegated by the parent orchestrator directly, not picked via the
+standard ready-ticket scan):** independently validate PR #559 against FOLLOW-584's 7 AC items and
+CI, promote/finalize the QUEUE.md entry to `READY_FOR_REVIEW`, and reconcile the FOLLOW_UPS.md /
+STATUS.md bookkeeping. Did not touch the code deliverable (already committed by the backend-engineer
+worker) — backlog coordination files only.
+
+**AC verification (against the real PR #559 diff, not the worker's PR description):**
+
+1. `packages/shared/src/archetypes.ts` exports `CANONICAL_ARCHETYPE_IDS` (18-item
+   `as const satisfies readonly string[]`) — confirmed by reading the new file.
+2. `directives.ts` `ArchetypeId` -> `(typeof CANONICAL_ARCHETYPE_IDS)[number]`, old inline union
+   literal removed — confirmed.
+3. `description.ts` `ArchetypeIdSchema` -> `z.enum([...CANONICAL_ARCHETYPE_IDS])`, old inline array
+   removed — confirmed.
+4. `bandit-seed.ts` imports `CANONICAL_ARCHETYPE_IDS` from `@estalara/shared`; module-private
+   `CANONICAL_ARCHETYPES` constant + its "FOLLOW-036 will move this" comment deleted — confirmed.
+5. New guard test `packages/shared/src/__tests__/archetype-canonical-parity.test.ts` (NOT
+   `tests/integration/archetype-id-parity.test.ts`, per the conflict-avoidance instruction in
+   QUEUE.md `notes:`) parses the real, checked-in `packages/sdk/src/core/intent.ts` via
+   `readFileSync` + regex and asserts exact set-parity with `CANONICAL_ARCHETYPE_IDS` — confirmed by
+   reading the test file; the parser fails loudly (non-empty-match assertion) rather than vacuously
+   passing.
+6. `packages/db/migrations/0007_seed_ab_bandit_weights.sql` left as an explicit SQL literal with an
+   explanatory comment ("SQL cannot import TS... do not attempt to template it") — confirmed.
+7. All tests pass / `pnpm typecheck` clean — worker claimed this locally; independently re-verified
+   via CI (below), not taken on the worker's word (RETRO-146 §4e / FOLLOW-448 discipline).
+
+**CI (non-negotiable, step 5b):** `gh pr view 559 --json statusCheckRollup` ->
+`[.[] | select(conclusion != SUCCESS and conclusion != null)] | length` = **2**, both "Rule I —
+wired-or-dead check". Cross-checked this SAME check against the two most-recently-merged PRs
+(`gh pr checks 555`, `gh pr checks 557`) — fails identically on both, confirming it is
+pre-existing-red/non-blocking, not introduced by PR #559. `CANONICAL_ARCHETYPE_IDS` has 3 non-test
+importers (below), so it is not in Rule I's dead-symbol set either way. Every other real gate
+SUCCESS: Lint, Typecheck, Test (Node 22), Test (Python x4), Build, Build (control-plane), SDK E2E
+tests, Format check, Gitleaks, Doppler verify, and every ticket-specific guard workflow (Archetype
+embeddings, Archetype seeds completeness, Auto-Detection corpus, ClickHouse migrations smoke,
+Cross-language event contract, Demo integration, Fire-and-forget sink guard, K.3.6 D-1 live-network
+smoke, Migration journal monotonicity, Modal App singleton guard, Privacy Notice SDK key-sync, Redis
+shadow round-trip, Rule H, Rule J, Tracer query-builders live ClickHouse guard). **CI-check counter:
+1/5. Fix-iteration counter: 0/3** (no fixes were needed).
+
+**Runtime wiring (step 5c, evidence pasted):**
+`grep -rn 'CANONICAL_ARCHETYPE_IDS' apps/ packages/ --include=*.ts --include=*.py | grep -v node_modules | grep -v '\.test\.'`
+->
+
+- 1 non-test producer: `packages/shared/src/archetypes.ts:36`
+  `export const CANONICAL_ARCHETYPE_IDS = [...]`.
+- 3 non-test consumers: `apps/control-plane/src/lib/bandit-seed.ts:25` (import) + `:55` (usage in
+  `seedBanditWeightsForTenant`, feeding 54 live-prod `ab_bandit_weights` rows per new tenant),
+  `packages/shared/src/directives.ts:14` (`import type`, deriving `ArchetypeId`),
+  `packages/shared/src/schemas/description.ts:33` (import) + `:44` (usage in `ArchetypeIdSchema`).
+
+Not a co-assigned ticket (single agent, backend-engineer) — step 5d (multi-agent integration check)
+N/A.
+
+**Sibling-PR reconciliation (housekeeping, not part of the standard checklist but necessary this
+session):** PR #558 (session 38's dispatch bookkeeping) duplicated the FOLLOW-584 QUEUE.md entry as
+`IN_PROGRESS` and was still unmerged when PR #559 was opened — a foreseeable top-of-`QUEUE.md`
+conflict if both merged independently. Verified zero file overlap between the two branches
+(`git diff --name-only` both directions: #558 touches only
+`.claude/agents/pm-orchestrator/ lessons.md`, `backlog/FOLLOW_UPS.md`, `backlog/HANDOFFS.md`,
+`backlog/QUEUE.md`, `backlog/STATUS.md`; #559 touches only the 7 code/test files listed in its own
+PR description) and merged `origin/pm-orchestrator/FOLLOW-584-585-promote-dispatch` into this
+branch, commit `d95c726` (clean, no conflicts). This brings #558's dispatch-brief content
+(HANDOFFS.md, the session-38 lessons.md entry, FOLLOW-585's still-valid `IN_PROGRESS` dispatch) into
+PR #559's history intact, then this session's QUEUE.md/FOLLOW_UPS.md/STATUS.md edits land on top
+updating FOLLOW-584's status to `READY_FOR_REVIEW`. **Recommend closing PR #558 without merging** —
+its FOLLOW-584 content is now superseded by PR #559; nothing is lost since #559 carries it forward.
+
+**Result:** `backlog/QUEUE.md` `FOLLOW-584` moved to `status: READY_FOR_REVIEW`, `pr: 559`, full
+`pm_validated` evidence block added. `backlog/FOLLOW_UPS.md` `FOLLOW-036` entry (already
+SUPERSEDED/folded-into-FOLLOW-584 from a prior session) tightened with a current-status pointer to
+PR #559 — not duplicated. **PR #559 NOT merged — human review boundary**, per guardrails: the PR
+adds a new public export (`CANONICAL_ARCHETYPE_IDS`) to `@estalara/shared`.
+
+**Open escalations:** none newly filed. ESC-020 remains explicitly non-blocking (unrelated to this
+ticket).
+
+**Tickets in flight:** FOLLOW-584 now `READY_FOR_REVIEW` (was `IN_PROGRESS`); FOLLOW-585 unchanged,
+still `IN_PROGRESS`, dispatched to qa-engineer, no worker PR yet — out of scope this session, not
+picked up.
+
+---
 
 ## SESSION 38 (2026-07-18) — FOLLOW-584 + FOLLOW-585 promoted + dispatched; queue/handoffs ready for worker spawn
 

@@ -53,3 +53,18 @@ fixture set (here: `MOCK_ARCHETYPES` array + `buildMockExportRows()`'s inline li
 into one assertion rather than two — otherwise a future drift where one file is fixed and the other
 isn't goes undetected by whichever half-guard runs first. Did this here; worth calling out
 explicitly as the pattern for any future "two files, one dataset" guard.
+
+- **2026-07-19 / FOLLOW-585** · Added subset-validity parity assertions for 2 more `MOCK_ARCHETYPES`
+  dev/CI fallback copies (`pilot/cta-lift`, `dashboard/analytics/lift`), red-first against the
+  invalid `'investor'` literal, then fixed to `'portfolio_builder'`. · Where a test could have
+  passed over a dead wire: when I first wrote the fix-comment I placed it _inside_ the array-literal
+  block being regex-parsed (`between [ and ] as const;`); the comment's quoted word `'investor'` was
+  picked up by the existing `/'([a-z_]+)'/g` scan as a false positive, producing a misleading "still
+  red" result that looked like the fix hadn't landed rather than a parser artifact — caught only
+  because I re-ran and inspected the failure message closely enough to notice it still said
+  `investor` after editing the source array. · Guardrail I'd add: when a regex-based parity parser
+  scans a full source block (not just an array literal), any future contributor adding an inline
+  comment inside that block should keep it free of quoted strings matching the value pattern — worth
+  a one-line note at the top of `archetype-id-parity.test.ts`'s parser helpers warning that
+  comments-in-block can false-positive the scan. (Not adding it now — out of the ticket's declared
+  scope of exactly 3 files.)

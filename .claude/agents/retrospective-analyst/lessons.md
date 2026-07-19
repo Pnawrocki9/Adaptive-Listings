@@ -2661,3 +2661,39 @@ so.**
   mechanics and stops enumerating. Retro discipline: for any "consolidate/guard a class" ticket, the
   LAST check before writing the entry is a fresh repo-wide grep of the class signature minus the
   files the ticket touched — whatever remains is the finding.
+
+---
+
+## 2026-07-19 / RETRO-181 (FOLLOW-585)
+
+- **A finding I almost missed and why:** the merge itself was a clean, correct 3-file fix and it
+  would have been easy to write a `Wiring Audit — clean ✅ / gaps N/A` entry and stop — the two
+  named `'investor'` instances ARE genuinely closed end-to-end. The real finding was one
+  search-radius wider: a `top_archetype: 'family_nester'` inline mock field in a route
+  (`admin/tracer/sessions`) the ticket never touched, invalid the same way, invisible to BOTH
+  anchors used so far (`golden_visa_buyer` full-parity anchor AND the `MOCK_ARCHETYPES`-name grep).
+  It only surfaced because I ran a construct-agnostic sweep — a Python regex over EVERY
+  `top_archetype|archetype:'…'` literal in non-test control-plane routes diffed against the
+  canonical 18 — instead of trusting the ticket's own array-name search. Lesson reinforced: for a
+  "fix an invalid literal of class X" ticket, the mandatory last step is a repo-wide sweep for the
+  SEMANTIC class (any field that holds an X), not the syntactic construct the ticket happened to fix
+  (a named array). The bug hid in a different construct (object field) precisely because the prior
+  sweeps were construct-shaped.
+- **An axis/chain I had to trace twice — the multi-anchor sighting COUNT.** The task brief invited
+  me to treat this as possibly the threshold-crossing sighting for a Rule AD. I had to trace the
+  count carefully across RETRO-179 (which conflated "Rule AC 2nd sighting" with "multi-anchor 1st
+  sighting") and RETRO-180 (which authoritatively disentangled them: multi-anchor failure-mode (a)
+  had exactly 1 prior sighting, RETRO-179; RETRO-180 was NOT one). So RETRO-181's `family_nester` is
+  the 2nd TOTAL sighting = only 1 PRIOR = below the ≥2-prior threshold. It is the pivotal one, not
+  the crossing one. I nearly mis-promoted by anchoring on the brief's framing rather than
+  re-deriving the count from the two prior entries. Discipline held: cite the PRIOR count, not the
+  total.
+- **A meta-pattern in how gaps recur across agents:** the "closed a class" claim is systematically
+  over-scoped by ONE construct-shape at a time. FOLLOW-561 guarded arrays/dicts → RETRO-178 found a
+  4th array. FOLLOW-583 guarded 2 more arrays → RETRO-179 found 2 subset arrays. FOLLOW-585 fixed
+  the subset arrays → RETRO-181 found an inline OBJECT field. Each remediation closes the shape it
+  can SEE; the next instance hides in the next shape. The durable exit is not another reactive guard
+  but a TYPE tightening at the hand-authored-constant boundary (now possible via FOLLOW-584's
+  exported `CANONICAL_ARCHETYPE_IDS`) — recommended in FOLLOW-587, not codified as a rule (blanket
+  retyping is wrong for DB-hydrated fields; only hand-authored constants are safe). Watch for the
+  3rd genuine anchor-invisible sighting → that promotes Rule AD.

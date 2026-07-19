@@ -1,4 +1,43 @@
-# Status — 2026-07-19 (session 39 — FOLLOW-584 MERGED + DONE; RETRO-180 filed)
+# Status — 2026-07-19 (session 39 — FOLLOW-584 + FOLLOW-585 MERGED + DONE; RETRO-180/181 filed)
+
+## SESSION 39 (cont. 2) (2026-07-19) — FOLLOW-585 implemented, human-approved, MERGED to main + DONE; RETRO-181 filed
+
+**Ticket picked up + shipped this turn:** FOLLOW-585 (qa-engineer, Sonnet — mechanical mock-literal
+fix, same class as FOLLOW-583's `family_upsizer`). Dispatched a qa-engineer worker with the one
+PM-flagged ambiguous decision pre-resolved: `'investor'` → **`portfolio_builder`**, chosen by the
+CEO this session (most generic `INVESTOR_ARCHETYPES` member; `yield_hunter` already present in both
+arrays; mock data, validity-only, no correctness requirement).
+
+**Deliverable (PR #561, squash-merged `475dc0c`, human-approved):** both `MOCK_ARCHETYPES` arrays
+(`pilot/cta-lift/route.ts`, `dashboard/analytics/lift/route.ts`) fixed; two red-first
+subset-validity guards added to `tests/integration/archetype-id-parity.test.ts` (RED
+`2 failed | 8 passed` → GREEN `10 passed`). Scope: exactly 3 files, no ClickHouse paths touched.
+
+**PM validation (independent, this session):** re-ran the parity test locally (10/10 green, not
+taken on the worker's word), confirmed `git diff --stat` = 3 files, `control-plane typecheck` clean,
+CI 57 pass / 2 fail (both pre-existing-red Rule I). **Caught + fixed a worker slip:** the new
+guard's doc-comment named a non-canonical `flipper` instead of `flip_investor` — corrected in-branch
+(commit `9a9fb12`, comment-only, still 10/10) before merge. Verify-not-guess paid off again.
+
+**Retro loop — RETRO-181:** confirms the two `'investor'` instances RETRO-179 §4b named are closed
+end-to-end, BUT the mock-archetype-literal-invalidity CLASS is **not swept** — retro found a live
+**3rd** instance the sweep's anchors were structurally blind to: `family_nester` (not canonical;
+`family_buyer` is) in `admin/tracer/sessions/route.ts:49` `buildMockSessions()` `top_archetype`
+(loose `z.string()`), plus its test-fixture copy — invisible to both the `golden_visa_buyer` and the
+`MOCK_ARCHETYPES`-name anchors because it is an inline object field, not a named array. Plus a
+lower- confidence `'investor'` in `audit/route.ts:68`. **Filed FOLLOW-587** (qa, P3, 2h — fix both +
+guard the tracer mock + prefer typing hand-authored arrays `readonly ArchetypeId[]`) and
+**FOLLOW-588** (qa, P3, 1h — strip comments in the parity-guard parsers so the
+comment-in-parsed-block regex false-positive can't re-trip FOLLOW-586/587). **No Rule promoted** —
+the multi-anchor grep blind-spot is now its pivotal 2nd total sighting but still only 1 PRIOR retro
+(RETRO-179), below the ≥2-prior threshold; one more sighting promotes it.
+
+**CI-check counter:** 2/5 this session (PRs #560, #561 validated — plus #559 earlier = 3 total
+across the full session). **Fix-iteration counter:** 0/3. **Next ready pick:** FOLLOW-586
+(backend-engineer, P3 — 2 remaining importable archetype-ID copies); FOLLOW-587/588 newly filed
+(P3).
+
+---
 
 ## SESSION 39 (cont.) (2026-07-19) — FOLLOW-584 human-approved, MERGED to main + closed; RETRO-180 filed
 

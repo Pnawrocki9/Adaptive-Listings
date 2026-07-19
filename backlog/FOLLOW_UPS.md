@@ -15691,3 +15691,92 @@ SQL literal, superseded by the guarded runtime seed path), and the `db` embeddin
       out of scope).
 
 cross_ref: [FOLLOW-584, FOLLOW-036, FOLLOW-583, RETRO-178, RETRO-179, RETRO-180]
+
+## FOLLOW-587 — Fix the 3rd/4th already-invalid archetype mock literals the FOLLOW-585 sweep missed (`family_nester` in the tracer-sessions mock + `'investor'` in the audit mock); extend the parity guard to tracer `top_archetype`; prefer typing hand-authored `MOCK_ARCHETYPES` arrays `readonly ArchetypeId[]` as the durable root-fix
+
+source_retro: RETRO-181 (§4b CB-1/CB-2, §4c) source_ticket: FOLLOW-585 recommended_sprint: Sprint 24
+recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** FOLLOW-583 (PR #555) fixed `family_upsizer` (admin-labels mock) and FOLLOW-585 (PR #561)
+fixed the 2 `'investor'` lift-route `MOCK_ARCHETYPES` literals — both the same bug class: an invalid
+archetype id (not a member of canonical `ARCHETYPE_NAMES` / `CANONICAL_ARCHETYPE_IDS`) hard-coded in
+a dev/CI mock fallback whose field is typed loose `string`, so `pnpm typecheck` cannot catch it.
+RETRO-181's independent repo-wide `top_archetype`/`archetype:'…'` literal sweep (diffed against the
+canonical 18) found **the class is still open** — two more live instances the prior anchor greps
+(`golden_visa_buyer` full-parity anchor + `MOCK_ARCHETYPES`-name grep) are structurally blind to,
+because these are inline object fields, not named arrays:
+
+- **`apps/control-plane/src/app/api/admin/tracer/sessions/route.ts:49`** — `buildMockSessions()`
+  `top_archetype: 'family_nester'`. `family_nester` is NOT canonical (the family archetype is
+  `family_buyer`). Field `IntentSessionRow.top_archetype` is typed `z.string().nullable()`
+  (`packages/shared/src/schemas/tracer.ts:51`). Dev/CI-only mock (`data_source: 'mock'`, Rule K.2,
+  active when `DATABASE_URL_ADMIN` unconfigured), feeds the admin tracer-sessions list UI → a viewer
+  sees a non-existent archetype rendered as real. P3 (mock/admin-only). The invalid literal is ALSO
+  duplicated into a test fixture at
+  `apps/control-plane/src/app/api/admin/tracer/sessions/[id]/route.test.ts:298,309`
+  (`topArchetype: 'family_nester'` asserted to round-trip) — that test cements the bad literal and
+  must be updated alongside the source fix.
+- **`apps/control-plane/src/app/api/audit/route.ts:68`** — `MOCK_ENTRIES` carries
+  `details: { demo_id: 'demo-abc123', archetype: 'investor' }` (the same bare `'investor'`
+  non-member FOLLOW-585 removed from the lift routes). Lower confidence: `details` is a free-form
+  untyped audit blob and the value is illustrative of a past `demo.started` event, so it is arguably
+  acceptable historical fixture data — worker's call whether to fix to a canonical id or annotate as
+  intentional.
+
+**AC:**
+
+- [ ] Fix `family_nester` → `family_buyer` (unambiguous decomposition, unlike FOLLOW-585's
+      `investor`) in `admin/tracer/sessions/route.ts` `buildMockSessions()` AND its test-fixture
+      copy in `admin/tracer/sessions/[id]/route.test.ts:298,309`.
+- [ ] Disposition the `audit/route.ts:68` `'investor'` literal — fix to a canonical id OR add a
+      one-line comment documenting it as an intentional historical/illustrative audit value; state
+      which and why in the PR.
+- [ ] Add a subset-validity guard for the tracer mock `top_archetype` literals to
+      `tests/integration/archetype-id-parity.test.ts` (mirror the FOLLOW-585
+      `parseMockArchetypesGeneric` + `assertSubsetValidity` + non-empty-guard shape), shown failing
+      red against `main` first (falsification proof), then green after the fix.
+- [ ] Prefer the durable root-fix where safe: type the hand-authored `MOCK_ARCHETYPES` arrays
+      `readonly ArchetypeId[]` (now that `CANONICAL_ARCHETYPE_IDS` is an exported `@estalara/shared`
+      const post-FOLLOW-584) so this class is caught at compile time. Do NOT blanket-retype fields
+      hydrated from ClickHouse/DB (`LiftRow.archetype`, `ChArchetypeCounts.archetype`,
+      `IntentSessionRow.top_archetype`) — those are deliberately `string` and must not reject
+      unexpected external values.
+- [ ] Scope discipline: touch only the named mock literals + their test fixtures + the parity test —
+      do not touch the ClickHouse-backed (non-mock) code paths.
+
+cross_ref: [FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-178, RETRO-179, RETRO-181]
+
+## FOLLOW-588 — Harden the `archetype-id-parity.test.ts` parser helpers so inline comments inside a parsed literal block cannot false-positive the archetype scan (prevents re-tripping the FOLLOW-585 comment-in-block gotcha)
+
+source_retro: RETRO-181 (§4c) source_ticket: FOLLOW-585 recommended_sprint: Sprint 24
+recommended_agent: qa-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+
+**Gap:** The FOLLOW-585 worker's own lessons entry (2026-07-19,
+`.claude/agents/qa-engineer/lessons.md`) documents a real, generalizable gotcha: placing the
+fix-rationale comment INSIDE the `MOCK_ARCHETYPES = [...] as const;` block made the existing
+`/'([a-z_]+)'/g` scan match the word `'investor'` inside the comment text, producing a misleading
+still-RED result AFTER the source array was already fixed — a debugging time-sink resolved only by
+moving the comment above the array declaration. The parser helpers in
+`tests/integration/archetype-id-parity.test.ts` (`parseMockArchetypes`,
+`parseMockArchetypesGeneric`, and the full-parity block parsers) all capture the whole `[ … ]` (or
+enum) block and match every quoted `'[a-z_]+'` in it, comment text included. The moved-comment
+convention is an adequate INTERIM mitigation, but it is an unwritten discipline that FOLLOW-586
+(imminent — it edits these same parsers and adds inline-commented `z.enum`/array literals of exactly
+the shape that re-trips this) or any future archetype edit can silently violate. This is a genuine,
+already-cost-realized fragility, not make-work — hence a small hardening ticket rather than relying
+on the convention alone. Sequence FOLLOW-588 before/with FOLLOW-586.
+
+**AC:**
+
+- [ ] Strip `//` line comments and `/* */` block comments from the captured block BEFORE the
+      `/'([a-z_]+)'/g` scan in the parser helpers (or restrict matching to array-element lines) so a
+      quoted archetype id inside a comment cannot be counted.
+- [ ] Add a regression test: a fixture source with a valid array whose adjacent comment contains a
+      quoted INVALID id (e.g. `// replaced 'investor'`) parses to the valid set only (the commented
+      id is NOT picked up).
+- [ ] Add the one-line warning atop the parser helpers the FOLLOW-585 lessons entry recommended,
+      noting that comments-in-block previously false-positived the scan and are now stripped.
+- [ ] All 10 existing parity assertions still pass unchanged;
+      `pnpm --filter @estalara/integration-smoke test` green.
+
+cross_ref: [FOLLOW-585, FOLLOW-586, RETRO-181]

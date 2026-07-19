@@ -1,33 +1,40 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 MERGED + DONE; RETRO-180 filed)
+## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 + FOLLOW-585 both MERGED + DONE; RETRO-180/181 filed)
 
-**Read this before picking anything.** **FOLLOW-584 is DONE** — PR #559 squash-merged to `main` as
-commit `a08fcdf` (2026-07-19), human-approved (adds public export `CANONICAL_ARCHETYPE_IDS` to
-`@estalara/shared`). Three hand-maintained 18-item archetype-ID copies (`bandit-seed.ts`
-`CANONICAL_ARCHETYPES`, `directives.ts` `ArchetypeId`, `description.ts` `ArchetypeIdSchema`)
-consolidated onto the one shared canonical constant, guarded by a new parity test against
-`ARCHETYPE_NAMES` (`packages/sdk/src/core/intent.ts`). Supersedes the long-dormant FOLLOW-036.
-`retrospective-analyst` filed **RETRO-180** on the merged diff. CI at merge: 2/58 non-SUCCESS, both
-the pre-existing-red "Rule I — wired-or-dead check" (confirmed identical on already-merged PRs
-#555/#557, so not introduced by this PR).
+**Read this before picking anything.** **FOLLOW-585 is DONE** — PR #561 squash-merged to `main` as
+commit `475dc0c` (2026-07-19). Both invalid `'investor'` mock-archetype literals (`pilot/cta-lift`
+
+- `dashboard/analytics/lift` `MOCK_ARCHETYPES`) replaced with the canonical `'portfolio_builder'`
+  (CEO-chosen among the ambiguous `INVESTOR_ARCHETYPES` candidates; mock data, validity-only),
+  guarded red-then-green (10/10) in `tests/integration/archetype-id-parity.test.ts`.
+  `retrospective-analyst` filed **RETRO-181**. This closes the two mock-literal siblings RETRO-179
+  §4b predicted.
+
+**FOLLOW-584 is DONE** — PR #559 squash-merged to `main` as commit `a08fcdf` (2026-07-19),
+human-approved (adds public export `CANONICAL_ARCHETYPE_IDS` to `@estalara/shared`). Three
+hand-maintained 18-item archetype-ID copies (`bandit-seed.ts` `CANONICAL_ARCHETYPES`,
+`directives.ts` `ArchetypeId`, `description.ts` `ArchetypeIdSchema`) consolidated onto the one
+shared canonical constant, guarded by a new parity test against `ARCHETYPE_NAMES`
+(`packages/sdk/src/core/intent.ts`). Supersedes the long-dormant FOLLOW-036. `retrospective-analyst`
+filed **RETRO-180** on the merged diff. CI at merge: 2/58 non-SUCCESS, both the pre-existing-red
+"Rule I — wired-or-dead check" (confirmed identical on already-merged PRs #555/#557, so not
+introduced by this PR).
 
 **Housekeeping done this session:** sibling PR #558
 (`pm-orchestrator/FOLLOW-584-585-promote-dispatch`, opened 2026-07-18, never merged) duplicated the
 FOLLOW-584 promotion as `IN_PROGRESS`. Confirmed zero file overlap with PR #559 (code vs. backlog
 docs) and merged #558's branch into #559's (commit `d95c726`) before merge, so no content was lost.
-**PR #558 is now CLOSED without merging** — its FOLLOW-584 content shipped in #559, and its
-FOLLOW-585 dispatch content rode unmodified in #559's history. FOLLOW-585 itself is unaffected —
-still `IN_PROGRESS`, dispatched to qa-engineer, no worker PR yet.
+**PR #558 was CLOSED without merging** — its FOLLOW-584 content shipped in #559, and its FOLLOW-585
+dispatch content rode unmodified in #559's history.
 
 No open escalations block further work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
-ruling). **Next ready pick: FOLLOW-585** (qa-engineer, `IN_PROGRESS`, `'investor'` mock-literal
-fix). **Heads-up — the archetype-parity chain is NOT fully closed:** RETRO-180 found the FOLLOW-584
-consolidation left **2 more importable full-parity copies** un-migrated
-(`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` — inside the SoT package itself —
-and the deferred `adapt/description/route.ts` inline `z.enum`), both in RETRO-179's own anchor-grep
-output. Filed **FOLLOW-586** (backend-engineer, P3, 2h) to absorb them onto the now-exported
-`CANONICAL_ARCHETYPE_IDS`.
+ruling). **Next ready pick: FOLLOW-586** (backend-engineer, P3, 2h) — the archetype-parity chain is
+NOT yet fully closed: RETRO-180 found the FOLLOW-584 consolidation left **2 more importable
+full-parity copies** un-migrated (`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` —
+inside the SoT package itself — and the deferred `adapt/description/route.ts` inline `z.enum`), both
+in RETRO-179's own anchor-grep output. FOLLOW-586 absorbs them onto the now-exported
+`CANONICAL_ARCHETYPE_IDS`. (RETRO-181 may add further follow-ups — check its entry once filed.)
 
 ---
 
@@ -13086,10 +13093,18 @@ in-place in Sprint 22b above.
     Fix the 2 already-invalid 'investor' mock-archetype literals in CTA-lift + dashboard-analytics
     mock fallbacks; add subset-validity guards (RETRO-179)
   agent: qa-engineer
-  status: IN_PROGRESS
+  status: DONE
   assigned_to: qa-engineer
   started_at: '2026-07-18T00:00:00Z'
+  completed_at: '2026-07-19T20:29:13Z'
   branch: qa-engineer/FOLLOW-585-investor-literal-fix
+  pr: 561
+  merged_commit: 475dc0c
+  retro: RETRO-181
+  archetype_pick: >-
+    'investor' -> 'portfolio_builder' — CEO-chosen 2026-07-19 (PM-flagged genuinely-ambiguous: 5
+    valid INVESTOR_ARCHETYPES candidates once yield_hunter excluded; portfolio_builder is the most
+    generic, no niche flip/STR/visa/commercial connotation). Mock data, validity-only.
   priority: P2
   estimated_hours: 2
   depends_on: []
@@ -13121,16 +13136,16 @@ in-place in Sprint 22b above.
     Branch: qa-engineer/FOLLOW-585-investor-literal-fix
     AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-585; order matters, mirrors FOLLOW-583's AC-3
     falsification-before-fix discipline):
-    - [ ] Add a subset-validity assertion to tests/integration/archetype-id-parity.test.ts for
+    - [x] Add a subset-validity assertion to tests/integration/archetype-id-parity.test.ts for
           pilot/cta-lift/route.ts MOCK_ARCHETYPES, shown FAILING RED against main's current state
           FIRST (falsification proof, paste the red output in the PR), then passing after the fix.
-    - [ ] Add a subset-validity assertion for dashboard/analytics/lift/route.ts MOCK_ARCHETYPES,
+    - [x] Add a subset-validity assertion for dashboard/analytics/lift/route.ts MOCK_ARCHETYPES,
           same red-then-green discipline.
-    - [ ] Fix 'investor' -> a valid canonical archetype id in both MOCK_ARCHETYPES arrays (see PM
+    - [x] Fix 'investor' -> a valid canonical archetype id in both MOCK_ARCHETYPES arrays (see PM
           FLAG above — document the choice + one-sentence rationale prominently).
-    - [ ] All existing 8 assertions in archetype-id-parity.test.ts (post-FOLLOW-583) still pass
+    - [x] All existing 8 assertions in archetype-id-parity.test.ts (post-FOLLOW-583) still pass
           unaffected.
-    - [ ] Scope discipline: touch only the 2 named MOCK_ARCHETYPES arrays + the test file — do not
+    - [x] Scope discipline: touch only the 2 named MOCK_ARCHETYPES arrays + the test file — do not
           touch the ClickHouse-backed (non-mock) code paths in either route.
   cross_ref: [FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
 - id: FOLLOW-567

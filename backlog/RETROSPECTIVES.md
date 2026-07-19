@@ -28941,3 +28941,277 @@ dead. CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduc
   incomplete relative to its own target class" reaches its 6th sighting across 6 tickets (FOLLOW-264,
   384, 561, 583, 584, and now the mock-literal class that FOLLOW-585 partially swept) — Rule AC remains
   correctly promoted; the multi-anchor SUB-pattern (Rule AD) remains 1-prior-short.
+
+## RETRO-182 — FOLLOW-587 (sweep the 3rd/4th invalid archetype mock literals the FOLLOW-585 sweep missed — `family_nester`→`family_buyer` in the tracer-sessions mock + `'investor'`→`portfolio_builder` in the audit mock — add a red-first tracer `top_archetype` parity guard, and apply the durable compile-time root-fix: retype the three hand-authored `MOCK_ARCHETYPES` arrays `readonly ArchetypeId[]`. The two NAMED instances are GENUINELY closed end-to-end — literal fixed → parsed from the REAL route file by a non-vacuous subset assertion → and now caught at `tsc`, not just by a downstream grep-guard — a real discharge of RETRO-181 §4b CB-1/CB-2. The root-fix is the significant, durable step this chain was missing. BUT the mock-literal-INVALIDITY bug CLASS is STILL not fully swept: an independent all-structural-shapes sweep this session found the SAME invalid `family_nester` surviving one sub-shape over — as an unquoted object KEY inside a `JSON.stringify({ … })` blob in `admin/tracer/sessions/history/route.ts` `buildMockEvents()` (`archetype_deltas`), invisible to ALL THREE anchors used to date (the `golden_visa_buyer` full-parity anchor, the `MOCK_ARCHETYPES`-name grep, AND FOLLOW-587's own `archetype:'…'` value-position regex). This is a genuinely NEW 3rd structural sub-shape and the 3rd-total / 2nd-PRIOR sighting of Rule AC's failure-mode (a) — the multi-anchor grep blind spot — which RETRO-181 §6 explicitly pre-authorized as the threshold-crosser. ≥2-PRIOR met (RETRO-179 §6, RETRO-181 §4b) → **Rule AD PROMOTED**) — 2026-07-20
+
+**Deviation note (mirrors RETRO-179/180/181's precedent):** no Agent/Task-spawn tool was available in
+this session's toolset. I ran the retrospective-analyst's documented algorithm directly rather than
+spawning the subagent. Model-fit call: the analyst's default is **Opus** (CLAUDE.md model-fit table
+names retrospectives as the explicit Opus example); this run executed under Opus (`opus-4-8[1m]`),
+matching the intended routing.
+
+### 1. Summary of change
+
+- **PR:** #563 (squash-merged 2026-07-20 00:26:55 CEST [`mergedAt` per `git show`; UTC ≈ 2026-07-19
+  22:26], commit `2ed817f`; branch `qa-engineer/FOLLOW-587-mock-literal-sweep`, now deleted).
+- **Files changed:** 8 (+117 / −11) per `git show 2ed817f --stat` — of which 6 are code/test:
+  `apps/control-plane/src/app/api/admin/tracer/sessions/route.ts` (`family_nester`→`family_buyer`, 1
+  line), `apps/control-plane/src/app/api/admin/tracer/sessions/[id]/route.test.ts` (2 fixture lines),
+  `apps/control-plane/src/app/api/audit/route.ts` (`'investor'`→`'portfolio_builder'` + a 6-line
+  rationale comment ABOVE the literal), `apps/control-plane/src/app/api/pilot/cta-lift/route.ts` +
+  `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts` +
+  `apps/control-plane/src/app/api/admin/labels/route-helpers.ts` (each: `import type { ArchetypeId }`
+  + `MOCK_ARCHETYPES: readonly ArchetypeId[]`), `tests/integration/archetype-id-parity.test.ts`
+  (+1 parser `parseTracerSessionsMockTopArchetypes`, +1 `describe`/`it`, +2 widened parser regexes,
+  +doc). The 8th changed file is `.claude/agents/qa-engineer/lessons.md` (meta).
+- **Modules touched:** control-plane (3 mock-literal fixes + 3 compile-time retypes), qa
+  (`tests/integration/`), + agent-lesson bookkeeping. Zero shared/SDK/ingest/decision-api/Modal/
+  migration/docs-of-record.
+- **Key contracts changed:** none — 3 mock-literal string fixes + a type-annotation tightening on 3
+  hand-authored dev/CI-only arrays. Zero production behavior change; all three fixed fields are
+  `data_source: 'mock'` fallbacks (Rule K.2, gated on absent `CLICKHOUSE_URL`/`DATABASE_URL_ADMIN`),
+  not served to real tenants. `family_buyer` / `portfolio_builder` both verified genuine members of
+  `CANONICAL_ARCHETYPE_IDS` (`packages/shared/src/archetypes.ts`). The `ArchetypeId` type is imported
+  as `import type` (erased at build; no runtime dependency added).
+
+### 2. Verification done in PR
+
+- Test files changed: 1 extended (`archetype-id-parity.test.ts`, 11 `it` blocks total, up from 10) +
+  1 fixture updated (`sessions/[id]/route.test.ts`). Assertions added: ~2 (the new tracer-sessions
+  subset-validity pair: a `> 0` non-empty parser guard + an `assertSubsetValidity` reading the REAL
+  route source). Red-first honored per the ticket AC + worker lessons: RED = 1 new fail on
+  `family_nester` against `main`, GREEN = 11/11 after the fix.
+- The new assertion is **non-vacuous by construction** — `parseTracerSessionsMockTopArchetypes`
+  asserts `referenced.size > 0` before the subset check (regex broken by a future reformat FAILS LOUD
+  rather than passing on an empty set) and reads the production route source via `readRepoFile`, not a
+  fixture. Verified by reading the diff.
+- **The compile-time root-fix is real, not cosmetic — and I checked it caught nothing latent:** the
+  three `MOCK_ARCHETYPES` arrays are now `readonly ArchetypeId[]`, so an invalid literal in them is a
+  `tsc` error, not merely a runtime-guard-test failure. `control-plane typecheck` stayed clean, i.e.
+  all three arrays were already valid (no hidden bug surfaced by the retype). This is the durable,
+  shape-independent guard the four prior chain tickets (561/583/585 and this one's runtime half) never
+  installed — a type covers every future shape at compile time, unlike a per-shape grep-guard.
+- **Guard-architecture payoff, recorded (the worker flagged it, I confirm it):** the retype itself
+  broke the parity test's OWN parser regex — `MOCK_ARCHETYPES\s*=\s*\[…\]\s*as const;` no longer
+  matched once `: readonly ArchetypeId[]` sat between the name and `=`. This was caught NOT silently
+  (an empty match set reported as a pass) but LOUD, by the parser's own `matched > 0` fail-loud guard,
+  and fixed by widening the regex to `MOCK_ARCHETYPES(?:\s*:\s*readonly ArchetypeId\[\])?\s*=…`. A
+  compile-time root-fix and a regex runtime guard on the same literal are two independent layers, and
+  changing the first silently disarmed the second until the fail-loud caught it — concrete evidence
+  the FOLLOW-561 fail-loud design pays off, and direct motivation for Rule AD clause 3.
+- CI checks: PM-validated per the QUEUE/dispatch trail; not independently re-run this session. The
+  guards + retypes are reproducible from `git show 2ed817f` and match the diff content.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): no new production files or exports. The 3 fixed literals
+(`family_buyer`/`portfolio_builder`) are read by existing, already-wired mock builders
+(`buildMockSessions`, `MOCK_ENTRIES`, `seededRandom` selection loops) — value fixes inside existing
+wires. The 3 `import type { ArchetypeId }` are compile-time-only, consumed by the retyped arrays in
+the same files. The new `parseTracerSessionsMockTopArchetypes` helper IS test code, consumed by the
+new `it` block in the same file. The extended test file remains CI-wired via the same
+`tests/integration/vitest.config.ts` `include: **/*.test.ts` glob RETRO-178 confirmed fires on every
+PR to `main` (unchanged this diff). Nothing dead.
+CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduced. `family_buyer` and
+`portfolio_builder` are existing members of an existing closed domain; no producer/consumer pair is
+created or left dangling. `Wiring Audit — clean ✅` (both checks, on the diff as scoped).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A for the diff as scoped. The three fixes are correct (`family_buyer` is the unambiguous family
+  decomposition; `portfolio_builder` matches the CEO's FOLLOW-585 disposition and was flagged for a
+  human glance in the PR per the ambiguous-pick discipline). The root-fix retype is correctly scoped
+  to the three hand-authored arrays and correctly does NOT touch the ClickHouse/DB-hydrated
+  `string`-typed fields (`LiftRow.archetype`, `ChArchetypeCounts.archetype`,
+  `IntentSessionRow.top_archetype`, `archetype_deltas`) that must accept unexpected external values.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P3) — THE FINDING. A 5th live invalid archetype literal of the identical bug class survives,
+  in a 3rd structural sub-shape the FOLLOW-587 sweep is structurally blind to.**
+  `apps/control-plane/src/app/api/admin/tracer/sessions/history/route.ts:56` `buildMockEvents()`:
+  `archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 })`. `family_nester`
+  is NOT a member of `ARCHETYPE_NAMES` / `CANONICAL_ARCHETYPE_IDS` (canonical family archetype is
+  `family_buyer`; confirmed absent from every SDK type, `nlp.py`, `archetypes.ts`, migration —
+  `grep -rn family_nester` returns only this line + the SDK `follow-194.test.ts` reset-fixture, which
+  is a test simulating a stale/renamed archetype, out of scope). The `archetype_deltas` column is
+  typed `z.string()` (`packages/shared/src/schemas/tracer.ts:100`) — a JSON string, so `pnpm
+  typecheck` cannot catch a bad KEY inside it, the identical loose-typing root as `family_upsizer`
+  (RETRO-178), the 2 `'investor'` (RETRO-179), and the tracer-sessions `family_nester` (RETRO-181,
+  fixed by THIS PR). It is a dev/CI-only mock (`data_source: 'mock'`, active when ClickHouse is
+  unconfigured, Rule K.2 — file header line 20 documents exactly this fallback) feeding the admin
+  tracer **history** view, so a viewer sees a non-existent archetype in a rendered delta — P3
+  (mock/admin-only, not a live buyer prediction), same severity band as its four siblings. → **FOLLOW-589.**
+  **Why the FOLLOW-587 sweep could not have found it (this is the crux, and it is genuine, not a scope
+  oversight):** the literal is invisible to every anchor used to date — the `golden_visa_buyer`
+  full-parity anchor (line 56 does not contain it), the `MOCK_ARCHETYPES`-name grep (it is not in a
+  named array; it is in `buildMockEvents`), AND FOLLOW-587's own `(?:top_archetype|archetype)\s*:\s*'[a-z_]+'`
+  value-position regex (here `family_nester` is an UNQUOTED object KEY — `family_nester: -0.03` — not
+  a quoted value after `archetype:`). It is a strictly new structural sub-shape: a JSON-stringified
+  object KEY, distinct from both the named-array shape (561/583/585/587) and the inline-object-VALUE
+  shape (581/587). Independently confirmed present on `main` post-merge (`git show 2ed817f` does not
+  touch `history/route.ts`; `grep -n family_nester` on HEAD returns line 56).
+
+#### 4c. Test coverage gaps
+
+- Same root as CB-1: no test parses archetype KEYS out of the tracer-history mock's
+  `archetype_deltas: JSON.stringify({...})` blob. The new FOLLOW-587 parser
+  (`parseTracerSessionsMockTopArchetypes`) scans ONLY `sessions/route.ts` for quoted
+  `top_archetype: '<id>'` values — it does not touch `history/route.ts` and cannot match an unquoted
+  JSON-blob key. Folded into FOLLOW-589 (a distinct object-KEY parser + red-first subset assertion).
+- **Full enumeration statement (so the chain can be declared closable — task item 1/5):** a fresh
+  all-structural-shapes sweep this session (named `as const` arrays; inline object VALUES
+  `archetype:'…'` / `top_archetype:'…'`; inline object KEYS incl. `JSON.stringify({…})`; zod
+  `z.enum`; free-form fields) across non-test `apps/` + `packages/` found **exactly one** live invalid
+  archetype literal remaining: the `history/route.ts:56` `family_nester` (CB-1). Every other non-test
+  hit is a valid canonical id, a FOLLOW-585/587 fix-rationale comment, or a doc/JSDoc example. So after
+  FOLLOW-589 + its guard land, the mock-archetype-literal-INVALIDITY class is fully
+  enumerated-and-guarded across every live structural shape and the FOLLOW-561→583→585→587→589 chain is
+  **closable**. FOLLOW-589 is the last reactive fix.
+- **DG-adjacent nit (noted, NOT filed — cosmetic, in a comment):**
+  `packages/shared/src/schemas/events/quiz.ts:80` a JSDoc example uses
+  `behavioral_archetype: 'family_comfort'` — `family_comfort` is not a canonical archetype id. It is a
+  documentation example inside a `*`-prefixed comment block (a Rule AC false-positive class), not a
+  live literal on any wire, so no follow-up; flagging only so a future reader does not mistake it for a
+  real id.
+
+#### 4d. Documentation gaps
+
+- N/A. The new `describe` doc-comment and the widened-parser doc-comments in
+  `archetype-id-parity.test.ts` accurately scope themselves to the tracer-sessions `top_archetype`
+  field and honestly note the FOLLOW-587 `: readonly ArchetypeId[]` annotation the regex now tolerates
+  — no over-claim of repo-wide coverage (no Rule Y issue). The audit-route rationale comment is placed
+  correctly ABOVE the literal (the FOLLOW-585 comment-in-block gotcha FOLLOW-588 targets was avoided
+  here). The gap is scope-completeness (CB-1), not doc honesty.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-586** (RETRO-180 §7, backend-engineer, P3, in backlog — migrate `intent-weights.ts`
+  `ARCHETYPE_KEYS` + `adapt/description/route.ts` inline `z.enum` onto `CANONICAL_ARCHETYPE_IDS` /
+  `ArchetypeIdSchema`): **unaffected in scope, but its rationale is REINFORCED and unchanged.** The
+  `readonly ArchetypeId[]` retype in this PR touched the three `MOCK_ARCHETYPES` SUBSET arrays, NOT
+  the two FULL-PARITY copies FOLLOW-586 owns — zero file overlap (587 touched pilot/cta-lift,
+  dashboard/analytics/lift, admin/labels route files + the tracer/audit mocks + the test; 586 owns
+  `packages/shared/src/schemas/intent-weights.ts` + `adapt/description/route.ts`). So typing more mock
+  arrays does NOT reduce what FOLLOW-586 must do — the two remaining importable full-parity copies are
+  still un-consolidated and still each need the one-line derivation onto `CANONICAL_ARCHETYPE_IDS`.
+  (If anything, this PR's success with `import type { ArchetypeId }` in control-plane route files
+  confirms the import path FOLLOW-586 will use is clean.)
+- **FOLLOW-588** (parity-parser comment-stripping hardening, qa-engineer, P3, in backlog):
+  **unaffected, and this PR is corroborating evidence FOR it.** FOLLOW-587 avoided the comment-in-block
+  trap by placing the audit rationale comment ABOVE the literal — but that is the manual discipline
+  FOLLOW-588 exists to make unnecessary. Sequence note stands (RETRO-181 §5a): FOLLOW-588 should land
+  before/with FOLLOW-586, which edits the same parsers and adds inline-commented enum literals. This
+  PR additionally widened two parser regexes (to tolerate the `: readonly ArchetypeId[]` annotation) —
+  FOLLOW-588's worker should be aware the parser signatures changed this session so its comment-strip
+  edit rebases cleanly.
+
+#### 5b. Future sprint tickets affected
+
+- Any future archetype add/rename/removal now touches strictly FEWER unguarded hand sites for the
+  mock class: the three `MOCK_ARCHETYPES` arrays are now compile-time-checked (a bad literal is a
+  `tsc` error), and the tracer-sessions `top_archetype` is runtime-guarded. STILL requires a hand-edit
+  (until FOLLOW-589 guards it): the `history/route.ts` `archetype_deltas` JSON blob (CB-1) — plus every
+  site RETRO-179 §5b / RETRO-180 §5b / RETRO-181 §5b enumerated (the two FOLLOW-586 full-parity copies,
+  the Python copies, migration seeds). The durable direction is clear and now demonstrated: prefer a
+  compile-time `readonly ArchetypeId[]` / `Record<ArchetypeId, …>` on hand-authored constants over yet
+  another reactive per-shape runtime grep-guard (Rule AD clause 2).
+
+#### 5c. Contracts changed others rely on
+
+- None (this PR: 3 mock-string fixes + 3 compile-time type-annotation tightenings + test-only
+  extension; `import type` is erased at build).
+
+#### 5d. Architectural assumptions affected — MULTI-AXIS / CONTRADICTION-RECONCILIATION (step 8)
+
+- **Reconciliation with prior "clean"/prediction verdicts (per step 8): NO contradiction.** CB-1 does
+  not overturn any prior "clean" verdict — it CONFIRMS RETRO-179 §5d's standing prediction that closure
+  of the archetype-literal class "is a moving target… until the root cause… is fixed," and RETRO-181
+  §5d's re-affirmation of the same. This PR's `readonly ArchetypeId[]` retype IS the first real
+  installment of that root cause fix (compile-time typing of hand-authored constants) — but it was
+  applied only to the NAMED-array axis, so the class moved one axis over to the JSON-blob-KEY shape,
+  exactly the "moving target moving" pattern both prior retros forecast. The class history is now:
+  `family_upsizer`×2 (583), `investor`×2 (585), `family_nester` tracer-sessions + audit-`investor`
+  (587), and now `family_nester` tracer-history JSON-key (589) — 7 instances across 5 tickets, 3
+  structural sub-shapes, one sub-shape remaining live.
+- **Axes checked (multi-axis discipline, step 8):** (i) the **structural-shape** axis — the one the gap
+  moved along, enumerated exhaustively this session (§4c), one live instance found; (ii) the
+  **compile-time-vs-runtime** axis — the retype closes the named-array shape at `tsc` but leaves the
+  JSON-blob and free-form shapes runtime-only, which is why CB-1 escaped; (iii) the **mock-vs-live**
+  axis — all instances are `data_source: 'mock'` dev/CI fallbacks (Rule K.2), none on a live buyer
+  prediction path, so severity stays P3; (iv) the **variant/holdout** axis — n/a to a delta-map key.
+  No prior-retro "clean" claim exists on the shape axis to contradict; both 179 and 181 explicitly
+  held the class OPEN, so RETRO-182 continues, not reverses, their verdict.
+
+### 6. New lesson candidates
+
+- **Multi-anchor grep blind-spot (Rule AC failure-mode (a)) — 3rd-total / 2nd-PRIOR sighting →
+  THRESHOLD MET → Rule AD PROMOTED. Counted rigorously per task item 6/2.** The count locked in by
+  RETRO-180 §6 and RETRO-181 §6 (authoritative, not re-litigated here) is:
+  **RETRO-179 §6 = sighting #1** (the 2 `'investor'` subset arrays, invisible to the `golden_visa_buyer`
+  full-parity anchor); **RETRO-181 §4b CB-1 = sighting #2** (`family_nester` inline object field in
+  `sessions/route.ts`, invisible to BOTH the `golden_visa_buyer` anchor AND the `MOCK_ARCHETYPES`-name
+  grep). RETRO-181 §6 explicitly pre-authorized the trigger: *"the next genuine anchor-INVISIBLE
+  archetype-literal find is the 3rd total / 2nd prior — that one crosses the threshold and Rule AD
+  should be promoted then."* **RETRO-182's CB-1 IS that find:** `family_nester` as an unquoted
+  JSON-stringified object KEY in `history/route.ts`, structurally invisible to ALL THREE anchors used
+  to date (the distinctive-member grep, the array-name grep, AND FOLLOW-587's quoted-value regex) — a
+  genuinely new 3rd structural sub-shape, unambiguously failure-mode (a) (anchor-invisible), NOT
+  failure-mode (b) (hit-dropped-from-scope: it never appeared in any anchor's output, so it could not
+  have been dropped). Promotion math: **PRIOR retros carrying the pattern = RETRO-179 + RETRO-181 = 2
+  prior. RULE_PROMOTION_THRESHOLD = 2 PRIOR. 2 ≥ 2 → MET.** The promoting retro (this one) does NOT
+  inflate the count — the 2 banked occurrences are both strictly prior (same adjudication as Rules
+  AA/AB/AC/V/Q). **→ Rule AD promoted** (§ CONVENTIONS_PATCH.md): *"when fixing/guarding a
+  value-domain literal, enumerate EVERY structural shape it can occur in, not just the one the
+  triggering grep found; prefer a compile-time type over a downstream string-grep guard."* This is a
+  DISTINCT axis from the parent Rule AC (which governs enumerating every FILE the audit named vs. a
+  repo-wide grep) — AD governs enumerating every structural SHAPE a literal occupies vs. a single grep
+  anchor. Filed **FOLLOW-589**.
+- **Compile-time-type-beats-per-shape-grep-guard — folded INTO Rule AD clause 2, not a separate rule.**
+  This PR is the concrete demonstration: the runtime grep-guards (561/583/585/587) each covered only
+  the one shape their regex matched and missed the next sub-shape three times running; a single
+  `readonly ArchetypeId[]` (or `Record<ArchetypeId, number>` on the delta map) would catch every
+  hand-authored shape at `tsc` in one stroke. Codified as Rule AD clause 2 rather than a standalone
+  rule (same root pattern, one rule).
+- **NEGATIVE observation — the FOLLOW-585 comment-in-block parser gotcha (FOLLOW-588's target) did NOT
+  recur here** and is NOT incremented: FOLLOW-587 placed the audit rationale comment ABOVE the literal.
+  It stays at its 1 sighting (RETRO-181 §4c); FOLLOW-588 remains a below-threshold concrete hardening,
+  not a rule.
+
+### 7. Follow-ups
+
+- **FOLLOW-589** (qa-engineer, P3, 2h): fix `family_nester`→`family_buyer` in the tracer-**history**
+  mock's `archetype_deltas: JSON.stringify({...})` blob (`admin/tracer/sessions/history/route.ts:56`);
+  add a red-first guard to `archetype-id-parity.test.ts` that parses the archetype KEYS out of that
+  JSON blob (a distinct object-KEY parser, not the quoted-value parsers) and asserts subset-validity
+  vs `ARCHETYPE_NAMES`, with the `matched > 0` non-vacuous guard; per Rule AD, enumerate every
+  structural shape in the PR and confirm no other live JSON-blob-key literal (the RETRO-182 sweep found
+  only this one — so this is the LAST reactive fix and the class is then closable). Scope: the named
+  mock literal + the parity test only; do NOT retype the ClickHouse-hydrated `archetype_deltas`
+  `z.string()` column. (Closes §4b CB-1 + §4c.)
+- FOLLOW-588 (parser comment-strip) and FOLLOW-586 (2 full-parity copies) are UNCHANGED by this merge
+  (§5a) — no new follow-up for either; sequence note (588 before/with 586, and 589 folds into the same
+  `archetype-id-parity.test.ts` edit surface — the PM may batch 588+589 as they touch adjacent parsers).
+
+### 8. Cross-references
+
+- **Related to RETRO-181 / FOLLOW-585 (prior-follow-up closure check, step 7):** RETRO-182 confirms
+  FOLLOW-587 GENUINELY closed the two RETRO-181 §4b instances end-to-end — `family_nester`
+  (tracer-sessions) and `'investor'` (audit) are literal-fixed → parsed-from-the-real-route-file by a
+  non-vacuous subset assertion → AND (for the named arrays) now caught at `tsc` via `readonly
+  ArchetypeId[]`. Traced producer(fixed literal)→consumer(mock builder)→guard(runtime subset +
+  compile-time type) end-to-end; a REAL closure, not a one-hop relocation of THOSE instances. The bug
+  CLASS, however, relocated one structural sub-shape over (CB-1) — the moving target moving, as
+  RETRO-179 §5d / RETRO-181 §5d forecast.
+- **Related to RETRO-178 / FOLLOW-561, RETRO-179 / FOLLOW-583, RETRO-180 / FOLLOW-584 and Rules AC/AD:**
+  §6 — the multi-anchor SUB-pattern (Rule AC failure-mode (a)) reaches its 3rd total / 2nd PRIOR
+  sighting and is promoted to **Rule AD**, exactly at the trigger RETRO-180 §6 / RETRO-181 §6
+  pre-authorized. The parent super-pattern "ticket scope/coverage enumeration incomplete relative to
+  its own target class" (Rule AC's origin: RETRO-053/055, RETRO-107/108) now spans FOLLOW-264, 384,
+  561, 583, 584, 585, 587 — 7 tickets; Rule AC governs the file-scope axis, Rule AD the structural-shape
+  axis. FOLLOW-584's `CANONICAL_ARCHETYPE_IDS`/`ArchetypeId` export is what made this PR's durable
+  `readonly ArchetypeId[]` root-fix possible.

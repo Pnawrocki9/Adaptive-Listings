@@ -1,9 +1,20 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 + FOLLOW-585 both MERGED + DONE; RETRO-180/181 filed)
+## ▶️ START HERE — resume 2026-07-20 (session 39 — FOLLOW-584 + FOLLOW-585 + FOLLOW-587 all MERGED + DONE; RETRO-180/181/182 filed)
 
-**Read this before picking anything.** **FOLLOW-585 is DONE** — PR #561 squash-merged to `main` as
-commit `475dc0c` (2026-07-19). Both invalid `'investor'` mock-archetype literals (`pilot/cta-lift`
+**Read this before picking anything.** **FOLLOW-587 is DONE** — PR #563 squash-merged to `main` as
+commit `2ed817f` (2026-07-20). Swept the two live invalid mock literals RETRO-181 found
+(`family_nester`→`family_buyer` in the tracer-sessions mock + its test fixture;
+`'investor'`→`'portfolio_builder'` in the audit mock), added a red-first tracer `top_archetype`
+parity guard (11/11 green), and applied the durable root-fix: the 3 hand-authored `MOCK_ARCHETYPES`
+arrays are now typed `readonly ArchetypeId[]` (from `@estalara/shared`, post-FOLLOW-584) so this
+class is caught at compile time, not only by the runtime guard. `retrospective-analyst` filed
+**RETRO-182**. Note: a **5th** instance was found and deliberately left for a follow-up —
+`admin/tracer/history/route.ts:56` `family_nester` inside a JSON-stringified `archetype_deltas` blob
+(a third structural sub-shape). Check RETRO-182 / FOLLOW_UPS.md for its stub.
+
+**FOLLOW-585 is DONE** — PR #561 squash-merged to `main` as commit `475dc0c` (2026-07-19). Both
+invalid `'investor'` mock-archetype literals (`pilot/cta-lift`
 
 - `dashboard/analytics/lift` `MOCK_ARCHETYPES`) replaced with the canonical `'portfolio_builder'`
   (CEO-chosen among the ambiguous `INVESTOR_ARCHETYPES` candidates; mock data, validity-only),
@@ -34,7 +45,10 @@ NOT yet fully closed: RETRO-180 found the FOLLOW-584 consolidation left **2 more
 full-parity copies** un-migrated (`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` —
 inside the SoT package itself — and the deferred `adapt/description/route.ts` inline `z.enum`), both
 in RETRO-179's own anchor-grep output. FOLLOW-586 absorbs them onto the now-exported
-`CANONICAL_ARCHETYPE_IDS`. (RETRO-181 may add further follow-ups — check its entry once filed.)
+`CANONICAL_ARCHETYPE_IDS`. Other open chain follow-ups (all P3): **FOLLOW-587's leftover** (the
+`history/route.ts` `family_nester` — see RETRO-182's stub), **FOLLOW-588** (strip comments in the
+parity-guard parsers). RETRO-182 also carries the Rule-promotion decision on the multi-anchor grep
+blind-spot — check its verdict before assuming the pattern is un-codified.
 
 ---
 
@@ -13148,6 +13162,69 @@ in-place in Sprint 22b above.
     - [x] Scope discipline: touch only the 2 named MOCK_ARCHETYPES arrays + the test file — do not
           touch the ClickHouse-backed (non-mock) code paths in either route.
   cross_ref: [FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
+- id: FOLLOW-587
+  title: >-
+    Fix the 3rd/4th invalid archetype mock literals the FOLLOW-585 sweep missed (family_nester in
+    tracer-sessions mock + 'investor' in audit mock); extend the parity guard to tracer
+    top_archetype; retype hand-authored MOCK_ARCHETYPES arrays readonly ArchetypeId[] (RETRO-181)
+  agent: qa-engineer
+  status: DONE
+  assigned_to: qa-engineer
+  started_at: '2026-07-20T00:00:00Z'
+  completed_at: '2026-07-20T00:00:00Z'
+  branch: qa-engineer/FOLLOW-587-mock-literal-sweep
+  pr: 563
+  merged_commit: 2ed817f
+  retro: RETRO-182
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    RETRO-181 (§4b CB-1/CB-2) on FOLLOW-585 — an independent repo-wide top_archetype/archetype:'…'
+    literal sweep found the mock-archetype-invalidity class still open in two inline-object-field
+    sites the prior anchor greps were structurally blind to: admin/tracer/sessions/route.ts:49
+    buildMockSessions() top_archetype:'family_nester' (+ its test-fixture copy in
+    sessions/[id]/route.test.ts) and audit/route.ts:68 MOCK_ENTRIES details.archetype:'investor'.
+    Neither is a member of canonical ARCHETYPE_NAMES; both fields typed loose string, so typecheck
+    could not catch them.
+  pm_validated: >-
+    2026-07-20 — validated independently before DONE. Dispatched qa-engineer (Sonnet) with both
+    substitutions pre-decided: family_nester->family_buyer (unambiguous) and (parent-agent call,
+    consistent with the CEO's FOLLOW-585 disposition) audit 'investor'->'portfolio_builder'. All 5
+    AC re-verified against the real PR #563 diff: (1) family_nester->family_buyer in
+    tracer/sessions/route.ts buildMockSessions() + both lines of sessions/[id]/route.test.ts —
+    confirmed; (2) audit/route.ts 'investor'->'portfolio_builder' with rationale comment placed
+    ABOVE the parsed object literal — confirmed; (3) new red-first tracer top_archetype
+    subset-validity guard added to tests/integration/archetype-id-parity.test.ts (RED on main = 1
+    new fail on family_nester, GREEN after = 11/11) — re-ran locally, 11/11 green independently; (4)
+    durable root-fix — 3 hand-authored MOCK_ARCHETYPES arrays (pilot/cta-lift, dashboard/analytics/
+    lift, admin/labels/route-helpers) retyped `readonly ArchetypeId[]` from @estalara/shared;
+    control-plane typecheck clean (no latent bug); the retype broke the parity test's own
+    MOCK_ARCHETYPES parser regex (annotation between name and =), caught by its own fail-loud
+    matched>0 guard and fixed by widening the regex — the guard architecture working as designed;
+    (5) scope discipline — 8 files (7 in-scope + .claude/agents/qa-engineer/lessons.md), no
+    ClickHouse (non-mock) path touched, verified via git diff --stat. CI: 57 pass / 2 fail, both
+    pre-existing- red Rule I (unrelated — 179 violations all in untouched files). CI-check counter:
+    3/5 this session. Fix-iteration counter: 0/3. NOT MERGED at validation time — merged by CEO
+    immediately after (mock data + tests only, autonomous QA area).
+  notes: |
+    Model-fit: sonnet — mechanical, same class + red-then-green shape as FOLLOW-583/585.
+    Root-fix note: FOLLOW-584's exported CANONICAL_ARCHETYPE_IDS / ArchetypeId made the
+    `readonly ArchetypeId[]` compile-time guard possible — do NOT retype DB/ClickHouse-hydrated
+    string fields (LiftRow.archetype, ChArchetypeCounts.archetype, IntentSessionRow.top_archetype);
+    those deliberately accept unexpected external values.
+    OUT-OF-SCOPE FINDING (worker-flagged, PM-confirmed live): a 5th instance —
+    admin/tracer/history/route.ts:56 archetype_deltas: JSON.stringify({..., family_nester: -0.03 }),
+    a JSON-stringified blob KEY (a third structural sub-shape, invisible to every anchor so far).
+    Left for a follow-up (see RETRO-182 / FOLLOW_UPS.md), correctly not force-fit into this ticket.
+    AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-587):
+    - [x] family_nester -> family_buyer in tracer/sessions/route.ts + its test fixture.
+    - [x] Disposition audit/route.ts 'investor' — fixed to 'portfolio_builder', documented.
+    - [x] Red-first subset-validity guard for tracer mock top_archetype in the parity test.
+    - [x] Durable root-fix: 3 hand-authored MOCK_ARCHETYPES arrays typed readonly ArchetypeId[];
+          DB-hydrated string fields left as-is.
+    - [x] Scope discipline: only named mock literals + test fixtures + parity test touched.
+  cross_ref: [FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-179, RETRO-181]
 - id: FOLLOW-567
   title: >-
     Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but

@@ -15695,7 +15695,8 @@ cross_ref: [FOLLOW-584, FOLLOW-036, FOLLOW-583, RETRO-178, RETRO-179, RETRO-180]
 ## FOLLOW-587 — Fix the 3rd/4th already-invalid archetype mock literals the FOLLOW-585 sweep missed (`family_nester` in the tracer-sessions mock + `'investor'` in the audit mock); extend the parity guard to tracer `top_archetype`; prefer typing hand-authored `MOCK_ARCHETYPES` arrays `readonly ArchetypeId[]` as the durable root-fix
 
 source_retro: RETRO-181 (§4b CB-1/CB-2, §4c) source_ticket: FOLLOW-585 recommended_sprint: Sprint 24
-recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: true (DONE — PR
+#563, merged 2ed817f 2026-07-20; see QUEUE.md FOLLOW-587 and RETRO-182)
 
 **Gap:** FOLLOW-583 (PR #555) fixed `family_upsizer` (admin-labels mock) and FOLLOW-585 (PR #561)
 fixed the 2 `'investor'` lift-route `MOCK_ARCHETYPES` literals — both the same bug class: an invalid
@@ -15780,3 +15781,63 @@ on the convention alone. Sequence FOLLOW-588 before/with FOLLOW-586.
       `pnpm --filter @estalara/integration-smoke test` green.
 
 cross_ref: [FOLLOW-585, FOLLOW-586, RETRO-181]
+
+## FOLLOW-589 — Fix the 5th invalid archetype mock literal the FOLLOW-587 sweep structurally missed (`family_nester` as a JSON-stringified object KEY in the tracer-history mock) + guard the JSON-blob archetype-key shape — the 3rd structural sub-shape of the mock-literal class
+
+source_retro: RETRO-182 (§4b CB-1, §4c) source_ticket: FOLLOW-587 recommended_sprint: Sprint 24
+recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** FOLLOW-587 (PR #563) fixed the 3rd/4th invalid mock literals (`family_nester` in the
+tracer-**sessions** `top_archetype` field + `'investor'` in the audit mock) and added a compile-time
+`readonly ArchetypeId[]` root-fix on the three named `MOCK_ARCHETYPES` arrays. But its sweep used a
+value-position regex (`(?:top_archetype|archetype)\s*:\s*'[a-z_]+'`) and a `MOCK_ARCHETYPES`-name
+anchor, both of which are structurally blind to a **third** sub-shape of the same bug class: an
+archetype id appearing as an unquoted object **KEY** inside a `JSON.stringify({...})` blob. A fresh
+independent repo-wide sweep (RETRO-182) — enumerating named arrays, inline object VALUES, inline
+object KEYS, JSON-stringified blob keys, zod enums, and free-form fields — found exactly one live
+instance surviving:
+
+- **`apps/control-plane/src/app/api/admin/tracer/history/route.ts:56`** — `buildMockEvents()`:
+  `archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 })`. `family_nester`
+  is NOT a member of `ARCHETYPE_NAMES` / `CANONICAL_ARCHETYPE_IDS` (the canonical family archetype
+  is `family_buyer`; `family_nester` exists in no SDK type, `nlp.py`, `archetypes.ts`, or
+  migration). The `archetype_deltas` column is typed `z.string()`
+  (`packages/shared/src/schemas/tracer.ts:100`) — a JSON string, so `pnpm typecheck` cannot catch a
+  bad key inside it, the identical loose-typing root as the `family_upsizer` (RETRO-178),
+  `'investor'` (RETRO-179), and tracer-sessions `family_nester` (RETRO-181/587) literals. It is a
+  dev/CI-only mock (`data_source: 'mock'`, active when ClickHouse is unconfigured, Rule K.2) feeding
+  the admin tracer **history** view, so a viewer sees a non-existent archetype in a rendered delta —
+  P3 (mock/admin-only, not a live buyer prediction), same severity band as its four siblings.
+  Invisible to ALL THREE anchors used to date (the `golden_visa_buyer` full-parity anchor, the
+  `MOCK_ARCHETYPES`-name grep, and FOLLOW-587's `archetype:'…'` value-position regex) because it is
+  an unquoted JSON-blob key — this is the promotion trigger for **Rule AD** (RETRO-182 §6, now
+  promoted).
+- **Sweep result (stated so the chain can be declared closable):** after this fix, the
+  mock-archetype- literal-INVALIDITY class is FULLY enumerated-and-remediated across every live
+  (non-test) structural shape in the repo. RETRO-182's all-shapes sweep found NO other live invalid
+  literal — every other non-test hit is either a valid canonical id, a fix-rationale comment, or a
+  doc-comment example (`quiz.ts:80` `behavioral_archetype: 'family_comfort'` — a JSDoc example, not
+  a live literal; cosmetic-only, noted not filed). So FOLLOW-589 is the LAST reactive fix in the
+  FOLLOW-561→583→585→587 chain; once it lands with a guard, the class is closable.
+
+**AC:**
+
+- [ ] Fix `family_nester` → `family_buyer` in `admin/tracer/history/route.ts:56` `buildMockEvents()`
+      `archetype_deltas` JSON blob (unambiguous decomposition, matching the FOLLOW-587
+      tracer-sessions fix).
+- [ ] Add a red-first guard to `tests/integration/archetype-id-parity.test.ts` that parses the
+      archetype KEYS out of the tracer-history mock's `archetype_deltas: JSON.stringify({...})` blob
+      (a new parser distinct from the quoted-value parsers — match object keys, e.g.
+      `/(\w+):\s*-?\d/g` inside the stringified object, or `JSON.parse` the captured literal) and
+      asserts subset-validity against `ARCHETYPE_NAMES`; shown failing RED against `main`'s
+      `family_nester` first (falsification proof), GREEN after the fix. Include the `matched > 0`
+      non-vacuous guard (Rule AD clause 3).
+- [ ] Per Rule AD (RETRO-182 §6): enumerate EVERY structural shape in the PR description and confirm
+      no other live JSON-blob-key archetype literal exists (the RETRO-182 sweep found only this
+      one).
+- [ ] Scope discipline: touch only the named mock literal + the parity test. Do NOT retype the
+      ClickHouse-hydrated `archetype_deltas` column (deliberately `z.string()` — must accept
+      unexpected external keys); the guard is a mock-source parser assertion, not a type change on
+      the live path.
+
+cross_ref: [FOLLOW-587, FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-181, RETRO-182]

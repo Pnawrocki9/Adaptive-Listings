@@ -1782,6 +1782,104 @@ grep -rn '<distinctive_member_value>' apps/ packages/ --include=*.ts --include=*
 
 ---
 
+## Rule AD — When fixing or guarding a value-domain literal, enumerate EVERY structural shape it can occur in (named array, inline object VALUE, object KEY, JSON-stringified blob key, zod enum, free-form field), not just the shape the triggering grep matched — and prefer a compile-time type over a downstream string-grep guard
+
+**Pattern (MULTI-ANCHOR / MULTI-SHAPE LITERAL BLIND-SPOT — Rule AC failure-mode (a)):** A ticket
+fixes or guards instances of a member of a closed value domain (an archetype id, a status enum, an
+event type) that were found by ONE search anchor — a distinctive-member grep (`golden_visa_buyer`),
+a named-constant grep (`MOCK_ARCHETYPES`), or a single value-position regex
+(`archetype:\s*'[a-z_]+'`). The same invalid/at-risk literal recurs in a DIFFERENT structural shape
+that the chosen anchor is blind to by construction — an inline object field the array-name grep
+can't see, or an unquoted **object KEY** inside a JSON-stringified blob that a quoted-value regex
+can't see. Each sweep closes the shape it could see and moves the gap one structural hop to a shape
+it never searched, so the "class" is declared closed while a live instance survives one sub-shape
+over. A single anchor is never proof of full coverage; only enumerating the shapes (or a
+compile-time type on every hand-authored site) is.
+
+**Evidence (≥2 PRIOR retros):**
+
+- **RETRO-179 §6 (count 1, PRIOR)** — the 2 `'investor'` subset-array mock literals
+  (`pilot/cta-lift`, `dashboard/analytics/lift` `MOCK_ARCHETYPES`) were invisible to the
+  `golden_visa_buyer` full-parity anchor (short subset arrays that never contain that id); found
+  only by widening to a `MOCK_ARCHETYPES`-name grep. RETRO-179 was the first retro to explicitly
+  separate this multi-anchor sub-pattern from Rule AC's broad scope-by-audit failure-mode.
+- **RETRO-181 §4b CB-1 (count 2, PRIOR)** — `top_archetype: 'family_nester'` in
+  `admin/tracer/sessions/route.ts` `buildMockSessions()` was invisible to BOTH the
+  `golden_visa_buyer` anchor AND the `MOCK_ARCHETYPES`-name grep, because it is an inline object
+  field, not a named array. RETRO-181 pre-authorized promotion on "the next genuine anchor-INVISIBLE
+  archetype-literal find … the 3rd total / 2nd prior — that one crosses the threshold."
+- **RETRO-182 (the promotion trigger)** — FOLLOW-587 (PR #563) swept the two RETRO-181 inline-field
+  instances using a `(?:top_archetype|archetype)\s*:\s*'[a-z_]+'` value-position regex, and added a
+  compile-time root-fix (`readonly ArchetypeId[]`) on the three named `MOCK_ARCHETYPES` arrays. A
+  fresh independent sweep found the SAME invalid `family_nester` surviving one sub-shape over, in
+  `admin/tracer/sessions/history/route.ts` `buildMockEvents()`:
+  `archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 })` — an unquoted
+  object **KEY** inside a JSON-stringified blob, invisible to ALL THREE anchors used to date (the
+  distinctive-member grep, the array-name grep, and the quoted-value regex). This is a genuinely new
+  3rd structural sub-shape and the 2nd-prior sighting that crosses the ≥2-PRIOR threshold. The 2
+  banked occurrences are both PRIOR retros → threshold met; the promoting retro does NOT inflate the
+  count (same adjudication as Rules AA/AB/AC/V/Q).
+
+**Rule:** When a ticket (or retro follow-up) fixes or guards a literal from a closed value domain:
+
+1. Before declaring the fix/guard complete, enumerate every STRUCTURAL shape the literal can occupy
+   in the codebase and search each — at minimum: named `as const` arrays, inline object VALUES
+   (`field: 'id'`), inline object KEYS (`{ id: 0.12 }`, incl. inside `JSON.stringify({...})`), zod
+   `z.enum([...])`, and free-form/untyped `Record` fields. A single distinctive-member or
+   named-constant anchor is a starting point, never the coverage proof.
+2. Prefer a COMPILE-TIME type on every hand-authored site (`readonly ArchetypeId[]`,
+   `Record<ArchetypeId, number>`) over adding yet another downstream string-grep runtime guard — a
+   type catches every future shape at `tsc`, whereas each grep-guard only covers the one shape its
+   regex was written for and silently misses the next sub-shape. Do NOT tighten fields hydrated from
+   an external store (ClickHouse/DB/network) that must accept unexpected values — only hand-authored
+   constants and mock fixtures are safe to type.
+3. When a runtime string-parser guard IS used, make it fail loud on structural drift (assert
+   `matched > 0` before comparing) so a future reformat/retype that moves the literal out of the
+   regex's reach fails the build instead of passing on an empty match set.
+4. If a sweep finds the same invalid literal one sub-shape over, that is evidence the previous
+   sweep's anchor was too narrow — enumerate the remaining shapes NOW and state explicitly whether
+   the class is then fully enumerated-and-guarded (closable) or still open.
+
+**Verification:**
+
+```bash
+# Enumerate a closed-domain literal across ALL structural shapes, not one anchor. Example: archetype id.
+# (a) inline VALUE + named-array + zod-enum shapes:
+grep -rnE "archetype[a-z_]*\s*:\s*'[a-z_]+'|MOCK_ARCHETYPES|z\.enum\(\[" apps/ packages/ \
+  --include=*.ts | grep -v node_modules | grep -v '\.test\.'
+# (b) object-KEY-in-JSON-blob shape a quoted-value regex misses (the RETRO-182 sub-shape):
+grep -rnE "JSON.stringify\(\{[^}]*(hunter|_buyer|_investor|nester|relocator|upsizer|downsizer)" \
+  apps/ packages/ --include=*.ts | grep -v node_modules | grep -v '\.test\.'
+# Prefer a compile-time type so tsc catches every shape:
+grep -rnE "readonly ArchetypeId\[\]|Record<ArchetypeId" apps/ packages/ --include=*.ts | grep -v node_modules
+```
+
+---
+
+<!-- Rule AD added 2026-07-20 — RETRO-182 §6. Evidence (≥2 PRIOR numbered retros): RETRO-179 §6
+(the 2 'investor' MOCK_ARCHETYPES subset arrays, invisible to the golden_visa_buyer full-parity
+anchor; first retro to separate the multi-anchor SUB-pattern from Rule AC's broad scope-by-audit
+pattern — count 1) + RETRO-181 §4b CB-1 (top_archetype: 'family_nester' in
+admin/tracer/sessions/route.ts buildMockSessions(), an inline object field invisible to BOTH the
+golden_visa_buyer anchor AND the MOCK_ARCHETYPES-name grep — count 2). Promotion trigger: RETRO-182
+(FOLLOW-587/PR #563) — FOLLOW-587 swept the RETRO-181 inline-field instances with a value-position
+regex `(?:top_archetype|archetype)\s*:\s*'[a-z_]+'` and added a `readonly ArchetypeId[]` compile-time
+root-fix on the 3 named MOCK_ARCHETYPES arrays, but a fresh sweep found the SAME invalid family_nester
+surviving one sub-shape over — an unquoted object KEY inside a JSON.stringify({...}) blob in
+admin/tracer/sessions/history/route.ts buildMockEvents() (archetype_deltas), invisible to all THREE
+anchors used to date. This is a genuinely new 3rd structural sub-shape and the 2nd-PRIOR sighting
+RETRO-180 §6 / RETRO-181 §6 pre-authorized as the threshold-crosser ("the next genuine
+anchor-INVISIBLE find … the 3rd total / 2nd prior — that one crosses the threshold and Rule AD should
+be promoted then"). The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the
+promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/V/Q). DISTINCT axis
+from Rule AC (the PARENT scope-by-audit-not-by-grep discipline — AC governs enumerating every FILE the
+audit named vs. a repo-wide grep; AD governs enumerating every structural SHAPE the literal occupies
+vs. a single grep anchor, and the compile-time-type-over-grep-guard preference — AC failure-mode (a)
+made a standalone rule) and from Rule J (byte-identical cross-runtime FILE mirror sync via a
+manifest), Rule Z (producer/consumer TEST-contract across a language boundary), and Rule Q
+(check-reports-status-but-never-runs). Filed FOLLOW-589 (fix the family_nester JSON-key literal in
+history/route.ts + guard the tracer JSON-blob archetype-key shape). LETTER CHOICE: AD is the next in
+the double-letter sequence after AC. -->
 <!-- Rule AC added 2026-07-18 — RETRO-178 §6. Evidence (≥2 PRIOR numbered retros): RETRO-053 →
 RETRO-055 (FOLLOW-264 3-limb scope missed the SDK + LocaleSchema axes, count 1) + RETRO-107 §7 →
 RETRO-108 (FOLLOW-384's HW-3 closure scoped to the redis_writer hop only; RETRO-108 found the

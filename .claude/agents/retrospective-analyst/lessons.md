@@ -2697,3 +2697,31 @@ so.**
   exported `CANONICAL_ARCHETYPE_IDS`) — recommended in FOLLOW-587, not codified as a rule (blanket
   retyping is wrong for DB-hydrated fields; only hand-authored constants are safe). Watch for the
   3rd genuine anchor-invisible sighting → that promotes Rule AD.
+
+---
+
+## 2026-07-20 / RETRO-182 (FOLLOW-587, PR #563)
+
+- **A finding I almost missed and why:** the 5th live invalid literal (`history/route.ts:56`
+  `family_nester` inside `JSON.stringify({ … })`) is an UNQUOTED object KEY — my first two sweep
+  regexes (`archetype:\s*'[a-z_]+'` value-position, and the `MOCK_ARCHETYPES` name grep) both
+  structurally miss it, exactly like FOLLOW-587's own sweep did. I only caught it by deliberately
+  adding a THIRD grep shape — `JSON.stringify(\{[^}]*(hunter|_buyer|nester|…)` — as a separate pass.
+  Lesson banked: when a bug class has already relocated across shapes twice, do not trust a
+  value-position regex; enumerate object-KEY and JSON-blob shapes as first-class passes.
+- **An axis/chain I had to trace twice:** the Rule AD promotion COUNT. RETRO-181 §6 and RETRO-180 §6
+  had already locked the failure-mode-(a) tally (179 = #1, 181 = #2, both PRIOR) and pre-authorized
+  "the next anchor-invisible find crosses the threshold." I re-derived it from scratch before
+  trusting it — verified RETRO-182's find is genuinely anchor-INVISIBLE (failure-mode (a)), not
+  hit-dropped-from-scope (failure-mode (b), which would NOT count), because a literal that never
+  appears in ANY anchor's output cannot have been "dropped." 2 PRIOR (179+181) ≥ 2 → promoted. The
+  discipline: distinguish "invisible to the anchor" (counts toward AD) from "visible but dropped"
+  (counts toward AC, already promoted) — conflating them would have either over- or under-counted.
+- **A meta-pattern in how gaps recur across agents:** the reactive per-shape runtime grep-guard is a
+  TREADMILL — 561→583→585→587 each closed the one shape its regex saw and the gap hopped to the next
+  shape 3× running. The exit is a compile-time TYPE at the hand-authored-constant boundary (this
+  PR's `readonly ArchetypeId[]` retype — the first real installment). Rule AD now codifies "prefer
+  the type over the next grep." Meta-note for MY OWN loop: I flagged "watch for the 3rd sighting →
+  Rule AD" in my LAST lessons entry — and it landed exactly there. The forward-flag-to-next-retro
+  mechanism worked; keep doing it (each retro should name the specific next-sighting that would
+  cross a pending threshold).

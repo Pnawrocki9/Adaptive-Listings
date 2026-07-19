@@ -1,4 +1,29 @@
-# Status — 2026-07-19 (session 39 — FOLLOW-584 PM-validated, READY_FOR_REVIEW on PR #559)
+# Status — 2026-07-19 (session 39 — FOLLOW-584 MERGED + DONE; RETRO-180 filed)
+
+## SESSION 39 (cont.) (2026-07-19) — FOLLOW-584 human-approved, MERGED to main + closed; RETRO-180 filed
+
+**Human review boundary cleared:** Piotr (CEO/reviewer) approved and merged **PR #559** —
+squash-merged to `main` as commit **`a08fcdf`**, branch deleted. The new public export
+`CANONICAL_ARCHETYPE_IDS` on `@estalara/shared` was the reason this needed explicit human sign-off;
+granted. Sibling **PR #558** closed without merging (its FOLLOW-584 content shipped in #559 via
+reconciliation commit `d95c726`; FOLLOW-585 dispatch content rode along unmodified). **FOLLOW-584 →
+`DONE`** in QUEUE.md (all 7 AC boxes checked, `merged_commit: a08fcdf`, `retro: RETRO-180`).
+
+**Retro loop:** `retrospective-analyst` filed **RETRO-180** on the merged diff. Headline: the 3
+NAMED copies are genuinely consolidated end-to-end (producer → 3 non-test consumers → non-vacuous
+parity guard — a real closure of RETRO-179 §4a / FOLLOW-036, not a one-hop relocation), BUT the
+"onto ONE constant" claim does not hold repo-wide — **2 more importable full-parity copies survive**
+(`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS`, inside the SoT package itself;
+and the deferred `adapt/description/route.ts` inline `z.enum`), both in RETRO-179's own anchor-grep
+output (Rule AC failure-mode-(b) recurring on the consolidation ticket itself). Filed **FOLLOW-586**
+(backend-engineer, P3, 2h) to absorb them. **No Rule promoted** — the multi-anchor blind-spot
+sub-pattern has only 1 prior sighting (RETRO-179); both RETRO-180 findings are anchor-_visible_
+(failure-mode b), adding nothing to that count (< ≥2-prior threshold).
+
+**CI-check counter:** 1/5 this session (PR #559 validated). **Fix-iteration counter:** 0/3. **Next
+ready pick:** FOLLOW-585 (qa-engineer, IN_PROGRESS). FOLLOW-586 newly filed (P3).
+
+---
 
 ## SESSION 39 (2026-07-19) — FOLLOW-584 independently validated; READY_FOR_REVIEW on PR #559; sibling PR #558 reconciled
 

@@ -28509,3 +28509,218 @@ CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal introduced.
 - **Related to FOLLOW-036:** this retro is the first to re-discover FOLLOW-036's original 2-sprint-old
   finding independently, from a completely different angle (Rule AC re-verification) and confirm it
   is still open and still correct — see FOLLOW-584.
+
+---
+
+## RETRO-180 — FOLLOW-584 (promote + widen the never-promoted FOLLOW-036: consolidate the 3 named archetype-ID copies — `bandit-seed.ts` `CANONICAL_ARCHETYPES`, `directives.ts` `ArchetypeId`, `description.ts` `ArchetypeIdSchema` — onto one exported `packages/shared` constant `CANONICAL_ARCHETYPE_IDS`, guarded vs `ARCHETYPE_NAMES`. The 3 named copies are GENUINELY consolidated end-to-end — producer→3 consumers→non-vacuous parity guard, a real closure of RETRO-179 §4a's `bandit-seed.ts`/FOLLOW-036 finding, not a one-hop relocation. But the ticket's own title claim — "onto ONE exported canonical constant" — does NOT hold repo-wide: two more importable full-parity TS copies survive, one of them INSIDE `packages/shared` itself, and BOTH were in the RETRO-179 `golden_visa_buyer` anchor-grep output and dropped from scope anyway — the exact Rule AC failure-mode-(b) recurring on the very ticket that exists to end this class) — 2026-07-19
+
+### 1. Summary of change
+
+- **PR:** #559 (squash-merged 2026-07-19 17:23 UTC, commit `a08fcdf`; branch
+  `backend-engineer/FOLLOW-584-archetype-canonical-consolidation`, now deleted). Absorbed the closed
+  duplicate PR #558's FOLLOW-584/585 promotion bookkeeping (merge `d95c726`) before squash.
+- **Files changed:** 12 (+968 / −88) — of which 7 are code/SQL:
+  `packages/shared/src/archetypes.ts` (NEW, 59 lines), `packages/shared/src/directives.ts`,
+  `packages/shared/src/schemas/description.ts`, `packages/shared/src/index.ts` (+1 re-export),
+  `apps/control-plane/src/lib/bandit-seed.ts`,
+  `packages/shared/src/__tests__/archetype-canonical-parity.test.ts` (NEW, 118 lines),
+  `packages/db/migrations/0007_seed_ab_bandit_weights.sql` (comment-only). The remaining 5 are
+  backlog/agent-lesson bookkeeping (`QUEUE.md`, `STATUS.md`, `HANDOFFS.md`, `FOLLOW_UPS.md`,
+  `pm-orchestrator/lessons.md`).
+- **Modules touched:** shared (packages/shared — new SoT + 2 derivations + re-export + guard),
+  control-plane (bandit-seed import-swap), db (migration comment), docs/backlog.
+- **Key contracts changed:** `@estalara/shared` public surface — **ADDED** `CANONICAL_ARCHETYPE_IDS`
+  (new exported const, 18-item `as const satisfies readonly string[]`), breaking: no (pure addition).
+  `ArchetypeId` — **CHANGED** internal derivation (independent literal union →
+  `(typeof CANONICAL_ARCHETYPE_IDS)[number]`), same resolved type, breaking: no.
+  `ArchetypeIdSchema` — **CHANGED** internal derivation (independent `z.enum` literal →
+  `z.enum([...CANONICAL_ARCHETYPE_IDS])`), same accepted value set, breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: 1 NEW (`archetype-canonical-parity.test.ts`, 2 `it` blocks: an 18-count sanity
+  assertion + a set-parity assertion that parses the REAL `packages/sdk/src/core/intent.ts`
+  `ARCHETYPE_NAMES` via `readFileSync`+regex and asserts duplicate/missing/extra all empty).
+  Assertions added: ~4. Coverage delta: unknown (type-level refactor; no new runtime branch).
+- The guard is **non-vacuous by construction** — it asserts `canonical.length > 0` before comparing
+  (a regex broken by a future reformat FAILS LOUD rather than passing on two empty sets), and it
+  imports the production `../archetypes.js` binding, not a fixture. Verified by reading the diff.
+- CI checks: PM-validated green on all real gates per QUEUE.md `FOLLOW-584.pm_validated` (session 39)
+  — 2/58 non-SUCCESS, both the pre-existing-red "Rule I — wired-or-dead check" confirmed identical on
+  already-merged PRs #555/#557, i.e. not introduced here. Not independently re-run this session; the
+  PM's trail is reproducible from `git show a08fcdf` and matches the diff content.
+
+### 3. Wiring Audit
+
+CHECK A (dead code): the new production export `CANONICAL_ARCHETYPE_IDS`
+(`packages/shared/src/archetypes.ts:36`) has **3 non-test consumers** — verified by
+`grep -rn 'CANONICAL_ARCHETYPE_IDS' apps/ packages/ --include=*.ts | grep -v node_modules | grep -v dist | grep -v '\.test\.'`:
+`apps/control-plane/src/lib/bandit-seed.ts:25` (import) + `:55` (usage, flatMap → 54 rows/tenant),
+`packages/shared/src/directives.ts:14` (`import type` → `ArchetypeId` derivation),
+`packages/shared/src/schemas/description.ts:33` (import) + `:44` (`z.enum` spread, consumed at
+`:164` `archetype: ArchetypeIdSchema`). Not dead. The new test file is a Vitest-runner
+framework-entrypoint (suppressed). CHECK B (half-wire): no new event/env-var/column/topic/SDK-signal
+introduced; the new export is producer(1)+consumer(3), both sides present. `Wiring Audit — clean ✅`
+(both checks).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — a 4th full-parity hand copy, `ARCHETYPE_KEYS` in
+  `packages/shared/src/schemas/intent-weights.ts:33-56` (18 entries, `as const`), lives INSIDE the
+  very package the ticket created the SoT in and was left un-consolidated — and it was in the
+  RETRO-179 anchor-grep output the whole time.** `grep -rn 'golden_visa_buyer'` (the exact RETRO-178/
+  179 Rule-AC anchor) returns `packages/shared/src/schemas/intent-weights.ts:39` — reproduced this
+  session. So `ARCHETYPE_KEYS` was a visible hit at RETRO-179's scoping time and at FOLLOW-584's
+  scoping time, and was carried into NEITHER — the identical SCOPE-BY-AUDIT-NOT-BY-GREP /
+  hit-dropped-from-scope failure (Rule AC failure-mode (b)) that RETRO-179 §4a flagged on
+  `bandit-seed.ts`, now recurring on the consolidation ticket itself. It is the single most trivially
+  absorbable copy in the repo: same package (zero cross-package/circular-import friction — the entire
+  documented reason `packages/shared` "cannot import the SDK" does not apply to an intra-package
+  import), and it already uses the exact derivation shape the fix installs elsewhere
+  (`export type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number]`, `:58`) — it could become
+  `export const ARCHETYPE_KEYS = CANONICAL_ARCHETYPE_IDS` (or import + re-export) in one line.
+  Severity is **P3, not P2**, because unlike `bandit-seed.ts` this copy is NOT silently unguarded:
+  `packages/sdk/src/__tests__/intent-weights-drift.test.ts` DRIFT-1b/1c assert key-set equality
+  between `DEFAULT_INTENT_WEIGHTS.priors` (keyed off `ARCHETYPE_KEYS` via
+  `z.record(z.enum(ARCHETYPE_KEYS), ...)`, `:109`) and the SDK's `BASE_PRIOR`, so an archetype
+  add/rename that missed `ARCHETYPE_KEYS` would fail that CI drift guard loudly — a DRY/consolidation
+  gap, not a silent-degradation hazard. → **FOLLOW-586**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. No incorrect data shipped. The 3 consolidated copies were confirmed in sync at consolidation
+  time (PM byte-for-byte check, HANDOFFS session 38) and the derivation makes drift between them now
+  structurally impossible. `ARCHETYPE_KEYS` (LG-1) and the route enum (4c) are both currently in sync
+  (18/18, verified: both contain the full `golden_visa_buyer`…`neutral` set) — drift-RISK, not a live
+  defect.
+
+#### 4c. Test coverage gaps
+
+- **The known, explicitly-out-of-scope 5th copy is STILL PRESENT and is NOT the last one.** The task
+  asked whether `apps/control-plane/src/app/api/adapt/description/route.ts` `QueryParamsSchema`
+  `archetype: z.enum([...])` (`:67-85`, full 18-item inline literal) remains the last un-consolidated
+  copy. Confirmed present, verbatim 18 entries, `golden_visa_buyer` at `:72` — and it is **now
+  trivially absorbable**: `route.ts:52` already does `import { errorBody, ErrorCode } from
+  '@estalara/shared'`, so switching the field to the newly-exported `ArchetypeIdSchema` is a
+  one-import change with no new dependency. It is un-guarded by any parity test (no test asserts the
+  route enum matches `ARCHETYPE_NAMES`), but drift there fails LOUDLY (a legitimate archetype query
+  param would 400 on `.parse()`), so it is lower-urgency than a silent seed gap — same reasoning
+  RETRO-179 §4c used. **However, it is NOT the last remaining copy** — LG-1's `ARCHETYPE_KEYS` is a
+  second importable TS copy, arguably more absorbable (intra-package). Both fold into **FOLLOW-586**.
+- Considered and dismissed (not filed): (i) `packages/db/migrations/0007_seed_ab_bandit_weights.sql`
+  is left as an explicit SQL literal (comment updated per AC-6) — its own new comment correctly states
+  it "only ran once, historically" and the go-forward runtime seed path (`bandit-seed.ts`, now
+  guarded) supersedes it, so drift in this frozen migration has no future effect; SQL cannot import TS
+  — legitimately left. (ii) `packages/db/src/__tests__/archetype_embeddings_seed.test.ts:13`
+  `CANONICAL_ARCHETYPES` (18-item, ironically re-using the exact name just deleted from
+  `bandit-seed.ts`) is a TEST copy guarding the archetype-EMBEDDINGS seed (migration 0005 /
+  `archetype-seeds.ts`) — a distinct concern already covered by RETRO-178's integration guard, not
+  this consolidation's target. Noted, no FOLLOW.
+
+#### 4d. Documentation gaps
+
+- N/A — the new `archetypes.ts` and guard-test doc comments are accurate and do not over-claim
+  (no Rule Y issue): `archetypes.ts` explicitly scopes itself "single source of truth **within
+  `packages/shared`**" and names the 3 copies it collapses, without claiming repo-wide coverage; the
+  migration comment honestly labels itself a hand-maintained historical literal. The one honesty seam
+  is scope-completeness (LG-1/4c), not documentation over-claim.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-585** (sibling, `IN_PROGRESS`, qa-engineer — the `'investor'` mock-literal fix): unaffected
+  and un-blocked. Verified zero file overlap by construction (585 owns
+  `tests/integration/archetype-id-parity.test.ts` + 2 route mock arrays; 584 owns `packages/shared/**`
+  + `bandit-seed.ts`). 585 could OPTIONALLY now also assert its `MOCK_ARCHETYPES` subset-validity
+  against the newly-exported `CANONICAL_ARCHETYPE_IDS` instead of re-parsing `intent.ts`, but its AC
+  does not require it — no change forced.
+
+#### 5b. Future sprint tickets affected
+
+- Any future archetype add/rename/removal now touches strictly FEWER hand sites for the consolidated
+  trio (edit `CANONICAL_ARCHETYPE_IDS` once → `ArchetypeId` + `ArchetypeIdSchema` + `bandit-seed`
+  follow automatically; the guard test catches an out-of-sync `ARCHETYPE_NAMES`). But it STILL
+  independently requires editing `intent-weights.ts` `ARCHETYPE_KEYS` (LG-1), the
+  `adapt/description/route.ts` inline enum (4c), the Python copies (`nlp.py`,
+  `generate_description.py`), `archetype-seeds.ts`/migration 0005, and migration 0007 — until
+  FOLLOW-586 (+ the pre-existing FOLLOW-561/583 guards) close the remainder.
+
+#### 5c. Contracts changed others rely on
+
+- `CANONICAL_ARCHETYPE_IDS` is now a PUBLIC `@estalara/shared` export (re-exported from `index.ts:16`)
+  — a new supported surface any package may import. This is the intended, positive cascade: it makes
+  the FOLLOW-586 absorptions (and any future consumer) a clean import rather than a new hand copy.
+  `ArchetypeId`/`ArchetypeIdSchema` resolved shapes are unchanged, so the 15+ existing `ArchetypeId`
+  consumers (SDK, control-plane `adapt/route.ts`, `llm-gateway.ts`, `tenant-site-schema.ts`) are
+  transparently unaffected.
+
+#### 5d. Architectural assumptions affected
+
+- **Reconciliation with RETRO-179 §5d (multi-axis, per step 8):** RETRO-179 §5d explicitly predicted
+  that closure of the archetype-literal class "is a moving target… until the root cause (no single
+  canonical exported constant other packages import from — FOLLOW-036's original proposal) is fixed."
+  FOLLOW-584 fixes exactly that root cause — the exported constant now EXISTS — for the 3 copies it
+  named. RETRO-179's prediction therefore **holds, partially**: the root cause is fixed, but two
+  importable copies (`ARCHETYPE_KEYS`, the route enum) were not migrated ONTO the new root, so the
+  class is not repo-wide closed. No contradiction of any prior "clean" verdict — no earlier retro ever
+  called this class clean (RETRO-178/179 both flagged it open). I checked the other axes a contract
+  change of this kind can hide on: the **variant** axis (`bandit-seed.ts` still composes
+  `CANONICAL_ARCHETYPE_IDS × SEED_VARIANTS` — the variant list is a SEPARATE import, untouched and
+  correct); the **locale** axis (`description.ts` `LocaleSchema` is a different enum, untouched); the
+  **holdout/A-B** axis (n/a to an ID list). All clean — the only surviving axis is the
+  inventory-completeness one (LG-1/4c).
+
+### 6. New lesson candidates
+
+- **Pattern: "a hit that appears in the guard/consolidation ticket's OWN canonical anchor-grep is
+  dropped from its scope anyway (Rule AC failure-mode (b))."** Seen in: RETRO-179 §4a
+  (`bandit-seed.ts`, in the `golden_visa_buyer` grep, dropped from FOLLOW-583) — count 1 as a
+  post-Rule-AC recurrence; **this retro** (`intent-weights.ts` `ARCHETYPE_KEYS`, in the SAME grep,
+  dropped from BOTH RETRO-179's own scope AND FOLLOW-584) — count 2. **This is already a promoted
+  Rule (Rule AC, RETRO-178) — no NEW rule needed; it is reinforcing evidence Rule AC's verification is
+  correct and was simply not run to completion, not that a new rule is missing.**
+- **Rule-promotion assessment (the multi-anchor grep blind-spot, failure-mode (a) — task item 6),
+  reasoned explicitly:** the multi-anchor blind spot (subset/asymmetric copies a single anchor cannot
+  see) has exactly **ONE** prior sighting — RETRO-179 §6, which itself said it was "the FIRST retro to
+  explicitly separate these two sub-patterns" and "if a 3rd sighting of the multi-anchor gap occurs,
+  promote a Rule AD." **This retro is NOT that 3rd sighting, and does not even add a 2nd:** both gaps
+  I found this session (`ARCHETYPE_KEYS`, the route enum) are FULL 18-entry copies that CONTAIN
+  `golden_visa_buyer` and are therefore grep-VISIBLE to the single anchor — they are failure-mode (b)
+  (hit-dropped-from-scope), not failure-mode (a) (invisible-to-anchor). The task brief's paraphrase
+  ("RETRO-179 noted the multi-anchor sub-pattern was its 2nd sighting") conflated the two counts:
+  RETRO-179's "2nd sighting" referred to **Rule AC** (the broad failure-mode-(b) pattern, already
+  promoted), NOT to the multi-anchor sub-pattern (which RETRO-179 called its 1st). Per
+  RULE_PROMOTION_THRESHOLD = 2 PRIOR retros and the evidence requirement to cite ≥2 prior RETRO IDs, I
+  can cite only ONE prior retro for the multi-anchor gap (RETRO-179) — below threshold. **No Rule AD
+  promoted this session.** Recorded for the next retro that finds a genuine anchor-INVISIBLE copy:
+  that would be multi-anchor sighting #2, still one short.
+
+### 7. Follow-ups
+
+- **FOLLOW-586:** Finish the FOLLOW-584 consolidation — migrate the two remaining importable
+  full-parity TS copies ONTO the now-exported `CANONICAL_ARCHETYPE_IDS`/`ArchetypeIdSchema`:
+  (a) `packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` (intra-package, one-line
+  derivation; LG-1), and (b) `apps/control-plane/src/app/api/adapt/description/route.ts`
+  `QueryParamsSchema.archetype` → import `ArchetypeIdSchema` from `@estalara/shared` (route already
+  imports from that package; 4c). No behavior change; both currently in sync. (backend-engineer, P3,
+  2h.)
+
+### 8. Cross-references
+
+- **Related to RETRO-179 / FOLLOW-583:** this retro is FOLLOW-584's own — the ticket RETRO-179 §7
+  spawned — and confirms its 3-copy scope is genuinely, end-to-end closed (unlike the moving-target
+  warning in RETRO-179 §5d, which nonetheless still holds for the 2 unabsorbed copies).
+- **Related to FOLLOW-036:** the never-promoted, 2-sprint-dormant FOLLOW-036 is now genuinely
+  DISCHARGED for its stated target (`bandit-seed.ts` `CANONICAL_ARCHETYPES` moved to
+  `packages/shared/src/archetypes.ts` as FOLLOW-036 itself proposed) — the "FOLLOW-036 will move this"
+  comment is removed and the move actually happened. Prior-follow-up closure check (step 7): traced
+  producer (`archetypes.ts`) → consumers (`directives.ts`/`description.ts`/`bandit-seed.ts`) → guard
+  (parity test vs `ARCHETYPE_NAMES`) end-to-end; this is a REAL closure, not a gap moved one hop.
+- **Related to RETRO-178 / FOLLOW-561 and Rule AC:** §6 — Rule AC's failure-mode (b) recurs a 2nd
+  post-promotion time (on the consolidation ticket itself); reinforces Rule AC, no new rule.
+- **Related to RETRO-053/055, RETRO-107/108:** the underlying "ticket scope enumeration incomplete
+  relative to its own target class" super-pattern (Rule AC's origin) is now at its 5th sighting across
+  5 tickets (FOLLOW-264, 384, 561, 583, and now 584).

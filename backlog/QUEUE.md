@@ -1,28 +1,33 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 PM-validated, READY_FOR_REVIEW on PR #559)
+## ▶️ START HERE — resume 2026-07-19 (session 39 — FOLLOW-584 MERGED + DONE; RETRO-180 filed)
 
-**Read this before picking anything.** FOLLOW-584's backend-engineer worker phase opened **PR #559**
-(`9817f65`, branch `backend-engineer/FOLLOW-584-archetype-canonical-consolidation`). PM
-independently re-verified all 7 AC checkboxes against the real diff (not the worker's claim), the
-non-test producer/consumer wiring for the new `CANONICAL_ARCHETYPE_IDS` export, and CI (2/58
-non-SUCCESS, both the pre-existing-red "Rule I — wired-or-dead check" — confirmed identical on
-already-merged PRs #555/#557, so not introduced by this PR). Full evidence in `QUEUE.md`
-`FOLLOW-584.pm_validated` and `backlog/STATUS.md` session 39. Moved to `READY_FOR_REVIEW`. **Not
-merged — human review boundary** (adds a new public export `CANONICAL_ARCHETYPE_IDS` to
-`@estalara/shared`).
+**Read this before picking anything.** **FOLLOW-584 is DONE** — PR #559 squash-merged to `main` as
+commit `a08fcdf` (2026-07-19), human-approved (adds public export `CANONICAL_ARCHETYPE_IDS` to
+`@estalara/shared`). Three hand-maintained 18-item archetype-ID copies (`bandit-seed.ts`
+`CANONICAL_ARCHETYPES`, `directives.ts` `ArchetypeId`, `description.ts` `ArchetypeIdSchema`)
+consolidated onto the one shared canonical constant, guarded by a new parity test against
+`ARCHETYPE_NAMES` (`packages/sdk/src/core/intent.ts`). Supersedes the long-dormant FOLLOW-036.
+`retrospective-analyst` filed **RETRO-180** on the merged diff. CI at merge: 2/58 non-SUCCESS, both
+the pre-existing-red "Rule I — wired-or-dead check" (confirmed identical on already-merged PRs
+#555/#557, so not introduced by this PR).
 
 **Housekeeping done this session:** sibling PR #558
 (`pm-orchestrator/FOLLOW-584-585-promote-dispatch`, opened 2026-07-18, never merged) duplicated the
 FOLLOW-584 promotion as `IN_PROGRESS`. Confirmed zero file overlap with PR #559 (code vs. backlog
-docs) and merged #558's branch into #559's (commit `d95c726`) rather than let both merge
-independently and conflict at the top of this file. **PR #558 is now superseded and should be closed
-without merging** — its FOLLOW-584 content is superseded by this entry, and its FOLLOW-585 dispatch
-content rides unmodified in #559's history. FOLLOW-585 itself is unaffected — still `IN_PROGRESS`,
-dispatched to qa-engineer, no worker PR yet (out of scope this session).
+docs) and merged #558's branch into #559's (commit `d95c726`) before merge, so no content was lost.
+**PR #558 is now CLOSED without merging** — its FOLLOW-584 content shipped in #559, and its
+FOLLOW-585 dispatch content rode unmodified in #559's history. FOLLOW-585 itself is unaffected —
+still `IN_PROGRESS`, dispatched to qa-engineer, no worker PR yet.
 
-No open escalations block this work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
-ruling). **1 ticket READY_FOR_REVIEW this session (584); FOLLOW-585 stays IN_PROGRESS, unpicked.**
+No open escalations block further work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
+ruling). **Next ready pick: FOLLOW-585** (qa-engineer, `IN_PROGRESS`, `'investor'` mock-literal
+fix). **Heads-up — the archetype-parity chain is NOT fully closed:** RETRO-180 found the FOLLOW-584
+consolidation left **2 more importable full-parity copies** un-migrated
+(`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` — inside the SoT package itself —
+and the deferred `adapt/description/route.ts` inline `z.enum`), both in RETRO-179's own anchor-grep
+output. Filed **FOLLOW-586** (backend-engineer, P3, 2h) to absorb them onto the now-exported
+`CANONICAL_ARCHETYPE_IDS`.
 
 ---
 
@@ -12979,11 +12984,14 @@ in-place in Sprint 22b above.
     ArchetypeId, and description.ts ArchetypeIdSchema onto one exported packages/shared canonical
     constant (RETRO-179)
   agent: backend-engineer
-  status: READY_FOR_REVIEW
+  status: DONE
   assigned_to: backend-engineer
   started_at: '2026-07-18T00:00:00Z'
+  completed_at: '2026-07-19T17:23:17Z'
   branch: backend-engineer/FOLLOW-584-archetype-canonical-consolidation
   pr: 559
+  merged_commit: a08fcdf
+  retro: RETRO-180
   pm_validated: >-
     2026-07-19 session 39 — validated independently before READY_FOR_REVIEW. All 7 AC checkboxes
     re-verified against the real PR #559 diff (not the worker's claim): (1)
@@ -13053,25 +13061,25 @@ in-place in Sprint 22b above.
     (comment-only) before opening the PR.
     Branch: backend-engineer/FOLLOW-584-archetype-canonical-consolidation
     AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-584, PM-verified against real files first):
-    - [ ] packages/shared/src/archetypes.ts exports CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]
+    - [x] packages/shared/src/archetypes.ts exports CANONICAL_ARCHETYPE_IDS: readonly ArchetypeId[]
           (parallel canonical export — packages/shared may NOT import packages/sdk; document that
           constraint inline, same rationale directives.ts currently states).
-    - [ ] packages/shared/src/directives.ts ArchetypeId derived from CANONICAL_ARCHETYPE_IDS
+    - [x] packages/shared/src/directives.ts ArchetypeId derived from CANONICAL_ARCHETYPE_IDS
           (typeof CANONICAL_ARCHETYPE_IDS[number]) instead of an independent literal union.
-    - [ ] packages/shared/src/schemas/description.ts ArchetypeIdSchema built from
+    - [x] packages/shared/src/schemas/description.ts ArchetypeIdSchema built from
           CANONICAL_ARCHETYPE_IDS (z.enum(CANONICAL_ARCHETYPE_IDS) or equivalent) instead of an
           independent literal array.
-    - [ ] apps/control-plane/src/lib/bandit-seed.ts imports CANONICAL_ARCHETYPE_IDS from
+    - [x] apps/control-plane/src/lib/bandit-seed.ts imports CANONICAL_ARCHETYPE_IDS from
           @estalara/shared instead of declaring its own CANONICAL_ARCHETYPES — remove the
           module-private constant and its "FOLLOW-036 will move this" comment.
-    - [ ] New guard test in packages/shared/src/__tests__/ (NOT
+    - [x] New guard test in packages/shared/src/__tests__/ (NOT
           tests/integration/archetype-id-parity.test.ts — see conflict-avoidance instruction above)
           asserts CANONICAL_ARCHETYPE_IDS (packages/shared) has exact set-parity with
           ARCHETYPE_NAMES (packages/sdk/src/core/intent.ts) — the one drift axis that survives
           consolidation.
-    - [ ] packages/db/migrations/0007_seed_ab_bandit_weights.sql left as an explicit SQL literal
+    - [x] packages/db/migrations/0007_seed_ab_bandit_weights.sql left as an explicit SQL literal
           with a comment explaining SQL cannot import TS — not silently forgotten.
-    - [ ] All existing tests pass unchanged; pnpm typecheck clean.
+    - [x] All existing tests pass unchanged; pnpm typecheck clean.
   cross_ref: [FOLLOW-036, FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
 - id: FOLLOW-585
   title: >-

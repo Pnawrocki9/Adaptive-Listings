@@ -15638,3 +15638,56 @@ retro to find.
       touch the ClickHouse-backed (non-mock) code paths in either route.
 
 cross_ref: [FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
+
+## FOLLOW-586 — Finish the FOLLOW-584 consolidation: migrate the 2 remaining importable archetype-ID copies (`intent-weights.ts` `ARCHETYPE_KEYS`, `adapt/description/route.ts` inline `z.enum`) onto the now-exported `CANONICAL_ARCHETYPE_IDS` / `ArchetypeIdSchema` (RETRO-180)
+
+source_retro: RETRO-180 (§4a LG-1, §4c) source_ticket: FOLLOW-584 (this is the retro on FOLLOW-584
+itself) recommended_sprint: Sprint 24 recommended_agent: backend-engineer priority: P3
+estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** FOLLOW-584 (PR #559) consolidated the 3 archetype-ID copies RETRO-179 named
+(`bandit-seed.ts`, `directives.ts`, `description.ts`) onto the new exported
+`packages/shared/src/archetypes.ts` `CANONICAL_ARCHETYPE_IDS` — genuinely, end-to-end. But the
+ticket's title claim ("onto ONE exported canonical constant") does not hold repo-wide: RETRO-180
+found two MORE importable full-parity 18-entry TS copies, both of which were in the RETRO-179
+`golden_visa_buyer` anchor-grep output and dropped from scope anyway (Rule AC failure-mode (b)):
+
+1. `packages/shared/src/schemas/intent-weights.ts:33-56` `ARCHETYPE_KEYS` (`as const`, 18 entries;
+   `golden_visa_buyer` at `:39`). Lives INSIDE `packages/shared` — the "shared cannot import the SDK
+   / circular-dep" rationale does NOT apply to an intra-package import. Already uses the identical
+   derivation shape the fix installs elsewhere
+   (`export type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number]`, `:58`). Partially guarded already
+   (drift would fail `packages/sdk/src/__tests__/intent-weights-drift.test.ts` DRIFT-1b/1c via the
+   `DEFAULT_INTENT_WEIGHTS.priors ↔ BASE_PRIOR` key-parity check), so this is a DRY/consolidation
+   gap, not a silent-drift hazard — hence P3.
+2. `apps/control-plane/src/app/api/adapt/description/route.ts:65-88`
+   `QueryParamsSchema.archetype: z.enum([...])` (full 18-item inline literal; `golden_visa_buyer` at
+   `:72`) — the copy RETRO-178/179 explicitly deferred. `route.ts:52` already imports from
+   `@estalara/shared`, so switching to the newly-exported `ArchetypeIdSchema` is a one-import change
+   with no new dependency. Un-guarded, but drift fails LOUDLY (a legit archetype query param would
+   400 on `.parse()`), so lower urgency.
+
+Both are currently IN SYNC with `ARCHETYPE_NAMES` (18/18) — this is a consolidation/drift-risk
+closure, NOT a live-data fix. Explicitly OUT OF SCOPE (do not touch): the Python copies (`nlp.py`,
+`generate_description.py` — cross-runtime, guarded by FOLLOW-561), `archetype-seeds.ts` + migration
+0005 (embeddings-seed, different concern, guarded by FOLLOW-561), migration 0007 (frozen historical
+SQL literal, superseded by the guarded runtime seed path), and the `db` embeddings-seed test copy.
+
+**AC:**
+
+- [ ] `packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` derives from / re-exports
+      `CANONICAL_ARCHETYPE_IDS` (`../archetypes.js`) instead of its own independent literal array;
+      the resolved `ArchetypeKey` type and `z.enum(ARCHETYPE_KEYS)` accepted set are unchanged.
+- [ ] `apps/control-plane/src/app/api/adapt/description/route.ts` `QueryParamsSchema.archetype` uses
+      `ArchetypeIdSchema` imported from `@estalara/shared` instead of its inline `z.enum([...])`;
+      the accepted query-param value set is unchanged.
+- [ ] No behavior change — all existing `adapt/description/route.*.test.ts` and `intent-weights`
+      tests pass unchanged; `pnpm typecheck` clean.
+- [ ] After this change, a repo-wide
+      `grep -rn 'golden_visa_buyer' apps/ packages/ --include=*.ts     | grep -v node_modules | grep -v dist | grep -v '\.test\.'`
+      shows no remaining hand-maintained full-parity 18-entry TS ID _array/enum_ copy outside
+      `packages/shared/src/archetypes.ts` (the per-archetype numeric maps in
+      `intent.ts`/`intent-weights.ts` and the SDK behavioral tables are NOT ID-list copies and are
+      out of scope).
+
+cross_ref: [FOLLOW-584, FOLLOW-036, FOLLOW-583, RETRO-178, RETRO-179, RETRO-180]

@@ -453,7 +453,7 @@ describe('FOLLOW-585 — pilot/cta-lift + dashboard/analytics/lift mock archetyp
   // fields are typed loose `string`, so `pnpm typecheck` cannot catch a bad literal.
   // A repo-wide grep found both hard-coded 'investor', which is NOT a member of
   // ARCHETYPE_NAMES (the canonical INVESTOR_ARCHETYPES sub-types are
-  // `yield_hunter`, `portfolio_builder`, `flipper`, `vacation_rental_investor`,
+  // `yield_hunter`, `portfolio_builder`, `flip_investor`, `vacation_rental_investor`,
   // `golden_visa_buyer`, `commercial_investor` — no bare `investor`).
 
   it('pilot/cta-lift/route.ts MOCK_ARCHETYPES is a valid, proper subset of ARCHETYPE_NAMES', () => {

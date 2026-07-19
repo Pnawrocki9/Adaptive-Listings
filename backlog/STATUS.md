@@ -1,4 +1,57 @@
-# Status — 2026-07-18 (session 37 — FOLLOW-583 DONE transition + retrospective RETRO-179)
+# Status — 2026-07-18 (session 38 — FOLLOW-584 + FOLLOW-585 promoted + dispatched concurrently)
+
+## SESSION 38 (2026-07-18) — FOLLOW-584 + FOLLOW-585 promoted + dispatched; queue/handoffs ready for worker spawn
+
+**State check:** `main` at `9c1ca46` (FOLLOW-583 DONE + RETRO-179 bookkeeping merged, PR #557).
+Working tree clean at session start. No open ESCALATIONS.md entries (ESC-020 explicitly non-blocking
+per CEO ruling; ESC-037/ESC-038 both RESOLVED) — none block picking new work.
+`gh pr list --state open` returned no open PRs at session start.
+
+**Pre-delegation analysis (per operator brief, all against real files, not the brief's own
+claims):**
+
+1. `bandit-seed.ts` `CANONICAL_ARCHETYPES` confirmed byte-for-byte IN SYNC with `ARCHETYPE_NAMES`
+   (18/18) and with `description.ts` `ArchetypeIdSchema` (also 18/18) — no live-prod defect,
+   FOLLOW-584 is guard/consolidation-ADD only.
+2. `'investor'` mock-literal replacement: found genuinely ambiguous (5 defensible
+   `INVESTOR_ARCHETYPES` candidates after excluding the already-used `yield_hunter`, no textual
+   anchor). Not gated on a human ruling (validity-only mock data, matches the FOLLOW-583
+   `family_upsizer` precedent where the worker picks + states rationale) but flagged prominently in
+   QUEUE.md `notes:` and this file for a human glance before merge.
+3. FOLLOW-584 dispatched to **backend-engineer alone** (Sonnet), overriding the FOLLOW_UPS stub's
+   "architect + backend-engineer" suggestion — the one cross-package design question is already
+   resolved by the stub's own AC; no open ADR-worthy decision remains. Full reasoning in
+   `backlog/HANDOFFS.md`.
+4. Same-file conflict (both tickets touch `tests/integration/archetype-id-parity.test.ts` per the
+   brief): resolved at the root by redirecting FOLLOW-584's guard test to
+   `packages/shared/src/__tests__/` (an explicit OR-choice already in FOLLOW-584's own AC) instead
+   of sequencing or combining into one PR. Verified zero file overlap between the two tickets' full
+   AC scopes. **Both dispatched CONCURRENTLY.**
+5. Rule AC (RETRO-178) was violated in its very next application per RETRO-179 — recorded as the
+   first occurrence of that specific meta-pattern; NOT promoting a new codified rule (below the ≥2
+   -prior-retro threshold).
+
+**Action taken:** Promoted `FOLLOW-584` (P2, backend-engineer, ~4h) and `FOLLOW-585` (P2,
+qa-engineer, ~2h) from `backlog/FOLLOW_UPS.md` (both flipped `promoted_to_queue: true`) into
+`backlog/QUEUE.md` as `IN_PROGRESS`, `started_at: 2026-07-18`, with branch names
+`backend-engineer/FOLLOW-584-archetype-canonical-consolidation` and
+`qa-engineer/FOLLOW-585-investor-literal-fix`. Full delegation briefs written to
+`backlog/HANDOFFS.md`. **No Agent/Task-spawn tool was available in this session's toolset** — queue
+and handoff state are ready; the parent orchestrator spawns the actual workers next. Committed on
+fresh branch `pm-orchestrator/FOLLOW-584-585-promote-dispatch` off `main` (never `main` directly),
+PR opened.
+
+**CI-check counter / fix-iteration counter:** N/A this session — no worker CI run yet (queue/handoff
+bookkeeping only, no code changes). Will be tracked once each worker opens a PR.
+
+**Open escalations:** none blocking. ESC-020 remains explicitly non-blocking (CEO 2026-06-10
+ruling).
+
+**2 tickets IN_PROGRESS (584, 585) — within the 3-ticket cap.** `FOLLOW-562`/`FOLLOW-564` remain
+`READY` and unblocked (out of scope this session). `FOLLOW-560`/`FOLLOW-565` stay `BLOCKED` on
+`FOLLOW-553`.
+
+---
 
 ## SESSION 37 (2026-07-18) — FOLLOW-583 DONE transition + retrospective RETRO-179; no new dispatch
 

@@ -15503,7 +15503,16 @@ cross_ref: [FOLLOW-574, FOLLOW-193, FOLLOW-558, RETRO-176]
 
 source_retro: RETRO-179 (§4a LG-1, §4c, §5d) source_ticket: FOLLOW-583 (this is the retro on
 FOLLOW-583 itself) recommended_sprint: Sprint 24 recommended_agent: architect + backend-engineer
-priority: P2 estimated_hours: 4 promoted_to_queue: false
+priority: P2 estimated_hours: 4 promoted_to_queue: true
+
+**PROMOTED 2026-07-18 (session 38)** to `backlog/QUEUE.md` as `FOLLOW-584`, status `IN_PROGRESS`,
+dispatched to **backend-engineer alone** (PM override of the `architect + backend-engineer`
+suggestion above — see `backlog/HANDOFFS.md` for the independent re-assessment: the AC already fully
+resolves the one cross-package design question, no ADR-worthy decision remains open). Guard-test
+location redirected to `packages/shared/src/__tests__/` (not
+`tests/integration/archetype-id-parity.test.ts`) to guarantee zero file overlap with the
+concurrently-dispatched FOLLOW-585. bandit-seed.ts + description.ts confirmed IN SYNC with
+`ARCHETYPE_NAMES` this session (18/18, no live-prod defect).
 
 **Gap:** `FOLLOW-036` (filed earlier, `recommended_sprint: 9`, still `promoted_to_queue: false`
 today) already identified that `apps/control-plane/src/lib/bandit-seed.ts` `CANONICAL_ARCHETYPES` is
@@ -15575,7 +15584,17 @@ cross_ref: [FOLLOW-036, FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
 ## FOLLOW-585 — Fix the 2 already-invalid `'investor'` mock-archetype literals in the CTA-lift + dashboard-analytics mock fallbacks (same bug class as FOLLOW-583's `family_upsizer` fix); add subset-validity guards
 
 source_retro: RETRO-179 (§4b CB-1) source_ticket: FOLLOW-583 recommended_sprint: Sprint 24
-recommended_agent: qa-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 promoted_to_queue: true
+
+**PROMOTED 2026-07-18 (session 38)** to `backlog/QUEUE.md` as `FOLLOW-585`, status `IN_PROGRESS`,
+dispatched to qa-engineer. **PM FLAG:** the `'investor'` → canonical-id mapping was found genuinely
+ambiguous (5 defensible `INVESTOR_ARCHETYPES` candidates once `yield_hunter` — already used in both
+mock arrays — is excluded; no textual anchor favors one, unlike the unambiguous
+`family_upsizer`→`upsizer` decomposition). Not blocked on a human ruling since the AC above already
+establishes validity-only/no-correctness-requirement for this mock data, but the worker is
+instructed to state the pick + rationale prominently in the PR for a human/PM glance before merge,
+not bury it. Dispatched concurrently with FOLLOW-584 (zero file overlap — see that entry's promotion
+note).
 
 **Gap:** FOLLOW-583 (PR #555) fixed one already-invalid mock-archetype literal (`'family_upsizer'`,
 in the admin-labels mock fixtures) and added a guard test for it. RETRO-179's independent

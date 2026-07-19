@@ -68,3 +68,32 @@ explicitly as the pattern for any future "two files, one dataset" guard.
   a one-line note at the top of `archetype-id-parity.test.ts`'s parser helpers warning that
   comments-in-block can false-positive the scan. (Not adding it now — out of the ticket's declared
   scope of exactly 3 files.)
+
+---
+
+## 2026-07-19 / FOLLOW-587
+
+**What I tested:** Swept the 3rd/4th non-canonical archetype literals FOLLOW-585 missed — both
+inline object-literal fields (`top_archetype: 'family_nester'` in tracer sessions mock,
+`archetype: 'investor'` in the audit-log mock), invisible to a `MOCK_ARCHETYPES`-name-anchored grep.
+Added a red-first subset-validity guard for the tracer mock, fixed both literals, then applied the
+durable compile-time root-fix: retyped the three hand-authored `MOCK_ARCHETYPES` arrays as
+`readonly ArchetypeId[]`.
+
+**Where a test could have passed over a dead wire:** the retype itself silently broke the existing
+parity test's own parser regex (`MOCK_ARCHETYPES\s*=\s*\[...\]\s*as const;` no longer matched once
+`: readonly ArchetypeId[]` sat between the name and `=`). Caught only because the parser's own
+"matched > 0" guard threw loud
+(`could not locate ... — the literal was likely renamed or reformatted`) instead of silently
+reporting an empty match set as a pass. This is the exact fail-loud design the FOLLOW-561 doc
+comment promises — worth calling out as a real payoff, not just theoretical: a compile-time root-fix
+and a regex-based runtime guard covering the same literal are two independent layers, and changing
+the first without touching the second can silently disarm the second unless it's built to fail loud
+on structural drift.
+
+**A guardrail I'd add:** whenever a ticket's "durable root-fix" step adds a type annotation to a
+literal that an existing regex-parser test also scans, always re-run that parser test _before_
+declaring the retype done — don't assume a `tsc`-clean retype is orthogonal to a runtime
+string-parse guard on the same line. (Caught this time because the full parity suite was re-run as a
+matter of course; would recommend making it an explicit sub-step in any future "add readonly type
+annotation near a parsed literal" ticket.)

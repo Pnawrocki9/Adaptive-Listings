@@ -27,6 +27,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
+import type { ArchetypeId } from '@estalara/shared';
 import { getSessionAuthClaims } from '@/lib/session-auth';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
@@ -229,7 +230,7 @@ function seededRandom(seed: number): number {
 // FOLLOW-585: the third entry was the invalid literal "investor" — replaced with
 // the most generic INVESTOR_ARCHETYPES member (no niche flip/vacation-rental/
 // golden-visa connotation); yield_hunter is already covered above.
-const MOCK_ARCHETYPES = [
+const MOCK_ARCHETYPES: readonly ArchetypeId[] = [
   'yield_hunter',
   'family_buyer',
   'portfolio_builder',

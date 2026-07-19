@@ -8,6 +8,8 @@
  * @module apps/control-plane/src/app/api/admin/labels/route-helpers
  */
 
+import type { ArchetypeId } from '@estalara/shared';
+
 // ─── Row types ────────────────────────────────────────────────────────────────
 
 /**
@@ -84,7 +86,7 @@ const MOCK_OUTCOME_CLASSES = [
   'no_response',
 ] as const;
 
-const MOCK_ARCHETYPES = [
+const MOCK_ARCHETYPES: readonly ArchetypeId[] = [
   'yield_hunter',
   'upsizer',
   'first_time_buyer',

@@ -58,6 +58,12 @@ const MOCK_ENTRIES: AuditEntry[] = [
     created_at: '2026-05-02T14:30:00.000Z',
     details: { field: 'brand.primary_color', old: '#000000', new: '#1a73e8' },
   },
+  // FOLLOW-587: 'investor' is not a member of ARCHETYPE_NAMES (no bare
+  // 'investor' archetype — the investor sub-types are yield_hunter,
+  // portfolio_builder, flip_investor, vacation_rental_investor,
+  // golden_visa_buyer, commercial_investor). Substituted with
+  // 'portfolio_builder', matching the CEO's FOLLOW-585 disposition for the
+  // same generic-investor substitution.
   {
     id: '00000000-0000-0000-0000-000000000003',
     action: 'demo.started',
@@ -65,7 +71,7 @@ const MOCK_ENTRIES: AuditEntry[] = [
     user_email: 'admin@tenant.example',
     ip_address: '203.0.113.42',
     created_at: '2026-05-03T09:15:00.000Z',
-    details: { demo_id: 'demo-abc123', archetype: 'investor' },
+    details: { demo_id: 'demo-abc123', archetype: 'portfolio_builder' },
   },
   {
     id: '00000000-0000-0000-0000-000000000004',

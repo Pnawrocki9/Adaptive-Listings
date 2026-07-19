@@ -46,7 +46,7 @@ function buildMockSessions(): IntentSessionRow[] {
       session_id: 'mock-session-d4e5f6',
       tenant_id: '00000000-0000-0000-0000-000000000001',
       signal_count: 3,
-      top_archetype: 'family_nester',
+      top_archetype: 'family_buyer',
       confidence: 0.61,
       last_event_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
       quiz_completed: false,

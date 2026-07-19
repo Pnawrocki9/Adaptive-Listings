@@ -83,6 +83,24 @@
  *     `upsizer` as two separate archetypes) — TypeScript never caught it because
  *     both fields are typed `archetype: string`, not the canonical union type.
  *
+ * FOLLOW-587 addition — the FOLLOW-585 sweep missed a 3rd/4th invalid literal
+ * because both are inline object fields, not a hand-maintained `MOCK_ARCHETYPES`
+ * array, so they were invisible to the `golden_visa_buyer`/`MOCK_ARCHETYPES`-name
+ * anchor greps used to scope that sweep:
+ *   - `apps/control-plane/src/app/api/admin/tracer/sessions/route.ts`
+ *     `buildMockSessions()` hard-coded `top_archetype: 'family_nester'` — not a
+ *     member of `ARCHETYPE_NAMES` (the canonical family archetype is
+ *     `family_buyer`). Guarded below with the same subset-validity shape as the
+ *     `buildMockExportRows()` parser above (inline `top_archetype: '<id>'`
+ *     object-literal values).
+ *   - `apps/control-plane/src/app/api/audit/route.ts` `MOCK_ENTRIES` carried
+ *     `details: { demo_id: 'demo-abc123', archetype: 'investor' }` — the same
+ *     bare non-member `'investor'` FOLLOW-585 removed from the lift routes.
+ *     Fixed in place (no dedicated guard added — this route's mock entries are
+ *     free-form `Record<string, unknown>` audit-log payloads, not a
+ *     `MOCK_ARCHETYPES` catalog, so there is no stable literal shape to anchor a
+ *     parser to beyond this one field).
+ *
  * @module tests/integration/archetype-id-parity
  */
 
@@ -193,9 +211,16 @@ function parseReachableArchetypes(source: string): Set<string> {
   return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
-/** Parses the `MOCK_ARCHETYPES = [...] as const;` array literal. */
+/**
+ * Parses the `MOCK_ARCHETYPES = [...] as const;` array literal (optionally
+ * preceded by the FOLLOW-587 `: readonly ArchetypeId[]` compile-time-safe
+ * type annotation).
+ */
 function parseMockArchetypes(source: string): Set<string> {
-  const block = /MOCK_ARCHETYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(source);
+  const block =
+    /MOCK_ARCHETYPES(?:\s*:\s*readonly ArchetypeId\[\])?\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(
+      source,
+    );
   if (!block) {
     throw new Error(
       'archetype-id-parity: could not locate `MOCK_ARCHETYPES = [...] as const;` in ' +
@@ -206,9 +231,16 @@ function parseMockArchetypes(source: string): Set<string> {
   return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
-/** Parses the `MOCK_ARCHETYPES = [...] as const;` array literal from a given source. */
+/**
+ * Parses the `MOCK_ARCHETYPES = [...] as const;` array literal from a given
+ * source (optionally preceded by the FOLLOW-587 `: readonly ArchetypeId[]`
+ * compile-time-safe type annotation).
+ */
 function parseMockArchetypesGeneric(source: string, sourceLabel: string): Set<string> {
-  const block = /MOCK_ARCHETYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(source);
+  const block =
+    /MOCK_ARCHETYPES(?:\s*:\s*readonly ArchetypeId\[\])?\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(
+      source,
+    );
   if (!block) {
     throw new Error(
       `archetype-id-parity: could not locate \`MOCK_ARCHETYPES = [...] as const;\` in ` +
@@ -227,6 +259,18 @@ function parseMockArchetypesGeneric(source: string, sourceLabel: string): Set<st
  */
 function parseExportRouteMockArchetypes(source: string): Set<string> {
   return new Set([...source.matchAll(/archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
+/**
+ * Parses every quoted `top_archetype: '<id>'` object-literal value out of
+ * `buildMockSessions()` in admin/tracer/sessions/route.ts. Mirrors
+ * `parseExportRouteMockArchetypes` above — only matches quoted string values
+ * (the live-path assembly at the bottom of the file uses
+ * `top_archetype: state?.topArchetype ?? null`, no quotes, so it can't be
+ * picked up here).
+ */
+function parseTracerSessionsMockTopArchetypes(source: string): Set<string> {
+  return new Set([...source.matchAll(/top_archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
 // ─── Set-equality assertion helper ────────────────────────────────────────────
@@ -490,6 +534,29 @@ describe('FOLLOW-585 — pilot/cta-lift + dashboard/analytics/lift mock archetyp
     assertSubsetValidity(
       'apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts MOCK_ARCHETYPES',
       mockArchetypes,
+      ARCHETYPE_NAMES,
+    );
+  });
+});
+
+describe('FOLLOW-587 — admin/tracer/sessions mock top_archetype literals (dev/CI-only)', () => {
+  // Same shape as the FOLLOW-583 admin/labels export-route guard above: an inline
+  // `top_archetype: '<id>'` object-literal field, invisible to the FOLLOW-585
+  // sweep's `MOCK_ARCHETYPES`-name anchor greps. Found hard-coded 'family_nester',
+  // which is NOT a member of ARCHETYPE_NAMES (the canonical family archetype is
+  // `family_buyer`).
+  it('admin/tracer/sessions/route.ts buildMockSessions() top_archetype literals are a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const source = readRepoFile('apps/control-plane/src/app/api/admin/tracer/sessions/route.ts');
+    const referenced = parseTracerSessionsMockTopArchetypes(source);
+
+    expect(
+      referenced.size,
+      'parser matched 0 top_archetype literals in admin/tracer/sessions/route.ts buildMockSessions() — regex is broken',
+    ).toBeGreaterThan(0);
+
+    assertSubsetValidity(
+      'apps/control-plane/src/app/api/admin/tracer/sessions/route.ts buildMockSessions() top_archetype',
+      referenced,
       ARCHETYPE_NAMES,
     );
   });

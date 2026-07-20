@@ -2800,3 +2800,25 @@ so.**
   from "the rule operating" (grep-scoped, surfaced forward) before counting it as a failure
   sighting. Also: separate the ownership-boundary defer (correct) from a scope-drop (incorrect) —
   same surface, opposite verdict.
+
+## 2026-07-20 / RETRO-186 (FOLLOW-590 — importable-copy class CLOSED, arc capstone)
+
+- **A finding I almost missed and why:** Almost declared closure purely from the PR body's claim.
+  The load-bearing move was RE-RUNNING the `golden_visa_buyer` closure grep myself and confirming
+  `adapt-schema.ts:33` had DISAPPEARED from the output (not just "changed") — a closure verdict on a
+  multi-ticket class must be proven by the ABSENCE of the target signature in a fresh grep, never by
+  the merge note. Also nearly filed a follow-up for the two test-only fixtures; caught that they're
+  test-internal and self-failing → a note, not a ticket (guardrail: 1–8h scoped, no make-work).
+- **An axis/chain I had to trace twice:** the derivation chain from the SDK re-export up to the SoT
+  — `archetypeIdSchema = ArchetypeIdSchema` (shared) → `z.enum([...CANONICAL_ARCHETYPE_IDS])`
+  (`schemas/description.ts`) → `CANONICAL_ARCHETYPE_IDS` (`archetypes.ts`) → guarded vs
+  `ARCHETYPE_NAMES` (`intent.ts`). I verified BOTH that shared re-exports `ArchetypeIdSchema` (index
+  → schemas/index → description) AND that the new in-SDK `.options` test closes the loop, so the
+  alias is double-guarded, not one-hop.
+- **A meta-pattern in how gaps recur across agents:** the whole arc = one value domain hand-copied
+  into ~a dozen parallel places with no single source; the durable fix was ONE exported const +
+  derivations + a SHAPE-COMPLETE guard suite (every structural sub-shape parsed from the REAL file
+  with a non-vacuity "matched 0 → regex broken" check). The residual risk that outlives the arc is
+  the cross-runtime (Python/SQL) copies that CAN'T import the TS SoT — the parity guard's
+  non-vacuity assertions are the only thing between them and silent drift. Watch that invariant on
+  any future edit to those parsers.

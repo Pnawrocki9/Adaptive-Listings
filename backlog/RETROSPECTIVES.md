@@ -29556,3 +29556,115 @@ The 3 structural sub-shapes the chain traversed are each now guarded: **quoted a
 - **FOLLOW-036** — the long-dormant never-promoted original de-duplication ticket FOLLOW-584 superseded; FOLLOW-590 is the final leg that fully retires the intent behind FOLLOW-036.
 - **FOLLOW-590** — filed this retro; closes the importable-full-parity-COPY class when it lands.
 - **RETRO-183** — the invalid-literal-VALUE chain closure; explicitly SEPARATE from this duplication thread (RETRO-183 §5a already noted FOLLOW-586 is "a DIFFERENT class — duplication, not invalid values").
+
+## RETRO-186 — FOLLOW-590 (migrate the LAST importable full-parity archetype-ID copy — `packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema`, an inline 18-entry `z.enum` — onto a single canonical source by re-exporting `@estalara/shared`'s `ArchetypeIdSchema`, and add the runtime `.options ≡ ARCHETYPE_NAMES` parity guard the file lacked. The migration is GENUINELY end-to-end, not a one-hop relocation: `archetypeIdSchema = ArchetypeIdSchema` ← `z.enum([...CANONICAL_ARCHETYPE_IDS])` (`schemas/description.ts:44`) ← `CANONICAL_ARCHETYPE_IDS` (`archetypes.ts:36`) ← guarded vs `ARCHETYPE_NAMES` (the true SoT, `sdk/src/core/intent.ts:54`) by `archetype-canonical-parity.test.ts`, AND now double-guarded in-SDK by the new `[...archetypeIdSchema.options].toEqual([...ARCHETYPE_NAMES])` assertion — proven load-bearing by perturbation. **HEADLINE: the importable-full-parity-COPY class is now CLOSED repo-wide.** I independently re-ran the AC#4 `golden_visa_buyer` closure grep on `main` post-`bb9f837` and classified EVERY remaining hit: ZERO category-(c) hand-maintained full-parity importable TS ID-list copies survive outside the canonical `archetypes.ts` source — `adapt-schema.ts:33` (the sole survivor RETRO-185 flagged) is gone from the grep, now a re-export. Every importable TS ID-list array/enum in the repo derives from ONE canonical source; nothing importable is hand-maintained-and-independent. The two RETRO-185 residuals (test-only full-parity fixtures `quiz-widget.test.ts` / `archetype_embeddings_seed.test.ts`) are OUT of this class (test-fixture scope, not importable production) — a lower-severity note, not a gap worth a ticket. This retro also CAPSTONES the ~9-ticket archetype-parity arc across two related classes: the invalid-literal-VALUE chain FOLLOW-561→583→585→587→589 (closed RETRO-183) and the duplicate-COPY consolidation FOLLOW-584→586→590 (closing NOW), plus FOLLOW-588 (parser hardening, RETRO-184) and Rules AC/AD. No new pattern crosses the ≥2-prior promotion threshold — Rules AC + AD already cover this arc; `CONVENTIONS_PATCH.md` correctly UNTOUCHED) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #571 (squash-merged 2026-07-20 ~10:16 UTC / 12:16 CEST, commit `bb9f837`), branch (now deleted) `sdk-engineer/FOLLOW-590-adapt-schema-consolidation`. Source retro: RETRO-185 (§1 CRITICAL, §3, §4a); FOLLOW-590 stub `backlog/FOLLOW_UPS.md`.
+- **Files changed:** 3 (+54 / -29): `packages/sdk/src/core/adapt-schema.ts` (inline 18-item `z.enum([...])` removed → `export const archetypeIdSchema = ArchetypeIdSchema` re-export from `@estalara/shared`; doc-comment rewritten from "Keep in sync by hand" to describe the alias + the derivation/guard chain), `packages/sdk/src/__tests__/adapt-schema.test.ts` (+22: new `archetypeIdSchema ≡ ARCHETYPE_NAMES` parity guard — non-vacuous `.options.length > 0` check first, then `[...archetypeIdSchema.options].toEqual([...ARCHETYPE_NAMES])`), `.claude/agents/sdk-engineer/lessons.md` (+22).
+- **Modules touched:** SDK (adapt-schema + its test) · agent-lessons. **No shared / ingest / decision-api / control-plane / Python / SQL source touched** (the change consumes an already-existing `@estalara/shared` export; it does not modify shared).
+- **Key contracts changed:** `packages/sdk` `archetypeIdSchema` — implementation changed from a hand-maintained inline `z.enum` literal to `= ArchetypeIdSchema` (re-export). Runtime accepted value set + `.options` order — UNCHANGED (byte-identical 18 members, `golden_visa_buyer` at position 5, `'neutral'` last; verified via `.options` parity test). `sdk → shared` is the ALLOWED dependency direction. Breaking: **no** (pure DRY re-derivation; `adaptResponseSchema` parse behavior unchanged).
+
+### 2. Verification done in PR
+
+- Test files changed: **1** (`packages/sdk/src/__tests__/adapt-schema.test.ts`). Assertions added: **2** (non-vacuity guard + order-exact `.options ≡ ARCHETYPE_NAMES` equality). Both proven load-bearing by perturbation per the PR/lessons note (no natural red-on-`main` since the removed copy was already in sync). Coverage delta: unknown numerically; qualitatively POSITIVE — the one previously-UNGUARDED full-parity copy (RETRO-185 §4c) is now guarded, closing that hole as it retires the literal.
+- CI checks: assumed green at merge (PM gate). PR body claims typecheck clean, sdk suite green (1534 tests), bundle 40.69KB gzip (< 42KB budget). **Independently spot-verified this session** on `main`: `git show bb9f837` confirms `adapt-schema.ts` `export const archetypeIdSchema = ArchetypeIdSchema;` with the inline `z.enum([...18...])` removed and `import { ArchetypeIdSchema } from '@estalara/shared'` added; the new test imports `ARCHETYPE_NAMES` from `../core/intent.js` and asserts order-exact equality. Confirmed `@estalara/shared` re-exports `ArchetypeIdSchema` (`index.ts:13` `export * from './schemas/index.js'` → `schemas/description.ts:44` `ArchetypeIdSchema = z.enum([...CANONICAL_ARCHETYPE_IDS])`), so the alias resolves and derives from canonical.
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** no new file / entrypoint introduced. The re-exported `archetypeIdSchema` retains its in-file consumers `textDirectiveSchema` / `classDirectiveSchema` → `adaptResponseSchema` (unchanged), and is now additionally imported by `adapt-schema.test.ts`. The new `ArchetypeIdSchema` import is a live consumer of an existing FOLLOW-584/586 shared export. The removed inline `z.enum` literal had no other referents — it WAS the definition. Nothing orphaned.
+- **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal introduced. This is a producer-side re-derivation of an already-consumed schema; `archetypeIdSchema` remains producer+consumer complete (producer: shared `ArchetypeIdSchema`; consumers: the two directive sub-schemas + the new test). The new test's `ARCHETYPE_NAMES` import has a real producer (`intent.ts`) and a real consumer (the assertion). Clean.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps — AUDITABLE closure-grep re-run (task items 1 + 2, load-bearing)
+
+I re-ran the AC#4 closure grep myself on `main` post-`bb9f837`:
+`grep -rn 'golden_visa_buyer' apps/ packages/ --include=*.ts | grep -v node_modules | grep -v dist | grep -v '\.test\.'`
+and classified EVERY hit into the three task categories. **Annotated table (every remaining non-test `.ts` hit):**
+
+| # | file:line | classification | note |
+|---|-----------|----------------|------|
+| 1 | `packages/shared/src/archetypes.ts:42` | **(a) canonical source** | `CANONICAL_ARCHETYPE_IDS` — THE shared canonical, guarded vs `ARCHETYPE_NAMES` |
+| 2 | `packages/sdk/src/core/intent.ts:30` | **(a) SoT** | `Archetype` union member (true SoT, count-guarded) |
+| 3 | `packages/sdk/src/core/intent.ts:54` | **(a) SoT** | `ARCHETYPE_NAMES` array — the TRUE canonical source everything derives from |
+| 4 | `packages/sdk/src/core/intent.ts:76` | **(b) subset Set** | `INVESTOR_ARCHETYPES` 6-member subset (not 18-parity) |
+| 5 | `packages/sdk/src/core/intent.ts:190/216/236/256/276/348/370/459/479/504/536/1114` | **(b) numeric maps + boost** | per-archetype probability/affinity NUMBER maps + one `*= 1.35` boost — not ID-list copies |
+| 6 | `packages/shared/src/schemas/intent-weights.ts:153` | **(b) numeric map** | `golden_visa_buyer: 0.04` prior-weight map |
+| 7 | `packages/sdk/src/core/embedding.ts:55` | **(b) numeric map** | 7-dim embedding vector map |
+| 8 | `packages/sdk/src/core/playbooks/index.ts:40` | **(b) playbook lookup** | `['golden_visa_buyer', goldenVisaBuyerPlaybook]` registry tuple |
+| 9 | `packages/sdk/src/core/playbooks/archetypes/golden-visa-buyer.ts:4` | **(b) single-value field** | one playbook's own `archetype:` field |
+| 10 | `packages/sdk/src/auto-detect/archetype-hints.ts:74/78/84/90/244/264/360` | **(b) boost tuples / doc + documented SUBSET** | boost objects + comments; the file is a documented proper subset, exempt by the parity suite (l.477) |
+| 11 | `packages/sdk/src/ui/quiz-widget.ts:8` | **(b) doc-comment** | Polish quiz-mapping doc-comment, not code |
+| 12 | `packages/sdk/src/ui/quiz-widget.ts:266` | **(b) single-value `return`** | `if (q3Answer === 2) return 'golden_visa_buyer'` — one branch return |
+| 13 | `apps/control-plane/src/app/api/audit/route.ts:64` | **(b) doc-comment** | comment enumerating example archetypes, not a literal array |
+| 14 | `packages/db/src/seed/archetype-seeds.ts:43` | **(b) object-array data table** | `ARCHETYPE_SEEDS` (name+description+threshold objects, not a bare ID list) — already GUARDED by the integration parity suite (l.430) |
+
+- **(c) genuine remaining hand-maintained full-parity ID-list array/enum copy: ZERO.** `adapt-schema.ts:33` — the SOLE category-(c) survivor identified by RETRO-185 — no longer appears in the grep output at all; `git show bb9f837` confirms its inline `z.enum([...18...])` was replaced by `= ArchetypeIdSchema` (a re-export carrying no literal). **The closure grep's category-(c) count is 0.**
+- **Deliberately-separate / not-importable (out of the TS-copy class):** Python `nlp.py`, `generate_description.py` (cross-runtime — cannot import TS; PARALLEL by design, guarded by FOLLOW-561); SQL seeds `0005`/`0007` (parity-guarded). These are correctly NOT part of the importable-TS-copy class and their survival does not affect closure.
+- **Verdict on the migration: correct, no logic gap.** The `.options` order survives the re-export (Zod `z.enum().options` returns the literal tuple passed at construction; `ArchetypeIdSchema` was built from the order-identical `CANONICAL_ARCHETYPE_IDS`), verified by the new order-exact test, not assumed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** Pure DRY re-derivation of a byte-identical schema; no behavioral surface, no bug introduced or discovered. The former stale copy was in sync at removal, so there is not even a latent value bug to inherit.
+
+#### 4c. Test coverage gaps
+
+- **N/A — this PR CLOSES the coverage gap RETRO-185 §4c flagged.** `adapt-schema.ts` `archetypeIdSchema` was the one full-parity copy with NO parity assertion; the PR adds the missing `.options ≡ ARCHETYPE_NAMES` guard (non-vacuous first, order-exact second, perturbation-proven). SDK suite 1534 green.
+- **Residual (noted, NOT filed — unchanged from RETRO-185 §4c):** the two test-only full-parity fixtures — `packages/db/src/__tests__/archetype_embeddings_seed.test.ts:13` `CANONICAL_ARCHETYPES` (18-entry, still present; self-asserts length 18 + neutral-last but NOT vs the canonical SoT) and `packages/sdk/src/__tests__/quiz-widget.test.ts:224` `expected` (17 non-neutral) — remain hand-maintained and not SoT-parity-guarded. These are TEST-FIXTURE scope, not importable production copies. **Decision (task item 3): out of scope for the "importable-COPY class CLOSED" verdict, and NOT worth a ticket** — they are internal to their own test files, would fail loudly the moment their own suite ran against a changed set, and filing a P3/P4 to guard test fixtures is make-work below the bar. Recorded here so a future opportunistic guard-sweep can absorb them if one is ever run.
+
+#### 4d. Documentation gaps
+
+- **N/A — docs improved.** The PR rewrote `adapt-schema.ts`'s doc-comment from the manual-sync smell ("Keep `archetypeIdSchema` in sync with the `ArchetypeId` union … by hand") to an accurate description of the re-export + the full derivation/guard chain (`ArchetypeIdSchema` → `CANONICAL_ARCHETYPE_IDS` → guarded vs `ARCHETYPE_NAMES`). The last stale "keep in sync by hand" instruction in the importable-copy class is now gone.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **No follow-up filed; no IN_PROGRESS/READY ticket invalidated.** FOLLOW-586/587/588/589 are merged/closed (RETRO-182/183/184/185). This refactor adds no archetype literals, changes no wire shape, and touches only `packages/sdk`, so it neither reopens nor expands the invalid-literal chain, the parser-hardening work, or any adjacent ticket. FOLLOW-590 is the terminal leg of its class.
+
+#### 5b. Future sprint tickets affected
+
+- **N/A (materially POSITIVE for future work).** Adding a new archetype now requires editing exactly: the `ARCHETYPE_NAMES` SoT array (+ its `Archetype` union) in `intent.ts`, plus the deliberately-parallel Python/SQL copies (all parity-guarded). Every importable TS ID-list — `CANONICAL_ARCHETYPE_IDS`, `ArchetypeId`, `ArchetypeIdSchema`, `ARCHETYPE_KEYS`, the `/api/adapt/description` route schema, and now `adapt-schema.ts` — derives automatically. The hand-edit surface for the importable class is now a single file.
+
+#### 5c. Contracts changed others rely on
+
+- **`packages/sdk` `archetypeIdSchema`** — implementation re-derived; public runtime value + `.options` order UNCHANGED; consumers (`adaptResponseSchema` via the two directive sub-schemas, plus any external SDK consumer parsing `/api/adapt` responses) unaffected. No downstream break.
+
+#### 5d. Architectural assumptions affected — multi-axis / contradiction reconciliation (step 8)
+
+- **Reconciliation with RETRO-185 (direct predecessor):** RETRO-185's HEADLINE stated the class was "NOT yet closed repo-wide — exactly ONE hand-maintained importable full-parity TS ID-list copy survives, `adapt-schema.ts` `archetypeIdSchema`" and predicted "after FOLLOW-590 lands, the class will be CLOSED." This retro **discharges that prediction exactly**: the one named copy is migrated, and my independent post-merge closure grep confirms 0 category-(c) survivors. No prior "clean" verdict is contradicted — RETRO-185 explicitly never called the class closed (it filed FOLLOW-590 because it wasn't). RETRO-185 also recommended **Option A** (re-export `@estalara/shared` `ArchetypeIdSchema`) over the task-note's in-package `ARCHETYPE_NAMES` derivation, on the grounds that `ARCHETYPE_NAMES` is `readonly Archetype[]` (not an `as const` tuple) and `z.enum()` needs a literal tuple; the PR adopted exactly Option A — the recommendation held, no unsafe cast, no broader SoT change.
+- **Axes checked:** (i) **producer vs consumer** — the re-export (producer side) and `adaptResponseSchema`'s consumption + the new test consumer all analyzed; (ii) **type vs runtime** — the `.options` runtime-order axis is the load-bearing one for correctness (a type alias alone would not guarantee runtime member/order identity), and the new test asserts it directly rather than trusting the type; (iii) **importable-production vs test-fixture vs cross-runtime** — the three sub-classes stay separated so the closure verdict is scoped precisely (importable production TS: CLOSED; test fixtures: separate note; Python/SQL: separate parallel-and-guarded); (iv) **locale axis** — no locale enum in this file; N/A.
+
+- **Guard-coverage audit for the now-closed class (task item 2) — every hand-maintained archetype-ID source on record + its drift protection:**
+  - **`ARCHETYPE_NAMES` (`packages/sdk/src/core/intent.ts:54`)** — the TRUE canonical SoT; the ONE genuinely hand-authored master list. Everything below is diffed against it. (It also carries a paired `Archetype` union, count-consistent.)
+  - **`CANONICAL_ARCHETYPE_IDS` (`packages/shared/src/archetypes.ts:36`)** — hand-maintained shared canonical; **guarded vs `ARCHETYPE_NAMES` by `packages/shared/src/__tests__/archetype-canonical-parity.test.ts`** (order-exact, non-vacuous, dup/extra/missing assertions).
+  - **DERIVED — no independent literal, carry no drift risk:** `ArchetypeId` (`directives.ts`, `(typeof …)[number]`), `ArchetypeIdSchema` (`schemas/description.ts:44`, `z.enum([...CANONICAL_ARCHETYPE_IDS])`), `ARCHETYPE_KEYS` (`intent-weights.ts`, `= CANONICAL_ARCHETYPE_IDS` — FOLLOW-586), `adapt/description/route.ts` (`= ArchetypeIdSchema` — FOLLOW-586), and **now `adapt-schema.ts` `archetypeIdSchema` (`= ArchetypeIdSchema` — FOLLOW-590)**, additionally double-guarded in-SDK by the new `.options ≡ ARCHETYPE_NAMES` test.
+  - **Deliberately parallel (cross-runtime, cannot import TS) but GUARDED** by `tests/integration/archetype-id-parity.test.ts` (FOLLOW-561, 14 assertions, parses the REAL files): Python `nlp.py` `_ARCHETYPES`, `generate_description.py` `_ARCHETYPE_GUIDANCE`; `packages/db/src/seed/archetype-seeds.ts` `ARCHETYPE_SEEDS`; migration `0005` SQL inserts. (Migration `0007` bandit weights + the mock/subset shapes are likewise covered by that suite's later `describe` blocks.)
+  - **Still hand-maintained-and-parallel but NOT SoT-guarded — the only residual:** the two TEST-ONLY fixtures (§4c). Not importable production; a note, not a gap.
+- **Closure determination (task item 3, headline-level):** the **importable-full-parity-COPY class is CLOSED repo-wide.** Every importable (non-test) TS ID-list array/enum derives from one canonical source (`CANONICAL_ARCHETYPE_IDS`, itself guarded vs the `ARCHETYPE_NAMES` SoT); nothing importable is hand-maintained-and-independent. Residuals are two test-only fixtures (separate lower-severity note) and the deliberately-parallel-and-guarded Python/SQL copies (a different, cross-runtime class).
+
+### 6. New lesson candidates
+
+- **Capstone pattern (for the record, ALREADY covered — no promotion):** "one value domain (the 18 archetype IDs) hand-copied into many parallel places with no single exported source → both wrong-VALUE drift and duplicate-COPY drift, and incomplete grep-scoping lets each consolidation ticket miss the next copy." This arc's two failure-modes are ALREADY promoted: **Rule AC** (a consolidation/guard ticket MUST be scoped by a repo-wide grep for the target signature, not just the source-audit's named files — the in-grep-but-out-of-scope sub-pattern) and **Rule AD** (the anchor-INVISIBLE structural-sub-shape blind spot — a copy the chosen anchor grep cannot see). FOLLOW-590 exhibits NEITHER failure-mode — it was the clean terminal execution of a copy that Rule AC had already correctly surfaced-and-deferred in RETRO-185. **No new pattern; no amendment; `CONVENTIONS_PATCH.md` correctly UNTOUCHED.** Promoting anything here would double-promote AC/AD (guardrail: duplicate codification is noise). Current count for a hypothetical NEW rule: subsumed → N/A.
+
+### 6b. Capstone — the archetype-parity arc (FOLLOW-561→583→585→587→589 + FOLLOW-584→586→590 + FOLLOW-588 + Rules AC/AD)
+
+This retro closes a ~9-ticket, two-class arc over one value domain (the 18 archetype IDs). **Root cause:** the archetype-ID set was hand-copied into ~a dozen parallel places across TS/Python/SQL with NO single exported source, which manifested as two distinct pathologies — invalid-VALUE literals (typos like `family_nester`/`'investor'` that were never valid members) and duplicate-COPY drift risk (byte-identical full-parity lists that could silently diverge) — and each early consolidation/guard ticket under-scoped its grep, so the gap kept relocating one file (or one structural sub-shape) downstream. **What systemically fixed it:** (1) one exported canonical const `CANONICAL_ARCHETYPE_IDS` (FOLLOW-584) with every importable TS list re-derived from it (FOLLOW-586/590) and drift-guarded vs the `ARCHETYPE_NAMES` SoT; (2) a shape-complete integration parity suite that parses the REAL files for EVERY live structural sub-shape — named `as const` array, inline object value/key, JSON-stringified blob key, `z.enum`, Python tuple, SQL insert (FOLLOW-561→589), plus parser hardening so in-block comments can't false-positive/negative the scan (FOLLOW-588); (3) **Rule AD** codifying the multi-anchor / structural-sub-shape blind spot and **Rule AC**'s surfacing-forward discipline, which is precisely what let FOLLOW-586 hand off the last copy cleanly to FOLLOW-590 across an ownership boundary instead of dropping it. **Residual systemic risk worth watching:** the Python and SQL copies remain genuinely hand-maintained-and-parallel (they cannot import the TS SoT), so the parity guard is the ONLY thing preventing cross-runtime drift — if any of those real files is renamed/reformatted such that a parser regex silently matches 0 entries, the assertion could pass vacuously; the suite mitigates this with explicit "parser matched 0 → regex is broken" non-vacuity checks, and that non-vacuity discipline is the load-bearing invariant to preserve on any future edit to those parsers or files. Test-only fixtures (§4c) are the one remaining unguarded duplication, deliberately left as a note.
+
+### 7. Follow-ups
+
+- **N/A.** The migration is clean (§4b), the coverage hole RETRO-185 flagged is now CLOSED by this PR's guard (§4c), and the test-fixture residual (§4c) is a recorded note below the make-work bar — I judge it NOT a genuine gap worth a ticket (test-internal, self-failing, guarding it is make-work). No follow-up filed.
+
+### 8. Cross-references
+
+- **FOLLOW-590** — this PR (#571, `bb9f837`); the subject and terminal leg of the importable-copy class.
+- **FOLLOW-586 / RETRO-185** — the predecessor that migrated the 2 remaining NAMED copies and correctly surfaced-and-deferred `adapt-schema.ts` to FOLLOW-590; this retro discharges RETRO-185's "will be CLOSED after FOLLOW-590" prediction and its Option-A derivation recommendation.
+- **FOLLOW-584 / RETRO-179 / RETRO-180** — created `CANONICAL_ARCHETYPE_IDS` and consolidated the first 3 named copies; the origin of the consolidation thread.
+- **FOLLOW-588 / RETRO-184** — parser-comment hardening that de-risked the parity suite these consolidations rely on.
+- **FOLLOW-561 / RETRO-178** — the integration parity guard (Rule J) that protects the deliberately-parallel Python/SQL copies.
+- **RETRO-183** — closure of the SEPARATE invalid-literal-VALUE chain (FOLLOW-561→583→585→587→589); this duplicate-COPY thread is a DIFFERENT class, and closing it does not reopen that one.
+- **RETRO-182** — Rule AD promotion (the multi-anchor / structural-sub-shape blind spot), one of the two codified rules that governed this arc.

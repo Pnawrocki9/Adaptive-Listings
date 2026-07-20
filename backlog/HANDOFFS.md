@@ -4160,3 +4160,97 @@ read-only parse targets for this ticket, not edit targets.
 file. Include in the PR description: (a) the falsification-red output from AC-3 step 3, (b) a
 one-sentence rationale for the `family_upsizer` -> `family_buyer`/`upsizer` choice. Do not mark DONE
 — PM validates CI green + runtime wiring before READY_FOR_REVIEW.
+
+## Delegation brief — FOLLOW-592 (session 40, 2026-07-20)
+
+**From:** pm-orchestrator (session 40) **To:** backend-engineer, model **OPUS** (not the sonnet
+default — see model-fit note below; do not argue this down) **Ticket:** `backlog/QUEUE.md`
+`FOLLOW-592` **Branch:** `backend-engineer/FOLLOW-592-resolve-tenant-access` **Delegation-table row
+used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing,
+webhooks → backend-engineer" — this is a control-plane auth/RLS change.
+
+### Required reading, in order, before writing any code
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read fresh, do not rely on
+   memory of an earlier version).
+2. `docs/adr/ADR-0018-superadmin-tenant-access.md` **§2 END-TO-END** — this is the binding spec.
+   Read the whole ADR, not just §2, but §2 is where the code contract lives. Pay special attention
+   to:
+   - The five security invariants (§2, numbered list). **Invariant 5 is the highest-risk one and the
+     one most likely to be gotten wrong under time pressure:** staff DB access goes through
+     `createAdminClient` (service-role — RLS is bypassed by construction for that client, not
+     policy-enforced). This means correctness for tenant isolation on the staff path rests ENTIRELY
+     on an explicit `WHERE tenant_id = <validated id>` filter written into every staff-path query.
+     There is no safety net under it. Any staff route that forgets this filter is a cross-tenant
+     data leak. Your test suite MUST include a case that proves the filter is present in a
+     representative staff-path query (e.g. assert the SQL/query builder call includes the tenant
+     filter, or use a two-tenant fixture and assert tenant B's data never appears when acting as
+     tenant A) — "the helper returned the correct `tenantId`" is NOT sufficient proof that a
+     consuming query actually used it.
+   - §Resolved decisions (CEO, 2026-07-20), especially Q3 (write tier): `canWrite` requires
+     `estalara:ops` (rank >= 2); the highest-risk writes (bandit weights, global `generation_model`
+     — NOT this ticket's concern, but the primitive must support them later) require
+     `estalara:superadmin` (rank >= 3). Both ranks must be independently testable from this helper's
+     output, even though no route wires the rank-3 check yet.
+   - §Alternatives considered — read why session-side impersonation and the wholesale `/dashboard/*`
+     unblock were BOTH rejected. Do not reintroduce either pattern "for convenience."
+3. `CONVENTIONS_PATCH.md` — current rules in force; in particular check for any RLS/auth-pattern
+   rules (search "RLS", "service-role", "tenant") that may have been added since the ADR was
+   written.
+4. Existing precedent: `apps/control-plane/src/lib/tracer-auth.ts` (`verifyTracerAdminAuth`,
+   :93-154) — the ADR explicitly generalizes this pattern; read it before designing your own shape
+   from scratch. Also read `apps/control-plane/src/lib/session-auth.ts` in full (the file you're
+   editing) — especially the existing `resolveSsrSession` staff/agency claim split (:100-133) and
+   the `createTenantClient(undefined)` RLS-off foot-gun it already documents (:128-133) — your new
+   code must never hit that path.
+
+### Model-fit ruling (stated explicitly per CLAUDE.md's mandatory model-fit rule)
+
+**Worker model: OPUS.** This is a security-sensitive auth-path change (session resolution + RLS
+discipline) with a documented single point of failure (invariant 5, above) whose failure mode is a
+cross-tenant data leak — not a cosmetic bug. Per CLAUDE.md: "escalate one tier ... for irreversible
+or prod-touching work" and "never argue a P0 down a tier on cost grounds" (this is P1 with a
+P0-grade blast radius if invariant 5 is missed). Sonnet is the CLAUDE.md default for "routine
+implementation inside a well-defined ticket scope" — this ticket's scope is well-defined on paper,
+but the risk surface (silent cross-tenant leak, no RLS safety net) puts it in Opus's
+"security-sensitive changes" bucket, not Sonnet's routine-implementation bucket. Do not downgrade
+this on the reasoning that "the diff is small" — the diff being small is exactly why an easy-to-miss
+one-line omission (a forgotten `WHERE tenant_id`) is the whole risk.
+
+### Non-negotiable scope constraints
+
+- **Helper + tests ONLY.** `apps/control-plane/src/lib/session-auth.ts` gains the new
+  `resolveTenantAccess` export (plus any small supporting types/helpers it needs, e.g. a
+  `STAFF_ROLE_RANK` lookup if one doesn't already exist — check `middleware.ts:119-125` first, reuse
+  rather than duplicate). **No existing route file is modified to call it.** Routes opt in starting
+  with FOLLOW-593/594 and later — do not pre-wire any route in this ticket, even as a demo/example,
+  unless it's inside the ticket's own test file.
+- Do not touch `middleware.ts`'s existing staff-block behavior (`:226`) — that stays as-is; this
+  ticket does not change who can reach `/admin/*` today, only adds a helper for future routes.
+- Zero new third-party dependencies, zero new DB migrations (the `tenants` table and
+  `staff_audit_log` already exist).
+
+### AC (verbatim, also in QUEUE.md FOLLOW-592)
+
+- [ ] `resolveTenantAccess(req, opts)` implemented per ADR-0018 §2, returning
+      `{ via: 'agency', tenantId, claims, rawToken } | { via: 'staff', tenantId, staff, role,     canWrite }`,
+      throwing `AccessError({status})` on failure.
+- [ ] > =6-case test matrix: agency-unchanged; staff-read; staff-write-role-gate (incl. rank-3
+      superadmin tier); foreign-tenant-rejected-for-agency; staff-tenant-validated-against-table;
+      staff-query-is-tenant-filtered (the invariant-5 proof — see above).
+- [ ] No existing route behavior changes (helper + tests only).
+- [ ] Typecheck clean; all existing `session-auth` tests unchanged and still passing.
+
+### On completion
+
+Open a PR (never commit to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Conventional commit referencing `[FOLLOW-592]`. In the PR description, paste: (a) the full
+
+> =6-case test list with a one-line description of what each proves, (b) the specific line(s) that
+> implement the invariant-5 tenant-filter and how the test proves it's applied (not just declared),
+> (c) confirmation (via `git diff --stat`) that no file outside `session-auth.ts` and its test
+> file(s) was touched. Do not mark DONE — PM independently validates CI green + runtime wiring
+> (producer/ consumer grep — expect zero non-test consumers yet, since no route opts in this ticket;
+> that is CORRECT and expected, not a wiring failure, for this specific ticket) before
+> READY_FOR_REVIEW.

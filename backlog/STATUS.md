@@ -1,3 +1,54 @@
+# Status — 2026-07-20 (session 40 — FOLLOW-592 promoted (READY, worker model OPUS) + FOLLOW-593 enriched; bookkeeping-only, dispatch pending)
+
+## SESSION 40 (2026-07-20) — FOLLOW-592 promotion + delegation brief; FOLLOW-593 real-data finding; bookkeeping-only
+
+**Scope:** this session ran PM steps 1-3 only (read state, promote, prepare delegation) per explicit
+instruction — worker dispatch is the parent session's job, not this session's.
+
+**State read:** `backlog/QUEUE.md` + `ESCALATIONS.md` + `HANDOFFS.md`, `git log -20`,
+`gh pr list --state open` (empty). One `## OPEN` escalation exists (ESC-020), explicitly
+non-blocking per its own 2026-06-10 CEO resolution — did not block this session. Working tree was on
+`main`, clean, at `9f33488`.
+
+**FOLLOW-592 promoted** `FOLLOW_UPS.md` → `QUEUE.md`: `status: READY`, `priority: P1`,
+`depends_on: []`, blocks FOLLOW-593..600. AC copied verbatim from the stub (>=6-case test matrix).
+`notes:` records the model-fit ruling — **worker model OPUS**, not the sonnet default — security-
+sensitive auth-path change (ADR-0018 §2 invariant 5: staff DB access bypasses RLS via
+`createAdminClient`; correctness depends entirely on a hand-written `WHERE tenant_id` filter with no
+safety net). `FOLLOW_UPS.md`'s `promoted_to_queue` flipped `false` →
+`true (2026-07-20, QUEUE.md id FOLLOW-592, status READY, worker model OPUS per model-fit ruling)`.
+
+**Delegation brief written** to `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-592"): required
+reading order (Master_Design §Snapshot.1 → ADR-0018 §2 end-to-end, invariant 5 called out explicitly
+→ CONVENTIONS_PATCH.md → tracer-auth precedent + existing session-auth.ts RLS-off foot-gun), the
+model-fit ruling restated with rationale, non-negotiable scope constraints (helper + tests ONLY, no
+route wired yet, `middleware.ts` untouched, zero new deps/migrations), verbatim AC, and completion
+requirements (PR must show the invariant-5 tenant-filter proof specifically — a test that fails if
+the filter is dropped, not just "helper returns the right tenantId"). Delegation-table row cited:
+"ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks
+→ backend-engineer."
+
+**FOLLOW-593 enriched** with a verified-not-assumed PM finding: grepped
+`apps/control-plane/src/app/admin/{tenants,registrations,demo-sessions}/*` and confirmed all three
+pages import `MOCK_TENANTS`/`MOCK_REGISTRATIONS`/`MOCK_DEMO_SESSIONS` from local `mock-data.ts` and
+render them unconditionally — no DB-configured path exists today (`tenants/page.tsx:6,63` checked
+directly). Un-hiding nav per the ratified Q2 without wiring real data would show the CEO permanently
+fake tenant rows — a Rule K.2 "never fabricate" instance, worse than usual because it's silently
+WRONG, not silently empty. Estimate raised 3h → 5-6h; added AC that the tenants list must show real
+`tenants`-table rows when the DB is configured, mock retained only as the documented DB-unconfigured
+fallback (same pattern as FOLLOW-599's audit-log mock). Left `promoted_to_queue: false` — correctly
+still blocked on FOLLOW-592.
+
+**FOLLOW-594..600:** deliberately NOT promoted (all blocked on FOLLOW-592).
+
+**No code changes.** No dispatch this session — flagged explicitly in the QUEUE.md banner and this
+entry so a future session doesn't assume FOLLOW-592 is already in progress.
+
+**CI-check counter this session:** N/A (docs-only bookkeeping PR pending; will log its own count
+below once opened). **Fix-iteration counter:** 0/3.
+
+---
+
 # Status — 2026-07-20 (session 39 — archetype-parity COMPLETE; superadmin-access Phase 0 SHIPPED + ADR-0018 ACCEPTED; Phase-1 stubs FOLLOW-592..600 filed)
 
 ## SESSION 39 (cont. 8) (2026-07-20) — superadmin-access: Phase 0 shipped (PRs #574/#575), ADR-0018 CEO-accepted, Phase-1 stubs filed

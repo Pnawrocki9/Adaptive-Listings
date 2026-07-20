@@ -1,6 +1,51 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 39 — ENTIRE archetype-parity effort COMPLETE; invalid-VALUE chain + importable-COPY class both CLOSED + parsers hardened; FOLLOW-584/585/586/587/588/589/590 all DONE; Rule AD promoted)
+## ▶️ START HERE — resume 2026-07-20 (session 40 — FOLLOW-592 promoted to QUEUE.md (READY, worker model OPUS) + FOLLOW-593 enriched with a real-data-wiring finding; PM bookkeeping only, dispatch is the parent session's next step)
+
+**Read this before picking anything.** This session did **bookkeeping only** for the ADR-0018
+superadmin-access thread — no code was written, and the worker (`backend-engineer`, Opus) has NOT
+been dispatched yet by this session.
+
+- **FOLLOW-592 promoted** `backlog/FOLLOW_UPS.md` → `backlog/QUEUE.md` (`status: READY`,
+  `priority: P1`, `depends_on: []`, blocks FOLLOW-593..600). AC copied verbatim from the stub.
+  `notes:` records the model-fit ruling — **worker model = OPUS**, security-sensitive auth-path
+  change (session resolution + RLS discipline; ADR-0018 §2 invariant 5 is a cross-tenant-leak risk
+  with no RLS safety net under the staff/service-role path) — per CLAUDE.md's mandatory model-fit
+  rule, do not argue this down to sonnet. `FOLLOW_UPS.md`'s `promoted_to_queue` flipped to `true`
+  with the QUEUE.md id/status/model note.
+- **Full delegation brief written to `backlog/HANDOFFS.md`** ("Delegation brief — FOLLOW-592",
+  session 40) — required reading order (Master_Design §Snapshot.1 → ADR-0018 §2 end-to-end →
+  CONVENTIONS_PATCH.md → the tracer-auth precedent), the model-fit ruling restated with rationale,
+  non-negotiable scope constraints (helper + tests ONLY, no route wired yet, no middleware change),
+  the verbatim >=6-case AC, and completion requirements (PR evidence for the invariant-5 tenant-
+  filter proof specifically, not just "helper returns right tenantId").
+- **FOLLOW-593 enriched** with a PM finding verified against the real files (not assumed from the
+  ADR text): all three multi-tenant admin pages currently slated for un-hiding (`/admin/tenants`,
+  `/admin/registrations`, `/admin/demo-sessions`) render **100% mock data unconditionally** —
+  `MOCK_TENANTS`/`MOCK_REGISTRATIONS`/`MOCK_DEMO_SESSIONS` from local `mock-data.ts` modules, no
+  DB-configured code path exists yet. Un-hiding the nav without wiring real Supabase data would put
+  a staff-navigable page in front of the CEO showing permanently-fake rows — a live instance of the
+  Rule K.2 "never fabricate" trap, worse than the usual silent-empty failure mode because it's
+  silently WRONG. Estimate raised 3h → ~5-6h; added an AC that the tenants list must show real rows
+  when the DB is configured, with mock retained only as the documented DB-unconfigured fallback (the
+  same accepted pattern used elsewhere, e.g. FOLLOW-599's audit-log mock fallback). **Not promoted**
+  — still correctly blocked on FOLLOW-592 per the ADR's own sequencing; do not dispatch before 592
+  lands.
+- **FOLLOW-594..600 deliberately NOT promoted** — all blocked on FOLLOW-592 (`resolveTenantAccess`
+  doesn't exist yet for any of them to opt into).
+
+No open escalations block this pick (ESC-020 remains explicitly non-blocking per its own 2026-06-10
+CEO resolution — the only `## OPEN` entry in `backlog/ESCALATIONS.md`). No PRs were open at session
+start (`gh pr list --state open` empty) and none from a prior session were stranded on a branch —
+working tree was on `main`, clean, at `9f33488` before this session's docs-only commit.
+
+**This session did not dispatch the worker.** The next step is the parent session invoking
+`backend-engineer` on **Opus** for FOLLOW-592, using the `backlog/HANDOFFS.md` brief above — not
+another PM bookkeeping pass.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-20 (session 39 — ENTIRE archetype-parity effort COMPLETE; invalid-VALUE chain + importable-COPY class both CLOSED + parsers hardened; FOLLOW-584/585/586/587/588/589/590 all DONE; Rule AD promoted)
 
 **Read this before picking anything.** The **archetype-invalid-mock-literal class is now CLOSED**
 (RETRO-183 verdict, independent all-shapes sweep = 0 live invalid literals). The
@@ -13551,4 +13596,71 @@ in-place in Sprint 22b above.
     - [x] No-PII payload mapping only (`channel`, `has_phone`, `budget_hint`, `timeline`,
           `message_length`); `is_agent=true` signals dropped; invalid-schema fields filtered.
     - [x] Test coverage for the mapping/drop/filter behavior (5 cases, see notes).
+- id: FOLLOW-592
+  title: >-
+    ADR-0018 foundation: resolveTenantAccess helper (agency|staff discriminated union) +
+    security-invariant test suite
+  agent: backend-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    ADR-0018 §2 (docs/adr/ADR-0018-superadmin-tenant-access.md; CEO-accepted 2026-07-20, all 4 open
+    questions resolved same day). Every tenant-scoped dashboard API today resolves tenant_id from
+    the agency session only (`claims.tenant_id`), so a staff/superadmin session (`tenant_id: null`)
+    cannot act on any tenant — either 401s (session-tenant APIs) or, if middleware's staff block is
+    ever lifted incorrectly, silently disables RLS (`createTenantClient(undefined)`). This ticket
+    ships the one helper that makes staff access to a specific tenant both possible and safe.
+    **Blocks FOLLOW-593..600 (all Phase 1-3 staff-porting tickets) — do this first.**
+  notes: |
+    **Model-fit: OPUS (worker model for this ticket — do NOT argue it down to sonnet).** Rationale:
+    this is a security-sensitive auth-path change touching session resolution + RLS discipline (the
+    staff branch deliberately bypasses RLS via a service-role client and depends entirely on a
+    hand-written WHERE-clause filter for tenant isolation — a forgotten filter is a cross-tenant
+    data leak). Per CLAUDE.md's model-fit rule: "escalate one tier when the task already failed once
+    at the lower tier" and "never argue a P0 down a tier on cost grounds" — this is the auth-boundary
+    equivalent for a P1 security-sensitive ticket; take the higher tier for irreversible/prod-touching
+    reasoning even though the diff itself is additive/reversible.
+
+    Full delegation brief is in backlog/HANDOFFS.md ("Delegation brief — FOLLOW-592"). Non-negotiable
+    requirements restated here so they survive even if HANDOFFS.md is trimmed later:
+    - **Read docs/adr/ADR-0018-superadmin-tenant-access.md §2 END-TO-END before writing any code.**
+      All five security invariants apply, but **invariant 5 (the RLS/service-role trap) is the one
+      that matters most**: staff DB access uses `createAdminClient` (service-role, RLS bypassed by
+      construction), so EVERY staff-path query in this ticket's own test fixtures — and every route
+      that later opts in — MUST carry an explicit `WHERE tenant_id = <validated id>` filter written
+      into the query itself, proven by a test that fails if the filter is removed. Do not rely on
+      "the helper returned the right tenantId" as proof; prove the filter is actually applied.
+    - **Implement the CEO Q3 write tier exactly:** `canWrite = STAFF_ROLE_RANK[role] >= estalara:ops`
+      (rank >= 2), PLUS a separate rank >= 3 (`estalara:superadmin`) assertion/flag for future
+      highest-risk routes (bandit weights, global generation_model — those routes are ported later
+      in FOLLOW-598+, not here; this ticket only needs to expose the primitive and prove it gates
+      correctly in tests).
+    - **Change NO existing route behavior.** This ticket is helper + tests ONLY —
+      `apps/control-plane/src/lib/session-auth.ts` gains the new `resolveTenantAccess` export; no
+      existing route file is modified to call it. Routes opt in starting with FOLLOW-593/594+.
+    - Keep test coverage >=80% for `packages/*` / >=70% for `apps/*` per the CLAUDE.md quality bar
+      (this lands in `apps/control-plane`, so >=70% applies; the ADR's own >=6-case matrix should
+      clear that easily on the new code in session-auth.ts).
+
+    Branch: backend-engineer/FOLLOW-592-resolve-tenant-access
+
+    AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-592):
+    - [ ] `resolveTenantAccess(req, opts)` implemented per ADR-0018 §2 in
+          `apps/control-plane/src/lib/session-auth.ts`, returning the discriminated union
+          `{ via: 'agency', tenantId, claims, rawToken } | { via: 'staff', tenantId, staff, role,
+          canWrite }` (throws `AccessError({status})` on any failure).
+    - [ ] >=6-case test matrix: (1) agency-unchanged — agency claims resolve exactly as today,
+          `tenantId` comes ONLY from `claims.tenant_id`; (2) staff-read — `allowStaffOverride: true`
+          + a valid staff session resolves `via: 'staff'`; (3) staff-write-role-gate INCLUDING the
+          rank-3 (superadmin) tier, not just rank-2 ops; (4) foreign-tenant-rejected-for-agency — an
+          agency session cannot supply a foreign `tenant_id` via URL/query (403, claim wins); (5)
+          staff-tenant-validated-against-table — a staff-supplied `tenantId` that doesn't exist in
+          `tenants` returns 404, validated BEFORE any query runs; (6) staff-query-is-tenant-filtered
+          — a representative staff-path query includes an explicit `WHERE tenant_id = <id>` clause,
+          proven by a test that fails if the filter is dropped (not merely code-reviewed).
+    - [ ] No existing route behavior changes until routes opt in (helper + tests only).
+    - [ ] Typecheck clean + all existing `session-auth` tests unchanged and still passing.
+  cross_ref: [ADR-0018, FOLLOW-456, FOLLOW-555, RETRO-186]
 ```

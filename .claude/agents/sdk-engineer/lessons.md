@@ -576,3 +576,25 @@ line is wrong) — did NOT self-edit Rule AB / RETRO-170 per scope.
 (`requestAnimationFrame(fn(x))`, `setTimeout(fn(x))`), remember the argument is evaluated NOW, not
 on the deferred tick — the deferred thing is only what `fn` RETURNS. Audit the returned closure (and
 any observer that re-invokes it), not the call expression, when reasoning about "what runs later."
+
+## 2026-07-20 / FOLLOW-590
+
+**What I built:** Retired the last hand-maintained full-parity `archetypeIdSchema` copy in
+`packages/sdk/src/core/adapt-schema.ts` — it's now
+`export const archetypeIdSchema = ArchetypeIdSchema` (re-export from `@estalara/shared`, which
+derives from `CANONICAL_ARCHETYPE_IDS`). Added the missing runtime parity guard the file lacked
+(`archetypeIdSchema.options` ≡ `ARCHETYPE_NAMES`, non-vacuous check first) since there's no in-file
+literal left for a human to desync. Closure-grepped `golden_visa_buyer` repo-wide and confirmed no
+remaining hand-maintained 18-entry ID-list copy exists outside `packages/shared/src/archetypes.ts` —
+the consolidation class opened by RETRO-179/FOLLOW-584 is now closed.
+
+**What was uncertain:** Whether `.options` order would survive the re-export unchanged (it does —
+Zod's `z.enum().options` returns the literal tuple passed at construction, and `ArchetypeIdSchema`
+was itself built from the order-identical `CANONICAL_ARCHETYPE_IDS`). Confirmed via typecheck +
+existing/new tests rather than assuming from reading the source alone.
+
+**A guardrail I'd add:** When a "consolidation" ticket removes the last literal a parity test would
+normally diff against, don't skip the guard just because there's nothing left to diff — assert
+against the true upstream SoT instead (`ARCHETYPE_NAMES`) and prove it's load-bearing by perturbing
+the expected value locally, running red, then restoring. A consolidation that removes an array but
+adds no guard just moves the drift risk one hop upstream and out of sight.

@@ -1,10 +1,12 @@
 /**
- * Tests for AdminLayout — FOLLOW-332 AC1.
+ * Tests for AdminLayout — FOLLOW-332 AC1, extended by FOLLOW-593.
  *
- * Verifies the v1 single-tenant sidebar:
- *   AC1-a: Exactly 3 nav links are rendered (Live Monitor, Session History, Weight Editor).
+ * FOLLOW-593 (ADR-0018 §Decision 0, CEO-ratified 2026-07-20) un-hides the
+ * multi-tenant admin nav (Tenants, Registrations, Demo Sessions), reversing
+ * the FOLLOW-332 "absent" assertions below. This suite now verifies:
+ *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 3 tenants hub + 1 platform).
  *   AC1-b: "Live Monitor" and "Session History" hrefs contain PILOT_TENANT_ID.
- *   AC1-c: Multi-tenant screens (Registrations, Tenants, Demo Sessions) are absent.
+ *   AC1-c: The Tenants hub links (Tenants, Registrations, Demo Sessions) ARE present.
  *
  * The `href` values asserted are NOT hand-authored in this test.  They are built
  * from `PILOT_TENANT_ID` imported from the REAL `@/lib/pilot-tenant` module —
@@ -75,7 +77,7 @@ const WEIGHT_EDITOR_HREF = '/admin/tracer/weights';
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
-describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)', () => {
+describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLLOW-593)', () => {
   function renderLayout() {
     return render(
       <AdminLayout>
@@ -84,7 +86,7 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     );
   }
 
-  it('AC1-a: renders exactly 4 nav links (3 tracer + platform Settings)', () => {
+  it('AC1-a: renders exactly 7 nav links (3 tracer + 3 tenants hub + platform Settings)', () => {
     renderLayout();
 
     // All three tracer link labels must be present (FOLLOW-332 AC1)...
@@ -96,11 +98,12 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     const settingsLink = screen.getByText('Settings').closest('a');
     expect(settingsLink?.getAttribute('href')).toBe('/admin/settings');
 
-    // Count every <a> inside the <nav> element — must be exactly 4.
+    // Count every <a> inside the <nav> element — must be exactly 7 (FOLLOW-593
+    // un-hides the Tenants hub: Tenants, Registrations, Demo Sessions).
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(4);
+    expect(navLinks.length).toBe(7);
   });
 
   it('AC1-b: "Live Monitor" href contains PILOT_TENANT_ID', () => {
@@ -132,35 +135,35 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     expect(weightLink?.getAttribute('href')).not.toContain(PILOT_TENANT_ID);
   });
 
-  it('AC1-c: nav does NOT contain text "Registrations"', () => {
+  it('AC1-c (FOLLOW-593): nav contains "Registrations" link to /admin/registrations', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
-    expect(nav?.textContent).not.toContain('Registrations');
+    expect(nav?.textContent).toContain('Registrations');
+    const link = screen.getByText('Registrations').closest('a');
+    expect(link?.getAttribute('href')).toBe('/admin/registrations');
   });
 
-  it('AC1-c: nav does NOT contain text "Tenants"', () => {
+  it('AC1-c (FOLLOW-593): nav contains "Tenants" link to /admin/tenants', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
-    // "Tenants" as a standalone nav label must be absent (Tracer is fine).
-    // The nav section heading says "Tracer" not "Tenants".
-    const allNavText = nav!.textContent || '';
-    // Check that no link whose label is exactly "Tenants" exists.
+    // A link whose label is exactly "Tenants" must now be present.
     const tenantLabelLink = Array.from(nav!.querySelectorAll('a')).find(
       (a) => a.textContent.trim() === 'Tenants',
     );
-    expect(tenantLabelLink).toBeUndefined();
-    // The nav heading must not be "Tenants" (it is "Tracer").
-    expect(allNavText).not.toMatch(/^Tenants$/m);
+    expect(tenantLabelLink).toBeDefined();
+    expect(tenantLabelLink?.getAttribute('href')).toBe('/admin/tenants');
   });
 
-  it('AC1-c: nav does NOT contain text "Demo Sessions"', () => {
+  it('AC1-c (FOLLOW-593): nav contains "Demo Sessions" link to /admin/demo-sessions', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
-    expect(nav?.textContent).not.toContain('Demo Sessions');
+    expect(nav?.textContent).toContain('Demo Sessions');
+    const link = screen.getByText('Demo Sessions').closest('a');
+    expect(link?.getAttribute('href')).toBe('/admin/demo-sessions');
   });
 
   it('renders children in the main content area', () => {
@@ -181,7 +184,7 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the four nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the seven nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -189,6 +192,6 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(4);
+    expect(uniqueHrefs.size).toBe(7);
   });
 });

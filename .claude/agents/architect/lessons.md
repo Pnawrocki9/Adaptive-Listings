@@ -1,5 +1,24 @@
 # Architect lessons log
 
+## 2026-07-20 / superadmin-tenant-access (PROPOSED-0018)
+
+**What I decided:** Generalize the ADR-0013 tracer pattern — URL-scoped `/admin/tenants/[id]/*` +
+one `resolveTenantAccess(req, { allowStaffOverride })` helper — rather than un-blocking staff from
+`/dashboard` wholesale or a session impersonation switch. Reuse the existing append-only
+`staff_audit_log` table for staff writes. Left the 2026-06-01 `generation_model` global-only lock
+intact by default and pushed the per-tenant-override reversal to a CEO open question.
+
+**Where a spec risked describing behavior with no owner:** The whole ADR is a behavioral spec with
+no implementing code yet. Mitigated by listing FOLLOW-590..599 stubs inline (helper, per-feature
+ports, audit wiring) so every behavior the ADR describes has a named future owner before any of it
+is ratified — no §-level spec ships without a phased ticket attached. The single load-bearing risk
+is invariant 5 (staff writes use a service-role client that bypasses RLS), which I bound to a
+mandatory per-route "staff query is tenant-filtered" test case so it cannot ship un-owned.
+
+**A guardrail I'd add:** For any ADR that opens a staff/service-role write path around RLS, require
+the implementing ticket to include a cross-tenant-leak negative test as an explicit acceptance
+criterion — not left to reviewer memory.
+
 ## 2026-06-11 / FOLLOW-275
 
 **What I decided:** Adopted option (b) — SDK runtime GET for post-activation-mutable quiz config —

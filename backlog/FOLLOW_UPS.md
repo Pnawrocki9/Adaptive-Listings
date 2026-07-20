@@ -15928,3 +15928,57 @@ Option A**:
       residual).
 
 cross_ref: [FOLLOW-586, FOLLOW-584, FOLLOW-036, FOLLOW-561, RETRO-179, RETRO-180, RETRO-185]
+
+## FOLLOW-591 — Stop Rule I ("wired-or-dead") from failing CI on the 179 accumulated legacy violations: make it diff-scoped (or advisory) so a red CI signal means a NEW problem, not permanent noise
+
+source_retro: SESSION-RETRO session 39 (whole-arc meta-retro on the FOLLOW-584→590 archetype-parity
+work) source_ticket: (process/CI-hygiene, not a code ticket) recommended_sprint: Sprint 24
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+
+**Gap:** `scripts/check-rule-i.sh` (invoked by `.github/workflows/ci.yml` as the "Rule I —
+wired-or-dead check") scans the WHOLE codebase every run and exits 1 if any exported symbol has zero
+non-test importers. On `main` today it reports **179 violations and fails** — and has failed
+identically for the entire session (confirmed red on already-merged PRs #555/#557 and on every one
+of the ~14 PRs merged this session). Because `main` has **no required-status-check branch
+protection** (verified via `gh api …/branches/main/protection` → none), the red is non-blocking, so
+every PR shows a standing "2 fail" (Rule I ×2 workflow instances) that reviewers and agents have
+been trained to wave through as "pre-existing."
+
+**Why this is worth a ticket (the real risk):** a permanently-red gate destroys the signal value of
+CI red. When "2 fails is normal," a genuinely NEW regression that trips Rule I (a dead export a PR
+adds, or another check that starts failing) is invisible in the noise — nobody looks, because
+looking has never once been actionable this whole session. This is latent, not an active incident,
+hence P2 not P1 — but it degrades the CI signal for ALL future work and compounds.
+
+**Resolution options (pick one; B recommended):**
+
+- **Option A — remediate the 179 violations.** Per Rule I's own remediation menu (wire each symbol,
+  delete it, or add a `FOLLOW-NNN` deferral stub + header comment). Correct but expensive and spread
+  across many module owners; most are almost certainly legitimately-dead exports or barrel/test-only
+  helpers, so this is largely a delete-or-annotate sweep. High effort, not a single-agent job.
+- **Option B (RECOMMENDED) — make Rule I diff-scoped.** Change the CI step so Rule I fails only on
+  NEW zero-importer exports introduced by the PR's diff (compare against the merge-base), not on the
+  accumulated whole-codebase set — mirroring how the other diff-scoped guards already work. The 179
+  legacy violations become a separate, non-blocking `check-rule-i.sh --baseline` report (or a
+  tracked allowlist), and CI red for Rule I once again means "this PR added a dead export."
+  Preserves the check's actual value, kills the normalization, ~3h in `scripts/check-rule-i.sh` +
+  `.github/workflows/ci.yml`.
+- **Option C — downgrade to advisory.** Make the CI step `continue-on-error: true` (or emit a
+  warning annotation, exit 0). Cheapest, but discards the gate entirely — only take this if Rule I
+  is judged not worth enforcing at all (it is worth enforcing on new code, so prefer B).
+
+**AC:**
+
+- [ ] Decide A/B/C (recommend B) and state the rationale in the PR.
+- [ ] After the change, a clean PR that adds NO dead export shows Rule I GREEN (the standing "2
+      fail" disappears); a PR that DOES add a zero-importer export still fails RED (add a throwaway
+      proof case in the PR description showing both directions).
+- [ ] The 179 legacy violations are not silently dropped — they land in a tracked baseline
+      (allowlist file, or a non-blocking report step) so remediation can still be scheduled, not
+      forgotten.
+- [ ] Update `CONVENTIONS_PATCH.md` Rule I text to describe the new diff-scoped enforcement (it
+      currently says "gates the whole codebase continuously via CI").
+- [ ] Confirm no other CI check is ALSO standing-red and being waved through (audit the current
+      `main` check set while in here — if another permanent-red exists, note it).
+
+cross_ref: [RETRO-182, RETRO-186, SESSION-RETRO-39]

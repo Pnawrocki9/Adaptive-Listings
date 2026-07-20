@@ -1,6 +1,51 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 40 — FOLLOW-592 promoted to QUEUE.md (READY, worker model OPUS) + FOLLOW-593 enriched with a real-data-wiring finding; PM bookkeeping only, dispatch is the parent session's next step)
+## ▶️ START HERE — resume 2026-07-20 (session 41 — RECOVERY COMPLETE: FOLLOW-593 + FOLLOW-594 recovered from stranded worktrees and MERGED (#581 → 7826967, #582 → 08a5d1e); next = retros + promote FOLLOW-595)
+
+**Read this before picking anything.** Session 40/parent dispatched `backend-engineer` (Opus) for
+**both FOLLOW-593 and FOLLOW-594** (FOLLOW-592 having merged, #579, both were unblocked). A terminal
+shutdown killed both runs mid-flight; neither committed. Session 41 recovered the stranded work from
+`.claude/worktrees/agent-*` (empty `git diff main` would have hidden it — see memory
+`feedback_check_worktrees_before_concluding_agent_didnt_run`), verified it, and **both are now
+MERGED to main**. Nothing was lost. Worktrees removed and branches deleted.
+
+- **FOLLOW-593 → MERGED #581** (squash `7826967`). `/admin/tenants` hub + `/admin/tenants/[id]`
+  landing, multi-tenant admin nav un-hidden, three admin pages wired to **real Supabase data with
+  mock as the documented DB-unconfigured fallback** (closed the PM finding's Rule K.2
+  "silently-wrong fake tenants" risk — pages previously rendered 100% mock unconditionally). 88
+  tests; all real CI gates were green (Test Node 22 pass).
+
+- **FOLLOW-594 → MERGED #582** (squash `08a5d1e`). Analytics staff read-port: summary + lift +
+  **weights GET (read only)** opt into `resolveTenantAccess({allowStaffOverride:true})`; bandit
+  **PATCH write left untouched (Phase-3 / FOLLOW-598)**. Added `/admin/tenants/[id]/analytics` page,
+  the RETRO-187 ADMIN_API_SECRET-403 route doc note, and the **MANDATORY red-first tenant-filter
+  tests** (ADR-0018 §2 invariant 5 / RETRO-187) — VERIFIED (this session, by reading them) to
+  exercise the **real** outgoing query (ClickHouse `param_tenant_id` / drizzle `eq(tenantId,A)`
+  against a both-tenants service-role table), NOT the demonstrative local-array
+  `RLS-TRAP-LEAK-DEMO`. 54 tests; all real CI gates were green (Test Node 22 pass).
+
+- **Rule I stayed red on both (181/191) — non-blocking, pre-existing (also red on merged #580).**
+  The new `data.ts` return-type interfaces (`TenantsListResult`, `TenantLookupResult`,
+  registrations/ demo-sessions equivalents) are naive-grep false-positives: they ARE the return
+  types of the wired loader functions, but the pages import the function and infer the return, so
+  the grep sees "zero non-test importers." **Deliberately NOT force-wired** (non-surgical, would
+  risk the green tests) — these fold into **FOLLOW-591** (already exists to clear Rule I wholesale).
+  Not a merge gate.
+
+**Next step (nothing in-flight):**
+
+1. Spawn `retrospective-analyst` for **RETRO on FOLLOW-593 and FOLLOW-594** (per the per-ticket
+   retro loop — both are now DONE/merged).
+2. Promote **FOLLOW-595** (Phase-2 quiz config staff-write port + `staff_audit_log` wiring). Note it
+   now has a real per-tenant landing to link from (593's `[id]` page) and the analytics precedent
+   (594) to copy the `resolveTenantAccess` + MANDATORY tenant-filter-test shape.
+3. File a **sibling stub** for the Pilot / Site-Detection read-only staff views deferred out of 594
+   (same `resolveTenantAccess({allowStaffOverride}) + per-tenant page` pattern).
+4. FOLLOW-596..600 unchanged (Phase-2/3, blocked/next).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-20 (session 40 — FOLLOW-592 promoted to QUEUE.md (READY, worker model OPUS) + FOLLOW-593 enriched with a real-data-wiring finding; PM bookkeeping only, dispatch is the parent session's next step)
 
 **Read this before picking anything.** This session did **bookkeeping only** for the ADR-0018
 superadmin-access thread — no code was written, and the worker (`backend-engineer`, Opus) has NOT

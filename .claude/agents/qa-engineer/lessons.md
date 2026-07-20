@@ -124,3 +124,32 @@ structural shapes (quoted array entry, quoted object field, unquoted object key,
 SQL insert value) up front and grep for all of them in one pass, rather than fixing shapes
 one-ticket-at-a-time as each new sweep stumbles on the next. This ticket is evidence the chain is
 now closable — worth confirming in the next retro that no 6th shape surfaces.
+
+---
+
+## 2026-07-20 / FOLLOW-588
+
+**What I tested:** hardened all 11 archetype-ID-parity parser helpers (`stripComments()`) so a
+quoted/keyed archetype id sitting inside a `//`/`#`/`/* */` comment INSIDE a captured `[...]`/
+`(...)`/`{...}` block can no longer false-positive the scan. Added 2 regression tests (JS `//` case
+via `parseMockArchetypesGeneric`, Python `#` case via `parseNlpPyArchetypes`) using inline
+self-contained fixture strings, NOT real repo files — run through the REAL parser functions (same
+stripping path), not a reimplementation. Proved red→green by temporarily neutering `stripComments`
+to an identity no-op: both new tests failed exactly as predicted (`investor` leaked through from the
+comment) while all 12 pre-existing assertions against real files stayed green (confirming the
+neutering didn't corrupt anything the real files depend on); restored the hardened version and
+re-ran green 14/14.
+
+**Where a test could have passed over a dead wire:** this ticket exists precisely because the
+_previous_ parity tests were exactly that kind of trap — they passed even when the underlying regex
+scan could be fooled by a comment, because no test had ever exercised that path. The fix here is the
+regression test itself; nothing new introduced this time (the fixtures are run through the real
+parsers, not hand-rolled duplicate parsing logic, per the QA charter's own guardrail against
+dead-wire tests).
+
+**A guardrail I'd add:** when a captured-block regex parser is added for a NEW literal shape (a 6th
+shape, a new file), require a comment-injection regression test alongside it from day one — don't
+wait for a real debugging incident (FOLLOW-585) to discover the gap. Consider adding a lint rule or
+PR-template checklist item for "regex captures a delimited block + scans for quoted values inside it
+→ has this been comment-injection tested?" so the pattern doesn't need re-discovering a 3rd time in
+a different test file.

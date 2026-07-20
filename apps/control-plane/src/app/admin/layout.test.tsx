@@ -84,19 +84,23 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     );
   }
 
-  it('AC1-a: renders exactly 3 nav links', () => {
+  it('AC1-a: renders exactly 4 nav links (3 tracer + platform Settings)', () => {
     renderLayout();
 
-    // All three expected link labels must be present.
+    // All three tracer link labels must be present (FOLLOW-332 AC1)...
     expect(screen.getByText('Live Monitor')).toBeDefined();
     expect(screen.getByText('Session History')).toBeDefined();
     expect(screen.getByText('Weight Editor')).toBeDefined();
+    // ...plus the Platform section's Settings link (Phase 0 superadmin-access,
+    // 2026-07-20 — global generation-model selector, staff-writable FOLLOW-456).
+    const settingsLink = screen.getByText('Settings').closest('a');
+    expect(settingsLink?.getAttribute('href')).toBe('/admin/settings');
 
-    // Count every <a> inside the <nav> element — must be exactly 3.
+    // Count every <a> inside the <nav> element — must be exactly 4.
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(3);
+    expect(navLinks.length).toBe(4);
   });
 
   it('AC1-b: "Live Monitor" href contains PILOT_TENANT_ID', () => {
@@ -177,7 +181,7 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the three nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the four nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -185,6 +189,6 @@ describe('AdminLayout sidebar — v1 single-tenant navigation (FOLLOW-332 AC1)',
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(3);
+    expect(uniqueHrefs.size).toBe(4);
   });
 });

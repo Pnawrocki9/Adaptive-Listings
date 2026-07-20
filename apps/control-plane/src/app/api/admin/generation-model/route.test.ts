@@ -204,6 +204,68 @@ describe('GET /api/admin/generation-model', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('internal_error');
   });
+
+  // ─── Staff path (Phase 0 superadmin-access, 2026-07-20) ────────────────────
+  // The /admin/settings page is used by staff sessions that carry NO agency_role,
+  // so GET must accept the same staff auth PUT already does. Additive: the agency
+  // path above is untouched (a non-staff caller falls through to it).
+  describe('staff auth path (/admin/settings page)', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.unstubAllEnvs();
+      vi.stubEnv('ADMIN_API_SECRET', ADMIN_SECRET);
+      mockGetAuthClaims.mockResolvedValue(null);
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('succeeds via ADMIN_API_SECRET Bearer without any agency session', async () => {
+      // Agency guard must NOT be consulted on the staff path — reject if called.
+      mockRequireTenantAccess.mockRejectedValue(new Error('should not be called'));
+      mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
+
+      const req = new NextRequest('http://localhost/api/admin/generation-model', {
+        headers: { Authorization: `Bearer ${ADMIN_SECRET}` },
+      });
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+
+      const body = await parseBody<Record<string, unknown>>(res);
+      expect(body.generation_model).toBe('claude-sonnet-4-6');
+      expect(mockRequireTenantAccess).not.toHaveBeenCalled();
+    });
+
+    it('succeeds via a verified estalara_staff:true JWT without any agency session', async () => {
+      mockIsStaffClaims.mockReturnValue(true);
+      mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
+      mockRequireTenantAccess.mockRejectedValue(new Error('should not be called'));
+      mockGetGlobalGenerationModel.mockResolvedValue('claude-opus-4-8');
+
+      const req = new NextRequest('http://localhost/api/admin/generation-model', {
+        headers: { Authorization: 'Bearer staff-jwt-token' },
+      });
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+
+      const body = await parseBody<Record<string, unknown>>(res);
+      expect(body.generation_model).toBe('claude-opus-4-8');
+      expect(mockRequireTenantAccess).not.toHaveBeenCalled();
+    });
+
+    it('still 401 for a caller that is neither staff nor agency:admin', async () => {
+      // Not staff (JWT path rejects), and the agency fallback rejects too.
+      mockIsStaffClaims.mockReturnValue(false);
+      mockGetAuthClaims.mockResolvedValue(null);
+      mockRequireTenantAccess.mockRejectedValue(new Error('Unauthorized'));
+
+      const req = new NextRequest('http://localhost/api/admin/generation-model', {
+        headers: { Authorization: 'Bearer some-random-token' },
+      });
+      const res = await GET(req);
+      expect(res.status).toBe(401);
+    });
+  });
 });
 
 // ─── PUT tests ────────────────────────────────────────────────────────────────

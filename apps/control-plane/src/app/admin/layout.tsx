@@ -31,6 +31,13 @@ const TRACER_NAV_LINKS = [
 ];
 
 /**
+ * Platform-global staff settings (Phase 0 of the superadmin-access work,
+ * 2026-07-20). Currently: the global generation-model selector (FOLLOW-161 /
+ * FOLLOW-456 — staff are the only accounts that can write it).
+ */
+const PLATFORM_NAV_LINKS = [{ href: '/admin/settings', label: 'Settings' }];
+
+/**
  * Server Action: sign out the current user and redirect to /sign-in.
  * Called by the sidebar footer form submission.
  */
@@ -62,6 +69,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </p>
               <ul className="space-y-0.5">
                 {TRACER_NAV_LINKS.map(({ href, label }) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      className="block rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      {label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Platform-global settings (staff-writable; see PLATFORM_NAV_LINKS doc). */}
+            <div className="mt-6">
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                Platform
+              </p>
+              <ul className="space-y-0.5">
+                {PLATFORM_NAV_LINKS.map(({ href, label }) => (
                   <li key={href}>
                     <Link
                       href={href}

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened; FOLLOW-584/585/587/588/589 all DONE; Rule AD promoted)
+## ▶️ START HERE — resume 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened + 5/6 duplicate copies consolidated; FOLLOW-584/585/586/587/588/589 all DONE; Rule AD promoted)
 
 **Read this before picking anything.** The **archetype-invalid-mock-literal class is now CLOSED**
 (RETRO-183 verdict, independent all-shapes sweep = 0 live invalid literals). The
@@ -25,18 +25,23 @@ Merged this session (all squash to `main`, all CI green modulo pre-existing-red 
   retype on the 3 named arrays.
 - **FOLLOW-589** — PR #565 (`04f7832`) + RETRO-183. Last literal: `family_nester`→`family_buyer` in
   the tracer-history `archetype_deltas` JSON blob + a new JSON-blob-KEY guard. **Chain closed.**
+- **FOLLOW-586** — PR #569 (`5883e18`) + RETRO-185. Migrated the 2 NAMED importable full-parity
+  DUPLICATE copies (`intent-weights.ts` `ARCHETYPE_KEYS` = `CANONICAL_ARCHETYPE_IDS`;
+  `adapt/description/route.ts` `z.enum` → `ArchetypeIdSchema`) onto the FOLLOW-584 canonical
+  sources.
 
 No open escalations block further work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
-ruling). **One chain-ADJACENT follow-up remains open — a SEPARATE class, NOT invalid values:**
+ruling). **One importable-copy follow-up remains — SEPARATE from the (closed) invalid-VALUE chain:**
 
-- **FOLLOW-586** (backend-engineer, P3, 2h) — 2 importable full-parity DUPLICATE copies still
-  un-migrated (`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` — RETRO-183
-  independently re-confirmed it is a valid 18-entry copy, drift-risk not a live bug — and the
-  deferred `adapt/description/route.ts` inline `z.enum`); absorb onto `CANONICAL_ARCHETYPE_IDS`. Now
-  de-risked: FOLLOW-588 hardened the parsers it will edit. Cautions from RETRO-184 for its worker:
-  `stripComments` does NOT strip SQL `--` comments (bounded, zero live exposure today), and the
-  outer block-capture regexes are unchanged — keep any new literal in the expected shape or the
-  guard fails loud.
+- **FOLLOW-590** (sdk-engineer, P3, ~1h) — the LAST importable full-parity copy, surfaced by
+  FOLLOW-586's closure grep and correctly deferred across the ownership boundary (Rule AC working):
+  `packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema` (inline 18-item `z.enum`, currently
+  UN-guarded — can drift silently today). Recommended fix: re-export `@estalara/shared`'s
+  `ArchetypeIdSchema` (sdk→shared is the allowed direction; `z.enum(ARCHETYPE_NAMES)` won't
+  typecheck — the SoT array isn't `as const`) + add a parity guard. **After FOLLOW-590 lands, the
+  importable-full-parity-COPY class is CLOSED repo-wide** (RETRO-185 verdict). Out of that class and
+  unaffected: the Python cross-runtime copies (guarded by FOLLOW-561, deliberately parallel) and two
+  lower-severity test-only fixtures (RETRO-185 §4c, noted not filed).
 
 ---
 
@@ -13322,6 +13327,63 @@ in-place in Sprint 22b above.
     - [x] One-line warning atop the parser helpers noting comments-in-block are now stripped.
     - [x] All existing parity assertions still pass (12, grown from the stub's stated 10); suite green.
   cross_ref: [FOLLOW-585, FOLLOW-586, RETRO-181, RETRO-183]
+- id: FOLLOW-586
+  title: >-
+    Finish the FOLLOW-584 consolidation: migrate the 2 remaining importable archetype-ID copies
+    (intent-weights.ts ARCHETYPE_KEYS, adapt/description/route.ts inline z.enum) onto the
+    now-exported CANONICAL_ARCHETYPE_IDS / ArchetypeIdSchema (RETRO-180)
+  agent: backend-engineer
+  status: DONE
+  assigned_to: backend-engineer
+  started_at: '2026-07-20T00:00:00Z'
+  completed_at: '2026-07-20T00:00:00Z'
+  branch: backend-engineer/FOLLOW-586-finish-archetype-consolidation
+  pr: 569
+  merged_commit: 5883e18
+  retro: RETRO-185
+  priority: P3
+  estimated_hours: 2
+  depends_on: [FOLLOW-584]
+  source: >-
+    RETRO-180 (§4a LG-1) on FOLLOW-584 — FOLLOW-584 consolidated the 3 named archetype-ID copies but
+    the closure grep found 2 MORE importable full-parity 18-entry TS copies (intent-weights.ts
+    ARCHETYPE_KEYS, adapt/description/route.ts inline z.enum), both in the RETRO-179
+    golden_visa_buyer anchor-grep output and dropped from scope. Both currently IN SYNC —
+    consolidation/drift-risk closure, not a live-data fix.
+  pm_validated: >-
+    2026-07-20 — validated independently before merge (CEO pre-authorized merge-on-green).
+    Dispatched backend-engineer (Sonnet); PM pre-verified the two facts that gated the refactor:
+    ArchetypeIdSchema IS exported from the @estalara/shared root (schemas/index.ts ->
+    description.js), and CANONICAL_ARCHETYPE_IDS order is byte-identical to ARCHETYPE_KEYS (so
+    derivation preserves order, no behavior change). AC re-verified against the real PR #569 diff:
+    (1) intent-weights.ts ARCHETYPE_KEYS = CANONICAL_ARCHETYPE_IDS (intra-package import from
+    ../archetypes.js), ArchetypeKey type + both z.enum(ARCHETYPE_KEYS) call sites unchanged (both
+    as-const readonly tuples, no spread needed) — confirmed; (2) adapt/description/route.ts
+    archetype: ArchetypeIdSchema (added to the existing @estalara/shared import), bare required
+    field, drop-in — confirmed; (3) no behavior change — pnpm typecheck clean across
+    shared/control-plane/sdk (re-ran all three locally), intent-weights 281, sdk drift 9/9 (re-ran
+    locally), adapt/description 53, integration parity 14/14 all green. CI: 57 pass / 2 fail, both
+    pre-existing-red Rule I. CI-check counter: 6/5 (exceeded — 6 PRs validated this session).
+    Fix-iteration counter: 0/3.
+  notes: |
+    Model-fit: sonnet — type-level DRY refactor, both copies pre-verified in-sync + order-identical.
+    OUT-OF-SCOPE FINDING (worker-flagged, PM-confirmed real): AC#4's closure grep surfaced a THIRD
+    genuine full-parity 18-entry copy this ticket's 2-named-file scope did not cover —
+    packages/sdk/src/core/adapt-schema.ts archetypeIdSchema (z.enum, 18 ids). It is packages/sdk
+    (sdk-engineer ownership, not one of the 2 named files), so correctly left out rather than
+    scope-crept. Filed as a follow-up (see RETRO-185 / FOLLOW-590). It can derive intra-package from
+    ARCHETYPE_NAMES (the in-package SoT), no circular-dep concern. So the importable-COPY
+    consolidation thread is NOT yet fully closed repo-wide — one copy remains after this ticket.
+    AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-586):
+    - [x] intent-weights.ts ARCHETYPE_KEYS derives from CANONICAL_ARCHETYPE_IDS; ArchetypeKey +
+          z.enum set unchanged.
+    - [x] adapt/description/route.ts QueryParamsSchema.archetype uses ArchetypeIdSchema from
+          @estalara/shared instead of inline z.enum.
+    - [x] No behavior change — all adapt/description + intent-weights tests pass; typecheck clean.
+    - [~] Closure grep shows no remaining hand-maintained full-parity TS ID array/enum copy outside
+          archetypes.ts — PARTIAL: the 2 NAMED copies are closed, but the grep surfaced a 3rd
+          (sdk adapt-schema.ts) out of this ticket's scope → FOLLOW-590 (sdk-engineer).
+  cross_ref: [FOLLOW-584, FOLLOW-036, FOLLOW-583, FOLLOW-590, RETRO-179, RETRO-180]
 - id: FOLLOW-567
   title: >-
     Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but

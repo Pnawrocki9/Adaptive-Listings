@@ -15643,7 +15643,8 @@ cross_ref: [FOLLOW-583, FOLLOW-561, RETRO-178, RETRO-179]
 
 source_retro: RETRO-180 (§4a LG-1, §4c) source_ticket: FOLLOW-584 (this is the retro on FOLLOW-584
 itself) recommended_sprint: Sprint 24 recommended_agent: backend-engineer priority: P3
-estimated_hours: 2 promoted_to_queue: false
+estimated_hours: 2 promoted_to_queue: true (DONE — PR #569, merged 5883e18 2026-07-20; the 2 NAMED
+copies consolidated; a 3rd surfaced → FOLLOW-590. See QUEUE.md FOLLOW-586 and RETRO-185)
 
 **Gap:** FOLLOW-584 (PR #559) consolidated the 3 archetype-ID copies RETRO-179 named
 (`bandit-seed.ts`, `directives.ts`, `description.ts`) onto the new exported
@@ -15843,3 +15844,85 @@ instance surviving:
       the live path.
 
 cross_ref: [FOLLOW-587, FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-181, RETRO-182]
+
+## FOLLOW-590 — Migrate the last importable full-parity archetype-ID copy (`packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema`, an inline 18-entry `z.enum`) onto a single canonical source + extend a parity guard — closes the importable-full-parity-COPY class repo-wide
+
+source_retro: RETRO-185 (§1 CRITICAL, §3, §4a) source_ticket: FOLLOW-586 recommended_sprint: Sprint
+24 recommended_agent: sdk-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+
+**Gap:** FOLLOW-584 (RETRO-179/180) consolidated the 3 named `packages/shared` full-parity
+archetype-ID copies onto `CANONICAL_ARCHETYPE_IDS`, and FOLLOW-586 (PR #569, `5883e18`, RETRO-185)
+migrated the 2 remaining NAMED importable copies (`intent-weights.ts` `ARCHETYPE_KEYS` →
+`CANONICAL_ARCHETYPE_IDS`; `adapt/description/route.ts` inline `z.enum` → `ArchetypeIdSchema`).
+FOLLOW-586's own AC#4 closure grep (`golden_visa_buyer`) surfaced — and the worker correctly FLAGGED
+rather than silently dropped (out of `packages/sdk` / sdk-engineer ownership, and not one of the 2
+files the ticket named) — a **THIRD** genuine hand-maintained full-parity 18-entry TS ID-list copy
+the 2-named-file scope did not cover:
+
+- **`packages/sdk/src/core/adapt-schema.ts:33`** —
+  `export const archetypeIdSchema = z.enum([ ...18 ids... ])`, a full inline `z.enum` copy
+  (confirmed independently on `main` post-`5883e18`: 18 entries, order-identical to
+  `ARCHETYPE_NAMES`, includes `golden_visa_buyer` at position 5, `'neutral'` fallback last). Its
+  doc-comment says it "mirrors `ArchetypeId` in `packages/shared/src/directives.ts`" and instructs
+  "Keep `archetypeIdSchema` in sync" BY HAND — the same no-guard drift risk FOLLOW-584 removed for
+  the shared copies. It is consumed by `textDirectiveSchema`/`classDirectiveSchema` (and thus
+  `adaptResponseSchema`) in the same file.
+- **NOT currently parity-guarded.** `tests/integration/archetype-id-parity.test.ts` (14 assertions)
+  guards `nlp.py`, `archetype-seeds.ts`, migration `0005`, `generate_description.py`, and the mock
+  subset/JSON-blob shapes — but has NO assertion parsing `adapt-schema.ts` `archetypeIdSchema`.
+  `packages/sdk/src/__tests__/adapt-schema.test.ts` only tests `adaptResponseSchema` parse behavior,
+  not the 18-entry set. So this copy can drift from `ARCHETYPE_NAMES` today with zero fail-loud — a
+  genuine coverage hole, not merely cosmetic duplication.
+
+**Recommended derivation (assess + decide; a real z.enum tuple-typing constraint tips it):**
+`adapt-schema.ts` lives INSIDE `packages/sdk`, where the true SoT `ARCHETYPE_NAMES`
+(`packages/sdk/src/core/intent.ts`) also lives, so an intra-package derivation has NO
+circular-dependency concern (unlike `packages/shared`, which may not import the SDK). BUT
+`ARCHETYPE_NAMES` is typed `readonly Archetype[]` (a plain array, **not** `as const` → not a literal
+tuple), and `z.enum()` requires a non-empty tuple `[string, ...string[]]`; building the runtime enum
+directly from `ARCHETYPE_NAMES` would therefore need an unsafe cast. Two clean options — **prefer
+Option A**:
+
+- **Option A (recommended — mirrors the FOLLOW-586 `route.ts` precedent exactly, no cast, 1h):**
+  `import { ArchetypeIdSchema } from '@estalara/shared'` and re-export it as the SDK's
+  `archetypeIdSchema` (`export const archetypeIdSchema = ArchetypeIdSchema;`). `sdk → shared` is the
+  ALLOWED dependency direction (`@estalara/sdk` already depends on `@estalara/shared`), the shared
+  `ArchetypeIdSchema` is ALREADY a `z.enum` derived from `CANONICAL_ARCHETYPE_IDS` (guarded vs
+  `ARCHETYPE_NAMES` by `archetype-canonical-parity.test.ts`), and adapt-schema.ts's own doc-comment
+  already declares it "mirrors `ArchetypeId` in shared" — so this is the most faithful, zero-cast,
+  drop-in analog of exactly what this PR did for `route.ts`. It couples the SDK schema to shared,
+  but that coupling is the intended contract (the SDK validates the shared `/api/adapt` response
+  shape).
+- **Option B (in-package, only if decoupling from shared is explicitly wanted):** derive the TYPE
+  via `type ArchetypeId = (typeof ARCHETYPE_NAMES)[number]`, but the runtime `z.enum` still needs a
+  tuple source — making `ARCHETYPE_NAMES` `as const` is a broader SoT change (re-verify the two
+  `z.enum(ARCHETYPE_KEYS)`-style call sites + every `readonly Archetype[]` consumer) that exceeds a
+  P3/1h scope and adds no drift-safety over Option A. Do NOT adopt B without a separate scoped
+  ticket for the `as const` change.
+
+**AC:**
+
+- [ ] Replace the inline 18-entry `z.enum([...])` at `adapt-schema.ts:33` with a single-sourced
+      binding (Option A: `ArchetypeIdSchema` from `@estalara/shared`), so the SDK no longer
+      hand-maintains its own copy. No behavior change: `archetypeIdSchema.parse` must accept the
+      same 18 ids and reject the same out-of-set values; `adaptResponseSchema` + `fetchDirectives`
+      graceful-null path unchanged.
+- [ ] State in the PR which derivation (A or B) was chosen and why, referencing the z.enum
+      tuple-typing constraint above.
+- [ ] Run `tsc --noEmit` on `@estalara/sdk` (+ `@estalara/shared` if touched) — typecheck clean; run
+      `packages/sdk` tests incl. `adapt-schema.test.ts` + `adapt.test.ts` — green/unchanged.
+- [ ] Extend a guard so `adapt-schema.ts` `archetypeIdSchema` can no longer drift silently: EITHER
+      add an `it()` to `tests/integration/archetype-id-parity.test.ts` that parses the enum members
+      out of `adapt-schema.ts` and asserts exact-parity vs `ARCHETYPE_NAMES` (with the Rule AD
+      `matched > 0` non-vacuous clause), OR — if Option A makes the file an alias with no literal to
+      parse — add a runtime `expect([...archetypeIdSchema.options]).toEqual([...ARCHETYPE_NAMES])`
+      assertion in `adapt-schema.test.ts`. Show it RED against `main`'s inline literal first
+      (falsification proof), GREEN after.
+- [ ] Scope discipline (Rule AC): touch only `adapt-schema.ts` + one guard file. Do NOT expand into
+      the Python cross-runtime copies (`nlp.py`/`generate_description.py` — deliberately parallel,
+      guarded by FOLLOW-561, cannot be import-consolidated across runtimes) or the test-fixture
+      full-parity arrays (`quiz-widget.test.ts` `expected`, `archetype_embeddings_seed.test.ts`
+      `CANONICAL_ARCHETYPES` — noted in RETRO-185 §4c as a separate, lower-severity test-only
+      residual).
+
+cross_ref: [FOLLOW-586, FOLLOW-584, FOLLOW-036, FOLLOW-561, RETRO-179, RETRO-180, RETRO-185]

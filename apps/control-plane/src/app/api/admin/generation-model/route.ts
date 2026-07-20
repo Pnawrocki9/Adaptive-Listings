@@ -6,7 +6,13 @@
  * There is NO per-tenant override for this setting (locked CEO decision 2026-06-01).
  *
  * Auth:
- *   GET — agency:admin or agency:owner minimum (global admin setting, not viewer-visible)
+ *   GET — Estalara staff (any tier — read-only view of a platform setting), OR
+ *         agency:admin / agency:owner (global admin setting, not viewer-visible).
+ *         The staff path was added for the /admin/settings page (Phase 0 of the
+ *         superadmin-access work, 2026-07-20): staff sessions carry no agency_role,
+ *         so the original agency-only GET returned 401 for the very accounts that
+ *         are the ONLY ones allowed to PUT — leaving the selector readable by
+ *         accounts that cannot write and unreadable by the account that can.
  *   PUT — Estalara platform staff ONLY (FOLLOW-456 / audit F-13). This setting is
  *         PLATFORM-GLOBAL (no per-tenant override — locked CEO decision 2026-06-01),
  *         so a tenant's own `agency:admin`/`agency:owner` role must NOT be sufficient
@@ -113,26 +119,36 @@ async function readConfigRow(): Promise<{
  * GET /api/admin/generation-model
  *
  * Returns the current global generation model configuration.
- * Requires agency:admin or agency:owner role.
+ * Accepts Estalara staff auth (ADMIN_API_SECRET / staff JWT / staff SSR session —
+ * the /admin/settings page path) OR an agency:admin / agency:owner session (the
+ * legacy /dashboard/settings page path). Read-only in both cases; PUT below
+ * stays staff-only.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  let claims;
-  try {
-    claims = await requireTenantSessionAccess(req, 'agency:admin');
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'unauthorized',
-          message: 'Valid JWT with agency:admin or agency:owner role is required',
+  // Staff path first (additive — cannot loosen the agency gate below: a non-staff
+  // agency session fails verifyTracerAdminAuth and falls through to the original
+  // agency:admin check unchanged).
+  const staffAuth = await verifyTracerAdminAuth(req);
+  if (!staffAuth.ok) {
+    let claims;
+    try {
+      claims = await requireTenantSessionAccess(req, 'agency:admin');
+    } catch {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'unauthorized',
+            message:
+              'Estalara staff auth, or a valid JWT with agency:admin or agency:owner role, is required',
+          },
         },
-      },
-      { status: 401 },
-    );
-  }
+        { status: 401 },
+      );
+    }
 
-  // Suppress unused warning — claims are required for auth gating even if not used in body.
-  void claims;
+    // Suppress unused warning — claims are required for auth gating even if not used in body.
+    void claims;
+  }
 
   try {
     const model = await getGlobalGenerationModel();

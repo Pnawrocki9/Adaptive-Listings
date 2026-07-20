@@ -16061,8 +16061,19 @@ existing tests; staff path test per endpoint; NO write surfaces (bandit PATCH st
 Same read-only porting shape applies to Pilot
 
 - Site Detection views (include here if trivial, else note for a sibling stub at promotion).
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** include a red-first "staff query is
+      tenant-filtered" test — prove that a staff request for tenant A cannot READ tenant B's rows
+      through this endpoint's actual query (the staff path uses `createAdminClient`, RLS BYPASSED;
+      `access.tenantId` is the ONLY fence — this applies to READS too, not just writes). This
+      obligation is NOT discharged by FOLLOW-592's `RLS-TRAP-LEAK-DEMO`, which is demonstrative (it
+      filters a local array; it does not exercise any route query).
+- [ ] **Behavior note (RETRO-187):** unlike the tracer routes this is modeled on,
+      `resolveTenantAccess` REJECTS the headless `ADMIN_API_SECRET` Bearer path for staff (no
+      attributable identity → 403). The staff analytics port therefore requires an identified staff
+      SSR session or JWT; any headless automation that hits tracer routes with the secret will 403
+      here. Document this in the route.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 
 ## FOLLOW-595 — Phase 2: Quiz config staff write port + staff_audit_log wiring
 
@@ -16074,7 +16085,13 @@ every staff write appends to `staff_audit_log` (who/tenant/what/when per ADR-001
 `/admin/tenants/[id]/quiz` surface; agency path unchanged (existing tests green); audit-row asserted
 in tests.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+      tenant-filtered" test — prove a staff request for tenant A cannot READ OR WRITE tenant B's
+      quiz-config rows through this endpoint's real query (service-role/RLS-bypassed;
+      `access.tenantId` is the only fence). NOT discharged by FOLLOW-592's demonstrative
+      `RLS-TRAP-LEAK-DEMO`.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 
 ## FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port
 
@@ -16084,7 +16101,12 @@ priority: P3 estimated_hours: 3 promoted_to_queue: false
 **AC:** demo-override endpoints accept staff (writes audited, rank ≥ ops);
 `/admin/tenants/[id]/demo` surface; agency path unchanged.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+      tenant-filtered" test proving a staff request for tenant A cannot reach tenant B's rows
+      through this endpoint's real (service-role/RLS-bypassed) query. NOT discharged by FOLLOW-592's
+      demonstrative `RLS-TRAP-LEAK-DEMO`.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
 
 ## FOLLOW-597 — Phase 2: Label management + Intent config staff port
 
@@ -16094,7 +16116,12 @@ priority: P3 estimated_hours: 3 promoted_to_queue: false
 **AC:** labels + intent-config endpoints accept staff (writes audited, rank ≥ ops); per-tenant admin
 surfaces; agency paths unchanged.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+      tenant-filtered" test per ported endpoint proving a staff request for tenant A cannot reach
+      tenant B's rows through the real (service-role/RLS-bypassed) query. NOT discharged by
+      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
 
 ## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
 
@@ -16104,10 +16131,23 @@ backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: false
 **Gap:** bandit weight PATCH directly steers live adaptation for a tenant — the highest-blast-radius
 staff write. CEO Q3 ruling: requires `estalara:superadmin` (rank ≥ 3), not merely ops.
 
-**AC:** staff PATCH path asserts rank ≥ 3 (test proves ops-rank staff is 403); every write audited;
-agency path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pattern.
+**AC:** staff PATCH path asserts rank ≥ 3 — use the as-built `access.isSuperadmin` predicate the
+FOLLOW-592 helper already returns (test proves ops-rank staff is 403); every write audited; agency
+path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pattern.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+      tenant-filtered" test — the bandit PATCH is the highest-blast-radius write; prove a superadmin
+      request for tenant A cannot PATCH tenant B's weights through the real
+      (service-role/RLS-bypassed) query. NOT discharged by FOLLOW-592's demonstrative
+      `RLS-TRAP-LEAK-DEMO`.
+- [ ] **Added scope (RETRO-187 §4a LG-2, CEO Q3):** also tighten the GLOBAL `generation_model` PUT
+      (`apps/control-plane/src/app/api/admin/generation-model/route.ts`) from "any staff" to rank ≥
+      3 (superadmin-only). This is a GLOBAL route (not tenant-scoped) so it does NOT use
+      `resolveTenantAccess` — apply a direct `estalara_role`-rank ≥ 3 assertion on the verified
+      staff claim (the same `STAFF_ROLE_RANK` map). No-op today (sole prod account is superadmin);
+      binding as staff accounts are added. Test proves ops-rank staff PUT → 403.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, RETRO-187]
 
 ## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub
 
@@ -16122,7 +16162,13 @@ trail they generate.
 DB-unconfigured fallback per Rule K.2); per-tenant filter; `/admin` audit view; reads NOT logged
 (CEO Q4).
 
-cross_ref: [ADR-0018, FOLLOW-587, FOLLOW-592]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** if the per-tenant audit view
+      resolves tenant via the staff path, red-first "staff query is tenant-filtered" test proving a
+      staff request for tenant A cannot read tenant B's `staff_audit_log` rows (service-role table,
+      no RLS; the per-tenant `WHERE target_tenant_id` filter is the only fence). NOT discharged by
+      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+
+cross_ref: [ADR-0018, FOLLOW-587, FOLLOW-592, RETRO-187]
 
 ## FOLLOW-600 — `/admin/tenants/[id]/settings` per-tenant settings surface (aligned with the Phase-0 global /admin/settings)
 
@@ -16136,4 +16182,10 @@ appear on this per-tenant page (the dropped FOLLOW-601).
 **AC:** per-tenant settings page grouping the ported per-tenant settings; explicit test asserting no
 generation-model control renders here; links from the FOLLOW-593 tenant landing.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** for any per-tenant setting this page
+      READS or WRITES through the staff path, red-first "staff query is tenant-filtered" test
+      proving a staff request for tenant A cannot reach tenant B's settings rows
+      (service-role/RLS-bypassed; `access.tenantId` is the only fence). NOT discharged by
+      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]

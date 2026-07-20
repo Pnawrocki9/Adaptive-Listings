@@ -13601,7 +13601,31 @@ in-place in Sprint 22b above.
     ADR-0018 foundation: resolveTenantAccess helper (agency|staff discriminated union) +
     security-invariant test suite
   agent: backend-engineer
-  status: READY
+  status: DONE
+  assigned_to: backend-engineer
+  completed_at: '2026-07-20T00:00:00Z'
+  branch: backend-engineer/FOLLOW-592-resolve-tenant-access
+  pr: 579
+  merged_commit: 336786a
+  retro: RETRO-187
+  worker_model: opus
+  pm_validated: >-
+    2026-07-20 — validated independently before merge (CEO merge-on-green authorization). All AC
+    re-verified against the real PR #579 diff: additive-only (one import-line extension; the 4
+    pre-existing session-auth exports byte-unchanged; tracer-auth untouched); 17 new invariant tests
+    + 21 pre-existing session/tracer-auth tests re-run locally by PM (38/38 green); typecheck clean;
+    INV-2 foreign-tenant cross-check confirmed in code (param never overrides claim); headless
+    ADMIN_API_SECRET rejected on the staff path via the attributable-identity requirement (test
+    proves 403) — documented hardening vs the ADR sketch; CEO Q3 tier shipped (canWrite=ops+,
+    isSuperadmin rank-3 predicate, dead-by-design until FOLLOW-598). CI 57 pass / 2 fail — Rule I
+    only, now +4 DELIBERATE new symbols (deferred consumers, in-file deferral banner per remediation
+    option 3; first consumers land in FOLLOW-594). RETRO-187 adversarial security verdict: CLEAN on
+    all four seams (staff branch unreachable without opt-in; agency can never obtain via:staff or a
+    foreign tenant; tenantExists fails CLOSED on DB error; secret path rejected). One P1 CASCADE
+    finding (not a code defect): the INV-5 per-route tenant-filter test obligation was missing from
+    the FOLLOW-594..600 stub ACs — retro fixed all 7 stubs; the already-dispatched FOLLOW-594
+    worker's brief carried the obligation explicitly, so no gap in flight. LG-2 folded into
+    FOLLOW-598 (global generation_model PUT rank-3 gate).
   priority: P1
   estimated_hours: 4
   depends_on: []

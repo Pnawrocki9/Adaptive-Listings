@@ -1,4 +1,24 @@
-# Status — 2026-07-20 (session 40 — FOLLOW-592 promoted (READY, worker model OPUS) + FOLLOW-593 enriched; bookkeeping-only, dispatch pending)
+# Status — 2026-07-20 (session 39 — ADR-0018 thread: FOLLOW-592 DONE + RETRO-187 CLEAN; 593/594 in flight)
+
+## SESSION 39 (cont. 9) (2026-07-20) — FOLLOW-592 MERGED + DONE; RETRO-187 security verdict CLEAN; stubs 594..600 hardened
+
+**FOLLOW-592 (ADR-0018 foundation) shipped:** PR #579 squash-merged `336786a` (worker:
+backend-engineer on OPUS per model-fit; PM validated independently — 38/38 tests locally,
+additive-only diff, INV-2 in code, secret-path rejection proven; CI 57/2 with Rule I +4 deliberate
+deferred-consumer symbols, in-file deferral banner per remediation option 3). RETRO-187 adversarial
+pass: **CLEAN on all four security seams** (opt-in gate, agency/foreign-tenant, fail-closed
+tenantExists, headless-secret rejection). One **P1 CASCADE finding**: the ADR §2 invariant-5
+per-route tenant-filter test obligation had not propagated into the FOLLOW-594..600 stub ACs — retro
+hardened all 7 stubs (red-first "staff query is tenant-filtered" AC each) + folded LG-2 (rank-3 gate
+on global generation_model PUT) into FOLLOW-598. The concurrent FOLLOW-594 worker's brief already
+carried the obligation explicitly — no gap in flight.
+
+**In flight (both in ISOLATED WORKTREES after the shared-checkout incident lesson):** FOLLOW-593
+(tenant hub + real tenants data + nav un-hide; sonnet) and FOLLOW-594 (analytics read-only staff
+port — FIRST resolveTenantAccess consumer, pattern-setting; opus). Zero file overlap engineered
+between them. CEO pre-authorized merge-on-green for both, subject to PM validation gates.
+
+---
 
 ## SESSION 40 (2026-07-20) — FOLLOW-592 promotion + delegation brief; FOLLOW-593 real-data finding; bookkeeping-only
 

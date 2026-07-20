@@ -29668,3 +29668,89 @@ This retro closes a ~9-ticket, two-class arc over one value domain (the 18 arche
 - **FOLLOW-561 / RETRO-178** — the integration parity guard (Rule J) that protects the deliberately-parallel Python/SQL copies.
 - **RETRO-183** — closure of the SEPARATE invalid-literal-VALUE chain (FOLLOW-561→583→585→587→589); this duplicate-COPY thread is a DIFFERENT class, and closing it does not reopen that one.
 - **RETRO-182** — Rule AD promotion (the multi-anchor / structural-sub-shape blind spot), one of the two codified rules that governed this arc.
+
+## RETRO-187 — FOLLOW-592 (ADR-0018 foundation: `resolveTenantAccess` agency|staff discriminated-union helper + 17-case security-invariant suite; the SECURITY FOUNDATION of the superadmin-tenant-access thread. **HEADLINE — the shipped helper is SECURITY-CLEAN: all four adversarial seams hold** (staff branch is strictly gated behind `allowStaffOverride`; an agency session can NEVER obtain `via:'staff'` or a foreign tenantId — the param is a cross-check, the claim always wins; `tenantExists` fails CLOSED on every DB error path with `AccessError(500)`, never fail-open; the headless `ADMIN_API_SECRET` path is correctly REJECTED for tenant-scoped actions on attributability grounds, a defensible hardening BEYOND the ADR §2 sketch). **The one finding is a CASCADE/propagation gap, not a code defect: the load-bearing security requirement of the ENTIRE ADR — ADR-0018 §2 invariant 5's mandatory per-route "staff query is tenant-filtered" test — is enforced by NOTHING shippable in this PR and is NOT carried into the ACs of the FOLLOW-594..600 stubs that will actually run the RLS-bypassed queries.** The INV-5 `RLS-TRAP-LEAK-DEMO` test is DEMONSTRATIVE only — it filters a local literal array and asserts a property of `Array.prototype.filter`, it does not exercise any route's query — so the real obligation has relocated one hop downstream exactly per the meta-pattern this retro system tracks, and the downstream stubs dropped it. Fixed by stub-alignment edits to FOLLOW-594..600 (added the mandatory red-first leak-test AC to each), so the obligation now travels WITH the tickets that discharge it. Two smaller cascade notes: `isSuperadmin` is dead until FOLLOW-598 (expected), and the ADR §4 / CEO-Q3 rank-3 gate on the GLOBAL `generation_model` PUT has no implementing ticket — folded into FOLLOW-598's scope) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #579 (merged 2026-07-20 ~14:43 UTC, commit `336786a`, squash)
+- **Files changed:** 2 (+674 / -1) — `apps/control-plane/src/lib/session-auth.ts` (+269, additive; one import-line extension), `apps/control-plane/src/lib/__tests__/resolve-tenant-access.test.ts` (+406, new)
+- **Modules touched:** [control-plane] (lib auth helper + test); no schema, no route, no SDK, no shared, no cross-app surface
+- **Key contracts changed:**
+  - `resolveTenantAccess(req, opts?)` — ADDED — new exported async fn returning discriminated `TenantAccess` — breaking: no (net-new, zero existing consumers)
+  - `TenantAccess` (union), `ResolveTenantAccessOpts`, `AccessError` — ADDED — new exported types/class — breaking: no
+  - As-built vs ADR §2 type sketch: worker ADDED `isSuperadmin: boolean` to the staff branch (CEO Q3 rank-3 tier) and REJECTED the headless `ADMIN_API_SECRET` staff path (ADR §3 audit attributability) — both are documented, correct narrowings/extensions of the sketch, NOT drift. `session-auth.ts`'s 26 existing consumers of `getSessionAuth`/`requireTenantSessionAccess`/`getSessionAuthClaims` are byte-untouched.
+
+### 2. Verification done in PR
+
+- Test files changed: [`resolve-tenant-access.test.ts` — NEW, 17 cases] · Assertions added: ~40 across 17 `it()` blocks mapping to ADR §2 INV-1..5 + Q3 tier matrix · Coverage delta: high for the new symbol (agency happy/foreign/role-gate, staff read/no-optin/fallthrough/secret-rejected/unauth, tenant unknown/malformed/missing/fails-closed, RLS-demo, 3 tiers); one branch uncovered (see 4c)
+- Pre-existing `session-auth.test.ts` + `tracer-auth.test.ts` (the "21 untouched") confirmed present and unmodified.
+- CI checks: PM-validated independently — 38/38 local, typecheck clean, diff additive. CI 57 pass / 2 fail = **Rule I only** (183 whole-codebase violations, +4 deliberate: the 4 new zero-non-test-importer exports). Not verified green by me; the 2 fails are the standing pre-existing non-blocking Rule I noise (`main` has no required-status-check branch protection — memory `project_postgres_migrations_no_autoapply` context + FOLLOW-591).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — 1 finding, documented deferral:**
+
+- `apps/control-plane/src/lib/session-auth.ts:386` `resolveTenantAccess` (fn) + `:245` `AccessError` (class) — **DEAD_CODE P1** — zero non-test importers (`grep -rln resolveTenantAccess apps packages --include='*.ts' | grep -v test` → only the definition file). `TenantAccess` + `ResolveTenantAccessOpts` are type-only exports → SUPPRESSED per CHECK-A rule. This is the deliberate, in-file-documented (session-auth.ts:208-218) Rule-I-remediation-option-3 deferral; consumers land in **FOLLOW-594..600** (existing stubs, already cross-referenced). **No NEW FOLLOW emitted** — the closure tickets already exist; duplicating would be noise. Finding recorded so the deferral cannot silently become permanent.
+
+**CHECK B (half-wire) — clean:** no new event/env-var/DB-column/topic/SDK-signal introduced. The helper reads existing env (`NEXT_PUBLIC_SUPABASE_URL/ANON_KEY`, `ADMIN_API_SECRET`) and the existing `tenants` table; it produces no new wire. `Wiring Audit CHECK B — clean ✅`
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, CASCADE — the load-bearing one):** ADR-0018 §2 **invariant 5** mandates that "every ported route's test suite MUST include a 'staff query is tenant-filtered' case" — this is the single highest-risk surface of the whole ADR (staff path uses `createAdminClient`, RLS BYPASSED; `access.tenantId` is the ONLY tenant fence). FOLLOW-592's own AC listed `staff-query-is-tenant-filtered`, and the suite has `RLS-TRAP-LEAK-DEMO` (`resolve-tenant-access.test.ts:337-363) — but that test is **DEMONSTRATIVE, not enforcing**: it resolves access, then builds a local `allRows` literal and asserts that `allRows.filter(r => r.tenant_id === access.tenantId)` drops tenant B. It exercises `Array.prototype.filter`, not any route query (the helper deliberately runs NO query — filtering is the caller's job). So FOLLOW-592 satisfied its AC while the REAL enforcement obligation relocated one hop downstream to FOLLOW-594..600 — whose ACs (verified by reading each stub) do **NOT** carry a per-route leak-test: FOLLOW-594 says only "staff path test per endpoint", 595 "audit-row asserted", 596/597 "agency path unchanged", 598 "ops-rank staff is 403", 599 "per-tenant filter" (as a feature, not a leak-test). A worker implementing any of these from the stub AC alone could ship an RLS-bypassed route with NO cross-tenant-leak test → a silent cross-tenant read/write leak in prod. **Remediated in §7 by stub-alignment edits** adding the mandatory red-first leak-test AC to FOLLOW-594..600.
+- **LG-2 (P3, global-route, out of THIS helper's scope):** ADR-0018 §4 + CEO Q3 require the GLOBAL `generation_model` PUT to additionally assert rank ≥ 3 (superadmin-only). Today `apps/control-plane/src/app/api/admin/generation-model/route.ts` PUT is gated "any staff" via `verifyTracerAdminAuth` (route header lines 9-23), NOT rank-3. No implementing ticket exists (FOLLOW-598 covers only bandit). It is a global (non-tenant) route so it does NOT use `resolveTenantAccess` — a separate one-line `STAFF_ROLE_RANK[...] >= 3` assertion. No-op today (sole prod account is superadmin) → P3. **Folded into FOLLOW-598 scope** (§7), the sibling rank-3 gate, rather than a new number.
+
+#### 4b. Code bugs not caught
+
+- N/A. Adversarial pass on the four seams found no defect:
+  - (a) staff branch unreachable without `allowStaffOverride:true` — it is wholly inside `if (allowStaffOverride)` (line 416); default is `false` (line 390). ✅
+  - (b) agency→staff / agency→foreign-tenant impossible — agency path (`isTenantClaims`, line 397) is evaluated FIRST, returns `via:'agency'` with `tenantId: claims.tenant_id`, and 403s a mismatched `opts.tenantId` (lines 404-406) BEFORE the staff gate is ever consulted (tests AGENCY-FOREIGN, STAFF-NONSTAFF-FALLTHROUGH assert `verifyTracer` not called). A request carrying BOTH an agency SSR session AND a Bearer secret still returns via:agency (short-circuit). ✅
+  - (c) `tenantExists` fail-closed — malformed id → `false`→404 (line 327); `createAdminClient` throw → `AccessError(500)` (line 334); query reject → `AccessError(500)` (line 345). Never returns `true`/passes through on an unverifiable tenant. ✅
+  - (d) headless secret rejection — `staffAuth.ok` via `admin_secret` yields `claims:null` and, with no staff SSR session, `staffClaims===null`→403 (lines 429-435, test STAFF-SECRET-REJECTED). ✅
+
+#### 4c. Test coverage gaps
+
+- **TC-1 (P3):** `tenantExists`'s query-reject catch (`session-auth.ts:344-346`, the `.limit()` promise rejecting AFTER a successful `createAdminClient()`) is NOT directly exercised — `STAFF-VALIDATION-FAILS-CLOSED` only covers `createAdminClient()` itself throwing. The code is correct (both throw `AccessError(500)`); the second fail-closed branch is untested. Low severity; note for the FOLLOW-594 author to cover when they first put a real DB behind the path. No ticket (proportionate).
+
+#### 4d. Documentation gaps
+
+- N/A. The in-file doc-comments are unusually thorough (RLS-TRAP warning on the `TenantAccess.staff.tenantId` field; the Rule-I deferral banner; per-invariant JSDoc). The ADR §2 type-sketch vs as-built delta (`isSuperadmin` added, secret path rejected) is documented in-file (lines 378-382) — but NOT reflected back into the FOLLOW-598 stub (which still says "asserts rank ≥ 3" generically rather than "use `access.isSuperadmin`") — folded into the §7 stub edit.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-593..600 (Sprint 24-25, ADR-0018 pipeline)** — all consume this helper. Signature match verified: stubs assume `resolveTenantAccess({ allowStaffOverride, tenantId })` + `canWrite`/rank-3 — the as-built provides exactly this plus `isSuperadmin`. Two as-built facts the stubs did NOT reflect and now do (post-edit): (1) the mandatory INV-5 leak-test AC (LG-1); (2) FOLLOW-594's staff analytics port will **NOT** accept the headless `ADMIN_API_SECRET` (unlike the tracer it is modeled on) — staff must present an identified SSR session/JWT — a real behavior narrowing for any headless automation, noted on the stub.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-591 (diff-scoped Rule I, P2, NOT promoted per instruction):** cross-reference only. The +4 Rule I violations from this PR are exactly the "new-in-diff zero-importer export" case FOLLOW-591 option B would flag — which is arguably CORRECT (they ARE dead until FOLLOW-594 lands), and the in-file Rule-I-option-3 deferral banner is precisely how one annotates them. No conflict; do NOT promote FOLLOW-591 (single sighting, P2 process hygiene).
+
+#### 5c. Contracts changed others rely on
+
+- New public lib surface (`resolveTenantAccess`, `TenantAccess`, `AccessError`, `ResolveTenantAccessOpts`) — additive, zero current dependents, so zero regression risk. Existing `getSessionAuth`/`requireTenantSessionAccess`/`getSessionAuthClaims` (26 non-test importers) untouched — agency dashboard contract unchanged (ADR "Positive" consequence held).
+
+#### 5d. Architectural assumptions affected
+
+- Establishes the URL-scoped (not session-impersonation) staff access model as the single pattern for all staff-on-tenant actions (ADR §1/§Decision). The load-bearing architectural risk — "correctness depends ENTIRELY on the explicit `WHERE tenant_id` filter because the service-role client bypasses RLS" (ADR §Consequences/Negative) — is now structurally acknowledged in the return-type doc-comment but its TEST enforcement is only as strong as the downstream stubs' ACs (LG-1). The stub edits are the mechanism that keeps this assumption defended per-route.
+
+### 6. New lesson candidates
+
+- Pattern: **"a foundation ticket satisfies its own AC with a DEMONSTRATIVE test while the real enforcement obligation relocates one hop downstream into consumer tickets whose ACs drop it"** — seen in: this (RETRO-187 §4a LG-1). This is the SAME meta-shape as the already-promoted **Rule AC** (gap-moves-one-hop / in-scope-but-dropped-downstream) but in a NEW domain (a security TEST obligation across a ticket boundary, not a code literal across a grep anchor). 1st sighting in this domain — **count 1, below the ≥2-prior threshold, NOT promoted.** Watch FOLLOW-594..600 implementation: if a ported route ships without the INV-5 leak-test despite the now-added AC, that is the 2nd sighting and Rule AC's scope should be widened to test-obligation propagation.
+- Pattern (operational): **"concurrent agents sharing ONE non-worktree checkout"** — evidence: session started on branch `backend-engineer/FOLLOW-584-...` with a DIRTY tree (modified `bandit-seed.ts`, `directives.ts`, `schemas/description.ts`, untracked `archetypes.ts`, `archetype-canonical-parity.test.ts`) from a DIFFERENT ticket while running the FOLLOW-592 retro. Distinct from memory `feedback_check_worktrees_before_concluding_agent_didnt_run` (that is about work STRANDED inside worktrees; this is the inverse — NOT using worktrees, so interleaved dirty state contaminates a checkout). Already logged by pm-orchestrator this session → treating as **1st sighting, count 1, NOT promoted.**
+
+### 7. Follow-ups
+
+- **No NEW FOLLOW numbers filed** (proportionate — the gaps belong IN existing stubs; a new ticket would be make-work). Instead, stub-alignment edits in `backlog/FOLLOW_UPS.md`:
+  - **FOLLOW-594..600** — added the mandatory ADR-0018 §2-invariant-5 red-first "staff query is tenant-filtered / cross-tenant-leak" per-route test AC (LG-1 remediation), explicitly noting it is NOT discharged by FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+  - **FOLLOW-594** — added the headless-`ADMIN_API_SECRET`-rejected behavior note (staff analytics port requires an identified SSR session/JWT, unlike the tracer).
+  - **FOLLOW-598** — scope extended to also gate the GLOBAL `generation_model` PUT at rank ≥ 3 (LG-2, CEO Q3), and to use the as-built `access.isSuperadmin` predicate.
+- **DEAD_CODE P1** (resolveTenantAccess/AccessError) → closure ticket is the existing **FOLLOW-594** (first consumer); no new stub.
+
+### 8. Cross-references
+
+- Related to **RETRO-186 / RETRO-185**: FOLLOW-592 is cross-referenced by RETRO-186 (it was filed alongside the ADR-0018 planning) — but it is a SEPARATE domain (auth/security foundation) from the RETRO-179→186 archetype-parity arc; no pattern from RETRO-183..186 (Rules AC/AD, archetype literals) recurs here.
+- Related to **RETRO-076 / memory `project_postgres_migrations_no_autoapply`**: the CI "2 fail" context (no `main` branch protection) frames why the Rule I +4 is non-blocking.
+- **First retro** on the ADR-0018 superadmin-tenant-access thread; FOLLOW-593..600 retros should trace forward to LG-1's per-route enforcement.

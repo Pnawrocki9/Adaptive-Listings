@@ -50,9 +50,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { isTenantClaims } from '@estalara/auth';
 import type { ArchetypeId } from '@estalara/shared';
-import { getSessionAuthClaims } from '@/lib/session-auth';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
 import { zTest } from '@/lib/z-test';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 
@@ -261,24 +261,45 @@ function buildMockLiftRows(tenantId: string): LiftRow[] {
 /**
  * GET /api/dashboard/analytics/lift
  *
+ * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`.
+ * Agency path unchanged (tenant from the session claim). Estalara staff may read
+ * any tenant via an explicit `?tenant_id=<uuid>` validated against the `tenants`
+ * table; that validated id is the SINGLE tenant fence bound into the ClickHouse
+ * query. Staff calls without `?tenant_id` are rejected (400).
+ *
+ * Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
+ * `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
+ * attributable to a staff user for a tenant-scoped read). Staff must authenticate
+ * with an identified SSR session or a staff JWT.
+ *
  * @returns 200 LiftResponse on success.
- * @returns 401 when no valid JWT is present.
+ * @returns 400 when a staff caller omits `?tenant_id`.
+ * @returns 401 when no valid session is present.
+ * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
  *   (Rule K.2 — fail loud; never silently fall back to mock data when a real
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getSessionAuthClaims(req);
-  if (!claims || !isTenantClaims(claims)) {
-    return NextResponse.json(
-      {
-        error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
-      },
-      { status: 401 },
-    );
+  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is
+  // the ONLY tenant fence — bound into the ClickHouse query as param_tenant_id for
+  // BOTH paths.
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes: omit the key when absent rather than passing
+      // `undefined`, so a staff caller without ?tenant_id still reaches resolve's 400.
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+      minAgencyRole: 'agency:viewer',
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  const tenantId: string = claims.tenant_id;
+  const tenantId: string = access.tenantId;
 
   // Rule K.2: when CLICKHOUSE_URL is unset (dev / CI), serve deterministic mock
   // data tagged data_source:'mock' so consumers can distinguish it from real data.

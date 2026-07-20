@@ -25,8 +25,9 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSessionAuth } from '@/lib/session-auth';
-import { createTenantClient } from '@estalara/db';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
+import { createTenantClient, createAdminClient } from '@estalara/db';
 import { abBanditWeights } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
 
@@ -59,55 +60,81 @@ export interface AbWeightsResponse {
 /**
  * GET /api/ab/weights
  *
+ * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`.
+ * Agency path unchanged (tenant from the session claim, RLS-enforced). Estalara
+ * staff may read any tenant's weights via an explicit `?tenant_id=<uuid>`
+ * validated against the `tenants` table; that validated id is the SINGLE tenant
+ * fence. The staff path uses a service-role client (RLS BYPASSED), so the explicit
+ * `WHERE tenant_id` filter is the only isolation (ADR-0018 invariant 5).
+ *
+ * Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
+ * `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
+ * attributable to a staff user for a tenant-scoped read). Staff must authenticate
+ * with an identified SSR session or a staff JWT.
+ *
  * @returns 200 AbWeightsResponse on success.
- * @returns 401 when no valid Bearer JWT or JWT lacks tenant_id.
+ * @returns 400 when a staff caller omits `?tenant_id`.
+ * @returns 401 when no valid session is present.
+ * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 on DB error.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // Auth: tenant_id from verified JWT claims — NEVER from x-tenant-id header (TICKET-FIX-014).
-  // getSessionAuth() also resolves a same-origin browser session via the Supabase
-  // SSR cookie (FOLLOW-454) and returns the raw JWT for RLS propagation below.
-  const session = await getSessionAuth(req);
-  if (!session || !('tenant_id' in session.claims) || !session.claims.tenant_id) {
-    return NextResponse.json(
-      {
-        error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
-      },
-      { status: 401 },
-    );
+  // Auth: tenant_id from verified claims / validated staff param — NEVER from an
+  // x-tenant-id header (TICKET-FIX-014). `access.tenantId` is the single fence.
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes: omit the key when absent rather than passing
+      // `undefined`, so a staff caller without ?tenant_id still reaches resolve's 400.
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+      minAgencyRole: 'agency:viewer',
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  const tenantId: string = session.claims.tenant_id;
+  const tenantId: string = access.tenantId;
   const archetypeFilter = req.nextUrl.searchParams.get('archetype') ?? undefined;
 
-  // DATABASE_URL may not be set in dev/CI — graceful empty response.
-  if (!process.env.DATABASE_URL) {
-    const response: AbWeightsResponse = {
-      tenant_id: tenantId,
-      rows: [],
-      total: 0,
-      generated_at: new Date().toISOString(),
-    };
-    return NextResponse.json(response, { status: 200 });
-  }
+  // Shared WHERE fence — built once, applied identically on BOTH paths. For the
+  // staff (service-role) path it is the ONLY tenant isolation (invariant 5); for
+  // the agency path it is defense-in-depth on top of RLS.
+  const buildWhere = () => {
+    const conditions = [eq(abBanditWeights.tenantId, tenantId)];
+    if (archetypeFilter) {
+      conditions.push(eq(abBanditWeights.archetype, archetypeFilter));
+    }
+    return conditions.length === 1 ? conditions[0] : and(...conditions);
+  };
 
   try {
-    // rawToken comes from getSessionAuth() above — the Bearer/legacy-cookie JWT
-    // for programmatic callers, or the SSR session's access_token for browser
-    // sessions (FOLLOW-454) — so RLS stays enforced on both paths.
-    const db = createTenantClient(session.rawToken ?? undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; the tenant fence (buildWhere) is applied explicitly on every path
+    let dbRows: any[];
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; any is safe here since db.rls enforces the DB type at runtime
-    const dbRows: any[] = await db.rls((tx: any) => {
-      const conditions = [eq(abBanditWeights.tenantId, tenantId)];
-      if (archetypeFilter) {
-        conditions.push(eq(abBanditWeights.archetype, archetypeFilter));
+    if (access.via === 'agency') {
+      // DATABASE_URL may not be set in dev/CI — graceful empty response.
+      if (!process.env.DATABASE_URL) {
+        const response: AbWeightsResponse = {
+          tenant_id: tenantId,
+          rows: [],
+          total: 0,
+          generated_at: new Date().toISOString(),
+        };
+        return NextResponse.json(response, { status: 200 });
       }
-      return tx
-        .select()
-        .from(abBanditWeights)
-        .where(conditions.length === 1 ? conditions[0] : and(...conditions));
-    });
+      // rawToken → RLS enforced (FOLLOW-454 SSR + programmatic callers).
+      const db = createTenantClient(access.rawToken ?? undefined);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is the uncompiled package Database type
+      dbRows = await db.rls((tx: any) => tx.select().from(abBanditWeights).where(buildWhere()));
+    } else {
+      // Staff path: service-role client, RLS BYPASSED. The explicit
+      // WHERE tenant_id = access.tenantId (buildWhere) is the ONLY fence.
+      const db = createAdminClient();
+      dbRows = await db.select().from(abBanditWeights).where(buildWhere());
+    }
 
     const rows: BanditWeightRow[] = dbRows.map((r) => ({
       tenant_id: r.tenantId as string,

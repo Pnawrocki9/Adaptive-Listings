@@ -41,8 +41,38 @@ vi.mock('@estalara/auth', () => ({
   }),
 }));
 
+// ─── Partial mock of @/lib/session-auth ───────────────────────────────────────
+// The dashboard lift route now delegates auth to `resolveTenantAccess` (ADR-0018).
+// The pilot route still uses the REAL `getSessionAuthClaims` (kept via
+// `importOriginal`), which reads the mocked `getAuthClaims` above — so both routes
+// see the same agency caller from identical fixtures.
+
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
+
+import type * as SessionAuthModule from '@/lib/session-auth';
 import { getAuthClaims } from '@estalara/auth';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
+const mockResolve = vi.mocked(resolveTenantAccess);
+
+function agencyAccess(): TenantAccess {
+  return {
+    via: 'agency',
+    tenantId: TENANT_ID,
+    claims: {
+      sub: 'user-uuid',
+      email: 'user@agency.com',
+      tenant_id: TENANT_ID,
+      agency_role: 'agency:admin',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
+  };
+}
 
 function authAsTenant(): void {
   mockGetAuthClaims.mockResolvedValue({
@@ -53,6 +83,8 @@ function authAsTenant(): void {
     estalara_staff: false,
     mfa_verified: true,
   });
+  // Dashboard lift route resolves via resolveTenantAccess (mocked here).
+  mockResolve.mockResolvedValue(agencyAccess());
 }
 
 // ─── Fixture dataset ──────────────────────────────────────────────────────────

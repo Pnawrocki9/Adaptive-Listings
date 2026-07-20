@@ -1715,3 +1715,17 @@ would generalize this beyond just `adapt-get-auth`.
   lint rule (or Rule-I exemption) that accepts an inline `// consumer: FOLLOW-NNN` tag on an export
   as a valid deferral, so foundation PRs don't have to choose between a false green and touching
   backlog files.
+
+- **2026-07-20 / FOLLOW-605** · Made the staff quiz-config write atomic: config `update` +
+  `staff_audit_log` insert now commit-or-roll-back together in one `db.transaction()` on a single
+  `createAdminClient()` (retrofit of FOLLOW-595's mutate-then-audit shape). Ratified
+  single-transaction (not outbox) in ADR-0018 §3a; sequence-gated FOLLOW-598. · Risks weighed: (a)
+  fail-loud on rollback → 500 `audit_write_failed` + Sentry, never a silent unattributed 200; (b)
+  surgical — did NOT touch auth resolution, tenant fence, write-rank gate, or STAFF-only audit
+  condition, only the transactional wrapping; (c) red-first proof: reverted the route to
+  non-transactional and watched the rollback test fail `expected 'pl' to be 'en'`, then restored.
+  Harness needed a `.transaction()` mock with real staged/discard semantics (snapshot store → mutate
+  staged → commit on resolve, drop on throw). · Guardrail I'd add: a Rule-H-style CI check that
+  flags any staff WRITE port doing `db.update(...)` + `db.insert(staffAuditLog)` OUTSIDE a shared
+  `tx` (grep for the two on the same route without `db.transaction`), so 596/597/598 can't silently
+  regress to mutate-then-audit.

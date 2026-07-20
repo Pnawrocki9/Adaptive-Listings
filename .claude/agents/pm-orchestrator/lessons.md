@@ -2367,3 +2367,28 @@ hung session strands work wherever the agent was standing, and for subagents tha
   already touches the same backlog files for the same ticket family — a stale, unmerged dispatch PR
   is an easy way to silently duplicate or conflict with bookkeeping that already happened, and it
   won't show up just by reading the ticket's own worker PR.
+
+- **Date / ticket:** 2026-07-20 — FOLLOW-592 (promoted + delegation brief prepared, PR #577 merged
+  e656b57)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (Model-fit override: worker model OPUS,
+  not the row's Sonnet default, per the mandatory model-fit rule — security-sensitive RLS/auth-path
+  change with a documented cross-tenant-leak failure mode).
+- **What validation caught (or missed):** Mid-task, `git branch --show-current` silently changed
+  from my own `pm-orchestrator/FOLLOW-592-promote-dispatch` to
+  `backend-engineer/FOLLOW-592-resolve-tenant-access` with an uncommitted edit already sitting in
+  the working tree (`session-auth.ts`) — the parent session had dispatched the worker concurrently
+  into the SAME shared working directory (no per-agent git worktree isolation observed this time,
+  unlike the `.claude/worktrees/agent-*` pattern documented in an earlier memory). Caught only
+  because I ran `git status`/`git log -1` before my next git command out of habit, not because
+  anything failed loudly. Any git operation that touches the working tree at that moment (checkout,
+  reset, even `git diff main --stat` on the wrong branch) could have clobbered the worker's
+  in-progress uncommitted edit. Recovered by merging PR #577 purely via `gh pr merge` (GitHub API,
+  no local checkout needed) and never touching the working tree again.
+- **A delegation/validation rule I'd add:** When a PM session and a worker dispatch may run
+  concurrently against the same non-worktree-isolated checkout, treat every `git status`/`git log`
+  call as load-bearing safety checks before ANY write-ish git command (checkout/reset/stash/clean),
+  not just before destructive ones — a bare `checkout` can happen out-of-band from another process
+  between your own commands. Prefer `gh pr merge`/`gh api` (no local checkout required) over local
+  git merge/push flows whenever a PR is already open, specifically to avoid needing to touch a
+  working tree that might not be yours to touch anymore.

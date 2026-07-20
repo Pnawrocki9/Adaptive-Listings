@@ -47,7 +47,7 @@ import type {
   StaffClaims,
   TenantClaims,
 } from '@estalara/auth';
-import { verifyTracerAdminAuth } from './tracer-auth.js';
+import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 
 function isAgencyRole(v: unknown): v is AgencyRole {
   return v === 'agency:owner' || v === 'agency:admin' || v === 'agency:viewer';
@@ -207,6 +207,14 @@ export async function requireTenantSessionAccess(
 
 // ═══════════════════════════════════════════════════════════════════════════
 // resolveTenantAccess — ADR-0018 §2 (superadmin tenant access) — FOLLOW-592
+//
+// Consumer phasing (Rule I deferral): the exports below (resolveTenantAccess,
+// AccessError, TenantAccess, ResolveTenantAccessOpts) are the FOLLOW-592
+// foundation. Production route consumers opt in in FOLLOW-594..600 per ADR-0018
+// §6 (analytics read-only first, then per-tenant writes, then bandit). Until then
+// the end-to-end wiring is proven by the integration test suite
+// `__tests__/resolve-tenant-access.test.ts` (17 cases). Do NOT wire a route here
+// — that is out of FOLLOW-592 scope.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**

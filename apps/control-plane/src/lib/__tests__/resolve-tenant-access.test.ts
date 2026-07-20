@@ -53,7 +53,7 @@ vi.mock('@supabase/ssr', () => ({
 
 // ─── Mock ./tracer-auth.js (the composed staff gate) ──────────────────────────
 
-vi.mock('../tracer-auth.js', () => ({
+vi.mock('@/lib/tracer-auth', () => ({
   verifyTracerAdminAuth: vi.fn(),
 }));
 
@@ -78,8 +78,8 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 import { getAuthClaims, requireAgencyRole } from '@estalara/auth';
-import { verifyTracerAdminAuth } from '../tracer-auth.js';
-import { resolveTenantAccess, AccessError } from '../session-auth.js';
+import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+import { resolveTenantAccess, AccessError } from '@/lib/session-auth';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 const mockRequireAgencyRole = vi.mocked(requireAgencyRole);

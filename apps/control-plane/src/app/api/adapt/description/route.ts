@@ -49,7 +49,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { afterResponse } from '@/lib/after-response';
 import * as Sentry from '@sentry/nextjs';
-import { errorBody, ErrorCode } from '@estalara/shared';
+import { errorBody, ErrorCode, ArchetypeIdSchema } from '@estalara/shared';
 import type { DescriptionResponse, DescriptionRequestedEvent } from '@estalara/shared';
 import { getPlaybook } from '@estalara/sdk/playbooks';
 import { descriptionKey, getCachedDescription } from '@/lib/description-cache';
@@ -64,26 +64,9 @@ import { getPgCachedDescription, insertPgCachedDescription } from '@/lib/descrip
 
 const QueryParamsSchema = z.object({
   listing_id: z.string().min(1).max(256),
-  archetype: z.enum([
-    'yield_hunter',
-    'vacation_rental_investor',
-    'flip_investor',
-    'portfolio_builder',
-    'golden_visa_buyer',
-    'commercial_investor',
-    'family_buyer',
-    'first_time_buyer',
-    'upsizer',
-    'downsizer',
-    'luxury_buyer',
-    'remote_worker',
-    'lifestyle_expat',
-    'retiree_relocator',
-    'diaspora_buyer',
-    'second_home_buyer',
-    'student_parent',
-    'neutral',
-  ]),
+  // Canonical archetype ID set (FOLLOW-586) — imported from @estalara/shared instead of
+  // a hand-maintained inline copy; see packages/shared/src/archetypes.ts.
+  archetype: ArchetypeIdSchema,
   locale: z.enum(['en', 'pl', 'es']).default('en'),
 });
 

@@ -1637,3 +1637,22 @@ would generalize this beyond just `adapt-get-auth`.
   payload field named like a derived-intent artifact (archetype/confidence/stability) riding a
   non-`profiling` class — the LG-1 pattern was "derived field rides a benign class," and it took a
   retro to catch it.
+
+- **2026-07-20 / FOLLOW-586** · Migrated the last 2 hand-maintained full-parity archetype-ID TS
+  copies (`ARCHETYPE_KEYS` in `intent-weights.ts`, the inline `z.enum([...18])` in
+  `adapt/description/route.ts`) onto the FOLLOW-584 canonical `CANONICAL_ARCHETYPE_IDS` export —
+  pure DRY, both copies already 18/18 in sync, no behavior change. · **Risks weighed:** (a) an
+  `as const` readonly-tuple swap could silently narrow/widen `ArchetypeKey` or break the two
+  `z.enum(ARCHETYPE_KEYS)` call sites if zod's typings required a mutable tuple (description.ts's
+  sibling `ArchetypeIdSchema` documents exactly this trap and spreads); I verified empirically via
+  `tsc --noEmit` rather than trusting the doc comment, and it turned out no spread was needed here
+  because `ARCHETYPE_KEYS` was already `as const` before my change (identical readonly-tuple shape
+  in, readonly-tuple shape out) — the description.ts case differs because it derives a _new_ binding
+  from a readonly source for the first time; (b) confirmed order-identity between the two arrays by
+  diff before deriving, not by assumption; (c) grepped every consumer (prod + test) of both symbols
+  before touching, including a dynamic `import('@estalara/shared')` test consumer in packages/sdk
+  that wouldn't have shown up in a naive static-import grep. · **Guardrail I'd add:** none — the
+  existing `archetype-canonical-parity.test.ts` + `intent-weights-drift.test.ts` + integration
+  parity suite together already covered this refactor's blast radius; a new guardrail here would be
+  redundant. (Left one remaining full copy, `packages/sdk/core/adapt-schema.ts`'s
+  `archetypeIdSchema`, flagged in the PR for sdk-engineer — out of my ownership scope.)

@@ -18,42 +18,25 @@
  *     all cause `.parse()` to throw; the caller (`fetchDirectives`) catches that,
  *     reports to Sentry when available, and returns `null` gracefully.
  *
- * Keep `archetypeIdSchema` in sync with the `ArchetypeId` union in
- * `packages/shared/src/directives.ts`.
+ * `archetypeIdSchema` IS `@estalara/shared`'s `ArchetypeIdSchema` (re-exported, not
+ * hand-copied) — see below. That schema derives from `CANONICAL_ARCHETYPE_IDS`
+ * (`packages/shared/src/archetypes.ts`), which is itself guarded against
+ * `ARCHETYPE_NAMES` (`packages/sdk/src/core/intent.ts`, the true canonical source) by
+ * `packages/shared/src/__tests__/archetype-canonical-parity.test.ts`. There is no
+ * hand-maintained literal left in this file to drift (FOLLOW-590 / RETRO-185).
  *
  * @module @estalara/sdk/core/adapt-schema
  */
 
+import { ArchetypeIdSchema } from '@estalara/shared';
 import { z } from 'zod';
 
 /**
- * Canonical archetype identifiers — mirrors `ArchetypeId` in
- * `packages/shared/src/directives.ts`. Includes the `'neutral'` fallback.
+ * Canonical archetype identifiers — re-export of `@estalara/shared`'s
+ * `ArchetypeIdSchema`, which derives from `CANONICAL_ARCHETYPE_IDS`
+ * (`packages/shared/src/archetypes.ts`). Includes the `'neutral'` fallback.
  */
-export const archetypeIdSchema = z.enum([
-  // Investors
-  'yield_hunter',
-  'vacation_rental_investor',
-  'flip_investor',
-  'portfolio_builder',
-  'golden_visa_buyer',
-  'commercial_investor',
-  // Own use
-  'family_buyer',
-  'first_time_buyer',
-  'upsizer',
-  'downsizer',
-  'luxury_buyer',
-  'remote_worker',
-  // Special / cross-border
-  'lifestyle_expat',
-  'retiree_relocator',
-  'diaspora_buyer',
-  'second_home_buyer',
-  'student_parent',
-  // Fallback
-  'neutral',
-]);
+export const archetypeIdSchema = ArchetypeIdSchema;
 
 /** Mirror of `TextDirective`. */
 const textDirectiveSchema = z

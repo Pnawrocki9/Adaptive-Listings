@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import { adaptResponseSchema } from '../core/adapt-schema.js';
+import { adaptResponseSchema, archetypeIdSchema } from '../core/adapt-schema.js';
 import { fetchDirectives, resetAdaptState } from '../core/adapt.js';
 import type { SdkConfig } from '../core/config.js';
+import { ARCHETYPE_NAMES } from '../core/intent.js';
 import type { SessionState } from '../core/session.js';
 
 /**
@@ -108,6 +109,25 @@ describe('adaptResponseSchema.parse', () => {
   it("accepts the 'neutral' fallback archetype", () => {
     const parsed = adaptResponseSchema.parse({ ...VALID_RESPONSE, archetype: 'neutral' });
     expect(parsed.archetype).toBe('neutral');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// archetypeIdSchema ≡ ARCHETYPE_NAMES parity guard (FOLLOW-590 / RETRO-185)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `archetypeIdSchema` is now a re-export of `@estalara/shared`'s `ArchetypeIdSchema`
+// (no hand-maintained literal lives in adapt-schema.ts anymore), so there is no
+// in-file 18-entry array for a human to accidentally desync. This test proves the
+// alias still carries the full, order-identical set — a load-bearing guard against
+// a future shared-side change silently narrowing what the SDK accepts.
+describe('archetypeIdSchema ≡ ARCHETYPE_NAMES parity guard', () => {
+  it('is non-vacuous (options is non-empty)', () => {
+    expect(archetypeIdSchema.options.length).toBeGreaterThan(0);
+  });
+
+  it('matches ARCHETYPE_NAMES exactly, in order', () => {
+    expect([...archetypeIdSchema.options]).toEqual([...ARCHETYPE_NAMES]);
   });
 });
 

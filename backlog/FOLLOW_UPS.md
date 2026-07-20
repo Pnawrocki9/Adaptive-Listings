@@ -15982,3 +15982,132 @@ hence P2 not P1 — but it degrades the CI signal for ALL future work and compou
       `main` check set while in here — if another permanent-red exists, note it).
 
 cross_ref: [RETRO-182, RETRO-186, SESSION-RETRO-39]
+
+## FOLLOW-592 — ADR-0018 foundation: `resolveTenantAccess` helper (agency|staff discriminated union) + security-invariant test suite
+
+source_adr: ADR-0018 §2 (superadmin tenant access; CEO-accepted 2026-07-20) recommended_sprint:
+Sprint 24 recommended_agent: backend-engineer priority: P1 estimated_hours: 4 promoted_to_queue:
+false
+
+**Gap:** every tenant-scoped dashboard API resolves the tenant from the agency session only, so
+staff (superadmin) cannot act on any tenant. ADR-0018 §2 specifies ONE helper in
+`apps/control-plane/src/lib/session-auth.ts`:
+`resolveTenantAccess(req, { allowStaffOverride, tenantId, minAgencyRole })` returning a
+discriminated union (`via: 'agency' | 'staff'`), with five security invariants (agency path
+byte-unchanged and foreign-tenant-proof; staff path requires verified `estalara_staff` + explicit
+opt-in; staff `tenant_id` validated against the tenants table; staff DB access via service-role
+client MUST carry an explicit `WHERE tenant_id` filter — the RLS trap in §2 invariant 5). Write tier
+per the CEO Q3 ruling: `canWrite = rank ≥ estalara:ops`, and highest-risk routes additionally assert
+`estalara:superadmin` (rank ≥ 3).
+
+**AC:** helper implemented per ADR-0018 §2 with the ≥6-case test matrix (agency-unchanged,
+staff-read, staff-write-role-gate incl. the rank-3 tier, foreign-tenant-rejected-for-agency,
+staff-tenant-validated-against-table, staff-query-is-tenant-filtered); no existing route behavior
+changes until routes opt in; typecheck + all existing session-auth tests unchanged. **Blocks
+FOLLOW-593..600 — do this first.**
+
+cross_ref: [ADR-0018, FOLLOW-456, FOLLOW-555, RETRO-186]
+
+## FOLLOW-593 — `/admin/tenants` hub + `/admin/tenants/[id]` landing; un-hide the multi-tenant admin nav (ADR-0018 §Decision 0, CEO-ratified)
+
+source_adr: ADR-0018 §Decision 0 + §6 recommended_sprint: Sprint 24 recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+
+**Gap:** multi-tenant admin screens (Registrations, Tenants list, Demo Sessions) exist but are
+hidden from `/admin` nav per the 2026-06-15 "single-tenant v1" decision — formally REVERSED by the
+CEO 2026-07-20 (ADR-0018 Resolved Q2). The tenant hub is the entry point for every per-tenant staff
+surface (`/admin/tenants/[id]/<feature>`).
+
+**AC:** tenants list navigable from `/admin` sidebar; per-tenant landing page linking the (ported)
+feature surfaces; nav tests updated; staff-only (middleware already gates `/admin/*`).
+
+cross_ref: [ADR-0018, FOLLOW-592]
+
+## FOLLOW-594 — Phase 1: Analytics read-only staff port (summary + lift accept staff + explicit tenant_id)
+
+source_adr: ADR-0018 §6 Phase 1 recommended_sprint: Sprint 24 recommended_agent: backend-engineer
+priority: P2 estimated_hours: 3 promoted_to_queue: false
+
+**AC:** analytics summary + lift GET endpoints opt into
+`resolveTenantAccess({ allowStaffOverride: true })`; `/admin/tenants/[id]/analytics` renders the
+existing dashboard analytics UI with tenantId from the route param; agency path covered by unchanged
+existing tests; staff path test per endpoint; NO write surfaces (bandit PATCH stays agency/Phase-3).
+Same read-only porting shape applies to Pilot
+
+- Site Detection views (include here if trivial, else note for a sibling stub at promotion).
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593]
+
+## FOLLOW-595 — Phase 2: Quiz config staff write port + staff_audit_log wiring
+
+source_adr: ADR-0018 §6 Phase 2 + §3 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+
+**AC:** quiz config GET/PUT accept staff via `resolveTenantAccess` (write requires rank ≥ ops);
+every staff write appends to `staff_audit_log` (who/tenant/what/when per ADR-0018 §3);
+`/admin/tenants/[id]/quiz` surface; agency path unchanged (existing tests green); audit-row asserted
+in tests.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593]
+
+## FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port
+
+source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
+priority: P3 estimated_hours: 3 promoted_to_queue: false
+
+**AC:** demo-override endpoints accept staff (writes audited, rank ≥ ops);
+`/admin/tenants/[id]/demo` surface; agency path unchanged.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]
+
+## FOLLOW-597 — Phase 2: Label management + Intent config staff port
+
+source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
+priority: P3 estimated_hours: 3 promoted_to_queue: false
+
+**AC:** labels + intent-config endpoints accept staff (writes audited, rank ≥ ops); per-tenant admin
+surfaces; agency paths unchanged.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]
+
+## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
+
+source_adr: ADR-0018 §6 Phase 3 + Resolved Q3 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: false
+
+**Gap:** bandit weight PATCH directly steers live adaptation for a tenant — the highest-blast-radius
+staff write. CEO Q3 ruling: requires `estalara:superadmin` (rank ≥ 3), not merely ops.
+
+**AC:** staff PATCH path asserts rank ≥ 3 (test proves ops-rank staff is 403); every write audited;
+agency path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pattern.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595]
+
+## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub
+
+source_adr: ADR-0018 §3 recommended_sprint: Sprint 25 recommended_agent: backend-engineer priority:
+P3 estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** `apps/control-plane/src/app/api/audit/route.ts` serves MOCK_ENTRIES; ADR-0018 makes
+`staff_audit_log` the audit SoT for staff writes (writes-only per CEO Q4). Staff need to SEE the
+trail they generate.
+
+**AC:** audit endpoint reads real `staff_audit_log` rows (mock stays as the documented
+DB-unconfigured fallback per Rule K.2); per-tenant filter; `/admin` audit view; reads NOT logged
+(CEO Q4).
+
+cross_ref: [ADR-0018, FOLLOW-587, FOLLOW-592]
+
+## FOLLOW-600 — `/admin/tenants/[id]/settings` per-tenant settings surface (aligned with the Phase-0 global /admin/settings)
+
+source_adr: ADR-0018 §5 + §6 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
+priority: P3 estimated_hours: 2 promoted_to_queue: false
+
+**Gap:** ADR-0018 §5 enumerates global vs per-tenant settings; the per-tenant ones need one staff
+surface per tenant. NOTE (CEO Q1, binding): `generation_model` stays GLOBAL-only — it must NOT
+appear on this per-tenant page (the dropped FOLLOW-601).
+
+**AC:** per-tenant settings page grouping the ported per-tenant settings; explicit test asserting no
+generation-model control renders here; links from the FOLLOW-593 tenant landing.
+
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595]

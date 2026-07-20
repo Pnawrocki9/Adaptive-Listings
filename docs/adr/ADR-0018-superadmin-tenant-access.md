@@ -2,11 +2,12 @@
 
 ## Status
 
-PROPOSED — 2026-07-20 (CEO-directed, Piotr). Generalizes the staff-per-tenant access pattern
-established by ADR-0013 (`/admin/tenants/[id]/tracer`, `verifyTracerAdminAuth`). Reverses two prior
-locked decisions where the newer 2026-07-20 CEO instruction supersedes them (see §Decision 0 and the
-Open questions). Relates to FOLLOW-456 (staff-only generation-model PUT), FOLLOW-267 (tracer admin
-auth), FOLLOW-454/555 (SSR session auth), and the existing `staff_audit_log` table
+ACCEPTED — 2026-07-20 (CEO, Piotr; all four open questions resolved same day — see §Resolved
+decisions at the end; proposed earlier the same day). Generalizes the staff-per-tenant access
+pattern established by ADR-0013 (`/admin/tenants/[id]/tracer`, `verifyTracerAdminAuth`). Reverses
+two prior locked decisions where the newer 2026-07-20 CEO instruction supersedes them (see §Decision
+0 and the Open questions). Relates to FOLLOW-456 (staff-only generation-model PUT), FOLLOW-267
+(tracer admin auth), FOLLOW-454/555 (SSR session auth), and the existing `staff_audit_log` table
 (`packages/db/src/schema/staff_audit_log.ts`).
 
 ## Context
@@ -162,9 +163,10 @@ Staff roles rank `estalara:superadmin (3) > estalara:ops (2) > estalara:readonly
 - **`estalara:readonly` ⇒ view-only** on every ported tenant feature (GET allowed, writes 403).
 - **Writes require `estalara:ops` or higher (rank ≥ 2).** `resolveTenantAccess` sets
   `canWrite = STAFF_ROLE_RANK[role] >= 2`; write routes assert `canWrite` and 403 otherwise. The
-  CEO's `estalara:superadmin` account satisfies this. (Whether the highest-risk writes — bandit
-  weights, any future per-tenant model override — should be `superadmin`-only rather than `ops`+ is
-  Q3.)
+  CEO's `estalara:superadmin` account satisfies this.
+- **Highest-risk writes are `estalara:superadmin`-only (Q3 RESOLVED, CEO 2026-07-20):** bandit
+  weight PATCH and the global `generation_model` PUT additionally assert rank ≥ 3. No-op for the
+  sole prod account today; binding as staff accounts are added.
 
 ### 5. Global vs per-tenant settings surface
 
@@ -223,7 +225,8 @@ Phase-2 tickets for the PM to promote (listed here only; not written into `FOLLO
   replacing the mock stub.
 - **FOLLOW-600** — `/admin/tenants/[id]/settings` per-tenant settings surface; align with the
   Phase-0 `/admin/settings` global page.
-- **FOLLOW-601** — Per-tenant `generation_model` override (BLOCKED on Q1; Phase 3).
+- ~~FOLLOW-601 — per-tenant `generation_model` override~~ — **DROPPED** (Q1 resolved narrow, CEO
+  2026-07-20: the 2026-06-01 global-only lock stands).
 
 ## Consequences
 
@@ -275,24 +278,25 @@ Phase-2 tickets for the PM to promote (listed here only; not written into `FOLLO
    between the two copies, and violates the surgical-change norm. Shared components parametrized by
    `tenantId` achieve the same reach with one implementation.
 
-## Open questions for CEO
+## Resolved decisions (CEO, Piotr — 2026-07-20)
 
-1. **Does `generation_model` gain a per-tenant override?** Two readings of "per-tenant AND
-   globally":
-   - **Narrow (recommended):** "per-tenant" means staff control of settings that are already
-     per-tenant (quiz, demo, bandit, labels, intent); "globally" means `/admin/settings`. The
-     2026-06-01 global-only lock on `generation_model` STANDS. No FOLLOW-601.
-   - **Broad:** `generation_model` gains a per-tenant override with resolution order **tenant
-     override > global > static default**, reversing the lock. This lets one tenant run a different
-     model — an explicit cost/quality divergence per tenant. Only pursue if you want that.
-2. **Ratify un-hiding the multi-tenant admin nav** (Registrations, Tenants list, Demo Sessions),
-   reversing the 2026-06-15 "single-tenant v1" decision? (Your 2026-07-20 instruction implies yes;
-   this ADR assumes yes in §Decision 0 unless you say otherwise.)
-3. **Write tier:** confirm writes require `estalara:ops`+ (rank ≥ 2) with `estalara:readonly` as
-   view-only — or should the highest-risk writes (bandit weights, any per-tenant model override) be
-   restricted to `estalara:superadmin` only?
-4. **Audit scope:** writes are always logged. Should staff READS of tenant data also be logged (all
-   reads, or only PII/chat-bearing surfaces), given the 7-year retention cost?
+All four open questions were answered by the CEO the same day the ADR was proposed. These are the
+binding rulings; do not re-litigate:
+
+1. **`generation_model` stays GLOBAL — narrow reading adopted.** "Per-tenant" means staff control of
+   settings that are already per-tenant (quiz, demo, bandit, labels, intent); "globally" means
+   `/admin/settings`. The 2026-06-01 global-only lock on `generation_model` **STANDS**. FOLLOW-601
+   (per-tenant model override) is **DROPPED** — do not file or promote it.
+2. **Un-hiding the multi-tenant admin nav is RATIFIED** (Registrations, Tenants list, Demo
+   Sessions), formally reversing the 2026-06-15 "single-tenant v1" decision. §Decision 0 is
+   confirmed.
+3. **Write tier — tiered, per this ADR's recommendation:** staff writes require `estalara:ops`+
+   (rank ≥ 2), with `estalara:readonly` view-only; the **highest-risk writes** — bandit weight PATCH
+   and the global `generation_model` — require **`estalara:superadmin`**. (Operationally a no-op
+   today: the sole prod account is superadmin, so everything works immediately; the tighter tier
+   only starts mattering as staff accounts are added.)
+4. **Audit scope: writes only.** Staff reads of tenant data are NOT logged (7-year retention cost
+   not justified); revisit only if a compliance requirement (DPIA/ROPA) later demands read logging.
 
 ## References
 

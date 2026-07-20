@@ -1,14 +1,17 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 39 — archetype mock-literal chain CLOSED; FOLLOW-584/585/587/589 all DONE; Rule AD promoted)
+## ▶️ START HERE — resume 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened; FOLLOW-584/585/587/588/589 all DONE; Rule AD promoted)
 
 **Read this before picking anything.** The **archetype-invalid-mock-literal class is now CLOSED**
 (RETRO-183 verdict, independent all-shapes sweep = 0 live invalid literals). The
 FOLLOW-561→583→585→587→**589** chain remediated every live structural sub-shape and guarded all
 three in `tests/integration/archetype-id-parity.test.ts` (12 assertions), reinforced by
-`readonly ArchetypeId[]` compile-time typing on the named `MOCK_ARCHETYPES` arrays. **Rule AD**
-(`CONVENTIONS_PATCH.md`, promoted RETRO-182) codifies the discipline: enumerate every structural
-shape a value-domain literal can occupy; prefer a compile-time type over a downstream grep-guard.
+`readonly ArchetypeId[]` compile-time typing on the named `MOCK_ARCHETYPES` arrays. **FOLLOW-588**
+then hardened all 11 of that file's parsers with `stripComments()` so a comment inside a captured
+block can't false-positive the scan (RETRO-184 verdict: SAFE, no over-strip false-negative) — the
+convention is now enforced by code, de-risking FOLLOW-586. **Rule AD** (`CONVENTIONS_PATCH.md`,
+promoted RETRO-182) codifies the discipline: enumerate every structural shape a value-domain literal
+can occupy; prefer a compile-time type over a downstream grep-guard.
 
 Merged this session (all squash to `main`, all CI green modulo pre-existing-red Rule I):
 
@@ -24,16 +27,16 @@ Merged this session (all squash to `main`, all CI green modulo pre-existing-red 
   the tracer-history `archetype_deltas` JSON blob + a new JSON-blob-KEY guard. **Chain closed.**
 
 No open escalations block further work (ESC-020 remains explicitly non-blocking per CEO 2026-06-10
-ruling). **Two chain-ADJACENT follow-ups remain open — SEPARATE classes, NOT closed by the above**
-(both P3, both about currently-VALID-but-fragile code, not invalid values):
+ruling). **One chain-ADJACENT follow-up remains open — a SEPARATE class, NOT invalid values:**
 
-- **FOLLOW-586** (backend-engineer, 2h) — 2 importable full-parity DUPLICATE copies still
+- **FOLLOW-586** (backend-engineer, P3, 2h) — 2 importable full-parity DUPLICATE copies still
   un-migrated (`packages/shared/src/schemas/intent-weights.ts` `ARCHETYPE_KEYS` — RETRO-183
   independently re-confirmed it is a valid 18-entry copy, drift-risk not a live bug — and the
-  deferred `adapt/description/route.ts` inline `z.enum`); absorb onto `CANONICAL_ARCHETYPE_IDS`.
-- **FOLLOW-588** (qa-engineer, 1h) — strip comments in the parity-guard parsers so a quoted id
-  inside a comment can't false-positive the scan (the FOLLOW-585 gotcha); sequence before/with
-  FOLLOW-586.
+  deferred `adapt/description/route.ts` inline `z.enum`); absorb onto `CANONICAL_ARCHETYPE_IDS`. Now
+  de-risked: FOLLOW-588 hardened the parsers it will edit. Cautions from RETRO-184 for its worker:
+  `stripComments` does NOT strip SQL `--` comments (bounded, zero live exposure today), and the
+  outer block-capture regexes are unchanged — keep any new literal in the expected shape or the
+  guard fails loud.
 
 ---
 
@@ -13267,6 +13270,58 @@ in-place in Sprint 22b above.
     - [x] Rule AD: all structural shapes enumerated in the PR; no other live JSON-blob-key literal.
     - [x] Scope discipline: only the mock literal + parity test; z.string() column not retyped.
   cross_ref: [FOLLOW-587, FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-181, RETRO-182]
+- id: FOLLOW-588
+  title: >-
+    Harden the archetype-id-parity.test.ts parser helpers so inline comments inside a parsed literal
+    block cannot false-positive the archetype scan (prevents re-tripping the FOLLOW-585
+    comment-in-block gotcha) (RETRO-181)
+  agent: qa-engineer
+  status: DONE
+  assigned_to: qa-engineer
+  started_at: '2026-07-20T00:00:00Z'
+  completed_at: '2026-07-20T00:00:00Z'
+  branch: qa-engineer/FOLLOW-588-parser-comment-strip
+  pr: 567
+  merged_commit: c6326c8
+  retro: RETRO-184
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    RETRO-181 (§4c) on FOLLOW-585 — the FOLLOW-585 worker's lessons entry documented a real gotcha:
+    a fix-rationale comment placed INSIDE a MOCK_ARCHETYPES = [...] block made the parser's
+    /'([a-z_]+)'/g scan match a quoted id in the comment text, giving a misleading still-RED result
+    after the array was already fixed. The moved-comment convention was an unwritten discipline
+    FOLLOW-586 (edits these same parsers) could silently violate. Sequenced before FOLLOW-586.
+  pm_validated: >-
+    2026-07-20 — validated independently before DONE. Test-infra only (no production source). All AC
+    re-verified against PR #567: (1) stripComments() added (strips /* */, // JS, # Python) and
+    applied to ALL 11 parser helpers — confirmed by reading the diff (parseNlpPyArchetypes,
+    parseArchetypeSeedsTs, parseMigration0005Archetypes, parseArchetypeHintsReferencedIds,
+    parseArchetypeGuidancePyKeys, parseReachableArchetypes, parseMockArchetypes,
+    parseMockArchetypesGeneric, parseExportRouteMockArchetypes,
+    parseTracerSessionsMockTopArchetypes, parseTracerHistoryArchetypeDeltaKeys); (2) red→green
+    regression test with two self-contained inline fixtures (JS // + Python #) proved load-bearing
+    by neutering the stripper (2 fixtures fail, 12 real assertions stay green under the neuter); (3)
+    warning comment added atop the parser section; (4) all 12 pre-existing assertions unchanged
+    (stub said 10 — grown to 12 post-587/589), total 14/14 green — re-ran locally, 14/14 green
+    independently. No over-strip: 12 real assertions green = empirical proof no parsed block relies
+    on #/// as meaningful in-string content (ids and comments on separate lines). Scope: 2 files
+    (test + .claude/agents/qa-engineer/lessons.md). CI: 56 pass / 2 fail, both pre-existing-red Rule
+    I. CI-check counter: 5/5 this session. Fix-iteration counter: 0/3. NOT MERGED at validation time
+    — merged by CEO immediately after (test-infra only, autonomous QA area).
+  notes: |
+    Model-fit: sonnet — mechanical test-infra hardening.
+    Unblocks FOLLOW-586 (edits these same parsers, adds inline-commented z.enum/array literals of
+    exactly the shape that previously re-tripped the gotcha) — the convention is now enforced by
+    code, not discipline.
+    AC (verbatim from backlog/FOLLOW_UPS.md FOLLOW-588):
+    - [x] Strip //, /* */ (and # for Python) comments from the captured block before the id scan in
+          the parser helpers.
+    - [x] Regression test: a fixture with a commented invalid id parses to the valid set only.
+    - [x] One-line warning atop the parser helpers noting comments-in-block are now stripped.
+    - [x] All existing parity assertions still pass (12, grown from the stub's stated 10); suite green.
+  cross_ref: [FOLLOW-585, FOLLOW-586, RETRO-181, RETRO-183]
 - id: FOLLOW-567
   title: >-
     Fix Modal embed-seed -> POST /api/listings/embed contract mismatch (text_fields required but

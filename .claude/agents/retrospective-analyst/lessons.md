@@ -2747,3 +2747,28 @@ so.**
   never inherited from the predecessor retro. Also worth carrying forward: distinguishing the
   invalidity class (CLOSED) from the sibling duplicate-but-valid (FOLLOW-586) and parser-robustness
   (FOLLOW-588) classes prevented a false "everything archetype is now done" over-claim.
+
+---
+
+## 2026-07-20 / RETRO-184 (FOLLOW-588 — parser comment-strip hardening)
+
+- **A finding I almost missed and why:** the task framed the risk as false-NEGATIVE/over-strip, and
+  the lazy check is "all 12 real assertions are green → safe." But green is only self-evidencing for
+  the 5 EXACT-parity parsers (over-strip → `missing` → fail); the SUBSET-validity parsers would pass
+  VACUOUSLY under an over-strip (smaller-but-still-valid proper subset). I nearly rubber-stamped on
+  the green suite alone. The leg that actually clears the subset parsers is a file-level grep
+  proving no real archetype id is co-located after a `//`/`#` marker — mechanism, not just outcome.
+  Lesson: when a guard can pass vacuously, "the suite is green" is necessary but NOT sufficient;
+  find the input-level reason the bad case cannot arise.
+- **An axis/chain I had to trace twice:** the block-comment (`/* */`) direction. First pass I only
+  reasoned about line comments; then realized the 3 whole-source parsers strip the ENTIRE file,
+  which contains JSDoc `/* */`, so a non-greedy strip COULD in principle swallow a real id across an
+  unbalanced/open `/*`. Had to go back and count `/*`↔`*/` balance per file (18/18, 15/15, 2/2) to
+  close it. Whole-source-scan parsers have a strictly larger over-strip surface than captured-block
+  ones — check them separately.
+- **A meta-pattern in how gaps recur across agents:** the "neuter the mechanism and confirm exactly
+  the intended tests flip" move (here: identity-no-op stripper → exactly the 2 regression tests red,
+  12 real green) is a high-value dual proof — it establishes BOTH that the new test is load-bearing
+  AND that the change is inert on existing real data (nothing to over-strip). Worth
+  requesting/looking for this two-sided neuter evidence on every "hardening/guard" ticket, not just
+  the one-sided red→green the worker usually reports.

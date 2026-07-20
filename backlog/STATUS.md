@@ -1,4 +1,39 @@
-# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED; FOLLOW-584/585/587/589 DONE; RETRO-180–183; Rule AD promoted)
+# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened; FOLLOW-584/585/587/588/589 DONE; RETRO-180–184; Rule AD promoted)
+
+## SESSION 39 (cont. 5) (2026-07-20) — FOLLOW-588 MERGED + DONE; RETRO-184 → parser hardening SAFE
+
+**Ticket picked up + shipped this turn:** FOLLOW-588 (qa-engineer, Sonnet) — test-infra hardening,
+sequenced before FOLLOW-586 (which edits the same parsers). Added `stripComments()` (`/* */`, `//`
+JS/TS, `#` Python) to `tests/integration/archetype-id-parity.test.ts` and applied it inside all
+**11** parser helpers, so an archetype id inside a comment within a captured literal block can no
+longer false-positive the id scan (the FOLLOW-585 gotcha). No production source touched.
+
+**Deliverable (PR #567, squash-merged `c6326c8`, human-approved):** the stripper + a red→green
+regression test with two self-contained inline fixtures (JS `//` + Python `#`) run through the real
+parsers, proven load-bearing by neutering the stripper (2 fixtures fail, 12 real assertions stay
+green). Suite 14/14. Warning comment added atop the parser section.
+
+**PM validation (independent):** re-ran the suite locally (14/14 green), confirmed `stripComments`
+applied to all 11 helpers (read the diff), scope = 2 files (test + lessons), CI 56 pass / 2 fail
+(both pre-existing-red Rule I).
+
+**Retro loop — RETRO-184: over-strip risk SAFE.** The retro rigorously checked the one real hazard —
+that comment-stripping could silently DROP a real archetype id (a false-negative on a
+subset-validity parser passes vacuously, worse than the gotcha it fixes). Cleared on three legs: (1)
+a repo-wide grep of every parsed real file found ZERO archetype ids co-located after a `//`/`#`
+marker (only non-archetype words like `'mock'`/`'real'` sit in comments); (2) the 3
+whole-source-scanned files have balanced JSDoc so non-greedy `/* */` stripping can't swallow a real
+id; (3) neutering `stripComments` to identity flips EXACTLY the 2 regression tests red while all 12
+real assertions stay green. **No follow-up filed, no Rule promoted** (parser-fragility was a 1st
+sighting in RETRO-181; FOLLOW-588 is its resolution, not a 2nd sighting). Residual cautions noted
+for FOLLOW-586's worker: `stripComments` does not strip SQL `--` comments (bounded, zero live
+exposure), and the outer block-capture regexes are unchanged.
+
+**CI-check counter:** 5/5 this session. **Fix-iteration counter:** 0/3. **Only remaining
+chain-adjacent open ticket:** FOLLOW-586 (backend-engineer, P3 — 2 valid duplicate full-parity
+copies), now de-risked by FOLLOW-588. No other archetype-parity work remains open.
+
+---
 
 ## SESSION 39 (cont. 4) (2026-07-20) — FOLLOW-589 MERGED + DONE; RETRO-183 → CHAIN CLOSED
 

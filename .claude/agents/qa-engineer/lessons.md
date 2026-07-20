@@ -97,3 +97,30 @@ declaring the retype done — don't assume a `tsc`-clean retype is orthogonal to
 string-parse guard on the same line. (Caught this time because the full parity suite was re-run as a
 matter of course; would recommend making it an explicit sub-step in any future "add readonly type
 annotation near a parsed literal" ticket.)
+
+---
+
+## 2026-07-20 / FOLLOW-589
+
+**What I tested:** `apps/control-plane/src/app/api/admin/tracer/history/route.ts`
+`buildMockEvents()` — the `archetype_deltas: JSON.stringify({ ... })` blob. Added a 12th
+parser/assertion to `tests/integration/archetype-id-parity.test.ts` (subset-validity, same pattern
+as the FOLLOW-587 guard). Captured RED against main's current state (`family_nester`, 11 passed / 1
+failed), applied the one-line fix (`family_nester` → `family_buyer`), re-ran GREEN 12/12.
+
+**Where a test could have passed over a dead wire:** none this time — the new parser is a genuinely
+new structural shape (unquoted object-literal KEY inside a `JSON.stringify({...})` call), so
+`JSON.parse` on the raw source text can't be used (it isn't valid JSON until stringified at
+runtime); had to regex the `{...}` body directly and match keys via `/(\w+)\s*:\s*-?\d/g`. This is
+the 3rd sub-shape of the same value-domain-literal bug class (quoted array literal → quoted
+object-field value → unquoted JSON-blob key) that a naive "grep for the anchor name" sweep keeps
+missing one shape at a time (FOLLOW-561→583→585→587→589). A repo-wide sweep for `JSON.stringify({`
+blocks + a targeted grep across known-typo variants (`family_nester`, `luxury_seeker`, etc.) found
+no other live instance of this shape.
+
+**A guardrail I'd add:** Rule AD (promoted this session) should be checked BEFORE writing the next
+parser, not just documented after — for any future archetype-literal ticket, enumerate the known
+structural shapes (quoted array entry, quoted object field, unquoted object key, Python dict key,
+SQL insert value) up front and grep for all of them in one pass, rather than fixing shapes
+one-ticket-at-a-time as each new sweep stumbles on the next. This ticket is evidence the chain is
+now closable — worth confirming in the next retro that no 6th shape surfaces.

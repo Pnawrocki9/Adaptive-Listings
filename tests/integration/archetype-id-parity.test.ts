@@ -101,6 +101,20 @@
  *     `MOCK_ARCHETYPES` catalog, so there is no stable literal shape to anchor a
  *     parser to beyond this one field).
  *
+ * FOLLOW-589 addition — RETRO-182's all-shapes sweep found a 3rd structural
+ * shape of the same bug class, invisible to every anchor used above:
+ *   - `apps/control-plane/src/app/api/admin/tracer/history/route.ts`
+ *     `buildMockEvents()` hard-coded an invalid id as an UNQUOTED OBJECT KEY
+ *     inside a `JSON.stringify({...})` call —
+ *     `archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 })`.
+ *     Unlike every parser above, the key here is neither a quoted string value
+ *     nor `JSON.parse`-able source text (it isn't JSON until stringified at
+ *     runtime), so it needed a dedicated key-shape parser. `family_nester` is
+ *     NOT a member of ARCHETYPE_NAMES (the canonical family archetype is
+ *     `family_buyer`). RETRO-182's sweep found this is the only live instance
+ *     of this 3rd shape repo-wide — the mock-archetype-literal-invalidity class
+ *     is now fully enumerated and remediated across all live structural shapes.
+ *
  * @module tests/integration/archetype-id-parity
  */
 
@@ -271,6 +285,30 @@ function parseExportRouteMockArchetypes(source: string): Set<string> {
  */
 function parseTracerSessionsMockTopArchetypes(source: string): Set<string> {
   return new Set([...source.matchAll(/top_archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
+}
+
+/**
+ * Parses the unquoted object-literal KEYS out of the `archetype_deltas:
+ * JSON.stringify({ ... })` blob in `buildMockEvents()`
+ * (admin/tracer/history/route.ts). Unlike every quoted-VALUE parser above,
+ * these are unquoted JS object-literal keys inside a `JSON.stringify(...)`
+ * call — the source text isn't JSON until stringified at runtime, so
+ * `JSON.parse` can't be used here. Instead this captures the `{...}` body
+ * immediately following `archetype_deltas: JSON.stringify(`, then matches
+ * each key via `/(\w+)\s*:\s*-?\d/g` — every key in this blob is followed by
+ * a numeric delta value, so this can't accidentally match a value or a
+ * nested string.
+ */
+function parseTracerHistoryArchetypeDeltaKeys(source: string): Set<string> {
+  const block = /archetype_deltas:\s*JSON\.stringify\(\{([\s\S]*?)\}\)/.exec(source);
+  if (!block) {
+    throw new Error(
+      'archetype-id-parity: could not locate `archetype_deltas: JSON.stringify({ ... })` in ' +
+        'apps/control-plane/src/app/api/admin/tracer/history/route.ts — the literal was likely ' +
+        'renamed or reformatted; update this parser regex to match.',
+    );
+  }
+  return new Set([...block[1].matchAll(/(\w+)\s*:\s*-?\d/g)].map((m) => m[1]!));
 }
 
 // ─── Set-equality assertion helper ────────────────────────────────────────────
@@ -556,6 +594,33 @@ describe('FOLLOW-587 — admin/tracer/sessions mock top_archetype literals (dev/
 
     assertSubsetValidity(
       'apps/control-plane/src/app/api/admin/tracer/sessions/route.ts buildMockSessions() top_archetype',
+      referenced,
+      ARCHETYPE_NAMES,
+    );
+  });
+});
+
+describe('FOLLOW-589 — admin/tracer/history mock archetype_deltas JSON-blob keys (dev/CI-only)', () => {
+  // Same underlying bug class as the FOLLOW-587 admin/tracer/sessions guard above,
+  // but a 3rd structural shape: here the invalid id is an UNQUOTED OBJECT KEY
+  // inside a `JSON.stringify({...})` call, not a quoted string value — invisible
+  // to every quoted-string anchor regex used by the parsers above (and to
+  // `JSON.parse`, since the source text isn't JSON until stringified at
+  // runtime). Found hard-coded `family_nester` as a key in
+  // `archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 })`,
+  // which is NOT a member of ARCHETYPE_NAMES (the canonical family archetype is
+  // `family_buyer`).
+  it('admin/tracer/history/route.ts buildMockEvents() archetype_deltas keys are a valid, proper subset of ARCHETYPE_NAMES', () => {
+    const source = readRepoFile('apps/control-plane/src/app/api/admin/tracer/history/route.ts');
+    const referenced = parseTracerHistoryArchetypeDeltaKeys(source);
+
+    expect(
+      referenced.size,
+      'parser matched 0 archetype_deltas keys in admin/tracer/history/route.ts buildMockEvents() — regex is broken',
+    ).toBeGreaterThan(0);
+
+    assertSubsetValidity(
+      'apps/control-plane/src/app/api/admin/tracer/history/route.ts buildMockEvents() archetype_deltas',
       referenced,
       ARCHETYPE_NAMES,
     );

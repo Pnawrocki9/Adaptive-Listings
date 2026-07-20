@@ -4254,3 +4254,37 @@ file. Conventional commit referencing `[FOLLOW-592]`. In the PR description, pas
 > (producer/ consumer grep — expect zero non-test consumers yet, since no route opts in this ticket;
 > that is CORRECT and expected, not a wiring failure, for this specific ticket) before
 > READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-595 (session 41, 2026-07-20)
+
+**Worker:** `backend-engineer` · **Model: OPUS** (mandatory model-fit ruling — first staff WRITE
+path: RLS-bypassed service-role update + `staff_audit_log` attribution + write-rank gate; a fence or
+audit error is a cross-tenant-write / non-attributable-privileged-action risk. Do not argue down to
+sonnet). **Branch:** `backend-engineer/FOLLOW-595-quiz-staff-write`.
+
+**Verified ground truth (PM, against real files — no blockers):**
+
+- Target `apps/control-plane/src/app/api/quiz/config/route.ts` has GET (read) + **POST** (write —
+  the AC's "PUT" is nominal). Both already use `createAdminClient()` (RLS BYPASSED) +
+  `eq(tenants.id, tenantId)` fence → INV-5 model already present; the port swaps auth to
+  `resolveTenantAccess` and adds write-rank + audit.
+- `staff_audit_log` table + Drizzle schema EXIST (`packages/db/src/schema/staff_audit_log.ts`,
+  migrated) — NO new migration. Direct-insert precedent: `api/admin/labels/export/route.ts` (~L269,
+  `db.insert(staffAuditLog).values({ adminUserId, action, targetTenantId, payload })`).
+- `resolveTenantAccess` already exposes `canWrite` (rank ≥ `estalara:ops`) + `isSuperadmin` + `role`
+  for the CEO-Q3 write-rank gate.
+- Surface precedent: merged `admin/tenants/[id]/analytics/page.tsx` (validate via `tenantExists` →
+  `notFound`). Agency editor that may be extractable: `app/dashboard/quiz/page.tsx`.
+
+**Non-negotiable scope constraints:** port GET + POST only; agency write semantics unchanged (viewer
+may write today); staff write requires `canWrite` (else 403); audit STAFF writes only, AWAITED (not
+fire-and-forget — Vercel drops un-awaited); MANDATORY red-first tenant-filter test covers READ
+**and** WRITE against the real query (not a local array — RETRO-187); add FOLLOW-603 route-level
+`toHaveBeenCalledWith(allowStaffOverride/minAgencyRole)` assertions; do NOT claim "agency tests
+unchanged" (porting forces re-mock). RETRO-187 route doc note (ADMIN_API_SECRET → 403 for staff).
+
+**Completion:** worker opens the PR; PM validates the READ+WRITE tenant-filter test genuinely hits
+the real query, the audit row is asserted + durably awaited, the write-rank 403 gate, and the
+FOLLOW-603 assertions — BEFORE READY_FOR_REVIEW.

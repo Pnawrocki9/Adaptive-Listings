@@ -32,16 +32,25 @@ MERGED to main**. Nothing was lost. Worktrees removed and branches deleted.
   risk the green tests) — these fold into **FOLLOW-591** (already exists to clear Rule I wholesale).
   Not a merge gate.
 
-**Next step (nothing in-flight):**
+**Status / in-flight:**
 
-1. Spawn `retrospective-analyst` for **RETRO on FOLLOW-593 and FOLLOW-594** (per the per-ticket
-   retro loop — both are now DONE/merged).
-2. Promote **FOLLOW-595** (Phase-2 quiz config staff-write port + `staff_audit_log` wiring). Note it
-   now has a real per-tenant landing to link from (593's `[id]` page) and the analytics precedent
-   (594) to copy the `resolveTenantAccess` + MANDATORY tenant-filter-test shape.
-3. File a **sibling stub** for the Pilot / Site-Detection read-only staff views deferred out of 594
-   (same `resolveTenantAccess({allowStaffOverride}) + per-tenant page` pattern).
-4. FOLLOW-596..600 unchanged (Phase-2/3, blocked/next).
+1. ✅ DONE — retros filed+merged (#584): RETRO-188 (593), RETRO-189 (594, INV-5 security-CLEAN).
+2. ⏳ **IN-FLIGHT — FOLLOW-595 PROMOTED + DISPATCHED** (session 41). Worker = `backend-engineer`
+   (**OPUS** — security-sensitive staff WRITE + `staff_audit_log` + RLS-bypass tenant fence; do not
+   argue down). Branch **`backend-engineer/FOLLOW-595-quiz-staff-write`**; full brief in
+   `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-595", session 41). **If this session died and
+   you're resuming: check that branch + `gh pr list` for the worker's PR BEFORE re-dispatching**
+   (the session-41 recovery started from exactly this failure mode — a dispatch lost to a crash
+   strands work uncommitted in `.claude/worktrees/agent-*`). PM must then VALIDATE the PR (the
+   MANDATORY read+write tenant-filter test hits the REAL query, the audit row is asserted + durably
+   awaited, the write-rank 403 gate, and the FOLLOW-603 route-level option-wiring assertions) before
+   ready.
+3. ⬜ NEXT after 595 lands: file a **sibling stub** for the Pilot / Site-Detection read-only staff
+   views deferred out of 594 (same `resolveTenantAccess({allowStaffOverride}) + per-tenant page`
+   pattern); then FOLLOW-596..600 (Phase-2/3).
+4. ⬜ Open follow-ups from the retros: **FOLLOW-602** (Rule-I diff-scope must not false-block
+   inference-only exports — a dependency of FOLLOW-591) and **FOLLOW-603** (route-level
+   option-wiring assertions in staff-ported route tests; 595 already applies it inline).
 
 ---
 

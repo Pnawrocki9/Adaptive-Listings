@@ -1,4 +1,52 @@
-# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened; FOLLOW-584/585/587/588/589 DONE; RETRO-180–184; Rule AD promoted)
+# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened + 5/6 duplicate copies consolidated; FOLLOW-584/585/586/587/588/589 DONE; RETRO-180–185; Rule AD promoted)
+
+## SESSION 39 (cont. 6) (2026-07-20) — FOLLOW-586 MERGED + DONE; RETRO-185; one importable copy (FOLLOW-590) remains
+
+**Ticket picked up + shipped this turn:** FOLLOW-586 (backend-engineer, Sonnet) — "finish
+FOLLOW-584": migrate the 2 remaining NAMED importable full-parity archetype-ID copies onto the
+exported canonical sources. CEO pre-authorized merge-on-green.
+
+**PM pre-work (verify-not-guess):** before dispatch, independently confirmed the two facts the
+refactor depended on — `ArchetypeIdSchema` IS exported from the `@estalara/shared` root
+(`schemas/index.ts` → `description.js`), and `CANONICAL_ARCHETYPE_IDS` order is byte-identical to
+`ARCHETYPE_KEYS` (so the derivation preserves order → no behavior change).
+
+**Deliverable (PR #569, squash-merged `5883e18`):** `intent-weights.ts`
+`ARCHETYPE_KEYS = CANONICAL_ARCHETYPE_IDS` (intra-package import); `adapt/description/route.ts`
+`QueryParamsSchema.archetype: ArchetypeIdSchema` (from `@estalara/shared`). Both drop-in, order-
+identical, no behavior change. Scope: 2 named files + lessons.
+
+**PM validation (independent):** re-ran typecheck on all 3 affected packages
+(shared/control-plane/sdk — clean), the `intent-weights-drift` guard (9/9 green locally), confirmed
+the migration diff, CI 57 pass / 2 fail (both pre-existing-red Rule I). Merged per the CEO's
+merge-on-green authorization.
+
+**Retro loop — RETRO-185: 2 named copies consolidated, but a 3rd surfaced.** FOLLOW-586's AC#4
+closure grep found a THIRD genuine hand-maintained full-parity 18-entry copy the ticket's
+2-named-file scope did not cover: `packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema`
+(inline `z.enum`, currently UN-guarded — can drift silently today). The worker correctly
+SURFACED-and-DEFERRED it across the ownership boundary (sdk-engineer) rather than scope-creeping —
+**Rule AC WORKING, not failing** (an in-grep copy handled forward, unlike FOLLOW-584 which silently
+dropped in-grep copies). Filed **FOLLOW-590** (sdk-engineer, P3, ~1h): re-export
+`@estalara/shared`'s `ArchetypeIdSchema` (retro noted `z.enum(ARCHETYPE_NAMES)` won't typecheck —
+SoT array isn't `as const`) + add the missing parity guard. **No Rule promoted** — the
+"in-grep-but-out-of-this-ticket's-scope" sub-pattern is already the CORE of promoted Rule AC
+(distinct from Rule AD's anchor-INVISIBLE mode); this sighting CONFIRMS Rule AC rather than crossing
+a new threshold. PM also removed a **duplicate FOLLOW-590 stub** the retro accidentally wrote twice
+(kept the complete one).
+
+**Thread status:** the importable-full-parity-COPY consolidation is NOT yet closed — one copy
+(`adapt-schema.ts`) remains; **after FOLLOW-590 lands it will be CLOSED repo-wide** (RETRO-185).
+This thread is SEPARATE from the invalid-literal-VALUE chain (closed RETRO-183) and the Python
+cross-runtime copies (guarded by FOLLOW-561, deliberately parallel).
+
+**CI-check counter:** 6/5 this session (exceeded — 6 code PRs validated:
+#559/#561/#563/#565/#567/#569,
+
+- 6 docs PRs). **Fix-iteration counter:** 0/3. **Only remaining archetype-parity ticket:**
+  FOLLOW-590 (sdk-engineer, P3).
+
+---
 
 ## SESSION 39 (cont. 5) (2026-07-20) — FOLLOW-588 MERGED + DONE; RETRO-184 → parser hardening SAFE
 

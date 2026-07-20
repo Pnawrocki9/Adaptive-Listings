@@ -2772,3 +2772,31 @@ so.**
   AND that the change is inert on existing real data (nothing to over-strip). Worth
   requesting/looking for this two-sided neuter evidence on every "hardening/guard" ticket, not just
   the one-sided red→green the worker usually reports.
+
+## 2026-07-20 · RETRO-185 (PR #569, FOLLOW-586 — finish the archetype-ID consolidation; filed FOLLOW-590 for the last copy; NO rule promoted)
+
+- **A finding I almost missed and why:** whether the 3rd copy (`adapt-schema.ts`) was
+  parity-GUARDED. The easy path was "grep found it, file FOLLOW-590, done." But the load-bearing
+  detail for the follow-up's AC was that `tests/integration/archetype-id-parity.test.ts` (14
+  assertions) does NOT cover `adapt-schema.ts`, and `adapt-schema.test.ts` only tests parse
+  behaviour, not 18-entry parity — so the ONE surviving copy is precisely the one that can drift
+  silently. I only caught it by grepping the parity suite + the SDK test for `archetypeIdSchema`
+  rather than assuming "there's a parity suite, so it's covered." Lesson: when a copy is left
+  behind, always separately verify whether it's GUARDED, not just whether it EXISTS — "guarded" and
+  "consolidated" are different axes.
+- **An axis/chain I had to trace twice:** the derivation recommendation. The task note leaned toward
+  in-package `ARCHETYPE_NAMES` derivation as "cleaner." First pass I nearly echoed that. Second pass
+  I checked the actual type of `ARCHETYPE_NAMES` (`readonly Archetype[]`, NOT `as const`) against
+  `z.enum()`'s tuple requirement (`[string, ...string[]]`) — which flips the recommendation to
+  Option B (import shared's `ArchetypeIdSchema`, no cast, matches the route.ts precedent this very
+  PR set). A "cleaner" architectural suggestion can be blocked by a concrete typing constraint;
+  verify the type, don't trust the prose.
+- **A meta-pattern in how gaps recur across agents:** the "in-grep-but-out-of-this-ticket's-scope"
+  copy is now on its 3rd sighting (FOLLOW-561/583 → 584 → 586) and my reflex was to ask "is this
+  promotable?" It is NOT — it's the CORE of already-promoted Rule AC, and (unlike FOLLOW-584 which
+  silently dropped) FOLLOW-586 SURFACED-and-DEFERRED across an ownership boundary, i.e. Rule AC
+  WORKING. The meta-lesson: a recurring pattern that is ALREADY codified as a rule should be scored
+  as CONFIRM-the-rule, not promote-a-new-rule; and distinguish "failure of the rule" (silent drop)
+  from "the rule operating" (grep-scoped, surfaced forward) before counting it as a failure
+  sighting. Also: separate the ownership-boundary defer (correct) from a scope-drop (incorrect) —
+  same surface, opposite verdict.

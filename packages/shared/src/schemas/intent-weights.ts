@@ -23,37 +23,21 @@
 
 import { z } from 'zod';
 
+import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
+
 // ─── Canonical key sets ───────────────────────────────────────────────────────
 
 /**
- * All 18 valid archetype keys. Derived from `ARCHETYPE_NAMES` in
- * `packages/sdk/src/core/intent.ts` — do NOT add keys here without adding the
- * corresponding archetype to the SDK's `Archetype` union and `ARCHETYPE_NAMES`.
+ * All 18 valid archetype keys.
+ *
+ * Derived from `CANONICAL_ARCHETYPE_IDS` (`../archetypes.js`), the single canonical
+ * source of this list within `packages/shared` (FOLLOW-584/FOLLOW-586). That array
+ * is itself kept in sync with `ARCHETYPE_NAMES` in `packages/sdk/src/core/intent.ts`
+ * — do NOT add keys here; add them to `archetypes.ts`. Order/parity is guarded by
+ * `packages/sdk/src/__tests__/intent-weights-drift.test.ts` and
+ * `packages/shared/src/__tests__/archetype-canonical-parity.test.ts`.
  */
-export const ARCHETYPE_KEYS = [
-  // Investors
-  'yield_hunter',
-  'vacation_rental_investor',
-  'flip_investor',
-  'portfolio_builder',
-  'golden_visa_buyer',
-  'commercial_investor',
-  // Own use
-  'family_buyer',
-  'first_time_buyer',
-  'upsizer',
-  'downsizer',
-  'luxury_buyer',
-  'remote_worker',
-  // Special / cross-border
-  'lifestyle_expat',
-  'retiree_relocator',
-  'diaspora_buyer',
-  'second_home_buyer',
-  'student_parent',
-  // Fallback
-  'neutral',
-] as const;
+export const ARCHETYPE_KEYS = CANONICAL_ARCHETYPE_IDS;
 
 export type ArchetypeKey = (typeof ARCHETYPE_KEYS)[number];
 

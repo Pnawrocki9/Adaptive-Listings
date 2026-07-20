@@ -1,4 +1,43 @@
-# Status — 2026-07-20 (session 39 — ENTIRE archetype-parity effort COMPLETE; both classes CLOSED; FOLLOW-584/585/586/587/588/589/590 DONE; RETRO-180–186; Rule AD promoted)
+# Status — 2026-07-20 (session 39 — archetype-parity COMPLETE; superadmin-access Phase 0 SHIPPED + ADR-0018 ACCEPTED; Phase-1 stubs FOLLOW-592..600 filed)
+
+## SESSION 39 (cont. 8) (2026-07-20) — superadmin-access: Phase 0 shipped (PRs #574/#575), ADR-0018 CEO-accepted, Phase-1 stubs filed
+
+**New CEO-driven thread (after the archetype-parity close-out):** the CEO asked which Claude model
+generates DOM descriptions, then to add a model selector to admin.estalara.com. Repo check
+(check-before-proposing) found the selector FULLY BUILT (FOLLOW-161) but dead end-to-end: no nav
+link anywhere; PUT staff-only (FOLLOW-456) while the only UI lived in the agency zone staff cannot
+reach; GET agency-only (401 for staff); and prod Supabase Auth has exactly ONE user — the CEO's
+`estalara:superadmin` (verified via read-only SQL). So no reachable UI could change the model.
+
+**Shipped:**
+
+- **PR #574** (`41ee32d`) — Settings nav link in the /dashboard sidebar (agency zone; before the
+  auth asymmetry was fully diagnosed).
+- **PR #575** (`9f2c17f`, CEO-merged) — Phase 0: GET /api/admin/generation-model additionally
+  accepts staff auth (additive fall-through, agency path unchanged; route tests 19/19 incl. 3 new
+  staff cases); new `/admin/settings` "Platform Settings" page + "Platform" nav section (layout
+  tests 11/11); panel extracted to shared `components/generation-model-settings.tsx` rendered by
+  BOTH zones (no hand-copied UI — the RETRO-179..186 drift class). Also carried architect-drafted
+  (Opus) PROPOSED-0018.
+
+**ADR-0018 ACCEPTED (CEO, same day) — all 4 open questions resolved:** (1) `generation_model` stays
+GLOBAL (2026-06-01 lock STANDS; FOLLOW-601 dropped); (2) un-hiding multi-tenant admin nav RATIFIED
+(reverses 2026-06-15 single-tenant v1); (3) write tier = `estalara:ops`+ for staff writes,
+`estalara:superadmin`-only for bandit weights + global generation_model; (4) audit WRITES only. File
+promoted `PROPOSED-0018` → `ADR-0018-superadmin-tenant-access.md`; resolved-decisions section
+appended; stub numbering fixed in-ADR (draft's 590/591 collided with taken tickets → 592..601, 601
+dropped).
+
+**Phase-1 pipeline filed:** FOLLOW-592 (P1 foundation — `resolveTenantAccess` + invariant tests;
+blocks the rest), 593 (tenant hub + nav un-hide), 594 (Analytics read-only port), 595–597 (Phase-2
+audited writes: quiz, demo, labels+intent), 598 (bandit write, superadmin-only per Q3), 599 (real
+staff_audit_log behind /api/audit), 600 (per-tenant settings surface; generation-model explicitly
+excluded per Q1). All `promoted_to_queue: false` — PM promotes at planning; FOLLOW-592 first.
+
+**Also this thread:** FOLLOW-591 stub (Rule I diff-scoping) filed earlier and left un-promoted per
+CEO. CI-check counter: 8/5 (PRs #573/#574/#575 validated this thread). Fix-iteration: 0/3.
+
+---
 
 ## SESSION 39 (cont. 7) (2026-07-20) — FOLLOW-590 MERGED + DONE; RETRO-186 → IMPORTABLE-COPY CLASS CLOSED; whole effort complete
 

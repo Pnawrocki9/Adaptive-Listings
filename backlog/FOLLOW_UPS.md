@@ -16189,3 +16189,73 @@ generation-model control renders here; links from the FOLLOW-593 tenant landing.
       FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
+
+## FOLLOW-602 — Enrich FOLLOW-591 (diff-scoped Rule I) so it does NOT false-block inference-only-consumed exports
+
+source_retro: RETRO-188 source_ticket: FOLLOW-593 recommended_sprint: Sprint 24 recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false
+
+**Gap (a dependency/refinement of FOLLOW-591, NOT a duplicate):** FOLLOW-591's recommended Option B
+makes `check-rule-i.sh` fail CI only on NEW zero-importer exports in a PR's diff. But Rule I detects
+consumption by grepping for **named imports** — it is structurally blind to a symbol consumed ONLY
+via **TypeScript return-type inference**. FOLLOW-593 (PR #581, RETRO-188 §3) added 8 such exports:
+the colocated `admin/**/data.ts` return-type interfaces (`TenantsListResult`, `TenantLookupResult`,
+`RegistrationRow`, `RegistrationsDataSource`, `PendingRegistrationsResult`, `DemoSessionRow`,
+`DemoSessionsDataSource`, `DemoSessionsListResult`). They are genuinely WIRED — the pages
+destructure the loader's return (`const { dataSource, tenants } = await getTenantsList()`), so the
+compiler propagates the interface — yet each has zero named importers, so Rule I flags them dead.
+Under FOLLOW-591 Option B as written, these would flip CI RED as if they were new dead code,
+converting today's ignored whole-repo noise into tomorrow's false-block. This is DISTINCT from the
+RETRO-187 case (genuine dead code — `resolveTenantAccess`/`AccessError`, zero callers of any kind),
+which Option B SHOULD flag.
+
+**AC:**
+
+- [ ] `check-rule-i.sh` treats a symbol reachable via return-type inference from a wired export as
+      CONSUMED — e.g. a type used as a colocated function's declared return type whose function IS
+      imported — OR (simpler) exempt colocated `apps/**/src/app/admin/**/data.ts` return-type
+      interfaces. State which approach and why in the PR.
+- [ ] Proof-both-directions: the 8 FOLLOW-593 exports go GREEN (no longer flagged), AND a throwaway
+      genuinely-dead export (zero consumers of any kind, like the RETRO-187 pre-wire case) still
+      fails RED.
+- [ ] Sequence with / fold into FOLLOW-591 (same file, same owner) — do not ship Option B without
+      this, or the first PR after it lands that adds a colocated data loader will false-block.
+- [ ] (Small, colocated) add the `[id]/page.tsx` `data_source:'error'` banner render test noted as
+      RETRO-188 TG-1 (the loader's `'error'` return is already unit-tested; only the page JSX branch
+      is untested).
+
+cross_ref: [RETRO-188, FOLLOW-591, FOLLOW-593]
+
+## FOLLOW-603 — Assert the route-owned `resolveTenantAccess` security options in every staff-ported route test
+
+source_retro: RETRO-189 source_ticket: FOLLOW-594 recommended_sprint: Sprint 25 recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 promoted_to_queue: false
+
+**Gap (RETRO-189 §4c TC-1):** FOLLOW-594 re-greened the 3 analytics route tests (`ab/weights`,
+`dashboard/analytics/summary`, `dashboard/analytics/lift`) by PARTIALLY MOCKING `@/lib/session-auth`
+— spying `resolveTenantAccess`, keeping `AccessError` real. Correct for route isolation, but it
+DROPPED route-level proof that each route invokes the helper with the correct security options:
+`allowStaffOverride: true` + `minAgencyRole: 'agency:viewer'`. A `grep` for
+`toHaveBeenCalledWith|allowStaffOverride|minAgencyRole` across the 3 test files finds ZERO
+arg-assertions. Impact: a future edit that dropped `allowStaffOverride:true` (silently breaking the
+whole staff port) or weakened/omitted `minAgencyRole` (an authz regression) would pass EVERY current
+route test. The agency→tenantId BINDING itself IS proven in
+`src/lib/__tests__/resolve-tenant-access.test.ts` (AGENCY-1/FOREIGN/MATCH/DEFAULT) — but the helper
+suite structurally cannot assert which options each ROUTE opts into. This is a test-coverage gap on
+a security-relevant config, no live defect (the options are correct today).
+
+**AC:**
+
+- [ ] In each of the 3 ported route tests add a red-first assertion:
+      `expect(mockResolve).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }))`.
+- [ ] Prove it is load-bearing: perturbing the route's option (e.g. removing `allowStaffOverride`)
+      flips the new assertion RED while the rest of the suite is otherwise unaffected.
+- [ ] Cover the `ab/weights` staff-path + `?archetype=` combination (the
+      `and(eq(tenant,A),     eq(archetype,x))` array-fence branch of `whereTenantVal`, currently
+      only the single-condition branch is exercised on the staff path — RETRO-189 §4c TC-2).
+- [ ] **Template note (do NOT skip):** the same option-wiring assertion is MANDATORY in every future
+      `resolveTenantAccess` staff port — FOLLOW-595/596/597/598/600 and the deferred
+      Pilot/Site-Detection sibling — and each WRITE port must additionally assert its write-rank
+      gate (`access.isSuperadmin` / rank ≥ ops) is enforced. Reference this ticket as the pattern.
+
+cross_ref: [RETRO-189, FOLLOW-594, FOLLOW-592, FOLLOW-595, FOLLOW-598]

@@ -2926,3 +2926,26 @@ so.**
   same PR" rule. Also: the worker PROACTIVELY applied FOLLOW-603's option-wiring assertions —
   evidence the retro→FOLLOW→AC learning loop actually propagates into implementation, not just
   backlog.
+
+- **2026-07-20 / RETRO-191 (FOLLOW-605)** · **A finding I almost missed and why:** the
+  mock↔production boundary. The `.transaction()` harness mock is so faithful (snapshot → stage →
+  commit-on-resolve / discard-on-throw) that it's easy to record the green rollback test as PROOF of
+  atomicity and move on. It isn't — it proves the ROUTE's control flow + the mock's contract, never
+  the real postgres.js/pgBouncer BEGIN/COMMIT/ROLLBACK. The load-bearing evidence for real-DB
+  atomicity is ELSEWHERE: the 4 production precedents on the same session-pool client (I
+  grep-confirmed quiz/completion:236 and dsr/erase:317). Lesson: for any test that mocks a
+  transactional/atomic primitive, explicitly separate "what the mock proves" from "what de-risks the
+  real primitive," and name the latter — otherwise a green over-promises. · **An axis/chain I had to
+  trace twice:** the cascade propagation. First pass I saw ADR §3a names 596/597/598 and thought the
+  obligation was fully carried. Second pass (grepping the actual stub blocks) showed the inline
+  sequence-note landed ONLY in 598; 596/597 have zero atomicity refs and lean solely on the ADR
+  scope line. Prose obligations propagate ASYMMETRICALLY — verify the note is IN each downstream
+  stub, don't assume a scope-line-naming covers it. That asymmetry is precisely what tipped
+  FOLLOW-607 (a mechanical guard covers all ports uniformly) from "nice-to-have" to "worth filing."
+  · **A meta-pattern in how gaps recur across agents:** the gap→fix ARC vs independent-sighting
+  distinction. RETRO-190 flagged the non-transactional write; RETRO-191 fixed the SAME write. That
+  is ONE arc, NOT two rule-promotion sightings — resisting the urge to promote a Rule off a single
+  remediated instance is the discipline the ≥2-INDEPENDENT bar exists to protect. The right move was
+  to set the explicit promotion TRIGGER (first 2nd independent port found non-transactional) rather
+  than codify prematurely. This mirrors the RETRO-180..186 archetype arc where I repeatedly had to
+  distinguish "confirms an existing rule" from "new independent sighting."

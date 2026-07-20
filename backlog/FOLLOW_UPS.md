@@ -16370,3 +16370,34 @@ failed to wire itself in.
       PR (prevents the 3rd recorded sighting → the promotion trigger noted in RETRO-190 §6).
 
 cross_ref: [RETRO-190, RETRO-189, FOLLOW-593, FOLLOW-594, FOLLOW-595]
+
+## FOLLOW-607 — CI guard: staff WRITE ports must wrap their data mutation + `staff_audit_log` insert in ONE `db.transaction()` (mechanically enforce ADR-0018 §3a)
+
+source_retro: RETRO-191 source_ticket: FOLLOW-605 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P3 estimated_hours: 2-3 promoted_to_queue: false
+
+**Scope:** FOLLOW-605 ratified (ADR-0018 §3a) and implemented single-transaction atomicity for the
+FOLLOW-595 quiz-config staff write, so the config `update` and its `staff_audit_log` insert
+commit-or-roll-back together. But the obligation is enforced ONLY by PROSE — the ADR §3a scope line
+plus an inline sequence-dependency note that landed ONLY in the FOLLOW-598 stub; FOLLOW-596/597
+carry NO inline atomicity reference (grep of their stub blocks: 0 hits for
+`atomic`/`transaction`/`605`/ `§3a`). Nothing mechanical stops 596/597/598 from silently regressing
+to the pre-605 mutate-then-audit shape. Add a Rule-H-style CI check (extend the
+`scripts/check-rule-*.sh` family) that FLAGS any control-plane API route which calls
+`insert(staffAuditLog)` AND a sibling `.update(...)`/`.insert(...)` data mutation on the same route
+WITHOUT a shared `db.transaction(...)` wrapper. Endorsed by the FOLLOW-605 worker's own lessons
+entry as the durable guardrail; RETRO-191 concurs. This is the mechanical companion to ADR §3a and,
+once landed, would itself be the codification of the "staff writes must be transactional +
+attributable" pattern (so no separate CONVENTIONS_PATCH Rule is needed — RETRO-191 §6 held it below
+the ≥2-independent-sighting bar).
+
+**AC:**
+
+- [ ] A red-first fixture route (a `db.update(...)` + `db.insert(staffAuditLog)` NOT inside a
+      `db.transaction`) makes the check FAIL; wrapping them in one tx makes it PASS.
+- [ ] The shipped FOLLOW-605 `api/quiz/config` route PASSES the check (reference impl), and the
+      agency-only path (no audit insert) is correctly not flagged.
+- [ ] The check is wired into CI (same non-soft-skip discipline as Rule Q) and documented so
+      FOLLOW-596/597/598 authors get a mechanical failure, not a prose-only reminder.
+
+cross_ref: [RETRO-191, RETRO-190, FOLLOW-605, FOLLOW-596, FOLLOW-597, FOLLOW-598, ADR-0018]

@@ -42,7 +42,15 @@ MERGED to main**. Nothing was lost. Worktrees removed and branches deleted.
    now commit-or-rollback in ONE `db.transaction()` (ADR-0018 **§3a**; rollback test proves no
    orphan mutation). PM-validated #586 and #589 before merge.
 
-**⬜ NEXT (nothing in-flight — pick per priority):**
+**⏳ IN-FLIGHT — FOLLOW-607 (staff-write transaction CI guard) DISPATCHED** (session 41). Worker =
+`backend-engineer` (**SONNET** — routine CI-tooling, red-first-fixture-verifiable). Branch
+**`backend-engineer/FOLLOW-607-staff-write-tx-guard`**; brief in `backlog/HANDOFFS.md`. **If
+resuming after a crash: check that branch + `gh pr list` BEFORE re-dispatching.** Deliverable: a new
+`scripts/check-rule-*.sh` grep guard (flags `db.update`/`insert` + `insert(staffAuditLog)` on a
+route without a wrapping `db.transaction()`) + a CI step in `.github/workflows/ci.yml` + a red-first
+fixture; 605's `api/quiz/config` must PASS, agency path not flagged.
+
+**⬜ NEXT (pick per priority):**
 
 3. **Phase-2 write ports FOLLOW-596 / 597** (demo-override; labels + intent-config) — copy 595's
    shape: `resolveTenantAccess` + write-rank (`canWrite`) + `staff_audit_log` **inside one

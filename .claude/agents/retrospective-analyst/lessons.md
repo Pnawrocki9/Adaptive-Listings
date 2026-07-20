@@ -2822,3 +2822,31 @@ so.**
   the cross-runtime (Python/SQL) copies that CAN'T import the TS SoT — the parity guard's
   non-vacuity assertions are the only thing between them and silent drift. Watch that invariant on
   any future edit to those parsers.
+
+## 2026-07-20 · RETRO-187 (FOLLOW-592, ADR-0018 superadmin-tenant-access foundation)
+
+- **A finding I almost missed and why:** The suite has a test literally named `RLS-TRAP-LEAK-DEMO`
+  mapped to INV-5 (the ADR's single load-bearing security invariant), and FOLLOW-592's AC lists
+  `staff-query-is-tenant-filtered`. Surface-reading the test NAME + AC = "invariant 5 covered,
+  clean." Only reading the test BODY (it builds a local `allRows` literal and asserts
+  `Array.prototype.filter` behavior — it never invokes a route query, because the helper by design
+  runs no query) revealed it is DEMONSTRATIVE, not enforcing. Lesson: a test's name/AC-label proves
+  intent, never coverage — for the highest-risk invariant, read the body and ask "what production
+  code does this assertion actually bind?" Here: none.
+- **An axis/chain I had to trace twice:** The RLS-trap ENFORCEMENT chain. First trace: helper →
+  returns `access.tenantId` (the fence) → OK. Second trace (the one that mattered): where does the
+  fence get APPLIED, and is that application tested? → deferred to FOLLOW-594..600 → read each of
+  the 7 downstream stub ACs → NONE carried a per-route leak-test. The gap wasn't in what shipped; it
+  was in whether the obligation TRAVELS with the tickets that discharge it. It didn't. Fixed by
+  editing the stubs, not by filing a new ticket.
+- **A meta-pattern in how gaps recur across agents:** This is Rule AC's shape ("gap moves one hop
+  downstream / dropped from the next scope") reappearing in a NEW domain — a security TEST
+  obligation crossing a ticket boundary rather than a code literal crossing a grep anchor. A
+  foundation ticket can pass its own AC with a demonstrative test while pushing the real enforcement
+  into consumer tickets whose ACs quietly omit it. 1st sighting in this domain (count 1) — did NOT
+  promote, but flagged the 2nd-sighting trigger for widening Rule AC to test-obligation propagation.
+- **Blind-spot on the harness itself:** started on a DIRTY non-worktree checkout (branch
+  `backend-engineer/FOLLOW-584-...`, 5 modified/untracked files from a DIFFERENT ticket) while
+  retro'ing FOLLOW-592. Read-only on code so no contamination risk to my output, but a reminder to
+  `git show <sha>` the MERGED commit rather than trust the working tree when the tree is dirty from
+  a concurrent agent sharing the checkout.

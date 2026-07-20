@@ -1,4 +1,54 @@
-# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED + parsers hardened + 5/6 duplicate copies consolidated; FOLLOW-584/585/586/587/588/589 DONE; RETRO-180–185; Rule AD promoted)
+# Status — 2026-07-20 (session 39 — ENTIRE archetype-parity effort COMPLETE; both classes CLOSED; FOLLOW-584/585/586/587/588/589/590 DONE; RETRO-180–186; Rule AD promoted)
+
+## SESSION 39 (cont. 7) (2026-07-20) — FOLLOW-590 MERGED + DONE; RETRO-186 → IMPORTABLE-COPY CLASS CLOSED; whole effort complete
+
+**Final ticket of the arc:** FOLLOW-590 (sdk-engineer, Sonnet) — migrate the LAST importable
+full-parity archetype-ID copy. PM pre-verified sdk depends on `@estalara/shared` (so `sdk→shared`
+re-export is the allowed direction) and that `z.enum(ARCHETYPE_NAMES)` can't be used (SoT isn't
+`as const`).
+
+**Deliverable (PR #571, squash-merged `bb9f837`, human-approved):**
+`packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema` is now a re-export of shared's
+`ArchetypeIdSchema` (inline 18-item `z.enum` removed); added the `.options ≡ ARCHETYPE_NAMES`
+runtime parity guard the file lacked (proven load-bearing by perturbation — no natural red-on-main,
+the copy was in sync). No behavior change; typecheck clean; sdk suite 1534 green; bundle 40.69KB
+gzip < 42KB. Scope: 3 files (adapt-schema + test + lessons).
+
+**PM validation (independent):** re-ran the guard test (17/17 green) + sdk typecheck (clean),
+confirmed the re-export + `z` still used for the file's other schemas, and **re-ran the closure grep
+myself** — every remaining `golden_visa_buyer` hit is the canonical `archetypes.ts` /
+`ARCHETYPE_NAMES` SoT, a numeric weight/embedding map, a playbook lookup / single `return`, or a
+doc-comment (incl. the audit/route.ts FOLLOW-587 rationale comment); ZERO remaining hand-maintained
+full-parity ID-list copies. CI 57 pass / 2 fail (both pre-existing-red Rule I).
+
+**Retro loop — RETRO-186: IMPORTABLE-COPY CLASS CLOSED.** The retro's own closure-grep re-run
+classified all 14 non-test hits into an auditable table: category-(c) genuine hand-maintained
+full-parity importable ID-list copy = **0**. Guard-coverage audit for the record: every importable
+TS ID-list derives from `CANONICAL_ARCHETYPE_IDS` (guarded vs `ARCHETYPE_NAMES` by
+`archetype-canonical-parity.test.ts`); the Python copies + `archetype-seeds.ts` + migration 0005 are
+guarded by `archetype-id-parity.test.ts` (FOLLOW-561). No follow-up filed (the coverage hole
+RETRO-185 flagged is closed by this PR's own guard; the 2 test-only fixtures are a recorded note).
+No Rule promoted (Rules AC + AD already cover the arc).
+
+**🎯 ENTIRE ARCHETYPE-PARITY ARC COMPLETE (~9 tickets, this session).** Two related classes, both
+now closed and guarded:
+
+- Invalid-literal-VALUE chain: FOLLOW-561→583→585→587→589 (RETRO-183 CHAIN CLOSED — 0 live invalid
+  literals across all structural shapes, 12 guard assertions).
+- Duplicate-COPY class: FOLLOW-584→586→590 (RETRO-186 CLOSED — every importable copy derives from
+  one canonical source).
+- Plus FOLLOW-588 (parser hardening, RETRO-184 SAFE) and **Rule AD** (RETRO-182) codifying the
+  root-cause discipline. Root cause (for the record): multiple hand-maintained parallel copies of
+  one value domain with no single source, compounded by incomplete grep-scoping that let each fix
+  miss the next structural shape / copy. Systemic fix: one exported canonical const + derivations
+  everywhere + shape-complete guards + Rule AD (enumerate all shapes; prefer compile-time types) +
+  Rule AC surfacing-forward across ownership boundaries.
+
+**CI-check counter:** 7/5 this session (7 code PRs #559/#561/#563/#565/#567/#569/#571 + 7 docs PRs,
+all validated). **Fix-iteration counter:** 0/3. **No open archetype-parity tickets remain** — next
+work is normal backlog priority.
+
+---
 
 ## SESSION 39 (cont. 6) (2026-07-20) — FOLLOW-586 MERGED + DONE; RETRO-185; one importable copy (FOLLOW-590) remains
 

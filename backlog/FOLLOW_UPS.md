@@ -15848,7 +15848,9 @@ cross_ref: [FOLLOW-587, FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-18
 ## FOLLOW-590 — Migrate the last importable full-parity archetype-ID copy (`packages/sdk/src/core/adapt-schema.ts` `archetypeIdSchema`, an inline 18-entry `z.enum`) onto a single canonical source + extend a parity guard — closes the importable-full-parity-COPY class repo-wide
 
 source_retro: RETRO-185 (§1 CRITICAL, §3, §4a) source_ticket: FOLLOW-586 recommended_sprint: Sprint
-24 recommended_agent: sdk-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+24 recommended_agent: sdk-engineer priority: P3 estimated_hours: 1 promoted_to_queue: true (DONE —
+PR #571, merged bb9f837 2026-07-20; IMPORTABLE-COPY CLASS CLOSED per RETRO-186; see QUEUE.md
+FOLLOW-590)
 
 **Gap:** FOLLOW-584 (RETRO-179/180) consolidated the 3 named `packages/shared` full-parity
 archetype-ID copies onto `CANONICAL_ARCHETYPE_IDS`, and FOLLOW-586 (PR #569, `5883e18`, RETRO-185)

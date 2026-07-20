@@ -320,8 +320,13 @@ export interface ResolveTenantAccessOpts {
  * leaked); if the lookup itself cannot run (DB unconfigured/unreachable) it THROWS
  * an `AccessError(500)` rather than passing through — this is a security boundary,
  * so an unverifiable tenant is a denied tenant, never an allowed one.
+ *
+ * Exported (FOLLOW-594) so URL-scoped staff pages (`/admin/tenants/[id]/*`) can
+ * reuse the SAME existence check the API staff-override path uses, before
+ * rendering — an unknown `[id]` renders `notFound()` (404). Do not duplicate the
+ * lookup in a page; call this so both surfaces agree on what "exists" means.
  */
-async function tenantExists(tenantId: string): Promise<boolean> {
+export async function tenantExists(tenantId: string): Promise<boolean> {
   // Malformed ids never hit the DB (a non-UUID against a uuid column would throw
   // and be indistinguishable from an outage). Treat as "unknown tenant".
   if (!UUID_RE.test(tenantId)) return false;

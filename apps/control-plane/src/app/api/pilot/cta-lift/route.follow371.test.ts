@@ -33,6 +33,19 @@ vi.mock('@estalara/auth', () => ({
 import { getAuthClaims } from '@estalara/auth';
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 
+// The dashboard/analytics/lift route delegates auth to `resolveTenantAccess`
+// (ADR-0018). The pilot cta-lift + calibration routes still use the REAL
+// `getSessionAuthClaims` (kept via `importOriginal`, driven by the getAuthClaims
+// mock above), so only `resolveTenantAccess` is spied here.
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
+
+import type * as SessionAuthModule from '@/lib/session-auth';
+import { resolveTenantAccess } from '@/lib/session-auth';
+const mockResolve = vi.mocked(resolveTenantAccess);
+
 vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
   captureMessage: vi.fn(),
@@ -46,6 +59,20 @@ function authAsTenant(): void {
     agency_role: 'agency:admin',
     estalara_staff: false,
     mfa_verified: true,
+  });
+  // Dashboard lift route resolves via resolveTenantAccess (agency, own tenant).
+  mockResolve.mockResolvedValue({
+    via: 'agency',
+    tenantId: TENANT_ID,
+    claims: {
+      sub: 'user-uuid',
+      email: 'analyst@agency.com',
+      tenant_id: TENANT_ID,
+      agency_role: 'agency:admin',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
   });
 }
 

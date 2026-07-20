@@ -1656,3 +1656,19 @@ would generalize this beyond just `adapt-get-auth`.
   parity suite together already covered this refactor's blast radius; a new guardrail here would be
   redundant. (Left one remaining full copy, `packages/sdk/core/adapt-schema.ts`'s
   `archetypeIdSchema`, flagged in the PR for sdk-engineer — out of my ownership scope.)
+
+- **2026-07-20 / FOLLOW-594** · Finished stranded analytics staff-port (ADR-0018): re-greened 3
+  route suites + golden-query + follow371 by PARTIALLY mocking `@/lib/session-auth` (spy only
+  `resolveTenantAccess`, keep `AccessError`/others real via `importOriginal`); added staff
+  200/400/404 + MANDATORY red-first tenant-filter tests that exercise each route's REAL query
+  (ClickHouse `param_tenant_id`, drizzle `.where(eq(tenantId,A))`), proving A-fence excludes B;
+  built server page `/admin/tenants/[id]/analytics` (tenantExists → notFound → AnalyticsView). ·
+  **Risks weighed**: mocking `resolveTenantAccess` drops the route-level SSR-cookie proof —
+  acceptable because that wiring is fully covered by `resolve-tenant-access.test.ts`; RETRO-187 says
+  a local-array leak demo does NOT discharge the fence invariant, so tenant-filter tests intercept
+  the actual outgoing query, and I verified red-first by breaking the fence. Also fixed 4 real
+  `exactOptionalPropertyTypes` CI blockers the stranded work left (3× `?? undefined` into resolve
+  opts, 1× `onResume={... : undefined}`) via key-omission spreads — behavior-identical, not an
+  auth-logic rewrite. · **Guardrail I'd add**: a CI grep that fails any staff-override route lacking
+  a tenant-filter test that intercepts the real query (not a local array) — mirrors RETRO-187's
+  exact miss.

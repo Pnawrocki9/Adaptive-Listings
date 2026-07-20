@@ -15750,7 +15750,8 @@ cross_ref: [FOLLOW-585, FOLLOW-583, FOLLOW-561, FOLLOW-586, RETRO-178, RETRO-179
 ## FOLLOW-588 — Harden the `archetype-id-parity.test.ts` parser helpers so inline comments inside a parsed literal block cannot false-positive the archetype scan (prevents re-tripping the FOLLOW-585 comment-in-block gotcha)
 
 source_retro: RETRO-181 (§4c) source_ticket: FOLLOW-585 recommended_sprint: Sprint 24
-recommended_agent: qa-engineer priority: P3 estimated_hours: 1 promoted_to_queue: false
+recommended_agent: qa-engineer priority: P3 estimated_hours: 1 promoted_to_queue: true (DONE — PR
+#567, merged c6326c8 2026-07-20; RETRO-184 verdict SAFE; see QUEUE.md FOLLOW-588)
 
 **Gap:** The FOLLOW-585 worker's own lessons entry (2026-07-19,
 `.claude/agents/qa-engineer/lessons.md`) documents a real, generalizable gotcha: placing the

@@ -29317,3 +29317,158 @@ The 3 structural sub-shapes the chain traversed are each now guarded: **quoted a
 - **Related to RETRO-182 / FOLLOW-589 (prior-follow-up closure check, step 7):** RETRO-183 confirms FOLLOW-589 GENUINELY closed RETRO-182 §4b CB-1 end-to-end — literal fixed (`family_nester`→`family_buyer`) → parsed from the REAL `history/route.ts` by a non-vacuous subset assertion (`it@613`) → and, verified by fresh independent sweep, the gap did NOT relocate one sub-shape over this time. Traced producer(`buildMockEvents()`)→consumer(admin tracer-history render)→guard(runtime JSON-KEY subset assertion) end-to-end. A REAL terminal closure, not a one-hop relocation.
 - **Related to RETRO-178/FOLLOW-561, RETRO-179/FOLLOW-583, RETRO-180/FOLLOW-584, RETRO-181/FOLLOW-585, RETRO-182/FOLLOW-587 and Rule AD:** this retro is the terminal entry of the FOLLOW-561→583→585→587→589 mock-archetype-literal-invalidity chain — **CLOSED** with 12-assertion guard coverage across all 3 structural sub-shapes + `readonly ArchetypeId[]` compile-time reinforcement on the named arrays (FOLLOW-584's `CANONICAL_ARCHETYPE_IDS`/`ArchetypeId` export made that root-fix possible).
 - **Related to FOLLOW-586 + FOLLOW-588:** confirmed genuinely SEPARATE classes (duplicate-but-valid consolidation; parser robustness) — remain open, NOT closed by this chain.
+
+## RETRO-184 — FOLLOW-588 (harden all 11 `archetype-id-parity.test.ts` parser helpers with `stripComments()` — strip `/* */`, `//` (JS/TS) and `#` (Python) out of each captured literal block BEFORE the id/key regex runs, so a quoted/keyed archetype id sitting INSIDE an in-block comment can no longer false-positive the scan (the FOLLOW-585 debugging gotcha), and add a red→green comment-injection regression guard. **HEADLINE: the parser-comment-fragility noted as a 1st sighting in RETRO-181/182 is now RESOLVED by construction, and the one genuine correctness risk — that `stripComments` could OVER-strip and silently DROP a real archetype id, making a parity assertion vacuously pass — is verified SAFE on all 13 parsed real files.** Test-infra only, no production source touched; suite 12→14/14. This de-risks the imminent FOLLOW-586 (which edits these same parsers and adds inline-commented `z.enum`/array literals) with one residual caveat: SQL `--` line comments are NOT in the stripper's grammar.) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #567 (squash-merged 2026-07-20 ~08:39 UTC, commit `c6326c8`), branch (now deleted) `qa-engineer/FOLLOW-588-parser-comment-strip`. Source retro: RETRO-181 §4c → stub FOLLOW-588 (P3, 1h).
+- **Files changed:** 2 (+117 / -11): `tests/integration/archetype-id-parity.test.ts` (+88: new `stripComments()` helper wrapped around the scanned text of all 11 parser helpers + a new `describe` with 2 inline-fixture regression tests + doc-comments), `.claude/agents/qa-engineer/lessons.md` (+29).
+- **Modules touched:** qa (integration parity guard) · agent-lessons. **No production source touched.**
+- **Key contracts changed:** none. `stripComments(block: string): string` is a module-private test helper; no exported symbol, schema, wire shape, env-var, column, or topic changed. Breaking: **N/A**.
+
+### 2. Verification done in PR
+
+- Test files changed: `tests/integration/archetype-id-parity.test.ts` (1). Assertions added: **2** `it()` (a JS `//` case via `parseMockArchetypesGeneric`, a Python `#` case via `parseNlpPyArchetypes`), both run inline self-contained fixtures through the REAL parser functions (same stripping path as real files), not a reimplementation. Red→green proof in PR/lessons: neutering `stripComments` to identity makes both fail (`investor` leaks from the comment) while all 12 real-file assertions stay green.
+- CI checks: assumed green at merge (PM gate). **Independently re-run this session** on HEAD `c6326c8`: `pnpm --filter @estalara/integration-smoke test` → **14 passed (14)** (12 pre-existing parity + 2 new regression). Coverage delta: unknown (integration guard, not unit).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the sole new symbol is module-private `stripComments` — consumed by all 11 parser helpers in the same file (grep: 11 `stripComments(` call-sites in the diff). No new file, no new public export, no new env-var/column/topic/event. N/A on framework-entrypoint suppression.
+- **CHECK B (half-wire):** no new event/env-var/column/topic/SDK-signal introduced. Test-infra only. **Both checks clean.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A — but this is the load-bearing verification of the retro (task §1, the over-strip FALSE-NEGATIVE risk).** `stripComments` uses `#[^\n]*`, `//[^\n]*` (strip to end-of-line) and `/\*[\s\S]*?\*\//` (non-greedy block). Independently checked EVERY line-comment-drop and block-comment-swallow path against all 13 parsed real files/blocks:
+  1. **Line comments (`//`, `#`) can only drop a real id if the id token sits AFTER a `//`/`#` on the SAME line.** Grep across every parsed file for an `[a-z_]+` archetype-id token co-located with a `//`/`#`/`/*` marker on one line returned **zero real-id co-locations.** The only same-line comment+quoted-word hits are non-archetype words inside comments — `analytics/lift/route.ts:92/205/284` (`'mock'`/`'significant'`/`'real'` in `//` comments, all OUTSIDE the captured `MOCK_ARCHETYPES` block), `labels/route-helpers.ts:73` (`'real'`/`'mock'` in JSDoc), `nlp.py:37` (`role`/`user`/`assistant` in a `#` type-comment, outside the `_ARCHETYPES` tuple) — none are members of `ARCHETYPE_NAMES`, and stripping them is the DESIRED behavior. In every real block the ids sit on their own lines (or before any trailing comment), so end-of-line stripping removes no id.
+  2. **Block comments (`/* */`) can only swallow a real id if a `/*` is unbalanced (no closing `*/` before the id).** The 3 whole-source parsers (`archetype-hints.ts`, `labels/export/route.ts`, `tracer/sessions/route.ts` — which strip the ENTIRE file, the largest over-strip surface) have perfectly balanced JSDoc: `/*`=`*/` counts 18/18, 15/15, 2/2. Non-greedy `[\s\S]*?\*\/` therefore strips only self-contained JSDoc bodies; every `archetype: '…'` literal (e.g. `archetype-hints.ts:51/57/63`) sits OUTSIDE any comment pair and survives.
+- **Why empirically-green is SUFFICIENT (task §1):** for the 5 EXACT-parity parsers (`nlp.py`, `archetype-seeds.ts`, migration 0005, guidance `.py`, `REACHABLE_ARCHETYPES`) an over-strip surfaces directly as a non-empty `missing` set in `assertExactParity` → hard FAIL; all 5 are green, so no id is dropped. For the SUBSET-asserted parsers `assertSubsetValidity` does NOT check `missing`, so an over-strip there would NOT fail loudly (the vacuous-pass risk the task flags) — this is closed independently by check (1) above: the file-level grep proves no real id is even co-located with a comment marker in any subset-parsed file, so no over-strip is possible. The decisive independent signal: **neutering `stripComments` to identity this session left all 12 real-file assertions green** — i.e. the real files do not depend on stripping AT ALL (no comment currently affects any real parse, in either direction). The stripping is a pure forward-guard for FOLLOW-586's INCOMING edits.
+- **Non-vacuous `matched > 0` guards still fire:** stripping happens AFTER the outer block-capture (`block[1]`), so each parser's structural "update this parser regex to match" throw is unaffected. The block bodies are not emptied (they contain ids on their own lines) — confirmed by the exact-parity assertions requiring all 18 present.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** Test-infra hardening; no production code path touched, no bug introduced or discovered.
+
+#### 4c. Test coverage gaps
+
+- **N/A for the comment-fragility class — now guarded by construction** (2 regression tests exercise the real strip path). Residual (NOT a gap of this ticket, noted for FOLLOW-586): the regression fixtures cover `//` (JS) and `#` (Python) but not `/* */` block comments nor SQL `--` — see §5a. The block-comment path is exercised implicitly (balanced JSDoc in the 3 whole-source real files), and SQL `--` is out of the stripper's grammar by design.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The `stripComments` doc-comment scopes its safety claim honestly ("verified none of the parsed files use `//`/`#`/`/* */` as meaningful in-string content — no URLs, no hex-color literals — so stripping everywhere is safe"), which this retro's independent grep confirms as accurate, not over-claimed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected — FOLLOW-586 de-risk (task §3)
+
+- **FOLLOW-586** (backend-engineer, P3 — migrate the 2 remaining full-parity copies onto `CANONICAL_ARCHETYPE_IDS`/`ArchetypeIdSchema`, editing these same parsers and adding inline-commented `z.enum`/array literals): **de-risked as intended.** A rationale comment placed INSIDE a new `z.enum([...])` or array literal FOLLOW-586 adds can no longer false-positive the id scan — the exact FOLLOW-585 gotcha is now structurally impossible for `//`/`#`/`/* */` comments, removing the unwritten "comment above the block" discipline the FOLLOW-588 stub called out as fragile. **Two residual cautions for FOLLOW-586's worker:** (i) **SQL `--` line comments are NOT stripped** — `stripComments` only handles `//`, `#`, `/* */`; if any FOLLOW-586 SQL edit adds a `--` comment mentioning an old id inside migration 0005's captured row-tuple block, it would still false-positive (low risk — FOLLOW-586 is TS `z.enum`/array, not SQL). (ii) FOLLOW-586 edits the OUTER block-capture regexes' target literals, so it must keep the literal shapes those regexes expect or trip the intended fail-loud "update this parser regex" throw.
+- **FOLLOW-589 / prior chain** (RETRO-183): unaffected — that chain is CLOSED; this ticket is the DIFFERENT robustness class RETRO-183 §5a explicitly separated out.
+
+#### 5b. Future sprint tickets affected
+
+- **N/A.** Any future parser added for a new literal shape inherits the `stripComments` discipline if it wraps its scan; the qa-engineer lessons entry recommends a comment-injection regression test alongside each new captured-block parser from day one.
+
+#### 5c. Contracts changed others rely on
+
+- **None.** Test-only helper; nothing exported or wire-visible.
+
+#### 5d. Architectural assumptions affected — multi-axis / reconciliation (step 8)
+
+- **Multi-axis check of the one contract-shaped change (`stripComments`), both directions:** (i) **false-POSITIVE axis** (the fix's intent) — a commented id can no longer be over-counted: CLOSED, proven by both regression tests. (ii) **false-NEGATIVE / over-strip axis** (the risk, harder direction) — a real id can no longer be silently dropped: verified SAFE (§4a) across line-comment-drop and block-comment-swallow paths on all 13 real files. (iii) **language axis** — JS/TS (`//`,`/* */`), Python (`#`) covered by grammar + both regression cases; SQL (`--`) explicitly NOT covered (§5a caveat). (iv) **exact-vs-subset assertion axis** — over-strip is loud on the 5 exact parsers, silent-but-impossible on the subset parsers (proven by grep + identity-neuter). No prior "clean" verdict is contradicted: RETRO-181/182 flagged parser-comment-fragility as a 1st sighting and forecast a hardening ticket; this retro discharges that forecast.
+
+### 6. New lesson candidates
+
+- **No new pattern promoted, and none pending.** The parser-comment-fragility was a **1st sighting** in RETRO-181/182 and FOLLOW-588 is its RESOLUTION — it does NOT recur here as a 2nd sighting of a distinct fragility (task §4). The independent all-files check found no second, unaddressed parser-fragility mode. Below the ≥2-prior promotion threshold by design; `CONVENTIONS_PATCH.md` intentionally untouched.
+- **Meta-note (for the periodic skill-upgrade run, not a follow-up):** the fix hardens a grep-based test against comment-injection, but grep-based literal parsers remain inherently fragile vs a proper AST/tokenizer. The durable direction (RETRO-182/183 Rule AD clause 2 — prefer a compile-time `readonly ArchetypeId[]` type over a per-shape grep-guard) subsumes this: a `tsc`-typed constant has no comment-parsing surface at all. FOLLOW-588 correctly hardens the interim grep-guards without over-engineering a tokenizer for a 1h P3 ticket.
+
+### 7. Follow-ups
+
+- **NONE filed.** Per task §6, a stub is warranted only for a genuine gap. The over-strip false-negative risk — the one real correctness concern — is verified SAFE (§4a), so no hardening follow-up is needed. The SQL-`--`-not-stripped residual (§5a) is a rebase-awareness note for FOLLOW-586, not an open defect (no current SQL block has an `--` comment carrying an id), and inventing a follow-up for it would be make-work. `backlog/FOLLOW_UPS.md` intentionally untouched.
+
+### 8. Cross-references
+
+- **Related to RETRO-181 / FOLLOW-585 (source):** FOLLOW-588 is the P3 hardening stub RETRO-181 §4c raised from the FOLLOW-585 debugging gotcha (a fix-rationale comment inside a `MOCK_ARCHETYPES = [...]` block made an already-fixed array read as still-broken). Traced end-to-end: gotcha documented (585 lessons) → stub filed (RETRO-181 §4c) → root-hardened for all 11 parsers + regression-guarded (this PR). Terminal closure of the fragility, not a one-hop relocation.
+- **Related to FOLLOW-586:** the imminent consumer this ticket was deliberately sequenced BEFORE — de-risked (§5a), with the SQL-`--` and block-shape-preservation caveats noted.
+- **Related to RETRO-183 / FOLLOW-589:** confirms the separation RETRO-183 §5a drew — the mock-literal-INVALIDITY chain (561→589) is a DISTINCT class from this parser-ROBUSTNESS ticket; closing one never touched the other.
+
+## RETRO-184 — FOLLOW-588 (harden the `archetype-id-parity.test.ts` parsers so a `//`/`#`/`/* */` comment INSIDE a captured literal block can no longer false-positive the archetype-id scan — the FOLLOW-585 comment-in-block gotcha, closed by code rather than by the unwritten "comment above the block" convention. **HEADLINE: the fix is SAFE in BOTH directions — it kills the false-POSITIVE without introducing a false-NEGATIVE/over-strip.** Independently verified the concern the task flags: `stripComments` cannot silently DROP a REAL archetype id from any of the 11 parsers' scanned text, because (a) `//`/`#` strip only to end-of-line and a repo-wide grep confirms ZERO parsed files place a real `[a-z_]+` archetype id AFTER a comment marker on the same line — every id sits on its own line, comments are separate; (b) the `/* */` block strip is non-greedy and every whole-source-scanned file has BALANCED, well-formed JSDoc (18/18, 15/15, 2/2) with all real ids OUTSIDE the comment pairs. Empirically confirmed by neutering `stripComments` to identity: EXACTLY the 2 new regression tests flip red while all 12 real-file assertions stay green — proving the regression is load-bearing AND that no real-file assertion depends on stripping at all, i.e. there is nothing to over-strip on real data today; the hardening is a pure forward-guard for FOLLOW-586's incoming inline-commented literals. Contained test-infra ticket, no production source touched, suite 14/14) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #567 (squash-merged 2026-07-20 ~08:39 UTC / 10:39 CEST, commit `c6326c8`), branch (now deleted) `qa-engineer/FOLLOW-588-parser-comment-strip`. Source retro: RETRO-181 §4c.
+- **Files changed:** 2 (+117 / -11): `tests/integration/archetype-id-parity.test.ts` (+88: new module-private `stripComments()` helper, `stripComments(...)` wrapped around the scanned text of all 11 parser helpers, one new `describe` with 2 regression `it()`s, doc-comments), `.claude/agents/qa-engineer/lessons.md` (+29).
+- **Modules touched:** qa (integration parity guard) · agent-lessons. **No production source.**
+- **Key contracts changed:** none. Test-only; no exported symbol, schema, env-var, column, topic, or wire shape changed. Breaking: **N/A**.
+
+### 2. Verification done in PR
+
+- Test files changed: `tests/integration/archetype-id-parity.test.ts` (1). Assertions added: **2** `it()` (a JS `//` case via `parseMockArchetypesGeneric` + a Python `#` case via `parseNlpPyArchetypes`), both run through the REAL parser functions on inline self-contained fixtures (not reimplemented parsing, not real repo files). Red→green proven in PR by neutering `stripComments` to a no-op.
+- CI checks: assumed green at merge (PM gate). **Independently re-run this session** on HEAD `c6326c8`: `pnpm --filter @estalara/integration-smoke test` → **14 passed** (12 pre-existing parity + 2 new regression). Coverage delta: unknown (integration guard).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the sole new symbol is module-private `stripComments()` (not exported), consumed by all 11 parser helpers in the same file + exercised by the 2 regression `it()`s — has consumers, not dead. No new file / public export / entrypoint.
+- **CHECK B (half-wire):** no new event / env-var / column / topic / SDK-signal introduced. Pure in-test transform. Both checks clean.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps — the over-strip / false-NEGATIVE check (task item 1, load-bearing)
+
+- **N/A — verified SAFE, rigorously and independently.** The genuine risk is that stripping could DROP a real archetype id from a scanned block, making a parity assertion pass vacuously while a real invalid literal slips through (worse than the false-positive it fixes). Ruled out on three independent legs:
+  1. **Line-comment mechanism (`//[^\n]*`, `#[^\n]*`):** these strip only to end-of-line, so an id can only be lost if a real `'[a-z_]+'` id sits AFTER a `//`/`#` on the same line. A grep across every one of the parsed real files (`nlp.py`, `archetype-seeds.ts`, migration `0005.sql`, `archetype-hints.ts`, `generate_description.py`, `demo-override-store.ts`, `route-helpers.ts` + `export/route.ts`, `cta-lift`, `analytics/lift`, `tracer/sessions`, `tracer/history`) found **ZERO** cases of an archetype id co-located after a comment marker. The only comment/quoted-word co-locations that exist (`analytics/lift:92/205/284` `'mock'`/`'significant'`/`'real'`; `route-helpers:73` `'real'`/`'mock'`; `nlp.py:37` `# … "role"/"user"/"assistant"`) are all NON-archetype words inside comments that stripping correctly removes — the desired direction, and outside the captured blocks anyway.
+  2. **Block-comment mechanism (`/\*[\s\S]*?\*/`, non-greedy):** the three whole-source-scanned files carry JSDoc `/* */` and are stripped file-wide, but their `/*`↔`*/` counts are **balanced** (`archetype-hints.ts` 18/18, `export/route.ts` 15/15, `tracer/sessions/route.ts` 2/2) and well-formed; non-greedy matching removes each self-contained JSDoc body only, and the real `archetype: '…'` entries sit OUTSIDE every pair — so no id is swallowed. No parsed file contains an unbalanced/open `/*` that could over-eat.
+  3. **Empirical / vacuity leg:** neutering `stripComments` to identity flips **exactly** the 2 new regression tests red and leaves **all 12** real-file assertions green — i.e. the real assertions do not depend on stripping in either direction, so there is nothing to over-strip on current real data. For the 5 EXACT-parity parsers an over-strip would surface as a `missing` failure (non-vacuous); for the subset parsers it would not, but leg (1) proves no over-strip is even reachable there. Non-vacuous `matched > 0` behaviour intact: the outer block-capture guards (throw + "update this parser regex") run BEFORE stripping (on `block[1]` extraction), and stripping never empties a real block (the regression run + green subset sizes confirm).
+- **Verdict: SAFE.** No false-negative/over-strip risk under the shipped `stripComments`.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No production code touched; no bug introduced or discovered.
+
+#### 4c. Test coverage gaps
+
+- **N/A for the shipped scope.** The regression is load-bearing (leg 3) and self-contained (inline fixtures, real parsers). Residual (NOT a gap of this ticket, noted for FOLLOW-586's worker in §5a): `stripComments` covers `//`, `#`, `/* */` — it does **not** strip SQL `--` line comments. Migration `0005.sql` is parsed by the row-tuple regex and today contains no `--`-commented ids, so no live exposure; but a future SQL-literal edit that puts a `--` comment mentioning an old id INSIDE the captured block would still false-positive. Out of FOLLOW-586's TS-only scope, hence a note not a follow-up.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The `stripComments` doc-comment scopes its safety claim honestly ("verified … none of the parsed files use `//`, `#`, or `/* */` as meaningful in-string content") and the regression `describe` explicitly flags its fixtures as inline/not-real-files. One minor over-broad phrase — the doc-comment asserts stripping "everywhere is safe" without naming the `--`/SQL carve-out — but it is a comment, not a claim others build on; below the bar for a doc follow-up.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-586** (backend-engineer, P3, in backlog — consolidate the 2 remaining duplicate-but-VALID full-parity copies; it edits these same parser targets and adds inline-commented `z.enum`/array literals): **hardening confirmed to de-risk it as intended.** A `//`/`/* */` comment inside FOLLOW-586's new `z.enum([...])`/array literals can no longer false-positive the id scan — the exact FOLLOW-585 trap FOLLOW-588 pre-empts, so FOLLOW-586's worker no longer has to manually keep rationale-comments above blocks. **Two residual cautions for FOLLOW-586:** (i) `stripComments` does NOT strip SQL `--` comments (§4c) — if any FOLLOW-586 edit reaches a SQL block, keep id-mentioning comments out of the captured tuple; (ii) the block-capture outer regexes are unchanged, so FOLLOW-586 must keep its new literals in the shape each parser's outer regex expects, or the "update this parser regex" guard throws (intended fail-loud, not a regression).
+- **FOLLOW-587/589 chain:** already merged/closed (RETRO-182/183); FOLLOW-588 adds no new archetype literals, so it does not reopen or expand that class.
+
+#### 5b. Future sprint tickets affected
+
+- **N/A.** No contract/shape change. Any future parser added for a new literal shape should ship with a comment-injection regression test from day one (the qa-lessons entry already records this as a guardrail).
+
+#### 5c. Contracts changed others rely on
+
+- **None.** Test-infra only; nothing exported or wire-visible.
+
+#### 5d. Architectural assumptions affected — multi-axis / contradiction reconciliation (step 8)
+
+- **No contradiction with any prior "clean" verdict.** RETRO-181 §4c ORIGINATED FOLLOW-588 as an open robustness gap and RETRO-183 §5a explicitly kept it open as a SEPARATE (robustness, not invalidity) class; this retro DISCHARGES that open item rather than reversing anything. RETRO-183's parser-coverage map (12 assertions) is unaffected — FOLLOW-588 changes HOW each parser reads (comment-stripped), not WHAT it asserts; re-ran green, so no parity verdict is disturbed.
+- **Axes checked:** (i) **direction axis** — both false-POSITIVE (fixed) and false-NEGATIVE/over-strip (ruled out, §4a) analyzed, not just the obvious one; (ii) **language axis** — JS/TS `//`, Python `#`, block `/* */` all covered by the single stripper; SQL `--` explicitly NOT covered (carve-out surfaced, §4c); (iii) **captured-block vs whole-source axis** — 8 parsers strip a captured `block[1]`, 3 strip the entire file (`archetype-hints`, `export/route`, `tracer/sessions`); the whole-source ones have the larger over-strip surface and were the focus of the balanced-JSDoc check; (iv) **exact-parity vs subset-validity axis** — over-strip is self-catching only on the 5 exact parsers, so the file-level grep (leg 1) was needed to clear the subset parsers where an over-strip would NOT fail loudly.
+
+### 6. New lesson candidates
+
+- **No new pattern, none pending promotion.** The parser-fragility / comment-in-block observation was a **1st sighting** in RETRO-181 (and echoed in RETRO-182 §5a as a note) — FOLLOW-588 is its **RESOLUTION by code**, so it does not recur rather than crossing the ≥2-prior threshold. My independent multi-axis check surfaced **no distinct 2nd fragility** (the SQL `--` carve-out is a bounded, no-live-exposure residual, not a new failure that has occurred). No Rule promoted; `CONVENTIONS_PATCH.md` correctly untouched.
+
+### 7. Follow-ups
+
+- **NONE filed.** Per task item 6, the over-strip risk is verified SAFE and already covered (the 12 real assertions + 2 regression tests), so no hardening follow-up is warranted. The SQL `--` carve-out (§4c) is a documented residual with zero live exposure and is out of the archetype-literal robustness scope — filing a ticket for it would be make-work; it is instead noted as a rebase caution for FOLLOW-586 (§5a). No make-work.
+
+### 8. Cross-references
+
+- **FOLLOW-588** — this PR; discharges the open item raised in **RETRO-181 §4c** and kept open in **RETRO-183 §5a**.
+- **FOLLOW-585** — the debugging incident (a rationale-comment inside a `MOCK_ARCHETYPES` block re-reading a fixed `'investor'` as still-invalid) that FOLLOW-588 now prevents by construction.
+- **FOLLOW-586** — de-risked by this hardening (§5a); remains open (duplicate-but-valid consolidation, a different class), with two residual cautions noted.
+- **RETRO-181 / RETRO-183** — RETRO-181 originated the follow-up; RETRO-183 §5a/§7 confirmed it a SEPARATE robustness class from the now-CLOSED invalidity chain and left it open — this retro closes it.

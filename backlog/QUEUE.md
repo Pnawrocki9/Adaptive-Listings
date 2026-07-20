@@ -1,6 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 40 — FOLLOW-592 promoted to QUEUE.md (READY, worker model OPUS) + FOLLOW-593 enriched with a real-data-wiring finding; PM bookkeeping only, dispatch is the parent session's next step)
+## ▶️ START HERE — resume 2026-07-20 (session 41 — RECOVERY: FOLLOW-593 + FOLLOW-594 dispatched, interrupted mid-flight by a terminal shutdown, recovered from stranded worktrees → both now GREEN PRs #581/#582 awaiting human review)
+
+**Read this before picking anything.** Session 40 (or the parent session after it) dispatched
+`backend-engineer` (Opus) for **both FOLLOW-593 and FOLLOW-594** — FOLLOW-592 having merged (#579),
+both were unblocked. The terminal was then killed mid-run; neither agent committed. Session 41
+recovered the stranded work from `.claude/worktrees/agent-*` (empty `git diff main` would have
+hidden it — see memory `feedback_check_worktrees_before_concluding_agent_didnt_run`). Nothing was
+lost.
+
+- **FOLLOW-593 → PR #581** (`backend-engineer/FOLLOW-593-tenant-hub`, commit `6cef7c4`). Work was
+  complete + coherent (88 tests green): `/admin/tenants` hub + `/admin/tenants/[id]` landing,
+  multi-tenant admin nav un-hidden, and the three admin pages wired to **real Supabase data with
+  mock as the documented DB-unconfigured fallback** (closes the PM finding's Rule K.2
+  "silently-wrong fake tenants" risk — the page previously rendered 100% mock unconditionally).
+  **All real CI gates GREEN incl. Test (Node 22) 7m20s.** READY_FOR_REVIEW.
+
+- **FOLLOW-594 → PR #582** (`backend-engineer/FOLLOW-594-analytics-staff-port`, commit `749fd9f`).
+  Routes were done when interrupted; a re-dispatched `backend-engineer` (Opus) finished the rest
+  **in the existing worktree** (deps re-installed): staff-path + the MANDATORY red-first
+  tenant-filter tests (ADR-0018 §2 invariant 5 / RETRO-187), the `/admin/tenants/[id]/analytics`
+  page surface, and the RETRO-187 ADMIN_API_SECRET-403 route doc note. summary + lift + **weights
+  GET (read only)** opt into `resolveTenantAccess({allowStaffOverride:true})`; the bandit **PATCH
+  write stays untouched (Phase-3 / FOLLOW-598)**. The mandatory tests were VERIFIED (by this
+  session, reading them) to exercise the **real** outgoing query — ClickHouse `param_tenant_id` /
+  drizzle `eq(tenantId,A)` against a both-tenants service-role table — NOT the demonstrative
+  local-array `RLS-TRAP-LEAK-DEMO` (which RETRO-187 explicitly says does not discharge invariant 5).
+  54 tests green. **All real CI gates GREEN incl. Test (Node 22) 7m35s.** READY_FOR_REVIEW.
+
+- **Rule I is red on both (181/191) — non-blocking, pre-existing (also red on merged #580).** The
+  new `data.ts` return-type interfaces (`TenantsListResult`, `TenantLookupResult`, registrations/
+  demo-sessions equivalents) are naive-grep false-positives: they ARE the return types of the wired
+  loader functions, but the pages import the function and infer the return, so the grep sees "zero
+  non-test importers." **Deliberately NOT force-wired** (would be a non-surgical change risking the
+  green tests) — these fold into **FOLLOW-591** (the ticket that already exists to clear Rule I
+  wholesale). Do not treat Rule I as a merge gate here.
+
+- **Two agent worktrees remain** (`agent-a3cd2b28…` = 593, `agent-a20eed68…` = 594). Safe to
+  `git worktree remove` after the PRs merge; both branches are pushed so no work is at risk.
+
+**Next step:** human merges #581 then #582 (593 first — 594's `[id]/analytics` links from 593's
+landing, though 594's own AC does not hard-depend on it). Then spawn `retrospective-analyst` per PR
+and promote **FOLLOW-595** (Phase-2 quiz staff-write + `staff_audit_log`), still blocked only by
+being Phase-2. FOLLOW-596..600 unchanged (blocked/next). Also fold the Pilot / Site-Detection
+read-only staff views (deferred out of 594) into a sibling stub.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-20 (session 40 — FOLLOW-592 promoted to QUEUE.md (READY, worker model OPUS) + FOLLOW-593 enriched with a real-data-wiring finding; PM bookkeeping only, dispatch is the parent session's next step)
 
 **Read this before picking anything.** This session did **bookkeeping only** for the ADR-0018
 superadmin-access thread — no code was written, and the worker (`backend-engineer`, Opus) has NOT

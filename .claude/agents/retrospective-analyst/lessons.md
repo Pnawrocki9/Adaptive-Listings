@@ -2850,3 +2850,57 @@ so.**
   retro'ing FOLLOW-592. Read-only on code so no contamination risk to my output, but a reminder to
   `git show <sha>` the MERGED commit rather than trust the working tree when the tree is dirty from
   a concurrent agent sharing the checkout.
+
+## 2026-07-20 · RETRO-188 (FOLLOW-593, PR #581 — tenant hub + mock→real-Supabase)
+
+- **A finding I almost missed:** the 8 new `data.ts` return-type interfaces are Rule-I "dead" but
+  are actually WIRED via return-type inference (the page destructures the loader's return, never a
+  named `import type`). I nearly filed them as the same class as RETRO-187's dead
+  `resolveTenantAccess`. They are the OPPOSITE: RETRO-187 = code genuinely dead, detector correct;
+  RETRO-188 = code wired, detector wrong. Fusing them into one "Rule-I-new-export" promotion
+  candidate (which the dispatch brief nudged toward as the ≥2 threshold-crosser) would have been the
+  exact premature-fusion error RETRO-150/176 refused. The distinction also produced the real
+  deliverable: FOLLOW-602, because FOLLOW-591's Option B would false-block these 8.
+- **An axis I had to trace twice:** whether INV-5 (RETRO-187's mandatory tenant-filter test) applies
+  here. First pass said "staff querying a specific tenant via createAdminClient = INV-5 applies."
+  Second pass corrected it: these are cross-tenant staff LIST views (staff MAY read all tenants) and
+  `getTenantById` reads the tenant's OWN identity row — there is no foreign-tenant fence, so INV-5
+  does NOT apply and RETRO-187's placement on FOLLOW-594+ (the per-tenant DATA surfaces) was already
+  correct. Reconciling rather than contradicting a prior retro is itself the step-8 discipline.
+- **Verify-not-guess paid off (numbering):** the brief asserted "max is 275, use RETRO-276." The
+  file's true max heading is RETRO-187; the only RETRO-275 token is prose inside RETRO-063. Used
+  RETRO-188 and flagged it. Also caught FOLLOW-600's "the dropped FOLLOW-601" reference → filed my
+  stub as 602, not 601, to avoid an id collision. Two numbering traps, both caught by reading the
+  file instead of trusting the brief.
+- **A cleared-not-confirmed discipline:** three plausible logic gaps (pending-only registrations
+  filter, UUID-gate, deriveStatus) all dissolved on inspection — the pending filter matched prior
+  page behavior, the env-var check is an EXACT mirror of createAdminClient. Recording "checked and
+  cleared" is as valuable as recording a gap; it stops the next retro re-litigating.
+- **Meta-pattern across agents:** stranded-worktree recovery is now 2 distinct incidents
+  (RETRO-175/176 + this). But this one's recovery SUCCEEDED, validating FOLLOW-573's detection step
+  — a rare case where the recurrence is evidence the remedy works, not that it's missing. Resisted
+  filing a redundant stub.
+
+## 2026-07-20 · RETRO-189 (FOLLOW-594 — first real consumer of the RLS-bypassed staff path)
+
+- **A finding I almost missed and why:** the INV-5 tenant-filter tests were so thorough (real
+  fetch-intercept + real `.where()` capture on all 3 endpoints) that I nearly signed off "coverage
+  complete" — the actual gap was one layer up: the SPY on `resolveTenantAccess` re-greened the
+  agency tests but silently dropped any assertion that the ROUTE passes `allowStaffOverride:true` +
+  `minAgencyRole`. The leak-test proves the fence works GIVEN the resolved access; nothing proves
+  the route CONFIGURED resolve correctly. The strong test masked the weak one. Lesson: when a route
+  delegates auth to a spied helper, always grep `toHaveBeenCalledWith` — the delegation's OPTIONS
+  are a distinct, security-relevant surface the helper's own suite cannot cover.
+- **An axis/chain I had to trace twice:** whether the staff SURFACE was fully covered — had to
+  enumerate every `fetch()` in `AnalyticsView` (4: summary/lift/ab-weights + the PATCH) and confirm
+  the PATCH is `allowResume`-gated OFF on the staff page, i.e. no un-ported staff read path. Also
+  chased a phantom "transient broken main" (tenantExists imported before exported between #581/#582)
+  — turned out the data.ts/[id]/page.tsx hits were COMMENT references, not imports. Verify-not-guess
+  paid off both times.
+- **Meta-pattern in how gaps recur across agents:** RETRO-187 §6 pre-registered a 2nd-sighting watch
+  ("a ported route ships without the INV-5 test despite the AC"). It DIDN'T recur — the AC held. But
+  a NEIGHBOR of the same shape appeared: not the test class relocating across a TICKET boundary, but
+  an EXISTING test's assertion surface SHRINKING within a spy-based port. Gaps don't just move one
+  hop downstream — they also move one LAYER up (from "does the fence work" to "did we wire the
+  fence's config"). Registered as a new count-1 pattern; watching the write ports (595/598) for
+  sighting 2.

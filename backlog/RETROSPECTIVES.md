@@ -29754,3 +29754,260 @@ This retro closes a ~9-ticket, two-class arc over one value domain (the 18 arche
 - Related to **RETRO-186 / RETRO-185**: FOLLOW-592 is cross-referenced by RETRO-186 (it was filed alongside the ADR-0018 planning) — but it is a SEPARATE domain (auth/security foundation) from the RETRO-179→186 archetype-parity arc; no pattern from RETRO-183..186 (Rules AC/AD, archetype literals) recurs here.
 - Related to **RETRO-076 / memory `project_postgres_migrations_no_autoapply`**: the CI "2 fail" context (no `main` branch protection) frames why the Rule I +4 is non-blocking.
 - **First retro** on the ADR-0018 superadmin-tenant-access thread; FOLLOW-593..600 retros should trace forward to LG-1's per-route enforcement.
+
+## RETRO-188 — FOLLOW-593 (`/admin/tenants` hub + `[id]` landing; un-hide multi-tenant admin nav; mock→real-Supabase-with-K.2-fallback across 3 admin surfaces) — 2026-07-20
+
+> **NUMBERING NOTE (verify-not-guess):** dispatch brief said "current max is 275, use RETRO-276."
+> The file disagrees: the highest `## RETRO-` heading is **RETRO-187** (FOLLOW-592, the ticket
+> immediately preceding this one), and the "read the last 5 retros" chain is 183→187. The only
+> `RETRO-275` string in the file is inside RETRO-063's lessons prose (line ~16158, "RETRO-056/057/275"),
+> not a heading. Using 276 would open an 88-entry gap and break the sequential learning chain, so this
+> entry is **RETRO-188**. Flagged for the orchestrator; renumber on merge if a different scheme is
+> canonical.
+
+### 1. Summary of change
+
+- **PR:** #581 (merged 2026-07-20 ~18:13 UTC, squash commit `7826967`; branch
+  `backend-engineer/FOLLOW-593-tenant-hub`, now deleted — recovered from a strand, see §4e)
+- **Files changed:** 16 (+1828 / -305)
+- **Modules touched:** [control-plane] (admin UI + colocated server data-access; no SDK/ingest/shared/db-schema/docs/config)
+- **Key contracts changed:**
+  - `layout.tsx` `TENANTS_NAV_LINKS` — added; multi-tenant nav un-hidden (ADR-0018 §Decision 0, CEO Q2) — breaking: no
+  - 3 new colocated loaders — `getTenantsList()` / `getTenantById(id)` / `getPendingRegistrations()` /
+    `getDemoSessionsList()` — added — breaking: no (new files)
+  - Page contract flipped from **unconditional `MOCK_*`** → **real Supabase read with a `data_source`
+    provenance flag** (`live` | `mock` | `error`); mock retained ONLY as the DB-unconfigured (dev/CI)
+    fallback — this is the Rule K.2 "fail loud, never fabricate" fix the PM finding demanded — breaking: no (server-internal)
+  - `/admin/tenants/[id]` landing page — new route, entry point for FOLLOW-594..600 per-tenant surfaces
+
+### 2. Verification done in PR
+
+- Test files changed/added: `tenants/data.test.ts` (+212), `tenants/[id]/page.test.tsx` (+116),
+  `tenants/page.test.tsx`, `registrations/data.test.ts` (+117), `registrations/page.test.tsx` (+88),
+  `demo-sessions/data.test.ts` (+176), `demo-sessions/page.test.tsx` (+89), `layout.test.tsx` — 88 tests / 14 files.
+  · Assertions: all three surfaces assert **all three** `data_source` paths incl. the `'error'` fail-loud
+  branch (verified: `data_source:'error'` asserted in each `data.test.ts`) — the Rule K.2 headline feature
+  is genuinely covered, not just the happy path.
+- Coverage delta: est. positive (the three pages had NO real-data path before; now both real + mock + error paths tested).
+- CI checks: not re-watched by me (read-only retro). Expect the standing pre-existing Rule I "2 fail" red
+  (whole-codebase, non-blocking — no `main` branch protection), now carrying this PR's inference-only-consumed
+  type exports (§3). All other gates PM-attested per QUEUE #581.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):**
+
+- New route files (`tenants/[id]/page.tsx`, and the rewired `page.tsx` × 3) — framework-route entrypoints → SUPPRESSED.
+- Loader functions `getTenantsList` / `getTenantById` (`tenants/data.ts`), `getPendingRegistrations`
+  (`registrations/data.ts`), `getDemoSessionsList` (`demo-sessions/data.ts`) — **WIRED**: each imported and
+  awaited by its colocated page (`tenants/page.tsx:22,90`; `tenants/[id]/page.tsx:25,48`;
+  `registrations/page.tsx:17,34`; `demo-sessions/page.tsx:18,42`).
+- **RULE-I FALSE POSITIVES (8) — NOT genuine dead code:** the return-type interfaces `TenantsListResult`,
+  `TenantLookupResult` (tenants), `RegistrationRow`, `RegistrationsDataSource`, `PendingRegistrationsResult`
+  (registrations), `DemoSessionRow`, `DemoSessionsDataSource`, `DemoSessionsListResult` (demo-sessions) show
+  zero non-test named importers (`grep` per symbol), so `check-rule-i.sh` counts them dead — but they ARE
+  consumed via **return-type inference** at the destructuring call sites (`const { dataSource, tenants } = await getTenantsList()`).
+  Rule I's named-import grep is structurally blind to inference-only consumption. `TenantRow`/`TenantsDataSource`/
+  `DemoSessionStatus` ARE imported by name (2 refs each) → truly wired. Classified as a **detector blind spot**,
+  distinct from RETRO-187's genuine-dead-deferral (§6). Folds into the existing FOLLOW-591; refinement filed FOLLOW-602.
+
+**CHECK B (half-wire):** no NEW event / env-var / column / topic / SDK-signal. `isDbConfigured()` reads the
+**pre-existing** `DATABASE_URL_ADMIN ?? DATABASE_URL_DIRECT` — verified an EXACT mirror of `createAdminClient()`
+(`packages/db/src/client.ts:189`), so there is NO configured-vs-usable mismatch (a false `isDbConfigured`→mock or a
+true→createAdminClient-throw→`'error'` fail-loud are both impossible-or-safe). `data_source` is a terminal UI literal,
+not a wire. All reads hit existing tables (`tenants`, `tenant_registrations`, `demo_sessions`) with existing writers.
+**CHECK B — clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A of consequence. Checked three candidates and CLEARED all: (1) `getPendingRegistrations` returns only
+  `status='pending'` — verified FAITHFUL to prior behavior (`git show 8444232:.../registrations/page.tsx` also
+  filtered `status==='pending'`), not a regression. (2) `getTenantById` UUID-gate: a non-UUID id under a configured
+  DB returns `{live, tenant:null}`→`notFound()` (never a DB throw); mock ids are non-UUID by design and only hit the
+  unconfigured path — correct. (3) `deriveStatus` revoked/expired precedence correct.
+
+#### 4b. Code bugs not caught
+
+- N/A. No defects. The env-var mirror is exact; `.leftJoin(tenants)` on demo-sessions renders `'(unknown tenant)'`
+  for a hard-deleted tenant (never fabricated) — Rule K.2-consistent.
+
+#### 4c. Test coverage gaps
+
+- TG-1 (P3): the `[id]` landing page's `data_source:'error'` banner branch is rendered by `page.tsx` but I did not
+  confirm a page-level render test for it (the loader's `'error'` return IS unit-tested in `data.test.ts`; the
+  page's error-banner JSX is the untested hop). Low severity — the loader contract is proven; the banner is 6 lines
+  of static JSX. Folded as an AC note on FOLLOW-602, no standalone stub.
+
+#### 4d. Documentation gaps
+
+- N/A. Docstrings are unusually thorough and accurate (cross-reference `tenantExists`/FOLLOW-592, cite Rule K.2, and
+  the `/api/pilot/cta-lift` `clickhouseConfigured` precedent). The `[id]` page's "more surfaces being ported per
+  ADR-0018 §6" note is the correct forward-pointer for §5b.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-594** (analytics staff port, merged #582): consumes this `[id]` landing as its parent route and is the
+  first real consumer of `resolveTenantAccess` (RETRO-187's DEAD_CODE P1 closure). No conflict — 594's route sits
+  UNDER `[id]`; this PR ships the shell, 594 adds the feature link.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-595..600:** the `[id]` landing page currently hardcodes ONLY the K.3.6 Tracer links + a static "Analytics,
+  Quiz, Demo, Labels, Bandit weights are being ported" note. Each downstream stub MUST add its own link to this hub as
+  it lands, or the surface it ships is navigable only by hand-typed URL. **PM action:** ensure each of FOLLOW-595..600's
+  AC includes "add the feature link to `/admin/tenants/[id]/page.tsx`." This is the hub-linkage cascade, recorded so it
+  cannot silently rot.
+- **RETRO-187 INV-5 obligation is UNAFFECTED by this PR and still rides FOLLOW-594..600:** the three surfaces shipped
+  here are **fleet-wide staff LIST views** (all tenants, by design) and `getTenantById` returns a tenant's OWN identity
+  row — there is no per-tenant fence to leak across, so ADR-0018 §2 invariant-5 does NOT apply here (reconciled in §8).
+  The mandatory red-first "staff query is tenant-filtered" test still attaches to the per-tenant DATA surfaces
+  (FOLLOW-594+), exactly where RETRO-187 placed it.
+
+#### 5c. Contracts changed others rely on
+
+- The `data_source` provenance flag (`live|mock|error`) is now the established shape for every admin surface's DB read.
+  FOLLOW-595..600 should reuse it verbatim (the `DataSourceBadge` component is duplicated inline in `tenants/page.tsx`
+  and `[id]/page.tsx` — a candidate for a shared component, noted not ticketed).
+
+#### 5d. Architectural assumptions affected
+
+- Confirms the URL-scoped (not session-impersonation) staff-on-tenant model from ADR-0018 §1 at the UI layer: the hub
+  is the single entry point; every per-tenant surface is `/admin/tenants/[id]/<feature>`. No divergence from Master Design.
+
+### 6. New lesson candidates
+
+- **Pattern (RULE-I DETECTOR BLIND SPOT — inference-only-consumed export):** an exported return-type interface consumed
+  ONLY via TypeScript return-type inference at a destructuring call site (never a named `import type`) is flagged dead by
+  `check-rule-i.sh`, which greps for named imports. — seen in: **RETRO-188** (8 instances this PR). count 1. **HELD.**
+  This is **DISTINCT** from RETRO-187's Rule-I finding (which was GENUINE dead code — `resolveTenantAccess`/`AccessError`
+  had zero callers of any kind, awaiting FOLLOW-594). Fusing the two into one "Rule-I-new-export" rule would be the
+  premature-fusion error RETRO-150/176 repeatedly refused: one is "the code IS wired, the detector is wrong"; the other is
+  "the code is genuinely dead, correctly flagged, wire later." **≥2-threshold NOT met on a single coherent pattern → NO PROMOTION.**
+  Both are already owned by FOLLOW-591 (make Rule I diff-scoped) — but this sighting surfaces a real gap in FOLLOW-591's
+  recommended Option B (see §7 / FOLLOW-602): diff-scoping as written would newly RED-BLOCK these 8 genuinely-wired exports.
+- **Pattern (STRANDED-WORKTREE RECOVERY):** agent work interrupted by a terminal shutdown, stranded uncommitted in
+  `.claude/worktrees/agent-*`, recovered by a later session. — seen in: RETRO-175/176 (one incident) + **RETRO-188** (a
+  SEPARATE incident, session 41). count 2 DISTINCT incidents. **HELD — NO new rule.** The actionable remedy (a worktree
+  DETECTION step in AGENT_WORKFLOW.md) is already owned by **FOLLOW-573**, and this incident's SUCCESSFUL recovery is
+  evidence that approach works. The un-ticketed angle is PREVENTION (agents commit-early / checkpoint to shrink the strand
+  window) — a process-doc convention, not a CONVENTIONS_PATCH code rule; folded as a note on FOLLOW-573 rather than a new stub.
+
+### 7. Follow-ups
+
+- **FOLLOW-602** (devops-engineer, ~2h, **P2**): enrich FOLLOW-591's Option B (diff-scoped Rule I) so it does NOT
+  RED-BLOCK **inference-only-consumed** exports — a return-type interface referenced solely via return-type inference at a
+  call site is WIRED, not dead. Concretely: teach `check-rule-i.sh` to treat a symbol used as a colocated function's
+  return type (or otherwise reachable via inference from a wired export) as consumed, OR exempt colocated `admin/**/data.ts`
+  return-type interfaces. Include the 8 FOLLOW-593 exports as the proof fixture (must go GREEN), plus a genuinely-dead
+  export that must stay RED. AC also notes the FOLLOW-593 `[id]` error-banner render-test gap (TG-1, P3) as a small
+  colocated add. **This is a dependency of FOLLOW-591, not a duplicate:** it fixes a false-block Option B would otherwise ship.
+- RULE-I DEAD-CODE already-known items (the +8): no standalone stub — owned by FOLLOW-591/601 per §3.
+- Stranded-worktree prevention angle: folded into existing FOLLOW-573, no new stub (§6).
+
+### 8. Cross-references
+
+- Related to **RETRO-187** (FOLLOW-592): direct predecessor on the ADR-0018 thread. **RECONCILED CONTRADICTION-CANDIDATE:**
+  RETRO-187 attached the mandatory INV-5 "staff query is tenant-filtered" red-first test to FOLLOW-594..600. A naive reading
+  would demand it here too. It does NOT apply to this PR: the three surfaces are cross-tenant staff LIST views (staff are
+  ENTITLED to read all tenants — there is no foreign-tenant fence to breach) and `getTenantById` reads the tenant's own
+  identity row. INV-5 governs the per-tenant DATA surfaces (analytics/quiz/demo rows) that FOLLOW-594+ query RLS-bypassed —
+  RETRO-187 placed it correctly; no relocation, no gap. AFFIRMED.
+- Related to **RETRO-186** (FOLLOW-591 provenance / SESSION-RETRO-39): the Rule-I noise this PR adds is the exact class
+  FOLLOW-591 exists to fix; FOLLOW-602 refines its recommended option.
+- Related to **RETRO-175 / RETRO-176** (§4e stranded-worktree incidents) and memory
+  `feedback_check_worktrees_before_concluding_agent_didnt_run`: this ticket is a 2nd distinct recovery, successfully closed.
+
+<!-- next free FOLLOW number: 603 (601 is a burned/dropped id — FOLLOW-600 references "the dropped FOLLOW-601", the per-tenant generation-model control CEO Q1 killed). RETRO-188 = retro for PR #581 (FOLLOW-593, MERGED 2026-07-20 ~18:13 UTC, commit 7826967; 16 files +1828/-305; /admin/tenants hub + [id] landing + multi-tenant nav un-hidden per ADR-0018 §Decision 0, and 3 admin surfaces flipped from unconditional MOCK_* to real Supabase reads with a live|mock|error data_source flag — mock retained ONLY as the documented DB-unconfigured fallback, closing the PM's Rule K.2 "silently-wrong fake tenants" finding; 88 tests; content recovered from a stranded agent worktree, session 41). NUMBERING: dispatch brief said "use RETRO-276 (max 275)" but the file's true max heading is RETRO-187 (FOLLOW-592) and the last-5 chain is 183→187; the only RETRO-275 token is prose inside RETRO-063's lessons; used RETRO-188 to preserve the sequential chain — flagged for orchestrator renumber if a 200+ scheme is canonical. WIRING: CHECK A — 4 loader fns WIRED to their colocated pages; 8 return-type interfaces (TenantsListResult/TenantLookupResult/RegistrationRow/RegistrationsDataSource/PendingRegistrationsResult/DemoSessionRow/DemoSessionsDataSource/DemoSessionsListResult) are RULE-I FALSE POSITIVES (consumed via return-type inference, not named import — detector blind spot, NOT genuine dead code, DISTINCT from RETRO-187's real dead resolveTenantAccess); CHECK B clean (isDbConfigured reads pre-existing DATABASE_URL_ADMIN??DATABASE_URL_DIRECT, EXACT mirror of createAdminClient client.ts:189 → no configured-vs-usable mismatch; no new event/env/column/topic; data_source is a terminal UI literal). GAPS: TG-1 (P3) [id] error-banner render-test gap (loader 'error' path IS unit-tested); zero logic/code/doc gaps (3 logic candidates checked+cleared — pending-filter faithful to prior page, UUID-gate safe, deriveStatus correct). CASCADE: §5b FOLLOW-595..600 must each add their link to [id]/page.tsx (PM action); INV-5 does NOT apply to these cross-tenant LIST views + own-identity lookup (reconciled §8, RETRO-187 placement AFFIRMED). RULE: NO PROMOTION — Rule-I-detector-blind-spot count 1 HELD (DISTINCT from RETRO-187 genuine-dead; fusing = premature-fusion error per RETRO-150/176; both owned by FOLLOW-591); stranded-worktree count 2-distinct HELD (remedy owned by FOLLOW-573, recovery succeeded). FOLLOWS FILED: 602 (devops ~2h P2 — enrich FOLLOW-591 Option B so diff-scoped Rule I does NOT false-block inference-only-consumed exports; 8 FOLLOW-593 exports = proof-green fixture + a dead export must stay red; also the [id] error-banner render test). CONVENTIONS_PATCH.md correctly UNTOUCHED. -->
+
+## RETRO-189 — FOLLOW-594 (Phase-1 analytics READ-ONLY staff port; the FIRST real consumer of the `resolveTenantAccess` staff-override / RLS-bypassed path — ADR-0018 §6. **HEADLINE — the tenant-isolation is SECURITY-CLEAN and INV-5 is GENUINELY DISCHARGED end-to-end for all three ported reads.** Each of the three GET endpoints (`dashboard/analytics/summary`, `dashboard/analytics/lift`, `ab/weights`) opts into `resolveTenantAccess({ allowStaffOverride:true })`, binds the resolved `access.tenantId` as the SINGLE tenant fence into its REAL outgoing query, AND carries a MANDATORY red-first tenant-filter test that exercises that real query path — the two ClickHouse routes intercept the outgoing `fetch` and assert `param_tenant_id===A`, `!==B`, and `{tenant_id:String}` parameterization; the `ab/weights` route captures the real drizzle `.where()` against a service-role table seeded with BOTH tenants and asserts `eq(tenantId,A)` with B's rows/`downsizer` archetype never surfacing. This is the 2nd sighting of RETRO-187 §6's watched pattern — but the obligation was **MET, not dropped**: the stub-alignment AC RETRO-187 added to FOLLOW-594 survived into implementation, CONFIRMING the fix worked rather than re-opening the gap. **RETRO-187's DEAD_CODE P1 (`resolveTenantAccess`/`AccessError` zero-consumer deferral) is now CLOSED end-to-end** — producer (helper) → 3 route consumers → real RLS-bypassed query → non-vacuous per-route leak test — not a one-hop relocation. Coverage of the staff surface is COMPLETE: the staff page's `AnalyticsView` issues exactly three GET reads (summary/lift/ab-weights), all three ported+fenced+tested; the only other `fetch` (bandit PATCH) is `allowResume`-gated OFF on the staff page (deferred FOLLOW-598) — no un-ported staff read path exists. **The ONE finding is a test-coverage gap, not a live defect: the port re-greened the pre-existing agency-path route tests by SPYING `resolveTenantAccess`, which silently dropped route-level assertion of each route's OWN security-relevant option wiring** — no test proves the routes actually pass `allowStaffOverride:true` + `minAgencyRole:'agency:viewer'`, so a future edit dropping/weakening either would pass every current test (the agency→tenantId BINDING itself IS proven, in `resolve-tenant-access.test.ts` AGENCY-1/FOREIGN/MATCH/DEFAULT — so the worker's "covered by the helper suite" claim holds for the binding but NOT for the route's opt-in config). Filed FOLLOW-603. exactOptional fix + `accessErrorToResponse`/`tenantExists`/`AnalyticsView` exports all verified behavior-identical / genuinely wired) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #582 (merged 2026-07-20, squash commit `08a5d1e`; branch `backend-engineer/FOLLOW-594-analytics-staff-port`, now deleted — recovered from a terminal-shutdown strand, §4e)
+- **Files changed:** 14 (+1710 / -407)
+- **Modules touched:** [control-plane] (3 API routes + their tests, 1 new server page + test, 1 extracted client component, 2 lib files; no SDK/ingest/shared/db-schema/docs/config)
+- **Key contracts changed:**
+  - `session-auth.ts` `tenantExists(id)` — visibility **widened** `async function` → `export async function` (FOLLOW-594) — breaking: no (additive export; body byte-unchanged)
+  - `lib/access-error-response.ts` `accessErrorToResponse(err)` — ADDED — maps `AccessError`→`NextResponse`, re-throws non-`AccessError` — breaking: no (net-new)
+  - `components/analytics/analytics-view.tsx` `AnalyticsView({ tenantId?, allowResume? })` — ADDED (extracted from the agency dashboard page); optional `tenantId` appends `?tenant_id=<id>` to every panel GET — breaking: no
+  - 3 GET routes (`ab/weights`, `dashboard/analytics/summary`, `dashboard/analytics/lift`) — auth SWAPPED from session-claim-only → `resolveTenantAccess({ allowStaffOverride:true, minAgencyRole:'agency:viewer' })`; `access.tenantId` is the SINGLE fence bound into each real query — breaking: no (agency path preserves prior tenant-from-claim semantics; staff path is net-new). **The `ab/weights` PATCH write was deliberately left untouched** (Phase-3 / FOLLOW-598).
+  - New route `/admin/tenants/[id]/analytics` — validates `[id]` via `tenantExists()`→`notFound()`, mounts `AnalyticsView tenantId={id}` read-only
+
+### 2. Verification done in PR
+
+- Test files changed/added: `ab/weights/route.test.ts` (rewritten, 340 lines), `summary/route.test.ts` (319), `lift/route.test.ts` (261), `lift/golden-query-comparison.test.ts` (+32), `[id]/analytics/page.test.tsx` (+83), `pilot/cta-lift/route.follow371.test.ts` (+27). ~54 tests. · Assertions: each of the 3 ported routes has the mandatory INV-5 red-first tenant-filter test PLUS staff-200 / staff-omit-400 / staff-unknown-404 / agency-happy/foreign/error paths.
+- CI checks: not re-watched by me (read-only retro). Expect the standing pre-existing Rule I "2 fail" red (whole-codebase, non-blocking — no `main` branch protection); the 3 new value exports here are all genuinely wired (§3) so they add no NEW legitimate Rule I violation. All other gates PM-attested per QUEUE #582.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):**
+
+- New API route files + the new `[id]/analytics/page.tsx` — framework-route/page entrypoints → SUPPRESSED.
+- `accessErrorToResponse` (`lib/access-error-response.ts`) — **WIRED**: named-imported + called by all 3 ported routes (`grep -rln accessErrorToResponse apps --include='*.ts' | grep -v test` → 3 routes + def).
+- `tenantExists` (now exported, `session-auth.ts:329`) — **WIRED**: named-imported by `[id]/analytics/page.tsx:25` (the `data.ts`/`[id]/page.tsx` grep hits are COMMENT references — verified at `7826967` they do NOT `import` it, so there was NO transient-broken-main window between #581 and #582).
+- `AnalyticsView` (`components/analytics/analytics-view.tsx`) — **WIRED**: imported by `[id]/analytics/page.tsx:26` and by the agency dashboard page it was extracted from.
+- Route response-type exports (`AbWeightsResponse`/`BanditWeightRow`/`SummaryResponse`/`LiftResponse`/`LiftRow`) — type-only exports → SUPPRESSED per CHECK-A rule (`LiftResponse`/`LiftRow`/`SummaryResponse` ARE type-imported by `analytics-view.tsx:28-29` regardless). **No inference-only-false-positive (RETRO-188) and no genuine-dead (RETRO-187) finding here** — the 3 new VALUE exports are all named-import-wired. Per RETRO-188, those two Rule-I sub-classes stay DISTINCT and un-fused; this PR is simply an instance of NEITHER. **CHECK A — clean ✅**
+
+**CHECK B (half-wire):** no NEW event / env-var / DB-column / topic / SDK-signal. Routes read existing env (`DATABASE_URL`, `CLICKHOUSE_URL/USER/PASSWORD`, and — via the helper — `ADMIN_API_SECRET`, `NEXT_PUBLIC_SUPABASE_*`) and existing tables (`ab_bandit_weights`, `adaptation_decisions`, `events`, `tenants`). `?tenant_id` is an existing query param; `data_source` is a terminal UI literal, not a wire. **CHECK B — clean ✅**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A of consequence. Three security seams checked and CLEARED: (1) staff path binds the SAME `access.tenantId` as the agency path into `buildWhere()`/`param_tenant_id` — the fence is path-agnostic and unconditionally first in `buildWhere` (`route.ts:106`, `conditions[0]` is always `eq(tenantId,...)`). (2) `exactOptional` fix `...(param ? {tenantId:param}:{})` is **behavior-identical** to the old `tenantId: param ?? undefined`: `resolveTenantAccess` reads the value (`opts?.tenantId !== undefined`, `session-auth.ts:409`), never `'tenantId' in opts`, so an absent param yields the same `undefined` and the same staff-path 400 on both; an empty-string param is falsy→omitted→400 (old code passed `''`→`tenantExists('')`→UUID-fail→404) — both REJECT, the fence never opens. (3) staff page mounts `AnalyticsView` with `allowResume` defaulted false → the bandit PATCH `fetch` (`analytics-view.tsx:690`) is unreachable for staff — the write deferral (FOLLOW-598) is enforced by construction, not merely by convention.
+
+#### 4b. Code bugs not caught
+
+- N/A. No defect on the adversarial pass. The staff (`createAdminClient`, RLS BYPASSED) path in all three routes fences on `access.tenantId` and nothing else; the ClickHouse queries parameterize `{tenant_id:String}` (no string interpolation of the id — injection-safe).
+
+#### 4c. Test coverage gaps
+
+- **TC-1 (P2, the finding → FOLLOW-603):** the port re-greened the 3 routes' pre-existing agency tests by PARTIALLY MOCKING `@/lib/session-auth` (spy `resolveTenantAccess`, keep `AccessError` real via `importOriginal`). Correct for isolating the route, but it means **no test asserts these routes invoke `resolveTenantAccess` with the correct security options** — `allowStaffOverride:true` + `minAgencyRole:'agency:viewer'`. `grep 'toHaveBeenCalledWith|allowStaffOverride|minAgencyRole'` across the 3 route tests → ZERO arg-assertions (the only `allowStaffOverride` hits are inside an `AccessError` message string). Impact: a future edit that dropped `allowStaffOverride:true` (silently breaking the whole staff port) or weakened/omitted `minAgencyRole` (an authz regression) would pass EVERY current route test. The agency→tenantId BINDING itself IS proven (in `resolve-tenant-access.test.ts` AGENCY-1/AGENCY-FOREIGN/AGENCY-MATCH/AGENCY-DEFAULT) — so the worker's "covered by the helper suite" claim holds for the binding but NOT for the route's own opt-in config, which the helper suite structurally cannot assert (it can't know which routes opt in).
+- **TC-2 (P3, no ticket — proportionate):** the `ab/weights` staff path with `?archetype=` (→ `and(eq(tenant,A), eq(archetype,x))`, the array branch of `whereTenantVal`) is not exercised on the STAFF path; the mandatory test uses the no-archetype single-condition branch. Fence is structurally unconditional (`conditions[0]` always tenant), so this is a completeness note, not a leak. Folded as an AC note on FOLLOW-603.
+
+#### 4d. Documentation gaps
+
+- N/A. The three route docstrings each carry the INV-5 "single fence / RLS BYPASSED" warning AND the RETRO-187 headless-`ADMIN_API_SECRET`-403 caveat; the page and `tenantExists` export are documented with the "both surfaces agree on what exists means" rationale.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-595 (Phase-2 quiz WRITE port) — the one to warn:** its AC says "copy this exact `resolveTenantAccess` + MANDATORY tenant-filter-test shape." **What 595 must NOT copy blindly:** (a) the SPY strategy that dropped route-level option-wiring assertion (TC-1) — 595 must ADD the `toHaveBeenCalledWith(..., objectContaining({ allowStaffOverride:true, minAgencyRole:... }))` assertion, AND for its WRITE path additionally assert the write-rank gate is passed; (b) 595's AC still reads "agency path unchanged (existing tests green)" — but 594 proved that porting to `resolveTenantAccess` FORCES rewriting the route tests (they cannot stay unchanged, because the auth entrypoint changed) — so 595 should expect to rewrite, not preserve, its route tests; (c) 595 adds `staff_audit_log` — a genuinely NEW wire (producer=write path, consumer=FOLLOW-599 audit view) that 594 has NO precedent for, so the "copy 594" instruction covers only the read-fence half.
+- **FOLLOW-598 (Phase-3 bandit PATCH) — the write 594 deferred:** 594 correctly left the `ab/weights` PATCH and the `AnalyticsView` Resume button (`allowResume`) untouched; 598 owns turning `allowResume` on behind `access.isSuperadmin` (rank ≥ 3) + audit. No conflict — the deferral is clean and construction-enforced.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-596/597/600 (remaining Phase-2 read/write ports) + the deferred Pilot/Site-Detection sibling stub:** each will re-hit TC-1 if it copies the spy strategy without the option-wiring assertion. FOLLOW-603 should be positioned as a template fix applied to ALL ported route tests, not just the 3 shipped here (its AC notes this).
+- **FOLLOW-603 (this retro's stub):** the option-wiring assertion. Small, colocated in the same 3 test files.
+
+#### 5c. Contracts changed others rely on
+
+- `resolveTenantAccess` now has 3 live consumers (was 0) — RETRO-187's DEAD_CODE P1 is CLOSED. The `{ allowStaffOverride:true, minAgencyRole:'agency:viewer' }` call shape + `access.tenantId`-as-only-fence + `accessErrorToResponse(err)` catch is now the established per-route pattern every Phase-2/3 port copies. `accessErrorToResponse`'s `{ error:{ code,message } }` envelope preserves the agency-path 401 shape byte-identically (existing dashboard consumers unaffected).
+
+#### 5d. Architectural assumptions affected
+
+- Confirms + first-EXERCISES the ADR-0018 §1 URL-scoped staff model at the query layer: `access.tenantId` (validated `?tenant_id` on the staff branch, session claim on the agency branch) is the sole isolation boundary once RLS is bypassed. The load-bearing risk RETRO-187 flagged (correctness depends ENTIRELY on the explicit `WHERE tenant_id`) is now defended per-route by real query-path leak tests — the assumption is no longer only doc-comment-deep. No divergence from Master Design.
+
+### 6. New lesson candidates
+
+- **Pattern (SPY-PORT DROPS ROUTE-OWNED SECURITY-OPTION COVERAGE):** porting a route's auth to a shared helper and re-greening its tests by spying that helper silently drops route-level proof of the route's OWN security-relevant call options (`allowStaffOverride`, `minAgencyRole`, write-rank) — the helper suite proves the helper's behavior but structurally cannot prove which options each route passes. — seen in: **RETRO-189** (3 routes, this PR). count 1. **HELD — NOT promoted (below ≥2-prior threshold).** DISTINCT from RETRO-187's "demonstrative-test / obligation-relocates-downstream" (that was about a MISSING test class relocating across a TICKET boundary; this is about an EXISTING test's assertion surface shrinking WITHIN a port). Watch FOLLOW-595/596/598: if any ports via spy without the option-wiring assertion, that is the 2nd sighting → promote.
+- **Pattern (RETRO-187 §6 demonstrative→downstream — 2nd sighting, but OBLIGATION MET):** RETRO-187 §6 pre-registered "if a ported route ships WITHOUT the INV-5 leak-test despite the now-added AC, that is the 2nd sighting." Here the route shipped WITH the real-query leak-test on all three endpoints → the AC held → this is CONFIRMATION the stub-alignment mitigation works, **NOT** a 2nd sighting of the gap. No promotion; the watch remains open for the write ports.
+
+### 7. Follow-ups
+
+- **FOLLOW-603** (qa-engineer or backend-engineer, ~2h, **P2**): in each of the 3 ported route tests (`ab/weights`, `dashboard/analytics/summary`, `dashboard/analytics/lift`) add a red-first assertion that the route invoked `resolveTenantAccess` with the correct security options — `expect(mockResolve).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }))` — so dropping/weakening either option is caught at the route level (the spy strategy currently leaves it unasserted; TC-1). AC: perturbing the option flips the assertion red (proves load-bearing). Also cover the `ab/weights` staff+`?archetype=` array-fence branch (TC-2). **Template note:** the same option-wiring assertion MUST be added by every future `resolveTenantAccess` port (FOLLOW-595/596/597/598/600 + the Pilot/Site-Detection sibling) — reference this ticket as the pattern.
+- RETRO-187 DEAD_CODE P1 (`resolveTenantAccess`) — **CLOSED by this PR** (3 wired consumers + real-query leak tests); no stub.
+
+### 8. Cross-references
+
+- Related to **RETRO-187** (FOLLOW-592): direct security foundation. This retro DISCHARGES RETRO-187 §4a LG-1 for the analytics slice (INV-5 leak-test AC survived into implementation on all 3 reads) and CLOSES RETRO-187's DEAD_CODE P1 end-to-end. The FOLLOW-598-scoped LG-2 (`generation_model` PUT rank-3) and the write-path INV-5 remain open on the write tickets — correctly not this PR's scope.
+- Related to **RETRO-188** (FOLLOW-593): 594's `[id]/analytics` page sits UNDER the `[id]` landing #581 shipped; RETRO-188 §5a correctly predicted 594 as "the first real consumer of `resolveTenantAccess`." **RECONCILED (no contradiction):** RETRO-188 §8 held INV-5 does NOT apply to its cross-tenant LIST views / own-identity lookup, and placed the obligation on the per-tenant DATA surfaces FOLLOW-594+ query RLS-bypassed — this retro confirms that placement was exact: INV-5 DOES apply here and is discharged. RETRO-188 §5b's hub-linkage cascade is satisfied — the `[id]` page links to `/analytics`.
+- Related to **memory `feedback_check_worktrees_before_concluding_agent_didnt_run` / RETRO-188 §4e:** 594's routes were stranded uncommitted by the SAME session-41 terminal shutdown that stranded 593, recovered by a re-dispatched Opus `backend-engineer` in the same worktree — the SAME incident RETRO-188 already counted (not a distinct 3rd sighting). Successful recovery; no new rule (remedy owned by FOLLOW-573).
+
+<!-- next free FOLLOW number: 604 (603 filed by THIS retro). RETRO-189 = retro for PR #582 (FOLLOW-594, MERGED 2026-07-20, squash commit 08a5d1e; 14 files +1710/-407; Phase-1 analytics READ-ONLY staff port — 3 GET routes (ab/weights, dashboard/analytics/summary, dashboard/analytics/lift) opt into resolveTenantAccess({allowStaffOverride:true, minAgencyRole:'agency:viewer'}); new /admin/tenants/[id]/analytics page validates [id] via exported tenantExists()→notFound() and mounts extracted read-only AnalyticsView tenantId={id}; new lib/access-error-response.ts accessErrorToResponse; ab/weights PATCH write deliberately deferred to FOLLOW-598; ~54 tests; recovered from the session-41 terminal-shutdown strand). NUMBERING: file's true max heading before this was RETRO-188 (FOLLOW-593); used RETRO-189 (ignored the RETRO-275 prose token inside RETRO-063). HEADLINE: tenant-isolation SECURITY-CLEAN + INV-5 GENUINELY DISCHARGED end-to-end on all 3 reads — each binds access.tenantId as the single fence into its REAL query and carries a MANDATORY red-first tenant-filter test that exercises that real path (CH routes fetch-intercept param_tenant_id===A/!==B/{tenant_id:String}; ab/weights captures real .where() vs a both-tenants service-role table asserting eq(tenantId,A), B/downsizer never surface); staff surface COMPLETE (AnalyticsView issues exactly the 3 ported reads, PATCH allowResume-gated OFF); RETRO-187 DEAD_CODE P1 CLOSED (helper→3 route consumers→real query→leak test, not one-hop). WIRING: CHECK A clean (accessErrorToResponse/tenantExists/AnalyticsView all genuinely named-import wired — NEITHER RETRO-187 genuine-dead NOR RETRO-188 inference-false-positive class, kept distinct/un-fused; no transient-broken-main between #581/#582 verified); CHECK B clean (no new event/env/column/topic; ?tenant_id + data_source pre-existing). GAP: TC-1 (P2→FOLLOW-603) — spy-port re-greened agency tests by mocking resolveTenantAccess, silently dropping route-level assertion of allowStaffOverride:true + minAgencyRole (agency→tenantId BINDING itself IS proven in resolve-tenant-access.test.ts, but the route's opt-in CONFIG is unasserted; a future edit dropping either passes all tests). exactOptional fix verified behavior-identical (resolve reads opts.tenantId by value not 'in'; empty/absent both reject, fence never opens). CASCADE: FOLLOW-595 must NOT blindly copy the spy strategy (add option-wiring assertion + write-rank assertion) nor its 'agency tests unchanged' AC (porting FORCES rewrite); staff_audit_log is a NEW wire 594 has no precedent for. RULE: NO PROMOTION — spy-port-drops-option-coverage count 1 HELD; RETRO-187 §6 demonstrative→downstream 2nd-sighting but OBLIGATION MET (confirmation, not gap). FOLLOWS FILED: 603 (qa/backend ~2h P2 — route-level option-wiring assertion in the 3 ported route tests + template note for all future ports + ab/weights staff+archetype array-fence branch). CONVENTIONS_PATCH.md correctly UNTOUCHED. -->
+

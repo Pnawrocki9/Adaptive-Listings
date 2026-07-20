@@ -29215,3 +29215,105 @@ created or left dangling. `Wiring Audit — clean ✅` (both checks, on the diff
   561, 583, 584, 585, 587 — 7 tickets; Rule AC governs the file-scope axis, Rule AD the structural-shape
   axis. FOLLOW-584's `CANONICAL_ARCHETYPE_IDS`/`ArchetypeId` export is what made this PR's durable
   `readonly ArchetypeId[]` root-fix possible.
+
+## RETRO-183 — FOLLOW-589 (fix the 5th/last invalid archetype mock literal the FOLLOW-587 sweep structurally missed — `family_nester`→`family_buyer` as an unquoted object KEY inside the tracer-**history** mock's `archetype_deltas: JSON.stringify({…})` blob — and add a red-first, non-vacuous JSON-blob-KEY parity guard, the 12th assertion. **HEADLINE: the FOLLOW-561→583→585→587→589 mock-archetype-literal-INVALIDITY class is now CLOSED** — an independent all-structural-shapes sweep this session found ZERO remaining live (non-test) invalid archetype literals in ANY shape (named `as const` array, inline object VALUE, inline object KEY, JSON-stringified blob key, zod `z.enum`, Python dict key, SQL insert value, free-form field), and all 3 live structural sub-shapes are now guarded by the 12 assertions in `tests/integration/archetype-id-parity.test.ts`. This is a REAL end-to-end closure of RETRO-182 §4b CB-1 — literal fixed → parsed from the REAL route file by a non-vacuous subset assertion, not a one-hop relocation — AND, verified by fresh sweep, the gap did not move one sub-shape over this time: there is no 4th sub-shape. The two still-open non-chain follow-ups (FOLLOW-586 duplicate-but-VALID full-parity copies, FOLLOW-588 parser comment-strip hardening) are a DIFFERENT class — duplication/robustness, not invalid values — and closing this chain does NOT close them) — 2026-07-20
+
+### 1. Summary of change
+
+- **PR:** #565 (squash-merged 2026-07-20 ~10:02 UTC, commit `04f7832`), branch (now deleted) `qa-engineer/FOLLOW-589-json-blob-literal`. Source retro: RETRO-182 §4b CB-1.
+- **Files changed:** 3 (+93 / -1): `apps/control-plane/src/app/api/admin/tracer/history/route.ts` (1 line: `family_nester`→`family_buyer`), `tests/integration/archetype-id-parity.test.ts` (+65: new `parseTracerHistoryArchetypeDeltaKeys` parser + a 12th `describe`/`it` subset-validity assertion + doc-comment), `.claude/agents/qa-engineer/lessons.md` (+27).
+- **Modules touched:** control-plane (admin tracer-history mock, dev/CI-only fallback per Rule K.2) · qa (integration parity guard) · agent-lessons.
+- **Key contracts changed:** none. The fix is a mock-string correction; the guard is test-only; no exported symbol, schema, or wire shape changed. `import`-erasable / runtime-string only. Breaking: **N/A**.
+
+### 2. Verification done in PR
+
+- Test files changed: `tests/integration/archetype-id-parity.test.ts` (1). Assertions added: **1** `it()` (the 12th), with a non-vacuous `referenced.size > 0` guard + `assertSubsetValidity(...ARCHETYPE_NAMES)`. Red-first evidence in commit body: RED against main = 11 passed / 1 failed on `family_nester`; GREEN after fix = **12/12**.
+- CI checks: assumed green at merge (PM gate). **Independently re-run this session:** `pnpm vitest run tests/integration/archetype-id-parity.test.ts` → **12 passed (12)** on HEAD `04f7832`. Coverage delta: unknown (integration guard, not unit).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`
+
+- **CHECK A (dead code):** the sole new export-like symbol is the module-private helper `parseTracerHistoryArchetypeDeltaKeys` (not exported), consumed by the new `it()` in the same file — has ≥1 non-test importer in the sense that matters (its consumer is the assertion it exists for). No new file, no new public export, no new env-var/column/topic/event. N/A on framework-entrypoint suppression.
+- **CHECK B (half-wire):** no new event/env-var/column/topic/SDK-signal introduced. The production change is a one-token value correction inside an existing `archetype_deltas` string that already had both a producer (`buildMockEvents()`) and a consumer (the admin tracer-history view rendering the delta map). No producer-only or consumer-only wire. **Both checks clean.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A** — and this is the load-bearing finding of the retro. My **own fresh, independent all-structural-shapes sweep** (two positional scripts + targeted greps; venv/node_modules/.next/.turbo/dist excluded; test files excluded) enumerated and checked EVERY shape a closed-domain archetype literal can occupy:
+  1. **named `as const` arrays / quoted array entries** — `ARCHETYPE_SEEDS`, `_ARCHETYPES` (py), `MOCK_ARCHETYPES` ×N, `ARCHETYPE_KEYS`, `CANONICAL_ARCHETYPE_IDS`: all canonical.
+  2. **inline object VALUES** (`archetype|top_archetype|behavioral_archetype: '…'`): positional regex over all `.ts/.tsx/.js/.py/.sql` non-test files → **0 invalid** (the tracer-sessions `family_nester` from RETRO-181/182 is fixed).
+  3. **inline object KEYS incl. inside `JSON.stringify({…})`** (`{ id: -0.03 }`): the exact shape this PR fixed → **0 invalid remaining** (grep `family_nester` over non-test `apps/`+`packages/` returns nothing).
+  4. **zod `z.enum([...])`** — `adapt/description/route.ts` inline enum + `ARCHETYPE_KEYS`-derived enums: all canonical (these are FOLLOW-586's duplicate-but-VALID copies, see §5a).
+  5. **Python dict keys** (`_ARCHETYPE_GUIDANCE`) + **SQL insert values** (migration 0005 `archetype_name`): guarded exact-parity, canonical.
+  6. **free-form / doc-comment examples:** the only two non-canonical archetype-shaped tokens repo-wide are (a) `packages/shared/src/schemas/events/quiz.ts:80` JSDoc example `behavioral_archetype: 'family_comfort'` — a `*`-prefixed comment example (Rule AC false-positive class, cosmetic, NOT a live literal), and (b) `apps/intent-engine/src/test_intent_engine.py:124` `spaceship_buyer` — a deliberately-invalid fake JSON fixture INSIDE a pytest test (`test_*.py`), test-internal, out of the mock-fixture class. Neither is a live wire literal.
+- **Independent verdict: ZERO remaining live (non-test) invalid archetype literals in any structural shape.** This CONFIRMS (does not merely restate) the prior worker's + RETRO-182's claim. The only two out-of-scope survivors the task named — SDK `follow-194.test.ts:317/319` `simulatedReset('family_nester')` (test-internal simulated stale-archetype value) and `quiz.ts:80` `family_comfort` (JSDoc cosmetic) — are both confirmed non-live and correctly excluded.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** This PR is itself the fix for the last such bug (RETRO-182 §4b CB-1, a P3 mock/admin-only literal). No new code bug introduced or discovered.
+
+#### 4c. Test coverage gaps
+
+- **N/A — the guard is now complete for the invalidity class.** All 3 live structural sub-shapes are covered (see §4-Closure below). No unguarded mock-fixture file with archetype literals remains. Residual (tracked elsewhere, NOT a coverage gap of THIS class): the guard is **file-enumerated**, not a repo-wide universal invariant — a hypothetical FUTURE new mock file with a bad literal in a not-yet-parsed path would not be auto-caught. That is drift-PREVENTION (Rule AD clause 2 / FOLLOW-586's compile-time-type direction), not an open instance of the current class.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The new `describe`/parser doc-comments scope themselves honestly to the JSON-blob-KEY shape and do not over-claim repo-wide coverage (no Rule Y issue). The tracer-history fix has no rationale-comment-in-block (the FOLLOW-585 gotcha FOLLOW-588 targets was avoided — it is a one-token value swap).
+
+#### 4-Closure. CHAIN-CLOSURE DETERMINATION (headline — auditable, per task item 2)
+
+**VERDICT: CHAIN CLOSED.** The mock-archetype-literal-INVALIDITY class (FOLLOW-561→583→585→587→589) is CLOSED: every live structural shape is BOTH remediated (0 live invalid literals, §4a) AND guarded by `tests/integration/archetype-id-parity.test.ts`. Auditable guard-coverage map (12 `it()` assertions, all green on `04f7832`):
+
+1. `it@375` — sanity: `ARCHETYPE_NAMES` (canonical SoT, `packages/sdk/src/core/intent.ts`) has 18 entries — meta-guard.
+2. `it@381` — `apps/intent-engine/src/nlp.py` `_ARCHETYPES` exact parity — **Python named list** shape.
+3. `it@391` — `packages/db/src/seed/archetype-seeds.ts` `ARCHETYPE_SEEDS` exact parity — **TS named `as const` array** shape.
+4. `it@405` — `packages/db/migrations/0005_seed_archetype_embeddings.sql` inserted `archetype_name` values — **SQL insert value** shape.
+5. `it@419` — `apps/llm-gateway/src/jobs/generate_description.py` `_ARCHETYPE_GUIDANCE` exact parity — **Python dict KEY** shape.
+6. `it@439` — `packages/sdk/src/auto-detect/archetype-hints.ts` referenced ids — documented proper-subset (AC-b exemption).
+7. `it@473` — `apps/control-plane/src/lib/demo-override-store.ts` `REACHABLE_ARCHETYPES` — subset (§D.6).
+8. `it@502` — control-plane admin/labels `MOCK_ARCHETYPES` + export-route inline literals — subset (FOLLOW-583).
+9. `it@541` — `apps/control-plane/src/app/api/pilot/cta-lift/route.ts` `MOCK_ARCHETYPES` — subset (FOLLOW-585).
+10. `it@560` — `apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts` `MOCK_ARCHETYPES` — subset (FOLLOW-585).
+11. `it@586` — `apps/control-plane/src/app/api/admin/tracer/sessions/route.ts` `buildMockSessions()` `top_archetype` — **inline object VALUE** shape (FOLLOW-587).
+12. `it@613` — `apps/control-plane/src/app/api/admin/tracer/history/route.ts` `buildMockEvents()` `archetype_deltas` — **JSON-stringified object KEY** shape (FOLLOW-589, THIS PR).
+
+The 3 structural sub-shapes the chain traversed are each now guarded: **quoted array entry** (2,3,8,9,10) → **inline object VALUE** (11) → **JSON-blob object KEY** (12). Compile-time reinforcement: the three `MOCK_ARCHETYPES` arrays are typed `readonly ArchetypeId[]` (FOLLOW-587), so a bad literal in those is also a `tsc` error. **No 4th sub-shape surfaced in the independent sweep → chain is not merely "closable" but CLOSED.** FOLLOW-589 was the last reactive fix.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected — the two still-open non-chain follow-ups (task item 4)
+
+- **FOLLOW-586** (backend-engineer, P3, in backlog — migrate the 2 remaining importable full-parity copies onto `CANONICAL_ARCHETYPE_IDS`/`ArchetypeIdSchema`): **genuinely SEPARATE class — NOT closed by this chain.** Verified this session: `packages/shared/src/schemas/intent-weights.ts:33` `ARCHETYPE_KEYS` is a **valid** 18-entry duplicate (all canonical), and `adapt/description/route.ts` inline `z.enum` derives from it — both are duplicate-but-CURRENTLY-VALID copies. FOLLOW-586 is about DEDUPLICATION / drift-prevention (collapse copies onto one source), not about fixing invalid values. This PR touched neither file (zero overlap). So closing the invalidity chain does NOT reduce FOLLOW-586's scope. Rationale unchanged and mildly reinforced (the two copies still each need the one-line derivation).
+- **FOLLOW-588** (qa-engineer, P3, in backlog — harden parity parsers against inline-comment false-positives): **genuinely SEPARATE — NOT closed by this chain.** It is about parser ROBUSTNESS (a comment inside a parsed literal block could false-positive the scan), not about invalid values. This PR's fix has no in-block comment (avoided the trap by construction), but that is the manual discipline FOLLOW-588 exists to make unnecessary. Note for FOLLOW-588's worker: this PR added a new parser (`parseTracerHistoryArchetypeDeltaKeys`, whose `/(\w+)\s*:\s*-?\d/g` key regex would false-match a `word: 3` inside a stray comment in the blob) — so the hardening surface grew by one parser; rebase awareness only.
+
+#### 5b. Future sprint tickets affected
+
+- **N/A for the invalidity class** — a future archetype add/rename/removal is now caught by the 12-assertion guard (+ `tsc` on the 3 typed arrays) across every live shape. The durable direction remains: prefer a compile-time `readonly ArchetypeId[]` / `Record<ArchetypeId, number>` on hand-authored constants over adding a 13th reactive per-shape grep-guard (Rule AD clause 2). FOLLOW-586 is the next installment of that direction; FOLLOW-588 hardens the interim grep-guards.
+
+#### 5c. Contracts changed others rely on
+
+- **None.** One mock-string value fix + one test-only assertion; `import type` and runtime-string only; nothing exported or wire-visible changed.
+
+#### 5d. Architectural assumptions affected — MULTI-AXIS / CONTRADICTION-RECONCILIATION (step 8)
+
+- **Reconciliation with prior verdicts: NO contradiction — this retro DISCHARGES, not reverses, the standing prediction.** RETRO-179 §5d / RETRO-181 §5d / RETRO-182 §5d each held the class OPEN and forecast that it "is a moving target… until the root cause is fixed" and that closure needed a full-shape sweep. This retro's independent sweep is that sweep, and it comes back EMPTY — so the moving target has stopped moving. RETRO-182 called the class "closable" (one live sub-shape remaining); RETRO-183 upgrades that to **CLOSED** (zero live, all shapes guarded). No prior "clean" verdict is contradicted; every prior retro that touched this class explicitly kept it open, and this retro is the first entitled to close it.
+- **Axes checked (multi-axis discipline, step 8):** (i) **structural-shape axis** — enumerated exhaustively (§4a, 6 shape families), zero live invalid; (ii) **compile-time-vs-runtime axis** — 3 named arrays are `tsc`-guarded, the inline-VALUE + JSON-KEY shapes are runtime-guarded, Python/SQL sites stay runtime-parity-guarded (can't take a TS type) — all covered; (iii) **mock-vs-live axis** — every instance in the chain was `data_source:'mock'` dev/CI fallback (Rule K.2), never a live buyer prediction, so the whole class was P3; (iv) **duplicate-but-valid vs invalid axis** — explicitly separated FOLLOW-586's valid duplicates from the invalidity class so closure of one does not falsely claim the other. No contradiction to reconcile.
+- **Final class history (7 instances / 5 tickets / 3 sub-shapes):** `family_upsizer`×2 (583), `'investor'`×2 (585), `family_nester` tracer-sessions + `'investor'` audit (587), `family_nester` tracer-history JSON-key (589). All remediated + guarded.
+
+### 6. New lesson candidates
+
+- **No new pattern promoted, and none pending.** Rule AD ("enumerate EVERY structural shape a value-domain literal occupies; prefer a compile-time type over a per-shape grep-guard") was PROMOTED in RETRO-182 §6 for exactly this pattern at the ≥2-PRIOR threshold (RETRO-179 §6 + RETRO-181 §4b) — NOT re-promoted or duplicated here.
+- **Rule-quality assessment (task item 3): Rule AD, as written, WOULD have prevented this whole chain.** Had Rule AD existed at FOLLOW-561, clause 1 obliges enumerating named arrays + inline VALUES + inline KEYS incl. `JSON.stringify({…})` + `z.enum` + free-form up front — which is precisely the 3-sub-shape spread that leaked one-per-ticket across 561→589; the chain would have collapsed to a single ticket. Clause 4 mandates the exact closable/open determination this retro performs. So Rule AD is a HIGH-QUALITY rule and its promotion was correctly timed.
+- **Documented residual weakness in Rule AD (noted, below any amendment bar — the rule is one merge old):** clause 1's shape checklist was itself GROWN reactively (the JSON-blob-KEY shape was only ADDED to the enumeration after FOLLOW-589 discovered it), and the clause honestly says "at minimum" — so it offers no proof of exhaustiveness against a genuinely novel 6th shape (e.g. a template-string interpolation, a YAML/TOML config value, a Redpanda topic key). Only clause 2's compile-time type is a true exhaustiveness guarantee, and it cannot cover the Python/SQL parity sites (which is why those retain runtime parity guards). This is a note for the periodic skill-upgrade run, NOT a follow-up: giving Rule AD one cycle before amending is correct, and the empty sweep this session is evidence the current checklist is adequate for the archetype domain.
+
+### 7. Follow-ups
+
+- **NONE filed.** Per task item 6: the chain is genuinely CLOSED and my independent sweep is clean — filing a make-work follow-up to keep the chain alive would be noise. The two pre-existing non-chain follow-ups (FOLLOW-586 duplicate-consolidation, FOLLOW-588 parser-hardening) remain open in `backlog/FOLLOW_UPS.md` UNCHANGED — this merge neither closes nor expands them (§5a). `backlog/FOLLOW_UPS.md` intentionally untouched.
+
+### 8. Cross-references
+
+- **Related to RETRO-182 / FOLLOW-589 (prior-follow-up closure check, step 7):** RETRO-183 confirms FOLLOW-589 GENUINELY closed RETRO-182 §4b CB-1 end-to-end — literal fixed (`family_nester`→`family_buyer`) → parsed from the REAL `history/route.ts` by a non-vacuous subset assertion (`it@613`) → and, verified by fresh independent sweep, the gap did NOT relocate one sub-shape over this time. Traced producer(`buildMockEvents()`)→consumer(admin tracer-history render)→guard(runtime JSON-KEY subset assertion) end-to-end. A REAL terminal closure, not a one-hop relocation.
+- **Related to RETRO-178/FOLLOW-561, RETRO-179/FOLLOW-583, RETRO-180/FOLLOW-584, RETRO-181/FOLLOW-585, RETRO-182/FOLLOW-587 and Rule AD:** this retro is the terminal entry of the FOLLOW-561→583→585→587→589 mock-archetype-literal-invalidity chain — **CLOSED** with 12-assertion guard coverage across all 3 structural sub-shapes + `readonly ArchetypeId[]` compile-time reinforcement on the named arrays (FOLLOW-584's `CANONICAL_ARCHETYPE_IDS`/`ArchetypeId` export made that root-fix possible).
+- **Related to FOLLOW-586 + FOLLOW-588:** confirmed genuinely SEPARATE classes (duplicate-but-valid consolidation; parser robustness) — remain open, NOT closed by this chain.

@@ -1,4 +1,49 @@
-# Status — 2026-07-20 (session 39 — FOLLOW-584 + FOLLOW-585 + FOLLOW-587 MERGED + DONE; RETRO-180/181/182 filed; Rule AD promoted)
+# Status — 2026-07-20 (session 39 — archetype mock-literal chain CLOSED; FOLLOW-584/585/587/589 DONE; RETRO-180–183; Rule AD promoted)
+
+## SESSION 39 (cont. 4) (2026-07-20) — FOLLOW-589 MERGED + DONE; RETRO-183 → CHAIN CLOSED
+
+**Ticket picked up + shipped this turn:** FOLLOW-589 (qa-engineer, Sonnet) — the LAST reactive fix
+in the archetype-mock-literal chain. `family_nester` → `family_buyer` in
+`admin/tracer/history/route.ts` `buildMockEvents()` `archetype_deltas: JSON.stringify({...})` — the
+3rd structural sub-shape (an unquoted JSON-blob object KEY). Unambiguous substitution, no decision
+needed.
+
+**Deliverable (PR #565, squash-merged `04f7832`, human-approved):** the fix + a new red-first parser
+`parseTracerHistoryArchetypeDeltaKeys` in `tests/integration/archetype-id-parity.test.ts` (regexes
+the `{...}` after `archetype_deltas: JSON.stringify(`, matches unquoted keys, `matched>0`
+non-vacuous guard, `assertSubsetValidity`). RED on main = 1 fail, GREEN after = 12/12. Scope: 2
+files + lessons.
+
+**PM validation (independent):** re-ran the parity test locally (12/12 green), grep-confirmed
+`family_nester` is gone from all live (non-test) paths (only the test-internal `follow-194.test.ts`
+value remains, out of class), `tracer.ts` `z.string()` column NOT retyped, CI 57 pass / 2 fail (both
+pre-existing-red Rule I). Confirmed the parser reads the real route file (not itself), so its own
+describe-block comment's `family_nester` is inert.
+
+**Retro loop — RETRO-183 → CHAIN CLOSED.** The retro ran its own two-script all-structural-shapes
+sweep (named `as const` arrays, inline object VALUES, inline object KEYS incl.
+`JSON.stringify({…})`, `z.enum`, Python dict keys, SQL insert values, free-form/doc) and found
+**zero live invalid archetype literals in any shape** — the only two non-canonical survivors are
+non-live (`quiz.ts:80` `family_comfort` JSDoc example; `test_intent_engine.py:124` `spaceship_buyer`
+deliberate pytest fake). It mapped all 12 parity assertions to a file+shape coverage table
+(auditable), and independently re-confirmed FOLLOW-586's `ARCHETYPE_KEYS` is a VALID 18-entry
+duplicate (so FOLLOW-586/588 are a separate duplication/robustness class, NOT invalidity — this
+chain's closure does not touch them). It also assessed that Rule AD, as written, WOULD have
+prevented the whole chain had it existed at FOLLOW-561. **No new follow-up filed** (no genuine gap —
+no make-work). **Verdict: CHAIN CLOSED.**
+
+**Chain summary (FOLLOW-561→583→585→587→589):** every live structural sub-shape of the
+archetype-invalid-mock-literal class is remediated AND guarded (12 assertions), reinforced by
+`readonly ArchetypeId[]` compile-time typing (FOLLOW-587, enabled by FOLLOW-584's exported
+`ArchetypeId`), with Rule AD codifying the discipline. FOLLOW-584 additionally consolidated the
+duplicate-canonical-copy root.
+
+**CI-check counter:** 4/5 this session (PRs #560/#561/#562/#563/#564/#565 validated across the full
+session). **Fix-iteration counter:** 0/3. **Still-open (separate classes):** FOLLOW-586 (2 valid
+duplicate full-parity copies), FOLLOW-588 (parity-parser comment-strip hardening). No chain work
+remains.
+
+---
 
 ## SESSION 39 (cont. 3) (2026-07-20) — FOLLOW-587 implemented, human-approved, MERGED to main + DONE; RETRO-182 filed; Rule AD promoted
 

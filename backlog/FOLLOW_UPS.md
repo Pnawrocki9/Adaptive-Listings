@@ -15785,7 +15785,8 @@ cross_ref: [FOLLOW-585, FOLLOW-586, RETRO-181]
 ## FOLLOW-589 — Fix the 5th invalid archetype mock literal the FOLLOW-587 sweep structurally missed (`family_nester` as a JSON-stringified object KEY in the tracer-history mock) + guard the JSON-blob archetype-key shape — the 3rd structural sub-shape of the mock-literal class
 
 source_retro: RETRO-182 (§4b CB-1, §4c) source_ticket: FOLLOW-587 recommended_sprint: Sprint 24
-recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: false
+recommended_agent: qa-engineer priority: P3 estimated_hours: 2 promoted_to_queue: true (DONE — PR
+#565, merged 04f7832 2026-07-20; CHAIN CLOSED per RETRO-183; see QUEUE.md FOLLOW-589)
 
 **Gap:** FOLLOW-587 (PR #563) fixed the 3rd/4th invalid mock literals (`family_nester` in the
 tracer-**sessions** `top_archetype` field + `'investor'` in the audit mock) and added a compile-time

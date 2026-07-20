@@ -2725,3 +2725,25 @@ so.**
   Rule AD" in my LAST lessons entry — and it landed exactly there. The forward-flag-to-next-retro
   mechanism worked; keep doing it (each retro should name the specific next-sighting that would
   cross a pending threshold).
+
+## 2026-07-20 / RETRO-183 (FOLLOW-589 — chain-closure verdict)
+
+- **A finding I almost missed and why:** my first two sweep scripts flagged 44 "non-canonical
+  archetype-shaped tokens" — nearly all were `.venv/site-packages` third-party noise
+  (`construction_worker`, `same_process_as_parent`, `transparent`) that I had NOT excluded. Almost
+  let that volume obscure the two real hits. Lesson: for a Python-app monorepo, ALWAYS exclude
+  `.venv`/`site-packages` in a token sweep before reading the count, or the signal drowns. After
+  exclusion the true live-invalid count was 0 (the two survivors were a JSDoc example and a
+  `test_*.py` fake).
+- **An axis/chain I had to trace twice:** the closure claim. First pass I was ready to accept "prior
+  worker says closed." That is not auditable. Second pass I mapped all 12 `it()` assertions to a
+  specific file+structural-shape and re-ran the suite (12/12) — only THEN could I say CLOSED with
+  the coverage table, not just assert it. A closure verdict without a per-assertion coverage map is
+  an opinion, not a finding.
+- **A meta-pattern in how gaps recur across agents:** the "closable vs CLOSED" distinction matters.
+  RETRO-182 correctly said "closable" (1 live sub-shape left); the temptation as the terminal retro
+  is to rubber-stamp. The discipline that earned the CLOSED verdict was doing my OWN independent
+  all-shapes sweep and getting an EMPTY result — closure must be proven by a fresh negative sweep,
+  never inherited from the predecessor retro. Also worth carrying forward: distinguishing the
+  invalidity class (CLOSED) from the sibling duplicate-but-valid (FOLLOW-586) and parser-robustness
+  (FOLLOW-588) classes prevented a false "everything archetype is now done" over-claim.

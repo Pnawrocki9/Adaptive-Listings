@@ -16075,7 +16075,7 @@ Same read-only porting shape applies to Pilot
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 
-## FOLLOW-595 — Phase 2: Quiz config staff write port + staff_audit_log wiring
+## FOLLOW-595 — Phase 2: Quiz config staff write port + staff_audit_log wiring — ✅ DONE (PR #586 `ace5c40`, RETRO-190; PM-validated INV-5 write-fence + awaited audit + write-rank)
 
 source_adr: ADR-0018 §6 Phase 2 + §3 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P2 estimated_hours: 4-5 (raised 2026-07-20: surface + audit + 4 test

@@ -115,6 +115,17 @@
  *     of this 3rd shape repo-wide — the mock-archetype-literal-invalidity class
  *     is now fully enumerated and remediated across all live structural shapes.
  *
+ * FOLLOW-588 addition — hardening, not a new copy. During FOLLOW-585 a
+ * fix-rationale comment placed INSIDE a `MOCK_ARCHETYPES = [...] as const;`
+ * block (see the `pilot/cta-lift`/`dashboard/analytics/lift` FOLLOW-585 doc
+ * comments above — they happen to sit just outside the captured block, by
+ * luck, not by guarantee) made a since-removed invalid id readable again to
+ * every parser below: each one captures a whole `[...]`/`(...)`/`{...}` block
+ * then regex-matches every quoted id or key IN THE CAPTURED TEXT, with no
+ * distinction between a real entry and a comment mentioning an old one. Every
+ * parser now runs `stripComments()` on the text it scans before matching, so
+ * a comment inside a captured block can never again false-positive the scan.
+ *
  * @module tests/integration/archetype-id-parity
  */
 
@@ -135,6 +146,30 @@ function readRepoFile(relativePath: string): string {
 }
 
 // ─── Parsers — each reads the REAL checked-in file, not a fixture copy ────────
+// FOLLOW-588: a quoted/keyed archetype id inside a `//`/`#`/`/* */` comment
+// WITHIN a captured block previously matched the same as a real entry (RETRO-181)
+// — every parser below strips comments via `stripComments()` before scanning.
+
+/**
+ * Strips `//` and `#` line comments and `/* … *\/` block comments out of a
+ * captured literal block (or a full source string) BEFORE the id/key regexes
+ * below run. FOLLOW-588 (RETRO-181): without this, a comment mentioning an
+ * old/invalid archetype id inside a parsed `[...]`/`(...)`/`{...}` block was
+ * indistinguishable from a real entry to the naive regex scan, which cost a
+ * real debugging cycle during FOLLOW-585 (a fix-rationale comment made an
+ * already-fixed array look still-broken). One combined stripper is used for
+ * every parser (JS/TS + Python + SQL) rather than per-language variants —
+ * verified at FOLLOW-588 that none of the parsed files use `//`, `#`, or
+ * `/* *\/` as meaningful in-string content (no URLs, no hex-color literals),
+ * so stripping them everywhere is safe. `//`/`#` stripping only removes to
+ * end-of-line, so it cannot corrupt a comma-separated multi-line literal.
+ */
+function stripComments(block: string): string {
+  return block
+    .replace(/\/\*[\s\S]*?\*\//g, '') // /* ... */ block comments
+    .replace(/\/\/[^\n]*/g, '') // // line comments (JS/TS)
+    .replace(/#[^\n]*/g, ''); // # line comments (Python)
+}
 
 /** Parses `_ARCHETYPES: tuple[str, ...] = (...)` out of the real `nlp.py`. */
 function parseNlpPyArchetypes(source: string): string[] {
@@ -146,7 +181,7 @@ function parseNlpPyArchetypes(source: string): string[] {
         'update this parser regex to match.',
     );
   }
-  return [...block[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!);
+  return [...stripComments(block[1]).matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!);
 }
 
 /** Parses `ARCHETYPE_SEEDS: readonly ArchetypeSeedRow[] = [...]` out of the real seed file. */
@@ -162,7 +197,7 @@ function parseArchetypeSeedsTs(source: string): string[] {
         'renamed or reformatted; update this parser regex to match.',
     );
   }
-  return [...block[1].matchAll(/archetypeName:\s*'([a-z_]+)'/g)].map((m) => m[1]!);
+  return [...stripComments(block[1]).matchAll(/archetypeName:\s*'([a-z_]+)'/g)].map((m) => m[1]!);
 }
 
 /** Parses the `archetype_name` value of every inserted row in migration 0005's SQL. */
@@ -179,13 +214,13 @@ function parseMigration0005Archetypes(source: string): string[] {
   // archetype_name as the first column value — this distinguishes row-tuples from
   // the column-list `(archetype_name, description, ...)` on the INSERT line itself,
   // which has no newline directly after its opening paren.
-  return [...block[1].matchAll(/\(\s*\r?\n\s*'([a-z_]+)',/g)].map((m) => m[1]!);
+  return [...stripComments(block[1]).matchAll(/\(\s*\r?\n\s*'([a-z_]+)',/g)].map((m) => m[1]!);
 }
 
 /** Parses every `archetype: '<id>'` reference out of the real archetype-hints.ts. */
 function parseArchetypeHintsReferencedIds(source: string): Set<string> {
   const ids = new Set<string>();
-  for (const m of source.matchAll(/archetype:\s*'([a-z_]+)'/g)) {
+  for (const m of stripComments(source).matchAll(/archetype:\s*'([a-z_]+)'/g)) {
     ids.add(m[1]!);
   }
   return ids;
@@ -209,7 +244,7 @@ function parseArchetypeGuidancePyKeys(source: string): string[] {
         'reformatted; update this parser regex to match.',
     );
   }
-  return [...block[1].matchAll(/^\s{4}"([a-z_]+)":\s*\(/gm)].map((m) => m[1]!);
+  return [...stripComments(block[1]).matchAll(/^\s{4}"([a-z_]+)":\s*\(/gm)].map((m) => m[1]!);
 }
 
 /** Parses the `REACHABLE_ARCHETYPES = [...] as const;` array literal. */
@@ -222,7 +257,7 @@ function parseReachableArchetypes(source: string): Set<string> {
         'reformatted; update this parser regex to match.',
     );
   }
-  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+  return new Set([...stripComments(block[1]).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
 /**
@@ -242,7 +277,7 @@ function parseMockArchetypes(source: string): Set<string> {
         'renamed or reformatted; update this parser regex to match.',
     );
   }
-  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+  return new Set([...stripComments(block[1]).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
 /**
@@ -262,7 +297,7 @@ function parseMockArchetypesGeneric(source: string, sourceLabel: string): Set<st
         'regex to match.',
     );
   }
-  return new Set([...block[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+  return new Set([...stripComments(block[1]).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
 }
 
 /**
@@ -272,7 +307,9 @@ function parseMockArchetypesGeneric(source: string, sourceLabel: string): Set<st
  * be picked up here).
  */
 function parseExportRouteMockArchetypes(source: string): Set<string> {
-  return new Set([...source.matchAll(/archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
+  return new Set(
+    [...stripComments(source).matchAll(/archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!),
+  );
 }
 
 /**
@@ -284,7 +321,9 @@ function parseExportRouteMockArchetypes(source: string): Set<string> {
  * picked up here).
  */
 function parseTracerSessionsMockTopArchetypes(source: string): Set<string> {
-  return new Set([...source.matchAll(/top_archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!));
+  return new Set(
+    [...stripComments(source).matchAll(/top_archetype:\s*'([a-z_]+)'/g)].map((m) => m[1]!),
+  );
 }
 
 /**
@@ -308,7 +347,7 @@ function parseTracerHistoryArchetypeDeltaKeys(source: string): Set<string> {
         'renamed or reformatted; update this parser regex to match.',
     );
   }
-  return new Set([...block[1].matchAll(/(\w+)\s*:\s*-?\d/g)].map((m) => m[1]!));
+  return new Set([...stripComments(block[1]).matchAll(/(\w+)\s*:\s*-?\d/g)].map((m) => m[1]!));
 }
 
 // ─── Set-equality assertion helper ────────────────────────────────────────────
@@ -624,5 +663,43 @@ describe('FOLLOW-589 — admin/tracer/history mock archetype_deltas JSON-blob ke
       referenced,
       ARCHETYPE_NAMES,
     );
+  });
+});
+
+describe('FOLLOW-588 — comment-injection regression guard (self-contained fixtures, not real repo files)', () => {
+  // These fixtures are inline strings, NOT read from any repo file — they exist
+  // solely to prove `stripComments()` does its job. Each fixture is run through
+  // a REAL parser above (the same stripping path production files go through),
+  // not a reimplementation, so this guard can't itself drift from what the
+  // parsers actually do. Before FOLLOW-588 hardened every parser, both cases
+  // below FAILED (the invalid id inside the comment was picked up as a real
+  // entry); see the PR description for the red→green run.
+
+  it('parseMockArchetypesGeneric ignores an invalid id inside a `//` comment inside the block (JS/TS shape)', () => {
+    const fixture = [
+      'const MOCK_ARCHETYPES: readonly ArchetypeId[] = [',
+      "  'yield_hunter', // replaced 'investor'",
+      "  'neutral',",
+      '] as const;',
+    ].join('\n');
+
+    const referenced = parseMockArchetypesGeneric(fixture, 'FOLLOW-588 inline fixture (JS)');
+
+    expect(referenced).toEqual(new Set(['yield_hunter', 'neutral']));
+    expect(referenced.has('investor')).toBe(false);
+  });
+
+  it('parseNlpPyArchetypes ignores an invalid id inside a `#` comment inside the block (Python shape)', () => {
+    const fixture = [
+      '_ARCHETYPES: tuple[str, ...] = (',
+      '    "yield_hunter",  # replaced "investor"',
+      '    "neutral",',
+      ')',
+    ].join('\n');
+
+    const parsed = parseNlpPyArchetypes(fixture);
+
+    expect(parsed).toEqual(['yield_hunter', 'neutral']);
+    expect(parsed).not.toContain('investor');
   });
 });

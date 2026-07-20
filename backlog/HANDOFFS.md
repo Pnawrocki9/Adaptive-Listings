@@ -4288,3 +4288,33 @@ unchanged" (porting forces re-mock). RETRO-187 route doc note (ADMIN_API_SECRET 
 **Completion:** worker opens the PR; PM validates the READ+WRITE tenant-filter test genuinely hits
 the real query, the audit row is asserted + durably awaited, the write-rank 403 gate, and the
 FOLLOW-603 assertions — BEFORE READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-607 (session 41, 2026-07-20)
+
+**Worker:** `backend-engineer` · **Model: SONNET** (routine, reversible CI-tooling; the red-first
+fixture makes correctness self-verifying — not the security-reasoning tier). **Branch:**
+`backend-engineer/FOLLOW-607-staff-write-tx-guard`.
+
+**Goal:** mechanically enforce ADR-0018 §3a — a staff WRITE port must wrap its data mutation +
+`staff_audit_log` insert in ONE `db.transaction()` — so FOLLOW-596/597/598 can't silently regress to
+the pre-605 mutate-then-audit shape.
+
+**Verified ground truth (PM):** rule guards are `scripts/check-rule-h.sh` / `check-rule-i.sh` (bash,
+grep-based, `set -euo pipefail`, exit 0/1, take a base branch arg for diff-scoping). Wired as named
+steps in `.github/workflows/ci.yml` (Rule H `bash scripts/check-rule-h.sh origin/main` ~L456; Rule I
+~L134; Rule J ~L460). The ONLY current staff-write route is
+`apps/control-plane/src/app/api/quiz/ config/route.ts` (605 reference impl — both writes inside one
+`db.transaction()`, must PASS); its agency branch (single un-audited `update`, NO `staffAuditLog`
+insert) must NOT be flagged.
+
+**AC (from the stub):** new `scripts/check-rule-<next-free-letter>.sh` that flags any control-plane
+API route containing `insert(staffAuditLog)` AND a sibling `.update(...)`/`.insert(...)` data
+mutation WITHOUT a wrapping `db.transaction(`; a red-first fixture route (update+audit, no tx)
+FAILS; the shipped 605 route PASSES; agency-only path not falsely flagged; wired into CI
+(non-soft-skip) + documented (which routes scanned, how to exempt a legit single-write path). Pick
+the next free rule letter (H/I/J taken).
+
+**Completion:** worker opens PR; PM validates the guard actually FAILS on a non-transactional staff
+write (not just passes the current clean tree) and PASSES 605, and that CI wiring is real.

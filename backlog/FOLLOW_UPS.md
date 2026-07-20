@@ -16374,7 +16374,17 @@ cross_ref: [RETRO-190, RETRO-189, FOLLOW-593, FOLLOW-594, FOLLOW-595]
 ## FOLLOW-607 — CI guard: staff WRITE ports must wrap their data mutation + `staff_audit_log` insert in ONE `db.transaction()` (mechanically enforce ADR-0018 §3a)
 
 source_retro: RETRO-191 source_ticket: FOLLOW-605 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 2-3 promoted_to_queue: false
+backend-engineer priority: P3 estimated_hours: 2-3 promoted_to_queue: true (session 41 — dispatched
+to backend-engineer/SONNET, branch `backend-engineer/FOLLOW-607-staff-write-tx-guard`; see HANDOFFS)
+
+**Model-fit (session 41): SONNET** — routine, well-scoped, reversible CI-tooling implementation (new
+`scripts/check-rule-*.sh` grep guard + a `.github/workflows/ci.yml` step + a red-first fixture),
+strongly verifiable by the AC's red-first fixture; not the security-reasoning tier. **PM
+pre-dispatch findings (verified):** rule guards live in `scripts/check-rule-h.sh`/`check-rule-i.sh`
+(bash, grep, exit 0/1) and are wired as named steps in `.github/workflows/ci.yml` (Rule H @ ~L456,
+Rule I @ ~L134, Rule J @ ~L460); the ONLY current staff-write route is `api/quiz/config/route.ts`
+(605 reference impl, tx-wrapped → must PASS); its agency path (single un-audited `update`, no
+`staffAuditLog` insert) must NOT be flagged. Next free rule letter is after J.
 
 **Scope:** FOLLOW-605 ratified (ADR-0018 §3a) and implemented single-transaction atomicity for the
 FOLLOW-595 quiz-config staff write, so the config `update` and its `staff_audit_log` insert

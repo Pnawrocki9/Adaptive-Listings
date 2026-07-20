@@ -16273,3 +16273,86 @@ a security-relevant config, no live defect (the options are correct today).
       gate (`access.isSuperadmin` / rank ≥ ops) is enforced. Reference this ticket as the pattern.
 
 cross_ref: [RETRO-189, FOLLOW-594, FOLLOW-592, FOLLOW-595, FOLLOW-598]
+
+## FOLLOW-604 — Staff-override port for `PATCH /api/tenants/[id]` (the quiz ON/OFF toggle) + unify the agency & staff quiz editors
+
+source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P3 estimated_hours: 3-4 promoted_to_queue: false
+
+**Gap (RETRO-190 §4a LG-2):** FOLLOW-595 gave staff a MINIMAL quiz editor that writes only the
+`tenants.quiz_config` JSONB blob (language / accent_color / micro_polls_enabled) via the
+staff-ported `/api/quiz/config`. The quiz ON/OFF toggle is a DIFFERENT column
+(`tenants.quiz_enabled`) driven by `PATCH /api/tenants/[id]`, which still authenticates via
+`getSessionAuthClaims()` (`apps/control-plane/src/app/api/tenants/[id]/route.ts:52`) and has NO
+staff-override port — so staff can restyle a tenant's quiz but cannot enable/disable it. Verified
+NOT covered by any existing FOLLOW (596=demo, 597=labels/intent, 598=bandit, 599=audit-view,
+600=settings-page never enumerates `quiz_enabled` or the `/api/tenants/:id` staff port). This is the
+worker's own deferred `FOLLOW-UP:` note in `quiz-config-editor.tsx`.
+
+**AC:**
+
+- [ ] `PATCH /api/tenants/[id]` accepts staff via
+      `resolveTenantAccess({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' })`;
+      `access.tenantId` is the SINGLE fence bound into the update; write requires rank ≥ ops
+      (`via==='staff' && !canWrite`→403); agency path byte-preserved.
+- [ ] Every staff write appends one `staff_audit_log` row (`action:'tenant.update'`, awaited inline,
+      audit-fail→500 `audit_write_failed` + Sentry — copy the FOLLOW-595 shape).
+- [ ] **MANDATORY (ADR-0018 §2 invariant 5):** red-first non-vacuous READ+WRITE tenant-filter test —
+      a staff request for tenant A cannot toggle tenant B's `quiz_enabled` through the real
+      (service-role/RLS-bypassed) query (DB mock keyed on the bound `.where().val`). NOT discharged
+      by FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+- [ ] Route-level option-wiring assertion (FOLLOW-603 pattern):
+      `toHaveBeenCalledWith(anything, objectContaining({ allowStaffOverride:true, minAgencyRole:'agency:viewer' }))`,
+      perturbation flips it red.
+- [ ] Unify the agency (`dashboard/quiz/page.tsx`) and staff (`admin/tenants/[id]/quiz`) editors
+      into one `tenantId`-prop component that surfaces the ON/OFF toggle to both.
+
+cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-600, ADR-0018]
+
+## FOLLOW-605 — Decide + implement audit-write ATOMICITY (single-transaction / outbox) before the high-blast FOLLOW-598 write
+
+source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
+architect priority: P3 estimated_hours: 2-3 promoted_to_queue: false
+
+**Gap (RETRO-190 §4a LG-1):** FOLLOW-595's staff write is mutate-then-audit and NON-transactional:
+the config `.update()` commits, THEN `db.insert(staffAuditLog)` runs; if the audit insert fails the
+caller gets a 500 but the config change is ALREADY applied — so a config mutation can transiently
+exist WITHOUT its audit row (until an idempotent retry re-audits). This is a defensible, documented
+tradeoff for LOW-blast-radius quiz styling. It is NOT acceptable to inherit unexamined on the
+highest-blast-radius staff write — FOLLOW-598 (bandit-weight PATCH "directly steers live
+adaptation") will COPY the FOLLOW-595 shape.
+
+**AC:**
+
+- [ ] An ADR-0018 §3 note ratifying the chosen model: single DB transaction (config update + audit
+      insert commit or roll back together) OR transactional-outbox (audit row written in the same
+      tx, delivered async).
+- [ ] If transactional: a test proving an audit-insert failure ROLLS BACK the config update (no
+      orphan mutation).
+- [ ] Explicitly scope whether the low-blast quiz route (FOLLOW-595) is retrofitted or
+      grandfathered.
+- [ ] Resolved BEFORE FOLLOW-598 ships (sequence dependency, not a duplicate).
+
+cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-598, ADR-0018]
+
+## FOLLOW-606 — Wire every per-tenant staff sub-surface into the `/admin/tenants/[id]` hub landing (analytics + quiz + future demo/labels/settings)
+
+source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: false
+
+**Gap (RETRO-190 §5b + §8):** the `/admin/tenants/[id]` landing (`page.tsx`) links only to tracer /
+tracer/history / tracer/export. The FOLLOW-594 `/analytics` staff page and the FOLLOW-595 `/quiz`
+staff page are reachable by DIRECT URL only — no hub link. This RECONCILES RETRO-189 §8's incorrect
+claim that "the `[id]` page links to `/analytics`" (verified false at merge `08a5d1e` and on
+`main`). Originates from RETRO-188 §5b's hub-linkage cascade — each new per-tenant surface has
+failed to wire itself in.
+
+**AC:**
+
+- [ ] The `[id]` landing renders a link to each existing per-tenant staff sub-surface — `/analytics`
+      and `/quiz` today; add `/demo` `/labels` `/settings` as FOLLOW-596/597/600 land.
+- [ ] A page test asserts the analytics + quiz links render for a known tenant.
+- [ ] Adopt as the template: every future per-tenant staff surface adds its landing link in the same
+      PR (prevents the 3rd recorded sighting → the promotion trigger noted in RETRO-190 §6).
+
+cross_ref: [RETRO-190, RETRO-189, FOLLOW-593, FOLLOW-594, FOLLOW-595]

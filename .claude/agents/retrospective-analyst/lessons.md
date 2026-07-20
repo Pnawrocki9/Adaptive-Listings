@@ -2904,3 +2904,25 @@ so.**
   hop downstream — they also move one LAYER up (from "does the fence work" to "did we wire the
   fence's config"). Registered as a new count-1 pattern; watching the write ports (595/598) for
   sighting 2.
+
+## 2026-07-20 · RETRO-190 (FOLLOW-595 — first staff WRITE port)
+
+- **A finding I almost missed and why:** the `staff_audit_log` HALF_WIRE_P. The audit insert looks
+  fully wired within the PR (producer + schema + tests), so CHECK B nearly read "clean" — but the
+  CONSUMER (`/api/audit`) still serves MOCK_ENTRIES, so nothing reads the rows yet. Caught it by
+  remembering RETRO-189 §5a explicitly PRE-REGISTERED this as a coming wire. Lesson: a producer that
+  is internally complete + tested is still a half-wire until the READER exists; check the prior
+  retro's cascade predictions as a HALF_WIRE checklist.
+- **An axis/chain I had to trace twice:** the hub-linkage claim. RETRO-189 §8 stated "the `[id]`
+  page links to `/analytics`" — I nearly inherited it as fact. Grepping the landing `page.tsx` (and
+  `git show 08a5d1e:`) proved it links ONLY to tracer/\*; the analytics AND quiz staff pages are
+  direct-URL-only. A prior retro's "satisfied" verdict is NOT evidence — re-run the grep. Step 8
+  (reconcile contradictions with prior retros) paid off directly.
+- **A meta-pattern in how gaps recur across agents:** the "gap moves one hop / one surface
+  downstream" motif again — 593 shipped the hub, 594 shipped analytics unlinked, 595 shipped quiz
+  unlinked; each agent closed its own slice and left the CROSS-surface wiring (hub link) for
+  "someone." Same shape as the classic producer→consumer→render chain, but on the NAV axis. Watching
+  for the 3rd recorded sighting (596/597/600) to promote a "wire your surface into the hub in the
+  same PR" rule. Also: the worker PROACTIVELY applied FOLLOW-603's option-wiring assertions —
+  evidence the retro→FOLLOW→AC learning loop actually propagates into implementation, not just
+  backlog.

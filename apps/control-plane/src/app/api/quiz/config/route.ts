@@ -18,6 +18,11 @@
  *     gated on `access.canWrite` (rank ≥ `estalara:ops`, CEO Q3) — a staff caller
  *     below ops rank (`estalara:readonly`) is 403. Every successful STAFF write
  *     appends one `staff_audit_log` row (ADR-0018 §3); agency writes are NOT audited.
+ *     ATOMICITY (FOLLOW-605, ADR-0018 §3): on the staff path the config `update` and
+ *     the `staff_audit_log` insert commit-or-roll-back TOGETHER in ONE
+ *     `db.transaction()`, so a config mutation can never outlive a missing audit row
+ *     (RETRO-190 §4a). Any failure inside the tx rolls BOTH back → 500
+ *     `audit_write_failed` (no orphan mutation). The agency path is unchanged.
  *
  *   Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
  *   `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
@@ -193,58 +198,69 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // re-enter the persisted blob via this path.
     updated = { ...current, ...parsed.data } as QuizConfig;
 
-    // Persist to DB (fenced on access.tenantId — invariant 5). `updated` never
-    // contains `enabled` (Rule U).
-    await db
-      .update(tenants)
-      .set({ quizConfig: updated, updatedAt: new Date() })
-      .where(eq(tenants.id, tenantId));
+    if (access.via === 'staff') {
+      // ── Atomic staff write (ADR-0018 §3 atomicity / FOLLOW-605) ─────────────────
+      // The config mutation and its staff_audit_log row commit-or-roll-back TOGETHER
+      // in ONE transaction, so a config change can never outlive a missing audit row
+      // (RETRO-190 §4a / FOLLOW-595 was mutate-then-audit and non-transactional). This
+      // is the reference impl every staff WRITE port (595 retrofit + 596/597/598) MUST
+      // copy — 598 (bandit weight, high blast radius) especially. Precedent for
+      // `db.transaction()` on this admin/session-pool client: quiz/completion,
+      // admin/intent/config, dsr/erase, crm/outcome. `createAdminClient()` returns a
+      // transaction-capable raw drizzle instance (poolMode:'session', prepare:false),
+      // so a single-transaction (NOT a transactional-outbox) is the right shape here.
+      try {
+        await db.transaction(async (tx) => {
+          // Persist to DB (fenced on access.tenantId — invariant 5). `updated` never
+          // contains `enabled` (Rule U).
+          await tx
+            .update(tenants)
+            .set({ quizConfig: updated, updatedAt: new Date() })
+            .where(eq(tenants.id, tenantId));
+          // Staff audit trail (§3) — attributed to the acting staff user. AWAITED inside
+          // the tx (never fire-and-forget) so it commits atomically with the update.
+          await tx.insert(staffAuditLog).values({
+            adminUserId: access.staff.sub,
+            action: 'quiz_config.update',
+            targetTenantId: tenantId,
+            payload: { before: current, after: updated },
+            ipAddress: requestIp(req),
+            userAgent: req.headers.get('user-agent'),
+          });
+        });
+      } catch (err: unknown) {
+        // Any failure INSIDE the tx (the update OR the audit insert) rolls BOTH back —
+        // there is no orphan config mutation to leave behind. Fail loud: capture to
+        // Sentry and return 500, never a silent unattributed 200 (Rule K.2). A retry is
+        // safe: it re-reads, re-applies the same config (idempotent) and appends a fresh
+        // audit row inside a new tx.
+        Sentry.captureException(err, {
+          tags: { route: 'quiz/config', staff_audit_error: 'true' },
+          extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+        });
+        return NextResponse.json(
+          {
+            error: {
+              code: 'audit_write_failed',
+              message:
+                'The quiz config change could not be recorded atomically with its staff ' +
+                'audit row; the change was rolled back and NOT applied. Retry the action.',
+            },
+          },
+          { status: 500 },
+        );
+      }
+    } else {
+      // Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only).
+      // Persist to DB (fenced on access.tenantId — invariant 5). `updated` never
+      // contains `enabled` (Rule U).
+      await db
+        .update(tenants)
+        .set({ quizConfig: updated, updatedAt: new Date() })
+        .where(eq(tenants.id, tenantId));
+    }
   } catch {
     return NextResponse.json({ error: 'Failed to update quiz configuration' }, { status: 500 });
-  }
-
-  // ── Staff audit trail (ADR-0018 §3) — STAFF writes ONLY ──────────────────────
-  // Agency self-service writes are out of scope for staff_audit_log by contract.
-  //
-  // DURABILITY DECISION (ticket FOLLOW-595 / Rule K.2 / Vercel after() rule):
-  // We AWAIT the audit insert INLINE (never fire-and-forget) so it completes before
-  // the response is sent — an un-awaited write is dropped on Vercel instance
-  // suspension, and a privileged staff write MUST be attributable. Ordering is
-  // mutate-then-audit: an audit row for a write that did not happen would be a LIE,
-  // so we only claim the action after the update succeeded. If the audit insert then
-  // FAILS we do NOT silently return 200 — we capture to Sentry and return 500. The
-  // config update is already applied at that point; we accept that over a silent,
-  // unattributed staff mutation. A retry is safe: it re-sets the same config
-  // (idempotent) and appends a fresh audit row — over-attribution is acceptable,
-  // under-attribution is not.
-  if (access.via === 'staff') {
-    try {
-      const db = createAdminClient();
-      await db.insert(staffAuditLog).values({
-        adminUserId: access.staff.sub,
-        action: 'quiz_config.update',
-        targetTenantId: tenantId,
-        payload: { before: current, after: updated },
-        ipAddress: requestIp(req),
-        userAgent: req.headers.get('user-agent'),
-      });
-    } catch (err: unknown) {
-      Sentry.captureException(err, {
-        tags: { route: 'quiz/config', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
-      });
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_write_failed',
-            message:
-              'Quiz config was updated but the staff audit record could not be written; ' +
-              'the change is not attributable. Retry to re-record the action.',
-          },
-        },
-        { status: 500 },
-      );
-    }
   }
 
   return NextResponse.json(updated);

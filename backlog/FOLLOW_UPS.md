@@ -16149,6 +16149,14 @@ staff write. CEO Q3 ruling: requires `estalara:superadmin` (rank ≥ 3), not mer
 FOLLOW-592 helper already returns (test proves ops-rank staff is 403); every write audited; agency
 path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pattern.
 
+> **SEQUENCE DEPENDENCY (FOLLOW-605, landed 2026-07-20):** the weight PATCH + its `staff_audit_log`
+> insert MUST use the single-transaction atomicity pattern ratified in ADR-0018 §3a and implemented
+> by the FOLLOW-605 retrofit of `api/quiz/config` POST
+> (`db.transaction(async (tx) => { await tx.update(...); await tx.insert(staffAuditLog)...; })` on
+> one `createAdminClient()`; any failure inside the tx rolls BOTH back → 500 `audit_write_failed`).
+> Do NOT copy the pre-605 mutate-then-audit shape onto this high-blast write. Reference impl +
+> rollback test: `apps/control-plane/src/app/api/quiz/config/route.ts` + `route.test.ts`.
+
 - [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
       tenant-filtered" test — the bandit PATCH is the highest-blast-radius write; prove a superadmin
       request for tenant A cannot PATCH tenant B's weights through the real
@@ -16309,7 +16317,11 @@ worker's own deferred `FOLLOW-UP:` note in `quiz-config-editor.tsx`.
 
 cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-600, ADR-0018]
 
-## FOLLOW-605 — Decide + implement audit-write ATOMICITY (single-transaction / outbox) before the high-blast FOLLOW-598 write
+## FOLLOW-605 — Decide + implement audit-write ATOMICITY (single-transaction / outbox) before the high-blast FOLLOW-598 write — DONE 2026-07-20
+
+status: DONE (2026-07-20, backend-engineer). Decision: **single DB transaction** (NOT outbox).
+Ratified in ADR-0018 §3a; quiz-config POST retrofitted (NOT grandfathered) as the reference impl;
+red-first rollback test added; FOLLOW-598 sequence dependency recorded above.
 
 source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
 architect priority: P3 estimated_hours: 2-3 promoted_to_queue: false
@@ -16324,14 +16336,16 @@ adaptation") will COPY the FOLLOW-595 shape.
 
 **AC:**
 
-- [ ] An ADR-0018 §3 note ratifying the chosen model: single DB transaction (config update + audit
+- [x] An ADR-0018 §3 note ratifying the chosen model: single DB transaction (config update + audit
       insert commit or roll back together) OR transactional-outbox (audit row written in the same
-      tx, delivered async).
-- [ ] If transactional: a test proving an audit-insert failure ROLLS BACK the config update (no
-      orphan mutation).
-- [ ] Explicitly scope whether the low-blast quiz route (FOLLOW-595) is retrofitted or
-      grandfathered.
-- [ ] Resolved BEFORE FOLLOW-598 ships (sequence dependency, not a duplicate).
+      tx, delivered async). → **single transaction**, ADR-0018 §3a.
+- [x] If transactional: a test proving an audit-insert failure ROLLS BACK the config update (no
+      orphan mutation). → `route.test.ts` "ROLLS BACK the config update when the staff audit insert
+      fails inside the tx (no orphan mutation)" (red-first verified).
+- [x] Explicitly scope whether the low-blast quiz route (FOLLOW-595) is retrofitted or
+      grandfathered. → **retrofitted** (becomes the reference impl for 596/597/598).
+- [x] Resolved BEFORE FOLLOW-598 ships (sequence dependency, not a duplicate). → sequence note added
+      to the FOLLOW-598 stub above.
 
 cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-598, ADR-0018]
 

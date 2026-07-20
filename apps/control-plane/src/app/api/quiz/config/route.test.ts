@@ -123,9 +123,21 @@ interface FakeDb {
     updateWhere: { col: unknown; val: string } | null;
     updateSet: { quizConfig: Record<string, unknown> } | null;
   };
+  /** Test control: when true, the audit insert INSIDE the tx rejects (FOLLOW-605 rollback). */
+  _control: { failAuditInsert: boolean };
   select: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   insert: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+}
+
+/** A shallow snapshot of the store, so staged tx mutations can be discarded on rollback. */
+function snapshotStore(
+  store: Record<string, { quizConfig: Record<string, unknown> }>,
+): Record<string, { quizConfig: Record<string, unknown> }> {
+  const copy: Record<string, { quizConfig: Record<string, unknown> }> = {};
+  for (const k of Object.keys(store)) copy[k] = { quizConfig: { ...store[k]!.quizConfig } };
+  return copy;
 }
 
 /** Seed a store of tenantId → quizConfig; queries filter on the fence the route binds. */
@@ -134,18 +146,19 @@ function makeMultiTenantDb(seed: Record<string, Record<string, unknown>> = {}): 
   for (const k of Object.keys(seed)) store[k] = { quizConfig: { ...seed[k] } };
   const auditRows: Record<string, unknown>[] = [];
   const captured: FakeDb['_captured'] = { selectWhere: null, updateWhere: null, updateSet: null };
+  const control = { failAuditInsert: false };
 
-  return {
-    _store: store,
-    _auditRows: auditRows,
-    _captured: captured,
-    select: vi.fn(() => ({
+  // Non-transactional writers, used by the AGENCY path (byte-unchanged).
+  const makeSelect = (
+    target: Record<string, { quizConfig: Record<string, unknown> }>,
+  ): ReturnType<typeof vi.fn> =>
+    vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn((w: { col: unknown; val: string }) => {
           captured.selectWhere = w;
           return {
             limit: vi.fn(() => {
-              const row = store[w.val];
+              const row = target[w.val];
               return Promise.resolve(
                 row ? [{ quizConfig: row.quizConfig, quizEnabled: true }] : [],
               );
@@ -153,27 +166,61 @@ function makeMultiTenantDb(seed: Record<string, Record<string, unknown>> = {}): 
           };
         }),
       })),
-    })),
-    update: vi.fn(() => ({
+    }));
+
+  const makeUpdate = (
+    target: Record<string, { quizConfig: Record<string, unknown> }>,
+  ): ReturnType<typeof vi.fn> =>
+    vi.fn(() => ({
       set: vi.fn((vals: { quizConfig: Record<string, unknown> }) => {
         captured.updateSet = vals;
         return {
           where: vi.fn((w: { col: unknown; val: string }) => {
             captured.updateWhere = w;
-            const existing = store[w.val];
+            const existing = target[w.val];
             if (existing) existing.quizConfig = vals.quizConfig;
-            else store[w.val] = { quizConfig: vals.quizConfig };
+            else target[w.val] = { quizConfig: vals.quizConfig };
             return Promise.resolve([]);
           }),
         };
       }),
-    })),
-    insert: vi.fn(() => ({
+    }));
+
+  const makeInsert = (target: Record<string, unknown>[]): ReturnType<typeof vi.fn> =>
+    vi.fn(() => ({
       values: vi.fn((v: Record<string, unknown>) => {
-        auditRows.push(v);
+        if (control.failAuditInsert) return Promise.reject(new Error('audit sink down'));
+        target.push(v);
         return Promise.resolve([]);
       }),
-    })),
+    }));
+
+  return {
+    _store: store,
+    _auditRows: auditRows,
+    _captured: captured,
+    _control: control,
+    select: makeSelect(store),
+    update: makeUpdate(store),
+    insert: makeInsert(auditRows),
+    // Real rollback semantics: the tx callback mutates STAGED copies of the store and
+    // audit rows. If it resolves, the staged mutations are committed atomically; if it
+    // throws (e.g. the audit insert rejects), the staged mutations are DISCARDED — the
+    // real store is byte-unchanged (no orphan mutation). This models Postgres
+    // commit-or-rollback for the FOLLOW-605 atomicity test.
+    transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const stagedStore = snapshotStore(store);
+      const stagedAudit: Record<string, unknown>[] = [];
+      const tx = {
+        select: makeSelect(stagedStore),
+        update: makeUpdate(stagedStore),
+        insert: makeInsert(stagedAudit),
+      };
+      await fn(tx); // if this rejects, we do NOT commit — staged mutations vanish.
+      // Commit: promote staged state into the real store / audit log.
+      for (const k of Object.keys(stagedStore)) store[k] = stagedStore[k]!;
+      for (const v of stagedAudit) auditRows.push(v);
+    }),
   };
 }
 
@@ -441,10 +488,8 @@ describe('POST /api/quiz/config — staff audit trail', () => {
   it('staff write whose audit insert FAILS → 500 (never a silent unattributed 200)', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
     const db = makeMultiTenantDb({ [TENANT_A]: { language: 'en' } });
-    // Make the audit insert throw; the config update itself still succeeds first.
-    db.insert = vi.fn(() => ({
-      values: vi.fn(() => Promise.reject(new Error('audit sink down'))),
-    }));
+    // Make the audit insert throw INSIDE the tx (FOLLOW-605 atomic path).
+    db._control.failAuditInsert = true;
     useDb(db);
 
     const res = await POST(makePost({ language: 'pl' }, TENANT_A));
@@ -452,8 +497,55 @@ describe('POST /api/quiz/config — staff audit trail', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('audit_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
-    // The update WAS applied (durability decision: mutate-then-audit; retry is idempotent).
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLLOW-605 — audit-write atomicity: config update + audit row are one tx
+//
+// Red-first verified during dev: with the pre-FOLLOW-605 mutate-then-audit shape
+// (db.update commits, THEN a separate db.insert), the audit-insert failure leaves
+// tenant A's config mutated to 'pl' → this test's UNCHANGED assertion FAILS. Wrapping
+// update+insert in one db.transaction() (staged-then-committed, discarded on throw)
+// makes it pass. This is the anti-orphan-mutation guard 598 (bandit weight) inherits.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('POST /api/quiz/config — audit-write atomicity (FOLLOW-605)', () => {
+  it('ROLLS BACK the config update when the staff audit insert fails inside the tx (no orphan mutation)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeMultiTenantDb({ [TENANT_A]: { language: 'en', accent_color: '#AAAAAA' } });
+    // The config update runs first inside the tx and succeeds; the audit insert then
+    // rejects → the whole transaction rolls back.
+    db._control.failAuditInsert = true;
+    useDb(db);
+
+    const res = await POST(makePost({ language: 'pl' }, TENANT_A));
+
+    // (a) fail loud — 500, attributable-write-failed, captured to Sentry.
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('audit_write_failed');
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+
+    // (b) NO ORPHAN MUTATION — tenant A's stored config is byte-unchanged; the 'pl'
+    // update that briefly staged inside the tx was discarded on rollback.
+    expect(db._store[TENANT_A]!.quizConfig.language).toBe('en');
+    expect(db._store[TENANT_A]!.quizConfig.accent_color).toBe('#AAAAAA');
+    // …and no audit row was committed either (both limbs rolled back together).
+    expect(db._auditRows).toHaveLength(0);
+  });
+
+  it('COMMITS both the config update and exactly one audit row when the tx succeeds (atomic happy path)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeMultiTenantDb({ [TENANT_A]: { language: 'en' } });
+    useDb(db);
+
+    const res = await POST(makePost({ language: 'pl' }, TENANT_A));
+    expect(res.status).toBe(200);
+    // Both limbs committed atomically: config updated AND one audit row appended.
     expect(db._store[TENANT_A]!.quizConfig.language).toBe('pl');
+    expect(db._auditRows).toHaveLength(1);
+    expect(db._auditRows[0]!.targetTenantId).toBe(TENANT_A);
   });
 });
 

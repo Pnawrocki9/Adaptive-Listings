@@ -155,6 +155,40 @@ already anticipates staff-on-tenant actions in its example action list.
   contract). `GET /api/audit` today is a mock stub (`audit/route.ts:42-96`, `TODO Sprint 5`); wiring
   it to read `staff_audit_log` for a tenant is a Phase-2 item, not a blocker.
 
+#### 3a. Atomicity: the config mutation and its audit row commit as ONE transaction (FOLLOW-605)
+
+**Ratified 2026-07-20 (FOLLOW-605, source RETRO-190 §4a / FOLLOW-595).** Every staff WRITE port MUST
+apply its tenant-data mutation and the corresponding `staff_audit_log` insert inside a **single DB
+transaction** —
+`db.transaction(async (tx) => { await tx.update(...); await tx.insert(staffAuditLog)...; })` on a
+single `createAdminClient()` — so the two commit-or-roll-back together. On any failure inside the tx
+(the mutation OR the audit insert) BOTH roll back and the route returns 500 `audit_write_failed`;
+there is never an orphan config mutation that outlives a missing audit row, and never a silent
+unattributed 200 (Rule K.2).
+
+FOLLOW-595's quiz-config POST originally shipped mutate-then-audit and **non-transactional** (the
+`db.update(tenants)` committed, then a SEPARATE `db.insert(staffAuditLog)` ran; if the audit insert
+failed, the config change was already applied). That is **retrofitted** by FOLLOW-605 and becomes
+the **reference impl** for the remaining staff-write ports; it is NOT grandfathered.
+
+Decision rationale (single transaction, NOT a transactional-outbox):
+
+- `createAdminClient()` returns a raw transaction-capable Drizzle instance
+  (`drizzle(pgSql, { schema })`, `poolMode: 'session'` → `prepare: false`, pgBouncer session pooling
+  holds a cross-statement transaction fine — see `packages/db/src/client.ts`).
+- `db.transaction()` is already a proven pattern on this same admin/session-pool client:
+  `api/quiz/completion/route.ts`, `api/admin/intent/config/route.ts`, `api/dsr/erase/route.ts`,
+  `api/crm/outcome/route.ts`.
+- There is **no transactional-outbox infrastructure** in the repo; building one for a single
+  co-located Postgres write (config row + audit row, same DB) would be unjustified. If a future
+  staff write must span two stores (e.g. Postgres + ClickHouse) the outbox tradeoff is reopened via
+  a new ADR.
+
+**Scope:** this pattern is MANDATORY for ALL staff WRITE ports — the FOLLOW-595 retrofit and
+FOLLOW-596 / FOLLOW-597 / **FOLLOW-598**. FOLLOW-598 (bandit-weight PATCH) is the
+highest-blast-radius staff write and MUST NOT copy the pre-605 non-transactional shape; it depends
+on landing this pattern first.
+
 ### 4. Read-only staff tier
 
 Staff roles rank `estalara:superadmin (3) > estalara:ops (2) > estalara:readonly (1)`

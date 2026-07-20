@@ -16078,12 +16078,26 @@ cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 ## FOLLOW-595 — Phase 2: Quiz config staff write port + staff_audit_log wiring
 
 source_adr: ADR-0018 §6 Phase 2 + §3 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+backend-engineer priority: P2 estimated_hours: 4-5 (raised 2026-07-20: surface + audit + 4 test
+classes + agency test rewrite per FOLLOW-603) promoted_to_queue: true (session 41 — dispatched to
+backend-engineer/OPUS, branch `backend-engineer/FOLLOW-595-quiz-staff-write`; see HANDOFFS.md brief)
 
-**AC:** quiz config GET/PUT accept staff via `resolveTenantAccess` (write requires rank ≥ ops);
+**PM pre-dispatch findings (session 41, verified against real files — no blockers):** the write verb
+on `apps/control-plane/src/app/api/quiz/config/route.ts` is **POST**, not PUT (AC wording is
+nominal); both GET+POST already use `createAdminClient()` (RLS-bypassed) with an
+`eq(tenants.id, tenantId)` fence, so the INV-5 model already exists. `staff_audit_log` table +
+Drizzle schema EXIST (no migration needed); a direct-insert precedent lives in
+`api/admin/labels/export/route.ts`. `resolveTenantAccess` already exposes `canWrite` (rank ≥ ops)
+for the write-rank gate. Agency editor to (maybe) extract for the surface:
+`app/dashboard/quiz/page.tsx`. Guidance folded from RETRO-189: add route-level
+`allowStaffOverride`/`minAgencyRole` `toHaveBeenCalledWith` assertions (FOLLOW-603), do NOT treat
+"agency tests unchanged" as blanket AC, and make the audit-durability choice explicit (await; do not
+fire-and-forget).
+
+**AC:** quiz config GET/POST accept staff via `resolveTenantAccess` (write requires rank ≥ ops);
 every staff write appends to `staff_audit_log` (who/tenant/what/when per ADR-0018 §3);
-`/admin/tenants/[id]/quiz` surface; agency path unchanged (existing tests green); audit-row asserted
-in tests.
+`/admin/tenants/[id]/quiz` surface; agency behavior preserved (re-mock as needed — NOT
+byte-unchanged tests); audit-row asserted in tests.
 
 - [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
       tenant-filtered" test — prove a staff request for tenant A cannot READ OR WRITE tenant B's

@@ -15987,7 +15987,8 @@ cross_ref: [RETRO-182, RETRO-186, SESSION-RETRO-39]
 
 source_adr: ADR-0018 §2 (superadmin tenant access; CEO-accepted 2026-07-20) recommended_sprint:
 Sprint 24 recommended_agent: backend-engineer priority: P1 estimated_hours: 4 promoted_to_queue:
-false
+true (2026-07-20, backlog/QUEUE.md id FOLLOW-592, status READY, worker model OPUS per model-fit
+ruling)
 
 **Gap:** every tenant-scoped dashboard API resolves the tenant from the agency session only, so
 staff (superadmin) cannot act on any tenant. ADR-0018 §2 specifies ONE helper in
@@ -16011,15 +16012,40 @@ cross_ref: [ADR-0018, FOLLOW-456, FOLLOW-555, RETRO-186]
 ## FOLLOW-593 — `/admin/tenants` hub + `/admin/tenants/[id]` landing; un-hide the multi-tenant admin nav (ADR-0018 §Decision 0, CEO-ratified)
 
 source_adr: ADR-0018 §Decision 0 + §6 recommended_sprint: Sprint 24 recommended_agent:
-backend-engineer priority: P2 estimated_hours: 3 promoted_to_queue: false
+backend-engineer priority: P2 estimated_hours: 5-6 (raised 2026-07-20, PM finding below — real-data
+wiring, not just nav un-hide) promoted_to_queue: false
 
 **Gap:** multi-tenant admin screens (Registrations, Tenants list, Demo Sessions) exist but are
 hidden from `/admin` nav per the 2026-06-15 "single-tenant v1" decision — formally REVERSED by the
 CEO 2026-07-20 (ADR-0018 Resolved Q2). The tenant hub is the entry point for every per-tenant staff
 surface (`/admin/tenants/[id]/<feature>`).
 
+**PM finding (2026-07-20 session, verified against real files, not assumed from the ADR text):**
+un-hiding these pages is NOT just a nav change — all three currently render 100% MOCK data,
+unconditionally, with no DB-configured code path at all yet:
+
+- `apps/control-plane/src/app/admin/tenants/page.tsx` imports `MOCK_TENANTS` from `./mock-data.ts`
+  and maps it directly — no `tenants` table query exists.
+- `apps/control-plane/src/app/admin/registrations/page.tsx` imports `MOCK_REGISTRATIONS` from
+  `./mock-data.ts`, same shape.
+- `apps/control-plane/src/app/admin/demo-sessions/page.tsx` imports `MOCK_DEMO_SESSIONS` from
+  `./mock-data.ts`, same shape.
+
+Un-hiding the nav per the ratified Q2 without also wiring real data would put a staff-navigable page
+in front of the CEO that always shows the same fabricated rows — a live instance of the Rule K.2
+"decision-grade surfaces must fail loud, never fabricate" trap (`CONVENTIONS_PATCH.md` §K.2), except
+here the failure mode is worse than silent-empty: it's silently WRONG (plausible-looking fake
+tenants). This raises the estimate from 3h (nav-only) to ~5-6h (nav + real Supabase `tenants` table
+query + registrations/demo-sessions equivalents, or their real sources if different tables). Mock
+stays only as the documented DB-unconfigured fallback (Rule K.2's own accepted pattern elsewhere in
+the repo, e.g. FOLLOW-599's audit-log mock fallback) — never as the only path.
+
 **AC:** tenants list navigable from `/admin` sidebar; per-tenant landing page linking the (ported)
-feature surfaces; nav tests updated; staff-only (middleware already gates `/admin/*`).
+feature surfaces; nav tests updated; staff-only (middleware already gates `/admin/*`); **the tenants
+list shows REAL rows from the `tenants` table when the DB is configured** (mock renders only when
+`DATABASE_URL_ADMIN`/equivalent is absent, mirroring the documented DB-unconfigured-fallback pattern
+used elsewhere — e.g. `data_source: 'mock'` badge-flagged, per Rule K.2); test asserting the
+real-data path is exercised, not just the mock path.
 
 cross_ref: [ADR-0018, FOLLOW-592]
 

@@ -53,7 +53,7 @@ function buildMockEvents(tenantId: string): IntentEventRow[] {
       tenant_id: tenantId,
       event_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       event_type: 'intent.snapshot',
-      archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_nester: -0.03 }),
+      archetype_deltas: JSON.stringify({ yield_hunter: 0.12, family_buyer: -0.03 }),
       confidence_before: 0.55,
       confidence_after: 0.67,
       top_archetype: 'yield_hunter',

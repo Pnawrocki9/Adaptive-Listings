@@ -21,13 +21,25 @@ import { PILOT_TENANT_ID } from '@/lib/pilot-tenant';
  * /admin/tenants/[id]/tracer, so we link them directly with PILOT_TENANT_ID
  * instead of routing through a tenants list. Weight Editor is global.
  *
- * Multi-tenant screens (Registrations, Tenants list, Demo Sessions) are hidden in
- * v1 (CEO decision 2026-06-15) — those pages still exist but are not navigable.
+ * De-pinning these links from PILOT_TENANT_ID to the new Tenants hub is a
+ * later ticket (ADR-0018 §6 Phase 1+) — left as-is here per FOLLOW-593 scope.
  */
 const TRACER_NAV_LINKS = [
   { href: `/admin/tenants/${PILOT_TENANT_ID}/tracer`, label: 'Live Monitor' },
   { href: `/admin/tenants/${PILOT_TENANT_ID}/tracer/history`, label: 'Session History' },
   { href: '/admin/tracer/weights', label: 'Weight Editor' },
+];
+
+/**
+ * Multi-tenant admin screens — un-hidden per ADR-0018 §Decision 0
+ * (CEO-ratified 2026-07-20), reversing the 2026-06-15 "single-tenant v1" hide.
+ * `/admin/tenants` is the entry point for every per-tenant staff surface
+ * (`/admin/tenants/[id]/<feature>`, ADR-0018 §1).
+ */
+const TENANTS_NAV_LINKS = [
+  { href: '/admin/tenants', label: 'Tenants' },
+  { href: '/admin/registrations', label: 'Registrations' },
+  { href: '/admin/demo-sessions', label: 'Demo Sessions' },
 ];
 
 /**
@@ -69,6 +81,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </p>
               <ul className="space-y-0.5">
                 {TRACER_NAV_LINKS.map(({ href, label }) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      className="block rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      {label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Multi-tenant hub — un-hidden per ADR-0018 §Decision 0. */}
+            <div className="mt-6">
+              <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                Tenants
+              </p>
+              <ul className="space-y-0.5">
+                {TENANTS_NAV_LINKS.map(({ href, label }) => (
                   <li key={href}>
                     <Link
                       href={href}

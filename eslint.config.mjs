@@ -20,6 +20,10 @@ export default tseslint.config(
       '**/*.config.cjs',
       '**/*.config.mjs',
       'scripts/check-bundle-size.ts',
+      // Fixture routes for scripts/check-staff-write-atomicity.sh (FOLLOW-607).
+      // Deliberately fake/never-compiled TS text fixtures the guard greps as
+      // strings — not real source, not built or imported by any app.
+      'scripts/__fixtures__/**',
       'apps/control-plane/scripts/**',
       'packages/sdk/scripts/**',
       'packages/sdk/e2e/*.js',

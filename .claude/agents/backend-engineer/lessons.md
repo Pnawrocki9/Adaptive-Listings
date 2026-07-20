@@ -1656,3 +1656,22 @@ would generalize this beyond just `adapt-get-auth`.
   parity suite together already covered this refactor's blast radius; a new guardrail here would be
   redundant. (Left one remaining full copy, `packages/sdk/core/adapt-schema.ts`'s
   `archetypeIdSchema`, flagged in the PR for sdk-engineer — out of my ownership scope.)
+
+- **2026-07-20 / FOLLOW-592** · Built `resolveTenantAccess` (ADR-0018 §2): discriminated-union
+  agency|staff tenant-access helper in `session-auth.ts` + 17-case security-invariant suite.
+  Composed `verifyTracerAdminAuth` (staff gate) + `getSessionAuth` (identity/role) rather than
+  reimplementing. · **Risks weighed:** (1) staff path runs under `createAdminClient` = RLS OFF, so
+  the returned `tenantId` is the ONLY tenant fence — documented as a loud "RLS TRAP" doc-comment + a
+  leak-demo test. (2) `tenantExists` fails CLOSED (throws 500) when the DB can't be reached — an
+  unverifiable tenant is a denied tenant, never allowed. (3) Deliberately REJECTED the headless
+  `ADMIN_API_SECRET` path (valid for read-only tracer) because a tenant-scoped staff action must be
+  attributable to a `staff.sub` for `staff_audit_log`. (4) Malformed (non-UUID) tenant ids
+  short-circuit to 404 before touching the uuid column (no sentinel-in-uuid 500). · **Two CI traps
+  hit:** relative `./tracer-auth.js` import compiles under tsc/vitest but NOT Next webpack
+  (`Module not found`) — use the `@/lib/...` alias for intra-app imports. And
+  `Rule I — wired-or-dead` flags any new export lacking a non-test importer; it's pre-existing-red +
+  non-blocking and has no comment deferral, so a foundation-helper-before-consumers PR will always
+  trip it (Rule H is the real guardrail, satisfied via integration test). · **Guardrail I'd add:** a
+  lint rule (or Rule-I exemption) that accepts an inline `// consumer: FOLLOW-NNN` tag on an export
+  as a valid deferral, so foundation PRs don't have to choose between a false green and touching
+  backlog files.

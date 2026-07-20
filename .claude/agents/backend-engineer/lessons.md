@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-07-20 / FOLLOW-595
+
+**What I built:** First staff WRITE port under ADR-0018 — `POST/GET /api/quiz/config` now resolve
+auth via `resolveTenantAccess({ allowStaffOverride: true })`. POST adds a write-rank gate (staff
+`canWrite`, rank ≥ ops → else 403) and appends one `staff_audit_log` row per successful STAFF write
+(agency writes NOT audited). New minimal staff surface `/admin/tenants/[id]/quiz` (tenantExists →
+notFound; minimal editor GET/POSTing `?tenant_id=` rather than extracting the agency client page,
+which is coupled to a separate `/api/tenants/:id` toggle route with no staff port yet).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Audit durability — chose mutate-then-await-audit; if
+the audit insert throws, return a loud 500 (`audit_write_failed`) + Sentry rather than a silent
+unattributed 200. Update is already applied; retry is idempotent (over-attribution safe,
+under-attribution not). NEVER fire-and-forget (Vercel drops un-awaited writes). (2) Invariant-5 RLS
+trap — service-role client bypasses RLS, so the `eq(tenants.id, access.tenantId)` fence is the only
+boundary; the mandatory READ+WRITE tenant-filter tests key a stateful mock store on the value the
+route actually binds (not a pre-filtered array, RETRO-187), red-first verified. (3) FOLLOW-603
+option-wiring assertions (`toHaveBeenCalledWith` for `allowStaffOverride`/`minAgencyRole`) so a
+future weakening edit fails a test.
+
+**A guardrail I'd add:** A lint/grep that flags any route using `createAdminClient()` +
+`db.update`/`db.insert` on a tenant table whose test file lacks a `updateWhere.val === tenantId`
+style fence assertion — the invariant-5 leak is only ever caught by that specific test shape.
+
+---
+
 ## 2026-06-26 / FOLLOW-405
 
 **What I built:** Cross-package parity gate: `variant-index.parity.test.ts` imports the real

@@ -1,14 +1,28 @@
 /**
  * GET/POST /api/quiz/config — quiz widget configuration per tenant.
  *
- * Auth: JWT-verified tenant claims required, via getSessionAuthClaims /
- *   requireTenantSessionAccess (apps/control-plane/src/lib/session-auth.ts), which
- *   try the Bearer/legacy-cookie path first and fall back to the Supabase SSR
- *   browser session cookie (FOLLOW-454).
- *   GET  — requires a valid session. Defaults apply only when the tenant
- *     row exists but has no stored config (legitimate no-exception case); a thrown
- *     DB error returns HTTP 500 instead of enabled defaults (Rule K.2, FOLLOW-453).
- *   POST — requires agency:viewer or higher.
+ * Auth (ADR-0018 §2, FOLLOW-595): `resolveTenantAccess` with `allowStaffOverride`.
+ *   The agency path is byte-unchanged (tenant sourced from the session claim; an
+ *   agency:viewer or higher may write, exactly as before). An Estalara staff caller
+ *   may read/write any tenant by supplying an explicit `?tenant_id=<uuid>` — which is
+ *   validated against the `tenants` table — and that validated id becomes the SINGLE
+ *   tenant fence bound into every query (invariant 5). This route uses
+ *   `createAdminClient()` (service-role, RLS BYPASSED), so the explicit
+ *   `eq(tenants.id, access.tenantId)` fence in each query is the ONLY tenant boundary.
+ *
+ *   GET  — requires a valid session (agency:viewer+ on the agency path). Defaults
+ *     apply only when the tenant row exists but has no stored config (legitimate
+ *     no-exception case); a thrown DB error returns HTTP 500 instead of enabled
+ *     defaults (Rule K.2, FOLLOW-453).
+ *   POST — write. Agency: agency:viewer or higher (UNCHANGED). Staff: additionally
+ *     gated on `access.canWrite` (rank ≥ `estalara:ops`, CEO Q3) — a staff caller
+ *     below ops rank (`estalara:readonly`) is 403. Every successful STAFF write
+ *     appends one `staff_audit_log` row (ADR-0018 §3); agency writes are NOT audited.
+ *
+ *   Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
+ *   `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
+ *   attributable to a staff user; a privileged staff write MUST be attributable to
+ *   `staff_audit_log.adminUserId`). Staff need an identified SSR session or staff JWT.
  *
  * Persists to tenants.quiz_config JSONB column via createAdminClient().
  *
@@ -51,9 +65,11 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 
-import { createAdminClient, tenants } from '@estalara/db';
-import { getSessionAuthClaims, requireTenantSessionAccess } from '@/lib/session-auth';
+import { createAdminClient, tenants, staffAuditLog } from '@estalara/db';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
 import type { QuizConfig } from '@estalara/shared';
 import { QuizConfigSchema, QUIZ_DEFAULT_CONFIG, parseStoredQuizConfig } from '@estalara/shared';
 import { eq } from 'drizzle-orm';
@@ -61,16 +77,32 @@ import { eq } from 'drizzle-orm';
 // Re-export so existing consumers that import QuizConfig from this route continue to compile.
 export type { QuizConfig } from '@estalara/shared';
 
+/** Best-effort client IP for the audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const claims = await getSessionAuthClaims(req);
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is
+  // the ONLY tenant fence — bound into the select's WHERE for BOTH paths. The agency
+  // branch sources it from the session claim; the staff branch from the validated
+  // `?tenant_id` (never the session, whose staff tenant_id is null).
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes (RETRO-189): omit the key when absent rather than
+      // passing `undefined`, so a staff caller without ?tenant_id reaches resolve's 400.
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  const tenantId = claims.tenant_id;
-  if (!tenantId) {
-    return NextResponse.json({ error: 'Unauthorized: no tenant_id in claims' }, { status: 401 });
-  }
+  const tenantId = access.tenantId;
 
   try {
     const db = createAdminClient();
@@ -99,14 +131,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  let claims;
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
   try {
-    claims = await requireTenantSessionAccess(req, 'agency:viewer');
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      minAgencyRole: 'agency:viewer', // agency write semantics UNCHANGED (viewer+ may write).
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  const tenantId = claims.tenant_id;
+  // Write-rank gate (CEO Q3, ADR-0018 §4): staff below `estalara:ops` (rank < 2) is
+  // view-only. `canWrite` is set on the staff branch iff rank ≥ ops. Agency writes are
+  // NOT rank-gated here — agency:viewer may write today and that is preserved.
+  if (access.via === 'staff' && !access.canWrite) {
+    return NextResponse.json(
+      { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
+      { status: 403 },
+    );
+  }
+
+  const tenantId = access.tenantId;
 
   let body: unknown;
   try {
@@ -126,10 +173,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  let current: QuizConfig;
+  let updated: QuizConfig;
   try {
     const db = createAdminClient();
 
-    // Read current config from DB
+    // Read current config from DB (fenced on access.tenantId — invariant 5).
     const rows = await db
       .select({ quizConfig: tenants.quizConfig })
       .from(tenants)
@@ -138,20 +187,65 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // FOLLOW-271: parseStoredQuizConfig strips any legacy `enabled` key from the read blob.
     const stored = parseStoredQuizConfig(rows[0]?.quizConfig ?? {});
-    const current = { ...QUIZ_DEFAULT_CONFIG, ...stored };
+    current = { ...QUIZ_DEFAULT_CONFIG, ...stored };
     // current fills all required fields; parsed.data overrides only the provided ones.
     // `enabled` cannot appear in parsed.data (Zod schema omits it), so it can never
     // re-enter the persisted blob via this path.
-    const updated = { ...current, ...parsed.data } as QuizConfig;
+    updated = { ...current, ...parsed.data } as QuizConfig;
 
-    // Persist to DB — `updated` never contains `enabled` (Rule U).
+    // Persist to DB (fenced on access.tenantId — invariant 5). `updated` never
+    // contains `enabled` (Rule U).
     await db
       .update(tenants)
       .set({ quizConfig: updated, updatedAt: new Date() })
       .where(eq(tenants.id, tenantId));
-
-    return NextResponse.json(updated);
   } catch {
     return NextResponse.json({ error: 'Failed to update quiz configuration' }, { status: 500 });
   }
+
+  // ── Staff audit trail (ADR-0018 §3) — STAFF writes ONLY ──────────────────────
+  // Agency self-service writes are out of scope for staff_audit_log by contract.
+  //
+  // DURABILITY DECISION (ticket FOLLOW-595 / Rule K.2 / Vercel after() rule):
+  // We AWAIT the audit insert INLINE (never fire-and-forget) so it completes before
+  // the response is sent — an un-awaited write is dropped on Vercel instance
+  // suspension, and a privileged staff write MUST be attributable. Ordering is
+  // mutate-then-audit: an audit row for a write that did not happen would be a LIE,
+  // so we only claim the action after the update succeeded. If the audit insert then
+  // FAILS we do NOT silently return 200 — we capture to Sentry and return 500. The
+  // config update is already applied at that point; we accept that over a silent,
+  // unattributed staff mutation. A retry is safe: it re-sets the same config
+  // (idempotent) and appends a fresh audit row — over-attribution is acceptable,
+  // under-attribution is not.
+  if (access.via === 'staff') {
+    try {
+      const db = createAdminClient();
+      await db.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'quiz_config.update',
+        targetTenantId: tenantId,
+        payload: { before: current, after: updated },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+    } catch (err: unknown) {
+      Sentry.captureException(err, {
+        tags: { route: 'quiz/config', staff_audit_error: 'true' },
+        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: 'audit_write_failed',
+            message:
+              'Quiz config was updated but the staff audit record could not be written; ' +
+              'the change is not attributable. Retry to re-record the action.',
+          },
+        },
+        { status: 500 },
+      );
+    }
+  }
+
+  return NextResponse.json(updated);
 }

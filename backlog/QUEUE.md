@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 41 — RECOVERY COMPLETE: FOLLOW-593 + FOLLOW-594 recovered from stranded worktrees and MERGED (#581 → 7826967, #582 → 08a5d1e); next = retros + promote FOLLOW-595)
+## ▶️ START HERE — resume 2026-07-20 (session 41 — RECOVERY + Phase-2 first-write COMPLETE: FOLLOW-593/594 recovered from stranded worktrees and merged; FOLLOW-595 (first staff WRITE) promoted→dispatched→PM-validated→merged; RETRO-188/189/190 all filed. Next = FOLLOW-596/597 or the 604/605/606 follow-ups)
 
 **Read this before picking anything.** Session 40/parent dispatched `backend-engineer` (Opus) for
 **both FOLLOW-593 and FOLLOW-594** (FOLLOW-592 having merged, #579, both were unblocked). A terminal
@@ -32,25 +32,34 @@ MERGED to main**. Nothing was lost. Worktrees removed and branches deleted.
   risk the green tests) — these fold into **FOLLOW-591** (already exists to clear Rule I wholesale).
   Not a merge gate.
 
-**Status / in-flight:**
+**Status (ADR-0018 Phase-1 + first Phase-2 write COMPLETE):**
 
-1. ✅ DONE — retros filed+merged (#584): RETRO-188 (593), RETRO-189 (594, INV-5 security-CLEAN).
-2. ⏳ **IN-FLIGHT — FOLLOW-595 PROMOTED + DISPATCHED** (session 41). Worker = `backend-engineer`
-   (**OPUS** — security-sensitive staff WRITE + `staff_audit_log` + RLS-bypass tenant fence; do not
-   argue down). Branch **`backend-engineer/FOLLOW-595-quiz-staff-write`**; full brief in
-   `backlog/HANDOFFS.md` ("Delegation brief — FOLLOW-595", session 41). **If this session died and
-   you're resuming: check that branch + `gh pr list` for the worker's PR BEFORE re-dispatching**
-   (the session-41 recovery started from exactly this failure mode — a dispatch lost to a crash
-   strands work uncommitted in `.claude/worktrees/agent-*`). PM must then VALIDATE the PR (the
-   MANDATORY read+write tenant-filter test hits the REAL query, the audit row is asserted + durably
-   awaited, the write-rank 403 gate, and the FOLLOW-603 route-level option-wiring assertions) before
-   ready.
-3. ⬜ NEXT after 595 lands: file a **sibling stub** for the Pilot / Site-Detection read-only staff
-   views deferred out of 594 (same `resolveTenantAccess({allowStaffOverride}) + per-tenant page`
-   pattern); then FOLLOW-596..600 (Phase-2/3).
-4. ⬜ Open follow-ups from the retros: **FOLLOW-602** (Rule-I diff-scope must not false-block
-   inference-only exports — a dependency of FOLLOW-591) and **FOLLOW-603** (route-level
-   option-wiring assertions in staff-ported route tests; 595 already applies it inline).
+1. ✅ DONE — FOLLOW-592 (#579), 593 (#581), 594 (#582), **595 (#586, `ace5c40`)** all merged.
+2. ✅ DONE — retros filed+merged: RETRO-188 (593), RETRO-189 (594), **RETRO-190 (595)** (#584/#587).
+   All three staff surfaces are INV-5 **security-CLEAN** end-to-end (594 read-port + 595 write-port,
+   each with non-vacuous real-query leak tests; 595's staff write is awaited-audited + write-rank
+   gated). PM-validated PR #586 before merge.
+
+**⬜ NEXT (nothing in-flight — pick per priority):**
+
+3. **Phase-2 write ports FOLLOW-596 / 597** (demo-override; labels + intent-config) — copy 595's
+   shape: `resolveTenantAccess` + write-rank (`canWrite`) + **awaited** `staff_audit_log` +
+   MANDATORY READ+WRITE tenant-filter test + FOLLOW-603 option-wiring assertions. **596/597 must NOT
+   inherit 595's non-transactional audit unexamined — see FOLLOW-605 first for the high-blast
+   path.**
+4. **New retro-driven follow-ups (all P3):**
+   - **FOLLOW-604** — staff-port `PATCH /api/tenants/[id]` (quiz ON/OFF toggle, `quiz_enabled`) +
+     unify quiz editors. Staff can restyle the quiz but can't enable/disable it (gap surfaced by
+     RETRO-190; not a 595 AC miss).
+   - **FOLLOW-605** — decide audit-write **atomicity** (single-txn/outbox) BEFORE **FOLLOW-598**
+     (bandit write) inherits 595's mutate-then-audit shape. Sequence 605 → 598.
+   - **FOLLOW-606** — wire per-tenant staff sub-surfaces into the `/admin/tenants/[id]` hub landing
+     (analytics + quiz are direct-URL-only today; reconciles a RETRO-189 mis-statement).
+   - **FOLLOW-602** (Rule-I diff-scope false-positive fix, dep of FOLLOW-591) + **FOLLOW-603**
+     (option-wiring assertions — 595 already applied it inline).
+5. **Still open from earlier:** sibling stub for the Pilot / Site-Detection read-only staff views
+   deferred out of 594; FOLLOW-598/599/600 (Phase-3 + audit-log consumer). Next-free FOLLOW id
+   = 607.
 
 ---
 

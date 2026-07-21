@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-07-22 / FOLLOW-599
+
+**What I built:** Wired `GET /api/audit` to the real `staff_audit_log` table, replacing the
+`MOCK_ENTRIES` stub, and closed an auth hole — the route trusted an unauthenticated `x-tenant-id`
+header. Now STAFF-ONLY via `resolveTenantAccess({ allowStaffOverride: true })`, agency callers → 403
+(deferred Phase-2, ADR-0018 §3), staff supply `?tenant_id` validated by the helper. Added a
+read-only per-tenant staff page (`/admin/tenants/[id]/audit`) + `StaffAuditView`, and the FOLLOW-606
+hub link on the `[id]` landing (same PR).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Invariant-5 fence — `staff_audit_log` has NO RLS and
+is read via `createAdminClient()`, so the `eq(staffAuditLog.targetTenantId, access.tenantId)` WHERE
+predicate is the ONLY tenant boundary; MANDATORY red-first test drives the REAL Drizzle query (DB
+mock keys a per-tenant store on the bound `and(...).conds[0].val`) and proves tenant A never sees B.
+(2) Reads-NOT-logged (CEO Q4) — asserted no `.insert`/`.transaction` on a GET; the atomicity guard
+correctly does NOT list the route (no `insert(staffAuditLog)` → not a staff-write). (3) Rule K.2 —
+DB-unconfigured → `data_source: 'mock'` in the NEW shape; configured-but-throws → 500 + Sentry, no
+fabricated rows. (4) Old `AuditResponse` shape had a fabricated `user_email` with no backing column;
+migrated to `admin_user_id`. Only consumer of the old type was its own test (grepped) + the new
+`audit-view.tsx` consumes the new type (Rule H satisfied).
+
+**A guardrail I'd add:** The staff mock-fallback path is only reachable in tests because
+`resolveTenantAccess`'s staff branch calls `tenantExists` → `createAdminClient`, which throws when
+the DB is unconfigured (AccessError 500) BEFORE the route's `!dbConfigured` mock check. So for a
+staff-only route the `data_source: 'mock'` branch is effectively test-only in a real no-DB env.
+Worth a lint/CI note that "mock fallback after a staff-path resolve" is unreachable without DB — or
+move the dbConfigured check to short-circuit before resolve on read-only routes. Left as-is here to
+mirror the labels precedent exactly.
+
+---
+
 ## 2026-07-21 / FOLLOW-612
 
 **What I built:** Closed the 5th bypass (RETRO-196) of the staff-write atomicity CI guard

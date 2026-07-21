@@ -16266,10 +16266,14 @@ path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pat
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, FOLLOW-609, FOLLOW-612, FOLLOW-613,
 RETRO-187, RETRO-196, RETRO-197]
 
-## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub
+## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/OPUS, isolated worktree, branch `backend-engineer/FOLLOW-599-audit-read-consumer`)
 
 source_adr: ADR-0018 §3 recommended_sprint: Sprint 25 recommended_agent: backend-engineer priority:
-P3 estimated_hours: 2 promoted_to_queue: false
+P3 estimated_hours: 2 promoted_to_queue: true (dispatched session 50; OPUS per model-fit —
+security-sensitive: the current route trusts an unauthenticated `x-tenant-id` header (auth hole to
+close), reads a service-role RLS-off sensitive table, and needs the MANDATORY invariant-5
+tenant-fence test. Read-authorization is STAFF-ONLY per ADR-0018 §3 (agency read = deferred Phase-2,
+out of scope); reads are NOT logged (CEO Q4).)
 
 **Gap:** `apps/control-plane/src/app/api/audit/route.ts` serves MOCK_ENTRIES; ADR-0018 makes
 `staff_audit_log` the audit SoT for staff writes (writes-only per CEO Q4). Staff need to SEE the

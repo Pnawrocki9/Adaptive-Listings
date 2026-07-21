@@ -16138,28 +16138,52 @@ validation detail in `backlog/QUEUE.md` START HERE (session 43 entry, preserved)
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
 
-## FOLLOW-597 — Phase 2: Label management + Intent config staff port
+## FOLLOW-597 — Phase 2: Label management + Intent config staff port — 🟡 IMPLEMENTED (branch `backend-engineer/FOLLOW-597-labels-intent-staff-port`, uncommitted at session 50 start → committed session 50; NOT yet PR'd/merged)
 
 source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
-priority: P3 estimated_hours: 3 promoted_to_queue: false
+priority: P3 estimated_hours: 3 promoted_to_queue: true (implemented directly, session 50)
+
+**STATUS (session 50):** implementation complete on the branch, all local gates green —
+`tsc --noEmit` ✓, `eslint` ✓, `prettier --check` ✓, 95 vitest tests ✓ (labels GET/PATCH,
+intent-weights GET/PUT, `/labels` + `/intent` staff pages), guard self-test ✓. Ported surfaces:
+`GET /api/admin/labels` + `PATCH /api/admin/labels/[id]` (reclassify) to `resolveTenantAccess`/staff
+audit; NEW additive `GET|PUT /api/admin/intent-weights` (per-tenant, separate from the global K.3.6
+`intent/config` surface — see route header for why the global route was deliberately NOT
+retrofitted); NEW `/admin/tenants/[id]/labels` + `/admin/tenants/[id]/intent` staff pages + editors.
+Agency paths byte-unchanged. Next: PR + CI-green verify + human review (superadmin-gated feature).
 
 **AC:** labels + intent-config endpoints accept staff (writes audited, rank ≥ ops); per-tenant admin
 surfaces; agency paths unchanged.
 
-- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+- [x] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
       tenant-filtered" test per ported endpoint proving a staff request for tenant A cannot reach
-      tenant B's rows through the real (service-role/RLS-bypassed) query. NOT discharged by
-      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
-- [ ] **Guard-shape note (RETRO-196, do not skip):** if this ticket introduces its own
-      store-delegation helper (following the FOLLOW-609 `upsertDemoOverride(tx?)` pattern), import
-      it as a NAMED/bare identifier (`import { upsertX } from …`), NOT a namespace
-      (`import * as store from …`) — `scripts/check-staff-write-atomicity.cjs` only recognizes the
-      former today; the latter silently SKIPs with zero enforcement (FOLLOW-612, unfixed as of this
-      writing). Verify with `node scripts/check-staff-write-atomicity.cjs` after landing: the
-      touched route must print `OK`, never `SKIP`.
+      tenant B's rows through the real (service-role/RLS-bypassed) query. **DONE:**
+      `labels/route.test.ts:401` (staff-A binds `eq(conversionLabels.tenantId, A)`, never returns
+      B); `intent-weights/route.test.ts:427` (READ) + `:453` (WRITE swap fenced to A, B untouched).
+      `labels/[id]` PATCH sources tenant from the label row's own FK (never caller-supplied), so
+      invariant-5 is discharged by the row-scoped SELECT + the agency cross-tenant-404 test
+      (`labels/route.test.ts:607`), documented in the route header.
+- [~] **Guard-shape note (updated session 49 — RETRO-197):** the caveat "do NOT reach a
+  store-delegation helper through a BARREL re-export (FOLLOW-613)" was RESPECTED for
+  `intent-weights` (mutation kept INLINE → guard prints `OK`) but was UNAVOIDABLE for `labels/[id]`:
+  its mutation reuses the shared, CRM-path-shared `upsertConversionLabel`, which lives in
+  `@estalara/db` and is re-exported via
+  `export { upsertConversionLabel } from     './upsert-conversion-label.js'`
+  (`packages/db/src/index.ts:15`) — the exact FOLLOW-613 shape, reached through a workspace-package
+  specifier the guard cannot resolve at all. "Import the helper directly" was not achievable without
+  a non-idiomatic cross-package deep import or duplicating the FOLLOW-179/182 precedence SQL (Rule
+  H). **Operator ruling (session 50): document + defer, not inline-duplicate and not touch the guard
+  mid-597.** So the guard prints `SKIP` for `labels/[id]` (verified) — atomicity is instead proven
+  by the rollback unit test (`labels/route.test.ts` "ROLLS BACK … when the staff audit insert fails
+  inside the tx") and an explicit in-file guard-coverage caveat. FOLLOW-613 (now marked LIVE, AC
+  extended for package-specifier resolution) flips it to `OK` with no route change.
+- [ ] **Hub-link (deferred to FOLLOW-606, unchanged sequencing):** the `[id]` landing does NOT yet
+      link `/labels` or `/intent` — consistent with `/analytics` (594) and `/quiz` (595), which also
+      lack hub links. FOLLOW-606 (next after 597/598) owns the comprehensive one-pass hub wiring per
+      its own AC; not blocking this PR.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-609, FOLLOW-612, RETRO-187,
-RETRO-196]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-606, FOLLOW-609, FOLLOW-612,
+FOLLOW-613, RETRO-187, RETRO-196, RETRO-197]
 
 ## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
 
@@ -16192,18 +16216,23 @@ path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pat
       `resolveTenantAccess` — apply a direct `estalara_role`-rank ≥ 3 assertion on the verified
       staff claim (the same `STAFF_ROLE_RANK` map). No-op today (sole prod account is superadmin);
       binding as staff accounts are added. Test proves ops-rank staff PUT → 403.
-- [ ] **Guard-shape note (RETRO-196, do not skip — this is the guard's HIGHEST-blast-radius
-      beneficiary):** if this ticket's weight-write helper is delegated (following the FOLLOW-609
-      `upsertDemoOverride(tx?)` pattern), import it as a NAMED/bare identifier
-      (`import { upsertX } from …`), NOT a namespace (`import * as store from …`) —
-      `scripts/check-staff-write-atomicity.cjs` only recognizes the former today; the latter
-      silently SKIPs with zero enforcement (FOLLOW-612, unfixed as of this writing). Verify with
-      `node scripts/check-staff-write-atomicity.cjs` after landing: the touched route must print
-      `OK`, never `SKIP`. Given this is the highest-blast-radius staff write, land FOLLOW-612 FIRST
-      if there is any doubt about which import style the implementation will use.
+- [ ] **Guard-shape note (updated session 49 — RETRO-197; supersedes the RETRO-196 note — this is
+      the guard's HIGHEST-blast-radius beneficiary):** FOLLOW-612 (merged, PR #598) closed the
+      guard's namespace/property-access bypass, so a bare identifier OR a namespace import
+      (`import * as store from …; store.upsertX(tx, …)`) are now BOTH correctly recognized — the
+      prior "named-import-only" interim mitigation no longer applies. **New caveat to respect
+      instead:** do NOT reach the new weight-write helper through a BARREL re-export
+      (`export * from './x'` / `export { upsertX } from './x'` in an `index.ts` the route imports
+      from) — a confirmed, still-open 6th bypass (FOLLOW-613, unfixed as of this writing): the
+      guard's bounded module walk does not follow `export` re-export declarations, so it silently
+      SKIPs regardless of tx-scoping, in BOTH the co-scoped and out-of-tx case. Import the helper
+      module DIRECTLY from the route. Verify with `node scripts/check-staff-write-atomicity.cjs`
+      after landing: the touched route must print `OK`, never `SKIP`. Given this is the
+      highest-blast-radius staff write, land FOLLOW-613 FIRST if there is any doubt about whether
+      the implementation will use a barrel.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, FOLLOW-609, FOLLOW-612, RETRO-187,
-RETRO-196]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, FOLLOW-609, FOLLOW-612, FOLLOW-613,
+RETRO-187, RETRO-196, RETRO-197]
 
 ## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub
 
@@ -16736,11 +16765,24 @@ on ITS OWN diff scan and could confuse a worker into thinking they leaked a cred
 
 cross_ref: [RETRO-195, FOLLOW-610, FOLLOW-411]
 
-## FOLLOW-612 — Close the staff-write-atomicity guard's 5th call-shape bypass: a delegated mutation called via a NAMESPACE/PROPERTY-ACCESS import (`helper.upsertX(tx, …)`) is silently un-detected
+## FOLLOW-612 — Close the staff-write-atomicity guard's 5th call-shape bypass: a delegated mutation called via a NAMESPACE/PROPERTY-ACCESS import (`helper.upsertX(tx, …)`) is silently un-detected — ✅ DONE (PR #598 `c102863`, merged 2026-07-21T18:07:18Z; RETRO-197)
 
-source_retro: RETRO-196 source_ticket: FOLLOW-609 recommended_sprint: opportunistic (before
-FOLLOW-598) recommended_agent: backend-engineer priority: P2 estimated_hours: 1-2 promoted_to_queue:
-false
+**STATUS: DONE + MERGED.** PR #598 (`backend-engineer/FOLLOW-608-staff-write-atomicity-scope`, per
+`gh pr view`) squash-merged to `main` (merge commit `c1028637ed4cdfb11642eebbf87f3ca8e5a6ddd2`,
+branch deleted). Operator pre-authorized ("merge #612 when green") and independently verified before
+merging: `gh pr checks 598` — all 58 real gates PASS, only the documented non-blocking `Rule I` red;
+the out-of-tx bypass-5 fixture FAILs (not SKIP), the co-scoped one OKs, `admin/labels/export` still
+correctly SKIPs. **Session (post-merge close-out) independently re-confirmed, nothing taken on
+trust:** `gh pr view 598 --json state,mergeCommit,mergedAt` → MERGED, `c102863…`,
+`2026-07-21T18:07:18Z`; `gh pr checks 598` re-pulled directly (all 58 jobs PASS, `Rule I` the sole
+red, pre-existing); `bash scripts/__tests__/check-staff-write-atomicity.test.sh` re-run on `main`
+HEAD: **33/33 assertions PASS**, including the new
+`bypass5-namespace-import-delegated-mutation{,-out-of-tx}` pair (co-scoped → `OK`, out-of-tx →
+`FAIL`, never `SKIP`) and the real-repo scan (`demo/override` + `quiz/config` → `OK`,
+`admin/labels/export` → `SKIP`, no regression). AC checklist below all met. Full retro in
+`backlog/RETROSPECTIVES.md` RETRO-197, which also independently reproduced (via an uncommitted
+throwaway fixture — a barrel/`export * from` re-export delegation shape) a genuine **6th bypass** —
+filed as **FOLLOW-613**.
 
 **Gap (verified by direct reproduction, not inference):**
 `scripts/check-staff-write-atomicity.cjs`'s `collectFileFacts` recognizes a delegated mutation call
@@ -16764,27 +16806,107 @@ while CI reports "passed."
 
 **AC:**
 
-- [ ] Extend `collectFileFacts`'s `PropertyAccessExpression` branch (or add a parallel one) to also
+- [x] Extend `collectFileFacts`'s `PropertyAccessExpression` branch (or add a parallel one) to also
       treat a call whose object expression is a locally-imported namespace/module identifier
       (`ts.isNamespaceImport`, already tracked by `collectLocalImportedIdentifierSources`) as a
       candidate delegated-mutation site, gated the same way as the bare-identifier case: only
       promoted to `mutationCalls` when `moduleContainsMutation` proves the resolved module performs
-      a mutation.
-- [ ] Red-first fixture pair mirroring `bypass4-helper-delegated-mutation{,-out-of-tx}` but with a
+      a mutation. **Shipped as designed** — reuses the same map + `moduleContainsMutation`, no
+      parallel resolution path (verified by reading the diff, not the PR description).
+- [x] Red-first fixture pair mirroring `bypass4-helper-delegated-mutation{,-out-of-tx}` but with a
       `import * as helper from '@/lib/mutation-helper'; helper.upsertSomething(tx, …)` call shape:
       pre-fix guard SKIPs (zero enforcement), post-fix guard OKs when co-scoped / FAILs when the
-      call sits outside the `db.transaction()`.
-- [ ] Re-run the existing bypass-1..4 fixtures + the real-repo scan (`demo/override`, `quiz/config`,
-      `admin/labels/export`) to confirm no regression.
-- [ ] **Sequence note (do not skip):** land this BEFORE or WITH FOLLOW-598 (the highest-blast-radius
-      beneficiary) if that ticket's worker chooses a namespace-import store-delegation shape. If
-      FOLLOW-597/598 land first using NAMED imports (the FOLLOW-609 shape, already
-      guard-recognized), this ticket may follow as a hardening pass instead of a hard blocker — but
-      the choice must be made explicitly, not accidentally, by whichever session dispatches 597/598
-      next.
+      call sits outside the `db.transaction()`. **Confirmed independently** (33/33 assertions PASS,
+      PM re-run on `main` HEAD, not the PR's own claim).
+- [x] Re-run the existing bypass-1..4 fixtures + the real-repo scan (`demo/override`, `quiz/config`,
+      `admin/labels/export`) to confirm no regression. **Confirmed** — no regression.
+- [x] **Sequence note:** landed BEFORE FOLLOW-597/598 per the operator's "merge #612 when green"
+      instruction — both tickets can now drop the interim named-import-only mitigation for THIS
+      bypass (see FOLLOW-597/598 AC, amended this session). **Caveat carried forward, not closed by
+      this ticket:** RETRO-197 found a distinct, still-open 6th bypass (barrel/`export *` re-export
+      delegation) — see FOLLOW-613.
 
-cross_ref: [RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-597, FOLLOW-598, Rule
-AD, Rule AE]
+cross_ref: [RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-597, FOLLOW-598,
+FOLLOW-613, Rule AD, Rule AE]
 
-<!-- next free FOLLOW number: 613. Filed by session 48 (PM-orchestrator) post-merge retro for
-FOLLOW-609 (RETRO-196). -->
+## FOLLOW-613 — Close the staff-write-atomicity guard's 6th call-shape bypass: a delegated mutation reachable only through a BARREL re-export (`export * from './x'` / `export { upsertX } from './x'`) is silently un-detected
+
+source_retro: RETRO-197 source_ticket: FOLLOW-612 recommended_sprint: opportunistic (before
+FOLLOW-598 if that ticket's helper uses a barrel) recommended_agent: backend-engineer priority: P2
+estimated_hours: 1-2 promoted_to_queue: false
+
+**Gap (verified by direct reproduction, not inference — uncommitted throwaway fixture, run, deleted,
+never committed):** `moduleContainsMutation`'s bounded (depth-3) import-graph walk resolves a
+route's local import to a module path via `collectLocalImportedIdentifierSources`, then — if that
+module itself contains no direct mutation — calls `collectLocalImports` on it to keep walking. But
+`collectLocalImports` only visits `ts.isImportDeclaration` nodes; it does NOT visit
+`ts.isExportDeclaration` nodes (`export * from './mutation-helper'` /
+`export { upsertX } from './mutation-helper'`). So when a route imports a mutation helper THROUGH a
+barrel (`import { upsertSomething } from '@/lib/stores'` where `src/lib/stores/index.ts` is
+`export * from './mutation-helper'`), the walk reaches the barrel file, finds zero direct
+`mutationCalls` there (correct — the barrel has none), tries to continue via
+`collectLocalImports(barrel)`, gets an EMPTY array (the barrel's re-export is invisible to that
+function), and terminates — `moduleContainsMutation` returns `false` even though the real mutation
+is one hop further. Reproduced twice: (1) helper call co-scoped inside the SAME `db.transaction()`
+as the audit insert — guard prints `SKIP` (should be `OK`); (2) byte-identical route but the helper
+call moved OUTSIDE the transaction — guard ALSO prints `SKIP`, exit 0 (should be `FAIL`). The guard
+cannot distinguish the safe and unsafe shape at all through a barrel — zero enforcement in both
+directions, the same failure class as bypass 4/5, one further shape over (Rule AE, which already
+names "a re-exported wrapper" in its shape-enumeration list at Rule text point 1 — this is that
+exact anticipated shape, now confirmed to actually exist in the shipped guard).
+
+**⚠️ NOW A LIVE DEFECT (updated session 50, FOLLOW-597 implementation).** The "not a live defect
+today" claim below held only until FOLLOW-597 shipped `api/admin/labels/[id]/route.ts`, whose staff
+reclassify write DELEGATES its mutation to `upsertConversionLabel` imported from the `@estalara/db`
+workspace package — and `packages/db/src/index.ts:15` re-exports it via exactly this shape:
+`export { upsertConversionLabel } from './upsert-conversion-label.js'`. The guard reports **SKIP**
+(verified: `node scripts/check-staff-write-atomicity.cjs` →
+`SKIP: …/labels/[id]/route.ts — insert(staffAuditLog) present but no other data mutation`). This is
+the FIRST real-repo instance of the class. Note it is reached through a WORKSPACE-PACKAGE specifier
+(`@estalara/db`), which the guard's `collectLocalImports` does not resolve AT ALL (it maps only
+`./`, `../`, `@/`) — so closing this LIVE case needs BOTH (a) package-specifier resolution
+(`@estalara/*` → `packages/*/src/index.ts`) AND (b) the barrel-re-export following that is this
+ticket's core AC. FOLLOW-597 shipped with the route's atomicity proven by its rollback UNIT TEST
+(`labels/route.test.ts` "ROLLS BACK … when the staff audit insert fails inside the tx") and an
+explicit in-file guard-coverage caveat pointing here (CEO/operator ruling session 50: document +
+defer, do NOT inline-duplicate the shared precedence SQL, do NOT touch the guard mid-FOLLOW-597).
+
+Original latent-risk note (kept for provenance): "Not a live defect today (grepped: no current
+staff-write route imports its mutation helper through a barrel `index.ts`) … but a real and
+plausible risk for FOLLOW-597/598's new store-delegation helpers if either worker follows this
+repo's common barrel-export convention (seen elsewhere in `packages/*/src/index.ts`) for their new
+helper module." — that predicted risk materialized in FOLLOW-597.
+
+**AC:**
+
+- [ ] Extend the bounded module walk (`moduleContainsMutation`'s `collectLocalImports` call, or a
+      parallel resolution) to also follow `ts.isExportDeclaration` re-export specifiers
+      (`export * from '...'` and `export { x } from '...'`) with a local module specifier, so a
+      barrel that re-exports a mutating module is still discovered within the existing depth-3
+      bound.
+- [ ] **(added session 50 — required to close the now-LIVE `labels/[id]` case)** Resolve
+      workspace-PACKAGE specifiers (`@estalara/db`, `@estalara/*`) to their
+      `packages/*/src/index.ts` barrel entry, then apply the re-export following above — the live
+      defect is reached via `@estalara/db`, not an `@/`-alias barrel, so re-export following alone
+      is insufficient without package resolution. Map from the workspace layout (each
+      `@estalara/<pkg>` → `packages/<pkg>/src/index.ts`); keep the depth-3 bound.
+- [ ] Red-first REAL-REPO assertion: after the fix, `api/admin/labels/[id]/route.ts` must flip from
+      `SKIP` → `OK` in the default-scan output (it is the concrete live instance), and moving its
+      `insert(staffAuditLog)` outside the `db.transaction()` must produce `FAIL`.
+- [ ] Red-first fixture pair (mirroring bypass4/5's naming) with a 3-file layout — route → barrel
+      `index.ts` (`export * from './mutation-helper'`) → `mutation-helper.ts` (the real mutation) —
+      co-scoped variant must go from `SKIP`→`OK`, out-of-tx variant from `SKIP`→`FAIL`.
+- [ ] Re-run the full existing fixture suite (bypass 1-5 + real-repo scan) to confirm no regression.
+- [ ] Re-verify the depth-3 bound (`MAX_DEPTH`) is still sufficient once re-exports are followed (a
+      barrel-of-a-barrel is now representable) — either confirm 3 is enough for any real repo layout
+      today or document why not.
+- [ ] Before declaring the guard "complete" this time, explicitly enumerate whether any further
+      call-shape remains unaddressed (dynamic/computed member access `helper['upsertX'](tx, …)`,
+      `await import(...)` dynamic import, a variable holding a function reference assigned from a
+      property access) per Rule AE point 4 — state the answer in the PR, do not leave it implicit.
+
+cross_ref: [RETRO-197, RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-612,
+FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
+
+<!-- next free FOLLOW number: 614. next free RETRO number: 198. Filed by session 49
+(PM-orchestrator) post-merge retro for FOLLOW-612 (RETRO-197). -->

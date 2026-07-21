@@ -28,6 +28,45 @@
  *   - Cross-tenant writes blocked: we re-read the label's tenant_id from the DB and
  *     compare it against the JWT claim before any write.
  *
+ * Staff audit trail + atomicity (ADR-0018 §3/§3a, FOLLOW-597): a staff reclassification
+ * is attributable to the acting staff user — every successful STAFF write appends one
+ * `staff_audit_log` row (`action: 'conversion_label.reclassify'`). The
+ * `upsertConversionLabel` write and the audit insert commit-or-roll-back TOGETHER in
+ * ONE `db.transaction()` (mirrors `quiz/config` POST, FOLLOW-605), so a reclassification
+ * can never outlive a missing audit row — any failure inside the tx rolls BOTH back and
+ * returns 500 `audit_write_failed` (Rule K.2, no orphan mutation). The AGENCY path is
+ * UNCHANGED: unaudited, non-transactional, and its cross-tenant 404 (not 403, to avoid
+ * leaking label existence) is preserved byte-for-byte.
+ *
+ * Auth-shape note (deliberate, FOLLOW-597): this route does NOT route the staff branch
+ * through `resolveTenantAccess`. That helper's `tenantId` option models an
+ * attacker-influenced, caller-SUPPLIED tenant id (a URL/query param) that must be
+ * validated against the `tenants` table before use (ADR-0018 §2 invariant 3/4). Here the
+ * tenant fence is never caller-supplied at all — it is read from the label row's own
+ * `tenant_id` FK column (`existing.tenantId`, already guaranteed to reference a real
+ * tenant), so there is no cross-tenant-spoof surface for `resolveTenantAccess` to close.
+ * The existing inline `estalara:ops`+ rank gate below already implements invariant-5
+ * tenant-scoping correctly (no query ever omits the WHERE fence); this PR only adds the
+ * audit trail + atomicity on top of it.
+ *
+ * Guard-coverage caveat (FOLLOW-613, still OPEN — the mechanical guard SKIPs this route;
+ * do NOT delete this note or the covering test without re-reading FOLLOW-613 + Rule AE):
+ * the staff-write atomicity guard (`scripts/check-staff-write-atomicity.cjs`) reports
+ * SKIP for THIS route, not OK. Its bounded import walk resolves only relative and
+ * `@/`-alias imports; the mutation here is DELEGATED to `upsertConversionLabel` imported
+ * from the `@estalara/db` PACKAGE BARREL, which the guard cannot follow — so it sees the
+ * inline `insert(staffAuditLog)` but no co-located mutation and classifies the write as an
+ * audit-of-a-read (SKIP, exit 0 — zero enforcement, NOT a CI failure). Unlike the sibling
+ * `intent-weights` route (which keeps its swap INLINE and therefore reads as OK), this
+ * route deliberately reuses the shared, CRM-path-shared `upsertConversionLabel` rather than
+ * re-declaring its precedence SQL (Rule H). The atomicity documented above IS real; it is
+ * proven PRIMARILY by the unit test "ROLLS BACK (no silent 200) when the staff audit insert
+ * fails inside the tx" (`../route.test.ts`), NOT by the guard. FOLLOW-613 — teaching the
+ * guard to follow `@estalara/db` package-barrel re-exports — flips this route to OK with no
+ * code change here; until it lands, that test is the load-bearing atomicity check for this
+ * write. (FOLLOW-597 makes this the FIRST live instance of the FOLLOW-613 barrel-SKIP class,
+ * which was filed as latent — see FOLLOW_UPS.md FOLLOW-613.)
+ *
  * Rule K.2 — fail loud:
  *   When DATABASE_URL_ADMIN is set but Postgres fails → 500 + Sentry capture.
  *   When DATABASE_URL_ADMIN is absent → 503 "database not configured" (not a silent mock).
@@ -45,8 +84,21 @@ import { isStaffClaims } from '@estalara/auth';
 // FOLLOW-555 (A3-F-04): accept the @supabase/ssr browser session in addition to the
 // Bearer/legacy-cookie path so a logged-in labels-page PATCH fetch() no longer 401s.
 import { getSessionAuthClaims } from '@/lib/session-auth';
-import { createAdminClient, conversionLabels, upsertConversionLabel } from '@estalara/db';
+import {
+  createAdminClient,
+  conversionLabels,
+  upsertConversionLabel,
+  staffAuditLog,
+} from '@estalara/db';
+import type { Database } from '@estalara/db';
 import { ConversionOutcomeClassSchema } from '@estalara/shared';
+
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
 
 // ─── Body schema ──────────────────────────────────────────────────────────────
 
@@ -244,17 +296,69 @@ export async function PATCH(
   const now = new Date();
 
   try {
-    await upsertConversionLabel(db, {
-      tenantId,
-      predictionId: existing.predictionId,
-      leadId: existing.leadId,
-      outcomeClass: outcome_class,
-      labelSource: 'manual_admin',
-      confidence: 1.0,
-      ...(notes !== undefined ? { notes } : {}),
-      labeledAt: now,
-    });
+    if (isStaff) {
+      // ── Atomic staff write (ADR-0018 §3a, FOLLOW-597) ───────────────────────
+      // The reclassification and its staff_audit_log row commit-or-roll-back
+      // TOGETHER in ONE db.transaction(), so a mutation can never outlive a
+      // missing/failed audit row (mirrors quiz/config POST, FOLLOW-605).
+      await db.transaction(async (tx) => {
+        await upsertConversionLabel(tx as unknown as Database, {
+          tenantId,
+          predictionId: existing.predictionId,
+          leadId: existing.leadId,
+          outcomeClass: outcome_class,
+          labelSource: 'manual_admin',
+          confidence: 1.0,
+          ...(notes !== undefined ? { notes } : {}),
+          labeledAt: now,
+        });
+        // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
+        // inside the tx (never fire-and-forget) so it commits atomically.
+        await tx.insert(staffAuditLog).values({
+          adminUserId: claims.sub,
+          action: 'conversion_label.reclassify',
+          targetTenantId: tenantId,
+          payload: { label_id: labelId, outcome_class, notes: notes ?? null },
+          ipAddress: requestIp(req),
+          userAgent: req.headers.get('user-agent'),
+        });
+      });
+    } else {
+      // Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only).
+      await upsertConversionLabel(db, {
+        tenantId,
+        predictionId: existing.predictionId,
+        leadId: existing.leadId,
+        outcomeClass: outcome_class,
+        labelSource: 'manual_admin',
+        confidence: 1.0,
+        ...(notes !== undefined ? { notes } : {}),
+        labeledAt: now,
+      });
+    }
   } catch (err: unknown) {
+    if (isStaff) {
+      // Any failure INSIDE the tx (the upsert OR the audit insert) rolls BOTH
+      // back — there is no orphan reclassification left behind. Fail loud:
+      // capture to Sentry and return 500, never a silent unattributed 200
+      // (Rule K.2). A retry is safe (idempotent upsert + a fresh audit row).
+      Sentry.captureException(err, {
+        tags: { admin_labels_patch_staff_audit_error: 'true' },
+        extra: { label_id: labelId, tenant_id: tenantId },
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: 'audit_write_failed',
+            message:
+              'The reclassification could not be recorded atomically with its staff ' +
+              'audit row; the change was rolled back and NOT applied. Retry the action.',
+          },
+        },
+        { status: 500 },
+      );
+    }
+
     const message = err instanceof Error ? err.message : String(err);
     Sentry.captureException(err, {
       tags: { admin_labels_patch_write_error: 'true' },

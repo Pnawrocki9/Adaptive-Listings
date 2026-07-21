@@ -1,16 +1,18 @@
 /**
- * Tests for GET /api/admin/labels + PATCH /api/admin/labels/[id] (FOLLOW-174).
+ * Tests for GET /api/admin/labels + PATCH /api/admin/labels/[id] (FOLLOW-174,
+ * FOLLOW-597).
  *
  * Coverage:
- *   - Auth gate: 401 for missing/invalid JWT, role enforcement
+ *   - GET: auth via `resolveTenantAccess` (ADR-0018 §2, FOLLOW-597) — 401/403/404
+ *     mapped from AccessError, tenant-filter proof, option-wiring assertion.
  *   - Mock fallback (data_source: 'mock') when DB/CH absent (Rule K.2)
  *   - Fail-loud: 500 when Postgres configured-but-fails (Rule K.2)
  *   - Fail-loud: 500 when ClickHouse configured-but-fails (Rule K.2)
- *   - Tenant_id pinning: agency user cannot query another tenant's data
- *   - Staff can supply tenant_id query param
  *   - PATCH: writes label_source=manual_admin, validates outcome_class Zod enum
  *   - PATCH: cross-tenant guard (agency user gets 404, not 403, to avoid leaking)
  *   - PATCH: 503 when DATABASE_URL_ADMIN absent
+ *   - PATCH staff branch (FOLLOW-597): staff_audit_log insert + db.transaction()
+ *     atomicity, rollback-on-audit-failure (ADR-0018 §3a)
  *   - Wired-entrypoint test (Rule Q): drives the route handler, not just helpers
  *
  * @module apps/control-plane/src/app/api/admin/labels/route.test
@@ -19,6 +21,7 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { AdminLabelsResponse } from './route-helpers';
+import type * as SessionAuthModule from '@/lib/session-auth';
 
 // ─── Mock modules ─────────────────────────────────────────────────────────────
 
@@ -52,6 +55,26 @@ vi.mock('@estalara/db', () => ({
     updatedAt: 'updated_at',
   },
   upsertConversionLabel: vi.fn(),
+  staffAuditLog: { __table: 'staff_audit_log' },
+}));
+
+// Partial mock (GET, FOLLOW-597): ONLY resolveTenantAccess is a spy; AccessError and
+// every other export (incl. getSessionAuthClaims, used by PATCH) stay real.
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
+
+// `eq(col, val)`/`and(...conds)` → plain tagged objects the DB mock reads `.val` off
+// of. This is how the MANDATORY tenant-filter test observes the REAL fence the route
+// binds (RETRO-187) — `.where()` is always mocked in this file (never real Postgres),
+// so swapping the real drizzle-orm builders for introspectable stand-ins does not
+// change any OTHER test's behavior (none of them inspect the `.where()` argument).
+vi.mock('drizzle-orm', () => ({
+  eq: vi.fn((col: unknown, val: unknown) => ({ tag: 'eq', col, val })),
+  and: vi.fn((...conds: unknown[]) => ({ tag: 'and', conds })),
+  gte: vi.fn((col: unknown, val: unknown) => ({ tag: 'gte', col, val })),
+  lte: vi.fn((col: unknown, val: unknown) => ({ tag: 'lte', col, val })),
 }));
 
 // @estalara/shared is used as-is (real Zod schemas) — no mock needed.
@@ -59,14 +82,16 @@ vi.mock('@estalara/db', () => ({
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import * as Sentry from '@sentry/nextjs';
 import { createAdminClient, upsertConversionLabel } from '@estalara/db';
+import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
 const mockIsStaffClaims = vi.mocked(isStaffClaims);
 const mockCreateAdminClient = vi.mocked(createAdminClient);
 const mockUpsertConversionLabel = vi.mocked(upsertConversionLabel);
 const mockCaptureException = vi.mocked(Sentry.captureException);
+const mockResolve = vi.mocked(resolveTenantAccess);
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers — PATCH (getAuthClaims/isStaffClaims, unchanged shape) ───────────
 
 function agencyAuth(tenantId = TENANT_ID) {
   mockGetAuthClaims.mockResolvedValue({
@@ -90,6 +115,42 @@ function staffAuth() {
     mfa_verified: true,
   });
   mockIsStaffClaims.mockReturnValue(true);
+}
+
+// ─── Helpers — GET (resolveTenantAccess fixtures, FOLLOW-597) ─────────────────
+
+function agencyAccess(tenantId = TENANT_ID): TenantAccess {
+  return {
+    via: 'agency',
+    tenantId,
+    claims: {
+      sub: 'user-uuid',
+      email: 'user@agency.com',
+      tenant_id: tenantId,
+      agency_role: 'agency:viewer',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
+  };
+}
+
+function staffAccess(tenantId: string): TenantAccess {
+  return {
+    via: 'staff',
+    tenantId,
+    staff: {
+      sub: 'staff-uuid',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: 'estalara:ops',
+      mfa_verified: true,
+    },
+    role: 'estalara:ops',
+    canWrite: true,
+    isSuperadmin: false,
+  };
 }
 
 function makeGetRequest(params?: Record<string, string>): NextRequest {
@@ -130,6 +191,7 @@ describe('GET /api/admin/labels', () => {
     delete process.env.DATABASE_URL_ADMIN;
     delete process.env.DATABASE_URL_DIRECT;
     delete process.env.CLICKHOUSE_URL;
+    mockResolve.mockResolvedValue(agencyAccess());
   });
 
   afterEach(() => {
@@ -141,25 +203,35 @@ describe('GET /api/admin/labels', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('returns 401 when JWT is absent', async () => {
-    mockGetAuthClaims.mockResolvedValue(null);
+  it('returns 401 when resolveTenantAccess throws AccessError(401)', async () => {
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     const { GET } = await import('./route.js');
     const req = new NextRequest('http://localhost/api/admin/labels');
     const res = await GET(req);
     expect(res.status).toBe(401);
   });
 
-  it('returns 400 when staff supplies no tenant_id param', async () => {
-    staffAuth();
+  it('returns 400 when staff supplies no tenant_id param (mapped from AccessError(400))', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(400, 'tenantId is required when allowStaffOverride is true'),
+    );
     const { GET } = await import('./route.js');
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('validation_error');
+    expect(body.error.code).toBe('bad_request');
+  });
+
+  it('option-wiring (FOLLOW-603 pattern): calls resolveTenantAccess with allowStaffOverride:true', async () => {
+    const { GET } = await import('./route.js');
+    await GET(makeGetRequest());
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true }),
+    );
   });
 
   it('returns 400 for invalid page_size (> 100)', async () => {
-    agencyAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeGetRequest({ page_size: '200' }));
     expect(res.status).toBe(400);
@@ -170,7 +242,6 @@ describe('GET /api/admin/labels', () => {
   // ── Mock path (no DB configured) ──────────────────────────────────────────
 
   it('returns mock data with data_source: mock when DATABASE_URL_ADMIN is unset', async () => {
-    agencyAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeGetRequest({ page: '1', page_size: '5' }));
     expect(res.status).toBe(200);
@@ -184,7 +255,6 @@ describe('GET /api/admin/labels', () => {
   // ── Real DB path ──────────────────────────────────────────────────────────
 
   it('returns data_source: real when DB is configured and query succeeds', async () => {
-    agencyAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = {
@@ -227,7 +297,6 @@ describe('GET /api/admin/labels', () => {
   // ── Fail-loud: Postgres configured-but-fails (Rule K.2) ───────────────────
 
   it('returns 500 and calls Sentry when Postgres configured but throws', async () => {
-    agencyAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = {
@@ -254,7 +323,6 @@ describe('GET /api/admin/labels', () => {
   // ── Fail-loud: ClickHouse configured-but-fails (Rule K.2) ─────────────────
 
   it('returns 500 and calls Sentry when ClickHouse configured but fetch fails', async () => {
-    agencyAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
@@ -300,7 +368,7 @@ describe('GET /api/admin/labels', () => {
   // ── Staff can supply tenant_id param ──────────────────────────────────────
 
   it('allows staff to supply tenant_id as a query param', async () => {
-    staffAuth();
+    mockResolve.mockResolvedValue(staffAccess(TENANT_ID));
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = {
@@ -321,6 +389,82 @@ describe('GET /api/admin/labels', () => {
     expect(res.status).toBe(200);
     const body = await parseBody<AdminLabelsResponse>(res);
     expect(body.data_source).toBe('real');
+  });
+
+  // ── MANDATORY tenant-filter test (ADR-0018 §2 invariant 5, RETRO-187) ─────
+  //
+  // Drives the route's REAL Drizzle query (not a pre-filtered local array): the
+  // DB mock keys a stateful per-tenant store on the value the route binds into
+  // `.where(eq(conversionLabels.tenantId, access.tenantId))`. A mis-fence (e.g.
+  // binding the wrong tenant) would key the wrong store slot and surface B's rows.
+
+  it('MANDATORY: staff request for tenant A binds eq(conversionLabels.tenantId, A) into the real query and never returns B’s rows', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_ID));
+    process.env.DATABASE_URL_ADMIN = 'postgres://test';
+
+    const rowsByTenant: Record<string, Record<string, unknown>[]> = {
+      [TENANT_ID]: [
+        {
+          id: LABEL_ID,
+          tenant_id: TENANT_ID,
+          prediction_id: 'pred-a',
+          lead_id: '',
+          outcome_class: 'viewing_booked',
+          label_source: 'system',
+          confidence: 1.0,
+          notes: null,
+          labeled_at: new Date('2026-06-01T10:00:00Z'),
+          created_at: new Date('2026-06-01T10:00:00Z'),
+          updated_at: new Date('2026-06-01T10:00:00Z'),
+        },
+      ],
+      [OTHER_TENANT_ID]: [
+        {
+          id: 'other-label-id',
+          tenant_id: OTHER_TENANT_ID,
+          prediction_id: 'pred-b',
+          lead_id: '',
+          outcome_class: 'lost',
+          label_source: 'system',
+          confidence: 0.4,
+          notes: null,
+          labeled_at: new Date('2026-06-02T10:00:00Z'),
+          created_at: new Date('2026-06-02T10:00:00Z'),
+          updated_at: new Date('2026-06-02T10:00:00Z'),
+        },
+      ],
+    };
+
+    // `fetchLabels` always builds `conditions = [eq(conversionLabels.tenantId, tenantId), ...]`
+    // then `and(...conditions)` — so `conds[0].val` is the REAL tenant fence the route bound.
+    let capturedWhereVal: string | null = null;
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn((cond: { tag: string; conds: { tag: string; val: string }[] }) => {
+            capturedWhereVal = cond.conds[0]!.val;
+            const tenantRows = rowsByTenant[capturedWhereVal] ?? [];
+            return { orderBy: vi.fn().mockResolvedValue(tenantRows) };
+          }),
+        }),
+      }),
+    };
+    mockCreateAdminClient.mockReturnValue(
+      mockDb as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeGetRequest({ tenant_id: TENANT_ID }));
+    const body = await parseBody<AdminLabelsResponse>(res);
+
+    // The fence bound into the REAL query is A, never B.
+    expect(capturedWhereVal).toBe(TENANT_ID);
+    expect(capturedWhereVal).not.toBe(OTHER_TENANT_ID);
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0]!.label.id).toBe(LABEL_ID);
+    expect(body.rows[0]!.label.tenant_id).toBe(TENANT_ID);
+    // Tenant B's row must never appear for a tenant-A-scoped request.
+    expect(body.rows.some((r) => r.label.tenant_id === OTHER_TENANT_ID)).toBe(false);
   });
 });
 
@@ -585,5 +729,150 @@ describe('PATCH /api/admin/labels/[id]', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('postgres_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PATCH — staff audit trail + atomicity (ADR-0018 §3/§3a, FOLLOW-597)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PATCH /api/admin/labels/[id] — staff audit trail + atomicity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.DATABASE_URL_ADMIN;
+    delete process.env.DATABASE_URL_DIRECT;
+  });
+
+  afterEach(() => {
+    delete process.env.DATABASE_URL_ADMIN;
+    delete process.env.DATABASE_URL_DIRECT;
+  });
+
+  const makeParams = (id: string) => Promise.resolve({ id });
+
+  /** Build a mock admin client whose select() resolves the existing row, and whose
+   * transaction() invokes the callback with a `tx` exposing `.insert(staffAuditLog)`. */
+  function makeStaffWriteDb(auditRows: Record<string, unknown>[]) {
+    const selectDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { id: LABEL_ID, tenantId: TENANT_ID, predictionId: 'pred-001', leadId: '' },
+              ]),
+          }),
+        }),
+      }),
+      transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const insertFn = vi.fn((_table: unknown) => ({
+          values: vi.fn((v: Record<string, unknown>) => {
+            auditRows.push(v);
+            return Promise.resolve([]);
+          }),
+        }));
+        return cb({ insert: insertFn });
+      }),
+    };
+    return selectDb;
+  }
+
+  it('a successful staff reclassify inserts exactly one staff_audit_log row (attributed) inside ONE db.transaction()', async () => {
+    staffAuth();
+    process.env.DATABASE_URL_ADMIN = 'postgres://test';
+    const auditRows: Record<string, unknown>[] = [];
+    const db = makeStaffWriteDb(auditRows);
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockUpsertConversionLabel.mockResolvedValue(undefined);
+
+    const { PATCH } = await import('./[id]/route.js');
+    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'purchased' }), {
+      params: makeParams(LABEL_ID),
+    });
+
+    expect(res.status).toBe(200);
+    expect(db.transaction).toHaveBeenCalledOnce();
+    // upsertConversionLabel was called INSIDE the tx (with the tx handle as 1st arg).
+    expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
+    expect(mockUpsertConversionLabel.mock.calls[0]![1].outcomeClass).toBe('purchased');
+    // Exactly one attributed staff_audit_log row.
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]!.adminUserId).toBe('staff-uuid');
+    expect(auditRows[0]!.action).toBe('conversion_label.reclassify');
+    expect(auditRows[0]!.targetTenantId).toBe(TENANT_ID);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('ROLLS BACK (no silent 200) when the staff audit insert fails inside the tx', async () => {
+    staffAuth();
+    process.env.DATABASE_URL_ADMIN = 'postgres://test';
+
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { id: LABEL_ID, tenantId: TENANT_ID, predictionId: 'pred-001', leadId: '' },
+              ]),
+          }),
+        }),
+      }),
+      transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+        const insertFn = vi.fn(() => ({
+          values: vi.fn().mockRejectedValue(new Error('audit sink down')),
+        }));
+        // Real Postgres/Drizzle rolls back the whole tx when the callback rejects
+        // (well-established Drizzle behavior — not independently re-provable from a
+        // mock; the load-bearing property under test here is that the ROUTE never
+        // returns a silent 200 when this rejection occurs).
+        return cb({ insert: insertFn });
+      }),
+    };
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockUpsertConversionLabel.mockResolvedValue(undefined);
+
+    const { PATCH } = await import('./[id]/route.js');
+    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'purchased' }), {
+      params: makeParams(LABEL_ID),
+    });
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('audit_write_failed');
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+
+  it('agency write does NOT open a transaction and is NOT audited', async () => {
+    agencyAuth();
+    process.env.DATABASE_URL_ADMIN = 'postgres://test';
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { id: LABEL_ID, tenantId: TENANT_ID, predictionId: 'pred-001', leadId: '' },
+              ]),
+          }),
+        }),
+      }),
+      transaction: vi.fn(),
+    };
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+    mockUpsertConversionLabel.mockResolvedValue(undefined);
+
+    const { PATCH } = await import('./[id]/route.js');
+    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'purchased' }), {
+      params: makeParams(LABEL_ID),
+    });
+
+    expect(res.status).toBe(200);
+    expect(db.transaction).not.toHaveBeenCalled();
+    // upsertConversionLabel called directly on `db` (not a tx handle) — unchanged shape.
+    expect(mockUpsertConversionLabel).toHaveBeenCalledWith(db, expect.anything());
   });
 });

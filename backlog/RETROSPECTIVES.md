@@ -30633,3 +30633,116 @@ mutation calls, reproduced via an uncommitted throwaway fixture) directly releva
 queued tickets (FOLLOW-597/598) and promoted CONVENTIONS_PATCH Rule AE. Filed FOLLOW-612 (P2) to
 close bypass 5. No P0/P1 before-go-live FOLLOW is open blocking any gate-close language (none was
 written this session). -->
+
+## RETRO-197 — FOLLOW-612 (close staff-write-atomicity guard bypass 5 — namespace/property-access import, PR #598, merged `c1028637ed4cdfb11642eebbf87f3ca8e5a6ddd2` 2026-07-21T18:07:18Z) — session-49 PM-orchestrator post-merge retro (Sonnet; no Task/Agent subagent tool available this session, same caveat as RETRO-194/195/196)
+
+**HEADLINE: the shipped fix genuinely closes bypass 5 and is independently verified LIVE on `main`,
+not just on the PR's own fixtures — but a distinct, previously-unenumerated 6th bypass exists in the
+SAME guard and is confirmed by fresh reproduction, not inference.** `collectFileFacts`'s
+`PropertyAccessExpression` branch (`scripts/check-staff-write-atomicity.cjs`) now checks, after the
+fixed method-name branches, whether the callee's object (`node.expression.expression`) is an
+identifier present in `localImportedIdentifierSources` — i.e. bound by either a named OR a namespace
+import — and if so queues it as a `localHelperCallCandidate` keyed by that object's name, resolved
+through the SAME `moduleContainsMutation` check bypass 4 already uses (no parallel resolution path,
+confirmed by reading the diff, not the PR's own description). Independently re-confirmed post-merge:
+`gh pr view 598` → MERGED `c102863…` 2026-07-21T18:07:18Z; `gh pr checks 598` re-pulled directly, all
+58 jobs PASS, only the documented pre-existing non-blocking `Rule I`; `bash
+scripts/__tests__/check-staff-write-atomicity.test.sh` re-run on `main` HEAD myself (not trusting the
+worker's or the operator's claimed output): **33/33 assertions PASS**, including the new
+`bypass5-namespace-import-delegated-mutation{,-out-of-tx}` pair (co-scoped → `OK`, out-of-tx →
+`FAIL`, never `SKIP`) and the real-repo scan unchanged (`demo/override` + `quiz/config` → `OK`,
+`admin/labels/export` → `SKIP`, no regression). A scoped `.gitleaks.toml` allowlist addition for the
+new 40+-char fixture directory name is CI-tooling only, verified against the actual gitleaks binary
+per the PR description, no functional-code implication.
+
+**ONE material NEW finding, found by direct reproduction (not inference), not a live defect today,
+but a real and immediately-relevant guard blind spot for the same two queued tickets bypass 5
+threatened:** the task brief asked whether the guard is now exhaustive over call shapes or whether a
+plausible bypass 6 exists (re-exported/aliased helpers, dynamic dispatch, computed member access).
+Built an uncommitted throwaway 3-file reproduction (route → barrel `index.ts` → real helper module;
+run in-repo under a disposable `_pm_throwaway_repro_bypass6/` directory, deleted before finishing,
+confirmed via `git status --short` that nothing was left behind) of a route that imports its
+delegated mutation helper THROUGH A BARREL RE-EXPORT
+(`import { upsertSomething } from '@/lib/stores'` where `src/lib/stores/index.ts` is
+`export * from './mutation-helper'`, the mutation living one file further in
+`src/lib/stores/mutation-helper.ts`). Result: **the guard prints `SKIP`, exit 0, for BOTH variants**
+— the mutation co-scoped inside the same `db.transaction()` as the audit insert (should be `OK`) AND
+the byte-identical route with the mutation call moved OUTSIDE the transaction (should be `FAIL`).
+Root cause read directly from the source, not guessed: `moduleContainsMutation`'s bounded (depth-3)
+walk resolves the barrel's path via `collectLocalImportedIdentifierSources` correctly, finds zero
+DIRECT `mutationCalls` in the barrel (correct — it has none), then tries to continue the walk via
+`collectLocalImports(barrelPath, …)` to follow the barrel's own imports — but `collectLocalImports`
+only visits `ts.isImportDeclaration` nodes; a barrel's `export * from '...'` is a
+`ts.isExportDeclaration` node, invisible to that function. The walk terminates with an empty queue,
+`moduleContainsMutation` returns `false`, and the delegated call is never promoted to
+`mutationCalls` — zero enforcement in BOTH directions, identical failure class to bypass 4/5, one
+further shape over. **This is not hypothetical for the same two queued tickets bypass 5 threatened**
+(FOLLOW-597 labels/intent-config, FOLLOW-598 bandit weights — the highest-blast-radius staff write):
+either worker choosing this repo's common barrel-index convention (seen today in `packages/*/src/
+index.ts`) for their new store-delegation helper would silently regress to zero atomicity
+enforcement while CI reports "passed," exactly as bypass 4/5 would have. Filed **FOLLOW-613** (P2,
+same severity class as FOLLOW-609/612) to close this 6th call-shape, and amended FOLLOW-597/598's AC:
+the interim "named-import-only" mitigation from RETRO-196 is now DROPPED (FOLLOW-612 covers both
+named and namespace imports), replaced with a "do not delegate through a barrel — import the helper
+module directly" interim mitigation pointing at FOLLOW-613, per the task's explicit instruction this
+session.
+
+**Is the guard now believed exhaustive?** No, and this retro does not claim so. Per the task's
+explicit instruction not to invent speculative tickets, only FOLLOW-613 is filed because it is the
+one gap this session could concretely reproduce. Two further shapes named in the task prompt and in
+Rule AE's own enumeration were considered but NOT filed as tickets because they could not be
+concretely demonstrated as a real, non-contrived risk this session: (1) **dynamic/computed member
+access** (`helper['upsertSomething'](tx, …)`) — plausible in principle (an `ElementAccessExpression`
+callee matches neither guard branch), but no current or plausible-near-term route in this repo has
+any reason to use bracket-notation dispatch on a fixed, statically-known helper name, so filing it
+now would be exactly the "speculative ticket" the brief said not to invent; flagging here so a future
+retro that finds a REAL instance doesn't have to re-derive the mechanism. (2) **re-exported/aliased
+named imports** (`import { upsertX as helper } from '...'`) — checked directly: NOT a bypass,
+`collectLocalImportedIdentifierSources` keys its map on `el.name.text`, which TypeScript's AST
+already resolves to the LOCAL (post-alias) binding name, so an aliased named import is transparently
+handled today (verified by reading the function, not assumed).
+
+**CONVENTIONS_PATCH: NO NEW PROMOTION — this IS Rule AE, not a new pattern.** Rule AE (promoted
+RETRO-196, 2026-07-21) already names "a re-exported wrapper" explicitly in its point-1 shape
+enumeration (`CONVENTIONS_PATCH.md` line ~1911) as one of the shapes a complete guard must cover.
+This retro's finding is direct, independent CONFIRMATION that the anticipated gap is real in the
+shipped guard — not a novel pattern requiring its own rule. Filing FOLLOW-613 and adding this
+evidence to the RETRO-197 record is the correct action per Rule AE point 4 ("if a fresh, independent
+reproduction finds the same class of gap one more call-shape over after a fix has shipped... state
+explicitly whether the class is then fully enumerated-and-guarded or still open") — stated here:
+**still open**, tracked by FOLLOW-613, not closed by this ticket.
+
+**WIRING:** no new production symbol/event/column beyond the CI-tooling script + fixtures + a
+`.gitleaks.toml` allowlist entry (step 5c N/A — internal dev-tooling script, not a production
+export). No co-assignment — step 5d N/A.
+
+**CASCADE:** FOLLOW-597 and FOLLOW-598 (both P3, `promoted_to_queue: false`, next in the
+operator-locked sequence) had their AC amended this session (dropped the closed named-import-only
+caveat, added the open barrel caveat) so the session that dispatches them does not skip this. No
+other in-flight PR touches `scripts/check-staff-write-atomicity.cjs`.
+
+**Process note (same caveat as RETRO-194/195/196):** written directly by the PM-orchestrator session
+(session 49), not a separately-invoked `retrospective-analyst` subagent — this session's tool
+environment exposed only Read/Write/Edit/Bash, no Task/Agent-spawning tool. Rigor aimed to match the
+existing bar (independent from-scratch reproduction of both the fix AND the new bypass, not the
+PR's/operator's claim taken on faith) but at Sonnet tier, not the Opus tier the model-fit table calls
+for on retrospectives specifically — flagging so a future session with Task-tool access can re-run
+an Opus-tier retrospective-analyst pass on this ticket if the operator wants a second opinion, and can
+independently re-assess whether the two NOT-filed shapes above (computed member access,
+already-checked-clean alias imports) deserve a ticket once/if a concrete instance appears.
+
+cross_ref: [RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-612, FOLLOW-613,
+ADR-0018, Rule AD, Rule AE]
+
+<!-- next free FOLLOW number: 614. next free RETRO number: 198. Session 49 (PM-orchestrator,
+Read/Write/Edit/Bash tools only — no Task/Agent subagent-spawning tool available) closed out
+FOLLOW-612 (PR #598, merged c102863) per operator instruction: marked DONE+MERGED in QUEUE.md/
+FOLLOW_UPS.md, independently re-verified the guard fix live on `main` (33/33 fixture assertions,
+bypass-5 OK/FAIL correct, no regression), filed RETRO-197. RETRO-197 found a genuine NEW guard blind
+spot (bypass 6 — barrel/`export *` re-export delegation, reproduced via an uncommitted throwaway
+fixture, cleaned up, git status confirmed clean) directly relevant to the same two queued tickets
+(FOLLOW-597/598) and confirmed it as Rule AE's own anticipated "re-exported wrapper" shape — NO new
+CONVENTIONS_PATCH rule promoted (Rule AE already covers this class). Filed FOLLOW-613 (P2) to close
+bypass 6; amended FOLLOW-597/598 AC to drop the now-closed named-import caveat and add the new
+barrel caveat. No P0/P1 before-go-live FOLLOW is open blocking any gate-close language (none was
+written this session). -->

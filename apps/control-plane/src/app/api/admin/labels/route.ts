@@ -14,10 +14,16 @@
  *   page          — 1-based page number (default: 1)
  *   page_size     — rows per page (default: 25, max: 100)
  *
- * Auth: verified Supabase JWT (HMAC-SHA-256).
- *   - Estalara staff (estalara_staff: true): may supply tenant_id query param.
- *   - Agency users (agency_role ≥ agency:admin): tenant_id is pinned from JWT claims;
- *     any supplied tenant_id query param is ignored (the JWT claim wins).
+ * Auth (ADR-0018 §2, FOLLOW-597): `resolveTenantAccess` with `allowStaffOverride`.
+ *   The agency path is byte-unchanged (tenant sourced ONLY from the session claim; any
+ *   supplied tenant_id query param is a cross-check only — a foreign tenant is 403,
+ *   matching the pre-existing "the JWT claim wins" behavior). An Estalara staff caller
+ *   may read any tenant by supplying an explicit `?tenant_id=<uuid>` — which is
+ *   validated against the `tenants` table (invariant 4) — and that validated id becomes
+ *   the SINGLE tenant fence bound into every query (invariant 5). This route uses
+ *   `createAdminClient()` (service-role, RLS BYPASSED) on the staff path, so the
+ *   explicit `eq(conversionLabels.tenantId, access.tenantId)` fence in `fetchLabels` is
+ *   the ONLY tenant boundary.
  *
  * Rule K.2 — fail loud:
  *   When CLICKHOUSE_URL is set but a query fails → HTTP 500 + Sentry capture.
@@ -40,10 +46,8 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { and, eq, gte, lte } from 'drizzle-orm';
 
-import { isStaffClaims } from '@estalara/auth';
-// FOLLOW-555 (A3-F-04): accept the @supabase/ssr browser session in addition to the
-// Bearer/legacy-cookie path so a logged-in labels-page fetch() no longer 401s.
-import { getSessionAuthClaims } from '@/lib/session-auth';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import { ConversionOutcomeClassSchema, type ConversionOutcomeClass } from '@estalara/shared';
 
@@ -259,36 +263,21 @@ async function fetchLabels(
  * @returns 500 when Postgres or ClickHouse is configured but fails (Rule K.2).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const claims = await getSessionAuthClaims(req);
-  if (!claims) {
-    return NextResponse.json(
-      { error: { code: 'unauthorized', message: 'Valid Bearer JWT is required' } },
-      { status: 401 },
-    );
+  // ── Auth + tenant resolution (ADR-0018 §2, FOLLOW-597) ────────────────────
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes (RETRO-189): omit the key when absent rather than
+      // passing `undefined`, so a staff caller without ?tenant_id reaches resolve's 400.
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  // ── Resolve tenant_id (tenant JWT wins; staff may supply query param) ─────
-  let tenantId: string;
-  if (isStaffClaims(claims)) {
-    // Staff: tenant_id must come from query param.
-    const rawTenantId = req.nextUrl.searchParams.get('tenant_id');
-    if (!rawTenantId) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: 'Staff callers must supply tenant_id query param',
-          },
-        },
-        { status: 400 },
-      );
-    }
-    tenantId = rawTenantId;
-  } else {
-    // Agency user: tenant_id pinned from verified JWT claims.
-    tenantId = claims.tenant_id;
-  }
+  const tenantId = access.tenantId;
 
   // ── Parse + validate query params ─────────────────────────────────────────
   const rawParams = Object.fromEntries(req.nextUrl.searchParams.entries());

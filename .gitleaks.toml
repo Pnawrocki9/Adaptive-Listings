@@ -187,6 +187,13 @@ regexes = [
   # substrings false-positive on this generic heuristic. Token-scoped allowlist per Rule V — do NOT
   # path-ignore the secret-handling file. Real Cloudflare tokens are random, never ADR-NNNN-kebab.
   '''ADR-\d{4}-[a-z0-9-]+''',
+  # FOLLOW-609: the bypass-4 CI-guard fixture directory name
+  # `bypass4-helper-delegated-mutation-out-of-tx` (43 chars) — cited in the fixture's
+  # own doc comment, its sibling fixture's doc comment, and the test harness's
+  # run_fixture() call — false-positives on this generic 40-char entropy heuristic
+  # (same class as the ADR-NNNN-kebab and agent-branch-slug entries above). Not a
+  # secret — a descriptive fixture/test identifier. Token-scoped per Rule V.
+  '''bypass4-helper-delegated-mutation(-out-of-tx)?''',
 ]
 
 # JWT tokens (generic)

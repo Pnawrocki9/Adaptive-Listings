@@ -16370,6 +16370,13 @@ cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-598, ADR-0018]
 source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: false
 
+**Sequencing (session 44, operator-ratified):** deferred until AFTER FOLLOW-597/598 land — locked
+order FOLLOW-608 → FOLLOW-609 → FOLLOW-597/598 → **FOLLOW-606**. Wiring the hub link once, after
+both remaining Phase-2/3 write ports (597/598) have shipped their own
+`/admin/tenants/[id]/<feature>` pages, avoids touching the landing file 3 separate times for
+demo/labels/bandit and lets this ticket link all of them (including FOLLOW-596's already-shipped
+`/demo`) in one pass.
+
 **Gap (RETRO-190 §5b + §8):** the `/admin/tenants/[id]` landing (`page.tsx`) links only to tracer /
 tracer/history / tracer/export. The FOLLOW-594 `/analytics` staff page and the FOLLOW-595 `/quiz`
 staff page are reachable by DIRECT URL only — no hub link. This RECONCILES RETRO-189 §8's incorrect
@@ -16456,20 +16463,23 @@ reasoning tier that applies to the staff-write _routes themselves_ (ADR-0018 pre
 592/594/595/596 because those touch the RLS-bypassed data path). This ticket only hardens the
 guard's own matching logic — no production route/query is touched.
 
-**Sequencing decision (session 44, PM-orchestrator call, absorbing RETRO-193 §5b/§5d):** promoted
-AHEAD of FOLLOW-597 (next Phase-2 write port in the prior plan) and paired with FOLLOW-609 (dup-
-elimination) landing next. Rationale: RETRO-193 found the FOLLOW-607 guard's presence-not-scope
-design FORCED FOLLOW-596 to inline-duplicate `demo-override-store.upsertDemoOverride` with zero
-parity guard (LG-1) — and flagged this as SYSTEMIC: FOLLOW-597 (labels/intent-config store) and
-FOLLOW-598 (bandit weights, the highest-blast-radius write) will each inline-duplicate their own
-store for the identical guard-avoidance reason unless 608 (scope-aware guard) + 609 (tx-aware
-delegated write) land first. Landing 597 before 608/609 would (a) create a 3rd duplicated write
-shape to retrofit instead of 1, and (b) let the highest-risk ticket (598) inherit an established
-"inline-and-duplicate" precedent from _two_ prior tickets instead of zero. This is ordinary backlog
-resequencing (not an architectural/pricing/compliance call) — reversible, PR-gated, and every
-affected ticket (597, 598) is otherwise unblocked and simply moves down one slot. Flagging it
-explicitly here (and in QUEUE.md) so the operator can override on merge review if they'd rather
-prioritize feature-port velocity over closing the duplication class first.
+**Sequencing decision (session 44, PM-orchestrator call, absorbing RETRO-193 §5b/§5d; RATIFIED by
+operator Piotr same session):** locked order **FOLLOW-608 → FOLLOW-609 → FOLLOW-597/598 →
+FOLLOW-606**. Promoted 608 AHEAD of FOLLOW-597 (next Phase-2 write port in the prior plan) and
+paired with FOLLOW-609 (dup-elimination) landing next; hub-linkage (FOLLOW-606) explicitly deferred
+until after 597/598, not interleaved with the P3 backlog. Rationale: RETRO-193 found the FOLLOW-607
+guard's presence-not-scope design FORCED FOLLOW-596 to inline-duplicate
+`demo-override-store.upsertDemoOverride` with zero parity guard (LG-1) — and flagged this as
+SYSTEMIC: FOLLOW-597 (labels/intent-config store) and FOLLOW-598 (bandit weights, the
+highest-blast-radius write) will each inline-duplicate their own store for the identical
+guard-avoidance reason unless 608 (scope-aware guard) + 609 (tx-aware delegated write) land first.
+Landing 597 before 608/609 would (a) create a 3rd duplicated write shape to retrofit instead of 1,
+and (b) let the highest-risk ticket (598) inherit an established "inline-and-duplicate" precedent
+from _two_ prior tickets instead of zero. This is ordinary backlog resequencing (not an
+architectural/pricing/compliance call) — reversible, PR-gated, and every affected ticket (597, 598)
+is otherwise unblocked and simply moves down one slot. Flagging it explicitly here (and in QUEUE.md)
+so the operator can override on merge review if they'd rather prioritize feature-port velocity over
+closing the duplication class first.
 
 **Gap:** `scripts/check-staff-write-atomicity.sh` (FOLLOW-607) is a file-level PRESENCE check — it
 verifies `.transaction(` appears _somewhere_ in a staff-audited-write route, NOT that the audited

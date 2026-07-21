@@ -4488,3 +4488,74 @@ FOLLOW-605 reference route and the agency-only/export routes are unaffected, (c)
 result (which routes use `staff-write-atomicity-exempt:` today, and confirmation none are
 rank-3/superadmin-only). PM independently re-runs the test harness + re-verifies CI green before
 READY_FOR_REVIEW — do not mark DONE yourself.
+
+## Bounce-back — FOLLOW-608 CI-wiring gap found in PM verification (session 45, 2026-07-21)
+
+**From:** pm-orchestrator (session 45) **To:** backend-engineer (same ticket, same branch
+`backend-engineer/FOLLOW-608-staff-write-atomicity-scope`)
+
+**Context:** recovered a prior worker session's uncommitted output on this branch (no PR opened, no
+crash — just left uncommitted). Followed `docs/AGENT_WORKFLOW.md` "Recovered-work re-verification":
+confirmed branch (not `main`), confirmed `main` was clean (nothing else stranded), independently
+re-ran `bash scripts/__tests__/check-staff-write-atomicity.test.sh` myself (25/25 assertions pass,
+all 3 bypass fixtures + qualified-form + exempt-ok/disallowed all behave as the AC requires — the
+detection logic is correct and complete). Checkpointed the good work in two commits (`8c5f248` code,
+`345c285` backlog bookkeeping) rather than opening a PR, because independent verification surfaced a
+real gap that must close before this is PR-ready.
+
+**The gap:** `scripts/check-staff-write-atomicity.cjs` does `require('typescript')`. The
+`.github/workflows/ci.yml` `staff-write-atomicity` job (lines ~464-474) only runs
+`actions/checkout@v4` — no `pnpm/action-setup`, no `actions/setup-node`, no
+`pnpm install --frozen-lockfile` — unlike every other node-dependent job in this workflow (`lint`,
+`typecheck`, `test-node`, `build`, `build-control-plane`, `format`, `tracer-query-smoke`,
+`corpus-gate`, `cross-language-contract`, `archetype-seeds-complete`,
+`archetype-embeddings-not-null` all install first). This job previously worked with zero install
+because the FOLLOW-607 guard was pure bash/grep. **Reproduced locally:** temporarily moved aside
+`node_modules/` and ran `node scripts/check-staff-write-atomicity.cjs` — hard crash,
+`Error: Cannot find module 'typescript'`, `MODULE_NOT_FOUND`, exit code 1. On a fresh CI checkout
+(no install step), this is exactly what will happen on every single PR from now on — a hard,
+non-soft-skip gate (`staff-write-atomicity` has no `continue-on-error`) that will NEVER pass again
+once this merges, blocking the entire pipeline for every future ticket.
+
+**Fix required (narrow, mechanical — same model-fit as the rest of this ticket, SONNET):** add the
+missing setup steps to the `staff-write-atomicity` job in `.github/workflows/ci.yml`, mirroring the
+exact pattern already used by the `lint` job (`.github/workflows/ci.yml` ~L76-93, minus the
+`TURBO_TOKEN`/`TURBO_TEAM` env and the "Build shared package" step, neither of which this guard
+needs):
+
+```yaml
+staff-write-atomicity:
+  name: Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+
+    - uses: pnpm/action-setup@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Run staff-write atomicity check
+      run: bash scripts/check-staff-write-atomicity.sh
+
+    - name: Run red-first fixture proof
+      run: bash scripts/__tests__/check-staff-write-atomicity.test.sh
+```
+
+**Non-negotiable scope constraints (unchanged from the original brief):** do not touch any
+`apps/control-plane/src/app/api/**/route.ts` production file; do not touch FOLLOW-609; the detection
+logic in `check-staff-write-atomicity.cjs` is already verified correct — do not modify it unless you
+find an actual defect (if you do, flag it, don't silently rewrite).
+
+**Completion:** after adding the CI steps, run locally
+`bash scripts/__tests__/check-staff-write-atomicity.test.sh` (must still be 25/25), then
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, prettier on any touched
+file, conventional commit `[FOLLOW-608]`, push, open the PR (never commit to `main`), and note in
+the PR description that this job previously had no `pnpm install` step and the fix adds it. PM
+re-runs `gh pr checks <pr> --watch` and independently confirms the `staff-write-atomicity` job is
+actually green (not just present) before marking READY_FOR_REVIEW.

@@ -10,11 +10,23 @@ Two-tier chat NLP pipeline (Master Design §C.3):
 Both tiers produce the identical 12-dim ChatIntentDetectedPayload (schemas.py)
 and write to the Redis SHADOW namespace only (shadow:{tenant}:{session}:chat_intent).
 No live adaptation reads this in Sprint 13 — shadow-only by design.
+
+F-01 / ADR-0016 pilot path (2026-07-21):
+  Redpanda Cloud Serverless has no HTTP Proxy, so stream-consumer never receives
+  chat.message.sent events in prod. The ingest Worker POSTs directly to
+  chat_nlp_endpoint (authenticated Modal web endpoint below), which spawns
+  process_chat_message — same pattern as llm-gateway description_requested_endpoint.
 """
 
 from __future__ import annotations
 
+import hmac
+import os
+from typing import Any
+
 import modal
+from fastapi import Body, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 SERVICE_NAME = "estalara-intent-engine"
 SERVICE_VERSION = "0.1.0"
@@ -25,7 +37,11 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "anthropic>=0.28",
     "upstash-redis>=1.0",
     "pydantic>=2.7",
+    "fastapi>=0.110",
 )
+
+# Required JSON keys for chat_nlp_endpoint (mirrors stream-consumer _spawn_chat_nlp args).
+_CHAT_NLP_REQUIRED = frozenset({"tenant_id", "session_id", "message"})
 
 
 @app.function(image=image, secrets=[modal.Secret.from_name("estalara-secrets")])
@@ -49,8 +65,6 @@ def process_chat_message(
         The ChatIntentDetectedPayload as a dict (also written to Redis shadow
         unless profiling_opt_out is True).
     """
-    import os
-
     from nlp import extract_intent
     from redis_writer import write_shadow_intent
 
@@ -61,6 +75,79 @@ def process_chat_message(
     payload.session_id = session_id
     write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
     return payload.model_dump()
+
+
+def _valid_bearer(authorization: str | None) -> bool:
+    """Validate ``Authorization: Bearer <INTERNAL_API_SECRET>`` (constant-time).
+
+    Fails closed when the secret is unset/empty or the header is missing/wrong.
+    Mirrors llm-gateway ``description_requested_endpoint`` auth (ADR-0016).
+    """
+    expected = os.environ.get("INTERNAL_API_SECRET", "")
+    if not expected or not authorization:
+        return False
+    scheme, _, token = authorization.partition(" ")
+    if scheme != "Bearer" or not token:
+        return False
+    return hmac.compare_digest(token, expected)
+
+
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("estalara-secrets")],
+    timeout=30,
+)
+@modal.fastapi_endpoint(method="POST")
+async def chat_nlp_endpoint(
+    body: dict[str, Any] = Body(...),
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    """POST — direct-invocation replacement for Redpanda → stream-consumer spawn.
+
+    Auth: ``Authorization: Bearer <INTERNAL_API_SECRET>``.
+    Body: ``tenant_id``, ``session_id``, ``message`` ({role, content}), optional
+    ``profiling_opt_out`` (bool, default false). Spawns ``process_chat_message``
+    fire-and-forget and returns 202.
+
+    Does NOT flip CHAT_NLP_LIVE — shadow Redis write only; directives stay gated.
+    """
+    if not _valid_bearer(authorization):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    missing = _CHAT_NLP_REQUIRED - set(body.keys())
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"missing required fields: {sorted(missing)}",
+        )
+
+    message = body.get("message")
+    if not isinstance(message, dict) or not str(message.get("content", "")).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="message must be an object with non-empty content",
+        )
+
+    tenant_id = str(body["tenant_id"]).strip()
+    session_id = str(body["session_id"]).strip()
+    if not tenant_id or not session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id and session_id must be non-empty strings",
+        )
+
+    profiling_opt_out = bool(body.get("profiling_opt_out", False))
+
+    process_chat_message.spawn(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        message={
+            "role": str(message.get("role") or "user"),
+            "content": str(message["content"]),
+        },
+        profiling_opt_out=profiling_opt_out,
+    )
+    return JSONResponse(status_code=202, content={"status": "accepted"})
 
 
 def get_service_info() -> dict[str, str]:

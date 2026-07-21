@@ -142,3 +142,7 @@ max_batch_timeout = 5
 # Secrets set via `wrangler secret put`:
 #   SENTRY_DSN_INGEST      — Sentry DSN for ingest project
 #   OTEL_EXPORTER_HEADERS  — Authorization header for Grafana Cloud OTLP
+#   INTERNAL_API_SECRET    — Bearer shared with Modal chat_nlp_endpoint (F-01)
+#   MODAL_CHAT_NLP_URL     — HTTPS URL of intent-engine chat_nlp_endpoint (F-01 / ADR-0016)
+#     e.g. https://<workspace>--estalara-intent-engine-chat-nlp-endpoint.modal.run
+#     Empty = skip chat-NLP dispatch (shadow path stays inert until provisioned).

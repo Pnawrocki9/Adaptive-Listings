@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Red-first proof for scripts/check-staff-write-atomicity.sh (FOLLOW-607, tightened
-# to scope-aware by FOLLOW-608, mutation-detection extended by FOLLOW-609).
+# to scope-aware by FOLLOW-608, mutation-detection extended by FOLLOW-609/FOLLOW-612).
 #
 # Runs the guard against the committed fixtures under
 # scripts/__fixtures__/staff-write-atomicity/ and asserts the exit code each
@@ -20,6 +20,16 @@
 #   bypass4-helper-delegated-mutation-out-of-tx/ same delegated-helper
 #                                               mutation, OUTSIDE the tx that
 #                                               wraps the audit insert         -> exit 1
+#   bypass5-namespace-import-delegated-mutation/ same delegated-mutation
+#                                               shape as bypass 4, but a
+#                                               NAMESPACE import
+#                                               (`helper.upsertX(tx, ...)`),
+#                                               in ONE tx with the audit
+#                                               insert                        -> exit 0
+#   bypass5-namespace-import-delegated-mutation-out-of-tx/ same
+#                                               namespace-delegated mutation,
+#                                               OUTSIDE the tx that wraps the
+#                                               audit insert                   -> exit 1
 #
 # Also proves (FOLLOW-608 AC 4, whitespace hardening) via a dynamically
 # generated, non-committed fixture (so prettier's format-on-commit never
@@ -131,6 +141,19 @@ run_fixture "exempt-ok" 0 "EXEMPT:"
 # be zero enforcement in the opposite direction).
 run_fixture "bypass4-helper-delegated-mutation" 0 "OK:"
 run_fixture "bypass4-helper-delegated-mutation-out-of-tx" 1 "FAIL:"
+
+# ─── FOLLOW-612 bypass 5 (namespace/property-access delegated mutation, RETRO-196) ──
+# Red-first proof: pre-FOLLOW-612, the SAME delegated-mutation shape as bypass 4
+# but imported as a NAMESPACE (`import * as helper from ...`) and called via
+# property access (`helper.upsertX(tx, ...)`) was invisible to
+# collectFileFacts — the PropertyAccessExpression branch only recognised the
+# fixed method names transaction/insert/update/delete/execute, so
+# `upsertSomething` fell through both classification paths silently
+# (misclassified SKIP even when co-scoped with the audit insert in one
+# db.transaction()). The fixed guard must OK the co-scoped variant and FAIL
+# the out-of-tx variant (not SKIP it).
+run_fixture "bypass5-namespace-import-delegated-mutation" 0 "OK:"
+run_fixture "bypass5-namespace-import-delegated-mutation-out-of-tx" 1 "FAIL:"
 
 # ─── FOLLOW-608 AC 4: whitespaced audit-insert form (dynamic, non-committed) ──
 # Not a committed fixture: `.insert( staffAuditLog )` would be reformatted to

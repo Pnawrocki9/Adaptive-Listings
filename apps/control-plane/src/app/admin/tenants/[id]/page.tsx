@@ -12,7 +12,7 @@
  * tenant as missing or fabricating its data.
  *
  * Hub-links every per-tenant staff surface shipped so far (Analytics, Quiz
- * config, Demo Mode, Labels, Intent Weights) alongside the K.3.6 Tracer
+ * config, Demo Mode, Labels, Intent Weights, Audit Log) alongside the K.3.6 Tracer
  * surfaces (FOLLOW-606). Bandit weights live inside the Analytics resume
  * action, not as a standalone page. New per-tenant surfaces should add
  * their landing link here in the same PR (FOLLOW-606 AC).
@@ -123,6 +123,12 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
             className="text-purple-600 underline hover:text-purple-800"
           >
             Intent Weights
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/audit`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Audit Log
           </Link>
         </div>
       </div>

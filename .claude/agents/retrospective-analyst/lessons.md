@@ -3038,3 +3038,23 @@ so.**
   exists), so the barrel-SKIP simply can't fire for it. The guard-coverage risk only exists where a
   route DELEGATES through a package barrel; inline mutations are always visible. Check the actual
   call-shape before recommending a sequencing constraint.
+
+## 2026-07-21 · RETRO-199 (FOLLOW-598, PR #600)
+
+- **A finding I almost missed and why:** I nearly conflated two DIFFERENT wires for the same write.
+  The bandit resume IS wired end-to-end on the _business_ axis (`paused=false` → `getBanditArms` →
+  `/api/adapt`), which felt like "wiring clean" — but the _audit_ of that write is NOT wired
+  (consumer `/api/audit` is still `MOCK_ENTRIES`). Had to force myself to record producer→consumer
+  separately for the business wire vs the audit wire. Lesson: "the write is wired" ≠ "the audit of
+  the write is wired" — always split them in §3.
+- **An axis/chain I had to trace twice:** the superadmin-gate ordering. First pass I confirmed the
+  gate sits before the mock path structurally in the diff; second pass I went to the TEST to confirm
+  it's ASSERTED (`DATABASE_URL=''` + ops-staff→403). Structure alone doesn't prove a
+  below-superadmin caller can't get a mock-200; the test does. Don't declare ordering-safe from the
+  diff without the negative test.
+- **A meta-pattern in how gaps recur across agents:** the "inline vs barrel-delegated staff
+  mutation" guard-coverage fork now appears in two consecutive retros (597 barrel→SKIP, 598
+  inline→OK). It LOOKS promotable at count 2, but it's a transient artifact of FOLLOW-613 (guard
+  can't follow `export *`) — the moment 613 lands, the fork disappears. Meta-lesson: a pattern that
+  only exists because a known open ticket hasn't landed is NOT a durable convention; resist
+  promoting it. Rule AE + FOLLOW-613 already own it.

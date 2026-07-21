@@ -16196,12 +16196,31 @@ surfaces; agency paths unchanged.
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-606, FOLLOW-609, FOLLOW-612,
 FOLLOW-613, RETRO-187, RETRO-196, RETRO-197]
 
-## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3) — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/OPUS, isolated worktree, branch `backend-engineer/FOLLOW-598-bandit-superadmin-write-port`)
+## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3) — ✅ DONE + MERGED (PR #600, squash `a9e1923`, merged 2026-07-21T21:08:47Z; RETRO-199)
 
 source_adr: ADR-0018 §6 Phase 3 + Resolved Q3 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: true (dispatched session 50;
-model-fit override stub's default → OPUS: security-sensitive + HIGHEST blast radius, though
-well-scoped by the 595/597 audited-write precedents)
+backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: true (dispatched + landed
+session 50; model-fit override stub's default → OPUS: security-sensitive + HIGHEST blast radius,
+though well-scoped by the 595/597 audited-write precedents)
+
+**STATUS: DONE.** Merged to `main` via PR #600 (squash `a9e1923`, 4 files, +589/-145, no
+migrations). Dispatched to backend-engineer/OPUS in an isolated worktree, PM-validated independently
+before merge (read the actual diff, ran `node scripts/check-staff-write-atomicity.cjs` MYSELF on the
+branch AND on merged `main` → bandit route prints **`OK`**, never SKIP; confirmed the MANDATORY
+invariant-5 WRITE tenant-fence + superadmin-403 + rollback + agency-unchanged tests exist and assert
+the real query), CI green (59 gates pass, only non-blocking `Rule I` red). Post-merge: synced
+`main`, removed the agent worktree + stale local branch, re-ran the guard on `main` (no regression).
+RETRO-199: all 4 hunt targets clean; **this COMPLETES the ADR-0018 staff-WRITE-PORT sequence
+(592→598 all merged — NO staff write ports remain)**; 0 code bugs, 0 new tickets, no rule promoted.
+Shipped: bandit PATCH `tenants/[id]/bandit/weights/[archetype]` ported to staff (superadmin-only via
+`access.isSuperadmin`, gate placed BEFORE the mock path; `createAdminClient()` + one
+`db.transaction()` with the INLINE `.update(abBanditWeights)` mutation + `staffAuditLog` action
+`bandit_weights.resume`, atomic rollback→500; agency path byte-unchanged) + the GLOBAL
+`generation-model` PUT tightened to `estalara:superadmin` (`ADMIN_API_SECRET` automation path
+exempt + documented). Successor items (all pre-existing, all NON-write, none new): FOLLOW-599 (audit
+consumer half-wire — now 5 producer actions incl. `bandit_weights.resume`), FOLLOW-606 (hub-links —
+its 597/598 sequencing dependency now SATISFIED → unblocked), FOLLOW-613 (guard barrel-bypass — now
+protects the `labels/[id]` SKIP alone; 598 added no new SKIP).
 
 **Gap:** bandit weight PATCH directly steers live adaptation for a tenant — the highest-blast-radius
 staff write. CEO Q3 ruling: requires `estalara:superadmin` (rank ≥ 3), not merely ops.

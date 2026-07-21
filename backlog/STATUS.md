@@ -37,6 +37,12 @@ else outstanding on this ticket.
   Flagged explicitly in QUEUE.md/FOLLOW_UPS.md so the operator can override on the next review if
   they'd rather prioritize feature-port velocity.
 
+**Operator ruling (Piotr, same session, post-dispatch-write-up):** sequencing CONFIRMED as proposed
+and LOCKED: **FOLLOW-608 → FOLLOW-609 → FOLLOW-597/598 → FOLLOW-606**. Updated `QUEUE.md` and
+`FOLLOW_UPS.md` (FOLLOW-608/606 entries) to record the ruling explicitly and correct the prior draft
+ordering, which had listed FOLLOW-606 among the "remaining P3s" interleaved before 597 rather than
+strictly after 597/598 — operator's ruling is more precise and now the sole ordering of record.
+
 **Task 3/4 — dispatch:** delegation-table row used — "a contract between two modules, a new
 dependency, an ADR" does NOT apply here; this is CI-guard tooling under ADR-0018's existing scope,
 so routed per the **backend-engineer** row (ingest/control-plane/decision-api/Postgres/RLS/auth

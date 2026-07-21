@@ -36,9 +36,18 @@ for staff-write _routes_ touching the RLS-bypassed data path, e.g. 592/594/595/5
 Full delegation brief: `backlog/HANDOFFS.md` "Delegation brief — FOLLOW-608 (session 44,
 2026-07-21)". Branch: `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`.
 
-**Next after FOLLOW-608 merges:** dispatch FOLLOW-609 (de-dup the demo-override write, backend-
-engineer, P2), then FOLLOW-597 (labels/intent-config staff port), then the remaining P3s
-(604/606/602/603), then FOLLOW-598/599/600. Next-free FOLLOW id = **610**.
+**OPERATOR RULING (Piotr, 2026-07-21, session 44) — sequencing locked:** FOLLOW-608 → FOLLOW-609 →
+FOLLOW-597/598 → FOLLOW-606. The systemic-duplication fix (608 scope-aware guard, then 609 de-dup)
+goes AHEAD of the further staff-write ports (597/598); hub-wiring (606) comes AFTER those, not
+interleaved with the P3 backlog as the prior draft ordering suggested. This supersedes the
+"remaining P3s (604/606/602/603)" ordering below — 606 specifically is deferred until after 597/598;
+604/602/603 are unordered relative to that spine and can be picked opportunistically. Next-free
+FOLLOW id = **610**.
+
+**Sequence after FOLLOW-608 merges:** dispatch FOLLOW-609 (de-dup the demo-override write, backend-
+engineer, P2) next, then FOLLOW-597 (labels/intent-config staff port), then FOLLOW-598 (bandit
+weights, superadmin-only), then FOLLOW-606 (hub-linkage). FOLLOW-604/602/603 can be slotted in
+opportunistically alongside this spine; FOLLOW-599/600 remain after.
 
 ---
 

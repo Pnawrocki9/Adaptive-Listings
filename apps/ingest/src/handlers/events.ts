@@ -27,6 +27,7 @@ import { authenticateRequest } from '../auth.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
+import { dispatchChatNlp } from './chat-nlp-dispatch.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
 import { logger } from '../observability/logger.js';
 import { checkRateLimit } from '../rate-limiter.js';
@@ -281,6 +282,8 @@ events.post('/', async (c) => {
   // 6. Per-type side-effect handlers (fire-and-forget via waitUntil).
   //
   // intent.snapshot — dual-write to ClickHouse intent_events + Supabase intent_sessions.
+  // chat.message.sent — direct Modal HTTPS → intent-engine chat_nlp_endpoint (F-01 /
+  //   ADR-0016). Bypasses Redpanda/stream-consumer which are inert on Serverless.
   // These writes are non-blocking: ingest ACK is returned to the SDK regardless of
   // whether they succeed. Failures are logged to console/Sentry.
   for (const evt of validated) {
@@ -335,6 +338,49 @@ events.post('/', async (c) => {
       // If waitUntil is unavailable (test env), the promise is still dispatched;
       // it will resolve before the Worker exits on a hot-path because handleIntentSnapshot
       // itself awaits both writes.
+    }
+
+    if (evt.type === 'chat.message.sent') {
+      const waitUntil = getWaitUntil(c);
+      const sessionIdStr =
+        typeof evt.session_id === 'string'
+          ? evt.session_id
+          : typeof evt.session_id === 'number'
+            ? String(evt.session_id)
+            : '';
+      const chatPayload = evt.payload as {
+        message?: unknown;
+        profiling_opt_out?: unknown;
+      };
+      const messageText = typeof chatPayload.message === 'string' ? chatPayload.message : '';
+      const profilingOptOut = chatPayload.profiling_opt_out === true;
+      const dispatchPromise = dispatchChatNlp(
+        {
+          tenant_id: tenantId,
+          session_id: sessionIdStr,
+          message_text: messageText,
+          profiling_opt_out: profilingOptOut,
+        },
+        c.env,
+      );
+      if (waitUntil) {
+        waitUntil(
+          dispatchPromise.catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(
+              JSON.stringify({
+                event: 'chat_nlp_dispatch_threw',
+                tenant_id: tenantId,
+                error: msg,
+              }),
+            );
+            Sentry.captureException(err instanceof Error ? err : new Error(msg), {
+              tags: { area: 'chat-nlp', sink: 'handler', kind: 'unexpected_throw' },
+              extra: { tenant_id: tenantId },
+            });
+          }),
+        );
+      }
     }
   }
 

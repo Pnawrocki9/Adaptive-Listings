@@ -8,6 +8,7 @@ import type { DurableObjectNamespace, KVNamespace } from '@cloudflare/workers-ty
 
 import type { ClickHouseProducerEnv } from './clickhouse-producer.js';
 import type { EventsRetryQueueEnv } from './events-retry-queue.js';
+import type { ChatNlpDispatchEnv } from './handlers/chat-nlp-dispatch.js';
 import type { IntentSnapshotEnv } from './handlers/intent-snapshot.js';
 import type { ObservabilityEnv } from './observability.js';
 import type { RateLimiterEnv } from './rate-limiter.js';
@@ -27,6 +28,7 @@ import type { RedpandaProducerEnv } from './redpanda-producer.js';
  * - KV namespace binding for idempotency key deduplication (TICKET-019, 24h TTL)
  * - Durable Object namespace binding for the per-tenant rate limiter (TICKET-013)
  * - Supabase config for intent-snapshot dual-write (FOLLOW-266)
+ * - Modal chat-NLP direct invoke (F-01 / ADR-0016 pattern — MODAL_CHAT_NLP_URL)
  */
 export interface Env
   extends
@@ -35,6 +37,7 @@ export interface Env
     ClickHouseProducerEnv,
     EventsRetryQueueEnv,
     IntentSnapshotEnv,
+    ChatNlpDispatchEnv,
     RateLimiterEnv {
   ENVIRONMENT: string;
   KV_API_KEYS: KVNamespace;

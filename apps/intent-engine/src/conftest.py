@@ -23,6 +23,7 @@ def _make_modal_stub() -> MagicMock:
       - modal.Image.debian_slim().pip_install() chain
       - modal.Secret.from_name()
       - modal.Cron()
+      - modal.fastapi_endpoint() — passthrough (F-01 / ADR-0016 chat-NLP endpoint)
     """
     modal_stub = MagicMock(name="modal")
 
@@ -48,6 +49,8 @@ def _make_modal_stub() -> MagicMock:
     modal_stub.Secret.from_name = MagicMock(return_value=MagicMock(name="Secret"))
     modal_stub.Cron = MagicMock(return_value=MagicMock(name="Cron"))
     modal_stub.Period = MagicMock(return_value=MagicMock(name="Period"))
+    # Passthrough so chat_nlp_endpoint is a plain async Python function under test.
+    modal_stub.fastapi_endpoint = MagicMock(side_effect=lambda *a, **kw: (lambda fn: fn))
 
     return modal_stub
 

@@ -16483,3 +16483,43 @@ The three bypasses:
       CI job (same non-soft-skip discipline).
 
 cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598, ADR-0018]
+
+## FOLLOW-609 — Eliminate the agency/staff demo-override write DUPLICATION the FOLLOW-607 guard forces (latent agency↔staff write divergence; systemic across the staff-write ports)
+
+source_retro: RETRO-193 source_ticket: FOLLOW-596 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: false
+
+**Gap (RETRO-193 §4a LG-1):** the FOLLOW-596 staff write path INLINES the `demo_overrides` upsert
+(`api/demo/override/route.ts:311-331`, `insert(demoOverrides)…onConflictDoUpdate(…).returning()`) —
+a byte-for-byte re-implementation of `demo-override-store.ts::upsertDemoOverride` (`:154-174`),
+which the AGENCY path still delegates to (`route.ts:252`). Both set the identical column set TODAY,
+so there is NO behavioral divergence yet — but there is NO parity guard, so any future change to
+`upsertDemoOverride` (a new `demo_overrides` column + default, a changed `onConflict` target/set,
+added normalization) would flow to the agency write and SILENTLY NOT to the staff write → divergent
+rows for the same logical op.
+
+The duplication is FORCED, not incidental: delegating the staff write to the store helper would
+leave only `insert(staffAuditLog)` textually in the route, which
+`scripts/check-staff-write-atomicity.sh` (FOLLOW-607) treats as an audit-of-a-read and SKIPs (zero
+§3a protection), so the worker inlined to keep the guard engaged. This is the RETRO-192 "guard moves
+the gap one hop" meta-pattern manifesting as code duplication, and it is SYSTEMIC: FOLLOW-597
+(labels/intent-config) and FOLLOW-598 (bandit weights) will each inline+duplicate their own stores
+for the same guard reason unless resolved first. Latent, no live defect (byte-identical today) — but
+a data-write-divergence class → P2.
+
+**AC:**
+
+- [ ] Preferred: make `upsertDemoOverride` accept an optional `tx` handle so BOTH the agency and
+      staff paths share ONE write implementation; land it TOGETHER with FOLLOW-608's scope-aware
+      guard so the delegated in-tx call still satisfies ADR-0018 §3a (the guard must recognize the
+      audited mutation inside the tx even when the mutation is a helper call).
+- [ ] Interim if FOLLOW-608 is not ready: add a red-first parity unit test asserting the inline
+      staff upsert and `upsertDemoOverride` write the IDENTICAL column set (fails if either drifts)
+      — RETRO-193 §4c TG-1.
+- [ ] Generalize the chosen approach so FOLLOW-597/598 do NOT entrench the same duplication.
+- [ ] Agency + staff paths remain behavior-identical; `scripts/check-staff-write-atomicity.sh` still
+      PASSES on `api/demo/override/route.ts`; the FOLLOW-596 INV-5 tenant-filter +
+      atomicity-rollback tests stay green.
+
+cross_ref: [RETRO-193, RETRO-192, FOLLOW-607, FOLLOW-608, FOLLOW-596, FOLLOW-597, FOLLOW-598,
+ADR-0018]

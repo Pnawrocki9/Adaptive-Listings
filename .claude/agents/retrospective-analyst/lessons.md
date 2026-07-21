@@ -2975,3 +2975,36 @@ so.**
   to set the explicit promotion TRIGGER (first 2nd independent port found non-transactional) rather
   than codify prematurely. This mirrors the RETRO-180..186 archetype arc where I repeatedly had to
   distinguish "confirms an existing rule" from "new independent sighting."
+
+## 2026-07-21 · RETRO-193 (FOLLOW-596, demo-override staff-write port + /admin/tenants/[id]/demo)
+
+- **A finding I almost missed and why:** the INLINE-vs-DELEGATED write duplication (LG-1). The PR
+  body frames the inline upsert as a clean, well-justified choice ("mirrors quiz/config, keeps the
+  guard engaged") and the atomicity guard PASSES — so the reflex is to record it as clean and move
+  on. What I almost missed is the SECOND-ORDER cost: inlining duplicates `upsertDemoOverride`'s
+  exact write shape with NO parity guard, and it's not a one-off — the FOLLOW-607 presence-check
+  STRUCTURALLY forces every staff-write port (597/598) to do the same. The guard I retro'd LAST
+  cycle (RETRO-192) is now shaping the code structure of the tickets that land under it. Lesson:
+  when a prior-cycle mechanical guard is in play, don't just check "does the new code PASS it" —
+  check "what did passing it COST / what shape did it force," because a guard's presence-check can
+  push authors into a worse pattern (duplication) than the one it prevents.
+- **An axis/chain I had to trace twice:** the hub-linkage PROMOTION count. First pass I read
+  FOLLOW-606's AC ("prevents the 3rd recorded sighting → the promotion trigger") and RETRO-190
+  framing analytics+quiz as two surfaces, and nearly promoted a Rule (demo = "3rd sighting"). Second
+  pass I applied the house BANKING convention strictly: the unit is PRIOR RETROS, not
+  surfaces-within-a-retro, and RETRO-190 §6 had ALREADY adjudicated "count 1 HELD" (explicitly NOT
+  counting RETRO-188's prospective note, and RETRO-189 recorded the OPPOSITE). So there is only ONE
+  prior banked retro → below the ≥2-PRIOR bar → HOLD. Two counting schemes (surfaces vs
+  banked-retros) genuinely disagreed; the banked-retro scheme is the one every existing Rule
+  footnote uses, so it wins. Lesson: "N surfaces observed" ≠ "N prior retros banked" — always
+  resolve promotion against the same banking unit the CONVENTIONS_PATCH footnotes use, and let the
+  guardrail (don't promote below threshold) break ties toward HOLD.
+- **A meta-pattern in how gaps recur across agents:** a remediation ticket that DEFERS wiring to a
+  perpetually-unlanded sibling. 596 scoped its own hub link OUT "because FOLLOW-606 owns it" — the
+  third surface in a row to do so. Each surface ticket is individually reasonable, but the aggregate
+  is a standing gap that never closes because ownership is always one ticket away. This is the
+  inverse of the gap→fix arc: not "a fix moves the gap one hop downstream" but "each new producer
+  defers its own wiring to a shared follow-up that keeps not landing." Worth watching whether 606
+  actually lands before 597/600 add sightings 4/5 — that's the real promotion trigger, and if 606
+  keeps slipping the pattern is a PROCESS gap (deferral-to-a-non-landing-ticket), not just a coding
+  one.

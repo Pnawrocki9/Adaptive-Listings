@@ -2392,3 +2392,24 @@ hung session strands work wherever the agent was standing, and for subagents tha
   between your own commands. Prefer `gh pr merge`/`gh api` (no local checkout required) over local
   git merge/push flows whenever a PR is already open, specifically to avoid needing to touch a
   working tree that might not be yours to touch anymore.
+
+- **Date / ticket:** 2026-07-21 — FOLLOW-596 (promoted + dispatched to backend-engineer/OPUS)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" (Model-fit override: OPUS, matching the
+  precedent set by FOLLOW-595/598 — every staff WRITE port through the ADR-0018
+  `resolveTenantAccess` service-role path is security-sensitive regardless of the specific route's
+  blast radius).
+- **What validation caught (or missed):** Before writing the delegation brief I grepped the actual
+  target route (`demo/override/route.ts`) and its store (`demo-override-store.ts`) rather than
+  trusting the stub's one-line AC — found the store is already tenant-parameterized but NOT
+  transaction-aware, which the FOLLOW-607 atomicity CI guard will need satisfied. Flagged the caveat
+  explicitly in the brief (extend the store to accept a `tx` handle, or inline the mutation in the
+  route like `quiz/config` does) so the worker doesn't have to rediscover it. Separately, I drafted
+  an overreaching STATUS.md claim ("no P0/P1 open FOLLOWs blocking a gate") before actually running
+  the grep the guardrail specifies — running it surfaced a long tail of old, unrelated P0/P1-tagged
+  OPEN stubs, so I corrected the STATUS.md line to not assert gate-cleanliness I hadn't actually
+  verified. Caught before commit, not after.
+- **A delegation/validation rule I'd add:** Don't pre-write a guardrail-satisfying claim in
+  STATUS.md and verify it after — run the actual grep/check FIRST, then write only what it proves.
+  The guardrail's grep is cheap; asserting its conclusion without running it risks a false "clean"
+  claim slipping into the record.

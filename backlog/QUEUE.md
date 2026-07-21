@@ -1,6 +1,15 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 41 — ADR-0018 staff-write chain COMPLETE: FOLLOW-593/594 recovered from stranded worktrees & merged; 595 first staff WRITE + 605 audit-atomicity (§3a) + 607 atomicity CI guard all PM-validated→merged; RETRO-188→192 all filed. Next = FOLLOW-596/597 (adopt §3a) or 608 (tighten guard)/604/606)
+## ▶️ START HERE — resume 2026-07-21 (session 42 — FOLLOW-596 (Phase-2 demo-override staff write port) promoted to QUEUE + dispatched to backend-engineer/OPUS, branch `backend-engineer/FOLLOW-596-demo-override-staff-write`; see HANDOFFS.md brief. IN_PROGRESS. No open PRs, no open escalations at dispatch time. Awaiting worker completion — PM validates CI green + INV-5 tenant-filter test + FOLLOW-607 atomicity-guard pass before READY_FOR_REVIEW.)
+
+**Read this before picking anything.** No escalations open (ESC-036/037/038 all RESOLVED). No open
+PRs at session start. FOLLOW-596 is the only ticket IN_PROGRESS (1/3 slots used per the 3-in-flight
+cap). Next candidates after 596 lands: FOLLOW-597 (same Phase-2 shape, labels + intent-config), then
+the P3 retro-driven follow-ups (608/604/606/602/603), then FOLLOW-598/599/600.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 41 — ADR-0018 staff-write chain COMPLETE: FOLLOW-593/594 recovered from stranded worktrees & merged; 595 first staff WRITE + 605 audit-atomicity (§3a) + 607 atomicity CI guard all PM-validated→merged; RETRO-188→192 all filed. Next = FOLLOW-596/597 (adopt §3a) or 608 (tighten guard)/604/606)
 
 **Read this before picking anything.** Session 40/parent dispatched `backend-engineer` (Opus) for
 **both FOLLOW-593 and FOLLOW-594** (FOLLOW-592 having merged, #579, both were unblocked). A terminal

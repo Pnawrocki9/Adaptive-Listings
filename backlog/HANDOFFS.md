@@ -4318,3 +4318,78 @@ the next free rule letter (H/I/J taken).
 
 **Completion:** worker opens PR; PM validates the guard actually FAILS on a non-transactional staff
 write (not just passes the current clean tree) and PASSES 605, and that CI wiring is real.
+
+---
+
+## Delegation brief — FOLLOW-596 (session 42, 2026-07-21)
+
+**Worker:** `backend-engineer` · **Model: OPUS** (mandatory model-fit ruling — same risk class as
+FOLLOW-595/598: a staff WRITE path using `createAdminClient()` service-role/RLS-bypassed queries,
+where the tenant fence is a hand-written WHERE clause and the audit row must be attributable and
+atomic. Per CLAUDE.md model-fit table this is "security-sensitive changes" — do not argue down to
+sonnet on the grounds that demo-override is lower blast-radius than bandit weights; it is still a
+privileged cross-tenant-capable write). **Branch:**
+`backend-engineer/FOLLOW-596-demo-override-staff-write`.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-596 ("Phase 2: Demo Mode / Archetype Simulator staff
+port"). Read `docs/MASTER_DESIGN.md` §Snapshot.1 first (OP Rule 1) and the current
+`CONVENTIONS_PATCH.md` rules before writing any code.
+
+**Verified ground truth (PM, against real files — no blockers):**
+
+- Target route: `apps/control-plane/src/app/api/demo/override/route.ts`. Today BOTH `GET` and `PUT`
+  auth via `requireTenantSessionAccess(req, 'agency:viewer' | 'agency:admin')` — the OLD agency-only
+  helper, not `resolveTenantAccess`. Tenant id comes only from `claims.tenant_id`.
+- Backing store: `apps/control-plane/src/lib/demo-override-store.ts` — `getDemoOverride(tenantId)` /
+  `upsertDemoOverride(tenantId, patch, updatedBy)`, both already tenant-parameterized and already
+  use `createAdminClient()` internally with an `eq(demoOverrides.tenantId, tenantId)` fence — so the
+  fence exists at the store layer; the route layer just needs to source `tenantId` from
+  `resolveTenantAccess` instead of the agency-only claim.
+- **Reference impl to copy exactly:** `apps/control-plane/src/app/api/quiz/config/route.ts` (the
+  FOLLOW-595 + FOLLOW-605 shipped pattern — read it end-to-end before writing code). Its shape:
+  `resolveTenantAccess(req, { allowStaffOverride: true, minAgencyRole: 'agency:viewer', ...(tenantIdParam ? { tenantId: tenantIdParam } : {}) })`
+  on both GET and PUT; write-rank gate `if (access.via === 'staff' && !access.canWrite) return 403`;
+  on the staff branch, the data mutation (`upsertDemoOverride`, or an inlined `db.update`) and the
+  `staffAuditLog` insert MUST be inside ONE `db.transaction()` (ADR-0018 §3a, mechanically enforced
+  by the FOLLOW-607 `check-staff-write-atomicity.sh` CI gate — your PR will be checked against it);
+  agency branch stays byte-unchanged and NOT audited.
+  - **Caveat:** `upsertDemoOverride` currently does its own internal `createAdminClient()` call and
+    is not transaction-aware. Either (a) extend it to accept an optional `tx` client param so the
+    route can pass a transaction handle through to it and the audit insert, or (b) inline the
+    demo-override upsert logic into the route inside the `db.transaction()` block (the quiz/config
+    route does the latter — it does not call out to a separate store module for its staff write).
+    Pick whichever keeps the change smallest; document the choice in the PR.
+- Surface precedent: `apps/control-plane/src/app/admin/tenants/[id]/quiz/page.tsx` +
+  `quiz-config-editor.tsx` is the direct template for the new
+  `apps/control-plane/src/app/admin/tenants/[id]/demo/page.tsx` (+ a `demo-override-editor.tsx` or
+  equivalent client component). Validate the tenant exists the same way that page does
+  (`tenantExists` → `notFound()`).
+- Do NOT wire this page into the `/admin/tenants/[id]` hub landing links in this ticket — that
+  cross-surface wiring is FOLLOW-606's job (separate ticket, already stubbed). Building the page at
+  the right route is in scope; adding the hub link is not.
+
+**Non-negotiable scope constraints:**
+
+- Port GET + PUT only on `demo/override/route.ts`. Agency semantics (viewer read, admin write)
+  byte-unchanged.
+- Staff write requires `access.canWrite` (rank ≥ `estalara:ops`), else 403.
+- Every staff write appends one `staff_audit_log` row (`action: 'demo_override.update'` or similar),
+  AWAITED inside the same `db.transaction()` as the data mutation — never fire-and-forget (Vercel
+  drops un-awaited work after response).
+- **MANDATORY (ADR-0018 §2 invariant 5, RETRO-187):** red-first "staff query is tenant-filtered"
+  test proving a staff request for tenant A cannot reach tenant B's demo-override row through the
+  real service-role query — NOT the demonstrative `RLS-TRAP-LEAK-DEMO`.
+- **FOLLOW-603 pattern:** route-level assertion that `resolveTenantAccess` was called with
+  `{ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }` (or whatever options you land on),
+  with a perturbation test that flips it red.
+- Zero new third-party dependencies, zero new DB migrations (`demo_overrides` and `staff_audit_log`
+  already exist).
+
+**Completion:** worker opens a PR (never commits to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every touched
+file. Conventional commit referencing `[FOLLOW-596]`. In the PR description paste: (a) the tenant-
+filter red-first test and what it proves, (b) confirmation the FOLLOW-607 atomicity CI gate
+(`staff-write-atomicity` job) PASSES on the new route, (c) the choice made on the
+`upsertDemoOverride` transaction-plumbing caveat above and why. PM independently re-verifies CI
+green + runtime wiring (producer/consumer grep) + the atomicity-guard pass before READY_FOR_REVIEW —
+do not mark DONE yourself.

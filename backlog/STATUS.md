@@ -1,4 +1,45 @@
-# Status — 2026-07-20 (session 39 — ADR-0018 thread: FOLLOW-592 DONE + RETRO-187 CLEAN; 593/594 in flight)
+# Status — 2026-07-21 (session 42 — FOLLOW-596 promoted + dispatched to backend-engineer/OPUS)
+
+## SESSION 42 (2026-07-21) — FOLLOW-596 (Phase-2 demo-override staff write port) promoted + dispatched
+
+**State read:** `docs/MASTER_DESIGN.md` §Snapshot.1, `docs/ops/OPERATING_PRINCIPLES.md`,
+`backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (ESC-036/037/038 all RESOLVED — zero open escalations),
+`backlog/HANDOFFS.md`, `git log --oneline -20`, `gh pr list --state open` (0 open PRs). Nothing
+blocking. IN_PROGRESS count before this dispatch: 0/3.
+
+**Ticket picked:** FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port. Per QUEUE.md's
+own "NEXT (pick per priority)" ordering, Phase-2 write ports FOLLOW-596/597 are listed ahead of the
+P3 retro-driven follow-ups (608/604/606) and the not-yet-safe FOLLOW-598 (blast-radius/sequencing
+note: do after FOLLOW-608 tightens the atomicity guard). 596 and 597 are equal-priority (both P3,
+`depends_on: []`); picked 596 first (listed first in the queue note, lower ticket number).
+
+**Delegation:** `backend-engineer` · **model: OPUS** — same risk class as FOLLOW-595/598 (staff
+WRITE via `createAdminClient()` service-role/RLS-bypassed query; per CLAUDE.md model-fit table,
+security-sensitive auth-adjacent changes route to Opus, not sonnet, regardless of blast-radius being
+lower than the bandit-weight route). Delegation-table row used: "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks → backend-engineer." Verified
+ground truth before writing the brief: target route
+`apps/control-plane/src/app/api/demo/override/route.ts` (currently agency-only via
+`requireTenantSessionAccess`); backing store `demo-override-store.ts` already tenant-parameterized;
+reference impl `api/quiz/config/route.ts` (FOLLOW-595/605 shipped pattern, single-tx staff write);
+surface precedent `admin/tenants/[id]/quiz/page.tsx`. Full brief in `backlog/HANDOFFS.md`
+("Delegation brief — FOLLOW-596").
+
+**Bookkeeping (this session, done BEFORE dispatch per the no-concurrent-git-with-subagents rule):**
+`FOLLOW_UPS.md` FOLLOW-596 `promoted_to_queue` flipped `false` → `true`; `QUEUE.md` START HERE
+header updated (session 42, IN_PROGRESS, 1/3 slots); `HANDOFFS.md` delegation brief appended;
+`STATUS.md` (this entry). Committed to `main` directly (docs-only, PM's own domain per CLAUDE.md).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (Not yet started — worker not yet
+dispatched in this transcript; counters reset for FOLLOW-596.)
+
+**Open escalations:** none (ESC-036/037/038 RESOLVED). Not writing "DONE"/"gate closed"/"sprint
+closed" this session, so the P0/P1 before-go-live FOLLOW gate-check was not run — FOLLOW_UPS.md has
+a long tail of historical P0/P1-tagged OPEN stubs unrelated to any current go-live gate; that
+inventory needs its own pass at the next sprint/gate-close, not asserted clean here. FOLLOW-596
+itself is P3, routine Phase-2 backlog work, not a gate action.
+
+---
 
 ## SESSION 39 (cont. 9) (2026-07-20) — FOLLOW-592 MERGED + DONE; RETRO-187 security verdict CLEAN; stubs 594..600 hardened
 

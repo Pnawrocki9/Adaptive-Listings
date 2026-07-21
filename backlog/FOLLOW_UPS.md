@@ -16110,7 +16110,9 @@ cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 ## FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port
 
 source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
-priority: P3 estimated_hours: 3 promoted_to_queue: false
+priority: P3 estimated_hours: 3 promoted_to_queue: true (session 42 — dispatched to
+backend-engineer/OPUS, branch `backend-engineer/FOLLOW-596-demo-override-staff-write`; see
+HANDOFFS.md brief)
 
 **AC:** demo-override endpoints accept staff (writes audited, rank ≥ ops);
 `/admin/tenants/[id]/demo` surface; agency path unchanged.

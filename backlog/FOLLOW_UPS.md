@@ -16551,6 +16551,19 @@ cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598,
 
 ## FOLLOW-609 — Eliminate the agency/staff demo-override write DUPLICATION the FOLLOW-607 guard forces (latent agency↔staff write divergence; systemic across the staff-write ports)
 
+**STATUS: READY_FOR_REVIEW** (session 47, pm-orchestrator). PR #597
+(`backend-engineer/FOLLOW-609-demo-override-dedup`). CI green (0 non-success on all real gates; the
+one red — `Rule I` — is the documented pre-existing whole-repo exception, independently confirmed
+unrelated to this diff). Guard-fix hard blocker independently re-verified: ran the committed test
+harness myself (12/12 fixture scenarios + real-repo scan pass) AND built a from-scratch throwaway
+reproduction (not the committed fixtures) of the exact bypass-4 shape — confirmed FAIL when the
+delegated mutation call sits outside the `db.transaction()`, OK when co-scoped. §3a atomicity
+re-verified: 23/23 pre-existing `route.test.ts` tests pass unchanged (including the FOLLOW-605/607
+rollback test and the MANDATORY tenant-filter tests) plus 2 new `demo-override-store.test.ts` tests
+proving the `tx`-dispatch directly. Local gauntlet (`typecheck`, `lint`) re-run independently,
+clean. Not merged — awaiting human review. Full validation detail in `backlog/QUEUE.md` session-47
+START HERE entry.
+
 source_retro: RETRO-193 source_ticket: FOLLOW-596 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: true (session 46 — dispatched
 to backend-engineer/SONNET, branch `backend-engineer/FOLLOW-609-demo-override-dedup`; see

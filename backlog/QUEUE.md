@@ -1,6 +1,80 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 46 — reconciled PR #595 (external Cursor PR, FOLLOW-610) + PR #596 (FOLLOW-608) both merged; found+fixed FOLLOW-609's AC before dispatch; FOLLOW-609 promoted+dispatched to backend-engineer/SONNET)
+## ▶️ START HERE — resume 2026-07-21 (session 47 — validated PR #597 (FOLLOW-609), moved READY_FOR_REVIEW; awaiting human merge)
+
+**Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
+memory, all others RESOLVED). One open PR: **#597**
+(`backend-engineer/FOLLOW-609-demo-override-dedup`), **PM-validated this session, READY_FOR_REVIEW,
+awaiting human merge.** `main` unchanged this session (HEAD `5ecd112`, same as session 46's
+reconciliation). **Do not pick a new ticket that touches `api/demo/override/route.ts`,
+`demo-override-store.ts`, or `scripts/check-staff-write-atomicity.cjs` until #597 merges.**
+
+**FOLLOW-609 / PR #597 validation (session 47), full checklist run, nothing taken on the worker's
+word:**
+
+1. **CI (step 5b):** `gh pr checks 597 --watch` — every job green except the pre-existing
+   non-blocking `Rule I — wired-or-dead check` (documented gate-landscape exception, memory
+   `project_ci_gate_landscape`). Pulled that job's log directly: 190 whole-repo violations, none
+   introduced by this diff — the only demo-override-store.ts hits (`ReachableArchetype`,
+   `DemoAllowedModel`) are PRE-EXISTING symbols untouched by this PR (confirmed via `gh pr diff`).
+   CI non-success count for every REAL gate: **0**. Check-count: 1/5. Fix-iterations: 0/3 (no bounce
+   needed).
+2. **Independent guard re-verification (step 4/5c, the ticket's explicit completion criterion) — did
+   NOT trust the PR's own claimed output.** Checked out the branch locally (it was already the
+   working tree's checked-out branch). Ran
+   `bash scripts/__tests__/check-staff-write-atomicity.test.sh` myself: exit 0, all 12 fixture
+   scenarios + real-repo scan pass, including the two new
+   `bypass4-helper-delegated-mutation{,-out-of-tx}` fixtures — co-scoped → `OK`, out-of-tx → `FAIL`
+   (not `SKIP`). **Then built my own throwaway reproduction from scratch** (own fixture files, not
+   the committed ones — written to
+   `scripts/__fixtures__/staff-write-atomicity/_pm-throwaway-repro/`, run, then deleted, never
+   committed) of the exact FOLLOW-609 shape (a `.insert(...).onConflictDoUpdate(...)` helper
+   delegated from a route via `@/lib/mutation-helper`): out-of-tx call → guard correctly **FAILs**
+   (exit 1, "NOT both inside the SAME db.transaction()"); same shape moved inside `db.transaction()`
+   → guard correctly **OKs** (exit 0). Confirms the fix independently, not just via the worker's
+   committed fixtures.
+3. **§3a atomicity preserved (step 5e/AC):** read the shipped diff directly — `putStaff` in
+   `api/demo/override/route.ts` now calls
+   `upsertDemoOverride(tenantId, patch, access.staff.sub, tx as unknown as Database)` from inside
+   its own `db.transaction(async (tx) => {...})`, immediately followed by the AWAITED
+   `tx.insert(staffAuditLog)` in the same callback — one commit/rollback unit, matching the
+   FOLLOW-605 reference pattern. `upsertDemoOverride` itself: `const db = tx ?? createAdminClient()`
+   — agency path (no `tx` arg) is byte-behavior-unchanged. Independently ran
+   `pnpm --filter control-plane test -- api/demo/override`: all 23 pre-existing tests pass
+   UNCHANGED, including
+   `'ROLLS BACK the override upsert when the staff audit insert fails (no orphan mutation)'`
+   (FOLLOW-605/607 atomicity test) and the MANDATORY tenant-filter READ+WRITE tests (ADR-0018 §2
+   invariant 5) — plus 2 new tests in `demo-override-store.test.ts` proving the `tx`-dispatch branch
+   directly (`createAdminClient` NOT called when `tx` supplied; called once when it isn't).
+4. **Local gauntlet (step 5a), run myself, not from the PR description:**
+   `pnpm install --frozen-lockfile` (up to date), `pnpm --filter control-plane typecheck` (clean),
+   `pnpm --filter control-plane lint` (clean) — both re-run independently, not accepted from the PR.
+5. **Runtime wiring (step 5c):** no new exported symbol/event/column/config field — this ticket
+   dedupes an existing write path and hardens an existing CI script; `upsertDemoOverride`'s new
+   optional `tx` parameter is consumed by both the staff route (producer: `route.ts` `putStaff`,
+   passes `tx`) and the agency route (calls with no `tx`) — both non-test call sites, confirmed by
+   reading `route.ts` directly (not a grep-only check, since this is a parameter not a new symbol).
+6. **Single-agent ticket** — step 5d (co-assignment integration check) N/A.
+
+**Evidence pasted per `<evidence_requirements>`:**
+
+- CI non-success count: **0** (Rule I excluded per documented pre-existing non-blocking exception,
+  confirmed its violations are unrelated to this diff).
+- Guard-fix grep/repro: see item 2 above — independent throwaway repro, not just the committed
+  fixtures, confirms OK/FAIL behavior in both directions.
+- CI-check counter: **1/5**. Fix-iteration counter: **0/3**.
+
+**Action taken:** PR #597 comment posted: "PM-validated. CI green (Rule I pre-existing/unrelated,
+documented exception). Runtime wiring confirmed. §3a atomicity independently re-verified (23/23
+pre-existing tests + 2 new pass). Guard fix independently reproduced from scratch (own throwaway
+fixture, not just the committed ones) — co-scoped OK, out-of-tx FAIL. Ready for human review."
+FOLLOW-609 moved to **READY_FOR_REVIEW** in `backlog/FOLLOW_UPS.md`. **Not merged — human review
+required next.** Retrospective-analyst spawn + DONE marking deferred to the session that observes
+the merge (per workflow: retro runs AFTER human merge).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 46 — reconciled PR #595 (external Cursor PR, FOLLOW-610) + PR #596 (FOLLOW-608) both merged; found+fixed FOLLOW-609's AC before dispatch; FOLLOW-609 promoted+dispatched to backend-engineer/SONNET)
 
 **Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
 memory, all others RESOLVED). No open PRs (`gh pr list --state open` → empty). `main` is current

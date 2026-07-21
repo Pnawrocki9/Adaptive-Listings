@@ -1856,6 +1856,112 @@ grep -rnE "readonly ArchetypeId\[\]|Record<ArchetypeId" apps/ packages/ --includ
 
 ---
 
+## Rule AE — An AST-based mechanical guard for a security invariant (e.g. "audited mutation must be tx-scoped") MUST enumerate every syntactic CALL-SHAPE the guarded action can take before being declared complete — a fix that closes the one shape a regression happened to use is not proof the class is closed
+
+**Pattern (the Rule AD meta-pattern, restated for AST call-shapes instead of value literals):** A
+ticket hardens a hand-written AST detector that decides "does this route perform the guarded
+mutation?" by pattern-matching ONE syntactic call-shape it observed in a real regression
+(`.update(`/`.insert(` property-access calls; later, a bare-identifier delegated helper call). The
+NEXT ticket that needs the same kind of delegation happens to phrase it in a DIFFERENT, equally
+idiomatic TypeScript call-shape the detector never enumerated (a namespace/property-access import
+instead of a named one), and the guard silently reports success (`SKIP`/`OK`) while providing zero
+enforcement — moving the gap one syntactic hop, exactly as Rule AD's value-literal shapes move one
+structural hop. The fix for hop N is real and correct for the shape it targets; it is never proof
+hop N+1 doesn't exist, because each hop is only ever discovered when a subsequent ticket happens to
+phrase its own delegation in the untested shape.
+
+**Evidence (≥2 PRIOR retros, all on the SAME staff-write-atomicity guard —
+`scripts/check-staff-write-atomicity.cjs`, ADR-0018 §3a/FOLLOW-607):**
+
+- **RETRO-192 §6 (count 1, PRIOR)** — named 3 bypasses in the presence-only v1 guard (unrelated-tx,
+  helper-factored-audit, raw-SQL-mutation); explicitly declined promotion as "the guard IS the
+  codification," reasoning the 3 bypasses were the SAME arc as the guard's own initial authoring,
+  not an independent recurrence. Filed FOLLOW-608.
+- **RETRO-194 §6 (count 2, PRIOR)** — FOLLOW-608 shipped the scope-aware fix for RETRO-192's 3
+  bypasses, but a 4th call-shape (a bare-identifier delegated helper call, `upsertX(tx, …)`) was
+  found un-detected by direct reproduction BEFORE the next ticket (FOLLOW-609) shipped; also
+  declined promotion as "same arc, 2nd hop of 607→608→609," matching RETRO-192's reasoning.
+- **RETRO-196 (the promotion trigger)** — FOLLOW-609 shipped the fix for RETRO-194's bypass 4
+  (`collectLocalImportedIdentifierSources` + `moduleContainsMutation`, correctly recognizing a
+  bare-identifier delegated call) — independently re-verified live on `main`
+  (`node scripts/check-staff-write-atomicity.cjs` prints `OK`, not `SKIP`, for the fixed route). A
+  fresh independent reproduction (uncommitted throwaway fixture, not inferred) found the SAME class
+  of gap ONE MORE call-shape over: a **namespace/property-access** delegated call
+  (`import * as helper from '@/lib/mutation-helper'; helper.upsertX(tx, …)`) is a
+  `PropertyAccessExpression` whose method name matches none of the guard's known mutation method
+  names (`insert`/`update`/`delete`/`execute`/`transaction`), so it silently falls through BOTH
+  detection branches — `SKIP`, exit 0, zero enforcement. This is a genuinely NEW call-shape (not a
+  re-sighting of bypass 4), found independently by the PM session (not inferred from a prior retro's
+  prose), and it directly threatens the NEXT two queued tickets (FOLLOW-597/598) which each need
+  their own NEW store-delegation helper. Re-adjudicated against Rule AD's own promotion precedent
+  (RETRO-182 crossed the threshold on "the same literal, one more STRUCTURAL shape over" across the
+  SAME guard-family's evolution, which is likewise "one arc") — the correct bar was never
+  same-arc-vs-independent-arc, it was "a genuinely new, independently-found, previously-unenumerated
+  shape." That bar is met here: 2 banked PRIOR retros (192, 194) + this 3rd independent sighting of
+  a yet-newer shape crosses it. Filed FOLLOW-612 (close bypass 5) with an explicit note in
+  FOLLOW-597 and FOLLOW-598's AC to prefer named imports (the recognized shape) until it lands.
+
+**Rule:** When authoring or hardening an AST-based (or regex-based) mechanical guard that decides
+whether a route/module performs a guarded security-relevant action (a mutation, an audit write, a
+tenant-scoping call, …) by pattern-matching call shapes:
+
+1. Before declaring the guard complete, enumerate every syntactic call-shape the guarded action can
+   take: a direct method call (`.insert(`/`.update(`), a bare-identifier delegated helper call
+   (`helperFn(...)`), a namespace/property-access delegated call (`ns.helperFn(...)`), a re-exported
+   wrapper, and a raw string/SQL escape hatch. A guard that only recognizes the ONE shape the
+   triggering regression happened to use is a starting point, never coverage proof.
+2. When a fix for shape N ships, explicitly ask (and record the answer in the PR/retro) whether the
+   SAME fix technique also covers shapes N+1 that a future ticket could plausibly use — do not wait
+   for the next ticket to accidentally discover it.
+3. Prefer resolving to the underlying symbol/module (as `moduleContainsMutation`'s bounded
+   import-graph walk does) over per-syntax-shape special-casing where practical, since a
+   module-level "does this resolved thing mutate" check is shape-agnostic once the identifier is
+   resolved — the residual gap is almost always in the IDENTIFIER-RESOLUTION step (which import
+   forms are followed), not the mutation-detection step itself.
+4. If a fresh, independent reproduction finds the same class of gap one more call-shape over after a
+   fix has shipped, that is evidence the previous fix's shape-enumeration was incomplete — enumerate
+   the remaining shapes NOW and state explicitly whether the class is then fully
+   enumerated-and-guarded (closable) or still open, exactly as Rule AD requires for value-literal
+   shapes.
+
+**Verification:**
+
+```bash
+# Confirm the guard currently recognizes ONLY the shapes it claims to (read the source, don't guess):
+grep -n "isPropertyAccessExpression\|isIdentifier(node.expression)\|isNamespaceImport" \
+  scripts/check-staff-write-atomicity.cjs
+# Re-run the guard against the live repo after any change — the touched staff-write route must
+# print OK, never SKIP:
+node scripts/check-staff-write-atomicity.cjs
+# Build (do NOT commit) a throwaway fixture per untested call-shape and confirm the guard's verdict
+# before trusting any "guard complete" claim in a PR description.
+```
+
+---
+
+<!-- Rule AE added 2026-07-21 — RETRO-196 §6. Evidence (≥2 PRIOR numbered retros, all on
+scripts/check-staff-write-atomicity.cjs, ADR-0018 §3a): RETRO-192 §6 (3 bypasses in the v1
+presence-only guard — unrelated-tx, helper-factored-audit, raw-SQL-mutation — count 1, explicitly
+declined promotion as "same arc as the guard's own authoring") + RETRO-194 §6 (a 4th bypass —
+bare-identifier delegated helper call — found by direct reproduction after FOLLOW-608's scope-aware
+fix shipped, count 2, also declined as "same arc, 2nd hop"). Promotion trigger: RETRO-196
+(FOLLOW-609/PR #597) — independently re-verified FOLLOW-609's fix for bypass 4 is genuinely correct
+and live on `main` (guard prints OK not SKIP), then found a 5th bypass (namespace/property-access
+delegated call) by a FRESH uncommitted throwaway reproduction, not inferred from a prior retro. Both
+RETRO-192 and RETRO-194 used "same arc, not independent" as the reason NOT to promote — but
+re-adjudicated against Rule AD's own precedent (RETRO-182's promotion trigger was ALSO "the same
+literal, one more structural shape over," across the same guard-family's evolution — i.e. Rule AD's
+actual bar was never same-arc-vs-different-arc, it was a genuinely new, independently-found,
+previously-unenumerated shape), this crosses the ≥2-PRIOR threshold: 2 banked prior retros (192, 194)
++ this 3rd independent sighting of a yet-newer call-shape. The promoting retro does NOT inflate the
+count (same adjudication as Rules AA/AB/AC/AD/V/Q). DISTINCT axis from Rule AD (AD governs
+VALUE-LITERAL occurrence shapes in data/config — archetype ids, status enums; AE governs AST
+CALL-SHAPE enumeration in security-enforcement guards — which syntactic form a delegated call takes)
+and from Rule AC (AC governs FILE-scope-by-audit vs repo-wide grep, the parent scope discipline; AE
+is a call-shape-enumeration discipline for a specific class of AST guard). Filed FOLLOW-612 (close
+bypass 5) with an explicit note added to FOLLOW-597/598's AC (the next two queued tickets, the
+direct beneficiaries/risks) to prefer named imports until it lands. LETTER CHOICE: AE is the next in
+the double-letter sequence after AD. -->
 <!-- Rule AD added 2026-07-20 — RETRO-182 §6. Evidence (≥2 PRIOR numbered retros): RETRO-179 §6
 (the 2 'investor' MOCK_ARCHETYPES subset arrays, invisible to the golden_visa_buyer full-parity
 anchor; first retro to separate the multi-anchor SUB-pattern from Rule AC's broad scope-by-audit

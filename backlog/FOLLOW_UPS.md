@@ -16150,8 +16150,16 @@ surfaces; agency paths unchanged.
       tenant-filtered" test per ported endpoint proving a staff request for tenant A cannot reach
       tenant B's rows through the real (service-role/RLS-bypassed) query. NOT discharged by
       FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+- [ ] **Guard-shape note (RETRO-196, do not skip):** if this ticket introduces its own
+      store-delegation helper (following the FOLLOW-609 `upsertDemoOverride(tx?)` pattern), import
+      it as a NAMED/bare identifier (`import { upsertX } from …`), NOT a namespace
+      (`import * as store from …`) — `scripts/check-staff-write-atomicity.cjs` only recognizes the
+      former today; the latter silently SKIPs with zero enforcement (FOLLOW-612, unfixed as of this
+      writing). Verify with `node scripts/check-staff-write-atomicity.cjs` after landing: the
+      touched route must print `OK`, never `SKIP`.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-609, FOLLOW-612, RETRO-187,
+RETRO-196]
 
 ## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
 
@@ -16184,8 +16192,18 @@ path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pat
       `resolveTenantAccess` — apply a direct `estalara_role`-rank ≥ 3 assertion on the verified
       staff claim (the same `STAFF_ROLE_RANK` map). No-op today (sole prod account is superadmin);
       binding as staff accounts are added. Test proves ops-rank staff PUT → 403.
+- [ ] **Guard-shape note (RETRO-196, do not skip — this is the guard's HIGHEST-blast-radius
+      beneficiary):** if this ticket's weight-write helper is delegated (following the FOLLOW-609
+      `upsertDemoOverride(tx?)` pattern), import it as a NAMED/bare identifier
+      (`import { upsertX } from …`), NOT a namespace (`import * as store from …`) —
+      `scripts/check-staff-write-atomicity.cjs` only recognizes the former today; the latter
+      silently SKIPs with zero enforcement (FOLLOW-612, unfixed as of this writing). Verify with
+      `node scripts/check-staff-write-atomicity.cjs` after landing: the touched route must print
+      `OK`, never `SKIP`. Given this is the highest-blast-radius staff write, land FOLLOW-612 FIRST
+      if there is any doubt about which import style the implementation will use.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, RETRO-187]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, FOLLOW-609, FOLLOW-612, RETRO-187,
+RETRO-196]
 
 ## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub
 
@@ -16549,20 +16567,27 @@ The three bypasses:
 
 cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598, ADR-0018]
 
-## FOLLOW-609 — Eliminate the agency/staff demo-override write DUPLICATION the FOLLOW-607 guard forces (latent agency↔staff write divergence; systemic across the staff-write ports)
+## FOLLOW-609 — Eliminate the agency/staff demo-override write DUPLICATION the FOLLOW-607 guard forces (latent agency↔staff write divergence; systemic across the staff-write ports) — ✅ DONE (PR #597 `5458001`, merged 2026-07-21T17:34:21Z; RETRO-196)
 
-**STATUS: READY_FOR_REVIEW** (session 47, pm-orchestrator). PR #597
-(`backend-engineer/FOLLOW-609-demo-override-dedup`). CI green (0 non-success on all real gates; the
-one red — `Rule I` — is the documented pre-existing whole-repo exception, independently confirmed
-unrelated to this diff). Guard-fix hard blocker independently re-verified: ran the committed test
-harness myself (12/12 fixture scenarios + real-repo scan pass) AND built a from-scratch throwaway
-reproduction (not the committed fixtures) of the exact bypass-4 shape — confirmed FAIL when the
-delegated mutation call sits outside the `db.transaction()`, OK when co-scoped. §3a atomicity
-re-verified: 23/23 pre-existing `route.test.ts` tests pass unchanged (including the FOLLOW-605/607
-rollback test and the MANDATORY tenant-filter tests) plus 2 new `demo-override-store.test.ts` tests
-proving the `tx`-dispatch directly. Local gauntlet (`typecheck`, `lint`) re-run independently,
-clean. Not merged — awaiting human review. Full validation detail in `backlog/QUEUE.md` session-47
-START HERE entry.
+**STATUS: DONE + MERGED.** PR #597 (`backend-engineer/FOLLOW-609-demo-override-dedup`) squash-merged
+to `main` (merge commit `5458001`, branch deleted). PM-validated session 47 (CI green, 0 non-success
+on all real gates; `Rule I` pre-existing non-blocking exception), READY_FOR_REVIEW, then
+human-merged. A trailing devops-authored commit
+(`ci: allowlist bypass-4 fixture identifier for gitleaks false positive`) was appended after PM
+validation to fix a `.gitleaks.toml` entropy false-positive on the new 43-char fixture directory
+name — CI-tooling only, no functional change; re-confirmed green post-merge via `gh pr checks 597`
+(all real gates pass, only pre-existing `Rule I` red). Guard-fix hard blocker independently
+re-verified twice (sessions 47 and post-merge RETRO-196): ran the committed test harness (12/12
+fixture scenarios + real-repo scan pass) AND built a from-scratch throwaway reproduction (not the
+committed fixtures) of the exact bypass-4 shape — confirmed FAIL when the delegated mutation call
+sits outside the `db.transaction()`, OK when co-scoped. Live on `main`:
+`node scripts/check-staff-write-atomicity.cjs` now prints
+`OK: apps/control-plane/src/app/api/demo/override/route.ts — mutation + insert(staffAuditLog), both inside the SAME db.transaction()`
+(was previously enforced only via the byte-duplicated inline upsert). §3a atomicity re-verified:
+23/23 pre-existing `route.test.ts` tests pass unchanged (including the FOLLOW-605/607 rollback test
+and the MANDATORY tenant-filter tests) plus 2 new `demo-override-store.test.ts` tests proving the
+`tx`-dispatch directly. AC checklist below all met. Full validation detail in `backlog/QUEUE.md`
+session-47 START HERE entry; post-merge retro in `backlog/RETROSPECTIVES.md` RETRO-196.
 
 source_retro: RETRO-193 source_ticket: FOLLOW-596 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: true (session 46 — dispatched
@@ -16607,32 +16632,32 @@ the gap one hop" meta-pattern manifesting as code duplication, and it is SYSTEMI
 for the same guard reason unless resolved first. Latent, no live defect (byte-identical today) — but
 a data-write-divergence class → P2.
 
-**AC:**
+**AC (all met — verified independently, not taken on the worker's claim):**
 
-- [ ] **MANDATORY, HARD BLOCKER (confirmed session 46, RETRO-194 — do not skip):** extend
+- [x] **MANDATORY, HARD BLOCKER (confirmed session 46, RETRO-194 — not skipped):** extended
       `scripts/check-staff-write-atomicity.cjs`'s mutation-detection to recognize a data mutation
       delegated to an imported local-helper function call (e.g. `await upsertDemoOverride(tx, …)`)
       as an in-scope mutation when it and `insert(staffAuditLog)` share the same `db.transaction()`
-      callback. Add a red-first fixture proving the CURRENT (pre-fix) guard SKIPs this exact shape
-      (zero enforcement, mis-classified as audit-of-a-read), then proving the fixed guard correctly
-      OKs it when co-scoped and FAILs it when the mutation call sits outside the transaction. This
-      MUST land in the same PR as the store refactor below — shipping the refactor without it
-      silently regresses `api/demo/override/route.ts` to zero atomicity enforcement while CI still
-      reports "passed."
-- [ ] Preferred: make `upsertDemoOverride` accept an optional `tx` handle so BOTH the agency and
-      staff paths share ONE write implementation; land it TOGETHER with the guard fix above so the
-      delegated in-tx call still satisfies ADR-0018 §3a.
-- [ ] Interim if the guard fix above is not ready: add a red-first parity unit test asserting the
-      inline staff upsert and `upsertDemoOverride` write the IDENTICAL column set (fails if either
-      drifts) — RETRO-193 §4c TG-1. This is a fallback only — do NOT ship the tx-handle refactor
-      without the guard fix; ship the interim test instead if time-boxed.
-- [ ] Generalize the chosen approach so FOLLOW-597/598 do NOT entrench the same duplication.
-- [ ] Agency + staff paths remain behavior-identical; `scripts/check-staff-write-atomicity.cjs`
-      still correctly OKs (not SKIPs) `api/demo/override/route.ts`; the FOLLOW-596 INV-5
-      tenant-filter + atomicity-rollback tests stay green.
+      callback (`collectLocalImportedIdentifierSources` + `moduleContainsMutation`, bounded depth
+      3). Red-first fixtures (`bypass4-helper-delegated-mutation{,-out-of-tx}`) prove the pre-fix
+      guard SKIPs this exact shape and the fixed guard OKs it when co-scoped, FAILs it when the
+      mutation call sits outside the transaction. Landed in the SAME PR as the store refactor.
+- [x] `upsertDemoOverride` now accepts an optional `tx` handle so BOTH the agency and staff paths
+      share ONE write implementation (`demo-override-store.ts:163`); landed together with the guard
+      fix so the delegated in-tx call still satisfies ADR-0018 §3a.
+- [x] Agency + staff paths remain behavior-identical (agency: `db = tx ?? createAdminClient()` falls
+      through to the pre-existing standalone path); `scripts/check-staff-write-atomicity.cjs` now
+      correctly OKs (not SKIPs) `api/demo/override/route.ts` (verified live on `main` post-merge);
+      the FOLLOW-596 INV-5 tenant-filter + atomicity-rollback tests stay green (23/23 unchanged + 2
+      new).
+- [ ] NOT generalized to FOLLOW-597/598 by this ticket (out of scope) — `moduleContainsMutation`'s
+      module-level (not per-export) granularity is documented as a known, deliberate imprecision
+      that is safe-by-construction (can only push toward FAIL, never a false OK); FOLLOW-597/598 can
+      reuse the same guard mechanism but must each verify their own store shape lands the delegated
+      call inside the tx.
 
-cross_ref: [RETRO-193, RETRO-192, FOLLOW-607, FOLLOW-608, FOLLOW-596, FOLLOW-597, FOLLOW-598,
-ADR-0018]
+cross_ref: [RETRO-193, RETRO-192, RETRO-194, RETRO-196, FOLLOW-607, FOLLOW-608, FOLLOW-596,
+FOLLOW-597, FOLLOW-598, ADR-0018]
 
 ## FOLLOW-610 — Direct Modal HTTPS chat-NLP invoke from ingest (audit F-01) — CODE DRAFTED 2026-07-21
 
@@ -16710,3 +16735,56 @@ on ITS OWN diff scan and could confuse a worker into thinking they leaked a cred
 - [ ] Confirm `gitleaks detect` passes clean on the touched file after the change.
 
 cross_ref: [RETRO-195, FOLLOW-610, FOLLOW-411]
+
+## FOLLOW-612 — Close the staff-write-atomicity guard's 5th call-shape bypass: a delegated mutation called via a NAMESPACE/PROPERTY-ACCESS import (`helper.upsertX(tx, …)`) is silently un-detected
+
+source_retro: RETRO-196 source_ticket: FOLLOW-609 recommended_sprint: opportunistic (before
+FOLLOW-598) recommended_agent: backend-engineer priority: P2 estimated_hours: 1-2 promoted_to_queue:
+false
+
+**Gap (verified by direct reproduction, not inference):**
+`scripts/check-staff-write-atomicity.cjs`'s `collectFileFacts` recognizes a delegated mutation call
+only when the callee is a **bare identifier** bound by a named/default import
+(`upsertSomething(tx, …)` — the FOLLOW-609 shape). A **namespace-imported** or otherwise
+property-accessed delegation
+(`import * as helper from '@/lib/mutation-helper'; helper.upsertSomething(tx, …)`) is a
+`PropertyAccessExpression` whose method name (`upsertSomething`) matches none of
+`transaction`/`insert`/`update`/`delete`/`execute`, so it falls through BOTH detection branches
+silently: not a `mutationCall`, not a `localHelperCallCandidate`. Reproduced via an uncommitted
+throwaway fixture (scratch dir, run, deleted): the guard prints
+`SKIP: … insert(staffAuditLog) present but no other data mutation` and exits 0 for this exact shape
+— zero enforcement, same failure class as bypass-4 (RETRO-194), one further call-shape hop over. Not
+a live defect today (no current route imports these stores as a namespace — verified:
+`grep -rn "import \* as" apps/control-plane/src/app/api` finds no hits on the staff-write routes),
+but a real and immediate risk for the next two queued tickets that each need a NEW store-delegation
+helper of their own (FOLLOW-597 labels/intent-config, FOLLOW-598 bandit weights — the
+highest-blast-radius staff write) where a worker choosing `import * as X` over a named import (an
+arbitrary, equally-idiomatic style choice) would silently regress to zero atomicity enforcement
+while CI reports "passed."
+
+**AC:**
+
+- [ ] Extend `collectFileFacts`'s `PropertyAccessExpression` branch (or add a parallel one) to also
+      treat a call whose object expression is a locally-imported namespace/module identifier
+      (`ts.isNamespaceImport`, already tracked by `collectLocalImportedIdentifierSources`) as a
+      candidate delegated-mutation site, gated the same way as the bare-identifier case: only
+      promoted to `mutationCalls` when `moduleContainsMutation` proves the resolved module performs
+      a mutation.
+- [ ] Red-first fixture pair mirroring `bypass4-helper-delegated-mutation{,-out-of-tx}` but with a
+      `import * as helper from '@/lib/mutation-helper'; helper.upsertSomething(tx, …)` call shape:
+      pre-fix guard SKIPs (zero enforcement), post-fix guard OKs when co-scoped / FAILs when the
+      call sits outside the `db.transaction()`.
+- [ ] Re-run the existing bypass-1..4 fixtures + the real-repo scan (`demo/override`, `quiz/config`,
+      `admin/labels/export`) to confirm no regression.
+- [ ] **Sequence note (do not skip):** land this BEFORE or WITH FOLLOW-598 (the highest-blast-radius
+      beneficiary) if that ticket's worker chooses a namespace-import store-delegation shape. If
+      FOLLOW-597/598 land first using NAMED imports (the FOLLOW-609 shape, already
+      guard-recognized), this ticket may follow as a hardening pass instead of a hard blocker — but
+      the choice must be made explicitly, not accidentally, by whichever session dispatches 597/598
+      next.
+
+cross_ref: [RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-597, FOLLOW-598, Rule
+AD, Rule AE]
+
+<!-- next free FOLLOW number: 613. Filed by session 48 (PM-orchestrator) post-merge retro for
+FOLLOW-609 (RETRO-196). -->

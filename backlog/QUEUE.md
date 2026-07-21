@@ -1,6 +1,71 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 47 — validated PR #597 (FOLLOW-609), moved READY_FOR_REVIEW; awaiting human merge)
+## ▶️ START HERE — resume 2026-07-21 (session 48 — FOLLOW-609 merged, closed out DONE+MERGED; RETRO-196 filed, found+fixed-forward a genuine 5th guard bypass, promoted CONVENTIONS_PATCH Rule AE; queue at operator/next-dispatch boundary — FOLLOW-597/598 next, AC amended)
+
+**Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
+memory, all others RESOLVED). `gh pr list --state open` → empty (PR #597 merged, `5458001`,
+2026-07-21T17:34:21Z, branch deleted). `main` fast-forwarded locally to include it before this
+session started.
+
+**Post-merge close-out performed (session 48), full checklist, nothing taken on trust:**
+
+1. Confirmed merge via `gh pr view 597 --json state,mergeCommit,mergedAt` (MERGED, `5458001`,
+   17:34:21Z) and `gh pr checks 597` (every real gate PASS post-merge, including the 2nd
+   devops-authored commit that fixed a `.gitleaks.toml` false positive on the new fixture directory
+   name AFTER the session-47 PM validation — CI-tooling only, no functional change, re-confirmed
+   green). Only red: pre-existing non-blocking `Rule I` (memory `project_ci_gate_landscape`).
+2. **Did not trust the PR's own claim on the headline fix.** Read the shipped diff directly
+   (`upsertDemoOverride`'s new optional `tx` parameter, `demo/override/route.ts`'s delegation from
+   inside its own `db.transaction()`), then independently re-ran
+   `node scripts/check-staff-write-atomicity.cjs` against the live `main` tree: it now prints
+   `OK: apps/control-plane/src/app/api/demo/override/route.ts — mutation + insert(staffAuditLog), both inside the SAME db.transaction()`
+   (was `SKIP` before this PR, per RETRO-194). Grepped `upsertDemoOverride` repo-wide: 1 non-test
+   producer file (`demo-override-store.ts:163`), 2 non-test consumer call sites (agency
+   `route.ts:257` no-tx, staff `route.ts:320` with-tx).
+3. **Went further than the merge itself required.** Because the guard's evolution (607→608→609) has
+   now shown 2 PRIOR retro-documented "the fix for the observed bypass isn't the last bypass" hops
+   (RETRO-192, RETRO-194), built a FRESH, uncommitted, from-scratch throwaway fixture (scratch dir,
+   run, deleted — never committed) testing a call-shape none of the 4 known bypasses cover: a
+   NAMESPACE/property-access delegated call (`import * as helper from …; helper.upsertX(tx, …)`)
+   instead of a bare-identifier one. **Confirmed a genuine 5th bypass**: the guard's
+   `PropertyAccessExpression` branch only recognizes method names
+   `transaction`/`insert`/`update`/`delete`/`execute` — `upsertX` matches none, so the call falls
+   through BOTH detection branches silently (`SKIP`, exit 0, zero enforcement). Not a live defect
+   today (grepped: no current staff-write route uses a namespace import for these stores), but a
+   real and immediate risk for the NEXT two queued tickets (FOLLOW-597, FOLLOW-598) which each need
+   a new store-delegation helper of their own. Filed **FOLLOW-612** (P2) and amended
+   FOLLOW-597/598's AC with an explicit named-import-only interim mitigation + a pointer to
+   FOLLOW-612.
+4. Wrote **RETRO-196** (`backlog/RETROSPECTIVES.md`) covering the above, and promoted
+   **CONVENTIONS_PATCH Rule AE** ("an AST-based mechanical guard for a security invariant must
+   enumerate every syntactic call-shape before being declared complete") — this is the 3rd numbered
+   sighting of the meta-pattern (RETRO-192 count 1, RETRO-194 count 2, this retro's independent 5th
+   call-shape find crosses the threshold), re-adjudicated against Rule AD's own precedent (which
+   promoted on the "same guard-family, one more shape over" pattern, not a same-arc/different-arc
+   distinction). Full reasoning + evidence trail in the Rule AE block and RETRO-196.
+5. Marked FOLLOW-609 **DONE + MERGED** in `backlog/FOLLOW_UPS.md` (AC checkboxes flipped, PR/merge
+   commit recorded) and here.
+
+**Next-free counters (per RETRO-196/FOLLOW-612 trailer comments): FOLLOW-613, RETRO-197.**
+
+**Reassessed queue state — at the next-dispatch boundary, no open escalation or human-review
+block:** FOLLOW-597 (labels/intent-config staff port, P3, `promoted_to_queue: false`) and FOLLOW-598
+(bandit weights, P3, `promoted_to_queue: false`, HIGHEST blast radius) are next in the
+operator-locked FOLLOW-608→609→597/598→606 sequence and are both otherwise unblocked (their stated
+prerequisite, FOLLOW-595 establishing the audited-write pattern, is DONE). **Did not
+promote+dispatch either this session** — this session's tool environment (Read/Write/Edit/Bash only,
+no Task/Agent-spawning tool, same constraint as sessions 45–47) means "dispatch" here would only be
+writing a delegation brief for a future session to execute, and the freshly-found FOLLOW-612 guard
+gap is directly relevant to whichever of 597/598 lands first (their AC now says so explicitly). Left
+for the next session (with or without Task-tool access) to either (a) land FOLLOW-612 first given it
+protects the highest-blast-radius write, or (b) promote+dispatch FOLLOW-597 with the named-import
+mitigation called out, per its amended AC. **Do not pick a new ticket that touches
+`api/demo/override/route.ts`, `demo-override-store.ts`, or `scripts/check-staff-write-atomicity.cjs`
+without re-reading FOLLOW-612 and Rule AE first.**
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 47 — validated PR #597 (FOLLOW-609), moved READY_FOR_REVIEW; awaiting human merge)
 
 **Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
 memory, all others RESOLVED). One open PR: **#597**

@@ -1,4 +1,69 @@
-# Status — 2026-07-21 (session 47 — validated PR #597, FOLLOW-609 → READY_FOR_REVIEW, awaiting human merge)
+# Status — 2026-07-21 (session 48 — FOLLOW-609 merged + closed out DONE; RETRO-196 found a fresh 5th guard bypass, promoted Rule AE; queue at next-dispatch boundary)
+
+## SESSION 48 (2026-07-21) — post-merge close-out for FOLLOW-609 (PR #597, `5458001`), RETRO-196, Rule AE promotion
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (no unresolved entries — every header
+`RESOLVED` except the standing non-blocking `OPEN — ESC-020/028/034`), `backlog/HANDOFFS.md`,
+`backlog/FOLLOW_UPS.md`, `git log --oneline -10` (HEAD `5458001`, the FOLLOW-609 merge),
+`gh pr list --state open` (empty). Confirmed the merge independently:
+`gh pr view 597 --json state,mergeCommit,mergedAt` → `MERGED`,
+`5458001912a0f55c063adf4224a9f77ca7c926c9`, `2026-07-21T17:34:21Z`. Local `main` was already
+fast-forwarded per the task instruction (clean working tree, `git status` confirmed).
+
+**Close-out performed, nothing taken on the merged PR's own claim:**
+
+1. `gh pr checks 597` (post-merge) — every real gate PASS; only pre-existing non-blocking `Rule I`.
+   Noted a 2nd commit (author Piotr directly) landed AFTER the session-47 PM validation to fix a
+   `.gitleaks.toml` false positive on the new bypass-4 fixture directory name — CI-tooling only, no
+   functional change, re-confirmed green.
+2. Read the merged diff directly (`gh pr diff 597`): `upsertDemoOverride` gained an optional `tx`
+   param (`demo-override-store.ts:163`, `const db = tx ?? createAdminClient()`); the staff route
+   (`route.ts:320`) now delegates to it from inside its own `db.transaction()`; the guard
+   (`check-staff-write-atomicity.cjs`) gained `collectLocalImportedIdentifierSources` +
+   `moduleContainsMutation` to recognize a bare-identifier delegated mutation call.
+3. Independently re-ran `node scripts/check-staff-write-atomicity.cjs` against live `main`: prints
+   `OK` for `api/demo/override/route.ts` (was `SKIP` pre-merge per RETRO-194). Grepped
+   `upsertDemoOverride` repo-wide: 1 non-test producer (`demo-override-store.ts:163`), 2 non-test
+   consumer call sites (agency no-tx, staff with-tx) — both confirmed by reading the file, not just
+   grep, since this is a parameter not a new symbol.
+4. **Went beyond the merge's own scope** given the guard's evolution has 2 prior retro-documented
+   "the fix wasn't the last bypass" hops (RETRO-192, RETRO-194): built a fresh, uncommitted,
+   from-scratch throwaway fixture (scratch dir outside the repo, run, deleted) testing a
+   namespace/property-access delegated call shape (`import * as helper …; helper.upsertX(tx, …)`).
+   **Found a genuine 5th bypass** — the guard's `PropertyAccessExpression` branch only recognizes
+   method names `transaction`/`insert`/`update`/`delete`/`execute`; a delegated helper call via a
+   namespace import falls through silently (`SKIP`, exit 0). Verified via `echo $?` and reading the
+   guard's actual branch logic, not inferred. Not a live defect today (grepped: zero namespace
+   imports on current staff-write routes) but directly relevant to FOLLOW-597/598, the next two
+   queued tickets, each of which needs a NEW store-delegation helper.
+5. Marked FOLLOW-609 **DONE + MERGED** in `backlog/FOLLOW_UPS.md` (AC checkboxes flipped) and
+   `backlog/QUEUE.md`.
+6. Filed **RETRO-196** in `backlog/RETROSPECTIVES.md` and **FOLLOW-612** (P2, close bypass 5) in
+   `backlog/FOLLOW_UPS.md`; amended FOLLOW-597/598's AC with an explicit named-import-only interim
+   mitigation note pointing at FOLLOW-612.
+7. **Promoted CONVENTIONS_PATCH Rule AE** ("an AST-based mechanical guard for a security invariant
+   must enumerate every syntactic call-shape before being declared complete"). This is the 3rd
+   numbered-retro sighting of the meta-pattern (RETRO-192 count 1 PRIOR, RETRO-194 count 2 PRIOR,
+   this retro's independently-found 5th call-shape crosses the ≥2-prior threshold), re-adjudicated
+   against Rule AD's own precedent (which promoted on "same guard-family, one more shape over," not
+   a same-arc/independent-arc split — the split RETRO-192/194 had used to decline). Full reasoning
+   in the Rule AE HTML-comment provenance block and in RETRO-196.
+
+**Reassessed for next dispatch:** no open escalation, no open PR — the queue is at a next-dispatch
+boundary, not a human-review block. FOLLOW-597/FOLLOW-598 are next in the operator-locked
+FOLLOW-608→609→597/598→606 sequence, both unblocked (FOLLOW-595 prerequisite DONE), both P3,
+`promoted_to_queue: false`. **Did not promote+dispatch either this session** — no Task/Agent
+subagent-spawning tool was available (Read/Write/Edit/Bash only, same constraint as sessions 45–47),
+so "dispatch" here would only mean writing a brief for a future session; left explicitly for the
+next session to either land FOLLOW-612 first (protects the highest-blast-radius FOLLOW-598 write) or
+promote+dispatch FOLLOW-597 with the named-import mitigation called out per its amended AC.
+
+**CI-check counter: 0/5 this session (no new PR opened or validated — this was a post-merge
+close-out pass, no code changed). Fix-iteration counter: 0/3.** **Escalation ages:** zero OPEN
+blocking escalations; ESC-020/028/034 remain OPEN, non-blocking per standing memory (unchanged this
+session).
+
+---
 
 ## SESSION 47 (2026-07-21) — validated FOLLOW-609 / PR #597, moved READY_FOR_REVIEW
 

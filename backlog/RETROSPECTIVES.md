@@ -30541,3 +30541,95 @@ close the helper-delegated-mutation bypass found by direct reproduction this ses
 the store-dedup refactor). FOLLOW-611 filed (gitleaks false-positive cleanup, P4). No P0/P1
 before-go-live FOLLOW is open blocking any gate-close language (none was written this session). -->
 
+
+## RETRO-196 — FOLLOW-609 (dedupe agency/staff demo-override write + close the FOLLOW-608 bypass-4 gap, PR #597, merged `5458001` 2026-07-21T17:34:21Z) — session-48 PM-orchestrator post-merge retro (Sonnet; no Task/Agent subagent tool available this session, same caveat as RETRO-194/195)
+
+**HEADLINE: the shipped fix genuinely closes bypass-4 and is independently verified LIVE on `main`,
+not just on the PR's own fixtures.** `upsertDemoOverride` (`demo-override-store.ts:163`) now takes an
+optional `tx` handle (`const db = tx ?? createAdminClient()`); the staff route
+(`api/demo/override/route.ts:320`) delegates to it from inside its own `db.transaction()` and the
+agency route (`:257`) calls it with no `tx`, unchanged. Re-running
+`node scripts/check-staff-write-atomicity.cjs` against `main` post-merge prints `OK:
+apps/control-plane/src/app/api/demo/override/route.ts — mutation + insert(staffAuditLog), both
+inside the SAME db.transaction()` — the guard now correctly recognizes the delegated call, where
+before FOLLOW-609 it printed `SKIP` (RETRO-194's finding). 23/23 pre-existing `route.test.ts` tests
+pass unchanged + 2 new `demo-override-store.test.ts` tests prove the `tx`-dispatch branch directly
+(`createAdminClient` NOT called when `tx` supplied, called once when it isn't). CI: every real gate
+green; only pre-existing non-blocking `Rule I`. One process note, not a defect: a 2nd commit
+(`ci: allowlist bypass-4 fixture identifier for gitleaks false positive`, author Piotr directly) was
+appended AFTER the PM's session-47 CI-green validation, to fix a `.gitleaks.toml` entropy
+false-positive on the new 43-char fixture directory name — CI-tooling only, re-confirmed green
+post-merge via `gh pr checks 597`, no functional code touched by that commit.
+
+**ONE material NEW finding, found by direct reproduction (not inference), not a live defect today,
+but a real and immediately-relevant guard blind spot for the NEXT two queued tickets:** the
+FOLLOW-609 guard extension (`collectFileFacts`'s new local-helper-call branch) only recognizes a
+delegated mutation call shaped as a **bare identifier call** (`upsertSomething(tx, ...)` from a
+NAMED import). It does NOT recognize the same delegation shaped as a **namespace/property-access
+call** (`import * as helper from '@/lib/mutation-helper'; helper.upsertSomething(tx, ...)`) — that
+call is a `PropertyAccessExpression` whose method name (`upsertSomething`) matches none of
+`transaction`/`insert`/`update`/`delete`/`execute`, so it falls through BOTH branches of
+`collectFileFacts` silently: not a `mutationCall`, not a `localHelperCallCandidate`. Built an
+isolated throwaway fixture (not committed — written to a scratch directory outside the repo, run,
+then deleted) reproducing exactly this shape (byte-identical to the committed
+`bypass4-helper-delegated-mutation` fixture except the import/call is `import * as helper from
+'@/lib/mutation-helper'` / `helper.upsertSomething(tx, tenantId)`): the guard printed `SKIP: …
+insert(staffAuditLog) present but no other data mutation` and exited 0 — zero enforcement,
+identical failure mode to bypass-4, one further call-shape hop over. **This is not hypothetical for
+the very next tickets in the locked FOLLOW-608→609→597/598→606 sequence**: FOLLOW-597 (labels/
+intent-config) and FOLLOW-598 (bandit weights, the HIGHEST-blast-radius staff write) will each need
+their own store-delegation helper, and if either worker happens to import it as a namespace
+(`import * as labelStore from …`) rather than a named import (an equally idiomatic TS style,
+arbitrary which one a worker picks), the guard will silently regress to zero enforcement exactly as
+it did for bypass-4, while CI reports "passed." Filed **FOLLOW-612** (P2 — same severity class as
+FOLLOW-609's own bypass-4 fix) to close this 5th call-shape; until it lands, FOLLOW-597/598's AC
+should require named/bare-identifier imports for any new store-delegation helper (the FOLLOW-609
+shape, which the guard DOES recognize) as an interim mitigation.
+
+**CONVENTIONS_PATCH: PROMOTED — new Rule AE.** This is the 3rd numbered-retro sighting of the SAME
+meta-pattern Rule AD already codified for value-domain literals (a mechanical detection script
+enumerates the call/occurrence shapes its author happened to think of; the NEXT ticket in the same
+area instantiates a shape the detector never considered, and the "guard is now complete" claim is
+falsified one hop later) — RETRO-192 (bypass 1–3 named, count 1 PRIOR, explicitly declined promotion
+as "same arc"), RETRO-194 (bypass 4 named on top of the scope-aware fix, count 2 PRIOR, also declined
+as "same arc, not independent"), and now this retro finds bypass 5 in the SAME arc, on the SAME guard,
+immediately after bypass 4 was fixed. Re-adjudicating with the Rule AD precedent in view (Rule AD's
+own promotion trigger, RETRO-182, was ALSO "the same literal, one more structural shape over" across
+607/608/609's shared ancestor guard-family — i.e. "same arc" was never the repo's actual bar for
+Rule AD; "a genuinely new, previously-unenumerated STRUCTURAL shape, found independently, not
+inferred from the PR's own claim" was) — this crosses the same threshold Rule AD uses, just for AST
+CALL-shapes instead of value-LITERAL shapes. New Rule AE (see below) generalizes the discipline to
+AST-based security-enforcement guards: enumerate every call-shape (bare identifier, property-access/
+namespace, re-export, method chain) before declaring a delegation-detecting guard complete, and scope
+this explicitly into FOLLOW-598's AC given it is the guard's highest-blast-radius beneficiary.
+
+**WIRING:** no new production symbol/event/column beyond the already-checked `tx` optional parameter
+(step 5c N/A — parameter, not a new export; both call sites are non-test, confirmed by reading
+`route.ts` directly). CI-tooling-only change to `scripts/check-staff-write-atomicity.cjs`. No
+co-assignment — step 5d N/A.
+
+**CASCADE:** FOLLOW-597 and FOLLOW-598 (both P3, `promoted_to_queue: false`, next in the locked
+sequence) are the direct beneficiaries/risks of this finding — flagged in their FOLLOW_UPS.md
+entries and in QUEUE.md so the session that dispatches them does not skip this. No other in-flight
+PR touches `scripts/check-staff-write-atomicity.cjs` or `demo-override-store.ts`.
+
+**Process note (same caveat as RETRO-194/195):** written directly by the PM-orchestrator session
+(session 48), not a separately-invoked `retrospective-analyst` subagent — this session's tool
+environment exposed only Read/Write/Edit/Bash, no Task/Agent-spawning tool. Rigor aimed to match the
+existing bar (independent from-scratch reproduction, not the PR's/prior retro's claim taken on
+faith) but at Sonnet tier, not the Opus tier the model-fit table calls for on retrospectives and on
+CONVENTIONS_PATCH promotions specifically — flagging so a future session with Task-tool access can
+re-run an Opus-tier retrospective-analyst pass on this ticket + re-check the Rule AE promotion call
+if the operator wants a second opinion.
+
+cross_ref: [RETRO-192, RETRO-193, RETRO-194, FOLLOW-607, FOLLOW-608, FOLLOW-609, FOLLOW-612, ADR-0018, Rule AD, Rule AE]
+
+<!-- next free FOLLOW number: 613. next free RETRO number: 197. Session 48 (PM-orchestrator,
+Read/Write/Edit/Bash tools only — no Task/Agent subagent-spawning tool available) closed out
+FOLLOW-609 (PR #597, merged 5458001) per operator instruction: marked DONE+MERGED in QUEUE.md/
+FOLLOW_UPS.md, independently re-verified the guard fix live on `main` (OK, not SKIP), filed RETRO-196.
+RETRO-196 found a genuine NEW guard blind spot (bypass 5 — namespace/property-access delegated
+mutation calls, reproduced via an uncommitted throwaway fixture) directly relevant to the next two
+queued tickets (FOLLOW-597/598) and promoted CONVENTIONS_PATCH Rule AE. Filed FOLLOW-612 (P2) to
+close bypass 5. No P0/P1 before-go-live FOLLOW is open blocking any gate-close language (none was
+written this session). -->

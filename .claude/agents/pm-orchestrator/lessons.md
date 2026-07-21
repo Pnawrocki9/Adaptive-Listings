@@ -2492,3 +2492,21 @@ hung session strands work wherever the agent was standing, and for subagents tha
   `git log HEAD ^origin/main --oneline` to check whether the current branch's commits are already
   common history with `main` — this tells you definitively whether bookkeeping belongs on `main` or
   the ticket branch, instead of inferring it from convention alone.
+
+- **Date / ticket:** 2026-07-21 — post-merge close-out FOLLOW-609 / PR #597 (session 48)
+- **Delegation row used:** N/A (post-merge close-out + retro, no new delegation this session).
+- **What validation caught (or missed):** The merge itself was clean (guard fix verified live on
+  `main`: `OK` not `SKIP`). But because this guard's history already had 2 retro-documented "the fix
+  for the observed bypass wasn't the last one" hops (RETRO-192, RETRO-194), I built one MORE
+  uncommitted throwaway fixture testing a call-shape none of the 4 known bypasses covered
+  (namespace/property-access delegated call) — and found a genuine 5th bypass, live-relevant to the
+  next two queued tickets (FOLLOW-597/598). This would NOT have surfaced from re-running the
+  committed fixtures or trusting "CI green" — it only surfaces by actively asking "what shape did
+  nobody think to test yet" instead of just re-verifying the shapes that were already fixed.
+- **A delegation/validation rule I'd add:** When a mechanical AST/regex guard has ≥2 prior retros
+  each finding "one more bypass shape" after a fix shipped, treat that as a standing signal to
+  proactively fuzz ONE more untested call-shape at every subsequent touch of that guard — don't wait
+  for the next ticket to accidentally discover it. Promoted this as CONVENTIONS_PATCH Rule AE this
+  session (re-adjudicated against Rule AD's precedent: the promotion bar was never
+  same-arc-vs-independent-arc, it was "a genuinely new, independently-found, previously-unenumerated
+  shape" — RETRO-192/194 had used the wrong bar to decline).

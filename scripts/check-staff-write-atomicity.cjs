@@ -3,7 +3,7 @@
 
 /**
  * Staff-write audit atomicity guard — ADR-0018 §3a / FOLLOW-607, tightened to be
- * SCOPE-AWARE by FOLLOW-608.
+ * SCOPE-AWARE by FOLLOW-608, mutation-detection extended by FOLLOW-609.
  *
  * Every staff-audited WRITE — a route that both performs a data mutation and
  * records it in staff_audit_log — MUST commit the mutation and the audit row in
@@ -40,6 +40,41 @@
  *     the pattern — an audit insert that lives in a separate module opens its
  *     own DB client and can never be proven to commit atomically with the
  *     route's own mutation, so this is always a FAIL, never a silent SKIP.
+ *
+ * FOLLOW-609 closes a 4th bypass RETRO-194 found in FOLLOW-608 as shipped: a
+ * data mutation delegated to a bare call of an imported LOCAL HELPER FUNCTION
+ * (e.g. `await upsertDemoOverride(tx, ...)`, as opposed to a method call like
+ * `.update(`/`.insert(`) was invisible to `collectFileFacts` — it is neither a
+ * `.update(`/`.delete(`/`.insert(` PropertyAccessExpression call nor a raw-SQL
+ * `.execute(sql\`...\`)` call, so a route whose ONLY local mutation-shaped call
+ * is a helper delegation had an EMPTY `mutationCalls` list and was misclassified
+ * SKIP ("insert(staffAuditLog) present but no other data mutation") even when
+ * the helper call and the audit insert shared one `db.transaction()` — zero
+ * enforcement, not merely presence-only.
+ *
+ * Fix: `collectLocalImportedIdentifierSources` maps every LOCAL (relative or
+ * `@/`-alias) imported identifier name in the route file to the resolved
+ * absolute path of the module it comes from. A bare-identifier call to one of
+ * those names is a CANDIDATE delegated-mutation site, but is only promoted
+ * into `mutationCalls` when `moduleContainsMutation` proves the RESOLVED
+ * module itself performs a mutation (directly, or via its own further local
+ * delegation, bounded depth 3 — mirroring `findHelperFactoredAudit`'s bounded
+ * walk for the audit side). This is deliberately NOT gated on whether the call
+ * site itself is inside a tx scope — an out-of-scope delegated mutation call
+ * must still be counted as a mutation so the normal scope-match check below
+ * correctly FAILs it (the alternative, gating on tx-scope at collection time,
+ * would silently SKIP an out-of-tx delegated mutation instead of failing it —
+ * zero enforcement in the opposite direction, tried and rejected during this
+ * fix's own development). Gating on "does the resolved module actually
+ * mutate" instead is what keeps routes that call unrelated local helpers (auth
+ * resolvers, response wrappers, fire-and-forget dispatchers, ...) with NO data
+ * mutation at all — e.g. `api/admin/labels/export/route.ts`, a genuine
+ * audit-of-a-read/export with zero `db.transaction()` calls — correctly
+ * SKIPped: none of its local imports resolve to a module containing
+ * `.update(`/`.delete(`/a non-audit `.insert(`/a raw-SQL mutation. (An earlier
+ * draft of this fix gated on tx-scope alone and regressed exactly this route
+ * from SKIP to a false FAIL — caught by the existing real-repo assertion in
+ * scripts/__tests__/check-staff-write-atomicity.test.sh before it shipped.)
  *
  * Exemption: a route may still opt out (a genuinely single-store single-write
  * path where a transaction wrapper is meaningless) with an inline comment
@@ -123,43 +158,200 @@ function isRawSqlMutationCall(callNode) {
 }
 
 /**
- * Walks the whole file collecting:
- *   - auditCalls:    CallExpression nodes that insert into staffAuditLog
- *   - mutationCalls: CallExpression nodes that are .update(/.delete(/a non-audit
- *                     .insert(/a raw-SQL mutation .execute(sql\`...\`)
- *   - txScopeNodes:  the ArrowFunction/FunctionExpression callback argument of
- *                     every `.transaction(...)` call
+ * Maps each LOCAL (relative or `@/`-alias) imported identifier NAME bound by
+ * this file's own import declarations to the resolved absolute path of the
+ * module it comes from (FOLLOW-609 bypass 4). A bare-identifier call whose
+ * callee name is a key of this map is a CANDIDATE helper-delegated mutation
+ * site; `collectFileFacts` only promotes it to `mutationCalls` when the
+ * resolved module itself actually performs a mutation (`moduleContainsMutation`
+ * below) — see that function's doc comment and the module doc comment's "4th
+ * bypass" note. Type-only named imports are excluded (never callable).
+ * Uses the same resolution helpers as `collectLocalImports` (bypass 2).
  */
-function collectFileFacts(sourceFile) {
-  const auditCalls = [];
-  const mutationCalls = [];
-  const txScopeNodes = new Set();
+function collectLocalImportedIdentifierSources(fileAbsPath, sourceFile) {
+  const dir = path.dirname(fileAbsPath);
+  const sources = new Map();
 
   function visit(node) {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const method = node.expression.name.text;
-
-      if (method === 'transaction') {
-        const fnArg = node.arguments.find(
-          (a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a),
-        );
-        if (fnArg) txScopeNodes.add(fnArg);
-      } else if (method === 'insert') {
-        if (isStaffAuditLogRef(node.arguments[0])) {
-          auditCalls.push(node);
-        } else {
-          mutationCalls.push(node);
+    if (
+      ts.isImportDeclaration(node) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      node.importClause &&
+      !node.importClause.isTypeOnly
+    ) {
+      const spec = node.moduleSpecifier.text;
+      let basePath = null;
+      if (spec.startsWith('./') || spec.startsWith('../')) {
+        basePath = path.resolve(dir, spec);
+      } else if (spec.startsWith('@/')) {
+        const srcRoot = findSrcRoot(dir);
+        if (srcRoot) basePath = path.join(srcRoot, spec.slice(2));
+      }
+      if (basePath) {
+        const resolved = resolveFileCandidates(basePath);
+        if (resolved) {
+          const clause = node.importClause;
+          if (clause.name) sources.set(clause.name.text, resolved);
+          if (clause.namedBindings) {
+            if (ts.isNamedImports(clause.namedBindings)) {
+              for (const el of clause.namedBindings.elements) {
+                if (!el.isTypeOnly) sources.set(el.name.text, resolved);
+              }
+            } else if (ts.isNamespaceImport(clause.namedBindings)) {
+              sources.set(clause.namedBindings.name.text, resolved);
+            }
+          }
         }
-      } else if (method === 'update' || method === 'delete') {
-        mutationCalls.push(node);
-      } else if (method === 'execute' && isRawSqlMutationCall(node)) {
-        mutationCalls.push(node);
       }
     }
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
+  return sources;
+}
+
+/**
+ * Bounded (depth 3) check: does the module at `absPath` perform a data
+ * mutation itself (`.update(`/`.delete(`/a non-audit `.insert(`/a raw-SQL
+ * mutation `.execute(sql\`...\`)`), directly or via ITS OWN local import
+ * delegation chain? Mirrors `findHelperFactoredAudit`'s bounded resolution but
+ * checks `mutationCalls` instead of `auditCalls` (FOLLOW-609 bypass 4). This is
+ * what distinguishes a REAL delegated mutation helper (e.g.
+ * `upsertDemoOverride`, which itself calls `.insert(demoOverrides)...`) from an
+ * unrelated local helper a route happens to call (an auth resolver, a response
+ * wrapper, a fire-and-forget dispatcher, ...) that performs no data mutation at
+ * all — counting the latter as a "mutation" would produce false FAILs (see
+ * module doc comment).
+ *
+ * Known imprecision (acceptable — see below): this checks the WHOLE resolved
+ * module, not the specific named export that was called. A read-only sibling
+ * export co-located in the same file as a mutating export (e.g.
+ * `getDemoOverride` living beside `upsertDemoOverride` in
+ * `demo-override-store.ts`) is therefore ALSO treated as a mutation candidate
+ * when called. This is safe by construction: an extra, non-tx-scoped
+ * candidate can only ever push an otherwise-OK file toward FAIL (forcing a
+ * human to wrap it in a transaction or add an exemption), never toward a
+ * false OK — `hasMatchingPair` below requires a genuine same-scope match, so
+ * spurious candidates are inert unless they happen to match, and a spurious
+ * match can only occur if the read-only call is ALSO inside the exact tx
+ * scope the real audit insert uses, which is not a false pass. FOLLOW-597/598
+ * (labels/intent-config, bandit-weight stores) can rely on this same
+ * module-level check; a future ticket may sharpen it to per-export precision
+ * if a real false-FAIL nuisance shows up.
+ */
+function moduleContainsMutation(absPath) {
+  const MAX_DEPTH = 3;
+  const visited = new Set();
+  const queue = [{ path: absPath, depth: 1 }];
+
+  while (queue.length > 0) {
+    const { path: candidatePath, depth } = queue.shift();
+    if (visited.has(candidatePath)) continue;
+    visited.add(candidatePath);
+    if (!fs.existsSync(candidatePath)) continue;
+
+    const { sourceFile } = parse(candidatePath);
+    // Direct mutation shapes only at this level — the bounded import-graph
+    // walk below already follows further local-helper delegation chains, so
+    // this does not need its own identifier-delegation widening.
+    const facts = collectFileFacts(sourceFile);
+    if (facts.mutationCalls.length > 0) return true;
+
+    if (depth < MAX_DEPTH) {
+      for (const nextPath of collectLocalImports(candidatePath, sourceFile)) {
+        queue.push({ path: nextPath, depth: depth + 1 });
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Walks the whole file collecting:
+ *   - auditCalls:    CallExpression nodes that insert into staffAuditLog
+ *   - mutationCalls: CallExpression nodes that are .update(/.delete(/a non-audit
+ *                     .insert(/a raw-SQL mutation .execute(sql\`...\`)/a bare
+ *                     call to a locally-imported helper function whose OWN
+ *                     module performs a mutation (FOLLOW-609 bypass 4 — see
+ *                     module doc comment)
+ *   - txScopeNodes:  the ArrowFunction/FunctionExpression callback argument of
+ *                     every `.transaction(...)` call
+ *
+ * @param sourceFile                    The parsed file to walk.
+ * @param localImportedIdentifierSources Map of identifier name -> resolved
+ *   absolute module path, from `collectLocalImportedIdentifierSources`.
+ *   Defaults to an empty map for callers (e.g. `findHelperFactoredAudit`'s
+ *   recursive audit-only search, and `moduleContainsMutation`'s own per-module
+ *   check) that only need the DIRECT `.update(`/`.delete(`/`.insert(`/raw-SQL
+ *   shapes and have no use for the helper-delegation widening (avoiding
+ *   unbounded mutual recursion between the two bounded import-graph walks).
+ */
+function collectFileFacts(sourceFile, localImportedIdentifierSources = new Map()) {
+  const auditCalls = [];
+  const mutationCalls = [];
+  const txScopeNodes = new Set();
+  // FOLLOW-609 bypass 4: bare calls to a locally-imported identifier, collected
+  // separately and only promoted to `mutationCalls` AFTER the full walk (see
+  // below) — filtered to calls whose resolved source module actually performs
+  // a mutation itself.
+  const localHelperCallCandidates = [];
+
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        const method = node.expression.name.text;
+
+        if (method === 'transaction') {
+          const fnArg = node.arguments.find(
+            (a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a),
+          );
+          if (fnArg) txScopeNodes.add(fnArg);
+        } else if (method === 'insert') {
+          if (isStaffAuditLogRef(node.arguments[0])) {
+            auditCalls.push(node);
+          } else {
+            mutationCalls.push(node);
+          }
+        } else if (method === 'update' || method === 'delete') {
+          mutationCalls.push(node);
+        } else if (method === 'execute' && isRawSqlMutationCall(node)) {
+          mutationCalls.push(node);
+        }
+      } else if (
+        ts.isIdentifier(node.expression) &&
+        localImportedIdentifierSources.has(node.expression.text)
+      ) {
+        localHelperCallCandidates.push(node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+
+  // Only count a locally-imported helper call as a mutation candidate when its
+  // OWN resolved module actually performs a mutation (directly or via ITS OWN
+  // further local delegation — `moduleContainsMutation`). This is deliberately
+  // NOT gated on tx-scope here — an out-of-scope delegated mutation call MUST
+  // still be counted so the scope-match check below correctly FAILs it (rather
+  // than SKIPping it as "no mutation found", which would be zero enforcement
+  // in the opposite direction). Gating on "does the module actually mutate"
+  // instead of "is this call inside a tx" is what keeps routes that call
+  // unrelated local helpers (auth resolvers, response wrappers,
+  // fire-and-forget dispatchers, ...) with NO data mutation at all — e.g.
+  // `api/admin/labels/export/route.ts` — correctly SKIPped: none of ITS local
+  // imports resolve to a module containing `.update(`/`.delete(`/a non-audit
+  // `.insert(`/a raw-SQL mutation.
+  for (const call of localHelperCallCandidates) {
+    const calleeName = call.expression.text;
+    const resolvedPath = localImportedIdentifierSources.get(calleeName);
+    if (resolvedPath && moduleContainsMutation(resolvedPath)) {
+      mutationCalls.push(call);
+    }
+  }
+
   return { auditCalls, mutationCalls, txScopeNodes };
 }
 
@@ -261,7 +453,8 @@ function findHelperFactoredAudit(routeAbsPath, routeSourceFile) {
 // ─── Main scan ─────────────────────────────────────────────────────────────
 
 console.log(
-  '=== Staff-write audit atomicity check (ADR-0018 §3a / FOLLOW-607, scope-aware FOLLOW-608) ===',
+  '=== Staff-write audit atomicity check (ADR-0018 §3a / FOLLOW-607, scope-aware FOLLOW-608, ' +
+    'helper-delegated-mutation-aware FOLLOW-609) ===',
 );
 console.log(`Scanning: ${scanRootRel}/**/route.ts`);
 console.log('');
@@ -279,7 +472,10 @@ const exemptionSightings = [];
 for (const absPath of routeFiles) {
   const relPath = path.relative(ROOT, absPath);
   const { text, sourceFile } = parse(absPath);
-  const facts = collectFileFacts(sourceFile);
+  const facts = collectFileFacts(
+    sourceFile,
+    collectLocalImportedIdentifierSources(absPath, sourceFile),
+  );
 
   // Bypass 2: no local audit insert, but a real mutation exists — check whether
   // the audit insert was factored into an imported local helper instead.

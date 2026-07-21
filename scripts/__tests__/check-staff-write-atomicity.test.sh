@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Red-first proof for scripts/check-staff-write-atomicity.sh (FOLLOW-607, tightened
-# to scope-aware by FOLLOW-608).
+# to scope-aware by FOLLOW-608, mutation-detection extended by FOLLOW-609).
 #
 # Runs the guard against the committed fixtures under
 # scripts/__fixtures__/staff-write-atomicity/ and asserts the exit code each
@@ -14,6 +14,12 @@
 #   qualified-form-passing/        schema.staffAuditLog, in ONE tx            -> exit 0
 #   exempt-disallowed-superadmin/  exemption marker + isSuperadmin gate       -> exit 1
 #   exempt-ok/                     exemption marker, NOT superadmin-gated     -> exit 0
+#   bypass4-helper-delegated-mutation/         mutation delegated to a local
+#                                               helper call, in ONE tx with
+#                                               the audit insert              -> exit 0
+#   bypass4-helper-delegated-mutation-out-of-tx/ same delegated-helper
+#                                               mutation, OUTSIDE the tx that
+#                                               wraps the audit insert         -> exit 1
 #
 # Also proves (FOLLOW-608 AC 4, whitespace hardening) via a dynamically
 # generated, non-committed fixture (so prettier's format-on-commit never
@@ -85,7 +91,7 @@ run_fixture() {
   fi
 }
 
-echo "=== FOLLOW-607/608 red-first fixture proof ==="
+echo "=== FOLLOW-607/608/609 red-first fixture proof ==="
 
 run_fixture "violation" 1 "FAIL:"
 run_fixture "passing" 0 "OK:"
@@ -112,6 +118,19 @@ run_fixture "bypass3-raw-sql-mutation" 1 "FAIL:"
 run_fixture "qualified-form-passing" 0 "OK:"
 run_fixture "exempt-disallowed-superadmin" 1 "DISALLOWS this exemption"
 run_fixture "exempt-ok" 0 "EXEMPT:"
+
+# ─── FOLLOW-609 bypass 4 (helper-delegated mutation, RETRO-194) ────────────
+# Red-first proof: pre-FOLLOW-609, a data mutation delegated to a bare call of
+# an imported local helper function (mirroring the real
+# demo-override-store.ts::upsertDemoOverride shape) was invisible to
+# collectFileFacts's .update(/.delete(/.insert(/raw-SQL detection, so a route
+# whose only local mutation-shaped call was such a delegation was misclassified
+# SKIP ("no other data mutation") even when co-scoped with the audit insert in
+# one db.transaction() — zero enforcement. The fixed guard must OK the
+# co-scoped variant and FAIL the out-of-tx variant (not SKIP it — a SKIP would
+# be zero enforcement in the opposite direction).
+run_fixture "bypass4-helper-delegated-mutation" 0 "OK:"
+run_fixture "bypass4-helper-delegated-mutation-out-of-tx" 1 "FAIL:"
 
 # ─── FOLLOW-608 AC 4: whitespaced audit-insert form (dynamic, non-committed) ──
 # Not a committed fixture: `.insert( staffAuditLog )` would be reformatted to
@@ -170,8 +189,8 @@ assert_contains "real repo" "No staff-write-atomicity-exempt: usages found in pr
 
 echo ""
 if [[ "$FAILURES" -gt 0 ]]; then
-  echo "FOLLOW-607/608 fixture proof FAILED: $FAILURES assertion(s) failed."
+  echo "FOLLOW-607/608/609 fixture proof FAILED: $FAILURES assertion(s) failed."
   exit 1
 else
-  echo "FOLLOW-607/608 fixture proof passed: all scenarios behaved as expected."
+  echo "FOLLOW-607/608/609 fixture proof passed: all scenarios behaved as expected."
 fi

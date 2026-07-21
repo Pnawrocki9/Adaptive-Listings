@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-07-21 / FOLLOW-609
+
+**What I built:** Deduped the FOLLOW-596 byte-duplicated staff/agency `demo_overrides` write
+(RETRO-193) by giving `demo-override-store.ts::upsertDemoOverride` an optional 4th `tx?: Database`
+argument. The agency path calls it with no `tx` (unchanged); the staff path now delegates from
+inside its own `db.transaction(async (tx) => {...})`, passing `tx as unknown as Database` (the
+established cast pattern from `api/crm/outcome/route.ts`), so the upsert and the `staff_audit_log`
+insert still commit/roll back atomically (ADR-0018 §3a). In the SAME PR, extended
+`scripts/check-staff-write-atomicity.cjs` (the FOLLOW-608 AST guard) to recognise a bare call to a
+locally-imported helper function as a mutation candidate — the PM's pre-dispatch verification
+(session 46, RETRO-194) had already proven the as-shipped guard silently SKIPped this exact
+delegated shape (zero enforcement, misclassified as audit-of-a-read), which would have made the
+dedup regress atomicity coverage on `api/demo/override/route.ts` to nothing while CI still reported
+"passed."
+
+**Wiring/auth/fail-loud risks I weighed:** (1) My first guard-fix draft gated the new helper-call
+detection on "is this call lexically inside a recorded tx scope" — this correctly OK'd the co-scoped
+case but silently SKIPped (not FAILed) the out-of-tx violation case, which is the exact zero-
+enforcement failure mode the ticket explicitly warned against ("FAILs it when the helper call sits
+outside the transaction" is a named AC). Caught this myself by writing the out-of-tx throwaway
+fixture BEFORE writing the permanent one, per the ticket's own red-first instruction. (2) My second
+draft (any call to any locally-imported identifier is a mutation candidate, unconditionally) was
+over-inclusive in the wrong dimension: it regressed `api/admin/labels/export/route.ts` — a genuine
+audit-of-a-read/export route with zero `db.transaction()` calls — from a correct SKIP to a false
+FAIL, because it imports several unrelated local helpers (`afterResponse`, `getSessionAuthClaims`,
+`clickhouseAuthHeaders`). The existing test harness's real-repo assertion
+(`assert_contains ... "SKIP: ... labels/export/route.ts"`) caught this immediately on re-run — a
+concrete case of a pre-existing regression test earning its keep. Landed on: resolve the bare-call's
+imported symbol to its source file, and only count the call as a mutation when THAT resolved module
+itself performs a mutation (`moduleContainsMutation`, bounded depth 3, mirrors the existing
+`findHelperFactoredAudit` bypass-2 resolution). This is module-level, not per-export, precision — a
+known, documented, and deliberately accepted imprecision: a read-only sibling export co-located with
+a mutating export in the same file (e.g. `getDemoOverride` beside `upsertDemoOverride`) is also
+treated as a mutation candidate when called, but this can only ever push a file toward an
+(survivable) false FAIL, never a false OK, so it stays safe under the "fail loud, never silently
+pass" guardrail. (3) Ran the full existing fixture suite (10 pre-existing scenarios) after each
+draft, not just the new ones — this is what surfaced both wrong turns before they shipped.
+
+**A guardrail I'd add:** when hardening an AST-based CI guard's detection surface, always re-run the
+FULL existing fixture/regression suite (not just the new fixture) after every draft of the fix — a
+heuristic that closes one gap can silently open a different one in an unrelated existing case, and
+that only shows up by re-running everything, not by reasoning about the new case in isolation.
+
+---
+
 ## 2026-07-20 / FOLLOW-607
 
 **What I built:** `scripts/check-staff-write-atomicity.sh` — a hard CI gate mechanically enforcing

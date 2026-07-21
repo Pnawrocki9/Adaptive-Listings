@@ -1,11 +1,60 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 42 — FOLLOW-596 (Phase-2 demo-override staff write port) promoted to QUEUE + dispatched to backend-engineer/OPUS, branch `backend-engineer/FOLLOW-596-demo-override-staff-write`; see HANDOFFS.md brief. IN_PROGRESS. No open PRs, no open escalations at dispatch time. Awaiting worker completion — PM validates CI green + INV-5 tenant-filter test + FOLLOW-607 atomicity-guard pass before READY_FOR_REVIEW.)
+## ▶️ START HERE — resume 2026-07-21 (session 43 — FOLLOW-596 (Phase-2 demo-override staff write port) PM-validated on PR #594; CI green (only pre-existing Rule I red, PR net-REDUCES violations 190→189); atomicity + tenant-fence + wiring independently confirmed. Moved to READY_FOR_REVIEW. Awaiting human merge.)
 
-**Read this before picking anything.** No escalations open (ESC-036/037/038 all RESOLVED). No open
-PRs at session start. FOLLOW-596 is the only ticket IN_PROGRESS (1/3 slots used per the 3-in-flight
-cap). Next candidates after 596 lands: FOLLOW-597 (same Phase-2 shape, labels + intent-config), then
-the P3 retro-driven follow-ups (608/604/606/602/603), then FOLLOW-598/599/600.
+**Read this before picking anything.** No escalations open (ESC-036/037/038 all RESOLVED). PR #594
+(`backend-engineer/FOLLOW-596-demo-override-staff-write`) is READY_FOR_REVIEW, awaiting human merge
+— do not pick a new ticket that touches `api/demo/override/route.ts` or the same admin surface until
+it lands. After merge: spawn `retrospective-analyst` on the merged diff, then next candidates are
+FOLLOW-597 (same Phase-2 shape, labels + intent-config), the P3 retro-driven follow-ups
+(608/604/606/602/603), then FOLLOW-598/599/600.
+
+**FOLLOW-596 PM validation summary (session 43):**
+
+- **CI (step 5b):** `gh pr checks 594 --watch` → every real gate SUCCESS (Lint, Typecheck, Test
+  (Node 22), Test (Python x4), Build, Build (control-plane), SDK E2E tests, Format check, Gitleaks,
+  Doppler verify, **Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607) — PASS**, and every
+  other ticket-specific guard). Only red: `Rule I — wired-or-dead check` — pre-existing,
+  non-blocking (memory `project_ci_gate_landscape`). **Spot-checked, not taken on faith:** ran
+  `scripts/check-rule-i.sh` on `origin/main` HEAD (`7aa2353`) myself → **190** violations; the PR
+  branch's own CI log shows **189** — this PR branch has ONE FEWER violation than main, i.e. it
+  introduces ZERO new Rule I violations (net improvement). Grepped the PR-branch Rule I log for
+  `demo`/`override` — the only demo-related hits (`ReachableArchetype`, `DemoAllowedModel` in
+  `demo-override-store.ts`, pre-existing types on an untouched file per `git diff --stat`) are not
+  new.
+- **Atomicity (step 5c/AC):** read the shipped `api/demo/override/route.ts` diff directly — the
+  staff `PUT` path (`putStaff`) wraps
+  `tx.insert(demoOverrides)...onConflictDoUpdate(...).returning()` AND
+  `await tx.insert(staffAuditLog).values(...)` inside ONE `db.transaction(async (tx) => {...})`; any
+  throw inside (incl. a forced rollback on an empty upsert result) rolls both back → 500
+  `audit_write_failed`, never an orphan mutation. Confirmed the FOLLOW-607 CI gate
+  (`Staff-write audit atomicity`) actually ran against this file and PASSED. Agency branch still
+  calls the pre-existing `upsertDemoOverride(...)` unmodified, unaudited — byte-unchanged per the
+  diff. `minAgencyRole: 'agency:admin'` on PUT (viewer cannot write) confirmed in code, a deliberate
+  divergence from quiz/config as claimed.
+- **Tests:** `route.test.ts` — 23/23 pass locally (independently re-run, not the worker's claim).
+  Confirmed by reading the file: dedicated rollback test ("ROLLS BACK the override upsert when the
+  staff audit insert fails", L579) and commit test (L608) target the real `db.transaction()` path;
+  the MANDATORY tenant-filter tests (L634-676) exercise the real fenced
+  `eq(demoOverrides.tenantId, ...)` insert/read against a both-tenants mock DB — NOT the
+  demonstrative `RLS-TRAP-LEAK-DEMO` (ADR-0018 §2 invariant 5 / RETRO-187 discipline).
+- **Runtime wiring (step 5c):** new page `admin/tenants/[id]/demo/page.tsx` imports and renders
+  `StaffDemoOverrideEditor` from the new `demo-override-editor.tsx` (Next.js file-route, reachable
+  at `/admin/tenants/[id]/demo`); the page's `tenantExists` producer/consumer pair
+  (`session-auth.ts:329` → `demo/page.tsx:42`) matches the shipped pattern already used by the
+  merged `quiz` and `analytics` staff pages. **Not yet wired into the `/admin/tenants/[id]` hub
+  landing links** — explicitly out of scope per the ticket and the worker's own doc-comment;
+  FOLLOW-606 (already filed) is the follow-up that adds the landing link, same as it will for
+  597/598.
+- **Local re-verification (recovered-work-grade rigor, not required here since no crash occurred,
+  but applied anyway per discipline):**
+  `pnpm --filter @estalara/control-plane test -- demo/override` → 23/23 pass;
+  `pnpm --filter @estalara/control-plane exec tsc --noEmit -p .` → clean, zero errors.
+- **Co-assignment:** single agent (backend-engineer only) — step 5d (multi-agent integration check)
+  N/A.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3** (CI was already green on first read; no fixes
+requested).
 
 ---
 

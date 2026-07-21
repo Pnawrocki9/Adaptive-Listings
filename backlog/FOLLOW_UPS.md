@@ -16114,6 +16114,15 @@ priority: P3 estimated_hours: 3 promoted_to_queue: true (session 42 — dispatch
 backend-engineer/OPUS, branch `backend-engineer/FOLLOW-596-demo-override-staff-write`; see
 HANDOFFS.md brief)
 
+**STATUS (session 43): READY_FOR_REVIEW.** PR #594. PM-validated independently: CI green (only
+pre-existing Rule I red, net-reduces violations 190→189 — zero new), atomicity confirmed by reading
+the shipped `db.transaction()` wrapping both the `demoOverrides` upsert and the `staffAuditLog`
+insert (ADR-0018 §3a, FOLLOW-607 gate PASS), the MANDATORY invariant-5 tenant-filter tests (READ +
+WRITE) exercise the real fenced query (not the demonstrative `RLS-TRAP-LEAK-DEMO`), agency path
+byte-unchanged, and the new `/admin/tenants/[id]/demo` page/editor is wired and reachable (not yet
+in the hub landing links — that is FOLLOW-606's job, explicitly out of scope here). Awaiting human
+merge. Full validation detail in `backlog/QUEUE.md` START HERE (session 43).
+
 **AC:** demo-override endpoints accept staff (writes audited, rank ≥ ops);
 `/admin/tenants/[id]/demo` surface; agency path unchanged.
 

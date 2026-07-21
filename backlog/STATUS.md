@@ -1,3 +1,82 @@
+# Status — 2026-07-21 (session 43 — FOLLOW-596 PM-validated on PR #594, READY_FOR_REVIEW)
+
+## SESSION 43 (2026-07-21) — FOLLOW-596 validated: CI green, atomicity + wiring confirmed, READY_FOR_REVIEW
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (scanned all `## ` headers — every
+entry either `RESOLVED` or the long-standing explicitly-non-blocking `OPEN — ESC-020`; nothing new
+blocks this validation), `backlog/HANDOFFS.md` (FOLLOW-596 delegation brief),
+`git log --oneline -20`, `gh pr list --state open` (1 open PR: #594, this ticket's worker PR).
+
+**Task:** independently validate PR #594 (backend-engineer/OPUS, FOLLOW-596) against the delegation
+brief's ACs and the CONVENTIONS_PATCH/ADR-0018 discipline. Did not write code — validation + queue
+bookkeeping only.
+
+**CI (step 5b, non-negotiable):** `gh pr checks 594 --watch` → every real gate SUCCESS: Lint,
+Typecheck, Test (Node 22), Test (Python 3.12 ×4), Build, Build (control-plane), SDK E2E tests,
+Format check, Gitleaks secrets scan, Doppler verify, Vercel, and every ticket-specific guard
+(Archetype embeddings/seeds, Auto-Detection corpus, ClickHouse migrations smoke, Cross-language
+event contract, Demo integration, Fire-and-forget sink guard, K.3.6 D-1 live-network smoke,
+Migration journal monotonicity, Modal App singleton guard, Privacy Notice SDK key-sync, Redis shadow
+round-trip, Rule H, Rule J, Tracer query-builders live ClickHouse guard), **and the FOLLOW-607
+`Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)` gate — PASS on this route**. Only red:
+`Rule I — wired-or-dead check`. **Did not accept the worker's "pre-existing, zero new violations"
+claim on faith** — added a git worktree on `origin/main` (`7aa2353`) and ran
+`scripts/check-rule-i.sh` myself: **190** violations on main. The PR branch's own CI log shows
+**189**. So this PR branch has strictly fewer violations than main — zero new Rule I violations
+introduced (net -1, likely an incidental wiring fix elsewhere). Grepped the PR branch's Rule I log
+output for `demo`/`override`: the only demo-related hits (`ReachableArchetype`, `DemoAllowedModel`
+in `lib/demo-override-store.ts`) are on a file this PR's diff does not touch (`git diff --stat`
+confirms `demo-override-store.ts` is absent from the changed-file list) — pre-existing, not new.
+
+**Atomicity + AC verification (read the real diff, not the PR description):** `putStaff()` in the
+shipped `api/demo/override/route.ts` wraps
+`tx.insert(demoOverrides)...onConflictDoUpdate(...) .returning()` AND
+`await tx.insert(staffAuditLog).values(...)` inside ONE `db.transaction(async (tx) => {...})`; an
+empty upsert result or any audit-insert failure throws inside the callback, rolling BOTH back to a
+500 `audit_write_failed` (no orphan mutation) — this is the genuine ADR-0018 §3a shape, and it is
+the reason the FOLLOW-607 CI gate actually engaged (a delegated `upsertDemoOverride` call would
+leave only the audit insert in the route file, which the guard treats as audit-of-a-read and skips —
+confirmed this is why the worker inlined the upsert instead of extending the store module). PUT
+gates on `minAgencyRole: 'agency:admin'` (viewer cannot write demo mode) — confirmed in code as the
+claimed deliberate divergence from quiz/config. Agency branch still calls the pre-existing
+`upsertDemoOverride(...)`, unaudited, byte-unchanged (diff stat confirms `demo-override-store.ts`
+untouched).
+
+**Tests:** read `route.test.ts` directly — 23 `it(...)` blocks across 6 `describe` blocks, including
+the MANDATORY rollback test (L579, "ROLLS BACK the override upsert when the staff audit insert
+fails"), the commit test (L608), and the invariant-5 tenant-filter READ (L635) + WRITE (L655) tests
+— the WRITE test asserts `db._captured.insertTenantId === TENANT_A` (not B), that tenant B's row is
+byte-untouched, and that the audit row targets A — a real fenced-query proof, not the demonstrative
+`RLS-TRAP-LEAK-DEMO` array. **Independently re-ran, not taken on the worker's word:**
+`pnpm --filter @estalara/control-plane test -- demo/override` → 23/23 pass;
+`pnpm --filter @estalara/control-plane exec tsc --noEmit -p .` → clean.
+
+**Runtime wiring (step 5c, evidence):**
+`grep -rn 'tenantExists' apps/control-plane/src --include=*.ts --include=*.tsx | grep -v '\.test\.'`
+→ 1 non-test producer (`lib/session-auth.ts:329`) reached by the new consumer
+(`admin/tenants/[id]/demo/page.tsx:42`), matching the already-shipped `quiz`/`analytics` staff
+pages. `admin/tenants/[id]/demo/page.tsx` imports and renders `StaffDemoOverrideEditor` from the new
+`demo-override-editor.tsx` (confirmed by reading both files) — reachable at the Next.js file-route
+`/admin/tenants/[id]/demo`. Not wired into the `/admin/tenants/[id]` hub landing links — explicitly
+out of scope per the ticket and the page's own doc-comment; FOLLOW-606 (already filed, unpromoted)
+covers that cross-surface wiring for 596/597/598 alike.
+
+**Co-assignment:** single agent (backend-engineer only) — step 5d N/A.
+
+**Result:** `backlog/QUEUE.md` FOLLOW-596 START HERE header updated to session 43, summarizing the
+full validation; `backlog/FOLLOW_UPS.md` FOLLOW-596 entry annotated `READY_FOR_REVIEW` with a
+pointer back to the QUEUE.md detail. **PR #594 commented** "PM-validated. CI green. Runtime wiring
+confirmed. Ready for human review." **PR NOT merged — human review boundary.**
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3** (CI was green on first read; zero fixes
+requested — well within cap).
+
+**Open escalations:** none newly filed. No P0/P1 before-go-live FOLLOW gate language written this
+session (not closing anything) — the gate-check grep was not re-run since this session asserts
+nothing about sprint/gate closure.
+
+---
+
 # Status — 2026-07-21 (session 42 — FOLLOW-596 promoted + dispatched to backend-engineer/OPUS)
 
 ## SESSION 42 (2026-07-21) — FOLLOW-596 (Phase-2 demo-override staff write port) promoted + dispatched

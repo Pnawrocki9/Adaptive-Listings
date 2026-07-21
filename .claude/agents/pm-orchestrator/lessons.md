@@ -2453,3 +2453,23 @@ hung session strands work wherever the agent was standing, and for subagents tha
   nominally lower-priority (P3) — the cost of the reorder is one ticket-slot delay; the cost of NOT
   reordering compounds with every additional port that inlines-and-duplicates before the guard is
   fixed. Surface the reorder explicitly (don't silently reprioritize) so the human can veto it.
+
+- **Date / ticket:** 2026-07-21 — reconcile PR #595/#596 merges + dispatch FOLLOW-609 (session 46)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" for FOLLOW-609. Model-fit: SONNET
+  (mechanical dedup refactor + CI-guard AST extension, same tier as its predecessor FOLLOW-608).
+- **What validation caught (or missed):** Two real catches this session, both from refusing to take
+  a merged PR's own claim at face value. (1) PR #595 (external Cursor-agent PR) showed a real
+  `Gitleaks secrets scan` CI failure that had been merged past — investigated the actual job log
+  instead of assuming "external PR, not ours" meant "not our problem now that it's on main"; turned
+  out to be a benign example-URL false positive, but only reading the log (not the PR title/summary)
+  proved that. (2) Before dispatching FOLLOW-609, built a throwaway fixture reproducing its proposed
+  fix shape against the just-merged FOLLOW-608 guard and found the guard SILENTLY SKIPS
+  (zero-enforcement, not presence-only) a mutation delegated to an imported helper function call —
+  exactly the shape FOLLOW-609 was about to ship as its "preferred" remedy. Catching this BEFORE
+  dispatch (not at PR review) turned a would-be silent regression into a hard-blocker AC amendment.
+- **A delegation/validation rule I'd add:** When a ticket's own AC contains a forward-looking
+  assumption about a DEPENDENCY ticket that just merged ("the guard must recognize X" — written
+  before the guard shipped), don't dispatch on the assumption; spend 10 minutes reproducing the
+  assumption against the actual shipped artifact before writing the delegation brief. It's cheap and
+  it already caught a real gap twice in two consecutive sessions (608->609 chain).

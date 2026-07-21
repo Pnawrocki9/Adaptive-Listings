@@ -2510,3 +2510,25 @@ hung session strands work wherever the agent was standing, and for subagents tha
   session (re-adjudicated against Rule AD's precedent: the promotion bar was never
   same-arc-vs-independent-arc, it was "a genuinely new, independently-found, previously-unenumerated
   shape" — RETRO-192/194 had used the wrong bar to decline).
+
+---
+
+**Date / ticket:** 2026-07-21 — FOLLOW-612 (staff-write-atomicity guard bypass-5 fix, PR #598)
+**Delegation row used:** none this session (post-merge close-out only; original dispatch used "a
+contract between two modules... / CI guard for a security invariant" → backend-engineer, at a prior
+session). **What validation caught (or missed):** independently re-ran the operator's own claimed
+CI-green + fixture-pass results (`gh pr checks 598`, `check-staff-write-atomicity.test.sh` — both
+matched, 33/33). Then, per this session's explicit instruction, went hunting for a bypass-6 by
+building an in-repo throwaway 3-file reproduction (route→barrel→helper) rather than just reading the
+diff and declaring the guard complete — found a genuine, still-open 6th bypass:
+`moduleContainsMutation`'s bounded walk follows `ImportDeclaration` but not `ExportDeclaration`, so
+a helper reached through a barrel `export * from` re-export is invisible, SKIPping with zero
+enforcement in both the safe and unsafe variant. Correctly did NOT promote a new CONVENTIONS_PATCH
+rule for this — Rule AE (from the prior retro) already named "a re-exported wrapper" as an
+anticipated shape, so this is confirmation, not a new pattern; filing a duplicate rule would have
+been the failure mode Rule AD/AE's own ≥2-PRIOR-retro bar exists to prevent. **A
+delegation/validation rule I'd add:** when a promoted Rule already enumerates candidate shapes it
+expects to be found later (Rule AE's own list), treat that list as a checklist for the NEXT retro on
+the same guard — work down it with concrete reproductions rather than treating "the guard now covers
+the one bypass this PR fixed" as closure; two of the three listed shapes (computed member access,
+re-exports) were tractable to check directly this session in under 10 minutes each.

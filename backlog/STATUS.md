@@ -1,4 +1,65 @@
-# Status — 2026-07-21 (session 48 — FOLLOW-609 merged + closed out DONE; RETRO-196 found a fresh 5th guard bypass, promoted Rule AE; queue at next-dispatch boundary)
+# Status — 2026-07-21 (session 49 — FOLLOW-612 merged + closed out DONE; RETRO-197 found a fresh 6th guard bypass (barrel re-export), NO new rule promoted (confirms Rule AE); queue at next-dispatch boundary)
+
+## SESSION 49 (2026-07-21) — post-merge close-out for FOLLOW-612 (PR #598, `c102863`), RETRO-197
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (no unresolved entries — every header
+`RESOLVED` except the standing non-blocking `OPEN — ESC-020`), `git log --oneline -20` (HEAD
+`c102863`, the FOLLOW-612 merge), `gh pr list --state open` (empty). Confirmed the merge
+independently: `gh pr view 598 --json state,mergeCommit,mergedAt` → `MERGED`,
+`c1028637ed4cdfb11642eebbf87f3ca8e5a6ddd2`, `2026-07-21T18:07:18Z`. Local `main` was already
+fast-forwarded per the task instruction (clean working tree, `git status` confirmed).
+
+**Close-out performed, nothing taken on the operator's own pre-merge claim:**
+
+1. `gh pr checks 598` (post-merge, re-pulled directly) — all 58 real jobs PASS; only pre-existing
+   non-blocking `Rule I` red. Matches the operator's stated pre-merge verification independently.
+2. Read the merged diff directly (`git show c102863`): `collectFileFacts`'s
+   `PropertyAccessExpression` branch now also recognizes a call whose object resolves via
+   `localImportedIdentifierSources` (covers both named AND namespace imports), reusing
+   `moduleContainsMutation` unchanged — no parallel resolution path.
+3. Independently re-ran `bash scripts/__tests__/check-staff-write-atomicity.test.sh` on live `main`:
+   **33/33 assertions PASS**, including the new
+   `bypass5-namespace-import-delegated-mutation {,-out-of-tx}` pair (`OK`/`FAIL` correctly),
+   real-repo scan unchanged, `admin/labels/export` still `SKIP` (no regression).
+4. **Went beyond the merge's own scope**, per this session's task instruction to critically assess
+   guard exhaustiveness: built a fresh, uncommitted, in-repo throwaway reproduction (disposable
+   `_pm_throwaway_repro_bypass6/`, deleted, `git status --short` confirmed clean after) of a route →
+   barrel `index.ts` (`export * from './mutation-helper'`) → real helper module shape. **Found a
+   genuine 6th bypass**: `moduleContainsMutation`'s bounded walk cannot follow a barrel's re-export
+   (`collectLocalImports` only visits `ImportDeclaration` nodes, not `ExportDeclaration`), so the
+   guard prints `SKIP`, exit 0, for BOTH the co-scoped variant (should be `OK`) and the out-of-tx
+   variant (should be `FAIL`) — zero enforcement, indistinguishable from safe. Verified via
+   `echo $?` and reading the guard's actual walk logic. Not a live defect today (grepped: zero
+   barrel re-exports on current staff-write helper modules) but directly relevant to FOLLOW-597/598,
+   the same next two queued tickets bypass 5 threatened.
+5. Considered but did NOT file two further shapes (dynamic/computed member access, aliased named
+   imports) — the first is not concretely demonstrable as a real risk today (no route has reason to
+   use bracket-notation dispatch), the second was checked directly and found NOT to be a bypass
+   (`collectLocalImportedIdentifierSources` already keys on the post-alias local name).
+6. Marked FOLLOW-612 **DONE + MERGED** in `backlog/FOLLOW_UPS.md` (AC checkboxes flipped) and
+   `backlog/QUEUE.md`.
+7. Filed **RETRO-197** in `backlog/RETROSPECTIVES.md` and **FOLLOW-613** (P2, close bypass 6) in
+   `backlog/FOLLOW_UPS.md`; re-amended FOLLOW-597/598's AC — dropped the now-closed
+   named-import-only caveat, added the new barrel-avoidance caveat pointing at FOLLOW-613.
+8. **Did NOT promote a new CONVENTIONS_PATCH rule.** Rule AE (promoted RETRO-196) already explicitly
+   names "a re-exported wrapper" in its shape-enumeration list — this finding is confirmation of an
+   already-anticipated gap, not a novel pattern requiring its own rule.
+
+**Reassessed for next dispatch:** no open escalation, no open PR — the queue is at a next-dispatch
+boundary, not a human-review block. FOLLOW-597/FOLLOW-598 are next in the operator-locked
+FOLLOW-608→609→597/598→606 sequence, both unblocked (FOLLOW-595 prerequisite DONE), both P3,
+`promoted_to_queue: false`. **Did not promote+dispatch either this session** — no Task/Agent
+subagent-spawning tool was available (Read/Write/Edit/Bash only, same constraint as sessions 45–48),
+so "dispatch" here would only mean writing a brief for a future session; left explicitly for the
+next session to either land FOLLOW-613 first (protects the highest-blast-radius FOLLOW-598 write) or
+promote+dispatch FOLLOW-597 with the barrel-avoidance mitigation called out per its amended AC.
+
+**CI-check counter this session:** 0/5 (no fix iterations needed — pure post-merge verification,
+independent re-runs of already-green checks). **Fix-iteration counter:** 0/3.
+
+No P0/P1 before-go-live FOLLOW is open blocking any gate-close language (none written this session).
+
+---
 
 ## SESSION 48 (2026-07-21) — post-merge close-out for FOLLOW-609 (PR #597, `5458001`), RETRO-196, Rule AE promotion
 

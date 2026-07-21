@@ -30431,3 +30431,113 @@ not a wire. All reads hit existing tables (`tenants`, `tenant_registrations`, `d
 - Related to **RETRO-187** (FOLLOW-592, ADR-0018 foundation): 596 is the 4th consumer of `resolveTenantAccess`; INV-5 discharged end-to-end on both verbs (the RETRO-187 mandate that survived into FOLLOW-596's AC), and the headless `ADMIN_API_SECRET` staff rejection is honored.
 
 <!-- next free FOLLOW number: 610 (609 filed by THIS retro). RETRO-193 = retro for PR #594 (FOLLOW-596, MERGED 2026-07-21 10:08:39 UTC, squash commit b0c34d3 on main; code files: api/demo/override/route.ts +238/-46, route.test.ts +548/-177 [23 tests], admin/tenants/[id]/demo/page.tsx +59 NEW, demo-override-editor.tsx +241 NEW; demo-override / Archetype-Simulator staff WRITE port + staff surface). NUMBERING: max heading before this was RETRO-192 (FOLLOW-607); used RETRO-193. HEADLINE: SECURITY-CLEAN + INV-5 discharged both verbs + staff write END-TO-END to visitor render (demo_overrides → adapt/description getDemoOverride → forced persona/model); staff upsert+staff_audit_log insert in ONE db.transaction() (§3a, FOLLOW-607 PASS), rank-gated, fail-loud. TWO findings: LG-1 = FOLLOW-607 guard's presence-not-scope design FORCED the staff upsert INLINED, DUPLICATING upsertDemoOverride with no parity guard → latent agency/staff write divergence, systemic across 597/598 → FOLLOW-609 (P2, backend, 2-3h); CASCADE = /admin/tenants/[id]/demo ships UNWIRED to hub (direct-URL only), NOT dead-code (framework route + full render chain), already owned by pre-existing FOLLOW-606 (do NOT duplicate). WIRING clean both checks; staff_audit_log demo_override.update = 2nd producer action on the pre-existing RETRO-190 HALF_WIRE_P (consumer still FOLLOW-599), no new stub. Agency path byte-unchanged + un-audited (consistent RETRO-190, in §3 scope). PUT requires agency:admin (deliberate divergence from quiz/config viewer-write, defensible on visitor-facing blast radius). CONVENTIONS_PATCH: NO PROMOTION — hub-linkage HELD at count 2 (only RETRO-190 banked as prior; RETRO-188 prospective-not-banked per 190's own adjudication, RETRO-189 recorded the opposite); below ≥2-PRIOR bar AND same open remediation 606 not a fresh lapse; promote when a surface ships unwired AFTER 606's template lands. FOLLOW FILED: 609 (backend, P2, 2-3h). -->
+
+## RETRO-194 — FOLLOW-608 (scope-aware AST staff-write audit-atomicity guard, PR #596, merged `5ecd112` 2026-07-21T16:24:57Z) — session-46 PM-orchestrator reconciliation retro (Sonnet; not a dedicated retrospective-analyst subagent invocation — no Task/Agent tool was available this session, see note at end)
+
+**HEADLINE: the shipped guard is a genuine, verified improvement over FOLLOW-607's presence-only
+check — all 3 RETRO-192 bypasses (unrelated-tx, helper-factored-audit, raw-SQL-mutation) now FAIL as
+required, verified by independently re-running the 25-assertion test harness, not taken on the PR's
+own claim.** The session-45 CI-wiring gap (missing `pnpm install` before the guard script, which
+would have made this job hard-fail on every future PR the moment it merged) was fixed in the shipped
+commit — confirmed present in the diff. CI: every real gate PASS except the pre-existing
+non-blocking `Rule I — wired-or-dead check` (memory `project_ci_gate_landscape`).
+
+**ONE material finding, found by direct reproduction (not inference) and immediately actionable
+because the very next queued ticket triggers it:** the guard's mutation-detection walks only
+`.update(`/`.delete(`/non-audit `.insert(`/raw-SQL `.execute(sql…)` call shapes in the route's own
+AST — it does **not** recognize a mutation delegated to an imported local-helper **function call**
+(e.g. `await upsertDemoOverride(tx, …)`) as "a mutation in scope," even when that call and a local
+`insert(staffAuditLog)` share the same `db.transaction()` callback. Built an isolated fixture (not
+committed — created under `scripts/__fixtures__/tmp-verify-bypass4/`, run against
+`node scripts/check-staff-write-atomicity.cjs <fixture-root>`, then deleted) reproducing exactly this
+shape; the guard printed `SKIP: … insert(staffAuditLog) present but no other data mutation
+(audit-of-a-read/export, not a mutate+audit shape)` — i.e. **zero enforcement**, misreported as a
+benign audit-of-a-read, which is worse than the bypass classes FOLLOW-608 was built to close (those
+still triggered mutation-detection; this one evades it entirely). This is not hypothetical: FOLLOW-609
+(next in the locked FOLLOW-608→609→597/598→606 sequence) proposes exactly this shape — a shared
+`upsertDemoOverride(tx?)` helper called from both the agency and staff branches — as its **preferred**
+remedy for the write-duplication FOLLOW-608 itself created (RETRO-193 LG-1). FOLLOW-609's own AC #1
+already anticipated the requirement ("the guard must recognize the audited mutation inside the tx
+even when the mutation is a helper call") — this retro CONFIRMS via direct reproduction that the
+requirement is real, unmet, and load-bearing, and elevates it to a hard blocker in FOLLOW-609's AC
+(amended this session) rather than an optional nice-to-have.
+
+**CONVENTIONS_PATCH: NO PROMOTION.** This is the SAME "guard moves the gap one hop" meta-pattern
+RETRO-192 already named and CONVENTIONS_PATCH already declined to promote as a fresh prose Rule
+(RETRO-192's ratification: "the guard IS the codification"); this is the 2nd hop of the SAME arc
+(607 presence-only → 608 scope-aware-but-blind-to-helper-calls → 609 must close it), not an
+independent recurrence of a different pattern.
+
+**WIRING:** no new production symbol/event/column — CI-tooling only (`.cjs` guard +
+`.github/workflows/ci.yml` step + fixtures). No co-assignment; step 5d not applicable.
+
+**Process note:** this retro was written by the PM-orchestrator session directly (session 46), not
+a separately-invoked `retrospective-analyst` subagent — the tool environment for this session
+exposed only Read/Write/Edit/Bash, no Task/Agent-spawning tool. Content and rigor aimed to match the
+existing retro bar (independent reproduction, not the worker's/PR's claim taken on faith), but the
+model-fit table calls for Opus on retrospectives; flagging so a future session can re-run a
+dedicated retrospective-analyst pass on PRs #596/#595 if the operator wants the Opus-tier take.
+
+cross_ref: [RETRO-192, RETRO-193, FOLLOW-607, FOLLOW-608, FOLLOW-609, ADR-0018]
+
+## RETRO-195 — PR #595 (`cursor/adaptive-listings-code-audit-fb97`, external Cursor-agent PR, merged `bb213d6` 2026-07-21T16:20:37Z) + FOLLOW-610 (F-01 direct-Modal chat-NLP invoke) — session-46 PM-orchestrator reconciliation retro (Sonnet; same tool-availability caveat as RETRO-194)
+
+**HEADLINE: this PR did NOT go through our normal delegation/validation pipeline at all** — it was
+authored and opened by an external Cursor background agent (not one of our 9 roster agents), carried
+a docs-audit report plus a real code change (F-01), and was merged by the human without a
+PM-orchestrator pre-merge validation pass (no `gh pr checks --watch`, no evidence-requirements
+paste, no runtime-wiring grep on record). The prior session's QUEUE.md note ("DRAFT, unrelated to
+our pipeline, ignore unless the human asks") was accurate when written but the PR has since been
+converted out of draft and merged — this retro is the first independent verification of its
+contents, performed retroactively rather than pre-merge.
+
+**Runtime wiring: GENUINELY REAL, non-test producer→consumer, independently confirmed by grep, not
+taken from the PR body's own claim.** `apps/ingest/src/handlers/events.ts:30` imports
+`dispatchChatNlp`; `:357` calls it inside the `chat.message.sent` handler with
+`tenant_id`/`session_id`/`message_text`/`profiling_opt_out` (the last threading §H.9 consent-scope
+through, not dropped), wrapped in the same `waitUntil` fire-and-forget pattern already used for
+`intent.snapshot` (Cloudflare Workers `ctx.waitUntil`, not the Vercel `after()` trap — correct
+runtime for this app). `apps/intent-engine/src/main.py:101` `chat_nlp_endpoint` is a real consumer:
+validates `Authorization: Bearer <INTERNAL_API_SECRET>` (constant-time compare, :81-86) and spawns
+`process_chat_message`. Dispatch is a configured no-op while `MODAL_CHAT_NLP_URL` is unset (verified
+in `chat-nlp-dispatch.ts:58`), so prod behavior is unchanged pending the 3 remaining operator legs
+(`modal deploy`, set `MODAL_CHAT_NLP_URL`+`INTERNAL_API_SECRET` secrets, smoke-test) — correctly left
+unchecked in FOLLOW-610's AC, `CHAT_NLP_LIVE` correctly left `false`.
+
+**ONE finding, verified NOT a live defect:** `gh pr checks 595` shows `Gitleaks secrets scan` FAILED.
+Reproduced via `gh api repos/.../actions/jobs/<id>/logs`: gitleaks' `cloudflare-api-token` rule
+false-positived on `apps/ingest/wrangler.toml:147`, an inline comment giving an EXAMPLE
+`MODAL_CHAT_NLP_URL` shape (`https://<workspace>--estalara-intent-engine-chat-nlp-endpoint.modal.run`)
+— read the live file directly (not the redacted log) to confirm no actual token/secret value is
+present, only a placeholder URL pattern whose hyphenated Modal-workspace slug trips the entropy
+heuristic. This is a genuine CI-gate MISS on a now-merged PR (the human merged past a red required-ish
+check), but not a security exposure — same false-positive class the repo has hit before
+(`.gitleaks.toml:178-187`, FOLLOW-411 CB-1). Filed FOLLOW-611 (P4) to allowlist/reword and prevent a
+future PR touching this line from re-tripping the same false alarm. `Rule I — wired-or-dead check`
+also failed — pre-existing, non-blocking (memory `project_ci_gate_landscape`), consistent with every
+other PR in this repo's history. No other real gate failed (Lint/Typecheck/Test/Build/SDK
+E2E/Doppler/Staff-write-atomicity/Fire-and-forget-guard/Modal-singleton-guard all green).
+
+**CASCADE:** none identified against adjacent open tickets — FOLLOW-610's own AC already scoped the
+3 remaining operator legs correctly; no other in-flight ticket touches
+`apps/ingest/src/handlers/events.ts` or `apps/intent-engine/src/main.py`.
+
+**CONVENTIONS_PATCH: NO PROMOTION for the wiring/code quality** (this is a single sighting of an
+externally-sourced PR merging outside the normal pipeline — not yet a ≥2-prior pattern; if it recurs,
+promote a Rule requiring PM-orchestrator retroactive validation within N days of any non-roster-agent
+merge). **NO PROMOTION for the gitleaks false-positive** either — same reasoning, and the underlying
+class (URL/example-string entropy false positives) is already covered by the FOLLOW-411/CB-1
+precedent, this is not a 2nd INDEPENDENT pattern warranting new prose beyond the existing allowlist
+convention.
+
+cross_ref: [FOLLOW-610, FOLLOW-611, ADR-0016, AUDIT_REPORT_2026-07-21_CODE_DIAGNOSIS]
+
+<!-- next free FOLLOW number: 612. next free RETRO number: 196. Session 46 (PM-orchestrator,
+Read/Write/Edit/Bash tools only — no Task/Agent subagent-spawning tool available) reconciled PRs
+#595 (external Cursor PR, FOLLOW-610, merged bb213d6) and #596 (FOLLOW-608, merged 5ecd112) per
+operator instruction. FOLLOW-608 marked DONE. FOLLOW-610 marked CODE_COMPLETE_OPERATOR_PENDING.
+FOLLOW-609 promoted+dispatched (backend-engineer/SONNET) with an amended hard-blocker AC (guard must
+close the helper-delegated-mutation bypass found by direct reproduction this session, BEFORE/WITH
+the store-dedup refactor). FOLLOW-611 filed (gitleaks false-positive cleanup, P4). No P0/P1
+before-go-live FOLLOW is open blocking any gate-close language (none was written this session). -->
+

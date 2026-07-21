@@ -4559,3 +4559,65 @@ file, conventional commit `[FOLLOW-608]`, push, open the PR (never commit to `ma
 the PR description that this job previously had no `pnpm install` step and the fix adds it. PM
 re-runs `gh pr checks <pr> --watch` and independently confirms the `staff-write-atomicity` job is
 actually green (not just present) before marking READY_FOR_REVIEW.
+
+---
+
+## Delegation brief — FOLLOW-609 (session 46, 2026-07-21)
+
+**Delegate:** backend-engineer. **Delegation-table row:** "ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" — this ticket touches
+`apps/control-plane/src/app/api/demo/override/route.ts` and
+`apps/control-plane/src/lib/demo-override-store.ts`. **Model-fit: SONNET** — mechanical refactor
+(parameterize an existing helper to accept an optional `tx`, delegate both call sites to it) plus a
+CI-guard AST extension of the same kind FOLLOW-608 just shipped; reversible, PR-gated, not the
+security-reasoning tier reserved for the staff-write _routes themselves_ touching the RLS-bypassed
+data path (592/594/595/596 went OPUS because those establish the tenant-fence pattern; this ticket
+consumes an already-established, already-tested pattern and removes duplication — routine by
+comparison).
+
+**Branch:** `backend-engineer/FOLLOW-609-demo-override-dedup`.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-609 (full AC, amended this session — read the whole
+entry, not just the summary below).
+
+**Read first:** `docs/MASTER_DESIGN.md` §Snapshot.1, `CONVENTIONS_PATCH.md` current rules, ADR-0018
+(§3a single-transaction ratification), the reference atomicity impl
+`apps/control-plane/src/app/api/quiz/config/route.ts` (FOLLOW-605), and
+`scripts/check-staff-write-atomicity.cjs` (FOLLOW-608, just merged — read the whole file, not just
+the doc-comment, to understand exactly what AST shapes it currently recognizes as a "mutation").
+
+**The one thing that makes this ticket different from a routine dedup refactor — read this before
+writing any code:** the PM-orchestrator (session 46) independently reproduced, with an isolated
+throwaway fixture (not committed), that the FOLLOW-608 guard as merged does **not** recognize a
+mutation delegated to an imported local-helper function call (e.g.
+`await upsertDemoOverride(tx, …)`) as an in-scope mutation — it silently **SKIPs** such a route
+("audit-of-a-read", zero enforcement) even when the helper call and `insert(staffAuditLog)` share
+the same `db.transaction()`. If you ship the preferred `upsertDemoOverride(tx?)` refactor without
+also teaching the guard to recognize this shape, `check-staff-write-atomicity.cjs` will report
+"passed" on `api/demo/override/route.ts` while atomicity enforcement has silently gone to zero — a
+worse regression than any of the 3 bypasses FOLLOW-608 just closed, and one that would land
+completely unnoticed unless someone manually re-tests the guard the way the PM did. **This guard fix
+is a hard blocker for this ticket, not an optional nice-to-have — it must land in the same PR as the
+store refactor**, with a red-first fixture proving the CURRENT guard SKIPs the
+helper-delegated-mutation shape, then proving the fixed guard OKs it when co-scoped in the same
+transaction and FAILs it when the helper call sits outside the transaction. Suggested approach: when
+walking a route file's own mutation/audit facts, also resolve local (relative/`@/`-alias) imports
+the same way `findHelperFactoredAudit` already does for the audit side, and treat a bare-identifier
+call to an imported symbol as a "possible mutation" if that same symbol accepts a `tx`-shaped first
+parameter in its own definition (or, simpler: treat ANY call to a locally-imported function as a
+candidate mutation site for tx-scope purposes — over-inclusive is safe here, the guard only needs to
+prove "a call exists inside the same tx as the audit insert," not classify precisely what kind of
+mutation it is). Use your judgment on the exact heuristic; the AC requirement is the observable
+behavior (SKIP→FAIL before the fix, OK after, on the fixture), not a specific implementation.
+
+**Scope constraints:** do not touch FOLLOW-597/598 (later in the sequence); do not touch
+`api/quiz/config/route.ts` (FOLLOW-605 reference impl, must stay byte-identical); the agency path in
+`demo-override-store.ts` and `api/demo/override/route.ts` must remain behavior-identical (same INV-5
+tenant-filter + atomicity-rollback tests must stay green, not just "still exist").
+
+**Completion:** `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, prettier
+on every touched file, conventional commit `[FOLLOW-609]`, push, open the PR (never commit to
+`main`). PM re-runs `gh pr checks <pr> --watch`, independently re-verifies the guard-fix fixture
+(does not take the PR's own claim on faith — same discipline as session 46's pre-dispatch
+verification), and confirms the store refactor didn't change agency-path behavior before marking
+READY_FOR_REVIEW.

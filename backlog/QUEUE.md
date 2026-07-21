@@ -1,6 +1,84 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 45 — recovered FOLLOW-608 uncommitted worker output, found+bounced a real CI-wiring gap; backend-engineer re-dispatched on the same branch)
+## ▶️ START HERE — resume 2026-07-21 (session 46 — reconciled PR #595 (external Cursor PR, FOLLOW-610) + PR #596 (FOLLOW-608) both merged; found+fixed FOLLOW-609's AC before dispatch; FOLLOW-609 promoted+dispatched to backend-engineer/SONNET)
+
+**Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
+memory, all others RESOLVED). No open PRs (`gh pr list --state open` → empty). `main` is current
+(`git pull` clean, HEAD `5ecd112`).
+
+**Operator instruction this session:** "PRs #595 and #596 were just merged — reconcile the
+queue/backlog." Did the following, in order:
+
+1. **FOLLOW-608 → DONE.** PR #596 (`backend-engineer/FOLLOW-608-staff-write-atomicity-scope`) merged
+   squash `5ecd112`, 2026-07-21T16:24:57Z. Ran `gh pr checks 596` myself (not trusting the merge
+   alone as evidence): every real gate PASS, only pre-existing non-blocking `Rule I` red. Confirmed
+   the session-45 CI-wiring fix (missing `pnpm install`) is actually in the shipped diff.
+   **RETRO-194 filed.**
+2. **PR #595 (external Cursor-agent PR, FOLLOW-610) reconciled.** This PR was previously flagged
+   "DRAFT, not ours to validate" — it has since been converted out of draft and merged (squash
+   `bb213d6`, 2026-07-21T16:20:37Z) WITHOUT going through our PM-orchestrator pre-merge validation
+   pipeline. Performed a retroactive validation this session: `gh pr checks 595` shows one real
+   finding — `Gitleaks secrets scan` FAILED. Reproduced via the job log
+   (`gh api .../actions/jobs/<id>/logs`): flagged `apps/ingest/wrangler.toml:147`, an EXAMPLE
+   `MODAL_CHAT_NLP_URL` comment string, as a `cloudflare-api-token` false positive — read the live
+   file directly, confirmed NO actual secret/token present, same false-positive class as the
+   existing `.gitleaks.toml:178-187` (FOLLOW-411) precedent. **Not a live security issue** but a
+   genuine CI-gate miss the human merged past; filed **FOLLOW-611** (P4, cleanup) so it doesn't
+   re-trip on the next PR touching that line. Runtime wiring independently grep-confirmed
+   non-test-producer→non-test-consumer: `apps/ingest/src/handlers/events.ts:357` `dispatchChatNlp`
+   (imported :30) → POSTs `MODAL_CHAT_NLP_URL` w/ `INTERNAL_API_SECRET` bearer →
+   `apps/intent-engine/src/main.py:101` `chat_nlp_endpoint` validates the same bearer, spawns
+   `process_chat_message`. Correctly inert (configured no-op) until the operator legs below run.
+   **RETRO-195 filed.** **FOLLOW-610 status: `CODE_COMPLETE_OPERATOR_PENDING`** — 3 AC items remain,
+   all operator-side, not a worker ticket:
+   - [ ] `modal deploy` intent-engine; copy the `.modal.run` URL
+   - [ ] `wrangler secret put MODAL_CHAT_NLP_URL` + `INTERNAL_API_SECRET` on ingest prod
+   - [ ] Smoke: one chat message → Redis `shadow:{tenant}:{session}:chat_intent` within ~1s; leave
+         `CHAT_NLP_LIVE=false` until C-07
+3. **Pre-dispatch verification caught a real gap before it could ship silently.** Before promoting
+   FOLLOW-609 (next in the locked FOLLOW-608→609→597/598→606 sequence), independently tested the
+   just-merged FOLLOW-608 guard against FOLLOW-609's own proposed fix shape (a shared
+   `upsertDemoOverride(tx?)` helper called from both agency+staff branches) using an isolated
+   throwaway fixture (built, run, deleted — not committed). **The guard SKIPs it** — a mutation
+   delegated to an imported local-helper function call is invisible to the guard's mutation-AST
+   walk, so a route with that shape + a local `insert(staffAuditLog)` inside the same
+   `db.transaction()` is misclassified as "audit-of-a-read" (zero enforcement, not merely
+   presence-only). FOLLOW-609's own AC #1 already anticipated this requirement in prose; this
+   session's reproduction CONFIRMS it's real and unmet, and the amended ticket now makes the guard
+   fix a **hard blocker landing in the same PR** as the store refactor — see `backlog/FOLLOW_UPS.md`
+   FOLLOW-609 and the full delegation brief in `backlog/HANDOFFS.md` "Delegation brief — FOLLOW-609
+   (session 46, 2026-07-21)".
+
+**FOLLOW-609 promoted + dispatched: backend-engineer, SONNET** (delegation table row:
+control-plane/Postgres row — routine mechanical dedup + CI-guard AST extension, not the
+security-reasoning tier reserved for staff-write route establishment). Branch:
+`backend-engineer/FOLLOW-609-demo-override-dedup`. **Do not pick a new ticket that touches
+`api/demo/override/route.ts`, `demo-override-store.ts`, or `scripts/check-staff-write-atomicity.cjs`
+until this PR opens and lands.**
+
+**Sequence after FOLLOW-609 merges:** FOLLOW-597 (labels/intent-config staff port), then FOLLOW-598
+(bandit weights, superadmin-only), then FOLLOW-606 (hub-linkage). FOLLOW-604/602/603/611 can be
+slotted in opportunistically; FOLLOW-599/600 remain after.
+
+**Process note flagged for the operator (not blocking):** PR #595 merged outside our
+delegation/validation pipeline entirely (external Cursor-agent, no PM pre-merge
+`gh pr checks --watch`, no evidence-requirements paste). Retroactive verification this session found
+the work sound (wiring real, only a benign gitleaks false-positive) — no action needed beyond
+FOLLOW-611, but flagging the process gap for visibility. Separately: this session's retros
+(RETRO-194/195) were written directly by the PM-orchestrator session, not a separately-invoked
+`retrospective-analyst` subagent — no Task/Agent-spawning tool was available in this session's
+toolset (Read/Write/Edit/Bash only). If the operator wants a dedicated Opus-tier
+retrospective-analyst pass on PRs #595/#596, a future session with that tool available should re-run
+one.
+
+**Minor pre-existing hygiene note (not touched this session, not blocking):** `RETRO-193` appears
+twice in `backlog/RETROSPECTIVES.md` (two near-duplicate write-ups of the same FOLLOW-596 retro,
+both attributed to RETRO-193) — looks like an accidental double-write from a prior session, not a
+numbering collision with anything new. Left as-is; flagging for a future cleanup pass, not urgent.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 45 — recovered FOLLOW-608 uncommitted worker output, found+bounced a real CI-wiring gap; backend-engineer re-dispatched on the same branch)
 
 **Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
 memory, all others RESOLVED). One open PR: #595, `cursor/adaptive-listings-code-audit-fb97`, DRAFT,

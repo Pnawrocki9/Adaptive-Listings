@@ -16449,13 +16449,39 @@ the ≥2-independent-sighting bar).
 
 cross_ref: [RETRO-191, RETRO-190, FOLLOW-605, FOLLOW-596, FOLLOW-597, FOLLOW-598, ADR-0018]
 
-## FOLLOW-608 — Tighten the staff-write audit-atomicity guard from transaction-PRESENCE to transaction-SCOPE (close the 3 false-negative bypasses before FOLLOW-598 inherits the shape)
+## FOLLOW-608 — Tighten the staff-write audit-atomicity guard from transaction-PRESENCE to transaction-SCOPE (close the 3 false-negative bypasses before FOLLOW-598 inherits the shape) — ✅ DONE (PR #596 `5ecd112`, merged 2026-07-21T16:24:57Z; RETRO-194)
 
 source_retro: RETRO-192 source_ticket: FOLLOW-607 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P3 (re-sequenced ahead of FOLLOW-597/598 — see session 44 rationale
 below) estimated_hours: 2-4 promoted_to_queue: true (session 44 — dispatched to
 backend-engineer/SONNET, branch `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`; see
 HANDOFFS.md brief)
+
+**STATUS: DONE.** PR #596 merged to `main` (squash `5ecd112`, 2026-07-21T16:24:57Z). Reconciled +
+CI-verified session 46 (PM-orchestrator): `gh pr checks 596` — every real gate PASS/SUCCESS (Lint,
+Typecheck, Build ×2, Test Node 22, Test Python ×4, SDK E2E, Format, Gitleaks, Doppler verify,
+Staff-write audit atomicity (self-check, green on itself), all archetype/tracer/K.3.6/Rule-H/J/N
+guards); only red is the pre-existing non-blocking `Rule I — wired-or-dead check` (memory
+`project_ci_gate_landscape`). The session-45 CI-wiring gap (missing `pnpm install` in the
+`staff-write-atomicity` CI job) was fixed in the shipped commit — confirmed present in the diff
+(`.github/workflows/ci.yml` now has `pnpm/action-setup` + `actions/setup-node` +
+`pnpm install --frozen-lockfile` ahead of the guard script step). AST-based guard replaces the
+FOLLOW-607 bash regex; closes all 3 RETRO-192 bypasses (unrelated-tx, helper-factored-audit,
+raw-SQL-mutation) with committed fixtures + a 25-assertion test harness (independently re-run, not
+taken on faith). **RETRO-194 filed** — one residual confirmed by direct reproduction (not
+inference): the shipped guard still does NOT recognize a data mutation delegated to an imported
+local helper **function call** (e.g. `await upsertDemoOverride(tx, …)`) as "a mutation in scope" —
+only `.update(`/`.delete(`/non-audit `.insert(`/raw-SQL `.execute(sql…)` are recognised as mutation
+call-shapes; a bare-identifier helper call is invisible to `collectFileFacts`'s mutation walk. A
+route with that shape + a local `insert(staffAuditLog)` inside the same `db.transaction()` is
+mis-classified **SKIP** ("audit-of-a-read"), i.e. **zero enforcement**, not merely presence-only
+enforcement — worse than bypass 1-3, because it reports "passed" while actually skipping. This
+matters immediately: FOLLOW-609 (next in the locked sequence) proposes exactly this shape as its
+**preferred** fix (`upsertDemoOverride(tx, …)` shared helper). FOLLOW-609's existing AC #1 already
+anticipated this ("the guard must recognize the audited mutation inside the tx even when the
+mutation is a helper call") — confirmed necessary and NOT yet satisfied by 608, verified via an
+isolated fixture (built + run + deleted, not committed) reproducing the exact SKIP. See RETRO-194
+for the full repro and see the amended FOLLOW-609 entry below.
 
 **Model-fit (session 44): SONNET** — same class as its predecessor FOLLOW-607 (routine, reversible,
 red-first-fixture-verifiable CI-tooling work on the same bash guard script); not the security-
@@ -16526,12 +16552,29 @@ cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598,
 ## FOLLOW-609 — Eliminate the agency/staff demo-override write DUPLICATION the FOLLOW-607 guard forces (latent agency↔staff write divergence; systemic across the staff-write ports)
 
 source_retro: RETRO-193 source_ticket: FOLLOW-596 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: false
+backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: true (session 46 — dispatched
+to backend-engineer/SONNET, branch `backend-engineer/FOLLOW-609-demo-override-dedup`; see
+HANDOFFS.md brief)
 
 **Sequencing (session 44):** queued to dispatch immediately AFTER FOLLOW-608 lands (its preferred
 remedy — a tx-aware `upsertDemoOverride(tx?)` shared by both agency+staff paths — depends on 608
-making the atomicity guard scope-aware so a delegated in-tx call still satisfies ADR-0018 §3a). Not
-dispatched this session; next candidate once 608's PR is validated.
+making the atomicity guard scope-aware so a delegated in-tx call still satisfies ADR-0018 §3a).
+FOLLOW-608 merged (PR #596, `5ecd112`, session 46) — dispatching now.
+
+**PRE-DISPATCH VERIFICATION (session 46, RETRO-194):** independently reproduced (fixture built, run,
+deleted — not committed) that the FOLLOW-608 guard as-shipped does **NOT** yet satisfy this ticket's
+own AC #1 — a route with a data mutation delegated to a bare local-helper function call
+(`await upsertDemoOverride(tx, …)`) plus a local `insert(staffAuditLog)` inside the same
+`db.transaction()` is currently mis-classified **SKIP** by `check-staff-write-atomicity.cjs` (zero
+enforcement, not merely presence-only). **This means AC #1's guard-hardening sub-requirement is a
+HARD BLOCKER, not an optional nice-to-have** — if the worker ships the preferred
+`upsertDemoOverride(tx?)` refactor WITHOUT first (or simultaneously) teaching the guard to recognize
+delegated-mutation-helper-calls as an in-scope mutation, CI will report "Staff-write atomicity check
+passed" while the route has silently regressed to zero atomicity enforcement. **Do not merge this
+ticket unless the PR also extends `check-staff-write-atomicity.cjs`'s mutation detection (or an
+equivalent AST change) to close this 4th bypass, with a red-first fixture proving the CURRENT guard
+SKIPs the helper-delegated shape before the fix and correctly OKs/FAILs it after.** This is now the
+single most important acceptance gate for this ticket — flag prominently in the PR description.
 
 **Gap (RETRO-193 §4a LG-1):** the FOLLOW-596 staff write path INLINES the `demo_overrides` upsert
 (`api/demo/override/route.ts:311-331`, `insert(demoOverrides)…onConflictDoUpdate(…).returning()`) —
@@ -16553,17 +16596,27 @@ a data-write-divergence class → P2.
 
 **AC:**
 
+- [ ] **MANDATORY, HARD BLOCKER (confirmed session 46, RETRO-194 — do not skip):** extend
+      `scripts/check-staff-write-atomicity.cjs`'s mutation-detection to recognize a data mutation
+      delegated to an imported local-helper function call (e.g. `await upsertDemoOverride(tx, …)`)
+      as an in-scope mutation when it and `insert(staffAuditLog)` share the same `db.transaction()`
+      callback. Add a red-first fixture proving the CURRENT (pre-fix) guard SKIPs this exact shape
+      (zero enforcement, mis-classified as audit-of-a-read), then proving the fixed guard correctly
+      OKs it when co-scoped and FAILs it when the mutation call sits outside the transaction. This
+      MUST land in the same PR as the store refactor below — shipping the refactor without it
+      silently regresses `api/demo/override/route.ts` to zero atomicity enforcement while CI still
+      reports "passed."
 - [ ] Preferred: make `upsertDemoOverride` accept an optional `tx` handle so BOTH the agency and
-      staff paths share ONE write implementation; land it TOGETHER with FOLLOW-608's scope-aware
-      guard so the delegated in-tx call still satisfies ADR-0018 §3a (the guard must recognize the
-      audited mutation inside the tx even when the mutation is a helper call).
-- [ ] Interim if FOLLOW-608 is not ready: add a red-first parity unit test asserting the inline
-      staff upsert and `upsertDemoOverride` write the IDENTICAL column set (fails if either drifts)
-      — RETRO-193 §4c TG-1.
+      staff paths share ONE write implementation; land it TOGETHER with the guard fix above so the
+      delegated in-tx call still satisfies ADR-0018 §3a.
+- [ ] Interim if the guard fix above is not ready: add a red-first parity unit test asserting the
+      inline staff upsert and `upsertDemoOverride` write the IDENTICAL column set (fails if either
+      drifts) — RETRO-193 §4c TG-1. This is a fallback only — do NOT ship the tx-handle refactor
+      without the guard fix; ship the interim test instead if time-boxed.
 - [ ] Generalize the chosen approach so FOLLOW-597/598 do NOT entrench the same duplication.
-- [ ] Agency + staff paths remain behavior-identical; `scripts/check-staff-write-atomicity.sh` still
-      PASSES on `api/demo/override/route.ts`; the FOLLOW-596 INV-5 tenant-filter +
-      atomicity-rollback tests stay green.
+- [ ] Agency + staff paths remain behavior-identical; `scripts/check-staff-write-atomicity.cjs`
+      still correctly OKs (not SKIPs) `api/demo/override/route.ts`; the FOLLOW-596 INV-5
+      tenant-filter + atomicity-rollback tests stay green.
 
 cross_ref: [RETRO-193, RETRO-192, FOLLOW-607, FOLLOW-608, FOLLOW-596, FOLLOW-597, FOLLOW-598,
 ADR-0018]
@@ -16591,6 +16644,56 @@ ADR-0018]
   - [ ] Smoke: one chat message → Redis `shadow:{tenant}:{session}:chat_intent` within ~1s
   - [ ] Leave `CHAT_NLP_LIVE=false` until C-07; document in QUEUE as
         `CODE_COMPLETE_OPERATOR_PENDING` until smoke passes
-- **promoted_to_queue:** false (code shipped on audit PR; promote operator leg at next planning)
+- **promoted_to_queue:** true (session 46 — PR #595 merged to `main`, squash `bb213d6`,
+  2026-07-21T16:20:37Z; status is now **CODE_COMPLETE_OPERATOR_PENDING**, tracked in QUEUE.md; the 3
+  operator legs above remain the only unchecked AC items)
 
-cross_ref: [AUDIT-F-01, ADR-0016, ADR-0005, FOLLOW-346, FOLLOW-458, CHAT_NLP_LIVE]
+**STATUS (session 46, PM-orchestrator reconciliation — RETRO-195):** merged via an out-of-pipeline
+external Cursor-agent PR (not delegated through our worker roster), so this is a retroactive
+validation, not a pre-merge one. Runtime wiring independently confirmed non-test producer→consumer:
+`apps/ingest/src/handlers/events.ts:357` calls `dispatchChatNlp(...)` (imported at :30) on validated
+`chat.message.sent`, POSTing to `env.MODAL_CHAT_NLP_URL` with `Bearer env.INTERNAL_API_SECRET`;
+`apps/intent-engine/src/main.py:101` `chat_nlp_endpoint` validates the same `INTERNAL_API_SECRET`
+bearer (constant-time compare) and spawns `process_chat_message`. `profiling_opt_out` is threaded
+through (§H.9 consent-scope respected). Correctly gated: dispatch is a configured no-op while
+`MODAL_CHAT_NLP_URL` is unset, so prod behavior is unchanged until the operator legs above complete.
+**CI finding, verified NOT a live secret leak:** `gh pr checks 595` shows `Gitleaks secrets scan`
+FAIL — reproduced the finding (`gh api .../actions/jobs/.../logs`): it flagged
+`apps/ingest/wrangler.toml:147`, an inline comment giving an EXAMPLE `MODAL_CHAT_NLP_URL` shape
+(`https://<workspace>--estalara-intent-engine-chat-nlp-endpoint.modal.run`) as a
+`cloudflare-api-token`-pattern false positive (hyphenated-slug entropy heuristic, no actual token
+value present — read the live file directly to confirm, not inferred from the redacted log). Not a
+live secret; a genuine CI-gate miss on a merged PR, but no security exposure. Filed FOLLOW-611 to
+allowlist/reword and prevent recurrence. `Rule I — wired-or-dead check` also failed — the
+pre-existing non-blocking gate (memory `project_ci_gate_landscape`), consistent with every other PR.
+No other real gate failed. This PR bypassed the normal delegation/validation loop entirely (no
+PM-orchestrator pre-merge validation, no `gh pr checks --watch`, no evidence-requirements paste) —
+flagging for the operator as a process note, not blocking, since retroactive verification found the
+work sound.
+
+cross_ref: [AUDIT-F-01, ADR-0016, ADR-0005, FOLLOW-346, FOLLOW-458, CHAT_NLP_LIVE, FOLLOW-611,
+RETRO-195]
+
+## FOLLOW-611 — Gitleaks false positive on `apps/ingest/wrangler.toml` example Modal URL (allowlist or reword)
+
+source_retro: RETRO-195 source_ticket: FOLLOW-610 recommended_sprint: opportunistic
+recommended_agent: devops-engineer priority: P4 estimated_hours: 0.5 promoted_to_queue: false
+
+**Gap:** `gitleaks` flags the `MODAL_CHAT_NLP_URL` example comment in
+`apps/ingest/wrangler.toml:147`
+(`https://<workspace>--estalara-intent-engine-chat-nlp-endpoint.modal.run`) as a
+`cloudflare-api-token` pattern match (hyphenated-slug entropy heuristic) — confirmed a false
+positive, no real secret present. It did not block PR #595's merge only because the human merged
+past the red check; a future PR touching this comment/line would re-trigger the same false positive
+on ITS OWN diff scan and could confuse a worker into thinking they leaked a credential. Verified via
+`gh api repos/.../actions/jobs/<id>/logs` on PR #595's failed `Gitleaks secrets scan` job.
+
+**AC:**
+
+- [ ] Either reword the example URL to avoid the entropy heuristic (e.g.
+      `https://EXAMPLE_WORKSPACE--...`) or add a scoped `.gitleaks.toml` allowlist entry (path +
+      line-level, mirroring the precedent pattern already documented at `.gitleaks.toml:178-187` for
+      the `lib.ts:46` CB-1 false positive) — do not broaden the allowlist beyond this one string.
+- [ ] Confirm `gitleaks detect` passes clean on the touched file after the change.
+
+cross_ref: [RETRO-195, FOLLOW-610, FOLLOW-411]

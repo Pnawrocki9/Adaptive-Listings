@@ -1,4 +1,52 @@
-# Status — 2026-07-21 (session 46 — reconciled PRs #595/#596 merged; found+fixed a real gap in FOLLOW-609's AC before dispatch)
+# Status — 2026-07-21 (session 47 — validated PR #597, FOLLOW-609 → READY_FOR_REVIEW, awaiting human merge)
+
+## SESSION 47 (2026-07-21) — validated FOLLOW-609 / PR #597, moved READY_FOR_REVIEW
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (no unresolved entries),
+`backlog/HANDOFFS.md`, `backlog/FOLLOW_UPS.md`, `git log --oneline -20`, `gh pr list --state open`
+(one PR: #597, `backend-engineer/FOLLOW-609-demo-override-dedup`, OPEN). Working directory was
+already checked out to the ticket branch (worker had just finished, not marked READY_FOR_REVIEW per
+the task).
+
+**Validation performed, full checklist, nothing taken on the worker's claim:**
+
+1. `gh pr checks 597 --watch` — every real gate green. Only red: `Rule I — wired-or-dead check`
+   (documented pre-existing non-blocking exception). Pulled its job log directly
+   (`gh api .../actions/jobs/<id>/logs`): 190 whole-repo violations; the only demo-override-store.ts
+   hits (`ReachableArchetype`, `DemoAllowedModel`) are pre-existing symbols, confirmed via
+   `gh pr diff` untouched by this PR. CI non-success count for real gates: **0**.
+2. Independently re-ran `bash scripts/__tests__/check-staff-write-atomicity.test.sh` (exit 0, 12/12
+   fixtures pass) — then built my OWN from-scratch throwaway reproduction of the bypass-4 shape
+   (separate fixture files, not the PR's committed ones, run then deleted, never committed):
+   confirmed the guard FAILs the out-of-tx delegated-mutation call and OKs the co-scoped one.
+3. Read the shipped diff directly for §3a: `putStaff` calls `upsertDemoOverride(...)` from inside
+   its own `db.transaction()`, immediately followed by the awaited `staff_audit_log` insert in the
+   same callback. Independently ran `pnpm --filter control-plane test -- api/demo/override`: 23/23
+   pre-existing tests pass unchanged (including the FOLLOW-605/607 rollback test and the MANDATORY
+   tenant-filter tests), plus 2 new `demo-override-store.test.ts` tests.
+4. Re-ran `pnpm install --frozen-lockfile`, `pnpm --filter control-plane typecheck`,
+   `pnpm --filter control-plane lint` myself — all clean.
+5. No new exported symbol/event/column — runtime-wiring step 5c is N/A beyond the `tx` parameter,
+   which has two confirmed non-test call sites (staff route passes it, agency route omits it).
+6. Single-agent ticket — step 5d (co-assignment integration check) N/A.
+
+**Bookkeeping-branch discipline note:** before committing, ran `git log HEAD ^origin/main --oneline`
+to confirm which commits on the checked-out ticket branch were already common history with `main` (2
+were, matching the established repo pattern of PM bookkeeping landing on `main` directly, not on
+ticket branches). Stashed working-tree edits, switched to `main`, committed there (`4d6c64e`
+QUEUE.md/FOLLOW_UPS.md update, `11f6774` lessons entry), pushed, then switched back to the ticket
+branch and confirmed the working tree matched its original state exactly (`git status` clean) before
+finishing.
+
+**Outcome:** PR #597 comment posted with full evidence (CI=0, guard-fix repro, §3a re-verification).
+FOLLOW-609 moved to **READY_FOR_REVIEW** in `backlog/FOLLOW_UPS.md` and `backlog/QUEUE.md`. **Not
+merged.** Retrospective-analyst spawn + DONE marking deferred to the session that observes the human
+merge.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.** **Escalation ages:** zero OPEN blocking
+escalations; ESC-020/028/034 remain OPEN, non-blocking per standing memory (unchanged this session).
+
+---
 
 ## SESSION 46 (2026-07-21) — reconciled PR #595 (external, FOLLOW-610) + PR #596 (FOLLOW-608); promoted+dispatched FOLLOW-609 with an amended hard-blocker AC
 

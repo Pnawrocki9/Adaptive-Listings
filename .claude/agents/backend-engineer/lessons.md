@@ -1757,3 +1757,16 @@ would generalize this beyond just `adapt-get-auth`.
   flags any staff WRITE port doing `db.update(...)` + `db.insert(staffAuditLog)` OUTSIDE a shared
   `tx` (grep for the two on the same route without `db.transaction`), so 596/597/598 can't silently
   regress to mutate-then-audit.
+
+- **2026-07-21 / FOLLOW-596** · Ported `PUT/GET /api/demo/override` to the ADR-0018 staff-write
+  pattern (`resolveTenantAccess` + atomic `db.transaction()` upsert+audit); built the
+  `/admin/tenants/[id]/demo` staff page + editor. · Weighed the transaction-plumbing caveat:
+  delegating the write to `upsertDemoOverride` would have left only `insert(staffAuditLog)`
+  textually in the route, which the FOLLOW-607 atomicity guard SKIPS as an audit-of-a-read — hollow.
+  Inlined the upsert inside the tx (matching quiz/config) so the guard actually engages. Preserved
+  agency `admin`-write semantics (NOT viewer, unlike quiz) via `minAgencyRole: 'agency:admin'`.
+  Red-first verified both the orphan-mutation rollback test and the tenant-filter WRITE fence by
+  breaking the route and watching them fail. · **Guardrail I'd add**: a lint/guard that flags a
+  staff-write route whose data mutation is delegated to a non-tx-aware store helper while
+  `insert(staffAuditLog)` sits in the route — the exact shape that silently defeats
+  check-staff-write-atomicity.sh.

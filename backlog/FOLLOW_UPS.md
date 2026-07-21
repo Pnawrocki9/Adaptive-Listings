@@ -16373,6 +16373,20 @@ cross_ref: [RETRO-190, RETRO-189, FOLLOW-593, FOLLOW-594, FOLLOW-595]
 
 ## FOLLOW-607 — CI guard: staff WRITE ports must wrap their data mutation + `staff_audit_log` insert in ONE `db.transaction()` (mechanically enforce ADR-0018 §3a)
 
+**STATUS: DONE** (backend-engineer/SONNET, branch
+`backend-engineer/FOLLOW-607-staff-write-tx-guard`). Guard script:
+`scripts/check-staff-write-atomicity.sh` (full scan of `apps/control-plane/src/app/api/**/route.ts`;
+flags a file iff it contains `insert(staffAuditLog)` AND another data-mutation call with NO
+`.transaction(` in the same file, comments stripped before matching to avoid false negatives from
+descriptive comments; supports an inline `// staff-write-atomicity-exempt: <reason>` opt-out). Wired
+as a hard-gate CI step `staff-write-atomicity` in `.github/workflows/ci.yml` (no continue-on-error),
+which also runs the red-first fixture proof `scripts/__tests__/check-staff-write-atomicity.test.sh`
+against committed fixtures under
+`scripts/__fixtures__/staff-write-atomicity/{violation,passing,agency-only}/`. Verified locally:
+`api/quiz/config/route.ts` (605 reference impl) PASSES; `api/admin/labels/export/route.ts`
+(audit-only export, no data mutation) is SKIPped, not flagged; the violation fixture FAILS (exit 1);
+the agency-only fixture is not flagged.
+
 source_retro: RETRO-191 source_ticket: FOLLOW-605 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P3 estimated_hours: 2-3 promoted_to_queue: true (session 41 — dispatched
 to backend-engineer/SONNET, branch `backend-engineer/FOLLOW-607-staff-write-tx-guard`; see HANDOFFS)

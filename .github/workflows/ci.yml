@@ -456,6 +456,23 @@ jobs:
       - name: Run Rule H check
         run: bash scripts/check-rule-h.sh origin/main
 
+  # ── Staff-write audit atomicity hard gate (ADR-0018 §3a / FOLLOW-607) ────
+  # Every staff-audited WRITE (data mutation + staff_audit_log insert) must
+  # commit both in ONE db.transaction() — stops FOLLOW-596/597/598 (and any
+  # future staff-write port) from regressing to the pre-605 mutate-then-audit
+  # shape. Hard gate — no continue-on-error.
+  staff-write-atomicity:
+    name: Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run staff-write atomicity check
+        run: bash scripts/check-staff-write-atomicity.sh
+
+      - name: Run red-first fixture proof
+        run: bash scripts/__tests__/check-staff-write-atomicity.test.sh
+
   # ── Rule J hard gate: mirror-code pairs must stay in sync ───────────────
   rule-j:
     name: Rule J — mirror-code sync check

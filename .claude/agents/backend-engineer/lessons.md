@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-07-20 / FOLLOW-607
+
+**What I built:** `scripts/check-staff-write-atomicity.sh` — a hard CI gate mechanically enforcing
+ADR-0018 §3a: any control-plane route that both mutates data and inserts `staff_audit_log` MUST also
+contain `db.transaction(`, else FAIL. Comments are stripped before matching (mirrors Rule H's node
+one-liner) — without it a fixture whose _comment_ described "no transaction" false-passed. Refined
+the heuristic beyond the ticket's literal spec: only flags files with an audit insert AND a
+_separate_ data mutation, so the existing `admin/labels/export` route (audits an export action, no
+data mutation) is correctly `SKIP`ped rather than a false positive that would have broken CI on
+merge. Wired as a non-soft-skip CI job; proved red-first via 3 committed fixtures + a shell test
+harness (`scripts/__tests__/check-staff-write-atomicity.test.sh`).
+
+**Wiring/auth/fail-loud risks I weighed:** (1) This is tooling, not a route — no new schema/auth/DB
+surface, so Rule H/mutating-endpoint-auth requirements don't apply here; documented that explicitly
+in the PR evidence section rather than silently omitting it. (2) The naive "any file with
+`insert(staffAuditLog)` needs `.transaction(`" heuristic from the ticket would have broken CI on the
+real `admin/labels/export` route (audit-of-a-read, no data mutation) — caught this by running the
+guard against the clean tree before committing, not after. (3) Fixture .ts files under
+`scripts/__fixtures__/` tripped the repo's global `eslint.config.mjs` (`projectService: true`
+type-checks every staged `.ts` regardless of package) via the pre-commit hook — added an ignore
+entry mirroring the existing `apps/control-plane/scripts/**` precedent rather than fighting the
+linter with `// eslint-disable`.
+
+**A guardrail I'd add:** none — the exemption comment + SKIP/EXEMPT/FAIL three-way split already
+covers the known edge cases (audit-of-read, single-write path, real violation).
+
+---
+
 ## 2026-07-20 / FOLLOW-595
 
 **What I built:** First staff WRITE port under ADR-0018 — `POST/GET /api/quiz/config` now resolve

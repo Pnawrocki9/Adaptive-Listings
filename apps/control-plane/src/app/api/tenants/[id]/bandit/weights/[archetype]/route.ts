@@ -13,18 +13,58 @@
  *
  * Used by the Panel 5 "Anomaly feed" Resume button in the analytics dashboard.
  *
- * Auth: Bearer JWT required. Caller must be an agency user (agency:admin or above)
- * whose tenant_id matches the :id path parameter.
+ * Auth (ADR-0018 §6 Phase 3, FOLLOW-598 — HIGHEST-blast-radius staff write):
+ *   `resolveTenantAccess` with `allowStaffOverride`. The tenant is URL-supplied
+ *   (the `[id]` segment), NOT a query param.
+ *
+ *   Agency: `agency:admin`+ acting on its OWN tenant (the helper enforces that the
+ *   session `tenant_id` equals `[id]`, invariant 2). RLS-enforced via
+ *   `createTenantClient(rawToken)` + `db.rls()`; NOT audited, NO transaction —
+ *   byte-unchanged from the pre-port behavior, including the dev/CI mock path.
+ *
+ *   Staff: `[id]` is validated against the `tenants` table (invariant 4) and
+ *   becomes the SINGLE tenant fence (invariant 5). This route requires the
+ *   STRICTER superadmin predicate (`access.isSuperadmin`, rank ≥
+ *   `estalara:superadmin`, CEO Q3) — an ops-rank staff caller is 403 (NOT gated on
+ *   `canWrite`; resuming a bandit archetype directly steers live adaptation
+ *   traffic, so it is superadmin-only). Staff writes run under
+ *   `createAdminClient()` (service-role, RLS BYPASSED), so `access.tenantId` is the
+ *   ONLY tenant boundary; every staff query binds `WHERE tenant_id = <that id>`.
+ *   ATOMICITY (ADR-0018 §3a): the `paused = false` mutation and the
+ *   `staff_audit_log` insert commit-or-roll-back TOGETHER in ONE
+ *   `db.transaction()` — mirrors `admin/intent-weights` PUT (FOLLOW-597) and
+ *   `quiz/config` POST (FOLLOW-605). Any failure inside the tx rolls BOTH back →
+ *   500 `audit_write_failed` (never a silent unattributed 200, Rule K.2).
+ *
+ *   The mutation is kept INLINE (not delegated through an `@estalara/db` helper) so
+ *   the staff-write atomicity guard (`scripts/check-staff-write-atomicity.cjs`) can
+ *   prove the mutation + audit insert share the same transaction (FOLLOW-613 — a
+ *   delegated write would make the guard SKIP this route).
  *
  * @module apps/control-plane/src/app/api/tenants/[id]/bandit/weights/[archetype]/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSessionAuth } from '@/lib/session-auth';
-import { createTenantClient } from '@estalara/db';
-import { abBanditWeights } from '@estalara/db';
+import * as Sentry from '@sentry/nextjs';
 import { eq, and } from 'drizzle-orm';
+import {
+  createTenantClient,
+  createAdminClient,
+  abBanditWeights,
+  staffAuditLog,
+} from '@estalara/db';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
 
 // ─── Route handler ─────────────────────────────────────────────────────────────
 
@@ -34,53 +74,108 @@ import { eq, and } from 'drizzle-orm';
  * Sets paused = false for all variants of the given archetype for the tenant.
  *
  * @returns 200 { resumed: true, archetype } on success.
- * @returns 401 when no valid JWT or tenant mismatch.
- * @returns 403 when caller lacks agency:admin role.
- * @returns 500 on DB error.
+ * @returns 401/403/404 via {@link accessErrorToResponse} on auth failure.
+ * @returns 403 when a staff caller is below `estalara:superadmin` (CEO Q3).
+ * @returns 500 `audit_write_failed` when a staff write cannot commit atomically.
+ * @returns 500 `internal_error` on an agency DB error.
  */
 export async function PATCH(
   req: NextRequest,
   context: { params: Promise<{ id: string; archetype: string }> },
 ): Promise<NextResponse> {
-  // getSessionAuth() tries the Bearer/legacy-cookie path first, then falls back
-  // to the Supabase SSR browser session cookie (FOLLOW-454), and returns the raw
-  // JWT so RLS stays enforced on db.rls() below on both paths.
-  const session = await getSessionAuth(req);
-  if (!session || !('tenant_id' in session.claims) || !session.claims.tenant_id) {
-    return NextResponse.json(
-      {
-        error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
-      },
-      { status: 401 },
-    );
-  }
-  const claims = session.claims;
-
   const { id: tenantId, archetype } = await context.params;
 
-  // Tenant isolation: JWT tenant_id must match the URL :id parameter.
-  if (claims.tenant_id !== tenantId) {
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      minAgencyRole: 'agency:admin',
+      tenantId,
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
+  }
+
+  // Superadmin gate (CEO Q3, ADR-0018 §4): this is the highest-blast-radius staff
+  // write in the epic — a below-superadmin staff caller is 403 (stricter than the
+  // `canWrite`/ops floor used by per-tenant config routes).
+  if (access.via === 'staff' && !access.isSuperadmin) {
     return NextResponse.json(
-      { error: { code: 'forbidden', message: 'JWT tenant_id does not match resource tenant' } },
+      {
+        error: {
+          code: 'forbidden',
+          message: 'Resuming a bandit archetype requires estalara:superadmin',
+        },
+      },
       { status: 403 },
     );
   }
 
-  // Require at least agency:admin to resume a paused archetype.
-  if ('agency_role' in claims && claims.agency_role === 'agency:viewer') {
-    return NextResponse.json(
-      { error: { code: 'forbidden', message: 'agency:admin or higher role required' } },
-      { status: 403 },
-    );
-  }
-
-  // DATABASE_URL may not be set in dev/CI — graceful mock response.
+  // DATABASE_URL may not be set in dev/CI — graceful mock response (dependency not
+  // configured, Rule K.2). Placed AFTER the superadmin gate so an ops-rank staff
+  // caller is rejected before ever reaching the mock success path.
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({ resumed: true, archetype, mock: true }, { status: 200 });
   }
 
+  // ── STAFF PATH — audited + atomic (ADR-0018 §3a), service-role (RLS bypassed). ──
+  if (access.via === 'staff') {
+    // invariant 5: the ONLY tenant fence — createAdminClient() bypasses RLS.
+    const tenantFence = access.tenantId;
+    try {
+      const db = createAdminClient();
+
+      await db.transaction(async (tx) => {
+        // (a) the mutation — kept INLINE so the atomicity guard can prove it shares
+        // the tx with the audit insert (FOLLOW-613).
+        await tx
+          .update(abBanditWeights)
+          .set({ paused: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(abBanditWeights.tenantId, tenantFence),
+              eq(abBanditWeights.archetype, archetype),
+            ),
+          );
+
+        // (b) the staff audit row — attributed to the acting superadmin, AWAITED
+        // inside the tx so it commits atomically with (a).
+        await tx.insert(staffAuditLog).values({
+          adminUserId: access.staff.sub,
+          action: 'bandit_weights.resume',
+          targetTenantId: tenantFence,
+          payload: { archetype, paused: false },
+          ipAddress: requestIp(req),
+          userAgent: req.headers.get('user-agent'),
+        });
+      });
+
+      return NextResponse.json({ resumed: true, archetype }, { status: 200 });
+    } catch (err: unknown) {
+      // Any failure INSIDE the tx (the mutation OR the audit insert) rolls BOTH
+      // back — no orphan resume to leave behind. Fail loud: capture + 500, never a
+      // silent unattributed 200 (Rule K.2).
+      Sentry.captureException(err, {
+        tags: { route: 'tenants/bandit/weights/resume', staff_audit_error: 'true' },
+        extra: { tenant_id: tenantFence, archetype },
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: 'audit_write_failed',
+            message:
+              'The archetype resume could not be recorded atomically with its staff audit row; ' +
+              'the change was rolled back and NOT applied. Retry the action.',
+          },
+        },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ── AGENCY PATH — byte-unchanged: RLS-enforced, NOT audited, NO transaction. ──
   try {
-    const db = createTenantClient(session.rawToken ?? undefined);
+    const db = createTenantClient(access.rawToken ?? undefined);
 
     // tx type is Database from @estalara/db — annotated explicitly to satisfy noImplicitAny.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; any is safe here since db.rls enforces the DB type at runtime
@@ -89,7 +184,10 @@ export async function PATCH(
         .update(abBanditWeights)
         .set({ paused: false, updatedAt: new Date() })
         .where(
-          and(eq(abBanditWeights.tenantId, tenantId), eq(abBanditWeights.archetype, archetype)),
+          and(
+            eq(abBanditWeights.tenantId, access.tenantId),
+            eq(abBanditWeights.archetype, archetype),
+          ),
         ),
     );
 

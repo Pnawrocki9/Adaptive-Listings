@@ -64,6 +64,24 @@ vi.mock('@estalara/auth', () => ({
   requireTenantAccess: mockRequireTenantAccess,
   getAuthClaims: mockGetAuthClaims,
   isStaffClaims: mockIsStaffClaims,
+  // Faithful reimplementation of the real `requireStaffRole` rank gate (FOLLOW-598
+  // Part 2) — throws when the claims are not staff or the role rank is insufficient.
+  requireStaffRole: (
+    claims: { estalara_staff?: boolean; estalara_role?: string } | null,
+    minimum: string,
+  ) => {
+    const rank: Record<string, number> = {
+      'estalara:superadmin': 3,
+      'estalara:ops': 2,
+      'estalara:readonly': 1,
+    };
+    if (claims?.estalara_staff !== true || !claims.estalara_role) {
+      throw new Error('Access denied: agency users cannot access staff resources');
+    }
+    if ((rank[claims.estalara_role] ?? 0) < (rank[minimum] ?? 0)) {
+      throw new Error(`Access denied: role '${claims.estalara_role}' is insufficient`);
+    }
+  },
 }));
 
 vi.mock('@estalara/db', () => {
@@ -115,6 +133,16 @@ const STAFF_CLAIMS = {
   tenant_id: null,
   estalara_staff: true as const,
   estalara_role: 'estalara:ops' as const,
+  mfa_verified: true,
+};
+
+const SUPERADMIN_USER_ID = 'eeeeffff-0000-0000-0000-000000000003';
+const SUPERADMIN_CLAIMS = {
+  sub: SUPERADMIN_USER_ID,
+  email: 'super@estalara.com',
+  tenant_id: null,
+  estalara_staff: true as const,
+  estalara_role: 'estalara:superadmin' as const,
   mfa_verified: true,
 };
 
@@ -339,16 +367,34 @@ describe('PUT /api/admin/generation-model', () => {
     expect(mockSetGlobalGenerationModel).toHaveBeenCalledWith('claude-opus-4-8', null);
   });
 
-  it('succeeds via a verified estalara_staff:true JWT', async () => {
+  it('succeeds via a verified estalara:superadmin JWT', async () => {
     mockIsStaffClaims.mockReturnValue(true);
-    mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
+    mockGetAuthClaims.mockResolvedValue(SUPERADMIN_CLAIMS);
     mockSetGlobalGenerationModel.mockResolvedValue(undefined);
 
     const res = await PUT(
       makePutRequest({ generation_model: 'claude-opus-4-8' }, { bearer: 'staff-jwt-token' }),
     );
     expect(res.status).toBe(200);
-    expect(mockSetGlobalGenerationModel).toHaveBeenCalledWith('claude-opus-4-8', STAFF_USER_ID);
+    expect(mockSetGlobalGenerationModel).toHaveBeenCalledWith(
+      'claude-opus-4-8',
+      SUPERADMIN_USER_ID,
+    );
+  });
+
+  // RETRO-187 §4a LG-2 / CEO Q3 (FOLLOW-598): a below-superadmin staff account can
+  // no longer mutate the platform-global generation model.
+  it('returns 403 for an ops-rank staff JWT (superadmin required)', async () => {
+    mockIsStaffClaims.mockReturnValue(true);
+    mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
+
+    const res = await PUT(
+      makePutRequest({ generation_model: 'claude-opus-4-8' }, { bearer: 'staff-jwt-token' }),
+    );
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+    expect(mockSetGlobalGenerationModel).not.toHaveBeenCalled();
   });
 
   it('succeeds with claude-haiku-4-5-20251001', async () => {

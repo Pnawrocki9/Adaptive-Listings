@@ -65,8 +65,10 @@ import { z } from 'zod';
 // FOLLOW-555 (A3-F-04): GET is called by the settings dashboard page, so it must accept
 // the @supabase/ssr browser session (not just Bearer/legacy cookie). PUT stays on
 // verifyTracerAdminAuth (staff-only, already session-aware).
-import { requireTenantSessionAccess } from '@/lib/session-auth';
+import { getSessionAuthClaims, requireTenantSessionAccess } from '@/lib/session-auth';
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
+import { requireStaffRole } from '@estalara/auth';
+import type { AuthClaims } from '@estalara/auth';
 import {
   getGlobalGenerationModel,
   setGlobalGenerationModel,
@@ -184,6 +186,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * agency:admin/agency:owner role must not authorize the write. See
  * `verifyTracerAdminAuth` (`@/lib/tracer-auth`) for the accepted auth paths.
  *
+ * Tightened (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598): staff callers must hold the
+ * `estalara:superadmin` role — below-superadmin staff is 403. The headless
+ * `ADMIN_API_SECRET` automation path stays exempt (see the gate comment in the body).
+ *
  * Body: { "generation_model": "claude-sonnet-4-6" }
  */
 export async function PUT(req: NextRequest): Promise<NextResponse> {
@@ -193,6 +199,37 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
       { error: { code: 'unauthorized', message: authResult.message } },
       { status: authResult.status },
     );
+  }
+
+  // Superadmin gate (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598): mutating the
+  // PLATFORM-GLOBAL generation model — the model EVERY tenant is generated with —
+  // is a rank-3 (estalara:superadmin) action for STAFF USERS. `verifyTracerAdminAuth`
+  // previously accepted any staff tier; below-superadmin staff is now 403.
+  //
+  // The headless `ADMIN_API_SECRET` path (`via: 'admin_secret'`) is deliberately
+  // EXEMPT: it carries no staff user identity (`claims: null`) and represents trusted
+  // server-to-server platform automation, not a role-bearing account — the CEO Q3
+  // superadmin predicate binds staff USERS, not the shared automation secret. Its
+  // behavior is left intact (this is not tenant-scoped; a shared secret is acceptable
+  // for a global platform knob, unlike the attributable per-tenant staff writes).
+  if (authResult.via !== 'admin_secret') {
+    // `verifyTracerAdminAuth`'s staff_session path returns `claims: null`, so resolve
+    // the acting staff user's claims (which carry `estalara_role`) to assert rank.
+    const staffClaims: AuthClaims | null = authResult.claims ?? (await getSessionAuthClaims(req));
+    try {
+      if (!staffClaims) throw new Error('unresolved staff identity');
+      requireStaffRole(staffClaims, 'estalara:superadmin');
+    } catch {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'forbidden',
+            message: 'Changing the global generation model requires the estalara:superadmin role',
+          },
+        },
+        { status: 403 },
+      );
+    }
   }
 
   // `claims` is null on the ADMIN_API_SECRET path (no user identity attached to

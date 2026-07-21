@@ -11,10 +11,11 @@
  * banner (distinct from "not found") instead of silently treating the
  * tenant as missing or fabricating its data.
  *
- * Only the K.3.6 Tracer surfaces exist today. More per-tenant features
- * (Analytics, Quiz config, Demo Mode, Labels, Bandit weights) are being
- * ported per the phased rollout in ADR-0018 §6 — this page notes that and
- * will grow links as each phase ships.
+ * Hub-links every per-tenant staff surface shipped so far (Analytics, Quiz
+ * config, Demo Mode, Labels, Intent Weights) alongside the K.3.6 Tracer
+ * surfaces (FOLLOW-606). Bandit weights live inside the Analytics resume
+ * action, not as a standalone page. New per-tenant surfaces should add
+ * their landing link here in the same PR (FOLLOW-606 AC).
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/page
  */
@@ -90,6 +91,42 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
         </div>
       </div>
 
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+        <h3 className="mb-3 text-sm font-semibold text-gray-800">Staff Surfaces</h3>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <Link
+            href={`/admin/tenants/${tenant.id}/analytics`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Analytics
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/quiz`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Quiz Config
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/demo`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Demo Mode
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/labels`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Labels
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/intent`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Intent Weights
+          </Link>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-gray-800">K.3.6 Archetype Tracer</h3>
         <div className="flex flex-wrap gap-4 text-sm">
@@ -113,11 +150,6 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
           </Link>
         </div>
       </div>
-
-      <p className="mt-4 text-xs text-gray-400">
-        More per-tenant staff surfaces (Analytics, Quiz config, Demo Mode, Labels, Bandit weights)
-        are being ported here per the phased rollout in ADR-0018 §6.
-      </p>
     </div>
   );
 }

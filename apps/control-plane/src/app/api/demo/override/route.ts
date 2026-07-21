@@ -30,15 +30,20 @@
  *     `audit_write_failed` (no orphan mutation). This shape is mechanically enforced
  *     by `scripts/check-staff-write-atomicity.sh`.
  *
- *   Transaction-plumbing choice (FOLLOW-596 caveat): the staff write INLINES the
- *   demo-override upsert inside the `db.transaction()` block rather than delegating to
- *   `upsertDemoOverride` (which opens its own `createAdminClient()` and is not
- *   tx-aware). This mirrors the reference impl (`api/quiz/config/route.ts`, which
- *   inlines its write too) and — critically — keeps the data mutation textually IN the
- *   route so the FOLLOW-607 atomicity guard actually engages on it (a delegated write
- *   would leave only `insert(staffAuditLog)` in the file, which the guard treats as an
- *   audit-of-a-read and SKIPS, providing zero protection). The AGENCY path still calls
- *   `upsertDemoOverride` so its behaviour is byte-unchanged.
+ *   Transaction-plumbing choice (FOLLOW-609, supersedes the FOLLOW-596 caveat): the
+ *   staff write now DELEGATES to `upsertDemoOverride(tenantId, patch, updatedBy, tx)` —
+ *   the same helper the agency path uses — passing the route's own
+ *   `db.transaction(async (tx) => { ... })` handle as the optional 4th argument, so the
+ *   upsert and the `staff_audit_log` insert commit/roll back together in ONE
+ *   transaction. This eliminates the byte-duplicated inline upsert RETRO-193 flagged
+ *   (the FOLLOW-596 write and `demo-override-store.ts::upsertDemoOverride` set the
+ *   identical column set, with no parity guard against future drift). The FOLLOW-607
+ *   atomicity guard used to be blind to a delegated-helper mutation call (it only
+ *   recognised `.update(`/`.delete(`/`.insert(` calls, so a bare
+ *   `upsertDemoOverride(tx, ...)` call was silently SKIPped as "no mutation" —
+ *   RETRO-194); FOLLOW-609 extended `scripts/check-staff-write-atomicity.cjs` to also
+ *   treat a call to a locally-imported helper as a candidate mutation site for tx-scope
+ *   purposes, so this delegated form is correctly recognised and enforced.
  *
  *   Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
  *   `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not attributable
@@ -73,8 +78,8 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import * as Sentry from '@sentry/nextjs';
 
-import { createAdminClient, demoOverrides, staffAuditLog } from '@estalara/db';
-import type { DemoOverrideRow } from '@estalara/db';
+import { createAdminClient, staffAuditLog } from '@estalara/db';
+import type { Database, DemoOverrideRow } from '@estalara/db';
 
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
@@ -270,9 +275,10 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
  * Staff write path (ADR-0018 §3/§3a). The demo-override upsert and its
  * `staff_audit_log` row commit-or-roll-back TOGETHER in one `db.transaction()`.
  *
- * The upsert is INLINED here (not delegated to `upsertDemoOverride`) so the data
- * mutation participates in the passed transaction handle AND stays textually in the
- * route for the FOLLOW-607 atomicity guard — see the module doc-comment.
+ * The upsert DELEGATES to `upsertDemoOverride(tenantId, patch, updatedBy, tx)`
+ * (FOLLOW-609) — the same helper the agency path uses — passing this
+ * transaction's `tx` handle so the write participates in it. See the module
+ * doc-comment for why this no longer needs to be inlined.
  *
  * @param req      - The incoming request (for audit IP / user-agent).
  * @param access   - The resolved STAFF access (narrowed; carries `staff.sub`).
@@ -306,34 +312,17 @@ async function putStaff(
   let row: DemoOverrideRow;
   try {
     row = await db.transaction(async (tx) => {
-      // Upsert the override, fenced on `demo_overrides.tenant_id` (unique). `.returning()`
-      // gives the committed row for the response.
-      const rows = await tx
-        .insert(demoOverrides)
-        .values({
-          tenantId,
-          enabled: patch.enabled,
-          overrideArchetype: patch.overrideArchetype,
-          overrideModel: patch.overrideModel,
-          updatedBy: access.staff.sub,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: demoOverrides.tenantId,
-          set: {
-            enabled: patch.enabled,
-            overrideArchetype: patch.overrideArchetype,
-            overrideModel: patch.overrideModel,
-            updatedBy: access.staff.sub,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-      const upserted = rows[0];
-      if (!upserted) {
-        // Force a rollback — an upsert that returns nothing means neither limb committed.
-        throw new Error('[demo/override PUT staff] upsert returned no rows');
-      }
+      // Delegate to the shared store helper (FOLLOW-609), passing this tx so the
+      // upsert participates in it instead of opening its own client. The cast via
+      // `unknown` is the standard workaround for Drizzle's transaction-callback
+      // generic diverging from `Database` at the type level while remaining a
+      // structural superset at runtime (see api/crm/outcome/route.ts).
+      const upserted = await upsertDemoOverride(
+        tenantId,
+        patch,
+        access.staff.sub,
+        tx as unknown as Database,
+      );
 
       // Staff audit trail (§3) — attributed to the acting staff user. AWAITED inside the
       // tx (never fire-and-forget) so it commits atomically with the upsert.

@@ -16,11 +16,24 @@
  *   - upsertDemoOverride: throws on DB failure — admin PUT must not silently
  *     swallow writes.
  *
+ * Shared write helper (FOLLOW-609): `upsertDemoOverride` accepts an optional
+ * `tx` (a Drizzle transaction handle) as its 4th argument. The AGENCY path
+ * (`api/demo/override/route.ts` PUT, un-audited) calls it with no `tx`, opening
+ * its own `createAdminClient()` exactly as before. The STAFF path calls it WITH
+ * the route's own `db.transaction(async (tx) => { ... })` handle, so the same
+ * single write implementation participates in the same transaction as the
+ * `staff_audit_log` insert (ADR-0018 §3a) — eliminating the byte-duplicated
+ * inline upsert RETRO-193 flagged (FOLLOW-596 had inlined it only so the
+ * FOLLOW-607 atomicity guard would still recognise the mutation; FOLLOW-608
+ * made the guard scope-aware and FOLLOW-609 extended its mutation detection to
+ * recognise a call to this delegated helper, so the guard now engages on the
+ * delegated form too — see scripts/check-staff-write-atomicity.cjs).
+ *
  * @module apps/control-plane/src/lib/demo-override-store
  */
 
 import { createAdminClient, demoOverrides } from '@estalara/db';
-import type { DemoOverrideRow } from '@estalara/db';
+import type { Database, DemoOverrideRow } from '@estalara/db';
 import { eq } from 'drizzle-orm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -138,6 +151,13 @@ export async function getDemoOverride(tenantId: string): Promise<DemoOverride> {
  * @param tenantId - Tenant UUID.
  * @param patch    - Fields to set (all required for a PUT semantics endpoint).
  * @param updatedBy - User UUID who made the change (for audit).
+ * @param tx - Optional Drizzle transaction handle (FOLLOW-609). When supplied,
+ *   the upsert runs on this handle instead of opening a new
+ *   `createAdminClient()` — pass the route's own `db.transaction(async (tx) =>
+ *   ...)` callback argument so this write commits/rolls back atomically with
+ *   whatever else the caller does inside that same transaction (e.g. a
+ *   `staff_audit_log` insert, ADR-0018 §3a). Omit it for a standalone write
+ *   (the agency path).
  * @returns The full updated row.
  */
 export async function upsertDemoOverride(
@@ -148,8 +168,9 @@ export async function upsertDemoOverride(
     overrideModel: string;
   },
   updatedBy: string | null,
+  tx?: Database,
 ): Promise<DemoOverrideRow> {
-  const db = createAdminClient();
+  const db = tx ?? createAdminClient();
 
   const rows = await db
     .insert(demoOverrides)

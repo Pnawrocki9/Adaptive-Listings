@@ -7,6 +7,7 @@
  *   T3: unknown tenant id — calls next/navigation notFound(), not a broken page
  *   T4: DB configured but lookup throws — renders visible error banner (Rule K.2),
  *       does NOT call notFound() (a lookup failure isn't "tenant doesn't exist")
+ *   T5: renders hub links to all 5 per-tenant staff surfaces (FOLLOW-606 AC)
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/page.test
  */
@@ -97,6 +98,38 @@ describe('TenantLandingPage — FOLLOW-593', () => {
       TenantLandingPage({ params: Promise.resolve({ id: 'unknown-id' }) }),
     ).rejects.toThrow('NEXT_NOT_FOUND');
     expect(mockNotFound).toHaveBeenCalledTimes(1);
+  });
+
+  it('T5: renders hub links to all 5 per-tenant staff surfaces (FOLLOW-606)', async () => {
+    mockGetTenantById.mockResolvedValue({
+      dataSource: 'live',
+      tenant: {
+        id: TENANT_ID,
+        name: 'Real Tenant Co',
+        plan: 'growth',
+        status: 'active',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        profileModeEnabled: false,
+      },
+    });
+
+    const page = await TenantLandingPage({ params: Promise.resolve({ id: TENANT_ID }) });
+    render(page);
+
+    const analyticsLink = screen.getByText('Analytics').closest('a');
+    expect(analyticsLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/analytics`);
+
+    const quizLink = screen.getByText('Quiz Config').closest('a');
+    expect(quizLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/quiz`);
+
+    const demoLink = screen.getByText('Demo Mode').closest('a');
+    expect(demoLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/demo`);
+
+    const labelsLink = screen.getByText('Labels').closest('a');
+    expect(labelsLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/labels`);
+
+    const intentLink = screen.getByText('Intent Weights').closest('a');
+    expect(intentLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/intent`);
   });
 
   it('T4 (fail loud): DB configured-but-throws renders an error banner, never calls notFound()', async () => {

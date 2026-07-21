@@ -1,10 +1,47 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 44 — FOLLOW-596 DONE (PR #594 merged, RETRO-193 filed); re-sequenced FOLLOW-608+609 AHEAD of FOLLOW-597/598 per RETRO-193's duplication-cascade finding; dispatched FOLLOW-608 to backend-engineer/SONNET)
+## ▶️ START HERE — resume 2026-07-21 (session 45 — recovered FOLLOW-608 uncommitted worker output, found+bounced a real CI-wiring gap; backend-engineer re-dispatched on the same branch)
 
 **Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
-memory, all others RESOLVED). No open PRs (`gh pr list --state open` empty). Working tree clean,
-`main` pushed through `423c448` + this session's bookkeeping.
+memory, all others RESOLVED). One open PR: #595, `cursor/adaptive-listings-code-audit-fb97`, DRAFT,
+opened by an external Cursor agent, unrelated to our pipeline — not ours to validate/merge, ignore
+unless the human asks. `main` unchanged this session (all session-45 work is on the FOLLOW-608
+branch only).
+
+**Session 45 — FOLLOW-608 (`backend-engineer/FOLLOW-608-staff-write-atomicity-scope`), still
+IN_PROGRESS, NOT PR-ready.** Found the branch checked out with substantial uncommitted work (new
+`scripts/check-staff-write-atomicity.cjs` AST-based guard, rewritten `.sh` wrapper, extended test
+harness, 6 new fixture dirs) — no PR open, no crash, worker just hadn't committed yet. Followed
+`docs/AGENT_WORKFLOW.md` "Recovered-work re-verification": confirmed branch != `main`; confirmed
+`main` was clean (nothing else stranded); independently re-ran
+`bash scripts/__tests__/check-staff-write-atomicity.test.sh` myself (25/25 assertions pass — did not
+trust the prior session's uncommitted state on faith). **The detection logic is correct and
+complete** — all 3 RETRO-192 bypasses (unrelated-tx, helper-factored audit, raw-SQL mutation) FAIL
+as required, qualified/whitespaced forms match, superadmin-gated exemption is disallowed, the
+FOLLOW-605/596 reference routes still PASS, `admin/labels/export` still SKIPs.
+
+**But found a real CI-breaking gap before committing to PR:** the new `.cjs` guard
+`require('typescript')`, but the `staff-write-atomicity` CI job only runs `actions/checkout@v4` — no
+`pnpm install` — unlike every other node-dependent job in `.github/workflows/ci.yml`. **Reproduced
+locally**: moved `node_modules/` aside, ran the script directly →
+`Error: Cannot find module 'typescript'`, exit 1. This is a hard gate (no `continue-on-error`) — it
+would go permanently red on every future PR the moment this merges, blocking the whole pipeline.
+Full repro + exact fix (mirrors the `lint` job's setup-node/pnpm-install pattern) written to
+`backlog/HANDOFFS.md` "Bounce-back — FOLLOW-608 CI-wiring gap found in PM verification (session 45,
+2026-07-21)".
+
+**Checkpointed the good work in 2 commits on the ticket branch** (not a PR — deliberately, since the
+gap must close first): `8c5f248` (guard code + fixtures + tests) and `345c285` (backlog bookkeeping
+— persisted the session-44 operator-ruling text that had been drafted but left uncommitted before
+dispatch). **Re-dispatched backend-engineer (SONNET, same model-fit rationale as session 44 —
+routine mechanical CI-workflow fix, not security-reasoning tier) on the SAME branch** to add the
+missing `pnpm/action-setup` + `actions/setup-node` + `pnpm install --frozen-lockfile` steps to the
+`staff-write-atomicity` job, re-verify locally, then open the PR themselves. **CI-check counter: 0/5
+(no PR opened yet). Fix-iteration counter: 0/3.**
+
+**Do not pick a new ticket that touches `.github/workflows/ci.yml` or
+`scripts/check-staff-write-atomicity.*` until this PR opens and lands** — same-branch, same-agent
+work in flight.
 
 **FOLLOW-596 → DONE.** PR #594 merged (squash `b0c34d3`, 2026-07-21T10:08:39Z). RETRO-193 filed
 (`backlog/RETROSPECTIVES.md`): SECURITY-CLEAN, INV-5 discharged end-to-end both verbs, staff write

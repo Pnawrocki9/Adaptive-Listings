@@ -1,4 +1,56 @@
-# Status — 2026-07-21 (session 44 — FOLLOW-596 DONE + RETRO-193 filed; FOLLOW-608 dispatched, re-sequenced ahead of 597/598)
+# Status — 2026-07-21 (session 45 — recovered FOLLOW-608 uncommitted worker output, found+bounced a CI-wiring gap, re-dispatched backend-engineer on the same branch)
+
+## SESSION 45 (2026-07-21) — recovered FOLLOW-608 work, found a real CI-wiring gap, bounced back
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (no unresolved entries — every `## `
+header is `RESOLVED` or the long-standing explicitly-non-blocking `OPEN — ESC-020/028/034`),
+`backlog/HANDOFFS.md` (FOLLOW-608 delegation brief), `git log --oneline -20`,
+`gh pr list --state open` (1 PR: #595, external Cursor-agent DRAFT, unrelated — not ours). Working
+directory was on `backend-engineer/FOLLOW-608-staff-write-atomicity-scope` with substantial
+uncommitted changes (modified `scripts/check-staff-write-atomicity.sh` + test harness, new `.cjs`
+guard, 6 new fixture dirs, plus uncommitted backlog edits from session 44).
+
+**Recovered-work re-verification (`docs/AGENT_WORKFLOW.md`), performed before touching anything:**
+
+1. Confirmed branch: `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`, not `main`.
+2. Confirmed nothing else stranded: `git stash push -u` → `git checkout main` → `git status --short`
+   → clean → `git checkout` back → `git stash pop`. `main` had zero stray diffs.
+3. Independently re-ran verification myself (not trusting the prior session's uncommitted claim):
+   `bash scripts/__tests__/check-staff-write-atomicity.test.sh` → 25/25 assertions PASS, all 3
+   RETRO-192 bypass fixtures (unrelated-tx, helper-factored-audit, raw-SQL-mutation) correctly FAIL
+   the tightened guard, qualified/whitespaced forms match, superadmin-gated exemption disallowed,
+   FOLLOW-605/596 reference routes still PASS, `admin/labels/export` still SKIPs,
+   `npx prettier --check scripts/check-staff-write-atomicity.cjs` clean. **The detection logic
+   itself is correct and complete** — read the full `.cjs` source directly, not just the test
+   output.
+
+**Found a real CI-wiring gap (step 5c-class, caught pre-PR):** the new `.cjs` guard does
+`require('typescript')`. `.github/workflows/ci.yml`'s `staff-write-atomicity` job only runs
+`actions/checkout@v4` — no `pnpm/action-setup`, `actions/setup-node`, or
+`pnpm install --frozen-lockfile` — unlike every other node-dependent job in the file (verified by
+grepping every job header + step list). **Reproduced locally, not just reasoned about:**
+`mv node_modules /tmp/... && node scripts/check-staff-write-atomicity.cjs` →
+`Error: Cannot find module 'typescript'`, `MODULE_NOT_FOUND`, exit code 1 (confirmed via `echo $?`,
+not inferred). This is a hard gate (no `continue-on-error`) — merging as-is would make it fail on
+literally every future PR, forever, blocking the pipeline. This is exactly the class of gap
+`docs/AGENT_WORKFLOW.md` recovered-work re-verification exists to catch — a stalled/uncommitted
+worker's local pass does not account for the CI environment's actual install surface.
+
+**Action taken:** did NOT open a PR. Checkpointed the verified-good work in two commits on the
+ticket branch (`8c5f248` guard code/fixtures/tests, `345c285` backlog bookkeeping — persisted
+session 44's drafted-but-uncommitted operator-ruling text, no new decision made). Wrote a full
+bounce-back brief to `backlog/HANDOFFS.md` ("Bounce-back — FOLLOW-608 CI-wiring gap found in PM
+verification, session 45") with the exact reproduction and the exact fix (mirror the `lint` job's
+setup-node/pnpm-install steps, minus the turbo env/build-shared-package parts it doesn't need).
+Re-dispatched **backend-engineer, SONNET** (delegation table row: backend-engineer —
+ingest/control-plane/decision-api/Postgres/RLS/auth family, this guard lives in
+`apps/control-plane`'s CI path; model-fit unchanged from session 44 — routine, reversible,
+mechanical CI-workflow fix, not the security-reasoning tier reserved for staff-write _routes_) on
+the SAME branch to add the missing CI steps, re-verify, and open the PR themselves.
+
+**CI-check counter: 0/5 (no PR opened this session). Fix-iteration counter: 0/3.**
+
+---
 
 ## SESSION 44 (2026-07-21) — closed the FOLLOW-596 loop, absorbed RETRO-193, dispatched FOLLOW-608
 

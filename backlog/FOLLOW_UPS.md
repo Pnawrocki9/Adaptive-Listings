@@ -16138,34 +16138,52 @@ validation detail in `backlog/QUEUE.md` START HERE (session 43 entry, preserved)
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
 
-## FOLLOW-597 — Phase 2: Label management + Intent config staff port
+## FOLLOW-597 — Phase 2: Label management + Intent config staff port — 🟡 IMPLEMENTED (branch `backend-engineer/FOLLOW-597-labels-intent-staff-port`, uncommitted at session 50 start → committed session 50; NOT yet PR'd/merged)
 
 source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
-priority: P3 estimated_hours: 3 promoted_to_queue: false
+priority: P3 estimated_hours: 3 promoted_to_queue: true (implemented directly, session 50)
+
+**STATUS (session 50):** implementation complete on the branch, all local gates green —
+`tsc --noEmit` ✓, `eslint` ✓, `prettier --check` ✓, 95 vitest tests ✓ (labels GET/PATCH,
+intent-weights GET/PUT, `/labels` + `/intent` staff pages), guard self-test ✓. Ported surfaces:
+`GET /api/admin/labels` + `PATCH /api/admin/labels/[id]` (reclassify) to `resolveTenantAccess`/staff
+audit; NEW additive `GET|PUT /api/admin/intent-weights` (per-tenant, separate from the global K.3.6
+`intent/config` surface — see route header for why the global route was deliberately NOT
+retrofitted); NEW `/admin/tenants/[id]/labels` + `/admin/tenants/[id]/intent` staff pages + editors.
+Agency paths byte-unchanged. Next: PR + CI-green verify + human review (superadmin-gated feature).
 
 **AC:** labels + intent-config endpoints accept staff (writes audited, rank ≥ ops); per-tenant admin
 surfaces; agency paths unchanged.
 
-- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
+- [x] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** red-first "staff query is
       tenant-filtered" test per ported endpoint proving a staff request for tenant A cannot reach
-      tenant B's rows through the real (service-role/RLS-bypassed) query. NOT discharged by
-      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
-- [ ] **Guard-shape note (updated session 49 — RETRO-197; supersedes the RETRO-196 note):**
-      FOLLOW-612 (merged, PR #598) closed the guard's namespace/property-access bypass, so a bare
-      identifier (`upsertX(tx, …)`) OR a namespace import
-      (`import * as store from …;     store.upsertX(tx, …)`) are now BOTH correctly recognized — the
-      prior "named-import-only" interim mitigation no longer applies and may be dropped. **New
-      caveat to respect instead:** do NOT reach the new store-delegation helper through a BARREL
-      re-export (`export * from './x'` / `export { upsertX } from './x'` in an `index.ts` the route
-      imports from) — that shape is a confirmed, still-open 6th bypass (FOLLOW-613, unfixed as of
-      this writing): the guard's bounded module walk does not follow `export` re-export
-      declarations, so it silently SKIPs regardless of tx-scoping. Import the helper module DIRECTLY
-      from the route until FOLLOW-613 lands. Verify with
-      `node scripts/check-staff-write-atomicity.cjs` after landing: the touched route must print
-      `OK`, never `SKIP`.
+      tenant B's rows through the real (service-role/RLS-bypassed) query. **DONE:**
+      `labels/route.test.ts:401` (staff-A binds `eq(conversionLabels.tenantId, A)`, never returns
+      B); `intent-weights/route.test.ts:427` (READ) + `:453` (WRITE swap fenced to A, B untouched).
+      `labels/[id]` PATCH sources tenant from the label row's own FK (never caller-supplied), so
+      invariant-5 is discharged by the row-scoped SELECT + the agency cross-tenant-404 test
+      (`labels/route.test.ts:607`), documented in the route header.
+- [~] **Guard-shape note (updated session 49 — RETRO-197):** the caveat "do NOT reach a
+  store-delegation helper through a BARREL re-export (FOLLOW-613)" was RESPECTED for
+  `intent-weights` (mutation kept INLINE → guard prints `OK`) but was UNAVOIDABLE for `labels/[id]`:
+  its mutation reuses the shared, CRM-path-shared `upsertConversionLabel`, which lives in
+  `@estalara/db` and is re-exported via
+  `export { upsertConversionLabel } from     './upsert-conversion-label.js'`
+  (`packages/db/src/index.ts:15`) — the exact FOLLOW-613 shape, reached through a workspace-package
+  specifier the guard cannot resolve at all. "Import the helper directly" was not achievable without
+  a non-idiomatic cross-package deep import or duplicating the FOLLOW-179/182 precedence SQL (Rule
+  H). **Operator ruling (session 50): document + defer, not inline-duplicate and not touch the guard
+  mid-597.** So the guard prints `SKIP` for `labels/[id]` (verified) — atomicity is instead proven
+  by the rollback unit test (`labels/route.test.ts` "ROLLS BACK … when the staff audit insert fails
+  inside the tx") and an explicit in-file guard-coverage caveat. FOLLOW-613 (now marked LIVE, AC
+  extended for package-specifier resolution) flips it to `OK` with no route change.
+- [ ] **Hub-link (deferred to FOLLOW-606, unchanged sequencing):** the `[id]` landing does NOT yet
+      link `/labels` or `/intent` — consistent with `/analytics` (594) and `/quiz` (595), which also
+      lack hub links. FOLLOW-606 (next after 597/598) owns the comprehensive one-pass hub wiring per
+      its own AC; not blocking this PR.
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-609, FOLLOW-612, FOLLOW-613,
-RETRO-187, RETRO-196, RETRO-197]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-606, FOLLOW-609, FOLLOW-612,
+FOLLOW-613, RETRO-187, RETRO-196, RETRO-197]
 
 ## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
 
@@ -16835,12 +16853,29 @@ call moved OUTSIDE the transaction — guard ALSO prints `SKIP`, exit 0 (should 
 cannot distinguish the safe and unsafe shape at all through a barrel — zero enforcement in both
 directions, the same failure class as bypass 4/5, one further shape over (Rule AE, which already
 names "a re-exported wrapper" in its shape-enumeration list at Rule text point 1 — this is that
-exact anticipated shape, now confirmed to actually exist in the shipped guard). Not a live defect
-today (grepped: no current staff-write route imports its mutation helper through a barrel `index.ts`
-— `demo-override-store.ts` and `mutation-helper.ts`-style fixtures are imported directly by their
-consuming routes), but a real and plausible risk for FOLLOW-597/598's new store-delegation helpers
-if either worker follows this repo's common barrel-export convention (seen elsewhere in
-`packages/*/src/index.ts`) for their new helper module.
+exact anticipated shape, now confirmed to actually exist in the shipped guard).
+
+**⚠️ NOW A LIVE DEFECT (updated session 50, FOLLOW-597 implementation).** The "not a live defect
+today" claim below held only until FOLLOW-597 shipped `api/admin/labels/[id]/route.ts`, whose staff
+reclassify write DELEGATES its mutation to `upsertConversionLabel` imported from the `@estalara/db`
+workspace package — and `packages/db/src/index.ts:15` re-exports it via exactly this shape:
+`export { upsertConversionLabel } from './upsert-conversion-label.js'`. The guard reports **SKIP**
+(verified: `node scripts/check-staff-write-atomicity.cjs` →
+`SKIP: …/labels/[id]/route.ts — insert(staffAuditLog) present but no other data mutation`). This is
+the FIRST real-repo instance of the class. Note it is reached through a WORKSPACE-PACKAGE specifier
+(`@estalara/db`), which the guard's `collectLocalImports` does not resolve AT ALL (it maps only
+`./`, `../`, `@/`) — so closing this LIVE case needs BOTH (a) package-specifier resolution
+(`@estalara/*` → `packages/*/src/index.ts`) AND (b) the barrel-re-export following that is this
+ticket's core AC. FOLLOW-597 shipped with the route's atomicity proven by its rollback UNIT TEST
+(`labels/route.test.ts` "ROLLS BACK … when the staff audit insert fails inside the tx") and an
+explicit in-file guard-coverage caveat pointing here (CEO/operator ruling session 50: document +
+defer, do NOT inline-duplicate the shared precedence SQL, do NOT touch the guard mid-FOLLOW-597).
+
+Original latent-risk note (kept for provenance): "Not a live defect today (grepped: no current
+staff-write route imports its mutation helper through a barrel `index.ts`) … but a real and
+plausible risk for FOLLOW-597/598's new store-delegation helpers if either worker follows this
+repo's common barrel-export convention (seen elsewhere in `packages/*/src/index.ts`) for their new
+helper module." — that predicted risk materialized in FOLLOW-597.
 
 **AC:**
 
@@ -16849,6 +16884,15 @@ if either worker follows this repo's common barrel-export convention (seen elsew
       (`export * from '...'` and `export { x } from '...'`) with a local module specifier, so a
       barrel that re-exports a mutating module is still discovered within the existing depth-3
       bound.
+- [ ] **(added session 50 — required to close the now-LIVE `labels/[id]` case)** Resolve
+      workspace-PACKAGE specifiers (`@estalara/db`, `@estalara/*`) to their
+      `packages/*/src/index.ts` barrel entry, then apply the re-export following above — the live
+      defect is reached via `@estalara/db`, not an `@/`-alias barrel, so re-export following alone
+      is insufficient without package resolution. Map from the workspace layout (each
+      `@estalara/<pkg>` → `packages/<pkg>/src/index.ts`); keep the depth-3 bound.
+- [ ] Red-first REAL-REPO assertion: after the fix, `api/admin/labels/[id]/route.ts` must flip from
+      `SKIP` → `OK` in the default-scan output (it is the concrete live instance), and moving its
+      `insert(staffAuditLog)` outside the `db.transaction()` must produce `FAIL`.
 - [ ] Red-first fixture pair (mirroring bypass4/5's naming) with a 3-file layout — route → barrel
       `index.ts` (`export * from './mutation-helper'`) → `mutation-helper.ts` (the real mutation) —
       co-scoped variant must go from `SKIP`→`OK`, out-of-tx variant from `SKIP`→`FAIL`.

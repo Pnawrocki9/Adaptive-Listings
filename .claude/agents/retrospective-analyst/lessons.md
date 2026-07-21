@@ -3008,3 +3008,33 @@ so.**
   actually lands before 597/600 add sightings 4/5 — that's the real promotion trigger, and if 606
   keeps slipping the pattern is a PROCESS gap (deferral-to-a-non-landing-ticket), not just a coding
   one.
+
+- **2026-07-21 / RETRO-198 (FOLLOW-597, PR #599)** · **A finding I almost missed and why:** the
+  guard's SKIP on `labels/[id]` is reported by `check-staff-write-atomicity.cjs` as
+  `insert(staffAuditLog) present but no other data mutation (audit-of-a-read/export)` — the SAME
+  phrasing it uses for genuinely-benign audit-of-a-read routes (`labels/export`). I nearly read it
+  as "clean, nothing to see." The tell that it was actually a ZERO-ENFORCEMENT bypass, not a benign
+  read, was reading the ROUTE body (a real `upsertConversionLabel` mutation inside the tx) — the
+  guard's OUTPUT STRING is identical for "safe audit-of-a-read" and "dangerous mutation the guard
+  can't see." Lesson: never trust the guard's SKIP classification text; always diff it against the
+  route's actual mutation surface. · **An axis/chain I had to trace twice:** the intent-weights PUT
+  → SDK render chain. First pass I assumed the PUT needed to set an `is_tenant_specific` COLUMN for
+  the SDK to pick it up (the route header says "is_tenant_specific: true"). Tracing it again against
+  `intent/config/route.ts` + `schema/intent-weight-configs.ts` showed `is_tenant_specific` is a
+  DERIVED RESPONSE field (`tenantId !== null`), NOT a column — the PUT setting `tenantId` non-null
+  IS sufficient, and the SDK's `tenantRow ?? globalRow` preference closes the wire end-to-end.
+  Almost filed a phantom HALF_WIRE on a column that doesn't exist. · **A meta-pattern in how gaps
+  recur across agents:** the "documented deferral vs live gap" distinction is doing a LOT of
+  load-bearing work in this epic (596/597/598/606/613). Three different retros now (193, 197, 198)
+  have had to explicitly separate "this is a NEW independent finding (file/promote)" from "this is
+  the PREDICTED materialization of an already-tracked latent ticket (reference, don't re-file, don't
+  re-promote)." The failure mode to guard against is DOUBLE-COUNTING a predicted-and-confirmed risk
+  as a fresh sighting (would wrongly trip a rule promotion or spawn a duplicate FOLLOW). The
+  discipline that worked: for every finding, grep the existing FOLLOW_UPS/RETROs for the exact
+  symbol/shape BEFORE deciding file-vs-reference, and state the adjudication (prediction-confirmed
+  vs independent) explicitly in §6. · **Sequencing insight worth reusing:** "highest-blast-radius
+  ticket must go last/most-guarded" is a good instinct but VERIFY the mechanism — I assumed
+  613-before-598 was needed until I grepped and found 598's bandit write is INLINE (no barrel helper
+  exists), so the barrel-SKIP simply can't fire for it. The guard-coverage risk only exists where a
+  route DELEGATES through a package barrel; inline mutations are always visible. Check the actual
+  call-shape before recommending a sequencing constraint.

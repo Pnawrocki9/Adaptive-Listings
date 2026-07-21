@@ -1,6 +1,56 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 49 — FOLLOW-612 merged, closed out DONE+MERGED; RETRO-197 filed, found+fixed-forward a genuine 6th guard bypass (barrel re-export), NO new Rule promoted (confirms existing Rule AE); queue at next-dispatch boundary — FOLLOW-597/598 next, AC re-amended)
+## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597 MERGED as PR #599, closed out DONE+MERGED; RETRO-198 filed, SECURITY-CLEAN, 0 code bugs, NO new tickets, NO rule promoted; FOLLOW-613 promoted latent→LIVE; queue at next-dispatch boundary — FOLLOW-598 next)
+
+**Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
+memory, all others RESOLVED). `gh pr list --state open` → empty (PR #599 merged, squash `748f287`,
+2026-07-21T20:09:55Z). Local `main` reset to origin/main this session (a local-only session-49
+bookkeeping commit `b5a0473` was verified byte-identically folded into the #599 squash — no content
+lost); `git status` clean, guard re-run on merged `main` (intent-weights `OK`, labels/[id] `SKIP`
+documented, demo/override + quiz/config `OK`, exit 0 — no regression).
+
+**Post-merge close-out performed (session 50), full checklist, nothing on trust:**
+
+1. Merge re-verified via `gh pr view 599` (MERGED, `748f287`, 20:09:55Z, by Pnawrocki9). CI was
+   verified green BEFORE merge: 59 real gates PASS, only non-blocking `Rule I` red; the Staff-write
+   audit-atomicity gate itself PASSED.
+2. **Judgment call this session (operator-ratified via AskUserQuestion — "document + defer"):** the
+   `labels/[id]` staff reclassify delegates its mutation to the shared `@estalara/db`
+   `upsertConversionLabel`, re-exported through the `packages/db/src/index.ts:15` package BARREL — a
+   shape `scripts/check-staff-write-atomicity.cjs` cannot follow, so the guard prints **SKIP** (zero
+   mechanical atomicity enforcement). Did NOT inline-duplicate the FOLLOW-179/182 precedence SQL
+   (Rule H), did NOT touch the guard mid-597. Atomicity is instead proven by the rollback UNIT test
+   - an explicit in-file guard-coverage caveat. This is the **first LIVE instance of FOLLOW-613**
+     (barrel bypass-6, filed latent by RETRO-197) → FOLLOW-613 promoted latent→LIVE, AC extended to
+     require workspace-package-specifier resolution.
+3. RETRO-198 (`backlog/RETROSPECTIVES.md`) via `retrospective-analyst`: SECURITY-CLEAN, 0 code bugs,
+   2 documented deferrals (both owned by existing tickets), 0 new FOLLOW filed. **No rule promoted**
+   (the barrel SKIP is the predicted materialization of FOLLOW-613, already covered by Rule AE;
+   hub-linkage is the 3rd banked sighting but below its stated promotion trigger — 606 hasn't
+   landed). **Amended FOLLOW-606 AC** to add `/intent` to the hub-link enumeration (597 shipped TWO
+   pages; 606 previously listed only `/labels`).
+4. **Sequencing finding (verified, not assumed):** FOLLOW-613-LIVE does NOT force 613-before-598 —
+   FOLLOW-598's bandit mutation is INLINE (`bandit/weights/[archetype]/route.ts:89`
+   `.update(abBanditWeights)`; no `@estalara/db` bandit helper exists), so its ported staff write
+   stays guard-`OK` as long as it keeps the mutation inline (598's AC already directs this). The
+   locked FOLLOW-608→609→597/598→606 order stands; **613 is opportunistic, not a blocker** — but
+   should be prioritized to restore mechanical atomicity enforcement to the now-live `labels/[id]`
+   SKIP.
+
+**Next-free counters: FOLLOW-614, RETRO-199.**
+
+**Reassessed queue state — at the next-dispatch boundary:** FOLLOW-598 (bandit weights staff-write
+port, P3, HIGHEST blast radius, superadmin-only per CEO Q3) is next in the locked sequence,
+unblocked (595/597 precedents established). Keep its mutation INLINE (do NOT introduce an
+`@estalara/db` bandit helper) so it stays guard-`OK`. Then FOLLOW-606 (hub-link pass, now incl.
+`/intent`). Consider landing FOLLOW-613 opportunistically to re-cover the `labels/[id]` SKIP. **Do
+not pick a ticket that touches `scripts/check-staff-write-atomicity.cjs`,
+`packages/db/src/index.ts`, or any staff-write route's mutation delegation without re-reading
+FOLLOW-613 + Rule AE first.**
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 49 — FOLLOW-612 merged, closed out DONE+MERGED; RETRO-197 filed, found+fixed-forward a genuine 6th guard bypass (barrel re-export), NO new Rule promoted (confirms existing Rule AE); queue at next-dispatch boundary — FOLLOW-597/598 next, AC re-amended)
 
 **Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
 memory, all others RESOLVED). `gh pr list --state open` → empty (PR #598 merged,

@@ -16138,19 +16138,30 @@ validation detail in `backlog/QUEUE.md` START HERE (session 43 entry, preserved)
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
 
-## FOLLOW-597 — Phase 2: Label management + Intent config staff port — 🟡 IMPLEMENTED (branch `backend-engineer/FOLLOW-597-labels-intent-staff-port`, uncommitted at session 50 start → committed session 50; NOT yet PR'd/merged)
+## FOLLOW-597 — Phase 2: Label management + Intent config staff port — ✅ DONE + MERGED (PR #599, squash `748f287`, merged 2026-07-21T20:09:55Z; RETRO-198)
 
 source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
 priority: P3 estimated_hours: 3 promoted_to_queue: true (implemented directly, session 50)
 
-**STATUS (session 50):** implementation complete on the branch, all local gates green —
-`tsc --noEmit` ✓, `eslint` ✓, `prettier --check` ✓, 95 vitest tests ✓ (labels GET/PATCH,
-intent-weights GET/PUT, `/labels` + `/intent` staff pages), guard self-test ✓. Ported surfaces:
-`GET /api/admin/labels` + `PATCH /api/admin/labels/[id]` (reclassify) to `resolveTenantAccess`/staff
-audit; NEW additive `GET|PUT /api/admin/intent-weights` (per-tenant, separate from the global K.3.6
-`intent/config` surface — see route header for why the global route was deliberately NOT
-retrofitted); NEW `/admin/tenants/[id]/labels` + `/admin/tenants/[id]/intent` staff pages + editors.
-Agency paths byte-unchanged. Next: PR + CI-green verify + human review (superadmin-gated feature).
+**STATUS: DONE.** Merged to `main` via PR #599 (squash `748f287`, +2393/-115, 16 files). CI verified
+green before merge: 59 real gates PASS, only the known non-blocking `Rule I — wired-or-dead check`
+red ([[project_ci_gate_landscape]]) — the Staff-write-atomicity gate itself PASSED (confirms the
+`labels/[id]` SKIP below is exit-0, not a CI failure). Post-merge close-out (session 50):
+re-verified merge via `gh pr view 599`, reset local `main` to origin/main (a local-only session-49
+bookkeeping commit `b5a0473` was confirmed byte-identically folded into the #599 squash — no content
+lost), re-ran the guard on merged `main` (intent-weights `OK`, labels/[id] `SKIP`, demo/override +
+quiz/config `OK`, exit 0 — no regression). RETRO-198 filed: **SECURITY-CLEAN** — INV-5 discharged on
+every ported endpoint, both new writes audited + single-`db.transaction()`-atomic + rank-gated + K.2
+fail-loud, all red-first; the per-tenant intent-weights staff WRITE is wired END-TO-END to visitor
+render (`intent_weight_configs` PUT → SDK-facing `GET /api/intent/config` prefers the
+tenant-specific active row → `data_source:'live'` → SDK weights). 0 code bugs, 0 new tickets filed.
+Ported surfaces: `GET /api/admin/labels` + `PATCH /api/admin/labels/[id]` (reclassify) to
+`resolveTenantAccess`/staff audit; NEW additive `GET|PUT /api/admin/intent-weights` (per-tenant,
+separate from the global K.3.6 `intent/config` surface); NEW `/admin/tenants/[id]/labels` +
+`/admin/tenants/[id]/intent` staff pages + editors. Agency paths byte-unchanged. Open successor
+items (all pre-existing tickets, none new): FOLLOW-613 (re-cover the live `labels/[id]` guard-SKIP),
+FOLLOW-606 (hub-link `/labels`+`/intent` — 606 AC amended by RETRO-198 to include `/intent`),
+FOLLOW-599 (audit consumer half-wire).
 
 **AC:** labels + intent-config endpoints accept staff (writes audited, rank ≥ ops); per-tenant admin
 surfaces; agency paths unchanged.
@@ -16434,7 +16445,9 @@ failed to wire itself in.
 **AC:**
 
 - [ ] The `[id]` landing renders a link to each existing per-tenant staff sub-surface — `/analytics`
-      and `/quiz` today; add `/demo` `/labels` `/settings` as FOLLOW-596/597/600 land.
+      and `/quiz` today; add `/demo` `/labels` `/intent` `/settings` as FOLLOW-596/597/600 land.
+      (RETRO-198: FOLLOW-597 shipped BOTH `/labels` AND `/intent` — this AC previously omitted
+      `/intent`; both are live-and-unwired on `main`, reachable by direct URL only.)
 - [ ] A page test asserts the analytics + quiz links render for a known tenant.
 - [ ] Adopt as the template: every future per-tenant staff surface adds its landing link in the same
       PR (prevents the 3rd recorded sighting → the promotion trigger noted in RETRO-190 §6).

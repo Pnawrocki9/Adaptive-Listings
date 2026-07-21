@@ -2,6 +2,26 @@
 
 ---
 
+**Date / ticket:** 2026-07-21 — FOLLOW-596 (demo/override staff-write port, PR #594) **Delegation
+row used:** ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP,
+billing, webhooks → backend-engineer (row already applied at dispatch, session 42; this session
+validated). **What validation caught (or missed):** The worker's atomicity claim held up on direct
+read of `putStaff()` — one `db.transaction()` genuinely wraps both the `demoOverrides` upsert and
+the `staffAuditLog` insert, and the FOLLOW-607 CI gate confirmed it engaged (not just present in the
+file). The one claim I did NOT take on faith was "zero new Rule I violations" — I built a throwaway
+worktree on `origin/main`, ran `scripts/check-rule-i.sh` myself, got 190, and compared against the
+PR branch's own CI log (189) — a net _decrease_, proving no new violations without trusting the
+worker's count. Also verified the two demo-related Rule I hits shown in the log were on a file
+(`demo-override-store.ts`) this PR's diff never touches, closing the loop that a superficial "still
+just Rule I, ignore it" read would have missed. No half-wire found; the not-wired-into-hub gap was
+already disclosed by the worker and matches the pre-agreed FOLLOW-606 scope split. **A
+delegation/validation rule I'd add:** When a worker claims "N pre-existing violations, zero new,"
+always diff the _count_ against a fresh run on main in the same session rather than trusting the
+worker's before/after numbers — a worktree + one script run is cheap and turns a self-report into
+independent evidence.
+
+---
+
 **Date / ticket:** 2026-06-30 — FOLLOW-438 loop closure (bookkeeping pass) **Delegation row used:**
 Terraform, CI/CD, workflows — devops-engineer (FOLLOW-438). **What validation caught (or missed):**
 FOLLOW-438 is a P3 CI guard ticket (script + ci.yml only); no new application symbols, events, env-

@@ -1,5 +1,31 @@
 # Retrospective-Analyst — meta-lessons (self-improvement loop)
 
+## 2026-07-21 · RETRO-192 (PR #592, FOLLOW-607 — the staff-write audit-atomicity CI guard; NO PROMOTION, filed FOLLOW-608)
+
+- **A finding I almost missed and why:** the sharpest false-negative bypass. The guard PASSES on
+  mere `.transaction(` presence, and the obvious "clean ✅" read is tempting because it IS red-first
+  and catches the naive regression. What made bypass (1) concrete was grepping the 605 REFERENCE
+  route itself — it already contains an in-tx `.update` (:217) AND an out-of-tx agency `.update`
+  (:258) in the same file and passes purely on presence. So the guard demonstrably cannot tell an
+  in-tx from an out-of-tx mutation ON THE VERY FILE IT WAS BUILT AGAINST. Lesson: for a grep-based
+  SECURITY guard, always test the guard's discriminating power against a file that legitimately
+  contains BOTH the compliant and a non-compliant instance of the pattern — presence checks look
+  clean until you find a file where presence and correctness diverge.
+- **An axis/chain I had to trace twice:** the CONVENTIONS_PATCH decision. First pass: "the anti-
+  pattern now has 3 sightings (190/191/192) → promote?" Second pass corrected it: 190/191/192 are
+  ONE gap→fix→mechanize ARC on the SAME FOLLOW-595 write, not 3 INDEPENDENT ports — and RETRO-191 §6
+  had ALREADY pre-authorized "the guard IS the codification, no prose Rule." Reading the prior
+  retro's explicit promotion condition BEFORE counting saved a double-codification. The count of
+  independent sightings, not the count of retros mentioning the pattern, is what the ≥2 bar
+  measures.
+- **A meta-pattern in how gaps recur across agents:** a mechanical guard that "closes" a gap often
+  just MOVES it one hop — here from "no §3a enforcement" to "presence-not-scope enforcement." This
+  is the SAME one-hop-relocation shape the step-7 prior-follow-up-closure check exists to catch (cf.
+  the `inquiry_submit_selector` chain). The guard is a legitimate net-positive, but declaring
+  FOLLOW-607 a full closure would have repeated exactly the failure the retro system is built to
+  prevent. When a ticket ships a GUARD, always run the closure check ON THE GUARD ITSELF: what does
+  it NOT catch, and does that residual land on the highest-blast inheritor (here FOLLOW-598)?
+
 ## 2026-06-14 · RETRO-075 (PR #291, FOLLOW-305 — the fix for the double-`/api` prod 404 RETRO-074 CB-1 caught; `buildEndpoint` helper; PROMOTED Rule X)
 
 - **A finding I almost missed and why:** the FIFTH `decisionApiUrl` fetch site,

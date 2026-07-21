@@ -16425,3 +16425,50 @@ the ≥2-independent-sighting bar).
       FOLLOW-596/597/598 authors get a mechanical failure, not a prose-only reminder.
 
 cross_ref: [RETRO-191, RETRO-190, FOLLOW-605, FOLLOW-596, FOLLOW-597, FOLLOW-598, ADR-0018]
+
+## FOLLOW-608 — Tighten the staff-write audit-atomicity guard from transaction-PRESENCE to transaction-SCOPE (close the 3 false-negative bypasses before FOLLOW-598 inherits the shape)
+
+source_retro: RETRO-192 source_ticket: FOLLOW-607 recommended_sprint: Sprint 25 recommended_agent:
+backend-engineer priority: P3 estimated_hours: 2-4 promoted_to_queue: false
+
+**Gap:** `scripts/check-staff-write-atomicity.sh` (FOLLOW-607) is a file-level PRESENCE check — it
+verifies `.transaction(` appears _somewhere_ in a staff-audited-write route, NOT that the audited
+mutation + its `insert(staffAuditLog)` are actually INSIDE the same transaction block (the worker
+deliberately skipped brace/AST matching). It catches the COMMON regression (a port with zero
+`.transaction(` anywhere) but is BLIND to three constructible bypasses that PASS while violating
+ADR-0018 §3a. This matters because the guard exists specifically to protect FOLLOW-598 (bandit
+weights — the highest-blast staff write), where a partial refactor could produce exactly bypass (1).
+The guard as-shipped moved the gap one hop (no-enforcement → presence-not-scope enforcement) rather
+than closing it end-to-end. RETRO-192 §4a LG-1.
+
+The three bypasses:
+
+1. **Unrelated transaction present.** A route with an unrelated `db.transaction()` PLUS a separate
+   non-transactional `.update()` + `insert(staffAuditLog)` PASSES. Sharpest bypass: the 605
+   reference route ALREADY has an in-tx `.update` (:217) and an out-of-tx agency `.update` (:258)
+   and passes purely on `.transaction(` presence — the guard cannot distinguish them.
+2. **Audit insert factored into a helper in another file** → route file lacks the literal
+   `insert(staffAuditLog)` → guard SKIPs the file → silent false negative.
+3. **Raw-SQL / non-drizzle mutation** (`db.execute(sql`UPDATE ...`)`) not matching
+   `.update(`/`.delete(`/non-audit `.insert(` → categorized as audit-of-a-read → SKIPped.
+
+**AC:**
+
+- [ ] Require the `insert(staffAuditLog)` (and its paired mutation) to appear lexically INSIDE a
+      `transaction(` block — OR replace the bash presence-check with an ESLint/AST rule that walks
+      the call graph. A red-first fixture for bypass (1) (unrelated tx + out-of-tx audited mutation)
+      FAILS the tightened guard.
+- [ ] Detect the audit insert when factored into a shared helper — grep the helper set, or ban
+      helper-wrapping of `staffAuditLog` inserts on staff-write routes. Red-first fixture for bypass
+      (2) FAILS.
+- [ ] Detect raw-SQL mutations paired with an audit insert. Red-first fixture for bypass (3) FAILS.
+- [ ] Harden the audit-insert matcher against qualified/whitespaced forms
+      (`.insert(schema.staffAuditLog)` / `.insert( staffAuditLog )`) so the "other mutation"
+      exclusion still holds (RETRO-192 §4b).
+- [ ] Enumerate/audit all `// staff-write-atomicity-exempt:` usages; DISALLOW the exemption on
+      rank-3/superadmin-only routes (FOLLOW-598) (RETRO-192 §5d).
+- [ ] The 605 `api/quiz/config` route still PASSES and the `agency-only`/`admin/labels/export`
+      shapes still pass/SKIP unchanged; all fixtures wired into the existing `staff-write-atomicity`
+      CI job (same non-soft-skip discipline).
+
+cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598, ADR-0018]

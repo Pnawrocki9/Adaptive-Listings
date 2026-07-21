@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-20 (session 41 — RECOVERY + Phase-2 first-write + atomicity COMPLETE: FOLLOW-593/594 recovered from stranded worktrees & merged; FOLLOW-595 first staff WRITE + FOLLOW-605 audit-atomicity (§3a single-transaction) both PM-validated→merged; RETRO-188/189/190/191 all filed. Next = FOLLOW-596/597 (adopt §3a) or 604/606/607)
+## ▶️ START HERE — resume 2026-07-21 (session 41 — ADR-0018 staff-write chain COMPLETE: FOLLOW-593/594 recovered from stranded worktrees & merged; 595 first staff WRITE + 605 audit-atomicity (§3a) + 607 atomicity CI guard all PM-validated→merged; RETRO-188→192 all filed. Next = FOLLOW-596/597 (adopt §3a) or 608 (tighten guard)/604/606)
 
 **Read this before picking anything.** Session 40/parent dispatched `backend-engineer` (Opus) for
 **both FOLLOW-593 and FOLLOW-594** (FOLLOW-592 having merged, #579, both were unblocked). A terminal
@@ -42,25 +42,24 @@ MERGED to main**. Nothing was lost. Worktrees removed and branches deleted.
    now commit-or-rollback in ONE `db.transaction()` (ADR-0018 **§3a**; rollback test proves no
    orphan mutation). PM-validated #586 and #589 before merge.
 
-**⏳ IN-FLIGHT — FOLLOW-607 (staff-write transaction CI guard) DISPATCHED** (session 41). Worker =
-`backend-engineer` (**SONNET** — routine CI-tooling, red-first-fixture-verifiable). Branch
-**`backend-engineer/FOLLOW-607-staff-write-tx-guard`**; brief in `backlog/HANDOFFS.md`. **If
-resuming after a crash: check that branch + `gh pr list` BEFORE re-dispatching.** Deliverable: a new
-`scripts/check-rule-*.sh` grep guard (flags `db.update`/`insert` + `insert(staffAuditLog)` on a
-route without a wrapping `db.transaction()`) + a CI step in `.github/workflows/ci.yml` + a red-first
-fixture; 605's `api/quiz/config` must PASS, agency path not flagged.
+**✅ FOLLOW-607 DONE** (#592, `8acbe90`, RETRO-192): `scripts/check-staff-write-atomicity.sh`
+hard-gate CI job — a route with a data mutation + `insert(staffAuditLog)` but no `.transaction()`
+FAILs. PM-validated (fails on the violation fixture, 605 passes, agency/audit-only not flagged).
+**Known residual (RETRO-192 §4a → FOLLOW-608):** it's a transaction-PRESENCE check, not SCOPE — an
+unrelated `db.transaction()` elsewhere in the file, a helper-factored audit insert, or a raw-SQL
+mutation can bypass it. Net-positive tripwire; tighten before FOLLOW-598.
 
 **⬜ NEXT (pick per priority):**
 
 3. **Phase-2 write ports FOLLOW-596 / 597** (demo-override; labels + intent-config) — copy 595's
    shape: `resolveTenantAccess` + write-rank (`canWrite`) + `staff_audit_log` **inside one
-   `db.transaction()` per ADR-0018 §3a** (605 is the reference impl) + MANDATORY READ+WRITE
-   tenant-filter test + FOLLOW-603 option-wiring assertions.
+   `db.transaction()` per ADR-0018 §3a** (605 is the reference impl; 607 guard now enforces it) +
+   MANDATORY READ+WRITE tenant-filter test + FOLLOW-603 option-wiring assertions.
 4. **Retro-driven follow-ups (all P3):**
-   - **FOLLOW-607** — Rule-H-style CI guard flagging any staff WRITE port that does `db.update(...)`
-     - `insert(staffAuditLog)` OUTSIDE a shared `db.transaction()` (mechanical enforcement of §3a so
-       596/597/598 can't regress; RETRO-191, endorsed by the 605 worker's lessons). Landing it also
-       codifies the pattern (no separate CONVENTIONS_PATCH Rule needed).
+   - **FOLLOW-608** — tighten the 607 guard from transaction-PRESENCE to transaction-SCOPE
+     (lexical-in-tx or ESLint/AST), close the 3 false-negative bypasses + harden the
+     qualified-insert matcher + disallow the exempt-comment on rank-3/superadmin routes. Do before
+     FOLLOW-598 inherits the shape (RETRO-192).
    - **FOLLOW-604** — staff-port `PATCH /api/tenants/[id]` (quiz ON/OFF toggle, `quiz_enabled`) +
      unify quiz editors (RETRO-190; not a 595 AC miss).
    - **FOLLOW-606** — wire per-tenant staff sub-surfaces into the `/admin/tenants/[id]` hub landing
@@ -68,8 +67,8 @@ fixture; 605's `api/quiz/config` must PASS, agency path not flagged.
    - **FOLLOW-602** (Rule-I diff-scope false-positive fix, dep of FOLLOW-591) + **FOLLOW-603**
      (option-wiring assertions — 595 already applied it inline).
 5. **Still open from earlier:** sibling stub for the Pilot / Site-Detection read-only staff views
-   deferred out of 594; **FOLLOW-598** (bandit write — MUST adopt §3a per FOLLOW-605) / 599 / 600.
-   Next-free FOLLOW id = **608**.
+   deferred out of 594; **FOLLOW-598** (bandit write — MUST adopt §3a + pass the 607 guard, ideally
+   after FOLLOW-608 tightens it) / 599 / 600. Next-free FOLLOW id = **609**.
 
 ---
 

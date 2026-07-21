@@ -4393,3 +4393,98 @@ filter red-first test and what it proves, (b) confirmation the FOLLOW-607 atomic
 `upsertDemoOverride` transaction-plumbing caveat above and why. PM independently re-verifies CI
 green + runtime wiring (producer/consumer grep) + the atomicity-guard pass before READY_FOR_REVIEW —
 do not mark DONE yourself.
+
+---
+
+## Delegation brief — FOLLOW-608 (session 44, 2026-07-21)
+
+**Worker:** `backend-engineer` · **Model: SONNET** (same class as FOLLOW-607, its predecessor —
+routine, reversible bash-guard hardening with a red-first-fixture-verifiable outcome; not the
+security-reasoning tier reserved for staff-write _routes_ themselves. This ticket only tightens the
+guard script's matching logic; it does not touch any production route, query, or the RLS-bypassed
+data path). **Branch:** `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` FOLLOW-608 ("Tighten the staff-write audit-atomicity guard from
+transaction-PRESENCE to transaction-SCOPE"). Read `docs/MASTER_DESIGN.md` §Snapshot.1 first (OP Rule
+
+1. and the current `CONVENTIONS_PATCH.md` rules before writing any code.
+
+**Why now (sequencing, PM-orchestrator decision, session 44):** RETRO-193 (FOLLOW-596) found the
+FOLLOW-607 guard's presence-not-scope design FORCED FOLLOW-596 to inline-duplicate
+`demo-override-store.upsertDemoOverride` inside the route with zero parity guard (LG-1 →
+FOLLOW-609), and flagged this as SYSTEMIC: FOLLOW-597 and FOLLOW-598 (the highest-blast-radius write
+— bandit weights) will each inherit the same forced-duplication unless the guard is made scope-aware
+first. This ticket was promoted ahead of FOLLOW-597 in the prior plan for exactly that reason — land
+it (then FOLLOW-609) before another staff-write port entrenches the pattern a second or third time.
+This is a reversible backlog-sequencing call, not an architectural ruling; noted in
+QUEUE.md/FOLLOW_UPS.md for the operator to override if desired.
+
+**Verified ground truth (PM, read the real guard script and its test — no blockers):**
+
+- Guard: `scripts/check-staff-write-atomicity.sh`. Its exact heuristic (confirmed by reading the
+  file, not assumed): strips `//` and `/* */` comments, then a route counts as a "staff-audited
+  write" IFF the stripped source contains the literal `insert(staffAuditLog)` AND at least one other
+  `.update(` / `.delete(` / non-`staffAuditLog` `.insert(` call; if so, it FAILs unless
+  `.transaction(` appears ANYWHERE in the same stripped file (or a
+  `// staff-write-atomicity-exempt: <reason>` comment is present in the raw file). This is a
+  **file-level presence check** — it does not verify the mutation and the audit insert are lexically
+  inside the SAME transaction block. The three bypasses in the stub's AC are real given this
+  heuristic (verified directly against the script logic, not inferred):
+  1. An unrelated `db.transaction()` elsewhere in the file plus an out-of-tx audited mutation still
+     PASSES (any `.transaction(` anywhere satisfies the check).
+  2. If the audit insert (`insert(staffAuditLog)`) is factored into a helper in another file, the
+     route file no longer contains the literal string → guard SKIPs it entirely (treated as
+     agency-only/no-audit), a silent false negative.
+  3. A raw-SQL mutation (`db.execute(sql\`UPDATE
+     ...\`)`) does not match `.update(`/`.delete(`/non-audit `.insert(` → the file is classified as
+     "audit-of-a-read" and SKIPped even though a real mutation exists.
+- Test harness: `scripts/__tests__/check-staff-write-atomicity.test.sh` runs the guard against three
+  committed fixtures (`scripts/__fixtures__/staff-write-atomicity/{violation,passing,agency-only}/`)
+  plus the real repo's FOLLOW-605 reference route (`api/quiz/config/route.ts`, must PASS) and the
+  audit-only export route (`api/admin/labels/export/route.ts`, must SKIP). Add new fixtures
+  alongside the existing three for each of the three bypasses (red-first: prove they currently PASS
+  the un-tightened guard, then prove the tightened guard FAILs them).
+- CI wiring: `.github/workflows/ci.yml` job `staff-write-atomicity` (hard-gate, no
+  `continue-on-error`) calls this script — do not touch the CI job wiring itself, only the script
+  (or its replacement) and the fixture/test harness.
+
+**AC (verbatim from the stub, `backlog/FOLLOW_UPS.md` FOLLOW-608):**
+
+- [ ] Require `insert(staffAuditLog)` (and its paired mutation) to appear lexically INSIDE a
+      `transaction(` block — OR replace the bash presence-check with an ESLint/AST rule that walks
+      the call graph. A red-first fixture for bypass (1) (unrelated tx + out-of-tx audited mutation)
+      FAILS the tightened guard.
+- [ ] Detect the audit insert when factored into a shared helper — grep the helper set, or ban
+      helper-wrapping of `staffAuditLog` inserts on staff-write routes. Red-first fixture for bypass
+      (2) FAILS.
+- [ ] Detect raw-SQL mutations paired with an audit insert. Red-first fixture for bypass (3) FAILS.
+- [ ] Harden the audit-insert matcher against qualified/whitespaced forms
+      (`.insert(schema.staffAuditLog)` / `.insert( staffAuditLog )`) so the "other mutation"
+      exclusion still holds.
+- [ ] Enumerate/audit all `// staff-write-atomicity-exempt:` usages in the repo today; DISALLOW the
+      exemption on rank-3/superadmin-only routes (this protects the future FOLLOW-598 bandit-weight
+      route from silently opting out of the guard).
+- [ ] The FOLLOW-605 `api/quiz/config` route still PASSES; the agency-only/`admin/labels/export`
+      shapes still pass/SKIP unchanged; all new fixtures wired into the existing
+      `staff-write-atomicity` CI job with the same non-soft-skip discipline.
+
+**Non-negotiable scope constraints:**
+
+- Do not touch any `apps/control-plane/src/app/api/**/route.ts` production file — this ticket is
+  guard-tooling only (script/ESLint-rule + fixtures + test harness + CI wiring, if a new job step is
+  needed for an ESLint-rule path).
+- Do not touch FOLLOW-609 (the demo-override de-dup fix) in this PR — separate ticket, dispatches
+  next once this lands.
+- Zero new third-party dependencies unless an ESLint/AST approach requires one already present in
+  the repo's eslint config; if a genuinely new dependency is needed, escalate per CLAUDE.md's
+  new-third-party-service rule before adding it.
+
+**Completion:** worker opens a PR (never commits to `main`). Run locally BEFORE push:
+`pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, plus
+`bash scripts/__tests__/check-staff-write-atomicity.test.sh` directly. Prettier on every touched
+file. Conventional commit referencing `[FOLLOW-608]`. In the PR description paste: (a) each of the
+three red-first bypass fixtures and proof they FAIL the tightened guard, (b) confirmation the
+FOLLOW-605 reference route and the agency-only/export routes are unaffected, (c) the exemption-audit
+result (which routes use `staff-write-atomicity-exempt:` today, and confirmation none are
+rank-3/superadmin-only). PM independently re-runs the test harness + re-verifies CI green before
+READY_FOR_REVIEW — do not mark DONE yourself.

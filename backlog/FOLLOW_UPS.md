@@ -16107,21 +16107,26 @@ byte-unchanged tests); audit-row asserted in tests.
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, RETRO-187]
 
-## FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port
+## FOLLOW-596 — Phase 2: Demo Mode / Archetype Simulator staff port — ✅ DONE (PR #594 `b0c34d3`, merged 2026-07-21T10:08:39Z; RETRO-193)
 
 source_adr: ADR-0018 §6 Phase 2 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
 priority: P3 estimated_hours: 3 promoted_to_queue: true (session 42 — dispatched to
 backend-engineer/OPUS, branch `backend-engineer/FOLLOW-596-demo-override-staff-write`; see
 HANDOFFS.md brief)
 
-**STATUS (session 43): READY_FOR_REVIEW.** PR #594. PM-validated independently: CI green (only
-pre-existing Rule I red, net-reduces violations 190→189 — zero new), atomicity confirmed by reading
-the shipped `db.transaction()` wrapping both the `demoOverrides` upsert and the `staffAuditLog`
-insert (ADR-0018 §3a, FOLLOW-607 gate PASS), the MANDATORY invariant-5 tenant-filter tests (READ +
-WRITE) exercise the real fenced query (not the demonstrative `RLS-TRAP-LEAK-DEMO`), agency path
-byte-unchanged, and the new `/admin/tenants/[id]/demo` page/editor is wired and reachable (not yet
-in the hub landing links — that is FOLLOW-606's job, explicitly out of scope here). Awaiting human
-merge. Full validation detail in `backlog/QUEUE.md` START HERE (session 43).
+**STATUS: DONE.** PR #594 merged to `main` (squash `b0c34d3`, 2026-07-21T10:08:39Z). PM-validated
+independently pre-merge: CI green (only pre-existing Rule I red, net-reduces violations 190→189 —
+zero new), atomicity confirmed by reading the shipped `db.transaction()` wrapping both the
+`demoOverrides` upsert and the `staffAuditLog` insert (ADR-0018 §3a, FOLLOW-607 gate PASS), the
+MANDATORY invariant-5 tenant-filter tests (READ + WRITE) exercise the real fenced query (not the
+demonstrative `RLS-TRAP-LEAK-DEMO`), agency path byte-unchanged, and the new
+`/admin/tenants/[id]/demo` page/editor is wired and reachable (not yet in the hub landing links —
+FOLLOW-606's job, explicitly out of scope here). **RETRO-193 filed** (`backlog/RETROSPECTIVES.md`):
+SECURITY-CLEAN, INV-5 discharged end-to-end both verbs, write wired all the way to visitor render.
+One material finding: **LG-1 → FOLLOW-609** — the FOLLOW-607 guard's presence-not-scope design
+forced the staff upsert to be INLINED, byte-duplicating `demo-override-store.upsertDemoOverride`
+with no parity guard (latent agency/staff write-divergence, systemic across 597/598). Full
+validation detail in `backlog/QUEUE.md` START HERE (session 43 entry, preserved).
 
 **AC:** demo-override endpoints accept staff (writes audited, rank ≥ ops);
 `/admin/tenants/[id]/demo` surface; agency path unchanged.
@@ -16440,7 +16445,31 @@ cross_ref: [RETRO-191, RETRO-190, FOLLOW-605, FOLLOW-596, FOLLOW-597, FOLLOW-598
 ## FOLLOW-608 — Tighten the staff-write audit-atomicity guard from transaction-PRESENCE to transaction-SCOPE (close the 3 false-negative bypasses before FOLLOW-598 inherits the shape)
 
 source_retro: RETRO-192 source_ticket: FOLLOW-607 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 2-4 promoted_to_queue: false
+backend-engineer priority: P3 (re-sequenced ahead of FOLLOW-597/598 — see session 44 rationale
+below) estimated_hours: 2-4 promoted_to_queue: true (session 44 — dispatched to
+backend-engineer/SONNET, branch `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`; see
+HANDOFFS.md brief)
+
+**Model-fit (session 44): SONNET** — same class as its predecessor FOLLOW-607 (routine, reversible,
+red-first-fixture-verifiable CI-tooling work on the same bash guard script); not the security-
+reasoning tier that applies to the staff-write _routes themselves_ (ADR-0018 precedent: OPUS for
+592/594/595/596 because those touch the RLS-bypassed data path). This ticket only hardens the
+guard's own matching logic — no production route/query is touched.
+
+**Sequencing decision (session 44, PM-orchestrator call, absorbing RETRO-193 §5b/§5d):** promoted
+AHEAD of FOLLOW-597 (next Phase-2 write port in the prior plan) and paired with FOLLOW-609 (dup-
+elimination) landing next. Rationale: RETRO-193 found the FOLLOW-607 guard's presence-not-scope
+design FORCED FOLLOW-596 to inline-duplicate `demo-override-store.upsertDemoOverride` with zero
+parity guard (LG-1) — and flagged this as SYSTEMIC: FOLLOW-597 (labels/intent-config store) and
+FOLLOW-598 (bandit weights, the highest-blast-radius write) will each inline-duplicate their own
+store for the identical guard-avoidance reason unless 608 (scope-aware guard) + 609 (tx-aware
+delegated write) land first. Landing 597 before 608/609 would (a) create a 3rd duplicated write
+shape to retrofit instead of 1, and (b) let the highest-risk ticket (598) inherit an established
+"inline-and-duplicate" precedent from _two_ prior tickets instead of zero. This is ordinary backlog
+resequencing (not an architectural/pricing/compliance call) — reversible, PR-gated, and every
+affected ticket (597, 598) is otherwise unblocked and simply moves down one slot. Flagging it
+explicitly here (and in QUEUE.md) so the operator can override on merge review if they'd rather
+prioritize feature-port velocity over closing the duplication class first.
 
 **Gap:** `scripts/check-staff-write-atomicity.sh` (FOLLOW-607) is a file-level PRESENCE check — it
 verifies `.transaction(` appears _somewhere_ in a staff-audited-write route, NOT that the audited
@@ -16488,6 +16517,11 @@ cross_ref: [RETRO-192, RETRO-191, RETRO-190, FOLLOW-607, FOLLOW-605, FOLLOW-598,
 
 source_retro: RETRO-193 source_ticket: FOLLOW-596 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P2 estimated_hours: 2-3 promoted_to_queue: false
+
+**Sequencing (session 44):** queued to dispatch immediately AFTER FOLLOW-608 lands (its preferred
+remedy — a tx-aware `upsertDemoOverride(tx?)` shared by both agency+staff paths — depends on 608
+making the atomicity guard scope-aware so a delegated in-tx call still satisfies ADR-0018 §3a). Not
+dispatched this session; next candidate once 608's PR is validated.
 
 **Gap (RETRO-193 §4a LG-1):** the FOLLOW-596 staff write path INLINES the `demo_overrides` upsert
 (`api/demo/override/route.ts:311-331`, `insert(demoOverrides)…onConflictDoUpdate(…).returning()`) —

@@ -2433,3 +2433,23 @@ hung session strands work wherever the agent was standing, and for subagents tha
   STATUS.md and verify it after — run the actual grep/check FIRST, then write only what it proves.
   The guardrail's grep is cheap; asserting its conclusion without running it risks a false "clean"
   claim slipping into the record.
+
+- **Date / ticket:** 2026-07-21 — FOLLOW-596 close-out + FOLLOW-608 dispatch (session 44)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks -> backend-engineer" for FOLLOW-608. Model-fit: SONNET (not the
+  OPUS staff-write-route precedent — this ticket only hardens a CI guard script, it never touches
+  the RLS-bypassed data path or a production route).
+- **What validation caught (or missed):** RETRO-193's LG-1 finding (guard-forced write-shape
+  duplication, FOLLOW-609) is the interesting one — a mechanical CI guard (FOLLOW-607) that was
+  itself meant to CLOSE a gap instead SHAPED the code toward a new one (duplication) as a side
+  effect, a second facet of RETRO-192's "guard moves the gap one hop" pattern. Before deciding to
+  reorder 608/609 ahead of 597/598, I read the actual guard script and its test harness rather than
+  trusting the retro's paraphrase, and confirmed zero `staff-write-atomicity-exempt:` usages exist
+  in production routes today — so tightening the exemption rule now (before any route depends on it)
+  is the cheapest possible time to do it.
+- **A delegation/validation rule I'd add:** When a retro flags that a _guard_ (not a feature) is
+  shaping code toward a defect class across MULTIPLE upcoming tickets, treat tightening the guard as
+  higher-priority than the next feature ticket in the stated plan, even if the guard ticket is
+  nominally lower-priority (P3) — the cost of the reorder is one ticket-slot delay; the cost of NOT
+  reordering compounds with every additional port that inlines-and-duplicates before the guard is
+  fixed. Surface the reorder explicitly (don't silently reprioritize) so the human can veto it.

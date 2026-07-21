@@ -1,6 +1,48 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 43 — FOLLOW-596 (Phase-2 demo-override staff write port) PM-validated on PR #594; CI green (only pre-existing Rule I red, PR net-REDUCES violations 190→189); atomicity + tenant-fence + wiring independently confirmed. Moved to READY_FOR_REVIEW. Awaiting human merge.)
+## ▶️ START HERE — resume 2026-07-21 (session 44 — FOLLOW-596 DONE (PR #594 merged, RETRO-193 filed); re-sequenced FOLLOW-608+609 AHEAD of FOLLOW-597/598 per RETRO-193's duplication-cascade finding; dispatched FOLLOW-608 to backend-engineer/SONNET)
+
+**Read this before picking anything.** No escalations open (ESC-020/028/034 non-blocking OPEN per
+memory, all others RESOLVED). No open PRs (`gh pr list --state open` empty). Working tree clean,
+`main` pushed through `423c448` + this session's bookkeeping.
+
+**FOLLOW-596 → DONE.** PR #594 merged (squash `b0c34d3`, 2026-07-21T10:08:39Z). RETRO-193 filed
+(`backlog/RETROSPECTIVES.md`): SECURITY-CLEAN, INV-5 discharged end-to-end both verbs, staff write
+wired all the way to visitor render (`demo_overrides` → `adapt/description/route.ts` →
+`getDemoOverride`). One material finding, no live defect: **LG-1 → FOLLOW-609** (P2) — the
+FOLLOW-607 guard's presence-not-scope design forced FOLLOW-596 to INLINE-duplicate
+`demo-override-store.upsertDemoOverride` in the route with zero parity guard (byte-identical today,
+latent agency/staff divergence risk on any future schema/logic change to the store). RETRO-193 flags
+this as SYSTEMIC: FOLLOW-597 (labels/intent-config) and FOLLOW-598 (bandit weights, highest blast
+radius) will each inline-duplicate their own store for the identical guard-avoidance reason unless
+FOLLOW-608 (make the guard scope-aware, not presence-only) lands first.
+
+**Sequencing decision made this session (PM-orchestrator call, not deferred to human):**
+**FOLLOW-608 dispatched now; FOLLOW-609 queued to dispatch next (after 608 lands); FOLLOW-597/598
+pushed down one slot.** Reasoning: this is ordinary, reversible backlog resequencing (not an
+architectural/pricing/compliance decision) — every affected ticket is otherwise unblocked, so the
+only cost is one session's delay on FOLLOW-597. The benefit is real: landing 597 first would create
+a THIRD duplicated write shape to retrofit instead of one, and would let FOLLOW-598 (the
+highest-blast-radius write, superadmin-only bandit weights) inherit an established
+inline-and-duplicate precedent from two prior tickets instead of zero. RETRO-193 §5b explicitly
+recommends 608+609 land before the highest-risk write carries the un-guarded duplicate. **Flagging
+this reordering explicitly for the operator** — if you'd rather prioritize feature-port velocity
+(land 597 now, defer 608/609), say so and the next session will pick 597 instead; nothing here is
+irreversible (FOLLOW-608's PR hasn't merged yet).
+
+**Model-fit for FOLLOW-608: SONNET** (same class as its predecessor FOLLOW-607 — routine, reversible
+CI-guard-script hardening, red-first-fixture-verifiable; NOT the security-reasoning tier reserved
+for staff-write _routes_ touching the RLS-bypassed data path, e.g. 592/594/595/596 which went OPUS).
+Full delegation brief: `backlog/HANDOFFS.md` "Delegation brief — FOLLOW-608 (session 44,
+2026-07-21)". Branch: `backend-engineer/FOLLOW-608-staff-write-atomicity-scope`.
+
+**Next after FOLLOW-608 merges:** dispatch FOLLOW-609 (de-dup the demo-override write, backend-
+engineer, P2), then FOLLOW-597 (labels/intent-config staff port), then the remaining P3s
+(604/606/602/603), then FOLLOW-598/599/600. Next-free FOLLOW id = **610**.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 43 — FOLLOW-596 (Phase-2 demo-override staff write port) PM-validated on PR #594; CI green (only pre-existing Rule I red, PR net-REDUCES violations 190→189); atomicity + tenant-fence + wiring independently confirmed. Moved to READY_FOR_REVIEW. Awaiting human merge.)
 
 **Read this before picking anything.** No escalations open (ESC-036/037/038 all RESOLVED). PR #594
 (`backend-engineer/FOLLOW-596-demo-override-staff-write`) is READY_FOR_REVIEW, awaiting human merge

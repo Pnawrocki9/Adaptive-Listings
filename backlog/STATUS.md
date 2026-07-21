@@ -1,4 +1,60 @@
-# Status — 2026-07-21 (session 43 — FOLLOW-596 PM-validated on PR #594, READY_FOR_REVIEW)
+# Status — 2026-07-21 (session 44 — FOLLOW-596 DONE + RETRO-193 filed; FOLLOW-608 dispatched, re-sequenced ahead of 597/598)
+
+## SESSION 44 (2026-07-21) — closed the FOLLOW-596 loop, absorbed RETRO-193, dispatched FOLLOW-608
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (no unresolved entries),
+`git log --oneline -20`, `gh pr list --state open` (empty). Synced `main`:
+`git checkout main && git pull --ff-only origin main` — already up to date (retrospective-analyst's
+RETRO-193 + FOLLOW-609 commit `423c448` was local-only, not yet on origin). Pushed it:
+`git push origin main` → `b0c34d3..423c448 main -> main`. Confirmed clean tree before and after.
+
+**Task 1 — close FOLLOW-596:** marked DONE in `backlog/QUEUE.md` (new session-44 START HERE header,
+prior session marked `(superseded)`) and in `backlog/FOLLOW_UPS.md` (heading updated to "✅ DONE (PR
+#594 `b0c34d3`, merged 2026-07-21T10:08:39Z; RETRO-193)"). PR #594 merged, RETRO-193 filed — nothing
+else outstanding on this ticket.
+
+**Task 2 — absorbed RETRO-193 findings:**
+
+- **FOLLOW-609 (new stub, already filed by retrospective-analyst):** de-duplicate / parity-guard the
+  two demo-override write shapes (`demo-override-store.upsertDemoOverride` vs. the inlined staff
+  upsert in `route.ts:311-331`) — byte-identical today, no parity guard, forced by the FOLLOW-607
+  guard's presence-only heuristic. backend-engineer, P2, ~2-3h. Left `promoted_to_queue: false`,
+  queued to dispatch immediately after FOLLOW-608 lands (its preferred remedy depends on 608 making
+  the guard scope-aware).
+- **Sequencing call (made, not deferred):** promoted **FOLLOW-608 ahead of FOLLOW-597/598**. Read
+  the actual guard script (`scripts/check-staff-write-atomicity.sh`) and its test harness
+  (`scripts/__tests__/check-staff-write-atomicity.test.sh`) myself to verify the three bypasses in
+  the stub's AC are real given the script's literal heuristic (comment-stripped grep for
+  `insert(staffAuditLog)` + any `.transaction(` ANYWHERE in file — not scope-checked); confirmed
+  zero `staff-write-atomicity-exempt:` usages exist in production routes today (grepped
+  `apps/control-plane` — none), so tightening the exemption rule is low-risk. Reasoning for the
+  reorder: landing FOLLOW-597 first would create a THIRD duplicated write shape (after 596) to
+  retrofit instead of one, and would let FOLLOW-598 (bandit weights, the highest-blast-radius write,
+  superadmin-only) inherit an established inline-and-duplicate precedent from two prior tickets
+  instead of zero — exactly the risk RETRO-193 §5b flags. This is ordinary backlog resequencing
+  (reversible, PR-gated, no ticket is blocked by the reorder, just delayed one slot) — within normal
+  PM prioritization authority, not an architectural/pricing/compliance call reserved for the human.
+  Flagged explicitly in QUEUE.md/FOLLOW_UPS.md so the operator can override on the next review if
+  they'd rather prioritize feature-port velocity.
+
+**Task 3/4 — dispatch:** delegation-table row used — "a contract between two modules, a new
+dependency, an ADR" does NOT apply here; this is CI-guard tooling under ADR-0018's existing scope,
+so routed per the **backend-engineer** row (ingest/control-plane/decision-api/Postgres/RLS/auth
+family — this guard lives in `apps/control-plane`'s CI path and enforces an auth-adjacent
+invariant). **Model-fit: SONNET** — same class as FOLLOW-607 (routine, reversible,
+red-first-fixture-verifiable bash-guard hardening; does not touch any production route or the
+RLS-bypassed data path itself, so the OPUS security-sensitive-by-class precedent for staff-write
+_routes_ does not apply). Full brief written to `backlog/HANDOFFS.md` ("Delegation brief —
+FOLLOW-608, session 44"): verified guard heuristic + all three bypasses read directly from source,
+verbatim AC, non-negotiable scope (no production route touched), completion/evidence requirements.
+
+**Bookkeeping commits done BEFORE dispatch, pushed to origin** (no worker running — safe per git
+discipline; no concurrent git ops planned once FOLLOW-608 is dispatched).
+
+**CI-check counter: N/A this session (no PR opened/validated by PM this session — bookkeeping +
+dispatch only). Fix-iteration counter: N/A.**
+
+---
 
 ## SESSION 43 (2026-07-21) — FOLLOW-596 validated: CI green, atomicity + wiring confirmed, READY_FOR_REVIEW
 

@@ -16557,3 +16557,30 @@ a data-write-divergence class → P2.
 
 cross_ref: [RETRO-193, RETRO-192, FOLLOW-607, FOLLOW-608, FOLLOW-596, FOLLOW-597, FOLLOW-598,
 ADR-0018]
+
+## FOLLOW-610 — Direct Modal HTTPS chat-NLP invoke from ingest (audit F-01) — CODE DRAFTED 2026-07-21
+
+- **source_retro:** AUDIT_REPORT_2026-07-21_CODE_DIAGNOSIS (F-01)
+- **source_ticket:** ADR-0016 pattern extension; unblocks dead Redpanda → stream-consumer feed
+- **recommended_sprint:** 23 (pilot must-fix)
+- **recommended_agent:** ml-engineer (Modal) + devops-engineer (Worker secrets) + backend-engineer
+  (ingest)
+- **priority:** P0
+- **estimated_hours:** 2 (ops) — code already drafted in PR #595
+- **scope:** Production never fed `apps/intent-engine` because ingest Redpanda publish is a no-op
+  (Serverless has no HTTP Proxy) and stream-consumer is the only spawn bridge. Mirror ADR-0016:
+  Modal `chat_nlp_endpoint` + ingest `waitUntil` POST on `chat.message.sent`. Shadow Redis only; do
+  NOT flip `CHAT_NLP_LIVE` (C-07).
+- **ac:**
+  - [x] `chat_nlp_endpoint` on intent-engine (Bearer `INTERNAL_API_SECRET`, spawns
+        `process_chat_message`) — PR #595
+  - [x] Ingest `dispatchChatNlp` + `waitUntil` on validated `chat.message.sent` — PR #595
+  - [x] Unit tests (Python endpoint + Vitest dispatch) — PR #595
+  - [ ] Operator: `modal deploy` intent-engine; set ingest secrets `MODAL_CHAT_NLP_URL` +
+        `INTERNAL_API_SECRET`
+  - [ ] Smoke: one chat message → Redis `shadow:{tenant}:{session}:chat_intent` within ~1s
+  - [ ] Leave `CHAT_NLP_LIVE=false` until C-07; document in QUEUE as
+        `CODE_COMPLETE_OPERATOR_PENDING` until smoke passes
+- **promoted_to_queue:** false (code shipped on audit PR; promote operator leg at next planning)
+
+cross_ref: [AUDIT-F-01, ADR-0016, ADR-0005, FOLLOW-346, FOLLOW-458, CHAT_NLP_LIVE]

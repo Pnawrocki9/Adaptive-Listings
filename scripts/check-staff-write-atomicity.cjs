@@ -3,7 +3,9 @@
 
 /**
  * Staff-write audit atomicity guard — ADR-0018 §3a / FOLLOW-607, tightened to be
- * SCOPE-AWARE by FOLLOW-608, mutation-detection extended by FOLLOW-609.
+ * SCOPE-AWARE by FOLLOW-608, mutation-detection extended by FOLLOW-609 (bare
+ * identifier call to a NAMED import) and FOLLOW-612 (namespace/property-access
+ * call to a `import * as ns` import).
  *
  * Every staff-audited WRITE — a route that both performs a data mutation and
  * records it in staff_audit_log — MUST commit the mutation and the audit row in
@@ -75,6 +77,31 @@
  * draft of this fix gated on tx-scope alone and regressed exactly this route
  * from SKIP to a false FAIL — caught by the existing real-repo assertion in
  * scripts/__tests__/check-staff-write-atomicity.test.sh before it shipped.)
+ *
+ * FOLLOW-612 closes a 5th bypass RETRO-196 found in FOLLOW-609 as shipped: the
+ * SAME delegated-mutation shape as bypass 4, but expressed as a NAMESPACE/
+ * property-access call (`import * as helper from '@/lib/mutation-helper';
+ * ... helper.upsertSomething(tx, ...)`) instead of a bare identifier call. The
+ * FOLLOW-609 `visit()` walk only widened the ALREADY-`ts.isIdentifier(node.expression)`
+ * branch to check `localImportedIdentifierSources` — a
+ * `PropertyAccessExpression` callee (`helper.upsertSomething`) fell into the
+ * OTHER branch instead, which only recognises the method names `transaction`/
+ * `insert`/`update`/`delete`/`execute`. `upsertSomething` matches none of
+ * those, so the call was silently invisible to BOTH classification paths: not
+ * a `mutationCall`, not a `localHelperCallCandidate` — the same zero-
+ * enforcement SKIP as bypass 4, one further call-shape hop over (Rule AE).
+ *
+ * Fix: reuses (does not fork) the SAME `localImportedIdentifierSources` map —
+ * built by `collectLocalImportedIdentifierSources`, which already resolves a
+ * `import * as helper from ...` namespace import's LOCAL binding name
+ * (`helper`) to the module path, exactly as it does for a named import's bound
+ * name. The `PropertyAccessExpression` branch in `visit()` now falls through
+ * to a new check, after the fixed method-name checks: if the property access's
+ * OBJECT (`node.expression.expression`, e.g. `helper` in `helper.upsertX(...)`)
+ * is an identifier present in that same map, the call is queued as a
+ * `localHelperCallCandidate` keyed by the OBJECT's name — resolved through the
+ * identical `moduleContainsMutation` check bypass 4 already uses. No parallel
+ * resolution path was added.
  *
  * Exemption: a route may still opt out (a genuinely single-store single-write
  * path where a transaction wrapper is meaningless) with an inline comment
@@ -292,16 +319,22 @@ function collectFileFacts(sourceFile, localImportedIdentifierSources = new Map()
   const auditCalls = [];
   const mutationCalls = [];
   const txScopeNodes = new Set();
-  // FOLLOW-609 bypass 4: bare calls to a locally-imported identifier, collected
-  // separately and only promoted to `mutationCalls` AFTER the full walk (see
-  // below) — filtered to calls whose resolved source module actually performs
-  // a mutation itself.
+  // FOLLOW-609 bypass 4 (bare `upsertX(tx, ...)` calls) + FOLLOW-612 bypass 5
+  // (namespace/property-access `helper.upsertX(tx, ...)` calls) both land here
+  // as `{ call, calleeName }` pairs, collected separately and only promoted to
+  // `mutationCalls` AFTER the full walk (see below) — filtered to calls whose
+  // resolved source module actually performs a mutation itself. `calleeName`
+  // is always the LOCAL identifier bound by this file's own import
+  // declaration (the bare name for a named import, the namespace name for a
+  // `import * as helper from ...` import) — the same key
+  // `collectLocalImportedIdentifierSources` populates for both import shapes.
   const localHelperCallCandidates = [];
 
   function visit(node) {
     if (ts.isCallExpression(node)) {
       if (ts.isPropertyAccessExpression(node.expression)) {
         const method = node.expression.name.text;
+        const object = node.expression.expression;
 
         if (method === 'transaction') {
           const fnArg = node.arguments.find(
@@ -318,12 +351,24 @@ function collectFileFacts(sourceFile, localImportedIdentifierSources = new Map()
           mutationCalls.push(node);
         } else if (method === 'execute' && isRawSqlMutationCall(node)) {
           mutationCalls.push(node);
+        } else if (ts.isIdentifier(object) && localImportedIdentifierSources.has(object.text)) {
+          // FOLLOW-612 bypass 5 (RETRO-196): a namespace/property-access call
+          // to a locally-imported helper — e.g. `helper.upsertSomething(tx, ...)`
+          // from `import * as helper from '@/lib/mutation-helper'`. `method`
+          // matched none of the built-in mutation method names above, so
+          // without this branch the call falls through BOTH classification
+          // paths silently (not a mutationCall, not a
+          // localHelperCallCandidate) — the exact bypass RETRO-196 found.
+          // Resolved via `object.text` (the namespace identifier, e.g.
+          // `helper`), which `collectLocalImportedIdentifierSources` already
+          // maps to the resolved module path for a namespace import.
+          localHelperCallCandidates.push({ call: node, calleeName: object.text });
         }
       } else if (
         ts.isIdentifier(node.expression) &&
         localImportedIdentifierSources.has(node.expression.text)
       ) {
-        localHelperCallCandidates.push(node);
+        localHelperCallCandidates.push({ call: node, calleeName: node.expression.text });
       }
     }
     ts.forEachChild(node, visit);
@@ -343,9 +388,11 @@ function collectFileFacts(sourceFile, localImportedIdentifierSources = new Map()
   // fire-and-forget dispatchers, ...) with NO data mutation at all — e.g.
   // `api/admin/labels/export/route.ts` — correctly SKIPped: none of ITS local
   // imports resolve to a module containing `.update(`/`.delete(`/a non-audit
-  // `.insert(`/a raw-SQL mutation.
-  for (const call of localHelperCallCandidates) {
-    const calleeName = call.expression.text;
+  // `.insert(`/a raw-SQL mutation. This same resolution (`moduleContainsMutation`)
+  // is reused for BOTH the bare-identifier (bypass 4) and namespace/
+  // property-access (bypass 5) call shapes above — one resolution path, not a
+  // parallel one, per FOLLOW-612 AC 1.
+  for (const { call, calleeName } of localHelperCallCandidates) {
     const resolvedPath = localImportedIdentifierSources.get(calleeName);
     if (resolvedPath && moduleContainsMutation(resolvedPath)) {
       mutationCalls.push(call);
@@ -454,7 +501,7 @@ function findHelperFactoredAudit(routeAbsPath, routeSourceFile) {
 
 console.log(
   '=== Staff-write audit atomicity check (ADR-0018 §3a / FOLLOW-607, scope-aware FOLLOW-608, ' +
-    'helper-delegated-mutation-aware FOLLOW-609) ===',
+    'helper-delegated-mutation-aware FOLLOW-609/FOLLOW-612) ===',
 );
 console.log(`Scanning: ${scanRootRel}/**/route.ts`);
 console.log('');

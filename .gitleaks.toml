@@ -194,6 +194,23 @@ regexes = [
   # (same class as the ADR-NNNN-kebab and agent-branch-slug entries above). Not a
   # secret — a descriptive fixture/test identifier. Token-scoped per Rule V.
   '''bypass4-helper-delegated-mutation(-out-of-tx)?''',
+  # FOLLOW-612: same class as the bypass-4 entry above — the bypass-5 CI-guard
+  # fixture directory name `bypass5-namespace-import-delegated-mutation(-out-of-tx)`
+  # (43/53 chars) is cited in the fixture's own doc comment, its sibling fixture's
+  # doc comment, and the test harness's run_fixture() call — false-positives on
+  # this generic 40-char entropy heuristic. Unlike the bypass-4 entry (whose base
+  # name is only 33 chars, shorter than the 40-char capture window, so the FULL
+  # base name is always a substring of the truncated match), this fixture's base
+  # name is 43 chars — LONGER than the 40-char capture window — so gitleaks'
+  # `[a-zA-Z0-9_-]{40}` rule captures only the first 40 chars
+  # (`bypass5-namespace-import-delegated-mutat`, missing the trailing `ion`); a
+  # regex requiring the full word "mutation" would never match the truncated
+  # capture and this allowlist entry would be silently inert. Verified locally
+  # with the gitleaks binary (not added speculatively) — this shorter prefix
+  # regex is guaranteed to be a substring of the 40-char capture regardless of
+  # which variant (bare or `-out-of-tx`) is matched. Not a secret — a
+  # descriptive fixture/test identifier. Token-scoped per Rule V.
+  '''bypass5-namespace-import-delegated''',
 ]
 
 # JWT tokens (generic)

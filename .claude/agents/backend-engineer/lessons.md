@@ -2,6 +2,56 @@
 
 ---
 
+## 2026-07-21 / FOLLOW-612
+
+**What I built:** Closed the 5th bypass (RETRO-196) of the staff-write atomicity CI guard
+(`scripts/check-staff-write-atomicity.cjs`): a data mutation delegated through a NAMESPACE/
+property-access import (`import * as helper from '@/lib/x'; helper.upsertX(tx, ...)`) fell through
+BOTH classification branches of `collectFileFacts`'s `visit()` — not a fixed-method-name mutation
+(`transaction`/`insert`/`update`/`delete`/`execute`), not a bare-identifier helper call
+(FOLLOW-609's own fix only widened the `ts.isIdentifier(node.expression)` branch) — so it silently
+printed SKIP, zero enforcement, identical failure mode to bypass 4 one call-shape hop over. Fix:
+reused (did not fork) the existing `localImportedIdentifierSources` map — it already resolves a
+namespace import's LOCAL binding (`helper`) to the module path exactly like it does for a named
+import's bound name — and added a new branch inside the `PropertyAccessExpression` handling that,
+when none of the fixed method names match, checks whether the property access's OBJECT is a
+locally-imported identifier; if so it's queued as a `localHelperCallCandidate` keyed by that
+object's name and resolved through the SAME `moduleContainsMutation` check bypass 4 already uses.
+Added committed fixture pair `bypass5-namespace-import-delegated-mutation(-out-of-tx)/` (OK / FAIL)
+mirroring the bypass-4 pair, wired into `check-staff-write-atomicity.test.sh`.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) Re-read the FOLLOW-609 lessons entry first per the
+ticket's own instruction — it documents two wrong turns (gating on tx-scope at collection time
+silently SKIPs an out-of-tx violation instead of failing it; and "any call to any local import is a
+mutation" false-FAILs `admin/labels/export/route.ts`). My fix reuses the exact same
+`moduleContainsMutation`-gated, NOT-tx-scope-gated resolution, so neither wrong turn was
+reintroduced — verified explicitly by re-running the FULL fixture suite (not just the two new
+fixtures) plus the real-repo assertion that `admin/labels/export` still prints SKIP. (2) Confirmed
+by grep that every real `import * as X` in `apps/control-plane/src/app/api/**/route.ts` is
+`@sentry/nextjs` (a non-local package import) — my new branch only activates for LOCAL
+(relative/`@/`-alias) imports, so this posed zero regression risk to the real repo, but I verified
+it directly rather than assuming. (3) Gitleaks false positive, caught BEFORE pushing rather than
+after a red CI run: downloaded the `gitleaks` binary locally and ran it against the new fixture
+content in isolation. The FOLLOW-609 precedent's bypass-4 allowlist regex works because the bypass-4
+base name (33 chars) is shorter than gitleaks' `[a-zA-Z0-9_-]{40}` capture window, so the full base
+name is always a substring of the 40-char truncated match. My bypass-5 base name is 43 chars —
+LONGER than the window — so the capture truncates to `bypass5-namespace-import-delegated-mutat`
+(missing `ion`), and an allowlist regex requiring the full word "mutation" would have been silently
+inert (a no-op regex, never flagged by any test, CI-green until an unrelated future gitleaks version
+bump or line-shift changed the truncation offset and the leak resurfaced with no attribution to this
+PR). Fixed by using a shorter prefix regex, and verified fixed with the same local binary before
+committing.
+
+**A guardrail I'd add:** when adding a gitleaks allowlist regex for a descriptive identifier ≥40
+chars, always verify locally with the actual gitleaks binary (freely downloadable, no CI round-trip
+needed) that the regex matches the ACTUAL truncated capture, not just the full identifier — the
+capture window truncates non-anchored 40-char runs, and a regex written against the full string can
+be a silent no-op if the identifier is longer than 40 chars. This is now the 2nd time a fixture
+directory name for this exact guard has needed a gitleaks allowlist entry (bypass 4, bypass 5); a
+3rd `bypass6-...` fixture pair should budget for the same check up front.
+
+---
+
 ## 2026-07-21 / FOLLOW-609
 
 **What I built:** Deduped the FOLLOW-596 byte-duplicated staff/agency `demo_overrides` write

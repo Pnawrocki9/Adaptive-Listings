@@ -16196,10 +16196,12 @@ surfaces; agency paths unchanged.
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, FOLLOW-606, FOLLOW-609, FOLLOW-612,
 FOLLOW-613, RETRO-187, RETRO-196, RETRO-197]
 
-## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3)
+## FOLLOW-598 — Phase 3: Bandit weight staff-write port (HIGH RISK — superadmin-only per CEO Q3) — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/OPUS, isolated worktree, branch `backend-engineer/FOLLOW-598-bandit-superadmin-write-port`)
 
 source_adr: ADR-0018 §6 Phase 3 + Resolved Q3 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: false
+backend-engineer priority: P3 estimated_hours: 3 promoted_to_queue: true (dispatched session 50;
+model-fit override stub's default → OPUS: security-sensitive + HIGHEST blast radius, though
+well-scoped by the 595/597 audited-write precedents)
 
 **Gap:** bandit weight PATCH directly steers live adaptation for a tenant — the highest-blast-radius
 staff write. CEO Q3 ruling: requires `estalara:superadmin` (rank ≥ 3), not merely ops.

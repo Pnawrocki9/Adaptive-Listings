@@ -2473,3 +2473,22 @@ hung session strands work wherever the agent was standing, and for subagents tha
   before the guard shipped), don't dispatch on the assumption; spend 10 minutes reproducing the
   assumption against the actual shipped artifact before writing the delegation brief. It's cheap and
   it already caught a real gap twice in two consecutive sessions (608->609 chain).
+
+- **Date / ticket:** 2026-07-21 — validate FOLLOW-609 / PR #597 (session 47)
+- **Delegation row used:** N/A (validation-only session, no new delegation) — original dispatch used
+  "control-plane" row (backend-engineer, SONNET).
+- **What validation caught (or missed):** Nothing wrong with the PR — the worker correctly landed
+  the hard-blocker guard fix in the same PR as the store dedup, exactly as briefed. What this
+  session's discipline DID catch: (1) the working tree was on the ticket branch, not `main` — the
+  branch's own commits (`ea47455`, `3d62def`) turned out to already be common history with `main`
+  (merge-base check via `git log HEAD ^origin/main` proved only 2 commits were branch-unique),
+  confirming the repo's established pattern of committing PM bookkeeping to `main` directly rather
+  than onto ticket branches; committing bookkeeping onto the ticket branch instead would have
+  polluted PR #597's diff with unrelated docs churn. (2) Ran my OWN from-scratch throwaway repro of
+  the bypass-4 shape (separate from the PR's committed fixtures) before trusting "12/12 pass" — this
+  is the literal instruction in the task brief and it's cheap (a 20-line fixture) insurance against
+  a worker's fixture being subtly miscalibrated to pass its own fix.
+- **A delegation/validation rule I'd add:** Before any backlog-bookkeeping commit, run
+  `git log HEAD ^origin/main --oneline` to check whether the current branch's commits are already
+  common history with `main` — this tells you definitively whether bookkeeping belongs on `main` or
+  the ticket branch, instead of inferring it from convention alone.

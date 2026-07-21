@@ -3058,3 +3058,35 @@ so.**
   can't follow `export *`) — the moment 613 lands, the fork disappears. Meta-lesson: a pattern that
   only exists because a known open ticket hasn't landed is NOT a durable convention; resist
   promoting it. Rule AE + FOLLOW-613 already own it.
+
+## 2026-07-22 · RETRO-201 (FOLLOW-599 / PR #602 — audit-read consumer + x-tenant-id hole)
+
+- **A finding I almost missed and why:** I nearly wrote up the `/api/config` `x-tenant-id` auth hole
+  as a NEW one-off security finding. It is not — RETRO-153/163 had ALREADY filed it (with
+  `/api/audit`) as FOLLOW-491, which was then SKIPPED per a QUEUE.md "both are stubs, defer" note.
+  Grepping the retro history (step 3) BEFORE writing §4 turned a duplicate stub into the correct
+  NARROWED SUCCESSOR (FOLLOW-614, config leg only) and reframed the whole headline from "closed a
+  hole" to "closed ONE leg of a known 2-leg class; the other leg is still live." Lesson: always grep
+  prior FOLLOW/RETRO history for a finding's signature before minting a stub — a "new" security hole
+  is often a re-sighting of a deferred one, and the right output is to re-scope, not duplicate.
+- **An axis/chain I had to trace twice:** the mock-branch reachability. First pass I accepted the
+  worker's "unreachable" flag at face value; second pass I actually followed `resolveTenantAccess` →
+  `tenantExists` (session-auth.ts:446) → `createAdminClient` (client.ts:188 `throw`) and confirmed
+  the throw uses the SAME two env vars as the route's `dbConfigured` check, so `!dbConfigured` ⟺
+  createAdminClient-throws — the mock branch is provably unreachable in a real no-DB env. But the
+  SECOND trace also delivered the VERDICT that matters: this is Rule-K.2-COMPLIANT (fails loud,
+  never fabricates), so it's a benign dead branch, NOT a ticket. Tracing the chain twice is what
+  separated "dead code, file a stub" from "dead but correct, don't."
+- **Meta-pattern in how gaps recur across agents:** the "close leg A of a multi-leg class and let
+  legs B/C ride an OPEN deferral" pattern keeps producing HALF-discharged tickets (FOLLOW-491 audit
+  vs config here; the FOLLOW-473/491 fail-open family before it; the FOLLOW-613 barrel-bypass before
+  that). Each write-port/hardening PR closes exactly its named route and the sibling of the SAME
+  class stays open under a "defer, it's a stub" note that never gets re-examined until the next
+  retro re-greps. The retro's job is to be the periodic re-grep that keeps the residual leg from
+  being silently forgotten — Rule AC (sweep by repo-wide grep, not the files the audit named) is the
+  durable answer, and this is another confirming instance of WHY it exists.
+- **Positive confirmation worth recording:** FOLLOW-599 is the FIRST per-tenant surface after the
+  FOLLOW-606 same-PR-link template (RETRO-200 armed the trigger). It SELF-WIRED its hub link
+  correctly → the trigger stays un-fired and the template is CONFIRMED working. Recording the
+  compliant instance is as important as recording failures — it's what keeps a premature rule
+  promotion from firing on a pattern that's now self-correcting.

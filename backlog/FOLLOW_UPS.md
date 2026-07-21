@@ -16266,14 +16266,32 @@ path unchanged; do NOT start before FOLLOW-595 establishes the audited-write pat
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-595, FOLLOW-456, FOLLOW-609, FOLLOW-612, FOLLOW-613,
 RETRO-187, RETRO-196, RETRO-197]
 
-## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/OPUS, isolated worktree, branch `backend-engineer/FOLLOW-599-audit-read-consumer`)
+## FOLLOW-599 — Wire GET /api/audit (+ per-tenant admin audit view) to the real staff_audit_log, replacing the mock stub — ✅ DONE + MERGED (PR #602, squash `78b8b53`, merged 2026-07-21T22:34:43Z; RETRO-201)
 
 source_adr: ADR-0018 §3 recommended_sprint: Sprint 25 recommended_agent: backend-engineer priority:
-P3 estimated_hours: 2 promoted_to_queue: true (dispatched session 50; OPUS per model-fit —
-security-sensitive: the current route trusts an unauthenticated `x-tenant-id` header (auth hole to
-close), reads a service-role RLS-off sensitive table, and needs the MANDATORY invariant-5
-tenant-fence test. Read-authorization is STAFF-ONLY per ADR-0018 §3 (agency read = deferred Phase-2,
-out of scope); reads are NOT logged (CEO Q4).)
+P3 estimated_hours: 2 promoted_to_queue: true (dispatched + landed session 50; OPUS per model-fit —
+security-sensitive)
+
+**STATUS: DONE.** Merged via PR #602 (squash `78b8b53`, 8 files, +877/-110, no migrations).
+Dispatched to backend-engineer/OPUS in an isolated worktree, PM-validated independently (read the
+rewritten route: the unauthenticated `x-tenant-id` header path is REMOVED; staff-only via
+`resolveTenantAccess`, agency→403; `eq(staffAuditLog.targetTenantId, access.tenantId)` is the only
+fence; NO insert on read; MANDATORY invariant-5 tenant-fence test present;
+`node scripts/check-staff-write-atomicity.cjs` still passes and correctly does NOT list this read
+route), CI green (59 gates pass, only non-blocking `Rule I` red). Post-merge: synced `main`, removed
+the agent worktree + stale branch, re-ran the guard (no regression). Shipped: `GET /api/audit`
+rewritten to a staff-only, tenant-fenced read of `staff_audit_log` (mock kept as the
+`data_source:'mock'` DB-unconfigured fallback; reads NOT logged per CEO Q4) + NEW
+`/admin/tenants/[id]/audit` staff page + its hub link on the `[id]` landing (correctly self-wired
+per the just-landed FOLLOW-606 same-PR-link template — CONFIRMS the template, trigger not fired).
+RETRO-201: **the `staff_audit_log` HALF_WIRE_P (RETRO-190/198/199) is now RESOLVED end-to-end**
+(producer→table→real read→`StaffAuditView`→hub link). 0 P0/P1 bugs. **One concrete security finding
+→ FOLLOW-614 (P2):** hunt for the same unauthenticated-`x-tenant-id` class found ONE live residual
+leg — `/api/config` (GET/PATCH + `x-agency-role` role-spoof) still trusts caller-supplied headers as
+sole auth (P2, not P1: `config` is still an in-memory stub with no real data today, but ships the
+hole when wired — and FOLLOW-600's `/settings` is the likely wire point, so it MUST move onto
+`resolveTenantAccess` first). Mock-branch dead-but-benign (Rule-K.2-compliant, no ticket). No rule
+promoted (auth-hole class already governed by the Rule H amendment, RETRO-006 §6a).
 
 **Gap:** `apps/control-plane/src/app/api/audit/route.ts` serves MOCK_ENTRIES; ADR-0018 makes
 `staff_audit_log` the audit SoT for staff writes (writes-only per CEO Q4). Staff need to SEE the
@@ -16959,5 +16977,41 @@ helper module." — that predicted risk materialized in FOLLOW-597.
 cross_ref: [RETRO-197, RETRO-196, RETRO-194, RETRO-192, FOLLOW-608, FOLLOW-609, FOLLOW-612,
 FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
 
-<!-- next free FOLLOW number: 614. next free RETRO number: 198. Filed by session 49
-(PM-orchestrator) post-merge retro for FOLLOW-612 (RETRO-197). -->
+- id: FOLLOW-614 title: >- Sweep the LAST live leg of the `x-tenant-id` spoofable-header auth-hole
+  class — `/api/config` GET+PATCH (+ `x-agency-role` role-spoof on PATCH) — onto
+  `resolveTenantAccess`; narrowed successor to the half-discharged FOLLOW-491 source_retro:
+  RETRO-201 source_ticket: FOLLOW-599 recommended_sprint: next recommended_agent: backend-engineer
+  priority: P2 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-599 (PR #602) closed the
+  `/api/audit` leg of the 2-leg spoofable-header stub that RETRO-153/163 filed as FOLLOW-491 (which
+  was SKIPPED per the QUEUE.md note "both are in-memory stubs, defer"). The `/api/config` leg is
+  UNCHANGED and re-verified LIVE on `main` (78b8b53): `config/route.ts:89` (GET) and `:101` (PATCH)
+  read `req.headers.get('x-tenant-id')` as the SOLE tenant authority with no JWT/session, and `:110`
+  reads the caller ROLE from a spoofable `x-agency-role` header to gate the PATCH mutation.
+  Middleware does NOT protect it: `/api/config` falls through the `/admin` and `/dashboard` branches
+  to the "All other routes — pass through" `NextResponse.next()`, which does NOT strip/overwrite the
+  caller's `x-tenant-id` (contrast the `/dashboard` branch, which SETS it from verified claims). So
+  a caller can send `x-tenant-id: <victim>` + `x-agency-role: agency:owner` and read/mutate config
+  for any tenant. Severity P2 (not P1) ONLY because `config` is still an in-memory `configStore` Map
+  stub — no real cross-tenant data is exposed TODAY — but `config/route.ts:6` carries
+  `// TODO Sprint 5: read/write tenants table`: the hole SHIPS the moment it is wired to a real
+  store (FOLLOW-600's `/settings` surface is the likely wiring point). This is the SOLE remaining
+  live instance of the class (the other `x-tenant-id` sites — `adapt`, `adapt/description`,
+  `ab/weights`, `demo/.../revoke` — are all "no-longer-an-authority" JWT/HMAC paths, per FOLLOW-473
+  and their in-file comments). The class is governed by the Rule H amendment (2026-05-23, RETRO-006
+  §6a); this is an enforcement/sweep gap, not a missing rule. ac:
+  - /api/config GET+PATCH derive `tenant_id` (and PATCH the role) from verified JWT/session claims
+    via `resolveTenantAccess`, never from `x-tenant-id` / `x-agency-role` request headers.
+  - A spoofed `x-tenant-id` / `x-agency-role` that disagrees with (or substitutes for) the verified
+    session is rejected (401 no session / 403 mismatch), with a test asserting the `configStore` Map
+    is NOT touched on rejection (TG-1 from RETRO-201 — `config/route.test.ts` currently codifies the
+    header-only auth model at :16/:29/:49 and must be updated).
+  - If `config` stays a stub for now, a committed guard or CI note prevents wiring it to a real
+    `createTenantClient()`/`createAdminClient()` store while header-authed (references the
+    `config/route.ts:6` Sprint 5 TODO and the FOLLOW-600 `/settings` wiring point). cross_ref:
+    [RETRO-201, RETRO-153, RETRO-163, FOLLOW-491, FOLLOW-456, FOLLOW-599, FOLLOW-600, ADR-0018, Rule
+    H amendment RETRO-006 §6a]
+
+<!-- next free FOLLOW number: 615. next free RETRO number: 202. FOLLOW-614 filed by RETRO-201
+(retrospective-analyst) — post-merge retro for FOLLOW-599 / PR #602. FOLLOW-614 = narrowed successor
+to the SKIPPED FOLLOW-491: sweeps the last live leg (/api/config GET+PATCH + x-agency-role) of the
+x-tenant-id spoofable-header class, after FOLLOW-599 closed the /api/audit leg. -->

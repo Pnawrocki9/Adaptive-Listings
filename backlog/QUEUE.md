@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597, 598, AND 606 all MERGED (PR #599 / #600 / #601) and closed out DONE+MERGED; RETRO-198/199/200 filed, all SECURITY/WIRING-CLEAN, 0 code bugs, 0 new tickets, no rule promoted — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is COMPLETE and the hub-linkage cascade is CLOSED**)
+## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597, 598, 606, AND 599 all MERGED (PR #599 / #600 / #601 / #602) and closed out DONE+MERGED; RETRO-198/199/200/201 filed — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is COMPLETE, the hub-linkage cascade is CLOSED, and the staff_audit_log HALF_WIRE_P is RESOLVED**; RETRO-201 filed FOLLOW-614 (P2 security — one residual `x-tenant-id` auth-hole leg))
 
 **▶️ HIGHEST-LEVEL STATE (read first).** Three tickets landed this session, each PM-validated
 independently (diff read, guards/tests re-run by hand, CI confirmed green — only the non-blocking
@@ -18,15 +18,29 @@ independently (diff read, guards/tests re-run by hand, CI confirmed green — on
   hub-linkage cascade (RETRO-188/190/193/198)** and LANDS the same-PR-link template → its promotion
   trigger is now ARMED (the NEXT per-tenant surface that ships unwired is the codification
   sighting).
+- **FOLLOW-599** (PR #602, `78b8b53`, RETRO-201) — wired `GET /api/audit` from a mock stub (that
+  trusted an UNAUTHENTICATED `x-tenant-id` header) to a staff-only, tenant-fenced read of
+  `staff_audit_log` + a new `/admin/tenants/[id]/audit` page (which correctly SELF-WIRED its hub
+  link → CONFIRMS the FOLLOW-606 template, trigger not fired). **RESOLVES the `staff_audit_log`
+  HALF_WIRE_P** (the 5 producer actions are now readable end-to-end). RETRO-201 hunt found ONE
+  residual live leg of the auth-hole class → **FOLLOW-614**.
 
-**Remaining ADR-0018 epic work (all NON-write, unblocked):** **FOLLOW-599** (wire the real
-`/api/audit` consumer — the mock now hides **5** `staff_audit_log` producer actions:
-quiz_config.update, demo_override.update, intent_weights.update, conversion_label.reclassify,
-bandit_weights.resume), **FOLLOW-613** (teach the atomicity guard to follow `@estalara/db`
-package-barrel re-exports so `labels/[id]` flips SKIP→OK — opportunistic, protects one route). Also
-open (pre-existing, unrelated): 604, 611. Next-free **FOLLOW-614 / RETRO-201**. **Do not pick a
-ticket touching `scripts/check-staff-write-atomicity.cjs`, `packages/db/src/index.ts`, or any
-staff-write route's mutation delegation without re-reading FOLLOW-613 + Rule AE first.**
+**Remaining ADR-0018 / follow-up work:**
+
+- **FOLLOW-614 (P2 security, NEW — RETRO-201):** sweep the LAST live leg of the `x-tenant-id`
+  spoofable-header auth-hole class — `/api/config` (GET/PATCH + `x-agency-role` role-spoof) still
+  trusts caller-supplied headers as sole auth. P2 (not P1) only because `config` is still an
+  in-memory stub with no real data today; but it SHIPS the hole when wired. **Dependency:
+  FOLLOW-600's `/settings` surface is the likely point where `/api/config` gets wired to real data —
+  it MUST move `/api/config` onto `resolveTenantAccess` FIRST, or it ships a real cross-tenant
+  leak.** Narrowed successor to the half-discharged FOLLOW-491.
+- **FOLLOW-613** (teach the atomicity guard to follow `@estalara/db` package-barrel re-exports so
+  `labels/[id]` flips SKIP→OK — opportunistic, protects one route).
+- Also open (pre-existing, unrelated): 604, 611.
+
+Next-free **FOLLOW-615 / RETRO-202**. **Do not pick a ticket touching
+`scripts/check-staff-write-atomicity.cjs`, `packages/db/src/index.ts`, or any staff-write route's
+mutation delegation without re-reading FOLLOW-613 + Rule AE first.**
 
 ---
 

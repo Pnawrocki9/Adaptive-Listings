@@ -16444,10 +16444,13 @@ adaptation") will COPY the FOLLOW-595 shape.
 
 cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-598, ADR-0018]
 
-## FOLLOW-606 — Wire every per-tenant staff sub-surface into the `/admin/tenants/[id]` hub landing (analytics + quiz + future demo/labels/settings)
+## FOLLOW-606 — Wire every per-tenant staff sub-surface into the `/admin/tenants/[id]` hub landing (analytics + quiz + future demo/labels/settings) — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/SONNET, isolated worktree, branch `backend-engineer/FOLLOW-606-tenant-hub-links`)
 
 source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: false
+backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: true (dispatched session 50;
+SONNET per model-fit — routine, well-defined UI wiring + a page test, reversible/PR-gated. Link the
+5 surfaces that EXIST on `main` — analytics, quiz, demo, labels, intent; NOT `/settings`
+(FOLLOW-600's page does not exist yet).)
 
 **Sequencing (session 44, operator-ratified):** deferred until AFTER FOLLOW-597/598 land — locked
 order FOLLOW-608 → FOLLOW-609 → FOLLOW-597/598 → **FOLLOW-606**. Wiring the hub link once, after

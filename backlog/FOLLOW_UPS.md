@@ -16444,13 +16444,23 @@ adaptation") will COPY the FOLLOW-595 shape.
 
 cross_ref: [RETRO-190, FOLLOW-595, FOLLOW-598, ADR-0018]
 
-## FOLLOW-606 — Wire every per-tenant staff sub-surface into the `/admin/tenants/[id]` hub landing (analytics + quiz + future demo/labels/settings) — 🔵 IN FLIGHT (dispatched session 50 → backend-engineer/SONNET, isolated worktree, branch `backend-engineer/FOLLOW-606-tenant-hub-links`)
+## FOLLOW-606 — Wire every per-tenant staff sub-surface into the `/admin/tenants/[id]` hub landing (analytics + quiz + future demo/labels/settings) — ✅ DONE + MERGED (PR #601, squash `ee31247`, merged 2026-07-21T21:49:54Z; RETRO-200)
 
 source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
-backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: true (dispatched session 50;
-SONNET per model-fit — routine, well-defined UI wiring + a page test, reversible/PR-gated. Link the
-5 surfaces that EXIST on `main` — analytics, quiz, demo, labels, intent; NOT `/settings`
-(FOLLOW-600's page does not exist yet).)
+backend-engineer priority: P3 estimated_hours: 1-2 promoted_to_queue: true (dispatched + landed
+session 50; SONNET per model-fit — routine well-defined UI wiring + a page test)
+
+**STATUS: DONE.** Merged via PR #601 (squash `ee31247`, 2 files, +74/-9). Dispatched to
+backend-engineer/SONNET in an isolated worktree, PM-validated independently (diff is exactly
+`[id]/page.tsx` + `[id]/page.test.tsx`; grep-confirmed NO `/settings` or standalone bandit link
+leaked; CI 59 gates green, only non-blocking `Rule I` red), merged, `main` synced, worktree + stale
+branch cleaned up. Added a "Staff Surfaces" card linking the 5 surfaces that EXIST on `main`
+(`/analytics` `/quiz` `/demo` `/labels` `/intent`), kept the tracer card, removed the stale footer,
+and put the same-PR-link convention in the module doc-comment. `/settings` correctly omitted
+(FOLLOW-600's page does not exist); Bandit weights have no standalone page (resume lives inside
+`/analytics`). RETRO-200: **CLOSES the hub-linkage cascade (RETRO-188/190/193/198) and LANDS the
+same-PR-link template → the promotion trigger is now ARMED** (the next per-tenant surface that ships
+UNWIRED is the codification sighting). 0 code bugs, 0 new tickets, no rule promoted.
 
 **Sequencing (session 44, operator-ratified):** deferred until AFTER FOLLOW-597/598 land — locked
 order FOLLOW-608 → FOLLOW-609 → FOLLOW-597/598 → **FOLLOW-606**. Wiring the hub link once, after

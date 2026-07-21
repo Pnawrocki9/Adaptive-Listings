@@ -1,25 +1,32 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597 AND FOLLOW-598 both MERGED (PR #599 / #600) and closed out DONE+MERGED; RETRO-198 + RETRO-199 filed, both SECURITY-CLEAN, 0 code bugs, 0 new tickets, no rule promoted — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is now COMPLETE; no staff write ports remain**)
+## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597, 598, AND 606 all MERGED (PR #599 / #600 / #601) and closed out DONE+MERGED; RETRO-198/199/200 filed, all SECURITY/WIRING-CLEAN, 0 code bugs, 0 new tickets, no rule promoted — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is COMPLETE and the hub-linkage cascade is CLOSED**)
 
-**▶️ HIGHEST-LEVEL STATE (read first).** FOLLOW-598 (bandit weight staff-write port,
-superadmin-only, HIGHEST blast radius) landed as PR #600 (squash `a9e1923`, 2026-07-21T21:08:47Z) —
-dispatched to backend-engineer/OPUS in an isolated worktree, PM-validated independently (guard run
-by hand on the branch AND merged `main` → bandit prints **`OK`**; MANDATORY invariant-5 WRITE
-tenant-fence + superadmin-403 + rollback + agency-unchanged tests confirmed), CI green (59 pass,
-only non-blocking `Rule I` red), merged, `main` synced, agent worktree + stale branch cleaned up,
-guard re-verified on `main` (no regression). The highest-blast-radius write ships guard-`OK` because
-its mutation was kept INLINE (`.update(abBanditWeights)`) — the deliberate opposite of FOLLOW-597's
-`labels/[id]` barrel-SKIP (which FOLLOW-613 now protects alone). **All ADR-0018 staff WRITE ports
-(592→598) are merged.** The remaining epic work is all NON-write and unblocked: **FOLLOW-606**
-(hub-link the per-tenant staff surfaces incl. `/labels` + `/intent` — its 597/598 sequencing
-dependency is now satisfied), **FOLLOW-599** (wire the real `/api/audit` consumer — the mock now
-hides 5 producer actions incl. `bandit_weights.resume`), **FOLLOW-613** (teach the atomicity guard
-to follow `@estalara/db` package-barrel re-exports so `labels/[id]` flips SKIP→OK; opportunistic,
-protects one route). Also open (pre-existing, unrelated to write-ports): 604, 611. Next-free
-FOLLOW-614 / RETRO-200. **Do not pick a ticket touching `scripts/check-staff-write-atomicity.cjs`,
-`packages/db/src/index.ts`, or any staff-write route's mutation delegation without re-reading
-FOLLOW-613 + Rule AE first.**
+**▶️ HIGHEST-LEVEL STATE (read first).** Three tickets landed this session, each PM-validated
+independently (diff read, guards/tests re-run by hand, CI confirmed green — only the non-blocking
+`Rule I` red) and merged, with `main` synced + agent worktree/branch cleaned up each time:
+
+- **FOLLOW-597** (PR #599, `748f287`, RETRO-198) — labels + intent-weights staff port. `labels/[id]`
+  ships guard-**SKIP** (mutation delegated through the `@estalara/db` barrel) → documented+deferred,
+  atomicity held by its rollback unit test; **FOLLOW-613 LIVE** (protects that one route).
+- **FOLLOW-598** (PR #600, `a9e1923`, RETRO-199) — bandit weight staff-write port (superadmin-only,
+  HIGHEST blast radius) + global `generation-model` PUT tightened to superadmin. Ships guard-**OK**
+  (mutation kept INLINE). **Completes the ADR-0018 staff-WRITE-PORT sequence 592→598 — no staff
+  write ports remain.**
+- **FOLLOW-606** (PR #601, `ee31247`, RETRO-200) — hub-linked the 5 per-tenant staff surfaces
+  (`/analytics` `/quiz` `/demo` `/labels` `/intent`) into the `[id]` landing. **CLOSES the
+  hub-linkage cascade (RETRO-188/190/193/198)** and LANDS the same-PR-link template → its promotion
+  trigger is now ARMED (the NEXT per-tenant surface that ships unwired is the codification
+  sighting).
+
+**Remaining ADR-0018 epic work (all NON-write, unblocked):** **FOLLOW-599** (wire the real
+`/api/audit` consumer — the mock now hides **5** `staff_audit_log` producer actions:
+quiz_config.update, demo_override.update, intent_weights.update, conversion_label.reclassify,
+bandit_weights.resume), **FOLLOW-613** (teach the atomicity guard to follow `@estalara/db`
+package-barrel re-exports so `labels/[id]` flips SKIP→OK — opportunistic, protects one route). Also
+open (pre-existing, unrelated): 604, 611. Next-free **FOLLOW-614 / RETRO-201**. **Do not pick a
+ticket touching `scripts/check-staff-write-atomicity.cjs`, `packages/db/src/index.ts`, or any
+staff-write route's mutation delegation without re-reading FOLLOW-613 + Rule AE first.**
 
 ---
 

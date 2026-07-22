@@ -1,8 +1,8 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 54 — tmux tunnel dropped mid-FOLLOW-613 last session; recovered uncommitted worktree changes, found the guard fix + bypass6 fixtures already functionally complete (AC-1..6) and tests green with no regressions; finished the remaining AC-7 (explicit shape-enumeration, filed FOLLOW-616/617/618) + AC-8 (prettier/commit/push), opened **PR #605**; `gh pr checks 605 --watch` in progress)
+## ▶️ START HERE — resume 2026-07-22 (session 54 — tmux tunnel dropped mid-FOLLOW-613 last session; recovered uncommitted worktree changes, found the guard fix + bypass6 fixtures already functionally complete (AC-1..6) and tests green with no regressions; finished AC-7/AC-8, opened **PR #605**, fixed a Gitleaks false-positive found by CI, all real gates now green — **READY_FOR_REVIEW, awaiting Piotr's merge decision**)
 
-**FOLLOW-613 — status: PR OPEN, CI IN PROGRESS.** Branch
+**FOLLOW-613 — status: READY_FOR_REVIEW.** Branch
 `backend-engineer/FOLLOW-613-guard-barrel-reexport`, PR **#605**
 (`fix(control-plane): close staff-write guard bypass 6 — barrel re-export [FOLLOW-613]`). All 8 ACs
 addressed: guard now resolves `@estalara/*` package specifiers → barrel entry → re-exported concrete
@@ -15,11 +15,33 @@ closed by this ticket (out of its scope) and are confirmed hypothetical-only tod
 staff-audited routes, none uses any of the three) — filed as **FOLLOW-616/617/618** (all P3) in
 `backlog/FOLLOW_UPS.md`. Next-free FOLLOW is now **619**, next-free RETRO stays 204. `scripts/` is
 not a pnpm workspace member, so `pnpm lint`/`typecheck`/`build` don't touch this file (verified via
-`node -c` + the guard's own fixture suite instead, consistent with FOLLOW-607→612 precedent). **NEXT
-ACTION on resume: check `gh pr checks 605`** — if green (excluding the known non-blocking `Rule I`
-red per `project_ci_gate_landscape`), independently re-run the fixture suite + real-repo scan (do
-not trust the PR's own claimed output), confirm `labels/[id]` prints `OK`, then mark
-READY_FOR_REVIEW. If CI is still running, just re-check — no other work is blocked on this.
+`node -c` + the guard's own fixture suite instead, consistent with FOLLOW-607→612 precedent).
+
+**CI verification (2 full `gh pr checks 605 --watch` passes, both exit 0):** every real gate green —
+Build/Build(control-plane), Lint, Typecheck, Format check, Test (Node 22) ×2, Test (Python) ×8, SDK
+E2E ×2, Gitleaks, Staff-write audit atomicity, and all FOLLOW-433/438/230/H/J/K.3.6/tracer/
+redis/archetype guards. Only `Rule I — wired-or-dead check` red — confirmed pre-existing (191
+violations, same count cited in prior sessions) and unrelated (this ticket touches no
+`apps/`/`packages/` symbol). PM independently re-ran (not taken on the PR's own claimed output)
+`bash scripts/__tests__/check-staff-write-atomicity.test.sh` locally against the pushed branch: exit
+0, 38/38 PASS; `node scripts/check-staff-write-atomicity.cjs` on the real repo confirmed
+`admin/labels/[id]/route.ts` → `OK`, `admin/labels/export/route.ts` stays `SKIP`.
+
+**Mid-review fix required:** the first CI run failed `Gitleaks secrets scan` — a false-positive
+`cloudflare-api-token` match (9 findings) on the bypass6 fixture directory name
+(`bypass6-barrel-reexport-delegated-mutation`, 42 chars > the rule's 40-char capture window), same
+class as the existing bypass4/bypass5 `.gitleaks.toml` allowlist entries. Fixed with a token-scoped
+allowlist regex (commit `a4d4ca1`), verified by simulating the exact `[a-zA-Z0-9_-]{40}` capture
+against all 9 original CI-reported strings before pushing (all reduce to
+`bypass6-barrel-reexport-delegated-mutati`, confirmed the new regex is a substring of each). CI
+re-ran green after this fix.
+
+**NOT merged autonomously.** This PR modifies a CI security-invariant guard (ADR-0018 §3a
+enforcement) — deferring the merge decision to Piotr per this repo's "humans review PRs" operating
+principle, even though several recent tickets in this exact hardening chain (607→612,
+FOLLOW-614/ 615) were merged same-session by a prior PM session. If Piotr wants this session to
+merge + trigger the post-merge retrospective-analyst run instead of waiting for manual review, just
+say so.
 
 ## ▶️ (superseded) resume 2026-07-22 (session 53 — no open escalations blocking [ESC-020/028/034 non-blocking per memory], no open PRs; picked FOLLOW-613 (P2, live defect) over FOLLOW-600/604 (P3) per priority rule; dispatched to backend-engineer/OPUS)
 

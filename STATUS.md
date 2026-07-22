@@ -1,6 +1,28 @@
 # PM Orchestrator Status
 
-**Last updated:** 2026-06-26T23:59Z
+**Last updated:** 2026-07-22 (session 52). NOTE: this file's body below (up to the next `---`) is a
+STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authoritative running log.
+Kept here only for historical CI-counter provenance; do not treat entries below this line as current
+state — see QUEUE.md top block instead.
+
+## CURRENT (session 52, 2026-07-22)
+
+- **Escalations:** none OPEN. ESC-020/028/034 remain non-blocking OPEN per project memory
+  (`project_wave0_golive_2026_07_13`); ages: ESC-020 ~46d (2026-06-06), ESC-028 ~29d (2026-06-23,
+  believed superseded by later Upstash smoke-test resolution per memory but not re-closed in this
+  file), ESC-034 resolved per memory (RESOLVED, stale row here). All other ESCALATIONS.md entries
+  RESOLVED. None block this session's dispatch.
+- **IN_PROGRESS (1/3 max):** FOLLOW-615 — backend-engineer/Sonnet, branch
+  `backend-engineer/FOLLOW-615-config-write-rank-gate`, started 2026-07-22. No PR opened yet — CI
+  check counter 0/5, fix-iteration counter 0/3.
+- **Open PRs:** none (`gh pr list --state open` empty at session start).
+- **Retro loop:** RETRO-202 filed for FOLLOW-614/PR#603 (spawned + committed prior to this session
+  by retrospective-analyst, commit `be1f3fe`). Findings: spoofable-header class fully closed
+  repo-wide; produced FOLLOW-615 (this session's dispatch) and amended FOLLOW-600's AC.
+- **Next in queue after FOLLOW-615:** FOLLOW-600 (blocked on FOLLOW-615), FOLLOW-613, FOLLOW-604,
+  FOLLOW-611.
+
+---
 
 ## OPERATIONAL RECORD — ESC-031 Prod ClickHouse data-loss (2026-06-26)
 

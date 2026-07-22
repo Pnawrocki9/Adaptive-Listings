@@ -1,6 +1,103 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 51 — FOLLOW-614 MERGED (PR #603, squash `3669be2`)
+## ▶️ START HERE — resume 2026-07-22 (session 52 — RETRO-202 filed for FOLLOW-614; FOLLOW-615 promoted + IN_PROGRESS, dispatched to backend-engineer/SONNET on branch `backend-engineer/FOLLOW-615-config-write-rank-gate`)
+
+**▶️ HIGHEST-LEVEL STATE (read first).** RETRO-202 (post-merge retro for FOLLOW-614 / PR #603) is
+filed: the spoofable-header auth-hole class is now CLOSED repo-wide (FOLLOW-491 fully discharged),
+but the retro found ONE new gap — **FOLLOW-615 (P2 security)** — and amended FOLLOW-600's AC to
+depend on it. FOLLOW-615 is promoted to IN_PROGRESS this session and dispatched below. Do NOT pick
+FOLLOW-600 until FOLLOW-615 is merged (FOLLOW-600's AC now requires FOLLOW-615 land before/with it).
+
+**FOLLOW-615 — status: IN_PROGRESS.** assigned_to: backend-engineer (model: **Sonnet** — this is a
+single-file, well-defined mechanical gate addition that copies an EXACT existing pattern
+(`quiz/config/route.ts:154`'s `via==='staff' && !access.canWrite` → 403 shape) into one route; no
+cross-module design judgment or ambiguous scope, so it fits the Sonnet row of the model-fit table
+("routine implementation inside a well-defined ticket scope, tests... mechanical refactors") rather
+than Opus/Fable). started_at: 2026-07-22. branch:
+`backend-engineer/FOLLOW-615-config-write-rank-gate`.
+
+### Delegation brief — FOLLOW-615 (full, restated — do not rely on the FOLLOW_UPS.md stub alone; RETRO-202's own lesson was that a prior stub's AC under-enumeration let a gap ship, so every item is spelled out here)
+
+**Ticket:** `backlog/FOLLOW_UPS.md` →
+`## FOLLOW-615 — Add the missing staff write-rank gate to `PATCH /api/config`` (source_retro:
+RETRO-202, source_ticket: FOLLOW-614, priority P2, est. 1h).
+
+**Read first, in order:**
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status — read before any non-trivial
+   task per OPERATING_PRINCIPLES Rule 1).
+2. `CONVENTIONS_PATCH.md` (repo root) — current permanent rules, in particular **Rule H amendment
+   (RETRO-006 §6a)** governing the spoofable-header class this ticket is the tail of, and ADR-0018
+   §3/§3a/§4 (staff write-rank + audit-atomicity invariants).
+3. `backlog/HANDOFFS.md` — check for any note left for this route/module before starting.
+4. `apps/control-plane/src/app/api/config/route.ts` — the file to change (PATCH handler only; GET is
+   untouched — it stays readonly-staff-readable, no gate, matching `/api/audit`'s precedent).
+5. `apps/control-plane/src/app/api/quiz/config/route.ts` (the `POST` handler, ~line 145-160) — the
+   EXACT shape to mirror:
+   `if (access.via === 'staff' && !access.canWrite) { return NextResponse.json({ error: { code: 'forbidden', message: '...' } }, { status: 403 }); }`
+   immediately after `resolveTenantAccess` resolves.
+6. `apps/control-plane/src/app/api/config/route.test.ts` — existing FOLLOW-614 test file to extend
+   (fixtures: `TENANT_A`, `VICTIM_TENANT`, `agencyAccess()`, mocked `resolveTenantAccess`).
+7. `backlog/FOLLOW_UPS.md` FOLLOW-603 (§"Template note") — the epic-wide invariant every staff WRITE
+   port must assert: write-rank gate present AND perturbation-provably load-bearing.
+
+**Context (why this exists):** FOLLOW-614 (PR #603, merged `3669be2`) correctly moved `/api/config`
+off the spoofable `x-tenant-id`/`x-agency-role` headers onto `resolveTenantAccess`, but its PATCH
+staff-override path never added the write-rank gate that every sibling staff write enforces
+(`quiz/config/route.ts:154`, `demo/override/route.ts:197`, `admin/intent-weights/route.ts:206` — all
+`via==='staff' && !access.canWrite`→403; `bandit/weights/[archetype]/route.ts:102` uses
+`!isSuperadmin`→403 for its higher-blast-radius case). `verifyTracerAdminAuth` admits ANY
+`estalara_staff:true` user with no role floor (readonly included); `resolveTenantAccess` sets
+`access.canWrite:false` for staff rank < `estalara:ops` but by design does NOT enforce it itself —
+each ROUTE must. Today `config/route.ts` PATCH never reads `access.canWrite` before
+`configStore.set()`, so an `estalara:readonly` staff user (rank 1 < ops rank 2) can currently PATCH
+any tenant's config via `?tenant_id=<uuid>`. Severity P2 (not P1) because `configStore` is still an
+in-memory stub with zero consumers today — but **FOLLOW-600 wires this exact route to the real
+`tenants` table**, at which point this becomes a live cross-tenant write-tier violation, so **this
+ticket must land before or with FOLLOW-600.**
+
+**Acceptance criteria (ALL restated explicitly, none may be silently dropped):**
+
+- [ ] AC-1: `PATCH /api/config` adds
+      `if (access.via === 'staff' && !access.canWrite) { … return 403     … }` immediately after the
+      existing `resolveTenantAccess` call/error-handling block, mirroring the
+      `quiz/config/route.ts:154` shape verbatim in structure (error body shape:
+      `{ error: { code: 'forbidden', message: '<staff-write-requires-ops-or-higher message>' } }`).
+- [ ] AC-2: `GET /api/config` is explicitly left UNCHANGED — readonly staff keeps read access, no
+      gate added (matches the `/api/audit` precedent). State this explicitly in the PR description
+      so a reviewer doesn't assume GET was also gated.
+- [ ] AC-3: Red-first test added to `config/route.test.ts`: an `estalara:readonly` staff fixture
+      (`canWrite: false`) issuing PATCH receives 403, AND the `configStore` Map is asserted NOT
+      mutated as a result (GET immediately after, or an equivalent check, must show the pre-PATCH
+      value) — this also discharges RETRO-202 TG-2's "untouched-on-rejection" assertion for this
+      route.
+- [ ] AC-4 (FOLLOW-603 write-rank template, restated so it isn't missed as it was for FOLLOW-614):
+      add a load-bearing perturbation test — temporarily removing/inverting the new `canWrite` check
+      must flip the AC-3 test RED, while an `estalara:ops`-or-higher staff PATCH stays 200/GREEN. Do
+      not just assert the happy path; prove the gate is load-bearing.
+- [ ] AC-5: an ops-or-higher staff PATCH and an `agency:admin` PATCH (existing coverage) both
+      continue to return 200 — no regression to the already-passing FOLLOW-614 test suite.
+- [ ] AC-6 (repo hygiene, not in the stub but standard for every PR per CONVENTIONS_PATCH.md): run
+      prettier on every file touched, even if already formatted; confirm no repo-config gaps (this
+      ticket needs no new secrets/workflows/branch-protection, but state that explicitly in the PR).
+- [ ] AC-7: reference `[FOLLOW-615]` in every commit message per CONVENTIONS_PATCH.md commit
+      conventions (`fix(control-plane): <subject> [FOLLOW-615]`).
+
+**Explicitly OUT of scope (do not do this in this PR):** wiring `/api/config` to the real `tenants`
+table (that is FOLLOW-600); adding a `staff_audit_log` insert for this route (FOLLOW-614's own
+comment in `route.ts` explains this PATCH only mutates the in-memory stub, so there is no DB
+mutation to atomically pair an audit row with yet — that obligation activates only when FOLLOW-600
+wires real data, per ADR-0018 §3a).
+
+**Branch:** `backend-engineer/FOLLOW-615-config-write-rank-gate`
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" → **backend-engineer** (this is a control-plane auth/write-rank
+route change).
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-22 (session 51 — FOLLOW-614 MERGED (PR #603, squash `3669be2`)
 
 and closed out DONE+MERGED; retro RETRO-202 due next, then promote/dispatch from FOLLOW-613 / 604
 / 611)

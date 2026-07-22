@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 DONE+MERGED (PR #604, squash `c766fd6`); retro RETRO-203 due next)
+## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 DONE+MERGED+RETRO'd (PR #604, squash `c766fd6`, RETRO-203 clean closure, no follow-ups); FOLLOW-600 unblocked, ready to pick next)
 
 **▶️ HIGHEST-LEVEL STATE (read first).** RETRO-202 (post-merge retro for FOLLOW-614 / PR #603) is
 filed: the spoofable-header auth-hole class is now CLOSED repo-wide (FOLLOW-491 fully discharged),
@@ -17,10 +17,18 @@ opened **PR #604**
 memory). **PR #604 is now DONE + MERGED**: squash-merged to `main` at `c766fd6`
 (2026-07-22T09:45:07Z), re-verified via `gh pr view 604 --json state,mergeCommit,mergedAt` (not
 taken on the human's word alone, per the standing PM lesson). Local `main` fast-forwarded to
-`c766fd6`; agent worktree cleaned up. **Retrospective RETRO-203 for FOLLOW-615 is now due** (per the
-mandatory per-ticket retro loop) — spawn `retrospective-analyst` before dispatching the next ticket.
-FOLLOW-600 (`/api/config` real-table wiring) is now unblocked — its dependency on FOLLOW-615 is
-discharged.
+`c766fd6`; agent worktree cleaned up. **RETRO-203 filed** (`backlog/RETROSPECTIVES.md`): clean
+end-to-end closure of RETRO-202 §4a LG-1 — the gate is the sole write chokepoint, matches all three
+sibling ports verbatim, GET-ungated is the correct multi-axis call (not a contradiction). Zero
+logic/bug/docs gaps; one P4 test-coverage note (no stub warranted). No `CONVENTIONS_PATCH.md` rule
+promoted — the missing-write-rank-gate failure sits at 1 sighting (RETRO-202 only), below the ≥2
+promotion threshold; RETRO-190/199/201 are positive-compliance instances, not failure sightings.
+**FOLLOW-600 (`/api/config` real-table wiring) is now fully unblocked** — its FOLLOW-615 dependency
+is discharged; its own two remaining obligations (§3a audit-in-`db.transaction()`, keep the mutation
+inline to stay guard-OK) are already bound in its own AC. Next-free FOLLOW stays 616, next-free
+RETRO is 204. Ready to pick the next ticket — likely candidates: **FOLLOW-600** (now unblocked, was
+the reason FOLLOW-615 existed), or the pre-existing opportunistic **FOLLOW-613** / **FOLLOW-604** /
+**FOLLOW-611** (all open, no new dependency).
 
 **FOLLOW-615 — status: DONE + MERGED.** assigned_to: backend-engineer (model: **Sonnet** — this was
 a single-file, well-defined mechanical gate addition that copied an EXACT existing pattern

@@ -1,6 +1,67 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 54 — FOLLOW-613 DONE + MERGED by Piotr (PR #605, squash `872715f`); RETRO-204 filed, found a 4th recurrence of Rule AE — a NEW bypass-7 shape filed as FOLLOW-619; picking next ticket is the open item)
+## ▶️ START HERE — resume 2026-07-23 (session 55 — FOLLOW-600 IMPLEMENTED, PR #606 open; CI blocked by an UPSTREAM ClickHouse-image breakage, fixed by PR #607 [FOLLOW-620]; BOTH PRs await Piotr's review — merge #607 FIRST, then re-run #606's failed checks)
+
+**Session 55 was an interrupted-session recovery.** Session 54's dispatch of FOLLOW-600 died
+mid-flight with the full implementation UNCOMMITTED in the working tree on branch
+`backend-engineer/FOLLOW-600-tenant-settings-surface`. Recovered per the standing lesson (verify,
+don't discard): re-verified the work from scratch BEFORE committing — full control-plane suite
+**156/156 files, 1729/1729 tests PASS** (one earlier hook-timeout flake re-run green), `pnpm lint`
+
+- `pnpm typecheck` clean, prettier unchanged on every touched file,
+  `node scripts/check-staff-write-atomicity.cjs` → `api/config/route.ts` prints **OK** (not SKIP),
+  `labels/export` stays SKIP.
+
+**FOLLOW-600 — status: 🟡 READY_FOR_REVIEW (CI-conditional, see below).** PR **#606**
+(`feat(control-plane): per-tenant /settings surface, /api/config on real tenants [FOLLOW-600]`,
+commit `e96b7ee`). All ticket ACs verified present:
+
+- `/admin/tenants/[id]/settings` page + `TenantConfigEditor` (brand → `tenants.brandConfig`,
+  `sdk.allowed_origins` → `tenants.allowedOrigins`, `plan` read-only); linked from the FOLLOW-593
+  landing hub (with test).
+- `/api/config` GET/PATCH wired to the REAL `tenants` table via `createAdminClient()`, replacing the
+  FOLLOW-614 in-memory stub.
+- MANDATORY test: no generation-model control renders (CEO Q1 — GLOBAL-only).
+- MANDATORY invariant-5 tenant-fence tests, READ + WRITE directions (RETRO-187): staff request for
+  tenant A cannot see/mutate tenant B's row (DB mock keyed on the bound `.where()` value).
+- FOLLOW-615 write-rank gate verified live BEFORE wiring and re-asserted (readonly staff → 403).
+- §3a audit-in-`db.transaction()` (`action: 'tenant_config.update'`, audit-fail→500), mutation
+  INLINE (RETRO-202 / RETRO-198/199) — guard prints OK.
+- FOLLOW-603-pattern option-wiring assertions on GET (`agency:viewer`) and PATCH (`agency:admin`).
+- Deliberate drops documented in the route header: `sdk.active_domains` (zero consumers, no column —
+  Rule U/H) and `quiz.*` (owned by the dedicated FOLLOW-595 surface; avoids a second write path for
+  the same columns).
+
+**CI on #606:** every gate GREEN except (a) `Rule I` — documented pre-existing red (191 violations,
+unrelated), and (b) **both ClickHouse gates** (`ClickHouse migrations smoke`,
+`Tracer query-builders live ClickHouse guard`) — verified NOT this PR's fault: an UPSTREAM
+environmental breakage, see next.
+
+**FOLLOW-620 — status: 🟡 READY_FOR_REVIEW (P1, repo-wide CI un-breaker).** PR **#607**
+(`ci(infra): pin ClickHouse CI image to 25.8 LTS [FOLLOW-620]`, commit `ea21e05`). Docker Hub
+`clickhouse/clickhouse-server:latest` moved to **26.7.1** on 2026-07-22; its new strict check
+(dimension column `region` outside the `AggregatingMergeTree` sorting key →
+`Code: 36 BAD_ARGUMENTS`) rejects `0002_create_session_summary_mv.sql` at CREATE, failing BOTH CH
+gates on EVERY PR regardless of content (identical error, 2 independent runs, on a PR touching zero
+CH files; main green on the same chain hours earlier). Fix: pin both `ci.yml` service containers to
+`25.8` LTS (tag verified on Docker Hub) with in-file why-comments. **Proof on #607 itself: both CH
+gates PASS**; only Rule I red (the same pre-existing). Follow-ups filed in `FOLLOW_UPS.md`:
+**FOLLOW-620** (this fix, shipped) + **FOLLOW-621** (data-engineer: the real 26.x compat decision
+for migration 0002 — `allow_dimensions_outside_sorting_key=1` vs sorting-key change, prod-reach path
+since CH does not auto-apply, and un-pin/bump CI in the same PR). Next-free FOLLOW is **622**,
+next-free RETRO stays **205**.
+
+**NEXT ACTION (Piotr, then PM):**
+
+1. Merge **#607** first (tiny, 2-line ci.yml pin + backlog stubs; both CH gates proven green on it).
+2. Re-run the failed checks on **#606** (`gh pr checks 606` → re-run failed; the `pull_request`
+   merge ref picks up the pin from main). Expect green modulo Rule I.
+3. Merge **#606**, then PM: mark FOLLOW-600 DONE, dispatch `retrospective-analyst` (RETRO-205) per
+   the standard post-merge loop; FOLLOW-621 promotion is opportunistic (before any CH 26.x move).
+4. Remaining ready candidates unchanged: FOLLOW-604 (P3), FOLLOW-611 (P4), FOLLOW-616/617/618/619
+   (P3, hypothetical guard shapes).
+
+## ▶️ (superseded) resume 2026-07-22 (session 54 — FOLLOW-613 DONE + MERGED by Piotr (PR #605, squash `872715f`); RETRO-204 filed, found a 4th recurrence of Rule AE — a NEW bypass-7 shape filed as FOLLOW-619; picking next ticket is the open item)
 
 **FOLLOW-613 — status: ✅ DONE + MERGED.** PR **#605**
 (`fix(control-plane): close staff-write guard bypass 6 — barrel re-export [FOLLOW-613]`) merged by

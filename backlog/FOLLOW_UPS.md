@@ -16914,9 +16914,13 @@ FOLLOW-613, Rule AD, Rule AE]
 
 source_retro: RETRO-197 source_ticket: FOLLOW-612 recommended_sprint: opportunistic (before
 FOLLOW-598 if that ticket's helper uses a barrel) recommended_agent: backend-engineer priority: P2
-estimated_hours: 1-2 promoted_to_queue: true (dispatched session 53 to backend-engineer/OPUS, branch
-`backend-engineer/FOLLOW-613-guard-barrel-reexport`, status IN_PROGRESS — see full delegation brief
-in backlog/QUEUE.md top block)
+estimated_hours: 1-2 status: **DONE + MERGED** (PR #605, squash `872715f`, merged by Piotr
+2026-07-22T21:01:37Z; branch `backend-engineer/FOLLOW-613-guard-barrel-reexport`; CI green on all
+real gates, only the pre-existing non-blocking `Rule I` red; post-merge retro pending — see
+backlog/QUEUE.md top block). Filed 3 further-hardening follow-ups from this ticket's own AC-7
+enumeration: FOLLOW-616 (computed/bracket member access), FOLLOW-617 (dynamic `await import()`),
+FOLLOW-618 (local variable/function-reference aliasing) — all P3, none live in any staff-audited
+route today.
 
 **Gap (verified by direct reproduction, not inference — uncommitted throwaway fixture, run, deleted,
 never committed):** `moduleContainsMutation`'s bounded (depth-3) import-graph walk resolves a

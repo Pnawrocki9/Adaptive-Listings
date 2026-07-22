@@ -1,7 +1,10 @@
 # PM Orchestrator — Session Status
 
-**Date:** 2026-07-18 **Session:** 36 — PM-validated FOLLOW-583 (PR #555), moved to
-`READY_FOR_REVIEW`. Awaiting human merge. 0/3 tickets IN_PROGRESS.
+**Date:** 2026-07-22 **Session:** 53 — no escalations blocking, no open PRs; promoted + dispatched
+FOLLOW-613 (P2, confirmed live guard-defect) to backend-engineer/Opus. 1/3 tickets IN_PROGRESS.
+(Note: sessions 37-52's detailed narrative state lives in `backlog/QUEUE.md`'s own "START HERE"
+block, not in this file — this file had gone stale since session 36; updated now per the standing
+"STATUS.md every iteration" style rule.)
 
 ---
 
@@ -9,29 +12,31 @@
 
 | ESC     | Title                                                     | Filed      | Age | Blocker?                                                            |
 | ------- | --------------------------------------------------------- | ---------- | --- | ------------------------------------------------------------------- |
-| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 42d | Non-blocking per CEO 2026-06-10 ruling; Rafał (CTO) action required |
+| ESC-020 | Estalara-app DOM hooks committed but not deployed to prod | 2026-06-06 | 46d | Non-blocking per CEO 2026-06-10 ruling; Rafał (CTO) action required |
 
-All other escalations (ESC-001 through ESC-038, including ESC-028/034/037/038) RESOLVED. No open
-escalation blocks any pending ticket.
+All other escalations (ESC-001 through ESC-038) RESOLVED. No open escalation blocks any pending
+ticket in this session's queue (FOLLOW-613/600/604/611 are all unrelated to ESC-020's domain).
 
 ---
 
-## IN_PROGRESS tickets (0/3 max)
+## IN_PROGRESS tickets (1/3 max)
 
-None. FOLLOW-583 moved from IN_PROGRESS to READY_FOR_REVIEW this session (PR #555, awaiting human
-merge). Next candidates for the following loop: FOLLOW-562 (backend-engineer, dashboard Panel 5
-error banner, READY), FOLLOW-564 (architect, p95 SLA doc reconciliation, READY). FOLLOW-560/
-FOLLOW-565 remain BLOCKED on FOLLOW-553 (READY_OPERATOR).
+- **FOLLOW-613** (backend-engineer/Opus) — 6th call-shape bypass (barrel re-export) in the
+  staff-write-atomicity guard. Branch `backend-engineer/FOLLOW-613-guard-barrel-reexport`. Dispatch
+  brief in `backlog/QUEUE.md` top block. Not yet validated (this session ends at dispatch — worker
+  has not yet run).
+
+Next candidates once FOLLOW-613 lands: **FOLLOW-600** (P3, `/api/config` real-table wiring, now
+unblocked by FOLLOW-615), **FOLLOW-604** (P3, staff-override port for quiz ON/OFF toggle),
+**FOLLOW-611** (P4, gitleaks false-positive cleanup, opportunistic/low-priority).
 
 ---
 
 ## CI check counter (this session)
 
-FOLLOW-583 (PR #555): validation-only session (no code fix iterations needed — PR was already
-correct on first pass). CI non-success count on real gates: **0** (only the confirmed
-pre-existing/net-zero `Rule I — wired-or-dead check` red, verified via worktree diff on `main` vs.
-branch — byte-identical output). Counter: 1/5 CI checks consumed (one `check-runs` read), 0/3 fix
-iterations (no fixes needed).
+No PR opened yet this session (dispatch-only turn — worker has not run). Counter: 0/5 CI checks
+consumed, 0/3 fix iterations. Will be updated next session once the worker opens a PR and
+`gh pr checks` is run.
 
 ---
 

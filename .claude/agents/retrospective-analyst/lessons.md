@@ -3117,3 +3117,33 @@ so.**
   a template (port, hub link), the AC must point at the template checklist (RETRO-190 items a-g,
   FOLLOW-603 note) instead of re-deriving a subset. Banked at 1 prior; promote to a rule on the next
   sighting.
+
+---
+
+**2026-07-22 / RETRO-203** (FOLLOW-615 / PR #604 — staff write-rank gate on PATCH /api/config)
+
+- **A finding I almost missed and why:** I nearly recorded the "staff write-rank port template"
+  pattern as promotable because the launch brief pointed me at RETRO-190/199/201/202 and said "this
+  may already be at or past the threshold." It is NOT. Those first three are POSITIVE-compliance
+  instances (ports that correctly shipped the gate) — and rules are promoted from recurring FAILURE
+  sightings, not from a convention being followed. The actual failure (a port MISSING the gate) has
+  been seen exactly once (RETRO-202). FOLLOW-615 is the FIX of that one instance, and a clean fix
+  landing is not a new sighting (the Rule AB / RETRO-170 adjudication). Count 1 → no promotion. The
+  brief's framing is exactly the kind of "count the compliant instances too" inflation the charter
+  warns against. Lesson: when a brief suggests a threshold is met, re-derive the count from FAILURE
+  sightings only and discount the promoting/fixing PR itself.
+- **An axis/chain I had to trace twice:** the `via` axis. First pass I confirmed agency + staff are
+  gated. Second pass I asked "is there an `admin_secret` via that bypasses `via==='staff'`?" — and
+  had to go read the `TenantAccess` union (`session-auth.ts:261-290`, only agency|staff) AND confirm
+  the route passes no `allowAdminSecret` opt before I could call the gate axis-complete. RETRO-199
+  had to make the exact same `admin_secret`-exemption call on the bandit route; I should keep a
+  standing "enumerate every `via` value + which opts the route enables" checklist for any
+  `resolveTenantAccess` port so I don't re-derive it each time.
+- **A meta-pattern in how gaps recur across agents:** the retro→FOLLOW→fix loop closed a
+  security-class gap in EXACTLY the predicted shape (RETRO-202 said "copy quiz/config:154, land
+  before FOLLOW-600"; the PR did precisely that + a PM perturbation proof). When the FOLLOW AC is
+  well-specified and names the reference implementation, the fix is mechanical and clean — the
+  CONTRAST with the AC-under-enumeration pattern (banked at 1 prior) is instructive: a stub AC that
+  names the template shape produces clean closures; one that under-enumerates produces the next gap.
+  Same lever, opposite outcomes. This strengthens the banked AC-under-enumeration candidate without
+  adding a sighting (615's AC was well-specified, so it does not count against it).

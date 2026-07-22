@@ -17035,7 +17035,8 @@ session 52, backend-engineer/SONNET, branch `backend-engineer/FOLLOW-615-config-
 #604 squash-merged to main at `c766fd6` 2026-07-22T09:45:07Z, CI confirmed green pre-merge (only
 pre-existing non-blocking Rule I red, 191 violations, none in changed files); merge re-verified via
 `gh pr view 604 --json state,mergeCommit,mergedAt` per standing PM lesson (never take merge status
-on the human's word alone); retro RETRO-203 due next)
+on the human's word alone); **retro RETRO-203 FILED — clean end-to-end closure, no new FOLLOW, no
+rule promoted; FOLLOW-600 dependency now SATISFIED**)
 
 **Gap (RETRO-202 §4a LG-1, P2 security):** FOLLOW-614 (PR #603, `3669be2`) correctly moved
 `GET+PATCH /api/config` onto `resolveTenantAccess`, closing the unauthenticated spoofable-header
@@ -17071,9 +17072,17 @@ or WITH FOLLOW-600.**
 
 cross_ref: [RETRO-202, FOLLOW-614, FOLLOW-600, FOLLOW-603, RETRO-190, RETRO-199, ADR-0018]
 
-<!-- next free FOLLOW number: 616. next free RETRO number: 203. FOLLOW-615 filed by RETRO-202
-(retrospective-analyst) — post-merge retro for FOLLOW-614 / PR #603. FOLLOW-615 = the one residual
-gap from the config auth sweep: PATCH /api/config staff path lacks the canWrite write-rank gate
-every sibling staff write enforces; must land before/with FOLLOW-600's real-table wiring.
-FOLLOW-600's AC amended by RETRO-202 to bind the FOLLOW-615 dependency + the §3a
+<!-- next free FOLLOW number: 616. next free RETRO number: 204. RETRO-203 (post-merge retro for
+FOLLOW-615 / PR #604, squash c766fd6, merged 2026-07-22 09:45:07 UTC) filed NO new FOLLOW — a clean
+end-to-end closure of RETRO-202 LG-1: the `via==='staff' && !access.canWrite → 403` gate is now live
+on PATCH /api/config (route.ts:160), the sole staff write chokepoint, multi-axis verified (no
+admin_secret axis; agency stays minAgencyRole-gated; unknown-role fails closed). FOLLOW-600's
+FOLLOW-615 dependency is now SATISFIED (gate live) — clear to proceed on auth+write-rank axes; its
+remaining §3a-audit-in-tx + inline-mutation obligations are its own scope (already in its AC). No
+CONVENTIONS_PATCH promotion (missing-write-rank-gate failure is count 1; RETRO-190/199/201 are
+positive-compliance, not failures; template already guarded by FOLLOW-603 AC + FOLLOW-604 AC).
+FOLLOW-615 filed by RETRO-202 (retrospective-analyst) — post-merge retro for FOLLOW-614 / PR #603.
+FOLLOW-615 = the one residual gap from the config auth sweep: PATCH /api/config staff path lacks the
+canWrite write-rank gate every sibling staff write enforces; must land before/with FOLLOW-600's
+real-table wiring. FOLLOW-600's AC amended by RETRO-202 to bind the FOLLOW-615 dependency + the §3a
 audit-in-transaction + inline-mutation obligations. -->

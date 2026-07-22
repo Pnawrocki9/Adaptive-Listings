@@ -211,6 +211,18 @@ regexes = [
   # which variant (bare or `-out-of-tx`) is matched. Not a secret — a
   # descriptive fixture/test identifier. Token-scoped per Rule V.
   '''bypass5-namespace-import-delegated''',
+  # FOLLOW-613: same class as the bypass-4/bypass-5 entries above — the bypass-6
+  # CI-guard fixture directory name `bypass6-barrel-reexport-delegated-mutation(-out-of-tx)`
+  # (42/52 chars) is cited in the fixture's own doc comment, its sibling fixture's doc
+  # comment, and the test harness's run_fixture() call — false-positives on this generic
+  # 40-char entropy heuristic (9 findings, all the same string). The base name (42 chars) is
+  # LONGER than the 40-char capture window, so — same reasoning as the bypass-5 entry —
+  # gitleaks' `[a-zA-Z0-9_-]{40}` rule captures only `bypass6-barrel-reexport-delegated-mutati`
+  # (missing the trailing `on`), confirmed against all 9 CI findings (each truncates identically).
+  # This shorter prefix is a guaranteed substring of that capture regardless of which variant
+  # (bare or `-out-of-tx`) or surrounding context (quote, `#`, `/`, `../../`) precedes it. Not a
+  # secret — a descriptive fixture/test identifier. Token-scoped per Rule V.
+  '''bypass6-barrel-reexport-delegated''',
 ]
 
 # JWT tokens (generic)

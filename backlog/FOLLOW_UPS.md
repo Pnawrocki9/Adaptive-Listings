@@ -17074,7 +17074,117 @@ or WITH FOLLOW-600.**
 
 cross_ref: [RETRO-202, FOLLOW-614, FOLLOW-600, FOLLOW-603, RETRO-190, RETRO-199, ADR-0018]
 
-<!-- next free FOLLOW number: 616. next free RETRO number: 204. RETRO-203 (post-merge retro for
+## FOLLOW-616 — Close the staff-write-atomicity guard's 7th call-shape bypass: a delegated mutation called via COMPUTED/BRACKET member access (`helper['upsertX'](tx, ...)`) is silently un-detected
+
+source_retro: none (filed directly by FOLLOW-613 AC-7's mandatory shape-enumeration, per Rule AE
+point 4 — not yet found by a retro) source_ticket: FOLLOW-613 recommended_sprint: opportunistic
+recommended_agent: backend-engineer priority: P3 (hardening against a currently-hypothetical shape —
+grepped every `route.ts` under `apps/control-plane/src/app/api` containing `insert(staffAuditLog)`
+as of FOLLOW-613 and none uses bracket-notation member access; contrast bypass 6, which was P2
+because FOLLOW-597 had already shipped it live) estimated_hours: 1-2
+
+**Gap:** `collectFileFacts`'s call-classification `visit()` only matches
+`ts.isPropertyAccessExpression(node.expression)` (dot-notation, `helper.upsertX(...)`) when deciding
+whether a call is a delegated-mutation candidate through a locally-resolved import. A
+`ts.isElementAccessExpression` callee (`helper['upsertX'](...)` or `helper[SOME_CONST](...)`) is a
+different AST node kind and falls through both classification branches silently — not a
+`mutationCall`, not a `localHelperCallCandidate` — the same zero-enforcement failure mode as bypass
+4/5/6, one further call-shape over.
+
+**AC:**
+
+- [ ] Extend the `visit()` call-classification branch to also recognize
+      `ts.isElementAccessExpression(node.expression)` where the argument expression is a STATIC
+      string literal (`helper['upsertX']`) and the object resolves via
+      `localImportedIdentifierSources`, queuing it as a `localHelperCallCandidate` exactly as the
+      dot-notation branch does.
+- [ ] Explicitly decide and document the case where the bracket key is NOT a static string literal
+      (e.g. a variable or template expression) — this is fundamentally unanalyzable by a static AST
+      walk; state whether this residual case is accepted as a documented guard limitation (most
+      likely) or handled some other way (e.g. flag-as-suspicious rather than silently SKIP).
+- [ ] Red-first fixture pair (bypass7 naming) mirroring bypass 4/5/6's route→helper layout, using
+      `helper['upsertSomething'](tx, ...)` as the call site; co-scoped variant `SKIP`→`OK`,
+      out-of-tx variant `SKIP`→`FAIL`.
+- [ ] Re-run the full fixture suite (bypass 1-6 + real-repo scan) — confirm no regression.
+- [ ] Re-state the Rule AE point-4 enumeration: confirm FOLLOW-617/618 remain the only other named
+      open shapes, or note any new one found while doing this work.
+
+cross_ref: [FOLLOW-613, FOLLOW-617, FOLLOW-618, RETRO-197, Rule AE]
+
+## FOLLOW-617 — Close the staff-write-atomicity guard's 8th call-shape bypass: a delegated mutation reached via a dynamic `await import(...)` is silently un-detected
+
+source_retro: none (filed directly by FOLLOW-613 AC-7's mandatory shape-enumeration) source_ticket:
+FOLLOW-613 recommended_sprint: opportunistic recommended_agent: backend-engineer priority: P3
+(hardening against a currently-hypothetical shape — no staff-audited route today calls its mutation
+helper through a dynamic import; the `await import(...)` sites that DO exist in
+`apps/control-plane/src/app/api` today are all lazy Sentry/`@sentry/nextjs` loads or unrelated
+runtime-only module loads, none co-located with `insert(staffAuditLog)`) estimated_hours: 2-3
+
+**Gap:** `collectLocalImportedIdentifierSources` only visits `ts.isImportDeclaration` (static,
+top-of-file `import ... from '...'` statements). A dynamic `import()` call-expression — e.g.
+`const { upsertX } = await import('@estalara/db')` — is a `ts.isCallExpression` whose
+`expression.kind` is `ts.SyntaxKind.ImportKeyword`, never visited by that function at all, so the
+destructured binding never enters the identifier-source map and any call through it is invisible to
+the guard regardless of what module it actually resolves to.
+
+**AC:**
+
+- [ ] Extend identifier-source collection to also recognize a `VariableDeclaration` whose
+      initializer is `await import('<specifier>')` (or bare `import('<specifier>')`), resolving
+      `<specifier>` the same way `resolveSpecifier` already does for static imports (relative,
+      `@/`-alias, `@estalara/*` package), and mapping each destructured binding name to the resolved
+      concrete module via the existing `resolveExportedNameToConcreteModule` path — reuse, do not
+      duplicate, that resolution.
+- [ ] Handle both destructuring (`const { upsertX } = await import(...)`) and namespace-style
+      (`const mod = await import(...); mod.upsertX(...)`) bindings.
+- [ ] Explicitly decide the case where the specifier itself is dynamic/non-literal (e.g.
+      `import(     someVariable)`) — document as an accepted guard limitation (unanalyzable
+      statically) unless a cheap heuristic is worth adding.
+- [ ] Red-first fixture pair (bypass8 naming) using a dynamic `import()` in the route to reach the
+      same mutation-helper shape as bypass 4/5/6; co-scoped `SKIP`→`OK`, out-of-tx `SKIP`→`FAIL`.
+- [ ] Re-run the full fixture suite (bypass 1-7 + real-repo scan) — confirm no regression.
+- [ ] Re-state the Rule AE point-4 enumeration: confirm FOLLOW-618 remains the only other named open
+      shape, or note any new one found while doing this work.
+
+cross_ref: [FOLLOW-613, FOLLOW-616, FOLLOW-618, RETRO-197, Rule AE]
+
+## FOLLOW-618 — Close the staff-write-atomicity guard's 9th call-shape bypass: a local variable/function-reference alias of a resolved import (`const fn = helper.upsertX; ...; fn(tx, ...)`) is silently un-detected
+
+source_retro: none (filed directly by FOLLOW-613 AC-7's mandatory shape-enumeration) source_ticket:
+FOLLOW-613 recommended_sprint: opportunistic recommended_agent: backend-engineer priority: P3
+(hardening against a currently-hypothetical shape — no staff-audited route today aliases a resolved
+mutation helper to a local variable before calling it) estimated_hours: 2-3
+
+**Gap:** the guard's call-classification only inspects the call-expression's callee directly
+(`ts.isPropertyAccessExpression`/bare identifier against `localImportedIdentifierSources`) — there
+is no data-flow/alias-tracking pass over `ts.isVariableDeclaration` nodes. So
+`const fn = helper.upsertX;` (or `const fn = upsertX;` for a bare named import) followed by a later
+`fn(tx, ...)` call is invisible: by the time the call is visited, `fn` is not a key in
+`localImportedIdentifierSources` and there is no mechanism connecting it back to `helper.upsertX`'s
+resolution.
+
+**AC:**
+
+- [ ] Add a bounded alias-tracking pass: when a `VariableDeclaration`'s initializer is an identifier
+      or property-access already resolvable via `localImportedIdentifierSources` (or a chain of
+      such, to a shallow bound — reuse the existing depth-3 convention for consistency), register
+      the new local binding name in the SAME map, resolved to the same concrete module. This makes
+      the existing bare-identifier and property-access call-classification branches pick it up with
+      NO further changes to `visit()`.
+- [ ] Explicitly bound the alias chain depth (recommend depth-3, matching `MAX_DEPTH` elsewhere in
+      this file) to avoid unbounded traversal on adversarial/pathological files; document the
+      choice.
+- [ ] Red-first fixture pair (bypass9 naming): route assigns the resolved helper call to a local
+      `const fn = ...` before calling it, mirroring bypass 4/5/6/7/8's transaction-placement
+      variants — co-scoped `SKIP`→`OK`, out-of-tx `SKIP`→`FAIL`.
+- [ ] Re-run the full fixture suite (bypass 1-8 + real-repo scan) — confirm no regression.
+- [ ] Re-state the Rule AE point-4 enumeration: after FOLLOW-616/617/618 all land, explicitly
+      declare whether the call-shape space is now considered FULLY enumerated-and-guarded (Rule AE
+      point 4's "closable" answer) or whether a further shape is still known/suspected to be open.
+
+cross_ref: [FOLLOW-613, FOLLOW-616, FOLLOW-617, RETRO-197, Rule AE]
+
+<!-- next free FOLLOW number: 619. next free RETRO number: 204. RETRO-203 (post-merge retro for
 FOLLOW-615 / PR #604, squash c766fd6, merged 2026-07-22 09:45:07 UTC) filed NO new FOLLOW — a clean
 end-to-end closure of RETRO-202 LG-1: the `via==='staff' && !access.canWrite → 403` gate is now live
 on PATCH /api/config (route.ts:160), the sole staff write chokepoint, multi-axis verified (no

@@ -103,6 +103,74 @@
  * identical `moduleContainsMutation` check bypass 4 already uses. No parallel
  * resolution path was added.
  *
+ * FOLLOW-613 closes a 6th bypass RETRO-197 named (and FOLLOW-597 made LIVE): the
+ * SAME delegated-mutation shape as bypass 4/5, but the mutating helper is reached
+ * THROUGH A BARREL re-export rather than imported from its concrete module
+ * directly. Two resolution gaps combined to hide it: (a) the imported symbol
+ * arrived via a WORKSPACE-PACKAGE specifier (`import { upsertConversionLabel }
+ * from '@estalara/db'`), which the resolver did not follow at all (only `./`,
+ * `../`, `@/` were handled); and (b) even a `@/`-alias barrel was a dead end
+ * because the bounded module walk used `collectLocalImports`, which visits only
+ * `ts.isImportDeclaration` nodes — never the barrel's `ts.isExportDeclaration`
+ * re-export (`export * from './x'` / `export { x } from './x'`). So the walk
+ * reached the barrel, found no direct mutation there, and terminated — the real
+ * mutation one hop further was invisible. This is the exact shape
+ * `apps/control-plane/src/app/api/admin/labels/[id]/route.ts` uses: it delegates
+ * to `upsertConversionLabel`, re-exported from `packages/db/src/index.ts` via
+ * `export { upsertConversionLabel } from './upsert-conversion-label.js'`.
+ *
+ * Fix (in the IDENTIFIER-RESOLUTION step, Rule AE point 3, NOT by widening the
+ * mutation-detection method-name list): `collectLocalImportedIdentifierSources`
+ * now resolves each NAMED import to the CONCRETE module that ultimately provides
+ * it — `resolveSpecifier` maps `@estalara/<pkg>` to `packages/<pkg>/src/index.ts`
+ * (AC 2), then `resolveExportedNameToConcreteModule` follows that barrel's
+ * `export { name } from`/`export * from` re-exports (within depth 3) to the real
+ * source module (AC 1), and `resolveFileCandidates` maps the ESM `.js` re-export
+ * extension back to the `.ts` source. Resolution is PER-NAME, not per-barrel, and
+ * this is load-bearing, not a nicety: the `@estalara/db` barrel re-exports BOTH
+ * the mutating `upsertConversionLabel` AND the non-mutating `createAdminClient`
+ * from the same entry file, so a coarse whole-barrel "does it transitively
+ * mutate" check would flip the audit-of-a-read `admin/labels/export/route.ts`
+ * (which imports `createAdminClient` from that same barrel and calls it) from
+ * SKIP to a false FAIL. Per-name resolution keeps `createAdminClient` →
+ * `client.ts` (no mutation) distinct from `upsertConversionLabel` →
+ * `upsert-conversion-label.ts` (mutation). Once resolved to the concrete module,
+ * the existing `moduleContainsMutation` whole-module check runs UNCHANGED — the
+ * bypass 1-5 detection logic was not touched.
+ *
+ * FOLLOW-613 AC 7 (Rule AE point 4 — explicit enumeration, not implicit):
+ * bypasses 1-6 (unrelated-tx, helper-factored-audit, raw-SQL, bare-identifier
+ * delegation, namespace/property-access delegation, barrel re-export
+ * delegation) are now closed. Three further call-shapes are NOT addressed by
+ * this guard and are each confirmed, by grepping every `route.ts` under
+ * `apps/control-plane/src/app/api` that contains `insert(staffAuditLog)`
+ * (the only 6 staff-audited routes on `main` today), to be HYPOTHETICAL —
+ * none is used by a live staff-audited route as of FOLLOW-613:
+ *   1. Dynamic/computed member access (`helper['upsertX'](tx, ...)`): the
+ *      `visit()` call-classification branch above only matches
+ *      `ts.isPropertyAccessExpression` (dot access); `ts.isElementAccessExpression`
+ *      (bracket access) is a different node kind and falls through undetected,
+ *      even when the bracket key is a static string literal that could in
+ *      principle be resolved.
+ *   2. `await import(...)` dynamic import: `collectLocalImportedIdentifierSources`
+ *      only visits `ts.isImportDeclaration` (static `import` statements) — a
+ *      dynamic `import()` call-expression (optionally destructured, e.g.
+ *      `const { upsertX } = await import('@estalara/db')`) is never added to
+ *      the identifier-source map at all, so any call through it is invisible.
+ *   3. A local variable holding a function reference copied from a resolved
+ *      import (`const fn = helper.upsertX; ...; fn(tx, ...)`): there is no
+ *      data-flow/alias-tracking pass over `ts.isVariableDeclaration` — only the
+ *      call *expression itself* is inspected for a directly-resolvable callee,
+ *      so a call through an intermediate local alias is invisible regardless of
+ *      module resolution.
+ * None of these is closable within this ticket's scope (barrel re-exports only,
+ * per the explicit "OUT of scope" note in FOLLOW-613's ticket body) — each is
+ * filed as its own follow-up hardening ticket at P3 (hardening against a
+ * currently-hypothetical shape, not a confirmed live defect, unlike bypass 6):
+ * FOLLOW-616 (computed member access), FOLLOW-617 (dynamic `import()`),
+ * FOLLOW-618 (local variable/function-reference aliasing). See
+ * `backlog/FOLLOW_UPS.md` for each ticket's full acceptance criteria.
+ *
  * Exemption: a route may still opt out (a genuinely single-store single-write
  * path where a transaction wrapper is meaningless) with an inline comment
  * anywhere in the raw file text:
@@ -193,7 +261,16 @@ function isRawSqlMutationCall(callNode) {
  * resolved module itself actually performs a mutation (`moduleContainsMutation`
  * below) — see that function's doc comment and the module doc comment's "4th
  * bypass" note. Type-only named imports are excluded (never callable).
- * Uses the same resolution helpers as `collectLocalImports` (bypass 2).
+ *
+ * Resolution (FOLLOW-613 bypass 6): a NAMED import is resolved to the CONCRETE
+ * module that ultimately provides it — following `@estalara/<pkg>` package
+ * specifiers to their `packages/<pkg>/src/index.ts` barrel (AC 2) and then that
+ * barrel's `export { x } from` / `export star from` re-exports down to the real
+ * source module (AC 1), via `resolveExportedNameToConcreteModule`. This is what
+ * lets the guard see through `import { upsertConversionLabel } from '@estalara/db'`
+ * (barrel re-export of a mutating helper) — the shape FOLLOW-597's
+ * `admin/labels/[id]/route.ts` uses. A NAMESPACE import (`import * as helper`)
+ * keeps mapping to the resolved entry module (bypass 5 whole-module semantics).
  */
 function collectLocalImportedIdentifierSources(fileAbsPath, sourceFile) {
   const dir = path.dirname(fileAbsPath);
@@ -207,27 +284,28 @@ function collectLocalImportedIdentifierSources(fileAbsPath, sourceFile) {
       node.importClause &&
       !node.importClause.isTypeOnly
     ) {
-      const spec = node.moduleSpecifier.text;
-      let basePath = null;
-      if (spec.startsWith('./') || spec.startsWith('../')) {
-        basePath = path.resolve(dir, spec);
-      } else if (spec.startsWith('@/')) {
-        const srcRoot = findSrcRoot(dir);
-        if (srcRoot) basePath = path.join(srcRoot, spec.slice(2));
-      }
-      if (basePath) {
-        const resolved = resolveFileCandidates(basePath);
-        if (resolved) {
-          const clause = node.importClause;
-          if (clause.name) sources.set(clause.name.text, resolved);
-          if (clause.namedBindings) {
-            if (ts.isNamedImports(clause.namedBindings)) {
-              for (const el of clause.namedBindings.elements) {
-                if (!el.isTypeOnly) sources.set(el.name.text, resolved);
+      const resolvedEntry = resolveSpecifier(node.moduleSpecifier.text, dir);
+      if (resolvedEntry) {
+        const clause = node.importClause;
+        if (clause.name) {
+          sources.set(
+            clause.name.text,
+            resolveExportedNameToConcreteModule(resolvedEntry, 'default'),
+          );
+        }
+        if (clause.namedBindings) {
+          if (ts.isNamedImports(clause.namedBindings)) {
+            for (const el of clause.namedBindings.elements) {
+              if (!el.isTypeOnly) {
+                const sourceName = (el.propertyName ?? el.name).text;
+                sources.set(
+                  el.name.text,
+                  resolveExportedNameToConcreteModule(resolvedEntry, sourceName),
+                );
               }
-            } else if (ts.isNamespaceImport(clause.namedBindings)) {
-              sources.set(clause.namedBindings.name.text, resolved);
             }
+          } else if (ts.isNamespaceImport(clause.namedBindings)) {
+            sources.set(clause.namedBindings.name.text, resolvedEntry);
           }
         }
       }
@@ -431,7 +509,200 @@ function resolveFileCandidates(basePath) {
     path.join(basePath, 'index.ts'),
     path.join(basePath, 'index.tsx'),
   ];
+  // ESM/NodeNext specifiers point at the EMITTED `.js` file whose on-disk source
+  // is `.ts` (e.g. `export { upsertConversionLabel } from './upsert-conversion-label.js'`
+  // in packages/db/src/index.ts). Map the runtime extension back to the
+  // TypeScript source before probing (FOLLOW-613 — required to follow the
+  // @estalara/db barrel's re-export specifiers, which are all `.js`).
+  const jsExtMatch = basePath.match(/\.(js|jsx|mjs|cjs)$/);
+  if (jsExtMatch) {
+    const stripped = basePath.slice(0, -jsExtMatch[0].length);
+    candidates.push(`${stripped}.ts`, `${stripped}.tsx`);
+  }
   return candidates.find((c) => fs.existsSync(c)) ?? null;
+}
+
+/**
+ * Resolves a WORKSPACE-PACKAGE specifier (`@estalara/<pkg>`) to that package's
+ * `packages/<pkg>/src/index.ts` barrel entry (FOLLOW-613 AC 2). Returns null for
+ * any non-`@estalara/*` bare specifier (third-party packages are never local
+ * mutation sources). Only the bare package root is mapped — a deep subpath
+ * import (`@estalara/db/foo`) is out of the shape this guard needs today and
+ * returns null.
+ */
+function resolvePackageSpecifier(spec) {
+  const m = spec.match(/^@estalara\/([^/]+)$/);
+  if (!m) return null;
+  const entry = path.join(ROOT, 'packages', m[1], 'src', 'index.ts');
+  return fs.existsSync(entry) ? entry : null;
+}
+
+/**
+ * Unified module-specifier resolver: relative (`./`, `../`), `@/`-alias, and
+ * `@estalara/*` workspace-package specifiers → an absolute on-disk `.ts(x)`
+ * path, or null. The single resolution path used by both the identifier-source
+ * map and the barrel re-export walk (FOLLOW-613).
+ */
+function resolveSpecifier(spec, importerDir) {
+  if (spec.startsWith('./') || spec.startsWith('../')) {
+    return resolveFileCandidates(path.resolve(importerDir, spec));
+  }
+  if (spec.startsWith('@/')) {
+    const srcRoot = findSrcRoot(importerDir);
+    return srcRoot ? resolveFileCandidates(path.join(srcRoot, spec.slice(2))) : null;
+  }
+  return resolvePackageSpecifier(spec);
+}
+
+/** True iff `node` carries an `export` modifier. */
+function hasExportModifier(node) {
+  const mods = typeof ts.getModifiers === 'function' ? ts.getModifiers(node) : node.modifiers;
+  return !!mods && mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+/** True iff module `modPath` declares or re-exports a binding named `name` (bounded). */
+function moduleProvidesName(modPath, name, visited = new Set(), depth = 1) {
+  const MAX_DEPTH = 3;
+  if (visited.has(modPath) || !fs.existsSync(modPath)) return false;
+  visited.add(modPath);
+  const { sourceFile } = parse(modPath);
+  const dir = path.dirname(modPath);
+  let found = false;
+  const starTargets = [];
+
+  function visit(node) {
+    if (found) return;
+    if (ts.isExportDeclaration(node) && !node.isTypeOnly) {
+      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+        if (node.exportClause.elements.some((el) => !el.isTypeOnly && el.name.text === name)) {
+          found = true;
+        }
+      } else if (
+        !node.exportClause &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        starTargets.push(node.moduleSpecifier.text);
+      }
+    }
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name && hasExportModifier(node)) {
+      found = true;
+    }
+    if (ts.isClassDeclaration(node) && node.name?.text === name && hasExportModifier(node)) {
+      found = true;
+    }
+    if (ts.isVariableStatement(node) && hasExportModifier(node)) {
+      for (const d of node.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.name.text === name) found = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  if (found) return true;
+
+  if (depth < MAX_DEPTH) {
+    for (const spec of starTargets) {
+      const resolved = resolveSpecifier(spec, dir);
+      if (resolved && moduleProvidesName(resolved, name, visited, depth + 1)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Resolves an imported NAME through a barrel/module's re-export declarations to
+ * the concrete module that actually PROVIDES it, following `export { name } from
+ * './x'` and `export * from './x'` re-exports within a depth-3 bound
+ * (FOLLOW-613 bypass 6). Returns the concrete module path, or `barrelPath`
+ * itself when the name is locally declared there or cannot be traced further.
+ *
+ * Per-NAME (not whole-module) resolution is REQUIRED, not a nicety: the
+ * `@estalara/db` barrel (`packages/db/src/index.ts`) re-exports BOTH the
+ * mutating `upsertConversionLabel` AND the non-mutating
+ * `createAdminClient`/schema table objects from the SAME entry file. A coarse
+ * "does the whole barrel transitively contain a mutation" check (map every name
+ * to `index.ts`, then let `moduleContainsMutation` follow re-exports) would mark
+ * EVERY symbol imported from `@estalara/db` as a mutation candidate — flipping
+ * the audit-of-a-read `admin/labels/export/route.ts` (which imports
+ * `createAdminClient` from that same barrel and calls it) from SKIP to a false
+ * FAIL. Resolving each name to its OWN concrete source module keeps
+ * `createAdminClient` → `client.ts` (no mutation) distinct from
+ * `upsertConversionLabel` → `upsert-conversion-label.ts` (mutation). This is the
+ * "parallel resolution" AC-1 explicitly permits, done in the IDENTIFIER-
+ * RESOLUTION step (Rule AE point 3), so `moduleContainsMutation`'s existing
+ * whole-module check runs unchanged on the already-concrete module.
+ */
+function resolveExportedNameToConcreteModule(barrelPath, name, visited = new Set(), depth = 1) {
+  const MAX_DEPTH = 3;
+  if (visited.has(barrelPath) || !fs.existsSync(barrelPath)) return barrelPath;
+  visited.add(barrelPath);
+  const { sourceFile } = parse(barrelPath);
+  const dir = path.dirname(barrelPath);
+
+  let namedTarget = null; // { spec, sourceName }
+  const starTargets = [];
+  let locallyDeclared = false;
+
+  function visit(node) {
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.isTypeOnly &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      const spec = node.moduleSpecifier.text;
+      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+        for (const el of node.exportClause.elements) {
+          if (!el.isTypeOnly && el.name.text === name) {
+            namedTarget = { spec, sourceName: (el.propertyName ?? el.name).text };
+          }
+        }
+      } else if (!node.exportClause) {
+        starTargets.push(spec); // export * from '...'
+      }
+    }
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name && hasExportModifier(node)) {
+      locallyDeclared = true;
+    }
+    if (ts.isClassDeclaration(node) && node.name?.text === name && hasExportModifier(node)) {
+      locallyDeclared = true;
+    }
+    if (ts.isVariableStatement(node) && hasExportModifier(node)) {
+      for (const d of node.declarationList.declarations) {
+        if (ts.isIdentifier(d.name) && d.name.text === name) locallyDeclared = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+
+  // A direct `export { name } from './x'` is the authoritative source — follow it.
+  if (namedTarget) {
+    const resolved = resolveSpecifier(namedTarget.spec, dir);
+    if (resolved && depth < MAX_DEPTH) {
+      return resolveExportedNameToConcreteModule(
+        resolved,
+        namedTarget.sourceName,
+        visited,
+        depth + 1,
+      );
+    }
+    if (resolved) return resolved;
+  }
+  // The name is declared right here — this IS the concrete module.
+  if (locallyDeclared) return barrelPath;
+  // Otherwise the name may arrive via a wildcard re-export — drill into the star
+  // target that actually provides it.
+  if (depth < MAX_DEPTH) {
+    for (const spec of starTargets) {
+      const resolved = resolveSpecifier(spec, dir);
+      if (resolved && moduleProvidesName(resolved, name)) {
+        return resolveExportedNameToConcreteModule(resolved, name, visited, depth + 1);
+      }
+    }
+  }
+  return barrelPath;
 }
 
 /** Local (relative or `@/`-alias) import targets of a file, resolved to real paths on disk. */
@@ -501,7 +772,7 @@ function findHelperFactoredAudit(routeAbsPath, routeSourceFile) {
 
 console.log(
   '=== Staff-write audit atomicity check (ADR-0018 §3a / FOLLOW-607, scope-aware FOLLOW-608, ' +
-    'helper-delegated-mutation-aware FOLLOW-609/FOLLOW-612) ===',
+    'helper-delegated-mutation-aware FOLLOW-609/FOLLOW-612, barrel-re-export-aware FOLLOW-613) ===',
 );
 console.log(`Scanning: ${scanRootRel}/**/route.ts`);
 console.log('');

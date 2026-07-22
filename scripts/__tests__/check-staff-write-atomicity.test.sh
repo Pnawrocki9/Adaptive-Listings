@@ -30,6 +30,15 @@
 #                                               namespace-delegated mutation,
 #                                               OUTSIDE the tx that wraps the
 #                                               audit insert                   -> exit 1
+#   bypass6-barrel-reexport-delegated-mutation/ same delegated-mutation shape,
+#                                               reached THROUGH a barrel
+#                                               re-export (`export * from
+#                                               './mutation-helper'`), in ONE
+#                                               tx with the audit insert       -> exit 0
+#   bypass6-barrel-reexport-delegated-mutation-out-of-tx/ same
+#                                               barrel-reexport-delegated
+#                                               mutation, OUTSIDE the tx that
+#                                               wraps the audit insert          -> exit 1
 #
 # Also proves (FOLLOW-608 AC 4, whitespace hardening) via a dynamically
 # generated, non-committed fixture (so prettier's format-on-commit never
@@ -155,6 +164,22 @@ run_fixture "bypass4-helper-delegated-mutation-out-of-tx" 1 "FAIL:"
 run_fixture "bypass5-namespace-import-delegated-mutation" 0 "OK:"
 run_fixture "bypass5-namespace-import-delegated-mutation-out-of-tx" 1 "FAIL:"
 
+# ─── FOLLOW-613 bypass 6 (barrel-reexport delegated mutation, RETRO-197) ────
+# Red-first proof: pre-FOLLOW-613, a mutation delegated to a helper reached
+# THROUGH a barrel re-export (`import { upsertX } from '@/lib/store'` where
+# `store/index.ts` is `export * from './mutation-helper'`) was invisible to the
+# guard — `moduleContainsMutation`'s bounded walk used `collectLocalImports`,
+# which only visits `ts.isImportDeclaration`, never the barrel's
+# `ts.isExportDeclaration` re-export, so the walk reached the barrel, found no
+# direct mutation there and terminated (misclassified SKIP even when co-scoped
+# with the audit insert in one db.transaction()). This is the same shape as the
+# LIVE `admin/labels/[id]/route.ts` defect, which reaches its mutation through
+# the `@estalara/db` PACKAGE barrel. The fixed guard resolves the imported name
+# THROUGH the barrel's re-export to the concrete mutating module and must OK the
+# co-scoped variant and FAIL the out-of-tx variant (not SKIP it).
+run_fixture "bypass6-barrel-reexport-delegated-mutation" 0 "OK:"
+run_fixture "bypass6-barrel-reexport-delegated-mutation-out-of-tx" 1 "FAIL:"
+
 # ─── FOLLOW-608 AC 4: whitespaced audit-insert form (dynamic, non-committed) ──
 # Not a committed fixture: `.insert( staffAuditLog )` would be reformatted to
 # `.insert(staffAuditLog)` by prettier on any real commit, which would erase
@@ -207,6 +232,12 @@ echo ""
 assert_exit "real repo (default scan root)" 0 "$exit_repo" "$out_repo"
 assert_contains "real repo" "OK:   apps/control-plane/src/app/api/quiz/config/route.ts" "$out_repo"
 assert_contains "real repo" "OK:   apps/control-plane/src/app/api/demo/override/route.ts" "$out_repo"
+# FOLLOW-613: the staff reclassify write delegates its mutation to
+# `upsertConversionLabel`, re-exported from the `@estalara/db` package barrel —
+# the guard must now follow that barrel re-export and report OK (was SKIP).
+assert_contains "real repo" "OK:   apps/control-plane/src/app/api/admin/labels/[id]/route.ts" "$out_repo"
+# The audit-of-a-read export imports `createAdminClient` from the SAME barrel but
+# must stay SKIP — per-name resolution keeps it distinct from the mutating export.
 assert_contains "real repo" "SKIP: apps/control-plane/src/app/api/admin/labels/export/route.ts" "$out_repo"
 assert_contains "real repo" "No staff-write-atomicity-exempt: usages found in production routes today." "$out_repo"
 

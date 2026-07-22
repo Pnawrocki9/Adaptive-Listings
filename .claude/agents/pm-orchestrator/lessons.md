@@ -2559,3 +2559,23 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   under-specified," the PM's next delegation brief for the fix must restate every AC line verbatim
   plus the exact source file/line of the pattern to mirror — don't just paste the FOLLOW_UPS.md stub
   reference.
+
+- **Date / ticket:** 2026-07-22 — FOLLOW-613 (promotion/dispatch, not yet validated)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" → backend-engineer
+- **What validation caught (or missed):** Before dispatching, independently re-ran
+  `node scripts/check-staff-write-atomicity.cjs` myself rather than trusting the FOLLOW-613 stub's
+  claim that `labels/[id]/route.ts` still SKIPs — it does, confirmed live. Also caught that this is
+  the 4th consecutive hardening pass on the same guard (RETRO-192→194→196→197, Rule AE's own
+  evidence chain) and escalated the model tier from the Sonnet used on the mechanical siblings
+  (608/609) to Opus, per CLAUDE.md's "escalate one tier when the task already failed once at the
+  lower tier" rule — three consecutive incomplete-closure findings on the identical script counts as
+  that failure signal even though each individual PR was itself "correct" for its own scope. Also
+  found `.claude/agents/pm-orchestrator/STATUS.md` had gone stale since session 36 (all the real
+  narrative had migrated into QUEUE.md's own START HERE block) — refreshed it rather than leaving
+  two contradictory status files.
+- **A delegation/validation rule I'd add:** When a guard/detector has been hardened ≥3 times in a
+  row and each fix was independently found incomplete by the NEXT reproduction, treat that count
+  itself as the "failed once at the lower tier" signal for model-tier escalation, even if no
+  individual ticket in the chain was rated a failure — the recurring-incompleteness pattern is the
+  failure, not any single PR.

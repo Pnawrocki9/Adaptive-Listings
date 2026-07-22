@@ -17030,9 +17030,11 @@ FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
 ## FOLLOW-615 — Add the missing staff write-rank gate to `PATCH /api/config` (`estalara:readonly` staff can currently mutate any tenant's config)
 
 source_retro: RETRO-202 source_ticket: FOLLOW-614 recommended_sprint: next recommended_agent:
-backend-engineer priority: P2 estimated_hours: 1 promoted_to_queue: true status: IN_PROGRESS
+backend-engineer priority: P2 estimated_hours: 1 promoted_to_queue: true status: READY_FOR_REVIEW
 (dispatched session 52, backend-engineer/SONNET, branch
-`backend-engineer/FOLLOW-615-config-write-rank-gate`; full delegation brief in QUEUE.md top block)
+`backend-engineer/FOLLOW-615-config-write-rank-gate`, PR #604, CI green (only pre-existing
+non-blocking Rule I red, 191 violations, none in changed files); full delegation brief in QUEUE.md
+top block)
 
 **Gap (RETRO-202 §4a LG-1, P2 security):** FOLLOW-614 (PR #603, `3669be2`) correctly moved
 `GET+PATCH /api/config` onto `resolveTenantAccess`, closing the unauthenticated spoofable-header
@@ -17054,14 +17056,17 @@ or WITH FOLLOW-600.**
 
 **AC:**
 
-- [ ] `PATCH /api/config` adds `if (access.via === 'staff' && !access.canWrite) → 403` immediately
+- [x] `PATCH /api/config` adds `if (access.via === 'staff' && !access.canWrite) → 403` immediately
       after `resolveTenantAccess` (copy the `quiz/config/route.ts:154` shape); GET stays
       readonly-staff-readable (read, no gate — matches `/api/audit`).
-- [ ] Red-first test: `estalara:readonly` staff (`canWrite:false` fixture) PATCH → 403, and the
+- [x] Red-first test: `estalara:readonly` staff (`canWrite:false` fixture) PATCH → 403, and the
       `configStore` Map is NOT touched (also discharges RETRO-202 TG-2's untouched-on-rejection
       assertion for the other rejection paths).
-- [ ] FOLLOW-603 write-rank assertion: perturbing the gate (removing the `canWrite` check) flips a
-      test RED while ops-staff PATCH → 200 stays green.
+- [x] FOLLOW-603 write-rank assertion: perturbing the gate (removing the `canWrite` check) flips a
+      test RED while ops-staff PATCH → 200 stays green. PM independently re-verified this
+      perturbation live (temporarily inverted the condition to `if (false)`, re-ran the suite: only
+      the new 403 test flipped red, 13 others stayed green; reverted, clean/green again) before
+      opening the PR.
 
 cross_ref: [RETRO-202, FOLLOW-614, FOLLOW-600, FOLLOW-603, RETRO-190, RETRO-199, ADR-0018]
 

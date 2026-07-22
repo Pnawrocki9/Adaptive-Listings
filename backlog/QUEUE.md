@@ -1,20 +1,29 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 52 — RETRO-202 filed for FOLLOW-614; FOLLOW-615 promoted + IN_PROGRESS, dispatched to backend-engineer/SONNET on branch `backend-engineer/FOLLOW-615-config-write-rank-gate`)
+## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 implemented, PR #604 opened, CI green (only pre-existing non-blocking Rule I red) — READY_FOR_REVIEW, awaiting human merge)
 
 **▶️ HIGHEST-LEVEL STATE (read first).** RETRO-202 (post-merge retro for FOLLOW-614 / PR #603) is
 filed: the spoofable-header auth-hole class is now CLOSED repo-wide (FOLLOW-491 fully discharged),
 but the retro found ONE new gap — **FOLLOW-615 (P2 security)** — and amended FOLLOW-600's AC to
-depend on it. FOLLOW-615 is promoted to IN_PROGRESS this session and dispatched below. Do NOT pick
-FOLLOW-600 until FOLLOW-615 is merged (FOLLOW-600's AC now requires FOLLOW-615 land before/with it).
+depend on it. FOLLOW-615 was found already implemented (uncommitted) in the agent worktree
+`.claude/worktrees/agent-aac4622dd11351ccb` from a prior dispatch; PM independently re-verified
+every AC (diff read against the exact `quiz/config/route.ts:154` shape, ran the 14-test suite green,
+then live-perturbed the new gate — `if (false)` — to confirm exactly the new 403 test flips red
+while 13 others stay green, reverted clean) before committing. Committed (`541cc20`), pushed, and
+opened **PR #604**
+(`fix(control-plane): add staff write-rank gate to PATCH /api/config [FOLLOW-615]`).
+`gh pr checks 604 --watch` confirmed CI green on all real gates — only the pre-existing non-blocking
+`Rule I` red (191 violations, none in the two changed files; per `project_ci_gate_landscape`
+memory). PR is **READY_FOR_REVIEW**, awaiting human merge (Piotr). Do NOT pick FOLLOW-600 until
+FOLLOW-615/PR #604 is merged (FOLLOW-600's AC requires FOLLOW-615 land before/with it).
 
-**FOLLOW-615 — status: IN_PROGRESS.** assigned_to: backend-engineer (model: **Sonnet** — this is a
-single-file, well-defined mechanical gate addition that copies an EXACT existing pattern
+**FOLLOW-615 — status: READY_FOR_REVIEW.** assigned_to: backend-engineer (model: **Sonnet** — this
+was a single-file, well-defined mechanical gate addition that copied an EXACT existing pattern
 (`quiz/config/route.ts:154`'s `via==='staff' && !access.canWrite` → 403 shape) into one route; no
-cross-module design judgment or ambiguous scope, so it fits the Sonnet row of the model-fit table
-("routine implementation inside a well-defined ticket scope, tests... mechanical refactors") rather
-than Opus/Fable). started_at: 2026-07-22. branch:
-`backend-engineer/FOLLOW-615-config-write-rank-gate`.
+cross-module design judgment or ambiguous scope). started_at: 2026-07-22. branch:
+`backend-engineer/FOLLOW-615-config-write-rank-gate`. PR: #604. Next step once merged: mark
+FOLLOW-615 DONE, spawn `retrospective-analyst` for RETRO-203, then FOLLOW-600 is unblocked (also
+FOLLOW-613/604/611 remain open, unrelated, no dependency).
 
 ### Delegation brief — FOLLOW-615 (full, restated — do not rely on the FOLLOW_UPS.md stub alone; RETRO-202's own lesson was that a prior stub's AC under-enumeration let a gap ship, so every item is spelled out here)
 

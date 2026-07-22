@@ -2547,3 +2547,15 @@ state-transition bookkeeping). **A delegation/validation rule I'd add:** when a 
 as "just merged, CI already verified," still re-run the one-line
 `gh pr view --json state,mergeCommit,mergedAt` check yourself before writing DONE anywhere — costs
 one tool call, prevents ever writing DONE off a stale or mistaken human summary.
+
+- **Date / ticket:** 2026-07-22 — FOLLOW-615 (promotion/dispatch, not yet validated)
+- **Delegation row used:** control-plane auth/write-rank route change → backend-engineer
+- **What validation caught (or missed):** Read the FOLLOW-615 stub AND the sibling route
+  (quiz/config POST) it must mirror before writing the brief — the stub alone didn't state the exact
+  403 error-body shape or that GET must stay untouched; restated both explicitly in the delegation
+  brief so the worker can't under-enumerate the AC the way RETRO-202 itself flagged as a recurring
+  failure mode.
+- **A delegation/validation rule I'd add:** When a retro's own finding is "prior AC was
+  under-specified," the PM's next delegation brief for the fix must restate every AC line verbatim
+  plus the exact source file/line of the pattern to mirror — don't just paste the FOLLOW_UPS.md stub
+  reference.

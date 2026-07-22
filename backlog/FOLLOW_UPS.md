@@ -16981,18 +16981,20 @@ FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
   class — `/api/config` GET+PATCH (+ `x-agency-role` role-spoof on PATCH) — onto
   `resolveTenantAccess`; narrowed successor to the half-discharged FOLLOW-491 source_retro:
   RETRO-201 source_ticket: FOLLOW-599 recommended_sprint: next recommended_agent: backend-engineer
-  priority: P2 estimated_hours: 2 promoted_to_queue: false scope: >- FOLLOW-599 (PR #602) closed the
-  `/api/audit` leg of the 2-leg spoofable-header stub that RETRO-153/163 filed as FOLLOW-491 (which
-  was SKIPPED per the QUEUE.md note "both are in-memory stubs, defer"). The `/api/config` leg is
-  UNCHANGED and re-verified LIVE on `main` (78b8b53): `config/route.ts:89` (GET) and `:101` (PATCH)
-  read `req.headers.get('x-tenant-id')` as the SOLE tenant authority with no JWT/session, and `:110`
-  reads the caller ROLE from a spoofable `x-agency-role` header to gate the PATCH mutation.
-  Middleware does NOT protect it: `/api/config` falls through the `/admin` and `/dashboard` branches
-  to the "All other routes — pass through" `NextResponse.next()`, which does NOT strip/overwrite the
-  caller's `x-tenant-id` (contrast the `/dashboard` branch, which SETS it from verified claims). So
-  a caller can send `x-tenant-id: <victim>` + `x-agency-role: agency:owner` and read/mutate config
-  for any tenant. Severity P2 (not P1) ONLY because `config` is still an in-memory `configStore` Map
-  stub — no real cross-tenant data is exposed TODAY — but `config/route.ts:6` carries
+  priority: P2 estimated_hours: 2 promoted_to_queue: true (IN FLIGHT session 50 →
+  backend-engineer/OPUS, isolated worktree, branch `backend-engineer/FOLLOW-614-config-auth-sweep`)
+  scope: >- FOLLOW-599 (PR #602) closed the `/api/audit` leg of the 2-leg spoofable-header stub that
+  RETRO-153/163 filed as FOLLOW-491 (which was SKIPPED per the QUEUE.md note "both are in-memory
+  stubs, defer"). The `/api/config` leg is UNCHANGED and re-verified LIVE on `main` (78b8b53):
+  `config/route.ts:89` (GET) and `:101` (PATCH) read `req.headers.get('x-tenant-id')` as the SOLE
+  tenant authority with no JWT/session, and `:110` reads the caller ROLE from a spoofable
+  `x-agency-role` header to gate the PATCH mutation. Middleware does NOT protect it: `/api/config`
+  falls through the `/admin` and `/dashboard` branches to the "All other routes — pass through"
+  `NextResponse.next()`, which does NOT strip/overwrite the caller's `x-tenant-id` (contrast the
+  `/dashboard` branch, which SETS it from verified claims). So a caller can send
+  `x-tenant-id: <victim>` + `x-agency-role: agency:owner` and read/mutate config for any tenant.
+  Severity P2 (not P1) ONLY because `config` is still an in-memory `configStore` Map stub — no real
+  cross-tenant data is exposed TODAY — but `config/route.ts:6` carries
   `// TODO Sprint 5: read/write tenants table`: the hole SHIPS the moment it is wired to a real
   store (FOLLOW-600's `/settings` surface is the likely wiring point). This is the SOLE remaining
   live instance of the class (the other `x-tenant-id` sites — `adapt`, `adapt/description`,

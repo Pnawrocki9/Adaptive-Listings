@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 54 — FOLLOW-613 DONE + MERGED by Piotr (PR #605, squash `872715f`); retrospective-analyst dispatched next)
+## ▶️ START HERE — resume 2026-07-22 (session 54 — FOLLOW-613 DONE + MERGED by Piotr (PR #605, squash `872715f`); RETRO-204 filed, found a 4th recurrence of Rule AE — a NEW bypass-7 shape filed as FOLLOW-619; picking next ticket is the open item)
 
 **FOLLOW-613 — status: ✅ DONE + MERGED.** PR **#605**
 (`fix(control-plane): close staff-write guard bypass 6 — barrel re-export [FOLLOW-613]`) merged by
@@ -40,10 +40,31 @@ redis/archetype guards. Only `Rule I — wired-or-dead check` red — confirmed 
 violations, same count cited in prior sessions) and unrelated (this ticket touches no
 `apps/`/`packages/` symbol).
 
-**NEXT ACTION:** per CLAUDE.md's per-ticket retrospective loop, dispatch `retrospective-analyst`
-(model: **Opus**, per CLAUDE.md's explicit model-fit guidance listing "retrospectives" under Opus)
-to produce RETRO-204 for this merge, then check `backlog/FOLLOW_UPS.md` for any new stub it files,
-and pick up **FOLLOW-600/604** (P3, both still open/unblocked) next.
+**RETRO-204 filed** (`backlog/RETROSPECTIVES.md`, by `retrospective-analyst`/Opus). Headline: the
+bypass-6 fix is genuinely correct — independently re-verified LIVE on `main`, not just on the PR's
+own fixtures (`labels/[id]` → `OK`, `labels/export` stays `SKIP`, full suite green). BUT for the 4th
+consecutive time on this same guard, a fresh independent reproduction found the SAME Rule AE class
+one call-shape over, and it is NOT one of the three shapes FOLLOW-613 itself already
+enumerated-and-deferred (616/617/618): a **NAMESPACE import of a BARREL package**
+(`import * as db from '@estalara/db'; db.upsertConversionLabel(tx, ...)`) prints `SKIP` in both
+directions — the exact intersection of bypass 5 (namespace, FOLLOW-612) and bypass 6 (barrel,
+FOLLOW-613) that neither fix closes. Verified independently this session by direct code read
+(`check-staff-write-atomicity.cjs:307-308`): the namespace-import branch binds the bare barrel path
+`resolvedEntry` directly, skipping `resolveExportedNameToConcreteModule` (which the named/default
+branches above it now call) — so `moduleContainsMutation` on that unresolved barrel never sees its
+re-exported mutation. Confirmed HYPOTHETICAL today (zero routes use
+`import * as X from '@estalara/*'`) but flagged as the highest-likelihood of the four open shapes
+(616/617/618/619) — a one-line refactor of the live `labels/[id]` route would silently regress it
+back to `SKIP`. Filed **FOLLOW-619** (P3). No `CONVENTIONS_PATCH.md` promotion — this IS Rule AE,
+its 4th consecutive confirmation, not a new pattern. Next-free FOLLOW is now **620**, next-free
+RETRO is **205**.
+
+**NEXT ACTION:** no escalations open. Ready candidates: **FOLLOW-600** (P3, unblocked),
+**FOLLOW-604** (P3), **FOLLOW-611** (P4, gitleaks false-positive on ingest wrangler.toml — unrelated
+class to the .gitleaks.toml touch this session made), **FOLLOW-616/617/618/619** (all P3, the 4
+enumerated-but-open guard call-shapes — none live, opportunistic). Apply the standard priority rule
+(unblocks the most other tickets → active sprint → critical path, then priority level as tiebreak)
+to pick the next one.
 
 ## ▶️ (superseded) resume 2026-07-22 (session 53 — no open escalations blocking [ESC-020/028/034 non-blocking per memory], no open PRs; picked FOLLOW-613 (P2, live defect) over FOLLOW-600/604 (P3) per priority rule; dispatched to backend-engineer/OPUS)
 

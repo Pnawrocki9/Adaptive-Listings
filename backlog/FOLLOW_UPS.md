@@ -17188,6 +17188,82 @@ resolution.
 
 cross_ref: [FOLLOW-613, FOLLOW-616, FOLLOW-617, RETRO-197, Rule AE]
 
+## FOLLOW-619 — Close the staff-write-atomicity guard's namespace-import-of-a-barrel bypass: `import * as db from '@estalara/db'; db.upsertX(tx, ...)` is silently un-detected (the intersection of bypass 5 and bypass 6)
+
+source_retro: RETRO-204 (found by direct reproduction post-merge of FOLLOW-613/PR #605 — a fresh
+independent repro of the same Rule AE class one call-shape over, NOT one of the three shapes
+FOLLOW-613's AC-7 enumerated) source_ticket: FOLLOW-613 recommended_sprint: opportunistic
+recommended_agent: backend-engineer priority: P3 (hardening against a currently-hypothetical shape —
+`grep -rn "import \* as .* from '@estalara/"` across apps/packages returns zero hits today; the only
+`import * as` sites in the 6 staff-audited routes are `import * as Sentry from '@sentry/nextjs'`, a
+third-party pkg the resolver ignores. HOWEVER this is the HIGHEST-likelihood of the four open shapes
+[with FOLLOW-616/617/618]: the LIVE `admin/labels/[id]/route.ts` already delegates to
+`upsertConversionLabel` via a NAMED `@estalara/db` barrel import, and a one-line refactor to
+`import * as db from '@estalara/db'; db.upsertConversionLabel(tx, ...)` — idiomatic, the exact usage
+the barrel invites — would silently regress that route `OK`→`SKIP` with CI green. Contrast bypass 6,
+which was P2 only because FOLLOW-597 had already shipped it live.) estimated_hours: 2-3
+
+**Gap (verified by direct reproduction, RETRO-204 §4a LG-1 — uncommitted throwaway route tree,
+deleted via `git clean -fdx`, `git status` re-confirmed clean):** a NAMESPACE import whose specifier
+is a BARREL package, followed by a property-access call to a re-exported mutating helper, prints
+`SKIP` (zero enforcement) in BOTH the co-scoped (should be `OK`) and out-of-tx (should be `FAIL`)
+directions. This is the exact INTERSECTION of bypass 5 (namespace/property-access delegation, closed
+by FOLLOW-612 for CONCRETE modules) and bypass 6 (barrel re-export, closed by FOLLOW-613 for
+NAMED/DEFAULT imports) that NEITHER fix closes. Controlled a/b isolating the cause: a namespace
+import of a CONCRETE module (`import * as store from './real'; store.realUpsert(tx)`) is caught
+(`FAIL`, bypass 5 intact); the byte-identical route importing from a BARREL
+(`import * as store from './barrel'` where barrel does
+`export { realUpsert as upsertX } from './real'`) is NOT (`SKIP`) — the barrel re-export is the sole
+differentiator. Root cause in `scripts/check-staff-write-atomicity.cjs`:
+`collectLocalImportedIdentifierSources` runs the FOLLOW-613 per-name barrel resolver
+(`resolveExportedNameToConcreteModule`) only on the named-import (`:298-306`) and default-import
+(`:290-294`) branches; the NAMESPACE branch (`:307-308`) still binds the bare barrel entry
+(`sources.set(namespaceName, resolvedEntry)`). At classification (`collectFileFacts` `:432`),
+`db.upsertX(tx)` resolves `db`→barrel `index.ts` and calls `moduleContainsMutation(index.ts)`
+(`:475`), which finds no direct mutation and then walks `collectLocalImports(index.ts)` (`:368`) —
+but `collectLocalImports` (`:709`) visits only `ts.isImportDeclaration` nodes, and a barrel has only
+`ts.isExportDeclaration` re-exports → empty walk → `false` → never promoted to `mutationCalls` →
+`SKIP`. The module doc-comment (`:272-273`) mis-declares this closed: "A NAMESPACE import keeps
+mapping to the resolved entry module (bypass 5 whole-module semantics)" — true for a concrete
+module, a silent `SKIP` for a barrel.
+
+**AC:**
+
+- [ ] In the NAMESPACE-import path (or in `collectFileFacts`'s property-access classification of a
+      namespace-bound call), resolve the ACCESSED PROPERTY NAME through the barrel via the existing
+      `resolveExportedNameToConcreteModule(resolvedEntry, propertyName)` — reuse, do not fork, the
+      FOLLOW-613 resolver — so `db.upsertConversionLabel(...)` resolves to
+      `upsert-conversion-label.ts` (mutation) while `db.createAdminClient(...)` resolves to
+      `client.ts` (no mutation), preserving the per-name distinction FOLLOW-613 established for
+      named imports (do NOT map the whole namespace to a coarse whole-barrel mutation check — that
+      would false-FAIL a route that namespace-imports a barrel only for its non-mutating members).
+- [ ] Keep the CONCRETE-module namespace case (bypass 5) working unchanged —
+      `import * as store from     './mutation-helper'; store.upsertX(tx)` must stay caught
+      (regression guard).
+- [ ] Red-first fixture pair (bypass-namespace-barrel naming) mirroring bypass 6's
+      route→barrel→helper layout but with `import * as db from '<barrel>'; db.upsertX(tx, ...)` as
+      the call site; co-scoped variant `SKIP`→`OK`, out-of-tx variant `SKIP`→`FAIL`.
+- [ ] Re-run the full fixture suite (bypass 1-6 + real-repo scan) — confirm no regression, and
+      confirm `admin/labels/[id]/route.ts` stays `OK` and `admin/labels/export/route.ts` stays
+      `SKIP`.
+- [ ] Correct the guard module doc-comment: carve out the barrel case from the "namespace keeps
+      bypass-5 whole-module semantics" claim (`:272-273`), and add this shape to the AC-7
+      enumeration (`:141-172`) so the "these are the only open shapes" list is accurate.
+- [ ] Re-state the Rule AE point-4 enumeration: after this + FOLLOW-616/617/618 land, explicitly
+      declare whether the call-shape space is then FULLY enumerated-and-guarded (AE point 4
+      "closable") or whether a further shape is still known/suspected open.
+
+cross_ref: [FOLLOW-613, FOLLOW-612, FOLLOW-616, FOLLOW-617, FOLLOW-618, RETRO-196, RETRO-197,
+RETRO-204, Rule AE]
+
+<!-- next free FOLLOW number: 620. next free RETRO number: 205. RETRO-204 (post-merge retro for
+FOLLOW-613 / PR #605, squash 872715f, merged 2026-07-22 21:01:37 UTC) filed FOLLOW-619: the guard's
+namespace-import-of-a-barrel bypass (intersection of bypass 5 + bypass 6), found by direct
+reproduction, hypothetical today but the highest-likelihood open shape (a 1-line refactor of the LIVE
+labels/[id] would regress it OK→SKIP). No CONVENTIONS_PATCH promotion — this IS Rule AE (4th
+consecutive recurrence on this guard), point 1 already enumerates both the namespace and re-exported
+shapes; the failure was AE point-2 enforcement, not a missing rule. -->
+
 <!-- next free FOLLOW number: 619. next free RETRO number: 204. RETRO-203 (post-merge retro for
 FOLLOW-615 / PR #604, squash c766fd6, merged 2026-07-22 09:45:07 UTC) filed NO new FOLLOW — a clean
 end-to-end closure of RETRO-202 LG-1: the `via==='staff' && !access.canWrite → 403` gate is now live

@@ -1,5 +1,33 @@
 # Retrospective-Analyst — meta-lessons (self-improvement loop)
 
+## 2026-07-22 · RETRO-204 (PR #605, FOLLOW-613 — bypass 6 [barrel re-export] on the staff-write-atomicity guard; NO PROMOTION [Rule AE already covers], filed FOLLOW-619)
+
+- **A finding I almost missed and why:** the task named three axes to check — depth-3 bound, renamed
+  re-export, type-only re-export. All three came back CLEAN (renamed `export {x as y} from` →
+  caught/FAIL; star→star chain → caught; depth-3 → caught; depth-4 → the documented bound). Had I
+  stopped there I'd have written "clean ✅, only the known depth bound." The real live-relevant gap
+  was NONE of the three: it was the namespace×barrel INTERSECTION
+  (`import * as db from '@estalara/db'; db.upsertX(tx)`), which I only found by enumerating the full
+  CROSS-PRODUCT {named, namespace, default} × {concrete, barrel} instead of testing the suggested
+  axes in isolation. Lesson: when a fix closes shape N and enumerates N+1..N+3, the next gap is
+  often the INTERSECTION of two ALREADY-CLOSED shapes, not a brand-new one beyond the last — test
+  the matrix, not the list.
+- **An axis/chain I had to trace twice:** whether the barrel or the namespace was the
+  differentiator. A namespace-of-barrel SKIP could have meant "namespace imports are broken"
+  (contradicting FOLLOW-612/bypass-5 "closed"). I had to build the controlled a/b —
+  namespace-of-CONCRETE (caught, FAIL) vs namespace-of-BARREL (SKIP) — to prove bypass 5 is
+  genuinely intact and the barrel re-export is the sole cause. Never report an intersection bug
+  without the single-variable-isolated control, or you risk contradicting a prior "clean" verdict
+  that was actually correct.
+- **A meta-pattern in how gaps recur across agents:** this guard is now 4 hops deep (bypass 4→5→6→7)
+  and each hardening pass got MORE disciplined (613 enumerated 3 future shapes, a real improvement)
+  yet STILL missed one — because the enumeration reasoned "beyond the last closed shape" and the gap
+  sat BETWEEN two closed shapes. The durable fix is Rule AE point 3 (resolve to the concrete module
+  in the identifier-resolution step, don't special-case syntax): the namespace branch was literally
+  the one call-classification path NOT upgraded to the per-name barrel resolver. When a PR upgrades
+  a resolver on SOME import kinds, always check it upgraded ALL of them
+  (named/default/namespace/dynamic).
+
 ## 2026-07-21 · RETRO-192 (PR #592, FOLLOW-607 — the staff-write audit-atomicity CI guard; NO PROMOTION, filed FOLLOW-608)
 
 - **A finding I almost missed and why:** the sharpest false-negative bypass. The guard PASSES on

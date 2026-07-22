@@ -17030,11 +17030,12 @@ FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
 ## FOLLOW-615 — Add the missing staff write-rank gate to `PATCH /api/config` (`estalara:readonly` staff can currently mutate any tenant's config)
 
 source_retro: RETRO-202 source_ticket: FOLLOW-614 recommended_sprint: next recommended_agent:
-backend-engineer priority: P2 estimated_hours: 1 promoted_to_queue: true status: READY_FOR_REVIEW
-(dispatched session 52, backend-engineer/SONNET, branch
-`backend-engineer/FOLLOW-615-config-write-rank-gate`, PR #604, CI green (only pre-existing
-non-blocking Rule I red, 191 violations, none in changed files); full delegation brief in QUEUE.md
-top block)
+backend-engineer priority: P2 estimated_hours: 1 promoted_to_queue: true status: DONE (dispatched
+session 52, backend-engineer/SONNET, branch `backend-engineer/FOLLOW-615-config-write-rank-gate`, PR
+#604 squash-merged to main at `c766fd6` 2026-07-22T09:45:07Z, CI confirmed green pre-merge (only
+pre-existing non-blocking Rule I red, 191 violations, none in changed files); merge re-verified via
+`gh pr view 604 --json state,mergeCommit,mergedAt` per standing PM lesson (never take merge status
+on the human's word alone); retro RETRO-203 due next)
 
 **Gap (RETRO-202 §4a LG-1, P2 security):** FOLLOW-614 (PR #603, `3669be2`) correctly moved
 `GET+PATCH /api/config` onto `resolveTenantAccess`, closing the unauthenticated spoofable-header

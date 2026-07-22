@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 implemented, PR #604 opened, CI green (only pre-existing non-blocking Rule I red) — READY_FOR_REVIEW, awaiting human merge)
+## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 DONE+MERGED (PR #604, squash `c766fd6`); retro RETRO-203 due next)
 
 **▶️ HIGHEST-LEVEL STATE (read first).** RETRO-202 (post-merge retro for FOLLOW-614 / PR #603) is
 filed: the spoofable-header auth-hole class is now CLOSED repo-wide (FOLLOW-491 fully discharged),
@@ -14,16 +14,22 @@ opened **PR #604**
 (`fix(control-plane): add staff write-rank gate to PATCH /api/config [FOLLOW-615]`).
 `gh pr checks 604 --watch` confirmed CI green on all real gates — only the pre-existing non-blocking
 `Rule I` red (191 violations, none in the two changed files; per `project_ci_gate_landscape`
-memory). PR is **READY_FOR_REVIEW**, awaiting human merge (Piotr). Do NOT pick FOLLOW-600 until
-FOLLOW-615/PR #604 is merged (FOLLOW-600's AC requires FOLLOW-615 land before/with it).
+memory). **PR #604 is now DONE + MERGED**: squash-merged to `main` at `c766fd6`
+(2026-07-22T09:45:07Z), re-verified via `gh pr view 604 --json state,mergeCommit,mergedAt` (not
+taken on the human's word alone, per the standing PM lesson). Local `main` fast-forwarded to
+`c766fd6`; agent worktree cleaned up. **Retrospective RETRO-203 for FOLLOW-615 is now due** (per the
+mandatory per-ticket retro loop) — spawn `retrospective-analyst` before dispatching the next ticket.
+FOLLOW-600 (`/api/config` real-table wiring) is now unblocked — its dependency on FOLLOW-615 is
+discharged.
 
-**FOLLOW-615 — status: READY_FOR_REVIEW.** assigned_to: backend-engineer (model: **Sonnet** — this
-was a single-file, well-defined mechanical gate addition that copied an EXACT existing pattern
+**FOLLOW-615 — status: DONE + MERGED.** assigned_to: backend-engineer (model: **Sonnet** — this was
+a single-file, well-defined mechanical gate addition that copied an EXACT existing pattern
 (`quiz/config/route.ts:154`'s `via==='staff' && !access.canWrite` → 403 shape) into one route; no
-cross-module design judgment or ambiguous scope). started_at: 2026-07-22. branch:
-`backend-engineer/FOLLOW-615-config-write-rank-gate`. PR: #604. Next step once merged: mark
-FOLLOW-615 DONE, spawn `retrospective-analyst` for RETRO-203, then FOLLOW-600 is unblocked (also
-FOLLOW-613/604/611 remain open, unrelated, no dependency).
+cross-module design judgment or ambiguous scope). started_at: 2026-07-22. merged_at: 2026-07-22.
+branch: `backend-engineer/FOLLOW-615-config-write-rank-gate` (remote branch still present, not
+deleted — no explicit cleanup request). PR: #604 (merged `c766fd6`). Next step: spawn
+`retrospective-analyst` for RETRO-203, then FOLLOW-600 is unblocked (also FOLLOW-613/604/611 remain
+open, unrelated, no dependency).
 
 ### Delegation brief — FOLLOW-615 (full, restated — do not rely on the FOLLOW_UPS.md stub alone; RETRO-202's own lesson was that a prior stub's AC under-enumeration let a gap ship, so every item is spelled out here)
 

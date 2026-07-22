@@ -16914,7 +16914,9 @@ FOLLOW-613, Rule AD, Rule AE]
 
 source_retro: RETRO-197 source_ticket: FOLLOW-612 recommended_sprint: opportunistic (before
 FOLLOW-598 if that ticket's helper uses a barrel) recommended_agent: backend-engineer priority: P2
-estimated_hours: 1-2 promoted_to_queue: false
+estimated_hours: 1-2 promoted_to_queue: true (dispatched session 53 to backend-engineer/OPUS, branch
+`backend-engineer/FOLLOW-613-guard-barrel-reexport`, status IN_PROGRESS — see full delegation brief
+in backlog/QUEUE.md top block)
 
 **Gap (verified by direct reproduction, not inference — uncommitted throwaway fixture, run, deleted,
 never committed):** `moduleContainsMutation`'s bounded (depth-3) import-graph walk resolves a

@@ -1,6 +1,137 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 DONE+MERGED+RETRO'd (PR #604, squash `c766fd6`, RETRO-203 clean closure, no follow-ups); FOLLOW-600 unblocked, ready to pick next)
+## ▶️ START HERE — resume 2026-07-22 (session 53 — no open escalations blocking [ESC-020/028/034 non-blocking per memory], no open PRs; picked FOLLOW-613 (P2, live defect) over FOLLOW-600/604 (P3) per priority rule; dispatched to backend-engineer/OPUS)
+
+**▶️ HIGHEST-LEVEL STATE (read first).** Confirmed via
+`cat backlog/QUEUE.md backlog/ESCALATIONS.md backlog/HANDOFFS.md`, `git log --oneline -20`,
+`gh pr list --state open`: only ESCALATIONS entry open is ESC-020 (Estalara-app DOM hooks committed
+but not deployed to prod — a CTO/Rafał-owned deployment action, unrelated to any backend-engineer
+ticket in this queue; treated as non-blocking per longstanding precedent recorded in memory
+`project_ci_gate_landscape` and repeated across sessions 46-52's own "no escalations open" lines).
+`gh pr list --state open` → empty. `git log` matches QUEUE.md's own record (HEAD `91ab24b`,
+FOLLOW-615 close-out).
+
+**Ticket selection.** Ready candidates with no unmet `depends_on`: **FOLLOW-600** (P3, now
+unblocked), **FOLLOW-604** (P3), **FOLLOW-611** (P4), **FOLLOW-613** (P2, confirmed LIVE defect).
+Per the priority rule (unblocks the most other tickets → active sprint → critical path, then
+priority level as tiebreak), picked **FOLLOW-613**: it is the highest priority (P2 vs P3/P4) and is
+a confirmed-live security-relevant gap — independently re-ran
+`node scripts/check-staff-write-atomicity.cjs` before dispatch and reconfirmed
+`SKIP: apps/control-plane/src/app/api/admin/labels/[id]/route.ts — insert(staffAuditLog) present but no other data mutation`
+still holds on current `main` (the guard cannot see through the `@estalara/db` barrel re-export
+`packages/db/src/index.ts:15` to the real `upsertConversionLabel` mutation one hop further, so this
+shipped staff-write route's atomicity is provably enforced only by its own unit test, not by the
+repo-wide CI guard). FOLLOW-600/604 remain open, unrelated, no dependency, to be picked next
+session.
+
+**FOLLOW-613 — status: IN_PROGRESS.** assigned_to: backend-engineer (model: **Opus** — this is the
+4th consecutive hardening pass on the SAME AST security-invariant guard
+(`scripts/check-staff-write-atomicity.cjs`, ADR-0018 §3a) after FOLLOW-608→609→612 each shipped a
+fix that a fresh independent reproduction then found incomplete one call-shape further (Rule AE,
+promoted after RETRO-196 on exactly this pattern). Per CLAUDE.md's model-fit rule of thumb —
+"escalate one tier when the task already failed once at the lower tier" — three consecutive
+incomplete-closure findings on the same guard plus its security-sensitive nature (governs whether a
+staff write's audit-atomicity is actually CI-enforced) crosses that bar; this also needs non-trivial
+design judgment (package-specifier→barrel resolution, re-export-following bounded by depth, and an
+explicit enumerate-remaining-shapes verdict per Rule AE point 4), not mechanical pattern-copying.
+started_at: 2026-07-22. branch: `backend-engineer/FOLLOW-613-guard-barrel-reexport`.
+
+**Delegation-table row used:** "a contract between two modules, a new dependency, an ADR" does NOT
+apply here (no new dependency/contract); the correct row is **"ingest worker, control-plane,
+decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" → backend-engineer** — the
+guarded artifact is a CI script owned by control-plane's staff-write-atomicity invariant (ADR-0018
+§3a), and every prior ticket in this exact sequence (FOLLOW-607/608/609/612) was dispatched to
+backend-engineer under this same row.
+
+### Delegation brief — FOLLOW-613 (full)
+
+**Ticket:** `backlog/FOLLOW_UPS.md` →
+`## FOLLOW-613 — Close the staff-write-atomicity guard's 6th call-shape bypass: a delegated mutation reachable only through a BARREL re-export`
+(source_retro: RETRO-197, source_ticket: FOLLOW-612, priority P2, est. 1-2h).
+
+**Read first, in order:**
+
+1. `docs/MASTER_DESIGN.md` §Snapshot.1 (current implementation status, per OPERATING_PRINCIPLES Rule
+   1).
+2. `CONVENTIONS_PATCH.md` **Rule AE** in full (the exact rule this ticket exists to satisfy — read
+   all 4 numbered sub-points, especially point 4: "state explicitly whether the class is then fully
+   enumerated-and-guarded (closable) or still open").
+3. `backlog/HANDOFFS.md` — no open note for this script as of this dispatch; if one exists by the
+   time you start, read it first.
+4. `scripts/check-staff-write-atomicity.cjs` in full — especially `collectLocalImports` (only visits
+   `ts.isImportDeclaration`, NOT `ts.isExportDeclaration` — this is the exact gap),
+   `collectLocalImportedIdentifierSources`, and `moduleContainsMutation` (the bounded depth-3 walk
+   this ticket must extend).
+5. `scripts/__tests__/check-staff-write-atomicity.test.sh` — the existing fixture suite (currently
+   33/33 per session 49's re-verification); your new fixtures get added here, nothing existing may
+   regress.
+6. `packages/db/src/index.ts:15` and `apps/control-plane/src/app/api/admin/labels/[id]/route.ts` —
+   the concrete LIVE instance: the route imports `upsertConversionLabel` from `@estalara/db`
+   (workspace package specifier), whose barrel re-exports it from `./upsert-conversion-label.js`.
+   Reproduce the current false-negative yourself before changing anything:
+   `node scripts/check-staff-write-atomicity.cjs 2>&1 | grep 'labels/\[id\]'` — must currently print
+   `SKIP`.
+
+**Context (why this exists):** RETRO-192→194→196→197 is a 4-hop chain where each guard-hardening
+ticket closed the ONE call-shape a regression/reproduction had found, and a fresh independent
+reproduction then found the SAME class of gap one more call-shape over (bare-identifier →
+namespace/property-access → barrel re-export). This is Rule AE's exact pattern. FOLLOW-612 closed
+bypass 5 (namespace imports); this ticket closes bypass 6 (barrel re-exports), which is now a LIVE
+defect (not hypothetical) because FOLLOW-597 shipped `labels/[id]/route.ts` using exactly this
+shape.
+
+**Acceptance criteria (restated in full from the FOLLOW-613 stub — do not drop any):**
+
+- [ ] AC-1: Extend `moduleContainsMutation`'s bounded module walk (or a parallel resolution) to also
+      follow `ts.isExportDeclaration` re-export specifiers (`export * from '...'` and
+      `export { x } from '...'`) with a local module specifier, so a barrel that re-exports a
+      mutating module is discovered within the existing depth-3 bound.
+- [ ] AC-2: Resolve workspace-PACKAGE specifiers (`@estalara/db`, `@estalara/*`) to their
+      `packages/*/src/index.ts` barrel entry (map from the workspace layout), THEN apply the
+      re-export-following above — re-export-following alone is insufficient for the live
+      `labels/[id]` case since it's reached via a package specifier, not a `@/`-alias barrel. Keep
+      the depth-3 bound.
+- [ ] AC-3: Red-first REAL-REPO assertion — after the fix, `api/admin/labels/[id]/route.ts` must
+      flip from `SKIP` to `OK` in the default-scan output; moving its `insert(staffAuditLog)`
+      outside the `db.transaction()` (in an isolated throwaway check, not committed to the real
+      route) must produce `FAIL`.
+- [ ] AC-4: Red-first fixture pair (mirroring the bypass4/5 naming convention in the test script)
+      with a 3-file layout: route → barrel `index.ts` (`export * from './mutation-helper'`) →
+      `mutation-helper.ts` (the real mutation). Co-scoped variant must go `SKIP`→`OK`; out-of-tx
+      variant `SKIP`→`FAIL`.
+- [ ] AC-5: Re-run the FULL existing fixture suite (bypass 1-5 + real-repo scan) — confirm no
+      regression (must stay at least 33/33, plus your new AC-4 fixtures).
+- [ ] AC-6: Re-verify the depth-3 `MAX_DEPTH` bound is still sufficient once re-exports are followed
+      (a barrel-of-a-barrel is now representable) — confirm 3 is enough for the real repo layout
+      today, or document explicitly why not and what the fix would be.
+- [ ] AC-7 (Rule AE point 4 — mandatory, do not leave implicit): before declaring the guard
+      "complete," explicitly enumerate whether any further call-shape remains unaddressed — at
+      minimum address the three named in the stub: dynamic/computed member access
+      (`helper['upsertX'](tx, …)`), `await import(...)` dynamic import, and a variable holding a
+      function reference assigned from a property access. State the answer for each in the PR
+      description (closable now, or filed as a new FOLLOW with justification) — do not silently punt
+      without a decision.
+- [ ] AC-8 (repo hygiene): prettier on every touched file; conventional commit message
+      `fix(control-plane): <subject> [FOLLOW-613]` (or `chore(infra):` if that scope fits better —
+      use judgment, this is a CI script not a control-plane route, note your choice); no new
+      secrets/workflow/branch-protection needed — confirm and state so explicitly in the PR.
+
+**Explicitly OUT of scope:** do not touch any `apps/control-plane/src/app/api/**/route.ts`
+production file (this ticket only hardens the guard script + its test fixtures); do not touch
+FOLLOW-600/604/609's own route work; do not silently rewrite `moduleContainsMutation`'s existing
+detection logic for bypasses 1-5 — it is already verified correct, only extend it.
+
+**Completion:** `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, then
+`bash scripts/__tests__/check-staff-write-atomicity.test.sh` (must show all assertions green
+including your new AC-4 pair), prettier on every touched file, conventional commit referencing
+`[FOLLOW-613]`, push, open the PR (never commit to `main`). PM re-runs `gh pr checks <pr> --watch`,
+independently re-runs the fixture suite AND the real-repo scan (does not take the PR's own claimed
+output on faith — same discipline as sessions 46/49), confirms `labels/[id]/route.ts` now prints
+`OK`, and confirms the AC-7 shape-enumeration statement is present before marking READY_FOR_REVIEW.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-22 (session 52 — FOLLOW-615 DONE+MERGED+RETRO'd (PR #604, squash `c766fd6`, RETRO-203 clean closure, no follow-ups); FOLLOW-600 unblocked, ready to pick next)
 
 **▶️ HIGHEST-LEVEL STATE (read first).** RETRO-202 (post-merge retro for FOLLOW-614 / PR #603) is
 filed: the spoofable-header auth-hole class is now CLOSED repo-wide (FOLLOW-491 fully discharged),

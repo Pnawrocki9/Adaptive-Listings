@@ -1,6 +1,37 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-21 (session 50 — FOLLOW-597, 598, 606, AND 599 all MERGED (PR #599 / #600 / #601 / #602) and closed out DONE+MERGED; RETRO-198/199/200/201 filed — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is COMPLETE, the hub-linkage cascade is CLOSED, and the staff_audit_log HALF_WIRE_P is RESOLVED**; RETRO-201 filed FOLLOW-614 (P2 security — one residual `x-tenant-id` auth-hole leg))
+## ▶️ START HERE — resume 2026-07-22 (session 51 — FOLLOW-614 MERGED (PR #603, squash `3669be2`)
+
+and closed out DONE+MERGED; retro RETRO-202 due next, then promote/dispatch from FOLLOW-613 / 604
+/ 611)
+
+**▶️ HIGHEST-LEVEL STATE (read first).** FOLLOW-614 (`/api/config` GET+PATCH spoofable
+`x-tenant-id`/`x-agency-role` auth hole — the last live leg of the class RETRO-201 flagged) is
+**DONE + MERGED**: PR #603
+(`fix(control-plane): close /api/config spoofable-header auth hole via resolveTenantAccess [FOLLOW-614]`),
+squash-merged to `main` at `3669be2` (2026-07-22T07:30:38Z), dispatched to backend-engineer/OPUS on
+branch `backend-engineer/FOLLOW-614-config-auth-sweep`. PM-validated: CI confirmed green on all real
+gates pre-merge, only the pre-existing non-blocking `Rule I` red (per `project_ci_gate_landscape`
+memory). Worktree/branch already cleaned up. **Retrospective RETRO-202 for FOLLOW-614 is now due**
+(per the mandatory per-ticket retro loop) — spawn `retrospective-analyst` before dispatching the
+next ticket. Next-free **FOLLOW-615 / RETRO-202**.
+
+**Remaining open work after FOLLOW-614's close-out:**
+
+- **FOLLOW-613** (teach the atomicity guard to follow `@estalara/db` package-barrel re-exports so
+  `labels/[id]` flips SKIP→OK — opportunistic, protects one route). Likely next pick once RETRO-202
+  is filed — no dependency, no open escalation blocking it.
+- **FOLLOW-604** (staff-override port for `PATCH /api/tenants/[id]` quiz ON/OFF toggle) — open,
+  pre-existing, unrelated to 614.
+- **FOLLOW-611** (P4, gitleaks false-positive cleanup on `wrangler.toml`) — open, pre-existing,
+  opportunistic/low-priority.
+
+Do not pick a ticket touching `scripts/check-staff-write-atomicity.cjs`, `packages/db/src/index.ts`,
+or any staff-write route's mutation delegation without re-reading FOLLOW-613 + Rule AE first.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-21 (session 50 — FOLLOW-597, 598, 606, AND 599 all MERGED (PR #599 / #600 / #601 / #602) and closed out DONE+MERGED; RETRO-198/199/200/201 filed — **the ADR-0018 staff-WRITE-PORT sequence 592→598 is COMPLETE, the hub-linkage cascade is CLOSED, and the staff_audit_log HALF_WIRE_P is RESOLVED**; RETRO-201 filed FOLLOW-614 (P2 security — one residual `x-tenant-id` auth-hole leg))
 
 **▶️ HIGHEST-LEVEL STATE (read first).** Three tickets landed this session, each PM-validated
 independently (diff read, guards/tests re-run by hand, CI confirmed green — only the non-blocking

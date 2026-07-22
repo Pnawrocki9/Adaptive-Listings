@@ -2532,3 +2532,18 @@ expects to be found later (Rule AE's own list), treat that list as a checklist f
 the same guard — work down it with concrete reproductions rather than treating "the guard now covers
 the one bypass this PR fixed" as closure; two of the three listed shapes (computed member access,
 re-exports) were tractable to check directly this session in under 10 minutes each.
+
+**Date / ticket:** 2026-07-22 — FOLLOW-614 (`/api/config` spoofable-header auth-hole sweep, PR #603)
+**Delegation row used:** none this session (post-merge close-out only; original dispatch used
+"ingest worker, control-plane, ... auth" → backend-engineer, at a prior session). **What validation
+caught (or missed):** confirmed the merge independently via
+`gh pr view 603 --json state,mergeCommit,mergedAt` rather than trusting the human's summary at face
+value — matched exactly (3669be2, 2026-07-22T07:30:38Z, MERGED). Correctly refrained from spawning a
+worker or declaring the ticket's retro done myself: the CLAUDE.md retro loop requires
+retrospective-analyst to run before the next ticket is promoted, and PM cannot spawn subagents
+directly — bookkeeping-only turn, handed the spawn instruction back to the parent session in the
+NEXT: line. Nothing new caught at 5c/5d this run since no new diff was reviewed (pure
+state-transition bookkeeping). **A delegation/validation rule I'd add:** when a human reports a PR
+as "just merged, CI already verified," still re-run the one-line
+`gh pr view --json state,mergeCommit,mergedAt` check yourself before writing DONE anywhere — costs
+one tool call, prevents ever writing DONE off a stale or mistaken human summary.

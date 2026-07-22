@@ -1,4 +1,30 @@
-# Status — 2026-07-21 (session 49 — FOLLOW-612 merged + closed out DONE; RETRO-197 found a fresh 6th guard bypass (barrel re-export), NO new rule promoted (confirms Rule AE); queue at next-dispatch boundary)
+# Status — 2026-07-22 (session 51 — FOLLOW-614 merged + closed out DONE; retro RETRO-202 due next; queue at next-dispatch boundary — FOLLOW-613/604/611 open)
+
+## SESSION 51 (2026-07-22) — post-merge close-out for FOLLOW-614 (PR #603, `3669be2`); RETRO-202 due, not yet filed by this run
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (0 unresolved entries),
+`backlog/HANDOFFS.md`, `git log --oneline -20` (HEAD `3669be2`, the FOLLOW-614 squash-merge),
+`gh pr list --state open` (empty). Confirmed the merge independently:
+`gh pr view 603 --json state,mergeCommit,mergedAt` → `MERGED`,
+`3669be2135b1ad6e6e7a0a594abcf75b0bd224d4`, `2026-07-22T07:30:38Z`. Local `main` already at that
+commit (worktree/branch already cleaned up per the human's report — nothing stranded).
+
+**Bookkeeping done this run (no code, no dispatch):**
+
+- `backlog/FOLLOW_UPS.md` FOLLOW-614 entry updated `promoted_to_queue: true (IN FLIGHT)` →
+  `status: DONE + MERGED (PR #603, squash 3669be2, ...)`.
+- `backlog/QUEUE.md` new session-51 START HERE block written above the superseded session-50 block;
+  documents FOLLOW-614 DONE, flags RETRO-202 as due next, and lists FOLLOW-613/604/611 as the
+  remaining open, unblocked candidates for the next dispatch (no escalation, no depends_on blocking
+  any of the three).
+- Did **not** spawn `retrospective-analyst` myself (PM cannot spawn subagents) and did **not**
+  dispatch a worker — per explicit instruction, the retro (RETRO-202) must be filed by the parent
+  session before the next ticket is promoted+dispatched.
+
+**CI-check counter:** 0/5 (no new CI runs triggered this session — pure bookkeeping).
+**Escalations:** 0 open/unresolved. **Next-free counters:** FOLLOW-615, RETRO-202.
+
+---
 
 ## SESSION 49 (2026-07-21) — post-merge close-out for FOLLOW-612 (PR #598, `c102863`), RETRO-197
 

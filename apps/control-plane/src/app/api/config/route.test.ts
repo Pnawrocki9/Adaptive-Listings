@@ -15,6 +15,8 @@
  *   - No auth → 401 (via accessErrorToResponse / AccessError).
  *   - Staff `?tenant_id` → 200 (tenant from the validated param, not a header).
  *   - Option-wiring: resolveTenantAccess called with the expected opts.
+ *   - Staff write-rank gate (FOLLOW-615): `estalara:readonly` staff PATCH → 403,
+ *     configStore untouched; `estalara:ops`/`estalara:superadmin` staff PATCH → 200.
  *
  * @module apps/control-plane/src/app/api/config/route.test
  */
@@ -28,6 +30,7 @@ import type * as SessionAuthModule from '@/lib/session-auth';
 
 const TENANT_A = '550e8400-e29b-41d4-a716-446655440042';
 const VICTIM_TENANT = '660e8400-e29b-41d4-a716-446655440099';
+const GATE_TENANT = '770e8400-e29b-41d4-a716-446655440077';
 
 // ─── Mock modules ─────────────────────────────────────────────────────────────
 
@@ -60,7 +63,17 @@ function agencyAccess(tenantId: string, role: 'agency:viewer' | 'agency:admin'):
   };
 }
 
-function staffAccess(tenantId: string): TenantAccess {
+const STAFF_RANK: Record<string, number> = {
+  'estalara:superadmin': 3,
+  'estalara:ops': 2,
+  'estalara:readonly': 1,
+};
+
+function staffAccess(
+  tenantId: string,
+  role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly' = 'estalara:ops',
+): TenantAccess {
+  const rank = STAFF_RANK[role] ?? 0;
   return {
     via: 'staff',
     tenantId,
@@ -69,12 +82,12 @@ function staffAccess(tenantId: string): TenantAccess {
       email: 'staff@estalara.com',
       tenant_id: null,
       estalara_staff: true,
-      estalara_role: 'estalara:ops',
+      estalara_role: role,
       mfa_verified: true,
     },
-    role: 'estalara:ops',
-    canWrite: true,
-    isSuperadmin: false,
+    role,
+    canWrite: rank >= 2,
+    isSuperadmin: rank >= 3,
   };
 }
 
@@ -255,5 +268,68 @@ describe('PATCH /api/config', () => {
         minAgencyRole: 'agency:admin',
       }),
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Staff override — write-rank gate (CEO Q3, ADR-0018 §4; FOLLOW-615)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PATCH /api/config — staff write-rank gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('estalara:readonly staff → 403 (rank < ops), configStore left untouched', async () => {
+    mockResolve.mockResolvedValue(staffAccess(GATE_TENANT, 'estalara:readonly'));
+    const { GET, PATCH } = await import('./route.js');
+
+    // Read the pre-PATCH value first (GET is unaffected by this gate — readonly staff
+    // keeps read access, matching the `/api/audit` precedent).
+    const before = await GET(makeRequest({ query: { tenant_id: GATE_TENANT } }));
+    const beforeBody = await parseBody<TenantConfig>(before);
+    expect(beforeBody.brand.white_label).toBe(false);
+
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { white_label: true } },
+        query: { tenant_id: GATE_TENANT },
+      }),
+    );
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('forbidden');
+
+    // The write never ran: configStore is untouched (GET again shows the same pre-PATCH value).
+    const after = await GET(makeRequest({ query: { tenant_id: GATE_TENANT } }));
+    const afterBody = await parseBody<TenantConfig>(after);
+    expect(afterBody.brand.white_label).toBe(false);
+  });
+
+  it('estalara:ops staff → 200 (canWrite)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(GATE_TENANT, 'estalara:ops'));
+    const { PATCH } = await import('./route.js');
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { white_label: true } },
+        query: { tenant_id: GATE_TENANT },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('estalara:superadmin staff → 200 (canWrite)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(GATE_TENANT, 'estalara:superadmin'));
+    const { PATCH } = await import('./route.js');
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { white_label: true } },
+        query: { tenant_id: GATE_TENANT },
+      }),
+    );
+    expect(res.status).toBe(200);
   });
 });

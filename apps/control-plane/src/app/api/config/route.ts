@@ -20,6 +20,11 @@
  *   staff caller may target any tenant via `?tenant_id=<uuid>`, which `resolveTenantAccess`
  *   validates against the `tenants` table (invariant 4). `access.tenantId` is the config key.
  *
+ * Write-rank gate (ADR-0018 §4, FOLLOW-615): PATCH additionally rejects any staff caller
+ *   below `estalara:ops` (rank < 2) with 403, mirroring every sibling staff write
+ *   (`quiz/config`, `demo/override`, `admin/intent-weights`). GET is unaffected — readonly
+ *   staff keeps read access, matching the `/api/audit` precedent.
+ *
  * DB-coupling note (FOLLOW-614): the config store itself is an in-memory stub with NO DB,
  *   but `resolveTenantAccess` on the STAFF override path calls `tenantExists` →
  *   `createAdminClient()`. When the admin DB is unconfigured/unreachable, a STAFF request
@@ -147,6 +152,16 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     });
   } catch (err) {
     return accessErrorToResponse(err);
+  }
+
+  // Write-rank gate (CEO Q3, ADR-0018 §4; FOLLOW-615): staff below `estalara:ops`
+  // (rank < 2) is view-only. `canWrite` is set on the staff branch iff rank ≥ ops.
+  // Mirrors quiz/config/route.ts POST, demo/override/route.ts, admin/intent-weights/route.ts.
+  if (access.via === 'staff' && !access.canWrite) {
+    return NextResponse.json(
+      { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
+      { status: 403 },
+    );
   }
 
   let patch: ConfigPatch;

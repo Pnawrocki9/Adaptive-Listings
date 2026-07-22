@@ -16326,8 +16326,20 @@ generation-model control renders here; links from the FOLLOW-593 tenant landing.
       proving a staff request for tenant A cannot reach tenant B's settings rows
       (service-role/RLS-bypassed; `access.tenantId` is the only fence). NOT discharged by
       FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
+- [ ] **DEPENDENCY (added RETRO-202):** FOLLOW-615's staff write-rank gate on `PATCH /api/config`
+      (`via==='staff' && !access.canWrite`→403) MUST land BEFORE or WITH this ticket — wiring the
+      real `tenants` table while the gate is absent ships a live write-tier violation
+      (`estalara:readonly` staff could mutate any tenant's settings). Verify the gate exists before
+      wiring; do not re-derive.
+- [ ] **MANDATORY (added RETRO-202, per the `config/route.ts` header note):** when this ticket wires
+      `/api/config` PATCH to the real `tenants` table, the staff write MUST adopt the §3a
+      audit-in-`db.transaction()` pattern (mutation + `staff_audit_log` insert commit-or-roll-back
+      together, action e.g. `tenant_config.update`, audit-fail→500) AND keep the mutation INLINE in
+      the route (not delegated through the `@estalara/db` barrel) so
+      `check-staff-write-atomicity.cjs` prints OK, not the FOLLOW-613 SKIP (RETRO-198/199
+      inline-vs-barrel finding).
 
-cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187]
+cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187, RETRO-202, FOLLOW-615]
 
 ## FOLLOW-602 — Enrich FOLLOW-591 (diff-scoped Rule I) so it does NOT false-block inference-only-consumed exports
 
@@ -17015,7 +17027,45 @@ FOLLOW-597, FOLLOW-598, Rule AD, Rule AE]
     [RETRO-201, RETRO-153, RETRO-163, FOLLOW-491, FOLLOW-456, FOLLOW-599, FOLLOW-600, ADR-0018, Rule
     H amendment RETRO-006 §6a]
 
-<!-- next free FOLLOW number: 615. next free RETRO number: 202. FOLLOW-614 filed by RETRO-201
-(retrospective-analyst) — post-merge retro for FOLLOW-599 / PR #602. FOLLOW-614 = narrowed successor
-to the SKIPPED FOLLOW-491: sweeps the last live leg (/api/config GET+PATCH + x-agency-role) of the
-x-tenant-id spoofable-header class, after FOLLOW-599 closed the /api/audit leg. -->
+## FOLLOW-615 — Add the missing staff write-rank gate to `PATCH /api/config` (`estalara:readonly` staff can currently mutate any tenant's config)
+
+source_retro: RETRO-202 source_ticket: FOLLOW-614 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 1 promoted_to_queue: false
+
+**Gap (RETRO-202 §4a LG-1, P2 security):** FOLLOW-614 (PR #603, `3669be2`) correctly moved
+`GET+PATCH /api/config` onto `resolveTenantAccess`, closing the unauthenticated spoofable-header
+hole — but the PATCH staff-override path omits the write-rank gate that EVERY sibling staff write
+enforces (`quiz/config/route.ts:154`, `demo/override/route.ts:197`,
+`admin/intent-weights/route.ts:206` — all `via==='staff' && !access.canWrite`→403;
+`bandit/weights/[archetype]/route.ts:102` — `!isSuperadmin`→403). Chain: `verifyTracerAdminAuth`
+admits ANY `estalara_staff:true` user with NO role floor, readonly included
+(`tracer-auth.ts:133-137`); `resolveTenantAccess` returns `canWrite:false` for rank < ops
+(`session-auth.ts:456`) but by design does NOT enforce it — the route must, and
+`config/route.ts:136-169` never reads `access.canWrite` before `configStore.set()`. So an
+`estalara:readonly` staff user (rank 1 < ops 2) can PATCH any tenant's config via `?tenant_id`.
+First deviation from the RETRO-190 port-template item (c) across seven staff ports; root cause =
+FOLLOW-614's AC (a header-trust sweep) never restated the epic-wide invariant. P2 (not P1) ONLY
+because the write hits the per-instance in-memory `configStore` Map (ephemeral, zero consumers
+today) and the caller must be authenticated internal staff — but FOLLOW-600 wires this exact route
+to the real `tenants` table, at which point this is a live write-tier violation. **MUST land BEFORE
+or WITH FOLLOW-600.**
+
+**AC:**
+
+- [ ] `PATCH /api/config` adds `if (access.via === 'staff' && !access.canWrite) → 403` immediately
+      after `resolveTenantAccess` (copy the `quiz/config/route.ts:154` shape); GET stays
+      readonly-staff-readable (read, no gate — matches `/api/audit`).
+- [ ] Red-first test: `estalara:readonly` staff (`canWrite:false` fixture) PATCH → 403, and the
+      `configStore` Map is NOT touched (also discharges RETRO-202 TG-2's untouched-on-rejection
+      assertion for the other rejection paths).
+- [ ] FOLLOW-603 write-rank assertion: perturbing the gate (removing the `canWrite` check) flips a
+      test RED while ops-staff PATCH → 200 stays green.
+
+cross_ref: [RETRO-202, FOLLOW-614, FOLLOW-600, FOLLOW-603, RETRO-190, RETRO-199, ADR-0018]
+
+<!-- next free FOLLOW number: 616. next free RETRO number: 203. FOLLOW-615 filed by RETRO-202
+(retrospective-analyst) — post-merge retro for FOLLOW-614 / PR #603. FOLLOW-615 = the one residual
+gap from the config auth sweep: PATCH /api/config staff path lacks the canWrite write-rank gate
+every sibling staff write enforces; must land before/with FOLLOW-600's real-table wiring.
+FOLLOW-600's AC amended by RETRO-202 to bind the FOLLOW-615 dependency + the §3a
+audit-in-transaction + inline-mutation obligations. -->

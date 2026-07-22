@@ -3090,3 +3090,30 @@ so.**
   correctly → the trigger stays un-fired and the template is CONFIRMED working. Recording the
   compliant instance is as important as recording failures — it's what keeps a premature rule
   promotion from firing on a pattern that's now self-correcting.
+
+## 2026-07-22 · RETRO-202 (FOLLOW-614 / PR #603 — /api/config spoofable-header sweep)
+
+- **A finding I almost missed and why:** the missing staff write-rank gate on PATCH. The diff LOOKS
+  complete — headers removed, `resolveTenantAccess` with the right `minAgencyRole` floors, spoof
+  tests, even unprompted FOLLOW-603 option-wiring assertions — and every check the AC named passes.
+  The gap only appears when you diff the route against its SIBLINGS rather than against its AC: a
+  grep for `canWrite|isSuperadmin` across `app/api` showed every other staff write carries a
+  post-resolve rank gate and this one doesn't. Lesson: for any port that instantiates a codified
+  template, §step-2 symbol-mapping must include a SIBLING-CONFORMANCE grep (compare against the
+  other instances of the template), not just a consumer grep — the AC is not the spec, the template
+  is.
+- **An axis/chain I had to trace twice:** whether `minAgencyRole: 'agency:admin'` protects the staff
+  path (it reads like a write floor). First pass I assumed it did; second pass through
+  `session-auth.ts` showed `minAgencyRole` is consumed ONLY in the agency branch (:404) — the staff
+  branch's only outputs are `canWrite`/`isSuperadmin`, which the CALLER must enforce. Then a third
+  hop into `tracer-auth.ts` confirmed there is no role floor at the verification layer either (any
+  `estalara_staff:true` passes). Three layers, each of which LOOKS like it might gate, none of which
+  does for staff writes — the enforcement point is the route, full stop.
+- **A meta-pattern in how gaps recur across agents:** AC-faithful workers ship AC-shaped holes. The
+  2nd sighting (RETRO-198: FOLLOW-606's AC missing `/intent`; now RETRO-202: FOLLOW-614's AC missing
+  the write-rank gate) of "the stub AC under-enumerates a codified template and the worker
+  implements the AC exactly." Both times the AC author was… the retrospective-analyst (me). The
+  loop's own stubs are becoming the propagation vector: when I file a FOLLOW that is an INSTANCE of
+  a template (port, hub link), the AC must point at the template checklist (RETRO-190 items a-g,
+  FOLLOW-603 note) instead of re-deriving a subset. Banked at 1 prior; promote to a rule on the next
+  sighting.

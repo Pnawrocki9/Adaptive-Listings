@@ -51,15 +51,38 @@ for migration 0002 — `allow_dimensions_outside_sorting_key=1` vs sorting-key c
 since CH does not auto-apply, and un-pin/bump CI in the same PR). Next-free FOLLOW is **622**,
 next-free RETRO stays **205**.
 
-**NEXT ACTION (Piotr, then PM):**
+**NEXT ACTION — exact algorithm for the next `/run-pm` (verify, don't guess; check ACTUAL merge
+state first with `gh pr view 607 --json state,mergeCommit` and
+`gh pr view 606 --json state,mergeCommit`, then branch):**
 
-1. Merge **#607** first (tiny, 2-line ci.yml pin + backlog stubs; both CH gates proven green on it).
-2. Re-run the failed checks on **#606** (`gh pr checks 606` → re-run failed; the `pull_request`
-   merge ref picks up the pin from main). Expect green modulo Rule I.
-3. Merge **#606**, then PM: mark FOLLOW-600 DONE, dispatch `retrospective-analyst` (RETRO-205) per
-   the standard post-merge loop; FOLLOW-621 promotion is opportunistic (before any CH 26.x move).
-4. Remaining ready candidates unchanged: FOLLOW-604 (P3), FOLLOW-611 (P4), FOLLOW-616/617/618/619
-   (P3, hypothetical guard shapes).
+- **If #607 NOT merged yet:** nothing is actionable on this thread — #606's CH gates CANNOT go green
+  until the pin lands on main (the `pull_request` merge ref needs it). Do NOT re-run #606's checks
+  yet (wasted run), do NOT dispatch new implementation work on top of a red-CI repo without noting
+  every new PR will show the same 2 CH fails. Remind Piotr: **merge #607 first** (2-line `ci.yml`
+  pin; both CH gates proven green on #607 itself; only Rule I red = documented pre-existing).
+  Optionally pick an independent P3 (FOLLOW-604 etc.) but state the CH-gate caveat in its dispatch
+  brief.
+- **If #607 merged but #606 still red/unmerged:** fast-forward local `main`, then re-run ONLY the
+  failed checks on #606 (`gh run rerun <run-id> --failed` for the two runs, or via the PR checks
+  UI), `gh pr checks 606 --watch`. Expect green modulo Rule I. When green → #606 is READY_FOR_REVIEW
+  for Piotr to merge (all FOLLOW-600 ACs already PM-verified this session — see above; do not
+  re-derive).
+- **If #606 merged:** standard post-merge loop — verify merge independently
+  (`gh pr view 606 --json state,mergeCommit,mergedBy`), fast-forward `main`, delete the feature
+  branch, re-run `node scripts/check-staff-write-atomicity.cjs` on main (config route must print
+  OK), mark FOLLOW-600 **DONE + MERGED** here, dispatch `retrospective-analyst` (Opus) for
+  **RETRO-205** (bookkeeping commit BEFORE dispatch — the session-41 collision lesson). Also close
+  out FOLLOW-620 the same way if #607 merged (its retro can fold into RETRO-205's session sweep —
+  trivial 2-line CI pin, PM-inline note acceptable per the RETRO-200 precedent).
+- **Then:** pick the next ticket by the standard priority rule. Ready candidates: FOLLOW-604 (P3,
+  quiz ON/OFF staff port), FOLLOW-611 (P4), FOLLOW-616/617/618/619 (P3, hypothetical guard shapes),
+  FOLLOW-621 (P3, CH 26.x compat — opportunistic, but MUST land before any CH server upgrade to 26.x
+  anywhere).
+
+Standing facts for that session: next-free FOLLOW **622**, next-free RETRO **205**; commitlint
+header hard-limit is 100 chars (hit twice this session); local branch
+`backend-engineer/FOLLOW-600-tenant-settings-surface` = `e96b7ee` pushed, PR #606; local branch
+`devops-engineer/FOLLOW-620-pin-clickhouse-ci-image` = `ea21e05` pushed, PR #607.
 
 ## ▶️ (superseded) resume 2026-07-22 (session 54 — FOLLOW-613 DONE + MERGED by Piotr (PR #605, squash `872715f`); RETRO-204 filed, found a 4th recurrence of Rule AE — a NEW bypass-7 shape filed as FOLLOW-619; picking next ticket is the open item)
 

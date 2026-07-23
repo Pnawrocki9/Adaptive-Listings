@@ -3175,3 +3175,40 @@ so.**
   names the template shape produces clean closures; one that under-enumerates produces the next gap.
   Same lever, opposite outcomes. This strengthens the banked AC-under-enumeration candidate without
   adding a sighting (615's AC was well-specified, so it does not count against it).
+
+## 2026-07-23 — RETRO-205 (FOLLOW-600 / PR #606)
+
+- **A finding I almost missed and why:** the entire headline. The PR body, the PM's post-merge
+  audit, and my own first pass all traced the SAME chain — hub link → page → editor → `/api/config`
+  → real `tenants` columns → `staff_audit_log` — and it is genuinely intact, so I nearly wrote
+  "wiring clean". What saved it was asking the question one hop FURTHER than the audit's terminus:
+  the audit stopped at "the column is real". A column being real is a PRODUCER fact. I only found
+  the two HALF_WIRE_Ps when I grepped `allowed_origins` / `primary_color` for a READER and got
+  nothing but hardcoded env lists. **Standing correction: "wired to a real column" is the START of
+  CHECK B, not the end of it. For any staff/admin surface, the terminus is a runtime effect (a
+  request refused, a pixel rendered), never a row written.** A settings page is the highest-risk
+  shape for this because its round-trip (PATCH → GET → re-render) is self-consistent and looks alive
+  even when nothing downstream reads the value.
+- **An axis/chain I had to trace twice:** the client READ path. My first pass on
+  `tenant-config-editor.tsx` saw `if (!r.ok) throw` and I mentally ticked "checks status — Rule K.2
+  consumer side satisfied". Only on the second pass did I follow the throw into `.catch(() => {})`
+  sixteen lines later and then ask what `handleSave` sends (a FULL body, always) — which turns a
+  swallowed READ error into a destructive WRITE. **`res.ok` being present is not the same as the
+  failure being handled; read the catch AND the subsequent write shape before crediting a
+  consumer.** Also worth banking: three sibling editors carried the identical block and three prior
+  retros passed over them, because every one of us analysed the surface on the axis its ticket was
+  about (staff write) and not on the axis nobody's ticket was about (client read).
+- **A meta-pattern in how gaps recur across agents:** rules keep outrunning their enforcement. Rule
+  K.2 already forbids the consumer-side swallow and its Verification block already ships the exact
+  grep that finds all three instances — and it shipped three times anyway. That is the same shape
+  RETRO-204 found for Rule AE (the rule enumerated the bypass; the enforcement didn't). And Rule I
+  is the third instance of the same meta-failure at the CI layer: the check exists, runs, reports,
+  and is ignored. **Working hypothesis for the next retro: when I find a defect, check FIRST whether
+  an existing rule already covers it — if it does, the finding is an enforcement gap and the correct
+  output is a mechanical guard (FOLLOW), NOT a new rule.** Promoting a second rule over the same
+  ground would have been the easy, wrong move here; the one rule I did promote (AF) covers something
+  no existing rule addressed — what to do when a gate itself stops carrying information.
+- **On my own blind spot (the brief named it, and it was right):** I was handed a PM audit that said
+  "no gap found" and a green-modulo-Rule-I CI. Both were locally true and jointly misleading. The
+  audit verified the things a ticket's AC lists; nobody's AC says "and something must read this".
+  **A prior audit's clean verdict is an input to re-derive, never a section I can skip.**

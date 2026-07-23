@@ -17318,7 +17318,311 @@ new-version error text itself names the two sanctioned outs.
 cross_ref: [FOLLOW-620, FOLLOW-394, project_postgres_migrations_no_autoapply (CH does not
 auto-apply)]
 
-<!-- next free FOLLOW number: 622. next free RETRO number: 205.
+## FOLLOW-622 — Wire OR de-scope `tenants.allowed_origins`: the new settings page writes an SDK origin allow-list that NOTHING enforces, while MASTER_DESIGN §V.3.4 and the `api_keys` schema both claim it IS enforced
+
+source_retro: RETRO-205 (§3 HW-1, §4a LG-3, §4d DG-1) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
+recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 4
+depends_on: [] promoted_to_queue: false
+
+**Gap (HALF_WIRE_P — producer only, security-shaped):** FOLLOW-600 made
+`apps/control-plane/src/app/api/config/route.ts:299,303` the FIRST and ONLY writer of
+`tenants.allowed_origins` repo-wide, driven by the "SDK Allowed Origins" textarea at
+`admin/tenants/[id]/settings/tenant-config-editor.tsx:91`. **No code reads the column.**
+`grep -rn "allowedOrigins\|allowed_origins" apps packages --include=*.ts --include=*.tsx` (excl.
+node_modules/.next) returns only: this route, this editor, the schema
+(`packages/db/src/schema/tenants.ts:35`), test DDL — plus two allow-lists that are hardcoded and
+env-gated rather than per-tenant: `apps/ingest/src/router.ts:69-73` (`allowedOriginsForEnv` →
+`PROD_ALLOWED_ORIGINS` ± `DEV_EXTRA_ORIGINS`, compared at `:118` with
+`(allowed as string[]).includes(requestOrigin)`) and `apps/control-plane/src/lib/dev-cors.ts:57`.
+
+**Why P1 and not P3:** the surface promises a security control. `tenants.ts:34` documents the column
+as "Domains where the Estalara SDK snippet is permitted to run";
+`packages/db/src/schema/api_keys.ts:33` documents "CORS allowlist for this specific key (**null =
+inherit tenant allowedOrigins**)" — an inheritance chain implemented nowhere; and
+`docs/MASTER_DESIGN.md:5021` (§V.3.4) states "Origin validated against tenant.allowed_origins
+config" / "Ingest endpoint validuje origin per tenant config". An operator who edits this box will
+reasonably believe they have restricted where their SDK key can run. They have not.
+
+**Also fix here (RETRO-205 §4a LG-3 — do NOT split; wiring without this ships a broken
+comparison):** `route.ts:114-116` validates entries with `z.array(z.string().url())`, which accepts
+`https://x.com/path?q=1` and any scheme. An origin is scheme+host+port — a stored URL carrying a
+path can never match a browser `Origin` header. There is no dedupe, no length cap, and no defined
+meaning for the empty array.
+
+**AC (pick ONE direction in the PR and state why):**
+
+- [ ] **(a) ENFORCE** — read `tenants.allowed_origins` at a named enforcement point (ingest Worker
+      CORS and/or the SDK-facing control-plane routes), with the per-request tenant lookup cost and
+      cache strategy stated. Empty array semantics decided explicitly and documented (deny-all vs
+      inherit-env-defaults). Test both directions: a listed origin passes, an unlisted origin is
+      refused — against a REAL stored row, not a stub.
+- [ ] **OR (b) DE-SCOPE** — remove the control from `tenant-config-editor.tsx` and the `sdk` key
+      from the `/api/config` contract, and mark the column deferred with a `FOLLOW-NNN` header
+      comment per Rule I option 3. Do not leave a live editor over an inert column.
+- [ ] Normalise + validate origins as origins (scheme+host+port, no path/query), dedupe, cap the
+      list length. Required under (a); harmless-but-do-it under (b) only if the field survives.
+- [ ] Reconcile the docs either way: `docs/MASTER_DESIGN.md` §V.3.4 (:5011-5024) and the
+      `api_keys.allowedOrigins` "inherit" comment MUST match shipped behaviour after this PR — a
+      design doc that over-states a security control is worse than silence.
+
+cross_ref: [RETRO-205, FOLLOW-600, FOLLOW-623 (sibling half-wire in the same PR)]
+
+## FOLLOW-623 — Wire OR de-scope `tenants.brand_config` (`primary_color` / `logo_url` / `white_label`): the settings page ships three brand controls the SDK cannot read, while the LIVE brand colour lives in a different column
+
+source_retro: RETRO-205 (§3 HW-2) source_ticket: FOLLOW-600 (PR #606, `19ef714`) recommended_sprint:
+next recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: []
+promoted_to_queue: false
+
+**Gap (HALF_WIRE_P — producer only):** FOLLOW-600 made `api/config/route.ts:302`
+(`brandConfig: updatedBrand`) the first writer of `tenants.brand_config`, driven by the white-label
+toggle / colour picker / logo input at `tenant-config-editor.tsx:129-186`. **No consumer exists.**
+`grep -rn "primary_color\|white_label\|logo_url" apps packages` returns exactly one non-test line
+outside the PR's own files (a doc comment), and
+`grep -rniE "powered by|white.?label|branding" packages/sdk/src` finds **no white-label or
+badge-suppression logic in the SDK at all** — so the toggle labelled "Hide Estalara branding from
+the SDK widget" cannot do what its own helper text says.
+
+**The trap that makes this worse than a plain dead control:** the LIVE per-tenant brand colour is a
+DIFFERENT column — `tenants.quiz_config.accent_color` → `GET /api/quiz/public-config` → SDK runtime
+fetch → quiz widget (documented at `packages/db/src/schema/tenants.ts:44-47`). A staff user who sets
+"Primary Color" here sees no effect and has no signal that the working knob is on the `/quiz`
+surface. This is the two-source-of-truth drift the `/api/config` route header explicitly refuses to
+create for quiz fields — the same hazard arrived through the brand fields instead.
+
+**AC (pick ONE direction and state why):**
+
+- [ ] **(a) WIRE** — the SDK reads brand config at init (via the existing public-config fetch or an
+      equivalent), and at minimum `white_label` genuinely suppresses whatever Estalara branding the
+      widget renders (if there is none to suppress, say so in the PR and drop the toggle under (b)).
+      Prove it end-to-end producer→consumer→render, not one hop.
+- [ ] **OR (b) DE-SCOPE** — remove the three controls from the editor and the `brand` key from the
+      `/api/config` contract; mark the column deferred with a `FOLLOW-NNN` header comment.
+- [ ] Either way, RESOLVE the colour duality explicitly: one source of truth for tenant brand
+      colour. If `brand_config.primary_color` wins, `quiz_config.accent_color` must read from it (or
+      be migrated + stripped per Rule U); if `accent_color` wins, `primary_color` must not be
+      editable.
+- [ ] State in the PR which of the three fields (if any) survive and where each is rendered.
+
+cross_ref: [RETRO-205, FOLLOW-600, FOLLOW-622 (sibling half-wire in the same PR),
+FOLLOW-275/ADR-0011 (quiz public-config fetch path)]
+
+## FOLLOW-624 — Stop the three staff editors from swallowing a failed load and then clobbering real tenant config with defaults on the next Save
+
+source_retro: RETRO-205 (§4a LG-1, §4c TG-1) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
+recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 3
+depends_on: [] promoted_to_queue: false
+
+**Gap (live data-loss path, Rule K.2 consumer-side violation):**
+`admin/tenants/[id]/settings/tenant-config-editor.tsx:60-78` checks `r.ok` (`:61 if (!r.ok) throw`)
+and then throws straight into `:76 .catch(() => { /* Load silently — defaults already set … */ })`.
+On a 500 (the route's OWN Rule K.2 fail-loud path), a 403, or a network blip the component keeps
+`DEFAULTS` (`:34-38` — `#1a73e8`, `logo_url:null`, `white_label:false`, `allowed_origins:[]`) and
+renders them as if they were stored values; only `plan` renders as `'—'`. `handleSave` (`:82-96`)
+then PATCHes a **complete** body, and the route merges every present key (`route.ts:288-299`;
+`logo_url` uses an explicit `!== undefined` so `null` is a real write, and
+`updatedOrigins = patch.sdk?.allowed_origins ?? currentOrigins` accepts `[]` as a real value).
+**Net: failed load + one Save = the tenant's brand config is overwritten with defaults and its
+origin allow-list is wiped to `[]`, under a green "Settings saved!".**
+
+**Systemic — three instances, fix all three:**
+`grep -rn "catch(() => {" -A3 apps/control-plane/src/app/admin --include=*.tsx` returns the
+identical block with the identical comment in `quiz/quiz-config-editor.tsx:72`,
+`demo/demo-override-editor.tsx:87`, `settings/tenant-config-editor.tsx:76` (copied forward through
+FOLLOW-595 → 596 → 600). Rule K.2's consumer-side clause already forbids this and its Verification
+block already ships the grep that finds all three; the failure was enforcement, not a missing rule.
+
+**AC:**
+
+- [ ] All three editors distinguish "loaded" from "not loaded". On a failed GET: render a visible
+      error state (`role="alert"`) and **disable the Save control** — a write MUST NOT be possible
+      from un-loaded state. Do not silently substitute defaults.
+- [ ] Retry affordance (a "Retry" button or equivalent) so a transient failure is recoverable
+      without a page reload.
+- [ ] Red-first tests, per editor: (1) GET rejects/500 → error state visible AND save disabled AND
+      **no PATCH is issued** (assert `fetch` was not called with `method:'PATCH'`); (2) GET succeeds
+      → unchanged current behaviour. The settings editor's existing 3 tests all stub a successful
+      GET — that hole is what let this ship.
+- [ ] Surface the route's validation `details` in the error banner (today
+      `tenant-config-editor.tsx:99-101` drops them, so a bad Logo URL / origin line shows only
+      "Invalid request body"). Small, colocated.
+
+cross_ref: [RETRO-205, RETRO-193, RETRO-198, FOLLOW-595, FOLLOW-596, FOLLOW-600, FOLLOW-625 (the
+mechanical guard), CONVENTIONS_PATCH Rule K.2]
+
+## FOLLOW-625 — Mechanise Rule K.2's consumer-side swallow check in CI so the next copy-forward fails the build instead of shipping
+
+source_retro: RETRO-205 (§4a LG-1, §6 P-2) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [FOLLOW-624] promoted_to_queue: false
+
+**Gap:** Rule K.2 already states the consumer-side obligation ("A producer that fails loud paired
+with a consumer that swallows the failure … is the same defect one layer up") AND already ships the
+detecting command in its Verification block
+(`grep -rn "catch(() =>" apps/ --include="*.ts" | grep -v node_modules`). Nothing runs it. The
+swallow shipped in three consecutive staff-editor PRs (FOLLOW-595 → 596 → 600) and was found only by
+a retro, three merges later. This is the same diagnosis RETRO-204 reached for Rule AE: the rule text
+was already sufficient; the missing piece was mechanical enforcement.
+
+**AC:**
+
+- [ ] A CI check (script + `ci.yml` job, in the style of the existing `Fire-and-forget sink guard` /
+      `Staff-write audit atomicity` guards) that FAILS on a data-fetch error handler which discards
+      the error in a client component under `apps/control-plane/src/app/**` — i.e. an empty or
+      log-only `.catch()` / `catch {}` on a `fetch(...)` chain that populates editable state.
+- [ ] Scoped to avoid false positives on legitimate "dependency-not-configured" fallbacks: the guard
+      must accept a handler that sets an error state (or an explicit, annotated allow-list entry
+      with a reason).
+- [ ] Proof BOTH directions: the three FOLLOW-624-fixed editors pass; a throwaway reinstatement of
+      the `catch(() => {})` shape FAILS. Include the negative control in the fixture suite.
+- [ ] Enumerate the call-shapes the guard covers and the ones it does NOT (Rule AE discipline —
+      `.catch(() => {})`, `.catch(() => undefined)`, `catch { }`, `.catch(console.error)`, a
+      `.catch(noop)` alias); an un-covered shape is a documented residual, not a silent gap.
+
+cross_ref: [RETRO-205, RETRO-204 (Rule AE enforcement-vs-rule diagnosis), FOLLOW-624,
+CONVENTIONS_PATCH Rule K.2 + Rule AE]
+
+## FOLLOW-626 — Fix or quarantine the permanently-failing `Release` workflow (`@estalara/sdk` publish → E403): a terminal-red gate that no backlog file has ever recorded
+
+source_retro: RETRO-205 (§5d A-1) source_ticket: (CI hygiene — surfaced by the FOLLOW-600 merge)
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] promoted_to_queue: false
+
+**Gap:** `.github/workflows/release.yml` runs on every push to `main` and has `conclusion: failure`
+on **every run in the last 30**, with **no successful run in the last 100**
+(`gh run list --workflow=release.yml`). Failure (log for run on `07fd72b`): `changeset publish` →
+`@estalara/sdk@0.1.0` →
+`E403 … PUT https://npm.pkg.github.com/@estalara%2fsdk - Permission not_found: owner not found` —
+the `@estalara` scope does not resolve under the `Pnawrocki9` package registry. Consequence: the SDK
+has never been published, every merge burns ~2.5 min producing a failure notification nobody reads,
+and `grep` of `backlog/RETROSPECTIVES.md`, `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`,
+`backlog/ESCALATIONS.md` for `Release workflow` / `npm.pkg.github` / `E403` returns **zero hits** —
+a second gate reached terminal-red and nobody noticed for at least three days.
+
+**AC (decide and state which):**
+
+- [ ] **(a) FIX** — align the package scope with the registry owner (or point the publish at the
+      correct registry/org) and prove one successful `Release` run on `main`. If publishing is
+      genuinely required for SDK distribution, say where consumers install from today.
+- [ ] **OR (b) QUARANTINE** — if the SDK is distributed as a hosted bundle (see
+      `apps/control-plane/public/sdk.js` / ESC-015) and npm publish is not needed, disable or gate
+      the publish step so the workflow is green-or-absent, and record WHY in the workflow header.
+- [ ] Either way: `main` must not carry a workflow whose steady state is red. Per Rule AF, an
+      intentionally-deferred red gate must be explicitly quarantined with an owning FOLLOW, not left
+      failing.
+- [ ] While here, state (one line, in the PR) whether the SDK version/changeset flow is expected to
+      run at all in the current release model — a publish pipeline nobody consumes is itself a
+      finding.
+
+cross_ref: [RETRO-205, CONVENTIONS_PATCH Rule AF, FOLLOW-591 (the sibling permanently-red gate),
+ESC-015]
+
+## FOLLOW-627 — `/api/config` missing-row semantics: replace the tested-in fabricated defaults with a real 404/provenance signal, and detect the 0-row PATCH
+
+source_retro: RETRO-205 (§4a LG-2, §4c TG-3) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
+recommended_sprint: opportunistic recommended_agent: backend-engineer priority: P3 estimated_hours:
+2 depends_on: [] promoted_to_queue: false
+
+**Gap:** `api/config/route.ts:186-191` maps a missing `tenants` row to `plan:'free'`, default brand,
+`allowed_origins:[]`, `updated_at: new Date()` and returns **200** — while the same handler's Rule
+K.2 comment fourteen lines later (`:194-196`) says "Returning fabricated defaults here would
+silently misrepresent the tenant's real config on a staff/agency-facing settings surface". Both
+branches cannot be right. On PATCH the same shape yields a 0-row `db.update()` that still returns
+200 with the "saved" body (`:376-381`). Reach is narrow (staff hit `tenantExists` → 404 at
+`session-auth.ts:446-449`; agency tenant ids come from a signed JWT), so P3 — but
+`route.test.ts:376` (`'returns defaults (never an error) when the tenant row is not found'`)
+**asserts** the fabrication, so it is locked in against refactors. Combined with the FOLLOW-624
+client bug, the full chain is: missing row → GET 200 defaults → Save → 0-row update → 200 "Settings
+saved!" — a phantom success end to end.
+
+**AC:**
+
+- [ ] GET on a missing row returns 404 (`unknown_tenant`) OR a 200 carrying an explicit provenance
+      flag; pick one and state why. Flip `route.test.ts:376` to assert the new behaviour — do not
+      leave a test asserting fabrication.
+- [ ] PATCH detects a 0-row update and fails loud rather than returning a success body.
+- [ ] Add a `data_source` (or equivalent) field to `TenantConfig` so a caller can distinguish stored
+      values from defaults, matching the sibling ADR-0018 surfaces (`/api/audit` `'real'|'mock'`,
+      the admin loaders' `live|mock|error`) — Rule K.2's provenance-enum amendment (RETRO-072). The
+      client MUST read it, not merely receive it.
+
+cross_ref: [RETRO-205, FOLLOW-600, FOLLOW-624, CONVENTIONS_PATCH Rule K.2 + its RETRO-072 amendment]
+
+## FOLLOW-628 — Pin the unpinned upstream installs in CI, starting with `modal-deploy.yml`'s `pip install modal httpx fastapi` (unpinned, in a `production` environment, deploying prod ML functions)
+
+source_retro: RETRO-205 (§5d A-5) source_ticket: FOLLOW-620 (the `clickhouse-server:latest` breakage
+that prompted the sweep) recommended_sprint: opportunistic recommended_agent: devops-engineer
+priority: P3 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**Gap:** the `latest`→26.7 ClickHouse bump (FOLLOW-620) broke every CI gate repo-wide with no repo
+change. A full sweep of all 12 workflows for the same class found: only two `image:` entries exist
+and both are now pinned (`ci.yml:302,361`) — but **`.github/workflows/modal-deploy.yml:66` runs
+`pip install modal httpx fastapi` completely unpinned, under `environment: production`, and it is
+the step that registers and deploys the production Modal ML functions.** Same failure class as
+`:latest` with a larger blast radius: an upstream `modal` CLI major bump can change deploy semantics
+against prod with zero repo change. Secondary: `load-test.yml:40` `sudo apt-get install -y k6` (same
+class, low stakes). All `actions/*@vN` / `pnpm/action-setup@v4` / `dopplerhq/cli-action@v3` /
+`cloudflare/wrangler-action@v3` / `gitleaks/gitleaks-action@v2` / `changesets/action@v1` float on
+major tags — industry-normal, explicitly OUT of scope here.
+
+**AC:**
+
+- [ ] Pin `modal`, `httpx`, `fastapi` in `modal-deploy.yml` to explicit versions (compatible with
+      the Modal app `pyproject.toml`s), with an in-file comment giving the reason and the bump
+      procedure — same shape as the FOLLOW-620 pin comment.
+- [ ] Pin or version-check the k6 install in `load-test.yml`.
+- [ ] One-paragraph pinning policy in the workflow header or `docs/CONVENTIONS.md`: which upstream
+      classes must be pinned (container images, language-runtime package installs used in
+      prod-touching jobs) and which may float (marketplace actions on major tags).
+- [ ] Confirm the sweep found nothing else
+      (`grep -rniE "curl .*\| *(bash|sh)|@latest|:latest|pip install [a-z]|apt-get install" .github/workflows/*.yml`).
+
+cross_ref: [RETRO-205, FOLLOW-620, FOLLOW-621, FOLLOW-629]
+
+## FOLLOW-629 — Detect CI↔prod ClickHouse major-version skew so the FOLLOW-620 pin's hidden expiry fires loudly instead of silently
+
+source_retro: RETRO-205 (§5d A-4, §6 P-4) source_ticket: FOLLOW-620 / FOLLOW-621 recommended_sprint:
+opportunistic recommended_agent: data-engineer priority: P3 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+**Gap:** FOLLOW-620 pinned CI's ClickHouse service image to `25.8` to un-break the repo. FOLLOW-621
+does carry the un-pin obligation in its third AC ("un-pin OR bump the FOLLOW-620 CI pin to a 26.x
+tag in the SAME PR"), so the expiry is documented — but FOLLOW-621 is P3/opportunistic with **no
+trigger that ever fires on its own**. Meanwhile CI now proves the migration chain against 25.8 while
+prod ClickHouse Cloud runs whatever version ClickHouse Cloud chooses. The moment prod crosses into
+26.x, the CH gates stop being evidence for prod and nothing in the repo notices — the failure mode
+becomes a GREEN CI plus a broken prod migration, which is strictly worse than the loud repo-wide
+breakage FOLLOW-620 just fixed (and 26.x is already known to reject migration `0002`'s `region`
+dimension).
+
+**AC:**
+
+- [ ] The daily continuous CH schema-validation cron (per Master Design B.6) additionally reads the
+      prod server version (`SELECT version()`) and compares its MAJOR against the version pinned in
+      `.github/workflows/ci.yml`.
+- [ ] Skew → fail loud (the cron's existing alerting path), with a message naming FOLLOW-621 as the
+      remediation — so the pin's expiry surfaces as an alert, not as a prod incident.
+- [ ] Prove both directions: matching versions → pass; a stubbed/forced mismatch → fail with the
+      expected message.
+- [ ] Record the currently-observed prod CH version in the PR description (the repo has never
+      written it down anywhere).
+
+cross_ref: [RETRO-205, FOLLOW-620, FOLLOW-621, FOLLOW-394, project_postgres_migrations_no_autoapply]
+
+<!-- next free FOLLOW number: 630. next free RETRO number: 206.
+FOLLOW-622…629 filed by RETRO-205 (post-merge retro for FOLLOW-600 / PR #606, squash `19ef714`,
+merged 2026-07-23 21:27:05 UTC). Route layer verified clean and re-proven live on `main`; the gaps are
+(a) TWO HALF_WIRE_P — `tenants.allowed_origins` (622) and `tenants.brand_config` (623) are written by
+the new settings surface and read by NOTHING, with MASTER_DESIGN §V.3.4 claiming per-tenant origin
+enforcement that does not exist; (b) a live clobber path — all three staff editors swallow a failed
+GET and then PATCH a full body over real data (624), a Rule K.2 consumer-side violation whose own
+Verification grep finds all three, mechanised by 625; (c) CI hygiene — the `Release` workflow has been
+terminal-red on every run with zero backlog mentions (626), the CH pin carries an untriggered expiry
+(629), and `modal-deploy.yml` installs unpinned prod deploy tooling (628); (d) `/api/config`
+missing-row fabrication asserted by its own test (627). CONVENTIONS_PATCH: Rule AF PROMOTED
+(permanently-red gate = disabled gate; evidence SESSION-RETRO-39 + RETRO-187 + RETRO-188, 3 PRIOR ≥ 2).
+-->
+
+<!-- (superseded) next free FOLLOW number: 622. next free RETRO number: 205.
 FOLLOW-620 (CI CH image pin, shipped session 55) + FOLLOW-621 (26.x compat decision for migration
 0002) filed during session-55 CI triage of PR #606/FOLLOW-600 — upstream `latest`→26.7.1 image bump
 broke both CH gates repo-wide; environmental, not caused by any repo change. -->

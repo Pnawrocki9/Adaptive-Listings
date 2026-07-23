@@ -31244,3 +31244,423 @@ written this session). -->
 - Related to **RETRO-194 / RETRO-192** (FOLLOW-608/609, bypasses 3/4): the earlier hops of the same Rule AE arc on this guard.
 
 <!-- next free FOLLOW number: 620 (FOLLOW-619 filed by RETRO-204). next free RETRO number: 205. RETRO-204 = retro for PR #605 (FOLLOW-613, MERGED 2026-07-22 21:01:37 UTC, squash commit 872715f on main, by Pnawrocki9; +595/-22, 10 files, no migrations; branch backend-engineer/FOLLOW-613-guard-barrel-reexport, OPUS). Closed staff-write-atomicity guard bypass 6 (barrel re-export delegated mutation): resolveSpecifier maps @estalara/* → packages/*/src/index.ts, resolveExportedNameToConcreteModule follows export{}from / export*from re-exports per-NAME (depth-3), resolveFileCandidates maps .js re-export ext → .ts source. HEADLINE: fix GENUINELY closes bypass 6, re-verified LIVE on main (labels/[id] SKIP→OK, labels/export correctly STAYS SKIP — per-name resolution, no false FAIL; fixture suite + real-repo scan re-run this session, pass). BUT a fresh independent reproduction (uncommitted throwaway, git clean, status clean) found the SAME class one call-shape over, NOT among FOLLOW-613's own enumerated 616/617/618: a NAMESPACE import of a BARREL (import * as db from '@estalara/db'; db.upsertConversionLabel(tx,...)) prints SKIP both directions = the INTERSECTION of bypass 5 (namespace, FOLLOW-612) and bypass 6 (barrel, FOLLOW-613) that neither fix closes. Root cause: collectLocalImportedIdentifierSources runs the per-name barrel resolver ONLY on named/default import branches (:290-306); the namespace branch (:307-308) binds the bare barrel entry, and moduleContainsMutation can't follow a barrel's export-from re-exports (collectLocalImports visits only ts.isImportDeclaration). Controlled a/b: namespace-of-CONCRETE caught (FAIL, bypass5 stays closed); namespace-of-BARREL not (SKIP) — barrel is the sole differentiator. HYPOTHETICAL today (grep: zero import * as X from '@estalara/*'; only @sentry/nextjs) — latent exactly as bypass 6 was at RETRO-197 — but highest-likelihood of the 4 open shapes: a 1-line refactor of the LIVE labels/[id] from named to namespace import would silently regress OK→SKIP. Also LG-2 (P4, NO stub): ≥4 nested barrels → SKIP (documented depth-3 bound; boundary reproduced at exactly 4; not realistic in-repo, max chain is 2). Filed FOLLOW-619 (P3, 2-3h, backend-engineer) = 4th open call-shape, joins 616/617/618. WIRING clean (CI dev-tooling script, no production symbol, new functions zero external consumers, no module.exports). CONVENTIONS_PATCH: NO PROMOTION — this IS Rule AE (point 1 already names both "namespace/property-access delegated call" AND "re-exported wrapper"; the finding is their intersection, AE's 4th consecutive recurrence, strongest confirmation to date; AE point 4 discipline exercised: class STILL OPEN, tracked by 619). Considered+declined amending AE to call out shape-intersections — point 1's "every call-shape" already subsumes them; the failure was AE point 2 enforcement. Filed FOLLOW-619 only. -->
+
+
+## RETRO-205 — FOLLOW-600 (per-tenant `/admin/tenants/[id]/settings` staff surface + `/api/config` wired to the REAL `tenants` table, PR #606, merged `19ef714` 2026-07-23T21:27:05Z) — session-56 retrospective-analyst (Opus). **HEADLINE — the ROUTE layer is correct and independently re-verified (auth, INV-5 fence, FOLLOW-615 write-rank gate, §3a single-`db.transaction()` atomicity, guard `OK` live on `main`), but the SURFACE it ships is a FACADE: BOTH column families this PR makes writable — `tenants.allowed_origins` and `tenants.brand_config.{primary_color,logo_url,white_label}` — have ZERO runtime consumers anywhere in the repo, so every control on the new page is producer-only. The "SDK Allowed Origins" box in particular promises a SECURITY control (`tenants.ts:35` "Domains where the Estalara SDK snippet is permitted to run"; MASTER_DESIGN §V.3.4:5021 "Origin validated against tenant.allowed_origins config") that no code enforces — ingest CORS is a hardcoded per-env list (`apps/ingest/src/router.ts:69-73`). TWO HALF_WIRE_P (P1). Separately, LG-1 (P1): the new client SWALLOWS its GET failure (`tenant-config-editor.tsx:76` `.catch(() => {})`) and then PATCHes a FULL body — so a failed load renders plausible DEFAULTS and one click clobbers the tenant's real brand config and WIPES `allowed_origins` to `[]`; this is the exact consumer-side swallow Rule K.2 already forbids AND already greps for, shipped verbatim for the THIRD consecutive staff editor (quiz FOLLOW-595, demo FOLLOW-596, settings FOLLOW-600) — which CONTRADICTS RETRO-193's end-to-end "clean" verdict on the demo surface (that retro analyzed the staff-write axis only, never the client load-failure axis). PROCESS: the merge landed BEFORE any AC validation ran, with "CI green" as the sole control — on a repo where the aggregate `CI` workflow conclusion on `main` is `failure` on EVERY push (Rule I, now 191 violations, up from 179 at FOLLOW-591 → 183 at RETRO-187) and where a SECOND workflow (`Release`) has failed on every run in the last 30 with ZERO mentions in RETROSPECTIVES.md / FOLLOW_UPS.md / QUEUE.md / ESCALATIONS.md. That pattern crosses the ≥2-PRIOR-retro threshold → **Rule AF PROMOTED**. Filed FOLLOW-622…629.) — 2026-07-23
+
+### 1. Summary of change
+
+- **PR:** #606 (merged 2026-07-23 21:27:05 UTC, squash commit `19ef714`, by Pnawrocki9; branch
+  `backend-engineer/FOLLOW-600-tenant-settings-surface`). Post-merge close-out commit `07fd72b`.
+  Preceded by #607 (`f4dd037`, FOLLOW-620, CH CI image pin) merged 21:12:47Z — a repo-wide CI
+  un-breaker, not a dependency of #606's content.
+- **Files changed:** 8 (+1298 / -211); no migrations, no schema changes, no new package.
+- **Modules touched:** control-plane (1 API route + 1 server page + 1 client component + 4 test
+  files). No SDK, ingest, decision-api, Modal, docs, or config changes.
+- **Key contracts changed:**
+  - `TenantConfig` (exported, `api/config/route.ts:93-103`) — **REMOVED** `quiz:{enabled,language}`
+    and `sdk.active_domains`; `plan` changed from a stub literal (`'observer'`) to the real
+    `tenants.plan` column with a `'free'` fallback. Breaking: **no** — repo-wide grep for `api/config`
+    finds exactly ONE non-test consumer, and it is the client component this same PR adds
+    (`settings/tenant-config-editor.tsx:56`). The pre-PR store was an in-memory `Map` that never
+    persisted, so there is no data to migrate and no stale reader to break.
+  - `ConfigPatch` (exported, `route.ts:118`) — `quiz?` removed; `plan` still never accepted (read-only
+    by design, billing concern).
+  - `staff_audit_log.action` — NEW producer value `tenant_config.update` (`route.ts:319`), the **6th**
+    staff-write action after `quiz_config.update`, `demo_override.update`, `intent_weights.update`,
+    `conversion_label.reclassify`, `bandit_weights.resume`. Additive, no schema change.
+  - **Storage contract (the one that matters and was not called out in the PR body):** `/api/config`
+    becomes the FIRST and ONLY writer of `tenants.allowed_origins` and `tenants.brand_config`
+    repo-wide. Both columns previously sat at their defaults (`'{}'`) with no producer at all. See §3.
+
+### 2. Verification done in PR
+
+- Test files changed: 4 — `api/config/route.test.ts` (+508/-112, rewritten), `settings/page.test.tsx`
+  (+83, new), `settings/tenant-config-editor.test.tsx` (+117, new), `tenants/[id]/page.test.tsx`
+  (+6/-3). Assertions added: MANDATORY red-first INV-5 tenant fence in BOTH directions (staff READ for
+  A never returns B; staff PATCH binds `.where()` to A and leaves B untouched); FOLLOW-615 write-rank
+  gate (readonly staff → 403 with no DB write); §3a atomicity (one `db.transaction()`, audit-insert
+  failure → 500 `audit_write_failed` + rollback, no orphan config mutation); FOLLOW-603-pattern
+  option-wiring assertions on GET (`allowStaffOverride:true` + `minAgencyRole:'agency:viewer'`) and
+  PATCH (`'agency:admin'`); spoofed `x-tenant-id`/`x-agency-role` headers ignored (FOLLOW-614
+  regression); zod validation (hex color, URL, non-URL origin → 400); the CEO-Q1 negative test (no
+  `generation_model` control renders on the per-tenant page). Coverage delta: unknown (est. high on the
+  route; **low on the client** — see §4c).
+- CI checks: **passed** pre-merge for every real gate (59 green: Build, Build (control-plane),
+  Typecheck, Lint, Format, Test (Node 22), 4× Python, SDK E2E, Gitleaks, Doppler verify, both CH gates
+  — green thanks to #607's pin —, Rule H, Rule J, Migration-journal, Fire-and-forget sink guard, Modal
+  singleton, Privacy-Notice key-sync, **Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)**,
+  Vercel). The only red was the standing `Rule I — wired-or-dead check` ×2 (see §5d).
+- **Independently re-verified on merged `main` this session (not taken on trust):**
+  `node scripts/check-staff-write-atomicity.cjs` →
+  `OK: apps/control-plane/src/app/api/config/route.ts — mutation + insert(staffAuditLog), both inside the SAME db.transaction().`
+  (the `labels/export` SKIP is the pre-existing non-mutating one; no new SKIP, no regression).
+- **PROCESS DEVIATION worth recording (it happened to be harmless; the control was still bypassed):**
+  the human merged #606 at 21:27:05Z **before** the PM's READY_FOR_REVIEW / acceptance-criteria
+  validation ran; the PM's AC audit executed *after* the merge (QUEUE.md START-HERE says so
+  explicitly: "merged … directly, ahead of the PM's own READY_FOR_REVIEW gate"). CI-green was
+  therefore the SOLE pre-merge control — and §5d shows what "CI green" is worth on this repo today.
+  Rule A binds the PM ("verify CI green before READY_FOR_REVIEW"); nothing binds the merge itself.
+- **A second, smaller CI fact nobody has recorded:** the `CI` workflow run for the merge commit
+  `19ef714` was **`cancelled`**, killed by the `07fd72b` bookkeeping push 4 minutes later under
+  `concurrency: { group: CI-<ref>, cancel-in-progress: true }` (`ci.yml:19-21`). The merged state of
+  `main` has no completed CI run of its own. Low risk here (squash of a green branch), but it means
+  "main is green" is never actually observed on a fast follow-up push.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** New files: `settings/page.tsx` (Next.js framework route —
+suppressed), `settings/tenant-config-editor.tsx` (imported at `settings/page.tsx:26`, rendered at
+`:52` — wired), `api/config/route.ts` (framework route — suppressed). New exports: `BrandConfig`,
+`TenantConfig`, `ConfigPatch` are **type-only** (suppressed); `StaffTenantConfigEditor` has a real
+non-test importer. Corroborated against the actual Rule I job log for this PR (run `30045335580`, job
+`89335797339`): 191 violations listed, **none of them from this PR** (grepped the full log for
+`StaffTenant|TenantConfig|BrandConfig|ConfigPatch` → zero hits).
+
+**CHECK B — half-wire: TWO FINDINGS, both P1 HALF_WIRE_P.**
+
+- **HW-1 — `tenants.allowed_origins` — HALF_WIRE_P (P1) → FOLLOW-622.**
+  - Producer (NEW, this PR): `api/config/route.ts:299,303` (`allowedOrigins: updatedOrigins`) driven by
+    the "SDK Allowed Origins" textarea at `settings/tenant-config-editor.tsx:91`.
+  - Consumer: **NONE.** `grep -rn "allowedOrigins\|allowed_origins" apps packages --include=*.ts
+    --include=*.tsx` (excl. node_modules/.next) returns: this route, this editor, the schema
+    (`packages/db/src/schema/tenants.ts:35`), test DDL fixtures — and two allowlists that are
+    **hardcoded and env-gated, not per-tenant**: `apps/ingest/src/router.ts:69-73`
+    (`allowedOriginsForEnv` → `PROD_ALLOWED_ORIGINS` ± `DEV_EXTRA_ORIGINS`) and
+    `apps/control-plane/src/lib/dev-cors.ts:57`. No code path ever reads the column.
+  - This is a **security-shaped** half-wire, not a cosmetic one. The column's own docstring
+    (`tenants.ts:34`) says "Domains where the Estalara SDK snippet is permitted to run".
+    `packages/db/src/schema/api_keys.ts:33-34` goes further: "CORS allowlist for this specific key
+    (**null = inherit tenant allowedOrigins**)" — an inheritance chain implemented nowhere.
+    `docs/MASTER_DESIGN.md:5021` (§V.3.4 CORS configuration) states "Origin validated against
+    tenant.allowed_origins config" and "Ingest endpoint validuje origin per tenant config". **Design
+    divergence** (algorithm step 5): the design asserts an enforcement point that does not exist, and
+    this PR just gave operators a UI that implies it does.
+  - Zero prior retro has ever mentioned `allowed_origins` (`grep -c` on RETROSPECTIVES.md → 0), so this
+    is genuinely new ground, not a re-find.
+- **HW-2 — `tenants.brand_config.{primary_color,logo_url,white_label}` — HALF_WIRE_P (P1) → FOLLOW-623.**
+  - Producer (NEW, this PR): `api/config/route.ts:302` (`brandConfig: updatedBrand`) driven by the
+    white-label toggle / color picker / logo input (`tenant-config-editor.tsx:129-186`).
+  - Consumer: **NONE.** `grep -rn "primary_color\|white_label\|logo_url" apps packages` returns exactly
+    one non-test line outside this PR's own files — a doc comment. `grep -rniE "powered by|white.?label|branding"
+    packages/sdk/src` finds **no white-label or badge-suppression logic in the SDK at all**, so the
+    toggle labelled "Hide Estalara branding from the SDK widget" cannot do what it says.
+  - **Two-source-of-truth risk the PR's own docstring anticipated for quiz but missed for brand:** the
+    LIVE tenant brand colour is a *different* column — `tenants.quiz_config.accent_color` →
+    `GET /api/quiz/public-config` → SDK runtime fetch → quiz widget (documented at
+    `packages/db/src/schema/tenants.ts:44-47`). A staff user who sets "Primary Color" here will see no
+    effect and has no way to learn that the live knob is on the `/quiz` surface.
+  - Note the asymmetry this PR applied: it correctly invoked Rule U/H to DROP `sdk.active_domains` for
+    having *no backing column*, but adopted two column families that have *no backing consumer*. Rule H
+    is checked producer-side at schema-creation time; its CI gate ("Rule H — schema scaffold wiring")
+    passed here because the columns are old. A UI producer added later for a long-inert column is
+    outside every existing gate's reach.
+
+**NOT a half-wire (verified, step-7 closure):** the new `staff_audit_log` action `tenant_config.update`
+is fully consumed. FOLLOW-599 replaced the `MOCK_ENTRIES` stub with real reads
+(`api/audit/route.ts` — `eq(staffAuditLog.targetTenantId, access.tenantId)`, `action` typed as a plain
+`string` with **no allowlist**), and the render leg exists:
+`admin/tenants/[id]/audit/audit-view.tsx:105` prints `{e.action}` generically. Producer → consumer →
+render traced end-to-end; a 6th action needs no code change to appear. This is the pre-existing
+HALF_WIRE_P from RETRO-190/193/198/199 now genuinely CLOSED, not moved one hop.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the editor swallows its load failure, then the next click clobbers real config.**
+  `settings/tenant-config-editor.tsx:60-78`: the GET does check `r.ok` (`:61 if (!r.ok) throw`) but
+  throws straight into `:76 .catch(() => { /* Load silently — defaults already set; a save still fails
+  loud below. */ })`. On a 500 (the route's own Rule K.2 path), a 403, or a network blip the component
+  keeps `DEFAULTS` (`:34-38` — `#1a73e8`, `logo_url:null`, `white_label:false`, `allowed_origins:[]`)
+  and renders them as if they were the tenant's stored config. There is no loading/error state on the
+  read path; only `plan` renders as `'—'`. Then `handleSave` (`:82-96`) always PATCHes a **complete**
+  body (`brand: config.brand`, `sdk.allowed_origins: parseOriginsInput(originsInput)`), and the route
+  merges present keys unconditionally (`route.ts:288-299`; `logo_url` uses an explicit
+  `!== undefined` check so `null` is a legitimate write, and `updatedOrigins = patch.sdk?.allowed_origins
+  ?? currentOrigins` accepts `[]` as a real value). Net effect: **failed load + one Save = the tenant's
+  brand config is overwritten with defaults and its origin allowlist is wiped to `[]`, with a green
+  "Settings saved!" confirmation.** The route was deliberately hardened to fail loud; the client throws
+  that away — the gap moved exactly one hop downstream, which is the failure mode this retro loop
+  exists to catch.
+  - **Systemic, not local:** `grep -rn "catch(() => {" -A3 apps/control-plane/src/app/admin --include=*.tsx`
+    returns the identical block with the identical comment in **three** editors —
+    `quiz/quiz-config-editor.tsx:72`, `demo/demo-override-editor.tsx:87`, `settings/tenant-config-editor.tsx:76`.
+    It was copied forward through FOLLOW-595 → 596 → 600.
+  - **This is an existing-rule violation, not a new pattern.** Rule K.2's consumer-side clause is
+    explicit ("A producer that fails loud paired with a consumer that swallows the failure … is the
+    same defect one layer up") and its own **Verification** block literally ships the grep that finds
+    all three: `grep -rn "catch(() =>" apps/ --include="*.ts" | grep -v node_modules`. The rule existed;
+    nothing mechanical ran it. → **FOLLOW-624** (fix the three editors) + **FOLLOW-625** (mechanise the
+    check).
+  - **Contradiction with a prior "clean" verdict (reconciled):** RETRO-193 declared FOLLOW-596's demo
+    surface clean "end-to-end … producer→consumer→render, NOT a one-hop", and RETRO-198/200 likewise
+    treated the quiz/labels/intent editors as clean. Those verdicts are correct **on the staff-write
+    axis they analysed** and wrong as a whole-surface verdict: none of them examined the client's READ
+    path. I am explicitly re-opening that axis for all three surfaces; the write-path conclusions stand
+    unchanged.
+- **LG-2 (P3) — GET fabricates a full config for a missing tenant row, PATCH reports a phantom success,
+  and a test locks the behaviour in.** `route.ts:186-191` maps a missing row to
+  `plan:'free'`, default brand, `allowed_origins:[]`, `updated_at: new Date()` and returns **200**.
+  Fourteen lines earlier, the same handler's Rule K.2 comment (`:194-196`) says the opposite: "Returning
+  fabricated defaults here would silently misrepresent the tenant's real config on a staff/agency-facing
+  settings surface." Both branches cannot be right. On PATCH the same shape produces a 0-row
+  `db.update()` that still returns 200 with the "saved" body (`:376-381`). Reach is narrow — staff hit
+  `tenantExists` first (404, `session-auth.ts:446-449`) and agency tenant ids come from a signed JWT — so
+  the live window is "tenant deleted/soft-deleted while a session is alive", hence P3 not P1. What
+  raises it above noise is that `route.test.ts:376` (`'returns defaults (never an error) when the tenant
+  row is not found'`) **asserts** the fabrication, so it will survive refactors and any future reader.
+  Compounding: `TenantConfig` carries no `data_source`/provenance field, unlike every sibling ADR-0018
+  surface (`/api/audit` `data_source:'real'|'mock'`, the analytics/tenant loaders' `live|mock|error`),
+  so a caller cannot distinguish stored values from invented ones — the exact sub-shape of the Rule K.2
+  amendment of 2026-06-13 (RETRO-072, provenance-enum completeness). → **FOLLOW-627**.
+- **LG-3 (P3) — `allowed_origins` is validated as URLs, not as origins.** `route.ts:114-116` uses
+  `z.array(z.string().url())`, which accepts `https://x.com/some/path?q=1`, `http://…`, and any scheme.
+  An origin allowlist is compared as scheme+host+port (that is exactly how `ingest/src/router.ts:118`
+  does `(allowed as string[]).includes(requestOrigin)`), so a stored value with a path will never match
+  a browser `Origin` header. There is also no dedupe, no length cap, and no rejection of the empty array
+  (`[]` is written as-is; whether that means "deny all" or "inherit" is undefined because there is no
+  consumer to define it). Inert today precisely because of HW-1 — which is why it must be fixed *with*
+  HW-1, not after. Folded into **FOLLOW-622**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- No additional live defect beyond LG-1 (P1) and LG-2/LG-3 (P3), which I classify as logic gaps.
+  Adversarial passes that came back **clean**: auth (no `x-tenant-id`/`x-agency-role` read survives —
+  `route.ts:159-171,206-218`), INV-5 fence (`eq(tenants.id, access.tenantId)` bound into all four
+  queries, `:180,:270,:314`), the `via==='staff' && !access.canWrite → 403` rank gate ordered **before**
+  body parsing and any DB touch (`:221-227`), audit attribution (`adminUserId: access.staff.sub`, only
+  reachable on the staff branch — the `TenantAccess` union makes `access.staff` structurally
+  unavailable on the agency branch), atomicity + rollback + Sentry + fail-loud 500 (`:311-357`), and the
+  agency branch left byte-equivalent and deliberately un-audited per ADR-0018 §3.
+- **P3 (folded into FOLLOW-624):** the editor's Logo URL field is free text with no client validation,
+  while the schema demands `.url()`; a typo yields a 400 whose `details` the error extractor
+  (`tenant-config-editor.tsx:99-101`) discards, surfacing only "Invalid request body". Same for a
+  malformed origin line.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, the one that let LG-1 through):** `tenant-config-editor.test.tsx` has exactly **three**
+  tests (`:49` renders controls, `:67` no generation-model control, `:82` PATCHes on save) and **all
+  three stub a successful GET**. There is no failed-load test, so nothing exercises the defaults-render
+  path and nothing asserts that a Save after a failed load is prevented. Covered by FOLLOW-624's AC.
+- **TG-2 (P3):** `settings/page.test.tsx` has two tests (404 for unknown tenant, editor renders). No
+  test asserts what a `estalara:readonly` staff user sees — today they get a fully editable form and
+  discover the 403 only on Save. Rank-aware UI is arguably out of ADR-0018 §4's scope (the gate is
+  server-side and correct), so this is UX, not security. Noted, no ticket.
+- **TG-3 (P3):** the route suite asserts the LG-2 fabrication as desired behaviour rather than
+  questioning it (`route.test.ts:376`). FOLLOW-627 must flip this test, not just the code.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, owned by FOLLOW-622):** `docs/MASTER_DESIGN.md:5011-5024` (§V.3.4) documents per-tenant
+  origin validation at the ingest endpoint that does not exist in code. Whichever way FOLLOW-622 is
+  resolved (enforce it, or de-scope the control), §V.3.4 and the `api_keys.allowedOrigins` "inherit"
+  comment must be brought into line — a design doc that over-states a security control is worse than
+  silence.
+- **DG-2 (none):** `docs/compliance/ropa.md:260` lists `allowed_origins` and `brand_config` as tenant
+  data categories — accurate (they *are* stored), so there is **no** compliance/ROPA divergence. Checked
+  explicitly; recorded so a future retro doesn't re-open it.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-604** (P3, staff port of `PATCH /api/tenants/[id]` — the quiz ON/OFF toggle): unaffected but
+  now fenced by `api/config/route.ts:56-64` — quiz fields must NOT be threaded through `/api/config`
+  (they stay on the FOLLOW-595 surface). The route's docstring states this; the ticket AC should keep it.
+- **FOLLOW-616/617/618/619** (guard call-shape bypasses, all P3/hypothetical): unaffected — this route's
+  mutation is INLINE, so it is guard-`OK` and cannot regress into a barrel/namespace bypass unless
+  refactored.
+- **FOLLOW-621** (CH 26.x compat, P3): unaffected by #606, but see §5d — it now silently carries CI's
+  version-skew debt.
+- No IN_PROGRESS ticket's assumptions are invalidated by this merge.
+
+#### 5b. Future sprint tickets affected
+
+- Any ticket that claims "the per-tenant settings surface is live" is over-claiming until FOLLOW-622/623
+  land — the page is currently a persistence layer with no effect.
+- Whoever implements FOLLOW-622 must choose an enforcement point (ingest Worker vs `/api/adapt` vs
+  decision-api) and will need a tenant lookup on a hot path — a genuine design decision, not a
+  mechanical wiring job, which is why it is 4h and not 1h.
+
+#### 5c. Contracts changed others rely on
+
+- `staff_audit_log.action` — 6th value; consumers are generic, verified (§3).
+- `/api/config` request/response — sole consumer is this PR's own editor; nothing external to break.
+- `tenants.allowed_origins` / `tenants.brand_config` — these now have live writers. Any future consumer
+  must assume the values are **operator-entered and unvalidated as origins** (LG-3) and that most
+  tenants' rows are still at their `'{}'` / `[]` defaults because there was never a producer before.
+
+#### 5d. Architectural assumptions affected
+
+- **A-1 — NORMALIZED DEVIANCE ON RED CI GATES (severity: HIGH; PM escalation candidate — surfaced here
+  per my scope, not escalated).** Asked directly whether a permanently-red gate is eroding the gate set:
+  **yes, measurably, and it is now worse than the last time anyone measured.**
+  1. `Rule I — wired-or-dead` fails on `main` itself. Violation count over time: **179** when FOLLOW-591
+     was filed (SESSION-RETRO 39) → **183** at RETRO-187 (2026-07-20) → **191** on #606's run
+     (2026-07-23, job `89335797339`). +12 dead exports have landed unnoticed since the ticket was
+     filed, exactly as FOLLOW-591 predicted ("it degrades the CI signal for ALL future work and
+     compounds"). #606 itself added **zero** — verified, not assumed — but nobody could have known that
+     without reading the log, and nobody did.
+  2. Because Rule I is a job inside the `CI` workflow, the **aggregate `CI` workflow conclusion on
+     `main` is `failure` on every push** (`f4dd037`, `54e76a7`, `68e6f29`, `67a35e8` — all `failure`;
+     `19ef714` `cancelled`). "Is main green?" has no readable answer at the workflow level.
+  3. **A second permanently-red workflow that no backlog file mentions at all:** `Release` has
+     `conclusion: failure` on **every run in the last 30** and there is **no successful run in the last
+     100**. Cause (log, run for `07fd72b`): `changeset publish` → `@estalara/sdk@0.1.0` →
+     `E403 … PUT https://npm.pkg.github.com/@estalara%2fsdk - Permission not_found: owner not found`
+     (the `@estalara` scope does not resolve under the `Pnawrocki9` package registry). Grep of
+     RETROSPECTIVES.md / FOLLOW_UPS.md / QUEUE.md / ESCALATIONS.md for `Release workflow` /
+     `npm.pkg.github` / `E403` → **zero hits**. It runs on every push to main, burns ~2.5 min, and fails
+     silently into the void. That is the concrete cost of the normalization: a *second* gate reached
+     terminal-red and no one noticed for at least three days. → **FOLLOW-626**.
+  4. Combined with §2's process deviation, the merge control for #606 was "CI green" evaluated against a
+     baseline that is red in two places and unmeasured in one. It came out fine. That is luck, not
+     process. → **Rule AF** (§6).
+- **A-2 — Merge-before-AC-validation (count 1, banked, NOT promoted).** #606 merged ahead of the PM's
+  validation gate; the AC audit ran afterwards and found the ACs met. The risk is not this instance but
+  the ordering: had the audit found a gap, the remedy would have been a revert or a follow-up PR on
+  `main` instead of a change request on a branch. Rule A binds the PM's READY_FOR_REVIEW transition, not
+  the merge click. One sighting — no rule, no ticket. Arming condition: a **second** merge that precedes
+  AC validation promotes this (the natural home is a Rule A amendment, not a new letter).
+- **A-3 — Interrupted-PM-run recovery: the hazard is real and recurrent, but nothing was left
+  inconsistent this time (verified, not assumed).** Session 54's dispatch of FOLLOW-600 died mid-run,
+  stranding the implementation uncommitted in the agent worktree; session 55 recovered it per the
+  standing "check worktrees before concluding the agent never ran" lesson (this is the **third** such
+  stranding — FOLLOW-557/PR #528, FOLLOW-593/PR #581, now FOLLOW-600 — and the remedy ticket
+  **FOLLOW-573 (P2) is still open and unscheduled** since RETRO-175). Consistency sweep run this
+  session: `git status --porcelain` → clean; `.claude/worktrees` → absent; FOLLOW_UPS.md FOLLOW-600 →
+  `DONE + MERGED (PR #606, 19ef714)`; FOLLOW-620 → `DONE + MERGED (PR #607, f4dd037)`; QUEUE.md
+  START-HERE reflects both merges; next-free markers (FOLLOW 622 / RETRO 205) match reality; no
+  duplicate or half-written entries. **No orphaned backlog edits found.** The one residual artefact of
+  the interrupted/rapid-commit pattern is §2's cancelled `main` CI run, not lost work. Recommendation
+  stands from FOLLOW-573, not re-filed here.
+- **A-4 — CI↔prod ClickHouse version skew introduced by #607's pin (a hidden expiry, partially
+  tracked).** FOLLOW-621's third AC does carry the un-pin obligation ("After it lands: un-pin OR bump
+  the FOLLOW-620 CI pin to a 26.x tag in the SAME PR"), so the expiry is *documented* — but it is P3
+  "opportunistic" with no trigger that ever fires on its own. Meanwhile CI now proves the migration
+  chain against **25.8** while prod ClickHouse Cloud runs whatever version ClickHouse Cloud decides;
+  the moment prod crosses into 26.x, the CH gates stop being evidence for prod and **nothing in the repo
+  will notice** — the failure mode would be a green CI and a broken prod migration, which is strictly
+  worse than the loud repo-wide breakage #607 just fixed. → **FOLLOW-629** (a version-drift detector on
+  the existing daily CH schema-validation cron; cheap, and it converts a silent expiry into a loud one).
+- **A-5 — Other unpinned upstream dependencies in CI (swept, one real finding).** Full sweep of all 12
+  workflows: only two `image:` entries exist and both are now pinned (`ci.yml:302,361`). Remaining
+  floats, in descending risk: (a) **`pip install modal httpx fastapi` — `modal-deploy.yml:66`,
+  completely unpinned, running under `environment: production`, and it is the step that registers and
+  deploys the prod Modal ML functions.** This is the same class as `clickhouse-server:latest` with a
+  larger blast radius — an upstream `modal` CLI major bump can change deploy semantics against
+  production with no repo change; (b) `sudo apt-get install -y k6` (`load-test.yml:40`) — same class,
+  low stakes; (c) all `actions/*@v4`, `pnpm/action-setup@v4`, `dopplerhq/cli-action@v3`,
+  `cloudflare/wrangler-action@v3`, `gitleaks/gitleaks-action@v2`, `changesets/action@v1` float on major
+  tags — industry-normal, out of scope. → **FOLLOW-628** for (a) + (b).
+
+### 6. New lesson candidates
+
+- **P-1 — "A CI gate that is permanently red is functionally a disabled gate: the red is normalized,
+  new regressions inside it are invisible, and a second gate can reach terminal-red without anyone
+  noticing."** Seen in: **SESSION-RETRO 39** (filed FOLLOW-591 at 179 violations, arguing exactly this),
+  **RETRO-187** §2/§6 (183 violations; "the standing pre-existing non-blocking Rule I noise"; declined
+  promotion at "single sighting"), **RETRO-188** §5/§6 (+8 more; filed FOLLOW-602), **RETRO-205**
+  (this — 191 violations, plus the previously-unseen `Release` workflow red on every run, plus a merge
+  decided on "CI green"). Promote-threshold 2, **current count 3 PRIOR + this one → THRESHOLD MET →
+  PROMOTED as Rule AF** (§CONVENTIONS_PATCH). The promoting retro does not inflate the count (same
+  adjudication as Rules AA/AB/AC/AD/AE/V/Q). Note this is deliberately NOT a duplicate of FOLLOW-591:
+  591 is the *remediation ticket* for one gate; AF is the *behavioural rule* that stops the next gate
+  from rotting while 591 sits unscheduled, and it makes the baseline comparison an explicit obligation.
+- **P-2 — "A staff editor swallows its GET failure, renders DEFAULTS as if they were stored values, and
+  then PATCHes a FULL body — so one click clobbers real data."** 3 code instances (quiz/demo/settings)
+  but **count 1 as a retro finding** — RETRO-193 and RETRO-198/200 saw these surfaces and declared them
+  clean on the write axis. **NOT promoted**, and deliberately so: this is already Rule K.2's
+  consumer-side clause, whose Verification block already ships the exact grep that finds all three. The
+  failure is *enforcement*, not a missing rule — the same diagnosis RETRO-204 reached for Rule AE
+  ("point-1 already enumerates it; the failure was point-2 enforcement"). Remedy is mechanical
+  (FOLLOW-625), not textual. **Arming condition:** if a fourth instance ships *after* FOLLOW-624/625
+  land, that is a recurrence-despite-a-fix and warrants a Rule K.2 amendment codifying "a staff editor
+  MUST NOT enable its write control until a successful read has populated it".
+- **P-3 — "A new UI producer for a long-inert column passes every wiring gate, because Rule H checks
+  consumers at schema-creation time and Rule I only sees exported symbols."** Count 1 (this retro, but
+  **two independent instances inside one PR** — HW-1 and HW-2; per the anti-undercount guardrail both
+  are listed separately in §3 and get separate tickets). **Held, not promoted.** Arming condition: the
+  next staff surface that ships a control over a zero-consumer column.
+- **P-4 — "A pin applied to un-break CI creates an untriggered expiry."** Count 1 (A-4). Held; the
+  detector in FOLLOW-629 is the cheap remedy, and if a second pin-with-no-trigger appears this becomes
+  a candidate amendment to Rule Q (gate-must-prove-it-ran) rather than a new letter.
+
+### 7. Follow-ups
+
+- **FOLLOW-622:** Wire or de-scope `tenants.allowed_origins` — no consumer reads the column the new
+  settings page writes, while MASTER_DESIGN §V.3.4 and the `api_keys` schema claim it is enforced
+  (backend-engineer, 4h, **P1**).
+- **FOLLOW-623:** Wire or de-scope `tenants.brand_config` (`primary_color` / `logo_url` / `white_label`)
+  — zero SDK consumers; reconcile with the LIVE `quiz_config.accent_color` (sdk-engineer, 4h, **P1**).
+- **FOLLOW-624:** Stop the three staff editors from swallowing a failed load and clobbering real config
+  with defaults on the next save (backend-engineer, 3h, **P1**).
+- **FOLLOW-625:** Mechanise Rule K.2's consumer-side swallow check in CI so the next copy-forward fails
+  the build instead of shipping (devops-engineer, 3h, **P2**).
+- **FOLLOW-626:** Fix or quarantine the permanently-failing `Release` workflow (`@estalara/sdk` publish
+  → E403) — a terminal-red gate nobody has recorded (devops-engineer, 2h, **P2**).
+- **FOLLOW-627:** `/api/config` missing-row semantics — replace the tested-in fabricated defaults with a
+  404/provenance flag and detect the 0-row PATCH (backend-engineer, 2h, **P3**).
+- **FOLLOW-628:** Pin `modal-deploy.yml`'s unpinned `pip install modal httpx fastapi` (prod-deploying
+  step) and the k6 install; document the pinning policy (devops-engineer, 2h, **P3**).
+- **FOLLOW-629:** Detect CI↔prod ClickHouse major-version skew so the FOLLOW-620 pin's hidden expiry
+  fires loudly instead of silently (data-engineer, 2h, **P3**).
+
+### 8. Cross-references
+
+- **RETRO-202 (FOLLOW-614) / RETRO-203 (FOLLOW-615) — closure traced END-TO-END, not one hop.** Both
+  predecessors' fixes are live in the merged route and were re-read this session, not taken from the PR
+  body: the spoofable-header path is gone (no `x-tenant-id` read; `route.test.ts` "SPOOF CLOSED" proves
+  a spoofed header cannot redirect the fence), and the write-rank gate is at `route.ts:221-227`,
+  ordered before body parsing and before any DB touch. RETRO-202's two carried obligations (§3a
+  audit-in-transaction; mutation kept INLINE for guard coverage) are both discharged and
+  guard-verified `OK` live. **Neither gap moved downstream** — which is the outcome the
+  `inquiry_submit_selector` chain (097→114→127→141) trained this loop to check for.
+- **RETRO-201 (FOLLOW-599)** — its audit-read consumer is what makes the new 6th action non-half-wired;
+  I re-verified the render leg (`audit-view.tsx:105`) rather than assuming the read leg implies it.
+- **RETRO-200 (FOLLOW-606) — its ARMED promotion trigger did NOT fire, and that is a genuine positive
+  result.** RETRO-200 armed the hub-linkage rule on "the FIRST per-tenant staff surface that ships
+  UNWIRED after FOLLOW-606's same-PR-link template lands". #606 is that first test, and it **added its
+  own link in the same PR** (`admin/tenants/[id]/page.tsx` +14/-4: a `/settings` Link plus the
+  module-doc convention line). Template held on first contact. Trigger stays armed; no promotion, no
+  sighting.
+- **RETRO-193 / RETRO-198 — CONTRADICTED on one axis and reconciled (§4a LG-1).** Their "clean
+  end-to-end" verdicts for the demo/quiz/labels/intent staff surfaces are affirmed on the staff-WRITE
+  axis and re-opened on the client-READ axis, which no retro in that series examined. This is the same
+  multi-axis failure mode RETRO-003 caught when RETRO-001/002 analysed only the variant axis of
+  REORDER-001.
+- **RETRO-204 (Rule AE) — methodological reuse, not a shared finding.** Its central diagnosis ("the rule
+  already enumerates it; the failure was enforcement") is exactly why P-2 above is NOT promoted and
+  FOLLOW-625 (a mechanical guard) is filed instead.
+- **RETRO-187 / RETRO-188 + SESSION-RETRO 39 (FOLLOW-591/602)** — the banked prior sightings that carry
+  P-1 across the promotion threshold, with the violation count now measured at three points in time
+  (179 → 183 → 191).
+- **RETRO-199 (FOLLOW-598)** — `staff_audit_log` action inventory: this PR takes it from 5 to 6.
+
+<!-- next free FOLLOW number: 630 (FOLLOW-622…629 filed by RETRO-205). next free RETRO number: 206.
+RETRO-205 = retro for PR #606 (FOLLOW-600, MERGED 2026-07-23 21:27:05 UTC, squash 19ef714 on main by
+Pnawrocki9; 8 files +1298/-211, no migrations; branch backend-engineer/FOLLOW-600-tenant-settings-surface,
+OPUS). ROUTE LAYER CLEAN + independently re-verified live on main (check-staff-write-atomicity.cjs → OK
+for api/config/route.ts; FOLLOW-614 spoof-close + FOLLOW-615 canWrite gate at route.ts:221 both live;
+INV-5 fence bound into all 4 queries; §3a single-tx + rollback + Sentry). HEADLINE FINDINGS: (1) HW-1 P1
+— tenants.allowed_origins is producer-only; ingest CORS is a hardcoded env list (ingest/src/router.ts:69-73),
+api_keys.ts:33 claims inheritance that doesn't exist, MASTER_DESIGN:5021 claims per-tenant validation that
+doesn't exist → FOLLOW-622. (2) HW-2 P1 — tenants.brand_config.{primary_color,logo_url,white_label}
+producer-only; zero white-label logic in packages/sdk; live brand colour is the DIFFERENT column
+quiz_config.accent_color → FOLLOW-623. (3) LG-1 P1 — tenant-config-editor.tsx:76 .catch(() => {}) swallows a
+failed GET, renders DEFAULTS, and handleSave PATCHes a FULL body → one click clobbers brand config and wipes
+allowed_origins to []; identical block in quiz-config-editor.tsx:72 + demo-override-editor.tsx:87 (3rd
+consecutive copy-forward); this is a Rule K.2 consumer-side violation whose own Verification grep finds all
+three → FOLLOW-624 (fix) + FOLLOW-625 (mechanise). CONTRADICTS RETRO-193/198's clean verdicts on the
+client-READ axis (write axis affirmed). (4) LG-2 P3 — missing-row GET fabricates a config and route.test.ts:376
+asserts it, contradicting the route's own K.2 comment at :194; no data_source provenance → FOLLOW-627.
+PROCESS: merged before AC validation (CI-green was the sole control); main's CI conclusion is failure on every
+push (Rule I 179→183→191, none from this PR — verified against job 89335797339); Release workflow red on every
+run in the last 30, zero mentions anywhere → FOLLOW-626. #607 pin creates an untriggered CI↔prod CH version
+skew → FOLLOW-629; modal-deploy.yml:66 `pip install modal httpx fastapi` is unpinned in a production
+environment → FOLLOW-628. Interrupted-PM-run: 3rd stranding (FOLLOW-573 still open), but consistency swept
+this session and NOTHING was left inconsistent. CHECK A clean. RULE PROMOTED: Rule AF (permanently-red gate =
+disabled gate), evidence SESSION-RETRO-39 + RETRO-187 + RETRO-188 (3 PRIOR ≥ 2). Hub-link armed trigger from
+RETRO-200 did NOT fire — #606 added its link in the same PR (template held). -->

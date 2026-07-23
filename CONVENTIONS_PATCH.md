@@ -1939,6 +1939,93 @@ node scripts/check-staff-write-atomicity.cjs
 
 ---
 
+## Rule AF — A gate that is permanently red is a DISABLED gate: no CI check may sit red on `main` un-quarantined, and "CI green modulo the known reds" is only a valid merge signal when the known-red set is compared against `main`'s baseline and found UNCHANGED
+
+**Pattern:** A CI check starts failing for reasons nobody intends to fix today. It is labelled
+"pre-existing red, non-blocking" and waved through, PR after PR. Two things then happen, both
+silently: (1) NEW violations accumulate inside that check — the red carries no information, so
+nobody reads it, so a regression the check was built to catch lands unnoticed; and (2) the
+normalization generalizes — a SECOND check reaches terminal-red and no one notices at all, because
+"some red is normal" is now the ambient state. At that point "CI is green" has stopped being a merge
+control while still being used as one.
+
+**Evidence:** SESSION-RETRO 39 → FOLLOW-591 (`Rule I — wired-or-dead` red on `main` at **179**
+violations; the ticket itself argues "a permanently-red gate destroys the signal value of CI red …
+it degrades the CI signal for ALL future work and compounds"; no branch protection, so the red is
+non-blocking — count 1). RETRO-187 §2/§6 (**183** violations; "the standing pre-existing
+non-blocking Rule I noise"; promotion explicitly declined at "single sighting" — count 2). RETRO-188
+§5/§6 (+8 more from one PR; filed FOLLOW-602 to stop the eventual diff-scoped version from
+false-blocking — count 3). Promotion trigger — RETRO-205 (FOLLOW-600/PR #606): the count is now
+**191** (+12 since the remediation ticket was filed, none of them from the promoting PR — verified
+against the job log, not assumed); the aggregate `CI` workflow conclusion on `main` is `failure` on
+EVERY push, so "is main green?" has no readable answer; a SECOND workflow (`Release`) has failed on
+**every run in the last 30** with no success in the last 100 (`@estalara/sdk` publish →
+`E403 … owner not found`) and had **zero** mentions in RETROSPECTIVES.md / FOLLOW_UPS.md / QUEUE.md
+/ ESCALATIONS.md — prediction (2) realized; and the PR itself was merged with "CI green" as the sole
+pre-merge control, evaluated against that baseline. The 3 banked occurrences are all PRIOR retros →
+≥2-prior threshold met; the promoting retro does not inflate the count (same adjudication as Rules
+AA/AB/AC/AD/AE/V/Q).
+
+**Rule:**
+
+1. **No un-quarantined red on `main`.** A check that is not going to be fixed now MUST be
+   quarantined — made advisory (`continue-on-error: true`) or removed from the workflow — with an
+   in-file comment naming the owning `FOLLOW-NNN` and the condition for restoring it. A check left
+   failing is not "tracked"; it is noise with a ticket attached.
+2. **A known-red waiver is a comparison, not a label.** Any agent, PM, or retro that declares a PR
+   mergeable "modulo the known reds" MUST record (a) WHICH checks are red, (b) the owning FOLLOW for
+   each, and (c) that the red set and its VIOLATION COUNT are **unchanged versus `main`'s
+   baseline**. "Still red" is not evidence; "still red, still 191, none from this diff" is. Waving
+   through a red whose contents were never opened is forbidden.
+3. **Workflow-level red counts too.** If a red job makes its whole workflow's conclusion `failure`
+   on every push to `main`, that workflow no longer answers "is main healthy" — quarantine the job
+   (rule
+   1. or split it out. Periodically sweep workflows that do NOT appear in the PR check list
+      (`gh run list --branch main --workflow=<f>`); the `Release` finding above was invisible
+      precisely because push-only workflows never surface on a PR.
+4. **A pin or suppression applied to un-break CI MUST carry a trigger, not just a ticket.** An
+   "un-pin later" AC in a P3 opportunistic ticket is an expiry nobody will observe; pair it with a
+   check that fires when the pinned version diverges from production (see FOLLOW-620/621/629).
+
+**Verification:**
+
+```bash
+# 1. Is anything red on main right now — including workflows that never appear on a PR?
+gh run list --branch main --limit 20 --json conclusion,name,workflowName,headSha
+for w in $(ls .github/workflows/*.yml | xargs -n1 basename); do \
+  echo "== $w"; gh run list --workflow="$w" --branch main --limit 3 --json conclusion -q '.[].conclusion'; done
+# 2. Baseline comparison for a known-red gate (the waiver in rule 2 is invalid without this):
+gh run view --job <job-id> --log | tail -20   # read the COUNT, not just the red dot
+#    then diff that count against the last recorded baseline in the retro log:
+grep -n "violations" backlog/RETROSPECTIVES.md | tail -5
+# 3. Every red gate must be quarantined-with-an-owner or genuinely green:
+grep -rn "continue-on-error" .github/workflows/*.yml   # each hit needs an owning FOLLOW in a comment
+```
+
+---
+
+<!-- Rule AF added 2026-07-23 — RETRO-205 §6 (P-1). Evidence (≥2 PRIOR numbered retros): SESSION-RETRO
+39 → FOLLOW-591 (Rule I red on main at 179 violations, "a permanently-red gate destroys the signal
+value of CI red", count 1) + RETRO-187 §2/§6 (183 violations, promotion explicitly DECLINED at "single
+sighting", count 2) + RETRO-188 §5/§6 (+8 in one PR, filed FOLLOW-602, count 3). Promotion trigger:
+RETRO-205 (FOLLOW-600/PR #606) — count now 191 (+12 since the remediation ticket was filed; NONE from
+the promoting PR, verified against job 89335797339's log rather than assumed), the aggregate CI
+workflow conclusion on main is `failure` on every push, and the predicted generalization MATERIALIZED:
+a second workflow (`Release`) has been terminal-red on every run in the last 30 (no success in the last
+100 — `@estalara/sdk` publish → E403 "owner not found") with ZERO mentions in RETROSPECTIVES.md /
+FOLLOW_UPS.md / QUEUE.md / ESCALATIONS.md, while the PR itself was merged on "CI green" as the sole
+pre-merge control. The 3 banked occurrences are all PRIOR retros → ≥2-prior threshold met; the
+promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/V/Q). DISTINCT
+axis from Rule A (PM must WATCH CI go green before READY_FOR_REVIEW — governs whether the status is
+checked, not whether a red status still carries information), from Rule Q (a gate that reports GREEN
+without ever running its assertion — AF is the mirror image: a gate that reports RED so persistently
+that the red carries no information, plus the baseline-comparison obligation), from Rule I itself (the
+wired-or-dead CHECK; AF governs what to do when any check goes terminally red), and from Rule AA
+(code-vs-prod verdict split). NOT a duplicate of FOLLOW-591/602: those are the remediation tickets for
+ONE gate; AF is the behavioural rule that stops the NEXT gate from rotting while 591 sits unscheduled,
+and it converts "known red" from a label into a required baseline comparison. Filed FOLLOW-626 (fix or
+quarantine the Release workflow) + FOLLOW-628/629 (the pin-expiry limb of point 4). LETTER CHOICE: AF
+is the next in the double-letter sequence after AE. -->
 <!-- Rule AE added 2026-07-21 — RETRO-196 §6. Evidence (≥2 PRIOR numbered retros, all on
 scripts/check-staff-write-atomicity.cjs, ADR-0018 §3a): RETRO-192 §6 (3 bypasses in the v1
 presence-only guard — unrelated-tx, helper-factored-audit, raw-SQL-mutation — count 1, explicitly

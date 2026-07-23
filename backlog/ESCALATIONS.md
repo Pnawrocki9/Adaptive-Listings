@@ -2325,3 +2325,108 @@ filter) is the truthful Art. 15 behaviour, and mirroring erase would have shippe
 disclosure. The underlying erase no-op it exposed is fixed in **FOLLOW-581 (DONE, PR #544,
 `85156db`)**: `DSR_CLICKHOUSE_TABLES` now keys `intent_events` on `session_id`, so erase +
 disclosure re-converged and the FOLLOW-574 divergence note was removed. Nothing further outstanding.
+
+---
+
+## OPEN — ESC-039: three staff config editors swallow a failed load, then clobber real tenant config with defaults on the next Save — live on `main` [FOLLOW-624]
+
+**Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
+FOLLOW-624, FOLLOW-600 (PR #606, merged `19ef714`),
+`apps/control-plane/src/app/admin/tenants/[id]/settings/tenant-config-editor.tsx`,
+`.../quiz/quiz-config-editor.tsx`, `.../demo/demo-override-editor.tsx` **Type:** other (live
+data-loss bug — priority call needed)
+
+**Description:** RETRO-205 found, and I independently confirmed by reading the source, that
+`tenant-config-editor.tsx:61` throws on `!r.ok` while `:76` swallows the rejection with a
+comment-only `.catch(() => {})`. The component's `DEFAULTS` stay rendered, so a staff user sees a
+populated, plausible-looking form. `handleSave` then PATCHes a **full** body. Net effect: one failed
+load followed by one Save silently overwrites the tenant's real `brand_config` with defaults and
+wipes `allowed_origins` to `[]` — and the UI reports success ("Settings saved!").
+
+The identical block exists in `quiz-config-editor.tsx:72` and `demo-override-editor.tsx:87`, so the
+blast radius is all three per-tenant staff surfaces, not just the one FOLLOW-600 added.
+
+This is a Rule K.2 consumer-side violation. Neither code review nor the pm-orchestrator post-merge
+audit caught it — the audit terminated at "the columns are real", which is a producer-side fact.
+
+**Impact if not fixed:** silent, unattributed tenant config loss in production. The control-plane
+auto-deploys on merge to `main`, so this is live now. There is no dialog and no error state, so a
+staff user has no signal that anything was lost, and the wiped `allowed_origins` would not be
+noticed until someone tries to rely on it.
+
+**Required action:** CEO/PM priority call on FOLLOW-624. Recommend treating as P1 and fixing ahead
+of the remaining P3 backlog. FOLLOW-625 (mechanise the Rule K.2 swallow check in CI) should land
+with or immediately after it so the pattern cannot be copy-forwarded a fourth time.
+
+**Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-040: `tenants.allowed_origins` is a security facade — the settings UI and MASTER_DESIGN both claim SDK origin enforcement that does not exist in code [FOLLOW-622]
+
+**Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
+FOLLOW-622, FOLLOW-600, `apps/ingest/src/router.ts:69-73`, `packages/db/src/schema/api_keys.ts:33`,
+`docs/MASTER_DESIGN.md:5021` **Type:** architectural (security posture — documented control not
+implemented)
+
+**Description:** RETRO-205's CHECK B found `tenants.allowed_origins` is written by the new
+FOLLOW-600 settings page and read by **nothing**. Ingest CORS is enforced from a hardcoded env list
+(`apps/ingest/src/router.ts:69-73`), not from this column. Two artefacts nonetheless assert the
+control is real:
+
+- `packages/db/src/schema/api_keys.ts:33` — "null = inherit tenant allowedOrigins"
+- `docs/MASTER_DESIGN.md:5021` — "Origin validated against tenant.allowed_origins config"
+
+So a staff user can enter an origin allow-list, save it successfully, and reasonably believe they
+have restricted which sites may embed the SDK for that tenant. They have not. The same finding
+applies (without the security dimension) to
+`tenants.brand_config.{primary_color,logo_url, white_label}` — zero consumers, no white-label logic
+anywhere in `packages/sdk`, and the live brand colour is actually `quiz_config.accent_color`
+(FOLLOW-623).
+
+**Impact if not fixed:** a UI that promises a security control it does not provide is worse than no
+UI, because it produces false assurance. If a tenant is ever told "origins are restricted", that
+statement is currently untrue. This also has a documentation-truth dimension: MASTER_DESIGN is the
+project's single source of truth and it currently overstates enforcement.
+
+**Required action:** CEO decision on direction for FOLLOW-622 — **wire it** (make ingest CORS read
+the column) or **de-scope it** (remove the control from the settings page and correct both the
+`api_keys` docstring and MASTER_DESIGN §V.3.4). Either is acceptable; leaving the UI as-is is not.
+Same wire-or-de-scope call needed on FOLLOW-623.
+
+**Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-041: the `Release` workflow has failed on every run for days (`@estalara/sdk` → E403) with zero record in any backlog file [FOLLOW-626]
+
+**Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
+FOLLOW-626, `@estalara/sdk` publish path, repo CI gate credibility **Type:** other (ops — dead
+release pipeline + gate-hygiene precedent)
+
+**Description:** RETRO-205's cascading-impact sweep surfaced a second permanently-red workflow
+beyond the long-known `Rule I`. I verified independently via `gh run list --workflow=Release`: the
+last 8 runs are `failure`, back to 2026-07-22, failing on `@estalara/sdk` publish with
+`E403 owner not found`. No backlog file — QUEUE, FOLLOW_UPS, ESCALATIONS, RETROSPECTIVES — has ever
+mentioned it. It has been failing unnoticed.
+
+This is the concrete cost of the normalized-deviance pattern RETRO-205 promoted to **Rule AF**
+(permanently-red gate = disabled gate; a "known red" waiver must be a baseline comparison, not a
+label). `Rule I` has now been red 191 times and `main`'s aggregate `CI` conclusion is `failure` on
+every push — which is precisely why a _newly_ dead workflow could go days without anyone noticing. I
+applied that same "pre-existing red, non-blocking" reasoning twice in this session to clear the #607
+and #606 merges; the reasoning happened to be correct both times, but it is not a safe default.
+
+**Impact if not fixed:** the SDK release path is dead — any assumption that a merged SDK change has
+been published is currently false. More broadly, while the aggregate CI conclusion is permanently
+red, no future breakage can be detected by looking at whether CI is green.
+
+**Required action:** CEO/PM call on FOLLOW-626 (fix or quarantine the `Release` workflow — the E403
+suggests an npm org/ownership or token problem that likely needs a human with registry access), and
+on whether to schedule the `Rule I` cleanup so the aggregate signal becomes meaningful again. Also
+related: FOLLOW-628 (unpinned `pip install` in `modal-deploy.yml` under a `production` environment —
+same class of latent upstream risk as the `:latest` ClickHouse tag that broke CI repo-wide this
+session) and FOLLOW-629 (CI↔prod ClickHouse version-skew detection, so the FOLLOW-620 pin's hidden
+expiry fires loudly).
+
+**Resolution:** <empty until resolved>

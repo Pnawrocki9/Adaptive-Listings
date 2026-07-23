@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-07-23 / FOLLOW-624
+
+**What I built:** Fixed a live data-loss path (ESC-039, P1, RETRO-205 §4a LG-1) shared by all three
+Estalara-staff per-tenant config editors (`tenant-config-editor.tsx`, `quiz-config-editor.tsx`,
+`demo-override-editor.tsx`): each caught a failed initial GET into a no-op
+`.catch(() => { /* Load silently */ })`, then kept rendering the component's hardcoded `DEFAULTS` as
+if they were the tenant's real stored config. A subsequent Save PATCHed/POSTed/PUT that DEFAULTS
+blob, silently wiping the tenant's brand config + origin allow-list, quiz config, or DEMO MODE
+override — under a green "Settings saved!" banner. Added a `loadStatus` state
+(`'loading'|'loaded'|'error'`) tracked SEPARATELY from the existing save-only `status` state in all
+three editors: a failed GET now renders a `role="alert"` banner with a Retry button and disables
+Save (also guarded inside `handleSave` as defense in depth against an implicit form submit bypassing
+a disabled button). `tenant-config-editor` additionally now formats and surfaces the route's zod
+`.flatten()` validation `details` in the save-error banner (was previously dropped, showing only
+"Invalid request body"). Wrote the red-first failing tests BEFORE the fix (7 failed / 6 passed
+against the pre-fix components), then implemented.
+
+**Wiring/auth/fail-loud risks I weighed:** (1) The ticket drew a 3-way boundary: (a) loaded+row
+exists, (b) loaded+no-row-yet (legitimate first-time-tenant state, Save MUST still work), (c) load
+failed. The route already renders (b) as a normal 200-with-defaults, indistinguishable from (a) at
+the fetch layer — so gating purely on fetch outcome (not on whether the returned values equal
+DEFAULTS) correctly treats (a) and (b) identically as "loaded" without touching the route (that
+route-side fix is FOLLOW-627, explicitly out of scope and NOT pulled in here). (2) Two of the three
+editors (`quiz-config-editor.tsx`, `demo-override-editor.tsx`) had ZERO existing tests before this
+PR — exactly the hole the ticket named as what let the swallow ship 3 times (FOLLOW-595→596→600
+copy-forward, found only by a retro). Wrote full new test files for both, not just the fixed one.
+(3) Confirmed via `grep -rn "catch(() => {" -A3 apps/control-plane/src/app/admin --include=*.tsx`
+that all 3 instances are gone post-fix (was 3, now 0) — the exact command the ticket's own AC cited.
+(4) Scoped the `details`-surfacing fix to `tenant-config-editor.tsx` only, per the ticket's literal
+AC text, even though `quiz/config` and `demo/override` routes also return `details` on validation
+failure in a slightly different shape (`error: string` + sibling `details` vs
+`error: {message, details}`) — flagging this as a candidate follow-up rather than silently expanding
+scope.
+
+**A guardrail I'd add:** FOLLOW-625 (already filed, P2, devops-engineer) is exactly the right next
+step — mechanise the `catch(() => {` swallow-detection grep in CI so a 4th copy-forward of this
+pattern fails the build instead of shipping. I'd also flag as a follow-up: `quiz/config/route.ts`'s
+validation-error shape (`{error: string, details}`) is a different contract from `demo/override` and
+`config`'s (`{error: {message, details}}`) — worth a shared error-envelope type so a future
+save-error banner (or a future FOLLOW-625-style detail-surfacing pass on the other two editors)
+doesn't have to special-case both shapes.
+
+---
+
 ## 2026-07-22 / FOLLOW-599
 
 **What I built:** Wired `GET /api/audit` to the real `staff_audit_log` table, replacing the

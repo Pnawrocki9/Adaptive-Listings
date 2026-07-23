@@ -2,125 +2,154 @@
  * GET  /api/config  — return current tenant configuration
  * PATCH /api/config — partial update of tenant configuration
  *
- * MVP stub: deterministic mock config keyed on the VERIFIED tenant id.
+ * FOLLOW-600 (ADR-0018 §5/§6): wires this route to the REAL `tenants` table via
+ * `createAdminClient()`, replacing the FOLLOW-614-era in-memory `configStore` stub.
  *
- * // TODO Sprint 5 / FOLLOW-600: read/write the `tenants` table via createTenantClient()
- *
- * Auth (ADR-0018 §2, FOLLOW-614 — spoofable-header hole closed):
+ * Auth (ADR-0018 §2, FOLLOW-614 — spoofable-header hole closed; unchanged by this PR):
  *   GET   — `resolveTenantAccess(req, { allowStaffOverride: true, minAgencyRole: 'agency:viewer' })`
  *   PATCH — `resolveTenantAccess(req, { allowStaffOverride: true, minAgencyRole: 'agency:admin' })`
  *
- *   Prior to FOLLOW-614 this route trusted an `x-tenant-id` request header as the SOLE
- *   tenant authority, and PATCH additionally gated on a spoofable `x-agency-role` header.
- *   Both were caller-supplied and unauthenticated — any client could set
- *   `x-tenant-id: <victim>` + `x-agency-role: agency:owner` and read/mutate another
- *   tenant's config. BOTH header reads are REMOVED. The tenant and the caller's role now
- *   come ONLY from the verified session/JWT claims (the agency path sources the tenant
- *   from `claims.tenant_id`; the role floor is enforced by `minAgencyRole`). An Estalara
- *   staff caller may target any tenant via `?tenant_id=<uuid>`, which `resolveTenantAccess`
- *   validates against the `tenants` table (invariant 4). `access.tenantId` is the config key.
+ *   The tenant and the caller's role come ONLY from the verified session/JWT claims
+ *   (the agency path sources the tenant from `claims.tenant_id`; the role floor is
+ *   enforced by `minAgencyRole`). An Estalara staff caller may target any tenant via
+ *   `?tenant_id=<uuid>`, which `resolveTenantAccess` validates against the `tenants`
+ *   table (invariant 4).
  *
- * Write-rank gate (ADR-0018 §4, FOLLOW-615): PATCH additionally rejects any staff caller
- *   below `estalara:ops` (rank < 2) with 403, mirroring every sibling staff write
- *   (`quiz/config`, `demo/override`, `admin/intent-weights`). GET is unaffected — readonly
- *   staff keeps read access, matching the `/api/audit` precedent.
+ *   RLS TRAP (ADR-0018 §2 invariant 5): this route uses `createAdminClient()`
+ *   (service-role, RLS BYPASSED) for BOTH the agency and staff paths — same choice
+ *   as `quiz/config/route.ts` (the reference implementation this route copies). The
+ *   explicit `eq(tenants.id, access.tenantId)` fence bound into every query below is
+ *   the ONLY tenant boundary; there is no database-level fence backstopping it.
  *
- * DB-coupling note (FOLLOW-614): the config store itself is an in-memory stub with NO DB,
- *   but `resolveTenantAccess` on the STAFF override path calls `tenantExists` →
- *   `createAdminClient()`. When the admin DB is unconfigured/unreachable, a STAFF request
- *   with `?tenant_id` fails CLOSED with a 500 (the epic-wide "cannot verify tenant scope"
- *   property, identical to /api/audit and /api/admin/labels). The AGENCY path does NOT
- *   touch the DB (the tenant comes from the verified claim), so an agency caller keeps
- *   working against the pure in-memory stub with no DB infra. This is consistent with the
- *   labels/audit precedent.
+ * Write-rank gate (ADR-0018 §4, FOLLOW-615): PATCH rejects any staff caller below
+ *   `estalara:ops` (rank < 2) with 403, mirroring every sibling staff write
+ *   (`quiz/config`, `demo/override`, `admin/intent-weights`). GET is unaffected —
+ *   readonly staff keeps read access, matching the `/api/audit` precedent.
  *
- * Staff-write audit — DELIBERATELY OUT OF SCOPE (FOLLOW-614): the `staff_audit_log`
- *   §3/§3a "audit-in-transaction" pattern (see intent-weights / quiz-config / labels[id])
- *   pairs a staff write against REAL data with an audit row that commits atomically.
- *   This PATCH mutates ONLY the in-memory `configStore` Map — there is no DB mutation to
- *   atomically pair an audit row with, so NO `staff_audit_log` insert is added here (and
- *   the staff-write-atomicity guard must NOT see this as a staff write). WHEN FOLLOW-600
- *   wires `/api/config` to the real `tenants` table, a staff PATCH via the override path
- *   MUST then adopt the §3a audit-in-`db.transaction()` pattern. This PR is auth-only.
+ * Staff-write atomicity (ADR-0018 §3a, RETRO-202): the staff PATCH path commits the
+ *   `tenants` update and the `staff_audit_log` insert (`action: 'tenant_config.update'`)
+ *   TOGETHER in ONE `db.transaction()`, mirroring `quiz/config/route.ts`'s POST staff
+ *   branch byte-for-byte in shape. The mutation is kept INLINE in this route file
+ *   (not delegated through a `@/lib/*` helper or the `@estalara/db` barrel to a
+ *   separate mutation function) so `scripts/check-staff-write-atomicity.cjs` proves
+ *   the mutation and the audit insert share the same transaction scope directly —
+ *   this was an explicit, deliberate choice (see FOLLOW-613's barrel-re-export-
+ *   delegation bypass finding) over the `demo/override/route.ts` delegated-helper
+ *   shape, to keep this route's atomicity trivially provable without relying on the
+ *   guard's cross-module resolution.
+ *
+ * Schema mapping (FOLLOW-600 — real `tenants` columns, verified against
+ * `packages/db/src/schema/tenants.ts`):
+ *   - `plan`               → `tenants.plan` (text). READ-ONLY here — plan changes are
+ *     a billing decision, out of this route's scope; PATCH never accepts a `plan` key.
+ *   - `brand.*`            → `tenants.brandConfig` (jsonb: `primary_color`, `logo_url`,
+ *     `white_label`).
+ *   - `sdk.allowed_origins` → `tenants.allowedOrigins` (text array).
+ *
+ * Two fields from the pre-FOLLOW-600 stub were DELIBERATELY DROPPED, not carried
+ * forward (Rule U — delete unwired stub fields rather than invent schema for them,
+ * per the FOLLOW-271/274 `tenants.ts` precedent):
+ *   - `sdk.active_domains` — grepped repo-wide (control-plane + packages/sdk): ZERO
+ *     consumer of this key anywhere, and no `tenants` column backs it. Adding a
+ *     migration for a field nothing reads would be exactly the FOLLOW-006/007/008/010
+ *     anti-pattern (Rule H). Dropped rather than invented.
+ *   - `quiz.{enabled,language}` — `tenants.quizEnabled` and `tenants.quizConfig.language`
+ *     DO have real columns, but Investor Quiz config already has its OWN dedicated
+ *     staff-ported surface (`/api/quiz/config` + `/admin/tenants/[id]/quiz`, FOLLOW-595,
+ *     per ADR-0018 §5's table). Also threading quiz fields through THIS route would
+ *     create a second, divergent write path for the same columns — the exact
+ *     two-source-of-truth drift this codebase's retros repeatedly flag (e.g. the
+ *     `quiz_config` vs snippet-attribute split fixed by ADR-0011). Quiz settings stay
+ *     on their existing dedicated surface; this route does not touch them.
+ *
+ * `generation_model` intentionally never appears here (CEO Q1, ADR-0018 §5 — it is
+ * GLOBAL-only, owned by `/admin/settings` + `generation-model/route.ts`).
  *
  * @module apps/control-plane/src/app/api/config/route
  */
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
+import { eq } from 'drizzle-orm';
 
+import { createAdminClient, tenants, staffAuditLog } from '@estalara/db';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface BrandConfig {
+  primary_color: string;
+  logo_url: string | null;
+  white_label: boolean;
+}
+
 export interface TenantConfig {
   tenant_id: string;
+  /** `tenants.plan` — READ-ONLY here; plan changes are a billing concern. */
   plan: string;
-  brand: {
-    primary_color: string;
-    logo_url: string | null;
-    white_label: boolean;
-  };
-  quiz: {
-    enabled: boolean;
-    // trigger_after_n_listings removed — FOLLOW-264 / Rule L / RETRO-050 HALF_WIRE_P.
-    // SDK consumer deleted in FOLLOW-257; dead name cleared here (AC2 LG-2).
-    // Re-add under FOLLOW-199 (Quiz v2.0) with a matching SDK consumer.
-    language: string;
-  };
+  brand: BrandConfig;
   sdk: {
     allowed_origins: string[];
-    active_domains: string[];
   };
   updated_at: string;
 }
 
-export interface ConfigPatch {
-  brand?: Partial<TenantConfig['brand']>;
-  quiz?: Partial<TenantConfig['quiz']>;
-}
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+const ConfigPatchSchema = z.object({
+  brand: z
+    .object({
+      primary_color: z
+        .string()
+        .regex(HEX_COLOR_RE, 'primary_color must be a 6-digit hex color, e.g. #1a73e8')
+        .optional(),
+      logo_url: z.string().url().nullable().optional(),
+      white_label: z.boolean().optional(),
+    })
+    .optional(),
+  sdk: z
+    .object({
+      allowed_origins: z.array(z.string().url()).optional(),
+    })
+    .optional(),
+});
 
-/** Per-tenant in-memory state for the stub (survives within a single server process). */
-const configStore = new Map<string, TenantConfig>();
+export type ConfigPatch = z.infer<typeof ConfigPatchSchema>;
 
-function defaultConfig(tenantId: string): TenantConfig {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const DEFAULT_BRAND: BrandConfig = {
+  primary_color: '#1a73e8',
+  logo_url: null,
+  white_label: false,
+};
+
+/** Parses the `tenants.brand_config` jsonb blob defensively (untyped column). */
+function parseStoredBrandConfig(raw: unknown): BrandConfig {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_BRAND };
+  const obj = raw as Record<string, unknown>;
   return {
-    tenant_id: tenantId,
-    plan: 'observer',
-    brand: {
-      primary_color: '#1a73e8',
-      logo_url: null,
-      white_label: false,
-    },
-    quiz: {
-      enabled: false,
-      language: 'en',
-    },
-    sdk: {
-      allowed_origins: ['https://listings.example.com'],
-      active_domains: ['listings.example.com'],
-    },
-    updated_at: new Date().toISOString(),
+    primary_color:
+      typeof obj.primary_color === 'string' ? obj.primary_color : DEFAULT_BRAND.primary_color,
+    logo_url: typeof obj.logo_url === 'string' ? obj.logo_url : null,
+    white_label: typeof obj.white_label === 'boolean' ? obj.white_label : DEFAULT_BRAND.white_label,
   };
 }
 
-function getConfig(tenantId: string): TenantConfig {
-  if (!configStore.has(tenantId)) {
-    configStore.set(tenantId, defaultConfig(tenantId));
-  }
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return configStore.get(tenantId)!;
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
 }
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Auth + tenant resolution (ADR-0018 §2, FOLLOW-614) ────────────────────
-  // Tenant comes ONLY from the verified claim (agency) or the validated ?tenant_id
-  // (staff) — never from the removed `x-tenant-id` header.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -135,13 +164,46 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return accessErrorToResponse(err);
   }
 
-  return NextResponse.json(getConfig(access.tenantId), { status: 200 });
+  const tenantId = access.tenantId;
+
+  try {
+    const db = createAdminClient();
+    // Fenced on access.tenantId (invariant 5) — the ONLY tenant boundary on this
+    // service-role client.
+    const rows = await db
+      .select({
+        plan: tenants.plan,
+        allowedOrigins: tenants.allowedOrigins,
+        brandConfig: tenants.brandConfig,
+        updatedAt: tenants.updatedAt,
+      })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+
+    const row = rows[0];
+    const body: TenantConfig = {
+      tenant_id: tenantId,
+      plan: row?.plan ?? 'free',
+      brand: parseStoredBrandConfig(row?.brandConfig),
+      sdk: { allowed_origins: row?.allowedOrigins ?? [] },
+      updated_at: (row?.updatedAt ?? new Date()).toISOString(),
+    };
+    return NextResponse.json(body, { status: 200 });
+  } catch (err: unknown) {
+    // Rule K.2 — fail loud: the DB is configured but the query threw. Returning
+    // fabricated defaults here would silently misrepresent the tenant's real
+    // config on a staff/agency-facing settings surface.
+    console.error('[config GET] DB error:', err instanceof Error ? err.message : err);
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to load tenant configuration' } },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   // ── Auth + tenant resolution (ADR-0018 §2, FOLLOW-614) ────────────────────
-  // The role floor (agency:admin) is enforced from the VERIFIED claim by
-  // `minAgencyRole` — the old spoofable `x-agency-role` header gate is GONE.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -156,7 +218,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
 
   // Write-rank gate (CEO Q3, ADR-0018 §4; FOLLOW-615): staff below `estalara:ops`
   // (rank < 2) is view-only. `canWrite` is set on the staff branch iff rank ≥ ops.
-  // Mirrors quiz/config/route.ts POST, demo/override/route.ts, admin/intent-weights/route.ts.
   if (access.via === 'staff' && !access.canWrite) {
     return NextResponse.json(
       { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
@@ -164,9 +225,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let patch: ConfigPatch;
+  let rawBody: unknown;
   try {
-    patch = (await req.json()) as ConfigPatch;
+    rawBody = await req.json();
   } catch {
     return NextResponse.json(
       { error: { code: 'validation_failed', message: 'Request body must be valid JSON' } },
@@ -174,14 +235,149 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const current = getConfig(access.tenantId);
-  const updated: TenantConfig = {
-    ...current,
-    brand: patch.brand ? { ...current.brand, ...patch.brand } : current.brand,
-    quiz: patch.quiz ? { ...current.quiz, ...patch.quiz } : current.quiz,
-    updated_at: new Date().toISOString(),
-  };
-  configStore.set(access.tenantId, updated);
+  const parsed = ConfigPatchSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'validation_failed',
+          message: 'Invalid request body',
+          details: parsed.error.flatten(),
+        },
+      },
+      { status: 400 },
+    );
+  }
 
-  return NextResponse.json(updated, { status: 200 });
+  const patch = parsed.data;
+  const tenantId = access.tenantId;
+  const db = createAdminClient();
+
+  // Read current row first (fenced on tenantId — invariant 5) so a partial `brand`
+  // patch merges onto the real stored blob and the audit payload can carry a real
+  // before/after delta.
+  let currentPlan = 'free';
+  let currentBrand: BrandConfig = { ...DEFAULT_BRAND };
+  let currentOrigins: string[] = [];
+  try {
+    const rows = await db
+      .select({
+        plan: tenants.plan,
+        allowedOrigins: tenants.allowedOrigins,
+        brandConfig: tenants.brandConfig,
+      })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+    const row = rows[0];
+    currentPlan = row?.plan ?? 'free';
+    currentBrand = parseStoredBrandConfig(row?.brandConfig);
+    currentOrigins = row?.allowedOrigins ?? [];
+  } catch (err: unknown) {
+    console.error(
+      '[config PATCH] failed to read current config:',
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error', message: 'Failed to load tenant configuration' } },
+      { status: 500 },
+    );
+  }
+
+  // Explicit field-by-field merge (not `{ ...a, ...b }`) — with
+  // `exactOptionalPropertyTypes`, spreading a `Partial<BrandConfig>` whose keys are
+  // `string | undefined` widens the merged type incorrectly. `logo_url` needs an
+  // explicit `!== undefined` check (not `??`) because `null` is a legitimate patch
+  // value distinct from "field omitted".
+  const updatedBrand: BrandConfig = patch.brand
+    ? {
+        primary_color: patch.brand.primary_color ?? currentBrand.primary_color,
+        logo_url: patch.brand.logo_url !== undefined ? patch.brand.logo_url : currentBrand.logo_url,
+        white_label: patch.brand.white_label ?? currentBrand.white_label,
+      }
+    : currentBrand;
+  const updatedOrigins: string[] = patch.sdk?.allowed_origins ?? currentOrigins;
+
+  const setValues = {
+    brandConfig: updatedBrand,
+    allowedOrigins: updatedOrigins,
+    updatedAt: new Date(),
+  };
+
+  if (access.via === 'staff') {
+    // ── Atomic staff write (ADR-0018 §3a) ──────────────────────────────────
+    // The tenant config mutation and its staff_audit_log row commit-or-roll-back
+    // TOGETHER in ONE transaction (RETRO-190 §4a / RETRO-202), mirroring
+    // quiz/config/route.ts's POST staff branch.
+    try {
+      await db.transaction(async (tx) => {
+        await tx.update(tenants).set(setValues).where(eq(tenants.id, tenantId));
+        // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
+        // inside the tx so it commits atomically with the update.
+        await tx.insert(staffAuditLog).values({
+          adminUserId: access.staff.sub,
+          action: 'tenant_config.update',
+          targetTenantId: tenantId,
+          payload: {
+            before: {
+              plan: currentPlan,
+              brand: currentBrand,
+              sdk: { allowed_origins: currentOrigins },
+            },
+            after: {
+              plan: currentPlan,
+              brand: updatedBrand,
+              sdk: { allowed_origins: updatedOrigins },
+            },
+          },
+          ipAddress: requestIp(req),
+          userAgent: req.headers.get('user-agent'),
+        });
+      });
+    } catch (err: unknown) {
+      // Any failure INSIDE the tx (the update OR the audit insert) rolls BOTH
+      // back — there is no orphan config mutation to leave behind. Fail loud:
+      // capture to Sentry and return 500, never a silent unattributed 200
+      // (Rule K.2). A retry is safe: it re-reads, re-applies the same config
+      // (idempotent) and appends a fresh audit row inside a new tx.
+      Sentry.captureException(err, {
+        tags: { route: 'config', staff_audit_error: 'true' },
+        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: 'audit_write_failed',
+            message:
+              'The tenant config change could not be recorded atomically with its staff ' +
+              'audit row; the change was rolled back and NOT applied. Retry the action.',
+          },
+        },
+        { status: 500 },
+      );
+    }
+  } else {
+    // Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only).
+    try {
+      await db.update(tenants).set(setValues).where(eq(tenants.id, tenantId));
+    } catch (err: unknown) {
+      console.error(
+        '[config PATCH] failed to update tenant configuration:',
+        err instanceof Error ? err.message : err,
+      );
+      return NextResponse.json(
+        { error: { code: 'internal_error', message: 'Failed to update tenant configuration' } },
+        { status: 500 },
+      );
+    }
+  }
+
+  const body: TenantConfig = {
+    tenant_id: tenantId,
+    plan: currentPlan,
+    brand: updatedBrand,
+    sdk: { allowed_origins: updatedOrigins },
+    updated_at: setValues.updatedAt.toISOString(),
+  };
+  return NextResponse.json(body, { status: 200 });
 }

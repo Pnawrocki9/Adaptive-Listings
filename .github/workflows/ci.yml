@@ -294,7 +294,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:latest
+        # Pinned (FOLLOW-620): `latest` moved to 26.7 on 2026-07-22 and its new
+        # strict check (dimension columns outside the AggregatingMergeTree
+        # sorting key → Code 36 BAD_ARGUMENTS on 0002_create_session_summary_mv)
+        # broke every PR. 25.8 is the last LTS the migration chain is proven on.
+        # 26.x compatibility of migration 0002 is FOLLOW-621 (data-engineer).
+        image: clickhouse/clickhouse-server:25.8
         ports:
           - 8123:8123
         env:
@@ -351,7 +356,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:latest
+        # Pinned (FOLLOW-620) — same reason as clickhouse-smoke above: keep
+        # both CH service containers on the same proven LTS.
+        image: clickhouse/clickhouse-server:25.8
         ports:
           - 8123:8123
         env:

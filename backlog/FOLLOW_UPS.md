@@ -17256,7 +17256,71 @@ module, a silent `SKIP` for a barrel.
 cross_ref: [FOLLOW-613, FOLLOW-612, FOLLOW-616, FOLLOW-617, FOLLOW-618, RETRO-196, RETRO-197,
 RETRO-204, Rule AE]
 
-<!-- next free FOLLOW number: 620. next free RETRO number: 205. RETRO-204 (post-merge retro for
+## FOLLOW-620 — Pin the CI ClickHouse service image to 25.8 LTS (un-break the two CH gates broken by the `latest`→26.7 upstream bump)
+
+source: session-55 CI triage (PR #606 / FOLLOW-600 — first PR to hit the breakage; NOT caused by
+that PR, which touches zero ClickHouse files) recommended_agent: devops-engineer priority: P1
+(repo-wide: EVERY PR fails both CH gates until fixed) estimated_hours: 0.5 status: SHIPPED same
+session (PR referenced in QUEUE.md) — filed for the ticket-reference convention and the retro loop.
+
+**Gap:** both CH-backed CI gates (`ClickHouse migrations smoke`,
+`Tracer query-builders live ClickHouse guard` in `.github/workflows/ci.yml`) ran
+`clickhouse/clickhouse-server:latest`. On 2026-07-22 Docker Hub `latest` moved to 26.7.1, which adds
+a strict check: dimension columns of an AggregatingMergeTree outside the sorting key →
+`Code: 36 BAD_ARGUMENTS` at CREATE time. Migration `0002_create_session_summary_mv.sql` (the
+`region` column — denormalised, deliberately outside `ORDER BY (tenant_id, session_id)`) now fails
+to apply, so BOTH gates fail on every PR regardless of content. Verified environmental: identical
+`Code: 36` on both jobs, on two independent runs, on a PR touching zero CH files; main was green at
+the same migration chain hours earlier.
+
+**AC (all shipped):**
+
+- [x] Both `services.clickhouse.image` entries in `ci.yml` pinned to
+      `clickhouse/clickhouse-server:25.8` (last LTS the migration chain is proven on; tag existence
+      verified on Docker Hub before pinning).
+- [x] In-file comment at each pin explaining WHY + cross-ref to FOLLOW-621 (the 26.x compat
+      decision) so a future "bump to latest" PR cannot miss the context.
+- [x] Both CH gates green on the fix PR itself.
+
+cross_ref: [FOLLOW-621, FOLLOW-394, FOLLOW-316, FOLLOW-535]
+
+## FOLLOW-621 — Decide + implement 26.x ClickHouse compatibility for migration 0002 (`region` dimension outside the AggregatingMergeTree sorting key)
+
+source_ticket: FOLLOW-620 recommended_sprint: opportunistic (before any future CH server upgrade —
+prod ClickHouse Cloud will eventually move to 26.x and the same strict check will apply there)
+recommended_agent: data-engineer priority: P3 estimated_hours: 2
+
+**Gap:** ClickHouse 26.x rejects `session_summary`'s `region` column (a denormalised dimension,
+neither in `ORDER BY (tenant_id, session_id)` nor an aggregate) at CREATE time — see FOLLOW-620.
+Prod's EXISTING table is unaffected today (already created; CH Cloud not yet on 26.x), but any FRESH
+environment (new region per the 4-region rollout, local dev, CI unpinned) breaks on 26.x. The
+new-version error text itself names the two sanctioned outs.
+
+**AC:**
+
+- [ ] DECIDE (with rationale in the PR): either (a)
+      `SETTINGS allow_dimensions_outside_sorting_key = 1` on the CREATE — the documented intentional
+      path for columns functionally dependent on the sorting key, which `region` is per the
+      migration's own "consistent within a session" comment (the MV writes `any(region)` per
+      `(tenant_id, session_id)` group) — or (b) add `region` to the sorting key (changes sort order
+      semantics; needs a stated reason it's safe for existing queries). Do NOT silently rewrite
+      history: whichever is chosen must keep `migration-contract-test.sh` and `ttl-golden-test.sh`
+      green (golden DDL may need the same edit — state it explicitly).
+- [ ] Confirm how the edit reaches PROD (CH does NOT auto-apply; `CREATE TABLE IF NOT EXISTS` is a
+      no-op against the existing prod table — an `ALTER ... MODIFY SETTING` operator step may be
+      needed for option (a); enumerate it in the ops runbook if so).
+- [ ] After it lands: un-pin OR bump the FOLLOW-620 CI pin to a 26.x tag in the SAME PR, proving the
+      migration chain green on 26.x in CI (the pin comment in `ci.yml` points here).
+
+cross_ref: [FOLLOW-620, FOLLOW-394, project_postgres_migrations_no_autoapply (CH does not
+auto-apply)]
+
+<!-- next free FOLLOW number: 622. next free RETRO number: 205.
+FOLLOW-620 (CI CH image pin, shipped session 55) + FOLLOW-621 (26.x compat decision for migration
+0002) filed during session-55 CI triage of PR #606/FOLLOW-600 — upstream `latest`→26.7.1 image bump
+broke both CH gates repo-wide; environmental, not caused by any repo change. -->
+
+<!-- (superseded) next free FOLLOW number: 620. next free RETRO number: 205. RETRO-204 (post-merge retro for
 FOLLOW-613 / PR #605, squash 872715f, merged 2026-07-22 21:01:37 UTC) filed FOLLOW-619: the guard's
 namespace-import-of-a-barrel bypass (intersection of bypass 5 + bypass 6), found by direct
 reproduction, hypothetical today but the highest-likelihood open shape (a 1-line refactor of the LIVE

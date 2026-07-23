@@ -53,11 +53,19 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
   const [config, setConfig] = useState<StaffQuizConfig>(DEFAULTS);
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // FOLLOW-624 (ESC-039): tracked SEPARATELY from `status` (which is save-only).
+  // A failed GET must render its own visible error and disable Save — it must
+  // never be silently absorbed into DEFAULTS looking like real stored config.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Every call is fenced to this tenant via ?tenant_id — the staff-override API path.
   const url = `/api/quiz/config?tenant_id=${encodeURIComponent(tenantId)}`;
 
   useEffect(() => {
+    setLoadStatus('loading');
+    setLoadErrorMsg('');
     void fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
@@ -68,14 +76,22 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
           const d = data as Partial<StaffQuizConfig>;
           setConfig({ ...DEFAULTS, ...d });
         }
+        setLoadStatus('loaded');
       })
-      .catch(() => {
-        // Load silently — defaults already set; a save still fails loud below.
+      .catch((err: unknown) => {
+        // Rule K.2 consumer-side clause (FOLLOW-624): do NOT silently keep
+        // DEFAULTS looking like real stored config — a Save from this state
+        // would clobber the tenant's real quiz config.
+        setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
+        setLoadStatus('error');
       });
-  }, [url]);
+  }, [url, retryNonce]);
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    // Defense in depth: even if the disabled Save button is bypassed (e.g.
+    // an implicit form submit), never POST from un-loaded state.
+    if (loadStatus !== 'loaded') return;
     setStatus('loading');
     setErrorMsg('');
     try {
@@ -105,6 +121,24 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+      {loadStatus === 'error' && (
+        <div role="alert" className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>Failed to load quiz settings: {loadErrorMsg}</p>
+          <p className="mt-1 text-xs">
+            Saving is disabled until settings load successfully — this prevents overwriting the
+            tenant&apos;s real config with blank defaults.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setRetryNonce((n) => n + 1);
+            }}
+            className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
         {/* Micro-polls */}
         <div className="flex items-center justify-between">
@@ -181,7 +215,7 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
         <div className="flex items-center gap-4">
           <button
             type="submit"
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || loadStatus !== 'loaded'}
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             {status === 'loading' ? 'Saving…' : 'Save Settings'}

@@ -16309,10 +16309,10 @@ DB-unconfigured fallback per Rule K.2); per-tenant filter; `/admin` audit view; 
 
 cross_ref: [ADR-0018, FOLLOW-587, FOLLOW-592, RETRO-187]
 
-## FOLLOW-600 — `/admin/tenants/[id]/settings` per-tenant settings surface (aligned with the Phase-0 global /admin/settings)
+## FOLLOW-600 — `/admin/tenants/[id]/settings` per-tenant settings surface (aligned with the Phase-0 global /admin/settings) — ✅ DONE + MERGED (PR #606, `19ef714`, merged 2026-07-23T21:27:05Z; RETRO-205 pending)
 
 source_adr: ADR-0018 §5 + §6 recommended_sprint: Sprint 25 recommended_agent: backend-engineer
-priority: P3 estimated_hours: 2 promoted_to_queue: false
+priority: P3 estimated_hours: 2 promoted_to_queue: true (dispatched + landed)
 
 **Gap:** ADR-0018 §5 enumerates global vs per-tenant settings; the per-tenant ones need one staff
 surface per tenant. NOTE (CEO Q1, binding): `generation_model` stays GLOBAL-only — it must NOT
@@ -16321,23 +16321,26 @@ appear on this per-tenant page (the dropped FOLLOW-601).
 **AC:** per-tenant settings page grouping the ported per-tenant settings; explicit test asserting no
 generation-model control renders here; links from the FOLLOW-593 tenant landing.
 
-- [ ] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** for any per-tenant setting this page
+- [x] **MANDATORY (ADR-0018 §2 invariant 5, added RETRO-187):** for any per-tenant setting this page
       READS or WRITES through the staff path, red-first "staff query is tenant-filtered" test
       proving a staff request for tenant A cannot reach tenant B's settings rows
       (service-role/RLS-bypassed; `access.tenantId` is the only fence). NOT discharged by
-      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`.
-- [ ] **DEPENDENCY (added RETRO-202):** FOLLOW-615's staff write-rank gate on `PATCH /api/config`
+      FOLLOW-592's demonstrative `RLS-TRAP-LEAK-DEMO`. → present, drives the real query shape
+      (READ + WRITE directions), PM-reverified post-merge.
+- [x] **DEPENDENCY (added RETRO-202):** FOLLOW-615's staff write-rank gate on `PATCH /api/config`
       (`via==='staff' && !access.canWrite`→403) MUST land BEFORE or WITH this ticket — wiring the
       real `tenants` table while the gate is absent ships a live write-tier violation
       (`estalara:readonly` staff could mutate any tenant's settings). Verify the gate exists before
-      wiring; do not re-derive.
-- [ ] **MANDATORY (added RETRO-202, per the `config/route.ts` header note):** when this ticket wires
+      wiring; do not re-derive. → FOLLOW-615 (PR #603) landed first; gate re-asserted (readonly
+      staff → 403) in this PR's own tests.
+- [x] **MANDATORY (added RETRO-202, per the `config/route.ts` header note):** when this ticket wires
       `/api/config` PATCH to the real `tenants` table, the staff write MUST adopt the §3a
       audit-in-`db.transaction()` pattern (mutation + `staff_audit_log` insert commit-or-roll-back
       together, action e.g. `tenant_config.update`, audit-fail→500) AND keep the mutation INLINE in
       the route (not delegated through the `@estalara/db` barrel) so
       `check-staff-write-atomicity.cjs` prints OK, not the FOLLOW-613 SKIP (RETRO-198/199
-      inline-vs-barrel finding).
+      inline-vs-barrel finding). → `node scripts/check-staff-write-atomicity.cjs` PM-reverified on
+      merged `main`: `api/config/route.ts` prints OK.
 
 cross_ref: [ADR-0018, FOLLOW-592, FOLLOW-593, FOLLOW-595, RETRO-187, RETRO-202, FOLLOW-615]
 
@@ -17256,12 +17259,12 @@ module, a silent `SKIP` for a barrel.
 cross_ref: [FOLLOW-613, FOLLOW-612, FOLLOW-616, FOLLOW-617, FOLLOW-618, RETRO-196, RETRO-197,
 RETRO-204, Rule AE]
 
-## FOLLOW-620 — Pin the CI ClickHouse service image to 25.8 LTS (un-break the two CH gates broken by the `latest`→26.7 upstream bump)
+## FOLLOW-620 — Pin the CI ClickHouse service image to 25.8 LTS (un-break the two CH gates broken by the `latest`→26.7 upstream bump) — ✅ DONE + MERGED (PR #607, `f4dd037`, merged 2026-07-23T21:12:47Z)
 
 source: session-55 CI triage (PR #606 / FOLLOW-600 — first PR to hit the breakage; NOT caused by
 that PR, which touches zero ClickHouse files) recommended_agent: devops-engineer priority: P1
-(repo-wide: EVERY PR fails both CH gates until fixed) estimated_hours: 0.5 status: SHIPPED same
-session (PR referenced in QUEUE.md) — filed for the ticket-reference convention and the retro loop.
+(repo-wide: EVERY PR fails both CH gates until fixed) estimated_hours: 0.5 status: SHIPPED + MERGED
+— filed for the ticket-reference convention and the retro loop.
 
 **Gap:** both CH-backed CI gates (`ClickHouse migrations smoke`,
 `Tracer query-builders live ClickHouse guard` in `.github/workflows/ci.yml`) ran

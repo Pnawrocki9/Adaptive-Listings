@@ -2,6 +2,29 @@
 
 ---
 
+**Date / ticket:** 2026-07-23 — FOLLOW-600 (per-tenant `/settings` + `/api/config` real-tenant
+wiring, PR #606, merged by Piotr ahead of the PM's own READY_FOR_REVIEW gate). **Delegation row
+used:** backend-engineer (ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding
+HTTP, billing, webhooks) — row already applied at session-54/55 dispatch; this session audited
+post-merge. **What validation caught (or missed):** Human merged before the PM finished its own
+gate, converting the validation from a pre-merge block into a post-merge audit. Ran the FULL 5c
+wiring-grep + independent guard/test re-execution anyway (throwaway worktree at the exact
+merge-ready commit, then again on merged `main`) rather than treating an already-merged PR as
+lower-stakes — confirmed the schema-mapping claims in the route's doc-comment against the actual
+`tenants.ts`/`staff_audit_log.ts` source instead of trusting the PR description's column names.
+Nothing was a half-wire; all producer/consumer pairs were real. The one near-miss: my first scoped
+`tsc`/`eslint` run in the throwaway worktree threw ~40 `Cannot find module '@estalara/db'` errors
+that looked like real failures — turned out to be an artifact of not building workspace-package
+`dist/` output first, not a defect. Caught it by cross-checking against CI's own green
+Lint/Typecheck runs before treating it as a finding; could have wasted the fix-iteration budget
+chasing a phantom otherwise. **A delegation/validation rule I'd add:** when independently
+re-verifying a merged PR in a scratch worktree, run `pnpm install` AND
+`pnpm --filter <workspace deps> build` before scoped `tsc`/`eslint` — a bare `pnpm install` alone
+leaves internal `@estalara/*` packages unresolved and produces false-positive type/lint errors that
+look exactly like real regressions.
+
+---
+
 **Date / ticket:** 2026-07-21 — FOLLOW-596 (demo/override staff-write port, PR #594) **Delegation
 row used:** ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP,
 billing, webhooks → backend-engineer (row already applied at dispatch, session 42; this session

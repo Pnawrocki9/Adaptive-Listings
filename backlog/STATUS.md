@@ -1,3 +1,64 @@
+# Status — 2026-07-23 (session 56 — FOLLOW-600 + FOLLOW-620 merged + closed out DONE; retro RETRO-205 due next for FOLLOW-600)
+
+## SESSION 56 (2026-07-23) — post-merge audit + close-out for FOLLOW-600 (PR #606, `19ef714`) and FOLLOW-620 (PR #607, `f4dd037`)
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (0 unresolved — only the standing
+non-blocking `OPEN — ESC-020`, explicitly annotated "does NOT block the PM pipeline"),
+`backlog/HANDOFFS.md`, `git log --oneline -20`, `gh pr list --state open` (empty). Confirmed both
+merges independently (not on the human's word alone):
+`gh pr view 606/607 --json state,mergedAt,mergeCommit` → both `MERGED` (`19ef714`,
+2026-07-23T21:27:05Z; `f4dd037`, 2026-07-23T21:12:47Z). Local `main` fast-forwarded
+`54e76a7`→`19ef714` (clean f-f, no divergence).
+
+**FOLLOW-600 post-merge audit performed (the part nobody had checked yet) — treated as MORE
+important post-merge, not less:**
+
+- Read the full PR #606 diff end-to-end (8 files, ~1836 lines).
+- Verified schema claims against real source: `packages/db/src/schema/tenants.ts` (`plan`,
+  `allowedOrigins`, `brandConfig`, `updatedAt` all real columns) and
+  `packages/db/src/schema/staff_audit_log.ts` (`adminUserId`, `action`, `targetTenantId`, `payload`,
+  `ipAddress`, `userAgent` all real columns).
+- Runtime-wiring grep (non-test producer + non-test consumer) for every new symbol on the merged
+  branch content, per step 5c: hub link → settings page → editor component → real `/api/config` →
+  real `tenants`/`staff_audit_log` tables. Zero half-wires.
+- Independent re-execution in a throwaway git worktree (NOT trusting session-55's self-report):
+  `pnpm install` + built workspace-package `dist/` output,
+  `node scripts/check-staff-write-atomicity.cjs` → `api/config/route.ts` prints **OK** (twice — once
+  at the PR's merge-ready commit, once again directly on merged `main`), `labels/export` stays
+  `SKIP`. Targeted vitest (`src/app/api/config src/app/admin/tenants`) → **77/77 PASS** across 14
+  files. Scoped `tsc --noEmit` + `eslint` on touched paths → clean once workspace deps were built
+  (the initial "Cannot find module '@estalara/db'" errors were a throwaway-worktree artifact, not a
+  real defect — CI's own Lint/Typecheck gates, which run fully-built, already confirmed green).
+- CI evidence: `gh pr checks 606` → 59 pass, 2 fail (both `Rule I`, documented pre-existing —
+  independently re-confirmed still red on `main`'s own latest commit via
+  `gh api .../commits/main/check-runs`, so NOT a #606 regression). **Non-success count for REAL
+  gates: 0.**
+- All FOLLOW-600 acceptance criteria (FOLLOW_UPS.md) verified met, all 3 checkboxes flipped `[x]`.
+
+**Verdict: FOLLOW-600 is REAL, not scaffolded. No gap found, no follow-up ticket needed for this
+PR's own scope.**
+
+**Bookkeeping done this run (no code, no dispatch — PM cannot spawn subagents directly, the retro
+dispatch is the harness-level NEXT: action):**
+
+- `backlog/QUEUE.md` new session-56 START HERE block; FOLLOW-600 + FOLLOW-620 marked DONE + MERGED.
+- `backlog/FOLLOW_UPS.md` FOLLOW-600 entry → `status: DONE + MERGED`, all 3 AC checkboxes `[x]` with
+  verification notes; FOLLOW-620 entry → merge confirmation appended.
+- 7 stale local feature branches deleted (remotes already `gone` on GitHub; 5 pre-existing from
+  earlier merged tickets + the 2 from this session's FOLLOW-600/620).
+- Did **not** spawn `retrospective-analyst` myself — per standing instruction, RETRO-205 (next-free)
+  for FOLLOW-600 must be dispatched via the harness NEXT: line before further ticket promotion.
+
+**CI-check counter:** 0/5 this session (no new CI runs triggered — pure audit + bookkeeping; the
+`gh pr checks 606` pull was a read of the PR's own existing run, not a new trigger).
+**Escalations:** 0 open/unresolved (ESC-020 stays OPEN but non-blocking, per its own resolution
+note). **Next-free counters:** FOLLOW-622, RETRO-205. **Ready candidates for AFTER RETRO-205:**
+FOLLOW-604 (P3), FOLLOW-611 (P4), FOLLOW-616/617/618/619 (P3, hypothetical), FOLLOW-621 (P3, real CH
+26.x compat) — none blocked, none currently promoted to QUEUE.md as real tickets (sprint-planning
+promotion still pending).
+
+---
+
 # Status — 2026-07-22 (session 51 — FOLLOW-614 merged + closed out DONE; retro RETRO-202 due next; queue at next-dispatch boundary — FOLLOW-613/604/611 open)
 
 ## SESSION 51 (2026-07-22) — post-merge close-out for FOLLOW-614 (PR #603, `3669be2`); RETRO-202 due, not yet filed by this run

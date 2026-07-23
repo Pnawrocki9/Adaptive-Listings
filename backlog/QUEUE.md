@@ -1,6 +1,92 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-23 (session 55 — FOLLOW-600 IMPLEMENTED, PR #606 open; CI blocked by an UPSTREAM ClickHouse-image breakage, fixed by PR #607 [FOLLOW-620]; BOTH PRs await Piotr's review — merge #607 FIRST, then re-run #606's failed checks)
+## ▶️ START HERE — resume 2026-07-23 (session 56 — FOLLOW-600 DONE + MERGED (PR #606, `19ef714`), FOLLOW-620 DONE + MERGED (PR #607, `f4dd037`); RETRO-205 dispatch pending; next-ticket selection is the open item)
+
+**Session 56 = PM post-merge audit + bookkeeping.** Piotr merged both #607 (21:12Z) and #606
+(21:27Z) directly, ahead of the PM's own READY_FOR_REVIEW gate. Independently re-verified BOTH
+merges from scratch (not taken on the human's word alone):
+`gh pr view 606/607 --json state,mergedAt,mergeCommit` both confirm `state: MERGED`. Local `main`
+fast-forwarded `54e76a7`→`19ef714` (2 commits, clean f-f, no divergence). Stale local feature
+branches for both tickets (+5 other already-merged `backend-engineer/*` branches whose remotes were
+`gone`) deleted.
+
+**FOLLOW-600 post-merge audit (this session, done AFTER the human merge — treated as more important,
+not less, per the standing rule "any gap is already on `main`"):**
+
+- Re-read the full PR #606 diff (all 8 files, ~1836 lines) end-to-end, not just the session-55
+  summary.
+- Schema claims verified against the REAL source, not trusted from the PR description:
+  `packages/db/src/schema/tenants.ts` — confirmed `plan`, `allowedOrigins` (`text[]`), `brandConfig`
+  (`jsonb`), `updatedAt` all exist as real columns; `packages/db/src/schema/staff_audit_log.ts` —
+  confirmed `adminUserId`, `action`, `targetTenantId`, `payload`, `ipAddress`, `userAgent` all exist
+  as real columns. The route's doc-comment schema-mapping claims are accurate, not aspirational.
+- Runtime-wiring grep (non-test producer + non-test consumer) on the MERGED branch content for every
+  new symbol — see evidence block below. Zero half-wires found: hub link → settings page exists →
+  editor component exists → fetches the real `/api/config` → route reads/writes the real `tenants` +
+  `staff_audit_log` tables.
+- Independent re-execution (fresh git worktree at the PR's exact merge-ready commit `dcd26e5`, then
+  again directly on merged `main` `19ef714`, NOT trusting the session-55 self-report):
+  `pnpm install` (workspace deps built fresh), `node scripts/check-staff-write-atomicity.cjs` →
+  `api/config/route.ts` prints **OK** both times, `labels/export` correctly stays `SKIP`. Targeted
+  vitest run (`src/app/api/config src/app/admin/tenants`) → **77/77 tests PASS** across 14 files.
+  Scoped `tsc --noEmit` and `eslint` on the touched paths → clean (0 errors) once workspace-package
+  `dist/` output was built — an artifact of the throwaway worktree lacking built deps, not a real
+  defect; CI's own Lint/Typecheck gates (which run in a fully-built environment) already confirmed
+  green on GitHub Actions independently.
+- CI evidence (real gates only, per `docs/ops` CI-gate-landscape convention — Rule I is documented
+  pre-existing-red repo-wide, confirmed independently still red on `main`'s own latest commit
+  `f4dd037` via `gh api .../commits/main/check-runs`, so it is NOT a #606 regression):
+  `gh pr checks 606` → **59 pass, 2 fail (both `Rule I`, the same pre-existing gate, 2 job-matrix
+  runs)**. Non-success count for REAL gates: **0**.
+- Acceptance criteria (FOLLOW_UPS.md FOLLOW-600 entry) — all met: per-tenant settings page + editor;
+  `/api/config` on the real `tenants` table; CEO Q1 "no generation_model control" MANDATORY test
+  present and asserting against the un-mocked component; RETRO-187 invariant-5 READ+WRITE
+  tenant-fence tests present and driving the real query shape (not the demonstrative-only
+  `RLS-TRAP-LEAK-DEMO` shape); FOLLOW-615 write-rank gate re-asserted; RETRO-202 §3a
+  audit-in-`db.transaction()` present with a red-first rollback test; mutation kept INLINE (guard
+  prints OK, not the FOLLOW-613 SKIP class).
+
+**Verdict: FOLLOW-600 is REAL, not scaffolded. No gap found; no follow-up ticket needed for this
+PR's own scope.**
+
+**Wiring evidence (grep on the merged commit's tree, non-test producer + non-test consumer):**
+
+```
+$ git show <mergecommit>:apps/control-plane/src/app/admin/tenants/\[id\]/settings/page.tsx | grep StaffTenantConfigEditor
+26:import { StaffTenantConfigEditor } from './tenant-config-editor';
+53:      <StaffTenantConfigEditor tenantId={id} />
+$ git show <mergecommit>:.../tenant-config-editor.tsx | grep "export function StaffTenantConfigEditor"
+49:export function StaffTenantConfigEditor(...)
+$ git show <mergecommit>:.../page.tsx (hub) | grep settings
+134:  href={`/admin/tenants/${tenant.id}/settings`}
+$ git show <mergecommit>:.../tenant-config-editor.tsx | grep "api/config"
+56:  const url = `/api/config?tenant_id=${encodeURIComponent(tenantId)}`;
+$ git show <mergecommit>:.../api/config/route.ts | grep "tenants\.\|adminUserId\|targetTenantId"
+175-178: plan/allowedOrigins/brandConfig/updatedAt: tenants.*
+318,320: adminUserId: access.staff.sub / targetTenantId: tenantId
+```
+
+**FOLLOW-600 — status: ✅ DONE + MERGED.** PR **#606** merged by Piotr, `19ef714`,
+2026-07-23T21:27:05Z.
+
+**FOLLOW-620 — status: ✅ DONE + MERGED.** PR **#607** merged by Piotr, `f4dd037`,
+2026-07-23T21:12:47Z. Both CH gates proven green on #607 itself and remain green on #606 post-pin.
+FOLLOW-621 (data-engineer, P3 — real 26.x compat decision) remains separately OPEN, not closed by
+this pin (the pin is a stopgap, not the 26.x fix).
+
+**NEXT ACTION:** retrospective-analyst (Opus) dispatch for **RETRO-205** covering the merged
+FOLLOW-600 PR #606 is due per the standing per-ticket retro loop — note for the retro: (a) the #607
+CH-image-pin interaction with #606's CI (the CH gates only went green because #607 landed first — an
+inter-PR CI dependency worth flagging if it recurs), and (b) the session-54 mid-flight crash that
+stranded FOLLOW-600's implementation uncommitted (recovered per the standing verify-don't-discard
+lesson) — is this class of stranding trending, and does it need a systemic fix (e.g. more frequent
+auto-checkpoint commits)? No escalations open that block this. Ready ticket candidates for AFTER the
+retro: **FOLLOW-604** (P3, quiz ON/OFF staff port), **FOLLOW-611** (P4, gitleaks false-positive),
+**FOLLOW-616/617/618/619** (P3, hypothetical guard call-shapes, none live), **FOLLOW-621** (P3, real
+CH 26.x compat — opportunistic, must land before any CH server upgrade to 26.x anywhere). Next-free
+FOLLOW is **622**, next-free RETRO is **205**.
+
+## ▶️ (superseded) resume 2026-07-23 (session 55 — FOLLOW-600 IMPLEMENTED, PR #606 open; CI blocked by an UPSTREAM ClickHouse-image breakage, fixed by PR #607 [FOLLOW-620]; BOTH PRs await Piotr's review — merge #607 FIRST, then re-run #606's failed checks)
 
 **Session 55 was an interrupted-session recovery.** Session 54's dispatch of FOLLOW-600 died
 mid-flight with the full implementation UNCOMMITTED in the working tree on branch

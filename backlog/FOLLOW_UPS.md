@@ -18273,3 +18273,95 @@ hop over.
 
 cross_ref: [RETRO-210, RETRO-146, FOLLOW-448, FOLLOW-605 (HEAD-displacement sibling),
 memory:feedback_check_worktrees_before_concluding_agent_didnt_run]
+
+## FOLLOW-646 — Reconcile the cross-brand rollup ClickHouse query with its `summary`/`lift` mirrors (counting method + contamination predicate drift)
+
+source_retro: RETRO-212 §5d (DRIFT-1 / DRIFT-2) source_ticket: FOLLOW-638 (PR #617, `239854c`)
+recommended_agent: backend-engineer (data-engineer pair) priority: P3 estimated_hours: 3 depends_on:
+[] promoted_to_queue: false
+
+**Gap (Rule J family — same-runtime ClickHouse query forks with silent drift).** The new
+`api/admin/analytics/rollup/data.ts` query is a copy-fork of `dashboard/analytics/summary|lift`, and
+it drifted on two axes:
+
+1. **DRIFT-1 (counting method):** rollup counts `adapted`/`holdout` as
+   `countDistinctIf(ad.session_id, …)` (DISTINCT sessions per arm, `data.ts:171-172`), while
+   `summary/route.ts` counts `countIf(holdout_group = …)` (decision **rows**). `sessions` matches
+   (both DISTINCT) but the SAME tenant will show different Adapted/Holdout on the cross-brand rollup
+   vs its own dashboard summary panel. Rollup is internally consistent (arm-distinct ≈ sessions);
+   summary is the divergent one — but two staff-visible surfaces disagreeing is the hazard.
+2. **DRIFT-2 (missing exclusion predicate):** `lift/route.ts` carries the FOLLOW-371 / ESC-026
+   holdout-contamination exclusion `AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')`; the
+   rollup query omits it (`data.ts:185-186`). No-op TODAY (contamination window 2026-06-19 is
+   outside the rolling 7-day window) but a latent drift if the window widens or contamination
+   recurs. (`computeLift` returning `null` vs `0` is an intentional improvement — do NOT "fix" it
+   back to 0.)
+
+**AC:**
+
+1. Decide the canonical `adapted`/`holdout` counting method and make rollup + summary agree (a
+   tenant reads the same on both surfaces), or document why they legitimately differ in both routes'
+   JSDoc.
+2. Add the FOLLOW-371/ESC-026 contamination-exclusion predicate to the rollup query (or a shared
+   query helper) so the mirror family stays consistent.
+3. Consider registering the `adaptation_decisions ⋈ events(cta.clicked)` query family under a parity
+   check (the Rule K.1-amendment same-runtime-duplicate class; Rule J's `mirror-files.json` is
+   `apps/decision-api`-scoped and cannot express these).
+4. Test: a fixture tenant yields identical adapted/holdout on the rollup and the summary path.
+
+cross_ref: [RETRO-212, FOLLOW-638, FOLLOW-093, FOLLOW-371, ESC-026, CONVENTIONS_PATCH Rule J / K.1]
+
+## FOLLOW-647 — Rollup "platform-wide" total silently drops soft-deleted / orphan-`tenant_id` ClickHouse sessions (roster-join undercount)
+
+source_retro: RETRO-212 §4a (LG-1) source_ticket: FOLLOW-638 (PR #617, `239854c`) recommended_agent:
+backend-engineer priority: P3 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**Gap.** `getPlatformAnalyticsRollup()` builds both the per-brand table AND the rollup totals by
+iterating `tenantRoster` only (`data.ts:377-417`), where the roster is
+`tenants WHERE deletedAt IS NULL` (`data.ts:126-133`). A ClickHouse `tenant_id` with real
+`adaptation_decisions` in the 7-day window but (a) soft-deleted or (b) an orphan with no `tenants`
+row is dropped from BOTH the table AND the platform totals — so `rollup.sessions` is not the true
+platform sum, while the page advertises "Platform-wide rollup across every brand." Honest omission
+(no fabricated zeros; the reverse case — Postgres tenant absent from ClickHouse — correctly yields a
+real `0`), but the copy overstates.
+
+**AC:**
+
+1. Decide surface-or-document: either add an "unattributed / retired brands" reconciliation row so
+   the total is complete, or soften the "every brand" copy to "every active brand" and document the
+   exclusion.
+2. Add a test: a ClickHouse `tenant_id` absent from the roster is handled per the chosen policy (not
+   silently vanished without a trace).
+3. **Escalation trigger (from §5b):** when the white-label epic (FOLLOW-639/640/641) makes "a brand
+   with the quiz/AL disabled" a real state, add a per-brand config-state column so `0` is
+   distinguishable as "feature off" vs "no traffic" (same honesty axis as RETRO-205/FOLLOW-637). Do
+   NOT scope that column now — file it as this ticket's follow-on when the epic lands.
+
+cross_ref: [RETRO-212, FOLLOW-638, FOLLOW-639, FOLLOW-640, FOLLOW-641, RETRO-205, FOLLOW-637,
+ADR-0019]
+
+## FOLLOW-648 — Write down the "unfenced staff cross-tenant read → `verifyTracerAdminAuth`, NOT `resolveTenantAccess`" doctrine in ADR-0013/0018
+
+source_retro: RETRO-212 §4d (DOC-1) source_ticket: FOLLOW-638 (PR #617, `239854c`)
+recommended_agent: architect priority: P3 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+**Gap.** The #617 worker correctly rejected the brief's suggested `resolveTenantAccess` (it always
+fences to exactly ONE tenant — agency claim or a staff-supplied `?tenant_id=`) and used
+`verifyTracerAdminAuth` for the deliberately-unfenced rollup. This is the SAME choice
+`intent/config`, `tracer/sessions`, `tracer/export/*`, `generation-model`, and now
+`admin/analytics/rollup` each reached **independently**. ADR-0013 introduced `verifyTracerAdminAuth`
+(per-tenant tracer) and ADR-0018 generalized staff-per-tenant access, but neither states the general
+rule for the _unfenced_ case — so every new staff aggregate re-derives it. A future worker who
+follows a brief's `resolveTenantAccess` hint literally would silently fence a cross-tenant surface
+to one tenant.
+
+**AC:**
+
+1. Add an explicit clause to ADR-0013 or ADR-0018 (whichever owns the staff-auth doctrine):
+   "**Unfenced** cross-tenant staff reads use `verifyTracerAdminAuth`; `resolveTenantAccess` is for
+   single-tenant-scoped surfaces only (it always resolves to exactly one tenant fence)."
+2. List the current unfenced-staff routes as the reference set so the pattern is discoverable.
+3. No code change required (the routes are already correct); this is doctrine capture to stop
+   re-derivation.
+
+cross_ref: [RETRO-212, FOLLOW-638, ADR-0013, ADR-0018, FOLLOW-267]

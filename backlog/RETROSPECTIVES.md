@@ -32645,3 +32645,212 @@ analyzed write-rank axis clean but silent on 0-row axis — #616 extends (not a 
 provenance-discipline origin. NO CONVENTIONS_PATCH promotion across all three (facade pattern count 1
 prior; worktree-hygiene count 1 prior + guard-not-prose; K.2 provenance already a Rule). -->
 
+## RETRO-212 — FOLLOW-638 (cross-brand analytics rollup for staff admin) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #617 (merged 2026-07-24 20:32 UTC, squash commit `239854c` on `main`, by Pnawrocki9; FABLE)
+- **Files changed:** 9 (+1153 / −9) — 4 new files under `api/admin/analytics/rollup/`
+  (`data.ts` +430, `data.test.ts` +171, `route.ts` +58, `route.test.ts` +131), 2 new files under
+  `admin/analytics/` (`page.tsx` +188, `page.test.tsx` +123), `admin/layout.tsx` (nav link +4),
+  `admin/layout.test.tsx` (count 7→8), `.claude/agents/backend-engineer/lessons.md` (+35).
+- **Modules touched:** [control-plane (new staff admin page + read-only aggregate API + nav)]
+- **Key contracts changed:** NEW exports `getPlatformAnalyticsRollup()`, `PlatformAnalyticsRollup`,
+  `RollupTotals`, `BrandBreakdownRow`, `RollupResult` (all in `data.ts`) — **added**, breaking: **no**
+  (net-new module, no existing signature altered). New route `GET /api/admin/analytics/rollup`. No
+  DB migration, no new env var (reads existing `CLICKHOUSE_URL` / `DATABASE_URL_ADMIN|DIRECT`), no
+  new ClickHouse table (reads existing `adaptation_decisions` ⋈ `events`).
+
+### 2. Verification done in PR
+
+- Test files changed: `data.test.ts` (5 — mock path, 500 on CH throw, 500 on roster throw, quiz
+  independent-degrade → `quiz_data_source:'error'` + null, live happy path), `route.test.ts` (4 —
+  401 unauth, 500 mapped from `ok:false`, 200 live, 200 mock), `page.test.tsx` (4 — renders cards,
+  renders `—` not `0` on quiz degrade, error banner on `ok:false`, table rows), `layout.test.tsx`
+  (nav-count 7→8). PR reports full control-plane suite 170 files / 1802 tests green locally.
+- CI checks: PR body reports green; not independently re-run (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** `getPlatformAnalyticsRollup` has TWO real non-test consumers:
+`admin/analytics/page.tsx:95` (Server Component, direct call — no self-fetch loopback) and
+`api/admin/analytics/rollup/route.ts:49`. Both `page.tsx` and `route.ts` are Next.js framework
+entrypoints (suppressed). Exported types `BrandBreakdownRow`/`PlatformAnalyticsRollup` imported by
+`page.tsx:23-26`. Nav link `/admin/analytics` (`layout.tsx`) → the page. No orphan.
+
+**CHECK B (half-wire) — clean ✅.** No new event/topic/column/env-var introduced. The two provenance
+signals are fully wired producer→consumer→render: `data_source` ('clickhouse'|'mock') and
+`quiz_data_source` ('live'|'mock'|'error') are **produced** in `data.ts:321-322,416-427` and
+**consumed+rendered** by `page.tsx:107-112` (`DataSourceBadge`, red for 'error') + `QuizCell`/`LiftCell`
+rendering `—` for null (`page.tsx:44,55`). The `ok:false` 500 path is **produced** in `data.ts:349`
+and **consumed** by both the route (→ HTTP 500, `route.ts:50-55`) and the page (→ red error banner,
+`page.tsx:116-120`). No producer without a consumer; no fabricated-200 bypass.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — orphan / soft-deleted-tenant undercount silently shrinks the "platform-wide" total.**
+  The per-brand breakdown AND the rollup totals are both built by iterating `tenantRoster` only
+  (`data.ts:377-417`), where the roster is `tenants WHERE deletedAt IS NULL` (`data.ts:126-133`).
+  Totals (`totalSessions` etc.) accumulate **inside** that `.map` (`:387-396`). Consequence: a
+  ClickHouse `tenant_id` that has real `adaptation_decisions` in the 7-day window but is (a)
+  soft-deleted or (b) an orphan with no `tenants` row is dropped from BOTH the table AND the platform
+  totals — so `rollup.sessions` is NOT the true sum of platform sessions, yet the page advertises
+  "Platform-wide rollup across every brand." This is an honest **omission**, not a fabrication (no
+  fake zeros are injected), which is why it is **P3** — but the "every brand" copy overstates it. The
+  reverse case (a Postgres tenant absent from ClickHouse) is handled correctly: real `0` sessions +
+  `null` lift, which are genuine, not fabricated (`data.ts:378-384`). → **FOLLOW-647.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** No P0/P1/P2. Rule K.2 fail-loud is correctly implemented (primary group throws → `ok:false`
+  → 500 + Sentry; secondary quiz degrades to `null` + `quiz_data_source:'error'` at 200, never 0). Auth
+  gate is correct and consistent (see §5d).
+
+#### 4c. Test coverage gaps
+
+- **TC-1 (P3, folded — no separate stub).** No test exercises LG-1 (a CH tenant_id absent from the
+  roster). Folded into FOLLOW-647, not double-counted. No test asserts the DRIFT-1 counting-method
+  divergence (folded into FOLLOW-646). Everything the PR intends is covered red-first.
+
+#### 4d. Documentation gaps
+
+- **DOC-1 (P3) — the "unfenced staff cross-tenant read" auth doctrine is re-derived per route, not
+  written down.** The worker correctly rejected the brief's `resolveTenantAccess` suggestion (it always
+  fences to exactly one tenant) and reached for `verifyTracerAdminAuth` — the SAME choice
+  `intent/config`, `tracer/sessions`, `tracer/export/*`, `generation-model`, and now this route each
+  arrived at independently. ADR-0013 introduced `verifyTracerAdminAuth` (per-tenant tracer);
+  ADR-0018 generalized staff-per-tenant access; **neither states the general rule** "an *unfenced*
+  cross-tenant staff read uses `verifyTracerAdminAuth`, NOT `resolveTenantAccess`." Every new staff
+  aggregate re-derives this from first principles. → **FOLLOW-648** (doctrine clause).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-622 / FOLLOW-623 (isolated worktrees, in-flight).** Low collision risk with #617: those
+  workers edit `api/config/route.ts`, `tenant-config-editor.tsx`, `packages/shared|sdk`; #617 lives in
+  a **disjoint** file set (`api/admin/analytics/rollup/*`, `admin/analytics/*`). The one shared file is
+  `admin/layout.tsx` — #617 added a `PLATFORM_NAV_LINKS` entry; if FOLLOW-623 also adds a Platform-nav
+  link, expect a trivial one-line rebase conflict there (not a semantic collision). No shared type or
+  contract. No new FOLLOW needed (contrast RETRO-211 §5a, which WAS a real required-field collision).
+
+#### 5b. Future sprint tickets affected
+
+- **White-label epic FOLLOW-639/640/641 (ADR-0019).** These add per-brand divergent config (quiz
+  content, quiz placement, opt-out toggle). Concrete assumption this rollup bakes in: **it treats every
+  brand as configurationally uniform.** Once a brand can legitimately DISABLE the quiz (FOLLOW-641
+  opt-out / FOLLOW-639 per-brand quiz), that brand's `quizCompletions=0` and possibly `adapted=0` mean
+  "feature off," but the rollup has NO column distinguishing "0 because disabled" from "0 because no
+  traffic" — the same honesty axis RETRO-205/FOLLOW-637 hit for frozen-bandit analytics. **Flagged, not
+  scoped** (per brief) — when 639/640/641 land, the rollup should surface a per-brand config-state
+  column; cross-linked into FOLLOW-647 as the escalation trigger, no new feature ticket filed now.
+
+#### 5c. Contracts changed others rely on
+
+- The 5 new `data.ts` exports have exactly the two in-PR consumers; no third party depends on them yet.
+  The `GET /api/admin/analytics/rollup` JSON shape is now a staff-surface contract 639/640/641 may
+  extend. N/A for breakage today.
+
+#### 5d. Architectural assumptions affected — multi-axis + prior-retro reconciliation (step 8)
+
+- **Auth axis (brief probe 1) — verified, consistent.** `verifyTracerAdminAuth` is genuinely
+  staff-only: Bearer `ADMIN_API_SECRET` (constant-time) OR SSR staff session (`estalara_staff===true`)
+  OR staff JWT; a valid **non-staff / agency** session gets 403 (`tracer-auth.ts` Path 2 `not_staff`),
+  and `/admin/*` is already middleware-gated to `estalara:readonly`+ staff (`middleware.ts:284-286`).
+  Usage matches `intent/config` + `tracer/sessions` + `generation-model` exactly. The `resolveTenantAccess`
+  substitution is **correct**, not a shortcut. (Doctrine-writedown gap → DOC-1/FOLLOW-648.)
+- **Provenance/degrade axis (brief probe 2) — honest, not silently absorbable.** The partial degrade IS
+  rendered: `quiz_data_source:'error'` drives a RED badge (`page.tsx:29-40`, source ∉ {clickhouse,live,
+  mock} → red) and every quiz cell renders `—` (`QuizCell`, `page.tsx:54-57`), while the primary metrics
+  still render. Rule K.2 consumer-side satisfied — the operator sees the degrade, cannot mistake it for a
+  real 0. **Positive compliance.**
+- **Mirror-code / drift axis (brief probe 3) — TWO real drifts found (Rule J family).**
+  - **DRIFT-1 (P3, latent-inconsistent):** the rollup counts `adapted`/`holdout` as
+    `countDistinctIf(session_id, …)` — DISTINCT sessions per arm (`data.ts:171-172`) — whereas the
+    per-tenant `dashboard/analytics/summary` counts `countIf(holdout_group=…)` — decision **rows**
+    (`summary/route.ts` query). `sessions` matches (both distinct) but `adapted`/`holdout` will NOT: the
+    SAME tenant shows different Adapted/Holdout on the cross-brand rollup vs its own dashboard summary
+    panel. Rollup is internally consistent (arm-distinct ≈ sessions); summary is the divergent one — but
+    two staff-visible surfaces disagreeing on "Adapted" is exactly the Rule-J mirror hazard.
+  - **DRIFT-2 (P3, currently no-op):** the `lift` mirror carries the FOLLOW-371/ESC-026 holdout-
+    contamination exclusion `AND NOT (ad.holdout_group = 1 AND ad.variant != 'control')`
+    (`lift/route.ts` query); the rollup query **omits** it (`data.ts:185-186`). No-op TODAY because the
+    contamination window (2026-06-19, ~35 days ago) falls outside the rolling 7-day window — but it is a
+    silent drift that resurfaces if the window widens or contamination recurs. Also `computeLift`
+    diverges intentionally (rollup returns `null` on holdoutN=0; lift returns `0`) — this one is an
+    **improvement** (null is more honest) and is documented, so noted, not filed. → **FOLLOW-646**
+    (DRIFT-1 + DRIFT-2). NB: Rule J's `mirror-files.json` gate is `apps/decision-api`-scoped and cannot
+    express these same-runtime ClickHouse-query siblings (same structural blind spot Rule K.1 amendment
+    called out); recorded as a rule candidate in §6, held below threshold.
+  - **Roster-join axis (brief probe 3b):** verified — Postgres-present/CH-absent → real 0 (honest);
+    CH-present/roster-absent → silently dropped (LG-1/FOLLOW-647). No fabricated zeros either way.
+- **Reconciliation with prior retros:** No prior retro declared this surface "clean" — it is net-new, so
+  no contradiction to reconcile. Adjacent lineage: RETRO-008 (Rule K.2 fail-loud origin, cited in the
+  mirror routes' JSDoc) is **confirmed and extended** to a new route; RETRO-205/FOLLOW-637's
+  "analytics-0 must be honest about *why*" concern is the same axis flagged forward in §5b for the
+  per-brand epic.
+
+### 6. New lesson candidates
+
+- **Pattern: "the `adaptation_decisions ⋈ events(cta.clicked)` analytics query is copy-forked across
+  routes (`summary`, `lift`, now `rollup`) with silent per-fork drift (counting method, contamination
+  predicate)."** Same-runtime duplicate business logic that Rule J's cross-runtime file-mirror gate
+  does not cover — the Rule K.1-amendment blind-spot class. Prior sightings: FOLLOW-093 reconciled
+  `lift` vs `pilot/cta-lift` for exactly this (two ClickHouse routes, same metric, different numbers).
+  **Current retro-count for this named pattern = 1** (FOLLOW-093 was a follow-up/reconciliation, not a
+  RETRO finding I can cite as a prior RETRO ID). **HELD — no promotion** (threshold 2 prior RETRO IDs;
+  I have 0–1). If the next analytics-query fork drifts, promote a "Rule K.3 — analytics ClickHouse
+  query family parity" then.
+- **Pattern: "unfenced staff cross-tenant read → `verifyTracerAdminAuth`, never `resolveTenantAccess`" is
+  re-derived per route.** Recurs across ≥5 routes but has never been a *retro* finding before — count 1.
+  Remedy is doctrine (FOLLOW-648), not a CONVENTIONS rule yet. HELD.
+
+### 7. Follow-ups
+
+- **FOLLOW-646:** Reconcile the cross-brand rollup ClickHouse query with its `summary`/`lift` mirrors —
+  align the `adapted`/`holdout` counting method (DISTINCT-session vs decision-row) so a tenant reads the
+  same on both surfaces, and add the missing FOLLOW-371/ESC-026 holdout-contamination exclusion predicate
+  (currently a no-op but a latent drift). Consider registering the analytics-query family in a parity
+  check (Rule K.1-amendment class). (backend-engineer/data-engineer, 3h, **P3**)
+- **FOLLOW-647:** Rollup "platform-wide" total silently excludes soft-deleted / orphan-`tenant_id`
+  ClickHouse sessions (roster-join drop, LG-1) — decide surface-or-document so the total isn't a silent
+  undercount; add the CH-tenant-absent-from-roster test case; add a per-brand config-state column when
+  FOLLOW-639/640/641 make "0 = feature off" a real state (§5b escalation trigger).
+  (backend-engineer, 2h, **P3**)
+- **FOLLOW-648:** Add an explicit "unfenced staff cross-tenant read uses `verifyTracerAdminAuth`, NOT
+  `resolveTenantAccess` (which always fences to one tenant)" clause to ADR-0013/ADR-0018 so future staff
+  aggregates stop re-deriving the auth choice. (architect, 1h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-008 / FOLLOW-329/439 (Rule K.2 fail-loud origin)** — the discipline this PR applies to a new
+  route; confirmed + extended, not contradicted.
+- **RETRO-205 / FOLLOW-637 (analytics honesty about *why* a number is 0)** — same axis flagged forward
+  in §5b for the per-brand epic (a brand's `0` may mean "feature disabled," not "no traffic").
+- **RETRO-211 (FOLLOW-627, PR #616)** — adjacent staff-surface work in the same session; unlike #616,
+  #617 introduces **no** shared-type rebase hazard for the FOLLOW-622/623 worktrees (§5a).
+- **FOLLOW-093** — prior reconciliation of the same ClickHouse analytics-query drift class (§6 pattern).
+- **ADR-0019 (per-tenant presentation config)** — the white-label epic (639/640/641) whose per-brand
+  divergence this rollup will eventually need to reflect (§5b, FOLLOW-647).
+
+<!-- next free FOLLOW number: 649 (FOLLOW-646/647/648 filed by RETRO-212). next free RETRO number: 213.
+RETRO-212 = retro for PR #617 (FOLLOW-638, MERGED 2026-07-24 20:32 UTC, squash 239854c on main by
+Pnawrocki9; 9 files +1153/-9; FABLE). WIRING A+B clean (getPlatformAnalyticsRollup 2 consumers page+route,
+no self-fetch; data_source/quiz_data_source producer→badge/cell→render; ok:false→500/banner). HEADLINE:
+CLEAN, honest fail-loud (Rule K.2) staff aggregate — brief's resolveTenantAccess→verifyTracerAdminAuth
+substitution VERIFIED correct+consistent (staff-only, 403 for agency, matches intent/config+tracer+
+generation-model). THREE P3 findings, no P0/P1/P2: (1) DRIFT-1 rollup counts adapted/holdout as
+countDistinctIf(session_id) but summary counts countIf(rows) → same tenant differs across two staff
+surfaces; DRIFT-2 rollup OMITS lift's FOLLOW-371 holdout-contamination predicate (no-op now, window is
+7d and contamination is 35d old) → FOLLOW-646. (2) LG-1 rollup totals iterate roster (deletedAt IS NULL)
+only → CH sessions for soft-deleted/orphan tenants silently dropped from "platform-wide" total (honest
+omission not fabrication; reverse case = real 0, correct) → FOLLOW-647. (3) DOC-1 "unfenced staff read →
+verifyTracerAdminAuth not resolveTenantAccess" doctrine re-derived per route across ≥5 routes, unwritten
+in ADR-0013/0018 → FOLLOW-648. Quiz partial-degrade HONEST (red badge + — cells, not silently absorbable).
+§5a: FOLLOW-622/623 worktrees DISJOINT file set (only trivial layout.tsx nav rebase) — NO collision FOLLOW
+(contrast RETRO-211). §5b: white-label 639/640/641 will make brand-0 ambiguous (disabled vs no-traffic) —
+flagged not scoped. §6: analytics-ClickHouse-query-fork-drift pattern count 1 (FOLLOW-093), unfenced-staff-
+read pattern count 1 — BOTH HELD, NO CONVENTIONS_PATCH promotion (below ≥2-prior-RETRO threshold). -->
+

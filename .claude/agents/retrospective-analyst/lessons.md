@@ -3298,3 +3298,33 @@ so.**
   closures (633/636/637/627). The moment a NEW prior retro sights it, promote — but as a READ-side
   extension of the Rule-H lint (guard), not prose. Don't let the steady stream of CLOSURES trick me
   into thinking the PATTERN is being counted (closures are not new sightings).
+
+---
+
+### 2026-07-24 · RETRO-212 (PR #617 / FOLLOW-638 — cross-brand analytics rollup)
+
+- **A finding I almost missed and why:** DRIFT-1 — the rollup counts `adapted`/`holdout` with
+  `countDistinctIf(session_id)` while the mirrored `summary` route counts `countIf(rows)`. The PR
+  loudly advertised "mirrors summary/lift" and the `sessions` count DID match (both DISTINCT), which
+  nearly lulled me into passing the mirror as faithful. Only reading the two query bodies side by
+  side line-for-line — not the JSDoc claim — exposed that `adapted`/`holdout` diverge. **Lesson: a
+  PR's own "this mirrors X" claim is a hypothesis to falsify by diffing the actual SQL, never
+  evidence.**
+- **An axis/chain I had to trace twice:** the roster-join undercount (LG-1). First pass I saw
+  "tenant in Postgres but absent from ClickHouse → real 0, honest" and almost moved on. Second pass
+  on the REVERSE axis (CH tenant_id absent from the `deletedAt IS NULL` roster) revealed the totals
+  accumulate INSIDE the `tenantRoster.map`, so orphan/soft-deleted sessions vanish from the platform
+  total, not just the table. The "platform-wide" honesty gap only appears when you trace the
+  direction the code does NOT iterate. Multi-axis discipline (step 8) paid out on a JOIN, not a
+  contract field.
+- **A meta-pattern in how gaps recur across agents:** two DIFFERENT "silent 0 / silent omission"
+  honesty gaps this session both trace to the SAME root as RETRO-205/FOLLOW-637 — an analytics
+  surface that shows a number without disclosing WHY it's 0 (feature-off vs no-data vs dropped-row).
+  This honesty axis is becoming the dominant recurring class on staff/analytics surfaces. I flagged
+  it forward into FOLLOW-647's escalation trigger rather than promoting a rule (still count 1 as a
+  named _retro_ pattern) — but if the white-label epic surfaces it a third time, this is the
+  promotion.
+- **Restraint note:** resisted promoting the "same-runtime ClickHouse query fork drift" pattern to a
+  Rule despite it feeling real (FOLLOW-093 is a prior sighting) — FOLLOW-093 was a follow-up, not a
+  citable prior RETRO ID, so count = 0–1 of the required 2. Held. Guard-over-prose + threshold
+  discipline both held.

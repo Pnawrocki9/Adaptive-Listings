@@ -18472,3 +18472,49 @@ for `white_label:true` to suppress.
    the passthrough per Rule U (do not leave an inert signal) and record the decision.
 
 cross_ref: [RETRO-214, FOLLOW-623, RETRO-205, ADR-0019, FOLLOW-641]
+
+## FOLLOW-652 — Brand-provisioning runbook + checklist: stand up a new white-label brand end-to-end (3 real clients incoming, go-live 2-4 weeks)
+
+source_retro: CEO ruling 2026-07-25 (session 58 — three external re-brand clients onboarding NOW;
+domains not yet known; CEO operates everything from admin, no client dashboard access)
+source_ticket: (white-label per-brand epic) recommended_sprint: now recommended_agent:
+backend-engineer priority: P1 estimated_hours: 5 depends_on: [] promoted_to_queue: false
+
+**Goal:** a single executable runbook (`docs/runbooks/BRAND_PROVISIONING.md`) + verification
+checklist that takes a new client brand from zero to live AL, so the moment domains exist the 3
+clients can be provisioned mechanically. Must be accurate against the REAL current flows — verify
+each step in-repo, no guessing (Operating Principle 5).
+
+**AC:**
+
+1. Step-by-step: create `tenants` row (plan/status), generate api_key (existing onboarding activate
+   flow — verify what it automates: status flip, key gen, embeddings seed), set `brand_config`
+   (colors/logo per ADR-0019), `quiz_enabled`/`al_enabled` flags, quiz definition (post-FOLLOW-639)
+   or built-in fallback, `allowed_origins` (post-FOLLOW-642 — note the write-path that ticket
+   ships), intent weights (defaults vs per-tenant).
+2. Deploy-side coordination section: what the app-deployment side (client domain, DNS, branding
+   assets, api_key injection into the deployed instance) needs — as a HANDOFF checklist (that side
+   lives outside this repo; name the inputs/outputs precisely, incl. domain-independence: instance
+   identity = baked api_key, never hostname).
+3. Verification checklist per brand: SDK loads + public-config returns brand slice; ingest accepts
+   events from the brand domain (origin allow-list); events land in ClickHouse under the right
+   tenant_id; per-brand analytics + cross-brand rollup (#617) show the brand; AL on/off flip works.
+4. Dry-run the runbook against a THROWAWAY test tenant in the local/dev environment where
+   verifiable; mark any step that can only be verified in prod as OPERATOR-GATED.
+
+## FOLLOW-653 — Compliance technical-layer verification for external-brand go-live (contracts cover roles — verify the technical artifacts only)
+
+source_retro: CEO ruling 2026-07-25 (session 58): client CONTRACTS cover controller/processor roles
+— do NOT re-litigate DPIA; verify the technical layer only. source_ticket: (white-label per-brand
+epic) recommended_sprint: now recommended_agent: compliance-engineer priority: P2 estimated_hours: 4
+depends_on: [] promoted_to_queue: false
+
+**Scope (tight):** given 3 external brands on client domains sharing one data pool, verify the
+TECHNICAL compliance artifacts exist and are per-brand-correct: (1) privacy policy surfacing on
+client-domain deployments — whose policy renders, is it brandable/parameterized, does it name the
+actual data practices (AL profiling, quiz, chat); (2) consent umbrella (FOLLOW-373 lineage) works on
+client domains and its text doesn't hardcode "Estalara" where the brand should appear; (3) per-user
+opt-out (§H.9) reachable on client brands (FOLLOW-641 pending — flag, don't build); (4) DSR
+endpoints work for visitors of any brand (tenant-agnostic OTP flows). Deliverable: short gap report
+`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` + stubs for real gaps only. Explicitly OUT
+of scope: DPIA, controller-role analysis (contracts cover it — CEO ruling).

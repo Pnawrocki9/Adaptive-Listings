@@ -40,13 +40,14 @@ import * as Sentry from '@sentry/nextjs';
 
 import { createAdminClient, tenants } from '@estalara/db';
 
-/** Tenant statuses that hard-disable Adaptive Listings serving (FOLLOW-633). */
-export const AL_OFF_STATUSES: ReadonlySet<string> = new Set(['suspended', 'canceled']);
+/**
+ * Reason an adapt request was served neutral, for observability / provenance.
+ * Module-private: the adapt route consumes `resolveAlEnablement`'s inferred return
+ * type, so this is not re-exported (Rule I — no dead cross-file exports).
+ */
+type AlOffReason = 'al_disabled' | 'status_suspended' | 'status_canceled';
 
-/** Reason an adapt request was served neutral, for observability / provenance. */
-export type AlOffReason = 'al_disabled' | 'status_suspended' | 'status_canceled';
-
-export interface AlEnablement {
+interface AlEnablement {
   /** True when adaptation MUST be suppressed (serve neutral pass-through). */
   off: boolean;
   /** Why serving is off; `null` when on. Surfaced on the wire as `al_off_reason`. */

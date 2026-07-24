@@ -23,7 +23,6 @@ const { mockResolveAlEnablement } = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/al-enablement', () => ({
   resolveAlEnablement: mockResolveAlEnablement,
-  AL_OFF_STATUSES: new Set(['suspended', 'canceled']),
 }));
 
 vi.mock('@/lib/demo-jwt-verify', () => ({

@@ -41,7 +41,7 @@ vi.mock('@estalara/db', () => ({
 
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 
-import { resolveAlEnablement, AL_OFF_STATUSES } from './al-enablement';
+import { resolveAlEnablement } from './al-enablement';
 import { captureException } from '@sentry/nextjs';
 
 const TENANT = '11111111-1111-1111-1111-111111111111';
@@ -122,9 +122,5 @@ describe('resolveAlEnablement', () => {
     expect(await resolveAlEnablement('')).toEqual({ off: false, reason: null });
     expect(await resolveAlEnablement('unknown')).toEqual({ off: false, reason: null });
     expect(createAdminClientMock).not.toHaveBeenCalled();
-  });
-
-  it('AL_OFF_STATUSES contains exactly suspended + canceled', () => {
-    expect([...AL_OFF_STATUSES].sort()).toEqual(['canceled', 'suspended']);
   });
 });

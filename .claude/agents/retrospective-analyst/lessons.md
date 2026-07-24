@@ -3212,3 +3212,33 @@ so.**
   "no gap found" and a green-modulo-Rule-I CI. Both were locally true and jointly misleading. The
   audit verified the things a ticket's AC lists; nobody's AC says "and something must read this".
   **A prior audit's clean verdict is an input to re-derive, never a section I can skip.**
+
+---
+
+## 2026-07-24 · RETRO-206 (FOLLOW-624 / PR #608)
+
+- **A finding I almost missed and why.** FOLLOW-624's PR body was persuasive: red-first tests, three
+  editors fixed, and an explicit grep `grep -rn "catch(() => {" apps/control-plane/src/app/admin`
+  returning "0 matches after this PR." I nearly accepted "the swallow is closed." The tell was that
+  the grep was scoped to `/app/admin` — but Rule K.2's OWN Verification block specifies the
+  repo-wide `grep -rn "catch(() =>" apps/`. Running the rule's actual (wide) grep surfaced three
+  byte-identical twins outside `/admin`: `dashboard/quiz/page.tsx`,
+  `dashboard/demo/override/page.tsx`, and the shared `components/generation-model-settings.tsx`.
+  **Lesson: when a PR cites a grep as proof, re-run the RULE's grep verbatim, not the PR's narrowed
+  copy. A narrowed proof-grep is the fix inheriting the audit's blind spot.**
+- **An axis/chain I had to trace twice.** The route axis. Two of the twins (`/api/quiz/config`,
+  `/api/demo/override`) write the EXACT SAME routes the fixed admin editors write — so the routes
+  each have two client consumers, one safe and one clobbering. I had to map
+  consumer→route→sibling-consumer, not just consumer→route, to see that the fix covered one consumer
+  per route and left the other. The admin editors were the LATE copies (FOLLOW-595/596/600); the
+  dashboard pages are the ORIGINALS the swallow was copied FROM — so the fix chased the copies and
+  left the source.
+- **A meta-pattern in how gaps recur across agents.** "Scope the fix to the surfaces the retro
+  NAMED, not to the pattern's full grep." RETRO-205 named three admin editors (the surfaces IT was
+  auditing); FOLLOW-624 fixed exactly those three and no more. The finding's real boundary was the
+  grep, not the enumeration. Same shape as RETRO-001→004 (5 Rule-H instances missed in one PR).
+  Also: a SHARED component (`generation-model-settings.tsx`, one file → two zones) concentrates a
+  consumer-side defect and removes the "one surface fixed, one not" signal that would otherwise flag
+  the miss — and it sits in `src/components/`, outside the `src/app/**` scope FOLLOW-625's guard was
+  drafted against, so I had to widen the mechanization's scope too or it would ship blind to the
+  very instance that motivated it.

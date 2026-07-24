@@ -31664,3 +31664,232 @@ environment → FOLLOW-628. Interrupted-PM-run: 3rd stranding (FOLLOW-573 still 
 this session and NOTHING was left inconsistent. CHECK A clean. RULE PROMOTED: Rule AF (permanently-red gate =
 disabled gate), evidence SESSION-RETRO-39 + RETRO-187 + RETRO-188 (3 PRIOR ≥ 2). Hub-link armed trigger from
 RETRO-200 did NOT fire — #606 added its link in the same PR (template held). -->
+
+## RETRO-206 — FOLLOW-624 (stop staff config editors clobbering config on load failure) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #608 (merged 2026-07-24 07:28 UTC, squash commit `3b0b4a3`)
+- **Files changed:** 7 (+508 / −15) — 3 editor components, 3 new `.test.tsx`, 1 lessons doc
+- **Modules touched:** [control-plane (staff admin UI), docs (agent lessons)]
+- **Key contracts changed:** none. No schema/event/column/env/SDK-signal added. Pure consumer-side
+  bugfix to three already-wired editors of `/api/config`, `/api/quiz/config`, `/api/demo/override`
+  (each `?tenant_id=<id>`). A new internal `loadStatus` state was added *inside* each component
+  (not a cross-module contract). `tenant-config-editor` additionally now reads the route's existing
+  zod `.flatten().details` (a field the route already emitted — new consumer of an existing signal,
+  not a new producer). breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: 3 new (`tenant-config-editor.test.tsx` +105, `quiz-config-editor.test.tsx`
+  +108 [was ZERO before], `demo-override-editor.test.tsx` +110 [was ZERO before]). Assertions added:
+  per editor — GET-rejects/500 → error alert + Save disabled + no PATCH/POST/PUT issued; GET-succeeds
+  → unchanged; retry-recovers-without-reload; (tenant-config only) validation-`details`-surfaced.
+  Coverage delta: +2 previously-untested editors now covered; the TG-1 hole RETRO-205 named is closed
+  **on the three admin editors**. Red-first per AC3 (7 failed / 6 passed pre-fix, then green).
+- CI checks: PR body claims `tsc`/eslint/prettier/`check-rule-h.sh`/pre-push hooks all green; ESC-039
+  resolution note confirms all real gates green (only pre-existing repo-wide `Rule I` red, also red on
+  `main` `d89757f` — not a regression). Not independently re-run this session (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** No new file/export added (the two new component files are `.test.tsx`,
+suppressed as test files; the three edited components are pre-existing and each rendered by a live page
+wrapper — `admin/tenants/[id]/{settings,quiz,demo}/page.tsx`). No orphaned symbol.
+
+**CHECK B (half-wire) — clean ✅** for what the PR added. The new `loadStatus` state is produced (fetch
+outcome) and consumed (alert render + Save-disable + `handleSave` early-return) inside each component —
+producer→consumer→render all present. The newly-read validation `details` has a live producer
+(`/api/config` route's zod `.flatten()`), so it is not a consumer-only half-wire.
+
+*(The systemic finding below is NOT a wiring-audit class — it is an INCOMPLETE-FIX / gap-moved-one-hop
+finding, recorded in §4a and §8, per the step-7 closure-trace discipline.)*
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, HEADLINE — the fix is incomplete; the gap moved one hop, not closed).** FOLLOW-624 fixed
+  the **three admin/staff editors** under `admin/tenants/[id]/` but left **three sibling consumers with
+  the byte-identical swallow-then-Save-defaults shape untouched** — and two of them write to the *exact
+  same routes* the fixed editors write to:
+  1. `apps/control-plane/src/app/dashboard/quiz/page.tsx:96-114` — `void fetch('/api/quiz/config')`,
+     `if (!r.ok) throw` (`:98-100`) straight into `.catch(() => { /* load silently — defaults already
+     set */ })` (`:111-113`); `handleSave` (`:162-187`) POSTs the **full** `config` blob
+     (`JSON.stringify(config)`, `:171`) to the **same `/api/quiz/config`** the fixed
+     `quiz/quiz-config-editor.tsx` writes. Failed GET + Save = tenant's live SDK-consumed
+     `quiz_config` (`accent_color`, `language`, `micro_polls_enabled`) reverts to `DEFAULTS` (`:72-75`)
+     under "Settings saved!". **This is the ORIGINAL surface the admin editor was copied FROM**
+     (FOLLOW-595). Tenant-operated → routine use → arguably higher blast radius than the staff path.
+     Severity **P1**.
+  2. `apps/control-plane/src/app/dashboard/demo/override/page.tsx:89-108` — **worse**: the load has
+     **no `!r.ok` guard at all** (`:91 .then((r) => r.json())`), so a 500's error body is parsed as
+     config and `d.enabled ?? false` (`:96`) renders DEMO MODE **OFF** with no alert; `.catch(() => {})`
+     (`:105-107`) swallows network rejects. `handleSave` (`:110-148`) PUTs the full override to the
+     **same `/api/demo/override`** as the fixed `demo/demo-override-editor.tsx`. Failed/errored GET +
+     Save = a tenant's live DEMO override is silently turned OFF or reset. Severity **P1**.
+  3. `apps/control-plane/src/components/generation-model-settings.tsx:71-91` — `.catch(() => { /* Load
+     silently — defaults already set */ })` (`:88-90`), no `!r.ok` guard (`:73 .then((r) => r.json())`);
+     `handleSave` (`:93-127`) PUTs `{ generation_model }` to `/api/admin/generation-model`. Failed GET
+     renders the `'claude-sonnet-4-6'` default (`:62`); a Save resets the **GLOBAL** description-
+     generation model and busts the description cache. Smaller blast radius (single global value; only
+     staff PUT succeeds — agency gets a server-side 403, so the agency-side clobber is blocked at the
+     route, not the client), so **P2** — but same class, and it is the SHARED component rendered by
+     **both** `/admin/settings` and `/dashboard/settings` (`grep -rln GenerationModelSettings app` →
+     both), so the swallow is live in both zones from one file.
+
+  Grep that finds all six (three fixed + three missed):
+  `grep -rn "catch(() =>" apps/control-plane/src --include=*.tsx` (Rule K.2's own Verification block
+  specifies the **repo-wide** `grep -rn "catch(() =>" apps/`; FOLLOW-624's PR body instead ran
+  `grep … apps/control-plane/src/app/admin` — the rule's wide grep was narrowed to `/admin`, which is
+  precisely why the three non-`/admin` twins were not seen). → **FOLLOW-630**.
+
+- **LG-2 (P2, FOLLOW-625 mechanization is itself under-scoped).** FOLLOW-625's AC scopes the CI guard to
+  `apps/control-plane/src/app/**`. `generation-model-settings.tsx` lives in **`src/components/`**, OUTSIDE
+  that glob — so the mechanized guard, as specified, would catch the two dashboard `app/**` twins
+  (LG-1.1/1.2) but **silently miss the shared component (LG-1.3)**, re-creating the same scope-blind-spot
+  one level down. The guard's own proof AC ("the three FOLLOW-624-fixed editors pass") validates only
+  against the admin three, so a green FOLLOW-625 could ship while LG-1.3 still swallows. → amendment
+  appended to **FOLLOW-625** AC (scope must include `src/components/**` and any client component that
+  populates editable state, not only `src/app/**`).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- The three LG-1 instances ARE the live defect (classified as logic gaps, consistent with RETRO-205's
+  treatment of the identical admin instances as §4a LG-1). No *additional* bug in the merged diff: the
+  fix on the three admin editors is correct and end-to-end (traced in §8). Adversarial pass on the fix
+  came back clean — `handleSave` early-returns on `loadStatus !== 'loaded'` as defense-in-depth beyond
+  the disabled button; the no-row 200 case is correctly left as legitimate state (not treated as error).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, folded into FOLLOW-630).** The three new admin test files assert BOTH load directions, but
+  the three dashboard/shared twins (LG-1) have **no failed-load test** — `dashboard/quiz/page.tsx` and
+  `generation-model-settings.tsx` tests (where they exist) stub a successful GET, the exact hole RETRO-205
+  TG-1 named for the admin side, still open on the dashboard side. FOLLOW-630 must ship red-first
+  failed-load + no-write tests for all three, mirroring FOLLOW-624 AC3.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The `.claude/agents/backend-engineer/lessons.md` entry (+44) accurately records the admin fix.
+  No MASTER_DESIGN / ROPA divergence introduced (no data category or contract changed).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-625** (mechanize the K.2 swallow check, still OPEN, `promoted_to_queue:false`): directly
+  affected — its `src/app/**` scope (LG-2) must widen to `src/components/**` or it ships a guard that
+  cannot see LG-1.3. AC amendment appended this session.
+- **FOLLOW-627** (`/api/config` missing-row provenance): unaffected — it is route-side; the client
+  twins hit different routes (`/api/quiz/config`, `/api/demo/override`, `/api/admin/generation-model`),
+  though the same "missing-row → GET 200 defaults → Save → phantom success" chain FOLLOW-627 describes
+  applies to the quiz/demo routes too if they fabricate on missing rows (out of this retro's read scope).
+
+#### 5b. Future sprint tickets affected
+
+- Any ticket asserting "the staff config-loss clobber is fixed" (e.g. a Sprint close-out referencing
+  ESC-039) is **over-claiming**: ESC-039 is RESOLVED only on the three admin surfaces; the tenant-facing
+  `/dashboard/quiz`, `/dashboard/demo/override`, and the shared generation-model panel remain live-clobber
+  paths until FOLLOW-630 lands.
+
+#### 5c. Contracts changed others rely on
+
+- None changed. But note: `/api/quiz/config` and `/api/demo/override` each now have **two client
+  consumers** — one safe (admin editor, fixed) and one clobbering (dashboard twin, unfixed). Anyone
+  reasoning about these routes must not assume all consumers handle a failed GET correctly.
+
+#### 5d. Architectural assumptions affected
+
+- **A-1 — the "one shared component, two thin page wrappers" anti-drift pattern back-fired here.**
+  `generation-model-settings.tsx`'s own docstring (`:10-14`) states it was extracted so "the two zones
+  cannot drift apart." True for behaviour — but it also means the single swallow bug is rendered
+  identically into BOTH `/admin/settings` (staff) and `/dashboard/settings` (agency) with no divergence
+  to make one instance visible. Shared-component reuse concentrates a consumer-side defect instead of
+  diluting it; the anti-drift win is real but it removes the "one surface is fixed, the other isn't"
+  signal that would otherwise flag the miss. No action beyond FOLLOW-630; recorded as a design note.
+
+### 6. New lesson candidates
+
+- **P-5 (NEW) — "A fix generated from a retro finding must be scoped to the finding's FULL detecting
+  grep (repo-wide, as the rule specifies), not to the specific instances the retro enumerated. Narrowing
+  the rule's grep to the examined surface (`…/app/admin` instead of the rule's `apps/`) re-introduces
+  the exact undercount the preceding audit made — the fix inherits the audit's blind spot."** Seen in:
+  **this RETRO** (FOLLOW-624 ran `grep …/app/admin`, missing the repo-wide dashboard/shared twins that
+  Rule K.2's Verification block's wider `grep apps/` would have surfaced). Prior analogue: RETRO-001→004
+  (5 Rule-H instances missed inside one PR, found four retros later) — same class (scope of the fix/audit
+  tracked the surfaces under active examination, not the pattern's full extent), but logged there as an
+  anti-undercount caution, not as this exact "narrowed the rule's own grep" shape. **Count 1 (this) —
+  HELD, not promoted** (guardrail: <2 → no rule). Arming condition: a second fix that narrows a rule's
+  repo-wide Verification grep to the retro-named subset promotes this — the natural home is a Rule K/AE
+  *enforcement* amendment ("run the rule's grep verbatim, unscoped") plus the FOLLOW-625 mechanization,
+  not a new letter.
+
+- **P-2 (carried from RETRO-205) — the K.2 swallow-then-Save-defaults pattern. NOT promoted, and the
+  arming condition did NOT fire.** RETRO-205 P-2 armed promotion on "a **fourth** instance shipping
+  *after* FOLLOW-624/625 land (a recurrence-despite-a-fix)." The three twins found here are **not** that:
+  they PRE-DATE the fix (they are the ORIGINAL surfaces FOLLOW-595/596/600 copied *from*), so they are
+  missed-pre-existing instances, not recurrence-despite-fix. The trigger stays armed unchanged. Remedy
+  remains mechanical (FOLLOW-630 fix + FOLLOW-625 guard, now re-scoped), matching the RETRO-204/205
+  enforcement-not-text diagnosis. **No new Rule, no K.2 amendment.**
+
+- **META (the specific pattern the launching brief asked about) — "an audit/fix terminating at
+  producer-side facts (`the columns are real`) while missing the consumer-side" is ALREADY codified as
+  Rule K.2's consumer-side clause** (evidence RETRO-013/015 + this + RETRO-205). It is not a promotion
+  candidate because it is already a rule; the recurrence here is an *enforcement* failure of that existing
+  rule (nobody ran its grep, and when a grep was run it was narrowed — P-5), which FOLLOW-625 + FOLLOW-630
+  discharge. Flagged explicitly per the brief: **≥2 retros, but no promotion — already a Rule, remedy is
+  enforcement.**
+
+### 7. Follow-ups
+
+- **FOLLOW-630:** Fix the three dashboard/shared config editors that swallow a failed GET and clobber
+  real config with defaults on the next Save — the twins FOLLOW-624 missed
+  (`dashboard/quiz/page.tsx` P1, `dashboard/demo/override/page.tsx` P1,
+  `components/generation-model-settings.tsx` P2). Mirror FOLLOW-624's loadStatus/alert/Retry/Save-disable
+  fix and red-first tests (backend-engineer, 3h, **P1**).
+- **FOLLOW-625 AC amendment (appended, not a new number):** the CI guard scope must include
+  `apps/control-plane/src/components/**` (and any client component populating editable state), not only
+  `src/app/**`, and its proof fixtures must include `generation-model-settings.tsx`; else LG-1.3 ships
+  un-linted.
+
+### 8. Cross-references
+
+- **RETRO-205 (FOLLOW-600) — closure of ESC-039/FOLLOW-624 traced END-TO-END and found INCOMPLETE (the
+  gap moved one hop).** FOLLOW-624's fix is genuinely end-to-end **on the three admin editors** (failed
+  fetch → `loadStatus='error'` → `role="alert"` render + Save disabled + `handleSave` early-return —
+  producer→consumer→render all verified by reading the diff, not the PR body). BUT the FINDING's true
+  scope is Rule K.2's repo-wide swallow grep, which also matches three non-`/admin` twins that were not
+  fixed. So the gap moved from "3 admin editors swallow" to "3 dashboard/shared twins swallow" — the same
+  one-hop-downstream failure mode the `inquiry_submit_selector` chain (097→114→127→141) trained this loop
+  to check for. This is exactly the step-7 discipline paying out.
+- **RETRO-193 / RETRO-198 — CONTRADICTED on a further axis and reconciled.** RETRO-205 already re-opened
+  their "clean" verdict on the client-READ axis for the *admin* surfaces; this retro extends that
+  contradiction to the **dashboard/session-scoped** surfaces of the same routes, which no retro in that
+  series (nor RETRO-205, nor FOLLOW-624) examined. The ESC-039 resolution note's claim "Tests assert BOTH
+  directions in all three editors" is correct on the axis it names (load-success vs load-failure, admin
+  editors) and silent on the surface-family axis (admin vs dashboard/shared) — reconciled here as
+  incomplete, not wrong.
+- **RETRO-204 (Rule AE) — methodological reuse.** Its "the rule already enumerates it; the failure was
+  enforcement" diagnosis is why P-5 is held (not promoted) and the remedy is the FOLLOW-625 mechanization
+  + a scope correction, not new rule text.
+
+<!-- next free FOLLOW number: 631 (FOLLOW-630 filed by RETRO-206; FOLLOW-625 amended in place, not
+renumbered). next free RETRO number: 207. RETRO-206 = retro for PR #608 (FOLLOW-624, MERGED 2026-07-24
+07:28:10 UTC, squash 3b0b4a3 on main by Pnawrocki9; 7 files +508/-15, no migrations/contracts; branch
+backend-engineer/FOLLOW-624-editor-load-failure-guard, OPUS). WIRING AUDIT CHECK A + CHECK B both clean
+(no new export/contract; loadStatus produced+consumed+rendered in-component; validation `details` has a
+live route producer). HEADLINE: FOLLOW-624's fix is INCOMPLETE — it fixed the 3 ADMIN editors under
+admin/tenants/[id]/ but left 3 byte-identical twins that swallow a failed GET then Save DEFAULTS over
+real data: dashboard/quiz/page.tsx:111 (POSTs full config to the SAME /api/quiz/config, P1),
+dashboard/demo/override/page.tsx:105 (worse — no !r.ok guard at all, PUTs to SAME /api/demo/override,
+P1), components/generation-model-settings.tsx:88 (shared by /admin/settings + /dashboard/settings, PUTs
+global model, P2). Root: FOLLOW-624 ran `grep …/app/admin` — a NARROWED version of Rule K.2's repo-wide
+`grep apps/` — so the non-/admin twins were invisible. → FOLLOW-630 (fix all three). FOLLOW-625's CI
+guard is itself under-scoped (src/app/** only) and would MISS generation-model-settings.tsx in
+src/components/** → AC amended in place. NO PROMOTION: (a) K.2 swallow (RETRO-205 P-2) armed on a 4th
+instance AFTER the fix — these twins PRE-DATE the fix (originals copied FROM), so trigger did NOT fire;
+(b) the producer-fact-audit-termination meta-pattern is ALREADY Rule K.2's consumer-side clause — this is
+an enforcement failure of an existing rule, not a missing rule; (c) new P-5 "fix narrowed the rule's own
+grep" is count 1, held. ESC-039 is RESOLVED only on the admin axis — dashboard/shared clobber paths stay
+LIVE until FOLLOW-630. -->

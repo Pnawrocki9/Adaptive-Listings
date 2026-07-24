@@ -17551,6 +17551,9 @@ ESC-015]
 
 ## FOLLOW-627 — `/api/config` missing-row semantics: replace the tested-in fabricated defaults with a real 404/provenance signal, and detect the 0-row PATCH
 
+**STATUS 2026-07-24: 🔵 PR #616 OPEN** — `data_source: stored|default` on GET + 404 `unknown_tenant`
+on 0-row PATCH; 35/35 tests green locally, CI running.
+
 source_retro: RETRO-205 (§4a LG-2, §4c TG-3) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
 recommended_sprint: opportunistic recommended_agent: backend-engineer priority: P3 estimated_hours:
 2 depends_on: [] promoted_to_queue: false
@@ -17929,6 +17932,8 @@ FOLLOW-633 (PR #612 — the adapt/route.ts sequencing dependency), memory
 
 ## FOLLOW-636 — Demo-session "revoke" is a producer-only facade: `POST /api/demo/sessions/[id]/revoke` writes `revoked_at` but the runtime demo-JWT gate never checks it, so a revoked token keeps serving until its own `exp` (up to 7d)
 
+**STATUS 2026-07-24: ✅ DONE — PR #614 merged (`3eb73e7`).** Runtime gate now checks `revoked_at`.
+
 source_retro: session-57 admin-surface audit (full 4-probe sweep, 2026-07-24) source_ticket: (admin
 audit — platform pages cluster) recommended_sprint: next recommended_agent: backend-engineer
 priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue: false
@@ -17960,6 +17965,9 @@ cross_ref: [session-57 admin-surface audit `docs/ADMIN-SURFACE-AUDIT-2026-07-24.
 sibling resolve-then-enforce pattern), CONVENTIONS_PATCH Rule K.2 (producer-without-consumer)]
 
 ## FOLLOW-637 — A/B bandit analytics presents real-but-INERT data as live: `ab_bandit_weights.estimated_rate` is frozen at 0.5 (feedback 503-gated) and the analytics dashboard shows it with no "not-learning" indicator
+
+**STATUS 2026-07-24: 🔵 PR #615 OPEN** — `learning_state` on `/api/ab/weights` + "Learning Paused"
+badge; 34/34 tests green locally, CI running.
 
 source_retro: session-57 admin-surface audit (full 4-probe sweep, 2026-07-24) source_ticket: (admin
 audit — intent/tracer/weights cluster) recommended_sprint: opportunistic recommended_agent:

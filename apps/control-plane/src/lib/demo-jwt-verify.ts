@@ -20,6 +20,13 @@
 export interface DemoJwtClaims {
   /** Tenant the demo session belongs to. Present in JWTs issued by /api/demo/sessions. */
   tenant_id?: string;
+  /**
+   * The `demo_sessions.id` (UUID) this token was issued for. Present in JWTs
+   * issued by /api/demo/sessions. Consumed by the adapt path to enforce runtime
+   * revocation (`demo_sessions.revoked_at`) — the self-contained JWT `exp` cannot
+   * reflect a revoke, so this id is the lookup key (FOLLOW-636).
+   */
+  session_id?: string;
 }
 
 /** Thrown when `DEMO_MODE_JWT_SECRET` is not set in the environment. */
@@ -124,6 +131,9 @@ export async function verifyDemoJwt(token: string): Promise<DemoJwtClaims> {
   return {
     ...(typeof payload.tenant_id === 'string' && payload.tenant_id.length > 0
       ? { tenant_id: payload.tenant_id }
+      : {}),
+    ...(typeof payload.session_id === 'string' && payload.session_id.length > 0
+      ? { session_id: payload.session_id }
       : {}),
   };
 }

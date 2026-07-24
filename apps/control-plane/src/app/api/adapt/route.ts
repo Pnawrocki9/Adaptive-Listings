@@ -76,6 +76,7 @@ import {
 import { resolveApiKey } from '@/lib/api-key-auth';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { resolveAlEnablement } from '@/lib/al-enablement';
+import { resolveDemoSessionRevocation } from '@/lib/demo-session-revocation';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
 import * as Sentry from '@sentry/nextjs';
@@ -1170,6 +1171,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     } else {
       // Unexpected error — rethrow to surface as 500 via Next.js error handler.
       throw err;
+    }
+  }
+
+  // ── FOLLOW-636: enforce demo-session revocation at runtime ────────────────
+  // verifyDemoJwt above only proves signature + `exp`; it CANNOT see that the
+  // session was revoked (revoke writes demo_sessions.revoked_at, which the
+  // already-issued token cannot reflect). Without this, revoking a demo session
+  // has zero runtime effect — the token keeps serving up to its 7-day exp.
+  // Applies ONLY to the demo-JWT path (apiKeyTenantId === null): the API-key
+  // fallback has its own api_keys.revoked_at revocation (ADR-0015). A revoked
+  // session returns the SAME 401 invalid_demo_token the path already uses for a
+  // bad token. Fail-OPEN on a lookup problem (a DB blip must not break a legit
+  // demo — Sentry-captured inside the helper); signature + exp stay fail-closed.
+  if (apiKeyTenantId === null && jwtClaims.session_id) {
+    const { revoked } = await resolveDemoSessionRevocation(jwtClaims.session_id);
+    if (revoked) {
+      return NextResponse.json({ error: 'invalid_demo_token' }, { status: 401 });
     }
   }
 

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 ALL DONE + MERGED; ESC-039 FULLY CLOSED all 3 legs; RETRO-207/208 written; ▶️ NEXT: next-ticket selection from RETRO-205's open follow-ups)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 + 626 DONE + MERGED; ESC-039 FULLY CLOSED; RETRO-207/208 written; ▶️ NEXT: FOLLOW-622/623 P1 facade (needs escalation?) or FOLLOW-627/628/629)
 
 **Session 57 = ESC-039 close-out chain (K.2 swallow-then-clobber data-loss).**
 
@@ -41,11 +41,15 @@
    K.2 was one of many rules shipping an unrun grep). **ESC-039 verified closed end-to-end** by the
    retros (remediation leg + prevention leg), FOLLOW-631 tracked as latent residual, does NOT
    re-open ESC-039.
-2. **RETRO-205's still-open follow-ups (not yet promoted to QUEUE):** FOLLOW-622 + FOLLOW-623 (P1 —
+2. **FOLLOW-626 DONE + MERGED (PR #611, `f213880`).** Quarantined the permanently-red `Release`
+   workflow (trigger → `workflow_dispatch` only; SDK ships as hosted bundle, no npm consumer; header
+   records WHY + re-enable path). PM verified the merge commit fired no Release run. Second
+   permanently-red gate from RETRO-205 §5d closed.
+3. **RETRO-205's still-open follow-ups (not yet promoted to QUEUE):** FOLLOW-622 + FOLLOW-623 (P1 —
    `allowed_origins`/`brand_config` are producer-only facades; `allowed_origins` is advertised as an
    SDK-origin security control that ingest CORS does NOT enforce — likely needs escalation/design,
-   not a quick fix), FOLLOW-626 (permanently-red `Release` workflow), FOLLOW-627 (`/api/config`
-   missing-row semantics), FOLLOW-628, FOLLOW-629.
+   not a quick fix), FOLLOW-627 (`/api/config` missing-row semantics), FOLLOW-628, FOLLOW-629,
+   FOLLOW-631 (P3 block-form swallow guard gap), FOLLOW-632 (P2 audit CONVENTIONS_PATCH greps).
 
 ---
 

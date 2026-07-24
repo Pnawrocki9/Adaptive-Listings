@@ -17505,6 +17505,17 @@ enforcement-vs-rule diagnosis), FOLLOW-624, FOLLOW-630, CONVENTIONS_PATCH Rule K
 
 ## FOLLOW-626 — Fix or quarantine the permanently-failing `Release` workflow (`@estalara/sdk` publish → E403): a terminal-red gate that no backlog file has ever recorded
 
+**✅ DONE 2026-07-24 — PR #611 squash-merged to `main` `f213880`. Decision: QUARANTINE (option b).**
+`release.yml` trigger switched from `on.push.branches:[main]` to `on.workflow_dispatch:{}` only,
+with a 24-line header comment recording WHY (E403 history; sole `@estalara/sdk` consumer is
+control-plane via `workspace:*`; SDK ships as a hosted bundle `apps/control-plane/public/sdk.js` per
+ESC-015; no npm consumer; `@estalara` scope unresolvable under `Pnawrocki9` registry) + a documented
+re-enable path if a real registry is ever needed. Verdict per AC: the changeset version/publish flow
+is NOT expected to run automatically in the current release model. PM independently verified: branch
+release.yml has `workflow_dispatch` only; no Release run fired for the branch push; #611 CI clean
+except pre-existing `Rule I`. Second permanently-red gate from RETRO-205 §5d now closed (sibling
+FOLLOW-591 was the first).
+
 source_retro: RETRO-205 (§5d A-1) source_ticket: (CI hygiene — surfaced by the FOLLOW-600 merge)
 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
 depends_on: [] promoted_to_queue: false

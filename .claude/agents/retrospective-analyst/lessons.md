@@ -3328,3 +3328,35 @@ so.**
   Rule despite it feeling real (FOLLOW-093 is a prior sighting) — FOLLOW-093 was a follow-up, not a
   citable prior RETRO ID, so count = 0–1 of the required 2. Held. Guard-over-prose + threshold
   discipline both held.
+
+## 2026-07-25 / RETRO-213 + RETRO-214 (PR #618 FOLLOW-622 de-scope + PR #619 FOLLOW-623 brand slice)
+
+- **A finding I almost missed and why:** `white_label` in PR #619. The color and logo legs were so
+  cleanly wired end-to-end (real-init-path e2e proving a rendered pixel — genuinely exemplary) that
+  it was tempting to write "brand slice — clean ✅." But CHECK B is per-FIELD, not per-slice:
+  `white_label` is emitted by the route and surfaced into `SdkConfig.brand.whiteLabel` at
+  `index.ts:124` and read by NOTHING. A slice can be 2/3 wired. The "documented deviation" framing
+  in the PR nearly disarmed me — honesty about a facade does not un-make the facade (RETRO-205's
+  exact lesson). Grep of the CONSUMER side (`packages/sdk/src` excl tests) is what caught it: three
+  hits, all producer/type/comment, zero read.
+- **An axis/chain I had to trace twice:** the RETRO-205 closure chain. First pass: "#618+#619 close
+  the two facades RETRO-205 filed — done." Second pass (step-7 discipline): #619 closes color+logo
+  _end-to-end_ (pixel-verified, NOT one-hop) but the `white_label` leg's gap MOVED ONE HOP
+  (DB→/api/config→editor now ALSO →public-config→SdkConfig). Same PR, two legs, opposite verdicts.
+  And I had to trace whether `white_label` even HAS a definable consumer — grepping for "Powered by
+  Estalara" and finding none means its semantics are UNDEFINED, not unimplemented, which changes the
+  follow-up from "wire it" to "define it."
+- **A meta-pattern in how gaps recur across agents:** the producer-only-facade honesty axis
+  (RETRO-205 → 209 → 210 → now 214) is the dominant recurring class on staff/config/analytics
+  surfaces — a control that a human can toggle but that changes nothing downstream. Every session it
+  appears one layer deeper: first the DB column (205), then the analytics render (210), now the SDK
+  config object (214 white_label). The rules that name it (H/K/L/U) already exist; the discipline
+  that catches it is grepping the CONSUMER side and refusing "documented deviation" as a closure.
+  Counted, not promoted.
+- **Restraint / count-precision note:** the PM framed the `lessons.md` append collision as "the
+  SECOND shared-file collision this week." Verified the exact mechanism instead of accepting the
+  count: FOLLOW-644 (RETRO-211) is a semantic CODE-CONTRACT rebase collision (route.ts); this is a
+  TEXTUAL append-only-log collision (lessons.md). Different root, different remedy → they do NOT
+  compose one rule; the append-only variant is at count 1. Held. Filed FOLLOW-650 for the structural
+  fix so the pattern is tracked without a premature promotion. Same restraint on the prettier miss
+  (Rule B already exists — a compliance failure, not a new rule).

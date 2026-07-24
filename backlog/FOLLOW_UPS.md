@@ -18373,3 +18373,90 @@ to one tenant.
    re-derivation.
 
 cross_ref: [RETRO-212, FOLLOW-638, ADR-0013, ADR-0018, FOLLOW-267]
+
+## FOLLOW-649 — Propagate the §V.3.4 origin-validation correction to its sibling claims in MASTER_DESIGN (Operating Principle 2)
+
+source_retro: RETRO-213 §4d source_ticket: FOLLOW-622 (PR #618) recommended_sprint: next-doc-pass
+recommended_agent: compliance-engineer (or architect) priority: P3 estimated_hours: 1
+promoted_to_queue: false
+
+**Gap.** PR #618 corrected the _specific_ false claim "Origin validated against
+`tenant.allowed_origins` config" in `docs/MASTER_DESIGN.md` §V.3.4 (`:5022-5028`) + the SDK-CDN
+bullet, but three adjacent statements in the SAME §V security chapter still present origin
+validation as a stronger / per-tenant control without the hardcoded-env-CORS + FOLLOW-642 caveat:
+
+- `:4773` — trust-boundary diagram: "Origin validated, HMAC-signed payloads, rate-limited" at the
+  _"SDK on third-party domain"_ boundary (implies per-domain validation a real external re-brand
+  domain would fail against the 2-host env allowlist).
+- `:4801` — STRIDE table Spoofing row lists "origin validation" as an API-key-spoofing mitigation
+  (the real mitigation for that vector is HMAC; a hardcoded env allowlist is weak and NOT
+  per-tenant).
+- `:5052` — the api_keys schema code-sample shows `allowed_origins` with NONE of the "NOT enforced;
+  deferred — FOLLOW-642" annotation the real `packages/db/src/schema/api_keys.ts:41` now carries.
+
+Not the identical literal claim #618 fixed (so #618's stated propagation was complete), and (i)/(ii)
+are not strictly false — but a §V reader conflates them with per-tenant origin security, the exact
+drift Operating Principle 2 exists to prevent. `:5450` "postMessage z origin validation" is
+unrelated (browser postMessage origin) — leave as-is.
+
+**AC:**
+
+1. Add the hardcoded-env-CORS reality + FOLLOW-642 pointer as a caveat to `:4773`, `:4801`, and
+   `:5052` (a short parenthetical / footnote is sufficient — do not restructure the diagram/table).
+2. No code change (the code is already correct after #618). Doc-only, matching the §V.3.4 wording
+   #618 already landed.
+
+cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-642, RETRO-205]
+
+## FOLLOW-650 — Eliminate the shared append-only `lessons.md` cross-PR collision (per-ticket fragment files)
+
+source_retro: RETRO-213 §6 source_ticket: FOLLOW-622 (PR #618) recommended_sprint: tooling-backlog
+recommended_agent: devops-engineer (or architect) priority: P3 estimated_hours: 3 promoted_to_queue:
+false
+
+**Gap.** PR #618 hit a git merge conflict on `.claude/agents/backend-engineer/lessons.md` against
+already-merged #617 (FOLLOW-638) — both workers appended to the SAME per-agent file, so their diffs
+collided at the shared append point. Concurrent isolated-worktree workers writing the same per-agent
+`lessons.md` will keep colliding as parallelism increases. (Distinct from FOLLOW-644, which is a
+semantic code-contract rebase collision — different mechanism, different remedy.)
+
+**AC:**
+
+1. Move the append-only per-agent learning log from ONE shared `lessons.md` to per-ticket fragment
+   files (e.g. `.claude/agents/<agent>/lessons/<TICKET>.md`, or dated fragments) so two concurrent
+   workers never share an append point — a create-new-file-per-ticket write is conflict-free.
+2. Provide a read-time aggregation path (glob + concat, or an index) so the retro/skill-upgrade loop
+   can still read the whole history the way it reads `lessons.md` today.
+3. Update the agent definitions / SubagentStop hook (if any) that currently point at the single
+   file.
+
+cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-644, RETRO-211]
+
+## FOLLOW-651 — Define + wire the `white_label` consumer (brand slice is piped into the SDK but read by nothing)
+
+source_retro: RETRO-214 §3 / §5d source_ticket: FOLLOW-623 (PR #619) recommended_sprint:
+white-label-epic recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on:
+[FOLLOW-623] promoted_to_queue: false
+
+**Gap (HALF_WIRE_P).** PR #619 wires the brand slice's `primary_color` (→ sticky-trigger bg) and
+`logo_url` (→ quiz-card logo) end-to-end, but `white_label` is a producer-only passthrough: the
+route emits it and `packages/sdk/src/index.ts:124` surfaces it into `SdkConfig.brand.whiteLabel`,
+yet grep of `packages/sdk/src` (excl. tests) finds ZERO consumer — the only hits are the assignment,
+the type at `config.ts:131`, and the self-describing "NOT consumed by this ticket" comment at
+`config.ts:125`. A staff-editable toggle (`white-label-toggle`) now flows all the way into the SDK
+config and renders nothing. This is RETRO-205's producer-only-facade class with the gap moved one
+hop downstream (RETRO-214 §5d). Semantics are UNDEFINED, not merely unimplemented: grep finds NO
+"Powered by Estalara" / attribution string rendered anywhere in the SDK, so there is nothing today
+for `white_label:true` to suppress.
+
+**AC:**
+
+1. Decide + document the semantics — most likely: when `white_label === true`, suppress a
+   Powered-by-Estalara attribution/badge in the SDK-rendered widgets (add the badge for
+   `white_label:false` if none exists, so the toggle is observable).
+2. Wire the consumer and prove it changes a rendered pixel in an e2e (per the Rule L evidence bar
+   the color/logo legs already meet — a value-injecting unit test is not sufficient).
+3. If the CEO/ADR-0019 decision is that `white_label` has no SDK-side effect for the pilot, STRIP
+   the passthrough per Rule U (do not leave an inert signal) and record the decision.
+
+cross_ref: [RETRO-214, FOLLOW-623, RETRO-205, ADR-0019, FOLLOW-641]

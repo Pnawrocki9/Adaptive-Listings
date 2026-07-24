@@ -32854,3 +32854,340 @@ in ADR-0013/0018 → FOLLOW-648. Quiz partial-degrade HONEST (red badge + — ce
 flagged not scoped. §6: analytics-ClickHouse-query-fork-drift pattern count 1 (FOLLOW-093), unfenced-staff-
 read pattern count 1 — BOTH HELD, NO CONVENTIONS_PATCH promotion (below ≥2-prior-RETRO threshold). -->
 
+## RETRO-213 — FOLLOW-622 (de-scope the unenforced `allowed_origins` security facade — CEO Option B) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #618 (merged 2026-07-24 22:06 UTC, squash commit `24aa860` on `main`, by Pnawrocki9; OPUS)
+- **Files changed:** 10 (+108 / −101) — config route (`api/config/route.ts` +9/−19), staff editor
+  (`tenant-config-editor.tsx` +14/−41), settings `page.tsx` (+6/−2), 2 route/editor tests, 2 db-schema
+  doc-comments (`tenants.ts`, `api_keys.ts` — comment-only, column kept), `docs/MASTER_DESIGN.md`
+  (+10/−2), `.gitleaks.toml` (+11), `backend-engineer/lessons.md` (+23).
+- **Modules touched:** [control-plane, db (docs only), docs, configs]
+- **Key contracts changed:** `TenantConfig.sdk.allowed_origins` — **REMOVED** from the exported
+  `/api/config` interface — breaking: **yes** (field dropped), but the sole in-repo consumer (the staff
+  editor's `Pick<TenantConfig,…>`) is updated in-PR so nothing breaks on `main`. `ConfigPatchSchema.sdk`
+  (the `z.array(z.string().url())` validator) removed. The `tenants.allowed_origins` **DB column is NOT
+  dropped** — data kept, deferred, doc-comment corrected to state the truth (FOLLOW-642 re-enable
+  pointer). No migration.
+
+### 2. Verification done in PR
+
+- Test files changed: config route test (−26; dropped the `sdk.allowed_origins` assertions incl. the
+  non-URL 400 case + the audit-atomicity `allowedOrigins` byte-unchanged check), editor test (+15/−9;
+  replaced the "renders allowed-origins control" assertion with a **positive absence** test:
+  `queryByTestId('allowed-origins-textarea')` → null AND `queryByText(/allowed origins/i)` → null). PR
+  reports 37 config/editor/page tests green locally.
+- CI checks: **Format-check went RED on both CI runs** (the hand-merged `lessons.md` was committed
+  WITHOUT prettier) → fixed in branch commit `42c3bb9` (squashed away). See §6 (process). Post-fix green
+  per PR body; not independently re-run (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** Pure removal — no new runtime file or export. The two edited db
+schema files change comments only; the `.gitleaks.toml` + `lessons.md` are config/doc.
+
+**CHECK B (half-wire) — clean ✅ (and CLOSES a prior half-wire).** No new event/env/column/topic/signal
+introduced. The kept `tenants.allowed_origins` column is now a **documented dormant column — ZERO
+producer, ZERO consumer** — which is the *correct* resolution of RETRO-205's producer-only
+HALF_WIRE_P (the facade is removed, not "completed" by building a consumer). Grep on `main` for
+`allowed_origins`/`allowedOrigins` in `*.ts/*.tsx/*.sql` (excl. tests, `.claude/worktrees/*`, backlog)
+returns only: the kept column defs in `tenants.ts:44` / `api_keys.ts:41` (both now carry the honest
+"NOT enforced; deferred — FOLLOW-642" comment), the **unrelated name-collisions**
+`apps/ingest/src/router.ts:69` `allowedOriginsForEnv` (hardcoded env CORS) and
+`apps/control-plane/src/lib/dev-cors.ts:57` `allowedOrigins()` (local dev helper), and FOLLOW-622
+annotation comments in the three edited control-plane files. **No live reader or writer of the column
+remains.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps — N/A.
+
+#### 4b. Code bugs not caught — N/A (removal only; no new branch).
+
+#### 4c. Test coverage gaps — N/A. The absence of the control is asserted positively (both by testid and
+by visible label), and the PATCH-body test now asserts the body is `{ brand }` only. Good red-first.
+
+#### 4d. Documentation gaps
+
+- **DOC-1 (P3) — the §V.3.4 correction did NOT fully propagate to its sibling claims (Operating
+  Principle 2).** #618 correctly fixed the *specific* false claim ("Origin validated against
+  `tenant.allowed_origins` config", `MASTER_DESIGN.md:5022-5028`) and the SDK-CDN bullet. But three
+  adjacent statements in the SAME §V security chapter still present origin validation as a
+  stronger/per-tenant control without the FOLLOW-642 / hardcoded-env-CORS caveat: (i) the trust-boundary
+  diagram (`:4773` "Origin validated, HMAC-signed payloads, rate-limited" at the *"SDK on third-party
+  domain"* boundary — implies per-domain validation that a real external re-brand domain would fail);
+  (ii) the STRIDE table Spoofing row (`:4801` "origin validation" listed as an API-key-spoofing
+  mitigation — the real mitigation for that vector is HMAC, not a 2-host env allowlist); (iii) the
+  api_keys schema code-sample (`:5052` shows `allowed_origins` with none of the "not enforced/deferred"
+  annotation the *real* `api_keys.ts:41` now carries). **Honest scoping:** these are NOT the identical
+  literal claim #618 targeted (so #618's stated propagation of *its* claim was complete), and (i)/(ii)
+  are not strictly false (env-level origin validation exists) — but a §V reader conflates them with
+  per-tenant origin security, which is exactly the drift Operating Principle 2 exists to prevent. →
+  **FOLLOW-649** (P3). `:5450` "postMessage z origin validation" is unrelated (browser postMessage
+  origin, not tenant CORS) — correctly excluded.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-644 (RETRO-211) rebase hazard — NAVIGATED CLEANLY.** #616's REQUIRED
+  `TenantConfig.data_source` + the editor `Pick<TenantConfig,…>` coupling + PATCH
+  `.returning()`/`UnknownTenantError` were all preserved by #618 on rebase: the editor's
+  `StaffTenantConfig` Pick now reads `Pick<TenantConfig, 'plan'|'brand'|'data_source'>` (dropped only
+  `'sdk'`, kept `'data_source'`), and the route's `data_source:'stored'|'default'` return + 0-row 404 are
+  untouched. FOLLOW-644 AC1 (do not silently drop the #616 contract in a merge resolution) is satisfied.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-639 (dispatched worker — quiz_definitions + presentation-config extension + quiz-widget
+  `resolveArchetype`)** inherits the **de-scoped** config contract: it must NOT re-introduce
+  `sdk.allowed_origins` into `TenantConfig` / `ConfigPatchSchema`, and the settings editor it may touch
+  no longer has the origins textarea. **FOLLOW-642** remains the sole re-enable path (trigger: first
+  external re-brand client), correctly parked.
+
+#### 5c. Contracts changed others rely on
+
+- `/api/config` GET/PATCH body no longer carries `sdk` — the ONLY in-repo consumer (staff editor) is
+  updated in-PR; the SDK reads `/api/quiz/public-config` + `/api/adapt`, never `/api/config`, so no SDK
+  cascade. Recorded, not a defect.
+
+#### 5d. Architectural assumptions affected
+
+- **Prior-follow-up closure (step 7) — GENUINE END-TO-END, not a one-hop move.** RETRO-205 filed
+  ESC-040/FOLLOW-622 for `allowed_origins` as a producer-only security facade. #618 removes EVERY
+  producer leg (GET select, PATCH `setValues`, before/after audit payload, editor textarea + state +
+  `parseOriginsInput`, `TenantConfig.sdk`, `ConfigPatchSchema.sdk`) — verified against the merged diff
+  AND re-greped on `main`. The gap is not moved downstream; the misleading control is GONE and the
+  column is honestly re-labelled. **Correct destructive-migration restraint:** the column was kept (not
+  dropped) — a `DROP COLUMN` would auto-apply to prod on merge (memory
+  `project_postgres_migrations_no_autoapply`) and destroy data for no benefit.
+- **`.gitleaks.toml` Rule V — COMPLIANT.** The added entry
+  `'''DECISION-BRIEF-FACADES-622-623-2026-07'''` sits in the `regexes` **allowlist** array alongside the
+  bypass4/5/6 stopwords — **token-scoped, not file-scoped** (`paths`), a narrow 39-char literal that is
+  a guaranteed substring of the truncated 40-char capture, with the same verified reasoning as its
+  siblings. No prior file-scoped entry for this trigger to strip. Positive Rule V compliance.
+
+### 6. New lesson candidates
+
+- **Process — shared append-only `lessons.md` cross-PR collision.** #618 hit a git conflict merging
+  `.claude/agents/backend-engineer/lessons.md` against already-merged #617 (FOLLOW-638, FABLE) — BOTH
+  appended to the *same* per-agent file. Count discipline: the **append-only-log collision** mechanism
+  (textual conflict at a shared append point; clean structural fix = per-ticket fragment files) is at
+  **count 1** — this is its first citable RETRO sighting. RETRO-211's FOLLOW-644 is an *adjacent but
+  different* mechanism (a semantic **code-contract** rebase collision on `route.ts`), so the two do NOT
+  compose one coherent rule (different remedies: preserve-contract vs eliminate-append-point). The broad
+  "concurrent-worktree shared-file collision" umbrella is at 2, but a Rule needs one verification →
+  **NO promotion.** Filed **FOLLOW-650** for the structural fix and HELD the pattern at count 1.
+- **Process — Rule B recurrence (existing rule).** The hand-merged `lessons.md` was committed without
+  prettier → Format-check red on both runs → fix `42c3bb9`. This is a compliance FAILURE of the already
+  codified **Rule B** ("run prettier on every file you edit, every time"), not a new pattern. The
+  Format-check gate WORKED (it caught it); the miss was committing/pushing before running it locally,
+  costing a CI round-trip. NO new rule — Rule B already covers it; noted for the meta-loop.
+- Facade-removal / producer-only-facade class: already covered by Rules H/K/L/U. #618 is a compliant
+  *resolution* of that class, not a new sighting. NO promotion.
+
+### 7. Follow-ups
+
+- **FOLLOW-649:** Propagate the §V.3.4 origin-validation correction to its sibling claims — add the
+  hardcoded-env-CORS / FOLLOW-642 caveat to the trust-boundary diagram (`:4773`), the STRIDE Spoofing
+  row (`:4801`), and the api_keys schema sample (`:5052`) (compliance/architect, 1h, **P3**).
+- **FOLLOW-650:** Eliminate the shared append-only `lessons.md` cross-PR collision structurally — move
+  to per-ticket fragment files (e.g. `.claude/agents/<agent>/lessons/<TICKET>.md`) so concurrent workers
+  never share an append point (devops/architect, 3h, **P3**).
+
+### 8. Cross-references
+
+- **RETRO-205 (FOLLOW-600 / ESC-040)** — origin of this finding; #618 closes its `allowed_origins`
+  HALF_WIRE_P by de-scope (CEO Option B), the twin of the `brand_config` leg that PR #619/RETRO-214
+  closes by consumer-build.
+- **RETRO-211 (FOLLOW-627, PR #616)** — the rebase contract #618 preserved (§5a); FOLLOW-644 AC1 met.
+- **RETRO-204 (Rule V lineage)** — the bypass4/5/6 token-scoped-allowlist pattern this PR's gitleaks
+  entry correctly follows.
+
+## RETRO-214 — FOLLOW-623 (consume per-tenant `brand_config` via public-config — first ADR-0019 slice) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #619 (merged 2026-07-24 21:49 UTC, squash commit `6cf7ba1` on `main`, by Pnawrocki9; SDK-ENGINEER)
+- **Files changed:** 18 (+910 / −22) — new shared schema `presentation-config.ts` (+77) + examples
+  (+63) + test (+156) + barrel export; route `quiz/public-config/route.ts` (+61/−7) + test (+93); SDK
+  `config.ts` (+26), `quiz-config.ts` (+13/−7), `index.ts` (+28/−3), `ui/quiz-trigger.ts` (+14/−1),
+  `ui/quiz-widget.ts` (+27); e2e `brand.spec.ts` (+93) + fixtures + `serve.js` (+35); unit
+  `follow-623.test.ts` (+95); `docs/INTERFACES.md` (+71/−4); `sdk-engineer/lessons.md` (+24).
+- **Modules touched:** [shared, control-plane, SDK, docs]
+- **Key contracts changed:** NEW `BrandConfigSchema`, `PresentationConfigResponseSchema` (=
+  `QuizPublicConfigResponseSchema.extend({ brand: BrandConfigSchema.optional() })`), types
+  `BrandConfig` / `PresentationConfigResponse` — **added**. `GET /api/quiz/public-config` 200 body is
+  now the superset (optional `brand` slice). `SdkConfig.brand?` added. `QuizTriggerConfig.backgroundColor?`
+  + `QuizWidgetConfig.logoUrl?` added. Breaking: **no** — brand is `.optional()`, an unbranded tenant is
+  byte-identical (all 1534 pre-existing SDK tests pass unmodified). Bundle +0.24 KB (40.99/42 KB).
+
+### 2. Verification done in PR
+
+- Test files changed: shared `presentation-config.test.ts` (+12 cases: BrandConfigSchema valid/null-logo/
+  non-hex/3-digit-hex/non-url/missing-white_label; superset full/minimal/no-logo/examples), route test
+  (+4 brand cases: full slice emitted, `logo_url:null` never undefined, OMIT unconfigured `{}`, OMIT
+  malformed-hex blob still 200), SDK unit `follow-623.test.ts` (+5: snake→camel map, null logoUrl,
+  D4-absent, null-fetch, ADR-0011 fields undisturbed), e2e `brand.spec.ts` (+3 real-init-path). Totals:
+  shared 293 / sdk 1539 / route 14 / e2e 27 green per PR body.
+- CI checks: PR reports green; not independently re-run.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** `presentation-config.ts` → producer `route.ts` + consumer
+`quiz-config.ts`/`index.ts` + tests; barrel `schemas/index.ts` re-exports it; `examples/*` → test +
+`docs/INTERFACES.md`. e2e fixtures (`brand.html`, `brand-logo.svg`, `serve.js` route) drive the real
+init path. No orphan.
+
+**CHECK B (half-wire) — ONE finding.** The new `brand` SDK-signal is **partially** wired:
+- `brand.primary_color`: **producer** `route.ts:213` `parsePublicBrandConfig` → `:224` `...(brand?{brand}:{})`
+  → **consumer** `index.ts:1219` sticky-trigger `backgroundColor` → **rendered** `quiz-trigger.ts:148`
+  `triggerBg`. **e2e-verified** the painted trigger bg is `rgb(26,115,232)` (`#1a73e8`), NOT the `#ef4444`
+  default (`brand.spec.ts`). ✅
+- `brand.logo_url`: producer → **consumer** `index.ts:1039` `logoUrl` → **rendered** `quiz-widget.ts:499-509`
+  `<img class="estalara-quiz-logo">`. e2e-verified the `<img src>` matches the fetched URL. ✅
+- **`brand.white_label`: HALF_WIRE_P (P2).** Producer `route.ts` emits it and `index.ts:124`
+  `whiteLabel: fetched.brand.white_label` surfaces it into `SdkConfig.brand.whiteLabel` — but grep across
+  `packages/sdk/src` (excl. tests) finds **ZERO consumer**: the only hits are the assignment at
+  `index.ts:124`, the type at `config.ts:131`, and the self-describing "NOT consumed by this ticket"
+  doc-comment at `config.ts:125`. A staff-editable toggle (`white-label-toggle` in the settings editor)
+  now flows the whole way into the SDK config object and renders nothing. → **FOLLOW-651.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, no stub — defensive-only, effectively unreachable).** `parsePublicBrandConfig` drops the
+  ENTIRE brand slice (color + logo) when `BrandConfigSchema.safeParse` fails — so a stored brand with a
+  valid `primary_color` but a malformed `logo_url` loses its color too (trigger falls back to `#ef4444`).
+  This is only reachable via direct DB manipulation: the `/api/config` PATCH write path validates
+  `logo_url` as `z.string().url()` and `primary_color` as the same `HEX_COLOR_RE`, so a malformed value
+  can't normally be persisted. Fail-safe (drop-whole-slice) over fail-loud is an acceptable choice here;
+  noted, not stubbed.
+
+#### 4b. Code bugs not caught — N/A (no P0/P1/P2). `logo_url` `string | null` invariant is correct on
+every limb (see §5d).
+
+#### 4c. Test coverage gaps — N/A for the shipped behavior; the white_label half-wire (§3) is a missing
+CONSUMER, not a missing test (there is nothing to assert until the consumer exists). Folded into FOLLOW-651.
+
+#### 4d. Documentation gaps — N/A. `white_label` is explicitly documented as a PR-noted deviation in
+`config.ts:125`, `docs/INTERFACES.md`, and the schema module. The deviation is honest — but honesty
+about a facade does not un-make the facade (§3 / §5d).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-644 rebase — NO collision.** #619 did NOT touch `/api/config/route.ts` or the settings editor
+  (only `/api/quiz/public-config` + shared + SDK), so it is disjoint from #616's contended files;
+  confirmed by the PR file list. No rebase hazard realized.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-639 (dispatched — quiz_definitions + presentation-config extension + quiz-widget
+  `resolveArchetype`)** MUST honor the shipped module's invariants: (1) **schema-extension pattern** —
+  add its `quiz_definition` slice as `.optional()` on `PresentationConfigResponseSchema` and ship it
+  *together with* its SDK consumer (Rule L / Rule U), never ahead — the placeholders at
+  `presentation-config.ts:71-73` name exactly this contract; (2) **optional-slice omit-when-unconfigured**
+  — use the conditional-spread (`...(x?{x}:{})`) idiom so `exactOptionalPropertyTypes` holds and an
+  unconfigured tenant stays byte-identical (D4); (3) it edits `quiz-widget.ts` — must NOT clobber the new
+  `logoUrl` render leg (`.estalara-quiz-logo` `<img>`, re-appended each `buildStep()`); (4) **#618
+  residue** — the config editor no longer carries `sdk.allowed_origins`; do not reintroduce it.
+- **FOLLOW-640 / FOLLOW-641** (quiz placement / opt-out widget slices) inherit the same three invariants;
+  FOLLOW-641 (opt-out widget) is the most likely home for the eventual `white_label` attribution consumer.
+
+#### 5c. Contracts changed others rely on
+
+- `PresentationConfigResponse` is a strict superset of `QuizPublicConfigResponse` — a shipped SDK reading
+  only the ADR-0011 subset ignores `brand` (Zod strips unknown keys on the subset schema; the route now
+  validates with the SUPERSET schema so it does NOT strip `brand` — `route.ts:227` comment is load-bearing).
+  Backward-compatible.
+
+#### 5d. Architectural assumptions affected
+
+- **Prior-follow-up closure (step 7) + RETRO-205 reconciliation (step 8) — PARTIAL, with one leg's gap
+  moved exactly one hop.** RETRO-205 flagged `brand_config.{primary_color,logo_url,white_label}` as a
+  producer-only HALF_WIRE_P. #619 **closes 2 of 3 end-to-end** — color and logo now change a *rendered
+  pixel*, proven by `brand.spec.ts` (NOT a value-injecting unit test), so those are genuine closures, not
+  one-hop moves. **The `white_label` leg is the counter-example the discipline exists to catch:** its gap
+  did not close, it *moved one hop downstream* — before #619 it was DB→`/api/config`→editor; #619 adds
+  DB→`/api/quiz/public-config`→`SdkConfig.brand.whiteLabel`, still with no consumer. Declaring the brand
+  slice "wired end-to-end" without this caveat would repeat the RETRO-097→114→127→141 chain failure.
+- **`white_label` consumer semantics are UNDEFINED, not merely unimplemented.** Grep of `packages/sdk/src`
+  finds NO "Powered by Estalara" / attribution / branding string rendered to the DOM anywhere — so there
+  is nothing today for `white_label:true` to suppress, and a white-labelled tenant is (accidentally)
+  correct: it looks identical to a non-white-labelled one because neither shows Estalara branding.
+  FOLLOW-651 must therefore *define* the semantics (the obvious one: suppress a Powered-by-Estalara
+  attribution once such a badge exists) — not just wire an existing consumer.
+- **D4 precedence is a disjoint-surface ROUTING, not a fallback chain.** `accent_color` styles the quiz
+  *card*; `brand.primary_color` styles the *trigger* (which has no `accent_color` applied); they never
+  compete on one element, so the ADR's stated `accent_color > brand.primary_color > default` is honored
+  per-surface but is never exercised as a 3-way fallback. Future slices (639/640/641) must preserve this
+  disjoint routing or the "precedence" becomes ambiguous. Noted, not a defect.
+- **`logo_url` `string | null` invariant — verified across BOTH runtimes.** Shared
+  `BrandConfigSchema` `z.string().url().nullable()`; route `parsePublicBrandConfig` coerces
+  non-string→`null` (never `undefined`); `SdkConfig.brand.logoUrl: string | null`; `mergeQuizConfig`
+  passes it through; `index.ts:1039` `config.brand?.logoUrl ?? null` guarantees `string | null` at the
+  widget call site. Tests assert the null case on both the wire (route) and the SDK (unit). Clean.
+
+### 6. New lesson candidates
+
+- **`white_label` half-wire = a Rule H / Rule L instance (already codified).** A schema/signal shipped
+  ahead of its consumer. NO new pattern — the rules that name it already exist; the remedy is the
+  follow-up, not a promotion.
+- **Producer-only-facade honesty axis (RETRO-205 / 209 / 210 lineage) recurs** — a documented,
+  ticket-sanctioned deviation is still a facade (a staff toggle with zero runtime effect). This retro
+  keeps the axis visible via FOLLOW-651 rather than promoting (the naming rules already exist; guard/
+  consumer over prose). HELD.
+
+### 7. Follow-ups
+
+- **FOLLOW-651:** Define + wire the `white_label` consumer — the brand slice pipes `white_label` all the
+  way into `SdkConfig.brand.whiteLabel` (public-config → `mergeQuizConfig`) but nothing reads it, and no
+  Estalara attribution exists in the SDK to suppress; specify the semantics (suppress a Powered-by-Estalara
+  badge / documented no-op) and ship the consumer, or strip the passthrough per Rule U (sdk-engineer, 3h,
+  **P2**).
+
+### 8. Cross-references
+
+- **RETRO-205 (FOLLOW-600)** — the origin of both facade legs; #619 closes the color+logo of the
+  `brand_config` HALF_WIRE_P, PR #618/RETRO-213 closes the `allowed_origins` twin; `white_label` remains
+  (FOLLOW-651). Partial closure, explicitly reconciled (§5d).
+- **RETRO-211 (FOLLOW-627 / FOLLOW-644)** — the rebase contract; #619's disjoint file set meant no
+  collision (§5a).
+- **ADR-0011 (quiz-config transport)** — the subset this superset extends; **ADR-0019** — the epic
+  (639/640/641 slices) whose invariants §5b pins.
+
+<!-- next free FOLLOW number: 652 (FOLLOW-649/650 filed by RETRO-213, FOLLOW-651 by RETRO-214).
+next free RETRO number: 215.
+RETRO-213 = retro for PR #618 (FOLLOW-622, MERGED 2026-07-24 22:06 UTC, squash 24aa860 on main; 10 files
++108/-101; OPUS). WIRING A+B clean — CLOSES RETRO-205's allowed_origins producer-only HALF_WIRE_P by
+DE-SCOPE (CEO Option B): every producer leg removed (GET select/PATCH setValues/audit payload/editor
+textarea+state/TenantConfig.sdk/ConfigPatchSchema.sdk), re-greped on main = 0 live readers/writers, column
+KEPT (dormant, honest comment, FOLLOW-642 re-enable; correct DROP-COLUMN restraint per prod-auto-apply).
+Genuine end-to-end closure, not a one-hop move. gitleaks Rule V COMPLIANT (token-scoped regexes allowlist,
+narrow 39-char, not file-scoped). DOC-1 (P3): §V.3.4 correction did NOT propagate to sibling origin-validation
+claims — trust-diagram :4773, STRIDE Spoofing :4801, api_keys sample :5052 still uncaveated (Op-Principle-2;
+honestly scoped as NOT the identical claim #618 fixed) → FOLLOW-649. PROCESS §6: (a) lessons.md append-append
+collision w/ merged #617 — append-only-log-collision mechanism count 1 (RETRO-211/FOLLOW-644 was a DIFFERENT
+code-contract mechanism; broad umbrella=2 but no single verification) → FOLLOW-650, NO promotion; (b) prettier
+NOT run on hand-merged lessons.md → Format-check red x2 → fix 42c3bb9 = Rule B recurrence (existing rule, gate
+worked, NO new rule). FOLLOW-644 rebase preserved (data_source/Pick/returning kept). NO CONVENTIONS_PATCH
+promotion.
+RETRO-214 = retro for PR #619 (FOLLOW-623, MERGED 2026-07-24 21:49 UTC, squash 6cf7ba1 on main; 18 files
++910/-22; SDK-ENGINEER). WIRING A clean; CHECK B = brand slice color+logo CLOSED end-to-end (Rule L three
+limbs producer route+shared Zod+SDK consumer + e2e REAL-init-path pixel/img proof) but white_label = HALF_WIRE_P
+P2 (producer emits + SdkConfig.brand.whiteLabel exposed at index.ts:124, ZERO consumer; grep clean) → FOLLOW-651.
+STEP-7/8 RETRO-205 reconcile: closes 2/3 of brand_config HALF_WIRE_P (pixel-verified, NOT one-hop) but white_label
+gap MOVED ONE HOP (DB→/api/config→editor now also →public-config→SdkConfig) — the exact chain-move discipline
+catches. white_label semantics UNDEFINED not unimplemented (no Powered-by-Estalara badge exists in SDK to
+suppress; white-labelled tenant accidentally-correct). D4 precedence = disjoint-surface routing (accent→card,
+brand.primary→trigger), never 3-way fallback; future 639/640/641 must preserve. logo_url string|null invariant
+verified BOTH runtimes. LG-1 (P3 no stub): malformed logo_url drops whole slice incl color — defensive-only,
+write-path URL-validates so unreachable normally. CASCADE §5b: FOLLOW-639 worker must honor optional-slice
+`.optional()`+ship-with-consumer (Rule L/U), conditional-spread omit idiom, not clobber .estalara-quiz-logo,
+not reintroduce #618's sdk.allowed_origins. FOLLOW-644 no collision (disjoint files). NO CONVENTIONS_PATCH
+promotion (white_label = existing Rule H/L instance). -->
+

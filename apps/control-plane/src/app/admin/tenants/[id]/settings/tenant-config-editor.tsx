@@ -5,11 +5,17 @@
  * settings (ADR-0018 §5/§6 / FOLLOW-600).
  *
  * Reads/writes `plan` (display-only — plan changes are a billing concern, not
- * editable here), `brand.{primary_color,logo_url,white_label}`, and
- * `sdk.allowed_origins` via `/api/config?tenant_id=<id>` — the staff-override API
- * path FOLLOW-614/615 already ported. Every fetch carries `?tenant_id=<tenantId>`
- * so the route fences its `createAdminClient()` query to that tenant (ADR-0018 §2
- * invariant 5).
+ * editable here) and `brand.{primary_color,logo_url,white_label}` via
+ * `/api/config?tenant_id=<id>` — the staff-override API path FOLLOW-614/615
+ * already ported. Every fetch carries `?tenant_id=<tenantId>` so the route fences
+ * its `createAdminClient()` query to that tenant (ADR-0018 §2 invariant 5).
+ *
+ * FOLLOW-622 (CEO Option B, 2026-07-24 —
+ * `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`): the "SDK Allowed Origins"
+ * control has been REMOVED. It was a producer-only security facade — staff could
+ * edit it and it persisted to `tenants.allowedOrigins`, but nothing enforced it
+ * (ingest CORS is a hardcoded env allowlist). Re-enable (per-tenant, data-driven)
+ * is tracked as FOLLOW-642, before the first external re-brand client onboards.
  *
  * DELIBERATELY ABSENT (CEO Q1, ADR-0018 §5 — binding): no `generation_model`
  * control. That setting is GLOBAL-only, owned by `/admin/settings`. Do not add one
@@ -27,22 +33,13 @@
 import { useEffect, useState } from 'react';
 import type { TenantConfig } from '@/app/api/config/route';
 
-type StaffTenantConfig = Pick<TenantConfig, 'plan' | 'brand' | 'sdk' | 'data_source'>;
+type StaffTenantConfig = Pick<TenantConfig, 'plan' | 'brand' | 'data_source'>;
 
 const DEFAULTS: StaffTenantConfig = {
   plan: '',
   brand: { primary_color: '#1a73e8', logo_url: null, white_label: false },
-  sdk: { allowed_origins: [] },
   data_source: 'stored',
 };
-
-/** Splits the allow-list textarea into a trimmed, non-empty origin array. */
-function parseOriginsInput(raw: string): string[] {
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
 
 /**
  * Formats a zod `.flatten()` validation-error payload into a readable string
@@ -65,7 +62,6 @@ function formatValidationDetails(details: unknown): string | null {
 
 export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): React.JSX.Element {
   const [config, setConfig] = useState<StaffTenantConfig>(DEFAULTS);
-  const [originsInput, setOriginsInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   // FOLLOW-624 (ESC-039): tracked SEPARATELY from `status` (which is save-only).
@@ -92,20 +88,18 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
           const merged: StaffTenantConfig = {
             plan: d.plan ?? DEFAULTS.plan,
             brand: { ...DEFAULTS.brand, ...d.brand },
-            sdk: { ...DEFAULTS.sdk, ...d.sdk },
             // FOLLOW-627: default to 'stored' only as a safety net for a
             // response that omits the field — never coerce 'default' away.
             data_source: d.data_source === 'default' ? 'default' : 'stored',
           };
           setConfig(merged);
-          setOriginsInput(merged.sdk.allowed_origins.join('\n'));
         }
         setLoadStatus('loaded');
       })
       .catch((err: unknown) => {
         // Rule K.2 consumer-side clause (FOLLOW-624): do NOT silently keep
         // DEFAULTS looking like real stored config — a Save from this state
-        // would clobber the tenant's real brand config + origin allow-list.
+        // would clobber the tenant's real brand config.
         setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
         setLoadStatus('error');
       });
@@ -122,10 +116,7 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brand: config.brand,
-          sdk: { allowed_origins: parseOriginsInput(originsInput) },
-        }),
+        body: JSON.stringify({ brand: config.brand }),
       });
       if (!res.ok) {
         const bodyUnknown: unknown = await res.json().catch(() => ({}));
@@ -142,7 +133,6 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
       }
       const saved = (await res.json()) as StaffTenantConfig;
       setConfig((c) => ({ ...c, brand: saved.brand }));
-      setOriginsInput(saved.sdk.allowed_origins.join('\n'));
       setStatus('saved');
       setTimeout(() => {
         setStatus('idle');
@@ -250,23 +240,6 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
             }}
             placeholder="https://…"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Allowed origins */}
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            SDK Allowed Origins
-          </label>
-          <p className="mb-1 text-xs text-gray-500">One origin URL per line.</p>
-          <textarea
-            data-testid="allowed-origins-textarea"
-            value={originsInput}
-            onChange={(e) => {
-              setOriginsInput(e.target.value);
-            }}
-            rows={4}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         </div>
 

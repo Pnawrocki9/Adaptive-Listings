@@ -37,6 +37,29 @@
 
 ---
 
+## 2026-07-24 / FOLLOW-622
+
+- **What I built**: de-scoped a producer-only security facade per CEO Option B
+  (`docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`) — removed the "SDK Allowed Origins" textarea
+  and `sdk.allowed_origins` from `/api/config`'s contract (`TenantConfig`, GET assembly, PATCH
+  schema/merge/audit payload). Kept the `tenants.allowedOrigins` DB column and its data (deferred,
+  not dropped), updated its doc comment + `api_keys.allowedOrigins`'s to state the truth (ingest
+  CORS is a hardcoded env allowlist, nothing reads this column), fixed the false
+  per-tenant-origin-validation claim in `MASTER_DESIGN.md` §V.3.4, and confirmed FOLLOW-642 (the
+  tracked re-enable) was already filed.
+- **Wiring/auth/fail-loud risks I weighed**: this is a pure removal (not a new
+  schema/event/consumer), so Rule H doesn't gate it the normal way — the risk was the INVERSE:
+  leaving a stale claim of enforcement somewhere after the control's gone would be worse than the
+  original facade (silent lie vs. visible dead control). Did a repo-wide grep for every
+  `allowed_origins`/`allowedOrigins` hit and classified each (fixed / historical-record-leave-as-is
+  / unrelated name-collision, e.g. `dev-cors.ts`'s local `allowedOrigins()` helper) rather than
+  assuming the ticket's file list was exhaustive.
+- **A guardrail I'd add**: my own PR doc-comment citing the decision-brief's own 41-char kebab
+  filename (`DECISION-BRIEF-FACADES-622-623-2026-07-24`) tripped the `cloudflare-api-token` gitleaks
+  heuristic — a self-inflicted Rule V case. Worth a pre-commit lint that greps new diff lines for
+  `[a-zA-Z0-9_-]{40,}` runs BEFORE push, so this class of FP is caught locally instead of costing a
+  CI round-trip.
+
 ## 2026-07-24 / FOLLOW-636
 
 - **What I built**: closed a producer-only revocation facade — the admin "revoke demo session"

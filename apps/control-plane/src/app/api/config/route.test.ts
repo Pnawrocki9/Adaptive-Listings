@@ -18,7 +18,7 @@
  * Coverage:
  *   - GET/PATCH agency + staff paths, spoof-header closure, option-wiring.
  *   - Rule K.2: a thrown DB query returns 500, never fabricated defaults.
- *   - Zod validation (brand.primary_color hex, brand.logo_url URL, sdk.allowed_origins URLs).
+ *   - Zod validation (brand.primary_color hex, brand.logo_url URL).
  *   - Staff write-rank gate (FOLLOW-615): readonly staff PATCH → 403, untouched.
  *   - Staff audit trail + audit-write atomicity (ADR-0018 §3a, RETRO-202): mutation
  *     and staff_audit_log insert commit/roll back together in ONE db.transaction().
@@ -41,7 +41,6 @@ vi.mock('@estalara/db', () => ({
   tenants: {
     id: 'tenants.id',
     plan: 'tenants.plan',
-    allowedOrigins: 'tenants.allowed_origins',
     brandConfig: 'tenants.brand_config',
     updatedAt: 'tenants.updated_at',
   },
@@ -130,7 +129,6 @@ function staffAccess(
 
 interface TenantRow {
   plan: string;
-  allowedOrigins: string[];
   brandConfig: unknown;
   updatedAt: Date;
 }
@@ -220,7 +218,6 @@ function makeDb(seed: Record<string, Partial<TenantRow>> = {}): FakeDb {
   for (const k of Object.keys(seed)) {
     tenantRows[k] = {
       plan: 'observer',
-      allowedOrigins: ['https://listings.example.com'],
       brandConfig: { primary_color: '#1a73e8', logo_url: null, white_label: false },
       updatedAt: new Date('2026-07-20T00:00:00Z'),
       ...seed[k],
@@ -309,7 +306,6 @@ describe('GET /api/config', () => {
     expect(body.tenant_id).toBe(TENANT_A);
     expect(typeof body.plan).toBe('string');
     expect(typeof body.brand.primary_color).toBe('string');
-    expect(Array.isArray(body.sdk.allowed_origins)).toBe(true);
     // FOLLOW-627: a real stored row carries provenance 'stored'.
     expect(body.data_source).toBe('stored');
   });
@@ -386,7 +382,6 @@ describe('GET /api/config', () => {
     const body = await parseBody<TenantConfig>(res);
     expect(body.plan).toBe('free');
     expect(body.brand.white_label).toBe(false);
-    expect(body.sdk.allowed_origins).toEqual([]);
     // The fabrication MUST be observable on the wire (Rule K.2 amendment) — a
     // caller can distinguish this from a real stored row.
     expect(body.data_source).toBe('default');
@@ -466,17 +461,6 @@ describe('PATCH /api/config — agency', () => {
     useDb(makeDb({ [TENANT_A]: {} }));
     const res = await PATCH(
       makeRequest({ method: 'PATCH', body: { brand: { primary_color: 'not-a-color' } } }),
-    );
-    expect(res.status).toBe(400);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('validation_failed');
-  });
-
-  it('rejects a non-URL sdk.allowed_origins entry (400 validation_failed)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
-    useDb(makeDb({ [TENANT_A]: {} }));
-    const res = await PATCH(
-      makeRequest({ method: 'PATCH', body: { sdk: { allowed_origins: ['not-a-url'] } } }),
     );
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -652,7 +636,6 @@ describe('PATCH /api/config — audit-write atomicity', () => {
     const db = makeDb({
       [TENANT_A]: {
         brandConfig: { primary_color: '#1a73e8', logo_url: null, white_label: false },
-        allowedOrigins: ['https://original.example.com'],
       },
     });
     db._control.failAuditInsert = true;
@@ -661,10 +644,7 @@ describe('PATCH /api/config — audit-write atomicity', () => {
     const res = await PATCH(
       makeRequest({
         method: 'PATCH',
-        body: {
-          brand: { white_label: true },
-          sdk: { allowed_origins: ['https://new.example.com'] },
-        },
+        body: { brand: { white_label: true } },
         query: { tenant_id: TENANT_A },
       }),
     );
@@ -676,7 +656,6 @@ describe('PATCH /api/config — audit-write atomicity', () => {
 
     // NO ORPHAN MUTATION — tenant A's stored row is byte-unchanged.
     expect(db._tenants[TENANT_A]!.brandConfig).toMatchObject({ white_label: false });
-    expect(db._tenants[TENANT_A]!.allowedOrigins).toEqual(['https://original.example.com']);
     expect(db._auditRows).toHaveLength(0);
   });
 
@@ -711,11 +690,9 @@ describe('MANDATORY tenant filter — staff cannot cross tenants (RETRO-187)', (
     const db = makeDb({
       [TENANT_A]: {
         brandConfig: { primary_color: '#111111', logo_url: null, white_label: false },
-        allowedOrigins: ['https://a.example.com'],
       },
       [TENANT_B]: {
         brandConfig: { primary_color: '#222222', logo_url: null, white_label: true },
-        allowedOrigins: ['https://b.example.com'],
       },
     });
     useDb(db);
@@ -730,7 +707,6 @@ describe('MANDATORY tenant filter — staff cannot cross tenants (RETRO-187)', (
     expect(body.tenant_id).toBe(TENANT_A);
     expect(body.brand.primary_color).toBe('#111111');
     expect(body.brand.primary_color).not.toBe('#222222');
-    expect(body.sdk.allowed_origins).toEqual(['https://a.example.com']);
   });
 
   it('WRITE: staff PATCH for tenant A fences the update on A and leaves tenant B untouched', async () => {

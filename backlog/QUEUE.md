@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 ALL DONE + MERGED; ESC-039 FULLY CLOSED all 3 legs; ▶️ NEXT: RETRO-205 dispatch, then next-ticket selection)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 ALL DONE + MERGED; ESC-039 FULLY CLOSED all 3 legs; RETRO-207/208 written; ▶️ NEXT: next-ticket selection from RETRO-205's open follow-ups)
 
 **Session 57 = ESC-039 close-out chain (K.2 swallow-then-clobber data-loss).**
 
@@ -33,10 +33,14 @@
    `d89757f`); it is what filed ESC-039 + FOLLOW-622…629 and drove this whole session. Nothing to
    dispatch for 205. RETRO-206 (retro for #608/FOLLOW-624) also already ran and drove the 630/625
    chain.
-1. **Genuinely-owed per-ticket retros:** RETRO-207 for FOLLOW-630 (PR #609) and RETRO-208 for
-   FOLLOW-625 (PR #610) — not yet written. (PM already did the highest-value completeness checks by
-   hand: repo-wide grep for 630, local fixture/guard proof for 625; the formal retro entries are
-   still owed by the loop.)
+1. **Per-ticket retros DONE (session 57):** RETRO-207 (FOLLOW-630) — clean end-to-end closure of
+   RETRO-206 LG-1, no follow-ups. RETRO-208 (FOLLOW-625) — enforcement-not-text remedy delivered;
+   found ONE P3 residual → **FOLLOW-631** (guard covers only `.catch()` chain form, not block-form
+   `try{await fetch}catch{}` — hypothetical today, no such instance exists) + **FOLLOW-632** (P2 —
+   audit all ~30 CONVENTIONS_PATCH Verification-block greps, mechanise the high-blast-radius ones;
+   K.2 was one of many rules shipping an unrun grep). **ESC-039 verified closed end-to-end** by the
+   retros (remediation leg + prevention leg), FOLLOW-631 tracked as latent residual, does NOT
+   re-open ESC-039.
 2. **RETRO-205's still-open follow-ups (not yet promoted to QUEUE):** FOLLOW-622 + FOLLOW-623 (P1 —
    `allowed_origins`/`brand_config` are producer-only facades; `allowed_origins` is advertised as an
    SDK-origin security control that ingest CORS does NOT enforce — likely needs escalation/design,

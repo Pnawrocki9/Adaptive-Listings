@@ -17692,16 +17692,97 @@ cross_ref: [RETRO-206, RETRO-205 (§4a LG-1 admin instances), FOLLOW-624 (fixed 
 FOLLOW-595/596/600 (the copy-forward chain), FOLLOW-625 (the mechanized guard — its scope amended to
 cover `src/components/**` so LG-1.3 cannot escape it), CONVENTIONS_PATCH Rule K.2]
 
-<!-- next free FOLLOW number: 631. next free RETRO number: 207.
-FOLLOW-630 filed by RETRO-206 (post-merge retro for FOLLOW-624 / PR #608, squash `3b0b4a3`, merged
-2026-07-24 07:28:10 UTC): FOLLOW-624's fix is INCOMPLETE — it fixed the 3 ADMIN editors but ran a
-`/app/admin`-narrowed grep instead of Rule K.2's repo-wide `apps/` grep, missing 3 byte-identical
-twins that swallow a failed GET then Save DEFAULTS over real data (dashboard/quiz/page.tsx:111 P1,
-dashboard/demo/override/page.tsx:105 P1 [worse — no !r.ok guard], components/generation-model-settings
-.tsx:88 P2 [shared by /admin/settings + /dashboard/settings]). FOLLOW-625's CI-guard scope amended in
-place (must cover src/components/** not just src/app/**, else it misses the shared panel). No
-CONVENTIONS_PATCH promotion (K.2 swallow already a rule + RETRO-205's 4th-instance-after-fix trigger did
-NOT fire — these twins PRE-DATE the fix; new P-5 "fix narrowed the rule's own grep" is count 1, held).
+## FOLLOW-631 — Extend the K.2 consumer-side swallow guard to the block-form `try { … await fetch … } catch {}` shape
+
+source_retro: RETRO-208 (§4a LG-1) source_ticket: FOLLOW-625 (PR #610, `f936089`)
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 3
+depends_on: [FOLLOW-625] promoted_to_queue: false
+
+**Gap:** The FOLLOW-625 guard (`scripts/check-k2-consumer-swallow.cjs`) matches only the
+**promise-chain** form `fetch(...).then(...).catch(<swallow>)`. It documents the **statement/block
+form** — `try { const r = await fetch(...); setX(...) } catch {}` — as a residual ("add coverage if
+a block-form instance ever appears", `.cjs` header "WHAT IS NOT DETECTED"). But FOLLOW-625's OWN AC
+bullet 1 named "an empty or log-only `.catch()` / **`catch {}`**" and bullet 4 listed
+**`catch { }`** among the shapes to enumerate — so the guard ships a shape its own AC put in scope
+as a documented residual rather than covered. Modern React config editors are routinely written
+`async/await` with `try/catch`, so the next editor authored in that idiom would swallow a failed
+load with ZERO enforcement — the exact recurrence-despite-a-fix the guard exists to prevent. Same
+latent-shape class as the FOLLOW-616/617/618/619 backlog the staff-write atomicity guard carries.
+Hypothetical today (no block-form config-load swallow currently exists in `apps/control-plane/src`)
+but the highest-likelihood open shape.
+
+**AC:**
+
+- [ ] The guard FAILS on a `'use client'` component under
+      `apps/control-plane/src/{app,components}/**` that awaits a `fetch(...)` inside a `try`,
+      populates editable state (a `/^set[A-Z]/` setter) on the success path, and SWALLOWS the
+      failure in a block-form `catch {}` / `catch (e) {}` (empty / comment-only / log-only / no-op)
+      — mirroring the covered promise-chain semantics (setter/throw/non-console-sink in the catch =
+      accepted).
+- [ ] Red-first fixture proof BOTH directions: a block-form swallow fixture FAILS; a block-form
+      set-error-state fixture PASSES. Add to `scripts/__fixtures__/k2-consumer-swallow/` and the
+      `.test.sh` harness.
+- [ ] Re-affirm (Rule AE header) the remaining documented residuals: arbitrary NAMED handlers
+      (accepted as real work) and the hardcoded scan-root boundary. Add a watch note: if a second
+      client app — or a control-plane editor relocated outside `src/{app,components}` — ships
+      editable state via fetch, widen `DEFAULT_SCAN_ROOTS`.
+- [ ] The six FOLLOW-624/630 editors and existing fixtures still pass (no regression).
+
+cross_ref: [RETRO-208 (§4a LG-1), FOLLOW-625 (the guard being extended), RETRO-204 +
+FOLLOW-616/617/618/619 (the analogous latent-shape backlog on the AE staff-write guard),
+CONVENTIONS_PATCH Rule K.2 + Rule AE]
+
+## FOLLOW-632 — Audit every CONVENTIONS_PATCH Rule's Verification block; mechanise the manual-grep ones with the highest blast radius
+
+source_retro: RETRO-208 (§6 META) source_ticket: FOLLOW-625 (PR #610, `f936089`) recommended_sprint:
+next recommended_agent: devops-engineer priority: P2 estimated_hours: 6 depends_on: []
+promoted_to_queue: false
+
+**Gap:** Rule K.2 shipped its consumer-side detecting grep in its own Verification block and
+**nothing ran it** — the swallow defect then shipped across FOLLOW-595 → 596 → 600, was narrowed at
+FOLLOW-624, and was caught only by retros three-plus merges late. FOLLOW-625 mechanised that ONE
+grep. But of the ~30 Rules in CONVENTIONS_PATCH with a `**Verification:**` block, only a handful are
+mechanised as CI jobs/hooks (Rule O → `check-migration-journal.sh`, Rule AE →
+`check-staff-write-atomicity.cjs`, K.2 fire-and-forget → `check-fire-and-forget-sinks.sh`, Rule J
+mirror-code, and now K.2 consumer-side). The majority (e.g. Rules F/G/K/L/S/AC/AD/AF …) are "manual,
+by reviewer" greps — each a future "grep shipped, nobody ran it" incident of the exact class K.2
+already suffered. This is a systemic tooling gap, not yet a codification candidate (the cross-rule
+generalisation is count 1; per RULE_PROMOTION_THRESHOLD a second unrun-grep defect caught only by a
+retro would arm a promotion).
+
+**AC:**
+
+- [ ] Produce a table classifying every CONVENTIONS_PATCH Rule's Verification block as (a)
+      mechanised-in-CI (name the job/script), (b) mechanised-as-hook, or (c) manual-reviewer-grep
+      only.
+- [ ] Rank the manual-only ones by blast radius (does an un-run failure ship a data-loss / security
+      / contract defect?) and mechanise the top-ranked ones in the style of the existing guards (AST
+      or grep script + `ci.yml` hard-gate job + red-first fixture proof), OR record an explicit
+      "manual by design — reason" annotation on each Rule left manual.
+- [ ] Each newly-mechanised guard enumerates covered-vs-residual shapes (Rule AE discipline) and
+      ships a both-directions fixture proof.
+
+cross_ref: [RETRO-208 (§6 META, §5d), FOLLOW-625 (the K.2 template), RETRO-205 §6 P-2 / RETRO-206 §6
+P-5 (the K.2-specific enforcement-failure precedents), RETRO-204 (Rule AE — same
+enforcement-not-text diagnosis), CONVENTIONS_PATCH Rules O/AE/J + K.2 fire-and-forget (the
+already-mechanised exemplars)]
+
+<!-- next free FOLLOW number: 633. next free RETRO number: 209.
+FOLLOW-631 + FOLLOW-632 filed by RETRO-208 (post-merge retro for FOLLOW-625 / PR #610, squash `f936089`,
+merged 2026-07-24 08:25:46 UTC): the AST-based CI hard-gate mechanising Rule K.2's consumer-side swallow
+check. Guard scope covers BOTH src/app AND src/components (RETRO-206 LG-2 discharged); red-first fixture
+proof both directions; marker-scoped allow-list. FOLLOW-631 (P3) = block-form `try{await fetch}catch{}` is
+a DOCUMENTED residual but a realistic async/await escape hatch AND was in FOLLOW-625's own AC bullets 1+4.
+FOLLOW-632 (P2) = ~30 Rules ship Verification greps, only a handful CI-mechanised — cross-rule latent
+class. No CONVENTIONS_PATCH promotion (generalisation count 1; the enforcement-not-text remedy is now
+DELIVERED for K.2, lowering not raising the case for new rule text).
+RETRO-207 (post-merge retro for FOLLOW-630 / PR #609, squash `0bfaedd`, merged 2026-07-24 07:59:58 UTC)
+filed NO new FOLLOW — a clean end-to-end closure of RETRO-206 LG-1: the 3 dashboard/shared swallow twins are
+fixed (loadStatus/alert/Retry/Save-disable + 2 missing !r.ok guards + red-first no-write tests); re-ran
+Rule K.2's repo-wide grep independently (9 hits, 0 config-load swallows), all SIX editors now safe; GET
+routes fail LOUD (500) so the guard fires correctly. P-5 arming did NOT fire (630 ran the FULL grep — the
+counter-example). ESC-039 data-loss class now RESOLVED end-to-end: remediation (RETRO-207) + prevention
+(RETRO-208), one latent residual (block-form) tracked as FOLLOW-631.
 -->
 
 <!-- (superseded) next free FOLLOW number: 630. next free RETRO number: 206.

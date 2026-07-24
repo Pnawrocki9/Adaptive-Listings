@@ -3242,3 +3242,30 @@ so.**
   the miss — and it sits in `src/components/`, outside the `src/app/**` scope FOLLOW-625's guard was
   drafted against, so I had to widen the mechanization's scope too or it would ship blind to the
   very instance that motivated it.
+
+- **2026-07-24 / RETRO-207 + RETRO-208 (ESC-039 close-out chain, PRs #609/#610)**
+  - **A finding I almost missed and why:** RETRO-208's block-form gap. The guard's Rule-AE header
+    honestly lists `try/catch{}` as a documented residual, and it's tempting to accept a documented
+    residual as clean. But I cross-read it against FOLLOW-625's OWN AC (bullets 1+4 named `catch {}`
+    in scope) and found the shipped guard under-delivered against its own ticket — a residual that
+    is also an AC miss is a genuine finding, not a benign Rule-AE note. The tell: "documented" ≠ "in
+    scope by the ticket that shipped it." Always diff the guard's covered-set against the ticket AC,
+    not just the guard's self-declared residuals.
+  - **An axis/chain I had to trace twice:** whether the load-failure guard is defeated by the routes
+    returning 200-with-defaults. I first worried the quiz/demo/generation-model GETs fabricate
+    config on a missing row (which would sail through as `loadStatus='loaded'` and re-open the
+    clobber). Had to open all three routes: they fail LOUD (500) on real DB error and only
+    200-default on a genuinely-absent row (legit first-setup state) — so the guard fires exactly
+    when it should. The distinction (DB-error vs empty-row) is the whole ballgame; contrast
+    /api/config (FOLLOW-627) which DOES fabricate. Don't assume a load-failure guard is complete
+    without checking the producer can't hand it a fabricated success.
+  - **A meta-pattern in how gaps recur across agents:** the "enforcement-not-text" loop reached its
+    terminus here (K.2's grep is finally a CI gate) — but the same shape immediately generalised one
+    level up: ~30 Rules ship Verification greps and only a handful run in CI. The recurring failure
+    is not "the rule was wrong," it's "the rule's own check was never wired." I resisted promoting a
+    blanket rule (count 1 as a cross-rule observation; the K.2-specific precedents don't evidence
+    the generalisation recurs) and filed the audit (FOLLOW-632) instead — the discipline is:
+    mechanise the check, don't codify more prose that also won't be run.
+  - **P-5 arming discipline:** RETRO-207 was the counter-example that KEEPS P-5 at count 1 —
+    FOLLOW-630 ran the rule's FULL repo-wide grep (I re-ran it myself: 9 hits, 0 swallows). A clean
+    closure that _disarms_ a candidate is as important to record as a recurrence that arms one.

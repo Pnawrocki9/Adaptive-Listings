@@ -31874,22 +31874,321 @@ finding, recorded in §4a and §8, per the step-7 closure-trace discipline.)*
   enforcement" diagnosis is why P-5 is held (not promoted) and the remedy is the FOLLOW-625 mechanization
   + a scope correction, not new rule text.
 
-<!-- next free FOLLOW number: 631 (FOLLOW-630 filed by RETRO-206; FOLLOW-625 amended in place, not
-renumbered). next free RETRO number: 207. RETRO-206 = retro for PR #608 (FOLLOW-624, MERGED 2026-07-24
-07:28:10 UTC, squash 3b0b4a3 on main by Pnawrocki9; 7 files +508/-15, no migrations/contracts; branch
-backend-engineer/FOLLOW-624-editor-load-failure-guard, OPUS). WIRING AUDIT CHECK A + CHECK B both clean
-(no new export/contract; loadStatus produced+consumed+rendered in-component; validation `details` has a
-live route producer). HEADLINE: FOLLOW-624's fix is INCOMPLETE — it fixed the 3 ADMIN editors under
-admin/tenants/[id]/ but left 3 byte-identical twins that swallow a failed GET then Save DEFAULTS over
-real data: dashboard/quiz/page.tsx:111 (POSTs full config to the SAME /api/quiz/config, P1),
-dashboard/demo/override/page.tsx:105 (worse — no !r.ok guard at all, PUTs to SAME /api/demo/override,
-P1), components/generation-model-settings.tsx:88 (shared by /admin/settings + /dashboard/settings, PUTs
-global model, P2). Root: FOLLOW-624 ran `grep …/app/admin` — a NARROWED version of Rule K.2's repo-wide
-`grep apps/` — so the non-/admin twins were invisible. → FOLLOW-630 (fix all three). FOLLOW-625's CI
-guard is itself under-scoped (src/app/** only) and would MISS generation-model-settings.tsx in
-src/components/** → AC amended in place. NO PROMOTION: (a) K.2 swallow (RETRO-205 P-2) armed on a 4th
-instance AFTER the fix — these twins PRE-DATE the fix (originals copied FROM), so trigger did NOT fire;
-(b) the producer-fact-audit-termination meta-pattern is ALREADY Rule K.2's consumer-side clause — this is
-an enforcement failure of an existing rule, not a missing rule; (c) new P-5 "fix narrowed the rule's own
-grep" is count 1, held. ESC-039 is RESOLVED only on the admin axis — dashboard/shared clobber paths stay
-LIVE until FOLLOW-630. -->
+## RETRO-207 — FOLLOW-630 (guard the three dashboard/shared config editors — the swallow-then-Save-defaults twins FOLLOW-624 missed) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #609 (merged 2026-07-24 07:59:58 UTC, squash commit `0bfaedd` on `main`)
+- **Files changed:** 7 (+501 / −14) — 3 editor components, 3 new `*-load-guard.test.tsx`/`.test.tsx`,
+  1 lessons doc
+- **Modules touched:** [control-plane (dashboard + shared settings UI), docs (agent lessons)]
+- **Key contracts changed:** none. No schema/event/column/env/SDK-signal added. Consumer-side bugfix
+  to three already-wired editors of `/api/quiz/config`, `/api/demo/override`, and
+  `/api/admin/generation-model`. Each editor gains internal `loadStatus`/`loadErrorMsg`/`retryNonce`
+  state (component-local, not a cross-module contract); the demo-override page and generation-model
+  panel additionally gain the previously-missing `!r.ok` guard on their GET. breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: 3 new (`dashboard/quiz/quiz-load-guard.test.tsx` +126,
+  `dashboard/demo/override/override-load-guard.test.tsx` +107,
+  `components/generation-model-settings.test.tsx` +111 — the last two editors had **zero** failed-load
+  coverage before; this closes RETRO-206 TG-1 on the dashboard/shared side). Assertions added per
+  editor: failed/500 GET → `role="alert"` banner + Save disabled + **no** POST/PUT issued;
+  successful GET → unchanged; Retry re-fetches. Red-first per FOLLOW-624 AC3 pattern.
+- CI checks: PR body claims tsc/eslint/prettier + pre-push hooks green; the ESC-039 both-axes
+  close-out (`dd304fe`) confirms real gates green (only pre-existing repo-wide `Rule I` red, also red
+  on `main` — not a regression). Not independently re-run this session (read-only retro). The
+  FOLLOW-625 CI guard (RETRO-208) now **enforces** this fix's shape going forward.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** No new exported symbol. The three edited components are
+pre-existing and each rendered by a live wrapper (`dashboard/quiz/page.tsx` and
+`dashboard/demo/override/page.tsx` are route pages; `generation-model-settings.tsx` is imported by
+both `/admin/settings` and `/dashboard/settings`). The three new files are `.test.tsx` (suppressed).
+
+**CHECK B (half-wire) — clean ✅.** The new `loadStatus`/`loadErrorMsg` state is produced (fetch
+outcome), consumed (alert render + Save-disable + `handleSave` early-return), and rendered inside each
+component — producer→consumer→render all present. No new event/env/column/topic/SDK-signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A — the fix is COMPLETE and correct (this is a clean, verified closure of RETRO-206 LG-1).**
+  Independent adversarial pass on the diff: all three editors now track a separate `loadStatus`, throw
+  on `!r.ok` (the demo-override and generation-model `!r.ok` guards were genuinely absent before and
+  are added — verified against the diff, not the PR body), set `loadStatus='error'` in `.catch`,
+  render a `role="alert"` banner with a Retry that bumps `retryNonce` (a `useEffect` dep), disable Save
+  while `loadStatus !== 'loaded'`, AND early-return from `handleSave` on non-loaded state as
+  defense-in-depth beyond the disabled button. The legitimate empty-row case is NOT a failed load:
+  the GET routes (`api/quiz/config` `route.ts:121-127`, `api/demo/override`, `api/admin/generation-model`
+  `route.ts:159-163`) return a **200 with defaults only for a genuinely-absent row** and fail **loud
+  (500)** on a real DB error (`quiz/config route.ts:133-134`, `demo/override route.ts:157-162` — the
+  latter's docstring explicitly rejects the silent "enabled=false" default) — so the guard's
+  non-2xx→error path fires exactly when it should and leaves first-time-setup defaults writable. No
+  200-with-fabricated-config bypass on these three routes (contrast FOLLOW-627's `/api/config`).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** The merged diff is the fix for the RETRO-206 LG-1 defect; no additional bug introduced.
+
+#### 4c. Test coverage gaps
+
+- **N/A.** RETRO-206 TG-1 (dashboard/shared twins had no failed-load test — their suites stubbed only a
+  successful GET, the exact hole that let the twins ship) is CLOSED: all three new suites assert the
+  failed-load direction AND that no write is issued from the errored state. The red-first construction
+  is adequate — it asserts the negative (no POST/PUT), which is the property that actually prevents the
+  clobber, not merely the presence of the banner.
+
+#### 4d. Documentation gaps
+
+- **N/A.** `.claude/agents/backend-engineer/lessons.md` (+19) records the fix accurately. No
+  MASTER_DESIGN / ROPA divergence (no data category or contract changed).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-625** (RETRO-208, merged 26 min after this PR): its guard is now green against a repo where
+  all six FOLLOW-624/630 editors are fixed — this PR is what makes the guard's "green on current main"
+  precondition true.
+
+#### 5b. Future sprint tickets affected
+
+- Any close-out asserting "ESC-039 / the config-load clobber is fixed" is now **accurate** on the
+  swallow axis — it was over-claiming at RETRO-206 (admin-only), and is no longer. See §8.
+
+#### 5c. Contracts changed others rely on
+
+- None changed. Resolved a prior hazard RETRO-206 §5c flagged: `/api/quiz/config` and
+  `/api/demo/override` each had **two** client consumers, one safe (admin) and one clobbering
+  (dashboard). **Both consumers of each route are now safe** — verified: the repo-wide
+  `grep -rn "catch(() =>" apps/control-plane/src --include=*.tsx` (Rule K.2's own Verification grep,
+  run this session, NOT narrowed) returns 9 hits, **zero of which are config-load swallows**: 4 are
+  read-only analytics panels (`dashboard/analytics/page.tsx:639,678`;
+  `components/analytics/analytics-view.tsx:663,704` — state rendered, never saved back) and 5 are
+  defensive `res.json().catch(() => ({}))` error-body parses (`tracer/export:78`, `tracer/history:332`,
+  `quiz/quiz-config-editor:104`, `demo/demo-override-editor:124`, `settings/tenant-config-editor:130`).
+  Independently confirms the PM's residual claim.
+
+#### 5d. Architectural assumptions affected
+
+- **N/A.** The RETRO-206 §5d note (shared component concentrates the defect into both zones) is
+  resolved by fixing the single shared file once — the anti-drift property now works *for* the fix.
+
+### 6. New lesson candidates
+
+- **P-5 (carried from RETRO-206) — "a fix must run the rule's repo-wide Verification grep verbatim, not
+  a narrowed subset." Arming condition did NOT fire; stays count 1, HELD.** RETRO-206 armed P-5 on "a
+  *second* fix that narrows a rule's repo-wide Verification grep to the retro-named subset." FOLLOW-630
+  did the OPPOSITE — its PR body ran and cites the full repo-wide `grep -rn "catch(() =>"
+  apps/control-plane/src --include=*.tsx` across both `/admin` and non-`/admin`, exactly as Rule K.2
+  specifies, and I re-ran it independently (§5c). So this fix is the counter-example that keeps P-5 at
+  count 1. No promotion.
+- **P-2 (carried from RETRO-205) — the K.2 swallow-then-Save-defaults pattern.** Its arming condition
+  ("a *fourth* instance shipping AFTER FOLLOW-624/625 land — a recurrence-despite-a-fix") did NOT fire:
+  no new instance shipped; this PR CLOSES the pre-existing instances. Trigger stays armed, unchanged.
+  Now additionally mechanically enforced by FOLLOW-625 (RETRO-208), which discharges the
+  enforcement-not-text remedy RETRO-204/205 called for.
+
+### 7. Follow-ups
+
+- **N/A.** No new gap. This retro records a clean end-to-end closure. (The one residual worth acting on
+  — the guard's block-form `try/catch{}` blind spot — is a property of the FOLLOW-625 *guard*, filed
+  under RETRO-208 as FOLLOW-631, not of this fix.)
+
+### 8. Cross-references
+
+- **RETRO-206 (FOLLOW-624) — CLOSURE CONFIRMED end-to-end; the gap that "moved one hop" is now
+  terminated.** RETRO-206 found FOLLOW-624's fix incomplete — it fixed 3 admin editors and left 3
+  byte-identical dashboard/shared twins swallowing a failed GET. This PR fixes all three twins with the
+  identical `loadStatus`/alert/Retry/Save-disable/`handleSave`-early-return shape, adds the two missing
+  `!r.ok` guards, and ships red-first failed-load-and-no-write tests. Traced producer→consumer→render on
+  each and re-ran the rule's repo-wide grep (§5c): the swallow class is now closed on ALL SIX editors
+  (3 admin FOLLOW-624 + 3 dashboard/shared FOLLOW-630). This is the `inquiry_submit_selector`
+  (097→114→127→141) one-hop-downstream chase reaching its terminus — step-7 closure discipline paying
+  out with an actual close, not another hop.
+- **RETRO-205 (FOLLOW-600) — the ESC-039 data-loss class is now RESOLVED on every axis it named**
+  (admin AND dashboard/shared, load-success AND load-failure). RETRO-205's LG-1 and RETRO-206's LG-1 are
+  both discharged.
+- **RETRO-208 (FOLLOW-625) — companion enforcement.** Filed concurrently; this fix + that guard together
+  close ESC-039's remediation (fix) and prevention (CI gate) legs. One latent residual (block-form
+  `try/catch{}`) is carried in RETRO-208, not here.
+
+## RETRO-208 — FOLLOW-625 (mechanise Rule K.2's consumer-side swallow check as an AST-based CI hard-gate) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #610 (merged 2026-07-24 08:25:46 UTC, squash commit `f936089` on `main`)
+- **Files changed:** 13 (+823 / −0) — 1 AST detector (`.cjs` +388), 1 shell entrypoint (`.sh`), 1
+  fixture-proof harness (`.test.sh` +124), 8 fixtures, `ci.yml` (+37 — new hard-gate job), 1 lessons
+  doc
+- **Modules touched:** [CI/dev-tooling (`scripts/`, `.github/workflows/ci.yml`), docs (agent lessons)]
+- **Key contracts changed:** none in production code. A new CI job
+  `Rule K.2 consumer-side swallow guard (FOLLOW-625)` is added to `ci.yml` as a hard gate (no
+  `continue-on-error`). New dev entrypoint `scripts/check-k2-consumer-swallow.sh` (mirrors the existing
+  `check-fire-and-forget-sinks.sh` / `check-staff-write-atomicity.cjs` guards). breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: `scripts/__tests__/check-k2-consumer-swallow.test.sh` (+124) — a red-first
+  fixture proof asserting BOTH directions: a `passing-app-sets-error-state` fixture and its
+  `src/components` counterpart PASS; six violation fixtures (`violation-empty-catch`,
+  `violation-comment-only`, `violation-console-only`, `violation-returns-undefined`,
+  `violation-noop-alias`, and a `src/components` negative control) each FAIL. The CI job runs the proof
+  FIRST, then the guard against the real repo.
+- CI checks: PR body + FOLLOW-625 close-out (`cf4083a`) report the guard job green on both CI runs
+  (~32-33s), fixture proof green locally, guard exits 0 on real repo (all six FOLLOW-624/630 editors
+  pass; 4 read-only analytics swallows explicitly allow-listed). Not independently re-run this session.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** The `.cjs` detector is invoked by the `.sh` entrypoint, which is
+invoked by both the `.test.sh` harness AND the new `ci.yml` job step — a live non-test importer chain
+(`ci.yml` → `check-k2-consumer-swallow.sh` → `check-k2-consumer-swallow.cjs`). Fixtures are consumed by
+the harness. No orphaned symbol.
+
+**CHECK B (half-wire) — clean ✅.** The guard is a self-contained producer+consumer: it reads `.tsx`
+files and emits an exit code the CI job consumes. No new event/env/column/topic/SDK-signal. (This is a
+dev-tooling script; framework/CI-entrypoint suppression applies to the `.sh`.)
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, latent — the guard's block-form `try/catch{}` blind spot IS a realistic escape hatch,
+  and it falls short of the ticket's OWN AC).** The shipped detector matches only the **promise-chain**
+  form `fetch(...).then(...).catch(<swallow>)` (`chainStartsWithFetch` walks left from a
+  `.catch` PropertyAccessExpression). It explicitly documents `try { const r = await fetch(...);
+  setX(...) } catch {}` — the **statement/block form** — as a residual "add coverage if a block-form
+  instance ever appears" (`.cjs` header, "WHAT IS NOT DETECTED"). But FOLLOW-625's AC bullet 1 named
+  "an empty or log-only `.catch()` / **`catch {}`**" and bullet 4 listed **`catch { }`** among the
+  shapes to enumerate — so the guard ships a shape its own AC put in scope as a *documented residual*
+  rather than covered. This is defensible under Rule AE (enumerate + document beats silent), but the
+  block form is NOT hypothetical the way the RETRO-204 AE bypass shapes were: modern React editors are
+  routinely written `async/await` with `try/catch`, so the very next config editor authored in that
+  idiom would swallow a failed load with **zero** guard enforcement — the exact recurrence-despite-a-fix
+  that FOLLOW-625 exists to prevent. Same class as the FOLLOW-616/617/618/619 latent-shape backlog the
+  staff-write atomicity guard carries. → **FOLLOW-631** (P3). (The other two documented residuals —
+  `res.json().catch(() => ({}))` parse fallbacks, structurally excluded; and arbitrary named handlers,
+  accepted-as-real-work — are correctly benign and need no follow-up.)
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** The detector logic is sound on the shapes it covers: `handlerSwallows` correctly treats a
+  React setter (`/^set[A-Z]/`) or a `throw` or any non-`console.*` sink as NON-swallow, and empty /
+  comment-only / `undefined` / `void` / `console.*` / no-op-alias bodies as swallows — matching the six
+  fixed editors (PASS) and the six violation fixtures (FAIL). The allow-list is marker-scoped (exempts
+  only the specific known-safe handler text per file, not the whole file), so a future config swallow
+  added to an allow-listed analytics file would still FAIL — good defensive design.
+
+#### 4c. Test coverage gaps
+
+- **N/A for the covered shapes** (six violation fixtures + two passing fixtures span every covered
+  swallow shape and both scan roots). The block-form gap (LG-1) is a *coverage* gap by construction —
+  folded into FOLLOW-631, not double-counted here.
+
+#### 4d. Documentation gaps
+
+- **N/A.** The `.cjs` header's COVERED-vs-RESIDUAL enumeration (Rule AE discipline) and the
+  `.claude/agents/devops-engineer/lessons.md` (+23) entry are accurate.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-630 (RETRO-207):** its fix is now the guard's "green baseline" — any regression of the six
+  editors back to a swallow shape fails CI. The RETRO-206 §4a LG-2 amendment (scope must include
+  `src/components/**`) is honoured: the detector's `DEFAULT_SCAN_ROOTS` are
+  `['apps/control-plane/src/app', 'apps/control-plane/src/components']`, so `generation-model-settings.tsx`
+  (which lives in `src/components`, the twin FOLLOW-624 missed) IS covered. LG-2 is discharged.
+
+#### 5b. Future sprint tickets affected
+
+- Any future config editor in `apps/control-plane/src/{app,components}` written in the `.catch()`
+  promise-chain idiom is now guarded at merge. One authored in the `async/await` + `try/catch{}` idiom
+  is NOT (LG-1 / FOLLOW-631).
+
+#### 5c. Contracts changed others rely on
+
+- **Scope boundary (noted, not a gap today).** The guard's scan roots are hardcoded to
+  `apps/control-plane/src/{app,components}`. No other app/package currently ships a `'use client'`
+  component that GETs editable config into form state (`apps/control-plane` is the only Next.js control
+  surface; the SDK's Preact widgets consume `/api/adapt`/`/api/config` but do not render savable admin
+  config). So the scope is sufficient *today*. Arming condition for a re-scope: a second client app (or
+  a control-plane editor relocated outside `src/{app,components}`) that populates editable state via
+  fetch — folded into FOLLOW-631's AC as a watch item rather than a separate ticket.
+
+#### 5d. Architectural assumptions affected
+
+- **The RETRO-205 P-2 / RETRO-206 P-5 "enforcement-not-text" meta is now DISCHARGED for Rule K.2.** The
+  specific failure mode — "a rule shipped its own detecting grep in its Verification block but nothing
+  ran it" (K.2 shipped `grep -rn "catch(() =>" apps/` and it went unrun through FOLLOW-595→596→600, then
+  narrowed at FOLLOW-624) — no longer exists for K.2's consumer-side clause: there is now a hard CI gate.
+
+### 6. New lesson candidates
+
+- **META (the exact question the brief raised) — "a CONVENTIONS_PATCH Rule ships a Verification block
+  that is a manual grep, but NO CI job runs it" is a repo-wide latent class, not unique to K.2.** Of
+  ~30 rules with `**Verification:**` blocks, only a handful are mechanised as CI jobs/hooks (Rule O →
+  `check-migration-journal.sh`, Rule AE → `check-staff-write-atomicity.cjs`, K.2 fire-and-forget →
+  `check-fire-and-forget-sinks.sh`, Rule J mirror-code, and now K.2 consumer-side → this PR). The
+  majority (e.g. Rules F/G/K/L/S/AC/AD/AF and others) are "manual, by reviewer" greps — each is a
+  future "grep shipped, nobody ran it" incident waiting for the same three-merge-late retro discovery
+  K.2 suffered. This is a **process/tooling gap, not a codification candidate**: promoting a blanket
+  "every Verification grep must be a CI job" Rule now would be premature (RULE_PROMOTION_THRESHOLD
+  discipline — the generalised pattern is count 1 as a *cross-rule* observation; RETRO-205 P-2 and
+  RETRO-206 P-5 are both K.2-*specific* enforcement failures, not evidence that the generalisation
+  recurs). The right remedy is a scoped audit → **FOLLOW-632** (P2): classify every Rule's Verification
+  block as mechanised-in-CI vs manual-only, and mechanise the highest-blast-radius manual ones. If a
+  SECOND rule's unrun-grep ships a defect caught only by a retro, THAT arms a promotion.
+- **P-2 / P-5 (carried) — NOT promoted, arming conditions unchanged** (see RETRO-207 §6). This PR is the
+  *remedy* those lessons prescribed (mechanise, don't re-state), so it lowers — not raises — the case for
+  a new Rule.
+
+### 7. Follow-ups
+
+- **FOLLOW-631:** Extend the K.2 consumer-side guard to the block-form `try { … await fetch … } catch {}`
+  shape (and re-affirm the named-handler / cross-app scope residuals), so an `async/await`-idiom config
+  editor cannot swallow a failed load un-gated (devops-engineer, 3h, **P3**).
+- **FOLLOW-632:** Audit every CONVENTIONS_PATCH Rule's `**Verification:**` block; classify
+  mechanised-in-CI vs manual-reviewer-grep; mechanise the highest-blast-radius manual ones (the K.2
+  incident is the template — a rule's own grep went unrun for three merges) (devops-engineer, 6h, **P2**).
+
+### 8. Cross-references
+
+- **RETRO-205 §6 P-2 / RETRO-206 §6 P-5 + META — the enforcement-not-text remedy these lessons
+  repeatedly prescribed is now DELIVERED for K.2.** RETRO-204 first named the diagnosis ("the rule text
+  was sufficient; the missing piece was mechanical enforcement") for Rule AE; RETRO-205/206 re-confirmed
+  it for K.2. FOLLOW-625 is the mechanisation. The loop is closed for K.2's consumer-side clause; the
+  generalisation to other rules is FOLLOW-632.
+- **RETRO-207 (FOLLOW-630) — companion.** That PR fixed the six editors (remediation); this PR gates
+  them (prevention). Together they close ESC-039's fix + prevent legs. The one residual (block-form) is
+  carried here as FOLLOW-631.
+- **RETRO-204 (Rule AE) — methodological reuse.** This guard mirrors `check-staff-write-atomicity.cjs`
+  (AST walk, fixture proof, enumerate-covered-vs-residual header) and inherits the same latent-shape
+  backlog discipline — FOLLOW-631 is to this guard what FOLLOW-616/617/618/619 are to the AE guard.
+
+<!-- next free FOLLOW number: 633 (FOLLOW-631 + FOLLOW-632 filed by RETRO-208). next free RETRO number:
+209. RETRO-207 = retro for PR #609 (FOLLOW-630, MERGED 2026-07-24 07:59:58 UTC, squash 0bfaedd on main by
+Pnawrocki9; 7 files +501/-14, no migrations/contracts; OPUS). WIRING A+B clean. HEADLINE: CLEAN
+END-TO-END CLOSURE — the 3 dashboard/shared twins RETRO-206 LG-1 found are fixed with the identical
+loadStatus/alert/Retry/Save-disable/handleSave-early-return shape + the 2 missing !r.ok guards + red-first
+failed-load-and-no-write tests; re-ran Rule K.2's repo-wide grep independently (9 hits, 0 config-load
+swallows — 4 read-only analytics + 5 json-parse fallbacks), confirming ALL SIX editors (3 admin + 3
+dashboard/shared) now safe; GET routes fail LOUD (500) on real errors so the guard fires correctly and
+first-time-setup 200-defaults stay writable (no /api/config-style fabrication bypass). NO follow-up, NO
+promotion (P-5 arming did NOT fire — 630 ran the FULL grep, the counter-example). RETRO-208 = retro for PR
+#610 (FOLLOW-625, MERGED 2026-07-24 08:25:46 UTC, squash f936089 on main; 13 files +823/-0; AST guard +
+ci.yml hard-gate job; OPUS). WIRING A+B clean. HEADLINE: the enforcement-not-text remedy (RETRO-205 P-2 /
+RETRO-206 P-5) is DELIVERED for K.2 — hard CI gate, scan roots cover BOTH src/app AND src/components
+(RETRO-206 LG-2 discharged), red-first fixture proof both directions, marker-scoped allow-list. LG-1 (P3):
+guard covers only the .catch() promise-chain shape; block-form `try{await fetch}catch{}` is a DOCUMENTED
+residual but a REALISTIC async/await escape hatch AND was in FOLLOW-625's own AC bullets 1+4 → FOLLOW-631.
+META: ~30 rules ship Verification greps, only a handful are CI-mechanised — cross-rule latent class →
+FOLLOW-632 (P2 audit). NO promotion (generalisation is count 1; K.2-specific enforcement failures don't
+evidence the cross-rule pattern recurs; this PR is the remedy, lowering the case for new text). ESC-039 is
+now GENUINELY CLOSED end-to-end on both legs — remediation (all 6 editors, RETRO-207) + prevention (CI
+gate, RETRO-208) — with one latent residual (block-form) tracked as FOLLOW-631. -->

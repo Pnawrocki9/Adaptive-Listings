@@ -15,27 +15,25 @@
  * control. That setting is GLOBAL-only, owned by `/admin/settings`. Do not add one
  * here — `page.test.tsx` asserts its absence directly.
  *
+ * FOLLOW-627: reads the route's `data_source` provenance flag (Rule K.2
+ * amendment) and surfaces it — a `'default'` GET response means this tenant has
+ * no stored `tenants` row yet, so the values shown are fabricated defaults, not
+ * real config. Rendered as a visible notice rather than silently absorbed, so
+ * staff don't mistake defaults for the tenant's actual settings.
+ *
  * @module apps/control-plane/src/app/admin/tenants/[id]/settings/tenant-config-editor
  */
 
 import { useEffect, useState } from 'react';
+import type { TenantConfig } from '@/app/api/config/route';
 
-interface StaffTenantConfig {
-  plan: string;
-  brand: {
-    primary_color: string;
-    logo_url: string | null;
-    white_label: boolean;
-  };
-  sdk: {
-    allowed_origins: string[];
-  };
-}
+type StaffTenantConfig = Pick<TenantConfig, 'plan' | 'brand' | 'sdk' | 'data_source'>;
 
 const DEFAULTS: StaffTenantConfig = {
   plan: '',
   brand: { primary_color: '#1a73e8', logo_url: null, white_label: false },
   sdk: { allowed_origins: [] },
+  data_source: 'stored',
 };
 
 /** Splits the allow-list textarea into a trimmed, non-empty origin array. */
@@ -95,6 +93,9 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
             plan: d.plan ?? DEFAULTS.plan,
             brand: { ...DEFAULTS.brand, ...d.brand },
             sdk: { ...DEFAULTS.sdk, ...d.sdk },
+            // FOLLOW-627: default to 'stored' only as a safety net for a
+            // response that omits the field — never coerce 'default' away.
+            data_source: d.data_source === 'default' ? 'default' : 'stored',
           };
           setConfig(merged);
           setOriginsInput(merged.sdk.allowed_origins.join('\n'));
@@ -170,6 +171,12 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
           >
             Retry
           </button>
+        </div>
+      )}
+      {loadStatus === 'loaded' && config.data_source === 'default' && (
+        <div role="status" className="mb-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This tenant has no stored configuration yet — the values below are defaults, not saved
+          settings. Saving will create its config.
         </div>
       )}
       <form onSubmit={(e) => void handleSave(e)} className="space-y-6">

@@ -219,4 +219,29 @@ describe('StaffTenantConfigEditor', () => {
       false,
     );
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FOLLOW-627: the route's `data_source` provenance flag must be surfaced,
+  // not merely received — a staff user must be able to tell defaults from
+  // real stored config.
+  // ═══════════════════════════════════════════════════════════════════════
+  it('shows a defaults notice when GET returns data_source: "default" (no stored tenants row)', async () => {
+    mockFetchOnce({ ...SAMPLE_CONFIG, plan: 'free', data_source: 'default' });
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('free')).toBeDefined();
+    });
+    expect(screen.getByRole('status').textContent).toMatch(/no stored configuration/i);
+  });
+
+  it('does NOT show the defaults notice when GET returns data_source: "stored"', async () => {
+    mockFetchOnce({ ...SAMPLE_CONFIG, data_source: 'stored' });
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('observer')).toBeDefined();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });

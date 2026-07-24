@@ -95,6 +95,14 @@ export interface TenantConfig {
     allowed_origins: string[];
   };
   updated_at: string;
+  /**
+   * Provenance (FOLLOW-627, Rule K.2 amendment / RETRO-072): `'stored'` when the
+   * body reflects a real `tenants` row; `'default'` when no row exists for this
+   * `tenant_id` and every field below is a fabricated default. A caller MUST
+   * branch on this — never treat a `'default'` body as real stored config (the
+   * FOLLOW-624 client-side clause of the same rule).
+   */
+  data_source: 'stored' | 'default';
 }
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -146,6 +154,19 @@ function requestIp(req: NextRequest): string | null {
   return req.headers.get('x-real-ip');
 }
 
+/**
+ * Thrown when a PATCH's `.update(tenants)...returning()` affects zero rows
+ * (FOLLOW-627): the caller's `tenant_id` has no `tenants` row. Distinguished
+ * from a generic tx failure so the staff branch's catch block can return 404
+ * instead of the audit-atomicity 500.
+ */
+class UnknownTenantError extends Error {
+  constructor(tenantId: string) {
+    super(`No tenants row found for tenant_id: ${tenantId}`);
+    this.name = 'UnknownTenantError';
+  }
+}
+
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -188,6 +209,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       brand: parseStoredBrandConfig(row?.brandConfig),
       sdk: { allowed_origins: row?.allowedOrigins ?? [] },
       updated_at: (row?.updatedAt ?? new Date()).toISOString(),
+      // FOLLOW-627 (Rule K.2 amendment): 200 + fabricated defaults is only safe
+      // to return when the fabrication is OBSERVABLE on the wire. `row` absent
+      // means no `tenants` row exists for this tenant_id — every field above is
+      // a default, not stored config.
+      data_source: row ? 'stored' : 'default',
     };
     return NextResponse.json(body, { status: 200 });
   } catch (err: unknown) {
@@ -311,7 +337,19 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     // quiz/config/route.ts's POST staff branch.
     try {
       await db.transaction(async (tx) => {
-        await tx.update(tenants).set(setValues).where(eq(tenants.id, tenantId));
+        // FOLLOW-627: `.returning()` proves the update actually matched a row.
+        // A 0-row match (tenant_id has no `tenants` row) must never fall
+        // through to a "saved" 200 — throw so the outer catch returns 404
+        // instead of committing an audit row for a mutation that never
+        // happened.
+        const updated = await tx
+          .update(tenants)
+          .set(setValues)
+          .where(eq(tenants.id, tenantId))
+          .returning({ id: tenants.id });
+        if (updated.length === 0) {
+          throw new UnknownTenantError(tenantId);
+        }
         // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
         // inside the tx so it commits atomically with the update.
         await tx.insert(staffAuditLog).values({
@@ -335,9 +373,18 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
         });
       });
     } catch (err: unknown) {
-      // Any failure INSIDE the tx (the update OR the audit insert) rolls BOTH
-      // back — there is no orphan config mutation to leave behind. Fail loud:
-      // capture to Sentry and return 500, never a silent unattributed 200
+      // FOLLOW-627: a 0-row update surfaces as UnknownTenantError, not a
+      // generic tx failure — 404, no Sentry capture (expected caller error,
+      // not a dependency failure).
+      if (err instanceof UnknownTenantError) {
+        return NextResponse.json(
+          { error: { code: 'unknown_tenant', message: err.message } },
+          { status: 404 },
+        );
+      }
+      // Any other failure INSIDE the tx (the update OR the audit insert) rolls
+      // BOTH back — there is no orphan config mutation to leave behind. Fail
+      // loud: capture to Sentry and return 500, never a silent unattributed 200
       // (Rule K.2). A retry is safe: it re-reads, re-applies the same config
       // (idempotent) and appends a fresh audit row inside a new tx.
       Sentry.captureException(err, {
@@ -359,7 +406,25 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   } else {
     // Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only).
     try {
-      await db.update(tenants).set(setValues).where(eq(tenants.id, tenantId));
+      // FOLLOW-627: `.returning()` proves the update matched a row — a 0-row
+      // match must fail loud (404) rather than fall through to a "saved" 200
+      // for a tenant that was never written.
+      const updated = await db
+        .update(tenants)
+        .set(setValues)
+        .where(eq(tenants.id, tenantId))
+        .returning({ id: tenants.id });
+      if (updated.length === 0) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'unknown_tenant',
+              message: `No tenants row found for tenant_id: ${tenantId}`,
+            },
+          },
+          { status: 404 },
+        );
+      }
     } catch (err: unknown) {
       console.error(
         '[config PATCH] failed to update tenant configuration:',
@@ -378,6 +443,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     brand: updatedBrand,
     sdk: { allowed_origins: updatedOrigins },
     updated_at: setValues.updatedAt.toISOString(),
+    // Reaching here means the update above matched a real row — always 'stored'.
+    data_source: 'stored',
   };
   return NextResponse.json(body, { status: 200 });
 }

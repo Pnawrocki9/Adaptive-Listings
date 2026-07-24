@@ -174,15 +174,18 @@ function makeUpdate(
     set: vi.fn((values: Partial<TenantRow>) => ({
       where: vi.fn((w: { col: unknown; val: string }) => {
         captured.updateWhereVal = w.val;
-        if (control.failUpdate) return Promise.reject(new Error('update failed'));
-        const existing = target[w.val] ?? {
-          plan: 'free',
-          allowedOrigins: [],
-          brandConfig: {},
-          updatedAt: new Date('2026-01-01T00:00:00Z'),
+        return {
+          // FOLLOW-627: the route now calls `.returning({ id: tenants.id })` to
+          // detect a 0-row update. Mirrors real Postgres semantics — a missing
+          // key affects ZERO rows and returns `[]`, never a fabricated row.
+          returning: vi.fn(() => {
+            if (control.failUpdate) return Promise.reject(new Error('update failed'));
+            const existing = target[w.val];
+            if (!existing) return Promise.resolve([]);
+            target[w.val] = { ...existing, ...values };
+            return Promise.resolve([{ id: w.val }]);
+          }),
         };
-        target[w.val] = { ...existing, ...values };
-        return Promise.resolve();
       }),
     })),
   }));
@@ -307,6 +310,8 @@ describe('GET /api/config', () => {
     expect(typeof body.plan).toBe('string');
     expect(typeof body.brand.primary_color).toBe('string');
     expect(Array.isArray(body.sdk.allowed_origins)).toBe(true);
+    // FOLLOW-627: a real stored row carries provenance 'stored'.
+    expect(body.data_source).toBe('stored');
   });
 
   it('SPOOF CLOSED: verified tenant A + spoofed victim headers → tenant A config, never the victim', async () => {
@@ -373,7 +378,7 @@ describe('GET /api/config', () => {
     expect(body.error.code).toBe('internal_error');
   });
 
-  it('returns defaults (never an error) when the tenant row is not found', async () => {
+  it('returns 200 defaults with data_source: "default" (never silently) when the tenant row is not found (FOLLOW-627)', async () => {
     mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
     useDb(makeDb({}));
     const res = await GET(makeRequest());
@@ -382,6 +387,9 @@ describe('GET /api/config', () => {
     expect(body.plan).toBe('free');
     expect(body.brand.white_label).toBe(false);
     expect(body.sdk.allowed_origins).toEqual([]);
+    // The fabrication MUST be observable on the wire (Rule K.2 amendment) — a
+    // caller can distinguish this from a real stored row.
+    expect(body.data_source).toBe('default');
   });
 });
 
@@ -486,6 +494,17 @@ describe('PATCH /api/config — agency', () => {
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('internal_error');
+  });
+
+  it('returns 404 unknown_tenant (never a "saved" 200) on a 0-row update — tenant_id has no tenants row (FOLLOW-627)', async () => {
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+    useDb(makeDb({})); // TENANT_A seeded nowhere — the update below matches 0 rows
+    const res = await PATCH(
+      makeRequest({ method: 'PATCH', body: { brand: { white_label: true } } }),
+    );
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unknown_tenant');
   });
 });
 
@@ -596,6 +615,25 @@ describe('PATCH /api/config — staff audit trail', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('audit_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+
+  it('staff write on a 0-row update → 404 unknown_tenant, no audit row, no Sentry capture (FOLLOW-627)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    useDb(makeDb({})); // TENANT_A seeded nowhere — the update matches 0 rows
+
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { white_label: true } },
+        query: { tenant_id: TENANT_A },
+      }),
+    );
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('unknown_tenant');
+    // Expected caller error, not a dependency failure — no audit row committed,
+    // and this is not a Sentry-worthy event.
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 });
 

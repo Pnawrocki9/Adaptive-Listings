@@ -1,9 +1,34 @@
+# QUARANTINED — FOLLOW-626 / Rule AF.
+#
+# This workflow published `@estalara/sdk` to GitHub Packages
+# (npm.pkg.github.com) on every push to `main`. It has NEVER succeeded: the
+# `@estalara` scope does not resolve under the `Pnawrocki9` package registry,
+# so every run ends in `E403 ... Permission not_found: owner not found`
+# (10/10 most recent runs failed — see `gh run list --workflow=release.yml`).
+#
+# The SDK is not consumed via npm anywhere in this repo or by any external
+# party: the only dependant is `apps/control-plane`, which pulls it in via
+# the workspace protocol (`"@estalara/sdk": "workspace:*"`, resolved locally
+# by pnpm, no registry involved). The SDK is actually distributed to tenants
+# as a hosted bundle — `apps/control-plane/public/sdk.js` (~165KB), per
+# ESC-015 — loaded via a <script> tag, not `npm install`.
+#
+# Publishing to a registry nobody installs from is not a problem this repo
+# has, so the automatic publish-on-push trigger is disabled here rather than
+# "fixed": there is no correct registry/scope to fix it to, because there is
+# no consumer. Verdict: the changeset version/publish flow is NOT expected to
+# run automatically in the current release model. If SDK distribution via a
+# real npm registry becomes a requirement later, re-enable the `push` trigger
+# below once the target registry/scope actually resolves, and prove one
+# green run before merging that change.
+#
+# This file is kept (rather than deleted) as `workflow_dispatch`-only so a
+# human can still run the changeset version/publish flow on demand if that
+# ever becomes needed, without it firing red on every merge to `main`.
 name: Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch: {}
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 

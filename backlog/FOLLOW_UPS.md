@@ -18076,6 +18076,9 @@ audit-in-transaction + inline-mutation obligations. -->
 
 ## FOLLOW-638 — Cross-brand aggregate analytics in admin: one place showing ALL brands' stats (rollup + per-brand breakdown)
 
+**STATUS 2026-07-24: ✅ DONE — PR #617 MERGED (`239854c`).** `/admin/analytics` rollup + per-brand
+table live (staff-gated via `verifyTracerAdminAuth`).
+
 source_retro: CEO per-brand management ruling 2026-07-24 (session 58; see memory
 `project_single_tenant_rebrand_model` + `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`)
 source_ticket: (white-label per-brand epic) recommended_sprint: now recommended_agent:

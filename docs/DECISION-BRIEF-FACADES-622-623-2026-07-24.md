@@ -16,11 +16,12 @@ controls. The key insight: **they are NOT symmetric** under your single-tenant r
 
 ## FOLLOW-623 — `brand_config` (primary_color, logo_url, white_label)
 
-**Recommendation: ENFORCE.** In your stated model — clients run Estalara **private-label**,
-embedding the SDK on their own sites — per-tenant branding is not cosmetic, it IS the private-label
-mechanism. A white-label client's embedded widget / adapted DOM should carry _their_ colors and
-logo. Right now that column is written and read by nothing, so "white-label" is not actually
-delivered.
+**Recommendation: ENFORCE.** In your stated model — clients get a **full white-label deployment of
+app.estalara.com on their own domain** (same app, same DOM; the SDK always runs inside OUR app,
+never on a third-party site — CEO terminology clarification 2026-07-24) — per-tenant branding is not
+cosmetic, it IS the private-label mechanism. A white-label client's widget / adapted DOM should
+carry _their_ colors and logo. Right now that column is written and read by nothing, so
+"white-label" is not actually delivered.
 
 - **Enforce means:** the SDK-facing config path (`/api/config` or `/api/quiz/public-config`) exposes
   `brand_config`, and the SDK applies it to the widget / Shadow-DOM styling (colors, logo) instead

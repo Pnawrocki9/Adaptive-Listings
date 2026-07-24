@@ -1939,3 +1939,22 @@ would generalize this beyond just `adapt-get-auth`.
   staff-write route whose data mutation is delegated to a non-tx-aware store helper while
   `insert(staffAuditLog)` sits in the route — the exact shape that silently defeats
   check-staff-write-atomicity.sh.
+
+- **2026-07-24 / FOLLOW-630** · **What I built**: Applied the FOLLOW-624 swallow-then-clobber guard
+  to the three sibling config editors it missed outside `/admin` — `dashboard/quiz/page.tsx`,
+  `dashboard/demo/override/page.tsx`, and the shared `components/generation-model-settings.tsx`
+  (rendered by both `/admin/settings` and `/dashboard/settings`). Each now tracks a
+  `loadStatus`/`loadErrorMsg` separate from save status, renders a `role="alert"` + Retry on a
+  failed GET, disables Save, and early-returns from `handleSave` when not loaded. Added the missing
+  `!r.ok` guard to the two that parsed a 500 body as config (demo override rendered DEMO MODE OFF
+  silently; generation-model rendered the default as stored). Added red-first tests per surface
+  asserting no POST/PUT is issued from the errored state. · **Wiring/auth/fail-loud risks I
+  weighed**: The demo-override and generation-model twins were WORSE than the admin originals
+  because they lacked any `!r.ok` guard, so a non-2xx was silently coerced to config — a Save then
+  PUT fabricated state. Evaluated the four residual analytics `catch(() => {})` occurrences: all are
+  read-only dashboards or a bandit-resume PATCH retry, none load-then-clobber config, so documented
+  as out-of-scope-because-read-only rather than force-fixed. · **A guardrail I'd add**: The root
+  cause was FOLLOW-624 running a subdirectory-scoped grep (`…/app/admin`) instead of Rule K.2's
+  repo-wide `grep apps/`. FOLLOW-625's mechanized guard should assert the swallow-then-Save shape
+  across `src/**` including `src/components/**`, not just page routes — a narrowed grep is how twins
+  ship.

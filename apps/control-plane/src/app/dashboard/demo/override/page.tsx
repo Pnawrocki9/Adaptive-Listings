@@ -84,11 +84,27 @@ export default function DemoOverridePage() {
   });
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // FOLLOW-630 (RETRO-206, mirrors FOLLOW-624/ESC-039): tracked SEPARATELY from
+  // `status` (which is save-only). A failed GET — including a non-2xx body that
+  // was previously parsed as config because there was NO `!r.ok` guard — must
+  // render its own visible error and disable Save. Otherwise a 500 renders DEMO
+  // MODE OFF silently, and a Save PUTs that fabricated state, clobbering the
+  // tenant's real live demo override.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Load current override state on mount.
   useEffect(() => {
+    setLoadStatus('loading');
+    setLoadErrorMsg('');
     void fetch('/api/demo/override')
-      .then((r) => r.json())
+      .then((r) => {
+        // FOLLOW-630: the missing guard. Without it a 500 error body was parsed
+        // as config, silently rendering DEMO MODE OFF.
+        if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
+        return r.json();
+      })
       .then((data: unknown) => {
         if (data && typeof data === 'object') {
           const d = data as Partial<OverrideState>;
@@ -101,14 +117,22 @@ export default function DemoOverridePage() {
             models: d.models ?? DEFAULT_MODELS,
           }));
         }
+        setLoadStatus('loaded');
       })
-      .catch(() => {
-        // Load silently — defaults already set.
+      .catch((err: unknown) => {
+        // Rule K.2 consumer-side clause (FOLLOW-630): do NOT silently keep
+        // DEFAULTS looking like real stored config — a Save from this state
+        // would clobber the tenant's real demo override.
+        setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
+        setLoadStatus('error');
       });
-  }, []);
+  }, [retryNonce]);
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    // Defense in depth (FOLLOW-630): even if the disabled Save button is bypassed
+    // (e.g. an implicit form submit), never PUT from un-loaded/errored state.
+    if (loadStatus !== 'loaded') return;
     setStatus('loading');
     setErrorMsg('');
 
@@ -172,6 +196,26 @@ export default function DemoOverridePage() {
           <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">mock-decision-server.mjs</code>.
         </p>
       </div>
+
+      {/* Load-failure banner — FOLLOW-630 */}
+      {loadStatus === 'error' && (
+        <div role="alert" className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>Failed to load demo override settings: {loadErrorMsg}</p>
+          <p className="mt-1 text-xs">
+            Saving is disabled until settings load successfully — this prevents overwriting your
+            real DEMO MODE override with blank defaults.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setRetryNonce((n) => n + 1);
+            }}
+            className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Status banner */}
       {state.enabled && (
@@ -276,7 +320,7 @@ export default function DemoOverridePage() {
         <div className="flex items-center gap-4">
           <button
             type="submit"
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || loadStatus !== 'loaded'}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {status === 'loading' ? 'Saving...' : 'Save'}

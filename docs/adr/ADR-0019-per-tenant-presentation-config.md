@@ -1,13 +1,14 @@
-# PROPOSED-0019 — Per-tenant presentation & content config contract (white-label per-brand epic)
+# ADR-0019 — Per-tenant presentation & content config contract (white-label per-brand epic)
 
-**Status:** PROPOSED (CEO reviews) **Date:** 2026-07-24 **Proposed by:** architect (session 58)
-**Tickets:** white-label per-brand epic — FOLLOW-623, FOLLOW-639, FOLLOW-640, FOLLOW-641 (declared
-`depends_on: [presentation-config ADR]` for 639/640/641). **Cross-references:** ADR-0011
-(quiz-config transport), ADR-0014 (SoT archetype), ADR-0018 (superadmin/staff auth + atomic audited
-writes), FOLLOW-101/554 (quiz→archetype persistence), FOLLOW-270/271/274/275 (shared quiz-config
-types), FOLLOW-584 (canonical archetype ids), FOLLOW-600/614/615 (`/api/config` real-table wiring),
-FOLLOW-627 / PR #616 (`data_source` provenance + 404-on-0-row PATCH), FOLLOW-372 / §H.9 (opt-out
-scope), Rule H, Rule K.2, Rule L, Rule U, `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`.
+**Status:** ACCEPTED (CEO ratified 2026-07-24) **Date:** 2026-07-24 **Proposed by:** architect
+(session 58) **Tickets:** white-label per-brand epic — FOLLOW-623, FOLLOW-639, FOLLOW-640,
+FOLLOW-641 (declared `depends_on: [presentation-config ADR]` for 639/640/641). **Cross-references:**
+ADR-0011 (quiz-config transport), ADR-0014 (SoT archetype), ADR-0018 (superadmin/staff auth + atomic
+audited writes), FOLLOW-101/554 (quiz→archetype persistence), FOLLOW-270/271/274/275 (shared
+quiz-config types), FOLLOW-584 (canonical archetype ids), FOLLOW-600/614/615 (`/api/config`
+real-table wiring), FOLLOW-627 / PR #616 (`data_source` provenance + 404-on-0-row PATCH), FOLLOW-372
+/ §H.9 (opt-out scope), Rule H, Rule K.2, Rule L, Rule U,
+`docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`.
 
 ---
 

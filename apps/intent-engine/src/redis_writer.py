@@ -2,11 +2,17 @@
 Redis shadow-namespace writer for chat intent (FOLLOW-087).
 
 HARD CONSTRAINT: every write goes to the SHADOW key
-`shadow:{tenant_id}:{session_id}:chat_intent` — NEVER the main intent namespace.
-In Sprint 13 this data has zero UX effect; it exists only for post-pilot
-disagreement-rate analysis between behavioural and chat predictions. Writing to
-the main namespace here would silently start adapting live pages — explicitly
-out of scope.
+`shadow:{tenant_id}:{session_id}:chat_intent` — NEVER a separate "live" intent
+namespace; there is no such namespace to write to.
+
+FOLLOW-635 (CEO ruling, option A, 2026-07-24): despite the "shadow" key name,
+this data is NOT zero-UX-effect. `/api/adapt` reads this same key
+unconditionally and returns it to the SDK, whose client prior loop
+(`applyChatIntentPrior`) folds it into the Bayesian archetype state and
+re-sends it as `archetype_hint` on the next call, driving live directives.
+This module has no gate over that behaviour — the only switch is whether this
+Modal app is deployed and the key gets written at all (ESC-042). §H.9 remains
+enforced here: `profiling_opt_out=True` skips the write entirely (below).
 """
 
 from __future__ import annotations

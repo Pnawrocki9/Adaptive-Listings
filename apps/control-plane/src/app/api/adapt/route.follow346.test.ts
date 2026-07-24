@@ -1,20 +1,28 @@
 /**
- * FOLLOW-346 tests: CHAT_NLP_LIVE flag gate.
+ * FOLLOW-346 / FOLLOW-635 tests: chat-intent shadow-read bridge on POST /api/adapt.
+ *
+ * FOLLOW-635 (CEO ruling, option A, 2026-07-24): the `CHAT_NLP_LIVE` flag was
+ * vestigial (it gated a `console.info` only) and has been deleted. There is no
+ * server-side gate on this path: `chat_intent_dimensions` is attached
+ * unconditionally whenever the Redis shadow key has data, and it IS
+ * live-influencing across calls via the SDK's `applyChatIntentPrior` → next-call
+ * `archetype_hint` loop (tested in `packages/sdk`), not "shadow-only." This file
+ * covers only the server-side POST /api/adapt read+response contract.
  *
  * Coverage:
- *   AC-LIVE-1: CHAT_NLP_LIVE=false (default) → shadow key is read and
- *              chat_intent_dimensions is returned to the SDK, but directives
- *              remain unchanged (no live adaptation from chat intent).
- *   AC-LIVE-2: chat_intent_dimensions present in response when shadow key has data,
- *              even with CHAT_NLP_LIVE=false.
- *   AC-LIVE-3: No raw chat text fields appear in ClickHouse log payload (DPIA C-07).
+ *   AC-LIVE-1: chat_intent_dimensions is attached unconditionally (no flag/env
+ *              var required) when the shadow key has data, for the CURRENT
+ *              request/response — the directive-influence happens on the NEXT
+ *              adapt call via the SDK client loop, not on this one.
+ *   AC-LIVE-2: shadow key absent → no chat_intent_dimensions, adaptation unchanged.
+ *   AC-LIVE-3: No raw chat text fields appear in the adapt response (DPIA C-07).
  *   AC-LIVE-4: Shadow key read failure (fail-open) does not change the directives.
  *
  * @module apps/control-plane/src/app/api/adapt/route.follow346.test
  */
 
 import { NextRequest } from 'next/server';
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // ─── Hoisted stubs ────────────────────────────────────────────────────────────
 
@@ -147,18 +155,12 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('FOLLOW-346: CHAT_NLP_LIVE flag gate', () => {
+describe('FOLLOW-346 / FOLLOW-635: chat-intent shadow-read bridge (no CHAT_NLP_LIVE gate)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: CHAT_NLP_LIVE is false (not set in env)
-    delete process.env.CHAT_NLP_LIVE;
   });
 
-  afterEach(() => {
-    delete process.env.CHAT_NLP_LIVE;
-  });
-
-  it('AC-LIVE-1: CHAT_NLP_LIVE=false (default) → shadow read proceeds, directives unchanged', async () => {
+  it('AC-LIVE-1: chat_intent_dimensions is attached unconditionally when the shadow key has data', async () => {
     // Shadow key returns intent dimensions
     mockReadShadowChatIntent.mockResolvedValue({
       intent_dimensions: {
@@ -169,9 +171,8 @@ describe('FOLLOW-346: CHAT_NLP_LIVE flag gate', () => {
       confidence: 0.8,
     });
 
-    // Ensure CHAT_NLP_LIVE is false
-    process.env.CHAT_NLP_LIVE = 'false';
-
+    // No CHAT_NLP_LIVE (or any equivalent) env var is set — the flag no longer
+    // exists and the read/response is not gated by anything.
     const res = await POST(makePostRequest(BASE_BODY));
     expect(res.status).toBe(200);
 
@@ -183,8 +184,10 @@ describe('FOLLOW-346: CHAT_NLP_LIVE flag gate', () => {
       'investment',
     );
 
-    // Directives are empty because confidence=0.5 is below 0.6 threshold (no adaptation)
-    // This confirms chat intent did NOT change the adaptation path
+    // Directives for THIS response are empty because confidence=0.5 is below the
+    // 0.6 threshold (no adaptation on this call) — this is unrelated to chat
+    // intent; the chat-driven influence happens on the SDK's NEXT adapt() call
+    // via archetype_hint (applyChatIntentPrior), not within this request.
     expect(Array.isArray(body.directives)).toBe(true);
     // source is 'default' because confidence=0.5 <= 0.6 threshold
     expect(body.source).toBe('default');

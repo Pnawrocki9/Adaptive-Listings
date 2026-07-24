@@ -8,8 +8,16 @@ Two-tier chat NLP pipeline (Master Design §C.3):
   conversation re-processing for higher-quality intent.
 
 Both tiers produce the identical 12-dim ChatIntentDetectedPayload (schemas.py)
-and write to the Redis SHADOW namespace only (shadow:{tenant}:{session}:chat_intent).
-No live adaptation reads this in Sprint 13 — shadow-only by design.
+and write to the Redis SHADOW namespace (shadow:{tenant}:{session}:chat_intent).
+
+FOLLOW-635 (CEO ruling, option A, 2026-07-24): this shadow key is NOT purely
+"shadow" — `/api/adapt` (control-plane) reads it unconditionally and returns
+`chat_intent_dimensions`, which the SDK client prior loop folds into the
+Bayesian archetype state (`applyChatIntentPrior`) and re-sends as
+`archetype_hint` on the next adapt call, driving live directives. There is no
+server-side gate on this. It is live-influencing WHEN this Modal app is
+deployed and reachable (tracked as ESC-042); until then the shadow key is
+simply never written and the read path is a no-op.
 
 F-01 / ADR-0016 pilot path (2026-07-21):
   Redpanda Cloud Serverless has no HTTP Proxy, so stream-consumer never receives
@@ -109,7 +117,10 @@ async def chat_nlp_endpoint(
     ``profiling_opt_out`` (bool, default false). Spawns ``process_chat_message``
     fire-and-forget and returns 202.
 
-    Does NOT flip CHAT_NLP_LIVE — shadow Redis write only; directives stay gated.
+    Writes only to the Redis shadow key (see module docstring, FOLLOW-635): this
+    endpoint itself does not touch directives, but once the write path is
+    deployed the client prior loop picks up the shadow key on the next
+    `/api/adapt` call and folds it into live adaptation.
     """
     if not _valid_bearer(authorization):
         raise HTTPException(status_code=401, detail="unauthorized")

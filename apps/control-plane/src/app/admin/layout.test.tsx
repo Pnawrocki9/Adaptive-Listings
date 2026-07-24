@@ -86,7 +86,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     );
   }
 
-  it('AC1-a: renders exactly 7 nav links (3 tracer + 3 tenants hub + platform Settings)', () => {
+  it('AC1-a: renders exactly 8 nav links (3 tracer + 3 tenants hub + 2 platform)', () => {
     renderLayout();
 
     // All three tracer link labels must be present (FOLLOW-332 AC1)...
@@ -94,16 +94,20 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Session History')).toBeDefined();
     expect(screen.getByText('Weight Editor')).toBeDefined();
     // ...plus the Platform section's Settings link (Phase 0 superadmin-access,
-    // 2026-07-20 — global generation-model selector, staff-writable FOLLOW-456).
+    // 2026-07-20 — global generation-model selector, staff-writable FOLLOW-456)
+    // and the Cross-Brand Analytics link (FOLLOW-638).
     const settingsLink = screen.getByText('Settings').closest('a');
     expect(settingsLink?.getAttribute('href')).toBe('/admin/settings');
+    const analyticsLink = screen.getByText('Cross-Brand Analytics').closest('a');
+    expect(analyticsLink?.getAttribute('href')).toBe('/admin/analytics');
 
-    // Count every <a> inside the <nav> element — must be exactly 7 (FOLLOW-593
-    // un-hides the Tenants hub: Tenants, Registrations, Demo Sessions).
+    // Count every <a> inside the <nav> element — must be exactly 8 (FOLLOW-593
+    // un-hides the Tenants hub: Tenants, Registrations, Demo Sessions; FOLLOW-638
+    // adds Cross-Brand Analytics to the Platform section).
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(7);
+    expect(navLinks.length).toBe(8);
   });
 
   it('AC1-b: "Live Monitor" href contains PILOT_TENANT_ID', () => {
@@ -184,7 +188,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the seven nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the eight nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -192,6 +196,6 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(7);
+    expect(uniqueHrefs.size).toBe(8);
   });
 });

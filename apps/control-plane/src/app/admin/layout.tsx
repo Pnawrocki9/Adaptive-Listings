@@ -45,9 +45,13 @@ const TENANTS_NAV_LINKS = [
 /**
  * Platform-global staff settings (Phase 0 of the superadmin-access work,
  * 2026-07-20). Currently: the global generation-model selector (FOLLOW-161 /
- * FOLLOW-456 — staff are the only accounts that can write it).
+ * FOLLOW-456 — staff are the only accounts that can write it) and the
+ * cross-brand analytics rollup (FOLLOW-638).
  */
-const PLATFORM_NAV_LINKS = [{ href: '/admin/settings', label: 'Settings' }];
+const PLATFORM_NAV_LINKS = [
+  { href: '/admin/settings', label: 'Settings' },
+  { href: '/admin/analytics', label: 'Cross-Brand Analytics' },
+];
 
 /**
  * Server Action: sign out the current user and redirect to /sign-in.

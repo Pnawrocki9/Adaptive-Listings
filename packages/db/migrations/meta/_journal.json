@@ -239,6 +239,13 @@
       "when": 1783355674493,
       "tag": "0033_description_cache_verdict",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784894575960,
+      "tag": "0034_tenants_al_enabled",
+      "breakpoints": true
     }
   ]
 }

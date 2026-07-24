@@ -136,6 +136,12 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
           >
             Settings
           </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/al-state`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Adaptive Listings On/Off
+          </Link>
         </div>
       </div>
 

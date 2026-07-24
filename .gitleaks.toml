@@ -223,6 +223,17 @@ regexes = [
   # (bare or `-out-of-tx`) or surrounding context (quote, `#`, `/`, `../../`) precedes it. Not a
   # secret — a descriptive fixture/test identifier. Token-scoped per Rule V.
   '''bypass6-barrel-reexport-delegated''',
+  # FOLLOW-622: this PR's own doc-comment citation of
+  # `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md` (41-char kebab run
+  # "DECISION-BRIEF-FACADES-622-623-2026-07-24") false-positives on this generic
+  # 40-char entropy heuristic in both `tenant-config-editor.tsx` and
+  # `api/config/route.ts` — same class as the ADR-NNNN-kebab entry above (a
+  # descriptive doc filename cited in JSDoc outside `docs/adr/`, not a secret).
+  # The `[a-zA-Z0-9_-]{40}` rule captures the first 40 chars of the run
+  # (`DECISION-BRIEF-FACADES-622-623-2026-07-2`, missing the trailing `4`); this
+  # 39-char prefix literal is a guaranteed substring of that capture regardless
+  # of surrounding context (backtick, `/`, `.md`). Token-scoped per Rule V.
+  '''DECISION-BRIEF-FACADES-622-623-2026-07''',
 ]
 
 # JWT tokens (generic)

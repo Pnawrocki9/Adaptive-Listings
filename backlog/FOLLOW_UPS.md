@@ -18180,3 +18180,93 @@ provisioning), URL→origin normalization fix (`z.string().url()` bug), explicit
 (deny-all vs inherit-env), per-request tenant lookup + cache (ingest hot path, p95 <50ms ACK
 budget). The hardcoded env CORS list (`apps/ingest/src/router.ts:69-73`) is the anti-pattern this
 replaces (DOMAIN-INDEPENDENCE ruling). DO NOT build while Estalara is the only tenant.
+
+## FOLLOW-643 — Reconcile `/api/config` `data_source:'default'` notice ("Saving will create its config") with the PATCH 0-row 404 (UPDATE, not upsert)
+
+source_retro: RETRO-211 §4a LG-1 source_ticket: FOLLOW-627 (PR #616) recommended_sprint: next
+recommended_agent: backend-engineer priority: P3 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+**Gap (same-PR self-contradiction).** FOLLOW-627 shipped two halves that disagree on the
+no-`tenants`-row case. `GET /api/config` returns `data_source:'default'`, and the staff editor
+renders (`tenant-config-editor.tsx:176-180`): _"This tenant has no stored configuration yet … Saving
+will create its config."_ But `PATCH /api/config` does an `UPDATE tenants … WHERE id = :tenantId`
+(NOT an upsert), and by the same PR a 0-row match throws `UnknownTenantError` → **404
+unknown_tenant** (`route.ts:341-345`, `:392-400`). So in the exact state the notice describes,
+saving does NOT create config — it 404s. Reachable today only as an edge (a real admin-navigated
+`/admin/tenants/[id]` implies the row exists → GET 'stored'; 'default' needs a deleted-tenant race
+or a directly-supplied `tenant_id`), hence P3 — but escalates to a real UX-correctness bug once
+FOLLOW-639/640/641 make per-brand provisioning a live "no row yet → create on save" flow.
+
+**AC:**
+
+1. Choose ONE and make GET-notice + PATCH-behavior consistent: (a) change the editor copy to not
+   promise creation (e.g. "no config row exists — saving is unavailable until the tenant is
+   provisioned"), OR (b) make the `data_source:'default'` case an explicit upsert (INSERT … ON
+   CONFLICT) so the "create on save" promise holds.
+2. If (b): the upsert must respect the same staff write-rank gate (RETRO-203 / FOLLOW-615) and the
+   staff audit-in-tx atomicity (ADR-0018 §3a) — a create is a staff mutation.
+3. Red-first test asserting the chosen semantics end-to-end (GET 'default' → save → the promised
+   outcome, not a contradictory 404).
+4. Coordinate with FOLLOW-639/640/641 so per-brand provisioning inherits the resolved semantics.
+
+cross_ref: [RETRO-211, FOLLOW-627, FOLLOW-639/640/641 (per-brand provisioning makes this live),
+ADR-0019]
+
+## FOLLOW-644 — Rebase-coordination: protect #616's `/api/config` contract changes under the concurrent FOLLOW-622/623 (+639/640/641) worktrees
+
+source_retro: RETRO-211 §5a source_ticket: FOLLOW-627 (PR #616) recommended_sprint: now (before
+622/623 merge) recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on:
+[FOLLOW-622, FOLLOW-623] promoted_to_queue: false
+
+**Cascade.** FOLLOW-622/623 workers are editing the SAME files as #616 — `api/config/route.ts`,
+`admin/tenants/[id]/settings/tenant-config-editor.tsx`, `packages/sdk` — in isolated worktrees cut
+before/around #616's merge. On rebase they collide with three #616 changes: (1) `TenantConfig` now
+carries a **required** `data_source: 'stored' | 'default'` field — any `TenantConfig` reshape MUST
+preserve it or the editor's `Pick<>` and every `const body: TenantConfig = {…}` site fail typecheck;
+(2) the editor's `StaffTenantConfig = Pick<TenantConfig, 'plan'|'brand'|'sdk'|'data_source'>` now
+COUPLES the component to the route type — a FOLLOW-623 brand edit conflicts on those lines; (3)
+PATCH gained `.returning({ id })` + `UnknownTenantError` — a FOLLOW-622 `allowed_origins` de-scope
+(the `z.string().url()` bug, FOLLOW-642) touches the same handler.
+
+**AC:**
+
+1. When 622/623 rebase onto `main`, preserve: `TenantConfig.data_source` (required), the editor
+   `Pick<TenantConfig,…>` coupling, and the PATCH `.returning()`/`UnknownTenantError` → 404
+   `unknown_tenant` path (staff + agency). Do not silently drop them in a merge resolution.
+2. Re-run the #616 route + editor tests after rebase; the 0-row-404 and `data_source` provenance
+   assertions must still pass.
+3. Annotate `docs/adr/ADR-0019-per-tenant-presentation-config.md` (which already cites "FOLLOW-627 /
+   PR #616") with the required-field / `Pick`-coupling rebase note so the epic's later tickets
+   (639/640/641) don't re-fabricate the provenance contract.
+
+cross_ref: [RETRO-211, FOLLOW-627, FOLLOW-622, FOLLOW-623, FOLLOW-639, FOLLOW-640, FOLLOW-641,
+FOLLOW-642, ADR-0019]
+
+## FOLLOW-645 — Extend the FOLLOW-448 branch-hygiene guard to the isolated-worktree "uncommitted at terminal close" mode
+
+source_retro: RETRO-210 §6/§7 source_ticket: FOLLOW-637 / FOLLOW-627 (PRs #615/#616, both recovered
+from stranded worktrees, session-58) recommended_agent: devops-engineer priority: P3
+estimated_hours: 3 depends_on: [FOLLOW-448] promoted_to_queue: false
+
+**Gap (guard's blind spot — the failure moved one hop).** FOLLOW-448 shipped DONE (PR #411) and
+guards the `HEAD==main` _edit-on-main-before-branch_ stranding mode (RETRO-146). Session-58 stranded
+BOTH #615 and #616 in a SIBLING mode the guard does not cover: worker output left UNCOMMITTED in an
+isolated `.claude/worktrees/agent-*` when the session's terminal closed, recovered only the next
+session. The `HEAD==main` hook never fired because the work was on a ticket branch inside a
+worktree, not on `main`. This is the same silent-work-loss hazard FOLLOW-448 exists to prevent, one
+hop over.
+
+**AC:**
+
+1. Detect uncommitted/committed-but-unpushed work in `.claude/worktrees/agent-*` at session/terminal
+   end (or on idle timeout) and warn / auto-stash-with-marker / surface a recovery command, so a
+   subagent's finished output cannot be lost when the terminal closes before the PR is opened.
+2. Reuse the FOLLOW-448 hook infrastructure under `.claude/hooks/` where possible; do not duplicate.
+3. Prove it with a reproduction: a worktree with uncommitted changes at "session end" triggers the
+   warn/stash path (mirror the FOLLOW-448 test approach).
+4. Cross-reference the recovered-work "verify-don't-trust" discipline (Rule AA / RETRO-146) —
+   recovered work must still be independently re-verified before PR.
+
+cross_ref: [RETRO-210, RETRO-146, FOLLOW-448, FOLLOW-605 (HEAD-displacement sibling),
+memory:feedback_check_worktrees_before_concluding_agent_didnt_run]

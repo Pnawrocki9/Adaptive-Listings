@@ -3269,3 +3269,32 @@ so.**
   - **P-5 arming discipline:** RETRO-207 was the counter-example that KEEPS P-5 at count 1 —
     FOLLOW-630 ran the rule's FULL repo-wide grep (I re-ran it myself: 9 hits, 0 swallows). A clean
     closure that _disarms_ a candidate is as important to record as a recurrence that arms one.
+
+## 2026-07-24 / RETRO-209..211 (PRs #614/#615/#616, session-58)
+
+- **A finding I almost missed and why:** RETRO-211 LG-1 — the #616 GET notice "Saving will create
+  its config" DIRECTLY contradicts the PATCH 0-row-404 the SAME PR ships (UPDATE, not upsert). I
+  nearly passed it as a clean K.2-provenance closure because both halves are individually correct
+  and well-tested; the contradiction only surfaces when you hold the GET-render and the
+  PATCH-behavior for the identical no-row state in your head at once. Lesson: when a PR adds BOTH a
+  "state X is special" read-signal AND a "state X is rejected" write-path, always check the two
+  agree about state X.
+- **An axis/chain I had to trace twice:** #614's `session_id` — the fix is a no-op if the demo JWT
+  doesn't actually CARRY session_id (the `if (jwtClaims.session_id)` guard would be vacuously
+  false). The PR diff does NOT touch the mint side, so I had to go read
+  `/api/demo/sessions/route.ts:157-176` to confirm the producer already mints
+  `session_id = demo_sessions.id`. It does → genuine closure. This is the inquiry_submit_selector
+  one-hop trap: a consumer-side "fix" is only real if the producer feeds it. Always verify the
+  producer for a claimed-closed wire, even when the PR doesn't touch it.
+- **A meta-pattern in how gaps recur across agents:** the stranded-worktree failure mode moved ONE
+  HOP past its own guard. FOLLOW-448 (DONE) closed the HEAD==main mode; session-58 stranded
+  #615/#616 in the isolated-worktree mode the guard doesn't watch. This is the same "the fix
+  relocates the gap one hop downstream" shape I chase in code (K.2 swallow: admin editors →
+  dashboard twins; staff-write guard: bypass 4→5→6→...) — it applies to PROCESS guards too. A
+  guard's scope boundary IS a future gap; name it explicitly when a guard ships (RETRO-208 already
+  does this for the K.2 block-form residual).
+- **Blind-spot I'm watching:** the "producer-only lifecycle-column facade" (revoked_at/al_enabled/
+  allowed_origins written, never read/enforced) is at count 1 prior (RETRO-205) and keeps generating
+  closures (633/636/637/627). The moment a NEW prior retro sights it, promote — but as a READ-side
+  extension of the Rule-H lint (guard), not prose. Don't let the steady stream of CLOSURES trick me
+  into thinking the PATTERN is being counted (closures are not new sightings).

@@ -32192,3 +32192,456 @@ FOLLOW-632 (P2 audit). NO promotion (generalisation is count 1; K.2-specific enf
 evidence the cross-rule pattern recurs; this PR is the remedy, lowering the case for new text). ESC-039 is
 now GENUINELY CLOSED end-to-end on both legs — remediation (all 6 editors, RETRO-207) + prevention (CI
 gate, RETRO-208) — with one latent residual (block-form) tracked as FOLLOW-631. -->
+
+## RETRO-209 — FOLLOW-636 (enforce demo-session revocation at runtime — close the producer-only `revoked_at` facade) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #614 (merged 2026-07-24 17:36 UTC, squash commit `3eb73e7` on `main`, by Pnawrocki9; OPUS)
+- **Files changed:** 7 (+455 / −23) — 1 route (`api/adapt/route.ts` +18), 1 claim passthrough
+  (`demo-jwt-verify.ts` +10), 1 new helper (`demo-session-revocation.ts` +98), 1 new unit test
+  (+105), 1 new e2e test (+201), 1 deleted dead file (`demo-session-store.ts` −23), 1 lessons doc
+- **Modules touched:** [control-plane (adapt route + demo-auth lib), docs (agent lessons)]
+- **Key contracts changed:** `DemoJwtClaims.session_id` — **added** (optional string passthrough of the
+  `demo_sessions.id` the token was already minted with) — breaking: no. New internal helper
+  `resolveDemoSessionRevocation(sessionId) → { revoked }`. No schema/column/env/topic/SDK-signal added
+  (`demo_sessions.revoked_at` and the `session_id` JWT claim both pre-existed the PR).
+
+### 2. Verification done in PR
+
+- Test files changed: 2 new (`demo-session-revocation.test.ts` +105 unit — both directions +
+  fail-open + Sentry + dev/CI short-circuit; `route.follow636.test.ts` +201 e2e through the REAL POST
+  handler with `verifyDemoJwt` un-mocked — non-revoked→200, revoked→401, lookup-throw→200 fail-open).
+  Assertions added: ~9 across the two suites. The e2e mints a real HS256 JWT carrying `session_id` and
+  drives the full handler, so the wire is proven at the actual enforcement point, not only in the unit.
+- CI checks: PR body reports full adapt suite green (338 tests), typecheck + lint clean. Not
+  independently re-run this session (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** New `resolveDemoSessionRevocation` has a live non-test importer
+(`api/adapt/route.ts:79` import → `:1188` call — grep-confirmed). New `session_id` claim consumed at
+`route.ts:1187-1188`. The PR **deletes** orphaned `demo-session-store.ts` (grep-confirmed zero
+importers repo-wide this session — good cleanup, not a new orphan).
+
+**CHECK B (half-wire) — clean ✅.** The `revoked_at` lifecycle column: **producer** =
+`/api/demo/sessions/[id]/revoke` (writes `revoked_at`); **consumer** = `resolveDemoSessionRevocation`
+→ 401 on the adapt demo-JWT path (this PR). The `session_id` claim: **producer** =
+`/api/demo/sessions/route.ts:157-176` (mints `session_id: sessionId` where `sessionId =
+crypto.randomUUID()` is the SAME value inserted as `demo_sessions.id` — verified this session);
+**consumer** = `verifyDemoJwt` surface → helper lookup. Full producer→consumer→enforce chain present.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A — genuine end-to-end closure (step-7 traced in full, NOT one hop).** The prior facade was
+  producer-only: the admin "revoke" wrote `demo_sessions.revoked_at` but nothing on the enforcement
+  path read it, so a revoked demo token kept serving up to its 7-day `exp`. I traced the whole chain
+  independently, not from the PR body: mint (`demo/sessions/route.ts:160-162` puts `session_id` in the
+  JWT) → the same id is the `demo_sessions.id` PK (`:157`,`:176`) → `verifyDemoJwt` now surfaces it
+  (`demo-jwt-verify.ts:132-137`) → `resolveDemoSessionRevocation` PK-lookups `revoked_at`
+  (`route.ts:1188`) → 401. The gap did NOT relocate one hop: the mint side already carried `session_id`
+  **before** this PR (the diff does not touch `demo/sessions/route.ts`), so the consumer guard
+  `if (jwtClaims.session_id)` is not vacuously false in production. This is the `inquiry_submit_selector`
+  (097→114→127→141) failure mode checked-for and NOT found.
+- **Negligible residual (recorded, NO follow-up):** a demo JWT minted *before* `session_id` was ever
+  added to the mint payload would carry no `session_id` → the guard skips revocation for it. Not
+  material: the mint has carried `session_id` since the claim was introduced (pre-FOLLOW-636), and any
+  such token self-expires within the ≤7-day `exp`. Fail-safe direction is the only defect, and it is
+  time-bounded.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** Fail-axis discipline is correct: signature + `exp` stay fail-CLOSED inside `verifyDemoJwt`;
+  ONLY the revocation (enablement) axis is fail-OPEN (a DB blip must not break a legit live demo),
+  configured-but-threw is Sentry-captured, db-unconfigured (dev/CI) is the sanctioned silent mock path.
+  No cache — correctly avoids re-introducing the revocation lag the ticket closes. Mirrors the
+  FOLLOW-633 `resolveAlEnablement` sibling.
+
+#### 4c. Test coverage gaps
+
+- **N/A.** Both directions + both fail-open axes (no-row, DB-throw) + dev/CI short-circuit are covered
+  at BOTH the unit and the real-handler e2e level.
+
+#### 4d. Documentation gaps
+
+- **N/A.** `.claude/agents/backend-engineer/lessons.md` (+23) records the fix and proposes a guardrail
+  (see §6). No MASTER_DESIGN / ROPA divergence (no new data category; `revoked_at` and `session_id`
+  pre-existed).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **None adverse.** This is a self-contained enforcement close on the demo-JWT path.
+
+#### 5b. Future sprint tickets affected
+
+- **N/A.** The demo-session lifecycle is orthogonal to the white-label per-brand epic (FOLLOW-638…642)
+  and to FOLLOW-622/623 (which touch `/api/config`, not `/api/adapt`).
+
+#### 5c. Contracts changed others rely on
+
+- `DemoJwtClaims.session_id` is additive-optional; the only consumer is the adapt POST path. No SDK or
+  cross-app consumer of `DemoJwtClaims` — grep-confirmed the type is control-plane-internal.
+
+#### 5d. Architectural assumptions affected
+
+- **Multi-axis verified (step-8).** The demo-JWT path is **POST-only**: GET `/api/adapt` authenticates
+  via `resolveAdaptGetAuth` (ADAPT_API_KEY / api_keys — NOT `verifyDemoJwt`), and `/api/adapt/description`
+  via `resolveApiKey` (its own `api_keys.revoked_at`). So the revocation check is correctly scoped to the
+  one verb that accepts demo JWTs; the api-key path keeps its own revocation. No GET-verb or
+  description-route gap — the enforcement axis is complete.
+
+### 6. New lesson candidates
+
+- **Pattern: "producer-only *lifecycle-column* facade — a write to `*_revoked_at` / `*_disabled_at` /
+  `*_suspended_at` (or a cosmetic on/off flag) with NO grep-provable runtime reader on the enforcement
+  path."** Seen in: RETRO-205 (FOLLOW-622/623 `allowed_origins`/`brand_config` written, no SDK reader;
+  FOLLOW-633 `al_enabled` cosmetic) — **count 1 prior** — + this retro (FOLLOW-636 `revoked_at`, the
+  closure). The backend-engineer lessons.md independently proposes a "producer-without-consumer lint for
+  lifecycle columns" (the READ-side sibling of the Rule-H events-never-emitted / tables-never-seeded
+  family). **HELD at count 1 prior — NO promotion** (RULE_PROMOTION_THRESHOLD = 2). Arming condition:
+  the NEXT independently-found lifecycle-column/cosmetic-control facade in a *new* prior retro arms it —
+  and, per this repo's enforcement-not-text philosophy (RETRO-208 META), the remedy should be a guard
+  (extend the Rule-H family lint to READ-side lifecycle columns), not prose.
+
+### 7. Follow-ups
+
+- **N/A.** Clean end-to-end closure; no new gap in the merged change.
+
+### 8. Cross-references
+
+- **Session-57 admin-surface audit (RETRO-205 / FOLLOW-600) — this is the closure of facade F (demo
+  revocation).** RETRO-205 filed FOLLOW-636 as a producer-only facade; #614 closes it end-to-end and
+  the closure is genuine (§4a), not a one-hop move. Sibling closures land in the same session: FOLLOW-633
+  (`al_enabled`, PR #613, code leg done per commit `cf111ec`), FOLLOW-637 (RETRO-210), FOLLOW-627
+  (RETRO-211).
+- **RETRO-203 (FOLLOW-615) — methodological parallel.** Both are single-chokepoint enforcement gates on
+  a control-plane route where the fix had to be proven the SOLE path and multi-axis (no third `via`/verb
+  axis). Same "gap did not move one hop" verdict.
+
+## RETRO-210 — FOLLOW-637 (surface bandit learning-paused state in analytics — stop rendering real-but-frozen rows as live) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #615 (merged 2026-07-24 20:05 UTC, squash commit `b978006` on `main`, by Pnawrocki9; OPUS —
+  **recovered from a stranded worktree**, see §6/§8)
+- **Files changed:** 5 (+339 / −5) — 1 route (`api/ab/weights/route.ts` +31), 2 near-identical dashboard
+  twins (`dashboard/analytics/page.tsx` +48, `components/analytics/analytics-view.tsx` +48), 2 test
+  files (route +93, page +124)
+- **Modules touched:** [control-plane (analytics route + both analytics UIs)]
+- **Key contracts changed:** `AbWeightsResponse.learning_state: 'active' | 'paused'` — **added**
+  (required, derived) — breaking: no (additive; both in-repo consumers updated in the same PR, and the
+  client defaults absent→'paused'). No schema/column/env/topic/SDK-signal added (reads the existing
+  `FEEDBACK_ENDPOINT_ENABLED` env + existing `ab_bandit_weights` rows).
+
+### 2. Verification done in PR
+
+- Test files changed: route `+93` (6 cases: env-unset+moved→paused, env-true+all-at-prior→paused,
+  env-true+one-moved→active, env-false→paused, empty-table→paused, DATABASE_URL-absent→paused) and page
+  `+124` (badge shown on paused, rows NOT hidden alongside badge [Rule K.2], badge cleared on active,
+  absent-field→paused default). Assertions added: ~10. Both directions of BOTH gating conditions
+  (`FEEDBACK_ENDPOINT_ENABLED` AND moved-off-prior) are varied independently — good.
+- CI checks: PR body reports typecheck/lint/tests green. Not independently re-run (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** No new top-level export. `LearningPausedBadge` is a file-local
+component rendered by `Panel5` in each of the two files. The two edited components are pre-existing and
+each live-rendered (`dashboard/analytics/page.tsx` is a route page; `analytics-view.tsx` is rendered by
+`admin/tenants/[id]/analytics/page.tsx`).
+
+**CHECK B (half-wire) — clean ✅.** `learning_state`: **producer** = `GET /api/ab/weights` (computed on
+BOTH the agency and staff-override paths — see §5d); **consumers** = both analytics UIs read it, derive
+`learningPaused`, and render the badge + amber notice; both default absent→'paused'. Producer→consumer→
+render present on both surfaces. Grep confirms exactly **two** fetchers of `/api/ab/weights`
+(`page.tsx:670`, `analytics-view.tsx:694`) and both were updated — no third bandit-rendering surface
+left un-badged.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A.** The two gating conditions are correct and the "vacuous / no-data → paused" and "endpoint just
+  enabled but no conversions yet → paused" edge cases fail toward "don't imply learning" (Rule K.2
+  direction). Weights are labeled, never hidden — the row still renders next to the badge (asserted).
+- **NOTED (not a gap): the twin-component discipline was honored.** `dashboard/analytics/page.tsx` and
+  `components/analytics/analytics-view.tsx` are byte-near-identical twins — exactly the shape that bit
+  FOLLOW-624 (fixed admin editor, missed the dashboard twin; RETRO-206). Here BOTH twins received the
+  identical `LearningPausedBadge` + `Panel5` + fetch-default treatment in the same PR. The lesson from
+  RETRO-206/207 was applied.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** One micro-observation (not a bug): `hasMovedOffPrior = rows.some(r => r.alpha !== 1 || r.beta
+  !== 1)` would misread as 'active' if arms were ever *seeded* off Beta(1,1) without real conversions.
+  No such seed exists (arms seed at the (1,1) prior per TICKET-AB-006/007), and the primary gate
+  (`FEEDBACK_ENDPOINT_ENABLED`) is the root-cause signal, so this is latent-only. No follow-up.
+
+#### 4c. Test coverage gaps
+
+- **Minor (P4, NO follow-up):** the 6 new route tests all drive the **agency** path
+  (`agencyAccess()`); the **staff-override** path's `learning_state` value is not asserted directly. It
+  is structurally low-risk — both paths converge on the SAME shared computation (`route.ts:162-188`) and
+  the pre-existing FOLLOW-594 staff-override suite already exercises that path returning a valid
+  `AbWeightsResponse` (which now must include `learning_state` or fail typecheck). Recorded for
+  completeness; not worth a stub.
+
+#### 4d. Documentation gaps
+
+- **N/A.** Route + both component JSDoc blocks accurately describe the derivation and the absent→paused
+  default. No MASTER_DESIGN / ROPA impact.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **None adverse.** Additive analytics-truthfulness field; both consumers updated in-PR.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-638 (cross-brand aggregate analytics)** will build a NEW staff `/admin/analytics` rollup over
+  the same summary/lift/weights patterns. It should carry `learning_state` (and the `data_source`
+  provenance from RETRO-211) into the rollup so the aggregate view does not re-introduce the exact
+  "looks-live-but-frozen" facade F-02 this PR closes. Recorded as a design note for FOLLOW-638, not a
+  blocker.
+
+#### 5c. Contracts changed others rely on
+
+- `AbWeightsResponse.learning_state` is required; the only consumers are the two in-repo analytics UIs
+  (both updated). No SDK/cross-app consumer of `AbWeightsResponse` — grep-confirmed.
+
+#### 5d. Architectural assumptions affected
+
+- **Multi-axis verified (step-8).** The route has two auth paths (agency RLS + staff-override
+  service-role, ADR-0018 §2 / FOLLOW-594). Both converge on the SAME `rows`-map →
+  `feedbackEnabled && hasMovedOffPrior` computation → shared response (`route.ts:162-190`), so
+  `learning_state` is identical on both axes. The ONLY hardcoded `'paused'` is the agency dev/CI
+  empty-DB early return (`:147`), which is correct (no rows ⇒ vacuously at the prior). No staff-path
+  divergence.
+
+### 6. New lesson candidates
+
+- **Pattern (PROCESS): "worker output stranded UNCOMMITTED in an isolated `.claude/worktrees/agent-*`
+  when the session's terminal closes — recovered next session."** #615 (and #616, RETRO-211) were both
+  recovered this way in session-58. Seen in: RETRO-146 §6 (the WORKER-BRANCH-HYGIENE / STALLED-HANDOFF
+  pattern, **count 1 prior**, HELD, remedy = the branch-first guard FOLLOW-448) + this session
+  (2nd occurrence). **Key finding — the gap MOVED ONE HOP:** FOLLOW-448 shipped DONE (PR #411) and
+  guards `HEAD==main` edits (the *edit-on-main-before-branch* mode). The session-58 stranding was in
+  **isolated worktrees** left uncommitted at terminal close — a SIBLING mode the `HEAD==main` guard does
+  NOT cover. **NO prose-rule promotion** (count 1 prior; and RETRO-146 already chose guard-over-prose):
+  the correct lever is to EXTEND the guard → **FOLLOW-645**.
+- **F-02 analytics-truthfulness (label-don't-hide, Rule K.2) — positive-compliance, not a failure
+  sighting.** This PR + RETRO-211's `data_source` are two applications of the same K.2 "make the degraded
+  state observable on the wire" discipline already codified (Rule K.2 + its amendments). No new rule.
+
+### 7. Follow-ups
+
+- **FOLLOW-645:** Extend the FOLLOW-448 branch-hygiene guard to the isolated-worktree failure mode —
+  detect uncommitted work in `.claude/worktrees/agent-*` at session/terminal end (or idle) and
+  warn/auto-stash-with-marker, so a subagent's finished output cannot be lost when the terminal closes
+  before the PR is opened. Session-58 stranded #615/#616 exactly this way; the HEAD==main guard did not
+  fire because the work was in a worktree, not on `main` (devops-engineer, 3h, **P3**).
+
+### 8. Cross-references
+
+- **RETRO-205 / FOLLOW-600 (session-57 admin audit) — closure of facade F-02.** RETRO-205 filed
+  FOLLOW-637; #615 closes it (analytics no longer implies live learning for frozen rows).
+- **RETRO-206 / RETRO-207 (FOLLOW-624/630 twin-editor miss) — lesson applied.** Those retros'
+  hard-won "byte-identical twin components must BOTH be fixed in the same PR" lesson is honored here:
+  both analytics twins got the badge. This is the twin discipline paying out proactively.
+- **RETRO-146 / FOLLOW-448 — the branch-hygiene guard's blind spot.** See §6; the isolated-worktree mode
+  is the one hop FOLLOW-448 did not cover → FOLLOW-645.
+
+## RETRO-211 — FOLLOW-627 (`/api/config` `data_source` provenance + 404 `unknown_tenant` on 0-row PATCH) — 2026-07-24
+
+### 1. Summary of change
+
+- **PR:** #616 (merged 2026-07-24 20:05 UTC, squash commit `ed1797e` on `main`, by Pnawrocki9; OPUS —
+  **recovered from a stranded worktree**, see RETRO-210 §6)
+- **Files changed:** 4 (+162 / −25) — 1 route (`api/config/route.ts` +77), 1 staff editor
+  (`tenant-config-editor.tsx` +29/−reshaped), 1 route test (+56), 1 editor test (+25)
+- **Modules touched:** [control-plane (config route + staff tenant-config editor)]
+- **Key contracts changed:** `TenantConfig.data_source: 'stored' | 'default'` — **added** (required) —
+  breaking: **borderline** (see §5c — a REQUIRED field on an exported interface that a concurrently-
+  edited consumer `Pick<>`s). New route error `404 { error: { code: 'unknown_tenant' } }` on a 0-row
+  PATCH (both staff + agency paths, via `.returning({ id })` + `UnknownTenantError`). No
+  schema/column/env added.
+
+### 2. Verification done in PR
+
+- Test files changed: route `+56` (GET stored→`data_source:'stored'`; GET no-row→200
+  `data_source:'default'`; agency PATCH 0-row→404 `unknown_tenant`; staff PATCH 0-row→404 + **no audit
+  row + no Sentry**) and editor `+25` (GET `default`→`role="status"` "no stored configuration" notice;
+  GET `stored`→no notice). The route test's `makeUpdate` mock was reworked to model real Postgres
+  `.returning()` (missing key → `[]`), so the 0-row path is exercised through the real branch.
+- CI checks: PR body reports typecheck/lint/tests green. Not independently re-run (read-only retro).
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.** `UnknownTenantError` is file-local (thrown at `route.ts:341`,
+caught at `:376`). `data_source` field is consumed. No new orphan.
+
+**CHECK B (half-wire) — clean ✅.** `data_source`: **producer** = `GET /api/config` (`:216`
+`row ? 'stored' : 'default'`; PATCH success `:447` `'stored'`); **consumer** = `StaffTenantConfigEditor`
+(`:98` never coerces 'default' away → `:176` renders the amber `role="status"` notice). The new **404
+unknown_tenant**: **producer** = both PATCH paths; **consumer** = the editor's `handleSave` `!res.ok`
+branch surfaces `body.error.message` (verified `tenant-config-editor.tsx:130-142` — NOT swallowed,
+fail-loud). Producer→consumer→render present. Grep confirms the editor is the ONLY in-repo consumer of
+`GET /api/config` / `TenantConfig` (the SDK uses `/api/quiz/public-config` + `/api/adapt`, not
+`/api/config`), so no other consumer is left mistaking defaults for real config.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — the two halves of the SAME PR contradict each other on the 0-row/`default` case.** GET
+  renders, on `data_source:'default'`: *"This tenant has no stored configuration yet … **Saving will
+  create its config.**"* (`tenant-config-editor.tsx:176-180`). But PATCH does an `UPDATE tenants … WHERE
+  id = :tenantId` (NOT an upsert) and now, by this very PR, a 0-row match throws `UnknownTenantError` →
+  **404 unknown_tenant** (`route.ts:341-345`, `:392-400`). So in the exact state the GET notice
+  describes (no `tenants` row), **saving does NOT create the config — it 404s.** The notice copy
+  promises a create-on-save that the code path refuses. Reachability is an edge case (a real
+  admin-navigated `/admin/tenants/[id]` implies the row exists → GET returns 'stored', so the 'default'
+  branch is rarely hit for staff; it is reachable via a deleted-tenant race or a directly-supplied
+  `tenant_id`), which is why this is **P3, not P1** — but it is a genuine shipped inconsistency between
+  the provenance UX and the write semantics. **Fix options:** (a) change the notice to not promise
+  creation ("no config row exists — saving is unavailable until the tenant is provisioned"), or (b) make
+  the `default` case an explicit upsert (INSERT-on-conflict) so the promise holds. → **FOLLOW-643.**
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A.** The 404 discrimination is correct: `UnknownTenantError` is caught BEFORE the generic
+  Sentry/500 branch (staff path), so a 0-row match returns 404 with **no audit row and no Sentry
+  capture** (expected caller error, not a dependency failure) — asserted. The agency path 404s inline.
+  Retry-safety of the audited staff tx is preserved.
+
+#### 4c. Test coverage gaps
+
+- **N/A** for the shipped behavior — both the 'stored'/'default' GET provenance and the 0-row PATCH 404
+  (staff AND agency, with the no-audit/no-Sentry assertion) are covered red-first. LG-1 is a
+  copy-vs-behavior inconsistency, not a missing assertion (no test asserts the contradictory
+  "create on save" claim — folded into FOLLOW-643, not double-counted).
+
+#### 4d. Documentation gaps
+
+- **N/A.** Route JSDoc cites the lineage (Rule K.2 amendment / RETRO-072) accurately.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **⚠️ CONCRETE CASCADE — FOLLOW-622 / FOLLOW-623 workers are editing the SAME files RIGHT NOW in
+  isolated worktrees.** They target `api/config/route.ts`, `tenant-config-editor.tsx`, and
+  `packages/sdk`. Their branches were cut before/around #616's merge, so on rebase they collide with
+  three #616 changes: (1) `TenantConfig` now carries a **required** `data_source` field — any
+  FOLLOW-622 reshape of `TenantConfig` MUST preserve it or the editor's `Pick<>` and every
+  `const body: TenantConfig = {…}` construction site fail typecheck; (2) the editor's
+  `StaffTenantConfig = Pick<TenantConfig, 'plan'|'brand'|'sdk'|'data_source'>` now **couples** the
+  component to the route type — a FOLLOW-623 brand-config edit to the editor will conflict on the same
+  lines; (3) PATCH gained `.returning({ id })` + `UnknownTenantError` — a FOLLOW-622 de-scope of
+  `allowed_origins` validation (the `z.string().url()` bug tracked by FOLLOW-642) touches the same PATCH
+  handler. → **FOLLOW-644** (rebase-coordination heads-up) + recommend annotating
+  `docs/adr/ADR-0019-per-tenant-presentation-config.md` (the ADR already cites "FOLLOW-627 / PR #616" —
+  add the required-field/Pick-coupling rebase note; ADR edit is outside the retro-analyst write scope,
+  flagged to PM/architect in the run summary).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-639/640/641** (`depends_on: [presentation-config ADR]`) extend `/api/config` / the editor for
+  per-brand quiz/opt-out/placement config. They inherit the `data_source` provenance contract and MUST
+  keep the 'default'-notice / 0-row-404 semantics consistent (and should resolve LG-1's copy-vs-upsert
+  choice, since per-brand provisioning makes the "no row yet → create on save" path a REAL, non-edge
+  flow — at which point LG-1 escalates from P3 to a real UX correctness issue). Cross-linked in
+  FOLLOW-643.
+
+#### 5c. Contracts changed others rely on
+
+- `TenantConfig.data_source` is a **required** addition to an exported interface. In-repo the only
+  consumer (the staff editor) is updated in-PR, so nothing breaks on `main` today — but the
+  required-ness is what makes the FOLLOW-622/623 rebase hazard real (§5a). Recorded, not a defect in
+  #616 itself.
+
+#### 5d. Architectural assumptions affected
+
+- **Multi-axis verified + prior-retro reconciliation (step-8).** (i) GET has staff + agency callers;
+  both receive `data_source` (shared body construction). (ii) PATCH has staff (audited, tx) + agency
+  (un-audited) paths; the 0-row-404 is applied to BOTH (`route.ts:341` staff, `:392` agency) — no
+  path left silently succeeding. (iii) **Reconciled with RETRO-207 §4a**, which EXPLICITLY flagged this
+  route — *"No 200-with-fabricated-config bypass on these three routes (contrast FOLLOW-627's
+  `/api/config`)"* — #616 is the closure of exactly that contrasted bypass; this CONFIRMS RETRO-207,
+  does not contradict it. (iv) **Reconciled with RETRO-203 (FOLLOW-615)**, which analyzed
+  `PATCH /api/config` on the write-RANK axis and declared it clean but was SILENT on the 0-row-success
+  axis; #616 extends the analysis to that previously-unexamined axis — a different axis, not a
+  contradiction of RETRO-203's "clean."
+
+### 6. New lesson candidates
+
+- **Pattern: "fabricated-default / no-op-write must be OBSERVABLE on the wire (provenance flag /
+  fail-loud status), never indistinguishable from real stored state."** This is already codified as
+  **Rule K.2 + its amendments** (and the `data_source` provenance family: `intent/config`,
+  `quiz/public-config`, tracer exports all carry it). #616 is a compliant *application* of the existing
+  rule to a route that lacked it — **positive compliance, not a new failure sighting.** NO new rule.
+- **Same-PR-self-contradiction (LG-1) — count 1, no pattern yet.** A single PR whose two halves (GET
+  provenance notice vs PATCH write semantics) disagree. Not seen before as a named pattern; HELD at
+  count 1. No promotion.
+
+### 7. Follow-ups
+
+- **FOLLOW-643:** Reconcile the `data_source:'default'` editor notice ("Saving will create its config")
+  with the PATCH 0-row **404 unknown_tenant** — either fix the copy to not promise creation, or make the
+  `default` case an explicit upsert. Escalates from P3 to real UX-correctness once FOLLOW-639/640/641
+  make per-brand provisioning a live "no row yet → create" flow (backend-engineer, 2h, **P3**).
+- **FOLLOW-644:** Rebase-coordination for the FOLLOW-622/623 (and 639/640/641) worktrees against #616 —
+  preserve `TenantConfig.data_source` (required), the editor's `Pick<TenantConfig,…>` coupling, and the
+  PATCH `.returning()`/`UnknownTenantError` 404 path; annotate `ADR-0019` with the required-field/Pick
+  rebase note (backend-engineer/architect, 2h, **P2**).
+
+### 8. Cross-references
+
+- **RETRO-207 (FOLLOW-630) — the contrast it drew is now closed.** RETRO-207 §4a explicitly named
+  `/api/config` as the counter-example that DID have a 200-with-fabricated-config bypass; #616 closes it.
+- **RETRO-203 (FOLLOW-615) — same route, adjacent axis.** Write-rank gate (RETRO-203) + 0-row provenance
+  (this) together harden `PATCH /api/config` across two independent axes.
+- **RETRO-072 — origin of the `data_source` provenance discipline** (cited in the route JSDoc); #616
+  applies it to a route that had drifted from it.
+- **ADR-0019 (per-tenant presentation config)** — already cross-references FOLLOW-627 / PR #616; the
+  white-label epic (622/623/639/640/641) builds on this contract (§5a/§5b, FOLLOW-644).
+
+<!-- next free FOLLOW number: 646 (FOLLOW-643 + FOLLOW-644 filed by RETRO-211; FOLLOW-645 filed by
+RETRO-210). next free RETRO number: 212.
+RETRO-209 = retro for PR #614 (FOLLOW-636, MERGED 2026-07-24 17:36 UTC, squash 3eb73e7 on main by
+Pnawrocki9; 7 files +455/-23; OPUS). WIRING A+B clean. HEADLINE: CLEAN END-TO-END CLOSURE of the
+producer-only demo-session revocation facade — traced mint(demo/sessions:157-176 puts session_id =
+demo_sessions.id PK, pre-existing) → verifyDemoJwt surfaces it → resolveDemoSessionRevocation PK-lookup
+revoked_at → 401, NOT a one-hop move (consumer guard not vacuously false in prod). Multi-axis: demo-JWT
+path is POST-only (GET/api/adapt = resolveAdaptGetAuth API-key; description = resolveApiKey own
+revoked_at) — correctly scoped. Fail-CLOSED sig+exp, fail-OPEN only revocation axis, no cache. Deleted
+dead demo-session-store.ts (0 importers). NO follow-up. §6: lifecycle-column producer-only facade pattern
+count 1 prior (RETRO-205 622/623/633) HELD, remedy = guard not prose.
+RETRO-210 = retro for PR #615 (FOLLOW-637, MERGED 2026-07-24 20:05 UTC, squash b978006 on main; 5 files
++339/-5; OPUS; RECOVERED FROM STRANDED WORKTREE). WIRING A+B clean. HEADLINE: learning_state added to GET
+/api/ab/weights ('active' iff FEEDBACK_ENDPOINT_ENABLED=true AND ≥1 arm moved off Beta(1,1)) + Learning
+Paused badge on BOTH analytics twins (the RETRO-206/207 twin discipline applied proactively — no
+half-done twin). Multi-axis: agency + staff-override paths converge on shared computation (route:162-188);
+only dev/CI empty-DB early-return hardcodes paused (correct). Minor P4 test note (staff-path value
+untested, shared-code-covered) NO stub. §6/§8: WORKER-BRANCH-HYGIENE stranded-worktree pattern recurred —
+RETRO-146 count 1 prior + this = 2nd; FOLLOW-448 (DONE, PR #411) guards HEAD==main but NOT the
+isolated-worktree-uncommitted-at-terminal-close mode (gap moved one hop) → FOLLOW-645. NO prose promotion
+(count 1 prior + guard-over-prose philosophy).
+RETRO-211 = retro for PR #616 (FOLLOW-627, MERGED 2026-07-24 20:05 UTC, squash ed1797e on main; 4 files
++162/-25; OPUS; RECOVERED FROM STRANDED WORKTREE). WIRING A+B clean (data_source producer→editor
+notice→render; 404 unknown_tenant surfaced by handleSave, not swallowed; UnknownTenantError file-local).
+HEADLINE + LG-1 (P3): GET 'default' notice says "Saving will create its config" but PATCH is UPDATE
+(not upsert) → 0-row match now 404s by THIS SAME PR — the two halves contradict on the no-row case
+(edge-reachable for staff; becomes live under FOLLOW-639/640/641 per-brand provisioning) → FOLLOW-643.
+CONCRETE CASCADE (§5a): FOLLOW-622/623 (+639/640/641) worktrees editing route.ts/editor/sdk NOW collide on
+rebase with #616's REQUIRED TenantConfig.data_source + editor Pick<> coupling + PATCH .returning()/
+UnknownTenantError → FOLLOW-644 (+ recommend ADR-0019 annotation, out of retro write-scope). Reconciled:
+RETRO-207 §4a explicitly contrasted /api/config's fabrication bypass — #616 CLOSES it (confirms); RETRO-203
+analyzed write-rank axis clean but silent on 0-row axis — #616 extends (not a contradiction). RETRO-072 =
+provenance-discipline origin. NO CONVENTIONS_PATCH promotion across all three (facade pattern count 1
+prior; worktree-hygiene count 1 prior + guard-not-prose; K.2 provenance already a Rule). -->
+

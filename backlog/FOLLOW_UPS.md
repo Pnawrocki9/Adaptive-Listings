@@ -17899,9 +17899,17 @@ opt-out preserved end-to-end.
 **CEO ruling (2026-07-24): OPTION A** — accept the client-loop as the live path (§D.7 fusion already
 implemented); do NOT build a server-side fusion path (option B rejected).
 
-**Two remaining legs:**
+**Two legs — code ✅ DONE, operator deploy ⬜ REMAINS (ESC-042, Piotr-side = the actual enabler):**
 
-- [ ] **(code, this ticket — OPTION A cleanup PR, ml-engineer):** delete the vestigial
+- [x] **✅ DONE 2026-07-24 — PR #613 squash-merged to `main` `5ab923b`.** Removed the vestigial
+      `CHAT_NLP_LIVE` flag (+ `.env.example` entry; grep confirms zero `process.env.CHAT_NLP_LIVE`
+      reads remain), fixed the false "shadow-only" docstrings across `adapt/route.ts`,
+      `intent-engine/{main,redis_writer}.py`, `sdk/core/adapt.ts` + (bonus)
+      `packages/shared/src/directives.ts`, rewrote the FOLLOW-346 test contract to assert chat dims
+      attached unconditionally (no flag). §H.9 opt-out + fail-open intact (docstring/test-only). CI
+      clean except pre-existing `Rule I`.
+
+- [ ] **(code — historical description, superseded by the DONE line above):** delete the vestigial
       `CHAT_NLP_LIVE` flag (`adapt/route.ts:100` + its `console.info` at `:1521`); correct the
       now-FALSE "shadow-only / zero UX effect" docstrings in `adapt/route.ts:89-99`,
       `intent-engine/src/main.py:11-12`, `redis_writer.py:4-9`, `sdk/src/core/adapt.ts:859-862`;

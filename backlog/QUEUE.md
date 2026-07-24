@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — ESC-039 chain + FOLLOW-626 + FOLLOW-633 all DONE+MERGED; admin audit done; chat un-shadow scoped; ▶️ NEXT: FOLLOW-635 option-A cleanup PR (clear to dispatch), then FOLLOW-622/623 P1 facade)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — ESC-039 chain + FOLLOW-626 + FOLLOW-633 + FOLLOW-635 code leg all DONE+MERGED; admin audit done; ▶️ NEXT: ESC-042 operator deploy (Piotr) = chat un-shadow enabler, then FOLLOW-622/623 P1 facade)
 
 **Session 57 admin-surface work (post-ESC-039):** CEO asked whether the admin surface is done. Ran a
 3-probe audit + acted on findings:
@@ -26,10 +26,12 @@
 - New tickets filed: FOLLOW-633 (DONE), FOLLOW-634 (P3 stale data-engineer charter), FOLLOW-635
   (chat un-shadow, option-A cleanup pending). ESC-042 (chat deploy blocker, Piotr-side).
 
-**▶️ NEXT:** (1) dispatch FOLLOW-635 option-A cleanup PR; (2) ESC-042 operator deploy (Piotr); (3)
-FOLLOW-622/623 (P1 producer-only facades on the settings page — `allowed_origins` advertised as
-security control but ingest CORS doesn't enforce; likely needs a design decision); (4)
-FOLLOW-627/628/ 629/631/632/634.
+**▶️ NEXT:** (1) **ESC-042 operator deploy (Piotr-side)** — `modal deploy apps/intent-engine` +
+`MODAL_CHAT_NLP_URL`/Upstash secret wiring; the ACTUAL chat un-shadow enabler (FOLLOW-635 code leg
+DONE via PR #613 `5ab923b`; chat stays dark until this runs). (2) FOLLOW-622/623 (P1 producer-only
+facades on the settings page — `allowed_origins` advertised as security control but ingest CORS
+doesn't enforce; likely needs a design decision enforce-vs-de-scope). (3)
+FOLLOW-627/628/629/631/632/ 634.
 
 ---
 

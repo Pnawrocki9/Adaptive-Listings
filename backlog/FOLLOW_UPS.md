@@ -18179,6 +18179,10 @@ visitor uses to switch profiling + DOM generation on/off, with per-brand appeara
 
 ## FOLLOW-642 — Re-enable per-tenant `allowed_origins` enforcement (deferred; TRIGGER = before first external re-brand client onboards)
 
+**TRIGGER FIRED — CEO 2026-07-25 (session 58): Estalara is onboarding THREE external re-brand
+clients NOW.** Status flips deferred→**P1 ACTIVE**; dispatched session 58. Build per the spec below;
+client domains land in tenant config at provisioning (the mechanism must not require them up front).
+
 source_retro: CEO option-B ruling on FOLLOW-622 (2026-07-24, session 58;
 `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md` §DECISION) source_ticket: FOLLOW-622
 recommended_sprint: BLOCKED-until-first-external-client recommended_agent: backend-engineer

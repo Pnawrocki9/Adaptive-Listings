@@ -443,15 +443,16 @@ export function renderQuizWidget(
     // ── State ──────────────────────────────────────────────────────────────────
     //
     // currentId:     the question currently shown (starts at the definition root).
-    // depth:         0-based count of questions already answered (path length).
-    // acc:           accumulated archetype-weight vector from the selected answers.
+    // answerPath:    the answer INDEX chosen at each visited question, in root→leaf order.
+    //                The resolved archetype is `resolveArchetypeFromPath(def, answerPath)` — the
+    //                SAME pure walk the parity tests assert, so the renderer and the tests share
+    //                one reduction implementation (no drift).
     // selectedIndex: the answer highlighted on the CURRENT (non-root) question, or null.
     //
     // The root question navigates immediately on click (no CTA), matching the pre-ADR-0019
     // Q1 gate; non-root questions select then CTA-advance.
     let currentId: string = def.root;
-    let depth = 0;
-    let acc: Record<string, number> = {};
+    const answerPath: number[] = [];
     let selectedIndex: number | null = null;
 
     const overlay = document.createElement('div');
@@ -469,24 +470,19 @@ export function renderQuizWidget(
       onDismiss();
     });
 
-    /** Accumulate the selected answer's weights and either advance or complete. */
+    /** Record the selected answer and either advance to its `next` or complete at a leaf. */
     function applyAnswer(answerIndex: number): void {
       const q = byId.get(currentId);
       if (!q) return;
       const ans = q.answers[answerIndex];
       if (!ans) return;
-      const nextAcc: Record<string, number> = { ...acc };
-      for (const [archetypeId, weight] of Object.entries(ans.weights)) {
-        nextAcc[archetypeId] = (nextAcc[archetypeId] ?? 0) + weight;
-      }
+      answerPath.push(answerIndex);
       if (ans.next === null || !byId.has(ans.next)) {
         cleanup();
-        onComplete(reduceWeightsToArchetype(nextAcc));
+        onComplete(resolveArchetypeFromPath(def, answerPath));
         return;
       }
-      acc = nextAcc;
       currentId = ans.next;
-      depth += 1;
       selectedIndex = null;
       buildStep();
     }
@@ -494,9 +490,9 @@ export function renderQuizWidget(
     function buildStep(): void {
       const q = byId.get(currentId);
       if (!q) {
-        // Malformed definition (should be impossible post-validation) — resolve to neutral.
+        // Malformed definition (should be impossible post-validation) — resolve from the path.
         cleanup();
-        onComplete(reduceWeightsToArchetype(acc));
+        onComplete(resolveArchetypeFromPath(def, answerPath));
         return;
       }
       const isRoot = currentId === def.root;
@@ -515,10 +511,10 @@ export function renderQuizWidget(
         card.appendChild(logo);
       }
 
-      const totalSteps = depth + longestPathFrom(def, currentId);
+      const totalSteps = answerPath.length + longestPathFrom(def, currentId);
       const progress = document.createElement('div');
       progress.className = 'estalara-quiz-progress';
-      progress.textContent = `${String(depth + 1)} / ${String(totalSteps)}`;
+      progress.textContent = `${String(answerPath.length + 1)} / ${String(totalSteps)}`;
       card.appendChild(progress);
 
       const question = document.createElement('p');

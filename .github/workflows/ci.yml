@@ -541,6 +541,43 @@ jobs:
       - name: Assert no unwrapped fire-and-forget sinks
         run: bash scripts/check-fire-and-forget-sinks.sh
 
+  # ── Rule K.2 consumer-side swallow guard (FOLLOW-625 / RETRO-205 §6 P-2) ────
+  # Mechanises the consumer-side clause of CONVENTIONS_PATCH.md Rule K.2 (whose
+  # Verification-block grep nothing ran): FAILS the build when a CLIENT component
+  # under apps/control-plane/src/{app,components}/** GETs its editable config on a
+  # fetch(...) chain, populates form state, and SWALLOWS a failed load (empty /
+  # comment-only / log-only / no-op .catch) — the "swallow a failed GET then Save
+  # DEFAULTS over real config" data-loss class that shipped FOUR times
+  # (FOLLOW-595 → 596 → 600, then the twins fixed in FOLLOW-630) and was caught
+  # only by retros. The scope covers src/components/** (not just src/app/**) per
+  # the RETRO-206 §4a LG-2 amendment — the twin FOLLOW-624 missed lived there.
+  #
+  # A TypeScript-AST walk (typescript is already a repo devDependency) — see
+  # scripts/check-k2-consumer-swallow.cjs for the COVERED vs DOCUMENTED-RESIDUAL
+  # call-shapes (Rule AE) and the annotated allow-list. Hard gate — no
+  # continue-on-error.
+  k2-consumer-swallow-guard:
+    name: Rule K.2 consumer-side swallow guard (FOLLOW-625)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run red-first fixture proof (validates the gate BOTH directions)
+        run: bash scripts/__tests__/check-k2-consumer-swallow.test.sh
+
+      - name: Assert no consumer-side config-load swallows
+        run: bash scripts/check-k2-consumer-swallow.sh
+
   # ── Modal App singleton guard (FOLLOW-438 / RETRO-143 / ESC-034) ───────────
   # Asserts that exactly one real modal.App() instantiation exists in
   # apps/llm-gateway/src (the shared instance in jobs/_app.py).

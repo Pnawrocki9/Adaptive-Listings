@@ -5,8 +5,12 @@
  * Ports the per-tenant subset of settings enumerated in ADR-0018 §5 that are NOT
  * already covered by a dedicated staff surface (quiz → `/admin/tenants/[id]/quiz`,
  * demo mode → `/demo`, labels → `/labels`, intent → `/intent`): plan (read-only
- * display), brand config (`primary_color`, `logo_url`, `white_label`), and the SDK
- * `allowed_origins` allow-list. Backed by `GET`/`PATCH /api/config`.
+ * display) and brand config (`primary_color`, `logo_url`, `white_label`). Backed
+ * by `GET`/`PATCH /api/config`.
+ *
+ * FOLLOW-622 (CEO Option B, 2026-07-24): the SDK `allowed_origins` allow-list
+ * control was de-scoped from this page — it was an unenforced security facade.
+ * Re-enable tracked as FOLLOW-642.
  *
  * NOTE (CEO Q1, ADR-0018 §5, binding): `generation_model` is GLOBAL-only and MUST
  * NOT appear on this page (the dropped FOLLOW-601). `page.test.tsx` asserts this

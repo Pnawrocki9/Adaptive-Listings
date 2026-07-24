@@ -30,7 +30,14 @@ export const apiKeys = pgTable(
 
     /** e.g. ['read:events', 'write:adaptations'] */
     scopes: text('scopes').array().notNull().default([]),
-    /** CORS allowlist for this specific key (null = inherit tenant allowedOrigins). */
+    /**
+     * CORS allowlist for this specific key (null = inherit tenant allowedOrigins).
+     *
+     * NOT enforced; deferred — re-enable tracked as FOLLOW-642 (trigger: first
+     * external re-brand client). Ingest CORS uses a hardcoded env allowlist
+     * (`apps/ingest/src/router.ts:69-73`), not this column or `tenants.allowedOrigins`
+     * (FOLLOW-622, CEO Option B, 2026-07-24).
+     */
     allowedOrigins: text('allowed_origins').array(),
 
     /** Foreign key → users.id. Null if created programmatically. */

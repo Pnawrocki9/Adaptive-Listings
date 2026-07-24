@@ -31,7 +31,16 @@ export const tenants = pgTable(
     /** 'free' | 'observer' | 'augment' | 'native' */
     plan: text('plan').notNull().default('free'),
 
-    /** Domains where the Estalara SDK snippet is permitted to run. */
+    /**
+     * Domains where the Estalara SDK snippet is permitted to run.
+     *
+     * NOT enforced; deferred — re-enable tracked as FOLLOW-642 (trigger: first
+     * external re-brand client). Staff could edit this via the per-tenant
+     * settings page until FOLLOW-622 (CEO Option B, 2026-07-24) removed that
+     * control as an unenforced security facade: ingest CORS uses a hardcoded
+     * env allowlist (`apps/ingest/src/router.ts:69-73`), NOT this column. The
+     * column and its data are kept — nothing currently reads or writes it.
+     */
     allowedOrigins: text('allowed_origins').array().notNull().default([]),
 
     /** White-label colors, fonts, logo overrides. */

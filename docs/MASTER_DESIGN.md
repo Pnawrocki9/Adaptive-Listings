@@ -5018,14 +5018,22 @@ const ALLOWED_ORIGINS = {
 };
 
 // Ingest endpoint (cdn.estalara.com SDK calls):
-// Origin validated against tenant.allowed_origins config
+// REALITY (corrected 2026-07-24, FOLLOW-622 — this comment previously claimed
+// per-tenant enforcement that was never implemented): origin is validated
+// against a HARDCODED env allowlist (`apps/ingest/src/router.ts:69-73`), NOT
+// per-tenant `tenants.allowed_origins`. That column is written by nobody now
+// (the staff settings-page control was de-scoped as an unenforced facade, CEO
+// Option B) and read by nobody. Per-tenant, data-driven origin validation is
+// deferred — tracked as FOLLOW-642, trigger: before the first external
+// re-brand client onboards (domain-independence requires it then).
 // Wildcard ('*') NEVER allowed — explicit allowlist tylko
 ```
 
 **SDK CDN (cdn.estalara.com):**
 - Public access (każda strona klienta może załadować SDK)
 - CORS `Access-Control-Allow-Origin: *` ale TYLKO dla `/sdk/*.js` static assets
-- Ingest endpoint validuje origin per tenant config
+- Ingest endpoint validuje origin against the hardcoded env allowlist above — NOT
+  per-tenant config (see FOLLOW-622/FOLLOW-642 note above)
 
 #### V.3.5. API key lifecycle
 

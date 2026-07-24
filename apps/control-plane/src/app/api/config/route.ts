@@ -44,7 +44,15 @@
  *     a billing decision, out of this route's scope; PATCH never accepts a `plan` key.
  *   - `brand.*`            → `tenants.brandConfig` (jsonb: `primary_color`, `logo_url`,
  *     `white_label`).
- *   - `sdk.allowed_origins` → `tenants.allowedOrigins` (text array).
+ *
+ * FOLLOW-622 (CEO Option B, 2026-07-24 — `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`):
+ * `sdk.allowed_origins` has been REMOVED from this contract. It was a producer-only
+ * security facade — this route wrote `tenants.allowedOrigins`, but nothing ever
+ * enforced it (ingest CORS is a hardcoded env allowlist, `apps/ingest/src/router.ts:
+ * 69-73`), so the settings page implied per-tenant origin security that did not
+ * exist. The `tenants.allowedOrigins` column itself is NOT dropped — it is deferred,
+ * data stays, doc comment updated to state the truth — re-enable is tracked as
+ * FOLLOW-642 (trigger: before the first external re-brand client onboards).
  *
  * Two fields from the pre-FOLLOW-600 stub were DELIBERATELY DROPPED, not carried
  * forward (Rule U — delete unwired stub fields rather than invent schema for them,
@@ -91,9 +99,6 @@ export interface TenantConfig {
   /** `tenants.plan` — READ-ONLY here; plan changes are a billing concern. */
   plan: string;
   brand: BrandConfig;
-  sdk: {
-    allowed_origins: string[];
-  };
   updated_at: string;
   /**
    * Provenance (FOLLOW-627, Rule K.2 amendment / RETRO-072): `'stored'` when the
@@ -116,11 +121,6 @@ const ConfigPatchSchema = z.object({
         .optional(),
       logo_url: z.string().url().nullable().optional(),
       white_label: z.boolean().optional(),
-    })
-    .optional(),
-  sdk: z
-    .object({
-      allowed_origins: z.array(z.string().url()).optional(),
     })
     .optional(),
 });
@@ -194,7 +194,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rows = await db
       .select({
         plan: tenants.plan,
-        allowedOrigins: tenants.allowedOrigins,
         brandConfig: tenants.brandConfig,
         updatedAt: tenants.updatedAt,
       })
@@ -207,7 +206,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       tenant_id: tenantId,
       plan: row?.plan ?? 'free',
       brand: parseStoredBrandConfig(row?.brandConfig),
-      sdk: { allowed_origins: row?.allowedOrigins ?? [] },
       updated_at: (row?.updatedAt ?? new Date()).toISOString(),
       // FOLLOW-627 (Rule K.2 amendment): 200 + fabricated defaults is only safe
       // to return when the fabrication is OBSERVABLE on the wire. `row` absent
@@ -284,12 +282,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   // before/after delta.
   let currentPlan = 'free';
   let currentBrand: BrandConfig = { ...DEFAULT_BRAND };
-  let currentOrigins: string[] = [];
   try {
     const rows = await db
       .select({
         plan: tenants.plan,
-        allowedOrigins: tenants.allowedOrigins,
         brandConfig: tenants.brandConfig,
       })
       .from(tenants)
@@ -298,7 +294,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     const row = rows[0];
     currentPlan = row?.plan ?? 'free';
     currentBrand = parseStoredBrandConfig(row?.brandConfig);
-    currentOrigins = row?.allowedOrigins ?? [];
   } catch (err: unknown) {
     console.error(
       '[config PATCH] failed to read current config:',
@@ -322,11 +317,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
         white_label: patch.brand.white_label ?? currentBrand.white_label,
       }
     : currentBrand;
-  const updatedOrigins: string[] = patch.sdk?.allowed_origins ?? currentOrigins;
 
   const setValues = {
     brandConfig: updatedBrand,
-    allowedOrigins: updatedOrigins,
     updatedAt: new Date(),
   };
 
@@ -360,12 +353,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
             before: {
               plan: currentPlan,
               brand: currentBrand,
-              sdk: { allowed_origins: currentOrigins },
             },
             after: {
               plan: currentPlan,
               brand: updatedBrand,
-              sdk: { allowed_origins: updatedOrigins },
             },
           },
           ipAddress: requestIp(req),
@@ -441,7 +432,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     tenant_id: tenantId,
     plan: currentPlan,
     brand: updatedBrand,
-    sdk: { allowed_origins: updatedOrigins },
     updated_at: setValues.updatedAt.toISOString(),
     // Reaching here means the update above matched a real row — always 'stored'.
     data_source: 'stored',

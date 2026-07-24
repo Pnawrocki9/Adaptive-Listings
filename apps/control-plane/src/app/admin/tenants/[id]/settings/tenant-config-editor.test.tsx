@@ -33,7 +33,6 @@ const SAMPLE_CONFIG = {
   tenant_id: TENANT_ID,
   plan: 'observer',
   brand: { primary_color: '#1a73e8', logo_url: null, white_label: false },
-  sdk: { allowed_origins: ['https://listings.example.com'] },
   updated_at: '2026-07-22T00:00:00.000Z',
 };
 
@@ -46,7 +45,7 @@ afterEach(() => {
 });
 
 describe('StaffTenantConfigEditor', () => {
-  it('renders plan, brand, and allowed-origins controls after loading', async () => {
+  it('renders plan and brand controls after loading', async () => {
     mockFetchOnce(SAMPLE_CONFIG);
     render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
 
@@ -54,10 +53,19 @@ describe('StaffTenantConfigEditor', () => {
       expect(screen.getByText('observer')).toBeDefined();
     });
     expect(screen.getByTestId('white-label-toggle')).toBeDefined();
-    expect(screen.getByTestId('allowed-origins-textarea')).toHaveProperty(
-      'value',
-      'https://listings.example.com',
-    );
+  });
+
+  // FOLLOW-622 (CEO Option B): the "SDK Allowed Origins" control is a
+  // de-scoped, unenforced facade — it must not render anywhere on this page.
+  it('never renders an SDK Allowed Origins control', async () => {
+    mockFetchOnce(SAMPLE_CONFIG);
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('observer')).toBeDefined();
+    });
+    expect(screen.queryByTestId('allowed-origins-textarea')).toBeNull();
+    expect(screen.queryByText(/allowed origins/i)).toBeNull();
   });
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -79,7 +87,7 @@ describe('StaffTenantConfigEditor', () => {
     expect(screen.queryByLabelText(/generation model/i)).toBeNull();
   });
 
-  it('PATCHes brand + sdk.allowed_origins on save', async () => {
+  it('PATCHes brand on save', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE_CONFIG) })
@@ -109,10 +117,8 @@ describe('StaffTenantConfigEditor', () => {
     expect(patchCall[1].method).toBe('PATCH');
     const sentBody = JSON.parse(patchCall[1].body as string) as {
       brand: { white_label: boolean };
-      sdk: { allowed_origins: string[] };
     };
     expect(sentBody.brand.white_label).toBe(true);
-    expect(sentBody.sdk.allowed_origins).toEqual(['https://listings.example.com']);
   });
 
   // ═══════════════════════════════════════════════════════════════════════

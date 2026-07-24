@@ -114,3 +114,24 @@ being written to Redis without any disclosure review. The schema contract should
   confirm what column real rows populate before trusting the brief's "correctness trap" note — a
   brief can be built on a superseded migration model. (engagement_scores AC(d): PHANTOM CONFIRMED —
   no writer in repo or out-of-repo actors; arms RETRO-176 PHANTOM-STORE count→1; FOLLOW-582.)
+
+- **2026-07-25 / FOLLOW-653** · External-brand go-live technical check (4 axes: privacy-policy
+  surfacing, consent umbrella, per-user opt-out, DSR flows) for 3 white-label re-brand clients
+  sharing one data pool. Found + fixed a real Rule N gap in the same PR (grep-verified before
+  writing): `__estalara_profiling_opt_out__` (shipped PR #337, 2026-06-21) was never added to
+  `PRIVACY_NOTICE_TEMPLATE.md` §4 because the CI gate (`check-privacy-notice-keys.sh`) only scans
+  `_STORAGE_KEY`/`_KEY_PREFIX`/`_DISMISS_KEY` suffixes — `PROFILING_OPT_OUT_KEY` matched none of
+  them. Also found the ticket's OWN framing was wrong on axis 3: the brief (and same-day
+  FOLLOW-641/ADR-0019) claimed "no visitor-facing opt-out toggle UI exists" — grep of
+  `packages/sdk/src/ui/profiling-toggle.ts` + its unconditional mount at `index.ts:1051` showed the
+  toggle has been live and reachable on every brand since 2026-06-21; only per-brand
+  appearance/placement (FOLLOW-641 AC-2) is a real residual gap. **Where a disclosure could have
+  drifted from shipped behavior:** if I had trusted the delegation brief's premise instead of
+  grepping the SDK myself, I would have reported a false P0 ("opt-out unreachable on client brands")
+  instead of the real, narrower gaps (hardcoded "Estalara" in DSR emails; consent_text_hash silently
+  defaults to the canonical-tenant hash for any tenant that omits it — an audit-integrity risk that
+  is new specifically because of white-labeling, not present at one first-party tenant). **A
+  guardrail I'd add:** when a delegation brief asserts "X does not exist yet" as the reason a task
+  is scoped a certain way, grep for X before accepting the premise — a same-day sibling ticket/ADR
+  can itself be built on a stale scan, and propagating that premise into a go-live compliance report
+  would itself become a false statement.

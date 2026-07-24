@@ -17927,7 +17927,78 @@ cross_ref: [ESC-042 (the deploy blocker), CEO ruling option A, FOLLOW-346 (the n
 FOLLOW-633 (PR #612 — the adapt/route.ts sequencing dependency), memory
 `project_single_tenant_rebrand_model`, `project_optout_enforcement_h9_scope` (§H.9 preserved)]
 
-<!-- next free FOLLOW number: 636. next free RETRO number: 209.
+## FOLLOW-636 — Demo-session "revoke" is a producer-only facade: `POST /api/demo/sessions/[id]/revoke` writes `revoked_at` but the runtime demo-JWT gate never checks it, so a revoked token keeps serving until its own `exp` (up to 7d)
+
+source_retro: session-57 admin-surface audit (full 4-probe sweep, 2026-07-24) source_ticket: (admin
+audit — platform pages cluster) recommended_sprint: next recommended_agent: backend-engineer
+priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue: false
+
+**Gap (FACADE, security-relevant):** the admin demo-sessions surface exposes a "revoke" action.
+`POST /api/demo/sessions/[id]/revoke/route.ts:75-79` faithfully sets `demo_sessions.revoked_at` +
+`revoke_reason`, and the tenant GET even computes an `is_active` badge from it — so it LOOKS
+functional. But the actual runtime gate for demo access, `verifyDemoJwt()`
+(`apps/control-plane/src/lib/demo-jwt-verify.ts:104-122`) invoked by `/api/adapt`
+(`adapt/route.ts:1142`), validates ONLY the HS256 signature + the JWT's embedded `exp` — it never
+loads the `demo_sessions` row or checks `revoked_at`. **Revoking a demo session has zero runtime
+effect: the token keeps authenticating and serving adaptations until its self-contained JWT expiry
+(up to 7 days for a `7d` token).**
+
+**AC:**
+
+- [ ] `verifyDemoJwt` (or the adapt demo-auth path) checks `demo_sessions.revoked_at` and refuses a
+      revoked session (per-request lookup cost + any short cache TTL stated; a revoked token must be
+      cut off promptly — mirror the FOLLOW-633 `resolveAlEnablement` fail-open + no-cache
+      reasoning).
+- [ ] Fail-open posture on lookup failure is acceptable for the enablement axis but state it; do NOT
+      fabricate. Preserve the existing signature/exp checks.
+- [ ] Test both directions: a non-revoked session serves; a revoked session is refused at
+      `/api/adapt` (assert, against a real stored row).
+- [ ] While here: delete the orphaned dead code `apps/control-plane/src/lib/demo-session-store.ts`
+      (zero importers — confirmed by grep) since it is NOT the revocation reader and only confuses.
+
+cross_ref: [session-57 admin-surface audit `docs/ADMIN-SURFACE-AUDIT-2026-07-24.md`, FOLLOW-633 (the
+sibling resolve-then-enforce pattern), CONVENTIONS_PATCH Rule K.2 (producer-without-consumer)]
+
+## FOLLOW-637 — A/B bandit analytics presents real-but-INERT data as live: `ab_bandit_weights.estimated_rate` is frozen at 0.5 (feedback 503-gated) and the analytics dashboard shows it with no "not-learning" indicator
+
+source_retro: session-57 admin-surface audit (full 4-probe sweep, 2026-07-24) source_ticket: (admin
+audit — intent/tracer/weights cluster) recommended_sprint: opportunistic recommended_agent:
+backend-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**Gap (mock-shown-as-real — real numbers, but inert):** the bandit learning loop is FROZEN in prod.
+The only path that updates arm weights from conversions — `updateArmAsync` in
+`apps/control-plane/src/app/api/adapt/feedback/route.ts:471` — sits behind a hard 503 gate
+(`FEEDBACK_ENDPOINT_ENABLED !== 'true'`, `:262-269`). So every arm stays at Beta(1,1) →
+`estimated_rate = 0.5` forever, and the analytics dashboard (`dashboard/analytics/page.tsx:630` →
+`/api/ab/weights`, `analytics-view.tsx:654`) renders those static 0.5 rates **with no "frozen / not
+learning" indicator** (internal audit F-02: "A/B learning is theater in prod"). Unlike the other
+analytics panels (which badge mock and fail-loud), this one shows real-but-meaningless numbers as if
+they were live adaptive analytics.
+
+**Note:** the REAL fix for the underlying freeze is the operator flip
+`FEEDBACK_ENDPOINT_ENABLED=true` (Wave 0 / FOLLOW-450, code already merged) — this ticket is the
+HONESTY indicator to ship meanwhile, so the dashboard stops implying the bandit is learning when it
+isn't.
+
+**AC:**
+
+- [ ] The `/api/ab/weights` response (or a small derived flag) signals whether the feedback loop is
+      enabled (`FEEDBACK_ENDPOINT_ENABLED`) and/or whether all arms are still at the Beta(1,1)
+      prior.
+- [ ] The analytics AB-weights panel renders a visible "learning paused — bandit not yet receiving
+      conversions" indicator when frozen, analogous to the existing `MOCK DATA` badge pattern. Do
+      NOT hide the data; label its state.
+- [ ] When `FEEDBACK_ENDPOINT_ENABLED=true` and arms have moved off the prior, the indicator clears.
+
+cross_ref: [session-57 admin-surface audit, FOLLOW-450 (the operator un-freeze leg), audit F-02
+(`docs/audits/AUDIT_REPORT_2026-07-21_CODE_DIAGNOSIS.md`), memory `project_audit_2026_07_12`]
+
+<!-- next free FOLLOW number: 638. next free RETRO number: 209.
+FOLLOW-636 (demo-revoke facade — no runtime enforcement of revoked_at, P2 security) + FOLLOW-637
+(bandit-frozen analytics shown as live, P2) filed session-57 from the full 4-probe admin-surface audit
+(`docs/ADMIN-SURFACE-AUDIT-2026-07-24.md`). Audit verdict: admin surface mostly WIRED+honest; real
+gaps = FOLLOW-622/623 (P1 facades, need CEO enforce-vs-de-scope) + 636/637 + 627 (P3) + operator legs
+(prod envs, FEEDBACK_ENDPOINT_ENABLED flip, ESC-042 chat deploy, reconcile migration-0015 status).
 FOLLOW-633 DONE (PR #612, `8cb3be5`) — real per-tenant AL on/off + runtime enforcement. FOLLOW-635
 filed + scoped (chat un-shadow = ESC-042 deploy leg + option-A cleanup PR, per CEO ruling; chat already
 influences decisions via SDK client loop, dark in prod because intent-engine undeployed).

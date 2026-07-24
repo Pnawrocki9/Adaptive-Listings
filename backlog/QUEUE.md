@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 + 626 DONE + MERGED; ESC-039 FULLY CLOSED; RETRO-207/208 written; ▶️ NEXT: FOLLOW-622/623 P1 facade (needs escalation?) or FOLLOW-627/628/629)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — ESC-039 chain + FOLLOW-626 + FOLLOW-633 all DONE+MERGED; admin audit done; chat un-shadow scoped; ▶️ NEXT: FOLLOW-635 option-A cleanup PR (clear to dispatch), then FOLLOW-622/623 P1 facade)
+
+**Session 57 admin-surface work (post-ESC-039):** CEO asked whether the admin surface is done. Ran a
+3-probe audit + acted on findings:
+
+- **Model-picker for DOM creation → WIRED end-to-end** (global `app_config.generation_model` → Modal
+  `generate_description.py` → real `messages.create(model=…)`). No action needed.
+- **AL on/off from admin → was COSMETIC → NOW FIXED. FOLLOW-633 DONE+MERGED (PR #612, `8cb3be5`).**
+  New `tenants.al_enabled` (default true) + audited staff toggle + runtime enforcement in adapt
+  GET+POST (`al_enabled=false` OR status suspended/canceled → neutral; pending/active ON;
+  fail-open).
+- **Data → MOAT → mostly not built.** Collect partly live (but `intent_events` prod count=0 pending
+  migration 0015); cross-tenant aggregation (`archetype-pipeline` + DP) DOES NOT EXIST (app
+  deleted). CEO rulings: chat un-shadow YES, DPIA NO, MOAT epic DEFER. Decisive context: ONE tenant
+  (Estalara), future clients = private-label re-brands of app.estalara.com → single data pool,
+  cross-tenant MOAT parked. Brief: `docs/DECISION-BRIEF-MOAT-2026-07-24.md`; memory
+  `project_single_tenant_rebrand_model`.
+- **Chat un-shadow (FOLLOW-635) scoped:** it's a DEPLOY leg (ESC-042, Piotr-side:
+  `modal deploy apps/intent-engine` + `MODAL_CHAT_NLP_URL` wiring) + a small option-A cleanup PR
+  (delete vestigial `CHAT_NLP_LIVE` flag, fix false "shadow-only" docstrings, update FOLLOW-346
+  test). Chat already influences the decision via the SDK client loop; it's DARK only because
+  intent-engine is undeployed. CEO chose OPTION A. Cleanup PR was sequenced AFTER FOLLOW-633 (shared
+  `adapt/route.ts`) — 633 now merged, so it is CLEAR TO DISPATCH.
+- New tickets filed: FOLLOW-633 (DONE), FOLLOW-634 (P3 stale data-engineer charter), FOLLOW-635
+  (chat un-shadow, option-A cleanup pending). ESC-042 (chat deploy blocker, Piotr-side).
+
+**▶️ NEXT:** (1) dispatch FOLLOW-635 option-A cleanup PR; (2) ESC-042 operator deploy (Piotr); (3)
+FOLLOW-622/623 (P1 producer-only facades on the settings page — `allowed_origins` advertised as
+security control but ingest CORS doesn't enforce; likely needs a design decision); (4)
+FOLLOW-627/628/ 629/631/632/634.
+
+---
+
+## ▶️ (prev) session 57 head — ESC-039 chain closed
 
 **Session 57 = ESC-039 close-out chain (K.2 swallow-then-clobber data-loss).**
 

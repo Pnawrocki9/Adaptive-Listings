@@ -17780,6 +17780,19 @@ already-mechanised exemplars)]
 
 ## FOLLOW-633 — No real per-tenant ON/OFF for Adaptive Listings: `tenants.status` is written (Stripe/onboarding) and shown read-only in admin, but NOTHING in the runtime adapt path reads it — a suspended/canceled tenant keeps being served
 
+**✅ DONE 2026-07-24 — PR #612 squash-merged to `main` `8cb3be5`, auto-deployed (migration 0034
+auto-applies to prod).** Built BOTH a+b per the resolved direction: new `tenants.al_enabled` column
+(`NOT NULL DEFAULT true`, additive/idempotent — Estalara + every existing tenant stays ON); audited
+staff/superadmin write route `PUT /api/admin/tenants/al-state` (single `db.transaction()` + new
+`staff_audit_log` action `tenant_al_state.update` + write-rank gate); admin toggle UI with the
+load-failure guard (no swallow — K.2 guard passed); runtime enforcement via shared helper
+`resolveAlEnablement` called from BOTH adapt GET (`route.ts:826`) + POST (`:1261`) —
+`al_enabled=false` OR `status IN ('suspended','canceled')` → 200 neutral pass-through
+(`adaptive_listings_off:true` + `al_off_reason`, no bandit, no ClickHouse), `pending`/`active` stay
+ON, all lookup failures FAIL-OPEN (+ Sentry on DB throw). PM independently verified on the branch:
+default=true, both call sites, OFF semantics, no swallow; CI clean except pre-existing `Rule I`;
+control-plane suite 1780 passed. Closes the on/off gap from the session-57 admin audit.
+
 source_retro: session-57 admin-surface audit (CEO-requested 3-probe Explore, 2026-07-24)
 source_ticket: (surfaced auditing the FOLLOW-600/624/630 admin settings surface) recommended_sprint:
 next recommended_agent: backend-engineer priority: P1 estimated_hours: 5 depends_on: []
@@ -17867,7 +17880,49 @@ aggregation = design-only" — so the drift is localized to the agent charter.)
 cross_ref: [session-57 admin-surface audit, MASTER_DESIGN §Snapshot.1 row A.1/G,
 docs/DECISION-BRIEF-MOAT-2026-07-24.md]
 
-<!-- next free FOLLOW number: 635. next free RETRO number: 209.
+## FOLLOW-635 — Un-shadow chat NLP intent for the pilot: it's a DEPLOY leg (ESC-042) + a small flag/docstring cleanup, NOT a fusion build — chat already influences the decision via the SDK client prior loop
+
+source_retro: session-57 admin-surface audit (CEO ruling "odsłaniamy chat na pilot", 2026-07-24)
+source_ticket: (MOAT/data audit Decision A.4) recommended_sprint: next recommended_agent:
+ml-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**Scoped 2026-07-24 (ml-engineer, Opus, worktree). Phase-1 finding:** chat intent ALREADY influences
+the adaptation decision — not via server-side fusion but via the SDK **client prior loop**:
+`adapt/route.ts:1563` attaches `chat_intent_dimensions` unconditionally → SDK `applyChatIntentPrior`
+(`intent.ts:1353`) does a real multiplicative Bayesian update (§D.7: chat weight == quiz weight) →
+next call's `archetype_hint` (`adapt.ts:761`) → `route.ts:1289` drives directives. The
+`CHAT_NLP_LIVE` flag is **vestigial** (only a `console.info`, gates nothing). Chat is **DARK not
+shadow** in prod: `estalara-intent-engine` is not deployed (`modal-deploy.yml` ships llm-gateway
+only), so the shadow key is never written and `readShadowChatIntent` always returns null. §H.9
+opt-out preserved end-to-end.
+
+**CEO ruling (2026-07-24): OPTION A** — accept the client-loop as the live path (§D.7 fusion already
+implemented); do NOT build a server-side fusion path (option B rejected).
+
+**Two remaining legs:**
+
+- [ ] **(code, this ticket — OPTION A cleanup PR, ml-engineer):** delete the vestigial
+      `CHAT_NLP_LIVE` flag (`adapt/route.ts:100` + its `console.info` at `:1521`); correct the
+      now-FALSE "shadow-only / zero UX effect" docstrings in `adapt/route.ts:89-99`,
+      `intent-engine/src/main.py:11-12`, `redis_writer.py:4-9`, `sdk/src/core/adapt.ts:859-862`;
+      update the FOLLOW-346 DPIA-gate test contract (the gate is a false safety control now — chat
+      influences decisions regardless). Optionally add `apps/intent-engine` to `modal-deploy.yml` so
+      the deploy is repeatable. **MUST land AFTER FOLLOW-633 (PR #612, merged `8cb3be5`) — both edit
+      `adapt/route.ts`; sequence to avoid conflict.** (633 is now merged → clear to dispatch.)
+- [ ] **(operator/devops — tracked as ESC-042, Piotr-side):** `modal deploy apps/intent-engine`; set
+      `MODAL_CHAT_NLP_URL` (+ matching secret) in the ingest Worker prod env; confirm
+      `estalara-secrets` has `INTERNAL_API_SECRET` + Upstash REST creds pointing at the SAME Upstash
+      the control-plane reads. This is the ACTUAL un-shadow enabler — until intent-engine is
+      deployed, chat stays dark regardless of the code cleanup.
+
+cross_ref: [ESC-042 (the deploy blocker), CEO ruling option A, FOLLOW-346 (the now-false DPIA gate),
+FOLLOW-633 (PR #612 — the adapt/route.ts sequencing dependency), memory
+`project_single_tenant_rebrand_model`, `project_optout_enforcement_h9_scope` (§H.9 preserved)]
+
+<!-- next free FOLLOW number: 636. next free RETRO number: 209.
+FOLLOW-633 DONE (PR #612, `8cb3be5`) — real per-tenant AL on/off + runtime enforcement. FOLLOW-635
+filed + scoped (chat un-shadow = ESC-042 deploy leg + option-A cleanup PR, per CEO ruling; chat already
+influences decisions via SDK client loop, dark in prod because intent-engine undeployed).
 FOLLOW-633 (real per-tenant AL on/off + runtime status enforcement, P1) + FOLLOW-634 (stale
 data-engineer charter re: non-existent apps/archetype-pipeline, P3) filed session-57 from the
 CEO-requested admin-surface audit (3 Explore probes: model-picker WIRED end-to-end; AL on/off

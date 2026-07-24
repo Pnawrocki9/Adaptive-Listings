@@ -1958,3 +1958,20 @@ would generalize this beyond just `adapt-get-auth`.
   repo-wide `grep apps/`. FOLLOW-625's mechanized guard should assert the swallow-then-Save shape
   across `src/**` including `src/components/**`, not just page routes — a narrowed grep is how twins
   ship.
+
+- **2026-07-24 / FOLLOW-633** · **What I built**: real per-tenant Adaptive Listings on/off —
+  `tenants.al_enabled` column (default true, additive migration 0034), a single shared runtime
+  enforcement helper `resolveAlEnablement()` wired into BOTH adapt GET+POST (serves neutral
+  pass-through 200 when `al_enabled=false` OR `status IN (suspended,canceled)`), an audited
+  staff-only write route `/api/admin/tenants/al-state` (atomic tx: column + `staff_audit_log` action
+  `tenant_al_state.update`, write-rank gated), and a FOLLOW-624-shaped admin toggle editor. ·
+  **Wiring/auth/fail-loud risks I weighed**: (1) default MUST be true so the one live tenant
+  (Estalara) stays ON through the prod auto-apply; (2) fail-OPEN on a configured-but-threw tenant
+  lookup (+Sentry) rather than fail-closed — an off-switch must never break the live site on a DB
+  blip, and serving REAL adaptation is not fabricated data (so K.2 is satisfied by the Sentry
+  capture, not by forcing neutral); (3) put the OFF check in ONE helper so GET/POST cannot diverge;
+  (4) added `adaptive_listings_off`/`al_off_reason` provenance to the OFF response via object-spread
+  (not a shared-type field) so no Rule-H schema change / no adapt-schema drift — SDK schema is
+  `.passthrough()` so it survives. · **A guardrail I'd add**: none — the existing K.2, staff-write
+  atomicity, migration-journal and Rule-H guards all covered this change well; the awaited helper in
+  the hot path was cheap (one PK lookup) and fail-open kept all 335 existing adapt tests green.

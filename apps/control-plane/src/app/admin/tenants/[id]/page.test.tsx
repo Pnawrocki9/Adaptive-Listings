@@ -7,7 +7,7 @@
  *   T3: unknown tenant id — calls next/navigation notFound(), not a broken page
  *   T4: DB configured but lookup throws — renders visible error banner (Rule K.2),
  *       does NOT call notFound() (a lookup failure isn't "tenant doesn't exist")
- *   T5: renders hub links to all 7 per-tenant staff surfaces (FOLLOW-606 AC +
+ *   T5: renders hub links to all 8 per-tenant staff surfaces (FOLLOW-606 AC +
  *       FOLLOW-599 Audit Log + FOLLOW-600 Settings)
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/page.test
@@ -101,7 +101,7 @@ describe('TenantLandingPage — FOLLOW-593', () => {
     expect(mockNotFound).toHaveBeenCalledTimes(1);
   });
 
-  it('T5: renders hub links to all 7 per-tenant staff surfaces (FOLLOW-606 + FOLLOW-599 + FOLLOW-600)', async () => {
+  it('T5: renders hub links to all 8 per-tenant staff surfaces (FOLLOW-606 + FOLLOW-599 + FOLLOW-600)', async () => {
     mockGetTenantById.mockResolvedValue({
       dataSource: 'live',
       tenant: {
@@ -137,6 +137,10 @@ describe('TenantLandingPage — FOLLOW-593', () => {
 
     const settingsLink = screen.getByText('Settings').closest('a');
     expect(settingsLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/settings`);
+
+    // FOLLOW-633: Adaptive Listings on/off staff surface.
+    const alStateLink = screen.getByText('Adaptive Listings On/Off').closest('a');
+    expect(alStateLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/al-state`);
   });
 
   it('T4 (fail loud): DB configured-but-throws renders an error banner, never calls notFound()', async () => {

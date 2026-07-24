@@ -84,6 +84,27 @@ export const tenants = pgTable(
     pilotFrozen: boolean('pilot_frozen').notNull().default(false),
 
     /**
+     * Master ON/OFF switch for Adaptive Listings serving for this tenant (FOLLOW-633).
+     *
+     * The single per-tenant kill switch a staff/superadmin operator controls from
+     * `/admin/tenants/[id]/al-state` (audited write → `staff_audit_log.action =
+     * 'tenant_al_state.update'`). Consumed at runtime by the adapt path
+     * (`api/adapt/route.ts` GET + POST) via `resolveAlEnablement()` — when `false`,
+     * the adapt endpoint serves a valid neutral / pass-through 200 with NO adaptation
+     * (page still works) instead of directives.
+     *
+     * Default TRUE (additive migration 0034): every existing tenant — critically the
+     * single live tenant, Estalara itself — inherits `al_enabled = true` and stays ON
+     * when the migration auto-applies to prod on merge (db-migrate.yml). Do NOT default
+     * this to false.
+     *
+     * Distinct from `status`: `status IN ('suspended','canceled')` is ALSO treated as
+     * OFF at the same enforcement point (billing/lifecycle cut-off), while `al_enabled`
+     * is the explicit operator override. `pending` and `active` stay ON.
+     */
+    alEnabled: boolean('al_enabled').notNull().default(true),
+
+    /**
      * Whether the quiz widget is enabled for this tenant.
      * Default true — pilot tenant behavior is not changed (Sprint 13b freeze rule).
      * Tenants with high-quality chat coverage may set this to false to rely on

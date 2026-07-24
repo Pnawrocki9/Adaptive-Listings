@@ -75,6 +75,7 @@ import {
 } from '@/lib/demo-jwt-verify';
 import { resolveApiKey } from '@/lib/api-key-auth';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
+import { resolveAlEnablement } from '@/lib/al-enablement';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
 import * as Sentry from '@sentry/nextjs';
@@ -814,6 +815,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── FOLLOW-633: per-tenant Adaptive Listings ON/OFF enforcement ──────────
+  // Single shared point (resolveAlEnablement) so GET and POST cannot diverge.
+  // When al_enabled=false OR status IN ('suspended','canceled'), serve a valid
+  // neutral / pass-through 200 (no adaptation — the tenant's page still works),
+  // NEVER an error that breaks the site. No ClickHouse row is written (no
+  // decision was made — mirrors the profiling-opt-out gate below). The response
+  // carries `adaptive_listings_off`/`al_off_reason` so the consumer can read the
+  // provenance of the neutral result. `pending`/`active` stay ON.
+  const alState = await resolveAlEnablement(tenantId);
+  if (alState.off) {
+    return NextResponse.json(
+      {
+        adapt_decision_id: crypto.randomUUID(),
+        session_id: sessionId,
+        archetype: 'neutral' as const,
+        confidence,
+        similarity,
+        tier,
+        directives: [],
+        source: 'default' as const,
+        adaptive_listings_off: true,
+        al_off_reason: alState.reason,
+        generated_at: new Date().toISOString(),
+      } satisfies AdaptationDirectives & {
+        tier: number;
+        adaptive_listings_off: boolean;
+        al_off_reason: string | null;
+      },
+      { status: 200 },
+    );
+  }
+
   // ── FOLLOW-372: profiling opt-out gate ──────────────────────────────────
   // Early-return BEFORE bandit sampling so no variant is sampled or logged.
   // Variant logging is suppressed entirely: logDecisionAsync is NOT called on
@@ -1222,6 +1255,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
       { status: 403 },
     );
+  }
+
+  // ── FOLLOW-633: per-tenant Adaptive Listings ON/OFF enforcement ──────────
+  // Same shared point as the GET handler (resolveAlEnablement) so the two cannot
+  // diverge. When al_enabled=false OR status IN ('suspended','canceled'), serve a
+  // valid neutral / pass-through 200 (no adaptation — the tenant's page still
+  // works), NEVER an error. No ClickHouse row is written (no decision made). The
+  // response carries `adaptive_listings_off`/`al_off_reason` provenance. Checked
+  // BEFORE the demo-override read and A/B holdout gate so an OFF tenant does no
+  // further work. `pending`/`active` stay ON.
+  const alState = await resolveAlEnablement(tenantId);
+  if (alState.off) {
+    return NextResponse.json({
+      adapt_decision_id: crypto.randomUUID(),
+      session_id: body.session_id,
+      archetype: 'neutral' as const,
+      confidence: body.confidence ?? 0.5,
+      similarity: body.similarity ?? 0.5,
+      page_context: pageContextFromPageType(body.page_type),
+      directives: [],
+      reorderDirectives: [],
+      source: 'default' as const,
+      adaptive_listings_off: true,
+      al_off_reason: alState.reason,
+      generated_at: new Date().toISOString(),
+    });
   }
 
   // ── Pilot freeze guard (FOLLOW-106) — non-blocking, fire-and-forget ────────

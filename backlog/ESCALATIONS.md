@@ -2328,7 +2328,19 @@ disclosure re-converged and the FOLLOW-574 divergence note was removed. Nothing 
 
 ---
 
-## OPEN — ESC-039: three staff config editors swallow a failed load, then clobber real tenant config with defaults on the next Save — live on `main` [FOLLOW-624]
+## RESOLVED — ESC-039: three staff config editors swallow a failed load, then clobber real tenant config with defaults on the next Save — live on `main` [FOLLOW-624]
+
+**Resolved:** 2026-07-24 by FOLLOW-624 (PR #608, squash-merged to `main` `3b0b4a3`, auto-deployed).
+All three editors now track fetch outcome (loading/loaded/error) separately from save status: a
+failed GET renders a `role="alert"` banner + Retry and disables Save (guarded again inside
+`handleSave` as defense-in-depth); a successful GET (incl. first-time/no-row tenants, which the
+route serves as a normal 200) is unaffected. tenant-config-editor also now surfaces the route's zod
+`.flatten()` validation `details` in the save-error banner. Tests assert BOTH directions in all
+three editors. All real CI gates green (only pre-existing repo-wide `Rule I` red, confirmed also red
+on `main` d89757f — not a regression). **FOLLOW-625 (mechanise the Rule K.2 swallow check in CI)
+remains OPEN** so the pattern cannot be copy-forwarded a fourth time.
+
+**[original escalation below]**
 
 **Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
 FOLLOW-624, FOLLOW-600 (PR #606, merged `19ef714`),

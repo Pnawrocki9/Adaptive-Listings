@@ -17408,9 +17408,11 @@ FOLLOW-275/ADR-0011 (quiz public-config fetch path)]
 
 ## FOLLOW-624 — Stop the three staff editors from swallowing a failed load and then clobbering real tenant config with defaults on the next Save
 
+**✅ DONE 2026-07-24 — PR #608 squash-merged to `main` `3b0b4a3`, auto-deployed. ESC-039 RESOLVED.**
+
 source_retro: RETRO-205 (§4a LG-1, §4c TG-1) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
 recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 3
-depends_on: [] promoted_to_queue: false
+depends_on: [] promoted_to_queue: true status: DONE
 
 **Gap (live data-loss path, Rule K.2 consumer-side violation):**
 `admin/tenants/[id]/settings/tenant-config-editor.tsx:60-78` checks `r.ok` (`:61 if (!r.ok) throw`)

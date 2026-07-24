@@ -1,6 +1,20 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-23 (session 56 — FOLLOW-600 DONE + MERGED (PR #606, `19ef714`), FOLLOW-620 DONE + MERGED (PR #607, `f4dd037`); RETRO-205 dispatch pending; next-ticket selection is the open item)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 DONE + MERGED (PR #608, `3b0b4a3`), ESC-039 RESOLVED; RETRO-205 dispatch still pending; next-ticket selection is the open item)
+
+**Session 57 = FOLLOW-624 close-out.** P1 data-loss fix from ESC-039 / RETRO-205 §4a LG-1: the three
+staff config editors (tenant-config, quiz-config, demo-override) swallowed a failed GET and then
+clobbered real tenant config with DEFAULTS on the next Save under a green "Settings saved!" banner.
+Fix implemented + tested in a prior (interrupted) session; this session verified state, confirmed
+the only red CI gate is the pre-existing repo-wide `Rule I` (also red on `main` d89757f — not a
+regression), and squash-merged **PR #608 → `main` `3b0b4a3`** (07:28Z, auto-deployed). Backlog
+bookkeeping: ESC-039 → RESOLVED, FOLLOW-624 stub → DONE. **Still open:** FOLLOW-625 (mechanise the
+Rule K.2 swallow check in CI so the pattern can't be copy-forwarded a fourth time) + RETRO-205
+dispatch. Retrospective-analyst for FOLLOW-624 spawned this session.
+
+---
+
+## ▶️ (prev) session 56 — FOLLOW-600 DONE + MERGED (PR #606, `19ef714`), FOLLOW-620 DONE + MERGED (PR #607, `f4dd037`); RETRO-205 dispatch pending
 
 **Session 56 = PM post-merge audit + bookkeeping.** Piotr merged both #607 (21:12Z) and #606
 (21:27Z) directly, ahead of the PM's own READY_FOR_REVIEW gate. Independently re-verified BOTH

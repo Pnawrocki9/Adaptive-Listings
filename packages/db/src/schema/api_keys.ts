@@ -33,10 +33,12 @@ export const apiKeys = pgTable(
     /**
      * CORS allowlist for this specific key (null = inherit tenant allowedOrigins).
      *
-     * NOT enforced; deferred — re-enable tracked as FOLLOW-642 (trigger: first
-     * external re-brand client). Ingest CORS uses a hardcoded env allowlist
-     * (`apps/ingest/src/router.ts:69-73`), not this column or `tenants.allowedOrigins`
-     * (FOLLOW-622, CEO Option B, 2026-07-24).
+     * The per-tenant browser-`Origin` allow-list is ENFORCED as of FOLLOW-642 (2026-07-25).
+     * Enforcement lives in the ingest Worker, which reads its tenant projection from
+     * `KV_API_KEYS` (`ApiKeyRecord.allowed_origins`), NOT directly from this Postgres column
+     * — ingest has no Postgres binding. At provisioning, a key's effective origins are
+     * projected onto the KV record; `null` here means "inherit the tenant-level list", matching
+     * the KV gate's `null`=inherit semantics (`apps/ingest/src/origin-gate.ts`).
      */
     allowedOrigins: text('allowed_origins').array(),
 

@@ -5018,22 +5018,31 @@ const ALLOWED_ORIGINS = {
 };
 
 // Ingest endpoint (cdn.estalara.com SDK calls):
-// REALITY (corrected 2026-07-24, FOLLOW-622 — this comment previously claimed
-// per-tenant enforcement that was never implemented): origin is validated
-// against a HARDCODED env allowlist (`apps/ingest/src/router.ts:69-73`), NOT
-// per-tenant `tenants.allowed_origins`. That column is written by nobody now
-// (the staff settings-page control was de-scoped as an unenforced facade, CEO
-// Option B) and read by nobody. Per-tenant, data-driven origin validation is
-// deferred — tracked as FOLLOW-642, trigger: before the first external
-// re-brand client onboards (domain-independence requires it then).
-// Wildcard ('*') NEVER allowed — explicit allowlist tylko
+// PER-TENANT ENFORCEMENT (implemented 2026-07-25, FOLLOW-642 — supersedes the
+// 2026-07-24 FOLLOW-622 de-scope now that external re-brand clients are onboarding):
+// on every `POST /v1/events` the ingest Worker resolves the tenant from the api key
+// and matches the browser `Origin` against that tenant's `allowed_origins`, returning
+// HTTP 403 (before any Redpanda/ClickHouse side effect) on a mismatch. See
+// `apps/ingest/src/origin-gate.ts` + `handlers/events.ts`.
+//   - Data source: the ingest Worker has no Postgres binding, so it reads its tenant
+//     projection from `KV_API_KEYS` (`ApiKeyRecord.allowed_origins`), seeded at
+//     provisioning from `tenants.allowed_origins`. NOT a hardcoded env list.
+//   - Semantics: absent/null → inherit the env allow-list (backward compat for
+//     Estalara's own first-party tenant); `[]` → deny all cross-origin; `[...]` → allow
+//     exactly those origins. The `z.string().url()` normalization bug is fixed by
+//     re-normalizing both stored values and the request Origin to scheme+host[+port].
+//   - Preflight (OPTIONS) carries no api key (browsers strip custom headers), so it
+//     reflects the requested origin and enforcement happens on the actual POST.
+// Wildcard ('*') NEVER allowed — the exact origin is echoed or nothing.
+// SIBLING CLAIMS: other MASTER_DESIGN passages that still describe the old
+// hardcoded-env model are tracked for propagation by FOLLOW-649 (not fixed here).
 ```
 
 **SDK CDN (cdn.estalara.com):**
 - Public access (każda strona klienta może załadować SDK)
 - CORS `Access-Control-Allow-Origin: *` ale TYLKO dla `/sdk/*.js` static assets
-- Ingest endpoint validuje origin against the hardcoded env allowlist above — NOT
-  per-tenant config (see FOLLOW-622/FOLLOW-642 note above)
+- Ingest endpoint validuje origin against the per-tenant `allowed_origins` (FOLLOW-642,
+  data-driven from tenant config) — see the per-tenant enforcement note above
 
 #### V.3.5. API key lifecycle
 

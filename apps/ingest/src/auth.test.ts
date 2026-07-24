@@ -96,6 +96,25 @@ describe('authenticateRequest', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.signed).toBe(true);
   });
+
+  it('surfaces allowed_origins from the KV record (FOLLOW-642)', async () => {
+    const withOrigins: ApiKeyRecord = {
+      tenant_id: 'tenant-1',
+      scopes: [],
+      allowed_origins: ['https://clientx.com'],
+    };
+    const kv = mockKv({ 'api_key:k1': JSON.stringify(withOrigins) });
+    const result = await authenticateRequest('k1', undefined, '{"events":[]}', kv);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.allowed_origins).toEqual(['https://clientx.com']);
+  });
+
+  it('surfaces allowed_origins as undefined when the record omits it (inherit)', async () => {
+    const kv = mockKv({ 'api_key:k1': JSON.stringify(RECORD) });
+    const result = await authenticateRequest('k1', undefined, '{"events":[]}', kv);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.allowed_origins).toBeUndefined();
+  });
 });
 
 describe('computeHmacSha256Hex', () => {

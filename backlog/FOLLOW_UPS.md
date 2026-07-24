@@ -18198,6 +18198,20 @@ visitor uses to switch profiling + DOM generation on/off, with per-brand appeara
 clients NOW.** Status flips deferred→**P1 ACTIVE**; dispatched session 58. Build per the spec below;
 client domains land in tenant config at provisioning (the mechanism must not require them up front).
 
+**IMPLEMENTED 2026-07-25 (branch `backend-engineer/FOLLOW-642-per-tenant-origin-enforcement`).**
+Per-tenant origin gate lives in `apps/ingest/src/origin-gate.ts` + enforced on `POST /v1/events`
+(`handlers/events.ts`) — 403 `forbidden_origin` before any side effect. DECISIONS: (a) ingest has NO
+Postgres binding, so it reads its tenant projection from `KV_API_KEYS`
+(`ApiKeyRecord. allowed_origins`), which IS the per-request lookup + edge cache (zero new I/O on the
+hot path); the Postgres `tenants.allowed_origins` column stays the provisioning SoT, projected onto
+the KV record at provisioning (no admin UI — #618's removal stands). (b) Semantics: `null`/absent →
+inherit env list (Estalara backward compat); `[]` → deny-all cross-origin; `[...]` → explicit allow.
+(c) `z.string().url()` bug fixed by re-normalizing both stored values and the request `Origin` to
+scheme+host[+port] via `normalizeToOrigin`. (d) Fail-safe: the gate is PURE over auth-fetched data,
+so a store outage fails closed at auth (401), never fails an explicit-list tenant open. (e) OPTIONS
+preflight reflects (no api key available); enforcement is on the actual POST. §V.3.4 updated;
+sibling MASTER_DESIGN claims tracked by FOLLOW-649. **STATUS: DONE pending PR review.**
+
 source_retro: CEO option-B ruling on FOLLOW-622 (2026-07-24, session 58;
 `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md` §DECISION) source_ticket: FOLLOW-622
 recommended_sprint: BLOCKED-until-first-external-client recommended_agent: backend-engineer

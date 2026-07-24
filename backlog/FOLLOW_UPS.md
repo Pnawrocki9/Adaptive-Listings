@@ -17778,7 +17778,94 @@ P-5 (the K.2-specific enforcement-failure precedents), RETRO-204 (Rule AE — sa
 enforcement-not-text diagnosis), CONVENTIONS_PATCH Rules O/AE/J + K.2 fire-and-forget (the
 already-mechanised exemplars)]
 
-<!-- next free FOLLOW number: 633. next free RETRO number: 209.
+## FOLLOW-633 — No real per-tenant ON/OFF for Adaptive Listings: `tenants.status` is written (Stripe/onboarding) and shown read-only in admin, but NOTHING in the runtime adapt path reads it — a suspended/canceled tenant keeps being served
+
+source_retro: session-57 admin-surface audit (CEO-requested 3-probe Explore, 2026-07-24)
+source_ticket: (surfaced auditing the FOLLOW-600/624/630 admin settings surface) recommended_sprint:
+next recommended_agent: backend-engineer priority: P1 estimated_hours: 5 depends_on: []
+promoted_to_queue: false
+
+**Gap (HALF_WIRE_P — control-shaped, revenue + trust impact):** there is no admin control, and no
+runtime enforcement, that turns Adaptive Listings ON/OFF for a tenant/site. The state columns exist
+but are inert:
+
+- `packages/db/src/schema/tenants.ts:29` — `status` (`pending|active|suspended|canceled`, default
+  `pending`) and `:31` `plan` are written ONLY by `api/webhooks/stripe/route.ts:90-120`
+  (subscription events) and `api/schema/activate/route.ts:187` (onboarding flips `active`). No admin
+  route lets a human set them; `admin/tenants/[id]/settings/tenant-config-editor.tsx:176-185` and
+  the tenant list/detail pages render `status`/`plan` as **read-only badges**.
+- **Runtime never reads them.** The live adapt endpoint is
+  `apps/control-plane/src/app/api/adapt/route.ts` (the `apps/decision-api` adapt route is retired →
+  410). A grep for any read of `tenant.status` / active / suspended to gate serving across
+  `apps/ingest/src`, `apps/decision-api/src`, and `apps/control-plane/src/app/api/adapt` returns
+  **zero hits**. `api-key-auth.ts` resolves a key to a tenant and returns `{ok, tenantId}` but never
+  checks `status`/`plan`. **Consequence: a tenant set `suspended` on a failed Stripe payment keeps
+  receiving adaptations as long as its API key is valid.**
+- `profileModeEnabled`/`profileModeEnabledAt`/`profileModeEnabledBy` (`tenants.ts:100-103`) gate
+  columns exist with NO write path and NO enforcement anywhere.
+- The only per-tenant "toggle" in admin is DEMO override (`api/demo/override`), which is a
+  visual-preview archetype FORCER, not an off-switch; and `quiz_enabled`, which gates only the quiz
+  widget. The only real cut-off is out-of-band API-key revocation (`api_keys.revoked_at`) or the
+  per-end-user DOM opt-out (§H.9).
+
+**Decision embedded — pick ONE in the PR and state why (this is partly a product/billing call, flag
+to CEO if ambiguous):**
+
+- [ ] **(a) ENFORCE `status`** — the adapt path (and/or ingest ACK, and/or `/api/config`) reads the
+      tenant `status` and refuses to adapt (serve neutral / 402 / 403) when `suspended`/`canceled`,
+      with the per-request lookup cost + cache strategy stated. Define what `pending` means at
+      runtime. Test both directions against a REAL stored row.
+- [ ] **AND/OR (b) ADD AN ADMIN TOGGLE** — a staff/superadmin control to set a tenant's AL state
+      on/off (a dedicated `al_enabled` boolean, or reuse `status`), written through an audited route
+      (mirror the ADR-0018 §3a staff-write pattern + FOLLOW-615 write-rank gate), and consumed at
+      the same enforcement point as (a). A toggle without runtime enforcement would be a NEW facade
+      — do not ship one without (a).
+- [ ] Either way: `status='suspended'` must have a real runtime consumer, and the admin UI must not
+      present an AL-state control that has no effect.
+
+cross_ref: [session-57 admin-surface audit, FOLLOW-600 (the settings surface), FOLLOW-622/623 (the
+sibling producer-only facades on the same page), ADR-0018 §3a (staff-write pattern), FOLLOW-615
+(write-rank gate), §H.9 (per-user opt-out — the existing but different kill path), CONVENTIONS_PATCH
+Rule K.2 (producer-without-consumer)]
+
+## FOLLOW-634 — Correct the stale `data-engineer` agent charter: it claims ownership of `apps/archetype-pipeline/` (daily DP archetype job) which DOES NOT EXIST in the tree
+
+source_retro: session-57 admin-surface audit (CEO-requested 3-probe Explore, 2026-07-24)
+source_ticket: (surfaced auditing the MOAT data/aggregation pipeline) recommended_sprint:
+opportunistic recommended_agent: pm-orchestrator priority: P3 estimated_hours: 1 depends_on: []
+promoted_to_queue: false
+
+**Gap (doc-vs-reality — the single clearest MOAT-question gap):**
+`.claude/agents/data-engineer.md:52` (and `:32-34`) lists ownership of _"`apps/archetype-pipeline/`
+(daily DP archetype job)"_ and describes the intended DP design (regional clustering k≥50 from ≥3
+tenants, ε≤2/epoch, separate global Postgres) as if the app exists and is maintained. **It does
+not:** `ls apps/archetype-pipeline` → No such file or directory; `MASTER_DESIGN.md:441` (row A.1)
+confirms the `archetype-pipeline`/ `adaptation-engine` Modal apps "no longer exist". A charter that
+implies a shipped, owned aggregation pipeline is exactly what makes the "do we have a MOAT?"
+question answerable wrong. (MASTER_DESIGN §Snapshot.1 itself is honest — row G states "global DP
+aggregation = design-only" — so the drift is localized to the agent charter.)
+
+**AC:**
+
+- [ ] Edit `.claude/agents/data-engineer.md` so the `archetype-pipeline`/DP-aggregation ownership is
+      marked as **design-only / not yet built** (or moved to a "planned, not implemented" section),
+      not as an existing owned app. Reference `MASTER_DESIGN.md` row A.1/G as the source of truth.
+- [ ] While here, grep the other 8 agent charters for references to deleted apps
+      (`adaptation-engine`, and any other app not in the current `apps/` tree) and fix or flag them
+      — one stale charter usually means siblings drifted too.
+- [ ] Do NOT invent or scaffold the pipeline here; this ticket is documentation hygiene only. The
+      actual build is a separate epic (see the MOAT decision brief
+      `docs/DECISION-BRIEF-MOAT-2026-07-24.md`).
+
+cross_ref: [session-57 admin-surface audit, MASTER_DESIGN §Snapshot.1 row A.1/G,
+docs/DECISION-BRIEF-MOAT-2026-07-24.md]
+
+<!-- next free FOLLOW number: 635. next free RETRO number: 209.
+FOLLOW-633 (real per-tenant AL on/off + runtime status enforcement, P1) + FOLLOW-634 (stale
+data-engineer charter re: non-existent apps/archetype-pipeline, P3) filed session-57 from the
+CEO-requested admin-surface audit (3 Explore probes: model-picker WIRED end-to-end; AL on/off
+COSMETIC — status has zero runtime consumers; MOAT cross-tenant aggregation NON-EXISTENT — the app
+was deleted). MOAT decision brief written to docs/DECISION-BRIEF-MOAT-2026-07-24.md.
 FOLLOW-631 + FOLLOW-632 filed by RETRO-208 (post-merge retro for FOLLOW-625 / PR #610, squash `f936089`,
 merged 2026-07-24 08:25:46 UTC): the AST-based CI hard-gate mechanising Rule K.2's consumer-side swallow
 check. Guard scope covers BOTH src/app AND src/components (RETRO-206 LG-2 discharged); red-first fixture

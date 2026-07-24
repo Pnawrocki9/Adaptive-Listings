@@ -18158,6 +18158,13 @@ unconfigured tenants, bundle ≤42KB, tests.
 
 ## FOLLOW-641 — Visitor-facing profiling opt-out WIDGET (SDK-rendered toggle UI) with per-brand appearance + placement
 
+**PREMISE CORRECTED 2026-07-25 (FOLLOW-653 finding, PR #622):** the toggle UI ALREADY EXISTS —
+`packages/sdk/src/ui/profiling-toggle.ts`, mounted unconditionally since PR #337 (2026-06-21). The
+session-57 audit + ADR-0019 context table were wrong (naming evaded `optOut|OptOut` greps). Scope
+SHRINKS to: per-brand appearance/placement/label-text config (presentation-config slice per
+ADR-0019) applied to the EXISTING widget + admin editor fields. AC1 "new Shadow-DOM toggle widget"
+is void; AC2-5 stand.
+
 source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
 per-brand epic) recommended_sprint: next recommended_agent: sdk-engineer priority: P1
 estimated_hours: 8 depends_on: [presentation-config ADR] promoted_to_queue: false
@@ -18518,3 +18525,39 @@ opt-out (§H.9) reachable on client brands (FOLLOW-641 pending — flag, don't b
 endpoints work for visitors of any brand (tenant-agnostic OTP flows). Deliverable: short gap report
 `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` + stubs for real gaps only. Explicitly OUT
 of scope: DPIA, controller-role analysis (contracts cover it — CEO ruling).
+
+## FOLLOW-654 — Per-brand identity in consent + DSR flows: consent text hardcodes "Estalara"/"Time2Show", DSR OTP emails hardcode "Estalara", consent_text_hash silently defaults
+
+source_retro: FOLLOW-653 external-brand go-live check (PR #622, stub A) source_ticket: FOLLOW-653
+recommended_sprint: now recommended_agent: backend-engineer priority: P1 estimated_hours: 6
+depends_on: [] promoted_to_queue: false
+
+Blocks external-brand go-live: (1) consent umbrella §6.1 canonical text has no brand-substitution
+path (`api/v1/consent/platform-registration/route.ts`); (2) `consent_text_hash` silently defaults to
+the canonical hash when omitted (`route.ts:270`) — for non-first-party tenants it must be REQUIRED,
+or the audit trail attests text the visitor never saw; (3) DSR OTP emails hardcode "Estalara"
+(`api/dsr/initiate/route.ts:209,211`, `lib/email/resend.ts:17`) — parameterize sender identity per
+brand (from `tenants.brand_config` / brand name at provisioning). Details + evidence:
+`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md`.
+
+## FOLLOW-655 — privacy-notice-keys-sync CI gate misses storage keys without `_STORAGE_KEY`/`_KEY_PREFIX`/`_DISMISS_KEY` suffixes
+
+source_retro: FOLLOW-653 (PR #622, stub B — `__estalara_profiling_opt_out__` escaped the gate for a
+month) source_ticket: FOLLOW-653 recommended_sprint: next recommended_agent: devops-engineer
+priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+Broaden the gate's regex (e.g. match localStorage/sessionStorage setItem literals) so shipped
+storage keys can't skip Privacy Notice disclosure. The one missed key was disclosed manually in PR
+#622.
+
+## FOLLOW-656 — HANDOFF: verify out-of-repo white-label deployments render brand-correct disclosures (Rafał / app.estalara.com side)
+
+source_retro: FOLLOW-653 (PR #622, stub C) source_ticket: FOLLOW-653 recommended_sprint: now
+recommended_agent: (operator/Piotr↔Rafał — outside this repo) priority: P1 estimated_hours: n/a
+depends_on: [FOLLOW-654] promoted_to_queue: false
+
+The Privacy Policy page renders in the out-of-repo SvelteKit product — unverifiable from this repo.
+Before ANY external brand goes live: confirm with Rafał that each branded deployment renders
+per-brand privacy policy + consent text (post-FOLLOW-654 parameterization). Go-live QA gate =
+UNSATISFIABLE-PENDING-HANDOFF until confirmed. Add to the FOLLOW-652 runbook's deploy-side checklist
+when both PRs land.

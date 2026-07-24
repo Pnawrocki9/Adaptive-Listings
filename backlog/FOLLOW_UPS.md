@@ -18073,3 +18073,110 @@ FOLLOW-615 = the one residual gap from the config auth sweep: PATCH /api/config 
 canWrite write-rank gate every sibling staff write enforces; must land before/with FOLLOW-600's
 real-table wiring. FOLLOW-600's AC amended by RETRO-202 to bind the FOLLOW-615 dependency + the §3a
 audit-in-transaction + inline-mutation obligations. -->
+
+## FOLLOW-638 — Cross-brand aggregate analytics in admin: one place showing ALL brands' stats (rollup + per-brand breakdown)
+
+source_retro: CEO per-brand management ruling 2026-07-24 (session 58; see memory
+`project_single_tenant_rebrand_model` + `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`)
+source_ticket: (white-label per-brand epic) recommended_sprint: now recommended_agent:
+backend-engineer priority: P1 estimated_hours: 6 depends_on: [] promoted_to_queue: false
+
+**Model context:** every brand = a white-label deployment of app.estalara.com on its own domain, one
+shared data pool, one tenants row per brand. CEO requires per-brand stats to remain separate (EXISTS
+— tenant-scoped analytics) AND a single admin view aggregating across ALL brands (GAP). This is NOT
+the parked cross-tenant DP-MOAT epic — single first-party pool, plain rollup, no differential
+privacy.
+
+**AC:**
+
+1. New staff-only admin surface (e.g. `/admin/analytics`) showing: platform-wide rollup of the
+   existing summary/lift metrics (sessions, adaptations, CTA lift, quiz completions) across all
+   tenants, PLUS a per-brand breakdown table (one row per tenant, key metrics, link to the existing
+   per-tenant analytics page).
+2. ClickHouse queries follow the existing `dashboard/analytics/summary|lift` patterns but GROUP BY /
+   omit the tenant fence deliberately (staff-only route, ADR-0018 §2 auth via `resolveTenantAccess`
+   staff path or equivalent staff gate — NOT the agency session path).
+3. Rule K.2: fail-loud (500/503 + `data_source` provenance) — no fabricated zeros when ClickHouse is
+   unreachable; loading/error/empty states explicit.
+4. Tests per repo quality bar (route + page).
+
+## FOLLOW-639 — Per-brand quiz content: FULLY editable question tree served from tenant config (questions, answers, branching, archetype mappings)
+
+source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
+per-brand epic) recommended_sprint: next recommended_agent: ml-engineer priority: P1
+estimated_hours: 12 depends_on: [presentation-config ADR] promoted_to_queue: false
+
+**Gap:** quiz questions/answers are hardcoded in the SDK bundle
+(`packages/sdk/src/ui/quiz-widget.ts` `QUIZ_CONTENT`, EN/PL/ES, fixed tree: q1_gate →
+inwestor/own_use/cross_border × q2/q3). Zero per-brand customization. CEO ruling: **fully editable
+per brand** — not just wording: structure, answers, and answer→archetype mappings.
+
+**AC:**
+
+1. Per-tenant quiz definition (questions, per-question answers, branching, per-answer archetype
+   weight mappings, i18n variants) persisted server-side (extend `tenants.quiz_config` JSONB or a
+   new table — follow the presentation-config ADR's call) and served to the SDK at runtime via the
+   existing `GET /api/quiz/public-config` path (tenant-keyed via api_key — DOMAIN-INDEPENDENT, never
+   host-derived).
+2. **Profiling-integrity validation (the guardrail for full editability):** Zod-validated on write —
+   every answer's archetype ids MUST exist in the canonical space
+   (`packages/shared/src/archetypes.ts`); reject unknown archetypes; editor surfaces a WARNING
+   (non-blocking) listing archetypes unreachable under the custom tree.
+3. Admin editor UI on the per-tenant quiz page (staff path per ADR-0018; staff writes audited).
+4. SDK: falls back to the built-in default tree when no custom definition exists (current behavior
+   byte-preserved for tenants without one); moving content server-side must NOT grow the bundle
+   (expect a net size WIN — 3 hardcoded languages leave the bundle); ≤42KB gate stays green.
+5. Verify + preserve the quiz-completion → archetype persistence path end-to-end with a custom tree
+   (quiz Supabase SoT, FOLLOW-101 lineage).
+
+## FOLLOW-640 — Per-brand quiz-widget appearance + placement (position configurable from admin, consumed by SDK)
+
+source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
+per-brand epic) recommended_sprint: next recommended_agent: sdk-engineer priority: P2
+estimated_hours: 5 depends_on: [presentation-config ADR] promoted_to_queue: false
+
+**Gap:** quiz trigger position is hardcoded (`packages/sdk/src/ui/quiz-trigger.ts` —
+`position:fixed; bottom:24px`); only `accent_color` + `language` are per-tenant today. CEO requires
+per-brand appearance AND placement. Placement targets ONE known DOM (our own app on every brand
+domain) — no arbitrary-site CSS risk.
+
+**AC:** per-tenant placement/appearance fields per the presentation-config ADR (corner/offsets at
+minimum), admin editor on the per-tenant page, SDK consumes at runtime via the public-config path
+(tenant-keyed, domain-independent), sensible defaults preserve today's rendering byte-for-byte for
+unconfigured tenants, bundle ≤42KB, tests.
+
+## FOLLOW-641 — Visitor-facing profiling opt-out WIDGET (SDK-rendered toggle UI) with per-brand appearance + placement
+
+source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
+per-brand epic) recommended_sprint: next recommended_agent: sdk-engineer priority: P1
+estimated_hours: 8 depends_on: [presentation-config ADR] promoted_to_queue: false
+
+**Gap:** `packages/sdk/src/core/profiling-opt-out.ts` (FOLLOW-372 / §H.9) is localStorage state
+management ONLY — the SDK renders NO visitor-facing toggle UI. CEO requires a visible widget the
+visitor uses to switch profiling + DOM generation on/off, with per-brand appearance and placement.
+
+**AC:**
+
+1. New Shadow-DOM toggle widget in the SDK wired to the existing `profiling-opt-out.ts` state + §H.9
+   enforcement scope (suppress AL profiling + DOM adaptation; ingest stream rides §H.8 — scope per
+   `project_optout_enforcement_h9_scope`, do NOT re-litigate).
+2. Per-brand appearance (colors via brand config), placement, and label texts (i18n) via the
+   presentation-config ADR contract; admin editor fields on the per-tenant page.
+3. Reversible per §H.9: OFF suspends, ON resumes, accumulated state preserved.
+4. Bundle budget: ≤42KB gzip gate MUST stay green (currently ~39.9KB — tight; measure in PR).
+5. Tests incl. opt-out → no adapt calls → opt-in → resumed.
+
+## FOLLOW-642 — Re-enable per-tenant `allowed_origins` enforcement (deferred; TRIGGER = before first external re-brand client onboards)
+
+source_retro: CEO option-B ruling on FOLLOW-622 (2026-07-24, session 58;
+`docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md` §DECISION) source_ticket: FOLLOW-622
+recommended_sprint: BLOCKED-until-first-external-client recommended_agent: backend-engineer
+priority: P2-deferred estimated_hours: 8 depends_on: [FOLLOW-622] promoted_to_queue: false
+
+**Deferred by design.** 622 de-scopes the facade now; THIS ticket is the tracked re-enable. When the
+first external re-brand client is about to onboard: implement per-tenant origin validation in ingest
+CORS — data-driven from tenant config (per-tenant origins = domains of OUR OWN deployments, known at
+provisioning), URL→origin normalization fix (`z.string().url()` bug), explicit empty-array semantics
+(deny-all vs inherit-env), per-request tenant lookup + cache (ingest hot path, p95 <50ms ACK
+budget). The hardcoded env CORS list (`apps/ingest/src/router.ts:69-73`) is the anti-pattern this
+replaces (DOMAIN-INDEPENDENCE ruling). DO NOT build while Estalara is the only tenant.

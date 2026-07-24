@@ -197,7 +197,7 @@ describe('QuizDefinitionSchema', () => {
 
   it('HARD error: rejects an unknown archetype id in weights', () => {
     const def = validDefinition();
-    def.questions[1].answers[0].weights = { not_an_archetype: 1 };
+    def.questions[1]!.answers[0]!.weights = { not_an_archetype: 1 };
     const result = QuizDefinitionSchema.safeParse(def);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -209,7 +209,7 @@ describe('QuizDefinitionSchema', () => {
 
   it('HARD error: rejects a dangling answer.next reference', () => {
     const def = validDefinition();
-    def.questions[0].answers[0].next = 'does_not_exist';
+    def.questions[0]!.answers[0]!.next = 'does_not_exist';
     const result = QuizDefinitionSchema.safeParse(def);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -230,7 +230,7 @@ describe('QuizDefinitionSchema', () => {
   it('HARD error: rejects a cycle in the question graph', () => {
     const def = validDefinition();
     // Make q_invest point back at the root → cycle.
-    def.questions[1].answers[0].next = 'q_gate';
+    def.questions[1]!.answers[0]!.next = 'q_gate';
     const result = QuizDefinitionSchema.safeParse(def);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -240,7 +240,7 @@ describe('QuizDefinitionSchema', () => {
 
   it('HARD error: rejects duplicate question ids', () => {
     const def = validDefinition();
-    def.questions[1].id = 'q_gate';
+    def.questions[1]!.id = 'q_gate';
     const result = QuizDefinitionSchema.safeParse(def);
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -252,13 +252,13 @@ describe('QuizDefinitionSchema', () => {
 
   it('HARD error: rejects a question with fewer than 2 answers', () => {
     const def = validDefinition();
-    def.questions[1].answers = [def.questions[1].answers[0]];
+    def.questions[1]!.answers = [def.questions[1]!.answers[0]!];
     expect(QuizDefinitionSchema.safeParse(def).success).toBe(false);
   });
 
   it('accepts a leaf answer that weights toward neutral (canonical id)', () => {
     const def = validDefinition();
-    def.questions[0].answers[1].weights = { neutral: 1 };
+    def.questions[0]!.answers[1]!.weights = { neutral: 1 };
     expect(QuizDefinitionSchema.safeParse(def).success).toBe(true);
   });
 });

@@ -13,12 +13,14 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import type { QuizDefinition } from '@estalara/shared';
+
 import { StaffQuizDefinitionEditor } from './quiz-definition-editor';
 
 const TENANT_ID = '22222222-2222-4222-8222-222222222222';
 
 // A valid definition reaching only yield_hunter + flip_investor (rest unreachable → warning).
-const VALID_DEF = {
+const VALID_DEF: QuizDefinition = {
   schema_version: 1,
   root: 'q_gate',
   languages: ['en'],
@@ -89,7 +91,7 @@ describe('StaffQuizDefinitionEditor', () => {
     const textarea = await screen.findByTestId('quiz-definition-json');
 
     const badDef = structuredClone(VALID_DEF);
-    badDef.questions[0].answers[0].weights = { not_real: 1 };
+    badDef.questions[0]!.answers[0]!.weights = { not_real: 1 };
     fireEvent.change(textarea, { target: { value: JSON.stringify(badDef) } });
 
     await waitFor(() => {

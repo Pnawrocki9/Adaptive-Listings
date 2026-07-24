@@ -14,7 +14,33 @@
 
 import { Resend } from 'resend';
 
-const DEFAULT_FROM = 'Estalara <noreply@contact.estalara.com>';
+/**
+ * The transactional sending mailbox. FIXED infrastructure — the actual sending
+ * domain is an ops concern and does NOT change per brand (FOLLOW-654 leg 3).
+ * Only the display name in front of it is parameterized per brand.
+ */
+const SENDER_MAILBOX = 'noreply@contact.estalara.com';
+
+/** First-party display name used when no brand identity is supplied. */
+const DEFAULT_SENDER_DISPLAY_NAME = 'Estalara';
+
+const DEFAULT_FROM = `${DEFAULT_SENDER_DISPLAY_NAME} <${SENDER_MAILBOX}>`;
+
+/**
+ * Builds a Resend `from` value that shows a brand's display name in front of the
+ * fixed {@link SENDER_MAILBOX}. Used to make client-brand DSR emails display the
+ * brand's identity rather than "Estalara" while keeping the sending
+ * domain/infrastructure unchanged (FOLLOW-654 leg 3).
+ *
+ * Fail-honest: an empty / whitespace-only display name falls back to
+ * "Estalara" — never an empty display name.
+ *
+ * @param displayName - The brand display name (e.g. "Costa Sol Properties").
+ */
+export function brandSenderFrom(displayName: string): string {
+  const name = displayName.trim() || DEFAULT_SENDER_DISPLAY_NAME;
+  return `${name} <${SENDER_MAILBOX}>`;
+}
 
 export interface SendEmailOptions {
   to: string;

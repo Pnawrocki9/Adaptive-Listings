@@ -14,7 +14,9 @@
  * @module apps/control-plane/src/app/api/v1/consent/platform-registration/lib
  */
 
+import { createHash } from 'crypto';
 import { z } from 'zod';
+import type { BrandIdentity } from '@/lib/brand-identity';
 
 // ─── TOS / consent-text versioning ────────────────────────────────────────────
 
@@ -48,6 +50,69 @@ export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as c
 // line to remain the current SHA-256 value so the inline suppress stays accurate.
 export const CANONICAL_CONSENT_TEXT_HASH =
   'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' as const; // gitleaks:allow SHA-256 of public consent text
+
+// ─── Brand-substituting consent text (FOLLOW-654 leg 1) ───────────────────────
+
+/**
+ * Renders the canonical §6.1 platform-registration umbrella disclosure with the
+ * tenant's brand display identity substituted in.
+ *
+ * This is the authoritative server-side source of the consent text for a given
+ * brand. White-label client deployments (out-of-repo SvelteKit product, Rafał's
+ * side — see FOLLOW-656) fetch it via `GET /api/v1/consent/platform-registration`
+ * so the brand's own name / legal entity render in the disclosure instead of the
+ * hardcoded "Estalara" / "Time2Show, Inc.".
+ *
+ * SUBSTITUTED: the brand display name and legal entity only. NOT substituted: the
+ * `compliance@estalara.com` contact address (shared compliance infrastructure,
+ * changed by ops per-brand if a brand runs its own inbox — same boundary as the
+ * DSR sending domain in leg 3).
+ *
+ * SYNC: this text must stay byte-aligned with
+ * `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 for the version pinned in
+ * {@link PLATFORM_REGISTRATION_TOS_VERSION}. When that doc's §6.1 text changes,
+ * bump the TOS version and update this template in the same PR.
+ *
+ * @param identity - The resolved brand identity (`brandName`, `legalEntity`).
+ * @returns The full disclosure text with a single trailing newline stripped.
+ */
+export function renderPlatformConsentText(
+  identity: Pick<BrandIdentity, 'brandName' | 'legalEntity'>,
+): string {
+  const { brandName, legalEntity } = identity;
+  return `By creating an account and clicking "I agree", you consent to the ${brandName} Adaptive Listings service (provided by ${legalEntity}) processing your information for the following purposes:
+
+1. Behavioral tracking — We analyze how you browse listings (scroll depth, time spent, clicks, and searches) to personalize the listings shown to you.
+
+2. Chat analysis — Your messages in the ${brandName} AI chat are analyzed in real time to understand your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary of your intent — we do not store the full text of your messages in our personalization system.
+
+3. Transfer to agency/agent — Your inferred buyer profile (archetype, buying-intent score) is shared with the real estate agency or agent you interact with on this platform.
+
+4. Buying-intent identification — We build a 12-dimensional profile of your buying intent from your behavioral and chat signals. This profile is held for up to 24 hours in our personalization system.
+
+5. Lead ranking — You may be ranked alongside other investors by buying-intent strength. Agents use this ranking to prioritize follow-up. This ranking is advisory — the agent retains full discretion.
+
+6. Chat-question summaries — A summary of questions you have asked in LIVE chat and in the ${brandName} AI chat may be shown to the agency's staff to help them prepare for a conversation with you.
+
+This consent is required to use the platform. Without granting it, you cannot create an account or access chat features.
+
+Your rights: You can withdraw this consent at any time by contacting the agency's DSR contact. Withdrawal stops new personalization processing. A data erasure request will result in deletion of your behavioral data from ${brandName}'s systems within 30 days. Withdrawal does not affect the lawfulness of processing before withdrawal.
+
+For full details, see the agency privacy policy and ${brandName}'s privacy documentation at compliance@estalara.com.`;
+}
+
+/**
+ * Computes the lowercase-hex SHA-256 of a consent-text string — the value stored
+ * in `consent_records.consent_text_hash`. Used by
+ * `GET /api/v1/consent/platform-registration` to return the hash of the exact
+ * brand-substituted text it serves, so a client deployment can echo it back on
+ * the subsequent POST (closing the leg-2 audit loop).
+ *
+ * @param text - The exact consent text displayed to the data subject.
+ */
+export function computeConsentTextHash(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 

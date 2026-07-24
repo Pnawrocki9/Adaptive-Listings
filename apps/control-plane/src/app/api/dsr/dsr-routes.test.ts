@@ -101,6 +101,8 @@ vi.mock('@estalara/db', () => ({
     createdAt: 'created_at',
   },
   sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
+  // FOLLOW-654: brand identity lookup for the DSR OTP email display name.
+  tenants: { id: 'id', brandConfig: 'brand_config' },
   consentRecords: {
     sessionId: 'session_id',
     consentType: 'consent_type',
@@ -179,6 +181,10 @@ vi.mock('@/lib/dsr-rate-limit', () => ({
 
 vi.mock('@/lib/email/resend', () => ({
   sendEmail: mockSendEmail,
+  // FOLLOW-654: keep the real (pure) display-name builder so the DSR route's
+  // per-brand `from` value is exercised end-to-end.
+  brandSenderFrom: (displayName: string) =>
+    `${displayName.trim() || 'Estalara'} <noreply@contact.estalara.com>`,
 }));
 
 vi.mock('./_clickhouse', () => ({
@@ -361,7 +367,9 @@ describe('POST /api/dsr/initiate', () => {
 
   it('returns 202 with request_id and expires_at when everything is valid', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }]));
+    mockSelect
+      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
+      .mockReturnValueOnce(buildChain([])); // FOLLOW-654 brand identity lookup (no row → Estalara)
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-001', expiresAt }]));
 
     const { POST } = await import('./initiate/route.js');
@@ -380,6 +388,63 @@ describe('POST /api/dsr/initiate', () => {
       expect.objectContaining({
         to: 'buyer@example.com',
         subject: 'Your Estalara data request',
+      }),
+    );
+  });
+
+  // ─── FOLLOW-654 leg 3: per-brand DSR OTP email display identity ────────────
+
+  it('uses the brand display identity in the OTP email for a non-first-party tenant', async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    mockSelect
+      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
+      .mockReturnValueOnce(
+        buildChain([{ brandConfig: { brand_name: 'Costa Sol Properties' } }]), // brand identity
+      );
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-002', expiresAt }]));
+
+    const { POST } = await import('./initiate/route.js');
+    const req = makeRequest('POST', '/api/dsr/initiate', {
+      body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
+      headers: { Authorization: 'Bearer jwt_token' },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(202);
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: 'Costa Sol Properties <noreply@contact.estalara.com>',
+        subject: 'Your Costa Sol Properties data request',
+        html: expect.stringContaining('processed by Costa Sol Properties'),
+      }),
+    );
+    // Sending domain/infrastructure is unchanged — only the display name differs.
+    const call = mockSendEmail.mock.calls[0]?.[0] as { from: string };
+    expect(call.from).toContain('noreply@contact.estalara.com');
+  });
+
+  it('falls back to the Estalara identity when the tenant has no brand_name (first-party)', async () => {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    mockSelect
+      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
+      .mockReturnValueOnce(
+        buildChain([{ brandConfig: { primary_color: '#1a73e8' } }]), // no brand_name key
+      );
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-003', expiresAt }]));
+
+    const { POST } = await import('./initiate/route.js');
+    const req = makeRequest('POST', '/api/dsr/initiate', {
+      body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
+      headers: { Authorization: 'Bearer jwt_token' },
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(202);
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: 'Estalara <noreply@contact.estalara.com>',
+        subject: 'Your Estalara data request',
+        html: expect.stringContaining('processed by Estalara'),
       }),
     );
   });
@@ -897,7 +962,9 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
 
   it('FOLLOW-431: POST /api/dsr/initiate registers writeDsrAuditLog via after()', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-431-test' }]));
+    mockSelect
+      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-431-test' }])) // session lookup
+      .mockReturnValueOnce(buildChain([])); // FOLLOW-654 brand identity lookup
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-431', expiresAt }]));
 
     const { POST } = await import('./initiate/route.js');

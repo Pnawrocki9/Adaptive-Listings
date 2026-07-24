@@ -17619,62 +17619,16 @@ dimension).
 
 cross_ref: [RETRO-205, FOLLOW-620, FOLLOW-621, FOLLOW-394, project_postgres_migrations_no_autoapply]
 
-## FOLLOW-630 — Fix the three dashboard/shared config editors that swallow a failed GET and clobber real config with defaults on Save — the twins FOLLOW-624 missed
-
-source_retro: RETRO-206 (§4a LG-1, §4c TG-1) source_ticket: FOLLOW-624 (PR #608, `3b0b4a3`)
-recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 3
-depends_on: [] promoted_to_queue: false
-
-**Gap (live data-loss, Rule K.2 consumer-side — same defect FOLLOW-624 fixed, in three sibling
-consumers it did NOT touch).** FOLLOW-624 fixed only the three ADMIN editors under
-`admin/tenants/[id]/`. The identical swallow-then-Save-DEFAULTS shape still ships in three siblings,
-two of which write the SAME routes the fixed editors write. FOLLOW-624's PR ran `grep …/app/admin` —
-a narrowed version of Rule K.2's repo-wide `grep apps/` — so these were invisible:
-
-1. **`apps/control-plane/src/app/dashboard/quiz/page.tsx` (P1).** `:98-100 if (!r.ok) throw` →
-   `:111-113 .catch(() => { /* load silently — defaults already set */ })`; `handleSave`
-   (`:162-187`) POSTs the FULL `config` blob (`:171`) to the SAME `/api/quiz/config` as the fixed
-   admin editor. Failed GET + Save reverts the tenant's live SDK-consumed `quiz_config`
-   (`accent_color`, `language`, `micro_polls_enabled`) to `DEFAULTS` (`:72-75`) under "Settings
-   saved!". This is the ORIGINAL surface the admin editor was copied FROM (FOLLOW-595);
-   tenant-operated, routine use.
-2. **`apps/control-plane/src/app/dashboard/demo/override/page.tsx` (P1).** WORSE — no `!r.ok` guard
-   at all (`:91 .then((r) => r.json())`), so a 500 error body is parsed as config and
-   `d.enabled ?? false` (`:96`) renders DEMO MODE OFF with no alert; `:105-107 .catch(() => {})`
-   swallows rejects. `handleSave` (`:110-148`) PUTs the full override to the SAME
-   `/api/demo/override` as the fixed admin editor. Failed/errored GET + Save silently turns OFF /
-   resets a live DEMO override.
-3. **`apps/control-plane/src/components/generation-model-settings.tsx` (P2).**
-   `:88-90 .catch(() => {})`, no `!r.ok` guard (`:73`); `handleSave` (`:93-127`) PUTs
-   `{ generation_model }` to `/api/admin/generation-model`. Failed GET renders the
-   `claude-sonnet-4-6` default (`:62`); a staff Save resets the GLOBAL description-generation model
-   and busts the description cache. Smaller blast radius (single global value; agency PUT is 403'd
-   server-side so only staff can actually clobber) → P2. It is the SHARED panel rendered by BOTH
-   `/admin/settings` and `/dashboard/settings`, so the swallow is live in both zones from one file.
-
-**AC:**
-
-- [ ] All three editors distinguish "loaded" from "not loaded" (a `loadStatus`/`loadError` state
-      separate from save status). On a failed GET — including a non-2xx that
-      `.then((r) => r.json())` currently parses as config — render a visible `role="alert"` state
-      AND disable the Save control; do NOT silently substitute defaults. Add the missing `!r.ok`
-      guard to `dashboard/demo/override/page.tsx` and `generation-model-settings.tsx`.
-- [ ] Retry affordance so a transient failure recovers without a page reload.
-- [ ] `handleSave` early-returns from un-loaded state (defense-in-depth beyond the disabled button).
-- [ ] Red-first tests per editor: (1) GET rejects/500 → error state visible AND Save disabled AND no
-      POST/PUT/PATCH issued (assert `fetch` not called with a mutating method); (2) GET succeeds →
-      unchanged. Mirror FOLLOW-624 AC3. `generation-model-settings.test.*` and
-      `dashboard/quiz`/`dashboard/demo/override` currently stub only a successful GET — that hole is
-      what let these ship (RETRO-206 TG-1).
-- [ ] After landing, `grep -rn "catch(() =>" apps/control-plane/src --include=*.tsx` returns zero
-      config-load swallows across BOTH `/admin` and non-`/admin` surfaces (run the rule's grep
-      repo-wide, NOT scoped to a subdirectory — RETRO-206 P-5).
-
-cross_ref: [RETRO-206, RETRO-205 (§4a LG-1 / §6 P-2 — the admin instances), FOLLOW-624 (fixed the
-admin three), FOLLOW-625 (the mechanized guard — scope amended to cover `src/components/**` so it
-catches instance 3), FOLLOW-595/596/600, CONVENTIONS_PATCH Rule K.2]
-
 ## FOLLOW-630 — Fix the three dashboard/shared config editors that swallow a failed load and clobber real config with defaults on the next Save — the twins FOLLOW-624 missed
+
+**✅ DONE 2026-07-24 — PR #609 squash-merged to `main` `0bfaedd`, auto-deployed. All three twins
+(dashboard/quiz, dashboard/demo/override, generation-model-settings) now track load-status, render a
+`role="alert"` + Retry banner on a failed GET, disable Save, and early-return from `handleSave`; the
+two missing `!r.ok` guards were added. PM independently re-verified on the merged branch: bare
+swallow gone from all three targets, `!r.ok` throws present, repo-wide grep shows zero config-load
+swallows (9 residuals are read-only analytics + defensive `.json().catch(()=>({}))`, documented in
+the PR). Closes the tenant-facing axis of ESC-039. (A duplicate copy of this stub, written by
+RETRO-206, was removed here.)**
 
 source_retro: RETRO-206 (§4a LG-1, §4c TG-1) source_ticket: FOLLOW-624 (PR #608, `3b0b4a3`)
 recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 3

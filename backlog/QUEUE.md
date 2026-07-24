@@ -1,16 +1,33 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 DONE + MERGED (PR #608, `3b0b4a3`), ESC-039 RESOLVED; RETRO-205 dispatch still pending; next-ticket selection is the open item)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + FOLLOW-630 DONE + MERGED; ESC-039 fully RESOLVED both axes; ▶️ NEXT: FOLLOW-625 CI guard, then RETRO-205 dispatch)
 
-**Session 57 = FOLLOW-624 close-out.** P1 data-loss fix from ESC-039 / RETRO-205 §4a LG-1: the three
-staff config editors (tenant-config, quiz-config, demo-override) swallowed a failed GET and then
-clobbered real tenant config with DEFAULTS on the next Save under a green "Settings saved!" banner.
-Fix implemented + tested in a prior (interrupted) session; this session verified state, confirmed
-the only red CI gate is the pre-existing repo-wide `Rule I` (also red on `main` d89757f — not a
-regression), and squash-merged **PR #608 → `main` `3b0b4a3`** (07:28Z, auto-deployed). Backlog
-bookkeeping: ESC-039 → RESOLVED, FOLLOW-624 stub → DONE. **Still open:** FOLLOW-625 (mechanise the
-Rule K.2 swallow check in CI so the pattern can't be copy-forwarded a fourth time) + RETRO-205
-dispatch. Retrospective-analyst for FOLLOW-624 spawned this session.
+**Session 57 = ESC-039 close-out chain (K.2 swallow-then-clobber data-loss).**
+
+- **FOLLOW-624 DONE + MERGED (PR #608, `3b0b4a3`, 07:28Z).** The three ADMIN staff editors
+  (`admin/tenants/[id]/{settings,quiz,demo}/`) swallowed a failed GET then clobbered real tenant
+  config with DEFAULTS on the next Save under a green "Settings saved!". Fixed + tested. Merged.
+- **RETRO-206 (post-merge retro for #608) found the fix INCOMPLETE** — it ran a `/admin`-narrowed
+  grep instead of Rule K.2's repo-wide `apps/` grep and missed three byte-identical twins outside
+  `/admin` (two writing the SAME routes). Filed FOLLOW-630 (P1), widened FOLLOW-625's scope.
+- **FOLLOW-630 DONE + MERGED (PR #609, `0bfaedd`).** Fixed the three twins
+  (`dashboard/quiz/page.tsx`, `dashboard/demo/override/page.tsx`,
+  `components/generation-model-settings.tsx`), added the two missing `!r.ok` guards, red-first tests
+  per editor. PM independently re-verified on the merged branch (swallow gone, `!r.ok` present,
+  repo-wide grep clean — 9 residuals are read-only analytics + defensive JSON-parse, documented).
+- Both PRs: all real CI gates green; only pre-existing repo-wide `Rule I` red (also red on `main`
+  d89757f — not a regression). Backlog: ESC-039 → RESOLVED (both axes), FOLLOW-624 + FOLLOW-630 →
+  DONE.
+
+**▶️ NEXT (open):**
+
+1. **FOLLOW-625** — mechanise the Rule K.2 swallow check as a CI guard (scope MUST cover
+   `src/components/**`, not just `src/app/**`, per RETRO-206). This is the enforcement that stops
+   the pattern recurring; the two fixes above are the fixtures it proves against. recommended_agent
+   per stub is devops-engineer.
+2. **RETRO-205 dispatch** — still pending from session 56.
+3. Retrospective-analyst for FOLLOW-630 — not yet run (PM's independent repo-wide grep already did
+   the highest-value completeness check; retro can be run opportunistically).
 
 ---
 

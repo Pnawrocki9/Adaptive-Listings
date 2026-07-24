@@ -71,6 +71,49 @@ const AB_WEIGHTS_EMPTY = {
   rows: [],
   total: 0,
   generated_at: '2026-07-02T12:00:00.000Z',
+  learning_state: 'paused' as const,
+};
+
+// FOLLOW-637: bandit rows real but frozen — feedback endpoint disabled/every
+// arm still at the Beta(1,1) prior, so estimated_rate is always 0.5.
+const AB_WEIGHTS_PAUSED = {
+  tenant_id: 'test-tenant',
+  rows: [
+    {
+      tenant_id: 'test-tenant',
+      archetype: 'yield_hunter',
+      variant: 'control',
+      alpha: 1,
+      beta: 1,
+      estimated_rate: 0.5,
+      paused: false,
+      updated_at: '2026-07-02T12:00:00.000Z',
+    },
+  ],
+  total: 1,
+  generated_at: '2026-07-02T12:00:00.000Z',
+  learning_state: 'paused' as const,
+};
+
+// FOLLOW-637: feedback endpoint enabled AND at least one arm has moved off
+// the prior — real, live-learning bandit data.
+const AB_WEIGHTS_ACTIVE = {
+  tenant_id: 'test-tenant',
+  rows: [
+    {
+      tenant_id: 'test-tenant',
+      archetype: 'yield_hunter',
+      variant: 'control',
+      alpha: 12,
+      beta: 4,
+      estimated_rate: 0.75,
+      paused: false,
+      updated_at: '2026-07-02T12:00:00.000Z',
+    },
+  ],
+  total: 1,
+  generated_at: '2026-07-02T12:00:00.000Z',
+  learning_state: 'active' as const,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,6 +121,7 @@ const AB_WEIGHTS_EMPTY = {
 function makeFetchMock(
   summaryResponse: { ok: boolean; status: number; body: unknown },
   liftResponse: { ok: boolean; status: number; body: unknown },
+  weightsBody: unknown = AB_WEIGHTS_EMPTY,
 ) {
   const globalFetch = vi.fn((url: unknown) => {
     const urlStr = String(url);
@@ -85,7 +129,7 @@ function makeFetchMock(
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(AB_WEIGHTS_EMPTY),
+        json: () => Promise.resolve(weightsBody),
       });
     }
     const response = urlStr.includes('/lift') ? liftResponse : summaryResponse;
@@ -275,6 +319,84 @@ describe('AnalyticsDashboardPage — clean render (data_source=clickhouse)', () 
 
     await waitFor(() => {
       expect(screen.getAllByText('Yield Hunter').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+});
+
+describe('AnalyticsDashboardPage — bandit learning-paused indicator (FOLLOW-637)', () => {
+  it('shows LEARNING PAUSED badge when /api/ab/weights reports learning_state=paused', async () => {
+    makeFetchMock(
+      { ok: true, status: 200, body: MOCK_SUMMARY_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_LIFT_CLICKHOUSE },
+      AB_WEIGHTS_PAUSED,
+    );
+
+    render(<AnalyticsDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('LEARNING PAUSED')).toBeInTheDocument();
+    });
+    // The weights themselves are NOT hidden — Rule K.2 evidence.
+    expect(
+      screen.getByText(/Learning paused — bandit not yet receiving conversions/i),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT hide bandit rows when learning is paused (weights still render alongside the badge)', async () => {
+    const pausedRowStillRenders = {
+      ...AB_WEIGHTS_PAUSED,
+      rows: [{ ...AB_WEIGHTS_PAUSED.rows[0], paused: true }],
+    };
+    makeFetchMock(
+      { ok: true, status: 200, body: MOCK_SUMMARY_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_LIFT_CLICKHOUSE },
+      pausedRowStillRenders,
+    );
+
+    render(<AnalyticsDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('LEARNING PAUSED')).toBeInTheDocument();
+    });
+    // Rule K.2: the row itself is still rendered next to the badge, not
+    // swallowed/hidden because learning is paused. (getAllByText: the lift
+    // panels 2/3/4 also render "Yield Hunter" from the same archetype label.)
+    expect(screen.getAllByText('Yield Hunter').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('clears the badge when /api/ab/weights reports learning_state=active', async () => {
+    makeFetchMock(
+      { ok: true, status: 200, body: MOCK_SUMMARY_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_LIFT_CLICKHOUSE },
+      AB_WEIGHTS_ACTIVE,
+    );
+
+    render(<AnalyticsDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Anomaly Feed')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText('LEARNING PAUSED')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Learning paused — bandit not yet receiving conversions/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('defaults to paused (no badge suppressed) when learning_state is absent from the payload', async () => {
+    // Older/mocked payload shape without the FOLLOW-637 field — fail toward
+    // "don't imply learning" rather than silently showing nothing.
+    const legacyBody = { ...AB_WEIGHTS_EMPTY, learning_state: undefined };
+    makeFetchMock(
+      { ok: true, status: 200, body: MOCK_SUMMARY_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_LIFT_CLICKHOUSE },
+      legacyBody,
+    );
+
+    render(<AnalyticsDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('LEARNING PAUSED')).toBeInTheDocument();
     });
   });
 });

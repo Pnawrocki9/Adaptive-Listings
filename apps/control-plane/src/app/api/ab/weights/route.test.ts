@@ -321,6 +321,99 @@ describe('GET /api/ab/weights', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// learning_state (FOLLOW-637) — real-but-frozen bandit rows must say so
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// MOCK_DB_ROWS all carry alpha/beta that have moved off the Beta(1,1) prior
+// (10/5, 20/8, 3/30), so these tests vary FEEDBACK_ENDPOINT_ENABLED and the
+// prior-vs-moved shape of the rows independently to prove BOTH conditions
+// gate 'active'.
+
+describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
+  let savedDatabaseUrl: string | undefined;
+  let savedFeedbackEnabled: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockResolve.mockResolvedValue(agencyAccess());
+    adminState.rows = [];
+    adminState.capturedWhere = undefined;
+    savedDatabaseUrl = process.env.DATABASE_URL;
+    savedFeedbackEnabled = process.env.FEEDBACK_ENDPOINT_ENABLED;
+    setFakeDatabaseUrl();
+  });
+
+  afterEach(() => {
+    clearDatabaseUrl(savedDatabaseUrl);
+    if (savedFeedbackEnabled === undefined) {
+      delete process.env.FEEDBACK_ENDPOINT_ENABLED;
+    } else {
+      process.env.FEEDBACK_ENDPOINT_ENABLED = savedFeedbackEnabled;
+    }
+  });
+
+  it('FEEDBACK_ENDPOINT_ENABLED unset + arms moved off prior → paused (the frozen-in-prod case)', async () => {
+    delete process.env.FEEDBACK_ENDPOINT_ENABLED;
+    agencyState.rows = [...MOCK_DB_ROWS]; // alpha/beta already moved off (1,1)
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('paused');
+  });
+
+  it('FEEDBACK_ENDPOINT_ENABLED=true but every arm still at Beta(1,1) prior → paused', async () => {
+    process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
+    agencyState.rows = MOCK_DB_ROWS.map((r) => ({ ...r, alpha: 1, beta: 1 }));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('paused');
+  });
+
+  it('FEEDBACK_ENDPOINT_ENABLED=true AND at least one arm moved off the prior → active', async () => {
+    process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
+    agencyState.rows = [...MOCK_DB_ROWS];
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('active');
+  });
+
+  it('FEEDBACK_ENDPOINT_ENABLED=false explicitly + arms moved off prior → paused', async () => {
+    process.env.FEEDBACK_ENDPOINT_ENABLED = 'false';
+    agencyState.rows = [...MOCK_DB_ROWS];
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('paused');
+  });
+
+  it('empty table + FEEDBACK_ENDPOINT_ENABLED=true → paused (vacuous, no data yet)', async () => {
+    process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
+    agencyState.rows = [];
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('paused');
+  });
+
+  it('DATABASE_URL absent (agency path) → learning_state paused regardless of env', async () => {
+    process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
+    delete process.env.DATABASE_URL;
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+    const body = await parseBody<AbWeightsResponse>(res);
+    expect(body.learning_state).toBe('paused');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Staff override path (ADR-0018 §2, FOLLOW-594)
 // ═══════════════════════════════════════════════════════════════════════════
 

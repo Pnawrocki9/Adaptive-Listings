@@ -24,12 +24,12 @@ same app, same known DOM, one shared data pool, one `tenants` row per brand. The
 
 Four per-brand customization surfaces are currently hardcoded or unwired, each with an open ticket:
 
-| Ticket         | Surface                                | Current state                                                                                                        |
-| -------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **FOLLOW-623** | Branding (color, logo, white-label)    | `tenants.brand_config` written/read by `/api/config` (PR #616) but **no SDK consumer** — a producer-only facade.     |
-| **FOLLOW-640** | Quiz-widget placement + appearance     | Trigger position hardcoded `position:fixed; bottom:24px; left:24px` (`packages/sdk/src/ui/quiz-trigger.ts:141-148`). |
-| **FOLLOW-641** | Visitor opt-out **toggle widget**      | SDK renders **no toggle UI**; `packages/sdk/src/core/profiling-opt-out.ts` is localStorage state only (§H.9).        |
-| **FOLLOW-639** | Quiz **content** (fully editable tree) | Hardcoded `QUIZ_CONTENT` (EN/PL/ES) + hardcoded `resolveArchetype()` switch in `packages/sdk/src/ui/quiz-widget.ts`. |
+| Ticket         | Surface                                | Current state                                                                                                                                                                                        |
+| -------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-623** | Branding (color, logo, white-label)    | `tenants.brand_config` written/read by `/api/config` (PR #616) but **no SDK consumer** — a producer-only facade.                                                                                     |
+| **FOLLOW-640** | Quiz-widget placement + appearance     | Trigger position hardcoded `position:fixed; bottom:24px; left:24px` (`packages/sdk/src/ui/quiz-trigger.ts:141-148`).                                                                                 |
+| **FOLLOW-641** | Visitor opt-out **toggle widget**      | ~~SDK renders no toggle UI~~ **CORRECTED 2026-07-25 (FOLLOW-653/PR #622):** `packages/sdk/src/ui/profiling-toggle.ts` EXISTS, mounted since PR #337; 641 = per-brand config for the existing widget. |
+| **FOLLOW-639** | Quiz **content** (fully editable tree) | Hardcoded `QUIZ_CONTENT` (EN/PL/ES) + hardcoded `resolveArchetype()` switch in `packages/sdk/src/ui/quiz-widget.ts`.                                                                                 |
 
 These four are not four independent contracts. They are one thing: **the per-tenant presentation &
 content configuration the SDK must fetch at runtime, keyed by tenant identity, to render

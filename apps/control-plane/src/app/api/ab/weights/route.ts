@@ -20,6 +20,9 @@
  *
  * Reads real rows from ab_bandit_weights (seeded by TICKET-AB-006/007, PR #107).
  *
+ * Also returns `learning_state` (FOLLOW-637) so the dashboard can tell real
+ * rows apart from real-but-frozen rows — see `AbWeightsResponse.learning_state`.
+ *
  * @module apps/control-plane/src/app/api/ab/weights/route
  */
 
@@ -53,6 +56,24 @@ export interface AbWeightsResponse {
   rows: BanditWeightRow[];
   total: number;
   generated_at: string;
+  /**
+   * Derived "is the bandit actually learning" signal for the analytics
+   * dashboard (FOLLOW-637 / audit F-02).
+   *
+   * `FEEDBACK_ENDPOINT_ENABLED` 503-gates `POST /api/adapt/feedback` — while
+   * it is unset/false, `updateArmAsync` never runs and every arm sits frozen
+   * at the Beta(1,1) prior (`estimated_rate === 0.5`). Those rows are REAL
+   * (not mocked) but inert, so a boolean env echo alone would still let the
+   * dashboard imply live learning the moment ops flips the flag but before
+   * any conversion has actually landed. `learning_state` is 'active' ONLY
+   * when BOTH hold:
+   *   1. `process.env.FEEDBACK_ENDPOINT_ENABLED === 'true'`, AND
+   *   2. at least one returned row has moved off the prior
+   *      (`alpha !== 1 || beta !== 1`) — i.e. a real conversion has landed.
+   * Otherwise 'paused' (covers: endpoint disabled, endpoint just enabled but
+   * no conversions yet, and the empty-table case).
+   */
+  learning_state: 'active' | 'paused';
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -122,6 +143,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           rows: [],
           total: 0,
           generated_at: new Date().toISOString(),
+          // No rows → vacuously "still at the prior" → paused, regardless of env.
+          learning_state: 'paused',
         };
         return NextResponse.json(response, { status: 200 });
       }
@@ -149,11 +172,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       updated_at: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : (r.updatedAt as string),
     }));
 
+    // FOLLOW-637: 'active' only when the feedback endpoint is enabled AND at
+    // least one arm has actually received a conversion (moved off Beta(1,1)).
+    const feedbackEnabled = process.env.FEEDBACK_ENDPOINT_ENABLED === 'true';
+    const hasMovedOffPrior = rows.some((r) => r.alpha !== 1 || r.beta !== 1);
+    const learningState: 'active' | 'paused' =
+      feedbackEnabled && hasMovedOffPrior ? 'active' : 'paused';
+
     const response: AbWeightsResponse = {
       tenant_id: tenantId,
       rows,
       total: rows.length,
       generated_at: new Date().toISOString(),
+      learning_state: learningState,
     };
 
     return NextResponse.json(response, { status: 200 });

@@ -60,6 +60,14 @@ interface BanditRow {
 
 interface AbWeightsData {
   rows: BanditRow[];
+  /**
+   * FOLLOW-637: mirrors `AbWeightsResponse.learning_state` from the route —
+   * 'paused' means the bandit rows are real but frozen (feedback endpoint
+   * disabled and/or every arm still at the Beta(1,1) prior). Defaults to
+   * 'paused' when the field is absent from an older/mocked payload so the
+   * indicator fails toward "don't imply learning" rather than the reverse.
+   */
+  learning_state: 'active' | 'paused';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -158,6 +166,26 @@ function MockDataBadge() {
       className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800"
     >
       MOCK DATA
+    </span>
+  );
+}
+
+/**
+ * Learning-paused badge — shown when `learning_state === 'paused'` (FOLLOW-637).
+ *
+ * The Anomaly Feed's bandit rows are REAL (not mocked), but the feedback
+ * endpoint that would move them off the Beta(1,1) prior is 503-gated in prod
+ * (`FEEDBACK_ENDPOINT_ENABLED`), so `estimated_rate` is stuck at 0.5 for every
+ * arm. Without this badge the panel looks like live adaptive analytics when
+ * it is actually inert (audit F-02). Weights are NOT hidden — only labeled.
+ */
+function LearningPausedBadge() {
+  return (
+    <span
+      aria-label="LEARNING PAUSED"
+      className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-800"
+    >
+      Learning Paused
     </span>
   );
 }
@@ -461,13 +489,25 @@ function Panel5({
   resuming: Set<string>;
 }) {
   const pausedRows = data?.rows.filter((r) => r.paused) ?? [];
+  const learningPaused = !loading && data?.learning_state === 'paused';
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-1 text-sm font-semibold text-gray-700">Anomaly Feed</h2>
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">Anomaly Feed</h2>
+        {learningPaused && <LearningPausedBadge />}
+      </div>
       <p className="mb-4 text-xs text-gray-400">
         Archetypes auto-paused by regression detection (p &lt; 0.05, ≥ 200 sessions per arm).
       </p>
+
+      {learningPaused && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Learning paused — bandit not yet receiving conversions. Arm weights below are real rows,
+          but stuck at the Beta(1,1) prior until the feedback endpoint is enabled and conversions
+          start landing.
+        </div>
+      )}
 
       {loading && (
         <div className="space-y-3">
@@ -657,7 +697,10 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
         if (raw && typeof raw === 'object') {
           const d = raw as Record<string, unknown>;
           const rows = Array.isArray(d.rows) ? (d.rows as BanditRow[]) : [];
-          setWeightsData({ rows });
+          // FOLLOW-637: default to 'paused' (don't imply learning) if the
+          // field is unexpectedly absent from the payload.
+          const learningState = d.learning_state === 'active' ? 'active' : 'paused';
+          setWeightsData({ rows, learning_state: learningState });
         }
       })
       .catch(() => {
@@ -694,6 +737,7 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
           setWeightsData((prev) => {
             if (!prev) return prev;
             return {
+              ...prev,
               rows: prev.rows.map((row) =>
                 row.archetype === archetype ? { ...row, paused: false } : row,
               ),

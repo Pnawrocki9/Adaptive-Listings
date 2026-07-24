@@ -51,6 +51,12 @@
  * `string | null` on the wire, never `undefined` (ADR-0019 D-nullability). The `brand` slice
  * rides the same `data_source` provenance (Rule K.2): a `fallback` response carries no brand.
  *
+ * ADR-0019 (FOLLOW-639): the response ALSO carries an OPTIONAL `quiz_definition` slice — the
+ * tenant's ACTIVE row from the dedicated `quiz_definitions` table (D2), re-validated with
+ * `QuizDefinitionSchema` on read. Omitted when the tenant has no active/valid definition, so an
+ * unconfigured tenant is byte-identical to pre-ADR-0019 and the SDK walks its built-in default
+ * tree (D4/D5). Like `brand`, it rides `data_source` (a `fallback` response carries no definition).
+ *
  * @module apps/control-plane/src/app/api/quiz/public-config/route
  */
 
@@ -58,16 +64,18 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { createAdminClient, tenants } from '@estalara/db';
+import { createAdminClient, quizDefinitions, tenants } from '@estalara/db';
 import type {
   BrandConfig,
   PresentationConfigResponse,
+  QuizDefinition,
   QuizPublicConfigResponse,
 } from '@estalara/shared';
 import {
   BrandConfigSchema,
   PresentationConfigResponseSchema,
   QUIZ_DEFAULT_CONFIG,
+  QuizDefinitionSchema,
   parseStoredQuizConfig,
 } from '@estalara/shared';
 import { resolveApiKey } from '@/lib/api-key-auth';
@@ -118,6 +126,24 @@ function parsePublicBrandConfig(raw: unknown): BrandConfig | undefined {
     white_label: typeof obj.white_label === 'boolean' ? obj.white_label : false,
   };
   const result = BrandConfigSchema.safeParse(candidate);
+  return result.success ? result.data : undefined;
+}
+
+// ─── Quiz-definition slice (ADR-0019 / FOLLOW-639) ─────────────────────────────
+
+/**
+ * Parse the stored `quiz_definitions.definition` JSONB into the public wire slice.
+ *
+ * The definition is re-validated with `QuizDefinitionSchema` on read (belt-and-suspenders —
+ * it was already validated on write). A stored blob that fails validation (e.g. an archetype
+ * later renamed out of `CANONICAL_ARCHETYPE_IDS`) is DROPPED rather than allowed to break the
+ * whole quiz-config response: the SDK then falls back to its built-in default tree (D4/D5),
+ * which is the correct fail-safe for a read-only buyer-facing endpoint. Returns `undefined`
+ * when there is no active definition or it fails validation, so the slice is omitted and an
+ * unconfigured tenant is byte-identical to pre-ADR-0019.
+ */
+function parseActiveQuizDefinition(raw: unknown): QuizDefinition | undefined {
+  const result = QuizDefinitionSchema.safeParse(raw);
   return result.success ? result.data : undefined;
 }
 
@@ -212,6 +238,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // ADR-0019 (FOLLOW-623): optional brand slice from `tenants.brand_config`.
     const brand = parsePublicBrandConfig(tenantRow.brandConfig);
 
+    // ADR-0019 (FOLLOW-639): optional quiz-definition slice — the tenant's ACTIVE editable
+    // tree, if any. A separate fenced read on the dedicated `quiz_definitions` table (D2).
+    const activeDefRows = await db
+      .select({ definition: quizDefinitions.definition })
+      .from(quizDefinitions)
+      // invariant 5: the tenant fence on this service-role client.
+      .where(and(eq(quizDefinitions.tenantId, tenantId), eq(quizDefinitions.isActive, true)))
+      .limit(1);
+    const quizDefinition = activeDefRows[0]
+      ? parseActiveQuizDefinition(activeDefRows[0].definition)
+      : undefined;
+
     const payload: PresentationConfigResponse = {
       quiz_enabled: quizEnabled,
       micro_polls_enabled: merged.micro_polls_enabled,
@@ -222,6 +260,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Conditional spread (exactOptionalPropertyTypes): omit the key when unconfigured
       // rather than assign `undefined`, so an unbranded tenant is byte-identical (D4).
       ...(brand ? { brand } : {}),
+      // Omit the key when the tenant has no active/valid definition → SDK built-in default (D4/D5).
+      ...(quizDefinition ? { quiz_definition: quizDefinition } : {}),
     };
 
     // Validate outbound shape with the canonical superset schema (belt-and-suspenders).

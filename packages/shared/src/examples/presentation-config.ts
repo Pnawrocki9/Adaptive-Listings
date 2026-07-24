@@ -13,7 +13,48 @@
  * @module @estalara/shared/examples/presentation-config
  */
 
-import type { PresentationConfigResponse } from '../schemas/presentation-config.js';
+import type { PresentationConfigResponse, QuizDefinition } from '../schemas/presentation-config.js';
+
+/**
+ * Example quiz definition (FOLLOW-639) — a minimal but valid 2-question editable tree.
+ * Root gate → invest branch (two leaves) or a neutral skip. Every weights key is a
+ * canonical archetype id; every `next` resolves; no cycles → passes the hard integrity
+ * refinement. `student_parent` is intentionally NOT reachable here, so
+ * `computeUnreachableArchetypes` on this tree returns a non-empty warning list.
+ */
+export const EXAMPLE_QUIZ_DEFINITION: QuizDefinition = {
+  schema_version: 1,
+  root: 'q_gate',
+  languages: ['en'],
+  questions: [
+    {
+      id: 'q_gate',
+      prompt_i18n: { en: 'What are you looking for?' },
+      answers: [
+        { id: 'a_invest', label_i18n: { en: 'Investment' }, weights: {}, next: 'q_invest' },
+        { id: 'a_skip', label_i18n: { en: 'Just browsing' }, weights: {}, next: null },
+      ],
+    },
+    {
+      id: 'q_invest',
+      prompt_i18n: { en: 'What is your focus?' },
+      answers: [
+        {
+          id: 'a_yield',
+          label_i18n: { en: 'Rental yield' },
+          weights: { yield_hunter: 1 },
+          next: null,
+        },
+        {
+          id: 'a_flip',
+          label_i18n: { en: 'Flip / renovate' },
+          weights: { flip_investor: 1 },
+          next: null,
+        },
+      ],
+    },
+  ],
+};
 
 /**
  * Example 1 — fully-populated response for a branded, activated tenant.
@@ -60,4 +101,18 @@ export const EXAMPLE_PRESENTATION_BRAND_NO_LOGO: PresentationConfigResponse = {
     logo_url: null,
     white_label: false,
   },
+};
+
+/**
+ * Example 4 — response carrying a per-brand `quiz_definition` slice (FOLLOW-639).
+ * A tenant with a configured active quiz tree; the SDK walks THIS instead of its built-in
+ * default. The brand slice is also present here to show the two slices coexisting.
+ */
+export const EXAMPLE_PRESENTATION_CONFIG_WITH_QUIZ_DEF: PresentationConfigResponse = {
+  quiz_enabled: true,
+  micro_polls_enabled: false,
+  language: 'en',
+  accent_color: '#2563EB',
+  data_source: 'db',
+  quiz_definition: EXAMPLE_QUIZ_DEFINITION,
 };

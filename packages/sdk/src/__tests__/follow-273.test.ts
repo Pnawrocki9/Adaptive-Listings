@@ -1,39 +1,27 @@
 /**
- * FOLLOW-273: SDK quiz/locale path must reference canonical shared enum.
+ * FOLLOW-273 / FOLLOW-639: SDK quiz/locale path references the canonical shared enum.
  *
- * AC3 parity test: asserts that the keys of `QUIZ_CONTENT` in quiz-widget.ts
- * are exactly equal to `QUIZ_LANGUAGE_VALUES` from `@estalara/shared`.
- *
- * This test catches future locale additions that update `QUIZ_LANGUAGE_VALUES`
- * but forget to add the corresponding content block in `QUIZ_CONTENT` — or vice
- * versa. Without this gate, the SDK would silently `undefined`-index at runtime
- * when `renderQuizWidget` calls `QUIZ_CONTENT[config.language]`.
- *
- * AC2 parity: also asserts that `LocaleSchema.options` (description pipeline)
- * equals `QUIZ_LANGUAGE_VALUES` (quiz/UI), confirming they derive from the same
- * single source (FOLLOW-273: LocaleSchema is now `z.enum(QUIZ_LANGUAGE_VALUES)`).
+ * FOLLOW-273 originally asserted `QUIZ_CONTENT` keys equalled `QUIZ_LANGUAGE_VALUES`. Under
+ * FOLLOW-639 (ADR-0019 D5/D6) the hardcoded multilingual `QUIZ_CONTENT` was replaced by the
+ * built-in `DEFAULT_QUIZ_DEFINITION` (EN-only) plus the served-per-tenant definition, so the
+ * question/answer strings no longer live in a fixed language-keyed record. What remains
+ * canonical:
+ *   - `DEFAULT_QUIZ_DEFINITION.languages` are all members of `QUIZ_LANGUAGE_VALUES` (the SDK
+ *     never declares a language outside the shared enum);
+ *   - `LocaleSchema.options` (description pipeline) equals `QUIZ_LANGUAGE_VALUES` (single
+ *     source of truth, AC2 — unchanged by FOLLOW-639).
  */
 
 import { describe, expect, it } from 'vitest';
 
 import { QUIZ_LANGUAGE_VALUES, LocaleSchema } from '@estalara/shared';
 
-import { QUIZ_CONTENT } from '../ui/quiz-widget.js';
+import { DEFAULT_QUIZ_DEFINITION } from '../ui/quiz-widget.js';
 
-describe('FOLLOW-273: quiz/locale canonical enum parity', () => {
-  it('QUIZ_CONTENT keys match QUIZ_LANGUAGE_VALUES exactly', () => {
-    const quizContentKeys = Object.keys(QUIZ_CONTENT).sort();
-    const sharedValues = [...QUIZ_LANGUAGE_VALUES].sort();
-    expect(quizContentKeys).toEqual(sharedValues);
-  });
-
-  it('every QUIZ_LANGUAGE_VALUES entry has a non-empty QUIZ_CONTENT entry', () => {
-    for (const lang of QUIZ_LANGUAGE_VALUES) {
-      expect(QUIZ_CONTENT[lang], `QUIZ_CONTENT["${lang}"] must be defined`).toBeDefined();
-      expect(
-        QUIZ_CONTENT[lang].q1_gate.answers.length,
-        `QUIZ_CONTENT["${lang}"].q1_gate.answers must be non-empty`,
-      ).toBeGreaterThan(0);
+describe('FOLLOW-273/639: quiz/locale canonical enum parity', () => {
+  it('DEFAULT_QUIZ_DEFINITION.languages are all canonical language values', () => {
+    for (const lang of DEFAULT_QUIZ_DEFINITION.languages) {
+      expect(QUIZ_LANGUAGE_VALUES).toContain(lang);
     }
   });
 

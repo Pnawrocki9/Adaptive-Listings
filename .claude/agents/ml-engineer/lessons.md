@@ -288,3 +288,24 @@
   file in the repo still referencing that flag name in a docstring/comment without the flag also
   being removed there — would have caught `directives.ts` automatically instead of relying on a
   manual repo-wide grep sweep.
+
+- **2026-07-25 / FOLLOW-639** · **What I built:** per-brand FULLY editable quiz — new additive
+  `quiz_definitions` table (migration 0035, partial-unique active-per-tenant),
+  `QuizDefinitionSchema` slice in shared with HARD integrity (unknown archetype / dangling `next` /
+  cycle / duplicate id) + the shared `reduceWeightsToArchetype` argmax (ONE source of truth) +
+  non-blocking `computeUnreachableArchetypes`; `quiz_definition` on `GET /api/quiz/public-config`;
+  SDK generic tree-walker replacing the hardcoded `resolveArchetype()`/`QUIZ_CONTENT` (EN-only
+  `DEFAULT_QUIZ_DEFINITION`, argmax reduction, persistence path byte-preserved); staff editor
+  `PUT /api/admin/tenants/quiz-definition` (ADR-0018 §3a atomic-audited). Bundle 40.99→40.75KB (net
+  win). · **Where real vs placeholder was a judgment call:** two. (1) ADR D6 said "3 hardcoded
+  languages leave" (EN-only default) vs the ticket's "existing tests stay green unmodified / byte
+  identical" — these conflict for PL/ES. Resolved in favor of the ADR (EN-only default) because the
+  single live tenant is EN, baseline headroom was only ~1KB (keeping PL/ES risked the 42KB gate),
+  and full editability is exactly what lets a PL/ES brand ship its own tree. Rewrote the SDK
+  quiz-widget + follow-273 tests (they tested the removed `resolveArchetype`/`QUIZ_CONTENT`),
+  keeping the ROUTE tests green (unconfigured → no slice). Proved parity with a walk-vs-old-switch
+  test. (2) Progress indicator shows `1/3` on the gate now (longest-path) vs the old tentative `1/2`
+  — a cosmetic UI diff, not a persistence-contract change; accepted + noted. · **A guardrail I'd
+  add:** a corpus/parity gate that fails if `DEFAULT_QUIZ_DEFINITION` (walked + argmax) ever stops
+  reproducing the 17 legacy leaves — the byte-identical-fallback promise is only as strong as that
+  parity test, and a future weight edit could silently break it.

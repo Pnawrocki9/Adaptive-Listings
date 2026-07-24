@@ -15,12 +15,26 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { BrandConfigSchema, PresentationConfigResponseSchema } from './presentation-config.js';
+import {
+  BrandConfigSchema,
+  PresentationConfigResponseSchema,
+  QuizDefinitionSchema,
+  computeUnreachableArchetypes,
+  reduceWeightsToArchetype,
+} from './presentation-config.js';
+import type { QuizDefinition } from './presentation-config.js';
 import {
   EXAMPLE_PRESENTATION_BRAND_NO_LOGO,
   EXAMPLE_PRESENTATION_CONFIG_FULL,
   EXAMPLE_PRESENTATION_CONFIG_MINIMAL,
+  EXAMPLE_PRESENTATION_CONFIG_WITH_QUIZ_DEF,
+  EXAMPLE_QUIZ_DEFINITION,
 } from '../examples/presentation-config.js';
+
+/** A structurally-valid definition builder for mutation in individual cases. */
+function validDefinition(): QuizDefinition {
+  return structuredClone(EXAMPLE_QUIZ_DEFINITION);
+}
 
 // ─── BrandConfigSchema ──────────────────────────────────────────────────────
 
@@ -152,5 +166,133 @@ describe('PresentationConfigResponseSchema', () => {
       brand: { primary_color: 'red', logo_url: null, white_label: false },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('parses a response carrying a quiz_definition slice (FOLLOW-639)', () => {
+    const result = PresentationConfigResponseSchema.safeParse(
+      EXAMPLE_PRESENTATION_CONFIG_WITH_QUIZ_DEF,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.quiz_definition?.root).toBe('q_gate');
+    }
+  });
+
+  it('backward-compat: parses a response with NO quiz_definition slice', () => {
+    const result = PresentationConfigResponseSchema.safeParse(EXAMPLE_PRESENTATION_CONFIG_MINIMAL);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Absent → SDK uses its built-in default tree (ADR-0019 D4/D5).
+      expect(result.data.quiz_definition).toBeUndefined();
+    }
+  });
+});
+
+// ─── QuizDefinitionSchema — hard integrity guardrails (ADR-0019 D3) ──────────
+
+describe('QuizDefinitionSchema', () => {
+  it('accepts the example definition', () => {
+    expect(QuizDefinitionSchema.safeParse(EXAMPLE_QUIZ_DEFINITION).success).toBe(true);
+  });
+
+  it('HARD error: rejects an unknown archetype id in weights', () => {
+    const def = validDefinition();
+    def.questions[1].answers[0].weights = { not_an_archetype: 1 };
+    const result = QuizDefinitionSchema.safeParse(def);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('unknown archetype id'))).toBe(
+        true,
+      );
+    }
+  });
+
+  it('HARD error: rejects a dangling answer.next reference', () => {
+    const def = validDefinition();
+    def.questions[0].answers[0].next = 'does_not_exist';
+    const result = QuizDefinitionSchema.safeParse(def);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('unknown question id'))).toBe(true);
+    }
+  });
+
+  it('HARD error: rejects a root that references an unknown question', () => {
+    const def = validDefinition();
+    def.root = 'nowhere';
+    const result = QuizDefinitionSchema.safeParse(def);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('root references'))).toBe(true);
+    }
+  });
+
+  it('HARD error: rejects a cycle in the question graph', () => {
+    const def = validDefinition();
+    // Make q_invest point back at the root → cycle.
+    def.questions[1].answers[0].next = 'q_gate';
+    const result = QuizDefinitionSchema.safeParse(def);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('cycle detected'))).toBe(true);
+    }
+  });
+
+  it('HARD error: rejects duplicate question ids', () => {
+    const def = validDefinition();
+    def.questions[1].id = 'q_gate';
+    const result = QuizDefinitionSchema.safeParse(def);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.message.includes('duplicate question id'))).toBe(
+        true,
+      );
+    }
+  });
+
+  it('HARD error: rejects a question with fewer than 2 answers', () => {
+    const def = validDefinition();
+    def.questions[1].answers = [def.questions[1].answers[0]];
+    expect(QuizDefinitionSchema.safeParse(def).success).toBe(false);
+  });
+
+  it('accepts a leaf answer that weights toward neutral (canonical id)', () => {
+    const def = validDefinition();
+    def.questions[0].answers[1].weights = { neutral: 1 };
+    expect(QuizDefinitionSchema.safeParse(def).success).toBe(true);
+  });
+});
+
+// ─── reduceWeightsToArchetype — argmax semantics (ADR-0019 D5) ───────────────
+
+describe('reduceWeightsToArchetype', () => {
+  it('returns neutral for an empty vector', () => {
+    expect(reduceWeightsToArchetype({})).toBe('neutral');
+  });
+
+  it('returns neutral when all weights are non-positive', () => {
+    expect(reduceWeightsToArchetype({ yield_hunter: 0, flip_investor: -1 })).toBe('neutral');
+  });
+
+  it('returns the single-highest archetype', () => {
+    expect(reduceWeightsToArchetype({ first_time_buyer: 1, luxury_buyer: 2 })).toBe('luxury_buyer');
+  });
+
+  it('breaks ties by canonical order (earliest wins)', () => {
+    // yield_hunter precedes flip_investor in CANONICAL_ARCHETYPE_IDS.
+    expect(reduceWeightsToArchetype({ flip_investor: 3, yield_hunter: 3 })).toBe('yield_hunter');
+  });
+});
+
+// ─── computeUnreachableArchetypes — non-blocking warning (ADR-0019 D3) ───────
+
+describe('computeUnreachableArchetypes', () => {
+  it('warns for archetypes no path can reach (non-blocking)', () => {
+    const unreachable = computeUnreachableArchetypes(EXAMPLE_QUIZ_DEFINITION);
+    // Only yield_hunter + flip_investor are reachable in the example tree.
+    expect(unreachable).toContain('student_parent');
+    expect(unreachable).not.toContain('yield_hunter');
+    expect(unreachable).not.toContain('flip_investor');
+    expect(unreachable).not.toContain('neutral');
   });
 });

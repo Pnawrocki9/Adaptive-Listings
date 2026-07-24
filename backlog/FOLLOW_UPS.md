@@ -18434,6 +18434,14 @@ cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-644, RETRO-211]
 
 ## FOLLOW-651 — Define + wire the `white_label` consumer (brand slice is piped into the SDK but read by nothing)
 
+**CEO RULING 2026-07-25 (session 58): OPTION A — build "Powered by Estalara" attribution.** Scope
+now DEFINED: SDK widgets (quiz widget card; opt-out widget when FOLLOW-641 ships) render a small
+"Powered by Estalara" attribution BY DEFAULT; `brand.white_label === true` hides it. This gives the
+flag its real business semantics (attribution on non-white-label brands, clean UI for white-label
+clients). Sequencing: dispatch AFTER FOLLOW-639 merges (639 is rewriting
+`packages/sdk/src/ui/quiz-widget.ts` right now — file collision) — natural fit alongside the 640/641
+UI wave. Bundle: attribution adds bytes; ride the post-639 shrink headroom; ≤42KB gate.
+
 source_retro: RETRO-214 §3 / §5d source_ticket: FOLLOW-623 (PR #619) recommended_sprint:
 white-label-epic recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on:
 [FOLLOW-623] promoted_to_queue: false

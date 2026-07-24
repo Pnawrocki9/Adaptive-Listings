@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-07-24 / FOLLOW-636
+
+- **What I built**: closed a producer-only revocation facade — the admin "revoke demo session"
+  action wrote `demo_sessions.revoked_at` but the runtime gate (`verifyDemoJwt` → POST `/api/adapt`)
+  only checked HS256 signature + the JWT's self-contained `exp`, so a revoked demo token kept
+  serving adaptations for up to 7d. Added a `session_id` claim passthrough in `verifyDemoJwt`, a new
+  `resolveDemoSessionRevocation` helper (one PK lookup, no cache), and a call at the adapt demo-JWT
+  path that returns the existing `401 invalid_demo_token` on a revoked row. Deleted orphaned dead
+  `demo-session-store.ts`.
+- **Wiring/auth/fail-loud risks I weighed**: (1) kept signature+exp fail-CLOSED inside
+  `verifyDemoJwt` and made ONLY the enablement (revocation) axis fail-OPEN, mirroring FOLLOW-633
+  `resolveAlEnablement` — a DB blip must not break a legit live demo, but configured-but-threw is
+  Sentry-captured (K.2 observable) while db-not-configured (dev/CI) stays silent. (2) Gated the
+  check on the demo-JWT path only (`apiKeyTenantId === null`) so the api-key path keeps using its
+  own `api_keys.revoked_at`. (3) Deliberately NO cache: a TTL cache would re-introduce exactly the
+  revocation lag the ticket closes — stated the tradeoff in the helper doc. (4) New `session_id`
+  claim + helper both have a real consumer in the same PR (Rule H satisfied). Cost: one indexed PK
+  lookup, sub-ms, only on the demo path.
+- **A guardrail I'd add**: a "producer-without-consumer" lint for lifecycle columns — a write to a
+  `*_revoked_at` / `*_disabled_at` / `*_suspended_at` column should require a grep-provable runtime
+  reader on the enforcement path, or a FOLLOW stub. This facade (write with no read) is the same
+  shape as the events-never-emitted / tables-never-seeded Rule-H family but on the READ side.
+
 ## 2026-07-23 / FOLLOW-624
 
 **What I built:** Fixed a live data-loss path (ESC-039, P1, RETRO-205 §4a LG-1) shared by all three

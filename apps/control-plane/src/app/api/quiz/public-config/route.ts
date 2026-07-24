@@ -40,7 +40,16 @@
  *   - Unconfigured DB (dev/CI) → 200 with fallback defaults + `data_source: 'fallback'`.
  *   - Happy path → 200 with `data_source: 'db'` (provenance flag, Rule K.2 / FOLLOW-277).
  *
- * All four response fields are always present — no field is `null`.
+ * All four ADR-0011 core response fields are always present — no field is `null`.
+ *
+ * ADR-0019 (FOLLOW-623): the response is now the SUPERSET `PresentationConfigResponse`. It
+ * carries an OPTIONAL `brand` slice read from `tenants.brand_config` (`primary_color`,
+ * `logo_url`, `white_label`) — the same jsonb column written by `/api/config` PATCH
+ * (PR #616 / FOLLOW-627). The slice is OMITTED when the tenant configured no brand (the
+ * column defaults to `{}`), so an unconfigured tenant is byte-identical to pre-ADR-0019 and
+ * the SDK falls back to hardcoded widget defaults (ADR-0019 D4). `brand.logo_url` is
+ * `string | null` on the wire, never `undefined` (ADR-0019 D-nullability). The `brand` slice
+ * rides the same `data_source` provenance (Rule K.2): a `fallback` response carries no brand.
  *
  * @module apps/control-plane/src/app/api/quiz/public-config/route
  */
@@ -50,10 +59,15 @@ import { NextResponse } from 'next/server';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { createAdminClient, tenants } from '@estalara/db';
-import type { QuizPublicConfigResponse } from '@estalara/shared';
+import type {
+  BrandConfig,
+  PresentationConfigResponse,
+  QuizPublicConfigResponse,
+} from '@estalara/shared';
 import {
+  BrandConfigSchema,
+  PresentationConfigResponseSchema,
   QUIZ_DEFAULT_CONFIG,
-  QuizPublicConfigResponseSchema,
   parseStoredQuizConfig,
 } from '@estalara/shared';
 import { resolveApiKey } from '@/lib/api-key-auth';
@@ -79,6 +93,33 @@ const FALLBACK_CONFIG: QuizPublicConfigResponse = {
   language: QUIZ_DEFAULT_CONFIG.language,
   accent_color: QUIZ_DEFAULT_CONFIG.accent_color,
 };
+
+// ─── Brand slice (ADR-0019 / FOLLOW-623) ──────────────────────────────────────
+
+/**
+ * Parse the `tenants.brand_config` jsonb blob into the public wire `brand` slice.
+ *
+ * Returns `undefined` when the tenant has NOT configured a brand — the column defaults to
+ * `{}` (`packages/db/src/schema/tenants.ts`), so an object with no `primary_color` string
+ * means "unconfigured": we omit the slice and the SDK falls back to hardcoded widget defaults
+ * (ADR-0019 D4, byte-identical to pre-ADR-0019). `logo_url` is coerced to `string | null`,
+ * never `undefined` (ADR-0019 D-nullability), mirroring the `/api/config` write path's
+ * `parseStoredBrandConfig`. A blob that fails `BrandConfigSchema` (e.g. a malformed stored
+ * color) is dropped rather than allowed to break the whole quiz-config response.
+ */
+function parsePublicBrandConfig(raw: unknown): BrandConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  // Unconfigured tenant (empty `{}` default) → omit the slice (D4 byte-identical).
+  if (typeof obj.primary_color !== 'string') return undefined;
+  const candidate = {
+    primary_color: obj.primary_color,
+    logo_url: typeof obj.logo_url === 'string' ? obj.logo_url : null,
+    white_label: typeof obj.white_label === 'boolean' ? obj.white_label : false,
+  };
+  const result = BrandConfigSchema.safeParse(candidate);
+  return result.success ? result.data : undefined;
+}
 
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
@@ -145,7 +186,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = createAdminClient();
     const rows = await db
-      .select({ quizConfig: tenants.quizConfig, quizEnabled: tenants.quizEnabled })
+      .select({
+        quizConfig: tenants.quizConfig,
+        quizEnabled: tenants.quizEnabled,
+        // ADR-0019 (FOLLOW-623): the brand slice rides this same tenant fetch.
+        brandConfig: tenants.brandConfig,
+      })
       .from(tenants)
       .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)))
       .limit(1);
@@ -163,17 +209,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const merged = { ...QUIZ_DEFAULT_CONFIG, ...stored };
     const quizEnabled: boolean = tenantRow.quizEnabled;
 
-    const payload: QuizPublicConfigResponse = {
+    // ADR-0019 (FOLLOW-623): optional brand slice from `tenants.brand_config`.
+    const brand = parsePublicBrandConfig(tenantRow.brandConfig);
+
+    const payload: PresentationConfigResponse = {
       quiz_enabled: quizEnabled,
       micro_polls_enabled: merged.micro_polls_enabled,
       language: merged.language,
       accent_color: merged.accent_color,
       // FOLLOW-277 (Rule K.2): provenance flag — live DB read.
       data_source: 'db',
+      // Conditional spread (exactOptionalPropertyTypes): omit the key when unconfigured
+      // rather than assign `undefined`, so an unbranded tenant is byte-identical (D4).
+      ...(brand ? { brand } : {}),
     };
 
-    // Validate outbound shape with the canonical schema (belt-and-suspenders).
-    const validated = QuizPublicConfigResponseSchema.parse(payload);
+    // Validate outbound shape with the canonical superset schema (belt-and-suspenders).
+    // MUST be the presentation schema, not the ADR-0011 subset — the subset would STRIP
+    // the `brand` slice on parse (Zod drops unknown keys).
+    const validated = PresentationConfigResponseSchema.parse(payload);
 
     return NextResponse.json(validated, {
       status: 200,

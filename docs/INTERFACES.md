@@ -78,13 +78,80 @@ Response (200):
 }
 ```
 
-All fields non-nullable. SDK timeout budget: 1000 ms. On error/timeout the SDK falls back to snippet
-dataset attributes (DEPRECATED_FALLBACK) then to hardcoded defaults. The canonical Zod schema must
-be added to `packages/shared/src/schemas/quiz-config.ts` as `QuizPublicConfigResponseSchema` with ≥5
-test cases as part of FOLLOW-275 implementation (ADR-0011 guardrail for accepted interfaces).
+All four ADR-0011 core fields are non-nullable. SDK timeout budget: 1000 ms. On error/timeout the
+SDK falls back to snippet dataset attributes (DEPRECATED_FALLBACK) then to hardcoded defaults. The
+canonical Zod schema is `QuizPublicConfigResponseSchema` in
+`packages/shared/src/schemas/quiz-config.ts` (≥5 test cases, FOLLOW-275).
 
 Status: ACCEPTED (ADR-0011 at `docs/adr/ADR-0011-quiz-config-transport.md`, PR #269 merged
 2026-06-11).
+
+### Superset — `PresentationConfigResponse` (ACCEPTED — ADR-0019)
+
+ADR-0019 (`docs/adr/ADR-0019-per-tenant-presentation-config.md`, ACCEPTED 2026-07-24) makes this
+same response the unified per-tenant presentation contract. The route path and auth/CORS/cache are
+UNCHANGED (extending, not renaming — Alternatives A); the response gains OPTIONAL top-level slices,
+each shipped together with its real SDK consumer (Rule L). The canonical superset Zod schema is
+`PresentationConfigResponseSchema` in `packages/shared/src/schemas/presentation-config.ts` (extends
+`QuizPublicConfigResponseSchema`; ≥5 test cases). Wire examples:
+`packages/shared/src/examples/presentation-config.ts`.
+
+Slices (by ticket): `brand` (FOLLOW-623 — SHIPPED), `quiz_placement` (FOLLOW-640), `opt_out_widget`
+(FOLLOW-641), `quiz_definition` (FOLLOW-639). A shipped slice's absence means the SDK uses its
+built-in default (ADR-0019 D4) — an unconfigured tenant is byte-identical to pre-ADR-0019.
+
+**`brand` slice (FOLLOW-623):** read from `tenants.brand_config` (the same jsonb column written by
+`/api/config` PATCH, PR #616). `logo_url` is `string | null` end-to-end, NEVER `undefined`
+(D-nullability). Omitted when the tenant configured no brand (column default `{}`). Consumed per the
+D4 color precedence (`quiz_config.accent_color` > `brand.primary_color` > SDK default): the sticky
+quiz-trigger background uses `brand.primary_color` (else the hardcoded `#ef4444`); the quiz card
+shows `brand.logo_url` atop it (none when null). `white_label` is parsed/exposed but not yet
+consumed by FOLLOW-623 (colors/logo only).
+
+Example 1 — fully-populated branded tenant (200):
+
+```json
+{
+  "quiz_enabled": true,
+  "micro_polls_enabled": true,
+  "language": "pl",
+  "accent_color": "#2563EB",
+  "data_source": "db",
+  "brand": {
+    "primary_color": "#1a73e8",
+    "logo_url": "https://cdn.example.com/brands/acme/logo.svg",
+    "white_label": true
+  }
+}
+```
+
+Example 2 — unconfigured tenant (200); brand slice absent, `logo_url` shape shown via a
+brand-without-logo variant:
+
+```json
+{
+  "quiz_enabled": true,
+  "micro_polls_enabled": false,
+  "language": "en",
+  "accent_color": "#2563EB",
+  "data_source": "db"
+}
+```
+
+```json
+{
+  "quiz_enabled": true,
+  "micro_polls_enabled": false,
+  "language": "es",
+  "accent_color": "#2563EB",
+  "data_source": "db",
+  "brand": { "primary_color": "#c026d3", "logo_url": null, "white_label": false }
+}
+```
+
+Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
+`packages/sdk/src/core/quiz-config.ts` (`fetchQuizConfig`) → `packages/sdk/src/index.ts`
+(`mergeQuizConfig`) → `packages/sdk/src/ui/quiz-trigger.ts` + `quiz-widget.ts`.
 
 ## Auto-Detect Companion Bundle — `window.__EStalaraDetect` (FOLLOW-325)
 

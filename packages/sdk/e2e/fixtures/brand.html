@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Estalara SDK — Brand Config (FOLLOW-623) Test Page</title>
+    <!--
+      Drives the REAL init path for the ADR-0019 brand slice (FOLLOW-623):
+        GET /mock-decision/api/quiz/public-config  (serve.js returns a `brand` slice)
+          → fetchQuizConfig() parses PresentationConfigResponse
+            → mergeQuizConfig() → SdkConfig.brand
+              → renderQuizTrigger (brand primary_color background)
+              → renderQuizWidget  (brand logo atop the card)
+      Tenant identity is the api-key (DOMAIN-INDEPENDENT) — the fixture host is irrelevant.
+    -->
+    <script
+      src="/dist/estalara-sdk.iife.js"
+      data-api-key="EXAMPLE_test_key_brand"
+      data-tenant-id="550e8400-e29b-41d4-a716-446655440002"
+      data-tier="observer"
+      data-debug="true"
+      data-ingest-url="http://localhost:4444/mock-ingest"
+      data-decision-url="http://localhost:4444/mock-decision/api"
+    ></script>
+  </head>
+  <body>
+    <h1>Brand Config Test Page</h1>
+    <p>The SDK renders its quiz trigger/widget with this tenant's brand color + logo.</p>
+  </body>
+</html>

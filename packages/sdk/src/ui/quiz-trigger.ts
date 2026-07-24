@@ -18,6 +18,15 @@ export interface QuizTriggerConfig {
   accentColor: string;
   icon: string;
   language: QuizLanguage;
+  /**
+   * Background color for the sticky trigger button (FOLLOW-623 / ADR-0019).
+   *
+   * The trigger has no per-widget color of its own, so per the ADR-0019 D4 precedence the
+   * tenant's `brand.primary_color` becomes its color. Omit to keep the hardcoded `#ef4444`
+   * default (byte-identical to pre-ADR-0019). This is distinct from `accentColor`, which
+   * styles the quiz card, not the trigger.
+   */
+  backgroundColor?: string;
 }
 
 export const QUIZ_LABELS: Record<QuizLanguage, { trigger: string; dismiss: string }> = {
@@ -136,6 +145,10 @@ export function renderQuizTrigger(
   try {
     const labels = QUIZ_LABELS[config.language];
 
+    // FOLLOW-623 / ADR-0019 D4: use the tenant brand color when provided, else the
+    // hardcoded #ef4444 default (byte-identical to pre-ADR-0019).
+    const triggerBg = config.backgroundColor ?? TRIGGER_BG;
+
     const style = document.createElement('style');
     style.textContent = `
       .estalara-trigger {
@@ -146,7 +159,7 @@ export function renderQuizTrigger(
         align-items: center;
         gap: 12px;
         padding: 24px 36px;
-        background: ${TRIGGER_BG};
+        background: ${triggerBg};
         color: #fff;
         border: none;
         border-radius: 9999px;

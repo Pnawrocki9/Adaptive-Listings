@@ -31,6 +31,15 @@ export type QuizResolvedArchetype = Archetype;
 export interface QuizWidgetConfig {
   accentColor: string;
   language: QuizLanguage;
+  /**
+   * Tenant brand logo URL shown atop the quiz card (FOLLOW-623 / ADR-0019).
+   *
+   * `string | null`, never `undefined` (ADR-0019 D-nullability). `null` (or omitted)
+   * renders no logo — byte-identical to pre-ADR-0019. The card accent color stays
+   * `accentColor` (`quiz_config.accent_color` wins per the D4 precedence); the brand color
+   * drives the sticky trigger, not the card.
+   */
+  logoUrl?: string | null;
 }
 
 // ─── I18n content ─────────────────────────────────────────────────────────────
@@ -366,6 +375,13 @@ export function renderQuizWidget(
         color: #6b7280;
         line-height: 1;
       }
+      .estalara-quiz-logo {
+        display: block;
+        max-height: 32px;
+        max-width: 160px;
+        margin: 0 auto 16px;
+        object-fit: contain;
+      }
       .estalara-quiz-question {
         font-size: 16px;
         font-weight: 600;
@@ -482,6 +498,17 @@ export function renderQuizWidget(
     function buildStep(): void {
       card.innerHTML = '';
       card.appendChild(closeBtn);
+
+      // FOLLOW-623 / ADR-0019: brand logo atop the card when configured. Re-appended each
+      // step because buildStep() clears the card. Absent/null → no logo (byte-identical).
+      if (config.logoUrl) {
+        const logo = document.createElement('img');
+        logo.className = 'estalara-quiz-logo';
+        logo.src = config.logoUrl;
+        logo.alt = '';
+        logo.setAttribute('aria-hidden', 'true');
+        card.appendChild(logo);
+      }
 
       // Progress indicator: step X / totalSteps
       // On Q1 we show "1 / 2" tentatively; it updates after branch is known.

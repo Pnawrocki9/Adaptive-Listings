@@ -104,6 +104,32 @@ export interface SdkConfig {
    * override with the server-fetched value once the fetch resolves.
    */
   microPollsEnabled?: boolean;
+
+  /**
+   * Per-tenant brand configuration (FOLLOW-623 / ADR-0019).
+   *
+   * Resolved at runtime from the `brand` slice of the `GET /api/quiz/public-config`
+   * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
+   * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet
+   * attribute or `readConfig()`.
+   *
+   * ABSENT when the tenant configured no `brand_config` — the SDK then uses hardcoded
+   * widget colors/logo (byte-identical to pre-ADR-0019, ADR-0019 D4). `logoUrl` is
+   * `string | null`, NEVER `undefined` (ADR-0019 D-nullability).
+   *
+   * Consumed by the widget renderers per the ADR-0019 D4 precedence
+   * (`quiz_config.accent_color` > `brand.primary_color` > SDK default):
+   *   - `primaryColor` → the quiz sticky-trigger background (a widget with no per-widget
+   *     color; falls back to the hardcoded `#ef4444` when absent).
+   *   - `logoUrl`      → the brand logo shown atop the quiz card (none when absent).
+   *   - `whiteLabel`   → parsed and exposed but NOT consumed by this ticket (colors/logo
+   *     only); its consumer is unspecified by ADR-0019 D4 (PR-noted deviation).
+   */
+  brand?: {
+    primaryColor: string;
+    logoUrl: string | null;
+    whiteLabel: boolean;
+  };
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {

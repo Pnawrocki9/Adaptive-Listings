@@ -6,6 +6,12 @@
  * the retired `data-quiz-enabled` / `data-micro-polls-enabled` snippet attributes
  * as the transport for post-activation-mutable quiz config fields.
  *
+ * ADR-0019 (FOLLOW-623): the response is now the SUPERSET `PresentationConfigResponse`.
+ * It is parsed with `PresentationConfigResponseSchema` so the optional `brand` slice
+ * survives (the ADR-0011 subset schema would STRIP it). `mergeQuizConfig()` in `index.ts`
+ * applies the brand slice to the widget/Shadow-DOM styling. An absent slice → hardcoded
+ * widget defaults (byte-identical to pre-ADR-0019).
+ *
  * URL convention (FOLLOW-305 fix):
  *   `decisionApiUrl` = `https://admin.estalara.com/api` (host + `/api`),
  *   as emitted by `buildSnippet()` in DetectionPreview.tsx:153.
@@ -32,8 +38,8 @@
  * @module @estalara/sdk/core/quiz-config
  */
 
-import type { QuizPublicConfigResponse } from '@estalara/shared';
-import { QuizPublicConfigResponseSchema } from '@estalara/shared';
+import type { PresentationConfigResponse } from '@estalara/shared';
+import { PresentationConfigResponseSchema } from '@estalara/shared';
 import { buildEndpoint } from './endpoint.js';
 
 /**
@@ -60,12 +66,12 @@ export const QUIZ_CONFIG_CACHE_KEY = 'estalara_quiz_config_cache';
  *
  * @internal
  */
-function readCachedQuizConfig(): QuizPublicConfigResponse | null {
+function readCachedQuizConfig(): PresentationConfigResponse | null {
   try {
     const raw = sessionStorage.getItem(QUIZ_CONFIG_CACHE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    const result = QuizPublicConfigResponseSchema.safeParse(parsed);
+    const result = PresentationConfigResponseSchema.safeParse(parsed);
     return result.success ? result.data : null;
   } catch {
     return null;
@@ -78,7 +84,7 @@ function readCachedQuizConfig(): QuizPublicConfigResponse | null {
  *
  * @internal
  */
-function writeCachedQuizConfig(config: QuizPublicConfigResponse): void {
+function writeCachedQuizConfig(config: PresentationConfigResponse): void {
   try {
     sessionStorage.setItem(QUIZ_CONFIG_CACHE_KEY, JSON.stringify(config));
   } catch {
@@ -129,7 +135,7 @@ export async function fetchQuizConfig(
   intentStateRehydrated: boolean,
   timeoutMs = 1_000,
   debug = false,
-): Promise<QuizPublicConfigResponse | null> {
+): Promise<PresentationConfigResponse | null> {
   // Rule R gate — rehydrate path reuses the cached config instead of re-fetching.
   if (intentStateRehydrated) {
     const cached = readCachedQuizConfig();
@@ -175,7 +181,7 @@ export async function fetchQuizConfig(
       return null;
     }
 
-    const result = QuizPublicConfigResponseSchema.safeParse(body);
+    const result = PresentationConfigResponseSchema.safeParse(body);
     if (!result.success) {
       // Schema validation failure — return null; caller falls back to defaults.
       return null;

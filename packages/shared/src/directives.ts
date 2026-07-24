@@ -160,17 +160,23 @@ export interface AdaptationDirectives {
   /**
    * Flattened chat-intent dimension map from the Modal NLP pipeline (FOLLOW-101).
    *
-   * Populated by the `/api/adapt` control-plane route when a shadow chat-intent
-   * entry exists in Redis for this `(tenant_id, session_id)` pair. The SDK
-   * (`adapt.ts`) calls `applyChatIntentPrior(currentIntentState, chat_intent_dimensions)`
-   * to update the local IntentState for disagreement-rate analysis.
+   * Populated unconditionally by the `/api/adapt` control-plane route when a
+   * shadow chat-intent entry exists in Redis for this `(tenant_id, session_id)`
+   * pair. The SDK (`adapt.ts`) calls
+   * `applyChatIntentPrior(currentIntentState, chat_intent_dimensions)` to update
+   * the local IntentState, which also feeds `quiz.mismatch` detection and intent
+   * analytics.
    *
-   * Shadow-only constraint (Sprint 13): this value is NOT used to serve different
-   * directives — adaptation output remains purely behavioural. The update is for
-   * `quiz.mismatch` detection and intent analytics only.
+   * FOLLOW-635 (CEO ruling, option A, 2026-07-24): this value IS live-influencing
+   * across calls, not shadow-only — `applyChatIntentPrior` updates
+   * `intentState.archetype`, which is sent back as `archetype_hint` on the next
+   * adapt call and drives the directives served then. There is no
+   * `CHAT_NLP_LIVE`-style gate. It only has real content once
+   * `apps/intent-engine`'s write path is deployed (ESC-042); until then this
+   * field is simply absent.
    *
    * Absent when no shadow data exists for the session (first adapt call before any
-   * chat messages, or Redis unavailable).
+   * chat messages, intent-engine not yet deployed, or Redis unavailable).
    */
   chat_intent_dimensions?: Record<string, string> | null;
   /**

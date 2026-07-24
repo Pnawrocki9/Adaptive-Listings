@@ -265,3 +265,26 @@
   (incl. any client-side feedback loop) — a flag that only changes a log line while the signal
   reaches the decision by another route is a false safety control, exactly the RETRO-003/005 class
   of "name implies a computation it doesn't perform."
+
+- **2026-07-24 / FOLLOW-635 (PR #613, option-A cleanup)** · Executed the CEO's option-A ruling from
+  the same-day scoping entry above: deleted `CHAT_NLP_LIVE` (`adapt/route.ts`) after grepping to
+  confirm it gated nothing but a `console.info`; corrected the false "shadow-only / zero UX effect"
+  docstrings in `route.ts`, `intent-engine/src/{main,redis_writer}.py`, `sdk/src/core/adapt.ts`;
+  also found (via the same grep sweep, not in the original file list) the identical false claim in
+  `packages/shared/src/directives.ts`'s `chat_intent_dimensions` JSDoc and fixed it for consistency
+  — it's the canonical type both control-plane and SDK import, so leaving it stale would have
+  reintroduced the exact misleading-name problem one file over. Also removed the now-dead
+  `CHAT_NLP_LIVE=false` entry from `.env.example`. Rewrote the FOLLOW-346 test file's describe/AC-1
+  to assert the real contract (unconditional attach, no flag) instead of a flag-gate that no longer
+  exists — left AC-2/3/4 (absent-key, no-raw-text, fail-open) as-is since they already asserted real
+  behavior. Did NOT touch `modal-deploy.yml` (that's ESC-042, Piotr-side) and did NOT touch any §H.9
+  opt-out logic (`redis_writer.py`'s `profiling_opt_out` early-return, `route.ts`'s
+  `profiling_opt_out=1` gates) — verified via the existing Python/TS test suites that opt-out and
+  fail-open behavior are unchanged (all green: 26 pytest, 335 control-plane adapt tests, 1534 SDK
+  tests). · **Where real vs placeholder logic was a judgment call:** none in this PR — this was
+  comment/test-contract-only, no behavior change; the "real vs placeholder" judgment call already
+  happened in the prior scoping session (chat IS live-influencing, not a stub). · **A guardrail I'd
+  add:** a CI grep that fires whenever a PR deletes a `process.env.<FLAG>` read but leaves any other
+  file in the repo still referencing that flag name in a docstring/comment without the flag also
+  being removed there — would have caught `directives.ts` automatically instead of relying on a
+  manual repo-wide grep sweep.

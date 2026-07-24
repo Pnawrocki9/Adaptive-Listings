@@ -856,10 +856,15 @@ export async function fetchDirectives(
     //      in-memory fast-path for cross-listing navigation within the same tab
     //      lifecycle (no reload). Redundant but cheap; kept for defence-in-depth.
     //
-    // Shadow-only constraint (Sprint 13): this update does NOT change which
-    // directives are served — adaptation output remains purely behavioural. The
-    // IntentState update is for disagreement-rate analysis and quiz.mismatch
-    // detection only.
+    // FOLLOW-635 (CEO ruling, option A, 2026-07-24): this update DOES change
+    // which directives are served, just not on this call. `applyChatIntentPrior`
+    // updates `intentState.archetype`, which is persisted and sent as
+    // `body.archetype_hint` on the NEXT adapt() call (see `archetype_hint`
+    // usage below) — the control-plane uses that hint to pick `archetypeId`,
+    // which drives the decision tree and reorder directive. So chat intent is
+    // live-influencing across calls via this client loop, not "purely
+    // behavioural." The IntentState update also still feeds disagreement-rate
+    // analysis and quiz.mismatch detection (unchanged).
     const dims = response.chat_intent_dimensions;
     if (
       dims !== null &&

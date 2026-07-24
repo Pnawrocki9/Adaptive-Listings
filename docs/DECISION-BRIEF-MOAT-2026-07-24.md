@@ -111,3 +111,27 @@ Concretely:
   (embedding seed).
 - `FOLLOW-634` — fix the stale `data-engineer` charter that claims `apps/archetype-pipeline` exists
   (it doesn't); filed this session.
+
+## 7. CEO rulings (2026-07-24)
+
+Piotr answered the §5 questions:
+
+1. **Chat (A.4): UN-SHADOW for the pilot.** Chat signal moves from shadow-only to live-feeding the
+   profile. Actionable as a build (deploy `stream-consumer` + flip the shadow namespace to live);
+   needs its own ticket — NOT yet dispatched. Supersedes the earlier CEO Q2 "shadow-only" ruling for
+   the pilot.
+2. **MOAT epic timing (Decision B): DEFER.** PM recommendation accepted — do NOT build
+   `apps/archetype-pipeline` + DP now. Rationale reinforced by the tenancy model below: cross-tenant
+   aggregation needs ≥3 tenants; with one tenant it is unbuildable and premature.
+3. **DPIA / DP compliance review: NO — not now.** Do nothing further in this area at present.
+
+**Decisive context (CEO):** there is currently **ONE tenant — Estalara itself (first-party)** — and
+it stays that way for now. Future clients will run **Estalara under private label**, all built on
+**`app.estalara.com` merely re-branded** (not separate stacks). Implication: profiling data is
+effectively a **single first-party pool**, so the DPIA/cross-tenant-DP concerns are moot for now,
+and the "MOAT" is better framed as the **depth of Estalara's own behavioral corpus** than as
+cross-tenant aggregation. Revisit the MOAT definition (and Decision B) only when genuinely separate
+tenants with volume exist. See memory `project_single_tenant_rebrand_model`.
+
+**Net next step:** Decision A (Wave 0 operator flips) — approved in spirit as the only sensible move
+at one tenant; A.4 (chat) now explicitly greenlit. Decision B — parked.

@@ -17808,8 +17808,15 @@ but are inert:
   widget. The only real cut-off is out-of-band API-key revocation (`api_keys.revoked_at`) or the
   per-end-user DOM opt-out (§H.9).
 
-**Decision embedded — pick ONE in the PR and state why (this is partly a product/billing call, flag
-to CEO if ambiguous):**
+**RESOLVED DIRECTION (PM, per CEO 2026-07-24 "zbuduj FOLLOW-633 — realny on/off AL"):** do BOTH
+(a) + (b) — a dedicated `tenants.al_enabled` boolean (default **true**, so the one live tenant stays
+ON through the additive migration) written by an audited staff/superadmin admin toggle, AND runtime
+enforcement at a single shared point in the adapt path that treats `al_enabled=false` OR
+`status IN ('suspended','canceled')` as OFF. OFF must serve a valid neutral / pass-through response
+(page still works, no adaptation) — never an error that breaks the tenant's site. The AC options
+below are kept for context.
+
+**Decision embedded — (superseded by the RESOLVED DIRECTION above):**
 
 - [ ] **(a) ENFORCE `status`** — the adapt path (and/or ingest ACK, and/or `/api/config`) reads the
       tenant `status` and refuses to adapt (serve neutral / 402 / 403) when `suspended`/`canceled`,

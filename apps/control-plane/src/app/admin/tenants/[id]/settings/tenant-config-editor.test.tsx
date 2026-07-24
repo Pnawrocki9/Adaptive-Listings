@@ -114,4 +114,109 @@ describe('StaffTenantConfigEditor', () => {
     expect(sentBody.brand.white_label).toBe(true);
     expect(sentBody.sdk.allowed_origins).toEqual(['https://listings.example.com']);
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FOLLOW-624 (ESC-039, RETRO-205 §4a LG-1): a failed GET must NOT be
+  // swallowed into DEFAULTS-as-if-real, and must NOT allow a Save that would
+  // clobber the tenant's real stored config.
+  // ═══════════════════════════════════════════════════════════════════════
+  it('shows an error alert and disables Save when the initial GET fails, and issues no PATCH', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: { code: 'internal_error', message: 'boom' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+    const saveButton = screen.getByRole('button', { name: /save settings/i });
+    expect(saveButton).toHaveProperty('disabled', true);
+
+    // Attempting to submit the form must not reach the network with a PATCH.
+    fireEvent.click(saveButton);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+  });
+
+  it('retries the GET when the Retry affordance is used after a failed load', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ error: { code: 'internal_error', message: 'boom' } }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE_CONFIG) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('observer')).toBeDefined();
+    });
+    expect(screen.getByRole('button', { name: /save settings/i })).toHaveProperty(
+      'disabled',
+      false,
+    );
+  });
+
+  it('surfaces route validation `details` in the save error banner', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE_CONFIG) })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: 'validation_failed',
+              message: 'Invalid request body',
+              details: {
+                formErrors: [],
+                fieldErrors: { brand: ['logo_url must be a valid URL'] },
+              },
+            },
+          }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByText('observer')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/logo_url must be a valid URL/);
+    });
+  });
+
+  it('behaves unchanged when the GET succeeds (Save enabled, no error alert)', async () => {
+    mockFetchOnce(SAMPLE_CONFIG);
+    render(<StaffTenantConfigEditor tenantId={TENANT_ID} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('observer')).toBeDefined();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: /save settings/i })).toHaveProperty(
+      'disabled',
+      false,
+    );
+  });
 });

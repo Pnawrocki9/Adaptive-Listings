@@ -46,16 +46,43 @@ function parseOriginsInput(raw: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+/**
+ * Formats a zod `.flatten()` validation-error payload into a readable string
+ * (FOLLOW-624 AC4). Returns `null` when there's nothing to show.
+ */
+function formatValidationDetails(details: unknown): string | null {
+  if (!details || typeof details !== 'object') return null;
+  const d = details as {
+    formErrors?: string[];
+    fieldErrors?: Record<string, string[] | undefined>;
+  };
+  const parts: string[] = [...(d.formErrors ?? [])];
+  for (const [field, msgs] of Object.entries(d.fieldErrors ?? {})) {
+    if (msgs && msgs.length > 0) {
+      parts.push(`${field}: ${msgs.join(', ')}`);
+    }
+  }
+  return parts.length > 0 ? parts.join('; ') : null;
+}
+
 export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): React.JSX.Element {
   const [config, setConfig] = useState<StaffTenantConfig>(DEFAULTS);
   const [originsInput, setOriginsInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // FOLLOW-624 (ESC-039): tracked SEPARATELY from `status` (which is save-only).
+  // A failed GET must render its own visible error and disable Save — it must
+  // never be silently absorbed into DEFAULTS looking like real stored config.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Every call is fenced to this tenant via ?tenant_id — the staff-override API path.
   const url = `/api/config?tenant_id=${encodeURIComponent(tenantId)}`;
 
   useEffect(() => {
+    setLoadStatus('loading');
+    setLoadErrorMsg('');
     void fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
@@ -72,14 +99,22 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
           setConfig(merged);
           setOriginsInput(merged.sdk.allowed_origins.join('\n'));
         }
+        setLoadStatus('loaded');
       })
-      .catch(() => {
-        // Load silently — defaults already set; a save still fails loud below.
+      .catch((err: unknown) => {
+        // Rule K.2 consumer-side clause (FOLLOW-624): do NOT silently keep
+        // DEFAULTS looking like real stored config — a Save from this state
+        // would clobber the tenant's real brand config + origin allow-list.
+        setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
+        setLoadStatus('error');
       });
-  }, [url]);
+  }, [url, retryNonce]);
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    // Defense in depth: even if the disabled Save button is bypassed (e.g.
+    // an implicit form submit), never PATCH from un-loaded state.
+    if (loadStatus !== 'loaded') return;
     setStatus('loading');
     setErrorMsg('');
     try {
@@ -93,10 +128,14 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
       });
       if (!res.ok) {
         const bodyUnknown: unknown = await res.json().catch(() => ({}));
-        const body = bodyUnknown as { error?: string | { message?: string } };
-        const msg =
+        const body = bodyUnknown as {
+          error?: string | { message?: string; details?: unknown };
+        };
+        const baseMsg =
           typeof body.error === 'string' ? body.error : (body.error?.message ?? 'Failed to save.');
-        setErrorMsg(msg);
+        const details =
+          typeof body.error === 'object' ? formatValidationDetails(body.error.details) : null;
+        setErrorMsg(details ? `${baseMsg}: ${details}` : baseMsg);
         setStatus('error');
         return;
       }
@@ -115,6 +154,24 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
 
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+      {loadStatus === 'error' && (
+        <div role="alert" className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>Failed to load tenant settings: {loadErrorMsg}</p>
+          <p className="mt-1 text-xs">
+            Saving is disabled until settings load successfully — this prevents overwriting the
+            tenant&apos;s real config with blank defaults.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setRetryNonce((n) => n + 1);
+            }}
+            className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
         {/* Plan — display only; billing concern, not editable here */}
         <div>
@@ -215,7 +272,7 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
         <div className="flex items-center gap-4">
           <button
             type="submit"
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || loadStatus !== 'loaded'}
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             {status === 'loading' ? 'Saving…' : 'Save Settings'}

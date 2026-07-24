@@ -17551,8 +17551,8 @@ ESC-015]
 
 ## FOLLOW-627 — `/api/config` missing-row semantics: replace the tested-in fabricated defaults with a real 404/provenance signal, and detect the 0-row PATCH
 
-**STATUS 2026-07-24: 🔵 PR #616 OPEN** — `data_source: stored|default` on GET + 404 `unknown_tenant`
-on 0-row PATCH; 35/35 tests green locally, CI running.
+**STATUS 2026-07-24: ✅ DONE — PR #616 MERGED (`ed1797e`)** — `data_source: stored|default` on GET +
+404 `unknown_tenant` on 0-row PATCH; 35/35 tests green locally, CI running.
 
 source_retro: RETRO-205 (§4a LG-2, §4c TG-3) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
 recommended_sprint: opportunistic recommended_agent: backend-engineer priority: P3 estimated_hours:
@@ -17966,8 +17966,8 @@ sibling resolve-then-enforce pattern), CONVENTIONS_PATCH Rule K.2 (producer-with
 
 ## FOLLOW-637 — A/B bandit analytics presents real-but-INERT data as live: `ab_bandit_weights.estimated_rate` is frozen at 0.5 (feedback 503-gated) and the analytics dashboard shows it with no "not-learning" indicator
 
-**STATUS 2026-07-24: 🔵 PR #615 OPEN** — `learning_state` on `/api/ab/weights` + "Learning Paused"
-badge; 34/34 tests green locally, CI running.
+**STATUS 2026-07-24: ✅ DONE — PR #615 MERGED (`b978006`)** — `learning_state` on
+`/api/ab/weights` + "Learning Paused" badge; 34/34 tests green locally, CI running.
 
 source_retro: session-57 admin-surface audit (full 4-probe sweep, 2026-07-24) source_ticket: (admin
 audit — intent/tracer/weights cluster) recommended_sprint: opportunistic recommended_agent:

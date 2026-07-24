@@ -2346,8 +2346,13 @@ FOLLOW-624 fix was scoped to `/admin` only and missed three byte-identical twins
 identical guard to all three and proved a repo-wide (not `/admin`-narrowed) grep clean. ESC-039 is
 now RESOLVED on BOTH the admin and tenant-facing axes.
 
-**Still OPEN: FOLLOW-625** (mechanise the Rule K.2 swallow check in CI, scope widened by RETRO-206
-to cover `src/components/**`) so the pattern cannot be copy-forwarded a fifth time.
+**Enforcement leg closed 2026-07-24 by FOLLOW-625 (PR #610, `f936089`):** an AST-based CI hard-gate
+(`Rule K.2 consumer-side swallow guard`) now FAILS the build on a config-load swallow in any client
+component under `src/app/**` OR `src/components/**`, with a fixture suite proving both directions
+and a load-bearing allow-list. The pattern can no longer be copy-forwarded silently.
+
+**ESC-039 FULLY CLOSED** — all three legs done: fix (FOLLOW-624), twins (FOLLOW-630), mechanised
+enforcement (FOLLOW-625). Nothing outstanding.
 
 **[original escalation below]**
 

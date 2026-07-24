@@ -17453,6 +17453,17 @@ mechanical guard), CONVENTIONS_PATCH Rule K.2]
 
 ## FOLLOW-625 — Mechanise Rule K.2's consumer-side swallow check in CI so the next copy-forward fails the build instead of shipping
 
+**✅ DONE 2026-07-24 — PR #610 squash-merged to `main` `f936089`.** AST-based guard
+(`scripts/check-k2-consumer-swallow.cjs` + `.sh` entrypoint, mirrors `check-staff-write-atomicity`,
+no new dep) + CI hard-gate job `Rule K.2 consumer-side swallow guard (FOLLOW-625)` in `ci.yml`.
+Scope covers BOTH `src/app/**` AND `src/components/**` (RETRO-206 amendment). Fixture suite proves
+both directions (fixed editors pass / every covered swallow shape fails, incl. a `src/components/`
+negative control); allow-list is load-bearing (`K2_GUARD_NO_ALLOWLIST=1` makes it flag the 4
+read-only analytics swallows → green ≠ blind). Covered vs residual shapes enumerated in the script
+header (Rule AE). PM independently re-verified: guard job green on both CI runs (32s/33s), fixture
+proof passes locally, guard exits 0 on real repo. Closes the enforcement leg of ESC-039 — the K.2
+swallow can no longer be copy-forwarded silently.
+
 source_retro: RETRO-205 (§4a LG-1, §6 P-2) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
 depends_on: [FOLLOW-624] promoted_to_queue: false

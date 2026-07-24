@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + FOLLOW-630 DONE + MERGED; ESC-039 fully RESOLVED both axes; ▶️ NEXT: FOLLOW-625 CI guard, then RETRO-205 dispatch)
+## ▶️ START HERE — resume 2026-07-24 (session 57 — FOLLOW-624 + 630 + 625 ALL DONE + MERGED; ESC-039 FULLY CLOSED all 3 legs; ▶️ NEXT: RETRO-205 dispatch, then next-ticket selection)
 
 **Session 57 = ESC-039 close-out chain (K.2 swallow-then-clobber data-loss).**
 
@@ -19,15 +19,23 @@
   d89757f — not a regression). Backlog: ESC-039 → RESOLVED (both axes), FOLLOW-624 + FOLLOW-630 →
   DONE.
 
+- **FOLLOW-625 DONE + MERGED (PR #610, `f936089`).** AST-based CI hard-gate
+  `Rule K.2 consumer-side swallow guard` (`scripts/check-k2-consumer-swallow.cjs` + `.sh`), scope
+  covers `src/app/**` AND `src/components/**` (RETRO-206). Fixture suite proves both directions;
+  load-bearing allow-list. Guard job green on both CI runs; PM re-verified locally. This is the
+  enforcement leg — the swallow can no longer be copy-forwarded silently. **ESC-039 FULLY CLOSED**
+  (all 3 legs: fix 624 / twins 630 / enforcement 625).
+
 **▶️ NEXT (open):**
 
-1. **FOLLOW-625** — mechanise the Rule K.2 swallow check as a CI guard (scope MUST cover
-   `src/components/**`, not just `src/app/**`, per RETRO-206). This is the enforcement that stops
-   the pattern recurring; the two fixes above are the fixtures it proves against. recommended_agent
-   per stub is devops-engineer.
-2. **RETRO-205 dispatch** — still pending from session 56.
-3. Retrospective-analyst for FOLLOW-630 — not yet run (PM's independent repo-wide grep already did
-   the highest-value completeness check; retro can be run opportunistically).
+1. **RETRO-205 dispatch** — still pending from session 56 (post-merge retro for FOLLOW-600 / PR
+   #606). Note RETRO-206 already ran (retro for #608/FOLLOW-624) and drove the 630/625 chain; 205
+   itself is the FOLLOW-600 retro still owed.
+2. Retrospective-analyst for FOLLOW-630 and FOLLOW-625 — not yet run (PM's independent repo-wide
+   grep + local guard proof already did the highest-value completeness checks; can be run
+   opportunistically).
+3. After retros: next-ticket selection from the FOLLOW_UPS backlog (FOLLOW-626 permanently-red
+   Release workflow, FOLLOW-627 `/api/config` missing-row semantics, etc.).
 
 ---
 

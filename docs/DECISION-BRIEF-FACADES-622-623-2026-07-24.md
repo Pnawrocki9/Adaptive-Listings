@@ -77,3 +77,35 @@ Option A.
 
 **Your call needed:** (1) 623 → enforce or defer? (2) 622 → enforce now (A) or de-scope-now (B)?
 Once you rule, I dispatch the workers (the non-gated fixes 636/637/627 are already in flight).
+
+---
+
+## DECISION (CEO, 2026-07-24)
+
+- **FOLLOW-623 `brand_config` → ENFORCE.** Wire SDK consumption of per-tenant branding.
+- **FOLLOW-622 `allowed_origins` → OPTION B (de-scope now)** + a tracked FOLLOW to re-enable
+  (per-tenant, data-driven) before the first external re-brand client onboards.
+
+### Governing constraint — DOMAIN-INDEPENDENCE (CEO ruling, applies to ALL AL runtime)
+
+`app.estalara.com` is **only** the white-label shell. The same app is re-deployed with each client's
+branding on **their own domain** (e.g. `listings.clientX.com`). Therefore **Adaptive Listings
+runtime must be independent of the domain it runs on**:
+
+- Tenant identity is resolved from **`api_key` / `tenant_id`, never from the host /
+  `window.location`.**
+- **623:** SDK resolves branding by tenant identity, applied regardless of serving host (same app,
+  different domains, different brands).
+- **622 re-enable:** origin validation must be **fully per-tenant / data-driven from tenant config**
+  — the current hardcoded env CORS list (`ingest/src/router.ts:69-73`) is the anti-pattern this
+  ruling forbids. Our app's own domain is irrelevant; each client's origins come from their own
+  config.
+- General: SDK API base-URL resolution, CORS, and cookie-domain must all be domain-agnostic and
+  tenant-keyed.
+
+### Dispatch sequencing (file-collision note)
+
+Both 622 (de-scope) and 623 (enforce) touch `apps/control-plane/src/app/api/config/route.ts` and
+`.../settings/tenant-config-editor.tsx` — the **same files as FOLLOW-627 (PR #616, still open)**. To
+avoid worktree collisions, dispatch 622/623 **after #616 merges**. FOLLOW-637 (PR #615) is
+independent (analytics files) and can merge in any order.

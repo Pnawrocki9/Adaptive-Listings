@@ -28,14 +28,20 @@
 
 **▶️ NEXT (open):**
 
-1. **RETRO-205 dispatch** — still pending from session 56 (post-merge retro for FOLLOW-600 / PR
-   #606). Note RETRO-206 already ran (retro for #608/FOLLOW-624) and drove the 630/625 chain; 205
-   itself is the FOLLOW-600 retro still owed.
-2. Retrospective-analyst for FOLLOW-630 and FOLLOW-625 — not yet run (PM's independent repo-wide
-   grep + local guard proof already did the highest-value completeness checks; can be run
-   opportunistically).
-3. After retros: next-ticket selection from the FOLLOW_UPS backlog (FOLLOW-626 permanently-red
-   Release workflow, FOLLOW-627 `/api/config` missing-row semantics, etc.).
+0. **CORRECTION (session 57):** the old "RETRO-205 dispatch still pending" note was STALE —
+   RETRO-205 is a COMPLETE entry in `RETROSPECTIVES.md` (line ~31249, written session 56, commit
+   `d89757f`); it is what filed ESC-039 + FOLLOW-622…629 and drove this whole session. Nothing to
+   dispatch for 205. RETRO-206 (retro for #608/FOLLOW-624) also already ran and drove the 630/625
+   chain.
+1. **Genuinely-owed per-ticket retros:** RETRO-207 for FOLLOW-630 (PR #609) and RETRO-208 for
+   FOLLOW-625 (PR #610) — not yet written. (PM already did the highest-value completeness checks by
+   hand: repo-wide grep for 630, local fixture/guard proof for 625; the formal retro entries are
+   still owed by the loop.)
+2. **RETRO-205's still-open follow-ups (not yet promoted to QUEUE):** FOLLOW-622 + FOLLOW-623 (P1 —
+   `allowed_origins`/`brand_config` are producer-only facades; `allowed_origins` is advertised as an
+   SDK-origin security control that ingest CORS does NOT enforce — likely needs escalation/design,
+   not a quick fix), FOLLOW-626 (permanently-red `Release` workflow), FOLLOW-627 (`/api/config`
+   missing-row semantics), FOLLOW-628, FOLLOW-629.
 
 ---
 

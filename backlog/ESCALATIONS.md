@@ -2456,3 +2456,73 @@ session) and FOLLOW-629 (CI↔prod ClickHouse version-skew detection, so the FOL
 expiry fires loudly).
 
 **Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-042: un-shadowing chat NLP for the pilot (FOLLOW-635) is a DEPLOY-only enablement, not an ML-code change — plus one design ruling on the vestigial `CHAT_NLP_LIVE` gate [FOLLOW-635]
+
+**Filed by:** ml-engineer (FOLLOW-635) **Date:** 2026-07-24T00:00:00Z **Affects:** FOLLOW-635, chat
+NLP intent path (`apps/intent-engine`, `apps/ingest/src/handlers/chat-nlp-dispatch.ts`,
+`apps/control-plane/src/app/api/adapt/route.ts`, `packages/sdk/src/core/{adapt,intent}.ts`), Modal
+Phase B (ESC-036 residual / FOLLOW-458) **Type:** priority (deploy/enablement) + architectural (one
+design ruling)
+
+**Description (Phase-1 scope, with file:line evidence):**
+
+The read path is already fully wired AND the chat signal already reaches the adaptation DECISION —
+via the SDK client prior loop, not a server-side fusion:
+
+1. `apps/control-plane/src/app/api/adapt/route.ts:1508-1535` reads the shadow key and `:1563`
+   attaches `chat_intent_dimensions` to the response UNCONDITIONALLY (no `CHAT_NLP_LIVE` gate on
+   emission).
+2. `packages/sdk/src/core/adapt.ts:863-888` calls `applyChatIntentPrior(intentState, dims)` on
+   receipt; `packages/sdk/src/core/intent.ts:1353-1403` performs a REAL multiplicative Bayesian
+   update that changes `intentState.archetype`/`probabilities` (§D.7: chat weight == quiz weight),
+   and persists it to sessionStorage.
+3. `packages/sdk/src/core/adapt.ts:761` then sends `body.archetype_hint = intentState.archetype` on
+   the NEXT adapt call, and `route.ts:1289` sets `archetypeId = body.archetype_hint ?? 'neutral'` —
+   which drives `runDecisionTree` (headline/description) and `buildReorderDirective` (reorder).
+
+So: server-side WITHIN one request, `chat_intent_dimensions` is metadata only; ACROSS requests it
+influences directives via the client loop. This is already un-gated by `CHAT_NLP_LIVE` — that flag
+(`route.ts:100`) is vestigial: it appears only in a `console.info` line (`:1521`), gates no
+directive logic, and its docstring (`:89-99`) claims a server-side fusion that does not exist. The
+fusion policy is therefore already DEFINED and implemented; no new fusion weight needs inventing.
+
+**Why it is nonetheless DARK in prod today (the actual blocker):** the write path is not deployed.
+`.github/workflows/modal-deploy.yml` deploys ONLY `apps/llm-gateway`; intent-engine is explicitly
+"added as Phases B/C go live" (ESC-036 residual, FOLLOW-458). With no `estalara-intent-engine` Modal
+app running, `chat_nlp_endpoint` does not exist, `MODAL_CHAT_NLP_URL` in the ingest Worker is a
+configured no-op (`apps/ingest/src/handlers/chat-nlp-dispatch.ts:58-61`), the shadow key is never
+written, `readShadowChatIntent` always returns null, and `applyChatIntentPrior` never fires. This
+matches the 2026-07-12 audit ("chat feeds zero live archetype signal"). §H.9 opt-out is preserved
+end-to-end (`redis_writer.py:55` skips the write; null key → null read → no prior).
+
+**Required action:**
+
+1. OPERATOR/DEVOPS (Modal Phase B — unblocks the pilot): (a)
+   `modal deploy apps/intent-engine/src/main.py` (add it to `modal-deploy.yml` `paths`/jobs so it
+   can't drift); (b) confirm `estalara-secrets` contains `INTERNAL_API_SECRET` +
+   `UPSTASH_REDIS_REST_URL/TOKEN` pointing at the SAME Upstash the control-plane reads via
+   `UPSTASH_REDIS_URL/TOKEN`; (c) set `MODAL_CHAT_NLP_URL` (+ matching `INTERNAL_API_SECRET`) in the
+   ingest Worker prod env to the deployed `chat_nlp_endpoint` URL. After that, chat goes live for
+   the pilot through the existing client prior loop — no code change.
+
+2. CEO/PM DESIGN RULING on `CHAT_NLP_LIVE` and the latent "shadow-hole": because the client loop is
+   un-gated, once the write deploys chat influences decisions REGARDLESS of `CHAT_NLP_LIVE`. For a
+   single first-party tenant (Estalara, DPIA not a blocker) this is the DESIRED behavior. Choose:
+   (A) Accept the client-loop as the live path; DELETE the vestigial `CHAT_NLP_LIVE` flag and
+   correct the now-false "shadow-only / zero UX effect / purely behavioural" docstrings in
+   `apps/intent-engine/src/{main,redis_writer}.py`, `route.ts:89-99`, and `adapt.ts:859-862` (small
+   ml-engineer PR; also update the FOLLOW-346 test contract). OR (B) additionally build a
+   server-side fusion path (fuse chat dims into `archetypeId` within the request, independent of the
+   SDK) — a NEW decision-influence path requiring a product decision on the server fusion weight of
+   chat vs the incoming behavioral `archetype_hint`; ml-engineer will NOT guess that weight.
+   Recommendation: (A) — the client loop already delivers chat influence with the §D.7 policy; (B)
+   is only needed for non-SDK consumers or first-request effect.
+
+I did NOT open a code PR: there is no mechanical ml-code change that un-shadows (the code is already
+wired; enablement is the deploy). The docstring/flag cleanup is deferred pending the (A)/(B) ruling
+so it lands atomically with the chosen direction.
+
+**Resolution:** <empty until resolved>

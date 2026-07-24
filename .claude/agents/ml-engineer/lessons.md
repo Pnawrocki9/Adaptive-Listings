@@ -248,3 +248,20 @@
   local signal. Same pattern class as the FOLLOW-460 unprovisioned-secret lesson above (Modal
   env-var pairs) — this is grant provisioning's analogue; worth promoting to a CONVENTIONS_PATCH
   rule if a third instance appears.
+
+- **2026-07-24 / FOLLOW-635** · Scoped "un-shadow chat NLP for pilot." Traced the full chat→decision
+  path and found the read is not just wired — chat already influences the DECISION via the SDK
+  client prior loop (`applyChatIntentPrior` mutates `intentState.archetype` → next call sends it as
+  `body.archetype_hint` → server drives directives), un-gated by `CHAT_NLP_LIVE`. But it is DARK in
+  prod because the WRITE path (`estalara-intent-engine` Modal app) is not deployed
+  (`modal-deploy.yml` ships only llm-gateway). Concluded: un-shadow = a DEPLOY leg (Modal Phase B) +
+  one design ruling, NOT an ml-code change; filed ESC-042, no PR. · **Judgment call:** the guardrail
+  "don't ship a name for a computation it doesn't do" bit HARD here — `CHAT_NLP_LIVE` and three
+  "shadow-only / zero UX effect" docstrings are now factually false (chat DOES affect adaptation). I
+  deliberately did NOT open a churn PR to fix them, because whether to delete the flag (option A) vs
+  build server-side fusion (option B) is a product decision I must not pre-empt; the doc/flag
+  cleanup should land atomically with that ruling. · **Guardrail I'd add:** when a
+  "shadow/dark/gated" safety flag exists, verify it actually gates the data's influence end-to-end
+  (incl. any client-side feedback loop) — a flag that only changes a log line while the signal
+  reaches the decision by another route is a false safety control, exactly the RETRO-003/005 class
+  of "name implies a computation it doesn't perform."

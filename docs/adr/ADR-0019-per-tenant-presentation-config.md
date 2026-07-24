@@ -260,6 +260,15 @@ measured to breach 42 KB standalone, 639 is its hard predecessor.
 - **Nullability across the wire (guardrail):** `brand.logo_url` is `string | null` in `/api/config`
   (`route.ts:84`), on the public-config wire, and in the SDK type. It must never become
   `string | undefined` on any side. The implementing PRs grep both runtimes to confirm.
+- **Rebase-coordination note (RETRO-211 / FOLLOW-644):** PR #616 (merged `ed1797e`) made
+  `TenantConfig.data_source: 'stored' | 'default'` a **required** field on `/api/config`, coupled
+  the staff editor to it via `Pick<TenantConfig, 'plan' | 'brand' | 'sdk' | 'data_source'>`, and
+  changed PATCH to `.returning()` + `UnknownTenantError` → 404 on a 0-row update. Any consuming PR
+  touching `api/config/route.ts` or `tenant-config-editor.tsx` (FOLLOW-622 de-scope removes the
+  `sdk` key from that `Pick`; 623/639/640/641 read-side work) MUST rebase onto ≥ `ed1797e` and
+  preserve all three. Known P3 wrinkle tracked as FOLLOW-643: the GET `'default'` notice text
+  promises "Saving will create its config" while PATCH is UPDATE-only (404s on 0 rows) — reconcile
+  there, not here.
 
 ---
 

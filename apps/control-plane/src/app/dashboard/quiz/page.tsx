@@ -85,6 +85,14 @@ export default function QuizSettingsPage() {
   const [config, setConfig] = useState<DashboardQuizConfig>(DEFAULTS);
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // FOLLOW-630 (RETRO-206, mirrors FOLLOW-624/ESC-039): tracked SEPARATELY from
+  // `status` (which is save-only). A failed GET must render its own visible error
+  // and disable Save — it must never be silently absorbed into DEFAULTS looking
+  // like the tenant's real stored quiz config. A Save from that state would POST
+  // DEFAULTS and clobber the tenant's live SDK-consumed quiz_config.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // FOLLOW-102 AC5: separate state for the quiz ON/OFF toggle so optimistic updates
   // can be rolled back independently of the rest of the form.
@@ -93,6 +101,8 @@ export default function QuizSettingsPage() {
   const [quizToggleError, setQuizToggleError] = useState('');
 
   useEffect(() => {
+    setLoadStatus('loading');
+    setLoadErrorMsg('');
     void fetch('/api/quiz/config')
       .then((r) => {
         if (!r.ok) {
@@ -107,11 +117,16 @@ export default function QuizSettingsPage() {
           // FOLLOW-102: initialise quiz ON/OFF toggle from the dedicated column
           setQuizEnabled(typeof d.quiz_enabled === 'boolean' ? d.quiz_enabled : true);
         }
+        setLoadStatus('loaded');
       })
-      .catch(() => {
-        // load silently — defaults already set
+      .catch((err: unknown) => {
+        // Rule K.2 consumer-side clause (FOLLOW-630): do NOT silently keep
+        // DEFAULTS looking like real stored config — a Save from this state
+        // would clobber the tenant's real quiz config.
+        setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
+        setLoadStatus('error');
       });
-  }, []);
+  }, [retryNonce]);
 
   /**
    * FOLLOW-102 AC5: Toggle the quiz ON/OFF by PATCHing PATCH /api/tenants/:id.
@@ -161,6 +176,9 @@ export default function QuizSettingsPage() {
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    // Defense in depth (FOLLOW-630): even if the disabled Save button is bypassed
+    // (e.g. an implicit form submit), never POST from un-loaded/errored state.
+    if (loadStatus !== 'loaded') return;
     setStatus('loading');
     setErrorMsg('');
 
@@ -240,6 +258,24 @@ export default function QuizSettingsPage() {
 
       {/* ── Quiz widget configuration form ───────────────────────────────────── */}
       <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
+        {loadStatus === 'error' && (
+          <div role="alert" className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p>Failed to load quiz settings: {loadErrorMsg}</p>
+            <p className="mt-1 text-xs">
+              Saving is disabled until settings load successfully — this prevents overwriting your
+              real quiz config with blank defaults.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setRetryNonce((n) => n + 1);
+              }}
+              className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
           {/* Trigger threshold — REMOVED (FOLLOW-264 / Rule L / RETRO-050):
               "Show quiz after N listing views" had no SDK consumer after FOLLOW-257.
@@ -335,7 +371,7 @@ export default function QuizSettingsPage() {
           <div className="flex items-center gap-4">
             <button
               type="submit"
-              disabled={status === 'loading'}
+              disabled={status === 'loading' || loadStatus !== 'loaded'}
               className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
               {status === 'loading' ? 'Saving…' : 'Save Settings'}

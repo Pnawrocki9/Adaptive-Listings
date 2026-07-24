@@ -66,11 +66,28 @@ export default function GenerationModelSettings() {
   });
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // FOLLOW-630 (RETRO-206, mirrors FOLLOW-624/ESC-039): tracked SEPARATELY from
+  // `status` (which is save-only). A failed GET — including a non-2xx body that
+  // was previously parsed as config because there was NO `!r.ok` guard — must
+  // render its own visible error and disable Save. Otherwise a staff Save would
+  // PUT the `claude-sonnet-4-6` default, resetting the GLOBAL generation model
+  // and busting the description cache. Shared by /admin/settings AND
+  // /dashboard/settings, so the guard covers both zones from one file.
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [loadErrorMsg, setLoadErrorMsg] = useState('');
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Load current global config on mount.
   useEffect(() => {
+    setLoadStatus('loading');
+    setLoadErrorMsg('');
     void fetch('/api/admin/generation-model')
-      .then((r) => r.json())
+      .then((r) => {
+        // FOLLOW-630: the missing guard. Without it a non-2xx body was parsed as
+        // config, silently rendering the default model as if it were stored.
+        if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
+        return r.json();
+      })
       .then((data: unknown) => {
         if (data && typeof data === 'object') {
           const d = data as Partial<GenerationModelState>;
@@ -84,14 +101,22 @@ export default function GenerationModelSettings() {
             updated_at: d.updated_at ?? null,
           });
         }
+        setLoadStatus('loaded');
       })
-      .catch(() => {
-        // Load silently — defaults already set.
+      .catch((err: unknown) => {
+        // Rule K.2 consumer-side clause (FOLLOW-630): do NOT silently keep the
+        // default model looking like the real stored global config — a Save from
+        // this state would clobber it.
+        setLoadErrorMsg(err instanceof Error ? err.message : 'Failed to load settings.');
+        setLoadStatus('error');
       });
-  }, []);
+  }, [retryNonce]);
 
   async function handleSave(e: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
+    // Defense in depth (FOLLOW-630): even if the disabled Save button is bypassed
+    // (e.g. an implicit form submit), never PUT from un-loaded/errored state.
+    if (loadStatus !== 'loaded') return;
     setStatus('loading');
     setErrorMsg('');
 
@@ -151,6 +176,25 @@ export default function GenerationModelSettings() {
             timeStyle: 'short',
           })}
         </p>
+      )}
+
+      {loadStatus === 'error' && (
+        <div role="alert" className="mt-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>Failed to load the generation model setting: {loadErrorMsg}</p>
+          <p className="mt-1 text-xs">
+            Saving is disabled until it loads successfully — this prevents overwriting the stored
+            global model with the blank default.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setRetryNonce((n) => n + 1);
+            }}
+            className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       <form onSubmit={(e) => void handleSave(e)} className="mt-6 space-y-4">
@@ -219,7 +263,7 @@ export default function GenerationModelSettings() {
         <div className="flex items-center gap-4">
           <button
             type="submit"
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || loadStatus !== 'loaded'}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {status === 'loading' ? 'Saving...' : 'Save Settings'}

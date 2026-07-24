@@ -95,6 +95,14 @@ describe('resolveAlEnablement', () => {
     expect(r).toEqual({ off: false, reason: null });
   });
 
+  it('garbled row (alEnabled/status absent) → ON (fail-open — only an explicit false/off-status cuts off)', async () => {
+    // A row missing the expected fields must NOT be interpreted as OFF (only an
+    // EXPLICIT al_enabled===false or exact off-status forces OFF).
+    rowsRef.rows = [{ someOtherColumn: 'x' }];
+    const r = await resolveAlEnablement(TENANT);
+    expect(r).toEqual({ off: false, reason: null });
+  });
+
   it('configured-but-threw → ON (fail-open) AND captured to Sentry (Rule K.2 observable)', async () => {
     rowsRef.throwOnQuery = true;
     const r = await resolveAlEnablement(TENANT);

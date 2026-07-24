@@ -78,12 +78,14 @@ export async function resolveAlEnablement(tenantId: string): Promise<AlEnablemen
       .where(eq(tenants.id, tenantId))
       .limit(1);
 
-    const row = rows[0];
-    // Unknown tenant row → fail open (do not cut off a request we cannot classify;
-    // this can never be worse than the pre-FOLLOW-633 behaviour of always serving).
+    // Read the row DEFENSIVELY (values as `unknown`): only an EXPLICIT `al_enabled
+    // === false` or an exact off-status forces OFF. A missing/garbled value fails
+    // OPEN — we never cut a tenant off on a value we cannot positively classify
+    // (can't be worse than the pre-FOLLOW-633 always-serve behaviour).
+    const row = rows[0] as { alEnabled?: unknown; status?: unknown } | undefined;
     if (!row) return ON;
 
-    if (!row.alEnabled) return { off: true, reason: 'al_disabled' };
+    if (row.alEnabled === false) return { off: true, reason: 'al_disabled' };
     if (row.status === 'suspended') return { off: true, reason: 'status_suspended' };
     if (row.status === 'canceled') return { off: true, reason: 'status_canceled' };
 

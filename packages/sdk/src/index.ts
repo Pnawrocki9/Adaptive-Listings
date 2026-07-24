@@ -14,7 +14,7 @@ import { readConfig, BOT_UA_RE } from './core/config.js';
 import type { SdkConfig } from './core/config.js';
 import { fetchQuizConfig, eraseCachedQuizConfig } from './core/quiz-config.js';
 import { fetchIntentWeights } from './core/intent-weights.js';
-import type { QuizPublicConfigResponse } from '@estalara/shared';
+import type { PresentationConfigResponse } from '@estalara/shared';
 import { dispatchEvents, collectPageView } from './core/events.js';
 import { emitIntentSnapshot } from './core/intent-snapshot.js';
 import type { IntentSnapshotContext } from './core/intent-snapshot.js';
@@ -104,7 +104,7 @@ import { DOM_ADAPT_CONFIDENCE_FLOOR, DOM_ADAPT_MIN_SIGNAL_COUNT } from './core/a
  */
 export function mergeQuizConfig(
   config: SdkConfig,
-  fetched: QuizPublicConfigResponse | null,
+  fetched: PresentationConfigResponse | null,
 ): SdkConfig {
   if (!fetched) return config;
   return {
@@ -113,6 +113,18 @@ export function mergeQuizConfig(
     microPollsEnabled: fetched.micro_polls_enabled,
     language: fetched.language,
     accentColor: fetched.accent_color,
+    // FOLLOW-623 / ADR-0019: overlay the optional brand slice. Absent → key omitted
+    // (conditional spread for exactOptionalPropertyTypes) so an unbranded tenant is
+    // byte-identical to pre-ADR-0019. `logo_url` stays `string | null`, never undefined.
+    ...(fetched.brand
+      ? {
+          brand: {
+            primaryColor: fetched.brand.primary_color,
+            logoUrl: fetched.brand.logo_url,
+            whiteLabel: fetched.brand.white_label,
+          },
+        }
+      : {}),
   };
 }
 
@@ -1020,6 +1032,11 @@ async function init(): Promise<IntentState | null> {
     const quizConfig: QuizWidgetConfig = {
       accentColor: config.accentColor,
       language: config.language,
+      // FOLLOW-623 / ADR-0019: brand logo atop the quiz card. `string | null` (never
+      // undefined) — null renders no logo (byte-identical to pre-ADR-0019). D4 color
+      // precedence keeps the card accent on `accent_color`; brand.primary_color drives
+      // the sticky trigger (a widget with no per-widget color) below.
+      logoUrl: config.brand?.logoUrl ?? null,
     };
 
     // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
@@ -1192,7 +1209,15 @@ async function init(): Promise<IntentState | null> {
       quizTriggered = true;
       renderQuizTrigger(
         shadowHost.root,
-        { accentColor: quizConfig.accentColor, icon: '🎯', language: quizConfig.language },
+        {
+          accentColor: quizConfig.accentColor,
+          icon: '🎯',
+          language: quizConfig.language,
+          // FOLLOW-623 / ADR-0019 D4: the sticky trigger has no per-widget color, so the
+          // brand umbrella color becomes its default. Absent → hardcoded #ef4444 in
+          // renderQuizTrigger (byte-identical to pre-ADR-0019).
+          ...(config.brand?.primaryColor ? { backgroundColor: config.brand.primaryColor } : {}),
+        },
         () => {
           renderQuizWidget(
             shadowHost.root,

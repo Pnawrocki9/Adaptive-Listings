@@ -45,6 +45,8 @@ vi.mock('@estalara/db', () => ({
     id: 'id',
     quizConfig: 'quiz_config',
     quizEnabled: 'quiz_enabled',
+    // ADR-0019 (FOLLOW-623): brand slice source column.
+    brandConfig: 'brand_config',
     deletedAt: 'deleted_at',
   },
 }));
@@ -244,6 +246,97 @@ describe('GET /api/quiz/public-config — 200 shape (AC1 + AC2 + AC5)', () => {
     expect(typeof body.micro_polls_enabled).toBe('boolean');
     expect(typeof body.language).toBe('string');
     expect(typeof body.accent_color).toBe('string');
+  });
+});
+
+// ─── ADR-0019 / FOLLOW-623 — brand slice (Rule L producer test) ──────────────
+// These assert the route EMITS `brand` from the DB `tenants.brand_config` column — the
+// production producer for the SDK consumer, NOT a fixture-injected literal.
+
+describe('GET /api/quiz/public-config — brand slice (ADR-0019 / FOLLOW-623)', () => {
+  let validKeyHash: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    validKeyHash = await sha256Hex(VALID_KEY_RAW);
+    mockLimit.mockResolvedValue([]);
+    mockWhere.mockReturnValue({ limit: mockLimit });
+    mockFrom.mockReturnValue({ where: mockWhere });
+    mockSelect.mockReturnValue({ from: mockFrom });
+  });
+
+  it('emits a full brand slice from tenants.brand_config', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([
+        {
+          quizConfig: {},
+          quizEnabled: true,
+          brandConfig: {
+            primary_color: '#1a73e8',
+            logo_url: 'https://cdn.example.com/logo.svg',
+            white_label: true,
+          },
+        },
+      ]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{
+      brand?: { primary_color: string; logo_url: string | null; white_label: boolean };
+    }>(res);
+    expect(body.brand).toEqual({
+      primary_color: '#1a73e8',
+      logo_url: 'https://cdn.example.com/logo.svg',
+      white_label: true,
+    });
+  });
+
+  it('emits logo_url === null (never undefined) when the stored brand has no logo', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([
+        {
+          quizConfig: {},
+          quizEnabled: true,
+          brandConfig: { primary_color: '#c026d3', white_label: false },
+        },
+      ]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    const body = await parseBody<{ brand?: { logo_url: string | null } }>(res);
+    expect(body.brand).toBeDefined();
+    expect(body.brand?.logo_url).toBeNull();
+  });
+
+  it('OMITS the brand slice for an unconfigured tenant (empty {} default) — D4 byte-identical', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true, brandConfig: {} }]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect('brand' in body).toBe(false);
+  });
+
+  it('OMITS a malformed brand blob (bad hex color) rather than breaking the response', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([
+        {
+          quizConfig: {},
+          quizEnabled: true,
+          brandConfig: { primary_color: 'not-a-hex', logo_url: null, white_label: false },
+        },
+      ]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    // The core quiz config still returns 200; only the invalid brand slice is dropped.
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect('brand' in body).toBe(false);
+    expect(body.data_source).toBe('db');
   });
 });
 

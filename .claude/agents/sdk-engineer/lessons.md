@@ -598,3 +598,27 @@ normally diff against, don't skip the guard just because there's nothing left to
 against the true upstream SoT instead (`ARCHETYPE_NAMES`) and prove it's load-bearing by perturbing
 the expected value locally, running red, then restoring. A consolidation that removes an array but
 adds no guard just moves the drift risk one hop upstream and out of sight.
+
+## 2026-07-24 / FOLLOW-623
+
+**What I built:** First consuming slice of ADR-0019 — real SDK consumption of per-tenant
+`brand_config`. Shared Zod module `presentation-config.ts` (`BrandConfigSchema` +
+`PresentationConfigResponseSchema` extending the ADR-0011 quiz schema, brand slice only), extended
+`GET /api/quiz/public-config` to emit the optional `brand` slice from `tenants.brand_config`
+(preserving `data_source` provenance), and wired the SDK consumer: `fetchQuizConfig` now parses the
+superset schema so `brand` survives → `mergeQuizConfig` → sticky trigger background uses
+`brand.primary_color` (else `#ef4444`), quiz card shows `brand.logo_url`. +0.24KB gzip.
+
+**What was uncertain:** (1) D4 color precedence with an always-present `accent_color` — resolved by
+routing `brand.primary_color` to the sticky trigger (the widget with NO per-widget color, hardcoded
+`#ef4444`), leaving the quiz card on `accent_color` (which always wins). This makes brand a REAL
+visible consumer without touching byte-identical card behavior. (2) The 30s `QUIZ_TRIGGER_DELAY_MS`
+made a real-init-path E2E slow — solved with Playwright `page.clock.install()` + `runFor(31_000)`
+(pre-register `waitForResponse` before `goto` to avoid the fetch-resolves-first race). (3)
+`white_label` has no ADR-specified consumer — parsed/exposed but not consumed (noted as deviation).
+
+**A guardrail I'd add:** When a route already fills a field with a hardcoded default (here
+`accent_color`), a new lower-precedence source (`brand.primary_color`) can never win for that widget
+— so route the new source to a widget that had NO prior color, or it becomes a silent producer-only
+facade despite passing tests. Verify the new signal changes a _rendered_ pixel in an E2E, not just a
+merged config object.

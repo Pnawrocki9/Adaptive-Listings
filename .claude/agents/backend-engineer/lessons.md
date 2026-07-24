@@ -36,6 +36,7 @@
   rollup spans >1 backing store, rather than re-deriving it from scratch.
 
 ---
+
 ## 2026-07-24 / FOLLOW-622
 
 - **What I built**: de-scoped a producer-only security facade per CEO Option B

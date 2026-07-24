@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-07-24 / FOLLOW-625
+
+**What I shipped:** A CI hard-gate (`scripts/check-k2-consumer-swallow.cjs` + `.sh` wrapper +
+`.github/workflows/ci.yml` job) mechanising Rule K.2's consumer-side clause — an AST walk that FAILS
+when a client component under `apps/control-plane/src/{app,components}/**` GETs editable config on a
+`fetch(...)` chain, populates form state, and swallows a failed load. Scope deliberately covers
+`src/components/**`, not just `src/app/**` (RETRO-206 §4a LG-2), because FOLLOW-624's narrowed grep
+missed the shared `generation-model-settings.tsx` twin. Red-first fixture proof covers both
+directions incl. a `src/components` negative control.
+
+**Where a green badge could have hidden a broken run path:** (1) A guard whose real-repo run is
+green because it detects _nothing_ vs green because everything is fixed — I added a
+`K2_GUARD_NO_ALLOWLIST=1` bypass so the fixture proof asserts the 4 read-only analytics swallows ARE
+detected-then-allow-listed, proving the allow-list is load-bearing. (2) Scoping the guard to
+`src/app/**` (the ticket's ORIGINAL AC) would have shipped green while the components twin still
+swallowed — the exact escape the amendment widened to close. The negative control lives under
+`scripts/__fixtures__` (outside the real scan roots), so a committed "failing" fixture can't redden
+the branch.
+
+**A guardrail I'd add:** none new — this ticket IS the guardrail. Residual (documented, not silent):
+the block-form `try { await fetch } catch {}` shape is not yet covered; add coverage if an instance
+ever appears.
+
 ## 2026-06-26 / FOLLOW-406 + FOLLOW-411
 
 **What I shipped:** Negative-control attestation proving gitleaks `cloudflare-api-token` detection

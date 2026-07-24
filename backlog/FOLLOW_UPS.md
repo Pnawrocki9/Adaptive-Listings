@@ -17320,6 +17320,9 @@ auto-apply)]
 
 ## FOLLOW-622 — Wire OR de-scope `tenants.allowed_origins`: the new settings page writes an SDK origin allow-list that NOTHING enforces, while MASTER_DESIGN §V.3.4 and the `api_keys` schema both claim it IS enforced
 
+**STATUS 2026-07-25: ✅ DONE — PR #618 MERGED (`24aa860`), option B.** Facade removed from UI +
+`/api/config` contract; column kept, re-enable tracked as FOLLOW-642.
+
 source_retro: RETRO-205 (§3 HW-1, §4a LG-3, §4d DG-1) source_ticket: FOLLOW-600 (PR #606, `19ef714`)
 recommended_sprint: next recommended_agent: backend-engineer priority: P1 estimated_hours: 4
 depends_on: [] promoted_to_queue: false
@@ -17368,6 +17371,11 @@ meaning for the empty array.
 cross_ref: [RETRO-205, FOLLOW-600, FOLLOW-623 (sibling half-wire in the same PR)]
 
 ## FOLLOW-623 — Wire OR de-scope `tenants.brand_config` (`primary_color` / `logo_url` / `white_label`): the settings page ships three brand controls the SDK cannot read, while the LIVE brand colour lives in a different column
+
+**STATUS 2026-07-25: ✅ DONE — PR #619 MERGED (`6cf7ba1`), CEO ruled ENFORCE.** First ADR-0019
+slice: shared `presentation-config` Zod module + `brand` on public-config + real SDK consumer
+(trigger color, quiz-card logo) + E2E; bundle +0.24KB. `white_label` parsed-but-unconsumed (ADR gap
+— consumer TBD, likely "Powered by Estalara" attribution hide).
 
 source_retro: RETRO-205 (§3 HW-2) source_ticket: FOLLOW-600 (PR #606, `19ef714`) recommended_sprint:
 next recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: []

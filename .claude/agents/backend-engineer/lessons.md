@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-07-24 / FOLLOW-638
+
+- **What I built**: `/admin/analytics` (staff-only) + `GET /api/admin/analytics/rollup` — a
+  platform-wide rollup (sessions, adapted/holdout, CTA lift, quiz completions) across every
+  tenant/brand, plus a per-brand breakdown table. Deliberately unfenced (no `tenant_id` filter,
+  `GROUP BY tenant_id` instead) per the CEO's per-brand ruling (every client brand = a white-label
+  deployment sharing one data pool). Page and route share a single `getPlatformAnalyticsRollup()`
+  builder in a sibling `data.ts` (Rule H: one function, two real non-test consumers, no self-fetch
+  loopback in the RSC page).
+- **Wiring/auth/fail-loud risks I weighed**: (1) `resolveTenantAccess` (the ADR-0018 staff-override
+  pattern used by the per-tenant analytics routes) structurally does not fit an unfenced rollup — it
+  always resolves to exactly one tenant fence. Used `verifyTracerAdminAuth` instead (the same gate
+  `/api/admin/tracer/sessions` and `/api/admin/intent/config` already use for unfenced staff-only
+  reads) and documented the deviation explicitly in the route's JSDoc so a future reviewer doesn't
+  read "no resolveTenantAccess" as a missed auth port. (2) This route straddles TWO backing stores
+  (ClickHouse for session/CTA metrics, Postgres for the tenant roster + `quiz_completions`). Decided
+  the tenant roster + ClickHouse are the PRIMARY metric group (configured-but-failed → hard 500,
+  Rule K.2) while `quiz_completions` is SECONDARY and degrades independently (200 + explicit
+  `quiz_data_source: 'error'` + every `quizCompletions` field `null`, never a fabricated 0) — this
+  is the guardrails' explicit "200 carrying a degraded flag" escape hatch for a non-primary metric,
+  used deliberately rather than either always-hard-failing (too brittle for a secondary field) or
+  always-soft-failing (would have hidden a real ClickHouse outage on the primary numbers). (3)
+  Per-brand rows are built by iterating the Postgres tenant roster (not the ClickHouse result set)
+  so every tenant gets a row even with zero activity — a tenant present in ClickHouse but deleted
+  from `tenants` is correctly dropped, matching "row per tenant" from the AC literally. (4) Verified
+  no regression to the existing 3-tracer+3-tenant+1-platform nav-link-count test in
+  `admin/layout.test.tsx` by updating its "exactly N links" assertions in the same PR rather than
+  leaving a stale count that would silently start failing.
+- **A guardrail I'd add**: none new — this ticket is itself the guardrail-compliant answer to a gap
+  (no cross-brand admin view existed at all); the K.2 partial-degrade pattern here (primary vs.
+  secondary metric groups failing independently) is reusable and worth naming explicitly next time a
+  rollup spans >1 backing store, rather than re-deriving it from scratch.
+
+---
+
 ## 2026-07-24 / FOLLOW-636
 
 - **What I built**: closed a producer-only revocation facade — the admin "revoke demo session"

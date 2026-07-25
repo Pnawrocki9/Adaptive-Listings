@@ -2080,3 +2080,23 @@ would generalize this beyond just `adapt-get-auth`.
   has no automated staleness check (unlike code, a runbook can't fail CI when its cited routes
   change shape). Consider a lightweight "runbook cites route X at line Y" grep-check if this pattern
   repeats across more runbooks.
+
+---
+
+- **2026-07-25 / FOLLOW-642** · **What I built**: per-tenant `allowed_origins` enforcement in ingest
+  CORS. New pure module `apps/ingest/src/origin-gate.ts` (normalize→origin,
+  inherit/deny-all/explicit policy, matcher); enforced on `POST /v1/events` after auth (403
+  `forbidden_origin` before any side effect); origins surfaced via `ApiKeyRecord.allowed_origins`
+  from KV. · **Wiring/auth/fail-loud risks I weighed**: (1) ingest has NO Postgres binding — the
+  "per-request tenant lookup + cache" the stub asked for is ALREADY the existing `KV_API_KEYS` read
+  (edge-cached), so I extended the KV record shape instead of adding a DB round-trip on the <50ms
+  hot path → zero new I/O, zero new failure surface. (2) CORS preflight can't carry the api key
+  (browsers strip custom headers) → preflight had to become permissive (reflect) with enforcement
+  moved to the POST; this forced updating 3 existing preflight-denial tests — the honest reflection
+  of the new model, not a regression. (3) Fail-safe: kept the gate PURE over auth-fetched data so a
+  store outage fails closed at auth (401) and an explicit-list tenant is never failed open. (4)
+  `exactOptionalPropertyTypes` bit me — had to conditional-spread `allowed_origins` so absent stays
+  absent (=inherit). · **A guardrail I'd add**: a CI check that flags when a browser-`Origin`/CORS
+  decision is made on the OPTIONS preflight path using data only available on the authenticated
+  request — the preflight/POST asymmetry is a subtle place to accidentally build a facade (echo on
+  preflight ≠ enforcement).

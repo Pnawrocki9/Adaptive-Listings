@@ -1209,7 +1209,11 @@ describe('CORS — ESC-016 SDK browser callers', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('https://admin.estalara.com');
   });
 
-  it('OPTIONS preflight from a disallowed origin omits the Allow-Origin header', async () => {
+  // FOLLOW-642: preflight is now PERMISSIVE — the api key is not available on the OPTIONS
+  // preflight (browsers strip custom headers), so the tenant cannot be resolved here. Preflight
+  // reflects the requested origin; enforcement moved to the actual POST (see the per-tenant
+  // enforcement tests below, which return 403 + omit Allow-Origin for a disallowed origin).
+  it('OPTIONS preflight reflects the requested origin (enforcement is on the actual POST)', async () => {
     const app = createApp();
     const env = makeEnv();
     const res = await app.fetch(
@@ -1222,7 +1226,11 @@ describe('CORS — ESC-016 SDK browser callers', () => {
       }),
       env,
     );
-    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res.status).toBe(204);
+    // Reflected — but this grants nothing; the POST from this origin is rejected 403.
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://evil.example.com');
+    // Never a wildcard.
+    expect(res.headers.get('access-control-allow-origin')).not.toBe('*');
   });
 
   it('POST from app.estalara.com receives Access-Control-Allow-Origin on the actual response', async () => {
@@ -1249,7 +1257,10 @@ describe('CORS — ESC-016 SDK browser callers', () => {
     }
   });
 
-  it('POST from a disallowed origin omits Access-Control-Allow-Origin', async () => {
+  // FOLLOW-642: a disallowed origin is now REJECTED 403 at the POST (before any side effect),
+  // and the Allow-Origin header is omitted. VALID_KEY_RECORD carries no allowed_origins, so it
+  // inherits the env list — evil.example.com is not on it.
+  it('POST from a disallowed origin is rejected 403 and omits Access-Control-Allow-Origin', async () => {
     const app = createApp();
     const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
     const stub = stubFetch('ok');
@@ -1266,7 +1277,12 @@ describe('CORS — ESC-016 SDK browser callers', () => {
         }),
         env,
       );
+      expect(res.status).toBe(403);
+      const body = await readJson<{ error: { code: string } }>(res);
+      expect(body.error.code).toBe('forbidden_origin');
       expect(res.headers.get('access-control-allow-origin')).toBeNull();
+      // No ingest side effect fired: the origin gate returns before pushToRedpanda.
+      expect(stub.callCount()).toBe(0);
     } finally {
       stub.restore();
     }
@@ -1320,7 +1336,10 @@ describe('CORS — dev-only localhost origins', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
   });
 
-  it('OPTIONS preflight from localhost:5173 is BLOCKED in production env', async () => {
+  // FOLLOW-642: preflight reflects (permissive — no api key available); the PRODUCTION block for
+  // localhost is enforced on the actual POST (see 'POST from localhost:5173 is BLOCKED in
+  // production env' below), which returns 403 + omits Allow-Origin.
+  it('OPTIONS preflight from localhost:5173 is reflected in production env (POST enforces)', async () => {
     const app = createApp();
     const env = makeEnv({ environment: 'production' });
     const res = await app.fetch(
@@ -1333,11 +1352,11 @@ describe('CORS — dev-only localhost origins', () => {
       }),
       env,
     );
-    // CORS middleware omits the header when the origin is not in the allow-list.
-    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
   });
 
-  it('OPTIONS preflight from localhost:3000 is BLOCKED in production env', async () => {
+  it('OPTIONS preflight from localhost:3000 is reflected in production env (POST enforces)', async () => {
     const app = createApp();
     const env = makeEnv({ environment: 'production' });
     const res = await app.fetch(
@@ -1350,7 +1369,8 @@ describe('CORS — dev-only localhost origins', () => {
       }),
       env,
     );
-    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
   });
 
   it('POST from localhost:5173 receives Access-Control-Allow-Origin in dev env', async () => {
@@ -1380,7 +1400,7 @@ describe('CORS — dev-only localhost origins', () => {
     }
   });
 
-  it('POST from localhost:5173 is BLOCKED (no Allow-Origin) in production env', async () => {
+  it('POST from localhost:5173 is BLOCKED (403, no Allow-Origin) in production env', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
@@ -1400,7 +1420,196 @@ describe('CORS — dev-only localhost origins', () => {
         }),
         env,
       );
+      expect(res.status).toBe(403);
       expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+// ─── FOLLOW-642 — per-tenant allowed_origins enforcement ──────────────────────
+//
+// The security goal: a leaked/stolen api key of brand X must only work from brand X's own
+// domains. Enforcement is on the actual POST (the api key is present there). Semantics:
+//   - api-key record WITHOUT allowed_origins → inherit the env list (backward compat).
+//   - explicit non-empty array → allow exactly those origins.
+//   - explicit empty array []  → deny ALL cross-origin browser requests.
+//   - no Origin header (server-side caller) → gate bypassed (HMAC gates those instead).
+describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
+  const EXPLICIT_KEY_RECORD = JSON.stringify({
+    tenant_id: 'tenant-clientx',
+    scopes: ['write:events'],
+    // Stored with a trailing path on purpose — exercises the z.string().url() normalization fix.
+    allowed_origins: ['https://listings.clientx.com/embed'],
+  });
+  const DENY_ALL_KEY_RECORD = JSON.stringify({
+    tenant_id: 'tenant-locked',
+    scopes: ['write:events'],
+    allowed_origins: [],
+  });
+
+  it('explicit: POST from a configured origin is accepted (200 + Allow-Origin)', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:kx': EXPLICIT_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://listings.clientx.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kx',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://listings.clientx.com');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('explicit: a stolen key used from another origin is rejected 403 (no side effect)', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:kx': EXPLICIT_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://evil.example.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kx',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(403);
+      const body = await readJson<{ error: { code: string; details?: { origin: string } } }>(res);
+      expect(body.error.code).toBe('forbidden_origin');
+      expect(body.error.details?.origin).toBe('https://evil.example.com');
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+      expect(stub.callCount()).toBe(0);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('explicit: even the env-list Estalara origin is rejected when NOT in the tenant list', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:kx': EXPLICIT_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://app.estalara.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kx',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('deny-all ([]): every cross-origin browser request is rejected 403', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:kl': DENY_ALL_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://listings.clientx.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kl',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(403);
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('deny-all ([]): a server-side caller with NO Origin header still ingests', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:kl': DENY_ALL_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'kl',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      // No Origin header → no Allow-Origin echoed, and no 403.
+      expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('inherit: a record without allowed_origins accepts the env-list origin in production', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({
+        kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+        environment: 'production',
+      });
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://app.estalara.com',
+            'Content-Type': 'application/json',
+            'X-Estalara-API-Key': 'k1',
+          },
+          body: JSON.stringify({ events: [validEvent] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe('https://app.estalara.com');
     } finally {
       stub.restore();
     }

@@ -32,14 +32,26 @@ export const tenants = pgTable(
     plan: text('plan').notNull().default('free'),
 
     /**
-     * Domains where the Estalara SDK snippet is permitted to run.
+     * Domains where the Estalara SDK snippet is permitted to run — the per-tenant
+     * browser-`Origin` allow-list.
      *
-     * NOT enforced; deferred — re-enable tracked as FOLLOW-642 (trigger: first
-     * external re-brand client). Staff could edit this via the per-tenant
-     * settings page until FOLLOW-622 (CEO Option B, 2026-07-24) removed that
-     * control as an unenforced security facade: ingest CORS uses a hardcoded
-     * env allowlist (`apps/ingest/src/router.ts:69-73`), NOT this column. The
-     * column and its data are kept — nothing currently reads or writes it.
+     * ENFORCED as of FOLLOW-642 (2026-07-25, first external re-brand clients onboarding).
+     * The ingest Worker has no Postgres binding; it reads its tenant projection from
+     * `KV_API_KEYS`, so this column is the provisioning source-of-truth that is projected
+     * onto the api-key KV record (`ApiKeyRecord.allowed_origins`) at provisioning. The
+     * ingest origin gate (`apps/ingest/src/origin-gate.ts`) matches the browser `Origin`
+     * against it on every `POST /v1/events` and returns 403 on a mismatch.
+     *
+     * SEMANTICS: `[]` (the default) → INHERIT the env allow-list on the ingest side
+     * (backward compat for Estalara's own first-party tenant — its browser traffic is never
+     * disrupted). A non-empty array locks the tenant to exactly those origins. (Note: the KV
+     * projection distinguishes `null`=inherit from `[]`=deny-all; this Postgres column is
+     * `NOT NULL DEFAULT []`, so at the DB layer `[]` means "no explicit lock-down yet" →
+     * inherit. A tenant that wants hard deny-all is provisioned with the KV `[]`/`null`
+     * distinction directly.)
+     *
+     * The staff settings-page control that wrote this was removed as an unenforced facade by
+     * FOLLOW-622 (CEO Option B, 2026-07-24); values now land at provisioning (no admin UI).
      */
     allowedOrigins: text('allowed_origins').array().notNull().default([]),
 

@@ -24,6 +24,7 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
+import { allowedOriginsForEnv, isOriginAllowed, resolveOriginPolicy } from '../origin-gate.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
@@ -131,6 +132,57 @@ events.post('/', async (c) => {
   // Make tenant_id available to any Hono middleware/handler downstream via context.
   c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
+
+  // 2b. Per-tenant origin gate [FOLLOW-642]. Runs BEFORE rate-limit and BEFORE any ingest side
+  // effect, so a stolen api key embedded on a non-allow-listed origin ingests nothing.
+  //
+  // FAIL-SAFE: this operates only on `auth.allowed_origins` — data KV already returned above.
+  // It performs ZERO additional I/O, so it cannot fail on a store outage and adds no new failure
+  // surface to the <50ms ACK budget. If KV were unreadable, auth already returned 401 (fail
+  // closed) — an explicit-allow-list tenant is never silently failed open here.
+  //
+  // A request with NO `Origin` header is a server-side caller (curl / HMAC-signed adapter);
+  // CORS is a browser-only concern, so it bypasses the gate and stays gated by the HMAC
+  // signature check in `authenticateRequest` instead. The `corsAllowOrigin` context value the
+  // CORS middleware reads is set to the allow-listed origin (echo) or '' (deny → omit header).
+  const requestOrigin = c.req.header('Origin');
+  if (requestOrigin) {
+    const policy = resolveOriginPolicy(
+      auth.allowed_origins,
+      allowedOriginsForEnv(c.env.ENVIRONMENT),
+    );
+    if (!isOriginAllowed(requestOrigin, policy.allowList)) {
+      c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
+      span?.setAttributes({
+        'estalara.tenant_id': tenantId,
+        'estalara.origin_denied': true,
+        'estalara.origin_policy': policy.mode,
+      });
+      logger.warn(
+        { tenant_id: tenantId, origin: requestOrigin, policy_mode: policy.mode },
+        'origin_rejected',
+      );
+      // Rule K.2: a policy-driven rejection must stay observable, never silently swallowed.
+      Sentry.captureMessage('origin_gate_rejected', {
+        level: 'warning',
+        tags: { area: 'events', gate: 'origin', policy_mode: policy.mode },
+        extra: { tenant_id: tenantId, origin: requestOrigin },
+      });
+      return c.json(
+        errorBody(
+          requestId,
+          'forbidden_origin',
+          'Request origin is not permitted for this tenant',
+          {
+            origin: requestOrigin,
+          },
+        ),
+        403,
+      );
+    }
+    // Allowed — echo the exact request origin on the response (CORS middleware applies it).
+    c.set('corsAllowOrigin' as never, requestOrigin);
+  }
 
   // 3. Parse JSON
   let body: unknown;

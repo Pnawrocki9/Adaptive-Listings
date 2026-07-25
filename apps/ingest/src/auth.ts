@@ -28,6 +28,23 @@ export interface ApiKeyRecord {
   hmac_secret?: string;
   /** Optional human label for ops dashboards. */
   label?: string;
+  /**
+   * Per-tenant browser-`Origin` allow-list projected onto this api-key record. [FOLLOW-642]
+   *
+   * WRITE PATH (choice per the FOLLOW-642 stub — "provisioning writes the column directly"):
+   * these values are seeded into the KV record by tenant provisioning, alongside the api key
+   * itself, NOT by a control-plane admin UI (that facade was removed by FOLLOW-622/PR #618).
+   * The ingest Worker has no Postgres binding — KV IS the edge-cached tenant-config projection
+   * it reads. Values SHOULD be stored as canonical origins (`scheme://host[:port]`), but the
+   * gate re-normalizes defensively at read (see `origin-gate.ts` `normalizeToOrigin`), so a
+   * full-URL / trailing-path value (the `z.string().url()` bug) still matches correctly.
+   *
+   * SEMANTICS (see `origin-gate.ts` `resolveOriginPolicy`):
+   *   `undefined` / `null` (absent) → inherit the env allow-list (backward compat for
+   *                                   Estalara's own tenant); `[]` → deny ALL cross-origin
+   *                                   browser requests; `[...]` → allow exactly those origins.
+   */
+  allowed_origins?: string[] | null;
 }
 
 /** Result of a successful auth check — passed to downstream handlers. */
@@ -36,6 +53,12 @@ export interface AuthenticatedTenant {
   scopes: string[];
   /** True if request body was HMAC-verified. Server-side callers must pass this gate. */
   signed: boolean;
+  /**
+   * The tenant's browser-`Origin` allow-list, verbatim from the KV record (un-normalized).
+   * Consumed by the per-tenant origin gate in `handlers/events.ts` (FOLLOW-642). See
+   * {@link ApiKeyRecord.allowed_origins} for semantics.
+   */
+  allowed_origins?: string[] | null;
 }
 
 /** Reasons auth can fail. Caller maps these to HTTP 401 with appropriate detail. */
@@ -101,6 +124,9 @@ export async function authenticateRequest(
     tenant_id: record.tenant_id,
     scopes: record.scopes,
     signed,
+    // Conditional spread (exactOptionalPropertyTypes): only present when the KV record carried
+    // the field, so `undefined` (absent) stays absent → the gate reads it as "inherit".
+    ...(record.allowed_origins !== undefined ? { allowed_origins: record.allowed_origins } : {}),
   };
 }
 

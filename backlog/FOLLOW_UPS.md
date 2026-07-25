@@ -18562,6 +18562,20 @@ or the audit trail attests text the visitor never saw; (3) DSR OTP emails hardco
 brand (from `tenants.brand_config` / brand name at provisioning). Details + evidence:
 `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md`.
 
+STATUS 2026-07-25 — IMPLEMENTED (backend-engineer). Brand identity source =
+`tenants.brand_config.brand_name` / `.legal_entity` (additive JSONB keys, server-side only — NOT on
+the SDK public-config wire, no SDK consumer per Rule L). Single resolver
+`apps/control-plane/src/lib/brand-identity.ts` (`resolveBrandIdentity`, `fetchBrandIdentity`,
+`isFirstPartyTenant`). Leg 1: `renderPlatformConsentText` + new partner-authed
+`GET /api/v1/consent/platform-registration` serves brand-correct §6.1 text + its hash. Leg 2:
+`consent_text_hash` REQUIRED (400) for non-first-party tenants, gated by `FIRST_PARTY_TENANT_ID` env
+allowlist (UNSET → all first-party, preserves the live single-tenant flow; MUST be set before
+onboarding external brands). Leg 3: DSR OTP email `from`/subject/body use the brand display name
+(sending domain unchanged). Fail-honest: no brand identity → explicit Estalara fallback, never
+empty. NOTE: the cited evidence doc `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` was not present
+in-repo; implemented from this stub. Go-live still gated on FOLLOW-656 (Rafał deploy-side render
+verification) and ops setting `FIRST_PARTY_TENANT_ID`.
+
 ## FOLLOW-655 — privacy-notice-keys-sync CI gate misses storage keys without `_STORAGE_KEY`/`_KEY_PREFIX`/`_DISMISS_KEY` suffixes
 
 source_retro: FOLLOW-653 (PR #622, stub B — `__estalara_profiling_opt_out__` escaped the gate for a

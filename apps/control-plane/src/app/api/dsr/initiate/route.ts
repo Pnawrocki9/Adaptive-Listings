@@ -29,7 +29,8 @@ import { getAuthClaims, isTenantClaims } from '@estalara/auth';
 import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalara/db';
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
 import { checkInitiateRateLimit } from '@/lib/dsr-rate-limit';
-import { sendEmail } from '@/lib/email/resend';
+import { sendEmail, brandSenderFrom } from '@/lib/email/resend';
+import { fetchBrandIdentity } from '@/lib/brand-identity';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
@@ -202,13 +203,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
     .returning({ id: dsrVerifications.id, expiresAt: dsrVerifications.expiresAt });
 
+  // ── Resolve brand display identity (FOLLOW-654 leg 3) ──────────────────────
+  // The data subject on a white-label deployment must see the brand's own name
+  // as the sender and in the email body — not "Estalara". Fail-honest: a tenant
+  // with no configured brand identity falls back to the Estalara identity, so
+  // the first-party flow is byte-for-byte unchanged.
+  const brand = await fetchBrandIdentity(db, tenantId);
+
   // ── Send OTP email ─────────────────────────────────────────────────────────
   try {
     await sendEmail({
+      from: brandSenderFrom(brand.brandName),
       to: email,
-      subject: 'Your Estalara data request',
+      subject: `Your ${brand.brandName} data request`,
       html: `
-        <p>You requested access to your personal data processed by Estalara.</p>
+        <p>You requested access to your personal data processed by ${brand.brandName}.</p>
         <p>Your one-time verification code is:</p>
         <p style="font-size: 2em; letter-spacing: 0.2em; font-weight: bold;">${otp}</p>
         <p>This code is valid for <strong>15 minutes</strong>.</p>

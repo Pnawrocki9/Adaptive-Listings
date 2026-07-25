@@ -45,6 +45,8 @@ vi.mock('@estalara/db', () => ({
     userAgent: 'user_agent',
     grantedAt: 'granted_at',
   },
+  // FOLLOW-654: GET leg 1 resolves brand identity from tenants.brand_config.
+  tenants: { id: 'id', brandConfig: 'brand_config' },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -330,5 +332,186 @@ describe('POST /api/v1/consent/platform-registration', () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── FOLLOW-654 leg 2: consent_text_hash required for non-first-party ──────────
+
+describe('POST consent_text_hash requirement (FOLLOW-654 leg 2)', () => {
+  // A distinct UUID from TENANT_ID so, with FIRST_PARTY_TENANT_ID set, the
+  // request tenant is treated as a non-first-party external brand.
+  const FIRST_PARTY_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-leg2' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns 400 when a non-first-party tenant omits consent_text_hash', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', FIRST_PARTY_ID);
+    const { POST } = await import('./route');
+    // TENANT_ID !== FIRST_PARTY_ID → non-first-party → hash required.
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toContain('consent_text_hash');
+    // Fail-closed: no consent row is fabricated.
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('returns 201 when a non-first-party tenant supplies consent_text_hash', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', FIRST_PARTY_ID);
+    const customHash = 'c' + '0'.repeat(63);
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody({ consent_text_hash: customHash })));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(customHash);
+  });
+
+  it('allows the first-party tenant to omit consent_text_hash (backward compat)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+  });
+
+  it('treats all tenants as first-party when FIRST_PARTY_TENANT_ID is unset (live-flow compat)', async () => {
+    // No FIRST_PARTY_TENANT_ID stubbed → env unset → omission allowed for everyone.
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody()));
+    expect(res.status).toBe(201);
+  });
+});
+
+// ─── FOLLOW-654 leg 1: GET brand-correct consent text ─────────────────────────
+
+describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
+  function makeGetRequest(
+    tenantId: string,
+    options: { secret?: string; signature?: string | null } = {},
+  ): NextRequest {
+    const { secret = TEST_SECRET } = options;
+    const sig = options.signature !== undefined ? options.signature : computeHmac(secret, tenantId);
+    const headers: Record<string, string> = {};
+    if (sig !== null) headers['x-consent-signature'] = sig;
+    return new NextRequest(
+      `http://localhost/api/v1/consent/platform-registration?tenant_id=${tenantId}`,
+      { method: 'GET', headers },
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('renders the brand display identity in the consent text (substitution)', async () => {
+    mockSelectLimit.mockResolvedValue([
+      {
+        id: TENANT_ID,
+        brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
+      },
+    ]);
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<{
+      brand_name: string;
+      legal_entity: string;
+      consent_text: string;
+      consent_text_hash: string;
+      data_source: string;
+    }>(res);
+    expect(body.brand_name).toBe('Costa Sol Properties');
+    expect(body.consent_text).toContain('Costa Sol Properties Adaptive Listings service');
+    expect(body.consent_text).toContain('provided by Costa Sol S.L.');
+    expect(body.consent_text).not.toContain('Time2Show');
+    expect(body.data_source).toBe('stored');
+    // The hash matches the exact rendered text.
+    const { computeConsentTextHash } = await import('./lib');
+    expect(body.consent_text_hash).toBe(computeConsentTextHash(body.consent_text));
+  });
+
+  it('falls back to Estalara identity when the tenant has no brand_name', async () => {
+    mockSelectLimit.mockResolvedValue([
+      { id: TENANT_ID, brandConfig: { primary_color: '#1a73e8' } },
+    ]);
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ brand_name: string; consent_text: string; data_source: string }>(
+      res,
+    );
+    expect(body.brand_name).toBe('Estalara');
+    expect(body.consent_text).toContain('Estalara Adaptive Listings service');
+    expect(body.consent_text).toContain('provided by Time2Show, Inc.');
+    expect(body.data_source).toBe('stored');
+  });
+
+  it('returns data_source=default (Estalara) when no tenant row exists', async () => {
+    mockSelectLimit.mockResolvedValue([]);
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ brand_name: string; data_source: string }>(res);
+    expect(body.brand_name).toBe('Estalara');
+    expect(body.data_source).toBe('default');
+  });
+
+  it('returns 401 when the HMAC signature is missing', async () => {
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID, { signature: null }));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when the HMAC signature is wrong', async () => {
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID, { signature: 'deadbeef' + '0'.repeat(56) }));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when tenant_id is not a UUID', async () => {
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest('not-a-uuid'));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 (fail loud) when the tenant lookup throws — no fabricated 200', async () => {
+    mockSelectLimit.mockRejectedValueOnce(new Error('DB connection refused'));
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: string; data_source: string; degraded: boolean }>(res);
+    expect(body.data_source).toBe('db');
+    expect(body.degraded).toBe(true);
+    expect((body as Record<string, unknown>).consent_text).toBeUndefined();
   });
 });

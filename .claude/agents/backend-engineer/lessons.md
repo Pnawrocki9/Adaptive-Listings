@@ -2100,3 +2100,24 @@ would generalize this beyond just `adapt-get-auth`.
   decision is made on the OPTIONS preflight path using data only available on the authenticated
   request — the preflight/POST asymmetry is a subtle place to accidentally build a facade (echo on
   preflight ≠ enforcement).
+
+---
+
+- **2026-07-25 / FOLLOW-654** · Per-brand identity in consent + DSR flows. Built a single
+  server-side brand-identity resolver (`apps/control-plane/src/lib/brand-identity.ts`) reading two
+  additive `tenants.brand_config` JSONB keys (`brand_name`, `legal_entity`) and consumed it in three
+  legs: (1) `renderPlatformConsentText` §6.1 substitution served via a new partner-HMAC-authed `GET`
+  on the consent route; (2) `consent_text_hash` made REQUIRED (400) for non-first-party tenants via
+  a `FIRST_PARTY_TENANT_ID` env allowlist; (3) DSR OTP email `from`/subject/body brand-parameterized
+  (`brandSenderFrom`, sending domain fixed). · **Wiring/auth/fail-loud risks I weighed**: (a) Rule H
+  — the leg-1 renderer had no runtime consumer until I added the GET endpoint (avoided a test-only
+  export); (b) kept `brand_name`/`legal_entity` OFF the SDK public-config wire since there is no SDK
+  consumer (Rule L consumer-true) — server-side only; (c) chose brand-identity as source + env
+  allowlist for first-party rather than deriving the pinned `CANONICAL_CONSENT_TEXT_HASH` (a
+  gitleaks-registered placeholder) so I didn't disturb a compliance-audited constant; (d) GET fails
+  loud (500 + `data_source:'db'`) on a configured-but-failed tenant lookup, never a fabricated 200;
+  (e) fail-honest — no brand identity resolves to an EXPLICIT Estalara fallback, never an empty
+  string in legal text. · **A guardrail I'd add**: a CI check that flags any `tenants.brand_config`
+  key added to a server-side schema that is ALSO absent from the SDK public-config wire without a
+  one-line "server-side only, no SDK consumer" justification — the brand_name vs presentation-config
+  split is exactly the kind of decision that silently drifts.

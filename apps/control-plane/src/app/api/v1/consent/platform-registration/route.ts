@@ -43,13 +43,16 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { createAdminClient, consentRecords } from '@estalara/db';
+import { createAdminClient, consentRecords, tenants } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
 import {
   PLATFORM_REGISTRATION_TOS_VERSION,
   CANONICAL_CONSENT_TEXT_HASH,
   PlatformRegistrationConsentSchema,
+  renderPlatformConsentText,
+  computeConsentTextHash,
 } from './lib';
+import { isFirstPartyTenant, resolveBrandIdentity } from '@/lib/brand-identity';
 
 // ─── IP encryption ────────────────────────────────────────────────────────────
 
@@ -131,6 +134,111 @@ function verifyHmacSignature(rawBody: string, providedHex: string | null): boole
   }
 }
 
+// ─── GET handler (FOLLOW-654 leg 1) ───────────────────────────────────────────
+
+/**
+ * GET /api/v1/consent/platform-registration?tenant_id=<uuid>
+ *
+ * Returns the brand-correct canonical §6.1 consent disclosure text for a tenant,
+ * so white-label client deployments render the brand's OWN display identity in
+ * the consent text instead of the hardcoded "Estalara" / "Time2Show, Inc.".
+ * Also returns the SHA-256 of that exact text, which the deployment echoes back
+ * as `consent_text_hash` on the subsequent POST (closing the leg-2 audit loop).
+ *
+ * Auth: same HMAC shared secret as POST, but signed over the `tenant_id` string:
+ *   `X-Consent-Signature = HMAC-SHA256(PLATFORM_REGISTRATION_CONSENT_SECRET, tenant_id_utf8)`
+ * Constant-time compare. This is a partner-gated read (only callers holding the
+ * shared secret — Rafał's deployment backend — can fetch), not an anonymous
+ * public endpoint; the disclosure text is non-secret legal copy and the response
+ * is idempotent, so replay carries no risk.
+ *
+ * Provenance (Rule K.2): `data_source` is `'stored'` when a real `tenants` row
+ * backs the identity, `'default'` when no row exists (Estalara fallback). A
+ * configured-but-failed DB surfaces a 500 — never a fabricated 200.
+ *
+ * Responses:
+ *   200 { tenant_id, brand_name, legal_entity, tos_version, consent_text,
+ *         consent_text_hash, data_source }
+ *   400 — missing / malformed tenant_id
+ *   401 — missing or invalid HMAC signature
+ *   500 — DB configured but threw
+ */
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const tenantId = req.nextUrl.searchParams.get('tenant_id');
+  if (
+    !tenantId ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)
+  ) {
+    return NextResponse.json(
+      { error: 'tenant_id query parameter must be a valid UUID' },
+      { status: 400 },
+    );
+  }
+
+  // Auth — HMAC over the tenant_id string (constant-time compare).
+  const signature = req.headers.get('x-consent-signature');
+  if (!verifyHmacSignature(tenantId, signature)) {
+    return NextResponse.json({ error: 'Invalid or missing X-Consent-Signature' }, { status: 401 });
+  }
+
+  let db: ReturnType<typeof createAdminClient>;
+  try {
+    db = createAdminClient();
+  } catch (err: unknown) {
+    console.error(
+      '[platform-registration consent GET] createAdminClient() threw — DB not configured:',
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json(
+      { error: 'Service configuration error', data_source: 'none' },
+      { status: 500 },
+    );
+  }
+
+  let brandConfigRaw: unknown = null;
+  let rowExists = false;
+  try {
+    const rows = await db
+      .select({ id: tenants.id, brandConfig: tenants.brandConfig })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+    if (rows.length > 0) {
+      rowExists = true;
+      brandConfigRaw = rows[0]?.brandConfig ?? null;
+    }
+  } catch (err: unknown) {
+    // Rule K.2 — fail loud on configured-but-failed dependency. Never fabricate
+    // a 200 with Estalara-defaulted legal text when the DB actually threw.
+    console.error(
+      '[platform-registration consent GET] tenant lookup failed:',
+      err instanceof Error ? err.message : err,
+    );
+    return NextResponse.json(
+      { error: 'Database error resolving brand identity', data_source: 'db', degraded: true },
+      { status: 500 },
+    );
+  }
+
+  const identity = resolveBrandIdentity(brandConfigRaw);
+  const consentText = renderPlatformConsentText(identity);
+
+  return NextResponse.json(
+    {
+      tenant_id: tenantId,
+      brand_name: identity.brandName,
+      legal_entity: identity.legalEntity,
+      tos_version: PLATFORM_REGISTRATION_TOS_VERSION,
+      consent_text: consentText,
+      consent_text_hash: computeConsentTextHash(consentText),
+      // Provenance: 'stored' iff a real tenants row backs the identity; 'default'
+      // means no row exists and every field is the Estalara fallback.
+      data_source: rowExists ? 'stored' : 'default',
+    },
+    { status: 200 },
+  );
+}
+
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -167,6 +275,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const body = parsed.data;
+
+  // 4b. FOLLOW-654 leg 2 — `consent_text_hash` is REQUIRED for non-first-party
+  //     (external brand) tenants. On those deployments the disclosure text is
+  //     brand-substituted (leg 1), so silently defaulting the canonical Estalara
+  //     hash would attest an audit trail of text the visitor never saw. The
+  //     first-party Estalara tenant keeps backward-compat (hash may be omitted →
+  //     canonical default) so the single live registration flow is unaffected.
+  if (!isFirstPartyTenant(body.tenant_id) && body.consent_text_hash === undefined) {
+    return NextResponse.json(
+      {
+        error:
+          'consent_text_hash is required for non-first-party tenants (external brand deployments serve brand-substituted consent text)',
+      },
+      { status: 400 },
+    );
+  }
 
   // 5. Resolve IP address + user agent.
   const rawIp =

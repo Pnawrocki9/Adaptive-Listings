@@ -2056,3 +2056,27 @@ would generalize this beyond just `adapt-get-auth`.
   `.passthrough()` so it survives. · **A guardrail I'd add**: none — the existing K.2, staff-write
   atomicity, migration-journal and Rule-H guards all covered this change well; the awaited helper in
   the hot path was cheap (one PK lookup) and fail-open kept all 335 existing adapt tests green.
+
+- **2026-07-25 / FOLLOW-652** · **What I built**: `docs/runbooks/BRAND_PROVISIONING.md` — the
+  executable end-to-end brand-provisioning runbook (tenant create → detect+activate → brand/
+  quiz/AL/intent config → ingest CORS → verification), a deploy-side HANDOFF checklist, a per-brand
+  verification checklist, and a real local dry-run against a throwaway tenant. Docs-only PR, zero
+  application code. · **Wiring/auth/fail-loud risks I weighed**: tracing the ACTUAL auth path for
+  each step (not assuming ADR-0018 staff coverage) surfaced two real gaps the CEO's "no client
+  dashboard" model doesn't have a code answer for yet: `POST /api/detect` /
+  `POST /api/schema/activate` and `PATCH /api/tenants/:id` (quiz_enabled) still require a real
+  agency session — ADR-0018's staff-URL-scoped port was never extended to the onboarding wizard.
+  Rather than build a workaround into app code (out of scope for a docs PR, and the ticket
+  explicitly said don't), documented a dormant-internal-agency-account operator workaround and
+  flagged the gap for ticket promotion. Also traced ingest CORS (`apps/ingest/src/router.ts` — read
+  only, did not touch, FOLLOW-642 owns it) and confirmed a brand-new external domain is CORS-
+  rejected until FOLLOW-642 ships or an interim hardcoded-list edit is applied — called this out as
+  the real go-live blocker given the 2-4 week client timeline, not just a checklist line. Ran the
+  actual route test suites (126/126 green) + a live curl dry-run against a throwaway tenant with no
+  DB configured to prove every fail-loud/`data_source`/mock-observability claim in the doc against
+  real route behavior rather than assuming it from reading code. · **A guardrail I'd add**: none for
+  this ticket — but flag for the next provisioning-adjacent PR: if FOLLOW-639/642 land before this
+  runbook's placeholders (§Step 5/§Step 6) are updated, the runbook itself silently drifts stale; it
+  has no automated staleness check (unlike code, a runbook can't fail CI when its cited routes
+  change shape). Consider a lightweight "runbook cites route X at line Y" grep-check if this pattern
+  repeats across more runbooks.

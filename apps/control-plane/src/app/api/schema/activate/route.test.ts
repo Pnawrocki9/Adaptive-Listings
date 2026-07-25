@@ -35,6 +35,8 @@ vi.mock('@estalara/db', () => ({
   tenants: {
     id: 'id',
     status: 'status',
+    // FOLLOW-657: session-auth.ts's tenantExists() also filters on deletedAt.
+    deletedAt: 'deleted_at',
   },
   apiKeys: {
     tenantId: 'tenant_id',
@@ -43,6 +45,7 @@ vi.mock('@estalara/db', () => ({
     expiresAt: 'expires_at',
     createdAt: 'created_at',
   },
+  staffAuditLog: { __table: 'staff_audit_log' },
 }));
 
 vi.mock('@/lib/tenant-schema', () => ({
@@ -68,9 +71,15 @@ vi.mock('drizzle-orm', () => ({
   desc: vi.fn((col: unknown) => ({ col, op: 'desc' })),
 }));
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: vi.fn(),
-}));
+// FOLLOW-657: session-auth.ts's resolveTenantAccess also imports isTenantClaims,
+// isStaffClaims, and requireAgencyRole from @estalara/auth — these are pure
+// predicate/assert functions, safe to keep REAL via importOriginal. Only
+// getAuthClaims (the actual auth I/O) is mocked, exactly as before.
+vi.mock('@estalara/auth', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+  const actual = await importOriginal<typeof import('@estalara/auth')>();
+  return { ...actual, getAuthClaims: vi.fn() };
+});
 
 // ── Actual imports ─────────────────────────────────────────────────────────────
 
@@ -236,7 +245,11 @@ describe('POST /api/schema/activate — JWT authentication', () => {
     expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
-  it('staff JWT (tenant_id: null) → 403 STAFF_TENANT_CONTEXT_MISSING', async () => {
+  // FOLLOW-657 (ADR-0018 §2): staff callers may now activate via an explicit
+  // ?tenant_id — the old blanket 403 STAFF_TENANT_CONTEXT_MISSING rejection is
+  // superseded. See the staff-override describe block below for the
+  // ?tenant_id-present path.
+  it('staff JWT without ?tenant_id → 400 (tenantId required for staff override)', async () => {
     mockGetAuthClaims.mockResolvedValue({
       sub: 'staff-user-001',
       email: 'staff@estalara.com',
@@ -247,10 +260,10 @@ describe('POST /api/schema/activate — JWT authentication', () => {
     });
 
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
 
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
-    expect(body.error.code).toBe('STAFF_TENANT_CONTEXT_MISSING');
+    expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(typeof body.error.message).toBe('string');
   });
 });
@@ -480,5 +493,208 @@ describe('POST /api/schema/activate — listing embedding seed trigger (FOLLOW-0
     // Must still return 200 — the embed trigger is fire-and-forget.
     const res = await POST(makeRequest({ schema: MINIMAL_SCHEMA }));
     expect(res.status).toBe(200);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW-657 (ADR-0018 §2): Estalara staff override via ?tenant_id
+//
+// Drives the REAL resolveTenantAccess → verifyTracerAdminAuth → tenantExists
+// chain (only getAuthClaims and the DB layer are mocked). A dedicated
+// transaction-capable db mock backs createAdminClient(): the outer `db.select`
+// serves session-auth's tenantExists lookup; the tx object (built fresh inside
+// `.transaction()`) serves the schema upsert, tenant status update, api-key
+// lookup/insert, and the staff_audit_log insert — staged and committed (or
+// discarded on rollback) together.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/schema/activate — Estalara staff override (ADR-0018 §2, FOLLOW-657)', () => {
+  const STAFF_TENANT_ID = '550e8400-e29b-41d4-a716-446655440099';
+
+  function staffClaims(role: 'estalara:ops' | 'estalara:readonly' | 'estalara:superadmin') {
+    return {
+      sub: 'staff-uuid-777',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true as const,
+      estalara_role: role,
+      mfa_verified: true,
+    };
+  }
+
+  function makeStaffRequest(tenantId?: string): NextRequest {
+    const url = new URL('http://localhost/api/schema/activate');
+    if (tenantId) url.searchParams.set('tenant_id', tenantId);
+    return new NextRequest(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer staff-jwt-token',
+        'user-agent': 'vitest-staff-agent',
+        'x-forwarded-for': '203.0.113.9',
+      },
+      body: JSON.stringify({ schema: MINIMAL_SCHEMA }),
+    });
+  }
+
+  function makeStaffDb(
+    opts: {
+      tenantExists?: boolean;
+      failAudit?: boolean;
+      existingKey?: { prefix: string; last4: string } | null;
+    } = {},
+  ) {
+    const tenantExists = opts.tenantExists ?? true;
+    const failAudit = opts.failAudit ?? false;
+    const existingKey = opts.existingKey ?? null;
+    const auditRows: Record<string, unknown>[] = [];
+    const insertedApiKeys: Record<string, unknown>[] = [];
+
+    const select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => Promise.resolve(tenantExists ? [{ id: STAFF_TENANT_ID }] : [])),
+        })),
+      })),
+    }));
+
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const stagedAudit: Record<string, unknown>[] = [];
+      const stagedApiKeys: Record<string, unknown>[] = [];
+      const txSelect = vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn(() => Promise.resolve(existingKey ? [existingKey] : [])),
+            })),
+          })),
+        })),
+      }));
+      const txUpdate = vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })),
+      }));
+      const txInsert = vi.fn(() => ({
+        values: vi.fn((v: Record<string, unknown>) => {
+          if ('adminUserId' in v) {
+            if (failAudit) return Promise.reject(new Error('audit sink down'));
+            stagedAudit.push(v);
+            return Promise.resolve([]);
+          }
+          if ('hashedKey' in v) {
+            stagedApiKeys.push(v);
+            return Promise.resolve([]);
+          }
+          return { onConflictDoUpdate: vi.fn().mockResolvedValue([]) };
+        }),
+      }));
+      const tx = { select: txSelect, update: txUpdate, insert: txInsert };
+      await fn(tx); // rejecting inside discards staged state — nothing commits.
+      for (const row of stagedAudit) auditRows.push(row);
+      for (const row of stagedApiKeys) insertedApiKeys.push(row);
+    });
+
+    return {
+      db: { select, transaction },
+      _auditRows: auditRows,
+      _insertedApiKeys: insertedApiKeys,
+    };
+  }
+
+  it('estalara:readonly staff (rank < ops) with ?tenant_id → 403, no DB write', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:readonly'));
+    const { db } = makeStaffDb();
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('unknown ?tenant_id (not in tenants table) → 404, no DB write', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db } = makeStaffDb({ tenantExists: false });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeStaffRequest('550e8400-e29b-41d4-a716-446655440000'));
+    expect(res.status).toBe(404);
+  });
+
+  it('headless ADMIN_API_SECRET Bearer is REJECTED for staff (RETRO-187 — not attributable)', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', 'shared-secret-value');
+    mockGetAuthClaims.mockResolvedValue(null); // no identified session/JWT
+    const { db } = makeStaffDb();
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const url = new URL('http://localhost/api/schema/activate');
+    url.searchParams.set('tenant_id', STAFF_TENANT_ID);
+    const req = new NextRequest(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer shared-secret-value', // === ADMIN_API_SECRET
+      },
+      body: JSON.stringify({ schema: MINIMAL_SCHEMA }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(db.transaction).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
+  });
+
+  it('estalara:ops staff with valid ?tenant_id → 200, one staff_audit_log row, new key generated', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db, _auditRows, _insertedApiKeys } = makeStaffDb({ existingKey: null });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(200);
+
+    const body = await parseBody<{ api_key: string; tenant_id: string }>(res);
+    expect(body.api_key).toMatch(/^est_pub_/);
+    expect(body.tenant_id).toBe(STAFF_TENANT_ID);
+
+    expect(_insertedApiKeys).toHaveLength(1);
+    expect(_auditRows).toHaveLength(1);
+    const row = _auditRows[0]!;
+    expect(row.adminUserId).toBe('staff-uuid-777');
+    expect(row.action).toBe('schema.activate');
+    expect(row.targetTenantId).toBe(STAFF_TENANT_ID);
+    expect(row.ipAddress).toBe('203.0.113.9');
+    expect(row.userAgent).toBe('vitest-staff-agent');
+  });
+
+  it('estalara:ops staff with an existing active key → 200, returns prefix...last4 (no new key inserted)', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const existingKey = { prefix: 'est_pub_', last4: 'ab12' };
+    const { db, _insertedApiKeys } = makeStaffDb({ existingKey });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ api_key: string }>(res);
+    expect(body.api_key).toBe('est_pub_...ab12');
+    expect(_insertedApiKeys).toHaveLength(0);
+  });
+
+  it('staff write whose audit insert FAILS → 500 AUDIT_WRITE_FAILED, no orphan api key insert', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db, _auditRows, _insertedApiKeys } = makeStaffDb({
+      existingKey: null,
+      failAudit: true,
+    });
+    mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUDIT_WRITE_FAILED');
+    // Rolled back together — no orphan api key row and no audit row.
+    expect(_insertedApiKeys).toHaveLength(0);
+    expect(_auditRows).toHaveLength(0);
   });
 });

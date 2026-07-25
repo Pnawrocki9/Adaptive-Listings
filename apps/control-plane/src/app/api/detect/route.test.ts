@@ -51,16 +51,30 @@ vi.mock('@estalara/db', () => ({
     tenantId: 'tenant_id',
     domain: 'domain',
   },
+  // FOLLOW-657: session-auth.ts's tenantExists() selects from `tenants`; the
+  // route itself inserts staff_audit_log rows on the staff write path.
+  tenants: {
+    id: 'id',
+    deletedAt: 'deleted_at',
+  },
+  staffAuditLog: { __table: 'staff_audit_log' },
 }));
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
   and: vi.fn((...args: unknown[]) => args),
+  isNull: vi.fn((col: unknown) => ({ isNull: col })),
 }));
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: vi.fn(),
-}));
+// FOLLOW-657: session-auth.ts's resolveTenantAccess also imports isTenantClaims,
+// isStaffClaims, and requireAgencyRole from @estalara/auth — these are pure
+// predicate/assert functions, safe to keep REAL via importOriginal. Only
+// getAuthClaims (the actual auth I/O) is mocked, exactly as before.
+vi.mock('@estalara/auth', async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+  const actual = await importOriginal<typeof import('@estalara/auth')>();
+  return { ...actual, getAuthClaims: vi.fn() };
+});
 
 // FOLLOW-555: @supabase/ssr is called by the REAL getSessionAuthClaims() fallback
 // (session-auth.ts) when the legacy getAuthClaims path finds nothing — i.e. a
@@ -283,7 +297,12 @@ describe('POST /api/detect — JWT authentication (TICKET-033)', () => {
     expect(body.error.code).toBe('FETCH_FAILED');
   });
 
-  it('staff JWT (tenant_id: null) → 403 STAFF_TENANT_CONTEXT_MISSING', async () => {
+  // FOLLOW-657 (ADR-0018 §2): staff callers may now act via an explicit
+  // ?tenant_id — the old blanket 403 STAFF_TENANT_CONTEXT_MISSING rejection is
+  // superseded. Omitting ?tenant_id now surfaces resolveTenantAccess's own
+  // "tenantId is required" 400 (see the staff-override describe block below
+  // for the full ?tenant_id-present path).
+  it('staff JWT without ?tenant_id → 400 (tenantId required for staff override)', async () => {
     mockGetAuthClaims.mockResolvedValue({
       sub: 'staff-user-001',
       email: 'staff@estalara.com',
@@ -294,11 +313,189 @@ describe('POST /api/detect — JWT authentication (TICKET-033)', () => {
     });
 
     const res = await POST(makeRequest({ url: 'https://example.com' }));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
 
     const body = await parseBody<{ error: { code: string; message: string } }>(res);
-    expect(body.error.code).toBe('STAFF_TENANT_CONTEXT_MISSING');
+    expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(typeof body.error.message).toBe('string');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW-657 (ADR-0018 §2): Estalara staff override via ?tenant_id
+//
+// Drives the REAL resolveTenantAccess → verifyTracerAdminAuth → tenantExists
+// chain (none of those are mocked — only getAuthClaims and the DB layer are).
+// A dedicated transaction-capable db mock backs createAdminClient() so the
+// SAME instance serves (a) session-auth's tenantExists lookup and (b) the
+// route's own cache-guard read + transactional schema-upsert/audit write.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('POST /api/detect — Estalara staff override (ADR-0018 §2, FOLLOW-657)', () => {
+  const STAFF_TENANT_ID = '550e8400-e29b-41d4-a716-446655440099';
+
+  function staffClaims(role: 'estalara:ops' | 'estalara:readonly' | 'estalara:superadmin') {
+    return {
+      sub: 'staff-uuid-777',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true as const,
+      estalara_role: role,
+      mfa_verified: true,
+    };
+  }
+
+  function makeStaffRequest(tenantId?: string): NextRequest {
+    const url = new URL('http://localhost/api/detect');
+    if (tenantId) url.searchParams.set('tenant_id', tenantId);
+    return new NextRequest(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer staff-jwt-token',
+        'user-agent': 'vitest-staff-agent',
+        'x-forwarded-for': '203.0.113.9',
+      },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    });
+  }
+
+  /**
+   * A transaction-capable db mock: `.select().from().where().limit()` serves
+   * BOTH session-auth's tenantExists lookup (1st call) and the route's own
+   * cache-guard read (2nd call, forced to "no cache" — the route proceeds to
+   * fetch + detect). `.transaction()` stages tenant_site_schemas upserts and
+   * staff_audit_log inserts, committing both together or rolling both back.
+   */
+  function makeStaffDb(opts: { tenantExists?: boolean; failAudit?: boolean } = {}) {
+    const tenantExists = opts.tenantExists ?? true;
+    const failAudit = opts.failAudit ?? false;
+    let selectCalls = 0;
+    const auditRows: Record<string, unknown>[] = [];
+    let upsertedSchema: Record<string, unknown> | null = null;
+
+    const select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => {
+            selectCalls += 1;
+            if (selectCalls === 1) {
+              return Promise.resolve(tenantExists ? [{ id: STAFF_TENANT_ID }] : []);
+            }
+            return Promise.resolve([]); // cache-guard: always a miss in these tests
+          }),
+        })),
+      })),
+    }));
+
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      let stagedSchema: Record<string, unknown> | null = null;
+      const stagedAudit: Record<string, unknown>[] = [];
+      const tx = {
+        insert: vi.fn(() => ({
+          values: vi.fn((v: Record<string, unknown>) => {
+            if ('adminUserId' in v) {
+              if (failAudit) return Promise.reject(new Error('audit sink down'));
+              stagedAudit.push(v);
+              return Promise.resolve([]);
+            }
+            stagedSchema = v;
+            return { onConflictDoUpdate: vi.fn().mockResolvedValue([]) };
+          }),
+        })),
+      };
+      await fn(tx); // rejecting here discards staged state — nothing commits.
+      upsertedSchema = stagedSchema;
+      for (const row of stagedAudit) auditRows.push(row);
+    });
+
+    return {
+      db: { select, transaction },
+      _auditRows: auditRows,
+      get _upsertedSchema() {
+        return upsertedSchema;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('ADMIN_API_SECRET', 'shared-secret-value');
+  });
+
+  it('estalara:readonly staff (rank < ops) with ?tenant_id → 403, no DB write', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:readonly'));
+    const { db } = makeStaffDb();
+    withDbMock(db as unknown as DbMock);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('unknown ?tenant_id (not in tenants table) → 404, no DB write', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db } = makeStaffDb({ tenantExists: false });
+    withDbMock(db as unknown as DbMock);
+
+    const res = await POST(makeStaffRequest('550e8400-e29b-41d4-a716-446655440000'));
+    expect(res.status).toBe(404);
+  });
+
+  it('headless ADMIN_API_SECRET Bearer is REJECTED for staff (RETRO-187 — not attributable)', async () => {
+    mockGetAuthClaims.mockResolvedValue(null); // no identified session/JWT
+    const { db } = makeStaffDb();
+    withDbMock(db as unknown as DbMock);
+
+    const url = new URL('http://localhost/api/detect');
+    url.searchParams.set('tenant_id', STAFF_TENANT_ID);
+    const req = new NextRequest(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer shared-secret-value', // === ADMIN_API_SECRET
+      },
+      body: JSON.stringify({ url: 'https://example.com' }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('estalara:ops staff with valid ?tenant_id → 200, one staff_audit_log row, fenced on that tenant', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db, _auditRows } = makeStaffDb();
+    withDbMock(db as unknown as DbMock);
+    mockFetchSuccess();
+    mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(200);
+
+    expect(_auditRows).toHaveLength(1);
+    const row = _auditRows[0]!;
+    expect(row.adminUserId).toBe('staff-uuid-777');
+    expect(row.action).toBe('detect.schema_upsert');
+    expect(row.targetTenantId).toBe(STAFF_TENANT_ID);
+    expect(row.ipAddress).toBe('203.0.113.9');
+    expect(row.userAgent).toBe('vitest-staff-agent');
+  });
+
+  it('staff write whose audit insert FAILS → 500 AUDIT_WRITE_FAILED, no orphan schema upsert', async () => {
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
+    const { db, _auditRows } = makeStaffDb({ failAudit: true });
+    withDbMock(db as unknown as DbMock);
+    mockFetchSuccess();
+    mockDetectSiteSchema.mockResolvedValue(VALID_RESULT);
+
+    const res = await POST(makeStaffRequest(STAFF_TENANT_ID));
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('AUDIT_WRITE_FAILED');
+    expect(_auditRows).toHaveLength(0);
   });
 });
 

@@ -6,8 +6,14 @@
  * response for the Magic Link onboarding wizard (TICKET-030).
  *
  * Key behaviours (TICKET-033):
- *  - Auth via getSessionAuthClaims() — Bearer JWT OR @supabase/ssr browser session
- *    (FOLLOW-555); tenant_id extracted from the resolved claims
+ *  - Auth (ADR-0018 §2, FOLLOW-657): `resolveTenantAccess` with `allowStaffOverride`.
+ *    The agency path is byte-unchanged (tenant sourced from the session claim). An
+ *    Estalara staff caller may act on any tenant by supplying an explicit
+ *    `?tenant_id=<uuid>` — validated against the `tenants` table — and that
+ *    validated id becomes the SINGLE tenant fence bound into every query
+ *    (invariant 5). Staff writes require `estalara:ops` or higher (rank ≥ 2,
+ *    CEO Q3) and the headless `ADMIN_API_SECRET` Bearer path is REJECTED for
+ *    staff (RETRO-187 — a shared secret is not attributable to a staff user).
  *  - SSRF protection — blocks private IPs, IPv6 loopback/private, localhost, bare hostnames
  *  - 60-second detection cache guard — avoids burning AI Vision quota on rapid retries
  *  - Wizard-ready response shape with flattened `fields[]` array
@@ -25,6 +31,14 @@
  *  - Called when L1–L10 all return null and ANTHROPIC_API_KEY is set
  *  - AI Vision failure must not block the response
  *
+ * Staff write atomicity (ADR-0018 §3a, FOLLOW-657): when the caller is staff, the
+ * `tenant_site_schemas` upsert and its `staff_audit_log` row commit-or-roll-back
+ * TOGETHER in ONE `db.transaction()` — a failure inside the tx (either the upsert
+ * or the audit insert) rolls BOTH back and returns 500 `AUDIT_WRITE_FAILED`
+ * (never a silent unattributed 200). The agency path keeps the pre-existing
+ * "DB failure must not block the response" behavior (unchanged) — agency writes
+ * are self-service and are NOT audited (ADR-0018 §3).
+ *
  * @module apps/control-plane/src/app/api/detect/route
  */
 
@@ -32,13 +46,15 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
+import * as Sentry from '@sentry/nextjs';
 import { detectSiteSchema } from '@estalara/sdk/auto-detect';
 import type { DetectionResult } from '@estalara/sdk/auto-detect';
-import { createAdminClient, tenantSiteSchemas } from '@estalara/db';
-// FOLLOW-555 (A3-F-04): POST is called by the detection dashboard page and the onboarding
-// DetectWizard, so it must accept the @supabase/ssr browser session in addition to the
-// Bearer/legacy-cookie path (getSessionAuthClaims tries Bearer first, unchanged for API callers).
-import { getSessionAuthClaims } from '@/lib/session-auth';
+import { createAdminClient, tenantSiteSchemas, staffAuditLog } from '@estalara/db';
+// FOLLOW-657 (ADR-0018 §2): resolveTenantAccess replaces the direct getSessionAuthClaims()
+// call so an Estalara staff caller can act on an explicit ?tenant_id in addition to the
+// unchanged agency-session path (which resolveTenantAccess evaluates first and byte-for-byte
+// the same as the old getSessionAuthClaims() call — see session-auth.ts:401-418).
+import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
 import type {
   TenantSiteSchema,
   CardFieldMappings,
@@ -46,7 +62,6 @@ import type {
   SelectorStrategy,
 } from '@estalara/shared';
 import type { DetectField } from '@estalara/shared';
-import { errorBody, ErrorCode } from '@estalara/shared';
 import { checkSsrf, SsrfBlockedError } from '@/lib/ssrf';
 
 // ─── Request schema ───────────────────────────────────────────────────────────
@@ -151,6 +166,32 @@ function isNotImplementedError(err: unknown): boolean {
   return err instanceof Error && err.message.toLowerCase().startsWith('not implemented');
 }
 
+/** Best-effort client IP for the staff audit trail (no throw if absent). */
+function requestIp(req: NextRequest): string | null {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd) return fwd.split(',')[0]?.trim() ?? null;
+  return req.headers.get('x-real-ip');
+}
+
+/**
+ * Map an {@link AccessError} status to this route's existing UPPER_SNAKE error
+ * code convention (VALIDATION_ERROR, FETCH_FAILED, etc — TICKET-033).
+ */
+function accessErrorCode(status: number): string {
+  switch (status) {
+    case 400:
+      return 'VALIDATION_ERROR';
+    case 403:
+      return 'FORBIDDEN';
+    case 404:
+      return 'TENANT_NOT_FOUND';
+    case 401:
+      return 'UNAUTHORIZED';
+    default:
+      return 'INTERNAL_ERROR';
+  }
+}
+
 /**
  * Fetch the HTML from the provided URL server-side.
  *
@@ -188,45 +229,62 @@ async function fetchHtml(url: string): Promise<string> {
  * POST /api/detect
  *
  * Body: `{ url: string }`
- * Auth: `Authorization: Bearer <tenant-JWT>` (required)
+ * Auth: `Authorization: Bearer <tenant-JWT>` (agency) OR an identified Estalara
+ *   staff session/JWT plus `?tenant_id=<uuid>` (ADR-0018 §2, FOLLOW-657). Staff
+ *   writes require `estalara:ops`+; the headless `ADMIN_API_SECRET` is rejected
+ *   for staff (RETRO-187).
  *
  * @returns 200 wizard-ready `WizardDetectResponse` (schema may be null for low confidence).
- * @returns 400 validation error, fetch failure, or SSRF block.
+ * @returns 400 validation error, fetch failure, SSRF block, or missing staff `tenant_id`.
  * @returns 401 when JWT is missing or invalid.
+ * @returns 403 when a staff caller is below `estalara:ops` or not identifiable.
+ * @returns 404 when the staff-supplied `tenant_id` does not resolve to a real tenant.
  * @returns 501 when the detection engine is not yet implemented.
  * @returns 500 unexpected error.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ── JWT authentication ────────────────────────────────────────────────────
-  const claims = await getSessionAuthClaims(req);
-  if (!claims) {
+  // ── Auth: agency session (byte-unchanged) OR Estalara staff override ─────
+  // (ADR-0018 §2, FOLLOW-657). `access.tenantId` is the ONLY tenant fence bound
+  // into every query below — for agency it is the session claim (unchanged);
+  // for staff it is the validated `?tenant_id` (invariant 5).
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes: omit the key when absent (RETRO-189).
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+    });
+  } catch (err) {
+    if (err instanceof AccessError) {
+      return NextResponse.json(
+        {
+          error: { code: accessErrorCode(err.status), message: err.message, request_id: requestId },
+        },
+        { status: err.status },
+      );
+    }
+    throw err;
+  }
+
+  // Write-rank gate (CEO Q3, ADR-0018 §4): staff below `estalara:ops` is view-only.
+  // Detect always performs (or attempts) a write, so the whole POST is gated.
+  if (access.via === 'staff' && !access.canWrite) {
     return NextResponse.json(
       {
         error: {
-          code: 'UNAUTHORIZED',
-          message: 'Missing or invalid token',
+          code: 'FORBIDDEN',
+          message: 'Staff write requires estalara:ops or higher',
           request_id: requestId,
         },
       },
-      { status: 401 },
-    );
-  }
-
-  // Staff JWTs carry tenant_id: null — they must not call tenant-scoped endpoints.
-  // Returning a sentinel string would silently write 'estalara_staff' into a uuid column.
-  if (!claims.tenant_id) {
-    return NextResponse.json(
-      errorBody({
-        code: ErrorCode.STAFF_TENANT_CONTEXT_MISSING,
-        message: 'Staff callers cannot use the tenant detect API',
-        requestId,
-      }),
       { status: 403 },
     );
   }
-  const tenantId = claims.tenant_id;
+
+  const tenantId = access.tenantId;
 
   // ── Parse + validate body ─────────────────────────────────────────────────
   let body: unknown;
@@ -411,29 +469,94 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Persist when schema is present ───────────────────────────────────────
-  try {
-    const db = createAdminClient();
-    await db
-      .insert(tenantSiteSchemas)
-      .values({
-        tenantId,
-        domain: result.schema.domain,
-        schema: result.schema,
-        detectionSource: result.schema.detection_source,
-        detectionConfidence: result.confidence,
-      })
-      .onConflictDoUpdate({
-        target: [tenantSiteSchemas.tenantId, tenantSiteSchemas.domain],
-        set: {
+  if (access.via === 'staff') {
+    // ── Atomic staff write (ADR-0018 §3a, FOLLOW-657) ───────────────────────
+    // The schema upsert and its staff_audit_log row commit-or-roll-back
+    // TOGETHER in ONE transaction — a config mutation can never outlive a
+    // missing audit row. Unlike the agency path below, a staff DB failure is
+    // NOT swallowed: it fails loud (500), because a silent unattributed write
+    // is exactly what ADR-0018 §3a forbids.
+    // Bound to a const so the `result.schema === null` narrowing above survives
+    // inside the transaction closure (it does not for a property access).
+    const schema = result.schema;
+    try {
+      const db = createAdminClient();
+      await db.transaction(async (tx) => {
+        await tx
+          .insert(tenantSiteSchemas)
+          .values({
+            tenantId,
+            domain: schema.domain,
+            schema,
+            detectionSource: schema.detection_source,
+            detectionConfidence: result.confidence,
+          })
+          .onConflictDoUpdate({
+            target: [tenantSiteSchemas.tenantId, tenantSiteSchemas.domain],
+            set: {
+              schema,
+              detectionSource: schema.detection_source,
+              detectionConfidence: result.confidence,
+              updatedAt: new Date(),
+            },
+          });
+        await tx.insert(staffAuditLog).values({
+          adminUserId: access.staff.sub,
+          action: 'detect.schema_upsert',
+          targetTenantId: tenantId,
+          payload: {
+            domain: schema.domain,
+            detection_source: schema.detection_source,
+            detection_confidence: result.confidence,
+          },
+          ipAddress: requestIp(req),
+          userAgent: req.headers.get('user-agent'),
+        });
+      });
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { route: 'detect', staff_audit_error: 'true' },
+        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+      });
+      return NextResponse.json(
+        {
+          error: {
+            code: 'AUDIT_WRITE_FAILED',
+            message:
+              'The detected schema could not be recorded atomically with its staff audit ' +
+              'row; the change was rolled back and NOT applied. Retry the action.',
+            request_id: requestId,
+          },
+        },
+        { status: 500 },
+      );
+    }
+  } else {
+    // Agency self-service write — UNCHANGED and NOT audited (ADR-0018 §3).
+    try {
+      const db = createAdminClient();
+      await db
+        .insert(tenantSiteSchemas)
+        .values({
+          tenantId,
+          domain: result.schema.domain,
           schema: result.schema,
           detectionSource: result.schema.detection_source,
           detectionConfidence: result.confidence,
-          updatedAt: new Date(),
-        },
-      });
-  } catch (dbErr) {
-    // DB failure must not block the response — log and continue.
-    console.error('[detect] DB upsert failed:', dbErr instanceof Error ? dbErr.message : dbErr);
+        })
+        .onConflictDoUpdate({
+          target: [tenantSiteSchemas.tenantId, tenantSiteSchemas.domain],
+          set: {
+            schema: result.schema,
+            detectionSource: result.schema.detection_source,
+            detectionConfidence: result.confidence,
+            updatedAt: new Date(),
+          },
+        });
+    } catch (dbErr) {
+      // DB failure must not block the response — log and continue.
+      console.error('[detect] DB upsert failed:', dbErr instanceof Error ? dbErr.message : dbErr);
+    }
   }
 
   // ── Wizard-ready response ─────────────────────────────────────────────────

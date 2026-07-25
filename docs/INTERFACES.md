@@ -97,8 +97,8 @@ each shipped together with its real SDK consumer (Rule L). The canonical superse
 `packages/shared/src/examples/presentation-config.ts`.
 
 Slices (by ticket): `brand` (FOLLOW-623 — SHIPPED), `quiz_placement` (FOLLOW-640), `opt_out_widget`
-(FOLLOW-641), `quiz_definition` (FOLLOW-639). A shipped slice's absence means the SDK uses its
-built-in default (ADR-0019 D4) — an unconfigured tenant is byte-identical to pre-ADR-0019.
+(FOLLOW-641), `quiz_definition` (FOLLOW-639 — SHIPPED). A shipped slice's absence means the SDK uses
+its built-in default (ADR-0019 D4) — an unconfigured tenant is byte-identical to pre-ADR-0019.
 
 **`brand` slice (FOLLOW-623):** read from `tenants.brand_config` (the same jsonb column written by
 `/api/config` PATCH, PR #616). `logo_url` is `string | null` end-to-end, NEVER `undefined`
@@ -148,6 +148,68 @@ brand-without-logo variant:
   "brand": { "primary_color": "#c026d3", "logo_url": null, "white_label": false }
 }
 ```
+
+**`quiz_definition` slice (FOLLOW-639):** the tenant's ACTIVE editable quiz tree, read from the
+dedicated `quiz_definitions` table (ADR-0019 D2) and re-validated with `QuizDefinitionSchema` on
+read. Omitted when the tenant has no active/valid definition — the SDK then walks its built-in
+`DEFAULT_QUIZ_DEFINITION` (byte-identical to pre-ADR-0019 for every path). The SDK reduces the
+walked answer `weights` vectors to a single archetype by argmax (`reduceWeightsToArchetype`),
+preserving the ADR-0014 SoT + FOLLOW-101/554 + completion-ping persistence path unchanged. Hard
+integrity (unknown archetype id, dangling `next`, cycle, duplicate id) is rejected on write; the
+unreachable-archetype list is a NON-BLOCKING editor warning.
+
+Example 3 — tenant with an active quiz definition (200):
+
+```json
+{
+  "quiz_enabled": true,
+  "micro_polls_enabled": false,
+  "language": "en",
+  "accent_color": "#2563EB",
+  "data_source": "db",
+  "quiz_definition": {
+    "schema_version": 1,
+    "root": "q_gate",
+    "languages": ["en"],
+    "questions": [
+      {
+        "id": "q_gate",
+        "prompt_i18n": { "en": "What are you looking for?" },
+        "answers": [
+          {
+            "id": "a_invest",
+            "label_i18n": { "en": "Investment" },
+            "weights": {},
+            "next": "q_focus"
+          },
+          { "id": "a_skip", "label_i18n": { "en": "Just browsing" }, "weights": {}, "next": null }
+        ]
+      },
+      {
+        "id": "q_focus",
+        "prompt_i18n": { "en": "What is your focus?" },
+        "answers": [
+          {
+            "id": "a_yield",
+            "label_i18n": { "en": "Rental yield" },
+            "weights": { "yield_hunter": 1 },
+            "next": null
+          },
+          {
+            "id": "a_flip",
+            "label_i18n": { "en": "Flip / renovate" },
+            "weights": { "flip_investor": 1 },
+            "next": null
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The staff write path is `PUT /api/admin/tenants/quiz-definition?tenant_id=<uuid>` (ADR-0018 §3a
+staff-atomic-audited, `action: 'quiz_definition.update'`).
 
 Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
 `packages/sdk/src/core/quiz-config.ts` (`fetchQuizConfig`) → `packages/sdk/src/index.ts`

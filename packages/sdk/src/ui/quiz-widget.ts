@@ -1,336 +1,332 @@
 /**
- * Quiz widget v2.0 — branching decision tree.
+ * Quiz widget v3.0 — generic definition-driven tree walker (FOLLOW-639 / ADR-0019 D5).
  *
- * Q1 (gate): 4 options → INWESTOR / WŁASNY_UZYTKU / CROSS_BORDER branch, or neutral (skip).
- * Each branch has Q2 (and optionally Q3) leading to exactly one leaf archetype.
+ * The answer→archetype mapping is no longer a hardcoded `resolveArchetype()` switch over
+ * fixed `QUIZ_CONTENT`: it now lives in DATA — a `QuizDefinition` (the tenant's served,
+ * fully editable tree, or the built-in `DEFAULT_QUIZ_DEFINITION` fallback). This renderer is
+ * a GENERIC walker that:
+ *   1. Starts at `definition.root` and follows each selected answer's `next` until a leaf
+ *      (`next: null`), accumulating the selected answers' `weights` vectors.
+ *   2. Reduces the accumulated vector to a SINGLE resolved archetype by argmax
+ *      (`reduceWeightsToArchetype`, the ONE shared source of truth for the reduction; empty /
+ *      all-zero ⇒ `neutral`, ties broken by canonical order).
  *
- * 17 non-neutral leaf archetypes:
- *   INWESTOR:       yield_hunter, portfolio_builder, golden_visa_buyer,
- *                   vacation_rental_investor, flip_investor, commercial_investor
- *   WŁASNY_UZYTKU:  first_time_buyer, family_buyer, upsizer, downsizer, luxury_buyer, remote_worker
- *   CROSS_BORDER:   retiree_relocator, diaspora_buyer, lifestyle_expat,
- *                   second_home_buyer, student_parent
+ * The downstream persistence contract is UNCHANGED (ADR-0019 D5): `onComplete(resolved)` still
+ * feeds `applyQuizLeaf` → `persistResolvedArchetype` (non-neutral only, FOLLOW-554) →
+ * `postQuizCompletionPing` byte-for-byte — only the mapping SOURCE moved from code to data.
  *
- * On leaf resolution: calls `onComplete` with the resolved archetype (or 'neutral').
- * On dismiss: calls `onDismiss`.
- *
- * FOLLOW-273 (2026-06-11): `QuizWidgetConfig.language` and `QUIZ_CONTENT` key type now use
- * `QuizLanguage` imported from `@estalara/shared` instead of the inline `'en'|'pl'|'es'`
- * literal. `QUIZ_LANGUAGE_VALUES` is the single canonical source of truth.
+ * `DEFAULT_QUIZ_DEFINITION` reproduces the pre-ADR-0019 tree EXACTLY (the same 17 non-neutral
+ * leaves + neutral skip), expressed in the definition format and reduced by the same argmax —
+ * so an unconfigured tenant resolves the identical archetype for every path (proven by the
+ * parity test). It is EN-only (ADR-0019 D6 "minimal EN-only default tree"); the previous
+ * PL/ES `QUIZ_CONTENT` strings move server-side (a brand localises by saving a definition with
+ * its own `label_i18n`), banking the net-bundle-win the ADR sequences before FOLLOW-641.
  *
  * @module @estalara/sdk/ui/quiz-widget
  */
 
-import type { QuizLanguage } from '@estalara/shared';
+import type { QuizDefinition, QuizLanguage, QuizQuestion } from '@estalara/shared';
+import { reduceWeightsToArchetype } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
 
-/** All 17 non-neutral leaf archetypes plus 'neutral' for Q1-D skip. */
+/** A resolved leaf archetype (one of the 17 non-neutral archetypes, or 'neutral'). */
 export type QuizResolvedArchetype = Archetype;
 
 export interface QuizWidgetConfig {
   accentColor: string;
   language: QuizLanguage;
   /**
+   * The quiz tree to walk — the tenant's served `quiz_definition` slice, or
+   * `DEFAULT_QUIZ_DEFINITION` when the tenant configured none (ADR-0019 D4/D5).
+   */
+  definition: QuizDefinition;
+  /**
    * Tenant brand logo URL shown atop the quiz card (FOLLOW-623 / ADR-0019).
    *
-   * `string | null`, never `undefined` (ADR-0019 D-nullability). `null` (or omitted)
-   * renders no logo — byte-identical to pre-ADR-0019. The card accent color stays
-   * `accentColor` (`quiz_config.accent_color` wins per the D4 precedence); the brand color
-   * drives the sticky trigger, not the card.
+   * `string | null`, never `undefined` (ADR-0019 D-nullability). `null` (or omitted) renders
+   * no logo — byte-identical to pre-ADR-0019.
    */
   logoUrl?: string | null;
 }
 
-// ─── I18n content ─────────────────────────────────────────────────────────────
-
-interface QuizQuestion {
-  question: string;
-  answers: string[];
-}
-
-interface QuizLang {
-  q1_gate: QuizQuestion;
-  inwestor_q2: QuizQuestion;
-  inwestor_q3: QuizQuestion;
-  own_use_q2: QuizQuestion;
-  own_use_q3: QuizQuestion;
-  cross_border_q2: QuizQuestion;
-  cross_border_q3: QuizQuestion;
-  cta_next: string;
-  cta_finish: string;
-  skip: string;
-}
+// ─── UI chrome i18n (question/answer strings live in the definition) ────────────
 
 /**
- * AC3 (FOLLOW-273): The keys of this map MUST equal `QUIZ_LANGUAGE_VALUES`. Enforced by the
- * parity test in `src/__tests__/follow-273.test.ts`. If a new locale is added to
- * `QUIZ_LANGUAGE_VALUES`, TypeScript will error here until the corresponding key is added.
+ * Widget CHROME labels — the small non-content strings (CTA + skip) not carried by the
+ * definition. Kept multilingual (tiny) so a served non-EN definition still gets localised
+ * chrome. Question/answer text comes from the definition's `prompt_i18n` / `label_i18n`.
  */
-export const QUIZ_CONTENT: Record<QuizLanguage, QuizLang> = {
-  en: {
-    q1_gate: {
-      question: 'What are you looking for?',
-      answers: [
-        'Investment property',
-        'A home for myself or my family',
-        'Buying abroad / cross-border',
-        'Just browsing',
-      ],
-    },
-    inwestor_q2: {
-      question: 'What is your investment focus?',
-      answers: [
-        'Rental income (yield)',
-        'Vacation rental',
-        'Flip / renovation',
-        'Commercial / portfolio',
-      ],
-    },
-    inwestor_q3: {
-      question: 'What is your target return?',
-      answers: [
-        'Steady yield above market average',
-        'Long-term portfolio growth',
-        'Golden visa / residency pathway',
-      ],
-    },
-    own_use_q2: {
-      question: 'What describes your situation best?',
-      answers: ['First-time buyer', 'Growing family', 'Upsizing', 'Downsizing'],
-    },
-    own_use_q3: {
-      question: 'What matters most to you?',
-      answers: [
-        'Location and community',
-        'Luxury finishes and prestige',
-        'Remote-work setup',
-        'Value for money',
-      ],
-    },
-    cross_border_q2: {
-      question: 'Why are you buying abroad?',
-      answers: ['Retiring or relocating', 'Second / holiday home', 'Supporting a student'],
-    },
-    cross_border_q3: {
-      question: 'What is your primary goal?',
-      answers: [
-        'Retire and settle permanently',
-        'Stay connected to home country',
-        'Lifestyle and travel base',
-      ],
-    },
-    cta_next: '→',
-    cta_finish: 'Find my match',
-    skip: 'Skip',
-  },
-  pl: {
-    q1_gate: {
-      question: 'Czego szukasz?',
-      answers: [
-        'Nieruchomość inwestycyjna',
-        'Dom dla siebie lub rodziny',
-        'Zakup za granicą',
-        'Tylko przeglądam',
-      ],
-    },
-    inwestor_q2: {
-      question: 'Na czym skupia się Twoja inwestycja?',
-      answers: [
-        'Przychód z najmu (yield)',
-        'Wynajem wakacyjny',
-        'Flipping / renowacja',
-        'Komercja / portfel',
-      ],
-    },
-    inwestor_q3: {
-      question: 'Jaki jest Twój docelowy zwrot?',
-      answers: [
-        'Stabilny yield powyżej rynku',
-        'Długoterminowy wzrost portfela',
-        'Golden visa / ścieżka rezydencji',
-      ],
-    },
-    own_use_q2: {
-      question: 'Co najlepiej opisuje Twoją sytuację?',
-      answers: [
-        'Kupuję po raz pierwszy',
-        'Rosnąca rodzina',
-        'Przeprowadzam się do większego',
-        'Zmniejszam metraż',
-      ],
-    },
-    own_use_q3: {
-      question: 'Co jest dla Ciebie najważniejsze?',
-      answers: [
-        'Lokalizacja i społeczność',
-        'Luksusowe wykończenie i prestiż',
-        'Praca zdalna',
-        'Cena i wartość',
-      ],
-    },
-    cross_border_q2: {
-      question: 'Dlaczego kupujesz za granicą?',
-      answers: ['Emerytura lub relokacja', 'Drugi dom / wakacyjny', 'Wsparcie dla studenta'],
-    },
-    cross_border_q3: {
-      question: 'Jaki jest Twój główny cel?',
-      answers: [
-        'Osiedlić się na stałe',
-        'Pozostać w kontakcie z krajem',
-        'Baza lifestyle / podróże',
-      ],
-    },
-    cta_next: '→',
-    cta_finish: 'Znajdź dopasowanie',
-    skip: 'Pomiń',
-  },
-  es: {
-    q1_gate: {
-      question: '¿Qué buscas?',
-      answers: [
-        'Propiedad de inversión',
-        'Una vivienda para mí o mi familia',
-        'Comprar en el extranjero',
-        'Solo estoy mirando',
-      ],
-    },
-    inwestor_q2: {
-      question: '¿Cuál es tu enfoque de inversión?',
-      answers: [
-        'Ingresos por alquiler (rentabilidad)',
-        'Alquiler vacacional',
-        'Reforma / inversión rápida',
-        'Comercial / cartera',
-      ],
-    },
-    inwestor_q3: {
-      question: '¿Cuál es tu rentabilidad objetivo?',
-      answers: [
-        'Rentabilidad estable por encima del mercado',
-        'Crecimiento de cartera a largo plazo',
-        'Visado dorado / residencia',
-      ],
-    },
-    own_use_q2: {
-      question: '¿Qué describe mejor tu situación?',
-      answers: [
-        'Comprador por primera vez',
-        'Familia en crecimiento',
-        'Mudarse a algo más grande',
-        'Reducir tamaño',
-      ],
-    },
-    own_use_q3: {
-      question: '¿Qué es lo más importante para ti?',
-      answers: [
-        'Ubicación y comunidad',
-        'Acabados de lujo y prestigio',
-        'Trabajo en remoto',
-        'Precio y valor',
-      ],
-    },
-    cross_border_q2: {
-      question: '¿Por qué compras en el extranjero?',
-      answers: [
-        'Jubilación o reubicación',
-        'Segunda vivienda / vacacional',
-        'Apoyo a un estudiante',
-      ],
-    },
-    cross_border_q3: {
-      question: '¿Cuál es tu objetivo principal?',
-      answers: [
-        'Establecerse permanentemente',
-        'Mantener vínculos con el país de origen',
-        'Base de estilo de vida / viajes',
-      ],
-    },
-    cta_next: '→',
-    cta_finish: 'Encontrar mi opción',
-    skip: 'Omitir',
-  },
+const CHROME_LABELS: Record<QuizLanguage, { next: string; finish: string; skip: string }> = {
+  en: { next: '→', finish: 'Find my match', skip: 'Skip' },
+  pl: { next: '→', finish: 'Znajdź dopasowanie', skip: 'Pomiń' },
+  es: { next: '→', finish: 'Encontrar mi opción', skip: 'Omitir' },
 };
 
-// ─── State machine types ───────────────────────────────────────────────────────
-
-type Branch = 'INWESTOR' | 'OWN_USE' | 'CROSS_BORDER';
+// ─── Built-in default definition (EN-only) — reproduces the pre-ADR-0019 tree ──
 
 /**
- * Resolve the leaf archetype from the collected answers.
- * Returns 'neutral' for Q1-D (skip).
+ * The built-in default quiz tree (ADR-0019 D5/D6), expressed in the `QuizDefinition` format
+ * and reduced by the shared argmax so it resolves the SAME archetype as the old
+ * `resolveArchetype()` switch for every path (parity test: `quiz-widget.test.ts`).
+ *
+ * Weight scheme: a branch/gate answer contributes `{}` (0); a base own-use answer contributes
+ * `1` to its archetype; an override own-use Q3 answer contributes `2` so it beats the base on
+ * argmax (the old "Q3-B → luxury, Q3-C → remote, else confirm base" rule); leaf answers on the
+ * investor/cross-border branches contribute `1` to their single archetype.
  */
-export function resolveArchetype(
-  branch: Branch | null,
-  q2Answer: number | null,
-  q3Answer: number | null,
-): QuizResolvedArchetype {
-  if (branch === null) return 'neutral';
+export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = {
+  schema_version: 1,
+  root: 'q1_gate',
+  languages: ['en'],
+  questions: [
+    {
+      id: 'q1_gate',
+      prompt_i18n: { en: 'What are you looking for?' },
+      answers: [
+        {
+          id: 'invest',
+          label_i18n: { en: 'Investment property' },
+          weights: {},
+          next: 'inwestor_q2',
+        },
+        {
+          id: 'home',
+          label_i18n: { en: 'A home for myself or my family' },
+          weights: {},
+          next: 'own_use_q2',
+        },
+        {
+          id: 'abroad',
+          label_i18n: { en: 'Buying abroad / cross-border' },
+          weights: {},
+          next: 'cross_border_q2',
+        },
+        { id: 'browse', label_i18n: { en: 'Just browsing' }, weights: {}, next: null },
+      ],
+    },
+    {
+      id: 'inwestor_q2',
+      prompt_i18n: { en: 'What is your investment focus?' },
+      answers: [
+        {
+          id: 'yield',
+          label_i18n: { en: 'Rental income (yield)' },
+          weights: {},
+          next: 'inwestor_q3',
+        },
+        {
+          id: 'vacation',
+          label_i18n: { en: 'Vacation rental' },
+          weights: { vacation_rental_investor: 1 },
+          next: null,
+        },
+        {
+          id: 'flip',
+          label_i18n: { en: 'Flip / renovation' },
+          weights: { flip_investor: 1 },
+          next: null,
+        },
+        {
+          id: 'commercial',
+          label_i18n: { en: 'Commercial / portfolio' },
+          weights: { commercial_investor: 1 },
+          next: null,
+        },
+      ],
+    },
+    {
+      id: 'inwestor_q3',
+      prompt_i18n: { en: 'What is your target return?' },
+      answers: [
+        {
+          id: 'steady',
+          label_i18n: { en: 'Steady yield above market average' },
+          weights: { yield_hunter: 1 },
+          next: null,
+        },
+        {
+          id: 'portfolio',
+          label_i18n: { en: 'Long-term portfolio growth' },
+          weights: { portfolio_builder: 1 },
+          next: null,
+        },
+        {
+          id: 'golden',
+          label_i18n: { en: 'Golden visa / residency pathway' },
+          weights: { golden_visa_buyer: 1 },
+          next: null,
+        },
+      ],
+    },
+    {
+      id: 'own_use_q2',
+      prompt_i18n: { en: 'What describes your situation best?' },
+      answers: [
+        {
+          id: 'first_time',
+          label_i18n: { en: 'First-time buyer' },
+          weights: { first_time_buyer: 1 },
+          next: 'own_use_q3',
+        },
+        {
+          id: 'family',
+          label_i18n: { en: 'Growing family' },
+          weights: { family_buyer: 1 },
+          next: 'own_use_q3',
+        },
+        {
+          id: 'upsize',
+          label_i18n: { en: 'Upsizing' },
+          weights: { upsizer: 1 },
+          next: 'own_use_q3',
+        },
+        {
+          id: 'downsize',
+          label_i18n: { en: 'Downsizing' },
+          weights: { downsizer: 1 },
+          next: 'own_use_q3',
+        },
+      ],
+    },
+    {
+      id: 'own_use_q3',
+      prompt_i18n: { en: 'What matters most to you?' },
+      answers: [
+        { id: 'location', label_i18n: { en: 'Location and community' }, weights: {}, next: null },
+        {
+          id: 'luxury',
+          label_i18n: { en: 'Luxury finishes and prestige' },
+          weights: { luxury_buyer: 2 },
+          next: null,
+        },
+        {
+          id: 'remote',
+          label_i18n: { en: 'Remote-work setup' },
+          weights: { remote_worker: 2 },
+          next: null,
+        },
+        { id: 'value', label_i18n: { en: 'Value for money' }, weights: {}, next: null },
+      ],
+    },
+    {
+      id: 'cross_border_q2',
+      prompt_i18n: { en: 'Why are you buying abroad?' },
+      answers: [
+        {
+          id: 'retiring',
+          label_i18n: { en: 'Retiring or relocating' },
+          weights: {},
+          next: 'cross_border_q3',
+        },
+        {
+          id: 'second_home',
+          label_i18n: { en: 'Second / holiday home' },
+          weights: { second_home_buyer: 1 },
+          next: null,
+        },
+        {
+          id: 'student',
+          label_i18n: { en: 'Supporting a student' },
+          weights: { student_parent: 1 },
+          next: null,
+        },
+      ],
+    },
+    {
+      id: 'cross_border_q3',
+      prompt_i18n: { en: 'What is your primary goal?' },
+      answers: [
+        {
+          id: 'settle',
+          label_i18n: { en: 'Retire and settle permanently' },
+          weights: { retiree_relocator: 1 },
+          next: null,
+        },
+        {
+          id: 'connected',
+          label_i18n: { en: 'Stay connected to home country' },
+          weights: { diaspora_buyer: 1 },
+          next: null,
+        },
+        {
+          id: 'lifestyle',
+          label_i18n: { en: 'Lifestyle and travel base' },
+          weights: { lifestyle_expat: 1 },
+          next: null,
+        },
+      ],
+    },
+  ],
+};
 
-  if (branch === 'INWESTOR') {
-    if (q2Answer === 0) {
-      // Q2-A → Q3 required
-      if (q3Answer === 0) return 'yield_hunter';
-      if (q3Answer === 1) return 'portfolio_builder';
-      if (q3Answer === 2) return 'golden_visa_buyer';
-      return 'yield_hunter'; // defensive fallback
-    }
-    if (q2Answer === 1) return 'vacation_rental_investor';
-    if (q2Answer === 2) return 'flip_investor';
-    if (q2Answer === 3) return 'commercial_investor';
-    return 'yield_hunter'; // defensive fallback
-  }
+// ─── Pure walk helpers (shared by the renderer + tests) ─────────────────────────
 
-  if (branch === 'OWN_USE') {
-    // Q2 determines base; Q3 may override
-    const base: QuizResolvedArchetype =
-      q2Answer === 0
-        ? 'first_time_buyer'
-        : q2Answer === 1
-          ? 'family_buyer'
-          : q2Answer === 2
-            ? 'upsizer'
-            : 'downsizer';
+/** Resolve an i18n label for a language, falling back to `'en'` then the first present value. */
+export function resolveLabel(
+  bag: Partial<Record<QuizLanguage, string>>,
+  lang: QuizLanguage,
+): string {
+  return bag[lang] ?? bag.en ?? Object.values(bag)[0] ?? '';
+}
 
-    // Q3 override rule: B → luxury_buyer, C → remote_worker; A/D confirm base
-    if (q3Answer === 1) return 'luxury_buyer';
-    if (q3Answer === 2) return 'remote_worker';
-    return base;
-  }
-
-  // CROSS_BORDER
-  if (q2Answer === 0) {
-    // Q2-A → Q3 required
-    if (q3Answer === 0) return 'retiree_relocator';
-    if (q3Answer === 1) return 'diaspora_buyer';
-    if (q3Answer === 2) return 'lifestyle_expat';
-    return 'retiree_relocator'; // defensive fallback
-  }
-  if (q2Answer === 1) return 'second_home_buyer';
-  if (q2Answer === 2) return 'student_parent';
-  return 'second_home_buyer'; // defensive fallback
+/** Index a definition's questions by id. */
+function indexQuestions(def: QuizDefinition): Map<string, QuizQuestion> {
+  return new Map(def.questions.map((q) => [q.id, q]));
 }
 
 /**
- * Compute the total step count (2 or 3) for a given branch and Q2 answer.
- * Returns 2 when Q3 is not required, 3 when it is.
+ * Resolve the leaf archetype for a sequence of answer selections (by answer index per
+ * question), walking `definition` from its root. Pure — used by the renderer's completion
+ * path and by the parity tests. Empty / all-zero accumulation ⇒ `neutral`.
  */
-export function computeStepCount(branch: Branch | null, q2Answer: number | null): 2 | 3 {
-  if (branch === null) return 2; // Q1 only, never used for progress display
-  // Q3 is required when:
-  //   INWESTOR: Q2-A (yield focus)
-  //   OWN_USE: always (Q3 always asked)
-  //   CROSS_BORDER: Q2-A (retiring/relocating)
-  if (branch === 'INWESTOR') return q2Answer === 0 ? 3 : 2;
-  if (branch === 'OWN_USE') return 3;
-  // CROSS_BORDER
-  return q2Answer === 0 ? 3 : 2;
+export function resolveArchetypeFromPath(
+  def: QuizDefinition,
+  answerIndices: number[],
+): QuizResolvedArchetype {
+  const byId = indexQuestions(def);
+  let currentId: string | null = def.root;
+  const acc: Record<string, number> = {};
+  for (const idx of answerIndices) {
+    if (currentId === null) break;
+    const q = byId.get(currentId);
+    if (!q) break;
+    const ans = q.answers[idx];
+    if (!ans) break;
+    for (const [archetypeId, weight] of Object.entries(ans.weights)) {
+      acc[archetypeId] = (acc[archetypeId] ?? 0) + weight;
+    }
+    currentId = ans.next;
+  }
+  return reduceWeightsToArchetype(acc);
+}
+
+/** Longest number of remaining questions reachable from `qid` (for the progress indicator). */
+function longestPathFrom(def: QuizDefinition, qid: string): number {
+  const byId = indexQuestions(def);
+  const memo = new Map<string, number>();
+  const visit = (id: string, seen: ReadonlySet<string>): number => {
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    const q = byId.get(id);
+    if (!q || seen.has(id)) return 0;
+    const nextSeen = new Set(seen).add(id);
+    let best = 0;
+    for (const ans of q.answers) {
+      const remaining = ans.next === null ? 0 : visit(ans.next, nextSeen);
+      if (remaining > best) best = remaining;
+    }
+    const total = 1 + best;
+    memo.set(id, total);
+    return total;
+  };
+  return visit(qid, new Set<string>());
 }
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
 /**
- * Render the v2 quiz widget into the given Shadow Root.
+ * Render the definition-driven quiz widget into the given Shadow Root.
  * Returns a cleanup function.
  */
 export function renderQuizWidget(
@@ -340,7 +336,9 @@ export function renderQuizWidget(
   onDismiss: () => void,
 ): () => void {
   try {
-    const content = QUIZ_CONTENT[config.language];
+    const def = config.definition;
+    const byId = indexQuestions(def);
+    const chrome = CHROME_LABELS[config.language];
 
     const style = document.createElement('style');
     style.textContent = `
@@ -444,14 +442,18 @@ export function renderQuizWidget(
 
     // ── State ──────────────────────────────────────────────────────────────────
     //
-    // step:     1 = Q1 gate, 2 = branch Q2, 3 = branch Q3
-    // branch:   null until Q1 answered (not neutral)
-    // q2Answer: index of selected answer in Q2, null until answered
-    // q3Answer: index of selected answer in Q3, null until answered
-    let step: 1 | 2 | 3 = 1;
-    let branch: Branch | null = null;
-    let q2Answer: number | null = null;
-    let q3Answer: number | null = null;
+    // currentId:     the question currently shown (starts at the definition root).
+    // answerPath:    the answer INDEX chosen at each visited question, in root→leaf order.
+    //                The resolved archetype is `resolveArchetypeFromPath(def, answerPath)` — the
+    //                SAME pure walk the parity tests assert, so the renderer and the tests share
+    //                one reduction implementation (no drift).
+    // selectedIndex: the answer highlighted on the CURRENT (non-root) question, or null.
+    //
+    // The root question navigates immediately on click (no CTA), matching the pre-ADR-0019
+    // Q1 gate; non-root questions select then CTA-advance.
+    let currentId: string = def.root;
+    const answerPath: number[] = [];
+    let selectedIndex: number | null = null;
 
     const overlay = document.createElement('div');
     overlay.className = 'estalara-quiz-overlay';
@@ -468,39 +470,38 @@ export function renderQuizWidget(
       onDismiss();
     });
 
-    function getStepCount(): 2 | 3 {
-      if (step === 1) {
-        // We don't know Q2 answer yet — show 2 as default until branch is resolved
-        return branch !== null ? computeStepCount(branch, q2Answer) : 2;
+    /** Record the selected answer and either advance to its `next` or complete at a leaf. */
+    function applyAnswer(answerIndex: number): void {
+      const q = byId.get(currentId);
+      if (!q) return;
+      const ans = q.answers[answerIndex];
+      if (!ans) return;
+      answerPath.push(answerIndex);
+      if (ans.next === null || !byId.has(ans.next)) {
+        cleanup();
+        onComplete(resolveArchetypeFromPath(def, answerPath));
+        return;
       }
-      return computeStepCount(branch, step >= 2 ? q2Answer : null);
-    }
-
-    function getCurrentQuestion(): QuizQuestion {
-      if (step === 1) return content.q1_gate;
-      if (step === 2) {
-        if (branch === 'INWESTOR') return content.inwestor_q2;
-        if (branch === 'OWN_USE') return content.own_use_q2;
-        return content.cross_border_q2;
-      }
-      // step === 3
-      if (branch === 'INWESTOR') return content.inwestor_q3;
-      if (branch === 'OWN_USE') return content.own_use_q3;
-      return content.cross_border_q3;
-    }
-
-    function getCurrentAnswer(): number | null {
-      if (step === 1) return null; // Q1 navigates immediately on click
-      if (step === 2) return q2Answer;
-      return q3Answer;
+      currentId = ans.next;
+      selectedIndex = null;
+      buildStep();
     }
 
     function buildStep(): void {
+      const q = byId.get(currentId);
+      if (!q) {
+        // Malformed definition (should be impossible post-validation) — resolve from the path.
+        cleanup();
+        onComplete(resolveArchetypeFromPath(def, answerPath));
+        return;
+      }
+      const isRoot = currentId === def.root;
+
       card.innerHTML = '';
       card.appendChild(closeBtn);
 
-      // FOLLOW-623 / ADR-0019: brand logo atop the card when configured. Re-appended each
-      // step because buildStep() clears the card. Absent/null → no logo (byte-identical).
+      // FOLLOW-623 / ADR-0019: brand logo atop the card when configured. Re-appended each step
+      // because buildStep() clears the card. Absent/null → no logo (byte-identical).
       if (config.logoUrl) {
         const logo = document.createElement('img');
         logo.className = 'estalara-quiz-logo';
@@ -510,110 +511,62 @@ export function renderQuizWidget(
         card.appendChild(logo);
       }
 
-      // Progress indicator: step X / totalSteps
-      // On Q1 we show "1 / 2" tentatively; it updates after branch is known.
-      const totalSteps = getStepCount();
+      const totalSteps = answerPath.length + longestPathFrom(def, currentId);
       const progress = document.createElement('div');
       progress.className = 'estalara-quiz-progress';
-      progress.textContent = `${String(step)} / ${String(totalSteps)}`;
+      progress.textContent = `${String(answerPath.length + 1)} / ${String(totalSteps)}`;
       card.appendChild(progress);
-
-      const q = getCurrentQuestion();
-      const currentAnswer = getCurrentAnswer();
 
       const question = document.createElement('p');
       question.className = 'estalara-quiz-question';
-      question.textContent = q.question;
+      question.textContent = resolveLabel(q.prompt_i18n, config.language);
       card.appendChild(question);
 
       const answersDiv = document.createElement('div');
       answersDiv.className = 'estalara-quiz-answers';
 
-      q.answers.forEach((text, idx) => {
+      q.answers.forEach((ans, idx) => {
         const btn = document.createElement('button');
         btn.className = 'estalara-quiz-answer';
-        if (currentAnswer === idx) {
+        if (!isRoot && selectedIndex === idx) {
           btn.classList.add('selected');
         }
-        btn.textContent = text;
+        btn.textContent = resolveLabel(ans.label_i18n, config.language);
         btn.addEventListener('click', () => {
-          handleAnswerClick(idx);
+          if (isRoot) {
+            // Root: navigate / complete immediately on click (matches the old Q1 gate).
+            applyAnswer(idx);
+          } else {
+            selectedIndex = idx;
+            buildStep();
+          }
         });
         answersDiv.appendChild(btn);
       });
       card.appendChild(answersDiv);
 
-      const canProceed = step === 1 ? false : getCurrentAnswer() !== null;
-
-      const isLastStep = step === 2 ? computeStepCount(branch, q2Answer) === 2 : step === 3;
-
-      if (!isLastStep || step === 1) {
-        // On Q1 we never show a CTA — answers navigate immediately.
-        if (step !== 1) {
-          const cta = document.createElement('button');
-          cta.className = 'estalara-quiz-cta';
-          cta.textContent = content.cta_next;
-          cta.disabled = !canProceed;
-          cta.addEventListener('click', () => {
-            step = 3;
-            buildStep();
-          });
-          card.appendChild(cta);
-        }
-      } else {
+      // Non-root questions show a CTA that advances/completes the selected answer.
+      if (!isRoot) {
+        const selectedAnswer = selectedIndex !== null ? q.answers[selectedIndex] : undefined;
+        const isLeafSelected = selectedAnswer?.next === null;
         const cta = document.createElement('button');
         cta.className = 'estalara-quiz-cta';
-        cta.textContent = content.cta_finish;
-        cta.disabled = !canProceed;
+        cta.textContent = isLeafSelected ? chrome.finish : chrome.next;
+        cta.disabled = selectedIndex === null;
         cta.addEventListener('click', () => {
-          const resolved = resolveArchetype(branch, q2Answer, q3Answer);
-          cleanup();
-          onComplete(resolved);
+          if (selectedIndex !== null) applyAnswer(selectedIndex);
         });
         card.appendChild(cta);
       }
 
       const skip = document.createElement('button');
       skip.className = 'estalara-quiz-skip';
-      skip.textContent = content.skip;
+      skip.textContent = chrome.skip;
       skip.addEventListener('click', () => {
         cleanup();
         onDismiss();
       });
       card.appendChild(skip);
-    }
-
-    function handleAnswerClick(idx: number): void {
-      if (step === 1) {
-        // Q1: navigate immediately
-        if (idx === 0) {
-          branch = 'INWESTOR';
-          step = 2;
-        } else if (idx === 1) {
-          branch = 'OWN_USE';
-          step = 2;
-        } else if (idx === 2) {
-          branch = 'CROSS_BORDER';
-          step = 2;
-        } else {
-          // D → neutral, resolve immediately
-          cleanup();
-          onComplete('neutral');
-          return;
-        }
-        buildStep();
-        return;
-      }
-
-      if (step === 2) {
-        q2Answer = idx;
-        buildStep();
-        return;
-      }
-
-      // step === 3
-      q3Answer = idx;
-      buildStep();
     }
 
     buildStep();

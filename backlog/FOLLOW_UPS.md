@@ -18115,7 +18115,15 @@ privacy.
 
 source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
 per-brand epic) recommended_sprint: next recommended_agent: ml-engineer priority: P1
-estimated_hours: 12 depends_on: [presentation-config ADR] promoted_to_queue: false
+estimated_hours: 12 depends_on: [presentation-config ADR] promoted_to_queue: true
+
+**STATUS: BUILT (branch `ml-engineer/FOLLOW-639-editable-quiz-definitions`).** New
+`quiz_definitions` table (migration `0035`, additive) + `QuizDefinitionSchema` slice (hard
+integrity + shared `reduceWeightsToArchetype` argmax + non-blocking
+`computeUnreachableArchetypes`) + `quiz_definition` on `GET /api/quiz/public-config` + SDK generic
+tree-walker replacing `resolveArchetype()`/`QUIZ_CONTENT` (EN-only `DEFAULT_QUIZ_DEFINITION`, PL/ES
+moved server-side; parity + persistence path preserved) + staff editor
+`PUT /api/admin/tenants/quiz-definition` (ADR-0018 §3a atomic-audited). Bundle 40.99→40.75KB.
 
 **Gap:** quiz questions/answers are hardcoded in the SDK bundle
 (`packages/sdk/src/ui/quiz-widget.ts` `QUIZ_CONTENT`, EN/PL/ES, fixed tree: q1_gate →

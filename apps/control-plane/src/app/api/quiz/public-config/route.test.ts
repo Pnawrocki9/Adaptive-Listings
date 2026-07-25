@@ -49,6 +49,12 @@ vi.mock('@estalara/db', () => ({
     brandConfig: 'brand_config',
     deletedAt: 'deleted_at',
   },
+  // ADR-0019 (FOLLOW-639): quiz-definition slice source table.
+  quizDefinitions: {
+    tenantId: 'tenant_id',
+    isActive: 'is_active',
+    definition: 'definition',
+  },
 }));
 
 // ─── Mock env (DATABASE_URL_ADMIN must be set so auth path runs) ──────────────
@@ -336,6 +342,96 @@ describe('GET /api/quiz/public-config — brand slice (ADR-0019 / FOLLOW-623)', 
     expect(res.status).toBe(200);
     const body = await parseBody<Record<string, unknown>>(res);
     expect('brand' in body).toBe(false);
+    expect(body.data_source).toBe('db');
+  });
+});
+
+// ─── ADR-0019 (FOLLOW-639) — quiz_definition slice ──────────────────────────
+
+describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', () => {
+  let validKeyHash: string;
+
+  const VALID_DEFINITION = {
+    schema_version: 1,
+    root: 'q_gate',
+    languages: ['en'],
+    questions: [
+      {
+        id: 'q_gate',
+        prompt_i18n: { en: 'What are you after?' },
+        answers: [
+          { id: 'a_yield', label_i18n: { en: 'Yield' }, weights: { yield_hunter: 1 }, next: null },
+          { id: 'a_skip', label_i18n: { en: 'Browsing' }, weights: {}, next: null },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    validKeyHash = await sha256Hex(VALID_KEY_RAW);
+    mockLimit.mockResolvedValue([]);
+    mockWhere.mockReturnValue({ limit: mockLimit });
+    mockFrom.mockReturnValue({ where: mockWhere });
+    mockSelect.mockReturnValue({ from: mockFrom });
+  });
+
+  it('emits the active quiz_definition slice when a valid active row exists', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
+      .mockResolvedValueOnce([{ definition: VALID_DEFINITION }]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.data_source).toBe('db');
+    const def = body.quiz_definition as { root?: string } | undefined;
+    expect(def?.root).toBe('q_gate');
+  });
+
+  it('OMITS the slice when the tenant has no active definition (D4/D5 byte-identical)', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
+      .mockResolvedValueOnce([]); // no active quiz_definitions row
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect('quiz_definition' in body).toBe(false);
+  });
+
+  it('DROPS a stored definition that fails validation rather than breaking the response', async () => {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
+      // A stored blob referencing an unknown archetype id → fails QuizDefinitionSchema.
+      .mockResolvedValueOnce([
+        {
+          definition: {
+            schema_version: 1,
+            root: 'q_gate',
+            languages: ['en'],
+            questions: [
+              {
+                id: 'q_gate',
+                prompt_i18n: { en: 'x' },
+                answers: [
+                  { id: 'a', label_i18n: { en: 'a' }, weights: { not_real: 1 }, next: null },
+                  { id: 'b', label_i18n: { en: 'b' }, weights: {}, next: null },
+                ],
+              },
+            ],
+          },
+        },
+      ]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect('quiz_definition' in body).toBe(false);
     expect(body.data_source).toBe('db');
   });
 });

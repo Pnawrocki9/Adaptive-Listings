@@ -47,7 +47,7 @@ import {
   eraseProfilingOptOut,
 } from './core/profiling-opt-out.js';
 import { renderQuizTrigger, scheduleQuizTrigger, markQuizCompleted } from './ui/quiz-trigger.js';
-import { renderQuizWidget } from './ui/quiz-widget.js';
+import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from './ui/quiz-widget.js';
 import {
   renderMicroPoll,
   isMicroPollDismissed,
@@ -125,6 +125,9 @@ export function mergeQuizConfig(
           },
         }
       : {}),
+    // FOLLOW-639 / ADR-0019 D5: overlay the optional editable quiz definition. Absent → key
+    // omitted so the SDK walks its built-in DEFAULT_QUIZ_DEFINITION (byte-identical, D4/D5).
+    ...(fetched.quiz_definition ? { quizDefinition: fetched.quiz_definition } : {}),
   };
 }
 
@@ -1032,6 +1035,9 @@ async function init(): Promise<IntentState | null> {
     const quizConfig: QuizWidgetConfig = {
       accentColor: config.accentColor,
       language: config.language,
+      // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree, or the built-in
+      // default when none is configured (byte-identical to pre-ADR-0019 for every path).
+      definition: config.quizDefinition ?? DEFAULT_QUIZ_DEFINITION,
       // FOLLOW-623 / ADR-0019: brand logo atop the quiz card. `string | null` (never
       // undefined) — null renders no logo (byte-identical to pre-ADR-0019). D4 color
       // precedence keeps the card accent on `accent_color`; brand.primary_color drives

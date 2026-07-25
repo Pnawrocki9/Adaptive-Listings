@@ -20,7 +20,7 @@
  */
 export const BOT_UA_RE = /Googlebot|bingbot|Slurp|DuckDuckBot|AhrefsBot|SemrushBot|MJ12bot/i;
 
-import type { QuizLanguage } from '@estalara/shared';
+import type { QuizDefinition, QuizLanguage } from '@estalara/shared';
 import { QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
 
 export interface SdkConfig {
@@ -130,6 +130,18 @@ export interface SdkConfig {
     logoUrl: string | null;
     whiteLabel: boolean;
   };
+
+  /**
+   * Per-tenant editable quiz definition (FOLLOW-639 / ADR-0019 D5).
+   *
+   * Resolved at runtime from the `quiz_definition` slice of the `GET /api/quiz/public-config`
+   * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
+   * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
+   *
+   * ABSENT when the tenant configured no quiz tree — the SDK then walks its built-in
+   * `DEFAULT_QUIZ_DEFINITION` (byte-identical to pre-ADR-0019, ADR-0019 D4/D5).
+   */
+  quizDefinition?: QuizDefinition;
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {

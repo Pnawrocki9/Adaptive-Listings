@@ -35,10 +35,10 @@ import type { createAdminClient } from '@estalara/db';
 import { tenants } from '@estalara/db';
 
 /** First-party display name used whenever no per-tenant brand name is configured. */
-export const ESTALARA_BRAND_NAME = 'Estalara' as const;
+const ESTALARA_BRAND_NAME = 'Estalara' as const;
 
 /** First-party legal entity used whenever no per-tenant legal entity is configured. */
-export const ESTALARA_LEGAL_ENTITY = 'Time2Show, Inc.' as const;
+const ESTALARA_LEGAL_ENTITY = 'Time2Show, Inc.' as const;
 
 /**
  * Resolved, render-ready brand identity. Both fields are guaranteed non-empty:
@@ -64,12 +64,12 @@ export interface BrandIdentity {
  * display identity. Both keys are optional so pre-existing rows (which only
  * hold `primary_color` / `logo_url` / `white_label`) parse cleanly.
  */
-export const BrandIdentityConfigSchema = z.object({
+const BrandIdentityConfigSchema = z.object({
   brand_name: z.string().min(1).max(120).optional(),
   legal_entity: z.string().min(1).max(200).optional(),
 });
 
-export type BrandIdentityConfig = z.infer<typeof BrandIdentityConfigSchema>;
+type BrandIdentityConfig = z.infer<typeof BrandIdentityConfigSchema>;
 
 /** Returns a trimmed non-empty string, or `undefined` for nullish/blank input. */
 function normalizeNonEmpty(value: string | undefined): string | undefined {

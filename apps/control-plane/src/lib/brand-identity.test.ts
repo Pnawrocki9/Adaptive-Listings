@@ -5,12 +5,12 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  ESTALARA_BRAND_NAME,
-  ESTALARA_LEGAL_ENTITY,
-  isFirstPartyTenant,
-  resolveBrandIdentity,
-} from './brand-identity';
+import { isFirstPartyTenant, resolveBrandIdentity } from './brand-identity';
+
+// The first-party fallback identity (kept module-private in brand-identity.ts;
+// asserted here as literals so the constants need no test-only export).
+const ESTALARA_BRAND_NAME = 'Estalara';
+const ESTALARA_LEGAL_ENTITY = 'Time2Show, Inc.';
 
 describe('resolveBrandIdentity', () => {
   it('resolves a fully-configured brand identity', () => {

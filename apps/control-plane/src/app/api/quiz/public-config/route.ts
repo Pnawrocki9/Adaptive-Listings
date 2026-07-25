@@ -51,6 +51,15 @@
  * `string | null` on the wire, never `undefined` (ADR-0019 D-nullability). The `brand` slice
  * rides the same `data_source` provenance (Rule K.2): a `fallback` response carries no brand.
  *
+ * ADR-0019 (FOLLOW-640): the response ALSO carries an OPTIONAL `quiz_placement` slice — the
+ * tenant's `quiz_config.placement` (corner+offsets for the sticky quiz trigger), if set. Omitted
+ * when unset, so the SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical, D4).
+ *
+ * ADR-0019 (FOLLOW-641): the response ALSO carries an OPTIONAL `opt_out_widget` slice — the
+ * tenant's `optout_widget_config` (placement + i18n label overrides for the EXISTING profiling
+ * opt-out toggle). Omitted when unconfigured, so the toggle renders byte-identically (D4). Its
+ * accent color is NOT here — per D4 the opt-out toggle takes `brand.primary_color`.
+ *
  * ADR-0019 (FOLLOW-639): the response ALSO carries an OPTIONAL `quiz_definition` slice — the
  * tenant's ACTIVE row from the dedicated `quiz_definitions` table (D2), re-validated with
  * `QuizDefinitionSchema` on read. Omitted when the tenant has no active/valid definition, so an
@@ -67,12 +76,14 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { createAdminClient, quizDefinitions, tenants } from '@estalara/db';
 import type {
   BrandConfig,
+  OptOutWidgetConfig,
   PresentationConfigResponse,
   QuizDefinition,
   QuizPublicConfigResponse,
 } from '@estalara/shared';
 import {
   BrandConfigSchema,
+  OptOutWidgetConfigSchema,
   PresentationConfigResponseSchema,
   QUIZ_DEFAULT_CONFIG,
   QuizDefinitionSchema,
@@ -147,6 +158,26 @@ function parseActiveQuizDefinition(raw: unknown): QuizDefinition | undefined {
   return result.success ? result.data : undefined;
 }
 
+// ─── Opt-out widget slice (ADR-0019 / FOLLOW-641) ──────────────────────────────
+
+/**
+ * Parse the stored `tenants.optout_widget_config` JSONB into the public wire slice.
+ *
+ * Returns `undefined` when the tenant configured NOTHING (the column defaults to `{}`, so an
+ * object with neither `placement` nor `labels` means "unconfigured"): we omit the slice and
+ * the SDK renders the existing toggle with hardcoded defaults (ADR-0019 D4, byte-identical to
+ * pre-FOLLOW-641). A blob that fails `OptOutWidgetConfigSchema` (e.g. an out-of-bounds offset)
+ * is DROPPED rather than allowed to break the whole quiz-config response — the toggle then
+ * falls back to defaults, the correct fail-safe for a read-only buyer-facing endpoint.
+ */
+function parsePublicOptOutWidgetConfig(raw: unknown): OptOutWidgetConfig | undefined {
+  const result = OptOutWidgetConfigSchema.safeParse(raw);
+  if (!result.success) return undefined;
+  // "Configured but empty" (`{}`) → omit so an unconfigured tenant is byte-identical (D4).
+  if (result.data.placement === undefined && result.data.labels === undefined) return undefined;
+  return result.data;
+}
+
 // ─── Route handlers ───────────────────────────────────────────────────────────
 
 /** Handle CORS preflight. */
@@ -217,6 +248,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         quizEnabled: tenants.quizEnabled,
         // ADR-0019 (FOLLOW-623): the brand slice rides this same tenant fetch.
         brandConfig: tenants.brandConfig,
+        // ADR-0019 (FOLLOW-641): the opt-out widget slice rides this same tenant fetch.
+        optoutWidgetConfig: tenants.optoutWidgetConfig,
       })
       .from(tenants)
       .where(and(eq(tenants.id, tenantId), isNull(tenants.deletedAt)))
@@ -237,6 +270,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // ADR-0019 (FOLLOW-623): optional brand slice from `tenants.brand_config`.
     const brand = parsePublicBrandConfig(tenantRow.brandConfig);
+
+    // ADR-0019 (FOLLOW-640): optional quiz-trigger placement slice from `quiz_config.placement`.
+    // `parseStoredQuizConfig` already validated it against `WidgetPlacementSchema`.
+    const quizPlacement = merged.placement;
+
+    // ADR-0019 (FOLLOW-641): optional opt-out widget slice from `tenants.optout_widget_config`.
+    const optOutWidget = parsePublicOptOutWidgetConfig(tenantRow.optoutWidgetConfig);
 
     // ADR-0019 (FOLLOW-639): optional quiz-definition slice — the tenant's ACTIVE editable
     // tree, if any. A separate fenced read on the dedicated `quiz_definitions` table (D2).
@@ -260,6 +300,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // Conditional spread (exactOptionalPropertyTypes): omit the key when unconfigured
       // rather than assign `undefined`, so an unbranded tenant is byte-identical (D4).
       ...(brand ? { brand } : {}),
+      // FOLLOW-640: omit when the tenant set no placement → SDK uses DEFAULT_QUIZ_PLACEMENT (D4).
+      ...(quizPlacement ? { quiz_placement: quizPlacement } : {}),
+      // FOLLOW-641: omit when the tenant configured no opt-out widget → SDK defaults (D4).
+      ...(optOutWidget ? { opt_out_widget: optOutWidget } : {}),
       // Omit the key when the tenant has no active/valid definition → SDK built-in default (D4/D5).
       ...(quizDefinition ? { quiz_definition: quizDefinition } : {}),
     };

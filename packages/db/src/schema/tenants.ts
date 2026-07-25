@@ -57,6 +57,28 @@ export const tenants = pgTable(
 
     /** White-label colors, fonts, logo overrides. */
     brandConfig: jsonb('brand_config').default({}),
+
+    /**
+     * Per-brand config for the visitor-facing profiling opt-out toggle widget
+     * (FOLLOW-641 / ADR-0019 D2). Distinct column from `brand_config` / `quiz_config`
+     * because the opt-out toggle is a distinct widget with a distinct §H.9 lifecycle.
+     *
+     * Validated at the app layer by `OptOutWidgetConfigSchema`
+     * (`packages/shared/src/schemas/presentation-config.ts`): appearance/placement
+     * (corner+offsets) + i18n label overrides. The toggle UI itself
+     * (`packages/sdk/src/ui/profiling-toggle.ts`) has rendered UNCONDITIONALLY since
+     * PR #337; this column only re-styles/re-places/re-labels it — there is no enable
+     * gate (premise-corrected per FOLLOW-653).
+     *
+     * Write path: staff-only `PUT /api/admin/tenants/optout-widget` (ADR-0018 §3a
+     * atomic audited write, `action: 'optout_widget.update'`). Read path:
+     * `GET /api/quiz/public-config` emits it as the `opt_out_widget` slice.
+     *
+     * Default `{}` (additive migration 0036): every existing tenant inherits an empty
+     * config, so the SDK omits the slice and the toggle renders byte-identically to
+     * today (ADR-0019 D4). Do NOT default this to anything but `{}`.
+     */
+    optoutWidgetConfig: jsonb('optout_widget_config').notNull().default({}),
     /**
      * E.4 investor quiz widget configuration — widget UX settings only.
      *

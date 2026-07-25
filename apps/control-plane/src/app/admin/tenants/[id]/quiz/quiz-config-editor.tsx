@@ -27,20 +27,38 @@
 
 import { useEffect, useState } from 'react';
 
-import type { QuizLanguage } from '@estalara/shared';
-import { QUIZ_DEFAULT_CONFIG, QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
+import type { QuizLanguage, WidgetCorner, WidgetPlacement } from '@estalara/shared';
+import {
+  DEFAULT_QUIZ_PLACEMENT,
+  QUIZ_DEFAULT_CONFIG,
+  QUIZ_LANGUAGE_VALUES,
+} from '@estalara/shared';
 
-/** The JSONB-blob config fields this staff surface can edit (no quiz_enabled column). */
+/**
+ * The JSONB-blob config fields this staff surface can edit (no quiz_enabled column).
+ * FOLLOW-640: `placement` (corner + offsets) is now editable — it persists into
+ * `quiz_config.placement` via the same POST /api/quiz/config write and is served to the SDK
+ * as the `quiz_placement` slice.
+ */
 interface StaffQuizConfig {
   language: QuizLanguage;
   accent_color: string;
   micro_polls_enabled: boolean;
+  placement: WidgetPlacement;
 }
+
+const CORNERS: { value: WidgetCorner; label: string }[] = [
+  { value: 'bottom-left', label: 'Bottom-left' },
+  { value: 'bottom-right', label: 'Bottom-right' },
+  { value: 'top-left', label: 'Top-left' },
+  { value: 'top-right', label: 'Top-right' },
+];
 
 const DEFAULTS: StaffQuizConfig = {
   language: QUIZ_DEFAULT_CONFIG.language,
   accent_color: QUIZ_DEFAULT_CONFIG.accent_color,
   micro_polls_enabled: QUIZ_DEFAULT_CONFIG.micro_polls_enabled,
+  placement: DEFAULT_QUIZ_PLACEMENT,
 };
 
 const LANGUAGE_LABELS: Record<QuizLanguage, string> = {
@@ -203,6 +221,70 @@ export function StaffQuizConfigEditor({ tenantId }: { tenantId: string }): React
               className="h-9 w-16 cursor-pointer rounded border border-gray-300"
             />
             <span className="text-sm text-gray-500">{config.accent_color}</span>
+          </div>
+        </div>
+
+        {/* Sticky-trigger placement (FOLLOW-640) */}
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Sticky Trigger Placement
+          </label>
+          <p className="mb-2 text-xs text-gray-500">
+            Where the quiz trigger button anchors on the brand&apos;s pages. Defaults to bottom-left
+            at 24/24 px — the position every brand used before this control existed.
+          </p>
+          <select
+            data-testid="quiz-corner"
+            value={config.placement.corner}
+            onChange={(e) => {
+              setConfig((c) => ({
+                ...c,
+                placement: { ...c.placement, corner: e.target.value as WidgetCorner },
+              }));
+            }}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          >
+            {CORNERS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <div className="mt-3 flex gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Offset X (px)</label>
+              <input
+                type="number"
+                min={0}
+                max={200}
+                data-testid="quiz-offset-x"
+                value={config.placement.offset_x}
+                onChange={(e) => {
+                  setConfig((c) => ({
+                    ...c,
+                    placement: { ...c.placement, offset_x: Number(e.target.value) },
+                  }));
+                }}
+                className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Offset Y (px)</label>
+              <input
+                type="number"
+                min={0}
+                max={200}
+                data-testid="quiz-offset-y"
+                value={config.placement.offset_y}
+                onChange={(e) => {
+                  setConfig((c) => ({
+                    ...c,
+                    placement: { ...c.placement, offset_y: Number(e.target.value) },
+                  }));
+                }}
+                className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
           </div>
         </div>
 

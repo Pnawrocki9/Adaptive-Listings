@@ -38,6 +38,8 @@
 
 import { z } from 'zod';
 
+import { WidgetPlacementSchema, type WidgetPlacement } from './widget-placement.js';
+
 /**
  * Ordered tuple of all supported quiz widget language codes.
  * API, dashboard, and SDK must all reference this constant — never repeat the literal set.
@@ -63,6 +65,14 @@ const _QuizConfigFullSchema = z.object({
   accent_color: z.string().optional(),
   /** Whether to show micro-poll bottom-toast prompts as a quiz supplement (FOLLOW-209). */
   micro_polls_enabled: z.boolean().optional(),
+  /**
+   * Quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2). The corner+offset model lives
+   * in `quiz_config` per ADR-0019 D2 (quiz-widget UX is `quiz_config`'s charter). Optional:
+   * absent → the SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical to the pre-FOLLOW-640
+   * hardcoded `bottom:24px; left:24px`). Consumed at runtime by the SDK via
+   * `GET /api/quiz/public-config` → the `quiz_placement` slice → `renderQuizTrigger`.
+   */
+  placement: WidgetPlacementSchema.optional(),
 });
 
 /**
@@ -96,6 +106,12 @@ export interface QuizConfig {
    * it as `DEPRECATED_FALLBACK` only. No snippet re-install is needed when this changes.
    */
   micro_polls_enabled: boolean;
+  /**
+   * Quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2). Optional — absent means the SDK
+   * uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical to pre-FOLLOW-640). Emitted on the SDK wire
+   * as the `quiz_placement` slice of `GET /api/quiz/public-config`.
+   */
+  placement?: WidgetPlacement;
 }
 
 /**

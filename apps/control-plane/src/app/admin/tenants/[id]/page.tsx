@@ -142,6 +142,12 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
           >
             Adaptive Listings On/Off
           </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/optout-widget`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Opt-Out Widget
+          </Link>
         </div>
       </div>
 

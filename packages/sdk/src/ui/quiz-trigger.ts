@@ -12,7 +12,10 @@
  * literal. `QUIZ_LANGUAGE_VALUES` is the single canonical source of truth.
  */
 
-import type { QuizLanguage } from '@estalara/shared';
+import type { QuizLanguage, WidgetPlacement } from '@estalara/shared';
+import { DEFAULT_QUIZ_PLACEMENT } from '@estalara/shared';
+
+import { placementToCss } from './placement.js';
 
 export interface QuizTriggerConfig {
   accentColor: string;
@@ -27,6 +30,12 @@ export interface QuizTriggerConfig {
    * styles the quiz card, not the trigger.
    */
   backgroundColor?: string;
+  /**
+   * Sticky-trigger placement (FOLLOW-640 / ADR-0019 D2). Corner + px offsets from the
+   * tenant's `quiz_placement` slice. Omit to keep `DEFAULT_QUIZ_PLACEMENT`
+   * (`bottom-left`, 24/24 — byte-identical to the pre-FOLLOW-640 hardcoded position).
+   */
+  placement?: WidgetPlacement;
 }
 
 export const QUIZ_LABELS: Record<QuizLanguage, { trigger: string; dismiss: string }> = {
@@ -149,12 +158,15 @@ export function renderQuizTrigger(
     // hardcoded #ef4444 default (byte-identical to pre-ADR-0019).
     const triggerBg = config.backgroundColor ?? TRIGGER_BG;
 
+    // FOLLOW-640 / ADR-0019 D2: position from the tenant placement, else the default
+    // bottom-left 24/24 (byte-identical to the pre-FOLLOW-640 hardcoded position).
+    const placementCss = placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT);
+
     const style = document.createElement('style');
     style.textContent = `
       .estalara-trigger {
         position: fixed;
-        bottom: 24px;
-        left: 24px;
+        ${placementCss};
         display: flex;
         align-items: center;
         gap: 12px;

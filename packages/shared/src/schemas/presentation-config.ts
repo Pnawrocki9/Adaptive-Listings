@@ -28,6 +28,7 @@ import { z } from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { QuizLanguageSchema, QuizPublicConfigResponseSchema } from './quiz-config.js';
+import { WidgetPlacementSchema } from './widget-placement.js';
 
 /**
  * A canonical archetype identifier — one of the 18 members of `CANONICAL_ARCHETYPE_IDS`
@@ -79,6 +80,41 @@ export const LabelI18nSchema = z.record(QuizLanguageSchema, z.string());
 
 /** TypeScript type for an i18n label bag. Keys are optional; resolve with an `'en'` fallback. */
 export type LabelI18n = z.infer<typeof LabelI18nSchema>;
+
+// ─── Opt-out toggle widget slice (FOLLOW-641 / ADR-0019 D3) ────────────────────
+
+/**
+ * Per-brand config for the EXISTING profiling opt-out toggle widget
+ * (`packages/sdk/src/ui/profiling-toggle.ts`, mounted unconditionally since PR #337).
+ *
+ * PREMISE-CORRECTED DEVIATION FROM ADR-0019 D3/D4 (FOLLOW-653, PR #622): the ADR's original
+ * `OptOutWidgetConfigSchema` carried an `enabled: boolean` gate (default `false` → no widget)
+ * because the ADR was authored under the belief that NO toggle UI existed. It does — and it
+ * renders unconditionally. Adding an `enabled` gate here would (a) leave that field with no
+ * consumer unless we ALSO changed the mount to opt-in (a behavior change the ticket forbids —
+ * "unconfigured = byte-identical"), and (b) violate Rule U (an inert config key). So this
+ * slice is APPEARANCE/PLACEMENT/LABEL config ONLY, applied to the always-rendered widget:
+ *   - `placement` — corner+offsets; absent → `DEFAULT_OPTOUT_PLACEMENT` (bottom-left 16/16,
+ *     byte-identical to the pre-FOLLOW-641 hardcoded position).
+ *   - `labels`    — optional i18n overrides for the on/off state words + the aria label; each
+ *     is a partial i18n bag resolved with an `'en'` fallback. Absent → the SDK's hardcoded
+ *     per-locale COPY (byte-identical). The toggle's ACCENT COLOR is NOT here: per ADR-0019 D4
+ *     the opt-out toggle (a widget with no per-widget color) takes `brand.primary_color`,
+ *     carried by the `brand` slice.
+ *
+ * All keys optional → an unconfigured tenant omits the slice entirely and the widget renders
+ * byte-identically to today (ADR-0019 D4).
+ */
+export const OptOutWidgetConfigSchema = z.object({
+  placement: WidgetPlacementSchema.optional(),
+  labels: z
+    .object({ on: LabelI18nSchema, off: LabelI18nSchema, aria: LabelI18nSchema })
+    .partial()
+    .optional(),
+});
+
+/** TypeScript type for the opt-out toggle widget slice. */
+export type OptOutWidgetConfig = z.infer<typeof OptOutWidgetConfigSchema>;
 
 /**
  * One selectable answer in a quiz question (ADR-0019 D3).
@@ -311,8 +347,21 @@ export function computeUnreachableArchetypes(def: QuizDefinition): CanonicalArch
 export const PresentationConfigResponseSchema = QuizPublicConfigResponseSchema.extend({
   /** Brand slice (FOLLOW-623). Absent → SDK uses hardcoded widget defaults (ADR-0019 D4). */
   brand: BrandConfigSchema.optional(),
-  // quiz_placement  — FOLLOW-640 (added with its SDK consumer)
-  // opt_out_widget  — FOLLOW-641 (added with its SDK consumer)
+  /**
+   * Quiz sticky-trigger placement slice (FOLLOW-640). The tenant's `quiz_config.placement`,
+   * if configured. Absent → SDK uses `DEFAULT_QUIZ_PLACEMENT` (byte-identical, ADR-0019 D4).
+   * Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
+   * `packages/sdk/src/ui/quiz-trigger.ts` (`renderQuizTrigger`) via `index.ts`.
+   */
+  quiz_placement: WidgetPlacementSchema.optional(),
+  /**
+   * Opt-out toggle widget slice (FOLLOW-641). The tenant's `optout_widget_config`, if
+   * configured. Absent → SDK renders the existing toggle with hardcoded defaults
+   * (byte-identical, ADR-0019 D4). Producer:
+   * `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
+   * `packages/sdk/src/ui/profiling-toggle.ts` (`renderProfilingToggle`) via `index.ts`.
+   */
+  opt_out_widget: OptOutWidgetConfigSchema.optional(),
   /**
    * Quiz-definition slice (FOLLOW-639). The tenant's ACTIVE editable quiz tree. Absent →
    * SDK uses its built-in default tree (`DEFAULT_QUIZ_DEFINITION`), byte-identical to

@@ -18117,13 +18117,13 @@ source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_tic
 per-brand epic) recommended_sprint: next recommended_agent: ml-engineer priority: P1
 estimated_hours: 12 depends_on: [presentation-config ADR] promoted_to_queue: true
 
-**STATUS: BUILT (branch `ml-engineer/FOLLOW-639-editable-quiz-definitions`).** New
-`quiz_definitions` table (migration `0035`, additive) + `QuizDefinitionSchema` slice (hard
-integrity + shared `reduceWeightsToArchetype` argmax + non-blocking
-`computeUnreachableArchetypes`) + `quiz_definition` on `GET /api/quiz/public-config` + SDK generic
-tree-walker replacing `resolveArchetype()`/`QUIZ_CONTENT` (EN-only `DEFAULT_QUIZ_DEFINITION`, PL/ES
-moved server-side; parity + persistence path preserved) + staff editor
-`PUT /api/admin/tenants/quiz-definition` (ADR-0018 §3a atomic-audited). Bundle 40.99→40.75KB.
+**STATUS 2026-07-25: ✅ DONE — PR #620 MERGED (`7f4aa1e`).** New `quiz_definitions` table (migration
+`0035`, additive) + `QuizDefinitionSchema` slice (hard integrity + shared `reduceWeightsToArchetype`
+argmax + non-blocking `computeUnreachableArchetypes`) + `quiz_definition` on
+`GET /api/quiz/public-config` + SDK generic tree-walker replacing
+`resolveArchetype()`/`QUIZ_CONTENT` (EN-only `DEFAULT_QUIZ_DEFINITION`, PL/ES moved server-side;
+parity + persistence path preserved) + staff editor `PUT /api/admin/tenants/quiz-definition`
+(ADR-0018 §3a atomic-audited). Bundle 40.99→40.75KB.
 
 **Gap:** quiz questions/answers are hardcoded in the SDK bundle
 (`packages/sdk/src/ui/quiz-widget.ts` `QUIZ_CONTENT`, EN/PL/ES, fixed tree: q1_gate →
@@ -18193,6 +18193,10 @@ visitor uses to switch profiling + DOM generation on/off, with per-brand appeara
 5. Tests incl. opt-out → no adapt calls → opt-in → resumed.
 
 ## FOLLOW-642 — Re-enable per-tenant `allowed_origins` enforcement (deferred; TRIGGER = before first external re-brand client onboards)
+
+**STATUS 2026-07-25: ✅ DONE — PR #623 MERGED (`d631a08`).** KV-based origin gate in ingest
+(null=inherit-env, []=deny-all, list=explicit; fail-closed); origins seed into KV ApiKeyRecord at
+provisioning.
 
 **TRIGGER FIRED — CEO 2026-07-25 (session 58): Estalara is onboarding THREE external re-brand
 clients NOW.** Status flips deferred→**P1 ACTIVE**; dispatched session 58. Build per the spec below;
@@ -18504,6 +18508,10 @@ cross_ref: [RETRO-214, FOLLOW-623, RETRO-205, ADR-0019, FOLLOW-641]
 
 ## FOLLOW-652 — Brand-provisioning runbook + checklist: stand up a new white-label brand end-to-end (3 real clients incoming, go-live 2-4 weeks)
 
+**STATUS 2026-07-25: ✅ DONE — PR #621 MERGED (`e4c9dea`).** Runbook live with dry-run; GAP-1/2
+staff port ruled BUILD (CEO) → FOLLOW-657; needs post-merge reconciliation (KV origins step,
+FIRST_PARTY_TENANT_ID) → folded into FOLLOW-657.
+
 source_retro: CEO ruling 2026-07-25 (session 58 — three external re-brand clients onboarding NOW;
 domains not yet known; CEO operates everything from admin, no client dashboard access)
 source_ticket: (white-label per-brand epic) recommended_sprint: now recommended_agent:
@@ -18533,6 +18541,9 @@ each step in-repo, no guessing (Operating Principle 5).
 
 ## FOLLOW-653 — Compliance technical-layer verification for external-brand go-live (contracts cover roles — verify the technical artifacts only)
 
+**STATUS 2026-07-25: ✅ DONE — PR #622 MERGED (`50b86c3`).** Report + Privacy Notice fix live; stubs
+promoted as 654/655/656.
+
 source_retro: CEO ruling 2026-07-25 (session 58): client CONTRACTS cover controller/processor roles
 — do NOT re-litigate DPIA; verify the technical layer only. source_ticket: (white-label per-brand
 epic) recommended_sprint: now recommended_agent: compliance-engineer priority: P2 estimated_hours: 4
@@ -18549,6 +18560,9 @@ endpoints work for visitors of any brand (tenant-agnostic OTP flows). Deliverabl
 of scope: DPIA, controller-role analysis (contracts cover it — CEO ruling).
 
 ## FOLLOW-654 — Per-brand identity in consent + DSR flows: consent text hardcodes "Estalara"/"Time2Show", DSR OTP emails hardcode "Estalara", consent_text_hash silently defaults
+
+**STATUS 2026-07-25: ✅ DONE — PR #624 MERGED (`73a9013`).** Ops gate: set `FIRST_PARTY_TENANT_ID`
+before first external brand.
 
 source_retro: FOLLOW-653 external-brand go-live check (PR #622, stub A) source_ticket: FOLLOW-653
 recommended_sprint: now recommended_agent: backend-engineer priority: P1 estimated_hours: 6
@@ -18597,3 +18611,24 @@ Before ANY external brand goes live: confirm with Rafał that each branded deplo
 per-brand privacy policy + consent text (post-FOLLOW-654 parameterization). Go-live QA gate =
 UNSATISFIABLE-PENDING-HANDOFF until confirmed. Add to the FOLLOW-652 runbook's deploy-side checklist
 when both PRs land.
+
+## FOLLOW-657 — ADR-0018 staff port for onboarding mutations (detect + schema/activate + quiz_enabled) + runbook reconciliation
+
+source_retro: FOLLOW-652 runbook GAP-1/2 (PR #621); CEO ruling 2026-07-25: BUILD the staff port
+(option a), reject the dormant shadow-account workaround source_ticket: FOLLOW-652
+recommended_sprint: now recommended_agent: backend-engineer priority: P1 estimated_hours: 5
+depends_on: [] promoted_to_queue: false
+
+**Leg 1 — staff port:** `POST /api/detect`, `POST /api/schema/activate`, and the `quiz_enabled` flip
+(`PATCH /api/tenants/:id`) currently accept only the agency session path — under the CEO's
+no-client-dashboard model, staff provisioning of a new brand cannot execute them. Add the ADR-0018
+§2 staff override to each (explicit `?tenant_id=` validated against `tenants`, write-rank ≥
+`estalara:ops`, §3a atomic staff_audit_log in one tx per mutation), following the reference pattern
+in `/api/quiz/config`. No agency-path byte changes.
+
+**Leg 2 — runbook reconciliation (`docs/runbooks/BRAND_PROVISIONING.md`):** written pre-merge of
+three PRs it depends on — update against merged reality: (1) origins step vs PR #623 semantics (KV
+`ApiKeyRecord.allowed_origins`, null/[]/list, seeded at provisioning — NOT the dormant PG column);
+(2) add ops step: set `FIRST_PARTY_TENANT_ID` env before first external brand (PR #624); (3)
+un-stale Step 5 vs the merged FOLLOW-639 quiz-definition editor; (4) replace the GAP-1/2
+shadow-account workaround section with the new staff port (keep workaround as emergency appendix).

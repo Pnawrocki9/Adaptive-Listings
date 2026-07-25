@@ -17,6 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { WidgetPlacement } from '@estalara/shared';
 import { DEFAULT_OPTOUT_PLACEMENT, DEFAULT_QUIZ_PLACEMENT } from '@estalara/shared';
 
 import { placementToCss } from '../ui/placement.js';
@@ -62,13 +63,12 @@ describe('placementToCss (FOLLOW-640)', () => {
 // ─── FOLLOW-640: quiz sticky trigger ──────────────────────────────────────────
 
 describe('quiz trigger placement (FOLLOW-640)', () => {
-  function triggerCss(placement?: Parameters<typeof placementToCss>[0]): string {
+  // `exactOptionalPropertyTypes` forbids spreading a maybe-undefined optional, so the two
+  // shapes are built explicitly rather than merged.
+  function triggerCss(placement?: WidgetPlacement): string {
     const shadowRoot = makeShadowRoot();
-    renderQuizTrigger(
-      shadowRoot,
-      { accentColor: '#2563EB', language: 'en', ...(placement ? { placement } : {}) },
-      () => undefined,
-    );
+    const base = { accentColor: '#2563EB', icon: '🏠', language: 'en' as const };
+    renderQuizTrigger(shadowRoot, placement ? { ...base, placement } : base, () => undefined);
     return shadowRoot.querySelector('style')?.textContent ?? '';
   }
 
@@ -86,15 +86,33 @@ describe('quiz trigger placement (FOLLOW-640)', () => {
 // ─── FOLLOW-641: opt-out toggle placement + labels ────────────────────────────
 
 describe('profiling opt-out toggle (FOLLOW-641)', () => {
+  type ToggleOptions = Parameters<typeof renderProfilingToggle>[1];
+
+  /**
+   * `Partial<T>` would add `| undefined` to every key, which
+   * `exactOptionalPropertyTypes` rejects — so the overridable keys are listed explicitly and
+   * each is applied only when present.
+   */
   function renderToggle(
-    options: Partial<Parameters<typeof renderProfilingToggle>[1]> = {},
+    overrides: {
+      language?: ToggleOptions['language'];
+      placement?: NonNullable<ToggleOptions['placement']>;
+      labels?: NonNullable<ToggleOptions['labels']>;
+      showAttribution?: boolean;
+    } = {},
   ): ShadowRoot {
     const shadowRoot = makeShadowRoot();
+    const onChange: (optedOut: boolean) => void = vi.fn();
     renderProfilingToggle(shadowRoot, {
-      language: 'en',
+      language: overrides.language ?? 'en',
+      accentColor: '#2563EB',
       initialOptedOut: false,
-      onChange: vi.fn(),
-      ...options,
+      onChange,
+      ...(overrides.placement ? { placement: overrides.placement } : {}),
+      ...(overrides.labels ? { labels: overrides.labels } : {}),
+      ...(overrides.showAttribution === undefined
+        ? {}
+        : { showAttribution: overrides.showAttribution }),
     });
     return shadowRoot;
   }
@@ -179,10 +197,12 @@ describe('white_label attribution (FOLLOW-651)', () => {
 
   it('the opt-out toggle honours the same flag', () => {
     const shadowRoot = makeShadowRoot();
+    const onChange: (optedOut: boolean) => void = vi.fn();
     renderProfilingToggle(shadowRoot, {
       language: 'en',
+      accentColor: '#2563EB',
       initialOptedOut: false,
-      onChange: vi.fn(),
+      onChange,
       showAttribution: false,
     });
     expect(shadowRoot.textContent).not.toContain('Powered by Estalara');

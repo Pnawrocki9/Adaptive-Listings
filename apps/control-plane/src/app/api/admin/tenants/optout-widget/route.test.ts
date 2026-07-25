@@ -65,7 +65,9 @@ function staffAccess(
   return {
     via: 'staff',
     tenantId: TENANT_A,
+    role,
     canWrite: role !== 'estalara:readonly',
+    isSuperadmin: role === 'estalara:superadmin',
     staff: {
       sub: 'staff-uuid-777',
       email: 'staff@estalara.com',
@@ -74,11 +76,23 @@ function staffAccess(
       estalara_role: role,
       mfa_verified: true,
     },
-  } as TenantAccess;
+  };
 }
 
 function agencyAccess(): TenantAccess {
-  return { via: 'agency', tenantId: TENANT_A, canWrite: true } as TenantAccess;
+  return {
+    via: 'agency',
+    tenantId: TENANT_A,
+    claims: {
+      sub: 'agency-uuid-111',
+      email: 'owner@agency.example',
+      tenant_id: TENANT_A,
+      agency_role: 'agency:owner',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: null,
+  };
 }
 
 // ─── DB fake ──────────────────────────────────────────────────────────────────

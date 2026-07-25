@@ -120,9 +120,7 @@ export function renderProfilingToggle(
     bag?.[options.language] ?? bag?.en ?? fallback;
   const onWord = resolveBag(options.labels?.on, copy.on);
   const offWord = resolveBag(options.labels?.off, copy.off);
-  const ariaOverride = options.labels?.aria
-    ? resolveBag(options.labels.aria, '')
-    : '';
+  const ariaOverride = options.labels?.aria ? resolveBag(options.labels.aria, '') : '';
 
   /** State text shown in the toggle: `"<title>: <on|off word>"`. */
   function stateText(out: boolean): string {

@@ -18632,3 +18632,61 @@ three PRs it depends on — update against merged reality: (1) origins step vs P
 (2) add ops step: set `FIRST_PARTY_TENANT_ID` env before first external brand (PR #624); (3)
 un-stale Step 5 vs the merged FOLLOW-639 quiz-definition editor; (4) replace the GAP-1/2
 shadow-account workaround section with the new staff port (keep workaround as emergency appendix).
+
+## FOLLOW-658 — `allowed_origins` producer-coverage: enforcement silently no-ops until KV is seeded + two-source-of-truth (PG vs KV) reconciliation
+
+source_retro: RETRO-218 (PR #623, FOLLOW-642) source_ticket: FOLLOW-642 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 5 depends_on: []
+promoted_to_queue: false
+
+#623 shipped a live CONSUMER (`apps/ingest/src/origin-gate.ts` → 403 `forbidden_origin` on
+`POST /v1/events`) for `ApiKeyRecord.allowed_origins`, but NO in-repo code writes that KV field — a
+repo-wide grep finds ZERO writes to `KV_API_KEYS` at all (`schema/activate/route.ts` writes only the
+Postgres `apiKeys` table; the only PG `tenants.allowed_origins` writer was `/api/config`, removed by
+#618). The whole KV record is operator-seeded out-of-band, so origin enforcement **silently inherits
+the env allow-list (no lock-down) for every tenant until an operator manually seeds
+`allowed_origins`** — and nothing guarantees it. Two-SoT hazard: PG `tenants.allowed_origins` is
+`NOT NULL DEFAULT []` where `[]`=inherit, but KV distinguishes `null`=inherit from `[]`=deny-all — a
+naive PG→KV projection of `[]` would flip a tenant to deny-all (block ALL browser traffic). AC: (1)
+either build a PG→KV projection at provisioning OR add an explicit, documented provisioning step;
+(2) add a fail-loud check/alert when a NON-first-party tenant's KV record lacks `allowed_origins`
+(so enforcement cannot silently inherit for an external brand); (3) correct the over-claim in
+`packages/db/src/schema/tenants.ts` ("ENFORCED … projected onto the KV record at provisioning") and
+`docs/MASTER_DESIGN.md` §V.3.4 ("seeded at provisioning") to match reality — the read/enforce path
+is live, the write/projection path is not implemented (Rule M false-automation-claim axis).
+
+## FOLLOW-659 — `brand_config.brand_name`/`legal_entity` producer-coverage: per-brand identity silently falls back to "Estalara" until operator seeds JSONB
+
+source_retro: RETRO-219 (PR #624, FOLLOW-654) source_ticket: FOLLOW-654 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+#624 shipped live CONSUMERS (`apps/control-plane/src/lib/brand-identity.ts` →
+`api/dsr/initiate/route.ts` email + `api/v1/consent/platform-registration/route.ts` text) for the
+additive JSONB keys `tenants.brand_config.brand_name` / `.legal_entity`, but NO in-repo code writes
+them (grep of `apps/control-plane`/`packages` non-test finds only readers). They are operator-seeded
+JSONB. The consumer fails HONEST (absent → explicit "Estalara" fallback), so no runtime break — but
+for an EXTERNAL brand the per-brand identity fix silently no-ops (DSR/consent emit "Estalara") until
+an operator populates `brand_config.brand_name`, and no code/verified-runbook step guarantees it.
+AC: (1) add a provisioning step (or minimal admin surface) that sets the per-brand legal identity;
+(2) add a fail-loud check when a NON-first-party tenant lacks `brand_name` before DSR/consent send;
+(3) document the JSONB keys in the FOLLOW-657 runbook. Sibling of FOLLOW-658 (same operator-seeded-
+producer shape across the KV/JSONB surfaces).
+
+## FOLLOW-660 — Code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open (forgotten env re-opens the canonical-hash-default consent fabrication)
+
+source_retro: RETRO-219 (PR #624, FOLLOW-654) source_ticket: FOLLOW-654 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+`FIRST_PARTY_TENANT_ID` UNSET ⇒ `isFirstPartyTenant` treats ALL tenants as first-party ⇒
+`consent_text_hash` may be omitted ⇒ it silently defaults to the canonical Estalara hash — precisely
+the audit-fabrication axis #624 closed for non-first-party tenants. Today the env is unset and the
+single live tenant is Estalara (correct), but once external brands onboard, a forgotten env re-opens
+the fabrication for every external brand. Documentation-only mitigation exists (`.env.example` +
+FOLLOW-656 go-live gate). AC: refuse (or require `consent_text_hash` for) a registering tenant when
+`FIRST_PARTY_TENANT_ID` is UNSET AND the tenant is not the sole known first-party (e.g. tenant count
+
+> 1), so a forgotten env cannot silently degrade to the canonical-hash default. Keep the
+> single-live- tenant flow working (env-unset + exactly one tenant = today's Estalara path
+> unchanged).

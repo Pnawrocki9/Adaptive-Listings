@@ -2004,6 +2004,62 @@ grep -rn "continue-on-error" .github/workflows/*.yml   # each hit needs an ownin
 
 ---
 
+## Rule AG — Parallel-worktree agents MUST NOT append to a shared monotonic/append-only log (per-agent `lessons.md`, or any single file every worker adds a trailing entry to); write per-ticket fragment files instead
+
+**Pattern:** Two or more concurrently-running agents, each in an isolated worktree, append a
+trailing entry to the SAME append-only file (canonically `.claude/agents/<name>/lessons.md`, but any
+file whose contract is "add your entry at the end"). Because every writer targets end-of-file, the
+merges collide by construction — the second-merged PR hits a non-fast-forward / rebase conflict on
+that file even though the two entries have no semantic relationship. This is a MECHANICAL collision
+of the append point, not a logical disagreement about content.
+
+**Evidence (≥2 PRIOR numbered retros):** RETRO-213 §PROCESS (PR #618 — `backend-engineer/lessons.md`
+append-append collision with merged #617; append-only-log-collision mechanism banked count 1,
+explicitly distinguished from RETRO-211/FOLLOW-644's code-CONTRACT conflict) + RETRO-218 §6 (PR #623
+— same `backend-engineer/lessons.md`, count 2). Promotion trigger: RETRO-219 (PR #624 — same file,
+3rd independent PR); the 2 banked occurrences are both PRIOR retros → ≥2-PRIOR threshold met; the
+promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/V/Q). Three
+independent PRs (#618/#623/#624) each appended to the SAME monotonic log from separate worktrees.
+
+**Rule:** An agent running in a worktree MUST NOT append to a shared append-only log while other
+agents may be running. Write your lesson/entry to a per-ticket (or per-agent-per-session) FRAGMENT
+file — e.g. `.claude/agents/<name>/lessons.d/FOLLOW-NNN.md` — never to the shared `lessons.md` tail
+(FOLLOW-650 mechanism). A periodic/serial job may concatenate fragments into the rollup. The same
+discipline applies to any single file whose only contract is "append your entry at the end" when >1
+worker is in flight. The PM sequences bookkeeping writes to genuinely-shared logs (QUEUE.md,
+FOLLOW_UPS.md, RETROSPECTIVES.md) either BEFORE dispatch or AFTER completion, never concurrently
+(memory `feedback_no_concurrent_git_with_subagents`).
+
+**Distinct axis from:** RETRO-211 / FOLLOW-644 (a code-CONTRACT merge conflict — a semantic
+disagreement about the same lines, not a blind append-point collision); Rule A (CI-green before
+READY_FOR_REVIEW — governs review status, not merge mechanics).
+
+**Verification:**
+
+```bash
+# No file should appear in >1 concurrently-open PR's diff purely as an appended trailing entry:
+for pr in $(gh pr list --state open --json number -q '.[].number'); do \
+  gh pr diff "$pr" --name-only | grep -E 'lessons\.md$'; done | sort | uniq -d
+# Any duplicate = two open PRs both appending to one shared log → collision risk. Prefer fragments:
+ls .claude/agents/*/lessons.d/ 2>/dev/null   # fragment dirs should exist once FOLLOW-650 lands
+```
+
+---
+
+<!-- Rule AG added 2026-07-25 — RETRO-219 §6. Evidence (≥2 PRIOR numbered retros): RETRO-213 §PROCESS
+(PR #618 backend-engineer/lessons.md append-append collision w/ merged #617, append-only-log-collision
+mechanism count 1, explicitly distinguished from RETRO-211/FOLLOW-644's code-contract conflict) +
+RETRO-218 §6 (PR #623, same file, count 2). Promotion trigger: RETRO-219 (PR #624, 3rd independent PR,
+same backend-engineer/lessons.md) — the 2 banked occurrences are both PRIOR retros → ≥2-PRIOR threshold
+met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/V/Q).
+Three independent PRs (#618/#623/#624) each appended a trailing entry to the SAME monotonic log from
+separate worktrees → guaranteed EOF collision on each rebase-in-sequence merge. Remedy already ticketed
+FOLLOW-650 (per-ticket/per-agent fragment files). DISTINCT axis from RETRO-211/FOLLOW-644 (a code-
+CONTRACT merge conflict — a semantic disagreement about the same lines) and from Rule A (CI-green
+governs review status, not merge mechanics). Batch gh-pr-merge/mid-queue-rebase (this session, CEO-
+authorized): only realized harm was these append-log collisions (now AG); rebase PRESERVATION verified
+clean (RETRO-214 confirmed #619's removed sdk.allowed_origins not resurrected) → no separate rule,
+subsumed by AG + RETRO-211. LETTER CHOICE: AG is the next in the double-letter sequence after AF. -->
 <!-- Rule AF added 2026-07-23 — RETRO-205 §6 (P-1). Evidence (≥2 PRIOR numbered retros): SESSION-RETRO
 39 → FOLLOW-591 (Rule I red on main at 179 violations, "a permanently-red gate destroys the signal
 value of CI red", count 1) + RETRO-187 §2/§6 (183 violations, promotion explicitly DECLINED at "single

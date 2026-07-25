@@ -33191,3 +33191,390 @@ write-path URL-validates so unreachable normally. CASCADE §5b: FOLLOW-639 worke
 not reintroduce #618's sdk.allowed_origins. FOLLOW-644 no collision (disjoint files). NO CONVENTIONS_PATCH
 promotion (white_label = existing Rule H/L instance). -->
 
+## RETRO-215 — FOLLOW-639 (per-brand editable quiz definitions — full question tree / weights / i18n served from tenant config) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #620 (merged 2026-07-25 10:05:08 UTC, commit `7f4aa1e`)
+- **Files changed:** 23 (+2655 / -654)
+- **Modules touched:** [SDK / control-plane / shared / db / docs]
+- **Key contracts changed:** `PresentationConfigResponse.quiz_definition` — added (optional slice) — breaking: no;
+  `packages/db` new table `quiz_definitions` (0035) — added — breaking: no; SDK removed `QUIZ_CONTENT` /
+  `resolveArchetype()` switch, replaced by generic `resolveArchetypeFromPath` + `reduceWeightsToArchetype` +
+  `DEFAULT_QUIZ_DEFINITION` — internal, breaking: no (public `AdaptResponse`/`SdkConfig` superset-compatible).
+
+### 2. Verification done in PR
+
+- Test files changed: `follow-639.test.ts`, `quiz-widget.test.ts` (rewritten), `follow-273.test.ts` (updated),
+  `public-config/route.test.ts`, `admin/tenants/quiz-definition/route.test.ts`, `quiz-definition-editor.test.tsx`,
+  `presentation-config.test.ts`. Assertions added: high (route 16-case suite + 18-case walk-parity + editor). Coverage delta: est. up.
+- CI checks: not independently verified (merged on PM CI-green; Rule AF baseline applies).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅`. CHECK A: every new export consumed non-test — `reduceWeightsToArchetype`/`resolveArchetypeFromPath`/
+`DEFAULT_QUIZ_DEFINITION`/`resolveLabel` consumed by `quiz-widget.ts` + SDK tests; `quiz_definitions` schema imported by the staff
+route + `schema/index.ts` barrel; `quiz-definition/page.tsx` + `route.ts` are framework entrypoints (suppressed). CHECK B:
+`quiz_definition` slice has BOTH a producer (staff write `PUT /api/admin/tenants/quiz-definition` → `quiz_definitions` row) AND a
+consumer (`GET /api/quiz/public-config` reads active row → `SdkConfig.quizDefinition` → SDK walker). Column→wire→SDK→rendered leaf
+proven end-to-end. Migration 0035 rides Postgres auto-apply (memory `project_postgres_migrations_no_autoapply`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- **PL/ES degradation is honest AND tested (axis-1 verified, NOT a defect).** `DEFAULT_QUIZ_DEFINITION.languages = ['en']` (EN-only,
+  the ADR deviation from "byte-identical PL/ES"). The no-network / unconfigured-tenant path IS covered: `follow-639.test.ts` proves
+  absent slice → `quizDefinition` undefined → SDK falls back to the built-in default; `resolveLabel` (`quiz-widget.ts:266`,
+  `bag[lang] ?? bag.en ?? Object.values(bag)[0] ?? ''`) is unit-tested for the EN-fallback (`{en:'Hi'},'pl' → 'Hi'`) and the
+  first-value fallback (`{es:'Hola'},'pl' → 'Hola'`). Net effect: a PL/ES brand that ships NO served definition now renders the EN
+  default quiz on a fetch-fail (previously PL/ES were baked into the bundle). ADR-sanctioned (bundle headroom ~1KB, single live
+  tenant is EN); the remedy is exactly the editability shipped — a PL/ES brand provisions its own tree. Note (not a defect): the
+  runbook must state PL/ES brands MUST provision a served definition (folded into FOLLOW-657 leg 2).
+
+#### 4b. Code bugs not caught — N/A.
+#### 4c. Test coverage gaps
+- **Walk-vs-switch parity DOES pin all 17 leaves (axis-1 verified).** `quiz-widget.test.ts` walks `DEFAULT_QUIZ_DEFINITION` by
+  answer-index path and asserts each of the 17 non-neutral leaves + the neutral skip against the old switch's expected archetype
+  (`[0,0,0]→yield_hunter … [2,2]→student_parent`), plus a `covers exactly the 17 non-neutral archetypes` set assertion and
+  `computeUnreachableArchetypes(...) === []`. This IS the "corpus/parity gate" the PR body flagged as "must add" — it runs in the SDK
+  suite in CI and fails if any future weight edit breaks a leaf. Genuine end-to-end guard, not a value-injecting stub.
+
+#### 4d. Documentation gaps
+- **DG-1 (P3, no stub — folded into FOLLOW-657).** The staff editor page `admin/tenants/[id]/quiz-definition/page.tsx` has NO admin-nav
+  link (grep of `admin/**/*.tsx` for `quiz-definition` returns only the page/editor files) — reachable by direct URL only. Consistent
+  with the direct-URL house style for staff tools; the FOLLOW-657 runbook must cite the exact URL as the provisioning surface.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+- **FOLLOW-657 leg 2 (runbook reconciliation)** — Step 5 (quiz definition, previously "not yet shipped") is now LIVE; the runbook must
+  add the create/activate `quiz_definitions` step + the direct editor URL + the EN-only-default note. Already owned by FOLLOW-657.
+
+#### 5b. Future sprint tickets affected
+- **FOLLOW-640 / FOLLOW-641** (quiz placement / opt-out widget slices) inherit the optional-slice + ship-with-consumer invariants
+  (Rule L/U); FOLLOW-641 is separately affected by RETRO-217 (its "no opt-out toggle exists" premise is falsified).
+
+#### 5c. Contracts changed others rely on
+- `PresentationConfigResponse` gains `quiz_definition?` (optional; unconfigured tenant stays byte-identical via conditional-spread).
+  A shipped SDK reading only the ADR-0011 subset is unaffected. Backward-compatible.
+
+#### 5d. Architectural assumptions affected
+- The reduction is now DATA-driven (accumulated per-answer weight vectors → argmax) not a hardcoded switch. Any future archetype
+  space change must edit `DEFAULT_QUIZ_DEFINITION` weights AND keep the parity test green — the test is the invariant's guard.
+
+### 6. New lesson candidates
+- **Pattern: "an ADR-sanctioned deviation from byte-identical (EN-only default) is honest ONLY if the degradation path is tested."** —
+  seen here (tested) — this is OP5/Rule-L-adjacent, not a new promotable pattern. Count 1. No promotion.
+
+### 7. Follow-ups
+- N/A new — the two P3 notes (nav link, PL/ES-must-provision) fold into the existing FOLLOW-657 leg 2 (runbook reconciliation).
+
+### 8. Cross-references
+- **RETRO-214 (FOLLOW-623 / PR #619)** — this PR extends the exact `presentation-config` superset + public-config route #619 shipped,
+  honoring the §5b invariants RETRO-214 pinned. **ADR-0019** — the epic. **RETRO-217** — falsifies FOLLOW-641's premise.
+
+## RETRO-216 — FOLLOW-652 (brand provisioning runbook) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #621 (merged 2026-07-25 10:05:15 UTC, commit `e4c9dea`)
+- **Files changed:** 2 (+484 / -0)
+- **Modules touched:** [docs]
+- **Key contracts changed:** N/A (docs-only; `docs/runbooks/BRAND_PROVISIONING.md` + agent lessons.md).
+
+### 2. Verification done in PR
+
+- Test files changed: none (docs-only). Assertions added: 0. Coverage delta: N/A.
+- CI checks: not independently verified (docs-only; format-check applies).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` (docs-only, no exports/events/columns).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps — N/A.
+#### 4b. Code bugs — N/A.
+#### 4c. Test coverage gaps — N/A.
+#### 4d. Documentation gaps (spot-check of 2 steps against merged reality — the runbook was written PRE-merge of #620/#623/#624)
+- **DG-1 (Step 6 — origins) — MATERIALLY INACCURATE vs merged #623.** `BRAND_PROVISIONING.md:219-247` describes FOLLOW-642 as
+  "ingest reads `tenants.allowed_origins` per-request (with a cache)" and instructs the operator to "set `tenants.allowed_origins` via
+  whatever admin surface FOLLOW-642 ships." Merged reality (#623): ingest has NO Postgres binding — it reads
+  `ApiKeyRecord.allowed_origins` from `KV_API_KEYS`, and ships NO admin surface (PR #618's removal stands). The runbook's interim
+  mitigation ("add the literal to `router.ts` env allow-list") also contradicts #623, which REMOVED the hardcoded env approach as the
+  anti-pattern. → Reconciliation owned by FOLLOW-657 leg 2 point 1 (already scoped to "origins step vs PR #623 semantics"). FLAG, do
+  not fix (docs/runbooks/* is a parallel-worktree surface — out of scope for this retro's writes).
+- **DG-2 (Step 5 — quiz definition) — STALE.** `:207-217` marks Step 5 "post-FOLLOW-639 (not yet shipped)"; FOLLOW-639 merged as #620
+  this same session (RETRO-215). → FOLLOW-657 leg 2 point 3 (already scoped).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected — FOLLOW-657 leg 2 must reconcile Steps 5 & 6 (and add the FIRST_PARTY_TENANT_ID ops step per #624 / RETRO-219). Already owned.
+#### 5b. Future sprint tickets affected — N/A.
+#### 5c. Contracts changed others rely on — N/A.
+#### 5d. Architectural assumptions affected
+- The runbook's "dry-run-verified" claim is honest for the steps that existed at authoring time, but two of its seven steps document a
+  PREDICTED contract (the ticket stub) that the merged PRs did not match — a known hazard of writing a runbook ahead of its
+  dependencies. FOLLOW-657 leg 2 is the correct closure; no new gap.
+
+### 6. New lesson candidates
+- **Pattern: "a runbook authored against ticket STUBS ahead of merge documents predicted contracts that the merged code diverges from."**
+  — seen: RETRO-216 (Steps 5/6) — count 1, remedy already ticketed (FOLLOW-657). No promotion.
+
+### 7. Follow-ups
+- N/A new — both spot-checked divergences are owned by the existing FOLLOW-657 leg 2.
+
+### 8. Cross-references
+- **RETRO-218 (#623)** / **RETRO-219 (#624)** — the merged contracts this runbook must reconcile against. **RETRO-215 (#620)** — Step 5 now live.
+
+## RETRO-217 — FOLLOW-653 (external-brand go-live technical compliance check) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #622 (merged 2026-07-25 10:05:23 UTC, commit `50b86c3`)
+- **Files changed:** 3 (+406 / -22)
+- **Modules touched:** [compliance / docs]
+- **Key contracts changed:** N/A (docs — go-live check + PRIVACY_NOTICE_TEMPLATE v1.5, adding the missing
+  `__estalara_profiling_opt_out__` storage-key disclosure row).
+
+### 2. Verification done in PR
+
+- Test files changed: none (docs). Assertions added: 0 (grep-verified evidence per axis). Coverage delta: N/A.
+- CI checks: not independently verified (docs; privacy-notice-keys-sync gate applies).
+
+### 3. Wiring Audit
+
+`Wiring Audit — clean ✅` (docs-only). Notably this PR CLOSES a Rule N (Privacy Notice disclosure) gap: the shipped key
+`__estalara_profiling_opt_out__` (`core/profiling-opt-out.ts:30`, live since PR #337) was undisclosed for a month — now added to §4.
+
+### 4. Discovered gaps (this PR is itself a gap-FINDER; verifying its findings + its own method)
+#### 4a. Logic gaps
+- **The profiling-toggle false-absence was a GOOD catch, independently re-confirmed.** Axis-3 correction is real: `renderProfilingToggle()`
+  (`packages/sdk/src/ui/profiling-toggle.ts`) IS unconditionally mounted at `index.ts:1051` with no tenant/brand/feature gate (grep
+  confirms no `optOutEnabled`/`opt_out_widget` conditional). THREE prior audits (session-57, ADR-0019 architect, session-58 PM grep)
+  reported "no opt-out toggle UI exists" — the miss root cause: their greps used `optOut|OptOut`, which does not match the mounted
+  symbol names `ProfilingToggle` / `profiling-toggle` / `OptedOut`. See §6 (verification-rule candidate, HELD).
+#### 4b. Code bugs — N/A (doc PR).
+#### 4c. Test coverage gaps — the check's axis-4 gap (DSR OTP hardcodes "Estalara") and axis-2 gap (consent hardcodes "Estalara" + `consent_text_hash` silent default) are real and were closed by #624 (RETRO-219) the same session.
+#### 4d. Documentation gaps — the CI gate `privacy-notice-keys-sync` missed a real shipped key for a month (its regex only matches `_STORAGE_KEY`/`_KEY_PREFIX`/`_DISMISS_KEY` suffixes) → owned by FOLLOW-655.
+
+### 5. Cascading impact
+#### 5a. Current sprint tickets affected
+- **FOLLOW-654 (DONE, #624)** consumed axes 2 & 4 of this check. **FOLLOW-655 / FOLLOW-656** (filed by this check) own the CI-gate
+  broadening and the out-of-repo render-verification handoff.
+#### 5b. Future sprint tickets affected
+- **FOLLOW-641 (ADR-0019 opt-out widget) — PREMISE FALSIFIED.** Its charter ("build the opt-out toggle UI — none exists") is wrong:
+  the toggle has shipped since PR #337. → PM must re-scope FOLLOW-641 to "verify/parameterize the EXISTING toggle for external brands"
+  or close it. Surfaced for PM (FOLLOW-641 is an un-promoted stub; §5 surfacing suffices — no new follow-up).
+#### 5c. Contracts changed others rely on — N/A.
+#### 5d. Architectural assumptions affected
+- The single-data-pool re-brand model means DSR/consent/opt-out must be tenant-agnostic OR brand-parameterized; this check verified the
+  DSR routes are correctly tenant-scoped (zero hardcoded tenant literals across all 5 routes) — the only leaks were display-identity
+  strings (closed by #624).
+
+### 6. New lesson candidates
+- **Pattern: "an ABSENCE claim ('feature X does not exist') is false because the searcher used ONE naming token; the symbol shipped under
+  a different naming variant."** — this batch: the `ProfilingToggle`/`OptedOut` miss (3 audits) — **count 1 for this DISTINCT axis**
+  (absence-proof discipline). It RHYMES with Rule AC (scope-by-audit-not-grep) and Rule AD (all structural shapes) and OP5
+  (verify-not-guess), but those govern POSITIVE enumeration completeness; absence-proof is the mirror. Per the entrenched anti-inflation
+  discipline (≥2 PRIOR independent numbered retros required), **HOLD at count 1, fold into OP5 + Rule AC, NO promotion.**
+  **Pre-authorization:** promote a "an absence/negative claim requires ≥2 independent search strategies — naming variants AND
+  import-graph/mount-point — before it is recorded as a verdict" rule on the NEXT independent-subsystem sighting.
+
+### 7. Follow-ups
+- N/A new — the CI-gate blind spot is FOLLOW-655, the out-of-repo render check is FOLLOW-656, the identity fixes were FOLLOW-654 (#624).
+  FOLLOW-641 re-scope surfaced to PM in §5b.
+
+### 8. Cross-references
+- **RETRO-219 (#624)** — closed axes 2 & 4 of this check. **RETRO-215 (#620)** — the falsified FOLLOW-641 shares the ADR-0019 slice
+  family. **Rule N** — this PR closed a disclosure gap. First compliance-check retro of the external-brand wave.
+
+## RETRO-218 — FOLLOW-642 (per-tenant `allowed_origins` enforcement in ingest CORS) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #623 (merged 2026-07-25 10:06:20 UTC, commit `d631a08`)
+- **Files changed:** 12 (+734 / -96)
+- **Modules touched:** [ingest / db / docs]
+- **Key contracts changed:** `ApiKeyRecord.allowed_origins?: string[] | null` (ingest KV record) — added — breaking: no;
+  ingest `POST /v1/events` now 403 `forbidden_origin` on Origin mismatch — behavioral, breaking: only for a tenant whose KV record
+  carries a non-empty list; `tenants.allowed_origins` doc-comment changed "NOT enforced" → "ENFORCED" (semantics, no DDL).
+
+### 2. Verification done in PR
+
+- Test files changed: `auth.test.ts`, `index.test.ts`, `origin-gate.test.ts`. Assertions added: high (inherit/deny-all/explicit
+  matrix + KV surfacing). Coverage delta: est. up. Full ingest suite 266 tests / 5.0s.
+- CI checks: not independently verified (merged on PM CI-green; Rule AF baseline applies).
+
+### 3. Wiring Audit
+
+**CHECK A — clean.** `origin-gate.ts` (`resolveOriginPolicy`/`isOriginAllowed`/`allowedOriginsForEnv`) consumed by `handlers/events.ts`
++ `router.ts`; `auth.ts` surfaces the field. No dead exports.
+
+**CHECK B — QUALIFIED FINDING (producer-coverage gap, P1) → FOLLOW-658.** The new signal `ApiKeyRecord.allowed_origins` has a live
+CONSUMER (origin-gate on `POST /v1/events`, tested) but **NO in-repo PRODUCER writes it.** A repo-wide grep for any write of
+`allowed_origins`/`allowedOrigins` into KV, and for ANY write to `KV_API_KEYS` at all, returns ZERO code hits (`grep -rn KV_API_KEYS`
+across `apps/`/`packages/` → only ingest reads + docs). The entire `KV_API_KEYS` record is seeded OUT-OF-BAND (operator/wrangler);
+`schema/activate/route.ts` writes only the Postgres `apiKeys` table, never KV. There is likewise NO `tenants.allowed_origins` (PG) →
+KV projection code (grep confirms the only PG writer was `/api/config`, removed by #618). This is NOT a P0 runtime break — the consumer
+FAILS SAFE (`allowed_origins` absent → `inherit` → env list → traffic flows) — but it means the enforcement **silently no-ops (inherits)
+for every tenant until an operator manually seeds `allowed_origins` into the KV JSON**, and nothing in code or a verified runbook step
+guarantees that. Classified as a producer-coverage / operator-pending gap, not a clean ✅.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- **LG-1 (P1, → FOLLOW-658) — two-source-of-truth hazard with a SEMANTIC mismatch.** `tenants.allowed_origins` (PG) is
+  `NOT NULL DEFAULT []` where `[]` = "inherit"; the KV `ApiKeyRecord.allowed_origins` distinguishes `null`=inherit from `[]`=deny-all.
+  The tenants.ts doc-comment acknowledges this but there is no reconciliation/projection code: PG `[]` naively projected to KV `[]`
+  would flip a tenant from inherit to **deny-all (blocks ALL browser traffic)**. Two independently-writable stores (PG has no writer;
+  KV has an operator writer) with divergent `[]` semantics and no sync = latent drift.
+#### 4b. Code bugs — N/A (the code that exists is correct; the gap is absent producer/projection).
+#### 4c. Test coverage gaps
+- The consumer matrix (inherit/deny-all/explicit) is well tested, but there is no test/guard asserting a NEW external tenant's KV record
+  actually CARRIES `allowed_origins` (there can't be — the producer is out of repo). Covered by the FOLLOW-658 provisioning-step ask.
+#### 4d. Documentation gaps
+- **DG-1 (P2, → FOLLOW-658) — doc over-claim.** `tenants.ts` now says the column is "ENFORCED … the provisioning source-of-truth that
+  is projected onto the api-key KV record at provisioning," and MASTER_DESIGN §V.3.4 mirrors "seeded at [provisioning]." No such
+  projection exists in code; the projection is manual and undefined. This is a Rule M-adjacent false-automation claim (automation
+  CLAIMED, not implemented). The ENFORCEMENT (read side) is genuinely live; the PROJECTION (write side) is aspirational.
+
+### 5. Cascading impact
+#### 5a. Current sprint tickets affected
+- **FOLLOW-657 leg 2 point 1** (runbook origins step) must document the EXACT operator KV-seeding command and the `null`vs`[]` semantics —
+  and note that until seeded, enforcement inherits (no lock-down). **FOLLOW-652 runbook (RETRO-216 DG-1)** is inaccurate on this exact hop.
+#### 5b. Future sprint tickets affected
+- Onboarding the 3 external re-brand clients (the P1 driver) DEPENDS on the KV seeding actually happening per-brand; FOLLOW-658 is the guardrail.
+#### 5c. Contracts changed others rely on
+- `ApiKeyRecord` gains `allowed_origins?` (conditional-spread; absent = inherit) — backward-compatible with existing KV records that
+  predate FOLLOW-642 (they inherit, so Estalara's first-party browser traffic is never disrupted). Correct.
+#### 5d. Architectural assumptions affected
+- **RULE AA reconciliation (code-vs-prod split).** The enforcement CODE is complete and correct; the SECURITY GUARANTEE ("a leaked key
+  of brand X only works from brand X's domains") is NOT in effect for any tenant until its KV record is seeded with `allowed_origins`.
+  Per Rule AA this ticket is CODE_COMPLETE_OPERATOR_PENDING for its prod effect — do not read "#623 merged" as "origins enforced in prod."
+
+### 6. New lesson candidates
+- **Pattern: "an external-brand go-live feature adds a live CONSUMER for a tenant-config field whose PRODUCER is operator-seeded
+  out-of-repo, so the control silently no-ops until an operator remembers to seed it — with a doc-comment claiming it is enforced/projected."**
+  — seen: this retro (`allowed_origins`) — mirrored by RETRO-219 (`brand_config.brand_name`/`legal_entity`). Both are THIS batch; this is
+  the AA / Rule-M axis (operator-pending + false-automation-claim), not a new promotable pattern. Count 1 of this specific "external-brand
+  operator-seeded producer" sub-shape; HELD, folds into AA/M.
+- **PROCESS — append-only-log collision, count 2.** `.claude/agents/backend-engineer/lessons.md` collided on merge/rebase (PM self-report,
+  #623). RETRO-213 banked count 1 (#618). Two occurrences now (both PRIOR would need 213 + one more); **HOLD, no promotion yet** —
+  the ≥2-PRIOR bar is met only at RETRO-219 (see there). Remedy already ticketed FOLLOW-650.
+
+### 7. Follow-ups
+- **FOLLOW-658:** `allowed_origins` producer-coverage + two-SoT reconciliation — either build a PG `tenants.allowed_origins` → KV
+  `ApiKeyRecord.allowed_origins` projection at provisioning, or add an explicit provisioning step, AND a fail-loud check/alert when a
+  NON-first-party tenant's KV record lacks `allowed_origins` (so enforcement can't silently inherit for an external brand); also correct
+  the `tenants.ts` + MASTER_DESIGN §V.3.4 "projected at provisioning" over-claim to match reality (backend/devops, 5h, **P1**).
+
+### 8. Cross-references
+- **RETRO-213 (FOLLOW-622)** — de-scoped the `allowed_origins` admin surface; #623 re-enables enforcement on a DIFFERENT (KV) path.
+  **RETRO-219 (#624)** — the sibling operator-seeded-producer finding (`brand_name`/`legal_entity`) + the append-log promotion.
+  **Rule AA / Rule M** — code-vs-prod split + false-automation-claim.
+
+## RETRO-219 — FOLLOW-654 (per-brand identity in consent + DSR flows) — 2026-07-25
+
+### 1. Summary of change
+
+- **PR:** #624 (merged 2026-07-25 10:07:08 UTC, commit `73a9013`)
+- **Files changed:** 11 (+739 / -7)
+- **Modules touched:** [control-plane / compliance / docs]
+- **Key contracts changed:** `tenants.brand_config.brand_name` / `.legal_entity` (additive JSONB, server-side only) — added — breaking: no;
+  `consent_text_hash` now REQUIRED (400) for non-first-party tenants — behavioral, breaking: only for non-first-party when
+  `FIRST_PARTY_TENANT_ID` is SET; new `GET /api/v1/consent/platform-registration` (brand-correct §6.1 text + hash); DSR OTP email
+  `from`/subject/body brand-parameterized.
+
+### 2. Verification done in PR
+
+- Test files changed: `dsr-routes.test.ts`, `platform-registration/route.test.ts`, `brand-identity.test.ts`. Assertions added: high
+  (first-party/non-first-party hash matrix + brand-fallback). Coverage delta: est. up.
+- CI checks: not independently verified (merged on PM CI-green; Rule AF baseline applies).
+
+### 3. Wiring Audit
+
+**CHECK A — clean.** `brand-identity.ts` (`resolveBrandIdentity`/`fetchBrandIdentity`/`isFirstPartyTenant`) consumed by `dsr/initiate`
++ `consent/platform-registration`; `resend.ts` change consumed by DSR email path. `platform-registration` GET is a framework route
+(suppressed) and is itself the producer of the hash the subsequent POST consumes — end-to-end within the consent flow.
+
+**CHECK B — QUALIFIED FINDING (producer-coverage gap, P1) → FOLLOW-659.** New `brand_config.brand_name`/`legal_entity` keys have live
+CONSUMERS (DSR email + consent text via `fetchBrandIdentity`) but **NO in-repo PRODUCER writes them** (grep of `apps/control-plane`/
+`packages` for `brand_name`/`legal_entity`/`brandName`/`legalEntity` non-test returns only the readers — brand-identity/dsr/consent). The
+values are operator-seeded JSONB. The consumer FAILS HONEST (no `brand_name` → explicit "Estalara" fallback, never empty — correct
+design), so no runtime break — but for an EXTERNAL brand the "fix" (brand-correct emails/consent) silently no-ops until an operator
+populates `brand_config.brand_name`, and no code/verified-runbook step guarantees it. Identical shape to RETRO-218's `allowed_origins`.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+- **LG-1 (P2, → FOLLOW-660) — `FIRST_PARTY_TENANT_ID` fail-OPEN re-opens the exact bug this PR fixed.** With the env UNSET, ALL tenants
+  are treated first-party (`isFirstPartyTenant` allowlist empty → everyone allowed to omit `consent_text_hash` → it silently defaults to
+  the canonical Estalara hash). Today the env is unset and the single live tenant is Estalara, so this is correct now. But when external
+  brands onboard, if ops FORGETS to set `FIRST_PARTY_TENANT_ID`, every external brand becomes first-party → its `consent_text_hash`
+  defaults to the canonical hash → the audit trail attests text the visitor never saw — precisely the fabrication axis #624 set out to
+  close. The mitigation is documentation-only (`.env.example` + FOLLOW-656 go-live gate); a code-level guard is warranted.
+#### 4b. Code bugs — N/A.
+#### 4c. Test coverage gaps — the fail-open case IS tested as intended behavior (`treats all tenants as first-party when unset`), but there
+  is no guard asserting the env is set once >1 tenant / a non-first-party tenant exists. → FOLLOW-660.
+#### 4d. Documentation gaps — `.env.example` documents the ops requirement (good); the FOLLOW-657 runbook must add the "set
+  `FIRST_PARTY_TENANT_ID` before first external brand" step (already scoped as FOLLOW-657 leg 2 point 2).
+
+### 5. Cascading impact
+#### 5a. Current sprint tickets affected — closes FOLLOW-653 axes 2 & 4 (RETRO-217). Depends on FOLLOW-656 (out-of-repo render verification) for go-live.
+#### 5b. Future sprint tickets affected — external-brand onboarding depends on both the JSONB identity being seeded (FOLLOW-659) and the env being set (FOLLOW-660).
+#### 5c. Contracts changed others rely on — `brand_config` gains additive server-side keys (NOT on the SDK public-config wire — correct per Rule L, no SDK consumer for legal identity). Backward-compatible.
+#### 5d. Architectural assumptions affected
+- **RULE AA reconciliation.** Like #623, the per-brand-identity CODE is complete but its prod effect for external brands is
+  OPERATOR-PENDING (JSONB seeding + env set). Do not read "#624 merged" as "external brands are branded/audited correctly in prod."
+
+### 6. New lesson candidates
+- **PROCESS — append-only-log collision, count 3 → Rule AG PROMOTED.** `.claude/agents/backend-engineer/lessons.md` collided again on
+  merge/rebase (PM self-report, #624). The append-only-log-collision MECHANISM now has **≥2 PRIOR numbered retros: RETRO-213 (#618,
+  count 1) + RETRO-218 (#623, count 2)**; RETRO-219 is the 3rd sighting and does NOT inflate the count (same adjudication as Rules
+  AA/AB/AC/AD/AE/V/Q). Three INDEPENDENT PRs (#618, #623, #624) each appended a trailing entry to the SAME `backend-engineer/lessons.md`
+  from separate worktrees → guaranteed EOF collision on each rebase-in-sequence merge. DISTINCT from RETRO-211/FOLLOW-644 (a code-CONTRACT
+  merge conflict — a semantic disagreement) and from Rule A (CI-green): AG governs a purely MECHANICAL append-point collision on a
+  monotonic log. Remedy already ticketed FOLLOW-650 (per-ticket fragment files). → **Rule AG codified.**
+- **Batch `gh pr merge` + mid-queue rebase (CEO-authorized) — hazard assessment.** The 5 PRs were PM-merged with mid-queue rebases. The
+  ONLY realized harm was the append-log collisions (now Rule AG); rebase PRESERVATION was verified elsewhere (RETRO-214 confirmed #619's
+  removed `sdk.allowed_origins` was not resurrected; #623 kept #618's removal). RETRO-211 already governs the rebase-contract axis. HELD,
+  no separate rule (single realized harm, subsumed by AG + RETRO-211).
+- **External-brand operator-seeded-producer sub-shape** (see RETRO-218 §6) — 2nd instance this batch; folds into Rule AA/M; not promoted.
+
+### 7. Follow-ups
+- **FOLLOW-659:** `brand_config.brand_name`/`legal_entity` producer-coverage — add a provisioning step (or admin surface) that sets the
+  per-brand legal identity, AND a fail-loud check when a NON-first-party tenant lacks `brand_name` (so DSR/consent don't silently emit
+  "Estalara" for an external brand); document in the FOLLOW-657 runbook (backend, 3h, **P1**).
+- **FOLLOW-660:** code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open — refuse (or require `consent_text_hash` for) a registering
+  tenant when `FIRST_PARTY_TENANT_ID` is UNSET and the tenant is not the sole known first-party (e.g. tenant count > 1), so a forgotten
+  env cannot silently re-open the canonical-hash-default audit-fabrication path (backend, 3h, **P2**).
+
+### 8. Cross-references
+- **RETRO-217 (FOLLOW-653)** — this PR closed axes 2 & 4 of that check. **RETRO-218 (#623)** — the sibling operator-seeded-producer
+  finding + append-log count 2. **RETRO-213 (#618)** — append-log count 1. **Rule AG (PROMOTED here)** / **Rule AA / Rule M**.
+
+<!-- next free RETRO number: 220. next free FOLLOW number: 661 (FOLLOW-658/659/660 filed by RETRO-218/219).
+RETRO-215..219 = retros for PRs #620/#621/#622/#623/#624 (all MERGED 2026-07-25, session 58; commits
+7f4aa1e/e4c9dea/50b86c3/d631a08/73a9013; OPUS retrospective-analyst).
+RETRO-215 (#620/FOLLOW-639): WIRING clean ✅ — quiz_definition producer(staff PUT)+consumer(public-config→SDK walker) end-to-end;
+walk-vs-switch PARITY pins all 17 leaves + neutral (quiz-widget.test.ts) = the "corpus gate"; PL/ES EN-only-default degradation
+HONEST+TESTED (resolveLabel en-fallback + absent-slice→default). Notes fold into FOLLOW-657 (nav link, PL/ES-must-provision). NO promotion.
+RETRO-216 (#621/FOLLOW-652): docs-only, WIRING clean ✅. Spot-checked 2 steps: Step 6 (origins) MATERIALLY INACCURATE vs #623 (KV
+ApiKeyRecord not PG per-request read; no admin surface; interim router.ts mitigation contradicts #623), Step 5 (quiz) STALE (now live).
+Both owned by FOLLOW-657 leg 2. NO new follow-up. NO promotion.
+RETRO-217 (#622/FOLLOW-653): docs, WIRING clean ✅ (closes a Rule N disclosure gap — __estalara_profiling_opt_out__). profiling-toggle
+false-absence = GOOD catch, re-confirmed (renderProfilingToggle unconditional at index.ts:1051; 3 prior audits missed via optOut|OptOut
+grep vs ProfilingToggle/OptedOut names). Verification-rule (absence-claim needs ≥2 search strategies) HELD count 1, folds OP5/AC,
+pre-authorized. FOLLOW-641 premise FALSIFIED → PM re-scope (surfaced §5b). Gaps owned by FOLLOW-654/655/656. NO promotion.
+RETRO-218 (#623/FOLLOW-642): CHECK A clean; CHECK B QUALIFIED — ApiKeyRecord.allowed_origins consumer-live (origin-gate 403) but NO
+in-repo producer (KV seeded out-of-band; zero KV_API_KEYS writes in repo; no PG→KV projection) → enforcement silently INHERITS (no-op)
+until operator seeds KV; two-SoT hazard PG[]=inherit vs KV[]=deny-all no reconciliation; tenants.ts+§V.3.4 "ENFORCED/projected at
+provisioning" = Rule-M false-automation over-claim. AA code-vs-prod split. FOLLOW-658 (P1). append-log count 2 HOLD.
+RETRO-219 (#624/FOLLOW-654): CHECK A clean; CHECK B QUALIFIED — brand_config.brand_name/legal_entity consumer-live (DSR+consent) but NO
+in-repo writer (operator-seeded JSONB; fail-honest→Estalara) → FOLLOW-659 (P1). LG-1 FIRST_PARTY_TENANT_ID fail-OPEN re-opens the
+canonical-hash-default fabrication if ops forgets env → FOLLOW-660 (P2 code guard). AA split. append-log count 3 (priors 213+218) →
+Rule AG PROMOTED (mechanical append-only-log collision under parallel worktrees; remedy FOLLOW-650; distinct from RETRO-211 code-contract
+conflict + Rule A). Batch gh-pr-merge/rebase: only realized harm = append-log (now AG); rebase preservation verified clean; HELD. -->
+
+

@@ -3360,3 +3360,32 @@ so.**
   compose one rule; the append-only variant is at count 1. Held. Filed FOLLOW-650 for the structural
   fix so the pattern is tracked without a premature promotion. Same restraint on the prettier miss
   (Rule B already exists — a compliance failure, not a new rule).
+
+- **2026-07-25 / RETRO-215..219 (batch of 5, session 58).**
+  - **A finding I almost missed and why:** #623 read like a clean CHECK B — the origin-gate consumer
+    is well-tested and the semantics table is elegant, so my first pass wanted to write "producer +
+    consumer both present." The catch was refusing to accept "provisioning writes it" from the PR
+    prose and actually grepping for the WRITE: `grep -rn KV_API_KEYS` across the repo returns ZERO
+    code writes — the KV record is operator-seeded out-of-band. The consumer's FAIL-SAFE (absent →
+    inherit) is exactly what hides the gap: nothing breaks, enforcement just silently no-ops. Lesson
+    (bank): when a PR says "seeded/projected at provisioning," grep for the actual writer; a
+    fail-safe consumer + an absent producer is an invisible half-wire, not a clean wire. #624 was
+    the SAME shape (brand_config.brand_name has no writer, fails honest to "Estalara") — I only
+    caught it because #623 had trained me to grep the write side. Two PRs, one meta-shape:
+    "external-brand go-live features add live consumers for operator-seeded tenant-config fields."
+  - **An axis/chain I had to trace twice:** #620's PL/ES "no-network → EN fallback." First read I
+    almost flagged it as an untested degradation (the ADR deviates from byte-identical PL/ES).
+    Second trace: `resolveLabel` (`bag[lang] ?? bag.en ?? Object.values(bag)[0]`) IS unit-tested for
+    the en-fallback AND first-value fallback, and follow-639.test proves absent-slice → built-in
+    default. Honest and tested — downgraded from "gap" to "note." The parity claim needed the same
+    discipline: I verified quiz-widget.test.ts actually walks all 17 leaves + the set assertion, not
+    just the 2 leaves in follow-639.test. "The parity test exists" ≠ "the parity test pins all 17."
+  - **A meta-pattern in how gaps recur across agents:** the append-only `lessons.md` collision is
+    now the mechanical mirror of my own restraint — I banked it at count 1 in RETRO-213, held at 2
+    in RETRO-218, promoted at 3 (RETRO-219, Rule AG) with strictly PRIOR priors. The disciplined
+    count (don't let the promoting retro inflate) is what made the promotion defensible. Also: three
+    prior audits missed the profiling-toggle because they all grepped `optOut|OptOut` and the symbol
+    shipped as `ProfilingToggle`/`OptedOut` — absence-proofs need ≥2 independent search strategies.
+    I HELD that at count 1 (distinct axis from AC/AD) and pre-authorized rather than forcing a
+    promotion the same session I'd just promoted AG — resist the urge to promote two rules in one
+    batch on thin counts.

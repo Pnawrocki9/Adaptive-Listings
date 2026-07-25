@@ -18150,6 +18150,11 @@ per brand** — not just wording: structure, answers, and answer→archetype map
 
 ## FOLLOW-640 — Per-brand quiz-widget appearance + placement (position configurable from admin, consumed by SDK)
 
+**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open.** Ships with FOLLOW-641 + FOLLOW-651
+(shared `quiz-widget.ts` + one placement contract). Work was recovered from the session-58 terminal
+crash: implementation was uncommitted in a worktree, the admin picker was missing and there were no
+tests — all completed before the PR.
+
 source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
 per-brand epic) recommended_sprint: next recommended_agent: sdk-engineer priority: P2
 estimated_hours: 5 depends_on: [presentation-config ADR] promoted_to_queue: false
@@ -18165,6 +18170,13 @@ minimum), admin editor on the per-tenant page, SDK consumes at runtime via the p
 unconfigured tenants, bundle ≤42KB, tests.
 
 ## FOLLOW-641 — Visitor-facing profiling opt-out WIDGET (SDK-rendered toggle UI) with per-brand appearance + placement
+
+**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open** (with FOLLOW-640 + FOLLOW-651).
+Migration 0036 `tenants.optout_widget_config`, staff-only audited
+`GET`/`PUT /api/admin/tenants/optout-widget` + admin editor, SDK placement + i18n label overrides.
+**Deliberate ADR-0019 D3 deviation:** the ADR's `enabled: boolean` gate is NOT implemented — it was
+premised on no toggle existing; shipping it would leave an inert key (Rule U) or flip the widget to
+opt-in (a behaviour change the ticket forbids). Rationale recorded in the schema docstring.
 
 **PREMISE CORRECTED 2026-07-25 (FOLLOW-653 finding, PR #622):** the toggle UI ALREADY EXISTS —
 `packages/sdk/src/ui/profiling-toggle.ts`, mounted unconditionally since PR #337 (2026-06-21). The
@@ -18471,6 +18483,11 @@ cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-644, RETRO-211]
 
 ## FOLLOW-651 — Define + wire the `white_label` consumer (brand slice is piped into the SDK but read by nothing)
 
+**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open** (with FOLLOW-640 + FOLLOW-641).
+Option A built: "Powered by Estalara" renders BY DEFAULT in the quiz card + opt-out toggle,
+suppressed by `white_label === true`. Tests assert a RENDERED difference (the Rule L evidence bar
+AC2 sets), not a value passthrough. HALF_WIRE_P from RETRO-214 closed.
+
 **CEO RULING 2026-07-25 (session 58): OPTION A — build "Powered by Estalara" attribution.** Scope
 now DEFINED: SDK widgets (quiz widget card; opt-out widget when FOLLOW-641 ships) render a small
 "Powered by Estalara" attribution BY DEFAULT; `brand.white_label === true` hides it. This gives the
@@ -18613,6 +18630,14 @@ UNSATISFIABLE-PENDING-HANDOFF until confirmed. Add to the FOLLOW-652 runbook's d
 when both PRs land.
 
 ## FOLLOW-657 — ADR-0018 staff port for onboarding mutations (detect + schema/activate + quiz_enabled) + runbook reconciliation
+
+**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #625 open.** BOTH legs done. Leg 1 recovered
+from the session-58 terminal crash (uncommitted worktree; typecheck + lint errors fixed, 82 tests
+green). Leg 2 written from scratch — the runbook now documents merged reality for #620/#623/#624
+plus the new staff port, with the shadow-agency-account workaround demoted to a break-glass
+appendix. Reviewer note: the reconciliation surfaced that FOLLOW-658/659/660 are all
+live-consumer-without-producer gaps that fail SILENTLY — §Step 0 / §Step 3a / §Step 6 are
+documentation standing in for missing code until those ship.
 
 source_retro: FOLLOW-652 runbook GAP-1/2 (PR #621); CEO ruling 2026-07-25: BUILD the staff port
 (option a), reject the dormant shadow-account workaround source_ticket: FOLLOW-652

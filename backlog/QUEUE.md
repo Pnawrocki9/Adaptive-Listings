@@ -1,6 +1,39 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-24 (session 57 — ESC-039 chain + FOLLOW-626 + FOLLOW-633 + FOLLOW-635 code leg all DONE+MERGED; admin audit done; ▶️ NEXT: ESC-042 operator deploy (Piotr) = chat un-shadow enabler, then FOLLOW-622/623 P1 facade)
+## ▶️ START HERE — resume 2026-07-25 (session 59 — crash recovery; PR #625 + #626 open, awaiting Piotr's review)
+
+**Session 58 ended in a terminal crash mid-dispatch.** Two worker agents died with it, leaving their
+work **uncommitted inside `.claude/worktrees/`** — the exact failure mode
+`feedback_check_worktrees_before_concluding_agent_didnt_run` warns about. Session 59 recovered both;
+nothing was lost.
+
+| Recovered                    | State on recovery                                                         | Now                               |
+| ---------------------------- | ------------------------------------------------------------------------- | --------------------------------- |
+| FOLLOW-657 (staff port)      | Leg 1 written, tests passing, but typecheck + lint RED; Leg 2 not started | **PR #625** — both legs, 82 tests |
+| FOLLOW-640/641/651 (UI wave) | Implementation ~complete, typecheck RED, admin picker missing, ZERO tests | **PR #626** — 38 new tests        |
+
+**Both PRs: all real CI gates green; only the repo-wide pre-existing `Rule I` red** (verified also
+red on `main` alongside `Gitleaks secrets scan` — not a regression from either PR).
+
+**▶️ NEXT:**
+
+1. **Piotr reviews + merges #625 and #626.** #625 has no file overlap with #626; merge order is
+   free.
+2. **Then the fail-silent producer gaps — FOLLOW-658 / 659 / 660 (all P1).** The #625 runbook work
+   established these are one class: a live consumer shipped without its producer, and **none of them
+   errors at runtime.** An external brand today would silently inherit the env origin allow-list
+   (658), send DSR/consent mail as "Estalara" (659), and can have its consent hash defaulted to
+   Estalara's canonical text (660). Documentation is currently substituting for code on all three —
+   these gate the first external go-live.
+3. Then ESC-042 operator deploy (Piotr-side, chat un-shadow enabler) and the residual
+   FOLLOW-628/629/631/632/634.
+
+**Bundle watch:** the SDK is at **41.31KB / 42KB gzip** after #626 — 0.69KB headroom. The next SDK
+feature likely needs a shrink first; do not scope one assuming room.
+
+---
+
+## ▶️ (prev) session 57 head (2026-07-24 — session 57 — ESC-039 chain + FOLLOW-626 + FOLLOW-633 + FOLLOW-635 code leg all DONE+MERGED; admin audit done; ▶️ NEXT: ESC-042 operator deploy (Piotr) = chat un-shadow enabler, then FOLLOW-622/623 P1 facade)
 
 **Session 57 admin-surface work (post-ESC-039):** CEO asked whether the admin surface is done. Ran a
 3-probe audit + acted on findings:

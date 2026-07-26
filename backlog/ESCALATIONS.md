@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
+## RESOLVED — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
 
 **Filed by:** claude (session 61, live diagnostic) **Date:** 2026-07-26T15:45:00Z **Affects:**
 `apps/ingest` (all merged work since 2026-05-29), FOLLOW-642/658 (origin enforcement), FOLLOW-559
@@ -81,7 +81,35 @@ deploys have always been manual `wrangler deploy` from an operator machine.
    becomes a ticket, so this class ends — this is the third "merged ≠ live" surface after ESC-020
    (Estalara-app DOM hooks) and ESC-042 (Modal intent-engine).
 
-**Resolution:** <empty until resolved>
+**Resolution:** RESOLVED 2026-07-26 (session 61) — **verified deploy executed via FOLLOW-690**, CEO
+at the keyboard for every mutation, Claude driving reads/interpretation. Full procedure captured as
+`docs/runbooks/INGEST_WORKER_DEPLOY.md` (Rule AH: executed steps only). Facts:
+
+- **Pre-flight found the account was missing BOTH queues** (`estalara-events-retry`, `-dlq` —
+  required since FOLLOW-482/#449, 20+ days merged): the account had zero queues, so a blind
+  `wrangler deploy` would have failed. Created via `wrangler@4` (repo's wrangler 3.114 hits a
+  queues-create API incompatibility: `The specified queue settings are invalid.`). KV namespaces +
+  the secret trio pre-existed; optional secrets (`SENTRY_DSN_INGEST`, `MODAL_CHAT_NLP_URL`,
+  `REDPANDA_*`) absent but code-verified graceful.
+- Two traffic samples (45s + 4min `wrangler tail`) saw **zero** live requests pre-deploy — the
+  origin-gate activation risk was nil in practice (consistent with ESC-020: client hooks never
+  shipped).
+- Staging deploy green (bundle/API smoke), then production: version
+  `6b943785-2d32-4ace-b76e-580d950ed662` (May-29 code) → **`e64dd0c3-89ef-44a7-849c-47a4883ea6a6`**;
+  all bindings attached (2×KV, DO, 2×queue producers + consumer).
+- **Behavioral probes green:** `/health` 200; localhost-origin probe flipped from
+  reaches-schema-validation (morning) to **403 `forbidden_origin`** (the standing regression test —
+  also empirically clears FOLLOW-678's mis-set axis for the current value, since a wrong UUID would
+  have produced `origin_policy_unconfigured`); `app.estalara.com`-origin probe passed both gates and
+  was rejected ONLY by schema (`accepted:0` — zero persistence by construction). Response
+  fingerprint (discriminator list incl. `live.signup`/`adapt.description.*`) proves the new bundle
+  serves. No rollback needed.
+- Now live for the first time: FOLLOW-559 server-side consent gate, FOLLOW-579 snapshot stripping,
+  FOLLOW-642+658 origin enforcement (with today's `FIRST_PARTY_TENANT_ID`), FOLLOW-459/482/513
+  ACK/queue/Sentry paths.
+- **Still open, deliberately:** item 4 (production deploy pipeline) stays an unmade decision —
+  `deploy-staging.yml` remains manual/staging-only/never-green; `SENTRY_DSN_INGEST` unset = the
+  FOLLOW-658 guard 403s but cannot page; FOLLOW-678 canonicalization remains worth doing.
 
 ## RESOLVED — prod `ingest_worker` ClickHouse user has NO grant on `description_generations`, blocking FOLLOW-463's audit-trail write [FOLLOW-463]
 

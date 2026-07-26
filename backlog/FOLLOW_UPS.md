@@ -19710,7 +19710,14 @@ rather than claiming coverage you do not have (Rule Y); (4) do NOT extend the AD
 
 cross_ref: [RETRO-224, RETRO-221, FOLLOW-659, FOLLOW-670, FOLLOW-623, Rule U, Rule Y, Rule Z]
 
-## FOLLOW-690 — verified production deploy of the ingest Worker (stale since 2026-05-29): pre-flight infra check → staged deploy → behavioral probes → rollback plan (executes ESC-043)
+## ✅ DONE FOLLOW-690 — verified production deploy of the ingest Worker (stale since 2026-05-29): pre-flight infra check → staged deploy → behavioral probes → rollback plan (executes ESC-043)
+
+> **EXECUTED 2026-07-26 (session 61)** — agent dispatch was permission-blocked, so run
+> interactively: CEO executed every mutation, Claude drove reads/interpretation. All ACs met: both
+> missing queues created (wrangler@4 — v3 hits a queues-create API bug), staging then prod deploy
+> (`6b943785…` → `e64dd0c3-89ef-44a7-849c-47a4883ea6a6`), probes green (localhost → 403
+> `forbidden_origin`, first-party → schema-only rejection, zero persistence), no rollback.
+> Procedure: `docs/runbooks/INGEST_WORKER_DEPLOY.md`. Resolution: ESC-043.
 
 source_retro: ESC-043 (live diagnostic, session 61) source_ticket: ESC-043 recommended_sprint: now
 recommended_agent: devops-engineer priority: P1 estimated_hours: 4 depends_on: [] promoted_to_queue:

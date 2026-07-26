@@ -1,6 +1,71 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-26 (session 61 — all five session-60 PRs merged; retros pending; pipeline still gated on 3 open escalations)
+## ▶️ START HERE — resume 2026-07-26 (session 61 — RETRO-220..224 complete for #625-#629; pipeline still gated on 3 open escalations)
+
+**All five session-60 retrospectives are DONE** (RETRO-220..224, `retrospective-analyst`/opus, one
+invocation per PR — batching is against that agent's own charter). Each ran via
+`claude --agent retrospective-analyst -p ... --permission-mode acceptEdits` as a genuine nested
+subagent session (no Task tool available to this PM session; this is the sanctioned equivalent per
+CLAUDE.md's "agent-orchestrated codebase" model). Each took ~10-25 min wall-clock; ran sequentially,
+never concurrently, with a PM bookkeeping commit between each (never mid-run) per the
+no-concurrent-git-ops rule. Committed as `49f9432`, `af5692a`, `2a80304`, `f6de5d5`, `7adc017`.
+
+**Outcome — no P0 anywhere, real substance, not rubber-stamping:**
+
+- **Rule AH promoted** (RETRO-220): "documentation asserts behavior the code doesn't implement" —
+  confirmed the pattern the PM flagged at session start actually recurs (4 sightings: ESC-040/
+  RETRO-205, RETRO-216, RETRO-218, RETRO-220 itself as the promoting instance). PR #625's OWN new
+  runbook section (`BRAND_PROVISIONING.md` §Step 3a) shipped a `PATCH /api/config` curl that was
+  non-executable at its own merge commit — the Zod schema silently stripped `brand_name`/
+  `legal_entity` and any Save would have WIPED a hand-seeded identity. Closed 2h39m later by #629.
+- **Rule AI promoted** (RETRO-222): "ship falsifies doc" (the inverse) — on RETRO-213 + RETRO-221
+  priors.
+- **RETRO-223 answered the PM's specific ESC-040 question directly from the merged diff:** the
+  second-generation over-claim was corrected before merge at all sites, including a THIRD site
+  (`api_keys.ts`) neither RETRO-218 nor FOLLOW-658's own AC3 text had enumerated. No new rule (would
+  duplicate AH).
+- **RETRO-224 contradicted RETRO-222's "closed by #629" claim** and reopened it as **FOLLOW-684
+  (P1)**: the consent **POST** — the only writer of `brand_name`/`legal_entity` — calls neither
+  identity gate and accepts any hash including the canonical Estalara one. Flagged for the PM: "a
+  compliance-grade field is now tenant-writable and unaudited."
+- **New P1s worth prioritizing next dispatch:** FOLLOW-667 (BRAND_PROVISIONING runbook still says
+  `white_label` "has no consumer yet" ahead of 3 incoming white-label brands), FOLLOW-670-range
+  (opt-out widget PL/ES label producer missing — an EN default can silently overwrite live Polish
+  copy), FOLLOW-675 (out-of-repo `HANDOFFS.md` handoff doc still tells the caller the consent hash
+  is "optional"), FOLLOW-678 (`FIRST_PARTY_TENANT_ID` compared as an exact string in both apps — a
+  mis-set/case-shifted value 403s ALL first-party ingest and the SDK swallows the failure silently),
+  FOLLOW-684/685 (the reopened consent-POST gap above).
+- **30 new FOLLOW stubs total** (FOLLOW-661..690), all P1-P3, none P0. Two platform-shaped (not
+  ticket-shaped) concerns surfaced for PM judgment, not escalated by the retros themselves per their
+  charter: (a) `FIRST_PARTY_TENANT_ID` now lives unsynced across 3 stores (Doppler prd, Vercel,
+  ingest secret) with zero drift detection; (b) legal identity is compliance-grade data with no
+  audit trail on write.
+- Two retro learning-hook appends to `.claude/agents/retrospective-analyst/lessons.md` were
+  permission-blocked in the nested sessions (Edit(.claude/**) is allowed but the specific write hit
+  a scope check); staged content sits untracked in `.retro-tmp/lesson223.md` and `lesson224.md` at
+  repo root — **left in place, nothing deleted\*\*, needs either a manual fold-in or a
+  permission-scope fix.
+
+**Verified live, not assumed (unchanged from earlier this session):** all five PRs merged
+(#625-#629, see prior header below for exact timestamps/commits). Migration 0036 confirmed live in
+prod. Exactly 1 tenant in Supabase, 0 with `brand_name`/`legal_entity`/non-empty `allowed_origins` —
+none of the closed gaps was ever exploitable.
+
+**Two operator steps still pending with Piotr** (unchanged, tracked as handoff not a ticket):
+`FIRST_PARTY_TENANT_ID` in control-plane env (Doppler `prd` AND Vercel separately) and as an ingest
+secret (`wrangler secret put`).
+
+**3 OPEN escalations remain, none PM-resolvable — pipeline still bars picking a NEW ticket:**
+ESC-020 (Rafał), ESC-041 (npm registry E403), ESC-042 (Piotr/operator Modal deploy). ESC-040 is
+CLOSED — do not treat as open.
+
+**▶️ NEXT for a human:** clear any of the 3 escalations to unblock new-ticket dispatch. Once clear,
+highest-value next tickets by this session's own findings: FOLLOW-678 (P1, silent first-party-ingest
+outage risk) and FOLLOW-684/685 (P1, unaudited compliance-field write path) ahead of the P2/P3 tail.
+
+---
+
+## ▶️ (prev) session 61 head — resume 2026-07-26 (session 61 — all five session-60 PRs merged; retros pending; pipeline still gated on 3 open escalations)
 
 **Verified live, not assumed:** `main` @ `461e08a`, working tree clean, `gh pr list --state open`
 empty. All five PRs opened across sessions 59/60 are **MERGED**: #625 (FOLLOW-657, 12:18:24Z), #626

@@ -21,10 +21,18 @@
  * ship with a real consumer. Keeping it server-side avoids leaking an unwired
  * key onto the anonymous-buyer runtime fetch.
  *
+ * Producer (FOLLOW-659): `PATCH /api/config` (`{ brand: { brand_name,
+ * legal_entity } }`, staff rank ≥ `estalara:ops`, audited) — surfaced in the
+ * staff settings page. Before that ticket the keys had readers only and were
+ * seeded out-of-band, which also meant any settings-page Save silently WIPED
+ * them (the PATCH rewrites the whole `brand_config` blob).
+ *
  * Fail-honest default (FOLLOW-654 AC): a tenant with no configured brand
  * identity falls back to the Estalara first-party identity EXPLICITLY — never an
  * empty string in legal text. This preserves the exact current behavior for the
- * single live first-party tenant.
+ * single live first-party tenant. For an EXTERNAL brand that fallback is a
+ * silent mis-branding, so {@link isUnprovisionedExternalBrand} (FOLLOW-659)
+ * raises the alarm the fail-honest default cannot.
  *
  * @module apps/control-plane/src/lib/brand-identity
  */
@@ -65,14 +73,20 @@ export interface BrandIdentity {
  * hold `primary_color` / `logo_url` / `white_label`) parse cleanly.
  */
 const BrandIdentityConfigSchema = z.object({
-  brand_name: z.string().min(1).max(120).optional(),
-  legal_entity: z.string().min(1).max(200).optional(),
+  // `.nullish()`, not `.optional()` (FOLLOW-659): `PATCH /api/config` represents
+  // "identity not configured" as an ABSENT key, but a hand-seeded blob may carry
+  // an explicit `null`. With `.optional()` a single null would fail the WHOLE
+  // object parse, silently discarding a correctly-set sibling key (e.g. a set
+  // `brand_name` next to a null `legal_entity` would resolve to the Estalara
+  // fallback for both). Accepting null keeps each key independent.
+  brand_name: z.string().min(1).max(120).nullish(),
+  legal_entity: z.string().min(1).max(200).nullish(),
 });
 
 type BrandIdentityConfig = z.infer<typeof BrandIdentityConfigSchema>;
 
 /** Returns a trimmed non-empty string, or `undefined` for nullish/blank input. */
-function normalizeNonEmpty(value: string | undefined): string | undefined {
+function normalizeNonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   return trimmed;
@@ -182,19 +196,78 @@ export async function requiresExplicitConsentHash(
   db: ReturnType<typeof createAdminClient>,
   tenantId: string,
 ): Promise<boolean> {
+  return isTreatedAsExternalBrand(db, tenantId);
+}
+
+/**
+ * Core first-party detection shared by every "is this an external brand?" gate in this module
+ * (FOLLOW-659 — extracted from {@link requiresExplicitConsentHash} rather than re-derived, so a
+ * second differently-shaped check can never drift from the first).
+ *
+ * Module-private on purpose: callers should express their INTENT
+ * ({@link requiresExplicitConsentHash}, {@link isUnprovisionedExternalBrand}) so each gate's
+ * fail-closed semantics stay documented at its own call site.
+ *
+ * See {@link requiresExplicitConsentHash} for the decision table and the fail-CLOSED rationale.
+ *
+ * @param db - An admin (service-role) Drizzle client.
+ * @param tenantId - The tenant UUID.
+ * @returns `true` when the tenant must be treated as a non-first-party external brand.
+ */
+async function isTreatedAsExternalBrand(
+  db: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+): Promise<boolean> {
   const firstParty = process.env.FIRST_PARTY_TENANT_ID?.trim();
-  // Env SET — the configured tenant keeps the canonical default; everyone else supplies a hash.
+  // Env SET — the configured tenant is first-party; everyone else is external.
   if (firstParty) return tenantId !== firstParty;
 
-  // Env UNSET — safe only while exactly one tenant can exist.
+  // Env UNSET — "everyone is first-party" is safe only while exactly one tenant can exist.
   try {
     const rows = await db.select({ id: tenants.id }).from(tenants).limit(2);
     return rows.length > 1;
   } catch (err: unknown) {
     console.error(
-      '[brand-identity] tenant-count guard failed — requiring consent_text_hash:',
+      '[brand-identity] tenant-count guard failed — treating tenant as external:',
       err instanceof Error ? err.message : err,
     );
     return true;
   }
+}
+
+/**
+ * Whether `tenantId` is an EXTERNAL brand that is still running on the Estalara fallback identity
+ * (FOLLOW-659) — i.e. its legal-facing surfaces would name "Estalara" / "Time2Show, Inc." to that
+ * brand's data subjects because no operator ever seeded `brand_config.brand_name`.
+ *
+ * This is the fail-silent producer gap RETRO-219 flagged: nothing in this repo WRITES those keys
+ * on a code path (the only producer is the operator's `PATCH /api/config` in the provisioning
+ * runbook §Step 3a), and the reader fails HONEST — so an unprovisioned external brand emits
+ * plausible, wrong legal identity with no error anywhere. This predicate is the alarm.
+ *
+ * Cheap by construction: short-circuits on `identity.isFallbackIdentity` (already computed by
+ * {@link resolveBrandIdentity}), so a provisioned brand — and every first-party request once
+ * `FIRST_PARTY_TENANT_ID` is set — costs zero extra queries.
+ *
+ * The first-party tenant is NEVER flagged: for it, the Estalara identity is the CORRECT identity,
+ * not a fallback artefact.
+ *
+ * Callers decide the consequence, because it differs by surface (see each call site):
+ *   - `GET /api/v1/consent/platform-registration` REFUSES to serve mis-branded consent text.
+ *   - `POST /api/dsr/initiate` alerts but STILL SENDS — dropping a data subject's verification
+ *     e-mail would obstruct a GDPR Art. 12/15 right, a worse compliance outcome than a
+ *     mis-branded sender name.
+ *
+ * @param db - An admin (service-role) Drizzle client.
+ * @param tenantId - The tenant UUID.
+ * @param identity - The already-resolved identity for that tenant.
+ * @returns `true` when the tenant is external AND has no configured brand identity.
+ */
+export async function isUnprovisionedExternalBrand(
+  db: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+  identity: Pick<BrandIdentity, 'isFallbackIdentity'>,
+): Promise<boolean> {
+  if (!identity.isFallbackIdentity) return false;
+  return isTreatedAsExternalBrand(db, tenantId);
 }

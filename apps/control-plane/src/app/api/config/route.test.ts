@@ -66,6 +66,9 @@ vi.mock('@sentry/nextjs', () => ({
 
 import { createAdminClient, staffAuditLog } from '@estalara/db';
 import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
+// FOLLOW-659: the REAL consumer resolver, used to prove this route's writes are
+// exactly what the DSR/consent surfaces read back (producer↔consumer wiring).
+import { resolveBrandIdentity } from '@/lib/brand-identity';
 import { GET, PATCH } from './route';
 
 const mockResolve = vi.mocked(resolveTenantAccess);
@@ -741,5 +744,125 @@ describe('MANDATORY tenant filter — staff cannot cross tenants (RETRO-187)', (
     });
     // The audit row targets A, proving attribution follows the same fence.
     expect(db._auditRows[0]?.targetTenantId).toBe(TENANT_A);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLLOW-659 — per-brand legal identity: this route is its PRODUCER
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('PATCH /api/config — brand legal identity (FOLLOW-659)', () => {
+  it('writes brand_name + legal_entity into brand_config, readable by the consumer resolver', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeDb({ [TENANT_A]: {} });
+    useDb(db);
+
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' } },
+        query: { tenant_id: TENANT_A },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<TenantConfig>(res);
+    expect(body.brand.brand_name).toBe('Costa Sol Properties');
+    expect(body.brand.legal_entity).toBe('Costa Sol S.L.');
+
+    // End-to-end wiring proof (Rule H): the blob this producer stored is exactly what
+    // the DSR e-mail / consent-text CONSUMER resolves — not merely "a jsonb write".
+    const identity = resolveBrandIdentity(db._tenants[TENANT_A]!.brandConfig);
+    expect(identity).toEqual({
+      brandName: 'Costa Sol Properties',
+      legalEntity: 'Costa Sol S.L.',
+      isFallbackIdentity: false,
+    });
+  });
+
+  it('REGRESSION: a white_label-only PATCH no longer WIPES a seeded legal identity', async () => {
+    // The pre-FOLLOW-659 defect: the PATCH rewrites the whole brand_config blob from the
+    // keys it knows, so any settings-page Save silently reverted the brand's DSR e-mail
+    // and consent text to "Estalara" with no error anywhere.
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeDb({
+      [TENANT_A]: {
+        brandConfig: {
+          primary_color: '#111111',
+          logo_url: null,
+          white_label: false,
+          brand_name: 'Costa Sol Properties',
+          legal_entity: 'Costa Sol S.L.',
+        },
+      },
+    });
+    useDb(db);
+
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { white_label: true } },
+        query: { tenant_id: TENANT_A },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(db._tenants[TENANT_A]!.brandConfig).toMatchObject({
+      white_label: true,
+      brand_name: 'Costa Sol Properties',
+      legal_entity: 'Costa Sol S.L.',
+    });
+    expect(resolveBrandIdentity(db._tenants[TENANT_A]!.brandConfig).brandName).toBe(
+      'Costa Sol Properties',
+    );
+  });
+
+  it('explicit null clears the key back to the Estalara fallback (key omitted, never null in jsonb)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeDb({
+      [TENANT_A]: { brandConfig: { primary_color: '#111111', brand_name: 'Costa Sol Properties' } },
+    });
+    useDb(db);
+
+    const res = await PATCH(
+      makeRequest({
+        method: 'PATCH',
+        body: { brand: { brand_name: null } },
+        query: { tenant_id: TENANT_A },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(db._tenants[TENANT_A]!.brandConfig).not.toHaveProperty('brand_name');
+    expect(resolveBrandIdentity(db._tenants[TENANT_A]!.brandConfig).isFallbackIdentity).toBe(true);
+  });
+
+  it('GET reports an UNSET identity as null — never the resolved "Estalara" fallback', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    useDb(makeDb({ [TENANT_A]: { brandConfig: { primary_color: '#111111' } } }));
+
+    const res = await GET(makeRequest({ query: { tenant_id: TENANT_A } }));
+    const body = await parseBody<TenantConfig>(res);
+
+    expect(body.brand.brand_name).toBeNull();
+    expect(body.brand.legal_entity).toBeNull();
+  });
+
+  it('rejects an empty / over-long brand_name (400) — bounds match the reader schema', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:ops'));
+    const db = makeDb({ [TENANT_A]: {} });
+    useDb(db);
+
+    for (const brand_name of ['', '   ', 'x'.repeat(121)]) {
+      const res = await PATCH(
+        makeRequest({
+          method: 'PATCH',
+          body: { brand: { brand_name } },
+          query: { tenant_id: TENANT_A },
+        }),
+      );
+      expect(res.status).toBe(400);
+    }
+    expect(db._tenants[TENANT_A]!.brandConfig).not.toHaveProperty('brand_name');
   });
 });

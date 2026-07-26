@@ -43,7 +43,15 @@
  *   - `plan`               → `tenants.plan` (text). READ-ONLY here — plan changes are
  *     a billing decision, out of this route's scope; PATCH never accepts a `plan` key.
  *   - `brand.*`            → `tenants.brandConfig` (jsonb: `primary_color`, `logo_url`,
- *     `white_label`).
+ *     `white_label`, and — since FOLLOW-659 — `brand_name` / `legal_entity`).
+ *
+ * FOLLOW-659: this route is the PRODUCER for the per-brand legal identity keys
+ * (`brand_name` / `legal_entity`) that `@/lib/brand-identity` reads into the DSR OTP
+ * e-mail and the platform-registration consent text. They had readers only and were
+ * seeded out-of-band, which made this route a silent DESTROYER of them: the PATCH
+ * rewrites the entire `brand_config` blob from the keys it knows, so any settings-page
+ * Save dropped an operator-seeded identity and reverted that brand's legal surfaces to
+ * "Estalara" without an error. Both keys are now parsed, merged and written back.
  *
  * FOLLOW-622 (CEO Option B, 2026-07-24 — `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`):
  * `sdk.allowed_origins` has been REMOVED from this contract. It was a producer-only
@@ -92,6 +100,16 @@ export interface BrandConfig {
   primary_color: string;
   logo_url: string | null;
   white_label: boolean;
+  /**
+   * Per-brand LEGAL display name (FOLLOW-659). `null` = not configured, in which
+   * case every legal surface falls back to the Estalara identity — read
+   * `@/lib/brand-identity` for the resolution rules. Deliberately reported as
+   * `null` here rather than pre-resolved to `"Estalara"`: this is the config
+   * surface, and an operator must be able to see that the key is UNSET.
+   */
+  brand_name: string | null;
+  /** Per-brand legal entity (FOLLOW-659). `null` = not configured; see {@link BrandConfig.brand_name}. */
+  legal_entity: string | null;
 }
 
 export interface TenantConfig {
@@ -121,6 +139,12 @@ const ConfigPatchSchema = z.object({
         .optional(),
       logo_url: z.string().url().nullable().optional(),
       white_label: z.boolean().optional(),
+      // FOLLOW-659 — the per-brand LEGAL identity. Bounds MUST stay in sync with
+      // `BrandIdentityConfigSchema` in `@/lib/brand-identity` (the reader): a value
+      // this route accepts but that reader rejects would be a write that silently
+      // resolves to the Estalara fallback. `null` clears the key back to fallback.
+      brand_name: z.string().trim().min(1).max(120).nullable().optional(),
+      legal_entity: z.string().trim().min(1).max(200).nullable().optional(),
     })
     .optional(),
 });
@@ -133,6 +157,8 @@ const DEFAULT_BRAND: BrandConfig = {
   primary_color: '#1a73e8',
   logo_url: null,
   white_label: false,
+  brand_name: null,
+  legal_entity: null,
 };
 
 /** Parses the `tenants.brand_config` jsonb blob defensively (untyped column). */
@@ -144,6 +170,26 @@ function parseStoredBrandConfig(raw: unknown): BrandConfig {
       typeof obj.primary_color === 'string' ? obj.primary_color : DEFAULT_BRAND.primary_color,
     logo_url: typeof obj.logo_url === 'string' ? obj.logo_url : null,
     white_label: typeof obj.white_label === 'boolean' ? obj.white_label : DEFAULT_BRAND.white_label,
+    brand_name: typeof obj.brand_name === 'string' ? obj.brand_name : null,
+    legal_entity: typeof obj.legal_entity === 'string' ? obj.legal_entity : null,
+  };
+}
+
+/**
+ * Serializes a {@link BrandConfig} for the `brand_config` jsonb column.
+ *
+ * OMITS the legal-identity keys when they are `null` instead of writing an explicit
+ * `null` (FOLLOW-659): "absent" is the shape the reader's schema and every existing
+ * row already use, so the stored blob stays byte-comparable with an operator-seeded
+ * one. Colors/logo keep their historical `null` representation — unchanged.
+ */
+function serializeBrandConfig(brand: BrandConfig): Record<string, unknown> {
+  return {
+    primary_color: brand.primary_color,
+    logo_url: brand.logo_url,
+    white_label: brand.white_label,
+    ...(brand.brand_name !== null ? { brand_name: brand.brand_name } : {}),
+    ...(brand.legal_entity !== null ? { legal_entity: brand.legal_entity } : {}),
   };
 }
 
@@ -310,16 +356,30 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   // `string | undefined` widens the merged type incorrectly. `logo_url` needs an
   // explicit `!== undefined` check (not `??`) because `null` is a legitimate patch
   // value distinct from "field omitted".
+  //
+  // FOLLOW-659: `brand_name` / `legal_entity` MUST be merged here, not just accepted.
+  // `setValues.brandConfig` REPLACES the whole jsonb column, so before this ticket any
+  // Save from the settings page (which PATCHes the 3 keys it knows) silently deleted the
+  // operator-seeded legal identity — the DSR e-mail and consent text then reverted to
+  // "Estalara" for that brand with no error anywhere. They follow `logo_url`'s
+  // `!== undefined` rule, since `null` (clear back to the Estalara fallback) is a
+  // legitimate patch value distinct from "field omitted".
   const updatedBrand: BrandConfig = patch.brand
     ? {
         primary_color: patch.brand.primary_color ?? currentBrand.primary_color,
         logo_url: patch.brand.logo_url !== undefined ? patch.brand.logo_url : currentBrand.logo_url,
         white_label: patch.brand.white_label ?? currentBrand.white_label,
+        brand_name:
+          patch.brand.brand_name !== undefined ? patch.brand.brand_name : currentBrand.brand_name,
+        legal_entity:
+          patch.brand.legal_entity !== undefined
+            ? patch.brand.legal_entity
+            : currentBrand.legal_entity,
       }
     : currentBrand;
 
   const setValues = {
-    brandConfig: updatedBrand,
+    brandConfig: serializeBrandConfig(updatedBrand),
     updatedAt: new Date(),
   };
 

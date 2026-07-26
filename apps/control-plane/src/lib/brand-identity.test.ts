@@ -5,7 +5,12 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isFirstPartyTenant, resolveBrandIdentity } from './brand-identity';
+import {
+  isFirstPartyTenant,
+  isUnprovisionedExternalBrand,
+  resolveBrandIdentity,
+} from './brand-identity';
+import type { createAdminClient } from '@estalara/db';
 
 // The first-party fallback identity (kept module-private in brand-identity.ts;
 // asserted here as literals so the constants need no test-only export).
@@ -49,6 +54,99 @@ describe('resolveBrandIdentity', () => {
   it('trims surrounding whitespace on configured values', () => {
     const id = resolveBrandIdentity({ brand_name: '  Marbella Premium  ' });
     expect(id.brandName).toBe('Marbella Premium');
+  });
+
+  it('FOLLOW-659: an explicit null on ONE key does not discard the OTHER key', () => {
+    // Regression guard for `.optional()` vs `.nullish()`: with `.optional()` the whole
+    // object parse fails on a null, silently resolving a correctly-set brand_name to
+    // the Estalara fallback.
+    const id = resolveBrandIdentity({ brand_name: 'Costa Sol Properties', legal_entity: null });
+    expect(id.brandName).toBe('Costa Sol Properties');
+    expect(id.legalEntity).toBe(ESTALARA_LEGAL_ENTITY);
+    expect(id.isFallbackIdentity).toBe(false);
+  });
+});
+
+// ─── FOLLOW-659: un-provisioned external brand alarm ──────────────────────────
+
+describe('isUnprovisionedExternalBrand', () => {
+  const TENANT = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+  const OTHER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  /**
+   * Minimal Drizzle stub for `db.select({...}).from(tenants).limit(2)`. The `select`
+   * spy is returned alongside the client so a test can assert the probe never ran.
+   */
+  function dbWithTenantCount(count: number | Error): {
+    db: ReturnType<typeof createAdminClient>;
+    select: ReturnType<typeof vi.fn>;
+  } {
+    const limit = vi.fn(() =>
+      count instanceof Error
+        ? Promise.reject(count)
+        : Promise.resolve(Array.from({ length: count }, (_, i) => ({ id: `t-${String(i)}` }))),
+    );
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ limit })) }));
+    return { db: { select } as unknown as ReturnType<typeof createAdminClient>, select };
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('false for a tenant WITH a configured identity — and runs no query at all', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER);
+    const { db, select } = dbWithTenantCount(2);
+    const identity = resolveBrandIdentity({ brand_name: 'Costa Sol Properties' });
+
+    expect(await isUnprovisionedExternalBrand(db, TENANT, identity)).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('false for THE first-party tenant on the fallback identity (Estalara is correct for it)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT);
+    const identity = resolveBrandIdentity({});
+
+    expect(await isUnprovisionedExternalBrand(dbWithTenantCount(2).db, TENANT, identity)).toBe(
+      false,
+    );
+  });
+
+  it('true for a non-first-party tenant on the fallback identity', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER);
+    const identity = resolveBrandIdentity({});
+
+    expect(await isUnprovisionedExternalBrand(dbWithTenantCount(2).db, TENANT, identity)).toBe(
+      true,
+    );
+  });
+
+  it('env UNSET + exactly one tenant → false (today live state, byte-identical)', async () => {
+    const identity = resolveBrandIdentity({});
+
+    expect(await isUnprovisionedExternalBrand(dbWithTenantCount(1).db, TENANT, identity)).toBe(
+      false,
+    );
+  });
+
+  it('env UNSET + a second tenant → true (a forgotten env cannot mask the gap)', async () => {
+    const identity = resolveBrandIdentity({});
+
+    expect(await isUnprovisionedExternalBrand(dbWithTenantCount(2).db, TENANT, identity)).toBe(
+      true,
+    );
+  });
+
+  it('fails CLOSED on a tenant-count read error', async () => {
+    const identity = resolveBrandIdentity({});
+
+    expect(
+      await isUnprovisionedExternalBrand(
+        dbWithTenantCount(new Error('ECONNREFUSED')).db,
+        TENANT,
+        identity,
+      ),
+    ).toBe(true);
   });
 });
 

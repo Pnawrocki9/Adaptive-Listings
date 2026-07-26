@@ -18150,10 +18150,11 @@ per brand** — not just wording: structure, answers, and answer→archetype map
 
 ## FOLLOW-640 — Per-brand quiz-widget appearance + placement (position configurable from admin, consumed by SDK)
 
-**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open.** Ships with FOLLOW-641 + FOLLOW-651
-(shared `quiz-widget.ts` + one placement contract). Work was recovered from the session-58 terminal
-crash: implementation was uncommitted in a worktree, the admin picker was missing and there were no
-tests — all completed before the PR.
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #626 merged 2026-07-26T12:19:17Z.** Ships with
+FOLLOW-641 + FOLLOW-651 (shared `quiz-widget.ts` + one placement contract). Work was recovered from
+the session-58 terminal crash: implementation was uncommitted in a worktree, the admin picker was
+missing and there were no tests — all completed before the PR, PM-validated session 59 (63 checks,
+only pre-existing `Rule I` red).
 
 source_retro: CEO per-brand management ruling 2026-07-24 (session 58) source_ticket: (white-label
 per-brand epic) recommended_sprint: next recommended_agent: sdk-engineer priority: P2
@@ -18171,8 +18172,8 @@ unconfigured tenants, bundle ≤42KB, tests.
 
 ## FOLLOW-641 — Visitor-facing profiling opt-out WIDGET (SDK-rendered toggle UI) with per-brand appearance + placement
 
-**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open** (with FOLLOW-640 + FOLLOW-651).
-Migration 0036 `tenants.optout_widget_config`, staff-only audited
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #626 merged 2026-07-26T12:19:17Z** (with FOLLOW-640 +
+FOLLOW-651). Migration 0036 `tenants.optout_widget_config`, staff-only audited
 `GET`/`PUT /api/admin/tenants/optout-widget` + admin editor, SDK placement + i18n label overrides.
 **Deliberate ADR-0019 D3 deviation:** the ADR's `enabled: boolean` gate is NOT implemented — it was
 premised on no toggle existing; shipping it would leave an inert key (Rule U) or flip the widget to
@@ -18483,10 +18484,10 @@ cross_ref: [RETRO-213, FOLLOW-622, FOLLOW-644, RETRO-211]
 
 ## FOLLOW-651 — Define + wire the `white_label` consumer (brand slice is piped into the SDK but read by nothing)
 
-**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #626 open** (with FOLLOW-640 + FOLLOW-641).
-Option A built: "Powered by Estalara" renders BY DEFAULT in the quiz card + opt-out toggle,
-suppressed by `white_label === true`. Tests assert a RENDERED difference (the Rule L evidence bar
-AC2 sets), not a value passthrough. HALF_WIRE_P from RETRO-214 closed.
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #626 merged 2026-07-26T12:19:17Z** (with FOLLOW-640 +
+FOLLOW-641). Option A built: "Powered by Estalara" renders BY DEFAULT in the quiz card + opt-out
+toggle, suppressed by `white_label === true`. Tests assert a RENDERED difference (the Rule L
+evidence bar AC2 sets), not a value passthrough. HALF_WIRE_P from RETRO-214 closed.
 
 **CEO RULING 2026-07-25 (session 58): OPTION A — build "Powered by Estalara" attribution.** Scope
 now DEFINED: SDK widgets (quiz widget card; opt-out widget when FOLLOW-641 ships) render a small
@@ -18631,11 +18632,11 @@ when both PRs land.
 
 ## FOLLOW-657 — ADR-0018 staff port for onboarding mutations (detect + schema/activate + quiz_enabled) + runbook reconciliation
 
-**STATUS 2026-07-25 (session 59): 🔵 IN REVIEW — PR #625 open.** BOTH legs done. Leg 1 recovered
-from the session-58 terminal crash (uncommitted worktree; typecheck + lint errors fixed, 82 tests
-green). Leg 2 written from scratch — the runbook now documents merged reality for #620/#623/#624
-plus the new staff port, with the shadow-agency-account workaround demoted to a break-glass
-appendix. Reviewer note: the reconciliation surfaced that FOLLOW-658/659/660 are all
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #625 merged 2026-07-26T12:18:24Z.** BOTH legs done.
+Leg 1 recovered from the session-58 terminal crash (uncommitted worktree; typecheck + lint errors
+fixed, 82 tests green). Leg 2 written from scratch — the runbook now documents merged reality for
+#620/#623/#624 plus the new staff port, with the shadow-agency-account workaround demoted to a
+break-glass appendix. Reviewer note: the reconciliation surfaced that FOLLOW-658/659/660 are all
 live-consumer-without-producer gaps that fail SILENTLY — §Step 0 / §Step 3a / §Step 6 are
 documentation standing in for missing code until those ship.
 
@@ -18680,12 +18681,13 @@ either build a PG→KV projection at provisioning OR add an explicit, documented
 `docs/MASTER_DESIGN.md` §V.3.4 ("seeded at provisioning") to match reality — the read/enforce path
 is live, the write/projection path is not implemented (Rule M false-automation-claim axis).
 
-**STATUS 2026-07-26: IN REVIEW — branch `backend-engineer/FOLLOW-658-allowed-origins-producer`.**
-AC1 → `apps/control-plane/scripts/project-allowed-origins.mts`: an explicit, single-command
-provisioning step (NOT an automatic projection — the KV key is `api_key:<RAW key>` and the raw key
-is never stored in Postgres, so no server can address the record; and giving Vercel a CF token with
-KV write scope is a security-posture change, not a bug fix). It reconciles SHA-256(raw key) → owning
-tenant before writing, read-modify-writes the KV record so `hmac_secret` survives, and `--origins`
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #628 merged 2026-07-26T14:42:11Z** (branch
+`backend-engineer/FOLLOW-658-allowed-origins-producer`). AC1 →
+`apps/control-plane/scripts/project-allowed-origins.mts`: an explicit, single-command provisioning
+step (NOT an automatic projection — the KV key is `api_key:<RAW key>` and the raw key is never
+stored in Postgres, so no server can address the record; and giving Vercel a CF token with KV write
+scope is a security-posture change, not a bug fix). It reconciles SHA-256(raw key) → owning tenant
+before writing, read-modify-writes the KV record so `hmac_secret` survives, and `--origins`
 establishes `tenants.allowed_origins` (still no HTTP writer for that column — GAP noted in the
 runbook, out of scope per FOLLOW-622 Option B). AC2 → `isUnprovisionedExternalTenant` in
 `apps/ingest/src/origin-gate.ts` + a 403 `origin_policy_unconfigured` (Sentry `error`) in
@@ -18697,13 +18699,13 @@ MASTER_DESIGN §V.3.4 and `auth.ts` corrected; the KV record type moved to
 
 ## FOLLOW-659 — `brand_config.brand_name`/`legal_entity` producer-coverage: per-brand identity silently falls back to "Estalara" until operator seeds JSONB
 
-**STATUS 2026-07-26 (session 60): 🔵 IN REVIEW — PR #629 open.** All three ACs met. **AC1
-(producer):** `PATCH /api/config` + a **Legal Identity** fieldset on `/admin/tenants/[id]/settings`.
-Investigation found the pre-existing runbook curl for these keys did NOT work — the route's Zod
-schema stripped both keys (silent 200, no write) and, because the PATCH rewrites the whole
-`brand_config` blob, any settings-page Save also **wiped** a hand-seeded identity back to
-"Estalara". Both fixed; a regression test covers the wipe. **AC2 (fail-loud):** asymmetric by
-surface — consent-text `GET /api/v1/consent/platform-registration` returns **409
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #629 merged 2026-07-26T14:57:38Z.** All three ACs
+met. **AC1 (producer):** `PATCH /api/config` + a **Legal Identity** fieldset on
+`/admin/tenants/[id]/settings`. Investigation found the pre-existing runbook curl for these keys did
+NOT work — the route's Zod schema stripped both keys (silent 200, no write) and, because the PATCH
+rewrites the whole `brand_config` blob, any settings-page Save also **wiped** a hand-seeded identity
+back to "Estalara". Both fixed; a regression test covers the wipe. **AC2 (fail-loud):** asymmetric
+by surface — consent-text `GET /api/v1/consent/platform-registration` returns **409
 `brand_identity_not_provisioned`** (refuses to let a wrong legal attestation be created), while
 `POST /api/dsr/initiate` **still sends** and raises a Sentry `error` (blocking a DSR OTP would
 obstruct an Art. 15/17/20 right — worse than a mis-branded sender). First-party tenant is byte-
@@ -18729,8 +18731,8 @@ producer shape across the KV/JSONB surfaces).
 
 ## FOLLOW-660 — Code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open (forgotten env re-opens the canonical-hash-default consent fabrication)
 
-**STATUS 2026-07-26 (session 60): 🔵 IN REVIEW — PR #627 open.** Work was RECOVERED uncommitted from
-a stalled subagent (working tree, correct branch
+**STATUS 2026-07-26 (session 61): ✅ DONE — PR #627 merged 2026-07-26T12:20:43Z.** Work was
+RECOVERED uncommitted from a stalled subagent (working tree, correct branch
 `backend-engineer/FOLLOW-660-first-party-env-guard`, never `main`; all 13 agent worktrees verified
 clean, nothing else stranded). PM re-verified independently per `docs/AGENT_WORKFLOW.md`
 §Recovered-work re-verification — forced (cache-bypassed) typecheck + lint green, prettier clean,

@@ -1,6 +1,52 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-26 (session 60 — second crash recovery; PR #625 + #626 + #627 all open, awaiting Piotr's review)
+## ▶️ START HERE — resume 2026-07-26 (session 61 — all five session-60 PRs merged; retros pending; pipeline still gated on 3 open escalations)
+
+**Verified live, not assumed:** `main` @ `461e08a`, working tree clean, `gh pr list --state open`
+empty. All five PRs opened across sessions 59/60 are **MERGED**: #625 (FOLLOW-657, 12:18:24Z), #626
+(FOLLOW-640/641/651, 12:19:17Z), #627 (FOLLOW-660, 12:20:43Z), #628 (FOLLOW-658, 14:42:11Z), #629
+(FOLLOW-659, 14:57:38Z). All five tickets flipped ✅ DONE in `backlog/FOLLOW_UPS.md`. The
+fail-silent-producer class opened by RETRO-218/219 (FOLLOW-658/659/660) is now fully closed in code.
+Migration 0036 confirmed live in prod Supabase. `.claude/worktrees/` is empty (all 13 removed after
+merge verification) — nothing stranded.
+
+**Prod facts checked live today:** exactly 1 tenant in Supabase, 0 with `brand_name`, 0 with
+`legal_entity`, 0 with non-empty `allowed_origins`. None of the closed gaps was ever exploitable —
+this was preventive/pre-go-live hardening, not an incident fix.
+
+**Two operator steps still pending with Piotr before any of #627/#628 do anything in prod** (both
+fail-open-by-design when unset, so no outage risk from the delay, but they gate whether the new
+guards are load-bearing): (1) `FIRST_PARTY_TENANT_ID` in control-plane env — **Doppler `prd` AND
+Vercel separately** (they are not synced); (2) `FIRST_PARTY_TENANT_ID` as an ingest secret via
+`wrangler secret put`. Tracked here as a handoff item, not a ticket — nothing for an agent to build.
+
+**Session 61 work: five per-ticket retrospectives owed** (RETRO-220..224 for #625–#629) — none of
+today's five merges has been retro'd yet. Spawning `retrospective-analyst` now; this is mandatory
+post-merge bookkeeping (CLAUDE.md "Per-ticket retrospective loop"), not new-ticket selection, so it
+proceeds even with escalations open.
+
+**One thing to explicitly ask the retro to assess (not pre-judge):** the "documentation asserts
+behavior the code doesn't implement" defect has now surfaced in this one area three times — ESC-040
+(original `allowed_origins` over-claim), FOLLOW-658 AC3 (the fix's OWN docstring introduced a
+second-generation over-claim — "projected onto the KV record at provisioning" — before FOLLOW-658
+build had shipped), and the runbook §Step 0 correction in `461e08a`. `CONVENTIONS_PATCH.md` requires
+≥2 retro appearances before promoting a pattern to a Rule; this may already qualify. Instructing the
+retro to evaluate this on the merits rather than asserting it here.
+
+**3 OPEN escalations remain, none PM-resolvable — pipeline rule bars picking a NEW ticket** (Rule:
+"do not pick a new ticket while escalations are open") until a human clears at least one: ESC-020
+(Rafał — Estalara-app DOM hooks deploy, long-standing/annotated non-blocking), ESC-041 (npm registry
+E403 on the `Release` workflow — needs registry-owner access), ESC-042 (Piotr/operator —
+`modal deploy apps/intent-engine` + `MODAL_CHAT_NLP_URL`; the actual chat un-shadow enabler, code
+leg already merged). **ESC-040 is CLOSED** (commit `41556cc`) — do not treat it as open; it asked
+for a ruling the CEO already made and shipped.
+
+**▶️ NEXT (after retros land):** residual FOLLOW-628/629/631/632/634 remain queued but undispatched
+pending escalation clearance — see prior session heads below for their definitions.
+
+---
+
+## ▶️ (prev) session 60 head — resume 2026-07-26 (session 60 — second crash recovery; PR #625 + #626 + #627 all open, awaiting Piotr's review)
 
 **A THIRD stalled-agent diff was found uncommitted in the main working tree** — FOLLOW-660, on the
 correct branch `backend-engineer/FOLLOW-660-first-party-env-guard` (never `main`), left behind by a

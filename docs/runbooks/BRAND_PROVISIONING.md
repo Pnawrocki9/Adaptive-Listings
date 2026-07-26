@@ -59,16 +59,24 @@ first draft — #620 (quiz definitions), #621 (this runbook), #623 (origin enfor
 but skipping it silently corrupts the compliance record of every external brand.**
 
 Set `FIRST_PARTY_TENANT_ID` (control-plane env / Doppler + Vercel) to the UUID of the Estalara
-first-party tenant. `apps/control-plane/src/lib/brand-identity.ts:146` reads it as the first-party
-allowlist.
+first-party tenant. `isFirstPartyTenant` in `apps/control-plane/src/lib/brand-identity.ts` reads it
+as the first-party allowlist.
 
 **Why it is load-bearing (FOLLOW-654, PR #624):** when the env is UNSET, `isFirstPartyTenant` treats
 **every** tenant as first-party, so `consent_text_hash` may be omitted on registration and silently
 defaults to the canonical _Estalara_ hash. For an external brand that fabricates the audit record —
 the consent log would attest that the visitor accepted Estalara's text when they accepted the
-client's. Today the env is unset and the only live tenant IS Estalara (correct by accident); that
-stops being true with the first client. `FOLLOW-660` tracks a code-level guard so a forgotten env
-cannot degrade silently — until it ships, **this checklist item is the only defence.**
+client's. Today the env is unset and the only live tenant IS Estalara (verified in prod 2026-07-26:
+exactly one `tenants` row) — correct by accident; that stops being true with the first client.
+
+**Code-level backstop SHIPPED (FOLLOW-660, PR #627, merged 2026-07-26) — this checklist item is no
+longer the only defence.** The env-only check above is the no-DB fast path; a SECOND gate now runs
+once the DB client exists (`requiresExplicitConsentHash`, same module). With the env UNSET it probes
+the tenant count and starts requiring an explicit `consent_text_hash` (400) as soon as more than one
+tenant exists, and fails CLOSED if the count cannot be read — so a forgotten env can no longer
+silently attest the wrong consent text. Setting the env is still the recommended step: the guard
+stops corruption, it does not make the env optional (with 2+ tenants and no env, external
+registrations get a 400 until you set it).
 
 ```bash
 doppler secrets set FIRST_PARTY_TENANT_ID=<estalara-tenant-uuid> --config prd

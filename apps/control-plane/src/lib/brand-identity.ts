@@ -147,3 +147,54 @@ export function isFirstPartyTenant(tenantId: string): boolean {
   if (!firstParty) return true;
   return tenantId === firstParty;
 }
+
+/**
+ * Code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open (FOLLOW-660).
+ *
+ * {@link isFirstPartyTenant} answers `true` for EVERY tenant when the env is unset, which lets
+ * `consent_text_hash` be omitted and silently default to the canonical Estalara hash. That is
+ * correct only while Estalara is genuinely the only tenant. The moment a second tenant exists
+ * with the env still unset, the same fail-open fabricates the audit record for every external
+ * brand — it would attest that the visitor accepted Estalara's disclosure text when they
+ * accepted the client's. Documentation (`.env.example`, the provisioning runbook §Step 0) was
+ * the only defence; this is the code one.
+ *
+ * Decision table:
+ *
+ * | `FIRST_PARTY_TENANT_ID` | tenant count | hash required?                                  |
+ * | ----------------------- | ------------ | ----------------------------------------------- |
+ * | SET                     | any          | only for tenants other than the configured one  |
+ * | UNSET                   | ≤ 1          | NO — today's single-tenant Estalara path, unchanged |
+ * | UNSET                   | > 1          | YES, for every tenant — first-party is unknowable |
+ *
+ * The `> 1` case deliberately refuses rather than guessing: with no env there is no way to tell
+ * which row is Estalara, and defaulting the canonical hash for the wrong one is exactly the
+ * fabrication this closes. The fix is one env var, and the 400 says so.
+ *
+ * Fail-CLOSED on a count error: if the tenant count cannot be read we require the hash, because
+ * the alternative is defaulting a legal attestation on unknown state.
+ *
+ * @param db - An admin (service-role) Drizzle client.
+ * @param tenantId - The tenant UUID from the validated request body.
+ * @returns `true` when the request MUST carry an explicit `consent_text_hash`.
+ */
+export async function requiresExplicitConsentHash(
+  db: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+): Promise<boolean> {
+  const firstParty = process.env.FIRST_PARTY_TENANT_ID?.trim();
+  // Env SET — the configured tenant keeps the canonical default; everyone else supplies a hash.
+  if (firstParty) return tenantId !== firstParty;
+
+  // Env UNSET — safe only while exactly one tenant can exist.
+  try {
+    const rows = await db.select({ id: tenants.id }).from(tenants).limit(2);
+    return rows.length > 1;
+  } catch (err: unknown) {
+    console.error(
+      '[brand-identity] tenant-count guard failed — requiring consent_text_hash:',
+      err instanceof Error ? err.message : err,
+    );
+    return true;
+  }
+}

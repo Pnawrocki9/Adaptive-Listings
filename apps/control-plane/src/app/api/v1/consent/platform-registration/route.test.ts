@@ -26,7 +26,12 @@ const mockInsert = vi.fn(() => ({ values: mockInsertValues }));
 
 const mockSelectLimit = vi.fn();
 const mockSelectWhere = vi.fn(() => ({ limit: mockSelectLimit }));
-const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
+// FOLLOW-660: the tenant-count guard selects WITHOUT a .where() —
+// `db.select().from(tenants).limit(2)` — so `from()` must also expose `limit`.
+// Kept as its own mock so a test can control the count independently of the
+// where-fenced lookups above.
+const mockCountLimit = vi.fn();
+const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere, limit: mockCountLimit }));
 const mockSelect = vi.fn(() => ({ from: mockSelectFrom }));
 
 const mockDb = { insert: mockInsert, select: mockSelect };
@@ -117,6 +122,8 @@ describe('POST /api/v1/consent/platform-registration', () => {
 
     // Default DB mocks: no duplicate found, INSERT succeeds
     mockSelectLimit.mockResolvedValue([]);
+    // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
     mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-001' }]);
   });
 
@@ -347,6 +354,8 @@ describe('POST consent_text_hash requirement (FOLLOW-654 leg 2)', () => {
     vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
     vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
     mockSelectLimit.mockResolvedValue([]);
+    // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
     mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-leg2' }]);
   });
 
@@ -396,10 +405,94 @@ describe('POST consent_text_hash requirement (FOLLOW-654 leg 2)', () => {
   });
 
   it('treats all tenants as first-party when FIRST_PARTY_TENANT_ID is unset (live-flow compat)', async () => {
-    // No FIRST_PARTY_TENANT_ID stubbed → env unset → omission allowed for everyone.
+    // No FIRST_PARTY_TENANT_ID stubbed → env unset. With exactly ONE tenant (the
+    // beforeEach default) this stays today's behaviour — see FOLLOW-660 below for
+    // what happens once a second tenant exists.
     const { POST } = await import('./route');
     const res = await POST(makeRequest(buildValidBody()));
     expect(res.status).toBe(201);
+  });
+});
+
+// ─── FOLLOW-660: the FIRST_PARTY_TENANT_ID fail-open is closed in code ────────
+
+describe('POST consent_text_hash — forgotten FIRST_PARTY_TENANT_ID (FOLLOW-660)', () => {
+  const SECOND_TENANT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-660' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('env UNSET + a SECOND tenant + omitted hash → 400 instead of fabricating the canonical hash', async () => {
+    // The exact production hazard: an operator onboards an external brand and forgets the env.
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }, { id: SECOND_TENANT_ID }]);
+
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: string }>(res);
+    expect(body.error).toContain('FIRST_PARTY_TENANT_ID');
+    // The audit record must NOT have been written with a defaulted hash.
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('env UNSET + a SECOND tenant + explicit hash → 201 (the caller attested its own text)', async () => {
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }, { id: SECOND_TENANT_ID }]);
+    const customHash = 'c' + '0'.repeat(63);
+
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody({ consent_text_hash: customHash })));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(customHash);
+  });
+
+  it('env UNSET + exactly ONE tenant + omitted hash → 201, canonical hash (today unchanged)', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+  });
+
+  it('env SET → the guard short-circuits and never runs the tenant-count query', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    // A correctly configured deployment pays no extra query on the hot path.
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it('fails CLOSED — a tenant-count read error requires the hash rather than defaulting it', async () => {
+    mockCountLimit.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const { POST } = await import('./route');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(400);
+    expect(mockInsertValues).not.toHaveBeenCalled();
   });
 });
 
@@ -476,6 +569,8 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
 
   it('returns data_source=default (Estalara) when no tenant row exists', async () => {
     mockSelectLimit.mockResolvedValue([]);
+    // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
     const { GET } = await import('./route');
     const res = await GET(makeGetRequest(TENANT_ID));
 

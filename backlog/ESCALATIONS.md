@@ -2388,7 +2388,7 @@ with or immediately after it so the pattern cannot be copy-forwarded a fourth ti
 
 ---
 
-## OPEN — ESC-040: `tenants.allowed_origins` is a security facade — the settings UI and MASTER_DESIGN both claim SDK origin enforcement that does not exist in code [FOLLOW-622]
+## RESOLVED — ESC-040: `tenants.allowed_origins` is a security facade — the settings UI and MASTER_DESIGN both claim SDK origin enforcement that does not exist in code [FOLLOW-622]
 
 **Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
 FOLLOW-622, FOLLOW-600, `apps/ingest/src/router.ts:69-73`, `packages/db/src/schema/api_keys.ts:33`,
@@ -2420,7 +2420,48 @@ the column) or **de-scope it** (remove the control from the settings page and co
 `api_keys` docstring and MASTER_DESIGN §V.3.4). Either is acceptable; leaving the UI as-is is not.
 Same wire-or-de-scope call needed on FOLLOW-623.
 
-**Resolution:** <empty until resolved>
+**Resolution:** RESOLVED 2026-07-26 (session 60) — **no new CEO decision was required; the decision
+had already been made and shipped.** This escalation was filed 2026-07-23 and overtaken by events
+one day later. Verified against the current tree at `5e66288`, not against the ticket text:
+
+**The ruling: CEO Option B (de-scope), 2026-07-24.** Recorded in-code in two places —
+`apps/control-plane/src/app/admin/tenants/[id]/settings/page.tsx:11` ("FOLLOW-622 (CEO Option B,
+2026-07-24): the SDK `allowed_origins` allow-list control was de-scoped from this page — it was an
+unenforced security facade") and `packages/db/src/schema/tenants.ts:53-54`.
+
+Every "Required action" in this escalation is now satisfied — and the outcome went **both** ways,
+which is why the two ticket names look contradictory:
+
+| Required action                           | Status | Evidence                                                                                             |
+| ----------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| CEO decision wire-vs-de-scope             | DONE   | Option B, 2026-07-24                                                                                 |
+| Remove the control from the settings page | DONE   | FOLLOW-622 / PR #618 (`24aa860`); `sdk.allowed_origins` also removed from the `/api/config` contract |
+| Correct the `api_keys` docstring          | DONE   | `packages/db/src/schema/api_keys.ts:33-42`                                                           |
+| Correct MASTER_DESIGN §V.3.4              | DONE   | `docs/MASTER_DESIGN.md:5024-5029,5044` — now describes the KV projection, "NOT a hardcoded env list" |
+| Same call on FOLLOW-623 / `brand_config`  | DONE   | wired, not de-scoped — `/api/quiz/public-config` serves the `brand` slice to the SDK (PR #619, #626) |
+
+Beyond de-scoping the facade, real enforcement was then **built**: FOLLOW-642 / PR #623 (`d631a08`)
+shipped `apps/ingest/src/origin-gate.ts`, which matches the browser `Origin` against the tenant's
+list and returns 403 `forbidden_origin` before any ingest side effect. So the column is no longer a
+facade in the read direction.
+
+**⚠️ Closing this escalation does NOT make origin enforcement effective, and unblocks nothing.** Two
+things must not be mistaken for done:
+
+1. **The write path does not exist.** A repo-wide grep confirms **zero** writes to `KV_API_KEYS`
+   anywhere (`.put(` exists only for `KV_IDEMPOTENCY` and Durable Object storage). The gate reads a
+   KV record that no in-repo code produces, so enforcement silently inherits the env allow-list for
+   every tenant until an operator seeds KV by hand. That is FOLLOW-658 (P1, still OPEN).
+2. **The corrected docstrings introduced a _new_ over-claim.** `tenants.ts:40-41` and
+   `api_keys.ts:38-41` state the column "is projected onto the api-key KV record **at
+   provisioning**" — describing an automatic step that is not implemented (Rule M
+   false-automation-claim axis). This is exactly FOLLOW-658 AC3, and it is now the _second_
+   generation of the same documentation-truth defect this escalation was opened about.
+
+**Correction to the session-60 hand-off:** FOLLOW-658 was reported as "blocked on ESC-040". It is
+not and never was — its stub carries `depends_on: []`, and the overlap with ESC-040 is confined to
+AC3. FOLLOW-658 is dispatchable immediately; ESC-040 was never the constraint. The remaining
+external-brand go-live gate is FOLLOW-658 + FOLLOW-659, not this escalation.
 
 ---
 

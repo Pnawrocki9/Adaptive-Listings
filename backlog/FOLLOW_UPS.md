@@ -19709,3 +19709,41 @@ rather than claiming coverage you do not have (Rule Y); (4) do NOT extend the AD
 `brand_config` while doing this — the columns are separate on purpose (Rule U).
 
 cross_ref: [RETRO-224, RETRO-221, FOLLOW-659, FOLLOW-670, FOLLOW-623, Rule U, Rule Y, Rule Z]
+
+## FOLLOW-690 — verified production deploy of the ingest Worker (stale since 2026-05-29): pre-flight infra check → staged deploy → behavioral probes → rollback plan (executes ESC-043)
+
+source_retro: ESC-043 (live diagnostic, session 61) source_ticket: ESC-043 recommended_sprint: now
+recommended_agent: devops-engineer priority: P1 estimated_hours: 4 depends_on: [] promoted_to_queue:
+true (CEO-dispatched 2026-07-26, session 61)
+
+`estalara-ingest-production` runs code last deployed **2026-05-29T21:21:49Z** (every later entry in
+`wrangler deployments list --env production` is `Secret Change` only). 14 merged `apps/ingest`
+commits are not live — including the FOLLOW-559 server-side consent gate, FOLLOW-579
+unconsented-snapshot stripping, the FOLLOW-642/658 origin-enforcement stack, and the
+FOLLOW-459/482/513 ACK/queue-retry/Sentry work. The only Worker deploy workflow
+(`deploy-staging.yml`) is manual, staging-only, and has never succeeded; prod deploys are manual
+`wrangler deploy` from an operator machine. Full evidence + required-action plan: ESC-043 in
+`backlog/ESCALATIONS.md`. CEO authorized executing the verified deploy 2026-07-26.
+
+**AC:** (1) **pre-flight** — enumerate every binding `apps/ingest/wrangler.toml` `[env.production]`
+gained since 2026-05-29 (`git log -p --since=2026-05-29 -- apps/ingest/wrangler.toml`) and verify
+each resource exists in the Cloudflare account (`wrangler queues list`,
+`wrangler kv namespace list`, `wrangler secret list --env production`; compare against the `Env`
+type in `apps/ingest/src/types.ts`), creating missing additive resources (queues) and STOPPING on
+anything non-additive; record the current 100% version id as the rollback target; sample
+`wrangler tail` for live origins before touching anything. (2) **staged deploy** — deploy
+`--env staging` first from code identical to `origin/main` HEAD, probe, then `--env production`. (3)
+**behavioral verification, not just green output** — `/health` 200; a localhost-origin POST with the
+public api key and an intentionally schema-invalid event MUST return 403 `forbidden_origin` (today
+it reaches schema validation — that flip is the regression test); the same probe with
+`Origin: https://app.estalara.com` MUST pass the gates and be rejected by schema validation only
+(proves first-party passage, zero persistence); no `origin_policy_unconfigured` for the Estalara
+tenant during probes (proves the FOLLOW-658 guard agrees with the `FIRST_PARTY_TENANT_ID` secret set
+2026-07-26). (4) **rollback plan executed on failure** — any first-party 403 / health failure →
+immediate `wrangler rollback --env production` to the recorded version, then report. (5) document
+the verified procedure as `docs/runbooks/INGEST_WORKER_DEPLOY.md` (only steps actually executed —
+Rule AH) and append the ESC-043 Resolution. A production deploy **pipeline** is explicitly OUT of
+scope (ESC-043 required-action item 4 stays a separate decision).
+
+cross_ref: [ESC-043, ESC-020, ESC-042, FOLLOW-678, FOLLOW-642, FOLLOW-658, FOLLOW-559, Rule AH, Rule
+AI]

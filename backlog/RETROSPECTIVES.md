@@ -33870,3 +33870,450 @@ HEAD → OK on all 3 routes. CI: only Rule I red = Rule AF baseline. FOLLOW-658/
 CLOSED downstream (#627/#628/#629 + 461e08a) → deliberately NOT re-filed. Rule AH PROMOTED (evidence
 RETRO-216 + RETRO-218, corroborated RETRO-205/ESC-040; this retro is the 4th sighting and does not
 inflate the count). Superseded-error-code-orphan pattern HELD at count 1 with pre-authorization. -->
+
+## RETRO-221 — FOLLOW-640/641/651 (per-brand widget placement, opt-out labels + white-label attribution) — 2026-07-26
+
+### 1. Summary of change
+
+- **PR:** #626 (merged 2026-07-26 12:19:17 UTC, commit `cd586e0`) — `feat(sdk): per-brand widget
+  placement, opt-out labels + white-label attribution [FOLLOW-640/641/651]`. Recovered work: the
+  session-58 terminal crash left the branch uncommitted in a worktree (typecheck red, admin picker
+  missing, zero tests); all three were finished before the PR.
+- **Files changed:** 25 (+1840 / −26)
+- **Modules touched:** [SDK / control-plane / shared / db] — **no docs, no ADR** (see §4d)
+- **Key contracts changed:**
+  - NEW shared module `packages/shared/src/schemas/widget-placement.ts` — `WidgetCornerSchema`,
+    `WidgetPlacementSchema` (corner + int offsets 0–200), `DEFAULT_QUIZ_PLACEMENT` (bottom-left
+    24/24), `DEFAULT_OPTOUT_PLACEMENT` (bottom-left 16/16) — added — breaking: no.
+  - `QuizConfig.placement?` / `_QuizConfigFullSchema.placement` (`quiz-config.ts:76,132`) — added
+    (optional) — breaking: no.
+  - `PresentationConfigResponseSchema` gains `quiz_placement?` + `opt_out_widget?`
+    (`presentation-config.ts:2083,2091`) and NEW `OptOutWidgetConfigSchema` (`:2057`, placement +
+    `labels.{on,off,aria}` i18n bags) — added (optional slices) — breaking: no.
+  - `tenants.optout_widget_config jsonb NOT NULL DEFAULT '{}'` (migration `0036`, journal idx 36) —
+    added, purely additive — breaking: no. **Auto-applies to prod on merge** (db-migrate.yml).
+  - NEW staff route `GET`/`PUT /api/admin/tenants/optout-widget` + `staff_audit_log.action`
+    `'optout_widget.update'` — added — breaking: no.
+  - `SdkConfig.quizPlacement?` / `SdkConfig.optOutWidget?` (`core/config.ts:1583,1597`);
+    `QuizTriggerConfig.placement?`; `ProfilingToggleOptions.{placement,labels,showAttribution}?`;
+    `QuizWidgetConfig.showAttribution?` — added — breaking: no.
+  - **Behaviour change not covered by the "byte-identical" claim:** the opt-out toggle's accent is
+    now `config.brand?.primaryColor ?? config.accentColor` (`index.ts:1069`) — see §4a LG-5.
+- **Bundle (the PM's explicit ask, independently re-measured, not taken from the PR body):**
+  rebuilt `@estalara/sdk` at HEAD and ran the real gate —
+  `Bundle size: 41.31KB gzip (limit: 42KB) / Bundle size OK`
+  (`packages/sdk/scripts/check-bundle-size.js`, `MAX_BYTES = 42 * 1024`). **Headroom = 0.69 KB =
+  707 bytes = 1.6 % of budget.** The PR body's number is CONFIRMED. Trajectory: 40.99 KB at
+  RETRO-214 (post-#619) → 41.31 KB now; ADR-0019's `≤ +0.3 KB (640) + ≤ +1.5 KB (641)` envelope was
+  respected. **Evidence gap:** RETRO-215 (#620/FOLLOW-639, the "shrink" this wave was sequenced
+  behind) recorded NO bundle number, so the exact #626-attributable delta is not derivable from the
+  retro record — the +0.32 KB above is against a two-PR-old datapoint, not the immediate parent.
+
+### 2. Verification done in PR
+
+- Test files changed: `packages/shared/src/schemas/widget-placement.test.ts` (NEW, 10 cases),
+  `presentation-config.test.ts` (+2 retention cases, 1 re-pointed), `packages/sdk/src/__tests__/
+  follow-640-641-651.test.ts` (NEW, 14 jsdom cases), `apps/control-plane/.../admin/tenants/
+  optout-widget/route.test.ts` (NEW, 9 cases), `.../quiz/public-config/route.test.ts` (+5 wire-slice
+  cases). Assertions added: ~38 cases. Coverage delta: est. up on shared/SDK/route; **flat-to-down
+  on `apps/control-plane/src/app/admin`** (281-line editor + page shipped with zero tests, §4c).
+- Every feature is asserted twice (configured + unconfigured) — the D4 discipline is real and is the
+  strongest thing about this PR's test design.
+- CI checks: **independently verified** (`gh pr checks 626`) — 61 pass, **2 fail, both
+  `Rule I — wired-or-dead check`** (the same job on two runs) = the repo-wide permanently-red
+  baseline (Rule AF / ESC-041). Consistent with the red set RETRO-220 verified for #625 the same day.
+- **Rule AF baseline re-derived at HEAD (verify-not-guess, and it moved):** I ran
+  `bash scripts/check-rule-i.sh` myself → `Rule I FAILED: 192 symbol(s) with zero non-test
+  importers`. RETRO-220 cited **191** for the #625 window. **The +1 is NOT attributable to #626** —
+  grep of the violation list for every symbol this PR introduced
+  (`widget-placement|WidgetCorner|ui/placement|placementToCss|DEFAULT_OPTOUT|DEFAULT_QUIZ_PLACEMENT|
+  OptOutWidgetConfig|OptOutWidgetState|StaffOptOutWidget|optout-widget`) returns **zero hits**. The
+  +1 belongs to a later merge (#627/#628/#629) and is handed to whichever retro covers those; the
+  baseline they must compare against is **192, not 191**.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅, mechanically corroborated.** Every new file has ≥1 non-test
+importer: `shared/schemas/widget-placement.ts` → `quiz-config.ts:68`, `presentation-config.ts:2025`,
+`sdk/ui/placement.ts:1674`, both admin editors; `sdk/ui/placement.ts` (`placementToCss`) →
+`quiz-trigger.ts:1849` + `profiling-toggle.ts:1719`; `admin/tenants/[id]/optout-widget/page.tsx` →
+framework route (suppressed) and reachable — linked from the tenant landing page
+(`admin/tenants/[id]/page.tsx:357-362`); `optout-widget-editor.tsx` → imported by that page;
+`api/admin/tenants/optout-widget/route.ts` → framework route (suppressed), consumed by the editor
+(`optout-widget-editor.tsx:87`); migration `0036` → journal idx 36. Independently confirmed by the
+Rule I gate itself (§2): none of this PR's symbols is in the 192.
+
+- **One borderline, deliberately NOT classified DEAD_CODE (and therefore no FOLLOW):**
+  `WidgetCornerSchema` (`widget-placement.ts:2264`) has no external non-test importer — grep returns
+  its own module (`WidgetPlacementSchema.corner`), its test, and the `dist/` build artifact only.
+  It is consumed *at its definition site* and is the source of the `WidgetCorner` **type** that both
+  admin editors import (`quiz-config-editor.tsx:376`, `optout-widget-editor.tsx:22`). Exporting a
+  zod enum beside its inferred type is idiomatic, not a facade. Recorded so the next retro does not
+  re-discover it as a finding.
+
+**CHECK B (half-wire) — ONE finding (a locale sub-axis), the rest clean.** Every new signal traced
+producer→consumer→render:
+
+| signal | producer | consumer | render |
+| --- | --- | --- | --- |
+| `quiz_config.placement` | staff picker `quiz-config-editor.tsx:426-477` → `POST /api/quiz/config` (`QuizConfigSchema`, `route.ts:173`, atomic+audited `quiz_config.update`) | `public-config/route.ts:1223` `merged.placement` | ✅ |
+| `quiz_placement` slice | `public-config/route.ts:1236` | `index.ts:1653` → `renderQuizTrigger` | `quiz-trigger.ts:1880` `${placementCss}` in the `.estalara-trigger` rule ✅ |
+| `tenants.optout_widget_config` | `PUT /api/admin/tenants/optout-widget` (tx-atomic + `staff_audit_log`) + editor | `public-config/route.ts:1226` | ✅ |
+| `opt_out_widget` slice | `public-config/route.ts:1238` | `index.ts:1639-1640` → `renderProfilingToggle` | `profiling-toggle.ts:1792` inline `style` + `:1762-1763` label text ✅ |
+| `showAttribution` (SDK-internal) | `index.ts:1624` + `:1643` | `quiz-widget.ts:1925`, `profiling-toggle.ts:1823` | `.estalara-quiz-attribution` div / `[data-estalara-attribution]` span ✅ |
+| `brand.white_label` | settings toggle `tenant-config-editor.tsx:207-221` → `PATCH /api/config:371` → `tenants.brand_config` → `public-config` `brand` slice → `index.ts:124` | `index.ts:1054`/`:1078` | suppression of the two attribution nodes ✅ (§7 closure trace) |
+| `staff_audit_log.action 'optout_widget.update'` | `optout-widget/route.ts:1034` | `GET /api/audit` generic `eq(action)` (no whitelist — verified in RETRO-220) | `audit-view.tsx` raw print ✅ |
+
+- **HALF_WIRE_C (partial — LOCALE AXIS) — P1 → FOLLOW-668.** `opt_out_widget.labels.{on,off,aria}`
+  is a full `LabelI18nSchema` bag (`presentation-config.ts:2060`, keys `en|pl|es`) and the SDK
+  consumer reads the ACTIVE language first (`profiling-toggle.ts:1760-1761`
+  `bag?.[options.language] ?? bag?.en ?? fallback`). **The only write path emits `en` only** —
+  `optout-widget-editor.tsx:67-69` hard-codes `{ en: … }` for all three bags, and its own module
+  docstring concedes it (`:13-15` "this minimal staff surface edits the `en` texts only"). So the
+  `pl` / `es` keys are **consumer-ready with zero producer**. Consequence is not inert, it is a
+  regression: an operator who types an English "On" label **silently replaces the hardcoded Polish
+  and Spanish copy with English text** for `pl`/`es` visitors — and `pl` is the live market
+  (app.estalara.com). Priority **P1, not the rubric's P0**, because the slice as a whole HAS a
+  producer and the failure degrades to wrong-language text rather than a dead contract; recorded
+  explicitly so the downgrade is auditable.
+- No new env vars, topics, or cross-runtime (Python) contracts. New column present (§5c).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, "mint-on-save" — the unset→set one-way door) → FOLLOW-670.** BOTH staff editors always
+  send a fully-populated `placement`, so the **first save of any unrelated field** converts an
+  unconfigured tenant into a configured one. Quiz side: `DEFAULTS.placement = DEFAULT_QUIZ_PLACEMENT`
+  (`quiz-config-editor.tsx:61`), `GET /api/quiz/config` omits `placement` when unset (it is not in
+  `QUIZ_DEFAULT_CONFIG`, `quiz-config.ts:121-125`), the editor spreads `{...DEFAULTS, ...d}` (`:95`)
+  and POSTs the whole object (`:119`). Opt-out side: `toConfig()` unconditionally emits
+  `placement: {…}` (`optout-widget-editor.tsx:70-72`). Rendering stays identical (the defaults ARE
+  the old hardcoded values), so this is not a visual regression — but it (a) defeats ADR-0019 D4's
+  *omit-when-unset* wire property the route/schema tests carefully assert, (b) makes "has this brand
+  been configured?" unanswerable from the DB, (c) **pins that tenant to today's default forever** if
+  a future default changes, and (d) is irreversible from the UI (neither editor has a "use default"
+  affordance). This is the same class as RETRO-205 §4a LG-1 / FOLLOW-624 (editor DEFAULTS leaking
+  into persisted config) with the load-failure variant closed and the successful-load variant open
+  — see §6.
+- **LG-2 (P2, white-label attribution FAILS OPEN toward Estalara branding) → FOLLOW-671.**
+  Suppression depends entirely on the `brand` slice being present at render time:
+  `showAttribution: config.brand?.whiteLabel !== true` (`index.ts:1054`, `:1078`). On ANY degraded
+  read — `fetchQuizConfig` returns null (`index.ts:928` warns and keeps snippet defaults), the Rule
+  K.2 `data_source:'fallback'` response (which by contract carries **no** brand slice), or a brand
+  blob that fails `BrandConfigSchema` (RETRO-214 LG-1 drops the WHOLE slice) — `config.brand` is
+  `undefined`, the strict `!== true` yields `true`, and **"Powered by Estalara" renders on a paying
+  white-label brand's site**. The PR tested the two healthy axes (`white_label` true / absent) and
+  not the degraded one. With 3 external brands 2–4 weeks out this is a commercial/contractual
+  exposure, not a cosmetic one.
+- **LG-3 (P2, the VISIBLE label is the one you cannot rebrand) → FOLLOW-668.** The toggle renders
+  `"<title>: <on|off word>"` (`profiling-toggle.ts:1767-1769`) where `copy.title` is hardcoded
+  per-locale and has **no** override key in `OptOutWidgetConfigSchema`. So a white-label brand can
+  override the *invisible* `aria` string in full but is stuck with Estalara's visible
+  "Personalizacja"/"Personalization" title. The asymmetry (assistive-text fully configurable,
+  visible text partially) inverts the intuition and defeats FOLLOW-641's own "per-brand label texts"
+  charter for the string a buyer actually reads.
+- **LG-4 (P2, the `aria` override is state-blind — and the admin UI invites the bug) →
+  FOLLOW-669.** `ariaLabel(out)` returns the override verbatim for BOTH states
+  (`profiling-toggle.ts:1771-1775`), so a screen-reader user hears one fixed string whether
+  profiling is on or off. Mitigated (not cured) by `aria-checked` still flipping (`:1813`). The
+  admin field's placeholder is literally `"Personalization: active"`
+  (`optout-widget-editor.tsx:251`) — it *teaches* the operator to enter a state-bearing string that
+  will then lie 50 % of the time. Note the PR's own test only pins the static behaviour
+  (`follow-640-641-651.test.ts:152-157` "an aria override replaces the compound state label") — the
+  defect is codified as intended behaviour.
+- **LG-5 (P3, note only — behaviour change outside the "byte-identical" claim; test AC folded into
+  FOLLOW-665).** `index.ts:1069` changes the toggle accent from `config.accentColor` to
+  `config.brand?.primaryColor ?? config.accentColor`. ADR-0019 D4 sanctions it (a widget with no
+  per-widget color takes the brand umbrella color) and it IS byte-identical for *unconfigured*
+  tenants — but for a **brand-configured** tenant the toggle silently changes color as a side effect
+  of a placement/labels ticket, with zero test coverage and no mention in the PR's byte-identical
+  framing. It also contradicts a prior retro's architectural verdict — see §5d.
+
+#### 4b. Code bugs not caught — N/A (no P0/P1/P2). Four claims re-verified rather than accepted:
+
+- **Merge-before-render ordering — CORRECT.** `config = mergeQuizConfig(...)` at `index.ts:924`
+  precedes `renderProfilingToggle` (`:1066`) and `renderQuizTrigger` (`:1234`). Had the toggle been
+  rendered on the pre-fetch path (as the consent banner deliberately is, `:313`), placement, labels
+  AND white-label suppression would all have been silently inert. Checked because it is exactly the
+  failure this file's history contains.
+- **Partial-POST clobber of `quiz_config.placement` — DOES NOT OCCUR.** The tenant-facing dashboard
+  editor (`dashboard/quiz/page.tsx:64-65`) knows nothing of `placement`, but
+  `api/quiz/config/route.ts:194-198` re-reads the stored blob and applies
+  `updated = { ...current, ...parsed.data }`, so an absent key preserves the stored value. Verified
+  because `/api/config` PATCH had precisely this whole-blob-rewrite bug (documented in its own
+  header, `:361-362`) and because the two editors write the same column from different surfaces.
+- **Staff-write atomicity + rank gate on the new route — present and inline** (`optout-widget/
+  route.ts:1024-1040` single `db.transaction` around update + `staffAuditLog` insert; `:955` rank
+  gate; `:888` staff-only 403; `:996` tenant fence on the service-role client), matching the shape
+  `scripts/check-staff-write-atomicity.cjs` proves and the CI job reported green.
+- **Buyer-facing fail-safe on a bad stored blob — correct.** `parsePublicOptOutWidgetConfig`
+  (`public-config/route.ts:1197-1203`) drops an invalid slice instead of 500-ing the read-only
+  endpoint, and the PR tests it (`route.test.ts:1134-1144`, `offset_x: 9999`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) → FOLLOW-665: the two connective hops have ZERO assertions.**
+  `grep -rn "quiz_placement\|opt_out_widget" packages/sdk/src --include=*.test.ts` → **0 hits**.
+  Nothing asserts that `mergeQuizConfig` maps `quiz_placement → quizPlacement` /
+  `opt_out_widget → optOutWidget` (`index.ts:1611,1614`), nor that `init()` threads them into the
+  renderers (`:1639-1643`, `:1653`). The 14 new SDK cases call `renderQuizTrigger` /
+  `renderProfilingToggle` / `renderQuizWidget` **directly with hand-built props**. The wire is
+  proven at the route boundary and at the renderer boundary, with the join between them untested —
+  the literal shape step 7 exists to catch. Both sibling slices DO have this test:
+  `follow-623.test.ts` (snake→camel brand map) and `follow-639.test.ts` (`quiz_definition`).
+- **TG-2 (P1) → FOLLOW-665: FOLLOW-651's AC2 is not met as written.** The stub says: *"Wire the
+  consumer and prove it changes a rendered pixel **in an e2e** (per the Rule L evidence bar the
+  color/logo legs already meet — **a value-injecting unit test is not sufficient**)"*
+  (`FOLLOW_UPS.md:18517-18520`). Shipped evidence is jsdom-only; `packages/sdk/e2e/brand.spec.ts` —
+  the fixture harness FOLLOW-623 built for exactly this — was **not touched** (`grep -n
+  "attribution\|white_label" packages/sdk/e2e/*` → 0 hits). The PR body's "the tests assert a
+  RENDERED difference, not a value being passed around" is true at the jsdom tier and one tier
+  below the bar the ticket set. **Rule S instance** (same symmetric set, unequal verification tier).
+  The ticket is nonetheless correctly ✅ DONE on the code axis (§7).
+- **TG-3 (P1) → FOLLOW-666: the admin surfaces shipped with zero tests.**
+  `ls apps/control-plane/src/app/admin/tenants/[id]/optout-widget/` → `optout-widget-editor.tsx`,
+  `page.tsx` — **no test files**, while the sibling `quiz/` directory carries both
+  `quiz-config-editor.test.tsx` and `page.test.tsx`. And the existing
+  `quiz-config-editor.test.tsx` was **not extended** for the new picker (`grep -n
+  "placement\|quiz-corner"` → 0 hits). This is not hypothetical risk: the PR body records that
+  `CORNERS` "was declared but never rendered — the FOLLOW-640 admin picker was missing entirely
+  (typecheck caught it)". A whole admin control went missing once already and there is still no test
+  that would notice it going missing again. 281 + 55 untested lines.
+- **TG-4 (P3, folded into FOLLOW-665):** no test for the LG-5 accent precedence
+  (`brand.primaryColor ?? accentColor`) — every toggle test passes `accentColor` directly.
+
+#### 4d. Documentation gaps — the PR changed **no** doc, and shipping falsified three live claims
+
+- **DG-1 (P1, operator-facing, go-live blast radius) → FOLLOW-667.**
+  `docs/runbooks/BRAND_PROVISIONING.md:221` (Step 3 — Brand config) still reads: *"`white_label` is
+  **parsed but has no consumer yet**"*. As of `cd586e0` that is false. This is THE runbook an
+  operator follows to stand up the 3 incoming white-label brands; a reader who believes the flag is
+  inert will reasonably skip it — and the brand ships with "Powered by Estalara" on its quiz card
+  and opt-out toggle. Same doc, same brand keys, same failure mode as RETRO-220 §4a LG-1, one step
+  earlier in the file.
+- **DG-2 (P1) → FOLLOW-667.** `docs/INTERFACES.md:99-100` lists the slices as *"`brand`
+  (FOLLOW-623 — SHIPPED), `quiz_placement` (FOLLOW-640), `opt_out_widget` (FOLLOW-641),
+  `quiz_definition` (FOLLOW-639 — SHIPPED)"* — the two now-shipped slices are unmarked and have no
+  per-slice section (both SHIPPED siblings do), and `:108` still says *"`white_label` is
+  parsed/exposed but not yet consumed"*. INTERFACES.md is the contract doc every SDK/control-plane
+  worker reads before touching this wire.
+- **DG-3 (P2) → FOLLOW-672.** `docs/adr/ADR-0019-per-tenant-presentation-config.md:135` still
+  specifies `enabled: z.boolean(), // DEFAULT false → no widget` in `OptOutWidgetConfigSchema`. The
+  PR deliberately and correctly omitted that gate (premise-corrected by FOLLOW-653: the toggle has
+  mounted unconditionally since PR #337; shipping `enabled` would leave an inert key per Rule U or
+  flip the widget to opt-in) — but the rationale lives ONLY in a code docstring
+  (`presentation-config.ts:2039-2052`) and the PR body. The ADR itself already carries an in-place
+  `**CORRECTED 2026-07-25 (FOLLOW-653/PR #622)**` note at `:31`, so the precedent for amending it is
+  established and was not followed. `:300` ("Bundle headroom is tight (~2.1 KB)") is also stale —
+  it is now 0.69 KB — and with 623/639/640/641 all merged the ADR-0019 epic is COMPLETE and unmarked.
+- **DG-4 (P3) → FOLLOW-673.** Two stale bundle numbers, both pre-existing and both now further from
+  truth: `.github/workflows/ci.yml:226` names the step *"SDK bundle size gate (<40KB gzip)"* while
+  the script it runs enforces 42 KB (`check-bundle-size.js:16`); `docs/MASTER_DESIGN.md` Changelog
+  v4.3 / §Snapshot.1 B.2 states *"IIFE now 39.86 KB gzip — under budget, thin headroom"* — actual is
+  41.31 KB with 707 bytes left.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **None in flight.** `backlog/QUEUE.md` head (session 61) records the PR queue as **empty** and no
+  IN_PROGRESS/READY ticket. The five undispatched residuals are file-disjoint from this merge:
+  FOLLOW-628 (CI pip pinning), FOLLOW-629 (CH version skew), FOLLOW-631 (K.2 block-form guard),
+  FOLLOW-632 (CONVENTIONS_PATCH verification greps), FOLLOW-634 (data-engineer charter). No rebase
+  hazard.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-663 (staff surface for `quiz_enabled` + correct the `quiz-config-editor` doc-comment)
+  edits the SAME file this PR just extended** (`admin/tenants/[id]/quiz/quiz-config-editor.tsx`,
+  +85 here). Its worker must (a) rebase onto the new placement picker rather than reconstruct the
+  component, (b) leave `DEFAULTS.placement` alone or coordinate with FOLLOW-670, and (c) note that
+  the doc-comment it is chartered to fix was rewritten by this PR (`:384-389`) — re-verify the
+  wording is still false before "correcting" it.
+- **FOLLOW-656 (HANDOFF — verify out-of-repo white-label deployments render brand-correct
+  disclosures, Rafał / app.estalara.com side) gains a NEW artifact to verify:** the "Powered by
+  Estalara" attribution now renders **by default** in the quiz card and the opt-out toggle on every
+  deployment. The handoff checklist as written predates the attribution's existence.
+- **FOLLOW-659's runbook Step 3 is the text DG-1 corrects** — sequence FOLLOW-667 so the two do not
+  both rewrite §Step 3.
+- **The next SDK feature of any size has 707 bytes.** ADR-0019's slices are all merged, so the next
+  ticket to touch the bundle inherits a gate that will bite. Any ESC-028-style budget conversation
+  should start from 41.31 KB, not the 39.86 KB the Master Design still advertises (DG-4).
+
+#### 5c. Contracts changed others rely on
+
+- `PresentationConfigResponse` remains a backward-compatible **superset**: both new slices are
+  `.optional()` and conditionally spread (`route.ts:1236-1238`), so a shipped SDK that predates them
+  is unaffected — the same invariant RETRO-214 §5b pinned for this epic, honoured here.
+- `QuizConfig.placement?` is additive on a JSONB blob written by **two** surfaces (staff
+  `/admin/tenants/[id]/quiz`, tenant `/dashboard/quiz`) — merge semantics verified non-clobbering
+  (§4b), but any future writer of that blob MUST preserve the read-merge-write shape.
+- **Prod axis (Rule AA split):** migration `0036` auto-applies to staging→prod on merge with no
+  human gate (`db-migrate.yml`, memory `project_postgres_migrations_no_autoapply`). It is
+  `ADD COLUMN IF NOT EXISTS … NOT NULL DEFAULT '{}'` — additive and safe on the populated single-
+  tenant table, and the `{}` default is precisely why the live Estalara tenant keeps rendering
+  byte-identically. This retro verifies the CODE axis only; prod application state is not checked
+  here (no stub — auto-apply is proven infrastructure, and `DB Migrate` runs long, 83–99 min).
+
+#### 5d. Architectural assumptions affected
+
+- **★ CONTRADICTION WITH RETRO-214, reconciled.** RETRO-214 §5d ruled: *"D4 precedence is a disjoint-
+  surface ROUTING, not a fallback chain… `accent_color` styles the quiz *card*; `brand.primary_color`
+  styles the *trigger*… they never compete on one element… Future slices (639/640/641) must preserve
+  this disjoint routing or the 'precedence' becomes ambiguous."* **PR #626 does not preserve it.**
+  `index.ts:1069` makes the opt-out toggle the first element where the two DO compete —
+  `config.brand?.primaryColor ?? config.accentColor` is a literal 2-way fallback chain.
+  **Reconciliation: the PR is right and RETRO-214's rule is superseded, not violated.** ADR-0019 D4
+  explicitly assigns `brand.primary_color` to "a widget with no per-widget color", which the toggle
+  is; the toggle simply did not exist in RETRO-214's analysis frame (FOLLOW-653 corrected that
+  premise a day later). The durable statement is therefore: *D4 is disjoint routing for widgets that
+  own an `accent_color` surface, and a genuine fallback chain for widgets that do not.* RETRO-214's
+  "never exercised as a 3-way fallback" line should not be cited forward unqualified. The residual
+  defect is not the design, it is that the change is untested and unannounced (§4a LG-5).
+- **The placement contract covers 2 of 6 fixed-position SDK widgets.**
+  `widget-placement.ts:2248-2251` calls itself *"the SINGLE source of truth"* for "the SDK's
+  fixed-position Shadow-DOM widgets", but `grep -rln "position: *fixed" packages/sdk/src --include=*.ts`
+  finds six: `quiz-trigger`, `profiling-toggle` (both wired), plus `micro-poll`, `consent-banner`,
+  `sidebar-widget`, `quiz-widget` (overlay) — all still hardcoded. A Rule S sibling-completeness
+  observation, **not stubbed**: ADR-0019 chartered exactly these two, and inventing scope for the
+  other four is the speculative-work anti-pattern. Recorded so the docstring's "SINGLE source of
+  truth" claim is read as aspirational. (Related, pre-existing: the two DEFAULT placements overlap —
+  both bottom-left, 24/24 and 16/16 — so the defaults collide on screen today; per-brand placement
+  is now the escape hatch, an accidental improvement.)
+- **The staff/agency boundary held.** The new route is staff-only by design (`:888` `staff_only`
+  403), consistent with `al-state` / `quiz-definition`, and under the single-tenant re-brand model
+  (memory `project_single_tenant_rebrand_model`) the operator IS the intended producer — the
+  same reasoning RETRO-220 used to NOT classify the `?tenant_id` param as HALF_WIRE_C. Applied
+  identically here.
+
+### 6. New lesson candidates
+
+- **Pattern P-1 (SHIP-FALSIFIES-DOC, the inverse of Rule AH):** *"a PR that changes the truth-value
+  of a capability claim ('X is parsed but has no consumer yet', 'slice Y — SHIPPED') leaves every
+  doc/runbook sentence asserting the prior state untouched, and the stale sentence then steers an
+  operator or a worker wrong."* Rule AH binds the **doc author** at the doc's own merge commit; this
+  is the opposite direction — the **code author** falsifying a doc that was correct when written,
+  which no current rule mechanises (Operating Principle 2 covers it in prose only, and
+  CONVENTIONS_PATCH takes precedence over prose). Seen in: **RETRO-213 DOC-1** (§V.3.4 correction not
+  propagated to sibling claims → FOLLOW-649) + **RETRO-221 (this, DG-1/DG-2/DG-3, three claims in
+  three docs)**. RETRO-220 §4a LG-1 is a NEAR-MISS and is deliberately **not** counted — it is the
+  Rule AH direction (doc authored ahead of code). Promote-threshold **2 PRIOR** retros; **current
+  PRIOR count = 1 → HELD, NO PROMOTION.** **ARMED:** the next numbered retro observing this cites
+  RETRO-213 + RETRO-221 → ≥2 prior → promote. Ready-made rule text: *"A change that makes a
+  capability claim true (or false) MUST grep the ticket ID, flag name and symbol across `docs/` +
+  `docs/runbooks/` in the same PR and update every sentence asserting the prior state; operator-
+  facing runbooks are P1. Verification: `grep -rn '<flag>' docs/ | grep -i 'no consumer\|not yet\|
+  parsed but'` returns nothing at merge."*
+- **Pattern P-2 (EDITOR-DEFAULTS-BECOME-PERSISTED-CONFIG):** *"a staff editor initialised from
+  constants POSTs its full form state, so a save converts unset keys into explicitly-stored defaults
+  — the tenant is silently 'configured' and pinned to today's values."* Seen in: **RETRO-205 §4a
+  LG-1 / ESC-039 / FOLLOW-624** (the *load-failure* variant: blank DEFAULTS clobbering real config —
+  fixed) + **RETRO-221 §4a LG-1** (the *successful-load* variant: unset→default minted, still open,
+  and present in BOTH editors this PR touched). One mechanism, two variants; PRIOR count = **1 →
+  HELD, NO PROMOTION.** Vehicle: FOLLOW-670.
+- **Pattern P-3 (evidence-tier downgrade across a symmetric set):** §4c TG-2 is a textbook **Rule S**
+  instance (existing rule — same set, unequal verification tier). No new rule; the remedy is
+  FOLLOW-665.
+- **My own blind spot, recorded (learning hook):** I nearly signed CHECK B "clean" after confirming
+  `labels` had both a producer and a consumer. The gap was one axis down — inside the i18n bag, per
+  locale. Whole-field wiring checks are not sufficient for map/record-shaped contracts; every KEY
+  DOMAIN of a record contract is its own producer/consumer axis.
+
+### 7. Follow-ups
+
+- **FOLLOW-665:** e2e + connective-hop coverage for the two new slices and the attribution — meets
+  FOLLOW-651's AC2 as written (sdk-engineer, 3h, **P1**)
+- **FOLLOW-666:** tests for the FOLLOW-640 placement picker and the whole untested `optout-widget`
+  admin surface (backend-engineer, 2h, **P1**)
+- **FOLLOW-667:** un-stale the three now-false capability claims in `BRAND_PROVISIONING.md` +
+  `INTERFACES.md` (backend-engineer, 1h, **P1**)
+- **FOLLOW-668:** complete the opt-out label contract — per-locale producer (`pl`/`es`) + a `title`
+  key (sdk-engineer, 2h, **P1**) *(closes §3 HALF_WIRE_C + §4a LG-3)*
+- **FOLLOW-669:** make the `aria` label override state-aware and fix the admin placeholder that
+  teaches the defect (sdk-engineer, 1h, **P2**)
+- **FOLLOW-670:** stop the editors minting default placement into unconfigured tenants
+  (backend-engineer, 2h, **P2**)
+- **FOLLOW-671:** make white-label suppression fail SAFE on a degraded/absent brand slice
+  (sdk-engineer, 2h, **P2**)
+- **FOLLOW-672:** reconcile ADR-0019 with what shipped (`enabled` gate, headroom, epic-complete)
+  (architect, 1h, **P2**)
+- **FOLLOW-673:** propagate the real bundle number to the CI step label + Master Design §Snapshot.1
+  B.2 (devops-engineer, 1h, **P3**)
+
+### 8. Cross-references
+
+- **RETRO-214 (FOLLOW-623)** — the direct parent: this PR closes its `white_label` HALF_WIRE_P
+  (§7 trace below) and **supersedes** its "disjoint-surface routing" verdict (§5d). Its §5b
+  invariants for the 639/640/641 wave (optional slice + conditional spread + ship-with-consumer +
+  don't clobber `.estalara-quiz-logo`) were all honoured — the attribution uses a distinct class
+  (`quiz-widget.ts:1924`) and is re-appended per `buildStep()` exactly like the logo.
+- **RETRO-215 (FOLLOW-639)** — the shrink this wave was sequenced behind (ADR-0019 §240); recorded
+  no bundle number, which is why §1's delta is two PRs wide.
+- **RETRO-217 (FOLLOW-653)** — the premise correction that voided FOLLOW-641's AC1 and justifies the
+  omitted `enabled` gate; the ADR amendment it modelled is the one DG-3 says this PR skipped.
+- **RETRO-216 (FOLLOW-652) / RETRO-220 (FOLLOW-657)** — the `BRAND_PROVISIONING.md` lineage; DG-1 is
+  the same runbook, one step earlier, and RETRO-220 §4a LG-1 is P-1's near-miss sibling (§6).
+- **RETRO-205 (FOLLOW-600 / ESC-039)** — origin of the editor-defaults class (P-2) and of the
+  producer-only-facade lineage this PR's FOLLOW-651 leg finally terminates.
+- **RETRO-213 (FOLLOW-622)** — the one PRIOR occurrence of P-1 (FOLLOW-649).
+- **ADR-0019 / ADR-0018 §3a+§4 / Rule S / Rule U / Rule L / Rule K.2 / Rule AA / Rule AF** — the
+  rules this analysis leaned on; **no promotion this run** (both live patterns sit at 1 prior).
+
+### 7-bis. Prior-follow-up closure check (algorithm step 7 — traced END-TO-END, not one hop)
+
+**FOLLOW-651 (RETRO-214's HALF_WIRE_P) — GENUINELY CLOSED on the code axis. Chain re-greped on
+`main` at HEAD, all six hops:** (1) **producer UI** `admin/tenants/[id]/settings/
+tenant-config-editor.tsx:207-221` white-label toggle → (2) **write path** `PATCH /api/config`
+`:141` `white_label: z.boolean().optional()`, `:371` `white_label: patch.brand.white_label ??
+currentBrand.white_label`, `:382` `brandConfig: serializeBrandConfig(updatedBrand)` → (3) **storage**
+`tenants.brand_config` → (4) **read path** `quiz/public-config/route.ts` `parsePublicBrandConfig` →
+`brand` slice → (5) **SDK config** `index.ts:124` `whiteLabel: fetched.brand.white_label` →
+`SdkConfig.brand.whiteLabel` → (6) **RENDER** `index.ts:1054`/`:1078` `showAttribution` →
+`quiz-widget.ts:1925-1930` `.estalara-quiz-attribution` and `profiling-toggle.ts:1823-1832`
+`[data-estalara-attribution]`, asserted as a rendered DOM difference in
+`follow-640-641-651.test.ts:186-209`. **This is a real closure, not a one-hop move** — unlike the
+FOLLOW-097→114→127→141 chain, the gap did not relocate: there is no next-hop consumer left
+unwritten, and the flag now changes what a buyer sees.
+**Two honest caveats, both ticketed rather than waved through:** (a) the **evidence tier** is one
+below the ticket's own AC2, which demanded e2e (§4c TG-2 → FOLLOW-665) — so the closure is proven by
+code-trace + jsdom, not by the real init path the sibling brand legs met; (b) the closure is
+**conditional on a healthy config fetch** — on any fallback/degraded read the suppression silently
+reverts to "show Estalara branding" (§4a LG-2 → FOLLOW-671). FOLLOW-640 and FOLLOW-641 claim no
+prior follow-up (both are CEO-ruling tickets, not retro-derived), so nothing else to trace; their
+own ACs are met except FOLLOW-641's void AC1 (premise-corrected by FOLLOW-653, correctly).
+
+<!-- next free RETRO number: 222. next free FOLLOW number: 674 (FOLLOW-665..673 filed by RETRO-221).
+RETRO-221 = retro for PR #626 (FOLLOW-640/641/651, merged 2026-07-26T12:19:17Z, cd586e0; OPUS
+retrospective-analyst, session 61). BUNDLE (PM ask): independently rebuilt + ran the gate → 41.31KB
+gzip / 42KB, headroom 0.69KB = 707 bytes; PR body CONFIRMED; 40.99KB at RETRO-214 is the nearest prior
+datapoint (RETRO-215 recorded none). CI: 61 pass / 2 fail, both Rule I = Rule AF baseline — BUT I re-ran
+check-rule-i.sh at HEAD = 192, not the 191 RETRO-220 cited; zero of the +1 is a #626 symbol (grepped all
+10 new names), so the NEXT retro (#627/#628/#629) inherits baseline 192. CHECK A clean (WidgetCornerSchema
+borderline-but-not-dead, documented so it is not re-found). CHECK B: 7 signals traced producer→consumer→
+render; ONE finding = HALF_WIRE_C on the LOCALE SUB-AXIS — opt_out_widget.labels.{on,off,aria}.{pl,es}
+are consumer-ready (profiling-toggle.ts bag[language] ?? bag.en) with ZERO producer (editor hardcodes
+{en:…}, admits it at :13-15) → an `en` override SILENTLY REPLACES Polish/Spanish copy in the live PL
+market → FOLLOW-668, P1 not P0 (whole slice has a producer; degrades to wrong-language, not dead).
+PAIRWISE 640/641/651 boundary (PM ask) = NO half-wire: shared widget-placement.ts + placement.ts consumed
+by both renderers, showAttribution produced at both call sites and consumed in both widgets. STEP 7:
+FOLLOW-651 CLOSED end-to-end, all 6 hops re-greped (settings toggle → PATCH /api/config:371 → brand_config
+→ public-config → index.ts:124 → index.ts:1054/1078 → 2 rendered DOM nodes) — a REAL closure, not a
+one-hop move; 2 caveats ticketed (AC2 demanded e2e, shipped jsdom → FOLLOW-665; suppression fails OPEN on
+degraded fetch → FOLLOW-671). STEP 8 CONTRADICTION: RETRO-214 §5d "D4 = disjoint-surface routing, never a
+fallback chain" is SUPERSEDED — index.ts:1069 makes the opt-out toggle the first element where
+brand.primary_color ?? accent_color genuinely competes; PR is ADR-0019-D4-correct, RETRO-214's frame
+predated FOLLOW-653's toggle discovery; durable restatement recorded. GAPS: 5 logic (mint-on-save both
+editors; attribution fail-open; visible `title` not overridable while invisible aria is; aria override
+state-blind + admin placeholder teaches it; untested accent change), 0 code bugs (4 claims re-verified:
+merge-before-render ordering, NO partial-POST clobber, tx-atomicity, buyer-facing fail-safe), 4 test (no
+mergeQuizConfig/init assertions for either slice — grep 0 hits, both siblings have them; AC2 e2e unmet;
+optout admin surface 281+55 lines with ZERO tests while sibling quiz/ has both; accent precedence), 4 docs
+(BRAND_PROVISIONING:221 + INTERFACES:99/:108 now FALSE — operator would skip white_label for 3 incoming
+brands; ADR-0019:135 still shows the omitted `enabled` gate + :300 stale headroom; ci.yml:226 "<40KB" +
+MASTER_DESIGN 39.86KB). PATTERNS: P-1 SHIP-FALSIFIES-DOC (inverse of Rule AH; prior = RETRO-213 only,
+RETRO-220 LG-1 deliberately NOT counted = Rule AH direction) HELD at 1 prior, ARMED with ready-made rule
+text; P-2 EDITOR-DEFAULTS-BECOME-CONFIG (prior = RETRO-205/FOLLOW-624 load-failure variant) HELD at 1
+prior; P-3 = existing Rule S. NO CONVENTIONS_PATCH promotion. Widget-placement covers 2 of 6 fixed-position
+SDK widgets — Rule S observation, deliberately NOT stubbed (ADR chartered exactly two). -->
+

@@ -18852,3 +18852,294 @@ should be stated, not rediscovered); (2) record FOLLOW-657 in the §6 phasing li
 family (onboarding mutations) with its atomic-audit obligation; (3) cross-link §Alternatives →
 runbook break-glass appendix so the rejected impersonation path and its emergency survivor are read
 together. Docs-only; no code.
+
+## FOLLOW-665 — Close the two untested connective hops of the ADR-0019 placement/attribution wire (and meet FOLLOW-651's AC2 as written)
+
+source_retro: RETRO-221 §4c TG-1/TG-2/TG-4 source_ticket: FOLLOW-640/641/651 (PR #626)
+recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 3 depends_on:
+[] promoted_to_queue: false
+
+**Gap.** PR #626 proves the wire at the route boundary (5 public-config cases) and at the renderer
+boundary (14 jsdom cases calling `renderQuizTrigger` / `renderProfilingToggle` / `renderQuizWidget`
+with hand-built props) — and asserts **nothing** in between.
+`grep -rn "quiz_placement\|opt_out_widget" packages/sdk/src --include=*.test.ts` → **0 hits**: no
+test covers `mergeQuizConfig`'s `quiz_placement → quizPlacement` / `opt_out_widget → optOutWidget`
+mapping (`packages/sdk/src/index.ts:131-136`) or the `init()` call sites that thread them into the
+renderers (`:1072-1080`, `:1244`). Both sibling slices DO have exactly this test
+(`__tests__/follow-623.test.ts` snake→camel brand map, `__tests__/follow-639.test.ts`
+`quiz_definition`) — **Rule S**, same symmetric set, unequal verification tier.
+
+Separately, **FOLLOW-651's AC2 is unmet as written**: it required proof "in an e2e … a
+value-injecting unit test is not sufficient", and `packages/sdk/e2e/brand.spec.ts` — the fixture
+harness FOLLOW-623 built for precisely this — was not touched
+(`grep -n "attribution\|white_label" packages/sdk/e2e/*` → 0 hits). The ticket is correctly DONE on
+the code axis (RETRO-221 §7-bis traces all six hops), so this is the evidence leg only.
+
+**AC:**
+
+1. Unit: `mergeQuizConfig` maps BOTH new slices onto `SdkConfig.quizPlacement` / `optOutWidget`, and
+   OMITS the key (not `undefined`) when the slice is absent — the `exactOptionalPropertyTypes` /
+   ADR-0019 D4 property the conditional spread exists to hold.
+2. e2e (`packages/sdk/e2e/brand.spec.ts` or a sibling spec, real init path): a `white_label: true`
+   fixture renders NO "Powered by Estalara" node and a `white_label: false` / brand-less fixture
+   renders one — in BOTH the quiz card and the opt-out toggle.
+3. e2e or init-level: a configured `quiz_placement` moves the trigger's computed anchor edges (e.g.
+   `top`/`right` set, `bottom`/`left` not), proving the slice survives fetch → merge → render.
+4. Test the LG-5 accent precedence: `brand.primary_color` present → the toggle takes it; absent → it
+   falls back to `config.accentColor` (`index.ts:1069`). Today every toggle test passes
+   `accentColor` directly, so the substitution is unpinned.
+
+cross_ref: [RETRO-221, FOLLOW-651, FOLLOW-623, FOLLOW-639, RETRO-214, Rule S, Rule L]
+
+## FOLLOW-666 — Tests for the FOLLOW-640 placement picker and the entirely untested `optout-widget` admin surface
+
+source_retro: RETRO-221 §4c TG-3 source_ticket: FOLLOW-640/641 (PR #626) recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+**Gap.** `ls apps/control-plane/src/app/admin/tenants/[id]/optout-widget/` →
+`optout-widget-editor.tsx` (281 lines) and `page.tsx` (55 lines), **no test files** — while the
+sibling `admin/tenants/[id]/quiz/` carries BOTH `quiz-config-editor.test.tsx` and `page.test.tsx`.
+And the existing `quiz-config-editor.test.tsx` was not extended for the new placement picker
+(`grep -n "placement\|quiz-corner"` → 0 hits) even though the PR added `data-testid="quiz-corner"`,
+`quiz-offset-x`, `quiz-offset-y`.
+
+This is not hypothetical: the PR body records that `CORNERS` "was declared but never rendered — the
+FOLLOW-640 admin picker was missing entirely (typecheck caught it)". An entire staff control went
+missing once, was caught only because an unused const happened to be typed, and there is still no
+test that would notice it disappearing again.
+
+**AC:**
+
+1. `quiz-config-editor.test.tsx`: the corner select + both offset inputs render, are seeded from the
+   GET response, and the POSTed body carries the edited `placement` (assert on the `fetch` mock).
+2. New `optout-widget-editor.test.tsx`, mirroring the sibling's case set: renders; seeds from GET;
+   PUT body shape (`{ config: { placement, labels? } }`); empty label fields are OMITTED (the
+   documented "leave blank → SDK default" contract, `toConfig()` `:65-75`); and the FOLLOW-624/
+   ESC-039 guard — a failed GET shows the error, disables Save, and Retry re-fetches.
+3. New `optout-widget/page.test.tsx` mirroring `quiz/page.test.tsx` (mounts the editor with
+   `tenantId`; unknown tenant path).
+
+cross_ref: [RETRO-221, FOLLOW-641, FOLLOW-624, ESC-039, RETRO-205]
+
+## FOLLOW-667 — Un-stale the three capability claims PR #626 falsified (`white_label` "has no consumer yet" is now wrong in the operator runbook)
+
+source_retro: RETRO-221 §4d DG-1/DG-2 source_ticket: FOLLOW-651 (PR #626) recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 1 depends_on: []
+promoted_to_queue: false
+
+**Gap.** PR #626 changed no doc. Three live sentences are now false:
+
+1. `docs/runbooks/BRAND_PROVISIONING.md:221` (Step 3 — Brand config): "`white_label` is **parsed but
+   has no consumer yet**". **P1 blast radius** — this is the runbook an operator follows to stand up
+   the 3 incoming white-label brands (go-live 2–4 weeks). A reader who believes the flag is inert
+   will reasonably skip it, and that brand ships with "Powered by Estalara" rendered by default in
+   the quiz card AND the opt-out toggle.
+2. `docs/INTERFACES.md:99-100`: the slice list marks only `brand` and `quiz_definition` as SHIPPED;
+   `quiz_placement` (FOLLOW-640) and `opt_out_widget` (FOLLOW-641) are now shipped and have no
+   per-slice section, unlike both SHIPPED siblings.
+3. `docs/INTERFACES.md:108`: "`white_label` is parsed/exposed but not yet consumed by FOLLOW-623".
+
+**AC:**
+
+1. Runbook Step 3 states what `white_label` now DOES (suppresses the default "Powered by Estalara"
+   attribution in the quiz card + opt-out toggle) and that leaving it `false` on an external brand
+   is a visible-branding decision, not a no-op. Sequence with FOLLOW-659's Step 3 edits so the two
+   do not both rewrite the section.
+2. INTERFACES.md marks both slices SHIPPED and adds a per-slice paragraph each (source column → wire
+   key → SDK consumer → default when omitted), matching the `brand` / `quiz_definition` shape; the
+   `white_label` sentence is corrected.
+3. Optional but cheap: a runbook line for the two new staff surfaces (`/admin/tenants/<id>/quiz`
+   placement picker, `/admin/tenants/<id>/optout-widget`) so a brand can be positioned without
+   reading code. Docs-only; no code.
+
+cross_ref: [RETRO-221, RETRO-220, RETRO-216, FOLLOW-651, FOLLOW-659, FOLLOW-656, Rule AH]
+
+## FOLLOW-668 — Complete the opt-out label contract: a per-locale producer (`pl`/`es`) and a `title` override (today an English label silently overwrites Polish copy)
+
+source_retro: RETRO-221 §3 (HALF_WIRE_C, locale axis) + §4a LG-3 source_ticket: FOLLOW-641 (PR #626)
+recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 2 depends_on:
+[] promoted_to_queue: false
+
+**Gap (HALF_WIRE_C — partial, locale sub-axis).** `OptOutWidgetConfigSchema.labels` carries full
+`LabelI18n` bags (`en|pl|es`) and the SDK consumer resolves the ACTIVE language first —
+`bag?.[options.language] ?? bag?.en ?? hardcodedCopy` (`packages/sdk/src/ui/profiling-toggle.ts`,
+`resolveBag`). **The only write path emits `en` only:** `optout-widget-editor.tsx:67-69` hardcodes
+`{ en: … }` for on/off/aria, as its own docstring admits (`:13-15`). So `labels.*.pl` and
+`labels.*.es` are consumer-ready with **zero producer**.
+
+The consequence is a regression, not an inert key: an operator who types an English "On" label
+**replaces the hardcoded Polish and Spanish copy with English text** for `pl`/`es` visitors — and
+`pl` is the live market (app.estalara.com). The PR's own test pins the fallback as intended
+behaviour ("falls back to the English override when the active language has none").
+
+**Second, related gap (§4a LG-3): the VISIBLE label is the one that cannot be rebranded.** The
+toggle renders `"<title>: <on|off word>"` where `copy.title` is hardcoded per-locale and has NO key
+in the schema — so a white-label brand can fully override the _invisible_ `aria` string but is stuck
+with Estalara's visible "Personalizacja"/"Personalization".
+
+**AC:**
+
+1. The staff editor produces every supported locale (`QUIZ_LANGUAGE_VALUES`) for each bag — a tab/
+   row per language, blank = fall through to the SDK's hardcoded copy for THAT language.
+2. Until (1) ships (or if a per-locale UI is rejected), the editor MUST warn inline that an `en`
+   value overrides all locales — no silent cross-locale substitution.
+3. Add an optional `title` key to `OptOutWidgetConfigSchema.labels` with the same i18n-bag +
+   fallback semantics, consumed in `stateText()`; absent → today's hardcoded title (byte-identical,
+   ADR-0019 D4).
+4. Tests: a `pl` visitor with `{on:{pl:…}}` gets the Polish override; with `{on:{en:…}}` only, the
+   test PINS the chosen behaviour explicitly (fall through to hardcoded `pl` copy is the recommended
+   fix, not the current English substitution).
+
+cross_ref: [RETRO-221, FOLLOW-641, ADR-0019 D2/D3, Rule L]
+
+## FOLLOW-669 — The `labels.aria` override is state-blind (and the admin placeholder teaches the defect)
+
+source_retro: RETRO-221 §4a LG-4 source_ticket: FOLLOW-641 (PR #626) recommended_sprint: next
+recommended_agent: sdk-engineer priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue:
+false
+
+**Gap.** In `packages/sdk/src/ui/profiling-toggle.ts`, `ariaLabel(out)` returns the per-brand `aria`
+override **verbatim for both states**, replacing the compound `"<title>: <state>"` label. A screen-
+reader user therefore hears one fixed string whether profiling is ON or OFF. Partially mitigated —
+`aria-checked` still flips on change — but the accessible NAME can actively contradict the state.
+
+The admin field's placeholder is literally `"Personalization: active"`
+(`optout-widget-editor.tsx:251`), i.e. the UI teaches the operator to enter a state-bearing string
+that will then be wrong half the time. The PR's test codifies the current behaviour ("an aria
+override replaces the compound state label"), so the defect is currently pinned as intended.
+
+**AC:**
+
+1. The `aria` override becomes the label's STEM, with the resolved state appended
+   (`"<override>: <on|off word>"`), or supports an explicit `{state}` placeholder — pick one and
+   document it in the schema docstring.
+2. The admin placeholder becomes state-free (e.g. `"Personalization"`) with helper text explaining
+   the state is appended automatically.
+3. Test: flipping the checkbox with an `aria` override set changes `aria-label` AND `aria-checked`
+   (today only the latter changes). Update the existing case rather than leaving two contradictory
+   assertions.
+
+cross_ref: [RETRO-221, FOLLOW-641, FOLLOW-372, §H.9]
+
+## FOLLOW-670 — Staff editors mint default placement into unconfigured tenants (unset→set, one-way, defeats ADR-0019 D4's omit-when-unset)
+
+source_retro: RETRO-221 §4a LG-1 source_ticket: FOLLOW-640/641 (PR #626) recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+**Gap.** Both staff editors always POST/PUT a fully-populated `placement`, so the **first save of
+any unrelated field** converts an unconfigured tenant into a configured one:
+
+- Quiz: `DEFAULTS.placement = DEFAULT_QUIZ_PLACEMENT` (`quiz-config-editor.tsx:61`);
+  `GET /api/quiz/config` omits `placement` when unset (it is absent from `QUIZ_DEFAULT_CONFIG`); the
+  editor spreads `{...DEFAULTS, ...d}` and POSTs the whole object — so changing only the LANGUAGE
+  writes `placement: {bottom-left,24,24}` into `quiz_config`.
+- Opt-out: `toConfig()` (`optout-widget-editor.tsx:70-72`) unconditionally emits `placement`, so
+  saving only a label writes a placement too.
+
+Rendering is unchanged (the defaults ARE the old hardcoded values), so this is not a visual
+regression. What it costs: (a) the `quiz_placement` / `opt_out_widget` slices start appearing on the
+buyer-facing wire for tenants that configured nothing, defeating the omit-when-unset property the
+route and schema tests carefully assert; (b) "has this brand been configured?" becomes unanswerable
+from the DB; (c) the tenant is **pinned to today's defaults forever** if a default ever changes; (d)
+it is irreversible from the UI — neither editor offers "use default". Same mechanism class as
+RETRO-205 §4a LG-1 / FOLLOW-624 (editor DEFAULTS leaking into persisted config), successful-load
+variant.
+
+**AC:**
+
+1. A save that did not touch placement does not persist one — omit the key when the form value is
+   untouched AND the loaded config had none (track "loaded had placement" in editor state), or
+2. add an explicit "Use default position" control that clears the key back to unset, and
+3. a test per editor: load an unconfigured tenant → change one unrelated field → save → the request
+   body carries NO `placement`; and (for 2) clearing writes a body that removes it.
+4. No migration and no backfill of already-minted rows required (values are identical to defaults);
+   state that explicitly in the PR so nobody writes one.
+
+cross_ref: [RETRO-221, RETRO-205, FOLLOW-624, ESC-039, ADR-0019 D4]
+
+## FOLLOW-671 — White-label suppression fails OPEN: any degraded config read re-brands a white-label client "Powered by Estalara"
+
+source_retro: RETRO-221 §4a LG-2 source_ticket: FOLLOW-651 (PR #626) recommended_sprint: next
+recommended_agent: sdk-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-665]
+promoted_to_queue: false
+
+**Gap.** Attribution suppression is computed as `showAttribution: config.brand?.whiteLabel !== true`
+(`packages/sdk/src/index.ts`, both the quiz-card and opt-out-toggle call sites). `config.brand` is
+`undefined` on every degraded path:
+
+- `fetchQuizConfig` returns `null` (network error / non-200) → the SDK warns and keeps snippet
+  defaults;
+- the Rule K.2 `data_source: 'fallback'` response, which by contract carries **no** brand slice;
+- a stored brand blob that fails `BrandConfigSchema` — `parsePublicBrandConfig` drops the WHOLE
+  slice (RETRO-214 §4a LG-1).
+
+In all three, the strict `!== true` evaluates to `true` and **"Powered by Estalara" renders on a
+paying white-label brand's site**. PR #626 tested the two healthy axes (`white_label` true / brand
+absent) and not the degraded one. With 3 external brands 2–4 weeks out this is a
+commercial/contractual exposure, and the failure is silent.
+
+**AC:**
+
+1. Decide + document the fail-safe direction (recommended: a tenant that has EVER resolved
+   `white_label: true` in this browser session suppresses attribution on subsequent degraded reads —
+   e.g. persist the resolved flag alongside the existing session-scoped SDK state — rather than
+   defaulting the whole platform to suppressed).
+2. Whatever is chosen, a degraded fetch must not silently flip a brand's visible attribution; if the
+   CEO's ruling is "attribution on unless proven white-label", record that ruling in the schema
+   docstring so the fail-open is deliberate rather than incidental.
+3. Tests: `fetchQuizConfig → null`, `data_source:'fallback'`, and malformed-brand-blob each assert
+   the chosen behaviour for BOTH widgets.
+
+cross_ref: [RETRO-221, RETRO-214, FOLLOW-651, FOLLOW-656, Rule K.2]
+
+## FOLLOW-672 — Reconcile ADR-0019 with what actually shipped (`enabled` gate omitted, headroom stale, epic complete)
+
+source_retro: RETRO-221 §4d DG-3 source_ticket: FOLLOW-641 (PR #626) recommended_sprint: next
+recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+**Gap.** `docs/adr/ADR-0019-per-tenant-presentation-config.md` still specifies, at `:135`,
+`enabled: z.boolean(), // DEFAULT false → no widget` inside `OptOutWidgetConfigSchema`. PR #626
+deliberately and correctly omitted that gate — it was premised on no toggle existing (corrected by
+FOLLOW-653: `profiling-toggle.ts` has mounted unconditionally since PR #337), and shipping it would
+either leave an inert key (Rule U) or flip the widget to opt-in, a behaviour change the ticket
+forbids. The rationale lives ONLY in a code docstring
+(`packages/shared/src/schemas/presentation-config.ts`, `OptOutWidgetConfigSchema`) and the PR body.
+The ADR already carries an in-place `**CORRECTED 2026-07-25 (FOLLOW-653/PR #622)**` amendment at
+`:31`, so the precedent exists and was not followed.
+
+Two further stale statements: `:300` "Bundle headroom is tight (~2.1 KB)" — measured 0.69 KB
+(41.31/42 KB) after this wave; and with FOLLOW-623/639/640/641 all merged the **epic is complete**
+and unmarked.
+
+**AC:** (1) amend D3's `OptOutWidgetConfigSchema` in place (strike `enabled`, keep the history, cite
+FOLLOW-653 + PR #626) so the ADR matches the shipped contract; (2) update the bundle-headroom line
+to the measured 41.31 KB / 707 bytes and note the gate is now the binding constraint on the next SDK
+feature; (3) mark the four slices SHIPPED / the epic closed with their PR numbers. Docs-only.
+
+cross_ref: [RETRO-221, RETRO-217, ADR-0019, FOLLOW-653, Rule U]
+
+## FOLLOW-673 — Propagate the real SDK bundle number: the CI step still says "<40KB", the Master Design still says 39.86 KB (actual 41.31 KB, 707 bytes left)
+
+source_retro: RETRO-221 §1 / §4d DG-4 source_ticket: FOLLOW-640/641/651 (PR #626)
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 1
+depends_on: [] promoted_to_queue: false
+
+**Gap.** Two stale numbers, both pre-existing and both now further from the truth:
+
+- `.github/workflows/ci.yml:226` names the step **"SDK bundle size gate (<40KB gzip)"** while the
+  script it runs enforces 42 KB (`packages/sdk/scripts/check-bundle-size.js:16`,
+  `MAX_BYTES = 42 * 1024`, ESC-028). Anyone reading a green CI run sees the wrong budget.
+- `docs/MASTER_DESIGN.md` Changelog v4.3 / §Snapshot.1 row B.2 states "IIFE now 39.86 KB gzip —
+  under budget, thin headroom [FOLLOW-469]". Independently re-measured at HEAD: **41.31 KB gzip,
+  0.69 KB (707 bytes) headroom** — the SoT understates consumption by 1.45 KB, on the row a future
+  budget conversation would be based on.
+
+**AC:** (1) rename the CI step to match the enforced budget (or, better, print the measured value in
+the step name/summary so it self-updates); (2) correct §Snapshot.1 B.2 to the measured figure with
+its date and the ESC-028 42 KB gate; (3) note in B.2 that the ADR-0019 wave consumed most of the
+remaining headroom, so the next SDK feature must budget bytes up front (§Y.2 propagation: this row
+only, no section rename). Docs + workflow label; no code.
+
+cross_ref: [RETRO-221, ESC-028, FOLLOW-469, FOLLOW-672]

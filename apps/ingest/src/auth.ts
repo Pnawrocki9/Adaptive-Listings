@@ -17,35 +17,15 @@
  */
 
 import type { KVNamespace } from '@cloudflare/workers-types';
+import type { ApiKeyRecord } from '@estalara/shared';
 
-/** Shape of a `KV_API_KEYS` value. Stored as JSON, looked up by `api_key:<token>` key. */
-export interface ApiKeyRecord {
-  /** Tenant UUID owning this API key. */
-  tenant_id: string;
-  /** Permission scopes (e.g. `read:events`, `write:adaptations`). Master Design J.2. */
-  scopes: string[];
-  /** Hex-encoded HMAC-SHA256 secret. Optional — public client keys may omit it. */
-  hmac_secret?: string;
-  /** Optional human label for ops dashboards. */
-  label?: string;
-  /**
-   * Per-tenant browser-`Origin` allow-list projected onto this api-key record. [FOLLOW-642]
-   *
-   * WRITE PATH (choice per the FOLLOW-642 stub — "provisioning writes the column directly"):
-   * these values are seeded into the KV record by tenant provisioning, alongside the api key
-   * itself, NOT by a control-plane admin UI (that facade was removed by FOLLOW-622/PR #618).
-   * The ingest Worker has no Postgres binding — KV IS the edge-cached tenant-config projection
-   * it reads. Values SHOULD be stored as canonical origins (`scheme://host[:port]`), but the
-   * gate re-normalizes defensively at read (see `origin-gate.ts` `normalizeToOrigin`), so a
-   * full-URL / trailing-path value (the `z.string().url()` bug) still matches correctly.
-   *
-   * SEMANTICS (see `origin-gate.ts` `resolveOriginPolicy`):
-   *   `undefined` / `null` (absent) → inherit the env allow-list (backward compat for
-   *                                   Estalara's own tenant); `[]` → deny ALL cross-origin
-   *                                   browser requests; `[...]` → allow exactly those origins.
-   */
-  allowed_origins?: string[] | null;
-}
+/**
+ * Shape of a `KV_API_KEYS` value — re-exported from `@estalara/shared` so the ingest READ path
+ * and the control-plane provisioning WRITE path
+ * (`apps/control-plane/scripts/project-allowed-origins.mts`) share ONE declaration and cannot
+ * drift (FOLLOW-658). See that module for the `allowed_origins` three-state semantics.
+ */
+export type { ApiKeyRecord };
 
 /** Result of a successful auth check — passed to downstream handlers. */
 export interface AuthenticatedTenant {

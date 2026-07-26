@@ -5025,12 +5025,30 @@ const ALLOWED_ORIGINS = {
 // HTTP 403 (before any Redpanda/ClickHouse side effect) on a mismatch. See
 // `apps/ingest/src/origin-gate.ts` + `handlers/events.ts`.
 //   - Data source: the ingest Worker has no Postgres binding, so it reads its tenant
-//     projection from `KV_API_KEYS` (`ApiKeyRecord.allowed_origins`), seeded at
-//     provisioning from `tenants.allowed_origins`. NOT a hardcoded env list.
-//   - Semantics: absent/null → inherit the env allow-list (backward compat for
-//     Estalara's own first-party tenant); `[]` → deny all cross-origin; `[...]` → allow
-//     exactly those origins. The `z.string().url()` normalization bug is fixed by
-//     re-normalizing both stored values and the request Origin to scheme+host[+port].
+//     projection from `KV_API_KEYS` (`ApiKeyRecord.allowed_origins`). NOT a hardcoded
+//     env list.
+//   - WRITE PATH (corrected 2026-07-26, FOLLOW-658 — this passage previously claimed the
+//     value was "seeded at provisioning", describing automation that did not exist): NO
+//     service writes `KV_API_KEYS`. The KV key is `api_key:<RAW key>` and the raw key is
+//     never stored in Postgres, so the projection cannot be fully automatic. It is an
+//     explicit operator step — `apps/control-plane/scripts/project-allowed-origins.mts`
+//     reads `api_keys.allowed_origins ?? tenants.allowed_origins`, reconciles the key
+//     against Postgres (SHA-256 → owning tenant), and writes the KV record
+//     (`docs/runbooks/BRAND_PROVISIONING.md` §Step 6).
+//   - Semantics: absent/null → inherit the env allow-list (Estalara's OWN domains);
+//     `[]` → deny all cross-origin; `[...]` → allow exactly those origins. The
+//     `z.string().url()` normalization bug is fixed by re-normalizing both stored values
+//     and the request Origin to scheme+host[+port].
+//   - TWO-STORE TRAP: Postgres `tenants.allowed_origins` is `NOT NULL DEFAULT []` where
+//     `[]` means "not configured" — the OPPOSITE of KV `[]` = deny-all. A mechanical copy
+//     blocks 100% of a brand's browser traffic; the script refuses the ambiguous empty
+//     case instead of guessing.
+//   - FAIL-LOUD (FOLLOW-658): `inherit` is only ever correct for the first-party tenant.
+//     When the Worker's `FIRST_PARTY_TENANT_ID` is set, any OTHER tenant still on
+//     `inherit` proves its KV record was never seeded and is refused 403
+//     `origin_policy_unconfigured` (Sentry level error) instead of silently inheriting
+//     Estalara's allow-list. Unset var = guard off (pre-FOLLOW-658 behavior), so a
+//     forgotten value cannot black-hole first-party traffic.
 //   - Preflight (OPTIONS) carries no api key (browsers strip custom headers), so it
 //     reflects the requested origin and enforcement happens on the actual POST.
 // Wildcard ('*') NEVER allowed — the exact origin is echoed or nothing.

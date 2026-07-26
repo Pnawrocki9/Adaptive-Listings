@@ -44,7 +44,10 @@ first draft — #620 (quiz definitions), #621 (this runbook), #623 (origin enfor
 - [ ] The brand's **name** and a **URL-safe slug** (`^[a-z0-9-]+$`). The client's real domain is
       **not** required yet.
 - [ ] **Before the FIRST external (non-Estalara) brand only:** `FIRST_PARTY_TENANT_ID` set in the
-      control-plane env — see §Step 0 below. This is a one-time platform flip, not a per-brand step.
+      control-plane env **and** as an ingest Worker secret — see §Step 0 below. This is a one-time
+      platform flip, not a per-brand step.
+- [ ] **`CLOUDFLARE_API_TOKEN`** (Doppler `prd`) — needed only by §Step 6's projection script, to
+      write the brand's api-key KV record. Not needed for §Steps 0-5, 7.
 
 ---
 
@@ -70,7 +73,16 @@ cannot degrade silently — until it ships, **this checklist item is the only de
 ```bash
 doppler secrets set FIRST_PARTY_TENANT_ID=<estalara-tenant-uuid> --config prd
 # Vercel envs are separate from Doppler — set it there too (see project_wave0 trap notes).
+
+# SAME value is now also read by the INGEST WORKER (FOLLOW-658) — set it there too:
+cd apps/ingest && pnpm exec wrangler secret put FIRST_PARTY_TENANT_ID --env production
 ```
+
+**Second consumer (FOLLOW-658):** the ingest Worker uses the same UUID to enable the origin-gate
+provisioning guard. With it set, any tenant OTHER than this one whose api-key KV record has no
+`allowed_origins` is refused `403 origin_policy_unconfigured` instead of silently inheriting
+Estalara's own origin list (§Step 6). With it unset, the guard is simply off — a forgotten value can
+never black-hole first-party traffic, it only leaves the old silent behavior in place.
 
 Verify: `GET /api/v1/consent/platform-registration` for an external tenant must NOT emit the
 Estalara legal identity (see §Step 3a).
@@ -326,17 +338,57 @@ ingests nothing.
 > copy of an unset column flips the brand to deny-all and blocks all its browser traffic.** Never
 > project the PG column mechanically; write the KV field deliberately.
 
-**Provisioning action for a new external brand:** seed `allowed_origins` on the brand's KV api-key
-record with the brand's real origin(s) once the domain is known.
+**Provisioning action for a new external brand (UPDATED — FOLLOW-658):** run the projection script
+once the domain is known. It is the only in-repo writer of `KV_API_KEYS`.
 
-> **FAIL-SILENT HAZARD (FOLLOW-658):** **no in-repo code writes this KV field** — a repo-wide grep
-> finds zero writes to `KV_API_KEYS`; `schema/activate` writes only the Postgres `api_keys` table.
-> The whole record is operator-seeded out-of-band. So until an operator seeds it, an external
-> brand's key **silently inherits the env list** — i.e. no per-brand lock-down at all, with no error
-> anywhere. Nothing in the code guarantees this step ran. (The doc comments in
-> `packages/db/src/schema/tenants.ts` / MASTER_DESIGN §V.3.4 claiming the value is "projected onto
-> the KV record at provisioning" **overstate reality** — FOLLOW-658 tracks both the projection and
-> the correction.)
+```bash
+# DRY RUN first — writes nothing to either store, prints exactly what it would do:
+DATABASE_URL_ADMIN=<service-role url> pnpm exec tsx \
+  apps/control-plane/scripts/project-allowed-origins.mts \
+  --tenant-id <tenant-uuid> \
+  --api-key <raw est_pub_… key captured in §Step 2> \
+  --namespace-id 523aafacf2d54201a33631d62ba801e3 \
+  --origins https://listings.clientx.com
+
+# Same command + --apply to write for real (needs CLOUDFLARE_API_TOKEN in the environment —
+# docs/runbooks/cloudflare.md). It then does BOTH writes, in this order:
+#   1. tenants.allowed_origins  ← --origins   (only when the column is still the [] default)
+#   2. the api_key:<raw key> KV record        (read-modify-write, other fields preserved)
+```
+
+`--origins` is how the Postgres column gets set at all: there is **no HTTP writer** for
+`tenants.allowed_origins` (the staff settings control was removed as an unenforced facade by
+FOLLOW-622 / PR #618, and re-adding one is a product decision, not this script's). Omit `--origins`
+on a re-run and the script simply projects whatever Postgres already holds. Supplying `--origins`
+that **differs** from a configured column is refused, not applied.
+
+What the script guarantees, and why you should not hand-write the JSON instead:
+
+- **Reconciles the two stores before writing.** SHA-256 of the raw key must match a live (non-
+  revoked, non-expired) `api_keys` row **owned by the tenant you named**; otherwise it refuses. A
+  typo cannot seed a KV record for the wrong brand.
+- **Refuses the `[]` trap.** Postgres `[]` means "not configured"; KV `[]` means **deny-all**. The
+  script never projects the empty default — it stops and makes you state the intent
+  (`--on-empty=deny-all` for a deliberate lock-down, `--on-empty=inherit-env` for the first-party
+  tenant only).
+- **Read-modify-write.** An existing record's `hmac_secret` and every other field survive verbatim.
+  If the record does not exist yet it is created from Postgres — but only for a `public` key (a
+  `secret` key needs an `hmac_secret` that Postgres does not store; seed that one by hand).
+- **Refuses malformed origins** rather than silently dropping them the way the read path does.
+
+> **FAIL-LOUD (FOLLOW-658, replaces the previous fail-silent hazard):** if you skip this step, an
+> external brand's key resolves to the `inherit` policy — which is **Estalara's own** origin list.
+> With the ingest Worker's `FIRST_PARTY_TENANT_ID` set (§Step 0), that now returns **403
+> `origin_policy_unconfigured`** with a Sentry `error`, instead of silently inheriting. With the var
+> unset the old behavior remains: the brand's own domain is rejected as `forbidden_origin` while its
+> key still works from `app.estalara.com` — confusing and mis-scoped. **Set the var (§Step 0) and
+> run this step.**
+
+> **GAP (open, not a blocker):** there is still no admin UI / HTTP writer for
+> `tenants.allowed_origins` (§Step 3's `/api/config` writes only `brand_config`). The script's
+> `--origins` is a provisioning-time service-role write and is therefore **not** in
+> `staff_audit_log`, unlike the ADR-0018 staff routes. Restoring an audited HTTP writer is a product
+> decision (it reverses part of FOLLOW-622 Option B) — out of FOLLOW-658's scope.
 
 Origins must be **scheme+host+port, no path** (e.g. `https://listings.clientx.com`). Include every
 origin the SDK actually posts from — apex vs `www`, and any staging host used during §Part C.
@@ -416,11 +468,16 @@ document — the local dry-run below (§Dry-run log) is the closest verification
    check assuming Step 6 "probably" ran.
 
    **Then prove the negative — enforcement is per-brand, not inherited.** [OPERATOR-GATED] A 2xx
-   above proves traffic flows; it does **not** prove the brand is locked down, because an unseeded
-   KV record inherits the env list and lets the key work from anywhere (FOLLOW-658). Replay the same
+   above proves traffic flows; it does **not** prove the brand is locked down. Replay the same
    `POST /v1/events` with the brand's api key and an `Origin` header of some other domain — expect
-   **403 `forbidden_origin`**. A 2xx here means `allowed_origins` was never seeded (§Step 6) and the
-   brand's key would work from any site that stole it.
+   **403 `forbidden_origin`**. A 2xx here means the brand's key would work from any site that stole
+   it.
+
+   **Reading the failure modes (FOLLOW-658):** if the FIRST call returns **403
+   `origin_policy_unconfigured`**, §Step 6 never ran for this key — the KV record has no
+   `allowed_origins` and the guard is refusing to let it inherit Estalara's list. If it returns 403
+   `forbidden_origin` from the brand's OWN domain, the seeded list does not contain that origin
+   (check apex vs `www`). Both are loud; neither should be retried, they are provisioning defects.
 
 4. **Events land in ClickHouse under the right `tenant_id`.** [OPERATOR-GATED] Query
    `SELECT count() FROM intent_events WHERE tenant_id = '<id>' AND event_time > now() - INTERVAL 1 HOUR`
@@ -552,19 +609,21 @@ for real against staging/prod before the first external brand goes live.
 The original list is kept with its resolution, so a reader can tell what actually closed from what
 merely moved.
 
-| #   | Original gap                                                                 | Status now                                                                                             |
-| --- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1   | No staff port for `POST /api/detect` / `POST /api/schema/activate` (§Step 2) | ✅ **CLOSED** — FOLLOW-657 Leg 1. Staff `?tenant_id=`, rank ≥ ops, atomic audit.                       |
-| 2   | No staff-override port for `quiz_enabled` (§Step 4)                          | ✅ **CLOSED** — FOLLOW-657 Leg 1 (`PATCH /api/tenants/:id`, tenant from `:id`).                        |
-| 3   | No admin UI to create a `tenants` row (§Step 1)                              | 🟡 **OPEN, low priority** — `curl` works.                                                              |
-| 4   | FOLLOW-642 ingest per-tenant origin enforcement not merged                   | ✅ **CLOSED for the read/enforce path** — PR #623. ⚠️ **write path still open: FOLLOW-658** (§Step 6). |
-| 5   | FOLLOW-639 quiz definition editor not shipped                                | ✅ **CLOSED** — PR #620; §Step 5 rewritten.                                                            |
+| #   | Original gap                                                                 | Status now                                                                                                        |
+| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | No staff port for `POST /api/detect` / `POST /api/schema/activate` (§Step 2) | ✅ **CLOSED** — FOLLOW-657 Leg 1. Staff `?tenant_id=`, rank ≥ ops, atomic audit.                                  |
+| 2   | No staff-override port for `quiz_enabled` (§Step 4)                          | ✅ **CLOSED** — FOLLOW-657 Leg 1 (`PATCH /api/tenants/:id`, tenant from `:id`).                                   |
+| 3   | No admin UI to create a `tenants` row (§Step 1)                              | 🟡 **OPEN, low priority** — `curl` works.                                                                         |
+| 4   | FOLLOW-642 ingest per-tenant origin enforcement not merged                   | ✅ **CLOSED** — read/enforce path PR #623; write path (projection script + fail-loud guard) FOLLOW-658 (§Step 6). |
+| 5   | FOLLOW-639 quiz definition editor not shipped                                | ✅ **CLOSED** — PR #620; §Step 5 rewritten.                                                                       |
 
 **Open items that now gate an external go-live (all fail SILENTLY — none of them errors):**
 
-1. **FOLLOW-658** — nothing writes `allowed_origins` into the KV api-key record, so origin
-   enforcement inherits the env list for an external brand until an operator seeds it by hand (§Step
-   6). Also: PG `[]` = inherit vs KV `[]` = deny-all, so a naive projection blocks all traffic.
+1. ~~**FOLLOW-658**~~ — **CLOSED 2026-07-26.** A projection script now writes the KV field (§Step 6)
+   and the ingest guard refuses a non-first-party tenant that is still on `inherit` with 403
+   `origin_policy_unconfigured` (gated on §Step 0's `FIRST_PARTY_TENANT_ID`, which the ingest Worker
+   now also reads). The PG `[]` = inherit vs KV `[]` = deny-all mismatch is handled by refusing the
+   ambiguous empty case rather than projecting it. Still operator-run, by design — see §Step 6.
 2. **FOLLOW-659** — nothing writes `brand_config.brand_name` / `legal_entity`, so DSR + consent name
    **Estalara** for an external brand until an operator seeds them (§Step 3a).
 3. **FOLLOW-660** — `FIRST_PARTY_TENANT_ID` unset treats every tenant as first-party and can default

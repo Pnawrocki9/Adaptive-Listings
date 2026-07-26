@@ -32,5 +32,11 @@ export type {
 
 export * from './domains.js';
 
+/**
+ * Canonical `KV_API_KEYS` record shape — shared by the ingest read path and the control-plane
+ * provisioning writer (FOLLOW-658). `export type` keeps it fully erased at runtime.
+ */
+export type { ApiKeyRecord } from './api-key-record.js';
+
 /** Current shared package version string. */
 export const SHARED_VERSION = '0.0.0' as const;

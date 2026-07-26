@@ -77,6 +77,55 @@ and server.
 
 ---
 
+### `forbidden_origin` — HTTP 403 (FOLLOW-642)
+
+**When it occurs:**
+
+- The request carries a browser `Origin` header that is not permitted by the tenant's resolved
+  origin policy (`apps/ingest/src/origin-gate.ts`). Enforced on `POST /v1/events` **before** any
+  Redpanda/ClickHouse side effect. Requests with no `Origin` (server-side callers) skip the gate.
+
+**Details fields (when present):**
+
+| Field    | Type   | Description                   |
+| -------- | ------ | ----------------------------- |
+| `origin` | string | The rejected request `Origin` |
+
+**Client action:**
+
+Add the origin to the tenant's api-key KV record (`ApiKeyRecord.allowed_origins`) —
+[BRAND_PROVISIONING §Step 6](./BRAND_PROVISIONING.md). If the origin is genuinely not yours, this is
+the gate doing its job: a stolen api key used from another site.
+
+---
+
+### `origin_policy_unconfigured` — HTTP 403 (FOLLOW-658)
+
+**When it occurs:**
+
+- The tenant resolves to the `inherit` origin policy (its KV api-key record carries **no**
+  `allowed_origins`) **and** it is not the tenant named by the Worker's `FIRST_PARTY_TENANT_ID`.
+  `inherit` falls back to Estalara's _own_ env allow-list, so for any other brand it means the
+  provisioning step that seeds the KV field never ran.
+- Never fires when `FIRST_PARTY_TENANT_ID` is unset (guard disabled — pre-FOLLOW-658 behavior), nor
+  for a tenant with an explicit list or an explicit `[]` (deny-all).
+
+**Details fields (when present):**
+
+| Field    | Type   | Description          |
+| -------- | ------ | -------------------- |
+| `origin` | string | The request `Origin` |
+
+**Client action (operator, not the SDK):**
+
+Seed the brand's api-key KV record —
+`pnpm exec tsx apps/control-plane/scripts/project-allowed-origins.mts --tenant-id … --api-key … --apply`
+— see [BRAND_PROVISIONING §Step 6](./BRAND_PROVISIONING.md). This code is a **provisioning defect,
+not a client error**: retrying will not help. It is logged at Sentry level `error`
+(`origin_policy_unconfigured`), unlike `forbidden_origin` which is a `warning`.
+
+---
+
 ### `payload_too_large` — HTTP 413
 
 **When it occurs:**

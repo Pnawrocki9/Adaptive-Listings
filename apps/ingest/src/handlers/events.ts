@@ -24,7 +24,12 @@ import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
 import { authenticateRequest } from '../auth.js';
-import { allowedOriginsForEnv, isOriginAllowed, resolveOriginPolicy } from '../origin-gate.js';
+import {
+  allowedOriginsForEnv,
+  isOriginAllowed,
+  isUnprovisionedExternalTenant,
+  resolveOriginPolicy,
+} from '../origin-gate.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
 import { pushToClickHouse } from '../clickhouse-producer.js';
 import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
@@ -151,6 +156,42 @@ events.post('/', async (c) => {
       auth.allowed_origins,
       allowedOriginsForEnv(c.env.ENVIRONMENT),
     );
+    // 2c. Provisioning guard [FOLLOW-658]. `inherit` means "use Estalara's OWN env allow-list" —
+    // correct for exactly one tenant. For anyone else it proves the KV api-key record was never
+    // seeded with `allowed_origins` (no in-repo code writes `KV_API_KEYS`; it is an explicit
+    // operator step, `docs/runbooks/BRAND_PROVISIONING.md` §Step 6). That state is not a benign
+    // default: the brand's own domain gets a generic 403 while its api key still works from
+    // `app.estalara.com` / `admin.estalara.com`. Refuse with a self-describing code + a Sentry
+    // ERROR so the missed step is loud during onboarding verification instead of silent.
+    // Still zero I/O — `FIRST_PARTY_TENANT_ID` is a Worker var; blank = guard disabled (see
+    // `isUnprovisionedExternalTenant`), so a forgotten value cannot cost first-party traffic.
+    if (isUnprovisionedExternalTenant(policy.mode, tenantId, c.env.FIRST_PARTY_TENANT_ID)) {
+      c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
+      span?.setAttributes({
+        'estalara.tenant_id': tenantId,
+        'estalara.origin_denied': true,
+        'estalara.origin_policy': 'unprovisioned',
+      });
+      logger.error(
+        { tenant_id: tenantId, origin: requestOrigin, policy_mode: policy.mode },
+        'origin_policy_unconfigured',
+      );
+      Sentry.captureMessage('origin_policy_unconfigured', {
+        level: 'error',
+        tags: { area: 'events', gate: 'origin', policy_mode: 'unprovisioned' },
+        extra: { tenant_id: tenantId, origin: requestOrigin },
+      });
+      return c.json(
+        errorBody(
+          requestId,
+          'origin_policy_unconfigured',
+          'This tenant has no provisioned allowed_origins — seed the api-key KV record ' +
+            '(BRAND_PROVISIONING runbook, Step 6) before sending browser traffic',
+          { origin: requestOrigin },
+        ),
+        403,
+      );
+    }
     if (!isOriginAllowed(requestOrigin, policy.allowList)) {
       c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
       span?.setAttributes({

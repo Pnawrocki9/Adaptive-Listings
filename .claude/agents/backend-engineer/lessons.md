@@ -2122,6 +2122,33 @@ would generalize this beyond just `adapt-get-auth`.
   one-line "server-side only, no SDK consumer" justification — the brand_name vs presentation-config
   split is exactly the kind of decision that silently drifts.
 
+---
+
+- **2026-07-26 / FOLLOW-658** · `allowed_origins` producer coverage. Built the missing WRITE side of
+  FOLLOW-642's origin gate: an operator provisioning script
+  (`apps/control-plane/scripts/project-allowed-origins.mts`) that reconciles SHA-256(raw key) →
+  owning tenant in Postgres, translates PG→KV semantics, and read-modify-writes the api-key KV
+  record; plus a fail-loud ingest guard (`isUnprovisionedExternalTenant` → 403
+  `origin_policy_unconfigured` + Sentry `error`); plus the Rule M doc corrections in `tenants.ts`,
+  `api_keys.ts` and MASTER*DESIGN §V.3.4. · **Wiring/auth/fail-loud risks I weighed**: (a) chose an
+  explicit operator step over an automatic projection because the KV key IS the raw api key, which
+  Postgres never stores — a server literally cannot address the record; the alternative (a CF KV
+  write token in Vercel) is a security-posture change, not a bug fix; (b) the PG `[]`=inherit vs KV
+  `[]`=deny-all mismatch is resolved by REFUSING the ambiguous empty case — emitting `[]` would have
+  been a one-line total outage for a brand; (c) gated the new guard on `FIRST_PARTY_TENANT_ID` and
+  made UNSET = guard off, so the FOLLOW-660 defect class (forgotten env) degrades to prior behavior
+  instead of black-holing the single live tenant; (d) moved `ApiKeyRecord` to `packages/shared` so
+  producer and consumer share one declaration instead of the write side being hand-authored JSON;
+  (e) verified the actual failure mode before designing — an unseeded EXTERNAL brand does not "have
+  no lock-down", it inherits \_Estalara's* origins, so its own domain 403s while its key still works
+  from `app.estalara.com`; the retro's framing was directionally right but imprecise, and the fix
+  differs. · **A guardrail I'd add**: a CI check that any KV/Redis/cache record shape read at
+  runtime has at least one in-repo writer OR a runbook step referenced by file path from the type's
+  docstring — the "live consumer, no producer" shape has now produced three sibling tickets
+  (658/659/660).
+
+---
+
 - **2026-07-26 / FOLLOW-659** · **What I built**: producer + fail-loud coverage for
   `brand_config.brand_name`/`legal_entity` — `PATCH /api/config` now accepts/merges/persists both
   keys (plus a **Legal Identity** fieldset on the staff settings page), consent-text GET returns 409

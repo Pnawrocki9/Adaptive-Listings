@@ -150,6 +150,42 @@ export function resolveOriginPolicy(
 }
 
 /**
+ * True when a tenant is running on the `inherit` policy but is NOT the configured first-party
+ * tenant — i.e. its KV api-key record was never seeded with `allowed_origins`. [FOLLOW-658]
+ *
+ * WHY THIS IS A DEFECT, NOT A DEFAULT: `inherit` resolves to {@link PROD_ALLOWED_ORIGINS}, which
+ * is *Estalara's own* domain list. It is the correct backward-compatible default for exactly one
+ * tenant — the first-party one, whose KV records predate FOLLOW-642. For any external brand it
+ * means the provisioning step that writes the KV field (an explicit operator step — NO in-repo
+ * code writes `KV_API_KEYS`; see `docs/runbooks/BRAND_PROVISIONING.md` §Step 6) never ran, and the
+ * brand ends up with the *inverse* of the intended policy: its own domain is rejected while its
+ * api key still works from `app.estalara.com` / `admin.estalara.com`.
+ *
+ * FAIL-LOUD, NOT FAIL-SILENT: the caller turns a `true` here into an explicit
+ * `origin_policy_unconfigured` 403 + a Sentry error, so a missed provisioning step surfaces as a
+ * self-describing failure during onboarding verification instead of a silent mis-scoped key.
+ *
+ * NO TRAFFIC RISK FOR THE FIRST PARTY: when `firstPartyTenantId` is unset/blank the Worker cannot
+ * know which tenant is first-party, so this returns `false` for everyone and behavior is exactly
+ * what it was before FOLLOW-658. A forgotten env therefore degrades to the previous state; it can
+ * never black-hole Estalara's live traffic. (Configuring it is §Step 0 of the runbook.)
+ *
+ * @param mode - the resolved policy mode from {@link resolveOriginPolicy}.
+ * @param tenantId - the authenticated tenant id from the KV api-key record.
+ * @param firstPartyTenantId - `env.FIRST_PARTY_TENANT_ID` (may be undefined/blank).
+ */
+export function isUnprovisionedExternalTenant(
+  mode: OriginPolicyMode,
+  tenantId: string,
+  firstPartyTenantId: string | null | undefined,
+): boolean {
+  if (mode !== 'inherit') return false;
+  const firstParty = firstPartyTenantId?.trim();
+  if (!firstParty) return false;
+  return tenantId.trim() !== firstParty;
+}
+
+/**
  * True when the browser `Origin` header is permitted by the resolved allow-list.
  *
  * Normalizes the request origin the same way as stored entries, so a comparison never fails on

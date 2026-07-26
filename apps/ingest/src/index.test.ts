@@ -54,6 +54,9 @@ interface MakeEnvOptions {
   /** Provide a mock EVENTS_RETRY_QUEUE binding (FOLLOW-482). Absent by default — matches an
    *  environment that hasn't provisioned the queue (the "not configured" guard in events.ts). */
   eventsRetryQueue?: Env['EVENTS_RETRY_QUEUE'];
+  /** Set FIRST_PARTY_TENANT_ID (FOLLOW-658). Absent by default — the un-provisioned-tenant
+   *  guard is then disabled, which is exactly today's production configuration. */
+  firstPartyTenantId?: string;
 }
 
 interface RateCheckResponse {
@@ -118,6 +121,9 @@ function makeEnv(options: MakeEnvOptions = {}): Env {
     RATE_LIMITER: mockRateLimiter(options.rateLimit ?? 'allow'),
     ...(options.eventsRetryQueue !== undefined
       ? { EVENTS_RETRY_QUEUE: options.eventsRetryQueue }
+      : {}),
+    ...(options.firstPartyTenantId !== undefined
+      ? { FIRST_PARTY_TENANT_ID: options.firstPartyTenantId }
       : {}),
   };
 }
@@ -1586,6 +1592,156 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
     } finally {
       stub.restore();
     }
+  });
+
+  // ─── FOLLOW-658 — un-provisioned tenant guard ──────────────────────────────
+  //
+  // `inherit` uses ESTALARA's own env allow-list, so it is only correct for the first-party
+  // tenant. For any other tenant it proves the KV record was never seeded (no in-repo writer
+  // existed before FOLLOW-658) — a provisioning defect that must fail LOUD, not inherit silently.
+  describe('FOLLOW-658 un-provisioned tenant guard', () => {
+    // VALID_KEY_RECORD carries tenant-uuid-1 and NO allowed_origins → inherit.
+    const FIRST_PARTY = 'tenant-uuid-1';
+
+    it('refuses an external tenant on inherit with 403 origin_policy_unconfigured', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+          environment: 'production',
+          firstPartyTenantId: 'some-other-first-party-tenant',
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://app.estalara.com',
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'k1',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(403);
+        const body = await readJson<{ error: { code: string } }>(res);
+        // Closes the actual hole: an un-seeded external key otherwise keeps working from
+        // Estalara's OWN domains while the brand's real domain is rejected.
+        expect(body.error.code).toBe('origin_policy_unconfigured');
+        expect(res.headers.get('access-control-allow-origin')).toBeNull();
+        expect(stub.callCount()).toBe(0);
+      } finally {
+        stub.restore();
+      }
+    });
+
+    it('does NOT refuse the configured first-party tenant (no traffic regression)', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+          environment: 'production',
+          firstPartyTenantId: FIRST_PARTY,
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://app.estalara.com',
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'k1',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get('access-control-allow-origin')).toBe('https://app.estalara.com');
+      } finally {
+        stub.restore();
+      }
+    });
+
+    it('does NOT refuse a tenant that HAS an explicit allow-list', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:kx': EXPLICIT_KEY_RECORD },
+          environment: 'production',
+          firstPartyTenantId: FIRST_PARTY,
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://listings.clientx.com',
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'kx',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+      } finally {
+        stub.restore();
+      }
+    });
+
+    it('stays disabled when FIRST_PARTY_TENANT_ID is unset (today’s prod config)', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+          environment: 'production',
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://app.estalara.com',
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'k1',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+      } finally {
+        stub.restore();
+      }
+    });
+
+    it('server-side caller with no Origin header is unaffected', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+          environment: 'production',
+          firstPartyTenantId: 'some-other-first-party-tenant',
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'k1',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+      } finally {
+        stub.restore();
+      }
+    });
   });
 
   it('inherit: a record without allowed_origins accepts the env-list origin in production', async () => {

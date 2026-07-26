@@ -18680,6 +18680,21 @@ either build a PG→KV projection at provisioning OR add an explicit, documented
 `docs/MASTER_DESIGN.md` §V.3.4 ("seeded at provisioning") to match reality — the read/enforce path
 is live, the write/projection path is not implemented (Rule M false-automation-claim axis).
 
+**STATUS 2026-07-26: IN REVIEW — branch `backend-engineer/FOLLOW-658-allowed-origins-producer`.**
+AC1 → `apps/control-plane/scripts/project-allowed-origins.mts`: an explicit, single-command
+provisioning step (NOT an automatic projection — the KV key is `api_key:<RAW key>` and the raw key
+is never stored in Postgres, so no server can address the record; and giving Vercel a CF token with
+KV write scope is a security-posture change, not a bug fix). It reconciles SHA-256(raw key) → owning
+tenant before writing, read-modify-writes the KV record so `hmac_secret` survives, and `--origins`
+establishes `tenants.allowed_origins` (still no HTTP writer for that column — GAP noted in the
+runbook, out of scope per FOLLOW-622 Option B). AC2 → `isUnprovisionedExternalTenant` in
+`apps/ingest/src/origin-gate.ts` + a 403 `origin_policy_unconfigured` (Sentry `error`) in
+`handlers/events.ts`, gated on a new ingest `FIRST_PARTY_TENANT_ID` (unset = guard off, so a
+forgotten env can never black-hole first-party traffic). AC3 → `tenants.ts`, `api_keys.ts`,
+MASTER_DESIGN §V.3.4 and `auth.ts` corrected; the KV record type moved to
+`packages/shared/src/api-key-record.ts` so the producer and the consumer share one declaration.
+`[]`-trap: the projection REFUSES the ambiguous empty case instead of emitting KV `[]` (deny-all).
+
 ## FOLLOW-659 — `brand_config.brand_name`/`legal_entity` producer-coverage: per-brand identity silently falls back to "Estalara" until operator seeds JSONB
 
 **STATUS 2026-07-26 (session 60): 🔵 IN REVIEW — PR #629 open.** All three ACs met. **AC1

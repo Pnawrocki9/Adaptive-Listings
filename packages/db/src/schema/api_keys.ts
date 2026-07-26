@@ -36,9 +36,14 @@ export const apiKeys = pgTable(
      * The per-tenant browser-`Origin` allow-list is ENFORCED as of FOLLOW-642 (2026-07-25).
      * Enforcement lives in the ingest Worker, which reads its tenant projection from
      * `KV_API_KEYS` (`ApiKeyRecord.allowed_origins`), NOT directly from this Postgres column
-     * — ingest has no Postgres binding. At provisioning, a key's effective origins are
-     * projected onto the KV record; `null` here means "inherit the tenant-level list", matching
-     * the KV gate's `null`=inherit semantics (`apps/ingest/src/origin-gate.ts`).
+     * — ingest has no Postgres binding. `null` here means "inherit the tenant-level list"
+     * (`tenants.allowed_origins`), which is the precedence the projection script applies.
+     *
+     * The projection onto KV is NOT automatic (corrected by FOLLOW-658 — the earlier wording
+     * asserted it happened "at provisioning" and no such code existed). It is an explicit
+     * operator step: `apps/control-plane/scripts/project-allowed-origins.mts`, documented in
+     * `docs/runbooks/BRAND_PROVISIONING.md` §Step 6. Nothing in this repo writes `KV_API_KEYS`
+     * at runtime.
      */
     allowedOrigins: text('allowed_origins').array(),
 

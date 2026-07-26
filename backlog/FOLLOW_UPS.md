@@ -19143,3 +19143,140 @@ remaining headroom, so the next SDK feature must budget bytes up front (§Y.2 pr
 only, no section rename). Docs + workflow label; no code.
 
 cross_ref: [RETRO-221, ESC-028, FOLLOW-469, FOLLOW-672]
+
+## FOLLOW-674 — The `FIRST_PARTY_TENANT_ID` tenant-count guard is soft-delete-blind, mis-reports its own fail-closed path, and has no module-level test
+
+source_retro: RETRO-222 (PR #627, FOLLOW-660) source_ticket: FOLLOW-660 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+Three defects in the guard PR #627 shipped (all in `apps/control-plane/src/lib/brand-identity.ts`,
+now shared by three compliance surfaces after #629 refactored the body into the module-private
+`isTreatedAsExternalBrand`):
+
+1. **Soft-delete-blind count probe (RETRO-222 §4a LG-1).**
+   `db.select({ id: tenants.id }).from(tenants).limit(2)` (`:227` @HEAD, `:191` @`5e66288`) has no
+   `isNull(tenants.deletedAt)`, while every sibling tenant query in the app does —
+   `lib/session-auth.ts:346` (`tenantExists`), `admin/tenants/data.ts:94,145`,
+   `api/quiz/public-config/route.ts:255`, `api/admin/analytics/rollup/data.ts:131`. One
+   soft-deleted/decommissioned/test row makes `rows.length > 1` true while exactly one tenant is
+   LIVE, so today's single-tenant Estalara registration starts returning 400 on an omitted hash —
+   the inverse of FOLLOW-660's own AC2 ("single-live-tenant flow unchanged"). Latent, not live: no
+   in-repo path writes `tenants.deletedAt` today, so it needs a manual SQL soft-delete or a future
+   delete route. Blast radius is three gates, not one: the consent POST 400, the consent GET 409
+   `brand_identity_not_provisioned`, and the DSR brand alert all consult the same predicate.
+2. **The fail-CLOSED path lies about why it fired (RETRO-222 §4a LG-2).** On a count-read exception
+   the guard returns `true` and step 7b answers
+   `400 "FIRST_PARTY_TENANT_ID is not configured and more than one tenant exists"`
+   (`route.ts:380-383`) — but the branch taken was "the count could not be read". The operator is
+   told a false state during a DB incident and pointed at an env var that will not fix it; worse, a
+   server-side read failure is reported as a 4xx, so it is invisible to 5xx alerting and, per
+   `backlog/HANDOFFS.md:2865` ("do NOT proceed with account creation" on any non-2xx≠409), a
+   transient `tenants`-read fault blocks an investor registration. Fail-closed is the correct
+   behavior; the status code and the message are not.
+3. **No module-level test for `requiresExplicitConsentHash` (RETRO-222 §4c TG-1).**
+   `brand-identity.test.ts` covers `resolveBrandIdentity` (:20), `isUnprovisionedExternalBrand`
+   (:72, 6 cases) and `isFirstPartyTenant` (:153) — nothing for the export #627 added. Its logic is
+   pinned only through the route suite's hand-rolled mock and, at HEAD, only via the _sibling_ gate.
+   Rule S tier inversion: the later sibling got the better tests.
+
+**AC:** (1) add `isNull(tenants.deletedAt)` to the probe (use `and(...)` consistent with
+`session-auth.ts:346`) — with a red-first test that fails on today's code; (2) distinguish the
+count-read-error branch from the >1-tenant branch: its own message that says the count could not be
+read, and a retryable 5xx (or an explicit CEO-ratified reason to keep 4xx recorded in the code
+comment) — plus a test asserting the two branches produce different statuses/messages; (3) add a
+`describe('requiresExplicitConsentHash')` to `brand-identity.test.ts` covering env-SET (match /
+mismatch, no query), env-UNSET (1 tenant / 2 tenants / soft-deleted second row), and the read-error
+path; (4) do NOT change the guard's decision table — the "> 1 ⇒ require for every tenant" semantics
+are deliberate and correct.
+
+cross_ref: [RETRO-222, RETRO-219, FOLLOW-660, FOLLOW-659, PR #627, PR #629]
+
+## FOLLOW-675 — The out-of-repo caller's contract still says `consent_text_hash` is optional; the route docblock never lists the 400s it now returns
+
+source_retro: RETRO-222 (PR #627, FOLLOW-660) source_ticket: FOLLOW-660 recommended_sprint: next
+recommended_agent: backend-engineer + compliance-engineer (joint) priority: P1 estimated_hours: 2
+depends_on: [] promoted_to_queue: false
+
+`backlog/HANDOFFS.md:2842` is the integration contract handed to Rafał's `app.estalara.com` backend
+— the ONLY caller of `POST /api/v1/consent/platform-registration`. It states: _"`consent_text_hash`
+— optional; omit to use the canonical EN §6.1 SHA-256 hash. Provide a custom hash ONLY if you
+display a translated version of the text."_ That was true when written and is now false in three
+states: (a) a non-first-party tenant with `FIRST_PARTY_TENANT_ID` SET (PR #624), (b) env UNSET with
+more than one tenant (PR #627), (c) a tenant-count read failure (PR #627, fail-closed). The same
+handoff instructs the caller at `:2865` to **abort investor account creation** on any non-2xx except
+409, so the stale sentence and the new 400 compose into a registration outage the integrating team
+has no warning of — and this repo cannot fix the caller, only the handoff can. Secondly, the route's
+own contract docblock (`route.ts:32-38`) still enumerates only
+`201 / 400 — validation error / 401 / 409 / 500`; neither #624's nor #627's 400 was added by the PR
+that introduced it (RETRO-222 §4d DG-1/DG-2 — the two instances that promoted **Rule AI**).
+
+**AC:** (1) append a dated update block to the FOLLOW-373 handoff section stating the three states
+in which `consent_text_hash` is REQUIRED, with the exact 400 bodies, and the standing recommendation
+that the caller **always** compute and send its own hash (which is also PROPOSED STUB C item (c) in
+`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306`) — do not rewrite the original entry,
+append, so the lineage stays readable; (2) extend the route docblock `Responses:` list with both 400
+reasons and the 409 `brand_identity_not_provisioned` the GET can now return; (3) state explicitly in
+the handoff that a 400 naming `FIRST_PARTY_TENANT_ID` is an Estalara-side configuration fault, not a
+caller bug, and name the operator remedy (runbook §Step 0); (4) compliance-engineer confirms the
+wording is consistent with `PRIVACY_NOTICE_TEMPLATE.md` §6.1 / ROPA Activity 16 before it goes to
+Rafał. Docs/backlog only — no code.
+
+cross_ref: [RETRO-222, RETRO-219, Rule AI, FOLLOW-660, FOLLOW-654, FOLLOW-656, FOLLOW-373]
+
+## FOLLOW-676 — Runbook §Step 0 understates the tenant-count guard's blast radius (says "external registrations"; the gate hits every tenant, Estalara included)
+
+source_retro: RETRO-222 (PR #627, FOLLOW-660) source_ticket: FOLLOW-660 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 1 depends_on: []
+promoted_to_queue: false
+
+`docs/runbooks/BRAND_PROVISIONING.md:76-79` (written by `461e08a`, i.e. AFTER PR #627 merged) tells
+the operator: _"with 2+ tenants and no env, **external** registrations get a 400 until you set it."_
+The merged code applies the gate to **every** tenant including first-party Estalara — the guard's
+own decision table says "YES, for every tenant — first party is unknowable"
+(`brand-identity.ts:178-181`) and the code has no `tenantId` comparison on the unset branch.
+Post-#629 the same predicate also makes `GET /api/v1/consent/platform-registration` return 409
+`brand_identity_not_provisioned` for Estalara itself while `brand_config.brand_name` is unseeded
+(prod today: 0 tenants have it). So the true consequence of creating tenant #2 before Step 0 is that
+the **live Estalara registration flow breaks in both directions** (text fetch and consent write),
+which is a materially different instruction to an operator than "external registrations get a 400".
+Step _ordering_ is already correct and documented; only the consequence sentence and the Step 1
+precondition are missing.
+
+**AC:** (1) correct the §Step 0 backstop paragraph to state that with the env unset and ≥2 tenants
+the requirement applies to EVERY tenant including Estalara, and that the GET refuses too while
+`brand_name` is unseeded; (2) add a one-line precondition to §Step 1 ("Create the `tenants` row"):
+Step 0 MUST be completed before the second tenant row exists, with a pointer to §Step 0; (3) keep
+the existing "a forgotten env can no longer silently attest the wrong consent text" framing — it is
+correct and is the ticket's value; (4) verify each corrected sentence against `main` at the commit
+you write it (Rule AH), and grep the runbook for any other sentence scoped to "external" that the
+guard actually applies platform-wide. Docs only.
+
+cross_ref: [RETRO-222, RETRO-220, Rule AH, Rule AI, FOLLOW-660, FOLLOW-659, FOLLOW-652]
+
+## FOLLOW-677 — `DOPPLER_SECRETS_MATRIX.md` has no control-plane row for `FIRST_PARTY_TENANT_ID` — the var its own ingest row calls "the same value as the control-plane var"
+
+source_retro: RETRO-222 (PR #627, FOLLOW-660) source_ticket: FOLLOW-660 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue:
+false
+
+`docs/ops/DOPPLER_SECRETS_MATRIX.md` is the per-app env source of truth. It carries exactly one
+`FIRST_PARTY_TENANT_ID` row — `:31`, under **ingest** (added for FOLLOW-658) — whose description
+refers to _"the SAME value as the control-plane var"_, while the `## apps/control-plane` table
+(`:53-73`) never lists that var (grep of the whole file returns line 31 only). PR #627 made the
+control-plane variable load-bearing: unset, the consent route falls back to a tenant-count probe and
+begins refusing registrations (400) as soon as a second tenant exists. The operator step exists in
+`apps/control-plane/.env.example:61` and in the provisioning runbook §Step 0, but the one document
+whose job is to enumerate per-app env is the one that omits it — and QUEUE §session-61 records the
+non-obvious trap that **Doppler `prd` and Vercel are not synced**, so it must be set twice.
+
+**AC:** (1) add a `FIRST_PARTY_TENANT_ID | control-plane | Config` row to the
+`## apps/control-plane` table, describing both consumers (`isFirstPartyTenant` no-DB fast path +
+`requiresExplicitConsentHash` tenant-count backstop) and the unset semantics (≤1 tenant = today's
+Estalara path; >1 = every registration must send an explicit `consent_text_hash`); (2) state that it
+must be set in **Doppler `prd` AND Vercel separately**, and that the ingest Worker needs the same
+UUID via `wrangler secret put` (cross-link the existing `:31` row so the two stay reconciled); (3)
+note the deliberate asymmetry — control-plane fails CLOSED when unset, ingest's origin guard is
+simply OFF — so nobody reads one row's semantics onto the other (RETRO-222 §5c). Docs only.
+
+cross_ref: [RETRO-222, RETRO-218, FOLLOW-660, FOLLOW-658, FOLLOW-656]

@@ -34317,3 +34317,354 @@ text; P-2 EDITOR-DEFAULTS-BECOME-CONFIG (prior = RETRO-205/FOLLOW-624 load-failu
 prior; P-3 = existing Rule S. NO CONVENTIONS_PATCH promotion. Widget-placement covers 2 of 6 fixed-position
 SDK widgets — Rule S observation, deliberately NOT stubbed (ADR chartered exactly two). -->
 
+
+## RETRO-222 — FOLLOW-660 (code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open) — 2026-07-26
+
+### 1. Summary of change
+
+- **PR:** #627 (merged 2026-07-26 12:20:43 UTC, commit `5e66288`) —
+  `fix(control-plane): close the FIRST_PARTY_TENANT_ID fail-open (tenant-count guard) [FOLLOW-660]`.
+  Recovered work: a stalled subagent left the diff uncommitted in the main working tree on the
+  correct branch `backend-engineer/FOLLOW-660-first-party-env-guard` (never `main`); the PM ran
+  `docs/AGENT_WORKFLOW.md` §Recovered-work re-verification before committing (§5a audits that path).
+- **Files changed:** 3 (+180 / −3) — 1 lib, 1 route, 1 test file. No new files, no migration.
+- **Modules touched:** [control-plane] only (`lib/brand-identity.ts`,
+  `api/v1/consent/platform-registration/route.ts` + its suite). No SDK, ingest, db, or docs.
+- **Key contracts changed:**
+  - NEW export `requiresExplicitConsentHash(db, tenantId): Promise<boolean>`
+    (`apps/control-plane/src/lib/brand-identity.ts:181` @`5e66288`) — added — breaking: no.
+  - `POST /api/v1/consent/platform-registration` gains a **state-dependent 400** (new step 7b,
+    `route.ts:336-386` @`5e66288`): when `consent_text_hash` is omitted AND `FIRST_PARTY_TENANT_ID`
+    is UNSET AND `count(tenants) > 1` — **behavioral, breaking: conditionally yes** for the
+    out-of-repo caller (`app.estalara.com`), unreachable in today's prod state (env unset, exactly 1
+    tenant — QUEUE §session-61 live check). See §4d DG-1: the caller's contract doc was not updated.
+  - Semantics of the EXISTING env var `FIRST_PARTY_TENANT_ID` extended in control-plane: UNSET no
+    longer means "everyone is first-party" unconditionally, it means "everyone is first-party while
+    ≤1 tenant exists, otherwise nobody is". The ingest Worker's reading of the SAME var was NOT
+    changed (§5c).
+
+### 2. Verification done in PR
+
+- Test files changed: `platform-registration/route.test.ts` (+97/−2). New cases: **5** in a dedicated
+  `FOLLOW-660` describe (env-unset+2 tenants+omitted → 400 **and** `mockInsertValues` never called;
+  env-unset+2 tenants+explicit hash → 201 carrying the caller's hash; env-unset+1 tenant → 201 with
+  `CANONICAL_CONSENT_TEXT_HASH`; env-SET → count query never runs; count-query rejects → 400
+  fail-closed). Three pre-existing `beforeEach` blocks were given a `mockCountLimit` default of one
+  tenant so the live flow stays pinned. Coverage delta: est. up for the route; **zero** for the new
+  export's own module suite (§4c TG-1).
+- CI checks: **independently verified**, not accepted from the PR body — `gh pr checks 627` returns
+  **61 pass + 2 fail**, both fails being the duplicated `Rule I — wired-or-dead check`, i.e. the
+  repo-wide permanently-red baseline (Rule AF / ESC-041). Total 63 = exactly the PM's claim.
+- Re-verified the PM's non-regression proof shape rather than restating it: the Rule I job counts
+  `main` 618 symbols / 192 violations vs PR 619 symbols / 192 violations (+1 symbol = the new
+  export, +0 violations) — consistent with CHECK A finding the export wired.
+
+### 3. Wiring Audit
+
+**CHECK A — clean.** No new files. One new export, wired:
+
+- `requiresExplicitConsentHash` — producer `lib/brand-identity.ts:181`; **non-test importer**
+  `api/v1/consent/platform-registration/route.ts:58` (import) with the live call at `route.ts:338`,
+  both verified **at the merge commit itself** (`git show 5e66288:…` — the cited lines resolve to
+  `export async function requiresExplicitConsentHash(` and
+  `(await requiresExplicitConsentHash(db, body.tenant_id))`). Grep:
+  `grep -rn "requiresExplicitConsentHash" --include=*.ts --include=*.tsx . | grep -v node_modules`
+  → definition, 1 non-test consumer, route tests, docs. Not a type-only file, not a framework
+  entrypoint.
+
+**CHECK B — clean, with two qualified notes** (no new env var, column, topic, migration or SDK signal
+was introduced by this diff):
+
+- **New CONSUMER of an existing env var, with no producer in the live environment.**
+  `FIRST_PARTY_TENANT_ID` gains a second control-plane reader. Its producer is operator env
+  (Doppler `prd` + Vercel, which are not synced), and QUEUE §session-61 records it as **UNSET in
+  prod today**. This is NOT a HALF_WIRE_C: the code's unset branch is a designed, tested path
+  (tenant-count probe), and the env-SET branch is the Rule AA operator-pending axis, not a dead
+  wire. Recorded so "#627 merged" is never read as "the guard is load-bearing in prod" — it becomes
+  load-bearing only at tenant #2 (or when the env is set). The missing canonical-doc row for that
+  operator step is a real gap → §4d DG-4 / FOLLOW-677.
+- **New 400 response contract with no in-repo consumer.** The only consumer of this route is the
+  out-of-repo `app.estalara.com` backend (route docblock `:7-9` @`5e66288`). Adjudicated the same
+  way RETRO-220 §3 adjudicated the `?tenant_id` staff param: when the intended consumer is an
+  operator or an external system and the PR is the contract change, this is a **contract-doc gap,
+  not a HALF_WIRE_P**. The doc, however, was not updated and now states the opposite → §4d DG-1 /
+  FOLLOW-675.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) → FOLLOW-674 — the tenant-count probe is soft-delete-blind, against a repo-wide
+  convention that filters it.** `brand-identity.ts` runs
+  `db.select({ id: tenants.id }).from(tenants).limit(2)` (`:227` @HEAD, `:191` @`5e66288`) with **no
+  `isNull(tenants.deletedAt)`**. The column exists (`packages/db/src/schema/tenants.ts:197`) and
+  **every** other tenant-existence/enumeration query in the app filters it — grep
+  `grep -rn "deletedAt" --include=*.ts apps/control-plane/src | grep -v '\.test\.'`:
+  `lib/session-auth.ts:346` (`tenantExists`, the closest analogue), `admin/tenants/data.ts:94,145`,
+  `api/quiz/public-config/route.ts:255`, `api/admin/analytics/rollup/data.ts:131`. Consequence: a
+  single soft-deleted/decommissioned/test row makes `rows.length > 1` true, so the guard fires while
+  exactly one tenant is *live* — the precise inverse of the PR's own AC ("single-live-tenant flow
+  unchanged"): today's Estalara registration would start returning 400 on an omitted hash. **Honest
+  severity scoping:** no in-repo code path writes `tenants.deletedAt` today (same grep returns only
+  readers + the schema), so the hazard needs a manual/SQL soft-delete or a future delete route — it
+  is latent, not live. P2, not P1. **Fan-out (verified at HEAD):** PR #629 refactored this body into
+  the module-private `isTreatedAsExternalBrand` (`:218-236`) shared by `requiresExplicitConsentHash`
+  **and** `isUnprovisionedExternalBrand`, so the same missing predicate now gates three surfaces —
+  the consent POST 400, the consent GET 409 `brand_identity_not_provisioned` (`route.ts:246`), and
+  the DSR alert. One-line fix, three-surface blast radius.
+- **LG-2 (P2) → FOLLOW-674 — the fail-CLOSED path returns a 4xx whose message asserts a fact that is
+  false on that path.** On a count-read exception the guard returns `true`
+  (`brand-identity.ts:231-235`), and step 7b answers `400` with *"FIRST_PARTY_TENANT_ID is not
+  configured **and more than one tenant exists**"* (`route.ts:380-383` @`5e66288`) — but the branch
+  that reached it is "the tenant count could not be read". Two distinct defects: (i) the operator is
+  told a false state during a DB incident, and is sent to set an env var that will not fix a read
+  failure; (ii) a server-side read failure is reported as a client error, so it is invisible to 5xx
+  alerting and non-retryable by contract — `backlog/HANDOFFS.md:2865` instructs the caller *"If the
+  endpoint returns non-2xx (excluding 409), do NOT proceed with account creation"*, so a transient
+  `tenants`-read failure now blocks an investor registration. **Caveat stated honestly:** a total DB
+  outage would already 500 at the replay-check/insert, so the marginal window is a *partial* failure
+  (statement timeout or a permission/RLS fault scoped to `tenants`). Fail-closed is the right
+  choice; the status code and the message are not.
+- **LG-3 (P3, note only — traced, deliberately NOT re-filed) — the guard closes the omitted-hash
+  axis; the sibling "explicit-but-fabricated hash" axis was open at this merge and closed 2h37m
+  later.** Step 7b only requires that *a* hash be present; nothing verifies it corresponds to text
+  the visitor saw (pre-existing from #624). The concrete exploit path is our own API:
+  `GET /api/v1/consent/platform-registration` served an unprovisioned external brand the **canonical
+  Estalara** text + hash, which the caller could then submit explicitly — satisfying step 7b while
+  fabricating exactly the audit record FOLLOW-660 exists to prevent. Verified closed at HEAD by
+  #629 (`3ecec7f`, 14:57:38Z): the GET now refuses with 409 `brand_identity_not_provisioned`
+  (`route.ts:246-262`), and its own comment cross-references *"the same 'refuse rather than guess'
+  choice FOLLOW-660 made one step further down this route (step 7b)"*. Chain shape recorded in §5a.
+
+#### 4b. Code bugs not caught — N/A. Five claims re-verified rather than accepted:
+
+- **"Wired end-to-end"** — cited line numbers checked against `5e66288` itself, not HEAD (§3).
+- **"Env-SET deployments pay no extra query"** — the short-circuit is the first statement
+  (`brand-identity.ts:196-198` @merge) and the test asserts `mockCountLimit` was never called.
+- **"Runs before any write"** — step 7b is at `route.ts:336`, the sole `insert(consentRecords)` is at
+  `:455`; the replay 409 checks sit between. True.
+- **Not an unauthenticated DB-amplification vector** — HMAC verification is step 2 (`:298-302`), so
+  the new query is unreachable without a valid `X-Consent-Signature`.
+- **The first-party tenant is NOT exempt from the new gate** — the decision table says "YES, for
+  every tenant", and the code agrees (no `tenantId` comparison on the unset branch). Correct as
+  designed, but it is the fact §4d DG-3 shows the runbook understates.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) → FOLLOW-674 AC3 — the new export has no test in its own module's suite.**
+  `apps/control-plane/src/lib/brand-identity.test.ts` has describes for `resolveBrandIdentity` (:20),
+  `isUnprovisionedExternalBrand` (:72) and `isFirstPartyTenant` (:153) — **none for
+  `requiresExplicitConsentHash`**; this PR did not touch that file. Its 5 cases exist only at route
+  level. At HEAD the export is a one-line delegate whose logic is covered *only through the sibling
+  gate added later by #629 (`:72-152`, 6 cases incl. the count probe and fail-closed)* — so a change
+  to the delegate (e.g. adding an identity short-circuit like the sibling has) could alter the
+  consent gate with the whole suite green. Textbook **Rule S** shape: same symmetric set (the
+  module's exported brand predicates), unequal verification tier — and note the tier inverted with
+  time, the *later* sibling got the better tests.
+- **TG-2 (P3, no stub) — the route mock cannot see LG-1.** `mockSelectFrom` is
+  `vi.fn(() => ({ where: mockSelectWhere, limit: mockCountLimit }))` (`route.test.ts:31`), i.e. it
+  accepts the query **with or without** a `.where()`. All 5 new tests therefore pass identically
+  before and after adding the missing `isNull(deletedAt)` — which is exactly why a soft-delete-blind
+  probe shipped through a 5-case red-first suite.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) → FOLLOW-675 — the out-of-repo integration contract now states the opposite of the
+  shipped behavior.** `backlog/HANDOFFS.md:2842` (the CTO-facing "What Rafał needs to do" spec for
+  `POST /api/v1/consent/platform-registration`) says: *"`consent_text_hash` — **optional**; omit to
+  use the canonical EN §6.1 SHA-256 hash."* After #624 that was already conditional; after #627 it is
+  false in two more states (env unset + ≥2 tenants; count-read failure). The same handoff tells the
+  caller to abort account creation on any non-2xx≠409 (`:2865`), so the stale sentence + the new 400
+  compose into a registration outage the integrating team has no warning of. This repo cannot fix the
+  caller — only the handoff can.
+- **DG-2 (P3) → FOLLOW-675 AC2 — the route's own contract docblock was not extended by the PR that
+  changed it.** `route.ts:32-38` @`5e66288` enumerates `201 / 400 — validation error / 401 / 409 /
+  500`; the new 400 is a configuration-state refusal, not a validation error, and neither it nor
+  #624's non-first-party 400 appears. The PR edited this very file.
+- **DG-3 (P2) → FOLLOW-676 — the runbook §Step 0 backstop paragraph understates the blast radius,
+  and it was written AFTER this merge.** `docs/runbooks/BRAND_PROVISIONING.md:76-79` (added by
+  `461e08a`) says *"with 2+ tenants and no env, **external** registrations get a 400"*. The code
+  applies the gate to **every** tenant including first-party Estalara (§4b), and post-#629 the GET
+  409s for Estalara too while `brand_config.brand_name` is unseeded (prod: 0 tenants have it — QUEUE
+  §session-61). The real consequence of creating tenant #2 before Step 0 is that the **live Estalara
+  registration flow breaks in both directions**, which is a materially different instruction to an
+  operator than "external registrations get a 400". Step ordering itself is correct and documented.
+- **DG-4 (P2) → FOLLOW-677 — the canonical secrets matrix never lists the control-plane var this PR
+  made load-bearing.** `docs/ops/DOPPLER_SECRETS_MATRIX.md:31` has a `FIRST_PARTY_TENANT_ID` row for
+  **ingest** only (added by #628), whose own text points at *"the SAME value as the control-plane
+  var"* — but the `## apps/control-plane` table (`:53-73`) has no such row (grep of the file returns
+  the single line 31). The operator step is described in `.env.example:61` and the runbook, and QUEUE
+  §session-61 flags that Doppler `prd` and Vercel must be set **separately**; the one document whose
+  job is to be the per-app env source of truth is the one that omits it.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Prior-follow-up closure check (algorithm step 7) — FOLLOW-660 claims to close RETRO-219 §4a LG-1.
+  Traced end-to-end, not one hop.** Producer→consumer→effect: env/count probe
+  (`brand-identity.ts:196-235`) → route gate (`route.ts:336-386`) → the **write** it protects
+  (`route.ts:462` `consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH`) is now
+  unreachable-by-default whenever first-party identity is unknowable. **The fabrication axis
+  RETRO-219 named is genuinely closed for the omitted-hash path** — verdict: real closure, not a
+  one-hop move. Two residues, both handled without re-filing: (i) the *explicit-hash* sibling axis
+  moved one hop to the GET and was closed 2h37m later by #629 (LG-3); (ii) the closure is
+  conditioned on an unstated precondition — no soft-deleted `tenants` row (LG-1).
+- **Terminal-consumer note (why the guard matters at all):** `consent_records.consent_text_hash` has
+  **no in-repo reader** — grep `consentRecords` across `apps`/`packages` shows the write path plus
+  `api/dsr/portability/route.ts:102-108` and `api/dsr/erase/route.ts`, which select
+  `consentType/granted/grantedAt/revokedAt` and **not** the hash. The column's consumer is an
+  external auditor/regulator, i.e. exactly the consumer that cannot detect fabrication itself. This
+  is pre-existing (from #624/FOLLOW-373) and is **not** filed as a half-wire — a write-only audit
+  attestation is its own purpose — but it explains why "fails silent" here means "fails silent
+  forever".
+- **Recovery-path self-audit (the PM's explicit ask).** Ran the re-verification claims against the
+  merged artifacts rather than the narrative. **Accurate:** branch name; the wiring citations
+  `brand-identity.ts:181` / `route.ts:338` resolve exactly at `5e66288` (`git show`); "63 checks,
+  only `Rule I` red" matches `gh pr checks 627` (61 pass + 2 Rule I fail); the Rule I symbol/violation
+  counts are consistent with a wired new export. **One gap the recovery path left:** the FOLLOW-660
+  status block (`FOLLOW_UPS.md`) and `STATUS.md:34` assert *"Both ACs met"*, and AC2 is "the
+  single-live-tenant flow is unchanged" — which is true only while no soft-deleted tenant row exists
+  (LG-1). The re-verification checked typecheck/lint/prettier/suite/CI/wiring — all the *mechanical*
+  axes — and none of them can see a missing `WHERE` clause (TG-2 shows the tests cannot either). The
+  live prod check recorded in QUEUE ("exactly 1 tenant") does not disambiguate active-vs-soft-deleted
+  rows, and this repo cannot; stated as unresolved rather than assumed either way. **Also drifted
+  (harmless, worth a habit change):** both citations are HEAD-relative line numbers that #629 already
+  moved (181→195, 338→375) — closure evidence should be anchored to the commit it was taken at.
+- No QUEUE assumption invalidated: `gh pr list --state open` is empty (QUEUE §session-61, re-checked
+  in the PR data), no ticket is dispatched, and the residual FOLLOW-628/629/631/632/634 do not touch
+  the consent route. **QUEUE.md and ESCALATIONS.md not written (read-only per charter).**
+
+#### 5b. Future sprint tickets affected
+
+- The 3-brand external onboarding wave: §Step 0 is now a **hard sequencing precondition**, not a
+  best practice — with the env unset, creating tenant #2 degrades the first-party flow (DG-3).
+- FOLLOW-656 (out-of-repo render verification) and the go-live gate inherit DG-1: the caller must be
+  told to always send its own hash before any brand ships.
+- FOLLOW-674 must land before any operator soft-deletes a tenant row or a delete route is built.
+
+#### 5c. Contracts changed others rely on
+
+- **One env var, two consumers, opposite unset-semantics — reconciled, no ticket.** Control-plane
+  (this PR): UNSET → probe the tenant count → **fail CLOSED** (refuse). Ingest
+  (`handlers/events.ts:166-168`, `origin-gate.ts:175`, FOLLOW-658/#628): UNSET → guard simply **off**
+  → **fail OPEN**, deliberately, so a forgotten value "can never black-hole first-party traffic"
+  (`types.ts:53-57`, runbook `:88-93`). The asymmetry is justified — the Worker has no Postgres on a
+  zero-I/O hot path, so no count probe is available — and both are documented. The reason to record
+  it: the class statement "the `FIRST_PARTY_TENANT_ID` fail-open is closed" is true for **one of two**
+  consumers. On the ingest side the only defence is still the operator step.
+- The POST's error surface for the out-of-repo caller changed (§1, DG-1). No SDK, ingest or
+  decision-api contract touched; no migration; no public package export.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule AA split, restated:** code axis CLOSED; prod axis OPEN in a subtler way than usual — the
+  guard is *shipped and inert*, and becomes load-bearing on a state change (tenant #2) that an
+  operator can trigger without touching the env. "Merged" ≠ "protecting anything today"; equally,
+  "unset env" ≠ "safe", because the same unset env is what arms the 400.
+- **Fail-closed on a compliance attestation is now precedent in this codebase** (this PR, then #629's
+  GET 409 citing it explicitly). Worth naming as the ruling it is: for legal attestations we prefer
+  refusing service to guessing. LG-2 is the cost of that ruling being expressed as a 4xx.
+- A module-private predicate (`isTreatedAsExternalBrand`) is now the single arbiter of "is this an
+  external brand?" for three compliance surfaces. That consolidation is good design (#629's stated
+  intent: "so a second differently-shaped check can never drift from the first") and simultaneously
+  concentrates LG-1's blast radius — the shared-core tradeoff, recorded for the next reviewer.
+
+### 6. New lesson candidates
+
+- **Pattern P-1 (SHIP-FALSIFIES-DOC) — 3rd sighting, ≥2 PRIOR retros → Rule AI PROMOTED.**
+  *"A PR that changes the truth-value of a capability/contract claim leaves every sentence asserting
+  the prior state untouched, and the stale sentence then steers an operator or an integrating team
+  wrong."* This retro supplies **two instances in one PR** (listing each per charter): **(a)**
+  `HANDOFFS.md:2842` — the out-of-repo caller's spec still says the hash is *optional*, while this
+  PR added a third state in which omission is a 400, and the same handoff tells that caller to abort
+  registration on non-2xx (DG-1); **(b)** the route's own `Responses:` docblock (`route.ts:32-38`),
+  not extended by the PR that added the response (DG-2). PRIOR retros: **RETRO-213 §4d DOC-1**
+  (verified as cited — #618's §V.3.4 correction left three adjacent §V claims asserting the prior
+  state → FOLLOW-649; count 1) + **RETRO-221 §6 P-1** (DG-1/DG-2/DG-3, three claims across three
+  docs falsified by #626; count 2, explicitly **ARMED**: *"the next numbered retro observing this
+  cites RETRO-213 + RETRO-221 → ≥2 prior → promote"*). RETRO-220 §4a LG-1 remains deliberately
+  **uncounted** (opposite direction — doc authored ahead of code = Rule AH). This retro is the 3rd
+  sighting and does **not** inflate the count (same adjudication as AA/AB/AC/AD/AE/V/Q/AG/AH).
+  → **Rule AI codified**, extended beyond RETRO-221's ready-made text to name `backlog/HANDOFFS.md`
+  and in-file API docblocks as first-class targets, because the highest-severity instance found here
+  was an integration contract with a team that cannot read our diff.
+- **Pattern P-4 (CLASS-CLOSED-ON-ONE-CONSUMER):** *"a guard shipped for one consumer of a shared
+  env var / flag is recorded as closing the fail-open class, while a second consumer of the same var
+  keeps the original semantics."* Here: `FIRST_PARTY_TENANT_ID` is fail-closed in control-plane and
+  still fail-open in ingest, both by design (§5c), yet QUEUE §session-61 states the class "is now
+  fully closed in code". Rhymes with **Rule S** (symmetric set, unequal completeness) but is not the
+  same axis — the siblings here are *justifiably* asymmetric, and the defect is in the **claim**, not
+  the code. PRIOR count = **0 → HELD, NO PROMOTION.** Pre-authorization: promote (or fold into Rule
+  S) on the next independent sighting of a fail-open class declared closed while a second consumer
+  of the same switch retains the old semantics.
+- **Not a new pattern (existing Rule S):** §4c TG-1's tier inversion — the export added by this PR
+  has no module-level test while the sibling added two hours later has six. Remedy is FOLLOW-674 AC3.
+
+### 7. Follow-ups
+
+- **FOLLOW-674:** make the tenant-count probe soft-delete-aware (`isNull(tenants.deletedAt)`, matching
+  the 5 sibling queries), split the count-read-error path from the >1-tenant path (distinct message +
+  a 5xx/retryable status so a DB blip is not reported as a client error), and add module-level tests
+  for `requiresExplicitConsentHash` (backend-engineer, 3h, priority **P2**).
+- **FOLLOW-675:** update the out-of-repo integration contract — `backlog/HANDOFFS.md:2842` must state
+  the three states in which `consent_text_hash` is required, and the route docblock's `Responses:`
+  list must enumerate both new 400s; flag to Rafał that the caller should always send its own hash
+  (backend-engineer + compliance-engineer, 2h, priority **P1**).
+- **FOLLOW-676:** correct `BRAND_PROVISIONING.md` §Step 0's blast-radius sentence (the gate applies to
+  EVERY tenant incl. first-party, and post-#629 the GET 409s too) and add the "Step 0 must precede
+  Step 1 for tenant #2" precondition to §Step 1 (backend-engineer, 1h, priority **P2**).
+- **FOLLOW-677:** add the `FIRST_PARTY_TENANT_ID` row to `DOPPLER_SECRETS_MATRIX.md`'s
+  `## apps/control-plane` table, with the Doppler-`prd`-and-Vercel-are-separate trap (devops-engineer,
+  1h, priority **P2**).
+
+### 8. Cross-references
+
+- **RETRO-219 (#624, FOLLOW-654)** — the retro that filed FOLLOW-660; §4a LG-1 there is the gap this
+  PR closes (§5a). **Explicit contradiction, per algorithm step 8:** RETRO-219 §4d judged the
+  documentation axis of the hash requirement adequate (`.env.example` + the FOLLOW-657 runbook step)
+  and rated the whole item P2. It analyzed only the *env/runbook* axis and never opened
+  `backlog/HANDOFFS.md`, where the same change had already falsified the caller-facing contract
+  (`:2842`). Reconciliation: RETRO-219's verdict was right about the code and incomplete about the
+  contract surface; DG-1 supersedes it and is rated P1 because the affected consumer is out-of-repo.
+- **RETRO-220 (#625)** — its §3 adjudication of "no in-repo producer, by design" is the precedent
+  CHECK B follows here; its §5a "documentation standing in for code is a deferral, not a closure" is
+  the same chain this PR terminates on the code side. **Rule AH** was promoted there; **Rule AI**
+  (here) is its inverse direction and cites it as the boundary case.
+- **RETRO-221 (#626)** — P-1 was HELD at 1 prior and ARMED there; this retro is the trigger it named.
+- **RETRO-218 (#623) / FOLLOW-658 (#628)** — the ingest half of `FIRST_PARTY_TENANT_ID` (§5c P-4).
+- **FOLLOW-659 (#629, `3ecec7f`)** — closed LG-3's sibling axis and refactored this PR's body into the
+  shared `isTreatedAsExternalBrand`, which is what gives LG-1 a three-surface blast radius.
+- **Rule AA** (code-vs-prod split) · **Rule AF** (Rule I red = verified baseline, §2) · **Rule S**
+  (§4c TG-1) · **Rule AI** (PROMOTED here).
+
+<!-- next free RETRO number: 223. next free FOLLOW number: 678 (FOLLOW-674..677 filed by RETRO-222).
+RETRO-222 = retro for PR #627 (FOLLOW-660, merged 2026-07-26T12:20:43Z, 5e66288; OPUS
+retrospective-analyst, session 61). CHECK A clean (requiresExplicitConsentHash producer brand-identity.ts:181
+@merge -> non-test consumer route.ts:58/:338 @merge, verified via git show 5e66288 not HEAD). CHECK B clean +
+2 qualified notes (new consumer of an env var UNSET in prod = Rule AA operator-pending, not HALF_WIRE_C; new
+400 whose only consumer is out-of-repo = contract-doc gap per the RETRO-220 ?tenant_id precedent, not
+HALF_WIRE_P). STEP 7 CLOSURE: FOLLOW-660 is a REAL end-to-end closure of RETRO-219 LG-1 (probe->gate->the
+`?? CANONICAL_CONSENT_TEXT_HASH` write at route.ts:462 is now unreachable-by-default) — with 2 residues: the
+explicit-hash axis moved one hop to the GET and was closed 2h37m later by #629's 409 (traced, NOT re-filed),
+and the closure is conditioned on no soft-deleted tenants row. GAPS: 3 logic (LG-1 soft-delete-blind count
+probe — every sibling query filters isNull(deletedAt), one-line fix now fanned out to 3 gates by #629's
+shared isTreatedAsExternalBrand; LG-2 fail-closed path returns 400 asserting "more than one tenant exists"
+when the read FAILED, and HANDOFFS:2865 tells the caller to abort registration on non-2xx; LG-3 traced-closed),
+0 code bugs (5 claims re-verified incl. HMAC-before-probe so the query is not an unauth amplification vector),
+2 test (new export has ZERO tests in brand-identity.test.ts while the LATER sibling got 6 = Rule S tier
+inversion; the route mock exposes both where+limit so all 5 new tests pass with or without the missing WHERE —
+which is WHY LG-1 shipped through a red-first suite), 4 docs (HANDOFFS:2842 out-of-repo contract still says
+the hash is "optional" = P1; route docblock Responses list not extended by the PR that added the response;
+runbook §Step 0 says "external registrations get a 400" but the gate hits EVERY tenant incl. Estalara;
+DOPPLER_SECRETS_MATRIX has the ingest row only, whose text references a control-plane var the matrix never
+lists). RECOVERY-PATH SELF-AUDIT (PM ask): claims verified ACCURATE against artifacts (line numbers resolve at
+5e66288; gh pr checks 627 = 61 pass + 2 Rule I = 63 exactly as claimed) — ONE gap: "Both ACs met" is
+conditioned on no soft-deleted tenant row, an axis no mechanical check (typecheck/lint/suite/CI/wiring) can
+see; prod "1 tenant" does not disambiguate active vs soft-deleted and the repo cannot. Citations were also
+HEAD-relative and already drifted (181->195, 338->375) — anchor closure evidence to its commit. §5c: ONE env
+var, TWO consumers, OPPOSITE unset semantics (control-plane fail-CLOSED via probe; ingest fail-OPEN by design,
+no PG on a zero-I/O hot path) — asymmetry justified, but the class-closed claim is not. PATTERNS: P-1
+SHIP-FALSIFIES-DOC promoted -> Rule AI (priors RETRO-213 DOC-1 + RETRO-221 §6, both verified; RETRO-220 LG-1
+stays uncounted as the Rule AH direction; this retro does not inflate the count; 2 instances listed in this
+one PR). P-4 CLASS-CLOSED-ON-ONE-CONSUMER at 0 priors -> HELD + pre-authorized. -->

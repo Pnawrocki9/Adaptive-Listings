@@ -2257,3 +2257,101 @@ Rule Y (docstring citing a named test as CI proof) and Rule L (production instal
 ARCHITECTURAL PREMISE (RETRO-220 §5d): under the CEO's no-client-dashboard model the runbook IS the operator
 UI, so an unexecutable step is a functional defect, not a docs nit. LETTER CHOICE: AH is the next in the
 double-letter sequence after AG. -->
+
+## Rule AI — A change that makes a capability/contract claim true or false MUST update every document asserting the prior state IN THE SAME PR — including `backlog/HANDOFFS.md` integration contracts and the changed file's own API docblock
+
+**Pattern:** The inverse direction of Rule AH. There, a doc is authored ahead of the code and is
+false at its own merge commit. Here, the doc was CORRECT when written and a later PR silently
+falsifies it: the code author changes a behavior, flag, response contract or capability and leaves
+every sentence asserting the prior state untouched. The stale sentence then steers an operator, a
+worker, or an integrating team wrong — and unlike Rule AH's case, nobody is looking, because the doc
+was reviewed and correct once. The highest-severity variant is a contract handed to a consumer
+OUTSIDE this repo: they cannot read our diff, they will not notice, and we cannot fix their code.
+Operating Principle 2 (continuous propagation) covers this in prose only, and CONVENTIONS_PATCH
+takes precedence over prose — so it needs a mechanised rule.
+
+**Evidence (≥2 PRIOR numbered retros):** **RETRO-213 §4d DOC-1** (PR #618 correctly fixed the
+specific false claim at `MASTER_DESIGN.md:5022-5028` but left three adjacent §V statements — the
+trust-boundary diagram `:4773`, the STRIDE Spoofing row `:4801`, the `api_keys` code sample `:5052`
+— presenting origin validation as a per-tenant control it is not; propagation of the _sibling_
+claims never happened → FOLLOW-649. Count 1) + **RETRO-221 §6 P-1** (PR #626 flipped three
+capability claims and updated none: `BRAND_PROVISIONING.md:221` + `INTERFACES.md:99/:108` now FALSE
+about `white_label`, so an operator would skip the field for three incoming brands;
+`ADR-0019:135/:300` stale; `ci.yml:226` "<40KB" against a measured 41.31 KB. The pattern was
+formally HELD at 1 prior and **ARMED**: "the next numbered retro observing this cites RETRO-213 +
+RETRO-221 → ≥2 prior → promote". Count 2). Promotion trigger: **RETRO-222 §4d DG-1/DG-2** (PR #627 —
+two instances in one PR: (a) `backlog/HANDOFFS.md:2842`, the integration contract for the
+out-of-repo `app.estalara.com` caller, still says `consent_text_hash` is _"optional; omit to use the
+canonical EN §6.1 SHA-256 hash"_ after #624 and #627 added three states in which omission returns
+400 — and the same handoff tells that caller at `:2865` to abort investor account creation on any
+non-2xx≠409, so the stale sentence plus the new status compose into a registration outage the
+integrating team was never told about; (b) the changed route's own `Responses:` docblock,
+`route.ts:32-38`, was not extended by the very PR that added the response). The 2 banked occurrences
+are both PRIOR retros → ≥2-PRIOR threshold met; the promoting retro does NOT inflate the count (same
+adjudication as Rules AA/AB/AC/AD/AE/V/Q/AG/AH). **Deliberately NOT counted:** RETRO-220 §4a LG-1 —
+that is the Rule AH direction (doc authored ahead of code), and double-counting it across two rules
+would inflate both.
+
+**Rule:** A PR that changes the truth-value of a claim (a flag's effect, a field's optionality, a
+response contract, "X has no consumer yet", "Y is not yet shipped", a measured budget) MUST, in the
+same PR, grep the ticket ID, the flag/env name, the symbol and the endpoint path across `docs/`,
+`docs/runbooks/`, `backlog/HANDOFFS.md`, ADRs and the changed file's own docblock, and update every
+sentence asserting the prior state. Three tiers, all non-optional:
+
+1. **Out-of-repo integration contracts (`backlog/HANDOFFS.md`, compliance handoffs) — P1.** If the
+   consumer is another team's system, the handoff is the only channel that exists; append a dated
+   update block (do not rewrite history) naming the new states and what the caller must now do.
+2. **Operator-facing runbooks — P1.** Under the no-client-dashboard model the runbook is the UI.
+3. **In-file API docblocks, ADRs, MASTER_DESIGN, CI step labels — P2**, and the changed file's own
+   docblock is never exempt: a PR that adds a response/parameter and does not list it there is
+   incomplete by definition.
+
+A behavioral change whose blast radius is stated more narrowly in a doc than in the code (e.g. "only
+external tenants get the 400" when the guard fires for every tenant) is the same defect as an
+outright false sentence — scope understatement is falsification.
+
+**Distinct axis from:** Rule AH (same subject, opposite direction and opposite owner — AH binds the
+DOC author at the doc's own merge commit; AI binds the CODE author to the docs their change
+falsifies); Rule N (end-user compliance disclosure evaluated at a go-live gate, not at merge); Rule
+M (prod-effect claimed for dev-only automation); Rule Y (a docstring citing a named test as CI proof
+— citation integrity); Rule AA (whether an operator has RUN the step, not whether the step's
+description is still true).
+
+**Verification:**
+
+```bash
+# 1. Every ticket ID in the PR: what does the doc corpus still say about it?
+grep -rn "FOLLOW-<n>\|<FLAG_NAME>\|<symbolName>" docs/ backlog/HANDOFFS.md CONVENTIONS_PATCH.md \
+  | grep -viE 'RETROSPECTIVES|FOLLOW_UPS'
+
+# 2. Prior-state signatures that a shipping PR most often falsifies:
+grep -rn -E 'optional|no consumer yet|not yet (shipped|wired|enforced)|only (external|non-first-party)|parsed but' \
+  docs/ backlog/HANDOFFS.md
+
+# 3. The changed file's own contract block must list what the PR added:
+git diff origin/main -- '<route>.ts' | grep -E '^\+.*(status: [45][0-9][0-9]|NextResponse.json)'
+sed -n '/^ \* Responses:/,/^ \*\//p' <route>.ts   # every added status must appear here
+
+# 4. For an out-of-repo consumer, prove the handoff was updated in THIS PR:
+git diff --name-only origin/main | grep -q 'backlog/HANDOFFS.md' || echo 'FAIL: external contract changed, handoff not touched'
+```
+
+---
+
+<!-- Rule AI added 2026-07-26 — RETRO-222 §6. Evidence (≥2 PRIOR numbered retros): RETRO-213 §4d DOC-1
+(PR #618's §V.3.4 correction left 3 adjacent §V claims — :4773 diagram, :4801 STRIDE row, :5052 code sample —
+asserting the prior state → FOLLOW-649; count 1) + RETRO-221 §6 P-1 (PR #626 falsified BRAND_PROVISIONING:221,
+INTERFACES:99/:108, ADR-0019:135/:300 and ci.yml:226 and updated none; the pattern was HELD at 1 prior and
+explicitly ARMED for the next sighting citing RETRO-213 + RETRO-221; count 2). Promotion trigger: RETRO-222
+§4d DG-1/DG-2 (PR #627 — TWO instances in one PR: HANDOFFS.md:2842 still tells the out-of-repo
+app.estalara.com caller that consent_text_hash is "optional" although #624/#627 added three states where
+omission is a 400, while HANDOFFS.md:2865 tells that same caller to abort investor account creation on any
+non-2xx≠409; and the route's own Responses: docblock at route.ts:32-38 was not extended by the PR that added
+the response). Both banked occurrences are PRIOR retros → threshold met; the promoting retro does NOT inflate
+the count (adjudication shared with AA/AB/AC/AD/AE/V/Q/AG/AH). RETRO-220 §4a LG-1 deliberately NOT counted —
+it is the Rule AH direction, and counting it in both rules would inflate both. SCOPE-UNDERSTATEMENT is treated
+as falsification (RETRO-222 §4d DG-3: the runbook says "external registrations get a 400" while the guard
+fires for EVERY tenant incl. first-party Estalara). TIERING: out-of-repo handoffs and operator runbooks are
+P1 because the reader cannot see our diff; in-file docblocks/ADRs/MASTER_DESIGN/CI labels are P2 but the
+changed file's OWN docblock is never exempt. LETTER CHOICE: AI is the next in the double-letter sequence
+after AH. -->

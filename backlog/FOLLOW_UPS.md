@@ -19481,3 +19481,231 @@ a dedicated typecheck target (the PR body names the blocker: pre-existing `TS613
 types; do not silently leave it implied.
 
 cross_ref: [RETRO-223, FOLLOW-658, FOLLOW-450, Rule AH]
+
+## FOLLOW-684 — The consent POST is the only surface that WRITES the attestation and the only one with no brand-identity gate: an unprovisioned external brand can still store a fabricated `consent_text_hash`
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+PR #629 shipped a deliberately asymmetric fail-loud policy on two surfaces:
+`GET /api/v1/consent/ platform-registration` refuses with 409 `brand_identity_not_provisioned`
+(`route.ts:246-262`) and `POST /api/dsr/initiate` alerts but still sends
+(`initiate/route.ts:227-247`). Both calls are correct (RETRO-224 §4a LG-1 verifies the DSR premise
+in code: neither `dsrVerifications` `:192` nor the ClickHouse audit write `:283` persists a brand,
+so that path creates no wrong record). The **third** consumer surface got neither treatment:
+`POST /api/v1/consent/platform-registration` — the only code path that inserts `consentRecords`
+(`consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH`, `route.ts:462`) — never
+calls `isUnprovisionedExternalBrand`. Its two gates, `isFirstPartyTenant` (`:331`) and
+`requiresExplicitConsentHash` (`:375`), are satisfied by **any** syntactically valid hash.
+
+So for an un-provisioned external brand the fabrication axis is still open: FOLLOW-660 now
+_requires_ that caller to supply a hash, `backlog/HANDOFFS.md:2842` still describes the canonical
+Estalara hash as the default, and that hash is computable from the public §6.1 text — submit it and
+the audit record naming the wrong controller is stored with no refusal and no alert. RETRO-222 §4a
+LG-3 recorded this axis as "verified closed at HEAD by #629"; it is closed only for callers that
+fetch our text, and the documented integration does not (see FOLLOW-685).
+
+**AC:** (1) call `isUnprovisionedExternalBrand` on the POST path (after the DB client exists, before
+any write — i.e. beside step 7b) and raise the same Sentry `error` the DSR path raises, with tags
+`route: 'consent/platform-registration'` + `brand_identity: 'unprovisioned_external'`; (2)
+**hard-refuse** the one sub-case that needs no judgement: `body.consent_text_hash` equals
+`CANONICAL_CONSENT_TEXT_HASH` **and** the tenant is an unprovisioned external brand — that is a
+provable fabrication, so return a 4xx with a distinct code and write nothing; (3) do NOT refuse the
+general case without a CEO/DPO ruling — the PR's "refusing would discard a consent the visitor
+already gave" argument is on the record and should be decided, not overridden by an implementer;
+state which option you implemented and why in the PR; (4) red-first tests: unprovisioned external +
+canonical hash → refusal and `mockInsertValues` never called; unprovisioned external + a
+brand-specific hash → 201 plus one Sentry capture; provisioned external → 201, no capture;
+first-party → 201, no capture, byte-identical; (5) keep the guard's cost at zero for a provisioned
+or env-configured tenant (the `isFallbackIdentity` short-circuit already gives this — assert it).
+
+cross_ref: [RETRO-224, RETRO-222, RETRO-219, FOLLOW-659, FOLLOW-660, FOLLOW-685, FOLLOW-373, Rule
+K.2, Rule AA]
+
+## FOLLOW-685 — The consent-text GET has never been handed off to the only party that could call it, and the handoff's "409 is safe, proceed" rule now tells that party to ignore #629's refusal
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+Two defects that compose into a bypass of the gate #629 shipped.
+
+1. **The GET has no documented consumer.** `GET /api/v1/consent/platform-registration` (leg 1, #624)
+   is now the sole enforcement point for the mis-branded-consent axis. Its only possible consumer is
+   the out-of-repo `app.estalara.com` backend — and
+   `grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` returns **nothing**. The handoff
+   (`:2795-2867`) documents the POST only. Worse, the canonical out-of-repo spec prescribes the
+   opposite flow: `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306` requires each brand
+   deployment to "always compute and send its **own** `consent_text_hash`". A caller following that
+   instruction never calls the GET and therefore never sees the 409.
+2. **The 409 semantics now collide on the same path.** `HANDOFFS.md:2864` — _"On 409, the record
+   already exists — this is safe (idempotent); no re-insert needed"_ — and `:2867` — _"If the
+   endpoint returns non-2xx (excluding 409), do NOT proceed with account creation"_ — were written
+   for the POST's duplicate-nonce 409. The GET's new 409 means the exact opposite ("refused, nothing
+   recorded, do NOT proceed"). A caller with a per-endpoint status policy treats the refusal as
+   safe, renders its own Estalara-derived copy and posts a hash of it (→ FOLLOW-684).
+
+**AC:** (1) add a GET section to the FOLLOW-374 handoff: URL, the HMAC-over-`tenant_id` signature
+recipe, the 200 shape, and every documented failure — explicitly the 409
+`brand_identity_not_provisioned` with "STOP, do not register, contact Estalara ops"; (2)
+**method-scope** the 409 rule at `:2864/:2867` so "409 is safe/idempotent" applies to the POST only;
+(3) reconcile `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` — §2 is still titled "GAP" (`:85`),
+PROPOSED-STUB item 3 (`:264-270`) asks for work #624 shipped, and item (c) (`:306`) prescribes the
+bypassing flow: decide and record which flow is canonical (GET-then-echo vs author-your-own-hash)
+and make the checklist step a _verified_ one; (4) verify every sentence you write against `main` at
+the commit you write it (Rule AH) and update the route's own `Responses:` docblock if anything is
+still missing after FOLLOW-675; (5) optional, cheap: one sentence in MASTER_DESIGN §H.8 recording
+that external-brand registration is now blocked until `brand_config.brand_name` is provisioned —
+§H.8 says consent is mandatory at registration and never mentions this new precondition.
+Docs/handoff only; no code.
+
+cross_ref: [RETRO-224, RETRO-222, RETRO-219, FOLLOW-675, FOLLOW-684, FOLLOW-656, FOLLOW-653,
+FOLLOW-374, Rule AH, Rule AI]
+
+## FOLLOW-686 — The consent GET reports a failed tenant-count read as 409 `brand_identity_not_provisioned` (a false statement), 15 lines below a sibling DB failure that correctly returns 500
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-674]
+promoted_to_queue: false
+
+`isTreatedAsExternalBrand` fails CLOSED on a count-read exception (`brand-identity.ts:228-235`,
+`return true`), so `GET /api/v1/consent/platform-registration` answers **409
+`brand_identity_not_provisioned`** (`route.ts:246-262`) and tells the operator to
+`PATCH /api/config` — which cannot fix a DB read failure. Fail-closed is the right choice; the
+status code and the message are not. In the **same handler**, the tenant-row lookup failure returns
+`500 { data_source: 'db', degraded: true }` (`:217-228`) citing Rule K.2 — two DB read failures in
+one request, two different answer classes, and only one visible to 5xx alerting. This is RETRO-222
+§4a LG-2 (the POST's 400 asserting "more than one tenant exists" when the read failed) replicated
+onto a second surface by the shared core; FOLLOW-674 owns the POST side, so keep the two fixes
+consistent.
+
+Two further wrinkles on the same response: the 409 body omits `data_source`, although every other
+response from this GET carries it (Rule K.2 provenance — 200 `stored`/`default`, 500 `db`/`none`);
+and the gate cannot distinguish an **unknown tenant** (`rowExists === false` ⇒ fallback identity
+⇒ 409) from a known-but-unprovisioned one, so a typo'd `tenant_id` is reported as a provisioning gap
+and the operator is sent to a PATCH that would 404.
+
+**AC:** (1) separate the two branches — return a retryable 5xx with
+`data_source: 'db', degraded: true` and a message naming the _read failure_ when the count query
+throws, keeping the 409 for the genuine unprovisioned case; (2) carry `data_source` on the 409; (3)
+answer an unknown `tenant_id` distinctly (404 or an explicit `tenant_not_found` code) rather than
+folding it into the provisioning refusal; (4) correct `docs/runbooks/BRAND_PROVISIONING.md:269` —
+"Estalara's own first-party tenant: **Unchanged, byte-identical**" is false in today's prod state
+(fallback identity + unset env ⇒ the count probe runs on every consent GET and DSR initiate, and its
+failure turns a 200 into a 409); state the condition instead of the absolute (Rule AH); (5) tests
+for both new paths, and align the wording with whatever FOLLOW-674 does on the POST so the two
+surfaces cannot drift again.
+
+cross_ref: [RETRO-224, RETRO-222, FOLLOW-674, FOLLOW-659, FOLLOW-660, Rule K.2, Rule AH, Rule S]
+
+## FOLLOW-687 — A tenant's own `agency:admin` can rewrite the legal entity named in its GDPR consent attestations and DSR e-mails, through the UNAUDITED branch of `PATCH /api/config`
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+`PATCH /api/config` resolves access with `allowStaffOverride: true, minAgencyRole: 'agency:admin'`
+(`apps/control-plane/src/app/api/config/route.ts:281-283`). Only the **staff** branch writes
+`staff_audit_log`, inside the transaction (`:400-425`); the agency branch is explicitly _"UNCHANGED
+and NOT audited (§3 audits STAFF only)"_ (`:455`). That posture was defensible while the writable
+surface was cosmetic (`primary_color`, `logo_url`, `white_label`). PR #629 added `brand_name` /
+`legal_entity` to the same schema (`:146-147`, merged at `:373-378`, written at `:382`) — the values
+that name the controller in the §6.1 registration consent text a data subject attests to
+(`renderPlatformConsentText`, consent `route.ts:265`) and that appear as the sender identity of DSR
+OTP e-mails (`dsr/initiate/route.ts:251-259`). A client's own admin can therefore change a
+compliance-grade legal identity, including to another company's name, with **no audit row
+anywhere**. The PR body's §3 ("auth unchanged, all pre-existing and production-grade", mutation +
+audit row in one transaction) describes the staff path only.
+
+Honest scoping: prod has one tenant and one auth user (the superadmin) and no agency users today, so
+this is latent, not live — which is exactly why it should be settled before the 3 re-brand clients
+get `agency:admin` accounts.
+
+**AC:** (1) pick and implement one: (a) restrict `brand_name`/`legal_entity` to the staff branch
+(reject them with a 403 on an agency PATCH, with a message pointing at Estalara ops), or (b) write a
+`staff_audit_log`-equivalent row for agency mutations of these two keys in the same transaction, or
+(c) accept and document with an explicit compliance rationale — (a) or (b) preferred, and the
+decision recorded in the PR, not just in code; (2) tests: agency PATCH touching only cosmetic keys
+behaves exactly as today, agency PATCH touching an identity key follows the chosen path, staff PATCH
+unchanged (the ADR-0018 §3a atomicity test must still pass); (3) note in the PR whether ADR-0018
+needs an amendment — "§3 audits STAFF only" was written before an agency-writable field carried
+legal weight; (4) verify no other agency-writable route has quietly acquired a compliance-grade
+field the same way (grep the `minAgencyRole` call sites and list them in the PR).
+
+cross_ref: [RETRO-224, RETRO-190, RETRO-202, FOLLOW-659, FOLLOW-654, ADR-0018, Rule AA]
+
+## FOLLOW-688 — The DSR half of #629's asymmetric fail-loud policy is an UNROUTED Sentry issue: the new tag is in no alert rule, its only prod path is untested, and the runbook tells the operator to "confirm the alert stops"
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue:
+false
+
+PR #629 deliberately chose "alert, never block" on `POST /api/dsr/initiate` — the right call
+(blocking an OTP would obstruct an Art. 15/17/20 right; RETRO-224 §4a LG-1 confirms the path
+persists no brand, so nothing wrong is recorded). But the alarm is the **entire** enforcement
+mechanism on that surface, and it is not wired to anyone:
+
+- `docs/ops/DSR_ALERTING.md` (v1.0, 2026-05-24) is this repo's registry of DSR Sentry alert rules —
+  purpose statement `:9-16`, two alerts, per-tag UI recipes at `:44-56`. The new
+  `brand_identity: unprovisioned_external` tag (`initiate/route.ts:237`) is **absent**, so no rule
+  routes it to `#compliance-ops` or to Piotr; it lands in an unwatched issue stream.
+- `docs/runbooks/BRAND_PROVISIONING.md:543` nevertheless instructs the operator to _"confirm the
+  alert stops"_ — an alert no rule delivers.
+- `apps/control-plane/sentry.server.config.ts:18` makes capture a **graceful no-op** when
+  `SENTRY_DSN_CONTROL_PLANE` is absent. The var is in `DOPPLER_SECRETS_MATRIX.md:72` and
+  `apps/control-plane/.env.example:24`; whether it is actually set in Doppler `prd` **and** in
+  Vercel (they are not synced) is unverified — verify it, do not assume.
+- The three new DSR tests all `vi.stubEnv('FIRST_PARTY_TENANT_ID', …)`
+  (`dsr-routes.test.ts:556,571,583`) and `primeSelects` mocks only two selects, so the **env-unset
+  tenant-count branch — the only one reachable in prod today — is never executed** on this surface.
+
+**AC:** (1) add an "Alert 3" section to `DSR_ALERTING.md` for
+`brand_identity: unprovisioned_external` in the existing format (tag, when it fires with file:line,
+severity, UI recipe, SLA, response procedure = seed §Step 3a) and create the rule, recording that it
+exists; (2) add the missing DSR test for the env-unset + tenant-count path (including the probe
+throwing → guard catches → e-mail still sent, which is the intended degradation); (3) make an
+Estalara-branded OTP actionable for a data subject who does not recognise the sender — e.g. one body
+line naming the platform that processes on the brand's behalf — so the "we sent it, the right is
+preserved" premise survives contact with a recipient who would otherwise discard the mail
+(compliance-engineer owns the wording); (4) confirm `SENTRY_DSN_CONTROL_PLANE` is set in both
+stores, or file the operator step; (5) if you touch `BRAND_PROVISIONING.md:543`, keep it truthful at
+your own merge commit (Rule AH).
+
+cross_ref: [RETRO-224, RETRO-223, FOLLOW-659, FOLLOW-654, FOLLOW-677, Rule AH, Rule Q, Rule S]
+
+## FOLLOW-689 — `PATCH /api/config` still deletes every `brand_config` key it does not know: #629 fixed the two keys that bit it, not the class
+
+source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+The defect FOLLOW-659 discovered was that `setValues.brandConfig` replaces the whole jsonb column,
+so any Save from the settings page wiped an operator-seeded `brand_name`/`legal_entity`. #629 fixed
+it by adding those two keys to the merge (`route.ts:373-378`) and to a new writer
+(`serializeBrandConfig:186-195`) — but that writer still enumerates exactly five keys, and
+`parseStoredBrandConfig` (`:167-175`) discards everything else. **Any** other key in a stored blob
+is still silently deleted on the next PATCH.
+
+Blast radius today is honestly **zero**: the only other reader of the column,
+`parsePublicBrandConfig` (`api/quiz/public-config/route.ts:129-141`), reads the same three legacy
+keys, and the ADR-0019 placement/label/quiz slices live in different columns
+(`tenants.optout_widget_config`, `quiz_definitions.definition`) — verified by
+`grep -rn "brandConfig\|brand_config" --include=*.ts --include=*.tsx apps packages`. So this is
+latent. It is worth fixing anyway because the next module to add a `brand_config` key inherits the
+identical silent wipe, and because the implementer's own lessons entry names the class and proposes
+the guard: _"a route which writes a whole JSONB column must round-trip every key its own reader
+module parses — the pattern silently deletes fields owned by a different module, and it is invisible
+to types, tests and grep."_
+
+**AC:** (1) preserve unknown keys — carry the raw stored blob through `parseStoredBrandConfig` (or
+merge `serializeBrandConfig`'s output over the raw object) so a PATCH is additive for keys this
+route does not model, while keeping the deliberate null→omit behaviour for the identity keys; (2) a
+test that seeds an unrelated key, PATCHes an unrelated field and asserts the extra key survived; (3)
+implement the guard the lessons entry asks for — a repo check that every route writing a whole JSONB
+column round-trips the keys its readers parse (start with `brand_config`, `optout_widget_config`,
+`quiz_config`); if a static check is not tractable, ship the per-route test instead and say so
+rather than claiming coverage you do not have (Rule Y); (4) do NOT extend the ADR-0019 slices into
+`brand_config` while doing this — the columns are separate on purpose (Rule U).
+
+cross_ref: [RETRO-224, RETRO-221, FOLLOW-659, FOLLOW-670, FOLLOW-623, Rule U, Rule Y, Rule Z]

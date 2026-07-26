@@ -35123,3 +35123,550 @@ promotion (both already codified; a 2nd promotion of the same axis is duplicatio
 identity value, N unsynced stores, ASYMMETRIC mis-set failure (loud vs silent)" HELD at count 1 (RETRO-222
 §5c analyzed the UNSET axis, a different axis — not counted as a prior) + pre-authorized for promotion on a
 2nd numbered sighting. -->
+
+## RETRO-224 — FOLLOW-659 (per-brand legal identity producer + fail-loud gate) — 2026-07-26
+
+### 1. Summary of change
+
+- **PR:** #629 (merged 2026-07-26 14:57:38 UTC, commit `3ecec7f`) —
+  `feat(control-plane): per-brand legal identity producer + fail-loud gate [FOLLOW-659]`, branch
+  `backend-engineer/FOLLOW-659-brand-identity-producer-coverage`. Last of the five session-59/60
+  merges; third and final ticket of the fail-silent-producer class (658/659/660).
+- **Files changed:** 13 (+872 / −37) — 5 source files, 5 test files, 1 runbook, 1 backlog STATUS
+  block, 1 agent lessons append. **No new files, no new module, no migration, no DDL.**
+- **Modules touched:** [control-plane / docs]. No SDK, ingest, decision-api, db-schema, Modal or CI
+  config change.
+- **Key contracts changed:**
+  - `BrandConfig` (`api/config/route.ts:110,112` @`3ecec7f`) gains `brand_name: string | null` and
+    `legal_entity: string | null` — **added, breaking: no** (additive JSONB keys inside the existing
+    `tenants.brand_config`; the interface is consumed by the route's own GET/PATCH and by the staff
+    editor, which imports the canonical `TenantConfig` rather than redeclaring it).
+  - `PATCH /api/config` now **accepts, merges and persists** both keys (`:146`, `:373`, `:382`), and
+    `GET` reports an unset key as `null` rather than a pre-resolved `"Estalara"` — **behavioral,
+    breaking: no**; it repairs a silent no-op (Zod stripped the keys) *and* a silent destructive write.
+  - NEW export `isUnprovisionedExternalBrand(db, tenantId, identity)`
+    (`lib/brand-identity.ts:266` @`3ecec7f`) — added — breaking: no.
+  - `GET /api/v1/consent/platform-registration` gains **409 `brand_identity_not_provisioned`**
+    (`route.ts:246-262`) — behavioral, **breaking: conditionally yes** for the out-of-repo caller;
+    unreachable in today's prod (1 tenant, env unset ⇒ the predicate answers `false`).
+  - `POST /api/dsr/initiate` gains a Sentry signal `tags.brand_identity = 'unprovisioned_external'`
+    (`route.ts:229-241`) — additive; response (202) and e-mail behaviour unchanged.
+  - `BrandIdentityConfigSchema` hardened `.optional()` → `.nullish()` (`brand-identity.ts:83-84`) —
+    fixes a whole-object parse failure that discarded a correctly-set sibling key.
+
+### 2. Verification done in PR
+
+- Test files changed: **5** — `api/config/route.test.ts` (+123), `brand-identity.test.ts` (+99),
+  `consent/platform-registration/route.test.ts` (+92/−1), `dsr/dsr-routes.test.ts` (+73/−1),
+  `settings/tenant-config-editor.test.tsx` (+82). Assertions added: **24 new `it(` blocks** by grep
+  (`grep -n "^+.*  it(" ` on the merged diff); the PR body claims "+26 new" — plausibly counting the
+  renamed pre-existing case and the 3-input loop inside the bounds test. Immaterial, recorded per
+  verify-not-guess. Coverage delta: est. up on all five files.
+- **The strongest verification artefact of the whole five-PR wave is here:** `config/route.test.ts:285`
+  feeds the blob the PATCH actually stored into the **real** `resolveBrandIdentity()` — a
+  producer→consumer round-trip assertion, not two independently-mocked halves. It is why the "a Save
+  silently wiped a seeded identity" defect is now pinned (`route.test.ts:293-328`).
+- CI checks: **independently verified**, not accepted from the PR body — `gh pr checks 629` returns
+  **61 pass + 2 fail**, both fails the duplicated `Rule I — wired-or-dead check`, i.e. the repo-wide
+  permanently-red baseline (Rule AF / ESC-041). Total 63 = the identical shape as #625/#626/#627/#628.
+- The PR's Rule I non-regression proof (`main` 621/192 → branch 622/192; +1 symbol, +0 violations) is
+  consistent with §3 CHECK A finding the single new export wired.
+
+### 3. Wiring Audit
+
+**CHECK A — clean.** No new files. One new export, wired to **two** non-test consumers, verified at
+the merge commit itself (`git show 3ecec7f:…`, not HEAD):
+
+- `isUnprovisionedExternalBrand` — producer `lib/brand-identity.ts:266`; non-test importers
+  `api/v1/consent/platform-registration/route.ts:57` (call `:246`) and `api/dsr/initiate/route.ts:34`
+  (call `:229`). Grep:
+  `grep -rn "isUnprovisionedExternalBrand" --include=*.ts --include=*.tsx apps packages | grep -v node_modules`
+  → 1 definition, 2 non-test consumers, 1 test file, docstrings. Not type-only, not a framework
+  entrypoint.
+- `isTreatedAsExternalBrand` (`:217`) and `serializeBrandConfig` (`config/route.ts:186`) are
+  module-private with in-file callers (`:199`, `:272`; `:382`) — no unwired export added.
+- The new UI (`Legal Identity` fieldset, `tenant-config-editor.tsx:263-330`) sits inside an existing
+  client component already mounted by the framework route `admin/tenants/[id]/settings/page.tsx`, and
+  that page **is** nav-reachable — link verified at `admin/tenants/[id]/page.tsx:134`. No orphan
+  surface, so the producer is discoverable, not URL-only.
+
+**CHECK B — one FINDING plus three qualified notes.**
+
+- **HALF_WIRE_P (P1) → FOLLOW-685 — the surface this PR hardened has no documented consumer, while
+  the surface that writes the record has no gate.** `GET /api/v1/consent/platform-registration`
+  produces the brand-correct consent text + hash (leg 1, #624) and is now the **sole** enforcement
+  point for the mis-branding axis (`route.ts:246`). Its only possible consumer is out-of-repo
+  (`app.estalara.com`). Grep of every doc mentioning the endpoint —
+  `grep -rn "consent/platform-registration" docs backlog --include=*.md` — returns the POST handoff
+  (`HANDOFFS.md:2795-2867`), the provisioning runbook (operator curl `:95`, enforcement table `:267`)
+  and the compliance go-live check (`EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:90,306`). **Zero hits for
+  a GET instruction to the caller** (`grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` → nothing),
+  and the canonical out-of-repo spec prescribes the *opposite* flow: each brand deployment "always
+  computes and sends its **own** `consent_text_hash`" (`:306`). So the 409 gates a door the documented
+  integration never opens. This is **deliberately not** adjudicated the way RETRO-222 §3 adjudicated
+  #627's new 400 ("out-of-repo consumer ⇒ contract-doc gap, not a half-wire"): that precedent rests on
+  the consumer existing *and having been told*. Here the consumer was never told the producer exists.
+- Note 1 — **new JSONB keys: both directions now present.** Producer `PATCH /api/config:382` (via
+  `serializeBrandConfig`) + staff UI (`tenant-config-editor.tsx:263`); consumer
+  `resolveBrandIdentity`/`fetchBrandIdentity` (`brand-identity.ts:102`/`:131`); **render** legs both
+  real — DSR OTP `from`/subject/body (`dsr/initiate/route.ts:251-259`) and
+  `renderPlatformConsentText(identity)` (`consent/route.ts:265`). This is exactly the CHECK B finding
+  RETRO-219 filed, and it is genuinely closed on the producer axis (§5a step-7 trace).
+- Note 2 — **new Sentry signal with no routed consumer.** `brand_identity: 'unprovisioned_external'`
+  (`dsr/initiate/route.ts:237`) is the *entire* fail-loud mechanism on the DSR surface. Its consumer
+  would be a Sentry alert rule; the repo's own registry of DSR Sentry alert rules,
+  `docs/ops/DSR_ALERTING.md` (v1.0, 2026-05-24), enumerates exactly **two** tags
+  (`dsr_erase_clickhouse_mutation_failed` + stuck-mutation, with per-tag UI recipes at `:44-56`) and
+  was not touched by this PR. `sentry.server.config.ts:18` additionally makes capture a **graceful
+  no-op when `SENTRY_DSN_CONTROL_PLANE` is absent** (the var exists in
+  `DOPPLER_SECRETS_MATRIX.md:72` and `apps/control-plane/.env.example:24`; whether it is set in prod is
+  not verifiable from this repo and is stated as unresolved, not assumed either way). Classified as a
+  qualified note rather than HALF_WIRE_P because the runbook §Part C step 7 (`:543`) *is* a documented
+  operator consumer — but it instructs the operator to "confirm the alert stops" for an alert no rule
+  delivers → §4d DG-3 / FOLLOW-688.
+- Note 3 — **no new env var, column, migration, topic or SDK signal.** The two keys are deliberately
+  NOT on the SDK public wire — re-verified: `parsePublicBrandConfig`
+  (`api/quiz/public-config/route.ts:129-141`) reads only `primary_color`/`logo_url`/`white_label`.
+  Correct per Rule L; no browser exposure of legal identity.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) → FOLLOW-684 — the asymmetry is right about the two surfaces it examined and silent
+  about the third: the only surface that WRITES the attestation.** Verified from the diff per surface,
+  each analyzed independently:
+  - **Consent `GET` — the 409 is CORRECT and correctly placed.** The gate sits after
+    `resolveBrandIdentity` (`:231`) and **before** `renderPlatformConsentText` (`:265`), so no
+    mis-branded text is ever generated, hashed or returned; the 409 body carries neither
+    `consent_text` nor `consent_text_hash` (asserted, `route.test.ts:723-724`). The first-party path is
+    safe by construction (`isUnprovisionedExternalBrand` returns `false` on a non-fallback identity,
+    `brand-identity.ts:271`).
+  - **DSR `initiate` — "send + alert" is CORRECT, and the ticket's premise is TRUE IN CODE, not merely
+    asserted.** I checked what that path *persists*: the `dsrVerifications` insert (`:192-205`) carries
+    no brand field, and the ClickHouse audit write (`:283-292`) carries
+    `tenant_id/session_id/dsr_type/action/email/requested_at` — **no brand identity anywhere**. So the
+    "refuse where a wrong RECORD would be created, alert where refusing would obstruct the right"
+    distinction is factual, not rhetorical: the DSR path creates no attestation, only a mis-branded
+    e-mail. Ordering is right too (guard after the OTP row insert, before `sendEmail` at `:250`), and
+    the guard is fully try/catch-wrapped so its own fail-closed path can never cost the data subject
+    the mail. I affirm this axis. Two honest riders: (i) the policy protects *delivery* of the right,
+    not its *exercisability* — a data subject who discards an OTP from a company they never heard of
+    lands where a refusal would have left them, minus the ops-visible refusal (→ FOLLOW-688 AC3);
+    (ii) the two surfaces are asymmetric not only in KIND (deliberate, correct) but in FORCE
+    (control-flow-enforced vs enforced by an unrouted Sentry issue, §3 Note 2), which the ticket's own
+    table does not say.
+  - **Consent `POST` — the third consumer surface, and it got NEITHER treatment.** `POST` is the only
+    code path that creates the compliance record
+    (`consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH`, `route.ts:462`). It
+    never calls `isUnprovisionedExternalBrand` — verified: the only call in the file is the GET's
+    (`:246`); the POST's two gates are the env-only `isFirstPartyTenant` (`:331`) and FOLLOW-660's
+    `requiresExplicitConsentHash` (`:375`), **both satisfied by any syntactically valid hash**. So an
+    un-provisioned external brand that supplies a hash — which FOLLOW-660 now *requires* it to supply,
+    and which `HANDOFFS.md:2842` still describes as "canonical", trivially computable from the public
+    §6.1 text — writes the fabricated attestation with **no refusal and no alert**. Refusing the POST
+    is genuinely debatable (the PR's "don't discard a consent already given" is a fair call); *saying
+    nothing* is not, when the DSR surface got an alarm for a strictly smaller harm. And one sub-case
+    needs no judgement at all: a submitted hash **equal to** `CANONICAL_CONSENT_TEXT_HASH` while the
+    tenant is an unprovisioned external brand is fabrication on its face.
+- **LG-2 (P2) → FOLLOW-686 — the fail-CLOSED path answers 409 with a message that is false on that
+  path, 15 lines below a sibling failure that correctly answers 500.** On a tenant-count read
+  exception `isTreatedAsExternalBrand` returns `true` (`brand-identity.ts:228-235`), so the GET returns
+  **409 `brand_identity_not_provisioned`** — telling the operator the brand is unprovisioned when in
+  fact the count query failed, and pointing them at `PATCH /api/config`, which cannot fix a DB read
+  failure. In the *same handler* the tenant-row lookup failure returns
+  `500 { data_source: 'db', degraded: true }` (`:217-228`), explicitly citing Rule K.2. Two DB read
+  failures in one request, two classes of answer; only one is visible to 5xx alerting. This is the
+  **same defect RETRO-222 §4a LG-2 found on the POST**, now replicated onto a second surface by the
+  shared core. Two further wrinkles on the same response: the 409 omits `data_source` although every
+  other GET response carries it (Rule K.2 provenance), and it does not distinguish an **unknown
+  tenant** (`rowExists === false` ⇒ fallback identity ⇒ 409) from a known-but-unprovisioned one, so a
+  typo'd `tenant_id` is reported as a provisioning gap and sent to a PATCH that would 404.
+- **LG-3 (P2) → FOLLOW-687 — the PR widened an UNAUDITED self-service write from cosmetic branding to
+  compliance-grade legal identity.** `PATCH /api/config` resolves access with
+  `allowStaffOverride: true, minAgencyRole: 'agency:admin'` (`route.ts:281-283`), and only the **staff**
+  branch writes `staff_audit_log` inside the transaction (`:400-425`); the agency branch is explicitly
+  *"UNCHANGED and **NOT** audited (§3 audits STAFF only)"* (`:455`). Before this PR that branch could
+  set a colour, a logo and a white-label flag. It can now set the legal entity that (a) names the
+  controller in the §6.1 consent text a data subject attests to and (b) is the sender identity of DSR
+  OTP e-mails — with **no audit row anywhere**, changeable by the client's own `agency:admin`. The PR
+  body's §3 ("auth unchanged, all pre-existing and production-grade", audit row in one transaction)
+  describes the staff path only and never mentions this axis. Honest scoping: prod has one tenant and
+  one auth user (the superadmin), no agency users, so this is latent, not live — but it is a *posture*
+  question on a GDPR attestation field, surfaced with severity in §5d for the PM.
+- **LG-4 (P2) → FOLLOW-689 — the destructive whole-blob rewrite was fixed instance-wise, not
+  class-wise.** `serializeBrandConfig` (`config/route.ts:186-195`) enumerates exactly five keys and
+  `parseStoredBrandConfig` (`:167-175`) discards everything else, so **any** other key present in a
+  stored `brand_config` blob is still deleted by any PATCH; a one-line unknown-key passthrough would
+  have closed the class. Blast radius today is honestly **zero**: I enumerated every reader of the
+  column (`grep -rn "brandConfig\|brand_config" --include=*.ts --include=*.tsx apps packages`) and the
+  only other one, `parsePublicBrandConfig`, reads the same three legacy keys — the ADR-0019 placement /
+  label / quiz slices live in *different* columns (`tenants.optout_widget_config`,
+  `quiz_definitions.definition`). Latent, then — but the implementer's own lessons entry names exactly
+  this class ("a route which writes a whole JSONB column must round-trip every key its own reader
+  module parses … invisible to types, tests and grep"), and the next module to add a `brand_config` key
+  inherits the identical silent wipe that cost this ticket its investigation.
+- **LG-5 (P3, note only — traced, deliberately NOT re-filed).** The module still holds **two**
+  divergent first-party predicates with opposite unset semantics: `isFirstPartyTenant`
+  (`brand-identity.ts:159-162`, env-only, `if (!firstParty) return true` ⇒ fail-OPEN) and
+  `isTreatedAsExternalBrand` (`:217-236`, env → count probe ⇒ fail-CLOSED). This PR did **not** add a
+  third (§5d), and the divergence is currently harmless because step 4b's fail-open is backstopped by
+  step 7b's fail-closed. Recorded because a future consumer reaching for the older name silently gets
+  the weaker semantics. Fold into FOLLOW-674 (already owns this module's predicates); no new ticket.
+
+#### 4b. Code bugs not caught — N/A. Seven claims re-verified rather than accepted:
+
+- **"No third first-party check — the new gate short-circuits then delegates to FOLLOW-660's
+  detection, and `requiresExplicitConsentHash` now delegates to it too."** **CONFIRMED at the merge
+  commit** (`git show 3ecec7f:apps/control-plane/src/lib/brand-identity.ts`):
+  `requiresExplicitConsentHash` is a one-line delegate (`:195-200`, body
+  `return isTreatedAsExternalBrand(db, tenantId)`), `isTreatedAsExternalBrand` (`:217-236`) is the
+  single shared core holding the *only* env read and the *only* count probe on the module's async path,
+  and `isUnprovisionedExternalBrand` (`:266-273`) adds one cheap short-circuit (`:271`) before
+  delegating (`:272`). This is the sequential-ticket integration point the PM's step 5d flags, and it
+  holds in the merged code: #627's logic was **extracted and shared, not re-implemented**. The
+  env/probe/fail-closed shape is byte-equivalent to #627's (only the log message changed, `:231-233`).
+- **"Zero extra queries when the identity is configured or the env is set."** True as written and
+  asserted (`route.test.ts:747,762`: `expect(mockCountLimit).not.toHaveBeenCalled()`). **But neither
+  condition holds in prod today** — QUEUE §session-61 records 1 tenant, **0 with `brand_name`**, env
+  unset — so every consent `GET` and every DSR `initiate` now runs an extra
+  `select id from tenants limit 2`. The consequence is not perf: the runbook's "Estalara's own
+  first-party tenant — **Unchanged, byte-identical**" (`BRAND_PROVISIONING.md:269`) is false today
+  (§4d DG-2), and the fail-closed branch is **live**, not dormant, for the first-party flow.
+- **"The gate is at GET, not POST, because GET is where fabricated identity enters."** The placement
+  claim is true; the *inference* that POST therefore needs nothing is what LG-1 falsifies.
+- **"`null` clears a key and is omitted from the stored jsonb, so the blob stays shape-identical to an
+  operator-seeded one."** True — `serializeBrandConfig:191-192` spreads conditionally; asserted at
+  `route.test.ts:346` (`not.toHaveProperty('brand_name')`).
+- **"Bounds mirror the reader, so the route can never accept a value the reader rejects."** True:
+  writer `1–120`/`1–200` (`config/route.ts:146-147`) vs reader `min(1).max(120)`/`max(200)`
+  (`brand-identity.ts:90-91`). The writer also `.trim()`s, so a padded accepted value always survives
+  the reader's own `normalizeNonEmpty`.
+- **"`.optional()` → `.nullish()` was needed because one `null` would discard the sibling key."** A
+  real defect with a real regression test (`brand-identity.test.ts:59-67`) — a whole-object `z.object`
+  parse failure would have resolved BOTH keys to the fallback.
+- **"The DSR alarm can never cost the data subject their e-mail."** True — the guard is fully
+  try/catch-wrapped (`dsr/initiate/route.ts:227-247`) and `sendEmail` sits outside it.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) → FOLLOW-684 AC4 — the POST has no test for the fabrication case, because no code path
+  exists to test.** The new describe covers the GET gate exhaustively (5 cases incl. fail-closed) and
+  the POST not at all on this axis; nothing asserts what happens when an unprovisioned external tenant
+  POSTs `CANONICAL_CONSENT_TEXT_HASH`. Today it is a 201.
+- **TG-2 (P2) → FOLLOW-688 AC2 — the DSR surface never exercises the branch that is live in prod.**
+  All three new DSR cases `vi.stubEnv('FIRST_PARTY_TENANT_ID', …)`
+  (`dsr-routes.test.ts:556,571,583`) and `primeSelects` mocks exactly two selects (session, brand) — so
+  the **env-unset tenant-count probe, the only branch reachable in prod today, is never executed on
+  this surface**, and a throw from it would be swallowed by the guard's catch. The consent route's suite
+  does cover the unset branch (`route.test.ts:727-734`); its sibling does not. Rule S shape.
+- **TG-3 (P2, no new stub — RETRO-222 TG-2 unchanged) — the mocks still cannot see FOLLOW-674.** The
+  count-probe chain mock is `select → from → limit` with **no `where` at all**
+  (`brand-identity.test.ts:884-889`), so all 6 new module-level cases pass identically before and after
+  adding the missing `isNull(tenants.deletedAt)`. Two more surfaces built on an invariant no test can
+  observe.
+- **TG-4 (P3, note) — the Rule S tier inversion from RETRO-222 §4c persists.**
+  `isUnprovisionedExternalBrand` (added here) has **6** module-level cases
+  (`brand-identity.test.ts:72-151`); `requiresExplicitConsentHash` (added by #627) still has **zero**,
+  and is now a one-line delegate whose only coverage is its sibling's. Owned by FOLLOW-674 AC3; not
+  re-filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) → FOLLOW-685 — the integration contract now composes into "ignore the 409 and
+  proceed".** `backlog/HANDOFFS.md:2864` says *"On 409, the record already exists — this is safe
+  (idempotent); no re-insert needed"* and `:2867` says *"If the endpoint returns non-2xx (excluding
+  409), do NOT proceed with account creation"*. Both sentences were written for the POST's
+  duplicate-nonce 409. This PR introduces a 409 on the **same path, different method** whose meaning is
+  the exact opposite — "refused, nothing was recorded, do NOT proceed". A caller with a per-endpoint
+  status policy (which is what that handoff prescribes) treats the new refusal as safe-to-proceed, falls
+  back to its own Estalara-derived copy, and then POSTs a hash of it: DG-1 composed with §4a LG-1 is a
+  complete bypass of the gate this PR shipped. The GET itself is still undocumented in the handoff
+  (§3), and `:2842` still calls the hash "optional" (FOLLOW-675's scope, unchanged).
+- **DG-2 (P2) → FOLLOW-686 AC4 — Rule AH sighting.** `BRAND_PROVISIONING.md:269` asserts the
+  first-party tenant is "**Unchanged, byte-identical**"; in today's prod state (fallback identity + env
+  unset) the first-party consent GET and DSR initiate each gained a query, and a failure of that query
+  turns the live registration read into a 409 (§4b). The safety property is real only once
+  `FIRST_PARTY_TENANT_ID` is set or `brand_name` is seeded — conditional, stated as absolute.
+- **DG-3 (P2) → FOLLOW-688 — the new alarm was never registered with the thing that alarms.**
+  `docs/ops/DSR_ALERTING.md` is the repo's registry of DSR Sentry alert rules (purpose `:9-16`, two
+  alerts, per-tag UI recipes `:44-56`). The new `brand_identity: unprovisioned_external` tag is absent,
+  so no rule routes it to `#compliance-ops` or to Piotr — while `BRAND_PROVISIONING.md:543` tells the
+  operator to "confirm the alert stops". The entire fail-loud half of the deliberate asymmetry rests on
+  a rule that does not exist.
+- **DG-4 (P2) → FOLLOW-685 AC3 — Rule AI sighting: the compliance go-live check still describes the
+  pre-#629 world and prescribes the flow that bypasses the new gate.**
+  `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` §2 is still titled "**GAP**" (`:85`), its
+  PROPOSED-STUB item 3 (`:264-270`) still asks for work #624 shipped, and item (c) (`:306`) tells the
+  CTO each brand must compute and send **its own** hash — which, unamended, is precisely the path that
+  never calls the GET and therefore never sees the 409.
+- **DG-5 (P3, note only — no stub) — Master Design alignment.**
+  `grep -n "brand_name\|legal_entity\|brand_config" docs/MASTER_DESIGN.md` returns **nothing**, and the
+  endpoint appears nowhere in §V either, so there is no architectural claim to diverge from. §H.8's
+  "consent is mandatory at registration" would benefit from one sentence recording that for an external
+  brand registration is now *impossible* until an operator seeds a JSONB key — but that is an addition,
+  not a correction, so per Rule AH/AI discipline it rides as an optional AC on FOLLOW-685 rather than
+  its own ticket.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Prior-follow-up closure check (algorithm step 7) — FOLLOW-659 claims to close RETRO-219's CHECK B
+  finding. Traced END-TO-END. Verdict: the producer axis is a REAL closure; the fail-loud axis is closed
+  on one surface, conditional on a second, and ABSENT on a third.**
+  - Producer→consumer→render, all four hops verified in merged code rather than inferred:
+    **producer** `PATCH /api/config:382` (`serializeBrandConfig`) plus the UI that drives it
+    (`tenant-config-editor.tsx:263-330`, nav-reachable via `tenants/[id]/page.tsx:134`) → **storage**
+    `tenants.brand_config` JSONB → **consumer** `resolveBrandIdentity`/`fetchBrandIdentity`
+    (`brand-identity.ts:102`/`:131`) → **render** (a) DSR e-mail `from`/subject/body
+    (`dsr/initiate/route.ts:251-259`) and (b) `renderPlatformConsentText(identity)`
+    (`consent/route.ts:265`). Unlike FOLLOW-658 (whose producer is an operator-run script), this
+    producer is in-product code, and a single test crosses the boundary (`config/route.test.ts:285`).
+    **This is the first ticket of the 658/659/660 class whose closure I can prove without an operator
+    step.**
+  - It also closed a defect nobody had ticketed: the documented provisioning curl had **never** worked
+    (Zod stripped both keys ⇒ 200, no write) and any settings-page Save **wiped** a hand-seeded
+    identity. A Rule AH-shaped hazard found and fixed by the implementer — credit where due.
+  - **The gap did move one hop, and prior retros recorded it as closed.** §4a LG-1: the fabrication axis
+    now lives on the ungated POST; §3: the gated GET has no documented consumer. Explicit reconciliation
+    with RETRO-219 and RETRO-222 in §8.
+- **FOLLOW-674** (soft-delete-blind count probe) — **severity escalated by this merge; scope
+  unchanged.** RETRO-222 recorded the three-surface fan-out; what is new is that two of those surfaces
+  are now *live in prod today* (§4b), so a single soft-deleted `tenants` row makes `rows.length > 1`
+  true and the **live Estalara registration flow starts 409-ing** while DSR initiate alerts on every
+  request. Still latent by likelihood (no in-repo writer of `tenants.deletedAt`) — but the consequence
+  is now a funnel outage, not a config warning. Corroboration from a third direction: #628's own script
+  filters `isNull(tenants.deletedAt)` (`project-allowed-origins.mts:452`).
+- **FOLLOW-678** (mis-set `FIRST_PARTY_TENANT_ID`, exact-string compare) — **evidence strengthened, P1
+  justified.** RETRO-223 LG-1 noted the control-plane's mis-set failure is "loud (registrations 400 /
+  consent GET 409)". Post-#629 that is sharper: a typo'd Step 0 value makes Estalara itself "external"
+  with a fallback identity, so the consent GET 409s **and** steps 4b/7b block the POST **and** DSR
+  alerts — i.e. the pending operator step can take the live registration funnel down on a paste error,
+  in an app whose only client is an out-of-repo backend instructed to abort on non-2xx. The most
+  consequential open item touching the two pending operator steps.
+- **FOLLOW-675** (out-of-repo contract) — target text unchanged, but its scope is now **insufficient**:
+  it covers the hash-optional sentence and the POST docblock, not the GET's absence or the 409 collision
+  → FOLLOW-685 filed for the delta and cross-referenced both ways, rather than silently widening another
+  ticket.
+- **FOLLOW-676** (runbook §Step 0 blast radius) — partially self-corrected *elsewhere*: this PR's new
+  §Step 3a text states the "the moment a second tenant row exists … every tenant — including Estalara —
+  is treated as external" consequence correctly (`BRAND_PROVISIONING.md:263-269` region and the
+  paragraph below it). The §Step 0 paragraph FOLLOW-676 names is untouched, so the ticket stands;
+  whoever picks it should reuse the §Step 3a wording rather than invent a third phrasing.
+- **FOLLOW-670** (staff editors mint defaults into unconfigured tenants) — **second instance found, in
+  the object this PR edited.** `DEFAULTS.brand.primary_color = '#1a73e8'`
+  (`tenant-config-editor.tsx:50`) means any Save on a tenant whose `brand_config` is `{}` writes a
+  `primary_color`, which flips `parsePublicBrandConfig`
+  (`public-config/route.ts:132`: `if (typeof obj.primary_color !== 'string') return undefined`) from
+  "omit the slice" to "emit it" — the exact ADR-0019 D4 unset→set one-way transition FOLLOW-670
+  describes for placement. Pre-existing (from #623/FOLLOW-614), **not** introduced here — and notable
+  because the two keys added by this PR chose the correct null→omit pattern
+  (`serializeBrandConfig:191`), i.e. the right pattern was in the author's hands and applied unevenly
+  within one object. Cite into FOLLOW-670; not re-filed.
+- **No QUEUE assumption invalidated.** `gh pr list --state open` → `[]`; no ticket is dispatched; the
+  residual FOLLOW-628/629/631/632/634 touch neither the consent route nor `/api/config`. **QUEUE.md and
+  ESCALATIONS.md not written (read-only per charter).**
+
+#### 5b. Future sprint tickets affected
+
+- **External-brand go-live (the 3 re-brand clients):** §Step 3a is no longer a *branding* step, it is a
+  **registration-funnel precondition** — until `brand_name` is seeded the consent GET refuses, and the
+  documented POST path requires a caller-supplied hash. FOLLOW-656's handoff must carry both facts.
+- **FOLLOW-656 / FOLLOW-653** inherit DG-1 + DG-4: the go-live checklist needs a *verified* step
+  ("the brand's deployment fetches the text from the GET and aborts on 409"), not today's "computes its
+  own hash" instruction — otherwise the gate is decorative.
+- **FOLLOW-373 lineage (consent umbrella):** if the POST stays ungated (FOLLOW-684 deferred), the
+  umbrella's audit value for external brands rests entirely on the out-of-repo caller's good behaviour.
+  That is a CEO/DPO-visible posture, not an engineering detail.
+
+#### 5c. Contracts changed others rely on
+
+- **`GET /api/v1/consent/platform-registration` 409 `brand_identity_not_provisioned`** — new wire
+  contract. In-repo consumers: none (framework route). Documented out-of-repo consumers: **none** (§3).
+  Out-of-repo consumers whose documented status policy mis-handles it: one (`HANDOFFS.md:2864`).
+- **`BrandConfig` +2 fields on the `/api/config` wire** — additive; the staff editor consumes the
+  canonical `TenantConfig` from the route (no redeclared shared type), and `GET` now reports `null` for
+  an unset key instead of a resolved fallback — a provenance improvement an existing consumer could
+  nonetheless notice (the only consumer is the editor, which handles `null`,
+  `tenant-config-editor.tsx:274-289`).
+- **No SDK / ingest / decision-api / public-config change; no migration; no package export.** Legal
+  identity stays off the browser wire (re-verified, §3 Note 3).
+- **One new Sentry tag** (`brand_identity`) enters the platform tag vocabulary with no registry entry
+  (§4d DG-3).
+
+#### 5d. Architectural assumptions affected
+
+- **Sequential-ticket integration HELD (the PM's step-5d question, answered independently):** #629 did
+  not fork #627's detection. One env read, one count probe, one fail-closed branch, three intent-named
+  callers — verified at `3ecec7f`, not at HEAD (§4b). The module-private extraction is the right call,
+  and I record it as the positive counterpart to RETRO-223's warning about shared cores: the
+  consolidation that prevents drift is the same consolidation that gives FOLLOW-674 a three-surface
+  blast radius. Both are true; neither argues against the design.
+- **"Fail-loud" is now formally poly-valent in this codebase, and that is progress worth naming.** #627
+  established refuse-rather-than-guess for attestations; #629 establishes **refuse where a wrong record
+  would be created / alert where refusing would obstruct a data-subject right**, with a written Art.
+  12(2) rationale. That is a better rule than "return an error", and I verified it against the code
+  rather than the ticket text (§4a LG-1). Its missing leg is the *writer* surface; its weaker leg is
+  enforced by observability rather than by control flow.
+- **Rule AA split, restated for this ticket:** code axis **CLOSED and self-sufficient** (an in-product
+  producer; no operator step is needed to make the mechanism work). Prod axis **OPEN**: 0 tenants have
+  `brand_name`, so every legal surface still emits Estalara — correctly, for the single first-party
+  tenant. Unlike #627/#628, the new guard here is **not** inert in prod: it executes a query on every
+  consent GET and DSR initiate today (§4b).
+- **A compliance-grade field is now writable by the tenant, unaudited** (§4a LG-3). Surfaced with
+  severity for the PM: the choice is "restrict the two keys to the staff branch" vs "extend audit
+  coverage to agency writes" vs "accept and document". Not escalated on the PM's behalf.
+
+### 6. New lesson candidates
+
+- **Pattern P-7 (NEW) — "GATE-ON-THE-UNUSED-DOOR": an enforcement gate is added to the surface the team
+  reasons about, while the surface the documented integration actually uses stays ungated and
+  unalarmed.** Evidence here: consent GET 409 (gated, no documented consumer) vs consent POST (the only
+  writer, ungated, and the flow `EXTERNAL_BRAND_GOLIVE_CHECK:306` actually prescribes). Prior art
+  examined and **rejected as priors**: RETRO-223 §4a LG-3 is *observability* reaching the wrong party
+  (the SDK swallows a 403), not enforcement placed on the wrong surface; RETRO-218's producer-less
+  `allowed_origins` is a missing producer, not a mis-placed gate. **Count 1, HELD, NO PROMOTION** — the
+  ≥2-PRIOR bar is not met, and promoting on a single sighting is exactly the noise the threshold exists
+  to prevent. **Pre-authorized:** promote on a 2nd numbered-retro sighting of a guard shipped on a
+  surface with no documented consumer while a sibling write surface stays open.
+- **Pattern P-8 (NEW, positive) — "CROSS-MODULE ROUND-TRIP ASSERTION": a producer test that feeds the
+  producer's ACTUAL stored output into the consumer's REAL reader instead of mocking both halves.**
+  `config/route.test.ts:285` is the shape, and the class it would have caught (fail-silent
+  producer/consumer mismatch) has ≥2 prior numbered sightings (RETRO-218 CHECK B, RETRO-219 CHECK B,
+  RETRO-223). **Deliberately NOT promoted**, for two honest reasons: (i) the adjacent prescription is
+  **already codified as Rule Z** (a cross-runtime consumer must be tested against the other runtime's
+  canonical contract, not a self-shaped mock), so the correct move would be an *amendment* extending
+  Rule Z to same-runtime producer/consumer pairs across a DB column — an amendment is still a rule
+  write, and I will not make one on the first sighting of the intra-runtime variant; (ii) the concrete
+  remedy the implementer himself proposed (a CI round-trip guard for whole-JSONB writers) ships better
+  as a ticket than as prose → FOLLOW-689. **Count 1 on the Rule Z amendment axis, HELD, pre-authorized**
+  for promotion as a Rule Z amendment on the 2nd sighting.
+- **Rule AH sighting (no promotion) —** §4d DG-2 (`BRAND_PROVISIONING.md:269` asserts "byte-identical"
+  absolutely; true only conditionally). Rule AH was promoted by RETRO-220; count under AH: **6**.
+- **Rule AI sightings ×2 (no promotion) —** §4d DG-1 (`HANDOFFS.md:2864/2867` — this PR changed the
+  truth-value of a 409's meaning on that path and touched no handoff) and §4d DG-4
+  (`EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` §2 "GAP" + item 3 + item (c), falsified by #624/#629, never
+  updated). **Direct answer to the PM's QUEUE §session-61 question:** yes, the "documentation asserts
+  behavior the code doesn't implement" defect has cleared the bar — and it was **already promoted twice
+  the same day**: **Rule AH** (RETRO-220 — doc-ahead-of-code / operator instructions) and **Rule AI**
+  (RETRO-222 — a change that falsifies a claim must update every document asserting the prior state,
+  naming `backlog/HANDOFFS.md` and in-file API docblocks explicitly). The three instances the PM listed
+  (ESC-040, FOLLOW-658 AC3, the §Step 0 correction) are covered by those two rules; a third rule on the
+  same axis would be duplication, not codification. **No new promotion this retro.**
+- **Rule AG sighting (no count change).** This PR appended 24 lines to
+  `.claude/agents/backend-engineer/lessons.md` — the 4th independent PR of this wave to append to that
+  file. AG is codified (RETRO-219), remedy ticketed (FOLLOW-650), no collision reported for #629 (it
+  merged last). Recorded for completeness.
+- **Rule S sightings (no promotion) —** §4c TG-2 (the DSR suite never runs the branch its sibling's
+  suite covers) and TG-4 (the tier inversion RETRO-222 named). Long codified.
+
+### 7. Follow-ups
+
+- **FOLLOW-684:** close the fabrication axis on the surface that actually writes the record — gate/alarm
+  `POST /api/v1/consent/platform-registration` on `isUnprovisionedExternalBrand`, and hard-refuse the
+  provable sub-case (submitted hash **equals** `CANONICAL_CONSENT_TEXT_HASH` while the tenant is an
+  unprovisioned external brand) (backend-engineer + compliance-engineer, 3h, priority **P1**).
+- **FOLLOW-685:** hand off the GET that #624 shipped and #629 made load-bearing — document it in
+  `backlog/HANDOFFS.md`, enumerate the 409, and method-scope the "409 is safe, proceed" instruction that
+  currently tells the caller to ignore the refusal; reconcile the go-live check's "compute your own hash"
+  instruction with the GET-based flow (backend-engineer + compliance-engineer, 3h, priority **P1**).
+- **FOLLOW-686:** split the count-read-failure path from the unprovisioned path on the consent GET (a
+  5xx/retryable status and a message that states what actually failed), carry `data_source` on the 409,
+  distinguish unknown-tenant from unprovisioned, and correct the runbook's "byte-identical" claim
+  (backend-engineer, 2h, priority **P2**).
+- **FOLLOW-687:** decide and implement the write-authority posture for the two compliance-grade legal
+  identity keys — staff-only, or audited on the agency path (backend-engineer + compliance-engineer, 3h,
+  priority **P2**).
+- **FOLLOW-688:** give the DSR alarm a real consumer — register
+  `brand_identity: unprovisioned_external` in `docs/ops/DSR_ALERTING.md` with a rule recipe + SLA, add
+  the missing env-unset DSR test, and make an Estalara-branded OTP actionable for a data subject who does
+  not recognise the sender (devops-engineer + compliance-engineer, 2h, priority **P2**).
+- **FOLLOW-689:** make whole-JSONB writers round-trip unknown keys — `serializeBrandConfig` passthrough
+  plus a test, and the CI round-trip guard the implementer's own lessons entry proposes
+  (backend-engineer, 3h, priority **P2**).
+
+### 8. Cross-references
+
+- **RETRO-219 (#624, FOLLOW-654)** — the retro that filed FOLLOW-659; its CHECK B producer-coverage
+  finding is genuinely closed here (§5a). **Explicit contradiction, per algorithm step 8:** RETRO-219 §3
+  CHECK A declared the consent flow *"end-to-end within the consent flow"* on the grounds that the GET
+  "is itself the producer of the hash the subsequent POST consumes". That is **not established** — no
+  in-repo consumer, no handoff instruction to call the GET
+  (`grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` → zero hits), and the canonical out-of-repo spec
+  prescribes the caller author its own text and hash (`EXTERNAL_BRAND_GOLIVE_CHECK:306`).
+  Reconciliation: RETRO-219 analyzed the *in-repo* axis (both halves of the hash chain exist in our code
+  — true) and never opened the *integration* axis (nobody was told to use them). §3 supersedes it as
+  HALF_WIRE_P / P1.
+- **RETRO-222 (#627, FOLLOW-660)** — **explicit contradiction, per algorithm step 8:** §4a LG-3 there
+  recorded the explicit-but-fabricated-hash axis as *"Verified closed at HEAD by #629"* on the strength
+  of the new GET 409. Analyzing the POST independently (as this PR's own asymmetry demands) shows the
+  axis is closed **only for callers that fetch our text**; the documented caller path does not, and the
+  POST is ungated and unalarmed (§4a LG-1). RETRO-222 traced one hop — GET-now-refuses — and inferred
+  closure; the gap had moved to the writer. Reconciliation: LG-3 is **re-opened as FOLLOW-684**, and
+  RETRO-222's own §4a LG-2 defect (a fail-closed path answering a 4xx that asserts a false state) is
+  **replicated** onto the GET by the shared core → FOLLOW-686. Its §5d "the guard is shipped and inert"
+  framing also does not hold for #629's call sites (§4b).
+- **RETRO-223 (#628, FOLLOW-658)** — the sibling producer-coverage ticket; its LG-1 mis-set analysis is
+  strengthened here (§5a / FOLLOW-678). Its §5d "closed in code, not in prod" verdict holds for #629
+  too, with the refinement that this ticket's producer needs no operator step to *work*, only to be
+  *used*.
+- **RETRO-220 (#625)** — **Rule AH** promoted there; §4d DG-2 is sighting 6. **RETRO-221 (#626)** —
+  FOLLOW-670's minting pattern has a second instance in the very object this PR edited (§5a).
+- **RETRO-218 (#623)** — origin of the operator-seeded-producer class. **RETRO-213 (#618)** — Rule AI's
+  first prior.
+- **Rules:** **AA** (code-vs-prod split, §5d) · **AF** (Rule I red = verified baseline, §2) · **AH**
+  (DG-2) · **AI** (DG-1, DG-4) · **AG** (§6) · **S** (TG-2, TG-4) · **K.2** (LG-2) · **L** (§3 Note 3) ·
+  **Z** (§6 P-8, held).
+- **Tickets:** FOLLOW-674 / 675 / 676 / 678 / 670 / 656 / 653 / 650 (§5a–§5b) · new FOLLOW-684…689.
+
+<!-- next free RETRO number: 225. next free FOLLOW number: 690 (FOLLOW-684..689 filed by RETRO-224).
+RETRO-224 = retro for PR #629 (FOLLOW-659, merged 2026-07-26T14:57:38Z, 3ecec7f; OPUS
+retrospective-analyst, session 61). Completes RETRO-220..224 for PRs #625-#629 — the session-61 retro debt is
+now clear. CI independently verified: 61 pass + 2 Rule I (Rule AF baseline) = 63, the same shape as the other
+four. CHECK A clean (isUnprovisionedExternalBrand: producer brand-identity.ts:266 -> TWO non-test consumers
+consent/route.ts:57/:246 + dsr/initiate/route.ts:34/:229, verified via `git show 3ecec7f`; the new UI fieldset
+sits in a nav-reachable framework route, link at tenants/[id]/page.tsx:134). CHECK B = 1 FINDING + 3 notes:
+HALF_WIRE_P/P1 -> the GET this PR hardened has NO documented consumer (zero "GET /api/v1/consent" hits in
+HANDOFFS; the go-live check :306 prescribes the caller compute its OWN hash), so the 409 gates a door the
+documented integration never opens; deliberately NOT adjudicated the way RETRO-222 handled #627's 400 (that
+precedent needs the consumer to exist AND have been told). Notes: the JSONB keys now have producer AND consumer
+AND two render legs (RETRO-219's finding closed); the new Sentry tag has no rule in DSR_ALERTING.md (the repo's
+own 2-alert registry) and Sentry no-ops without SENTRY_DSN_CONTROL_PLANE; legal identity correctly stays OFF
+the SDK wire (parsePublicBrandConfig reads only 3 keys). STEP 7 CLOSURE (4 hops traced): PRODUCER
+PATCH /api/config:382 + UI editor:263 -> STORAGE brand_config -> CONSUMER resolveBrandIdentity:102 /
+fetchBrandIdentity:131 -> RENDER DSR email :251-259 AND renderPlatformConsentText :265. REAL closure of the
+producer axis (first of the 658/659/660 class needing no operator step to WORK) + it fixed an unticketed
+defect (the documented curl NEVER worked -- Zod stripped both keys -- and any settings Save WIPED a seeded
+identity). BUT the fail-loud axis: CLOSED on consent GET, CONDITIONAL on DSR (unrouted alarm), ABSENT on
+consent POST -> the gap moved one hop, to the writer. MULTI-AXIS VERDICT on the asymmetric policy (the PM's
+explicit ask): consent GET 409 CORRECT (gate at :246 before render :265; no text/hash in the 409 body); DSR
+send+alert CORRECT and its premise VERIFIED IN CODE (the dsrVerifications insert :192 and the ClickHouse audit
+write :283 persist NO brand -> no wrong record is created, only a mis-branded email) -- asymmetry affirmed in
+KIND, with two riders (it protects delivery of the right, not its exercisability; and its FORCE is unequal --
+control flow vs an unrouted Sentry issue). THIRD SURFACE = the consent POST, the ONLY writer (:462), calls
+neither gate; its two gates (isFirstPartyTenant :331, requiresExplicitConsentHash :375) are satisfied by ANY
+valid hash incl. the canonical Estalara one that HANDOFFS:2842 still calls the default -> FOLLOW-684 P1.
+DELEGATION CONFIRMED at 3ecec7f (the PM's step-5d question): requiresExplicitConsentHash:195 is a ONE-LINE
+delegate, isTreatedAsExternalBrand:217 is the single shared core (the only env read + the only count probe),
+isUnprovisionedExternalBrand:266 short-circuits on isFallbackIdentity:271 then delegates :272. NO third check.
+GAPS: 5 logic (LG-1 ungated POST P1; LG-2 the count-read failure answers 409 with a false message 15 lines
+below a sibling failure that answers 500, omits data_source, and conflates unknown-tenant = RETRO-222 LG-2
+replicated onto a 2nd surface; LG-3 agency:admin can write the compliance-grade legal identity through the
+UNAUDITED agency branch :455 -- the PR body describes only the staff path; LG-4 serializeBrandConfig:186 still
+drops unknown keys = the destructive write fixed instance-wise not class-wise, blast radius 0 today because the
+ADR-0019 slices live in OTHER columns; LG-5 note: isFirstPartyTenant:161 fail-OPEN still coexists with the
+fail-CLOSED core), 0 code bugs (7 claims re-verified; "zero extra queries" is TRUE as written but NEITHER
+condition holds in prod today -> the guard is LIVE, not inert, contra RETRO-222's framing), 4 test (the POST
+fabrication case is untestable because unimplemented; the DSR suite stubs the env in all 3 cases so it NEVER
+runs the prod-live count-probe branch; the probe mock has no .where() so FOLLOW-674 stays invisible; the Rule S
+tier inversion persists), 5 docs (HANDOFFS:2864/2867 "409 is safe, proceed" now composes with the new refusal
+into a full bypass = P1; runbook :269 "byte-identical" false today = AH sighting 6; DSR_ALERTING.md never got
+the new tag while runbook :543 tells the operator to "confirm the alert stops"; the go-live check still says
+"GAP" and prescribes the bypassing flow = AI sighting; MASTER_DESIGN has ZERO brand_config mentions so there is
+no divergence to file). PATTERNS: P-7 GATE-ON-THE-UNUSED-DOOR count 1 HELD + pre-authorized (RETRO-223 LG-3 and
+RETRO-218 examined and REJECTED as priors -- different axes). P-8 CROSS-MODULE ROUND-TRIP ASSERTION (positive;
+config/route.test.ts:285 feeds the stored blob to the REAL resolver) HELD at 1 on the Rule Z AMENDMENT axis, not
+promoted -- an amendment is still a rule write. Rule AH sighting 6, Rule AI sightings x2, Rule AG 4th append,
+Rule S x2. NO NEW RULE. The PM's QUEUE question is answered explicitly: the doc-over-claim axis was ALREADY
+promoted twice the same day (AH by RETRO-220, AI by RETRO-222); a third rule on that axis is duplication. -->

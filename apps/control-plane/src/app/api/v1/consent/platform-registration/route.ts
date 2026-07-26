@@ -52,7 +52,11 @@ import {
   renderPlatformConsentText,
   computeConsentTextHash,
 } from './lib';
-import { isFirstPartyTenant, resolveBrandIdentity } from '@/lib/brand-identity';
+import {
+  isFirstPartyTenant,
+  requiresExplicitConsentHash,
+  resolveBrandIdentity,
+} from '@/lib/brand-identity';
 
 // ─── IP encryption ────────────────────────────────────────────────────────────
 
@@ -282,6 +286,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //     hash would attest an audit trail of text the visitor never saw. The
   //     first-party Estalara tenant keeps backward-compat (hash may be omitted →
   //     canonical default) so the single live registration flow is unaffected.
+  //
+  //     This env-only check stays here as the no-DB fast path. FOLLOW-660 adds a
+  //     second gate after the DB client exists (step 7b) for the case this one
+  //     cannot see: `FIRST_PARTY_TENANT_ID` UNSET, which makes the predicate
+  //     answer `true` for EVERY tenant.
   if (!isFirstPartyTenant(body.tenant_id) && body.consent_text_hash === undefined) {
     return NextResponse.json(
       {
@@ -315,6 +324,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       { error: 'Service configuration error', data_source: 'none' },
       { status: 500 },
+    );
+  }
+
+  // 7b. FOLLOW-660 — close the `FIRST_PARTY_TENANT_ID` fail-open.
+  //     With the env UNSET, step 4b's predicate treats EVERY tenant as first-party, so a
+  //     missing hash silently defaults to the canonical Estalara text hash. Harmless while
+  //     Estalara is the only tenant; an audit fabrication for every external brand the moment
+  //     a second one exists. This gate needs the tenant count, hence a DB client — it runs
+  //     after step 7 and still before any write.
+  if (
+    body.consent_text_hash === undefined &&
+    (await requiresExplicitConsentHash(db, body.tenant_id))
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'consent_text_hash is required: FIRST_PARTY_TENANT_ID is not configured and more than ' +
+          'one tenant exists, so the first-party tenant cannot be identified. Set ' +
+          'FIRST_PARTY_TENANT_ID (see the brand-provisioning runbook, Step 0) or send an ' +
+          'explicit consent_text_hash.',
+      },
+      { status: 400 },
     );
   }
 

@@ -147,12 +147,45 @@ describe('PresentationConfigResponseSchema', () => {
       language: 'en',
       accent_color: '#2563EB',
       data_source: 'db',
-      // A future ADR-0019 slice a shipped SDK does not yet know about.
-      quiz_placement: { corner: 'top-right', offset_x: 10, offset_y: 10 },
+      // A future ADR-0019 slice a shipped SDK does not yet know about. (This case used
+      // `quiz_placement` until FOLLOW-640 made it a REAL slice — see the case below.)
+      some_future_slice: { anything: true },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect((result.data as Record<string, unknown>).quiz_placement).toBeUndefined();
+      expect((result.data as Record<string, unknown>).some_future_slice).toBeUndefined();
+    }
+  });
+
+  it('retains the quiz_placement slice now that FOLLOW-640 ships its SDK consumer', () => {
+    const placement = { corner: 'top-right', offset_x: 10, offset_y: 10 };
+    const result = PresentationConfigResponseSchema.safeParse({
+      quiz_enabled: true,
+      micro_polls_enabled: false,
+      language: 'en',
+      accent_color: '#2563EB',
+      data_source: 'db',
+      quiz_placement: placement,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>).quiz_placement).toEqual(placement);
+    }
+  });
+
+  it('retains the opt_out_widget slice (FOLLOW-641)', () => {
+    const optOut = { placement: { corner: 'bottom-right', offset_x: 8, offset_y: 8 } };
+    const result = PresentationConfigResponseSchema.safeParse({
+      quiz_enabled: true,
+      micro_polls_enabled: false,
+      language: 'en',
+      accent_color: '#2563EB',
+      data_source: 'db',
+      opt_out_widget: optOut,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>).opt_out_widget).toEqual(optOut);
     }
   });
 

@@ -253,6 +253,13 @@
       "when": 1784933100000,
       "tag": "0035_quiz_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784974732991,
+      "tag": "0036_tenants_optout_widget_config",
+      "breakpoints": true
     }
   ]
 }

@@ -48,6 +48,12 @@ export interface QuizWidgetConfig {
    * no logo — byte-identical to pre-ADR-0019.
    */
   logoUrl?: string | null;
+  /**
+   * Whether to render the discreet "Powered by Estalara" attribution in the card footer
+   * (FOLLOW-651). Defaults to `true`; the caller passes `false` when `brand.white_label ===
+   * true`. First real consumer of the brand `white_label` flag (RETRO-214 HALF_WIRE_P).
+   */
+  showAttribution?: boolean;
 }
 
 // ─── UI chrome i18n (question/answer strings live in the definition) ────────────
@@ -437,6 +443,14 @@ export function renderQuizWidget(
         color: #9ca3af;
         margin-bottom: 12px;
       }
+      .estalara-quiz-attribution {
+        display: block;
+        margin: 14px auto 0;
+        text-align: center;
+        font-size: 10px;
+        color: #b0b4bd;
+        letter-spacing: 0.02em;
+      }
     `;
     shadowRoot.appendChild(style);
 
@@ -567,6 +581,17 @@ export function renderQuizWidget(
         onDismiss();
       });
       card.appendChild(skip);
+
+      // FOLLOW-651: discreet "Powered by Estalara" attribution, rendered BY DEFAULT in the card
+      // footer. Suppressed only when the caller passes `showAttribution: false` (i.e.
+      // `brand.white_label === true`). Re-appended each step because buildStep() clears the card.
+      // Distinct class from `.estalara-quiz-logo` — the logo is NOT clobbered.
+      if (config.showAttribution !== false) {
+        const attribution = document.createElement('div');
+        attribution.className = 'estalara-quiz-attribution';
+        attribution.textContent = 'Powered by Estalara';
+        card.appendChild(attribution);
+      }
     }
 
     buildStep();

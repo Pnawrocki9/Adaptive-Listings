@@ -71,6 +71,13 @@ export const EXAMPLE_PRESENTATION_CONFIG_FULL: PresentationConfigResponse = {
     logo_url: 'https://cdn.example.com/brands/acme/logo.svg',
     white_label: true,
   },
+  // FOLLOW-640: custom quiz-trigger placement (bottom-right instead of the default bottom-left).
+  quiz_placement: { corner: 'bottom-right', offset_x: 32, offset_y: 32 },
+  // FOLLOW-641: opt-out toggle re-placed top-right with a localised label override.
+  opt_out_widget: {
+    placement: { corner: 'top-right', offset_x: 20, offset_y: 20 },
+    labels: { on: { pl: 'włączona' }, off: { pl: 'wyłączona' } },
+  },
 };
 
 /**

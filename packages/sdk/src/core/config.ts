@@ -20,7 +20,12 @@
  */
 export const BOT_UA_RE = /Googlebot|bingbot|Slurp|DuckDuckBot|AhrefsBot|SemrushBot|MJ12bot/i;
 
-import type { QuizDefinition, QuizLanguage } from '@estalara/shared';
+import type {
+  OptOutWidgetConfig,
+  QuizDefinition,
+  QuizLanguage,
+  WidgetPlacement,
+} from '@estalara/shared';
 import { QUIZ_LANGUAGE_VALUES } from '@estalara/shared';
 
 export interface SdkConfig {
@@ -122,8 +127,9 @@ export interface SdkConfig {
    *   - `primaryColor` → the quiz sticky-trigger background (a widget with no per-widget
    *     color; falls back to the hardcoded `#ef4444` when absent).
    *   - `logoUrl`      → the brand logo shown atop the quiz card (none when absent).
-   *   - `whiteLabel`   → parsed and exposed but NOT consumed by this ticket (colors/logo
-   *     only); its consumer is unspecified by ADR-0019 D4 (PR-noted deviation).
+   *   - `whiteLabel`   → FOLLOW-651: hides the "Powered by Estalara" attribution rendered by
+   *     default in the quiz card and the opt-out toggle when `true`. First real consumer of the
+   *     flag (was a producer-only passthrough per RETRO-214 HALF_WIRE_P).
    */
   brand?: {
     primaryColor: string;
@@ -142,6 +148,32 @@ export interface SdkConfig {
    * `DEFAULT_QUIZ_DEFINITION` (byte-identical to pre-ADR-0019, ADR-0019 D4/D5).
    */
   quizDefinition?: QuizDefinition;
+
+  /**
+   * Per-tenant quiz sticky-trigger placement (FOLLOW-640 / ADR-0019 D2).
+   *
+   * Resolved at runtime from the `quiz_placement` slice of the `GET /api/quiz/public-config`
+   * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
+   * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
+   *
+   * ABSENT when the tenant configured no placement — the SDK then uses `DEFAULT_QUIZ_PLACEMENT`
+   * (byte-identical to the pre-FOLLOW-640 hardcoded `bottom:24px; left:24px`).
+   */
+  quizPlacement?: WidgetPlacement;
+
+  /**
+   * Per-tenant opt-out toggle widget config (FOLLOW-641 / ADR-0019 D2).
+   *
+   * Resolved at runtime from the `opt_out_widget` slice of the `GET /api/quiz/public-config`
+   * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
+   * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
+   *
+   * ABSENT when the tenant configured nothing — the SDK then renders the (always-mounted)
+   * profiling opt-out toggle with hardcoded defaults (byte-identical to pre-FOLLOW-641).
+   * Carries placement + i18n label overrides; the toggle's accent color comes from the
+   * `brand` slice per the ADR-0019 D4 precedence, not from here.
+   */
+  optOutWidget?: OptOutWidgetConfig;
 }
 
 export const DEFAULT_CONFIG: Omit<SdkConfig, 'apiKey'> = {

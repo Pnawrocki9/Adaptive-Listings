@@ -128,6 +128,12 @@ export function mergeQuizConfig(
     // FOLLOW-639 / ADR-0019 D5: overlay the optional editable quiz definition. Absent → key
     // omitted so the SDK walks its built-in DEFAULT_QUIZ_DEFINITION (byte-identical, D4/D5).
     ...(fetched.quiz_definition ? { quizDefinition: fetched.quiz_definition } : {}),
+    // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz-trigger placement. Absent → key
+    // omitted so renderQuizTrigger uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
+    ...(fetched.quiz_placement ? { quizPlacement: fetched.quiz_placement } : {}),
+    // FOLLOW-641 / ADR-0019 D2: overlay the optional opt-out widget config. Absent → key
+    // omitted so renderProfilingToggle uses hardcoded defaults (byte-identical, D4).
+    ...(fetched.opt_out_widget ? { optOutWidget: fetched.opt_out_widget } : {}),
   };
 }
 
@@ -1043,6 +1049,9 @@ async function init(): Promise<IntentState | null> {
       // precedence keeps the card accent on `accent_color`; brand.primary_color drives
       // the sticky trigger (a widget with no per-widget color) below.
       logoUrl: config.brand?.logoUrl ?? null,
+      // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
+      // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
+      showAttribution: config.brand?.whiteLabel !== true,
     };
 
     // 5a. Sidebar widget ("Personalizing for you") is admin-only — not shown to investors.
@@ -1056,8 +1065,17 @@ async function init(): Promise<IntentState | null> {
     if (shadowHost) {
       profilingToggle = renderProfilingToggle(shadowHost.root, {
         language: config.language,
-        accentColor: config.accentColor,
+        // FOLLOW-641 / ADR-0019 D4: the opt-out toggle has no per-widget color, so the brand
+        // umbrella color becomes its accent; absent → the SDK accentColor (byte-identical).
+        accentColor: config.brand?.primaryColor ?? config.accentColor,
         initialOptedOut: profilingOptedOut,
+        // FOLLOW-641 / ADR-0019 D2: per-brand placement + i18n label overrides. Absent → the
+        // toggle renders at bottom-left with hardcoded copy (byte-identical to pre-FOLLOW-641).
+        ...(config.optOutWidget?.placement ? { placement: config.optOutWidget.placement } : {}),
+        ...(config.optOutWidget?.labels ? { labels: config.optOutWidget.labels } : {}),
+        // FOLLOW-651: render the "Powered by Estalara" attribution unless this tenant is
+        // white-label. First real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
+        showAttribution: config.brand?.whiteLabel !== true,
         onChange: (newOptedOut: boolean) => {
           profilingOptedOut = newOptedOut;
           setProfilingOptOut(newOptedOut, storedLeadId);
@@ -1223,6 +1241,9 @@ async function init(): Promise<IntentState | null> {
           // brand umbrella color becomes its default. Absent → hardcoded #ef4444 in
           // renderQuizTrigger (byte-identical to pre-ADR-0019).
           ...(config.brand?.primaryColor ? { backgroundColor: config.brand.primaryColor } : {}),
+          // FOLLOW-640 / ADR-0019 D2: per-brand placement. Absent → DEFAULT_QUIZ_PLACEMENT
+          // (byte-identical to the pre-FOLLOW-640 hardcoded bottom-left 24/24).
+          ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
         },
         () => {
           renderQuizWidget(

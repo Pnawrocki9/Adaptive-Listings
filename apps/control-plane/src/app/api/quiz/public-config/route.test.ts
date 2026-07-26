@@ -481,3 +481,78 @@ describe('GET /api/quiz/public-config — AC4 (FOLLOW-277): auth-path DB throw �
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
 });
+
+// ─── FOLLOW-640 / FOLLOW-641 wire slices ──────────────────────────────────────
+
+describe('GET /api/quiz/public-config — placement slices (FOLLOW-640 / FOLLOW-641)', () => {
+  let validKeyHash: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    validKeyHash = await sha256Hex(VALID_KEY_RAW);
+    mockLimit.mockResolvedValue([]);
+    mockWhere.mockReturnValue({ limit: mockLimit });
+    mockFrom.mockReturnValue({ where: mockWhere });
+    mockSelect.mockReturnValue({ from: mockFrom });
+  });
+
+  /** Drive the two sequential lookups: api_keys, then the tenant row. */
+  function withTenantRow(row: Record<string, unknown>): void {
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true, ...row }]);
+  }
+
+  it('emits quiz_placement from quiz_config.placement', async () => {
+    const placement = { corner: 'top-right', offset_x: 40, offset_y: 12 };
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: { placement }, quizEnabled: true }]);
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ quiz_placement?: unknown }>(res);
+    expect(body.quiz_placement).toEqual(placement);
+  });
+
+  it('omits quiz_placement for an unconfigured tenant (ADR-0019 D4 byte-identical)', async () => {
+    withTenantRow({});
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.quiz_placement).toBeUndefined();
+  });
+
+  it('emits opt_out_widget from tenants.optout_widget_config', async () => {
+    const optOut = {
+      placement: { corner: 'bottom-right', offset_x: 32, offset_y: 48 },
+      labels: { on: { en: 'tailoring on' } },
+    };
+    withTenantRow({ optoutWidgetConfig: optOut });
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    const body = await parseBody<{ opt_out_widget?: unknown }>(res);
+    expect(body.opt_out_widget).toEqual(optOut);
+  });
+
+  it('omits opt_out_widget when the column holds its `{}` default', async () => {
+    withTenantRow({ optoutWidgetConfig: {} });
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.opt_out_widget).toBeUndefined();
+  });
+
+  it('drops an invalid stored slice rather than failing the whole response', async () => {
+    // offset beyond the 200px bound — must not 500 the buyer-facing endpoint.
+    withTenantRow({
+      optoutWidgetConfig: { placement: { corner: 'bottom-left', offset_x: 9999, offset_y: 0 } },
+    });
+
+    const res = await GET(makeGetRequest(VALID_KEY_RAW));
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.opt_out_widget).toBeUndefined();
+  });
+});

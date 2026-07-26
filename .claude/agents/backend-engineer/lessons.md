@@ -2121,3 +2121,25 @@ would generalize this beyond just `adapt-get-auth`.
   key added to a server-side schema that is ALSO absent from the SDK public-config wire without a
   one-line "server-side only, no SDK consumer" justification — the brand_name vs presentation-config
   split is exactly the kind of decision that silently drifts.
+
+- **2026-07-26 / FOLLOW-659** · **What I built**: producer + fail-loud coverage for
+  `brand_config.brand_name`/`legal_entity` — `PATCH /api/config` now accepts/merges/persists both
+  keys (plus a **Legal Identity** fieldset on the staff settings page), consent-text GET returns 409
+  `brand_identity_not_provisioned` for an un-seeded EXTERNAL brand, DSR initiate alerts Sentry but
+  still sends. · **Wiring/auth/fail-loud risks I weighed**: (a) the _stated_ gap was "no producer",
+  but the real bug was worse — the PATCH's Zod schema silently STRIPPED both keys (200, no write)
+  and, because the handler rewrites the whole `brand_config` blob, any settings-page Save **wiped**
+  an operator-seeded legal identity; the runbook's documented curl had never worked. Grep for a
+  writer is not enough — check whether the documented write path actually round-trips; (b) resolved
+  fail-loud-vs-fail-honest ASYMMETRICALLY by surface: refuse where a wrong _record_ would be created
+  (consent attestation), alert-and-proceed where refusing would obstruct the data subject's own
+  right (DSR OTP e-mail, Art. 12(2)) — "fail loud" is not a synonym for "return an error"; (c)
+  reused FOLLOW-660's first-party detection by extracting a private `isTreatedAsExternalBrand` and
+  having `requiresExplicitConsentHash` delegate, rather than writing a third env/count check in the
+  same file; (d) hardened the reader schema `.optional()` → `.nullish()` after noticing my own new
+  `null`-writing producer would have made one null key discard the _other_ key via a whole-object
+  parse failure; (e) placed the gate on GET (where fabricated identity ENTERS) not POST (where
+  refusing would discard a consent already given). · **A guardrail I'd add**: a CI check that any
+  route which writes a whole JSONB column must round-trip every key its own reader module parses —
+  the "handler rewrites the blob from the keys it knows" pattern silently deletes fields owned by a
+  different module, and it is invisible to types, tests and grep.

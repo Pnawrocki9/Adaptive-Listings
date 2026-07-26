@@ -35,23 +35,38 @@ export const tenants = pgTable(
      * Domains where the Estalara SDK snippet is permitted to run — the per-tenant
      * browser-`Origin` allow-list.
      *
-     * ENFORCED as of FOLLOW-642 (2026-07-25, first external re-brand clients onboarding).
-     * The ingest Worker has no Postgres binding; it reads its tenant projection from
-     * `KV_API_KEYS`, so this column is the provisioning source-of-truth that is projected
-     * onto the api-key KV record (`ApiKeyRecord.allowed_origins`) at provisioning. The
-     * ingest origin gate (`apps/ingest/src/origin-gate.ts`) matches the browser `Origin`
-     * against it on every `POST /v1/events` and returns 403 on a mismatch.
+     * ENFORCED as of FOLLOW-642 (2026-07-25, first external re-brand clients onboarding) —
+     * but NOT from this column. The ingest Worker has no Postgres binding; the origin gate
+     * (`apps/ingest/src/origin-gate.ts`) matches the browser `Origin` on every
+     * `POST /v1/events` against `ApiKeyRecord.allowed_origins` in `KV_API_KEYS` and returns
+     * 403 on a mismatch. This column is the PROVISIONING INPUT for that KV field, not a live
+     * read path.
      *
-     * SEMANTICS: `[]` (the default) → INHERIT the env allow-list on the ingest side
-     * (backward compat for Estalara's own first-party tenant — its browser traffic is never
-     * disrupted). A non-empty array locks the tenant to exactly those origins. (Note: the KV
-     * projection distinguishes `null`=inherit from `[]`=deny-all; this Postgres column is
-     * `NOT NULL DEFAULT []`, so at the DB layer `[]` means "no explicit lock-down yet" →
-     * inherit. A tenant that wants hard deny-all is provisioned with the KV `[]`/`null`
-     * distinction directly.)
+     * WRITE PATH — read this before assuming automation (corrected by FOLLOW-658; the earlier
+     * wording claimed the value "is projected onto the api-key KV record at provisioning",
+     * which described automation that did not exist):
+     *   - NO service writes `KV_API_KEYS`. There is no automatic PG→KV projection, and there
+     *     cannot be a fully automatic one: the KV key is `api_key:<RAW key>` and the raw key is
+     *     never stored here (only `api_keys.hashed_key`).
+     *   - The projection is an EXPLICIT operator step:
+     *     `apps/control-plane/scripts/project-allowed-origins.mts` (docs/runbooks/
+     *     BRAND_PROVISIONING.md §Step 6) reads this column, translates the semantics below,
+     *     and writes the KV record.
+     *   - Missing that step no longer fails silently: a non-first-party tenant still on the KV
+     *     `inherit` policy is refused 403 `origin_policy_unconfigured` by the ingest guard
+     *     (FOLLOW-658), gated on the Worker's `FIRST_PARTY_TENANT_ID`.
      *
-     * The staff settings-page control that wrote this was removed as an unenforced facade by
-     * FOLLOW-622 (CEO Option B, 2026-07-24); values now land at provisioning (no admin UI).
+     * SEMANTICS — THE TWO STORES DISAGREE ABOUT `[]`, DO NOT COPY MECHANICALLY:
+     *   - HERE (`NOT NULL DEFAULT []`): `[]` means "nothing configured yet".
+     *   - IN KV: `null`/absent = inherit the env list, `[]` = DENY ALL browser traffic.
+     *   A naive copy of the `[]` default therefore blocks 100% of a brand's browser traffic.
+     *   The projection script REFUSES the empty case rather than guessing; the operator must
+     *   configure real origins or pass an explicit `--on-empty` decision.
+     *   A non-empty array locks the tenant to exactly those origins.
+     *
+     * The staff settings-page control that wrote this column was removed as an unenforced
+     * facade by FOLLOW-622 (CEO Option B, 2026-07-24); there is no admin UI writer today —
+     * values are set at provisioning.
      */
     allowedOrigins: text('allowed_origins').array().notNull().default([]),
 

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedOriginsForEnv,
   isOriginAllowed,
+  isUnprovisionedExternalTenant,
   normalizeToOrigin,
   resolveOriginPolicy,
 } from './origin-gate.js';
@@ -122,5 +123,40 @@ describe('allowedOriginsForEnv', () => {
     expect(list).toContain('https://app.estalara.com');
     expect(list).toContain('http://localhost:5173');
     expect(list).toContain('http://localhost:3000');
+  });
+});
+
+// ─── FOLLOW-658 — un-provisioned external tenant guard ───────────────────────
+//
+// `inherit` resolves to ESTALARA's own env allow-list, so it is only ever correct for the
+// first-party tenant. Any other tenant on `inherit` has a KV api-key record that was never seeded
+// with `allowed_origins` — a provisioning defect, not a default.
+describe('isUnprovisionedExternalTenant', () => {
+  const FIRST_PARTY = '11111111-1111-4111-8111-111111111111';
+  const EXTERNAL = '22222222-2222-4222-8222-222222222222';
+
+  it('flags an external tenant left on the inherit policy', () => {
+    expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, FIRST_PARTY)).toBe(true);
+  });
+
+  it('never flags the configured first-party tenant (its traffic must not break)', () => {
+    expect(isUnprovisionedExternalTenant('inherit', FIRST_PARTY, FIRST_PARTY)).toBe(false);
+  });
+
+  it('never flags a tenant that HAS an explicit policy', () => {
+    expect(isUnprovisionedExternalTenant('explicit', EXTERNAL, FIRST_PARTY)).toBe(false);
+    expect(isUnprovisionedExternalTenant('deny-all', EXTERNAL, FIRST_PARTY)).toBe(false);
+  });
+
+  it('is disabled when FIRST_PARTY_TENANT_ID is unset or blank — a forgotten env cannot black-hole traffic', () => {
+    expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, undefined)).toBe(false);
+    expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, '')).toBe(false);
+    expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, '   ')).toBe(false);
+  });
+
+  it('tolerates surrounding whitespace on either side of the comparison', () => {
+    expect(isUnprovisionedExternalTenant('inherit', ` ${FIRST_PARTY} `, ` ${FIRST_PARTY} `)).toBe(
+      false,
+    );
   });
 });

@@ -142,6 +142,13 @@ max_batch_timeout = 5
 # Secrets set via `wrangler secret put`:
 #   SENTRY_DSN_INGEST      — Sentry DSN for ingest project
 #   OTEL_EXPORTER_HEADERS  — Authorization header for Grafana Cloud OTLP
+#   FIRST_PARTY_TENANT_ID  — UUID of Estalara's own tenant (FOLLOW-658). Not secret, but set via
+#     `wrangler secret put` so it can be configured without a code change + redeploy. Enables the
+#     origin-gate provisioning guard: any OTHER tenant still on the `inherit` policy has an
+#     un-seeded api-key KV record and is refused 403 `origin_policy_unconfigured` instead of
+#     silently inheriting Estalara's own allow-list. UNSET = guard off (pre-FOLLOW-658 behavior for
+#     every tenant), so a forgotten value can never black-hole first-party traffic.
+#     Same value as the control-plane env of the same name (BRAND_PROVISIONING §Step 0).
 #   INTERNAL_API_SECRET    — Bearer shared with Modal chat_nlp_endpoint (F-01)
 #   MODAL_CHAT_NLP_URL     — HTTPS URL of intent-engine chat_nlp_endpoint (F-01 / ADR-0016)
 #     e.g. https://<workspace>--estalara-intent-engine-chat-nlp-endpoint.modal.run

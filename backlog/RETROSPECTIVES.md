@@ -34668,3 +34668,458 @@ no PG on a zero-I/O hot path) — asymmetry justified, but the class-closed clai
 SHIP-FALSIFIES-DOC promoted -> Rule AI (priors RETRO-213 DOC-1 + RETRO-221 §6, both verified; RETRO-220 LG-1
 stays uncounted as the Rule AH direction; this retro does not inflate the count; 2 instances listed in this
 one PR). P-4 CLASS-CLOSED-ON-ONE-CONSUMER at 0 priors -> HELD + pre-authorized. -->
+
+
+## RETRO-223 — FOLLOW-658 (allowed_origins producer-coverage + fail-loud unprovisioned guard) — 2026-07-26
+
+### 1. Summary of change
+
+- **PR:** #628 (merged 2026-07-26 14:42:11 UTC, commit `95a8492`) —
+  `feat(ingest): allowed_origins producer + fail-loud un-provisioned guard [FOLLOW-658]`, branch
+  `backend-engineer/FOLLOW-658-allowed-origins-producer`.
+- **Files changed:** 19 (+1495 / −90) — 1 new operator script (614), 1 new shared type module (61),
+  1 new script test (266), 3 ingest source files, 2 db schema doc-comment edits, 5 docs, 1
+  `wrangler.toml` comment, 1 backlog STATUS block, 1 agent lessons append.
+- **Modules touched:** [ingest / control-plane (scripts only) / shared / db (doc-comments only) /
+  docs / configs]. **No** SDK, decision-api, Modal, migration or DDL change.
+- **Key contracts changed:**
+  - `ApiKeyRecord` **relocated** `apps/ingest/src/auth.ts` → `packages/shared/src/api-key-record.ts`,
+    re-exported from `@estalara/shared` and type-re-exported from `auth.ts` — added/moved —
+    breaking: **no** (the one in-repo importer of the old path, `auth.test.ts:4`, still resolves via
+    the `export type { ApiKeyRecord }` re-export at `auth.ts:27`; `export type` = zero runtime bytes).
+  - NEW `isUnprovisionedExternalTenant(mode, tenantId, firstPartyTenantId)`
+    (`apps/ingest/src/origin-gate.ts:186`) — added — breaking: no.
+  - NEW ingest env var `Env.FIRST_PARTY_TENANT_ID?: string` (`apps/ingest/src/types.ts:57`) — added
+    — breaking: no (absent = pre-FOLLOW-658 behavior).
+  - `POST /v1/events` gains a **new 403 error code `origin_policy_unconfigured`** — behavioral,
+    breaking: **conditionally yes** — reachable only when the Worker's `FIRST_PARTY_TENANT_ID` is SET
+    **and** the requesting tenant is not it **and** its KV record has no `allowed_origins` **and** the
+    request carries an `Origin` header. Unreachable in today's prod (env unset everywhere).
+  - NEW operator CLI `apps/control-plane/scripts/project-allowed-origins.mts` — the **first and only
+    in-repo writer of `KV_API_KEYS`** and the only writer of `tenants.allowed_origins` since #618.
+  - Doc-comment/semantics corrections in `packages/db/src/schema/tenants.ts`,
+    `packages/db/src/schema/api_keys.ts`, `docs/MASTER_DESIGN.md` §V.3.4 (see §3 STEP-7 and §4d).
+
+### 2. Verification done in PR
+
+- Test files changed: 3 — `apps/control-plane/scripts/__tests__/project-allowed-origins.test.ts`
+  (NEW, 266 lines / 24 cases over the 5 pure exports), `apps/ingest/src/origin-gate.test.ts` (+36, 5
+  cases on the new predicate incl. the first-party non-regression and the unset/blank/whitespace
+  disable), `apps/ingest/src/index.test.ts` (+156, 3 route-level cases: 403 body/code, first-party
+  not refused, guard off when the env is unset). Coverage delta: est. up on both apps.
+- **CI checks: independently verified, not accepted from the PR body** — `gh pr checks 628` →
+  **61 pass + 2 fail**, both fails being the duplicated `Rule I — wired-or-dead check`, i.e. the
+  repo-wide permanently-red baseline (Rule AF / ESC-041). Same 63-check shape as #625/#626/#627.
+- **A verification-surface gap the PR self-declared and I confirmed:** `apps/control-plane`'s
+  `typecheck` is `tsc --noEmit` against a tsconfig whose `include` is
+  `["next-env.d.ts","src/**/*.ts","src/**/*.tsx",".next/types/**/*.ts","vitest.config.ts"]`, and
+  `lint` is `eslint src/` — so **neither typecheck nor lint ever sees `scripts/**`**, where the 614
+  new lines live. The _tests_ DO run (`vitest.config.ts:41` `include` carries `scripts/**/*.test.ts`,
+  added by FOLLOW-450) but Vitest transpiles without typechecking. Precedent + prior adjudication
+  exists (a prior retro confirmed `apps/control-plane/scripts/**` is eslint-ignored and outside every
+  tsconfig `include`), so this is not a new defect — but the class of code now sitting in that blind
+  zone changed: it is the only writer of edge auth records. → §4c TG-2 / FOLLOW-683.
+
+### 3. Wiring Audit
+
+**CHECK A — clean (2 suppressions, both cited to precedent).**
+
+- `packages/shared/src/api-key-record.ts` (NEW) — **type-only module** (`export interface` only),
+  suppressed per the type-only exemption; nonetheless it HAS two non-test importers:
+  `apps/ingest/src/auth.ts:20` and `apps/control-plane/scripts/project-allowed-origins.mts:53`
+  (`grep -rn "ApiKeyRecord" apps packages --include=*.ts | grep -v node_modules | grep -v dist/ | grep import`
+  → exactly those two + `auth.test.ts:4`). This is the point of the move: one declaration for the
+  reader and the writer. `packages/shared/dist/**` is untracked (`git ls-files packages/shared/dist`
+  → empty), so no stale mirror shipped.
+- `apps/control-plane/scripts/project-allowed-origins.mts` (NEW) — operator-CLI entrypoint,
+  suppressed per the framework/cron/Worker/operator-entrypoint exemption **and** the explicit
+  `feedback-canary.mts` precedent (RETRO-152 §3). Its 5 pure exports (`toCanonicalOrigin`,
+  `planKvAllowedOrigins`, `reconcileOperatorOrigins`, `mergeKvRecord`, `parseArgs`) are consumed by
+  `main()` in the same module **and** by the 24-case test. **Named residue:** the tail export
+  `export { main as runProjectAllowedOrigins }` (`:614`) has **zero importers repo-wide**
+  (`grep -rn "runProjectAllowedOrigins" . | grep -v node_modules` → the definition line only) —
+  byte-identical in shape to `runFeedbackCanary`, which RETRO-152 §3 adjudicated as an exempt
+  operator entrypoint. Recorded, not filed.
+- `isUnprovisionedExternalTenant` — non-test consumer `apps/ingest/src/handlers/events.ts:30`
+  (import) + `:168` (call). Wired.
+
+**CHECK B — QUALIFIED (no HALF_WIRE, but the wire is not load-bearing yet).** Two new signals:
+
+- **`ApiKeyRecord.allowed_origins` — the RETRO-218 HALF_WIRE_P is CLOSED IN CODE.** A producer now
+  exists: `project-allowed-origins.mts` → `wranglerKvPut` (`:403-431`, `wrangler kv key put --path`),
+  the only `KV_API_KEYS` write in the repo (`grep -rn KV_API_KEYS apps packages` → ingest reads,
+  ingest types/tests, this script, docs). Consumer unchanged (`auth.ts` → `origin-gate.ts` →
+  `events.ts:155`). **Not clean ✅, though:** producer execution is an operator step nobody has run —
+  QUEUE §session-61's live prod check records **0 tenants with a non-empty `allowed_origins`** — so
+  per Rule AA this is **CODE_COMPLETE_OPERATOR_PENDING**, not "origins are provisioned".
+- **`FIRST_PARTY_TENANT_ID` (ingest) — new CONSUMER, producer is operator env in a THIRD store.**
+  Not a HALF_WIRE_C: the unset branch is a designed, tested path (guard off), which is exactly the
+  adjudication RETRO-222 §3 applied to the control-plane's second reader. But note the store
+  topology honestly: control-plane needs it in **Doppler `prd` AND Vercel** (not synced), ingest
+  needs it a **third** time via `wrangler secret put` — three writes of one value, no drift
+  detection anywhere. Documented (`wrangler.toml:145`, `DOPPLER_SECRETS_MATRIX.md:31`,
+  BRAND_PROVISIONING §Step 0 `:86`); the missing control-plane matrix row is already FOLLOW-677
+  (RETRO-222 §4d DG-4) — **not re-filed here**.
+
+**STEP 7 — prior-follow-up closure, traced END-TO-END (this is the PM's ESC-040 question).**
+
+FOLLOW-658 claims three ACs. Traced against the merged diff at `95a8492`, not the STATUS note:
+
+- **AC1 (producer) — closed in code, one hop short of effective.** Chain:
+  `--origins` → `tenants.allowed_origins` (`:522-525`, the only writer since #618 removed
+  `/api/config`'s) → `planKvAllowedOrigins` (`:121`) → `mergeKvRecord` (`:254`) → `wranglerKvPut`
+  (`:403`) → KV `api_key:<raw>` → `authenticateRequest` → `resolveOriginPolicy` → 403-or-allow
+  (`events.ts:195`) → **render:** the browser either ingests or gets a 403 whose body the SDK never
+  reads (§4a LG-3). Every hop exists in code. The un-run hop is the operator's.
+- **AC2 (fail-loud) — closed in code, DORMANT in prod.** Guard exists and is tested at unit + route
+  level, but it is gated on an env var that is unset in all three stores today, so the loud leg
+  emits nothing until Piotr runs §Step 0. Rule AA.
+- **AC3 (doc-truth) — VERIFIED CORRECTED BEFORE MERGE. Answer to the PM's question: (a), with a
+  precision and a caveat.** The second-generation over-claim was REAL, was introduced by #623's fix
+  for ESC-040's first-generation claim, lived in `main` from 2026-07-25 10:06:20Z to 2026-07-26
+  14:42:11Z, and is **gone from the merged tree**. Verified at four sites, three of which the ticket
+  named and a fourth it did not:
+  1. `packages/db/src/schema/tenants.ts:40-41` — old: _"the provisioning source-of-truth that is
+     projected onto the api-key KV record … at provisioning"_ → new `:44-58`: _"WRITE PATH — read
+     this before assuming automation … NO service writes `KV_API_KEYS`. There is no automatic PG→KV
+     projection, and there cannot be a fully automatic one"_ + the reason (KV key is
+     `api_key:<RAW key>`; only `hashed_key` is stored).
+  2. `docs/MASTER_DESIGN.md` §V.3.4 `:5028` — old _"seeded at provisioning from
+     `tenants.allowed_origins`"_ → new `:5030-5036`: _"WRITE PATH (corrected 2026-07-26, FOLLOW-658 —
+     this passage previously claimed the value was 'seeded at provisioning', describing automation
+     that did not exist)"_.
+  3. **`packages/db/src/schema/api_keys.ts:38-41` — a FOURTH site neither RETRO-218 DG-1 nor the
+     FOLLOW-658 AC3 text enumerated** (ESC-040's resolution table did name it).
+     `git log -L 30,50:packages/db/src/schema/api_keys.ts` proves the claim entered at `d631a08`
+     (#623) and was corrected at `95a8492` (#628): _"The projection onto KV is NOT automatic
+     (corrected by FOLLOW-658 — the earlier wording asserted it happened 'at provisioning' and no
+     such code existed)."_ Counting this, the PR closed **3** instances of the same over-claim, not
+     the 2 named — the under-count guardrail applies to the ticket text, not to the fix.
+  4. The relocated `packages/shared/src/api-key-record.ts:34-40` carries the same correction, so the
+     canonical type now teaches the truth to both sides.
+  - **Precision on the PM's premise:** the sentence the PM's grep found at `FOLLOW_UPS.md:18680` is
+    AC3 _quoting the defect it exists to fix_, not the fix asserting it. The stale phrasing survives
+    only in append-only backlog history (`FOLLOW_UPS.md:18223` = the FOLLOW-642 stub, `:18657` =
+    FOLLOW-657 leg 2, `QUEUE.md:31`). Backlog files are a dated record of what was believed when
+    written; rewriting them would destroy the audit trail that let this chain be traced at all.
+    **Not a finding, not filed.** The live surfaces — schema doc-comments, MASTER_DESIGN, runbook,
+    shared type — are all correct at HEAD
+    (`grep -rn 'projected onto|seeded at provisioning' --include=*.ts --include=*.md .` → only
+    self-describing corrections + CONVENTIONS_PATCH's Rule AH evidence + backlog history).
+  - **Caveat — a narrower THIRD-generation claim did ship.** See §4d DG-1: four merged surfaces now
+    assert that a _forgotten_ env "can never black-hole first-party traffic". True for UNSET; **false
+    for MIS-SET** (§4a LG-1). The genus is the same (a doc asserting a safety property the code
+    provides only conditionally); the species is much narrower and, unlike its ancestors, it is one
+    normalization line away from being true.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) → FOLLOW-678 — the first-party comparison is exact-string on both sides, so a MIS-SET
+  `FIRST_PARTY_TENANT_ID` inverts the guard from fail-safe into a silent first-party ingest outage.**
+  `isUnprovisionedExternalTenant` (`origin-gate.ts:186-195`) trims both operands and compares with
+  `!==`; no case folding, no UUID normalization. The control-plane sibling is weaker still —
+  `isTreatedAsExternalBrand` (`brand-identity.ts:221-223`) and `isFirstPartyTenant` (`:160-162`) trim
+  only the ENV side and compare raw. Postgres renders `uuid` lower-case, but the env value is
+  hand-carried by an operator across three stores (Doppler, Vercel, `wrangler secret put`), and an
+  upper-cased or otherwise mistyped paste is detected nowhere. Consequence, verified by reading the
+  branch: `mode==='inherit'` (which Estalara's own pre-FOLLOW-642 KV records are, per
+  `origin-gate.ts:36-37`) + `tenantId !== firstParty` → **every browser `POST /v1/events` from
+  `app.estalara.com` returns 403 `origin_policy_unconfigured`** — 100% of pilot event ingest, dropped
+  before Redpanda/ClickHouse. The same typo on the control-plane side is _loud_ (registrations 400 /
+  consent GET 409); on ingest it is _silent_ client-side (LG-3), leaving only a Sentry `error`
+  stream. Tests pin `undefined`/`''`/`'   '`/whitespace-padded (`origin-gate.test.ts:150-160`) but
+  **not** a case variant. **Explicit reconciliation with RETRO-222 §5c:** that retro examined the
+  UNSET axis of this same env var across the two apps and adjudicated the divergence (control-plane
+  fail-CLOSED via tenant-count probe; ingest fail-OPEN because a Worker has no PG on a zero-I/O hot
+  path) as **justified** — I agree and do not contradict it. The **MIS-SET axis was analyzed by
+  neither retro**, and on that axis the two apps are _also_ asymmetric, in the opposite direction:
+  the control-plane's failure is noisy and reversible, ingest's is silent data loss. Requires an
+  operator error to trigger — but it triggers on the exact step the runbook is about to instruct.
+- **LG-2 (P2) → FOLLOW-679 — `wranglerKvGet` conflates "key absent" with "read failed", so a
+  transient KV read error silently converts a read-modify-write into a full record REPLACE.**
+  `:395-399` catches every non-zero `wrangler kv key get` exit and returns `null`; `:570-575` feeds
+  that `null` to `mergeKvRecord`, whose `existingRaw === null` branch (`:259-269`) **constructs a
+  fresh record from Postgres** (`tenant_id`, `scopes`, `label`) and drops every KV-only field. The
+  docstring's safety argument (`:367-370` — _"the caller's subsequent `wranglerKvPut` uses the same
+  credentials and will throw, so a broken environment can never be mistaken for a successful run"_)
+  holds only for a PERSISTENT credentials failure; a transient blip / rate-limit on the read followed
+  by a successful write is exactly the case it does not cover. **Honest severity scoping:** the
+  `merged.created && key.type !== 'public'` refusal (`:580-587`) caps the blast radius at `public`
+  keys, which normally carry no `hmac_secret`; the run prints `CREATED` vs `UPDATED`, so an attentive
+  operator can catch it. But `scopes` would be silently reset from Postgres, and the whole premise of
+  the module is that the two stores may disagree. P2.
+- **LG-3 (P2) → FOLLOW-680 — the new "self-describing" 403 is invisible to the only party positioned
+  to act on it, because the SDK discards the ingest response entirely.** `dispatchEvents`
+  (`packages/sdk/src/core/events.ts:85-103`) `await fetch(...)` with **no `res.ok` inspection** and a
+  bare `catch` that logs only in `debug` — a 403 is not a throw, so an un-provisioned brand's
+  installer sees _nothing_, not even in debug mode. The sibling path in the same package already does
+  it right: `reportFeedbackPingRejected` (`adapt.ts:107-116`, `console.warn` + Sentry breadcrumb,
+  added by FOLLOW-450) fires on `!res.ok` at `adapt.ts:175`. Textbook **Rule S** shape — symmetric
+  pair (two fire-and-forget SDK POSTs), unequal observability tier, and the _primary data path_ is
+  the weaker one. Pre-existing (it also mutes `forbidden_origin` from #623), but #628 is the PR that
+  made "the operator must see this during onboarding verification" the explicit design goal, which is
+  what moves it from latent to relevant.
+- **LG-4 (P3, note only) — the `api_key_column` precedence branch is unreachable in practice.**
+  `planKvAllowedOrigins` (`:122-125`) prefers `api_keys.allowed_origins` over the tenant column, and
+  the docstrings describe that precedence as live.
+  `grep -rn "allowedOrigins" apps/control-plane/src packages/db/src packages/sdk/src | grep -v '\.test\.'`
+  returns **only** the two schema declarations, two historical comments and an unrelated
+  `dev-cors.ts` local — i.e. **no code writes `api_keys.allowed_origins`, ever**, and `--origins`
+  writes only the tenant column. The per-key override is a producer-less column read by exactly one
+  consumer. Harmless (correct fall-through), but it means the projection is per-TENANT in practice
+  while being keyed per-KEY — see LG-5.
+- **LG-5 (P3) → FOLLOW-682 — provisioning coverage is per-KEY, not per-TENANT.** The script can only
+  address `api_key:<RAW key>`, so it provisions the ONE key whose raw value the operator captured at
+  §Step 2. Any other live `api_keys` row for that tenant (rotation, a hand-seeded second key, a
+  re-activation after expiry — `schema/activate/route.ts` reuses a live key but mints a new one when
+  none is live) stays on `inherit` and, after the §Step 0 flip, 403s `origin_policy_unconfigured`.
+  Neither the script nor §Step 6 counts the tenant's live keys or warns.
+
+#### 4b. Code bugs not caught — N/A. Six claims re-verified rather than accepted:
+
+- **"The guard adds zero I/O to the <50ms ACK path."** True — `isUnprovisionedExternalTenant` is pure
+  over `policy.mode` + `auth.*` + `c.env`, no await (`events.ts:168`).
+- **"Server-side / HMAC callers are unaffected."** True and important: the guard sits INSIDE
+  `if (requestOrigin)` (`events.ts:154`), so a no-`Origin` caller still bypasses the gate exactly as
+  #623 designed. A guard placed one line higher would have 403'd every server-side adapter of an
+  un-provisioned tenant.
+- **"Runs before any side effect."** True — `events.ts:168` precedes rate-limit, Redpanda and
+  ClickHouse; `corsAllowOrigin` is set to `''` so no CORS header is echoed on the denial.
+- **"The runbook command is executable at this merge commit" (Rule AH self-check).** Verified rather
+  than assumed: §Step 6's flags (`--tenant-id --api-key --namespace-id --origins --on-empty
+  --apply`) match `parseArgs` (`:338-348`) **exactly**; the hard-coded
+  `--namespace-id 523aafacf2d54201a33631d62ba801e3` matches `wrangler.toml:35` **and** `:113`
+  (`[env.production]`); `tsx` is a root devDependency (`package.json:45`); `wrangler ^3` resolves via
+  the script's `pnpm --filter @estalara/ingest exec wrangler` (`apps/ingest/package.json:19`). One
+  exception at §4d DG-2.
+- **"Importing the script in tests does not run `main()`."** True — `isMain` checks `process.argv[1]`
+  (`:599-605`), the `feedback-canary.mts` pattern, and the test header says so.
+- **The `[]` trap is genuinely refused, not merely documented.** `planKvAllowedOrigins`'s default
+  branch (`:170-181`) returns `ok:false` with a message naming BOTH meanings;
+  `--on-empty=inherit-env` additionally prints a warning that "inherit" means Estalara's domains
+  (`:550-556`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, → FOLLOW-678 AC3) — no case-variant test for the identity comparison.** The 5 new
+  `isUnprovisionedExternalTenant` cases cover unset/blank/whitespace/explicit/deny-all, and the 3
+  route cases cover the 403 and the two non-regressions — but nothing asserts what happens when the
+  env carries the right UUID in the wrong case. That is precisely the shape LG-1 describes, and it is
+  why LG-1 shipped through a red-first 8-case suite.
+- **TG-2 (P2, → FOLLOW-683) — 614 lines of the repo's only edge-auth-record writer sit outside both
+  `typecheck` and `lint` (see §2).** The 24 unit tests are real and well-chosen (they pin the `[]`
+  semantics, the `hmac_secret` preservation and the cross-tenant refusal), but Vitest's esbuild
+  transform performs no type checking, so the type-safety of the DB-facing and `execFileSync`-facing
+  halves of the file — the untested halves — is asserted by nothing in CI. The PR body honestly
+  discloses this and names the blocker for fixing it (pre-existing `TS6133` in
+  `seed-local-tenant.mts:37`).
+- **TG-3 (P3, no stub) — the two normalizers are duplicated across a runtime boundary with no parity
+  test.** `toCanonicalOrigin` (`:96-111`) is a deliberate copy of `normalizeToOrigin`
+  (`origin-gate.ts:89-103`); both delegate to `URL.origin`, so they agree today, and the asymmetry is
+  argued safe by construction (writer strictly stricter than reader: the producer REFUSES an
+  unparseable value, the consumer DROPS it). Not a Rule J case (no mirror-manifest file pair), and
+  the drift direction cannot open the gate. Recorded, not filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, → FOLLOW-678 AC4) — the third-generation safety over-claim (§3 STEP-7 caveat).** Four
+  merged surfaces state, unqualified, that a forgotten env cannot cost first-party traffic:
+  `origin-gate.ts:169-172` (_"A forgotten env therefore degrades to the previous state; it can never
+  black-hole Estalara's live traffic"_), `types.ts:50-52`, `wrangler.toml:147-148`,
+  `DOPPLER_SECRETS_MATRIX.md:31` (_"UNSET = guard off (prior behavior), never a traffic outage"_),
+  and BRAND_PROVISIONING `:92-93`. Each is literally true of the UNSET case and each reads as a
+  general safety property of the variable. Under Rule AH's own honest-shape test the sentence should
+  scope itself ("unset is safe; a WRONG value is not — verify per §Step 0").
+- **DG-2 (P3, → FOLLOW-683 AC1) — `docs/runbooks/ingest-errors.md:122` prints a command missing a
+  REQUIRED flag.** It gives `… project-allowed-origins.mts --tenant-id … --api-key … --apply` with no
+  `--namespace-id`, which `parseArgs` requires (`:343-345`). **Deliberately NOT scored as a Rule AH
+  violation:** Rule AH's harm criterion is _silent_ success (the 200-with-nothing-written shape), and
+  this fails loudly and immediately with a usage line naming the missing flag. A P3 papercut in a
+  file whose other new section (the `origin_policy_unconfigured` entry, `:102-125`) is accurate,
+  including the `error`-vs-`warning` Sentry-level contrast.
+- **DG-3 (P2) → FOLLOW-681 — MASTER_DESIGN §V.3.5 asserts an api-key hash algorithm the code has
+  never used, 14 lines below the passage this PR corrected.** `:5075` reads
+  `hashed_key: text('hashed_key').notNull(), // bcrypt or argon2id`. The implementation is **unsalted
+  SHA-256** — `apps/control-plane/src/lib/api-key-auth.ts:56` (`sha256Hex`) and, as of this PR,
+  `project-allowed-origins.mts:361` (`createHash('sha256')`). This is a **Rule AI** shape (a doc
+  possibly true when written, falsified by shipped code, left untouched by the PR that made the claim
+  load-bearing): FOLLOW-658's whole reconciliation guarantee is "SHA-256(raw) must match
+  `api_keys.hashed_key`", which the section directly above now documents — while the section below
+  tells a reader the digest is a password KDF. Two readings, both worth a ticket: the doc is stale, or
+  the algorithm choice deserves a conscious record (a 128-bit random key ⇒ SHA-256 is defensible; the
+  document should say which it is).
+- **DG-4 — NOT re-filed, already owned.** The `DOPPLER_SECRETS_MATRIX.md` control-plane row is
+  FOLLOW-677 (RETRO-222 §4d); this PR added the _ingest_ row (`:31`) whose text references the
+  missing control-plane row, which is the exact evidence FOLLOW-677 cites. The §Step 0 blast-radius
+  wording is FOLLOW-676; this PR edited §Step 0 (adding the ingest-secret leg at `:85-86`) without
+  touching that sentence, so FOLLOW-676 remains accurate and un-widened.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-676** (runbook §Step 0) — this PR EDITED §Step 0 and added a second consumer to it; the
+  ticket's scope is unchanged but its target text has moved. Whoever picks it must re-read `:56-97`
+  at HEAD, not the version quoted in the stub.
+- **FOLLOW-677** (Doppler matrix) — evidence strengthened, scope unchanged; the ingest row now exists
+  and explicitly points at the absent control-plane row.
+- **FOLLOW-674** (soft-delete-blind tenant-count probe) — **corroborated from a new direction**: the
+  script added by THIS PR queries tenants with `and(eq(tenants.id, …), isNull(tenants.deletedAt))`
+  (`:452`), i.e. the newest code in the repo follows the convention `brand-identity.ts:227` breaks.
+  Worth citing in that ticket.
+- **FOLLOW-673** (SDK bundle at 41.31 KB of a 42 KB budget, 707 bytes headroom) — **constrains
+  FOLLOW-680**: adding a rejection reporter to `events.ts` costs bytes on the critical path. The fix
+  must be measured, and `reportFeedbackPingRejected` should be _shared_, not duplicated.
+- **The two pending operator steps in QUEUE §session-61** are now the sole gate on this PR having any
+  prod effect. Nothing here changes their sequence; §Step 0 (`FIRST_PARTY_TENANT_ID`) **must not** be
+  set before §Step 6 has been run for every already-live external tenant — today that set is empty (1
+  tenant, first-party), so the ordering hazard is theoretical now and real at the first client.
+
+#### 5b. Future sprint tickets affected
+
+- **External-brand onboarding (the 3 re-brand clients)** — the go-live gate is no longer "code
+  missing" but "operator ran §Step 6 for every live key of the brand" (LG-5) and "§Step 0 value is
+  exactly right" (LG-1). Both belong in the FOLLOW-656 / FOLLOW-653 go-live checklist as _verified_
+  steps with a smoke assertion, not as checkboxes.
+- Any future automatic projection (a control-plane writer for `KV_API_KEYS`) is now explicitly a
+  **security-posture escalation**, not a bug fix — it requires handing Vercel a Cloudflare token with
+  KV write scope. The PR records that reasoning in three places; a future ticket must escalate rather
+  than "finish the automation".
+
+#### 5c. Contracts changed others rely on
+
+- **`origin_policy_unconfigured` (403)** — new wire-level error code. In-repo consumers: the runbook
+  (`ingest-errors.md:102`) and Sentry. **No SDK consumer** (LG-3). Out-of-repo consumers: none known;
+  `app.estalara.com` loads the SDK, and the SDK ignores it.
+- **`ApiKeyRecord` moved to `@estalara/shared`** — additive for every consumer; `packages/shared` is a
+  dependency of the SDK, so the discipline that keeps it free is `export type` (`index.ts:39`). A
+  future contributor adding a runtime const to `api-key-record.ts` would pull KV-record code into the
+  SDK bundle; the module header says "type-only, zero bytes" but nothing enforces it.
+- **`tenants.allowed_origins` gained its only writer** — a service-role, provisioning-time write that
+  is deliberately **not** in `staff_audit_log` (runbook `:423-427` says so). A conscious, documented
+  divergence from the ADR-0018 audited-mutation posture, correctly surfaced as a GAP rather than
+  silently accepted.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule AA reconciliation.** The fail-silent-producer class that RETRO-218/219 opened is **closed in
+  code** across #628/#629 — and, on the evidence of this diff, closed _well_. It is **not closed in
+  prod**: 0 tenants have origins, the env is unset in all three stores. "The class is closed" is true
+  of the repository and false of the deployment; those are different sentences and only the first is
+  provable from a merge.
+- **One value, three stores, zero drift detection** (severity note for the PM, §5c of RETRO-222
+  extended). `FIRST_PARTY_TENANT_ID` must be written to Doppler `prd`, to Vercel separately (not
+  synced), and to Cloudflare via `wrangler secret put`. The three copies can disagree, and a
+  disagreement means the two apps hold _different_ beliefs about who is first-party — control-plane
+  loud, ingest silent (LG-1). This is a platform-shaped problem, not a ticket-shaped one; surfaced
+  here with severity, not escalated on the PM's behalf.
+- **KV keys are the raw secrets.** `api_key:<RAW api key>` means anyone with Cloudflare KV read scope
+  can enumerate live api keys, and it is the structural reason no server-side projection can exist
+  (§3). Pre-existing design, NOT introduced here, and out of scope for this ticket — but it is now
+  load-bearing in a documented operator procedure, so it is on the record.
+
+### 6. New lesson candidates
+
+- **Pattern: "a doc/docstring asserts a safety or automation property the code provides only
+  conditionally"** — seen in: RETRO-216, RETRO-218, RETRO-220 (promotion), this retro §4d DG-1.
+  **ALREADY CODIFIED as Rule AH** (added 2026-07-26 by RETRO-220; 4 sightings, 3 document families).
+  **Explicit answer to the PM's ask:** this is the pattern flagged, the threshold was already met and
+  the rule already exists — a second promotion of the same axis would be duplication, not
+  codification. This retro contributes a 5th sighting (§4d DG-1) and, usefully, a _counter_-example:
+  #628's own AC3 corrections are the honest shape Rule AH prescribes (they name the false claim, date
+  it, and point at the ticket). Count under AH: 5. **No new rule.**
+- **Pattern: "a stale adjacent claim in the same file/section as a correction"** — §4d DG-3
+  (MASTER_DESIGN §V.3.5 `bcrypt or argon2id`, 14 lines below the §V.3.4 passage this PR fixed).
+  **ALREADY CODIFIED as Rule AI** (promoted by RETRO-222 the same day). Count under AI: a sighting,
+  not a promotion. **No new rule.**
+- **Pattern (NEW, HELD at count 1): "one operator-set identity value replicated across N unsynced
+  stores, where a MIS-SET value fails asymmetrically across its consumers (loud in one app, silent
+  data loss in another)."** Prior art examined: RETRO-222 §5c analyzed the UNSET axis of this exact
+  var and correctly adjudicated the divergence as justified — that is a _different_ axis and I do not
+  count it as a prior. Memory-recorded ops traps (Doppler≠Vercel; Vercel "Sensitive"=unreadable) are
+  operator lore, not numbered retros. **Count 1, HELD, no promotion** (the ≥2-PRIOR bar is not met,
+  and promoting on one sighting is exactly the noise the threshold exists to prevent).
+  **Pre-authorized:** promote on a 2nd numbered-retro sighting of a _mis-set_ (not merely unset)
+  multi-store identity value producing divergent failure modes.
+- **Rule AG sighting (no count change).** This PR appended 25 lines to
+  `.claude/agents/backend-engineer/lessons.md`, the file whose append-collision mechanism was
+  promoted at RETRO-219. Remedy already ticketed (FOLLOW-650). No collision was reported for #628 (it
+  merged last of the wave); recorded for completeness only.
+
+### 7. Follow-ups
+
+- **FOLLOW-678:** normalize the first-party identity comparison (case-insensitive / UUID-canonical on
+  both operands, ingest + control-plane), add the missing case-variant tests, add a post-flip
+  verification step to §Step 0, and scope the "can never black-hole first-party traffic" sentences to
+  the unset case (backend-engineer, 3h, **P1**).
+- **FOLLOW-679:** make `wranglerKvGet` distinguish "key absent" from "read failed" and refuse to
+  CREATE a record on any non-absence failure (backend-engineer, 2h, **P2**).
+- **FOLLOW-680:** give SDK event dispatch the rejection observability the feedback path already has —
+  a shared reporter for `!res.ok`, measured against the 707-byte bundle headroom (sdk-engineer, 3h,
+  **P2**).
+- **FOLLOW-681:** correct (or consciously record) MASTER_DESIGN §V.3.5's `bcrypt or argon2id`
+  api-key-hash claim against the shipped SHA-256 (architect, 1h, **P2**).
+- **FOLLOW-682:** make origin provisioning tenant-complete — pre-flight the tenant's live `api_keys`
+  rows, warn when >1 key needs projecting, and document the per-key limit + the producer-less
+  `api_keys.allowed_origins` column in §Step 6 (backend-engineer, 2h, **P3**).
+- **FOLLOW-683:** fix the `ingest-errors.md` command missing `--namespace-id`, add a `pnpm` alias for
+  the operator tool (parity with `feedback:canary`), and bring `apps/control-plane/scripts/**` under
+  typecheck/lint or record the exception explicitly (devops-engineer, 2h, **P3**).
+
+### 8. Cross-references
+
+- **RETRO-218 (#623/FOLLOW-642)** — filed FOLLOW-658; its CHECK B HALF_WIRE_P is the gap this PR
+  closes in code (§3 CHECK B) and its DG-1 over-claim is the one corrected at §3 STEP-7.
+- **RETRO-222 (#627/FOLLOW-660)** — same env var, same day; §5c's UNSET-axis adjudication is
+  explicitly upheld and extended (not contradicted) by §4a LG-1's MIS-SET axis. Its FOLLOW-674 is
+  corroborated by this PR's `isNull(deletedAt)` usage; its FOLLOW-676/677 are deliberately not
+  duplicated here.
+- **RETRO-219 (#624)** — the sibling operator-seeded-producer finding (FOLLOW-659, closed by #629)
+  and the Rule AG promotion.
+- **RETRO-220 (#625)** — promoted **Rule AH**, under which §4d DG-1 is sighting 5.
+- **RETRO-216 (#621)** — the runbook §Step 6 that this PR finally makes accurate and executable.
+- **RETRO-152 (#426/FOLLOW-450)** — the `feedback-canary.mts` operator-entrypoint precedent used to
+  suppress `runProjectAllowedOrigins` in CHECK A, the `scripts/**/*.test.ts` Vitest glob that makes
+  the new suite run at all, and the `reportFeedbackPingRejected` reference impl behind FOLLOW-680.
+- **ESC-040 (CLOSED, `41556cc`)** — its "⚠️ closing this does not make enforcement effective" warning
+  is now half-retired: item 2 (the doc over-claim) is fixed by this PR; item 1 (no write path) is
+  fixed in code but remains operator-pending.
+- **Rule AH / Rule AI / Rule AA / Rule S / Rule K.2 / Rule AF.**
+
+<!-- next free RETRO number: 224. next free FOLLOW number: 684 (FOLLOW-678..683 filed by RETRO-223).
+RETRO-223 = retro for PR #628 (FOLLOW-658, merged 2026-07-26T14:42:11Z, 95a8492; OPUS
+retrospective-analyst, session 61). CI independently verified: 61 pass + 2 Rule I (Rule AF baseline).
+CHECK A clean, 2 precedent-cited suppressions (type-only shared module — which nonetheless has 2 real
+non-test importers; operator-CLI entrypoint incl. the importer-less runProjectAllowedOrigins tail export,
+per RETRO-152). CHECK B QUALIFIED-CLOSED: RETRO-218's HALF_WIRE_P now has a producer (the only KV_API_KEYS
+write in the repo) but 0 tenants provisioned in prod -> Rule AA CODE_COMPLETE_OPERATOR_PENDING; ingest's new
+FIRST_PARTY_TENANT_ID consumer is not HALF_WIRE_C (unset branch designed+tested, per RETRO-222's
+adjudication) but the value now lives in THREE unsynced stores. STEP 7 (PM's ESC-040 question) ANSWER =
+(a) CORRECTED BEFORE MERGE, verified line-by-line at FOUR sites — tenants.ts:44-58, MASTER_DESIGN:5030-5036,
+api_keys.ts:38-47 (a 4th site the ticket text never enumerated; git log -L proves it entered at d631a08 and
+left at 95a8492) and the relocated shared type — so the PR closed 3 instances, not the 2 named. The PM's grep
+hit was AC3 QUOTING the defect; the stale phrasing survives only in append-only backlog history
+(FOLLOW_UPS:18223/18657, QUEUE:31), deliberately NOT filed (rewriting dated backlog destroys the audit trail
+that made this trace possible). CAVEAT: a NARROWER 3rd-generation claim did ship on 4 surfaces ("a forgotten
+env can never black-hole first-party traffic" — true UNSET, false MIS-SET) -> DG-1/FOLLOW-678. GAPS: 5 logic
+(LG-1 P1 exact-string first-party compare, no case folding, ingest side fails as SILENT total ingest loss
+while the control-plane sibling fails loud — the MIS-SET axis neither RETRO-222 nor this PR analyzed; LG-2 P2
+wranglerKvGet conflates absent-vs-failed so a transient read error turns RMW into a full record REPLACE,
+capped at public keys by the type guard; LG-3 P2 SDK dispatchEvents ignores res.ok entirely so the new
+fail-loud 403 is invisible client-side while the sibling adapt.ts path has reportFeedbackPingRejected =
+Rule S; LG-4 P3 api_keys.allowed_origins has zero writers repo-wide so the api_key_column precedence branch
+is unreachable; LG-5 P3 provisioning is per-KEY not per-TENANT), 0 code bugs (6 claims re-verified incl. the
+Rule AH self-check that §Step 6's flags / namespace-id / tsx / wrangler all resolve at the merge commit, and
+that the guard sits INSIDE if(requestOrigin) so no-Origin HMAC callers are untouched), 3 test (no
+case-variant test; 614 lines of the only edge-auth-record writer outside typecheck+lint — tests DO run via
+the FOLLOW-450 vitest glob but esbuild does not typecheck; normalizer duplicated cross-runtime, drift cannot
+open the gate), 4 docs (DG-1 3rd-gen safety claim; DG-2 ingest-errors.md:122 command missing REQUIRED
+--namespace-id but fails LOUD so deliberately NOT scored as Rule AH; DG-3 MASTER_DESIGN §V.3.5 "bcrypt or
+argon2id" vs shipped unsalted SHA-256, 14 lines below the passage this PR corrected = Rule AI sighting; DG-4
+already owned by FOLLOW-676/677, not re-filed). PATTERNS: Rule AH sighting 5 + Rule AI sighting — NO new
+promotion (both already codified; a 2nd promotion of the same axis is duplication). NEW pattern "one operator
+identity value, N unsynced stores, ASYMMETRIC mis-set failure (loud vs silent)" HELD at count 1 (RETRO-222
+§5c analyzed the UNSET axis, a different axis — not counted as a prior) + pre-authorized for promotion on a
+2nd numbered sighting. -->

@@ -19280,3 +19280,204 @@ note the deliberate asymmetry — control-plane fails CLOSED when unset, ingest'
 simply OFF — so nobody reads one row's semantics onto the other (RETRO-222 §5c). Docs only.
 
 cross_ref: [RETRO-222, RETRO-218, FOLLOW-660, FOLLOW-658, FOLLOW-656]
+
+## FOLLOW-678 — `FIRST_PARTY_TENANT_ID` is compared as an exact string in both apps: a MIS-SET value silently black-holes 100% of first-party ingest (and four merged docstrings promise it cannot)
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+Both consumers of this operator-set UUID compare it with `!==` on raw strings.
+`isUnprovisionedExternalTenant` (`apps/ingest/src/origin-gate.ts:186-195`) trims both operands;
+`isTreatedAsExternalBrand` (`apps/control-plane/src/lib/brand-identity.ts:221-223`) and
+`isFirstPartyTenant` (`:160-162`) trim only the env side. Neither case-folds or canonicalizes the
+UUID. The value is hand-carried by an operator into **three unsynced stores** (Doppler `prd`, Vercel
+separately, and `wrangler secret put` on the ingest Worker), and nothing anywhere validates that
+what was pasted matches a real `tenants.id`.
+
+Failure mode when the value is upper-cased / mistyped: Estalara's own KV api-key records carry no
+`allowed_origins` (they predate FOLLOW-642 — `origin-gate.ts:36-37`), so `resolveOriginPolicy`
+returns `inherit`; with `tenantId !== firstParty` the FOLLOW-658 guard fires and **every browser
+`POST /v1/events` from `app.estalara.com` returns 403 `origin_policy_unconfigured`** — the entire
+pilot event stream dropped before Redpanda/ClickHouse. The control-plane sibling fails LOUD on the
+same typo (registrations 400, consent GET 409); ingest fails SILENT, because the SDK never reads the
+response (FOLLOW-680). Only a Sentry `error` stream would show it. RETRO-222 §5c analysed the UNSET
+axis of this var and correctly called the fail-open/fail-closed divergence justified; the MIS-SET
+axis was analysed by neither retro.
+
+Compounding it, four merged surfaces assert the safety property without scoping it to UNSET:
+`origin-gate.ts:169-172` ("it can never black-hole Estalara's live traffic"), `types.ts:50-52`,
+`apps/ingest/wrangler.toml:147-148`, `docs/ops/DOPPLER_SECRETS_MATRIX.md:31` ("never a traffic
+outage"), plus `docs/runbooks/BRAND_PROVISIONING.md:92-93`.
+
+**AC:** (1) canonicalize both operands before comparing in `isUnprovisionedExternalTenant`,
+`isTreatedAsExternalBrand` and `isFirstPartyTenant` (lower-case + trim at minimum; reject a value
+that is not a well-formed UUID and treat a malformed env as UNSET on the ingest side so a bad paste
+degrades to "guard off" rather than "deny everything"); (2) log/Sentry-warn ONCE per Worker isolate
+when `FIRST_PARTY_TENANT_ID` is present but malformed, so a bad value is visible without a request
+having to fail; (3) add the missing case-variant tests on both sides (upper-case env vs lower-case
+tenant id, and the malformed-value branch) — the existing 5 ingest cases pin
+unset/blank/whitespace/explicit/deny-all and would all still pass with the defect present; (4)
+re-scope the five doc sentences above to the UNSET case and say explicitly that a WRONG value is NOT
+safe, per Rule AH's honest-shape requirement; (5) add a post-flip verification step to
+BRAND_PROVISIONING §Step 0: after setting the ingest secret, POST a test event from an allow-listed
+origin and require **2xx** before the step is considered done. Note honestly in the ticket that this
+requires an operator error to trigger — but it triggers on the exact step the runbook is about to
+instruct for the first time.
+
+cross_ref: [RETRO-223, RETRO-222, FOLLOW-658, FOLLOW-660, FOLLOW-680, Rule AH, Rule AA]
+
+## FOLLOW-679 — `project-allowed-origins.mts` treats a FAILED KV read as "key absent", so a transient error turns read-modify-write into a full record REPLACE
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+`wranglerKvGet` (`apps/control-plane/scripts/project-allowed-origins.mts:395-399`) catches EVERY
+non-zero exit of `wrangler kv key get` and returns `null`. `main()` (`:570-575`) feeds that `null`
+into `mergeKvRecord`, whose absent-record branch (`:259-269`) CONSTRUCTS a new record from Postgres
+(`tenant_id`, `scopes`, `label`) and drops every KV-only field — the exact opposite of the
+read-modify-write guarantee the script advertises ("`hmac_secret` and every other field of an
+existing record survive verbatim").
+
+The docstring's safety argument (`:367-370` — "the caller's subsequent `wranglerKvPut` uses the same
+credentials and will throw, so a broken environment can never be mistaken for a successful
+provisioning run") is sound only for a PERSISTENT credentials failure. A transient network blip or
+API rate-limit on the READ followed by a successful WRITE is precisely the case it does not cover.
+Honest scoping: the `merged.created && key.type !== 'public'` refusal (`:580-587`) caps the blast
+radius at `public` keys (normally no `hmac_secret`), and the run prints `CREATED` vs `UPDATED` — but
+`scopes` would be silently reset from Postgres, and the module's whole premise is that the two
+stores may disagree.
+
+**AC:** (1) distinguish "key does not exist" from "read failed" — capture wrangler's exit
+status/stderr and treat only the genuine not-found signal as absence (verify the actual v3 behaviour
+against the installed `wrangler 3.114.17` rather than assuming); (2) on any non-absence failure,
+abort with a non-zero exit and a message telling the operator to re-run, never fall through to the
+create path; (3) unit-test both branches through `mergeKvRecord` + a stubbed reader (create-on-true-
+absence still works; refuse-on-read-error); (4) correct the `:364-370` docstring so it no longer
+asserts a property the code does not hold.
+
+cross_ref: [RETRO-223, FOLLOW-658, Rule K.2]
+
+## FOLLOW-680 — SDK event dispatch discards the ingest response entirely, so the new fail-loud 403s (`origin_policy_unconfigured`, `forbidden_origin`) are invisible to the installer
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
+recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-673]
+promoted_to_queue: false
+
+`dispatchEvents` (`packages/sdk/src/core/events.ts:85-103`) awaits `fetch(config.ingestUrl, …)` and
+never inspects `res.ok` or `res.status`; the surrounding `catch` fires only on a network throw and
+logs only when `config.debug`. A 403 is not a throw, so an un-provisioned external brand — the exact
+scenario FOLLOW-658's guard exists to make loud — sees **nothing** client-side, in debug mode
+included. The provenance work (a distinct error code, a Sentry `error` level, a runbook entry) all
+lands server-side only.
+
+The same package already does this correctly on the sibling path: `reportFeedbackPingRejected`
+(`packages/sdk/src/core/adapt.ts:107-116`) emits a `console.warn` plus a Sentry breadcrumb on
+`!res.ok` at `:175`, shipped by FOLLOW-450 for precisely this reason. Two fire-and-forget SDK POSTs,
+unequal observability tier, and the weaker one is the PRIMARY data path — a Rule S asymmetry.
+
+**AC:** (1) extract the existing reporter into a shared helper (do NOT duplicate it) and call it
+from `dispatchEvents` on `!res.ok`, including `status` and the parsed `error.code` when the body is
+JSON; (2) keep it non-throwing and side-effect-free when Sentry is absent, matching the adapt.ts
+contract; (3) add SDK tests for 403 `origin_policy_unconfigured`, 403 `forbidden_origin` and 401,
+asserting a warn/breadcrumb is emitted and that event collection continues (no user-visible
+failure); (4) **measure the gzip bundle before/after** — FOLLOW-673 records 41.31 KB against the 42
+KB budget, i.e. 707 bytes of headroom; if the shared helper does not fit, say so in the PR and
+propose the trade rather than silently exceeding ESC-028's budget.
+
+cross_ref: [RETRO-223, FOLLOW-658, FOLLOW-642, FOLLOW-450, FOLLOW-673, Rule S, Rule K.2]
+
+## FOLLOW-681 — MASTER_DESIGN §V.3.5 says api keys are hashed with "bcrypt or argon2id"; the code has always used unsalted SHA-256 — 14 lines below the passage FOLLOW-658 just corrected
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
+recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+`docs/MASTER_DESIGN.md:5075` (§V.3.5 "API key lifecycle") reads
+`hashed_key: text('hashed_key').notNull(), // bcrypt or argon2id`. The shipped implementation is
+unsalted SHA-256: `apps/control-plane/src/lib/api-key-auth.ts:56` (`sha256Hex`, used at `:114`) and,
+as of PR #628, `apps/control-plane/scripts/project-allowed-origins.mts:361`
+(`createHash('sha256').update(raw).digest('hex')`).
+
+This is a Rule AI shape: the claim was left untouched by the very PR that made it load-bearing.
+FOLLOW-658's reconciliation guarantee — "SHA-256(raw key) must match a live `api_keys` row owned by
+the named tenant" — is now documented in §V.3.4 immediately ABOVE a passage telling the reader the
+digest is a password KDF. A future implementer reading §V.3.5 would write a verifier that can never
+match a stored hash.
+
+**AC:** (1) decide which direction is correct and record it — either the doc is stale (most likely:
+a 128-bit random `est_pub_<16 hex>` key has no dictionary to attack, so a fast digest is defensible
+for a bearer token, unlike a password) or the algorithm is a real divergence worth an ADR; (2)
+update `:5075` to state the shipped algorithm plus the one-line reason, cross-referencing
+`api-key-auth.ts:56`; (3) grep §V.3.4/§V.3.5 for any other sentence describing key handling that no
+longer matches shipped code (this section was already known to carry old-model siblings — FOLLOW-649
+owns the CORS-model ones, do not duplicate its scope); (4) verify every corrected sentence against
+`main` at the commit you write it (Rule AH). Docs only.
+
+cross_ref: [RETRO-223, RETRO-222, FOLLOW-658, FOLLOW-649, Rule AI, Rule AH]
+
+## FOLLOW-682 — Origin provisioning is per-KEY, not per-TENANT: a second live api key silently stays on `inherit` and 403s after the §Step 0 flip
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
+recommended_agent: backend-engineer priority: P3 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+`project-allowed-origins.mts` can only address `api_key:<RAW key>`, so one run provisions exactly
+ONE key — the one whose raw value the operator captured at BRAND_PROVISIONING §Step 2 ("visible only
+once"). A tenant can legitimately hold more than one live `api_keys` row (a rotation, a hand-seeded
+key, or a re-activation after the previous key expired —
+`apps/control-plane/src/app/api/schema/ activate/route.ts` reuses a live key but MINTS a new one
+when none is live). Every unprojected key stays on the KV `inherit` policy, which after the §Step 0
+flip means a hard 403 `origin_policy_unconfigured` on that key's browser traffic. Neither the script
+nor §Step 6 counts the tenant's live keys or warns.
+
+Related, same file: `api_keys.allowed_origins` is read as the higher-precedence source
+(`planKvAllowedOrigins:122-125`) but has **zero writers repo-wide** —
+`grep -rn "allowedOrigins" apps/control-plane/src packages/db/src packages/sdk/src | grep -v '\.test\.'`
+returns only the two schema declarations, two historical comments and an unrelated `dev-cors.ts`
+local. The per-key override branch is therefore unreachable in practice and its doc-comment reads as
+though it were live.
+
+**AC:** (1) after the reconciliation step, query the tenant's live (non-revoked, non-expired)
+`api_keys` rows and print the count with their `last4`; when >1, WARN that each additional key needs
+its own run and that unprojected keys will be refused once `FIRST_PARTY_TENANT_ID` is set; (2) add
+the same warning to BRAND_PROVISIONING §Step 6 with an explicit "run this once per live key" line;
+(3) annotate the `api_keys.allowed_origins` precedence (schema doc-comment + the script docstring)
+as "read-only today — no writer exists; it exists for a future per-key override" so the next reader
+does not assume a producer; (4) unit-test the multi-key warning path.
+
+cross_ref: [RETRO-223, FOLLOW-658, FOLLOW-652, FOLLOW-657]
+
+## FOLLOW-683 — Operator-tooling hygiene for the new projection script: a runbook command missing a REQUIRED flag, no `pnpm` alias, and 614 lines of the only edge-auth-record writer outside typecheck+lint
+
+source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
+recommended_agent: devops-engineer priority: P3 estimated_hours: 2 depends_on: [] promoted_to_queue:
+false
+
+Three small, related gaps around the same new operator tool:
+
+1. `docs/runbooks/ingest-errors.md:122` gives
+   `pnpm exec tsx apps/control-plane/scripts/project-allowed-origins.mts --tenant-id … --api-key … --apply`
+   — omitting `--namespace-id`, which `parseArgs` REQUIRES (`:343-345`). Deliberately scored P3, not
+   a Rule AH violation: it fails loudly and immediately with a usage line naming the missing flag,
+   whereas Rule AH governs instructions that succeed silently while writing nothing.
+   BRAND_PROVISIONING §Step 6's command is complete and correct (flags, namespace id and `tsx`/
+   `wrangler` availability were all verified against the merge commit).
+2. No `package.json` alias. `feedback-canary.mts` has `pnpm feedback:canary`; this script must be
+   invoked by full path, which is how flags get dropped (see 1).
+3. `apps/control-plane/scripts/**` is outside `tsconfig.json`'s `include` and outside `eslint src/`,
+   so the file is neither typechecked nor linted in CI. Its TESTS do run (`vitest.config.ts:41` glob
+   added by FOLLOW-450) but Vitest's esbuild transform performs no type checking, and the untested
+   halves of the file are exactly the DB-facing and `execFileSync`-facing ones. This is a
+   pre-existing, previously-adjudicated repo posture — what changed is that the blind zone now holds
+   the only writer of edge auth records.
+
+**AC:** (1) fix the `ingest-errors.md` command (add `--namespace-id`, or point at §Step 6 instead of
+inlining a partial command); (2) add a `origins:project` script to the root or control-plane
+`package.json` mirroring `feedback:canary`, and use it in both docs; (3) either add `scripts/**` to
+a dedicated typecheck target (the PR body names the blocker: pre-existing `TS6133` dead imports at
+`seed-local-tenant.mts:37` would have to be cleaned first) or record the exemption explicitly in
+`apps/control-plane/README` / the scripts folder so the next author knows CI does not check their
+types; do not silently leave it implied.
+
+cross_ref: [RETRO-223, FOLLOW-658, FOLLOW-450, Rule AH]

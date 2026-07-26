@@ -2163,3 +2163,97 @@ sequence after AB. -->
 <!-- Rule Q+ added by retrospective-analyst when RULE_PROMOTION_THRESHOLD (2) is met -->
 <!-- Rule P added 2026-06-01 by direct CEO directive (provenance noted in-rule), not retro-promoted -->
 <!-- Rule K.2 amendment (fire-and-forget HTTP-rejection observability sub-shape) added 2026-06-28 — RETRO-135 §6 (RETRO-118 §4 CB-1 ClickHouse logDecisionAsync .catch-only silent-swallow, remediated by FOLLOW-425/PR #374, count 1 + RETRO-135 §4b CB-1/CB-2 Redpanda publishAbAssignmentEvent + publishDescriptionRequested same res.ok-blind shape, count 2; 2 independent backend contexts — ClickHouse HTTP interface + Redpanda REST proxy — threshold met). NOT a new rule letter: shares K.2's root ("a configured-but-failed store must be observable"); the fire-and-forget sink just can't fail loud by throwing, so the obligation is res.ok-in-.then + .catch, both → Sentry. The parent K.2 greps were themselves blind to this sub-shape (a bare `await fetch()` + a fire-and-forget `.catch()` match neither `catch(() =>` nor `.then((r)=>r.json())`). Filed FOLLOW-426 to harden the 2 control-plane Redpanda publishers. Reference impls: logDecisionAsync (post-FOLLOW-425) + decision-api pushToRedpanda (redpanda-producer.ts:102). -->
+
+## Rule AH — A doc that gives an operator an executable instruction (or asserts a capability) MUST be verified against the code AT THE DOC'S OWN MERGE COMMIT; support that lives in an unmerged sibling PR is written as BLOCKED-ON-#N or omitted, never as a runnable step
+
+**Pattern:** A runbook step, schema doc-comment, ADR or MASTER_DESIGN section describes behavior the
+code does not implement — a `curl` whose fields the receiving route does not parse, a column
+"projected at provisioning" by projection code that does not exist, an enforcement control the
+request path never reads. The author verified against a ticket stub, a sibling worktree, or an
+intention, rather than against the tree the doc merges into. The failure is silent by construction:
+the operator runs the step, gets a 200, and believes a control/identity/allow-list is in place.
+Under an operating model where the client has no dashboard, **the runbook IS the UI**, so a wrong
+command is a functional defect with a compliance blast radius, not a documentation nit.
+
+**Evidence (≥2 PRIOR numbered retros):** RETRO-216 §4d DG-1/DG-2 (PR #621 — the brand-provisioning
+runbook's Step 6 instructs the operator to set `tenants.allowed_origins` "via whatever admin surface
+FOLLOW-642 ships" and describes a per-request Postgres read; merged #623 reads the KV `ApiKeyRecord`
+and ships no admin surface. Step 5 documents a feature as unshipped that had merged. Count 1) +
+RETRO-218 §4d DG-1 (PR #623 — the FIX for the first over-claim introduced a **second-generation**
+one: `packages/db/src/schema/tenants.ts` and MASTER_DESIGN §V.3.4 state the column is "projected
+onto the api-key KV record at provisioning"; a repo-wide grep finds zero writes to `KV_API_KEYS`
+anywhere. Count 2). Corroborating, pre-dating both: **ESC-040 / RETRO-205 CHECK B**
+(`packages/db/src/schema/api_keys.ts:33` + MASTER_DESIGN §5021 assert SDK origin validation against
+`tenant.allowed_origins` while ingest CORS read a hardcoded env list — "a UI that promises a
+security control it does not provide is worse than no UI"). Promotion trigger: **RETRO-220** (PR
+#625 — `docs/runbooks/BRAND_PROVISIONING.md` §Step 3a shipped a copy-pasteable
+`PATCH /api/config -d '{"brand":{"brand_name":…,"legal_entity":…}}'` while the route at that exact
+merge commit parsed only `primary_color`/`logo_url`/`white_label` in a **non-strict** Zod object —
+silent strip, HTTP 200, nothing written, and the whole-blob rewrite would erase a hand-seeded
+identity; the same section simultaneously stated "no in-repo code writes these keys". Proven with
+`git show f0a2310:apps/control-plane/src/app/api/config/route.ts:116-137,322` and corroborated
+verbatim by the later fix's own correction, `BRAND_PROVISIONING.md:242-247` @HEAD, PR #629). The 2
+banked occurrences are both PRIOR retros → ≥2-PRIOR threshold met; the promoting retro does NOT
+inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/V/Q/AG). Four sightings, three distinct
+document families (schema doc-comment + MASTER_DESIGN, runbook Step 6, runbook Step 3a).
+
+**Rule:** Before merging a doc that (a) instructs an operator to run something, or (b) asserts that
+a value is written/projected/enforced by the system, the author MUST open the receiving code AT THE
+COMMIT THE DOC WILL MERGE INTO and show the accepting parse — the Zod key, the column write, the KV
+field, the request-path read. A claim whose support sits in an unmerged sibling PR is written as
+`BLOCKED ON #N — do not run until merged`, or left out; it is never rendered as a runnable command.
+A document that BOTH flags "nothing in code writes X / X is operator-seeded" AND supplies a command
+to write X is self-contradictory by construction and must not merge. When a doc's claim is
+aspirational, say which ticket owns the gap and what the reader must NOT infer (the honest shape
+RETRO-218 credited: "the ENFORCEMENT is live; the PROJECTION is aspirational").
+
+**Distinct axis from:** Rule N (compliance/privacy documents disclosing behavior to END USERS before
+a go-live gate — AH governs internal operator instructions, and fires on the very first merge, not
+at a gate); Rule M (a job/seed/migration claiming to self-apply in PROD while its automation is
+dev-only — AH covers hand-executed instructions with no automation at all); Rule Y (a docstring
+citing a named test/file as proof a guard runs in CI — a citation-integrity rule, not an
+executability rule); Rule L (the production install/snippet path must PRODUCE the config a consumer
+reads — a code-to-code wire, not a doc-to-code one); Rule AA (code-vs-prod split for
+operator-pending tickets — AH is about whether the operator's instruction can work at all, AA about
+whether anyone has run it yet).
+
+**Verification:**
+
+```bash
+# 1. Self-contradiction signature: a step that says nothing writes X and then writes X.
+grep -n -A 25 -E 'operator-seeded|no in-repo code writes|FAIL-SILENT HAZARD' docs/runbooks/*.md \
+  | grep -nE 'curl|psql|wrangler .* put|doppler secrets set'
+
+# 2. For every field a runbook curl sends, prove the receiving route parses it (example: /api/config).
+grep -o -E '"[a-z_]+":' docs/runbooks/BRAND_PROVISIONING.md | sort -u
+grep -nE '^\s+[a-z_]+: z\.' apps/control-plane/src/app/api/config/route.ts
+# every documented key must appear in the route's schema — at the doc's OWN merge commit:
+git show <doc-merge-sha>:apps/control-plane/src/app/api/<route>/route.ts | grep -n 'z\.'
+
+# 3. Capability claims in schema/ADR/MASTER_DESIGN prose must name a real writer/reader:
+grep -rn 'projected|enforced|validated against|seeded at provisioning' packages/db/src/schema/*.ts docs/MASTER_DESIGN.md \
+  | while read -r hit; do echo "$hit"; done   # each hit needs a grep proving the code path exists
+```
+
+---
+
+<!-- Rule AH added 2026-07-26 — RETRO-220 §6. Evidence (≥2 PRIOR numbered retros): RETRO-216 §4d DG-1/DG-2
+(PR #621 brand-provisioning runbook Step 6 documents a PG per-request read + an admin surface that merged
+#623 does not have; Step 5 documents a shipped feature as unshipped — count 1) + RETRO-218 §4d DG-1 (PR #623
+— the FIX introduced a second-generation over-claim: tenants.ts + MASTER_DESIGN §V.3.4 "projected onto the
+KV record at provisioning" with zero KV_API_KEYS writes repo-wide — count 2). Corroborating and pre-dating
+both: ESC-040 / RETRO-205 CHECK B (api_keys.ts:33 + MASTER_DESIGN §5021 assert origin validation the ingest
+path never performed). Promotion trigger: RETRO-220 (PR #625 — runbook §Step 3a's PATCH /api/config curl was
+non-executable at its own merge commit f0a2310: the brand Zod object knew only primary_color/logo_url/
+white_label, was non-strict so unknown keys were silently stripped → 200 with nothing written, and the
+whole-blob rewrite would have WIPED a hand-seeded legal identity; the same section also stated "no in-repo
+code writes these keys". Verified by git show f0a2310 and corroborated verbatim by PR #629's own runbook
+correction at BRAND_PROVISIONING.md:242-247. Closed 2h39m later by #629/3ecec7f, so no remediation ticket —
+the recurrence-prevention leg is FOLLOW-662). The 2 banked occurrences are both PRIOR retros → ≥2-PRIOR
+threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/V/
+Q/AG). Four sightings across three distinct document families. DISTINCT axis from Rule N (end-user
+compliance disclosure at a go-live gate), Rule M (dev-only automation paired with a prod-effect claim),
+Rule Y (docstring citing a named test as CI proof) and Rule L (production install path produces the config).
+ARCHITECTURAL PREMISE (RETRO-220 §5d): under the CEO's no-client-dashboard model the runbook IS the operator
+UI, so an unexecutable step is a functional defect, not a docs nit. LETTER CHOICE: AH is the next in the
+double-letter sequence after AG. -->

@@ -33578,3 +33578,295 @@ Rule AG PROMOTED (mechanical append-only-log collision under parallel worktrees;
 conflict + Rule A). Batch gh-pr-merge/rebase: only realized harm = append-log (now AG); rebase preservation verified clean; HELD. -->
 
 
+
+## RETRO-220 — FOLLOW-657 (ADR-0018 staff port for onboarding mutations + runbook reconciliation) — 2026-07-26
+
+### 1. Summary of change
+
+- **PR:** #625 (merged 2026-07-26 12:18:24 UTC, commit `f0a2310`)
+- **Files changed:** 7 (+1383 / -252) — 3 route handlers, their 3 test files, 1 runbook
+- **Modules touched:** [control-plane / docs]
+- **Key contracts changed:**
+  - `POST /api/detect` — auth contract: adds the ADR-0018 §2 staff path via `?tenant_id=<uuid>`;
+    **removes** the 403 `STAFF_TENANT_CONTEXT_MISSING` rejection (staff without the param now gets
+    400 `VALIDATION_ERROR`) — breaking: **yes** for any consumer keying on that code (verified zero
+    in-repo consumers, see §3 CHECK A).
+  - `POST /api/schema/activate` — identical change.
+  - `PATCH /api/tenants/:id` — the existing `:id` segment doubles as the staff tenant param (no
+    second `?tenant_id` source); agency 401 `Unauthorized` / 403 `Forbidden: tenant mismatch` bodies
+    preserved byte-identical; new 400/404/500 statuses reachable only on the staff path — breaking:
+    no.
+  - `staff_audit_log.action` gains 3 values: `detect.schema_upsert`, `schema.activate`,
+    `tenant.quiz_enabled_update` — additive.
+  - New route error code `AUDIT_WRITE_FAILED` (500, staff paths only) — additive.
+  - `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` (`packages/shared/src/errors.ts:53`) — **loses its last
+    producer** (see §3 CHECK A / FOLLOW-661).
+  - `docs/runbooks/BRAND_PROVISIONING.md` — Steps 0/2/3a/4/5/6, Part C, GAP summary, new break-glass
+    appendix (+274 / −125).
+
+### 2. Verification done in PR
+
+- Test files changed: `api/detect/route.test.ts` (+203), `api/schema/activate/route.test.ts` (+222),
+  `api/tenants/[id]/route.test.ts` (+220). New staff-path cases: **16** (5 detect / 6 activate / 5
+  tenants) — rank gate (`estalara:readonly` → 403), unknown/soft-deleted id → 404, headless
+  `ADMIN_API_SECRET` rejected (RETRO-187), happy path asserting the audit row's
+  `adminUserId`/`action`/`targetTenantId`/`ipAddress`/`userAgent`, and audit-insert failure → 500
+  `AUDIT_WRITE_FAILED` with **no** orphan schema/api-key/tenant mutation. Two pre-existing agency
+  tests rewritten (403 `STAFF_TENANT_CONTEXT_MISSING` → 400). Quality note: the suites replaced the
+  blanket `vi.mock('@estalara/auth')` with `importOriginal` partial mocks, so the REAL
+  `resolveTenantAccess → verifyTracerAdminAuth → tenantExists` chain executes (only `getAuthClaims`
+  and the DB layer are mocked) — evidence-grade, not shape-injecting. Coverage delta: est. up.
+- CI checks: **independently verified** (`gh pr checks 625`) — of ~62 checks the ONLY red is
+  `Rule I — wired-or-dead` (both runs), the repo-wide permanently-red baseline (Rule AF / ESC-041,
+  191 violations on `main`). Green includes `Test (Node 22)`,
+  `Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)`,
+  `Demo integration (detect → activate → adapt → SDK)` — the last is direct E2E evidence for the
+  "agency path byte-unchanged" claim — plus `Build (control-plane)`, `Lint`, `Format check`.
+- Re-ran the mechanical guard at HEAD myself (verify-not-guess):
+  `node scripts/check-staff-write-atomicity.cjs` → `OK` for all three new routes ("mutation +
+  insert(staffAuditLog), both inside the SAME db.transaction()"), 0 exemptions.
+
+### 3. Wiring Audit
+
+**CHECK A — one finding.** No new files; the new helpers (`requestIp` ×3, `accessErrorCode` ×2) are
+module-local and used in-file; the three `route.ts` are framework entrypoints (suppressed).
+
+- **DEAD_CODE (P2) → FOLLOW-661.** `packages/shared/src/errors.ts:53`
+  `ErrorCode.STAFF_TENANT_CONTEXT_MISSING`. This PR removed its only two emitters
+  (`detect/route.ts`, `schema/activate/route.ts`). Grep:
+  `grep -rn "STAFF_TENANT_CONTEXT_MISSING" --include=*.ts --include=*.tsx --include=*.md . | grep -v node_modules`
+  → the enum-member definition, backlog/docs prose (QUEUE.md:5032/5046, FOLLOW_UPS.md:1329,
+  sprint-10/FOLLOW-047.md, RETROSPECTIVES.md), the runbook's own historical note, and 2 explanatory
+  comments in the changed test files. **Zero non-test producers, zero consumers.** Gate blind spot
+  worth recording: `scripts/check-rule-i.sh` scans `export` declarations, so an orphaned *enum
+  member* inside a live export is invisible to it — CI could not have caught this.
+
+**CHECK B — clean, with one qualified note.**
+
+- **New signal: 3 `staff_audit_log.action` values.** PRODUCER = the three transactional inserts
+  (`detect/route.ts:503`, `schema/activate/route.ts:277`, `tenants/[id]/route.ts:164`). CONSUMER =
+  `GET /api/audit` (`audit/route.ts:163-182`, generic `eq(staffAuditLog.action, query.action)` —
+  **verified there is no action whitelist/enum to update**). RENDER =
+  `admin/tenants/[id]/audit/audit-view.tsx:105` prints `{e.action}` raw. **producer→consumer→render
+  proven end-to-end.**
+- **New signal: `?tenant_id` staff param (detect/activate) and staff `:id` (tenants).** Consumer =
+  the routes. In-repo producer = **none**; the designed producer is the operator's curl, documented
+  in the same PR (`BRAND_PROVISIONING.md` §Step 2 / §Step 4). NOT classified HALF_WIRE_C: under the
+  CEO's no-client-dashboard model the operator IS the intended producer, and this PR shipped the
+  instruction alongside the capability. Recorded as a UI-surface gap instead → FOLLOW-663.
+- No new env vars, columns, topics, migrations or SDK signals.
+- The FAIL-SILENT hazards this PR's runbook flags (FOLLOW-658/659/660) are NOT re-filed here: traced
+  and confirmed closed downstream the same day (#627 `5e66288`, #628 `95a8492`, #629 `3ecec7f`, plus
+  the runbook un-stale `461e08a`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1 at merge, materially closed 2h39m later) — this PR authored an operator instruction the
+  code did not implement.** New §Step 3a (`docs/runbooks/BRAND_PROVISIONING.md`, added by this diff)
+  simultaneously states *"no in-repo code writes these keys — they are **operator-seeded JSONB**"*
+  AND supplies a copy-pasteable command to write them:
+  `curl -X PATCH "/api/config?tenant_id=<id>" -d '{"brand":{"brand_name":…,"legal_entity":…}}'`.
+  Both cannot be true. Verified against the merge commit itself, not assumed —
+  `git show f0a2310:apps/control-plane/src/app/api/config/route.ts`: the `brand` Zod object
+  (`:116-137`) knows only `primary_color` / `logo_url` / `white_label`, is **not** `.strict()` (so
+  unknown keys are silently stripped → HTTP 200, nothing written), and `:322` writes
+  `brandConfig: updatedBrand` — the 3-key re-parse — so the documented call would additionally
+  **wipe** any hand-seeded identity. Independently corroborated by the later fix's own text
+  (`BRAND_PROVISIONING.md:242-247` @HEAD, PR #629): *"Before FOLLOW-659 the route's Zod schema knew
+  only primary_color / logo_url / white_label, so it silently stripped brand_name / legal_entity and
+  returned 200 — the curl looked successful and wrote nothing."* Operator blast radius had it been
+  run in that window: the brand's DSR/consent record silently keeps saying "Estalara" — the exact
+  compliance-fabrication axis §Step 3a exists to prevent. **No remediation follow-up for the
+  instruction** (#629 `3ecec7f`, 14:57:38Z, shipped the producer and rewrote the step); the
+  recurrence-prevention leg is FOLLOW-662 + **Rule AH** (§6).
+- **LG-2 (P3, no stub, pre-existing) — `/api/detect`'s schema write never invalidates the tenant
+  schema cache.** `schema/activate/route.ts` calls `invalidateTenantSchemaCache` at 3 sites;
+  `detect/route.ts` upserts the same `tenant_site_schemas` rows on BOTH paths and calls it nowhere
+  (grep: no hit in `detect/route.ts`), so a detect-only run can leave `/api/adapt` on a stale
+  `schema:{tenantId}` for up to the 300s TTL (`lib/tenant-schema.ts:58-59,217`). Not introduced here
+  — the new staff transaction faithfully replicates the agency omission — and self-heals via TTL plus
+  the wizard's activate step. Noted, not ticketed (surgical-change discipline).
+- **LG-3 (P3, note only) — nullable in a non-nullable contract.** `schema/activate/route.ts` returns
+  `{ api_key: apiKeyOut }` where `apiKeyOut: string | null`, against a documented
+  `{ api_key: string }`. Unreachable today (every tx branch assigns it).
+
+#### 4b. Code bugs not caught — N/A. Four claims were re-verified rather than accepted:
+
+- **"Agency path is byte-unchanged" — TRUE.** `getSessionAuthClaims` is `getSessionAuth(req).claims`
+  (`session-auth.ts:176-179`) and `resolveTenantAccess` calls the same `getSessionAuth` (`:399`). The
+  one added agency-path condition, `requireAgencyRole(claims,'agency:viewer')`, cannot reject a
+  pre-existing caller: `agency:viewer` is the lowest rank, and a legacy tenant claim lacking
+  `agency_role` yields `AGENCY_ROLE_RANK[undefined] === undefined`, and `undefined < 1` is `false` →
+  no throw (`packages/auth/src/jwt.ts:146-157`). The `Demo integration (detect → activate → adapt →
+  SDK)` CI job passing is the end-to-end confirmation.
+- **§3a atomicity — mechanically proven** (guard re-run, §2), not merely asserted by the PR body.
+- **Invariant 2 (an agency session can never act on a foreign `?tenant_id`) — enforced**
+  (`session-auth.ts:409-411`) and covered by `lib/__tests__/resolve-tenant-access.test.ts:195-203`
+  (INV-2). See §4c for the route-level gap.
+- **FOLLOW-555 gate not vacated.** `scripts/check-follow555-session-auth.sh` guards the
+  `detect`/`schema` groups against *bare* `getAuthClaims`; `resolveTenantAccess` routes through
+  `getSessionAuth`, so the SSR-session property the gate protects still holds.
+
+#### 4c. Test coverage gaps (all P3, no stubs — the logic is covered one level down)
+
+- No ROUTE-level test that an **agency** caller passing a **foreign** `?tenant_id` to detect/activate
+  gets 403. The param is newly security-relevant on those two routes; only the helper suite covers it.
+- No `estalara:superadmin` (rank 3) case on any of the three routes (only `ops` + `readonly`).
+- No test that a low-confidence detect (`result.schema === null`) writes **no** audit row on the
+  staff path (the write block is skipped entirely — correct, but unpinned).
+- No test for `AccessError(500)` (DB unconfigured → `tenantExists` fails closed) →
+  `accessErrorCode(500) === 'INTERNAL_ERROR'`.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) → FOLLOW-663.**
+  `apps/control-plane/src/app/admin/tenants/[id]/quiz/quiz-config-editor.tsx:10-21` still asserts
+  that the quiz ON/OFF toggle "writes through a DIFFERENT route (`PATCH /api/tenants/:id`) **that
+  has no staff-override port yet**" and defers surfacing the toggle *on that basis*. False as of this
+  PR. Same defect class as LG-1 (a doc asserting a code state that no longer holds), in the opposite
+  direction — and load-bearing, because it is the recorded justification for the missing staff UI.
+- **DG-2 (P3) → FOLLOW-664.** `docs/adr/ADR-0018-superadmin-tenant-access.md` §5 inventory
+  (`:209-226`) and §6 phasing + ticket list (`:241-262`, stops at FOLLOW-600) never record the
+  FOLLOW-657 port, so the ADR still reads as if onboarding mutations are un-ported, and its
+  §Alternatives rejection of session-impersonation is not tied to the new break-glass appendix.
+- **DG-3 (P3, no stub — verified already closed).** The runbook's three FAIL-SILENT HAZARD boxes
+  (§Step 0 / §Step 3a / §Step 6) went stale within 2h39m of this merge. Already un-staled on `main`
+  (`BRAND_PROVISIONING.md:72,239,377,666-677` now carry CLOSED/SHIPPED markers from
+  `3ecec7f`/`95a8492`/`461e08a`). Traced, not assumed; no follow-up.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Prior-follow-up closure check (algorithm step 7) — FOLLOW-657 claims to close FOLLOW-652's
+  GAP-1/GAP-2. Traced end-to-end, not one hop:**
+  - GAP-1 (detect+activate): route accepts staff ✔ → mutation+audit committed atomically ✔ (guard) →
+    row readable via `GET /api/audit` ✔ → rendered in `audit-view.tsx` ✔ → operator instruction
+    exists ✔ (§Step 2). **CLOSED for the curl path.** The `/admin/tenants/[id]/onboarding` UI the
+    original GAP box named as the candidate shape was NOT built → the gap moved one hop (API done,
+    surface absent) → FOLLOW-663.
+  - GAP-2 (`quiz_enabled`): route ✔, audit ✔, instruction ✔. But the **only UI producer is still the
+    agency dashboard** (`/dashboard/quiz`, unusable under the no-client-dashboard model); the staff
+    quiz editor has no toggle and its comment says the port doesn't exist → same one-hop residue →
+    FOLLOW-663.
+  - Leg-2 points (1)–(4): origins vs #623 ✔ (KV `ApiKeyRecord`, three-state `null`/`[]`/list, no
+    admin surface — matches merged reality), `FIRST_PARTY_TENANT_ID` §Step 0 ✔, Step 5 vs #620 ✔
+    (staff-only `PUT /api/admin/tenants/quiz-definition`, hard-vs-warning integrity), workaround →
+    appendix ✔. **All four closed.** The failure was in the *unscoped fifth* addition (§Step 3a) —
+    LG-1.
+  - **Chain reconciliation with RETRO-218/219:** those retros recommended "add an explicit
+    provisioning step" as the mitigation for the missing producers. This PR executed that
+    recommendation — and the mitigation itself silently no-oped, i.e. **the gap moved from "no
+    producer" to "a documented step that writes nothing"** until #628/#629 shipped the real
+    producers. Documentation standing in for code is a *deferral*, not a closure; RETRO-218/219's
+    §5d Rule AA framing was right to keep the prod axis open.
+- No QUEUE assumption invalidated: `gh pr list --state open` is empty, the session-61 QUEUE head
+  reports no dispatched ticket, and the residual FOLLOW-628/629/631/632/634 do not touch these
+  routes. **QUEUE.md and ESCALATIONS.md not written (read-only per charter).**
+- **RETRO-221..224 (#626–#629) are owed this session.** #629's retro must NOT re-file LG-1 — it is
+  the fix for it; §Step 3a's current text is correct at HEAD.
+
+#### 5b. Future sprint tickets affected
+
+- The 3-client external onboarding wave now executes §Step 2 / §Step 4 through this staff port; it is
+  the CEO's only in-model provisioning path (the shadow agency account is break-glass).
+- FOLLOW-663 (staff UI + stale comment), FOLLOW-664 (ADR reconciliation), FOLLOW-662 (runbook
+  instruction gate). FOLLOW-661 cleans the orphaned error code.
+
+#### 5c. Contracts changed others rely on
+
+- **Removed 403 `STAFF_TENANT_CONTEXT_MISSING` on 2 routes** — intentionally reverses FOLLOW-047
+  (PR #129, RETRO-005 lineage) per the CEO's 2026-07-25 build-the-port ruling. Safe: grep proves no
+  in-repo consumer; both routes are same-origin browser/operator surfaces with no external SDK
+  contract.
+- `staff_audit_log.action` is an open string on both sides (producer + `/api/audit` filter) — the 3
+  new values need no consumer change (verified, §3).
+- `PATCH /api/tenants/:id` agency error bodies deliberately preserved (`'Unauthorized'` /
+  `'Forbidden: tenant mismatch'`), so the dashboard quiz toggle is unaffected. One cosmetic
+  side-effect: an agency 403 for *insufficient role* now also renders "tenant mismatch" (unreachable
+  in practice — `agency:viewer` is the floor).
+
+#### 5d. Architectural assumptions affected
+
+- ADR-0018 §6 phasing gains a de-facto fourth Phase-2 family (onboarding mutations) not in the ADR →
+  DG-2.
+- **Rule AA contrast, stated explicitly:** unlike #623/#624, this ticket is **NOT**
+  `CODE_COMPLETE_OPERATOR_PENDING` — the staff port is exercisable the moment the CEO's superadmin
+  session hits the route; no env flip or out-of-band seeding gates it. The only operator dependency
+  is that the runbook it ships is *accurate*.
+- Which is the shift worth naming: under "no client dashboard", the **runbook is the UI**. A wrong
+  curl block is now a functional defect with a compliance blast radius, not a docs nit — the premise
+  for Rule AH.
+
+### 6. New lesson candidates
+
+- **Pattern: "a document (runbook step, schema doc-comment, MASTER_DESIGN section) asserts a
+  behavior, automation or executable command that the code at that document's own merge commit does
+  not implement."** — **The PM asked whether PR #625 contains another instance. It does — verified,
+  not asserted: §Step 3a's `PATCH /api/config` curl (LG-1), proven against
+  `git show f0a2310:…/api/config/route.ts` and corroborated verbatim by #629's own correction text.**
+  Evidence chain: **RETRO-205 / ESC-040** (`api_keys.ts:33` + MASTER_DESIGN §5021 claim origin
+  enforcement that does not exist) → **RETRO-216 §4d DG-1** (#621 runbook Step 6 documents a PG
+  per-request read + an admin surface that merged #623 does not have) → **RETRO-218 §4d DG-1** (#623
+  ships a *second-generation* over-claim: `tenants.ts` + MASTER_DESIGN §V.3.4 say the value is
+  "projected onto the KV record at provisioning" — no projection code existed) → **this retro** (4th
+  sighting, 3rd distinct document family). Two-plus PRIOR numbered retros (RETRO-216, RETRO-218;
+  RETRO-205/ESC-040 corroborating) → threshold met → **Rule AH PROMOTED** (the promoting retro does
+  not inflate the count, per the AA/AB/AC/AD/AE/V/Q/AG adjudication). Distinct from Rule N
+  (compliance disclosure to end users), Rule M (CI/job automation claimed but dev-only), Rule Y (a
+  docstring citing a named test as proof) and Rule L (production install path produces the config):
+  AH governs **operator-executable instructions and capability claims verified against the doc's own
+  merge commit**, with the self-contradiction signature ("no code writes X" + "here is the command to
+  write X") as its cheapest detector.
+- **Pattern: "a port that reverses a prior ticket's behavior strands that ticket's error/status
+  contract"** (FOLLOW-047's `STAFF_TENANT_CONTEXT_MISSING` orphaned by FOLLOW-657) — count **1**.
+  Rhymes with Rule I but sits below its granularity (an enum member inside a live export). **HOLD, no
+  promotion.** Pre-authorization: promote on the next independent sighting of a *superseded contract
+  member* surviving its last producer.
+
+### 7. Follow-ups
+
+- **FOLLOW-661:** remove the orphaned `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` (zero producers, zero
+  consumers) + reconcile its FOLLOW-047 lineage references (backend-engineer, 2h, priority **P2**).
+- **FOLLOW-662:** operator-instruction verification gate for `docs/runbooks/*` — self-contradiction
+  grep + per-step `verified-at:<sha>` freshness check (devops-engineer, 4h, priority **P2**).
+- **FOLLOW-663:** staff surface for `quiz_enabled` + correct the now-false `quiz-config-editor.tsx`
+  doc-comment; decide (do not silently defer) on an `/admin/tenants/[id]/onboarding` detect→activate
+  surface (backend-engineer, 4h, priority **P2**).
+- **FOLLOW-664:** reconcile ADR-0018 §5/§6 with the FOLLOW-657 port and the break-glass appendix
+  (architect, 1h, priority **P3**).
+
+### 8. Cross-references
+
+- **RETRO-216 (#621)** — the runbook this PR reconciles; its DG-1/DG-2 are the leg-2 charter (now
+  closed) and its §6 staleness pattern is evidence #2 for Rule AH.
+- **RETRO-218 (#623) / RETRO-219 (#624)** — the operator-seeded-producer findings whose recommended
+  "document it" mitigation this PR executed; §5a explains why documentation was a deferral, and
+  RETRO-218 DG-1 is evidence #3 for Rule AH.
+- **RETRO-215 (#620)** — Step 5's merged reality, spot-checked accurate here.
+- **RETRO-205 / ESC-040 (CLOSED `41556cc`)** — the origin of the doc-over-claim chain.
+- **RETRO-187** — the `ADMIN_API_SECRET`-is-not-attributable rule this PR honors and tests.
+- **RETRO-005 / FOLLOW-047 (PR #129)** — the behavior this PR deliberately reverses.
+- **Rule AH (PROMOTED here)** / **Rule AA** (code-vs-prod split, and why this ticket is exempt from
+  it) / **Rule AF** (Rule I red = baseline, verified non-regressive) / **Rule AE** (the staff-write
+  atomicity guard that mechanically covered all three new call sites).
+
+<!-- next free RETRO number: 221. next free FOLLOW number: 665 (FOLLOW-661..664 filed by RETRO-220).
+RETRO-220 = retro for PR #625 (FOLLOW-657, merged 2026-07-26T12:18:24Z, f0a2310; OPUS
+retrospective-analyst, session 61). CHECK A: DEAD_CODE — ErrorCode.STAFF_TENANT_CONTEXT_MISSING lost its
+last producer (2 emitters removed), zero consumers, invisible to check-rule-i.sh (member-level vs
+symbol-level) → FOLLOW-661. CHECK B: clean — 3 new staff_audit_log.action values proven
+producer→/api/audit→audit-view render end-to-end (no action whitelist exists); the ?tenant_id staff param
+has no in-repo producer BY DESIGN (operator curl, no-client-dashboard model) → surface gap FOLLOW-663,
+not a half-wire. LG-1 (the PM's explicit ask, ANSWERED YES): §Step 3a's PATCH /api/config curl was
+non-executable at f0a2310 (brand Zod knew only primary_color/logo_url/white_label, non-strict → 200 +
+silent strip, and the whole-blob rewrite WIPED hand-seeded identity) — proven by git show f0a2310 and
+corroborated by #629's own runbook correction; closed 2h39m later by #629. Agency-path byte-unchanged
+VERIFIED (same getSessionAuth resolver; requireAgencyRole cannot reject — viewer is the floor and
+AGENCY_ROLE_RANK[undefined] < 1 is false; Demo-integration E2E green). Staff atomicity guard re-run at
+HEAD → OK on all 3 routes. CI: only Rule I red = Rule AF baseline. FOLLOW-658/659/660 hazard boxes traced
+CLOSED downstream (#627/#628/#629 + 461e08a) → deliberately NOT re-filed. Rule AH PROMOTED (evidence
+RETRO-216 + RETRO-218, corroborated RETRO-205/ESC-040; this retro is the 4th sighting and does not
+inflate the count). Superseded-error-code-orphan pattern HELD at count 1 with pre-authorization. -->

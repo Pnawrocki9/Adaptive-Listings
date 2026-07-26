@@ -18758,3 +18758,97 @@ FOLLOW-656 go-live gate). AC: refuse (or require `consent_text_hash` for) a regi
 > 1), so a forgotten env cannot silently degrade to the canonical-hash default. Keep the
 > single-live- tenant flow working (env-unset + exactly one tenant = today's Estalara path
 > unchanged).
+
+## FOLLOW-661 — Retire the orphaned `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` (last producer removed by the FOLLOW-657 staff port)
+
+source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+FOLLOW-657 replaced the two blanket staff rejections in `POST /api/detect` and
+`POST /api/schema/activate` with the ADR-0018 §2 staff override, removing the only two emitters of
+`ErrorCode.STAFF_TENANT_CONTEXT_MISSING` (`packages/shared/src/errors.ts:53`). Repo-wide grep
+(`grep -rn "STAFF_TENANT_CONTEXT_MISSING" --include=*.ts --include=*.tsx --include=*.md . | grep -v node_modules`)
+now returns **zero non-test producers and zero consumers** — only the enum-member definition,
+backlog prose (QUEUE.md:5032/5046, FOLLOW_UPS.md:1329, sprint-10/FOLLOW-047.md), the runbook's
+historical note, and two explanatory comments in the changed test files. The member is a shipped
+error contract nothing can ever emit. It is invisible to the `Rule I` gate because
+`scripts/check-rule-i.sh` scans `export` declarations, not members inside a live export — so CI will
+never surface it.
+
+AC: (1) remove `STAFF_TENANT_CONTEXT_MISSING` from the `ErrorCode` enum (or, if the CEO prefers a
+reserved-codes policy, mark it `@deprecated` with the superseding ticket and the date it lost its
+last producer — do not leave it undocumented either way); (2) update the FOLLOW-047 lineage
+references so a future reader is not sent looking for behavior that was deliberately reversed
+(`backlog/sprint-10/FOLLOW-047.md` header note is enough — do NOT rewrite QUEUE.md history); (3)
+state in the PR whether any out-of-repo consumer (Estalara-app / Rafał's deploy side) keys on the
+code — the repo cannot prove a negative for surfaces it does not contain.
+
+## FOLLOW-662 — Verification gate for operator-executable runbook instructions (Rule AH mechanization)
+
+source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 4 depends_on: [] promoted_to_queue:
+false
+
+RETRO-220 LG-1: `docs/runbooks/BRAND_PROVISIONING.md` §Step 3a shipped in PR #625 with a
+copy-pasteable `PATCH /api/config … {"brand":{"brand_name":…,"legal_entity":…}}` while the route at
+that same merge commit (`git show f0a2310:apps/control-plane/src/app/api/config/route.ts:116-137`)
+parsed only `primary_color`/`logo_url`/`white_label` with a non-strict Zod object — the command
+returned 200, wrote nothing, and would have wiped a hand-seeded identity. The same section
+simultaneously stated "no in-repo code writes these keys", so the document contradicted itself. This
+is the 4th sighting of the doc-asserts-unimplemented-behavior class (ESC-040 / RETRO-216 / RETRO-218
+/ RETRO-220) and the reason **Rule AH** was promoted; this ticket is its mechanization.
+
+AC: (1) a CI check that FAILS when a single runbook step contains BOTH an "operator-seeded" / "no
+in-repo code writes" / "FAIL-SILENT HAZARD" marker AND a command block purporting to write that same
+thing (the self-contradiction signature — cheapest reliable detector); (2) every Part-A step in
+`docs/runbooks/BRAND_PROVISIONING.md` carries a `verified-at: <sha>` marker naming the commit its
+claims were checked against, and CI fails when a route file the step cites has changed since that
+sha (warn-only for the first two weeks, then hard-fail); (3) the gate must emit positive proof it
+executed (Rule Q — no silent soft-skip when no runbook changed); (4) fixture tests for both a
+passing and a violating runbook, per the `scripts/__fixtures__` house pattern.
+
+## FOLLOW-663 — Staff surface for `quiz_enabled` + correct the now-false `quiz-config-editor` doc-comment (the one hop FOLLOW-657 left open)
+
+source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 4 depends_on: []
+promoted_to_queue: false
+
+FOLLOW-657 closed FOLLOW-652's GAP-1/GAP-2 at the **API** layer only. Two residues, both verified:
+
+1. `apps/control-plane/src/app/admin/tenants/[id]/quiz/quiz-config-editor.tsx:10-21` still asserts
+   the quiz ON/OFF toggle "writes through a DIFFERENT route (`PATCH /api/tenants/:id`) that has no
+   staff-override port yet" and **defers surfacing the toggle on that basis**. The port shipped in
+   #625, so the comment is false and is the recorded justification for a missing feature — the
+   dangerous shape (a stale doc that keeps a gap open).
+2. `quiz_enabled` still has exactly one UI producer: the AGENCY dashboard (`/dashboard/quiz`), which
+   is unusable under the no-client-dashboard model. Staff must curl. The staff editor's own
+   doc-comment names the fix ("unify the agency and staff quiz editors once `PATCH /api/tenants/:id`
+   gains a staff-override port") — that precondition is now met.
+
+AC: (1) correct/delete the stale comment; (2) surface the `quiz_enabled` ON/OFF toggle in
+`StaffQuizConfigEditor`, writing through `PATCH /api/tenants/:id` (staff path, rank ≥
+`estalara:ops`, audited) with a test asserting the staff write produces exactly one
+`staff_audit_log` row (`action: 'tenant.quiz_enabled_update'`); (3) make an explicit, recorded
+DECISION on the `/admin/tenants/[id]/onboarding` detect→activate staff surface that ADR-0018 and the
+original GAP-1 box named as the target shape — build it, or write "curl is the surface" into the
+ADR. Do not leave it implicitly deferred a third time.
+
+## FOLLOW-664 — Reconcile ADR-0018 §5/§6 with the FOLLOW-657 onboarding-mutation port
+
+source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
+recommended_agent: architect priority: P3 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+`docs/adr/ADR-0018-superadmin-tenant-access.md` §5 settings inventory (`:209-226`) and §6 rollout
+phasing + Phase-2 ticket list (`:241-262`, which stops at FOLLOW-600) predate FOLLOW-657 and were
+not updated by PR #625. The ADR therefore still reads as if the onboarding mutations
+(`POST /api/detect`, `POST /api/schema/activate`, `PATCH /api/tenants/:id`) are un-ported, and its
+§Alternatives rejection of session-impersonation is not connected to the break-glass shadow-agency
+appendix that now lives in `docs/runbooks/BRAND_PROVISIONING.md`.
+
+AC: (1) add the three routes to the §5 inventory with their staff-port status and tenant-source
+shape (`?tenant_id=` for detect/activate, `:id` for the PATCH — the asymmetry is deliberate and
+should be stated, not rediscovered); (2) record FOLLOW-657 in the §6 phasing list as a Phase-2
+family (onboarding mutations) with its atomic-audit obligation; (3) cross-link §Alternatives →
+runbook break-glass appendix so the rejected impersonation path and its emergency survivor are read
+together. Docs-only; no code.

@@ -21,6 +21,68 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
+
+**Filed by:** claude (session 61, live diagnostic) **Date:** 2026-07-26T15:45:00Z **Affects:**
+`apps/ingest` (all merged work since 2026-05-29), FOLLOW-642/658 (origin enforcement), FOLLOW-559
+(server-side consent gate), FOLLOW-579 (unconsented-snapshot stripping), FOLLOW-459/482/513 (<50ms
+ACK + durable queue retry + Sentry), FOLLOW-678 stub premise, ESC-020 (same defect class) **Type:**
+other (infra/ops — deploy gap, compliance-relevant)
+
+**Description:** While verifying today's `FIRST_PARTY_TENANT_ID` secret, a diagnostic
+`POST /v1/events` with `Origin: http://localhost:5173` against `ingest.estalara.com` sailed
+**through** the origin gate (rejected only by Zod schema validation; nothing persisted —
+`accepted:0`). Root cause established from `wrangler deployments list --env production`: the last
+**code** deployment of `estalara-ingest-production` is **2026-05-29T21:21:49Z** — every entry since
+is `Secret Change` only. The deployed binary therefore predates the entire origin-enforcement stack
+and **13 further merged ingest commits**. `git log --since=2026-05-29 -- apps/ingest` on `main`
+lists 14 undeployed commits, including:
+
+- `d631a08` FOLLOW-642 per-tenant `allowed_origins` CORS enforcement (#623) — **not live**
+- `95a8492` FOLLOW-658 producer + fail-loud `origin_policy_unconfigured` guard (#628) — **not live**
+- `0009c0f` FOLLOW-559 **server-side consent gate for profiling-class events** (#533) — **not live**
+- `d3911bf` FOLLOW-579 strip derived-intent fields from unconsented `session.quality.snapshot`
+  (#547) — **not live**
+- `08eb138`/`f53c3ba`/`ef2d6dc` FOLLOW-459/482/513 — ACK-before-insert p95 fix, durable Queue retry,
+  Sentry on the queue consumer — **not live**
+
+There is **no working deploy path**: the only Worker deploy workflow is `deploy-staging.yml` (manual
+`workflow_dispatch`, staging-only, and every historical run FAILED — last attempt 2026-05-04). Prod
+deploys have always been manual `wrangler deploy` from an operator machine.
+
+**Impact if not fixed:**
+
+1. **Compliance:** prod ingest accepts profiling-class events with **no server-side consent
+   enforcement** (FOLLOW-559 merged ~2026-06 but never live) — client-side suppression is the only
+   real gate; MASTER_DESIGN and multiple docstrings assert server-side behavior that is not running.
+   This is Rule AI (ship-falsifies-doc) at the **deploy layer** — the doc-truth axis the retro loop
+   now tracks, but for merged-vs-deployed instead of merged-vs-written.
+2. **Security:** anyone can POST events for the Estalara tenant from any origin with the public SDK
+   api key (empirically proven today). All origin-enforcement work of #623/#628 is inert.
+3. **Reliability/perf:** the <50ms ACK fix and the durable ClickHouse retry queue are not live; prod
+   still runs the pre-FOLLOW-459 synchronous path.
+4. Today's `FIRST_PARTY_TENANT_ID` ingest secret is set but **read by nothing** until deploy.
+
+**Required action:** Piotr decision + a verified deploy (recommend a dedicated ticket, NOT a blind
+`wrangler deploy`):
+
+1. **Pre-flight:** the May-29 binary predates the `env.production` queue producers/consumers
+   (FOLLOW-482) and any later bindings — verify the Cloudflare account actually HAS the queues/KV
+   namespaces `wrangler.toml` now declares (`wrangler queues list`, `kv namespace list`), or the
+   deploy fails/misbehaves. Also identify which origins CURRENTLY send prod events (deploying
+   activates the origin gate: Estalara's KV record has no `allowed_origins` → `inherit` → only
+   `app.estalara.com` + `admin.estalara.com` pass; any other origin in live use starts 403ing).
+2. **Deploy** `wrangler deploy --env production` from a clean checkout of `main`.
+3. **Post-deploy verification:** `/health` 200; events from `app.estalara.com` accepted; a
+   localhost-origin POST now returns 403 `forbidden_origin` (TODAY it passes — that is the
+   regression test this escalation hands you); Sentry shows no `origin_policy_unconfigured` for the
+   first-party tenant (proves the FOLLOW-658 guard + today's secret agree).
+4. Decide whether a prod deploy pipeline (extend `deploy-staging.yml` with a gated production job)
+   becomes a ticket, so this class ends — this is the third "merged ≠ live" surface after ESC-020
+   (Estalara-app DOM hooks) and ESC-042 (Modal intent-engine).
+
+**Resolution:** <empty until resolved>
+
 ## RESOLVED — prod `ingest_worker` ClickHouse user has NO grant on `description_generations`, blocking FOLLOW-463's audit-trail write [FOLLOW-463]
 
 **Filed by:** ml-engineer (session, FOLLOW-463) **Date:** 2026-07-08T00:00:00Z **Affects:**

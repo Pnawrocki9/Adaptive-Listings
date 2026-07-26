@@ -5,10 +5,18 @@
  * settings (ADR-0018 §5/§6 / FOLLOW-600).
  *
  * Reads/writes `plan` (display-only — plan changes are a billing concern, not
- * editable here) and `brand.{primary_color,logo_url,white_label}` via
+ * editable here) and
+ * `brand.{primary_color,logo_url,white_label,brand_name,legal_entity}` via
  * `/api/config?tenant_id=<id>` — the staff-override API path FOLLOW-614/615
  * already ported. Every fetch carries `?tenant_id=<tenantId>` so the route fences
  * its `createAdminClient()` query to that tenant (ADR-0018 §2 invariant 5).
+ *
+ * FOLLOW-659: `brand_name` / `legal_entity` are the per-brand LEGAL identity read
+ * by the DSR OTP e-mail and the platform-registration consent text
+ * (`@/lib/brand-identity`). This form is their only in-product producer — before
+ * it, they were operator-seeded JSONB that a Save from this very page silently
+ * wiped. An UNSET `brand_name` renders a visible notice rather than showing the
+ * resolved "Estalara" fallback as if it were stored config.
  *
  * FOLLOW-622 (CEO Option B, 2026-07-24 —
  * `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`): the "SDK Allowed Origins"
@@ -37,7 +45,13 @@ type StaffTenantConfig = Pick<TenantConfig, 'plan' | 'brand' | 'data_source'>;
 
 const DEFAULTS: StaffTenantConfig = {
   plan: '',
-  brand: { primary_color: '#1a73e8', logo_url: null, white_label: false },
+  brand: {
+    primary_color: '#1a73e8',
+    logo_url: null,
+    white_label: false,
+    brand_name: null,
+    legal_entity: null,
+  },
   data_source: 'stored',
 };
 
@@ -242,6 +256,76 @@ export function StaffTenantConfigEditor({ tenantId }: { tenantId: string }): Rea
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           />
         </div>
+
+        {/* Legal identity (FOLLOW-659) — the provisioning surface for the two
+            server-side-only brand_config keys read by the DSR e-mail and the
+            platform-registration consent text. */}
+        <fieldset className="rounded-lg border border-gray-200 p-4">
+          <legend className="px-1 text-sm font-medium text-gray-900">Legal Identity</legend>
+          <p className="mb-3 text-xs text-gray-500">
+            Shown to data subjects in DSR e-mails and in the registration consent text. Leave empty
+            only for Estalara&apos;s own tenant — an external brand left empty is served
+            &ldquo;Estalara&rdquo; instead of its own name.
+          </p>
+          {config.brand.brand_name === null && (
+            // Plain paragraph, NOT role="status": `role="status"` is reserved on this
+            // page for the load-time `data_source: 'default'` banner (a distinct
+            // condition its test asserts by role). This is a static field-level hint.
+            <p
+              data-testid="brand-identity-unset-notice"
+              className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              Not configured — this tenant&apos;s legal surfaces fall back to Estalara / Time2Show,
+              Inc. For a non-Estalara brand the consent endpoint refuses to serve text until this is
+              set.
+            </p>
+          )}
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="brand-name" className="mb-1 block text-sm font-medium text-gray-700">
+                Brand Name
+              </label>
+              <input
+                id="brand-name"
+                type="text"
+                value={config.brand.brand_name ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setConfig((c) => ({
+                    ...c,
+                    brand: { ...c.brand, brand_name: v.trim().length > 0 ? v : null },
+                  }));
+                }}
+                placeholder="Estalara"
+                maxLength={120}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="legal-entity"
+                className="mb-1 block text-sm font-medium text-gray-700"
+              >
+                Legal Entity
+              </label>
+              <input
+                id="legal-entity"
+                type="text"
+                value={config.brand.legal_entity ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setConfig((c) => ({
+                    ...c,
+                    brand: { ...c.brand, legal_entity: v.trim().length > 0 ? v : null },
+                  }));
+                }}
+                placeholder="Time2Show, Inc."
+                maxLength={200}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        </fieldset>
 
         {status === 'error' && (
           <div role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

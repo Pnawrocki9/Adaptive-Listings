@@ -43,7 +43,7 @@ vi.mock('next/server', async () => {
 });
 
 import { NextRequest, after } from 'next/server';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type * as DsrVerifyModule from '@/lib/dsr-verify';
 
 // ─── Stable mock references (vi.hoisted for hoist safety) ────────────────────
@@ -154,6 +154,14 @@ vi.mock('@estalara/db', () => ({
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: mockGetAuthClaims,
   isTenantClaims: mockIsTenantClaims,
+}));
+
+// FOLLOW-659: /api/dsr/initiate alerts (never blocks) when an EXTERNAL brand has no
+// configured legal identity — the alarm is the Sentry capture, so it is asserted.
+const { mockCaptureMessage } = vi.hoisted(() => ({ mockCaptureMessage: vi.fn() }));
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: mockCaptureMessage,
+  captureException: vi.fn(),
 }));
 
 vi.mock('@/lib/dsr-otp', () => ({
@@ -447,6 +455,70 @@ describe('POST /api/dsr/initiate', () => {
         html: expect.stringContaining('processed by Estalara'),
       }),
     );
+  });
+
+  // ─── FOLLOW-659: un-provisioned external brand → alert, but never drop the mail ──
+
+  describe('brand identity provisioning alarm (FOLLOW-659)', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    function primeSelects(brandConfig: unknown): void {
+      mockSelect
+        .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
+        .mockReturnValueOnce(buildChain([{ brandConfig }])); // brand identity lookup
+      mockInsert.mockReturnValue(
+        buildChain([{ id: 'dsr-uuid-659', expiresAt: new Date(Date.now() + 15 * 60 * 1000) }]),
+      );
+    }
+
+    function initiateRequest(): NextRequest {
+      return makeRequest('POST', '/api/dsr/initiate', {
+        body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
+        headers: { Authorization: 'Bearer jwt_token' },
+      });
+    }
+
+    it('external brand with no brand_name → STILL sends the OTP e-mail, and alerts Sentry', async () => {
+      // Blocking here would obstruct the data subject's Art. 15 request over an operator
+      // config gap — the alarm goes to ops, not to the data subject.
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', 'some-other-first-party-uuid');
+      primeSelects({ primary_color: '#1a73e8' });
+
+      const { POST } = await import('./initiate/route.js');
+      const res = await POST(initiateRequest());
+
+      expect(res.status).toBe(202);
+      expect(mockSendEmail).toHaveBeenCalledOnce();
+      expect(mockCaptureMessage).toHaveBeenCalledOnce();
+      const [msg, ctx] = mockCaptureMessage.mock.calls[0] as [string, Record<string, unknown>];
+      expect(msg).toContain('brand_config.brand_name');
+      expect(ctx.level).toBe('error');
+    });
+
+    it('THE first-party tenant with no brand_name → no alert (Estalara is its correct identity)', async () => {
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_CLAIMS.tenant_id);
+      primeSelects({ primary_color: '#1a73e8' });
+
+      const { POST } = await import('./initiate/route.js');
+      const res = await POST(initiateRequest());
+
+      expect(res.status).toBe(202);
+      expect(mockSendEmail).toHaveBeenCalledOnce();
+      expect(mockCaptureMessage).not.toHaveBeenCalled();
+    });
+
+    it('external brand WITH a configured identity → no alert', async () => {
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', 'some-other-first-party-uuid');
+      primeSelects({ brand_name: 'Costa Sol Properties' });
+
+      const { POST } = await import('./initiate/route.js');
+      const res = await POST(initiateRequest());
+
+      expect(res.status).toBe(202);
+      expect(mockCaptureMessage).not.toHaveBeenCalled();
+    });
   });
 
   // ─── FOLLOW-455 / audit F-20: anti email-bomb rate limiting ────────────────

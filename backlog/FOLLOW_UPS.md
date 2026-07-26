@@ -18682,6 +18682,20 @@ is live, the write/projection path is not implemented (Rule M false-automation-c
 
 ## FOLLOW-659 — `brand_config.brand_name`/`legal_entity` producer-coverage: per-brand identity silently falls back to "Estalara" until operator seeds JSONB
 
+**STATUS 2026-07-26 (session 60): 🔵 IN REVIEW — PR #629 open.** All three ACs met. **AC1
+(producer):** `PATCH /api/config` + a **Legal Identity** fieldset on `/admin/tenants/[id]/settings`.
+Investigation found the pre-existing runbook curl for these keys did NOT work — the route's Zod
+schema stripped both keys (silent 200, no write) and, because the PATCH rewrites the whole
+`brand_config` blob, any settings-page Save also **wiped** a hand-seeded identity back to
+"Estalara". Both fixed; a regression test covers the wipe. **AC2 (fail-loud):** asymmetric by
+surface — consent-text `GET /api/v1/consent/platform-registration` returns **409
+`brand_identity_not_provisioned`** (refuses to let a wrong legal attestation be created), while
+`POST /api/dsr/initiate` **still sends** and raises a Sentry `error` (blocking a DSR OTP would
+obstruct an Art. 15/17/20 right — worse than a mis-branded sender). First-party tenant is byte-
+identical: the new `isUnprovisionedExternalBrand` delegates to FOLLOW-660's existing first-party
+detection (env → tenant-count probe → fail closed), not a third check. **AC3:** runbook §Step 3a
+rewritten against merged code + §Part C step 7 split by failure mode.
+
 source_retro: RETRO-219 (PR #624, FOLLOW-654) source_ticket: FOLLOW-654 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
 promoted_to_queue: false

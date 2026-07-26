@@ -22,6 +22,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { afterResponse } from '@/lib/after-response';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
@@ -30,7 +31,7 @@ import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalar
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
 import { checkInitiateRateLimit } from '@/lib/dsr-rate-limit';
 import { sendEmail, brandSenderFrom } from '@/lib/email/resend';
-import { fetchBrandIdentity } from '@/lib/brand-identity';
+import { fetchBrandIdentity, isUnprovisionedExternalBrand } from '@/lib/brand-identity';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
@@ -209,6 +210,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // with no configured brand identity falls back to the Estalara identity, so
   // the first-party flow is byte-for-byte unchanged.
   const brand = await fetchBrandIdentity(db, tenantId);
+
+  // ── Un-provisioned external brand → ALERT, but still send (FOLLOW-659) ─────
+  // The fail-honest fallback above is correct for the first-party tenant and a silent
+  // mis-branding for anyone else: an external brand's data subject gets an OTP from
+  // "Estalara", a company they never heard of, and is likely to discard it.
+  //
+  // Deliberately NOT a refusal, unlike the consent-text gate in
+  // `api/v1/consent/platform-registration` (which stops a WRONG legal attestation from
+  // being created). This e-mail is the data subject's only path to exercising a GDPR
+  // Art. 15/17/20 right; blocking it to punish an operator's missing config would turn a
+  // branding defect into an obstruction of the right itself (Art. 12(2)). So: send the
+  // mail, and make the misconfiguration impossible to miss in Sentry.
+  //
+  // Best-effort by design — the predicate's own fail-closed path only ever produces an
+  // extra alert, and a throw here must never cost the data subject their e-mail.
+  try {
+    if (await isUnprovisionedExternalBrand(db, tenantId, brand)) {
+      const msg =
+        `[dsr/initiate] tenant ${tenantId} is a non-first-party brand with no ` +
+        'brand_config.brand_name — this DSR e-mail is going out branded "Estalara". ' +
+        'Set it via PATCH /api/config (brand-provisioning runbook, Step 3a).';
+      console.error(msg);
+      Sentry.captureMessage(msg, {
+        level: 'error',
+        tags: { route: 'dsr/initiate', brand_identity: 'unprovisioned_external' },
+        extra: { tenant_id: tenantId, request_id: requestId },
+      });
+    }
+  } catch (guardErr) {
+    console.error(
+      '[dsr/initiate] brand-identity provisioning check failed:',
+      guardErr instanceof Error ? guardErr.message : guardErr,
+    );
+  }
 
   // ── Send OTP email ─────────────────────────────────────────────────────────
   try {

@@ -216,13 +216,16 @@ They live under `tenants.brand_config` as **additive, server-side-only** keys �
 the SDK public-config wire, so they cannot be set from the browser and are not part of §Step 3's
 SDK-facing `brand` slice.
 
-> **FAIL-SILENT HAZARD (FOLLOW-659):** no in-repo code writes these keys — they are **operator-
-> seeded JSONB**. The consumer fails _honestly_ (absent → explicit `"Estalara"` fallback), so
-> nothing errors — but an external brand's DSR e-mails and consent records will say **Estalara**
-> until an operator populates them. There is no runtime alarm today. **Treat this step as mandatory
-> for every external brand and verify it (§Part C step 7).**
+**Status: SHIPPED — FOLLOW-659 (PR #629).** The section below is rewritten against the merged code.
+Two things changed from the pre-merge text that stood here:
 
-Seed them alongside §Step 3 (same `PATCH /api/config` transaction and audit row):
+- The `PATCH /api/config` call below **now actually works.** Before FOLLOW-659 the route's Zod
+  schema knew only `primary_color` / `logo_url` / `white_label`, so it **silently stripped**
+  `brand_name` / `legal_entity` and returned 200 — the curl looked successful and wrote nothing.
+- Worse, the PATCH rewrites the whole `brand_config` blob, so **any** later Save from
+  `/admin/tenants/[id]/settings` (e.g. a logo change) **wiped** a hand-seeded legal identity and
+  silently reverted that brand to "Estalara". Both keys are now parsed, merged and written back, and
+  the settings page has a **Legal Identity** fieldset — the preferred way to set them.
 
 ```bash
 curl -s -X PATCH "https://admin.estalara.com/api/config?tenant_id=<id>" \
@@ -230,6 +233,31 @@ curl -s -X PATCH "https://admin.estalara.com/api/config?tenant_id=<id>" \
   -H "Cookie: <staff SSR session cookie>" \
   -d '{"brand":{"brand_name":"<Client Brand>","legal_entity":"<Client Legal Entity Sp. z o.o.>"}}'
 ```
+
+Same staff rules as §Step 3 (rank ≥ `estalara:ops`, atomic `staff_audit_log` row, 404 on an unknown
+tenant). Bounds: `brand_name` 1–120 chars, `legal_entity` 1–200 chars; `null` clears a key back to
+the Estalara fallback. Re-read with `GET /api/config?tenant_id=<id>` — an unset key comes back as
+**`null`**, never as a pre-resolved `"Estalara"`, so the response distinguishes "not provisioned"
+from "provisioned as Estalara".
+
+**Runtime enforcement (FOLLOW-659) — what happens if you skip this for an external brand:**
+
+| Surface                                     | Behaviour when a NON-first-party tenant has no `brand_name`                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/consent/platform-registration` | **409 `brand_identity_not_provisioned`** — REFUSES to serve consent text that would name Estalara as the client's controller. Registration is blocked. |
+| `POST /api/dsr/initiate`                    | **Sends the OTP e-mail anyway**, and raises a Sentry `error` (`brand_identity: unprovisioned_external`). Never blocked — see below.                    |
+| Estalara's own first-party tenant           | **Unchanged, byte-identical.** Its Estalara identity is correct, not a fallback artefact; it is never gated and never alerted.                         |
+
+The asymmetry is deliberate: refusing consent text stops a _wrong legal attestation_ from being
+created, while refusing a DSR e-mail would obstruct the data subject's Art. 15/17/20 right over an
+operator config gap — a worse compliance outcome than a mis-branded sender name. So the DSR path
+alarms ops instead of punishing the data subject.
+
+"Non-first-party" is decided by the **same** predicate as §Step 0's consent-hash gate
+(`FIRST_PARTY_TENANT_ID`, falling back to a tenant-count probe when the env is unset, **failing
+closed** on a read error). Consequence worth internalising: **the moment a second tenant row exists
+with `FIRST_PARTY_TENANT_ID` still unset, every tenant — including Estalara — is treated as
+external** and the consent GET starts refusing. Do §Step 0 first, as it already says.
 
 ### Step 4 — `quiz_enabled` / `al_enabled` flags
 
@@ -441,10 +469,17 @@ document — the local dry-run below (§Dry-run log) is the closest verification
    neutral response, then toggling back on.
 7. **The brand speaks in its OWN name (external brands only).** [OPERATOR-GATED] Trigger a DSR
    initiation and a consent registration for the brand and confirm the e-mail/consent text names the
-   **client's** brand and legal entity, not "Estalara". Seeing "Estalara" means §Step 3a was never
-   seeded, or §Step 0's `FIRST_PARTY_TENANT_ID` is unset — both fail silently by design (FOLLOW-659
-   / FOLLOW-660), so this check is the only thing standing between a client and a compliance record
-   written in the wrong company's name.
+   **client's** brand and legal entity, not "Estalara". Since FOLLOW-659 the two failure modes are
+   no longer symmetric — read the result accordingly:
+   - **Consent GET returns 409 `brand_identity_not_provisioned`** → §Step 3a was never seeded.
+     Nothing wrong was recorded (that is the point of the refusal); seed it and re-run.
+   - **DSR e-mail arrives branded "Estalara"** → §Step 3a was never seeded, and a Sentry `error`
+     tagged `brand_identity: unprovisioned_external` was raised for this exact request. The e-mail
+     is sent on purpose (never block a data subject's right); seed §Step 3a and confirm the alert
+     stops.
+   - **Both look correct but §Step 0's `FIRST_PARTY_TENANT_ID` is unset** → the gate cannot tell
+     first-party from external while only one tenant row exists. Still fix §Step 0 before the second
+     brand goes live (FOLLOW-660).
 
 ---
 
@@ -565,8 +600,11 @@ merely moved.
 1. **FOLLOW-658** — nothing writes `allowed_origins` into the KV api-key record, so origin
    enforcement inherits the env list for an external brand until an operator seeds it by hand (§Step
    6). Also: PG `[]` = inherit vs KV `[]` = deny-all, so a naive projection blocks all traffic.
-2. **FOLLOW-659** — nothing writes `brand_config.brand_name` / `legal_entity`, so DSR + consent name
-   **Estalara** for an external brand until an operator seeds them (§Step 3a).
+2. ~~**FOLLOW-659**~~ — ✅ **CLOSED (PR #629).** `PATCH /api/config` + the settings page's **Legal
+   Identity** fieldset now write `brand_config.brand_name` / `legal_entity` (and no longer wipe
+   them), and an un-seeded EXTERNAL brand no longer fails silently: consent-text GET returns 409,
+   DSR still sends but raises a Sentry error (§Step 3a). Seeding is still a required provisioning
+   step — what changed is that skipping it now announces itself.
 3. **FOLLOW-660** — `FIRST_PARTY_TENANT_ID` unset treats every tenant as first-party and can default
    the consent hash to Estalara's canonical text (§Step 0). Env checklist is the only defence until
    the code guard ships.

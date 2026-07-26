@@ -54,6 +54,7 @@ import {
 } from './lib';
 import {
   isFirstPartyTenant,
+  isUnprovisionedExternalBrand,
   requiresExplicitConsentHash,
   resolveBrandIdentity,
 } from '@/lib/brand-identity';
@@ -165,6 +166,9 @@ function verifyHmacSignature(rawBody: string, providedHex: string | null): boole
  *         consent_text_hash, data_source }
  *   400 — missing / malformed tenant_id
  *   401 — missing or invalid HMAC signature
+ *   409 — `brand_identity_not_provisioned` (FOLLOW-659): a NON-first-party tenant
+ *         has no `brand_config.brand_name`, so the only text this route could serve
+ *         would name Estalara as that brand's controller. Refused, not defaulted.
  *   500 — DB configured but threw
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -225,6 +229,39 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const identity = resolveBrandIdentity(brandConfigRaw);
+
+  // FOLLOW-659 — fail LOUD instead of serving mis-branded legal text.
+  //
+  // This is the exact point where the un-seeded `brand_config.brand_name` becomes a
+  // fabrication: an EXTERNAL brand's deployment would render, hash and store consent
+  // text naming "Estalara" / "Time2Show, Inc." as the controller the visitor agreed to
+  // — an audit record of a disclosure that names the wrong legal entity. Refusing here
+  // stops that before any visitor sees it, and it is the same "refuse rather than guess"
+  // choice FOLLOW-660 made one step further down this route (step 7b).
+  //
+  // Safe for the first-party tenant BY CONSTRUCTION: `isUnprovisionedExternalBrand`
+  // returns false for it (its Estalara identity is correct, not a fallback artefact),
+  // and false for every tenant while `FIRST_PARTY_TENANT_ID` is unset and ≤1 tenant
+  // exists — today's live state, byte-identical.
+  if (await isUnprovisionedExternalBrand(db, tenantId, identity)) {
+    console.error(
+      `[platform-registration consent GET] refusing mis-branded consent text: tenant ${tenantId} ` +
+        'is a non-first-party brand with no brand_config.brand_name',
+    );
+    return NextResponse.json(
+      {
+        error:
+          'Brand legal identity is not provisioned for this tenant. Serving the consent text ' +
+          'would name "Estalara" / "Time2Show, Inc." as the controller the data subject agreed ' +
+          'to. Set brand_config.brand_name (and legal_entity) via PATCH /api/config — see the ' +
+          'brand-provisioning runbook, Step 3a.',
+        code: 'brand_identity_not_provisioned',
+        tenant_id: tenantId,
+      },
+      { status: 409 },
+    );
+  }
+
   const consentText = renderPlatformConsentText(identity);
 
   return NextResponse.json(

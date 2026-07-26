@@ -516,6 +516,10 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    // FOLLOW-659: the un-provisioned-brand gate shares FOLLOW-660's first-party
+    // detection, so it reads the tenant count when FIRST_PARTY_TENANT_ID is unset.
+    // Default to exactly ONE tenant — today's live single-tenant state.
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
   });
 
   afterEach(() => {
@@ -550,7 +554,7 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
     expect(body.consent_text_hash).toBe(computeConsentTextHash(body.consent_text));
   });
 
-  it('falls back to Estalara identity when the tenant has no brand_name', async () => {
+  it('falls back to Estalara identity when the tenant has no brand_name (single-tenant, first-party)', async () => {
     mockSelectLimit.mockResolvedValue([
       { id: TENANT_ID, brandConfig: { primary_color: '#1a73e8' } },
     ]);
@@ -608,5 +612,92 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
     expect(body.data_source).toBe('db');
     expect(body.degraded).toBe(true);
     expect((body as Record<string, unknown>).consent_text).toBeUndefined();
+  });
+});
+
+// ─── FOLLOW-659: un-provisioned external brand → refuse mis-branded consent text ──
+
+describe('GET brand identity provisioning gate (FOLLOW-659)', () => {
+  const SECOND_TENANT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  function makeGetRequest(tenantId: string): NextRequest {
+    return new NextRequest(
+      `http://localhost/api/v1/consent/platform-registration?tenant_id=${tenantId}`,
+      { method: 'GET', headers: { 'x-consent-signature': computeHmac(TEST_SECRET, tenantId) } },
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    // Tenant row exists but carries NO legal identity — the fail-silent shape.
+    mockSelectLimit.mockResolvedValue([{ id: TENANT_ID, brandConfig: { primary_color: '#fff' } }]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('env SET + a DIFFERENT tenant with no brand_name → 409, never Estalara-branded text', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', SECOND_TENANT_ID);
+
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(409);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.code).toBe('brand_identity_not_provisioned');
+    expect(body.tenant_id).toBe(TENANT_ID);
+    // The whole point: no consent text and no hash for the deployment to attest.
+    expect(body.consent_text).toBeUndefined();
+    expect(body.consent_text_hash).toBeUndefined();
+  });
+
+  it('env UNSET + a SECOND tenant + no brand_name → 409 (forgotten env cannot mask it)', async () => {
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }, { id: SECOND_TENANT_ID }]);
+
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(409);
+  });
+
+  it('env SET + THE first-party tenant with no brand_name → 200 Estalara (unchanged)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ brand_name: string; consent_text: string }>(res);
+    expect(body.brand_name).toBe('Estalara');
+    expect(body.consent_text).toContain('provided by Time2Show, Inc.');
+    // A configured deployment pays no extra query for this gate.
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it('external tenant WITH a configured brand_name → 200, and the gate costs no query', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', SECOND_TENANT_ID);
+    mockSelectLimit.mockResolvedValue([
+      { id: TENANT_ID, brandConfig: { brand_name: 'Costa Sol Properties' } },
+    ]);
+
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ brand_name: string }>(res);
+    expect(body.brand_name).toBe('Costa Sol Properties');
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it('fails CLOSED — a tenant-count read error refuses rather than serving Estalara text', async () => {
+    mockCountLimit.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(TENANT_ID));
+
+    expect(res.status).toBe(409);
   });
 });

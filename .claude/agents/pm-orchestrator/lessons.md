@@ -2602,3 +2602,23 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   itself as the "failed once at the lower tier" signal for model-tier escalation, even if no
   individual ticket in the chain was rated a failure — the recurring-incompleteness pattern is the
   failure, not any single PR.
+
+---
+
+- **Date / ticket:** 2026-07-26 — FOLLOW-660
+- **Delegation row used:** none — no dispatch this session (4 escalations OPEN). The recovered work
+  itself was backend-engineer territory ("ingest worker, control-plane, decision-api, Postgres/RLS,
+  auth, onboarding HTTP, billing, webhooks" — `apps/control-plane` consent route + `lib/`).
+- **What validation caught (or missed):** The stalled agent left a WARM TURBO CACHE. A plain
+  `pnpm typecheck` returned "cache hit … FULL TURBO" in 263ms — which would have let me record the
+  DEAD agent's own verification run as my independent one, exactly the thing the recovered-work
+  checklist exists to prevent. Re-ran with `--force` (cache bypass) to get real evidence.
+  Separately, on a PR whose only red gate is the known-red `Rule I`, I did not stop at
+  "pre-existing": I ran the checker locally on `main` (618 symbols / 192 violations) and compared to
+  the PR's CI job (619 symbols / 192 violations) — proving the new export added a symbol and zero
+  violations, rather than a real new violation hiding inside a permanently-red gate.
+- **A delegation/validation rule I'd add:** When recovering a stalled agent's work, treat build-tool
+  caches (turbo/nx/vitest) as part of the untrusted agent state — any verification command that
+  reports a cache hit must be re-run with cache bypass, because a cache hit silently replays the
+  crashed worker's run under the recovering party's name. And when a permanently-red gate is the
+  only failure, always diff its FINDING COUNT against `main`, never just its status.

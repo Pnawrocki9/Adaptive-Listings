@@ -1,6 +1,52 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-25 (session 59 — crash recovery; PR #625 + #626 open, awaiting Piotr's review)
+## ▶️ START HERE — resume 2026-07-26 (session 60 — second crash recovery; PR #625 + #626 + #627 all open, awaiting Piotr's review)
+
+**A THIRD stalled-agent diff was found uncommitted in the main working tree** — FOLLOW-660, on the
+correct branch `backend-engineer/FOLLOW-660-first-party-env-guard` (never `main`), left behind by a
+subagent that died before committing. Same failure mode as session 58/59, one session later. All 13
+`.claude/worktrees/agent-*` were verified clean, so nothing else is stranded.
+
+Session 60 ran the `docs/AGENT_WORKFLOW.md` §Recovered-work re-verification checklist rather than
+trusting the dead agent's state, then committed → pushed → **PR #627**.
+
+| PR       | Ticket             | State                                                                     |
+| -------- | ------------------ | ------------------------------------------------------------------------- |
+| **#625** | FOLLOW-657         | Open, PM-validated session 59 — 63 checks, only pre-existing `Rule I` red |
+| **#626** | FOLLOW-640/641/651 | Open, PM-validated session 59 — 63 checks, only pre-existing `Rule I` red |
+| **#627** | FOLLOW-660         | Open, PM-validated session 60 — 63 checks, only pre-existing `Rule I` red |
+
+**`Rule I` is proven non-regressive, not merely assumed:** `main` @ `506a84c` locally =
+`618 symbols / 192 violations`; PR #627's CI job = `619 symbols / **192** violations` (+1 symbol, +0
+violations), and the Rule I log has zero `brand-identity` mentions. CI run `30156478170` on `main`
+confirms `Rule I` is the ONLY failing job there.
+
+**▶️ NEXT:**
+
+1. **Piotr reviews + merges #625, #626, #627.** No file overlap between the three; merge order is
+   free. (#627 touches only `lib/brand-identity.ts` + the platform-registration consent route.)
+2. **Then the two REMAINING fail-silent producer gaps — FOLLOW-658 + FOLLOW-659 (both P1).**
+   FOLLOW-660 is the third member of that class and is now in review, but it does NOT clear the
+   gate: an external brand today would still silently inherit the env origin allow-list (658) and
+   send DSR/consent mail as "Estalara" (659). Both remain documentation-instead-of-code. **Neither
+   was dispatched this session because 4 escalations are OPEN** (see below) — the pipeline rule bars
+   picking a new ticket while escalations are unresolved.
+3. **4 OPEN escalations, all needing a human, none actionable by the PM:** ESC-020 (Rafał — DOM
+   hooks deploy, standing/annotated non-blocking), **ESC-040** (CEO/design —
+   `tenants.allowed_origins` security facade; overlaps FOLLOW-658's AC3, answering it likely shrinks
+   658), **ESC-041** (npm registry access — `Release` workflow E403; quarantined by FOLLOW-626 but
+   the root cause is unresolved), **ESC-042** (Piotr/operator — `modal deploy apps/intent-engine` +
+   `MODAL_CHAT_NLP_URL`; the actual chat un-shadow enabler, code leg already merged).
+4. Then the residual FOLLOW-628/629/631/632/634.
+
+**Housekeeping (recommendation, nothing deleted):** `.claude/worktrees/` holds 13 agent worktrees
+(~2.1 GB), all clean and all on branches whose PRs are merged, except
+`agent-a07c4baee844569e4`/`agent-a30e28bb55b998b64` which back the still-open #626/#625. The other
+11 are safe cleanup candidates via `git worktree remove` once Piotr confirms.
+
+---
+
+## ▶️ (prev) session 59 head — resume 2026-07-25 (session 59 — crash recovery; PR #625 + #626 open, awaiting Piotr's review)
 
 **Session 58 ended in a terminal crash mid-dispatch.** Two worker agents died with it, leaving their
 work **uncommitted inside `.claude/worktrees/`** — the exact failure mode

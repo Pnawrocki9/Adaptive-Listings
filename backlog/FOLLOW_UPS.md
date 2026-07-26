@@ -18700,6 +18700,18 @@ producer shape across the KV/JSONB surfaces).
 
 ## FOLLOW-660 — Code-level guard for the `FIRST_PARTY_TENANT_ID` fail-open (forgotten env re-opens the canonical-hash-default consent fabrication)
 
+**STATUS 2026-07-26 (session 60): 🔵 IN REVIEW — PR #627 open.** Work was RECOVERED uncommitted from
+a stalled subagent (working tree, correct branch
+`backend-engineer/FOLLOW-660-first-party-env-guard`, never `main`; all 13 agent worktrees verified
+clean, nothing else stranded). PM re-verified independently per `docs/AGENT_WORKFLOW.md`
+§Recovered-work re-verification — forced (cache-bypassed) typecheck + lint green, prettier clean,
+control-plane suite 1859 passed / 2 skipped (one unrelated PGlite-WASM `beforeAll` timeout under
+parallel load, passes in isolation). CI: 63 checks, only the repo-wide pre-existing `Rule I` red —
+proven non-regressive by symbol counts (`main` 618 symbols / 192 violations vs PR 619 symbols /
+**192** violations, and zero `brand-identity` mentions in the Rule I log). New export
+`requiresExplicitConsentHash` has a non-test producer (`lib/brand-identity.ts:181`) and a non-test
+consumer on the live POST path (`api/v1/consent/platform-registration/route.ts:338`). Both ACs met.
+
 source_retro: RETRO-219 (PR #624, FOLLOW-654) source_ticket: FOLLOW-654 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
 promoted_to_queue: false

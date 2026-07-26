@@ -1,3 +1,52 @@
+# Status — 2026-07-26 (session 60 — FOLLOW-660 recovered from a stalled agent → PR #627 PM-validated; no new dispatch, 4 escalations OPEN)
+
+## SESSION 60 (2026-07-26) — recovery + validation of FOLLOW-660; pipeline held at the escalation gate
+
+**State read:** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`,
+`git log --oneline -20`, `gh pr list --state open`, `git worktree list` + per-worktree
+`git status --porcelain`.
+
+**Escalation ages (all OPEN, all human-side, none PM-actionable):**
+
+| ESC     | Age    | Owner              | Blocks                                                       |
+| ------- | ------ | ------------------ | ------------------------------------------------------------ |
+| ESC-020 | ~long  | Rafał              | standing, explicitly annotated non-blocking for the pipeline |
+| ESC-040 | 3 days | CEO / design       | overlaps FOLLOW-658 AC3 (`allowed_origins` facade)           |
+| ESC-041 | 3 days | npm/registry owner | `Release` workflow E403 root cause (quarantined, not fixed)  |
+| ESC-042 | 2 days | Piotr / operator   | chat un-shadow (`modal deploy apps/intent-engine`)           |
+
+**Recovered work (the session's substance).** A third stalled-subagent diff was sitting uncommitted
+in the main working tree: FOLLOW-660, 3 files, on the correct branch
+`backend-engineer/FOLLOW-660-first-party-env-guard`. Ran the `docs/AGENT_WORKFLOW.md`
+§Recovered-work re-verification checklist instead of trusting it: branch confirmed (never `main`);
+nothing else stranded (all 13 `.claude/worktrees/agent-*` clean, `main` clean); independently re-ran
+`turbo run typecheck lint --filter=@estalara/control-plane --force` (cache **bypassed** — the
+stalled agent had left a warm turbo cache that would otherwise have replayed ITS run as if it were
+mine), `prettier --check` on all 3 files, and the full control-plane suite `--force` (**1859 passed
+/ 2 skipped / 173 files**; one unrelated `route.follow450-e2e.test.ts` PGlite-WASM `beforeAll` 30s
+timeout under parallel load, re-run in isolation → 2/2 green, environment flake). Then committed
+(`77f4907`), pushed, opened **PR #627**.
+
+**Validation evidence (steps 5b/5c/5e).** CI: 63 checks, non-success = **0 for real gates**; only
+the repo-wide pre-existing `Rule I` (2 duplicated runs). Proved non-regressive by counting rather
+than asserting: `main` locally `618 symbols / 192 violations` vs PR CI
+`619 symbols / **192** violations` (+1 symbol, +0 violations), and zero `brand-identity` mentions
+anywhere in the Rule I log. Wiring: new export `requiresExplicitConsentHash` — producer
+`lib/brand-identity.ts:181`, non-test consumer on the live POST path
+`api/v1/consent/platform-registration/route.ts:338`. Not co-assigned, so 5d N/A. Both ACs verified.
+**CI-check counter 1/5, fix-iteration counter 0/3.**
+
+**No new ticket dispatched.** 4 escalations are OPEN, and the loop rule bars picking a new ticket
+while any is unresolved. FOLLOW-658/659 (the two remaining siblings of the fail-silent-producer
+class) are ready in every other respect, and FOLLOW-658 is additionally entangled with ESC-040 —
+answering ESC-040 likely shrinks 658's AC3. Dispatching 658 before that ruling would risk building
+against a contract the CEO is about to change.
+
+**Verdict: three PRs (#625, #626, #627) sit fully PM-validated awaiting the human. The bottleneck is
+review + escalation answers, not agent capacity.**
+
+---
+
 # Status — 2026-07-23 (session 56 — FOLLOW-600 + FOLLOW-620 merged + closed out DONE; retro RETRO-205 due next for FOLLOW-600)
 
 ## SESSION 56 (2026-07-23) — post-merge audit + close-out for FOLLOW-600 (PR #606, `19ef714`) and FOLLOW-620 (PR #607, `f4dd037`)

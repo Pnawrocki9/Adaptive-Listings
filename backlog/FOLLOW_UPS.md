@@ -20023,7 +20023,7 @@ cross_ref: [RETRO-225, RETRO-222, RETRO-224, FOLLOW-678, FOLLOW-674, FOLLOW-695,
 
 source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 #631's step-7c block is entered only when `isUnprovisionedExternalBrand(db, tenant_id, identity)` is
 true (`route.ts:435`), and that predicate returns `false` immediately when
@@ -20072,7 +20072,7 @@ AE, Rule AA]
 
 source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 `isUnprovisionedExternalBrand` delegates to `isTreatedAsExternalBrand`, whose env-unset branch
 probes the tenant count and **fails CLOSED** on an exception (`brand-identity.ts:304-313`,

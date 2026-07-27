@@ -1,5 +1,106 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 67 — FOLLOW-697+698 dispatched together to backend-engineer/OPUS; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**RETRO-226 (filed after FOLLOW-684/PR#631 merged) found two new P1 live bugs in the code that just
+shipped**, both in the step-7c gate at
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts:435`:
+
+- **FOLLOW-697** — the hard-refusal is keyed on `isUnprovisionedExternalBrand`, which short-circuits
+  `false` the instant `identity.isFallbackIdentity` is false — so a **provisioned** external brand
+  (has `brand_config.brand_name`) submitting the canonical Estalara hash gets a silent 201, no 422,
+  no Sentry alert. Exactly the fabrication FOLLOW-684 set out to close, left open for the tenants
+  furthest along in onboarding. Root cause: FOLLOW-684's own AC-2 wording keyed the refusal on the
+  _diagnosis_ (unprovisioned) rather than the _evidence_ (external + canonical hash) — the AC-4 test
+  matrix was a diagonal of a 2×2 grid, so it looked complete at 4/4 green.
+- **FOLLOW-698** — the same gate's underlying helper (`isTreatedAsExternalBrand`,
+  `brand-identity.ts:290-314`) fails CLOSED (`catch → return true`) on a transient tenant-count read
+  error, or when `FIRST_PARTY_TENANT_ID` is unset with ≥2 tenant rows — a state
+  `docs/runbooks/BRAND_PROVISIONING.md:316-320` documents as expected. Estalara's own tenant carries
+  `isFallbackIdentity: true`, so in either state the new 422 fires for **Estalara's own first-party
+  consent**, discarding a real visitor consent with a message asserting the hash is "provably wrong"
+  — false for that tenant — and a remediation that cannot apply to it.
+
+**Verified the premise myself before dispatch:** read `route.ts:391-455` (the FOLLOW-684 step-7c
+block) and `brand-identity.ts:260-352` directly. Confirmed only 3 production call sites of the
+underlying helper family: GET consent (`route.ts:251`, refuses to SERVE — correct to stay
+fail-closed), POST step 7b `requiresExplicitConsentHash` (`route.ts:380`, demands more input —
+correct to stay fail-closed), and POST step 7c `isUnprovisionedExternalBrand` (`route.ts:435`, the
+only one that refuses a WRITE — this is the one both tickets scope in on). DSR initiate
+(`dsr/initiate/route.ts:229`) alerts but still sends, unaffected. Blast radius is narrow: one call
+site needs new tri-state-aware handling; the other two keep their existing (correct) boolean
+fail-closed semantics untouched.
+
+**Dispatching FOLLOW-697 + FOLLOW-698 together, one branch/one PR** — both ACs explicitly say to
+coordinate with each other ("do not regress the first-party path" / "which re-keys the same
+predicate") and both touch the identical ~20-line block; splitting them into two PRs would conflict
+on the same lines and risk exactly the kind of half-fix RETRO-226 just flagged. FOLLOW-699/700/701
+(the other RETRO-226 follow-ups: 422 has no doc consumer, alarm has no routing, general-case policy
+question) are explicitly NOT in this dispatch — Piotr chose to scope this round to the two live P1
+bugs only.
+
+### FOLLOW-697+698 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Opus** — escalated one tier above FOLLOW-684's Sonnet per
+the CLAUDE.md model-fit rule ("escalate one tier when the task already failed once at the lower
+tier"): the AC-4 matrix gap in FOLLOW-684 shipped from Sonnet-tier implementation of a
+Sonnet-written AC, and this ticket requires reasoning about ALL FOUR cells of the
+provisioned×hash-kind grid at once, changing a shared helper's return-type contract (boolean →
+tri-state) without regressing the two other call sites that must KEEP their fail-closed boolean
+behavior, and getting the interaction between "always alert" / "refuse only the provable case" /
+"never refuse on indeterminate" right simultaneously — genuinely security-sensitive,
+judgement-heavy, single-module reasoning, the textbook Opus fit. **started_at:** 2026-07-27.
+**branch:** `backend-engineer/FOLLOW-697-698-brand-gate-tristate`.
+
+**Delegation brief (sent to backend-engineer):**
+
+- Tickets: `backlog/FOLLOW_UPS.md` → `## FOLLOW-697` and `## FOLLOW-698` (full text, both P1, ~3h
+  each, both `source_retro: RETRO-226`).
+- Context: `docs/MASTER_DESIGN.md` §Snapshot.1; `CONVENTIONS_PATCH.md` Rule K.2 amendment
+  (2026-07-27, RETRO-226 §6 — fail-CLOSED-value-laundering / never-refuse-a-write) — this ticket is
+  the amendment's own worked example, read it before writing code; Rule AA (guard cost must stay
+  zero for the fast-path tenant).
+- Branch: `backend-engineer/FOLLOW-697-698-brand-gate-tristate`.
+- AC (verbatim from both stubs — implement together, one coherent change to the step-7c block and
+  `isTreatedAsExternalBrand`):
+  - **FOLLOW-697:** (1) re-key the hard refusal on `isTreatedAsExternalBrand`-equivalent evidence so
+    ANY non-first-party tenant submitting `CANONICAL_CONSENT_TEXT_HASH` is refused, provisioned or
+    not — coordinate with FOLLOW-698, which changes that same predicate's failure semantics, and do
+    not regress the first-party path; (2) for a PROVISIONED brand, prefer the positive check —
+    `body.consent_text_hash !== computeConsentTextHash(renderPlatformConsentText(identity))` is
+    suspicious — but do NOT hard-refuse on it alone (a translated text legitimately mismatches; that
+    is FOLLOW-701's policy question, out of scope here), alert instead; (3) tests for all four cells
+    of the grid, explicitly including `provisioned external × canonical hash → refused` (red-first:
+    returns 201 today) and `provisioned external × its own correct hash → 201, no capture`; (4)
+    state the EN-only scope limit (CANONICAL_CONSENT_TEXT_HASH is the EN §6.1 hash only) in the 7c
+    comment and in the 422 message, cross-reference FOLLOW-379; (5) keep the guard's cost unchanged
+    for the first-party fast path, re-assert it under both env-SET and env-unset.
+  - **FOLLOW-698:** (1) make `isTreatedAsExternalBrand`'s answer TRI-STATE (`external` /
+    `first_party` / `indeterminate`) — or throw — so a swallowed read error can never be presented
+    to a caller as a determined fact; keep the fail-closed DIRECTION for gates that merely refuse to
+    SERVE (`GET`, `route.ts:251`) or demand more input (7b, `route.ts:380`) — those two call sites
+    must NOT change behavior; forbid the fail-closed collapse only for the WRITE-refusing gate (7c);
+    (2) on `indeterminate`, the consent POST returns a retryable 5xx with
+    `data_source: 'db', degraded: true` (Rule K.2 shape, same as the sibling failure at
+    `route.ts:422-432`), never the 422 and never a false "more than one tenant exists" assertion;
+    (3) remove the 7b→7c contradiction — whatever 7b tells the caller to do must not be refused by
+    7c 55 lines later; state the first-party exemption explicitly; (4) re-scope the cost claim at
+    `route.ts:414-418` — "today's live first-party traffic pays no additional query" is true only
+    for the go-live (env-SET) configuration and false for the currently-running one (env-unset +
+    fallback identity ⇒ a `fetchBrandIdentity` select PLUS a tenant-count probe on every POST) —
+    state the condition (Rule AH); (5) do NOT touch FOLLOW-674/686/695 call sites in this PR — those
+    are separate not-yet-dispatched tickets; only the POST step-7c call site changes fail-closed
+    direction; (6) tests: env-unset + 2 tenants + first-party + canonical hash → 201 (NOT 422),
+    count-probe throw → retryable 5xx, no false Sentry capture for the first-party tenant in either
+    case.
+- Both stubs list `cross_ref` back to each other and to Rule K.2 — read both stubs in full before
+  starting, not just this summary.
+- PM will run the full validation loop (5a-5g) once a PR is opened, including confirming the two
+  untouched call sites (GET `:251`, POST 7b `:380`) truly keep their existing boolean fail-closed
+  behavior byte-for-byte (a regression there would recreate the exact bug class Rule K.2 forbids).
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 66 — FOLLOW-684 DONE, PR #631 merged `c08e1371`; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **FOLLOW-684 DONE.** PR #631 merged (squash) 2026-07-27T19:00:04Z → `c08e1371` on `main`, confirmed

@@ -620,23 +620,32 @@ describe('POST brand identity provisioning gate (FOLLOW-684)', () => {
     );
   });
 
-  it('provisioned external tenant (brand_name configured) → 201, no capture, no tenant-count query (AC-5)', async () => {
+  it('provisioned external tenant + ITS OWN correct hash → 201, no capture, no tenant-count query (AC-5)', async () => {
+    // FOLLOW-697 grid cell `provisioned × own correct hash`. Before FOLLOW-697 this test paired
+    // "provisioned" with an ARBITRARY hash ('e' + 63 zeros) and asserted no capture — which is
+    // why the `provisioned × canonical` cell (the fabrication) was never written.
     mockTenantSelectLimit.mockResolvedValue([
-      { id: EXTERNAL_TENANT_ID, brandConfig: { brand_name: 'Costa Sol Properties' } },
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
+      },
     ]);
-    const brandSpecificHash = 'e' + '0'.repeat(63);
     const { POST } = await import('./route');
+    const { computeConsentTextHash, renderPlatformConsentText } = await import('./lib');
     const Sentry = await import('@sentry/nextjs');
 
-    const res = await POST(
-      makeRequest(buildExternalBody({ consent_text_hash: brandSpecificHash })),
+    const ownHash = computeConsentTextHash(
+      renderPlatformConsentText({
+        brandName: 'Costa Sol Properties',
+        legalEntity: 'Costa Sol S.L.',
+      }),
     );
+    const res = await POST(makeRequest(buildExternalBody({ consent_text_hash: ownHash })));
 
     expect(res.status).toBe(201);
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
-    // `identity.isFallbackIdentity` is false for a provisioned brand —
-    // `isUnprovisionedExternalBrand` short-circuits before ever running the
-    // tenant-count query (Rule AA / FOLLOW-684 AC-5).
+    // A provisioned brand's branch is decided from the identity already fetched plus the hash
+    // submitted — the tenant-count probe never runs (Rule AA / FOLLOW-684 AC-5).
     expect(mockCountLimit).not.toHaveBeenCalled();
   });
 
@@ -663,6 +672,269 @@ describe('POST brand identity provisioning gate (FOLLOW-684)', () => {
     // The FIRST_PARTY_TENANT_ID exact-match branch inside `isUnprovisionedExternalBrand`
     // makes no DB call at all — the fast path for Estalara's own live traffic pays no
     // extra query (Rule AA).
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+});
+
+// ─── FOLLOW-697: the refusal is keyed on EVIDENCE, not on the un-provisioned diagnosis ──
+//
+// #631 entered the gate only via `isUnprovisionedExternalBrand`, which short-circuits to
+// false the instant a brand IS provisioned — so a PROVISIONED external brand submitting the
+// canonical Estalara hash got a silent 201, no 422 and no alert. These tests complete the
+// `provisioned? × hash-kind` grid whose diagonal #631's AC-4 matrix enumerated.
+
+describe('POST brand gate — provisioned brands (FOLLOW-697)', () => {
+  const EXTERNAL_TENANT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const BRAND_NAME = 'Costa Sol Properties';
+  const LEGAL_ENTITY = 'Costa Sol S.L.';
+
+  function buildExternalBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return buildValidBody({ tenant_id: EXTERNAL_TENANT_ID, ...overrides });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // PROVISIONED: `brand_config.brand_name` is set, so `isFallbackIdentity` is false and
+    // this route renders (and can hash) the brand's own consent text.
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: BRAND_NAME, legal_entity: LEGAL_ENTITY },
+      },
+    ]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-697' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('provisioned external brand + canonical Estalara hash → 422, nothing written (returned 201 before FOLLOW-697)', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildExternalBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{ code: string; tenant_id: string; error: string }>(res);
+    expect(body.code).toBe('consent_text_hash_fabricated');
+    expect(body.tenant_id).toBe(EXTERNAL_TENANT_ID);
+    // AC-4: the EN-only limit of this gate is stated on the wire, not only in a comment.
+    expect(body.error).toContain('FOLLOW-379');
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'error',
+        tags: expect.objectContaining({ brand_identity: 'consent_text_hash_mismatch' }),
+      }),
+    );
+    // Decided from the identity + the submitted hash alone — no tenant-count probe.
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it('provisioned external brand + a hash that is neither its own nor canonical → 201 + alert, NOT refused', async () => {
+    // A legitimately TRANSLATED rendering lands here too, so this must alert and write —
+    // refusing it is FOLLOW-701's policy question, not this ticket's (AC-2).
+    const otherHash = 'f' + '0'.repeat(63);
+    const { POST } = await import('./route');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildExternalBody({ consent_text_hash: otherHash })));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(otherHash);
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({ brand_identity: 'consent_text_hash_mismatch' }),
+      }),
+    );
+  });
+
+  it('a tenant provisioned AS the Estalara identity + canonical hash → NOT refused', async () => {
+    // Guards the `rendersFirstPartyIdentity` check: CANONICAL_CONSENT_TEXT_HASH is pinned to the
+    // published §6.1 text and is NOT equal to computeConsentTextHash(renderPlatformConsentText())
+    // for the Estalara identity, so a computed-hash comparison ALONE would 422 a tenant whose
+    // configured identity is the canonical one.
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: 'Estalara', legal_entity: 'Time2Show, Inc.' },
+      },
+    ]);
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+
+    const res = await POST(
+      makeRequest(buildExternalBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+  });
+});
+
+// ─── FOLLOW-698: a fail-CLOSED count probe must not refuse Estalara's OWN consent ────────
+//
+// Estalara's tenant also carries `isFallbackIdentity: true` (nobody seeds `brand_name` for the
+// brand that IS the fallback), so #631's boolean gate evaluated TRUE for Estalara itself
+// whenever the first party was unidentifiable or the count probe threw — and then answered 422
+// "provably the wrong text", discarding a consent the visitor actually gave.
+
+describe('POST brand gate — tri-state scope on the write path (FOLLOW-698)', () => {
+  const SECOND_TENANT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    // FIRST_PARTY_TENANT_ID deliberately UNSET — the configuration running today.
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // No tenant row → the Estalara fallback identity, exactly as the live first-party tenant.
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-698' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('env UNSET + a SECOND tenant + the CANONICAL hash → 201, consent kept (was 422 before FOLLOW-698)', async () => {
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }, { id: SECOND_TENANT_ID }]);
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    // Step 7b tells this caller to "send an explicit consent_text_hash"; for Estalara the
+    // canonical hash IS that hash. 7c must not then refuse it 55 lines later.
+    const res = await POST(
+      makeRequest(buildValidBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+    // No FALSE assertion: the request is not tagged as a provably-unprovisioned external brand
+    // when the code never established which tenant is the first party.
+    expect(Sentry.captureMessage).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        tags: expect.objectContaining({ brand_identity: 'unprovisioned_external' }),
+      }),
+    );
+    // The dangerous configuration is still surfaced — with an honest tag.
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({ brand_identity: 'first_party_unidentifiable' }),
+      }),
+    );
+  });
+
+  it('tenant-count probe THROWS + canonical hash → retryable 500, nothing written, no false accusation', async () => {
+    mockCountLimit.mockRejectedValue(new Error('ECONNREFUSED'));
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildValidBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: string; data_source: string; degraded: boolean }>(res);
+    expect(body.data_source).toBe('db');
+    expect(body.degraded).toBe(true);
+    // Not the 422, and no "provably the wrong text" accusation on a read that merely failed.
+    expect((body as Record<string, unknown>).code).toBeUndefined();
+    expect(body.error).not.toContain('provably');
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it('tenant-count probe THROWS + a brand-specific hash → the same retryable 500 (never a silent write on unknown scope)', async () => {
+    mockCountLimit.mockRejectedValue(new Error('ECONNREFUSED'));
+    const brandSpecificHash = 'a' + '0'.repeat(63);
+    const { POST } = await import('./route');
+
+    const res = await POST(makeRequest(buildValidBody({ consent_text_hash: brandSpecificHash })));
+
+    expect(res.status).toBe(500);
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('env UNSET + the sole tenant + OMITTED hash → 201 and at most ONE probe (today live flow, cost claim AC-4)', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+    // Step 7b's own FOLLOW-660 probe, and nothing added on top of it: step 7c does not
+    // re-classify a request that reached it without an explicit hash.
+    expect(mockCountLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it('env UNSET + the sole tenant + EXPLICIT canonical hash → 201, exempt, exactly one probe', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildValidBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(201);
+    // The first-party exemption is explicit: Estalara's own canonical hash is never refused and
+    // never alerted on.
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+    // 7b short-circuits (hash present), 7c classifies once — the invariant is "at most one".
+    expect(mockCountLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it('env SET to the first-party tenant → 201 and ZERO tenant-count probes (go-live cost claim)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+    const { POST } = await import('./route');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
     expect(mockCountLimit).not.toHaveBeenCalled();
   });
 });

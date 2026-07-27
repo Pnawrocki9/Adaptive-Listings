@@ -35,10 +35,14 @@
  *   400 — validation error
  *   401 — missing or invalid HMAC signature
  *   409 — duplicate nonce (replay detected)
- *   422 — `consent_text_hash_fabricated` (FOLLOW-684): tenant is an unprovisioned
- *         external brand AND the submitted consent_text_hash is the CANONICAL
- *         Estalara hash — a provable fabrication. Nothing is written.
- *   500 — DB write failed (configured but threw — fail loud, no mock)
+ *   422 — `consent_text_hash_fabricated` (FOLLOW-684 / FOLLOW-697): the submitted
+ *         consent_text_hash is the CANONICAL Estalara hash and this route can PROVE
+ *         it is the wrong text for the tenant — either the tenant is a proven-external
+ *         brand still on the fallback identity, or it is provisioned with a different
+ *         display identity (whose own hash this route computes). Nothing is written.
+ *   500 — DB write failed, or the tenant's first-party status could not be determined
+ *         (configured dependency threw — fail loud + retryable, never a 4xx asserting
+ *         a fact the read never established; Rule K.2 amendment / FOLLOW-698)
  *
  * @module apps/control-plane/src/app/api/v1/consent/platform-registration/route
  */
@@ -57,9 +61,11 @@ import {
   computeConsentTextHash,
 } from './lib';
 import {
+  classifyTenantBrandScope,
   fetchBrandIdentity,
   isFirstPartyTenant,
   isUnprovisionedExternalBrand,
+  rendersFirstPartyIdentity,
   requiresExplicitConsentHash,
   resolveBrandIdentity,
 } from '@/lib/brand-identity';
@@ -391,31 +397,73 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // 7c. FOLLOW-684 — this is the only surface that WRITES `consent_records`, and until
-  //     now it had no equivalent of the GET gate above (`:246`, FOLLOW-659): an
-  //     unprovisioned external brand (no `brand_config.brand_name`) could submit
+  // 7c. FOLLOW-684 (+ FOLLOW-697 / FOLLOW-698) — this is the only surface that WRITES
+  //     `consent_records`, and before FOLLOW-684 it had no equivalent of the GET gate above
+  //     (`:246`, FOLLOW-659): a tenant could submit
   //     `consent_text_hash: CANONICAL_CONSENT_TEXT_HASH` — a value computable from the
   //     public §6.1 text — and get a 201 whose stored record falsely attests that the
   //     visitor agreed to Estalara / Time2Show, Inc.'s disclosure. Neither 4b nor 7b
   //     catches this: both are satisfied by ANY syntactically valid hash.
   //
-  //     Scope is deliberately narrow (FOLLOW-684 AC-3, matching the PR's own recorded
-  //     "refusing would discard a consent the visitor already gave" argument):
-  //       - ALWAYS alert (Sentry `error`, same shape as `POST /api/dsr/initiate`'s
-  //         `:229-240` capture for this identical condition) when the tenant is an
-  //         unprovisioned external brand, regardless of which hash it sent.
-  //       - HARD-REFUSE only the one sub-case that needs no judgement call: the
-  //         submitted hash IS the canonical Estalara hash — a provable fabrication.
-  //       - A brand-specific (non-canonical) hash is left alone: the deployment may be
-  //         rendering its own brand-substituted text through a channel other than this
-  //         route's GET leg, and refusing that on a guess needs a CEO/DPO ruling this
-  //         ticket does not make (see FOLLOW-684, FOLLOW-685).
+  //     The gate is keyed on EVIDENCE, not on a diagnosis (FOLLOW-697). It splits on the one
+  //     fact that decides how much this route can PROVE about the submitted hash:
   //
-  //     Cost: `isUnprovisionedExternalBrand` short-circuits on `identity.isFallbackIdentity`
-  //     (no extra tenant-count query) for a provisioned brand, and the `FIRST_PARTY_TENANT_ID`
-  //     exact-match branch inside it makes no DB call at all for an env-configured tenant — so
-  //     today's live first-party traffic pays no additional query beyond this one brand-identity
-  //     lookup, and its response stays byte-identical.
+  //     (a) PROVISIONED tenant (`brand_config.brand_name` set, `isFallbackIdentity === false`).
+  //         This repo renders that brand's consent text itself, so the CORRECT hash is
+  //         computable here — `computeConsentTextHash(renderPlatformConsentText(identity))`, the
+  //         same pair the GET leg serves (`:270`,`:279`). No DB round-trip, no dependence on
+  //         first-party status:
+  //           - submitted === canonical EN hash, and the tenant renders some identity OTHER than
+  //             Estalara / Time2Show, Inc. → PROVABLY the wrong text → 422, nothing written.
+  //             (Pre-FOLLOW-697 this cell was not even evaluated: the gate was entered only via
+  //             `isUnprovisionedExternalBrand`, which short-circuits to false the instant a brand
+  //             IS provisioned — so the tenants furthest along in onboarding sailed through with
+  //             a silent 201.)
+  //           - any OTHER mismatch → ALERT ONLY, never a refusal: a legitimately TRANSLATED
+  //             rendering mismatches too, and whether that may be written is a policy question
+  //             this ticket does not decide (FOLLOW-701).
+  //         The `rendersFirstPartyIdentity` guard is load-bearing: `CANONICAL_CONSENT_TEXT_HASH`
+  //         is a constant pinned to the published §6.1 text and does NOT equal
+  //         `computeConsentTextHash(renderPlatformConsentText(estalara))`, so without it a tenant
+  //         provisioned AS Estalara would be accused of fabricating its own correct hash.
+  //
+  //     (b) FALLBACK identity (`isFallbackIdentity === true`) — nothing brand-specific is
+  //         computable, so the answer depends on WHO this tenant is, and that requires the
+  //         tri-state scope (FOLLOW-698). Estalara's own tenant also carries the fallback
+  //         identity (nobody seeds `brand_name` for the brand that IS the fallback), so a
+  //         fail-CLOSED boolean here refuses REAL first-party consents:
+  //           - `indeterminate` (the tenant-count read threw) → retryable 500 with
+  //             `data_source: 'db', degraded: true` — the Rule K.2 shape used by the sibling
+  //             failure right below. Never the 422: a caught read error is not evidence that the
+  //             hash is wrong, and a permanent-semantics refusal here DISCARDS a consent the
+  //             visitor actually gave.
+  //           - `external` via `first_party_unidentifiable` (env unset + >1 tenant, the state
+  //             `docs/runbooks/BRAND_PROVISIONING.md:316-320` documents as expected) → warn, do
+  //             NOT refuse and do NOT tag the request `unprovisioned_external`: this tenant may
+  //             be Estalara. Refusing would also contradict step 7b 55 lines above, which tells
+  //             this very caller to "send an explicit consent_text_hash".
+  //           - `external` via `env_mismatch` (PROVEN external) → FOLLOW-684's behaviour,
+  //             unchanged: always alert; refuse only the canonical-hash sub-case.
+  //           - `first_party` → EXEMPT. For Estalara the Estalara identity and the canonical
+  //             hash are both CORRECT; no alert, no refusal, byte-identical response.
+  //
+  //     EN-ONLY SCOPE LIMIT (FOLLOW-697 AC-4): `CANONICAL_CONSENT_TEXT_HASH` (`lib.ts:51`) is the
+  //     hash of the ENGLISH §6.1 text only. A tenant that renders a PL/ES translation of
+  //     ESTALARA's text submits a non-canonical hash and is NOT caught by either 422 branch. That
+  //     gap is FOLLOW-379's (per-language consent-text versioning); do not try to close it here.
+  //
+  //     Cost, stated per configuration rather than unqualified (FOLLOW-698 AC-4 / Rule AH):
+  //       - `FIRST_PARTY_TENANT_ID` SET (the go-live shape): ZERO extra queries for EVERY tenant.
+  //         The env exact-match branch answers without touching the DB, so this step costs only
+  //         the one brand-identity SELECT.
+  //       - env UNSET (the configuration running TODAY): a tenant on the FALLBACK identity —
+  //         which includes Estalara's own tenant, so the pre-FOLLOW-698 comment's unqualified
+  //         "today's live first-party traffic pays no additional query" was true only of the
+  //         env-SET configuration — pays ONE `select id from tenants limit 2` probe, and only
+  //         when it submitted an explicit hash (see branch (b)). Today's live omitted-hash flow
+  //         pays step 7b's probe and nothing more, exactly as before FOLLOW-684.
+  //       - a PROVISIONED tenant pays no probe in EITHER configuration: branch (a) is decided
+  //         entirely from the identity already fetched plus the hash the caller submitted.
   let brandIdentity: Awaited<ReturnType<typeof fetchBrandIdentity>>;
   try {
     brandIdentity = await fetchBrandIdentity(db, body.tenant_id);
@@ -432,33 +480,148 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (await isUnprovisionedExternalBrand(db, body.tenant_id, brandIdentity)) {
-    const msg =
-      `[platform-registration consent POST] tenant ${body.tenant_id} is a non-first-party ` +
-      'brand with no brand_config.brand_name — a consent_records write is about to be ' +
-      'attested under this un-provisioned identity.';
-    console.error(msg);
-    Sentry.captureMessage(msg, {
-      level: 'error',
-      tags: { route: 'consent/platform-registration', brand_identity: 'unprovisioned_external' },
-      extra: { tenant_id: body.tenant_id },
-    });
+  // Shared tail of both 422 messages: the EN-only limit of this gate (FOLLOW-697 AC-4).
+  const EN_ONLY_SCOPE_NOTE =
+    ' Scope limit: this refusal recognises the canonical ENGLISH §6.1 hash only — a translated ' +
+    "rendering of Estalara's own text submits a different hash and is not caught here " +
+    '(FOLLOW-379). Nothing was written; do not retry with the same hash.';
 
-    if (body.consent_text_hash === CANONICAL_CONSENT_TEXT_HASH) {
+  if (!brandIdentity.isFallbackIdentity) {
+    // (a) PROVISIONED tenant — the correct hash is computable from the text we render for it.
+    const expectedHash = computeConsentTextHash(renderPlatformConsentText(brandIdentity));
+    if (body.consent_text_hash !== undefined && body.consent_text_hash !== expectedHash) {
+      if (
+        body.consent_text_hash === CANONICAL_CONSENT_TEXT_HASH &&
+        !rendersFirstPartyIdentity(brandIdentity)
+      ) {
+        const msg =
+          `[platform-registration consent POST] tenant ${body.tenant_id} renders the ` +
+          `"${brandIdentity.brandName}" / "${brandIdentity.legalEntity}" consent text but ` +
+          'submitted the CANONICAL Estalara consent_text_hash — refusing the write.';
+        console.error(msg);
+        Sentry.captureMessage(msg, {
+          level: 'error',
+          tags: {
+            route: 'consent/platform-registration',
+            brand_identity: 'consent_text_hash_mismatch',
+          },
+          extra: { tenant_id: body.tenant_id, refused: true },
+        });
+        return NextResponse.json(
+          {
+            error:
+              'The submitted consent_text_hash is the CANONICAL Estalara / Time2Show, Inc. ' +
+              'hash, but this tenant renders its own brand-substituted consent text — the ' +
+              'submitted value provably attests text this tenant never displayed. Echo the ' +
+              'consent_text_hash returned by GET /api/v1/consent/platform-registration, or ' +
+              'send the SHA-256 of the exact text you displayed.' +
+              EN_ONLY_SCOPE_NOTE,
+            code: 'consent_text_hash_fabricated',
+            tenant_id: body.tenant_id,
+          },
+          { status: 422 },
+        );
+      }
+
+      // Any other mismatch is SUSPICIOUS, not provable — a legitimately translated rendering
+      // mismatches too. Alert, write (FOLLOW-697 AC-2; policy call deferred to FOLLOW-701).
+      const msg =
+        `[platform-registration consent POST] tenant ${body.tenant_id} submitted a ` +
+        'consent_text_hash that does not match the text this route renders for its configured ' +
+        'brand identity — writing it, but the attested text is unverified.';
+      console.warn(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: {
+          route: 'consent/platform-registration',
+          brand_identity: 'consent_text_hash_mismatch',
+        },
+        extra: { tenant_id: body.tenant_id, refused: false },
+      });
+    }
+  } else if (body.consent_text_hash !== undefined) {
+    // (b) FALLBACK identity — the answer depends on WHO this tenant is (tri-state, FOLLOW-698).
+    //
+    //     Guarded on an EXPLICIT hash so this branch costs nothing on the omitted-hash path: a
+    //     request that reaches step 7c with no hash was already cleared by step 7b, which 400s
+    //     unless `requiresExplicitConsentHash` was false — and that is false only for the
+    //     `first_party` scope, which this branch would exempt anyway. So there is nothing left
+    //     to decide, and no second tenant-count probe is paid. Invariant: at most ONE
+    //     `select id from tenants limit 2` per POST, in every configuration.
+    const scope = await classifyTenantBrandScope(db, body.tenant_id);
+
+    if (scope.scope === 'indeterminate') {
+      // Rule K.2 amendment: a swallowed dependency failure must never be presented as a
+      // determined fact, and must never refuse a write. Retryable, same shape as `:422-432`.
+      console.error(
+        '[platform-registration consent POST] brand scope indeterminate — the tenant-count read ' +
+          `failed, so it is unknown whether ${body.tenant_id} is the first-party tenant; ` +
+          'refusing to guess in either direction.',
+      );
       return NextResponse.json(
         {
           error:
-            'Brand legal identity is not provisioned for this tenant, and the submitted ' +
-            'consent_text_hash is the CANONICAL Estalara hash — provably the wrong text for ' +
-            'an unprovisioned external brand. Set brand_config.brand_name (and legal_entity) ' +
-            'via PATCH /api/config — see the brand-provisioning runbook, Step 3a — or submit ' +
-            "the brand's own consent_text_hash.",
-          code: 'consent_text_hash_fabricated',
-          tenant_id: body.tenant_id,
+            'Could not determine whether this tenant is the first-party tenant: the tenant ' +
+            'lookup failed. Nothing was written — please retry.',
+          data_source: 'db',
+          degraded: true,
         },
-        { status: 422 },
+        { status: 500 },
       );
     }
+
+    if (scope.scope === 'external' && scope.basis === 'first_party_unidentifiable') {
+      // FIRST_PARTY_TENANT_ID unset + more than one tenant row: this request CANNOT be
+      // attributed to a brand, so neither the 422 nor an `unprovisioned_external` tag would
+      // state something this code established. Step 7b already demanded the explicit hash that
+      // got us here; refusing it now would contradict that instruction and discard a real
+      // consent. Alert honestly instead, and let the write through.
+      const msg =
+        '[platform-registration consent POST] FIRST_PARTY_TENANT_ID is unset and more than one ' +
+        `tenant exists, so it cannot be determined whether ${body.tenant_id} is the first-party ` +
+        'tenant — writing the consent as submitted. Set FIRST_PARTY_TENANT_ID (brand-' +
+        'provisioning runbook, Step 0) to restore attribution.';
+      console.warn(msg);
+      Sentry.captureMessage(msg, {
+        level: 'warning',
+        tags: {
+          route: 'consent/platform-registration',
+          brand_identity: 'first_party_unidentifiable',
+        },
+        extra: { tenant_id: body.tenant_id, refused: false },
+      });
+    } else if (scope.scope === 'external') {
+      // PROVEN external (env_mismatch) + no configured identity — FOLLOW-684, unchanged.
+      const msg =
+        `[platform-registration consent POST] tenant ${body.tenant_id} is a non-first-party ` +
+        'brand with no brand_config.brand_name — a consent_records write is about to be ' +
+        'attested under this un-provisioned identity.';
+      console.error(msg);
+      Sentry.captureMessage(msg, {
+        level: 'error',
+        tags: { route: 'consent/platform-registration', brand_identity: 'unprovisioned_external' },
+        extra: { tenant_id: body.tenant_id },
+      });
+
+      if (body.consent_text_hash === CANONICAL_CONSENT_TEXT_HASH) {
+        return NextResponse.json(
+          {
+            error:
+              'Brand legal identity is not provisioned for this tenant, and the submitted ' +
+              'consent_text_hash is the CANONICAL Estalara hash — provably the wrong text for ' +
+              'an unprovisioned external brand. Set brand_config.brand_name (and legal_entity) ' +
+              'via PATCH /api/config — see the brand-provisioning runbook, Step 3a — or submit ' +
+              "the brand's own consent_text_hash." +
+              EN_ONLY_SCOPE_NOTE,
+            code: 'consent_text_hash_fabricated',
+            tenant_id: body.tenant_id,
+          },
+          { status: 422 },
+        );
+      }
+    }
+    // scope === 'first_party' → EXEMPT: for Estalara the fallback identity IS the correct
+    // identity and the canonical hash IS the right hash. No alert, no refusal (FOLLOW-698 AC-3).
   }
 
   // 8. Replay defense — check for duplicate (tenant_id, nonce).

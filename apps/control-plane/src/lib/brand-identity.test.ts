@@ -13,8 +13,10 @@ const { mockCaptureMessage } = vi.hoisted(() => ({ mockCaptureMessage: vi.fn() }
 vi.mock('@sentry/nextjs', () => ({ captureMessage: mockCaptureMessage }));
 
 import {
+  classifyTenantBrandScope,
   isFirstPartyTenant,
   isUnprovisionedExternalBrand,
+  rendersFirstPartyIdentity,
   resolveBrandIdentity,
   resolveFirstPartyTenantId,
 } from './brand-identity';
@@ -155,6 +157,88 @@ describe('isUnprovisionedExternalBrand', () => {
         identity,
       ),
     ).toBe(true);
+  });
+});
+
+// ─── FOLLOW-698: the predicate answers with EVIDENCE, not a laundered boolean ────
+
+describe('classifyTenantBrandScope', () => {
+  const TENANT = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+  const OTHER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  function dbWithTenantCount(count: number | Error): ReturnType<typeof createAdminClient> {
+    const limit = vi.fn(() =>
+      count instanceof Error
+        ? Promise.reject(count)
+        : Promise.resolve(Array.from({ length: count }, (_, i) => ({ id: `t-${String(i)}` }))),
+    );
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ limit })) }));
+    return { select } as unknown as ReturnType<typeof createAdminClient>;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('env SET + matching tenant → first_party via env_match, no query', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT);
+    expect(await classifyTenantBrandScope(dbWithTenantCount(2), TENANT)).toEqual({
+      scope: 'first_party',
+      basis: 'env_match',
+    });
+  });
+
+  it('env SET + a different tenant → external via env_mismatch (PROVEN external)', async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER);
+    expect(await classifyTenantBrandScope(dbWithTenantCount(2), TENANT)).toEqual({
+      scope: 'external',
+      basis: 'env_mismatch',
+    });
+  });
+
+  it('env UNSET + exactly one tenant → first_party via sole_tenant', async () => {
+    expect(await classifyTenantBrandScope(dbWithTenantCount(1), TENANT)).toEqual({
+      scope: 'first_party',
+      basis: 'sole_tenant',
+    });
+  });
+
+  it('env UNSET + a second tenant → external via first_party_unidentifiable (NOT proof)', async () => {
+    expect(await classifyTenantBrandScope(dbWithTenantCount(2), TENANT)).toEqual({
+      scope: 'external',
+      basis: 'first_party_unidentifiable',
+    });
+  });
+
+  it('a count-probe error is INDETERMINATE — never laundered into "external"', async () => {
+    // The defect this replaces: `catch → return true` made "I could not determine this"
+    // indistinguishable from "I determined this tenant is external", and a write path then
+    // asserted the latter to a caller (Rule K.2 fail-CLOSED-value-laundering amendment).
+    expect(
+      await classifyTenantBrandScope(dbWithTenantCount(new Error('ECONNREFUSED')), TENANT),
+    ).toEqual({ scope: 'indeterminate', basis: 'tenant_count_read_failed' });
+  });
+});
+
+describe('rendersFirstPartyIdentity', () => {
+  it('true for the fallback identity and for a tenant provisioned AS Estalara', () => {
+    expect(rendersFirstPartyIdentity(resolveBrandIdentity({}))).toBe(true);
+    expect(
+      rendersFirstPartyIdentity(
+        resolveBrandIdentity({ brand_name: 'Estalara', legal_entity: 'Time2Show, Inc.' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('false as soon as either field differs', () => {
+    expect(
+      rendersFirstPartyIdentity(resolveBrandIdentity({ brand_name: 'Costa Sol Properties' })),
+    ).toBe(false);
+    expect(
+      rendersFirstPartyIdentity(
+        resolveBrandIdentity({ brand_name: 'Estalara', legal_entity: 'Costa Sol S.L.' }),
+      ),
+    ).toBe(false);
   });
 });
 

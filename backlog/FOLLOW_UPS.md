@@ -20322,3 +20322,267 @@ FOLLOW-701 — option (c) "quarantine" needs exactly these columns.
 
 cross_ref: [RETRO-226, RETRO-224, RETRO-219, FOLLOW-684, FOLLOW-654, FOLLOW-687, FOLLOW-701,
 FOLLOW-379, Rule K.2, Rule L]
+
+---
+
+## FOLLOW-704 — `CANONICAL_CONSENT_TEXT_HASH` is a hand-typed placeholder, not a digest: the consent gate refuses a string no caller can produce, and every default-path consent record attests no text
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-374 recommended_sprint: now
+recommended_agent: backend-engineer priority: P0 estimated_hours: 4 depends_on: [FOLLOW-705 (decides
+WHICH bytes are canonical; start without it only if it is not being executed in the same wave)]
+promoted_to_queue: false
+
+`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:51-52` declares
+`CANONICAL_CONSENT_TEXT_HASH = 'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2'`
+and its docblock (`:33-45`) states it is the SHA-256 of `PRIVACY_NOTICE_TEMPLATE.md` §6.1, with
+`echo -n "<exact text>" | sha256sum` given as the recompute command. **It is not the SHA-256 of that
+text, or of any text.** Three independent proofs (RETRO-227 §4a LG-1):
+
+1. Take the first nibble of each byte: `afedcba` repeated exactly 32 times, second nibbles walking
+   `3,2,1,4,5,6,7,8,9,0…`. Probability in a real digest ≈ 16⁻³².
+2. 60 normalisations of both candidate texts (doc §6.1 as-committed and
+   `renderPlatformConsentText()` with the Estalara identity) × {raw | unwrapped | bold-stripped |
+   placeholder-substituted} × {as-is | +LF | CRLF | trimmed | ws-collapsed}, plus the whole section
+   and the whole file: **zero matches**. The real values are
+   `computeConsentTextHash(renderPlatformConsentText(estalara))` =
+   `821216cd2cca1814e7a42d2f749d19da 1e634949ec654b652fd6cecf7d5cf6fa` and SHA-256 of the doc §6.1
+   bytes = `201c5b326baa3f96d49f3c7a9e 5082fd7e2bfcb1165e59731dcaa8a552c04d18`.
+3. `git log -S` on the literal: introduced in `f810f72e` (FOLLOW-374, 2026-06-21), never changed.
+
+Two live consequences, which is why this is P0 rather than a lint:
+
+- **The gate built by FOLLOW-659 → 660 → 684 → 697/698 does not catch the fabrication it exists to
+  catch.** The 422 fires iff the submitted hash `===` this constant (`route.ts:495`, `:609`). A
+  brand that actually fabricates — copies Estalara's rendered consent text, or the published §6.1
+  doc, and hashes it — submits `821216cd…` or `201c5b32…`, and both fall into the **alert-only,
+  write-proceeds** branches (`route.ts:527-546`, `:596-624`). The only way to trip the refusal is to
+  copy the constant out of this repo's source; it appears in no artifact a caller reads.
+- **Every consent record written on the default path stores a digest of nothing.** `route.ts:703`
+  writes `body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH`, and `backlog/HANDOFFS.md:2842`
+  instructs the only caller to omit the field. That is the go-live flow. (Remediation of the
+  ALREADY-WRITTEN rows is FOLLOW-706; this ticket stops the bleeding.)
+
+Beware: the divergence is already load-bearing. `rendersFirstPartyIdentity()`
+(`brand-identity.ts:385`) exists **only** to stop the new gate mis-accusing a tenant provisioned AS
+Estalara, and `route.test.ts:770-795` pins that behaviour with a comment explaining the divergence.
+Correcting the constant makes that test go red **by design** — that is the fix landing, not a
+regression.
+
+**AC:** (1) make the canonical hash **derived, not asserted** — either
+`export const CANONICAL_CONSENT_TEXT_HASH = computeConsentTextHash(renderPlatformConsentText( ESTALARA_IDENTITY))`,
+or keep a pinned literal **plus** the test in AC-2; state which and why, and if FOLLOW-705 rules the
+DOC bytes canonical rather than the renderer's, pin to whatever that ruling names and make the
+renderer produce it; (2) add the one assertion that would have caught this on 2026-06-21 — a test
+that RECOMPUTES the hash from the canonical text and compares it to the constant, red-first against
+the current value; (3) add a test asserting the GET leg's returned `consent_text_hash`
+(`route.ts:286`) equals the value the POST leg defaults to (`route.ts:703`) for the same identity —
+the two legs currently disagree (RETRO-227 LG-2); (4) add the threat-vector case to the 422 grid: an
+external tenant submitting `821216cd…` (the true hash of Estalara's rendered text) must hit the same
+refusal as the constant does today — red-first; (5) widen `EN_ONLY_SCOPE_NOTE` (`route.ts:485-489`),
+which currently names only the translation axis, to state the actual boundary after this fix; (6)
+update the `// gitleaks:allow` tag on `lib.ts:52` and the `.gitleaks.toml:176-180` comment block to
+the new value, and confirm the scan stays green (Rule V / FOLLOW-407/411); (7) re-write
+`lib.ts:33-45` so the stated derivation is the one the code performs, and verify the
+`echo -n … | sha256sum` instruction actually reproduces it (Rule AH); (8) coordinate with
+FOLLOW-707, which changes the same `:703` default expression, and note in the PR that FOLLOW-701's
+policy ruling should be re-read after this lands — its refusal set changes.
+
+cross_ref: [RETRO-227, RETRO-226, RETRO-224, RETRO-219, FOLLOW-374, FOLLOW-654, FOLLOW-684,
+FOLLOW-697, FOLLOW-701, FOLLOW-705, FOLLOW-706, FOLLOW-707, Rule AH, Rule V, Rule S]
+
+---
+
+## FOLLOW-705 — The rendered consent text and the published §6.1 text are not the same bytes, and three artifacts assert a derivation that does not hold
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-654 recommended_sprint: now
+recommended_agent: compliance-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+`lib.ts:71-74` requires `renderPlatformConsentText()` to stay _"byte-aligned with
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 for the version pinned in
+`PLATFORM_REGISTRATION_TOS_VERSION`"_ (`platform-v1.3-2026-06-21`). It is not. Diffing the doc
+(paragraph-unwrapped, `**` stripped) against the rendered Estalara text leaves two substantive
+divergences — `[agency DSR contact]` → _"the agency's DSR contact"_ and `[agency privacy policy]` →
+_"the agency privacy policy"_ — on top of markdown emphasis and hard-wrapping, which a byte-exact
+hash counts too. Neither artifact is authoritative today, and FOLLOW-704 cannot pick source bytes
+until this is decided.
+
+Three places assert the broken derivation and must end up true together: `lib.ts:33-45` (the
+constant's docblock + its `sha256sum` instruction), `lib.ts:71-74` (the SYNC contract), and
+`.gitleaks.toml:176-180` (_"is a 64-char SHA-256 of the public consent text"_).
+
+**AC:** (1) decide and RECORD which artifact is byte-canonical for hashing — the doc §6.1 block or
+the server-side renderer — with the DPO consequence of each (the doc is what a regulator reads; the
+renderer is what the data subject saw); (2) make the losing artifact conform: either substitute the
+two bracket placeholders in the doc and note that the hashable block is the de-markdowned prose, or
+change the renderer; do not leave a third "normalised form" that exists only in a script; (3) state
+the normalisation precisely enough to be executable (line wrapping, `**`, trailing newline) — the
+current _"exact text block starting at … with trailing newline stripped"_ is not sufficient to
+reproduce a hash and that is how the placeholder survived; (4) correct all three assertions above at
+YOUR merge commit (Rule AH), and add a CI sync gate in the shape of the existing Rule N Privacy
+Notice key-sync check so the two artifacts cannot drift again; (5) confirm whether the divergence
+changes the DISCLOSED meaning (it does not, on my read — the bracket placeholders are editorial
+slots) and record that finding either way, because it decides whether a TOS version bump is
+required.
+
+cross_ref: [RETRO-227, FOLLOW-704, FOLLOW-706, FOLLOW-373, FOLLOW-374, FOLLOW-654, Rule AH, Rule AI,
+Rule N]
+
+---
+
+## FOLLOW-706 — Every consent record written on the default path carries a hash that is the digest of no text: decide and execute the remediation
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-374 recommended_sprint: now
+recommended_agent: compliance-engineer (drafts + executes); CEO/DPO decides priority: P1
+estimated_hours: 3 depends_on: [FOLLOW-704, FOLLOW-705] promoted_to_queue: false
+
+FOLLOW-704 stops new void records; this one addresses the ones already written. Since 2026-06-21
+`route.ts:703` has defaulted `consent_text_hash` to a placeholder constant (FOLLOW-704), and
+`HANDOFFS.md:2842` instructs the only caller to omit the field — so the default is the live
+registration path. GDPR Art. 7(1) requires the controller to be able to **demonstrate** that the
+data subject consented; a hash that corresponds to no rendered, displayed or published text
+demonstrates nothing, and the column has no reader anywhere in the repo (FOLLOW-703).
+
+This ticket is **operator-gated** (Rule AA): the code axis and the prod-data axis close separately
+and the ticket is not DONE on code alone.
+
+**AC:** (1) COUNT the affected rows in prod —
+`select count(*) from consent_records where consent_text_hash = '<placeholder>'`, split by
+`consent_type`, `tos_version` and date range — and record the number in the ticket; a zero result
+closes this cheaply and is a real possible outcome (the app.estalara.com caller may never have gone
+live on this endpoint — verify, do not assume); (2) state the Art. 7(1) position for the rows that
+exist, with options and consequences, no recommendation-by-omission: (a) backfill the recomputed
+hash + an explicit provenance/annotation column recording that the value was reconstructed and when,
+(b) annotate without backfilling (preserve the record exactly as written, add the reconstruction
+elsewhere), (c) re-consent the affected subjects, (d) accept with a recorded rationale; (3) obtain
+and RECORD the CEO/DPO ruling (ADR or dated decision note — **the PM escalates; this ticket does not
+self-escalate**); (4) execute the ruling, with the migration reviewed against the FOLLOW-703
+snapshot columns so the two do not collide; (5) record the outcome in MASTER_DESIGN §H.8 as the
+reproducibility invariant (a registration consent record must be re-derivable from identity + text
+version + hash), so the next retro does not re-open it.
+
+cross_ref: [RETRO-227, FOLLOW-704, FOLLOW-705, FOLLOW-703, FOLLOW-701, FOLLOW-374, FOLLOW-373, Rule
+AA, Rule K.2]
+
+---
+
+## FOLLOW-707 — The omitted-hash path bypasses the new provisioned-brand gate entirely: a provisioned tenant that omits `consent_text_hash` is written with the canonical constant, unchecked and unalerted
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-697 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: [FOLLOW-704 (same
+line)] promoted_to_queue: false
+
+#632's branch (a) — the provisioned-brand evidence check — is guarded on
+`body.consent_text_hash !== undefined` (`route.ts:493`). When the field is omitted the whole block
+is skipped and `route.ts:703` writes the canonical constant, even though `expectedHash`, the hash of
+the text this route renders for that very tenant, is computed eleven lines earlier at `:492`.
+
+Reachable in the **documented go-live configuration**, not just an edge state. Trace for a tenant
+that is the first-party tenant AND is provisioned with a non-Estalara identity — the CEO-ratified
+private-label re-brand model, where future clients are re-brands of app.estalara.com: step 4b
+`isFirstPartyTenant` → true → pass (`route.ts:343`); step 7b `requiresExplicitConsentHash` →
+`first_party`/`env_match` → false → pass (`route.ts:385`); step 7c branch (a) → hash undefined →
+skipped; `:703` → canonical constant. **A record attesting Estalara / Time2Show, Inc. text under a
+brand whose own text this route renders — no 422, no alert, no log line.** Also reachable with
+`FIRST_PARTY_TENANT_ID` unset and a single provisioned tenant (`isFirstPartyTenant` returns true for
+everyone when the env is unset — `brand-identity.ts:228`).
+
+**AC:** (1) when the identity is PROVISIONED (`isFallbackIdentity === false`), default the written
+hash to `computeConsentTextHash(renderPlatformConsentText(brandIdentity))`, not to
+`CANONICAL_CONSENT_TEXT_HASH` — the value is already in scope; (2) decide and DOCUMENT the
+fallback-identity case in the same expression (after FOLLOW-704 the constant and the rendered
+Estalara hash are the same value, so it collapses — say so in the comment rather than leaving two
+paths that look different); (3) tests, red-first: `provisioned × omitted hash` asserting the WRITTEN
+`consentTextHash` equals the brand's own computed hash (returns the canonical constant today), for
+both `FIRST_PARTY_TENANT_ID` SET-to-that-tenant and UNSET-with-one-tenant; (4) do not add a probe —
+the at-most-one-`select id from tenants limit 2`-per-POST invariant #632 established must survive,
+assert it in the new tests; (5) coordinate with FOLLOW-704, which rewrites the same `:703`
+expression, and with FOLLOW-701, whose policy ruling may reclassify this cell.
+
+cross_ref: [RETRO-227, RETRO-226, FOLLOW-697, FOLLOW-698, FOLLOW-704, FOLLOW-701, FOLLOW-654, Rule
+AA, Rule S]
+
+---
+
+## FOLLOW-708 — FOLLOW-700 registers ONE `brand_identity` tag value; PR #632 shipped three, and the two new ones include the sole control on a write-proceeds path
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-700 recommended_sprint: now
+recommended_agent: devops-engineer priority: P1 estimated_hours: 1 depends_on: [] promoted_to_queue:
+false
+
+**Fold into FOLLOW-700 at promotion — do not execute as a separate PR.** Filed only because
+FOLLOW-700's scope, as written, provably does not reach the values #632 added.
+
+FOLLOW-700's AC-1 asks for _"an alert-rule registry entry covering **the tag** across ALL producers,
+discriminated by the `route` tag"_, and all five of its ACs name
+`brand_identity: unprovisioned_external`. A Sentry alert rule filters on the tag **value**, not the
+key, so a rule written to that AC matches neither of the values PR #632 introduced:
+
+- `brand_identity: consent_text_hash_mismatch` — `route.ts:507` (`level: 'error'`, accompanies
+  the 422) and `route.ts:538` (`level: 'warning'`, **the write proceeds**). The warning producer is
+  the entire compensating control for the provisioned-brand mismatch #632 deliberately does not
+  refuse (its AC-2, deferred to FOLLOW-701) — the same Rule AJ P1 shape, one merge later.
+- `brand_identity: first_party_unidentifiable` — `route.ts:592`. The only signal that the deployment
+  cannot attribute a consent to a brand, fired on a path that writes.
+
+`grep -rn "brand_identity\|consent_text_hash_mismatch\|first_party_unidentifiable" docs/ops/DSR_ALERTING.md`
+→ **zero hits**; that file is the repo's only alert-rule registry. This is Rule AJ's **second**
+post-codification violation, on the same route as the first, and in both cases the delegation brief
+did not name Rule AJ.
+
+**AC:** (1) widen FOLLOW-700 AC-1 from one value to **three**, each with its producers (file:line),
+severity, when it fires, UI recipe, SLA and response procedure; (2) mark
+`consent_text_hash_mismatch` at `warning` explicitly as _the only signal on an intentionally
+unrefused write path_ — its SLA is not "best effort"; (3) keep FOLLOW-700's AC-2
+(`SENTRY_DSN_CONTROL_PLANE` verified in Doppler `prd` AND Vercel — they are not synced) as the
+delivery-channel half, since a registry entry with no DSN is still a producer-only alarm; (4) if
+FOLLOW-704 lands first, note in the registry that `consent_text_hash_mismatch` becomes reachable by
+the realistic fabrication vector at that point, which raises its expected volume from ~zero.
+
+cross_ref: [RETRO-227, RETRO-226, RETRO-225 (Rule AJ), FOLLOW-700, FOLLOW-688, FOLLOW-701,
+FOLLOW-704, Rule AJ, Rule Q]
+
+---
+
+## FOLLOW-709 — #632 added a retryable 500 and a second 422 variant with no documented consumer, and made one of FOLLOW-699's own ACs false
+
+source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-699 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+**Fold into FOLLOW-699 (and FOLLOW-685, which overlaps on `HANDOFFS.md`) at promotion.** Filed
+because FOLLOW-699 was written against #631 and cannot cover #632's additions, and because one of
+its ACs would now write a false statement.
+
+1. **The new retryable 500 has no consumer.** `route.ts:565-573` returns
+   `{ error, data_source: 'db', degraded: true }` at 500 when the brand scope is `indeterminate`.
+   `HANDOFFS.md:2795-2867` — the POST contract handed to the only (out-of-repo) caller — documents
+   no 500 at all, and nothing tells that caller the crucial thing: **this one is retryable and the
+   422 is not**. `:2867`'s _"non-2xx (excluding 409) → do NOT proceed"_ makes it fail-safe by luck
+   and also makes it fail-PERMANENT on a transient DB blip, which is the opposite of what the code
+   intends.
+2. **The 422 now has two variants with different remediations.** #631's (unprovisioned brand → seed
+   `brand_config.brand_name`) and #632's (`route.ts:493-524`, provisioned brand → _echo the hash GET
+   returned, or send the SHA-256 of what you displayed_). FOLLOW-699 AC-1 describes only the first.
+3. **FOLLOW-699 AC-4 is now factually wrong.** It asks to _"extend `brand-identity.ts:333-337` to
+   three call sites with their three consequences"_ — but #632 REMOVED the third call site (step 7c
+   no longer calls `isUnprovisionedExternalBrand`; it consumes `classifyTenantBrandScope` +
+   `rendersFirstPartyIdentity` directly). That docblock, now at `:395-419`, is accurate again at two
+   call sites. Executing AC-4 as written introduces the error it was filed to fix.
+
+**AC:** (1) document the 500 in the `HANDOFFS.md` POST section with explicit retry semantics
+(retryable, nothing written, no replay-nonce consumed) alongside the 422 (**not** retryable with the
+same hash); (2) document both 422 variants with their distinct remediations; (3) REPLACE FOLLOW-699
+AC-4 with: verify the `isUnprovisionedExternalBrand` docblock's two-call-site list against `main` at
+your merge commit (it is currently correct), and add a call-site/consequence enumeration to
+`classifyTenantBrandScope`'s docblock (`brand-identity.ts:280-300`) instead — the new export is the
+one with undocumented consumers; while there, fix the residual false clause _"The first-party tenant
+is NEVER flagged"_ (`:407-408`), which stays conditionally false on the GET leg (FOLLOW-686 class);
+(4) add the consent-POST row to `BRAND_PROVISIONING.md:306-308`'s enforcement table with all three
+outcomes (422-refuse / warn-and-write / retryable-500), superseding FOLLOW-699 AC-2's two-outcome
+description; (5) Rule AH — verify every sentence against `main` at your own merge commit, and do not
+re-assert _"first-party: byte-identical, never gated, never alerted"_: after #632 it is true, but
+only because the `first_party` scope is exempted explicitly, which is a different claim.
+
+cross_ref: [RETRO-227, RETRO-226, FOLLOW-699, FOLLOW-685, FOLLOW-686, FOLLOW-697, FOLLOW-698,
+FOLLOW-374, Rule AI, Rule AH]

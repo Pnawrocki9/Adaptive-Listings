@@ -19496,7 +19496,7 @@ cross_ref: [RETRO-223, FOLLOW-658, FOLLOW-450, Rule AH]
 
 source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true (session 64, backlog/QUEUE.md)
 
 PR #629 shipped a deliberately asymmetric fail-loud policy on two surfaces:
 `GET /api/v1/consent/ platform-registration` refuses with 409 `brand_identity_not_provisioned`

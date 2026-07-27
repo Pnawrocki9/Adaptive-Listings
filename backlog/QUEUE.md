@@ -1,5 +1,89 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 64 — FOLLOW-684 promoted + dispatched to backend-engineer; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**Re-verified before dispatch (not taken on trust):** `git status` clean on `main`, up to date with
+`origin/main` (the stale `M ...` gitStatus block shown at session boot was from a previous session's
+branch checkout and no longer reflects reality — confirmed via fresh
+`git status`/`git log origin/main`). `gh pr list --state open` empty. `.claude/worktrees/` empty, no
+`claude --agent` processes running — nothing stranded. `backlog/ESCALATIONS.md`: 3 `## OPEN` entries
+— ESC-020 (Rafał, `web-master` prod deploy), ESC-041 (npm registry E403), ESC-042 (narrowed — Modal
+intent-engine operator deploy). All three carry an explicit CEO dispatch-policy ruling (session 62
+head, `backlog/QUEUE.md` "Dispatch-policy ruling" note): standing EXTERNAL/operator-only blockers no
+agent in this pipeline can clear, non-blocking-for-dispatch, surfaced every session close. No NEW
+escalation exists. Proceeding per that standing ruling, consistent with sessions 59-63.
+
+**Picked FOLLOW-684** (P1, `depends_on: []`, `recommended_sprint: now`, backend-engineer,
+`promoted_to_queue` was `false` in FOLLOW_UPS.md, now promoted here) over the other 3 open P1 stubs:
+
+- FOLLOW-680 (sdk-engineer, P1) — **not ready**, `depends_on: [FOLLOW-673]` and FOLLOW-673 is still
+  `promoted_to_queue: false` / not started (P3, devops-engineer, unrelated bundle-size bookkeeping
+  ticket) — genuinely blocked, not just stale-labeled.
+- FOLLOW-685 (backend-engineer, P1) — no deps, docs/handoff-only, real but lower-urgency than a live
+  write-path gap; good next pick after FOLLOW-684.
+- FOLLOW-693 (devops-engineer, P1) — no deps, but AC-1 requires `wrangler secret put` against the
+  **production** Cloudflare Worker (`SENTRY_DSN_INGEST`) — a prod-credential operator action, same
+  class as ESC-020/042, not something to hand a code-only worker without first confirming this
+  session actually holds prod Cloudflare access. Left for a follow-up dispatch/escalation check.
+
+FOLLOW-684 wins: P1, zero dependencies, `recommended_sprint: now`, a live security/compliance gap
+(an unprovisioned external brand can still fabricate a GDPR consent attestation naming the wrong
+legal controller — the exact defect class FOLLOW-659/660 closed on two of three surfaces), bounded
+code AC with a test list, single-module (backend-engineer already owns
+`apps/control-plane/src/app/api/v1/consent/`).
+
+**Verified the premise myself before dispatch (verify-not-guess, not taken on the stub's word):**
+read `apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts` directly. The GET
+handler (`:246`) calls `isUnprovisionedExternalBrand(db, tenantId, identity)` and refuses with 409.
+The POST handler's write path (`:285-480`) calls only `isFirstPartyTenant` (`:331`) and
+`requiresExplicitConsentHash` (`:375`) — **no call to `isUnprovisionedExternalBrand` anywhere in the
+POST handler** — confirmed via
+`grep -n isUnprovisionedExternalBrand apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts`
+returning exactly one hit (the GET, line 246). The INSERT at `:454-467` stores
+`consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH` unconditionally once the
+duplicate-nonce check passes. Ticket premise confirmed accurate.
+
+### FOLLOW-684 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — routine implementation inside a well-defined
+module the agent already owns (one new guard call + one hard-refuse branch + tests), matching the
+existing pattern FOLLOW-659/660 already shipped twice in this same file; no prior failed attempt, no
+cross-module contract change. AC-3 explicitly directs the agent to implement only the provably-safe
+sub-case and NOT guess the general-case policy (that stays with the CEO/DPO per the ticket's own
+text) — so this does not need Opus-level judgement-call authority. **started_at:** 2026-07-27.
+**branch:** `backend-engineer/FOLLOW-684-consent-post-brand-gate`.
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" → backend-engineer (touches
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts`).
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-684` (full text — priority P1, ~3h).
+- Context: `docs/MASTER_DESIGN.md` §Snapshot.1 (read before any non-trivial task, Operating
+  Principle 1); current `CONVENTIONS_PATCH.md` rules — Rule K.2 (producer-side fail-loud, no silent
+  swallow) and Rule AA (guard cost must stay zero for the fast-path tenant) both apply directly; no
+  open `backlog/HANDOFFS.md` note for this ticket.
+- Branch: `backend-engineer/FOLLOW-684-consent-post-brand-gate`.
+- AC (verbatim from the stub, `backlog/FOLLOW_UPS.md` FOLLOW-684): (1) call
+  `isUnprovisionedExternalBrand` on the POST path after the DB client exists (step 7b area), before
+  any write, and raise the same Sentry `error` the DSR path raises with tags
+  `route: 'consent/platform-registration'` + `brand_identity: 'unprovisioned_external'`; (2)
+  hard-refuse the provable-fabrication sub-case only:
+  `body.consent_text_hash === CANONICAL_CONSENT_TEXT_HASH` AND the tenant is an unprovisioned
+  external brand → 4xx with a distinct error code, write nothing; (3) do NOT refuse the general case
+  (brand-specific hash from an unprovisioned external brand) without a CEO/DPO ruling — state which
+  option was implemented and why in the PR description, this is intentionally narrow; (4) red-first
+  tests: unprovisioned external + canonical hash → refusal, insert never called; unprovisioned
+  external + brand-specific hash → 201 + one Sentry capture; provisioned external → 201, no capture;
+  first-party → 201, no capture, byte-identical to today; (5) assert the `isFallbackIdentity`
+  short-circuit keeps the guard's cost at zero for a provisioned/env-configured tenant.
+- PM will run the full validation loop (5a-5g) once a PR is opened, including a runtime-wiring grep
+  for the new guard call + Sentry tag pair (producer AND that it actually gates the INSERT, not just
+  logs) before READY_FOR_REVIEW.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 63 close — FOLLOW-678 MERGED (PR #630, `5f830b40`); RETRO-225 done, 6 follow-ups filed (691-696), Rule AJ codified; pipeline still gated on 3 open escalations)
 
 **FOLLOW-678 DONE.** PR #630 merged 2026-07-27T08:05:18Z (`5f830b40`) — confirmed via

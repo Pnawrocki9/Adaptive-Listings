@@ -2694,3 +2694,78 @@ control-plane reads; set `MODAL_CHAT_NLP_URL` (+ matching secret) in the ingest 
 agent in this pipeline can execute it. Per 2026-07-27 dispatch-policy ruling (same treatment as
 ESC-020): **treated as non-blocking-for-dispatch**, kept OPEN, and surfaced in every session close
 until an operator runs the deploy and confirms live (chat_intent shadow key populated end-to-end).
+
+---
+
+## OPEN — ESC-044: the consent gate's "canonical" hash is a hand-typed placeholder — the fabrication refusal it exists to fire cannot fire, and every default-path consent record since go-live attests a text that was never displayed [FOLLOW-704 / FOLLOW-706]
+
+**Filed by:** claude (session 69, post-RETRO-227) **Date:** 2026-07-27T21:00:00Z **Affects:**
+FOLLOW-704 (P0), FOLLOW-706 (P1, operator-gated),
+`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:51-52`,
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1, prod `consent_records` **Type:** compliance /
+security
+
+**Description:** `CANONICAL_CONSENT_TEXT_HASH` — the constant this session's own two merges (PR #631
+FOLLOW-684, PR #632 FOLLOW-697/698) just spent building an evidence-keyed, tri-state refusal gate
+around — is not a SHA-256 digest of anything. RETRO-227 proved this three independent ways: the hex
+pattern is a hand-typed sequence (first nibble of every byte cycles `a,f,e,d,c,b,a` exactly 32
+times), 60 normalizations of both candidate source texts (the doc's §6.1 block and the server-side
+`renderPlatformConsentText()` output) hash to none of it, and `git log -S` shows it unchanged since
+introduction in `f810f72e` (FOLLOW-374, 2026-06-21). I independently re-derived the real hash myself
+before filing RETRO-227's dispatch (computed `821216cd2cca…` for the rendered Estalara text) and
+flagged the pattern; the retro's own script work confirmed it and found the second candidate (the
+doc's raw bytes hash to a third, different value: `201c5b326baa…`) — so even the two plausible
+"correct" answers disagree with each other, not just with the constant.
+
+**Two live consequences, why this needs a CEO/DPO ruling rather than a queue ticket alone:**
+
+1. **The refusal this repo just finished hardening cannot fire against a real fabricator.** The 422
+   in `route.ts` fires iff `submitted hash === CANONICAL_CONSENT_TEXT_HASH`. A brand that actually
+   copies Estalara's displayed text (rendered or the published doc) and hashes it submits one of the
+   two REAL values above — both land in the alert-only, write-proceeds branch. The only way to trip
+   the refusal is to copy the placeholder literal out of this repo's source, which no legitimate or
+   adversarial caller would ever do. FOLLOW-659 → 660 → 684 → 697/698 is four merged PRs building a
+   gate whose one hard-refusal case is unreachable by the threat it names.
+2. **Every consent record written on the default path since 2026-06-21 stores a hash of no text.**
+   `route.ts:703` defaults to the placeholder when the caller omits `consent_text_hash`, and
+   `backlog/HANDOFFS.md:2842` instructs the only caller (app.estalara.com) to omit it — that is the
+   documented go-live flow. GDPR Art. 7(1) requires the controller to be able to demonstrate consent
+   was given to a specific text; a hash that is the digest of nothing demonstrates nothing.
+
+**Why this is escalated rather than left as a queue ticket:** FOLLOW-706's own AC says it plainly —
+_"the PM escalates; this ticket does not self-escalate."_ This is a compliance-posture question
+(whether existing prod consent records are Art. 7(1)-adequate, and if not, what remediation —
+backfill, annotate, re-consent, or accept-with-rationale) that CLAUDE.md reserves for the human. It
+also has a regulatory clock shape similar to ESC-037 (four ClickHouse PII tables
+erased-but-undisclosed): unlike that case, prod exposure here has **not yet been counted** —
+FOLLOW-706 AC-1 is exactly that count and is UNRUN as of this filing. **Do not assume live exposure
+or its absence; the number needs to be pulled before scoping remediation.**
+
+**Two coordinated code-fix follow-ups, filed but not escalated (queue tickets, not this item):**
+FOLLOW-705 (compliance-engineer, P1 — decide which source text is byte-canonical for hashing: the
+doc or the renderer; they currently disagree at two placeholder substitutions, independent of the
+hash-constant defect) must land before FOLLOW-704 can pick final bytes; FOLLOW-704
+(backend-engineer, P0) then makes the constant derived-not-asserted and closes the
+unreachable-refusal gap; FOLLOW-707 (P1, a second omitted-hash bypass on the provisioned-brand
+branch #632 shipped) is adjacent but independently fixable.
+
+**Required action (CEO / DPO):**
+
+1. **Run FOLLOW-706 AC-1 first** (or authorize an operator to): count prod `consent_records` rows
+   where `consent_text_hash` equals the placeholder value
+   (`a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2`), split by `consent_type`,
+   `tos_version`, date range. A zero result (the app.estalara.com caller may never have gone live on
+   this endpoint) closes the prod-remediation axis cheaply — do not assume either way pending the
+   count, per the ESC-037 precedent where an assumed-live gap turned out to have zero exposure.
+2. **Rule on FOLLOW-705**: is the DOC's §6.1 block or the server-rendered text the byte-canonical
+   source for the hash? (The doc is what a regulator reads; the renderer is what the data subject
+   actually saw — they currently diverge at two bracket-placeholder substitutions.)
+3. **If prod rows exist, rule on FOLLOW-706's Art. 7(1) remediation options**: (a) backfill the
+   recomputed hash plus a provenance/annotation column recording the reconstruction, (b) annotate
+   without backfilling, (c) re-consent the affected subjects, (d) accept with a recorded rationale.
+   No option is recommended here by omission — pick one and record why.
+4. **Sequencing**: FOLLOW-705 → FOLLOW-704 (code fix, stops new void records) can proceed on an
+   engineering track once item 2 is ruled; FOLLOW-706 (prod remediation) is gated on items 1 and 3
+   and does not block 704/705.
+
+**Resolution:** — awaiting CEO/DPO ruling.

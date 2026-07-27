@@ -10,6 +10,7 @@ import {
   isOriginAllowed,
   isUnprovisionedExternalTenant,
   normalizeToOrigin,
+  resolveFirstPartyTenantId,
   resolveOriginPolicy,
 } from './origin-gate.js';
 
@@ -132,8 +133,10 @@ describe('allowedOriginsForEnv', () => {
 // first-party tenant. Any other tenant on `inherit` has a KV api-key record that was never seeded
 // with `allowed_origins` — a provisioning defect, not a default.
 describe('isUnprovisionedExternalTenant', () => {
-  const FIRST_PARTY = '11111111-1111-4111-8111-111111111111';
-  const EXTERNAL = '22222222-2222-4222-8222-222222222222';
+  // Contain hex letters (a/b/c/d/e/f) deliberately, not just digits, so a `.toUpperCase()` /
+  // `.toLowerCase()` transform below is a real case-fold, not a no-op [FOLLOW-678].
+  const FIRST_PARTY = 'aaaaaaaa-1111-4111-8111-111111111111';
+  const EXTERNAL = 'bbbbbbbb-2222-4222-8222-222222222222';
 
   it('flags an external tenant left on the inherit policy', () => {
     expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, FIRST_PARTY)).toBe(true);
@@ -158,5 +161,62 @@ describe('isUnprovisionedExternalTenant', () => {
     expect(isUnprovisionedExternalTenant('inherit', ` ${FIRST_PARTY} `, ` ${FIRST_PARTY} `)).toBe(
       false,
     );
+  });
+
+  // ─── FOLLOW-678 — canonicalization + malformed-value handling ────────────────
+  //
+  // The 5 cases above all pass unchanged with the pre-FOLLOW-678 defect (exact-string `!==`,
+  // no case-folding, no UUID-shape validation) still in place. The cases below would FAIL
+  // without the fix.
+  it('matches case-insensitively: upper-case env vs lower-case tenant id [would FAIL pre-fix]', () => {
+    expect(isUnprovisionedExternalTenant('inherit', FIRST_PARTY, FIRST_PARTY.toUpperCase())).toBe(
+      false,
+    );
+  });
+
+  it('matches case-insensitively: lower-case env vs upper-case tenant id [would FAIL pre-fix]', () => {
+    expect(isUnprovisionedExternalTenant('inherit', FIRST_PARTY.toUpperCase(), FIRST_PARTY)).toBe(
+      false,
+    );
+  });
+
+  it('still flags a genuinely external tenant when the first-party env has different case', () => {
+    expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, FIRST_PARTY.toUpperCase())).toBe(
+      true,
+    );
+  });
+
+  it(
+    'a malformed (non-UUID) FIRST_PARTY_TENANT_ID degrades the guard to OFF, not deny-all — ' +
+      'the pre-fix defect would instead 403 EVERY tenant, including the real first-party one, ' +
+      'because a garbled string never equals any real tenant id under raw `!==` [would FAIL pre-fix]',
+    () => {
+      expect(isUnprovisionedExternalTenant('inherit', EXTERNAL, 'not-a-real-uuid')).toBe(false);
+      expect(isUnprovisionedExternalTenant('inherit', FIRST_PARTY, 'not-a-real-uuid')).toBe(false);
+    },
+  );
+});
+
+// ─── FOLLOW-678 — FIRST_PARTY_TENANT_ID env classification ───────────────────
+describe('resolveFirstPartyTenantId', () => {
+  it('unset for undefined, empty, and whitespace-only', () => {
+    expect(resolveFirstPartyTenantId(undefined)).toEqual({ status: 'unset' });
+    expect(resolveFirstPartyTenantId(null)).toEqual({ status: 'unset' });
+    expect(resolveFirstPartyTenantId('')).toEqual({ status: 'unset' });
+    expect(resolveFirstPartyTenantId('   ')).toEqual({ status: 'unset' });
+  });
+
+  it('valid: trims and lower-cases a well-formed UUID', () => {
+    expect(resolveFirstPartyTenantId(' ABCDEF01-1111-4111-8111-111111111111 ')).toEqual({
+      status: 'valid',
+      value: 'abcdef01-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('malformed: present but not a well-formed UUID', () => {
+    expect(resolveFirstPartyTenantId('not-a-real-uuid')).toEqual({
+      status: 'malformed',
+      raw: 'not-a-real-uuid',
+    });
   });
 });

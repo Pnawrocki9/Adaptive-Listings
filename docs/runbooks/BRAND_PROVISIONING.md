@@ -87,13 +87,52 @@ cd apps/ingest && pnpm exec wrangler secret put FIRST_PARTY_TENANT_ID --env prod
 ```
 
 **Second consumer (FOLLOW-658):** the ingest Worker uses the same UUID to enable the origin-gate
-provisioning guard. With it set, any tenant OTHER than this one whose api-key KV record has no
-`allowed_origins` is refused `403 origin_policy_unconfigured` instead of silently inheriting
-Estalara's own origin list (§Step 6). With it unset, the guard is simply off — a forgotten value can
-never black-hole first-party traffic, it only leaves the old silent behavior in place.
+provisioning guard. With it set to a **well-formed UUID that matches the real first-party tenant
+id**, any tenant OTHER than this one whose api-key KV record has no `allowed_origins` is refused
+`403 origin_policy_unconfigured` instead of silently inheriting Estalara's own origin list (§Step
+6). With it UNSET, blank, OR MALFORMED (not a well-formed UUID once trimmed + lower-cased —
+FOLLOW-678), the guard degrades to OFF — a forgotten OR garbled value can never black-hole
+first-party traffic, it only leaves the old silent behavior in place.
 
-Verify: `GET /api/v1/consent/platform-registration` for an external tenant must NOT emit the
-Estalara legal identity (see §Step 3a).
+**A value that IS a well-formed UUID but simply the WRONG one is NOT safe** (FOLLOW-678) — a
+mistyped digit or the wrong tenant's UUID pasted here is indistinguishable from an intentional
+`explicit` origin scoping and will 403 **every** first-party browser request
+(`origin_policy_unconfigured`) the moment this step is applied, because `app.estalara.com` /
+`admin.estalara.com` traffic then looks like an un-provisioned external tenant. This is exactly the
+step most likely to be run for the first time under this runbook — verify it below before moving on.
+
+Verify:
+
+1. `GET /api/v1/consent/platform-registration` for an external tenant must NOT emit the Estalara
+   legal identity (see §Step 3a).
+2. **Post-flip ingest verification (FOLLOW-678) — MANDATORY, do not consider this step done without
+   it.** After `wrangler secret put FIRST_PARTY_TENANT_ID` above, POST one test event from an
+   allow-listed first-party origin (`https://app.estalara.com`) and require a **2xx** response
+   before moving on. No `X-Estalara-Signature` header — the browser SDK never sends one (its `pk_`
+   key is origin-locked, not HMAC-signed); the gate under test is the `Origin` header, not the
+   signature. The `type` is deliberately the invalid `page_view` (real is `page.view`) so a request
+   that clears every gate still writes NOTHING — zero-persistence by construction, safe to run
+   against prod. This is the exact same probe as `INGEST_WORKER_DEPLOY.md` §4 Probe C; run that
+   runbook's Probe B too if you want the negative case (a non-allow-listed origin) covered as well:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://ingest.estalara.com/v1/events \
+     -H "Content-Type: application/json" \
+     -H "X-Estalara-API-Key: <estalara-tenant-api-key>" \
+     -H "Origin: https://app.estalara.com" \
+     -d '{"events":[{"type":"page_view","session_id":"diag-probe","ts":"2026-01-01T00:00:00.000Z"}]}'
+   ```
+
+   - **`200`** → the flip is correct (the response body has `accepted:0, rejected:1` from the
+     deliberately-invalid `type` — that is expected, not a failure); the guard now protects external
+     brands without touching first-party traffic.
+   - **`403` (`origin_policy_unconfigured`)** → `FIRST_PARTY_TENANT_ID` is set to a well-formed UUID
+     that does **not** match the real first-party tenant id — re-check the value you pasted against
+     the `tenants.id` for Estalara, fix it, and re-run this probe. Do NOT proceed to onboard an
+     external brand until this returns `200`.
+   - **`403` (`forbidden_origin`) or reaches schema validation with no origin check at all** → the
+     ingest Worker is not deployed / not on current code — see `INGEST_WORKER_DEPLOY.md` before
+     continuing.
 
 ### Step 1 — Create the `tenants` row
 

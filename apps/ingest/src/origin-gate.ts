@@ -149,6 +149,40 @@ export function resolveOriginPolicy(
   return { mode: 'explicit', allowList: normalizeList(tenantOrigins) };
 }
 
+/** Well-formed (RFC 4122-shaped) UUID, case-insensitive. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Result of classifying a raw `FIRST_PARTY_TENANT_ID` env value. [FOLLOW-678] */
+export type FirstPartyTenantIdStatus =
+  | { status: 'unset' }
+  | { status: 'malformed'; raw: string }
+  | { status: 'valid'; value: string };
+
+/**
+ * Classifies + canonicalizes a raw `FIRST_PARTY_TENANT_ID` env value. [FOLLOW-678]
+ *
+ * Canonicalization is trim + lower-case, applied BEFORE the UUID-shape check, so a value that
+ * only differs from a real tenant id by case or incidental whitespace (a copy-paste artifact,
+ * not a typo) is treated as `valid`, not `malformed`.
+ *
+ * A value that is present but NOT a well-formed UUID (a truncated paste, a stray character) is
+ * classified `malformed` — DISTINCT from `unset` so a caller can warn about it — but callers of
+ * {@link isUnprovisionedExternalTenant} treat `malformed` exactly like `unset` (guard disabled),
+ * because deny-listing every tenant on a config typo is a worse outcome than the guard being off
+ * for one deploy (see that function's docstring).
+ *
+ * @param raw - `env.FIRST_PARTY_TENANT_ID`, as read from the Worker binding.
+ */
+export function resolveFirstPartyTenantId(
+  raw: string | null | undefined,
+): FirstPartyTenantIdStatus {
+  const trimmed = raw?.trim();
+  if (!trimmed) return { status: 'unset' };
+  const lower = trimmed.toLowerCase();
+  if (!UUID_RE.test(lower)) return { status: 'malformed', raw: trimmed };
+  return { status: 'valid', value: lower };
+}
+
 /**
  * True when a tenant is running on the `inherit` policy but is NOT the configured first-party
  * tenant — i.e. its KV api-key record was never seeded with `allowed_origins`. [FOLLOW-658]
@@ -165,14 +199,25 @@ export function resolveOriginPolicy(
  * `origin_policy_unconfigured` 403 + a Sentry error, so a missed provisioning step surfaces as a
  * self-describing failure during onboarding verification instead of a silent mis-scoped key.
  *
- * NO TRAFFIC RISK FOR THE FIRST PARTY: when `firstPartyTenantId` is unset/blank the Worker cannot
- * know which tenant is first-party, so this returns `false` for everyone and behavior is exactly
- * what it was before FOLLOW-658. A forgotten env therefore degrades to the previous state; it can
- * never black-hole Estalara's live traffic. (Configuring it is §Step 0 of the runbook.)
+ * ONLY A CORRECTLY-SET, UNSET, OR BLANK ENV IS SAFE FOR FIRST-PARTY TRAFFIC — A WRONG ONE IS NOT.
+ * [FOLLOW-678] `firstPartyTenantId` is classified by {@link resolveFirstPartyTenantId} and
+ * canonicalized (trim + lower-case) before comparison, so a case difference or incidental
+ * whitespace between the stored value and the env paste can never cause a false mismatch. Two
+ * env states degrade the guard to OFF (returns `false` for everyone, exactly pre-FOLLOW-658
+ * behavior): `unset`/blank (the Worker cannot know which tenant is first-party) AND `malformed`
+ * (not a well-formed UUID — a bad paste must degrade to "guard off", never to "deny everyone",
+ * per FOLLOW-678 AC). A forgotten OR garbled env can therefore never black-hole Estalara's live
+ * traffic. But a env that IS a well-formed UUID and simply does not match the real first-party
+ * tenant's id (e.g. mistyped one digit, or the wrong tenant's UUID pasted) is NOT safe — it is
+ * indistinguishable from an intentional `explicit` allow-list scoping and WILL 403 every
+ * first-party browser request with `origin_policy_unconfigured`. See
+ * {@link resolveFirstPartyTenantId} for the `malformed`-vs-`unset` distinction and
+ * `docs/runbooks/INGEST_WORKER_DEPLOY.md` for the post-flip verification step this class of bug
+ * motivated. (Configuring the env at all is §Step 0 of `BRAND_PROVISIONING.md`.)
  *
  * @param mode - the resolved policy mode from {@link resolveOriginPolicy}.
  * @param tenantId - the authenticated tenant id from the KV api-key record.
- * @param firstPartyTenantId - `env.FIRST_PARTY_TENANT_ID` (may be undefined/blank).
+ * @param firstPartyTenantId - `env.FIRST_PARTY_TENANT_ID` (may be undefined/blank/malformed).
  */
 export function isUnprovisionedExternalTenant(
   mode: OriginPolicyMode,
@@ -180,9 +225,9 @@ export function isUnprovisionedExternalTenant(
   firstPartyTenantId: string | null | undefined,
 ): boolean {
   if (mode !== 'inherit') return false;
-  const firstParty = firstPartyTenantId?.trim();
-  if (!firstParty) return false;
-  return tenantId.trim() !== firstParty;
+  const resolved = resolveFirstPartyTenantId(firstPartyTenantId);
+  if (resolved.status !== 'valid') return false;
+  return tenantId.trim().toLowerCase() !== resolved.value;
 }
 
 /**

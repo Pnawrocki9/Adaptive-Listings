@@ -39,6 +39,7 @@
 
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
+import * as Sentry from '@sentry/nextjs';
 import type { createAdminClient } from '@estalara/db';
 import { tenants } from '@estalara/db';
 
@@ -140,26 +141,92 @@ export async function fetchBrandIdentity(
   return resolveBrandIdentity(rows[0]?.brandConfig ?? null);
 }
 
+/** Well-formed (RFC 4122-shaped) UUID, case-insensitive. Same shape as `apps/ingest`'s copy
+ * (`origin-gate.ts`); not extracted to a shared package because each app's copy has a distinct,
+ * app-local warn-once side effect (see {@link firstPartyTenantIdStatus}) and neither imports the
+ * other's runtime. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Result of classifying a raw `FIRST_PARTY_TENANT_ID` env value. [FOLLOW-678] */
+export type FirstPartyTenantIdStatus =
+  | { status: 'unset' }
+  | { status: 'malformed'; raw: string }
+  | { status: 'valid'; value: string };
+
+/**
+ * Classifies + canonicalizes a raw `FIRST_PARTY_TENANT_ID` env value. [FOLLOW-678]
+ *
+ * Canonicalization is trim + lower-case, applied BEFORE the UUID-shape check, so a value that
+ * only differs from a real tenant id by case or incidental whitespace (a copy-paste artifact, not
+ * a typo) is classified `valid`, not `malformed`.
+ *
+ * @param raw - `process.env.FIRST_PARTY_TENANT_ID`.
+ */
+export function resolveFirstPartyTenantId(raw: string | undefined): FirstPartyTenantIdStatus {
+  const trimmed = raw?.trim();
+  if (!trimmed) return { status: 'unset' };
+  const lower = trimmed.toLowerCase();
+  if (!UUID_RE.test(lower)) return { status: 'malformed', raw: trimmed };
+  return { status: 'valid', value: lower };
+}
+
+/** Set once a `first_party_tenant_id_malformed` warning has fired for this server instance.
+ * [FOLLOW-678 AC 2] Module-level state persists across invocations handled by the same warm
+ * Vercel function instance, so this fires ONCE per instance rather than once per request — a
+ * mis-pasted env is visible in Sentry/logs without needing to spam either. Resets naturally on
+ * the next cold start / deploy; that is the desired behavior (a fixed env should stop warning
+ * without requiring a manual reset). */
+let firstPartyTenantIdMalformedWarned = false;
+
+/**
+ * Reads + classifies `process.env.FIRST_PARTY_TENANT_ID`, warning ONCE per server instance if it
+ * is present but malformed (not a well-formed UUID). [FOLLOW-678 AC 2] Centralized here so both
+ * {@link isFirstPartyTenant} and the module-private external-brand check warn exactly once
+ * between them, not once each.
+ */
+function firstPartyTenantIdStatus(): FirstPartyTenantIdStatus {
+  const resolved = resolveFirstPartyTenantId(process.env.FIRST_PARTY_TENANT_ID);
+  if (resolved.status === 'malformed' && !firstPartyTenantIdMalformedWarned) {
+    firstPartyTenantIdMalformedWarned = true;
+    console.warn(
+      '[brand-identity] FIRST_PARTY_TENANT_ID is set but not a well-formed UUID — treating as ' +
+        'unset (fails to the safe/existing unset behavior, never to "deny every tenant"):',
+      resolved.raw,
+    );
+    Sentry.captureMessage('first_party_tenant_id_malformed', {
+      level: 'warning',
+      tags: { area: 'brand-identity', config: 'first_party_tenant_id' },
+      extra: { first_party_tenant_id_raw: resolved.raw },
+    });
+  }
+  return resolved;
+}
+
 /**
  * Whether `tenantId` is the first-party Estalara tenant for the purposes of the
  * `consent_text_hash` requirement (FOLLOW-654 leg 2).
  *
  * Determined by the `FIRST_PARTY_TENANT_ID` env allowlist:
- *   - env UNSET → returns `true` for ALL tenants. This preserves the current
- *     live registration flow: today exactly one tenant (Estalara) exists, and
- *     making the hash suddenly required would break that flow. Ops MUST set
- *     `FIRST_PARTY_TENANT_ID` before onboarding any external brand (documented
- *     in `.env.example`; go-live gate in FOLLOW-656).
- *   - env SET → returns `true` only for the exact matching tenant UUID; every
- *     other tenant is treated as a non-first-party external brand and MUST
- *     supply its own `consent_text_hash`.
+ *   - env UNSET, blank, OR malformed (not a well-formed UUID once trimmed + lower-cased —
+ *     FOLLOW-678) → returns `true` for ALL tenants. This preserves the current live registration
+ *     flow: today exactly one tenant (Estalara) exists, and making the hash suddenly required
+ *     would break that flow. A malformed value is deliberately treated the SAME as unset (not as
+ *     "deny every tenant") — see {@link resolveFirstPartyTenantId}. Ops MUST set
+ *     `FIRST_PARTY_TENANT_ID` to a WELL-FORMED, CORRECT UUID before onboarding any external brand
+ *     (documented in `.env.example`; go-live gate in FOLLOW-656).
+ *   - env SET to a well-formed UUID → returns `true` only for the exact matching tenant id
+ *     (canonicalized: trim + lower-case on both sides, so case/whitespace never cause a false
+ *     mismatch); every other tenant is treated as a non-first-party external brand and MUST
+ *     supply its own `consent_text_hash`. A well-formed but WRONG UUID (mistyped, or the wrong
+ *     tenant's id pasted) is NOT safe — it is indistinguishable from an intentional scoping and
+ *     will require `consent_text_hash` from the real first-party tenant too.
  *
  * @param tenantId - The tenant UUID from the validated request body.
  */
 export function isFirstPartyTenant(tenantId: string): boolean {
-  const firstParty = process.env.FIRST_PARTY_TENANT_ID?.trim();
-  if (!firstParty) return true;
-  return tenantId === firstParty;
+  const resolved = firstPartyTenantIdStatus();
+  if (resolved.status !== 'valid') return true;
+  return tenantId.trim().toLowerCase() === resolved.value;
 }
 
 /**
@@ -175,15 +242,21 @@ export function isFirstPartyTenant(tenantId: string): boolean {
  *
  * Decision table:
  *
- * | `FIRST_PARTY_TENANT_ID` | tenant count | hash required?                                  |
- * | ----------------------- | ------------ | ----------------------------------------------- |
- * | SET                     | any          | only for tenants other than the configured one  |
- * | UNSET                   | ≤ 1          | NO — today's single-tenant Estalara path, unchanged |
- * | UNSET                   | > 1          | YES, for every tenant — first-party is unknowable |
+ * | `FIRST_PARTY_TENANT_ID`        | tenant count | hash required?                             |
+ * | ------------------------------ | ------------ | ------------------------------------------- |
+ * | SET, well-formed UUID          | any          | only for tenants other than the configured one |
+ * | UNSET / blank / MALFORMED      | ≤ 1          | NO — today's single-tenant Estalara path, unchanged |
+ * | UNSET / blank / MALFORMED      | > 1          | YES, for every tenant — first-party is unknowable |
+ *
+ * A malformed value (present but not a well-formed UUID — FOLLOW-678) is deliberately folded
+ * into the SAME row as unset/blank, never into the "SET" row: taking the exact-match branch on a
+ * typo would incorrectly flag the REAL first-party tenant as external too (every tenant fails to
+ * match a garbled string), which is the "deny everyone" outcome this ticket forbids. Falling
+ * through to the tenant-count probe instead reuses the existing FOLLOW-660 safety net.
  *
  * The `> 1` case deliberately refuses rather than guessing: with no env there is no way to tell
  * which row is Estalara, and defaulting the canonical hash for the wrong one is exactly the
- * fabrication this closes. The fix is one env var, and the 400 says so.
+ * fabrication this closes. The fix is one CORRECT, well-formed env var, and the 400 says so.
  *
  * Fail-CLOSED on a count error: if the tenant count cannot be read we require the hash, because
  * the alternative is defaulting a legal attestation on unknown state.
@@ -218,11 +291,16 @@ async function isTreatedAsExternalBrand(
   db: ReturnType<typeof createAdminClient>,
   tenantId: string,
 ): Promise<boolean> {
-  const firstParty = process.env.FIRST_PARTY_TENANT_ID?.trim();
-  // Env SET — the configured tenant is first-party; everyone else is external.
-  if (firstParty) return tenantId !== firstParty;
+  const resolved = firstPartyTenantIdStatus();
+  // Env SET to a well-formed UUID — the configured tenant is first-party; everyone else is
+  // external. Both operands canonicalized (trim + lower-case) so case/whitespace never cause a
+  // false mismatch [FOLLOW-678]. UNSET *and* malformed both fall through to the tenant-count
+  // probe below — see this function's docstring decision table for why malformed must NOT take
+  // this branch.
+  if (resolved.status === 'valid') return tenantId.trim().toLowerCase() !== resolved.value;
 
-  // Env UNSET — "everyone is first-party" is safe only while exactly one tenant can exist.
+  // Env UNSET (or malformed) — "everyone is first-party" is safe only while exactly one tenant
+  // can exist.
   try {
     const rows = await db.select({ id: tenants.id }).from(tenants).limit(2);
     return rows.length > 1;

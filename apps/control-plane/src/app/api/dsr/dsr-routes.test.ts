@@ -480,10 +480,16 @@ describe('POST /api/dsr/initiate', () => {
       });
     }
 
+    // [FOLLOW-678] Well-formed UUID, distinct from TENANT_CLAIMS.tenant_id — the env value must
+    // be a well-formed UUID to reach the `valid` classification (a malformed value now degrades
+    // to "unset", not "deny everyone"); it must also differ from the claims tenant id so these
+    // tests still exercise the "external, non-matching" branch they exercise pre-fix.
+    const OTHER_FIRST_PARTY_UUID = '99999999-9999-4999-8999-999999999999';
+
     it('external brand with no brand_name → STILL sends the OTP e-mail, and alerts Sentry', async () => {
       // Blocking here would obstruct the data subject's Art. 15 request over an operator
       // config gap — the alarm goes to ops, not to the data subject.
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', 'some-other-first-party-uuid');
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER_FIRST_PARTY_UUID);
       primeSelects({ primary_color: '#1a73e8' });
 
       const { POST } = await import('./initiate/route.js');
@@ -498,7 +504,14 @@ describe('POST /api/dsr/initiate', () => {
     });
 
     it('THE first-party tenant with no brand_name → no alert (Estalara is its correct identity)', async () => {
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_CLAIMS.tenant_id);
+      // [FOLLOW-678] TENANT_CLAIMS.tenant_id ('tenant-uuid-001') is not itself a well-formed
+      // UUID, so it can never equal a well-formed FIRST_PARTY_TENANT_ID env value under the
+      // canonicalized comparison. Override just this test's claims to a well-formed UUID so the
+      // env and the tenant id can genuinely match (exercising the `valid`-match branch, not the
+      // malformed→unset fallback).
+      const FIRST_PARTY_UUID = '11111111-1111-4111-8111-111111111111';
+      mockGetAuthClaims.mockResolvedValueOnce({ ...TENANT_CLAIMS, tenant_id: FIRST_PARTY_UUID });
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', FIRST_PARTY_UUID);
       primeSelects({ primary_color: '#1a73e8' });
 
       const { POST } = await import('./initiate/route.js');
@@ -510,7 +523,7 @@ describe('POST /api/dsr/initiate', () => {
     });
 
     it('external brand WITH a configured identity → no alert', async () => {
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', 'some-other-first-party-uuid');
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER_FIRST_PARTY_UUID);
       primeSelects({ brand_name: 'Costa Sol Properties' });
 
       const { POST } = await import('./initiate/route.js');

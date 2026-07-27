@@ -1,5 +1,20 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 66 — FOLLOW-684 DONE, PR #631 merged `c08e1371`; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**FOLLOW-684 DONE.** PR #631 merged (squash) 2026-07-27T19:00:04Z → `c08e1371` on `main`, confirmed
+via `gh pr view 631 --json state,mergedAt,mergeCommit`. Remote branch
+`backend-engineer/FOLLOW-684-consent-post-brand-gate` auto-deleted on merge; stale local
+remote-tracking ref pruned (`git fetch --prune`). Local `main` fast-forwarded to `c08e1371`, working
+tree clean. POST /api/v1/consent/platform-registration now gates on `isUnprovisionedExternalBrand`
+before every write, closing the last of the three consent-fabrication surfaces (GET closed by
+FOLLOW-659/660; POST closed here).
+
+**Next pick:** FOLLOW-685 (backend-engineer, P1, no deps, docs/handoff-only — flagged as the next
+good pick two sessions running now).
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 65 — FOLLOW-684 validated, PR #631 READY_FOR_REVIEW; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **Session interrupted mid-FOLLOW-684, resumed and closed out.** backend-engineer had already
@@ -73,7 +88,7 @@ returning exactly one hit (the GET, line 246). The INSERT at `:454-467` stores
 `consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH` unconditionally once the
 duplicate-nonce check passes. Ticket premise confirmed accurate.
 
-### FOLLOW-684 — status: READY_FOR_REVIEW (PR #631, all checks green modulo pre-existing-red Rule I, 43/43 tests pass locally)
+### FOLLOW-684 — status: DONE (PR #631 merged `c08e1371`, 2026-07-27T19:00:04Z)
 
 **assigned_to:** backend-engineer **model: Sonnet** — routine implementation inside a well-defined
 module the agent already owns (one new guard call + one hard-refuse branch + tests), matching the

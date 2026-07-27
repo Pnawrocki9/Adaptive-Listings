@@ -1,5 +1,40 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 68 — FOLLOW-697+698 validated, PR #632 READY_FOR_REVIEW; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**PR #632 opened by backend-engineer, validated by PM before handing to Piotr for merge:**
+
+- `gh pr checks 632`: 61/63 pass. The 2 failures are "Rule I — wired-or-dead check", the same
+  pre-existing-red gate flagged on #631; worker measured baseline explicitly (192 violations on
+  `main`, 192 on the branch — zero added, confirmed by wiring the new `TenantBrandScope` type at its
+  consuming call site).
+- Read the full diff (`gh pr diff 632`) against both stubs' ACs in full — re-keyed 7c onto EVIDENCE
+  (provisioned tenant's own computed hash vs. the fallback-identity tri-state), all 5 FOLLOW-697 ACs
+  and all 6 FOLLOW-698 ACs present, including the two call sites (`GET :251`, POST 7b `:380`) that
+  must keep boolean fail-closed behavior — verified unchanged, both their pre-existing test blocks
+  are untouched in the diff.
+- Checked out the branch locally (`gh pr checkout 632 --detach`) and ran the full suite myself:
+  **1964/1964 tests pass, 175/175 files**, `tsc --noEmit` clean. Matches the worker's report
+  exactly.
+- **Independently verified the load-bearing factual claim**: wrote a standalone script computing
+  SHA-256 of the rendered Estalara consent text — confirmed `CANONICAL_CONSENT_TEXT_HASH`
+  (`a3f2e1d4c5b6…`) does NOT equal `computeConsentTextHash(renderPlatformConsentText(estalara))`
+  (`821216cd2cca…`), exactly as the PR claims. **Additional finding beyond what the worker
+  flagged**: the constant's digit pattern
+  (`a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2`) looks like a hand-typed
+  placeholder — ascending hex nibbles in a repeating pattern — not a real SHA-256 digest, despite
+  `lib.ts:44`'s docstring instructing `echo -n "<exact text>" | sha256sum` to verify it. This
+  suggests the constant was never actually computed from real §6.1 text, which is a compliance
+  question (every first-party-default consent record's stored hash may not correspond to any real
+  displayed text) — **not filing a ticket for it myself** (retrospective-analyst owns FOLLOW_UPS.md
+  per charter); flagging it explicitly in the RETRO-227 dispatch prompt so it isn't lost, adjacent
+  to FOLLOW-379/699.
+
+**FOLLOW-697+698 → status: READY_FOR_REVIEW.** PR #632 is mergeable and validated; only outstanding
+item is Piotr's merge decision.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 67 — FOLLOW-697+698 dispatched together to backend-engineer/OPUS; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **RETRO-226 (filed after FOLLOW-684/PR#631 merged) found two new P1 live bugs in the code that just
@@ -39,7 +74,7 @@ on the same lines and risk exactly the kind of half-fix RETRO-226 just flagged. 
 question) are explicitly NOT in this dispatch — Piotr chose to scope this round to the two live P1
 bugs only.
 
-### FOLLOW-697+698 — status: IN_PROGRESS
+### FOLLOW-697+698 — status: READY_FOR_REVIEW (PR #632, all checks green modulo pre-existing-red Rule I, 1964/1964 tests pass locally, tsc clean)
 
 **assigned_to:** backend-engineer **model: Opus** — escalated one tier above FOLLOW-684's Sonnet per
 the CLAUDE.md model-fit rule ("escalate one tier when the task already failed once at the lower

@@ -1,5 +1,31 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 70 — RETRO-227 filed a P0: consent-hash placeholder, ESC-044 escalated to CEO/DPO; 4 escalations now OPEN)
+
+**NEW, escalated this session — ESC-044 (see `backlog/ESCALATIONS.md`):
+`CANONICAL_CONSENT_TEXT_HASH` is a hand-typed placeholder, not a real digest of any consent text.**
+RETRO-227 (post-#632) proved it three independent ways (nibble pattern, 60 text-normalization
+attempts, git blame since introduction). Consequences: (1) the fabrication-refusal gate this session
+just spent two merged PRs (#631 FOLLOW-684, #632 FOLLOW-697/698) hardening cannot fire against a
+real fabricator — a caller that actually copies Estalara's displayed text and hashes it lands in the
+alert-only branch, not the 422; (2) every default-path consent record since 2026-06-21 (the
+documented go-live flow) stores a hash of no text ever displayed — a GDPR Art. 7(1) demonstrability
+question. **This blocks nothing else in the queue but needs a CEO/DPO ruling before
+FOLLOW-704/705/706 can be dispatched** — filed per FOLLOW-706 AC-3's explicit "the PM escalates;
+this ticket does not self-escalate."
+
+**Do NOT dispatch FOLLOW-704 (P0 code fix) or FOLLOW-706 (P1 prod remediation) until ESC-044 is
+ruled** — FOLLOW-704 depends on FOLLOW-705 (compliance-engineer, decides which source text is
+byte-canonical) which itself doesn't strictly need the CEO ruling to start, so **FOLLOW-705 could be
+dispatched now** if Piotr wants the doc-vs-renderer reconciliation moving in parallel with the
+ESC-044 ruling — flag this as an option, don't assume the answer.
+
+FOLLOW-707 (P1, a second omitted-hash bypass on the provisioned-brand branch) and FOLLOW-708/709
+(P1, alarm-registry + doc gaps from the same PR) are independent of the ESC-044 ruling and
+dispatchable now.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 69 — FOLLOW-697+698 DONE, PR #632 merged `300cbfb8`; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **FOLLOW-697+698 DONE.** PR #632 merged (squash) 2026-07-27T21:04:43Z → `300cbfb8` on `main`,

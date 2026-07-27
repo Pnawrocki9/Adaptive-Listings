@@ -60,6 +60,7 @@ import {
   renderPlatformConsentText,
   computeConsentTextHash,
 } from './lib';
+import type { TenantBrandScope } from '@/lib/brand-identity';
 import {
   classifyTenantBrandScope,
   fetchBrandIdentity,
@@ -548,7 +549,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     //     `first_party` scope, which this branch would exempt anyway. So there is nothing left
     //     to decide, and no second tenant-count probe is paid. Invariant: at most ONE
     //     `select id from tenants limit 2` per POST, in every configuration.
-    const scope = await classifyTenantBrandScope(db, body.tenant_id);
+    // Annotated with the union deliberately: the branches below discriminate on `basis`, and the
+    // explicit type keeps that contract visible at the consuming call site (Rule I wiring).
+    const scope: TenantBrandScope = await classifyTenantBrandScope(db, body.tenant_id);
 
     if (scope.scope === 'indeterminate') {
       // Rule K.2 amendment: a swallowed dependency failure must never be presented as a

@@ -19363,8 +19363,17 @@ cross_ref: [RETRO-223, FOLLOW-658, Rule K.2]
 ## FOLLOW-680 — SDK event dispatch discards the ingest response entirely, so the new fail-loud 403s (`origin_policy_unconfigured`, `forbidden_origin`) are invisible to the installer
 
 source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: next
-recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-673]
-promoted_to_queue: false
+recommended_agent: sdk-engineer priority: P1 (elevated from P2 by RETRO-225, PR #630/FOLLOW-678 —
+see note below) estimated_hours: 3 depends_on: [FOLLOW-673] promoted_to_queue: false
+
+**Priority elevated P2→P1 by RETRO-225 (2026-07-27).** FOLLOW-678 re-verified this ticket's premise
+unchanged (`packages/sdk/src/core/events.ts:105` still has no `res.ok` check) while closing the
+case/whitespace and malformed axes of `FIRST_PARTY_TENANT_ID` — which leaves the well-formed-but-
+WRONG-value axis as the **one remaining way** this whole bug class black-holes first-party ingest,
+and this ticket is the only thing that would make that failure visible client-side (server-side
+detection — `origin_policy_unconfigured` — exists but rides a producer-only alarm, see FOLLOW-693).
+Until this ships, an operator error on `FIRST_PARTY_TENANT_ID` degrades from "silent" to
+"server-side-only-visible-if-someone-checks", not to "visible where it happens."
 
 `dispatchEvents` (`packages/sdk/src/core/events.ts:85-103`) awaits `fetch(config.ingestUrl, …)` and
 never inspects `res.ok` or `res.status`; the surrounding `catch` fires only on a network throw and
@@ -19755,3 +19764,255 @@ scope (ESC-043 required-action item 4 stays a separate decision).
 
 cross_ref: [ESC-043, ESC-020, ESC-042, FOLLOW-678, FOLLOW-642, FOLLOW-658, FOLLOW-559, Rule AH, Rule
 AI]
+
+## FOLLOW-691 — Control-plane `resolveFirstPartyTenantId` is exported with zero non-test importers: decide the two-app duplication explicitly (drop the export, or extract one canonicalizer to `@estalara/shared`)
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+PR #630 added `resolveFirstPartyTenantId` + `FirstPartyTenantIdStatus` + a private `UUID_RE`
+**twice**, once per app. The ingest copy (`apps/ingest/src/origin-gate.ts:176`) is genuinely wired —
+non-test importer `apps/ingest/src/handlers/events.ts:31`, live call `:157`. The control-plane copy
+(`apps/control-plane/src/lib/brand-identity.ts:165`) has **zero non-test importers**:
+`grep -rn "resolveFirstPartyTenantId" --include=*.ts --include=*.tsx --include=*.mts . | grep -v node_modules`
+returns only its own definition, its module-private caller `firstPartyTenantIdStatus()` (`:188`,
+same file), one docstring (`:214`), and `brand-identity.test.ts:19,181-200`.
+
+Honest scoping: the _logic_ is fully live — every control-plane comparison routes through it — so
+this is the weak form of Rule I (an unnecessary `export` keyword whose only external consumer is a
+test), not a hollow feature. It is filed because the alternative reading is worse: the implementer
+documented a deliberate reason for the duplication (`brand-identity.ts:144-147` — each app's copy
+has a distinct app-local warn-once side effect and neither app imports the other's runtime), and
+that reasoning is sound, but it was never weighed against the cost: two `UUID_RE`s that can drift,
+two classifiers, two test suites at unequal tiers (RETRO-225 §4c TG-1), and a Rule I false negative
+(FOLLOW-692). Make the call explicitly rather than by default.
+
+**AC:** (1) pick ONE: (a) drop the `export` on the control-plane `resolveFirstPartyTenantId` (and
+the `FirstPartyTenantIdStatus` export if it becomes internal-only) and cover the classifier through
+`isFirstPartyTenant`, or (b) extract a single `resolveFirstPartyTenantId` + `UUID_RE` into
+`packages/shared`, leaving the warn-once side effect app-local in each caller; (2) whichever is
+chosen, write the rationale into the surviving docstring so the next reader does not re-litigate it
+— if (a), state why the duplication is retained; if (b), state why the side effect stays app-local;
+(3) if (b), add a `Rule J` mirror entry or delete the second copy outright — do not leave two
+implementations after an extraction; (4) no behavior change: `pnpm --filter @estalara/ingest test`
+and `pnpm --filter control-plane test -- brand-identity dsr-routes` stay green with no assertion
+edits.
+
+cross_ref: [RETRO-225, FOLLOW-678, FOLLOW-692, Rule I, Rule J, Rule S]
+
+## FOLLOW-692 — Rule I's wired-or-dead gate is path-blind and comment-blind: a symbol duplicated into a second app scores as wired for both copies
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue:
+false
+
+`scripts/check-rule-i.sh:95-105` resolves a symbol's consumers with a repo-wide
+`grep -rl "\b${sym}\b" packages/ apps/`, filtered only by test-path patterns and by the **defining
+file**. Two consequences, both demonstrated by PR #630:
+
+- **Path-blind.** `resolveFirstPartyTenantId` defined in
+  `apps/control-plane/src/lib/brand-identity.ts` is satisfied by occurrences in `apps/ingest/**`,
+  because #630 deliberately duplicated the name across two apps that never import each other. A
+  genuinely unwired export shipped while `Violations found : 192` stayed flat (job `30247793949`, PR
+  #630: 627 symbols / 192 violations, vs the 618/192 and 619/192 RETRO-222 recorded).
+- **Comment-blind.** `grep -rl` matches any occurrence, including docstrings.
+  `apps/ingest/src/types.ts:57` and `origin-gate.ts:203,214` mention `resolveFirstPartyTenantId`
+  **only inside JSDoc**, and any one of those alone would have satisfied the gate. This half is
+  pre-existing, not introduced by #630.
+
+Consequence for the whole learning loop: Rule I is one of the few _mechanical_ wiring gates, and
+RETRO-222/223/224/225 have each leaned on its symbol/violation delta as non-regression evidence. A
+gate that can be satisfied by a comment in an unrelated app is weaker evidence than four retros have
+treated it as.
+
+**AC:** (1) scope consumer resolution to the defining symbol's own package/app root (a symbol in
+`apps/control-plane` may only be satisfied by a consumer inside `apps/control-plane` or by a package
+it imports — verify against the workspace graph rather than hard-coding); (2) ignore matches that
+occur only inside comments (line `//` and block `/* */`) — a lightweight strip pass is sufficient,
+do not add a TS AST dependency for this unless the strip pass proves unreliable on the existing
+corpus; (3) re-run against `main`, publish the **new** baseline violation count in the job output,
+and record it in `CONVENTIONS_PATCH.md` Rule I + `backlog/QUEUE.md` so Rule AF's "compare against
+main's baseline" instruction keeps working across the step change; (4) confirm the change surfaces
+the FOLLOW-691 symbol and does not introduce false positives on the existing 192 (spot-check at
+least the barrel-skipped and the `packages/sdk` clusters); (5) do NOT change the gate's red/green
+disposition in this ticket — it is already permanently red per Rule AF / ESC-041, and
+un-quarantining it is a separate decision.
+
+cross_ref: [RETRO-225, FOLLOW-691, FOLLOW-090, ESC-041, Rule I, Rule AF, Rule J]
+
+## FOLLOW-693 — `first_party_tenant_id_malformed` is a producer-only alarm, and on ingest the channel is absent, not merely unrouted (`SENTRY_DSN_INGEST` unset, no logpush) — while the shipped docstrings promise the opposite
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: now
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] promoted_to_queue:
+false
+
+FOLLOW-678 AC 2 shipped a warn-once malformed-env signal on both planes —
+`apps/ingest/src/handlers/events.ts:160-169` (`logger.warn` + `Sentry.captureMessage`) and
+`apps/control-plane/src/lib/brand-identity.ts:191-201` (`console.warn` + `Sentry.captureMessage`) —
+whose entire stated purpose is that "a mis-pasted env is visible in Sentry/logs **without needing**
+a request to fail" (`events.ts:47-52`). It has **no consumer**:
+`grep -rn "first_party_tenant_id_malformed" . | grep -v node_modules` returns the two producers and
+their two tests. No alert rule, no dashboard, no registry entry — `docs/ops/DSR_ALERTING.md` is the
+repo's only Sentry-rule registry and is DSR-scoped; `docs/runbooks/observability.md` documents DSNs,
+not rules.
+
+On the **ingest** plane it is worse than unrouted. `docs/runbooks/INGEST_WORKER_DEPLOY.md:123` — a
+file PR #630 edited, adding its own FOLLOW-678 note four lines below at `:127-132` — states
+`SENTRY_DSN_INGEST` is unset in prod and that "the FOLLOW-658 guard's Sentry alerting channel is
+**mute**"; `apps/ingest/src/observability.ts:8` confirms Sentry no-ops without the DSN. The fallback
+is no better: `apps/ingest/wrangler.toml` has no `logpush` and no `tail_consumers`, so `logger.warn`
+is retrievable only during a live `wrangler tail`.
+
+**Why P1 rather than P2.** The same mute silences the pre-existing `origin_policy_unconfigured`
+Sentry ERROR (`events.ts:212`), which after #630 is the **only automated detector** of the one
+failure mode FOLLOW-678 consciously did not close in code: a well-formed but WRONG
+`FIRST_PARTY_TENANT_ID`, which 403s 100% of first-party browser ingest. The SDK cannot see it either
+(`packages/sdk/src/core/events.ts:105` still discards the response — FOLLOW-680). Today the sole
+defence is an operator remembering to run `BRAND_PROVISIONING.md` §Step 0's manual probe.
+
+**AC:** (1) set `SENTRY_DSN_INGEST` on the production Worker (`wrangler secret put`, no redeploy
+needed) and prove it end-to-end by deliberately setting a malformed `FIRST_PARTY_TENANT_ID` in a
+**staging** environment and observing the `first_party_tenant_id_malformed` warning arrive — do not
+accept "the secret is set" as evidence; (2) create the alert rules and record them in a registry the
+repo actually owns: `first_party_tenant_id_malformed` (warning, both planes) and
+`origin_policy_unconfigured` (error, ingest — a first-party 403 storm is a total-outage signal and
+deserves a rate-based rule, not just an issue); extend `docs/ops/DSR_ALERTING.md` into a general
+Sentry-rule registry **or** create the equivalent section in `docs/runbooks/observability.md`, and
+say which in the PR; (3) correct the two docstrings that assert the visibility property
+unconditionally (`events.ts:47-52`, `brand-identity.ts:182-186`) so they name the DSN precondition —
+Rule AI applies to the file's own docblock; (4) reconcile `INGEST_WORKER_DEPLOY.md:123` with
+`:127-132` in the same edit, so the "known follow-ups" list does not simultaneously say the channel
+is mute and that a new signal rides it.
+
+cross_ref: [RETRO-225, RETRO-224 (FOLLOW-688), RETRO-154 (FOLLOW-495), FOLLOW-678, FOLLOW-658,
+FOLLOW-680, FOLLOW-158, ESC-043, Rule AJ, Rule AI, Rule AA]
+
+## FOLLOW-694 — Finish the doc census FOLLOW-678 AC 4 started: three more surfaces still carry the unscoped "a forgotten value cannot black-hole traffic" claim, including MASTER_DESIGN
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+FOLLOW-678 AC 4 named five sentences and PR #630 re-scoped exactly those five
+(`origin-gate.ts:203-217`, `types.ts:51-61`, `wrangler.toml:145-152`,
+`DOPPLER_SECRETS_MATRIX.md:31`, `BRAND_PROVISIONING.md:92-95` — all verified changed). The
+enumeration was a claim, not a census.
+`grep -rn "black-hole\|never a traffic outage" --include=*.md --include=*.ts --include=*.mts . | grep -v node_modules | grep -v backlog/`
+still returns:
+
+1. **`docs/MASTER_DESIGN.md:5049-5051`** — _"Unset var = guard off (pre-FOLLOW-658 behavior), so a
+   forgotten value cannot black-hole first-party traffic."_ Verbatim the shape re-scoped everywhere
+   else, sitting in the canonical source of truth every session reads (OPERATING_PRINCIPLES Rule 1),
+   with no `malformed` state and no wrong-value warning. Highest-value of the three.
+2. **`apps/control-plane/.env.example:57-61`** — _"UNSET → all tenants treated as first-party"_, no
+   malformed state, no "must be a well-formed UUID", no wrong-value hazard. This is the
+   operator-facing description of the **control-plane** store, the plane none of the five re-scoped
+   surfaces covers (the secrets-matrix row is ingest-only; its missing control-plane twin is
+   FOLLOW-677, which now needs the FOLLOW-678 content as well).
+3. **`docs/runbooks/BRAND_PROVISIONING.md:315-316`** (_"falling back to a tenant-count probe when
+   the env is unset"_ — also true on malformed as of #630) and **`:584-586`**, whose troubleshooting
+   list offers only _"§Step 0's `FIRST_PARTY_TENANT_ID` is unset"_; there is no "set but malformed"
+   or "set but wrong" row on the control-plane side, although §Step 0 now has both for ingest.
+
+**AC:** (1) re-scope all three (four line-ranges) to match the merged code semantics: unset/blank
+AND malformed degrade the guard, a well-formed-but-wrong value is NOT safe; (2) add the two missing
+control-plane troubleshooting rows to `BRAND_PROVISIONING.md:584-586` (set-but-malformed → the
+`first_party_tenant_id_malformed` warning + the tenant-count fallback; set-but-wrong → the real
+first-party tenant is treated as external on the consent/DSR surfaces); (3) coordinate with
+FOLLOW-677 rather than duplicating it — if 677 has not landed, add the control-plane secrets-matrix
+row here with the full semantics and close 677; (4) verification: re-run the grep above and show it
+returns only correctly-scoped sentences.
+
+cross_ref: [RETRO-225, RETRO-223, FOLLOW-678, FOLLOW-677, FOLLOW-658, Rule AI, Rule AH]
+
+## FOLLOW-695 — A malformed `FIRST_PARTY_TENANT_ID` makes the consent 400 say "not configured" (it IS configured), and the control-plane never validates the pasted UUID against a real `tenants` row it already queries
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-674]
+promoted_to_queue: false
+
+Two related defects on the control-plane plane, both created or left by PR #630.
+
+**(a) The 400 message is now false in a second way.** After #630 a **malformed** env no longer takes
+the exact-match branch; `isTreatedAsExternalBrand`
+(`apps/control-plane/src/lib/brand-identity.ts:290-306`) falls through to the FOLLOW-660
+tenant-count probe. So malformed + ≥2 tenants + omitted hash reaches step 7b, which answers 400 with
+_"consent_text_hash is required: FIRST_PARTY_TENANT_ID is not configured and more than one tenant
+exists"_ (`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts:380-383`) and
+sends the operator off to set the env. It **is** set — it is garbled. The operator opens
+Doppler/Vercel, sees a value, and concludes the error is wrong. This is the same sentence RETRO-222
+§4a LG-2 already flagged for the count-read-failure branch; it now has **three** distinct reaching
+causes (count>1, read failure, malformed env) and states the right one for only one of them.
+FOLLOW-674 already asks for the read-failure split — this extends that work, it does not duplicate
+it.
+
+**(b) The wrong-value axis is closeable here and was not closed.** `isTreatedAsExternalBrand`
+already has a `db` handle and already queries `tenants` on its fallback path (`:300-303`). A `valid`
+env that matches **no** `tenants.id` row is provably an operator typo, and unlike on the ingest
+plane it is distinguishable — the ingest runbook's "not distinguishable from an intentional
+`explicit` scoping by construction" (`INGEST_WORKER_DEPLOY.md:130-132`) is correct for a Worker with
+no Postgres on a zero-I/O hot path, and is **not** correct for the control-plane. Honest limitation
+to state in the ticket and in the code comment: this cannot prove the _ingest_ secret matches,
+because the three stores (Doppler, Vercel, `wrangler secret`) are unsynced by design — it catches
+the most likely operator error (one mistyped digit pasted identically everywhere), not divergence
+between stores. §Step 0's probe remains the only cross-store check.
+
+**AC:** (1) make the 400/409 messages name the branch that actually fired — distinguish "env not
+set", "env set but malformed" and "tenant count unreadable" (coordinate with FOLLOW-674 so the two
+tickets produce one coherent message set, not two competing ones); (2) validate a `valid` env
+against a real `tenants.id` row **once per server instance** (reuse the existing warn-once shape at
+`brand-identity.ts:179-201`, do not add a per-request query), emitting a distinct Sentry warning
+(`first_party_tenant_id_unknown`) — and register it under FOLLOW-693's rule set rather than shipping
+another producer-only alarm; (3) the unknown-tenant case must NOT change control-flow semantics in
+this ticket — it warns, it does not start refusing; state that choice explicitly; (4) tests for all
+three message branches plus the unknown-tenant warning; (5) update the code comment and
+`BRAND_PROVISIONING.md` to say what this does and does not prove about the ingest secret.
+
+cross_ref: [RETRO-225, RETRO-222 (LG-2), FOLLOW-678, FOLLOW-674, FOLLOW-660, FOLLOW-693, Rule AJ,
+Rule K.2]
+
+## FOLLOW-696 — FOLLOW-678's tests are complete per-APP but not per-CONSUMER: `isTreatedAsExternalBrand` has no case-variant test, the "warn ONCE" half of AC 2 is unasserted, and the consent-POST suite never sees the new malformed branch
+
+source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+Three gaps, all inside the ACs PR #630 claims met.
+
+- **Case-variant coverage is per-app, not per-consumer (Rule S).** The new control-plane describe
+  (`apps/control-plane/src/lib/brand-identity.test.ts:204-236`) exercises **only**
+  `isFirstPartyTenant`. The sibling consumer `isTreatedAsExternalBrand` — the single shared arbiter
+  behind the consent GET 409, the consent POST 400 and the DSR alarm — has **no** case-variant test;
+  its three existing cases (`:106`, `:115`, `:124`) stub exact-case values. Ingest got both the unit
+  axis (`apps/ingest/src/origin-gate.test.ts:172-198`) and the end-to-end axis
+  (`apps/ingest/src/index.test.ts:1758-1830`). Same file, same tier inversion RETRO-222 §4c TG-1 and
+  RETRO-224 §4c TG-4 already recorded.
+- **The "ONCE" in "warn once per isolate/instance" is unasserted on both planes, and the existing
+  assertions are silently order-dependent.** No test asserts that a second malformed read does
+  **not** warn, and `firstPartyTenantIdMalformedWarned` (`apps/ingest/src/handlers/events.ts:55`,
+  `brand-identity.ts:179`) has no reset hook. `brand-identity.test.ts:225`'s
+  `mockCaptureMessage.mockClear()` works only because that test happens to be the first malformed
+  read in the file; a second such test added later asserts against a no-op and the suite goes red
+  for a reason unrelated to the defect. Same trap at `index.test.ts:1795`.
+- **The consent-POST route suite was not touched and now has an entirely uncovered branch.**
+  `apps/control-plane/src/app/api/v1/consent/platform-registration/route.test.ts` is absent from the
+  diff and survives only because its fixtures happen to be well-formed UUIDs (`:65`, `:350`, `:420`,
+  `:621`). The malformed → count-probe path #630 created for that route has zero coverage —
+  including the FOLLOW-660 case asserting _"env SET → count query never runs"_ (`:478`), which is
+  now conditional on well-formedness and is pinned nowhere.
+
+**AC:** (1) add case-variant + malformed cases for `isTreatedAsExternalBrand` through **both** its
+public callers (`isUnprovisionedExternalBrand` and `requiresExplicitConsentHash`), matching the tier
+`isFirstPartyTenant` received; (2) export a test-only reset (or move the flag behind an injectable
+recorder) and assert the once-per-instance semantics positively on both planes — a second malformed
+read must produce exactly one capture; (3) add the malformed-env case to the consent-POST route
+suite, asserting the count probe IS consulted (the inverse of `:478`) and that the response is a
+201/400 consistent with FOLLOW-695's message split; (4) note in the PR whether any assertion had to
+change to accommodate the reset hook — a behavior-neutral test change should not need one; (5)
+consider a shared non-UUID-fixture sweep as a stretch goal only: `dsr-routes.test.ts`'s
+`TENANT_CLAIMS.tenant_id` is `'tenant-uuid-001'` and therefore can never reach the `valid`-match
+branch without a local override (RETRO-225 §4c TG-4). That is fixture-hygiene debt, P3, explicitly
+OUT of this ticket's required scope.
+
+cross_ref: [RETRO-225, RETRO-222, RETRO-224, FOLLOW-678, FOLLOW-674, FOLLOW-695, Rule S]

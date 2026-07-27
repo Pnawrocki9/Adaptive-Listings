@@ -3389,3 +3389,136 @@ so.**
     I HELD that at count 1 (distinct axis from AC/AD) and pre-authorized rather than forcing a
     promotion the same session I'd just promoted AG — resist the urge to promote two rules in one
     batch on thin counts.
+
+---
+
+- **2026-07-26 / RETRO-223 (PR #628, FOLLOW-658).**
+  - **A finding I almost missed and why:** the PM handed me a framed question ("did the
+    second-generation over-claim ship?"), and answering it consumed my attention while the _real_ P1
+    sat one function away. `isUnprovisionedExternalTenant` reads as obviously safe — it trims, it
+    returns `false` on blank, it has five tests, and four docstrings say a forgotten env can never
+    black-hole first-party traffic. I nearly wrote "clean". What caught it was asking the question
+    the tests did NOT ask: the suite pins UNSET, BLANK, WHITESPACE — three flavours of _absent_ —
+    and nothing at all about _present but wrong_. A test suite that enumerates one axis exhaustively
+    is a strong suggestion that the author only thought about that axis. Second-order lesson: the
+    docstring's safety claim was itself the tell. "Can NEVER X" is a universal quantifier; I should
+    reflexively look for the counter-example rather than reading it as reassurance — and here the
+    counter-example (case-shifted UUID paste, across three unsynced stores) also flipped a fail-safe
+    into total silent data loss, because the SDK never reads the response.
+  - **An axis/chain I had to trace twice:** the ESC-040 doc-truth chain. First trace followed the
+    two sites the ticket text named (tenants.ts, MASTER*DESIGN §V.3.4) → both corrected → "answer is
+    (a), done". Second trace, forced by my own under-count guardrail (RETRO-001 missed 5 instances
+    of one pattern), used `git log -L` on the \_third* file ESC-040's resolution table named but the
+    FOLLOW-658 ticket did not — `api_keys.ts` — and proved the same claim entered at `d631a08` and
+    left at `95a8492`. Three instances, not two. Lesson: when a ticket enumerates the sites of a
+    defect, the enumeration is a _claim_, not a census — re-derive it from the escalation and from
+    git history. I also had to trace the closure question twice in the other direction: the PM's
+    grep hit was AC3 _quoting_ the defect, so the honest answer had to separate "live surfaces" from
+    "append-only backlog history", and refuse to file the latter (rewriting dated backlog would
+    destroy the very audit trail that let me trace the chain).
+  - **A meta-pattern in how gaps recur across agents:** three consecutive retros (221 → 222 → 223)
+    have found the _same shape at a different layer_: a guard whose UNSET branch is designed,
+    documented and tested, and whose MIS-SET / partially-set branch is analysed by nobody. RETRO-222
+    adjudicated the unset asymmetry of `FIRST_PARTY_TENANT_ID` as justified — correctly — and that
+    verdict then functioned as a "this var has been reviewed" signal I had to consciously refuse. An
+    adjacent retro's _clean_ verdict on axis A is not evidence about axis B; I now write the
+    reconciliation sentence explicitly ("upheld and extended, not contradicted") so the next retro
+    can see which axis was actually covered. Related: I held a new pattern at count 1 (multi-store
+    identity value, asymmetric mis-set failure) rather than promoting on the PM's suggestion that
+    the doc-truth pattern "may already qualify" — it did qualify, and was already Rule AH; the right
+    answer to "should this be a rule?" was "it is one, here is its number, here is sighting five",
+    not a second rule with a new letter. Resisting a promotion request is as much a part of the job
+    as making one.
+
+_(The RETRO-223 and RETRO-224 entries above were staged in `.retro-tmp/` because direct writes to
+this file were permission-blocked in session 61; folded in by the RETRO-225 run, 2026-07-27, and
+`.retro-tmp/` cleared.)_
+
+---
+
+- **2026-07-26 / RETRO-224 (PR #629, FOLLOW-659)**
+  - **A finding I almost missed and why:** the consent **POST**. The brief framed the day's question
+    as "is the GET-refuses / DSR-alerts asymmetry correct?", and both halves _are_ correct — I
+    verified the DSR premise in code (neither the `dsrVerifications` insert nor the ClickHouse audit
+    write persists a brand, so that path really creates no wrong record). Answering the question as
+    posed would have produced a clean retro. What the framing hid is that the pair is not a pair:
+    there is a **third** consumer of the same predicate class, and it is the only one that WRITES
+    the attestation. The POST calls neither gate, and its two existing gates are satisfied by any
+    valid hash — including the canonical Estalara hash the handoff still advertises as the default.
+    Lesson: when a PR justifies an _asymmetry_, enumerate the full consumer set from the code (grep
+    the predicate, then grep the write), not the set the rationale names. A two-row decision table
+    is itself a claim that there are only two rows.
+  - **An axis/chain I had to trace twice:** the 409's consumer. First pass I was about to apply
+    RETRO-222's precedent verbatim ("a new status code whose only consumer is out-of-repo =
+    contract-doc gap, not a half-wire") and move on. Second pass I grepped for the consumer instead
+    of assuming the precedent's premise: `grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` →
+    **zero hits**, and the canonical go-live spec instructs the caller to compute its own hash, i.e.
+    never to call the GET at all. That inverts the classification (HALF_WIRE_P, P1) and falsifies
+    RETRO-219's "end-to-end within the consent flow" verdict. Precedents transfer only with their
+    premises; the premise here was "the consumer exists AND was told", and only the first half was
+    true.
+  - **A meta-pattern in how gaps recur across agents:** this is the third consecutive retro in which
+    a _closure_ was really a _relocation_ — FOLLOW-097→114→127→141 is the archived shape, and this
+    wave reproduced it inside a single day: #624 built the consumer, #627 gated the omitted-hash
+    path, #629 gated the GET, and the fabrication now sits on the POST. Each step was verified one
+    hop and declared closed — including by me, in RETRO-222. The habit that catches it is
+    mechanical: for every "closed" claim, grep the **terminal writer** of the state the gap
+    corrupts, not the surface the ticket touched. Also banked: two new patterns HELD at count 1
+    (gate-on-the-unused-door; cross-module round-trip assertion as a Rule Z _amendment_ axis) with
+    no promotion — and the doc-over-claim axis the PM asked me to evaluate had already been promoted
+    twice the same day (AH, AI), so "already codified, here are the sightings" was the more useful
+    answer than minting a duplicate third rule.
+
+---
+
+- **2026-07-27 / RETRO-225 (PR #630, FOLLOW-678).**
+  - **A finding I almost missed and why:** the alarm's _consumer_. I had already written CHECK B as
+    "clean — no new env var, column, topic or SDK signal" when I re-read my own charter's list and
+    noticed it says _SDK-signal_, not _signal_. The PR introduces a brand-new runtime signal
+    (`first_party_tenant_id_malformed`) that is the entire point of one of its five ACs, and my
+    category list had no slot for it, so it slid past. What caught it was the habit of grepping the
+    thing rather than reasoning about it: `grep -rn "first_party_tenant_id_malformed"` returned two
+    producers and two tests and nothing else. Then the second-order find, which is the one that
+    mattered: `INGEST_WORKER_DEPLOY.md:123` — _in the very file this PR edited, four lines above the
+    note it added_ — says `SENTRY_DSN_INGEST` is unset in prod and the channel is mute. The PR
+    author read that file, wrote below that line, and did not read up. I nearly did the same,
+    because I opened the file at the diff hunk instead of at the top of the section. **Lesson: when
+    a PR edits a "known follow-ups / limitations" list, read the WHOLE list, not the hunk — that
+    list is where the repo keeps the reasons your new mechanism will not work.**
+  - **An axis/chain I had to trace twice:** Rule I's verdict. First pass I did what RETRO-222 taught
+    me — compare the symbol/violation delta against `main`'s baseline (627/192 vs 618/192, +9
+    symbols, +0 violations) — and concluded the new exports were wired. Second pass, forced by the
+    charter's "every new export needs ≥1 **non-test** importer" wording, I grepped by hand and found
+    the control-plane copy has none. Then I had to trace a _third_ time to explain the
+    contradiction, and the answer was in `scripts/check-rule-i.sh:95-105`: the gate matches symbol
+    **names** globally across `packages/ + apps/`, so the ingest twin of a deliberately duplicated
+    name satisfies the control-plane copy — and it matches inside comments, so a docstring mention
+    would have sufficed on its own. **Four consecutive retros (222-225) have cited that delta as
+    non-regression evidence. A mechanical gate's output is evidence about the gate as much as about
+    the code, and I had been reading it as only the latter.** Note for the next run: I under-called
+    the DEAD_CODE severity to P2 against the charter's P1 default, deliberately and with the reason
+    written down — the logic is live in-module, only the `export` keyword is unwired. If a future
+    retro disagrees, the disagreement is with a stated argument, not a silent downgrade.
+  - **A meta-pattern in how gaps recur across agents:** the "closure was really a relocation" chain
+    (097→114→127→141; 627→629→684) reached its **fourth** consecutive retro — but changed character,
+    and I had to be careful not to score that as a plain repeat. Here the residual (a well-formed
+    but WRONG UUID) is _labelled_ in four merged surfaces, given a diagnostic procedure, and
+    explicitly excluded from the safety claim. That is a genuine improvement and saying so is part
+    of the job; an analyst who only ever finds decay teaches nobody. What keeps it inside the
+    pattern is subtler and is the thing I want to carry forward: **the deferral's detector was
+    itself unwired**, so the label is doing all the work. Two independent gaps composed into one —
+    an honest deferral plus a producer-only alarm equals a silent failure with good documentation.
+    Related discipline: I checked RETRO-222's pattern P-4 against its own written pre-authorization
+    and **refused** to fire it, because both consumers _were_ fixed here and what remains open is
+    another axis, not a second consumer. Bending a held pattern's premise to catch a nearby fact is
+    exactly the error RETRO-224 caught itself making with the 409 precedent. The rule I did promote
+    (AJ) I first tested against K.2, Q, AA and AI to be sure it was a new axis rather than a fifth
+    rule on the doc-truth axis.
+  - **Charter friction worth recording:** the dispatch brief asked me to update `backlog/QUEUE.md`'s
+    session head and `backlog/HANDOFFS.md`. Both are outside this agent's write scope and QUEUE.md
+    is named as forbidden, so I declined and surfaced the two items the PM actually needs (the QUEUE
+    §session-63 class-closure over-claim, and the FOLLOW-680 P2→P1 recommendation) in §5a/§7
+    instead. Second friction: the branch guard fired because HEAD was `main`. I did **not** create a
+    branch — displacing HEAD under a running parent is the documented worse failure (session-41
+    collision) — and instead left the three files modified in the working tree with an explicit
+    hand-back note.

@@ -35670,3 +35670,557 @@ config/route.test.ts:285 feeds the stored blob to the REAL resolver) HELD at 1 o
 promoted -- an amendment is still a rule write. Rule AH sighting 6, Rule AI sightings x2, Rule AG 4th append,
 Rule S x2. NO NEW RULE. The PM's QUEUE question is answered explicitly: the doc-over-claim axis was ALREADY
 promoted twice the same day (AH by RETRO-220, AI by RETRO-222); a third rule on that axis is duplication. -->
+
+
+## RETRO-225 — FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison in both apps) — 2026-07-27
+
+### 1. Summary of change
+
+- **PR:** #630 (merged 2026-07-27 08:05:18 UTC, squash commit `5f830b4`) —
+  `fix(ingest): canonicalize FIRST_PARTY_TENANT_ID comparison [FOLLOW-678]`, branch
+  `backend-engineer/FOLLOW-678-first-party-tenant-id-canonicalize`. The squash folds three commits:
+  the PM's pre-dispatch bookkeeping (`04a397a`-equivalent), the implementation (`d16341f`), and the
+  ready-for-review bookkeeping.
+- **Files changed:** 18 (+783 / −82) — 5 source/config files in 2 apps, 4 test files, 4 docs, 4
+  backlog files, 1 agent lessons file. **No new files, no new export file, no migration, no DDL, no
+  package export, no SDK change.**
+- **Modules touched:** [ingest / control-plane / docs / configs / backlog]. **Not** touched: SDK,
+  decision-api, Modal, `packages/db`, `packages/shared`.
+- **Key contracts changed:**
+  - NEW export `resolveFirstPartyTenantId(raw): FirstPartyTenantIdStatus` — **twice, once per app**,
+    deliberately duplicated: `apps/ingest/src/origin-gate.ts:176` and
+    `apps/control-plane/src/lib/brand-identity.ts:165` (@`5f830b4`) — added — breaking: no.
+  - NEW exported type `FirstPartyTenantIdStatus` — likewise duplicated (`origin-gate.ts:156`,
+    `brand-identity.ts:151`) — added — breaking: no (type-only, zero runtime bytes).
+  - `const UUID_RE` duplicated (`origin-gate.ts:153`, `brand-identity.ts:148`), non-exported. It
+    validates UUID **shape** only — the version/variant nibbles are unconstrained — so the docstring
+    phrase "RFC 4122-shaped" is accurate and "well-formed UUID" is the correct looser reading. Not a
+    defect; recorded because §4c TG-3 depends on it.
+  - **Semantics of the existing operator env `FIRST_PARTY_TENANT_ID` changed on the MALFORMED axis,
+    in opposite directions per app** — behavioral, breaking: **conditionally yes**, in an error
+    state only. Ingest: malformed used to take the SET branch and 403 every tenant; now degrades to
+    guard-OFF (`isUnprovisionedExternalTenant`, `origin-gate.ts:222-232`). Control-plane: malformed
+    used to take the SET branch (exact-match, zero DB queries); now falls through to the FOLLOW-660
+    tenant-count probe, i.e. **it acquires a DB round-trip it did not have** on every consent
+    GET/POST and DSR initiate (`brand-identity.ts:290-306`). §4a LG-1 and §4c TG-1 are consequences
+    of that second direction.
+  - Comparison is now canonicalized (trim + lower-case) on **both** operands in all three consumers
+    (`isUnprovisionedExternalTenant`, `isFirstPartyTenant` `brand-identity.ts:226`,
+    `isTreatedAsExternalBrand` `brand-identity.ts:290`). Previously only the env side was trimmed in
+    two of the three; nothing case-folded.
+  - NEW observability signal `first_party_tenant_id_malformed` on both planes — Sentry
+    `captureMessage(level: 'warning')` + a log line, warn-once per Worker isolate
+    (`handlers/events.ts:55,157-169`) / per server instance (`brand-identity.ts:179,187-201`). §3
+    CHECK B classifies it.
+  - Runbook contract: `BRAND_PROVISIONING.md` §Step 0 gains a **mandatory** post-flip 2xx probe
+    (`:107-134`), cross-linked from `INGEST_WORKER_DEPLOY.md:127-132` and `ingest-errors.md:107-133`.
+
+### 2. Verification done in PR
+
+- Test files changed: 4 — `apps/ingest/src/origin-gate.test.ts` (+62/−2, 4 new cases + a new
+  `resolveFirstPartyTenantId` describe of 3), `apps/ingest/src/index.test.ts` (+92/−4, 2 new
+  end-to-end cases + 3 pre-existing FOLLOW-658 fixtures re-based onto well-formed UUIDs),
+  `apps/control-plane/src/lib/brand-identity.test.ts` (+72/−3, a `resolveFirstPartyTenantId` describe
+  of 3 + an `isFirstPartyTenant` case-fold describe of 3),
+  `apps/control-plane/src/app/api/dsr/dsr-routes.test.ts` (+16/−3, fixture substitution only).
+  **Assertions added: ~19.** Coverage delta: unknown numerically; qualitatively up on the classifier
+  and on `isFirstPartyTenant`, **flat on `isTreatedAsExternalBrand`** (§4c TG-1).
+- **Red-first quality is genuinely good and worth crediting:** four of the new cases carry an
+  explicit `[would FAIL pre-fix]` marker and I verified the claim by inspection —
+  `origin-gate.test.ts:172-198` (case-fold both directions, still-flags-external-under-case-shift,
+  malformed-is-guard-OFF-not-deny-all) and `brand-identity.test.ts:204-236` all fail against the raw
+  `!==` implementation. This is the direct remedy for RETRO-223 §4c TG-1, which observed that the
+  five pre-existing ingest cases pinned only three flavours of *absent*.
+- CI checks: **independently verified, not accepted from the PR body** — `gh pr checks 630` returns
+  **61 pass + 2 fail**, both fails being the duplicated `Rule I — wired-or-dead check`, i.e. the
+  repo-wide permanently-red baseline (Rule AF / ESC-041). Same 63-check shape as #627/#628/#629.
+- **Rule I baseline compared, not assumed** (Rule AF's requirement): the job log for run
+  `30247793949` reports `Symbols scanned : 627 / Violations found : 192`. RETRO-222 recorded `main`
+  at 618/192 and PR #627 at 619/192; violations are **unchanged at 192** across four merges. That
+  green-modulo-known-red reading is correct in the aggregate — and §3 CHECK A explains why it is
+  nonetheless a false negative for one of this PR's own new exports.
+
+### 3. Wiring Audit
+
+**CHECK A — ONE FINDING.**
+
+- **DEAD_CODE (export surface) — P2 → FOLLOW-691.**
+  `resolveFirstPartyTenantId` in `apps/control-plane/src/lib/brand-identity.ts:165` (@`5f830b4`) has
+  **zero non-test importers**. Grep:
+  `grep -rn "resolveFirstPartyTenantId\|FirstPartyTenantIdStatus" --include=*.ts --include=*.tsx --include=*.mts . | grep -v node_modules | grep -v '/.next/'`
+  → in control-plane the symbol appears only at its own definition (`:165`), at its module-private
+  caller `firstPartyTenantIdStatus()` (`:188`, same file), in a docstring (`:214`), and in
+  `brand-identity.test.ts:19,181-200`. **Honest severity scoping, deliberately below the charter's
+  default P1:** the *logic* is fully live in-module (every control-plane comparison routes through
+  `firstPartyTenantIdStatus()` → `resolveFirstPartyTenantId`), so this is not a hollow feature — it
+  is an unnecessary `export` keyword whose only external consumer is a test, i.e. the weak form of
+  Rule I. The remedy is one of two things and FOLLOW-691 asks for the second: drop the `export` and
+  test through `isFirstPartyTenant`, **or** extract the one canonicalizer (and the duplicated
+  `UUID_RE`) into `@estalara/shared` so both apps share one implementation with one test.
+- The ingest twin is genuinely wired: producer `origin-gate.ts:176` → **non-test importer**
+  `handlers/events.ts:31` (import) with the live call at `:157`, both verified at the merge commit
+  (`git show 5f830b40:apps/ingest/src/handlers/events.ts`). Not a framework entrypoint, not
+  type-only.
+- Both `FirstPartyTenantIdStatus` exports are **type-only → suppressed** per charter.
+- **The repo's own gate cannot see this finding, and the reason is new — recorded as a second
+  finding → FOLLOW-692 (P2).** `scripts/check-rule-i.sh:95-105` resolves consumers with
+  `grep -rl "\b${sym}\b" packages/ apps/` filtered only by test-path and by the *defining file*. It
+  is (a) **path-blind** — a symbol defined in `apps/control-plane` is satisfied by an occurrence in
+  `apps/ingest`, which is exactly what happens here because this PR deliberately duplicates the name
+  across two apps — and (b) **comment-blind**: `apps/ingest/src/types.ts:57` and
+  `origin-gate.ts:203,214` mention `resolveFirstPartyTenantId` only inside docstrings and each of
+  those alone would satisfy the gate. That is why violations stayed at 192 while a genuinely
+  unwired export shipped. First numbered sighting of the *duplicated-name* variant; the
+  comment-blindness is pre-existing.
+
+**CHECK B — ONE FINDING (HALF_WIRE_P, P1) + two notes.** No new env var, column, topic, migration or
+SDK signal was introduced.
+
+- **HALF_WIRE_P — P1 → FOLLOW-693. New signal `first_party_tenant_id_malformed` has a producer on
+  both planes and NO consumer on either — and on the ingest plane the channel is not merely
+  unrouted, it is physically absent in prod.**
+  - Producers: `apps/ingest/src/handlers/events.ts:160-169` (`logger.warn` +
+    `Sentry.captureMessage`) and `apps/control-plane/src/lib/brand-identity.ts:191-201`
+    (`console.warn` + `Sentry.captureMessage`).
+  - Consumers: **none.** `grep -rn "first_party_tenant_id_malformed" . | grep -v node_modules`
+    returns the two producers and their two tests — no alert rule, no dashboard, no registry entry.
+    The repo's only Sentry-rule registry, `docs/ops/DSR_ALERTING.md`, is DSR-scoped and unchanged;
+    `docs/runbooks/observability.md` documents DSNs, not rules.
+  - **The ingest half is worse than unrouted.** `docs/runbooks/INGEST_WORKER_DEPLOY.md:123` states
+    `SENTRY_DSN_INGEST` **is unset in prod → "the FOLLOW-658 guard's Sentry alerting channel is
+    mute"** — and this PR **edited that very file**, adding its own note four lines below at
+    `:127-132`, without reconciling. `apps/ingest/src/observability.ts:8` confirms Sentry no-ops
+    without the DSN. The fallback channel is no better: `apps/ingest/wrangler.toml` has **no
+    `logpush` and no `tail_consumers`** (grep returns nothing), so `logger.warn` is retrievable only
+    during a live `wrangler tail` session.
+  - Why this is P1 and not a doc nit: **AC 2's entire stated purpose** — quoted verbatim in the
+    shipped docstring at `handlers/events.ts:47-52` — is that "a mis-pasted env is visible in
+    Sentry/logs **without needing** a request to fail." On the ingest plane that sentence is false
+    today. The same mute also silences the *pre-existing* `origin_policy_unconfigured` Sentry ERROR
+    (`events.ts:212`), which §5a shows is the **only** automated detector of the residual
+    wrong-value failure this PR consciously did not close in code.
+- **Note 1 — no new env var; the operator producer is unchanged and still unvalidated.** Nothing in
+  either app checks the pasted UUID against a real `tenants.id`, though the control-plane already
+  holds a Postgres handle in the same function that reads it (`brand-identity.ts:298-303`). See §4a
+  LG-2 / FOLLOW-695.
+- **Note 2 — the runbook probe is a *manual* consumer, and the charter's precedent says so.** The
+  §Step 0 2xx probe (`BRAND_PROVISIONING.md:107-134`) is the only end-to-end verification that the
+  three unsynced stores agree. RETRO-220's Rule AH adjudication ("documentation standing in for code
+  is a deferral, not a closure") applies; FOLLOW-662 already exists to mechanize exactly this class
+  of operator-executable instruction. Not re-filed; cross-referenced in §5b.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) → FOLLOW-695 — the FOLLOW-660 400 message is now false in a SECOND way, on a branch
+  this PR created.** With a **malformed** env, `isTreatedAsExternalBrand` no longer takes the
+  exact-match branch; it falls through to the tenant-count probe (`brand-identity.ts:300-306`). So
+  malformed + ≥2 tenants + omitted hash now reaches step 7b, which answers 400 with
+  *"consent_text_hash is required: FIRST_PARTY_TENANT_ID is not configured and more than one tenant
+  exists"* (`api/v1/consent/platform-registration/route.ts:380-383`) and tells the operator to go
+  set the env. **The env IS configured** — it is garbled. The operator will open Doppler/Vercel, see
+  a value, and conclude the message is wrong. This is RETRO-222 §4a LG-2's defect shape (a
+  fail-closed path asserting a state that is false on the branch that reached it) acquiring its
+  **third** reaching branch: count>1, count-read-failure, and now malformed-env. Same sentence, same
+  file, three different causes. Note honestly that FOLLOW-674 already asks for the count-read split;
+  FOLLOW-695 extends it rather than duplicating it.
+- **LG-2 (P2) → FOLLOW-695 — the residual wrong-value axis is closeable in code on the control-plane
+  plane and was not closed.** `isTreatedAsExternalBrand` already has `db` in hand and already
+  queries `tenants` on the fallback path. A `valid` env that matches **no** `tenants.id` row is
+  provably an operator typo and is distinguishable from an intentional scoping — unlike on the
+  ingest plane, where the Worker has no Postgres on a zero-I/O hot path and the PR's "not
+  distinguishable by construction" claim (`INGEST_WORKER_DEPLOY.md:130-132`) is **correct**. Scoping
+  the honesty in both directions: a control-plane check does **not** prove the *ingest* secret is
+  right, because the three stores are unsynced by design — but it converts the most likely operator
+  error (one mistyped digit, pasted identically everywhere) from "silent 100% traffic loss detected
+  by a manual probe" into "a startup/first-use warning with a real DSN behind it."
+- **LG-3 (P3, note only — traced, NOT filed) — a malformed env now costs a DB round-trip per
+  request on three control-plane surfaces.** Pre-fix, malformed took the zero-query exact-match
+  branch; post-fix it probes `tenants` on every consent GET, consent POST and DSR initiate. The
+  trade is correct (deny-everyone was the worse outcome) and the state is an error state, so this is
+  recorded rather than ticketed. It does, however, mean **FOLLOW-674's soft-delete-blind probe
+  (RETRO-222 §4a LG-1) gains a fourth way to be reached.**
+
+#### 4b. Code bugs not caught — N/A. Six claims re-verified rather than accepted:
+
+- **"All three comparison functions canonicalized"** — true at the merge commit; each of
+  `origin-gate.ts:222-232`, `brand-identity.ts:226-229`, `brand-identity.ts:290-296` applies
+  `.trim().toLowerCase()` to the tenant operand and compares against `resolved.value`, which is
+  already trimmed + lower-cased.
+- **"Malformed degrades to OFF, never deny-all"** — true on both planes, and the two meanings of
+  "off" differ correctly per plane (ingest: guard disabled; control-plane: fall through to the
+  count probe, which is the FOLLOW-660 safety net, not a blanket allow).
+- **The compliance direction of the malformed fallback is SAFE, contrary to first appearance** —
+  I checked whether routing malformed into the count probe re-opens the FOLLOW-660 fabrication.
+  It does not: ≤1 tenant → the only tenant *is* Estalara, so defaulting the canonical hash is
+  correct; >1 tenants → the probe requires an explicit hash. Both sub-cases verified against
+  `brand-identity.ts:300-306` + `route.ts:375-386`. Stated explicitly because the axis is
+  non-obvious and a future reader will otherwise re-derive it.
+- **Warn-once placement is not gated on the failure** — `events.ts:157` runs unconditionally after
+  auth, before the `policy.mode` branch, so a malformed env warns even when no request would have
+  been refused. That is what AC 2 asked for and it is implemented correctly. (It does require ≥1
+  *authenticated* request to fire; a total auth outage would suppress it. Negligible.)
+- **Module-level warn-once state is right for both runtimes** — a CF isolate and a warm Vercel
+  instance both reuse module scope; both reset on redeploy, which is the desired "a fixed env stops
+  warning" behavior.
+- **`UUID_RE` does not over-reject real ids** — it is shape-only (no version/variant nibble
+  constraint), so Postgres-generated v4 ids and the repo's hand-written fixtures both pass. A
+  stricter RFC-4122 regex would have rejected e.g. `route.test.ts:65`'s
+  `a1b2c3d4-e5f6-7890-abcd-ef1234567890`. The looser choice is the correct one.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) → FOLLOW-696 — AC 3 says "add the missing case-variant tests on both sides"; it was
+  satisfied per-APP, not per-CONSUMER.** The new control-plane describe
+  (`brand-identity.test.ts:204-236`) exercises **only `isFirstPartyTenant`**. The sibling consumer
+  `isTreatedAsExternalBrand` — reached by `isUnprovisionedExternalBrand` and
+  `requiresExplicitConsentHash`, i.e. the consent GET 409, the consent POST 400 and the DSR alarm —
+  has **no case-variant test at all**; its three existing cases (`:106,:115,:124`) stub exact-case
+  values. Textbook **Rule S**: symmetric set (the module's brand predicates), unequal verification
+  tier — and the same tier inversion RETRO-222 §4c TG-1 and RETRO-224 §4c TG-4 already recorded on
+  this exact file. Ingest, by contrast, got both the unit axis (`origin-gate.test.ts:172-198`) and
+  the end-to-end axis (`index.test.ts:1758-1830`).
+- **TG-2 (P2) → FOLLOW-696 — the "ONCE" half of AC 2 is untested on both planes, and the existing
+  assertions are silently order-dependent.** No test asserts that a *second* malformed read does not
+  warn, and `firstPartyTenantIdMalformedWarned` (`events.ts:55`, `brand-identity.ts:179`) has no
+  reset hook. `brand-identity.test.ts:225`'s `mockCaptureMessage.mockClear()` therefore only works
+  because that test happens to be the first malformed read in the file; a second such test added
+  later would assert against a no-op and the suite would go red for a reason unrelated to the
+  defect. Same latent trap in `index.test.ts:1795`.
+- **TG-3 (P2) → FOLLOW-696 — the consent-POST route suite was not touched and now has a wholly
+  uncovered new branch.**
+  `apps/control-plane/src/app/api/v1/consent/platform-registration/route.test.ts` is not in the
+  diff. It survives only because its fixtures happen to be well-formed UUIDs (`:65`, `:350`,
+  `:420`/`:621` — verified). Consequence: the **malformed → count-probe** path this PR created for
+  that route (the path LG-1 mis-reports) has zero coverage, including the FOLLOW-660 case that
+  asserts *"env SET → count query never runs"* (`:478`), which is now conditional on well-formedness
+  and is nowhere pinned as such.
+- **TG-4 (P3, no stub) — the fixture substitutions in `dsr-routes.test.ts` preserve intent; the
+  audit is recorded because the question was asked.** Verified case by case against `initiate/route.ts:229`
+  (`isUnprovisionedExternalBrand` → `isTreatedAsExternalBrand`):
+  - `:492` and `:526` (the two *external-brand* cases): pre-fix, env `'some-other-first-party-uuid'`
+    + claims `'tenant-uuid-001'` took the env-SET branch → external, **zero DB queries**. Post-fix,
+    `OTHER_FIRST_PARTY_UUID` + the same claims takes the `valid`-non-matching branch → external,
+    **zero DB queries**. Identical branch, identical query count. **Intent preserved**, and the
+    substitution was *necessary*: without it the env would classify `malformed`, fall through to the
+    count probe, and hit `mockSelect` with only two `mockReturnValueOnce` primed by `primeSelects`
+    (`:468-471`) — the tests would have started exercising an unprimed third select. The author
+    caught a real trap.
+  - `:507-515` (the *first-party* case) is the only one whose intent is narrowed, and only
+    cosmetically: it now overrides the claims for this test alone via `mockResolvedValueOnce`, so it
+    no longer shares the file's canonical `TENANT_CLAIMS.tenant_id`. Two residual risks, both
+    fail-LOUD rather than silent: (i) if `initiate/route.ts` ever calls `getAuthClaims` twice, the
+    second call returns the non-UUID `TENANT_CLAIMS` and the test flips to "external → alert" and
+    **fails**; (ii) the assertion `mockCaptureMessage).not.toHaveBeenCalled()` remains the real
+    proof and is unchanged. **No silent narrowing found.**
+  - Standing consequence worth naming: `TENANT_CLAIMS.tenant_id = 'tenant-uuid-001'` is not
+    UUID-shaped, so **no** test in that file can reach the `valid`-match branch without a local
+    override. That is a fixture-hygiene debt, not a defect — P3, no stub.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) → FOLLOW-694 — AC 4 enumerated five sentences; the enumeration was a claim, not a
+  census, and at least three more surfaces still carry the unscoped or now-stale text.** The PR
+  fixed exactly the five the ticket named (`origin-gate.ts:203-217`, `types.ts:51-61`,
+  `wrangler.toml:145-152`, `DOPPLER_SECRETS_MATRIX.md:31`, `BRAND_PROVISIONING.md:92-95` — all
+  verified changed). Still open, from
+  `grep -rn "black-hole\|never a traffic outage" --include=*.md --include=*.ts --include=*.mts . | grep -v node_modules | grep -v backlog/`:
+  1. **`docs/MASTER_DESIGN.md:5049-5051`** — *"Unset var = guard off (pre-FOLLOW-658 behavior), so a
+     forgotten value cannot black-hole first-party traffic."* Verbatim the shape the PR re-scoped
+     everywhere else, in the **canonical source of truth** (OPERATING_PRINCIPLES Rule 1), with no
+     mention of `malformed` and no wrong-value warning. Highest-value of the three.
+  2. **`apps/control-plane/.env.example:57-61`** — *"UNSET → all tenants treated as first-party."*
+     No malformed state, no "must be a well-formed UUID", no wrong-value hazard. This is the
+     operator-facing description of the **control-plane** store — the plane the PR's five re-scoped
+     surfaces never cover (the matrix row is ingest-only; its absent control-plane twin is
+     FOLLOW-677, which now needs the FOLLOW-678 content too).
+  3. **`docs/runbooks/BRAND_PROVISIONING.md:315-316`** (*"falling back to a tenant-count probe when
+     the env is unset"* — now also on malformed) and **`:584-586`**, whose troubleshooting bullet
+     offers only *"§Step 0's `FIRST_PARTY_TENANT_ID` is unset"*; there is no "set but malformed" or
+     "set but wrong" row on the control-plane side, though §Step 0 now has exactly those rows for
+     ingest.
+  **Rule AI sighting** (a change that flips a claim's truth-value must update every document
+  asserting the prior state, in the same PR). Not a promotion — AI is already codified.
+- **DG-2 (P2) → FOLLOW-693 AC — two shipped docstrings assert a visibility property the prod
+  environment does not provide.** `handlers/events.ts:47-52` ("a mis-pasted env is visible in
+  Sentry/logs without needing to spam either") and `brand-identity.ts:182-186` state AC 2's promise
+  unconditionally; §3 CHECK B shows the ingest half has neither channel in prod. The PR edited
+  `INGEST_WORKER_DEPLOY.md` **four lines below** the sentence that says so (`:123` vs `:127`).
+- **DG-3 (P3, no stub) — positive finding, recorded as the counter-example.** `ingest-errors.md:107-133`,
+  `BRAND_PROVISIONING.md:107-134` and `INGEST_WORKER_DEPLOY.md:127-132` are unusually honest: they
+  name the residual wrong-value failure, state that it is *"still not distinguishable from an
+  intentional `explicit` scoping by construction"*, and give the operator a zero-persistence probe
+  with an explicit "do NOT proceed until 200". The probe's design (deliberately invalid `type` so a
+  request that clears every gate still writes nothing) is safe against prod by construction — I
+  checked the claim, not just the sentence. This is the doc-honesty standard Rule AH asks for.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Prior-follow-up closure check (algorithm step 7) — FOLLOW-678 claims to close RETRO-223 §4a LG-1
+  (+ §4c TG-1 + §4d DG-1). Traced END-TO-END across five hops, not one.**
+  `PRODUCER (operator → 3 unsynced stores)` → `CLASSIFIER resolveFirstPartyTenantId` (both apps,
+  `origin-gate.ts:176` / `brand-identity.ts:165`) → `CONSUMERS` (all three named functions,
+  `origin-gate.ts:222`, `brand-identity.ts:226`, `:290`) → `EFFECT` (403 / 400 / 409 / DSR alarm) →
+  `DETECTION` (Sentry + the runbook probe). Verdict **per axis**:
+  - **case + incidental-whitespace axis: REAL, verified closure.** Both directions of the compare,
+    both apps, unit + end-to-end, with red-first evidence (§2).
+  - **malformed axis: REAL closure, and it also fixed a latent inversion nobody had named** — pre-fix
+    a garbled paste meant *deny every tenant*, on both planes.
+  - **wrong-but-well-formed axis: NOT closed in code.** It is mitigated by honest docs + a manual
+    §Step 0 probe. Its only automated detector on the ingest plane is the `origin_policy_unconfigured`
+    Sentry ERROR at `events.ts:212`, which is **mute** (no DSN, §3), and the SDK still cannot see the
+    403 — re-verified at HEAD, `packages/sdk/src/core/events.ts:105-104`: `await fetch(...)` with no
+    `res.ok`/`res.status` inspection and a `catch` that only fires on a network throw.
+  - **Meta-verdict on the three-retro "closure was really a relocation" pattern (the PM's explicit
+    question): the pattern CONTINUES structurally but has changed character, and that is progress
+    worth naming.** In FOLLOW-097→114→127→141, and again in #627→#629→FOLLOW-684, each step declared
+    closure and the gap moved *unannounced*. Here the residual is named in four merged surfaces, given
+    a diagnostic procedure, and explicitly excluded from the safety claim. **It is a labelled
+    deferral, not a silent relocation.** The one thing that keeps it in the pattern's orbit is
+    §3 CHECK B: the deferral's *detector* is unwired, so "labelled" is currently doing all the work.
+- **FOLLOW-680's premise is UNCHANGED by this PR — and its evidence is now stronger.** The stub cites
+  the SDK's response-discarding as the reason the ingest side fails silent; that is still true at
+  HEAD (grep above). What changed is its weight: after #630, the wrong-value 403 is the **sole
+  remaining** 100%-traffic-loss mode on this var, so FOLLOW-680 is no longer "nice observability for
+  external brands" — it is the only client-side detector of a first-party outage. **Recommendation
+  (NOT re-filed, NOT written to QUEUE): elevate FOLLOW-680 P2 → P1**; PM's call.
+- **FOLLOW-674's blast radius widened** (RETRO-222 §4a LG-1, soft-delete-blind count probe): the
+  malformed env is a fourth path into that probe (§4a LG-3).
+- **FOLLOW-677 needs new content, not just the missing row**: the control-plane matrix row it asks
+  for must now also carry the malformed/wrong-value semantics (DG-1 item 2).
+- **FOLLOW-662 (Rule AH mechanization — verification gate for operator-executable runbook
+  instructions) acquires its cleanest subject yet**: §Step 0's mandatory probe is precisely the class
+  of instruction it exists to mechanize.
+- **QUEUE §session-63 head contains a class-closure over-claim.** It states this PR *"closes the
+  entire `FIRST_PARTY_TENANT_ID` fail-silent bug class opened by FOLLOW-658/659/660."* Per the axis
+  table above, the *fail-silent* property is exactly what is **unchanged** for the wrong-value case.
+  Surfaced here with severity for the PM per charter; **QUEUE.md, ESCALATIONS.md and HANDOFFS.md not
+  written (read-only per charter — see the note at the end of §7).**
+- No IN_PROGRESS/READY assumption invalidated: `gh pr list --state open` empty, zero genuinely
+  IN_PROGRESS tickets (QUEUE §session-62/63, re-checked), `.claude/worktrees/` empty.
+
+#### 5b. Future sprint tickets affected
+
+- **The 3-brand external onboarding wave** now has a hard, mandatory, *manual* gate in its critical
+  path (§Step 0's 2xx probe). If FOLLOW-693 does not land first, that probe is the only thing
+  standing between a mistyped UUID and a total pilot-stream outage — with no page and no client-side
+  signal.
+- **FOLLOW-656 / the go-live gate** inherit DG-1: the SoT (`MASTER_DESIGN.md:5051`) still promises the
+  unscoped safety property.
+- **ESC-043 item 4 (no prod deploy pipeline)** compounds FOLLOW-693: arming `SENTRY_DSN_INGEST` is a
+  `wrangler secret put` (no redeploy needed), but confirming the warn actually reaches Sentry requires
+  the manual deploy path FOLLOW-690 had to execute by hand.
+
+#### 5c. Contracts changed others rely on
+
+- **One env var, TWO consumers, and the malformed axis now resolves in OPPOSITE directions per plane
+  — by design, and correctly.** Ingest malformed → guard OFF (no Postgres on a zero-I/O hot path).
+  Control-plane malformed → tenant-count probe → fail CLOSED on ≥2 tenants. This *extends* RETRO-222
+  §5c's unset-axis asymmetry finding onto the malformed axis; it does not contradict it. Both are
+  documented in-code. Recorded so nobody later "harmonizes" them into a single wrong behavior.
+- **New 403/400/409 reachability conditions** for the out-of-repo `app.estalara.com` caller are
+  unchanged in kind; only the malformed-env branch moved (§4a LG-1). No SDK, decision-api, package
+  export, migration or DDL change. Legal identity and tenant ids stay off the browser wire.
+- **A new platform-wide observability signal** (`first_party_tenant_id_malformed`) enters the tag
+  vocabulary with no registry entry (§3 CHECK B) — the second such entry in two days, after #629's
+  `brand_identity` tag.
+
+#### 5d. Architectural assumptions affected
+
+- **Rule AA split:** code axis **CLOSED for two of three axes**; the third is a *labelled* deferral
+  to an operator procedure. Prod axis **OPEN in a new way** — unlike #627 (shipped-and-inert) and
+  #629 (live), this guard is live *and* its safety net's detector is unarmed.
+- **"Fail-loud" now has a third failure mode in this codebase, and it is the one nobody owns.** #627
+  established refuse-rather-than-guess; #629 established refuse-where-a-wrong-record-would-be-written
+  / alert-where-refusing-would-obstruct-a-right; #630 establishes degrade-to-off-and-warn. The first
+  two are enforced by control flow. The third is enforced **entirely by observability** — and this
+  repo has now shipped three such alarms (FOLLOW-495's `clickhouse_push_failed_post_ack`, #629's
+  `brand_identity`, #630's `first_party_tenant_id_malformed`) with zero alert rules between them.
+  That is the architectural fact behind §6's rule promotion.
+- **Deliberate duplication over extraction is a defensible call that the repo's gate then
+  mis-scores.** The implementer documented why (`brand-identity.ts:144-147`: distinct app-local
+  warn-once side effects, neither app imports the other's runtime) and I agree with the reasoning.
+  The cost is two `UUID_RE`s, two classifiers, two test suites at unequal tiers (§4c TG-1), and a
+  Rule I false negative (§3). FOLLOW-691 asks for the decision to be made explicitly rather than by
+  default.
+
+### 6. New lesson candidates
+
+- **Pattern P-9 (PRODUCER-ONLY ALARM) — 3rd sighting, ≥2 PRIOR numbered retros → Rule AJ PROMOTED.**
+  *"A PR ships a new failure-detection signal (Sentry capture / structured log) as the ONLY thing
+  that makes a silent failure visible, and ships no consumer for it — no alert rule, no registry
+  entry, and sometimes no DSN in the environment it must fire in. The PR's 'fail-loud' claim then
+  rests on a channel nobody is listening to."*
+  **PRIOR 1 — RETRO-154 §4a LG-1 → FOLLOW-495** (verified as cited, `RETROSPECTIVES.md:24291`): after
+  FOLLOW-459 moved the ClickHouse insert past the ACK, `clickhouse_push_failed_post_ack` became the
+  *only* signal that the sole prod events store dropped a batch, and no alert rule keys off it; the
+  follow-up is still open (re-scoped by FOLLOW-515, still not closed). Count 1.
+  **PRIOR 2 — RETRO-224 §4d DG-3 → FOLLOW-688** (verified, `RETROSPECTIVES.md:35392`,
+  `FOLLOW_UPS.md:19639`): #629's `brand_identity: unprovisioned_external` tag is the entire
+  enforcement mechanism on the DSR path and is in no rule in `docs/ops/DSR_ALERTING.md`, while the
+  runbook instructs the operator to *"confirm the alert stops"*. Count 2.
+  **TRIGGER — this retro §3 CHECK B**, and it is the strongest instance of the three because the
+  channel is not merely unrouted but **absent** (`SENTRY_DSN_INGEST` unset per
+  `INGEST_WORKER_DEPLOY.md:123`, no `logpush`/`tail_consumers` in `wrangler.toml`), while the
+  shipped docstring promises the opposite. Both banked occurrences are PRIOR retros → threshold met;
+  **the promoting retro does not inflate the count** (adjudication shared with
+  AA/AB/AC/AD/AE/V/Q/AG/AH/AI).
+  **Checked against existing rules before minting, per RETRO-224's discipline:** Rule K.2 governs
+  whether a fire-and-forget path *emits* a signal and refuses to swallow errors — this PR fully
+  conforms to K.2. Rule Q governs a CI gate proving its assertion *ran*. Rule AA governs whether an
+  operator has *performed* a step. **None of them requires an emitted runtime signal to have a
+  consumer.** AJ is a genuinely new axis, not a fourth rule on the doc-truth axis.
+  → **Rule AJ codified** (letter AJ = next in the double-letter sequence after AI).
+- **Pattern P-4 (CLASS-CLOSED-ON-ONE-CONSUMER, RETRO-222 §6) — examined against its own
+  pre-authorization and NOT triggered. Count stays 0 priors, HELD.** Its pre-authorization reads
+  "the next independent sighting of a fail-open class declared closed while **a second consumer of
+  the same switch** retains the old semantics." Here **both** consumers were fixed; what remains open
+  is a different *axis* of the same switch, not a second consumer. The QUEUE over-claim (§5a) is
+  therefore an instance of a *different* shape and I refuse to bend P-4's premise to catch it —
+  premise-bending is precisely how RETRO-224 caught itself mis-applying RETRO-222's 409 precedent.
+- **Pattern P-10 (NEW) — "NAME-COLLISION GATE BYPASS": a symbol deliberately duplicated across two
+  apps satisfies a name-based wiring gate for both copies, so the unwired copy scores as wired.**
+  Evidence: §3 CHECK A + `scripts/check-rule-i.sh:95-105`. Prior art examined and **rejected as
+  priors**: Rule J (mirror-code sync) governs *drift* between intentional duplicates, not gate
+  scoring; Rule I is the gate being bypassed, not a sighting of the bypass. **Count 1, HELD, NO
+  PROMOTION** — the remedy is a ticket (FOLLOW-692), not prose, and one sighting is below the bar.
+  **Pre-authorized:** promote on a 2nd numbered-retro sighting of a mechanical gate scored by
+  unscoped symbol name.
+- **Rule S sightings ×2 (no promotion, long codified) —** §4c TG-1 (only one of the two control-plane
+  consumers got the case-variant test AC 3 asked for) and the persisting tier inversion on
+  `brand-identity.test.ts` first named in RETRO-222 §4c TG-1.
+- **Rule AI sighting (no promotion — promoted by RETRO-222) —** §4d DG-1, three surfaces still
+  asserting the pre-#630 state, including MASTER_DESIGN.
+- **Rule AH sighting, count 7 (no promotion) —** §3 CHECK B Note 2 / §4d DG-3: the wrong-value axis
+  is discharged by an operator instruction rather than code. Unlike the AH instances that earned the
+  rule, this one is *honestly labelled* — recorded as a conforming instance, not a violation.
+- **Rule AG sighting (no count change) —** this PR appended 29 lines to
+  `.claude/agents/pm-orchestrator/lessons.md`, the 5th independent PR of this wave to append to a
+  shared agent lessons log. Codified RETRO-219, remedy ticketed FOLLOW-650, no collision reported.
+
+### 7. Follow-ups
+
+- **FOLLOW-691:** decide the duplication explicitly — either drop the test-only `export` on
+  control-plane `resolveFirstPartyTenantId` and cover it through `isFirstPartyTenant`, or extract one
+  canonicalizer + `UUID_RE` into `@estalara/shared` so both apps share one implementation and one
+  test suite (backend-engineer, 2h, priority **P2**).
+- **FOLLOW-692:** close the Rule I false negative — scope consumer resolution to the defining
+  package/app and ignore matches inside comments, then re-baseline the violation count
+  (devops-engineer, 3h, priority **P2**).
+- **FOLLOW-693:** give `first_party_tenant_id_malformed` a real consumer — arm `SENTRY_DSN_INGEST`
+  in prod, add an alert-rule registry entry for both planes (and for the pre-existing
+  `origin_policy_unconfigured` ERROR, whose mute is the same defect), and correct the two docstrings
+  that promise Sentry/log visibility unconditionally (devops-engineer + backend-engineer, 3h,
+  priority **P1**).
+- **FOLLOW-694:** finish the doc census AC 4 started — re-scope `MASTER_DESIGN.md:5049-5051`,
+  `apps/control-plane/.env.example:57-61`, and `BRAND_PROVISIONING.md:315-316` / `:584-586`
+  (backend-engineer, 2h, priority **P2**).
+- **FOLLOW-695:** stop the control-plane from mis-reporting a malformed env as "not configured"
+  (`route.ts:380-383`), and validate a `valid` env against a real `tenants.id` row so a mistyped
+  UUID is caught where a Postgres handle already exists — with the honest limitation that this
+  cannot prove the *ingest* secret matches (backend-engineer, 3h, priority **P2**).
+- **FOLLOW-696:** close the three test gaps — case-variant coverage for `isTreatedAsExternalBrand`,
+  a real assertion of the warn-**once** semantics (plus a reset hook so the assertions stop being
+  order-dependent), and the malformed→count-probe branch on the consent POST route suite
+  (backend-engineer, 3h, priority **P2**).
+- **Recommendation, NOT re-filed (owned by the PM): elevate FOLLOW-680 P2 → P1** — after #630 it is
+  the only client-side detector of the sole remaining 100%-traffic-loss mode (§5a).
+- **Charter note on the dispatch brief's items 7 and the lessons file.** The brief asked for updates
+  to `backlog/QUEUE.md`'s session head and to `backlog/HANDOFFS.md`. Both are outside this agent's
+  write scope (charter: writes are limited to `RETROSPECTIVES.md`, `FOLLOW_UPS.md`, and
+  `CONVENTIONS_PATCH.md` at threshold; QUEUE.md is named as forbidden). **Not written.** The two
+  items the PM would want are §5a's QUEUE over-claim correction and the FOLLOW-680 elevation
+  recommendation; both are stated above for the PM to action.
+
+### 8. Cross-references
+
+- **RETRO-223 (#628, FOLLOW-658)** — the retro that filed FOLLOW-678. Its §4a LG-1 is the gap this PR
+  closes on two of three axes (§5a); its §4c TG-1 (a suite that enumerated three flavours of *absent*
+  and nothing about *present but wrong*) is genuinely discharged by the red-first cases in §2. **No
+  contradiction.**
+- **RETRO-222 (#627, FOLLOW-660)** — **explicit reconciliation, per algorithm step 8.** Its §5c
+  analyzed the UNSET axis of this env var across the two consumers and called the fail-open /
+  fail-closed divergence justified. That verdict is **upheld and extended, not contradicted**: this
+  PR adds a MALFORMED axis that resolves in opposite directions per plane for the same structural
+  reason (no Postgres on the Worker hot path), so §5c's reasoning generalizes correctly. Its §4a LG-2
+  (a fail-closed path answering a 4xx that asserts a false state) is **replicated onto a third
+  reaching branch** by this PR → §4a LG-1 / FOLLOW-695. Its §4a LG-1 (soft-delete-blind probe) gains
+  a fourth entry path (§4a LG-3).
+- **RETRO-224 (#629, FOLLOW-659)** — its §4d DG-3 is Rule AJ's second prior (§6). Its meta-pattern
+  ("closure was really a relocation", three consecutive retros) is **answered directly in §5a**:
+  structurally the pattern continues, but for the first time in the chain the residual is *labelled*
+  rather than silently moved — with the caveat that the label's detector is itself unwired.
+- **RETRO-154 (#…, FOLLOW-459)** — Rule AJ's first prior (`FOLLOW-495`, §6). Its §7 is also the
+  closure-discipline template this retro's §5a follows (name the residual, do not call a trade a
+  closure).
+- **RETRO-220 (#625)** — Rule AH's origin; §3 Note 2 / §4d DG-3 are sighting 7, and the *conforming*
+  kind. **RETRO-221 (#626)** — Rule AI's second prior, cited by §4d DG-1.
+- **Rules:** **AJ** (PROMOTED here) · **AA** (§5d) · **AF** (§2, Rule I baseline compared not assumed)
+  · **AH** (§3 Note 2, §4d DG-3) · **AI** (§4d DG-1) · **AG** (§6) · **S** (§4c TG-1) · **I** (§3
+  CHECK A + its bypass) · **K.2** (conforming, §6) · **J** (examined and rejected as a P-10 prior).
+- **Tickets:** FOLLOW-658 / 660 / 662 / 674 / 677 / 680 / 690 · ESC-043 · new FOLLOW-691…696.
+
+<!-- next free RETRO number: 226. next free FOLLOW number: 697 (FOLLOW-691..696 filed by RETRO-225).
+RETRO-225 = retro for PR #630 (FOLLOW-678, merged 2026-07-27T08:05:18Z, 5f830b40; OPUS
+retrospective-analyst, session 63). CI independently verified: 61 pass + 2 Rule I = 63 (Rule AF baseline);
+Rule I job 30247793949 = 627 symbols / 192 violations, violations UNCHANGED vs the 618/192 and 619/192
+RETRO-222 recorded -> and that stability is itself the tell (see CHECK A). CHECK A = 2 FINDINGS: (1)
+DEAD_CODE/P2 -> control-plane resolveFirstPartyTenantId (brand-identity.ts:165) has ZERO non-test importers
+(only its own module-private firstPartyTenantIdStatus:188 + brand-identity.test.ts:19); severity scoped BELOW
+the charter default because the logic IS live in-module and only the `export` keyword is unwired -> FOLLOW-691.
+(2) the repo's own gate CANNOT see it: check-rule-i.sh:95-105 resolves consumers with a global
+`grep -rl "\bSYM\b" packages/ apps/` that is PATH-BLIND (the ingest twin of the deliberately-duplicated name
+satisfies the control-plane copy) and COMMENT-BLIND (types.ts:57 mentions it only in a docstring) ->
+FOLLOW-692, new pattern P-10 HELD at 1. CHECK B = 1 HALF_WIRE_P/P1: new signal first_party_tenant_id_malformed
+has producers on both planes (events.ts:160-169, brand-identity.ts:191-201) and NO consumer anywhere -- no
+alert rule, no registry entry -- and on ingest the channel is ABSENT, not merely unrouted:
+INGEST_WORKER_DEPLOY.md:123 (a file THIS PR edited, adding :127-132 four lines below) states SENTRY_DSN_INGEST
+is unset in prod, and wrangler.toml has no logpush/tail_consumers, so logger.warn needs a live wrangler tail.
+AC 2's entire purpose ("visible without a request having to fail", quoted in the shipped docstring
+events.ts:47-52) is therefore false on that plane -> FOLLOW-693 P1. STEP 7 CLOSURE (5 hops:
+operator->classifier->3 consumers->effect->detection): case/whitespace axis REAL closure with red-first proof
+(4 cases marked [would FAIL pre-fix], verified by inspection); malformed axis REAL closure (and it fixed an
+unnamed latent inversion -- pre-fix a garbled paste meant DENY EVERY TENANT on both planes); wrong-but-
+well-formed axis NOT closed in code, deferred to honest docs + a manual §Step 0 2xx probe, and its only
+automated detector (origin_policy_unconfigured Sentry ERROR, events.ts:212) is the same mute channel while the
+SDK still discards the response (FOLLOW-680 premise RE-VERIFIED UNCHANGED at HEAD, sdk/src/core/events.ts:105
+-- no res.ok check). META-VERDICT on the 3-retro "closure was really a relocation" pattern: it CONTINUES
+structurally but has changed CHARACTER -- for the first time in the 097->114->127->141 / 627->629->684 chain
+the residual is LABELLED in 4 merged surfaces + given a diagnostic procedure, not silently moved; the only
+thing keeping it in the pattern's orbit is that the label's detector is unwired. GAPS: 3 logic (LG-1 the
+FOLLOW-660 400 message "FIRST_PARTY_TENANT_ID is not configured" is now false in a SECOND way -- malformed
+falls through to the count probe, so RETRO-222 LG-2's defect shape now has THREE reaching branches; LG-2 the
+wrong-value axis IS closeable on the control-plane plane, which already holds a db handle in the very function
+that reads the env, and was not -- with the honest limit that it cannot prove the ingest secret; LG-3 note-only
+malformed now costs a DB round-trip on 3 surfaces and is a 4th path into FOLLOW-674's soft-delete-blind probe),
+0 code bugs (6 claims re-verified, incl. the NON-OBVIOUS one: routing malformed into the count probe does NOT
+re-open the FOLLOW-660 fabrication -- <=1 tenant means the only tenant IS Estalara, >1 requires the explicit
+hash), 4 test (TG-1 AC 3 satisfied per-APP not per-CONSUMER: isTreatedAsExternalBrand -- the predicate behind
+the consent GET 409, the consent POST 400 AND the DSR alarm -- got NO case-variant test while isFirstPartyTenant
+got three = Rule S; TG-2 the "ONCE" half of AC 2 is untested on both planes and the module-level flag has no
+reset, so brand-identity.test.ts:225's mockClear works only because it is the FIRST malformed read in the file;
+TG-3 platform-registration/route.test.ts was untouched and survives only because its fixtures happen to be
+well-formed UUIDs -- the malformed->count-probe branch this PR created for that route has ZERO coverage,
+including the now-conditional "env SET -> count query never runs" assertion at :478; TG-4 the dsr-routes.test.ts
+fixture substitutions the PM asked about PRESERVE INTENT -- verified branch-by-branch: both external cases take
+the identical valid-non-matching/zero-query branch pre and post, and the substitution was NECESSARY because
+otherwise the env would classify malformed and hit an unprimed third select; the first-party case's
+mockResolvedValueOnce override is order-fragile but fails LOUD), 3+ docs (DG-1 AC 4's five-sentence enumeration
+was a CLAIM not a CENSUS -- MASTER_DESIGN.md:5049-5051 still carries the verbatim unscoped "cannot black-hole"
+over-claim in the SoT, .env.example:57-61 describes the CONTROL-PLANE store with no malformed/wrong-value
+state, BRAND_PROVISIONING.md:315-316 + :584-586 still say only "unset" = Rule AI sighting; DG-2 two shipped
+docstrings promise a visibility property prod does not provide; DG-3 POSITIVE -- the ingest-errors/§Step 0
+probe docs are the Rule AH honesty standard, and the probe is zero-persistence BY CONSTRUCTION, which I
+verified rather than read). PATTERNS: P-9 PRODUCER-ONLY ALARM promoted -> Rule AJ (priors RETRO-154 §4a LG-1 /
+FOLLOW-495 clickhouse_push_failed_post_ack and RETRO-224 §4d DG-3 / FOLLOW-688 brand_identity, both verified at
+their cited lines; checked against K.2/Q/AA before minting -- none requires an EMITTED signal to have a
+CONSUMER; this retro does not inflate the count). P-4 CLASS-CLOSED-ON-ONE-CONSUMER examined against its own
+pre-authorization and explicitly NOT triggered (both consumers were fixed; what remains is another AXIS, not a
+second consumer -- refused to bend the premise). P-10 NAME-COLLISION GATE BYPASS HELD at 1 + pre-authorized.
+Rule S x2, AI x1, AH sighting 7 (conforming kind), AG 5th append. SURFACED FOR THE PM, NOT WRITTEN: QUEUE
+§session-63 claims this PR "closes the entire FIRST_PARTY_TENANT_ID fail-silent bug class" -- fail-SILENT is
+exactly what is unchanged for the wrong-value case; and FOLLOW-680 should be elevated P2->P1. QUEUE.md /
+ESCALATIONS.md / HANDOFFS.md deliberately NOT written (charter). -->

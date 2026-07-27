@@ -2355,3 +2355,118 @@ fires for EVERY tenant incl. first-party Estalara). TIERING: out-of-repo handoff
 P1 because the reader cannot see our diff; in-file docblocks/ADRs/MASTER_DESIGN/CI labels are P2 but the
 changed file's OWN docblock is never exempt. LETTER CHOICE: AI is the next in the double-letter sequence
 after AH. -->
+
+## Rule AJ — A newly-shipped failure-detection signal MUST have a consumer in the SAME PR: an alert/registry entry AND a verified delivery channel in the environment it must fire in; a producer-only alarm is a HALF_WIRE_P, not observability
+
+**Pattern:** A PR closes a silent-failure gap by _emitting_ a signal — `Sentry.captureMessage` /
+`captureException`, a structured `logger.warn`, a new tag — and ships **no consumer** for it. No
+alert rule, no entry in any registry the repo owns, sometimes no DSN in the environment the producer
+runs in. The PR body, the ticket AC and the shipped docstring then describe the change as
+"fail-loud", and every subsequent retro/QUEUE entry inherits that word. The failure is still silent;
+only the _code_ changed.
+
+This is the observability twin of Rule H (a schema scaffold must ship with a runtime-wired consumer)
+and of Rule M (a prod-effect claim needs a workflow that targets prod). It is **not** covered by any
+existing rule — checked before minting: **Rule K.2** governs whether a fire-and-forget path _emits_
+at all and refuses to swallow errors (a producer-side obligation, which producer-only alarms
+satisfy); **Rule Q** governs a CI gate proving its assertion _ran_; **Rule AA** governs whether an
+operator has _performed_ a step; **Rule AI** governs documents that assert a stale truth. None of
+them requires an emitted **runtime** signal to have a **consumer**.
+
+**Evidence (≥2 PRIOR numbered retros, both verified at their cited lines):**
+
+- **RETRO-154 (PR for FOLLOW-459) §4a LG-1 → FOLLOW-495.** After the ClickHouse insert moved past
+  the ACK, `clickhouse_push_failed_post_ack` (`tags sink:clickhouse, kind:insert_failed`) became the
+  **only** signal that the sole production `events` store dropped a batch. No alert rule keys off
+  it. The follow-up asked for "alert, not just capture" and is still open (re-scoped by FOLLOW-515).
+  Count 1.
+- **RETRO-224 (PR #629, FOLLOW-659) §4d DG-3 → FOLLOW-688.** #629 deliberately chose "alert, never
+  block" on `POST /api/dsr/initiate`, making the Sentry tag `brand_identity: unprovisioned_external`
+  the **entire** enforcement mechanism on that surface — and it appears in no rule in
+  `docs/ops/DSR_ALERTING.md`, the repo's own registry of DSR Sentry alert rules, while
+  `BRAND_PROVISIONING.md:543` instructs the operator to "confirm the alert stops". Count 2.
+
+**Promotion trigger — RETRO-225 (PR #630, FOLLOW-678) §3 CHECK B**, the strongest of the three
+because the channel is not merely unrouted but **absent**: the new `first_party_tenant_id_malformed`
+signal is produced on both planes (`apps/ingest/src/handlers/events.ts:160-169`,
+`apps/control-plane/src/lib/brand-identity.ts:191-201`), has zero consumers anywhere, and on the
+ingest plane `SENTRY_DSN_INGEST` is unset in prod (`docs/runbooks/INGEST_WORKER_DEPLOY.md:123` — a
+file the same PR edited four lines above its own note) with no `logpush`/`tail_consumers` in
+`wrangler.toml`, so the `logger.warn` fallback needs a live `wrangler tail`. The shipped docstring
+(`events.ts:47-52`) promises the opposite in as many words. Both banked occurrences are PRIOR retros
+→ threshold met; the promoting retro does **not** inflate the count (adjudication shared with
+AA/AB/AC/AD/AE/V/Q/AG/AH/AI).
+
+**Rule:**
+
+1. A PR that introduces a **new** runtime failure signal (Sentry message/exception, new tag, new
+   structured log key) whose purpose is to make an otherwise-silent failure visible MUST, in the
+   same PR:
+   - **(a) Register it.** Add the signal to a registry the repo owns — `docs/ops/DSR_ALERTING.md`
+     for DSR, otherwise the alert-rule section of `docs/runbooks/observability.md` — with the
+     tag/message key, the severity, a rule recipe (threshold/window), and who is expected to act.
+   - **(b) Prove the channel exists in the environment the producer runs in.** Name the DSN/sink env
+     var and its state in the target environment. If it is unset, the PR either sets it or states,
+     in the PR body **and** in the producing file's docstring, that the signal is currently
+     undeliverable there. "Sentry will pick it up" is not evidence; a `wrangler secret list` /
+     dashboard check is.
+   - **(c) Scope the claim.** A docstring, runbook, AC or QUEUE entry may not describe the change as
+     "fail-loud", "visible", "alerts ops" or "surfaces" beyond what (a) and (b) establish.
+2. When a signal is the **sole** enforcement mechanism on a surface (the code deliberately does not
+   refuse — e.g. alert-rather-than-block on a data-subject right, or degrade-to-off on a config
+   typo), (a) and (b) are **P1**, not P2: the alarm is the control, and an unrouted control is no
+   control.
+3. A retro that finds a new signal with a producer and no consumer classifies it **HALF_WIRE_P**
+   under CHECK B and files a follow-up. An existing unrouted signal touched by the PR is a doc/AC
+   gap, not a new half-wire, but MUST be cited so the count is visible.
+4. The registry entry is the consumer of record. Absent a registry, "someone will see it in the
+   Sentry UI" is treated as **no consumer** — the same adjudication CHECK B applies to a DB column
+   no code reads.
+
+**Distinct axis from:** Rule H (schema scaffold ↔ runtime consumer — structural, not observability);
+Rule K.2 (the consumer must not swallow — producer-side emission, which this rule presupposes); Rule
+M (automation claimed to affect prod must target prod); Rule Q (a CI gate must prove it ran); Rule
+AA (whether the operator ran the step, not whether the alarm reaches anyone); Rule AI (documents
+asserting a stale claim — AJ is about the runtime wire, AI about the prose, and a producer-only
+alarm usually trips both).
+
+**Verification:**
+
+```bash
+# 1. Every new signal key introduced by the PR must appear outside its producer + tests.
+git diff origin/main | grep -oE "captureMessage\('([a-z0-9_]+)'|captureException.*kind: '([a-z0-9_]+)'" \
+  | grep -oE "'[a-z0-9_]+'" | tr -d "'" | sort -u | while read -r sig; do
+    hits=$(grep -rln "$sig" docs/ops docs/runbooks 2>/dev/null | wc -l)
+    [ "$hits" -eq 0 ] && echo "FAIL (AJ.1a): '$sig' has no registry entry in docs/ops or docs/runbooks"
+  done
+
+# 2. The channel must exist where the producer runs (example: the ingest Worker).
+grep -rn "SENTRY_DSN" apps/<app>/src/observability.ts   # confirm the no-op-without-DSN branch
+pnpm exec wrangler secret list --env production | grep SENTRY_DSN_INGEST \
+  || echo 'FAIL (AJ.1b): producer runs in an environment with no Sentry DSN'
+grep -qE '^\s*logpush|tail_consumers' apps/<app>/wrangler.toml \
+  || echo 'WARN (AJ.1b): logger.* fallback is only visible during a live `wrangler tail`'
+
+# 3. The claim must not outrun the wire.
+git diff origin/main | grep -nE '\+.*(fail[- ]loud|visible in (Sentry|logs)|alerts ops|surfaces)' \
+  # every hit must be justified by an AJ.1a registry entry added in the same diff
+```
+
+---
+
+<!-- Rule AJ added 2026-07-27 — RETRO-225 §6 (Pattern P-9, PRODUCER-ONLY ALARM). Evidence (≥2 PRIOR numbered
+retros): RETRO-154 §4a LG-1 / FOLLOW-495 (clickhouse_push_failed_post_ack became the sole signal that the sole
+prod events store dropped a batch after FOLLOW-459 moved the CH insert past the ACK; no alert rule; follow-up
+still open, re-scoped by FOLLOW-515; count 1) + RETRO-224 §4d DG-3 / FOLLOW-688 (#629's brand_identity:
+unprovisioned_external tag is the ENTIRE enforcement mechanism on the DSR path and is in no rule in
+DSR_ALERTING.md while BRAND_PROVISIONING.md:543 tells the operator to "confirm the alert stops"; count 2).
+Promotion trigger: RETRO-225 §3 CHECK B — PR #630's first_party_tenant_id_malformed has producers on BOTH
+planes and zero consumers, and on ingest the channel is ABSENT not merely unrouted (SENTRY_DSN_INGEST unset per
+INGEST_WORKER_DEPLOY.md:123 — the same file the PR edited four lines below — plus no logpush/tail_consumers in
+wrangler.toml), while events.ts:47-52 promises the opposite. The promoting retro does NOT inflate the count.
+CHECKED BEFORE MINTING, per RETRO-224's anti-duplication discipline: K.2 = producer-side emission (this PR
+CONFORMS to K.2 and still fails AJ), Q = a CI gate proving its assertion ran, AA = whether an operator ran a
+step, AI = stale prose. None requires an emitted RUNTIME signal to have a CONSUMER — AJ is a new axis, not a
+fourth rule on the doc-truth axis. TIERING: clause 2 makes (a)+(b) P1 whenever the alarm is the sole
+enforcement mechanism (alert-rather-than-block, or degrade-to-off), P2 otherwise. LETTER CHOICE: AJ is the next
+in the double-letter sequence after AI. -->

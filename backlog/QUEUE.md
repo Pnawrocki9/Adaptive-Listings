@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-27 (session 63 close — FOLLOW-678 MERGED (PR #630, `5f830b40`); retrospective-analyst dispatched; pipeline still gated on 3 open escalations)
+## ▶️ START HERE — resume 2026-07-27 (session 63 close — FOLLOW-678 MERGED (PR #630, `5f830b40`); RETRO-225 done, 6 follow-ups filed (691-696), Rule AJ codified; pipeline still gated on 3 open escalations)
 
 **FOLLOW-678 DONE.** PR #630 merged 2026-07-27T08:05:18Z (`5f830b40`) — confirmed via
 `gh pr view 630 --json state,mergedAt,mergeCommit`. All 5 ACs shipped: canonicalized
@@ -8,10 +8,22 @@
 `isTreatedAsExternalBrand`/`isFirstPartyTenant` (control-plane); warn-once-per-isolate Sentry
 logging on a malformed env in both apps; case-variant + malformed-value test coverage; five doc
 sentences re-scoped off the unqualified "never a traffic outage" claim; mandatory post-flip
-verification probe added to `BRAND_PROVISIONING.md` §Step 0. This closes the entire
-`FIRST_PARTY_TENANT_ID` fail-silent bug class opened by FOLLOW-658/659/660. `retrospective-analyst`
-dispatched per the standard per-ticket loop (§ CLAUDE.md "Per-ticket retrospective loop") — see
-RETRO-NNN in `backlog/RETROSPECTIVES.md` once complete.
+verification probe added to `BRAND_PROVISIONING.md` §Step 0.
+
+**Correction (RETRO-225 caught my own overclaim in the prior version of this note): this does NOT
+close the entire `FIRST_PARTY_TENANT_ID` fail-silent bug class.** It closes the case/whitespace and
+malformed axes cleanly (both were real, both are now tested, red-first-verified fixes). It does
+**not** close the fail-**silent** part for the remaining axis: a well-formed-but-WRONG UUID still
+403s 100% of first-party ingest, the SDK still discards the response (FOLLOW-680, just elevated
+P2→P1), and the one server-side detector (`origin_policy_unconfigured`) rides a Sentry channel that
+is currently mute in prod (`SENTRY_DSN_INGEST` unset — FOLLOW-693, P1, new). The new
+`first_party_tenant_id_malformed` signal this PR added is itself a producer-only alarm with no
+consumer (same FOLLOW-693). Full breakdown: RETRO-225 in `backlog/RETROSPECTIVES.md`; new tickets
+FOLLOW-691 (dead control-plane export), FOLLOW-692 (Rule I path/comment-blindness), FOLLOW-693 (P1 —
+alarm wiring), FOLLOW-694 (3 more unscoped doc surfaces incl. MASTER_DESIGN §V.3.4), FOLLOW-695
+(control-plane 400 message + provable wrong-value detection), FOLLOW-696 (test gaps in the ACs PR
+#630 claims met). New rule **AJ** codified in `CONVENTIONS_PATCH.md` (producer-only alarms are
+HALF_WIRE_P).
 
 **Local-repo note:** local `main` had one stray unpushed commit (`04a397a`, PM dispatch bookkeeping)
 whose entire content was already carried into `5f830b40` via the PR branch (it was cut from that

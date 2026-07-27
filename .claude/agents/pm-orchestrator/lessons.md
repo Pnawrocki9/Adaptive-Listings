@@ -2622,3 +2622,32 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   reports a cache hit must be re-run with cache bypass, because a cache hit silently replays the
   crashed worker's run under the recovering party's name. And when a permanently-red gate is the
   only failure, always diff its FINDING COUNT against `main`, never just its status.
+
+---
+
+- **Date / ticket:** 2026-07-27 — none dispatched (escalation gate holds: ESC-020/041/042)
+- **Delegation row used:** none — pipeline gated, no ticket picked.
+- **What validation caught (or missed):** Nothing to validate (0 open PRs, 0 real IN_PROGRESS
+  tickets) — but re-verified this independently rather than trusting the session-61 QUEUE.md
+  narrative: re-ran `gh pr list --state open`, re-read all three OPEN escalations directly (not the
+  summary) to confirm each still has an empty Resolution field, and grepped QUEUE.md's stray
+  `IN_PROGRESS` hit (FOLLOW-613) back to FOLLOW_UPS.md to confirm it was historical, not current.
+- **A delegation/validation rule I'd add:** none — this pass confirms the existing "STOP on any open
+  escalation, don't take the prior session's summary on faith" rule is working as intended; no gap
+  found.
+
+---
+
+- **Date / ticket:** 2026-07-27 — ESC-042 ruling + FOLLOW-678 dispatch
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" → backend-engineer (FOLLOW-678, Sonnet).
+- **What validation caught (or missed):** The CEO's ruling text on ESC-042 read as if the
+  `CHAT_NLP_LIVE` cleanup was still open work to dispatch. Verify-not-guess caught that it had
+  already been fully shipped 3 days earlier (PR #613/FOLLOW-635) — grepped for zero remaining
+  `CHAT_NLP_LIVE` code hits and re-read the actual docstrings/test file rather than trusting either
+  the ruling's framing or the QUEUE.md narrative. Avoided dispatching a redundant ml-engineer ticket
+  for work that didn't exist to do.
+- **A delegation/validation rule I'd add:** When a human ruling arrives on an escalation, always
+  re-check the live repo state before dispatching the ruling's action items — a ruling can lag
+  behind work that was already completed under an earlier informal decision; treat the ruling as an
+  instruction to verify-then-act, never as proof the described gap still exists.

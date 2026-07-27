@@ -2590,7 +2590,7 @@ expiry fires loudly).
 
 ---
 
-## OPEN — ESC-042: un-shadowing chat NLP for the pilot (FOLLOW-635) is a DEPLOY-only enablement, not an ML-code change — plus one design ruling on the vestigial `CHAT_NLP_LIVE` gate [FOLLOW-635]
+## OPEN (narrowed) — ESC-042: Modal `intent-engine` deploy is the sole remaining chat-un-shadow blocker — design ruling (item 2) RESOLVED 2026-07-27 [FOLLOW-635]
 
 **Filed by:** ml-engineer (FOLLOW-635) **Date:** 2026-07-24T00:00:00Z **Affects:** FOLLOW-635, chat
 NLP intent path (`apps/intent-engine`, `apps/ingest/src/handlers/chat-nlp-dispatch.ts`,
@@ -2656,4 +2656,41 @@ I did NOT open a code PR: there is no mechanical ml-code change that un-shadows 
 wired; enablement is the deploy). The docstring/flag cleanup is deferred pending the (A)/(B) ruling
 so it lands atomically with the chosen direction.
 
-**Resolution:** <empty until resolved>
+**Resolution (partial — item 2 only):** **RESOLVED 2026-07-27 — CEO ruling: Option (A).** Accept the
+client prior loop as the live path; delete the vestigial `CHAT_NLP_LIVE` flag and correct the
+now-false "shadow-only / zero UX effect / purely behavioural" docstrings; update the FOLLOW-346 test
+contract to match. **Option (B) server-side fusion is explicitly NOT approved** — not to be built,
+no fusion weight to invent.
+
+**Verified-not-guessed before acting on this ruling:** re-read the actual repo state rather than
+assuming the ruling described undone work. **All of item 2 was already shipped 2026-07-24, three
+days before this ruling landed** — `ml-engineer` (Opus) scoped and built it same-day as this
+escalation was filed, per `backlog/QUEUE.md` session-57 head and `backlog/FOLLOW_UPS.md` FOLLOW-635:
+
+- PR #613, squash-merged `5ab923b` (2026-07-24T15:24:37+02:00,
+  `chore(intent): remove vestigial CHAT_NLP_LIVE flag, fix shadow-only docstrings [FOLLOW-635] (#613)`).
+- `grep -rn CHAT_NLP_LIVE` across the live tree returns **zero** occurrences outside
+  backlog/docs/comments narrating its removal and one `packages/shared/src/directives.ts:174`
+  docstring that correctly describes it as removed — no `process.env.CHAT_NLP_LIVE` read remains
+  anywhere in `apps/control-plane`, `apps/intent-engine`, or `packages/sdk`.
+- Docstrings independently re-read at `apps/control-plane/src/app/api/adapt/route.ts:1559-1573` and
+  `packages/shared/src/directives.ts:160-181`: both now correctly state the field is
+  live-influencing (not shadow-only), attached unconditionally, with no server-side gate, and that
+  the ONLY remaining blocker is the ESC-042 Modal deploy (item 1 below) — an honest,
+  non-overclaiming description.
+- `apps/control-plane/src/app/api/adapt/route.follow346.test.ts` exists and its `describe` block
+  (`FOLLOW-346 / FOLLOW-635: chat-intent shadow-read bridge (no CHAT_NLP_LIVE gate)`) asserts the
+  new unconditional-attach behavior — the FOLLOW-346 test contract update this ruling asked for is
+  done.
+
+**No new ml-engineer ticket dispatched for item 2** — there is nothing left to build; the ruling
+formalizes work already merged. If a docstring/test gap is found on a future audit, re-open as a
+fresh, separately-numbered ticket rather than reusing this closed item.
+
+**Item 1 (Modal Phase B operator deploy) stays OPEN, narrowed scope, re-titled above.** This is now
+a pure operator/devops task — `modal deploy apps/intent-engine/src/main.py`; confirm
+`estalara-secrets` has `INTERNAL_API_SECRET` + Upstash REST creds pointing at the SAME Upstash the
+control-plane reads; set `MODAL_CHAT_NLP_URL` (+ matching secret) in the ingest Worker prod env — no
+agent in this pipeline can execute it. Per 2026-07-27 dispatch-policy ruling (same treatment as
+ESC-020): **treated as non-blocking-for-dispatch**, kept OPEN, and surfaced in every session close
+until an operator runs the deploy and confirms live (chat_intent shadow key populated end-to-end).

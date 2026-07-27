@@ -1,3 +1,87 @@
+# Status — 2026-07-27 (session 62b — CEO rulings actioned, ESC-042 narrowed/partially resolved, dispatch resumed, FOLLOW-678 IN_PROGRESS)
+
+## SESSION 62b (2026-07-27) — two CEO rulings actioned; pipeline unblocked; FOLLOW-678 dispatched
+
+**Rulings received mid-session from the coordinator (Piotr):**
+
+1. **ESC-042 design ruling: Option (A).** Client-prior-loop is the live chat path; delete
+   `CHAT_NLP_LIVE`, fix docstrings, update FOLLOW-346 test contract; Option (B) explicitly rejected.
+2. **Dispatch policy: resume dispatching** with ESC-020/ESC-041 (standing external,
+   non-PM-actionable blockers) OPEN but non-blocking-for-dispatch — same treatment sessions 59-61
+   already applied. Not a blanket "ignore escalations" — new/actionable ones still halt the line.
+
+**Verify-not-guess catch before acting on ruling 1:** re-read the live repo rather than assuming the
+ruling described undone work. **The entire code-cleanup ask was already shipped 2026-07-24** via PR
+#613 (`5ab923b`, FOLLOW-635) — three days before this ruling arrived. Confirmed via
+`grep -rn CHAT_NLP_LIVE` (zero live code hits), direct re-read of
+`apps/control-plane/src/app/api/adapt/route.ts:1559-1573` and
+`packages/shared/src/directives.ts:160-181` (docstrings already honest/correct), and
+`apps/control-plane/src/app/api/adapt/route.follow346.test.ts` (test contract already rewritten).
+**No redundant ml-engineer ticket dispatched.** Recorded this finding + the ruling in
+`backlog/ESCALATIONS.md` (ESC-042 title narrowed, partial-resolution section added for item 2, item
+1 — the Modal Phase B operator deploy — stays OPEN and is now explicitly non-blocking-for-dispatch).
+
+**Bookkeeping done BEFORE dispatch (no concurrent git ops with a running subagent):**
+`backlog/ESCALATIONS.md` (ESC-042 narrowed/partial-resolved), `backlog/QUEUE.md` (new session-62
+head + FOLLOW-678 ticket entry), `backlog/FOLLOW_UPS.md` (FOLLOW-678 `promoted_to_queue: true`),
+committed as a single docs commit prior to dispatching any subagent.
+
+**Dispatched FOLLOW-678** (P1, canonicalize `FIRST_PARTY_TENANT_ID` string comparison + warn-once
+log
+
+- doc re-scope + tests) to **backend-engineer, model Sonnet** (routine, well-scoped, single-module,
+  no prior failed attempt — does not meet the Opus/Fable escalation bar). Delegation-table row:
+  "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing,
+  webhooks." Branch `backend-engineer/FOLLOW-678-first-party-tenant-id-canonicalize`.
+  `depends_on: []` independently re-verified against `apps/ingest/src/origin-gate.ts` and
+  `apps/control-plane/src/lib/brand-identity.ts` before dispatch (not taken from the stub alone).
+
+**CI-check counter:** 0/5 (no PR yet). **Fix-iteration counter:** 0/3. **Tickets IN_PROGRESS: 1**
+(FOLLOW-678) — well under the 3-ticket cap.
+
+---
+
+# Status — 2026-07-27 (session 62 — clean loop pass, nothing to validate, escalation gate still holds — 0 tickets IN_PROGRESS, 0 open PRs, 3 escalations OPEN)
+
+## SESSION 62 (2026-07-27) — state re-verified independently, no dispatch, no validation work available
+
+**State read:** `docs/MASTER_DESIGN.md` §Snapshot.1, `backlog/QUEUE.md` (session-61 head),
+`backlog/ESCALATIONS.md`, `backlog/HANDOFFS.md`, `git log --oneline -20`, `gh pr list --state open`.
+
+**Verified live, not taken on the prior session's word:**
+
+- `gh pr list --state open` → **empty** (confirmed via direct `gh` call, not just QUEUE.md's
+  narrative).
+- `git log --oneline -20` matches QUEUE.md's own record exactly; `main` @ `ec04da2` (ESC-043
+  resolution commit), working tree clean except the pre-existing untracked `.retro-tmp/` (two
+  permission-blocked lesson-append stubs from session 61's retro sweep — `lesson223.md`,
+  `lesson224.md` — left in place per that session's note, not my job to fold in this pass).
+- `git worktree list` → only the main tree plus one `prunable` detached-HEAD scratchpad worktree at
+  a `/tmp/claude-*` path (not a `.claude/worktrees/agent-*` path) — confirmed NOT stranded agent
+  work, just leftover scratch state. `.claude/worktrees/` itself is empty.
+- Re-read `backlog/ESCALATIONS.md` directly (not the QUEUE.md summary) for all three claimed-open
+  escalations and confirmed each is still genuinely `## OPEN` with an empty `**Resolution:**` field:
+  **ESC-020** (Rafał — Estalara-app DOM hooks not deployed to prod; explicitly annotated "does NOT
+  block the PM pipeline" by a prior CEO clarification, but still open itself), **ESC-041** (npm
+  registry E403 on the `Release` workflow — needs registry-owner access, a human call), and
+  **ESC-042** (Modal `intent-engine` deploy + an explicit "CEO/PM DESIGN RULING" request on the
+  `CHAT_NLP_LIVE` flag — out of PM scope per the no-architectural-calls guardrail).
+- Grepped QUEUE.md for any current `IN_PROGRESS` ticket record: the only hits are historical log
+  entries (e.g. FOLLOW-613, dated 2026-07-22) already long superseded by later sessions — confirmed
+  via `backlog/FOLLOW_UPS.md` that FOLLOW-613 reached LIVE/closed status well before session 61. **0
+  tickets genuinely IN_PROGRESS today.**
+
+**Conclusion:** Per the operating loop's own gate — "If any ESCALATIONS entry is unresolved → STOP,
+print it, ask the human. Do not pick a new ticket while escalations are open" — no new ticket may be
+dispatched. There is also no open PR to run steps 5a-5g against, and no IN_PROGRESS/stalled work to
+recover. This session's only output is a re-verification pass (nothing taken on trust) plus this
+bookkeeping update. Nothing regressed since session 61's close; the bottleneck remains identical:
+human review/decisions on ESC-020 / ESC-041 / ESC-042.
+
+**CI-check counter:** 0/5 (no PR touched this session). **Fix-iteration counter:** 0/3.
+
+---
+
 # Status — 2026-07-26 (session 60 — FOLLOW-660 recovered from a stalled agent → PR #627 PM-validated; no new dispatch, 4 escalations OPEN)
 
 ## SESSION 60 (2026-07-26) — recovery + validation of FOLLOW-660; pipeline held at the escalation gate

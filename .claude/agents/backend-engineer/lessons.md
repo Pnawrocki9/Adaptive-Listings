@@ -2170,3 +2170,33 @@ would generalize this beyond just `adapt-get-auth`.
   route which writes a whole JSONB column must round-trip every key its own reader module parses —
   the "handler rewrites the blob from the keys it knows" pattern silently deletes fields owned by a
   different module, and it is invisible to types, tests and grep.
+
+- **2026-07-27 / FOLLOW-697 + FOLLOW-698 (PR #632)** · **What I built**: re-keyed the consent-POST
+  step-7c brand gate onto EVIDENCE instead of the `isUnprovisionedExternalBrand` diagnosis (a
+  provisioned brand's correct hash is computable in-repo, so the canonical Estalara hash is provably
+  wrong for it), and made the shared first-party predicate tri-state (`classifyTenantBrandScope` →
+  `first_party` / `external` / `indeterminate` + a `basis` discriminator), so a swallowed
+  tenant-count read failure answers a retryable 500 `{data_source:'db',degraded:true}` instead of a
+  422 that discarded Estalara's own visitor consent. · **Wiring/auth/fail-loud risks I weighed**:
+  (a) the AC literally said "tri-state", but two of its test cases demanded DIFFERENT outcomes for
+  two different unknowns — a caught read error (→500) vs "env unset + >1 tenant" (→201). Resolving
+  that needed a fourth distinction, which I expressed as `scope` + `basis` rather than a fourth
+  scope, so `indeterminate` keeps meaning exactly "the dependency failed" and the AC stays literally
+  satisfied; (b) the two call sites that MUST keep boolean fail-closed semantics were preserved by
+  collapsing `scope !== 'first_party'` — provably identical to the old `catch → return true` in all
+  five reachable states, and proven by leaving their six pre-existing unit tests byte-identical
+  rather than by re-asserting it in prose; (c) nearly shipped a NEW false accusation:
+  `CANONICAL_CONSENT_TEXT_HASH` is a hand-written placeholder that does NOT equal
+  `computeConsentTextHash(renderPlatformConsentText(estalara))`, so a pure computed-hash comparison
+  would 422 a tenant provisioned AS Estalara — caught by computing both values before writing the
+  branch, and guarded with `rendersFirstPartyIdentity()`; (d) refused to reuse the
+  `unprovisioned_external` Sentry tag for the unattributable case (it would assert something the
+  code never established) and instead flagged the two new tag values to the PM for FOLLOW-700's
+  registry; (e) the "cost unchanged" AC turned out to be a REAL regression #631 shipped (two
+  tenant-count probes on today's live omitted-hash flow) — fixed by guarding the scope branch on an
+  explicit hash, since a hash-less request reaching 7c was already proven first-party by 7b. · **A
+  guardrail I'd add**: when a PR adds a gate that can return a 4xx, require the diff to enumerate
+  every input state that reaches the refusal INCLUDING the ones produced inside a `catch` — "it
+  fails closed" is only a complete argument when the false-positive costs nothing, and here the
+  false positive was a destroyed legal record. A grep-able version: any `return` of a 4xx whose
+  condition transitively reads a value assigned in a catch block is a CI warning.

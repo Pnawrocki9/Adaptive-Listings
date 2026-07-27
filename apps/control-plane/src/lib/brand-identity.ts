@@ -259,7 +259,10 @@ export function isFirstPartyTenant(tenantId: string): boolean {
  * fabrication this closes. The fix is one CORRECT, well-formed env var, and the 400 says so.
  *
  * Fail-CLOSED on a count error: if the tenant count cannot be read we require the hash, because
- * the alternative is defaulting a legal attestation on unknown state.
+ * the alternative is defaulting a legal attestation on unknown state. That direction is correct
+ * HERE because the consequence is "ask the caller for more input", not "refuse a write" — see
+ * {@link classifyTenantBrandScope} for the tri-state the write path consumes instead
+ * (FOLLOW-698).
  *
  * @param db - An admin (service-role) Drizzle client.
  * @param tenantId - The tenant UUID from the validated request body.
@@ -273,15 +276,88 @@ export async function requiresExplicitConsentHash(
 }
 
 /**
+ * Evidence-carrying answer to "is this tenant the first-party (Estalara) tenant?" [FOLLOW-698]
+ *
+ * TRI-STATE on purpose (Rule K.2 fail-CLOSED-value-laundering amendment). The pre-FOLLOW-698
+ * shape was a bare `boolean` produced partly inside a `catch`, so "I could not determine this"
+ * was indistinguishable from "I determined this tenant is external" — and every caller then
+ * rendered that value to a client as a statement of fact. `indeterminate` makes the unknown
+ * legible to the caller, which is the only way a WRITE path can refuse to refuse.
+ *
+ * `basis` records HOW the scope was reached, because the two `external` bases carry very
+ * different evidential weight:
+ *   - `env_mismatch` — `FIRST_PARTY_TENANT_ID` is set and this tenant is NOT it. PROVEN external.
+ *   - `first_party_unidentifiable` — the env is unset/malformed and more than one tenant row
+ *     exists, so no code path can say which row is Estalara. Every fail-closed gate treats this
+ *     as external (that is the FOLLOW-660 safety net and it is correct for gates that refuse to
+ *     SERVE or demand more input), but it is NOT proof that THIS tenant is external — the caller
+ *     may be Estalara itself. A gate that refuses or discards a WRITE must not fire on it.
+ *
+ * @see {@link requiresExplicitConsentHash} for the decision table this classification implements.
+ */
+export type TenantBrandScope =
+  | { scope: 'first_party'; basis: 'env_match' | 'sole_tenant' }
+  | { scope: 'external'; basis: 'env_mismatch' | 'first_party_unidentifiable' }
+  | { scope: 'indeterminate'; basis: 'tenant_count_read_failed' };
+
+/**
  * Core first-party detection shared by every "is this an external brand?" gate in this module
  * (FOLLOW-659 — extracted from {@link requiresExplicitConsentHash} rather than re-derived, so a
- * second differently-shaped check can never drift from the first).
+ * second differently-shaped check can never drift from the first; made tri-state by FOLLOW-698).
  *
- * Module-private on purpose: callers should express their INTENT
- * ({@link requiresExplicitConsentHash}, {@link isUnprovisionedExternalBrand}) so each gate's
- * fail-closed semantics stay documented at its own call site.
+ * Exported because `POST /api/v1/consent/platform-registration` step 7c — the only gate here
+ * that can refuse a WRITE — must read the evidence directly rather than a fail-closed boolean.
+ * Gates that merely refuse to SERVE or demand more input keep consuming the boolean wrappers
+ * ({@link requiresExplicitConsentHash}, {@link isUnprovisionedExternalBrand}), whose behaviour is
+ * unchanged by this function's tri-state shape.
  *
  * See {@link requiresExplicitConsentHash} for the decision table and the fail-CLOSED rationale.
+ *
+ * @param db - An admin (service-role) Drizzle client.
+ * @param tenantId - The tenant UUID.
+ * @returns The scope plus the evidence it was derived from — never a laundered unknown.
+ */
+export async function classifyTenantBrandScope(
+  db: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+): Promise<TenantBrandScope> {
+  const resolved = firstPartyTenantIdStatus();
+  // Env SET to a well-formed UUID — the configured tenant is first-party; everyone else is
+  // external. Both operands canonicalized (trim + lower-case) so case/whitespace never cause a
+  // false mismatch [FOLLOW-678]. UNSET *and* malformed both fall through to the tenant-count
+  // probe below — see {@link requiresExplicitConsentHash}'s decision table for why malformed
+  // must NOT take this branch.
+  if (resolved.status === 'valid') {
+    return tenantId.trim().toLowerCase() === resolved.value
+      ? { scope: 'first_party', basis: 'env_match' }
+      : { scope: 'external', basis: 'env_mismatch' };
+  }
+
+  // Env UNSET (or malformed) — "everyone is first-party" is safe only while exactly one tenant
+  // can exist.
+  try {
+    const rows = await db.select({ id: tenants.id }).from(tenants).limit(2);
+    return rows.length > 1
+      ? { scope: 'external', basis: 'first_party_unidentifiable' }
+      : { scope: 'first_party', basis: 'sole_tenant' };
+  } catch (err: unknown) {
+    console.error(
+      '[brand-identity] tenant-count guard failed — brand scope is INDETERMINATE (boolean ' +
+        'callers still fail CLOSED to "external"; write-path callers must NOT refuse on this):',
+      err instanceof Error ? err.message : err,
+    );
+    return { scope: 'indeterminate', basis: 'tenant_count_read_failed' };
+  }
+}
+
+/**
+ * Boolean fail-CLOSED collapse of {@link classifyTenantBrandScope}, preserved verbatim for the
+ * gates whose consequence is "refuse to SERVE" or "demand more input" — where treating an
+ * unknown as external is the correct direction (Rule K.2 amendment §2).
+ *
+ * `indeterminate` collapses to `true`, exactly as the pre-FOLLOW-698 `catch → return true` did,
+ * so {@link requiresExplicitConsentHash} (consent POST step 7b) and
+ * {@link isUnprovisionedExternalBrand} (consent GET, DSR initiate) are behaviourally unchanged.
  *
  * @param db - An admin (service-role) Drizzle client.
  * @param tenantId - The tenant UUID.
@@ -291,26 +367,27 @@ async function isTreatedAsExternalBrand(
   db: ReturnType<typeof createAdminClient>,
   tenantId: string,
 ): Promise<boolean> {
-  const resolved = firstPartyTenantIdStatus();
-  // Env SET to a well-formed UUID — the configured tenant is first-party; everyone else is
-  // external. Both operands canonicalized (trim + lower-case) so case/whitespace never cause a
-  // false mismatch [FOLLOW-678]. UNSET *and* malformed both fall through to the tenant-count
-  // probe below — see this function's docstring decision table for why malformed must NOT take
-  // this branch.
-  if (resolved.status === 'valid') return tenantId.trim().toLowerCase() !== resolved.value;
+  return (await classifyTenantBrandScope(db, tenantId)).scope !== 'first_party';
+}
 
-  // Env UNSET (or malformed) — "everyone is first-party" is safe only while exactly one tenant
-  // can exist.
-  try {
-    const rows = await db.select({ id: tenants.id }).from(tenants).limit(2);
-    return rows.length > 1;
-  } catch (err: unknown) {
-    console.error(
-      '[brand-identity] tenant-count guard failed — treating tenant as external:',
-      err instanceof Error ? err.message : err,
-    );
-    return true;
-  }
+/**
+ * Whether a resolved identity renders the FIRST-PARTY Estalara display identity — either because
+ * it is the fail-honest fallback, or because a tenant explicitly configured those exact values.
+ *
+ * Used by the consent POST's canonical-hash refusal (FOLLOW-697): the canonical EN §6.1 hash is
+ * only PROVABLY the wrong text for a tenant that renders some OTHER display identity. Note that
+ * `CANONICAL_CONSENT_TEXT_HASH` is a constant pinned to the published §6.1 text and is NOT equal
+ * to `computeConsentTextHash(renderPlatformConsentText(estalaraIdentity))`, so a
+ * computed-hash comparison alone would mis-accuse a tenant provisioned AS Estalara.
+ *
+ * @param identity - A resolved brand identity.
+ */
+export function rendersFirstPartyIdentity(
+  identity: Pick<BrandIdentity, 'brandName' | 'legalEntity'>,
+): boolean {
+  return (
+    identity.brandName === ESTALARA_BRAND_NAME && identity.legalEntity === ESTALARA_LEGAL_ENTITY
+  );
 }
 
 /**

@@ -1,5 +1,35 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 65 — FOLLOW-684 validated, PR #631 READY_FOR_REVIEW; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**Session interrupted mid-FOLLOW-684, resumed and closed out.** backend-engineer had already
+committed the fix (`70d2a70a`), pushed the branch, and opened PR #631 before the interruption —
+found on resume via `git log`/`gh pr list`, working tree clean, nothing stranded. Ran the PM
+validation loop myself:
+
+- `gh pr checks 631`: 61/63 pass. The 2 failures are both "Rule I — wired-or-dead check" — confirmed
+  pre-existing-red/non-blocking per `project_ci_gate_landscape` memory, not a regression from this
+  diff.
+- Read the full diff (`git show 70d2a70a`) against all 5 ACs in the FOLLOW-684 delegation brief
+  below: guard placed at step 7c (after DB client exists, before any write) ✓; Sentry `error`
+  capture with `route: 'consent/platform-registration'` + `brand_identity: 'unprovisioned_external'`
+  tags, same shape as the DSR path's existing capture ✓; hard-refuse is scoped to the provable
+  sub-case only (`consent_text_hash === CANONICAL_CONSENT_TEXT_HASH`), 422
+  `consent_text_hash_fabricated`, general brand-specific-hash case deliberately left alone with the
+  reasoning stated in-code and in the commit message (AC-3) ✓; `isFallbackIdentity` short-circuit
+  cost note present and correct (AC-5) ✓.
+- Confirmed the AC-4 four-case test matrix + AC-5 zero-cost case exist in `route.test.ts`
+  (`describe('POST brand identity provisioning gate (FOLLOW-684)')`).
+- Ran the suite locally: `npx vitest run src/app/api/v1/consent/platform-registration/route.test.ts`
+  → **43/43 passed**, including all 4 new AC-4 cases and the first-party byte-identical/no-capture
+  case.
+
+**FOLLOW-684 → status: READY_FOR_REVIEW.** PR #631 is mergeable and validated; only outstanding item
+is Piotr's merge decision. Next pick after merge: FOLLOW-685 (backend-engineer, P1, no deps,
+docs/handoff-only — flagged as the good next pick in the prior session's note below).
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 64 — FOLLOW-684 promoted + dispatched to backend-engineer; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **Re-verified before dispatch (not taken on trust):** `git status` clean on `main`, up to date with
@@ -43,7 +73,7 @@ returning exactly one hit (the GET, line 246). The INSERT at `:454-467` stores
 `consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH` unconditionally once the
 duplicate-nonce check passes. Ticket premise confirmed accurate.
 
-### FOLLOW-684 — status: IN_PROGRESS
+### FOLLOW-684 — status: READY_FOR_REVIEW (PR #631, all checks green modulo pre-existing-red Rule I, 43/43 tests pass locally)
 
 **assigned_to:** backend-engineer **model: Sonnet** — routine implementation inside a well-defined
 module the agent already owns (one new guard call + one hard-refuse branch + tests), matching the

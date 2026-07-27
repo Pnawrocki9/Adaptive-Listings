@@ -1,6 +1,25 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-27 (session 62 — CEO rulings on ESC-042 + dispatch policy; pipeline UNGATED, FOLLOW-678 dispatched)
+## ▶️ START HERE — resume 2026-07-27 (session 63 close — FOLLOW-678 MERGED (PR #630, `5f830b40`); retrospective-analyst dispatched; pipeline still gated on 3 open escalations)
+
+**FOLLOW-678 DONE.** PR #630 merged 2026-07-27T08:05:18Z (`5f830b40`) — confirmed via
+`gh pr view 630 --json state,mergedAt,mergeCommit`. All 5 ACs shipped: canonicalized
+`FIRST_PARTY_TENANT_ID` comparison (trim + lower-case) in `isUnprovisionedExternalTenant` (ingest),
+`isTreatedAsExternalBrand`/`isFirstPartyTenant` (control-plane); warn-once-per-isolate Sentry
+logging on a malformed env in both apps; case-variant + malformed-value test coverage; five doc
+sentences re-scoped off the unqualified "never a traffic outage" claim; mandatory post-flip
+verification probe added to `BRAND_PROVISIONING.md` §Step 0. This closes the entire
+`FIRST_PARTY_TENANT_ID` fail-silent bug class opened by FOLLOW-658/659/660. `retrospective-analyst`
+dispatched per the standard per-ticket loop (§ CLAUDE.md "Per-ticket retrospective loop") — see
+RETRO-NNN in `backlog/RETROSPECTIVES.md` once complete.
+
+**Local-repo note:** local `main` had one stray unpushed commit (`04a397a`, PM dispatch bookkeeping)
+whose entire content was already carried into `5f830b40` via the PR branch (it was cut from that
+local commit). Reconciled locally via merge + `rebase --skip` (dropping `04a397a` as a pure no-op
+against `5f830b40`) rather than a force-reset — nothing pushed, origin/main unaffected, no data
+lost, local history now linear on top of origin.
+
+## ▶️ (prev) session 62 head — resume 2026-07-27 (session 62 — CEO rulings on ESC-042 + dispatch policy; pipeline UNGATED, FOLLOW-678 dispatched)
 
 **Two CEO rulings received, both actioned before any dispatch (bookkeeping-first, no concurrent git
 ops with a running subagent):**
@@ -38,7 +57,7 @@ confirmed genuinely free) — see ticket entry below for full delegation brief.
 per ruling 2 above:** ESC-020 (Rafał), ESC-041 (npm registry), ESC-042 (narrowed — Modal deploy
 only). Surfaced every session close per the ruling.
 
-### FOLLOW-678 — status: READY_FOR_REVIEW (PR #630, CI green)
+### FOLLOW-678 — status: DONE (PR #630 merged `5f830b40`, 2026-07-27T08:05:18Z)
 
 **CI verified (not taken on trust):** `gh pr checks 630 --watch` completed — every real merge gate
 passes (Lint, Format check, Typecheck, Test (Node 22), Build, Build (control-plane), Vercel, Rule H,

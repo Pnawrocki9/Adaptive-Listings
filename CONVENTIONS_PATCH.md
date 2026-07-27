@@ -671,6 +671,103 @@ BOTH the non-ok-then and the network paths).** Hardened: `logDecisionAsync`
   fire-and-forget `fetch` sink added in any PR MUST be added to this registry with its `res.ok`
   posture, or the PR is incomplete.
 
+### Rule K.2 amendment (2026-07-27 — RETRO-226 §6 — fail-CLOSED-value laundering / never-refuse-a-write sub-shape)
+
+**Trigger:** Rule K.2's parent framing covers a dependency that fails and is then SWALLOWED into a
+plausible success. This sub-shape is the mirror image: the dependency failure IS logged (K.2's
+emission half conforms), but the guard that caught it returns a **plain boolean fail-closed
+default** — so "I could not determine this" becomes indistinguishable from "I determined this is
+true" — and every caller then renders that value to a client as a **statement of fact** with a
+non-retryable 4xx. Four sightings of one helper, `isTreatedAsExternalBrand`
+(`apps/control-plane/src/lib/brand-identity.ts:290-314`, `catch → return true`), across four
+surfaces and three PRIOR numbered retros, each fixed by its own still-open ticket and none by a
+rule:
+
+- **RETRO-222 §4a LG-2 → FOLLOW-674** — the consent POST answers 400 _"FIRST_PARTY_TENANT_ID is not
+  configured and more than one tenant exists"_ when the tenant-count read merely **failed**.
+  Count 1.
+- **RETRO-224 → FOLLOW-686** — the same swallowed read makes the consent GET answer 409
+  `brand_identity_not_provisioned`, _"a false statement"_, in a handler where the sibling DB failure
+  15 lines above correctly returns `500 { data_source: 'db', degraded: true }`. Count 2.
+- **RETRO-225 §4a LG-1 → FOLLOW-695** — the malformed-env branch gives that same false 400 a third
+  reaching branch. Count 3.
+- **RETRO-226 §4a LG-2 (trigger, PR #631/FOLLOW-684)** — a qualitative escalation, not a fourth
+  repetition: the laundered unknown now guards a **WRITE**.
+  `POST /api/v1/consent/platform-registration` answers **422 `consent_text_hash_fabricated`** —
+  permanent semantics, nothing written — for **Estalara's own first-party tenant** whenever the
+  count probe throws (reachable today) or `FIRST_PARTY_TENANT_ID` is unset with ≥2 tenant rows (a
+  state `docs/runbooks/BRAND_PROVISIONING.md:316-320` documents as expected). A real consent the
+  visitor gave is **discarded**, with a message that is false for that tenant and a remediation that
+  cannot fix it — in the same PR whose AC-3 refused to discard a consent on a _guess_.
+
+**Amendment — a predicate that fails CLOSED MUST NOT launder the unknown, and MUST NOT refuse a
+write:**
+
+1. **Tri-state, not boolean.** A shared predicate whose answer can be reached by catching a
+   dependency failure MUST distinguish `true` / `false` / `indeterminate` (a discriminated union, or
+   a throw). Returning the fail-closed value as a bare boolean is the defect; the `console.error`
+   next to it is not a mitigation, because the caller cannot read a log.
+2. **Fail-closed DIRECTION is scoped by CONSEQUENCE, not by surface.** Fail-closed is correct for a
+   guard that refuses to SERVE (a GET), demands more input (a 400 asking for an explicit value), or
+   degrades to a safe default. It is FORBIDDEN as the sole basis for **refusing or discarding a
+   write** — an `indeterminate` on a write path returns a **retryable 5xx** with
+   `data_source: 'db', degraded: true`, never a 4xx, and never a "provably wrong" accusation.
+3. **No 4xx may assert a fact the code did not establish.** If the branch is reachable via a caught
+   error, the message must state what FAILED, not what the fail-closed value implies. Same for alarm
+   tags: do not tag a request `unprovisioned_external` when the real state is "unknown".
+4. **A gate added to a write path is audited for BOTH its false-negative and its false-positive
+   direction** in the retro/PR. "It fails closed" is a completed argument only when the false
+   positive costs nothing; when it costs a user's submitted data, it is a P1 finding.
+
+**Amendment rationale:** this is a fifth verification step on the same parent rule, not a new
+letter, because it shares K.2's root — a configured-but-failed dependency must not be turned into a
+confident answer. K.2 governs the _emission_ of the failure; this amendment governs the _value_
+substituted in its place and what a caller is allowed to assert on it. Deliberately NOT filed as a
+new letter, per the RETRO-135 precedent (fire-and-forget sub-shape) and the RETRO-224
+anti-duplication discipline. Distinct from **Rule AJ** (an emitted signal must have a consumer — the
+emission axis), **Rule AH/AI** (prose truth), **Rule S** (test mechanics), **Rule AE** (call-shape
+enumeration). Priority: **P1** when the laundered value gates a write, a payment, a consent or a
+deletion; **P2** when it only produces a false message on a read path.
+
+**Verification:**
+
+```bash
+# 1. Enumerate every predicate that manufactures its return value inside a catch:
+grep -rn -A3 "} catch" apps/ packages/ --include="*.ts" | grep -v node_modules | grep -v "\.test\." \
+  | grep -E "return (true|false|\[\]|null|0);"
+# 2. For EACH hit, list its callers and classify the consequence of the fail-closed value:
+#    grep -rn "<predicateName>" apps/ packages/ --include="*.ts" | grep -v "\.test\."
+#    - caller refuses to SERVE / asks for more input  -> allowed
+#    - caller refuses, discards or rolls back a WRITE -> VIOLATION (P1): the caller must receive
+#      `indeterminate` and answer a retryable 5xx instead.
+# 3. Every 4xx message reachable from such a predicate must be grep-checked for asserted facts:
+grep -rn "more than one tenant exists\|not provisioned\|provably" apps/ --include="route.ts" \
+  | grep -v node_modules
+#    Each hit must be unreachable from a caught dependency error, or reworded to name the failure.
+```
+
+**Evidence for this amendment:** RETRO-222 §4a LG-2 (FOLLOW-674), RETRO-224 (FOLLOW-686), RETRO-225
+§4a LG-1 (FOLLOW-695) — 3 PRIOR numbered retros, 3 separate open tickets, 1 shared helper — promoted
+by RETRO-226 §6 (Pattern P-11) on the write-refusing escalation (FOLLOW-698). The promoting retro
+does not inflate the count.
+
+<!-- Rule K.2 amendment (fail-CLOSED-value laundering / never-refuse-a-write sub-shape) added 2026-07-27 —
+RETRO-226 §6 (Pattern P-11). Priors, all verified at their cited lines and all still OPEN as tickets:
+RETRO-222 §4a LG-2 -> FOLLOW-674 (consent POST 400 asserting "more than one tenant exists" on a failed read,
+count 1); RETRO-224 -> FOLLOW-686 (consent GET 409 brand_identity_not_provisioned on the same failed read,
+15 lines below a sibling that correctly 500s, count 2); RETRO-225 §4a LG-1 -> FOLLOW-695 (malformed-env branch,
+third reaching branch of the same false 400, count 3). Promotion trigger = RETRO-226 §4a LG-2 / FOLLOW-698:
+PR #631 put the same laundered value in front of a WRITE, so the 4th sighting DESTROYS a submitted consent
+instead of merely stating a falsehood — and does so for Estalara's own first-party tenant, in a state the
+repo's own runbook (BRAND_PROVISIONING.md:316-320) documents as expected, contradicting the same PR's AC-3
+principle that a consent must not be discarded on a guess. NOT A NEW LETTER, deliberately: the root is shared
+with K.2 (a configured-but-failed dependency must not become a confident answer) — same adjudication RETRO-135
+made for the fire-and-forget sub-shape; checked against AJ (emission has a consumer — different axis, and
+RETRO-226 §3 HW-2 files that separately), AH/AI (prose), S (tests), AE (call shapes) before minting. The
+promoting retro does not inflate the count (adjudication shared with AA/AB/AC/AD/AE/V/Q/AG/AH/AI/AJ). Remedy
+tickets: FOLLOW-698 (the write path + the helper's tri-state), coordinating with the three open priors so all
+four surfaces land ONE semantics. -->
+
 ## Rule L — Verify the production install/snippet path PRODUCES the config a consumer reads — a test that injects the value is not evidence
 
 **Pattern:** A feature wires an SDK/runtime _consumer_ of a config value (an `<script>`

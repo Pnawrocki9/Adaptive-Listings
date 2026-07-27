@@ -20016,3 +20016,309 @@ branch without a local override (RETRO-225 §4c TG-4). That is fixture-hygiene d
 OUT of this ticket's required scope.
 
 cross_ref: [RETRO-225, RETRO-222, RETRO-224, FOLLOW-678, FOLLOW-674, FOLLOW-695, Rule S]
+
+---
+
+## FOLLOW-697 — The POST gate is keyed on the DIAGNOSIS, not the evidence: a PROVISIONED external brand submitting the canonical Estalara hash is neither refused nor alerted
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+#631's step-7c block is entered only when `isUnprovisionedExternalBrand(db, tenant_id, identity)` is
+true (`route.ts:435`), and that predicate returns `false` immediately when
+`identity.isFallbackIdentity` is false (`brand-identity.ts:349`). So for an external tenant that HAS
+been provisioned (`brand_config.brand_name = 'Costa Sol Properties'`), the canonical-hash check at
+`route.ts:447` is never evaluated: the insert at `route.ts:537` stores
+`CANONICAL_CONSENT_TEXT_HASH`, no 422, **no Sentry capture**. That is the exact fabrication
+FOLLOW-684 set out to close — an audit record attesting that Costa Sol's visitor accepted Estalara /
+Time2Show, Inc.'s disclosure — left open for the tenants that are FURTHEST along in onboarding.
+
+It is also the sub-case with the STRONGEST proof available: for a provisioned brand this repo
+renders the correct text itself, so the correct hash is computable —
+`computeConsentTextHash(renderPlatformConsentText(identity))`, both already used by the GET leg
+(`route.ts:270,279`). The refusal predicate should be the EVIDENCE (`isTreatedAsExternalBrand` +
+canonical hash) rather than the DIAGNOSIS (`isUnprovisionedExternalBrand` + canonical hash).
+
+The AC-4 test matrix hid it: it enumerated a DIAGONAL of a 2×2 grid (provisioned? × hash-kind), the
+`provisioned × canonical` cell never being written — `route.test.ts:634` pairs _provisioned_ with a
+brand-specific hash, `:566` pairs _canonical_ with _unprovisioned_. Root cause is FOLLOW-684 AC-2's
+own wording (RETRO-224 §7), which RETRO-226 records against the retro agent, not the implementer.
+
+Related scope limit to state while you are here (RETRO-226 §4a LG-3): the refusal is EN-only by
+construction — `CANONICAL_CONSENT_TEXT_HASH` is the EN §6.1 hash (`lib.ts:51`), so an unprovisioned
+brand rendering the PL/ES translation of ESTALARA's text submits a non-canonical hash and is not
+refused. Ties to the long-open FOLLOW-379.
+
+**AC:** (1) re-key the hard refusal on `isTreatedAsExternalBrand`-equivalent evidence so ANY
+non-first-party tenant submitting `CANONICAL_CONSENT_TEXT_HASH` is refused, provisioned or not —
+coordinate with FOLLOW-698, which changes that same predicate's failure semantics, and do not
+regress the first-party path; (2) for a PROVISIONED brand, prefer the positive check —
+`body.consent_text_hash !== computeConsentTextHash(renderPlatformConsentText(identity))` is
+suspicious — but do NOT hard-refuse on it alone (a translated text legitimately mismatches; that is
+FOLLOW-701's policy question), alert instead; (3) tests for all four cells of the grid, explicitly
+including `provisioned external × canonical hash → refused` (red-first: it returns 201 today) and
+`provisioned external × its own correct hash → 201, no capture`; (4) state the EN-only scope limit
+in the 7c comment and in the 422 message, and cross-reference FOLLOW-379; (5) keep the guard's cost
+unchanged for the first-party fast path and re-assert it under BOTH env-SET and env-unset (see
+FOLLOW-702).
+
+cross_ref: [RETRO-226, RETRO-224, FOLLOW-684, FOLLOW-659, FOLLOW-698, FOLLOW-701, FOLLOW-379, Rule
+AE, Rule AA]
+
+---
+
+## FOLLOW-698 — The new 422 can REFUSE AND DISCARD the first-party tenant's genuine consent: a fail-CLOSED count probe is being laundered into a permanent-semantics refusal of a write
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+`isUnprovisionedExternalBrand` delegates to `isTreatedAsExternalBrand`, whose env-unset branch
+probes the tenant count and **fails CLOSED** on an exception (`brand-identity.ts:304-313`,
+`catch → return true`). Estalara's own tenant also carries `isFallbackIdentity === true` (nobody
+seeds `brand_name` for the brand that IS the fallback), so `route.ts:435` evaluates TRUE for
+**Estalara itself** in two states this repo already documents:
+
+1. `FIRST_PARTY_TENANT_ID` unset + ≥2 tenant rows — `docs/runbooks/BRAND_PROVISIONING.md:316-320`
+   states it outright: _"the moment a second tenant row exists with `FIRST_PARTY_TENANT_ID` still
+   unset, every tenant — including Estalara — is treated as external."_
+2. the count probe throwing on a transient DB fault — reachable **today**, at one tenant.
+
+In either state step 7b (`route.ts:378-392`) answers an omitted hash with _"Set
+FIRST_PARTY_TENANT_ID … **or send an explicit consent_text_hash**"_ — and a caller that follows the
+second half of that instruction for Estalara sends the CANONICAL hash (which is CORRECT for
+Estalara) and gets **422 `consent_text_hash_fabricated`**: a message asserting the hash is
+_"provably the wrong text"_, a remediation (`PATCH brand_config.brand_name`) that is wrong for the
+first-party tenant, a non-retryable status class on what is actually a transient/config condition,
+one false Sentry `error` tagged `unprovisioned_external` for the first-party tenant — and **a
+visitor's real consent thrown away**. Two gates 55 lines apart give contradictory instructions.
+
+Witness in the existing suite: `route.test.ts:478` (_"env UNSET + a SECOND tenant + explicit hash →
+201"_) passes ONLY because its fixture hash is `'c' + '0'.repeat(63)`; substitute
+`CANONICAL_CONSENT_TEXT_HASH` — the live first-party value — and the same scenario returns 422.
+
+This is RETRO-222 §4a LG-2's shape on its FOURTH reaching branch (priors: FOLLOW-674 the POST 400,
+FOLLOW-686 the GET 409, FOLLOW-695 the malformed-env branch) and the first that DESTROYS DATA rather
+than only stating a falsehood — the promotion trigger for the Rule K.2 fail-CLOSED-value-laundering
+amendment. Fix it once, in the helper, not a fifth time at a fifth call site.
+
+**AC:** (1) make `isTreatedAsExternalBrand`'s answer TRI-STATE (`external` / `first_party` /
+`indeterminate`) — or throw — so a swallowed read error can never be presented to a caller as a
+determined fact; keep the fail-closed DIRECTION for gates that merely refuse to SERVE or demand more
+input, and forbid it for any gate that refuses a WRITE; (2) on `indeterminate`, the consent POST
+returns a retryable 5xx with `data_source: 'db', degraded: true` (Rule K.2 shape, same as the
+sibling failure at `route.ts:422-432`), never the 422 and never the 400 that asserts _"more than one
+tenant exists"_; (3) remove the 7b→7c contradiction: whatever 7b tells the caller to do must not be
+refused by 7c 55 lines later — state the first-party exemption explicitly; (4) re-scope the cost
+claim at `route.ts:414-418` — _"today's live first-party traffic pays no additional query"_ is TRUE
+for the go-live configuration and FALSE for the running one (env unset + fallback identity ⇒ a
+`fetchBrandIdentity` select PLUS a tenant-count probe on every POST); state the condition (Rule AH);
+(5) coordinate with FOLLOW-674 / FOLLOW-686 / FOLLOW-695 so all four surfaces land one consistent
+semantics, and with FOLLOW-697 which re-keys the same predicate; (6) tests: env-unset + 2 tenants +
+first-party + canonical hash → 201 (NOT 422), count-probe throw → retryable 5xx, no false Sentry
+capture for the first-party tenant in either case.
+
+cross_ref: [RETRO-226, RETRO-225, RETRO-224, RETRO-222, FOLLOW-684, FOLLOW-674, FOLLOW-686,
+FOLLOW-695, FOLLOW-697, Rule K.2 (fail-CLOSED-value laundering amendment), Rule AH]
+
+---
+
+## FOLLOW-699 — The new 422 has no consumer: the POST contract handed to the only caller, the provisioning runbook, the go-live check and the helper's own docblock all still describe the pre-#631 world
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+#631 changed a public error contract in a 2-file diff and touched zero documentation (HALF*WIRE_P,
+RETRO-226 §3). `grep -rn "consent_text_hash_fabricated"` returns only the route, its test and the
+backlog. The out-of-repo `app.estalara.com` caller — the only consumer that exists — reads
+`backlog/HANDOFFS.md:2795-2867`, which documents no 422 at all. It happens to be fail-safe by LUCK
+(`:2867` — *"If the endpoint returns non-2xx (excluding 409), do NOT proceed with account
+creation"\_), not by design: no line says what the code means, that nothing was written, or what to
+do about it.
+
+Four surfaces are stale:
+
+1. `backlog/HANDOFFS.md:2795-2867` — no 422; and `:2864`/`:2867`'s status policy is still written
+   for the POST's duplicate-nonce 409 (FOLLOW-685 owns the method-scoping — coordinate, do not
+   double-edit).
+2. `docs/runbooks/BRAND_PROVISIONING.md:306-308` — the "what breaks when brand identity is
+   unprovisioned" table still lists TWO surfaces (consent GET, DSR initiate); the consent POST is
+   now a third with a HYBRID behaviour (always alert; refuse only the canonical-hash sub-case).
+   `:578-586` troubleshooting likewise.
+3. `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306` — _"always computes and sends its
+   own `consent_text_hash`"_ is now the instruction that leads a brand into either a silent
+   201-plus-unrouted-alarm or, for Estalara-derived copy, the 422 (FOLLOW-685 AC-3 owns the
+   GET-then-echo vs author-your-own decision — coordinate).
+4. `apps/control-plane/src/lib/brand-identity.ts:333-337` — the helper's contract docblock still
+   enumerates exactly two call sites and their consequences (_"GET REFUSES … DSR alerts but STILL
+   SENDS"_). It now has three, and the third's consequence is a hybrid no reader would predict from
+   that list. Rule AI names in-file API docblocks explicitly.
+
+**AC:** (1) add the 422 to the `HANDOFFS.md` POST section: the code, the fact that NOTHING was
+written, the two remediations (seed `brand_config.brand_name`, or stop sending the canonical hash),
+and an explicit "do not retry unchanged"; (2) add the consent-POST row to the runbook's enforcement
+table and to §item-7 troubleshooting, describing BOTH behaviours (alert-always, refuse-canonical);
+(3) reconcile the go-live check's instruction (c) with whatever FOLLOW-685 AC-3 decides — one
+canonical flow, recorded; (4) extend `brand-identity.ts:333-337` to three call sites with their
+three consequences; (5) verify every sentence against `main` at YOUR merge commit (Rule AH) — in
+particular do not re-assert the _"first-party tenant: unchanged, byte-identical, never gated and
+never alerted"_ claim, which FOLLOW-698 shows is conditional. Docs only; no code. **Fold into
+FOLLOW-685 if the two are executed together — they overlap on surfaces 1 and 3.**
+
+cross_ref: [RETRO-226, RETRO-224, FOLLOW-684, FOLLOW-685, FOLLOW-686, FOLLOW-374, Rule AI, Rule AH]
+
+---
+
+## FOLLOW-700 — The consent-POST alarm is the ENTIRE compensating control for the case #631 deliberately did not refuse, and no rule routes it (Rule AJ's first post-codification violation)
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
+recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] promoted_to_queue:
+false
+
+#631 chose — correctly, per its AC-3 — not to refuse the general case (a brand-specific,
+non-canonical hash from an unprovisioned external brand), on the express grounds that _"the gate
+still alerts on this sub-case so ops has visibility"_ (`route.ts:394-418`). That makes the Sentry
+capture at `route.ts:441-445` the entire enforcement mechanism on that path — which is exactly the
+P1 tier of **Rule AJ** (codified by RETRO-225 in `a2106cfa`, on `main` BEFORE this PR's `70d2a70a`).
+
+It has no consumer: `grep -rn "brand_identity\|unprovisioned" docs/ops/DSR_ALERTING.md` → **zero
+hits** (that file is the repo's only Sentry alert-rule registry), and
+`apps/control-plane/sentry.server.config.ts:17` makes every capture a graceful no-op when
+`SENTRY_DSN_CONTROL_PLANE` is absent — set in Doppler `prd` AND in Vercel? still unverified
+(FOLLOW-688 AC-4, open). This is the THIRD producer of the `brand_identity: unprovisioned_external`
+tag (DSR initiate `:237`, and now the consent POST) and FOLLOW-688 does not cover it: its title and
+all five ACs are scoped to _"The DSR half"_.
+
+**AC:** (1) add an alert-rule registry entry covering the tag across ALL producers, discriminated by
+the `route` tag (`consent/platform-registration` vs `dsr/initiate`) in `DSR_ALERTING.md`'s existing
+format — tag, when it fires with file:line, severity, UI recipe, SLA, response procedure (seed §Step
+3a) — and CREATE the rule, recording that it exists (Rule AJ.1a); (2) verify
+`SENTRY_DSN_CONTROL_PLANE` is actually set in Doppler `prd` and in Vercel (they are not synced) —
+report the finding either way rather than assuming; if unset, file the operator step (Rule AJ.1b);
+(3) note in the registry that for the consent POST this alarm is the ONLY signal on the
+deliberately-unrefused path, so its SLA is not "best effort"; (4) execute with or immediately after
+FOLLOW-688 — one rule, three producers, do not write two half-rules; (5) if you touch
+`BRAND_PROVISIONING.md:543`'s _"confirm the alert stops"_, keep it truthful at your own merge commit
+(Rule AH).
+
+cross_ref: [RETRO-226, RETRO-225 (Rule AJ), RETRO-224, FOLLOW-688, FOLLOW-693, FOLLOW-684,
+FOLLOW-701, Rule AJ, Rule Q, Rule AH]
+
+---
+
+## FOLLOW-701 — The general-case policy question #631 deferred belongs to no ticket: FOLLOW-685 is docs-only and does not decide whether a brand-specific hash from an unprovisioned external brand may be written
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
+recommended_agent: compliance-engineer (drafts the options + implements the ruling); CEO/DPO decides
+priority: P1 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+FOLLOW-684 AC-3 deliberately did not decide the general case — an unprovisioned external brand
+submitting a brand-specific (non-canonical) hash is written, with an alert. Both the PR description
+and `backlog/QUEUE.md` point at FOLLOW-685 as the place that gets picked up next. **It is not
+there.** FOLLOW-685 (`FOLLOW_UPS.md:19536-19574`) is _"Docs/handoff only; no code"_ and its five ACs
+are: a GET section in HANDOFFS, method-scoping the 409, reconciling the go-live check, Rule AH
+verification, and a §H.8 sentence. Adjacent (AC-3's GET-then-echo-vs-author-your-own decision
+constrains the answer) but not the same decision. Filed so the question cannot fall between two
+tickets.
+
+The decision needs a controller/processor call this pipeline is not authorised to make. State the
+options with their compliance consequences, do not pick one silently:
+
+- **(a) accept + alert (status quo).** Rationale on the record: refusing would discard a consent the
+  visitor already gave. Cost: an audit record whose text nobody can reproduce, under an identity the
+  system knows is un-provisioned; and the alarm is currently unrouted (FOLLOW-700).
+- **(b) refuse (extend the 422 to every hash from an unprovisioned external brand).** Symmetrical
+  with the GET's 409, so registration is blocked consistently on both legs; cost: a real consent
+  event is lost if the brand is rendering correct copy through some other channel.
+- **(c) quarantine.** Write the record with an explicit `identity_unverified` marker (needs the
+  snapshot columns of FOLLOW-703), alert, and refuse nothing — preserves the consent and marks it
+  un-attested.
+
+**AC:** (1) write up (a)/(b)/(c) with the GDPR Art. 7(1) "demonstrate consent" consequence of each,
+one page, no recommendation-by-omission; (2) obtain and RECORD the CEO/DPO ruling (ADR or a dated
+decision note — the PM escalates, per charter this ticket does not self-escalate); (3) implement the
+ruling in `route.ts` step 7c with tests, including the first-party and provisioned-brand
+non-regressions (coordinate with FOLLOW-697/698, which change the same block); (4) reconcile
+whichever flow the ruling implies with `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306` and FOLLOW-685
+AC-3 so the caller instruction and the server policy cannot disagree; (5) record the ruling in
+MASTER_DESIGN §H.8 so the next retro does not re-open it.
+
+cross_ref: [RETRO-226, RETRO-224, FOLLOW-684, FOLLOW-685, FOLLOW-697, FOLLOW-700, FOLLOW-703,
+FOLLOW-373, Rule AH]
+
+---
+
+## FOLLOW-702 — The new gate's four tests all pin `FIRST_PARTY_TENANT_ID` to a SET value, so the only branch reachable in prod today is untested — the same defect RETRO-224 filed against the DSR suite one merge earlier
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-697,
+FOLLOW-698] promoted_to_queue: false
+
+`describe('POST brand identity provisioning gate (FOLLOW-684)')` stubs `FIRST_PARTY_TENANT_ID` to a
+SET value in its `beforeEach` (`route.test.ts:553`), so every one of the four AC-4 cases exercises
+the env-SET branch. Prod runs env-UNSET (the premise RETRO-222 §5c, RETRO-224 and RETRO-225 all rest
+on). Consequences: the misclassification path of FOLLOW-698 has no test at all; the
+count-probe-throw path has none; and the two `expect(mockCountLimit).not.toHaveBeenCalled()`
+assertions (`:640`, `:666`) that the PR offers as proof of AC-5's "zero extra cost" prove it ONLY
+under env-SET — under the running configuration the gate costs two extra queries per POST. This is
+verbatim the shape RETRO-224 §4c TG-2 filed against `dsr-routes.test.ts` (FOLLOW-688 AC-2) —
+repeated on the sibling surface one merge later. Rule S.
+
+Also: `route.test.ts:478` (FOLLOW-660's _env UNSET + a SECOND tenant + explicit hash → 201_) now
+traverses the new gate with a fallback identity and fires a Sentry `error` that nothing asserts — so
+the suite cannot distinguish "the alarm fires correctly" from "the alarm fires for the wrong
+tenant".
+
+**AC:** (1) add env-UNSET coverage to the FOLLOW-684 describe: 1 tenant → gate is a no-op, no
+capture; 2 tenants + first-party + canonical hash → the FOLLOW-698 expectation (201, no capture, no
+422), red-first; (2) count-probe throw → the FOLLOW-698 expectation (retryable 5xx, no capture); (3)
+the `provisioned external × canonical hash` cell from FOLLOW-697, red-first (it returns 201 today);
+(4) assert the 7b-before-7c precedence explicitly — an OMITTED hash from an unprovisioned external
+brand must be answered by 7b's 400 and never reach the `?? CANONICAL_CONSENT_TEXT_HASH` default at
+`route.ts:537` (today this holds by implication only, because both gates share
+`isTreatedAsExternalBrand`; pin it); (5) assert the Sentry capture (or its absence) in the
+pre-existing FOLLOW-660 cases that now traverse 7c; (6) re-assert AC-5's cost claim under BOTH env
+shapes, and change the assertion's comment so it states which configuration it proves.
+
+cross_ref: [RETRO-226, RETRO-225, RETRO-224 (TG-2), FOLLOW-684, FOLLOW-688, FOLLOW-696, FOLLOW-697,
+FOLLOW-698, Rule S, Rule AA]
+
+---
+
+## FOLLOW-703 — Four PRs have hardened a column with zero readers: `consent_text_hash` is absent from the data subject's own export and is resolvable only against MUTABLE brand config
+
+source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+The 654 → 659 → 660 → 684 wave exists to make one column trustworthy:
+`consent_records.consent_text_hash` (`packages/db/src/schema/consent_records.ts:46`).
+`grep -rn "consentTextHash" --include=*.ts apps packages | grep -v platform-registration` → **zero
+readers**. The table's only consumer, `GET /api/dsr/portability`
+(`apps/control-plane/src/app/api/dsr/portability/route.ts:102-107`), selects `consentType`,
+`granted`, `grantedAt`, `revokedAt` and omits BOTH `consentTextHash` and `tosVersion` — so the GDPR
+Art. 15/20 export a data subject receives contains no evidence of what they actually consented to.
+
+Worse, the hash's meaning is not self-contained: `consent_records` stores no brand name, no legal
+entity and no text snapshot, so resolving a stored hash back to a disclosure requires re-rendering
+`renderPlatformConsentText(identity)` from LIVE `tenants.brand_config` — a blob a tenant's own
+`agency:admin` can rewrite through the unaudited PATCH branch (FOLLOW-687). A brand rename therefore
+silently makes every prior attestation irreproducible, and no reader exists to notice. Art. 7(1)
+requires the controller to be able to DEMONSTRATE consent; a hash that cannot be resolved
+demonstrates nothing.
+
+**AC:** (1) snapshot the identity at write time — additive, nullable columns on `consent_records`
+(e.g. `brand_name_at_consent`, `legal_entity_at_consent`; a `consent_text_locale` if FOLLOW-379
+lands first) written by the POST from the already-resolved `brandIdentity` #631 fetches at
+`route.ts:421` — additive migration only, no backfill of unknowable history, RLS unchanged; (2) add
+`consent_text_hash`, `tos_version` and the new snapshot fields to the DSR portability export; (3)
+document (or implement) how an auditor resolves a stored hash to its text for a historical record —
+if the answer is "re-render from the snapshot", say so in `PRIVACY_NOTICE_TEMPLATE.md` / the
+runbook; (4) tests: a write carries the snapshot, the export carries all four fields, and a
+subsequent `brand_config` change does NOT alter an existing record's snapshot; (5) coordinate with
+FOLLOW-701 — option (c) "quarantine" needs exactly these columns.
+
+cross_ref: [RETRO-226, RETRO-224, RETRO-219, FOLLOW-684, FOLLOW-654, FOLLOW-687, FOLLOW-701,
+FOLLOW-379, Rule K.2, Rule L]

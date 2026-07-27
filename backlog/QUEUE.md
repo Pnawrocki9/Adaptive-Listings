@@ -1,5 +1,27 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 69 — FOLLOW-697+698 DONE, PR #632 merged `300cbfb8`; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
+
+**FOLLOW-697+698 DONE.** PR #632 merged (squash) 2026-07-27T21:04:43Z → `300cbfb8` on `main`,
+confirmed via `gh pr view 632 --json state,mergedAt,mergeCommit`. Local worktree
+`.claude/worktrees/agent-a187840a43b32d66e` removed (clean, fully merged) and both local + remote
+`backend-engineer/FOLLOW-697-698-brand-gate-tristate` branches deleted. Local `main` fast-forwarded
+to `300cbfb8`, working tree clean.
+
+Consent POST step 7c now refuses on EVIDENCE (a provisioned brand's own computable hash, or a
+proven-external fallback identity) instead of the narrower unprovisioned-only diagnosis #631
+shipped, and the underlying fail-closed helper is tri-state so a DB hiccup can no longer discard
+Estalara's own first-party consent as a false "fabrication."
+
+**Next pick:** FOLLOW-699 (backend-engineer, P1, docs — document the new 422/500 for the
+app.estalara.com caller) and FOLLOW-700 (devops-engineer, P1 — route all three `brand_identity`
+Sentry tag values, now three not one) are both queued from RETRO-226. FOLLOW-685 (original P1 docs
+ticket, GET handoff + 409 method-scoping) is still pending too. Retrospective for #632 dispatching
+next — will flag the `CANONICAL_CONSENT_TEXT_HASH` placeholder finding from the PM validation note
+below so it isn't lost.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 68 — FOLLOW-697+698 validated, PR #632 READY_FOR_REVIEW; 3 escalations remain OPEN, all confirmed non-blocking-for-dispatch per the standing 2026-07-27 ruling)
 
 **PR #632 opened by backend-engineer, validated by PM before handing to Piotr for merge:**
@@ -74,7 +96,7 @@ on the same lines and risk exactly the kind of half-fix RETRO-226 just flagged. 
 question) are explicitly NOT in this dispatch — Piotr chose to scope this round to the two live P1
 bugs only.
 
-### FOLLOW-697+698 — status: READY_FOR_REVIEW (PR #632, all checks green modulo pre-existing-red Rule I, 1964/1964 tests pass locally, tsc clean)
+### FOLLOW-697+698 — status: DONE (PR #632 merged `300cbfb8`, 2026-07-27T21:04:43Z)
 
 **assigned_to:** backend-engineer **model: Opus** — escalated one tier above FOLLOW-684's Sonnet per
 the CLAUDE.md model-fit rule ("escalate one tier when the task already failed once at the lower

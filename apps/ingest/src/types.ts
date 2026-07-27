@@ -48,10 +48,16 @@ export interface Env
    * for this one tenant. Any other tenant on `inherit` has an un-provisioned KV api-key record and
    * is refused with `origin_policy_unconfigured` rather than silently inheriting.
    *
-   * UNSET/blank = the pre-FOLLOW-658 behavior for every tenant (the Worker cannot tell which row
-   * is first-party, so it refuses nobody). A forgotten value can therefore never black-hole live
-   * traffic — it only degrades the guard. Same value as the control-plane's `FIRST_PARTY_TENANT_ID`
-   * (`apps/control-plane/src/lib/brand-identity.ts`); set it via
+   * UNSET/blank (and, as of FOLLOW-678, a MALFORMED value — not a well-formed UUID once
+   * trimmed + lower-cased) degrade to the pre-FOLLOW-658 behavior for every tenant (the Worker
+   * cannot tell which row is first-party, so it refuses nobody). Only those two states are safe:
+   * a forgotten OR garbled env can never black-hole live traffic — it only degrades the guard.
+   * A value that IS a well-formed UUID but simply the WRONG one (mistyped, or the wrong tenant's
+   * id pasted) is NOT safe — it 403s every first-party browser request with
+   * `origin_policy_unconfigured` (see `isUnprovisionedExternalTenant` / `resolveFirstPartyTenantId`
+   * in `origin-gate.ts` for the classification, and `INGEST_WORKER_DEPLOY.md` for the post-flip
+   * verification probe this class of bug motivated). Same value as the control-plane's
+   * `FIRST_PARTY_TENANT_ID` (`apps/control-plane/src/lib/brand-identity.ts`); set it via
    * `wrangler secret put FIRST_PARTY_TENANT_ID` so it is configurable without a code change.
    */
   FIRST_PARTY_TENANT_ID?: string;

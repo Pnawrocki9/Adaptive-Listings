@@ -104,11 +104,20 @@ the gate doing its job: a stolen api key used from another site.
 **When it occurs:**
 
 - The tenant resolves to the `inherit` origin policy (its KV api-key record carries **no**
-  `allowed_origins`) **and** it is not the tenant named by the Worker's `FIRST_PARTY_TENANT_ID`.
-  `inherit` falls back to Estalara's _own_ env allow-list, so for any other brand it means the
-  provisioning step that seeds the KV field never ran.
-- Never fires when `FIRST_PARTY_TENANT_ID` is unset (guard disabled — pre-FOLLOW-658 behavior), nor
-  for a tenant with an explicit list or an explicit `[]` (deny-all).
+  `allowed_origins`) **and** it is not the tenant named by the Worker's `FIRST_PARTY_TENANT_ID`
+  (compared canonicalized — trim + lower-case both sides, FOLLOW-678). `inherit` falls back to
+  Estalara's _own_ env allow-list, so for any other brand it means the provisioning step that seeds
+  the KV field never ran.
+- Never fires when `FIRST_PARTY_TENANT_ID` is unset, blank, OR malformed — not a well-formed UUID
+  once trimmed + lower-cased (guard disabled in all three cases — FOLLOW-658/678), nor for a tenant
+  with an explicit list or an explicit `[]` (deny-all).
+- **FIRING FOR THE FIRST-PARTY TENANT ITSELF (e.g. `app.estalara.com` traffic) is NOT this
+  scenario** — it means `FIRST_PARTY_TENANT_ID` is set to a well-formed UUID that does **not** match
+  the real first-party tenant id (a mistyped digit, or the wrong tenant's UUID pasted). This is NOT
+  a benign default (FOLLOW-678): it 403s every first-party browser request. Fix: re-check the value
+  against `tenants.id` for Estalara and re-run `BRAND_PROVISIONING.md` §Step 0's post-flip
+  verification probe — do not just re-seed KV (§Step 6), which addresses the OTHER cause of this
+  code and won't help here.
 
 **Details fields (when present):**
 
@@ -118,10 +127,11 @@ the gate doing its job: a stolen api key used from another site.
 
 **Client action (operator, not the SDK):**
 
-Seed the brand's api-key KV record —
+For an external brand missing its KV `allowed_origins`, seed the brand's api-key KV record —
 `pnpm exec tsx apps/control-plane/scripts/project-allowed-origins.mts --tenant-id … --api-key … --apply`
-— see [BRAND_PROVISIONING §Step 6](./BRAND_PROVISIONING.md). This code is a **provisioning defect,
-not a client error**: retrying will not help. It is logged at Sentry level `error`
+— see [BRAND_PROVISIONING §Step 6](./BRAND_PROVISIONING.md). For the first-party tenant itself, see
+the `FIRST_PARTY_TENANT_ID` mis-set case above instead. Either way this is a **provisioning / config
+defect, not a client error**: retrying will not help. It is logged at Sentry level `error`
 (`origin_policy_unconfigured`), unlike `forbidden_origin` which is a `warning`.
 
 ---

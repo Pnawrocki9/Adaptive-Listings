@@ -28,6 +28,7 @@ import {
   allowedOriginsForEnv,
   isOriginAllowed,
   isUnprovisionedExternalTenant,
+  resolveFirstPartyTenantId,
   resolveOriginPolicy,
 } from '../origin-gate.js';
 import { evaluateConsent, redactPersistedPayloadForConsent } from '../consent-gate.js';
@@ -42,6 +43,16 @@ import { mapCountryToRegion } from '../region.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 const MAX_BATCH_SIZE = 1000;
+
+/**
+ * Set once a `first_party_tenant_id_malformed` warning has fired for this Worker isolate.
+ * [FOLLOW-678 AC 2] Module-level state persists across requests handled by the same isolate
+ * (CF Workers reuse an isolate across many requests), so this fires ONCE per isolate rather than
+ * once per request — a mis-pasted env is visible in Sentry/logs without needing to spam either.
+ * Resets naturally on the next isolate/deploy; that is the desired behavior (a fixed env should
+ * stop warning without requiring a manual reset).
+ */
+let firstPartyTenantIdMalformedWarned = false;
 
 interface RejectedEvent {
   index: number;
@@ -138,6 +149,25 @@ events.post('/', async (c) => {
   c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
 
+  // 2a. Malformed-config visibility [FOLLOW-678 AC 2]. `isUnprovisionedExternalTenant` treats a
+  // malformed `FIRST_PARTY_TENANT_ID` exactly like unset (guard off) so a bad paste can never
+  // black-hole traffic — but that means a typo would otherwise be silent until someone thinks to
+  // check. Warn ONCE per isolate, independent of `policy.mode` / `requestOrigin`, so the bad
+  // value surfaces without a request having to fail.
+  const firstPartyStatus = resolveFirstPartyTenantId(c.env.FIRST_PARTY_TENANT_ID);
+  if (firstPartyStatus.status === 'malformed' && !firstPartyTenantIdMalformedWarned) {
+    firstPartyTenantIdMalformedWarned = true;
+    logger.warn(
+      { first_party_tenant_id_raw: firstPartyStatus.raw },
+      'first_party_tenant_id_malformed',
+    );
+    Sentry.captureMessage('first_party_tenant_id_malformed', {
+      level: 'warning',
+      tags: { area: 'events', gate: 'origin', config: 'first_party_tenant_id' },
+      extra: { first_party_tenant_id_raw: firstPartyStatus.raw },
+    });
+  }
+
   // 2b. Per-tenant origin gate [FOLLOW-642]. Runs BEFORE rate-limit and BEFORE any ingest side
   // effect, so a stolen api key embedded on a non-allow-listed origin ingests nothing.
   //
@@ -163,8 +193,11 @@ events.post('/', async (c) => {
     // default: the brand's own domain gets a generic 403 while its api key still works from
     // `app.estalara.com` / `admin.estalara.com`. Refuse with a self-describing code + a Sentry
     // ERROR so the missed step is loud during onboarding verification instead of silent.
-    // Still zero I/O — `FIRST_PARTY_TENANT_ID` is a Worker var; blank = guard disabled (see
-    // `isUnprovisionedExternalTenant`), so a forgotten value cannot cost first-party traffic.
+    // Still zero I/O — `FIRST_PARTY_TENANT_ID` is a Worker var; blank OR malformed (not a
+    // well-formed UUID — see `resolveFirstPartyTenantId`) = guard disabled (see
+    // `isUnprovisionedExternalTenant`), so a forgotten OR garbled value cannot cost first-party
+    // traffic. A WRONG-but-well-formed value is NOT safe (see 2a above + that function's
+    // docstring) — [FOLLOW-678].
     if (isUnprovisionedExternalTenant(policy.mode, tenantId, c.env.FIRST_PARTY_TENANT_ID)) {
       c.set('corsAllowOrigin' as never, ''); // deny → CORS middleware omits the header
       span?.setAttributes({

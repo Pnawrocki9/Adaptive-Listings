@@ -124,5 +124,9 @@ Execute immediately on: probe C returning any 403, `/health` non-200, or
   (guard still 403s; it just cannot page anyone). Set the secret to arm it.
 - No production deploy **pipeline** exists (`deploy-staging.yml` is manual, staging-only, never
   green) — ESC-043 required-action item 4, a separate decision.
-- FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison) remains open; probe B doubles as
-  its mis-set detector.
+- FOLLOW-678 (canonicalize the `FIRST_PARTY_TENANT_ID` comparison — trim + lower-case both operands,
+  reject/degrade-to-unset a malformed env, warn once per isolate) is fixed in code as of this
+  entry's follow-up PR; re-run Probe B + C after any FIRST_PARTY_TENANT_ID change regardless — they
+  remain the standing regression test for a WRONG-but-well-formed value, which is still not
+  distinguishable from an intentional `explicit` scoping by construction (see
+  `BRAND_PROVISIONING.md` §Step 0's post-flip verification, added by the same ticket).

@@ -146,8 +146,12 @@ max_batch_timeout = 5
 #     `wrangler secret put` so it can be configured without a code change + redeploy. Enables the
 #     origin-gate provisioning guard: any OTHER tenant still on the `inherit` policy has an
 #     un-seeded api-key KV record and is refused 403 `origin_policy_unconfigured` instead of
-#     silently inheriting Estalara's own allow-list. UNSET = guard off (pre-FOLLOW-658 behavior for
-#     every tenant), so a forgotten value can never black-hole first-party traffic.
+#     silently inheriting Estalara's own allow-list. UNSET, blank, OR malformed (not a well-formed
+#     UUID once trimmed + lower-cased — FOLLOW-678) = guard off (pre-FOLLOW-658 behavior for every
+#     tenant), so a forgotten OR garbled value can never black-hole first-party traffic. A value
+#     that IS a well-formed UUID but the WRONG one is NOT safe — it 403s every first-party browser
+#     request with `origin_policy_unconfigured`; run the post-flip verification probe in
+#     INGEST_WORKER_DEPLOY.md / BRAND_PROVISIONING.md §Step 0 after setting it.
 #     Same value as the control-plane env of the same name (BRAND_PROVISIONING §Step 0).
 #   INTERNAL_API_SECRET    — Bearer shared with Modal chat_nlp_endpoint (F-01)
 #   MODAL_CHAT_NLP_URL     — HTTPS URL of intent-engine chat_nlp_endpoint (F-01 / ADR-0016)

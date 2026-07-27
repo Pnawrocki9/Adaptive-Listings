@@ -1,6 +1,107 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-26 (session 61 — RETRO-220..224 complete for #625-#629; pipeline still gated on 3 open escalations)
+## ▶️ START HERE — resume 2026-07-27 (session 62 — CEO rulings on ESC-042 + dispatch policy; pipeline UNGATED, FOLLOW-678 dispatched)
+
+**Two CEO rulings received, both actioned before any dispatch (bookkeeping-first, no concurrent git
+ops with a running subagent):**
+
+1. **ESC-042 design ruling — Option (A).** Accept the client prior loop as the live chat-influence
+   path; delete `CHAT_NLP_LIVE`; fix docstrings; update the FOLLOW-346 test contract. Option (B)
+   server-side fusion explicitly rejected — not to be built. **Verify-not-guess finding: this was
+   already fully shipped 2026-07-24 via PR #613 (`5ab923b`, FOLLOW-635), three days before the
+   ruling arrived.** Independently re-confirmed today: `grep -rn CHAT_NLP_LIVE` across the live tree
+   = zero code occurrences (only backlog/docs narrating its removal);
+   `apps/control-plane/src/app/api/adapt/route.ts:1559-1573` and
+   `packages/shared/src/directives.ts:160-181` docstrings correctly describe the live-influencing,
+   ungated behavior; `apps/control-plane/src/app/api/adapt/route.follow346.test.ts` asserts the new
+   contract. **No new ml-engineer ticket dispatched — nothing left to build.** ESC-042 narrowed +
+   partially resolved in `backlog/ESCALATIONS.md` (design-ruling half RESOLVED; Modal Phase B
+   operator-deploy half stays OPEN, re-titled, and — per ruling 2 below — treated as
+   non-blocking-for-dispatch same as ESC-020).
+
+2. **Dispatch-policy ruling.** ESC-020 (Rafał, `web-master` prod deploy) and ESC-041 (npm registry
+   ownership) are standing EXTERNAL blockers no agent in this pipeline can clear — **resume
+   dispatching** with them still OPEN and surfaced every session close, exactly as sessions 59-61
+   already did. This does NOT generalize to "ignore all escalations": a NEW escalation, or one an
+   agent can actually act on, still halts the line. Applying the same reasoning to ESC-042's now
+   operator-only remainder (see above).
+
+**Re-verified before dispatch (not taken on trust):** `gh pr list --state open` empty; `git log`
+matches; 0 tickets genuinely `IN_PROGRESS` (the one QUEUE.md hit, FOLLOW-613, is a superseded
+2026-07-22 historical entry, confirmed closed via FOLLOW_UPS.md). `.claude/worktrees/` empty, no
+stranded work.
+
+**Dispatching FOLLOW-678** (P1, `depends_on: []`, `promoted_to_queue: false` in FOLLOW_UPS.md,
+confirmed genuinely free) — see ticket entry below for full delegation brief.
+
+**3 escalations remain OPEN, all human/operator-side, all now explicitly non-blocking-for-dispatch
+per ruling 2 above:** ESC-020 (Rafał), ESC-041 (npm registry), ESC-042 (narrowed — Modal deploy
+only). Surfaced every session close per the ruling.
+
+### FOLLOW-678 — status: READY_FOR_REVIEW (PR #630, CI green)
+
+**CI verified (not taken on trust):** `gh pr checks 630 --watch` completed — every real merge gate
+passes (Lint, Format check, Typecheck, Test (Node 22), Build, Build (control-plane), Vercel, Rule H,
+Rule J, Gitleaks, Doppler verify, Migration journal monotonicity, Cross-language event contract,
+Auto-Detection corpus gate, Demo integration, SDK E2E, ClickHouse migrations smoke, Archetype
+seeds/embeddings, and all Python matrix jobs). Only failure: **Rule I — wired-or-dead**, confirmed
+pre-existing-red/non-blocking per `project_ci_gate_landscape` memory (tracked by FOLLOW-090,
+unrelated to this diff). PR ready for Piotr's review.
+
+**Session note (session 63, 2026-07-27):** prior session's terminal closed mid-implementation;
+resumed from the uncommitted working tree (all 5 ACs already implemented, nothing left to write).
+Re-verified before committing, not taken on trust: re-read the full diff across all 13 files against
+the AC list below; ran `pnpm --filter @estalara/ingest test` (285/285 incl. new case-variant +
+malformed-env cases), `pnpm --filter control-plane test -- brand-identity dsr-routes` (51/51),
+`tsc --noEmit` (both apps, clean), `eslint` (both apps, clean), `prettier --check` (all touched
+files, clean). Committed `d16341f`, pushed, opened PR #630. `gh pr checks 630 --watch` dispatched in
+background — do not mark READY_FOR_REVIEW until it reports green. Left `.retro-tmp/` untracked and
+unstaged — unrelated leftover from a retrospective-analyst run blocked from writing
+`.claude/agents/retrospective-analyst/lessons.md` directly (see
+`.retro-tmp/lesson223.md`/`lesson224.md`); not this ticket's concern, flagged for next retro pass.
+
+**assigned_to:** backend-engineer **model: Sonnet** — routine, well-scoped implementation
+(canonicalize a string comparison in 3 call sites + add a warn-once log + re-scope 5 doc sentences +
+tests) inside one module family the agent already owns (ingest origin-gate + control-plane
+brand-identity); no prior failed attempt, no cross-module contract change, no ambiguous AC —
+textbook "routine implementation inside a well-defined ticket scope" per the model-fit table, does
+not warrant Opus/Fable. **started_at:** 2026-07-27. **branch:**
+`backend-engineer/FOLLOW-678-first-party-tenant-id-canonicalize`.
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" → backend-engineer (touches `apps/ingest/src/origin-gate.ts`,
+`apps/control-plane/src/lib/brand-identity.ts`, and `docs/runbooks/BRAND_PROVISIONING.md`).
+
+**Re-verified before dispatch, not taken on the stub's word:** re-read
+`apps/ingest/src/origin-gate.ts:160-195` and `apps/control-plane/src/lib/brand-identity.ts:150-225`
+directly — confirmed `isUnprovisionedExternalTenant` trims both operands but does not case-fold, and
+`isTreatedAsExternalBrand`/`isFirstPartyTenant` trim only the env side and also don't case-fold;
+confirmed `docs/ops/DOPPLER_SECRETS_MATRIX.md:31` and `docs/runbooks/BRAND_PROVISIONING.md:92-93`
+both assert the "never a traffic outage" safety property unscoped to the UNSET case.
+`depends_on: []` confirmed empty in `backlog/FOLLOW_UPS.md`; `promoted_to_queue: false` there, now
+promoted here.
+
+**Delegation brief (send to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-678` (full text — priority P1, ~3h).
+- Context: `docs/MASTER_DESIGN.md` §Snapshot.1; current `CONVENTIONS_PATCH.md` rules (Rule AH —
+  doc-vs-code honesty — applies directly to AC4); no open HANDOFFS.md note for this ticket.
+- Branch: `backend-engineer/FOLLOW-678-first-party-tenant-id-canonicalize`.
+- AC (verbatim from the stub): (1) canonicalize both operands (lower-case + trim minimum; reject
+  non-UUID-shaped values; malformed env degrades to UNSET/"guard off" on the ingest side, never to
+  deny-all) in all three functions; (2) log/Sentry-warn ONCE per Worker isolate when
+  `FIRST_PARTY_TENANT_ID` is present but malformed; (3) add case-variant + malformed-value tests on
+  both sides (the existing 5 ingest cases must still pass); (4) re-scope the 5 cited doc sentences
+  to the UNSET case only, explicit that a WRONG value is NOT safe; (5) add a post-flip verification
+  step to `BRAND_PROVISIONING.md` §Step 0 (POST a test event from an allow-listed origin, require
+  2xx).
+- PM will run the full validation loop (5a-5g) once a PR is opened, including the runtime-wiring
+  grep for the new warn-once log path and a re-check that the "malformed degrades to guard-off, not
+  deny-all" AC actually holds by test, not assertion.
+
+---
+
+## ▶️ (prev) session 61 head — resume 2026-07-26 (session 61 — RETRO-220..224 complete for #625-#629; pipeline still gated on 3 open escalations)
 
 **All five session-60 retrospectives are DONE** (RETRO-220..224, `retrospective-analyst`/opus, one
 invocation per PR — batching is against that agent's own charter). Each ran via

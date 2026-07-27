@@ -1601,7 +1601,17 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
   // existed before FOLLOW-658) — a provisioning defect that must fail LOUD, not inherit silently.
   describe('FOLLOW-658 un-provisioned tenant guard', () => {
     // VALID_KEY_RECORD carries tenant-uuid-1 and NO allowed_origins → inherit.
-    const FIRST_PARTY = 'tenant-uuid-1';
+    // [FOLLOW-678] A well-formed UUID, distinct from VALID_KEY_RECORD's ('tenant-uuid-1') and
+    // EXPLICIT_KEY_RECORD's tenant ids — `isUnprovisionedExternalTenant` now requires
+    // FIRST_PARTY_TENANT_ID to be a well-formed UUID to reach the `valid` classification.
+    const FIRST_PARTY = '11111111-1111-4111-8111-111111111111';
+    // A KV record whose tenant_id genuinely IS FIRST_PARTY (well-formed, matching) — needed to
+    // exercise the real match branch, since VALID_KEY_RECORD's tenant id is deliberately NOT
+    // UUID-shaped and can therefore never equal a well-formed env value.
+    const FIRST_PARTY_KEY_RECORD = JSON.stringify({
+      tenant_id: FIRST_PARTY,
+      scopes: ['write:events'],
+    });
 
     it('refuses an external tenant on inherit with 403 origin_policy_unconfigured', async () => {
       const stub = stubFetch('ok');
@@ -1610,7 +1620,7 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
         const env = makeEnv({
           kvStore: { 'api_key:k1': VALID_KEY_RECORD },
           environment: 'production',
-          firstPartyTenantId: 'some-other-first-party-tenant',
+          firstPartyTenantId: FIRST_PARTY,
         });
         const res = await app.fetch(
           new Request('http://test/v1/events', {
@@ -1641,7 +1651,7 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
       try {
         const app = createApp();
         const env = makeEnv({
-          kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+          kvStore: { 'api_key:k1': FIRST_PARTY_KEY_RECORD },
           environment: 'production',
           firstPartyTenantId: FIRST_PARTY,
         });
@@ -1724,7 +1734,7 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
         const env = makeEnv({
           kvStore: { 'api_key:k1': VALID_KEY_RECORD },
           environment: 'production',
-          firstPartyTenantId: 'some-other-first-party-tenant',
+          firstPartyTenantId: FIRST_PARTY,
         });
         const res = await app.fetch(
           new Request('http://test/v1/events', {
@@ -1742,6 +1752,84 @@ describe('CORS — FOLLOW-642 per-tenant allowed_origins', () => {
         stub.restore();
       }
     });
+  });
+
+  // ─── FOLLOW-678 — canonicalization + malformed-value handling ─────────────
+  describe('FOLLOW-678 FIRST_PARTY_TENANT_ID canonicalization', () => {
+    const FIRST_PARTY_LOWER = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const FIRST_PARTY_KEY_RECORD_LOWER = JSON.stringify({
+      tenant_id: FIRST_PARTY_LOWER,
+      scopes: ['write:events'],
+    });
+
+    it('matches case-insensitively end-to-end: upper-cased env still recognizes the tenant', async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({
+          kvStore: { 'api_key:k1': FIRST_PARTY_KEY_RECORD_LOWER },
+          environment: 'production',
+          // Upper-cased on purpose — would NOT have matched the lower-case KV tenant_id under
+          // the pre-fix raw `!==` compare.
+          firstPartyTenantId: FIRST_PARTY_LOWER.toUpperCase(),
+        });
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: {
+              Origin: 'https://app.estalara.com',
+              'Content-Type': 'application/json',
+              'X-Estalara-API-Key': 'k1',
+            },
+            body: JSON.stringify({ events: [validEvent] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+      } finally {
+        stub.restore();
+      }
+    });
+
+    it(
+      'a malformed FIRST_PARTY_TENANT_ID degrades the guard to OFF (200, not 403 deny-all) and ' +
+        'warns Sentry once — the specific test proving the malformed branch is guard-OFF, not deny-all',
+      async () => {
+        const stub = stubFetch('ok');
+        try {
+          const app = createApp();
+          const env = makeEnv({
+            kvStore: { 'api_key:k1': VALID_KEY_RECORD },
+            environment: 'production',
+            // Present but NOT a well-formed UUID — a plausible copy-paste mistake.
+            firstPartyTenantId: 'not-a-real-uuid',
+          });
+          const res = await app.fetch(
+            new Request('http://test/v1/events', {
+              method: 'POST',
+              headers: {
+                Origin: 'https://app.estalara.com',
+                'Content-Type': 'application/json',
+                'X-Estalara-API-Key': 'k1',
+              },
+              body: JSON.stringify({ events: [validEvent] }),
+            }),
+            env,
+          );
+          // Guard-OFF, not deny-all: the pre-fix defect would 403 this request too, because
+          // 'not-a-real-uuid' never equals the real tenant id under raw `!==`.
+          expect(res.status).toBe(200);
+          // [AC 2] Malformed-value visibility: warned via Sentry without the request having to
+          // fail (it didn't — 200 above).
+          expect(Sentry.captureMessage).toHaveBeenCalledWith(
+            'first_party_tenant_id_malformed',
+            expect.objectContaining({ level: 'warning' }),
+          );
+        } finally {
+          stub.restore();
+        }
+      },
+    );
   });
 
   it('inherit: a record without allowed_origins accepts the env-list origin in production', async () => {

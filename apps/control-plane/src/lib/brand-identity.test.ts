@@ -5,10 +5,18 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// [FOLLOW-678 AC 2] brand-identity.ts warns via Sentry once per instance when
+// FIRST_PARTY_TENANT_ID is present but malformed — mocked so the assertion below doesn't depend
+// on a real Sentry init.
+const { mockCaptureMessage } = vi.hoisted(() => ({ mockCaptureMessage: vi.fn() }));
+vi.mock('@sentry/nextjs', () => ({ captureMessage: mockCaptureMessage }));
+
 import {
   isFirstPartyTenant,
   isUnprovisionedExternalBrand,
   resolveBrandIdentity,
+  resolveFirstPartyTenantId,
 } from './brand-identity';
 import type { createAdminClient } from '@estalara/db';
 
@@ -160,8 +168,69 @@ describe('isFirstPartyTenant', () => {
   });
 
   it('treats only the matching tenant as first-party when the env is set', () => {
-    vi.stubEnv('FIRST_PARTY_TENANT_ID', 'estalara-tenant-uuid');
-    expect(isFirstPartyTenant('estalara-tenant-uuid')).toBe(true);
-    expect(isFirstPartyTenant('external-brand-uuid')).toBe(false);
+    const ESTALARA = 'a1b2c3d4-e5f6-4890-abcd-ef1234567890';
+    const EXTERNAL = 'b2c3d4e5-f6a7-4901-bcde-f12345678901';
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', ESTALARA);
+    expect(isFirstPartyTenant(ESTALARA)).toBe(true);
+    expect(isFirstPartyTenant(EXTERNAL)).toBe(false);
   });
+});
+
+// ─── FOLLOW-678: canonicalization + malformed-value handling ──────────────────
+
+describe('resolveFirstPartyTenantId', () => {
+  it('unset for undefined, empty, and whitespace-only', () => {
+    expect(resolveFirstPartyTenantId(undefined)).toEqual({ status: 'unset' });
+    expect(resolveFirstPartyTenantId('')).toEqual({ status: 'unset' });
+    expect(resolveFirstPartyTenantId('   ')).toEqual({ status: 'unset' });
+  });
+
+  it('valid: trims and lower-cases a well-formed UUID', () => {
+    expect(resolveFirstPartyTenantId(' A1B2C3D4-E5F6-4890-ABCD-EF1234567890 ')).toEqual({
+      status: 'valid',
+      value: 'a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+    });
+  });
+
+  it('malformed: present but not a well-formed UUID', () => {
+    expect(resolveFirstPartyTenantId('not-a-real-uuid')).toEqual({
+      status: 'malformed',
+      raw: 'not-a-real-uuid',
+    });
+  });
+});
+
+describe('isFirstPartyTenant — case-fold + malformed-env handling (FOLLOW-678)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('matches case-insensitively: upper-case env vs lower-case tenant id', () => {
+    const TENANT = 'a1b2c3d4-e5f6-4890-abcd-ef1234567890';
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT.toUpperCase());
+    expect(isFirstPartyTenant(TENANT)).toBe(true);
+  });
+
+  it('matches case-insensitively: lower-case env vs upper-case tenant id', () => {
+    const TENANT = 'a1b2c3d4-e5f6-4890-abcd-ef1234567890';
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT);
+    expect(isFirstPartyTenant(TENANT.toUpperCase())).toBe(true);
+  });
+
+  it(
+    'a malformed env degrades to the UNSET behavior (every tenant first-party) — would FAIL ' +
+      'under the pre-fix exact-string-compare defect, which instead denies every tenant',
+    () => {
+      mockCaptureMessage.mockClear();
+      vi.stubEnv('FIRST_PARTY_TENANT_ID', 'not-a-real-uuid');
+      expect(isFirstPartyTenant('any-tenant-uuid')).toBe(true);
+      expect(isFirstPartyTenant('a1b2c3d4-e5f6-4890-abcd-ef1234567890')).toBe(true);
+      // [AC 2] warned via Sentry that the env is malformed, so the bad value is visible
+      // without requiring a request to fail.
+      expect(mockCaptureMessage).toHaveBeenCalledWith(
+        'first_party_tenant_id_malformed',
+        expect.objectContaining({ level: 'warning' }),
+      );
+    },
+  );
 });

@@ -19285,7 +19285,8 @@ cross_ref: [RETRO-222, RETRO-218, FOLLOW-660, FOLLOW-658, FOLLOW-656]
 
 source_retro: RETRO-223 (PR #628, FOLLOW-658) source_ticket: FOLLOW-658 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true (QUEUE session 62, 2026-07-27, backend-engineer, branch
+backend-engineer/FOLLOW-678-first-party-tenant-id-canonicalize)
 
 Both consumers of this operator-set UUID compare it with `!==` on raw strings.
 `isUnprovisionedExternalTenant` (`apps/ingest/src/origin-gate.ts:186-195`) trims both operands;

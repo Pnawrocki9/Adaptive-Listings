@@ -20,38 +20,61 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ─── DB mock ──────────────────────────────────────────────────────────────────
 
+const mockConsentRecordsTable = {
+  id: 'id',
+  tenantId: 'tenant_id',
+  sessionId: 'session_id',
+  consentType: 'consent_type',
+  granted: 'granted',
+  tosVersion: 'tos_version',
+  consentTextHash: 'consent_text_hash',
+  ipAddress: 'ip_address',
+  userAgent: 'user_agent',
+  grantedAt: 'granted_at',
+};
+// FOLLOW-654: GET leg 1 (and, as of FOLLOW-684, the POST brand-identity guard) resolves
+// brand identity from tenants.brand_config.
+const mockTenantsTable = { id: 'id', brandConfig: 'brand_config' };
+
 const mockInsertReturning = vi.fn();
 const mockInsertValues = vi.fn(() => ({ returning: mockInsertReturning }));
 const mockInsert = vi.fn(() => ({ values: mockInsertValues }));
 
+// consentRecords select chain — nonce-check and duplicate-check in POST (route.ts `:398`/`:419`).
 const mockSelectLimit = vi.fn();
 const mockSelectWhere = vi.fn(() => ({ limit: mockSelectLimit }));
+
+// tenants select chain — brand identity lookup, used by GET (FOLLOW-654 leg 1) and, as of
+// FOLLOW-684, the POST-side unprovisioned-external-brand guard. Kept on ITS OWN mock —
+// separate from mockSelectLimit above — so the POST guard's extra tenant-row query never
+// shifts the call order the pre-existing nonce/duplicate-check tests assert via
+// `mockResolvedValueOnce` chains.
+const mockTenantSelectLimit = vi.fn();
+const mockTenantSelectWhere = vi.fn(() => ({ limit: mockTenantSelectLimit }));
+
 // FOLLOW-660: the tenant-count guard selects WITHOUT a .where() —
-// `db.select().from(tenants).limit(2)` — so `from()` must also expose `limit`.
-// Kept as its own mock so a test can control the count independently of the
-// where-fenced lookups above.
+// `db.select().from(tenants).limit(2)` — so `from()` must also expose `limit` directly.
+// Shared across both tables since only the tenants-count guard ever calls it this way.
 const mockCountLimit = vi.fn();
-const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere, limit: mockCountLimit }));
+
+const mockSelectFrom = vi.fn((table: unknown) => {
+  if (table === mockTenantsTable) {
+    return { where: mockTenantSelectWhere, limit: mockCountLimit };
+  }
+  return { where: mockSelectWhere, limit: mockCountLimit };
+});
 const mockSelect = vi.fn(() => ({ from: mockSelectFrom }));
 
 const mockDb = { insert: mockInsert, select: mockSelect };
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(() => mockDb),
-  consentRecords: {
-    id: 'id',
-    tenantId: 'tenant_id',
-    sessionId: 'session_id',
-    consentType: 'consent_type',
-    granted: 'granted',
-    tosVersion: 'tos_version',
-    consentTextHash: 'consent_text_hash',
-    ipAddress: 'ip_address',
-    userAgent: 'user_agent',
-    grantedAt: 'granted_at',
-  },
-  // FOLLOW-654: GET leg 1 resolves brand identity from tenants.brand_config.
-  tenants: { id: 'id', brandConfig: 'brand_config' },
+  consentRecords: mockConsentRecordsTable,
+  tenants: mockTenantsTable,
+}));
+
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: vi.fn(),
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -124,6 +147,9 @@ describe('POST /api/v1/consent/platform-registration', () => {
     mockSelectLimit.mockResolvedValue([]);
     // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
     mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // FOLLOW-684: no tenant row → Estalara fallback identity, first-party by default (not
+    // an unprovisioned external brand).
+    mockTenantSelectLimit.mockResolvedValue([]);
     mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-001' }]);
   });
 
@@ -356,6 +382,8 @@ describe('POST consent_text_hash requirement (FOLLOW-654 leg 2)', () => {
     mockSelectLimit.mockResolvedValue([]);
     // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
     mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // FOLLOW-684: no tenant row → Estalara fallback identity.
+    mockTenantSelectLimit.mockResolvedValue([]);
     mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-leg2' }]);
   });
 
@@ -425,6 +453,8 @@ describe('POST consent_text_hash — forgotten FIRST_PARTY_TENANT_ID (FOLLOW-660
     vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
     mockSelectLimit.mockResolvedValue([]);
     mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // FOLLOW-684: no tenant row → Estalara fallback identity.
+    mockTenantSelectLimit.mockResolvedValue([]);
     mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-660' }]);
   });
 
@@ -496,6 +526,147 @@ describe('POST consent_text_hash — forgotten FIRST_PARTY_TENANT_ID (FOLLOW-660
   });
 });
 
+// ─── FOLLOW-684: POST-side brand-identity fabrication gate ────────────────────
+//
+// FOLLOW-659 gave the GET leg a refusal for un-provisioned external brands. POST — the
+// only surface that WRITES `consent_records` — had no equivalent: an unprovisioned
+// external brand could submit `consent_text_hash: CANONICAL_CONSENT_TEXT_HASH` (public,
+// computable) and get a 201 whose audit record falsely names Estalara / Time2Show, Inc.
+// as the controller. This describe covers the AC-4 matrix.
+
+describe('POST brand identity provisioning gate (FOLLOW-684)', () => {
+  // Distinct from TENANT_ID so, with FIRST_PARTY_TENANT_ID pinned to TENANT_ID, this
+  // tenant is unambiguously non-first-party (no reliance on the tenant-count fallback).
+  const EXTERNAL_TENANT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+  function buildExternalBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return buildValidBody({ tenant_id: EXTERNAL_TENANT_ID, ...overrides });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    // Pinned to TENANT_ID (not EXTERNAL_TENANT_ID) — the real go-live shape per the
+    // brand-provisioning runbook (FOLLOW-656 requires this be set before onboarding any
+    // external brand).
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', TENANT_ID);
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    // Default: no tenant row → Estalara fallback identity. Individual tests override for
+    // the "provisioned" scenario.
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-684' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('unprovisioned external brand + canonical hash → 422, refused, nothing written', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildExternalBody({ consent_text_hash: CANONICAL_CONSENT_TEXT_HASH })),
+    );
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{ code: string; tenant_id: string }>(res);
+    expect(body.code).toBe('consent_text_hash_fabricated');
+    expect(body.tenant_id).toBe(EXTERNAL_TENANT_ID);
+    // Nothing written.
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'error',
+        tags: {
+          route: 'consent/platform-registration',
+          brand_identity: 'unprovisioned_external',
+        },
+      }),
+    );
+  });
+
+  it('unprovisioned external brand + brand-specific (non-canonical) hash → 201, exactly one Sentry capture', async () => {
+    const brandSpecificHash = 'd' + '0'.repeat(63);
+    const { POST } = await import('./route');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildExternalBody({ consent_text_hash: brandSpecificHash })),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(brandSpecificHash);
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'error',
+        tags: {
+          route: 'consent/platform-registration',
+          brand_identity: 'unprovisioned_external',
+        },
+      }),
+    );
+  });
+
+  it('provisioned external tenant (brand_name configured) → 201, no capture, no tenant-count query (AC-5)', async () => {
+    mockTenantSelectLimit.mockResolvedValue([
+      { id: EXTERNAL_TENANT_ID, brandConfig: { brand_name: 'Costa Sol Properties' } },
+    ]);
+    const brandSpecificHash = 'e' + '0'.repeat(63);
+    const { POST } = await import('./route');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildExternalBody({ consent_text_hash: brandSpecificHash })),
+    );
+
+    expect(res.status).toBe(201);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+    // `identity.isFallbackIdentity` is false for a provisioned brand —
+    // `isUnprovisionedExternalBrand` short-circuits before ever running the
+    // tenant-count query (Rule AA / FOLLOW-684 AC-5).
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it('first-party tenant → 201, no capture, byte-identical response, zero extra query (AC-5, no regression)', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    // TENANT_ID IS the FIRST_PARTY_TENANT_ID configured for this describe block.
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    const body = await parseBody<Record<string, unknown>>(res);
+    // Byte-identical shape to pre-FOLLOW-684 behavior — no new fields leak onto the
+    // success response.
+    expect(Object.keys(body)).toEqual(['consent_record_id']);
+    expect(body.consent_record_id).toBe('consent-record-uuid-684');
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+    // The FIRST_PARTY_TENANT_ID exact-match branch inside `isUnprovisionedExternalBrand`
+    // makes no DB call at all — the fast path for Estalara's own live traffic pays no
+    // extra query (Rule AA).
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+});
+
 // ─── FOLLOW-654 leg 1: GET brand-correct consent text ─────────────────────────
 
 describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
@@ -527,7 +698,7 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
   });
 
   it('renders the brand display identity in the consent text (substitution)', async () => {
-    mockSelectLimit.mockResolvedValue([
+    mockTenantSelectLimit.mockResolvedValue([
       {
         id: TENANT_ID,
         brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
@@ -555,7 +726,7 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
   });
 
   it('falls back to Estalara identity when the tenant has no brand_name (single-tenant, first-party)', async () => {
-    mockSelectLimit.mockResolvedValue([
+    mockTenantSelectLimit.mockResolvedValue([
       { id: TENANT_ID, brandConfig: { primary_color: '#1a73e8' } },
     ]);
     const { GET } = await import('./route');
@@ -572,7 +743,7 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
   });
 
   it('returns data_source=default (Estalara) when no tenant row exists', async () => {
-    mockSelectLimit.mockResolvedValue([]);
+    mockTenantSelectLimit.mockResolvedValue([]);
     // FOLLOW-660: default to exactly ONE tenant — today's live single-tenant state.
     mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
     const { GET } = await import('./route');
@@ -603,7 +774,7 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
   });
 
   it('returns 500 (fail loud) when the tenant lookup throws — no fabricated 200', async () => {
-    mockSelectLimit.mockRejectedValueOnce(new Error('DB connection refused'));
+    mockTenantSelectLimit.mockRejectedValueOnce(new Error('DB connection refused'));
     const { GET } = await import('./route');
     const res = await GET(makeGetRequest(TENANT_ID));
 
@@ -631,7 +802,9 @@ describe('GET brand identity provisioning gate (FOLLOW-659)', () => {
     vi.clearAllMocks();
     vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
     // Tenant row exists but carries NO legal identity — the fail-silent shape.
-    mockSelectLimit.mockResolvedValue([{ id: TENANT_ID, brandConfig: { primary_color: '#fff' } }]);
+    mockTenantSelectLimit.mockResolvedValue([
+      { id: TENANT_ID, brandConfig: { primary_color: '#fff' } },
+    ]);
     mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
   });
 
@@ -679,7 +852,7 @@ describe('GET brand identity provisioning gate (FOLLOW-659)', () => {
 
   it('external tenant WITH a configured brand_name → 200, and the gate costs no query', async () => {
     vi.stubEnv('FIRST_PARTY_TENANT_ID', SECOND_TENANT_ID);
-    mockSelectLimit.mockResolvedValue([
+    mockTenantSelectLimit.mockResolvedValue([
       { id: TENANT_ID, brandConfig: { brand_name: 'Costa Sol Properties' } },
     ]);
 

@@ -38,7 +38,27 @@ confirmed genuinely free) — see ticket entry below for full delegation brief.
 per ruling 2 above:** ESC-020 (Rafał), ESC-041 (npm registry), ESC-042 (narrowed — Modal deploy
 only). Surfaced every session close per the ruling.
 
-### FOLLOW-678 — status: IN_PROGRESS
+### FOLLOW-678 — status: READY_FOR_REVIEW (PR #630, CI green)
+
+**CI verified (not taken on trust):** `gh pr checks 630 --watch` completed — every real merge gate
+passes (Lint, Format check, Typecheck, Test (Node 22), Build, Build (control-plane), Vercel, Rule H,
+Rule J, Gitleaks, Doppler verify, Migration journal monotonicity, Cross-language event contract,
+Auto-Detection corpus gate, Demo integration, SDK E2E, ClickHouse migrations smoke, Archetype
+seeds/embeddings, and all Python matrix jobs). Only failure: **Rule I — wired-or-dead**, confirmed
+pre-existing-red/non-blocking per `project_ci_gate_landscape` memory (tracked by FOLLOW-090,
+unrelated to this diff). PR ready for Piotr's review.
+
+**Session note (session 63, 2026-07-27):** prior session's terminal closed mid-implementation;
+resumed from the uncommitted working tree (all 5 ACs already implemented, nothing left to write).
+Re-verified before committing, not taken on trust: re-read the full diff across all 13 files against
+the AC list below; ran `pnpm --filter @estalara/ingest test` (285/285 incl. new case-variant +
+malformed-env cases), `pnpm --filter control-plane test -- brand-identity dsr-routes` (51/51),
+`tsc --noEmit` (both apps, clean), `eslint` (both apps, clean), `prettier --check` (all touched
+files, clean). Committed `d16341f`, pushed, opened PR #630. `gh pr checks 630 --watch` dispatched in
+background — do not mark READY_FOR_REVIEW until it reports green. Left `.retro-tmp/` untracked and
+unstaged — unrelated leftover from a retrospective-analyst run blocked from writing
+`.claude/agents/retrospective-analyst/lessons.md` directly (see
+`.retro-tmp/lesson223.md`/`lesson224.md`); not this ticket's concern, flagged for next retro pass.
 
 **assigned_to:** backend-engineer **model: Sonnet** — routine, well-scoped implementation
 (canonicalize a string comparison in 3 call sites + add a warn-once log + re-scope 5 doc sentences +

@@ -428,6 +428,170 @@ describe('POST tos_version validation (FOLLOW-712)', () => {
   });
 });
 
+// ─── FOLLOW-715: bounded, explicitly-configured grace window for the ONE ───────
+// immediately-previous `tos_version` ────────────────────────────────────────────
+//
+// Before this ticket, ANY mismatch — including the single version immediately
+// preceding a bump — hard-refused with `422 tos_version_superseded`, turning every
+// `PLATFORM_REGISTRATION_TOS_VERSION` bump into an outage for the live out-of-repo
+// caller (app.estalara.com) until it redeployed (RETRO-229 → FOLLOW-715).
+// `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` (unset by default) lets an operator
+// explicitly configure exactly ONE grace-window version. Three bands, red-first:
+// current / previous-within-window / older-than-previous.
+
+describe('POST tos_version grace window (FOLLOW-715)', () => {
+  const PREVIOUS_VERSION = 'platform-v1.2-2026-05-01';
+  const OLDER_VERSION = 'platform-v1.1-2026-04-01';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-715' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // ── Band 1: current version — unaffected by this ticket ──────────────────────
+  it('band CURRENT: matches PLATFORM_REGISTRATION_TOS_VERSION → 201, written under the current version, no grace-window alert', async () => {
+    vi.stubEnv('PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS', PREVIOUS_VERSION);
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(
+      makeRequest(buildValidBody({ tos_version: PLATFORM_REGISTRATION_TOS_VERSION })),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.tosVersion).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  // ── Band 2: immediately-previous version, grace window configured → accepted ─
+  it('band PREVIOUS-WITHIN-WINDOW: the one grace-window version → 201, written under the SUBMITTED (previous) version — never coerced — and a warning alert fires', async () => {
+    vi.stubEnv('PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS', PREVIOUS_VERSION);
+    const { POST } = await import('./route');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: PREVIOUS_VERSION })));
+
+    expect(res.status).toBe(201);
+    const body = await parseBody<{ consent_record_id: string }>(res);
+    expect(body.consent_record_id).toBe('consent-record-uuid-715');
+
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    // AC-1: the record attests the version the caller ACTUALLY attested — never
+    // silently upgraded to the server's current version.
+    expect(valuesArg.tosVersion).toBe(PREVIOUS_VERSION);
+
+    // AC-1: every grace-window write raises a warning-level alert so the stale
+    // caller is visible. Distinct tag key from `brand_identity` — coordinated with,
+    // not a fourth value inside, the FOLLOW-700/708 registry (Rule AJ).
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        level: 'warning',
+        tags: {
+          route: 'consent/platform-registration',
+          tos_version_grace: 'previous_version_accepted',
+        },
+      }),
+    );
+  });
+
+  // ── Band 3: older than the previous version → hard 422, unconditionally ──────
+  it('band OLDER-THAN-PREVIOUS: refused with 422 tos_version_superseded even WITH a grace window configured — migration ramp, not amnesty', async () => {
+    vi.stubEnv('PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS', PREVIOUS_VERSION);
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: OLDER_VERSION })));
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{ code: string; current_tos_version: string }>(res);
+    expect(body.code).toBe('tos_version_superseded');
+    expect(body.current_tos_version).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    // Nothing OLDER than the grace-window version ever reaches the alert branch.
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it('the previous-version band is refused when NO grace window is configured (env unset) — byte-identical to pre-FOLLOW-715 behavior', async () => {
+    // PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS deliberately left unset.
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: PREVIOUS_VERSION })));
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{ code: string; current_tos_version: string }>(res);
+    expect(body.code).toBe('tos_version_superseded');
+    expect(body.current_tos_version).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+});
+
+// ─── RETRO-229 DG-5: a rejected tos_version costs ZERO DB queries ──────────────
+//
+// The 4a refusal is ordered BEFORE step 7's `createAdminClient()` call today. This
+// pins that invariant with a test, not just a code comment — it must fail if a
+// future reorder moved the tos_version check below any DB access.
+
+describe('POST tos_version rejection costs zero DB queries (RETRO-229 DG-5 / FOLLOW-715 AC-6)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('a hard-refused (older-than-previous, no grace window) tos_version never creates a DB client and never queries', async () => {
+    const { POST } = await import('./route');
+    const { createAdminClient } = await import('@estalara/db');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: 'platform-v0.1-ancient' })));
+
+    expect(res.status).toBe(422);
+    // Zero DB queries: the DB client itself is never even constructed for a
+    // rejected tos_version, let alone queried.
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('a hard-refused tos_version with a grace window CONFIGURED but not matched also costs zero DB queries', async () => {
+    vi.stubEnv('PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS', 'platform-v1.2-2026-05-01');
+    const { POST } = await import('./route');
+    const { createAdminClient } = await import('@estalara/db');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: 'platform-v0.1-ancient' })));
+
+    expect(res.status).toBe(422);
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+});
+
 // ─── FOLLOW-654 leg 2: consent_text_hash required for non-first-party ──────────
 
 describe('POST consent_text_hash requirement (FOLLOW-654 leg 2)', () => {

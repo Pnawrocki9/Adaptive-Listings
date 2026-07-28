@@ -26,6 +26,21 @@ import type { BrandIdentity } from '@/lib/brand-identity';
  * (v1.3, 2026-06-21).
  * Update this constant when the consent text changes and a new DPO-reviewed
  * version is published.
+ *
+ * FOLLOW-715 grace window: bumping this constant makes `POST
+ * /api/v1/consent/platform-registration` refuse (`422 tos_version_superseded`,
+ * FOLLOW-712) every caller still sending the OLD value — including the live
+ * out-of-repo caller (app.estalara.com), which shares no release train with this
+ * repo. `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` (an env var read directly in
+ * `route.ts`, not re-exported here) lets an operator set the immediately-previous
+ * value of this constant so the route accepts it for a bounded, EXPLICITLY-
+ * CONFIGURED grace window instead of hard-refusing on the very next deploy. The
+ * grace window is a migration ramp (accept + `warning`-level alert), never an
+ * amnesty: anything OLDER than that one previous value is still refused
+ * unconditionally, and the accepted record is written under the version the
+ * caller actually attested, never coerced to this constant. Ordered bump
+ * procedure, and the (deliberately manual, not time-based) window-closing
+ * decision: `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b.
  */
 export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as const;
 

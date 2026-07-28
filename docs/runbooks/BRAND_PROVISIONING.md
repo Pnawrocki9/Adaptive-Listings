@@ -322,6 +322,64 @@ closed** on a read error). Consequence worth internalising: **the moment a secon
 with `FIRST_PARTY_TENANT_ID` still unset, every tenant — including Estalara — is treated as
 external** and the consent GET starts refusing. Do §Step 0 first, as it already says.
 
+### Step 3b — Rotating the platform-registration `tos_version` (consent-text version bump, FOLLOW-715)
+
+**Read this BEFORE bumping `PLATFORM_REGISTRATION_TOS_VERSION`
+(`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts`).** That constant is
+checked against every `POST /api/v1/consent/platform-registration` call, and the caller
+(`app.estalara.com`, out of this repo, no shared release train) sends whatever `tos_version` its own
+last deploy hardcoded. Bumping the server constant with no ramp turns the very next registration
+into a hard `422 tos_version_superseded` the instant this repo deploys — that IS the outage
+FOLLOW-712 introduced and FOLLOW-715 exists to make survivable. Follow the steps below **in order**;
+do not bump the constant and stop.
+
+1. **Bump the server.** Edit `PLATFORM_REGISTRATION_TOS_VERSION` in `lib.ts` to the new value
+   (matching the newly DPO-reviewed §6.1 text — see the `consent-text-sync` CI gate this same PR
+   must keep green), and in the **same PR** set the deploy environment's
+   `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` to the value `PLATFORM_REGISTRATION_TOS_VERSION`
+   held **before** this bump (Doppler `prd`, and Vercel separately — they are not synced, same trap
+   as `SENTRY_DSN_CONTROL_PLANE` elsewhere in this runbook). Deploy. From this point, the route
+   accepts EITHER the new version OR that one previous version — never anything older.
+2. **The alert fires.** The next registration call that still sends the old (now-previous)
+   `tos_version` is accepted (`201`, written under the version it actually attested — never coerced
+   to the new one) and raises a `warning`-level Sentry alert tagged
+   `tos_version_grace: previous_version_accepted` (route: `consent/platform-registration`). **This
+   tag is a distinct axis from the `brand_identity` tag family FOLLOW-700/708 registers — coordinate
+   it into that registry when it is built; it is not a fourth `brand_identity` value (Rule AJ).**
+   Confirm the alert is actually reaching Sentry the same way §Part C step 7 confirms the
+   `brand_identity` alerts do (`SENTRY_DSN_CONTROL_PLANE` set in both Doppler `prd` and Vercel).
+3. **Notify Rafał.** The alert is the signal that `app.estalara.com` is still on the previous
+   `tos_version` — tell him directly (do not wait for him to notice the alert himself) that a
+   consent-text bump shipped and his deployment needs to pick up the new `tos_version` (and, if the
+   text itself changed meaning, the new `consent_text_hash` — GET-then-echo per
+   `backlog/HANDOFFS.md` → FOLLOW-374, Step 1).
+4. **Caller redeploys.** Rafał's side updates and redeploys against the current `tos_version`.
+   Verify by watching the alert stop firing (same "confirm the alert stops" pattern §Part C step 7
+   uses for the DSR/consent `brand_identity` alerts).
+5. **Close the window.** Once the alert has stopped firing (no more registrations arrive on the
+   previous version), **unset** `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` in Doppler `prd` AND
+   Vercel and redeploy. After this, the previous version hard-refuses again with
+   `422 tos_version_superseded`, exactly like every version older than it already does.
+
+**Window-closing design decision (recorded here per FOLLOW-715 AC-4): manually closed, not
+time-based.** A time-based window (e.g. "auto-expire 72h after the bump") was considered and
+rejected: nothing in this repo today monitors window expiry (no cron, no scheduled check, no
+dashboard), so an unnoticed time-based expiry would silently turn back into the exact outage this
+window exists to prevent — on a delay, at whatever hour the timer happened to fire, with no operator
+action having caused it. A manually-closed window fails safe instead: it stays open (with a
+`warning` alert on every use, so a caller left on the previous version is never silently tolerated)
+until an operator deliberately closes it in step 5 above. The cost is symmetrical and smaller:
+forgetting to close it just leaves the ramp open a little longer than necessary, loudly, not an
+unattended registration outage. If a monitored-expiry mechanism (e.g. a scheduled check that pages
+when the window has been open longer than N days) is ever added, revisit this decision — the
+tradeoff being weighed, not the conclusion, is what must survive that change.
+
+**Do not chain grace windows.** `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` holds exactly ONE value
+— the version immediately before the current `PLATFORM_REGISTRATION_TOS_VERSION`. If a second text
+bump happens before the first window is closed (step 5), close the first window before opening the
+second — the grace band is a one-version migration ramp, not an accumulating amnesty for every
+version ever served.
+
 ### Step 4 — `quiz_enabled` / `al_enabled` flags
 
 **`al_enabled` (Adaptive Listings master ON/OFF) — staff-only, works directly, no workaround:**
@@ -592,7 +650,15 @@ document — the local dry-run below (§Dry-run log) is the closest verification
      authoring its own text and must be moved to the GET-then-echo flow.
    - **Consent POST returns 422 `tos_version_superseded`** → the caller's hardcoded `tos_version` is
      older than the one this deploy serves. Nothing was written. A consent-text bump is a two-repo
-     operation (FOLLOW-712): the out-of-repo caller must be updated in the same window.
+     operation (FOLLOW-712): the out-of-repo caller must be updated in the same window. **Since
+     FOLLOW-715, there is a bounded grace window for the ONE immediately-previous version — see
+     §Step 3b below before assuming this is an outage.** Anything older than that one previous
+     version still hard-refuses unconditionally; this is a migration ramp, not an amnesty.
+   - **Consent POST returns 201 but a `warning`-level Sentry alert tagged
+     `tos_version_grace: previous_version_accepted` fires** → expected during a §Step 3b grace
+     window: the caller submitted the immediately-previous `tos_version` and it was accepted
+     (written under the version it actually attested, not coerced). This is the visibility signal
+     that a caller has not yet redeployed — see §Step 3b's response procedure.
    - **DSR e-mail arrives branded "Estalara"** → §Step 3a was never seeded, and a Sentry `error`
      tagged `brand_identity: unprovisioned_external` was raised for this exact request. The e-mail
      is sent on purpose (never block a data subject's right); seed §Step 3a and confirm the alert

@@ -40,12 +40,28 @@
  *         it is the wrong text for the tenant — either the tenant is a proven-external
  *         brand still on the fallback identity, or it is provisioned with a different
  *         display identity (whose own hash this route computes). Nothing is written.
- *   422 — `tos_version_superseded` (FOLLOW-712): the submitted tos_version does not match
- *         PLATFORM_REGISTRATION_TOS_VERSION currently served by this route. Refused rather
- *         than silently coerced or accepted — writing it would leave a consent_records row
- *         whose tos_version attests an OUTDATED text, and after FOLLOW-704 lands that would
- *         also mismatch the (correct) default consent_text_hash. The response includes
- *         `current_tos_version` so the caller can resync. Nothing is written.
+ *   422 — `tos_version_superseded` (FOLLOW-712, narrowed by FOLLOW-715): the submitted
+ *         tos_version does not match PLATFORM_REGISTRATION_TOS_VERSION AND does not match the
+ *         one grace-window version an operator may explicitly configure via
+ *         `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` (see FOLLOW-715 grace-window note below
+ *         `PLATFORM_REGISTRATION_TOS_VERSION` in ./lib.ts). Refused rather than silently
+ *         coerced or accepted — writing it would leave a consent_records row whose tos_version
+ *         attests an OUTDATED text, and after FOLLOW-704 lands that would also mismatch the
+ *         (correct) default consent_text_hash. The response includes `current_tos_version` so
+ *         the caller can resync. Nothing is written. This is a migration ramp, not an amnesty:
+ *         anything older than the immediately-previous version is refused unconditionally, and
+ *         the grace band accepts at most ONE (server-current, server-previous) pair at a time —
+ *         it does not chain across multiple stale versions.
+ *
+ *         FOLLOW-715 grace window (accepted, not refused): when the submitted tos_version
+ *         equals `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` (an operator-set env var, unset
+ *         by default), the request is NOT refused. The record is written under the version the
+ *         caller actually attested (never coerced to the current version — that would erase
+ *         the evidence the caller is stale), and a `warning`-level Sentry alert fires on every
+ *         such write so the stale caller stays visible rather than merely tolerated. See
+ *         `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b for the ordered bump procedure and the
+ *         window-closing decision (manually closed by unsetting the env var — deliberately NOT
+ *         time-based; see the code comment at the check below for why).
  *   500 — DB write failed, or the tenant's first-party status could not be determined
  *         (configured dependency threw — fail loud + retryable, never a 4xx asserting
  *         a fact the read never established; Rule K.2 amendment / FOLLOW-698)
@@ -343,22 +359,87 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //     evidence that the caller is stale, and the fix is for the caller to resync, not for the
   //     server to paper over the mismatch. Omitted (`undefined`) is unaffected — it still
   //     defaults to `PLATFORM_REGISTRATION_TOS_VERSION` below.
+  //
+  //     Deliberately still the FIRST statement of the handler that can return — no DB client is
+  //     created and no query runs above this point (RETRO-229 DG-5). A rejected `tos_version`
+  //     therefore costs ZERO DB round-trips; pinned by
+  //     "POST tos_version validation (FOLLOW-712 / FOLLOW-715)" → "costs zero DB queries" below.
+  //     Keep any future reordering of this block below step 7's `createAdminClient()` call from
+  //     silently making a rejected request pay a round trip.
   if (body.tos_version !== undefined && body.tos_version !== PLATFORM_REGISTRATION_TOS_VERSION) {
-    return NextResponse.json(
-      {
-        error:
-          `The submitted tos_version ("${body.tos_version}") does not match the version this ` +
-          `server currently serves ("${PLATFORM_REGISTRATION_TOS_VERSION}"). The disclosure ` +
-          'text has changed since the caller last synced — refetch the current text (GET ' +
-          '/api/v1/consent/platform-registration or the published PRIVACY_NOTICE_TEMPLATE.md ' +
-          '§6.1) and resubmit with the current tos_version (and, if applicable, ' +
-          'consent_text_hash). Nothing was written.',
-        code: 'tos_version_superseded',
-        current_tos_version: PLATFORM_REGISTRATION_TOS_VERSION,
-        tenant_id: body.tenant_id,
+    // FOLLOW-715 — bounded, EXPLICITLY-CONFIGURED grace window for the ONE
+    // immediately-previous tos_version. Before this ticket, bumping
+    // PLATFORM_REGISTRATION_TOS_VERSION turned every registration on
+    // app.estalara.com into a 422 the instant it deployed, because the two repos
+    // (this one and app.estalara.com's, out of scope) share no release train — see
+    // docs/runbooks/BRAND_PROVISIONING.md §Step 3b for the ordered bump procedure this
+    // window makes safe.
+    //
+    // WINDOW-CLOSING DESIGN DECISION (AC-4): manually closed by unsetting
+    // PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS (and redeploying), NOT time-based.
+    // Weighed explicitly: a time-based window (e.g. "accept the previous version for
+    // 72h after the bump") would auto-close even if the out-of-repo caller never
+    // redeployed — reproducing this exact outage on a delay, and nothing in this repo
+    // today monitors window expiry to catch that before it happens (no cron, no
+    // scheduled alert, no dashboard). A manually-closed window fails safe: it stays
+    // open (with a warning alert on every use, so the stale caller is visible) until
+    // an operator deliberately closes it, so the failure mode of "forgetting to close
+    // it" is "the ramp stays a little too generous, loudly", not "registration goes
+    // down at 3am with no operator action taken." If a monitored-expiry mechanism is
+    // ever added, revisit this call — the tradeoff, not the conclusion, is what must
+    // survive that change.
+    //
+    // The record is written under body.tos_version AS SUBMITTED (never coerced to
+    // PLATFORM_REGISTRATION_TOS_VERSION) — see the INSERT below, which already reads
+    // `body.tos_version ?? PLATFORM_REGISTRATION_TOS_VERSION` and therefore needs no
+    // change: the caller's actual attestation is preserved by construction.
+    const previousVersion = process.env.PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS ?? undefined;
+    const withinGraceWindow = previousVersion !== undefined && body.tos_version === previousVersion;
+
+    if (!withinGraceWindow) {
+      return NextResponse.json(
+        {
+          error:
+            `The submitted tos_version ("${body.tos_version}") does not match the version this ` +
+            `server currently serves ("${PLATFORM_REGISTRATION_TOS_VERSION}"). The disclosure ` +
+            'text has changed since the caller last synced — refetch the current text (GET ' +
+            '/api/v1/consent/platform-registration or the published PRIVACY_NOTICE_TEMPLATE.md ' +
+            '§6.1) and resubmit with the current tos_version (and, if applicable, ' +
+            'consent_text_hash). Nothing was written.',
+          code: 'tos_version_superseded',
+          current_tos_version: PLATFORM_REGISTRATION_TOS_VERSION,
+          tenant_id: body.tenant_id,
+        },
+        { status: 422 },
+      );
+    }
+
+    // Accepted under the grace window — NOT a fourth `brand_identity` tag value (Rule AJ /
+    // coordinated with the still-unbuilt FOLLOW-700/708 registry, which owns the `brand_identity`
+    // tag namespace): this is a distinct signal on a distinct axis (a stale TOS version, not a
+    // brand-identity mismatch), so it gets its own tag key, `tos_version_grace`, rather than a
+    // new value under `brand_identity`. Register this tag alongside the `brand_identity` values
+    // when FOLLOW-700/708's alert registry is built (docs/runbooks/BRAND_PROVISIONING.md §Step 3b
+    // names it explicitly so that build does not miss it).
+    const msg =
+      `[platform-registration consent POST] tenant ${body.tenant_id} submitted the ` +
+      `immediately-previous tos_version ("${body.tos_version}") — accepted under the ` +
+      `explicitly-configured grace window (current: "${PLATFORM_REGISTRATION_TOS_VERSION}"). ` +
+      'The record is written under the SUBMITTED version, not coerced. This caller is stale ' +
+      'and should redeploy against the current tos_version before the window closes.';
+    console.warn(msg);
+    Sentry.captureMessage(msg, {
+      level: 'warning',
+      tags: {
+        route: 'consent/platform-registration',
+        tos_version_grace: 'previous_version_accepted',
       },
-      { status: 422 },
-    );
+      extra: {
+        tenant_id: body.tenant_id,
+        submitted_tos_version: body.tos_version,
+        current_tos_version: PLATFORM_REGISTRATION_TOS_VERSION,
+      },
+    });
   }
 
   // 4b. FOLLOW-654 leg 2 — `consent_text_hash` is REQUIRED for non-first-party

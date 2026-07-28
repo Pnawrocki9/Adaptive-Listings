@@ -241,6 +241,16 @@ regexes = [
   # 39-char prefix literal is a guaranteed substring of that capture regardless
   # of surrounding context (backtick, `/`, `.md`). Token-scoped per Rule V.
   '''DECISION-BRIEF-FACADES-622-623-2026-07''',
+  # FOLLOW-715: the grace-window env var name `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS`
+  # (42 chars) is cited in lib.ts/route.ts/route.test.ts (doc comments, `process.env.` reads,
+  # `vi.stubEnv()` calls) — same class as the ADR-NNNN-kebab and DECISION-BRIEF entries above (a
+  # descriptive identifier, not a secret). The `[a-zA-Z0-9_-]{40}` rule captures the first 40
+  # chars (`PLATFORM_REGISTRATION_TOS_VERSION_PREVIO`, missing the trailing `US`) identically in
+  # all 11 findings (verified locally with the gitleaks binary against this exact commit). This
+  # 40-char literal is the exact capture every time, since the identifier always starts a fresh
+  # `[a-zA-Z0-9_-]` run (preceded by `.`, backtick, or a quote, never another matching char).
+  # Token-scoped per Rule V.
+  '''PLATFORM_REGISTRATION_TOS_VERSION_PREVIO''',
 ]
 
 # JWT tokens (generic)

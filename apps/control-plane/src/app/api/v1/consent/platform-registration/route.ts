@@ -40,6 +40,12 @@
  *         it is the wrong text for the tenant — either the tenant is a proven-external
  *         brand still on the fallback identity, or it is provisioned with a different
  *         display identity (whose own hash this route computes). Nothing is written.
+ *   422 — `tos_version_superseded` (FOLLOW-712): the submitted tos_version does not match
+ *         PLATFORM_REGISTRATION_TOS_VERSION currently served by this route. Refused rather
+ *         than silently coerced or accepted — writing it would leave a consent_records row
+ *         whose tos_version attests an OUTDATED text, and after FOLLOW-704 lands that would
+ *         also mismatch the (correct) default consent_text_hash. The response includes
+ *         `current_tos_version` so the caller can resync. Nothing is written.
  *   500 — DB write failed, or the tenant's first-party status could not be determined
  *         (configured dependency threw — fail loud + retryable, never a 4xx asserting
  *         a fact the read never established; Rule K.2 amendment / FOLLOW-698)
@@ -328,6 +334,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const body = parsed.data;
+
+  // 4a. FOLLOW-712 — `tos_version` must match what this server currently serves. Before this
+  //     check, an out-of-date caller (still sending a superseded version string after a text
+  //     bump) could write a consent_records row whose `tos_version` and `consent_text_hash`
+  //     attest two DIFFERENT texts, with no error and no alert (GDPR Art. 7(1)). Refused rather
+  //     than silently coerced: coercing the caller's value to the current one would erase the
+  //     evidence that the caller is stale, and the fix is for the caller to resync, not for the
+  //     server to paper over the mismatch. Omitted (`undefined`) is unaffected — it still
+  //     defaults to `PLATFORM_REGISTRATION_TOS_VERSION` below.
+  if (body.tos_version !== undefined && body.tos_version !== PLATFORM_REGISTRATION_TOS_VERSION) {
+    return NextResponse.json(
+      {
+        error:
+          `The submitted tos_version ("${body.tos_version}") does not match the version this ` +
+          `server currently serves ("${PLATFORM_REGISTRATION_TOS_VERSION}"). The disclosure ` +
+          'text has changed since the caller last synced — refetch the current text (GET ' +
+          '/api/v1/consent/platform-registration or the published PRIVACY_NOTICE_TEMPLATE.md ' +
+          '§6.1) and resubmit with the current tos_version (and, if applicable, ' +
+          'consent_text_hash). Nothing was written.',
+        code: 'tos_version_superseded',
+        current_tos_version: PLATFORM_REGISTRATION_TOS_VERSION,
+        tenant_id: body.tenant_id,
+      },
+      { status: 422 },
+    );
+  }
 
   // 4b. FOLLOW-654 leg 2 — `consent_text_hash` is REQUIRED for non-first-party
   //     (external brand) tenants. On those deployments the disclosure text is
@@ -700,7 +732,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         consentType: 'platform_registration',
         granted: true,
         tosVersion: body.tos_version ?? PLATFORM_REGISTRATION_TOS_VERSION,
-        consentTextHash: body.consent_text_hash ?? CANONICAL_CONSENT_TEXT_HASH,
+        // FOLLOW-707: the omitted-hash path must not bypass the provisioned-brand evidence
+        // check above (`:490-542`) — that check runs only when `body.consent_text_hash` is
+        // DEFINED, so an omitted hash used to fall straight through to the canonical constant
+        // even for a PROVISIONED tenant, whose own correct hash this route can compute (the
+        // same `computeConsentTextHash(renderPlatformConsentText(...))` pair the evidence check
+        // and the GET leg both use). Recomputed here rather than reusing `expectedHash` from
+        // that block: both calls are pure and cheap, and `expectedHash` is scoped to the `if`
+        // above rather than widened for this one extra read.
+        //   - PROVISIONED (`isFallbackIdentity === false`): default to the hash of the text THIS
+        //     route renders for that tenant — never the canonical constant, which is Estalara's
+        //     hash, not this brand's.
+        //   - FALLBACK (`isFallbackIdentity === true`, includes Estalara's own tenant): default
+        //     to `CANONICAL_CONSENT_TEXT_HASH`, unchanged. That constant is currently a
+        //     placeholder and NOT the correct digest of the Estalara text (FOLLOW-704, not this
+        //     ticket's scope) — once FOLLOW-704 re-pins it to
+        //     `computeConsentTextHash(renderPlatformConsentText(<first-party identity>))`, this
+        //     branch and the PROVISIONED branch above collapse to the same value for the
+        //     first-party tenant, because `rendersFirstPartyIdentity` guarantees the first-party
+        //     tenant's fallback identity IS the Estalara identity. Nothing here needs to change
+        //     when that lands — this expression already reads the identity, not the constant,
+        //     for every PROVISIONED tenant.
+        consentTextHash:
+          body.consent_text_hash ??
+          (brandIdentity.isFallbackIdentity
+            ? CANONICAL_CONSENT_TEXT_HASH
+            : computeConsentTextHash(renderPlatformConsentText(brandIdentity))),
         ...(encryptedIp !== null ? { ipAddress: encryptedIp } : {}),
         ...(userAgent !== null ? { userAgent } : {}),
         grantedAt: new Date(),

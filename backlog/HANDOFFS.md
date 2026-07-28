@@ -2838,7 +2838,12 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   Must be consistent for the investor's lifetime. No raw email / name / phone.
 - `nonce` — a fresh UUID per request (prevents accidental double-submit on retry).
 - `tos_version` — use `"platform-v1.3-2026-06-21"` to match the DPO-reviewed disclosure text. Update
-  when consent text changes and a new DPO-reviewed version is published.
+  when consent text changes and a new DPO-reviewed version is published. **[FOLLOW-712,
+  2026-07-28]** A version bump is now a two-repo operation: as of this endpoint's latest deploy, a
+  `tos_version` that does not match what the server currently serves is REFUSED
+  (`422 tos_version_superseded`, response includes `current_tos_version`) rather than written — if
+  this literal is not updated in the SAME window as an Adaptive-Listings text bump, registration
+  will start failing with that 422 until it is.
 - `consent_text_hash` — optional; omit to use the canonical EN §6.1 SHA-256 hash. Provide a custom
   hash ONLY if you display a translated version of the text.
 

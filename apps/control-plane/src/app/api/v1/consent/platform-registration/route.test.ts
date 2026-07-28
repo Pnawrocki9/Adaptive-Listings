@@ -193,15 +193,19 @@ describe('POST /api/v1/consent/platform-registration', () => {
     expect(valuesArg.tosVersion).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
   });
 
-  it('uses caller-supplied tos_version when provided', async () => {
+  it('uses caller-supplied tos_version when it matches the currently-served version', async () => {
+    // FOLLOW-712: an arbitrary caller-supplied value ('platform-v2.0-custom') is no longer
+    // accepted unvalidated — see the dedicated "POST tos_version validation (FOLLOW-712)"
+    // describe block below for the superseded-version rejection this test used to miss.
     const { POST } = await import('./route');
-    await POST(makeRequest(buildValidBody({ tos_version: 'platform-v2.0-custom' })));
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    await POST(makeRequest(buildValidBody({ tos_version: PLATFORM_REGISTRATION_TOS_VERSION })));
 
     const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
       string,
       unknown
     >;
-    expect(valuesArg.tosVersion).toBe('platform-v2.0-custom');
+    expect(valuesArg.tosVersion).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
   });
 
   it('inserts canonical consent_text_hash when not supplied', async () => {
@@ -365,6 +369,62 @@ describe('POST /api/v1/consent/platform-registration', () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── FOLLOW-712: `tos_version` must match what this server currently serves ────
+//
+// Before this ticket, `body.tos_version` was accepted with no check against
+// `PLATFORM_REGISTRATION_TOS_VERSION`, so a caller still sending a superseded version string
+// (e.g. after a text bump) would write a consent_records row whose tos_version and hash
+// attest two different texts (RETRO-228).
+
+describe('POST tos_version validation (FOLLOW-712)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-712' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns 422 tos_version_superseded when the submitted tos_version does not match the served version', async () => {
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    const res = await POST(
+      makeRequest(buildValidBody({ tos_version: 'platform-v1.2-2026-05-01' })),
+    );
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{
+      code: string;
+      current_tos_version: string;
+      error: string;
+    }>(res);
+    expect(body.code).toBe('tos_version_superseded');
+    expect(body.current_tos_version).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
+    // Fail-closed: nothing is coerced or written — the evidence the caller is stale survives.
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it('returns 201 and writes the default tos_version when tos_version is omitted (unchanged)', async () => {
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    const res = await POST(makeRequest(buildValidBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.tosVersion).toBe(PLATFORM_REGISTRATION_TOS_VERSION);
   });
 });
 
@@ -792,6 +852,92 @@ describe('POST brand gate — provisioned brands (FOLLOW-697)', () => {
       unknown
     >;
     expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
+  });
+});
+
+// ─── FOLLOW-707: the omitted-hash path must not bypass the provisioned-brand gate ──────
+//
+// #632's evidence check (FOLLOW-697) is guarded on `body.consent_text_hash !== undefined` —
+// when the field is OMITTED, the check never runs, and before this ticket the write defaulted
+// straight to `CANONICAL_CONSENT_TEXT_HASH`, even for a PROVISIONED tenant whose own correct
+// hash (`expectedHash`) was already computable. Reachable in the documented go-live shape: a
+// first-party tenant that is ALSO provisioned with a non-Estalara identity.
+
+describe('POST brand gate — provisioned tenant omits consent_text_hash (FOLLOW-707)', () => {
+  const EXTERNAL_TENANT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const BRAND_NAME = 'Costa Sol Properties';
+  const LEGAL_ENTITY = 'Costa Sol S.L.';
+
+  function buildExternalBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return buildValidBody({ tenant_id: EXTERNAL_TENANT_ID, ...overrides });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    // PROVISIONED: `brand_config.brand_name` is set, so `isFallbackIdentity` is false.
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: BRAND_NAME, legal_entity: LEGAL_ENTITY },
+      },
+    ]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-707' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("FIRST_PARTY_TENANT_ID SET to the provisioned tenant + omitted hash → writes the brand's own computed hash, not the canonical constant", async () => {
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', EXTERNAL_TENANT_ID);
+    mockCountLimit.mockResolvedValue([{ id: EXTERNAL_TENANT_ID }]);
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH, computeConsentTextHash, renderPlatformConsentText } =
+      await import('./lib');
+
+    const res = await POST(makeRequest(buildExternalBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    const expectedHash = computeConsentTextHash(
+      renderPlatformConsentText({ brandName: BRAND_NAME, legalEntity: LEGAL_ENTITY }),
+    );
+    expect(valuesArg.consentTextHash).toBe(expectedHash);
+    // Today's bug: this used to equal the canonical constant instead.
+    expect(valuesArg.consentTextHash).not.toBe(CANONICAL_CONSENT_TEXT_HASH);
+    // FIRST_PARTY_TENANT_ID matches exactly → zero tenant-count probes anywhere in the route.
+    expect(mockCountLimit).not.toHaveBeenCalled();
+  });
+
+  it("FIRST_PARTY_TENANT_ID UNSET + single tenant + omitted hash → writes the brand's own computed hash, not the canonical constant", async () => {
+    // Env unset entirely; the provisioned tenant is the only tenant row.
+    mockCountLimit.mockResolvedValue([{ id: EXTERNAL_TENANT_ID }]);
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH, computeConsentTextHash, renderPlatformConsentText } =
+      await import('./lib');
+
+    const res = await POST(makeRequest(buildExternalBody()));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    const expectedHash = computeConsentTextHash(
+      renderPlatformConsentText({ brandName: BRAND_NAME, legalEntity: LEGAL_ENTITY }),
+    );
+    expect(valuesArg.consentTextHash).toBe(expectedHash);
+    expect(valuesArg.consentTextHash).not.toBe(CANONICAL_CONSENT_TEXT_HASH);
+    // Invariant established by PR #632: at most ONE `select id from tenants limit 2` per POST.
+    // Here it is paid exactly once, by step 7b's FOLLOW-660 probe — the provisioned branch (a)
+    // at step 7c (and this ticket's hash-default expression) adds no probe of its own.
+    expect(mockCountLimit).toHaveBeenCalledTimes(1);
   });
 });
 

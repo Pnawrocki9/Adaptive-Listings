@@ -1,5 +1,31 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-28 (session 73 — FOLLOW-705 DONE, PR #633 merged `47e863c6`; FOLLOW-704 unblocked but held pending Piotr; 4 escalations OPEN)
+
+**FOLLOW-705 DONE.** PR #633 merged (squash) 2026-07-28T06:07:29Z → `47e863c6` on `main`, confirmed
+via `gh pr view 633 --json state,mergedAt,mergeCommit`. Worktree
+`.claude/worktrees/agent-a9cbe9de51eed32b9` removed (clean) and both local + remote
+`compliance-engineer/FOLLOW-705-consent-text-canonical-source` branches deleted. Local `main`
+fast-forwarded, working tree clean.
+
+The server renderer (`renderPlatformConsentText()`) is now the byte-canonical source for the
+consent-text hash; `PRIVACY_NOTICE_TEMPLATE.md` §6.1 conforms to it (two unfilled bracket slots
+replaced with the prose the renderer has actually served since 2026-06-21); a new hard CI gate
+(`consent-text-sync`) keeps the two from silently drifting apart again.
+
+**Still open, unresolved from the ruling flag:** Piotr hasn't yet weighed in on whether he affirms
+compliance-engineer's renderer-vs-doc call (ESC-044 item 2) — not blocking, since the PR is already
+merged and the ruling is recorded either way, but worth a explicit nod or override.
+
+**FOLLOW-704 (P0) is now unblocked** — its dependency (which bytes to pin the hash constant to) is
+resolved. **Still holding dispatch** pending Piotr's go-ahead, per the prior session's note. Also
+now dispatchable, independent of the ESC-044 ruling: FOLLOW-707 (P1, second omitted-hash bypass),
+FOLLOW-708/709 (P1, alarm-registry + doc gaps), FOLLOW-699/700 (P1, from RETRO-226), FOLLOW-685
+(original P1 docs ticket). Retrospective for #633 dispatching next — will fold in the DSR-contact
+finding compliance-engineer flagged.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-28 (session 72 — FOLLOW-705 validated, PR #633 READY_FOR_REVIEW; unblocks FOLLOW-704 pending Piotr's confirmation; 4 escalations OPEN)
 
 **PR #633 opened by compliance-engineer, validated by PM:**
@@ -55,7 +81,7 @@ bracket placeholders, which `renderPlatformConsentText()` (`lib.ts:79-102`) subs
 agency's DSR contact" / "the agency privacy policy" respectively. This is exactly the divergence
 RETRO-227/FOLLOW-705 describe — confirmed accurate, not taken on the retro's word.
 
-### FOLLOW-705 — status: READY_FOR_REVIEW (PR #633, all checks green modulo pre-existing-red Rule I, self-test 7/7 + check PASS verified locally)
+### FOLLOW-705 — status: DONE (PR #633 merged `47e863c6`, 2026-07-28T06:07:29Z)
 
 **assigned_to:** compliance-engineer **model: Opus** — this is a documentation-shaped ticket by file
 type, but the actual decision (which of two texts is legally byte-canonical, with the DPO

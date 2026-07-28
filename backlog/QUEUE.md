@@ -1,16 +1,86 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-716 MERGED (#638))
+## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-716 MERGED (#638); RETRO-230 filed; FOLLOW-720 dispatched)
 
-**FOLLOW-716 — status: DONE.** PR **#638** merged (squash `d77c9b2c`), branch deleted, local `main`
-fast-forwarded. Piotr merged directly (`gh pr merge 638 --squash --delete-branch`) after the PM-side
-CI verification below; `mergeStateStatus` was `UNSTABLE` (Rule I, confirmed pre-existing) not
-`DIRTY` — no conflicts. All 6 ACs shipped (see the full breakdown in the superseded section below).
-Retrospective-analyst dispatch: pending (next action).
+**FOLLOW-716 — status: DONE.** PR **#638** merged (squash `d77c9b2c`). **RETRO-230 filed**
+(`b158670d`): replaying all 4 historical drift incidents (RETRO-226→229) against the new gate shows
+only 2/4 would actually be caught (reused tuples and body-field-only changes are invisible to it);
+found the gate misses calls outside its two literal file-slice scans (P1, proven); found **both**
+consent gates' self-tests FAIL on the first CORRECT contract change, not just a real drift (P1,
+proven — this directly threatens FOLLOW-704/710/711); found Rule AK's own "no gap" verification
+check can never fail (`grep -l` against a single file that always contains the phrase); found 2
+un-retro'd merges (#636, #637). Filed FOLLOW-717..722. No new rule promoted (P-16 pattern has 2
+instances, below the ≥2-PRIOR-RETRO bar).
 
-**1 ticket now DONE this session, 0 IN_PROGRESS.** Still held on ESC-044: FOLLOW-704 + 714,
-FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling. Free-to-pick
-pool for next session: FOLLOW-700/708 (devops), FOLLOW-702/703/709 (P2).
+**Escalation gate re-checked, unchanged:** same 3 `## OPEN` entries in `backlog/ESCALATIONS.md`
+(ESC-041/042 standing non-blocking ruling, ESC-044 self-scoped to FOLLOW-704/706/710/711/701/714).
+FOLLOW-720 is not in that held list and does not touch any ESC-044 question (canonical hash text,
+prod remediation, withdrawal-channel design) — it fixes the two consent gates' self-test fixtures,
+unrelated code. Picking it does not require or pre-empt the ESC-044 ruling.
+
+**Premise re-verified before dispatch, not taken on the retro's word:** read
+`scripts/check-consent-contract-sync.mjs:333-410`'s `selfTest()` directly — case (b) (`:356-361`)
+and case (c) (`:373-378`) both `.replace()` on the ENTIRE literal fenced-block content; any
+legitimate addition to that block makes the replace a no-op (mutated fixture === original), so the
+`ok === false` assertion incorrectly fails. Read `scripts/check-consent-text-sync.mjs:281-291`'s
+`versionDrift` case — its search string is the literal CURRENT `PLATFORM_REGISTRATION_TOS_VERSION`
+value; once that value is genuinely bumped in the repo (exactly what FOLLOW-704/710/711 do), the
+search string no longer exists in `sources.libSrc`, `.replace()` no-ops, and the case wrongly reds.
+Confirmed both independently, not by re-running the retro's harness.
+
+### FOLLOW-720 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — `recommended_agent: backend-engineer` per the
+ticket stub; a bounded, well-scoped bug fix in two existing self-contained scripts the same
+worker/tier already owns (FOLLOW-716, FOLLOW-705 precedent), no cross-module contract change, no
+prior failed attempt at this specific fix. Does not warrant Opus per the model-fit table's
+escalation trigger. **started_at:** 2026-07-28. **branch:**
+`backend-engineer/FOLLOW-720-self-test-fixture-anchors`.
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-720` (full text, verbatim — P1, 2h,
+  `source_retro: RETRO-230`).
+- Read first: `scripts/check-consent-contract-sync.mjs` in full (`selfTest()` at `:333-410`, cases
+  (b)/(c) specifically); `scripts/check-consent-text-sync.mjs` in full (`selfTest()` at `:251-...`,
+  the `versionDrift` case at `:281-291`); RETRO-230 §4c TG-1 / §6 P-16 in
+  `backlog/RETROSPECTIVES.md` for the full analysis and reproduction steps.
+- Root cause (both scripts, same shape): self-test cases mutate a fixture via `String.replace()`
+  anchored on either (a) the FULL current literal content of a block, or (b) the CURRENT VALUE of a
+  constant the ticket exists to let change. When the repo's real state legitimately changes that
+  literal (a correct contract addition, a correct version bump), the anchor stops matching,
+  `.replace()` becomes a silent no-op, the "mutated" fixture equals the unmutated one, and the
+  `ok === false` assertion fails — printing the misleading
+  `SELF-TEST FAILED — the gate does not detect drift`, when the gate is actually fine and the
+  FIXTURE is stale.
+- AC (verbatim from the stub, 4 items): (1) each self-test case must assert its own mutation
+  actually applied (e.g. compare mutated string !== original before running the check) and fail with
+  a distinct, correctly-diagnosing message (`SELF-TEST FIXTURE STALE — update the anchor at :NNN`)
+  instead of the current misleading message; (2) prefer mutations anchored on the smallest stable
+  token (a single row / a single constant name) over a whole fenced block or an exact current value,
+  where practical; (3) fix **both** scripts in the SAME PR — one defect, two instances, do not let
+  the second get forgotten; (4) prove it — run each script's self-test against a simulated
+  legitimate change (a clean contract addition for the contract-sync script; a clean TOS-version
+  bump applied consistently to both sides for the text-sync script) and show it stays GREEN, then
+  against a real drift and show it still REDS. Paste both outputs in the PR description.
+- Scope constraints: do not touch FOLLOW-704/706/710/711/714/701 (held on ESC-044) or attempt the
+  actual TOS version bump — this ticket only hardens the self-test fixtures so that FUTURE bump
+  tickets don't hit a false-red. Do not touch FOLLOW-717/718/719/721/722 (separate tickets).
+- Completion: worker opens a PR (never commits to `main`). Run locally BEFORE push:
+  `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, AND install the
+  `gitleaks` binary locally (v8.21.2 confirmed working this session, not on the pre-commit hook's
+  PATH) and run it against the diff before pushing. Prettier on every touched file. Conventional
+  commit referencing `[FOLLOW-720]` — lowercase the subject (commitlint's `subject-case` rule fires
+  on standalone capitalized words like `CI`/`PR` outside the `[FOLLOW-NNN]` tag; keep header ≤100
+  chars). PM independently re-runs CI (checking the SPECIFIC PR run, not assuming Gitleaks/Rule I
+  status from memory) and confirms both self-test outputs (green-on-legitimate-change,
+  red-on-real-drift) before READY_FOR_REVIEW.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet.)
+
+**1 ticket IN_PROGRESS** (FOLLOW-720) — within the ≤3 guardrail. **Still held on ESC-044:**
+FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
+ruling.
 
 ---
 

@@ -1,6 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 77 continued — FOLLOW-715 MERGED (#637); FOLLOW-716 dispatched)
+## ▶️ START HERE — resume 2026-07-28 (session 78 — terminal crash recovery; FOLLOW-716 PR #638 opened, CI green)
+
+**Recovery context:** the terminal closed mid-session-77 while backend-engineer was implementing
+FOLLOW-716; work survived uncommitted on the
+`backend-engineer/FOLLOW-716-consent-contract-drift-gate` branch (`.mjs` script + CI wiring +
+`HANDOFFS.md` machine-checked blocks + `CONVENTIONS_PATCH.md` Rule AK, all already written).
+Verified the survived diff against all 6 ACs before trusting it — read
+`scripts/check-consent-contract-sync.mjs` in full, ran `--self-test` (5/5 PASS, both directions, GET
+vs POST scoped separately) and the real check (route/doc agree) before proceeding, per
+`feedback_check_worktrees_before_concluding_agent_didnt_run`.
+
+**FOLLOW-716 — status: READY_FOR_REVIEW.** PR **#638** opened
+(`backend-engineer/FOLLOW-716-consent-contract-drift-gate` → `main`). All 6 ACs shipped: (1)
+`scripts/check-consent-contract-sync.mjs` derives the GET/POST status+`code` contract from
+`route.ts` source, not hand-maintained; (2) the `consent-contract-sync` CI job is a hard gate,
+self-test proves both directions fail correctly before the real check runs; (3) `HANDOFFS.md`'s
+FOLLOW-374 section now carries machine-checked `<!-- BEGIN/END MACHINE-CHECKED CONTRACT -->` blocks
+per method; (4) red-first proven via `--self-test` (pasted in the PR description); (5) GET's
+`409 brand_identity_not_provisioned` and POST's uncoded `409` are checked as disjoint per-method
+tuples, not unioned; (6) `CONVENTIONS_PATCH.md` Rule AK promoted in the same PR, citing all four
+retros (226→227→228→229) per the ≥2-retro bar.
+
+- **Local verification run before push:** `pnpm --filter control-plane lint` / `typecheck` / `test`
+  (175 files / 1974 tests, matches the FOLLOW-715-session count) / `build` all clean;
+  `prettier --check` on all 4 touched files clean.
+- **Gitleaks installed locally (binary, v8.21.2, not the pre-commit hook's PATH — same gap
+  FOLLOW-715 hit) and run twice:** once against the staged diff (`--staged`, 0 leaks) and once
+  against the actual commit range (`--log-opts="main..HEAD"`, 0 leaks) — no repeat of FOLLOW-715's
+  round-1 false positive (this PR introduces no new long identifier of the tripping shape).
+- **CI-check counter: 1/5.** Full `gh pr checks 638 --watch` run: every job PASS including the new
+  `Consent contract drift gate (FOLLOW-716)` job on both the push and PR-synchronize runs, EXCEPT
+  `Rule I — wired-or-dead check` (fail on both runs). **Checked the SPECIFIC PR run against the
+  SPECIFIC main baseline, not memory:** PR run job log shows
+  `Symbols scanned: 630 / Violations found: 192`; pulled `main`'s own latest CI run (`6654552b`, run
+  `30380074756`) via `gh api .../actions/jobs/{id}/logs` and confirmed byte-identical `630 / 192` —
+  zero violations added by this PR. Pre-existing-red confirmed for THIS run per
+  `project_ci_gate_landscape` / Rule ("Only Rule I is still safely pre-existing... re-checked the
+  same session — zero added").
+- **Not merged.** Per repo convention the worker/PM opens the PR and verifies CI; a human (Piotr)
+  merges. Awaiting merge of #638.
+
+**1 ticket IN_PROGRESS→READY_FOR_REVIEW** (FOLLOW-716) — within the ≤3 guardrail. **Still held on
+ESC-044:** FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's
+CEO/DPO ruling.
+
+---
+
+## ▶️ (superseded) resume 2026-07-28 (session 77 continued — FOLLOW-715 MERGED (#637); FOLLOW-716 dispatched)
 
 **FOLLOW-715 — status: DONE.** PR **#637** merged (squash `1faa47b3`), branch deleted. All 6 ACs
 shipped: grace-window band (AC1-2), `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b ordered bump

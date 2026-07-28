@@ -1,6 +1,20 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 78 — terminal crash recovery; FOLLOW-716 PR #638 opened, CI green)
+## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-716 MERGED (#638))
+
+**FOLLOW-716 — status: DONE.** PR **#638** merged (squash `d77c9b2c`), branch deleted, local `main`
+fast-forwarded. Piotr merged directly (`gh pr merge 638 --squash --delete-branch`) after the PM-side
+CI verification below; `mergeStateStatus` was `UNSTABLE` (Rule I, confirmed pre-existing) not
+`DIRTY` — no conflicts. All 6 ACs shipped (see the full breakdown in the superseded section below).
+Retrospective-analyst dispatch: pending (next action).
+
+**1 ticket now DONE this session, 0 IN_PROGRESS.** Still held on ESC-044: FOLLOW-704 + 714,
+FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling. Free-to-pick
+pool for next session: FOLLOW-700/708 (devops), FOLLOW-702/703/709 (P2).
+
+---
+
+## ▶️ (superseded) resume 2026-07-28 (session 78 — terminal crash recovery; FOLLOW-716 PR #638 opened, CI green)
 
 **Recovery context:** the terminal closed mid-session-77 while backend-engineer was implementing
 FOLLOW-716; work survived uncommitted on the

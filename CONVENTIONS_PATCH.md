@@ -2567,3 +2567,99 @@ step, AI = stale prose. None requires an emitted RUNTIME signal to have a CONSUM
 fourth rule on the doc-truth axis. TIERING: clause 2 makes (a)+(b) P1 whenever the alarm is the sole
 enforcement mechanism (alert-rather-than-block, or degrade-to-off), P2 otherwise. LETTER CHOICE: AJ is the next
 in the double-letter sequence after AI. -->
+
+## Rule AK — A PR that changes an out-of-repo-consumed contract MUST ship the caller-facing documentation update, machine-checked against the code, in the SAME PR
+
+**Pattern:** An endpoint's only consumer is a system outside this repo (`app.estalara.com`, no
+shared release train), and its only specification is English prose in `backlog/HANDOFFS.md`,
+unlinked to the route's source. A PR changes the route's emittable HTTP status codes or `code`
+string literals and the doc silently drifts — the out-of-repo caller now has no spec for a response
+it can receive, or a stale spec for one it can no longer receive. **This happened four times in a
+row, on the SAME endpoint, each caught only by a human retrospective after the fact, never by CI**:
+RETRO-226 §4d DG-2 (PR for FOLLOW-684 added a 422 the doc never gained) → RETRO-227 §4d DG-4 (PR for
+FOLLOW-697/698 shipped a second 422 + a 500 the doc still didn't have) → RETRO-228 §4d DG-1 (PR for
+FOLLOW-705 — third consecutive occurrence, formally flagged "the next sighting promotes this") →
+RETRO-229 §4 DG-2 (PRs #634/#635 — fourth occurrence; #635 re-synced the four stale surfaces but
+fixed nothing structural, because the contract still lives as unlinked prose). Four is twice
+CONVENTIONS_PATCH's own ≥2-prior-retros bar, and the fourth retro states plainly: "more prose does
+not help" (RETRO-229 §4 DG-2 / §6 L-1).
+
+**Distinct axis from Rule AI** (the existing rule closest to this one): Rule AI requires the CODE
+author to update every document asserting a prior state, verified in Rule AI's own script by
+`git diff --name-only origin/main | grep -q 'backlog/HANDOFFS.md'` — i.e. proof the file was
+**touched**. That check passed on \#635 (HANDOFFS.md WAS touched, four times) and the structural gap
+persisted anyway, because "touched" does not mean "still true": nothing compares what the doc now
+says against what the route can now emit. Rule AK is the mechanised escalation Rule AI's own text
+anticipates ("Operating Principle 2 covers this in prose only... it needs a mechanised rule") for
+the specific case where human diligence on file-touching has demonstrably failed at the same site
+four times: **a hard, source-derived, bidirectional CI gate**, not an author obligation to remember.
+Also distinct from **Rule N** (compliance/DPIA disclosure TEXT vs. shipped SDK behavior, not an HTTP
+status/`code` enum) and **Rule Q** (a CI gate must prove its assertion ran generally; this rule is
+the specific contract-parity assertion Rule Q presupposes exists).
+
+**Rule:**
+
+1. **Derive, don't hand-maintain.** The set of HTTP status codes and `code` string literals an
+   endpoint can return, per HTTP method, MUST be extracted/asserted from the route's own source —
+   never a hand-typed mirror a future PR can forget to update. See
+   `scripts/check-consent-contract-sync.mjs` for the reference shape (modelled on
+   `scripts/check-consent-text-sync.mjs`, PR #633 / FOLLOW-705).
+2. **The out-of-repo caller-facing document (e.g. `backlog/HANDOFFS.md`'s per-endpoint handoff
+   section) MUST carry a small, fixed-format, machine-parseable block** — not only prose — that a CI
+   script parses and compares against (1). Prose stays for humans; the block is what CI reads.
+3. **The CI gate MUST fail in BOTH directions:** the route can emit a status/`code` pair the doc
+   does not document (undocumented addition), AND the doc documents a pair the route cannot actually
+   emit (stale/phantom entry). A stale removal is exactly as misleading to an out-of-repo caller as
+   a stale addition — do not build a one-directional gate.
+4. **HTTP methods on the same path are DISJOINT namespaces and MUST be checked separately**, never
+   unioned into one set. FOLLOW-685's real bug — the GET's `409 brand_identity_not_provisioned`
+   (refuse, do not proceed) being read as if it meant the POST's uncoded `409` (safe, duplicate
+   replay, proceed) — is exactly what a merged per-path set would fail to catch: both are `409`, but
+   they are not the same tuple, and only per-method scoping keeps that visible.
+5. **Prove the gate is red-first** before merge: deliberately falsify one side (remove a documented
+   row, or introduce an undocumented status/code in the route), confirm the gate fails, then restore
+   and confirm it passes again. Paste both results in the PR description.
+6. This rule applies to any endpoint whose consumer is confirmed to be outside this repo — it does
+   not require a NEW gate per endpoint if an existing one (e.g. this one) can be generalized, but it
+   forbids merging a new out-of-repo contract change into an unrelated PR without either extending
+   an existing gate or shipping a new one in the same PR as the contract change.
+
+**Verification:**
+
+```bash
+# 1. The gate exists and is wired into CI as a hard (non-continue-on-error) job:
+grep -n "consent-contract-sync" .github/workflows/ci.yml
+
+# 2. The gate proves it detects drift in both directions, per method, before trusting a green run:
+node scripts/check-consent-contract-sync.mjs --self-test
+
+# 3. Route and doc currently agree:
+node scripts/check-consent-contract-sync.mjs
+
+# 4. For a NEW out-of-repo contract elsewhere in the repo, confirm it has an equivalent gate —
+#    absence of a hit here is a Rule AK gap, not evidence the contract is stable:
+grep -rln "out-of-repo\|no shared release train" backlog/HANDOFFS.md
+```
+
+---
+
+<!-- Rule AK added 2026-07-28 — RETRO-229 §6 L-1 (promoted from FOLLOW-716). Evidence (4 PRIOR
+numbered retros, twice the ≥2 bar): RETRO-226 §4d DG-2 (FOLLOW-684 PR added a 422 HANDOFFS.md never
+gained; count 1) + RETRO-227 §4d DG-4 (FOLLOW-697/698 PR added a second 422 + a 500 still undocumented;
+count 2, explicitly flagged "third consecutive merge with this shape" in RETRO-227's own Rule AI
+sighting) + RETRO-228 §4d DG-1 (FOLLOW-705 PR — RETRO-228 itself labels this the point past which
+promotion is due; count 3). Promotion trigger: RETRO-229 §4 DG-2 (PRs #634/#635 fixed the four stale
+INSTANCES and nothing STRUCTURAL — contract still lives as unlinked English prose in HANDOFFS.md;
+RETRO-229 §6 L-1: "four retros in a row have paid for this... never docs follow-up next sprint"; count
+4). CHECKED BEFORE MINTING: Rule AI already requires the doc to be TOUCHED in the same PR (verified via
+`git diff --name-only | grep HANDOFFS.md`) and that check was satisfied on #635 while the structural gap
+remained — AK is the mechanised, source-derived, bidirectional PARITY gate Rule AI's own prose
+anticipates needing "when human diligence has demonstrably failed at the same site", not a duplicate of
+AI's touched-file obligation. Rule N is compliance-disclosure TEXT vs SDK behavior, a different subject
+matter. Rule Q is the general CI-gate-proves-it-ran rule; AK is the specific assertion instantiated here.
+METHOD-DISJOINTNESS clause is not hypothetical — FOLLOW-685 (RETRO-224's origin, re-surfaced in
+RETRO-229) is a real 409-collision bug between GET and POST namespaces on this exact endpoint.
+IMPLEMENTATION: scripts/check-consent-contract-sync.mjs + .github/workflows/ci.yml
+`consent-contract-sync` job, modelled explicitly on scripts/check-consent-text-sync.mjs (PR #633,
+FOLLOW-705) — the precedent RETRO-229 §4 DG-2 named as proof this gate shape works in this repo.
+LETTER CHOICE: AK is the next in the double-letter sequence after AJ. -->

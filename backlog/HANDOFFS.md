@@ -2870,6 +2870,25 @@ POST body unchanged.
 > **This GET's 409 is NOT the POST's 409.** See the method-scoping note under Step 2 — the two
 > statuses mean opposite things on the two methods.
 
+**Machine-checked contract (FOLLOW-716).** The block below is parsed by
+`scripts/check-consent-contract-sync.mjs` and compared, in both directions, against every
+`NextResponse.json(..., { status })` this GET handler can actually emit in `route.ts`. One `STATUS`
+or `STATUS code_literal` per line. **Do not hand-edit this block without also changing `route.ts` in
+the same PR — the CI job `consent-contract-sync` fails on any mismatch, in either direction.** The
+prose table above stays for humans; this block is what CI reads.
+
+<!-- BEGIN MACHINE-CHECKED CONTRACT: GET /api/v1/consent/platform-registration -->
+
+```
+200
+400
+401
+409 brand_identity_not_provisioned
+500
+```
+
+<!-- END MACHINE-CHECKED CONTRACT: GET /api/v1/consent/platform-registration -->
+
 ---
 
 #### Step 2 — `POST` the consent record (at the "I agree" click)
@@ -2972,6 +2991,27 @@ const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
 | `422 consent_text_hash_fabricated` | You sent the canonical Estalara hash, and the endpoint can PROVE it is the wrong text for this tenant (the tenant is a proven-external brand, or is provisioned with a different display identity).                                                                                | **NOTHING was written.** Two remediations: (a) call Step 1 and echo its hash, or (b) have Estalara ops seed `brand_config.brand_name` for the tenant. **Do NOT retry unchanged** — an identical retry gets an identical 422 forever. |
 | `422 tos_version_superseded`       | Your `tos_version` is not the one the server currently serves, AND (FOLLOW-715) is not the one immediately-previous version ops may have temporarily opted to still accept during a bump (`docs/runbooks/BRAND_PROVISIONING.md` §Step 3b). Response carries `current_tos_version`. | **NOTHING was written.** Resync: call Step 1, take its `tos_version` and `consent_text_hash`, resubmit. **Do NOT retry unchanged.**                                                                                                  |
 | `500`                              | DB write failed, **or** the tenant's first-party status could not be determined (a configured dependency threw — the endpoint refuses to guess in either direction rather than assert an unread fact).                                                                             | Retryable. Do not proceed with account creation. If it persists, contact Estalara ops.                                                                                                                                               |
+
+**Machine-checked contract (FOLLOW-716).** Same parsing rules and same CI gate
+(`consent-contract-sync`) as Step 1's block above — this is the POST's OWN block, checked separately
+from GET's. A status this POST shares with GET (`409`) is a DIFFERENT tuple here (no `code`, meaning
+"safe, duplicate-nonce replay") than GET's `409 brand_identity_not_provisioned` (refuse) — the gate
+never merges the two methods' sets, so listing `409` here does not also satisfy GET's coded `409`
+row, and vice versa.
+
+<!-- BEGIN MACHINE-CHECKED CONTRACT: POST /api/v1/consent/platform-registration -->
+
+```
+201
+400
+401
+409
+422 tos_version_superseded
+422 consent_text_hash_fabricated
+500
+```
+
+<!-- END MACHINE-CHECKED CONTRACT: POST /api/v1/consent/platform-registration -->
 
 **Critical timing:** Call this endpoint BEFORE creating the investor's account. If the endpoint
 returns non-2xx (excluding the POST's own duplicate-nonce 409), do NOT proceed with account creation

@@ -19539,6 +19539,20 @@ source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommen
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
 promoted_to_queue: true
 
+**STATUS 2026-07-28 (session 75): ✅ DONE — PR #635 merged 2026-07-28T07:39:42Z (`48ca90c2`),
+executed jointly with FOLLOW-699 + FOLLOW-713 as each stub instructs.** AC-1: Step 1 (the consent
+GET) added to the FOLLOW-374 handoff — URL, the HMAC-over-`tenant_id` recipe (which differs from the
+POST's over-the-body recipe), the 200 shape, and every failure incl.
+`409 brand_identity_not_provisioned` spelled out as STOP-do-not-register. AC-2: the "409 is
+safe/idempotent" rule is now method-scoped to the POST's duplicate-nonce case. AC-3: **decided —
+GET-then-echo is canonical**, recorded once in `HANDOFFS.md` with the Art. 7(1) rationale; #633 had
+pre-decided this in substance without saying so anywhere a caller reads. AC-4/AC-5: go-live check §2
+re-titled + items reconciled; MASTER_DESIGN §H.8 precondition sentence added. Verified by READING
+`route.ts` that the documented flow survives the POST's own hash gate (provisioned → echoed hash ==
+`expectedHash`; first-party fallback → exempt), so the new canonical flow raises no per-registration
+alert. **Follow-on:** RETRO-229 DG-4 — the file's own verdict table was left saying "GAP"; fixed in
+PR #636. RETRO-229 DG-2/FOLLOW-716: this closed the instances, not the structural cause.
+
 Two defects that compose into a bypass of the gate #629 shipped.
 
 1. **The GET has no documented consumer.** `GET /api/v1/consent/platform-registration` (leg 1, #624)
@@ -20130,6 +20144,18 @@ source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommen
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
 promoted_to_queue: true
 
+**STATUS 2026-07-28 (session 75): ✅ DONE — PR #635 merged 2026-07-28T07:39:42Z (`48ca90c2`), folded
+into FOLLOW-685 as this stub instructs.** All four stale surfaces re-synced: (1) `HANDOFFS.md` POST
+section now carries a full failure table — `422 consent_text_hash_fabricated` with "NOTHING was
+written", both remediations and an explicit _do not retry unchanged_, plus
+`422 tos_version_superseded` and the retryable 500; (2) `BRAND_PROVISIONING.md` enforcement table
+gained the consent POST as a fourth surface, broken out by submitted hash (alert-always /
+refuse-only-the- provable), and four outcomes in §item-7 troubleshooting; (3) go-live check item (c)
+corrected; (4) `brand-identity.ts` docblock extended from two call sites to three, incl. the write
+path's must-not-refuse-on-`indeterminate` constraint. AC-5 honoured: the "first-party: unchanged,
+byte-identical, never gated and never alerted" claim was **not** re-asserted — it is now stated as
+conditional on `FIRST_PARTY_TENANT_ID` per FOLLOW-698.
+
 #631 changed a public error contract in a 2-file diff and touched zero documentation (HALF*WIRE_P,
 RETRO-226 §3). `grep -rn "consent_text_hash_fabricated"` returns only the route, its test and the
 backlog. The out-of-repo `app.estalara.com` caller — the only consumer that exists — reads
@@ -20472,6 +20498,18 @@ source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-697 reco
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: [FOLLOW-704 (same
 line)] promoted_to_queue: true
 
+**STATUS 2026-07-28 (session 75): ✅ DONE — PR #634 merged 2026-07-28T07:13:52Z (`6958a3c1`),
+executed jointly with FOLLOW-712.** AC-1: a provisioned identity now defaults the written hash to
+`computeConsentTextHash(renderPlatformConsentText(brandIdentity))`. AC-2: the fallback branch keeps
+`CANONICAL_CONSENT_TEXT_HASH` with an inline note that FOLLOW-704's re-pin collapses the two
+branches to one value for the first-party tenant — so nothing here needs changing when that lands.
+AC-3: red-first tests for both `FIRST_PARTY_TENANT_ID` SET-to-that-tenant and UNSET-with-one-tenant
+(verified failing against the pre-fix route by stashing `route.ts`, not merely asserted). AC-4: no
+probe added; #632's at-most-one-`select id from tenants limit 2`-per-POST invariant asserted in both
+new tests. **Impact caveat (RETRO-229 DG-3): prod has one tenant, Estalara, on the FALLBACK identity
+— so this changes the behaviour of ZERO live requests today.** Every live consent record still
+carries the placeholder; that exposure is FOLLOW-704/706's, still held on ESC-044.
+
 #632's branch (a) — the provisioned-brand evidence check — is guarded on
 `body.consent_text_hash !== undefined` (`route.ts:493`). When the field is omitted the whole block
 is skipped and `route.ts:703` writes the canonical constant, even though `expectedHash`, the hash of
@@ -20716,6 +20754,18 @@ source_retro: RETRO-228 (PR #633, FOLLOW-705) source_ticket: FOLLOW-697 recommen
 recommended_agent: backend-engineer priority: P1 estimated_hours: 1 depends_on: [FOLLOW-707
 (adjacent line, same expression — FOLD IN, do not open a second PR)] promoted_to_queue: true
 
+**STATUS 2026-07-28 (session 75): ✅ DONE — PR #634 merged 2026-07-28T07:13:52Z (`6958a3c1`), folded
+into FOLLOW-707 as this stub instructs.** AC-1: **disposition = refuse** —
+`422 tos_version_superseded` with `current_tos_version` in the body so the caller can self-correct;
+documented in the route's `Responses` docblock. Chosen over accept-and-alarm because the mismatch is
+fully detectable server-side and refusing needs no alarm-registry entry, so it does not contradict
+the still-queued FOLLOW-700/708 registry shape. AC-2: not coerced. AC-3: red-first tests for a
+superseded version and for omission. AC-4: caller-facing consequence added to `HANDOFFS.md` (a bump
+is now a two-repo operation), coordinated with the FOLLOW-685+699+713 PR so the section was not
+double-edited. No behaviour change for the live caller — it already sends the served
+`platform-v1.3-2026-06-21`. **⚠️ RETRO-229 DG-1: this made the NEXT text bump a registration outage
+(hard 422 until an out-of-repo redeploy). FOLLOW-715 ships the grace window and BLOCKS FOLLOW-704.**
+
 `route.ts:702` writes `tosVersion: body.tos_version ?? PLATFORM_REGISTRATION_TOS_VERSION` — the
 caller's value is accepted with **no check that it is the version the server currently serves** —
 and `HANDOFFS.md:2838` hardcodes `"platform-v1.3-2026-06-21"` into the only caller's integration
@@ -20749,6 +20799,17 @@ FOLLOW-699, FOLLOW-374, Rule AI, Rule AJ, Rule S]
 source_retro: RETRO-228 (PR #633, FOLLOW-705) source_ticket: FOLLOW-705 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
 promoted_to_queue: true
+
+**STATUS 2026-07-28 (session 75): ✅ DONE — PR #635 merged 2026-07-28T07:39:42Z (`48ca90c2`), folded
+into FOLLOW-685/699 as this stub instructs.** AC-1: GET-then-echo added as the canonical flow with
+the plain-sentence rationale (a hash of text the subject never saw demonstrates nothing under Art.
+7(1)). AC-2: `HANDOFFS.md:2842` corrected — it no longer calls the default "the canonical EN §6.1
+SHA-256 hash"; it states that the default is `CANONICAL_CONSENT_TEXT_HASH`, a placeholder that is
+the digest of no text (FOLLOW-704, still open), that §6.1 is now the published mirror rather than
+the canonical artifact, and that omitting the field is discouraged. AC-3: go-live check `:306`
+reconciled, decision recorded in ONE place. AC-4: the two-repo `tos_version` note landed via #634
+(FOLLOW-712) at the same line and was not double-edited. AC-5 honoured: the GET-then-echo flow is
+described as created BY this PR, not as pre-existing.
 
 **Fold into FOLLOW-699 / FOLLOW-685 at promotion — do not execute as a separate PR.** Filed because
 neither ticket, as written, reaches what #633 changed.
@@ -20841,3 +20902,86 @@ verifiable and how, so FOLLOW-706's remediation decision is made against a known
 
 cross_ref: [RETRO-228, RETRO-227, FOLLOW-704, FOLLOW-705, FOLLOW-703, FOLLOW-706, FOLLOW-710,
 FOLLOW-711, FOLLOW-407, FOLLOW-411, Rule V, Rule S, Rule AH]
+
+---
+
+## FOLLOW-715 — `422 tos_version_superseded` turns the next consent-text bump into a registration outage: the refusal shipped without the grace window that makes a two-repo cutover survivable
+
+source_retro: RETRO-229 (PR #634, FOLLOW-712) source_ticket: FOLLOW-712 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+**Blocks FOLLOW-704.** File this before that ticket is unheld, not after.
+
+PR #634 was right to refuse rather than coerce (FOLLOW-712 AC-2: coercing the caller's stale
+`tos_version` to the server's erases the evidence the caller is stale). What it did not ship is the
+other half of that design: **a way to perform the bump.**
+
+- Before #634, bumping `PLATFORM_REGISTRATION_TOS_VERSION` degraded silently — the stale caller kept
+  registering investors under a superseded version string. Wrong, which is why FOLLOW-712 existed.
+- After #634, the same bump means **every registration on `app.estalara.com` returns 422 until a
+  different repository redeploys.** The two repos share no release train, and
+  `backlog/HANDOFFS.md:2840` now says as much in prose ("a version bump is now a two-repo
+  operation") without giving the operator any mechanism to make it safe.
+
+**This is not hypothetical, and it fires on the very next ticket in this family.** FOLLOW-704 (P0,
+held on ESC-044) re-pins the consent text; FOLLOW-714 argues that re-pin needs a `tos_version` bump;
+FOLLOW-710/711 need the same bump. The first thing unblocked by Piotr's ESC-044 ruling is also the
+first thing that trips this.
+
+**AC:** (1) accept the immediately-previous `tos_version` for a bounded, explicitly-configured grace
+window — the record must still be written under **the version the caller actually attested**, never
+silently upgraded, and each such write raises a `warning`-level alert so the stale caller is visible
+rather than merely tolerated (coordinate the tag with FOLLOW-700/708's registry, do not invent a
+fourth `brand_identity` value); (2) anything older than the previous version keeps today's hard 422
+— this is a migration ramp, not an amnesty; (3) document the bump procedure as an ordered runbook
+step in `docs/runbooks/BRAND_PROVISIONING.md` (bump server → alert fires → notify Rafał → caller
+redeploys → close the window), and update `HANDOFFS.md:2840`'s prose to point at it; (4) decide and
+record whether the window is time-based or manually closed — a time-based one that expires unnoticed
+reproduces the outage on a delay; (5) tests, red-first, for all three bands (current /
+previous-within-window / older); (6) **also pin RETRO-229 DG-5 while in this file:** one assertion
+that a rejected `tos_version` costs **zero** DB queries — the refusal is correctly ordered before
+the brand-identity read today (step 4a before 7a) but nothing stops a future reorder making a
+rejected request pay a round trip.
+
+cross_ref: [RETRO-229, RETRO-228, FOLLOW-712, FOLLOW-704, FOLLOW-714, FOLLOW-710, FOLLOW-711,
+FOLLOW-700, FOLLOW-708, ESC-044, FOLLOW-374]
+
+---
+
+## FOLLOW-716 — Four consecutive retros have filed the same finding: the out-of-repo consent contract is English prose in HANDOFFS.md, and no gate links it to the route it describes
+
+source_retro: RETRO-229 (PRs #634, #635) source_ticket: FOLLOW-685 recommended_sprint: now
+recommended_agent: backend-engineer (+ devops-engineer for the CI job) priority: P1 estimated_hours:
+5 depends_on: [] promoted_to_queue: false
+
+RETRO-226 §4d DG-2 → RETRO-227 §4d DG-4 → RETRO-228 §4d DG-1 → RETRO-229 §4 DG-2. **Four in a row**,
+same shape every time: a PR changes the request/response contract of
+`/api/v1/consent/platform-registration`, whose only consumer is out of this repo, and nothing
+notices that the document that consumer reads is now false.
+
+PR #635 fixed the four stale _instances_. It fixed nothing _structural_ — the contract still lives
+as English prose in `backlog/HANDOFFS.md`, unlinked to `route.ts`, so change number five drifts
+identically. CONVENTIONS_PATCH.md's own bar for codifying a rule is ≥2 prior retros; this is at
+four, and the evidence is that more prose does not help.
+
+**The proof that this shape of gate works here already exists in-repo:** PR #633 shipped
+`scripts/check-consent-text-sync.mjs` + the `consent-text-sync` CI job (zero deps, 361 lines, hard
+gate) to stop exactly analogous drift between a rendered string and a published document. This
+ticket is that pattern applied one level up — to the contract rather than the text.
+
+**AC:** (1) derive a machine-checkable contract artifact from the route (the set of status codes and
+`code` string literals it can return, per method) — generated or asserted from source, not
+hand-maintained; (2) a CI gate that fails when the route can emit a `code`/status the caller-facing
+document does not document, and when the document documents one the route cannot emit (**both**
+directions — a stale removal is as misleading as a stale addition); (3) `HANDOFFS.md`'s FOLLOW-374
+section is the reference document for the gate — if its prose shape makes that impractical, propose
+the smaller structured block it should carry and migrate it, rather than weakening the check; (4)
+prove the gate red-first against a deliberately-removed status row, and green after; (5) note the
+GET's and POST's codes are disjoint and must be scoped per method — the FOLLOW-685 409 collision is
+the concrete reason; (6) promote L-1 to CONVENTIONS_PATCH.md in the same PR: a PR that changes an
+out-of-repo-consumed contract ships the caller-facing document in the SAME PR (four-retro
+justification, cite all four).
+
+cross_ref: [RETRO-229, RETRO-228, RETRO-227, RETRO-226, RETRO-224, FOLLOW-685, FOLLOW-699,
+FOLLOW-713, FOLLOW-705, FOLLOW-374, Rule AI, Rule AH, CONVENTIONS_PATCH.md]

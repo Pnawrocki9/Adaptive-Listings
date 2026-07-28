@@ -2810,6 +2810,70 @@ The endpoint is in `apps/control-plane/src/app/api/v1/consent/platform-registrat
 
 **At the "I agree" registration click on app.estalara.com:**
 
+The canonical flow is **two calls, in this order — GET the text, display those exact bytes, then
+POST the hash the GET returned.** Step 1 was added to this handoff on 2026-07-28 (FOLLOW-685 /
+FOLLOW-713); the GET itself has existed since FOLLOW-654 leg 1.
+
+**Why the order matters (do not skip Step 1 and author your own hash).** `consent_text_hash` is
+evidence of _what the data subject actually read_ before clicking "I agree". A hash computed over a
+copy of the text that your deployment authored independently demonstrates nothing under GDPR Art.
+7(1) — it proves only that two systems agree on a string, not that the string is what was on screen.
+The bytes returned by Step 1 are the byte-canonical consent text (that ruling is
+`renderPlatformConsentText()`'s output, settled by PR #633 — `PRIVACY_NOTICE_TEMPLATE.md` §6.1 is
+the published mirror of it, not the source). Render those bytes verbatim and echo the hash back.
+
+---
+
+#### Step 1 — `GET` the brand-correct consent text (call this FIRST, at render time)
+
+```
+GET https://admin.estalara.com/api/v1/consent/platform-registration?tenant_id=<uuid>
+X-Consent-Signature: <HMAC-SHA256(PLATFORM_REGISTRATION_CONSENT_SECRET, tenant_id_utf8)>
+```
+
+Note the signature is over the **`tenant_id` string only** (not a JSON body) — this differs from the
+POST's signature recipe below. Same shared secret, constant-time compared.
+
+```typescript
+import { createHmac } from 'crypto';
+const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
+  .update(tenantId, 'utf8')
+  .digest('hex');
+```
+
+**200 response shape:**
+
+```json
+{
+  "tenant_id": "<uuid>",
+  "brand_name": "Estalara",
+  "legal_entity": "Time2Show, Inc.",
+  "tos_version": "platform-v1.3-2026-06-21",
+  "consent_text": "<the exact bytes to display next to the checkbox>",
+  "consent_text_hash": "<sha256 of consent_text — echo this on the POST>",
+  "data_source": "stored | default"
+}
+```
+
+Display `consent_text` verbatim, and carry `tos_version` and `consent_text_hash` into the Step 2
+POST body unchanged.
+
+**Failure responses — every one of them means STOP, do not render a consent checkbox:**
+
+| Status                               | Meaning                                                                                                                                                                                                | What to do                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`                                | `tenant_id` query parameter missing or not a UUID.                                                                                                                                                     | Fix the caller.                                                                                                                      |
+| `401`                                | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                 | Check the secret and that you signed the **tenant_id**, not a body.                                                                  |
+| `409 brand_identity_not_provisioned` | The tenant is a NON-first-party brand with no `brand_config.brand_name`. The only text the endpoint could serve would name "Estalara" / "Time2Show, Inc." as _that brand's_ controller, so it refuses. | **STOP. Do not register. Do not fall back to your own copy of the text.** Contact Estalara ops — this is brand-provisioning Step 3a. |
+| `500`                                | DB not configured, or configured and threw. Deliberately not a fabricated 200 with Estalara-defaulted legal text.                                                                                      | Retryable. Surface an error to the investor; do not proceed.                                                                         |
+
+> **This GET's 409 is NOT the POST's 409.** See the method-scoping note under Step 2 — the two
+> statuses mean opposite things on the two methods.
+
+---
+
+#### Step 2 — `POST` the consent record (at the "I agree" click)
+
 Call `POST https://admin.estalara.com/api/v1/consent/platform-registration` with the following:
 
 **Headers:**
@@ -2828,7 +2892,8 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   "tenant_id": "<Estalara_tenant_UUID_for_app_estalara>",
   "session_id": "<stable_investor_account_reference_no_PII>",
   "nonce": "<random_UUID_or_32+_char_random_string_per_request>",
-  "tos_version": "platform-v1.3-2026-06-21",
+  "tos_version": "<the tos_version Step 1 returned — currently platform-v1.3-2026-06-21>",
+  "consent_text_hash": "<the consent_text_hash Step 1 returned, echoed unchanged>",
   "user_agent": "<investor_browser_user_agent>"
 }
 ```
@@ -2844,8 +2909,22 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   (`422 tos_version_superseded`, response includes `current_tos_version`) rather than written — if
   this literal is not updated in the SAME window as an Adaptive-Listings text bump, registration
   will start failing with that 422 until it is.
-- `consent_text_hash` — optional; omit to use the canonical EN §6.1 SHA-256 hash. Provide a custom
-  hash ONLY if you display a translated version of the text.
+- `consent_text_hash` — **echo the value Step 1 returned.** Technically still optional in the
+  schema, but **omitting it is discouraged** and, for a non-first-party tenant, refused outright
+  (`422`, below). **[FOLLOW-713, 2026-07-28 — correcting this line, which previously said "omit to
+  use the canonical EN §6.1 SHA-256 hash"]** That was wrong in three ways and remains wrong: (a)
+  what the omission path currently writes is `CANONICAL_CONSENT_TEXT_HASH`, a hand-typed
+  **placeholder** that is the digest of no text at all (FOLLOW-704, open — an unresolved P0 against
+  every record already written on that path); (b) §6.1 of `PRIVACY_NOTICE_TEMPLATE.md` is no longer
+  the canonical artifact — PR #633 made the renderer's output canonical and §6.1 its published
+  mirror; and (c) omitting the field skips the evidence check that runs when the field IS present.
+  Since 2026-07-28 the omission path at least defaults to the tenant's **own** rendered hash when
+  that tenant's brand identity is provisioned (FOLLOW-707), instead of Estalara's constant — but
+  that is a floor, not the intended flow. Echo Step 1's value.
+
+  Send a hash you computed yourself ONLY if you display text this endpoint did not serve (e.g. a
+  translation). Expect it to be written but flagged: a hash that matches neither the tenant's
+  rendered text nor the canonical constant raises a Sentry alert and is stored as unverified.
 
 **Auth secret:** `PLATFORM_REGISTRATION_CONSENT_SECRET` — request from Piotr (to be provisioned in
 Doppler). The secret is HMAC-SHA256 shared between app.estalara.com and the control-plane.
@@ -2854,10 +2933,19 @@ Doppler). The secret is HMAC-SHA256 shared between app.estalara.com and the cont
 
 ```typescript
 import { createHmac } from 'crypto';
-const body = JSON.stringify({ tenant_id, session_id, nonce, tos_version, user_agent });
+const body = JSON.stringify({
+  tenant_id,
+  session_id,
+  nonce,
+  tos_version,
+  consent_text_hash,
+  user_agent,
+});
 const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
   .update(body, 'utf8')
   .digest('hex');
+// Send exactly this `body` string — the signature is over the bytes, so re-serializing
+// (different key order, different whitespace) before sending will fail with 401.
 ```
 
 **Expected response:**
@@ -2866,11 +2954,28 @@ const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
 { "consent_record_id": "uuid" } // 201 Created
 ```
 
-On 409, the record already exists — this is safe (idempotent); no re-insert needed.
+**Failure responses:**
+
+| Status                             | Meaning                                                                                                                                                                                                | What to do                                                                                                                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `400`                              | Body failed validation.                                                                                                                                                                                | Fix the caller.                                                                                                                                                                                                                      |
+| `401`                              | Missing/invalid `X-Consent-Signature`.                                                                                                                                                                 | Check the secret, and that you signed the exact body bytes you sent.                                                                                                                                                                 |
+| `409`                              | **Duplicate `nonce` (replay).** The record already exists — safe, idempotent.                                                                                                                          | Proceed. No re-insert needed.                                                                                                                                                                                                        |
+| `422 consent_text_hash_fabricated` | You sent the canonical Estalara hash, and the endpoint can PROVE it is the wrong text for this tenant (the tenant is a proven-external brand, or is provisioned with a different display identity).    | **NOTHING was written.** Two remediations: (a) call Step 1 and echo its hash, or (b) have Estalara ops seed `brand_config.brand_name` for the tenant. **Do NOT retry unchanged** — an identical retry gets an identical 422 forever. |
+| `422 tos_version_superseded`       | Your `tos_version` is not the one the server currently serves (FOLLOW-712, below). Response carries `current_tos_version`.                                                                             | **NOTHING was written.** Resync: call Step 1, take its `tos_version` and `consent_text_hash`, resubmit. **Do NOT retry unchanged.**                                                                                                  |
+| `500`                              | DB write failed, **or** the tenant's first-party status could not be determined (a configured dependency threw — the endpoint refuses to guess in either direction rather than assert an unread fact). | Retryable. Do not proceed with account creation. If it persists, contact Estalara ops.                                                                                                                                               |
 
 **Critical timing:** Call this endpoint BEFORE creating the investor's account. If the endpoint
-returns non-2xx (excluding 409), do NOT proceed with account creation — surface an error to the
-investor.
+returns non-2xx (excluding the POST's own duplicate-nonce 409), do NOT proceed with account creation
+— surface an error to the investor.
+
+> **Method-scoping of the 409 rule [FOLLOW-685, 2026-07-28].** "409 means the record already exists,
+> this is safe, proceed" applies to **the POST only**, where 409 is the duplicate-nonce replay
+> response. The **GET's** `409 brand_identity_not_provisioned` (Step 1) means the exact opposite:
+> refused, nothing recorded, **do NOT proceed**. A per-endpoint status policy that treats "409" as
+> uniformly safe will walk straight past the brand-identity gate, render Estalara-branded text for
+> someone else's brand and post a hash of it — the precise failure that gate exists to stop. Scope
+> the rule to the method.
 
 **What NOT to suppress:** The DOM opt-out toggle (`profiling_opt_out` in the SDK) only suspends AL
 DOM adaptation. It does NOT affect buying-intent identification, lead ranking, or agent-facing chat

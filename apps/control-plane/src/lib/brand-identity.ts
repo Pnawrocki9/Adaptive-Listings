@@ -407,11 +407,23 @@ export function rendersFirstPartyIdentity(
  * The first-party tenant is NEVER flagged: for it, the Estalara identity is the CORRECT identity,
  * not a fallback artefact.
  *
- * Callers decide the consequence, because it differs by surface (see each call site):
- *   - `GET /api/v1/consent/platform-registration` REFUSES to serve mis-branded consent text.
+ * Callers decide the consequence, because it differs by surface. There are THREE call sites, and
+ * no two behave the same way — do not generalise from one to another [FOLLOW-699]:
+ *   - `GET /api/v1/consent/platform-registration` REFUSES to serve mis-branded consent text
+ *     (409 `brand_identity_not_provisioned`). Nothing is recorded; registration is blocked.
  *   - `POST /api/dsr/initiate` alerts but STILL SENDS — dropping a data subject's verification
  *     e-mail would obstruct a GDPR Art. 12/15 right, a worse compliance outcome than a
  *     mis-branded sender name.
+ *   - `POST /api/v1/consent/platform-registration` is HYBRID, and its refusal is keyed on the
+ *     EVIDENCE rather than on this predicate alone [FOLLOW-697]: it always alerts, but refuses
+ *     (422 `consent_text_hash_fabricated`, nothing written) only for the sub-case it can prove
+ *     wrong — a submitted hash equal to the canonical Estalara constant when the route can show
+ *     that is not this tenant's text. Any other mismatching hash is WRITTEN plus alerted, because
+ *     unverifiable is not the same as provably wrong (legitimate translated copy lives there).
+ *     Note this write path must NOT refuse on an INDETERMINATE scope — see
+ *     {@link classifyTenantBrandScope} and FOLLOW-698: this predicate's boolean fails CLOSED to
+ *     "external", which is right for the two read/send paths above and wrong for a write that
+ *     would discard the first-party tenant's genuine consent.
  *
  * @param db - An admin (service-role) Drizzle client.
  * @param tenantId - The tenant UUID.

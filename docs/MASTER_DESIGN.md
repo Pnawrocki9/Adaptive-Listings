@@ -2875,6 +2875,8 @@ NIS2 dotyczy "essential" i "important entities" — Estalara prawdopodobnie nie 
 
 Consent is captured at registration and is mandatory — chat is only available to registered/logged-in investors, and without granting consent the investor cannot register or use the platform. The AL consent and disclosure layer must lawfully cover all of:
 
+> **Precondition added 2026-07-28 (FOLLOW-659 → FOLLOW-685):** for a **non-first-party (white-label) brand**, registration is *blocked* until that tenant's `brand_config.brand_name` is provisioned — `GET /api/v1/consent/platform-registration` returns `409 brand_identity_not_provisioned` rather than serve consent text naming "Estalara" / "Time2Show, Inc." as that brand's controller. The canonical registration flow is GET-then-echo (fetch the text, display those exact bytes, echo the returned `consent_text_hash` on the POST), specified in `backlog/HANDOFFS.md` → FOLLOW-374 Step 1; operator steps in `docs/runbooks/BRAND_PROVISIONING.md` §Step 3a.
+
 | Purpose | Description | Lawful basis |
 |---|---|---|
 | (a) Behavioral tracking | Scroll depth, dwell time, click patterns, listing-view rate, quiz answers | Consent (ePrivacy) + GDPR Art. 6.1(a) |

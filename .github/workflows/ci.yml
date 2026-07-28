@@ -549,6 +549,37 @@ jobs:
       - name: Assert Privacy Notice §6.1 == served consent text
         run: node scripts/check-consent-text-sync.mjs
 
+  # ── Consent contract drift gate (FOLLOW-716) ───────────────────────────────
+  # Asserts that the HTTP status codes and `code` string literals
+  # GET/POST /api/v1/consent/platform-registration can actually emit (derived
+  # from route.ts) match the caller-facing contract documented in
+  # backlog/HANDOFFS.md's FOLLOW-374 section (the MACHINE-CHECKED CONTRACT
+  # blocks), checked separately per method.
+  #
+  # Four consecutive retros (RETRO-226 → 227 → 228 → 229) independently found
+  # the same gap: the only consumer of this contract, app.estalara.com, is out
+  # of this repo, its only spec was unlinked English prose, and nothing caught
+  # a PR that changed the route's emittable status/code set without updating
+  # the doc. Same pattern as consent-text-sync (FOLLOW-705) applied to the
+  # contract rather than the rendered text.
+  #
+  # Hard gate — no continue-on-error.
+  consent-contract-sync:
+    name: Consent contract drift gate (FOLLOW-716)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-test the gate (proves it detects drift, both directions, per method)
+        run: node scripts/check-consent-contract-sync.mjs --self-test
+
+      - name: Assert route.ts status/code contract == HANDOFFS.md FOLLOW-374 spec
+        run: node scripts/check-consent-contract-sync.mjs
+
   # ── Fire-and-forget sink guard (FOLLOW-433 / ESC-033) ──────────────────────
   # Asserts that no bare `void fn(` / `void (async` request-path sinks exist in
   # apps/control-plane/src (excluding *.test.ts).  These patterns are silently

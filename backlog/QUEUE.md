@@ -1,6 +1,40 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-716 MERGED (#638); RETRO-230 filed; FOLLOW-720 dispatched)
+## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-720 PR #639, CI verified — awaiting merge)
+
+**FOLLOW-720 — status: READY_FOR_REVIEW.** PR **#639**
+(`backend-engineer/FOLLOW-720-self-test-fixture-anchors` → `main`) fixes both consent gates'
+self-test fixtures per RETRO-230's finding. All 4 ACs shipped: (1) `FixtureStaleError` +
+`mustReplace()` in both scripts — a no-op anchor now throws a distinct, correctly-diagnosing
+`SELF-TEST FIXTURE STALE` error instead of silently producing the misleading "the gate does not
+detect drift"; (2) `check-consent-contract-sync.mjs` cases (b)/(c) re-anchored on the sentinel pair
+
+- a single spliced row via new `insertDocContractLine()`/`removeDocContractLine()` helpers instead
+  of the whole fenced block's literal content; `check-consent-text-sync.mjs`'s `versionDrift` case
+  now derives its target version from the LIVE current value instead of a hardcoded pair; (3) both
+  scripts fixed in the same PR/commit; (4) proof pasted in the PR body for all 4 scenarios (both
+  scripts × clean-legitimate-change-stays-green / real-drift-still-reds).
+
+* **CI-check counter: 1/5.** `gh pr checks 639 --watch` on the specific PR run: everything PASS
+  including the (still-relevant) `Consent contract drift gate (FOLLOW-716)` job, EXCEPT
+  `Rule I — wired-or-dead check` — pulled its job log (`630 / 192`), byte-identical to `main`'s
+  unchanged baseline (this PR touches no production code, only two `scripts/*.mjs` files + a
+  lessons.md entry) — pre-existing-red confirmed for this specific run.
+* **PM independently reproduced the fix, not just trusted the PR body's pasted output:** checked out
+  the branch, ran both self-tests unmodified (5/5 and 7/7 PASS), then reproduced the TICKET'S OWN
+  repro case myself — added a throwaway `429 rate_limited` branch to the real GET handler + the
+  matching doc row (mirroring, not copying, the PR's proof scenario), confirmed the real check
+  PASSes AND the self-test stays 5/5 PASS (this exact scenario reddened 1/5 FAIL before the fix, per
+  the ticket). Reverted both files via `cp` from a pre-mutation backup, verified byte-identical to
+  `main` via `diff` and `git status` before switching back off the branch — no residue.
+* **Not merged yet.** Per repo convention the worker/PM verifies, a human merges.
+
+**1 ticket READY_FOR_REVIEW** (FOLLOW-720). **Still held on ESC-044:** FOLLOW-704 + 714, FOLLOW-706,
+FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling.
+
+---
+
+## ▶️ (superseded) resume 2026-07-28 (session 78 continued — FOLLOW-716 MERGED (#638); RETRO-230 filed; FOLLOW-720 dispatched)
 
 **FOLLOW-716 — status: DONE.** PR **#638** merged (squash `d77c9b2c`). **RETRO-230 filed**
 (`b158670d`): replaying all 4 historical drift incidents (RETRO-226→229) against the new gate shows

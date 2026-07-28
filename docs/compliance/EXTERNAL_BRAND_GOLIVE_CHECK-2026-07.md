@@ -33,7 +33,7 @@ per-axis below, not glossed over.
 | #   | Axis                                                                                   | Verdict                                                    | Evidence |
 | --- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------- |
 | 1   | Privacy policy surfacing on client-domain deployments                                  | **PARTIAL / OPERATOR-GATED**                               | §1 below |
-| 2   | Consent umbrella (FOLLOW-373 lineage) works on client domains, no hardcoded "Estalara" | **GAP**                                                    | §2 below |
+| 2   | Consent umbrella (FOLLOW-373 lineage) works on client domains, no hardcoded "Estalara" | **CLOSED IN CODE 2026-07-28** (was GAP; two open items)    | §2 below |
 | 3   | Per-user opt-out (§H.9/FOLLOW-372) reachable on client brands                          | **OK** (contrary to the ticket's premise — see correction) | §3 below |
 | 4   | DSR flows tenant-agnostic across brands                                                | **OK, with one concrete gap**                              | §4 below |
 

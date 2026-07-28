@@ -83,7 +83,19 @@ per-axis below, not glossed over.
 
 ---
 
-## 2. Consent umbrella (FOLLOW-373 lineage) — GAP
+## 2. Consent umbrella (FOLLOW-373 lineage) — CLOSED IN CODE 2026-07-28 (was: GAP)
+
+> **[FOLLOW-685 / FOLLOW-699 / FOLLOW-713, 2026-07-28]** The gap this section documented when it was
+> written has since been built out by PRs #624, #629, #631, #632, #633 and #634. What remains open
+> here is **not** the per-brand identity mechanism — that ships — but the two items called out
+> inline below (PROPOSED STUB A item 3, and item (c) of the out-of-repo confirmation in §"Scope"),
+> both of which prescribed a flow that is now the **wrong** one. The rest of this section is
+> retained as the historical record of why the work was commissioned; read the two inline
+> corrections as authoritative where they conflict with the surrounding prose.
+>
+> **The canonical registration flow is GET-then-echo, recorded once in `backlog/HANDOFFS.md` →
+> FOLLOW-374 §"What Rafał needs to do", Step 1.** That is the single place the decision lives; this
+> document defers to it and must not restate it.
 
 **What works, tenant-agnostic:**
 
@@ -265,6 +277,17 @@ actually shown), Art. 12 (transparent, brand-consistent communication to data su
    `consent_text_hash` **required** (400 on omission) for any `tenant_id` other than the first-party
    Estalara tenant, instead of silently defaulting to `CANONICAL_CONSENT_TEXT_HASH`. Add a red-first
    test proving the silent-default path is closed for non-first-party tenants.
+
+   > **[DONE — superseded 2026-07-28, FOLLOW-713]** Shipped, and in a stronger form than this item
+   > asked for. `consent_text_hash` is required for non-first-party tenants (FOLLOW-654 leg 2), a
+   > provably-wrong hash is refused with `422 consent_text_hash_fabricated` (FOLLOW-684/697), and
+   > the omission path no longer defaults to `CANONICAL_CONSENT_TEXT_HASH` for a provisioned tenant
+   > (FOLLOW-707). **But this item's framing — that the caller authors its own hash and the server
+   > merely stops defaulting — is not the canonical flow.** The caller GETs the text and echoes the
+   > returned hash; see `backlog/HANDOFFS.md` → FOLLOW-374, Step 1. Separately still open:
+   > `CANONICAL_CONSENT_TEXT_HASH` is a hand-typed placeholder, not a digest (FOLLOW-704, P0), so
+   > records already written on the old default path attest no text (FOLLOW-706).
+
 4. Update `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6 with an explicit `[Brand Name]`
    placeholder convention once the data path exists (compliance-engineer).
 
@@ -302,10 +325,17 @@ deployment: (a) publishes a Privacy Policy page containing the `PRIVACY_NOTICE_T
 disclosures with the brand's own name substituted where the template currently says
 "Estalara"/"Time2Show, Inc." (subject to whatever the client contract's controller/processor framing
 requires — that legal call is explicitly not compliance-engineer's or this document's to make); (b)
-presents the §6.1 registration consent checkbox with brand-correct wording; (c) always computes and
-sends its own `consent_text_hash` to `/api/v1/consent/platform-registration` when displaying
-non-canonical text (ties to PROPOSED STUB A item 3); (d) sets `data-privacy-url` on the SDK snippet
-to that brand's own Privacy Policy URL.
+presents the §6.1 registration consent checkbox with brand-correct wording; (c) **[CORRECTED
+2026-07-28 — FOLLOW-685 AC-3 / FOLLOW-713 AC-3]** ~~always computes and sends its own
+`consent_text_hash` to `/api/v1/consent/platform-registration` when displaying non-canonical text~~
+— **GETs the consent text from `/api/v1/consent/platform-registration`, displays those exact bytes,
+and echoes the returned `consent_text_hash` on the POST.** Authoring your own copy of the text and
+hashing it produces evidence of nothing under Art. 7(1): it shows two systems agree on a string, not
+that the string is what the data subject read. Computing your own hash remains acceptable **only**
+for genuinely non-canonical copy (e.g. a translation), and such a record is written
+flagged-as-unverified, not silently accepted. The flow is specified once, in `backlog/HANDOFFS.md` →
+FOLLOW-374 Step 1; (d) sets `data-privacy-url` on the SDK snippet to that brand's own Privacy Policy
+URL.
 
 **Per the compliance-engineer guardrail:** until this HANDOFF confirmation is recorded, the
 external-brand go-live QA gate for "privacy policy + consent text are brand-correct" must be marked

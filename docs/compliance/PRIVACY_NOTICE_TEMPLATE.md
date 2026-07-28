@@ -1,6 +1,6 @@
 # Estalara Adaptive Listings — Tenant-Embed Privacy Notice Template
 
-**Version:** 1.5 **Date:** 2026-07-25 **Author:** Compliance Engineering **Regulatory basis:** GDPR
+**Version:** 1.6 **Date:** 2026-07-28 **Author:** Compliance Engineering **Regulatory basis:** GDPR
 Art. 13/14, ePrivacy Directive Art. 5(3), UK GDPR, CCPA § 1798.100(b) **DPO gate:** See §5 — DPO
 sign-off required before this template is distributed to EU tenants.
 
@@ -204,6 +204,20 @@ template being shared with the DPO, escalate to the human (Piotr Nawrocki) via
 > **Action:** Display this text (or an equivalent translation) above the consent checkbox at
 > registration. The checkbox must not be pre-ticked (GDPR Art. 7(2)).
 
+> **Canonical bytes — ruling, FOLLOW-705 (2026-07-28).** The byte-canonical artifact for
+> `consent_records.consent_text_hash` is **the string returned by `renderPlatformConsentText()`**
+> (`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts`), served as
+> `consent_text` by `GET /api/v1/consent/platform-registration`. That is the exact string the data
+> subject reads before clicking "I agree", and it is the only artifact that exists for a white-label
+> brand (this section is written for the Estalara identity only). The block below is the **published
+> rendering of those same bytes for the Estalara identity**; it MUST reduce to them byte-for-byte
+> under the normalization in §6.1.1. The `consent-text-sync` CI gate
+> (`scripts/check-consent-text-sync.mjs`) enforces that equality on every push, so the two cannot
+> drift silently. Do not reintroduce `[bracket]` template slots in the block below: the served text
+> contains none, so a bracket here would make the published text differ from what was displayed.
+
+<!-- BEGIN CANONICAL CONSENT TEXT platform-v1.3-2026-06-21 -->
+
 By creating an account and clicking "I agree", you consent to the Estalara Adaptive Listings service
 (provided by Time2Show, Inc.) processing your information for the following purposes:
 
@@ -232,13 +246,74 @@ By creating an account and clicking "I agree", you consent to the Estalara Adapt
 **This consent is required to use the platform.** Without granting it, you cannot create an account
 or access chat features.
 
-**Your rights:** You can withdraw this consent at any time by contacting [agency DSR contact].
+**Your rights:** You can withdraw this consent at any time by contacting the agency's DSR contact.
 Withdrawal stops new personalization processing. A data erasure request will result in deletion of
 your behavioral data from Estalara's systems within 30 days. Withdrawal does not affect the
 lawfulness of processing before withdrawal.
 
-For full details, see the [agency privacy policy] and Estalara's privacy documentation at
+For full details, see the agency privacy policy and Estalara's privacy documentation at
 compliance@estalara.com.
+
+<!-- END CANONICAL CONSENT TEXT platform-v1.3-2026-06-21 -->
+
+> **Open disclosure-quality finding, carried forward from the removed `[agency DSR contact]` slot
+> (FOLLOW-705, not fixed here).** The bracket removed above was an unfilled editorial slot; deleting
+> it aligns the doc with the served text but also removes the only visible signal that the
+> withdrawal channel is unresolved. Recording it here so the signal survives: **the text served to
+> investors since 2026-06-21 names no concrete DSR address** — "the agency's DSR contact" is not
+> actionable on its own, and `compliance@estalara.com` appears only as a documentation contact, not
+> as the stated withdrawal channel. GDPR Art. 7(3) requires withdrawal to be as easy as giving
+> consent, and Art. 13(1)(a)–(b) requires contact details. Resolving this **changes the disclosed
+> meaning**, so it requires a `PLATFORM_REGISTRATION_TOS_VERSION` bump, a new sentinel version, a
+> re-pinned `CANONICAL_CONSENT_TEXT_HASH` and DPO review — deliberately out of scope for FOLLOW-705,
+> which is a meaning-preserving reconciliation. Escalated to the PM in the FOLLOW-705 PR.
+
+### 6.1.1 Hashable-block normalization (executable specification — FOLLOW-705)
+
+This specification exists so that any reader can reproduce the canonical hash without guessing. The
+prior wording ("the exact text block starting at 'By creating an account…' through
+'…compliance@estalara.com.' with trailing newline stripped") was not sufficient — it named neither
+the markdown stripping nor the hard-wrap treatment, and that ambiguity is how the placeholder
+`CANONICAL_CONSENT_TEXT_HASH` defect (FOLLOW-704) survived unnoticed for over a month.
+
+**Canonical text `C(brand)`** — the return value of
+`renderPlatformConsentText({ brandName, legalEntity })`. Its invariants: UTF-8; LF line endings
+only; no leading or trailing whitespace and **no trailing newline**; paragraphs separated by exactly
+one blank line (`\n\n`); each paragraph is a single physical line of unbounded length (no hard
+wrap); no markdown emphasis markers.
+
+**Canonical hash** — `SHA-256(C(brand))`, lowercase hex, over the UTF-8 bytes of `C(brand)` with
+nothing appended (no `\n`, no `\r\n`).
+
+**Normalization `N(block)`** mapping the published block above onto `C(Estalara)`:
+
+| Step | Rule                                                                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1   | Take the bytes strictly between the `<!-- BEGIN CANONICAL CONSENT TEXT … -->` and `<!-- END CANONICAL CONSENT TEXT … -->` lines, excluding both sentinel lines.                                                           |
+| N2   | Decode as UTF-8. A CR (`\r`), a tab, or a `[` character anywhere in the block is a hard error, not something to normalize away.                                                                                           |
+| N3   | Strip leading and trailing whitespace from the whole block.                                                                                                                                                               |
+| N4   | Split into paragraphs on one or more blank lines (regex `/\n[ \t]*\n+/`).                                                                                                                                                 |
+| N5   | Within each paragraph, strip leading and trailing whitespace from every physical line and join the lines with a single space (U+0020). This undoes the 100-column prettier wrap and the 3-space list-continuation indent. |
+| N6   | Delete every occurrence of `**` (markdown strong). No other inline markdown is permitted inside the block.                                                                                                                |
+| N7   | Join the paragraphs with exactly one blank line (`\n\n`).                                                                                                                                                                 |
+| N8   | Emit with no trailing newline.                                                                                                                                                                                            |
+
+**Assertion:**
+`N(block) === renderPlatformConsentText({ brandName: 'Estalara', legalEntity: 'Time2Show, Inc.' })`,
+byte-for-byte. Enforced by `node scripts/check-consent-text-sync.mjs` (CI job `consent-text-sync`,
+hard gate).
+
+**Reproducing the hash from a shell** (this command is verified to work, unlike the
+`echo -n "<exact text>"` instruction it replaces):
+
+```bash
+node scripts/check-consent-text-sync.mjs --print-text | sha256sum   # → the canonical hash
+node scripts/check-consent-text-sync.mjs --print-hash               # same value, computed in-process
+```
+
+> **Note (FOLLOW-704, open):** the `CANONICAL_CONSENT_TEXT_HASH` constant in `lib.ts` does **not**
+> currently equal this hash — it is a hand-typed placeholder. Pinning it is FOLLOW-704's scope, not
+> this section's; this section only fixes _which bytes_ it must be pinned to.
 
 ### 6.2 C-07 Boundary Confirmation (operator-facing — not shown to investors)
 
@@ -266,12 +341,13 @@ order, feature highlights) without withdrawing the registration consent. The tog
 
 ## 7. Revision History
 
-| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------- | ---------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item.                                                                                                                                                                                                                                                                    |
-| 1.2     | 2026-06-08 | Compliance Engineering | FOLLOW-230: §4 updated to list all eight active SDK keys. Added three keys omitted from v1.1: `estalara_variant:{sessionId}` (sessionStorage, A/B variant, strictly-necessary), `__estalara_quiz_dismissed__` (localStorage, preference timestamp, strictly-necessary), `__estalara_micro_poll_dismissed__` (localStorage, preference timestamp, strictly-necessary). Updated header from "all five" to "all eight". Added per-key implementation notes with grep-verified source references.                                                                      |
-| 1.4     | 2026-06-22 | Compliance Engineering | FOLLOW-375: §4 updated to list all ten active SDK keys. Added `__estalara_quiz_completed__` (sessionStorage, session-scoped quiz-completion suppression flag, strictly-necessary — Rule N) and `estalara_resolved_archetype_{sessionId}` (sessionStorage, resolved source-of-truth archetype, Mode B, erased on consent denial — ADR-0014). Updated header from "all eight" to "all ten".                                                                                                                                                                          |
-| 1.5     | 2026-07-25 | Compliance Engineering | FOLLOW-653 (external-brand go-live technical check): §4 updated to list all eleven active SDK keys. Added `__estalara_profiling_opt_out__[:{userId}]` (localStorage, per-user AL DOM-adaptation opt-out flag, Mode B, erased on consent denial/withdrawal — FOLLOW-372/§H.9), a key that shipped in PR #337 (2026-06-21) but was never added to this table — the `privacy-notice-keys-sync` CI gate does not scan for `_OPT_OUT_KEY`-suffixed constants, so the gap went undetected until this grep-verified audit. Updated header from "all ten" to "all eleven". |
-| 1.3     | 2026-06-21 | Compliance Engineering | FOLLOW-373: §6 added — Platform-Wide Registration Consent disclosure for app.estalara.com pilot. Covers six purposes (a)–(f) with investor-facing EN text (§6.1), C-07 boundary confirmation (§6.2), and DOM opt-out disclosure (§6.3). DPO gate updated: four new gate items. Old §6 Revision History renumbered to §7. Template version bumped to 1.3.                                                                                                                                                                                                           |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-05-27 | Compliance Engineering | Initial creation (FOLLOW-129). §13.1 + §13.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+|         |            |                        | disclosure paragraphs from DPIA Audit F-13/F-14                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 1.1     | 2026-06-08 | Compliance Engineering | FOLLOW-218: added §4 client-storage table listing all five active SDK keys including the new `estalara_intent_{sessionId}` sessionStorage entry. Renumbered old §4 (DPO Gate) to §5; old §5 (Revision History) to §6. DPO gate updated to add §13.3 review item and §13.3 staging QA gate item.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 1.2     | 2026-06-08 | Compliance Engineering | FOLLOW-230: §4 updated to list all eight active SDK keys. Added three keys omitted from v1.1: `estalara_variant:{sessionId}` (sessionStorage, A/B variant, strictly-necessary), `__estalara_quiz_dismissed__` (localStorage, preference timestamp, strictly-necessary), `__estalara_micro_poll_dismissed__` (localStorage, preference timestamp, strictly-necessary). Updated header from "all five" to "all eight". Added per-key implementation notes with grep-verified source references.                                                                                                                                                                                                                                                                                                                          |
+| 1.4     | 2026-06-22 | Compliance Engineering | FOLLOW-375: §4 updated to list all ten active SDK keys. Added `__estalara_quiz_completed__` (sessionStorage, session-scoped quiz-completion suppression flag, strictly-necessary — Rule N) and `estalara_resolved_archetype_{sessionId}` (sessionStorage, resolved source-of-truth archetype, Mode B, erased on consent denial — ADR-0014). Updated header from "all eight" to "all ten".                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 1.5     | 2026-07-25 | Compliance Engineering | FOLLOW-653 (external-brand go-live technical check): §4 updated to list all eleven active SDK keys. Added `__estalara_profiling_opt_out__[:{userId}]` (localStorage, per-user AL DOM-adaptation opt-out flag, Mode B, erased on consent denial/withdrawal — FOLLOW-372/§H.9), a key that shipped in PR #337 (2026-06-21) but was never added to this table — the `privacy-notice-keys-sync` CI gate does not scan for `_OPT_OUT_KEY`-suffixed constants, so the gap went undetected until this grep-verified audit. Updated header from "all ten" to "all eleven".                                                                                                                                                                                                                                                     |
+| 1.6     | 2026-07-28 | Compliance Engineering | FOLLOW-705: §6.1 made byte-conformant with the server-side renderer, which this ticket rules the byte-canonical artifact for `consent_records.consent_text_hash`. Substituted the two unfilled editorial slots `[agency DSR contact]` → "the agency's DSR contact" and `[agency privacy policy]` → "the agency privacy policy" (the prose the renderer has served since 2026-06-21 — the published doc, not the served text, was the divergent artifact). Added BEGIN/END sentinels around the hashable block and §6.1.1, an executable normalization spec, enforced by the new `consent-text-sync` CI gate. **No change to disclosed meaning** (no purpose, recipient, retention period, right or lawful basis differs) → `PLATFORM_REGISTRATION_TOS_VERSION` deliberately NOT bumped, and no re-consent is required. |
+| 1.3     | 2026-06-21 | Compliance Engineering | FOLLOW-373: §6 added — Platform-Wide Registration Consent disclosure for app.estalara.com pilot. Covers six purposes (a)–(f) with investor-facing EN text (§6.1), C-07 boundary confirmation (§6.2), and DOM opt-out disclosure (§6.3). DPO gate updated: four new gate items. Old §6 Revision History renumbered to §7. Template version bumped to 1.3.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

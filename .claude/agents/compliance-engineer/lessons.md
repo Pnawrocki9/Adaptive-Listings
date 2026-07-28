@@ -135,3 +135,23 @@ being written to Redis without any disclosure review. The schema contract should
   is scoped a certain way, grep for X before accepting the premise — a same-day sibling ticket/ADR
   can itself be built on a stale scan, and propagating that premise into a go-live compliance report
   would itself become a false statement.
+
+- **2026-07-28 / FOLLOW-705** · Ruled the byte-canonical consent artifact:
+  `renderPlatformConsentText()`'s return value, NOT `PRIVACY_NOTICE_TEMPLATE.md` §6.1. Decider was
+  not "which is more official" but "which one can exist at all" — §6.1 is hardcoded
+  Estalara/Time2Show, so a doc-canonical rule is unimplementable for every white-label brand, and
+  the served string is the one the subject actually read (Art. 7(1)). Made the doc conform (two
+  unfilled slots `[agency DSR contact]` / `[agency privacy policy]` → the prose the renderer has
+  always served), added BEGIN/END sentinels + an executable N1–N8 normalization spec + a
+  `consent-text-sync` CI gate with a `--self-test` mode that proves the gate reddens on drift.
+  Verified the retro's diff myself before acting: both hashes reproduced exactly (`821216cd…`
+  served, `201c5b32…` doc bytes). **Where a disclosure could have drifted:** the `lib.ts` "SYNC:
+  byte-aligned with §6.1" comment was FALSE for six weeks and nothing checked it — a prose SYNC
+  comment is not a contract, it is a wish. Also: removing a bracket slot to reconcile artifacts
+  silently deletes the editorial signal that the slot was never filled; I recorded that finding
+  outside the hashable block instead of letting it vanish (the served text still names no actionable
+  DSR address — Art. 7(3), flagged, not silently fixed, because fixing it changes disclosed
+  meaning). **A guardrail I'd add:** a comment asserting two artifacts are byte-identical must ship
+  with the executable comparison in the same PR, and the normalization must be precise enough to
+  reproduce ("trailing newline stripped" said nothing about markdown or hard wraps — that gap is
+  exactly where a placeholder hash hid for a month).

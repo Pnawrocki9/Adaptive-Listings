@@ -2768,4 +2768,56 @@ branch #632 shipped) is adjacent but independently fixable.
    engineering track once item 2 is ruled; FOLLOW-706 (prod remediation) is gated on items 1 and 3
    and does not block 704/705.
 
+---
+
+**Update 2026-07-28 (session 74, post-RETRO-228 / PR #633):**
+
+**Item 2 has a recorded answer, not yet your sign-off.** FOLLOW-705 merged (`47e863c6`) with
+compliance-engineer ruling the server renderer (not the doc) byte-canonical, on the grounds that
+§6.1 is hardcoded to the Estalara identity (undefined for white-label brands) and Art. 7(1) is about
+what the subject actually read. Reasoning and code are in PR #633. Treating this as answered unless
+you override it — flagging here since this item was originally routed to you.
+
+**New item 4, filed per FOLLOW-710's own AC-3** ("the PM escalates; this ticket does not
+self-escalate") — **bundle into the SAME DPO round as items 1 and 3, not a separate conversation**:
+
+RETRO-228 (following #633) investigated the consent text's withdrawal instruction — _"you can
+withdraw this consent at any time by contacting the agency's DSR contact"_ — and found there is no
+mechanism for a data subject to act on it, not merely a missing address:
+
+- `POST /api/dsr/initiate` is JWT-gated to **tenant staff** — a data subject cannot call it
+  directly; an agency admin must act on their behalf, and there is no public DSR-request page.
+- The consent route itself has no withdrawal endpoint (GET + POST only).
+- The DPIA's own documented intake procedure (`dpia.md` §8 step 3) names `POST /api/v1/dsr/request`
+  — **this route does not exist anywhere in the repo.**
+- The §6.3 DOM opt-out is explicitly not withdrawal (already documented as such in `HANDOFFS.md`).
+
+Every investor who has registered since 2026-06-21 (FOLLOW-374 go-live) has been told a specific,
+concrete way to withdraw consent that does not exist. This is GDPR Art. 7(3) (withdrawal must be as
+easy as giving consent) and Art. 13(1)(a)–(b) (contact details required) territory — filed as
+**FOLLOW-710** (P1). A related but lower-severity sibling, **FOLLOW-711** (P2, latent on the current
+single-tenant model, live the day a second brand registers): the same text hardcodes an Estalara
+mailbox as every white-label brand's own privacy-documentation contact, contradicting a sibling
+docblock about per-brand configurability. Both explicitly need to ride the **same text-change /
+`PLATFORM_REGISTRATION_TOS_VERSION` bump** as FOLLOW-706's remediation and the existing FOLLOW-145
+(SDK consent-banner withdrawal, same right, different surface, already OPEN P2) — RETRO-228's own
+recommendation is one DPO round covering FOLLOW-706 + FOLLOW-710 + FOLLOW-711 + FOLLOW-145, not four
+separate conversations.
+
+**Required action (CEO / DPO), added to the existing three:**
+
+5. **Rule on FOLLOW-710's withdrawal-channel options**: (a) name a concrete monitored DSR mailbox in
+   the text and stand it up, (b) build a subject-facing withdrawal affordance in the
+   registration/account surface and name it, (c) keep the mediated (staff-initiated) model but
+   render each tenant's own DSR contact from `brand_config` so the text names a real, brand-correct
+   address, (d) accept the current mediated/staff-only model with a recorded rationale — no option
+   recommended by omission.
+6. **Rule on FOLLOW-711's white-label contact**: per-brand contact from `brand_config` (fail-loud if
+   unprovisioned, same pattern as `brand_name`/`legal_entity`), or an
+   explicitly-Estalara-as-processor sentence that doesn't pretend to be the brand's own contact.
+7. **Take the FOLLOW-706 / item-1 prod row count BEFORE any text bump lands** — the population being
+   counted/remediated shifts the moment `PLATFORM_REGISTRATION_TOS_VERSION` changes.
+
+**Resolution:** — awaiting CEO/DPO ruling (items 1, 3, 5, 6; item 2 stands unless overridden).
+
 **Resolution:** — awaiting CEO/DPO ruling.

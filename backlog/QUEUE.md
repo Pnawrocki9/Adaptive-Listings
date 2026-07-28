@@ -1,6 +1,102 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 77 — FOLLOW-715 promoted + dispatched to backend-engineer/Sonnet)
+## ▶️ START HERE — resume 2026-07-28 (session 77 continued — FOLLOW-715 MERGED (#637); FOLLOW-716 dispatched)
+
+**FOLLOW-715 — status: DONE.** PR **#637** merged (squash `1faa47b3`), branch deleted. All 6 ACs
+shipped: grace-window band (AC1-2), `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b ordered bump
+procedure + `HANDOFFS.md:2840` updated to point at it (AC3), manually-closed window design decision
+recorded with rationale (AC4), red-first tests for all three bands + the "no window configured"
+control (AC5), RETRO-229 DG-5 zero-DB-query pin (AC6). CI-check counter: 2/5 (see below).
+Fix-iteration counter: 1/3.
+
+- **Local verification before push (not just CI-trust):** full `control-plane` suite 175 files /
+  1974 tests green; `tsc --noEmit` + `eslint` + `prettier --check` clean; a live dry-run against a
+  running `pnpm dev` (mirroring the repo's own 2026-07-25 dry-run precedent) proved all three bands
+  against the REAL route, not just mocks — including confirming the `tos_version_grace` Sentry
+  warning fires exactly once for the previous-within-window case (grepped the server log).
+- **CI round 1 found a real, new red gate — not the usual pre-existing ones.**
+  `Gitleaks secrets scan` failed: the new env var name `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS`
+  (42 chars) false-positives on the repo's generic `cloudflare-api-token` 40-char-entropy heuristic
+  (11 findings, same class as the existing ADR-NNNN-kebab / bypass-5/6 / DECISION-BRIEF allowlist
+  entries — see `.gitleaks.toml`'s own history). Installed the `gitleaks` binary locally (not in the
+  pre-commit hook's PATH), reproduced the 11 findings, confirmed the deterministic 40-char capture
+  (`PLATFORM_REGISTRATION_TOS_VERSION_PREVIO`, missing the trailing `US`), added a token-scoped
+  allowlist regex per Rule V, verified 0 leaks locally, pushed as a second commit. **Do not assume
+  Gitleaks is pre-existing-red without checking the specific PR run** — `project_ci_gate_landscape`
+  memory's "Gitleaks is repo-wide red alongside Rule I" is now STALE: `main`'s latest CI run shows
+  Gitleaks passing, only Rule I red. Only Rule I is still safely pre-existing: PR run showed 192
+  violations, byte-identical to the `main` baseline re-checked the same session — zero added.
+- **Post-merge git hygiene:** `gh pr merge --squash --delete-branch` moved the local checkout to
+  `main`, which surfaced a **stranded, never-pushed local commit** (`105c7b6f` "docs(backlog):
+  record session-77 dispatch status + lessons entry [FOLLOW-715]", touching only
+  `backlog/STATUS.md` + `.claude/agents/pm-orchestrator/lessons.md`, from earlier this same session)
+  sitting on local `main` while `origin/main` had moved ahead via the squash merge. Checked the
+  commit's diff for overlap with the merged PR's files before touching anything (none — clean
+  split), then `git fetch origin main && git rebase origin/main` (1 commit, no conflicts) and pushed
+  as a fast-forward. `main` = `e8a2bac6`. Per
+  `feedback_check_worktrees_before_concluding_agent_didnt_run` / the HEAD-displacement lesson:
+  verify before assuming a diverged branch means lost work.
+
+**Escalation gate re-checked before picking the next ticket:** same 3 `## OPEN` entries in
+`backlog/ESCALATIONS.md` as below (ESC-041/042 standing non-blocking ruling, ESC-044 self-scoped to
+FOLLOW-704/706/710/711/701/714, none of which is FOLLOW-716) — no change since the last check this
+session, not re-litigated.
+
+### FOLLOW-716 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — a strong in-repo precedent exists
+(`scripts/check-consent-text-sync.mjs` + the `consent-text-sync` CI job, PR #633, 361 lines) for
+exactly this shape of gate (derive-from-source + bidirectional drift check + CI job); this ticket
+applies that same pattern one level up (contract, not just rendered text). Routine implementation
+against a well-defined ticket scope with a concrete file to mirror — does not warrant Opus (no prior
+failed attempt, no cross-module contract change, the "propose a smaller structured block" fallback
+in AC3 is a bounded design choice with the tradeoff pre-stated, not open-ended). Not splitting out a
+separate devops-engineer leg — the PR #633 precedent shows one agent can own both the script and its
+CI job wiring. **started_at:** 2026-07-28. **branch:**
+`backend-engineer/FOLLOW-716-consent-contract-drift-gate`.
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-716` (full text, verbatim — P1, ~5h,
+  `source_retro: RETRO-229`, four-retro chain RETRO-226→227→228→229).
+- Read first: `docs/MASTER_DESIGN.md` §Snapshot.1; `scripts/check-consent-text-sync.mjs` in full
+  (the pattern to mirror, not reinvent); `.github/workflows/ci.yml:536-550` (the `consent-text-sync`
+  job, the CI wiring shape to mirror);
+  `apps/control-plane/src/app/api/v1/consent/platform-registration/ route.ts` (the route whose
+  emittable status/`code` pairs are the contract); `backlog/HANDOFFS.md`'s FOLLOW-374 section (the
+  caller-facing document this gate checks against — GET and POST have disjoint code sets per method,
+  keep them scoped separately, this is literally what the FOLLOW-685 409 collision AC-5 warns
+  about).
+- Branch: `backend-engineer/FOLLOW-716-consent-contract-drift-gate`.
+- AC (verbatim from the stub, 6 items): (1) machine-checkable contract artifact derived/asserted
+  from `route.ts` source (status codes + `code` string literals per method) — not hand-maintained;
+  (2) a CI gate failing in BOTH directions (route emits something undocumented; document describes
+  something the route can't emit); (3) `HANDOFFS.md`'s FOLLOW-374 section is the reference — if its
+  prose shape resists machine-checking, propose the smaller structured block and migrate it rather
+  than weaken the check; (4) prove the gate red-first (deliberately remove a status row, confirm
+  fail) then green; (5) GET vs POST code sets scoped separately per method; (6) promote finding L-1
+  to `CONVENTIONS_PATCH.md` in the SAME PR — a PR changing an out-of-repo-consumed contract ships
+  the caller-facing doc update in the same PR — citing all four retros (226, 227, 228, 229).
+- Scope constraints: do not touch FOLLOW-704/706/710/711/714/701 (held on ESC-044); do not touch the
+  FOLLOW-715 grace-window logic itself (merged, #637) beyond reading it as contract surface.
+- Completion: worker opens a PR (never commits to `main`). Run locally BEFORE push:
+  `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, AND install the
+  `gitleaks` binary locally and run it against the diff before pushing (FOLLOW-715 round 1 shipped a
+  false-positive-triggering identifier straight into CI — verify this locally now, `.gitleaks.toml`
+  documents the token-scoped-allowlist remediation pattern if a new long identifier trips it).
+  Prettier on every touched file. Conventional commit referencing `[FOLLOW-716]`. PM independently
+  re-runs CI (checking the SPECIFIC PR run, not assuming Gitleaks/Rule I status from memory) and
+  confirms the red-first proof and the CONVENTIONS_PATCH promotion before READY_FOR_REVIEW.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet.)
+
+**1 ticket IN_PROGRESS** (FOLLOW-716) — within the ≤3 guardrail. **Still held on ESC-044:**
+FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
+ruling.
+
+---
+
+## ▶️ (superseded) resume 2026-07-28 (session 77 — FOLLOW-715 promoted + dispatched to backend-engineer/Sonnet)
 
 **State re-verified before picking anything (not taken on trust):** `git status`/`git log -20` on
 `main` match the session-76 head exactly (`b2dd4585`). `gh pr list --state open` → empty, nothing to

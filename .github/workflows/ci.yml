@@ -519,6 +519,36 @@ jobs:
       - name: Assert all SDK storage keys are disclosed in Privacy Notice §4
         run: bash scripts/check-privacy-notice-keys.sh
 
+  # ── Registration consent-text sync gate (FOLLOW-705 / Rule N / Rule AH) ────
+  # Asserts that the published registration-consent disclosure
+  # (docs/compliance/PRIVACY_NOTICE_TEMPLATE.md §6.1, between the CANONICAL
+  # CONSENT TEXT sentinels) normalizes byte-for-byte — per the §6.1.1 N1–N8
+  # spec — to the string the server actually serves the data subject,
+  # renderPlatformConsentText() in the consent/platform-registration route.
+  #
+  # A doc that differs from the served text is a false statement about what the
+  # data subject agreed to (GDPR Art. 7(1) demonstrability). Before FOLLOW-705
+  # they DID differ — the doc carried two unfilled `[bracket]` slots the renderer
+  # never emitted — and the lib.ts "SYNC: byte-aligned" comment asserting
+  # otherwise had nothing enforcing it (RETRO-227).
+  #
+  # Hard gate — no continue-on-error.
+  consent-text-sync:
+    name: Registration consent-text sync (Rule N / FOLLOW-705)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-test the gate (proves it detects drift)
+        run: node scripts/check-consent-text-sync.mjs --self-test
+
+      - name: Assert Privacy Notice §6.1 == served consent text
+        run: node scripts/check-consent-text-sync.mjs
+
   # ── Fire-and-forget sink guard (FOLLOW-433 / ESC-033) ──────────────────────
   # Asserts that no bare `void fn(` / `void (async` request-path sinks exist in
   # apps/control-plane/src (excluding *.test.ts).  These patterns are silently

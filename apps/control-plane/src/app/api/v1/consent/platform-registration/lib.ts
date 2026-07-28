@@ -30,19 +30,39 @@ import type { BrandIdentity } from '@/lib/brand-identity';
 export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as const;
 
 /**
- * SHA-256 hex hash of the canonical English registration consent disclosure
- * text from docs/compliance/PRIVACY_NOTICE_TEMPLATE.md §6.1
- * (version 1.3, 2026-06-21).
+ * Intended to be the SHA-256 of the canonical English registration consent
+ * disclosure, used as the default `consent_text_hash` when the caller does not
+ * supply one (i.e. the caller displayed the canonical EN text). A caller that
+ * displayed a translation MUST supply its own hash.
  *
- * Computed over the exact text block starting at "By creating an account..."
- * through "...compliance@estalara.com." with trailing newline stripped.
+ * ⚠️ THE CURRENT LITERAL IS NOT THAT DIGEST. It is a hand-typed placeholder
+ * introduced with the endpoint (FOLLOW-374, `f810f72e`, 2026-06-21) and never
+ * recomputed; it is the SHA-256 of no text at all (RETRO-227 §4a LG-1 hashed 60
+ * normalisations of both candidate texts — zero matches). Re-pinning it is
+ * **FOLLOW-704** (P0), deliberately NOT done here: FOLLOW-705 only rules WHICH
+ * bytes it must be pinned to. Until FOLLOW-704 lands, this constant is not
+ * evidence that any particular text was displayed, and the 422
+ * `consent_text_hash_fabricated` refusal keyed on it (route.ts:495, :609) fires
+ * only on a value no honest or dishonest caller can derive.
  *
- * This value is used as the default `consent_text_hash` when the caller does
- * not supply one (i.e. the caller displayed the canonical EN text). If the
- * caller displayed a translated version, they MUST supply their own hash.
+ * CANONICAL BYTES (FOLLOW-705 ruling, recorded in PRIVACY_NOTICE_TEMPLATE.md
+ * §6.1): the canonical text is the return value of
+ * {@link renderPlatformConsentText} for the first-party identity
+ * (`ESTALARA_BRAND_NAME` / `ESTALARA_LEGAL_ENTITY`) — the exact string the data
+ * subject reads before clicking "I agree" and the string `GET` serves as
+ * `consent_text` — NOT the markdown of the published doc. The hash is
+ * lowercase-hex SHA-256 over that string's UTF-8 bytes with nothing appended:
+ * no trailing `\n`, no `\r\n`, no trimming beyond what the renderer emits. The
+ * doc's §6.1 block maps onto those bytes under the normalization spec'd in
+ * §6.1.1 (steps N1–N8) and enforced by the `consent-text-sync` CI gate.
  *
- * To recompute: echo -n "<exact text>" | sha256sum
- * See FOLLOW-374 PR description for the verification command.
+ * To recompute (both commands verified 2026-07-28 to print the same value):
+ *   node scripts/check-consent-text-sync.mjs --print-hash
+ *   node scripts/check-consent-text-sync.mjs --print-text | sha256sum
+ * The previous instruction here — `echo -n "<exact text>" | sha256sum` — was not
+ * reproducible: it named neither the markdown stripping nor the hard-wrap
+ * treatment, which is how the placeholder survived six weeks and four hardening
+ * PRs unnoticed.
  */
 // Suppression: the gitleaks:allow tag below is the SOLE suppression for this hash (no regexes
 // entry in .gitleaks.toml — CB-1/FOLLOW-411 confirmed the inline suppress is sufficient).
@@ -68,10 +88,26 @@ export const CANONICAL_CONSENT_TEXT_HASH =
  * changed by ops per-brand if a brand runs its own inbox — same boundary as the
  * DSR sending domain in leg 3).
  *
- * SYNC: this text must stay byte-aligned with
- * `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 for the version pinned in
- * {@link PLATFORM_REGISTRATION_TOS_VERSION}. When that doc's §6.1 text changes,
- * bump the TOS version and update this template in the same PR.
+ * CANONICAL (FOLLOW-705): this function's return value is the byte-canonical
+ * consent text — what the data subject actually reads and what is hashed into
+ * `consent_records.consent_text_hash`. `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`
+ * §6.1 is the PUBLISHED RENDERING of these bytes for the first-party identity,
+ * not an independent source: it is markdown (hard-wrapped, `**`-emphasised) and
+ * exists only for Estalara, so it cannot be the hash input for a white-label
+ * brand. Before FOLLOW-705 the two also differed in wording — the doc carried
+ * unfilled slots `[agency DSR contact]` / `[agency privacy policy]` this
+ * renderer has never emitted — while this comment asserted byte-alignment with
+ * nothing enforcing it (RETRO-227).
+ *
+ * SYNC: `N(§6.1 block) === renderPlatformConsentText(estalaraIdentity)`, where N
+ * is the normalization spec'd in PRIVACY_NOTICE_TEMPLATE.md §6.1.1 (N1–N8:
+ * sentinel-delimited block, paragraph unwrap, `**` strip, no trailing newline).
+ * Enforced on every push by `scripts/check-consent-text-sync.mjs` (CI job
+ * `consent-text-sync`, hard gate) — editing this template without editing §6.1
+ * (or the reverse) turns CI red. When the text changes: edit both, bump
+ * {@link PLATFORM_REGISTRATION_TOS_VERSION} and both §6.1 sentinels if the
+ * DISCLOSED MEANING changed (a data subject cannot be retro-bound to new text),
+ * and re-pin {@link CANONICAL_CONSENT_TEXT_HASH} — all in the same PR.
  *
  * @param identity - The resolved brand identity (`brandName`, `legalEntity`).
  * @returns The full disclosure text with a single trailing newline stripped.

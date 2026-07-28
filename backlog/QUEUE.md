@@ -1,5 +1,24 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-28 (session 74 — RETRO-228 found the consent withdrawal channel doesn't exist; ESC-044 item 4 added; FOLLOW-704 STILL held)
+
+**RETRO-228 (post-#633) found FOLLOW-705's "unresolved DSR contact" flag is worse than a missing
+address — no working withdrawal mechanism exists at all** for the platform-registration consent:
+`POST /api/dsr/initiate` is staff-only JWT-gated, no public DSR page exists, and the DPIA's own
+documented intake endpoint (`POST /api/v1/dsr/request`) doesn't exist in the repo. Filed as
+**ESC-044 item 4** (FOLLOW-710, P1) per that ticket's own "the PM escalates" AC, bundled with
+FOLLOW-711 (P2, latent — a hardcoded Estalara mailbox in what's now the canonical white-label text)
+and recommended to ride the same DPO round as items 1/3 and the existing FOLLOW-145. Also recorded
+FOLLOW-705's renderer-vs-doc ruling against ESC-044 item 2 for Piotr's explicit sign-off or override
+— not blocking, just flagged.
+
+**FOLLOW-704 (P0) remains held**, still pending Piotr's go-ahead (unchanged from session 73).
+FOLLOW-712/713/714 (P1, from RETRO-228 — `tos_version` unvalidated, `HANDOFFS.md` asserting a
+nonexistent GET-then-echo flow, FOLLOW-704's AC needs widening) are independent of the ESC-044
+ruling and dispatchable now, same as 707/708/709/699/700/685 from prior sessions.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-28 (session 73 — FOLLOW-705 DONE, PR #633 merged `47e863c6`; FOLLOW-704 unblocked but held pending Piotr; 4 escalations OPEN)
 
 **FOLLOW-705 DONE.** PR #633 merged (squash) 2026-07-28T06:07:29Z → `47e863c6` on `main`, confirmed

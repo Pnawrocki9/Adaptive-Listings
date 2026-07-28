@@ -20909,7 +20909,7 @@ FOLLOW-711, FOLLOW-407, FOLLOW-411, Rule V, Rule S, Rule AH]
 
 source_retro: RETRO-229 (PR #634, FOLLOW-712) source_ticket: FOLLOW-712 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 **Blocks FOLLOW-704.** File this before that ticket is unheld, not after.
 

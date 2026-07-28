@@ -1,5 +1,110 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-28 (session 77 — FOLLOW-715 promoted + dispatched to backend-engineer/Sonnet)
+
+**State re-verified before picking anything (not taken on trust):** `git status`/`git log -20` on
+`main` match the session-76 head exactly (`b2dd4585`). `gh pr list --state open` → empty, nothing to
+validate. `.claude/worktrees/` empty, no `claude --agent` processes running — nothing stranded to
+recover.
+
+**Escalation gate re-checked against the literal rule ("do not pick a new ticket while escalations
+are open"), not against habit:** 3 `## OPEN` entries in `backlog/ESCALATIONS.md`:
+
+- **ESC-041** (dead `Release` npm-publish workflow) and **ESC-042 narrowed** (Modal `intent-engine`
+  operator deploy) both carry the **standing 2026-07-27 CEO dispatch-policy ruling** (recorded
+  verbatim across sessions 62-76): external/operator-only blockers, explicitly
+  non-blocking-for-dispatch, re-surfaced every session close rather than re-litigated absent a new
+  ruling. That is a real human ruling, not a PM self-exemption — proceeding on it.
+- **ESC-044** (consent-hash CEO/DPO ruling) is self-scoped in its own text to the tickets it names —
+  FOLLOW-704, 706, 710, 711, 701, 714 — and explicitly separates out "two coordinated code-fix
+  follow-ups, filed but not escalated (queue tickets, not this item)". FOLLOW-715 is not in the
+  blocked list and does not touch any question ESC-044 asks the CEO/DPO to rule on (which text is
+  canonical, how to remediate prod rows, withdrawal-channel design) — it fixes an operational gap (a
+  hard-422 grace window) in code that already merged. Picking it does not require or pre-empt the
+  ESC-044 ruling.
+
+No new escalation filed this session. This reasoning is the same one sessions 70-76 applied
+consistently (see their headers below) — continuing it, not inventing it fresh.
+
+**Ticket selection:** free-to-dispatch pool per session-76 head: FOLLOW-715, FOLLOW-716,
+FOLLOW-700/708 (devops), FOLLOW-702/703/709 (P2). Picked **FOLLOW-715** (P1, `depends_on: []`) over
+FOLLOW-716 (also P1, `depends_on: []`) because FOLLOW-715 unblocks the most other tickets: its own
+text says "Blocks FOLLOW-704" (P0), and FOLLOW-704 is the head of the entire ESC-044 chain (704→706,
+710, 711, 714, 701) — the moment Piotr rules on ESC-044, FOLLOW-704 is the first ticket unblocked,
+and it trips the exact outage FOLLOW-715 exists to prevent if FOLLOW-715 isn't already landed.
+FOLLOW-716 (contract-drift CI gate) is real and overdue (4 retros, CONVENTIONS_PATCH bar is 2) but
+blocks nothing else — queued as the very next pick.
+
+**Premise re-verified before dispatch, not taken on the stub's word:** read
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts` directly around the
+`tos_version` check FOLLOW-712/PR #634 shipped — confirmed it is a bare equality against
+`PLATFORM_REGISTRATION_TOS_VERSION` with no grace band, confirmed the 422 fires before any DB read
+(matches RETRO-229 DG-5's "step 4a before 7a" claim, re-read the line order myself rather than
+trusting the retro), and confirmed `backlog/HANDOFFS.md:2840` does narrate "a version bump is now a
+two-repo operation" with no runbook link, matching the stub's claim. `depends_on: []` confirmed
+empty in `backlog/FOLLOW_UPS.md`.
+
+### FOLLOW-715 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — routine implementation inside a well-defined
+ticket scope: a grace-window band on a check the same worker/tier (Sonnet) already shipped correctly
+in FOLLOW-712/PR #634 one session ago, same module, same file, no prior failed attempt, no
+cross-module contract change. AC item 4 asks the worker to "decide and record" whether the window is
+time-based or manually-closed, which is a bounded implementation choice with the tradeoff already
+spelled out in the ticket, not an open-ended judgment call — does not warrant Opus per the model-fit
+table's escalation trigger ("already failed once at the lower tier" — it hasn't). **started_at:**
+2026-07-28. **branch:** `backend-engineer/FOLLOW-715-tos-version-grace-window`.
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" → backend-engineer (touches
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts`,
+`docs/runbooks/BRAND_PROVISIONING.md`, `backlog/HANDOFFS.md:2840`).
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-715` (full text, verbatim — P1, ~3h,
+  `source_retro: RETRO-229`).
+- Read first: `docs/MASTER_DESIGN.md` §Snapshot.1; current `CONVENTIONS_PATCH.md` rules (Rule AJ —
+  alert-tag registry — applies to AC1's warning alert, coordinate with FOLLOW-700/708, do not invent
+  a fourth `brand_identity` tag value); `backlog/HANDOFFS.md:2840` (the prose this ticket must turn
+  into a runbook pointer); PR #634's diff (`6958a3c1`) for the exact `tos_version` check this ticket
+  extends.
+- Branch: `backend-engineer/FOLLOW-715-tos-version-grace-window`.
+- AC (verbatim from the stub): (1) accept the immediately-previous `tos_version` for a bounded,
+  explicitly-configured grace window — write the record under the version the caller actually
+  attested, never silently upgrade it, and raise a `warning`-level alert on every such write so the
+  stale caller is visible (coordinate the tag with FOLLOW-700/708's registry); (2) anything older
+  than the previous version keeps today's hard 422 — this is a migration ramp, not an amnesty; (3)
+  document the bump procedure as an ordered runbook step in `docs/runbooks/BRAND_PROVISIONING.md`
+  (bump server → alert fires → notify Rafał → caller redeploys → close the window), and update
+  `HANDOFFS.md:2840`'s prose to point at it; (4) decide and record whether the window is time-based
+  or manually closed — a time-based one that expires unnoticed reproduces the outage on a delay; (5)
+  tests, red-first, for all three bands (current / previous-within-window / older); (6) also pin
+  RETRO-229 DG-5: one assertion that a rejected `tos_version` costs zero DB queries — the refusal is
+  correctly ordered before the brand-identity read today, add a test that would fail if a future
+  reorder broke that.
+- Scope constraints: do not touch FOLLOW-716 (contract-drift gate, separate ticket, dispatches
+  next); do not touch FOLLOW-704/706/710/711/714/701 (all held on ESC-044); do not re-derive or
+  touch `CANONICAL_CONSENT_TEXT_HASH` itself.
+- Completion: worker opens a PR (never commits to `main`). Run locally BEFORE push:
+  `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Prettier on every
+  touched file. Conventional commit referencing `[FOLLOW-715]`. In the PR description paste: (a) all
+  three red-first band tests and proof they exercise the grace window correctly, (b) the
+  zero-DB-query proof for the rejected-`tos_version` case, (c) confirmation no
+  `brand_identity`/alert-tag value was invented outside the existing registry. PM independently
+  re-runs CI, re-checks the alert-tag registry coordination, and re-verifies the zero-DB-query claim
+  by test (not assertion) before READY_FOR_REVIEW.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet this session.)
+
+**1 ticket IN_PROGRESS** (FOLLOW-715) — within the ≤3 guardrail.
+
+**Queued next, not dispatched this session:** FOLLOW-716 (P1, contract-drift CI gate — good next
+pick once FOLLOW-715 is out, same module family, no deps). **Still held on ESC-044:** FOLLOW-704 +
+714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-28 (session 76 — both dispatched bundles MERGED; RETRO-229 filed; FOLLOW-715 now BLOCKS the held FOLLOW-704)
 
 **Session 75 was interrupted mid-dispatch. Recovered in session 76:** the FOLLOW-707+712 work was

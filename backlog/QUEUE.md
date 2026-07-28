@@ -1,5 +1,57 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-27 (session 71 — FOLLOW-705 dispatched to compliance-engineer while ESC-044 awaits CEO/DPO ruling; 4 escalations OPEN)
+
+**Dispatched FOLLOW-705 on Piotr's instruction**, taking up the option surfaced alongside ESC-044
+("FOLLOW-705 could be dispatched now... doesn't strictly need the CEO ruling to start"). This does
+NOT dispatch FOLLOW-704 (P0 code fix) or FOLLOW-706 (P1 prod remediation) — both remain held on the
+ESC-044 ruling per the prior session's note; Piotr did not ask for those.
+
+**Verified the premise myself before dispatch:** read `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`
+around §6.1 — confirmed lines 235/240 carry `[agency DSR contact]` / `[agency privacy policy]`
+bracket placeholders, which `renderPlatformConsentText()` (`lib.ts:79-102`) substitutes with "the
+agency's DSR contact" / "the agency privacy policy" respectively. This is exactly the divergence
+RETRO-227/FOLLOW-705 describe — confirmed accurate, not taken on the retro's word.
+
+### FOLLOW-705 — status: IN_PROGRESS
+
+**assigned_to:** compliance-engineer **model: Opus** — this is a documentation-shaped ticket by file
+type, but the actual decision (which of two texts is legally byte-canonical, with the DPO
+consequence of each choice stated) is a compliance-judgment call, not mechanical doc editing, and it
+gates FOLLOW-704 (P0) — per the model-fit rule, judgement-heavy compliance-sensitive work with
+downstream blast radius takes the higher tier even though the diff itself will likely be small and
+reversible. **started_at:** 2026-07-27. **branch:**
+`compliance-engineer/FOLLOW-705-canonical-consent-text-source`.
+
+**Delegation brief (sent to compliance-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-705` (full text, P1, ~3h, `source_retro: RETRO-227`).
+- Context: this ticket is a dependency of FOLLOW-704 (P0, held pending ESC-044's CEO/DPO ruling —
+  read `backlog/ESCALATIONS.md` ESC-044 for full background on why the hash constant matters and
+  what's blocked on it) and is itself independent of that ruling — it only decides which TEXT is
+  canonical, not what to do about already-written prod rows.
+- AC (verbatim from the stub): (1) decide and RECORD which artifact is byte-canonical for hashing —
+  the doc §6.1 block or the server-side renderer — with the DPO consequence of each stated (the doc
+  is what a regulator reads; the renderer is what the data subject saw); (2) make the losing
+  artifact conform — either substitute the two bracket placeholders in the doc and note the hashable
+  block is the de-markdowned prose, or change the renderer; do not leave a third "normalised form"
+  that exists only in a script; (3) state the normalisation precisely enough to be executable (line
+  wrapping, `**`, trailing newline) — the current "exact text block... with trailing newline
+  stripped" wording is not sufficient to reproduce a hash, and that ambiguity is how the placeholder
+  in FOLLOW-704 survived unnoticed since 2026-06-21; (4) correct all three assertions that currently
+  claim the broken derivation — `lib.ts:33-45` (docblock + `sha256sum` instruction), `lib.ts:71-74`
+  (the SYNC contract), `.gitleaks.toml:176-180` — at your merge commit (Rule AH); add a CI sync gate
+  shaped like the existing Rule N Privacy Notice key-sync check so the two artifacts cannot drift
+  again; (5) confirm whether the divergence changes the DISCLOSED meaning (RETRO-227's read: it does
+  not — the bracket placeholders are editorial slots) and record that finding either way, since it
+  decides whether a TOS version bump is required.
+- Do NOT attempt FOLLOW-704 (the hash-constant code fix) or FOLLOW-706 (prod remediation) in this PR
+  — those are separate tickets, FOLLOW-704 depends on this one's output but is a different
+  worker/PR, and FOLLOW-706 is explicitly gated on the CEO/DPO ruling in ESC-044.
+- PM will run the full validation loop (5a-5g) once a PR is opened.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 70 — RETRO-227 filed a P0: consent-hash placeholder, ESC-044 escalated to CEO/DPO; 4 escalations now OPEN)
 
 **NEW, escalated this session — ESC-044 (see `backlog/ESCALATIONS.md`):

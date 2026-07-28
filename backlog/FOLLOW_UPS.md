@@ -20396,7 +20396,7 @@ FOLLOW-697, FOLLOW-701, FOLLOW-705, FOLLOW-706, FOLLOW-707, Rule AH, Rule V, Rul
 
 source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-654 recommended_sprint: now
 recommended_agent: compliance-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 `lib.ts:71-74` requires `renderPlatformConsentText()` to stay _"byte-aligned with
 `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 for the version pinned in

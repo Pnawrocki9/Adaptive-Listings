@@ -37955,3 +37955,370 @@ RETRO-224 (FOLLOW-685's origin) · RETRO-226 §4d DG-2 · RETRO-227 §4d DG-4 ·
 own merge commit — applied in §2) · Rule AI (in-file/API docblocks) · Rule I (baseline-compared, not
 waved) · FOLLOW-374 (the handoff) · FOLLOW-700/708 (alarm registry, non-colliding) · FOLLOW-702
 (scope shrinks)
+
+---
+
+## RETRO-230 — FOLLOW-716 (consent contract drift gate) — 2026-07-28
+
+### 1. Summary of change
+
+- **PR:** #638 (merged 2026-07-28T20:48:32Z, squash commit `d77c9b2`) — "feat(control-plane):
+  consent contract drift gate for platform-registration [FOLLOW-716]"
+- **Files changed:** 4 (+612 / −0) — `scripts/check-consent-contract-sync.mjs` (new, 445),
+  `.github/workflows/ci.yml` (+31), `backlog/HANDOFFS.md` (+40), `CONVENTIONS_PATCH.md` (+96).
+  **Zero source files, zero test files, `route.ts` untouched, zero deletions.**
+- **Modules touched:** [scripts · configs (`ci.yml`) · backlog · conventions]. No SDK, ingest,
+  decision-api, shared, schema, migration, event or env-var change. No new dependency (zero-dep
+  Node script, same shape as `check-consent-text-sync.mjs`).
+- **Key contracts changed:** **none in the HTTP sense — this PR changes no request and no
+  response.** What it adds is a *meta-contract*, and that distinction matters for §4:
+  - **NEW gate:** `scripts/check-consent-contract-sync.mjs` + hard CI job `consent-contract-sync`
+    (`ci.yml:567-581`, no `continue-on-error`) — added — breaking: no (it can red a future PR,
+    which is the point).
+  - **NEW doc contract:** per-method machine-checked sentinel blocks in `HANDOFFS.md`'s FOLLOW-374
+    section — GET at `:2880-2890`, POST at `:3002-3014`. The blocks assert the `(status, code)`
+    tuple sets `{200, 400, 401, 409 brand_identity_not_provisioned, 500}` (GET) and `{201, 400,
+    401, 409, 422 tos_version_superseded, 422 consent_text_hash_fabricated, 500}` (POST).
+  - **NEW rule:** `CONVENTIONS_PATCH.md:2571` Rule AK. Promoted **by the implementing worker**
+    under FOLLOW-716 AC-6, not by a retro — unusual but correct here (RETRO-229 §7 asked for it
+    in-PR). **Promotion arithmetic independently re-checked: valid.** Four *prior numbered retros*
+    (226 §4d DG-2 / 227 §4d DG-4 / 228 §4d DG-1 / 229 §4 DG-2), twice the ≥2 bar; the letter is
+    the next free one; the "checked before minting" note correctly distinguishes AK from AI
+    (touched-file obligation), N (disclosure text) and Q (gate-proves-it-ran).
+- **Housekeeping note for future retros:** the gate requires **exactly one** BEGIN and one END
+  sentinel line per method **in `HANDOFFS.md`**. This entry therefore names the sentinels
+  descriptively and never reproduces the literal comment lines. If the gate is ever generalised to
+  scan more files (FOLLOW-721), that hygiene becomes load-bearing for `RETROSPECTIVES.md` too.
+
+### 2. Verification done in PR
+
+- Test files changed: **none.** vitest assertions added: **0**. Executable coverage = **5
+  self-test cases** (`check-consent-contract-sync.mjs:333-410`) which CI runs *before* the real
+  check, so a gate that stops detecting drift also reddens CI. Coverage delta: n/a — no executable
+  source line changed.
+- **CI re-read at source, not from the ticket:** `gh pr checks 638` — the new job **"Consent
+  contract drift gate (FOLLOW-716)" passes on both runs** (8s / 10s, runs `30396205193` and
+  `30396228478`). The only red on both runs is `Rule I — wired-or-dead check`.
+- **Rule AF satisfied by re-derivation at MY OWN commit, not by copying the PR's number:** `main`'s
+  own run for `d7068846` (run `30398005521`, job `90406295471`) logs `Symbols scanned : 630 /
+  Violations found : 192` — byte-identical to the PR run's `630 / 192`. Zero violations added.
+  Consistent with the diff by construction: the new script has **zero exports**
+  (`grep -c "^export" scripts/check-consent-contract-sync.mjs` → `0`), so it cannot add a Rule I
+  symbol.
+- **I re-executed the gate on `main` at `d7068846`:** `node scripts/check-consent-contract-sync.mjs`
+  → PASS (both directions, both methods); `--self-test` → 5/5 PASS. Rule AH satisfied by
+  re-execution at a foreign commit, as RETRO-228 §2 did for the sibling gate.
+- **And I did the thing the PR could not do for itself: exercised the gate against mutations it has
+  no case for.** Method: copies of `route.ts`, `HANDOFFS.md` and the script under the session
+  scratchpad (the script derives `REPO_ROOT` from its own path, so a copied tree is a faithful
+  harness); repo working tree never modified. **Three of four mutations exposed blind spots** — see
+  §4 DG-1 and §4c TG-1. This is the difference between "the self-test passes" and "the gate is
+  sound", and it is where every finding below came from.
+- **Caveat carried forward from RETRO-228 §2, still true:** `gh api …/branches/main/protection`
+  → 403 (private repo, no Pro), so required-status-checks are unreadable from here, and **#638
+  itself merged with a red check**. "Hard gate" is verified as *reporting*, not as *merge-blocking*;
+  the blocking layer is still the PM's validation loop.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅.**
+
+- `scripts/check-consent-contract-sync.mjs` → non-test consumers `ci.yml:578` (`--self-test`) and
+  `ci.yml:581` (the check). CI-invoked gate scripts are the entrypoint class CHECK A suppresses,
+  and here the entrypoint is explicit and was executed. Additionally cited by `HANDOFFS.md:2873`,
+  `:2996` and `CONVENTIONS_PATCH.md:2605`, `:2631-2637`, `:2662`. The file declares **no exports at
+  all**, so there is no symbol that could be orphaned. *(Checked and dismissed, as RETRO-228 did:
+  the script is absent from `package.json` — so is every other gate in this repo;
+  `grep -n "scripts/check" package.json` → 0 hits. There is no registry to be missing from.)*
+- The two sentinel blocks → producer `HANDOFFS.md:2880/2890` and `:3002/3014`; consumer
+  `check-consent-contract-sync.mjs:60-69` (`DOC_SENTINELS`) + `extractDocContract()` `:216-250`.
+- Rule AK → a human-read artifact by nature; its *machine* half is CHECK B below.
+
+**CHECK B (half-wire) — one HALF_WIRE_P (P1), plus one out-of-diff finding recorded honestly.**
+
+| New signal                                    | Producer                              | Consumer                                        | Verdict           |
+| --------------------------------------------- | ------------------------------------- | ----------------------------------------------- | ----------------- |
+| route⇄doc tuple parity assertion              | `runCheck()` `:310-322`               | CI job `consent-contract-sync` `ci.yml:567-581` | wired (Rule AJ ✅) |
+| the detector-of-the-detector (`--self-test`)  | `selfTest()` `:333-410`               | CI step `ci.yml:578`, runs before the check     | wired             |
+| per-method machine block                      | `HANDOFFS.md:2880-2890`, `:3002-3014` | `DOC_SENTINELS` `:60-69`                        | wired             |
+| **Rule AK item 6's repo-wide obligation**     | `CONVENTIONS_PATCH.md:2571` item 6    | **none**                                        | **HALF_WIRE_P**   |
+
+- **HALF_WIRE_P (P1) — `CONVENTIONS_PATCH.md:2571` Rule AK item 6 declares an obligation for
+  "any endpoint whose consumer is confirmed to be outside this repo" and ships exactly one gated
+  endpoint, no inventory, and a verification command that cannot detect the gap it was written to
+  detect.** The rule's own Verification step 4 is
+  `grep -rln "out-of-repo\|no shared release train" backlog/HANDOFFS.md`, annotated *"absence of a
+  hit here is a Rule AK gap"*. I ran it: it prints `backlog/HANDOFFS.md`, exit 0 — `grep -l` on a
+  single named file that contains the phrase **always** hits, so "absence" is unreachable and the
+  check can never fire. Worse, the phrase-match approach cannot find the strongest real candidate:
+  `POST /api/crm/outcome` (FOLLOW-172, `HANDOFFS.md:2134-2175`, a PII allow-list contract consumed
+  by **tenant CRM systems** — as out-of-repo as it gets, 14 status sites in
+  `apps/control-plane/src/app/api/crm/outcome/route.ts`, zero machine block, zero gate) never uses
+  either phrase. → **FOLLOW-721.**
+- **Recorded, out of this diff, because nothing else will record it (see §5a):**
+  `route.ts:396` reads `process.env.PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS`, shipped by #637
+  (FOLLOW-715). It is documented in `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b but is **absent
+  from `apps/control-plane/.env.example`** (which does carry its sibling
+  `PLATFORM_REGISTRATION_CONSENT_SECRET` at `:54`). That is a textbook CHECK-B env-var HALF_WIRE_P
+  — and it has never been wiring-audited because **#637 was merged without a retrospective at
+  all**. → **FOLLOW-722.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **DG-1 (P1, Rule AE class — the gate is blind to every emission shape except the one it grepped
+  for; PROVEN, not theorised).** `extractCalls()` (`:130-154`) searches for the literal string
+  `NextResponse.json(` inside two slices of the file, and `extractMethodBody()` (`:166-188`) slices
+  `[export async function GET( … export async function POST( … EOF]`. Everything else is invisible
+  and **passes silently** — the failure mode Rule AE (`CONVENTIONS_PATCH.md:1956`) names as "the
+  guard silently reports success while providing zero enforcement". Two mutations, both run:
+  1. a module-level helper `function refuseLocked(): NextResponse` returning
+     `NextResponse.json({ code: 'tenant_locked' }, { status: 423 })` placed **above** the GET
+     handler (i.e. outside both slices) → gate exits **0, "CONSENT CONTRACT IN SYNC — PASS"**;
+  2. `return new NextResponse(JSON.stringify({ code: 'rate_limited' }), { status: 429 })` inside
+     the GET handler (a `NextResponse` shape that typechecks against the declared
+     `Promise<NextResponse>` return type) → gate exits **0, PASS**.
+     `NextResponse.redirect(...)` is a third such shape, untested but structurally identical.
+  Today the route is clean — all **22** `NextResponse.json(` call sites in the file sit inside the
+  two handlers (`grep -c` → 22; first one is `:214`, GET starts `:208`), so the gate's *current*
+  answer is right. It is right by luck of present-day layout, not by construction, and the gate's
+  own docblock (`:21-27`) overstates it as "every `NextResponse.json(body, { status: N })` call
+  site is extracted … the de-duplicated set … **is** the derived contract". The two things the gate
+  *does* fail loud on — a non-literal `status:` (`:142-148`) and unbalanced parens (`:119-124`) —
+  show the author was thinking about fail-closed behaviour; the shape enumeration is the axis that
+  was missed. → **FOLLOW-717.**
+- **DG-2 (P1 — `(status, code)` is not the unit of caller-facing meaning: the gate collapses two
+  refusals with opposite remediations into one row).** `route.ts:624-636` and `:723-735` both emit
+  `422` with `code: 'consent_text_hash_fabricated'`, and they are **not the same refusal**: `:633`
+  (provisioned brand) tells the caller *"echo the hash `GET` returned, or send the SHA-256 of what
+  you displayed"*; `:732` (unprovisioned external brand) tells it *"have ops set
+  `brand_config.brand_name`"*. `HANDOFFS.md:2991` documents both as remediations "(a)" and "(b)" of
+  one row. The gate de-dupes by `tupleKey()` (`:267`), so it sees **one** entry — meaning **if a
+  future PR deletes either branch, the tuple set is unchanged and the gate stays green while half
+  the documented remediation becomes a lie.** This is not hypothetical: it is exactly the drift
+  RETRO-227 §4d DG-4 filed (#632 added the second variant), which is one of the four instances this
+  gate was built to prevent. → **FOLLOW-719** (fold into FOLLOW-709 at promotion).
+- **DG-3 (P2 — the contract now exists in THREE hand-maintained copies and the gate checks one
+  pair).** (i) `route.ts`'s own `Responses:` docblocks — GET `:198-206`, POST `:33-67` — the copy
+  RETRO-227 §4d DG-5(i) praised the workers for maintaining, and **the copy an editor actually sees
+  when changing the route**; (ii) `HANDOFFS.md`'s human-facing failure tables (`:2863-2868` GET,
+  `:2986-2993` POST), which carry the *semantics* ("STOP, do not register", "Proceed. No re-insert
+  needed") the machine block deliberately omits; (iii) the new machine blocks. Only (iii) is gated
+  against code. A PR that adds a status and updates only (iii) — the minimum CI demands — leaves (i)
+  and (ii) stale **with CI green**, i.e. the drift class is not closed, it is displaced one artifact
+  sideways. Concretely: #634's `422 tos_version_superseded` would now be caught; #634's
+  `current_tos_version` **response-body field** would not, and neither would a rename of any field
+  in the GET's 200 body (`HANDOFFS.md:2844-2855`), which is pure prose. → **FOLLOW-718** (docblocks,
+  cheap and mechanical) and **FOLLOW-719** (prose table + body shape).
+- **DG-4 (the prior-follow-up closure check — FOLLOW-716 does NOT close the RETRO-226→229 class
+  end-to-end; it closes one of its three axes).** Rather than accept "four retros' finding is now
+  fixed", I replayed each of the four lineage instances against the gate as merged:
+
+  | Lineage instance                          | What actually drifted                                   | Caught by the new gate? |
+  | ----------------------------------------- | ------------------------------------------------------- | ----------------------- |
+  | RETRO-226 §4d DG-2 (FOLLOW-684, #631)     | new `422 consent_text_hash_fabricated` undocumented     | **yes** (new tuple)     |
+  | RETRO-227 §4d DG-4 (FOLLOW-697/698, #632) | new retryable `500` … **and** a 2nd 422 *variant*       | **half** — the 500 yes; the 2nd variant reuses the same tuple → invisible (DG-2) |
+  | RETRO-228 §4d DG-1 (FOLLOW-705, #633)     | `HANDOFFS.md:2842` prose claim about the hash went false | **no** (not a status/code) |
+  | RETRO-229 §4 DG-2 (FOLLOW-707/712, #634)  | `422 tos_version_superseded` **+** `current_tos_version` body field **+** changed omitted-hash default | **partly** — tuple yes, body field and default no |
+
+  So the honest score is **2 of 4 fully, 2 of 4 partially or not at all**. That is real progress and
+  a genuine structural improvement over prose — and it is *not* the closure the ticket title
+  implies. The gap has moved one hop, exactly as the `inquiry_submit_selector` chain
+  (FOLLOW-097 → 114 → 127 → 141) moved: consumer → producer → detector → seed. Recording it now,
+  at hop 1, is the entire point of this check. **This retro therefore does NOT declare the
+  RETRO-226→229 lineage closed**; it declares the *tuple axis* closed and names the two axes still
+  open (DG-2 branch semantics, DG-3 body/prose shape).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, latent).** `check-consent-contract-sync.mjs:149` —
+  `callText.match(/code:\s*'([a-zA-Z0-9_]+)'/)` has no leading word boundary, so a body field named
+  `error_code`, `status_code` or `reason_code` would be **read as the discriminator `code`** and
+  silently produce a wrong tuple. No such field exists in this route today
+  (`grep -n "code:" route.ts` → 4 hits, all the real discriminator), so this is latent, not live.
+  Same line: a `code` whose value is a template literal or double-quoted string yields `null`, i.e.
+  "this status carries no code" — a *silent misread*, where every other unparseable input in this
+  script fails loud. → folded into **FOLLOW-717**.
+- **CB-2 (P3, opposite direction, fail-loud so acceptable).** The extractor is comment-blind: a
+  commented-out or JSDoc-quoted `NextResponse.json(… { status: N })` *inside* either handler body
+  would be counted as an emittable response and red the gate. Fail-loud, so it cannot hide drift;
+  worth one line in the script's docblock rather than a ticket.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1 — the self-test fixtures are anchored on literal source strings that the very changes
+  the gate polices will invalidate; PROVEN on BOTH gates in this repo).** Every self-test case
+  mutates via `String.replace` on an exact anchor. When the anchor stops matching, `replace` is a
+  no-op, the "mutated" source equals the original, the case's `ok === false` assertion fails, and
+  CI prints **`=== SELF-TEST FAILED — the gate does not detect drift ===`** — which is *false*, and
+  accuses the gate of the one thing that has not happened.
+  - **Instance 1 — the new gate.** Sandbox: add `429 rate_limited` to the GET handler **and** to
+    the GET machine block (i.e. do the change perfectly, both sides in one PR). Result: real check
+    **PASS**, self-test **1/5 FAIL** (`GET contract block missing its own 409 row …`), CI red. The
+    case-(c) anchor is a regex over the **entire fenced GET block including both fences**
+    (`:376`), so *any* legitimate GET status addition breaks it. Case (b)'s anchor is the POST
+    block's full line sequence (`:359`) and breaks on any insertion; case (a)'s anchor is the exact
+    text of `route.ts`'s 201 return line (`:343`).
+  - **Instance 2 — the precedent gate, `scripts/check-consent-text-sync.mjs`, same defect, and it
+    is aimed at a HELD P0.** Sandbox: bump `platform-v1.3-2026-06-21` → `platform-v1.4-2026-08-01`
+    consistently in `lib.ts` **and** `PRIVACY_NOTICE_TEMPLATE.md` (i.e. exactly what FOLLOW-704 /
+    710 / 711 must do). Result: real check **PASS**, self-test **1/7 FAIL** (`TOS version bumped
+    without sentinel update FAILS`), CI red. RETRO-228 §2 scored those 7 cases as the PR's entire
+    verification story and did not test them against a future bump; I did, and they do not survive
+    it.
+  - Both instances are the same shape and both fail **closed**, so nothing unsafe ships — the cost
+    is that the first correct contract change after this merge gets a red CI with a misleading
+    message, on a ticket (FOLLOW-704) that is already the most contested in the backlog.
+    → **FOLLOW-720.**
+- **TG-2 (P3).** No vitest test covers either script; the self-test *is* the test. Consistent with
+  every other gate in the repo (RETRO-228 §3 established the precedent), recorded not scored.
+
+#### 4d. Documentation gaps
+
+- **DD-1 (P2).** Nothing in `route.ts` tells its next editor that a machine-checked block exists.
+  `route.ts` was **not touched by #638 at all**, so the two `Responses:` docblocks (`:33-67`,
+  `:198-206`) — the artifact Rule AI names explicitly and the one an editor reads — say nothing
+  about `HANDOFFS.md`'s blocks or the `consent-contract-sync` job. The sibling gate did better:
+  #633 back-referenced itself from `lib.ts:60-61` and `lib.ts:105`. **Answering the question the
+  dispatch brief asked — "is the new obligation obvious enough from the code?" — no.** It is
+  discoverable only by (a) reading `HANDOFFS.md`, (b) reading Rule AK, or (c) reddening CI. (c) is
+  an acceptable teacher; (a) and (b) are not reachable from the file being edited. → folded into
+  **FOLLOW-718.**
+- **DD-2 (P2).** Rule AK's Verification step 4 is inert — see §3 HALF_WIRE_P. → **FOLLOW-721.**
+- **DD-3 (P3).** `HANDOFFS.md:2873-2878` instructs *"Do not hand-edit this block without also
+  changing `route.ts` in the same PR"*, which is the right instruction but omits the one operational
+  fact that will bite: **duplicating the block** (the natural move when handing the same contract to
+  a second integrator in this append-only file) hard-fails the gate. Verified in sandbox: a second
+  copy of the GET block appended to `HANDOFFS.md` → `found 2 / 2 … Without them the GET contract
+  block boundary is a guess`, exit 1, under the banner `CONSENT CONTRACT OUT OF SYNC`, which
+  misnames the cause. Fail-closed and low-probability; folded into **FOLLOW-718**'s AC as a doc
+  line, not its own ticket.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-704 + 714 / 710 / 711 (held, ESC-044) — a new, undocumented precondition.** All three
+  require the consent-text and `tos_version` bump. As of this merge that bump reddens **two** CI
+  gates' self-test steps with "the gate does not detect drift" even when performed perfectly
+  (§4c TG-1, both proven). Whoever picks up FOLLOW-704 will hit a red CI whose message points at
+  the wrong thing. **FOLLOW-720 should land first** (2h), or 704's AC must absorb the fixture
+  update. Note this is the *second* consecutive retro to add a precondition to FOLLOW-704
+  (RETRO-229 DG-1 added the grace window, which shipped as #637).
+- **FOLLOW-701 (needs CEO/DPO) — new interaction.** If the ruling converts the "warn-and-write"
+  hash-mismatch branch (`route.ts:640-652`) into a refusal, the outcome depends on a detail nobody
+  has flagged: a **new** `code` reddens CI until the block is updated (the gate working as
+  designed), but **reusing** `consent_text_hash_fabricated` is invisible to the gate (§4a DG-2)
+  while changing what the caller must do. The safer instruction — "any new refusal gets its own
+  `code` literal" — exists nowhere. Recorded on the stub via FOLLOW-719.
+- **FOLLOW-709 (P2, queued) — partially overtaken, and its remaining half is now the ungated
+  half.** Its AC-1 (document the 500 with retry semantics) was satisfied by #635's prose table
+  (`HANDOFFS.md:2993`) and is now also in the machine block. Its AC-2 (both 422 variants with
+  distinct remediations) is the one thing the gate structurally *cannot* enforce (§4a DG-2), so
+  FOLLOW-709 is not obsolete — it is the human-side half of FOLLOW-719. Re-scope at promotion, do
+  not close as "covered by the gate".
+- **FOLLOW-706 / 702 / 703 / 700 / 708:** re-read against this diff, unaffected. #638 changes no
+  runtime behaviour, emits no new signal, and adds no env var.
+- **Process — two merges have no retrospective at all.** `RETROSPECTIVES.md` jumps from RETRO-229
+  (#634/#635) to this entry (#638): **#636 (FOLLOW-685 verdict table) and #637 (FOLLOW-715 grace
+  window) were never retro'd** — `grep -n "#637\|FOLLOW-715" backlog/RETROSPECTIVES.md` returns
+  only forward-looking mentions inside RETRO-229. CLAUDE.md's loop says "after every ticket reaches
+  DONE". This already cost something concrete and findable: #637's
+  `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` env var never got a CHECK B (§3, absent from
+  `.env.example`), and its new `warning`-level Sentry write (`tos_version_grace`) never got a
+  Rule AJ consumer check against the FOLLOW-700/708 alarm registry. **Severity: P2, PM decision** —
+  surfaced here per charter; I do not write QUEUE or ESCALATIONS. → **FOLLOW-722.**
+
+#### 5b. Future sprint tickets affected
+
+- Any future ticket touching `apps/control-plane/src/app/api/v1/consent/platform-registration/
+  route.ts` now carries an implicit obligation ("change the status/`code` set → update the machine
+  block in the same PR") that is **not** stated in the file itself (§4d DD-1). Until FOLLOW-718
+  lands, delegation briefs for that route should state it explicitly.
+- Any future ticket adding an endpoint consumed outside this repo inherits Rule AK item 6 with no
+  inventory to check itself against (§3 HALF_WIRE_P). Known un-gated candidates found while
+  auditing: `POST /api/crm/outcome` (tenant CRMs, `HANDOFFS.md:2134+`), `POST /api/tenants`
+  (auto-onboarding), the host-side DOM contract for `app.estalara.com`
+  (`HANDOFFS.md:3100-3125` + `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md`), and FOLLOW-373's
+  app-side retention windows (`HANDOFFS.md:3048+`, not code-derivable — the inventory must be
+  allowed to record "not gateable, here is why").
+
+#### 5c. Contracts changed others rely on
+
+- None at runtime. The one contract this PR creates for *agents* is the format of the machine
+  block ("`STATUS` or `STATUS code_literal` per line, `#` comments, exactly one sentinel pair per
+  method per file"). Its only spec is `HANDOFFS.md:2873-2878` + the parser at `:216-250`.
+
+#### 5d. Architectural assumptions affected
+
+- **New assumption, unstated:** "`route.ts` keeps exactly one GET and one POST, GET first, and all
+  responses inline inside those two functions." The gate fails loud on the first two (`:169-174`,
+  `:179-184`) and **silently** on the third (§4a DG-1). Any future extraction of a shared
+  `respond()` helper — an ordinary refactor in an 865-line route — disarms the gate without a
+  single red check.
+- **New assumption, unstated:** `backlog/HANDOFFS.md` — an append-only file that PM/retro
+  bookkeeping agents commit **directly to `main`** — is now CI-load-bearing. A bookkeeping commit
+  that duplicates or reflows a sentinel reds `main` with no PR gate in front of it (§4d DD-3).
+
+### 6. New lesson candidates
+
+- **Pattern P-16 (NEW) — "A GATE'S OWN SELF-TEST FIXTURES ARE ANCHORED TO THE LITERALS THE GATE
+  POLICES, so the first *correct* change the gate was built for reddens CI with a message accusing
+  the gate of being broken."** Count = **1 (this retro).** **HELD, NO PROMOTION.** Arithmetic
+  stated openly, per the house adjudication RETRO-145/Rule Q established and RETRO-227/228
+  re-affirmed: promotion needs the same pattern in **≥2 PRIOR retros**, and this pattern has **zero**
+  prior retro sightings — RETRO-228 §2 scored the sibling gate's 7 cases as verification and did not
+  test them against a bump. I found **two instances** (§4c TG-1, both gates) inside one retro;
+  per RETRO-228's own discipline, instances ≠ retros and two instances in one retro is still count
+  1. **Pre-authorised: promote unconditionally on the 2nd numbered-retro sighting of a
+  self-validating gate whose fixtures cannot survive the change it polices.**
+- **Rule AE — sighting, with a scope caveat worth one line in the skill-upgrade run.** §4a DG-1 is
+  Rule AE's exact pattern ("a fix that closes the one shape a regression happened to use is not
+  proof the class is closed … the guard silently reports success while providing zero
+  enforcement"), one hop further out: the *emission* shape rather than the *mutation* shape. But
+  AE's title binds it to "a security invariant", and a contract-parity gate is not one — so the
+  rule as written does not formally reach this gate, and no reviewer citing AE would have caught
+  DG-1. Recording as **AE sighting (by analogy), count 1 toward a scope-broadening amendment**
+  ("mechanical guard for ANY invariant"), not a new rule.
+- **Rule AK — its own first sighting is a violation of its spirit, on the day it was minted.** Item
+  6 extends the obligation repo-wide with no inventory and an inert verification command (§3). Not
+  scored as a pattern; scored as FOLLOW-721, because a rule whose verification cannot fail is the
+  same failure mode as a gate whose assertion cannot fail (Rule Q's subject), applied to prose.
+- **Rule AJ — satisfied, second consecutive gate-shipping PR to comply.** The failure-detection
+  signal (the gate) has its consumer (the CI job) in the same PR, plus a detector-of-the-detector.
+- **L-1 (observation, not a pattern yet).** Mechanising a contract is the right move and it changes
+  what "documented" means: after this merge, the *machine-readable* copy is the one that must be
+  right, and the *human-readable* copies (docblock, prose table) became the copies most likely to
+  be silently wrong — because CI now certifies "in sync" about a subset a reader will read as the
+  whole. Any future gate of this shape should either derive the human copy or gate it too.
+
+### 7. Follow-ups
+
+- **FOLLOW-717** (P1, backend-engineer, 3h) — enumerate every response-emission shape the gate must
+  see; fail loud on any it cannot classify (§4a DG-1, §4b CB-1). Rule AE class.
+- **FOLLOW-718** (P2, backend-engineer, 3h) — gate `route.ts`'s own GET/POST `Responses:` docblocks
+  against the derived tuple set, and back-reference the gate from the route (§4a DG-3, §4d DD-1/DD-3).
+- **FOLLOW-719** (P2, backend-engineer, 3h) — same-tuple/different-remediation collapse + the
+  ungated human prose table and response-body shapes (§4a DG-2/DG-3). Fold with FOLLOW-709.
+- **FOLLOW-720** (P1, backend-engineer, 2h) — make BOTH gates' self-test fixtures survive the change
+  they police, and distinguish "fixture stale" from "gate broken" (§4c TG-1). **Should land before
+  FOLLOW-704.**
+- **FOLLOW-721** (P1, architect + devops-engineer, 4h) — build the out-of-repo-contract inventory
+  Rule AK item 6 presumes, and replace its inert Verification step 4 (§3 HALF_WIRE_P, §4d DD-2).
+- **FOLLOW-722** (P2, retrospective-analyst, 2h) — retro-coverage gap: #636 and #637 merged with no
+  RETRO entry; audit #637's env var + Sentry signal that the skipped retro never checked (§5a).
+
+### 8. Cross-references
+
+RETRO-229 §4 DG-2 / §6 L-1 (this ticket's origin, and the closure claim §4a DG-4 re-opens
+partially) · RETRO-226 §4d DG-2 · RETRO-227 §4d DG-4 (the instance §4a DG-2 shows the gate would
+still miss) · RETRO-228 §2/§3 (the sibling gate this one is modelled on — and whose self-test
+§4c TG-1 now falsifies for the FOLLOW-704 case RETRO-228 did not test) · Rule AE (§4a DG-1, by
+analogy) · Rule AF (§2, re-derived at `d7068846`) · Rule AH (§2, gate re-executed at my own commit)
+· Rule AI (§4d DD-1, the docblock copy) · Rule AJ (§3, satisfied) · Rule AK (§1, promotion
+arithmetic re-checked; §3, its own item 6 is the HALF_WIRE_P) · Rule Q (a check that cannot fail is
+not a check — §3, applied to a rule's verification block) · ESC-044 (FOLLOW-704/706/710/711/701
+hold) · FOLLOW-709 (re-scoped, not obsoleted) · FOLLOW-374 (the handoff being gated) · the
+`inquiry_submit_selector` chain FOLLOW-097 → 114 → 127 → 141 (the displacement precedent §4a DG-4
+is measured against).

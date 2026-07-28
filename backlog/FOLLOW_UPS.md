@@ -19537,7 +19537,7 @@ K.2, Rule AA]
 
 source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 Two defects that compose into a bypass of the gate #629 shipped.
 
@@ -20128,7 +20128,7 @@ FOLLOW-695, FOLLOW-697, Rule K.2 (fail-CLOSED-value laundering amendment), Rule 
 
 source_retro: RETRO-226 (PR #631, FOLLOW-684) source_ticket: FOLLOW-684 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 #631 changed a public error contract in a 2-file diff and touched zero documentation (HALF*WIRE_P,
 RETRO-226 §3). `grep -rn "consent_text_hash_fabricated"` returns only the route, its test and the
@@ -20470,7 +20470,7 @@ AA, Rule K.2]
 
 source_retro: RETRO-227 (PR #632, FOLLOW-697/698) source_ticket: FOLLOW-697 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: [FOLLOW-704 (same
-line)] promoted_to_queue: false
+line)] promoted_to_queue: true
 
 #632's branch (a) — the provisioned-brand evidence check — is guarded on
 `body.consent_text_hash !== undefined` (`route.ts:493`). When the field is omitted the whole block
@@ -20714,7 +20714,7 @@ FOLLOW-659, FOLLOW-654, FOLLOW-656, Rule AH, Rule N, Rule K.2]
 
 source_retro: RETRO-228 (PR #633, FOLLOW-705) source_ticket: FOLLOW-697 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 1 depends_on: [FOLLOW-707
-(adjacent line, same expression — FOLD IN, do not open a second PR)] promoted_to_queue: false
+(adjacent line, same expression — FOLD IN, do not open a second PR)] promoted_to_queue: true
 
 `route.ts:702` writes `tosVersion: body.tos_version ?? PLATFORM_REGISTRATION_TOS_VERSION` — the
 caller's value is accepted with **no check that it is the version the server currently serves** —
@@ -20748,7 +20748,7 @@ FOLLOW-699, FOLLOW-374, Rule AI, Rule AJ, Rule S]
 
 source_retro: RETRO-228 (PR #633, FOLLOW-705) source_ticket: FOLLOW-705 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 **Fold into FOLLOW-699 / FOLLOW-685 at promotion — do not execute as a separate PR.** Filed because
 neither ticket, as written, reaches what #633 changed.

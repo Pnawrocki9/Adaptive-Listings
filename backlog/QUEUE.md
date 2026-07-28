@@ -1,5 +1,112 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-28 (session 75 — dispatched two combined tickets [707+712, 685+699+713] to backend-engineer; FOLLOW-704/714 STILL held per Piotr)
+
+**Piotr asked to dispatch FOLLOW-712/713/714. All three are written as amendments meant to fold into
+other not-yet-dispatched tickets, not standalone PRs** (each stub says so explicitly: FOLLOW-712
+"FOLD IN, do not open a second PR" into FOLLOW-707; FOLLOW-713 "Fold into FOLLOW-699 / FOLLOW-685...
+do not execute as a separate PR"; FOLLOW-714 "Fold into FOLLOW-704... do not execute as a separate
+PR"). Surfaced this before dispatching; **agreed plan: dispatch the two safe bundles now, hold
+FOLLOW-704+714** — 710/711 (still awaiting ESC-044 ruling) require the SAME text bump FOLLOW-704
+would need to re-pin against, so fixing the hash constant now risks doing it twice.
+
+**Verified premise myself before dispatch:** `route.ts` was untouched by PR #633, so all line
+references in FOLLOW-707/712 (`:492`, `:702`, `:703`) still hold — confirmed directly
+(`grep -n "tosVersion\|consentTextHash: body"` → `:702`/`:703` exact match).
+
+### FOLLOW-707+712 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — routine, well-scoped fix inside a module the
+agent already owns twice over (same file as FOLLOW-684/697/698), narrow diff (one default
+expression + one validation branch), no cross-cutting judgment call. **started_at:** 2026-07-28.
+**branch:** `backend-engineer/FOLLOW-707-712-omitted-hash-tos-version`.
+
+**Delegation brief:**
+
+- Tickets: `backlog/FOLLOW_UPS.md` → `## FOLLOW-707` and `## FOLLOW-712` (full text; both P1,
+  `source_retro: RETRO-227`/`RETRO-228`). Implement together, one PR — FOLLOW-712 says so
+  explicitly.
+- Context: both touch `route.ts:702-703` (the final INSERT's `tosVersion`/`consentTextHash`
+  defaults) and the provisioned-brand branch just above it (`:490-493`, from #632/FOLLOW-697). **Do
+  NOT touch `CANONICAL_CONSENT_TEXT_HASH`'s value or attempt FOLLOW-704/714** — those are explicitly
+  held pending Piotr; FOLLOW-707 AC-2 asks you to document (in a comment) that the constant and the
+  provisioned-brand default will collapse to the same value "after FOLLOW-704" — write it as a
+  forward-looking note, not as something you implement now.
+- AC (verbatim):
+  - **FOLLOW-707:** (1) when the identity is PROVISIONED (`isFallbackIdentity === false`), default
+    the written hash to `computeConsentTextHash(renderPlatformConsentText(brandIdentity))`, not to
+    `CANONICAL_CONSENT_TEXT_HASH` — the value is already computed in scope as `expectedHash`
+    (`:492`); (2) decide and DOCUMENT the fallback-identity case in the same expression (note in the
+    comment that after FOLLOW-704 the constant and the rendered Estalara hash will be the same
+    value, so it collapses — don't leave two paths that look permanently different); (3) tests,
+    red-first: `provisioned × omitted hash` asserting the WRITTEN `consentTextHash` equals the
+    brand's own computed hash (returns the canonical constant today), for both
+    `FIRST_PARTY_TENANT_ID` SET-to-that-tenant and UNSET-with-one-tenant; (4) do not add a probe —
+    the at-most-one-`select id from tenants limit 2`-per-POST invariant #632 established must
+    survive, assert it in the new tests.
+  - **FOLLOW-712:** (1) validate `body.tos_version` against `PLATFORM_REGISTRATION_TOS_VERSION` and
+    decide the disposition explicitly — refuse (422 with the served version in the body so the
+    caller can self-correct) or accept-and-alarm; state the reason in the route's `Responses`
+    docblock, and if it's an alarm it needs a registry entry (coordinate with FOLLOW-700/708, both
+    still queued, not yet dispatched — don't block on them, just don't contradict their registry
+    shape); (2) do not silently coerce the caller's value to the server's — that would erase the
+    evidence the caller is stale; (3) tests, red-first: a POST with a superseded `tos_version`, and
+    a POST omitting it, asserting the written row for both; (4) add the caller-facing consequence to
+    `HANDOFFS.md` in the same PR — **coordinate with the FOLLOW-685+699+713 PR below if both are in
+    flight at once; do not double-edit the same HANDOFFS.md section**.
+- PM will run the full validation loop (5a-5g) once a PR is opened.
+
+### FOLLOW-685+699+713 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — docs/handoff-only, mechanical (no code),
+matches the model-fit table's "docs/backlog bookkeeping" band even though the underlying subject is
+compliance-adjacent — no judgment call left undecided (FOLLOW-713 already tells you which way #633
+ruled). **started_at:** 2026-07-28. **branch:** `backend-engineer/FOLLOW-685-699-713-handoffs-sync`.
+
+**Delegation brief:**
+
+- Tickets: `backlog/FOLLOW_UPS.md` → `## FOLLOW-685`, `## FOLLOW-699`, `## FOLLOW-713` (full text).
+  FOLLOW-699 explicitly says "Fold into FOLLOW-685 if the two are executed together — they overlap
+  on surfaces 1 and 3"; FOLLOW-713 explicitly says "Fold into FOLLOW-699 / FOLLOW-685 at promotion —
+  do not execute as a separate PR." All three are docs/handoff-only; no code.
+- Context: read all three stubs in full before starting — they overlap on `backlog/HANDOFFS.md`'s
+  FOLLOW-374 section and must not be resolved twice differently. FOLLOW-713 in particular records
+  what PR #633 already decided (the renderer, not the doc, is byte-canonical) — use that as settled
+  fact, not an open question, when you write the GET-then-echo recommendation FOLLOW-685 AC-3 asks
+  for.
+- Combined AC — read each stub's own AC list in full, but the shape is: (1) add a GET section to the
+  FOLLOW-374 `HANDOFFS.md` handoff (URL, HMAC-over-`tenant_id` signature recipe, 200 shape, every
+  documented failure including the 409); (2) method-scope the existing "409 is safe/idempotent" rule
+  so it applies to the POST's duplicate-nonce case only, not the GET's refusal; (3) add the 422
+  `consent_text_hash_fabricated` to the POST section — the code, that NOTHING was written, the two
+  remediations, "do not retry unchanged"; (4) correct `HANDOFFS.md:2842`'s false claim that omitting
+  the hash uses "the canonical EN §6.1 SHA-256 hash" — state what the default currently is (a
+  placeholder, until FOLLOW-704) and that omitting the field is discouraged; (5) record the
+  GET-then-echo-vs-author-your-own-hash decision in ONE place, informed by FOLLOW-713's finding that
+  #633 already settled it in substance; (6) reconcile
+  `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` (§2 still titled "GAP", item (c) at
+  `:306` still prescribes the bypassing "author your own hash" flow) with whatever you record in
+  (5); (7) add the consent-POST row to `docs/runbooks/BRAND_PROVISIONING.md`'s enforcement table and
+  troubleshooting section, describing both the FOLLOW-684 hybrid behavior AND the FOLLOW-697
+  evidence-keyed refinement; (8) extend `brand-identity.ts`'s helper docblock (currently enumerates
+  two call sites) to three, each with its actual consequence; (9) note that a `tos_version` bump is
+  now a two-repo operation (ties to FOLLOW-712, dispatched separately — coordinate if both PRs are
+  open at once, do not double-edit); (10) verify every sentence against `main` at your merge commit
+  (Rule AH) — do not write "the documented GET-then-echo flow" as if it already existed before your
+  own PR creates it; (11) optional/cheap: one sentence in `docs/MASTER_DESIGN.md` §H.8 noting
+  external-brand registration is blocked until `brand_config.brand_name` is provisioned.
+- Do NOT touch FOLLOW-701's general-case policy question (still open, needs CEO/DPO ruling) or
+  FOLLOW-710/711 (ESC-044 items, also pending ruling) — record the current state accurately, don't
+  pre-decide those.
+- PM will run the full validation loop (5a-5g) once a PR is opened.
+
+**Not dispatching:** FOLLOW-704+714 (P0, hash constant re-pin — held per Piotr, ESC-044), FOLLOW-701
+(needs CEO/DPO ruling), FOLLOW-710/711 (ESC-044 item 4, needs CEO/DPO ruling), FOLLOW-706 (gated on
+FOLLOW-704/705 + the ruling), FOLLOW-700/708 (devops, alarm registry — independent, could be
+dispatched separately, not requested this round), FOLLOW-702/703/709 (P2, next-sprint priority).
+
+---
+
 ## ▶️ START HERE — resume 2026-07-28 (session 74 — RETRO-228 found the consent withdrawal channel doesn't exist; ESC-044 item 4 added; FOLLOW-704 STILL held)
 
 **RETRO-228 (post-#633) found FOLLOW-705's "unresolved DSR contact" flag is worse than a missing

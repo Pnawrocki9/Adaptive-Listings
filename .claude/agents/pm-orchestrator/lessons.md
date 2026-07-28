@@ -2651,3 +2651,15 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   re-check the live repo state before dispatching the ruling's action items — a ruling can lag
   behind work that was already completed under an earlier informal decision; treat the ruling as an
   instruction to verify-then-act, never as proof the described gap still exists.
+
+- **Date / ticket:** 2026-07-28 — FOLLOW-715
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks" → backend-engineer/Sonnet.
+- **What validation caught (or missed):** Nothing to validate yet this turn (dispatch-only session,
+  no PR opened). Pre-dispatch check caught a subtler thing: ESC-044 reads as blanket-blocking at a
+  glance, but its own text explicitly carves out "coordinated code-fix follow-ups, filed but not
+  escalated" — had to read the full escalation body, not just the title, to confirm FOLLOW-715
+  wasn't silently in scope of the CEO/DPO ruling.
+- **A delegation/validation rule I'd add:** When an escalation's title looks broad, always read its
+  full body for an explicit blocked-tickets list before treating every adjacent ticket as gated — a
+  title-only read would have wrongly stalled the whole pipeline on ESC-044 a second time.

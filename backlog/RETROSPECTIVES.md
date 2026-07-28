@@ -37264,3 +37264,545 @@ cells shipped in #632); re-word FOLLOW-696; re-price 674/686/695 (the tri-state 
 FOLLOW-687 P2->P1 still open from RETRO-226. QUEUE session-69 head checked and found ACCURATE on both axes -
 no over-claim this time (contrast RETRO-226 §5a). QUEUE.md / ESCALATIONS.md / HANDOFFS.md deliberately NOT
 written (charter). -->
+
+## RETRO-228 — FOLLOW-705 (canonical-consent-text ruling + doc/renderer sync gate) — 2026-07-28
+
+### 1. Summary of change
+
+- **PR:** #633 (merged 2026-07-28T06:07:29Z, squash commit `47e863c6`) — "fix(compliance): rule
+  renderer output byte-canonical, sync §6.1, gate drift [FOLLOW-705]"
+- **Files changed:** 6 (+561 / −31) — 1 new script, 1 CI workflow, 1 scanner config, 1 source file
+  (**comment-only**), 1 compliance doc, 1 agent `lessons.md`. **Zero test files.**
+- **Modules touched:** [docs/compliance · configs (`.github/workflows/ci.yml`, `.gitleaks.toml`) ·
+  scripts · control-plane (docblocks only)]. No SDK, ingest, decision-api, shared, schema, migration,
+  event or env-var change.
+- **Key contracts changed:**
+  - **RULING (a semantic contract, not a code contract):** the byte-canonical artifact for
+    `consent_records.consent_text_hash` is `renderPlatformConsentText()`'s return value, **not**
+    `PRIVACY_NOTICE_TEMPLATE.md` §6.1 — recorded in three places (`PRIVACY_NOTICE_TEMPLATE.md:199-209`
+    blockquote, `lib.ts:47-57` constant docblock, `lib.ts:90-97` renderer docblock). Breaking: no code
+    breaks, but it **settles FOLLOW-704's input** and **constrains FOLLOW-685 AC-3** (GET-then-echo vs
+    author-your-own-hash), which is a live open decision.
+  - **NEW gate:** `scripts/check-consent-text-sync.mjs` (361 lines, zero deps) + CI job
+    `consent-text-sync` (`ci.yml:51-65` of the diff → hard gate, no `continue-on-error`) — added —
+    breaking: no (it can red a future PR, which is the point).
+  - **NEW doc contract:** `<!-- BEGIN/END CANONICAL CONSENT TEXT platform-v1.3-2026-06-21 -->`
+    sentinels (`PRIVACY_NOTICE_TEMPLATE.md:219`, `:257`) and §6.1.1 normalization spec N1–N8
+    (`:271-311`) — added — breaking: no.
+  - `PRIVACY_NOTICE_TEMPLATE.md` §6.1 text: `[agency DSR contact]` → "the agency's DSR contact",
+    `[agency privacy policy]` → "the agency privacy policy"; template v1.5 → **v1.6**.
+    `PLATFORM_REGISTRATION_TOS_VERSION` **deliberately NOT bumped** (still
+    `platform-v1.3-2026-06-21`).
+  - `CANONICAL_CONSENT_TEXT_HASH`'s **value: untouched** (still the placeholder — FOLLOW-704).
+    `route.ts`: untouched.
+
+**Independent verification of the two load-bearing claims (not taken from the PR text).**
+(1) *"the `lib.ts` diff is comment-only"* — I read every `+`/`-` line of that file in
+`gh pr diff 633`: all 64 sit inside `/** … */` blocks (the constant's docblock `:33-45`→`:47-72` and
+the renderer's `:71-74`→`:90-113`). No executable line moved, which is why zero `route.test.ts`
+expectations move. (2) *the substitution is meaning-preserving* — I concur, and the simpler statement
+is stronger than the PR's: **the served bytes never changed at all** (the renderer was not edited),
+so no data subject ever saw anything different and a TOS bump was never on the table for the artifact
+that has legal effect. The meaning analysis only ever concerned the published mirror.
+
+### 2. Verification done in PR
+
+- Test files changed: **none.** Assertions added: 0 vitest assertions; **7 executable drift cases**
+  in the gate's own `--self-test` mode (`check-consent-text-sync.mjs:243-300`), which CI runs
+  *before* the real check — so a gate that stops detecting drift also reddens CI. Coverage delta:
+  n/a (no executable source line changed).
+- **CI: 62 pass / 2 fail = 64** across the two runs (33 unique job names; the 2 failures are the same
+  `Rule I — wired-or-dead check` job in both runs). New job
+  **"Registration consent-text sync (Rule N / FOLLOW-705)" → pass in both runs** (10s / 6s).
+- **Rule AF satisfied, numerically re-derived** (not copied forward): the #633 Rule I job log
+  (`run 30332464318 / job 90190770870`) reports `Symbols scanned : 630` / `Violations found : 192` —
+  **identical to the RETRO-225/226/227 baseline**. Zero violations added.
+- **Re-executed the gate myself on `main` at `34863e7e`** (post-merge): `node
+  scripts/check-consent-text-sync.mjs` → PASS, canonical SHA-256
+  `821216cd2cca1814e7a42d2f749d19da1e634949ec654b652fd6cecf7d5cf6fa`; `--print-hash` → same;
+  `--print-text | sha256sum` → same; `--self-test` → **7/7 PASS**. The `821216cd…` value matches the
+  one RETRO-227 computed independently by a different method, and the §6.1.1 shell instruction
+  reproduces it at *my* commit as well as the author's — **Rule AH satisfied by re-execution**, which
+  is the first time in this six-PR chain an in-repo recompute instruction has survived that test.
+- **Caveat on "hard gate" (recorded, not scored):** `gh api …/branches/main/protection` returns 403
+  (private repo, no GitHub Pro), so required-status-checks cannot be read from here; and #633 merged
+  with 2 red checks, which proves not every job is a merge blocker. The new gate is wired to CI
+  *reporting*; whether it blocks a merge rests on the PM's validation loop, as it does for every
+  other gate in this repo.
+
+### 3. Wiring Audit
+
+**Wiring Audit — clean ✅** (CHECK A and CHECK B both run; details below because "clean" here needed
+argument, not assertion).
+
+**CHECK A (dead code) — clean.** One new file, one new doc section, one new sentinel pair:
+
+- `scripts/check-consent-text-sync.mjs` → non-test consumers: `.github/workflows/ci.yml:547` and
+  `:550` (the `--self-test` step and the check step). Also cited by `lib.ts:60-61`, `lib.ts:105` and
+  `PRIVACY_NOTICE_TEMPLATE.md:215`, `:303`, `:310-311`. CI-invoked gate scripts are the
+  entrypoint class this check suppresses, and here the entry point is explicit and verified.
+  *(Checked and dismissed as a gap: the script is not registered in `package.json`. Neither is any
+  other gate — `grep -n "scripts/check" package.json` → **0 hits**, `check-privacy-notice-keys.sh`
+  included. There is no repo script registry to be absent from.)*
+- §6.1.1 (new doc section) → consumers: `lib.ts:57`, `lib.ts:103`, `check-consent-text-sync.mjs:24`,
+  `:87`, `:133`, `:151-164` (every normalization error message cites the step it enforces).
+- The sentinels → producer: `PRIVACY_NOTICE_TEMPLATE.md:219`/`:257`; consumer:
+  `check-consent-text-sync.mjs:51-52` + `extractDocBlock()` `:119-140`.
+
+**CHECK B (half-wire) — no HALF_WIRE_P, no HALF_WIRE_C.** Every new signal has both ends:
+
+| New signal | Producer | Consumer |
+| --- | --- | --- |
+| doc-block ⇄ served-text equality | doc §6.1 block | `runCheck()` `:181-227`, CI job |
+| BEGIN-sentinel TOS-version string | `lib.ts:30` constant + both sentinels | `runCheck()` `:194-201` asserts the sentinel names the pinned version |
+| canonical hash (`--print-hash` / `--print-text`) | script `:203`, `:325-333` | documented operator commands (§6.1.1 `:310-311`, `lib.ts:60-61`) — **which I executed**, so the consumer is real, not aspirational; plus FOLLOW-704 |
+| the gate itself (a failure-detection signal) | `check-consent-text-sync.mjs` | CI job `consent-text-sync` — **Rule AJ satisfied in the same PR**, the first merge in this chain to do so |
+
+**Two things the audit surfaced that are NOT half-wires but belong in §4:** the gate computes the
+canonical hash and never compares it to the constant that is supposed to BE it (→ §4a LG-1), and the
+third holder of the TOS-version string — the caller's hardcoded literal — is outside the new coupling
+(→ §4a LG-4).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the new gate stops one hop short of the value the whole exercise exists to make
+  reproducible.** `runCheck()` computes `canonicalHash` (`check-consent-text-sync.mjs:203`) and
+  prints it, but never compares it to `CANONICAL_CONSENT_TEXT_HASH` (`lib.ts:74`). So after the PR
+  whose stated purpose was *"state the normalisation precisely enough to be executable … so the two
+  artifacts cannot drift again"*, the one artifact that has never been checked against anything —
+  the constant, which RETRO-227 §4c TG-1 showed is only ever compared to itself — is still not under
+  a machine check. The omission is deliberate and ticketed (the constant is a known-wrong
+  placeholder; fixing it is FOLLOW-704), and the PR says so. The gap is about *where* the eventual
+  assertion lands: FOLLOW-704 AC-2 asks only for a **unit test**, and a unit test in
+  `route.test.ts` is exactly the artifact class that already failed to catch this for six weeks. The
+  three-line assertion belongs in this gate, which already has both operands in scope. → **FOLLOW-714**.
+- **LG-2 (P1) — the investigated finding, CONFIRMED REAL AND UNTICKETED: the consent text names a
+  withdrawal channel that resolves to nothing, and the only implemented DSR intake is closed to the
+  data subject.** I investigated this independently rather than accepting the worker's and the PM's
+  read. Four lines of evidence:
+  1. **The served text.** `lib.ts:135`: *"You can withdraw this consent at any time by contacting the
+     agency's DSR contact."* No address, no URL, no in-product affordance. `lib.ts:137` names
+     `compliance@estalara.com` but scopes it to *"{brandName}'s privacy documentation"* — a
+     documentation contact, not the stated withdrawal channel. Identical bytes in the published
+     mirror (`PRIVACY_NOTICE_TEMPLATE.md:249`, `:255`).
+  2. **No other document supplies the missing address to the data subject.** `ropa.md:20` gives
+     `compliance@estalara.com` as the **DPO contact** and `dpia.md:5` calls it a *"Placeholder
+     contact"*; neither is an artifact an investor reads at registration.
+     `PRIVACY_NOTICE_TEMPLATE.md:60` and `:86` still carry `[tenant DSR contact]` — unfilled slots in
+     the tenant-embed template (legitimate there, it is a template; but it means no filled DSR
+     address exists anywhere in the compliance corpus).
+  3. **No code path lets the data subject start a DSR.** `POST /api/dsr/initiate` is **JWT-gated to
+     tenant staff**: *"Auth: Bearer JWT (tenant-scoped agency user)"* and *"403 when the
+     authenticated user is not a tenant user"* (`apps/control-plane/src/app/api/dsr/initiate/route.ts:7`,
+     `:74-76`); the OTP is mailed to the subject only after **an agency admin** initiates on their
+     behalf. There is no public DSR page in the control-plane (`apps/control-plane/src/app` contains
+     only `sign-in`, `register`, `dashboard/*`, `admin/*`), and the consent route itself exposes only
+     `GET` and `POST` — **no withdrawal endpoint** (`route.ts:186`, `:297`). The §6.3 DOM opt-out
+     toggle is explicitly *not* withdrawal (`HANDOFFS.md:2869-2872`: it "does NOT affect
+     buying-intent identification, lead ranking, or agent-facing chat summaries").
+  4. **The documented intake procedure points at an endpoint that does not exist.** `dpia.md` §8
+     step 3: *"The tenant submits a DSR request to the Estalara DSR endpoint
+     (`POST /api/v1/dsr/request`)"* — `find apps -ipath "*v1/dsr*"` → **nothing**; the real route is
+     `POST /api/dsr/initiate`. So even the mediated path is documented against a phantom.
+
+  **Why this is a live gap and not a nit.** Art. 7(3) requires withdrawal to be as easy as giving
+  consent: giving is one checkbox click at registration; withdrawing requires the subject to guess an
+  address, reach staff, and have staff run a flow the subject cannot see. Art. 13(1)(a)–(b) requires
+  contact details in the disclosure. The text has been served since 2026-06-21 (`PLATFORM_REGISTRATION_TOS_VERSION`).
+  **This is a Rule N sighting** — a compliance disclosure asserting a user-facing behaviour
+  ("withdraw at any time by contacting X") where no non-test symbol implements a subject-reachable X.
+  It is **not** covered by FOLLOW-145 (P2, OPEN, RETRO-023), which is the *SDK consent-banner*
+  withdrawal affordance for anonymous embed visitors — a different consent artifact, a different
+  code surface, a different subject population; the shared root is the reason both should be
+  answered in one DPO conversation. → **FOLLOW-710**.
+- **LG-3 (P2, and this is the axis the PR and RETRO-227 did not analyse — step-8 multi-axis) — the
+  canonical text is brand-parameterized on the identity fields and hardcoded on the
+  subject-visible contact, and two docblocks contradict each other about it.** The ruling's own
+  decisive argument is that the renderer *"is brand-parameterized, so it is defined for every
+  deployment"*. True of `${brandName}` / `${legalEntity}` — **not** true of the contact:
+  `lib.ts:137` emits `compliance@estalara.com` for **every** brand, so a white-label subject reads
+  *"see the agency privacy policy and <Brand>'s privacy documentation at compliance@estalara.com"* —
+  an Estalara mailbox asserted to be the **brand's** documentation contact. Three consequences:
+  (i) it is a mis-attribution in a legal disclosure; (ii) it discloses the processor's identity in a
+  private-label deployment, which `docs/runbooks/BRAND_PROVISIONING.md:106-107` sets up as an
+  explicit verify step (*"GET … for an external tenant must NOT emit the Estalara legal identity"*);
+  (iii) the renderer docblock's justification is itself false — `lib.ts:86-88` says the address is
+  *"changed by ops per-brand if a brand runs its own inbox — same boundary as the DSR sending domain
+  in leg 3"*, but leg 3's own docblock says the opposite: *"FIXED infrastructure — the actual sending
+  domain is an ops concern and does NOT change per brand"* (`apps/control-plane/src/lib/email/resend.ts:17-22`,
+  `SENDER_MAILBOX = 'noreply@contact.estalara.com'` at `:22`). Neither value is ops-changeable
+  without a code edit. Latent today (one tenant, memory `project_single_tenant_rebrand_model`), live
+  the day the first external brand registers. → **FOLLOW-711**.
+- **LG-4 (P1) — the merge coupled two of the three holders of the TOS-version string and left the
+  third, which is the only one outside this repo, ungated.** `route.ts:702` writes
+  `tosVersion: body.tos_version ?? PLATFORM_REGISTRATION_TOS_VERSION` — the caller's value is
+  **accepted unvalidated**, and `HANDOFFS.md:2838` hardcodes `"platform-v1.3-2026-06-21"` into the
+  integration instructions. Before #633 this was inert. #633 makes it reachable: it wrote down the
+  bump procedure (`lib.ts:108-113` — bump the constant, both sentinels, re-pin the hash) and the gate
+  enforces sentinel↔constant (`check-consent-text-sync.mjs:194-201`), so a bump is now a routine
+  operation — and **FOLLOW-710 and FOLLOW-711 both require one.** After that bump, a caller still
+  pinned to the v1.3 literal writes a row claiming the subject agreed to v1.3 while the server
+  serves v1.4 text and (post-FOLLOW-704) defaults the hash to the v1.4 digest: a record whose
+  version field and hash field attest different texts. → **FOLLOW-712**.
+- **LG-5 (P2) — the ruling created an obligation for the out-of-repo caller that no caller-facing
+  document states, and I have to contradict the PR body to say so.** The PR's AC-1 rationale table
+  asserts *"`GET /api/v1/consent/platform-registration` already serves this string … so the
+  documented GET-then-echo flow is already keyed to it."* **There is no documented GET-then-echo
+  flow.** `grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` → **zero hits** (the same grep
+  RETRO-224 ran when it filed FOLLOW-685; unchanged since). `HANDOFFS.md:2842` documents the
+  opposite — *"omit to use the canonical EN §6.1 SHA-256 hash"* — and
+  `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306` instructs brands to *"always compute and send its own
+  `consent_text_hash`"*, i.e. to author their own copy. The whole Art. 7(1) argument that elected the
+  renderer is *"the hash attests the exact string the subject read"*; that holds only if the caller
+  renders the served bytes verbatim, which nothing asks it to do and nothing checks. → **FOLLOW-713**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None.** Four claims re-verified at source rather than trusted: (1) `lib.ts` is comment-only
+(read every changed line); (2) `--print-text` emits the **renderer's** string, not the normalized doc
+(`:330` writes `result.canonicalText`, built at `:186-190` from the renderer template) — so no third
+artifact was minted, which was FOLLOW-705 AC-2's explicit prohibition; (3) the normalization is
+order-correct — N6 (`replaceAll('**','')`) runs after the N5 join (`:130-141`), and since `**`
+never spans a line break in the block, the order is immaterial; I checked rather than assumed;
+(4) the guards fail loud, not silent — `\r`, tab, `[` and backtick each throw with the reason
+(`:150-166`), and an unreadable renderer throws (`:73-93`) instead of comparing against a partial
+string.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — two of the gate's own error branches have no self-test case.** `extractDocBlock()`
+  has a `beginCount !== 1 || endCount !== 1` branch (`:129-137`) and an `endIdx < beginIdx` branch
+  (`:139`); the 7 self-test cases cover a **removed BEGIN** sentinel only (`:277-281`). A duplicated
+  sentinel pair (the realistic accident when a second consent version is added to the same doc) and
+  an inverted pair are unexercised. Cheap: two more entries in the same array. → folded into
+  **FOLLOW-714**.
+- **TG-2 (P2) — nothing asserts what a NON-Estalara subject reads.** The gate substitutes only
+  `ESTALARA_BRAND_NAME` / `ESTALARA_LEGAL_ENTITY` (`:99-113`), and there is no fixture for the
+  white-label rendering. That absence is precisely where LG-3 lives: the one string in the template
+  that is *not* parameterized is the one no test renders. → folded into **FOLLOW-711**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, Rule AI — third consecutive merge with this shape) — `HANDOFFS.md:2842` is now false
+  on three counts and was not touched.** *"`consent_text_hash` — optional; omit to use the canonical
+  EN §6.1 SHA-256 hash."* (a) the default is a placeholder, not a SHA-256 of anything (FOLLOW-704);
+  (b) **this merge made "§6.1" the wrong artifact to name** — §6.1 is now explicitly the *published
+  rendering*, not the canonical source; (c) it recommends the omission path, which is the one that
+  bypasses every gate the chain has built. Rule AI says a change that makes a contract claim false
+  must update every document asserting the prior state **in the same PR**; the only document the
+  only caller reads was not in the ticket's enumeration. RETRO-226 §4d DG-2 and RETRO-227 §4d DG-4
+  are the two prior consecutive sightings — this is now a property of the chain, not of a worker.
+  → **FOLLOW-713**.
+- **DG-2 (P2, Rule AH) — `dpia.md` §8 step 3 documents the DSR intake as `POST /api/v1/dsr/request`,
+  which does not exist** (`find apps -ipath "*v1/dsr*"` → nothing; the real route is
+  `POST /api/dsr/initiate`). This is the document that defines the channel the consent text alludes
+  to, so it is load-bearing for LG-2 rather than a stray typo. → folded into **FOLLOW-710**.
+- **DG-3 (P2, Rule AH shape, freshly introduced) — `.gitleaks.toml`'s rewritten instruction
+  presupposes an outcome FOLLOW-704 may not choose.** The new block says *"If the hash is re-pinned
+  (FOLLOW-704) or rotated, update the `gitleaks:allow` tag on that line to the new value."*
+  FOLLOW-704 AC-1 sanctions two outcomes, and under the first — `export const
+  CANONICAL_CONSENT_TEXT_HASH = computeConsentTextHash(renderPlatformConsentText(ESTALARA_IDENTITY))`
+  — there is **no 64-char literal**, so the tag must be *removed*, not updated, and the scan re-proved
+  green without it. An instruction that one of two sanctioned futures makes unexecutable. →
+  folded into **FOLLOW-714**.
+- **DG-4 (POSITIVE ×3, worth naming because two of them are firsts for this chain).** (i) The
+  unresolved finding was recorded **inside the artifact** (`PRIVACY_NOTICE_TEMPLATE.md:259-269`,
+  immediately after the END sentinel) rather than only in the PR description — so it survives the
+  PR's half-life, which is exactly how the `[agency DSR contact]` bracket had been doing its job for
+  five weeks until this PR deleted it. Deleting an editorial signal and replacing it with a durable
+  one is the right trade, executed. (ii) The §6.1.1 recompute instruction is the **first in this
+  chain to survive independent re-execution at a different commit** (§2) — the direct answer to
+  Rule AH's ninth sighting in RETRO-227. (iii) The revision-history row (`:352`) records the
+  deliberate **non-**bump with its reasoning, so the next reader cannot mistake it for an oversight.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-704 (P0, unblocked, held pending Piotr) — the brief's specific question: YES, the
+  merged code changes what its AC should say, in five ways.** (1) **AC-1's conditional branch is now
+  dead** — *"if FOLLOW-705 rules the DOC bytes canonical … pin to whatever that ruling names and make
+  the renderer produce it"* — the ruling went the other way; the target is
+  `computeConsentTextHash(renderPlatformConsentText(ESTALARA_IDENTITY))` = `821216cd…`, printable via
+  `--print-hash`. (2) **AC-1's "derived, not asserted" option is now the more dangerous of the two,
+  and the AC does not say so.** A bare derived constant silently re-points at the new bytes the
+  moment the text changes — and two of this retro's tickets *require* a text change — after which
+  every row written under `platform-v1.3-2026-06-21` can no longer be validated against it. AC-1 must
+  say: version-key the hash (a `tos_version → hash` map), or land FOLLOW-703's snapshot columns
+  first, or state in-code that verification requires checking the repo out at the row's
+  `tos_version`. (3) **AC-2's assertion belongs in the `consent-text-sync` gate, not only in a unit
+  test** (LG-1) — `route.test.ts` is the artifact class that already failed at this. (4) **AC-6 is
+  conditional on AC-1's choice** (DG-3): under the derived option the `gitleaks:allow` tag is removed,
+  not updated. (5) **AC-7 is largely already done** by #633 (the docblock now states the derivation
+  the code will perform and names verified commands), so the remaining work there is a one-line
+  amendment, not a rewrite. → filed as **FOLLOW-714**, "fold into FOLLOW-704 at promotion", because
+  RETRO-227's own §7 recommendations about ticket scope (re-scope 702, re-word 696) are still
+  unactioned in the stubs — a recommendation buried in a retro has demonstrably not been reaching the
+  dispatch brief.
+- **FOLLOW-706 (P1, prod remediation, ESC-044-gated) — sequencing, and a merged option.** Its AC-2
+  asks the DPO to choose among backfill / annotate / re-consent / accept for the rows already written
+  under v1.3. LG-2 and LG-3 both require superseding the v1.3 text, which materially changes that
+  option set: option (c) "re-consent the affected subjects" stops being a costly standalone remedy
+  and becomes a by-product of a change that has to happen anyway. **Recommend one DPO round covering
+  FOLLOW-706 + FOLLOW-710 + FOLLOW-711 rather than three**, and that FOLLOW-706's row count
+  (ESC-044 item 1) be taken **before** the bump so the v1.3 population is closed rather than
+  moving.
+- **FOLLOW-707 (P1) — same expression, must not be split.** It rewrites `route.ts:703`; LG-4 is
+  `route.ts:702`, the line above. → **FOLLOW-712** is filed "fold into FOLLOW-707".
+- **FOLLOW-699 / FOLLOW-685 (P1, docs) — gained a requirement neither has.** FOLLOW-685 AC-3 asks for
+  a ruling on *"GET-then-echo vs author-your-own-hash"*; this merge **pre-decides it in substance
+  without saying so**: if the renderer's bytes are canonical because they are what the subject read,
+  then author-your-own-copy is evidentially weak by construction, and
+  `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md:306` currently instructs exactly that.
+  → **FOLLOW-713**, "fold into FOLLOW-699/685".
+- **FOLLOW-703 (P2, snapshot columns) — promoted in leverage.** It is the clean answer to the
+  version-keying problem in FOLLOW-704 AC-1 (5a item 2): if the row carries identity + text version
+  + hash, a bare derived constant is harmless. Worth sequencing before, not after, FOLLOW-704's
+  design choice.
+- **FOLLOW-700 / FOLLOW-708 (Sentry registry) — unaffected.** #633 ships no failure-detection signal
+  with a Sentry producer; the one signal it does ship (the CI gate) has its consumer in the same PR.
+- **FOLLOW-145 (P2, OPEN since RETRO-023) — same right, different surface.** It is the *SDK
+  consent-banner* withdrawal affordance; LG-2 is the *platform-registration umbrella*. Two
+  independent consent surfaces now both lack a subject-usable withdrawal path. Cross-referenced in
+  FOLLOW-710; **recommend the PM answer them in one DPO/CEO round**, not two.
+- **QUEUE accuracy — checked, ACCURATE, and reproducible.** The session-72 head (`QUEUE.md:29-46`)
+  claims the PM re-ran `--self-test` (7/7) and got `821216cd…`; I re-ran the same commands at a
+  later commit and got the same results, so the claim is not just plausible but reproduced. The
+  session-73 head correctly states FOLLOW-704 is unblocked-but-held and that the DSR finding is
+  routed here rather than filed by the PM. No over-claim to correct.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-656 / `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` — LG-3 is a go-live blocker for the first
+  external brand**, and the checklist's own guardrail language already anticipates this class:
+  *"until this HANDOFF confirmation is recorded … must be marked UNSATISFIABLE-PENDING-HANDOFF, not
+  silently passed — this is a disguised P0 (a false disclosure would be a false statement to data
+  subjects)"* (`:308-311`). A hardcoded `compliance@estalara.com` in the brand's own consent text is
+  that exact shape.
+- **ESC-044 (OPEN)** — LG-2 is a fourth candidate item for the same CEO/DPO conversation (items 1–3
+  are the row count, the FOLLOW-705 ruling affirmation, and the Art. 7(1) remediation). **I do not
+  write `ESCALATIONS.md`** — surfacing it here with severity, per charter; the PM escalates.
+- **MASTER_DESIGN §H.8** — states consent is mandatory at registration and enumerates the six
+  purposes, but says nothing about withdrawal mechanics. FOLLOW-706 AC-5 already plans to record the
+  reproducibility invariant there; the withdrawal-channel invariant belongs in the same edit.
+
+#### 5c. Contracts changed others rely on
+
+- The sentinel line format is now a de-facto contract for any future consent-text tooling: it must
+  contain the pinned TOS version, appear exactly once each, and the enclosed block must contain no
+  `[`, tab, CR or backtick. Nothing outside the script knows this except §6.1.1.
+- The ruling is a contract on FOLLOW-704's input and on FOLLOW-685 AC-3's still-open decision
+  (5a), and on any future translation work (FOLLOW-379): a translated consent text must now be
+  understood as *its own* canonical byte string with its own hash, since the doc is no longer the
+  reference for anything.
+- **The out-of-repo caller's obligations changed and it has not been told** (LG-5/DG-1).
+
+#### 5d. Architectural assumptions affected
+
+- **"Canonical = what the subject read."** The ruling is right, and it converts an assumption about
+  an actor this repo cannot observe into a legal invariant. The chain now gates
+  renderer⇄published-doc — but the hop that the invariant actually rests on, renderer⇄what
+  app.estalara.com renders, has no producer contract, no test and no runbook step. The strongest
+  available substitute is cheap and unfiled until now: instruct the caller to GET and display the
+  served string verbatim, and make that the recorded flow (FOLLOW-713).
+- **"Brand-parameterized, therefore defined for every deployment."** True on the axis the ticket
+  examined, false on the axis it did not (LG-3). The general form worth carrying: *a surface is only
+  as parameterized as its least-parameterized subject-visible string.*
+- **"An unfilled `[bracket]` is an editorial defect."** #633 is right that a subject must never see
+  one — but the bracket was also the repo's only working detector for "this slot was never filled".
+  Reconciling artifacts by deleting the placeholder converts a visible defect into an invisible one
+  unless the signal is re-homed, which this PR did (DG-4 i) and which is the practice worth
+  generalizing: **when you delete a marker to satisfy a byte-equality, the marker's information must
+  land somewhere the equality does not cover.**
+
+### 6. New lesson candidates
+
+- **Pattern P-15 (NEW) — "PARAMETERIZED ON THE IDENTITY AXIS, HARDCODED ON THE SUBJECT-VISIBLE
+  AXIS": a surface declared per-brand substitutes the fields the ticket named (name, legal entity)
+  and leaves the string the end user actually acts on (a contact address, a visible label) as a
+  first-party literal — and the per-brand claim is then asserted in a docblock that a sibling
+  module's docblock contradicts.** Count 2 = **1 prior retro + this trigger. HELD, NO PROMOTION.**
+  Prior: **RETRO-221** §4a LG-3 (*"a white-label brand can override the invisible `aria` string in
+  full but is stuck with Estalara's visible label"* → FOLLOW-668) and its LG-2 (white-label
+  attribution fails open to "Powered by Estalara" → FOLLOW-671) — same shape, different module.
+  Trigger here: §4a LG-3. **Arithmetic stated openly, consistent with the house adjudication**
+  (RETRO-145 Rule Q; re-affirmed by RETRO-227 §6): promotion needs the same pattern in **≥2 prior
+  retros**; one prior ≠ two. **Pre-authorised: promote unconditionally on a 2nd numbered-retro
+  sighting of a per-brand surface whose subject-visible string is a first-party literal.**
+- **Pattern P-13 (RETRO-227's "derived constant with no derivation test") — NOT scored as a new
+  sighting, deliberately.** §4a LG-1 concerns *the same constant, in the same file, for the same
+  reason*; counting a follow-up PR's failure to finish the same instance as a second sighting would
+  inflate the count with one defect wearing two dates. Count stays at **1 prior retro (RETRO-227)**,
+  pre-authorisation intact. *(This is the discipline RETRO-224 recorded catching itself failing and
+  RETRO-227 applied to P-12/P-14; applying it against my own interest here.)*
+- **Rule N — sighting, and a positive.** §4a LG-2 is a textbook Rule N violation: a compliance
+  disclosure asserting a concrete user-facing behaviour ("withdraw at any time by contacting X")
+  with no non-test symbol implementing a subject-reachable X — the same shape as RETRO-018/019's
+  banner-string cases that codified the rule, now on the umbrella consent instead of the SDK banner.
+  Positive on the same rule: this PR ships the repo's **second Rule N CI gate**, built explicitly in
+  the shape of the first (`check-privacy-notice-keys.sh`) — the rule is growing enforcement, not just
+  citations.
+- **Rule AI — 3rd consecutive merge** (§4d DG-1: RETRO-226 DG-2 → RETRO-227 DG-4 → this). RETRO-227
+  predicted exactly this: *"if the next merge repeats it, the finding is no longer 'a worker missed a
+  doc' but 'this chain ships doc debt structurally'."* **The prediction fired.** Three merges, one
+  document (`HANDOFFS.md`), zero edits, and the pooled debt (FOLLOW-699/709/713) is now larger than
+  any single PR that created it. This is a routing problem, not a worker problem: every one of the
+  three tickets scoped its doc surfaces by in-repo enumeration, and `HANDOFFS.md` is the surface the
+  only *consumer* reads.
+- **Rule AH — one satisfaction and two new debts.** Satisfaction: §2 (the recompute instruction
+  survives re-execution at a foreign commit) — the direct answer to RETRO-227's ninth sighting.
+  New debts: §4d DG-2 (a phantom endpoint in the DPIA's intake procedure) and DG-3 (a
+  freshly-written instruction that one sanctioned future makes unexecutable).
+- **Rule AJ — satisfied, and worth recording as the first clean instance in this chain.** The one
+  failure-detection signal #633 ships (the gate) has its consumer — the CI job — in the same PR,
+  plus a `--self-test` that proves the detector detects. RETRO-225 codified AJ; RETRO-226 and
+  RETRO-227 each recorded a violation; this is the first merge to comply.
+- **Rule AG — recorded factually, not scored, and the contradiction is now one retro older.** #633
+  appends 20 lines to `.claude/agents/compliance-engineer/lessons.md`. Single agent in flight
+  (QUEUE session-71/72), so no parallel-worktree conflict risk materialised. The rule-vs-practice
+  contradiction RETRO-227 surfaced (RETRO-226 scored the *absence* of such an append as a negative;
+  Rule AG restricts the artifact) remains unresolved — re-surfaced once for the skill-upgrade run,
+  not adjudicated inside a ticket retro.
+
+### 7. Follow-ups
+
+- **FOLLOW-710:** the registration consent text names no actionable withdrawal channel and the only
+  DSR intake is staff-only — decide the channel, fix the text, and take the TOS bump
+  (compliance-engineer + CEO/DPO, 4h, priority **P1**).
+- **FOLLOW-711:** `compliance@estalara.com` is hardcoded in the now-canonical consent text for every
+  brand, and the docblock justifying that contradicts `resend.ts` — ride the same TOS bump as
+  FOLLOW-710 (compliance-engineer + backend-engineer, 2h, priority **P2**; blocker for the first
+  external-brand go-live).
+- **FOLLOW-712:** `route.ts:702` accepts `body.tos_version` unvalidated — a caller pinned to the old
+  literal will attest a superseded version against the new text's hash the moment the bump lands
+  (backend-engineer, 1h, priority **P1**; fold into FOLLOW-707, same expression).
+- **FOLLOW-713:** the canonical-bytes ruling created a caller-side obligation nobody has told the
+  caller, and made `HANDOFFS.md:2842` false a third way (backend-engineer, 2h, priority **P1**; fold
+  into FOLLOW-699/685 at promotion).
+- **FOLLOW-714:** FOLLOW-704's AC set is under-specified after this merge (version-keying, the
+  assertion's home, the gitleaks branch), and the gate has two untested error branches
+  (backend-engineer, 2h, priority **P1**; fold into FOLLOW-704 at promotion — it is P0 and about to
+  be dispatched).
+- **Recommendations, NOT re-filed (PM-owned):** run **one** CEO/DPO round covering FOLLOW-706 +
+  FOLLOW-710 + FOLLOW-711 + FOLLOW-145 rather than four; take the ESC-044 item-1 row count **before**
+  any TOS bump; sequence **FOLLOW-703 before FOLLOW-704's design choice**; and RETRO-227's still-open
+  recommendations (re-scope FOLLOW-702, re-word FOLLOW-696, re-price 674/686/695, elevate FOLLOW-687
+  P2→P1) remain unactioned in the stubs.
+- **Charter note.** `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` and `backlog/HANDOFFS.md` were
+  **not** written. LG-2 is a live GDPR finding on a shipped go-live flow and belongs in ESC-044's
+  conversation — **the PM escalates, not me.**
+
+### 8. Cross-references
+
+- **RETRO-227 (#632) — the retro that filed this ticket. Step-7 closure verdict, traced end-to-end
+  and per-AC rather than one hop.** FOLLOW-705 is **genuinely closed on 4 of its 5 ACs and partially
+  on the fifth**: AC-1 recorded in all three places (verified at `PRIVACY_NOTICE_TEMPLATE.md:199-209`,
+  `lib.ts:47-57`, `lib.ts:90-97`); AC-2 closed *and* its explicit prohibition honoured — I checked
+  that `--print-text` emits the renderer's string (`:330` → `:186-190`), so no third artifact was
+  minted; AC-3 closed and **re-executed by me at a later commit**; AC-5 closed and strengthened
+  (§1). **AC-4 is 3-of-4:** the three artifacts the ticket enumerated (`lib.ts` ×2, `.gitleaks.toml`)
+  are corrected and the CI gate exists, but a **fourth** artifact asserting the same broken
+  derivation — `HANDOFFS.md:2842`, the only one the only caller reads — was outside the enumeration
+  and is untouched (§4d DG-1). **The chain's closure-was-relocation pattern continues, with its
+  direction reversed again:** RETRO-227 found the gap move *downward* into the constant; here the
+  layer below (the constant, FOLLOW-704) is correctly left alone and the gap moves **outward**, to
+  the two hops this repo does not own — the caller's rendering (LG-5) and the withdrawal channel
+  outside the software (LG-2). Full wire today: renderer (`lib.ts:114-137`) → published mirror
+  (§6.1, **now gated**) → default hash (`route.ts:703`, still a placeholder — FOLLOW-704) → stored
+  column (zero readers — FOLLOW-703) → what the subject saw (out-of-repo, undocumented) → how the
+  subject withdraws (**no reachable mechanism** — FOLLOW-710). Two hops closed, four open.
+- **RETRO-226 (#631)** — origin of the FOLLOW-699 doc-debt pool that DG-1 grows for the third time.
+- **RETRO-224 (#629) / FOLLOW-685** — source of the *"the GET has no documented consumer"* grep.
+  **I re-ran it (`grep -n "GET /api/v1/consent" backlog/HANDOFFS.md` → zero hits) and it still
+  returns nothing**, which is what makes the PR body's "documented GET-then-echo flow" claim
+  incorrect (LG-5) — a contradiction surfaced and reconciled rather than inherited.
+- **RETRO-221 (#626, FOLLOW-640/641/651)** — P-15's prior sighting (§6): the white-label axis where
+  the invisible string is overridable and the visible one is not. Reached across seven retros because
+  the shape recurred in a different module (SDK widget labels → legal disclosure contact).
+- **RETRO-023 / FOLLOW-145** — the other Art. 7(3) surface (SDK consent banner, still OPEN since
+  Sprint 14). LG-2 is not a duplicate of it; both should be answered together.
+- **RETRO-219 (#624, FOLLOW-654)** — origin of the chain; its "end-to-end within the consent flow"
+  verdict is contradicted a fourth time, now on the withdrawal leg rather than the write leg.
+- **Rules:** **N** (§4a LG-2 violation + a second Rule N gate shipped) · **AI** (3rd consecutive
+  merge, §4d DG-1) · **AH** (satisfied in §2; two new debts in DG-2/DG-3) · **AJ** (first clean
+  compliance in this chain, §3) · **AF** (§2, Rule I re-derived 630/192 = unchanged) · **AA**
+  (FOLLOW-710/711 carry an operator/DPO axis) · **V** (§4d DG-3, the gitleaks tag must move with the
+  value — or be deleted with it) · **AG** (§6, contradiction re-surfaced, not scored) · **K.2**
+  (the gate fails closed on an unreadable renderer — the right direction, verified at `:73-93`).
+- **Tickets:** FOLLOW-145 / 374 / 379 / 654 / 656 / 685 / 687 / 696 / 699 / 700 / 702 / 703 / 704 /
+  706 / 707 / 708 / 709 · new **FOLLOW-710…714** · ESC-044.
+
+<!-- next free RETRO number: 229. next free FOLLOW number: 715 (FOLLOW-710..714 filed by RETRO-228).
+RETRO-228 = retro for PR #633 (FOLLOW-705, merged 2026-07-28T06:07:29Z, 47e863c6; OPUS
+retrospective-analyst, session 73). CI: 62 pass / 2 fail = 64 (33 unique jobs; both failures are the same
+pre-existing-red Rule I job across two runs). Rule AF RE-DERIVED numerically: Rule I log for run 30332464318
+reports Symbols scanned 630 / Violations found 192 = IDENTICAL to the RETRO-225/226/227 baseline, zero added.
+New CI job "Registration consent-text sync (Rule N / FOLLOW-705)" PASSES in both runs. GATE RE-EXECUTED BY THE
+ANALYST on main at 34863e7e: check PASS, --self-test 7/7, --print-hash and --print-text|sha256sum both
+821216cd2cca1814e7a42d2f749d19da1e634949ec654b652fd6cecf7d5cf6fa (matches RETRO-227's independently computed
+value) -> the §6.1.1 recompute instruction is the FIRST in this chain to survive re-execution at a foreign
+commit (Rule AH satisfied by construction).
+WIRING AUDIT CLEAN (both checks). CHECK A: the new scripts/check-consent-text-sync.mjs has non-test consumers
+at ci.yml:547/:550 plus lib.ts:60-61/:105 and PRIVACY_NOTICE_TEMPLATE.md:215/:303/:310-311; §6.1.1 and the
+sentinels each have a consumer. Not being in package.json is NOT a gap - no gate is (grep "scripts/check"
+package.json -> 0 hits). CHECK B: no HALF_WIRE_P/C - every new signal (doc-vs-renderer equality, the sentinel
+TOS-version coupling, the canonical hash, the gate itself) has both ends; the gate is the FIRST Rule AJ-compliant
+merge in this chain (detector + consumer + self-test in one PR). Caveat recorded: branch-protection API returns
+403 (private repo), and #633 merged with 2 red checks, so "hard gate" means CI-reporting, not merge-blocking.
+HEADLINE (LG-2, P1, the assigned investigation - CONFIRMED REAL AND UNTICKETED): the registration consent text
+names NO actionable withdrawal channel and NO code path lets a data subject start a DSR. Four lines of evidence
+gathered independently: (1) lib.ts:135 "the agency's DSR contact" + :137 scopes compliance@estalara.com to
+"privacy documentation"; (2) no other artifact supplies the address - ropa.md:20 = DPO contact, dpia.md:5 calls
+it a "Placeholder contact", PRIVACY_NOTICE_TEMPLATE.md:60/:86 still carry unfilled [tenant DSR contact] slots;
+(3) POST /api/dsr/initiate is JWT-gated to tenant STAFF (route.ts:7, :74-76 "403 when the authenticated user is
+not a tenant user"), there is no public DSR page (apps/control-plane/src/app = sign-in|register|dashboard|admin
+only), the consent route has only GET+POST (no withdrawal endpoint), and the §6.3 DOM opt-out is explicitly NOT
+withdrawal; (4) dpia.md §8 step 3 documents the intake as POST /api/v1/dsr/request, which DOES NOT EXIST (find
+apps -ipath "*v1/dsr*" -> nothing; real route is /api/dsr/initiate). Art. 7(3) + 13(1)(a)-(b); Rule N sighting;
+distinct from FOLLOW-145 (SDK banner, different consent artifact) -> FOLLOW-710.
+OTHER GAPS: 5 logic (LG-1 P1 the new gate computes canonicalHash at :203 and never compares it to
+CANONICAL_CONSENT_TEXT_HASH - the assertion belongs in the GATE, not only in the unit test FOLLOW-704 AC-2 asks
+for; LG-3 P2 MULTI-AXIS FINDING THE PR AND RETRO-227 BOTH MISSED - compliance@estalara.com is hardcoded at
+lib.ts:137 for EVERY brand, so the ruling's own "brand-parameterized therefore defined for every deployment"
+argument is true of the identity fields and false of the subject-visible contact; lib.ts:86-88 says ops can
+change it per-brand while resend.ts:17-22 says the opposite ("does NOT change per brand") and both are code
+literals -> FOLLOW-711; LG-4 P1 route.ts:702 accepts body.tos_version UNVALIDATED and HANDOFFS.md:2838 hardcodes
+the v1.3 literal - inert before #633, reachable now that a bump is routine and two tickets require one ->
+FOLLOW-712; LG-5 P2 the PR body's "the documented GET-then-echo flow is already keyed to it" is NOT TRUE - grep
+"GET /api/v1/consent" HANDOFFS.md -> zero hits, :2842 documents the opposite, and GOLIVE_CHECK:306 tells brands
+to author their own copy -> FOLLOW-713), 0 code bugs (4 claims re-verified at source incl. that --print-text
+emits the RENDERER's string so no third artifact was minted, honouring AC-2's explicit prohibition), 2 test
+(TG-1 P2 two of extractDocBlock's error branches - duplicate sentinels, inverted pair - have no self-test case;
+TG-2 P2 nothing renders a NON-Estalara identity, which is exactly where LG-3 hides), 4 docs (DG-1 P1 Rule AI
+THIRD CONSECUTIVE MERGE - HANDOFFS.md:2842 is now false three ways and this merge made one of them false;
+DG-2 P2 the DPIA's phantom intake endpoint; DG-3 P2 the freshly-written .gitleaks.toml instruction presupposes
+FOLLOW-704 keeps a literal, which one of its two sanctioned options removes; DG-4 POSITIVE x3 - the unfixed
+finding was recorded INSIDE the artifact after the END sentinel so it cannot vanish, the recompute instruction
+survives foreign re-execution, and the revision row records the deliberate NON-bump).
+PATTERNS: P-15 NEW ("parameterized on the identity axis, hardcoded on the subject-visible axis"; prior =
+RETRO-221 LG-2/LG-3, the invisible aria string is overridable while the visible label is stuck) count 2 = 1
+PRIOR + trigger, HELD, pre-authorised for unconditional promotion on the next sighting. P-13 (RETRO-227)
+DELIBERATELY NOT SCORED as a second sighting - same constant, same file, same defect wearing two dates; count
+stays 1 prior. Rule N violation + a second Rule N gate shipped. Rule AI 3rd consecutive merge (RETRO-227's own
+prediction fired verbatim). Rule AH: satisfied once, two new debts. Rule AJ: FIRST clean compliance in this
+chain. Rule AG contradiction re-surfaced, not adjudicated.
+STEP-7 CLOSURE (FOLLOW-705): CLOSED on AC-1/2/3/5 verified per-AC at source; AC-4 is 3-of-4 - the three
+enumerated artifacts are corrected and the gate exists, but HANDOFFS.md:2842, the fourth artifact asserting the
+same broken derivation and the ONLY one the caller reads, was outside the enumeration. Chain direction reversed:
+RETRO-227's gap moved DOWNWARD into the constant, this one moves OUTWARD to the two hops the repo does not own
+(the caller's rendering, and the withdrawal channel outside the software). Full wire: renderer -> published
+mirror (NOW GATED) -> default hash (placeholder, FOLLOW-704) -> stored column (zero readers, FOLLOW-703) -> what
+the subject saw (undocumented) -> how the subject withdraws (NO MECHANISM). Two hops closed, four open.
+ANSWER TO THE BRIEF'S QUESTIONS: (1) the DSR finding is REAL and UNTICKETED -> FOLLOW-710 (P1), and it is NOT a
+duplicate of FOLLOW-145. (2) YES, the merged code changes FOLLOW-704's AC in five ways - the dead
+doc-canonical branch, the version-keying trap in "derived not asserted" (a bare derived constant retro-invalidates
+every v1.3 row the moment the text changes, and two of this retro's tickets require that change), the
+assertion's home, the conditional gitleaks branch, and AC-7 being mostly already done -> FOLLOW-714, filed
+rather than recommended because RETRO-227's ticket-scope recommendations are still unactioned. (3) FOLLOW-706
+interacts through the TOS bump - recommend ONE DPO round covering 706+710+711+145 and taking the ESC-044 item-1
+row count BEFORE any bump; FOLLOW-699/685 gain the caller-display obligation (FOLLOW-713); FOLLOW-707 must
+absorb FOLLOW-712 (adjacent line in the same expression). QUEUE session-72/73 heads checked, ACCURATE, and the
+PM's validation claims REPRODUCED. QUEUE.md / ESCALATIONS.md / HANDOFFS.md deliberately NOT written (charter);
+ESC-044 item-4 candidate surfaced for the PM. -->

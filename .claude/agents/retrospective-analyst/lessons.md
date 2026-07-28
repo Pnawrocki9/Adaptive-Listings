@@ -3522,3 +3522,52 @@ this file were permission-blocked in session 61; folded in by the RETRO-225 run,
     branch — displacing HEAD under a running parent is the documented worse failure (session-41
     collision) — and instead left the three files modified in the working tree with an explicit
     hand-back note.
+
+- **2026-07-28 / RETRO-228** (PR #633, FOLLOW-705 — canonical-consent-text ruling + doc/renderer
+  sync gate)
+  - **A finding I almost missed and why.** The white-label axis (§4a LG-3: `compliance@estalara.com`
+    hardcoded in a text now ruled canonical for _every_ brand). I almost missed it because the PR's
+    own argument was so good — "the renderer is brand-parameterized, therefore it is the only
+    artifact that exists for a white-label brand" is correct, persuasive, and it made me stop
+    checking the axis it was about. **The lesson is specific: when a PR wins an argument BY citing a
+    property (parameterized, versioned, gated, idempotent), that property is the first thing to
+    verify, not the last — it is load-bearing precisely because it was persuasive.** Reading
+    `renderPlatformConsentText()`'s body line by line instead of its docblock took thirty seconds
+    and showed the parameterization stops at the identity fields. The corollary caught the docblock
+    contradiction too (`lib.ts:86-88` vs `resend.ts:17-22`), which no grep for the ticket's own
+    keywords would have surfaced.
+  - **An axis/chain I had to trace twice.** The DSR withdrawal channel. First pass concluded "the
+    text names no address" — true, and one hop short, which is exactly the failure mode this charter
+    exists to prevent. The second pass asked the question that mattered: does a channel exist that
+    the text merely fails to _name_? That took four independent probes (the compliance corpus, the
+    DSR routes' auth model, the app router's public surface, the DPIA's stated intake procedure) and
+    inverted the finding's weight — `POST /api/dsr/initiate` is JWT-gated to tenant **staff**, so
+    there is nothing for the text to name, and the DPIA's documented intake endpoint
+    (`POST /api/v1/dsr/request`) does not exist at all. A missing address is a copy defect; a
+    missing mechanism plus a phantom endpoint is an Art. 7(3) gap. Same evidence, different ticket,
+    different priority. **Do not stop at "the disclosure is wrong" — establish what is true, then
+    price the disclosure against it.**
+  - **A meta-pattern in how gaps recur across agents.** Every ticket in this chain scopes its doc
+    surfaces by **in-repo enumeration**, and `backlog/HANDOFFS.md` — the one document the only
+    consumer reads — has now been missed by three consecutive merges (Rule AI, RETRO-226 → 227 →
+    228). RETRO-227 predicted verbatim that a third sighting would make it "structural rather than a
+    worker's miss"; the prediction fired, which is evidence the prediction mechanism works and that
+    nothing consumes the predictions. The generalization worth carrying: **a ticket's "which
+    documents assert this?" step is performed with a repo-scoped grep, so the artifacts that live at
+    the system boundary are systematically invisible to it.** The counter-move is cheap and belongs
+    in the delegation brief, not the retro: for any contract change, name the out-of-repo consumer
+    and its document explicitly in the AC.
+  - **Arithmetic discipline, applied against my own interest.** I declined to score RETRO-227's P-13
+    (derived constant with no derivation test) as a second sighting: §4a LG-1 is the same constant
+    in the same file, and counting a follow-up PR's failure to finish the same instance would be one
+    defect wearing two dates. Held P-15 (the new pattern) at 1 prior retro for the same reason
+    RETRO-227 held P-12/P-14. **Two retros running now hold patterns at count 2 with
+    pre-authorisations — if the skill-upgrade run wants a faster rule pipeline, the lever is the
+    prior-count definition, not analyst leniency.**
+  - **Charter friction.** The brief asked me to investigate a finding, which I did, and the finding
+    belongs in ESC-044's CEO/DPO conversation. I did not write `ESCALATIONS.md`, `QUEUE.md` or
+    `HANDOFFS.md`; the escalation candidate is surfaced in §5b with severity for the PM. Also
+    recorded a limit rather than guessing past it: branch protection is unreadable from here (403,
+    private repo without Pro), so "hard CI gate" could be verified as _reporting_ but not as
+    _merge-blocking_ — and #633 merged with 2 red checks, which is the observation that keeps that
+    caveat honest.

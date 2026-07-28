@@ -1,5 +1,47 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-28 (session 72 — FOLLOW-705 validated, PR #633 READY_FOR_REVIEW; unblocks FOLLOW-704 pending Piotr's confirmation; 4 escalations OPEN)
+
+**PR #633 opened by compliance-engineer, validated by PM:**
+
+- `gh pr checks 633`: 62/64 pass. The 2 failures are the same pre-existing-red "Rule I" gate. New
+  `consent-text-sync` CI job (hard gate, no `continue-on-error`) passes.
+- Checked out the branch, ran `node scripts/check-consent-text-sync.mjs --self-test` myself: **7/7
+  PASS** (unmodified-passes, plus 6 injected-drift cases that correctly fail, including a
+  fail-closed case when the renderer is unreadable). Ran the actual check: **PASS**, canonical
+  SHA-256 printed as `821216cd2cca1814e7a42d2f749d19da1e634949ec654b652fd6cecf7d5cf6fa` — matches
+  byte-for-byte the value I independently computed myself during the #632 validation.
+- Confirmed no scope creep: `route.ts` untouched (`git diff main --name-only` has no route.ts hit),
+  `CANONICAL_CONSENT_TEXT_HASH`'s literal value line is untouched (only its surrounding docblock
+  changed) — the worker's claim that this PR is comment/doc-only w.r.t. the hash constant holds.
+- Independently re-read the "unresolved DSR contact" finding the worker flagged (not fixed, by
+  design — fixing it changes disclosed meaning): confirmed accurate. The post-#633 §6.1 text says
+  "the agency's DSR contact" (not actionable on its own) and names `compliance@estalara.com` only as
+  a documentation contact, not as the stated withdrawal channel. Real Art. 7(3)/13(1) gap, correctly
+  scoped OUT of this ticket. Will hand to the next retrospective to file properly, same pattern as
+  the #632→RETRO-227 hash finding.
+
+**Canonical-source ruling recorded in this PR: the SERVER RENDERER wins**, not the doc — because
+§6.1 is hardcoded to the Estalara identity (undefined for white-label brands) and Art. 7(1)
+demonstrability is about what the subject actually read, which is what `GET` already serves. This
+was compliance-engineer's call per FOLLOW-705's own AC ("this is a compliance judgment call"), not
+routed through Piotr as a CEO/DPO decision — **flagging for Piotr's awareness/no-objection**, since
+ESC-044 item 2 listed "rule on FOLLOW-705" among the CEO/DPO required actions. ESC-044 items 1 (prod
+row count) and 3 (Art. 7(1) remediation options) remain fully open and unaffected by this PR.
+
+**FOLLOW-705 → status: READY_FOR_REVIEW.** PR #633 is mergeable and validated.
+
+**This resolves FOLLOW-704's blocking dependency** (FOLLOW-704 AC-1 needed to know which bytes to
+pin the hash constant to — now decided:
+`computeConsentTextHash(renderPlatformConsentText(ESTALARA_IDENTITY))`, printable via
+`--print-hash`). **Not dispatching FOLLOW-704 without asking first** — the prior session's note
+explicitly held it pending the ESC-044 ruling, and while FOLLOW-704's own AC doesn't technically
+need ESC-044 items 1/3 (those are FOLLOW-706's), it is still the P0 fix to the constant the live
+consent gate refuses against — surfacing to Piotr as the next decision rather than proceeding
+unilaterally.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-27 (session 71 — FOLLOW-705 dispatched to compliance-engineer while ESC-044 awaits CEO/DPO ruling; 4 escalations OPEN)
 
 **Dispatched FOLLOW-705 on Piotr's instruction**, taking up the option surfaced alongside ESC-044
@@ -13,7 +55,7 @@ bracket placeholders, which `renderPlatformConsentText()` (`lib.ts:79-102`) subs
 agency's DSR contact" / "the agency privacy policy" respectively. This is exactly the divergence
 RETRO-227/FOLLOW-705 describe — confirmed accurate, not taken on the retro's word.
 
-### FOLLOW-705 — status: IN_PROGRESS
+### FOLLOW-705 — status: READY_FOR_REVIEW (PR #633, all checks green modulo pre-existing-red Rule I, self-test 7/7 + check PASS verified locally)
 
 **assigned_to:** compliance-engineer **model: Opus** — this is a documentation-shaped ticket by file
 type, but the actual decision (which of two texts is legally byte-canonical, with the DPO

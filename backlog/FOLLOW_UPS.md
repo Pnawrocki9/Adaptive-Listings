@@ -21600,3 +21600,77 @@ after FOLLOW-726 and FOLLOW-727 to avoid a three-way conflict in the same two fi
 
 cross_ref: [RETRO-232 §4a LG-3, §4b CB-1/CB-2, §4c TG-2, §5d, RETRO-231 §3, FOLLOW-723, FOLLOW-724,
 FOLLOW-725, FOLLOW-726, FOLLOW-727, Rule Q, Rule AL]
+
+---
+
+## FOLLOW-729 — `apps/intent-engine`'s chat-NLP endpoint cannot run on localhost: it exists only as a Modal-native `@modal.fastapi_endpoint()`, so the chat→intent→archetype loop is dark for local dev even though every piece of it is otherwise built
+
+source_retro: (none — direct product-priority request, Piotr, 2026-07-29) source_ticket: none
+recommended_sprint: now recommended_agent: ml-engineer priority: P1 estimated_hours: 3 depends_on:
+[] promoted_to_queue: true (session 79, 2026-07-29 — dispatched directly to ml-engineer per Piotr's
+explicit "idź dalej, zrób ten ticket")
+
+Piotr's stated priority (2026-07-29): Adaptive Listings should work 100% end-to-end on localhost,
+including reading live chat and interpreting buyer messages, used to (1) refine the archetype after
+quiz completion and (2) identify the archetype from chat alone when the quiz is disabled/unanswered.
+
+**Both consumer-side mechanisms already exist and are correct** — this is not a design gap:
+`apps/control-plane/src/app/api/adapt/route.ts:1508-1535,1563` reads the Redis chat-intent shadow
+key unconditionally; `packages/sdk/src/core/adapt.ts:863-888` → `applyChatIntentPrior`
+(`packages/sdk/src/core/intent.ts:1353-1403`) does a real multiplicative Bayesian update on
+`intentState.archetype`, chat-weighted equally to quiz per §D.7 — the SAME mechanism serves both
+"refine after quiz" and "identify when quiz is off" (a neutral starting state is just another
+prior). `archetype_hint` then drives `runDecisionTree`/`buildReorderDirective`. The design question
+that used to gate this ("shadow-only pending DPIA") is **resolved**, not open: ESC-042 (CEO ruling
+2026-07-27) accepted the client-loop as the live path, deleted the vestigial `CHAT_NLP_LIVE` flag
+(PR #613, `5ab923b`), corrected the "shadow-only" docstrings. No DPIA blocker remains for the
+first-party single-tenant pilot (superseded by the 2026-06-24 single-tenant ruling too).
+
+**The actual blocker is that the producer side never runs anywhere reachable locally.** The ingest
+Worker calls `MODAL_CHAT_NLP_URL`, which is meant to point at `apps/intent-engine`'s deployed Modal
+endpoint — but `.github/workflows/modal-deploy.yml` only deploys `llm-gateway`, not
+`estalara-intent-engine` (ESC-042 item 1, still OPEN, prod-deploy-scoped, operator action). Without
+it, no `MODAL_CHAT_NLP_URL` value — prod or local — is a no-op or missing, and the shadow key
+(`write_shadow_intent`) is never written, so `applyChatIntentPrior` always sees nothing to apply.
+
+**Confirmed: `apps/intent-engine` cannot run via plain `uvicorn` today.** `chat_nlp_endpoint`
+(`apps/intent-engine/src/main.py:108`) is built with `@modal.fastapi_endpoint()` stacked on
+`@app.function()` — Modal's own ASGI synthesis, not a bare `FastAPI()` instance; there is no
+`fastapi_app` object to hand to a local server. `modal serve` is the Modal-native local-dev path,
+but it still requires Modal credentials and produces an ephemeral tunnel URL, not `localhost:PORT`.
+
+**But the computation itself has zero Modal coupling** — `nlp.extract_intent`
+(`apps/intent-engine/src/nlp.py`) and `redis_writer.write_shadow_intent`
+(`apps/intent-engine/src/redis_writer.py`) are plain Python functions, dependent only on
+`anthropic`, `upstash-redis`, `pydantic`, and 4 env vars (`ANTHROPIC_API_KEY`,
+`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `INTERNAL_API_SECRET`) — all 4 already have
+placeholder lines in the repo-root `.env.example` (lines 46-117). No other Modal app in this repo
+has a documented local-dev precedent (repo-wide grep for "modal serve" returns zero hits) — this
+ticket sets the first one.
+
+**AC:** (1) add `apps/intent-engine/src/local_dev.py` — a bare FastAPI app exposing
+`POST /chat_nlp_endpoint`, calling `nlp.extract_intent` + `redis_writer.write_shadow_intent`
+directly (no Modal, no `.spawn()`), reusing `main.py`'s existing auth/validation logic (import it,
+don't re-derive it — if it can't be imported cleanly because of Modal-decorator coupling, duplicate
+the minimum with a comment pointing at `main.py` as the source of truth and a note that the two must
+be kept in step); (2) a short local-dev doc (README section or `docs/runbooks/` note) stating the 4
+required env vars, the `uvicorn apps.intent_engine.src.local_dev:app --port <N>` run command, and
+what to set `MODAL_CHAT_NLP_URL` to locally so the ingest Worker's dev config picks it up; (3) one
+smoke test or documented manual step proving a POSTed chat message round-trips into the real Redis
+shadow key format `write_shadow_intent` writes (verifiable via `readShadowChatIntent` or direct
+Upstash inspection) — reuse the existing "Redis shadow round-trip" CI gate's fixture shape if
+practical, don't invent a new shadow-key schema; (4) explicitly OUT of scope: deploying to Modal
+(ESC-042 item 1 stays as-is, this ticket does not resolve it), the batch tier
+(`apps/intent-engine/src/jobs/batch_enrich.py` if it exists — check first), and any change to
+`main.py`'s production Modal wiring — this is additive-only, a new local-only entrypoint file, not a
+refactor of the deployed path; (5) confirm real dev-tier credentials exist or can be obtained (a dev
+Upstash Redis instance + a usable Anthropic key) — if neither exists, say so plainly in the PR
+rather than shipping a shim nobody can actually run, and escalate the credentials gap separately if
+needed (this is a credentials/operator step, not a code gap, per the investigation that produced
+this ticket).
+
+**Not a duplicate of ESC-042** — ESC-042 is the prod Modal deploy; this ticket is a local-only
+addition that unblocks Piotr seeing the full chat→intent→archetype loop on his own machine without
+waiting on that prod deploy or Modal credentials for production.
+
+cross_ref: [ESC-042, Rule N]

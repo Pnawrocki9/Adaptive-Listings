@@ -1,5 +1,96 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-29 (session 79 continued — RETRO-232 filed (Rules AL/AM promoted;
+
+FOLLOW-726/727/728 correct 2 wrong AC3 verdicts in FOLLOW-723's own PR); FOLLOW-729 dispatched)
+
+**Standing priority (Piotr, 2026-07-29, direct instruction — not from a retro):** Adaptive Listings
+should work 100% end-to-end on localhost, including reading live chat and interpreting buyer
+messages, feeding archetype refinement post-quiz OR archetype identification when the quiz is
+disabled/unanswered. Investigation (this session) found the consumer-side logic for both is already
+built and CEO-cleared (ESC-042) — the only real gap is that `apps/intent-engine` (the chat-NLP
+producer) never runs anywhere reachable locally. Filed + dispatched **FOLLOW-729** to close that
+gap. See `backlog/FOLLOW_UPS.md` → `## FOLLOW-729` for the full writeup. Session memory:
+`project_localhost_100pct_chat_archetype_priority` (Piotr's memory system, not this repo).
+
+**RETRO-232 (FOLLOW-723 / PR #640) — important self-correction, read before touching either consent
+gate again.** The retrospective independently re-verified this session's own FOLLOW-723 fix and
+found the fix itself (AC1/2/5/6) is sound, but **2 of the 5 AC3 audit verdicts this session wrote as
+inline comments are wrong**, both proven in a sandbox: (1) `check-consent-text-sync.mjs`'s claim
+that the 3 `libSrc`-targeting self-test cases are safe on file-wide `mustReplace` because "no
+narrower region exists to scope to" is **false** — `lib.ts:113-126` already quotes policed phrases
+in a docblock outside the extracted template literal, the same self-regenerating trap as RETRO-231's
+finding, just one file over; (2) `check-consent-contract-sync.mjs` case (a)'s recorded trigger
+condition ("a second literal match across GET/POST") is narrower than the real one — POST's copy is
+reachable from _any_ earlier match in the whole file, including a plausible refactor extracting the
+201-response builder. Filed **FOLLOW-726/727/728** (P1/P1/P3) to fix both plus a related
+END-sentinel test gap. Promoted **Rule AL** (region-blind assertion) and **Rule AM** (self-test
+fixtures must not mutate the live source the gate polices) to `CONVENTIONS_PATCH.md`. **FOLLOW-717
+sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger it as previously
+assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
+RETRO-232.
+
+### FOLLOW-729 — status: IN_PROGRESS
+
+**assigned_to:** ml-engineer **model: Sonnet** — routine, well-scoped addition (one new local-only
+FastAPI entrypoint file reusing existing, already-correct logic; no design decision, no cross-module
+contract change) inside ml-engineer's existing ownership of `apps/intent-engine`. Does not warrant
+Opus per the model-fit table. **started_at:** 2026-07-29. **branch:**
+`ml-engineer/FOLLOW-729-local-intent-engine-dev-shim` (worker creates on start, per
+`docs/AGENT_WORKFLOW.md` branch-first discipline).
+
+**Delegation brief (sent to ml-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-729` (full text, verbatim — P1, 3h, direct product
+  priority from Piotr, not retro-sourced).
+- Read first: `apps/intent-engine/src/main.py` in full (esp. `chat_nlp_endpoint` at `:108` and its
+  auth/validation logic `:109-161`); `apps/intent-engine/src/nlp.py`;
+  `apps/intent-engine/src/redis_writer.py`; the repo-root `.env.example:46-117` for the 4 required
+  env var names; ESC-042 in `backlog/ESCALATIONS.md` for why this is NOT blocked on DPIA or the prod
+  Modal deploy.
+- Root cause: `chat_nlp_endpoint` is built with `@modal.fastapi_endpoint()` stacked on
+  `@app.function()` — Modal's own ASGI synthesis, not a bare `FastAPI()` instance reachable by plain
+  `uvicorn`. The underlying computation (`extract_intent`, `write_shadow_intent`) has zero Modal
+  coupling, so a thin local-only entrypoint is sufficient — no architecture change needed.
+- AC (5 items, verbatim in the ticket stub): (1) add `apps/intent-engine/src/local_dev.py`, a bare
+  FastAPI app exposing `POST /chat_nlp_endpoint` calling the two functions directly, reusing (not
+  re-deriving) `main.py`'s auth/validation logic; (2) short local-dev doc with the 4 env vars, the
+  `uvicorn` run command, and what to set `MODAL_CHAT_NLP_URL` to locally; (3) one smoke
+  test/documented manual step proving a round-trip into the real Redis shadow key format; (4) do NOT
+  touch `main.py`'s production Modal wiring, do NOT deploy to Modal (ESC-042 stays open, unrelated),
+  do NOT touch the batch tier if one exists — additive-only; (5) confirm real dev credentials
+  (Upstash dev instance + Anthropic key) exist or say plainly in the PR if they don't — this is a
+  credentials/operator gap, not a code gap, and the ticket should not silently ship an untestable
+  shim.
+- Scope constraints: do not touch ESC-042 item 1 (prod Modal deploy — separate, operator-owned), do
+  not touch `main.py`'s production wiring, do not invent a new shadow-key schema — reuse the format
+  `write_shadow_intent`/`readShadowChatIntent` already agree on.
+- Completion: worker opens a PR (never commits to `main`). Run locally BEFORE push: the repo's
+  standard `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` PLUS the Python
+  side's own test/lint for `apps/intent-engine` (check `apps/intent-engine/pyproject.toml` for the
+  right commands — mirror what CI's `Test (Python)` matrix runs for this app). Install gitleaks
+  locally (v8.21.2 confirmed working this session,
+  `curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz`)
+  and run it against the diff before pushing — **be careful this ticket adds real dev credential
+  VALUES nowhere** (only variable names/placeholders, same as `.env.example`'s existing pattern).
+  Prettier/black or whatever this app's formatter is, on every touched file. Conventional commit
+  referencing `[FOLLOW-729]`, lowercase subject, header ≤100 chars. PM independently re-runs CI
+  (checking the SPECIFIC PR run, not assuming Rule I status from memory — Rule I is known
+  pre-existing-red, independently reconfirm on THIS PR's run before treating it as non-blocking) and
+  independently attempts the documented local-run smoke step before READY_FOR_REVIEW.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet.)
+
+**1 ticket IN_PROGRESS** (FOLLOW-729) — within the ≤3 guardrail. **Still held on ESC-044:**
+FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
+ruling. **Still OPEN, non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy, distinct
+from FOLLOW-729's local-only scope).
+
+---
+
+<details>
+<summary>Superseded — previous START HERE (session 79, FOLLOW-723 merge)</summary>
+
 ## ▶️ START HERE — resume 2026-07-29 (session 79 — FOLLOW-723 MERGED (#640); retrospective-analyst dispatch next)
 
 **FOLLOW-723 — status: DONE.** PR **#640** merged (squash `82894c1e`), branch deleted, local `main`
@@ -24,6 +115,8 @@ the real untouched repo, `pnpm lint/typecheck/build` green, `pnpm test` green ex
 tests that fail only under full-suite resource contention and pass individually in isolation
 (unrelated package). Gitleaks clean on the diff. **Next action: dispatch retrospective-analyst for
 FOLLOW-723 per the standard per-ticket loop.**
+
+</details>
 
 ---
 

@@ -30,6 +30,55 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
+### FOLLOW-730 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-07-29 (session 79), on Piotr's "zrób tak jak rekomendujesz" —** pulled
+ahead of FOLLOW-731/732/733/734 because until it lands, ESC-045's green-wire ambiguity stays live on
+the exact loop that is Piotr's standing priority, and it is the one item on that list a code change
+can close (the credentials themselves are operator-side).
+
+**assigned_to:** ml-engineer **model: Opus** — not routine: AC1 adds a field to
+`ChatIntentDetectedPayload` (`schemas.py`), a payload contract consumed by a SECOND app through a
+hand-written, non-strict TS interface (`apps/control-plane/src/lib/chat-intent-cache.ts:32-51`), and
+the ticket's dominant risk is **over-fixing** — the stub explicitly warns the blast radius is
+diagnostic, not correctness, and that the Rule R `chatPriorApplied` gate and the archetype path must
+NOT change. Scope restraint under a cross-app contract change is Opus-tier judgement per the
+model-fit table, not Sonnet mechanical work. **started_at:** 2026-07-29. **branch:**
+`ml-engineer/FOLLOW-730-extraction-error-marker` (worker creates on start).
+
+**Delegation brief (sent to ml-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-730` (6 ACs, verbatim — P2, 3h, RETRO-233-sourced).
+  Read `backlog/RETROSPECTIVES.md` → RETRO-233 §4a LG-1/LG-3 and `backlog/ESCALATIONS.md` → ESC-045
+  for why this is being pulled forward.
+- Read first, in full: `apps/intent-engine/src/nlp.py` (esp. `extract_intent` `:318-332` and
+  `_neutral_payload` `:202-218`), `apps/intent-engine/src/schemas.py`,
+  `apps/intent-engine/src/redis_writer.py`, `apps/intent-engine/src/local_dev.py`,
+  `apps/intent-engine/src/main.py` (the prod spawn path — do NOT change its 202-before-extraction
+  contract), and on the consumer side
+  `apps/control-plane/src/lib/chat-intent-cache.ts:32-51,176-191` plus
+  `packages/sdk/src/core/adapt.ts:863-888`.
+- **Hard scope limits.** The marker is DIAGNOSTIC ONLY. Do not change which archetype is applied, do
+  not change `flattenIntentDimensions`' null-dropping, do not touch the Rule R `chatPriorApplied`
+  one-per-session gate, do not alter `extract_intent`'s never-raises contract for the prod spawn
+  path, and do not touch ESC-042 item 1. If a fix looks like it improves adaptation quality, it is
+  out of scope — say so in the PR instead of shipping it.
+- AC5 is a **verify-don't-assume** item: read the TS reader and prove it tolerates the new field; do
+  not reason about it from the type declaration alone.
+- AC6 is **red-first**: land a test that fails before the marker exists and passes after; show both
+  states in the PR body.
+- The batch tier (`src/jobs/batch_enrich.py`) shares `extract_intent` — state explicitly in the PR
+  whether the marker appears on batch-tier payloads too, and whether that is intended.
+- Completion: open a PR (never commit to `main`). Before push: `pytest src/` for
+  `apps/intent-engine` mirroring CI's `Test (Python) (3.12, intent-engine)` step, plus the repo's
+  `pnpm lint`/`typecheck`/`test` if any TS file is touched; black + ruff + prettier on every touched
+  file; gitleaks against the diff. Conventional commit referencing `[FOLLOW-730]`, lowercase
+  subject, header ≤100 chars. Note that `Rule I — wired-or-dead` is pre-existing-red (192 TS
+  violations, red on `main` too) — reconfirm on YOUR PR's run rather than assuming, and expect any
+  new Sentry/marker symbol to be wired to a real call site or it becomes violation 193.
+
+---
+
 ### FOLLOW-729 — status: CODE_COMPLETE_OPERATOR_PENDING (PR #641 merged 2026-07-29, `6f121741` on `main`)
 
 **Code merged; NOT `DONE`.** `apps/intent-engine/src/local_dev.py` is on `main`, so the chat-NLP

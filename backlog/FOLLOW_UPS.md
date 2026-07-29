@@ -21684,7 +21684,8 @@ cross_ref: [ESC-042, Rule N]
 
 source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: now
 recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue:
-false
+true (session 79, 2026-07-29 — pulled ahead of FOLLOW-731..734 on Piotr's "zrób tak jak
+rekomendujesz"; dispatched to ml-engineer on Opus)
 
 `apps/intent-engine/src/nlp.py:318-332` documents `extract_intent` as "Never raises" and catches
 `Exception` → `print(...)` → `_neutral_payload(...)` (`nlp.py:202-218`: all 12 dims `None`,

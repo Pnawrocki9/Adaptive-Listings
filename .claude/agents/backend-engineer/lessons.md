@@ -2200,3 +2200,35 @@ would generalize this beyond just `adapt-get-auth`.
   fails closed" is only a complete argument when the false-positive costs nothing, and here the
   false positive was a destroyed legal record. A grep-able version: any `return` of a 4xx whose
   condition transitively reads a value assigned in a catch block is a CI warning.
+
+---
+
+## 2026-07-28 / FOLLOW-720
+
+- **What I built**: hardened the self-tests of `scripts/check-consent-contract-sync.mjs`
+  (FOLLOW-716) and `scripts/check-consent-text-sync.mjs` (FOLLOW-705) so they no longer false-red on
+  the first CORRECT contract/TOS-version change. Both scripts' `selfTest()` mutated a fixture via
+  `String.replace(literalAnchor, ...)`; when a legitimate change made `literalAnchor` stop matching
+  verbatim, `.replace()` silently no-oped, and the case's `ok === false` assertion failed for the
+  wrong reason, printing `the gate does not detect drift` and blaming the gate. Added a
+  `FixtureStaleError` + `mustReplace()` pair (duplicated in both scripts — no shared module exists
+  between them by design) that throws a distinctly-worded, anchor-naming error instead; re-anchored
+  the two worst offenders (a whole-fenced-block regex, a hardcoded before/after TOS version pair) on
+  a single sentinel-bounded doc row and a dynamically-extracted current value respectively.
+- **Wiring/auth/fail-loud risks I weighed**: (1) whether to build a shared helper module for the two
+  scripts — decided against; they're two small, zero-dependency, standalone CI scripts by design
+  (stated in both file headers), and a shared module for a ~30-line helper used by exactly 2 callers
+  would be the abstraction Rule "Simplicity First" warns against. (2) how to prove the fix without
+  leaving the repo in a bumped/drifted state — did the proof via temporary `Edit`-tool mutations to
+  the real `route.ts` / `HANDOFFS.md` / `lib.ts` / `PRIVACY_NOTICE_TEMPLATE.md`, captured terminal
+  output, then `git checkout --` each file and verified `git diff` was empty before opening the PR;
+  a sandboxed copy would have been safer against a mid-proof crash but the guard-rail's actual
+  requirement (repo state at PR-open time) was verified directly rather than assumed. (3) resisted
+  the temptation to also fix the ROUTE/DOC drift these gates check for (not asked, out of scope,
+  ESC-044-held) — this ticket only touches the self-test's fixture-generation code, never the gates'
+  real comparison logic, so a genuine future drift still reds exactly as before.
+- **A guardrail I'd add**: any self-test case that mutates a fixture via `String.replace` on a
+  literal anchor is itself untested against anchor staleness — a lint rule (or a Rule-H-style CI
+  script) that greps `selfTest()` / `--self-test` functions for bare `.replace(` calls not wrapped
+  in an asserting helper would have caught this class before RETRO-230 needed a sandboxed repro to
+  find it twice.

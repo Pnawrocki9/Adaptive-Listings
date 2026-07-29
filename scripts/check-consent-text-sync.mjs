@@ -246,72 +246,196 @@ function readSources() {
   };
 }
 
+// ── Self-test fixture helpers (FOLLOW-720) ─────────────────────────────────────
+//
+// RETRO-230 §4c TG-1: `versionDrift` used to mutate `libSrc` via `.replace()` anchored on the
+// EXACT CURRENT VALUE of `PLATFORM_REGISTRATION_TOS_VERSION` — the literal this gate exists to let
+// change (FOLLOW-704/710/711). The moment that value is genuinely bumped, the anchor no longer
+// matches, `.replace()` silently no-ops, the "mutated" fixture equals the original, and this
+// case's `ok === false` assertion fails for the WRONG reason — the misleading
+// `the gate does not detect drift` message then blames the gate instead of the stale fixture. The
+// helpers below make a no-op anchor throw loudly with a message that names the fixture as stale,
+// and let `versionDrift` derive its anchor from whatever the CURRENT source assigns rather than a
+// hardcoded literal, so a legitimate prior bump can never make it stale.
+
+class FixtureStaleError extends Error {
+  constructor(where) {
+    super(
+      `SELF-TEST FIXTURE STALE — the anchor for "${where}" no longer appears verbatim in the ` +
+        `current source. This does NOT mean the gate failed to detect drift; it means this ` +
+        `self-test case's fixture predates a later, legitimate change and needs a new anchor. ` +
+        `Update the anchor at ${where}.`,
+    );
+    this.name = 'FixtureStaleError';
+  }
+}
+
+/**
+ * `String.replace` with a literal anchor silently no-ops if the anchor is not found. This wrapper
+ * makes that a loud, correctly-attributed failure instead of a silent no-op mutation.
+ *
+ * @param {string} str
+ * @param {string} anchor
+ * @param {string} replacement
+ * @param {string} where - human-readable pointer to the anchor's source location
+ * @returns {string}
+ */
+function mustReplace(str, anchor, replacement, where) {
+  if (!str.includes(anchor)) throw new FixtureStaleError(where);
+  return str.replace(anchor, replacement);
+}
+
+/**
+ * Runs one self-test case. `fn` returns the assertion result, or throws `FixtureStaleError` if its
+ * fixture mutation could not be applied to the current source — the two outcomes are reported
+ * distinctly by `selfTest()` below instead of both surfacing as "the gate does not detect drift".
+ *
+ * @param {{ name: string, status: 'PASS' | 'FAIL' | 'STALE', detail?: string }[]} results
+ * @param {string} name
+ * @param {() => boolean} fn
+ */
+function runCase(results, name, fn) {
+  try {
+    results.push({ name, status: fn() ? 'PASS' : 'FAIL' });
+  } catch (err) {
+    if (err instanceof FixtureStaleError) {
+      results.push({ name, status: 'STALE', detail: err.message });
+    } else {
+      throw err;
+    }
+  }
+}
+
 // ── Self-test (validates the gate itself) ─────────────────────────────────────
 
 function selfTest() {
   const sources = readSources();
-  const cases = [];
+  /** @type {{ name: string, status: 'PASS' | 'FAIL' | 'STALE', detail?: string }[]} */
+  const results = [];
 
-  cases.push(['unmodified repo state PASSES', runCheck(sources).ok === true]);
+  runCase(results, 'unmodified repo state PASSES', () => runCheck(sources).ok === true);
 
-  const wordDrift = {
-    ...sources,
-    docSrc: sources.docSrc.replace('within 30 days', 'within 60 days'),
-  };
-  cases.push(['doc retention-period drift FAILS', runCheck(wordDrift).ok === false]);
+  runCase(results, 'doc retention-period drift FAILS', () => {
+    const mutated = {
+      ...sources,
+      docSrc: mustReplace(
+        sources.docSrc,
+        'within 30 days',
+        'within 60 days',
+        `${DOC_PATH} — "within 30 days"`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
-  const bracketDrift = {
-    ...sources,
-    docSrc: sources.docSrc.replace("the agency's DSR contact", '[agency DSR contact]'),
-  };
-  cases.push(['reintroduced bracket placeholder FAILS', runCheck(bracketDrift).ok === false]);
+  runCase(results, 'reintroduced bracket placeholder FAILS', () => {
+    const mutated = {
+      ...sources,
+      docSrc: mustReplace(
+        sources.docSrc,
+        "the agency's DSR contact",
+        '[agency DSR contact]',
+        `${DOC_PATH} — "the agency's DSR contact"`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
-  const rendererDrift = {
-    ...sources,
-    libSrc: sources.libSrc.replace('within 30 days', 'within 60 days'),
-  };
-  cases.push(['renderer-side text drift FAILS', runCheck(rendererDrift).ok === false]);
+  runCase(results, 'renderer-side text drift FAILS', () => {
+    const mutated = {
+      ...sources,
+      libSrc: mustReplace(
+        sources.libSrc,
+        'within 30 days',
+        'within 60 days',
+        `${LIB_PATH} — "within 30 days"`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
-  const sentinelGone = {
-    ...sources,
-    docSrc: sources.docSrc.replace(BEGIN_SENTINEL, '<!-- begin consent text'),
-  };
-  cases.push(['removed BEGIN sentinel FAILS', runCheck(sentinelGone).ok === false]);
+  runCase(results, 'removed BEGIN sentinel FAILS', () => {
+    const mutated = {
+      ...sources,
+      docSrc: mustReplace(
+        sources.docSrc,
+        BEGIN_SENTINEL,
+        '<!-- begin consent text',
+        `${DOC_PATH} — BEGIN_SENTINEL`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
-  const versionDrift = {
-    ...sources,
-    libSrc: sources.libSrc.replace(
-      "PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21'",
-      "PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.4-2026-08-01'",
-    ),
-  };
-  cases.push([
-    'TOS version bumped without sentinel update FAILS',
-    runCheck(versionDrift).ok === false,
-  ]);
+  // The version literal this case mutates is exactly what FOLLOW-704/710/711 bump. Anchored on
+  // whatever the CURRENT source assigns — extracted dynamically via the same regex the real check
+  // uses, not hardcoded to today's value — so a legitimate prior bump can never make this stale.
+  runCase(results, 'TOS version bumped without sentinel update FAILS', () => {
+    const versionMatch = sources.libSrc.match(/PLATFORM_REGISTRATION_TOS_VERSION\s*=\s*'([^']+)'/);
+    if (!versionMatch) {
+      throw new FixtureStaleError(`${LIB_PATH} — PLATFORM_REGISTRATION_TOS_VERSION assignment`);
+    }
+    const [currentAssignment, currentVersion] = versionMatch;
+    const bumpedAssignment = currentAssignment.replace(
+      currentVersion,
+      `${currentVersion}-selftest-bumped`,
+    );
+    const mutated = {
+      ...sources,
+      libSrc: mustReplace(
+        sources.libSrc,
+        currentAssignment,
+        bumpedAssignment,
+        `${LIB_PATH} — PLATFORM_REGISTRATION_TOS_VERSION assignment`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
-  const rendererGone = {
-    ...sources,
-    libSrc: sources.libSrc.replace(
-      'export function renderPlatformConsentText',
-      'function renderPlatformConsentTextRenamed',
-    ),
-  };
-  cases.push(['unreadable renderer FAILS CLOSED', runCheck(rendererGone).ok === false]);
+  runCase(results, 'unreadable renderer FAILS CLOSED', () => {
+    const mutated = {
+      ...sources,
+      libSrc: mustReplace(
+        sources.libSrc,
+        'export function renderPlatformConsentText',
+        'function renderPlatformConsentTextRenamed',
+        `${LIB_PATH} — "export function renderPlatformConsentText"`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
 
   let failed = 0;
-  for (const [name, passed] of cases) {
-    console.log(`${passed ? 'PASS ' : 'FAIL '} [self-test] ${name}`);
-    if (!passed) failed++;
+  let stale = 0;
+  for (const r of results) {
+    if (r.status === 'PASS') {
+      console.log(`PASS  [self-test] ${r.name}`);
+    } else if (r.status === 'FAIL') {
+      console.log(`FAIL  [self-test] ${r.name}`);
+      failed++;
+    } else {
+      console.log(`STALE [self-test] ${r.name}`);
+      console.log(`      ${r.detail}`);
+      stale++;
+    }
   }
   console.log('');
   if (failed > 0) {
     console.log(
-      `=== SELF-TEST FAILED (${failed}/${cases.length}) — the gate does not detect drift ===`,
+      `=== SELF-TEST FAILED (${failed}/${results.length}) — the gate does not detect drift ===`,
     );
+  }
+  if (stale > 0) {
+    console.log(
+      `=== SELF-TEST FIXTURE STALE (${stale}/${results.length}) — one or more self-test fixture ` +
+        'anchors predate a later, legitimate change; the gate itself is UNPROVEN either way — ' +
+        'update the named anchor(s) above to match the current source, then re-run ===',
+    );
+  }
+  if (failed > 0 || stale > 0) {
     process.exit(1);
   }
-  console.log(`=== SELF-TEST PASSED (${cases.length}/${cases.length}) ===`);
+  console.log(`=== SELF-TEST PASSED (${results.length}/${results.length}) ===`);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

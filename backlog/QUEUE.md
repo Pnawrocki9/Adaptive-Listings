@@ -1,6 +1,20 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-28 (session 78 continued — FOLLOW-720 PR #639, CI verified — awaiting merge)
+## ▶️ START HERE — resume 2026-07-29 (session 78 continued — FOLLOW-720 MERGED (#639))
+
+**FOLLOW-720 — status: DONE.** PR **#639** merged (squash `a8764ae7`), branch deleted, local `main`
+fast-forwarded. Piotr merged directly (`gh pr merge 639 --squash --delete-branch`) after PM-side CI
+verification AND an independent PM reproduction of the ticket's exact repro case (see the superseded
+section below for the full breakdown). Retrospective-analyst dispatch: pending (next action).
+
+**1 ticket now DONE this session (2nd this session, after FOLLOW-716/#638), 0 IN_PROGRESS.** Still
+held on ESC-044: FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting
+Piotr's CEO/DPO ruling. Free-to-pick pool for next session: FOLLOW-717/718/719/721/722 (RETRO-230
+follow-ups — 720 is done, 717 is the next P1), FOLLOW-700/708 (devops), FOLLOW-702/703/709 (P2).
+
+---
+
+## ▶️ (superseded) resume 2026-07-28 (session 78 continued — FOLLOW-720 PR #639, CI verified — awaiting merge)
 
 **FOLLOW-720 — status: READY_FOR_REVIEW.** PR **#639**
 (`backend-engineer/FOLLOW-720-self-test-fixture-anchors` → `main`) fixes both consent gates'

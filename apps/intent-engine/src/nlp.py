@@ -22,6 +22,12 @@ with Sonnet for a better cross-lingual read.
 Error contract (hard guardrail): on ANY Anthropic exception or JSON parse
 failure, return a NEUTRAL payload (all dims None, confidence 0.0,
 archetype_hint 'neutral'). This function NEVER raises.
+
+FOLLOW-730: that neutral payload is byte-identical to the one a genuinely
+no-signal buyer produces, so every producer path stamps `data_source` on the
+payload (and `extraction_error` on the failure path), and the swallowed
+exception is sent to Sentry when SENTRY_DSN is set. The markers are DIAGNOSTIC
+ONLY — nothing reads them to decide which archetype is applied.
 """
 
 from __future__ import annotations
@@ -32,7 +38,12 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from schemas import ChatIntentDetectedPayload, ChatIntentDimensions
+from schemas import ChatIntentDataSource, ChatIntentDetectedPayload, ChatIntentDimensions
+
+# Set once by _capture_extraction_error on the first captured failure (FOLLOW-730).
+# sentry-sdk is a declared dependency but nothing in this app initialises it, so
+# initialisation is lazy and DSN-gated rather than at import time.
+_sentry_initialised = False
 
 # A single chat message: {"role": "user"|"assistant", "content": str}. Values are
 # typed as Any because callers pass plain dicts whose values are strings (and the
@@ -199,11 +210,27 @@ def _build_system_prompt() -> str:
     )
 
 
-def _neutral_payload(message_count: int, model: str, source: str) -> ChatIntentDetectedPayload:
+def _neutral_payload(
+    message_count: int,
+    model: str,
+    source: str,
+    *,
+    data_source: ChatIntentDataSource,
+    extraction_error: str | None = None,
+) -> ChatIntentDetectedPayload:
     """Build the NEUTRAL fallback payload (all dims null, confidence 0.0).
 
     Returned on empty input or any error. tenant_id/session_id are placeholders;
     the caller overwrites them after extraction.
+
+    Args:
+        data_source: which producer path built this payload (FOLLOW-730). Required
+            and keyword-only on purpose: every caller must state whether this
+            neutral payload is a degraded fallback or a legitimate no-signal
+            result, because the two are otherwise byte-identical (RETRO-233 §4a
+            LG-1).
+        extraction_error: "<classified kind>: <ExceptionClassName>" when
+            data_source is "error_fallback"; None otherwise.
     """
     return ChatIntentDetectedPayload(
         tenant_id="",
@@ -215,7 +242,61 @@ def _neutral_payload(message_count: int, model: str, source: str) -> ChatIntentD
         source="batch" if source == "batch" else "realtime",
         message_count=message_count,
         detected_at=datetime.now(UTC).isoformat(),
+        data_source=data_source,
+        extraction_error=extraction_error,
     )
+
+
+def _classify_extraction_error(exc: Exception) -> str:
+    """Classify a swallowed extraction failure into a coarse, taggable kind.
+
+    Separates the cases an operator acts on differently (FOLLOW-730 AC2):
+    a missing/rotated credential is a config fix, an unparseable response is a
+    prompt/model problem, anything else needs the Sentry event to diagnose.
+    """
+    if isinstance(exc, KeyError) and "API_KEY" in str(exc):
+        return "missing_api_key"
+    if isinstance(exc, ValueError):  # incl. json.JSONDecodeError
+        return "parse_error"
+    return "other"
+
+
+def _capture_extraction_error(
+    exc: Exception, *, model: str, source: str, kind: str, stage: str
+) -> None:
+    """Send a swallowed extraction exception to Sentry, tagged for triage.
+
+    `extract_intent` must never raise, which means its failures are invisible
+    beyond a stdout line. `sentry-sdk` is already a declared dependency but is
+    NOT initialised anywhere in this app, so this helper initialises it lazily
+    and only when `SENTRY_DSN` is set — with the DSN unset it is a deliberate
+    no-op and the payload marker plus the log line remain the only signals.
+
+    Never raises: a telemetry failure must not turn a degraded extraction into a
+    hard error on the production spawn path.
+    """
+    dsn = os.environ.get("SENTRY_DSN")
+    if not dsn:
+        return
+
+    global _sentry_initialised
+    try:
+        import sentry_sdk
+
+        if not _sentry_initialised:
+            sentry_sdk.init(dsn=dsn, traces_sample_rate=0.0)
+            _sentry_initialised = True
+
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag("area", "chat_intent")
+            scope.set_tag("kind", "extraction_error")
+            scope.set_tag("error_kind", kind)
+            scope.set_tag("stage", stage)
+            scope.set_tag("source", source)
+            scope.set_tag("model_family", _model_family(model))
+            sentry_sdk.capture_exception(exc)
+    except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
+        print(f"_capture_extraction_error failed: {telemetry_exc}")
 
 
 def _conversation_text(messages: list[Message]) -> str:
@@ -277,6 +358,11 @@ def _parse_response(
         source="batch" if source == "batch" else "realtime",
         message_count=message_count,
         detected_at=datetime.now(UTC).isoformat(),
+        # A parsed response IS a model read, including when every dimension came
+        # back null — that is the case FOLLOW-730 exists to keep distinguishable
+        # from the error fallback.
+        data_source="model",
+        extraction_error=None,
     )
 
 
@@ -317,19 +403,32 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
 
     Never raises: on empty input, Anthropic error, or parse failure, returns the
     neutral payload (all dims null, confidence 0.0, archetype_hint 'neutral').
+    Which of those paths produced the payload is recorded in `data_source`
+    (FOLLOW-730) — the dimensions are identical either way, so that field is the
+    only thing separating a degraded extraction from a genuinely neutral buyer.
     """
     message_count = len(messages)
     if message_count == 0:
-        return _neutral_payload(message_count, model, source)
+        return _neutral_payload(message_count, model, source, data_source="empty_input")
 
     try:
         raw_text = _call_model(messages, model)
         if not raw_text.strip():
-            return _neutral_payload(message_count, model, source)
+            return _neutral_payload(
+                message_count, model, source, data_source="empty_model_response"
+            )
         payload = _parse_response(raw_text, message_count, model, source)
     except Exception as exc:  # noqa: BLE001 — guardrail: never raise from here.
+        kind = _classify_extraction_error(exc)
         print(f"extract_intent error model={model} source={source}: {exc}")
-        return _neutral_payload(message_count, model, source)
+        _capture_extraction_error(exc, model=model, source=source, kind=kind, stage="primary")
+        return _neutral_payload(
+            message_count,
+            model,
+            source,
+            data_source="error_fallback",
+            extraction_error=f"{kind}: {type(exc).__name__}",
+        )
 
     # §C.3 multilingual fallback: a low-confidence Haiku read on mixed-language
     # input is retried once on Sonnet (better cross-lingual extraction). Only the
@@ -345,5 +444,16 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
                 return _parse_response(retry_raw, message_count, SONNET_MODEL, source)
         except Exception as exc:  # noqa: BLE001 — keep the Haiku result on retry failure.
             print(f"extract_intent multilingual retry error: {exc}")
+            # stage="retry" distinguishes this from a primary-pass failure: the
+            # returned payload below is a real Haiku read, NOT a degraded one, so
+            # it keeps data_source="model" and only the Sentry event records that
+            # the Sonnet upgrade was lost.
+            _capture_extraction_error(
+                exc,
+                model=SONNET_MODEL,
+                source=source,
+                kind=_classify_extraction_error(exc),
+                stage="retry",
+            )
 
     return payload

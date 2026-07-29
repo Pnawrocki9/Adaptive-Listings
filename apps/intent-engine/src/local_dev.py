@@ -145,4 +145,25 @@ async def chat_nlp_endpoint(
     payload.session_id = session_id
     write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
 
+    # FOLLOW-730 AC4 — local-only degraded signal. `extract_intent` never raises,
+    # so before this an absent ANTHROPIC_API_KEY produced a healthy-looking 202
+    # plus a neutral shadow key: a green wire with zero archetype movement, which
+    # is indistinguishable at a glance from a writer/reader Upstash DB mismatch
+    # (RETRO-233 §4a LG-1/LG-3, ESC-045). Surfacing it here is safe ONLY because
+    # this file is local-only: production's endpoint returns 202 before extraction
+    # runs at all, so its contract is untouched and the ingest dispatcher's
+    # `res.ok` check is unaffected in prod.
+    #
+    # The marked payload is still written above on purpose — an operator doing
+    # `GET shadow:{t}:{s}:chat_intent` should see WHY the archetype never moved.
+    if payload.data_source == "error_fallback":
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "degraded",
+                "data_source": payload.data_source,
+                "extraction_error": payload.extraction_error,
+            },
+        )
+
     return JSONResponse(status_code=202, content={"status": "accepted"})

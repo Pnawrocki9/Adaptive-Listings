@@ -31,6 +31,7 @@ if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
 import local_dev  # noqa: E402
+import nlp  # noqa: E402
 import redis_writer as rw  # noqa: E402
 from schemas import ChatIntentDetectedPayload, ChatIntentDimensions  # noqa: E402
 
@@ -123,6 +124,58 @@ async def test_round_trip_writes_real_shadow_key_format(monkeypatch: pytest.Monk
     assert written["archetype_hint"] == "yield_hunter"
     assert written["intent_dimensions"]["purchase_purpose"] == "investment"
     assert written["confidence"] == 0.85
+
+
+async def test_degraded_extraction_returns_502_on_the_wire(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FOLLOW-730 AC4: a swallowed extraction failure is surfaced on the wire in
+    LOCAL mode (502 + `degraded`), so an operator with Upstash provisioned but no
+    Anthropic key no longer sees a healthy-looking 202.
+
+    Runs the REAL `extract_intent` with only `nlp._call_model` failing the way an
+    absent `ANTHROPIC_API_KEY` fails, so the marker is produced by production
+    logic, not by a stubbed payload.
+    """
+    mock_redis_client = MagicMock()
+    monkeypatch.setattr(rw, "_get_redis", lambda: mock_redis_client)
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(side_effect=KeyError("ANTHROPIC_API_KEY")))
+
+    response = await local_dev.chat_nlp_endpoint(
+        body=_VALID_BODY,
+        authorization="Bearer test-internal-secret",
+    )
+
+    assert response.status_code == 502
+    body = json.loads(response.body)
+    assert body["status"] == "degraded"
+    assert body["data_source"] == "error_fallback"
+    assert body["extraction_error"] == "missing_api_key: KeyError"
+
+    # The marked payload is STILL written, so `redis-cli GET <shadow key>` shows
+    # the operator why the archetype never moved.
+    args, _kwargs = mock_redis_client.set.call_args
+    written = json.loads(args[1])
+    assert written["data_source"] == "error_fallback"
+    assert written["archetype_hint"] == "neutral"
+
+
+async def test_healthy_extraction_still_returns_202(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FOLLOW-730 AC4 (negative leg): a successful extraction keeps the 202
+    contract the ingest dispatcher expects — the 502 is degraded-only."""
+    mock_redis_client = MagicMock()
+    monkeypatch.setattr(rw, "_get_redis", lambda: mock_redis_client)
+    monkeypatch.setattr(
+        local_dev,
+        "extract_intent",
+        MagicMock(return_value=_make_fixture_payload()),
+    )
+
+    response = await local_dev.chat_nlp_endpoint(
+        body=_VALID_BODY,
+        authorization="Bearer test-internal-secret",
+    )
+
+    assert response.status_code == 202
+    assert json.loads(response.body) == {"status": "accepted"}
 
 
 async def test_profiling_opt_out_skips_shadow_write(monkeypatch: pytest.MonkeyPatch) -> None:

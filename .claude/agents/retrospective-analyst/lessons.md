@@ -3571,3 +3571,45 @@ this file were permission-blocked in session 61; folded in by the RETRO-225 run,
     private repo without Pro), so "hard CI gate" could be verified as _reporting_ but not as
     _merge-blocking_ — and #633 merged with 2 red checks, which is the observation that keeps that
     caveat honest.
+
+---
+
+## 2026-07-29 / RETRO-231 — FOLLOW-720 (#639), both consent gates' self-test fixtures
+
+- **A finding I almost missed and why.** I nearly accepted the PM's verification wholesale, and it
+  was accurate on every claim it made — the trap was that its claims were about the
+  **contract-sync** repro (a GET `429` both-sides addition, which I reproduced and which genuinely
+  passes 5/5 now). The ticket's headline was "unblocks FOLLOW-704/710/711", and the only way to test
+  _that_ was to stop re-running the repro the ticket quotes and instead **run the fix against the
+  next queued ticket that will exercise it.** I read FOLLOW-710's AC set, saw its fix rewrites the
+  "contacting the agency's DSR contact" sentence, noticed that phrase is also the `bracketDrift`
+  self-test anchor, and simulated it. It reddened — `FAIL`, with the exact misleading banner
+  FOLLOW-720 exists to delete. Generalising: **when a ticket claims to unblock a named downstream
+  ticket, the verification is the downstream ticket's diff, not the upstream ticket's repro.** Two
+  consecutive retros in this chain now (RETRO-230 §4a DG-1, this §4a LG-1) found the gap by leaving
+  the ticket's own scenario.
+- **An axis/chain I had to trace twice.** Twice, both productive. (1) I first assumed the anchor
+  would go `STALE` (the correct, new behaviour) and only found `FAIL` by actually running it — the
+  cause was that `mustReplace` checks `str.includes(anchor)` **file-wide** while the gate compares a
+  **sentinel-delimited slice**, and the phrase survives at `:263` and `:352` outside the block. I
+  had to re-read the fix twice before seeing that the _same PR_ solved this correctly in the sibling
+  script (`insertDocContractLine` is region-scoped by construction) — the asymmetry is the finding,
+  and I'd have missed it if I had audited the two scripts as one unit instead of as two. (2) The
+  P-16 promotion arithmetic: RETRO-230 pre-authorised promotion "on the 2nd numbered-retro
+  sighting", which is _this_ retro. I nearly honoured it. Re-derived it against RETRO-227's
+  P-12/P-14 and RETRO-229's P-15 wording ("promotion on the NEXT sighting", from count 2) and found
+  RETRO-230's clause is drafted **one hop early** relative to the charter's ≥2-PRIOR bar. Declined,
+  and recorded the drift instead of quietly resolving it. **A prior retro's pre-authorisation is not
+  an authorisation — re-derive the arithmetic every time, including against my own predecessors.**
+- **A meta-pattern in how gaps recur across agents.** The consent-gate chain has now displaced four
+  times — prose (226–229) → tuple gate (230) → fixture anchor (720/#639) → **fixture anchor region**
+  (this) — and every hop was closed by an agent that verified the _named_ scenario and shipped. The
+  recurring shape is not carelessness; it is that **the remediation inherits the original's region
+  assumption.** RETRO-230 §3 found Rule AK's `grep -rln` inert for the same reason (a predicate
+  satisfied by matter outside the region it means to inspect); I filed that as P-17 REGION-BLIND
+  ASSERTION with RETRO-230 as its prior. Second meta-note, more uncomfortable: the repo _already
+  solved this class_ — the three shell gates synthesize fixtures in `mktemp -d` and never touch live
+  sources — so the answer was in `scripts/` the whole time, one directory over, and neither the
+  worker nor RETRO-230 nor I looked there until the repo-wide P-16 scan the PM explicitly asked for.
+  **Before filing a fix-the-symptom follow-up, grep the repo for a sibling that does not have the
+  problem; the structural answer is often already a precedent rather than a proposal.**

@@ -21215,3 +21215,180 @@ merges skippable, so the dispatch gap is visible to the skill-upgrade run.
 
 cross_ref: [RETRO-230 §3 / §5a, RETRO-229 §4 DG-1, FOLLOW-715, FOLLOW-685, FOLLOW-700, FOLLOW-708,
 Rule AJ, Rule Q, CLAUDE.md "Per-ticket retrospective loop"]
+
+---
+
+## FOLLOW-723 — `mustReplace` proves the anchor exists somewhere in the FILE; the gate compares only a sentinel-delimited SLICE — so FOLLOW-720's own defect is still live in the text gate, on the ticket it was written to unblock
+
+source_retro: RETRO-231 (PR #639, FOLLOW-720) source_ticket: FOLLOW-720 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+`scripts/check-consent-text-sync.mjs` compares only the bytes between the canonical-consent-text
+BEGIN/END sentinels of `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` (today lines 219–257) against
+the renderer. `mustReplace()` (added by FOLLOW-720) guards against a _missing_ anchor with
+`str.includes(anchor)` over the **whole file** — so an anchor that survives **outside** the compared
+block still satisfies `mustReplace`, the mutation lands outside the region, `runCheck` correctly
+returns `ok === true`, and the case's `ok === false` assertion fails as a **`FAIL`, not a `STALE`**,
+under the verbatim misleading banner FOLLOW-720 existed to remove.
+
+**Live instance, proven in a sandboxed copy of the tree against `main` at `47ecb691` (repo
+untouched).** The `bracketDrift` case anchors on `the agency's DSR contact`, which occurs **three
+times** in that doc: `:249` (inside the gated block), `:263` (the standing "Open disclosure-quality
+finding" blockquote) and `:352` (the v1.6 changelog row) — the latter two added by FOLLOW-705
+itself. Simulating FOLLOW-710/711 done **perfectly** (withdrawal sentence rewritten in BOTH
+`lib.ts:150` and `PRIVACY_NOTICE_TEMPLATE.md:249`, `PLATFORM_REGISTRATION_TOS_VERSION` bumped
+consistently across `lib.ts` and both doc sentinels):
+
+```
+===== REAL CHECK =====   PASS  §6.1 normalizes byte-for-byte to the served consent text.
+                         === CONSENT TEXT IN SYNC — PASS ===
+===== SELF-TEST =====    FAIL  [self-test] reintroduced bracket placeholder FAILS
+                         === SELF-TEST FAILED (1/7) — the gate does not detect drift ===   EXIT=1
+```
+
+The same PR got this **right** in the sibling script: `insertDocContractLine` /
+`removeDocContractLine` (`check-consent-contract-sync.mjs:376-395`, `:406-427`) locate the BEGIN/END
+sentinel pair and operate strictly between the indices. The insight exists; it was applied to one
+script's doc cases and not the other's.
+
+**Why P1 and not P2:** `PRIVACY_NOTICE_TEMPLATE.md` carries an **append-only changelog table that
+quotes consent-text phrases verbatim** when they change (`:352` quotes both of FOLLOW-705's
+substitutions). Performing the change these anchors police _manufactures_ the out-of-block duplicate
+that defeats `mustReplace` for the next anchor — the trap regenerates itself. `within 30 days` is
+unique today (`grep -c` → 1 in the doc, 1 in `lib.ts`) and is safe only until a changelog row quotes
+it.
+
+**Structural alternative to weigh first (repo precedent, not a proposal):** the three other
+self-testing gates — `check-fire-and-forget-sinks.sh:57-92`, `check-modal-app-singleton.sh:68-111`,
+`check-migration-journal.sh:50-160` — build **fully synthetic fixtures in `mktemp -d`** and never
+mutate a live source. They are structurally immune to this whole class. The two consent gates are
+the only ones in `scripts/` that mutate live sources, and **that** — not the anchor style — is the
+root coupling; `mustReplace` treats a symptom.
+
+**AC:** (1) make every fixture mutation in `check-consent-text-sync.mjs` that targets `docSrc`
+assert its anchor **within the region the gate compares**, not file-wide — either by slicing to the
+sentinel block before the `includes`/`replace` (mirroring `insertDocContractLine`'s approach) or by
+switching to a synthesized fixture per the shell-gate precedent; state which and why; (2) red-first
+proof: reproduce the FOLLOW-710/711 simulation above **before** the fix (must show `FAIL` + the
+misleading banner) and **after** (must show either PASS or a correctly-worded `STALE`), in a
+sandboxed copy of the tree, never by mutating the working tree — do NOT use the
+`Edit`-then-`git checkout --` method the FOLLOW-720 author flagged as the riskier one in
+`.claude/agents/backend-engineer/lessons.md:2224`; (3) audit the remaining `mustReplace` call sites
+in BOTH scripts for the same region-blindness and record the verdict per site, including
+`check-consent-contract-sync.mjs`'s case (a), whose `route.ts` 201-return anchor is unique today
+(`grep -c` → 1) but is reached file-wide; (4) **coordinate with FOLLOW-717** — 717 rewrites
+`extractCalls()`/`extractMethodBody()`, i.e. contract-sync's region slicing; if 717 narrows the
+extraction region, case (a)'s anchor must be re-scoped in the same PR or contract-sync inherits this
+exact defect; (5) small hardening in the same pass: replicate `extractDocContract:221-222`'s
+sentinel **uniqueness count** inside `insertDocContractLine`/`removeDocContractLine` (they use bare
+`findIndex`), and add one comment to case (c) stating what property a replacement row anchor must
+have (a coded status in GET whose bare status also appears uncoded in POST) so a future STALE is
+actionable; (6) do NOT touch either gate's real comparison logic, and do NOT touch any ESC-044-held
+artifact (`lib.ts`'s consent text, `PLATFORM_REGISTRATION_TOS_VERSION`,
+`CANONICAL_CONSENT_TEXT_HASH`, `route.ts`).
+
+**Blocks:** FOLLOW-710 + FOLLOW-711 (their text change is the proven trip). Does **not** block
+FOLLOW-704 — re-checked against its AC set, 704 changes no gated byte and no version literal, so
+RETRO-230 §5a's blanket "before FOLLOW-704" note is refuted for 704 specifically (RETRO-231 §4a
+LG-2).
+
+cross_ref: [RETRO-231 §4a LG-1/LG-2, §5, §5a, §6 P-17, RETRO-230 §4c TG-1, FOLLOW-720, FOLLOW-710,
+FOLLOW-711, FOLLOW-717, FOLLOW-705, ESC-044, Rule Q, Rule AE]
+
+---
+
+## FOLLOW-724 — Both consent gates emit a three-valued self-test outcome into a two-valued channel: `STALE` and "the gate is broken" share exit code 1 and a CI step named "proves it detects drift", and the STALE path has never once executed
+
+source_retro: RETRO-231 (PR #639, FOLLOW-720) source_ticket: FOLLOW-720 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-723 (touches
+the same two files; sequence 723 first)] promoted_to_queue: false
+
+FOLLOW-720's entire contribution is a **distinction** — "this fixture is stale" vs "the gate does
+not detect drift". Every consumer downstream of the log body destroys it (RETRO-231 §3,
+HALF_WIRE_P):
+
+1. **Exit code.** `process.exit(1)` fires for `failed > 0 || stale > 0`
+   (`check-consent-text-sync.mjs:436`, `check-consent-contract-sync.mjs:559`) — identical code for
+   opposite diagnoses. The repo **already has the convention**: `check-migration-journal.sh:30`,
+   `check-fire-and-forget-sinks.sh:50` and `check-modal-app-singleton.sh:61` all document and use
+   **`2 = self-test failure (the guard itself is broken)`** distinct from `1`. Neither `.mjs` gate
+   does.
+2. **CI step name.** `ci.yml:546` and `:577` are both named _"Self-test the gate (proves it detects
+   drift…)"_. A `STALE` reaches a PM in `gh pr checks` as a red step whose **name asserts the exact
+   misattribution the PR removed from the log body** — and the step name is what a PM reads first.
+3. **Banner ordering.** When a run yields both a genuine FAIL and a STALE, both banners print and
+   `the gate does not detect drift` prints **first** (`check-consent-text-sync.mjs:434-451`).
+   Observed in sandbox on a one-sided rewording run.
+4. **Header docs.** Neither `.mjs` script documents its exit-code vocabulary; all three shell gates
+   do.
+
+**And the machinery has never run.** `FixtureStaleError`'s construction, `runCase`'s `catch` branch,
+the `STALE` reporting arm, the `SELF-TEST FIXTURE STALE (n/N)` banner and 3 of the 5 throw sites
+(the two sentinel-pair guards + the missing-fence guard) are executed by **no self-test case and no
+CI run** — every run to date prints `5/5` and `7/7` PASS. A typo in the STALE arm would ship
+undetected and the whole PR would be inert. Rule Q one level down: _a diagnosis that is never
+rendered is not a diagnosis._ RETRO-231 proved it works by sandbox (rewording the unique
+`within 30 days` anchor → correctly-worded `STALE`, `EXIT=1`) — which is the verification the PR
+could have carried in-tree, since a self-test is the one place a deliberately-stale fixture is
+trivially constructible in memory.
+
+**AC:** (1) adopt the repo's documented exit-code convention in both `.mjs` gates — `0` pass, `1`
+real drift / gate broken, `2` fixture stale (guard unproven) — and document the vocabulary in each
+file header, matching `check-migration-journal.sh:28-30`'s shape; (2) suppress the
+`the gate does not detect drift` banner when `failed === 0`, and print the STALE banner first when
+both occur; (3) rename the two CI steps so the name does not assert a conclusion the run may
+contradict (e.g. "Self-test the gate — detects drift AND fixtures current"), and confirm the job
+still hard-fails (no `continue-on-error`) for both exit `1` and exit `2`; (4) add executable
+coverage for the STALE path itself — at least one self-test case per script that feeds a
+deliberately-stale in-memory anchor through `runCase` and asserts the result is `STALE` (not
+`FAIL`), so the fail-loud machinery is observed failing on every CI run; (5) keep both scripts' real
+comparison logic untouched; (6) sequence after FOLLOW-723 to avoid a three-way conflict in the same
+two files.
+
+cross_ref: [RETRO-231 §3, §4a LG-3, §4c TG-1, §4d DD-1/DD-2, §6 (Rule AJ), FOLLOW-720, FOLLOW-723,
+FOLLOW-725, Rule Q, Rule AJ]
+
+---
+
+## FOLLOW-725 — Three byte-identical helpers now live in two same-runtime gate scripts with no parity mechanism, in the gap between Rule J's scope and Rule K.1's
+
+source_retro: RETRO-231 (PR #639, FOLLOW-720) source_ticket: FOLLOW-720 recommended_sprint: next
+recommended_agent: backend-engineer priority: P3 estimated_hours: 2 depends_on: [FOLLOW-723,
+FOLLOW-724 (both will edit one copy; do this after, or it gates a moving target)] promoted_to_queue:
+false
+
+PR #639 duplicated `FixtureStaleError` (455 chars), `mustReplace` (165) and `runCase` (277)
+**byte-identically** into `scripts/check-consent-contract-sync.mjs` and
+`scripts/check-consent-text-sync.mjs` (verified by AST-slice comparison, not by eye). The PR's
+justification is reasonable on its own terms — two standalone zero-dependency scripts, ~30 lines,
+two callers, and "Simplicity First" argues against a shared module — but it ships **no parity
+mechanism**, and this repo has one: `scripts/check-mirror-files.sh` + `scripts/mirror-files.json`
+(Rule J), currently declaring 2 pairs.
+
+Neither existing rule reaches it: **Rule J** is scoped to `apps/decision-api/src/lib/`
+_cross-runtime_ mirrors (`CONVENTIONS_PATCH.md:405-409`), and these are two same-runtime
+`scripts/*.mjs`; **Rule K.1** is scoped to a "metric or business value" (`:458-465`), and a
+test-harness helper is not one. Net: a declared-identical pair with no gate — the exact pattern Rule
+J was minted for, in a location neither rule covers. K.1 has been scope-amended once before for a
+shape its framing missed (the 2026-06-03 TS-map ↔ inline-SQL amendment, RETRO-030); this is a second
+such shape (gate/tooling code), recorded at count 1 toward a future amendment, **not** promoted.
+
+The divergence is not theoretical: **FOLLOW-723 will edit the text-sync copy only**, and FOLLOW-724
+edits both. A one-sided improvement here is silent — a fixed `mustReplace` in one gate and a
+region-blind one in the other produces no CI signal at all.
+
+**AC:** (1) decide and record ONE of: (a) add the pair to `scripts/mirror-files.json` with a
+strategy that compares only the shared helper region (the manifest already supports a narrowed
+`strip_comments: false` signature-subset mode — see its `reorder.ts` entry's `note`), (b) extract
+the triplet to a single `scripts/lib/selftest-fixtures.mjs` and import from both (re-litigating the
+PR's "no shared module" call now that a third gate is foreseeable — `CONVENTIONS_PATCH.md:2605`
+names `check-consent-contract-sync.mjs` as "the reference shape" for future out-of-repo-contract
+gates), or (c) accept the duplication with a recorded rationale plus a top-of-block JSDoc in each
+copy naming the other; (2) whichever is chosen, both copies must name each other in a comment so the
+next editor sees the obligation from the file being edited (Rule AI's spirit); (3) if (a) or (b),
+prove the gate fires: red-first with a one-character divergence between the copies; (4) do not
+change either helper's behaviour in this ticket.
+
+cross_ref: [RETRO-231 §4c TG-2, §6, RETRO-030 (the prior K.1 scope amendment), RETRO-003 / RETRO-005
+(Rule J's evidence), FOLLOW-720, FOLLOW-723, FOLLOW-724, FOLLOW-721, Rule J, Rule K.1, Rule AI]

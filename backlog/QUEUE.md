@@ -30,7 +30,7 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
-### FOLLOW-729 — status: IN_PROGRESS
+### FOLLOW-729 — status: READY_FOR_REVIEW → PR #641
 
 **assigned_to:** ml-engineer **model: Sonnet** — routine, well-scoped addition (one new local-only
 FastAPI entrypoint file reusing existing, already-correct logic; no design decision, no cross-module
@@ -79,12 +79,41 @@ Opus per the model-fit table. **started_at:** 2026-07-29. **branch:**
   pre-existing-red, independently reconfirm on THIS PR's run before treating it as non-blocking) and
   independently attempts the documented local-run smoke step before READY_FOR_REVIEW.
 
-**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet.)
+**CI-check counter:** 1/5. **Fix-iteration counter:** 0/3.
 
-**1 ticket IN_PROGRESS** (FOLLOW-729) — within the ≤3 guardrail. **Still held on ESC-044:**
-FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
-ruling. **Still OPEN, non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy, distinct
-from FOLLOW-729's local-only scope).
+**PM validation (2026-07-29, session 79 continued — a terminal close interrupted the worker and left
+its output uncommitted in the main working tree; nothing was lost, all 4 files were present and
+complete).** PR **#641** opened from `ml-engineer/FOLLOW-729-local-intent-engine-dev-shim` (+369/-0,
+4 files, additive-only: `src/local_dev.py`, `src/test_local_dev.py`, `README.md`, `pyproject.toml`
+dev-extra `uvicorn`).
+
+- **CI green except Rule I**, independently re-verified on THIS PR's run (not assumed from memory):
+  `Test (Python) (3.12, intent-engine)` pass, `Test (Node 22)` pass, `Typecheck` pass, `SDK E2E`
+  pass, every Rule gate + Vercel pass. `Rule I — wired-or-dead` fails with 192 violations, **all 192
+  TypeScript symbols in `packages/sdk` / `packages/shared`** — this PR's diff contains zero TS, and
+  the same job is the failing job on `main`'s latest CI run (30433133673). Pre-existing-red
+  reconfirmed, non-blocking.
+- **PM independently ran the documented local smoke step**, not just the unit tests:
+  `uvicorn local_dev:app --port 8090 --app-dir src` boots verbatim as documented; `GET /health` →
+  `{"service":"estalara-intent-engine-local-dev","status":"active"}`; unauthenticated POST → 401;
+  authenticated short-body POST → 400 with the expected missing-fields detail. Local `pytest src/` →
+  31 passed / 2 skipped; `black --check`, `mypy src/local_dev.py`, `ruff` on both new files and
+  prettier on the README all clean; gitleaks v8.21.2 `protect --staged` → no leaks.
+- **AC5 (credentials) confirmed OPEN and correctly reported in the PR, not papered over.** A fully
+  authenticated POST returns 500 with `extract_intent error … 'ANTHROPIC_API_KEY'` — no dev-tier
+  Anthropic key and no dev Upstash instance are provisioned. Operator/credentials gap, not a code
+  gap; the shim fails loud. **This is the remaining blocker on Piotr's "100% on localhost" priority
+  once #641 merges** — the runner must supply an `ANTHROPIC_API_KEY` plus an Upstash instance, and
+  per `docs/runbooks/upstash-redis-env-parity.md` the writer's `UPSTASH_REDIS_REST_URL`/`_TOKEN`
+  must point at the SAME database as the control-plane reader's `UPSTASH_REDIS_URL`/`_TOKEN`.
+- Noted, not fixed (pre-existing, unrelated): `ruff check src/` reports one `E402` in
+  `src/test_chat_nlp_endpoint.py:22` (missing `# noqa: E402`); ruff does not run in CI.
+- ESC-042 item 1 (prod Modal deploy) untouched and still OPEN, as scoped.
+
+**1 ticket READY_FOR_REVIEW** (FOLLOW-729, PR #641) — within the ≤3 guardrail. **Still held on
+ESC-044:** FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's
+CEO/DPO ruling. **Still OPEN, non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy,
+distinct from FOLLOW-729's local-only scope).
 
 ---
 

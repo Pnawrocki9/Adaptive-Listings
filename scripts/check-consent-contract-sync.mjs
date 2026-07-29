@@ -385,8 +385,15 @@ function insertDocContractLine(docSrc, method, line) {
   const lines = docSrc.split('\n');
   const beginIdx = lines.findIndex((l) => l.trim() === begin);
   const endIdx = lines.findIndex((l) => l.trim() === end);
-  if (beginIdx === -1 || endIdx === -1) {
-    throw new FixtureStaleError(`${method} BEGIN/END sentinel pair in ${DOC_PATH}`);
+  const beginCount = lines.filter((l) => l.trim() === begin).length;
+  const endCount = lines.filter((l) => l.trim() === end).length;
+  // FOLLOW-723: mirror extractDocContract's own uniqueness invariant (lines 224-230 above) —
+  // a bare findIndex would silently match the FIRST occurrence of a duplicated sentinel line
+  // (e.g. if it were ever quoted in prose elsewhere) instead of failing loud on the ambiguity.
+  if (beginCount !== 1 || endCount !== 1 || beginIdx === -1 || endIdx === -1) {
+    throw new FixtureStaleError(
+      `${method} BEGIN/END sentinel pair in ${DOC_PATH} (found ${beginCount} BEGIN / ${endCount} END)`,
+    );
   }
   let fenceIdx = -1;
   for (let i = endIdx - 1; i > beginIdx; i--) {
@@ -418,8 +425,15 @@ function removeDocContractLine(docSrc, method, line) {
   const lines = docSrc.split('\n');
   const beginIdx = lines.findIndex((l) => l.trim() === begin);
   const endIdx = lines.findIndex((l) => l.trim() === end);
-  if (beginIdx === -1 || endIdx === -1) {
-    throw new FixtureStaleError(`${method} BEGIN/END sentinel pair in ${DOC_PATH}`);
+  const beginCount = lines.filter((l) => l.trim() === begin).length;
+  const endCount = lines.filter((l) => l.trim() === end).length;
+  // FOLLOW-723: mirror extractDocContract's own uniqueness invariant (lines 224-230 above) —
+  // a bare findIndex would silently match the FIRST occurrence of a duplicated sentinel line
+  // (e.g. if it were ever quoted in prose elsewhere) instead of failing loud on the ambiguity.
+  if (beginCount !== 1 || endCount !== 1 || beginIdx === -1 || endIdx === -1) {
+    throw new FixtureStaleError(
+      `${method} BEGIN/END sentinel pair in ${DOC_PATH} (found ${beginCount} BEGIN / ${endCount} END)`,
+    );
   }
   let targetIdx = -1;
   for (let i = beginIdx + 1; i < endIdx; i++) {
@@ -469,6 +483,17 @@ function selfTest() {
   runCase(results, 'unmodified repo state PASSES', () => runCheck(sources).ok === true);
 
   // (a) route emits a status/code the doc does not document — undocumented ADDITION.
+  //     FOLLOW-723 AC3 audit: this `mustReplace` targets `routeSrc` file-wide (`str.includes` /
+  //     `.replace()` over the whole file), while the real check slices per-method via
+  //     `extractMethodBody` before `extractCalls` runs. Verdict: SAFE TODAY, NOT STRUCTURALLY —
+  //     the anchor line is unique in `route.ts` (`grep -c` → 1), so the file-wide replace lands in
+  //     POST's body, the only place it exists. This is the same class of region-blindness FOLLOW-723
+  //     fixed in `check-consent-text-sync.mjs`'s `docSrc` cases, just not (yet) manufactured here —
+  //     `route.ts` carries no append-only changelog that quotes return statements verbatim, so
+  //     nothing regenerates a duplicate the way `PRIVACY_NOTICE_TEMPLATE.md` did for the doc gate.
+  //     If a future change ever produces a second literal match of this anchor across GET/POST, this
+  //     case must be re-scoped to `extractMethodBody(routeSrc, 'POST')` first, mirroring
+  //     `mustReplaceInDocBlock` — do not assume file-wide uniqueness holds by construction.
   runCase(results, 'route-side undocumented addition (POST 201 + new code) FAILS', () => {
     const anchor = 'return NextResponse.json({ consent_record_id: recordId }, { status: 201 });';
     const mutated = {
@@ -500,6 +525,13 @@ function selfTest() {
   //     (anchored on that row's exact text, not the whole fenced block) so ONLY the POST block
   //     still lists a 409 (uncoded) — this must still fail, because GET's 409 must be documented
   //     in GET's OWN block, not "covered" by POST's 409 entry existing somewhere in the file.
+  //     FOLLOW-723: if this row's anchor (`409 brand_identity_not_provisioned`) ever needs
+  //     replacing, the replacement's STATUS must have this exact shape for the case to still mean
+  //     anything — CODED in one method's block (e.g. GET's `409 <code>`) and the SAME BARE STATUS,
+  //     UNCODED, in the other method's block (e.g. POST's plain `409`). Without that pairing,
+  //     removing the row only exercises "a documented tuple went missing", not the cross-method
+  //     bleed-through this case exists to catch, and a future STALE here would not be actionable
+  //     without re-deriving that property from scratch.
   runCase(
     results,
     'GET contract block missing its own 409 row FAILS even though POST documents a 409 (methods scoped separately)',
@@ -515,6 +547,12 @@ function selfTest() {
 
   // Sentinel-removal fail-closed check, same shape as check-consent-text-sync.mjs. Anchored on the
   // sentinel text itself — the exact thing being removed — which is inherently stable.
+  // FOLLOW-723 AC3 audit: this `mustReplace` targets `docSrc` (`backlog/HANDOFFS.md`) file-wide.
+  // Verdict: SAFE — `DOC_SENTINELS.GET.begin` is a full unique HTML-comment token
+  // (`grep -c` → 1 in `backlog/HANDOFFS.md` today), unlike a short prose phrase, so there is no
+  // append-only-changelog-style mechanism in this doc that could regenerate a duplicate of a full
+  // sentinel line the way `PRIVACY_NOTICE_TEMPLATE.md`'s changelog regenerated bracketDrift's
+  // anchor. No region-scoping needed here.
   runCase(results, 'removed GET BEGIN sentinel FAILS', () => {
     const mutated = {
       ...sources,

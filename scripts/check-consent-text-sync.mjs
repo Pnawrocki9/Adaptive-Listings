@@ -285,6 +285,100 @@ function mustReplace(str, anchor, replacement, where) {
   return str.replace(anchor, replacement);
 }
 
+// ── docSrc-targeting self-test fixture helpers, region-scoped (FOLLOW-723) ────────────────────
+//
+// RETRO-231 §4a LG-1/LG-2: `mustReplace` above proves an anchor exists SOMEWHERE IN THE FILE
+// (`str.includes`) and mutates the FIRST occurrence in the file (`str.replace`) — but `runCheck`
+// only ever compares the bytes strictly between the BEGIN/END sentinels (`extractDocBlock`). An
+// anchor that also occurs OUTSIDE that block (e.g. `PRIVACY_NOTICE_TEMPLATE.md`'s "Open
+// disclosure-quality finding" blockquote and its append-only changelog table both quote §6.1
+// phrases verbatim once they change) still satisfies `str.includes`, and if that out-of-region
+// occurrence sorts earlier in the file than the in-region one, `str.replace` silently mutates it
+// instead — the fixture then diverges from the real text, `runCheck` correctly still says PASS
+// (nothing in the compared block changed), and the case's `ok === false` assertion fails as a
+// `FAIL` under the exact misleading "the gate does not detect drift" banner FOLLOW-720 existed to
+// remove. Proven live for the `bracketDrift` case: "the agency's DSR contact" occurs 3× in the doc
+// today (in-region + two out-of-region mentions added by FOLLOW-705 itself).
+//
+// The two helpers below locate the sentinel-delimited block/line the same way `extractDocBlock`
+// does (line-prefix match, uniqueness-checked) and scope every docSrc mutation to it, so an
+// out-of-region duplicate of the same anchor text can never satisfy or silently redirect a
+// docSrc-targeting case. libSrc-targeting cases (`renderer-side text drift`, `TOS version bumped`,
+// `unreadable renderer`) still use `mustReplace` above unchanged: `extractRendererTemplate`'s own
+// extraction is itself a whole-`libSrc`-first-match regex (no narrower region exists to scope to),
+// so a whole-file `mustReplace` already mirrors what the real check does for those three anchors.
+
+/**
+ * Finds the unique BEGIN/END sentinel line indices in `docSrc`, using the exact same invariant
+ * `extractDocBlock` enforces (§6.1.1 N1: exactly one BEGIN line, one END line, BEGIN before END).
+ * Throws `FixtureStaleError` (not a raw Error) so a broken sentinel pair reports as a stale fixture,
+ * not a false "gate does not detect drift".
+ *
+ * @param {string} docSrc
+ * @param {string} where - human-readable pointer for FixtureStaleError messages
+ * @returns {{ lines: string[], beginIdx: number, endIdx: number }}
+ */
+function locateDocSentinelLines(docSrc, where) {
+  const lines = docSrc.split('\n');
+  const beginIdx = lines.findIndex((l) => l.startsWith(BEGIN_SENTINEL));
+  const endIdx = lines.findIndex((l) => l.startsWith(END_SENTINEL));
+  const beginCount = lines.filter((l) => l.startsWith(BEGIN_SENTINEL)).length;
+  const endCount = lines.filter((l) => l.startsWith(END_SENTINEL)).length;
+  if (beginCount !== 1 || endCount !== 1 || endIdx < beginIdx) {
+    throw new FixtureStaleError(
+      `${where} — could not uniquely locate the BEGIN/END sentinel pair (found ${beginCount} BEGIN / ${endCount} END)`,
+    );
+  }
+  return { lines, beginIdx, endIdx };
+}
+
+/**
+ * `mustReplace`, scoped STRICTLY to the sentinel-delimited block — the bytes strictly between the
+ * BEGIN and END sentinel lines, excluding both — which is exactly what `extractDocBlock`/`runCheck`
+ * compare. Throws `FixtureStaleError` if the anchor does not appear INSIDE that block, even if it
+ * appears elsewhere in the file: a mutation the real gate cannot see must not silently satisfy this
+ * self-test (FOLLOW-723).
+ *
+ * @param {string} docSrc
+ * @param {string} anchor
+ * @param {string} replacement
+ * @param {string} where
+ * @returns {string}
+ */
+function mustReplaceInDocBlock(docSrc, anchor, replacement, where) {
+  const { lines, beginIdx, endIdx } = locateDocSentinelLines(docSrc, where);
+  const block = lines.slice(beginIdx + 1, endIdx).join('\n');
+  if (!block.includes(anchor)) throw new FixtureStaleError(where);
+  const mutatedBlockLines = block.replace(anchor, replacement).split('\n');
+  const out = [...lines.slice(0, beginIdx + 1), ...mutatedBlockLines, ...lines.slice(endIdx)];
+  return out.join('\n');
+}
+
+/**
+ * `mustReplace`, scoped to the BEGIN sentinel LINE ITSELF — located the same way `extractDocBlock`
+ * locates it (`line.startsWith(BEGIN_SENTINEL)`), not by a whole-file substring search. A whole-file
+ * `str.includes(anchor)` would also match the sentinel's literal syntax anywhere it is quoted in
+ * prose elsewhere in the doc (e.g. the §6.1.1 N1 spec row: "the `<!-- BEGIN CANONICAL CONSENT
+ * TEXT … -->`" line), and a whole-file `.replace()` mutates whichever occurrence sorts first in the
+ * file — today that happens to be the real sentinel line, but only because it appears earlier in
+ * the file than every other mention, an ordering coincidence the real gate does not rely on and this
+ * self-test must not either (FOLLOW-723).
+ *
+ * @param {string} docSrc
+ * @param {string} anchor
+ * @param {string} replacement
+ * @param {string} where
+ * @returns {string}
+ */
+function mustReplaceBeginSentinelLine(docSrc, anchor, replacement, where) {
+  const { lines, beginIdx } = locateDocSentinelLines(docSrc, where);
+  const line = lines[beginIdx];
+  if (!line.includes(anchor)) throw new FixtureStaleError(where);
+  const out = lines.slice();
+  out[beginIdx] = line.replace(anchor, replacement);
+  return out.join('\n');
+}
+
 /**
  * Runs one self-test case. `fn` returns the assertion result, or throws `FixtureStaleError` if its
  * fixture mutation could not be applied to the current source — the two outcomes are reported
@@ -318,11 +412,11 @@ function selfTest() {
   runCase(results, 'doc retention-period drift FAILS', () => {
     const mutated = {
       ...sources,
-      docSrc: mustReplace(
+      docSrc: mustReplaceInDocBlock(
         sources.docSrc,
         'within 30 days',
         'within 60 days',
-        `${DOC_PATH} — "within 30 days"`,
+        `${DOC_PATH} §6.1 block — "within 30 days"`,
       ),
     };
     return runCheck(mutated).ok === false;
@@ -331,11 +425,11 @@ function selfTest() {
   runCase(results, 'reintroduced bracket placeholder FAILS', () => {
     const mutated = {
       ...sources,
-      docSrc: mustReplace(
+      docSrc: mustReplaceInDocBlock(
         sources.docSrc,
         "the agency's DSR contact",
         '[agency DSR contact]',
-        `${DOC_PATH} — "the agency's DSR contact"`,
+        `${DOC_PATH} §6.1 block — "the agency's DSR contact"`,
       ),
     };
     return runCheck(mutated).ok === false;
@@ -357,11 +451,11 @@ function selfTest() {
   runCase(results, 'removed BEGIN sentinel FAILS', () => {
     const mutated = {
       ...sources,
-      docSrc: mustReplace(
+      docSrc: mustReplaceBeginSentinelLine(
         sources.docSrc,
         BEGIN_SENTINEL,
         '<!-- begin consent text',
-        `${DOC_PATH} — BEGIN_SENTINEL`,
+        `${DOC_PATH} — BEGIN_SENTINEL line`,
       ),
     };
     return runCheck(mutated).ok === false;

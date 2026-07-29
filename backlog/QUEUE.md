@@ -1,6 +1,111 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-29 (session 78 continued — FOLLOW-720 MERGED (#639))
+## ▶️ START HERE — resume 2026-07-29 (session 78 continued — FOLLOW-720 MERGED (#639); RETRO-231 filed; FOLLOW-723 dispatched)
+
+**FOLLOW-720 — status: DONE.** PR **#639** merged (squash `a8764ae7`). **RETRO-231 filed**
+(`2b76ae9a`): the fix genuinely closes the gap in `check-consent-contract-sync.mjs`, but
+`check-consent-text-sync.mjs`'s `mustReplace()` checks anchor existence FILE-WIDE while the real
+check compares only the sentinel-delimited SLICE — so a correctly-done FOLLOW-710/711 bump would
+still red CI with the exact misleading banner FOLLOW-720 was built to eliminate, just via a
+different case (`bracketDrift`, whose anchor phrase appears 3× in `PRIVACY_NOTICE_TEMPLATE.md`, only
+1 of which is inside the gated block). Corrected scope: FOLLOW-704 was never actually exposed on
+this axis (no gated byte/version literal in its ACs) — the real block is FOLLOW-710 + FOLLOW-711
+only, text-sync gate only. No repo-wide spread (the other 3 self-testing gates use disposable
+`mktemp` fixtures, structurally immune). No new rule promoted (P-16/P-17 both correctly held below
+the ≥2-prior-retro bar; a drafting-drift in RETRO-230's own promotion wording was caught and logged,
+not acted on). Filed FOLLOW-723/724/725.
+
+**Escalation gate re-checked, unchanged:** 4 `## OPEN` entries in `backlog/ESCALATIONS.md` (ESC-020
+— Estalara-app DOM deploy, operator-side, non-blocking-for-dispatch per longstanding pattern;
+ESC-041/042 — standing non-blocking ruling; ESC-044 — self-scoped to
+FOLLOW-704/706/710/711/701/714). FOLLOW-723 touches neither `route.ts` nor `lib.ts`'s consent text
+nor `PLATFORM_REGISTRATION_TOS_VERSION`/`CANONICAL_CONSENT_TEXT_HASH` (explicitly excluded in its
+own AC6) — it only hardens `check-consent-text-sync.mjs`'s self-test region-scoping. Does not touch
+or pre-empt ESC-044.
+
+**Premise re-verified before dispatch, not taken on the retro's word:** read
+`scripts/check-consent-text-sync.mjs:283-286`'s `mustReplace()` directly — confirmed
+`str.includes(anchor)` is a file-wide check with no region slicing, unlike the sibling script's
+`insertDocContractLine`/`removeDocContractLine`. Grepped
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` for `"the agency's DSR contact"` — confirmed 3 hits
+(`:249` inside the gated BEGIN/END block, `:263` and `:352` outside it, both added by FOLLOW-705).
+Confirmed `.replace()` mutates the FIRST match, and in the simulated post-FOLLOW-710/711 state
+(where `:249`'s own wording has already changed as part of that ticket), the first remaining
+occurrence shifts to `:263` — outside the compared region — reproducing the ticket's claimed failure
+structurally, without needing to fully re-run the simulation myself (that reproduction is
+FOLLOW-723's own AC2).
+
+### FOLLOW-723 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Sonnet** — `recommended_agent: backend-engineer` per the
+ticket stub; a bounded, well-scoped follow-on fix in the same script family the same worker/tier
+already owns (FOLLOW-716, FOLLOW-720 precedent), no cross-module contract change, root cause and a
+working sibling-script precedent to mirror (`insertDocContractLine`/`removeDocContractLine`) already
+identified. Does not warrant Opus per the model-fit table's escalation trigger. **started_at:**
+2026-07-29. **branch:** `backend-engineer/FOLLOW-723-text-sync-region-scoped-anchors`.
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-723` (full text, verbatim — P1, 3h,
+  `source_retro: RETRO-231`).
+- Read first: `scripts/check-consent-text-sync.mjs` in full (`mustReplace()` at `:283-286`, all 6
+  self-test cases); `scripts/check-consent-contract-sync.mjs`'s `insertDocContractLine`/
+  `removeDocContractLine` (`:376-395`, `:406-427`) — the sibling script's WORKING precedent to
+  mirror or explicitly reject with reasoning; RETRO-231 §4a LG-1/LG-2, §5, §5a, §6 P-17 in
+  `backlog/RETROSPECTIVES.md` for the full analysis;
+  `.claude/agents/backend-engineer/lessons.md:2224` for the flagged riskier reproduction method to
+  AVOID (raw `Edit`-then-`git checkout --` on the real working tree — use a sandboxed copy instead,
+  same as RETRO-230/231's own methodology).
+- Root cause: `mustReplace(str, anchor, replacement, where)` asserts `str.includes(anchor)` over the
+  WHOLE file, but `check-consent-text-sync.mjs`'s real check compares only the bytes between the
+  canonical-consent-text BEGIN/END sentinels. An anchor phrase that also appears OUTSIDE that region
+  (e.g. in `PRIVACY_NOTICE_TEMPLATE.md`'s append-only changelog table, which quotes changed phrases
+  verbatim) satisfies `mustReplace`'s existence check and `.replace()` silently mutates whichever
+  occurrence comes first in file order — which may land outside the gated region, producing a
+  correctly-attributed-sounding but WRONG `FAIL` (not `STALE`) when the in-region text has itself
+  legitimately changed and the out-of-region duplicate is now the first match.
+- AC (verbatim from the stub, 6 items): (1) every `docSrc`-targeting mutation in
+  `check-consent-text-sync.mjs` must assert its anchor is within the COMPARED region, not file-wide
+  — either slice to the sentinel block before `includes`/`replace` (mirroring
+  `insertDocContractLine`'s approach) or switch to a synthesized fixture per the 3-other-shell-gates
+  precedent (`check-fire-and-forget-sinks.sh`, `check-modal-app-singleton.sh`,
+  `check-migration-journal.sh` — all build fixtures in `mktemp -d`, never mutate live sources);
+  state which approach and why; (2) red-first proof: reproduce the FOLLOW-710/711 simulation
+  (withdrawal sentence rewritten consistently in `lib.ts:150` AND `PRIVACY_NOTICE_TEMPLATE.md:249`,
+  `PLATFORM_REGISTRATION_TOS_VERSION` bumped consistently) BEFORE the fix (must show `FAIL` + the
+  misleading banner) and AFTER (must show either PASS or a correctly-worded `STALE`) — in a
+  SANDBOXED COPY of the tree, never by mutating the real working tree; (3) audit every remaining
+  `mustReplace` call site in BOTH scripts for the same region-blindness and record the verdict per
+  site, INCLUDING `check-consent-contract-sync.mjs` case (a)'s `route.ts` 201-return anchor (unique
+  today but reached file-wide); (4) coordinate with FOLLOW-717's scope (not yet started — check
+  `backlog/QUEUE.md`/`FOLLOW_UPS.md` before touching anything there) since 717 may rewrite
+  `extractCalls()`/`extractMethodBody()`, contract-sync's region slicing — if a conflict is found,
+  note it, do not block on it; (5) small hardening: replicate `extractDocContract`'s sentinel
+  uniqueness count inside `insertDocContractLine`/`removeDocContractLine` (currently bare
+  `findIndex`), and add one comment to case (c) stating what property a replacement row anchor must
+  have; (6) do NOT touch either gate's real comparison logic, and do NOT touch any ESC-044-held
+  artifact (`lib.ts`'s consent text, `PLATFORM_REGISTRATION_TOS_VERSION`,
+  `CANONICAL_CONSENT_TEXT_HASH`, `route.ts`).
+- Scope constraints: do not touch FOLLOW-704/706/710/711/714/701 (held on ESC-044) or attempt an
+  actual TOS bump or consent-text change. Do not touch FOLLOW-717/718/719/721/722/724/725 (separate
+  tickets) — if FOLLOW-717 hasn't started, do not start it either, just note the coordination point
+  per AC4.
+- Completion: worker opens a PR (never commits to `main`). Run locally BEFORE push:
+  `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, AND install the
+  `gitleaks` binary locally (v8.21.2 confirmed working this session) and run it against the diff
+  before pushing. Prettier on every touched file. Conventional commit referencing `[FOLLOW-723]` —
+  lowercase the subject (commitlint's `subject-case` rule fires on standalone capitalized words like
+  `CI`/`PR` outside the `[FOLLOW-NNN]` tag; keep header ≤100 chars). PM independently re-runs CI
+  (checking the SPECIFIC PR run, not assuming Gitleaks/Rule I status from memory) and independently
+  reproduces the red-first proof (per AC2) before READY_FOR_REVIEW.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3. (No PR opened yet.)
+
+**1 ticket IN_PROGRESS** (FOLLOW-723) — within the ≤3 guardrail. **Still held on ESC-044:**
+FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
+ruling.
+
+---
 
 **FOLLOW-720 — status: DONE.** PR **#639** merged (squash `a8764ae7`), branch deleted, local `main`
 fast-forwarded. Piotr merged directly (`gh pr merge 639 --squash --delete-branch`) after PM-side CI

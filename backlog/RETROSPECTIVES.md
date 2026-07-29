@@ -39157,3 +39157,390 @@ grew) · FOLLOW-725 (§5a, premise falsified, ticket strengthened) · the `inqui
 FOLLOW-097 → 114 → 127 → 141 (the displacement precedent this chain now matches hop for hop: prose →
 tuple gate → fixture anchor → fixture anchor region (doc) → **fixture anchor region (renderer + route)**
 → [named in advance: compared-vs-extracted region, §4a LG-3]).
+
+---
+
+## RETRO-233 — FOLLOW-729 (local-only FastAPI entrypoint for `chat_nlp_endpoint`) — 2026-07-29
+
+### 1. Summary of change
+
+- **PR:** #641 (merged 2026-07-29 15:16 UTC, commit `6f12174`, branch
+  `ml-engineer/FOLLOW-729-local-intent-engine-dev-shim`)
+- **Files changed:** **5** (+405 / -7) per `gh pr view 641 --json files`. The PM record says "4
+  files, +369/-0" — that is the CODE portion and is correct as such; the 5th file is
+  `backlog/QUEUE.md` (+36/-7), a bookkeeping commit folded into the same PR. Recorded here so the
+  next reader reconciling `gh` output against the QUEUE record does not chase a phantom.
+  - `apps/intent-engine/src/local_dev.py` (new, +148)
+  - `apps/intent-engine/src/test_local_dev.py` (new, +141)
+  - `apps/intent-engine/README.md` (+77, new local-dev section)
+  - `apps/intent-engine/pyproject.toml` (+3, `uvicorn>=0.29` → `dev` extra only)
+- **Modules touched:** intent-engine (Python/Modal app) only. No SDK, control-plane, ingest,
+  decision-api, shared, or infra change.
+- **Key contracts changed:** none broken. ONE contract gains a **second independent server-side
+  implementation**: `POST {MODAL_CHAT_NLP_URL}` body `{tenant_id, session_id, message:{role,content},
+  profiling_opt_out}` → 202. Producer = `apps/ingest/src/handlers/chat-nlp-dispatch.ts:71-77`.
+  Implementations = `main.chat_nlp_endpoint` (`main.py:109-161`, prod/Modal) and
+  `local_dev.chat_nlp_endpoint` (`local_dev.py:92-148`, local). Breaking: **no** — verified the shim
+  accepts exactly the dispatcher's body and returns 202, which the dispatcher accepts via `res.ok`
+  (`chat-nlp-dispatch.ts:84`).
+
+### 2. Verification done in PR
+
+- **Test files changed:** 1 new — `apps/intent-engine/src/test_local_dev.py` (5 cases).
+  **Assertions added:** 16. **Coverage delta:** unknown (no coverage gate on `apps/*` Python).
+- **CI checks:** all green EXCEPT `Rule I — wired-or-dead check` = **failure**. Independently
+  re-derived, not inherited: run 30463582421 job 90616546579 logs `Violations found : 192`; the same
+  check is `failure` on `main` head `cd279d13`
+  (`gh api repos/.../commits/cd279d13/check-runs`). Diff is Python-only, Rule I scans TS exports →
+  the 192 cannot include anything from this PR. Rule AF's baseline-comparison condition is
+  therefore SATISFIED and the merge signal was valid. (Count trend, §6.)
+- `Test (Python) (3.12, intent-engine)` **pass** — independently confirms the `uvicorn` dev-extra
+  addition does not break the job that runs `pip install -e ".[dev]"` (`ci.yml:181,197`).
+- `Redis shadow round-trip (write_shadow_intent → readShadowChatIntent)` **pass** (unchanged path).
+- **Independently re-verified the PR's central technical claim** (the one the whole duplication
+  decision rests on). With the REAL `modal` 1.4.2 installed:
+  `python -c "import main; print(type(main.chat_nlp_endpoint), callable(main.chat_nlp_endpoint))"`
+  → `<class 'modal.functions.Function'> False`. **The claim is TRUE**: `main.chat_nlp_endpoint` is
+  not a plain callable outside a Modal context, so it genuinely cannot be imported and served, and
+  `conftest.py`'s stub genuinely does not apply outside pytest. The worker's justification is sound
+  and was not taken on faith here.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code):**
+
+- `apps/intent-engine/src/local_dev.py` → `app` (`:63`) — zero non-test importers
+  (`grep -rn "local_dev" --include=*.py --include=*.ts --include=*.toml --include=*.yml` returns
+  only the test, the README, the pyproject comment and the file itself). **SUPPRESSED — entrypoint
+  class:** it is an ASGI application object consumed by `uvicorn local_dev:app --app-dir src`
+  (`README.md:54`), the Python equivalent of a framework route/Worker entrypoint. Additionally
+  confirmed `apps/intent-engine` has **no `package.json`** and is not a pnpm-workspace member, so a
+  `turbo`/`pnpm` dev-script wiring is not the missing artifact — README is the correct and only
+  available wiring surface. NOT a finding.
+- `local_dev.health` (`:85`) — reachable via the FastAPI route table, documented consumer at
+  `README.md:67`. Not dead.
+- `local_dev._valid_bearer` (`:69`), `local_dev.chat_nlp_endpoint` (`:92`) — both consumed
+  in-module / via the route table plus 5 tests. Not dead.
+
+**CHECK B (half-wire, producer AND consumer for every new event / env-var / column / topic /
+SDK-signal):**
+
+- **New env vars: ZERO.** All four the shim reads (`INTERNAL_API_SECRET`, `INTENT_REALTIME_MODEL`,
+  `ANTHROPIC_API_KEY`, `UPSTASH_REDIS_REST_URL`/`_TOKEN` transitively) pre-exist and are present in
+  the repo-root `.env.example:53,54,64,117`. No new name introduced ⇒ no HALF_WIRE_P/C possible on
+  the env axis.
+- **New events / ClickHouse columns / Redpanda topics / SDK signals: ZERO.**
+- **New HTTP route `POST /chat_nlp_endpoint`** — producer `dispatchChatNlp`
+  (`apps/ingest/src/handlers/chat-nlp-dispatch.ts:73-83`, pre-existing) AND consumer (this PR).
+  BOTH sides present. Not a half-wire.
+- **New dependency `uvicorn>=0.29`** — consumer = the documented run command (`README.md:54`).
+  Verified it **cannot** leak into the deployed Modal image: the image is declared in code at
+  `main.py:44-49` (`modal.Image.debian_slim().pip_install("anthropic","upstash-redis","pydantic","fastapi")`)
+  and does not read `pyproject.toml`; `modal-deploy.yml:66` installs `modal httpx fastapi` on the
+  runner only, and `:90` deploys `apps/llm-gateway/src/main.py` — intent-engine is not deployed at
+  all yet (ESC-042 item 1).
+
+**Wiring Audit — clean ✅** (one entrypoint-class suppression recorded above).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the localhost failure mode this ticket exists to expose is SILENT, and the recorded
+  AC5 diagnosis attributes it to the wrong dependency.** `apps/intent-engine/src/nlp.py:318-332`:
+  `extract_intent` is documented "Never raises" and catches `Exception` → `print(...)` →
+  `_neutral_payload(...)` (`nlp.py:202-218`: all 12 dims `None`, `confidence=0.0`,
+  `archetype_hint="neutral"`). The only uncaught dependency is
+  `redis_writer._get_redis()`'s `os.environ["UPSTASH_REDIS_REST_URL"]` (`redis_writer.py:35`).
+  Reproduced against the merged shim, not reasoned about:
+
+  ```
+  # no ANTHROPIC_API_KEY, no UPSTASH_* :
+  extract_intent error model=claude-haiku-4-5-20251001 source=realtime: 'ANTHROPIC_API_KEY'
+  RAISED: KeyError KeyError('UPSTASH_REDIS_REST_URL')      ← this is the 500, NOT Anthropic
+
+  # UPSTASH_* valid, ANTHROPIC_API_KEY still absent :
+  HTTP: 202 {"status":"accepted"}
+  KEY WRITTEN: shadow:t:s:chat_intent
+  archetype_hint: neutral | confidence: 0.0 | all dims null: True
+  ```
+
+  Consequence, and it lands squarely on Piotr's standing priority: **the operator who provisions
+  Upstash first (the harder credential) and Anthropic second gets a green 202, a present shadow key,
+  and zero archetype movement** — which reads exactly like "chat doesn't affect the archetype", the
+  highest-cost false-bug trail in this loop. This is a **Rule K.2** instance ("swallows an error and
+  substitutes plausible-looking default data … a neutral response"; `CONVENTIONS_PATCH.md:509-513`)
+  and it is additionally un-Sentried despite `sentry-sdk>=2.0` being a declared dependency
+  (`pyproject.toml:15`) — the signal is a bare `print`.
+  **Pre-existing in `nlp.py`, NOT introduced by this PR** — but this PR is the one that makes it the
+  first thing a human meets on localhost, and the PR/QUEUE/FOLLOW_UPS record of AC5 ("a real POST
+  500s on the missing `ANTHROPIC_API_KEY`") is falsified by the trace above. → **FOLLOW-730**.
+  Blast radius CHECKED and bounded: `flattenIntentDimensions`
+  (`apps/control-plane/src/lib/chat-intent-cache.ts:176-191`) skips nulls → `{}`, and
+  `adapt.ts:869-880` gates on `Object.keys(dims).length > 0`, so a neutral write does **not** poison
+  the archetype and does **not** burn the Rule R one-per-session `chatPriorApplied` gate
+  (`adapt.ts:877,888`). The damage is diagnostic, not correctness.
+
+- **LG-2 (P3) — the sync-vs-spawn divergence is documented as a MECHANISM but not as a
+  CONSEQUENCE.** `local_dev.py:32-42` and `README.md:73-74` both state the shim writes synchronously
+  while prod spawns. Neither states what that costs: prod has a real write/read race (the SDK's next
+  `/api/adapt` may hit `readShadowChatIntent` before the Modal container finishes), so
+  "the first chat message's intent isn't visible until a later adapt call" is a **prod-only class
+  that structurally cannot reproduce on the shim**. Verified benign for correctness (an absent key
+  yields `dims={}` → skip → gate not burned), so this is a fidelity/expectation gap, not a bug.
+  Latency: no breach — §C.3's `<500ms` budget is "message send → intent vector update"
+  (`MASTER_DESIGN.md:1653`) which the shim meets more directly than prod, and the ingest ACK budget
+  is unaffected because `dispatchChatNlp` runs inside `ctx.waitUntil()`
+  (`chat-nlp-dispatch.ts:5-7`). Folded into **FOLLOW-733**.
+
+- **LG-3 (P2, structural — the step-7 finding) — the wire closed one hop and the gap moved
+  downstream, and 2 of the 3 remaining hops fail invisibly.** Traced the full chain
+  producer→consumer→render for localhost at merge commit `6f12174`:
+
+  | Hop | Artifact | State |
+  | --- | --- | --- |
+  | 1 producer | `dispatchChatNlp` + `MODAL_CHAT_NLP_URL` | ✅ built; local value documented |
+  | 2 server | `local_dev.py` | ✅ **closed by this PR** |
+  | 3 extract | `nlp.extract_intent` ← `ANTHROPIC_API_KEY` | ❌ absent — **fails SILENTLY** (LG-1) |
+  | 4 write | `redis_writer` ← `UPSTASH_REDIS_REST_URL`/`_TOKEN` | ❌ absent — fails loud (500) |
+  | 5 read | `readShadowChatIntent` ← `UPSTASH_REDIS_URL`/`_TOKEN`, **same DB** | ❌ parity unenforced locally |
+  | 6 render | `applyChatIntentPrior` → `archetype_hint` → directives | ✅ built |
+
+  Hop 5 is the specific trap the PM flagged: `docs/runbooks/upstash-redis-env-parity.md:36-40`
+  declares same-database parity **MANDATORY**, and there IS an enforcement mechanism — the
+  `Redis shadow round-trip` CI job (`.github/workflows/redis-shadow-smoke.yml`) writes with the
+  Python names and reads with the TS names, which can only pass if they point at one DB. But that
+  gate covers **GitHub secrets only**; nothing checks a developer's four local exports, and a
+  mismatch presents identically to LG-1 (202, key written, no archetype movement). So hops 3 and 5
+  produce the SAME symptom through two different causes, neither of which announces itself. →
+  **FOLLOW-730** (hop 3 fail-loud) covers the silent half; hop 5 is surfaced to the PM in §5d.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**None in the PR's own code.** Line-by-line comparison of `local_dev.py:109-148` against
+`main.py:125-161` (the region the docstring names as source of truth): `_CHAT_NLP_REQUIRED` frozenset
+identical; 401 path identical; missing-fields 400 identical incl. `sorted(missing)`; message-object
+400 identical; tenant/session strip+empty 400 identical; `role or "user"` default identical; 202 body
+identical. The `§H.9 profiling_opt_out` axis — the compliance-relevant one — was checked separately
+and behaves **identically in both copies** (`local_dev.py:146` → `write_shadow_intent(...,
+profiling_opt_out=...)` → `redis_writer.py:63` early return; prod reaches the same line via
+`main.py:84`), including the fact that both still call Anthropic before skipping the write. No
+divergence introduced on the opt-out axis.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the chat-NLP request contract is the one direct-Modal dispatch contract with NO
+  shared-fixture gate, and this PR just gave it a second implementation.** The repo already has the
+  exact mechanism and treats it as blocking: `packages/shared/contracts/` holds
+  `description-event.required.json`, `listing-embed-seed-event.required.json`,
+  `listing-embed-post.required.json`, asserted from BOTH runtimes by the hard
+  `cross-language-contract` job (`ci.yml:664-726`, comment: "This is a HARD gate — no
+  continue-on-error"). There is **no `chat-nlp.required.json`**. The required-field set is now
+  hand-typed in THREE places with nothing tying them together: `main.py:52`, `local_dev.py:66`, and
+  the producer's body literal at `chat-nlp-dispatch.ts:71-77`. `test_local_dev.py:37-42`'s
+  `_VALID_BODY` is a hand-written Python fixture — precisely the shape **Rule Z**
+  (`CONVENTIONS_PATCH.md:1485`) says is not evidence the wire connects, and this contract's own
+  history is why Rule Z exists (RETRO-098 HW-1: the SDK sent `message`, Python read `content`, both
+  suites green). → **FOLLOW-731**.
+- **TG-2 (P3) — the mirror's test suite is a STRICT SUBSET of the source's on day one.**
+  `test_chat_nlp_endpoint.py` covers 7 behaviours for `main.py`; `test_local_dev.py` covers 5. The
+  two missing from the copy are exactly the ones guarding the security/validation edges:
+  `test_valid_bearer_empty_secret_fails_closed` (`test_chat_nlp_endpoint.py:49-51` — the
+  fail-closed-on-unset-secret invariant) and `test_empty_message_content_returns_400`
+  (`:75-82`). So the duplication is already asymmetrically verified before anyone has edited either
+  copy. → **FOLLOW-732**.
+- **TG-3 (P3) — no parity mechanism exists or can exist today for this pair.** Verified rather than
+  assumed: `scripts/mirror-files.json` declares 2 pairs, both TypeScript; `scripts/check-mirror-files.sh`
+  is structurally TS-only — its `strip_comments()` (`:33-40`) strips `/* */` and `//` (Python uses
+  `#` and `"""`), and its fallback mode greps `^(export )?(async )?function <name>\(`
+  (`:100,113`), which matches no Python `def`. So Rule J's gate could not be pointed at this pair
+  even if someone added it to the manifest. Rule K.1 does not reach it either (scoped to "a metric or
+  business value", `CONVENTIONS_PATCH.md:458-465`; an auth check is not one). → **FOLLOW-732**, and
+  scored in §6.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — three records carry a falsified cause.** `apps/intent-engine/README.md:88-94`, the PR
+  #641 body ("Credentials gap (AC5)"), `backlog/QUEUE.md:33-38` and `backlog/FOLLOW_UPS.md:21611-21613`
+  all state the authenticated POST 500s **on the missing `ANTHROPIC_API_KEY`**. Disproved in LG-1:
+  the Anthropic failure is swallowed; the 500 is `KeyError('UPSTASH_REDIS_REST_URL')`. This matters
+  operationally (it mis-orders which credential to chase and hides that one of them fails green) and
+  is a **Rule Y**-family defect — a behavioural claim recorded without being verified against the
+  code path it names. → **FOLLOW-733**.
+- **DG-2 (P3) — the file the PR edited still declares itself unimplemented.**
+  `apps/intent-engine/README.md:5-7` reads "## Status — Placeholder — full implementation in
+  TICKET-013 (ml-engineer)", untouched while the same PR appended 77 lines documenting a working
+  local server for a fully-implemented app (`nlp.py` 14 KB, `main.py`, `redis_writer.py`,
+  `jobs/batch_enrich.py`). **Rule AI** (`CONVENTIONS_PATCH.md:2358`) obliges the capability-claim
+  update in the SAME PR, including the changed file's own header. → **FOLLOW-733**.
+- **DG-3 (P3) — the one instruction that connects ingest to the new shim points at a file that does
+  not exist.** `README.md:57-62` says to set `MODAL_CHAT_NLP_URL` + `INTERNAL_API_SECRET`
+  "e.g. in `apps/ingest/.dev.vars`". Verified: `apps/ingest/` contains **no `.dev.vars` and no
+  `.dev.vars.example`**; the file that does exist, `apps/ingest/.env.example`, contains **neither**
+  key (both are documented in `wrangler.toml:156-159` as `wrangler secret put` values, which is the
+  prod path, not the `wrangler dev` path). A reader following the runbook literally has no template.
+  **Rule AH**-adjacent (an executable operator instruction must be verified at its own merge
+  commit). → **FOLLOW-733**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+**None.** `backlog/QUEUE.md:119` records **0 tickets IN_PROGRESS** at merge (FOLLOW-729 was the only
+one and is DONE). The held set on ESC-044 (FOLLOW-704, 706, 710, 711, 701, 714) is consent-domain
+and untouched by a Python-only intent-engine diff — re-verified, not inherited. No READY ticket's
+assumptions are invalidated: nothing in the queue asserts "intent-engine cannot run locally".
+
+#### 5b. Future sprint tickets affected
+
+- **`apps/llm-gateway` has TWO endpoints with the byte-identical structural problem**, and the brief's
+  premise needed narrowing:
+  `grep -rn "fastapi_endpoint" --include=*.py apps/` returns exactly three production endpoints —
+  `apps/intent-engine/src/main.py:108` (closed by this PR),
+  `apps/llm-gateway/src/jobs/generate_description.py:2140` (`description_requested_endpoint`), and
+  `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:448` (embed-seed). **`apps/stream-consumer`
+  and `apps/data-quality` have ZERO** `fastapi_endpoint`/`asgi_app` — they are consumers/crons, so
+  they do not share this problem. The cascade is 2 endpoints in 1 app, not 3 apps.
+- Consequence for Piotr's "100% end-to-end on localhost" goal: **FOLLOW-729 closed 1 of 3** Modal HTTP
+  endpoints. `description_requested_endpoint` is the AI-description generator — as central to the
+  visible localhost loop as chat-NLP. Anyone scoping "the rest of localhost" should treat this as a
+  known 2-endpoint remainder, not a solved class.
+- **`local_dev.py` is now the implicit template.** It is the repo's first local-dev entrypoint for any
+  Modal app. Copied as-is twice more it multiplies TG-2/TG-3: three ungated `_valid_bearer` copies
+  plus three ungated validation blocks, in a repo whose Rule J exists specifically because that
+  compounds. A generalize-or-accept decision is cheap NOW and expensive after the second copy. →
+  **FOLLOW-734**.
+
+#### 5c. Contracts changed others rely on
+
+- `POST {MODAL_CHAT_NLP_URL}` now has **two** independent server implementations against **one**
+  producer, with no shared fixture (TG-1). The next editor of `chat-nlp-dispatch.ts`'s body literal
+  has two Python files to update and zero CI signal if they update one or neither.
+- Nothing else. The Redis shadow key format, `ChatIntentDetectedPayload`, `/api/adapt`'s
+  `chat_intent_dimensions`, and the SDK prior loop are byte-unchanged — the shim reuses
+  `write_shadow_intent` rather than re-deriving the key (`local_dev.py:146`), and
+  `test_local_dev.py:117-118` pins the real key string and 86400s TTL. That was the right call and
+  it is the strongest part of this PR.
+
+#### 5d. Architectural assumptions affected — **PM ACTION RECOMMENDED, severity HIGH**
+
+- **The credentials gap is the last hop of a CEO-stated priority and is tracked only in prose.**
+  FOLLOW-729's own AC5 pre-authorised the remedy — *"escalate the credentials gap separately if
+  needed"* (`FOLLOW_UPS.md:21678`) — and no `backlog/ESCALATIONS.md` entry was written. Two
+  independent conventions say it should be: (a) `CLAUDE.md`'s escalation list covers work that
+  requires provisioning an agent cannot do; (b) **Rule AA** (`CONVENTIONS_PATCH.md:1708`) states an
+  operator-gated ticket is `CODE_COMPLETE_OPERATOR_PENDING`, **never `DONE` on code alone**, and that
+  the verdict MUST split the code axis from the operator axis with a fail-loud proof step —
+  `QUEUE.md:33` records FOLLOW-729 flatly as `status: DONE`. Combined with LG-3, the practical risk
+  is that the remaining three hops (Anthropic key, dev Upstash, writer/reader DB parity) sit in
+  narrative prose across two backlog files while the ticket reads closed. **I am not escalating on
+  the PM's behalf and have written nothing to ESCALATIONS.md** — surfacing it here per my guardrail.
+  Recommended PM actions: (1) an ESC entry for "dev-tier Anthropic key + dev Upstash instance for
+  local end-to-end", (2) re-label FOLLOW-729 `CODE_COMPLETE_OPERATOR_PENDING` per Rule AA.
+- **New architectural precedent, unratified:** "a Modal app MAY carry a local-only bare-FastAPI twin".
+  This is a good precedent and consistent with §C.3 (Modal is a deployment target, not a coupling),
+  but it is currently established by one file's docstring rather than by an ADR or a Master Design
+  line. `docs/MASTER_DESIGN.md` §Snapshot.1 / §C.3 do not diverge from this PR — nothing to
+  reconcile — but the precedent is exactly the kind of thing §5b will cause to be copied. Folded
+  into FOLLOW-734 rather than raised as a separate divergence.
+- **ESC-042 item 1 (prod Modal deploy of `estalara-intent-engine`) is UNCHANGED and was correctly
+  kept out of scope.** Verified: `modal-deploy.yml:90` still deploys only `apps/llm-gateway/src/main.py`.
+
+### 6. New lesson candidates
+
+- **Pattern "SAME-RUNTIME DECLARED-IDENTICAL DUPLICATE IN THE Rule J / Rule K.1 GAP" — count 2
+  (1 PRIOR retro). THRESHOLD NOT MET → NOT PROMOTED.** RETRO-231 §6 recorded this as a
+  "Rule J / Rule K.1 scope-boundary sighting, count 1, no amendment proposed yet" for the three
+  byte-identical helpers across two `scripts/*.mjs` gates (→ FOLLOW-725). This retro is the second
+  sighting and a genuinely different shape: **Python, intra-app, and PARTIAL** — a whole function
+  (`_valid_bearer`) plus an inline 24-line block inside a larger function, not a whole-file mirror.
+  The house counting convention (RETRO-232 §6: "count 3, = 2 PRIOR RETROS. THRESHOLD MET") puts this
+  at 1 prior retro, one short. Explicitly holding. What the third sighting should carry, so the
+  eventual amendment is not under-scoped: **(a)** a comparison strategy that is language-agnostic
+  (the current `check-mirror-files.sh` cannot express Python — `strip_comments()` at `:33-40` strips
+  `/* */`+`//`, the fallback greps `^(export )?(async )?function`), and **(b)** a strategy for a
+  REGION of a file rather than a whole file, since neither RETRO-231's nor this instance is a
+  file-level mirror. §5b says the third sighting is likely to arrive as the llm-gateway copy of
+  `local_dev.py` — if so it is the same instance multiplied, and I will need to decide whether N
+  copies of one PR's decision count once or N times. Recording that question now so the next retro
+  does not have to re-derive it.
+- **Rule K.2 — instance sighting, no promotion needed (already codified).** LG-1 is a textbook K.2
+  fabricate-instead-of-fail: neutral payload substituted for a failed extraction, `print` instead of
+  Sentry, and — the K.2 clause that bites hardest here — **no provenance marker on the wire**, so
+  neither the shadow key nor the 202 distinguishes "the buyer said nothing archetype-bearing" from
+  "the model call died". K.2's own amendment history (`:552-564`) is three retros of exactly this
+  sub-shape: the degraded signal emitted with no schema slot. Here it is not even emitted.
+  FOLLOW-730 is written against K.2 rather than proposing anything new.
+- **Rule AF — the count moved again: 179 → 183 → 191 → 192.** Rule I is at 192 on this PR and
+  `failure` on `main`, so this merge complied with AF's actual requirement (compare the known-red set
+  to `main`'s baseline, find it UNCHANGED) — the PM did that and I re-derived it independently
+  (§2). But AF was promoted at RETRO-205 on evidence of exactly this drift, and the number has
+  incremented once more since. The specific erosion this retro can attest to: **I could not use
+  "CI green" as a signal at all** — I had to fetch the job log, read `Violations found : 192`, and
+  fetch `main`'s check-runs to establish that 192 was not 191+1-from-this-PR. That is three API
+  calls of ceremony per merge to recover a boolean, and it is the mechanism by which "some red is
+  normal" becomes load-bearing. No new rule (AF covers it); recording the count so the next retro
+  has the series. Not filing a stub — FOLLOW-591/602 already exist for the remediation.
+- **Process/meta — the recovery-discipline hypothesis is FALSIFIED; no documentation gap.** The PM
+  flagged the terminal-close recovery (worker output surviving as uncommitted changes in the MAIN
+  working tree) as a possible third variant undocumented outside operator memory. It is documented:
+  `docs/AGENT_WORKFLOW.md:171-181` describes this exact variant — *"before ever running
+  `git checkout -b`* — the edits sat uncommitted directly in the `main` working tree"* — and
+  `:193-212` is a mandatory **"Recovered-work re-verification"** procedure whose step 1 is *"if it's
+  sitting uncommitted on `main`, move it"* and whose step 3 requires the recovering party to run its
+  own verification pass because *"a worker that crashed produced zero verification"*. The PM
+  followed both. **No stub filed** — writing one would have been a manufactured finding, and the
+  more useful record is that this convention has now been exercised and held.
+- **Process/meta — ticket design foreclosed the best option, and the retro nearly inherited the
+  worker's framing.** FOLLOW-729 AC1 offered a binary: *import `main.py`'s logic, or duplicate it
+  with a keep-in-step comment*. The worker verified the first is impossible and took the second, and
+  its reasoning is correct (§2, re-derived here). But the binary omits option (c): **extract the
+  auth+validation contract into a sibling module (`src/http_contract.py`) that BOTH import** — which
+  has nothing to do with Modal decorators and is feasible, since `main.py` already relies on sibling
+  modules resolving inside the Modal container (`main.py:76-77` imports `nlp`/`redis_writer` at call
+  time). Option (c) was foreclosed not by Modal but by **AC4** ("no change to `main.py`"). Lesson for
+  ticket authors, and for me: *when a ticket offers "reuse X or duplicate X", the third option —
+  extract X — is usually invisible because the ticket named X as the thing to reuse.* The
+  duplication here is therefore a scoping artifact, not a technical necessity, and FOLLOW-732 says so
+  explicitly so the next editor does not inherit "we had to".
+
+### 7. Follow-ups
+
+- **FOLLOW-730:** make an extraction failure distinguishable from a genuine neutral read — Sentry
+  capture + a provenance marker on the shadow payload, or at minimum a fail-loud local-mode signal
+  (ml-engineer, 3h, **P2**) [LG-1, LG-3 hop 3, Rule K.2]
+- **FOLLOW-731:** add `packages/shared/contracts/chat-nlp.required.json` and wire it into the
+  blocking `cross-language-contract` CI job, asserted from the TS producer AND both Python
+  implementations (backend-engineer, 3h, **P2**) [TG-1, Rule Z]
+- **FOLLOW-732:** decide and record ONE parity mechanism for the `main.py` ↔ `local_dev.py`
+  duplicate, and close the day-one test asymmetry by porting the 2 missing cases (ml-engineer, 3h,
+  **P3**) [TG-2, TG-3, Rule J / K.1 gap]
+- **FOLLOW-733:** correct the falsified AC5 cause in all four records, drop the stale "Placeholder"
+  status header, add an `apps/ingest/.dev.vars.example`, and state the sync-vs-spawn *consequence*
+  (ml-engineer, 2h, **P3**) [DG-1, DG-2, DG-3, LG-2, Rules Y / AI / AH]
+- **FOLLOW-734:** decide whether `local_dev.py` becomes a shared pattern BEFORE llm-gateway's two
+  endpoints copy it (architect, 3h, **P3**) [§5b, §5d]
+
+Not filed, deliberately: no stub for the credentials gap itself (an operator step, surfaced to the
+PM in §5d per my no-escalation guardrail); no stub for Rule I (FOLLOW-591/602 exist); no stub for the
+`/health` route or the recovery-discipline hypothesis (both verified non-findings).
+
+### 8. Cross-references
+
+- **RETRO-231 §6 / FOLLOW-725** — the count-1 sighting of the Rule J / Rule K.1 scope gap this retro
+  advances to count 2 (§6). FOLLOW-732 is deliberately shaped to be resolvable by the same amendment.
+- **RETRO-098 §3 HW-1** — the prior break in THIS EXACT contract (SDK emitted `message`, Python read
+  `content`; both test suites green because each invented its own fixture) → FOLLOW-366/368 and the
+  minting of **Rule Z**. TG-1 is that same hole, now with one more Python implementation in it.
+- **RETRO-205 / FOLLOW-591 / FOLLOW-602** — the Rule AF evidence series (179 → 183 → 191); §2/§6
+  record 192.
+- **RETRO-030** — the prior Rule K.1 scope amendment (TS-map ↔ inline-SQL), cited in §6 as the
+  precedent for how the eventual K.1 broadening should be shaped.
+- **ESC-042** (Modal intent-engine prod deploy, item 1) — correctly untouched; verified at
+  `modal-deploy.yml:90`.
+- **FOLLOW-635 / ADR-0016 / F-01** — the CEO ruling and design that make the shadow key
+  live-influencing, i.e. why LG-1's silent neutral write is a product problem and not just a log line.
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141)** — §4a LG-3 is
+  the same shape one domain over: FOLLOW-729 closed the missing-server hop and the gap moved to
+  missing-credentials (hop 3/4/5), with hops 3 and 5 sharing one indistinguishable symptom. Named in
+  advance so the next retro checks hop 3 and hop 5 by trace, not by ticket status.

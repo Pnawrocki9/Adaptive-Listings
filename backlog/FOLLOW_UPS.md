@@ -21677,3 +21677,263 @@ addition that unblocks Piotr seeing the full chat→intent→archetype loop on h
 waiting on that prod deploy or Modal credentials for production.
 
 cross_ref: [ESC-042, Rule N]
+
+---
+
+## FOLLOW-730 — A failed Anthropic call is indistinguishable from a genuinely neutral buyer: `extract_intent` returns the neutral payload, the shim writes it, and the wire says 202
+
+source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: now
+recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue:
+false
+
+`apps/intent-engine/src/nlp.py:318-332` documents `extract_intent` as "Never raises" and catches
+`Exception` → `print(...)` → `_neutral_payload(...)` (`nlp.py:202-218`: all 12 dims `None`,
+`confidence=0.0`, `archetype_hint="neutral"`). The caller writes that payload to the shadow key and
+returns 202. Reproduced against merged `6f12174` with `UPSTASH_*` valid and `ANTHROPIC_API_KEY`
+absent:
+
+```
+extract_intent error model=claude-haiku-4-5-20251001 source=realtime: 'ANTHROPIC_API_KEY'
+HTTP: 202 {"status":"accepted"}
+KEY WRITTEN: shadow:t:s:chat_intent
+archetype_hint: neutral | confidence: 0.0 | all dims null: True
+```
+
+Nothing on the wire — not the 202, not the shadow payload — separates "the model call died / was
+rate-limited / returned unparseable JSON" from "the buyer genuinely said nothing archetype-bearing".
+The only signal is a bare `print` to stdout, despite `sentry-sdk>=2.0` being a declared dependency
+(`pyproject.toml:15`). This is a **Rule K.2** violation in its original framing
+(`CONVENTIONS_PATCH.md:509-513`, "substitutes plausible-looking default data … a neutral response"),
+and K.2's amendment (`:552-564`) covers exactly the aggravating factor here: the degraded signal has
+no schema slot at all.
+
+**Pre-existing in `nlp.py`, not introduced by PR #641** — but #641 is what makes it the first thing
+a human meets, and it lands on a CEO-stated priority. On localhost the operator who provisions
+Upstash first (the harder credential) and Anthropic second sees a green 202, a present shadow key,
+and zero archetype movement — i.e. "chat doesn't affect the archetype", the most expensive false-bug
+trail in this loop. RETRO-233 §4a LG-3 hop 5 shows a _second, unrelated_ cause (writer/reader
+Upstash DB mismatch) presents with the _same_ symptom, so the diagnostic ambiguity is not
+hypothetical.
+
+Blast radius is bounded and must NOT be over-fixed: `flattenIntentDimensions`
+(`apps/control-plane/src/lib/chat-intent-cache.ts:176-191`) drops nulls → `{}`, and
+`adapt.ts:869-880` gates on `Object.keys(dims).length > 0`, so a neutral write does not poison the
+archetype and does not burn the Rule R `chatPriorApplied` one-per-session gate. The damage is
+diagnostic, not correctness — scope accordingly.
+
+**AC:** (1) distinguish the two cases at the source: `extract_intent` keeps its never-raises
+contract for the prod spawn path, but the neutral-on-error payload MUST be marked (e.g. an
+`extraction_error` / `data_source` field on `ChatIntentDetectedPayload` in `schemas.py`) — a marker
+only, do NOT change which archetype is applied; (2) capture the swallowed exception to Sentry (the
+dependency is already declared) with enough tags to tell an auth failure from a parse failure; (3)
+the marker must be carried through `write_shadow_intent` into the shadow JSON so an operator
+inspecting Redis can read it, AND round-tripped through a test rather than only asserted as a
+literal (K.2 amendment, `:552-564`); (4) `local_dev.py` additionally surfaces it on the wire in
+local mode — a 502/`degraded` response is acceptable there since prod's contract is unaffected (the
+prod endpoint returns 202 before extraction runs at all); (5) confirm the TS reader tolerates the
+new field (`chat-intent-cache.ts:32-51` is a hand-written interface, non-strict parse — verify,
+don't assume); (6) red-first: a test that fails before the marker exists.
+
+cross_ref: [RETRO-233 §4a LG-1 / LG-3, RETRO-098 §3, Rule K.2 + its 2026-06-13 amendment,
+FOLLOW-729, FOLLOW-733 (records the same misdiagnosis in prose), ESC-042]
+
+---
+
+## FOLLOW-731 — chat-NLP is the only direct-Modal dispatch contract with no shared fixture, and PR #641 just gave it a second server implementation
+
+source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: now
+recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+The repo already has this mechanism and already treats it as blocking. `packages/shared/contracts/`
+holds `description-event.required.json`, `listing-embed-seed-event.required.json` and
+`listing-embed-post.required.json`, asserted from BOTH runtimes by the `cross-language-contract` job
+(`.github/workflows/ci.yml:664-726`), whose own comment reads _"This is a HARD gate — no
+continue-on-error. Drift on either side fails the merge."_
+
+There is **no `chat-nlp.required.json`**. The required-field set for `POST {MODAL_CHAT_NLP_URL}` is
+hand-typed in three places with nothing tying them together:
+
+- producer body literal — `apps/ingest/src/handlers/chat-nlp-dispatch.ts:71-77`
+- prod consumer — `apps/intent-engine/src/main.py:52` (`_CHAT_NLP_REQUIRED`)
+- local consumer — `apps/intent-engine/src/local_dev.py:66` (`_CHAT_NLP_REQUIRED`, added by #641)
+
+Both Python test suites build their own Python-side fixture (`test_chat_nlp_endpoint.py:24-29`,
+`test_local_dev.py:37-42`) — the exact shape **Rule Z** (`CONVENTIONS_PATCH.md:1485`) says is not
+evidence the wire connects. This contract's own history is why Rule Z exists: RETRO-098 §3 HW-1
+found the SDK emitting `message` while the Python side read `content`, with both suites green,
+because each runtime invented its own fixture. That hole is still open here, now with one more
+implementation in it.
+
+**AC:** (1) add `packages/shared/contracts/chat-nlp.required.json` following the existing files'
+shape exactly (do not invent a new format); (2) add a Python contract test asserting BOTH
+`main._CHAT_NLP_REQUIRED` AND `local_dev._CHAT_NLP_REQUIRED` equal the fixture — one test, two
+assertions, so a one-sided edit reddens CI (this also closes half of FOLLOW-732's drift concern);
+(3) add a TS contract test asserting the `dispatchChatNlp` request body ⊇ the fixture, mirroring
+`src/__tests__/cross-runtime/description-event-contract.test.ts`; (4) wire all three into the
+existing `cross-language-contract` job — a NEW job is wrong, the existing one is already the
+blocking home for this class; (5) prove the gate fires: red-first by removing one key from one side;
+(6) do not change any runtime behaviour in this ticket.
+
+cross_ref: [RETRO-233 §4c TG-1 / §5c, RETRO-098 §3 HW-1, Rule Z, FOLLOW-366, FOLLOW-368, FOLLOW-729,
+FOLLOW-732, ADR-0016 / F-01]
+
+---
+
+## FOLLOW-732 — `_valid_bearer` + the validation block now exist twice in one Python app with no parity mechanism, and the copy's test suite is a strict subset of the original's on day one
+
+source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: next
+recommended_agent: ml-engineer priority: P3 estimated_hours: 3 depends_on: [FOLLOW-731 (its AC2
+closes the required-field half; do this after so the remainder is smaller)] promoted_to_queue: false
+
+PR #641 duplicated `_valid_bearer` (`main.py:88-100` → `local_dev.py:69-81`), `_CHAT_NLP_REQUIRED`
+(`main.py:52` → `local_dev.py:66`) and the 24-line request-validation block (`main.py:125-150` →
+`local_dev.py:109-132`) into a second file in the same app. **The duplication itself was correctly
+justified and is not the finding** — RETRO-233 §2 independently re-verified with real `modal` 1.4.2
+installed that `main.chat_nlp_endpoint` is a `modal.functions.Function` and `callable(...)` is
+`False`, so importing it genuinely does not work. Two things follow that the PR did not address:
+
+**1. No parity mechanism exists, and Rule J's cannot be pointed at this pair.** Verified, not
+assumed: `scripts/mirror-files.json` declares 2 pairs, both TypeScript;
+`scripts/check-mirror-files.sh` is structurally TS-only — `strip_comments()` (`:33-40`) strips
+`/* */` and `//` (Python uses `#` and `"""`), and the fallback mode greps
+`^(export )?(async )?function <name>\(` (`:100,113`), which matches no Python `def`. Rule K.1 does
+not reach it either (scoped to "a metric or business value", `CONVENTIONS_PATCH.md:458-465`; an auth
+check is not one). This is the **second** sighting of the Rule J / K.1 scope gap after FOLLOW-725 —
+recorded at count 2, threshold (2 prior retros) NOT met, so no rule is being promoted for it.
+
+**2. The copy is already asymmetrically verified.** `test_chat_nlp_endpoint.py` covers 7 behaviours;
+`test_local_dev.py` covers 5. The two missing from the copy are precisely the security/validation
+edges: `test_valid_bearer_empty_secret_fails_closed` (`:49-51` — the fail-closed-on-unset-secret
+invariant) and `test_empty_message_content_returns_400` (`:75-82`). Nobody has edited either copy
+yet and they are already unequally guarded.
+
+**Do not inherit "we had to duplicate."** RETRO-233 §6 records that FOLLOW-729 AC1 offered a binary
+(import `main.py`, or duplicate) and AC4 forbade touching `main.py`, which foreclosed the third
+option — **extract the auth+validation contract into a sibling module both import**. That option has
+nothing to do with Modal decorators and is feasible: `main.py:76-77` already relies on sibling
+modules (`nlp`, `redis_writer`) resolving inside the Modal container. It is now on the table because
+AC4 no longer binds.
+
+**AC:** (1) decide and record ONE of: (a) extract the shared contract to
+`apps/intent-engine/src/http_contract.py` imported by both — **verify empirically that the sibling
+module resolves inside the deployed Modal container before choosing this**, do not assume it from
+the `nlp`/`redis_writer` precedent; (b) teach `scripts/check-mirror-files.sh` a Python-capable,
+REGION-scoped strategy and register the pair (note this is the strategy FOLLOW-725 also needs — if
+both tickets land, build it once); (c) accept the duplication with a recorded rationale; (2)
+whichever is chosen, both copies must name each other in a comment so the obligation is visible from
+the file being edited (Rule AI's spirit — `local_dev.py` already does this, `main.py` does **not**,
+which is the asymmetry that matters since `main.py` is the file people edit); (3) port
+`test_valid_bearer_empty_secret_fails_closed` and `test_empty_message_content_returns_400` to
+`test_local_dev.py` regardless of which option is chosen; (4) if (a) or (b), prove the gate/refactor
+fires: red-first with a one-character divergence; (5) do not change either copy's behaviour.
+
+cross_ref: [RETRO-233 §4c TG-2 / TG-3, §6, RETRO-231 §6 + FOLLOW-725 (the count-1 sighting of the
+same scope gap), RETRO-030 (the prior K.1 scope amendment), Rule J, Rule K.1, Rule AI, FOLLOW-729,
+FOLLOW-731, FOLLOW-734]
+
+---
+
+## FOLLOW-733 — Four records state the local shim 500s on the missing `ANTHROPIC_API_KEY`; it does not, and the README it lives in still calls the app a placeholder while pointing at a `.dev.vars` that does not exist
+
+source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: now
+recommended_agent: ml-engineer priority: P3 estimated_hours: 2 depends_on: [] promoted_to_queue:
+false
+
+Four documentation defects from PR #641, all in or around the same 77-line README section. Grouped
+because they are one editing pass.
+
+**(1) The AC5 cause is falsified.** `apps/intent-engine/README.md:88-94`, the PR #641 body
+("Credentials gap (AC5)"), `backlog/QUEUE.md:33-38` and `backlog/FOLLOW_UPS.md:21611-21613` all
+state that an authenticated POST **500s on the missing `ANTHROPIC_API_KEY`**. It does not.
+`extract_intent` swallows that error (`nlp.py:318-332`) and returns the neutral payload; the
+uncaught exception is `KeyError('UPSTASH_REDIS_REST_URL')` from `redis_writer.py:35`. Reproduced
+against merged `6f12174`:
+
+```
+extract_intent error model=claude-haiku-4-5-20251001 source=realtime: 'ANTHROPIC_API_KEY'
+RAISED: KeyError KeyError('UPSTASH_REDIS_REST_URL')
+```
+
+This mis-orders which credential to chase and, worse, hides that **one of the two fails green**:
+provision Upstash alone and you get 202 + a neutral shadow key + no archetype movement. Rule Y
+family (a behavioural claim recorded without verifying it against the code path it names). The
+behavioural fix is FOLLOW-730; this ticket fixes the record.
+
+**(2) The file the PR edited still declares the app unimplemented.**
+`apps/intent-engine/README.md:5-7` reads "## Status — Placeholder — full implementation in
+TICKET-013 (ml-engineer)" — untouched while the same PR appended 77 lines documenting a working
+local server for an app with a 14 KB `nlp.py`, a live `main.py`, `redis_writer.py` and
+`jobs/batch_enrich.py`. **Rule AI** (`CONVENTIONS_PATCH.md:2358`) obliges this in the SAME PR,
+explicitly including the changed file's own header.
+
+**(3) The one instruction connecting ingest to the shim points at a file that does not exist.**
+`README.md:57-62` says to set `MODAL_CHAT_NLP_URL` + `INTERNAL_API_SECRET` "e.g. in
+`apps/ingest/.dev.vars`". Verified: `apps/ingest/` has **no `.dev.vars` and no
+`.dev.vars.example`**; `apps/ingest/.env.example` (which does exist) contains **neither** key; both
+are documented in `wrangler.toml:156-159` as `wrangler secret put` values, which is the prod path,
+not the `wrangler dev` path. Rule AH-adjacent.
+
+**(4) The sync-vs-spawn divergence is documented as a mechanism, never as a consequence.**
+`local_dev.py:32-42` and `README.md:73-74` correctly state the shim writes synchronously while prod
+spawns. Neither says what that costs: prod has a genuine write/read race (the SDK's next
+`/api/adapt` may read before the Modal container finishes), so **"the first chat message's intent
+isn't visible until a later adapt call" is a prod-only class that structurally cannot reproduce on
+the shim**. Verified benign for correctness (an absent key yields `dims={}` → skip → the Rule R gate
+is not burned), so this is an expectation gap for anyone using localhost to predict prod timing.
+
+**AC:** (1) correct the AC5 cause in all four records, naming `UPSTASH_REDIS_REST_URL` as the 500
+and stating plainly that a missing/broken Anthropic key fails GREEN (202 + neutral key),
+cross-referencing FOLLOW-730; (2) replace the "Placeholder / TICKET-013" status header with the real
+state; (3) add `apps/ingest/.dev.vars.example` carrying both keys with the localhost value for
+`MODAL_CHAT_NLP_URL`, confirm `.dev.vars` is gitignored, and point the README at the example rather
+than at a file the reader must know to create; (4) add two sentences to the README's local-dev
+section on the consequence in (4) above; (5) docs only — zero code change, and do not touch `nlp.py`
+(that is FOLLOW-730).
+
+cross_ref: [RETRO-233 §4d DG-1 / DG-2 / DG-3, §4a LG-2, Rule Y, Rule AI, Rule AH, FOLLOW-729,
+FOLLOW-730, docs/runbooks/upstash-redis-env-parity.md]
+
+---
+
+## FOLLOW-734 — `local_dev.py` is now the repo's only local-dev entrypoint pattern for a Modal app, and two more endpoints are waiting to copy it
+
+source_retro: RETRO-233 (PR #641, FOLLOW-729) source_ticket: FOLLOW-729 recommended_sprint: next
+recommended_agent: architect priority: P3 estimated_hours: 3 depends_on: [FOLLOW-732 (its option (a)
+decision is an input, not an output, of this one)] promoted_to_queue: false
+
+PR #641 established a precedent — _"a Modal app MAY carry a local-only bare-FastAPI twin"_ — in a
+file docstring, with no ADR and no Master Design line. It is a good precedent (Modal is a deployment
+target, not a coupling, per §C.3), and it is about to be copied.
+
+Scope, measured rather than assumed.
+`grep -rn "fastapi_endpoint\|asgi_app\|web_endpoint" --include=*.py apps/` returns exactly three
+production HTTP endpoints:
+
+- `apps/intent-engine/src/main.py:108` — closed by #641
+- `apps/llm-gateway/src/jobs/generate_description.py:2140` — `description_requested_endpoint`, OPEN
+- `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:448` — embed-seed, OPEN
+
+`apps/stream-consumer` and `apps/data-quality` have **zero** — they are consumers/crons and do not
+share this problem. So the remainder is 2 endpoints in 1 app, not 3 apps.
+
+Why decide now rather than after the next copy: `description_requested_endpoint` is the
+AI-description generator, as central to the visible localhost loop as chat-NLP is, so under Piotr's
+standing "100% end-to-end on localhost" priority it is the next thing someone will want. Copied
+as-is it produces a third and fourth ungated `_valid_bearer` and validation block — in a repo whose
+Rule J exists precisely because that compounds (RETRO-233 §6 records this as the likely third
+sighting of the Rule J / K.1 scope gap, which would trip the promotion threshold).
+
+**AC:** (1) decide and record ONE of: (a) generalize — a small shared local-dev harness that takes
+an app name + a handler and builds the bare FastAPI app, adopted by intent-engine and applied to
+llm-gateway's two endpoints; (b) accept per-app copies with a mandatory shared auth/validation
+module per app (i.e. FOLLOW-732 option (a) applied three times, so the duplication never crosses a
+file boundary); (c) explicitly decline to generalize, with the rationale recorded; (2) record the
+decision where the next author will hit it — an ADR if (a), otherwise a short section in
+`docs/CONVENTIONS.md` or the Master Design §C.3 area; the current single-file docstring is not
+discoverable from llm-gateway; (3) if (a) or (b), state whether llm-gateway's two endpoints are in
+scope for a follow-on ticket or explicitly deferred — do not leave it implied; (4) do not implement
+llm-gateway's shims in this ticket; this is a decision ticket with a written artifact, not a build.
+
+cross_ref: [RETRO-233 §5b / §5d / §6, FOLLOW-729, FOLLOW-732, FOLLOW-725, Rule J, Rule K.1, ESC-042,
+MASTER_DESIGN §C.3, ADR-0016]

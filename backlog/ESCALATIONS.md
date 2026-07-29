@@ -2821,3 +2821,52 @@ separate conversations.
 **Resolution:** — awaiting CEO/DPO ruling (items 1, 3, 5, 6; item 2 stands unless overridden).
 
 **Resolution:** — awaiting CEO/DPO ruling.
+
+---
+
+## OPEN — ESC-045: the local chat-NLP shim fails GREEN on a missing Anthropic key — it returns 202 and writes a neutral archetype, and four records name the wrong cause [FOLLOW-729 / FOLLOW-730]
+
+**Filed by:** claude (session 79, post-RETRO-233) **Date:** 2026-07-29T16:00:00Z **Affects:**
+Piotr's standing "100% end-to-end on localhost" priority, FOLLOW-729 (merged, PR #641), FOLLOW-730
+(P2), `apps/intent-engine/src/nlp.py:318-332`, `apps/intent-engine/src/redis_writer.py:35` **Type:**
+operator / credentials + falsified record
+
+**Description:** two things, one of which is my own error.
+
+**(1) The credentials gap itself.** No dev-tier Anthropic key and no dev Upstash instance are
+provisioned, so the merged `local_dev.py` cannot actually run the chat → intent → archetype loop end
+to end. FOLLOW-729's own AC5 pre-authorised escalating this ("escalate the credentials gap
+separately if needed"), and Rule AA says an operator-gated ticket is not DONE on code alone. It
+blocks a CEO-stated product priority, so it is escalated here rather than left as prose in
+`QUEUE.md`.
+
+**(2) The recorded cause was wrong, and the real failure mode is worse.** The PR body, the
+`README.md` section, `QUEUE.md` and the `FOLLOW_UPS.md` stub all state that an authenticated POST
+500s on the missing `ANTHROPIC_API_KEY`. It does not. RETRO-233 falsified this and I re-verified it
+directly: `extract_intent` is documented **"Never raises"** and swallows every Anthropic failure
+(`nlp.py:325-332` — prints, then returns the neutral payload); the 500 I observed actually came from
+`redis_writer._get_redis` raising `KeyError('UPSTASH_REDIS_REST_URL')` (`redis_writer.py:35`),
+because in my smoke run BOTH credentials were absent and Redis raised first. The log line I quoted
+as the cause was a swallowed-error print, not the raise.
+
+**Why that matters operationally:** provision Upstash first (the harder credential) and leave the
+Anthropic key unset, and the shim returns **202, writes the shadow key, and records
+`archetype_hint: neutral, confidence: 0.0, all dimensions null`**. The wire looks healthy. That is
+indistinguishable at a glance from a writer/reader Upstash database mismatch — the _other_ silent
+failure on this same path — and both present exactly as "chat isn't affecting the archetype", which
+is the highest-cost false-bug trail on this loop. Blast radius is bounded (RETRO-233 checked:
+`flattenIntentDimensions` drops nulls → `{}` → `adapt.ts:869-880` skips the prior, so no archetype
+poisoning and Rule R is not burned) — the damage is diagnostic time, not corrupted state.
+
+**Decision needed from Piotr (CEO/operator):**
+
+1. Provision an `ANTHROPIC_API_KEY` and an Upstash instance for local dev — and set BOTH before the
+   first run, since a partial provision fails green.
+2. Confirm the Upstash env-pair parity (`UPSTASH_REDIS_REST_URL`/`_TOKEN` for the writer vs
+   `UPSTASH_REDIS_URL`/`_TOKEN` for the control-plane reader must address the SAME database, per
+   `docs/runbooks/upstash-redis-env-parity.md`).
+3. Whether FOLLOW-730 (make the neutral-payload fallback distinguishable from a real neutral buyer)
+   should be pulled forward ahead of the remaining P2/P3 stubs, since until it lands the green-wire
+   ambiguity above stays live.
+
+**Not blocked on:** ESC-042 item 1 (prod Modal deploy) — unrelated, still open, local-only scope.

@@ -30,13 +30,40 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
-### FOLLOW-729 — status: DONE (PR #641 merged 2026-07-29, `6f121741` on `main`)
+### FOLLOW-729 — status: CODE_COMPLETE_OPERATOR_PENDING (PR #641 merged 2026-07-29, `6f121741` on `main`)
 
-**Merged.** `apps/intent-engine/src/local_dev.py` is now on `main`, so the chat-NLP producer is
-runnable on localhost for the first time. **Follow-on that is NOT code:** the credentials gap under
-"AC5" below is the only thing still standing between this and Piotr's "100% on localhost" goal —
-tracked there, not in a separate ticket, because it is an operator step. Retrospective for this
-ticket not yet run.
+**Code merged; NOT `DONE`.** `apps/intent-engine/src/local_dev.py` is on `main`, so the chat-NLP
+producer is runnable on localhost for the first time — but AC5 (credentials) is answered NO, and
+**Rule AA** says an operator-gated ticket is never `DONE` on code alone. This entry was briefly
+mislabelled `DONE` on merge; RETRO-233 §5d caught it and it is corrected here. Escalated as
+**ESC-045**.
+
+**RETRO-233 falsified this session's own recorded failure cause — correction, re-verified
+directly.** The PR body, the README section, this queue entry and the FOLLOW-729 stub all stated
+that an authenticated POST 500s on the missing `ANTHROPIC_API_KEY`. It does not. `extract_intent` is
+documented "Never raises" and swallows Anthropic failures (`nlp.py:325-332`), returning the neutral
+payload; the observed 500 actually came from `redis_writer._get_redis` raising
+`KeyError('UPSTASH_REDIS_REST_URL')` (`redis_writer.py:35`) because both credentials were absent in
+the smoke run and Redis raised first. **Operational consequence:** with Upstash provisioned and the
+Anthropic key missing, the shim returns 202 and writes
+`archetype_hint: neutral, confidence: 0.0, all dims null` — a green wire with zero archetype
+movement, indistinguishable from a writer/reader Upstash DB mismatch. Blast radius bounded
+(RETRO-233: `flattenIntentDimensions` drops nulls → `{}` → `adapt.ts:869-880` skips the prior; no
+archetype poisoning, Rule R not burned). **FOLLOW-730** (P2) closes the fail-green.
+
+**Retrospective: RETRO-233 complete** (Opus). Wiring audit clean; gaps logic 3 / code bugs 0 / test
+3 / docs 3. Stubs filed: **FOLLOW-730** (P2 fail-loud), **731** (P2 — chat-NLP is the only
+direct-Modal contract with no shared fixture, now with 3 hand-typed copies), **732** (P3 — duplicate
+`_valid_bearer` parity + day-one test asymmetry), **733** (P3 docs — incl. the falsified cause above
+and a README pointing at a `.dev.vars` that does not exist), **734** (P3 — generalize-or-accept
+before `llm-gateway` copies the pattern). **No Rule promoted:** the Rule J / K.1 scope gap is at
+count 2 but only 1 prior retro (RETRO-231/FOLLOW-725); house threshold is 2 prior, held
+deliberately, with what a third sighting must carry recorded in RETRO-233 §6. Cascade is narrower
+than assumed: `apps/llm-gateway` has **2** endpoints with the identical Modal-only problem
+(`generate_description.py:2140`, `consume_embed_seed_requests.py:448`); `stream-consumer` and
+`data-quality` have **zero**. The PR's core justification was independently verified as **correct**
+(with real `modal` 1.4.2, `main.chat_nlp_endpoint` is a `modal.functions.Function`,
+`callable(...) == False`) — the duplication was unavoidable given AC4.
 
 **assigned_to:** ml-engineer **model: Sonnet** — routine, well-scoped addition (one new local-only
 FastAPI entrypoint file reusing existing, already-correct logic; no design decision, no cross-module
@@ -105,21 +132,26 @@ dev-extra `uvicorn`).
   authenticated short-body POST → 400 with the expected missing-fields detail. Local `pytest src/` →
   31 passed / 2 skipped; `black --check`, `mypy src/local_dev.py`, `ruff` on both new files and
   prettier on the README all clean; gitleaks v8.21.2 `protect --staged` → no leaks.
-- **AC5 (credentials) confirmed OPEN and correctly reported in the PR, not papered over.** A fully
-  authenticated POST returns 500 with `extract_intent error … 'ANTHROPIC_API_KEY'` — no dev-tier
-  Anthropic key and no dev Upstash instance are provisioned. Operator/credentials gap, not a code
-  gap; the shim fails loud. **This is the remaining blocker on Piotr's "100% on localhost" priority
-  once #641 merges** — the runner must supply an `ANTHROPIC_API_KEY` plus an Upstash instance, and
-  per `docs/runbooks/upstash-redis-env-parity.md` the writer's `UPSTASH_REDIS_REST_URL`/`_TOKEN`
-  must point at the SAME database as the control-plane reader's `UPSTASH_REDIS_URL`/`_TOKEN`.
+- **AC5 (credentials) confirmed OPEN and correctly reported in the PR, not papered over.** No
+  dev-tier Anthropic key and no dev Upstash instance are provisioned. Operator/credentials gap, not
+  a code gap. **This is the remaining blocker on Piotr's "100% on localhost" priority** — the runner
+  must supply an `ANTHROPIC_API_KEY` plus an Upstash instance, and per
+  `docs/runbooks/upstash-redis-env-parity.md` the writer's `UPSTASH_REDIS_REST_URL`/`_TOKEN` must
+  point at the SAME database as the control-plane reader's `UPSTASH_REDIS_URL`/`_TOKEN`. **CORRECTED
+  by RETRO-233 (see the header of this entry):** the claim originally recorded here — "a fully
+  authenticated POST returns 500 with `extract_intent error … 'ANTHROPIC_API_KEY'` … the shim fails
+  loud" — is **wrong on both counts**. The 500 came from Upstash (`redis_writer.py:35`), not
+  Anthropic, and with Upstash present the shim fails **green**: 202 + a neutral shadow key.
+  Escalated as **ESC-045**; **FOLLOW-730** fixes the fail-green.
 - Noted, not fixed (pre-existing, unrelated): `ruff check src/` reports one `E402` in
   `src/test_chat_nlp_endpoint.py:22` (missing `# noqa: E402`); ruff does not run in CI.
 - ESC-042 item 1 (prod Modal deploy) untouched and still OPEN, as scoped.
 
-**0 tickets IN_PROGRESS** (FOLLOW-729 DONE). **Still held on ESC-044:** FOLLOW-704 + 714,
-FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling. **Still OPEN,
-non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy, distinct from FOLLOW-729's
-local-only scope).
+**0 tickets IN_PROGRESS** (FOLLOW-729 = CODE_COMPLETE_OPERATOR_PENDING, awaiting ESC-045). **New,
+unstarted:** FOLLOW-730 (P2) / 731 (P2) / 732 (P3) / 733 (P3) / 734 (P3) from RETRO-233. **Still
+held on ESC-044:** FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting
+Piotr's CEO/DPO ruling. **Still OPEN, non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal
+deploy, distinct from FOLLOW-729's local-only scope).
 
 ---
 

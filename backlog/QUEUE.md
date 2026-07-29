@@ -1,5 +1,35 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-29 (session 79 — FOLLOW-723 MERGED (#640); retrospective-analyst dispatch next)
+
+**FOLLOW-723 — status: DONE.** PR **#640** merged (squash `82894c1e`), branch deleted, local `main`
+fast-forwarded. Session was interrupted by a terminal close mid-implementation (uncommitted diff
+already had AC1's `mustReplaceInDocBlock`/`mustReplaceBeginSentinelLine` + AC5's uniqueness
+hardening done); resumed, completed remaining ACs, verified, and merged in the same continuation
+session. All 6 ACs closed: (1) all 3 `docSrc`-targeting self-test cases in
+`check-consent-text-sync.mjs` scoped to the sentinel-delimited region, libSrc-targeting cases left
+on file-wide `mustReplace` with a recorded rationale (extraction is itself whole-file-first-match);
+(2) red-first proof reproduced in a sandboxed `/tmp` copy (never the working tree) — pre-fix script
+reproduces RETRO-231's exact misleading `FAIL`, post-fix script reports a correctly-worded `STALE`;
+(3) audited every remaining `mustReplace` call site in both scripts, recorded verdict as inline
+comments (contract-sync case (a)'s `route.ts` 201-return anchor: SAFE TODAY NOT STRUCTURALLY, unique
+now, flagged for re-scoping if a duplicate is ever manufactured; GET BEGIN-sentinel removal: SAFE,
+stable unique token); (4) FOLLOW-717 confirmed not started (`promoted_to_queue: false`) — no
+conflict, noted for whoever picks it up; (5) `insertDocContractLine`/`removeDocContractLine`
+hardened with the same sentinel-uniqueness count `extractDocContract` enforces, case (c) comment
+added; (6) no real comparison logic or ESC-044 artifact touched. CI green except the known
+pre-existing-red `Rule I` gate (independently re-confirmed failing on #639 and #636 too, before
+merging — not introduced by this PR). Local verification: both self-tests 7/7 and 5/5 PASS against
+the real untouched repo, `pnpm lint/typecheck/build` green, `pnpm test` green except 2 `packages/db`
+tests that fail only under full-suite resource contention and pass individually in isolation
+(unrelated package). Gitleaks clean on the diff. **Next action: dispatch retrospective-analyst for
+FOLLOW-723 per the standard per-ticket loop.**
+
+---
+
+<details>
+<summary>Superseded — previous START HERE (session 78, FOLLOW-723 dispatch)</summary>
+
 ## ▶️ START HERE — resume 2026-07-29 (session 78 continued — FOLLOW-720 MERGED (#639); RETRO-231 filed; FOLLOW-723 dispatched)
 
 **FOLLOW-720 — status: DONE.** PR **#639** merged (squash `a8764ae7`). **RETRO-231 filed**
@@ -104,6 +134,8 @@ identified. Does not warrant Opus per the model-fit table's escalation trigger. 
 **1 ticket IN_PROGRESS** (FOLLOW-723) — within the ≤3 guardrail. **Still held on ESC-044:**
 FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO
 ruling.
+
+</details>
 
 ---
 

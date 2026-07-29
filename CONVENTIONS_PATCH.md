@@ -2663,3 +2663,215 @@ IMPLEMENTATION: scripts/check-consent-contract-sync.mjs + .github/workflows/ci.y
 `consent-contract-sync` job, modelled explicitly on scripts/check-consent-text-sync.mjs (PR #633,
 FOLLOW-705) — the precedent RETRO-229 §4 DG-2 named as proof this gate shape works in this repo.
 LETTER CHOICE: AK is the next in the double-letter sequence after AJ. -->
+
+---
+
+## Rule AL — An assertion MUST be evaluated over the SAME region its consumer reads: a check that greps a whole file/repo while the thing it guards parses only a delimited slice reports on the wrong bytes, and fails in the direction that looks like a real finding
+
+**Pattern:** A guard, a self-test fixture, or a rule's own verification command asserts that a
+literal is PRESENT (or ABSENT) across a **whole file or repo**, while the thing it guards reads only
+a **delimited region** of that file — a sentinel block, a method body, a template literal, a
+normalized projection. The assertion is then satisfied, or defeated, by matter **outside** the
+region its consumer will ever look at. Two failure directions, both bad and both silent about their
+real cause:
+
+- **Defeated:** the mutation/predicate lands out-of-region, the guarded check correctly reports
+  nothing changed, and the assertion fails — **as a red that accuses the guard of being broken**, on
+  a legitimate change. The reader's first line is an accusation about the wrong subsystem.
+- **Satisfied:** the predicate hits an out-of-region occurrence and the assertion passes while
+  enforcing nothing. **A verification step that cannot fail is not a verification step** (Rule Q's
+  subject, applied to a region rather than to an exit code).
+
+**Evidence — three numbered retros, two of them PRIOR (twice the ≥2 bar is not claimed; the bar is
+exactly met and stated openly):**
+
+- **RETRO-230 §3 / §4d DD-2 (prior, count 1)** — Rule AK's own Verification step 4,
+  `grep -rln "out-of-repo\|no shared release train" backlog/HANDOFFS.md`, annotated "absence of a
+  hit here is a Rule AK gap". `grep -l` on a single named file that contains the phrase **always**
+  hits, so "absence" is unreachable; and the phrase-match cannot find the strongest real candidate
+  (`POST /api/crm/outcome`) because that endpoint uses neither phrase. Satisfied-direction instance,
+  in **prose**, not code.
+- **RETRO-231 §4a LG-1 (prior, count 2)** — `mustReplace`'s file-wide `str.includes()` /
+  `str.replace()` in `scripts/check-consent-text-sync.mjs` vs the gate's sentinel-delimited slice.
+  `the agency's DSR contact` occurs 3× in `PRIVACY_NOTICE_TEMPLATE.md` (`:249` in-block, `:263` and
+  `:352` out-of-block); a correctly-performed consent-text change mutates the out-of-block copy and
+  CI prints `=== SELF-TEST FAILED — the gate does not detect drift ===`. **Proven in a sandbox.**
+  Defeated-direction instance, in **code**.
+- **RETRO-232 §4a LG-1 + §4a LG-2 (promotion trigger, count 3)** — the remediation PR for the above
+  (#640) fixed the `docSrc` axis and shipped an in-file audit declaring two remaining sites safe.
+  **Both verdicts are wrong, both proven in a sandbox:** (i) `renderer-side text drift` anchors on a
+  phrase inside `extractRendererTemplate`'s returned template literal but mutates `lib.ts`
+  file-wide, and the comment's justification ("no narrower region exists to scope to") is factually
+  false; (ii) contract-sync case (a) records its trigger as "a second literal match across GET/POST"
+  when the real trigger is a match **anywhere earlier in the file**, including the module-level
+  region `extractCalls()` is already blind to — reachable by an ordinary five-line helper
+  extraction. **The audit itself was region-blind**: it reasoned about the _count of matches_
+  instead of _the region the consumer reads_.
+
+**CHECKED BEFORE MINTING.** Not covered by **Rule Q** (a check that _cannot_ fail; Rule AL's checks
+fail readily — they just fail about the wrong bytes, and the defeated direction is a _false red_,
+not a false green). Not covered by **Rule AE** (enumerate every syntactic CALL-SHAPE — shapes, not
+regions; AE is also bound to "a security invariant"). Not covered by **Rule AD** (structural shapes
+a value-domain literal occurs in). Not covered by **Rule AK item 5** (red-first proof at merge time,
+which is orthogonal — a region-blind fixture is red-first-provable on the day it is written and
+breaks on the next legitimate change). No existing rule states the region invariant.
+
+**Rule:**
+
+1. **Name the region before writing the assertion.** For any grep, `includes`, `replace`, `sed`,
+   fixture mutation or verification command, state — in the code or in the rule's Verification block
+   — **which region the consumer of that assertion actually reads**: whole file, a
+   sentinel-delimited block, a function/method body, a template literal, a normalized projection, a
+   named directory.
+2. **Evaluate the assertion over that region, not over its container.** If the consumer slices, the
+   assertion slices, **using the same locator the consumer uses** (call the extractor, or replicate
+   its invariants including any uniqueness/ordering counts). A whole-file predicate is acceptable
+   **only** when the anchor IS the thing the consumer's own whole-file locator matches — and that
+   coincidence must be stated per site, not assumed.
+3. **Compared, not extracted.** When the consumer normalizes, projects or sub-slices what it
+   extracted (strips markdown, unwraps paragraphs, reads one substring of a line), the assertion's
+   region is the **compared** projection, not the extracted container.
+4. **Fail loud, and fail as the right diagnosis.** If the anchor is absent from the region, throw a
+   staleness error naming the region — never fall back to a file-wide search, and never let the miss
+   surface as "the guard is broken".
+5. **A "safe" verdict is itself an assertion and inherits this rule.** An audit that records "unique
+   today, `grep -c` → 1" has counted matches, not established region alignment. Any verdict left in
+   code MUST state the region the consumer reads, the region the assertion evaluates, and the
+   **real** trigger that would break the alignment — a wrong "audited safe" comment is worse than no
+   comment, because it stops the next auditor.
+
+**Verification (region-scoped, per its own clause 2 — do not paste a whole-repo grep here):**
+
+1. For the file under review, list every `includes(` / `.replace(` / `grep` / `sed` anchor in
+   fixture or verification code: `grep -n "includes(\|\.replace(\|grep -" <file>`.
+2. For each hit, identify the consumer's locator in the same file (the `extract*` function, the
+   slice, the regex) and confirm the anchor is evaluated inside it — by reading the call, not by
+   counting matches.
+3. Red-first, in a **sandboxed copy of the tree, never the working tree**: place a duplicate of the
+   anchor **outside** the consumer's region and **earlier in the file**, then run the check. A
+   region-scoped assertion reports staleness naming the region; a region-blind one reports a failure
+   naming the guard.
+
+<!-- Rule AL added 2026-07-29 — RETRO-232 §6 (pattern P-17 "REGION-BLIND ASSERTION"). Evidence (2 PRIOR
+numbered retros, exactly the ≥2 bar, arithmetic re-derived independently rather than inherited):
+RETRO-230 §3 / §4d DD-2 (Rule AK Verification step 4 inert; satisfied-direction, prose; count 1) +
+RETRO-231 §4a LG-1 (mustReplace file-wide vs sentinel slice, sandbox-proven; defeated-direction, code;
+count 2). Promotion trigger: RETRO-232 §4a LG-1 + §4a LG-2 (count 3) — TWO further sandbox-proven
+instances inside the remediation PR for count 2, plus one named in advance (§4a LG-3, normalization).
+RETRO-231 §6 pre-authorised promotion "on the next sighting (3rd, = 2 priors)" in the corrected P-15
+form; RETRO-232 honoured it only AFTER re-deriving the count, per RETRO-231's own lesson that a
+predecessor's pre-authorisation is not an authorisation. CHECKED BEFORE MINTING: Rule Q (cannot-fail
+checks — AL's checks DO fail, about the wrong bytes), Rule AE (call-SHAPES, and bound to security
+invariants), Rule AD (structural shapes of a literal), Rule AK item 5 (red-first at merge time,
+orthogonal). Clause 5 exists because RETRO-232's two P1 findings were both wrong verdicts produced by
+a conscientious audit whose counts were all correct. LETTER CHOICE: AL is the next in the double-letter
+sequence after AK. -->
+
+---
+
+## Rule AM — A self-testing gate's fixtures MUST NOT be produced by mutating the live source the gate polices — synthesize them; if a live-source mutation is unavoidable it MUST be region-scoped AND report fixture-staleness as a diagnosis distinct from gate-failure
+
+**Pattern:** A CI gate ships a `--self-test` mode that proves it detects drift by **mutating a copy
+of the very source it polices** and asserting the check then fails. The fixture is therefore
+anchored on the exact literals the gate exists to protect — so **the first CORRECT change the gate
+was built for invalidates the fixture**, `String.replace` becomes a no-op, the "mutated" source
+equals the original, the case's `ok === false` assertion fails, and CI prints a banner accusing the
+gate of not detecting drift. The gate is fine. The change is fine. The message is a lie, it lands on
+the author of a legitimate change, and it lands **at the moment of highest stakes** (a consent-text
+bump, a contract change) when a red CI is least likely to be read charitably.
+
+**The repo already solved this, one directory over.** The three other self-testing gates —
+`scripts/check-migration-journal.sh:50-160`, `scripts/check-fire-and-forget-sinks.sh:57-92`,
+`scripts/check-modal-app-singleton.sh:68-111` — build **fully synthetic fixtures in a `mktemp -d`**
+and point the gate at the temp tree via an env var / fixture mode. **None of them mutates a live
+repo source, and all three are structurally immune to this entire class.** The two `.mjs` consent
+gates are the only gates in `scripts/` that mutate live sources (RETRO-231 §5, repo-wide scan). That
+choice — not the anchor style — is the root coupling.
+
+**Evidence — three numbered retros, two of them PRIOR:**
+
+- **RETRO-230 §4c TG-1 (prior, count 1)** — proven on **both** consent gates in one sandbox session.
+  Adding `429 rate_limited` to GET **and** to its machine block (i.e. doing the change perfectly) →
+  contract gate: real check PASS, self-test **1/5 FAIL**. Bumping
+  `PLATFORM_REGISTRATION_TOS_VERSION` consistently in `lib.ts` **and** `PRIVACY_NOTICE_TEMPLATE.md`
+  (i.e. exactly what FOLLOW-704/710/711 must do) → text gate: real check PASS, self-test **1/7
+  FAIL**. Both under `=== SELF-TEST FAILED — the gate does not detect drift ===`.
+- **RETRO-231 §4a LG-1 / §5 (prior, count 2)** — the dedicated remediation PR (#639, FOLLOW-720)
+  introduced `FixtureStaleError` / `STALE` to fix the _message_, and the defect **survived**: a
+  correctly-performed FOLLOW-710/711 edit still produced `FAIL` with the identical banner. §5's
+  repo-wide scan established the synthetic-fixture precedent above and named live-source mutation as
+  the root coupling; `mustReplace` "treats a symptom".
+- **RETRO-232 §2 / §6 (promotion trigger, count 3)** — the **second** dedicated remediation PR
+  (#640, FOLLOW-723) region-scoped the doc fixtures and genuinely fixed the axis it targeted
+  (pre-fix `FAIL` → post-fix correctly-worded `STALE`, both reproduced independently on an identical
+  sandbox tree). **And the pattern still holds:** a `STALE` is still `exit 1` on a CI step named
+  "proves it detects drift", so the next legitimate consent-text change still reddens CI — now
+  honestly, but red; and two further sites remain region-blind (§4a LG-1/LG-2). The
+  synthetic-fixture alternative was **explicitly offered in FOLLOW-723's AC-1 and declined** in
+  favour of region-scoping. That is a defensible call for a 3h ticket, and it is exactly why the
+  invariant belongs in a rule rather than in a ticket: **the next gate author will make the same
+  default choice**, and `CONVENTIONS_PATCH.md:2605` (Rule AK item 1) already points them at these
+  two scripts as "the reference shape".
+
+**CHECKED BEFORE MINTING.** **Rule Q** requires a gate to emit positive proof its assertion executed
+— it says nothing about where the fixture comes from, and both consent gates satisfy Q while
+carrying this defect. **Rule AJ** is about a shipped signal having a consumer. **Rule AK item 5**
+requires a red-first proof _at merge time_ — a live-source fixture is red-first-provable on the day
+it is written; the defect appears on the _next_ legitimate change. **Rule AL** (minted alongside
+this one) governs the region an assertion is evaluated over; AM governs where the fixture **comes
+from** in the first place. AM is the fixture-provenance rule none of them states.
+
+**Rule:**
+
+1. **Default: synthesize.** A gate's `--self-test` / fixture mode MUST construct its fixture from
+   synthetic content it owns — a `mktemp -d` tree or an in-memory string built in the test — not by
+   mutating a copy of the live source the gate polices. Follow
+   `scripts/check-migration-journal.sh:50-160` for the reference shape.
+2. **If live-source mutation is genuinely necessary** (e.g. the gate's whole subject is "these two
+   real artifacts agree"), then **both** of the following are mandatory, not optional: a. every
+   mutation is **region-scoped per Rule AL** to the region the check actually compares; and b. an
+   anchor that no longer matches reports **fixture staleness**, naming the anchor and its region —
+   never "the gate does not detect drift".
+3. **Fixture staleness is a distinct diagnosis and MUST reach a machine consumer**, not only a log
+   body: a distinct exit code (this repo's documented convention is
+   `2 = self-test failure / guard unproven`, see `check-migration-journal.sh:28-30`,
+   `check-fire-and-forget-sinks.sh:50`, `check-modal-app-singleton.sh:61`), and a CI step name that
+   does not assert a conclusion the run may contradict.
+4. **The fail-loud path MUST itself execute.** At least one self-test case per gate MUST feed a
+   deliberately-stale anchor through the staleness path and assert the outcome is the staleness
+   status — otherwise the diagnosis is never rendered and a typo in it ships inert (Rule Q, one
+   level down).
+5. **Anchor choice, when live mutation is used:** prefer an anchor the gate derives dynamically from
+   the current source (the pattern `check-consent-text-sync.mjs`'s `TOS version bumped` case uses —
+   read the value with the gate's own regex, then mutate what you read) over a hardcoded literal. A
+   dynamically-derived anchor cannot go stale.
+
+**Verification:**
+
+1. `grep -rln "self-test\|selfTest\|SELF-TEST" scripts/` — for each gate, determine whether its
+   fixture is synthetic (`mktemp`, in-memory literal) or a mutation of a live repo source.
+2. For every live-source mutator, confirm clause 2a (region-scoped, per Rule AL's verification) and
+   2b (staleness reported distinctly), clause 3 (distinct exit code + honest step name in `ci.yml`)
+   and clause 4 (a case that actually exercises the staleness path — check it appears in the gate's
+   PASS list on a normal run).
+3. Red-first, in a **sandboxed copy of the tree, never the working tree**: perform the change the
+   gate exists to police, **done perfectly and completely**, and run the self-test. A compliant gate
+   is green or reports staleness naming the anchor; a non-compliant one accuses itself.
+
+<!-- Rule AM added 2026-07-29 — RETRO-232 §6 (pattern P-16, first raised RETRO-230 §6). Evidence (2 PRIOR
+numbered retros, exactly the ≥2 bar, arithmetic re-derived independently): RETRO-230 §4c TG-1 (both
+consent gates, two sandbox-proven instances in one retro — counted as ONE retro sighting per RETRO-228's
+"instances ≠ retros" discipline; count 1) + RETRO-231 §4a LG-1 / §5 (the pattern survived its first
+dedicated remediation PR #639; §5's repo-wide scan named live-source mutation as the root coupling and
+established the three shell gates as the immune precedent; count 2). Promotion trigger: RETRO-232 §2 / §6
+(count 3) — survived a SECOND dedicated remediation PR #640; the fix works on the axis it targeted
+(independently reproduced) yet the next legitimate change still reddens CI, and the synthetic-fixture
+alternative was explicitly offered in FOLLOW-723 AC-1 and declined. RETRO-230 §6 pre-authorised promotion
+"on the 2nd sighting", which RETRO-231 §6 identified as drafted ONE HOP EARLY against the ≥2-PRIOR bar,
+declined, and re-issued in RETRO-229's correct P-15 form ("on the 3rd sighting"); RETRO-232 honours the
+CORRECTED form only after re-deriving the count. CHECKED BEFORE MINTING: Rule Q (gate proves its assertion
+RAN — orthogonal to fixture provenance; both consent gates satisfy Q and carry this defect), Rule AJ
+(signal needs a consumer), Rule AK item 5 (red-first AT MERGE TIME — a live-source fixture passes that and
+breaks on the NEXT change), Rule AL (region of an assertion; AM is provenance of a fixture). Clause 5 is
+lifted from the one case in these gates that is already immune (the dynamically-derived TOS-version
+anchor, RETRO-231 §4a LG-2 table row 2). LETTER CHOICE: AM follows AL, minted in the same retro. -->

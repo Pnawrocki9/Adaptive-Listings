@@ -21392,3 +21392,211 @@ change either helper's behaviour in this ticket.
 
 cross_ref: [RETRO-231 §4c TG-2, §6, RETRO-030 (the prior K.1 scope amendment), RETRO-003 / RETRO-005
 (Rule J's evidence), FOLLOW-720, FOLLOW-723, FOLLOW-724, FOLLOW-721, Rule J, Rule K.1, Rule AI]
+
+---
+
+## FOLLOW-726 — The `libSrc` self-test anchors are still region-blind after FOLLOW-723, and an inline comment now declares them structurally safe on a premise that is false
+
+source_retro: RETRO-232 (PR #640, FOLLOW-723) source_ticket: FOLLOW-723 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 3 depends_on: []
+promoted_to_queue: false
+
+FOLLOW-723 region-scoped the three `docSrc` self-test cases in `scripts/check-consent-text-sync.mjs`
+and left the three `libSrc` cases on the file-wide `mustReplace`, with this justification at
+`check-consent-text-sync.mjs:296-303`:
+
+> `libSrc`-targeting cases (`renderer-side text drift`, `TOS version bumped`, `unreadable renderer`)
+> still use `mustReplace` above unchanged: `extractRendererTemplate`'s own extraction is itself a
+> whole-`libSrc`-first-match regex (**no narrower region exists to scope to**) …
+
+**The parenthesis is false.** `extractRendererTemplate` (`:66-95`) _begins_ with a whole-file
+first-match regex, but what it **returns and what `runCheck:222-229` compares** is `tpl[1]` — the
+template literal inside `renderPlatformConsentText()` (`lib.ts:134+`). That is a strictly narrower
+region, already computed by the gate, and scopeable in ~5 lines — exactly the relationship
+`extractDocBlock` has to the doc, which the same PR _did_ scope.
+
+**Per-site audit (what FOLLOW-723 AC-3 asked for; the merged comment gave one collective verdict):**
+
+| Case                           | Anchor                                                                                       | Region `runCheck` compares               | Aligned?                                           |
+| ------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------- |
+| `unreadable renderer`          | `export function renderPlatformConsentText`                                                  | the `fn` regex's own first match         | ✅ the anchor IS what the whole-file regex locates |
+| `TOS version bumped`           | the `PLATFORM_REGISTRATION_TOS_VERSION = '…'` assignment (derived with the gate's own regex) | `libSrc.match(/PLATFORM_…/)` first match | ✅ same regex, same match                          |
+| **`renderer-side text drift`** | **`within 30 days`** — a phrase INSIDE the returned template                                 | **`tpl[1]` only**                        | ❌ **NO**                                          |
+
+**Proven in a sandboxed copy of the tree against `main` at `1078cfc0` (working tree never
+modified).** One realistic edit — a docblock line above the renderer quoting the disclosed retention
+window, inserted at `lib.ts:127`, ten lines above the template literal it quotes, nothing else
+changed:
+
+```
+===== REAL CHECK =====   === CONSENT TEXT IN SYNC — PASS ===
+===== SELF-TEST =====    FAIL  [self-test] renderer-side text drift FAILS
+                         === SELF-TEST FAILED (1/7) — the gate does not detect drift ===   EXIT=1
+```
+
+`FAIL`, not `STALE` — the verbatim banner FOLLOW-720 **and** FOLLOW-723 both exist to delete, in the
+file FOLLOW-723 was dispatched to fix.
+
+**Why P1.** RETRO-231 scored the doc case P1 because `PRIVACY_NOTICE_TEMPLATE.md` has an append-only
+changelog that quotes policed phrases verbatim, so the policed change manufactures its own trap.
+**`lib.ts` has the same mechanic and nobody has named it:** its renderer docblock at `:113-115`
+quotes `[agency DSR contact]` and `[agency privacy policy]` — the pre-FOLLOW-705 forms of two
+currently policed phrases — and `:121-126` **instructs the next editor to update that docblock when
+the text changes**. The file's own instructions steer the next author into writing prose _above_ the
+template about the phrases _inside_ it. Honest scope of the claim: the **mechanism** is proven live
+(above); the **specific** trip on FOLLOW-710/711 is not, because `within 30 days` is still unique in
+`lib.ts` (`grep -c` → 1) and 710/711 rewrites the DSR sentence, not the retention window. **What
+makes it P1 is not probability — it is that a wrong "audited, safe" verdict now sits in the file and
+will stop the next auditor.** An unexamined call site invites examination; one labelled _audited and
+safe_ does not.
+
+**AC:** (1) scope `renderer-side text drift`'s mutation to the template literal
+`extractRendererTemplate` returns — mirror `mustReplaceInDocBlock`'s shape (locate the region the
+way the gate locates it, `includes` within it, `replace` within it, splice back), throwing
+`FixtureStaleError` if the anchor is absent **from the template** even when present elsewhere in
+`lib.ts`; (2) **correct the comment at `:296-303`, do not merely leave it** — replace the collective
+verdict with a per-site verdict, and delete the "no narrower region exists to scope to" claim, which
+is the load-bearing error; (3) state explicitly, per site, whether the anchor is aligned because it
+_is_ the thing the extractor's whole-file regex locates (true for the other two) or because it was
+scoped (true after this fix for the third) — the distinction is the whole point; (4) red-first proof
+in a **sandboxed copy of the tree, never the working tree**: reproduce the docblock-quote scenario
+above BEFORE the fix (must show `FAIL` + the misleading banner) and AFTER (must show a
+correctly-worded `STALE`), paste both; (5) do NOT touch either gate's real comparison logic, and do
+NOT touch any ESC-044-held artifact (`lib.ts`'s consent text, `PLATFORM_REGISTRATION_TOS_VERSION`,
+`CANONICAL_CONSENT_TEXT_HASH`, `route.ts`) — the docblock line in the repro is a **sandbox**
+mutation only; (6) if you instead adopt the synthetic-fixture approach the three shell gates use
+(`check-migration-journal.sh:50-160` et al., the structural answer RETRO-231 §5 identified and
+FOLLOW-723 declined), that satisfies (1)–(3) — state which you chose and why.
+
+**Relates to:** Rule AL (minted by RETRO-232 — this is its trigger instance), Rule AM.
+
+cross_ref: [RETRO-232 §4a LG-1, §4d DD-1, §5a, §6 (Rule AL / Rule AM), RETRO-231 §4a LG-1 / §5,
+RETRO-230 §4c TG-1, FOLLOW-720, FOLLOW-723, FOLLOW-710, FOLLOW-711, FOLLOW-724, FOLLOW-725, ESC-044,
+Rule Q, Rule AE]
+
+---
+
+## FOLLOW-727 — Contract-sync case (a)'s recorded "safe today" verdict names a trigger narrower than the real one; the real one is live TODAY under an ordinary refactor, and FOLLOW-717 will MASK it rather than trigger it
+
+source_retro: RETRO-232 (PR #640, FOLLOW-723) source_ticket: FOLLOW-723 recommended_sprint: now
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
+promoted_to_queue: false
+
+FOLLOW-723 AC-3 audited `scripts/check-consent-contract-sync.mjs`'s case (a) — the `route.ts`
+201-return anchor reached file-wide by `mustReplace` — and recorded the verdict in-file at
+`:486-496` as "SAFE TODAY, NOT STRUCTURALLY", naming the trigger as:
+
+> If a future change ever produces **a second literal match of this anchor across GET/POST**, this
+> case must be re-scoped to `extractMethodBody(routeSrc, 'POST')` …
+
+The count is right (`grep -c` → 1 today; re-verified) and the remedy is right. **The trigger
+condition is wrong — too narrow in the one direction that matters.** `mustReplace` mutates the
+**first match in the whole file**, and POST's real copy is at `route.ts:853`. The case is therefore
+defeated by a second literal match **anywhere above line 853** — which includes the entire GET
+handler (`:208-318`) and, critically, **all module-level code**, the exact region RETRO-230 §4a DG-1
+already proved `extractCalls()` is structurally blind to. "Across GET/POST" does not name that
+region at all.
+
+**Proven in a sandboxed copy of the tree against `main` at `1078cfc0` (working tree never
+modified).** One ordinary refactor — extract the 201 builder into a module-level helper placed above
+`GET`, 5 lines, no behaviour change, the exact shape RETRO-230 §4a DG-1's mutation 1 used:
+
+```
+===== REAL CHECK =====   === CONSENT CONTRACT IN SYNC — PASS ===
+===== SELF-TEST =====    FAIL  [self-test] route-side undocumented addition (POST 201 + new code) FAILS
+                         === SELF-TEST FAILED (1/5) — the gate does not detect drift ===   EXIT=1
+```
+
+**Two independent defects compound, and neither is visible from the other's ticket:** the real check
+silently PASSES (RETRO-230 §4a DG-1, owned by FOLLOW-717) _and_ the self-test misleadingly FAILS
+(this). A reader sees a red self-test beside a green contract check and will reasonably conclude the
+gate broke — when in fact the gate went blind and the fixture went stale simultaneously, from one
+five-line refactor.
+
+**The FOLLOW-717 interaction is the OPPOSITE of what the in-file comment predicts.** The comment
+says _"if 717 **narrows** the extraction region…"_. FOLLOW-717's stub does the reverse — it
+**broadens** `extractCalls()` to see helper-extracted and `new NextResponse(...)` emissions. After
+717 lands, the module-level copy becomes visible to the real check, `runCheck` fails, and case (a)
+goes **green again while silently testing module-level attribution instead of the POST-body addition
+its name asserts.** 717 therefore _masks_ this — the worst of the three outcomes. FOLLOW-717's own
+stub AC-4 still says "keep them fixture-robust per FOLLOW-720", naming the superseded standard and
+carrying no case-(a) constraint.
+
+**Sequencing:** land this **before FOLLOW-717**, and before FOLLOW-721's gate-minting work —
+`CONVENTIONS_PATCH.md:2605` (Rule AK item 1) names this script as "the reference shape" for every
+future out-of-repo-contract gate, so a third gate minted now inherits a call site documented in-file
+as known-unsafe.
+
+**AC:** (1) re-scope case (a)'s mutation to `extractMethodBody(routeSrc, 'POST')` — assert and
+mutate within POST's slice, throwing `FixtureStaleError` if the anchor is absent **from that slice**
+even when present elsewhere in `route.ts`; (2) apply the same treatment to any other
+`routeSrc`-targeting `mustReplace` introduced by the fix, and re-state the in-file verdict as a
+per-site one that names the **real** trigger ("a second literal match anywhere earlier in the file,
+including module-level code the extractor cannot see"), not "across GET/POST"; (3) red-first proof
+in a **sandboxed copy of the tree, never the working tree**: reproduce the module-level-helper
+scenario above BEFORE (must show `FAIL` + misleading banner) and AFTER (must show a correctly-worded
+`STALE` or a `PASS`), paste both; (4) update **FOLLOW-717's stub AC-4** to reference this ticket and
+the correct standard instead of "per FOLLOW-720", and add one line to FOLLOW-717's scope note
+stating that broadening `extractCalls()` **masks** rather than triggers this case; (5) do NOT touch
+`route.ts`, the gate's real comparison logic, or any ESC-044-held artifact — the helper extraction
+is a **sandbox** mutation only; (6) do NOT start FOLLOW-717 itself (`promoted_to_queue: false`,
+confirmed not started).
+
+**Relates to:** Rule AL (minted by RETRO-232 — this is its second trigger instance).
+
+cross_ref: [RETRO-232 §4a LG-2, §4d DD-3, §5a, §5b, §6 (Rule AL), RETRO-230 §4a DG-1, RETRO-231 §5a,
+FOLLOW-717, FOLLOW-721, FOLLOW-723, FOLLOW-716, Rule AK, Rule AE, Rule Q]
+
+---
+
+## FOLLOW-728 — The fixture region is scoped to what the gate EXTRACTS, not to what it COMPARES: normalization and sentinel-line subsets are the next hop, and the END-sentinel guard branches have never executed
+
+source_retro: RETRO-232 (PR #640, FOLLOW-723) source_ticket: FOLLOW-723 recommended_sprint: next
+recommended_agent: backend-engineer priority: P3 estimated_hours: 2 depends_on: [FOLLOW-726,
+FOLLOW-727 (same two files; sequence after both)] promoted_to_queue: false
+
+Three latent items in the two consent gates, filed together because they share one root and one file
+pair. **All three are latent, none is live today** — the point of filing is that this chain has
+displaced exactly one hop per PR for four consecutive PRs (prose → tuple gate → fixture anchor →
+fixture-anchor region), and this is the next hop, named before it bites.
+
+**(1) Compared ≠ extracted (§4a LG-3).** `mustReplaceInDocBlock`'s docblock claims it is scoped to
+the bytes between the sentinels, "**which is exactly what `extractDocBlock`/`runCheck` compare**".
+One hop loose: `runCheck:229` compares `normalizeDocBlock(block)`, not `block`. Normalization
+(`:148-178`, §6.1.1 N3–N6) discards leading/trailing whitespace, intra-paragraph line breaks,
+blank-line runs and every `**`. A fixture mutation landing _inside the block_ but _only in
+normalized-away bytes_ is an effective no-op the helper cannot see — the identical FAIL-not-STALE
+shape, one region deeper. Symmetrically, `mustReplaceBeginSentinelLine` scopes to the whole BEGIN
+line while `runCheck:213` reads only `beginLine.includes(tosVersion)` from it. Latent because all
+three current doc anchors are prose inside a paragraph and the sentinel case removes the sentinel
+outright.
+
+**(2) END-sentinel coverage asymmetry (§4c TG-2).** Both gates self-test **BEGIN**-sentinel removal
+and **neither** self-tests the END sentinel, nor the `endIdx < beginIdx` ordering branch
+(`check-consent-text-sync.mjs:136-138`, `check-consent-contract-sync.mjs:231-233`). Pre-existing,
+but PR #640 minted `mustReplaceBeginSentinelLine` with **no `…EndSentinelLine` sibling**, turning a
+latent test gap into a visible structural one. The END branch is load-bearing: both
+`backlog/HANDOFFS.md` and `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` are append-only files where a
+later section could plausibly quote or duplicate a sentinel.
+
+**(3) Deliberate error-class split is undocumented (§4b CB-1).** `locateDocSentinelLines:325-329`
+throws `FixtureStaleError` when the sentinel pair is not unique, while `extractDocBlock:129-138`
+throws a plain `Error` for the identical condition (which `runCheck` catches into `errors`, i.e. a
+real check failure). The split is **correct** — a fixture helper's inability to locate its region is
+fixture staleness, not drift — but the same repo state is then reported as `STALE` by one path and
+as a real `FAIL` by the other in the same run, with nothing saying that is deliberate.
+
+**AC:** (1) make every `docSrc` fixture mutation assert against the **compared** projection, not the
+extracted one — either by running the anchor check through `normalizeDocBlock` (or the sentinel
+line's compared substring) before mutating, or by documenting precisely which sub-region each helper
+guarantees and why the current anchors are safe in it; state which and why; (2) add one self-test
+case per gate for **END**-sentinel removal and one for BEGIN/END inversion, so
+`extractDocBlock`/`extractDocContract`'s END and ordering branches execute on every CI run (Rule Q
+class: a branch that never runs is not a guard); (3) add one comment at `locateDocSentinelLines`
+stating that the `FixtureStaleError`-vs-`Error` divergence from `extractDocBlock` is deliberate and
+what each means; (4) red-first proof for the new cases in a **sandboxed copy of the tree, never the
+working tree**; (5) do NOT change either gate's real comparison logic or normalization; (6) sequence
+after FOLLOW-726 and FOLLOW-727 to avoid a three-way conflict in the same two files.
+
+cross_ref: [RETRO-232 §4a LG-3, §4b CB-1/CB-2, §4c TG-2, §5d, RETRO-231 §3, FOLLOW-723, FOLLOW-724,
+FOLLOW-725, FOLLOW-726, FOLLOW-727, Rule Q, Rule AL]

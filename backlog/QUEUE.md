@@ -30,7 +30,13 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
-### FOLLOW-729 — status: READY_FOR_REVIEW → PR #641
+### FOLLOW-729 — status: DONE (PR #641 merged 2026-07-29, `6f121741` on `main`)
+
+**Merged.** `apps/intent-engine/src/local_dev.py` is now on `main`, so the chat-NLP producer is
+runnable on localhost for the first time. **Follow-on that is NOT code:** the credentials gap under
+"AC5" below is the only thing still standing between this and Piotr's "100% on localhost" goal —
+tracked there, not in a separate ticket, because it is an operator step. Retrospective for this
+ticket not yet run.
 
 **assigned_to:** ml-engineer **model: Sonnet** — routine, well-scoped addition (one new local-only
 FastAPI entrypoint file reusing existing, already-correct logic; no design decision, no cross-module
@@ -110,10 +116,10 @@ dev-extra `uvicorn`).
   `src/test_chat_nlp_endpoint.py:22` (missing `# noqa: E402`); ruff does not run in CI.
 - ESC-042 item 1 (prod Modal deploy) untouched and still OPEN, as scoped.
 
-**1 ticket READY_FOR_REVIEW** (FOLLOW-729, PR #641) — within the ≤3 guardrail. **Still held on
-ESC-044:** FOLLOW-704 + 714, FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's
-CEO/DPO ruling. **Still OPEN, non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy,
-distinct from FOLLOW-729's local-only scope).
+**0 tickets IN_PROGRESS** (FOLLOW-729 DONE). **Still held on ESC-044:** FOLLOW-704 + 714,
+FOLLOW-706, FOLLOW-710 + 711, FOLLOW-701 — unchanged, awaiting Piotr's CEO/DPO ruling. **Still OPEN,
+non-blocking:** ESC-020, ESC-041/042 (item 1 — prod Modal deploy, distinct from FOLLOW-729's
+local-only scope).
 
 ---
 

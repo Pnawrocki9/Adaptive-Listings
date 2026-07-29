@@ -21608,7 +21608,10 @@ FOLLOW-725, FOLLOW-726, FOLLOW-727, Rule Q, Rule AL]
 source_retro: (none — direct product-priority request, Piotr, 2026-07-29) source_ticket: none
 recommended_sprint: now recommended_agent: ml-engineer priority: P1 estimated_hours: 3 depends_on:
 [] promoted_to_queue: true (session 79, 2026-07-29 — dispatched directly to ml-engineer per Piotr's
-explicit "idź dalej, zrób ten ticket")
+explicit "idź dalej, zrób ten ticket") status: DONE — PR #641 merged 2026-07-29 (`6f121741`).
+AC1-AC4 shipped; **AC5 answered NO**: no dev-tier Anthropic key and no dev Upstash instance exist,
+so a real POST 500s on the missing `ANTHROPIC_API_KEY` — an operator/credentials step, not a code
+gap, and the last thing standing between this shim and the "100% on localhost" goal.
 
 Piotr's stated priority (2026-07-29): Adaptive Listings should work 100% end-to-end on localhost,
 including reading live chat and interpreting buyer messages, used to (1) refine the archetype after

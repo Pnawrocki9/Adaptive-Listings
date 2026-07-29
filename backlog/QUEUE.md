@@ -30,7 +30,50 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
-### FOLLOW-730 — status: IN_PROGRESS
+### FOLLOW-730 — status: READY_FOR_REVIEW → PR #642
+
+**⚠️ Read this before validating: the usual worker/PM separation did NOT hold on this ticket.** The
+dispatched ml-engineer subagent terminated twice on a server-side `529 Overloaded` API error — once
+mid-implementation, once immediately on resume-from-transcript. Its partial work survived intact in
+the main working tree (schema + all 228 lines of tests, verified present before any reaction, per
+the `AGENT_WORKFLOW.md:171-181` recovery procedure). The remaining implementation
+(`nlp.py`/`local_dev.py` wiring) was then **written by the PM/main-loop session itself**, so the
+"worker implements → PM independently validates" gate collapsed into one actor. Every check below
+was run and is truthfully reported, but **PR #642's review is NOT independent** and should get a
+fresh reviewer or a `/code-review` pass before merge. Flagged rather than quietly absorbed.
+
+**CI-check counter:** 1/5. **Fix-iteration counter:** 0/3.
+
+**PM validation of PR #642** (branch `ml-engineer/FOLLOW-730-extraction-error-marker`, +401/-6, 5
+files, all under `apps/intent-engine/src/`):
+
+- **CI: 63 checks pass, Rule I the only fail** — and its count is **192, byte-identical to the
+  pre-change baseline** on both `main` and PR #641, with zero TS in this diff. Reconfirmed on THIS
+  PR's run (30490953241), not assumed. `Test (Python) (3.12, intent-engine)` pass.
+- **Red-first honoured and shown**: 9 failed / 34 passed before the implementation → **43 passed / 2
+  skipped** after. The load-bearing case is
+  `test_extract_intent_genuinely_neutral_buyer_is_not_marked` — a real model read returning all-null
+  dims yields dimensions identical to the error case but `data_source="model"`.
+- **AC5 verified by reading the consumer, not its type declaration**: `readShadowChatIntent:113-123`
+  is `JSON.parse` → a structural check on `intent_dimensions` → a cast (no Zod, no key whitelist),
+  and `flattenIntentDimensions:176-191` iterates `intent_dimensions` only. The markers are
+  TOP-LEVEL, so they cannot leak into the flattened dims — had they gone inside `intent_dimensions`
+  they would have become a fake dimension reaching `archetype_hint`. The TS interface was
+  deliberately NOT updated (declaring a diagnostic-only field invites a consumer to act on it;
+  FOLLOW-731/732 own the contract mechanism).
+- **Batch tier answered**: `jobs/batch_enrich.py:44` shares `extract_intent`, so batch payloads
+  carry the marker too — intended, `source` already separates the tiers. No batch file modified.
+- **Sentry was declared but never initialised** (`pyproject.toml:15`, no `init` call anywhere), so a
+  bare `capture_exception` would have been a silent no-op. Helper initialises lazily, DSN-gated,
+  never raises; both legs tested. Note `SENTRY_DSN_INGEST` is unset in prod — wired-and-ready, not
+  live. Only the exception CLASS NAME reaches the 24h-TTL Redis value; the message goes to log +
+  Sentry.
+- **Scope held**: `main.py` not modified at all (`git diff --name-only` confirms); no change to the
+  archetype path, the control plane's null-dropping, the Rule R `chatPriorApplied` gate, the
+  never-raises contract, or ESC-042. `_neutral_payload`'s new `data_source` arg is required and
+  keyword-only so this cannot silently regress. Rule J (`check-mirror-files.sh`) → all pairs in
+  sync.
+- black / ruff / mypy clean on all touched Python; gitleaks → no leaks; zero TS or markdown touched.
 
 **Promoted + dispatched 2026-07-29 (session 79), on Piotr's "zrób tak jak rekomendujesz" —** pulled
 ahead of FOLLOW-731/732/733/734 because until it lands, ESC-045's green-wire ambiguity stays live on

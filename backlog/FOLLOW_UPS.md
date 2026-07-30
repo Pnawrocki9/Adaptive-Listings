@@ -22119,3 +22119,267 @@ drift guard asserting the Zod dimension key set equals the Python model's field 
 cross_ref: [ADR-0020, FOLLOW-735, FOLLOW-736, `apps/control-plane/src/lib/chat-intent-cache.ts`,
 `apps/intent-engine/src/schemas.py`, MASTER_DESIGN §C.4, architect guardrail "every accepted
 interface"]
+
+---
+
+> **NUMBERING NOTE (RETRO-234 §6 / Rule AN).** `FOLLOW-736` and `FOLLOW-737` are **TAKEN** — they
+> were filed by the architect's FOLLOW-735 draft and exist only on the unmerged branch
+> `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (commit `0f2a033e`, no PR). They are
+> **not** in this file on `main`. Do NOT reallocate 736/737. RETRO-234 therefore allocated from 738.
+> FOLLOW-742 exists to land or reserve them before a third duplicate is minted.
+
+---
+
+## FOLLOW-738 — one hardened Sentry initialiser for the Python Modal apps: provisioning `SENTRY_DSN` today would silently turn on two producers that ship frame locals
+
+source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: now
+recommended_agent: backend-engineer (or devops-engineer) priority: P1 estimated_hours: 4 depends_on:
+[] blocks: [ESC-045 item 4] promoted_to_queue: false
+
+**The gap, measured not assumed.** All four Python/Modal Sentry surfaces read the **bare**
+`SENTRY_DSN` name, and all three Modal apps mount the **same** secret
+(`modal.Secret.from_name("estalara-secrets")` — `apps/intent-engine/src/main.py:61,111`,
+`apps/intent-engine/src/jobs/batch_enrich.py:20`,
+`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:159,365,445`,
+`apps/data-quality/src/crons/schema_validation.py:342`). PR #642 hardened exactly one of the init
+sites:
+
+| Site                                                           | `include_local_variables` | `send_default_pii` | `default_integrations` |
+| -------------------------------------------------------------- | ------------------------- | ------------------ | ---------------------- |
+| `apps/intent-engine/src/nlp.py:337-352`                        | **False** ✅              | **False** ✅       | **False** ✅           |
+| `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:195` | default **True** ❌       | default ❌         | default ❌             |
+| `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:395` | default **True** ❌       | default ❌         | default ❌             |
+| `apps/data-quality/src/crons/schema_validation.py:354-357`     | default **True** ❌       | default ❌         | default ❌             |
+
+**Consequence, and why this is P1 rather than hygiene.** The single operator action ESC-045 item 4
+asks for — add `SENTRY_DSN` to `estalara-secrets` — activates all four at once. The two unhardened
+ones then ship every frame's locals (tenant ids, listing payloads, DB rows) and, via the default
+`LoggingIntegration`, turn every `logging.error` into an event. So closing an escalation about
+_missing_ alerting would open a _new_ disclosure surface, in the same secret, on the same day.
+`.env.example:70`'s comment ("all services share one org, **separate projects**") is already false
+for the Python tier.
+
+**AC:** (1) extract ONE shared initialiser (e.g. `packages/py-shared` or a per-app
+`observability.py` mirrored under Rule J — pick one and say why) that hard-codes
+`include_local_variables=False`, `send_default_pii=False`, and an explicit integration list, and
+takes the DSN env name as a parameter; (2) adopt it at all four init sites — intent-engine's
+existing hardened call must end up behaviourally identical (its `AtexitIntegration` + bounded
+`flush(0.3)` are load-bearing for fire-and-forget Modal containers, see `nlp.py:353-368` — do not
+drop them); (3) add a `before_send` that drops or truncates the exception `value` string on the
+chat-intent path, so `ropa.md:444`'s asserted control becomes real (coordinate with FOLLOW-739,
+which owns the doc side — do not edit compliance docs in this ticket beyond citing the new helper);
+(4) a CI guard (shell or AST, in the style of `scripts/check-modal-app-singleton.sh`) asserting
+**zero** `sentry_sdk.init(` call sites outside the helper — red-first, with a fixture proving it
+catches a re-introduced bare init; (5) decide and record whether the three apps should keep sharing
+one bare `SENTRY_DSN` or move to per-app names (`SENTRY_DSN_INTENT_ENGINE`, …) matching the existing
+`SENTRY_DSN_INGEST` / `SENTRY_DSN_CONTROL_PLANE` convention — if per-app, update `.env.example:70`
+and the ESC-045 item 4 operator instruction accordingly; (6) state explicitly in the PR that ESC-045
+item 4 is unblocked by this merge (or what still blocks it).
+
+**Out of scope:** the `apps/control-plane` TS Sentry configs (a separate runtime and a separate
+scrubber story — name them in the PR as deferred, do not fix); anything in `nlp.py` other than the
+init call; the shadow-key write path (FOLLOW-736).
+
+cross_ref: [RETRO-234 §3 HW-3, §4b CB-2, §4c TG-2, §5d; ESC-045 item 4; Rules S / AE / AJ;
+`docs/compliance/ropa.md:444`; FOLLOW-739]
+
+---
+
+## FOLLOW-739 — `ropa.md` and `dpia.md` assert a Sentry `beforeSend` PII scrubber and a CI check that exist nowhere in the repo, on the one path whose binding constraint is "no message content"
+
+source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: now
+recommended_agent: compliance-engineer priority: P1 estimated_hours: 2 depends_on: [FOLLOW-738 (its
+`before_send` is the thing that would make the assertion true)] promoted_to_queue: false
+
+**The contradiction, in three quotes from three files, two of which PR #642 edited.**
+
+1. `docs/compliance/ropa.md:444` (sub-processor table, Sentry row): _"Stack traces, request context
+   (**scrubbed of PII before transmission per Sentry SDK `beforeSend` hook with PII patterns regex;
+   verification: CI check on scrubber config** + annual audit), tenant_id"_.
+2. `docs/compliance/dpia.md:157` and `:224`: _"Stack traces, request context (scrubbed of PII via
+   SDK `beforeSend` hook; **CI-verified**)"_.
+3. `docs/compliance/C-07-chat-retention-scope.md:222` — **added by PR #642**: _"the exception
+   message, **which could echo prompt text**, goes to the log line and the Sentry event and never
+   into Redis."_
+
+**The verification that makes this P1:**
+`grep -rn "beforeSend\|before_send" --include=*.ts --include=*.tsx --include=*.py --include=*.mjs --include=*.cjs --include=*.yml . | grep -v node_modules`
+returns **zero hits repo-wide**. There are four Sentry init sites
+(`apps/intent-engine/src/nlp.py:337`,
+`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:195,395`,
+`apps/data-quality/src/crons/schema_validation.py:354`,
+`apps/control-plane/sentry.server.config.ts:18`) and **none** installs a scrubber. There is also no
+CI job checking a "scrubber config". So (1) and (2) describe a control and a verification that do
+not exist, while (3) — written in this same PR — states the residual risk that control was supposed
+to cover.
+
+This is a **Rule N** doc-vs-code failure and a **Rule AI** miss (ropa.md WAS edited by PR #642 — the
+retention row — while line 444, the row this change actually affects, was not), with a **Rule Y**
+edge (a document citing a CI check as proof).
+
+**AC:** (1) decide and record which way the reconciliation goes — implement the control (depends on
+FOLLOW-738 AC-3) and keep the assertion, or correct the assertion to describe what actually ships;
+partial is not acceptable; (2) if the assertion is kept, cite the helper by **symbol**, not by line
+number (per this PR's own C-07:18-21 discipline), and name the CI job that verifies it — a job that
+must actually exist; (3) if the assertion is corrected, state the residual disclosure explicitly in
+ropa.md's Sentry row and dpia.md §transfers: exception messages from `intent-engine` reach a US
+processor and may echo prompt text; assess whether the Art. 44 transfer basis already on file covers
+it; (4) add the missing negative test to `apps/intent-engine/src/test_intent_engine.py` — a raised
+exception whose message contains a distinctive buyer-text sentinel, asserting that sentinel is
+absent from `payload.model_dump()` (the C-07 "class name only" claim is currently
+code-comment-backed, not test-backed); (5) re-check the same three documents against
+`apps/control-plane`'s Sentry config while you are in them — if the TS side is also unscrubbed, say
+so rather than leaving the row half-true.
+
+**Out of scope:** implementing the scrubber (FOLLOW-738); the `data_source`/`extraction_error`
+retention rows, which PR #642 already updated correctly and which this retro verified.
+
+cross_ref: [RETRO-234 §4b CB-1, §4c TG-1, §5d; PR #642; Rules N / AI / Y; FOLLOW-738;
+`docs/compliance/ropa.md:444`, `docs/compliance/dpia.md:157,224`,
+`docs/compliance/C-07-chat-retention-scope.md:222`]
+
+---
+
+## FOLLOW-740 — the degraded marker is written to Redis and read by nobody in production; plus three provenance-integrity defects behind it
+
+source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: next
+recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [] promoted_to_queue:
+false
+
+**The half-wire (RETRO-234 §3 HW-1).** `extraction_error` has six producer sites in `nlp.py` and, in
+production, **zero consumers**: `local_dev.py:172-181` is a local-only file that is never deployed
+(`modal-deploy.yml:90`), Sentry is inert (`SENTRY_DSN` unset — ESC-045 item 4, now additionally
+blocked by FOLLOW-738), `chat-intent-cache.ts:113-123` deliberately ignores unknown top-level keys,
+and `jobs/batch_enrich.py:52` branches on `data_source` only. FOLLOW-730 closed the "you cannot tell
+a dead model from a quiet buyer" gap in the payload and moved it one hop: the payload now says so,
+and nothing in production listens.
+
+**Three defects that ride along, each verified:**
+
+1. **`schemas.py:20-21` claims "One value per code path in `nlp.extract_intent` that can produce a
+   payload — nothing here is inferred or decorative". That is false.** Three code paths emit
+   `data_source="model"`: the primary parse (`nlp.py:441`), the successful Sonnet retry
+   (`nlp.py:543` — a different model), and the two failed-retry arms (`nlp.py:552`, `nlp.py:575`). A
+   Rule Y defect in the exact comment that exists to make provenance auditable.
+2. **The `retry_failed:` marker has zero consumers anywhere.** Those arms set `extraction_error`
+   while keeping `data_source="model"`, so the value is outside `DEGRADED_DATA_SOURCES` and is
+   skipped by the batch counter AND by the local 502 branch. A systematically broken Sonnet retry is
+   therefore 100% invisible in every environment — which is precisely the failure mode
+   `nlp.py:566-577`'s own comment says the field exists to prevent.
+3. **`batch_enrich_conversations()`'s new `degraded` return key has no reader** — it is a
+   `modal.Cron` function and Modal discards a scheduled function's return value; only the `print` at
+   `batch_enrich.py:76` survives. (Latent: `read_recent_chat_sessions` still returns `[]`.)
+4. **The `data_source` default fails green.** `schemas.py:118` defaults to `"model"`, so a future
+   construction site that forgets the stamp is silently labelled a real model read. Correct for
+   legacy compatibility; the fix is a guard on construction sites, not a different default.
+
+**AC:** (1) give the degraded signal at least ONE production consumer that does not depend on
+`SENTRY_DSN` — choose and justify one of: a structured single-line log record an operator/runbook
+can grep in Modal logs (cheapest, honest), a counter surfaced by the existing admin/ops surface, or
+a `degraded` field on an existing health/info endpoint; do NOT invent a new store; (2) make the
+`retry_failed` case reachable by whatever consumer (1) picks — either by widening the consumer's
+predicate to "`extraction_error is not None`" or by stating in the code why retry-failures are
+deliberately excluded; do not leave it implicit; (3) correct the `schemas.py:20-21` comment to
+describe the real path/value mapping (Rule Y); (4) add a guard that every construction of
+`ChatIntentDetectedPayload` passes `data_source` explicitly — a test enumerating construction sites
+via grep is acceptable, a required keyword-only factory is better; (5) either give
+`batch_enrich_conversations()`'s `degraded` count a reader or reduce it to the log line and say so;
+(6) red-first on at least (2) and (4).
+
+**Out of scope, hard:** the shadow-key write-admission rule (ADR-0020 / FOLLOW-736), the archetype
+path, `flattenIntentDimensions`' null-dropping, Rule R's `chatPriorApplied` latch, and
+`extract_intent`'s never-raises contract. FOLLOW-730's stub said "must NOT be over-fixed" and was
+over-fixed twice (RETRO-234 §6 P-20) — that warning carries here unchanged.
+
+cross_ref: [RETRO-234 §3 HW-1/HW-4, §4a LG-1/LG-2; RETRO-233 §4a LG-1; ESC-045; Rules AJ / Y / K.2;
+FOLLOW-736, FOLLOW-738]
+
+---
+
+## FOLLOW-741 — ADR-0020 §D6 rests on three visibility channels; two of them do not exist in production
+
+source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-735 / ADR-0020
+recommended_sprint: next recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: []
+blocks: [FOLLOW-736 dispatch] promoted_to_queue: false
+
+**This ticket does NOT re-open ADR-0020's D1 ruling.** RETRO-234 §5b independently re-derived the
+ruling and the `SET … NX` mechanism and found them correct — and a strict superset of the gap, since
+a content-keyed rule also closes the neutral-success ("hi"/"thanks") clobber that none of PR #642's
+three review rounds addressed. The only defect is in what the ADR says happens to the _visibility_
+of a suppressed degraded write.
+
+**The three channels D6 names, checked one by one:**
+
+1. _"the Sentry capture FOLLOW-730 added"_ — **inert in production.** `SENTRY_DSN` is absent from
+   Doppler `prd` and from the Modal `estalara-secrets` secret (ESC-045 item 4). This is stated in
+   FOLLOW-730's own `apps/intent-engine/README.md:40-45`, in `QUEUE.md`'s merge rider and in
+   ESC-045, all of which pre-date the ADR. RETRO-234 §3 HW-3 adds that provisioning it is currently
+   **blocked** by FOLLOW-738, because the same bare env name activates two unhardened Sentry inits
+   in other apps.
+2. _"the payload returned by `process_chat_message` / `local_dev`"_ — **does not exist in
+   production.** `main.py:157-166` calls `process_chat_message.spawn(...)` fire-and-forget and
+   returns 202; nothing ever calls `.get()`, so the returned payload is discarded. The channel is
+   real only for `local_dev.py`, which is never deployed (`modal-deploy.yml:90`).
+3. _"the key itself on a cold session"_ — **real ✅**, but it covers only a session's first message,
+   i.e. exactly the case where there is no prior to lose.
+
+So the Consequences section's accepted negative — _"the operator must look at Sentry"_ — and
+Alternatives §4's _"Sentry already serves that consumer for free"_ are not currently available.
+Under ADR-0020 as written, a degraded write on a warm session becomes invisible in every production
+channel — which is a structurally cleaner re-run of the defect PR #642's own round 2 identified
+("the don't-clobber guard hid the marker it exists to surface").
+
+**AC:** (1) amend ADR-0020 §D6 and the Consequences "Negative" bullet to state the actual prod
+status of channels (1) and (2), with the ESC-045-item-4 / FOLLOW-738 dependency named; (2) amend
+Alternatives §4's "Sentry already serves that consumer for free" to reflect the same; (3) decide and
+record whether FOLLOW-736 may merge while the blind window is open — either add an AC to FOLLOW-736
+requiring FOLLOW-740's non-Sentry consumer to land first, or record an explicit, dated acceptance of
+the blind window with the condition that closes it; (4) update the `backlog/HANDOFFS.md` "FOLLOW-735
+→ FOLLOW-736" entry's trap list to carry the same fact, so the implementer does not read a stale
+visibility claim; (5) do not change D1, D2, D3, D4, D5 or D7 — the write-admission design stands.
+
+**Note on where the ADR lives:** ADR-0020 and the FOLLOW-736/737 stubs are currently only on branch
+`pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (commit `0f2a033e`, no PR). Sequence
+this after FOLLOW-742 or fold the amendment into whatever PR lands that branch — do not create a
+second copy of the ADR on `main` (Rule AN).
+
+cross_ref: [RETRO-234 §4d DG-1, §5b; ADR-0020 D6 + Consequences + Alternatives §4; FOLLOW-736,
+FOLLOW-740, FOLLOW-742; ESC-045 item 4; `apps/intent-engine/src/main.py:157-166`;
+`.github/workflows/modal-deploy.yml:90`]
+
+---
+
+## FOLLOW-742 — FOLLOW-736 and FOLLOW-737 exist only on an unmerged branch, so `main`'s next-free number is 736 and a third duplicate is one session away
+
+source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-735 recommended_sprint: now
+recommended_agent: pm-orchestrator priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue:
+false
+
+**State, verified.** `grep "^## FOLLOW-" backlog/FOLLOW_UPS.md` on `main` maxes at **735**.
+`FOLLOW-736` (ml-engineer implementation of ADR-0020) and `FOLLOW-737` (the missing shared-Zod
+mirror for `ChatIntentDetectedPayload`) were written by the architect's FOLLOW-735 draft and
+committed to `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (`0f2a033e`) — pushed, but
+**no PR opened** (`gh pr list --state open` → none). Any session computing "next free FOLLOW" from
+`main` today gets **736** and mints a duplicate.
+
+**This already happened once on this exact ticket chain.** A `FOLLOW-735` stub was written on the PR
+#642 branch while `main` independently received a different `FOLLOW-735`; the branch copy had to be
+deleted by hand —
+`git log origin/ml-engineer/FOLLOW-730-extraction-error-marker -- backlog/FOLLOW_UPS.md` →
+`a8bfc27e docs(backlog): drop duplicate follow-735 stub, main's copy is canonical`. RETRO-234 §6
+P-18 records this as the 5th sighting across RETRO-036 / 113 / 154 / 188 and promoted **Rule AN**.
+
+**AC:** (1) land the branch — open a PR for
+`pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (ADR-0020, the `docs/adr/README.md`
+index row, the MASTER_DESIGN v4.4 patch, INTERFACES.md, the two stubs, HANDOFFS) or fold it into
+FOLLOW-736's implementation PR — **decide, do not defer again**; if folding, the reservation in (2)
+is mandatory because the numbers stay off `main` until that PR merges; (2) either way, land a
+one-line reservation on `main` in `backlog/FOLLOW_UPS.md` recording that 736/737 are taken and where
+they live (RETRO-234 already added the NUMBERING NOTE above FOLLOW-738 — verify it survives the
+merge and reconcile if the branch's own copy conflicts); (3) when the branch lands, confirm the two
+stubs are not duplicated and the note is removed or updated in the same commit; (4) apply Rule AN's
+verification step to the current `RETRO`/`ADR`/`ESC` registers too and report the result — this
+ticket is cheap; the audit is the value.
+
+cross_ref: [RETRO-234 §6 P-18, §5d; Rule AN; RETRO-036 §6 watch-item, RETRO-113 §7, RETRO-154 §2/§7,
+RETRO-188; FOLLOW-736, FOLLOW-737, FOLLOW-741]

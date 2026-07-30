@@ -2875,3 +2875,128 @@ RAN — orthogonal to fixture provenance; both consent gates satisfy Q and carry
 breaks on the NEXT change), Rule AL (region of an assertion; AM is provenance of a fixture). Clause 5 is
 lifted from the one case in these gates that is already immune (the dynamically-derived TOS-version
 anchor, RETRO-231 §4a LG-2 table row 2). LETTER CHOICE: AM follows AL, minted in the same retro. -->
+
+---
+
+## Rule AN — A number in a sequentially-allocated register (FOLLOW / RETRO / ADR / ESC / ROPA activity / DPIA section) MUST be allocated against `origin/main` and the allocating write MUST land on `main` before that number is used anywhere else; a number minted on a feature branch is not allocated, it is guessed
+
+**Pattern:** Two writers need the next number in an append-only register. Each computes it as
+`max(entries) + 1` — but from a **different tree**: one from `main`, one from a feature branch, one
+from a stale dispatch brief, one from a concurrent retro run. Both get the same number. The register
+is now double-booked, and because both writes are individually well-formed, nothing detects it: no
+CI gate reads these files, `git merge` cheerfully keeps both `## FOLLOW-735` headings, and the
+duplicate is found later by a human reading the file — or not at all, at which point two tickets,
+two ADRs or two ROPA activities share an identifier that other documents cite. The failure is
+silent, it is discovered downstream, and the repair is a rename that invalidates every
+cross-reference already written against it.
+
+The seductive part is that the arithmetic feels rigorous. `max + 1` **is** rigorous — over the tree
+you ran it in. The defect is never in the counting; it is in the implicit premise that the tree you
+counted is the register.
+
+**Evidence — five sightings, four of them PRIOR numbered retros:**
+
+- **RETRO-036 §6 (prior, count 1)** — minted the pattern: _"a sequentially-numbered append-only
+  register … gets the SAME number assigned by two independent writers because neither checks the
+  already-reserved number before writing — only the register's current max."_ Two instances in one
+  run: ROPA "Activity 14" claimed by FOLLOW-218 five days after FOLLOW-187 reserved it (→ FOLLOW-227
+  carried the renumber, and it **gated** FOLLOW-187), plus duplicate `RETRO-035` headers from
+  concurrent retro runs. Set the explicit watch-item: _"a second register-number collision in a
+  future retro promotes …"_.
+- **RETRO-113 §7 (prior, count 2)** — _"the next free number is 390; RETRO-111 also references a
+  FOLLOW-390 for the GET-surface question — to avoid a number collision I assign the GET-surface
+  follow-up FOLLOW-390 and THIS prod-seed follow-up FOLLOW-391"_ — two retros allocating from the
+  same max, caught only because one retro happened to read the other.
+- **RETRO-154 §2 / §7 (prior, count 3 — the exact branch shape)** — _"the PR's third commit
+  renumbered 475→482 to avoid the RETRO-151 collision … a bookkeeping fix for a
+  **concurrent-branch** collision."_ A realized collision, repaired mid-PR, with the
+  residual-pointer documentation in `events.ts` having to be re-pointed at the new number.
+- **RETRO-188 (prior, count 4)** — the retro number itself: the dispatch brief said "use RETRO-276
+  (max 275)" while the file's true max heading was RETRO-187; the stray 275/276 tokens were prose
+  inside RETRO-063. Allocated from a stale non-register source.
+- **RETRO-234 §6 P-18 (promotion trigger, count 5 — two live instances).** (a) A `FOLLOW-735` stub
+  was written on the PR #642 branch while `main` independently received a **different** FOLLOW-735;
+  the branch copy was deleted by hand —
+  `git log origin/ml-engineer/FOLLOW-730-extraction-error-marker -- backlog/FOLLOW_UPS.md` →
+  `a8bfc27e docs(backlog): drop duplicate follow-735 stub, main's copy is canonical`. (b) A
+  **third** collision was armed at the moment of promotion: `FOLLOW-736` and `FOLLOW-737` exist only
+  on the unmerged branch `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (`0f2a033e`,
+  no PR), so `grep "^## FOLLOW-" backlog/FOLLOW_UPS.md` on `main` returns max 735 and the next
+  session's next-free computation yields 736. RETRO-234 allocated from 738 and filed FOLLOW-742.
+
+**Why RETRO-036's own proposed remedy is insufficient, and what this rule adds.** RETRO-036 proposed
+_"grep the open FOLLOW/QUEUE backlog AND the register itself for the next **reserved** number, not
+just the current max."_ That closes the reserved-but-unwritten axis (its ROPA case) and does nothing
+for the branch axis: on a feature branch, grepping the register **more thoroughly** still reads the
+wrong tree. The missing variable is **which tree you allocate from**, not how many places you grep
+in it. Rule AN states the tree, and adds the landing requirement — because a number written only to
+a branch is invisible to every other writer for as long as that branch stays unmerged, which on this
+repo's evidence can be days.
+
+**CHECKED BEFORE MINTING.** **Rule O** governs migration-journal monotonicity + recency — one
+specific register, with an apply-time consequence, and RETRO-036 itself named it the structural
+near-neighbour; it says nothing about ticket/RETRO/ADR registers or about branch-vs-`main`
+allocation. **Rule AG** forbids parallel-worktree agents appending to a shared monotonic log and
+prescribes per-ticket fragment files — a write-**conflict** remedy, not a **numbering** remedy:
+fragments still need unique numbers, and AG's own remedy would not have prevented any of the five
+sightings above. **Rule P** (check docs + repo for prior art before proposing) is about duplicate
+_work_, not duplicate _identifiers_ — two writers can each be doing genuinely novel work and still
+collide. **Rule J** (mirror-file sync) governs byte-identical duplicates across runtimes. None of
+them covers allocation provenance.
+
+**Rule:**
+
+1. **Allocate from `origin/main`, always.** Before writing a new entry to any sequentially-allocated
+   register, fetch and compute the next number from `origin/main`, not from your working tree, not
+   from your branch, not from a dispatch brief, and not from a memory note. If you cannot reach
+   `origin/main`, you may not allocate — say so and stop.
+2. **Scan the whole namespace, not just the register file.** The next-free number is
+   `max(register headings, references in QUEUE.md / STATUS.md / ESCALATIONS.md / HANDOFFS.md / open PR branches) + 1`.
+   A number **reserved** in prose (a QUEUE note saying "filed FOLLOW-N") is taken even when no stub
+   exists yet — RETRO-036's ROPA case and RETRO-188's brief case are both this shape.
+3. **Land the allocating write on `main` before the number is used anywhere else.** A stub, ADR or
+   retro that exists only on a feature branch is **not allocated**. Either commit the allocating
+   write directly to `main` (backlog bookkeeping is permitted this), or open its PR immediately, or
+   record a one-line reservation on `main` naming the number and the branch that holds it. Never all
+   three of: mint on a branch, leave the branch unmerged, and tell another session the number is
+   taken.
+4. **A cross-branch collision is repaired by renumbering the LATER-LANDING write, and the repair is
+   not complete until every cross-reference moves with it.** The canonical shape is RETRO-154's
+   475→482: the renumber commit must also update the residual pointers in code comments, QUEUE rows,
+   ticket `cross_ref` lists and any doc citing the old number.
+5. **`main` is the register's source of truth for identity even when a branch is the source of truth
+   for content.** When landing a branch that carries an allocated number, verify the number is still
+   free on `main` **at merge time**, not only at branch time — the whole failure mode is that the
+   two moments differ.
+
+**Verification:**
+
+1. `git fetch origin && git show origin/main:backlog/FOLLOW_UPS.md | grep -c "^## FOLLOW-"` and
+   `… | grep "^## FOLLOW-" | tail -1` — the allocation baseline. Repeat for
+   `backlog/RETROSPECTIVES.md` (`^## RETRO-`), `docs/adr/` (filenames), `backlog/ESCALATIONS.md`
+   (`ESC-`).
+2. `grep -rn "FOLLOW-<N>" backlog/ docs/` on `origin/main` for the candidate number — a prose-only
+   reservation counts as taken (clause 2).
+3. `git branch -r --sort=-committerdate | head -20`, then for each unmerged branch touching a
+   register file: `git show <branch>:backlog/FOLLOW_UPS.md | grep "^## FOLLOW-" | tail -3` — this is
+   the step that catches the branch-only allocations of RETRO-154 and RETRO-234 and is the one no
+   prior remedy performed.
+4. After landing any branch that allocated a number: re-run step 1 and confirm the heading appears
+   exactly **once** (`grep -c "^## FOLLOW-<N>"` → `1`).
+
+<!-- Rule AN added 2026-07-30 — RETRO-234 §6 (pattern P-18). Evidence (4 PRIOR numbered retros, well over
+the ≥2 bar; arithmetic re-derived independently against RETROSPECTIVES.md line numbers, not taken from a
+summary): RETRO-036 §6 (count 1, pattern minted + watch-item "a second register-number collision in a
+future retro promotes …" — this rule discharges that watch-item), RETRO-113 §7 (count 2, two retros
+allocating from one max), RETRO-154 §2/§7 (count 3, realized CONCURRENT-BRANCH collision repaired by a
+475→482 renumber — the exact shape), RETRO-188 (count 4, RETRO number from a stale brief). Promotion
+trigger: RETRO-234 §6 P-18 (count 5) — a realized branch-vs-main duplicate FOLLOW-735 deleted by hand
+(a8bfc27e) PLUS a third collision armed at promotion time (FOLLOW-736/737 live only on an unmerged
+branch), i.e. the pattern recurring twice inside a single ticket chain. CHECKED BEFORE MINTING: Rule O
+(migration-journal monotonicity — one register, apply-time consequence, named by RETRO-036 as the
+near-neighbour, silent on ticket registers and on branch allocation), Rule AG (parallel-worktree shared-log
+APPENDS — a write-conflict remedy; per-ticket fragments still need unique numbers and would not have
+prevented any sighting), Rule P (prior-art check — duplicate WORK, not duplicate IDENTIFIERS), Rule J
+(mirror-file sync). Clause 3 is the axis RETRO-036's own remedy ("grep for the reserved number, not just
+the max") does NOT cover: on a branch, grepping harder still reads the wrong tree. Clause 4's repair shape
+is lifted verbatim from RETRO-154's successful repair. LETTER CHOICE: AN follows AM. -->

@@ -212,7 +212,21 @@ git ops while a subagent runs."
 
 ---
 
-### FOLLOW-730 — status: DONE (PR #642 merged 2026-07-30 by Piotr, `5a56ba62` on `main`)
+### FOLLOW-730 — status: CODE_COMPLETE_OPERATOR_PENDING (PR #642 merged 2026-07-30 by Piotr, `5a56ba62`)
+
+**Downgraded from DONE on RETRO-234 §5d's recommendation — the retro was right and I was wrong.** I
+had argued the core deliverable "works with no operator action at all; only the alerting channel
+waits", and invited the retro to overturn that if it disagreed. It traced the claim hop by hop and
+found every route by which a human could observe this ticket's effect is operator-gated today: the
+502 body lives only in `local_dev.py`, which needs ESC-045 items 1-2 to run at all; the marker does
+reach Redis but **nothing in production reads it** (HW-1); and the Sentry leg is inert (HW-2) and
+currently unsafe to enable (HW-3). Rule AA's "keep the prod-measurement axis OPEN with a fail-loud
+proof step" is therefore unmet. **This is the second consecutive ticket on this path mislabelled
+against Rule AA** (RETRO-233 §5d caught FOLLOW-729) — the pattern is mine, not the workers'.
+
+**Proof step that closes it:** with `SENTRY_DSN` provisioned (only AFTER FOLLOW-738) and a
+deliberately-broken key, an operator sees a tagged Sentry issue AND `GET shadow:{t}:{s}:chat_intent`
+shows `data_source:"error_fallback"`.
 
 **Merged.** A degraded chat extraction is now distinguishable from a genuinely no-signal buyer:
 `data_source` + `extraction_error` on the payload, a Sentry capture tagged for triage, and a

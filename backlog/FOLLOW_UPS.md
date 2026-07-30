@@ -21989,7 +21989,11 @@ a version of "don't clobber" and each was reverted or would have been:
    provenance label, not a content check — a future provenance value could carry non-null dims (see
    `test_degraded_source_set_partitions_the_provenance_literal`, `test_intent_engine.py:512-523`,
    which already polices the Literal/set relationship for exactly this reason). Any merge rule
-   should test "are the incoming dims empty" independent of why.
+   should test "are the incoming dims empty" independent of why. Concretely, the first attempt's set
+   membership missed `empty_input` — it produces dimensions every bit as null as the other two, so
+   it was the one all-null shape that still destroyed a prior. A rule phrased as "never replace
+   non-null dimensions with all-null dimensions" covers all four present values and any future one;
+   a rule phrased as set membership has already failed once.
 4. **TTL invariant.** A degraded write that preserves a prior must NOT refresh that prior's 24h
    retention clock — re-derive the ROPA/DPIA/C-07 retention assertion.
 5. **Validation invariant.** If a merge reads the prior back, it must go through the same Pydantic

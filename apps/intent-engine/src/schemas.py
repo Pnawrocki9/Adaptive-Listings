@@ -33,6 +33,19 @@ from pydantic import BaseModel
 #                            The dimensions are the NEUTRAL fallback, not a read.
 ChatIntentDataSource = Literal["model", "empty_input", "empty_model_response", "error_fallback"]
 
+# Which of those values mean "an extraction was attempted and came back unusable",
+# i.e. something an operator should be told about. Lives HERE, next to the Literal
+# it partitions, so adding a value to one without considering the other is visible
+# in a single diff — an earlier cut of FOLLOW-730 kept this in redis_writer.py and
+# a hand-copied duplicate in jobs/batch_enrich.py, which is exactly the drift this
+# ticket is about. Public on purpose: two other modules import it.
+#
+# "empty_input" is NOT here: no extraction was attempted (zero messages reached
+# the extractor), so there is no extraction failure to report. "model" is not here
+# even when every dimension came back null — that IS a real read, and telling the
+# two apart is the whole point of the ticket.
+DEGRADED_DATA_SOURCES = frozenset({"error_fallback", "empty_model_response"})
+
 
 class ChatIntentDimensions(BaseModel):
     """The 12-dimension chat-intent vector (mirrors the behavioural ontology).

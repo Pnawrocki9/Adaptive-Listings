@@ -86,15 +86,14 @@ curl -s -X POST http://localhost:8090/chat_nlp_endpoint \
 #   when the extraction itself failed or came back empty (FOLLOW-730). Production
 #   CANNOT return this — it answers 202 before extraction runs — so it is a
 #   local-only signal that exists to stop a dead model call from looking healthy.
-#   Two things to know. (1) `shadow_key_written: false` means nothing was written
-#   at all — today that is only §H.9 opt-out, so there is no key to inspect. When
-#   it is `true` the key is worth reading either way: on a first failure it holds
-#   the marked all-null payload, and mid-session it holds the PRIOR GOOD
-#   dimensions with `extraction_error` stamped on them, which tells you the
-#   pipeline was working and only just broke. (2) The ingest Worker treats ANY
-#   non-2xx as a dispatch failure, so a missing API key shows up Worker-side as
-#   "[chat-nlp] Modal dispatch rejected: HTTP 502" with tag kind=dispatch_failed.
-#   Trust this body, not that log line.
+#   Two things to know. (1) `shadow_key_written: false` means §H.9 opt-out — the
+#   write was skipped, so there is no key to inspect. When it is `true` the key
+#   holds the MARKED all-null payload, i.e. `GET` it and read `data_source` /
+#   `extraction_error` to see why the archetype stopped moving. Note this write
+#   REPLACES whatever the session had accumulated (known gap, FOLLOW-735). (2) The
+#   ingest Worker treats ANY non-2xx as a dispatch failure, so a missing API key
+#   shows up Worker-side as "[chat-nlp] Modal dispatch rejected: HTTP 502" with
+#   tag kind=dispatch_failed. Trust this body, not that log line.
 
 curl -s "$UPSTASH_REDIS_REST_URL/get/shadow:local-dev-tenant:local-dev-session:chat_intent" \
   -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"

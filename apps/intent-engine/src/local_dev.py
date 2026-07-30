@@ -65,7 +65,8 @@ from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from nlp import extract_intent
-from redis_writer import _DEGRADED_SOURCES, write_shadow_intent
+from redis_writer import write_shadow_intent
+from schemas import DEGRADED_DATA_SOURCES
 
 SERVICE_NAME = "estalara-intent-engine-local-dev"
 
@@ -152,7 +153,7 @@ async def chat_nlp_endpoint(
     payload = extract_intent([message_obj], model=model, source="realtime")
     payload.tenant_id = tenant_id
     payload.session_id = session_id
-    shadow_key_written = write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
+    write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
 
     # FOLLOW-730 AC4 — local-only degraded signal. `extract_intent` never raises,
     # so before this an absent ANTHROPIC_API_KEY produced a healthy-looking 202
@@ -166,19 +167,21 @@ async def chat_nlp_endpoint(
     # 200 with no usable text) is just as fail-green as a raised error, and
     # covering only `error_fallback` left half the hole open.
     #
-    # `shadow_key_written` is reported rather than assumed: under §H.9 opt-out no
-    # key is written at all, and under the degraded-clobber guard the key holds
-    # the OLDER good prior — telling an operator to `GET shadow:{t}:{s}:chat_intent`
-    # when nothing was written sends them chasing a phantom Redis mismatch, which
-    # is the exact misdiagnosis this ticket exists to prevent.
-    if payload.data_source in _DEGRADED_SOURCES:
+    # `shadow_key_written` exists because §H.9 opt-out skips the write entirely:
+    # telling an operator to `GET shadow:{t}:{s}:chat_intent` when nothing was
+    # written sends them chasing a phantom Redis mismatch, which is the exact
+    # misdiagnosis this ticket exists to prevent. Derived from the opt-out flag
+    # rather than from the writer's return value on purpose — `write_shadow_intent`
+    # writes unconditionally otherwise, so this is the whole truth and cannot drift
+    # out of step with the writer the way an earlier cut of this code did.
+    if payload.data_source in DEGRADED_DATA_SOURCES:
         return JSONResponse(
             status_code=502,
             content={
                 "status": "degraded",
                 "data_source": payload.data_source,
                 "extraction_error": payload.extraction_error,
-                "shadow_key_written": shadow_key_written,
+                "shadow_key_written": not profiling_opt_out,
             },
         )
 

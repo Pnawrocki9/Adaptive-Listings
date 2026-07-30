@@ -21938,3 +21938,69 @@ llm-gateway's shims in this ticket; this is a decision ticket with a written art
 
 cross_ref: [RETRO-233 §5b / §5d / §6, FOLLOW-729, FOLLOW-732, FOLLOW-725, Rule J, Rule K.1, ESC-042,
 MASTER_DESIGN §C.3, ADR-0016]
+
+---
+
+## FOLLOW-735 — A degraded all-null extraction still overwrites a buyer's accumulated chat prior, and three attempts inside FOLLOW-730 proved this needs its own design decision rather than a guard
+
+source_retro: (none — three `/code-review` rounds on PR #642, 2026-07-29/30) source_ticket:
+FOLLOW-730 recommended_sprint: next recommended_agent: architect (design) then ml-engineer priority:
+P2 estimated_hours: 5 depends_on: [] promoted_to_queue: false
+
+**The defect.** `write_shadow_intent` writes unconditionally. When `extract_intent` degrades (a 429,
+a revoked key, an unparseable or empty response) it returns the all-null neutral payload, and that
+payload replaces whatever the session had accumulated in `shadow:{tenant}:{session}:chat_intent`.
+`flattenIntentDimensions` (`apps/control-plane/src/lib/chat-intent-cache.ts`) then yields `{}`,
+`adapt.ts` skips the prior, and the buyer's chat-derived signal is gone for the rest of the 24h key.
+On the 6h batch cron the same rotation would wipe every session's prior at once.
+
+**Why it is NOT a FOLLOW-730 fix — read this before writing code.** FOLLOW-730's own stub said the
+blast radius was "diagnostic, not correctness — scope accordingly" and warned it "must NOT be
+over-fixed". It was fixed anyway, twice, and each attempt was worse than the gap:
+
+1. **Skip the write when a prior exists** (`943ebff7`) — hid the diagnostic marker it was meant to
+   surface. Mid-outage an operator running `GET` saw the older HEALTHY payload, concluded extraction
+   was fine, and went hunting an Upstash writer/reader mismatch: precisely the ESC-045 misdiagnosis.
+2. **Merge the marker onto the prior** (`ccec445d`) — produced five further defects: it made
+   `data_source` decision-affecting, contradicting the "DIAGNOSTIC ONLY — nothing reads this to
+   decide which archetype is applied" contract stated in `schemas.py`, `nlp.py` and MASTER_DESIGN
+   §1669; it refreshed the 24h TTL on un-refreshed personal data, defeating the retention limit
+   ROPA/DPIA/C-07 assert; it wrote an unvalidated `json.loads` of the prior straight back, so the
+   "only `payload.model_dump()` is persisted" evidence those compliance docs cite no longer covered
+   the code; it was still a non-atomic read-then-write, which the SDK's one-shot `chatPriorApplied`
+   latch (`packages/sdk/src/core/adapt.ts:875-888`) turns into PERMANENT loss of a newer good read
+   rather than a delay; and its `marker = payload.extraction_error or payload.data_source` fallback
+   stored a bare enum in a field whose format the compliance record pins.
+
+Both were reverted in `<this ticket's parent commit>`; the current behaviour is the original
+unconditional write, with a test (`test_degraded_payload_currently_still_overwrites_a_prior`) that
+states the gap instead of leaving it implicit.
+
+**Design questions that must be answered BEFORE implementation** (hence architect first):
+
+1. **Should a failed extraction neutralise the served prior at all?** The unconditional write has a
+   defensible reading: after a failure we genuinely do not know the buyer's current intent, and
+   serving a stale prior is its own error. Answer this explicitly — it decides everything below.
+2. If the prior should survive, the write must be **atomic** (Lua `EVAL`, or `SET … XX/NX` with a
+   compare-and-set on a version field). A GET-then-SET is not sufficient: production spawns one
+   Modal container PER MESSAGE with no ordering guarantee.
+3. The guard must key on **whether the dimensions are actually all-null**, not on `data_source` —
+   otherwise a legitimate all-null `"model"` read ("ok thanks") still clobbers, and any fifth
+   provenance value silently escapes the guard. Expressing it as "never replace non-null dimensions
+   with all-null dimensions" covers every present and future value.
+4. Whatever is stored must remain a **Pydantic-validated `ChatIntentDetectedPayload` dump** and must
+   **not extend the TTL** beyond the original write's 24h — both are load-bearing for C-07 / ROPA.
+5. The degradation must stay **visible in Redis** to an operator, without becoming readable as
+   adaptation input. If that needs a separate short-TTL diagnostic key, that key needs its own
+   compliance-doc row (Rule AI).
+6. `empty_input` produces identical all-null dimensions and must be covered by whatever rule 3
+   yields (it was missed by the first attempt's set membership).
+
+**AC:** (1) an ADR or a design note answering Q1 explicitly, reviewed before code; (2)
+implementation matching that decision, atomic per Q2, all-null-keyed per Q3; (3) invariants of Q4
+asserted by tests, not by comment; (4) a concurrency test that would fail against a GET-then-SET;
+(5) the FOLLOW-730 gap test flipped from documenting the clobber to asserting the new behaviour; (6)
+no change to the Rule R `chatPriorApplied` gate or to `flattenIntentDimensions` without a separate
+decision.
+
+cross_ref: [FOLLOW-730, ESC-045, RETRO-233, Rule K.2, Rule AI, ADR-0014]

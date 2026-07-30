@@ -362,9 +362,18 @@ def _capture_extraction_error(
                     f"chat intent extraction degraded: {kind}", level="error"
                 )
         # Belt to AtexitIntegration's braces: a spawned Modal container can be torn
-        # down hard enough that atexit hooks do not run. Bounded so telemetry can
-        # never dominate the <500ms realtime budget (§C.3).
-        sentry_sdk.flush(timeout=2.0)
+        # down hard enough that atexit hooks do not run.
+        #
+        # 0.3s, not the 2s an earlier cut used, and the honest arithmetic: this is
+        # NOT free. §C.3 budgets <500ms for a realtime extraction, so a 2s flush was
+        # 4x the whole budget while a comment claimed it "can never dominate" it —
+        # false. Worse, `jobs/batch_enrich.py` runs under Modal's 300s default with
+        # no override, so a per-session flush stacks: at 2s a ~150-session outage
+        # killed the entire 6h enrichment window and surfaced as a Modal timeout
+        # rather than the extraction outage it was. At 0.3s the realtime cost is a
+        # ~60% overshoot on an ALREADY-degraded call (the happy path never reaches
+        # this line) and the batch tier can absorb ~1000 sessions.
+        sentry_sdk.flush(timeout=0.3)
     except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
         print(f"_capture_extraction_error failed: {telemetry_exc}")
 

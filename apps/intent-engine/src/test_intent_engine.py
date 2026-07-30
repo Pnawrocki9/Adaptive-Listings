@@ -281,10 +281,8 @@ def test_error_marker_round_trips_through_shadow_write() -> None:
     payload.session_id = "sess_730"
 
     mock_redis = MagicMock()
-    # No existing key: a degraded payload IS written when it destroys nothing.
-    mock_redis.get.return_value = None
     with patch("redis_writer._get_redis", return_value=mock_redis):
-        assert write_shadow_intent(payload) is True
+        write_shadow_intent(payload)
 
     args, _kwargs = mock_redis.set.call_args
     assert args[0] == "shadow:tnt_730:sess_730:chat_intent"
@@ -483,75 +481,46 @@ def test_empty_model_response_is_captured_not_silent(monkeypatch: pytest.MonkeyP
     assert capture.call_args.args[0] is None
 
 
-def test_degraded_payload_preserves_prior_dims_and_stamps_the_marker() -> None:
-    """Round 1 finding: a degraded payload wiped a buyer's accumulated prior.
-    Round 2 finding on the first fix: simply SKIPPING the write hid the marker, so
-    an operator running GET mid-outage saw a healthy payload and misdiagnosed an
-    Upstash mismatch. Both must hold at once — dims survive AND the failure shows.
+def test_degraded_payload_currently_still_overwrites_a_prior() -> None:
+    """Documents a KNOWN, ACCEPTED gap — see FOLLOW-735.
+
+    A degraded all-null payload still overwrites an accumulated prior. Three review
+    rounds established that fixing it inside FOLLOW-730 was the wrong call: every
+    attempt (skip-the-write, then merge-the-marker) either hid the diagnostic it was
+    meant to surface, made `data_source` decision-affecting against the DIAGNOSTIC
+    ONLY contract, refreshed the 24h retention TTL, or raced the SDK's one-shot
+    `chatPriorApplied` latch. The clobber needs an atomic compare-and-set and a
+    design decision about whether a failed extraction SHOULD neutralise the served
+    prior — that is FOLLOW-735, not this ticket.
+
+    This test exists so the current behaviour is stated rather than assumed, and so
+    whoever implements 735 has a red test to flip.
     """
     with patch("nlp._call_model", side_effect=RuntimeError("connection reset")):
         degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
     degraded.tenant_id, degraded.session_id = "tnt_clobber", "sess_clobber"
 
     mock_redis = MagicMock()
-    mock_redis.set.return_value = None  # NX write refused: a prior already exists
-    mock_redis.get.return_value = json.dumps(
-        {
-            "intent_dimensions": {"budget_band": "comfortable"},
-            "archetype_hint": "yield_hunter",
-            "data_source": "model",
-            "extraction_error": None,
-        }
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        write_shadow_intent(degraded)
+
+    written = json.loads(mock_redis.set.call_args.args[1])
+    assert written["data_source"] == "error_fallback"  # the marker IS visible…
+    assert all(v is None for v in written["intent_dimensions"].values())  # …but dims are null
+
+
+def test_degraded_source_set_partitions_the_provenance_literal() -> None:
+    """DEGRADED_DATA_SOURCES lives beside ChatIntentDataSource so the two cannot
+    drift unnoticed. Assert the relationship rather than the membership list, so
+    adding a fifth provenance value forces a decision here."""
+    from schemas import DEGRADED_DATA_SOURCES
+
+    all_values = set(get_args(ChatIntentDataSource))
+    assert DEGRADED_DATA_SOURCES <= all_values, "a degraded value left the Literal"
+    assert all_values - DEGRADED_DATA_SOURCES == {"model", "empty_input"}, (
+        "a new provenance value appeared: decide whether it is operator-reportable "
+        "and add it to DEGRADED_DATA_SOURCES (or to this assertion) deliberately"
     )
-    with patch("redis_writer._get_redis", return_value=mock_redis):
-        assert write_shadow_intent(degraded) is True
-
-    # First call is the atomic NX attempt; the last is the merge.
-    nx_call = mock_redis.set.call_args_list[0]
-    assert nx_call.kwargs.get("nx") is True, "must attempt an atomic write-if-absent first"
-
-    written = json.loads(mock_redis.set.call_args_list[-1].args[1])
-    assert written["intent_dimensions"]["budget_band"] == "comfortable"  # prior survives
-    assert written["archetype_hint"] == "yield_hunter"
-    assert written["data_source"] == "model"  # provenance of the DIMS is unchanged
-    assert written["extraction_error"] == "other: RuntimeError"  # …but the failure shows
-
-
-def test_degraded_payload_writes_atomically_when_no_prior_exists() -> None:
-    """With no key, the marked all-null payload IS the record — and the write must
-    be a single atomic SET NX, because production spawns one container per message
-    and a read-then-write races a concurrent good write."""
-    with patch("nlp._call_model", side_effect=RuntimeError("boom")):
-        degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
-    degraded.tenant_id, degraded.session_id = "tnt_fresh", "sess_fresh"
-
-    mock_redis = MagicMock()
-    mock_redis.set.return_value = "OK"  # NX write accepted
-    with patch("redis_writer._get_redis", return_value=mock_redis):
-        assert write_shadow_intent(degraded) is True
-
-    assert mock_redis.set.call_args.kwargs.get("nx") is True
-    mock_redis.get.assert_not_called()  # no read-then-write race window at all
-
-
-def test_empty_input_payload_also_refuses_to_clobber() -> None:
-    """Round 2 finding: `empty_input` produces the same all-null dims but was left
-    out of the guard set, making it the one all-null shape that still destroyed a
-    prior. Latent until clickhouse_reader is implemented — pinned now."""
-    empty = extract_intent([], model=_HAIKU, source="batch")
-    empty.tenant_id, empty.session_id = "tnt_empty", "sess_empty"
-    assert empty.data_source == "empty_input"
-
-    mock_redis = MagicMock()
-    mock_redis.set.return_value = None  # a prior exists
-    mock_redis.get.return_value = json.dumps(
-        {"intent_dimensions": {"urgency": "0-3mo"}, "data_source": "model"}
-    )
-    with patch("redis_writer._get_redis", return_value=mock_redis):
-        write_shadow_intent(empty)
-
-    written = json.loads(mock_redis.set.call_args_list[-1].args[1])
-    assert written["intent_dimensions"]["urgency"] == "0-3mo"
 
 
 def test_multilingual_retry_empty_response_is_marked() -> None:
@@ -574,16 +543,6 @@ def test_multilingual_retry_empty_response_is_marked() -> None:
     assert calls["n"] == 2, "the multilingual retry must actually have been attempted"
     assert payload.data_source == "model"
     assert payload.extraction_error == "retry_failed: empty_model_response"
-
-
-def test_good_payload_still_overwrites_an_existing_prior() -> None:
-    """The guard above must not freeze the key: a real read still replaces it."""
-    good = _make_good_payload()
-    mock_redis = MagicMock()
-    mock_redis.get.return_value = '{"intent_dimensions": {"budget_band": "stretch"}}'
-    with patch("redis_writer._get_redis", return_value=mock_redis):
-        assert write_shadow_intent(good) is True
-    mock_redis.set.assert_called_once()
 
 
 def test_multilingual_retry_failure_is_marked_and_keeps_model_provenance(

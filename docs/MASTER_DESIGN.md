@@ -1669,6 +1669,11 @@ type ChatIntentDetectedPayload = {
   confidence: number;                       // 0–1 combined confidence
   model_used: 'haiku-4.5' | 'sonnet-4.6';  // which model produced this
   source: 'realtime' | 'batch';
+  // FOLLOW-730 — extraction provenance, diagnostic only (nothing reads these to
+  // decide an archetype). Needed because `extract_intent` never raises: a failed
+  // model call returns the same all-null neutral payload a no-signal buyer does.
+  data_source: 'model' | 'empty_input' | 'empty_model_response' | 'error_fallback';
+  extraction_error: string | null;          // "<kind>: <ExceptionClass>", no message text
 };
 
 type ChatIntentDimensions = {

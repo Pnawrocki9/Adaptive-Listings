@@ -27,23 +27,37 @@ def batch_enrich_conversations() -> dict:
     intent with the batch model, and writes each result to the Redis shadow
     namespace.
 
-    Returns a summary: {"processed": N, "errors": N}.
+    Returns a summary: {"processed": N, "errors": N, "degraded": N}.
+
+    FOLLOW-730: `extract_intent` never raises, so a session whose model call
+    failed used to be counted as `processed` with `errors: 0` — a green cron log
+    over a batch that extracted nothing. `degraded` counts those. It is NOT an
+    error count: those sessions were processed, they just produced no signal.
     """
     import os
 
     from clickhouse_reader import read_recent_chat_sessions
     from nlp import extract_intent
+
     from redis_writer import write_shadow_intent
+
+    # Imported from schemas (next to the Literal it partitions), never re-typed: a
+    # hand-copied literal here would drift the moment a fifth provenance value is
+    # added, and this cron would then report a fully green summary over a batch
+    # that extracted nothing — the exact failure `degraded` exists to stop.
+    from schemas import DEGRADED_DATA_SOURCES
 
     model = os.environ.get("INTENT_BATCH_MODEL", "claude-sonnet-4-6")
     sessions = read_recent_chat_sessions(hours=6)
-    processed, errors = 0, 0
+    processed, errors, degraded = 0, 0, 0
 
     for session in sessions:
         try:
             payload = extract_intent(session["messages"], model=model, source="batch")
             payload.tenant_id = session["tenant_id"]
             payload.session_id = session["session_id"]
+            if payload.data_source in DEGRADED_DATA_SOURCES:
+                degraded += 1
             # §H.9: clickhouse_reader does not yet surface opt-out state, so
             # we default to False. The batch tier processes only sessions whose
             # events reached ClickHouse; opted-out sessions are suppressed
@@ -58,4 +72,7 @@ def batch_enrich_conversations() -> dict:
             print(f"batch_enrich error: {e}")
             errors += 1
 
-    return {"processed": processed, "errors": errors}
+    if degraded:
+        print(f"batch_enrich: {degraded}/{processed} sessions extracted degraded (see Sentry)")
+
+    return {"processed": processed, "errors": errors, "degraded": degraded}

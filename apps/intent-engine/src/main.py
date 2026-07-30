@@ -46,6 +46,12 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "upstash-redis>=1.0",
     "pydantic>=2.7",
     "fastapi>=0.110",
+    # FOLLOW-730: nlp._capture_extraction_error imports this at runtime. Being in
+    # pyproject.toml is NOT enough — the deployed container only ever has what is
+    # listed here, so without this line every capture raises ModuleNotFoundError,
+    # is swallowed by the helper's own guard, and the ticket's alerting is a
+    # permanent prod no-op. jobs/batch_enrich.py reuses this same image object.
+    "sentry-sdk>=2.0",
 )
 
 # Required JSON keys for chat_nlp_endpoint (mirrors stream-consumer _spawn_chat_nlp args).

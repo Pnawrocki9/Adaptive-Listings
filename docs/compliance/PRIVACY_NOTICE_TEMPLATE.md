@@ -319,9 +319,12 @@ node scripts/check-consent-text-sync.mjs --print-hash               # same value
 
 Raw chat text is stored APP-SIDE only (app.estalara.com infrastructure, Rafał Palak's
 responsibility). The Adaptive-Listings system stores only a 12-dimensional intent vector with a
-24-hour TTL. Code-verified: `schemas.py:58–79` — `ChatIntentDetectedPayload` has no `messages` or
-`raw_text` field; `redis_writer.py:49` — `payload.model_dump()` serializes only the structured
-payload. See `docs/compliance/C-07-chat-retention-scope.md`.
+24-hour TTL. Code-verified: `schemas.py` (class `ChatIntentDetectedPayload`) has no `messages` or
+`raw_text` field; `redis_writer.py` — `payload.model_dump()` serializes only the structured payload.
+Since FOLLOW-730 that payload also carries two diagnostic fields, `data_source` and
+`extraction_error`, which record WHY an extraction produced its result (a fixed enum plus an
+exception CLASS name — never the exception message, and never buyer content). See
+`docs/compliance/C-07-chat-retention-scope.md`.
 
 App-side chat text retention and deletion windows are specified in `backlog/HANDOFFS.md` FOLLOW-373
 HANDOFF to Rafał Palak, CTO.

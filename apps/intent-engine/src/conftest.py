@@ -6,13 +6,18 @@ Mocks the `modal` package so unit tests can import the Modal-decorated modules
 installed. The decorators (app.function, Secret.from_name, Cron, …) become
 no-ops and the underlying Python functions are tested directly — the standard
 offline-Modal pattern used across this repo (see apps/llm-gateway/src/conftest.py).
+
+Also neutralises SENTRY_DSN for every test — see `_no_live_sentry` below.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
 from unittest.mock import MagicMock
+
+import pytest
 
 
 def _make_modal_stub() -> MagicMock:
@@ -59,3 +64,29 @@ def _make_modal_stub() -> MagicMock:
 # installed (full dev environment), leave it alone.
 if "modal" not in sys.modules:
     sys.modules["modal"] = _make_modal_stub()  # type: ignore[assignment]
+
+
+@pytest.fixture(autouse=True)
+def _no_live_sentry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the test suite from initialising a REAL Sentry client (FOLLOW-730).
+
+    Several tests drive `nlp._capture_extraction_error` through the production
+    path. That helper is DSN-gated, so with `SENTRY_DSN` present in the
+    environment — which is routine here, since Python is often run under
+    `doppler run --` — the suite would init a live client and ship fabricated
+    `KeyError: ANTHROPIC_API_KEY` / `JSONDecodeError` issues straight into the
+    real project, polluting the very alert channel FOLLOW-730 creates.
+    (Reproduced before this fixture existed: 5 pending events on one run.)
+
+    Tests that WANT the capture path stub `sys.modules['sentry_sdk']` and set the
+    DSN themselves via monkeypatch, which still wins — autouse fixtures run
+    first, so this only clears an inherited value.
+
+    Also resets the module-level init latch so ordering cannot leak a `True`
+    from one test into another's assertions.
+    """
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+    if "nlp" in sys.modules:
+        monkeypatch.setattr(sys.modules["nlp"], "_sentry_initialised", False, raising=False)
+    # Belt and braces: if some other layer re-reads the env directly.
+    assert os.environ.get("SENTRY_DSN") is None

@@ -439,7 +439,7 @@ retaining raw chat text. Alternatives assessed:
 | Manual agent data entry                        | Defeats the automated personalization purpose                    |
 | No ranking (first-come-first-served)           | Does not serve the commercial interest                           |
 
-The 24-hour TTL for the intent vector, enforced natively by Upstash Redis (`redis_writer.py:40`,
+The 24-hour TTL for the intent vector, enforced natively by Upstash Redis (`redis_writer.py`,
 `ttl_seconds=86400`), is the minimum retention consistent with within-session personalization and
 the investor's reasonable expectation of continuity during an active session.
 

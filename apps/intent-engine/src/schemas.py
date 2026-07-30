@@ -18,6 +18,34 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+# Provenance of a ChatIntentDetectedPayload (FOLLOW-730 / Rule K.2). One value per
+# code path in `nlp.extract_intent` that can produce a payload — nothing here is
+# inferred or decorative:
+#   "model"                — the Anthropic call returned text that parsed into this
+#                            payload. All-null dimensions under this value mean a
+#                            REAL model read that found no archetype-bearing signal.
+#   "empty_input"          — extract_intent was called with zero messages; the model
+#                            was never called.
+#   "empty_model_response" — the call succeeded but returned only whitespace; no
+#                            exception was raised and nothing could be parsed.
+#   "error_fallback"       — the Anthropic call or the JSON parse raised and the
+#                            exception was swallowed by the never-raises contract.
+#                            The dimensions are the NEUTRAL fallback, not a read.
+ChatIntentDataSource = Literal["model", "empty_input", "empty_model_response", "error_fallback"]
+
+# Which of those values mean "an extraction was attempted and came back unusable",
+# i.e. something an operator should be told about. Lives HERE, next to the Literal
+# it partitions, so adding a value to one without considering the other is visible
+# in a single diff — an earlier cut of FOLLOW-730 kept this in redis_writer.py and
+# a hand-copied duplicate in jobs/batch_enrich.py, which is exactly the drift this
+# ticket is about. Public on purpose: two other modules import it.
+#
+# "empty_input" is NOT here: no extraction was attempted (zero messages reached
+# the extractor), so there is no extraction failure to report. "model" is not here
+# even when every dimension came back null — that IS a real read, and telling the
+# two apart is the whole point of the ticket.
+DEGRADED_DATA_SOURCES = frozenset({"error_fallback", "empty_model_response"})
+
 
 class ChatIntentDimensions(BaseModel):
     """The 12-dimension chat-intent vector (mirrors the behavioural ontology).
@@ -77,3 +105,33 @@ class ChatIntentDetectedPayload(BaseModel):
     message_count: int
     # ISO 8601
     detected_at: str
+
+    # ── FOLLOW-730: degraded-vs-genuine provenance (Rule K.2) ────────────────
+    # Where these dimensions came from. Before this field existed, a dead /
+    # rate-limited / unparseable Anthropic call was indistinguishable — on the
+    # wire AND in Redis — from a buyer who genuinely said nothing
+    # archetype-bearing: both produced all-null dims, confidence 0.0 and
+    # archetype_hint "neutral" (RETRO-233 §4a LG-1, ESC-045).
+    #
+    # DIAGNOSTIC ONLY. Nothing reads this to decide which archetype is applied;
+    # `flattenIntentDimensions` (control-plane) still drops nulls and the SDK
+    # still skips an empty dimension map, exactly as before.
+    #
+    # Defaults to "model" so shadow JSON written before this field existed still
+    # validates (that legacy shape is what the FOLLOW-368 Redis round-trip
+    # fixture writes). Every producer path in `nlp.py` sets it explicitly.
+    data_source: ChatIntentDataSource = "model"
+    # Human-readable diagnosis, formatted "<classified kind>: <ExceptionClassName>"
+    # (e.g. "missing_api_key: KeyError"). Set on two distinct occasions:
+    #   - data_source == "error_fallback" — the extraction itself failed;
+    #   - data_source == "model" with a "retry_failed: …" value — the read is a
+    #     genuine (Haiku) one, but the §C.3 multilingual Sonnet retry failed, so
+    #     the buyer silently kept a low-confidence read. Provenance stays "model"
+    #     because the dimensions ARE a real read; this field is the only trace.
+    # None on every other path.
+    #
+    # The full exception message is deliberately NOT stored here — it goes to the
+    # log line and the Sentry event only, because this value lands in a 24h-TTL
+    # Redis key that is served to no user surface and must carry no model/prompt
+    # echo. Keep it to <kind>: <ClassName>.
+    extraction_error: str | None = None

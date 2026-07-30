@@ -35,11 +35,20 @@ Production's `chat_nlp_endpoint` calls `process_chat_message.spawn(...)`
 (fire-and-forget) and returns 202 immediately; the shadow Redis write happens
 asynchronously in a separate Modal container. This local shim has no spawn
 mechanism, so it runs `extract_intent` + `write_shadow_intent`
-SYNCHRONOUSLY in-process before returning 202 — by the time the HTTP response
-comes back, the shadow key is already written. This makes local round-trip
-verification deterministic (see `test_local_dev.py`) without changing the
-response contract the ingest Worker's dispatcher relies on (it only checks
-`res.ok`, per `apps/ingest/src/handlers/chat-nlp-dispatch.ts`).
+SYNCHRONOUSLY in-process before responding — by the time the HTTP response comes
+back, the shadow key is already written. This makes local round-trip
+verification deterministic (see `test_local_dev.py`).
+
+The response contract DOES differ from production (FOLLOW-730): on a degraded
+extraction this shim answers 502, where production always answers 202 because it
+returns before extraction even runs. That divergence is the point — a 202 over a
+dead model call is the fail-green this ticket exists to remove — but it has a
+consequence worth knowing before you debug: the ingest Worker's dispatcher
+(`apps/ingest/src/handlers/chat-nlp-dispatch.ts:83-92`) treats any `!res.ok` as a
+DISPATCH failure and logs/reports `kind: 'dispatch_failed'`. So against this shim
+a missing `ANTHROPIC_API_KEY` surfaces Worker-side as "Modal dispatch rejected:
+HTTP 502", which is a transport-shaped message for a credentials-shaped problem.
+Read the 502 body (`extraction_error`) rather than the Worker log line.
 
 Explicitly OUT of scope (FOLLOW-729 AC4): no change to `main.py`'s production
 Modal wiring, no Modal deploy, no batch-tier (`jobs/batch_enrich.py`) change.
@@ -57,6 +66,7 @@ from fastapi.responses import JSONResponse
 
 from nlp import extract_intent
 from redis_writer import write_shadow_intent
+from schemas import DEGRADED_DATA_SOURCES
 
 SERVICE_NAME = "estalara-intent-engine-local-dev"
 
@@ -144,5 +154,35 @@ async def chat_nlp_endpoint(
     payload.tenant_id = tenant_id
     payload.session_id = session_id
     write_shadow_intent(payload, profiling_opt_out=profiling_opt_out)
+
+    # FOLLOW-730 AC4 — local-only degraded signal. `extract_intent` never raises,
+    # so before this an absent ANTHROPIC_API_KEY produced a healthy-looking 202
+    # plus a neutral shadow key: a green wire with zero archetype movement, which
+    # is indistinguishable at a glance from a writer/reader Upstash DB mismatch
+    # (RETRO-233 §4a LG-1/LG-3, ESC-045). Surfacing it here is safe ONLY because
+    # this file is local-only — see the module docstring for how it looks from the
+    # ingest Worker's side, which is NOT what production does.
+    #
+    # BOTH degraded provenance values are covered: `empty_model_response` (HTTP
+    # 200 with no usable text) is just as fail-green as a raised error, and
+    # covering only `error_fallback` left half the hole open.
+    #
+    # `shadow_key_written` exists because §H.9 opt-out skips the write entirely:
+    # telling an operator to `GET shadow:{t}:{s}:chat_intent` when nothing was
+    # written sends them chasing a phantom Redis mismatch, which is the exact
+    # misdiagnosis this ticket exists to prevent. Derived from the opt-out flag
+    # rather than from the writer's return value on purpose — `write_shadow_intent`
+    # writes unconditionally otherwise, so this is the whole truth and cannot drift
+    # out of step with the writer the way an earlier cut of this code did.
+    if payload.data_source in DEGRADED_DATA_SOURCES:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "degraded",
+                "data_source": payload.data_source,
+                "extraction_error": payload.extraction_error,
+                "shadow_key_written": not profiling_opt_out,
+            },
+        )
 
     return JSONResponse(status_code=202, content={"status": "accepted"})

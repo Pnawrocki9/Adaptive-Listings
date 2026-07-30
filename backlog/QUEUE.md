@@ -42,7 +42,45 @@ the `AGENT_WORKFLOW.md:171-181` recovery procedure). The remaining implementatio
 was run and is truthfully reported, but **PR #642's review is NOT independent** and should get a
 fresh reviewer or a `/code-review` pass before merge. Flagged rather than quietly absorbed.
 
-**CI-check counter:** 3/5. **Fix-iteration counter:** 2/3.
+**CI-check counter:** 4/5. **Fix-iteration counter:** 3/3 — at the guardrail. Any further defect
+found in this PR should be a NEW ticket, not a fourth fix round here.
+
+**Third review round (2026-07-30, `1ff873ef`) — and a REVERT, not a fourth patch.** The third
+`/code-review` found 10 more defects and **9 of them lived in the don't-clobber logic I added in
+rounds 1-2**, not in the original ticket work. The pattern was decisive: the merge design made
+`data_source` decide which prior `/api/adapt` serves (breaking the "DIAGNOSTIC ONLY" contract stated
+in `schemas.py`, `nlp.py` AND MASTER_DESIGN §1669), refreshed the 24h TTL on un-refreshed personal
+data (defeating the retention limit ROPA/DPIA/C-07 assert — and this PR edits those docs), wrote an
+unvalidated `json.loads` of the prior straight back (so `payload.model_dump()` was no longer the
+only write path the compliance evidence cites), and was still a read-then-write race that the SDK's
+one-shot `chatPriorApplied` latch converts into PERMANENT loss of a good read.
+
+**So it was reverted to `main`'s unconditional write.** FOLLOW-730's own stub had said the blast
+radius was "diagnostic, not correctness — scope accordingly" and "must NOT be over-fixed". It was
+over-fixed anyway, twice; each attempt was worse than the gap it closed. The clobber is real but is
+now **FOLLOW-735** (P2, architect first) with the six design questions three rounds surfaced —
+atomicity, keying on all-null dims instead of provenance, TTL + validation invariants, keeping the
+degradation visible without making it adaptation input — because Q1 ("should a failed extraction
+neutralise the served prior at all?") is a product decision, not an implementation detail.
+`test_degraded_payload_currently_still_overwrites_a_prior` states the gap instead of leaving it
+implicit.
+
+**Kept from the fix rounds, all still verified:** the provenance markers, `sentry-sdk` in the Modal
+image, `include_local_variables=False` (the compliance fix), the empty-response arms on BOTH primary
+and retry paths, the classifier's auth/rate-limit/upstream kinds, the conftest DSN isolation, the
+doc/citation sync. Also fixed this round: the flush timeout (2.0 → 0.3 — the old comment claimed 2s
+"can never dominate the <500ms budget", which is 4x it, and per-session stacking would have killed
+the 300s batch cron after ~150 degraded sessions) and `DEGRADED_DATA_SOURCES` moved to `schemas.py`
+beside the Literal it partitions, with a test asserting the partition rather than the membership
+list.
+
+CI after the revert: **63 pass, Rule I still 192.** Suite 55 → 53 (two tests removed with the
+behaviour they pinned, two added).
+
+**Review-cost note for the retro:** three rounds, 30 findings, and rounds 2-3 were dominated by
+defects the previous round's fixes created. The lesson is not "review more" — it is that a single
+actor patching their own reviewed work compounds risk, and that a ticket's own "do not over-fix"
+warning is load-bearing.
 
 **Second review round (2026-07-30, `ccec445d`).** A second `/code-review` at high effort was run on
 the FIXES from round 1, because those were written by the same single actor too. It found **10 more

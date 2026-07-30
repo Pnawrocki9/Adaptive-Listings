@@ -9,10 +9,18 @@ running, nothing stranded.
 
 **Escalation gate re-applied.** The same 5 `## OPEN` entries remain (ESC-020, ESC-041,
 ESC-042-narrowed, ESC-044, ESC-045) — all still blocked on a human/operator action, none newly
-arrived. **ESC-045 item 4 is now RESOLVED** (FOLLOW-738 landed the hardened Sentry init —
+arrived. **ESC-045 item 4's hazard leg is RESOLVED** (FOLLOW-738 landed the hardened Sentry init —
 `SENTRY_DSN` is safe to provision); items 1-3 (Anthropic dev key, Upstash dev instance,
-writer/reader env-pair parity) remain the ONLY open blockers on Piotr's "100% on localhost" standing
-priority.
+writer/reader env-pair parity) remain open blockers on Piotr's "100% on localhost" standing
+priority. **Self-correction, later this same session:** the retrospective this session ran
+(RETRO-235) caught that this sentence, written at the top of this session, itself repeats a
+DG-1-class error — item 4 carried a SECOND leg (the Sentry channel has zero producer in prod at all,
+DSN or no DSN) that FOLLOW-738 did NOT close and that lost its tracking owner when item 4 was marked
+resolved. Re-owned as `backlog/FOLLOW_UPS.md` → `## FOLLOW-744`; `backlog/ESCALATIONS.md` → ESC-045
+carries the full correction. So "items 1-3" above is the accurate list of what's open ONLY if
+FOLLOW-744's gap is read as belonging to FOLLOW-738/744, not to ESC-045 — both framings track the
+same open work, just filed under different IDs; the point is not to read this line as "everything
+Sentry-side is now closed except items 1-3."
 
 **FOLLOW-736 judged, not dispatched — reasoned, not deferred by default.** The handoff framed it as
 "strongest pick, every blocker cleared" and that's true of its OWN `depends_on`/`blocks` chain

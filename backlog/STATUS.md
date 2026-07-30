@@ -10,11 +10,8 @@ dispatched, FOLLOW-738 retro dispatched; ESC-045 narrowed to items 1-3; 5 ESCALA
 **5 escalations still OPEN**, ages as of today (2026-07-30): ESC-020 (~24d, Rafał/`web-master` prod
 deploy), ESC-041 (~7d, npm registry E403 / FOLLOW-626), ESC-042-narrowed (~6d, Modal `intent-engine`
 operator deploy / FOLLOW-635), ESC-044 (~3d, consent-hash placeholder / DPO ruling), ESC-045 (~1d;
-item 4 RESOLVED this cycle by FOLLOW-738, items 1-3 — Anthropic key, Upstash instance, env-pair
-parity — remain OPEN and are the only blockers left on Piotr's "100% on localhost" priority). None
-newly arrived; none resolved by a human this session (item 4 was resolved by merged code, not by a
-human decision, so the escalation entry itself stays `## OPEN` with the resolved sub-item struck
-through, per how session 82 left it).
+item 4's HAZARD leg resolved this cycle by FOLLOW-738 — corrected below, its CHANNEL leg was not).
+None newly arrived; none resolved by a human this session.
 
 **Judgement call: FOLLOW-736 NOT dispatched, despite being ready in principle.** Its own
 `depends_on`/`blocks` chain is fully clear (FOLLOW-730 merged, FOLLOW-741 DONE). But it is generic
@@ -34,20 +31,38 @@ configs have zero scrubbing (FOLLOW-738 explicitly deferred that). Rewrote the t
 reality rather than dispatching a worker against a premise that had partially become true. Held for
 the same escalation-gate reason as FOLLOW-736.
 
-**Retrospective for FOLLOW-738 (PR #644, merged `479ac0ef`) — owed since session 82, dispatched this
-session.** Model: Opus (agent default — cross-module wiring audit + rule-promotion judgement).
-Dispatch mechanism/log path recorded below once started.
+**Retrospective for FOLLOW-738 (PR #644, merged `479ac0ef`) — owed since session 82, dispatched AND
+completed this session.** Model: Opus. Dispatched nohup'd (`claude --agent retrospective-analyst`,
+PID 102802, log
+`/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/retro738_analyst.log`),
+ran ~20 minutes, committed locally on branch `retrospective-analyst/RETRO-235-follow-738-retro`
+(`c90830a6`) because it correctly detected `main` had advanced past its prepared context and refused
+to force onto it. Verified the commit was a clean, append-only diff to
+`backlog/RETROSPECTIVES.md`/`backlog/FOLLOW_UPS.md` (845 insertions, 2 files, no code), fast-forward
+merged onto `main`, deleted the branch, pushed. **RETRO-235 filed: 2 logic gaps / 5 code bugs (2×P1)
+/ 3 test gaps / 3 doc gaps; wiring CHECK A clean, CHECK B 4 half-wires (2×P1 FOLLOW-743/744, 2×P2
+FOLLOW-745/746); no rule promoted (Rule J/K.1 held at 2 — this instance is the pattern's remedy, not
+its recurrence). Follow-ups FOLLOW-743..748.**
 
-**Bookkeeping committed BEFORE dispatch** (no concurrent git ops with a running subagent): one
-commit touching `backlog/QUEUE.md`, `backlog/FOLLOW_UPS.md`, `backlog/STATUS.md`.
+**The finding that mattered most: DG-1 — my own session-83 opening lines repeated the exact
+over-read RETRO-235 flags.** ESC-045 item 4 carried two legs (hazard + absent channel); FOLLOW-738
+closed only the hazard, but this session's own `QUEUE.md`/`STATUS.md` header (written before the
+retro ran) said "items 1-3 remain the ONLY open blockers" — which reads as if the whole Sentry
+channel is now closed. It isn't: `SENTRY_DSN` still has zero producers in prod (RETRO-235 §3 HW-2).
+Corrected in place in `backlog/ESCALATIONS.md` (ESC-045, non-blocking correction, no new decision)
+and in this session's own `QUEUE.md` header, rather than leaving the imprecise framing to propagate
+to the next session. FOLLOW-744 now owns the untracked leg.
+
+**Bookkeeping committed BEFORE dispatch, and again after retro completion** (no concurrent git ops
+while the subagent was running — did not touch `backlog/FOLLOW_UPS.md`/`RETROSPECTIVES.md` while its
+own uncommitted changes were staged in the shared working tree).
 
 **0 tickets IN_PROGRESS** (FOLLOW-736/739/740 all held; no worker ticket dispatched this session —
 only the retro, which is Step 6/7 maintenance, not a new ticket pick). **CI-check counter:** N/A (no
 worker PR this session). **Fix-iteration counter:** N/A.
 
-NEXT: Wait for the retrospective-analyst run on FOLLOW-738/PR #644 to finish, then re-judge
-FOLLOW-736 next session — human attention still needed on ESC-020/041/042/044/045 items 1-3 (see
-backlog/ESCALATIONS.md).
+NEXT: Re-judge FOLLOW-736 and dispatch FOLLOW-743/744 (P1, both new from RETRO-235) next session —
+human attention still needed on ESC-020/041/042/044/045 items 1-3 (see backlog/ESCALATIONS.md).
 
 ---
 

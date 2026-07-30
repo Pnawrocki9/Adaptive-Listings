@@ -2905,3 +2905,19 @@ comment ("all services share one org, separate projects") is already false for t
 into the Modal `estalara-secrets` secret whenever convenient; the hardening it was waiting on is on
 `main` and CI-guarded. Items 1-3 (Anthropic key, Upstash instance + env-pair parity) are unaffected
 and remain the actual blockers on the "100% on localhost" goal.
+
+**CORRECTION 2026-07-30 (session 83, per RETRO-235 §3 HW-2 / §4d DG-1) — item 4's "RESOLVED" framing
+above conflated two distinct legs; only one is closed.** Item 4, in its own original words, named
+two legs: (a) the hazard — provisioning `SENTRY_DSN` would silently activate two unhardened Sentry
+producers; (b) the absent channel — _"the code is wired and tested; the channel is absent"_ (no
+producer exists in prod for any of the four call sites, DSN or no DSN). **FOLLOW-738 (PR #644)
+closed leg (a) only.** The "✅ RESOLVED" line above, and this session's own earlier `QUEUE.md`/
+`STATUS.md` entries which repeated "items 1-3 remain the ONLY open blockers", both over-read that as
+closing leg (b) too. It did not: `SENTRY_DSN` is still absent from Doppler `prd` and from the Modal
+`estalara-secrets` secret (`docs/runbooks/MODAL_PROD_STANDUP.md:17`) — nothing changed on the
+producer side, only the hazard of provisioning it did. **Leg (b) is now correctly tracked as
+`backlog/FOLLOW_UPS.md` → `## FOLLOW-744`** (filed by RETRO-235, since RETRO-234's original note —
+"NO new stub — already owned by ESC-045 item 4" — lost its owner when item 4 was marked resolved).
+This escalation stays `## OPEN` (not re-opened as blocking-for-dispatch; it was never closed to
+begin with) — this note only corrects the record, it changes no decision and requires no new
+operator action beyond what FOLLOW-744 already asks for.

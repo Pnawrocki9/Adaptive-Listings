@@ -1,7 +1,55 @@
-# Status — 2026-07-30 (session 82 — FOLLOW-742 closed stale; FOLLOW-738 (devops) + FOLLOW-741
+# Status — 2026-07-30 (session 83 — FOLLOW-736 held (escalation gate), FOLLOW-739 re-scoped not
 
-(architect, draft-only) dispatched; FOLLOW-736 held pending FOLLOW-741; 5 ESCALATIONS open,
-unchanged)
+dispatched, FOLLOW-738 retro dispatched; ESC-045 narrowed to items 1-3; 5 ESCALATIONS open)
+
+## SESSION 83 (2026-07-30) — FOLLOW-736 held, FOLLOW-739 re-scoped, FOLLOW-738 retro dispatched
+
+**State re-verified:** `main` at `1bea483d`, clean, matches session-82 handoff exactly.
+`gh pr list --state open` → empty. No stranded processes/worktrees.
+
+**5 escalations still OPEN**, ages as of today (2026-07-30): ESC-020 (~24d, Rafał/`web-master` prod
+deploy), ESC-041 (~7d, npm registry E403 / FOLLOW-626), ESC-042-narrowed (~6d, Modal `intent-engine`
+operator deploy / FOLLOW-635), ESC-044 (~3d, consent-hash placeholder / DPO ruling), ESC-045 (~1d;
+item 4 RESOLVED this cycle by FOLLOW-738, items 1-3 — Anthropic key, Upstash instance, env-pair
+parity — remain OPEN and are the only blockers left on Piotr's "100% on localhost" priority). None
+newly arrived; none resolved by a human this session (item 4 was resolved by merged code, not by a
+human decision, so the escalation entry itself stays `## OPEN` with the resolved sub-item struck
+through, per how session 82 left it).
+
+**Judgement call: FOLLOW-736 NOT dispatched, despite being ready in principle.** Its own
+`depends_on`/`blocks` chain is fully clear (FOLLOW-730 merged, FOLLOW-741 DONE). But it is generic
+ADR-0020 implementation scope — it does not clear or touch any of the 5 open escalations. Applied
+the same distinction the session-81 note itself drew for this exact ticket ("no NEW ticket is picked
+while escalations are open ... FOLLOW-736 dispatch does not [proceed]"), rather than the narrower
+exception used for FOLLOW-738/741 (escalation-clearing remediation only). Held for a future session
+to re-judge.
+
+**FOLLOW-739 re-scoped in place, not dispatched.** Read `observability.py`,
+`check-sentry-init-singleton.sh`, `test_observability.py` and
+`apps/control-plane/sentry.server.config.ts` directly against `main` rather than trusting the
+handoff's framing. Found FOLLOW-738 landed a real `before_send` hook + CI gate (so "exist nowhere"
+is now false), but the docs' actual wording ("PII patterns regex", blanket Sentry-row scrubbing
+claim, "CI check on scrubber config") remains inaccurate, and `apps/control-plane`'s 3 Sentry
+configs have zero scrubbing (FOLLOW-738 explicitly deferred that). Rewrote the ticket's AC to match
+reality rather than dispatching a worker against a premise that had partially become true. Held for
+the same escalation-gate reason as FOLLOW-736.
+
+**Retrospective for FOLLOW-738 (PR #644, merged `479ac0ef`) — owed since session 82, dispatched this
+session.** Model: Opus (agent default — cross-module wiring audit + rule-promotion judgement).
+Dispatch mechanism/log path recorded below once started.
+
+**Bookkeeping committed BEFORE dispatch** (no concurrent git ops with a running subagent): one
+commit touching `backlog/QUEUE.md`, `backlog/FOLLOW_UPS.md`, `backlog/STATUS.md`.
+
+**0 tickets IN_PROGRESS** (FOLLOW-736/739/740 all held; no worker ticket dispatched this session —
+only the retro, which is Step 6/7 maintenance, not a new ticket pick). **CI-check counter:** N/A (no
+worker PR this session). **Fix-iteration counter:** N/A.
+
+NEXT: Wait for the retrospective-analyst run on FOLLOW-738/PR #644 to finish, then re-judge
+FOLLOW-736 next session — human attention still needed on ESC-020/041/042/044/045 items 1-3 (see
+backlog/ESCALATIONS.md).
+
+---
 
 ## SESSION 82 (2026-07-30) — FOLLOW-738 + FOLLOW-741 dispatched, FOLLOW-742 closed stale
 

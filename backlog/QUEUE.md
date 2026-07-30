@@ -1,6 +1,64 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-30 (session 82 — FOLLOW-742 closed stale, FOLLOW-738 (devops) +
+## ▶️ START HERE — resume 2026-07-30 (session 83 — FOLLOW-736 judged NOT ready to dispatch (escalation gate), FOLLOW-739 re-scoped not dispatched, FOLLOW-738 retro dispatched; 5 open ESCALATIONS unchanged, ESC-045 narrowed to items 1-3)
+
+**State re-verified before doing anything:** `git status` clean, `main` at `1bea483d`
+(`docs(backlog): close follow-738 (merged #644) + follow-741, esc-045 item 4 unblocked [FOLLOW-738]`),
+matching the session-82 handoff exactly. `gh pr list --state open` → empty, no worker processes
+running, nothing stranded.
+
+**Escalation gate re-applied.** The same 5 `## OPEN` entries remain (ESC-020, ESC-041,
+ESC-042-narrowed, ESC-044, ESC-045) — all still blocked on a human/operator action, none newly
+arrived. **ESC-045 item 4 is now RESOLVED** (FOLLOW-738 landed the hardened Sentry init —
+`SENTRY_DSN` is safe to provision); items 1-3 (Anthropic dev key, Upstash dev instance,
+writer/reader env-pair parity) remain the ONLY open blockers on Piotr's "100% on localhost" standing
+priority.
+
+**FOLLOW-736 judged, not dispatched — reasoned, not deferred by default.** The handoff framed it as
+"strongest pick, every blocker cleared" and that's true of its OWN `depends_on`/`blocks` chain
+(FOLLOW-730 merged, FOLLOW-741 DONE, HANDOFFS.md trap 6 written). But FOLLOW-736 does not clear or
+touch ANY of the 5 open escalations — it is generic ADR-0020 implementation scope, not
+escalation-clearing remediation. The prior session's OWN reasoning for FOLLOW-738/741 was explicit
+that dispatching them was an exception because they _remove a blocker_ ("FOLLOW-738 is not competing
+new scope, it is ESC-045 item 4's own named remediation"); the session before that, when it filed
+FOLLOW-736 itself, drew the same line the other way: "5 ESCALATIONS remain OPEN ... no NEW ticket is
+picked while escalations are open ... FOLLOW-736 dispatch does not [proceed]." Applying that same
+precedent to FOLLOW-736 today (nothing about its readiness changes this): **held, not dispatched.**
+Re-judge next session if the human resolves any of the 5, or if a future session decides the
+generic-scope/escalation-clearing distinction should be abandoned — that is a judgment call for
+whoever runs this loop next, not a settled rule.
+
+**FOLLOW-739 re-scoped, not dispatched — the handoff's instruction was correct that its premise had
+partially changed, and rewriting it (not merely executing it) was the right call.** Read
+`observability.py`, `check-sentry-init-singleton.sh`, `test_observability.py`, and
+`apps/control-plane/sentry.server.config.ts` directly against `main`. Found: FOLLOW-738 DID land a
+real `before_send` hook and a real CI gate, so the ORIGINAL framing ("exist nowhere") is now false —
+but the docs' actual claims ("PII patterns regex", blanket "Sentry" row, "CI check on scrubber
+config") remain overstated/imprecise in ways that matter: the hook is a hardcoded blanket redaction
+of one field on one tag, not regex-based PII detection; `apps/control-plane`'s 3 Sentry configs have
+**zero** scrubbing (FOLLOW-738 explicitly deferred this); the named CI check is a singleton-bypass
+guard, not a "scrubber config" check. Rewrote `backlog/FOLLOW_UPS.md` → `## FOLLOW-739` in place
+with the corrected AC (cite real symbols/scripts, state the control-plane gap explicitly, keep the
+missing negative test). Not dispatched this session for the same escalation-gate reason as
+FOLLOW-736 (docs-accuracy scope, not escalation-clearing) — ready for compliance-engineer/Sonnet the
+moment that gate lifts.
+
+**Retrospective for FOLLOW-738 (PR #644, merged `479ac0ef`) — owed since last session, dispatched
+this session.** Per Step 6/7, every merge gets a retro before the next new ticket is picked; this
+was flagged outstanding in the session-82 handoff and not reached. Dispatched
+`retrospective-analyst`/Opus (model-fit: cross-module wiring audit + rule-promotion judgement, not
+routine — matches the agent's own default). See dispatch record below for PID/log path per the
+standing instruction not to lose nohup'd output.
+
+**Not touched this session, deliberately:** FOLLOW-740 (P2, ml-engineer — no hard dependency, but
+lower priority than clearing the retro + queue-hygiene this session did; also generic scope, same
+escalation-gate hold), FOLLOW-731/732/733/734 (P2/P3/P3/P3, unstarted from RETRO-233), FOLLOW-737
+(P3, shared-Zod mirror gap). All held for the same reason: no new generic-scope dispatch while the 5
+escalations are open.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-30 (session 82 — FOLLOW-742 closed stale, FOLLOW-738 (devops) +
 
 FOLLOW-741 (architect, draft-only) dispatched; FOLLOW-736 held pending FOLLOW-741's amendment; 5
 open ESCALATIONS unchanged, none newly blocking)

@@ -22197,56 +22197,86 @@ cross_ref: [RETRO-234 §3 HW-3, §4b CB-2, §4c TG-2, §5d; ESC-045 item 4; Rule
 
 ---
 
-## FOLLOW-739 — `ropa.md` and `dpia.md` assert a Sentry `beforeSend` PII scrubber and a CI check that exist nowhere in the repo, on the one path whose binding constraint is "no message content"
+## FOLLOW-739 — `ropa.md` and `dpia.md` overstate the Sentry scrubber's mechanism and scope; `apps/control-plane`'s Sentry remains fully unscrubbed
 
 source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: now
-recommended_agent: compliance-engineer priority: P1 estimated_hours: 2 depends_on: [FOLLOW-738 (its
-`before_send` is the thing that would make the assertion true)] promoted_to_queue: false
+recommended_agent: compliance-engineer priority: P1 estimated_hours: 2 depends_on: [] (FOLLOW-738
+DONE 2026-07-30, PR #644, `479ac0ef` — see below) promoted_to_queue: false
 
-**The contradiction, in three quotes from three files, two of which PR #642 edited.**
+**RE-SCOPED 2026-07-30 (session 83, PM), per FOLLOW-738's landing — do NOT dispatch this as
+originally written; the premise has partially changed.** FOLLOW-738 (PR #644) shipped a real
+`before_send` hook (`observability.py:58-89`, `_scrub_chat_intent_exception_value`, Rule-J-mirrored
+into all 3 Python Modal apps) plus a real CI gate (`scripts/check-sentry-init-singleton.sh`, wired
+into `ci.yml`). So the original framing — "a scrubber and a CI check that exist nowhere" — is no
+longer accurate as a blanket claim. Verified directly against `main` before writing this (not
+inferred from the PR description):
 
-1. `docs/compliance/ropa.md:444` (sub-processor table, Sentry row): _"Stack traces, request context
-   (**scrubbed of PII before transmission per Sentry SDK `beforeSend` hook with PII patterns regex;
-   verification: CI check on scrubber config** + annual audit), tenant_id"_.
-2. `docs/compliance/dpia.md:157` and `:224`: _"Stack traces, request context (scrubbed of PII via
-   SDK `beforeSend` hook; **CI-verified**)"_.
-3. `docs/compliance/C-07-chat-retention-scope.md:222` — **added by PR #642**: _"the exception
-   message, **which could echo prompt text**, goes to the log line and the Sentry event and never
-   into Redis."_
+- `observability.py:58-89` — the hook exists, but it does ONE thing: if
+  `event.tags.area == "chat_intent"`, it replaces the exception's `value` string with a fixed
+  placeholder (`"[redacted by FOLLOW-738: ...]"`.). It is **not** a "PII patterns regex" — there is
+  no pattern matching, no scan for PII shapes; it is a blanket, tag-gated overwrite of one field.
+  Every other Sentry field (breadcrumbs, `extra`, `request`, `contexts`) is untouched, and every
+  non-`chat_intent` tagged event (the `onboarding`, `schema_validation` areas) passes through this
+  hook unmodified — which is fine (those paths don't carry buyer chat text) but means ropa.md's
+  blanket "Sentry" row overclaims uniform scrubbing across the vendor relationship.
+- `scripts/check-sentry-init-singleton.sh` is a **singleton-bypass guard** ("is every
+  `sentry_sdk.init(` call routed through the shared hardened helper"), not a "scrubber config" check
+  in the sense ropa.md:444 asserts (it does not inspect `before_send`'s content or verify PII
+  patterns). The thing that actually pins the scrub's _behaviour_ is
+  `apps/intent-engine/src/test_observability.py` (pytest, runs under CI as part of the normal test
+  matrix — reasonable to call "CI-verified" loosely, but it is not a dedicated named check as the
+  docs' wording implies).
+- **`apps/control-plane`'s three Sentry configs (`sentry.server.config.ts`,
+  `sentry.client.config.ts`, `sentry.edge.config.ts`) still have ZERO `beforeSend`/scrubber** —
+  confirmed by direct read of `sentry.server.config.ts` (plain
+  `Sentry.init({dsn, tracesSampleRate, release, environment, autoInstrumentServerFunctions})`, no
+  `beforeSend` key at all). FOLLOW-738 explicitly scoped this out ("Out of scope, do not touch:
+  `apps/control-plane`'s TS Sentry config... name it as deferred in the PR"). This was AC-5 of the
+  ORIGINAL FOLLOW-739 and remains fully, unambiguously open.
 
-**The verification that makes this P1:**
-`grep -rn "beforeSend\|before_send" --include=*.ts --include=*.tsx --include=*.py --include=*.mjs --include=*.cjs --include=*.yml . | grep -v node_modules`
-returns **zero hits repo-wide**. There are four Sentry init sites
-(`apps/intent-engine/src/nlp.py:337`,
-`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:195,395`,
-`apps/data-quality/src/crons/schema_validation.py:354`,
-`apps/control-plane/sentry.server.config.ts:18`) and **none** installs a scrubber. There is also no
-CI job checking a "scrubber config". So (1) and (2) describe a control and a verification that do
-not exist, while (3) — written in this same PR — states the residual risk that control was supposed
-to cover.
+**What is still false, precisely (this is what the ticket must fix now):**
 
-This is a **Rule N** doc-vs-code failure and a **Rule AI** miss (ropa.md WAS edited by PR #642 — the
-retention row — while line 444, the row this change actually affects, was not), with a **Rule Y**
-edge (a document citing a CI check as proof).
+1. `docs/compliance/ropa.md:444` and `docs/compliance/dpia.md:157,224` say "scrubbed of PII ... per
+   Sentry SDK `beforeSend` hook **with PII patterns regex**" — the mechanism described (regex-based
+   PII detection) does not exist anywhere in the repo. What exists is a single hardcoded blanket
+   redaction of one field, gated on one tag, in 3 of 4 Sentry-emitting apps.
+2. Both docs describe "Stack traces, request context (scrubbed...)" as if the redaction covers those
+   fields — it does not; only the exception `value` string is touched.
+3. Neither doc distinguishes that `apps/control-plane` (the 4th Sentry-emitting app, TS/Next.js) has
+   **no scrubber of any kind** — a blanket "Sentry" sub-processor row implies uniform treatment
+   across the whole vendor relationship, which is false.
+4. "Verification: CI check on scrubber config" (ropa.md) / "CI-verified" (dpia.md) name a specific
+   verification artifact that isn't the one that actually exists (see above) — cite the real ones by
+   symbol/script name, not a paraphrase.
 
-**AC:** (1) decide and record which way the reconciliation goes — implement the control (depends on
-FOLLOW-738 AC-3) and keep the assertion, or correct the assertion to describe what actually ships;
-partial is not acceptable; (2) if the assertion is kept, cite the helper by **symbol**, not by line
-number (per this PR's own C-07:18-21 discipline), and name the CI job that verifies it — a job that
-must actually exist; (3) if the assertion is corrected, state the residual disclosure explicitly in
-ropa.md's Sentry row and dpia.md §transfers: exception messages from `intent-engine` reach a US
-processor and may echo prompt text; assess whether the Art. 44 transfer basis already on file covers
-it; (4) add the missing negative test to `apps/intent-engine/src/test_intent_engine.py` — a raised
-exception whose message contains a distinctive buyer-text sentinel, asserting that sentinel is
-absent from `payload.model_dump()` (the C-07 "class name only" claim is currently
-code-comment-backed, not test-backed); (5) re-check the same three documents against
-`apps/control-plane`'s Sentry config while you are in them — if the TS side is also unscrubbed, say
-so rather than leaving the row half-true.
+**AC (rewritten):** (1) correct `ropa.md:444` and `dpia.md:157,224` to state precisely: the Python
+chat-intent path (intent-engine + its 2 Rule-J mirrors) blanket-redacts the exception `message`
+value via `_scrub_chat_intent_exception_value` (cite the symbol, not a line number, per this repo's
+own C-07:18-21 discipline), verified by `apps/intent-engine/src/test_observability.py` (pytest, runs
+in CI) and guarded against bypass by `scripts/check-sentry-init-singleton.sh`; (2) state explicitly,
+in both docs, that `apps/control-plane`'s Sentry (server/client/edge) has no scrubber and assess
+whether that is an accepted residual risk (control-plane doesn't log raw buyer chat text today, per
+a grep you must actually run and cite) or needs its own follow-up; (3) add the negative test
+originally specified: a raised exception whose message contains a distinctive buyer-text sentinel,
+asserting that sentinel is absent from the Sentry event AND from `payload.model_dump()`; (4) do NOT
+re-litigate or re-scope FOLLOW-738's own design (the singleton guard, the shared `SENTRY_DSN`
+decision) — this ticket is docs-accuracy only.
 
-**Out of scope:** implementing the scrubber (FOLLOW-738); the `data_source`/`extraction_error`
-retention rows, which PR #642 already updated correctly and which this retro verified.
+**Out of scope:** extending the scrubber to a real PII-pattern regex, or to `apps/control-plane` —
+if AC-2's assessment concludes control-plane needs one, file that as a new, separately numbered
+ticket rather than doing it here; the `data_source`/`extraction_error` retention rows, which PR #642
+already updated correctly and which RETRO-234 verified.
 
-cross_ref: [RETRO-234 §4b CB-1, §4c TG-1, §5d; PR #642; Rules N / AI / Y; FOLLOW-738;
+**Why not dispatched this session (2026-07-30, session 83):** 5 ESCALATIONS remain OPEN
+(ESC-020/041/042-narrowed/044/045-items-1-3) and this ticket does not clear any of them — it is
+generic doc-accuracy scope, not escalation-clearing remediation, so it stays queued per the standing
+"no new ticket while escalations are open" gate (same reasoning the session-81 note applied to
+FOLLOW-736). Ready for compliance-engineer/Sonnet dispatch the moment that gate lifts or a future
+session judges the gate doesn't apply to this ticket.
+
+cross_ref: [RETRO-234 §4b CB-1, §4c TG-1, §5d; PR #642; PR #644 (FOLLOW-738); Rules N / AI / Y;
+`apps/intent-engine/src/observability.py:58-89`, `scripts/check-sentry-init-singleton.sh`,
+`apps/intent-engine/src/test_observability.py`, `apps/control-plane/sentry.server.config.ts`,
 `docs/compliance/ropa.md:444`, `docs/compliance/dpia.md:157,224`,
 `docs/compliance/C-07-chat-retention-scope.md:222`]
 

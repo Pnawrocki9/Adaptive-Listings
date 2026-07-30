@@ -1,6 +1,83 @@
-# Status — 2026-07-30 (session 80 — PR #642 independently re-validated; FOLLOW-735 stub filed +
+# Status — 2026-07-30 (session 81 — FOLLOW-735 architect draft recovered + applied; FOLLOW-736/737
 
-dispatched to architect)
+filed, not dispatched; 5 ESCALATIONS open, FOLLOW-730 retro still outstanding)
+
+## SESSION 81 (2026-07-30) — FOLLOW-735 draft recovered and applied (ADR-0020); DONE
+
+**State re-verified before doing anything:** `main` clean at `dc33da34`, no worker process running.
+Read `backlog/QUEUE.md`, `backlog/ESCALATIONS.md` (grepped `## OPEN`: **5** entries — ESC-020,
+ESC-041, ESC-042, ESC-044, ESC-045), `backlog/HANDOFFS.md`, `git log -20`, `gh pr list --state open`
+(none). Per the operating loop, 5 open ESCALATIONS mean no NEW ticket gets picked this session; the
+work done below is finishing already-in-flight FOLLOW-735 (Step 6/7 territory: the architect had
+already been paid for and had already produced output), not picking new work.
+
+**Found the architect's DRAFT-ONLY dispatch output before considering re-dispatch, per standing
+instruction.** No worktree, no `ps` process, no file under the repo or `/tmp/claude-1000/.../tasks/`
+directly named for it — but `/tmp/claude-1000/.../scratchpad/dispatch_logs/follow735_architect.log`
+(session-scoped scratchpad, not `/tmp` generically) had the full 720-line response: Q1 ruling, D2-D7
+spec, a full ADR-0020 draft, a `docs/adr/README.md` index row, a 3-part MASTER_DESIGN patch, an
+`docs/INTERFACES.md` entry, two FOLLOW_UPS stubs (FOLLOW-736/737), an architect-lessons entry, and a
+HANDOFFS draft — genuinely complete, paid-for work. Did not re-dispatch.
+
+**Independently re-verified the draft's load-bearing technical claims against HEAD before applying
+anything** (not taken on the architect's word): read `apps/intent-engine/src/redis_writer.py` in
+full — confirmed the unconditional `SET`, zero `nx` references, matches the draft's Context exactly;
+read `schemas.py` — `DEGRADED_DATA_SOURCES = frozenset({"error_fallback", "empty_model_response"})`
+matches verbatim; grepped `chat-intent-cache.ts` — `flattenIntentDimensions` at line 176 as cited;
+grepped `packages/sdk/src/core/adapt.ts` — `Object.keys(dims).length > 0` guard at line 872 (draft
+cited 868-880, close enough, verified the actual guard exists); and directly inspected the installed
+`upstash_redis` client (`apps/intent-engine/.venv/.../upstash_redis/commands.py:4611`) —
+`set(key, value, nx: Optional[bool] = None, ..., ex: Optional[int] = None, ...)` genuinely exists,
+so the whole mechanism the spec depends on is real, not assumed.
+
+**Applied verbatim on branch `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission`** (created
+immediately — one file (`ADR-0020...md`) had already been written while still on `main`; the
+FOLLOW-448 branch guard warned, branch was created immediately after with the untracked file carried
+over cleanly, nothing else was on `main` to strand): new
+`docs/adr/ADR-0020-shadow-intent-write-admission.md` (Q1 ruling + D1-D7 spec, 5 alternatives
+considered, reversibility stated), `docs/adr/README.md` index row, `docs/MASTER_DESIGN.md` v4.3→v4.4
+(version line + Polish changelog paragraph + §D.1.1 body marked "⚠️ SPEC, NOT YET IMPLEMENTED AT
+HEAD"), `docs/INTERFACES.md` new "Chat-Intent Shadow Key Contract" entry with two worked JSON
+examples, `backlog/FOLLOW_UPS.md` two new stubs (**FOLLOW-736** implementation
+P2/ml-engineer/Sonnet, **FOLLOW-737** missing shared-Zod-schema gap P3/backend-engineer),
+`.claude/agents/architect/lessons.md` append, and `backlog/HANDOFFS.md` entry to ml-engineer.
+Committed (`0f2a033e`), pushed to origin. No PR opened — this is spec/doc content with no runtime
+change to gate on CI; left for next session to decide whether to fold into the FOLLOW-736
+implementation PR or open standalone.
+
+**Deliberately NOT applied: ADR-0020 status `PROPOSED`→`ACCEPTED`.** The architect's own draft named
+D1 (should a failed extraction ever neutralise a served prior) "a product tradeoff" and explicitly
+offered the PM a choice to leave it PROPOSED for Piotr instead of self-ratifying. Taken — ratifying
+a product-tradeoff ADR is outside the PM-orchestrator's scope ("MUST NOT... make architectural
+calls"), even though `docs/adr/README.md` §Governance nominally allows PM+architect Tier-2
+ratification. Noted in QUEUE.md as a decision for Piotr, not filed as a numbered ESC (doesn't block
+any other ticket).
+
+**FOLLOW-735 marked DONE** — all 4 ACs met (ruling, spec, non-implementation + handoff named, marker
+fate answered). **FOLLOW-736/737 filed but NOT dispatched** — the 5 open escalations block picking
+new work this session.
+
+**FOLLOW-730's retrospective — still not run.** Flagging explicitly for the second session in a row
+rather than silently deferring: this was the other Step-7 item in the handoff and the FOLLOW-735
+recovery/verification/apply work took the full session. Next session should run it first, or state
+why not.
+
+**Escalations, ages, unchanged from the handoff:** ESC-020 (Estalara-app DOM hooks undeployed),
+ESC-041 (Release workflow E403), ESC-042 item 1 (Modal `intent-engine` operator deploy), ESC-044
+(consent-hash placeholder, items open), ESC-045 (4 items — `ANTHROPIC_API_KEY`, Upstash
+writer/reader parity, `SENTRY_DSN`). All operator/Piotr-gated, surfaced not re-litigated, not
+re-dated this session (no new information on any of them).
+
+**0 tickets IN_PROGRESS at session end** (FOLLOW-735 closed to DONE, nothing else picked up) — well
+within the ≤3 guardrail. No CI run this session (doc/backlog-only diff, no PR opened, nothing to
+gate).
+
+NEXT: Human attention needed — see `backlog/ESCALATIONS.md` (5 OPEN: ESC-020, ESC-041, ESC-042,
+ESC-044, ESC-045) and the Piotr-facing ADR-0020 ratification note in `backlog/QUEUE.md`. Once
+resolved, dispatch FOLLOW-736 to ml-engineer (Sonnet) per the delegation table row "intent/adapt
+logic... ml-engineer" and run FOLLOW-730's overdue retrospective.
+
+---
 
 ## SESSION 80 (2026-07-30) — PR #642 re-validated, FOLLOW-735 filed and dispatched
 

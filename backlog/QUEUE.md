@@ -97,9 +97,15 @@ numbered ml-engineer follow-on with `test_degraded_payload_currently_still_overw
 the red test to flip. Do not touch `redis_writer.py`, `nlp.py`, or any other application code in
 this ticket.
 
-**started_at:** 2026-07-30. **branch:** `architect/FOLLOW-735-shadow-intent-clobber-decision`
-(worker creates on start; this ticket produces a doc/ADR, not application code, but still follows
-branch-first discipline per `docs/AGENT_WORKFLOW.md`).
+**started_at:** 2026-07-30. **No branch — DRAFT-ONLY dispatch.** Per `docs/AGENT_WORKFLOW.md` "Agent
+tool-capability routing" (RETRO-168/174, FOLLOW-551): architect's manifest is
+`Read, Write, Edit, Glob, Grep, WebSearch, WebFetch` — no `Bash`, so it cannot
+`git checkout -b`/commit/push/open a PR. Using option (2), draft-then-apply: architect makes no
+`Edit`/`Write` call on any tracked file and instead returns the exact final spec/ADR content plus
+precise insertion anchors in its response text. The PM applies the draft verbatim afterward on a
+fresh branch (`pm-orchestrator/FOLLOW-735-shadow-intent-clobber-decision` or a Bash-capable agent's
+branch if a follow-on build is bundled) — never while this dispatch is in flight, per "no concurrent
+git ops while a subagent runs."
 
 **Delegation brief (sent to architect):**
 
@@ -116,11 +122,15 @@ branch-first discipline per `docs/AGENT_WORKFLOW.md`).
   `docs/compliance/ropa.md` / `docs/compliance/dpia.md` for the retention invariant question 4
   depends on.
 - No HANDOFFS.md entry exists for this ticket yet — if the spec produces one for the ml-engineer
-  follow-on, write it there per the standard cross-agent handoff mechanism.
-- Completion: open a PR containing the ADR/spec doc only (plus MASTER_DESIGN §D.1.1 update if the
-  ruling changes documented behaviour). Conventional commit referencing `[FOLLOW-735]`. State the Q1
-  ruling and its rationale in the PR body in one paragraph a non-architect can follow — this is the
-  artifact the PM will check acceptance against.
+  follow-on, draft its exact text too; the PM will write it to `backlog/HANDOFFS.md` when applying.
+- **You are DRAFT-ONLY — you have no Bash tool, per `docs/AGENT_WORKFLOW.md` "Agent tool-capability
+  routing".** Do not attempt `Edit`/`Write` on any tracked file, do not try to create a branch or
+  open a PR. Instead, return in your response: (a) the Q1 ruling and its rationale in one paragraph
+  a non-architect can follow, (b) the answers to questions 2-6 as a numbered spec, (c) the exact
+  file path + insertion anchor + full text for wherever this should land (a new
+  `docs/adr/000X-shadow-intent-degraded-merge.md`, or a `docs/MASTER_DESIGN.md` §D.1.1 patch, or
+  both), and (d) the draft `HANDOFFS.md` entry for the ml-engineer implementation follow-on. The PM
+  applies this verbatim on a fresh branch afterward.
 
 ---
 

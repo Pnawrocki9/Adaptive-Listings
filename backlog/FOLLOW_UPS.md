@@ -21938,3 +21938,79 @@ llm-gateway's shims in this ticket; this is a decision ticket with a written art
 
 cross_ref: [RETRO-233 §5b / §5d / §6, FOLLOW-729, FOLLOW-732, FOLLOW-725, Rule J, Rule K.1, ESC-042,
 MASTER_DESIGN §C.3, ADR-0016]
+
+---
+
+## FOLLOW-735 — a degraded chat-intent extraction still clobbers a good accumulated prior, and three implementation attempts inside FOLLOW-730 made it worse before it was reverted
+
+source_retro: FOLLOW-730 PR #642 (three `/code-review` rounds) source_ticket: FOLLOW-730
+recommended_sprint: now recommended_agent: architect priority: P2 estimated_hours: 2 (design
+decision + ADR/short spec only; implementation is a follow-on) depends_on: [] promoted_to_queue:
+true
+
+**The gap, current behaviour.** `redis_writer.write_shadow_intent`
+(`apps/intent-engine/src/redis_writer.py`) does an unconditional `SET key value ex=86400` on every
+call. A degraded extraction (Anthropic call failed, timed out, or returned unparseable text —
+`data_source in {"error_fallback", "empty_model_response"}`) produces an all-null-dimensions payload
+and that payload overwrites whatever the session had previously accumulated in the shadow key.
+FOLLOW-730 added the `data_source` marker so the degradation is now _visible_
+(`test_degraded_payload_currently_still_overwrites_a_prior`, `test_intent_engine.py:484-509`, a
+deliberately-red-stating test, not a fix), but did not change the overwrite itself. Blast radius is
+bounded — `flattenIntentDimensions` drops nulls, so the SDK's Bayesian prior loop
+(`adapt.ts:863-888`) sees an empty map and applies nothing new; it does not poison the archetype.
+The cost is a **lost signal**: a buyer's earlier, real chat-derived prior is gone from the shadow
+key the next time `/api/adapt` reads it, even though nothing about that earlier read was wrong.
+
+**Why this is not a FOLLOW-730 fix, in evidence.** Three `/code-review` rounds on PR #642 each tried
+a version of "don't clobber" and each was reverted or would have been:
+
+1. **Round 1/2 (skip-the-write, then merge-the-marker):** made `data_source` decision-affecting —
+   `/api/adapt` would have served different content depending on provenance, breaking the
+   "DIAGNOSTIC ONLY" contract stated in `schemas.py`, `nlp.py`, and MASTER_DESIGN §1669.
+2. Refreshed the 24h TTL on a write that carried no new personal data — defeating the
+   retention-limit assertion in ROPA/DPIA/C-07 (docs this same PR edits).
+3. Read-then-wrote the prior back via an unvalidated `json.loads`, so `payload.model_dump()` was no
+   longer the only write path the compliance evidence cites.
+4. Was a non-atomic GET-then-SET racing per-message Modal containers, which the SDK's one-shot
+   `chatPriorApplied` latch (Rule R) turns into a **permanent** loss of a good read if two writes
+   interleave badly — worse than the gap it closed.
+
+**Six questions a correct fix needs answered, none of them implementation detail:**
+
+1. **(Product decision, the load-bearing one)** Should a failed extraction neutralise the served
+   prior at all, or should the shadow key keep serving the last good read until a new good read
+   arrives? Nothrows either way is defensible: "the buyer's situation may have changed and we have
+   no signal" vs. "we have no signal BECAUSE OF AN OUTAGE, not because the buyer went quiet — don't
+   punish them for our downtime."
+2. **Atomicity.** Whatever the merge rule, it must not be a GET-then-SET pair — Upstash/Redis offers
+   Lua scripting (`EVAL`) or `WATCH`-free alternatives; pick one that survives concurrent
+   per-message Modal containers writing the same key.
+3. **Keying the merge rule on all-null dimensions, not on `data_source`.** `data_source` is a
+   provenance label, not a content check — a future provenance value could carry non-null dims (see
+   `test_degraded_source_set_partitions_the_provenance_literal`, `test_intent_engine.py:512-523`,
+   which already polices the Literal/set relationship for exactly this reason). Any merge rule
+   should test "are the incoming dims empty" independent of why.
+4. **TTL invariant.** A degraded write that preserves a prior must NOT refresh that prior's 24h
+   retention clock — re-derive the ROPA/DPIA/C-07 retention assertion.
+5. **Validation invariant.** If a merge reads the prior back, it must go through the same Pydantic
+   model (`ChatIntentDetectedPayload(**...)`), never a bare `json.loads` — the compliance evidence
+   cites `payload.model_dump()` as the only write path and a fix must not create a second one.
+6. **Visibility without becoming adaptation input.** The `data_source`/`extraction_error` markers
+   FOLLOW-730 added must remain readable on the merged record (so an operator can still see a
+   degradation happened) without either field influencing which archetype the SDK applies — the same
+   DIAGNOSTIC ONLY boundary FOLLOW-730 was scoped to respect.
+
+**AC:** (1) rule on question 1 and record the rationale (this is the actual point of routing to
+architect first — it is a product/UX tradeoff, not a code question); (2) given that ruling, write a
+short spec (ADR if the atomicity mechanism is non-trivial, otherwise a `docs/` note + MASTER_DESIGN
+§D.1.1 update) answering questions 2-6; (3) do NOT implement in this ticket — hand the spec to
+ml-engineer as a new, separately-numbered follow-on with
+`test_degraded_payload_currently_still_overwrites_a_prior` named as the red test to flip; (4) if the
+ruling on (1) is "no, never neutralise a good prior," state explicitly what happens to the
+`data_source`/`extraction_error` markers on a merged write (do they move to a sibling field so they
+don't imply the dims are also degraded?).
+
+cross_ref: [FOLLOW-730 (PR #642, commit `1ff873ef` revert), `test_intent_engine.py:484-523`,
+`apps/intent-engine/src/redis_writer.py`, `packages/sdk/src/core/adapt.ts:863-888`, Rule R,
+docs/compliance/C-07-chat-retention-scope.md, docs/compliance/ropa.md, docs/compliance/dpia.md,
+MASTER_DESIGN §1669, §D.1.1]

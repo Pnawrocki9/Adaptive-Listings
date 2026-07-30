@@ -1,8 +1,42 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-29 (session 79 continued — RETRO-232 filed (Rules AL/AM promoted;
+## ▶️ START HERE — resume 2026-07-30 (session 80 — PR #642 independently re-validated (fresh CI
 
-FOLLOW-726/727/728 correct 2 wrong AC3 verdicts in FOLLOW-723's own PR); FOLLOW-729 dispatched)
+pull + wiring re-derived from the branch, not the PR body); FOLLOW-735 stub actually filed (it was
+only prose in QUEUE.md before — see note below); FOLLOW-735 dispatched to architect)
+
+**PR #642 (FOLLOW-730) independent re-validation this session — evidence pasted on the PR, not just
+in QUEUE.md.** Re-ran `gh pr checks 642` myself: 63 pass, the only failure is
+`Rule I — wired-or-dead check`. Pulled the job log directly (`gh api .../jobs/{id}/logs`) rather
+than trusting the "192" figure already in this file: confirmed `Violations found : 192` on THIS PR's
+run (job 90825006911) AND independently on `main`'s own latest CI run (job 90827261130,
+run 30529022264) — byte-identical, so this is genuinely pre-existing-red, not something this diff
+caused. Fetched the PR branch directly (`git show origin/ml-engineer/FOLLOW-730-...:<path>`) rather
+than reading the PR description to re-derive the wiring: `schemas.py` producer
+(`ChatIntentDataSource`, `data_source`, `extraction_error`, `DEGRADED_DATA_SOURCES`), 2 real
+consumers (`chat-intent-cache.ts`'s loose-parse interface structurally ignores the new top-level
+fields; `jobs/batch_enrich.py:48,59` imports and branches on `DEGRADED_DATA_SOURCES`), and confirmed
+`redis_writer.py` has zero references to the reverted clobber logic. Posted the full evidence as a
+PR comment (`PM-validated. CI green. Runtime wiring confirmed. Ready for human review.`). **Still
+not merged — that is Piotr's call, not mine.** Fix-iteration counter stays 3/3; no further patches
+should land on this branch.
+
+**FOLLOW-735 gap found and corrected.** The prior session's commit message said "file follow-735"
+but only `QUEUE.md` prose was touched — no actual ticket stub existed in `backlog/FOLLOW_UPS.md`.
+Read the PR branch's `test_degraded_payload_currently_still_overwrites_a_prior` and
+`redis_writer.write_shadow_intent` directly to reconstruct the six design questions faithfully
+(rather than dispatching architect against a ticket that didn't exist) and filed the real stub. See
+`backlog/FOLLOW_UPS.md` → `## FOLLOW-735`.
+
+**FOLLOW-733 double-checked before dispatch consideration, per prior session's own caution note.**
+Its four documented defects (stale "Placeholder/TICKET-013" README header, the falsified
+`ANTHROPIC_API_KEY`-500 claim, the `.dev.vars` file reference that doesn't exist, the sync-vs-spawn
+consequence gap) are **still all present, unmodified, on the PR #642 branch** — PR #642's README
+changes are additive documentation about the NEW 502 diagnostic response, a different section, not a
+fix to any of FOLLOW-733's four items. So FOLLOW-733 is NOT redundant with #642 and remains a valid,
+undispatched P3. Left in the queue for a future session (docs-only, ml-engineer, no dependencies) —
+not picked up this session because FOLLOW-735 outranks it (P2 > P3, directly serves the standing
+priority below, and is a design decision that gates FOLLOW-735's own implementation follow-on).
 
 **Standing priority (Piotr, 2026-07-29, direct instruction — not from a retro):** Adaptive Listings
 should work 100% end-to-end on localhost, including reading live chat and interpreting buyer
@@ -29,6 +63,66 @@ fixtures must not mutate the live source the gate polices) to `CONVENTIONS_PATCH
 sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger it as previously
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
+
+### FOLLOW-735 — status: IN_PROGRESS
+
+**Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-735` (full text, 6 ACs — P2, ~2h, design decision +
+short spec only, no implementation in this ticket). Filed this session (see note above — the prior
+session's "filed" claim was prose-only; the real stub is now in place).
+
+**Why this ticket, why now:** a degraded chat-intent extraction currently still overwrites
+(clobbers) a good accumulated prior in the shadow Redis key — a real data-loss bug on the exact
+localhost chat→archetype loop that is Piotr's standing priority (see below). Three `/code-review`
+rounds inside FOLLOW-730 each tried to fix it in-place and each made it worse (broke the DIAGNOSTIC
+ONLY contract, defeated the 24h retention invariant, introduced an unvalidated write path, or raced
+the SDK's one-shot `chatPriorApplied` latch) before being reverted. The blocking question — "should
+a failed extraction neutralise the served prior at all?" — is a product/UX tradeoff, not an
+implementation detail, hence architect first rather than a direct ml-engineer dispatch.
+
+**Delegation-table row used:** "a contract between two modules, a new dependency, an ADR" →
+architect. (This ticket also touches a compliance retention invariant (C-07/ROPA/DPIA) and Rule R —
+cross-cutting concerns squarely inside architect's remit.)
+
+**model: Opus** — this is exactly the "ambiguous acceptance criteria, non-trivial design" case the
+model-fit table calls out for Opus, not Sonnet: the core AC is a product ruling with compliance and
+concurrency side-constraints (atomicity, TTL invariants, validation invariants), not routine
+implementation, and it already burned 3 rounds of a lower-effort approach getting this wrong. Not
+escalating to Fable — this is single-domain (one shared-cache contract), reversible (spec, not a
+prod-touching change), and PR-gated.
+
+**Hard scope limits (carried over verbatim from the ticket):** this is a DECISION + SPEC ticket. Do
+NOT implement the fix here — the AC explicitly requires handing the spec to a new, separately
+numbered ml-engineer follow-on with `test_degraded_payload_currently_still_overwrites_a_prior`
+(`apps/intent-engine/src/test_intent_engine.py:484-509`, on `main` after PR #642 merges) named as
+the red test to flip. Do not touch `redis_writer.py`, `nlp.py`, or any other application code in
+this ticket.
+
+**started_at:** 2026-07-30. **branch:** `architect/FOLLOW-735-shadow-intent-clobber-decision`
+(worker creates on start; this ticket produces a doc/ADR, not application code, but still follows
+branch-first discipline per `docs/AGENT_WORKFLOW.md`).
+
+**Delegation brief (sent to architect):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-735` (verbatim, 6 ACs). Read in full before starting.
+- Context: `docs/MASTER_DESIGN.md` §Snapshot.1, plus §1669 and §D.1.1 (the sections this ticket's
+  spec will update). Current `CONVENTIONS_PATCH.md` rules apply, especially Rule R
+  (`chatPriorApplied` one-shot latch) and the DIAGNOSTIC ONLY contract already stated in
+  `apps/intent-engine/src/schemas.py` and `nlp.py`.
+- Read directly, not secondhand: `apps/intent-engine/src/redis_writer.py` (`write_shadow_intent`,
+  the unconditional `SET`), `apps/intent-engine/src/test_intent_engine.py:484-523` (the two tests
+  that state the current gap and the provenance-partition invariant),
+  `packages/sdk/src/core/adapt.ts:863-888` (how a null-dims payload is skipped today — this is why
+  the blast radius is bounded, not zero), and `docs/compliance/C-07-chat-retention-scope.md` /
+  `docs/compliance/ropa.md` / `docs/compliance/dpia.md` for the retention invariant question 4
+  depends on.
+- No HANDOFFS.md entry exists for this ticket yet — if the spec produces one for the ml-engineer
+  follow-on, write it there per the standard cross-agent handoff mechanism.
+- Completion: open a PR containing the ADR/spec doc only (plus MASTER_DESIGN §D.1.1 update if the
+  ruling changes documented behaviour). Conventional commit referencing `[FOLLOW-735]`. State the Q1
+  ruling and its rationale in the PR body in one paragraph a non-architect can follow — this is the
+  artifact the PM will check acceptance against.
+
+---
 
 ### FOLLOW-730 — status: READY_FOR_REVIEW → PR #642
 

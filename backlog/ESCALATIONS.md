@@ -2879,11 +2879,20 @@ is unset, so in the deployed container every capture added by that PR is a no-op
 and tested; the channel is absent. **Consequence:** a model outage in prod still produces a silent
 all-null archetype run — the only surviving signals are a container stdout line and the
 `extraction_error` field inside a 24h-TTL Redis key that no dashboard, alert rule or TS reader
-surfaces. **⚠️ CORRECTION 2026-07-30 (RETRO-234 HW-3) — DO NOT PROVISION `SENTRY_DSN` YET.** The
-advice originally written here (and given to Piotr twice in session) was to provision the DSN
-alongside the other ESC-045 credentials. That is now known to be unsafe. All three Python Modal apps
-read the **bare** `SENTRY_DSN` name and mount the **same**
-`modal.Secret.from_name("estalara-secrets")`: `apps/intent-engine/src/nlp.py` (hardened by PR #642),
+surfaces. **✅ RESOLVED 2026-07-30 — `SENTRY_DSN` is now SAFE to provision.** FOLLOW-738 merged (PR
+#644, `479ac0ef`): all three Python Modal apps now initialise Sentry through one shared, hardened
+`init_sentry` helper (`include_local_variables=False`, `send_default_pii=False`,
+`default_integrations=False` + explicit atexit), and `scripts/check-sentry-init-singleton.sh` is a
+CI gate that fails the build on any raw `sentry_sdk.init(` outside `observability.py`. Verified on
+`main` after merge: the gate passes and all four Rule J mirror pairs are in sync. **The warning
+below is kept for the record, struck through — it was correct until PR #644 merged and is now
+historical.**
+
+~~**⚠️ CORRECTION 2026-07-30 (RETRO-234 HW-3) — DO NOT PROVISION `SENTRY_DSN` YET.**~~ The advice
+originally written here (and given to Piotr twice in session) was to provision the DSN alongside the
+other ESC-045 credentials. That is now known to be unsafe. All three Python Modal apps read the
+**bare** `SENTRY_DSN` name and mount the **same** `modal.Secret.from_name("estalara-secrets")`:
+`apps/intent-engine/src/nlp.py` (hardened by PR #642),
 `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:193,393` and
 `apps/data-quality/src/crons/schema_validation.py:352-357`. **Neither of the latter two sets
 `include_local_variables=False`, `send_default_pii=False` or `default_integrations=False`** — so
@@ -2892,7 +2901,7 @@ Sentry events. Provisioning the one secret this ticket asks for therefore silent
 producers that lack the exact control PR #642 spent a whole review round adding. `.env.example:70`'s
 comment ("all services share one org, separate projects") is already false for the Python tier.
 
-**Decision needed:** either (a) land **FOLLOW-738** (one hardened Sentry initialiser shared by the
-Python Modal apps) FIRST and then provision the DSN — recommended — or (b) explicitly accept that
-chat extraction has no alerting in prod for now. Items 1-3 of this escalation (Anthropic key,
-Upstash instance + env-pair parity) are unaffected and can be actioned immediately.
+**Decision needed (updated after FOLLOW-738 merged):** option (a) is done — provision `SENTRY_DSN`
+into the Modal `estalara-secrets` secret whenever convenient; the hardening it was waiting on is on
+`main` and CI-guarded. Items 1-3 (Anthropic key, Upstash instance + env-pair parity) are unaffected
+and remain the actual blockers on the "100% on localhost" goal.

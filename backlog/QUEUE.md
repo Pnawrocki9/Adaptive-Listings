@@ -44,7 +44,13 @@ to max out the cap.
 
 ---
 
-### FOLLOW-738 — status: READY_FOR_REVIEW — PR #644
+### FOLLOW-738 — status: DONE (PR #644 merged 2026-07-30 by Piotr, `479ac0ef`)
+
+**Merged and verified on `main` after merge, not from the worker's report:** the singleton gate
+passes (zero raw `sentry_sdk.init(` outside `observability.py`), all four Rule J mirror pairs are in
+sync, CI was 65 pass with Rule I unchanged at 192, and the intent-engine suite went 53 → 62. **This
+unblocks ESC-045 item 4** — `SENTRY_DSN` is now safe to provision, and that escalation entry has
+been updated from its DO-NOT-PROVISION warning to RESOLVED.
 
 **Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-738` (6 ACs, verbatim — P1, 4h, RETRO-234-sourced).
 Read `backlog/ESCALATIONS.md` → ESC-045 item 4 (the correction: do NOT provision `SENTRY_DSN` before
@@ -105,7 +111,18 @@ devops-engineer.
 
 ---
 
-### FOLLOW-741 — status: IN_PROGRESS (draft-only — architect has no Bash, per
+### FOLLOW-741 — status: DONE (2026-07-30, `7a79e7e1`)
+
+**Architect draft applied.** Its four factual corrections landed in `docs/adr/ADR-0020-*.md` (§D6,
+Consequences/Negative bullet 1, Alternatives item 5) and `backlog/HANDOFFS.md` (trap 6). The
+architect itself caught that the ticket said "§4" while the cited sentence lives in Alternatives
+item 5, and targeted by content rather than executing the wrong instruction.
+
+**One deliberate deviation from the draft:** the architect argued in-place amendment over a
+superseding ADR-0021, on the grounds that this is a same-day factual correction with no decision
+change. Agreed on substance — but ADR-0020 had been RATIFIED by Piotr hours earlier, so a silent
+edit was not acceptable. The content was applied AND the status line now carries an explicit
+amendment note recording what changed, why, and that D1-D5 and D7 are byte-unchanged.
 
 `docs/AGENT_WORKFLOW.md` "Agent tool-capability routing")
 

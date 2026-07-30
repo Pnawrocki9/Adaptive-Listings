@@ -311,13 +311,41 @@ def _capture_extraction_error(
         import sentry_sdk
 
         if not _sentry_initialised:
-            # default_integrations=False: this process is not a Sentry-instrumented
-            # service, and initialising mid-request with the defaults would
-            # retroactively install LoggingIntegration (every ERROR log becomes an
-            # event) plus the auto-enabling FastAPI/Starlette integration on an
-            # already-running container — burying the extraction issues the
-            # operator turned the DSN on for.
-            sentry_sdk.init(dsn=dsn, traces_sample_rate=0.0, default_integrations=False)
+            try:
+                from sentry_sdk.integrations.atexit import AtexitIntegration
+
+                integrations = [AtexitIntegration()]
+            except Exception:  # noqa: BLE001 — SDK layout changed; flush() below still covers us.
+                integrations = []
+
+            sentry_sdk.init(
+                dsn=dsn,
+                traces_sample_rate=0.0,
+                # C-07 / ROPA BOUNDARY — DO NOT REMOVE. Sentry's default
+                # include_local_variables=True serialises each frame's locals into
+                # the event, and the frames on this traceback hold `messages` (the
+                # buyer's raw chat text) and `raw_text` (the model response). That
+                # would ship the whole transcript to a third-party US processor,
+                # breaking the "no free text, no message content" assertion in
+                # docs/compliance/dpia.md, ropa.md and C-07 — a strictly larger
+                # disclosure than the exception-message echo those documents
+                # contemplate. send_default_pii is defaulted off, pinned here so a
+                # future edit has to argue with a comment before flipping it.
+                include_local_variables=False,
+                send_default_pii=False,
+                # This process is not a Sentry-instrumented service: initialising
+                # mid-request with the defaults would retroactively install
+                # LoggingIntegration (every ERROR log becomes an event) and the
+                # auto-enabling FastAPI/Starlette integration on an already-running
+                # container, burying the extraction issues the DSN was turned on
+                # for. AtexitIntegration is re-added explicitly because it is NOT
+                # noise: the realtime tier runs in a fire-and-forget Modal
+                # container that exits immediately after this call, and without an
+                # atexit flush the daemon transport thread is killed with the
+                # interpreter and the queued event never ships.
+                default_integrations=False,
+                integrations=integrations,
+            )
             _sentry_initialised = True
 
         with sentry_sdk.new_scope() as scope:
@@ -333,6 +361,10 @@ def _capture_extraction_error(
                 sentry_sdk.capture_message(
                     f"chat intent extraction degraded: {kind}", level="error"
                 )
+        # Belt to AtexitIntegration's braces: a spawned Modal container can be torn
+        # down hard enough that atexit hooks do not run. Bounded so telemetry can
+        # never dominate the <500ms realtime budget (§C.3).
+        sentry_sdk.flush(timeout=2.0)
     except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
         print(f"_capture_extraction_error failed: {telemetry_exc}")
 
@@ -500,6 +532,21 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
             retry_raw = _call_model(messages, SONNET_MODEL)
             if retry_raw.strip():
                 return _parse_response(retry_raw, message_count, SONNET_MODEL, source)
+            # Retry returned whitespace only (max_tokens truncation on a longer
+            # mixed-language transcript, or a thinking/tool-only block). Nothing
+            # raised, so without this arm the function fell straight through to
+            # `return payload` with no log, no capture and no marker — the fix
+            # round closed exactly this hole on the primary path and left it open
+            # one branch over.
+            print(f"extract_intent multilingual retry returned empty model={SONNET_MODEL}")
+            _capture_extraction_error(
+                None,
+                model=SONNET_MODEL,
+                source=source,
+                kind="empty_model_response",
+                stage="retry",
+            )
+            payload.extraction_error = "retry_failed: empty_model_response"
         except Exception as exc:  # noqa: BLE001 — keep the Haiku result on retry failure.
             retry_kind = _classify_extraction_error(exc)
             print(f"extract_intent multilingual retry error: {exc}")

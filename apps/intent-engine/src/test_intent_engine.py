@@ -360,6 +360,18 @@ def test_capture_extraction_error_tags_kind_when_dsn_set(monkeypatch: pytest.Mon
 
     fake_sentry.init.assert_called_once()
     fake_sentry.capture_exception.assert_called_once_with(exc)
+
+    # C-07 / ROPA boundary — the frames on this traceback hold `messages` (raw
+    # buyer chat text) and `raw_text` (the model response). Sentry serialises
+    # frame locals by DEFAULT, so leaving this unset shipped the transcript to a
+    # third-party processor, contradicting the very compliance records this PR
+    # edits. Pinned here so re-enabling it has to break a test.
+    init_kwargs = fake_sentry.init.call_args.kwargs
+    assert init_kwargs["include_local_variables"] is False
+    assert init_kwargs["send_default_pii"] is False
+    # Short-lived Modal containers exit before the daemon transport thread ships:
+    # the event must be flushed, not merely enqueued.
+    fake_sentry.flush.assert_called_once()
     tags = {call.args[0]: call.args[1] for call in scope.set_tag.call_args_list}
     assert tags["area"] == "chat_intent"
     assert tags["kind"] == "extraction_error"
@@ -471,19 +483,97 @@ def test_empty_model_response_is_captured_not_silent(monkeypatch: pytest.MonkeyP
     assert capture.call_args.args[0] is None
 
 
-def test_degraded_payload_does_not_clobber_an_existing_prior() -> None:
-    """Review finding: one rate-limited call mid-conversation replaced a buyer's
-    accumulated chat prior with nulls, and /api/adapt then stopped returning
-    chat_intent_dimensions for the rest of the session."""
+def test_degraded_payload_preserves_prior_dims_and_stamps_the_marker() -> None:
+    """Round 1 finding: a degraded payload wiped a buyer's accumulated prior.
+    Round 2 finding on the first fix: simply SKIPPING the write hid the marker, so
+    an operator running GET mid-outage saw a healthy payload and misdiagnosed an
+    Upstash mismatch. Both must hold at once — dims survive AND the failure shows.
+    """
     with patch("nlp._call_model", side_effect=RuntimeError("connection reset")):
         degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
     degraded.tenant_id, degraded.session_id = "tnt_clobber", "sess_clobber"
 
     mock_redis = MagicMock()
-    mock_redis.get.return_value = '{"intent_dimensions": {"budget_band": "comfortable"}}'
+    mock_redis.set.return_value = None  # NX write refused: a prior already exists
+    mock_redis.get.return_value = json.dumps(
+        {
+            "intent_dimensions": {"budget_band": "comfortable"},
+            "archetype_hint": "yield_hunter",
+            "data_source": "model",
+            "extraction_error": None,
+        }
+    )
     with patch("redis_writer._get_redis", return_value=mock_redis):
-        assert write_shadow_intent(degraded) is False
-    mock_redis.set.assert_not_called()
+        assert write_shadow_intent(degraded) is True
+
+    # First call is the atomic NX attempt; the last is the merge.
+    nx_call = mock_redis.set.call_args_list[0]
+    assert nx_call.kwargs.get("nx") is True, "must attempt an atomic write-if-absent first"
+
+    written = json.loads(mock_redis.set.call_args_list[-1].args[1])
+    assert written["intent_dimensions"]["budget_band"] == "comfortable"  # prior survives
+    assert written["archetype_hint"] == "yield_hunter"
+    assert written["data_source"] == "model"  # provenance of the DIMS is unchanged
+    assert written["extraction_error"] == "other: RuntimeError"  # …but the failure shows
+
+
+def test_degraded_payload_writes_atomically_when_no_prior_exists() -> None:
+    """With no key, the marked all-null payload IS the record — and the write must
+    be a single atomic SET NX, because production spawns one container per message
+    and a read-then-write races a concurrent good write."""
+    with patch("nlp._call_model", side_effect=RuntimeError("boom")):
+        degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+    degraded.tenant_id, degraded.session_id = "tnt_fresh", "sess_fresh"
+
+    mock_redis = MagicMock()
+    mock_redis.set.return_value = "OK"  # NX write accepted
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        assert write_shadow_intent(degraded) is True
+
+    assert mock_redis.set.call_args.kwargs.get("nx") is True
+    mock_redis.get.assert_not_called()  # no read-then-write race window at all
+
+
+def test_empty_input_payload_also_refuses_to_clobber() -> None:
+    """Round 2 finding: `empty_input` produces the same all-null dims but was left
+    out of the guard set, making it the one all-null shape that still destroyed a
+    prior. Latent until clickhouse_reader is implemented — pinned now."""
+    empty = extract_intent([], model=_HAIKU, source="batch")
+    empty.tenant_id, empty.session_id = "tnt_empty", "sess_empty"
+    assert empty.data_source == "empty_input"
+
+    mock_redis = MagicMock()
+    mock_redis.set.return_value = None  # a prior exists
+    mock_redis.get.return_value = json.dumps(
+        {"intent_dimensions": {"urgency": "0-3mo"}, "data_source": "model"}
+    )
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        write_shadow_intent(empty)
+
+    written = json.loads(mock_redis.set.call_args_list[-1].args[1])
+    assert written["intent_dimensions"]["urgency"] == "0-3mo"
+
+
+def test_multilingual_retry_empty_response_is_marked() -> None:
+    """Round 2 finding: the retry's empty-response arm (nothing raised, `if
+    retry_raw.strip()` false) fell through with no log, no capture and no marker —
+    the same hole the previous round closed on the primary path."""
+    calls = {"n": 0}
+
+    def _call(messages: object, model: str) -> str:
+        calls["n"] += 1
+        return '{"archetype_hint": "neutral", "confidence": 0.1}' if calls["n"] == 1 else "  \n "
+
+    with patch("nlp._call_model", _call):
+        payload = extract_intent(
+            [{"role": "user", "content": "Szukam mieszkania w Krakowie"}],
+            model=_HAIKU,
+            source="realtime",
+        )
+
+    assert calls["n"] == 2, "the multilingual retry must actually have been attempted"
+    assert payload.data_source == "model"
+    assert payload.extraction_error == "retry_failed: empty_model_response"
 
 
 def test_good_payload_still_overwrites_an_existing_prior() -> None:

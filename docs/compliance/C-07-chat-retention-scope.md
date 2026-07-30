@@ -220,12 +220,12 @@ HEAD on branch `main`:
   carries buyer content: `extraction_error` is explicitly constructed from the exception's CLASS
   name only — the exception message, which could echo prompt text, goes to the log line and the
   Sentry event and never into Redis. No `messages` or `raw_text` field.
-- `chat-intent-cache.ts:62` — `shadowChatIntentKey` returns
+- `chat-intent-cache.ts` — `shadowChatIntentKey` returns
   `shadow:${tenantId}:${sessionId}:chat_intent`.
 - `redis_writer.py` — `shadow_key` returns `f"shadow:{tenant_id}:{session_id}:chat_intent"`.
-- `main.py:31–60` — `process_chat_message` calls `extract_intent`, then
-  `write_shadow_intent(payload)` — only the payload dict is persisted.
-- `main.py:13` — module docstring: "writes to the Redis SHADOW namespace only ... No live adaptation
+- `main.py`, `process_chat_message` — calls `extract_intent`, then `write_shadow_intent(payload)` —
+  only the payload dict is persisted.
+- `main.py` module docstring — "writes to the Redis SHADOW namespace only ... No live adaptation
   reads this in Sprint 13 — shadow-only by design."
 
 No raw chat text is written to Redis, ClickHouse, or Postgres in the current implementation. This

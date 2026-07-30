@@ -2870,3 +2870,15 @@ poisoning and Rule R is not burned) — the damage is diagnostic time, not corru
    ambiguity above stays live.
 
 **Not blocked on:** ESC-042 item 1 (prod Modal deploy) — unrelated, still open, local-only scope.
+
+**Added 2026-07-30 (second `/code-review` round on PR #642) — item 4, Rule AJ half-wire.**
+FOLLOW-730 wires extraction failures to Sentry, but **`SENTRY_DSN` is not provisioned** in Doppler
+`prd` or in the Modal `estalara-secrets` secret (`docs/runbooks/MODAL_PROD_STANDUP.md` records that
+prd is missing every Modal runtime secret). `_capture_extraction_error` returns early when the DSN
+is unset, so in the deployed container every capture added by that PR is a no-op. The code is wired
+and tested; the channel is absent. **Consequence:** a model outage in prod still produces a silent
+all-null archetype run — the only surviving signals are a container stdout line and the
+`extraction_error` field inside a 24h-TTL Redis key that no dashboard, alert rule or TS reader
+surfaces. **Decision needed:** provision `SENTRY_DSN` into `estalara-secrets` (same operator step as
+the ESC-045 credentials above, and worth doing in the same sitting), or accept explicitly that chat
+extraction has no alerting in prod for now.

@@ -24,9 +24,21 @@ from upstash_redis import Redis
 
 from schemas import ChatIntentDetectedPayload
 
-# Provenance values whose dimensions are an all-null fallback rather than a read
-# (FOLLOW-730). Mirrors ChatIntentDataSource in schemas.py — "empty_input" is not
-# here: zero messages is a caller bug, not a degraded extraction.
+# FOLLOW-730 — two different questions, two different sets. Keeping them separate
+# is deliberate: conflating them is what let `empty_input` slip past the write
+# guard in the first cut of this fix.
+#
+# 1. Which provenance values mean "these dimensions are an all-null fallback, not
+#    a read"? ALL of them destroy an accumulated prior if written over it, so the
+#    write guard keys on this set — including `empty_input`, whose dimensions are
+#    every bit as null as the other two even though its cause (zero messages
+#    reaching the extractor) is a caller bug rather than a failed model call.
+_ALL_NULL_SOURCES = frozenset({"error_fallback", "empty_model_response", "empty_input"})
+
+# 2. Which values mean "an extraction was attempted and came back unusable", i.e.
+#    something an operator should be told about on the wire? `empty_input` is NOT
+#    one: no extraction was attempted, and the local shim always sends exactly one
+#    message so it cannot occur there. `local_dev` imports this one.
 _DEGRADED_SOURCES = frozenset({"error_fallback", "empty_model_response"})
 
 _redis: Redis | None = None
@@ -63,32 +75,70 @@ def write_shadow_intent(
     §H.9 compliance: if profiling_opt_out is True the write is skipped entirely
     so no chat-intent shadow prior accumulates for opted-out sessions.
 
-    FOLLOW-730: a DEGRADED payload (all-null dims from a failed or empty
-    extraction) never overwrites an existing key. Without that guard one rate-
-    limited call mid-conversation replaced a buyer's accumulated chat prior with
-    nulls; `flattenIntentDimensions` then yields `{}` and `/api/adapt` stops
-    returning `chat_intent_dimensions`, so the chat signal vanishes for the rest
-    of the session — and on the 6h batch cron the same rotation would wipe every
-    session's prior at once. A degraded payload IS still written when no key
-    exists, because then it destroys nothing and is the operator's only clue.
+    FOLLOW-730 — an ALL-NULL payload must neither destroy an accumulated prior nor
+    hide the fact that extraction is failing. The first cut of this guard achieved
+    the first and broke the second: it simply skipped the write, so an operator who
+    ran `GET` on the key mid-outage saw the older healthy payload, concluded
+    extraction was fine, and went hunting an Upstash mismatch — the exact ESC-045
+    misdiagnosis this ticket exists to prevent. So:
+
+    - **No key yet** → write the all-null payload as-is, atomically (`SET … NX`).
+      It destroys nothing and is the operator's only clue. NX rather than a
+      GET-then-SET because production spawns one Modal container PER MESSAGE with
+      no ordering guarantee: a plain read-then-write races a concurrent good write
+      and can still clobber it.
+    - **Key exists** → keep the prior's dimensions, archetype and confidence, and
+      stamp `extraction_error` onto the stored payload so the degradation is
+      visible in the very place the README and the 502 body send the operator.
+      This reuses the convention already set by the multilingual retry: dimensions
+      that ARE a real read keep `data_source="model"`, and `extraction_error`
+      records that something later went wrong.
+
+    The merge branch is still read-then-write and so is not atomic. That residual
+    race is bounded and one-directional: the worst outcome is re-writing the prior
+    good dimensions (plus a marker) over a marginally newer good payload. All-null
+    dimensions can no longer reach an existing key by any interleaving, which is
+    the loss that mattered.
 
     Returns:
-        True if a value was written, False if the write was skipped (opt-out, or
-        a degraded payload declining to clobber a good prior). Callers that
-        report success/failure counts must not treat False as an error.
+        True if the key now holds this call's information (a fresh write or a
+        marker merged onto the prior), False only when nothing was written at all
+        — today that means §H.9 opt-out. Callers reporting success/failure counts
+        must not treat False as an error.
     """
     if profiling_opt_out:
         return False
 
     key = shadow_key(payload.tenant_id, payload.session_id)
     redis = _get_redis()
+    serialised = json.dumps(payload.model_dump())
 
-    if payload.data_source in _DEGRADED_SOURCES and redis.get(key) is not None:
-        print(
-            f"write_shadow_intent: keeping existing prior for {key} "
-            f"(incoming payload degraded: {payload.data_source})"
-        )
+    if payload.data_source not in _ALL_NULL_SOURCES:
+        redis.set(key, serialised, ex=ttl_seconds)
+        return True
+
+    if redis.set(key, serialised, ex=ttl_seconds, nx=True):
+        return True  # nothing was there; the marked payload is now the only record
+
+    marker = payload.extraction_error or payload.data_source
+    existing_raw = redis.get(key)
+    if existing_raw is None:
+        # The key expired between the NX attempt and this read (24h TTL, so rare).
+        # Nothing to preserve — write the marked payload rather than losing the
+        # signal entirely.
+        redis.set(key, serialised, ex=ttl_seconds, nx=True)
+        return True
+
+    try:
+        merged = json.loads(existing_raw)
+        merged["extraction_error"] = marker
+    except (TypeError, ValueError) as exc:  # unparseable prior — do not compound it
+        print(f"write_shadow_intent: existing value at {key} is unreadable ({exc}); leaving it")
         return False
 
-    redis.set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)
+    print(
+        f"write_shadow_intent: keeping prior dimensions at {key}, "
+        f"stamping degradation marker ({marker})"
+    )
+    redis.set(key, json.dumps(merged), ex=ttl_seconds)
     return True

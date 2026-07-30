@@ -39,7 +39,12 @@ def batch_enrich_conversations() -> dict:
 
     from clickhouse_reader import read_recent_chat_sessions
     from nlp import extract_intent
-    from redis_writer import write_shadow_intent
+
+    # Imported, never re-typed: a hand-copied literal here would drift from the
+    # writer's guard the moment a fifth provenance value is added, and this cron
+    # would then report a fully green summary over a batch that extracted nothing
+    # — the exact green-log-over-dead-extraction failure `degraded` exists to stop.
+    from redis_writer import _DEGRADED_SOURCES, write_shadow_intent
 
     model = os.environ.get("INTENT_BATCH_MODEL", "claude-sonnet-4-6")
     sessions = read_recent_chat_sessions(hours=6)
@@ -50,7 +55,7 @@ def batch_enrich_conversations() -> dict:
             payload = extract_intent(session["messages"], model=model, source="batch")
             payload.tenant_id = session["tenant_id"]
             payload.session_id = session["session_id"]
-            if payload.data_source in ("error_fallback", "empty_model_response"):
+            if payload.data_source in _DEGRADED_SOURCES:
                 degraded += 1
             # §H.9: clickhouse_reader does not yet surface opt-out state, so
             # we default to False. The batch tier processes only sessions whose

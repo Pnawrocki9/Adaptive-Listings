@@ -22024,7 +22024,8 @@ MASTER_DESIGN §1669, §D.1.1]
 source_retro: FOLLOW-735 (architect ruling, ADR-0020) source_ticket: FOLLOW-735 recommended_sprint:
 now recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-730 (PR #642
 must be merged first — this ticket edits the `data_source` / `DEGRADED_DATA_SOURCES` code and the
-tests that PR adds)] promoted_to_queue: false
+tests that PR adds) — SATISFIED, #642 merged `5a56ba62`] promoted_to_queue: true (session 84,
+2026-07-30 — dispatched to ml-engineer on Opus per Piotr's explicit override of the PM's hold)
 
 **Spec:** `docs/adr/ADR-0020-shadow-intent-write-admission.md` (D1-D7) + MASTER_DESIGN §D.1.1
 "Shadow-key write-admission rule". Do not re-litigate D1 — the product ruling is made; implement it.

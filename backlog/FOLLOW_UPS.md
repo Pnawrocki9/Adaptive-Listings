@@ -22776,3 +22776,39 @@ reader who will act on the stale text.
 cross_ref: [RETRO-235 §4b CB-3, §5a, §8;
 `docs/adr/ADR-0020-shadow-intent-write-admission.md:145-148, 163-164, 194-199, 235-237`; commits
 `7a79e7e1` then `479ac0ef`; FOLLOW-741, FOLLOW-744, FOLLOW-736; Rules AI / AH]
+
+---
+
+## FOLLOW-749 — `local_dev`'s `shadow_key_written: true` can now report a write that `SET … NX` suppressed
+
+source_retro: FOLLOW-736 (implementation, ADR-0020) source_ticket: FOLLOW-736 recommended_sprint:
+next recommended_agent: ml-engineer priority: P3 estimated_hours: 1 depends_on: []
+promoted_to_queue: false
+
+**The gap.** `apps/intent-engine/src/local_dev.py:184` returns
+`"shadow_key_written": not profiling_opt_out` on the degraded (502) response. Before FOLLOW-736 that
+was exact: the writer wrote unconditionally, so "not opted out" ⇔ "the key holds this record". After
+FOLLOW-736 a degraded payload carries no dimension and is written with `SET … NX`, which stores
+nothing when the session already has a prior. Reproduced live during FOLLOW-736's OP-Rule-5
+verification: a degraded POST against a warm key answered
+`{"status":"degraded", ..., "shadow_key_written":true}` while `GET` returned the earlier good record
+and `TTL` showed the original expiry still ticking down (86314, never re-set to 86400). The
+suppression is correct; the flag's wording is what over-claims.
+
+FOLLOW-736 corrected the comment above the flag in place (comment-only, no behaviour change) and
+deliberately did not touch the value, because making it exact requires `write_shadow_intent` to
+report whether the `NX` write landed — i.e. a return value — and ADR-0020 D3 pins the signature at
+`-> None`. Scope: **local-dev only.** `local_dev.py` is never deployed, so no operator-facing
+surface is affected; production's `main.py` returns 202 before extraction runs and has no such
+field.
+
+**AC:** (1) decide between (a) renaming the field to `shadow_write_attempted` (honest, zero
+plumbing) and (b) having `write_shadow_intent` return the client's `SET` result and threading it
+through — (b) changes the ADR-0020 D3 signature and therefore needs an ADR amendment, so (a) is
+recommended; (2) whichever is chosen, `apps/intent-engine/src/test_local_dev.py` gets a case
+covering the degraded-write-against-a-warm-key path (currently untested — the existing cases all
+start from a cold key); (3) update the README's local-verification snippet if it quotes the field.
+
+cross_ref: [ADR-0020 D3/D6, FOLLOW-736, `apps/intent-engine/src/local_dev.py:170-190`,
+`apps/intent-engine/src/test_local_dev.py`, FOLLOW-740 (the operator-visibility channel this does
+NOT substitute for)]

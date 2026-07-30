@@ -17,6 +17,13 @@
  *     round-trip: if `redis_writer.py`'s key format ever changes, this test's
  *     regex either fails to match (hard-fail) or extracts a different literal,
  *     which then fails the comparison — it cannot silently pass on drift.
+ *   ADR-0020 D2 / FOLLOW-736: `flattenIntentDimensions()` is checked against the SHARED
+ *     fixture `tests/fixtures/chat-intent-signal-parity.json`, the same file the Python
+ *     `has_intent_signal()` predicate is parametrized over in
+ *     `apps/intent-engine/src/test_intent_engine.py`. One fixture, two runtimes: the
+ *     Python writer admits a shadow write exactly when this flattener would keep at
+ *     least one dimension, so a divergence here means the writer would admit a payload
+ *     the SDK reads as `{}` (and clobber a real prior with it).
  *
  * @module apps/control-plane/src/lib/__tests__/chat-intent-cache.test
  */
@@ -25,7 +32,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { deleteShadowChatIntent, shadowChatIntentKey } from '../chat-intent-cache.js';
+import {
+  deleteShadowChatIntent,
+  flattenIntentDimensions,
+  shadowChatIntentKey,
+} from '../chat-intent-cache.js';
 
 // ─── deleteShadowChatIntent() — AC1 ───────────────────────────────────────────
 
@@ -113,5 +124,49 @@ describe('shadowChatIntentKey() cross-runtime key-format parity (FOLLOW-557, Rul
       .replace('{session_id}', SESSION_ID);
 
     expect(shadowChatIntentKey(TENANT_ID, SESSION_ID)).toBe(pythonExpected);
+  });
+});
+
+// ─── flattenIntentDimensions() vs. the shared parity fixture — ADR-0020 D2 ───
+
+interface ParityCase {
+  name: string;
+  why: string;
+  dims: Record<string, string | boolean | null>;
+  expect_signal: boolean;
+}
+
+function loadParityCases(): ParityCase[] {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const fixturePath = path.resolve(
+    __dirname,
+    '../../../../../tests/fixtures/chat-intent-signal-parity.json',
+  );
+  const parsed = JSON.parse(readFileSync(fixturePath, 'utf-8')) as { cases: ParityCase[] };
+  return parsed.cases;
+}
+
+describe('flattenIntentDimensions() cross-runtime signal parity (FOLLOW-736 / ADR-0020 D2)', () => {
+  const cases = loadParityCases();
+
+  it('loads the shared fixture consumed by the Python has_intent_signal() test', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(cases)(
+    'case $name: at least one dimension survives === $expect_signal',
+    ({ dims, expect_signal, why }: ParityCase) => {
+      const flattened = flattenIntentDimensions(dims);
+      expect(Object.keys(flattened).length > 0, why).toBe(expect_signal);
+    },
+  );
+
+  it('drops tax_aware:false and empty strings — the two shapes that would readmit the clobber', () => {
+    // Stated directly as well as via the fixture: if either of these ever became a
+    // signal, the Python writer would overwrite an accumulated prior with a payload
+    // this flattener resolves to `{}`, which the SDK then applies nothing from.
+    expect(flattenIntentDimensions({ tax_aware: false })).toEqual({});
+    expect(flattenIntentDimensions({ purchase_purpose: '' })).toEqual({});
+    expect(flattenIntentDimensions({ tax_aware: true })).toEqual({ tax_aware: 'true' });
   });
 });

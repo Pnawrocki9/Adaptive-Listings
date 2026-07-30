@@ -87,10 +87,15 @@ curl -s -X POST http://localhost:8090/chat_nlp_endpoint \
 #   CANNOT return this — it answers 202 before extraction runs — so it is a
 #   local-only signal that exists to stop a dead model call from looking healthy.
 #   Two things to know. (1) `shadow_key_written: false` means §H.9 opt-out — the
-#   write was skipped, so there is no key to inspect. When it is `true` the key
-#   holds the MARKED all-null payload, i.e. `GET` it and read `data_source` /
-#   `extraction_error` to see why the archetype stopped moving. Note this write
-#   REPLACES whatever the session had accumulated (known gap, FOLLOW-735). (2) The
+#   write was skipped, so there is no key to inspect. `true` means the write was
+#   ATTEMPTED, which since ADR-0020 / FOLLOW-736 is not the same as "the key now
+#   holds this record": a degraded payload carries no dimension, so it is written
+#   with `SET … NX` and lands ONLY on a cold key. On a session that already has a
+#   prior, the prior survives untouched (value AND remaining TTL) and `GET`
+#   returns it, not the marked all-null payload — that is the fix, not a bug
+#   (FOLLOW-749 tracks the flag's wording). So: `GET` on a cold session shows the
+#   markers (`data_source` / `extraction_error`); on a warm session it shows the
+#   last good read, and the degraded event is not persisted anywhere. (2) The
 #   ingest Worker treats ANY non-2xx as a dispatch failure, so a missing API key
 #   shows up Worker-side as "[chat-nlp] Modal dispatch rejected: HTTP 502" with
 #   tag kind=dispatch_failed. Trust this body, not that log line.

@@ -18,7 +18,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args, get_type_hints
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,10 +30,15 @@ if str(_SRC_DIR) not in sys.path:
 
 import nlp  # noqa: E402
 import observability  # noqa: E402
+import redis_writer  # noqa: E402
 from main import get_service_info  # noqa: E402
 from nlp import detect_language_mix, extract_intent  # noqa: E402
-from redis_writer import write_shadow_intent  # noqa: E402
-from schemas import ChatIntentDataSource, ChatIntentDetectedPayload  # noqa: E402
+from redis_writer import has_intent_signal, write_shadow_intent  # noqa: E402
+from schemas import (  # noqa: E402
+    ChatIntentDataSource,
+    ChatIntentDetectedPayload,
+    ChatIntentDimensions,
+)
 
 _HAS_API_KEY = bool(os.environ.get("ANTHROPIC_API_KEY"))
 _HAIKU = os.environ.get("INTENT_REALTIME_MODEL", "claude-haiku-4-5-20251001")
@@ -485,20 +490,13 @@ def test_empty_model_response_is_captured_not_silent(monkeypatch: pytest.MonkeyP
     assert capture.call_args.args[0] is None
 
 
-def test_degraded_payload_currently_still_overwrites_a_prior() -> None:
-    """Documents a KNOWN, ACCEPTED gap — see FOLLOW-735.
+def test_degraded_payload_does_not_overwrite_a_prior() -> None:
+    """ADR-0020 D1/D3 (FOLLOW-736): a degraded all-null payload is written with
+    `SET … NX`, so against an existing key it mutates nothing — the accumulated
+    prior survives an Anthropic outage.
 
-    A degraded all-null payload still overwrites an accumulated prior. Three review
-    rounds established that fixing it inside FOLLOW-730 was the wrong call: every
-    attempt (skip-the-write, then merge-the-marker) either hid the diagnostic it was
-    meant to surface, made `data_source` decision-affecting against the DIAGNOSTIC
-    ONLY contract, refreshed the 24h retention TTL, or raced the SDK's one-shot
-    `chatPriorApplied` latch. The clobber needs an atomic compare-and-set and a
-    design decision about whether a failed extraction SHOULD neutralise the served
-    prior — that is FOLLOW-735, not this ticket.
-
-    This test exists so the current behaviour is stated rather than assumed, and so
-    whoever implements 735 has a red test to flip.
+    The record still carries its own markers, so on a COLD key (where NX succeeds
+    and there is no prior to lose) the degraded write is stored in full.
     """
     with patch("nlp._call_model", side_effect=RuntimeError("connection reset")):
         degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
@@ -508,9 +506,11 @@ def test_degraded_payload_currently_still_overwrites_a_prior() -> None:
     with patch("redis_writer._get_redis", return_value=mock_redis):
         write_shadow_intent(degraded)
 
+    _args, kwargs = mock_redis.set.call_args
+    assert kwargs.get("nx") is True  # create-only: cannot clobber, cannot refresh the TTL
     written = json.loads(mock_redis.set.call_args.args[1])
-    assert written["data_source"] == "error_fallback"  # the marker IS visible…
-    assert all(v is None for v in written["intent_dimensions"].values())  # …but dims are null
+    assert written["data_source"] == "error_fallback"  # the marker is still on the record…
+    assert all(v is None for v in written["intent_dimensions"].values())  # …and dims are null
 
 
 def test_degraded_source_set_partitions_the_provenance_literal() -> None:
@@ -581,3 +581,150 @@ def test_multilingual_retry_failure_is_marked_and_keeps_model_provenance(
     assert payload.data_source == "model"
     assert payload.extraction_error == "retry_failed: RuntimeError"
     assert capture.call_args.kwargs["stage"] == "retry"
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-736 / ADR-0020 — write admission: an empty extraction never clobbers a
+# stored prior. The rule is keyed on CONTENT (all dimensions flatten away), NOT
+# on `data_source` — provenance stays DIAGNOSTIC ONLY.
+# ---------------------------------------------------------------------------
+
+_PARITY_FIXTURE = (
+    Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "chat-intent-signal-parity.json"
+)
+
+
+def _load_parity_cases() -> list[dict[str, Any]]:
+    """Load the shared cross-runtime fixture (also consumed by the TS flattener test)."""
+    assert _PARITY_FIXTURE.is_file(), (
+        f"missing shared parity fixture at {_PARITY_FIXTURE} — it pins ADR-0020 D2 "
+        "across Python and TypeScript and must not be moved on one side only"
+    )
+    cases: list[dict[str, Any]] = json.loads(_PARITY_FIXTURE.read_text(encoding="utf-8"))["cases"]
+    return cases
+
+
+def _payload_with(dims: dict[str, Any]) -> ChatIntentDetectedPayload:
+    """A payload carrying exactly `dims` (provenance deliberately left at its default)."""
+    return ChatIntentDetectedPayload(
+        tenant_id="tnt_736",
+        session_id="sess_736",
+        intent_dimensions=ChatIntentDimensions(**dims),
+        archetype_hint="neutral",
+        confidence=0.0,
+        model_used="haiku-4.5",
+        source="realtime",
+        message_count=1,
+        detected_at="2026-07-30T00:00:00+00:00",
+    )
+
+
+def _write(payload: ChatIntentDetectedPayload, **kwargs: Any) -> MagicMock:
+    """Run write_shadow_intent against a mock client and return the client."""
+    mock_redis = MagicMock()
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        write_shadow_intent(payload, **kwargs)
+    return mock_redis
+
+
+def test_empty_dims_successful_extraction_also_uses_nx() -> None:
+    """AC4(a) — the neutral-success case: the model really answered ("hi"/"thanks")
+    and found nothing. `data_source == 'model'`, so a provenance-keyed rule (PR #642
+    round 1) would have admitted this write and destroyed the prior anyway. The rule
+    is keyed on content, so it does not."""
+    payload = _payload_with({})
+    assert payload.data_source == "model"  # NOT degraded — a genuine read
+
+    mock_redis = _write(payload)
+
+    _args, kwargs = mock_redis.set.call_args
+    assert kwargs.get("nx") is True
+    assert kwargs.get("ex") == 86400  # HANDOFF trap 2: NX still carries the TTL
+
+
+def test_non_empty_dims_write_is_unconditional_and_refreshes_ttl() -> None:
+    """AC4(b) — a real read overwrites last-writer-wins and refreshes the 24h clock
+    (unchanged pre-existing semantics, ADR-0020 D7)."""
+    mock_redis = _write(_payload_with({"purchase_purpose": "investment"}))
+
+    _args, kwargs = mock_redis.set.call_args
+    assert "nx" not in kwargs, "a signal-bearing write must not be create-only"
+    assert kwargs.get("ex") == 86400
+
+
+def test_tax_aware_false_alone_is_not_a_signal() -> None:
+    """AC4(c) / HANDOFF trap 1 — `tax_aware: False` means "unknown". The TS flattener
+    drops it, so admitting it would let a payload the SDK reads as `{}` clobber a real
+    prior — the same bug through the back door."""
+    assert has_intent_signal(ChatIntentDimensions(tax_aware=False)) is False
+    assert has_intent_signal(ChatIntentDimensions(tax_aware=True)) is True
+
+    mock_redis = _write(_payload_with({"tax_aware": False}))
+    assert mock_redis.set.call_args.kwargs.get("nx") is True
+
+
+def test_empty_string_dimension_is_not_a_signal() -> None:
+    """AC4(d) — the TS flattener requires `value.length > 0`."""
+    assert has_intent_signal(ChatIntentDimensions(purchase_purpose="")) is False
+    assert has_intent_signal(ChatIntentDimensions(purchase_purpose="investment")) is True
+
+    mock_redis = _write(_payload_with({"purchase_purpose": ""}))
+    assert mock_redis.set.call_args.kwargs.get("nx") is True
+
+
+def test_opt_out_skips_both_branches() -> None:
+    """AC4(e) / §H.9 regression — `profiling_opt_out` stays the FIRST statement, so
+    NEITHER admission branch runs: redis.set is not called at all, for a signal-bearing
+    payload as well as an empty one."""
+    for dims in ({}, {"purchase_purpose": "investment"}):
+        mock_redis = _write(_payload_with(dims), profiling_opt_out=True)
+        mock_redis.set.assert_not_called()
+
+
+def test_redis_writer_module_never_reads() -> None:
+    """AC4(f) / ADR-0020 D5 — the writer performs no read of the shadow namespace and
+    no deserialization, so `json.dumps(payload.model_dump())` stays the SINGLE
+    serialization path into the key (the fact C-07 / DPIA / ROPA evidence rests on).
+    This is the guard that would have caught round 3 of PR #642, which read the prior
+    back through a bare deserializer and wrote it forward."""
+    source = Path(redis_writer.__file__).read_text(encoding="utf-8")
+
+    for forbidden in ("json.loads", ".get(", ".mget("):
+        assert forbidden not in source, (
+            f"redis_writer.py contains {forbidden!r} — ADR-0020 D5 forbids reading or "
+            "deserializing the shadow namespace here. A read reintroduces both the "
+            "second write path and the GET-then-SET race the NX design removes."
+        )
+
+
+def test_predicate_cannot_see_provenance() -> None:
+    """ADR-0020 D2 — the admission predicate takes the DIMENSIONS object, never the
+    payload. That parameter type is how DIAGNOSTIC ONLY is enforced structurally: with
+    `ChatIntentDetectedPayload` in the signature, `data_source` becomes reachable and
+    the next reviewer's "just check the marker here" is a one-line change. Asserted on
+    the annotation so it fails loudly if someone widens it."""
+    hints = get_type_hints(has_intent_signal)
+    assert hints["dims"] is ChatIntentDimensions
+    assert ChatIntentDetectedPayload not in hints.values()
+
+
+@pytest.mark.parametrize("case", _load_parity_cases(), ids=lambda c: str(c["name"]))
+def test_has_intent_signal_matches_shared_parity_fixture(case: dict[str, Any]) -> None:
+    """AC5 — one fixture, two runtimes. The TypeScript half of this pair lives in
+    `apps/control-plane/src/lib/__tests__/chat-intent-cache.test.ts` and asserts the
+    same cases against `flattenIntentDimensions`, so the mirror cannot drift silently."""
+    dims = ChatIntentDimensions(**case["dims"])
+    assert has_intent_signal(dims) is case["expect_signal"], case["why"]
+
+
+def test_parity_fixture_covers_every_declared_dimension() -> None:
+    """The fixture is only a mirror guard if it names the same 12 dimensions the schema
+    declares — a renamed field would otherwise be silently absent from both sides."""
+    schema_fields = set(ChatIntentDimensions.model_fields)
+    for case in _load_parity_cases():
+        assert set(case["dims"]) <= schema_fields, (
+            f"fixture case {case['name']!r} names a dimension that is not on "
+            "ChatIntentDimensions"
+        )
+    covered = {key for case in _load_parity_cases() for key in case["dims"]}
+    assert covered == schema_fields, f"fixture never exercises: {sorted(schema_fields - covered)}"

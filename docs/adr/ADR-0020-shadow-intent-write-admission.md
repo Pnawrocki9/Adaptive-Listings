@@ -4,15 +4,16 @@
 merging the PR was the ratification act) — **AMENDED 2026-07-30 per FOLLOW-741:** §D6,
 Consequences/Negative bullet 1 and Alternatives item 5 corrected in place; factual corrections to
 implementation status only, D1-D5 and D7 byte-unchanged, no decision revisited. **Date:** 2026-07-30
-**Proposed by:** architect (FOLLOW-735) **Implementing ticket:** FOLLOW-736 (ml-engineer) — this ADR
-describes behaviour that is **NOT implemented at HEAD**; it is binding only when FOLLOW-736 merges.
-**Tickets:** FOLLOW-735 (this decision), FOLLOW-730 / PR #642 (the reverted attempts), FOLLOW-736
-(implementation), FOLLOW-737 (shared-Zod mirror gap, filed by this ADR). **Cross-references:**
-FOLLOW-087 (writer), FOLLOW-101 / FOLLOW-252 / Rule R (one-shot chat-prior latch), FOLLOW-346 +
-FOLLOW-635 (the key is live-influencing, not shadow), FOLLOW-384 / §H.9 (`profiling_opt_out`),
-FOLLOW-557 (DSR erase), MASTER_DESIGN §C.3, §C.4, §D.1.1,
-`docs/compliance/C-07-chat-retention-scope.md`, `docs/compliance/ropa.md` (line 133),
-`docs/compliance/dpia.md` (§269, §1350).
+**Proposed by:** architect (FOLLOW-735) **Implementing ticket:** FOLLOW-736 (ml-engineer) —
+**implemented 2026-07-30**; D1-D5 are shipped in `apps/intent-engine/src/redis_writer.py`
+(`has_intent_signal` + the two `SET` branches). D6's channels (1) and (2) remain blind in production
+per the amendment below; D7's non-goals remain unimplemented by design. **Tickets:** FOLLOW-735
+(this decision), FOLLOW-730 / PR #642 (the reverted attempts), FOLLOW-736 (implementation),
+FOLLOW-737 (shared-Zod mirror gap, filed by this ADR). **Cross-references:** FOLLOW-087 (writer),
+FOLLOW-101 / FOLLOW-252 / Rule R (one-shot chat-prior latch), FOLLOW-346 + FOLLOW-635 (the key is
+live-influencing, not shadow), FOLLOW-384 / §H.9 (`profiling_opt_out`), FOLLOW-557 (DSR erase),
+MASTER_DESIGN §C.3, §C.4, §D.1.1, `docs/compliance/C-07-chat-retention-scope.md`,
+`docs/compliance/ropa.md` (line 133), `docs/compliance/dpia.md` (§269, §1350).
 
 ---
 

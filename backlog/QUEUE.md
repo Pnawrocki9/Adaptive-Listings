@@ -1,5 +1,36 @@
 # Backlog Queue
 
+### FOLLOW-736 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-07-30 (session 84) on Piotr's explicit "puść 736", overriding the PM's
+hold.** The PM held it twice on the "no new ticket while escalations are open" rule and flagged it
+for re-judgment; Piotr re-judged. That rule exists to stop new scope competing with unresolved
+blockers — but all five open escalations are blocked on Piotr as OPERATOR, not on engineering
+capacity, and FOLLOW-736 is the substantive correctness fix for a defect live on `main` today.
+Holding it accelerates no escalation.
+
+**assigned_to:** ml-engineer **model: Opus** — the model-fit rule says escalate a tier when the task
+already failed at a lower one, and this exact code area has **three reverted attempts** behind it
+(PR #642 rounds 1-3). The spec is settled, so the difficulty is not design: every constraint here is
+invariant-shaped and superficially easy to satisfy while actually breaking — "atomic" (a
+GET-then-SET passes unit tests and races in prod), "never TTL-refresh", "validated dump only", and a
+predicate that must be _structurally_ unable to read provenance. Mechanical tier-appropriate
+implementation is precisely what produced the three reverts. **started_at:** 2026-07-30. **branch:**
+`ml-engineer/FOLLOW-736-shadow-write-admission`.
+
+**Spec:** `docs/adr/ADR-0020-shadow-intent-write-admission.md` D1-D7 (ACCEPTED, ratified by Piotr
+via PR #643, amended 2026-07-30 per FOLLOW-741) + `backlog/FOLLOW_UPS.md` → `## FOLLOW-736` (8
+ACs) + `backlog/HANDOFFS.md` FOLLOW-735 → FOLLOW-736 entry (6 traps, incl. trap 6 on the blind
+window).
+
+**Note on AC7/AC8:** AC7 ("flip ADR-0020 to ACCEPTED") was already done in `06553402` — verify, do
+not redo. AC8 (delete the "SPEC, NOT YET IMPLEMENTED AT HEAD" warning in MASTER_DESIGN §D.1.1)
+becomes true only when this ticket's code merges, so it is this ticket's to do.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-30 (session 83 — FOLLOW-736 judged NOT ready to dispatch (escalation gate), FOLLOW-739 re-scoped not dispatched, FOLLOW-738 retro dispatched; 5 open ESCALATIONS unchanged, ESC-045 narrowed to items 1-3)
 
 **State re-verified before doing anything:** `git status` clean, `main` at `1bea483d`

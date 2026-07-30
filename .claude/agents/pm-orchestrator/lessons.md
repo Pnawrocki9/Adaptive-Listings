@@ -2681,3 +2681,23 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   no PR, prose-only handoff), treat "the draft cites a library method as available" as a claim to
   verify by reading the installed dependency's source directly — not just the draft's own self-check
   checklist — before transcribing it into an ADR that will gate a future ticket's design.
+
+- **Date / ticket:** 2026-07-30 — FOLLOW-736 / FOLLOW-739 (session 83)
+- **Delegation row used:** none this session — deliberately withheld dispatch (no delegation-table
+  row fired for FOLLOW-736 or FOLLOW-739); "post-ticket-DONE analysis" → retrospective-analyst
+  (Opus, per agent default) for FOLLOW-738/PR #644.
+- **What validation caught (or missed):** Re-verifying a prior session's own claim against the
+  actual working tree (not the handoff's framing) caught that FOLLOW-739's premise had only
+  _partially_ become true — the before_send hook and CI gate now exist, but the docs' "PII patterns
+  regex" wording and apps/control-plane's total lack of scrubbing were still false. Dispatching a
+  worker to "fix docs that had become true" would have wasted a cycle on a stale ticket; rewriting
+  the AC first was the right move. Separately, the dispatched retrospective (RETRO-235) caught that
+  THIS SESSION's own opening QUEUE.md/STATUS.md lines repeated the exact DG-1 conflation pattern it
+  flags elsewhere (hazard-leg-closed read as whole-item-closed) — a PM's own bookkeeping prose is
+  not exempt from the same over-read a retro polices in worker PRs.
+- **A delegation/validation rule I'd add:** When a handoff frames a ticket as "ready, every blocker
+  cleared," re-derive readiness against the escalation gate independently rather than accepting the
+  handoff's framing — the SAME session-chain had, one session earlier, drawn the opposite conclusion
+  for the identical ticket (FOLLOW-736) for a reason ("does not clear an open escalation") that
+  still applied unchanged. A handoff's enthusiasm for a ticket is not evidence the escalation-gate
+  analysis was re-run.

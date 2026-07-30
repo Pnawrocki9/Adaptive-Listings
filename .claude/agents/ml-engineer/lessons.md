@@ -309,3 +309,38 @@
   add:** a corpus/parity gate that fails if `DEFAULT_QUIZ_DEFINITION` (walked + argmax) ever stops
   reproducing the 17 legacy leaves — the byte-identical-fallback promise is only as strong as that
   parity test, and a future weight edit could silently break it.
+
+## 2026-07-30 · FOLLOW-736 — shadow-key write admission (ADR-0020, `SET … NX`)
+
+**Built.** `has_intent_signal(dims: ChatIntentDimensions) -> bool` + two branches in
+`write_shadow_intent`: signal-bearing → `SET … EX`, empty → `SET … EX NX`. Shared parity fixture
+`tests/fixtures/chat-intent-signal-parity.json` consumed by BOTH the Python predicate and the TS
+`flattenIntentDimensions`. Compliance sync (C-07 / ROPA) + MASTER_DESIGN §D.1.1.
+
+**Where real-vs-placeholder was a judgment call.** Two places, both about a name over-claiming:
+
+1. `local_dev.py` returns `"shadow_key_written": not profiling_opt_out`, with a comment asserting
+   that flag "is the whole truth and cannot drift out of step with the writer". My change made that
+   false — I reproduced it live: a degraded POST against a warm key answered
+   `shadow_key_written: true` while the NX write had stored nothing. The ticket said "do not touch
+   `local_dev.py`". I read that as _do not change its behaviour_ and corrected the comment + README
+   only (byte-identical call site), then filed FOLLOW-749 rather than improvising a return value on
+   `write_shadow_intent`, whose `-> None` signature the ADR pins. Leaving a comment that says the
+   opposite of what the code now does is the RETRO-003 failure mode with extra steps.
+2. `ex=ttl_seconds` on the NX branch looks redundant (an existing key ignores the whole command) and
+   is very tempting to delete. Deleting it would leave a session's FIRST record with no TTL at all —
+   a permanent personal-data key. The handoff named this as trap 2; I would not have caught it from
+   the code alone.
+
+**Guardrail I'd add.** _When a change makes a sibling module's diagnostic field or comment
+over-claim, correcting the prose is in scope even when the file is on the "do not touch" list —
+behaviour is what the scope line protects, not stale prose. Say so explicitly in the PR and file the
+ticket for the real fix._ Corollary that saved me here: **verify against a real client, not a
+mock.** Docker `redis:7-alpine` + `hiett/serverless-redis-http` gives a genuine Upstash-REST
+endpoint in ~30s, so "TTL not refreshed" became three descending TTL readings (86400 → 86369
+→ 86314) instead of an assertion about `kwargs`. A mocked client would have proven the kwargs and
+none of the semantics.
+
+**Also worth remembering.** `pkill -f "<pattern>"` matches the agent's own shell command line and
+kills the session — it cost me two tool calls. Use `pgrep -af` first and a pattern that cannot match
+the invoking command.

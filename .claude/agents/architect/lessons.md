@@ -107,3 +107,22 @@ Design §V.3.2 update is explicitly delegated to architect post-PR-merge (named,
 helpers) before designing a new auth scheme. A wrong schema comment caused a full "new column +
 migration + env var + key rotation" design to be drafted before the code audit showed SHA-256 was
 already there. Rule: "read the seeder and the closest working auth route before writing the ADR."
+
+- **2026-07-30 / FOLLOW-735** · Ruled that an empty chat-intent extraction never neutralises a
+  stored prior, and that the merge rule is keyed on _content_ (all-null dims), not on the
+  `data_source` provenance label — which collapsed a 4-constraint "atomic merge" problem into a
+  single `SET … NX`. The unlock was noticing the decision needs **no read of the prior**: once you
+  never read, the race, the TTL refresh, and the second-write-path defects that killed three
+  `/code-review` rounds all disappear at once. Also widened the rule past the reported symptom
+  (neutral-success "hi" clobbers priors more often than outages do) — worth stating loudly in the
+  ADR, because it is a behaviour change the ticket did not ask for. · **Where a spec risked
+  describing behaviour with no owner:** the §D.1.1 patch. It is a runtime rule with zero
+  implementing code at HEAD, so it ships with an explicit "⚠️ SPEC, NOT YET IMPLEMENTED AT HEAD"
+  block naming FOLLOW-736 (dated) and an AC in that ticket to _delete the warning_ on merge — a
+  self-clearing Rule-H marker, not a permanent disclaimer. Also refused to let my own "every
+  interface needs shared Zod" guardrail pass silently: the payload has no `packages/shared` schema,
+  so FOLLOW-737 owns that gap rather than the ADR pretending it's covered. · **Guardrail I'd add:**
+  when a merge/precedence rule is proposed for shared state, first ask "does the decision depend on
+  the stored value at all?" — if not, forbid the read outright; the read is what manufactures the
+  atomicity, TTL and validation problems. Second: a predicate that must not see field X should take
+  a parameter _type_ that excludes X, rather than a comment saying not to look at it.

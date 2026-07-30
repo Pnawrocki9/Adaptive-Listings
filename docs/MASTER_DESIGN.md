@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.3 (2026-07-09 — §Snapshot.1 truth-reconciliation refresh [FOLLOW-470]: per-section verdicts re-verified against HEAD (verify-not-guess, OP Rule 5); README + CLAUDE.md status drift flagged/corrected; CONVENTIONS_PATCH rule-count fixed (27 rules, not 8); bazuje na 4.2: Full-Stack Audit Remediation epic: `Sprint 22b` FOLLOW-449…471 closing findings F-01…F-21 from the 2026-07-01 end-to-end code audit; §Snapshot.1 refreshed; acceptance gate = clean re-audit [FOLLOW-471]; bazuje na 4.1 (2026-06-21) — Platform-wide consent umbrella (§H.8) + per-user opt-out toggle (§H.9) CEO-directed; bazuje na 4.0: Quiz Widget v2.0 cascading decision tree, permanent description cache (no Tiers/no TTL), §D.6 coverage matrix updated (all 17 archetypes reachable); bazuje na 3.9: Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 21 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+**Wersja:** 4.4 (2026-07-30 — §D.1.1 shadow-key write-admission rule [ADR-0020 / FOLLOW-735, impl FOLLOW-736]; bazuje na 4.3: §Snapshot.1 truth-reconciliation refresh [FOLLOW-470]: per-section verdicts re-verified against HEAD (verify-not-guess, OP Rule 5); README + CLAUDE.md status drift flagged/corrected; CONVENTIONS_PATCH rule-count fixed (27 rules, not 8); bazuje na 4.2: Full-Stack Audit Remediation epic: `Sprint 22b` FOLLOW-449…471 closing findings F-01…F-21 from the 2026-07-01 end-to-end code audit; §Snapshot.1 refreshed; acceptance gate = clean re-audit [FOLLOW-471]; bazuje na 4.1 (2026-06-21) — Platform-wide consent umbrella (§H.8) + per-user opt-out toggle (§H.9) CEO-directed; bazuje na 4.0: Quiz Widget v2.0 cascading decision tree, permanent description cache (no Tiers/no TTL), §D.6 coverage matrix updated (all 17 archetypes reachable); bazuje na 3.9: Conversion Label Loop §T (PROPOSED) + prompt v1.9 archetype-fit gate [ADR-0010]; bazuje na 3.8: detection→adaptation runtime bridge, **no-code app.estalara.com**, AI-Vision quality strategy [ADR-0008; FOLLOW-159 implement, FOLLOW-160 Plan B]; FIX-014 slot-injection superseded — patrz changelog v3.8 + §B.5.7. Bazuje na 3.7: CEO ratifications wave 2026-05-30 — 10 z 11 decyzji ratified: D-1 app.estalara.com / D-2 chat in v1.0 / D-3 6 families classifier / D-4 live.signup OR chat / D-5 technical-readiness / D-6 Discovery Day batched / R-2 Vercel env DONE / R-3 peter+rafal owners / R-4 wait for Magic Link / R-5 **10-12 weeks** priorytet jakość; R-1 ZIP pending; pilot start tydzień 13; SCHEMA-001 + VERIFY-001 dodane; FIX-006/017 scope changed; full ratifications wave w `backlog/PLAN-V3-2026-05-30.md` §0; APPROVED_TO_IMPLEMENT=pending R-1 only; otherwise as v3.6) | **Data:** 21 czerwca 2026 | **Autorzy odbiorcy:** Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO)
+
+**Changelog v4.4 (30 lipca 2026 — shadow-key write-admission rule [ADR-0020]):** Jedna decyzja architektoniczna, spec-only. FOLLOW-735 rozstrzygnął pytanie produktowe otwarte przez trzy odwrócone rundy `/code-review` w PR #642 (FOLLOW-730, revert `1ff873ef`): **nieudana ekstrakcja NIE neutralizuje serwowanego prioru**. Awaria wywołania Anthropic (a także "udana" ekstrakcja bez żadnego wymiaru — "hi", "dziękuję") nie mówi nic o kupującym, a strata jest sesyjnie trwała przez one-shot latch Rule R (`chatPriorApplied`, FOLLOW-252). Reguła jest kluczowana na **treści** (brak jakiegokolwiek użytecznego wymiaru), nie na `data_source` — provenance pozostaje DIAGNOSTIC ONLY. Mechanizm: pojedyncze atomowe `SET … NX` (bez GET, bez Lua, bez read-backu) — więc `payload.model_dump()` pozostaje jedyną ścieżką zapisu cytowaną w ROPA/DPIA/C-07, a TTL zachowanego rekordu nie jest odświeżany (retencja może się tylko skrócić, nigdy wydłużyć). Brak rekordu scalonego: `data_source`/`extraction_error` zawsze opisują wymiary leżące obok nich w tym samym rekordzie. §D.1.1 rozszerzone o tę regułę, **oznaczone jako SPEC — nie zaimplementowane w HEAD** (właściciel: FOLLOW-736, ml-engineer; czerwony test do odwrócenia: `test_degraded_payload_currently_still_overwrites_a_prior`). Zero zmian w SDK i control-plane. §Y.2 propagacja: brak rename sekcji (pozycje 1-3, 6, 7 checklisty = no-op); `backlog/QUEUE.md` + `backlog/FOLLOW_UPS.md` dotknięte w tym samym change (FOLLOW-736 stub + status FOLLOW-735); §Snapshot.1 BEZ zmian — reguła nie jest jeszcze zaimplementowana i wiersz D pozostaje prawdziwy do czasu merge'u FOLLOW-736.
 
 **Changelog v4.3 (9 lipca 2026 — §Snapshot.1 truth-reconciliation refresh [FOLLOW-470]):** Docs-only reconciliation pass — no new decisions ratified. The Implementation Status Snapshot header had been dated 2026-05-24 (~5 weeks stale) and its per-section verdict table pre-dated the 2026-07-01 Full-Stack Audit; the audit's "Update 2026-07-01" block explicitly deferred the table refresh to FOLLOW-470. This change walks every §Snapshot.1 row, grep-verifies the cited symbol/file against HEAD (verify-not-guess, OP Rule 5), and corrects the rows that no longer match shipped code: **A.1** (intent-engine + llm-gateway description job are now real Modal services; `archetype-pipeline`/`adaptation-engine` apps no longer exist; stream-consumer chat-NLP is code-complete but not deployed in prod — F-03); **B.1** (Tier 1/2/3 framing retired per CEO 2026-06-05 §E.7 — flagged, section body NOT renamed per §Y.2); **B.2** (SDK budget raised to 42 KB gzip [ESC-028], IIFE now 39.86 KB gzip — under budget, thin headroom [FOLLOW-469], was 🟥 over-budget); **C** (SDK emits 21/46 event types per 2026-07-01 audit, taxonomy since grown to 52 via FOLLOW-461, was 8/37); **D** (intent-engine real, not a 27-line placeholder; 18-archetype set consistent across code, not "3 divergent places"); **E.1–E.3** (bandit feedback loop wired in CODE [FOLLOW-450 DONE] but prod feedback endpoint still operator-gated → bandit frozen at Beta(1,1) in prod — CODE-VS-PROD axis, Rule AA); **E.4** (Quiz v2.0 cascading tree IMPLEMENTED — `applyQuizLeaf` shipped, was "impl PENDING"); **E.7** (description pipeline IMPLEMENTED + LIVE in prod via Modal `estalara-description-generator` [ADR-0016, 2026-07-03] with `description_cache_persistent`, was "impl PENDING"); **H** (consent umbrella §H.8 + opt-out §H.9 wired, always-`legitimate-interest` bug fixed). §Snapshot.6 rule-count corrected 8→27 and retro/follow-up counts refreshed. `README.md` corrected from "Sprint 0" to Sprint 22b. `CLAUDE.md` Tier 1/2/3 language EDITED to flag the tiers as retired/historical (CEO ruling 2026-06-05 §E.7) — a retirement callout was added and the Tier bullets kept as explicitly-labeled legacy rather than silently rewriting the framing (§Y.2 respected, no section rename); the stale SDK-bundle line was corrected `<40KB` → `<42KB` (ESC-028). The edit was applied by the top-level orchestrator on the architect's behalf (the `architect` subagent has no shell tool); the architect's original plan to only *flag* was superseded — see RETRO-168 DG-1 / FOLLOW-544, which corrects this line's earlier "flagged, not edited" self-description. §Y.2 propagation: no section renames; `backlog/QUEUE.md` (FOLLOW-380 promotion) + `backlog/FOLLOW_UPS.md` (stub marked promoted) touched in the same change. Reszta jak v4.2.
 
@@ -1764,6 +1766,50 @@ tax_aware=true                     → yield_hunter:0.4, golden_visa_buyer:0.5, 
 **Mismatch detection:** jeśli `quiz.event` już odpowiedziano i `chat_archetype ≠ quiz_archetype` z confidence > 0.5 obydwóch — SDK emituje `quiz.mismatch` event i wybiera źródło z wyższym combined confidence.
 
 > **Schema:** TBD pending FOLLOW-087. `CHAT_INTENT_LIKELIHOODS` powyżej to propozycja do weryfikacji przy implementacji FOLLOW-100.
+
+**Shadow-key write-admission rule (ADR-0020) — ⚠️ SPEC, NOT YET IMPLEMENTED AT HEAD.**
+
+> Owner: **FOLLOW-736** (ml-engineer, filed 2026-07-30). Until that ticket merges, the shipped
+> behaviour is still the unconditional overwrite described below as "before". This paragraph
+> describes a decision, not current runtime behaviour.
+
+The Redis key `shadow:{tenant_id}:{session_id}:chat_intent` is written by three call sites in
+`apps/intent-engine` (`main.py`, `local_dev.py`, `jobs/batch_enrich.py`) and read on every
+`/api/adapt` call by `readShadowChatIntent`. **Before:** every write was an unconditional
+`SET … EX 86400`, so an extraction carrying no dimensions — whether the Anthropic call failed
+(`data_source ∈ DEGRADED_DATA_SOURCES`) or the buyer simply said "hi" — destroyed whatever prior
+the session had accumulated. **After (ADR-0020):**
+
+1. **Ruling.** An extraction carrying no usable dimension never neutralises a stored prior. The
+   key keeps serving the last good read until a new good read replaces it or the 24h TTL expires
+   it. A failed call is a fact about our infrastructure, not about the buyer; staleness is already
+   bounded by the TTL; and because the SDK folds the chat prior **once per session** (Rule R
+   `chatPriorApplied`, FOLLOW-252), a prior destroyed before that read is lost for the whole
+   session.
+2. **Keyed on content, not provenance.** The admission predicate `has_intent_signal(dims)` takes
+   `ChatIntentDimensions`, not the payload, so it cannot read `data_source` — DIAGNOSTIC ONLY
+   (§C.4) is enforced by the parameter type. It is a line-for-line mirror of
+   `flattenIntentDimensions` (`chat-intent-cache.ts:176-191`): `null` → no signal, `bool` → signal
+   only when `true`, `str` → signal only when non-empty, any other type → no signal. Pinned on both
+   runtimes by `tests/fixtures/chat-intent-signal-parity.json`.
+3. **Atomicity.** Non-empty → `SET key value EX 86400` (unchanged). Empty → `SET key value EX 86400
+   **NX**`. One command, no GET, no Lua, no read-then-write window across concurrent per-message
+   Modal containers. Invariant: *the only command that can remove a good record is a `SET` carrying
+   non-empty dimensions.*
+4. **TTL invariant.** A write may only shorten or leave unchanged the residual lifetime of
+   previously-stored personal data, never extend it — `SET … NX` against an existing key performs
+   no mutation, so the preserved record's retention clock is not refreshed. Effective lifetime
+   becomes "24 h from the last chat message that yielded at least one dimension" (≤ the 24 h
+   asserted in C-07 Q3.1 / ROPA / DPIA).
+5. **Validation + visibility.** No read-back, so `json.dumps(payload.model_dump())` remains the
+   only serialization path into the key (the fact the compliance evidence cites). There is no
+   merged record and no sibling field: a preserved record is untouched, so its
+   `data_source`/`extraction_error` always describe the dimensions beside them. Degradation stays
+   visible via Sentry, via the payload returned to the caller, and — on a session with no prior —
+   in the key itself, where the `NX` write succeeds.
+
+`profiling_opt_out` (§H.9) remains the first statement in the writer and gates both branches. No
+SDK and no control-plane change is in scope.
 
 ### D.2. Architektura model serving
 

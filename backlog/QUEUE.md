@@ -1,9 +1,87 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-30 (session 80 — PR #642 independently re-validated (fresh CI
+## ▶️ START HERE — resume 2026-07-30 (session 81 — FOLLOW-735 architect draft recovered from a
 
-pull + wiring re-derived from the branch, not the PR body); FOLLOW-735 stub actually filed (it was
-only prose in QUEUE.md before — see note below); FOLLOW-735 dispatched to architect)
+nohup dispatch log and applied; FOLLOW-735 DONE; FOLLOW-736/737 filed, NOT dispatched — 5 open
+ESCALATIONS still block picking a new ticket)
+
+**FOLLOW-735 closed out this session.** Last session's architect dispatch (DRAFT-ONLY, no Bash) had
+exited with its output sitting unread in
+`/tmp/claude-1000/.../scratchpad/dispatch_logs/follow735_architect.log` — found it (per the standing
+instruction not to re-dispatch before checking for existing paid-for work), read the full draft, and
+independently re-verified its load-bearing technical claims against the actual working tree before
+applying anything: `redis_writer.py` on `main` is still the unconditional `SET` (confirmed — no `nx`
+anywhere), `schemas.py` has
+`DEGRADED_DATA_SOURCES = frozenset({"error_fallback", "empty_model_response"})` exactly as cited,
+`adapt.ts:872` has the `Object.keys(dims).length > 0` guard the ruling leans on, and the installed
+Upstash client (`apps/intent-engine/.venv/.../upstash_redis/commands.py:4611`) genuinely supports
+`set(..., nx=...)` — the mechanism the whole spec depends on is real, not assumed.
+
+**The ruling (architect, ADR-0020, PROPOSED — not self-ratified, see below):** a chat-intent
+extraction carrying no usable dimension (degraded _or_ successful-but-empty, e.g. "hi") must never
+neutralise an accumulated prior. Mechanism: `write_shadow_intent` branches into a plain `SET … EX`
+when dims are non-empty (unchanged) vs. a `SET … EX … NX` when they're empty — one atomic command,
+no GET, no Lua, no read-back, which structurally forecloses all four defects that killed PR #642's
+three reverted `/code-review` rounds (DIAGNOSTIC-ONLY breach, TTL refresh on non-new personal data,
+a second unvalidated write path, and a GET-then-SET race that Rule R's one-shot latch turns into
+permanent loss). Full reasoning, alternatives considered, and consequences in
+`docs/adr/ADR-0020-shadow-intent-write-admission.md`.
+
+**Applied verbatim on branch `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission`** (created
+immediately after the first file write landed on `main` by mistake — FOLLOW-448 branch guard caught
+it, no other work was stranded, see git log): new
+`docs/adr/ADR-0020-shadow-intent-write-admission.md`, `docs/adr/README.md` index row,
+`docs/MASTER_DESIGN.md` v4.3→v4.4 (version line + changelog + §D.1.1 body, explicitly marked "⚠️
+SPEC, NOT YET IMPLEMENTED AT HEAD"), `docs/INTERFACES.md` new "Chat-Intent Shadow Key Contract"
+entry, two new stubs in `backlog/FOLLOW_UPS.md` (**FOLLOW-736** implementation, P2, ml-engineer;
+**FOLLOW-737** missing shared-Zod-schema gap, P3, backend-engineer), the architect's own lessons.md
+entry, and the `backlog/HANDOFFS.md` note to ml-engineer. **Not applied as the architect's draft
+self-recommended:** flipping ADR-0020 `PROPOSED`→`ACCEPTED`. The architect itself flagged D1 as "a
+product tradeoff" and offered the PM the choice to leave it PROPOSED for Piotr — taken, since
+ratifying a product-tradeoff ADR is outside this role's scope (guardrails: "MUST NOT... make
+architectural calls"). **Left for Piotr: rule on ADR-0020 (flip to ACCEPTED, or amend D1) before
+FOLLOW-736 is dispatched** — noted, not escalated as a numbered ESC, since it doesn't block any
+other ticket and the architect's own draft made it optional-not-required for the ml-engineer
+follow-on to proceed if Piotr is comfortable with PM+architect Tier-2 ratification per
+`docs/adr/README.md` §Governance instead.
+
+**FOLLOW-736/737 filed, NOT dispatched.** Five ESCALATIONS remain OPEN (ESC-020, ESC-041, ESC-042,
+ESC-044, ESC-045) — per the operating loop, no NEW ticket is picked while escalations are open. This
+session's work was finishing already-in-flight FOLLOW-735 (Step 6/7 territory: collecting a paid-for
+draft and applying it), not picking new work, so it proceeded; FOLLOW-736 dispatch does not.
+
+**Retrospective for FOLLOW-730 (PR #642, merged `5a56ba62`) — still NOT run.** This is the other
+outstanding Step-7 item from the handoff and was not reached this session (FOLLOW-735 recovery/apply
+took the full session). Flagging explicitly rather than silently deferring again — next session must
+either run it first or explain why not.
+
+---
+
+### FOLLOW-735 — status: DONE (spec applied 2026-07-30, branch
+
+`pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission`, not yet a PR — see below)
+
+All 4 ACs met: (1) Q1 ruled — no, an empty extraction never neutralises a served prior — rationale
+in ADR-0020 §Decision D1; (2) full spec for questions 2-6 written as ADR-0020 D2-D7 plus a
+MASTER_DESIGN §D.1.1 patch (ADR chosen over a bare docs note per the ticket's own AC-2 branch,
+because the atomicity mechanism (`SET…NX`) and the cross-module/compliance contract made it
+non-trivial); (3) NOT implemented in this ticket — implementation handed to **FOLLOW-736**
+(ml-engineer), with the red test named (`test_degraded_payload_currently_still_overwrites_a_prior`);
+(4) the "what happens to `data_source`/`extraction_error`" question answered explicitly in ADR-0020
+D2/D6 — nothing, because there is no merged record; a preserved prior's record is untouched.
+
+**Still open, deliberately:** this branch has draft/doc content only, no PR opened yet — the PM does
+not open PRs for its own bookkeeping commits without a next actionable step attached. **Next
+session:** either fold this branch's commit into the FOLLOW-736 implementation PR (cleaner history —
+one PR carries both the accepted spec and its implementation), or open a docs-only PR for this
+branch standalone first. Recommend the former unless Piotr wants the ADR merged and visible before
+implementation starts.
+
+**Whoever ratifies ADR-0020 status must do it in the SAME commit as flipping the
+`docs/adr/README.md` index row** — do not let the two drift (this is exactly the kind of
+two-places-must-agree drift CONVENTIONS_PATCH already polices elsewhere).
+
+---
 
 **PR #642 (FOLLOW-730) independent re-validation this session — evidence pasted on the PR, not just
 in QUEUE.md.** Re-ran `gh pr checks 642` myself: 63 pass, the only failure is
@@ -64,7 +142,7 @@ sequencing changed:** RETRO-232 found 717 would _mask_ LG-2 rather than trigger 
 assumed — sequence **FOLLOW-727 before FOLLOW-717**. Full detail in `backlog/RETROSPECTIVES.md` →
 RETRO-232.
 
-### FOLLOW-735 — status: IN_PROGRESS
+### FOLLOW-735 — dispatch-time record (was: IN_PROGRESS, dispatched to architect — see DONE summary above for outcome)
 
 **Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-735` (full text, 6 ACs — P2, ~2h, design decision +
 short spec only, no implementation in this ticket). Filed this session (see note above — the prior

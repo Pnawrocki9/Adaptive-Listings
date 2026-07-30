@@ -4779,3 +4779,73 @@ on every touched file, conventional commit `[FOLLOW-609]`, push, open the PR (ne
 (does not take the PR's own claim on faith — same discipline as session 46's pre-dispatch
 verification), and confirms the store refactor didn't change agency-path behavior before marking
 READY_FOR_REVIEW.
+
+## FOLLOW-735 → FOLLOW-736 — shadow-key write-admission ruling handed to ml-engineer (2026-07-30)
+
+**From:** architect (FOLLOW-735, DRAFT-ONLY dispatch — spec returned in-response, applied by PM)
+**To:** ml-engineer (FOLLOW-736) **Blocking:** FOLLOW-736 must not start before **PR #642
+(FOLLOW-730) is merged** — it edits the `data_source` / `DEGRADED_DATA_SOURCES` code and the tests
+that PR introduces. (Note from PM applying this handoff: PR #642 merged 2026-07-30, `5a56ba62` on
+`main` — this dependency is now satisfied.)
+
+### The ruling (do not re-litigate — this was the point of routing to architect first)
+
+**A failed extraction never neutralises a served prior.** The shadow key keeps serving the last good
+read until a new good read replaces it or the 24h TTL expires it. A failure is a fact about our
+infrastructure, not about the buyer; staleness is already bounded by the TTL; and Rule R's one-shot
+`chatPriorApplied` latch makes a prior destroyed before that single read lost for the **whole
+session**, not one request. The rule is keyed on **content** (no usable dimension), not on
+`data_source` — so it also closes the neutral-success clobber ("hi", "thanks"), which is the more
+frequent real-world case.
+
+### The spec
+
+`docs/adr/ADR-0020-shadow-intent-write-admission.md` (D1-D7) + `docs/MASTER_DESIGN.md` §D.1.1
+"Shadow-key write-admission rule". Mechanism, in full: non-empty dims → `SET key value EX 86400`
+(unchanged); empty dims → `SET key value EX 86400 **NX**`. One command. **No GET, no Lua, no
+read-back** — which is precisely what makes the four defects of PR #642's rounds 1-3 structurally
+impossible rather than merely avoided: no race window, no TTL refresh on an existing key, no second
+write path beside `payload.model_dump()`, and no merged record whose `data_source` would describe
+someone else's dimensions.
+
+### Red test to flip
+
+**`test_degraded_payload_currently_still_overwrites_a_prior`**
+(`apps/intent-engine/src/test_intent_engine.py:484-509`, on `main` after PR #642 merges). Rename to
+`test_degraded_payload_does_not_overwrite_a_prior`, invert to `kwargs.get("nx") is True`, and strip
+the "deliberately red / states the gap" docstring. Its sibling
+`test_degraded_source_set_partitions_the_provenance_literal` (`:512-523`) must survive **untouched**
+— it is the guard that keeps the rule from being re-keyed onto provenance later.
+
+### Traps worth naming up front
+
+1. **`tax_aware: false` is NOT a signal.** The TS reader drops it (`chat-intent-cache.ts:182-184`).
+   If the Python predicate counts it, a payload the SDK sees as empty gets admitted as "good" and
+   clobbers a real prior — reintroducing the bug through the back door. Same for empty strings, and
+   same for any non-`str`/non-`bool` value (the TS flattener drops those too). Fixture-pinned in
+   AC-5.
+2. **`SET … NX` must carry `ex=ttl_seconds` too.** It is applied only when the key is actually
+   created; against an existing key the whole command is a no-op, which is exactly the TTL invariant
+   (ADR-0020 D4). Do not "optimise" it away.
+3. **`profiling_opt_out` stays the first statement** in `write_shadow_intent` (§H.9, FOLLOW-384) —
+   both branches sit downstream of it, and there is an AC-4(e) regression test for it.
+4. **Compliance docs are in scope** (AC-6): the C-07 Q3.1 retention sentence changes, and the
+   `redis_writer.py` line citations in C-07:209-218, dpia.md:269 and ropa.md:133 shift with this
+   edit. QUEUE.md:215 already records these citations going stale once on this exact file.
+5. **Do not extend scope.** Per-dimension merging and `detected_at` monotonic ordering are named
+   non-goals in ADR-0020 D7 (they need Lua, and nothing demonstrates the need). FOLLOW-730's stub
+   said "must NOT be over-fixed" and was over-fixed twice; the same warning applies here and is
+   load-bearing.
+
+### Not in scope
+
+`packages/sdk` (zero changes — Rule R already gates on non-empty dims), `apps/control-plane` source
+(a test file only), `nlp.py`, `main.py`, `local_dev.py`, `jobs/batch_enrich.py` (all three call
+sites unchanged by design), and the record schema itself (the missing shared-Zod mirror is
+FOLLOW-737, not this ticket).
+
+### Model recommendation
+
+**Sonnet.** The design ambiguity is resolved and the target shape is fully specified down to the
+function body; what remains is a small, well-bounded implementation plus tests and a doc sync.
+Escalate to Opus only if the cross-runtime fixture surfaces a parity case the ADR does not answer.

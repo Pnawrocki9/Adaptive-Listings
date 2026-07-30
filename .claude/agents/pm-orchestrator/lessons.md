@@ -2663,3 +2663,21 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
 - **A delegation/validation rule I'd add:** When an escalation's title looks broad, always read its
   full body for an explicit blocked-tickets list before treating every adjacent ticket as gated — a
   title-only read would have wrongly stalled the whole pipeline on ESC-044 a second time.
+
+- **Date / ticket:** 2026-07-30 — FOLLOW-735
+- **Delegation row used:** "a contract between two modules, a new dependency, an ADR" → architect
+  (this session did NOT dispatch — it recovered and applied an already-completed DRAFT-ONLY dispatch
+  from a prior session).
+- **What validation caught (or missed):** Before applying a draft-only architect output verbatim,
+  independently re-grepped its four most load-bearing technical claims against HEAD (unconditional
+  `SET` in `redis_writer.py`, `DEGRADED_DATA_SOURCES` contents, the `adapt.ts` empty-dims guard
+  line, and — most important — that the installed `upstash_redis` client actually supports
+  `set(..., nx=...)`, since the entire spec's atomicity claim depends on that one kwarg existing).
+  All four checked out, but the last one specifically is the kind of claim a lower-effort session
+  would take on faith from a well-written ADR — a hallucinated or version-mismatched client method
+  would have shipped a spec whose implementer discovers the mechanism doesn't exist only when
+  writing FOLLOW-736's code.
+- **A delegation/validation rule I'd add:** When applying a DRAFT-ONLY subagent's output (no Bash,
+  no PR, prose-only handoff), treat "the draft cites a library method as available" as a claim to
+  verify by reading the installed dependency's source directly — not just the draft's own self-check
+  checklist — before transcribing it into an ADR that will gate a future ticket's design.

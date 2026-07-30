@@ -134,7 +134,31 @@ git ops while a subagent runs."
 
 ---
 
-### FOLLOW-730 — status: READY_FOR_REVIEW → PR #642
+### FOLLOW-730 — status: DONE (PR #642 merged 2026-07-30 by Piotr, `5a56ba62` on `main`)
+
+**Merged.** A degraded chat extraction is now distinguishable from a genuinely no-signal buyer:
+`data_source` + `extraction_error` on the payload, a Sentry capture tagged for triage, and a
+local-only 502 instead of a healthy-looking 202. Three `/code-review` rounds (30 findings) ran
+against this PR before merge; all resolved, reverted or escalated.
+
+**One rider, deliberately not hidden in the status:** AC2's Sentry leg is implemented and tested but
+**inert in production** — `SENTRY_DSN` is absent from Doppler `prd` and `estalara-secrets`
+(**ESC-045 item 4**, operator action). The ticket is DONE rather than CODE_COMPLETE_OPERATOR_PENDING
+because its core deliverable — the marker reaching Redis and the 502 body — works with no operator
+action at all; only the alerting channel waits. That is a narrower gate than FOLLOW-729's, where the
+missing credentials made the whole shim unrunnable. If the retrospective disagrees with that call,
+downgrade it there.
+
+**Known gap, stated not implied:** a degraded all-null payload still overwrites an accumulated chat
+prior. Fixing it inside this ticket was attempted twice and reverted both times — see the round-3
+note below and **FOLLOW-735** (architect-first, dispatched). The red-stating test
+`test_degraded_payload_currently_still_overwrites_a_prior` is on `main` for whoever implements it.
+
+Retrospective for this ticket not yet run.
+
+---
+
+### FOLLOW-730 — merge-time record (was: READY_FOR_REVIEW → PR #642)
 
 **⚠️ Read this before validating: the usual worker/PM separation did NOT hold on this ticket.** The
 dispatched ml-engineer subagent terminated twice on a server-side `529 Overloaded` API error — once

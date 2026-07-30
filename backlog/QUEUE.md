@@ -44,11 +44,21 @@ to max out the cap.
 
 ---
 
-### FOLLOW-738 — status: IN_PROGRESS
+### FOLLOW-738 — status: READY_FOR_REVIEW — PR #644
 
 **Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-738` (6 ACs, verbatim — P1, 4h, RETRO-234-sourced).
 Read `backlog/ESCALATIONS.md` → ESC-045 item 4 (the correction: do NOT provision `SENTRY_DSN` before
 this lands) before starting.
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/644 (branch
+`devops-engineer/FOLLOW-738-hardened-sentry-init`). All 6 ACs addressed — shared
+`apps/intent-engine/src/observability.py` (Rule J mirrors in llm-gateway/jobs + data-quality/crons),
+all 4 sites adopted, `before_send` chat-intent scrub added, `scripts/check-sentry-init-singleton.sh`
+red-first CI guard wired into `ci.yml`, kept one shared `SENTRY_DSN` (AC-5, reasoning in PR body),
+**ESC-045 item 4 now UNBLOCKED** (AC-6). Local pytest green on all 3 touched apps (62/2 skip, 140,
+24), black+ruff clean on touched lines, Rule J mirror gate green, gitleaks unavailable locally
+(manual grep review clean, will run in CI). PM: verify CI green (incl. new
+`sentry-init-singleton-guard` job) before marking DONE, per `gh pr checks 644 --watch`.
 
 **assigned_to:** devops-engineer **model: Sonnet** — routine, well-scoped implementation: extract
 one shared initialiser, adopt it at 4 known call sites, add a CI guard in the style of an existing

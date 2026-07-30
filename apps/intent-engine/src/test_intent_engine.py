@@ -29,6 +29,7 @@ if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
 import nlp  # noqa: E402
+import observability  # noqa: E402
 from main import get_service_info  # noqa: E402
 from nlp import detect_language_mix, extract_intent  # noqa: E402
 from redis_writer import write_shadow_intent  # noqa: E402
@@ -323,7 +324,7 @@ def test_capture_extraction_error_is_noop_without_dsn(monkeypatch: pytest.Monkey
     fake_sentry = MagicMock()
     monkeypatch.delenv("SENTRY_DSN", raising=False)
     monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
-    monkeypatch.setattr(nlp, "_sentry_initialised", False)
+    monkeypatch.setattr(observability, "_sentry_initialised", False)
 
     nlp._capture_extraction_error(
         RuntimeError("boom"),
@@ -345,7 +346,7 @@ def test_capture_extraction_error_tags_kind_when_dsn_set(monkeypatch: pytest.Mon
     fake_sentry.new_scope.return_value.__enter__.return_value = scope
     monkeypatch.setenv("SENTRY_DSN", "sentry-dsn-placeholder")
     monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
-    monkeypatch.setattr(nlp, "_sentry_initialised", False)
+    monkeypatch.setattr(observability, "_sentry_initialised", False)
 
     exc = KeyError("ANTHROPIC_API_KEY")
     nlp._capture_extraction_error(
@@ -367,6 +368,9 @@ def test_capture_extraction_error_tags_kind_when_dsn_set(monkeypatch: pytest.Mon
     init_kwargs = fake_sentry.init.call_args.kwargs
     assert init_kwargs["include_local_variables"] is False
     assert init_kwargs["send_default_pii"] is False
+    # FOLLOW-738: the chat-intent-scrubbing before_send hook must be wired,
+    # not just documented.
+    assert init_kwargs["before_send"] is observability._scrub_chat_intent_exception_value
     # Short-lived Modal containers exit before the daemon transport thread ships:
     # the event must be flushed, not merely enqueued.
     fake_sentry.flush.assert_called_once()

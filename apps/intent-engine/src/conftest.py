@@ -83,10 +83,13 @@ def _no_live_sentry(monkeypatch: pytest.MonkeyPatch) -> None:
     first, so this only clears an inherited value.
 
     Also resets the module-level init latch so ordering cannot leak a `True`
-    from one test into another's assertions.
+    from one test into another's assertions. FOLLOW-738: the latch now lives
+    in observability.py (shared across all Python Modal apps), not nlp.py.
     """
     monkeypatch.delenv("SENTRY_DSN", raising=False)
-    if "nlp" in sys.modules:
-        monkeypatch.setattr(sys.modules["nlp"], "_sentry_initialised", False, raising=False)
+    if "observability" in sys.modules:
+        monkeypatch.setattr(
+            sys.modules["observability"], "_sentry_initialised", False, raising=False
+        )
     # Belt and braces: if some other layer re-reads the env directly.
     assert os.environ.get("SENTRY_DSN") is None

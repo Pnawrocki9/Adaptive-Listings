@@ -98,7 +98,6 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(json.loads(_CONTRACT_FIXTURE.read_te
 
 from jobs._app import _image, app  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Embed one listing via the control-plane internal endpoint
 # ---------------------------------------------------------------------------
@@ -187,12 +186,16 @@ def consume_embed_seed_requests() -> None:
         INTERNAL_API_SECRET               — x-internal-api-secret header value
     """
     import sentry_sdk  # imported inside function for Modal image compatibility
-
     from confluent_kafka import Consumer as KafkaConsumer  # type: ignore[import-untyped]
 
-    sentry_dsn = os.environ.get("SENTRY_DSN")
-    if sentry_dsn:
-        sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=0.0)
+    from jobs.observability import flush_sentry, init_sentry
+
+    # FOLLOW-738: hardened init (include_local_variables=False,
+    # send_default_pii=False, explicit integration list incl.
+    # AtexitIntegration) lives in jobs/observability.py, shared with the
+    # other two Python Modal apps. Lazy + DSN-gated: with SENTRY_DSN unset
+    # this is a deliberate no-op.
+    init_sentry("SENTRY_DSN")
 
     topic = os.environ.get("REDPANDA_TOPIC_LISTING_EMBEDDINGS", "estalara.listing-embeddings")
     group_id = os.environ.get("REDPANDA_EMBED_GROUP", "llm-gateway-embed-seed")
@@ -323,6 +326,11 @@ def consume_embed_seed_requests() -> None:
             embed_ok,
             embed_fail,
         )
+        # Belt to AtexitIntegration's braces (FOLLOW-738): a Modal container
+        # running a scheduled poll can be torn down hard enough that atexit
+        # hooks do not run. One bounded flush at the end of the batch, not
+        # per-capture inside the loop above (this can process many messages).
+        flush_sentry(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -390,9 +398,11 @@ def process_embed_seed_request(event: dict[str, Any]) -> None:
     """
     import sentry_sdk  # imported inside function for Modal image compatibility
 
-    sentry_dsn = os.environ.get("SENTRY_DSN")
-    if sentry_dsn:
-        sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=0.0)
+    from jobs.observability import flush_sentry, init_sentry
+
+    # FOLLOW-738: see consume_embed_seed_requests() above — same hardened,
+    # shared init.
+    init_sentry("SENTRY_DSN")
 
     embed_base_url: str = os.environ["EMBED_API_BASE_URL"]
     internal_secret: str = os.environ["INTERNAL_API_SECRET"]
@@ -438,6 +448,10 @@ def process_embed_seed_request(event: dict[str, Any]) -> None:
         embed_ok,
         embed_fail,
     )
+    # Belt to AtexitIntegration's braces (FOLLOW-738): this is a .spawn()'d
+    # fire-and-forget Modal function — the container can exit immediately
+    # after this call returns. One bounded flush at the end of the batch.
+    flush_sentry(0.3)
 
 
 @app.function(

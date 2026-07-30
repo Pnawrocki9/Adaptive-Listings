@@ -661,6 +661,25 @@ jobs:
       - name: Assert exactly one modal.App() instantiation in llm-gateway
         run: bash scripts/check-modal-app-singleton.sh
 
+  # ── Sentry init singleton guard (FOLLOW-738 / ESC-045 item 4) ───────────────
+  # Asserts that every sentry_sdk.init( call site across the Python Modal apps
+  # lives inside the shared hardened observability.py helper (or one of its
+  # Rule J mirrors), never a bare re-introduced call. See
+  # scripts/check-sentry-init-singleton.sh for the full ESC-045 rationale.
+  #
+  # Hard gate — no continue-on-error.
+  sentry-init-singleton-guard:
+    name: Sentry init singleton guard (FOLLOW-738)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Sentry init self-test (validates the gate itself)
+        run: bash scripts/check-sentry-init-singleton.sh --self-test
+
+      - name: Assert zero sentry_sdk.init( call sites outside observability.py
+        run: bash scripts/check-sentry-init-singleton.sh
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

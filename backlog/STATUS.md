@@ -1,4 +1,91 @@
-# Status — 2026-07-28 (session 77 — FOLLOW-715 promoted + dispatched to backend-engineer)
+# Status — 2026-07-30 (session 80 — PR #642 independently re-validated; FOLLOW-735 stub filed +
+
+dispatched to architect)
+
+## SESSION 80 (2026-07-30) — PR #642 re-validated, FOLLOW-735 filed and dispatched
+
+**State re-verified before doing anything:** `main` clean at `3f130bb8` matching the handoff.
+`gh pr list --state open` → PR #642 only (FOLLOW-730). `backlog/ESCALATIONS.md`: 3 `## OPEN` entries
+(ESC-042 item 1 narrowed, ESC-044, ESC-045) — all operator/CEO-gated per the standing 2026-07-27
+non-blocking-for-dispatch ruling, re-surfaced not re-litigated, consistent with prior sessions.
+Proceeded on that established basis.
+
+**PR #642 (FOLLOW-730) independently re-validated — evidence pasted directly on the PR, not
+transcribed from QUEUE.md's prose:**
+
+- CI (5b): `gh pr checks 642` → 63 pass, 2 fail (both `Rule I — wired-or-dead check`, duplicate job
+  entries). Pulled the job log myself (`gh api .../jobs/{id}/logs`): `Violations found : 192` on
+  this PR's run (job 90825006911) AND on `main`'s own latest CI run (job 90827261130) —
+  byte-identical, confirming pre-existing-red rather than trusting the queue's claim. Non-success
+  count for all REAL gates = **0**.
+- Runtime wiring (5c): fetched the PR branch directly (`git show origin/<branch>:<path>`) rather
+  than reading the PR body. Producer: `schemas.py` (`ChatIntentDataSource`, `data_source`,
+  `extraction_error`, `DEGRADED_DATA_SOURCES`); `nlp.py` stamps `data_source` at 4 call sites.
+  Consumer 1: `chat-intent-cache.ts`'s loose-parse `ShadowChatIntent` interface structurally ignores
+  the new top-level fields (read directly, confirmed). Consumer 2: `jobs/batch_enrich.py:48,59`
+  imports + branches on `DEGRADED_DATA_SOURCES` — real, non-test. Confirmed `redis_writer.py` has
+  zero references to the reverted clobber logic (matches the round-3 revert claim).
+- Scope: diff is `apps/intent-engine/*` (Python) + compliance docs + backlog bookkeeping only; the
+  lone `main.py` change adds `sentry-sdk` to the Modal image's `pip_install`, unrelated to the
+  archetype/spawn path.
+- Posted full evidence as a PR comment ending "PM-validated. CI green. Runtime wiring confirmed.
+  Ready for human review." **Not merged — Piotr's call.** Fix-iteration counter unchanged: 3/3, at
+  the guardrail; no further patches on this branch.
+
+**Gap found and corrected: FOLLOW-735 had never actually been filed.** The prior session's commit
+message claimed "file follow-735" but only `backlog/QUEUE.md` prose referenced it — no ticket stub
+existed in `backlog/FOLLOW_UPS.md`. Read the PR branch's reverted clobber-fix attempts and
+`test_degraded_payload_currently_still_overwrites_a_prior` directly to reconstruct the six design
+questions faithfully, then filed the real `## FOLLOW-735` stub (P2, architect, `depends_on: []`,
+`promoted_to_queue: true`).
+
+**FOLLOW-733 re-checked against #642's actual diff (per the handoff's own caution) before
+considering dispatch:** confirmed its four defects (stale "Placeholder/TICKET-013" header, falsified
+`ANTHROPIC_API_KEY`-500 claim, nonexistent `.dev.vars` reference, sync-vs-spawn consequence gap) are
+still present, unmodified, on the PR #642 branch — #642's README changes are additive documentation
+about the NEW 502 response, a different section. Not redundant; left undispatched (P3 < FOLLOW-735's
+P2) for a future session.
+
+**Ticket picked and dispatched: FOLLOW-735** (P2, `depends_on: []`) — directly serves Piotr's
+standing "100% localhost" priority (the exact chat→archetype shadow-key loop), outranks the P3
+siblings (731/732/733/734), and its own AC scopes it to a design decision + spec only (~2h), not a
+build. **Delegation-table row used:** "a contract between two modules, a new dependency, an ADR" →
+architect.
+
+**Model-fit:** architect dispatched with `model: opus` (explicit override of the agent definition's
+sonnet default) — justified as "ambiguous acceptance criteria, non-trivial design" per the model-fit
+table: the core AC is a product ruling (Q1) with compliance (C-07/ROPA/DPIA retention) and
+concurrency (atomicity, TTL, validation invariants) side-constraints, and 3 prior lower-effort
+attempts already got it wrong. Not escalated to Fable — single-domain, reversible (spec only), and
+PR-gated.
+
+**Tool-capability correction caught before dispatch:** the first draft of the delegation brief told
+architect to "open a PR" — wrong, per `docs/AGENT_WORKFLOW.md` "Agent tool-capability routing"
+(RETRO-168/174, FOLLOW-551), architect has no Bash tool. Corrected to draft-then-apply (option 2)
+before dispatching: architect returns spec text + insertion anchors only, PM applies afterward.
+Fixed in a second bookkeeping commit, still before dispatch — no concurrent git ops with the running
+subagent.
+
+**Bookkeeping commits (both BEFORE dispatch, per "no concurrent git ops with a running subagent"):**
+`cbbc29ba` (FOLLOW-735 stub + session header), `39f3603c` (tool-capability correction). Pushed to
+`origin/main` both times. Dispatched architect via
+`nohup claude --agent architect -p ... --model opus` after the second push; PID confirmed running
+via `ps -eo pid,lstart,cmd`.
+
+**CI-check counter (FOLLOW-730/PR #642):** 4/5. **Fix-iteration counter:** 3/3 — at the guardrail,
+no further rounds. **1 ticket IN_PROGRESS this session** (FOLLOW-735) — within the ≤3 guardrail.
+
+**3 escalations remain OPEN**, all non-blocking-for-dispatch per the standing ruling: ESC-042 item 1
+(Modal `intent-engine` operator deploy), ESC-044 (consent-hash placeholder + withdrawal-channel DPO
+ruling, items 1/3/5/6 still awaiting Piotr), ESC-045 (local chat-NLP shim credentials gap). Ages:
+ESC-042 open since 2026-07-24 (narrowed 2026-07-27); ESC-044 open since 2026-07-27, updated
+2026-07-28; ESC-045 opened this session's prior run, 2026-07-29 — still fresh, not yet stale.
+Surfaced again, not re-litigated.
+
+NEXT: Use the architect subagent on FOLLOW-735. (table row: a contract between two modules, a new
+dependency, an ADR)
+
+---
 
 ## SESSION 77 (2026-07-28) — FOLLOW-715 picked and dispatched
 

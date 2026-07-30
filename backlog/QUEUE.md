@@ -42,7 +42,29 @@ the `AGENT_WORKFLOW.md:171-181` recovery procedure). The remaining implementatio
 was run and is truthfully reported, but **PR #642's review is NOT independent** and should get a
 fresh reviewer or a `/code-review` pass before merge. Flagged rather than quietly absorbed.
 
-**CI-check counter:** 1/5. **Fix-iteration counter:** 0/3.
+**CI-check counter:** 2/5. **Fix-iteration counter:** 1/3.
+
+**Post-review fix round (2026-07-30, `943ebff7`).** `/code-review` at high effort (27 agents) was
+run BECAUSE of the collapsed separation flagged above, and it earned its keep: **10 distinct
+defects, 7 CONFIRMED**, most of them inside the ticket's own subject matter. All 10 fixed in one
+round; CI re-run: **63 pass, Rule I still exactly 192** (unchanged baseline). Suite 43 → **52
+passed**.
+
+The headline was that **the observability this ticket adds never reached an operator**: `sentry-sdk`
+was in `pyproject.toml` but NOT in `main.py`'s Modal image `pip_install`, so every capture raised
+`ModuleNotFoundError` in the deployed container and the helper's own guard swallowed it — a
+fail-silent observability bug shipped inside a ticket about fail-silent observability. The PR body's
+"wired-and-ready" claim was simply wrong. Also fixed: only ONE of the two degraded provenance values
+surfaced (`empty_model_response` still answered 202 with no log and no capture); the classifier
+caught only a literally-absent env var, bucketing blank/revoked keys and 429s into `other` because
+Anthropic's errors don't derive from `ValueError`; the suite shipped fabricated issues to a LIVE
+Sentry project whenever `SENTRY_DSN` was in the env (reproduced — 5 pending events — and this repo
+runs Python under `doppler run --`); a degraded payload overwrote a good chat prior while the batch
+cron reported `errors: 0`; the opt-out 502 pointed the operator at a key that was never written; and
+two contradictions between new code and its own neighbouring comments. **Rule AI** was satisfied
+separately: the two persisted fields are now in C-07, the privacy notice, ROPA, the DPIA and
+MASTER_DESIGN, and stale line-number citations invalidated by this diff were replaced with symbol
+references across six documents (incl. the Upstash parity runbook Piotr is pointed at).
 
 **PM validation of PR #642** (branch `ml-engineer/FOLLOW-730-extraction-error-marker`, +401/-6, 5
 files, all under `apps/intent-engine/src/`):

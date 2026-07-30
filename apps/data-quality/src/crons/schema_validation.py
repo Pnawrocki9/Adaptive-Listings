@@ -47,6 +47,8 @@ import sentry_sdk
 from bs4 import BeautifulSoup
 from confluent_kafka import Producer
 
+from crons.observability import flush_sentry, init_sentry
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -322,9 +324,7 @@ def _emit_redpanda_event(
         producer.produce(
             topic="estalara.schema",
             key=tenant_id.encode(),
-            value=json.dumps(
-                {"event_type": "schema_drift_detected", **payload}
-            ).encode(),
+            value=json.dumps({"event_type": "schema_drift_detected", **payload}).encode(),
         )
         producer.flush(timeout=5)
         logger.info("Emitted schema_drift_detected for tenant=%s domain=%s", tenant_id, domain)
@@ -349,18 +349,25 @@ async def validate_schemas() -> None:
     ``tenant_site_schemas``, fetches a sample listing page, validates all
     stored CSS selectors against the live HTML, and records the result.
     """
-    sentry_dsn = os.environ.get("SENTRY_DSN", "")
-    if sentry_dsn:
-        sentry_sdk.init(
-            dsn=sentry_dsn,
-            environment=os.environ.get("ENV", "production"),
-        )
+    # FOLLOW-738: hardened init (include_local_variables=False,
+    # send_default_pii=False, explicit integration list incl.
+    # AtexitIntegration) lives in crons/observability.py, shared with the
+    # other two Python Modal apps. Lazy + DSN-gated: with SENTRY_DSN unset
+    # this is a deliberate no-op. Dropped the previous `environment=` kwarg
+    # so this site is directly symmetric with the other three (Rule S) —
+    # nothing here reads it back.
+    init_sentry("SENTRY_DSN")
 
     conn = _get_db_connection()
     try:
         _run_validation(conn)
     finally:
         conn.close()
+        # Belt to AtexitIntegration's braces (FOLLOW-738): a scheduled Modal
+        # cron container can be torn down hard enough that atexit hooks do
+        # not run. One bounded flush at the end of the whole run, not per
+        # tenant (capture_message above may fire many times per run).
+        flush_sentry(0.3)
 
 
 def _run_validation(conn: "psycopg2.extensions.connection") -> None:
@@ -369,8 +376,7 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> None:
     Fetches active tenants + their site schemas, validates each, writes history.
     """
     with conn.cursor() as cur:
-        cur.execute(
-            """
+        cur.execute("""
             SELECT
                 t.id            AS tenant_id,
                 tss.domain      AS domain,
@@ -380,8 +386,7 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> None:
             JOIN tenant_site_schemas tss ON tss.tenant_id = t.id
             WHERE t.status = 'active'
             ORDER BY t.id, tss.domain
-            """
-        )
+            """)
         rows = cur.fetchall()
 
     if not rows:

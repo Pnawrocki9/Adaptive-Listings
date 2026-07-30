@@ -38,14 +38,14 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from observability import flush_sentry, init_sentry
 from schemas import ChatIntentDataSource, ChatIntentDetectedPayload, ChatIntentDimensions
 
-# Set once by _capture_extraction_error on the first captured failure (FOLLOW-730).
-# Nothing else in this app initialises sentry-sdk, so initialisation is lazy and
-# DSN-gated rather than at import time. The package must be listed in BOTH
-# pyproject.toml and main.py's Modal image pip_install — pyproject alone leaves
-# the capture dead in the deployed container.
-_sentry_initialised = False
+# FOLLOW-738: the hardened init + flush live in observability.py (shared,
+# mirrored by Rule J into the other two Python Modal apps) — see that
+# module's docstring for why. The package must be listed in BOTH
+# pyproject.toml and main.py's Modal image pip_install — pyproject alone
+# leaves the capture dead in the deployed container.
 
 # A single chat message: {"role": "user"|"assistant", "content": str}. Values are
 # typed as Any because callers pass plain dicts whose values are strings (and the
@@ -302,51 +302,17 @@ def _capture_extraction_error(
     Never raises: a telemetry failure must not turn a degraded extraction into a
     hard error on the production spawn path.
     """
-    dsn = os.environ.get("SENTRY_DSN")
-    if not dsn:
-        return
-
-    global _sentry_initialised
     try:
         import sentry_sdk
 
-        if not _sentry_initialised:
-            try:
-                from sentry_sdk.integrations.atexit import AtexitIntegration
-
-                integrations = [AtexitIntegration()]
-            except Exception:  # noqa: BLE001 — SDK layout changed; flush() below still covers us.
-                integrations = []
-
-            sentry_sdk.init(
-                dsn=dsn,
-                traces_sample_rate=0.0,
-                # C-07 / ROPA BOUNDARY — DO NOT REMOVE. Sentry's default
-                # include_local_variables=True serialises each frame's locals into
-                # the event, and the frames on this traceback hold `messages` (the
-                # buyer's raw chat text) and `raw_text` (the model response). That
-                # would ship the whole transcript to a third-party US processor,
-                # breaking the "no free text, no message content" assertion in
-                # docs/compliance/dpia.md, ropa.md and C-07 — a strictly larger
-                # disclosure than the exception-message echo those documents
-                # contemplate. send_default_pii is defaulted off, pinned here so a
-                # future edit has to argue with a comment before flipping it.
-                include_local_variables=False,
-                send_default_pii=False,
-                # This process is not a Sentry-instrumented service: initialising
-                # mid-request with the defaults would retroactively install
-                # LoggingIntegration (every ERROR log becomes an event) and the
-                # auto-enabling FastAPI/Starlette integration on an already-running
-                # container, burying the extraction issues the DSN was turned on
-                # for. AtexitIntegration is re-added explicitly because it is NOT
-                # noise: the realtime tier runs in a fire-and-forget Modal
-                # container that exits immediately after this call, and without an
-                # atexit flush the daemon transport thread is killed with the
-                # interpreter and the queued event never ships.
-                default_integrations=False,
-                integrations=integrations,
-            )
-            _sentry_initialised = True
+        # FOLLOW-738: hardened init (include_local_variables=False,
+        # send_default_pii=False, explicit integration list incl.
+        # AtexitIntegration, before_send scrub on this exact `area` tag) lives
+        # in observability.py, shared with the other two Python Modal apps.
+        # Lazy + DSN-gated: with SENTRY_DSN unset this is a deliberate no-op
+        # and the payload marker plus the log line remain the signals.
+        if not init_sentry("SENTRY_DSN"):
+            return
 
         with sentry_sdk.new_scope() as scope:
             scope.set_tag("area", "chat_intent")
@@ -373,7 +339,7 @@ def _capture_extraction_error(
         # rather than the extraction outage it was. At 0.3s the realtime cost is a
         # ~60% overshoot on an ALREADY-degraded call (the happy path never reaches
         # this line) and the batch tier can absorb ~1000 sessions.
-        sentry_sdk.flush(timeout=0.3)
+        flush_sentry(0.3)
     except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
         print(f"_capture_extraction_error failed: {telemetry_exc}")
 

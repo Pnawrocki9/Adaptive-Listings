@@ -34,6 +34,7 @@ from crons.schema_validation import (
     check_selectors,
     compute_coverage,
     extract_selectors,
+    validate_schemas,
 )
 
 # ---------------------------------------------------------------------------
@@ -279,7 +280,9 @@ class TestRunValidation:
         # Must write a history row with error
         conn.cursor.return_value.__enter__.return_value.execute.assert_called()
         execute_calls = conn.cursor.return_value.__enter__.return_value.execute.call_args_list
-        insert_calls = [c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)]
+        insert_calls = [
+            c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)
+        ]
         assert len(insert_calls) == 1
 
         # Verify the call args contain error string and drift_detected=False
@@ -333,9 +336,7 @@ class TestRunValidation:
         ):
             mock_client_instance = MagicMock()
             mock_http_cls.return_value.__enter__.return_value = mock_client_instance
-            mock_client_instance.get.return_value = MagicMock(
-                status_code=200, text=GOOD_HTML
-            )
+            mock_client_instance.get.return_value = MagicMock(status_code=200, text=GOOD_HTML)
 
             _run_validation(conn)
 
@@ -399,7 +400,9 @@ class TestRunValidation:
         mock_sentry.assert_not_called()
 
         execute_calls = conn.cursor.return_value.__enter__.return_value.execute.call_args_list
-        insert_calls = [c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)]
+        insert_calls = [
+            c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)
+        ]
         assert len(insert_calls) == 1
         insert_args = insert_calls[0][0][1]
         # execute args: (tenant_id, domain, coverage_score, failed_selectors,
@@ -440,3 +443,28 @@ class TestExtractSelectors:
         all_sel, required_sel = extract_selectors({})
         assert all_sel == []
         assert required_sel == []
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-738: validate_schemas() must go through the shared hardened Sentry
+# initialiser, not a bare sentry_sdk.init().
+# ---------------------------------------------------------------------------
+
+
+class TestValidateSchemasSentryInit:
+    async def test_uses_shared_hardened_init_and_flush(self) -> None:
+        with (
+            patch("crons.schema_validation._get_db_connection") as mock_get_conn,
+            patch("crons.schema_validation._run_validation") as mock_run,
+            patch("crons.schema_validation.init_sentry") as mock_init,
+            patch("crons.schema_validation.flush_sentry") as mock_flush,
+        ):
+            mock_conn = MagicMock()
+            mock_get_conn.return_value = mock_conn
+
+            await validate_schemas.local()
+
+        mock_init.assert_called_once_with("SENTRY_DSN")
+        mock_run.assert_called_once_with(mock_conn)
+        mock_conn.close.assert_called_once()
+        mock_flush.assert_called_once_with(0.3)

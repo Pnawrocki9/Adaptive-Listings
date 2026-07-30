@@ -142,3 +142,46 @@ def test_process_embed_seed_request_one_failure_does_not_abort_batch() -> None:
         process_embed_seed_request.local(_VALID_BODY)
 
     assert mock_embed.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-738: both Sentry init sites in this module must go through the
+# shared hardened helper (jobs.observability), not a bare sentry_sdk.init().
+# ---------------------------------------------------------------------------
+
+
+def test_process_embed_seed_request_uses_shared_hardened_init() -> None:
+    with (
+        patch("jobs.consume_embed_seed_requests._embed_one_listing"),
+        patch("jobs.observability.init_sentry") as mock_init,
+        patch("jobs.observability.flush_sentry") as mock_flush,
+    ):
+        process_embed_seed_request.local(_VALID_BODY)
+
+    mock_init.assert_called_once_with("SENTRY_DSN")
+    mock_flush.assert_called_once_with(0.3)
+
+
+def test_consume_embed_seed_requests_uses_shared_hardened_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jobs.consume_embed_seed_requests import consume_embed_seed_requests
+
+    monkeypatch.setenv("REDPANDA_BROKERS", "broker:9092")
+    monkeypatch.setenv("REDPANDA_SASL_USERNAME", "u")
+    monkeypatch.setenv("REDPANDA_SASL_PASSWORD", "p")
+
+    fake_consumer_cls = MagicMock()
+    fake_consumer = fake_consumer_cls.return_value
+    fake_consumer.poll.return_value = None  # no messages — exits on the 25s deadline
+
+    with (
+        patch("confluent_kafka.Consumer", fake_consumer_cls),
+        patch("jobs.observability.init_sentry") as mock_init,
+        patch("jobs.observability.flush_sentry") as mock_flush,
+        patch("time.monotonic", side_effect=[0.0, 26.0]),  # exit the poll loop immediately
+    ):
+        consume_embed_seed_requests.local()
+
+    mock_init.assert_called_once_with("SENTRY_DSN")
+    mock_flush.assert_called_once_with(0.3)

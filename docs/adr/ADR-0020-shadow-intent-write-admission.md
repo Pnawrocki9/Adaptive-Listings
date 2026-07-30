@@ -1,15 +1,18 @@
 # ADR-0020 — Shadow chat-intent key: write-admission rule (an empty extraction never clobbers a prior)
 
 **Status:** ACCEPTED (ratified by Piotr 2026-07-30 by merging PR #643 — D1 is a product ruling and
-merging the PR was the ratification act) **Date:** 2026-07-30 **Proposed by:** architect
-(FOLLOW-735) **Implementing ticket:** FOLLOW-736 (ml-engineer) — this ADR describes behaviour that
-is **NOT implemented at HEAD**; it is binding only when FOLLOW-736 merges. **Tickets:** FOLLOW-735
-(this decision), FOLLOW-730 / PR #642 (the reverted attempts), FOLLOW-736 (implementation),
-FOLLOW-737 (shared-Zod mirror gap, filed by this ADR). **Cross-references:** FOLLOW-087 (writer),
-FOLLOW-101 / FOLLOW-252 / Rule R (one-shot chat-prior latch), FOLLOW-346 + FOLLOW-635 (the key is
-live-influencing, not shadow), FOLLOW-384 / §H.9 (`profiling_opt_out`), FOLLOW-557 (DSR erase),
-MASTER_DESIGN §C.3, §C.4, §D.1.1, `docs/compliance/C-07-chat-retention-scope.md`,
-`docs/compliance/ropa.md` (line 133), `docs/compliance/dpia.md` (§269, §1350).
+merging the PR was the ratification act) — **AMENDED 2026-07-30 per FOLLOW-741:** §D6,
+Consequences/Negative bullet 1 and Alternatives item 5 corrected in place; factual corrections to
+implementation status only, D1-D5 and D7 byte-unchanged, no decision revisited. **Date:** 2026-07-30
+**Proposed by:** architect (FOLLOW-735) **Implementing ticket:** FOLLOW-736 (ml-engineer) — this ADR
+describes behaviour that is **NOT implemented at HEAD**; it is binding only when FOLLOW-736 merges.
+**Tickets:** FOLLOW-735 (this decision), FOLLOW-730 / PR #642 (the reverted attempts), FOLLOW-736
+(implementation), FOLLOW-737 (shared-Zod mirror gap, filed by this ADR). **Cross-references:**
+FOLLOW-087 (writer), FOLLOW-101 / FOLLOW-252 / Rule R (one-shot chat-prior latch), FOLLOW-346 +
+FOLLOW-635 (the key is live-influencing, not shadow), FOLLOW-384 / §H.9 (`profiling_opt_out`),
+FOLLOW-557 (DSR erase), MASTER_DESIGN §C.3, §C.4, §D.1.1,
+`docs/compliance/C-07-chat-retention-scope.md`, `docs/compliance/ropa.md` (line 133),
+`docs/compliance/dpia.md` (§269, §1350).
 
 ---
 
@@ -138,10 +141,29 @@ module source contains no `json.loads`, `.get(` or `.mget(`.
 There is **no merged record, no sibling field, no marker stitching**. When a prior is preserved the
 stored record is not touched, so **a record's `data_source` / `extraction_error` always describe the
 dimensions in that same record** — the record-level provenance integrity the reverted rounds broke.
-Degradation stays observable via (1) the Sentry capture FOLLOW-730 added on both the primary and
-retry paths, (2) the payload returned by `process_chat_message` / `local_dev`, and (3) the key
-itself on a cold session, where the `NX` write succeeds and stores the degraded record with its
-markers in full.
+Degradation is _designed_ to be observable via three channels. As corrected by FOLLOW-741
+(2026-07-30), only one of the three is real in production today: (1) **the Sentry capture FOLLOW-730
+added is currently inert in prod** — `SENTRY_DSN` is absent from Doppler `prd` and from the Modal
+`estalara-secrets` secret (ESC-045 item 4), and provisioning it is presently **blocked by
+FOLLOW-738** (the same bare env name would activate two unhardened Sentry inits in other apps); (2)
+**the payload returned by `process_chat_message` / `local_dev` does not exist in prod** — `main.py`
+calls `process_chat_message.spawn(...)` fire-and-forget and returns `202`; nothing ever calls
+`.get()` on the result. This channel is real only for `local_dev.py`, which is never deployed. (3)
+**the key itself on a cold session is real** — the `NX` write succeeds and stores the degraded
+record with its markers in full — but it only covers a session's first message, i.e. exactly the
+case where there is no prior to lose. Closing channels (1) and (2) is FOLLOW-740's scope, not this
+ADR's.
+
+**Blind-window acceptance (dated, FOLLOW-741, 2026-07-30).** FOLLOW-736 (the write-admission
+implementation, D1-D5) is accepted to merge and ship while channels (1) and (2) remain blind. The
+correctness fix (a suppressed degraded write no longer destroys a good prior) is a strict
+improvement over the pre-FOLLOW-736 status quo, in which the same class of event was equally
+invisible AND actively destructive; FOLLOW-736 removes the destructive half unconditionally, and the
+observability gap is a pre-existing condition, not a new regression it introduces. The window closes
+when FOLLOW-740 lands a non-Sentry consumer of the preserved-vs-suppressed signal, or,
+independently, when FOLLOW-738 unblocks `SENTRY_DSN` provisioning — whichever lands first. Until
+then, an operator has no per-session channel to see how often a degraded write was suppressed; this
+must not be read as "it never happens."
 
 Rule R is unaffected: the latch arms only on `Object.keys(dims).length > 0` (`adapt.ts:868-880`), so
 a degraded record on a cold key (which flattens to `{}`) cannot consume it. **No SDK change and no
@@ -167,9 +189,14 @@ _good_ writes is the pre-existing semantics and is unchanged.
 
 **Negative**
 
-- On a session that already has a prior, the degraded record is not persisted anywhere in Redis; the
-  operator must look at Sentry. Accepted — the shared cache is not an observability store, and
-  treating it as one is what broke the DIAGNOSTIC ONLY contract in PR #642.
+- On a session that already has a prior, the degraded record is not persisted anywhere in Redis, and
+  — as of this writing (FOLLOW-741, 2026-07-30) — the operator has **no working channel to see it
+  either**: the Sentry capture is inert in prod (`SENTRY_DSN` unset, provisioning blocked by
+  FOLLOW-738) and the `process_chat_message`/`local_dev` return payload is never read in prod
+  (fire-and-forget `.spawn()`). Accepted as a **named, dated blind window** (see D6) — the shared
+  cache is not an observability store, and treating it as one is what broke the DIAGNOSTIC ONLY
+  contract in PR #642 — but the window closes only when FOLLOW-740 lands a non-Sentry consumer or
+  FOLLOW-738 unblocks `SENTRY_DSN`, not merely by this acceptance.
 - A preserved prior can be up to 24 h old while the buyer is actively (but unextractably) chatting.
   Bounded by the same TTL that already governs.
 - Two write branches instead of one; parity with the TS flattener is now a maintained contract.
@@ -204,7 +231,11 @@ No schema change, no migration, no stored-data shape change, no consumer change.
 5. **Two keys — `…:chat_intent` (last good) plus `…:chat_intent_last_attempt` (rejected).** Gives
    perfect visibility, but doubles the retention surface and the DSR erase path
    (`deleteShadowChatIntent`, FOLLOW-557), needs a control-plane read change, and adds a personal-
-   data key whose only consumer is an operator — Sentry already serves that consumer for free.
+   data key whose only consumer is an operator. This alternative was rejected partly on the
+   assumption that Sentry already served that operator-consumer for free — per FOLLOW-741
+   (2026-07-30) that assumption does not currently hold either (`SENTRY_DSN` is unset in prod,
+   provisioning blocked by FOLLOW-738); the rejection stands on the retention-surface and DSR-erase
+   costs alone.
 
 ## References
 

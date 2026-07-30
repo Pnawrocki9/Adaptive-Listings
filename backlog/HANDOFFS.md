@@ -4836,6 +4836,17 @@ the "deliberately red / states the gap" docstring. Its sibling
    non-goals in ADR-0020 D7 (they need Lua, and nothing demonstrates the need). FOLLOW-730's stub
    said "must NOT be over-fixed" and was over-fixed twice; the same warning applies here and is
    load-bearing.
+6. **ADR-0020 §D6's three visibility channels are not all real in prod (FOLLOW-741, 2026-07-30).**
+   Channel 1 (Sentry capture) is currently inert — `SENTRY_DSN` is absent from Doppler `prd` and the
+   Modal `estalara-secrets` secret, and provisioning it is blocked by FOLLOW-738 (the same bare env
+   name would activate two unhardened Sentry inits elsewhere). Channel 2 (the `process_chat_message`
+   / `local_dev` return payload) does not exist in prod — `main.py` calls `.spawn()` fire-and-forget
+   and returns 202; nothing ever calls `.get()`. Only channel 3 (the key itself on a cold session)
+   is real, and it only covers a session's first message. **Do not write a test, comment, or PR
+   description that assumes an operator can currently see a suppressed degraded write via Sentry or
+   the chat response body** — they cannot, until FOLLOW-740 lands a non-Sentry consumer (or
+   FOLLOW-738 unblocks `SENTRY_DSN`). This is an accepted, dated blind window (ADR-0020 D6), not a
+   blocker for this ticket.
 
 ### Not in scope
 

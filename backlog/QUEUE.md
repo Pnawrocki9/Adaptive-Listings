@@ -42,7 +42,40 @@ the `AGENT_WORKFLOW.md:171-181` recovery procedure). The remaining implementatio
 was run and is truthfully reported, but **PR #642's review is NOT independent** and should get a
 fresh reviewer or a `/code-review` pass before merge. Flagged rather than quietly absorbed.
 
-**CI-check counter:** 2/5. **Fix-iteration counter:** 1/3.
+**CI-check counter:** 3/5. **Fix-iteration counter:** 2/3.
+
+**Second review round (2026-07-30, `ccec445d`).** A second `/code-review` at high effort was run on
+the FIXES from round 1, because those were written by the same single actor too. It found **10 more
+defects, 4 of them created by the round-1 fixes** — evidence that one adversarial pass over
+single-actor work is not enough. All fixed; CI re-run: **63 pass, Rule I still 192**. Suite 52 →
+**55 passed**.
+
+**The serious one was a compliance breach.** `sentry_sdk.init` kept the default
+`include_local_variables=True`, so `capture_exception` attached the frames of
+`extract_intent`/`_call_model`/`_parse_response` — whose locals hold `messages` (raw buyer chat
+text) and `raw_text` — shipping the transcript to a third-party US processor. That directly
+contradicts the "no free text, no message content" assertion in `dpia.md`, `ropa.md` and C-07
+**which this same PR edits**. Now `include_local_variables=False` + explicit
+`send_default_pii=False`, pinned by a test. Note the shape of this: the round-1 fix that ADDED
+working Sentry delivery is what turned a dormant default into a live disclosure — a fix creating a
+compliance exposure, caught only because the round-2 brief told reviewers to attack the fixes
+themselves.
+
+Also fixed: the multilingual retry's EMPTY-response arm still fell through unmarked (same
+fail-green, one branch over); the don't-clobber guard **hid the marker it exists to surface**
+(mid-outage an operator running `GET` saw a healthy payload) — degraded writes now MERGE the marker
+onto the prior so dims survive AND the failure shows; that guard was a non-atomic GET-then-SET
+racing per-message Modal containers, so the no-prior case is now a single `SET … NX`; `empty_input`
+was outside the guard set despite identical all-null dims (split into `_ALL_NULL_SOURCES` vs
+`_DEGRADED_SOURCES`); `default_integrations=False` had also dropped `AtexitIntegration`, so events
+queued in a fire-and-forget container died with it (re-added + bounded `flush()`); `batch_enrich`
+re-typed the degraded set as a literal (now imported); the README misread
+`shadow_key_written: false`; and C-07 kept three line citations this PR's own +6 shift invalidated.
+
+**One finding NOT fixed, deliberately: `SENTRY_DSN` is absent from Doppler `prd` and
+`estalara-secrets`** (Rule AJ half-wire), so this alerting cannot fire in prod at all. Provisioning
+a secret is an operator action, so it is escalated as **ESC-045 item 4** rather than shipped as if
+live; the README says the same.
 
 **Post-review fix round (2026-07-30, `943ebff7`).** `/code-review` at high effort (27 agents) was
 run BECAUSE of the collapsed separation flagged above, and it earned its keep: **10 distinct

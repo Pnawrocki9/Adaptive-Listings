@@ -1,6 +1,144 @@
 # Backlog Queue
 
-## ▶️ START HERE — resume 2026-07-30 (session 81 — FOLLOW-735 architect draft recovered from a
+## ▶️ START HERE — resume 2026-07-30 (session 82 — FOLLOW-742 closed stale, FOLLOW-738 (devops) +
+
+FOLLOW-741 (architect, draft-only) dispatched; FOLLOW-736 held pending FOLLOW-741's amendment; 5
+open ESCALATIONS unchanged, none newly blocking)
+
+**State re-verified before doing anything:** `git status` clean, `main` at `06553402`
+(`docs(adr): ratify adr-0020 - accepted via pr #643 merge [FOLLOW-735]`), matching the session-81
+handoff exactly. `gh pr list --state open` → empty. `ps -eo pid,lstart,cmd | grep 'claude --agent'`
+and `.claude/worktrees/` → both empty, nothing stranded to recover.
+`ls /tmp/claude-1000/.../scratchpad/dispatch_logs/` → `follow735_architect.log` and
+`retro730_analyst.log`, both already consumed (session 81/82 handoff confirms FOLLOW-735 applied and
+RETRO-234 committed) — no unread paid-for work sitting in a log.
+
+**Escalation gate re-applied, with the handoff's correction.** 5 `## OPEN` entries remain (ESC-020,
+ESC-041, ESC-042-narrowed, ESC-044, ESC-045) — all still blocked on a human/operator action named in
+each entry, none newly arrived. Per the standing instruction (step 1) that would normally stop all
+new dispatch; the handoff for this session named the specific exception that applies: **FOLLOW-738
+is not competing new scope, it is ESC-045 item 4's own named remediation** ("land FOLLOW-738 FIRST
+and then provision the DSN — recommended", verbatim from ESC-045's own text). Dispatching it
+_removes_ a blocker rather than adding scope alongside open escalations, so it proceeds on the same
+reasoning sessions 59-76 used for ESC-020/041/042 (surfaced every close, non-blocking-for-dispatch
+once the ticket itself targets the blocker). FOLLOW-741 is dispatched alongside it for a narrower
+reason: it is not escalation-clearing, but its own `blocks:` field says plainly that FOLLOW-736 (the
+next item in this exact chain) must not be dispatched before FOLLOW-741 lands, so leaving it
+unstarted just stalls the chain one more session for a 1-hour architect doc correction. Both are
+within the ≤3 concurrent-tickets guardrail (2 of 3).
+
+**FOLLOW-742 closed as stale, not dispatched.** Its own premise ("FOLLOW-736/737 exist only on an
+unmerged branch") was falsified by PR #643 merging that branch before this session started — see
+`backlog/FOLLOW_UPS.md` → `## FOLLOW-742` for the closure note and the Rule-AN registry audit run in
+its place (FOLLOW/RETRO/ESC/ADR max-number sweep, no gaps or dupes found). The stale NUMBERING NOTE
+above `## FOLLOW-738` was corrected in the same commit.
+
+**Not picked this session, and why:** FOLLOW-736 itself (ready in principle —
+`depends_on: [FOLLOW-730 merged]` is satisfied — but its own sibling ticket FOLLOW-741 explicitly
+blocks its _dispatch_, not just its merge, until the ADR's visibility claims are corrected;
+dispatching it now would mean an ml-engineer implementing against a design doc RETRO-234 already
+proved wrong in §D6). FOLLOW-739 (P1, compliance-engineer) — `depends_on: [FOLLOW-738]`, its
+`before_send` control does not exist yet. FOLLOW-740 (P2, ml-engineer) — no hard dependency, but
+lower priority than 738/741 and would push this session to 3 concurrent tickets with no clear reason
+to max out the cap.
+
+---
+
+### FOLLOW-738 — status: IN_PROGRESS
+
+**Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-738` (6 ACs, verbatim — P1, 4h, RETRO-234-sourced).
+Read `backlog/ESCALATIONS.md` → ESC-045 item 4 (the correction: do NOT provision `SENTRY_DSN` before
+this lands) before starting.
+
+**assigned_to:** devops-engineer **model: Sonnet** — routine, well-scoped implementation: extract
+one shared initialiser, adopt it at 4 known call sites, add a CI guard in the style of an existing
+script (`scripts/check-modal-app-singleton.sh`). No ambiguous acceptance criteria, no cross-module
+contract change, no prior failed attempt at this exact scope — mechanical hardening + CI-fix tier
+per the model-fit table, not Opus-tier judgement. **started_at:** 2026-07-30. **branch:**
+`devops-engineer/FOLLOW-738-hardened-sentry-init` (worker creates on start).
+
+**Delegation brief (sent to devops-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-738`, verbatim, 6 ACs. Read `docs/MASTER_DESIGN.md`
+  §Snapshot.1 first (per OPERATING_PRINCIPLES Rule 1), then `CONVENTIONS_PATCH.md` Rules S, AE, AJ,
+  AN (cited in the ticket's cross_ref) for the conventions this PR must not violate.
+- Read the 4 existing init sites named in the ticket table before writing anything:
+  `apps/intent-engine/src/nlp.py:337-368` (the ALREADY-hardened one — match its behaviour, including
+  the `AtexitIntegration` + bounded `flush(0.3)`, do not regress it),
+  `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:159-395`,
+  `apps/data-quality/src/crons/schema_validation.py:342-357`, and
+  `scripts/check-modal-app-singleton.sh` (the CI-guard style to mirror for AC-4).
+- **Hard scope limits.** Out of scope, do not touch: `apps/control-plane`'s TS Sentry config
+  (`sentry.server.config.ts`) — name it as deferred in the PR; the shadow-key write path
+  (FOLLOW-736); anything in `nlp.py` other than the init call. Do not implement the compliance-doc
+  reconciliation (`ropa.md`/`dpia.md`) — that is FOLLOW-739, coordinate only by citing the new
+  helper's symbol name in your PR description so that ticket can reference it.
+- AC-4's CI guard must be red-first: commit a fixture that reintroduces a bare `sentry_sdk.init(`
+  outside the helper, show the guard catching it, then remove the fixture in a later commit (or use
+  a temp/test file) — show both states in the PR body.
+- AC-5 (per-app DSN names vs. one shared bare `SENTRY_DSN`) is a real decision point, not a
+  formality: state your reasoning either way in the PR; if you choose per-app names, update
+  `.env.example:70` and say explicitly what ESC-045 item 4's operator instruction becomes.
+- AC-6: state explicitly, in the PR description, whether ESC-045 item 4 (provisioning `SENTRY_DSN`)
+  is now safe to action, or what still blocks it. This sentence is what the PM will quote back into
+  ESC-045.
+- Completion: open a PR (never commit to `main`). Before push: `pytest src/` for every touched
+  Python app mirroring CI's per-app `Test (Python)` steps, black + ruff on every touched Python
+  file, and the repo's `pnpm lint`/`typecheck`/`test` only if any non-Python file is touched;
+  gitleaks against the diff. Conventional commit referencing `[FOLLOW-738]`, lowercase subject,
+  header ≤100 chars. `Rule I — wired-or-dead` is pre-existing-red on `main` — reconfirm on YOUR PR's
+  own run rather than assuming, and make sure the new helper's call sites all count as "wired" (a
+  producer AND a consumer) so it does not become a new violation.
+
+**Delegation-table row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks" →
+devops-engineer.
+
+---
+
+### FOLLOW-741 — status: IN_PROGRESS (draft-only — architect has no Bash, per
+
+`docs/AGENT_WORKFLOW.md` "Agent tool-capability routing")
+
+**Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-741` (5 ACs, verbatim — P2, 1h, RETRO-234-sourced).
+Read `docs/adr/ADR-0020-shadow-intent-write-admission.md` §D6 + Consequences ("Negative") +
+Alternatives §4 (the three passages this ticket corrects) and `backlog/ESCALATIONS.md` → ESC-045
+item 4 first.
+
+**assigned_to:** architect **model: Sonnet** — this is a factual correction to an already-ratified
+document (three visibility-channel claims proven false by RETRO-234, re-verified independently by
+this session against `main.py:157-166` and `modal-deploy.yml:90`), not new design reasoning;
+D1-D5/D7 are explicitly out of scope (AC-5). Docs-correction tier per the model-fit table, not
+Opus-tier judgement. **started_at:** 2026-07-30. **Mode: DRAFT-ONLY** (option 2, per
+`docs/AGENT_WORKFLOW.md` "Agent tool-capability routing") — architect reads, drafts the exact
+replacement text for §D6/Consequences/Alternatives §4 plus the `backlog/HANDOFFS.md` "FOLLOW-735 →
+FOLLOW-736" entry update, and makes **no** `Edit`/`Write`/git call. The PM applies the draft in a
+follow-up commit once collected (same pattern as the FOLLOW-735 draft this session's predecessor
+recovered and applied). No branch is created by architect for this ticket.
+
+**Delegation brief (sent to architect, draft-only):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-741`, verbatim, 5 ACs. Read `docs/MASTER_DESIGN.md`
+  §Snapshot.1 first, then `CONVENTIONS_PATCH.md` (all rules — this session's own bookkeeping cites
+  Rules AJ/Y/K.2/AN, but read the whole file per standing instruction).
+- Do NOT re-open D1 (the write-admission ruling itself) or D2-D5/D7. This ticket corrects ONLY the
+  three visibility-channel claims in §D6, the "Negative" consequences bullet, and Alternatives §4.
+- AC-3 is the real judgement call: decide and record whether FOLLOW-736 may merge while the Sentry
+  channel is still blind (pending FOLLOW-738), OR add an explicit AC to FOLLOW-736 requiring
+  FOLLOW-740's non-Sentry consumer to land first. State your reasoning; either answer is acceptable
+  if it is explicit and dated, per the ticket's own wording.
+- Output format: for each of the 4 target edits (ADR §D6, ADR Consequences, ADR Alternatives §4,
+  `backlog/HANDOFFS.md` entry), give the exact current text (verbatim quote) and the exact
+  replacement text, plus a one-line rationale. No prose summary in place of the actual text — the PM
+  applies your literal replacement, not a paraphrase of it.
+- This is DRAFT-ONLY: you have no Bash tool and must not attempt `git`, branch creation, or a PR.
+  Return the draft as your final message.
+
+**Delegation-table row used:** "a contract between two modules, a new dependency, an ADR" →
+architect.
+
+---
+
+## Session 81 (2026-07-30) — FOLLOW-735 architect draft recovered from a
 
 nohup dispatch log and applied; FOLLOW-735 DONE; FOLLOW-736/737 filed, NOT dispatched — 5 open
 ESCALATIONS still block picking a new ticket)

@@ -22122,11 +22122,22 @@ interface"]
 
 ---
 
-> **NUMBERING NOTE (RETRO-234 §6 / Rule AN).** `FOLLOW-736` and `FOLLOW-737` are **TAKEN** — they
-> were filed by the architect's FOLLOW-735 draft and exist only on the unmerged branch
-> `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` (commit `0f2a033e`, no PR). They are
-> **not** in this file on `main`. Do NOT reallocate 736/737. RETRO-234 therefore allocated from 738.
-> FOLLOW-742 exists to land or reserve them before a third duplicate is minted.
+> **NUMBERING NOTE — UPDATED 2026-07-30 (session 82), superseding the RETRO-234 §6 / Rule AN note
+> below.** `FOLLOW-736` and `FOLLOW-737` are now **on `main`**: PR #643 (`0fd34dd7`) merged the
+> architect's FOLLOW-735 draft, including both stubs above, ahead of RETRO-234's own commit
+> (`98995760`) — both are present in this file on `main` as of this commit
+> (`grep -c "^## FOLLOW-736\|^## FOLLOW-737" backlog/FOLLOW_UPS.md` → 2). The branch
+> `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission` this note originally pointed at is
+> merged history, not a pending duplicate risk. Do not reallocate 736/737 — they are real tickets,
+> not reservations. FOLLOW-742 (below) is closed as stale on this basis; see its entry for the
+> Rule-AN registry audit this note's own AC-4 required.
+>
+> _Original RETRO-234 §6 / Rule AN note (2026-07-30, now stale — kept for the audit trail):_
+> "`FOLLOW-736` and `FOLLOW-737` are **TAKEN** — they were filed by the architect's FOLLOW-735 draft
+> and exist only on the unmerged branch `pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission`
+> (commit `0f2a033e`, no PR). They are **not** in this file on `main`. Do NOT reallocate 736/737.
+> RETRO-234 therefore allocated from 738. FOLLOW-742 exists to land or reserve them before a third
+> duplicate is minted."
 
 ---
 
@@ -22134,7 +22145,8 @@ interface"]
 
 source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: now
 recommended_agent: backend-engineer (or devops-engineer) priority: P1 estimated_hours: 4 depends_on:
-[] blocks: [ESC-045 item 4] promoted_to_queue: false
+[] blocks: [ESC-045 item 4] promoted_to_queue: true (session 82, dispatched to devops-engineer — see
+backlog/QUEUE.md)
 
 **The gap, measured not assumed.** All four Python/Modal Sentry surfaces read the **bare**
 `SENTRY_DSN` name, and all three Modal apps mount the **same** secret
@@ -22300,7 +22312,8 @@ FOLLOW-736, FOLLOW-738]
 
 source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-735 / ADR-0020
 recommended_sprint: next recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: []
-blocks: [FOLLOW-736 dispatch] promoted_to_queue: false
+blocks: [FOLLOW-736 dispatch] promoted_to_queue: true (session 82, dispatched to architect,
+draft-only per docs/AGENT_WORKFLOW.md tool-capability routing — see backlog/QUEUE.md)
 
 **This ticket does NOT re-open ADR-0020's D1 ruling.** RETRO-234 §5b independently re-derived the
 ruling and the `SET … NX` mechanism and found them correct — and a strict superset of the gap, since
@@ -22349,11 +22362,31 @@ FOLLOW-740, FOLLOW-742; ESC-045 item 4; `apps/intent-engine/src/main.py:157-166`
 
 ---
 
-## FOLLOW-742 — FOLLOW-736 and FOLLOW-737 exist only on an unmerged branch, so `main`'s next-free number is 736 and a third duplicate is one session away
+## FOLLOW-742 — status: CLOSED STALE (2026-07-30, session 82) — FOLLOW-736 and FOLLOW-737 exist only on an unmerged branch, so `main`'s next-free number is 736 and a third duplicate is one session away
 
 source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-735 recommended_sprint: now
 recommended_agent: pm-orchestrator priority: P2 estimated_hours: 1 depends_on: [] promoted_to_queue:
 false
+
+**Closed as stale, not actioned as written.** AC-1 asked to "land the branch — open a PR for
+`pm-orchestrator/FOLLOW-735-adr-0020-shadow-write-admission`... or fold it into FOLLOW-736's
+implementation PR." That branch was already merged as **PR #643** (`0fd34dd7`, same day, before this
+stub was even read) — independently, not because of this ticket. So AC-1 is satisfied by an event
+outside this ticket's own action, and AC-2/AC-3 ("reservation" bookkeeping for numbers that are
+still unmerged) no longer apply: 736/737 are ordinary merged tickets on `main`, not a reservation.
+Re-writing AC-1-3 to fit the as-happened order would just be describing the merge after the fact —
+no value in promoting this to QUEUE.md as an active ticket.
+
+**AC-4 (the actual audit) — done here instead of as a separate dispatch, since it is cheap.**
+`grep -c "^## FOLLOW-" backlog/FOLLOW_UPS.md` → next-free is 743 (738-742 filed this file, all
+present, no gaps, no dupes). `grep -c "^## RETRO-" backlog/RETROSPECTIVES.md` → max is RETRO-234, no
+higher number seen on any local or remote branch (`git branch -a` / `git ls-remote --heads origin`
+swept, session 82). `grep -c "ESC-0" backlog/ESCALATIONS.md` → max is ESC-045, sequential, no gaps.
+`ls docs/adr/` → max is ADR-0020, sequential. No other branch (local or `origin`) carries a
+higher-numbered stub for any of the four registers as of this check. Rule AN holds.
+
+**Superseded the stale NUMBERING NOTE** above FOLLOW-738 in the same commit that closes this ticket
+— see that note for the correction.
 
 **State, verified.** `grep "^## FOLLOW-" backlog/FOLLOW_UPS.md` on `main` maxes at **735**.
 `FOLLOW-736` (ml-engineer implementation of ADR-0020) and `FOLLOW-737` (the missing shared-Zod

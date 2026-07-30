@@ -1,6 +1,80 @@
-# Status — 2026-07-30 (session 81 — FOLLOW-735 architect draft recovered + applied; FOLLOW-736/737
+# Status — 2026-07-30 (session 82 — FOLLOW-742 closed stale; FOLLOW-738 (devops) + FOLLOW-741
 
-filed, not dispatched; 5 ESCALATIONS open, FOLLOW-730 retro still outstanding)
+(architect, draft-only) dispatched; FOLLOW-736 held pending FOLLOW-741; 5 ESCALATIONS open,
+unchanged)
+
+## SESSION 82 (2026-07-30) — FOLLOW-738 + FOLLOW-741 dispatched, FOLLOW-742 closed stale
+
+**State re-verified before doing anything:** `git status`/`git log -20` match the session-81 handoff
+exactly (`main` at `06553402`). `gh pr list --state open` → empty. No `claude --agent` process
+running, `.claude/worktrees/` empty — nothing stranded. `backlog/ESCALATIONS.md`: 5 `## OPEN`
+entries (ESC-020, ESC-041, ESC-042-narrowed, ESC-044, ESC-045), unchanged from session 81.
+
+**Escalation-gate judgement call, made explicitly rather than defaulting to "stop":** the standing
+loop says no new ticket while escalations are open. ESC-045 item 4's own text names FOLLOW-738 as
+its recommended remediation ("land FOLLOW-738 FIRST... recommended") — dispatching it removes a
+named blocker rather than adding independent new scope, so it proceeds under the same reasoning
+already applied to ESC-020/041/042 across sessions 59-76. FOLLOW-741 is dispatched alongside for a
+narrower, non-escalation reason: its own `blocks:` field names FOLLOW-736's _dispatch_ (not just its
+merge) as gated on this ticket landing first, and it is a 1-hour architect doc correction — holding
+it back would stall the FOLLOW-736 chain for no benefit.
+
+**FOLLOW-742 closed as stale.** Verified directly: `git show 0fd34dd7 --stat` (PR #643 merge) added
+FOLLOW-736/737 to `backlog/FOLLOW_UPS.md` on `main` at 2026-07-30T20:21, before the RETRO-234 commit
+(`98995760`, 20:22) that filed FOLLOW-742 itself — so FOLLOW-742's premise ("736/737 exist only on
+an unmerged branch") was already false the moment it was written. Closed with a note rather than
+promoted to QUEUE.md; ran its AC-4 registry audit in the closure note instead (FOLLOW/RETRO/ESC/ADR
+max-number sweep across `main`, all local branches, and `origin` — no gaps or dupes found, Rule AN
+holds). Corrected the now-stale NUMBERING NOTE above `## FOLLOW-738` in the same commit.
+
+**Bookkeeping committed BEFORE dispatch** (no concurrent git ops with a running subagent, per
+`feedback_no_concurrent_git_with_subagents`): one commit touching `backlog/FOLLOW_UPS.md` (NUMBERING
+NOTE correction, FOLLOW-742 closure, FOLLOW-738/741 `promoted_to_queue`) and `backlog/QUEUE.md`
+(session-82 header + FOLLOW-738/741 IN_PROGRESS ticket entries), pushed to `origin/main` before
+either worker was started.
+
+**Dispatching FOLLOW-738** to devops-engineer (model: Sonnet — routine implementation, well-scoped,
+mechanical hardening + CI guard, no prior failed attempt at this scope) on branch
+`devops-engineer/FOLLOW-738-hardened-sentry-init`. Full delegation brief in `backlog/QUEUE.md`
+FOLLOW-738 entry. **Delegation-table row used:** "Terraform, CI/CD, workflows, secrets,
+observability, runbooks" → devops-engineer.
+
+**Dispatching FOLLOW-741** to architect, **draft-only mode** (architect has no Bash tool, per
+`docs/AGENT_WORKFLOW.md` "Agent tool-capability routing" — this ticket is a doc correction to
+ADR-0020, no branch/PR possible from architect alone). Model: Sonnet — factual correction to an
+already-proven-wrong document, not new design reasoning; D1-D5/D7 explicitly out of scope. Full
+delegation brief in `backlog/QUEUE.md` FOLLOW-741 entry. **Delegation-table row used:** "a contract
+between two modules, a new dependency, an ADR" → architect.
+
+**Dispatch mechanism:** nohup'd
+`claude --agent devops-engineer -p "<brief>" --permission-mode acceptEdits --model sonnet` and
+`claude --agent architect -p "<brief>" --permission-mode acceptEdits --model sonnet` (draft-only
+prompt, no Edit/Write/git instruction given), both in the background — no Task/Agent tool available
+to this PM session, same sanctioned nohup pattern as prior sessions. Logs:
+`/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow738_devops.log`
+and
+`/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow741_architect.log`
+— recorded here so a future session can collect them without re-dispatching, per standing
+instruction.
+
+**CI-check counter:** 0/5 (both tickets). **Fix-iteration counter:** 0/3 (both tickets). No PR
+opened yet.
+
+**2 tickets IN_PROGRESS this session** (FOLLOW-738, FOLLOW-741) — within the ≤3 guardrail.
+
+**5 escalations remain OPEN**, all non-blocking-for-dispatch per the reasoning above: ESC-020
+(Rafał, `web-master` prod deploy, open since 2026-06-06), ESC-041 (npm registry E403, FOLLOW-626,
+open since 2026-07-23), ESC-042-narrowed (Modal `intent-engine` operator deploy, FOLLOW-635, open
+since 2026-07-24), ESC-044 (consent-hash placeholder + DPO ruling, open since 2026-07-27), ESC-045
+(local chat-NLP shim credentials + Sentry hardening gap, open since 2026-07-29, item 4 added
+2026-07-30 — this session's FOLLOW-738 dispatch is that item's own recommended next step). Surfaced
+again, not re-litigated; no new escalation filed this session.
+
+NEXT: Use the devops-engineer subagent on FOLLOW-738 and the architect subagent (draft-only) on
+FOLLOW-741. (table rows: "Terraform, CI/CD, workflows, secrets, observability, runbooks" →
+devops-engineer; "a contract between two modules, a new dependency, an ADR" → architect)
+
+---
 
 ## SESSION 81 (2026-07-30) — FOLLOW-735 draft recovered and applied (ADR-0020); DONE
 

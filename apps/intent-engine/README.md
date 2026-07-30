@@ -72,6 +72,17 @@ curl -s -X POST http://localhost:8090/chat_nlp_endpoint \
   -d '{"tenant_id":"local-dev-tenant","session_id":"local-dev-session","message":{"role":"user","content":"Looking for a high-yield cash investment property"}}'
 # → 202 {"status": "accepted"} — by the time this returns, the shadow key is already written
 # (unlike production's fire-and-forget spawn, this shim writes synchronously).
+#
+# → 502 {"status": "degraded", "data_source": "...", "extraction_error": "...",
+#        "shadow_key_written": true|false}
+#   when the extraction itself failed or came back empty (FOLLOW-730). Production
+#   CANNOT return this — it answers 202 before extraction runs — so it is a
+#   local-only signal that exists to stop a dead model call from looking healthy.
+#   Two things to know: `shadow_key_written: false` means there is no key to
+#   inspect (§H.9 opt-out, or a degraded payload declining to overwrite a good
+#   prior), and the ingest Worker treats ANY non-2xx as a dispatch failure, so a
+#   missing API key shows up Worker-side as "[chat-nlp] Modal dispatch rejected:
+#   HTTP 502" with tag kind=dispatch_failed. Trust this body, not that log line.
 
 curl -s "$UPSTASH_REDIS_REST_URL/get/shadow:local-dev-tenant:local-dev-session:chat_intent" \
   -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"

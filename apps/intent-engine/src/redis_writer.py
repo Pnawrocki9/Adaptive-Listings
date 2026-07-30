@@ -24,6 +24,11 @@ from upstash_redis import Redis
 
 from schemas import ChatIntentDetectedPayload
 
+# Provenance values whose dimensions are an all-null fallback rather than a read
+# (FOLLOW-730). Mirrors ChatIntentDataSource in schemas.py — "empty_input" is not
+# here: zero messages is a caller bug, not a degraded extraction.
+_DEGRADED_SOURCES = frozenset({"error_fallback", "empty_model_response"})
+
 _redis: Redis | None = None
 
 
@@ -47,7 +52,7 @@ def write_shadow_intent(
     payload: ChatIntentDetectedPayload,
     ttl_seconds: int = 86400,
     profiling_opt_out: bool = False,
-) -> None:
+) -> bool:
     """Write a chat-intent payload to the shadow namespace with a TTL.
 
     Key: shadow:{tenant_id}:{session_id}:chat_intent
@@ -57,8 +62,33 @@ def write_shadow_intent(
 
     §H.9 compliance: if profiling_opt_out is True the write is skipped entirely
     so no chat-intent shadow prior accumulates for opted-out sessions.
+
+    FOLLOW-730: a DEGRADED payload (all-null dims from a failed or empty
+    extraction) never overwrites an existing key. Without that guard one rate-
+    limited call mid-conversation replaced a buyer's accumulated chat prior with
+    nulls; `flattenIntentDimensions` then yields `{}` and `/api/adapt` stops
+    returning `chat_intent_dimensions`, so the chat signal vanishes for the rest
+    of the session — and on the 6h batch cron the same rotation would wipe every
+    session's prior at once. A degraded payload IS still written when no key
+    exists, because then it destroys nothing and is the operator's only clue.
+
+    Returns:
+        True if a value was written, False if the write was skipped (opt-out, or
+        a degraded payload declining to clobber a good prior). Callers that
+        report success/failure counts must not treat False as an error.
     """
     if profiling_opt_out:
-        return
+        return False
+
     key = shadow_key(payload.tenant_id, payload.session_id)
-    _get_redis().set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)
+    redis = _get_redis()
+
+    if payload.data_source in _DEGRADED_SOURCES and redis.get(key) is not None:
+        print(
+            f"write_shadow_intent: keeping existing prior for {key} "
+            f"(incoming payload degraded: {payload.data_source})"
+        )
+        return False
+
+    redis.set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)
+    return True

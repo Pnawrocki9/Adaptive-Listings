@@ -136,6 +136,7 @@ async def test_degraded_extraction_returns_502_on_the_wire(monkeypatch: pytest.M
     logic, not by a stubbed payload.
     """
     mock_redis_client = MagicMock()
+    mock_redis_client.get.return_value = None  # no prior to protect
     monkeypatch.setattr(rw, "_get_redis", lambda: mock_redis_client)
     monkeypatch.setattr(nlp, "_call_model", MagicMock(side_effect=KeyError("ANTHROPIC_API_KEY")))
 
@@ -149,6 +150,7 @@ async def test_degraded_extraction_returns_502_on_the_wire(monkeypatch: pytest.M
     assert body["status"] == "degraded"
     assert body["data_source"] == "error_fallback"
     assert body["extraction_error"] == "missing_api_key: KeyError"
+    assert body["shadow_key_written"] is True
 
     # The marked payload is STILL written, so `redis-cli GET <shadow key>` shows
     # the operator why the archetype never moved.
@@ -156,6 +158,49 @@ async def test_degraded_extraction_returns_502_on_the_wire(monkeypatch: pytest.M
     written = json.loads(args[1])
     assert written["data_source"] == "error_fallback"
     assert written["archetype_hint"] == "neutral"
+
+
+async def test_empty_model_response_is_also_degraded_on_the_wire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review finding: the 502 originally covered only `error_fallback`, leaving
+    `empty_model_response` (HTTP 200, no usable text — nothing raised) answering a
+    healthy 202 with no log and no capture. That is the same fail-green symptom
+    the ticket exists to remove, so both degraded values must surface."""
+    mock_redis_client = MagicMock()
+    mock_redis_client.get.return_value = None
+    monkeypatch.setattr(rw, "_get_redis", lambda: mock_redis_client)
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(return_value="   \n "))
+
+    response = await local_dev.chat_nlp_endpoint(
+        body=_VALID_BODY,
+        authorization="Bearer test-internal-secret",
+    )
+
+    assert response.status_code == 502
+    body = json.loads(response.body)
+    assert body["data_source"] == "empty_model_response"
+    assert body["shadow_key_written"] is True
+
+
+async def test_degraded_under_opt_out_reports_no_shadow_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review finding: §H.9 opt-out skips the write, so a 502 that tells the
+    operator to inspect the shadow key would send them chasing a phantom Redis
+    mismatch — the exact misdiagnosis of ESC-045. The body must say so."""
+    mock_redis_client = MagicMock()
+    monkeypatch.setattr(rw, "_get_redis", lambda: mock_redis_client)
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(side_effect=KeyError("ANTHROPIC_API_KEY")))
+
+    response = await local_dev.chat_nlp_endpoint(
+        body={**_VALID_BODY, "profiling_opt_out": True},
+        authorization="Bearer test-internal-secret",
+    )
+
+    assert response.status_code == 502
+    assert json.loads(response.body)["shadow_key_written"] is False
+    mock_redis_client.set.assert_not_called()
 
 
 async def test_healthy_extraction_still_returns_202(monkeypatch: pytest.MonkeyPatch) -> None:

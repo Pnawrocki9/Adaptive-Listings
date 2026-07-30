@@ -264,10 +264,13 @@ purposes enumerated in §H.8 of the Master Design and in §13.4 of this DPIA:
 
 **C-07 boundary (binding — must never be violated):** Raw chat text is stored APP-SIDE only
 (app.estalara.com). Adaptive-Listings stores only the 12-dimensional intent vector with a 24-hour
-TTL — no free text, no message content. This is verified in shipped code: `schemas.py:58–79`
-(`ChatIntentDetectedPayload` fields contain no `messages` or `raw_text` field) and
-`redis_writer.py:49` (`payload.model_dump()` serializes only `ChatIntentDetectedPayload`). See also
-C-07 scoping brief (`docs/compliance/C-07-chat-retention-scope.md`).
+TTL — no free text, no message content. This is verified in shipped code: `schemas.py`, class
+`ChatIntentDetectedPayload` (its fields contain no `messages` or `raw_text` field) and
+`redis_writer.py` (`payload.model_dump()` serializes only `ChatIntentDetectedPayload`). Since
+FOLLOW-730 that payload also carries `data_source` and `extraction_error` — extraction provenance
+(an enum, plus an exception CLASS name with the message deliberately excluded), not buyer content,
+so the boundary above is unchanged. See also the C-07 scoping brief
+(`docs/compliance/C-07-chat-retention-scope.md`).
 
 ### 3.2 Why Behavioral Signals Are the Minimum Required
 

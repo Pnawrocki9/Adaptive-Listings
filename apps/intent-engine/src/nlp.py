@@ -41,8 +41,10 @@ from typing import Any
 from schemas import ChatIntentDataSource, ChatIntentDetectedPayload, ChatIntentDimensions
 
 # Set once by _capture_extraction_error on the first captured failure (FOLLOW-730).
-# sentry-sdk is a declared dependency but nothing in this app initialises it, so
-# initialisation is lazy and DSN-gated rather than at import time.
+# Nothing else in this app initialises sentry-sdk, so initialisation is lazy and
+# DSN-gated rather than at import time. The package must be listed in BOTH
+# pyproject.toml and main.py's Modal image pip_install — pyproject alone leaves
+# the capture dead in the deployed container.
 _sentry_initialised = False
 
 # A single chat message: {"role": "user"|"assistant", "content": str}. Values are
@@ -251,26 +253,51 @@ def _classify_extraction_error(exc: Exception) -> str:
     """Classify a swallowed extraction failure into a coarse, taggable kind.
 
     Separates the cases an operator acts on differently (FOLLOW-730 AC2):
-    a missing/rotated credential is a config fix, an unparseable response is a
-    prompt/model problem, anything else needs the Sentry event to diagnose.
+    a credential problem is a config fix, a quota/upstream problem is wait-or-
+    escalate, an unparseable response is a prompt/model problem.
+
+    Anthropic's own exceptions are matched BY CLASS NAME rather than by
+    isinstance, deliberately: importing `anthropic` here would couple this
+    classifier to the SDK being importable in every context that calls it (the
+    Modal image has it, a bare unit-test environment need not), and the SDK's
+    errors derive from `AnthropicError`, NOT from `ValueError` — so a
+    `ValueError` check silently buckets every 401/429/5xx into "other". That
+    exact hole was found in review: a set-but-blank `ANTHROPIC_API_KEY` never
+    reaches the KeyError branch (`os.environ[...]` succeeds and the request
+    401s), which is the single most likely credential misconfiguration.
     """
+    name = type(exc).__name__
     if isinstance(exc, KeyError) and "API_KEY" in str(exc):
         return "missing_api_key"
+    if name in {"AuthenticationError", "PermissionDeniedError"}:
+        # 401/403 — key present but blank, revoked, rotated or wrong-account.
+        return "auth_error"
+    if name in {"RateLimitError", "OverloadedError"}:
+        return "rate_limited"
+    if name in {"APIConnectionError", "APITimeoutError", "InternalServerError"}:
+        return "upstream_error"
     if isinstance(exc, ValueError):  # incl. json.JSONDecodeError
         return "parse_error"
     return "other"
 
 
 def _capture_extraction_error(
-    exc: Exception, *, model: str, source: str, kind: str, stage: str
+    exc: Exception | None, *, model: str, source: str, kind: str, stage: str
 ) -> None:
-    """Send a swallowed extraction exception to Sentry, tagged for triage.
+    """Send a swallowed extraction failure to Sentry, tagged for triage.
 
     `extract_intent` must never raise, which means its failures are invisible
-    beyond a stdout line. `sentry-sdk` is already a declared dependency but is
-    NOT initialised anywhere in this app, so this helper initialises it lazily
-    and only when `SENTRY_DSN` is set — with the DSN unset it is a deliberate
-    no-op and the payload marker plus the log line remain the only signals.
+    beyond a stdout line. `sentry-sdk` is listed BOTH in `pyproject.toml` (local
+    + CI) and in `main.py`'s Modal image `pip_install` — the second is the one
+    that matters in production, and its absence made this helper a permanent
+    no-op in the deployed container until review caught it. Initialisation is
+    lazy and only happens when `SENTRY_DSN` is set; with the DSN unset this is a
+    deliberate no-op and the payload marker plus the log line remain the signals.
+
+    Args:
+        exc: the swallowed exception, or None for a degraded path that produced
+            no exception at all (an empty model response) — that case is sent as
+            a message so it is not silently unreportable.
 
     Never raises: a telemetry failure must not turn a degraded extraction into a
     hard error on the production spawn path.
@@ -284,7 +311,13 @@ def _capture_extraction_error(
         import sentry_sdk
 
         if not _sentry_initialised:
-            sentry_sdk.init(dsn=dsn, traces_sample_rate=0.0)
+            # default_integrations=False: this process is not a Sentry-instrumented
+            # service, and initialising mid-request with the defaults would
+            # retroactively install LoggingIntegration (every ERROR log becomes an
+            # event) plus the auto-enabling FastAPI/Starlette integration on an
+            # already-running container — burying the extraction issues the
+            # operator turned the DSN on for.
+            sentry_sdk.init(dsn=dsn, traces_sample_rate=0.0, default_integrations=False)
             _sentry_initialised = True
 
         with sentry_sdk.new_scope() as scope:
@@ -294,7 +327,12 @@ def _capture_extraction_error(
             scope.set_tag("stage", stage)
             scope.set_tag("source", source)
             scope.set_tag("model_family", _model_family(model))
-            sentry_sdk.capture_exception(exc)
+            if exc is not None:
+                sentry_sdk.capture_exception(exc)
+            else:
+                sentry_sdk.capture_message(
+                    f"chat intent extraction degraded: {kind}", level="error"
+                )
     except Exception as telemetry_exc:  # noqa: BLE001 — telemetry must never escalate.
         print(f"_capture_extraction_error failed: {telemetry_exc}")
 
@@ -374,7 +412,15 @@ def _call_model(messages: list[Message], model: str) -> str:
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    api_key = os.environ["ANTHROPIC_API_KEY"]
+    if not api_key.strip():
+        # A set-but-blank key is a real and common Doppler/Modal-secret
+        # misconfiguration. `anthropic.Anthropic(api_key="")` constructs happily
+        # and only fails later as a 401 AuthenticationError, which reads as an
+        # upstream problem rather than the config problem it is — so fail here,
+        # in the shape _classify_extraction_error maps to "missing_api_key".
+        raise KeyError("ANTHROPIC_API_KEY (set but empty)")
+    client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(
         model=model,
         max_tokens=_MAX_TOKENS,
@@ -414,6 +460,18 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
     try:
         raw_text = _call_model(messages, model)
         if not raw_text.strip():
+            # Degraded, but nothing raised (HTTP 200 with a tool/thinking-only
+            # content block, or a max_tokens-truncated empty text). Without this
+            # leg it was the one degraded path with NO log and NO capture — a
+            # green wire and a still archetype, i.e. the pre-fix symptom intact.
+            print(f"extract_intent empty model response model={model} source={source}")
+            _capture_extraction_error(
+                None,
+                model=model,
+                source=source,
+                kind="empty_model_response",
+                stage="primary",
+            )
             return _neutral_payload(
                 message_count, model, source, data_source="empty_model_response"
             )
@@ -443,17 +501,23 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
             if retry_raw.strip():
                 return _parse_response(retry_raw, message_count, SONNET_MODEL, source)
         except Exception as exc:  # noqa: BLE001 — keep the Haiku result on retry failure.
+            retry_kind = _classify_extraction_error(exc)
             print(f"extract_intent multilingual retry error: {exc}")
-            # stage="retry" distinguishes this from a primary-pass failure: the
-            # returned payload below is a real Haiku read, NOT a degraded one, so
-            # it keeps data_source="model" and only the Sentry event records that
-            # the Sonnet upgrade was lost.
             _capture_extraction_error(
                 exc,
                 model=SONNET_MODEL,
                 source=source,
-                kind=_classify_extraction_error(exc),
+                kind=retry_kind,
                 stage="retry",
             )
+            # data_source stays "model": the payload below IS a real Haiku read,
+            # only the Sonnet upgrade was lost, so calling it degraded would be a
+            # lie in the other direction. But it does NOT stay unmarked — with
+            # SENTRY_DSN unset (its actual prod state) the capture above returns
+            # immediately, and a systematically broken Sonnet retry would then be
+            # 100% invisible: every mixed-language buyer silently keeps the
+            # low-confidence read forever. extraction_error carries that fact
+            # into Redis where an operator can see it.
+            payload.extraction_error = f"retry_failed: {type(exc).__name__}"
 
     return payload

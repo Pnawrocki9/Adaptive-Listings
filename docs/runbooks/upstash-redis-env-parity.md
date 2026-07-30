@@ -9,12 +9,12 @@
 The chat-intent shadow bridge spans two runtimes that use **different env-var names** for the same
 Upstash Redis instance:
 
-| Runtime          | Env var                    | Used by                                                             |
-| ---------------- | -------------------------- | ------------------------------------------------------------------- |
-| Modal (Python)   | `UPSTASH_REDIS_REST_URL`   | `apps/intent-engine/src/redis_writer.py:29` (`write_shadow_intent`) |
-| Modal (Python)   | `UPSTASH_REDIS_REST_TOKEN` | `apps/intent-engine/src/redis_writer.py:30`                         |
-| Vercel (TS/Next) | `UPSTASH_REDIS_URL`        | `apps/control-plane/src/lib/chat-intent-cache.ts:69`                |
-| Vercel (TS/Next) | `UPSTASH_REDIS_TOKEN`      | `apps/control-plane/src/lib/chat-intent-cache.ts:74`                |
+| Runtime          | Env var                    | Used by                                                                           |
+| ---------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| Modal (Python)   | `UPSTASH_REDIS_REST_URL`   | `apps/intent-engine/src/redis_writer.py` → `_get_redis()` (`write_shadow_intent`) |
+| Modal (Python)   | `UPSTASH_REDIS_REST_TOKEN` | `apps/intent-engine/src/redis_writer.py` → `_get_redis()`                         |
+| Vercel (TS/Next) | `UPSTASH_REDIS_URL`        | `apps/control-plane/src/lib/chat-intent-cache.ts:69`                              |
+| Vercel (TS/Next) | `UPSTASH_REDIS_TOKEN`      | `apps/control-plane/src/lib/chat-intent-cache.ts:74`                              |
 
 The Python writer and TypeScript reader use a **byte-identical Redis key**:
 

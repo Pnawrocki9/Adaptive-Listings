@@ -108,10 +108,17 @@ class ChatIntentDetectedPayload(BaseModel):
     # validates (that legacy shape is what the FOLLOW-368 Redis round-trip
     # fixture writes). Every producer path in `nlp.py` sets it explicitly.
     data_source: ChatIntentDataSource = "model"
-    # Human-readable diagnosis for `data_source == "error_fallback"`, formatted
-    # "<classified kind>: <ExceptionClassName>" (e.g. "missing_api_key: KeyError").
-    # None on every other path. The full exception message is deliberately NOT
-    # stored here — it goes to the log line and the Sentry event only, because
-    # this value lands in a 24h-TTL Redis key that is served to no user surface
-    # and should carry no model/prompt echo.
+    # Human-readable diagnosis, formatted "<classified kind>: <ExceptionClassName>"
+    # (e.g. "missing_api_key: KeyError"). Set on two distinct occasions:
+    #   - data_source == "error_fallback" — the extraction itself failed;
+    #   - data_source == "model" with a "retry_failed: …" value — the read is a
+    #     genuine (Haiku) one, but the §C.3 multilingual Sonnet retry failed, so
+    #     the buyer silently kept a low-confidence read. Provenance stays "model"
+    #     because the dimensions ARE a real read; this field is the only trace.
+    # None on every other path.
+    #
+    # The full exception message is deliberately NOT stored here — it goes to the
+    # log line and the Sentry event only, because this value lands in a 24h-TTL
+    # Redis key that is served to no user surface and must carry no model/prompt
+    # echo. Keep it to <kind>: <ClassName>.
     extraction_error: str | None = None

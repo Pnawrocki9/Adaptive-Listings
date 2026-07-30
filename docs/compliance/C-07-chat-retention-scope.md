@@ -15,9 +15,10 @@ reads the raw chat text from the `messages` list, calls Claude Haiku 4.5 (real-t
 (batch), and writes the resulting 12-dimensional intent vector — not the raw text — to a Redis
 shadow key (`shadow:{tenant_id}:{session_id}:chat_intent`, TTL 24 h) in Upstash Redis. No raw chat
 text is written to Redis, ClickHouse, or Postgres in the current implementation (verified:
-`apps/intent-engine/src/redis_writer.py:49`, `write_shadow_intent` serializes `payload.model_dump()`
+`apps/intent-engine/src/redis_writer.py`, `write_shadow_intent` serializes `payload.model_dump()`
 which is `ChatIntentDetectedPayload` — no `messages` field on that model;
-`apps/intent-engine/src/schemas.py:58–79`).
+`apps/intent-engine/src/schemas.py`, class `ChatIntentDetectedPayload`). Line numbers are omitted
+deliberately: FOLLOW-730 shifted them, and a citation that drifts is worse than none.
 
 Live adaptation is gated on this C-07 sign-off. This brief answers the five CEO questions and makes
 a concrete recommendation.
@@ -58,7 +59,7 @@ must trigger deletion of stored messages.
 | Data category                                                                 | Retention limit                                                                                                               | Enforcement mechanism                                     |
 | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | Raw chat messages (if consented)                                              | **30 days** (recommended maximum — see rationale below)                                                                       | Server-side TTL + consent-withdrawal cascade deletion     |
-| 12-dim intent vector (Redis shadow key)                                       | **24 hours** (current implementation — `ttl_seconds=86400` in `redis_writer.py:40`)                                           | Upstash Redis native TTL; self-cleaning                   |
+| 12-dim intent vector (Redis shadow key)                                       | **24 hours** (current implementation — `ttl_seconds=86400` in `redis_writer.py`)                                              | Upstash Redis native TTL; self-cleaning                   |
 | 12-dim intent vector (if promoted to ClickHouse/Postgres for live adaptation) | **13 months** (aligned with existing `adaptation_decisions` ClickHouse retention per DPIA §12.5 / AI Act Art. 12 audit trail) | Requires a verified TTL enforcement ticket before go-live |
 
 **Rationale for 30-day raw-text limit.** The only purpose for retaining raw chat text is enriching
@@ -141,8 +142,8 @@ that expectation.
 **Balancing test result: PASSES**, subject to three conditions:
 
 1. The intent vector key is scoped to the session (current: `session_id` in the Redis key — verified
-   in `chat-intent-cache.ts:62` and `redis_writer.py:37`).
-2. The 24-hour TTL is enforced by Redis natively (current: `ex=86400` in `redis_writer.py:49` —
+   in `chat-intent-cache.ts` and `redis_writer.py`).
+2. The 24-hour TTL is enforced by Redis natively (current: `ex=86400` in `redis_writer.py` —
    code-verified).
 3. The Privacy Notice discloses the server-side shadow key at the time live adaptation is activated
    (not yet done — see Q3 above; this is a go-live gate).
@@ -206,16 +207,22 @@ brief is approved.
 The following code facts are referenced in this brief and have been verified against shipped code at
 HEAD on branch `main`:
 
-- `redis_writer.py:40` — `write_shadow_intent(payload, ttl_seconds=86400)` default TTL 24 h.
-- `redis_writer.py:49` — `_get_redis().set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)`.
+- `redis_writer.py` — `write_shadow_intent(payload, ttl_seconds=86400)` default TTL 24 h.
+- `redis_writer.py` — `_get_redis().set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)`.
   `payload.model_dump()` serializes `ChatIntentDetectedPayload`; raw `messages` is not a field on
   that model.
-- `schemas.py:58–79` — `ChatIntentDetectedPayload` fields: `tenant_id`, `session_id`,
+- `schemas.py` (class `ChatIntentDetectedPayload`) — fields: `tenant_id`, `session_id`,
   `intent_dimensions`, `archetype_hint`, `confidence`, `model_used`, `source`, `message_count`,
-  `detected_at`. No `messages` or `raw_text` field.
+  `detected_at`, and since FOLLOW-730 two diagnostic fields: `data_source` (an enum recording which
+  producer path built the payload — `model` / `empty_input` / `empty_model_response` /
+  `error_fallback`) and `extraction_error` (`null`, or a fixed-format
+  `"<classified kind>: <ExceptionClassName>"` string such as `"missing_api_key: KeyError"`). Neither
+  carries buyer content: `extraction_error` is explicitly constructed from the exception's CLASS
+  name only — the exception message, which could echo prompt text, goes to the log line and the
+  Sentry event and never into Redis. No `messages` or `raw_text` field.
 - `chat-intent-cache.ts:62` — `shadowChatIntentKey` returns
   `shadow:${tenantId}:${sessionId}:chat_intent`.
-- `redis_writer.py:37` — `shadow_key` returns `f"shadow:{tenant_id}:{session_id}:chat_intent"`.
+- `redis_writer.py` — `shadow_key` returns `f"shadow:{tenant_id}:{session_id}:chat_intent"`.
 - `main.py:31–60` — `process_chat_message` calls `extract_intent`, then
   `write_shadow_intent(payload)` — only the payload dict is persisted.
 - `main.py:13` — module docstring: "writes to the Redis SHADOW namespace only ... No live adaptation

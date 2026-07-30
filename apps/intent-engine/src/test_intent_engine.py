@@ -281,8 +281,10 @@ def test_error_marker_round_trips_through_shadow_write() -> None:
     payload.session_id = "sess_730"
 
     mock_redis = MagicMock()
+    # No existing key: a degraded payload IS written when it destroys nothing.
+    mock_redis.get.return_value = None
     with patch("redis_writer._get_redis", return_value=mock_redis):
-        write_shadow_intent(payload)
+        assert write_shadow_intent(payload) is True
 
     args, _kwargs = mock_redis.set.call_args
     assert args[0] == "shadow:tnt_730:sess_730:chat_intent"
@@ -379,3 +381,150 @@ def test_extract_intent_captures_the_swallowed_exception(monkeypatch: pytest.Mon
     capture.assert_called_once()
     assert capture.call_args.kwargs["kind"] == "missing_api_key"
     assert capture.call_args.kwargs["stage"] == "primary"
+
+
+# ---------------------------------------------------------------------------
+# Post-review hardening (code review of PR #642) — every test below pins a
+# defect the review found in the first cut of FOLLOW-730.
+# ---------------------------------------------------------------------------
+
+
+def _make_good_payload() -> ChatIntentDetectedPayload:
+    """A payload from a real model read (data_source defaults to 'model')."""
+    return ChatIntentDetectedPayload(
+        tenant_id="tnt_good",
+        session_id="sess_good",
+        intent_dimensions={"budget_band": "comfortable"},
+        archetype_hint="yield_hunter",
+        confidence=0.8,
+        model_used="haiku-4.5",
+        source="realtime",
+        message_count=1,
+        detected_at="2026-07-29T00:00:00+00:00",
+    )
+
+
+# Named EXACTLY as the SDK names them: the classifier matches by class name, not
+# isinstance (Anthropic's errors derive from AnthropicError, not ValueError), so
+# the name is the contract. `test_sdk_error_class_names_still_match` below guards
+# these against an upstream rename.
+class AuthenticationError(Exception):
+    """Stands in for anthropic.AuthenticationError (401)."""
+
+
+class RateLimitError(Exception):
+    """Stands in for anthropic.RateLimitError (429)."""
+
+
+def test_blank_api_key_classifies_as_missing_not_other() -> None:
+    """Review finding: `ANTHROPIC_API_KEY=""` (set but blank) is the most likely
+    credential misconfiguration and used to sail past the KeyError branch —
+    os.environ succeeds, the request 401s, and the payload was stamped `other`."""
+    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "   "}):
+        payload = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+    assert payload.data_source == "error_fallback"
+    assert payload.extraction_error == "missing_api_key: KeyError"
+
+
+def test_auth_and_rate_limit_errors_get_their_own_kinds() -> None:
+    """Review finding: Anthropic errors do NOT derive from ValueError, so a
+    revoked key and a 429 both landed in `other` — the bucket the docstring
+    defines as 'needs the Sentry event', while that event was itself dead."""
+    with patch("nlp._call_model", side_effect=AuthenticationError("401")):
+        auth = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+    with patch("nlp._call_model", side_effect=RateLimitError("429")):
+        throttled = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+
+    assert auth.extraction_error == "auth_error: AuthenticationError"
+    assert throttled.extraction_error == "rate_limited: RateLimitError"
+
+
+def test_sdk_error_class_names_still_match_the_classifier() -> None:
+    """The classifier keys on Anthropic's class NAMES, so an upstream rename
+    would silently send 401s/429s back to `other`. Assert the names against the
+    installed SDK rather than trusting the stand-ins above.
+
+    Also pins the fact that made name-matching necessary: these do NOT derive
+    from ValueError, so the original `isinstance(exc, ValueError)` check could
+    never have caught them.
+    """
+    anthropic = pytest.importorskip("anthropic")
+
+    for name in ("AuthenticationError", "PermissionDeniedError", "RateLimitError"):
+        assert hasattr(anthropic, name), f"anthropic.{name} disappeared — classifier is stale"
+        assert not issubclass(getattr(anthropic, name), ValueError)
+
+
+def test_empty_model_response_is_captured_not_silent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review finding: the empty-response path raised nothing, so it produced no
+    log and no capture at all — the only degraded path with zero telemetry."""
+    capture = MagicMock()
+    monkeypatch.setattr(nlp, "_capture_extraction_error", capture)
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(return_value=""))
+
+    payload = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+
+    assert payload.data_source == "empty_model_response"
+    capture.assert_called_once()
+    assert capture.call_args.kwargs["kind"] == "empty_model_response"
+    # No exception exists on this path — it must be reported as a message.
+    assert capture.call_args.args[0] is None
+
+
+def test_degraded_payload_does_not_clobber_an_existing_prior() -> None:
+    """Review finding: one rate-limited call mid-conversation replaced a buyer's
+    accumulated chat prior with nulls, and /api/adapt then stopped returning
+    chat_intent_dimensions for the rest of the session."""
+    with patch("nlp._call_model", side_effect=RuntimeError("connection reset")):
+        degraded = extract_intent(_ONE_MESSAGE, model=_HAIKU, source="realtime")
+    degraded.tenant_id, degraded.session_id = "tnt_clobber", "sess_clobber"
+
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = '{"intent_dimensions": {"budget_band": "comfortable"}}'
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        assert write_shadow_intent(degraded) is False
+    mock_redis.set.assert_not_called()
+
+
+def test_good_payload_still_overwrites_an_existing_prior() -> None:
+    """The guard above must not freeze the key: a real read still replaces it."""
+    good = _make_good_payload()
+    mock_redis = MagicMock()
+    mock_redis.get.return_value = '{"intent_dimensions": {"budget_band": "stretch"}}'
+    with patch("redis_writer._get_redis", return_value=mock_redis):
+        assert write_shadow_intent(good) is True
+    mock_redis.set.assert_called_once()
+
+
+def test_multilingual_retry_failure_is_marked_and_keeps_model_provenance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review finding: a failing §C.3 Sonnet retry left NO trace on the payload,
+    so with SENTRY_DSN unset (its actual prod state) a systematically broken
+    retry was 100% invisible — every mixed-language buyer silently kept the
+    low-confidence Haiku read forever."""
+    capture = MagicMock()
+    monkeypatch.setattr(nlp, "_capture_extraction_error", capture)
+
+    low_conf_haiku = '{"archetype_hint": "neutral", "confidence": 0.1}'
+    calls = {"n": 0}
+
+    def _call(messages: object, model: str) -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return low_conf_haiku
+        raise RuntimeError("sonnet unavailable")
+
+    monkeypatch.setattr(nlp, "_call_model", _call)
+
+    # Polish text triggers detect_language_mix, so the retry leg is reached.
+    payload = extract_intent(
+        [{"role": "user", "content": "Szukam mieszkania w Krakowie"}],
+        model=_HAIKU,
+        source="realtime",
+    )
+
+    # Provenance stays "model" — the dimensions ARE a real Haiku read.
+    assert payload.data_source == "model"
+    assert payload.extraction_error == "retry_failed: RuntimeError"
+    assert capture.call_args.kwargs["stage"] == "retry"

@@ -22018,3 +22018,104 @@ cross_ref: [FOLLOW-730 (PR #642, commit `1ff873ef` revert), `test_intent_engine.
 `apps/intent-engine/src/redis_writer.py`, `packages/sdk/src/core/adapt.ts:863-888`, Rule R,
 docs/compliance/C-07-chat-retention-scope.md, docs/compliance/ropa.md, docs/compliance/dpia.md,
 MASTER_DESIGN §1669, §D.1.1]
+
+## FOLLOW-736 — implement ADR-0020: an empty chat-intent extraction must stop clobbering an accumulated prior (`SET … NX`)
+
+source_retro: FOLLOW-735 (architect ruling, ADR-0020) source_ticket: FOLLOW-735 recommended_sprint:
+now recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-730 (PR #642
+must be merged first — this ticket edits the `data_source` / `DEGRADED_DATA_SOURCES` code and the
+tests that PR adds)] promoted_to_queue: false
+
+**Spec:** `docs/adr/ADR-0020-shadow-intent-write-admission.md` (D1-D7) + MASTER_DESIGN §D.1.1
+"Shadow-key write-admission rule". Do not re-litigate D1 — the product ruling is made; implement it.
+The three reverted rounds in PR #642 are documented in the ADR's Context and Alternatives; read
+those before writing code, they are the constraint list.
+
+**Scope:** `apps/intent-engine/src/redis_writer.py` (+ its tests), a new shared parity fixture, one
+TS test, and the compliance line-citation refresh. **No SDK change. No control-plane source change**
+(only a test file there). Do not touch `nlp.py`, `main.py`, `local_dev.py`, or
+`jobs/batch_enrich.py` — all three call sites are unchanged by design.
+
+**AC:**
+
+1. `has_intent_signal(dims: ChatIntentDimensions) -> bool` added to `redis_writer.py`, exactly as in
+   ADR-0020 D2, with the cross-runtime parity docstring. Parameter type is the **dimensions**
+   object, never the payload (this is how DIAGNOSTIC ONLY is enforced — do not "simplify" it to take
+   the payload).
+2. `write_shadow_intent` takes the two branches of ADR-0020 D3. `profiling_opt_out` stays the first
+   statement. `ttl_seconds` default stays `86400`. Signature stays `-> None`. No new parameter.
+3. **Red test to flip:** `test_degraded_payload_currently_still_overwrites_a_prior`
+   (`apps/intent-engine/src/test_intent_engine.py:484-509` on `main` after PR #642) — rename to
+   `test_degraded_payload_does_not_overwrite_a_prior`, invert the assertion to
+   `kwargs.get("nx") is True`, and delete the "deliberately red / states the gap" docstring
+   language. `test_degraded_source_set_partitions_the_provenance_literal` (`:512-523`) must survive
+   untouched.
+4. ≥5 further Python cases: (a) `test_empty_dims_successful_extraction_also_uses_nx` (the
+   neutral-success case — proves the rule is keyed on content, not `data_source`); (b)
+   `test_non_empty_dims_write_is_unconditional_and_refreshes_ttl` (no `nx` kwarg, `ex == 86400`);
+   (c) `test_tax_aware_false_alone_is_not_a_signal`; (d)
+   `test_empty_string_dimension_is_not_a_signal`; (e) `test_opt_out_skips_both_branches` (§H.9
+   regression — `redis.set` not called at all); (f) `test_redis_writer_module_never_reads` — read
+   `redis_writer.py`'s own source and assert it contains no `json.loads`, `.get(`, `.mget(`
+   (ADR-0020 D5, the guard that would have caught round 3 of PR #642).
+5. **Cross-runtime parity:** new `tests/fixtures/chat-intent-signal-parity.json` — ≥6 cases
+   `{name, dims, expect_signal}` covering all-null, one string dim, `tax_aware:true`,
+   `tax_aware:false` only, empty-string only, and mixed. Consumed by a Python test
+   (`has_intent_signal`) **and** by a TS test in
+   `apps/control-plane/src/lib/__tests__/chat-intent-cache.test.ts` asserting
+   `Object.keys(flattenIntentDimensions(dims)).length > 0 === expect_signal`. One fixture, two
+   runtimes, so the two can never drift silently.
+6. **Compliance doc sync (do not skip — this is why FOLLOW-735 went to architect):** update
+   `docs/compliance/C-07-chat-retention-scope.md` Q3.1 wording from "24 hours from last chat
+   message" to "24 hours from the last chat message that yielded at least one intent dimension", add
+   one line to the Implementation Evidence block stating that the NX branch cannot refresh an
+   existing TTL, and **re-verify/renumber** the shifted `redis_writer.py` line citations in
+   C-07:209-218, `docs/compliance/dpia.md:269` and `docs/compliance/ropa.md:133`. Flag the diff for
+   compliance-engineer review in the PR description (review, not a blocking gate — the change is
+   retention-shortening).
+7. ADR-0020 status flipped to ACCEPTED (with ratifier + date) and the `docs/adr/README.md` index
+   row's Status cell updated in the same PR, **only if** it was still PROPOSED at merge time.
+8. `docs/MASTER_DESIGN.md` §D.1.1: delete the "⚠️ SPEC, NOT YET IMPLEMENTED AT HEAD" warning block
+   and the FOLLOW-736 owner blockquote; the paragraph then describes shipped behaviour. §Snapshot.1
+   may cite the rule only after this PR merges.
+
+**Verification step (OP Rule 5):** with the local shim running
+(`apps/intent-engine/src/local_dev.py`), POST a message that extracts cleanly, confirm the key holds
+non-null dims, then POST with `ANTHROPIC_API_KEY` deliberately broken and confirm via `GET` that the
+key's value **and remaining TTL** are unchanged. Paste both `TTL` readings in the PR.
+
+cross_ref: [ADR-0020, FOLLOW-735, FOLLOW-730 / PR #642 (`1ff873ef`), Rule R + amendment,
+`apps/intent-engine/src/redis_writer.py`, `apps/control-plane/src/lib/chat-intent-cache.ts:176-191`,
+`packages/sdk/src/core/adapt.ts:868-880`, MASTER_DESIGN §D.1.1, C-07 / ROPA / DPIA]
+
+## FOLLOW-737 — the chat-intent shadow payload is the only cross-runtime contract with no shared Zod schema; the TS side is a hand-written mirror
+
+source_retro: FOLLOW-735 (architect, ADR-0020 §References — gap found while checking wire
+nullability) source_ticket: FOLLOW-735 recommended_sprint: next recommended_agent: backend-engineer
+priority: P3 estimated_hours: 3 depends_on: [FOLLOW-736] promoted_to_queue: false
+
+**Gap.** `ChatIntentDetectedPayload` is defined in Pydantic (`apps/intent-engine/src/schemas.py`)
+and re-declared **by hand** in TypeScript as a non-Zod interface plus a duck-typed `JSON.parse` +
+`'intent_dimensions' in parsed` check
+(`apps/control-plane/src/lib/chat-intent-cache.ts:22-51, 113-124`). Architect guardrail: "every
+accepted interface MUST have a Zod schema in `packages/shared`, a `.test.ts` with ≥5 cases, an entry
+in `docs/INTERFACES.md`, and an example in `packages/shared/src/examples/`." As of 2026-07-30 this
+contract has the INTERFACES.md entry (added with ADR-0020) and nothing else. The 12-dimension list
+therefore lives in three places (Pydantic model, TS interface, MASTER_DESIGN §C.4) with no
+mechanical check that they agree — the same shape as the drift families CONVENTIONS_PATCH already
+polices.
+
+**AC:** (1) `packages/shared/src/schemas/chat-intent.ts` with `ChatIntentDimensionsSchema` +
+`ChatIntentDetectedPayloadSchema`, forward-compatible (`.passthrough()` — unknown fields ignored, so
+a Python-side additive field never breaks a read); (2) `readShadowChatIntent` parses through it
+instead of the duck-typed check, keeping the **fail-open** posture (parse failure → `null` +
+`console.warn`, never a throw — see `chat-intent-cache.ts:83-91`; do not change that posture); (3)
+`.test.ts` with ≥5 cases incl. all-null dims, unknown extra field, wrong type, missing
+`intent_dimensions`, valid full payload; (4) an example in `packages/shared/src/examples/`; (5) a
+drift guard asserting the Zod dimension key set equals the Python model's field set (read
+`schemas.py` in the test, same style as the existing key-format literal check); (6) update the
+"Known gap" note in `docs/INTERFACES.md` § Chat-Intent Shadow Key Contract.
+
+cross_ref: [ADR-0020, FOLLOW-735, FOLLOW-736, `apps/control-plane/src/lib/chat-intent-cache.ts`,
+`apps/intent-engine/src/schemas.py`, MASTER_DESIGN §C.4, architect guardrail "every accepted
+interface"]

@@ -215,6 +215,103 @@ Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer
 `packages/sdk/src/core/quiz-config.ts` (`fetchQuizConfig`) → `packages/sdk/src/index.ts`
 (`mergeQuizConfig`) → `packages/sdk/src/ui/quiz-trigger.ts` + `quiz-widget.ts`.
 
+## Chat-Intent Shadow Key Contract (`shadow:{tenant_id}:{session_id}:chat_intent`)
+
+Cross-runtime shared-cache contract. **Producer:** Python — `write_shadow_intent`
+(`apps/intent-engine/src/redis_writer.py`), payload `ChatIntentDetectedPayload`
+(`apps/intent-engine/src/schemas.py`). **Consumer:** TypeScript — `readShadowChatIntent` +
+`flattenIntentDimensions` (`apps/control-plane/src/lib/chat-intent-cache.ts`), surfaced to the SDK
+as `chat_intent_dimensions` on the `/api/adapt` response and folded into the archetype prior once
+per session (`packages/sdk/src/core/adapt.ts:838-897`, Rule R). **Eraser:** `deleteShadowChatIntent`
+(DSR Art. 17 cascade, FOLLOW-557). Store: Upstash Redis, TTL 86400s.
+
+**Write-admission rule — ADR-0020 (PROPOSED; implementation FOLLOW-736, not at HEAD yet):** a
+payload carrying no usable dimension (degraded _or_ neutral-success) is written with `SET … NX`, so
+it can never overwrite, and never TTL-refresh, an accumulated prior. A payload carrying ≥1 usable
+dimension is written with a plain `SET … EX`. The predicate is a content check, never a
+`data_source` check.
+
+**Nullability parity (both directions, enforced by
+`tests/fixtures/chat-intent-signal-parity.json`):** Python emits explicit JSON `null` for every
+unset dimension (`schemas.py:34-55`); TypeScript declares every field both optional and nullable
+(`chat-intent-cache.ts:33-44`), so `null` and absent behave identically. A dimension "counts" iff it
+survives `flattenIntentDimensions`: non-null, non-empty string, or boolean `true`.
+**`tax_aware: false` is not a signal on either side.** Any future dimension that is neither `str`
+nor `bool` must be added to both runtimes in the same PR.
+
+**Example 1 — good extraction (overwrites, refreshes TTL):**
+
+```json
+{
+  "tenant_id": "tnt_a1b2",
+  "session_id": "sess_9f3c",
+  "intent_dimensions": {
+    "purchase_purpose": "investment",
+    "urgency": "0-3mo",
+    "budget_band": null,
+    "family_stage": null,
+    "geo_priority": null,
+    "feature_priority": null,
+    "cross_border": null,
+    "finance_complexity": "cash",
+    "decision_role": "decider",
+    "risk_appetite": "aggressive",
+    "emotional_state": "comparison_shopping",
+    "tax_aware": true
+  },
+  "archetype_hint": "yield_hunter",
+  "confidence": 0.85,
+  "model_used": "haiku-4.5",
+  "source": "realtime",
+  "message_count": 3,
+  "detected_at": "2026-07-30T10:00:00+00:00"
+}
+```
+
+→ `SET shadow:tnt_a1b2:sess_9f3c:chat_intent <json> EX 86400`; SDK receives
+`{purchase_purpose:"investment", urgency:"0-3mo", finance_complexity:"cash", decision_role:"decider", risk_appetite:"aggressive", emotional_state:"comparison_shopping", tax_aware:"true"}`.
+
+**Example 2 — degraded extraction 40 s later (preserves Example 1 verbatim, TTL untouched):**
+
+```json
+{
+  "tenant_id": "tnt_a1b2",
+  "session_id": "sess_9f3c",
+  "intent_dimensions": {
+    "purchase_purpose": null,
+    "urgency": null,
+    "budget_band": null,
+    "family_stage": null,
+    "geo_priority": null,
+    "feature_priority": null,
+    "cross_border": null,
+    "finance_complexity": null,
+    "decision_role": null,
+    "risk_appetite": null,
+    "emotional_state": null,
+    "tax_aware": null
+  },
+  "archetype_hint": "neutral",
+  "confidence": 0.0,
+  "model_used": "haiku-4.5",
+  "source": "realtime",
+  "message_count": 4,
+  "detected_at": "2026-07-30T10:00:40+00:00",
+  "data_source": "error_fallback",
+  "extraction_error": "upstream_5xx"
+}
+```
+
+→ `SET … NX` returns falsy, nothing is written, the Example-1 record and its remaining TTL survive;
+the degradation is reported to Sentry and returned to the caller. Had the key been empty, this exact
+record would have been stored (markers included) and the SDK would have applied nothing (`{}` fails
+the `Object.keys(...).length > 0` guard).
+
+**Known gap:** this payload has **no shared Zod schema** in `packages/shared` — the TypeScript side
+is a hand-maintained mirror interface with a runtime `JSON.parse` + shape check
+(`chat-intent-cache.ts:22-51, 113-124`). Tracked as **FOLLOW-737**. ADR-0020 does not change the
+record shape, so it does not widen this gap, but it does not close it either.
+
 ## Auto-Detect Companion Bundle — `window.__EStalaraDetect` (FOLLOW-325)
 
 The auto-detect companion is a separate IIFE bundle that extends the main SDK's cold-start

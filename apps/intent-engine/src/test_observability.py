@@ -63,6 +63,30 @@ def test_init_sentry_hardens_config_when_dsn_set(monkeypatch: pytest.MonkeyPatch
     assert kwargs["before_send"] is observability._scrub_chat_intent_exception_value
 
 
+def test_init_sentry_never_raises_on_malformed_dsn(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FOLLOW-744: a hand-pasted malformed DSN must degrade to "Sentry off",
+    not crash the caller. sentry_sdk.init() raises BadDsn on a malformed DSN
+    — this is the exact failure mode of the operator action that provisions
+    SENTRY_DSN. Only 1 of the 4 real call sites has its own try/except, so
+    init_sentry itself must never raise."""
+    fake_sentry = MagicMock()
+
+    class BadDsn(Exception):  # noqa: N818 — matches sentry_sdk's real exception name
+        pass
+
+    fake_sentry.init.side_effect = BadDsn("Invalid Sentry DSN: not-a-real-dsn")
+    monkeypatch.setenv("SOME_DSN_NAME", "not-a-real-dsn")
+    monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
+
+    result = observability.init_sentry("SOME_DSN_NAME")  # must not raise
+
+    assert result is False
+    assert observability._sentry_initialised is False
+    assert "init_sentry" in capsys.readouterr().out
+
+
 def test_init_sentry_is_idempotent_across_call_sites(monkeypatch: pytest.MonkeyPatch) -> None:
     """A second call site (e.g. a second capture in the same process) must not
     re-init — matching the original per-site lazy-init behaviour this module

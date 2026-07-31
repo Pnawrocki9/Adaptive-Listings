@@ -114,44 +114,56 @@ def init_sentry(dsn_env_name: str) -> bool:
     if _sentry_initialised:
         return True
 
-    import sentry_sdk
-
+    # FOLLOW-744: everything from here down is wrapped so a malformed DSN
+    # (sentry_sdk.init raises BadDsn), a missing/incompatible sentry_sdk
+    # install (ImportError), or any other init-time failure degrades to
+    # "Sentry off" rather than crashing the caller — the same never-raise
+    # contract flush_sentry() already keeps below. Without this, the
+    # operator action that turns alerting ON (provisioning SENTRY_DSN) could
+    # take three production jobs down on a copy-paste typo.
     try:
-        from sentry_sdk.integrations.atexit import AtexitIntegration
+        import sentry_sdk
 
-        integrations = [AtexitIntegration()]
-    except Exception:  # noqa: BLE001 — SDK layout changed; flush_sentry() below still covers us.
-        integrations = []
+        try:
+            from sentry_sdk.integrations.atexit import AtexitIntegration
 
-    sentry_sdk.init(
-        dsn=dsn,
-        traces_sample_rate=0.0,
-        # C-07 / ROPA BOUNDARY — DO NOT REMOVE. Sentry's default
-        # include_local_variables=True serialises each frame's locals into the
-        # event. On the chat-intent path those locals hold `messages` (the
-        # buyer's raw chat text) and `raw_text` (the model response) — shipping
-        # that to a third-party US processor would be a strictly larger
-        # disclosure than the exception-message echo dpia.md/ropa.md/C-07
-        # contemplate. On the other call sites the same default would ship
-        # tenant ids, listing payloads and DB rows. send_default_pii is
-        # defaulted off too, pinned here so a future edit has to argue with a
-        # comment (and a test — see test_observability.py) before flipping it.
-        include_local_variables=False,
-        send_default_pii=False,
-        # None of these processes is a Sentry-instrumented web service in the
-        # framework-middleware sense: initialising with the defaults would
-        # install LoggingIntegration (every ERROR log becomes an event) and
-        # auto-enable FastAPI/Starlette integrations on an already-running
-        # container, burying the actual signal each call site captures
-        # deliberately. AtexitIntegration is re-added explicitly because it is
-        # NOT noise: every call site here runs inside a fire-and-forget or
-        # short-lived Modal container that can exit immediately after this
-        # call, and without an atexit flush the daemon transport thread is
-        # killed with the interpreter and the queued event never ships.
-        default_integrations=False,
-        integrations=integrations,
-        before_send=_scrub_chat_intent_exception_value,
-    )
+            integrations = [AtexitIntegration()]
+        except Exception:  # noqa: BLE001 — SDK layout changed; flush_sentry() still covers us.
+            integrations = []
+
+        sentry_sdk.init(
+            dsn=dsn,
+            traces_sample_rate=0.0,
+            # C-07 / ROPA BOUNDARY — DO NOT REMOVE. Sentry's default
+            # include_local_variables=True serialises each frame's locals into the
+            # event. On the chat-intent path those locals hold `messages` (the
+            # buyer's raw chat text) and `raw_text` (the model response) — shipping
+            # that to a third-party US processor would be a strictly larger
+            # disclosure than the exception-message echo dpia.md/ropa.md/C-07
+            # contemplate. On the other call sites the same default would ship
+            # tenant ids, listing payloads and DB rows. send_default_pii is
+            # defaulted off too, pinned here so a future edit has to argue with a
+            # comment (and a test — see test_observability.py) before flipping it.
+            include_local_variables=False,
+            send_default_pii=False,
+            # None of these processes is a Sentry-instrumented web service in the
+            # framework-middleware sense: initialising with the defaults would
+            # install LoggingIntegration (every ERROR log becomes an event) and
+            # auto-enable FastAPI/Starlette integrations on an already-running
+            # container, burying the actual signal each call site captures
+            # deliberately. AtexitIntegration is re-added explicitly because it is
+            # NOT noise: every call site here runs inside a fire-and-forget or
+            # short-lived Modal container that can exit immediately after this
+            # call, and without an atexit flush the daemon transport thread is
+            # killed with the interpreter and the queued event never ships.
+            default_integrations=False,
+            integrations=integrations,
+            before_send=_scrub_chat_intent_exception_value,
+        )
+    except Exception as exc:  # noqa: BLE001 — telemetry must never escalate.
+        print(f"observability.init_sentry: Sentry init failed, continuing without it: {exc!r}")
+        return False
+
     _sentry_initialised = True
     return True
 

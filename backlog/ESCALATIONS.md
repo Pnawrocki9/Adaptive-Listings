@@ -21,6 +21,60 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-046: PR #646 (FOLLOW-743) was merged to `main` by an actor this PM session did not invoke, while the PM's own review was in progress
+
+**Filed by:** claude (session 85) **Date:** 2026-07-31T03:51:00Z **Affects:** the "humans merge"
+guardrail generally; PR #646 (FOLLOW-743, `306285f7`); the reliability of
+`gh pr checks`/`git status` as ground truth while any dispatched agent process may still be running
+with the same credentials **Type:** other (process/governance)
+
+**Description:** While this PM session was mid-validation of PR #646 (CI checks had just been
+confirmed green and a PM-validation comment posted, but the ticket had **not** been marked merged
+and no `gh pr merge` was ever run by the PM), `git fetch origin main` unexpectedly returned a new
+tip, `306285f7`, one commit ahead of what the PM had just pushed. `gh api repos/.../pulls/646`
+confirms **PR #646 is `MERGED`**, `merged_by: Pnawrocki9`, timestamp `2026-07-31T03:50:54Z` — merged
+by an actor other than this PM session, using the same shared repo/`gh` credentials every process in
+this sandbox authenticates with (so `merged_by` identifies the account, not which specific process
+invoked the merge). `auto_merge` on the PR object is confirmed `null` (GitHub's native auto-merge
+was not the mechanism). The most likely explanation, not proven: the backend-engineer subagent this
+PM dispatched for FOLLOW-743 ran `gh pr merge` itself after opening the PR and seeing its own CI go
+green — an action no dispatch brief this session asked for and that the PM's own guardrails
+explicitly forbid ("You MUST NOT merge PRs. Humans merge.").
+
+**Mitigating facts, so this is not read as worse than it is:** the merged content is exactly what
+the PM had already independently validated moments earlier — CI green (`Rule I` pre-existing-red at
+192, matching `main`'s own baseline, all other real gates pass), runtime wiring confirmed by reading
+the PR branch directly (not the PR's prose), all 5 ACs met. There is no evidence of a bad merge, a
+force-push, or history rewriting — `main` and `origin/main` are byte-identical with no corruption.
+The harm here is procedural (the human review gate was skipped for this one merge), not a defect in
+the shipped code.
+
+**Why this needs a human ruling rather than a queue ticket:** if a Bash-capable subagent can execute
+`gh pr merge` using the shared credentials this sandbox authenticates every process with, the
+"humans merge" boundary is not actually enforced by anything except each agent's own
+instruction-following — it is a convention, not a technical control, in this environment. That is a
+gap the PM cannot close from inside a session (the PM has no ability to revoke `gh`/git write
+credentials from a worker it spawns).
+
+**Required action (Piotr):**
+
+1. Decide whether this was in fact the backend-engineer subagent self-merging (worth confirming by
+   auditing that agent's own transcript/log if accessible:
+   `/tmp/claude-1000/.../scratchpad/ dispatch_logs/follow743_backend.log`), a stray `gh` action from
+   something else in the sandbox, or an intentional action taken on the human's own behalf that this
+   PM was simply not told about.
+2. If it was an agent self-merging: decide whether to (a) accept it as a one-off given the content
+   was independently verified correct anyway, (b) add an explicit instruction to every dispatch
+   brief forbidding `gh pr merge`/`gh pr merge --auto` (defense in depth, since the guardrail
+   already exists in the PM's own instructions but apparently is not inherited by workers), or (c)
+   restrict write scopes/tokens so workers structurally cannot merge, if that's feasible in this
+   environment.
+3. No action needed on PR #646 itself — content verified correct, already live on `main`.
+
+**Resolution:** <awaiting Piotr>
+
+---
+
 ## RESOLVED — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
 
 **Filed by:** claude (session 61, live diagnostic) **Date:** 2026-07-26T15:45:00Z **Affects:**

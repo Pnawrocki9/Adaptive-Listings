@@ -1,3 +1,86 @@
+# Status — 2026-07-31 (session 85 close — collision recovered zero data loss; RETRO-236 on main;
+
+PR #646/#647 PM-validated READY_FOR_REVIEW; 5 ESCALATIONS open, non-blocking-for-dispatch)
+
+## SESSION 85 CLOSE (2026-07-31) — recovery complete, both PRs validated
+
+**Final reconciliation after the shared-worktree collision (full incident above, unchanged).** Once
+all three dispatched processes (`122018` retro, `122371` backend, `122776` devops) exited (confirmed
+via two background `kill -0` monitors), found ONE more piece of stray damage the in-flight recovery
+hadn't caught: retrospective-analyst's own final commit (`af6846f7`, RETRO-236) had landed on
+`devops-engineer/FOLLOW-744-sentry-dsn-provisioning` instead of its own
+`retrospective-analyst/RETRO-236-follow-736-retro` branch — same root cause, one more instance.
+Relocated via `git cherry-pick` onto the correct branch, then `git reset --hard` to strip it back
+off the devops branch (safe: devops's branch was already pushed to origin at that exact tip, so the
+reset target matched origin exactly, verified via `git diff origin/<branch> <branch>` = empty).
+
+**A second, still-unexplained mechanism:** immediately after that reset (same second, per
+`git reflog --date=iso`), a `checkout: moving to main` + `cherry-pick` of the SAME RETRO-236 commit
+appeared in the reflog and was already pushed to `origin/main` by the time this was noticed — this
+PM did not issue that command in this exact form. Content was verified byte-for-byte correct (825
+insertions, docs-only, matches the retrospective's own diff exactly) and `main`/`origin/main` are
+confirmed identical with no corruption or stray files, so it was accepted rather than reverted — but
+the mechanism is not fully understood and is flagged here rather than silently normalized. Possible
+explanation: a detached child process from the retrospective-analyst's own session (mirroring the
+"fast-forward merge to main" pattern prior retro sessions describe doing explicitly) outlived the
+parent PID `ps` reported as exited. Worth another session's attention if it recurs.
+
+**End-state verification, every ref checked against its own origin counterpart (zero drift):**
+`main` = `origin/main` = `1c06d4f1`. `backend-engineer/FOLLOW-743-spend-cap-sentry-init` =
+`origin/...` = `5ff39efa` (PR #646, 4 files, clean).
+`devops-engineer/FOLLOW-744-sentry-dsn- provisioning` = `origin/...` = `5d3c3275` (PR #647, 6 files,
+clean). Redundant local `retrospective-analyst/RETRO-236-follow-736-retro` branch deleted (content
+already safely on `main`). Working tree returned to a clean `main` checkout.
+
+**PR #646 (FOLLOW-743) validated:** `gh pr checks 646` all real gates pass; `Rule I` 192 violations
+(pulled from the job log directly), matching `main`'s own current baseline — pre-existing-red,
+non-blocking. Runtime wiring confirmed by reading the PR branch content directly: `init_sentry`/
+`flush_sentry` call site in `generate_description.py:415-439`, new CI gate
+`check-sentry-capture-has-init.sh` wired into `ci.yml:699,702` with a working 3-case `--self-test`,
+unit test at `test_generate_description.py:1496-1512`. Full evidence posted as a PR comment. Moved
+to READY_FOR_REVIEW.
+
+**PR #647 (FOLLOW-744) validated:** `gh pr checks 647` all real gates pass; same `Rule I` 192
+baseline. Runtime wiring confirmed: the hardened `init_sentry` try/except body read directly off the
+PR branch (matches `flush_sentry`'s existing never-raise shape), mirror-parity confirmed identical
+across all 3 files on the branch, 4 non-test consumers named
+(`schema_validation.py`/`nlp.py`/`consume_embed_seed_requests.py`/sibling PR's
+`generate_description.py`). AC-2/AC-3 (DSN provisioning + live-capture proof) correctly deferred to
+Piotr as a dated runbook instruction, not silently skipped. Full evidence posted as a PR comment.
+Moved to READY_FOR_REVIEW.
+
+**PR #647 not merged, awaiting Piotr's review as normal.** `backlog/QUEUE.md` FOLLOW-744 entry
+updated to READY_FOR_REVIEW with the collision incident recorded in full.
+
+**PR #646 turned out to be ALREADY MERGED by the time this was written — NOT by this PM.**
+Immediately after posting the PM-validation comment on #646, a routine `git fetch origin main`
+turned up a new tip (`306285f7`) this session never pushed. `gh api repos/.../pulls/646` confirms
+**MERGED**, `merged_by: Pnawrocki9` (the shared repo identity every process in this sandbox
+authenticates with — not proof of which process ran the merge), `auto_merge: null` (GitHub's native
+auto-merge was not the mechanism). The PM never ran `gh pr merge`. Best guess, unproven: the
+backend-engineer subagent itself invoked `gh pr merge` after seeing its own CI go green — its
+dispatch log's only merge-adjacent line is a `NEXT:`-style suggestion ("merge PR #646, then
+FOLLOW-744..."), which does not by itself prove or disprove that it also executed the merge; the
+`-p` log only buffers final output, not the full tool-call transcript, so this could not be
+confirmed either way from the log alone. **Filed as ESC-046** (`backlog/ESCALATIONS.md`) rather than
+silently accepted or silently fixed — the content itself was already independently verified correct
+by this PM moments earlier (same CI-green, same wiring-confirmed evidence now sitting in the PR
+comment), so there is no code-quality harm, but the "humans merge" boundary was bypassed by
+something this PM does not control, which is a governance question for Piotr, not an engineering
+one. `backlog/QUEUE.md`'s FOLLOW-743 entry updated to `MERGED`, flagged, cross-referenced to
+ESC-046. FOLLOW-743's retrospective is still owed regardless of how the merge happened (Step 6/7
+applies to any DONE ticket, not only human-merged ones).
+
+**CI-check counter:** 1/5 for both tickets (one `gh pr checks --watch` run each). **Fix-iteration
+counter:** 0/3 for both — no fix round was needed.
+
+NEXT: Human review + merge on PR #647; human ruling needed on ESC-046 (PR #646's out-of-process
+merge) before this PM dispatches another Bash-capable worker with merge-capable credentials. Once
+#647 merges, spawn retrospectives for both FOLLOW-743 and FOLLOW-744 before picking new work; read
+FOLLOW-751/752/753/754 first. Human attention still needed on ESC-020/041/042/044/045 items 2-3.
+
+---
+
 # Status — 2026-07-31 (session 85 — FOLLOW-736 retro dispatched; FOLLOW-743 + FOLLOW-744
 
 dispatched (gate re-judged narrower); 5 ESCALATIONS open, non-blocking-for-dispatch)
@@ -96,20 +179,21 @@ pathspecs to separate the two agents' interleaved uncommitted diffs without disc
 `git reset --soft`/`git cherry-pick` to move commits to their correct branch without touching
 working-tree content, and a `git worktree add` for this very commit (isolating the PM's own
 bookkeeping from the two still-running agents' shared tree) rather than checking out `main` in the
-contested directory. **End state verified clean:** PR #646 (FOLLOW-743, `backend-engineer/FOLLOW-
-743-spend-cap-sentry-init`) contains only `.github/workflows/ci.yml` +
+contested directory. **End state verified clean:** PR #646 (FOLLOW-743,
+`backend-engineer/FOLLOW- 743-spend-cap-sentry-init`) contains only `.github/workflows/ci.yml` +
 `generate_description.py`/its test + the new `check-sentry-capture-has-init.sh` — 4 files, no
-`observability.py` contamination. PR #647 (FOLLOW-744, `devops-engineer/FOLLOW-744-sentry-dsn-
-provisioning`) contains only `.env.example` + `observability.py` ×3 + `test_observability.py` +
-`MODAL_PROD_STANDUP.md` — 6 files, no `generate_description.py` contamination. **Binding rule for
-every future session:** never dispatch two or more Bash-capable (code-writing) subagents into the
-same literal working directory concurrently unless each is given its own `git worktree` first (`git
-worktree add <path> -b <branch>` per agent, then `cd <path>` inside that agent's own dispatch
+`observability.py` contamination. PR #647 (FOLLOW-744,
+`devops-engineer/FOLLOW-744-sentry-dsn- provisioning`) contains only `.env.example` +
+`observability.py` ×3 + `test_observability.py` + `MODAL_PROD_STANDUP.md` — 6 files, no
+`generate_description.py` contamination. **Binding rule for every future session:** never dispatch
+two or more Bash-capable (code-writing) subagents into the same literal working directory
+concurrently unless each is given its own `git worktree` first
+(`git worktree add <path> -b <branch>` per agent, then `cd <path>` inside that agent's own dispatch
 command) — a draft-only agent (no Bash/git, e.g. `architect` in draft mode) is always safe to run
 alongside one Bash-capable agent, which is why sessions 80-82 never hit this. Retrospective-analyst
-was the third concurrent process this session and stayed safe throughout only because its own
-first commit had not landed yet when the collision was caught and fixed — it was not an exception
-to the rule, just lucky timing.
+was the third concurrent process this session and stayed safe throughout only because its own first
+commit had not landed yet when the collision was caught and fixed — it was not an exception to the
+rule, just lucky timing.
 
 ---
 

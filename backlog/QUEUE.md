@@ -1,6 +1,15 @@
 # Backlog Queue
 
-### FOLLOW-743 — status: IN_PROGRESS
+### FOLLOW-743 — status: MERGED (PR #646 → `main` `306285f7`) — merge actor NOT the PM, see ESC-046
+
+**IMPORTANT:** this PR was merged while this PM session was still running, by an actor this PM did
+not invoke and does not control (`gh api` shows `merged_by: Pnawrocki9`, the shared repo identity
+every process in this sandbox uses — not proof of which process actually ran `gh pr merge`; GitHub's
+native `auto_merge` was confirmed OFF for this PR). Content was independently PM-validated (CI
+green, wiring confirmed, evidence posted as a PR comment) **before** this was discovered, and is
+correct — the concern is procedural, not correctness: the explicit "humans merge" gate was bypassed.
+Full incident in **ESC-046** below and in `backlog/STATUS.md`. Retrospective still owed per Step 6/7
+regardless of how it merged.
 
 **The finding (RETRO-235).** `apps/llm-gateway/src/jobs/generate_description.py:413-423` calls
 `sentry_sdk.capture_message(...)` for the daily LLM spend-cap alarm with **no Sentry init anywhere
@@ -50,7 +59,7 @@ change, a Sentry-wiring one).
 
 ---
 
-### FOLLOW-744 — status: IN_PROGRESS
+### FOLLOW-744 — status: READY_FOR_REVIEW (PR #647, CI green, PM-validated)
 
 **The finding (RETRO-235).** `SENTRY_DSN` is consumed at `apps/intent-engine/src/observability.py`
 (and its two Rule J mirrors) from four call sites and produced **nowhere** in Doppler `prd` or the
@@ -102,7 +111,62 @@ devops-engineer.
 
 ---
 
-## ▶️ START HERE — resume 2026-07-31 (session 85 — FOLLOW-736 retro dispatched (RETRO-236 owed);
+## ▶️ START HERE — resume 2026-07-31 (session 85 continued — collision recovered, RETRO-236 landed on
+
+main, PR #646/#647 both PM-validated READY_FOR_REVIEW; 5 open ESCALATIONS unchanged)
+
+**Post-dispatch incident, fully recovered, zero data loss — full writeup in `backlog/STATUS.md`.**
+Dispatching backend-engineer + devops-engineer concurrently into the same literal working directory
+(no per-agent `git worktree`) meant they shared one `.git/HEAD`; each agent's own branch checkout
+carried the other's uncommitted diffs across, and the retrospective-analyst's final commit
+(RETRO- 236) also landed on the wrong branch (`devops-engineer/FOLLOW-744-...`) rather than its own.
+Recovered live: backed up every uncommitted diff to patch files before any mutation, used
+`git stash` with explicit pathspecs to separate interleaved WIP without discarding either agent's
+work, `git reset --soft`/`--hard` + `git cherry-pick` to relocate commits to their correct branch
+without touching working-tree content, and a `git worktree add` for the PM's own bookkeeping commit
+so it never touched the contested shared directory. **Binding rule added for all future sessions:**
+never dispatch 2+ Bash-capable subagents into one shared `cwd` without a `git worktree` per agent.
+
+**Final verified state — every branch byte-identical to its own pushed origin ref, zero drift:**
+`main` (`1c06d4f1`, includes RETRO-236), `backend-engineer/FOLLOW-743-spend-cap-sentry-init`
+(`5ff39efa`, PR #646, 4 files — `ci.yml`, `generate_description.py`, its test,
+`check-sentry-capture-has-init.sh`, NO `observability.py` contamination),
+`devops-engineer/FOLLOW- 744-sentry-dsn-provisioning` (`5d3c3275`, PR #647, 6 files —
+`.env.example`, `observability.py` ×3, `test_observability.py`, `MODAL_PROD_STANDUP.md`, NO
+`generate_description.py` contamination).
+
+**RETRO-236 landed on `main` directly** (content-only docs commit, 825 insertions across
+`CONVENTIONS_PATCH.md`/`backlog/FOLLOW_UPS.md`/`backlog/RETROSPECTIVES.md`, zero code). Rule AA
+verdict: AGREE with FOLLOW-736's DONE call. Wiring audit: CHECK A clean, CHECK B 2 findings (HW-1 P3
+— write-admission decision has no consumer at any of 3 call sites, `jobs/batch_enrich.py:66-70`
+double-counts an NX-suppressed write as `processed`; HW-2 P2 — `nx=` proven only against a
+`MagicMock`, the repo's one real-Redis gate exercises the unchanged EX branch). **Rule AO promoted**
+(P-19 count 3): a corrective edit whose purpose is to remove a false/over-broad claim must be
+re-verified against the SAME PR's own evidence, not evaluated only against the error it replaces.
+**Follow-ups filed: FOLLOW-751 (P3), 752/753/754 (P2)** — not yet read in full by the PM this
+session; read before next dispatch. `QUEUE.md`/`ESCALATIONS.md`/sprint files/code untouched by the
+retro itself (confirmed).
+
+**PR #646 (FOLLOW-743) and PR #647 (FOLLOW-744) both PM-validated this session** — see PR comments
+for full evidence (CI non-success count 0 for real gates on both, Rule I pre-existing-red at 192
+matching `main`'s baseline exactly on each; producer/consumer grep pasted for every new symbol;
+mirror-parity and AC-by-AC checks done against the actual PR branch content, not PR prose). Both
+moved to READY_FOR_REVIEW. **Not merged — Piotr's call.**
+
+**CI-check counter:** 1/5 for both. **Fix-iteration counter:** 0/3 for both.
+
+**PR #646 discovered already MERGED (`306285f7`) by an actor this PM did not invoke** — filed as
+**ESC-046**, see above and `backlog/STATUS.md`. Content independently verified correct before this
+was found; the concern is procedural (bypassed "humans merge"), not a code defect.
+
+NEXT: Human review + merge on PR #647; human ruling needed on ESC-046 before dispatching another
+Bash-capable worker. Once #647 merges, retrospectives owed for both FOLLOW-743 and FOLLOW-744 before
+any new ticket is picked. Read FOLLOW-751/752/753/754 (RETRO-236 follow-ups) before next dispatch.
+Human attention still needed on ESC-020/041/042/044/045 items 2-3 — see `backlog/ESCALATIONS.md`.
+
+---
+
+## ▶️ (superseded) START HERE — resume 2026-07-31 (session 85 — FOLLOW-736 retro dispatched (RETRO-236 owed);
 
 gate re-judged narrower — FOLLOW-743 + FOLLOW-744 dispatched as self-contained, non-Piotr-blocking
 scope; 5 open ESCALATIONS unchanged, ESC-045 item 1 corrected FALSE per session-84 validation)

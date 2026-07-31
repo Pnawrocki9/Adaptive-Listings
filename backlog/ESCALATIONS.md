@@ -21,6 +21,93 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-046: the "unknown actor" that merged PR #646 was the main-loop session acting on Piotr's explicit instruction — no guardrail was bypassed
+
+**Resolved 2026-07-31 by Piotr's ruling ("zamknij jako wyjaśnioną"), on the following facts.**
+
+**What actually happened.** Piotr instructed the main-loop session, verbatim, "mergujemy #646 i
+#647". The main loop verified CI on both (68 and 65 pass, `Rule I` pre-existing-red at 192 on each,
+confirmed from the job logs rather than the check summary), then ran `gh pr merge 646 --squash`,
+producing `306285f7` at `2026-07-31T03:50:54Z` — the exact commit and timestamp this escalation
+flagged. **No subagent merged anything.** The backend-engineer is cleared; the suspicion recorded
+below was reasonable on the evidence available to the PM, and wrong.
+
+**Why the PM could not see it.** The PM was dispatched by the main loop and ran concurrently with
+it. It has no visibility into the main loop's actions, and `merged_by` resolves to the shared
+account identity every process in this sandbox uses, so a merge by the main loop is
+indistinguishable from a merge by a worker. The PM did the right thing with what it could see: it
+refused to normalise an unexplained merge and escalated instead of assuming.
+
+**The real lesson is mine, not the PM's.** The main loop dispatched a PM to drive the backlog and
+then operated on the same repository in parallel — the same class of collision the PM had just spent
+a session recovering from at the git level (two agents, one shared `HEAD`), reproduced one layer up
+at the coordination level. Merges and other repo-mutating actions should happen either BEFORE a PM
+is dispatched or AFTER it returns, not alongside it.
+
+**Residual point that survives this closure, and is NOT resolved by it:** the escalation's
+governance question stands on its own — nothing in this environment technically prevents a
+Bash-capable subagent from running `gh pr merge` on its own PR. Today that boundary is a convention
+each agent follows, not a control. Filed as **FOLLOW-755** (P3) so it is not lost with this closure;
+it needs no action before the next dispatch.
+
+---
+
+<details><summary>Original escalation as filed (preserved for the record — its premise was false)</summary>
+
+## OPEN — ESC-046: PR #646 (FOLLOW-743) was merged to `main` by an actor this PM session did not invoke, while the PM's own review was in progress
+
+**Filed by:** claude (session 85) **Date:** 2026-07-31T03:51:00Z **Affects:** the "humans merge"
+guardrail generally; PR #646 (FOLLOW-743, `306285f7`); the reliability of
+`gh pr checks`/`git status` as ground truth while any dispatched agent process may still be running
+with the same credentials **Type:** other (process/governance)
+
+**Description:** While this PM session was mid-validation of PR #646 (CI checks had just been
+confirmed green and a PM-validation comment posted, but the ticket had **not** been marked merged
+and no `gh pr merge` was ever run by the PM), `git fetch origin main` unexpectedly returned a new
+tip, `306285f7`, one commit ahead of what the PM had just pushed. `gh api repos/.../pulls/646`
+confirms **PR #646 is `MERGED`**, `merged_by: Pnawrocki9`, timestamp `2026-07-31T03:50:54Z` — merged
+by an actor other than this PM session, using the same shared repo/`gh` credentials every process in
+this sandbox authenticates with (so `merged_by` identifies the account, not which specific process
+invoked the merge). `auto_merge` on the PR object is confirmed `null` (GitHub's native auto-merge
+was not the mechanism). The most likely explanation, not proven: the backend-engineer subagent this
+PM dispatched for FOLLOW-743 ran `gh pr merge` itself after opening the PR and seeing its own CI go
+green — an action no dispatch brief this session asked for and that the PM's own guardrails
+explicitly forbid ("You MUST NOT merge PRs. Humans merge.").
+
+**Mitigating facts, so this is not read as worse than it is:** the merged content is exactly what
+the PM had already independently validated moments earlier — CI green (`Rule I` pre-existing-red at
+192, matching `main`'s own baseline, all other real gates pass), runtime wiring confirmed by reading
+the PR branch directly (not the PR's prose), all 5 ACs met. There is no evidence of a bad merge, a
+force-push, or history rewriting — `main` and `origin/main` are byte-identical with no corruption.
+The harm here is procedural (the human review gate was skipped for this one merge), not a defect in
+the shipped code.
+
+**Why this needs a human ruling rather than a queue ticket:** if a Bash-capable subagent can execute
+`gh pr merge` using the shared credentials this sandbox authenticates every process with, the
+"humans merge" boundary is not actually enforced by anything except each agent's own
+instruction-following — it is a convention, not a technical control, in this environment. That is a
+gap the PM cannot close from inside a session (the PM has no ability to revoke `gh`/git write
+credentials from a worker it spawns).
+
+**Required action (Piotr):**
+
+1. Decide whether this was in fact the backend-engineer subagent self-merging (worth confirming by
+   auditing that agent's own transcript/log if accessible:
+   `/tmp/claude-1000/.../scratchpad/ dispatch_logs/follow743_backend.log`), a stray `gh` action from
+   something else in the sandbox, or an intentional action taken on the human's own behalf that this
+   PM was simply not told about.
+2. If it was an agent self-merging: decide whether to (a) accept it as a one-off given the content
+   was independently verified correct anyway, (b) add an explicit instruction to every dispatch
+   brief forbidding `gh pr merge`/`gh pr merge --auto` (defense in depth, since the guardrail
+   already exists in the PM's own instructions but apparently is not inherited by workers), or (c)
+   restrict write scopes/tokens so workers structurally cannot merge, if that's feasible in this
+   environment.
+3. No action needed on PR #646 itself — content verified correct, already live on `main`.
+
+**Resolution:** <awaiting Piotr>
+
+## </details>
+
 ## RESOLVED — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
 
 **Filed by:** claude (session 61, live diagnostic) **Date:** 2026-07-26T15:45:00Z **Affects:**

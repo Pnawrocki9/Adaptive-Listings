@@ -1,6 +1,33 @@
 # Backlog Queue
 
-### FOLLOW-736 — status: READY_FOR_REVIEW — PR #645
+### FOLLOW-736 — status: DONE (PR #645 merged 2026-07-31 by Piotr, `264bf1da`)
+
+**Merged.** ADR-0020 D1-D5 shipped: `has_intent_signal(dims)` plus a two-branch write where an empty
+extraction takes `SET … NX`. Both hard invariants hold **structurally, not by discipline** —
+atomicity because it is one command with no read, and the TTL because `SET NX` on an existing key
+mutates neither value nor expiry. The predicate takes `ChatIntentDimensions`, so it is type-level
+unable to read provenance. That is what the three reverted attempts inside PR #642 could not
+achieve.
+
+**Verified on `main` after merge**, not from the worker's report: `has_intent_signal` at
+`redis_writer.py:51`, `nx=True` at `:130`, signature still `-> None`. CI was 66 pass with Rule I
+unchanged at 192. The worker's own live run had no mocks in the path — real shim, real
+`upstash_redis` client, `redis:7-alpine` behind `hiett/serverless-redis-http` in Docker, real Haiku
+call — and showed TTL ticking DOWN 86400 → 86369 → 86314 across an empty successful read and a dead
+model call instead of resetting.
+
+**Credential facts corrected during validation — see ESC-045 and FOLLOW-750.** The worker used the
+PRODUCTION Anthropic key and disclosed that unprompted; I then verified `dev`/`stg`/`prd` hold the
+SAME key value, which **falsifies ESC-045 item 1** ("no dev-tier key provisioned") — a claim I wrote
+and repeated to Piotr twice. `UPSTASH_*` and `SENTRY_DSN` are genuinely absent from every config.
+
+**Follow-on:** FOLLOW-749 — `shadow_key_written` in `local_dev.py`'s 502 body now reports `true` for
+a write `NX` suppressed. The worker corrected the prose and filed the ticket rather than changing
+`write_shadow_intent`'s `-> None` signature, which ADR-0020 D3 pins. Correct call.
+
+---
+
+### FOLLOW-736 — dispatch record (was: READY_FOR_REVIEW — PR #645)
 
 **Completed 2026-07-30 by ml-engineer (Opus).** PR
 [#645](https://github.com/Pnawrocki9/Adaptive-Listings/pull/645), commit `933fc423`. **CI: green** —

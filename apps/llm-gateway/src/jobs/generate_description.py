@@ -412,6 +412,18 @@ def _spend_cap_exceeded() -> bool:
         try:
             import sentry_sdk
 
+            from jobs.observability import flush_sentry, init_sentry
+
+            # FOLLOW-743: this module had no init_sentry(...) anywhere, so the
+            # capture_message() below was a permanent no-op on the live,
+            # deployed description path (no bound client, nothing to send).
+            # Hardened init (include_local_variables=False,
+            # send_default_pii=False, explicit integration list incl.
+            # AtexitIntegration) lives in jobs/observability.py, shared with
+            # the other two Python Modal apps. Lazy + DSN-gated: with
+            # SENTRY_DSN unset this is a deliberate no-op.
+            init_sentry("SENTRY_DSN")
+
             # sentry-sdk >= 2.0 API (push_scope removed). new_scope is the replacement.
             with sentry_sdk.new_scope() as scope:
                 scope.set_tag("kind", "spend_cap")
@@ -421,6 +433,10 @@ def _spend_cap_exceeded() -> bool:
                 sentry_sdk.capture_message(
                     "generate_description daily LLM spend cap reached", level="warning"
                 )
+            # This function returns immediately after, so without an explicit
+            # flush the queued event can be dropped when the container is torn
+            # down (see jobs/observability.py's flush_sentry docstring).
+            flush_sentry(0.3)
         except Exception:  # noqa: BLE001 — Sentry optional; never fatal
             pass
         return True

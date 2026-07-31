@@ -1,5 +1,192 @@
 # Backlog Queue
 
+### FOLLOW-743 — status: IN_PROGRESS
+
+**The finding (RETRO-235).** `apps/llm-gateway/src/jobs/generate_description.py:413-423` calls
+`sentry_sdk.capture_message(...)` for the daily LLM spend-cap alarm with **no Sentry init anywhere
+in that process** — a permanent no-op on the LIVE deployed description path, the one Sentry signal
+in the repo with a direct € consequence. FOLLOW-738 landed the shared `init_sentry`/`flush_sentry`
+helper this ticket wires up.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-743` (5 ACs, verbatim — P1, 2h, RETRO-235-sourced).
+
+**assigned_to:** backend-engineer **model: Sonnet** — routine, mechanical wiring of an
+already-existing shared helper into one more call site (`nlp.py`'s own adoption of the same helper,
+landed in FOLLOW-738, is the pattern to match), plus a repo-wide grep inventory and one CI-gate
+inversion in an existing script's style. No ambiguous AC, no cross-module contract change, no prior
+failed attempt at this scope. **started_at:** 2026-07-31. **branch:**
+`backend-engineer/FOLLOW-743-spend-cap-sentry-init`.
+
+**Delegation brief (sent to backend-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-743`, verbatim, 5 ACs. Read `docs/MASTER_DESIGN.md`
+  §Snapshot.1 first (Operating Principle 1), then the full `CONVENTIONS_PATCH.md` (Rules S / AA / AE
+  / AJ are directly relevant — the AC text cites them). No open `backlog/HANDOFFS.md` note for this
+  ticket.
+- Read `apps/intent-engine/src/nlp.py`'s existing `init_sentry`/`flush_sentry` call pattern (the
+  already-hardened site FOLLOW-738 built around) before touching `generate_description.py` — match
+  its shape, don't invent a new one.
+- AC-2's repo-wide inventory is a **precondition**, not an afterthought: grep every
+  `sentry_sdk.capture_exception|capture_message` call site across `apps/*/src` BEFORE writing the
+  fix, paste the table in the PR body, and fix every site the inventory finds — not just
+  `generate_description.py:413-423` — if more turn up.
+- AC-3's CI-gate extension is red-first: the negative-control self-test (a capture-without-init
+  fixture) must fail against `main` as it stands today, before AC-1's fix lands, and pass after.
+  Show both states in the PR body.
+- Do NOT change the spend-cap threshold, tags, or any other behavior in that function (AC-5).
+- Completion: `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`, plus the
+  per-app Python test/black/ruff steps for every touched app; prettier on every touched non-Python
+  file; conventional commit `[FOLLOW-743]`; push; open the PR (never commit to `main`). PM re-runs
+  `gh pr checks <pr> --watch`, re-verifies the inventory + red-first gate itself (not on the PR's
+  own claim), and confirms the new init call is genuinely wired (producer: the call site; consumer:
+  the Sentry project it reports to, or the CI gate proving it's present) before READY_FOR_REVIEW.
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks" → backend-engineer (this ticket lives in `apps/llm-gateway`
+alongside the description-generation path backend-engineer already owns; not a Modal/ML-logic
+change, a Sentry-wiring one).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
+### FOLLOW-744 — status: IN_PROGRESS
+
+**The finding (RETRO-235).** `SENTRY_DSN` is consumed at `apps/intent-engine/src/observability.py`
+(and its two Rule J mirrors) from four call sites and produced **nowhere** in Doppler `prd` or the
+Modal `estalara-secrets` secret. ESC-045 item 4's "absent channel" leg lost its tracking owner when
+the item was marked RESOLVED (FOLLOW-738 closed only the hazard leg). Folded-in secondary defect:
+`init_sentry` is not guarded — `sentry_sdk.init()` can raise `BadDsn` on a malformed DSN, and 3 of 4
+call sites have no surrounding `try`, so the same operator action that turns alerting ON can also
+take three production jobs down on a typo.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` → `## FOLLOW-744` (4 ACs, verbatim — P1, 2h, RETRO-235-sourced).
+
+**assigned_to:** devops-engineer **model: Sonnet** — mechanical hardening of an existing helper
+(wrap `import`+`init` in a try/except mirroring `flush_sentry`'s existing never-raise guard) plus a
+Doppler/Modal-secret provisioning instruction; no ambiguous AC, no new design. **started_at:**
+2026-07-31. **branch:** `devops-engineer/FOLLOW-744-sentry-dsn-provisioning`.
+
+**Delegation brief (sent to devops-engineer):**
+
+- Ticket: `backlog/FOLLOW_UPS.md` → `## FOLLOW-744`, verbatim, 4 ACs. Read `docs/MASTER_DESIGN.md`
+  §Snapshot.1 first, then the full `CONVENTIONS_PATCH.md` (Rules AA / AJ / S are directly cited in
+  the AC text).
+- AC-1 is the code-only leg and can ship independently of AC-2: make `init_sentry` non-fatal — wrap
+  `import sentry_sdk` + `sentry_sdk.init(...)` so any exception (`BadDsn`, `ImportError`, etc.)
+  returns `False` and prints, exactly matching `flush_sentry`'s existing guard shape in the same
+  file. Apply to the canonical `apps/intent-engine/src/observability.py` AND both Rule J mirrors in
+  one commit. Add a unit test with a deliberately malformed DSN asserting `init_sentry` returns
+  `False` and does not raise.
+- AC-2 (provisioning `SENTRY_DSN` into Doppler `prd` + the Modal `estalara-secrets` secret) is an
+  operator-credential action. **Do not block the PR on it** — per the ticket's own text, ship AC-1 +
+  AC-3's proof-step scaffolding, and write AC-2 as an explicit, dated instruction for Piotr in
+  `docs/runbooks/MODAL_PROD_STANDUP.md`, naming which Sentry project the DSN should point at
+  (`.env.example:73`'s `SENTRY_PROJECT` line is currently unspecific for the Python tier — fix that
+  too).
+- AC-3's live-capture proof (trigger one real capture with the DSN live, show the tagged issue in
+  the named Sentry project) genuinely cannot run until Piotr provisions the DSN — note this
+  explicitly in the PR body as a follow-up verification step rather than skipping it silently.
+- Do NOT reopen or edit `backlog/ESCALATIONS.md` (PM territory) and do NOT change the AC-5
+  one-shared-DSN decision from FOLLOW-738 (AC-4).
+- Completion: full Python test/black/ruff for every touched app (all 3 mirror sites); conventional
+  commit `[FOLLOW-744]`; push; open the PR. PM re-runs `gh pr checks <pr> --watch`, greps for the
+  non-test producer/consumer of the hardened `init_sentry` (its callers) before READY_FOR_REVIEW,
+  and confirms the runbook instruction for AC-2 is concrete enough for Piotr to execute without
+  further clarification.
+
+**Delegation-table row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks" →
+devops-engineer.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
+## ▶️ START HERE — resume 2026-07-31 (session 85 — FOLLOW-736 retro dispatched (RETRO-236 owed);
+
+gate re-judged narrower — FOLLOW-743 + FOLLOW-744 dispatched as self-contained, non-Piotr-blocking
+scope; 5 open ESCALATIONS unchanged, ESC-045 item 1 corrected FALSE per session-84 validation)
+
+**State re-verified before doing anything, not taken on the handoff's word:** `git status` clean,
+`main` at `507b6192` (`docs(backlog): close follow-736 (merged #645) [FOLLOW-736]`).
+`gh pr list --state open` → empty. `ps -eo pid,lstart,cmd | grep 'claude --agent'` and
+`.claude/worktrees/` → both empty, nothing stranded. `grep -n "^## OPEN" backlog/ESCALATIONS.md` → 5
+entries, unchanged: ESC-020, ESC-041, ESC-042-narrowed, ESC-044, ESC-045.
+
+**Escalation gate re-judged, narrower than sessions 82/83's blanket "no generic scope while
+escalations open."** All 5 open items are self-scoped in their own `Affects:` lines to specific
+tickets/areas (FOLLOW-626 for ESC-041, FOLLOW-635 for ESC-042, FOLLOW-704/706 for ESC-044,
+FOLLOW-729/730 for ESC-045) and are blocked on Piotr/an external operator taking an action named in
+each entry — none of them names FOLLOW-743 or FOLLOW-744 as affected, and dispatching either does
+not require any of the 5 items to move first. This is the same distinction sessions 59-76 already
+used for ESC-020/041/042 (a standing 2026-07-27 CEO ruling: those are non-blocking-for-dispatch,
+re-surfaced not re-litigated) and that sessions 71-76 applied to ESC-044/045 for unrelated tickets
+(FOLLOW-705/715/716/720/723 all dispatched while those items sat open). Sessions 82/83 drew a
+stricter line specifically for FOLLOW-736 (generic ADR-0020 scope, self-described as "does not clear
+or touch any of the 5 open escalations") — a narrower, defensible call for that one ticket, but not
+one this session extends to FOLLOW-743/744: those two are themselves self-contained Sentry-hardening
+fixes with no Piotr-blocking step in their critical path (FOLLOW-744's own AC explicitly ships AC-1
+
+- AC-3-scaffolding without waiting on AC-2's provisioning). Holding them would not accelerate any of
+  the 5 open items — it would only idle unrelated engineering capacity, which is the exact reasoning
+  the session-84 handoff flagged as the gate's actual purpose. **Justification for what IS held this
+  session:** FOLLOW-749 (P3, ml-engineer, local-dev-only cosmetic flag fix) and the P2/P3 stubs
+  (731-734, 737, 740, 745-748, 750) are held not because of the escalation gate but for the ≤3
+  concurrent-tickets guardrail and to keep this session's validation surface bounded to what can
+  genuinely be checked next invocation — re-judge next session, not deferred by default.
+
+**FOLLOW-736 retrospective — owed since the merge, dispatched this session (Step 6/7).** This is
+Step-6/7 maintenance on an already-merged, already-DONE ticket, not new scope competing with the
+escalation gate under any reading of it. Dispatched `retrospective-analyst`/**Opus** (model-fit:
+cross-module wiring + rule-promotion judgement is this agent's own default tier, and this merge
+touches a 3-round-reverted defect class plus compliance-doc citations — exactly the kind of
+ambiguous, multi-axis analysis Opus is for). Nohup'd
+(`claude --agent retrospective-analyst --model opus -p "<brief>" --permission-mode acceptEdits`),
+PID and log path recorded in `backlog/STATUS.md` per the standing instruction not to lose nohup'd
+output. Expected output: `RETRO-236` in `backlog/RETROSPECTIVES.md` + any new `FOLLOW-NNN` stubs in
+`backlog/FOLLOW_UPS.md`.
+
+**FOLLOW-743 dispatched** to backend-engineer, model Sonnet. **FOLLOW-744 dispatched** to
+devops-engineer, model Sonnet. Full delegation briefs in each ticket's entry above. Both selected
+over the P3 stubs (731-734, 737, 749, 750) per priority: P1 > P2/P3, and both are the RETRO-235
+follow-ups the session-84 handoff itself ranked #1 and #2. Verified no file overlap between the two
+branches before dispatching both concurrently (743 touches `generate_description.py` +
+`check-sentry-init-singleton.sh` + its own test file; 744 touches `observability.py` canonical +
+mirrors + `MODAL_PROD_STANDUP.md` — disjoint).
+
+**Credential-fact corrections from the handoff, re-verified against the actual file state before
+trusting them:** `backlog/ESCALATIONS.md` ESC-045 item 1 already reads corrected (Anthropic key
+confirmed present and byte-identical across `dev`/`stg`/`prd` — not re-litigated this session, only
+confirmed the correction is actually in the file, not just claimed in the handoff prose). FOLLOW-750
+(P3, the shared-key finding) confirmed filed in `backlog/FOLLOW_UPS.md`.
+
+**Bookkeeping committed BEFORE dispatch** (no concurrent git ops with a running subagent, per
+`feedback_no_concurrent_git_with_subagents`): one commit touching `backlog/QUEUE.md` (this header +
+FOLLOW-743/744 ticket entries), `backlog/FOLLOW_UPS.md` (`promoted_to_queue: true` for both), and
+`backlog/STATUS.md`, pushed to `origin/main` before any subagent was started.
+
+**3 things IN_PROGRESS this session** (FOLLOW-743, FOLLOW-744, plus the retrospective which is
+maintenance not a queue ticket) — within the ≤3 concurrent-tickets guardrail counting only the two
+real tickets.
+
+**CI-check counter:** 0/5 for both tickets. **Fix-iteration counter:** 0/3 for both. No PR opened
+yet — dispatch just started.
+
+**5 escalations remain OPEN, all non-blocking-for-dispatch for the reasons stated above:** ESC-020
+(Rafał, `web-master` prod deploy, open since 2026-06-06), ESC-041 (npm registry E403, FOLLOW-626,
+open since 2026-07-23), ESC-042-narrowed (Modal `intent-engine` operator deploy, FOLLOW-635, open
+since 2026-07-24), ESC-044 (consent-hash placeholder + DPO ruling, open since 2026-07-27), ESC-045
+(Upstash dev-parity items 2-3 still genuinely open on Piotr; item 1 corrected FALSE, item 4 resolved
+
+- re-owned to FOLLOW-744). Surfaced again for human attention, not re-litigated.
+
+NEXT: Use the backend-engineer subagent on FOLLOW-743 and the devops-engineer subagent on
+FOLLOW-744. (table rows: "ingest worker, control-plane... billing, webhooks" → backend-engineer;
+"Terraform, CI/CD, workflows, secrets, observability, runbooks" → devops-engineer) Human attention
+also needed on ESC-020/041/042/044/045 items 2-3 — see `backlog/ESCALATIONS.md`.
+
+---
+
 ### FOLLOW-736 — status: DONE (PR #645 merged 2026-07-31 by Piotr, `264bf1da`)
 
 **Merged.** ADR-0020 D1-D5 shipped: `has_intent_signal(dims)` plus a two-branch write where an empty
@@ -90,7 +277,7 @@ becomes true only when this ticket's code merges, so it is this ticket's to do.
 
 ---
 
-## ▶️ START HERE — resume 2026-07-30 (session 83 — FOLLOW-736 judged NOT ready to dispatch (escalation gate), FOLLOW-739 re-scoped not dispatched, FOLLOW-738 retro dispatched; 5 open ESCALATIONS unchanged, ESC-045 narrowed to items 1-3)
+## ▶️ (superseded) START HERE — resume 2026-07-30 (session 83 — FOLLOW-736 judged NOT ready to dispatch (escalation gate), FOLLOW-739 re-scoped not dispatched, FOLLOW-738 retro dispatched; 5 open ESCALATIONS unchanged, ESC-045 narrowed to items 1-3)
 
 **State re-verified before doing anything:** `git status` clean, `main` at `1bea483d`
 (`docs(backlog): close follow-738 (merged #644) + follow-741, esc-045 item 4 unblocked [FOLLOW-738]`),

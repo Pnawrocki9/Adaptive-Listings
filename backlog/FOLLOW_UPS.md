@@ -22454,7 +22454,7 @@ RETRO-188; FOLLOW-736, FOLLOW-737, FOLLOW-741]
 
 source_retro: RETRO-235 (PR #644, FOLLOW-738) source_ticket: FOLLOW-738 recommended_sprint: now
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true
 
 **The finding.** `apps/llm-gateway/src/jobs/generate_description.py:413-423` opens a scope, sets
 `kind=spend_cap` / `area=description`, adds `rolling_24h_spend_usd` + `cap_usd` extras and calls
@@ -22507,7 +22507,7 @@ cross_ref: [RETRO-235 §3 HW-1, §4b CB-1, §4c TG-1, §6 (Rule AE/AC count 2);
 
 source_retro: RETRO-235 (PR #644, FOLLOW-738) source_ticket: FOLLOW-738 / ESC-045 item 4
 recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 2
-depends_on: [] blocks: [FOLLOW-739 verification leg] promoted_to_queue: false
+depends_on: [] blocks: [FOLLOW-739 verification leg] promoted_to_queue: true
 
 **The finding — a half-wire that lost its owner rather than gaining one.** `SENTRY_DSN` is consumed
 at `apps/intent-engine/src/observability.py:109` (and its two Rule J mirrors) from four call sites,

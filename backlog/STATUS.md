@@ -1,3 +1,80 @@
+# Status — 2026-07-31 (session 85 — FOLLOW-736 retro dispatched; FOLLOW-743 + FOLLOW-744
+
+dispatched (gate re-judged narrower); 5 ESCALATIONS open, non-blocking-for-dispatch)
+
+## SESSION 85 (2026-07-31) — FOLLOW-736 retro dispatched; FOLLOW-743/744 dispatched
+
+**State re-verified before doing anything:** `git status` clean, `main` at `507b6192`.
+`gh pr list --state open` → empty. No stray `claude --agent` processes, `.claude/worktrees/` empty —
+nothing stranded. `backlog/ESCALATIONS.md`: 5 `## OPEN` entries (ESC-020, ESC-041, ESC-042-narrowed,
+ESC-044, ESC-045), unchanged from session 84's validation pass.
+
+**Escalation gate re-judged, narrower than sessions 82/83's blanket hold.** All 5 open items
+self-scope their own `Affects:` list to specific tickets, and none names FOLLOW-743 or FOLLOW-744.
+Per the same reasoning sessions 59-76 already used for ESC-020/041/042 (standing 2026-07-27 CEO
+ruling: external/operator-only blockers are non-blocking-for-dispatch) and sessions 71-76 applied to
+ESC-044/045 for unrelated tickets, dispatched FOLLOW-743 and FOLLOW-744 — both self-contained
+engineering fixes with no Piotr-blocking step in their own critical path. Held FOLLOW-749 and the
+P2/P3 stubs (731-734, 737, 740, 745-748, 750) for the ≤3-concurrent-tickets guardrail and bounded
+validation surface, not for the escalation gate — re-judge next session.
+
+**FOLLOW-736 retrospective dispatched (Step 6/7 maintenance, owed since the 2026-07-31 merge).**
+Model: Opus. Nohup'd (`claude --agent retrospective-analyst --model opus`), PID and log path below.
+
+**FOLLOW-743 dispatched** to backend-engineer (model Sonnet — routine wiring of an existing shared
+helper into one more call site, no ambiguous AC). Branch
+`backend-engineer/FOLLOW-743-spend-cap-sentry-init`. Delegation-table row: "ingest worker,
+control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks" →
+backend-engineer.
+
+**FOLLOW-744 dispatched** to devops-engineer (model Sonnet — mechanical hardening of an existing
+helper + a provisioning runbook instruction, no new design). Branch
+`devops-engineer/FOLLOW-744-sentry-dsn-provisioning`. Delegation-table row: "Terraform, CI/CD,
+workflows, secrets, observability, runbooks" → devops-engineer.
+
+**Verified no file overlap between FOLLOW-743 and FOLLOW-744 before dispatching both concurrently:**
+743 touches `generate_description.py` + `check-sentry-init-singleton.sh` + its own test file; 744
+touches `observability.py` canonical + 2 mirrors + `MODAL_PROD_STANDUP.md` — disjoint.
+
+**Bookkeeping committed BEFORE dispatch** (no concurrent git ops with a running subagent):
+`backlog/QUEUE.md` (session-85 header + FOLLOW-743/744 entries), `backlog/FOLLOW_UPS.md`
+(`promoted_to_queue: true` for both), `backlog/STATUS.md`, pushed to `origin/main` before any
+subagent started.
+
+**Dispatch mechanism:** nohup'd
+`claude --agent <worker> -p "<brief>" --permission-mode acceptEdits --model sonnet`
+(backend-engineer, devops-engineer) and `--model opus` (retrospective-analyst), all backgrounded —
+no Task/Agent tool available to this PM session, same sanctioned pattern as prior sessions. Logs
+(session-scoped scratchpad, not `/tmp` generically):
+
+- `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/retro736_analyst.log`
+- `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow743_backend.log`
+- `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow744_devops.log`
+
+PIDs recorded immediately below once confirmed via `pgrep`/`ps`, per
+`feedback_pm_nohup_dispatch_silently_fails` (a short/quiet log at T+5s is expected, not a failure
+signal).
+
+**CI-check counter:** 0/5 for both tickets. **Fix-iteration counter:** 0/3 for both. No PR opened
+yet this session.
+
+**2 tickets IN_PROGRESS** (FOLLOW-743, FOLLOW-744) — within the ≤3 guardrail. The retrospective is
+Step-6/7 maintenance, not a queue ticket, and is not counted against the cap.
+
+**5 escalations remain OPEN**, all non-blocking-for-dispatch: ESC-020 (Rafał, `web-master` prod
+deploy, open since 2026-06-06), ESC-041 (npm registry E403, FOLLOW-626, open since 2026-07-23),
+ESC-042-narrowed (Modal `intent-engine` operator deploy, FOLLOW-635, open since 2026-07-24), ESC-044
+(consent-hash placeholder + DPO ruling, open since 2026-07-27), ESC-045 (Upstash dev-parity items
+2-3 still open on Piotr; item 1 corrected FALSE by session 84, item 4 resolved + re-owned to
+FOLLOW-744). Surfaced for human attention, not re-litigated.
+
+NEXT: Use the backend-engineer subagent on FOLLOW-743 and the devops-engineer subagent on
+FOLLOW-744. (table rows: "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding
+HTTP, billing, webhooks" → backend-engineer; "Terraform, CI/CD, workflows, secrets, observability,
+runbooks" → devops-engineer)
+
+---
+
 # Status — 2026-07-30 (session 83 — FOLLOW-736 held (escalation gate), FOLLOW-739 re-scoped not
 
 dispatched, FOLLOW-738 retro dispatched; ESC-045 narrowed to items 1-3; 5 ESCALATIONS open)

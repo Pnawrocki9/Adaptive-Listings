@@ -22848,3 +22848,181 @@ runs against it; (3) whichever way, record the decision where a future reader wi
 `.env.example` comment block and `docs/runbooks/MODAL_PROD_STANDUP.md`.
 
 cross_ref: [ESC-045, FOLLOW-736, FOLLOW-743]
+
+---
+
+## FOLLOW-751 — the batch cron counts `SET … NX`-suppressed writes as `processed`; FOLLOW-749 fixes the same over-claim in local-dev and its scope text clears production
+
+source_retro: RETRO-236 source_ticket: FOLLOW-736 recommended_sprint: next recommended_agent:
+ml-engineer priority: P3 estimated_hours: 1 depends_on: [] promoted_to_queue: false
+
+**The gap.** `apps/intent-engine/src/jobs/batch_enrich.py:66-70` calls `write_shadow_intent(...)`
+and then increments `processed` unconditionally. Since FOLLOW-736 that call may store nothing: a
+payload carrying no usable dimension is written with `SET … NX`, which is a no-op against a session
+that already has a key. `write_shadow_intent` returns `None` (ADR-0020 D3 pins the signature), so
+the caller cannot tell the two outcomes apart.
+
+The cron's only operator-facing output is its summary `{"processed", "errors", "degraded"}` plus the
+`print` at `:76`. `degraded` counts degraded **extractions**, not suppressed **writes**, and the two
+sets are different: a neutral-success extraction ("hi", "thanks") has `data_source == "model"`, so
+it is outside `DEGRADED_DATA_SOURCES`, is counted as `processed`, is **not** counted as `degraded`,
+and stored nothing. An operator reading `processed: 100, errors: 0, degraded: 0` cannot distinguish
+a batch that wrote 100 records from one that wrote 3.
+
+**Why this is not a duplicate of FOLLOW-749.** FOLLOW-749 is the same over-claim class at a
+different call site (`local_dev.py`'s `shadow_key_written`) and states in writing: _"Scope:
+**local-dev only.** `local_dev.py` is never deployed, so no operator-facing surface is affected;
+production's `main.py` returns 202 before extraction runs and has no such field."_ That clears
+`main.py` correctly and is silent on `jobs/batch_enrich.py`, the third production call site — which
+the FOLLOW-736 PR body did enumerate ("no change to the three call sites' behaviour") while walking
+only the behaviour axis across it, not the telemetry axis (**Rule S**). If FOLLOW-749 is instead
+broadened to cover both, close this stub as merged into it rather than doing the work twice.
+
+**Latent, not live.** `read_recent_chat_sessions` is still a stub returning `[]`
+(`apps/intent-engine/src/clickhouse_reader.py:28`), so the cron currently iterates nothing. It stops
+being latent the moment FOLLOW-101 lands — **sequence this before FOLLOW-101, not after.**
+
+**AC:** (1) the batch summary distinguishes records actually stored from calls made — recommended
+shape is a `suppressed` counter alongside `degraded`, since it needs no new vocabulary; (2)
+whichever mechanism is chosen must NOT change `write_shadow_intent`'s `-> None` signature without an
+ADR-0020 D3 amendment (if a return value is genuinely required, coordinate with FOLLOW-749 option
+(b) and amend the ADR once, for both call sites); (3) the docstring at `batch_enrich.py:30-36`,
+which currently explains `degraded` as the fix for "a green cron log over a batch that extracted
+nothing", is updated so it does not now describe a green cron log over a batch that **stored**
+nothing; (4) a test asserting the counter over a warm key with an empty-dimension payload.
+
+cross_ref: [RETRO-236 §3 HW-1c, FOLLOW-749, FOLLOW-736, ADR-0020 D3,
+`apps/intent-engine/src/jobs/batch_enrich.py:66-70`, FOLLOW-101, Rule S]
+
+---
+
+## FOLLOW-752 — the `SET … NX` invariant is proved only against a `MagicMock`, while the repo's real-Redis gate went green over the branch that did not change
+
+source_retro: RETRO-236 source_ticket: FOLLOW-736 recommended_sprint: next recommended_agent:
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**The gap.** FOLLOW-736's whole deliverable is one invariant: _an extraction carrying no usable
+dimension must not remove a stored prior, and must not refresh its TTL._ In CI that invariant is
+asserted only through `_write()` (`apps/intent-engine/src/test_intent_engine.py:623-627`), which
+patches `redis_writer._get_redis` with a `MagicMock` and checks `kwargs.get("nx") is True`. That
+proves the kwarg was **passed**; it cannot prove Redis **honoured** it. A `MagicMock` accepts any
+kwarg name, so a future `upstash_redis` bump that renames, deprecates or silently ignores `nx=`
+leaves the entire suite green while the production behaviour reverts to the clobber this ticket
+exists to prevent.
+
+**The gate that should cover it already exists and was not extended.**
+`.github/workflows/redis-shadow-smoke.yml` provisions a real Upstash instance, runs the REAL
+`write_shadow_intent` (`tests/integration/shadow_intent_writer.py:80`) and reads it back with the
+REAL `readShadowChatIntent` (`tests/integration/redis-shadow-round-trip.smoke.test.ts:58,189`). It
+passed on PR #645 — but its single payload (`shadow_intent_writer.py:57-70`) carries **8 non-null
+dimensions**, so it exercises the unconditional `EX` branch only. `grep -n "nx\|NX"` on the smoke
+test returns zero hits, and
+`git log --oneline -- tests/integration/redis-shadow-round-trip.smoke.test.ts` shows it last changed
+in `dd740267` (FOLLOW-368). **A green gate over the unchanged path was available to be read as
+coverage of the changed one.**
+
+The only real-Redis evidence for the new branch is the implementer's local Docker run
+(`redis:7-alpine` behind `hiett/serverless-redis-http`), documented in the PR body. That run was
+excellent and is the reason this is P2 rather than P1 — but it is unrepeatable and ungated.
+
+**AC:** (1) extend the smoke workflow with the two missing cases, both against the real instance —
+(a) **warm key**: write a signal-bearing payload, then write an empty-dimension payload for the same
+`{tenant, session}`, then assert via the real `readShadowChatIntent` that the FIRST record is what
+comes back, and assert `TTL` **decreased** rather than returning to 86400 (the D4 invariant, which
+is the half a value-equality assertion alone would miss); (b) **cold key**: an empty-dimension
+payload on a fresh `session_id` IS stored with its markers intact; (2) the empty-dimension case must
+use `data_source == "model"` (neutral success), not only a degraded payload — the content-keyed rule
+is what ADR-0020 D2 decided and a degraded-only fixture would let a provenance-keyed regression
+pass; (3) the new cases must fail if `nx=True` is removed from `redis_writer.py:130` — demonstrate
+the red in the PR; (4) do not weaken or duplicate the existing AC-RT1 round-trip case.
+
+cross_ref: [RETRO-236 §3 HW-2 / §4c TG-1, FOLLOW-736, ADR-0020 D3/D4, FOLLOW-368,
+`.github/workflows/redis-shadow-smoke.yml`, `tests/integration/shadow_intent_writer.py`, Rule Z]
+
+---
+
+## FOLLOW-753 — the tightened chat-retention wording is false for a session whose first message yields no dimension, in two compliance documents
+
+source_retro: RETRO-236 source_ticket: FOLLOW-736 recommended_sprint: next recommended_agent:
+compliance-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**The gap.** FOLLOW-736 correctly re-derived the shadow key's retention statement from the new code
+and then stated it one case too wide. Both documents now read:
+
+- `docs/compliance/C-07-chat-retention-scope.md:96-97` — lifetime _"24 hours from the last chat
+  message **that yielded at least one intent dimension**"_;
+- `docs/compliance/ropa.md:133` — the same sentence in the evidence cell.
+
+That is false for the cold-key all-null record. `SET … NX` succeeds when the key does **not** exist,
+so a session whose FIRST message yields nothing (a failed model call, or "hi") stores a record with
+a full `ex=86400`. **The PR proved this itself, as step 4 of its own verification table**
+(`sess_cold`, `TTL 86400`, "the marked all-null record IS stored"). For that record no message ever
+yielded a dimension, yet it is retained for 24 hours, and it is not free of personal data: it
+carries `tenant_id`, `session_id` (pseudonymous identifiers) and the FOLLOW-730 provenance markers.
+
+**The tightening claim itself is sound and must be preserved.** `SET … NX` genuinely cannot refresh
+an existing key's expiry, so the effective lifetime really is ≤ the previous "24 hours from last
+chat message", and the 24h **maximum** is unchanged. Only the **anchor** is wrong. The accurate form
+is approximately: _"24 hours from the first chat message of the session, restarted only by a message
+whose extraction yields at least one intent dimension."_
+
+**Why P2 and not P3.** The `C-07` sentence sits in **Q3.1**, the list of what the Privacy Notice
+must disclose at go-live — i.e. text scheduled to be copied into a user-facing document. A retention
+statement that under-describes the retention surface is the wrong error to carry into a published
+notice, even when the direction of the underlying change is tightening.
+
+**AC:** (1) correct both sentences, keeping the retention-tightening statement and the "maximum
+unchanged at 24h" statement intact; (2) state the cold-key case explicitly — a session that never
+yields a dimension still stores one all-null record for up to 24 h — so the notice text derived from
+Q3.1 is complete; (3) re-check `dpia.md:269` and `dpia.md:~1350` against the corrected wording (both
+were re-verified as needing no edit during FOLLOW-736; confirm that still holds after this change,
+do not assume it); (4) note in the C-07 evidence block that the anchor is a property of `SET … NX`
+key-absence semantics, not of the dimension content, so the next reader does not re-derive the same
+error.
+
+cross_ref: [RETRO-236 §4b CB-1 / §4d DG-2, FOLLOW-736, FOLLOW-730, ADR-0020 D4,
+`docs/compliance/C-07-chat-retention-scope.md:96-97`, `docs/compliance/ropa.md:133`, Rules N/AI/Y]
+
+---
+
+## FOLLOW-754 — ADR-0020 §D6's one surviving visibility channel is blind for any session that opens with an unextractable message
+
+source_retro: RETRO-236 source_ticket: FOLLOW-736 recommended_sprint: next recommended_agent:
+architect priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+
+**The gap.** `docs/adr/ADR-0020-shadow-intent-write-admission.md:152-155`, as amended by FOLLOW-741,
+states: _"(3) **the key itself on a cold session is real** — the `NX` write succeeds and stores the
+degraded record with its markers in full — but it only covers a session's first message, **i.e.
+exactly the case where there is no prior to lose**."_
+
+The clause after "i.e." asserts an equivalence the code does not have. `SET … NX` succeeds iff **the
+KEY is absent**, not iff there is **no prior**. A session whose first message is a neutral success
+("hi", "thanks") takes the NX branch and CREATES a record holding no signal (`redis_writer.py:130`).
+From message 2 onward the key exists, so every later degraded write is suppressed — even though
+there is still nothing to lose. So there is a third state the ADR does not model: **a session with a
+record but no prior**, in which the degraded write is invisible on all three channels.
+
+The operator consequence is the one the reverted PR #642 round 2 already identified once:
+mid-outage, `GET shadow:{t}:{s}:chat_intent` on such a session returns `data_source: "model"` — a
+healthy-looking payload — because the record it reads was written by an earlier, successful, empty
+read. Since an unextractable greeting is the ordinary opening of a chat, this is the common case,
+not the corner.
+
+**This is a correction to the amendment, not a re-litigation of D1-D5.** The write-admission ruling
+is right and shipped; only D6's characterisation of the residual visibility is wrong. RETRO-236 §5d
+records the consequence for the PM: FOLLOW-740 is the **only** remaining route, not one of three.
+
+**AC:** (1) rewrite D6 channel (3) to key on **key absence** rather than "no prior", and name the
+third state explicitly; (2) carry the correction into the Consequences/Negative bullet, which
+inherits the same framing; (3) drop or qualify "accumulated" wherever the ADR,
+`redis_writer.py:16-19` and `MASTER_DESIGN.md` §D.1.1 use it — neither runtime accumulates: the
+writer does no per-dimension merging (D7) and the SDK folds the prior exactly once per session
+behind the Rule R latch (`packages/sdk/src/core/adapt.ts:869-880`), so the fix's value window is
+_between the first signal-bearing extraction and the next `adapt()` call_; (4) fix the Rule R
+citation at `ADR-0020:181` — `adapt.ts:868-880` should be `packages/sdk/src/core/adapt.ts` (the
+asserted behaviour is correct; only the path is wrong — **Rule Y**); (5) record in FOLLOW-740's
+context that its consumer must be driven by the write-admission decision, not by reading the key
+back, since reading the key back is exactly the channel this finding shows is blind.
+
+cross_ref: [RETRO-236 §4a LG-1/LG-2 §4d DG-1/DG-3, ADR-0020 §D6 + Consequences, FOLLOW-741,
+FOLLOW-740, FOLLOW-736, RETRO-234 §5b (which assessed channel (3) as real), Rules Y/AH]

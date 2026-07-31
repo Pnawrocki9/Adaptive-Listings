@@ -3000,3 +3000,115 @@ prevented any sighting), Rule P (prior-art check — duplicate WORK, not duplica
 (mirror-file sync). Clause 3 is the axis RETRO-036's own remedy ("grep for the reserved number, not just
 the max") does NOT cover: on a branch, grepping harder still reads the wrong tree. Clause 4's repair shape
 is lifted verbatim from RETRO-154's successful repair. LETTER CHOICE: AN follows AM. -->
+
+---
+
+## Rule AO — A corrective edit whose purpose is to REMOVE a false or over-broad claim MUST be re-verified against the SAME PR's own evidence artefacts before merge; a correction written in fixing-mode inherits the mental model that produced the original error
+
+**Pattern.** A defect is found in a claim — a doc paragraph, an ADR decision record, a comment, a
+guard's stated invariant. Someone rewrites the claim specifically to make it true. The rewrite is
+false, over-broad, or wrong on an adjacent case — and in the sharpest instances it is falsified by
+evidence the same PR already produced and the same author already read. The correction is not
+reviewed as a new claim, because everyone (author and reviewer) is evaluating it against the error
+it replaces rather than against the code. "The old text was just disproved" reads as "the new text
+is verified".
+
+**Evidence (≥2 prior retros — promotion arithmetic).**
+
+- **RETRO-234 §6 (count 1, minted the pattern).** PR #642's three review rounds: of 30 findings,
+  round 2 found "10 more defects, **4 of them created by the round-1 fixes**"; round 3 found "10
+  more and **9 of them lived in the don't-clobber logic added in rounds 1-2**". Directional
+  instance: the round-1 fix that made Sentry delivery actually work (adding `sentry-sdk` to the
+  Modal image) is what converted a dormant `include_local_variables=True` default into a live
+  disclosure of raw buyer chat text. Pre-specified clause (a): _a fix that ENABLES a previously-dead
+  code path must re-open the security/compliance review of everything downstream of it, because "it
+  never ran" was the mitigation._
+- **RETRO-235 §6 / CB-3 (count 2).** FOLLOW-741 existed **solely** to stop ADR-0020 asserting
+  visibility channels that did not exist. Its fix asserted `SENTRY_DSN` provisioning was "blocked by
+  FOLLOW-738" in four places (`ADR-0020:148-149`, `:165`, `:196`, `:200`); FOLLOW-738 merged **30
+  minutes later** (`479ac0ef`, the very next commit) and made the fix false. Pre-specified clause
+  (b): _a document amended to describe a blocker's existence has a lifetime measured in commits and
+  must be written to expire (`BLOCKED-ON-#N`, Rule AH) rather than to assert._
+- **RETRO-236 §4b CB-1 + §4a LG-1 (count 3, TWO live instances in one PR — promotion trigger).** (i)
+  PR #645 rewrote the shadow-key retention statement in `C-07:96-97` and `ropa.md:133` **precisely
+  to make it more accurate** ("24 hours from the last chat message that yielded at least one intent
+  dimension") — and the new wording is false for the cold-key all-null record, which **the same PR
+  verified as step 4 of its own evidence table** (`sess_cold`, `TTL 86400`, "the marked all-null
+  record IS stored"). (ii) FOLLOW-741's amendment to ADR-0020 §D6, written to stop the ADR
+  over-claiming visibility, over-claims visibility on the one channel it certified as real: it
+  glosses "the key itself on a cold session" as "**i.e. exactly the case where there is no prior to
+  lose**", but `SET … NX` keys on **key absence**, not on the absence of a prior — so a session that
+  opens with "hi" has a record, no prior, and a permanently invisible degraded write.
+- **Why the prior clauses do not cover the new instances, i.e. what this rule adds.** Clause (a) is
+  about a fix that _enables_ dead code — neither RETRO-236 instance enables anything. Clause (b) is
+  about a claim falsified by a _later, external_ commit — both RETRO-236 instances were false the
+  moment they were written, and (b)'s remedy would not have helped: an expiring form of a wrong
+  anchor is still a wrong anchor. The missing axis is **the direction the falsifying evidence comes
+  from**. Here it came from inside the PR, from artefacts the author produced and read. That is the
+  axis with a mechanical check attached, and it is clause (c) below.
+
+**Rule.**
+
+1. **A PR that edits an existing claim in order to correct it MUST treat the replacement as a NEW
+   claim requiring its own verification** — never as verified-by-inheritance from the disproof of
+   the old one. In the PR body, state the evidence for the _new_ wording separately from the
+   evidence that the _old_ wording was wrong. These are two different sentences and must both be
+   present.
+2. **The replacement MUST be checked against every case in the same PR's own evidence artefacts** —
+   verification table, live-run log, red-first output, new test names, the ACs' own proof steps. If
+   the PR contains a row, a case or a log line the corrected claim does not cover, the claim is
+   wrong or the row is out of scope, and the PR must say which. This is the cheapest check in the
+   rule and it would have caught both RETRO-236 instances (`C-07`'s anchor vs the table's step 4;
+   D6's "no prior to lose" vs the cold-NX-write case the same table proves).
+3. **A corrected claim about a CONDITION must restate the condition in the code's own terms, not in
+   the terms of the symptom that motivated the fix.** "The key does not exist" is the code's term;
+   "there is no prior to lose" is the symptom's term, and the gap between them is where the third
+   state lives. Where the claim is a data-retention or user-facing statement, the code's term wins
+   even when it is less readable; add the readable gloss _after_ the exact statement, never instead
+   of it.
+4. **A corrective edit to a document is in scope for the same wiring/consumer audit as code.** If
+   the PR edits one document asserting a fact, `grep` the repo for the other documents asserting the
+   same fact and correct them in the same PR (this is Rule AI's obligation) — AND check that the
+   file you are already editing does not retain a _different_ falsified assertion elsewhere in it.
+   RETRO-236 §4b CB-2 is the miss: PR #645 edited `ADR-0020`'s header while leaving four falsified
+   "blocked by FOLLOW-738" assertions in the same file, and wrote the CORRECT expiring form into
+   `MASTER_DESIGN` in the same commit — leaving the repo holding both versions with the normative
+   document carrying the wrong one.
+5. **A review round N+1 brief MUST name round N's diff as its primary target** (RETRO-234's clause
+   (a), retained), and **a fix that enables a previously-dead code path MUST re-open the
+   security/compliance review of everything downstream of it**, because "it never ran" was the
+   mitigation.
+
+**Verification.**
+
+- Reviewer check, mechanical, no tooling required: for every claim the PR _changes_ (as opposed to
+  adds), locate the PR's own evidence artefact and read the corrected claim against each row of it.
+  If the PR has no evidence artefact, the correction is unverified — say so in the PR body rather
+  than shipping it silently.
+- Retro check (this rule's own enforcement): a retro examining a PR that contains a corrective doc
+  edit MUST re-derive the corrected claim from the code, not from the diff's plausibility. Both
+  RETRO-236 instances were found this way and neither was visible from reading the diff.
+- No CI gate is proposed. The falsification is semantic and the artefacts are prose; a grep-based
+  gate here would be the Rule AE failure (a guard scoped to the one shape the finding happened to
+  use) applied to natural language. If a mechanical check is ever wanted, the tractable one is
+  narrow: **a PR that edits a compliance document's retention/lifetime sentence must also touch or
+  cite a test or evidence artefact** — nothing broader.
+
+<!-- PROMOTED by RETRO-236 (2026-07-31). Pattern P-19 "THE FIX ROUND IS THE DEFECT SOURCE", count 3,
+PRIOR RETROS: RETRO-234 §6 (count 1, review-round mechanism, clause (a)) and RETRO-235 §6 / CB-3
+(count 2, concurrent-merge mechanism, clause (b)). Promotion trigger: RETRO-236 §4b CB-1 + §4a LG-1 —
+TWO instances in a single PR, both falsified by evidence INSIDE that PR (the C-07/ropa retention
+anchor vs the PR's own verification-table step 4; ADR-0020 D6's "no prior to lose" gloss vs SET…NX
+key-absence semantics), i.e. a third distinct MECHANISM (self-falsifying correction) that neither
+prior clause covers. CHECKED BEFORE MINTING: Rule AI (must update every doc asserting the prior state
+in the same PR — the TRIGGER rule; fires on docs NOT updated, silent on the accuracy of docs that
+WERE updated; both RETRO-236 instances are docs correctly updated with wrong content), Rule AH
+(operator-executable instruction verified at the doc's own merge commit, BLOCKED-ON-#N form — nearest
+neighbour, owns RETRO-235's instance, but neither RETRO-236 instance is an operator instruction and
+CB-1 would PASS AH's merge-commit check because SET…NX is real and merged), Rule Y (a citation naming
+a test/file must be verified against that file — about artefact citations, not about factual claims
+derived from code; RETRO-236 DG-3 is a Y instance and is deliberately filed under Y, not here),
+Rule AE (a mechanical guard must enumerate every call-shape — same ORGAN, one domain over, code not
+prose, no evidence/doc axis). Clause 2 is the novel, mechanically checkable part and the reason the
+rule earns its letter. Clause 5 preserves RETRO-234's clause (a) verbatim so promotion does not drop
+the first sighting's remedy. LETTER CHOICE: AO follows AN. -->

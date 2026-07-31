@@ -1491,6 +1491,33 @@ def test_under_cap_allows_generation_end_to_end(
         mock_httpx.assert_called()
 
 
+def test_spend_cap_breach_uses_shared_hardened_init() -> None:
+    """
+    FOLLOW-743 AC-4: the spend-cap capture_message() had no init_sentry(...)
+    anywhere in this process, so it was a permanent no-op on the live
+    description path. Mirrors
+    test_process_embed_seed_request_uses_shared_hardened_init
+    (test_listing_embed_seed_requested_endpoint.py:153-162): the breach path
+    must route through the shared hardened helper, init before capturing, and
+    flush after (the function returns immediately, so the flush is
+    load-bearing).
+    """
+    from jobs.generate_description import _spend_cap_exceeded
+
+    with (
+        patch(
+            "jobs.generate_description._get_rolling_24h_spend",
+            return_value=150.0,  # over the default $100 cap
+        ),
+        patch("jobs.observability.init_sentry") as mock_init,
+        patch("jobs.observability.flush_sentry") as mock_flush,
+    ):
+        assert _spend_cap_exceeded() is True
+
+    mock_init.assert_called_once_with("SENTRY_DSN")
+    mock_flush.assert_called_once_with(0.3)
+
+
 # ---------------------------------------------------------------------------
 # FOLLOW-188: leak/format fail-safe — _body_violates_contract unit tests
 # ---------------------------------------------------------------------------

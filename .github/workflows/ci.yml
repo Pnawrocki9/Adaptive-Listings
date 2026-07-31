@@ -680,6 +680,27 @@ jobs:
       - name: Assert zero sentry_sdk.init( call sites outside observability.py
         run: bash scripts/check-sentry-init-singleton.sh
 
+  # ── Sentry capture-has-init guard (FOLLOW-743) ──────────────────────────────
+  # The INVERSE of the guard above: asserts every capture_exception(/
+  # capture_message( call site's module also contains an init_sentry( call (or
+  # is explicitly allow-listed). Closes the blind spot check-sentry-init-
+  # singleton.sh cannot see by construction — a module that never had an init
+  # trivially has "zero bare init sites". See
+  # scripts/check-sentry-capture-has-init.sh for the full FOLLOW-743 rationale.
+  #
+  # Hard gate — no continue-on-error.
+  sentry-capture-has-init-guard:
+    name: Sentry capture-has-init guard (FOLLOW-743)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Sentry capture-has-init self-test (validates the gate itself)
+        run: bash scripts/check-sentry-capture-has-init.sh --self-test
+
+      - name: Assert every capture call site has an init_sentry( in its module
+        run: bash scripts/check-sentry-capture-has-init.sh
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

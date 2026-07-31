@@ -51,9 +51,15 @@ no Task/Agent tool available to this PM session, same sanctioned pattern as prio
 - `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow743_backend.log`
 - `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/dispatch_logs/follow744_devops.log`
 
-PIDs recorded immediately below once confirmed via `pgrep`/`ps`, per
-`feedback_pm_nohup_dispatch_silently_fails` (a short/quiet log at T+5s is expected, not a failure
-signal).
+PIDs confirmed running via `ps -eo pid,lstart,cmd | grep 'claude --agent'` at T+5s (all three showed
+their full `-p` argument in the process table, not just a wrapper shell — real work in flight, per
+`feedback_pm_nohup_dispatch_silently_fails`): retrospective-analyst **122018**, backend-engineer
+(FOLLOW-743) **122371**, devops-engineer (FOLLOW-744) **122776**. **Caveat for next session:** the
+FOLLOW-744 `-p` prompt used unescaped backticks around two code identifiers inside a double-quoted
+bash string, which bash command-substituted away before the process ever saw them — the worker's own
+delegation brief lost two inline code mentions (still fully recoverable from `backlog/FOLLOW_UPS.md`
+→ `## FOLLOW-744`, which the brief tells it to read verbatim). Worth a lessons-file note: never use
+bare backticks inside a double-quoted `-p` string.
 
 **CI-check counter:** 0/5 for both tickets. **Fix-iteration counter:** 0/3 for both. No PR opened
 yet this session.
@@ -72,6 +78,38 @@ NEXT: Use the backend-engineer subagent on FOLLOW-743 and the devops-engineer su
 FOLLOW-744. (table rows: "ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding
 HTTP, billing, webhooks" → backend-engineer; "Terraform, CI/CD, workflows, secrets, observability,
 runbooks" → devops-engineer)
+
+**INCIDENT, caught and fully recovered mid-session — read before dispatching 2+ code-writing agents
+concurrently again.** Dispatching backend-engineer and devops-engineer at the same time with the
+same `cwd` (no per-agent `git worktree`) meant both shared ONE `.git/HEAD`. Each agent's own
+`git checkout -b <its branch>` silently flipped HEAD out from under the other, and git's default
+behavior (carry non-conflicting working-tree edits across a checkout) meant each agent's
+in-progress, uncommitted files kept riding along onto whichever branch happened to be checked out —
+including, briefly, this PM's own routine post-dispatch `git commit` for a `backlog/STATUS.md` PID
+update, which landed on `devops-engineer/FOLLOW-744-...` instead of `main` (session's own
+"bookkeeping before dispatch, never during" rule was followed for the FIRST commit but violated for
+a SECOND one made ~1 minute after dispatch, while both workers were already live). Two of devops-
+engineer's own commits also transiently landed on backend-engineer's branch mid-session for the same
+reason. **Nothing was lost** — recovered live via `git diff`-backed patches to
+`/tmp/.../scratchpad/git-recovery/*.patch` before any mutation, `git stash push` with explicit
+pathspecs to separate the two agents' interleaved uncommitted diffs without discarding either,
+`git reset --soft`/`git cherry-pick` to move commits to their correct branch without touching
+working-tree content, and a `git worktree add` for this very commit (isolating the PM's own
+bookkeeping from the two still-running agents' shared tree) rather than checking out `main` in the
+contested directory. **End state verified clean:** PR #646 (FOLLOW-743, `backend-engineer/FOLLOW-
+743-spend-cap-sentry-init`) contains only `.github/workflows/ci.yml` +
+`generate_description.py`/its test + the new `check-sentry-capture-has-init.sh` — 4 files, no
+`observability.py` contamination. PR #647 (FOLLOW-744, `devops-engineer/FOLLOW-744-sentry-dsn-
+provisioning`) contains only `.env.example` + `observability.py` ×3 + `test_observability.py` +
+`MODAL_PROD_STANDUP.md` — 6 files, no `generate_description.py` contamination. **Binding rule for
+every future session:** never dispatch two or more Bash-capable (code-writing) subagents into the
+same literal working directory concurrently unless each is given its own `git worktree` first (`git
+worktree add <path> -b <branch>` per agent, then `cd <path>` inside that agent's own dispatch
+command) — a draft-only agent (no Bash/git, e.g. `architect` in draft mode) is always safe to run
+alongside one Bash-capable agent, which is why sessions 80-82 never hit this. Retrospective-analyst
+was the third concurrent process this session and stayed safe throughout only because its own
+first commit had not landed yet when the collision was caught and fixed — it was not an exception
+to the rule, just lucky timing.
 
 ---
 

@@ -1,3 +1,38 @@
+# Status — 2026-07-31 (session 86 — retro dispatched for FOLLOW-743+744; FOLLOW-752 picked as next
+
+ticket, held pending retro)
+
+## SESSION 86 (2026-07-31) — retro for FOLLOW-743/744, FOLLOW-752 picked next
+
+**State re-verified, not taken on trust:** `main` clean at `66575f5e`. `gh pr list --state open` →
+empty. No running `claude --agent` processes, no worktrees. ESC-046 confirmed RESOLVED in the file
+(Piotr's ruling). 5 escalations remain OPEN: ESC-020, ESC-041, ESC-042 (narrowed), ESC-044, ESC-045
+— all operator-blocked, none affecting FOLLOW-752, standing ruling says non-blocking-for-dispatch.
+
+**Dispatched `retrospective-analyst` (Opus) for a single combined retro covering FOLLOW-743 (PR
+#646, `306285f7`) and FOLLOW-744 (PR #647, `5eeb5c40`)** — both small, same subsystem (Sentry
+observability), same source retro (RETRO-235), merged in the same session. Expected output:
+`RETRO-237` in `backlog/RETROSPECTIVES.md` + any new `FOLLOW-NNN` stubs.
+
+- Dispatch command:
+  `nohup claude --agent retrospective-analyst --model opus -p "<brief, see backlog/QUEUE.md session 86 header>" --permission-mode acceptEdits > /tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/retro-237-follow743-744.log 2>&1 &`
+- **PID:** recorded below once launched. **Log:**
+  `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/retro-237-follow743-744.log`
+
+**FOLLOW-752 picked as the next ticket** (P2, qa-engineer — extend `redis-shadow-smoke.yml` with two
+real-Redis cases proving `nx=` is honoured, not just passed to a `MagicMock`), but **not dispatched
+this turn** — my own session-85 NEXT: line required the retro to land first, and dispatching a
+second Bash-capable agent into this same cwd while the retro runs would repeat the exact collision
+class session 85 just recovered from. Full brief in `backlog/QUEUE.md` session-86 header.
+
+**CI-check counter:** n/a (no PR opened this turn). **Fix-iteration counter:** n/a.
+
+NEXT: Wait for the retrospective-analyst to finish, confirm RETRO-237 landed on its own branch (not
+main, not a stray branch — check `git log --all --oneline -5` and `git branch -a` before trusting
+it), then dispatch qa-engineer on FOLLOW-752.
+
+---
+
 # Status — 2026-07-31 (session 85 close — collision recovered zero data loss; RETRO-236 on main;
 
 PR #646/#647 PM-validated READY_FOR_REVIEW; 5 ESCALATIONS open, non-blocking-for-dispatch)

@@ -1,5 +1,53 @@
 # Backlog Queue
 
+## ▶️ START HERE — resume 2026-07-31 (session 86 — retro dispatched for FOLLOW-743+744; FOLLOW-752
+
+picked as next ticket, held until retro lands)
+
+**State re-verified before doing anything:** `git status` clean, `main` at `66575f5e`
+(`docs(backlog): close follow-743 (#646) and follow-744 (#647) [FOLLOW-744]`).
+`gh pr list --state open` → empty. `ps -eo pid,lstart,cmd | grep 'claude --agent'` and
+`git worktree list` → both empty, nothing stranded. `grep -n "^## OPEN" backlog/ESCALATIONS.md`
+(outside the preserved `<details>` block) → 5 entries, unchanged: ESC-020, ESC-041, ESC-042
+(narrowed), ESC-044, ESC-045. **ESC-046 confirmed RESOLVED** (Piotr's ruling, 2026-07-31: the merge
+of #646 was the main-loop session on explicit instruction, not a self-merging subagent; residual
+governance point spun out as FOLLOW-755, P3). No new escalation this session.
+
+**Retrospectives for FOLLOW-743 and FOLLOW-744 are owed (Step 6/7) and are dispatched first, before
+any new ticket is picked** — this is the binding sequencing my own prior session recorded in its
+NEXT: line. Judged **combined**: both PRs (#646, #647) are small, same subsystem (Sentry
+observability hardening — spend-cap capture wiring + non-fatal init), same source retro (RETRO-235),
+same session, and merged minutes apart. Dispatched `retrospective-analyst`/**Opus** (model-fit:
+retrospectives are Opus per CLAUDE.md's "Per-ticket retrospective loop" section — cross-module
+wiring + rule-promotion judgement; also the tier this repo has used for every prior RETRO-NNN entry
+this sprint). Nohup'd, PID and log path recorded in `backlog/STATUS.md`.
+
+**FOLLOW-752 read in full and selected as the next ticket** (P2, qa-engineer, `depends_on: []`, not
+yet promoted to QUEUE.md): FOLLOW-736's `SET … NX` invariant is proved in CI only against a
+`MagicMock` (`test_intent_engine.py:623-627`), while the repo's one real-Redis gate
+(`redis-shadow-smoke.yml`) went green over a payload that never exercises the `NX` branch — a future
+`upstash_redis` bump that renames/ignores `nx=` would leave the suite green while production reverts
+to the clobber FOLLOW-736 exists to prevent. Delegation-table row: "E2E/integration/load/a11y tests,
+fixtures, golden harness" → qa-engineer (matches the stub's own `recommended_agent`). **Held this
+turn, not dispatched** — my own prior-session NEXT: line said "before any new ticket is picked," and
+dispatching a second Bash-capable agent into this shared cwd while the retro is still running would
+repeat the exact collision class already recovered from once this sprint (session 85). One
+Bash-capable agent at a time absent a per-agent `git worktree`.
+
+FOLLOW-749/750/751/753/754 (the remaining RETRO-236 stubs) and 731-734/737/739/740/745-748 (older
+stubs) read but deferred — none outrank FOLLOW-752, and the ≤3-concurrent-tickets guardrail plus
+this session's one-agent-at-a-time discipline bound scope to a single next pick.
+
+**Escalation gate:** all 5 open items remain operator-blocked and self-scoped to tickets FOLLOW-752
+does not touch; per the standing 2026-07-27 ruling this does not block dispatch, only re-surfaced at
+session close.
+
+NEXT: Wait for the retrospective-analyst to finish (RETRO-237 expected in
+`backlog/RETROSPECTIVES.md`), then dispatch qa-engineer on FOLLOW-752. (table row: "E2E/integration/
+load/a11y tests, fixtures, golden harness")
+
+---
+
 ### FOLLOW-743 — status: DONE (PR #646 merged 2026-07-31, `306285f7`)
 
 **Merged.** The daily LLM spend-cap alarm on the LIVE description path was calling `capture_message`

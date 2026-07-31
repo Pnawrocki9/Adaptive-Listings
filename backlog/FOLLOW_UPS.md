@@ -23181,7 +23181,8 @@ AA / AJ / AH / Y]
 
 source_retro: RETRO-237 (PR #646, FOLLOW-743) source_ticket: FOLLOW-743 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-01 — dispatched to devops-engineer on Sonnet, sequenced ahead of
+FOLLOW-752 per Piotr)
 
 **Not a duplicate of FOLLOW-746 — read this paragraph before merging the two.** FOLLOW-746 covers
 `scripts/check-sentry-init-singleton.sh` (the registry/basename gap and its whole-line-only comment

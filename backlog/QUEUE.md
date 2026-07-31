@@ -1,5 +1,35 @@
 # Backlog Queue
 
+### FOLLOW-757 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-08-01 on Piotr's explicit "puść 757 przed 752".** Sequenced ahead of
+FOLLOW-752 on the reasoning that a false GREEN in a CI gate is worse than an invariant proved only
+against a `MagicMock`: the gate actively asserts that things are fine, whereas the mock merely fails
+to promise anything. Both are open; this one lies.
+
+**assigned_to:** devops-engineer **model: Sonnet** — the analytical work is already done and done
+well: RETRO-237 MEASURED all four false negatives against the shipped script with throwaway fixtures
+rather than reasoning about them, and the ACs are concrete (anchored test-file glob, comment +
+docstring stripping, allowlist inventory, one red-first fixture per shape). What remains is
+well-scoped shell hardening inside one file plus its self-test — the delegation-table row
+"Terraform, CI/CD, workflows, secrets, observability, runbooks". No design decision, no cross-module
+contract. **started_at:** 2026-08-01. **branch:**
+`devops-engineer/FOLLOW-757-capture-gate-false-negatives`.
+
+**Why this ticket exists is the session's recurring pattern.**
+`scripts/check-sentry-capture-has-init.sh` was written in PR #646 to close a blind spot in its
+sibling gate — and inherited that sibling's own comment-filter bug, inverted: in the singleton guard
+a trailing comment causes a false RED (loud, self-correcting); here it causes a false GREEN (silent,
+permanent). The gate currently reports PASS against a genuinely clean tree, so all four holes are
+latent regression risk, not live breakage.
+
+**Explicitly NOT a duplicate of FOLLOW-746** (same class, sibling script, opposite direction). If a
+future PM folds them, the direction difference and this ticket's ACs must survive intact.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ## ▶️ START HERE — resume 2026-07-31 (session 86 — retro dispatched for FOLLOW-743+744; FOLLOW-752
 
 picked as next ticket, held until retro lands)

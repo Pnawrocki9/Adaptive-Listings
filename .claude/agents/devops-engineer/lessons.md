@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-08-01 / FOLLOW-757
+
+**What I shipped:** Fixed four measured false-negative shapes in
+`scripts/check-sentry-capture-has-init.sh` (PR #648): (1) a docstring mentioning `init_sentry(`
+cleared the whole file, (2) a trailing comment did the same (inherited from the sibling singleton
+gate's own bug, inverted to fail silently instead of loudly), (3) `! -name "*test*.py"` was a
+substring glob that skipped production files like `latest_pricing.py`, (4)
+`! -name "observability.py"` blanket-excluded any file with that basename though its stated
+rationale (capture calls live there "in comments only") was empirically false — verified with a
+direct grep against all three registered mirrors before removing it, per AC3's instruction not to
+take the ticket's word for it. Fix: a `python3 tokenize`-based `_clean_python_source()` blanks
+COMMENT/STRING tokens to same-width whitespace (preserving line numbers) before EITHER the
+capture-detection or the init-clearance regex runs, so the two halves can't drift apart again; the
+allowlist-comment check still reads the ORIGINAL line so that legitimate annotation isn't itself
+stripped. Added one red-first self-test fixture per shape (shown false-PASS on the pre-fix script,
+correct-FAIL on the fixed one — pasted transcript in the PR) plus an allowlist inventory line
+(count + file:line) printed on every run.
+
+**Where a green badge could have hidden a broken run path:** the gate reported PASS against the real
+tree both before and after this fix — none of the four holes were live. The only thing that would
+have hidden the regression risk permanently is exactly what this ticket fixed: a self-test that
+never exercised these four shapes, so a future PR could reintroduce any of them (e.g. someone adds a
+docstring like "this module's captures are served by init_sentry() in main.py") and the mechanical
+gate would silently clear it forever, with nobody able to tell from the CI badge alone.
+
+**A guardrail I'd add:** none new for this gate — the four fixtures are now permanently wired into
+`--self-test`, which is the first step of the hard CI job, so they can't silently stop running.
+Residual, explicitly deferred per the ticket (not silently dropped): SCAN_DIRS is `apps/*/src` only
+(a capture site under `packages/`/`scripts/`/`tests/` would be unscanned — verified zero such sites
+exist today) and the real-check `for f in $FILES` loop is unquoted word-splitting (no filename with
+IFS whitespace exists today). Both recorded in the script header so a future engineer doesn't
+rediscover them from scratch.
+
 ## 2026-07-24 / FOLLOW-625
 
 **What I shipped:** A CI hard-gate (`scripts/check-k2-consumer-swallow.cjs` + `.sh` wrapper +

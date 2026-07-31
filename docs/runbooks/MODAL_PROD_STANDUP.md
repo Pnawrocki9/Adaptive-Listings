@@ -267,3 +267,42 @@ listing-fetch hop) still wants a real-listing confirmation; Phases B (intent-eng
 (data-quality / stream-consumer, FOLLOW-458) remain deferred.
 
 FOLLOW-436 / FOLLOW-460 / FOLLOW-485 marked DONE; ESC-036 RESOLVED.
+
+---
+
+## 11. `SENTRY_DSN` provisioning instruction (2026-07-31, FOLLOW-744) — OPERATOR ACTION, not yet done
+
+**Status as of this commit:** `SENTRY_DSN` is still absent from Doppler `prd` and from the Modal
+`estalara-secrets` secret (§0/§3 above). This section is a dated, executable instruction for
+**Piotr** to run — the code in this PR does NOT and cannot perform this step (Doppler-prd write +
+Modal-secret write are operator-credential actions, Rule AA).
+
+1. **Create (or confirm) the Sentry project this DSN must point at: `estalara-python-modal`.** This
+   is the ONE shared Sentry project for all three Python Modal apps (`intent-engine`, `llm-gateway`,
+   `data-quality`) per the FOLLOW-738 AC-5 one-shared-DSN decision
+   (`apps/intent-engine/src/observability.py` module docstring) — NOT the same project as
+   `estalara-ingest` / `estalara-control-plane` (those are separate TS-runtime projects with their
+   own `SENTRY_DSN_INGEST` / `SENTRY_DSN_CONTROL_PLANE`). Triage across the three Python apps uses
+   each event's `area`/`sink` tag, not a separate DSN per app — do not create three projects.
+2. Sentry dashboard → `estalara-python-modal` project → Settings → Client Keys (DSN) → copy the DSN.
+3. `doppler secrets set SENTRY_DSN --config prd` (paste the DSN, no surrounding whitespace —
+   FOLLOW-488 is the reminder for the analogous `ANTHROPIC_API_KEY` leading-space bug in §10 above;
+   the same copy-paste hazard applies here).
+4. Modal web console → `estalara` workspace → `estalara-secrets` → add `SENTRY_DSN` key (prefer the
+   console's "add key" over the CLI's whole-secret-replace form — see §5 above).
+5. **Do NOT skip the AC-3 live-capture proof step below just because this write succeeded.** A green
+   `pytest` run (this PR's `test_init_sentry_never_raises_on_malformed_dsn`) is a code-axis proof
+   only — it proves `init_sentry` degrades safely on a BAD dsn, not that a GOOD, live dsn actually
+   ships an event to Sentry. After step 4:
+   - Trigger one real capture (e.g. a deliberately broken `ANTHROPIC_API_KEY` on the chat-intent
+     path, `apps/intent-engine/src/nlp.py`, tagged `area=chat_intent`) OR the spend-cap path once
+     FOLLOW-743 lands.
+   - Confirm the resulting issue appears in the `estalara-python-modal` Sentry project, tagged with
+     the expected `area`/`sink`.
+   - Record the issue URL + timestamp back into this section (or a follow-up PR) as the closing
+     attestation, matching the §10 attestation format above.
+
+**Cross-ref:** FOLLOW-744 (this ticket), FOLLOW-738 (AC-5 one-shared-DSN decision, not reopened by
+this instruction), `.env.example:81` (`SENTRY_PROJECT` comment now names this project for the Python
+tier), Rule AA (code-vs-prod verdict split — this ticket ships `CODE_COMPLETE_OPERATOR_PENDING`, not
+`DONE`, until steps 1-5 above are executed and attested).

@@ -41081,3 +41081,639 @@ implementer, warning held). FOLLOWS FILED: 751 (P3 ml-engineer 1h), 752 (P2 qa/m
 2h), 754 (P2 architect 2h). QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED (the
 FOLLOW-740 re-rate, the FOLLOW-750 re-rate, the FOLLOW-748 and FOLLOW-749 AC amendments, and the ESC-042
 item-1 invocation AC are all PM actions, surfaced in §5a/§5d). -->
+
+---
+
+## RETRO-237 — FOLLOW-743 + FOLLOW-744 (spend-cap capture wired to `init_sentry`; `init_sentry` made non-fatal + DSN provisioning instruction) — 2026-07-31
+
+**COMBINED ENTRY — why.** One retro covers two merges. Both are small (4 and 6 files), both land in
+the same subsystem (the Python-tier Sentry initialiser), both descend from the same parent
+(RETRO-235 §3 HW-1 and §3 HW-2 respectively), both were dispatched and merged in the same session,
+and — the load-bearing reason — **their central findings are only visible against each other**:
+#646 adds a CI gate that asserts a call-shape, #647 changes what that call-shape does at runtime,
+and the interaction is where three of this retro's findings live. Splitting them would have produced
+two retros each blind to the other's axis. The two PRs are assessed separately wherever the verdict
+differs (notably §5d, where FOLLOW-743's `DONE` is agreed and FOLLOW-744's is disputed).
+
+### 1. Summary of change
+
+- **PR #646 (FOLLOW-743):** merged 2026-07-31 03:50:53 UTC, commit `306285f7`. 4 files
+  (+286 / −0). Modules: llm-gateway (Modal Python) · CI.
+- **PR #647 (FOLLOW-744):** merged 2026-07-31 19:32:41 UTC, commit `5eeb5c40`. 6 files
+  (+215 / −112). Modules: intent-engine · llm-gateway · data-quality (all Modal Python) · runbooks ·
+  configs.
+- **Combined:** 10 files, +501 / −112. `306285f7` is an ancestor of `5eeb5c40`
+  (`git merge-base --is-ancestor` → true), with two backlog-only commits between them
+  (`a682c633`, `1c23e3c6`). Bookkeeping follow-on `66575f5e` closed both in `QUEUE.md`; `main` has
+  since moved to `5bd23dbe`, so this retro is written on
+  `retrospective-analyst/RETRO-237-follow-743-744-combined`.
+- **Key contracts changed:**
+  - **#646** — `scripts/check-sentry-capture-has-init.sh` — **new CI gate**, the inverse of
+    FOLLOW-738's singleton guard; wired as a hard job `sentry-capture-has-init-guard`
+    (`ci.yml:692-702`). Breaking: no (new).
+  - **#646** — a new repo-wide **allowlist token**: `# sentry-init-guard: allowlisted — <reason>`
+    (script header, `:47-52`). Breaking: no (new vocabulary).
+  - **#646** — a new script-scoped env var `SENTRY_CAPTURE_INIT_TARGET` (self-test only).
+  - **#646** — `generate_description._spend_cap_exceeded` (`:399`) now calls
+    `init_sentry("SENTRY_DSN")` (`:425`) and `flush_sentry(0.3)` (`:439`). Signature unchanged;
+    threshold, tags and extras untouched (verified in the diff, AC-5).
+  - **#647** — `observability.init_sentry(dsn_env_name) -> bool` — **signature byte-unchanged,
+    return SEMANTICS changed**: `False` previously meant only "DSN env var unset"; it now also means
+    "sentry_sdk missing or `sentry_sdk.init` raised". Applied to all three Rule J mirror copies.
+    Breaking: **yes, on the meaning axis** — see §4a LG-1; the docstring documenting the old meaning
+    was not changed.
+  - **#647** — `init_sentry` no longer propagates exceptions to its callers (previously `BadDsn` /
+    `ImportError` escaped). Breaking: yes, in the safe direction; **nothing assumed it raised** —
+    verified against all four call sites, §4a LG-3.
+  - **#647** — `docs/runbooks/MODAL_PROD_STANDUP.md` §11 — **new operator-executable section**;
+    `.env.example:82-86` — `SENTRY_PROJECT` comment now names `estalara-python-modal` as the Python
+    tier's target Sentry project (closes RETRO-235 §4d DG-2).
+  - **No TS touched by either PR.** No new Python exported symbol in either PR (verified:
+    `git show <sha> | grep "^+def "` → zero in both).
+
+### 2. Verification done in PR
+
+- **#646** — test files changed: `test_generate_description.py` (+27, 1 new test, 2 assertions).
+  **#647** — `apps/intent-engine/src/test_observability.py` (+24, 1 new test, 3 assertions).
+  Coverage delta: unknown (no coverage gate on the Python apps).
+- **CI re-derived independently for BOTH PRs, not read from either PR body.** `gh pr checks 646` →
+  **68 pass**, sole failure `Rule I — wired-or-dead check` (both duplicated runs). Job log pulled
+  directly (`gh api …/actions/jobs/91066369305/logs | grep "Violations found"`) → **192**.
+  `gh pr checks 647` → **67 pass**, same sole failure; job `91071205966` → **192**. Identical to
+  `main`'s baseline re-derived by RETRO-234 (job 90932985464), RETRO-235 (90975488035) and RETRO-236
+  (90996692773). Neither diff adds a TS symbol, so neither can move the count. **Rule AF satisfied.**
+  Series: 179 → 183 → 191 → 192 → 192 → 192 → 192 → **192 → 192 (flat, 4th and 5th consecutive)**.
+- **The new gate really ran and really is a gate.** `Sentry capture-has-init guard (FOLLOW-743)` →
+  **pass** on both duplicated runs of #646 (jobs 91066025062, 91066186820), and `ci.yml:692-702`
+  carries no `continue-on-error`, with the `--self-test` step ordered **before** the assertion step —
+  **Rule Q satisfied** (the self-test is the positive proof the assertion executed).
+- **Red-first evidence for #646 AC-3 is credible.** The self-test ships a negative control
+  (`rogue_capture.py`, a capture-without-init reproducing the exact FOLLOW-743 shape), a positive
+  control and an allowlist control; the script header records that it failed against the real tree
+  before AC-1 landed. I re-read all three fixtures in the shipped source and they are what the header
+  claims.
+- **#646 AC-2's repo-wide inventory re-derived independently and found CORRECT AND COMPLETE.**
+  `grep -rn "capture_exception(\|capture_message(" --include=*.py .` (node_modules/.venv excluded)
+  returns exactly the 6 predicted call sites — `nlp.py:325,327`,
+  `consume_embed_seed_requests.py:305,432`, `generate_description.py:433`,
+  `schema_validation.py:491` — plus one docstring hit in a test file. No seventh site was missed.
+  This is the AC RETRO-235 asked for and it was honoured.
+- **Post-merge deploy verified for BOTH merges, and it matters here.** `modal-deploy.yml:39` fires on
+  `apps/llm-gateway/**`; both PRs touched that tree. `gh run list --workflow=modal-deploy.yml` →
+  `306285f7` **success**, `5eeb5c40` **success**. So the spend-cap init/flush AND the non-fatal
+  guard are **live in the deployed `estalara-description-generator`** today. The container-side wire
+  is also complete: `generate_description.py:451-453` mounts
+  `secrets=[modal.Secret.from_name("estalara-secrets")]` and calls `_spend_cap_exceeded()` at `:522`
+  inside that same deployed function. **Only the DSN value is missing** — which is exactly why §3
+  HW-1 is P1 and not a bookkeeping note.
+- **Rule J parity re-verified by diff, not by the gate's word:** `diff` of
+  `apps/intent-engine/src/observability.py` against both mirrors → **byte-identical**, and
+  `scripts/mirror-files.json` still registers both pairs.
+- **#647's CI history contains a genuine process win worth banking:** its first red was a GitHub
+  Actions billing block (8 checks "failed" at 2s without running) plus a `Format check` against a
+  stale base. The PM refused the partially-unstarted results and re-ran from scratch. That is
+  **Rule AF's discipline applied to a non-code red** and it is the correct handling.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** Verified by grep, not by reading either PR body:
+
+- `scripts/check-sentry-capture-has-init.sh` → referenced at `ci.yml:699,702` (CI entrypoint, and
+  referenced, so not even a suppression case).
+- `SENTRY_CAPTURE_INIT_TARGET` → produced by the script's own `--self-test` block, consumed at the
+  script's `TARGET=` line. Self-contained by design; recorded so a future CHECK B does not re-flag it.
+- Neither PR adds a Python export (`grep "^+def "` → zero in both diffs). `#646` adds two
+  **function-scope** imports of existing symbols at `generate_description.py:415`; `init_sentry` /
+  `flush_sentry` retain the non-test importers RETRO-235 enumerated, now +1 each.
+- `docs/runbooks/MODAL_PROD_STANDUP.md` §11 and `.env.example` — operator/config artefacts,
+  suppressed correctly.
+
+**CHECK B — half-wire: 2 findings.**
+
+- **HW-1 — the spend-cap alarm now has an initialiser, a flush, a unit test, a CI gate and a live
+  deploy, and STILL has zero delivery channel in any environment — and as of `66575f5e` it has no
+  owner either. Classification: HALF_WIRE_C (consumer-only; `SENTRY_DSN` is read and produced
+  nowhere). P1. → FOLLOW-756.** Consumer: `observability.py:109` (`os.environ.get(dsn_env_name)`),
+  reached from five call sites now. Producer: none. `backlog/ESCALATIONS.md:3009` records
+  "**`SENTRY_DSN` — confirmed absent from all three configs**" for Doppler; the Modal side is
+  asserted but **not verified** (§4b CB-2). **What is new since RETRO-235 §3 HW-2 is the ownership
+  hop, and it is the sharpest fact in this retro:** FOLLOW-744 existed *solely* to re-own this leg;
+  its own merged artefact states, at `docs/runbooks/MODAL_PROD_STANDUP.md:305-308`, *"Rule AA … this
+  ticket ships `CODE_COMPLETE_OPERATOR_PENDING`, **not `DONE`**, until steps 1-5 above are executed
+  and attested"*; and `backlog/QUEUE.md:121` reads *"FOLLOW-744 — status: DONE"*, written in
+  `66575f5e` — **35 seconds after `5eeb5c40`** (21:32:41 → 21:33:16 +0200). `ESCALATIONS.md:3029-3031`
+  now aims leg (b) at *"`backlog/FOLLOW_UPS.md` → `## FOLLOW-744`"*, i.e. at a ticket marked DONE. The
+  QUEUE entry's prose is honest ("The DSN itself is still not provisioned — that stays with Piotr");
+  the defect is that the **status label** and the **register pointer** both now say the opposite of
+  the ticket's own shipped document.
+- **HW-2 — `init_sentry`'s new failure outcome is a producer with no consumer: one of four call
+  sites reads the bool, and the print has no delivery channel at all. Classification: HALF_WIRE_P.
+  P2. → FOLLOW-758.** Producer: `observability.py:163-165` — `except Exception as exc: print(...);
+  return False`. Consumers of the **bool**: exactly one — `nlp.py:314` (`if not init_sentry(...):
+  return`). Ignored at `consume_embed_seed_requests.py:198`, `:405`, `schema_validation.py:359` and
+  `generate_description.py:425`. Consumers of the **print**: none — it goes to Modal container
+  stdout; it cannot reach Sentry (Sentry is the thing that just failed), it is not a `logging` call
+  so it is outside whatever route FOLLOW-745 restores for that app, and no metric or alert reads it.
+  Aggravating: `_sentry_initialised` is deliberately left `False` on the failure path (`:167` is
+  after the `return`), so **every** subsequent call re-attempts `sentry_sdk.init` and re-prints —
+  `nlp.py` calls this per failed extraction, and `jobs/batch_enrich.py` runs that per session across
+  a 6h window. The one operator error this guard was built for (a malformed hand-pasted DSN)
+  therefore produces an unbounded stream of identical stdout lines and nothing else.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — #647 falsified its own module's docstring, twice, 60 lines above the change, in all
+  three mirrors, and the falsifying evidence is inside the same hunk.**
+  `observability.py:105-107` still states the return contract as *"True if a live client is (or
+  already was) initialised, **False if the named DSN env var is unset**"* — an exhaustive
+  either/or that the new `except` branch at `:163-165` breaks. Worse, `:95-98` still states that the
+  DSN-unset skip is *"the **ONLY** allowed skip condition — 'dependency not configured', **not**
+  'dependency present but broken'"* — which is now the literal description of the behaviour the same
+  diff added. This is not pedantry: the sentence was written as a deliberate design boundary (it is
+  the reason the helper is DSN-gated rather than try/except-gated), and #647 crossed that boundary
+  without arguing with it. **This is Rule AO's first post-promotion instance and it is textbook** —
+  a corrective edit that inherits the mental model of the thing it is fixing, falsified by evidence
+  the author produced in the same sitting. → FOLLOW-758.
+- **LG-2 (P3) — the overloaded bool collapses "not configured" into "configured but broken" at the
+  ONE site that reads it, re-creating in the observability layer the exact ambiguity the chat-intent
+  layer just spent three tickets removing.** `nlp.py:314` returns silently on `False`, and its
+  adjacent comment (`:312-313`) explains that behaviour as *"with SENTRY_DSN unset this is a
+  deliberate no-op and the payload marker plus the log line remain the signals"* — true for the
+  unset case, false for the broken case, where there is no marker saying the telemetry itself
+  failed. FOLLOW-730 / ADR-0020 / FOLLOW-736 exist because a degraded extraction was
+  indistinguishable from a real neutral one; three merges later the same shape is back one layer
+  down, in the very code that was supposed to observe it. Folded into FOLLOW-758.
+- **LG-3 (P3) — Rule S asymmetry across the four call sites of one contract, and a verified-clean
+  axis recorded so it is not re-derived.** `nlp.py:314` gates on the return value; the other three
+  ignore it. **Verified explicitly, because it is the question that decides whether #647 is safe:
+  NOTHING assumes `init_sentry` raises.** All four call sites were read on `main` — the three
+  ignoring the bool proceed to `sentry_sdk.new_scope()` / `capture_*`, which are no-ops with no bound
+  client, and all four sit inside their own `try/except` or a caller's. So the non-fatal change is
+  behaviour-safe on every path. The residual defect is only that the same bool means different
+  things to different siblings, and no test pins which sites must consult it. Folded into FOLLOW-758.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — FOUR MEASURED false negatives in the new gate, reproduced with throwaway fixtures
+  (RETRO-230's mutation method), not theorised. → FOLLOW-757.** The clearance test at
+  `check-sentry-capture-has-init.sh:104-106` is
+  `grep -nE "init_sentry\(" "$file" | grep -vE "^[0-9]+:[[:space:]]*#" | grep -q .` — *any* surviving
+  occurrence anywhere in the file clears every capture site in it. I built one fixture per shape and
+  ran the shipped script against each:
+  1. **A docstring mentioning `init_sentry("SENTRY_DSN")` with no real call → gate PASSES.** A
+     docstring carries no `#`, so the comment filter never sees it. The most likely real-world
+     trigger is a module whose docstring explains where its init lives.
+  2. **A trailing comment `x = 1  # TODO: restore the init_sentry( call` → gate PASSES.** This is
+     **the identical bug RETRO-235 §4b CB-4 found in the sibling script** (`^[^:]+:[0-9]+:[[:space:]]*#`,
+     whole-line only), inherited by the script written to close that sibling's blind spot — and
+     **inverted in direction**: in the singleton guard it produces a false RED (loud, self-correcting);
+     here it produces a false GREEN (silent, permanent). That direction flip is why this is not a
+     duplicate of FOLLOW-746.
+  3. **A production module named `latest_pricing.py` is never scanned → gate PASSES.**
+     `! -name "*test*.py"` is a substring glob: `la-test-`. Any production basename containing
+     `test` (`latest_*`, `attestation*`, `contest*`) is silently excluded. Latent today — the only
+     current matches are the two `conftest.py` files, which are separately excluded.
+  4. **A capture inside a 4th, unregistered `observability.py` → gate PASSES.** `! -name
+     "observability.py"` re-creates RETRO-235 §3 HW-4's basename hole **in a third gate** — and here
+     the exclusion buys nothing, because its stated rationale is empirically false. The header claims
+     those files *"define capture_exception/capture_message-shaped call sites in comments only"*; in
+     fact `grep -nE "sentry_sdk\.(capture_exception|capture_message)\(" apps/intent-engine/src/observability.py`
+     returns **nothing at all** (the only hit for the bare words is prose at `:176`, with no
+     `sentry_sdk.` prefix and no `(`), so the script's own regex already excludes them. A pure hole,
+     justified by a condition that does not hold.
+  Two further scope notes, recorded as **verified-not-live** so they are not over-stated: (5)
+  `SCAN_DIRS` is built from `"$ROOT"/apps/*/src`, so a Python capture site anywhere else
+  (`packages/`, `scripts/`, `tests/integration/`, `apps/*/tests/`) is unscanned — the repo-wide grep
+  returns **zero** such sites today; (6) `for f in $FILES` is unquoted word-splitting.
+  **Live status: I ran the gate against `main` — PASS, and the tree is genuinely clean.** All six
+  are latent regression holes, which is why this is P2 and not P1.
+- **CB-2 (P2) — the runbook's status claim rests on two citations that neither support it, one of
+  which a LATER SECTION OF THE SAME RUNBOOK supersedes. → FOLLOW-756.**
+  `MODAL_PROD_STANDUP.md:275-276` reads *"`SENTRY_DSN` is still absent from Doppler `prd` and from
+  the Modal `estalara-secrets` secret (§0/§3 above)"*. **§0 is a 2026-07-02 snapshot** stating the
+  Modal account had *"0 apps and 0 secrets"* — explicitly superseded by **§10's 2026-07-03
+  attestation**: *"Modal workspace `estalara` created; `estalara-secrets` provisioned"*. **§3 is a
+  gather-list** whose own header says *"Flagged gaps are not in **Doppler prd** today"* — a Doppler
+  column (`SENTRY_DSN` → `❌ gather`), not an observation of the Modal secret's contents. So the
+  Doppler half of the claim is evidenced (`ESCALATIONS.md:3009`) and **the Modal half is inferred
+  from a pre-creation snapshot.** The hidden failure mode is precisely the one #647 hardened for:
+  §5's create template (`:149`) is `SENTRY_DSN='<from Sentry>'`, so if the literal placeholder was
+  pasted during the 2026-07-03 stand-up, the secret holds a **malformed** DSN — and after #647 that
+  degrades silently to a stdout print (§3 HW-2). **The correct method already exists in the repo,
+  written the previous day:** `docs/MASTER_DESIGN.md:1807` — *"verify by listing that secret — do not
+  infer it from a ticket status"*. §11 has no listing step. Rules AH / Y + Operating Principle 5.
+- **CB-3 (P3) — §11's Rule AA proof step is unexecutable as written, on BOTH branches of its own
+  "or". → FOLLOW-756.** Step 5 offers: (a) *"a deliberately broken `ANTHROPIC_API_KEY` on the
+  chat-intent path, `apps/intent-engine/src/nlp.py`"* — but `apps/intent-engine` **has no prod
+  deployment** (`modal-deploy.yml:39` triggers on `apps/llm-gateway/**` only; ESC-042 item 1;
+  RETRO-235 §5b), and the same key is read by the **live** description pipeline (RETRO-236 §5a), so
+  breaking it takes production down rather than producing a test event; and (b) *"the spend-cap path
+  **once FOLLOW-743 lands**"* — #646 merged **15h 42m earlier**, and `306285f7` is an ancestor of this
+  very PR's merge commit (`git merge-base --is-ancestor 306285f7 5eeb5c40` → true), so a
+  conditional-future clause was written about a fact already true at the doc's own merge commit
+  (**Rule AH**); and triggering the spend cap in prod means burning the $100/day
+  `_DAILY_SPEND_CAP_USD`. The right trigger is a cheap, deliberate capture inside the one deployed
+  app — which #646 makes trivially available and §11 does not use.
+- **CB-4 (P3) — citation and command defects in §11. Folded into FOLLOW-756.** `:306` cites
+  *"`.env.example:81` (`SENTRY_PROJECT` comment now names this project …)"* — `:81` is `SENTRY_ORG=`;
+  `SENTRY_PROJECT` is `:82` and the FOLLOW-744 comment block is `:83-86` (**Rule Y**, off-by-one).
+  Step 3's `doppler secrets set SENTRY_DSN --config prd` omits `--project`, and the repo disagrees
+  with itself about which project it would default to: `docs/runbooks/cloudflare.md:87` uses
+  `--project estalara`, while `ESCALATIONS.md:2996` names the Doppler project
+  `estalara-adaptive-listings`. Consistent with §2 of the same runbook (`:69-70`), so not a
+  regression — but it is the one step where a wrong default is silent.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — #646's only test proves the call happened, not that anything ships; and unlike
+  RETRO-236's instance, there is no real-backend gate to extend.**
+  `test_generate_description.py:1494-1519` patches `jobs.observability.init_sentry` and
+  `flush_sentry` with `MagicMock`s and asserts `assert_called_once_with("SENTRY_DSN")` / `(0.3)`. The
+  patch is technically sound (the imports at `generate_description.py:415` are function-scope, so
+  they resolve to the patched attributes at call time — I checked, it is not a false-passing test).
+  What it cannot assert is that a Sentry event exists. This is **RETRO-236 §3 HW-2's shape one
+  subsystem over** — an invariant proved only against a `MagicMock` — with the difference stated
+  honestly: RETRO-236's repo already **had** a real-backend gate that went green over the wrong
+  branch, whereas here no real-Sentry gate exists **or can exist** until the DSN lands. The only
+  available proof is FOLLOW-744 AC-3's live attestation, which is unexecuted. Folded into FOLLOW-756.
+- **TG-2 (P2) — the new gate's self-test covers 3 shapes and none of the 4 measured false
+  negatives.** `--self-test` ships a negative control, a positive control and an allowlist control.
+  CB-1's four shapes are the ones that matter, because each makes the gate *pass*. Folded into
+  FOLLOW-757 AC.
+- **TG-3 (P3) — recorded as verified-ADEQUATE, not a gap, so a future retro does not file it.**
+  #647's never-raise test exists once (`apps/intent-engine/src/test_observability.py:66-88`) and the
+  other two apps have no `test_observability.py` (`find apps -name test_observability.py` → 1 hit).
+  That is correct: `diff` proves all three `observability.py` copies **byte-identical** and
+  `scripts/mirror-files.json` + the `rule-j` gate keep them so, therefore one test legitimately
+  covers three apps — the same call RETRO-235 §4c made for the hardened-kwargs pin, re-verified here
+  rather than inherited.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — the two-document contradiction about FOLLOW-744's own status.**
+  `MODAL_PROD_STANDUP.md:305-308` ("`CODE_COMPLETE_OPERATOR_PENDING`, not `DONE`") vs
+  `QUEUE.md:121` ("status: DONE"), 35 seconds apart. Detail in §3 HW-1, verdict in §5d. **Rule AA.**
+- **DG-2 (P2) — CB-2's superseded citations**, and the absence of the "verify by listing" step that
+  `MASTER_DESIGN.md:1807` already prescribes. → FOLLOW-756.
+- **DG-3 (P3) — CB-3 + CB-4.** → FOLLOW-756.
+- **Verified TRUE, recorded because I checked it rather than accepting it.** §11's central new fact —
+  that the Python tier's shared `SENTRY_DSN` points at its own project, distinct from the TS
+  runtimes' — **holds**: `grep -n "SENTRY_" .env.example` confirms the bare `SENTRY_DSN` (`:79`) is a
+  different name from `SENTRY_DSN_INGEST` / `SENTRY_DSN_CONTROL_PLANE`, which RETRO-235 §4d
+  grep-verified as the only bare-name readers in the TS tier. Naming a concrete target project
+  (`estalara-python-modal`) closes RETRO-235 §4d **DG-2** properly, and the *"do not create three
+  projects"* instruction pre-empts the obvious operator misreading. **This is the best part of #647
+  and it should not be lost in the findings above.**
+- **Also verified, so the next retro does not re-derive it:** the deployed container really would see
+  the secret. `generate_description.py:451-453` mounts
+  `secrets=[modal.Secret.from_name("estalara-secrets")]`, `_spend_cap_exceeded()` is called at `:522`
+  inside that function, and `modal-deploy` on both merge commits is **success**. The wire is complete
+  from `@app.function` to `capture_message`; only the value is absent.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-752 (P2, qa-engineer — the PM's declared next pick, held pending this retro) —
+  premises UNAFFECTED, re-verified rather than assumed:** neither merge touches `redis_writer.py`,
+  `chat-intent-cache.ts` or `.github/workflows/redis-shadow-smoke.yml`. **But its lesson is now
+  duplicated verbatim one subsystem over** (§4c TG-1): whoever picks it up should know that the
+  FOLLOW-743 test is the same `MagicMock`-kwarg shape, and that in the Sentry case there is no real
+  backend to point a gate at yet. Two tickets, one root cause, and only one of them has a cheap fix.
+- **FOLLOW-746 (P2, devops-engineer, open) — premise CHANGED: there are now THREE gates carrying the
+  `observability.py` basename hole, not two**, and the third one's exclusion is justified by a
+  rationale I measured to be false (§4b CB-1.4). FOLLOW-746 also owns RETRO-235 CB-4, the whole-line
+  comment filter — which #646 **re-created in the more dangerous direction**. **Recommendation, not
+  an edit:** either broaden FOLLOW-746 to all three gates, or accept **FOLLOW-757** as its sibling. I
+  filed 757 so the gap has an owner either way and cross-referenced both — the same handling
+  RETRO-236 gave FOLLOW-749/751.
+- **FOLLOW-747 (P3, compliance-engineer, open) — premise CHANGED: #646 added a FIFTH live Sentry
+  producer to the surface FOLLOW-739 is about to document in `ropa.md`/`dpia.md` as *the* PII
+  control**, and it is a `capture_message`, i.e. exactly the shape
+  `_scrub_chat_intent_exception_value` returns untouched (`observability.py:83-85`). **Verified
+  benign on content, and I state that as firmly as the finding:** the message is a static literal and
+  the two extras are numeric (`rolling_24h_spend_usd`, `cap_usd` — `generate_description.py:429-434`);
+  no tenant id, listing id or free text. So this is an **inventory-completeness** point for
+  FOLLOW-739/747, not a disclosure. Recorded precisely so neither ticket re-derives it and neither
+  over-states it.
+- **FOLLOW-748 (P2, architect, open) — premise CHANGED twice, and the replacement text it needs now
+  exists.** Re-verified still false on `main`: `ADR-0020:149,165,196,200,238` assert `SENTRY_DSN`
+  provisioning is *"blocked by FOLLOW-738"*. Both FOLLOW-738 **and** its successor FOLLOW-744 have now
+  merged, so the claim is doubly stale. The AC's expiring form should point at
+  `MODAL_PROD_STANDUP.md §11` plus the FOLLOW-756 attestation slot — **not** at a ticket status, which
+  is exactly what `MASTER_DESIGN.md:1807` already says. No duplicate stub; AC recommendation only.
+- **FOLLOW-745 (P2, backend-engineer, open) — premise unchanged and mildly reinforced.** #647's new
+  failure signal is a `print`, not a `logger.error`, so restoring an explicit Sentry route for
+  `schema_validation.py:332,442` will not incidentally cover `init_sentry`'s own failure. That gap is
+  FOLLOW-758's, not 745's — recorded so the two are not merged by mistake.
+- **ESC-045 item 4 — its own text is now MORE accurate than the ticket system around it, and two
+  lines have drifted. PM territory; I am not writing to `ESCALATIONS.md`.** The 2026-07-30 correction
+  (`:3021-3032`) splits legs (a)/(b) correctly and is good work. Drift: (i) *"provision … **whenever
+  convenient**"* (`:3016-3018`) was written when the only DSN-gated signals sat in an app with no prod
+  deploy; after #646 the DSN gates **the only cost control on the live description path, in the one
+  Python app that IS deployed** — RETRO-235 §5b's own observation ("provisioning changes the behaviour
+  of exactly one app") is now an argument for urgency rather than against it; (ii) its pointer *"Leg
+  (b) is now correctly tracked as … `## FOLLOW-744`"* now aims at a ticket marked DONE.
+
+#### 5b. Future sprint tickets affected
+
+- **ESC-042 item 1 (prod Modal deploy of `estalara-intent-engine`) inherits a SECOND, independent
+  reason to require an actual invocation.** RETRO-235 §5b asked for one on the import-time
+  `observability.py` mounting axis. §4b CB-3 adds another: the runbook's headline live-capture
+  trigger lives in this undeployed app, so either ESC-042 lands first, or FOLLOW-756 must supply a
+  trigger inside `llm-gateway` — which #646 makes trivial and §11 does not use.
+- **`apps/data-quality` still has no deploy path** (`modal-deploy.yml:39` = `apps/llm-gateway/**`
+  only), so #647 hardened a third copy of a helper in an app that does not run. Unchanged from
+  RETRO-235 §5b and restated only because §11's *"all three Python Modal apps"* framing repeats the
+  claim to an operator who will read it as three live services.
+- **FOLLOW-739 (ropa/dpia Sentry control)** — must now enumerate **5** producers, not 4 (§5a), and
+  must still not describe the scrubber as verified-in-operation: after two more merges, nothing in
+  this tier has ever executed against a live Sentry client in any environment.
+
+#### 5c. Contracts changed others rely on
+
+- **`init_sentry`'s return semantics changed with a byte-unchanged signature, across three physical
+  copies, with one documented meaning, two real meanings, and one of four consumers reading it.** Any
+  future call site inherits the ambiguity silently, and the docstring will actively mislead it
+  (§4a LG-1).
+- **`sentry-capture-has-init-guard` is a new HARD CI gate** (`ci.yml:692-702`, no
+  `continue-on-error`, self-test first — Rule Q satisfied). Whether it is a **required** check in
+  branch protection is unknown to me (no admin read) — the same open item RETRO-235 §5c raised for
+  the sibling gate, now doubled. **FOLLOW-755 is the natural place to answer it**, since its AC-1 is
+  already "determine the current branch-protection state on `main`".
+- **A new allowlist vocabulary entered the repo**: `# sentry-init-guard: allowlisted — <reason>`.
+  Documented only inside the script header; nothing counts allowlist entries or surfaces them in CI
+  output, so an allowlist that grows is invisible — the same shape Rule Q was promoted for, applied
+  to suppressions instead of skips. Folded into FOLLOW-757.
+- **`.env.example:82-86` now binds the Python tier to a named Sentry project.** Any future service
+  reading the bare `SENTRY_DSN` inherits both the hardening contract (RETRO-235 §5c) and now a
+  project assignment, implicitly and silently.
+
+#### 5d. Architectural assumptions affected — **PM ACTION RECOMMENDED**
+
+- **Rule AA verdict, SPLIT per ticket — and the two verdicts differ, which is the point of assessing
+  them together.**
+  - **FOLLOW-743: I AGREE with `DONE`.** Its deliverable is a code control with no operator action of
+    its own, and all five ACs are demonstrably shipped: AC-1 (`:425`, `:439`), AC-2 (inventory
+    re-derived independently and found complete — §2), AC-3 (sibling gate with a red-first negative
+    control, wired as a hard job), AC-4 (`test_generate_description.py:1494`), AC-5 (threshold, tags
+    and extras verified untouched in the diff). `modal-deploy` on `306285f7` is **success**, so it is
+    live. Same call as RETRO-235/236 made for FOLLOW-738/736, for the same stated reason.
+  - **FOLLOW-744: I DISAGREE with `DONE`. It is `CODE_COMPLETE_OPERATOR_PENDING` — and the ticket's
+    own merged artefact says so in writing** (`MODAL_PROD_STANDUP.md:305-308`). AC-1 shipped. AC-2
+    shipped only in its escape-hatch form (a written instruction — which carries CB-2, CB-3 and CB-4).
+    AC-3 explicitly not executed. This is deliberately the **opposite** call from the last three
+    retros, and the distinction is the one those retros themselves drew: FOLLOW-736 and FOLLOW-738 had
+    no operator action of their own, and their prod axis was owned one level up. **FOLLOW-744's entire
+    reason for existing WAS the operator action**, and there is no level above it — ESC-045 item 4
+    already delegated leg (b) down to this ticket. Note also that the AC's escape hatch is
+    self-contradictory as written (*"ship AC-1 + AC-3"* while AC-3 consumes AC-2's output), which is
+    part of how a half-shipped ticket read as complete.
+- **The displacement chain now has FOUR hops, and the fourth took 35 seconds.** ESC-045 item 4 leg
+  (b) → closed on paper alongside leg (a) by FOLLOW-738 (RETRO-235 §3 HW-2) → re-owned by FOLLOW-744
+  → FOLLOW-744 marked `DONE` 35 seconds after its own artefact declared it not-done, so leg (b) is
+  un-owned again and the escalation's corrective pointer now points at a closed ticket. **FOLLOW-756
+  exists so the leg has an owner regardless of what the PM decides**; whether ESC-045's pointer is
+  re-aimed, and whether FOLLOW-744's status label is corrected to `CODE_COMPLETE_OPERATOR_PENDING`,
+  are PM calls. I am not writing to `QUEUE.md` or `ESCALATIONS.md`.
+- **A CI gate has been substituted for a runtime channel twice in three merges, and the arithmetic
+  should be said out loud before a third.** #644 gated the init *shape*; #646 gated the capture/init
+  *pairing*. Both are genuine improvements and both assert shapes. The Python tier now has
+  **3 Sentry CI gates, 5 capture sites, 1 hardened initialiser, 3 mirror copies, 4 unit tests — and
+  0 events ever delivered in any environment.** Every one of those gates is cheap and none of them
+  can fire an alarm. The marginal gate is now much cheaper than the marginal DSN, and only one of the
+  two is on the critical path.
+- **RETRO-235 §5b's "provisioning changes exactly one app" has flipped from a de-scoping argument to
+  an urgency argument.** It was written to shrink FOLLOW-738's claimed blast radius, and it was right.
+  After #646, the one app it referred to (`llm-gateway`, the only deployed one) is also the one that
+  now holds the repo's only Sentry signal with a direct € consequence. Same fact, opposite
+  implication — recorded because a PM reading RETRO-235 alone would draw the earlier conclusion.
+
+### 6. New lesson candidates
+
+- **Rule AE — scope-broadening + clearance-side amendment. Count 3, with 2 PRIOR RETROS
+  (RETRO-230 §6 and RETRO-235 §6). THRESHOLD MET → PROMOTED as a Rule AE amendment.**
+  - **RETRO-230 §6 (prior, count 1)** — the consent-contract-parity gate: `extractCalls()` searched
+    for one literal emission shape inside two file slices, and two hand-built mutations (a
+    module-level helper outside both slices; `new NextResponse(JSON.stringify(...))` inside the
+    handler) both made it exit **0, "PASS"**. Recorded explicitly as *"AE sighting (by analogy),
+    count 1 toward a scope-broadening amendment ('mechanical guard for ANY invariant')"*, because
+    AE's title binds it to a **security** invariant and a parity gate is not one.
+  - **RETRO-235 §6 (prior, count 2)** — `check-sentry-init-singleton.sh` was built around the shape
+    RETRO-234's finding used (`sentry_sdk.init(`), so the one file that needed an init *because it
+    never had one* was invisible to the guard, the tests and three review passes. Pre-specified the
+    amendment in as many words: *"AE's current text is scoped to 'AST-based mechanical guard for a
+    security invariant'; both sightings are grep-based guards for compliance/cost invariants, which
+    is the exact broadening the amendment should make."* **HELD at count 2** for want of a second
+    prior.
+  - **THIS RETRO (count 3, and the strongest instance, because the guard in question IS the
+    remediation of sighting 2).** §4b CB-1: four false negatives, each **measured** with a throwaway
+    fixture against the shipped script, in the gate written specifically to close RETRO-235's AE
+    instance. Three different guards, three different PRs, three different subsystems — these are
+    independent sightings, not three hops of one arc (contrast the deliberate decline below).
+  - **What the amendment must ADD that neither prior covers — the axis I had to trace twice.** Both
+    priors are about the guard's **detection** side: which shapes of the guarded action it searches
+    for. This instance's two worst holes are on the **clearance** side: which shapes make the guard
+    declare a file CLEAN (a docstring or trailing-comment occurrence of the required token; a
+    basename exclusion; a substring-glob file filter; the scan-dir root). A guard with perfect
+    detection and a leaky clearance test is exactly as blind, and reads as *more* trustworthy because
+    it is "specific". Plus the **direction** clause: the identical filter bug produced a false RED in
+    the sibling gate (loud, self-correcting) and a false GREEN here (silent, permanent) — so the
+    remediation priority of a filter defect depends on which side of the assertion it sits on, and
+    that is not obvious from the code.
+  - **CHECKED BEFORE AMENDING.** Rule AC (scope a guard-authoring ticket by a repo-wide grep of the
+    target signature, not the files the audit named) — adjacent and genuinely fired here for #646's
+    AC-2 inventory, which **complied**: the inventory was repo-wide and complete (§2). AC governs
+    *which files* the guard is pointed at; it says nothing about which *shapes* clear a file. Rule AM
+    (a self-testing gate's fixtures must be synthesized, not mutated from the live source) — the new
+    gate **complies** (its fixtures are synthesized into a `mktemp -d`); AM is about fixture
+    provenance, not fixture coverage. Rule AL (an assertion must be evaluated over the same region
+    its consumer reads) — nearest neighbour on hole (5), the scan-dir scope, and the reason I recorded
+    that one as verified-not-live rather than folding it into the amendment. Rule Q (a gate that can
+    soft-skip must emit positive proof) — satisfied by the self-test; Q is about the *job* running,
+    not about what the assertion can see. **No existing rule requires enumerating the shapes that
+    CLEAR a guard.**
+- **"Closing a blocker does not close the blocked item" (the Rule AJ amendment RETRO-235 pre-specified)
+  — HELD at count 2. I am DECLINING an advance the arithmetic appears to authorise, and correcting the
+  prior arithmetic while I do it.** By the letter, this retro is sighting 3 with 2 prior retros
+  (RETRO-234 §6, RETRO-235 §6) and the amendment is pre-written. I decline because **all three
+  sightings are the same artefact — `SENTRY_DSN` — and the same unbroken displacement chain**: ESC-045
+  item 4 leg (b) → FOLLOW-738 → FOLLOW-744 → un-owned again. RETRO-235 itself set the house discipline
+  that a single decision executed N times counts **once** ("N copies from one PR count ONCE") and that
+  a compliant instance is not a sighting; counting each hop of one unresolved gap would let a single
+  half-wire promote a rule by itself, which is the inflation RETRO-235 refused on the Rule J pattern.
+  **Reconciliation with RETRO-235, stated explicitly:** its advance from count 1 → 2 was *also*
+  same-artefact, so the honest **unique-artefact count is 1**, not 2. I am recording the raw sighting
+  count as 3 and the unique-artefact count as 1, and pre-specifying the bar: **the next sighting must
+  be a DIFFERENT half-wire whose owner disappeared when its blocker closed — not another hop of the
+  `SENTRY_DSN` chain.** If that arrives, promote immediately with RETRO-235's text.
+- **Rule AO — first post-merge instance since promotion, and it validates the letter.** §4a LG-1:
+  #647's docstring (*"the ONLY allowed skip condition — 'dependency not configured', not 'dependency
+  present but broken'"*) was falsified by the `except` branch **in the same hunk**, i.e. by evidence
+  the author produced in the same sitting — Rule AO's clause-(c) mechanism exactly, one domain over
+  (a code docstring rather than a compliance document). No amendment needed; recorded because a rule's
+  first independent confirmation is worth banking, and because RETRO-236 minted AO 18 hours before
+  this merge landed on the same subsystem.
+- **P-21 (MINTED, count 1) — "A GATE IS ACCEPTED AS A SUBSTITUTE FOR THE CHANNEL IT GUARDS."** Across
+  #644/#646/#647 the Python tier accumulated 3 Sentry CI gates, 5 capture sites and 4 unit tests while
+  delivering 0 events in any environment (§5d). Each individual step was correct and each ticket was
+  correctly scoped; the aggregate is a subsystem that is thoroughly *verified* and entirely *inert*,
+  and the register drifted toward calling that done. **Pre-specified second-sighting criteria, so the
+  next retro is not re-deriving intuition:** a second sighting requires (i) ≥2 CI gates or tests
+  shipped for a signal path, (ii) the path's terminal delivery channel still unprovisioned or
+  unverified at the later merge, and (iii) at least one register artefact (QUEUE status, escalation
+  closure, or a doc's status line) describing the work as complete. Distinct from Rule AA, which is
+  about a **single ticket's** verdict; P-21 is about the **accumulated** state across tickets, which no
+  single Rule AA verdict can see.
+- **Rule S — instance sighting, codified, no promotion needed.** §4a LG-3: four call sites of one
+  new bool contract, one of which consults it. Same shape RETRO-235 §6 and RETRO-236 §6 both banked
+  (*"an explicit sibling enumeration protects the axis you are thinking about and gives false comfort
+  on the others"*) — third consecutive retro, and it keeps arriving inside changes whose stated
+  purpose is symmetry.
+- **Rule Q — satisfied, third consecutive gate-shipping PR to comply.** Self-test step ordered before
+  the assertion step, no `continue-on-error`, both steps observed `pass` in the run logs.
+- **Rule AF — series flat at 192 for the FOURTH and FIFTH consecutive readings** (179 → 183 → 191 →
+  192 ×5). Both re-derived independently from job logs (§2). No action; FOLLOW-591/602 own it.
+
+### 7. Follow-ups
+
+- **FOLLOW-756:** re-own the `SENTRY_DSN` provisioning leg and the Rule AA attestation that
+  FOLLOW-744's `DONE` label dropped for the second time — verify `estalara-secrets` by **listing** it
+  rather than inferring from a superseded §0 snapshot, replace §11's unexecutable proof trigger (both
+  branches of its "or" are impossible or destructive) with a cheap deliberate capture in the one
+  deployed app, and fix the §11 citation/command defects (devops-engineer, 3h, **P1**)
+  [HW-1, CB-2, CB-3, CB-4, TG-1, DG-1/2/3; Rules AA / AJ / AH / Y]
+- **FOLLOW-757:** close the four MEASURED false negatives in `check-sentry-capture-has-init.sh` — a
+  docstring or trailing-comment mention of `init_sentry(` clears the whole file, `*test*.py` is a
+  substring glob that hides production basenames, and the `observability.py` basename exclusion is a
+  pure hole whose stated rationale I verified to be false — and add one mutation fixture per shape to
+  the self-test (devops-engineer, 3h, **P2**) [CB-1, TG-2; Rule AE-as-amended; sibling of FOLLOW-746,
+  deliberately NOT folded into it — different script, opposite failure direction]
+- **FOLLOW-758:** `init_sentry`'s return contract is now overloaded and its docstring asserts the
+  opposite in all three mirrors ("the ONLY allowed skip condition … not 'dependency present but
+  broken'"), one of four call sites reads the bool, the failure print has no consumer, and
+  `_sentry_initialised` is left `False` so every subsequent call re-attempts init and re-prints
+  (backend-engineer, 2h, **P2**) [HW-2, LG-1, LG-2, LG-3; Rules AO / AI / S / AJ]
+
+**Not filed, deliberately:** no duplicate of **FOLLOW-746** (§5a records the premise change — three
+gates now, not two — and FOLLOW-757 is filed as its sibling with an explicit non-duplication note);
+no duplicate of **FOLLOW-747/739** (§5a gives them the fifth-producer fact and the verified-benign
+content finding as AC input); no duplicate of **FOLLOW-748** (§5a supplies the replacement target its
+expiring form should point at); no stub for **FOLLOW-745** (premise unchanged; the adjacent gap is
+FOLLOW-758's); no stub for the **branch-protection question** (§5c — FOLLOW-755 AC-1 already asks it);
+no stub for **ESC-045's two drifted lines**, the **FOLLOW-744 status-label correction**, or the
+**ESC-045 pointer re-aim** (all PM/escalation territory, surfaced in §5a/§5d per my no-escalation
+guardrail); no stub for **ESC-042 item 1** (operator step; §5b gives it a second invocation AC);
+no stub for **Rule I** (FOLLOW-591/602 exist).
+
+### 8. Cross-references
+
+- **RETRO-235 (FOLLOW-738, PR #644)** — the direct parent of both merges. **Closure trace (step 7),
+  end-to-end on `main`, not one hop, for each of its two children:**
+  - **HW-1 (spend-cap capture with no init) — GENUINELY CLOSED on the init axis, and I traced all
+    four:** *producer* — `generate_description.py:425` calls `init_sentry("SENTRY_DSN")` and `:439`
+    flushes, both inside the same `try` as the capture; *shape* — the repo-wide grep now returns an
+    `init_sentry(` for every one of the six capture sites; *regression* — `check-sentry-capture-has-init.sh`
+    wired at `ci.yml:699,702`, self-test first, **pass** on both duplicated runs; *deploy* —
+    `modal-deploy` on `306285f7` **success**, and the enclosing `@app.function` at `:451-453` mounts
+    the secret, so the container really would read the DSN. **But the chain does not terminate there:
+    the alarm still cannot fire**, because the value is absent — the gap moved from "no initialiser"
+    to "initialiser, gate, test and deploy, no value" (§3 HW-1). One hop downstream, and the hop is
+    the one that was already open.
+  - **HW-2 (`SENTRY_DSN` consumer-only, owner lost) — NOT CLOSED; it moved.** FOLLOW-744 shipped the
+    hardening (AC-1, verified in all three mirrors) and the documentation (AC-2's escape hatch), and
+    left the channel absent (AC-3 unexecuted, by its own admission). The half-wire did not close and
+    did not stay put: it was marked `DONE`, so it is un-owned for the **second** time (§5d). RETRO-235
+    called this "the single most important line in this retro for the PM"; it is still the single most
+    important line, one merge later.
+  - **LG-1 (`init_sentry` can raise) — GENUINELY CLOSED**, verified by reading all four call sites
+    rather than the PR body: the `try` at `observability.py:124` encloses both the import and the
+    `init`, the never-raise contract now matches `flush_sentry`'s, the test at
+    `test_observability.py:66-88` pins it with a fake `BadDsn`, and the three mirrors are byte-identical.
+    Rule S symmetry restored on the axis it was broken on — **and broken on a new one in the same
+    edit** (§4a LG-3).
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141)** — this pair of
+  merges is an instance on two axes, and one of them sets a new speed record. (i) *Channel:* no init →
+  init + gate + deploy → still no DSN (above). (ii) *Ownership:* ESC-045 item 4 leg (b) → FOLLOW-738
+  closed it on paper → FOLLOW-744 re-owned it → FOLLOW-744 marked `DONE` **35 seconds after its own
+  merged artefact declared it not-done**, and the escalation's corrective pointer now aims at a closed
+  ticket. Four hops, one wire, still open. Traced producer→consumer→delivery before being called open;
+  nothing inferred from a ticket status.
+- **RETRO-236 (FOLLOW-736, PR #645)** — its §3 **HW-2** ("an invariant proved only against a
+  `MagicMock`") is the shape §4c TG-1 finds one subsystem over, with the difference stated rather than
+  elided: RETRO-236's repo already had a real-backend gate that went green over the unchanged branch,
+  whereas here no real-Sentry gate exists or can exist until the DSN lands. Its §4b **CB-2** (ADR-0020's
+  four falsehoods, FOLLOW-748) is **re-verified still open on `main`** at `ADR-0020:149,165,196,200,238`
+  and §5a adds the replacement target #647 supplies. Its promoted **Rule AO** gets its first independent
+  confirmation here (§4a LG-1), 18 hours after minting, on the adjacent subsystem.
+- **RETRO-230 §4c/§6** — the Rule AE-by-analogy prior (count 1), and the source of the **mutation-fixture
+  method** §4b CB-1 uses. RETRO-230 proved its finding by building two throwaway mutations and observing
+  the gate exit 0; I built four and observed the same. Method reuse recorded deliberately: it is the
+  cheapest technique in this retro's toolkit and it converted a plausible-looking finding into a measured
+  one.
+- **RETRO-232 / RETRO-235 §6** — the precedent for a retro **declining** a promotion the arithmetic
+  appears to authorise, and for reconciling a contradiction with a prior retro explicitly. Both are
+  exercised here: §6 promotes the Rule AE amendment and **declines** the Rule AJ one, correcting
+  RETRO-235's own same-artefact count 1 → 2 while doing so; §5d **reverses the implication** RETRO-235
+  §5b drew from a fact I agree with; §4c TG-3 and §4d record two axes as **verified-adequate** so the
+  next retro does not file them.
+- **RETRO-205 / FOLLOW-591 / FOLLOW-602** — the Rule AF evidence series; §2 records the fourth and fifth
+  consecutive flat readings (192).
+- **ESC-045** (items 1-3 open and unaffected; item 4 leg (b) is §3 HW-1 and §5a) · **ESC-042 item 1**
+  (§5b gives it a second invocation AC) · **ESC-046 / FOLLOW-755** (#646's out-of-process merge; §5c
+  hands FOLLOW-755 the branch-protection question for the two new gates) · **ADR-0020 / FOLLOW-739 /
+  FOLLOW-740 / FOLLOW-745 / FOLLOW-746 / FOLLOW-747 / FOLLOW-748 / FOLLOW-752** — all assessed in
+  §5a/§5b, none duplicated.
+
+<!-- next free FOLLOW number: 759 (756-758 filed by THIS retro). Next free RETRO: 238. RETRO-237 = ONE
+COMBINED retro for PR #646 (FOLLOW-743, MERGED 2026-07-31T03:50:53Z, 306285f7, 4 files +286/-0) and PR
+#647 (FOLLOW-744, MERGED 2026-07-31T19:32:41Z, 5eeb5c40, 6 files +215/-112) — combined because both are
+small, same subsystem (Python-tier Sentry initialiser), same source retro (RETRO-235), same session, and
+because 3 findings are only visible in the INTERACTION (#646 gates a call-shape, #647 changes what that
+shape does at runtime). Written on branch retrospective-analyst/RETRO-237-follow-743-744-combined (main
+had moved past 66575f5e). CI re-derived independently for BOTH: 68 pass / 67 pass, sole failure Rule I =
+192 = main's baseline (jobs 91066369305, 91071205966), Rule AF flat 4th AND 5th consecutive.
+modal-deploy SUCCESS on BOTH merge commits — the spend-cap init AND the non-fatal guard are LIVE in
+estalara-description-generator; generate_description.py:451-453 mounts estalara-secrets and calls
+_spend_cap_exceeded() at :522, so only the DSN VALUE is missing. WIRING: CHECK A clean; CHECK B 2
+findings — HW-1 the spend-cap alarm now has init+flush+test+CI gate+live deploy and STILL zero delivery
+channel, AND FOLLOW-744 was marked DONE in QUEUE.md:121 **35 seconds after** its own merged artefact
+(MODAL_PROD_STANDUP.md:305-308) declared it CODE_COMPLETE_OPERATOR_PENDING "not DONE", so ESC-045 item 4
+leg (b) is un-owned for the SECOND time and the escalation's pointer aims at a closed ticket
+(HALF_WIRE_C, P1 -> 756); HW-2 init_sentry's new failure outcome is a producer with no consumer — 1 of 4
+call sites reads the bool, the print has no channel, and _sentry_initialised stays False so every call
+re-attempts+re-prints (HALF_WIRE_P, P2 -> 758). GAPS: logic 3 / code bugs 4 (CB-1 P2 = FOUR MEASURED
+false negatives in the new gate, each reproduced with a throwaway fixture: docstring mention of
+init_sentry( clears the file, trailing-comment mention clears it [= RETRO-235 CB-4 inherited by the
+script written to close it, INVERTED to false-GREEN], *test*.py substring glob hides prod basenames,
+observability.py basename exclusion is a pure hole whose stated rationale I measured FALSE; CB-2 P2 =
+runbook §11 cites §0 [a 2026-07-02 pre-creation snapshot that §10's attestation supersedes] and §3 [a
+Doppler column] as evidence for a MODAL-secret claim, while MASTER_DESIGN.md:1807 already prescribes
+"verify by listing that secret"; CB-3 P3 = §11's proof trigger is unexecutable on BOTH branches of its
+own "or" — intent-engine has no prod deploy and the key it says to break runs the live description
+pipeline; the fallback says "once FOLLOW-743 lands" though #646 is an ANCESTOR of this PR's own merge
+commit) / test 3 / docs 3. RULE AA VERDICT SPLIT: **AGREE with DONE for FOLLOW-743** (code control, 5/5
+ACs shipped, AC-2 inventory re-derived and found complete, live); **DISAGREE with DONE for FOLLOW-744**
+— CODE_COMPLETE_OPERATOR_PENDING per its own shipped runbook text; AC-3 unexecuted; its escape hatch is
+self-contradictory ("ship AC-1 + AC-3" while AC-3 consumes AC-2's output). Deliberately opposite call
+from RETRO-235/236, distinction stated (738/736 had no operator action of their own; 744's ENTIRE
+purpose was one). MULTI-AXIS: the "does anything assume init_sentry raises" axis VERIFIED CLEAN by
+reading all 4 call sites; the deployed-container axis VERIFIED (secret IS mounted); the compliance axis
+on the new 5th producer VERIFIED BENIGN (static message + 2 numeric extras, no identifiers) and recorded
+so FOLLOW-739/747 neither miss it nor over-state it; RETRO-235 §5b's "provisioning changes exactly one
+app" REVERSED in implication (de-scoping -> urgency) now that the one app holds the only Sentry signal
+with a € consequence. RULES: **Rule AE AMENDED/PROMOTED** (count 3, PRIOR RETROS RETRO-230 §6 + RETRO-235
+§6 — 3 different guards, 3 PRs, 3 subsystems; the amendment adds the CLEARANCE side [which shapes make a
+guard declare a file clean] which neither prior covers, plus the false-RED-vs-false-GREEN direction
+clause; checked against Rules AC/AM/AL/Q before amending). **Rule AJ amendment DECLINED at count 2**
+despite the arithmetic — all 3 sightings are ONE artefact (SENTRY_DSN) and ONE displacement chain;
+RETRO-235's own 1->2 advance was also same-artefact, so the honest UNIQUE-ARTEFACT count is 1; next
+sighting must be a DIFFERENT half-wire. Rule AO first post-promotion instance (LG-1). **P-21 MINTED at
+count 1** ("a gate is accepted as a substitute for the channel it guards": 3 gates / 5 capture sites / 4
+tests / 0 events ever delivered) with 3-part second-sighting criteria. FOLLOWS FILED: 756 (P1 devops 3h),
+757 (P2 devops 3h), 758 (P2 backend 2h). QUEUE.md / ESCALATIONS.md / sprint files / code correctly
+UNTOUCHED (the FOLLOW-744 status-label correction, the ESC-045 pointer re-aim + its two drifted lines,
+the FOLLOW-746/747/748 AC amendments, and the ESC-042 item-1 trigger AC are all PM actions, surfaced in
+§5a/§5d). -->

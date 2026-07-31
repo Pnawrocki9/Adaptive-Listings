@@ -23068,3 +23068,285 @@ assume); (2) pick one option above with the rationale written down; (3) if the c
 wording must be explicit that this is unenforced — no phrasing that implies a control exists.
 
 cross_ref: [ESC-046, FOLLOW-743, RETRO-076]
+
+---
+
+## FOLLOW-756 — the `SENTRY_DSN` provisioning leg lost its owner for the second time, and the runbook instruction that replaced it is unverified and unexecutable
+
+source_retro: RETRO-237 (PRs #646/#647, FOLLOW-743/744) source_ticket: FOLLOW-744
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 3
+depends_on: [] blocks: [FOLLOW-739 verification leg, FOLLOW-747 verification leg] promoted_to_queue:
+false
+
+**The ownership finding — read this first, it is the reason the ticket is P1.** FOLLOW-744 existed
+solely to re-own ESC-045 item 4's leg (b) — _"the code is wired and tested; the channel is absent"_
+— after FOLLOW-738 closed leg (a) and the item was marked RESOLVED. FOLLOW-744 shipped its code leg
+(AC-1) and its documentation leg (AC-2's escape hatch) and explicitly did **not** execute AC-3, the
+Rule AA live-capture proof. Its own merged artefact says so:
+`docs/runbooks/MODAL_PROD_STANDUP.md:305-308` — _"Rule AA (code-vs-prod verdict split — this ticket
+ships `CODE_COMPLETE_OPERATOR_PENDING`, **not `DONE`**, until steps 1-5 above are executed and
+attested)"_. `backlog/QUEUE.md:121` reads _"FOLLOW-744 — status: DONE"_, written in `66575f5e`, **35
+seconds after `5eeb5c40`**. And `backlog/ESCALATIONS.md:3029-3031` now aims leg (b) at
+_"`backlog/FOLLOW_UPS.md` → `## FOLLOW-744`"_ — a ticket marked DONE. So the leg is un-owned again,
+one hop further down the same displacement chain. **This stub exists so the leg has an owner
+regardless of what the PM decides about FOLLOW-744's status label** (correcting that label, and
+re-aiming ESC-045's pointer, are PM actions and are NOT part of this ticket).
+
+**Why P1 and not "whenever convenient".** `backlog/ESCALATIONS.md:3016-3018` downgrades the action
+to _"provision … whenever convenient"_. That was written when the only DSN-gated Sentry signals
+lived in `apps/intent-engine`, which has no prod deployment. **Since PR #646 that is no longer
+true:** the daily LLM spend-cap alarm (`apps/llm-gateway/src/jobs/generate_description.py:433`) is
+now correctly wired to `init_sentry`/`flush_sentry`, sits inside the deployed `generate_description`
+`@app.function` (`:451-455`, which mounts `secrets=[modal.Secret.from_name("estalara-secrets")]`,
+called at `:522`), and `modal-deploy` on `306285f7` is **success**. It is the one Sentry signal in
+this repo with a direct € consequence, it is live, and it is a no-op purely for want of a value.
+
+**Defect 1 — the "absent from the Modal secret" claim is inferred, not verified, and the citation is
+superseded.** `MODAL_PROD_STANDUP.md:275-276` reads _"`SENTRY_DSN` is still absent from Doppler
+`prd` and from the Modal `estalara-secrets` secret (§0/§3 above)"_.
+
+- The **Doppler** half IS evidenced: `backlog/ESCALATIONS.md:3009` — _"`SENTRY_DSN` — confirmed
+  absent from all three configs"_, from a direct query.
+- The **Modal** half is not. **§0 is a 2026-07-02 snapshot** stating the Modal account had _"0 apps
+  and 0 secrets"_ — superseded by **§10's 2026-07-03 attestation**: _"Modal workspace `estalara`
+  created; `estalara-secrets` provisioned"_. **§3** is a gather-list whose own header says _"Flagged
+  gaps are not in **Doppler prd** today"_ — a Doppler column, not an observation of the Modal
+  secret.
+- The failure mode this hides is exactly the one FOLLOW-744 hardened for: §5's create template
+  (`:149`) is `SENTRY_DSN='<from Sentry>'`, so if that literal placeholder was pasted during the
+  stand-up, the secret holds a **malformed** DSN, `init_sentry` returns `False`, prints to container
+  stdout, and nothing else happens.
+- The correct method is already in the repo, written the day before: `docs/MASTER_DESIGN.md:1807` —
+  _"verify by listing that secret — **do not infer it from a ticket status**"_. §11 has no listing
+  step.
+
+**Defect 2 — §11's proof step is unexecutable on BOTH branches of its own "or".** Step 5 offers (a)
+_"a deliberately broken `ANTHROPIC_API_KEY` on the chat-intent path,
+`apps/intent-engine/src/nlp.py`"_ — but `apps/intent-engine` has **no prod deployment**
+(`modal-deploy.yml:39` triggers on `apps/llm-gateway/**` only; ESC-042 item 1), and the same key is
+read by the **live** description pipeline, so breaking it takes production down rather than
+producing a test event; and (b) _"the spend-cap path **once FOLLOW-743 lands**"_ — #646 merged 15h
+42m earlier and `306285f7` is an **ancestor** of this PR's own merge commit
+(`git merge-base --is-ancestor 306285f7 5eeb5c40` → true), so a conditional-future clause was
+written about a fact already true at the doc's own merge commit (**Rule AH**); and triggering it in
+prod means burning the $100/day `_DAILY_SPEND_CAP_USD`.
+
+**Defect 3 — citation and command defects in §11.** `:306` cites _"`.env.example:81`
+(`SENTRY_PROJECT` comment …)"_ — `:81` is `SENTRY_ORG=`; `SENTRY_PROJECT` is `:82` and the
+FOLLOW-744 comment block is `:83-86` (**Rule Y**). Step 3's
+`doppler secrets set SENTRY_DSN --config prd` omits `--project`, and the repo disagrees with itself
+about the default: `docs/runbooks/cloudflare.md:87` uses `--project estalara`, while
+`backlog/ESCALATIONS.md:2996` names the Doppler project `estalara-adaptive-listings`. (Consistent
+with §2 of the same runbook at `:69-70`, so not a regression — but it is the one step where a wrong
+default is silent.)
+
+**Explicitly NOT in scope.** Provisioning the DSN itself remains an operator-credential action for
+Piotr. Do not edit `backlog/ESCALATIONS.md` or `backlog/QUEUE.md`. Do not re-open the FOLLOW-738
+AC-5 one-shared-DSN decision. Do not change `init_sentry` (that is FOLLOW-758).
+
+**AC:**
+
+1. Add a **verify-first** step to `MODAL_PROD_STANDUP.md` §11, ahead of the write steps: list the
+   `estalara-secrets` keys (Modal console or `modal secret list`/inspect) and record the observed
+   result — present / absent / present-but-placeholder — with a date. Replace the `(§0/§3 above)`
+   citation, since §0 is superseded by §10 and §3 is a Doppler column. Quote
+   `docs/MASTER_DESIGN.md:1807`'s rule verbatim as the reason.
+2. Replace step 5's proof trigger with one that is executable in the **deployed** app and destroys
+   nothing: a deliberate, cheap capture inside `apps/llm-gateway` (the only Python app with a deploy
+   path). Do **not** leave the "break `ANTHROPIC_API_KEY`" option in the document — it takes the
+   live description pipeline down; and do not leave a trigger whose cost is the $100 spend cap.
+   State plainly that the `apps/intent-engine` option is blocked on ESC-042 item 1 (`BLOCKED-ON-#N`
+   form per Rule AH), rather than deleting the context.
+3. Fix the `.env.example:81` → `:82-86` citation, and make step 3's `doppler secrets set` command
+   name the project explicitly (resolve which of `estalara` / `estalara-adaptive-listings` is
+   correct by querying, not by picking — Operating Principle 5).
+4. Carry the **Rule AA attestation slot** for leg (b): once the DSN is provisioned, one real capture
+   observed as a tagged issue in the named `estalara-python-modal` project, recorded in §10's
+   attestation format (date / operator / environment / verdict / proof). Until that is filled, this
+   ticket is `CODE_COMPLETE_OPERATOR_PENDING`, not DONE — and say so in the ticket's own PR body so
+   the next status label does not repeat FOLLOW-744's.
+5. Do NOT write to `backlog/ESCALATIONS.md` or `backlog/QUEUE.md`. The FOLLOW-744 status-label
+   correction, the ESC-045 pointer re-aim, and ESC-045's _"whenever convenient"_ line are PM
+   decisions surfaced in RETRO-237 §5a/§5d.
+
+cross_ref: [RETRO-237 §3 HW-1, §4b CB-2/CB-3/CB-4, §4c TG-1, §4d DG-1/DG-2/DG-3, §5d; RETRO-235 §3
+HW-2 / §4d DG-1/DG-2; RETRO-234 §3 HW-2; `backlog/ESCALATIONS.md` ESC-045 item 4 (leg b);
+`docs/runbooks/MODAL_PROD_STANDUP.md:275-308`; `docs/MASTER_DESIGN.md:1807`;
+`apps/llm-gateway/src/jobs/generate_description.py:425,433,439,451-453,522`; ESC-042 item 1; Rules
+AA / AJ / AH / Y]
+
+---
+
+## FOLLOW-757 — four MEASURED false negatives in the new capture-has-init gate, including the sibling gate's own comment-filter bug inherited and inverted to fail silently
+
+source_retro: RETRO-237 (PR #646, FOLLOW-743) source_ticket: FOLLOW-743 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Not a duplicate of FOLLOW-746 — read this paragraph before merging the two.** FOLLOW-746 covers
+`scripts/check-sentry-init-singleton.sh` (the registry/basename gap and its whole-line-only comment
+filter, RETRO-235 CB-2/CB-4). This ticket covers the **different** script
+`scripts/check-sentry-capture-has-init.sh` (new in PR #646), where the same filter bug produces the
+**opposite** failure direction: in the singleton guard a trailing comment causes a false **RED**
+(loud, self-correcting); here it causes a false **GREEN** (silent, permanent). If the PM prefers one
+ticket, fold — but the AC below must survive intact, and the direction difference must be stated in
+whichever ticket lands.
+
+**How these were found: measured, not theorised.** Each shape below was reproduced with a throwaway
+fixture run against the shipped script (RETRO-230's mutation method). The gate currently reports
+**PASS** against the real tree and the tree is genuinely clean — all four are latent regression
+holes, which is why this is P2.
+
+The clearance test is `check-sentry-capture-has-init.sh:104-106`:
+
+```
+grep -nE "init_sentry\(" "$file" | grep -vE "^[0-9]+:[[:space:]]*#" | grep -q .
+```
+
+Any surviving occurrence anywhere in the file clears **every** capture site in it.
+
+1. **A docstring mentioning `init_sentry("SENTRY_DSN")`, with no real call → gate PASSES.** A
+   docstring carries no `#`, so the comment filter never sees it. Most likely real trigger: a module
+   whose docstring explains where its init lives.
+2. **A trailing comment (`x = 1  # TODO: restore the init_sentry( call`) → gate PASSES.** Identical
+   to RETRO-235 §4b CB-4 in the sibling script — inherited by the script written to close that
+   sibling's blind spot.
+3. **A production module named `latest_pricing.py` is never scanned → gate PASSES.**
+   `! -name "*test*.py"` is a substring glob (`la-test-`). Any production basename containing `test`
+   (`latest_*`, `attestation*`, `contest*`) is silently excluded. Latent today: the only current
+   matches are the two `conftest.py` files, which are separately excluded.
+4. **A capture inside a 4th, unregistered `observability.py` → gate PASSES.**
+   `! -name "observability.py"` re-creates RETRO-235 §3 HW-4's basename hole in a **third** gate —
+   and here the exclusion buys nothing, because its stated rationale is **empirically false**. The
+   header claims those files _"define capture_exception/capture_message-shaped call sites in
+   comments only"_; in fact
+   `grep -nE "sentry_sdk\.(capture_exception|capture_message)\(" apps/intent-engine/src/observability.py`
+   returns **nothing at all** (the only hit for the bare words is prose at `:176`, with no
+   `sentry_sdk.` prefix and no `(`), so the script's own regex already excludes them.
+
+**Two further items, recorded as verified-not-live so they are not over-stated in the fix:** (5)
+`SCAN_DIRS` is built from `"$ROOT"/apps/*/src`, so a Python capture site in `packages/`, `scripts/`,
+`tests/integration/` or `apps/*/tests/` is unscanned — the repo-wide grep returns **zero** such
+sites today; (6) `for f in $FILES` is unquoted word-splitting.
+
+**Also in scope, one line: the allowlist has no visibility.**
+`# sentry-init-guard: allowlisted — <reason>` is a new repo-wide suppression vocabulary documented
+only inside the script header, and nothing counts allowlist entries or surfaces them in CI output —
+so an allowlist that grows is invisible. Same shape Rule Q was promoted for, applied to suppressions
+instead of skips.
+
+**AC:**
+
+1. Make the clearance test see only **real** `init_sentry(` calls: strip whole-line comments,
+   trailing comments **and** docstrings/string literals before deciding a file is clear. Whatever
+   technique is chosen, apply the same treatment to the detection side so the two halves cannot
+   drift.
+2. Replace `! -name "*test*.py"` with an anchored pattern that matches only real test-file
+   conventions (`test_*.py`, `*_test.py`, `conftest.py`), so a production basename containing `test`
+   as a substring is scanned.
+3. Remove the `observability.py` basename exclusion (its stated rationale does not hold — verify
+   this yourself with the grep above before removing, do not take this ticket's word for it), or
+   replace it with an exclusion keyed on the registered mirror paths in `scripts/mirror-files.json`.
+   Coordinate with FOLLOW-746, which owns the same hole in the sibling gate.
+4. Add **one self-test fixture per shape above** (docstring-clear, trailing-comment-clear,
+   substring-name skip, unregistered-`observability.py`), each asserting the gate now **fails**.
+   Red-first: each fixture must be shown failing against the current script before the fix.
+5. Emit the allowlist inventory in the gate's own output (count + file:line of every
+   `sentry-init-guard: allowlisted` occurrence), so a growing suppression set is visible in the CI
+   log rather than only in the source.
+6. State in the PR body whether the class is now **fully enumerated-and-guarded** or still open, per
+   Rule AE-as-amended. Do NOT change `apps/*` source, the allowlist token spelling, or the CI job
+   wiring (`ci.yml:692-702` is correct — hard gate, self-test ordered first).
+
+cross_ref: [RETRO-237 §4b CB-1, §4c TG-2, §5a, §5c, §6 (Rule AE amendment, count 3); RETRO-235 §3
+HW-4 / §4b CB-2/CB-4 (FOLLOW-746 — sibling script, opposite failure direction); RETRO-230 §4a DG-1 /
+§6 (the mutation-fixture method and the count-1 AE prior);
+`scripts/check-sentry-capture-has-init.sh:104-106,120-127`; `scripts/mirror-files.json`; Rules AE /
+AC / Q]
+
+---
+
+## FOLLOW-758 — `init_sentry`'s return contract is now overloaded, its docstring asserts the opposite in all three mirrors, and the failure signal has no consumer
+
+source_retro: RETRO-237 (PR #647, FOLLOW-744) source_ticket: FOLLOW-744 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding.** PR #647 correctly made `init_sentry` non-fatal (`observability.py:124-165`) — a
+malformed DSN can no longer take down three production jobs, which was the right fix and is verified
+shipped in all three Rule J mirrors (byte-identical by `diff`). It did not update what the function
+says about itself, and it created a new outcome nothing reads.
+
+**Defect 1 — the docstring was falsified by the same hunk, twice, in all three copies.**
+
+- `observability.py:105-107` still states the contract as _"True if a live client is (or already
+  was) initialised, **False if the named DSN env var is unset**"_ — an exhaustive either/or that the
+  new `except` at `:163-165` breaks.
+- `:95-98` still states that the DSN-unset skip is _"the **ONLY** allowed skip condition —
+  'dependency not configured', **not** 'dependency present but broken'"_ — which is now the literal
+  description of the behaviour the same diff added. That sentence was a deliberate design boundary
+  (it is why the helper is DSN-gated rather than try/except-gated); #647 crossed it without arguing
+  with it.
+
+This is a **Rule AO** instance — a corrective edit carrying forward the mental model of the thing it
+was fixing, falsified by evidence inside its own diff.
+
+**Defect 2 — the overloaded bool collapses two very different states at the one site that reads
+it.** Call sites: `nlp.py:314` (`if not init_sentry("SENTRY_DSN"): return`) is the **only**
+consumer; `consume_embed_seed_requests.py:198`, `:405`, `schema_validation.py:359` and
+`generate_description.py:425` all ignore the return value (**Rule S** — four siblings, one
+behaviour). `nlp.py`'s adjacent comment (`:312-313`) explains the early return as _"with SENTRY_DSN
+unset this is a deliberate no-op and the payload marker plus the log line remain the signals"_ —
+true for the unset case, false for the broken case, where nothing records that the telemetry itself
+failed. FOLLOW-730, ADR-0020 and FOLLOW-736 exist because a degraded extraction was
+indistinguishable from a real neutral one; the same shape is now back one layer down, in the code
+that was supposed to observe it.
+
+**Defect 3 — the failure signal is a producer with no consumer, and it repeats without bound.**
+`:164` is a bare `print(...)` to Modal container stdout. It cannot reach Sentry (Sentry is what just
+failed); it is not a `logging` call, so it also sits outside whatever route FOLLOW-745 restores for
+`apps/data-quality`; no metric, alert or dashboard reads it. And `_sentry_initialised` is left
+`False` on the failure path (`:167` is after the `return`), so **every** subsequent call re-attempts
+`sentry_sdk.init` and re-prints — `nlp.py` calls this per failed extraction and
+`jobs/batch_enrich.py` runs that per session across a 6h window, so the single operator error this
+guard exists for produces an unbounded stream of identical lines during exactly the outage the
+telemetry was meant to surface.
+
+**Verified clean, recorded so it is not re-litigated:** _nothing assumed `init_sentry` raises._ All
+four call sites were read on `main` — the three that ignore the bool proceed to
+`sentry_sdk.new_scope()` / `capture_*`, which are no-ops with no bound client, and all four sit
+inside their own `try/except` or a caller's. The non-fatal change is behaviour-safe on every path;
+the residual defect is only the ambiguity and the missing consumer.
+
+**AC:**
+
+1. Make the two outcomes distinguishable to callers. Either widen the return (e.g. an enum /
+   `Literal["ok", "not_configured", "failed"]`) or add a companion accessor — the choice is the
+   ticket's, but the caller must be able to tell "Sentry is deliberately off" from "Sentry is
+   broken" without parsing stdout.
+2. Update the docstring in the **canonical file and both Rule J mirrors in one commit** so `:95-98`
+   and `:105-107` describe what the function now does. Do not delete the "dependency not configured,
+   not dependency present but broken" reasoning — it is a real design boundary; re-state it as the
+   _intent_ and record that the failure path is a deliberate, logged exception to it.
+3. One-shot the failure notification: after a failed init, do not re-attempt on every subsequent
+   call in the same process (a separate module-level flag, not `_sentry_initialised`, so a later
+   legitimate init is still possible if that is desired — state which semantics you chose and why).
+   Add a test asserting N calls with a malformed DSN produce exactly one notification.
+4. Decide and record whether the three sites that ignore the bool **should** consult it. If yes,
+   wire them; if no, add a one-line call-site-inventory comment in `observability.py` saying which
+   sites consult the return value and why the others need not (Rule S amendment, RETRO-112 shape).
+5. Route the failure notification through `logging` rather than a bare `print`, so it lands in the
+   same stream FOLLOW-745 is deciding about — **coordinate with FOLLOW-745, do not pre-empt its
+   decision** about restoring a Sentry route for `logging.error`.
+6. Do NOT change the hardened `sentry_sdk.init(...)` kwargs (`include_local_variables=False`,
+   `send_default_pii=False`, `default_integrations=False`, `before_send=`) — the C-07/ROPA boundary
+   is out of scope and is pinned by `test_observability.py:49-63`.
+
+cross_ref: [RETRO-237 §3 HW-2, §4a LG-1/LG-2/LG-3, §6 (Rule AO first post-promotion instance);
+RETRO-235 §4a LG-1 (the raise-hazard this PR correctly closed) / §3 HW-3 (FOLLOW-745, the adjacent
+`logging` decision); RETRO-236 (the degraded-vs-neutral ambiguity this re-creates one layer down);
+`apps/intent-engine/src/observability.py:95-98,105-107,124-167` + both Rule J mirrors;
+`apps/intent-engine/src/nlp.py:312-315`;
+`apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:198,405`;
+`apps/data-quality/src/crons/schema_validation.py:359`;
+`apps/llm-gateway/src/jobs/generate_description.py:425`; Rules AO / AI / S / AJ]

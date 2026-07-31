@@ -2036,6 +2036,130 @@ node scripts/check-staff-write-atomicity.cjs
 
 ---
 
+### Rule AE amendment (2026-07-31 — RETRO-237 §6 — scope-broadening to ANY invariant, and the CLEARANCE-side sub-shape)
+
+**Two changes, one to AE's scope and one to its enumeration obligation.**
+
+**(1) Scope.** Rule AE's title binds it to _"an AST-based mechanical guard for a **security**
+invariant"_. Every sighting since promotion has been a **grep**-based guard for a **compliance /
+cost / observability** invariant, and in each case the retro recorded that AE as written did not
+formally reach the gate, so no reviewer citing AE would have caught it. The rule now reads on **any
+mechanical guard (AST- or regex/grep-based) that decides whether a file, route or module satisfies
+an invariant by pattern-matching source text** — security, compliance, cost, observability,
+contract-parity alike. The rule body already said "(or regex-based)"; the title and the promotion
+bar did not.
+
+**(2) The clearance side.** AE's four items are all about the guard's **detection** side: which
+syntactic shapes of the _guarded action_ it searches for. Every guard also has a **clearance** side:
+the shapes that make it declare a file CLEAN — comment/string filters, allowlist tokens, name-based
+exclusions, and the scan-root itself. A guard with perfect detection and a leaky clearance test is
+exactly as blind, and it reads as _more_ trustworthy because it looks specific. The clearance side
+must be enumerated with the same discipline, and it must be enumerated **by measurement**.
+
+**Evidence (≥2 PRIOR retros, three different guards, three different PRs, three different subsystems
+— not three hops of one arc):**
+
+- **RETRO-230 §4a DG-1 / §6 (count 1, PRIOR)** — the consent-contract-parity gate. `extractCalls()`
+  searched for the literal `NextResponse.json(` inside two file slices; two hand-built mutations (a
+  module-level helper placed **outside** both slices; `new NextResponse(JSON.stringify(...))`
+  **inside** the handler) each made the gate exit **0, "CONSENT CONTRACT IN SYNC — PASS"**. Recorded
+  explicitly as _"AE sighting (by analogy), count 1 toward a scope-broadening amendment ('mechanical
+  guard for ANY invariant')"_, because a parity gate is not a security invariant. Also the origin of
+  the **mutation-fixture method** this amendment now requires.
+- **RETRO-235 §3 HW-1 / §4b CB-1 / §6 (count 2, PRIOR)** — `scripts/check-sentry-init-singleton.sh`
+  was built around the shape RETRO-234's finding happened to use (`sentry_sdk.init(`), so the one
+  file that needed an init **because it never had one** (`generate_description.py`, the live LLM
+  spend-cap alarm) was invisible to the guard, to the tests and to three `/code-review` passes.
+  Pre-specified the amendment in as many words: _"AE's current text is scoped to 'AST-based
+  mechanical guard for a security invariant'; both sightings are grep-based guards for
+  compliance/cost invariants, which is the exact broadening the amendment should make."_ **HELD at
+  count 2** for want of a second prior.
+- **RETRO-237 §4b CB-1 (count 3 — the promotion trigger, and the strongest instance because the
+  guard in question IS sighting 2's remediation).** `scripts/check-sentry-capture-has-init.sh` (PR
+  #646) was written specifically to close RETRO-235's blind spot. Its detection side is sound and
+  its repo-wide inventory was complete. Its **clearance** side has four false negatives, each
+  reproduced with a throwaway fixture run against the shipped script:
+  1. a **docstring** mentioning `init_sentry(` clears the whole file (the comment filter is
+     `^[0-9]+:[[:space:]]*#`; docstrings carry no `#`);
+  2. a **trailing** `#` comment mentioning `init_sentry(` clears the whole file — the _identical_
+     filter bug RETRO-235 §4b CB-4 found in the sibling script, inherited by the script written to
+     close that sibling's blind spot;
+  3. `! -name "*test*.py"` is a **substring** glob, so a production module named `latest_*.py` /
+     `attestation*.py` is never scanned;
+  4. `! -name "observability.py"` excludes by **basename**, and its stated rationale is
+     **empirically false** — the script's own regex already excludes those files, so the exclusion
+     buys nothing and costs a hole. Plus the **direction** finding: bug 2 produces a false **RED**
+     in the sibling gate (loud, self-correcting) and a false **GREEN** here (silent, permanent) —
+     the same defect, opposite remediation priority, and that is not visible from the code.
+
+**Rule (additions to Rule AE's numbered list):**
+
+5. **Applies to any mechanical guard for any invariant**, AST- or grep-based — not only security
+   invariants. If the guard decides "does this file/route/module satisfy X" by pattern-matching
+   source text, items 1-4 and 6-8 below bind.
+6. **Enumerate the CLEARANCE side, not just the detection side.** Before declaring the guard
+   complete, list every shape that makes it declare a file/route CLEAN and state whether each is
+   intended: (a) comment filters — whole-line vs trailing vs docstring/string-literal; (b) allowlist
+   or suppression tokens; (c) name-based exclusions (`--exclude`, `! -name`) — and check the glob is
+   anchored, not a substring; (d) the scan root / directory scope; (e) any early `return 0` /
+   `continue`. A guard whose detection is complete and whose clearance test is leaky is exactly as
+   blind as one that never looked.
+7. **Every named exclusion must carry a rationale that is verified, not asserted** — run the guard's
+   own pattern against the excluded file and confirm it would have matched. An exclusion whose
+   stated reason does not hold is a pure hole; strip it rather than documenting it.
+8. **Prove each shape by MUTATION, not by reading.** Build one throwaway fixture per enumerated
+   shape (detection _and_ clearance), run the shipped guard against it, and record the verdict in
+   the PR body — this is what separates a measured finding from a plausible one, and it is how all
+   three sightings above were established. Ship the surviving fixtures into the guard's
+   `--self-test` so the shape cannot silently regress. **State the direction of every defect
+   found**: a filter defect on the detection side and the same defect on the clearance side have
+   opposite severity (false RED is loud and self-correcting; false GREEN is silent and permanent).
+
+**Verification:**
+
+```bash
+# 1. Read the clearance side of the guard, don't guess it — every filter, exclusion and allowlist:
+grep -nE "grep -v|--exclude|! -name|allowlist|continue|return 0" scripts/<guard>.sh
+
+# 2. For every "! -name"/"--exclude" pattern, prove the exclusion is needed (the guard's own pattern
+#    must actually match the excluded file — if it does not, the exclusion is a hole, not a filter):
+grep -nE "<the guard's own detection regex>" <the excluded file>
+
+# 3. Mutation-prove each shape. Fixtures go to a temp dir, NEVER into the live tree (Rule AM):
+#    one file per shape — docstring-clear, trailing-comment-clear, substring-name skip, basename
+#    exclusion, out-of-scan-root — then run the SHIPPED guard against each and record pass/fail.
+mkdir -p /tmp/guardprobe/app-x/src && printf '...' > /tmp/guardprobe/app-x/src/probe.py
+<GUARD_TARGET_ENV>=/tmp/guardprobe bash scripts/<guard>.sh; echo "exit=$?"
+
+# 4. Confirm the guard still reports correctly on the REAL tree after the fix (a hardened guard that
+#    now false-REDs on main is a Rule AF liability):
+bash scripts/<guard>.sh
+```
+
+<!-- AMENDED by RETRO-237 (2026-07-31). Rule AE scope-broadening + clearance-side sub-shape, count 3,
+PRIOR RETROS: RETRO-230 §6 (count 1, consent-contract-parity gate, mutation-proven, explicitly filed
+"toward a scope-broadening amendment") and RETRO-235 §6 (count 2, check-sentry-init-singleton.sh, with
+the amendment's scope clause pre-specified verbatim and HELD for want of a second prior). Promotion
+trigger: RETRO-237 §4b CB-1 — FOUR measured false negatives in check-sentry-capture-has-init.sh, the
+gate written specifically to close sighting 2, all four on the CLEARANCE side which neither prior
+covers. Three different guards, three PRs, three subsystems — independent sightings, not one arc
+(contrast RETRO-237 §6's DELIBERATE DECLINE of the Rule AJ amendment at count 2, where all three
+sightings were the same SENTRY_DSN artefact on one displacement chain). CHECKED BEFORE AMENDING:
+Rule AC (scope a guard-authoring ticket by a repo-wide grep of the target signature — adjacent, and it
+FIRED and was COMPLIED WITH by PR #646's AC-2 inventory; AC governs which FILES the guard is pointed
+at, not which SHAPES clear a file), Rule AM (a self-testing gate's fixtures must be synthesized, not
+mutated from live source — the new gate COMPLIES, mktemp -d; AM is about fixture provenance, not
+coverage — item 8 above cites AM so the two do not conflict), Rule AL (an assertion must be evaluated
+over the same region its consumer reads — nearest neighbour on the scan-root sub-item 6(d), and the
+reason RETRO-237 recorded the scan-root hole as verified-not-live rather than as the trigger),
+Rule Q (a soft-skippable gate must emit positive proof its assertion ran — satisfied by both Sentry
+gates' self-tests; Q is about the JOB running, not about what the assertion can SEE). No existing rule
+requires enumerating the shapes that CLEAR a guard. Amendment, not a new letter: this is Rule AE's own
+subject (shape-enumeration completeness in a mechanical guard) on its second axis, and splitting it
+would let a reviewer cite one half against the other. -->
+
+---
+
 ## Rule AF — A gate that is permanently red is a DISABLED gate: no CI check may sit red on `main` un-quarantined, and "CI green modulo the known reds" is only a valid merge signal when the known-red set is compared against `main`'s baseline and found UNCHANGED
 
 **Pattern:** A CI check starts failing for reasons nobody intends to fix today. It is labelled

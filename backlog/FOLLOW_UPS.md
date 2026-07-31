@@ -22812,3 +22812,39 @@ start from a cold key); (3) update the README's local-verification snippet if it
 cross_ref: [ADR-0020 D3/D6, FOLLOW-736, `apps/intent-engine/src/local_dev.py:170-190`,
 `apps/intent-engine/src/test_local_dev.py`, FOLLOW-740 (the operator-visibility channel this does
 NOT substitute for)]
+
+---
+
+## FOLLOW-750 — `dev`, `stg` and `prd` share ONE Anthropic API key, so a local dev run is indistinguishable from production in billing, rate limits and revocation
+
+source_retro: (none — surfaced during FOLLOW-736 PR #645 validation, 2026-07-31) source_ticket:
+FOLLOW-736 recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours:
+1 depends_on: [] promoted_to_queue: false
+
+**Verified** (names and value-shapes only, no values read into any artifact): Doppler project
+`estalara-adaptive-listings` holds `ANTHROPIC_API_KEY` in configs `dev`, `stg` and `prd`; all three
+are 108 chars, `sk-ant-` shaped, and **byte-identical**.
+
+**Why it matters.** Three consequences follow mechanically:
+
+1. **Billing/attribution** — a developer running `local_dev.py` on a laptop spends against the same
+   key as the live description pipeline. FOLLOW-736's own verification did exactly this (two Haiku
+   calls, fractions of a cent, disclosed by the worker unprompted). There is no way to answer "how
+   much of last month's Anthropic spend was local development?"
+2. **Rate limits** — a loop or a load test locally consumes the production quota for
+   `generate_description`, the LIVE deployed path. Note this interacts with **FOLLOW-743**: the
+   daily spend-cap alarm that would warn about this is itself a permanent no-op today.
+3. **Revocation** — the key cannot be rotated for dev without breaking prod, which is precisely the
+   situation where one wants to rotate quickly (a leaked laptop key).
+
+**Not urgent, and deliberately P3:** nothing is broken today and no incident is in progress. This is
+a posture item, raised because the shared-value fact was discovered incidentally and would otherwise
+stay undiscovered until it mattered.
+
+**AC:** (1) decide — separate key per config, or accept the shared key with the rationale recorded
+(a single-tenant pilot with one operator is a defensible reason to accept); (2) if separating, issue
+a dev-scoped Anthropic key, set it in Doppler `dev` (and `stg`), and confirm `local_dev.py` still
+runs against it; (3) whichever way, record the decision where a future reader will look — the
+`.env.example` comment block and `docs/runbooks/MODAL_PROD_STANDUP.md`.
+
+cross_ref: [ESC-045, FOLLOW-736, FOLLOW-743]

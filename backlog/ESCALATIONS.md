@@ -2901,6 +2901,31 @@ Sentry events. Provisioning the one secret this ticket asks for therefore silent
 producers that lack the exact control PR #642 spent a whole review round adding. `.env.example:70`'s
 comment ("all services share one org, separate projects") is already false for the Python tier.
 
+**⚠️ CORRECTION 2026-07-31 — item 1 ("no dev-tier Anthropic key") IS FALSE, and it was my error.**
+Verified by direct query during FOLLOW-736 validation (names and value-shapes only, never values):
+Doppler project `estalara-adaptive-listings` holds `ANTHROPIC_API_KEY` in **all three** configs
+`dev` / `stg` / `prd`, all 108 chars, all `sk-ant-` shaped, and **all three are byte-identical**.
+The ml-engineer proved that value live during FOLLOW-736 (a real Haiku extraction returned
+`feature_priority: "4_bedrooms"`, a token in no fixture in this repo). So a working key is readable
+today with `doppler secrets get ANTHROPIC_API_KEY -c dev --plain` — **nothing needs provisioning.**
+This escalation asserted the opposite from the day it was filed and I repeated it to Piotr twice.
+
+**Item 2-3 (Upstash) — still genuinely absent from Doppler** (`UPSTASH_*` appears in NO config), but
+FOLLOW-736's verification demonstrated a path that needs no cloud provisioning either: a local
+`redis:7-alpine` behind `hiett/serverless-redis-http` is a working Upstash-REST-compatible endpoint.
+Point BOTH the writer's `UPSTASH_REDIS_REST_URL`/`_TOKEN` and the control-plane reader's
+`UPSTASH_REDIS_URL`/`_TOKEN` at that one local shim and the env-pair parity requirement is satisfied
+by construction — the mismatch hazard this escalation warns about cannot occur when there is one
+endpoint. That reduces the remaining operator work for the "100% on localhost" goal to starting two
+containers.
+
+**`SENTRY_DSN` — confirmed absent from all three configs**, consistent with FOLLOW-744.
+
+**New risk surfaced by the same query, unrelated to this escalation's original scope:** `dev`, `stg`
+and `prd` share ONE Anthropic key value. A local developer run is therefore indistinguishable from
+production in billing and rate limits, and the key cannot be rotated for dev without breaking prod.
+Filed as FOLLOW-750 (P3) for Piotr's judgement; not blocking anything here.
+
 **Decision needed (updated after FOLLOW-738 merged):** option (a) is done — provision `SENTRY_DSN`
 into the Modal `estalara-secrets` secret whenever convenient; the hardening it was waiting on is on
 `main` and CI-guarded. Items 1-3 (Anthropic key, Upstash instance + env-pair parity) are unaffected

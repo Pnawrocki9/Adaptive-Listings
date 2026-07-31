@@ -23026,3 +23026,45 @@ back, since reading the key back is exactly the channel this finding shows is bl
 
 cross_ref: [RETRO-236 §4a LG-1/LG-2 §4d DG-1/DG-3, ADR-0020 §D6 + Consequences, FOLLOW-741,
 FOLLOW-740, FOLLOW-736, RETRO-234 §5b (which assessed channel (3) as real), Rules Y/AH]
+
+---
+
+## FOLLOW-755 — nothing technically prevents a Bash-capable subagent from merging its own PR; "humans merge" is a convention, not a control
+
+source_retro: (none — residual point from ESC-046, closed 2026-07-31) source_ticket: FOLLOW-743
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 2
+depends_on: [] promoted_to_queue: false
+
+**Context, so this is not misread.** ESC-046 was filed on the suspicion that a worker had merged its
+own PR (#646). That suspicion was **false** — the main-loop session merged it on Piotr's explicit
+instruction, and the escalation is closed as explained. But the governance question the PM raised
+while investigating survives on its own merits and is worth a cheap control.
+
+**The gap.** Every process in this sandbox authenticates to git/`gh` with the same account identity.
+A Bash-capable subagent therefore _can_ run `gh pr merge` on the PR it just opened, and `merged_by`
+would be indistinguishable from a human merge. Today the only thing preventing it is that each
+agent's brief tells it not to — instruction-following, not a technical boundary.
+`docs/AGENT_WORKFLOW.md` and the PM's own guardrails state "humans merge" as a rule with nothing
+enforcing it.
+
+**Why P3 and not higher.** No incident has occurred (the one suspected case was a human-authorised
+merge). This is a defence-in-depth item, and the honest framing is that the current control —
+consistent, well-written dispatch briefs — has held every time so far.
+
+**Options worth weighing (the ticket is to pick one, not to build all three):**
+
+1. **Branch protection requiring a review approval** on `main`. Strongest, and free; the cost is
+   that it also blocks the human's own one-click merges unless they self-approve or are an admin
+   with bypass. Check whether `main` already has protection rules — RETRO-076 recorded that
+   Production had zero at the time.
+2. **A `CODEOWNERS` + required-review rule** scoped to `apps/**` and `docs/adr/**`, leaving backlog
+   bookkeeping unblocked. Narrower blast radius, more configuration.
+3. **Accept and document.** State in `docs/AGENT_WORKFLOW.md` that the boundary is conventional, so
+   no future reader mistakes it for an enforced control. Cheapest, and honest; it changes nothing
+   mechanically.
+
+**AC:** (1) determine the current branch-protection state on `main` and record it (verify, do not
+assume); (2) pick one option above with the rationale written down; (3) if the choice is (3), the
+wording must be explicit that this is unenforced — no phrasing that implies a control exists.
+
+cross_ref: [ESC-046, FOLLOW-743, RETRO-076]

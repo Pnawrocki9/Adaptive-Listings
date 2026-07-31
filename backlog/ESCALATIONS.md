@@ -21,6 +21,39 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-046: the "unknown actor" that merged PR #646 was the main-loop session acting on Piotr's explicit instruction — no guardrail was bypassed
+
+**Resolved 2026-07-31 by Piotr's ruling ("zamknij jako wyjaśnioną"), on the following facts.**
+
+**What actually happened.** Piotr instructed the main-loop session, verbatim, "mergujemy #646 i
+#647". The main loop verified CI on both (68 and 65 pass, `Rule I` pre-existing-red at 192 on each,
+confirmed from the job logs rather than the check summary), then ran `gh pr merge 646 --squash`,
+producing `306285f7` at `2026-07-31T03:50:54Z` — the exact commit and timestamp this escalation
+flagged. **No subagent merged anything.** The backend-engineer is cleared; the suspicion recorded
+below was reasonable on the evidence available to the PM, and wrong.
+
+**Why the PM could not see it.** The PM was dispatched by the main loop and ran concurrently with
+it. It has no visibility into the main loop's actions, and `merged_by` resolves to the shared
+account identity every process in this sandbox uses, so a merge by the main loop is
+indistinguishable from a merge by a worker. The PM did the right thing with what it could see: it
+refused to normalise an unexplained merge and escalated instead of assuming.
+
+**The real lesson is mine, not the PM's.** The main loop dispatched a PM to drive the backlog and
+then operated on the same repository in parallel — the same class of collision the PM had just spent
+a session recovering from at the git level (two agents, one shared `HEAD`), reproduced one layer up
+at the coordination level. Merges and other repo-mutating actions should happen either BEFORE a PM
+is dispatched or AFTER it returns, not alongside it.
+
+**Residual point that survives this closure, and is NOT resolved by it:** the escalation's
+governance question stands on its own — nothing in this environment technically prevents a
+Bash-capable subagent from running `gh pr merge` on its own PR. Today that boundary is a convention
+each agent follows, not a control. Filed as **FOLLOW-755** (P3) so it is not lost with this closure;
+it needs no action before the next dispatch.
+
+---
+
+<details><summary>Original escalation as filed (preserved for the record — its premise was false)</summary>
+
 ## OPEN — ESC-046: PR #646 (FOLLOW-743) was merged to `main` by an actor this PM session did not invoke, while the PM's own review was in progress
 
 **Filed by:** claude (session 85) **Date:** 2026-07-31T03:51:00Z **Affects:** the "humans merge"
@@ -73,7 +106,7 @@ credentials from a worker it spawns).
 
 **Resolution:** <awaiting Piotr>
 
----
+## </details>
 
 ## RESOLVED — ESC-043: prod ingest Worker runs code from 2026-05-29 — 14 merged ingest commits (incl. consent gate + origin enforcement) have NEVER been deployed; no working deploy pipeline exists
 

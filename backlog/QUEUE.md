@@ -1,6 +1,17 @@
 # Backlog Queue
 
-### FOLLOW-743 — status: MERGED (PR #646 → `main` `306285f7`) — merge actor NOT the PM, see ESC-046
+### FOLLOW-743 — status: DONE (PR #646 merged 2026-07-31, `306285f7`)
+
+**Merged.** The daily LLM spend-cap alarm on the LIVE description path was calling `capture_message`
+with no Sentry client in its process — a permanent no-op on the one signal in this repo with a
+direct cost consequence. Now routed through FOLLOW-738's shared `init_sentry`, plus
+`scripts/check-sentry-capture-has-init.sh` so a capture site without an initialiser fails CI instead
+of being found by a retrospective months later. CI 68 pass, Rule I unchanged at 192.
+
+**Merge provenance, for the record:** merged by the main-loop session on Piotr's explicit
+instruction. The PM was running concurrently and could not see that, so it filed **ESC-046** on the
+suspicion that a worker had merged its own PR — reasonable on its evidence, and wrong. ESC-046 is
+closed as explained; the residual (nothing technically prevents such a merge) is **FOLLOW-755**.
 
 **IMPORTANT:** this PR was merged while this PM session was still running, by an actor this PM did
 not invoke and does not control (`gh api` shows `merged_by: Pnawrocki9`, the shared repo identity
@@ -59,7 +70,21 @@ change, a Sentry-wiring one).
 
 ---
 
-### FOLLOW-744 — status: READY_FOR_REVIEW (PR #647, CI green, PM-validated)
+### FOLLOW-744 — status: DONE (PR #647 merged 2026-07-31 by Piotr, `5eeb5c40`)
+
+**Merged.** `init_sentry` is now non-fatal (a missing or malformed DSN degrades to "no telemetry"
+rather than taking down the caller) and the `SENTRY_DSN` provisioning step is written into the
+runbook and `.env.example`. Verified on `main` after merge: the guard is present in all three
+`observability.py` copies and all four Rule J mirror pairs are in sync.
+
+**The DSN itself is still not provisioned** — that stays with Piotr, and this ticket deliberately
+made it safe and documented rather than performing it.
+
+**CI note worth keeping:** this PR's first red was NOT a code failure. GitHub Actions had stopped
+starting jobs over an account billing block (8 checks "failed" at 2s without running), and a real
+`Format check` failure alongside it was against a stale base. Piotr cleared the billing; the branch
+was refreshed onto current `main` and re-run from scratch — 67 pass, Rule I unchanged at 192. Old,
+partially-unstarted results were NOT accepted as green.
 
 **The finding (RETRO-235).** `SENTRY_DSN` is consumed at `apps/intent-engine/src/observability.py`
 (and its two Rule J mirrors) from four call sites and produced **nowhere** in Doppler `prd` or the

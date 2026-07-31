@@ -40546,3 +40546,538 @@ Rule AJ amendment count 2, P-19 count 2 — all HELD with second-sighting criter
 743 (P1 backend 2h), 744 (P1 devops 2h), 745 (P2 backend 2h), 746 (P2 devops 2h), 747 (P3 compliance 2h),
 748 (P2 architect 1h). QUEUE.md / ESCALATIONS.md correctly UNTOUCHED (the ESC-045 item-4 re-open and the
 FOLLOW-740 re-rating are PM actions, surfaced in §5a/§5d). -->
+
+---
+
+## RETRO-236 — FOLLOW-736 (empty chat extraction no longer clobbers a stored prior — ADR-0020 `SET … NX`) — 2026-07-31
+
+### 1. Summary of change
+
+- **PR:** #645 (merged 2026-07-31 03:01:06 UTC, commit `264bf1da`) — squash-merged by Piotr onto
+  `main`; bookkeeping follow-ons `ad714725`, `507b6192`, then `ed5207d2` (session-84 dispatch
+  record). `main` has moved 3 commits past the merge, so this retro is written on
+  `retrospective-analyst/RETRO-236-follow-736-retro`.
+- **Files changed:** 13 (+637 / −73). Code: 2 Python source files (`redis_writer.py`,
+  `local_dev.py`) + 2 test files (1 Python, 1 TS) + 1 new shared fixture. Docs: `MASTER_DESIGN.md`,
+  `ADR-0020`, `C-07`, `ropa.md`, `README.md`. Backlog: `FOLLOW_UPS.md`, `QUEUE.md`. Agent log:
+  `ml-engineer/lessons.md`.
+- **Modules touched:** intent-engine (Modal Python) · control-plane (**test file only** — no source
+  change, verified: `git show 264bf1da --stat -- apps/control-plane` returns only
+  `__tests__/chat-intent-cache.test.ts`) · compliance docs · Master Design · ADR · backlog.
+- **Key contracts changed:**
+  - `redis_writer.has_intent_signal(dims: ChatIntentDimensions) -> bool` — **new public symbol**
+    (`redis_writer.py:51`) — breaking: no (new). The parameter type is load-bearing, not incidental:
+    it makes the function structurally unable to read `data_source` / `extraction_error`.
+  - `write_shadow_intent` — **behaviour changed, signature byte-unchanged** (`-> None`, pinned by
+    ADR-0020 D3). The single `SET … EX` became two branches; the empty-dimension branch is
+    `SET … EX NX` (`redis_writer.py:125-130`).
+  - **`tests/fixtures/chat-intent-signal-parity.json` — new cross-runtime contract artefact**, 8
+    cases, consumed by BOTH runtimes (`test_intent_engine.py:593,712` and
+    `chat-intent-cache.test.ts:143,152`).
+  - `local_dev.py:170-190` — **comment only, call site byte-identical** (verified in the diff: the
+    `write_shadow_intent(...)` call at `:156` is untouched).
+  - No SDK change, no control-plane source change, no `main.py` change, no `flattenIntentDimensions`
+    change — all four claimed in the PR body and all four **verified by diff**, not accepted.
+
+### 2. Verification done in PR
+
+- Test files changed: `test_intent_engine.py` (+165/−18), `chat-intent-cache.test.ts` (+56/−1).
+  **Assertions added: 28**
+  (`git show 264bf1da -- <2 test files> | grep -c "^+.*assert\|^+.*expect("`). Suites:
+  `apps/intent-engine` 78 passed / 2 skipped; `apps/control-plane` chat-intent-cache 13 passed.
+  Coverage delta: unknown (no coverage gate on the Python apps).
+- Red-first honoured and visible in the diff: the deliberately-red
+  `test_degraded_payload_currently_still_overwrites_a_prior` was **flipped** to
+  `test_degraded_payload_does_not_overwrite_a_prior`, and the surviving guard
+  `test_degraded_source_set_partitions_the_provenance_literal` is byte-untouched — i.e. the
+  provenance-partition invariant was re-proved by an assertion the PR did not author.
+- **CI re-derived independently, not read from the PR body.** `gh pr checks 645` → **66 pass**, the
+  only failure is `Rule I — wired-or-dead check` (both duplicated runs). Pulled the job log directly
+  (`gh api …/actions/jobs/90996692773/logs | grep "Violations found"`) → `Violations found : 192`,
+  **identical to `main`'s baseline** re-derived by RETRO-234 (job 90932985464) and RETRO-235 (job
+  90975488035). This diff adds one TS symbol only inside a `__tests__` file, so it cannot move the
+  count. **Rule AF satisfied.** Series: 179 → 183 → 191 → 192 → 192 → 192 → **192 (flat, THIRD
+  consecutive)**.
+- **The `Redis shadow round-trip` gate ran and passed** — but see §3 HW-2: it passes for a reason
+  that has nothing to do with this PR's change, and its green is not evidence for the new branch.
+- **Live verification quality is the strongest part of this PR and is genuine.** The evidence table
+  (real `local_dev.py` shim + real `upstash_redis` client + `redis:7-alpine` behind
+  `hiett/serverless-redis-http`, real Haiku call) shows TTL ticking DOWN 86400 → 86369 → 86314 across
+  a neutral-success write and a degraded write. That is the exact observation a mocked test cannot
+  make, and it is the correct response to OP Rule 5. **It is also unrepeatable and ungated** — no CI
+  artefact reproduces it (§3 HW-2).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** Verified by grep, not by reading the PR body
+(`grep -rn "has_intent_signal\|chat-intent-signal-parity" --include=*.py --include=*.ts --include=*.json . | grep -v node_modules | grep -v /.venv/`):
+
+- `has_intent_signal` → **non-test importer present**: `redis_writer.py:125`, inside
+  `write_shadow_intent` itself. Also `test_intent_engine.py:36,659-717`.
+- `tests/fixtures/chat-intent-signal-parity.json` → consumers are two **test** files, one per
+  runtime (`test_intent_engine.py:593`, `chat-intent-cache.test.ts:143`). **Suppressed, correctly:**
+  a cross-runtime parity fixture whose only consumers are the two test suites it exists to bind is
+  the detector's test-artefact carve-out, not dead code. Recorded explicitly so a future retro does
+  not re-flag it.
+- No new files besides the fixture; no new exported symbol without a caller.
+
+**CHECK B — half-wire: 2 findings.**
+
+- **HW-1 — the write-admission decision is a signal with a producer and NO consumer at any of the
+  three call sites; FOLLOW-749 fixes one of the three and its scope text asserts the other two are
+  fine. Classification: HALF_WIRE_P. P3. → FOLLOW-751 (the production sibling only — no duplicate of
+  FOLLOW-749).** Producer: the branch at `redis_writer.py:125-130` now decides, per call, whether the
+  record was stored or silently discarded. Consumers, traced one by one:
+  (a) `main.py:90` — return value is `None` and the caller returns `payload.model_dump()` regardless;
+  the result is discarded anyway by `.spawn()` (RETRO-234 §5b). No consumer, and none possible.
+  (b) `local_dev.py:156,194` — `shadow_key_written` reports the opt-out flag, so it answers `true`
+  for a suppressed write. **Correctly found and filed by the implementer as FOLLOW-749** — reproduced
+  live, not theorised. No duplicate filed here.
+  (c) **`jobs/batch_enrich.py:66-70` — NOT examined by the PR, by FOLLOW-749, or by ADR-0020.**
+  `write_shadow_intent(...)` at `:66` is followed unconditionally by `processed += 1` at `:70`, and
+  the cron's only output is `{"processed", "errors", "degraded"}`. `degraded` counts degraded
+  *extractions* (FOLLOW-730), not suppressed *writes*, and the two are not the same set — a
+  neutral-success write ("hi") is suppressed on a warm key while `data_source == "model"`, so it is
+  counted as `processed`, is **not** counted as `degraded`, and stored nothing. This is the ONE
+  production call site whose entire deliverable is a summary count, and FOLLOW-749's stub states the
+  opposite in writing: *"Scope: **local-dev only.** … production's `main.py` returns 202 before
+  extraction runs and has no such field"* — true of `main.py`, silent on `batch_enrich.py`. **Rule S
+  sibling-completeness, inside a PR that correctly enumerated all three call sites in its own body**
+  ("No change to the three call sites' behaviour (`main.py`, `local_dev.py`, `jobs/batch_enrich.py`)")
+  — the enumeration was present and the telemetry axis was not walked across it. Latent, not live:
+  `read_recent_chat_sessions` is still a stub returning `[]` (`clickhouse_reader.py:28`), which is why
+  this is P3 and not P2.
+- **HW-2 — `nx=` is a new SDK signal whose only CI consumer is a `MagicMock`, in a repo that already
+  operates a real-Redis gate over the exact function that emits it. Classification: HALF_WIRE_P
+  (producer shipped, no verified delivery channel in CI). P2. → FOLLOW-752.** Producer:
+  `redis_writer.py:130`. Consumers: (a) every Python assertion goes through `_write()`
+  (`test_intent_engine.py:623-627`), which patches `redis_writer._get_redis` with a `MagicMock` and
+  asserts `kwargs.get("nx") is True` — i.e. it proves *the kwarg was passed*, never *that Redis
+  honoured it and the prior survived*; a mock accepts any kwarg name, so a renamed or dropped
+  parameter in a future `upstash_redis` bump passes this suite unchanged. (b) The real-Redis gate
+  **exists and was not extended**: `.github/workflows/redis-shadow-smoke.yml` runs the REAL
+  `write_shadow_intent` (`tests/integration/shadow_intent_writer.py:80`) against a real Upstash
+  instance and reads it back with the REAL `readShadowChatIntent`
+  (`redis-shadow-round-trip.smoke.test.ts:58,189`) — and its single payload
+  (`shadow_intent_writer.py:57-70`) carries **8 non-null dimensions**, so it exercises the `EX` branch
+  only. `grep -rn "nx\|NX" tests/integration/redis-shadow-round-trip.smoke.test.ts` → **zero hits**;
+  `git log --oneline -- tests/integration/redis-shadow-round-trip.smoke.test.ts` → last touched
+  `dd740267` (FOLLOW-368), untouched by this PR. So the gate went green having tested the one branch
+  that did not change. The PR's own Docker run is the only real-Redis evidence for the new branch, and
+  it lives in a PR body. **Rule Z**: a mock validating the shape this runtime emits is not evidence
+  the wire connects — and here the wire is the one the whole ticket rests on.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — ADR-0020 §D6's last surviving visibility channel is narrower than the ADR states, and
+  the common case escapes it.** `ADR-0020:152-155` (as amended by FOLLOW-741) reads: *"(3) **the key
+  itself on a cold session is real** — the `NX` write succeeds and stores the degraded record with its
+  markers in full — but it only covers a session's first message, **i.e. exactly the case where there
+  is no prior to lose**."* The gloss after "i.e." asserts an equivalence that the code does not have.
+  `SET … NX` succeeds iff **the KEY does not exist** — not iff there is no *prior*. A session whose
+  first message is a neutral success ("hi", "thanks") takes the NX branch and **creates a record**
+  (`redis_writer.py:130`, and the PR's own evidence table step 4 proves a cold NX write lands). From
+  message 2 onward the key exists, so every subsequent degraded write is suppressed — even though the
+  stored record holds **no signal** and there is still nothing to lose. Consequence: channel (3) is
+  blind for every session that opens with an unextractable greeting, which is the ordinary opening of
+  a chat. Worse in the direction that matters: during a total model outage, an operator running
+  `GET shadow:{t}:{s}:chat_intent` on such a session reads `data_source: "model"` — a **healthy-looking
+  payload** — which is verbatim the defect PR #642 round 2 identified and reverted ("mid-outage an
+  operator running `GET` saw a healthy payload"), arriving a third time by a third route. RETRO-234
+  §5b analysed this on the axis "session with a prior" vs "cold"; **neither it, nor the ADR, nor
+  FOLLOW-741's amendment considered the third state: a session with a record but no prior.** →
+  FOLLOW-754.
+- **LG-2 (P3) — "accumulated prior" over-describes the mechanism in three places, and no runtime
+  accumulates anything.** `redis_writer.py:16-19`, `MASTER_DESIGN.md:~1800` and the PR body all frame
+  the win as protecting *an accumulated chat prior*. Neither runtime accumulates: the writer does no
+  per-dimension merging (ADR-0020 D7 non-goal, correctly parked), so the key holds the **last
+  signal-bearing extraction**, full stop; and the SDK folds it **once per session** and latches —
+  verified at `packages/sdk/src/core/adapt.ts:869-880`, where the guard requires
+  `Object.keys(dims).length > 0 && intentState.chatPriorApplied !== true`. The fix's real value window
+  is therefore precise and worth stating: *between the first signal-bearing extraction and the next
+  `adapt()` call that folds it.* That is a genuine window and the fix is right; the prose implies a
+  larger one. Reconciles with RETRO-234 §5b, which praised D2 as "a strict superset" without walking
+  the Rule R bound. Folded into FOLLOW-754 AC, no separate stub.
+- **LG-3 (P3, latent, no stub) — the parity contract is key-agnostic on one side and model-bound on
+  the other.** `flattenIntentDimensions` iterates `Object.entries(dims)` over whatever keys the stored
+  JSON carries (`chat-intent-cache.ts:179`), and `readShadowChatIntent` does a raw
+  `parsed as ShadowChatIntent` cast with **no Zod validation** (`chat-intent-cache.ts:113-123`), while
+  `has_intent_signal` iterates `dims.model_dump()` — the declared pydantic fields only. Symmetric
+  today because the sole writer is `model_dump()`. It de-synchronises for the 24h TTL window after any
+  deploy that renames or removes a dimension: TS would still count the old key as a signal, Python
+  would not. The direction is benign (TS over-counts, so a stale-but-real prior is preserved rather
+  than destroyed), which is why this is recorded and not filed — FOLLOW-737 (shared-Zod mirror) is the
+  right owner and already exists.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — the retention wording this PR tightened is now FALSE for a case the PR's own evidence
+  table verified, in two compliance documents.** `C-07:96-97` now states the shadow key's lifetime is
+  *"24 hours from the last chat message **that yielded at least one intent dimension**"*, and
+  `ropa.md:133` repeats it verbatim in the evidence cell. Both are false for the cold-key all-null
+  record: a session whose **first** message yields no dimension still stores a record via the
+  succeeding NX write, with a full `ex=86400` — the PR proved exactly this as **step 4 of its own
+  verification table** (`sess_cold`, `TTL 86400`, "the marked all-null record IS stored"). For that
+  record no message ever yielded a dimension, yet it is retained 24h. The record is not empty of
+  personal data either: it carries `tenant_id`, `session_id` (pseudonymous identifiers) and the
+  provenance markers. The correct statement is *"24 hours from the first chat message of the session,
+  reset only by a message that yields at least one intent dimension"* — which is still strictly
+  tighter than the pre-ADR-0020 wording, so **the tightening claim survives; only the anchor is
+  wrong.** This lands in `C-07` **Q3.1**, the list of what the Privacy Notice must disclose at
+  go-live, i.e. text that will be copied into a user-facing document. Rules N / AI / Y. → FOLLOW-753.
+- **CB-2 (P2, NOT a duplicate — evidence for the already-open FOLLOW-748) — this PR edited
+  `ADR-0020` and left the four false "blocked by FOLLOW-738" assertions in place, while writing the
+  CORRECT expiring form into `MASTER_DESIGN` in the same commit.** Still on `main`:
+  `ADR-0020:148-149`, `:165`, `:196`, `:200`, `:238` all assert `SENTRY_DSN` provisioning is *"blocked
+  by FOLLOW-738"* — false since `479ac0ef` (RETRO-235 CB-3, owner FOLLOW-748, P2 architect, open).
+  What is **new** here: (i) PR #645 *touched this file* (header block, +10/−9), so the Rule AI
+  mitigation RETRO-235 granted #644 ("the branch was cut before the ADR amendment existed") does not
+  extend to it; (ii) the same PR wrote the correct, Rule-AH-expiring form into `MASTER_DESIGN §D.1.1`
+  — *"for as long as `SENTRY_DSN` is absent from the Modal `estalara-secrets` secret (verify by
+  listing that secret — do not infer it from a ticket status)"* — explicitly citing FOLLOW-748 as the
+  reason. **So the repo now holds the corrected claim and the falsified claim side by side, and the
+  normative document (the ADR) is the wrong one.** No duplicate stub; FOLLOW-748's AC should absorb
+  this and the two-document divergence. Correct call by the implementer to write the expiring form;
+  incomplete in that the file it was already editing kept the assertion.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the ticket's central invariant has no CI regression at all.** Detail in §3 HW-2. The
+  assertion "a prior survives an empty extraction" is tested only against a mock that records kwargs.
+  Folded into FOLLOW-752 AC.
+- **TG-2 (P3) — the degraded-write-against-a-warm-key path is untested in `test_local_dev.py`.**
+  Already correctly identified and written into **FOLLOW-749 AC-2** by the implementer ("the existing
+  cases all start from a cold key"). Recorded, not re-filed.
+- **TG-3 (P3) — `test_parity_fixture_covers_every_declared_dimension` guards one runtime's declared
+  set only.** It fails if a *Python* dimension is added or renamed without a fixture case. Nothing
+  guards the TS side — correctly, since `flattenIntentDimensions` is structurally key-agnostic
+  (LG-3), so there is no TS "declared set" to drift. **Recorded as verified-adequate rather than as a
+  gap**, because the obvious-looking symmetric test would be unimplementable, and a future retro
+  should not file it.
+- **Not a gap, recorded so it is not re-flagged:** the shared-fixture design (ONE JSON file,
+  parametrized in pytest and `it.each` in vitest) is the correct discharge of **Rule Z** for the
+  predicate/flattener pair, and `test_predicate_cannot_see_provenance` (`test_intent_engine.py:706`,
+  asserting the *annotation*) is an unusually strong way to pin a contract that is otherwise a
+  convention. Best engineering in this PR.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2)** — ADR-0020 §D6 channel (3), detail in §4a LG-1. → FOLLOW-754.
+- **DG-2 (P2)** — `C-07:96-97` + `ropa.md:133`, detail in §4b CB-1. → FOLLOW-753.
+- **DG-3 (P3, noted not filed)** — `ADR-0020:181` cites the Rule R latch as `adapt.ts:868-880`. The
+  real path is `packages/sdk/src/core/adapt.ts` (there is no `packages/sdk/src/adapt.ts` —
+  `sed -n '862,884p' packages/sdk/src/adapt.ts` errors). **I verified the substance rather than the
+  citation**: the guard is at `:869-880` and the claim is TRUE — the latch arms only on
+  `Object.keys(dims).length > 0`, so a `{}`-flattening record cannot consume it. A Rule Y path defect
+  with a correct assertion behind it; flagging it separately would be stub inflation. Folded into
+  FOLLOW-754 AC as a one-line fix.
+- **Not a gap, recorded because I checked it rather than accepting it:** the PR's two
+  "outside the stated file list" edits were both correct and both correctly disclosed. The
+  `local_dev.py` comment change is genuinely behaviour-free (call site byte-identical in the diff),
+  and rewriting `MASTER_DESIGN §D.1.1` point 5 was **mandatory** under Rule AI, not optional — AC-8
+  made that paragraph describe shipped behaviour, and leaving the old text would have shipped the
+  exact false visibility claim FOLLOW-741 existed to remove. Asking for confirmation while doing the
+  right thing is the correct handling.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-749 (P3, ml-engineer, filed by the implementer) — CORRECT and well-evidenced, but its
+  scope statement needs one correction.** The finding, the live reproduction, the decision not to
+  change `write_shadow_intent`'s pinned `-> None`, and AC-2 (the untested warm-key path) are all
+  right. The defect is the sentence *"Scope: local-dev only … production's `main.py` … has no such
+  field"*: it clears `main.py` and never mentions `jobs/batch_enrich.py`, the third production call
+  site, whose cron summary has the same over-claim (§3 HW-1c). **Recommendation, not an edit:** either
+  broaden FOLLOW-749 or accept FOLLOW-751 as its production sibling. I filed FOLLOW-751 so the gap has
+  an owner either way, and cross-referenced both.
+- **FOLLOW-750 (P3, devops-engineer, filed by the PM) — verified sound, no correction needed.** Its
+  three consequences (billing/attribution, rate limits, revocation blast radius) are the right three,
+  and the "names and value-shapes only, no values read into any artifact" discipline is correct. One
+  observation for the PM, not a stub: the stub's own revocation leg is the reason a **P3 re-rate to P2
+  is defensible** — `nlp.py:422` reads `ANTHROPIC_API_KEY` and so does the live description pipeline,
+  so revoking after a laptop leak is a production outage, not an inconvenience. A re-rating is a PM
+  decision; I am recording the argument, not applying it.
+- **FOLLOW-748 (P2, architect, open) — its AC should absorb §4b CB-2** (this PR edited ADR-0020 and
+  left the four falsehoods; `MASTER_DESIGN` now carries the corrected expiring form, so the two
+  documents disagree and the ADR is the wrong one). No duplicate stub.
+- **FOLLOW-740 (P2→P1 recommended by RETRO-235, ml-engineer, not dispatched) — LG-1 changes its AC.**
+  A non-Sentry consumer for the degraded marker must NOT assume ADR-0020 channel (3) covers
+  "sessions with no prior": after the first neutral message the key exists and the marker is
+  suppressed. The consumer has to be driven by the *write-admission decision*, not by reading the key
+  back.
+- **FOLLOW-743 / FOLLOW-744 (both IN_PROGRESS this session) — unaffected.** Re-verified: neither
+  touches `redis_writer.py`, `chat-intent-cache.ts` or the shadow-key contract. No assumption of
+  theirs is invalidated by this merge.
+- **FOLLOW-737 (shared-Zod mirror, filed by ADR-0020, undispatched) — now has a second reason to
+  exist and a concrete first test.** LG-3: the TS reader does a raw cast with no schema validation,
+  which is precisely what a shared Zod mirror would fix, and
+  `tests/fixtures/chat-intent-signal-parity.json` is the fixture it should consume on landing.
+
+#### 5b. Future sprint tickets affected
+
+- **ESC-042 item 1 (prod Modal deploy of `estalara-intent-engine`) — this ticket's entire benefit is
+  latent until it lands, and that is stated honestly in the code.** `route.ts:1574-1576`:
+  *"Chat only actually influences prod decisions once `apps/intent-engine`'s write path is deployed
+  (tracked as ESC-042); until then the shadow key is never populated and this read is a no-op
+  fail-open null."* So in production today the producer does not run, the key is never written, and
+  the write-admission rule governs nothing. **This is not a criticism of the PR** — the fix must land
+  before the deploy, not after — but it is the fact that decides the Rule AA verdict in §5d, and it
+  means the PR's live Docker evidence is currently the *only* place this behaviour has ever executed.
+- **FOLLOW-101 (batch ClickHouse reader)** — when `read_recent_chat_sessions` stops returning `[]`,
+  §3 HW-1c stops being latent (the cron begins reporting `processed` counts that include suppressed
+  writes) **and** RETRO-234 LG-3 goes live simultaneously (a non-empty batch write still clobbers a
+  fresher realtime read — unchanged and a deliberate D7 non-goal). FOLLOW-751 should land before
+  FOLLOW-101, not after.
+- **FOLLOW-752's gate is cheap now and expensive later.** The smoke workflow already provisions a
+  real Upstash instance and already runs the real writer and the real TS reader; adding the
+  warm-key/empty-dims case is a fixture and a second invocation, not new infrastructure.
+
+#### 5c. Contracts changed others rely on
+
+- **`write_shadow_intent` is now a function whose observable outcome depends on state its callers
+  cannot see, with an unchanged `-> None` signature.** That is a deliberate ADR-0020 D3 decision and
+  the implementer respected it rather than improvising — but it is a real contract change for all
+  three call sites, and it is the root of both §3 HW-1 and FOLLOW-749. Any future caller will inherit
+  it silently.
+- **`tests/fixtures/chat-intent-signal-parity.json` is a new cross-runtime contract artefact with a
+  documented same-PR rule** (`redis_writer.py:66-72`: if a future dimension is neither `str` nor
+  `bool`, BOTH runtimes must change in the same PR as the fixture). Enforced for the Python side by
+  `test_parity_fixture_covers_every_declared_dimension`; the TS side needs no equivalent (TG-3).
+  This is the third mechanism in three sprints for binding two runtimes (shared fixture here;
+  mirrored files + `mirror-files.json` in RETRO-235; a CI grep gate in RETRO-230). Recorded for the
+  architect — **the shared fixture is the best of the three** and no ADR names it as the preferred
+  pattern.
+- **The retention statement in `C-07` and `ropa.md` is now a claim two documents make and no test
+  checks** (CB-1). It was code-verified prose before this PR and remains code-verified prose after —
+  except the code it describes changed and the prose overshot.
+
+#### 5d. Architectural assumptions affected — **PM ACTION RECOMMENDED**
+
+- **Rule AA verdict on FOLLOW-736: I AGREE with `DONE`.** This is deliberately the same call as
+  RETRO-235 made for FOLLOW-738 and the opposite of RETRO-233/234, and the distinction is the same
+  one: FOLLOW-736's deliverable is a **code control** (a write-admission rule), its ACs are all
+  demonstrably shipped, CI is green modulo an unchanged Rule I baseline, and it has **no operator
+  action of its own**. Its prod-measurement axis is not missing — it is owned one level up by
+  **ESC-042 item 1**, which already exists, is already open, and already carries the deploy. The PM's
+  DONE note is also correctly scoped: it verifies symbols on `main` after merge and does not claim
+  prod effect. **The one thing that would make this verdict wrong** is if ESC-042 item 1's closure AC
+  does not require an actual invocation — RETRO-235 §5b already asked for that on a different axis
+  (import-time `observability.py` mounting). The same AC now carries this ticket's proof too.
+- **"The compliance docs are verified against shipped code" moved in the right direction and still
+  overshot** (CB-1). This PR did the hard part — it re-derived the retention claim from the new code
+  rather than leaving stale text — and then stated the derived claim slightly wider than the code
+  supports, contradicted by its own evidence table four lines earlier in the same PR body. That is a
+  better failure than the RETRO-234 CB-1 class (a control asserted that never existed anywhere), and
+  it is the failure that §6 promotes a rule for.
+- **The last surviving observability channel on the chat-intent path is narrower than every document
+  says** (LG-1). Compounding: RETRO-234 established channels (1) and (2) are dead; FOLLOW-741 wrote
+  that down; this retro finds channel (3) blind for any session past an unextractable opener. **The
+  PM should read FOLLOW-740 as the only remaining route, not as one of three** — and re-rate it
+  accordingly (RETRO-235 already recommended P1). I am not writing to QUEUE.md.
+- **A green CI gate over an unchanged code path is being read as coverage of a changed one**
+  (HW-2). `Redis shadow round-trip` is the repo's only real-Redis cross-runtime gate; it passed on
+  this PR while testing the branch that did not change. Nothing in the process flags that — the gate
+  name does not encode which branch it covers.
+
+### 6. New lesson candidates
+
+- **Pattern P-19 — "THE FIX ROUND IS THE DEFECT SOURCE": a corrective edit whose sole purpose is to
+  remove a false or over-broad claim introduces a new false claim in the same artefact. Count 3, with
+  2 PRIOR RETROS (RETRO-234 §6 count 1, RETRO-235 §6 count 2). THRESHOLD MET → PROMOTED as Rule AO.**
+  - **RETRO-234 §6 (prior, count 1)** — minted the pattern from PR #642's review rounds: of 30
+    findings, "4 of them created by the round-1 fixes", then "9 of them lived in the don't-clobber
+    logic added in rounds 1-2"; the sharpest instance directional (adding `sentry-sdk` to the image
+    made a dormant `include_local_variables=True` a live disclosure). Pre-specified clause (a): *a fix
+    that ENABLES a previously-dead code path must re-open the review of everything downstream.*
+  - **RETRO-235 §6 (prior, count 2)** — FOLLOW-741 existed solely to stop ADR-0020 asserting
+    visibility channels that did not exist; its fix asserted "blocked by FOLLOW-738" in four places
+    and FOLLOW-738 merged **30 minutes later**. Pre-specified clause (b): *a document amended to
+    describe a blocker's existence has a lifetime measured in commits and must be written to expire
+    (`BLOCKED-ON-#N`, Rule AH) rather than to assert.*
+  - **THIS RETRO (count 3, two live instances, and they close a mechanism gap the priors left open).**
+    (i) **CB-1** — `C-07`/`ropa.md`'s retention wording was rewritten *precisely to be more accurate*
+    and the more accurate version is false for the cold-key case **the same PR verified as step 4 of
+    its own evidence table**. (ii) **LG-1** — FOLLOW-741's amendment to ADR-0020 §D6, written to stop
+    the ADR over-claiming visibility, over-claims visibility on the one channel it certified as real.
+    Both were falsified by evidence already inside the same PR, not by anything external.
+  - **Why the two prior clauses do not cover these, i.e. what Rule AO must add.** Clause (a) is about
+    a fix that *enables* dead code — neither instance enables anything. Clause (b) is about a claim
+    falsified by a *later, external* commit — both instances were false the moment they were written,
+    and clause (b)'s remedy (write it to expire) would not have helped: an expiring form of a wrong
+    anchor is still a wrong anchor. The missing axis in both priors is **the direction the falsifying
+    evidence comes from**: here it came from *inside the PR*, from artefacts the author produced and
+    read. That is clause (c), and it is the one with a mechanical check attached — re-run the
+    correction against the PR's own evidence table. The generative mechanism is worth stating because
+    it predicts the next instance: **a correction is written by the same person, in the same sitting,
+    from the same mental model that produced the original error; being in "fixing mode" makes the new
+    text feel verified because the *old* text was just disproved.**
+  - **CHECKED BEFORE MINTING.** Rule AI (a change making a claim true/false must update every document
+    asserting the prior state, same PR) — the *trigger* rule; it fires on the doc that was NOT
+    updated, and both instances are docs that WERE updated, correctly and in the same PR, with wrong
+    content. AI has nothing to say about the accuracy of the update. Rule AH (operator-executable
+    instructions verified at the doc's own merge commit; `BLOCKED-ON-#N` form) — nearest neighbour,
+    and RETRO-235's instance sits squarely inside it; but neither of this retro's instances is an
+    operator instruction, and CB-1's anchor error would pass AH's merge-commit check because
+    `SET … NX` is real and merged. Rule Y (a docstring/test-header citing a named test/file as proof
+    must be verified against that file) — about citations naming an artefact, not about a factual
+    claim derived from code. Rule AE (a mechanical guard must enumerate every call-shape) — the
+    same *organ* (a fix scoped to the shape the finding used) one domain over, in code rather than
+    prose, and it has no doc/evidence axis. **No existing rule covers "re-verify the correction
+    against the same PR's own evidence".**
+
+- **Pattern P-20 ("A TICKET'S OWN 'DO NOT OVER-FIX' WARNING IS IGNORED") — count stays at 1, and this
+  merge is the counter-evidence, recorded because negative results are load-bearing.** RETRO-234
+  minted P-20 at count 1 off FOLLOW-730 being over-fixed twice, with the confound noted (the
+  implementer was the PM's own loop). FOLLOW-736 carried the *same* warning through ADR-0020 D7 and a
+  handoff, into a normal dispatched ml-engineer — and it held, visibly and in writing: no
+  per-dimension merging, no `detected_at` ordering, no signature change, no SDK change, no second key.
+  The implementer hit the exact temptation (making `shadow_key_written` exact) and **filed FOLLOW-749
+  instead of improvising a return value**, citing the D3 pin. **This strengthens RETRO-234's confound
+  hypothesis rather than the pattern:** the variable that moved between the two tickets is *who
+  implemented it*, not how loudly the warning was written. P-20 should not advance on a future
+  sighting without recording the author/orchestrator identity.
+
+- **Rule S — instance sighting, no promotion needed (codified).** §3 HW-1: the PR enumerated all three
+  call sites in its own body and walked the *behaviour* axis across all three (correctly finding it
+  unchanged) while walking the *telemetry* axis across only one. Worth banking as the same shape
+  RETRO-235 LG-1 recorded (`flush_sentry` guarded, `init_sentry` not, inside the file whose purpose
+  was symmetry): **an explicit sibling enumeration protects the axis you are thinking about and gives
+  false comfort on the others.**
+
+- **Rule Z — instance sighting, no promotion needed (codified).** §3 HW-2 is Rule Z's exact shape with
+  an aggravating factor the rule's text does not anticipate: the real-backend gate Z asks for
+  **already existed** and went green over the unchanged branch. Recording as a candidate amendment if
+  it recurs: *when a real-backend gate exists for the function under change, the PR must extend it or
+  state why the changed path is out of its scope — a pass on the old path is not a signal about the
+  new one.*
+
+- **Rule AF — series flat at 192 for the THIRD consecutive retro** (179 → 183 → 191 → 192 → 192 → 192
+  → 192). Re-derived independently (§2). No action; FOLLOW-591/602 own the remediation.
+
+### 7. Follow-ups
+
+- **FOLLOW-751:** `jobs/batch_enrich.py:66-70` increments `processed` after a write `SET … NX` may
+  have silently discarded, and `degraded` counts degraded *extractions* not suppressed *writes*, so
+  the cron's summary — the batch tier's only operator-facing output — over-reports stored records;
+  FOLLOW-749 fixes the same over-claim in `local_dev.py` and its scope text states production is
+  unaffected (ml-engineer, 1h, **P3**) [HW-1c; Rule S; land before FOLLOW-101]
+- **FOLLOW-752:** extend `.github/workflows/redis-shadow-smoke.yml` — the repo's only real-Redis
+  cross-runtime gate — to cover the `NX` branch (warm key + empty-dims payload → prior survives, TTL
+  does not reset; cold key + empty-dims → record lands), so the ticket's central invariant has a CI
+  regression instead of a `MagicMock` kwarg assertion and one unrepeatable local Docker run
+  (qa-engineer or ml-engineer, 2h, **P2**) [HW-2, TG-1; Rule Z]
+- **FOLLOW-753:** correct the retention anchor in `docs/compliance/C-07-chat-retention-scope.md:96-97`
+  and `docs/compliance/ropa.md:133` — "24 hours from the last chat message that yielded at least one
+  intent dimension" is false for a session whose first message yields nothing, where the succeeding
+  `NX` write stores an all-null record for a full 24h (proven by FOLLOW-736's own evidence table, step
+  4); the retention-tightening claim itself is sound and must be preserved, only the anchor is wrong,
+  and this text sits in the Q3.1 list of what the Privacy Notice must disclose at go-live
+  (compliance-engineer, 2h, **P2**) [CB-1, DG-2; Rules N/AI/Y]
+- **FOLLOW-754:** correct ADR-0020 §D6 channel (3) — `SET … NX` succeeds iff the KEY is absent, not
+  iff there is no prior, so a session opening with an unextractable greeting has a record, no prior,
+  and a suppressed (invisible) degraded write, and an operator's `GET` reads `data_source: "model"`
+  mid-outage; also drop "accumulated" where no runtime accumulates (LG-2) and fix the
+  `adapt.ts:868-880` path citation to `packages/sdk/src/core/adapt.ts` (DG-3) (architect, 2h, **P2**)
+  [LG-1, LG-2, DG-1, DG-3; changes FOLLOW-740's AC — the consumer must be driven by the
+  write-admission decision, not by reading the key back]
+
+**Not filed, deliberately:** no duplicate of **FOLLOW-749** or **FOLLOW-750** (both re-verified —
+749 needs a scope correction, recorded in §5a and covered by FOLLOW-751; 750 needs no correction, a
+P3→P2 re-rate is argued in §5a and left to the PM); no duplicate of **FOLLOW-748** (§4b CB-2 is new
+evidence for it, recorded as an AC recommendation); no stub for the **shadow-key clobber** itself
+(closed by this merge — §8); no stub for **ESC-042 item 1** or **ESC-045 items 2-3** (operator steps,
+surfaced to the PM in §5b/§5d per my no-escalation guardrail); no stub for **LG-3** (FOLLOW-737 owns
+the shared-Zod mirror); no stub for **RETRO-234 LG-3** (batch clobbers realtime — ADR-0020 D7 owns the
+non-goal); no stub for **Rule I** (FOLLOW-591/602 exist).
+
+### 8. Cross-references
+
+- **RETRO-234 (FOLLOW-730, PR #642) and its §5b assessment of ADR-0020** — the direct grandparent.
+  **Closure trace (step 7), end-to-end, not one hop.** RETRO-234 §5b assessed ADR-0020 as "correct and
+  a strict superset on the write-admission axis"; this merge implements it and I traced the whole
+  chain on `main` rather than reading the PR body: **producer** — `redis_writer.py:125-130`, two
+  branches, `nx=True` present, `-> None` unchanged; **serialization** — one
+  `json.dumps(payload.model_dump())` shared by both branches, pinned by
+  `test_redis_writer_module_never_reads`; **consumer** — `readShadowChatIntent`
+  (`chat-intent-cache.ts:93`) → `flattenIntentDimensions` (`:176-191`), byte-unchanged and now
+  fixture-bound to the Python predicate; **render** — `route.ts:1579-1583` attaches
+  `chat_intent_dimensions` only when the flattened map is non-empty, and the SDK folds it once at
+  `packages/sdk/src/core/adapt.ts:869-880` behind the Rule R latch, whose
+  `Object.keys(dims).length > 0` condition I read rather than inherited from the ADR. **The
+  write-admission gap is genuinely CLOSED on the code axis.** What moved rather than closed: the
+  *visibility* gap. RETRO-234 tracked it from "indistinguishable payload" → "distinguishable payload
+  nothing reads"; FOLLOW-741 amended the ADR to admit two of three channels are dead; this retro finds
+  the third is blind for any session past an unextractable opener (§4a LG-1). **Three hops, one chain,
+  no closure** — and the producer does not run in production at all (ESC-042 item 1), so hop 0 is
+  still absent.
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141)** — the canonical
+  one-hop-downstream shape, and this merge is an instance on two axes. (i) *Visibility:* channel (3)
+  above — the gap moved from "the ADR claims three channels" to "the ADR admits one" to "the one it
+  admits is blind in the common case". (ii) *Over-claiming flags:* the `shadow_key_written` defect was
+  correctly found, filed and scoped at `local_dev.py` — and the identical over-claim one call site
+  over (`batch_enrich.py`, the production cron) travelled with the scope statement that excluded it
+  (§3 HW-1c). Both traced producer→consumer→render before being called open; neither inferred from a
+  ticket status.
+- **RETRO-235 (FOLLOW-738, PR #644)** — the immediate parent. Its CB-3 (ADR-0020's four "blocked by
+  FOLLOW-738" falsehoods → FOLLOW-748) is **re-verified still open on `main`** at `ADR-0020:148-149`,
+  `:165`, `:196`, `:200`, `:238`, and §4b CB-2 adds the new fact that PR #645 edited that file and
+  left them while writing the corrected form into `MASTER_DESIGN`. Its §6 P-19 count-2 entry is what
+  §6 advances to 3.
+- **RETRO-232 / RETRO-235 §6** — the precedent for a retro contradicting or **declining** a prior
+  verdict and reconciling it explicitly. Both directions are exercised here: §4a LG-1 **contradicts**
+  ADR-0020 §D6-as-amended and RETRO-234 §5b's channel-(3)-is-real verdict; §4c TG-3 and §4d record two
+  axes as **verified-adequate** so the next retro does not file them; §6 P-20 records this merge as
+  **counter-evidence** to a pattern I could have advanced.
+- **RETRO-233** — its §4a LG-1 (the neutral-write chain, traced twice and downgraded once the
+  `Object.keys(dims).length > 0` gate was found) is the same SDK gate that makes §4a LG-2's bound
+  precise. Re-derived here from source, not cited from that retro.
+- **RETRO-230 / RETRO-231** — the Rule J/K.1 cross-runtime-duplication priors; §5c records that this
+  PR used a **third** mechanism (a shared fixture consumed by both runtimes) which is better than
+  either prior and is named in no ADR.
+- **RETRO-205 / FOLLOW-591 / FOLLOW-602** — the Rule AF evidence series; §2 records the third
+  consecutive flat reading (192).
+- **ESC-042 item 1** (intent-engine prod deploy — gates every production effect of this ticket, §5b) ·
+  **ESC-045** (item 1 falsified during this PR's validation and correctly corrected by the PM; items
+  2-3 open) · **ADR-0020 D1-D5 implemented / D6 corrected in §4a / D7 non-goals respected** ·
+  **FOLLOW-737 / FOLLOW-740 / FOLLOW-748 / FOLLOW-749 / FOLLOW-750** — all assessed in §5a.
+
+<!-- next free FOLLOW number: 755 (751-754 filed by THIS retro; 749/750 pre-existed and were assessed,
+NOT duplicated). Next free RETRO: 237. RETRO-236 = retro for PR #645 (FOLLOW-736, MERGED
+2026-07-31T03:01:06Z, squash 264bf1da; 13 files +637/-73; ADR-0020 D1-D5 write admission —
+has_intent_signal + SET…NX on the empty-extraction branch). Written on branch
+retrospective-analyst/RETRO-236-follow-736-retro (main had moved 3 commits past the merge). CI re-derived
+independently: 66 pass, Rule I = 192 = main's baseline (job 90996692773), Rule AF flat THIRD consecutive.
+WIRING: CHECK A clean (has_intent_signal has a non-test importer at redis_writer.py:125; the parity JSON is
+a test-artefact carve-out, suppressed deliberately); CHECK B 2 findings — HW-1 the write-admission decision
+has no consumer at any of 3 call sites, FOLLOW-749 covers local_dev and its scope text wrongly clears
+production, batch_enrich.py:66-70 counts suppressed writes as `processed` (HALF_WIRE_P, P3 -> 751, Rule S),
+HW-2 `nx=` is asserted only against a MagicMock while the repo's real-Redis gate (redis-shadow-smoke.yml)
+went green testing the UNCHANGED EX branch — its payload carries 8 non-null dims (HALF_WIRE_P, P2 -> 752,
+Rule Z). GAPS: logic 3 / code bugs 2 (CB-1 P2 = C-07:96-97 + ropa:133 retention anchor falsified by the
+PR's OWN evidence table step 4 — a cold-key all-null record is retained 24h though no message yielded a
+dimension; CB-2 P2 = PR edited ADR-0020 and left RETRO-235's four "blocked by FOLLOW-738" falsehoods while
+writing the CORRECT expiring form into MASTER_DESIGN, so the two docs now disagree and the normative one is
+wrong — evidence for the open FOLLOW-748, no dup) / test 3 / docs 3. CLOSURE (step 7): ADR-0020
+write-admission traced producer->serialization->consumer->render on main (redis_writer.py:125-130 -> single
+model_dump -> chat-intent-cache.ts:93,176 -> route.ts:1579 -> SDK core/adapt.ts:869-880 Rule R latch) =
+GENUINELY CLOSED on the code axis; the VISIBILITY gap moved a THIRD hop (LG-1: D6 channel 3 is blind for
+any session past an unextractable opener, because NX keys on KEY ABSENCE not on "no prior"), and hop 0 is
+absent entirely (producer not deployed, ESC-042 item 1). PRIOR FOLLOW-UPS ASSESSED, NOT DUPLICATED:
+FOLLOW-749 correct but its "local-dev only" scope wrongly clears production -> FOLLOW-751 files the
+sibling; FOLLOW-750 sound, no correction, P3->P2 re-rate argued and left to PM. RULE AA VERDICT: **AGREE
+with DONE for FOLLOW-736** (code control, all ACs shipped, no operator action of its own; the
+prod-measurement axis is owned one level up by ESC-042 item 1) — same call as RETRO-235, opposite of
+RETRO-233/234, distinction stated. MULTI-AXIS: predicate/flattener parity VERIFIED by reading both
+implementations (chat-intent-cache.ts:176-191 vs redis_writer.py:51-82) — genuinely line-for-line; TS-side
+is key-agnostic and does NO Zod validation while Python is model-bound (LG-3, benign direction, FOLLOW-737
+owns); Rule R latch bound READ FROM SOURCE (LG-2 — neither runtime "accumulates"). RULE: **Rule AO
+PROMOTED** (P-19 "the fix round is the defect source", count 3, priors RETRO-234 §6 + RETRO-235 §6, both of
+whose pre-specified clauses are shown NOT to cover the new instances; checked against Rules AI/AH/Y/AE
+before minting). P-20 HELD at count 1 with this merge recorded as COUNTER-evidence (same warning, different
+implementer, warning held). FOLLOWS FILED: 751 (P3 ml-engineer 1h), 752 (P2 qa/ml 2h), 753 (P2 compliance
+2h), 754 (P2 architect 2h). QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED (the
+FOLLOW-740 re-rate, the FOLLOW-750 re-rate, the FOLLOW-748 and FOLLOW-749 AC amendments, and the ESC-042
+item-1 invocation AC are all PM actions, surfaced in §5a/§5d). -->

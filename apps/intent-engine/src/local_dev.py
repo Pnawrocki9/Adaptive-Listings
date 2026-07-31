@@ -170,10 +170,20 @@ async def chat_nlp_endpoint(
     # `shadow_key_written` exists because §H.9 opt-out skips the write entirely:
     # telling an operator to `GET shadow:{t}:{s}:chat_intent` when nothing was
     # written sends them chasing a phantom Redis mismatch, which is the exact
-    # misdiagnosis this ticket exists to prevent. Derived from the opt-out flag
-    # rather than from the writer's return value on purpose — `write_shadow_intent`
-    # writes unconditionally otherwise, so this is the whole truth and cannot drift
-    # out of step with the writer the way an earlier cut of this code did.
+    # misdiagnosis this ticket exists to prevent. It is derived from the opt-out
+    # flag alone.
+    #
+    # NARROWED BY FOLLOW-736 / ADR-0020 (comment only — no behaviour change here):
+    # this flag now means "the write was ATTEMPTED", not "the key now holds this
+    # record". A degraded payload carries no dimension, so `write_shadow_intent`
+    # issues `SET … NX`, which stores the record only on a COLD key; against a
+    # session that already has a prior the command is a no-op and the prior — not
+    # this degraded record — is what a `GET` returns. That is the intended fix (an
+    # empty extraction must not clobber a good prior), but do not read
+    # `shadow_key_written: true` as "the degraded record is in Redis". Making the
+    # flag exact would require the writer to report whether the `NX` write landed,
+    # i.e. a return value on `write_shadow_intent`, which ADR-0020 keeps at `-> None`
+    # — filed as FOLLOW-749 rather than improvised here.
     if payload.data_source in DEGRADED_DATA_SOURCES:
         return JSONResponse(
             status_code=502,

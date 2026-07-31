@@ -1,0 +1,157 @@
+{
+  "$comment": "ADR-0020 D2 cross-runtime parity fixture (FOLLOW-736). ONE fixture, TWO runtimes: consumed by has_intent_signal() in apps/intent-engine/src/redis_writer.py (Python, via test_intent_engine.py) and by flattenIntentDimensions() in apps/control-plane/src/lib/chat-intent-cache.ts (TypeScript, via chat-intent-cache.test.ts). expect_signal is true iff at least one dimension survives the TS flattener. If a future dimension is neither string nor boolean, both runtimes must change in the same PR as this fixture.",
+  "cases": [
+    {
+      "name": "all_null_dimensions",
+      "why": "the degraded/error_fallback and the neutral-success shapes are byte-identical here; neither may clobber a prior",
+      "dims": {
+        "purchase_purpose": null,
+        "urgency": null,
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": null
+      },
+      "expect_signal": false
+    },
+    {
+      "name": "one_string_dimension",
+      "why": "a single real read is a signal and must overwrite + refresh the TTL",
+      "dims": {
+        "purchase_purpose": null,
+        "urgency": null,
+        "budget_band": "comfortable",
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": null
+      },
+      "expect_signal": true
+    },
+    {
+      "name": "tax_aware_true_only",
+      "why": "the only boolean dimension; true is kept by the TS flattener as 'true'",
+      "dims": {
+        "purchase_purpose": null,
+        "urgency": null,
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": true
+      },
+      "expect_signal": true
+    },
+    {
+      "name": "tax_aware_false_only",
+      "why": "HANDOFF trap 1 — false means 'unknown'; the TS flattener drops it, so counting it as a signal would readmit the clobber through the back door",
+      "dims": {
+        "purchase_purpose": null,
+        "urgency": null,
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": false
+      },
+      "expect_signal": false
+    },
+    {
+      "name": "empty_string_only",
+      "why": "the TS flattener requires value.length > 0",
+      "dims": {
+        "purchase_purpose": "",
+        "urgency": null,
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": null
+      },
+      "expect_signal": false
+    },
+    {
+      "name": "empty_string_plus_tax_aware_false",
+      "why": "two non-null values that both flatten away still leave the SDK with {} — no signal",
+      "dims": {
+        "purchase_purpose": "",
+        "urgency": null,
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": "",
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": false
+      },
+      "expect_signal": false
+    },
+    {
+      "name": "mixed_droppable_and_real",
+      "why": "one surviving dimension among droppable ones is still a signal",
+      "dims": {
+        "purchase_purpose": "",
+        "urgency": "3-6mo",
+        "budget_band": null,
+        "family_stage": null,
+        "geo_priority": null,
+        "feature_priority": null,
+        "cross_border": null,
+        "finance_complexity": null,
+        "decision_role": null,
+        "risk_appetite": null,
+        "emotional_state": null,
+        "tax_aware": false
+      },
+      "expect_signal": true
+    },
+    {
+      "name": "full_vector",
+      "why": "every dimension populated — the unambiguous overwrite case",
+      "dims": {
+        "purchase_purpose": "investment",
+        "urgency": "0-3mo",
+        "budget_band": "stretch",
+        "family_stage": "couple",
+        "geo_priority": "beach",
+        "feature_priority": "pool",
+        "cross_border": "foreign_buyer",
+        "finance_complexity": "cash",
+        "decision_role": "decider",
+        "risk_appetite": "aggressive",
+        "emotional_state": "excited",
+        "tax_aware": true
+      },
+      "expect_signal": true
+    }
+  ]
+}

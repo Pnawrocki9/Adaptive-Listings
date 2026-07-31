@@ -1767,11 +1767,7 @@ tax_aware=true                     → yield_hunter:0.4, golden_visa_buyer:0.5, 
 
 > **Schema:** TBD pending FOLLOW-087. `CHAT_INTENT_LIKELIHOODS` powyżej to propozycja do weryfikacji przy implementacji FOLLOW-100.
 
-**Shadow-key write-admission rule (ADR-0020) — ⚠️ SPEC, NOT YET IMPLEMENTED AT HEAD.**
-
-> Owner: **FOLLOW-736** (ml-engineer, filed 2026-07-30). Until that ticket merges, the shipped
-> behaviour is still the unconditional overwrite described below as "before". This paragraph
-> describes a decision, not current runtime behaviour.
+**Shadow-key write-admission rule (ADR-0020, implemented by FOLLOW-736 2026-07-30).**
 
 The Redis key `shadow:{tenant_id}:{session_id}:chat_intent` is written by three call sites in
 `apps/intent-engine` (`main.py`, `local_dev.py`, `jobs/batch_enrich.py`) and read on every
@@ -1804,9 +1800,14 @@ the session had accumulated. **After (ADR-0020):**
 5. **Validation + visibility.** No read-back, so `json.dumps(payload.model_dump())` remains the
    only serialization path into the key (the fact the compliance evidence cites). There is no
    merged record and no sibling field: a preserved record is untouched, so its
-   `data_source`/`extraction_error` always describe the dimensions beside them. Degradation stays
-   visible via Sentry, via the payload returned to the caller, and — on a session with no prior —
-   in the key itself, where the `NX` write succeeds.
+   `data_source`/`extraction_error` always describe the dimensions beside them. Visibility of a
+   *suppressed* degraded write is a **named, dated blind window** (ADR-0020 §D6, amended by
+   FOLLOW-741): of the three channels, only the key itself on a cold session is real today. The
+   Sentry capture stays inert for as long as `SENTRY_DSN` is absent from the Modal
+   `estalara-secrets` secret (verify by listing that secret — do not infer it from a ticket
+   status); the payload returned by `process_chat_message` is never read at all, because `main.py`
+   dispatches it with fire-and-forget `.spawn()` and returns 202. Closing those two channels is
+   FOLLOW-740. Do not read the absence of alerts as "it never happens".
 
 `profiling_opt_out` (§H.9) remains the first statement in the writer and gates both branches. No
 SDK and no control-plane change is in scope.

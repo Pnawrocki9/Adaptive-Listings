@@ -93,8 +93,15 @@ go-live to add:
    pattern `shadow:{tenantId}:{sessionId}:chat_intent`, storage layer Upstash Redis (server-side,
    not browser), data stored (12-dim intent vector: purchase purpose, urgency, budget band, family
    stage, geo priority, feature priority, cross-border status, finance complexity, decision role,
-   risk appetite, emotional state, tax awareness), lifetime (24 hours from last chat message),
-   consent requirement, and purpose (real-time personalization from chat-expressed intent).
+   risk appetite, emotional state, tax awareness), lifetime (24 hours from the last chat message
+   that yielded at least one intent dimension), consent requirement, and purpose (real-time
+   personalization from chat-expressed intent).
+
+   The lifetime wording is precise as of ADR-0020 / FOLLOW-736: a chat message whose extraction
+   yields no usable dimension (a failed model call, or a buyer who said "hi") is written with
+   `SET … NX`, which against an existing key performs no mutation and therefore does **not** restart
+   the 24-hour clock. The retention **maximum** is unchanged at 24 hours; the effective lifetime is
+   strictly shorter than or equal to the previous "24 hours from last chat message".
 
 2. A disclosure that visitor chat messages are analyzed by an AI system to infer buyer intent and
    adapt property listing presentation. This is independently required by AI Act Art. 50(1)
@@ -143,8 +150,9 @@ that expectation.
 
 1. The intent vector key is scoped to the session (current: `session_id` in the Redis key — verified
    in `chat-intent-cache.ts` and `redis_writer.py`).
-2. The 24-hour TTL is enforced by Redis natively (current: `ex=86400` in `redis_writer.py` —
-   code-verified).
+2. The 24-hour TTL is enforced by Redis natively (current: `ex=86400` on both write branches in
+   `redis_writer.py` — code-verified; since ADR-0020 the create-only branch cannot extend an
+   existing key's expiry, so the effective lifetime is ≤ this maximum).
 3. The Privacy Notice discloses the server-side shadow key at the time live adaptation is activated
    (not yet done — see Q3 above; this is a go-live gate).
 
@@ -208,9 +216,20 @@ The following code facts are referenced in this brief and have been verified aga
 HEAD on branch `main`:
 
 - `redis_writer.py` — `write_shadow_intent(payload, ttl_seconds=86400)` default TTL 24 h.
-- `redis_writer.py` — `_get_redis().set(key, json.dumps(payload.model_dump()), ex=ttl_seconds)`.
+- `redis_writer.py` — `value = json.dumps(payload.model_dump())`, then exactly one of
+  `_get_redis().set(key, value, ex=ttl_seconds)` (dimensions present) or
+  `_get_redis().set(key, value, ex=ttl_seconds, nx=True)` (no usable dimension — ADR-0020 D3).
   `payload.model_dump()` serializes `ChatIntentDetectedPayload`; raw `messages` is not a field on
-  that model.
+  that model. Both branches share that single serialization call: there is no second write path.
+- `redis_writer.py` — the `nx=True` branch cannot refresh an existing key's TTL. Redis `SET … NX`
+  against an existing key performs no mutation at all (neither value nor expiry), so a write
+  carrying no new personal data cannot extend the retention clock of data already stored (ADR-0020
+  D4). `ex=ttl_seconds` is still passed because it applies when the key does **not** yet exist, i.e.
+  the first write of a session.
+- `redis_writer.py` — the module performs no read and no deserialization of the shadow namespace (no
+  `json.loads`, no read command). Enforced by `test_redis_writer_module_never_reads` in
+  `apps/intent-engine/src/test_intent_engine.py`, so the "only one serialization path" fact above is
+  a test-guarded property rather than a point-in-time grep.
 - `schemas.py` (class `ChatIntentDetectedPayload`) — fields: `tenant_id`, `session_id`,
   `intent_dimensions`, `archetype_hint`, `confidence`, `model_used`, `source`, `message_count`,
   `detected_at`, and since FOLLOW-730 two diagnostic fields: `data_source` (an enum recording which

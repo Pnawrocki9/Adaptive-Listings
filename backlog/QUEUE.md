@@ -1,6 +1,38 @@
 # Backlog Queue
 
-### FOLLOW-736 — status: IN_PROGRESS
+### FOLLOW-736 — status: READY_FOR_REVIEW — PR #645
+
+**Completed 2026-07-30 by ml-engineer (Opus).** PR
+[#645](https://github.com/Pnawrocki9/Adaptive-Listings/pull/645), commit `933fc423`. **CI: green** —
+every check passes except `Rule I — wired-or-dead`, which reports **192 violations on this PR's run
+(job 90993661679) and 192 on `main`'s latest run (30577458468)**: zero delta, pre-existing red, no
+new unwired symbol. All 8 ACs met; AC7 was verified already-done (`06553402`), not redone.
+
+**Live verification (OP Rule 5)** ran the real `local_dev.py` shim + real `upstash_redis` client +
+real Redis behind a real Upstash-REST endpoint, with a real Haiku call: good read → TTL 86400; then
+`"hi"` (neutral-success) → prior intact, TTL 86369; then broken `ANTHROPIC_API_KEY` (degraded) →
+prior intact, TTL 86314; then the same degraded payload on a cold key → record stored, TTL 86400.
+The TTL never resets — the preserved prior's retention clock is untouched. Both TTL readings are in
+the PR body. The live `Redis shadow round-trip smoke (FOLLOW-368)` also passed against real Upstash
+on this branch, covering the unchanged signal-bearing branch.
+
+**For the reviewer, two things to confirm rather than assume:** (1) the compliance diff (C-07 Q3.1 +
+Implementation Evidence, `ropa.md:133`) is flagged for compliance-engineer **review, not a gate** —
+it is retention-tightening and the 24 h maximum is unchanged; `dpia.md:269` / `:1350` were
+re-verified as still accurate and deliberately left alone. (2) Three files outside the stated scope
+list were touched **for documentation accuracy only, zero behaviour change**: `MASTER_DESIGN.md`
+§D.1.1 point 5 (repeated the visibility claim FOLLOW-741 had already corrected in the ADR — now
+written in Rule AH expiring form, and per FOLLOW-748 it does **not** repeat "blocked by
+FOLLOW-738"), plus a comment in `local_dev.py` and a paragraph in `apps/intent-engine/README.md`
+that both asserted the pre-736 semantics (Rule AI). The README literally said the degraded write
+"REPLACES whatever the session had accumulated (known gap, FOLLOW-735)".
+
+**Filed:** FOLLOW-749 — `local_dev`'s `shadow_key_written: true` now over-claims when `SET … NX`
+suppresses the write (reproduced live in step 3 above). Not fixed here because an exact flag needs
+`write_shadow_intent` to report whether the write landed, and ADR-0020 D3 pins the signature at
+`-> None`. Local-dev only; production has no such field.
+
+**Prior dispatch context (kept):**
 
 **Promoted + dispatched 2026-07-30 (session 84) on Piotr's explicit "puść 736", overriding the PM's
 hold.** The PM held it twice on the "no new ticket while escalations are open" rule and flagged it

@@ -1,6 +1,30 @@
 # Backlog Queue
 
-### FOLLOW-752 — status: IN_PROGRESS
+### FOLLOW-752 — status: DONE (PR #649 merged 2026-08-01 by Piotr, `a254c0f7`)
+
+**Merged.** The `SET … NX` write-admission invariant is now gated on a REAL Redis instance in
+`redis-shadow-smoke.yml`, not on a `MagicMock`. Two cases: warm key (prior survives an
+empty-dimension write AND its TTL decreased rather than resetting — the D4 half a value-equality
+assertion alone would miss) and cold key (an empty-dimension payload IS stored, markers intact).
+
+**PM verified independently, not from the PR body:** the mutation was reverted (`redis_writer.py`
+does not appear in the diff — the first thing checked, since shipping a temporarily-removed
+`nx=True` would be a catastrophe that looks like a success); the smoke job's own CI log shows **4
+tests executed for real** against the live Upstash instance including both FOLLOW-752 cases, not
+skipped; the empty fixture uses `data_source="model"` per AC2; and AC-RT1 is untouched — the only
+removed lines are a stale ESC-028 comment claiming the secrets do not exist, which stopped being
+true on 2026-07-13. CI 68 pass, Rule I unchanged at 192. Verified again on `main` after merge:
+`nx=True` is at `redis_writer.py:130` and the new gate file is present.
+
+**Why this ticket mattered more than its P2 suggests.** The bug it closes is not in the code — the
+code was correct. It is in the EVIDENCE: a green gate over the unchanged code path was available to
+be read as coverage of the changed one. That is the same failure this session hit four separate
+times (Sentry without an initialiser, a spend-cap alarm without a client, a capture gate with false
+greens, and this). The pattern is a control that exists and does not control.
+
+---
+
+### FOLLOW-752 — dispatch record (was: IN_PROGRESS)
 
 **Promoted + dispatched 2026-08-01 on Piotr's "puść 752",** immediately after FOLLOW-757 merged.
 

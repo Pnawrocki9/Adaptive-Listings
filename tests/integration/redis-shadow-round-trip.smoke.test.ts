@@ -36,11 +36,15 @@
  * succeed. If they do not, AC-RT1 will fail with "readShadowChatIntent returned
  * null" — which is the correct behaviour (it surfaces the misconfiguration).
  *
- * Secrets needed (ESC-028):
- *   None of the four secrets above exist as GitHub Actions secrets today.
- *   They must be provisioned as a single logical "test Upstash instance" before
- *   this CI job can run in non-skip mode.
- *   See backlog/ESCALATIONS.md ESC-028 and docs/runbooks/upstash-redis-env-parity.md.
+ * Secrets (ESC-028, RESOLVED 2026-07-13):
+ *   All four secrets are provisioned as GitHub Actions secrets against a
+ *   single shared "test Upstash instance", so this CI job runs in hard-fail
+ *   mode (REQUIRE_REDIS_SMOKE=1), not soft-skip. See backlog/ESCALATIONS.md
+ *   ESC-028 and docs/runbooks/upstash-redis-env-parity.md.
+ *
+ * FOLLOW-752 extends this file with a second describe block proving the
+ * `SET … NX` write-admission invariant (ADR-0020 D3/D4) against this SAME
+ * real instance — see the bottom of this file.
  *
  * @module tests/integration/redis-shadow-round-trip.smoke
  */
@@ -55,7 +59,10 @@ import { fileURLToPath } from 'url';
 // `readShadowChatIntent` is the REAL function from chat-intent-cache.ts.
 // It reads UPSTASH_REDIS_URL and UPSTASH_REDIS_TOKEN from process.env.
 // Nothing is mocked here.
-import { readShadowChatIntent } from '../../apps/control-plane/src/lib/chat-intent-cache.js';
+import {
+  readShadowChatIntent,
+  deleteShadowChatIntent,
+} from '../../apps/control-plane/src/lib/chat-intent-cache.js';
 
 // ─── Smoke constants (must match shadow_intent_writer.py) ────────────────────
 
@@ -256,6 +263,175 @@ describe('FOLLOW-368 — cross-runtime Redis round-trip: write_shadow_intent (Py
       // The key was written within the last 60 s, so TTL must be in (86400-60, 86400].
       const TOLERANCE_SECONDS = 60;
       expect(ttl).toBeGreaterThan(EXPECTED_TTL_SECONDS - TOLERANCE_SECONDS);
+      expect(ttl).toBeLessThanOrEqual(EXPECTED_TTL_SECONDS);
+    },
+  );
+});
+
+// ─── FOLLOW-752 — the `SET … NX` write-admission invariant (ADR-0020 D3/D4) ──
+//
+// FOLLOW-736's whole deliverable is one invariant: an extraction carrying no
+// usable dimension must neither remove a stored prior nor refresh its TTL.
+// Until this block, that invariant was proved only against a `MagicMock`
+// (apps/intent-engine/src/test_intent_engine.py `_write()` helper), which
+// proves `nx=True` was PASSED, not that Redis HONOURED it. The two cases below
+// run the PRODUCTION `write_shadow_intent` against the SAME real Upstash
+// instance AC-RT1/AC-RT2 already use, then read the result back with the
+// PRODUCTION `readShadowChatIntent` / a direct TTL call — nothing here is
+// mocked or hand-injected.
+//
+// Uses a DIFFERENT tenant/session pair than AC-RT1/AC-RT2 (`smoke-tenant-368`)
+// so the two suites can never interfere with each other's fixture state.
+
+const NX_WARM_TENANT_ID = 'smoke-tenant-752-warm';
+const NX_WARM_SESSION_ID = 'smoke-session-752-warm';
+const NX_COLD_TENANT_ID = 'smoke-tenant-752-cold';
+const NX_COLD_SESSION_ID = 'smoke-session-752-cold';
+
+// Must match the "signal" fixture in nx_invariant_writer.py.
+const NX_SIGNAL_PURCHASE_PURPOSE = 'primary_residence';
+const NX_SIGNAL_ARCHETYPE_HINT = 'family_upsizer';
+const NX_SIGNAL_CONFIDENCE = 0.9;
+
+/**
+ * Run the PRODUCTION `write_shadow_intent` (via nx_invariant_writer.py) for a
+ * given tenant/session pair. `mode` selects which fixture the Python side
+ * builds — see nx_invariant_writer.py for the exact payload shapes.
+ */
+function runNxWriter(tenantId: string, sessionId: string, mode: 'signal' | 'empty') {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const writerScript = path.resolve(__dirname, 'nx_invariant_writer.py');
+  const result = spawnSync('python3', [writerScript, tenantId, sessionId, mode], {
+    env: {
+      ...process.env,
+      UPSTASH_REDIS_REST_URL: PYTHON_REST_URL,
+      UPSTASH_REDIS_REST_TOKEN: PYTHON_REST_TOKEN,
+    },
+    encoding: 'utf-8',
+    timeout: 15_000,
+  });
+  expect(
+    result.status,
+    `nx_invariant_writer.py (mode=${mode}, tenant=${tenantId}, session=${sessionId}) ` +
+      `exited with code ${String(result.status)}.\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
+  ).toBe(0);
+}
+
+/**
+ * Direct Upstash REST TTL check via the TS-side credentials — same call shape
+ * as AC-RT2 above, factored out here because the NX cases below need it twice
+ * (once per write) rather than once.
+ */
+async function fetchTtl(tenantId: string, sessionId: string): Promise<number> {
+  const base = TS_REDIS_URL.replace(/\/$/, '');
+  const key = `shadow:${tenantId}:${sessionId}:chat_intent`;
+  const ttlPath = ['ttl', key].map((a) => encodeURIComponent(a)).join('/');
+  const res = await fetch(`${base}/${ttlPath}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${TS_REDIS_TOKEN}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  expect(res.ok, `TTL check returned HTTP ${String(res.status)} — expected 200.`).toBe(true);
+  const body = (await res.json()) as { result: number };
+  return body.result;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+describe('FOLLOW-752 — SET … NX write-admission invariant honoured by a REAL Redis instance', () => {
+  /**
+   * AC1(a) — warm key. A signal-bearing payload is written first (unconditional
+   * `SET`, real TTL=86400). A SECOND, empty-dimension payload
+   * (`data_source == "model"` — AC2, a neutral success, NOT a degraded-only
+   * fixture) is then written for the SAME {tenant, session}. Per ADR-0020
+   * D3/D4, `SET … NX` against the now-existing key must perform NO mutation:
+   * neither the stored value NOR the TTL may change. This test FAILS if
+   * `nx=True` is removed from `redis_writer.py:130` (verified locally against
+   * a real dockerised Redis — see the FOLLOW-752 PR body for the mutation
+   * red/green evidence).
+   */
+  it.skipIf(!HAS_ALL_CREDS)(
+    'AC1(a): a warm key — an empty-dimension write neither clobbers the prior value nor refreshes its TTL',
+    async () => {
+      // Step 1: signal-bearing write — unconditional overwrite branch.
+      runNxWriter(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID, 'signal');
+      const ttlAfterSignal = await fetchTtl(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID);
+      expect(
+        ttlAfterSignal,
+        'TTL after the signal-bearing write must reflect the fresh ex=86400.',
+      ).toBeGreaterThan(EXPECTED_TTL_SECONDS - 60);
+
+      // Let enough wall-clock time pass that a refreshed TTL would be
+      // distinguishable from a preserved one.
+      await sleep(2_500);
+
+      // Step 2: empty-dimension write for the SAME key — must hit `SET … NX`
+      // and therefore perform NO mutation at all.
+      runNxWriter(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID, 'empty');
+
+      // Assert via the REAL readShadowChatIntent that the FIRST (signal) record
+      // is what comes back, not the second (empty) one.
+      const result = await readShadowChatIntent(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID);
+      expect(
+        result,
+        'readShadowChatIntent returned null for the warm-key NX case — expected the ' +
+          'preserved signal-bearing record.',
+      ).not.toBeNull();
+      expect(
+        result!.intent_dimensions.purchase_purpose,
+        'The empty-dimension write clobbered the stored prior — nx=True is not being ' +
+          'honoured by the real Redis instance.',
+      ).toBe(NX_SIGNAL_PURCHASE_PURPOSE);
+      expect(result!.archetype_hint).toBe(NX_SIGNAL_ARCHETYPE_HINT);
+      expect(result!.confidence).toBeCloseTo(NX_SIGNAL_CONFIDENCE, 2);
+
+      // ADR-0020 D4: the empty write must not refresh the retention clock. A
+      // value-equality assertion alone would pass even if the TTL had been
+      // reset to 86400 — this is the half that catches that regression.
+      const ttlAfterEmpty = await fetchTtl(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID);
+      expect(
+        ttlAfterEmpty,
+        `TTL was refreshed by the empty-dimension write (ttlAfterEmpty=${String(ttlAfterEmpty)} ` +
+          `>= ttlAfterSignal=${String(ttlAfterSignal)}). ADR-0020 D4 requires the residual ` +
+          'lifetime to only ever shorten or stay unchanged, never extend.',
+      ).toBeLessThan(ttlAfterSignal);
+      expect(ttlAfterEmpty).toBeGreaterThan(0);
+    },
+  );
+
+  /**
+   * AC1(b) — cold key. An empty-dimension payload (`data_source == "model"`,
+   * AC2) written on a FRESH session_id — no prior exists — IS stored, with its
+   * markers intact (the record is not silently dropped or altered because it
+   * carries no signal; `SET … NX` succeeds unconditionally against a key that
+   * does not yet exist).
+   */
+  it.skipIf(!HAS_ALL_CREDS)(
+    'AC1(b): a cold key — an empty-dimension write on a fresh session IS stored, markers intact',
+    async () => {
+      // Ensure the key is genuinely cold via the PRODUCTION delete path (idempotent).
+      await deleteShadowChatIntent(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID);
+
+      runNxWriter(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID, 'empty');
+
+      const result = await readShadowChatIntent(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID);
+      expect(
+        result,
+        'readShadowChatIntent returned null for the cold-key NX case — the create-only ' +
+          'SET … NX write did not land against a genuinely absent key.',
+      ).not.toBeNull();
+
+      // Markers intact: all 12 dimensions null, and the provenance fields the
+      // write carried survive untouched (ADR-0020 D6 — no merge, no stitching).
+      expect(result!.intent_dimensions.purchase_purpose ?? null).toBeNull();
+      expect(result!.archetype_hint).toBe('neutral');
+      expect(result!.confidence).toBeCloseTo(0, 2);
+      expect((result as unknown as { data_source?: string }).data_source).toBe('model');
+
+      const ttl = await fetchTtl(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID);
+      expect(ttl).toBeGreaterThan(EXPECTED_TTL_SECONDS - 60);
       expect(ttl).toBeLessThanOrEqual(EXPECTED_TTL_SECONDS);
     },
   );

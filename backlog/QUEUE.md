@@ -1,6 +1,30 @@
 # Backlog Queue
 
-### FOLLOW-757 — status: IN_PROGRESS
+### FOLLOW-757 — status: DONE (PR #648 merged 2026-08-01 by Piotr, `35ecd80f`)
+
+**Merged.** The gate now tokenizes Python source and blanks COMMENT/STRING tokens before either
+regex runs — applied to the detection side as well as the clearance side, so the two halves cannot
+drift. Test-file exclusion anchored; the `observability.py` exclusion removed after the worker
+verified (as AC3 instructed, rather than taking the ticket's word) that all three registered mirrors
+contain zero capture calls. AC5's allowlist inventory now prints in the gate's own output.
+
+**PM re-verified the red-first claim independently**, not from the PR body: built fresh fixtures for
+three of the four shapes and ran BOTH `main`'s pre-fix script and the PR's script against each.
+Pre-fix PASSed all three (false green); post-fix FAILed all three (caught). The real tree still
+passes, and the self-test passes on `main` after merge. CI 67 pass, Rule I unchanged at 192.
+
+**AC6 answered honestly as PARTIAL, and that is the right answer** — shapes 1-4 closed and
+self-test-guarded; the unscanned dirs outside `apps/*/src` and the unquoted `for f in $FILES` are
+verified not-live today and deferred **in the script header**, not silently dropped. For a gate
+whose entire value is that it does not lie, an overstated "fully guarded" would have been the worse
+outcome.
+
+**Scope held:** two files (the script + `lessons.md`). No `apps/*` source, no `ci.yml`, and the
+sibling gate — FOLLOW-746's territory, same bug, opposite failure direction — untouched.
+
+---
+
+### FOLLOW-757 — dispatch record (was: IN_PROGRESS)
 
 **Promoted + dispatched 2026-08-01 on Piotr's explicit "puść 757 przed 752".** Sequenced ahead of
 FOLLOW-752 on the reasoning that a false GREEN in a CI gate is worse than an invariant proved only

@@ -1,9 +1,11 @@
-name: Redis shadow round-trip smoke (FOLLOW-368)
+name: Redis shadow round-trip smoke (FOLLOW-368, FOLLOW-752)
 
 # Proves the Python write_shadow_intent writer and the TypeScript
 # readShadowChatIntent reader share ONE Upstash Redis instance (env-var
-# parity). Runs on every push/PR for all agent-prefixed branches and on a
-# nightly schedule.
+# parity), AND (FOLLOW-752) that the `SET … NX` write-admission invariant
+# (ADR-0020 D3/D4) is honoured by that REAL instance, not just passed as a
+# kwarg to a mock. Runs on every push/PR for all agent-prefixed branches and
+# on a nightly schedule.
 #
 # Skip-loud contract (mirrors intent-weights-live-smoke / RETRO-007):
 #   secrets absent → soft-skip with ::notice:: in the spec output (safe for
@@ -11,9 +13,9 @@ name: Redis shadow round-trip smoke (FOLLOW-368)
 #   REQUIRE_REDIS_SMOKE=1 + any secret absent → spec throws (hard-fail).
 #   All secrets present + round-trip broken → assertion fails (hard-fail).
 #
-# ESC-028: the four required secrets are not yet provisioned as GitHub Actions
-# secrets. Until they are, every run enters the soft-skip path. Provision them
-# per backlog/ESCALATIONS.md ESC-028 to enable live assertions.
+# ESC-028 RESOLVED 2026-07-13: all four secrets are provisioned as GitHub
+# Actions secrets against the shared test Upstash instance, so this job runs
+# in hard-fail mode (REQUIRE_REDIS_SMOKE=1) on every push/PR, not soft-skip.
 #
 # Required secrets (all four must point at the SAME Upstash instance):
 #   UPSTASH_REDIS_REST_URL   — Upstash REST endpoint (Python writer side)

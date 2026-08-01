@@ -153,3 +153,26 @@ wait for a real debugging incident (FOLLOW-585) to discover the gap. Consider ad
 PR-template checklist item for "regex captures a delimited block + scans for quoted values inside it
 → has this been comment-injection tested?" so the pattern doesn't need re-discovering a 3rd time in
 a different test file.
+
+- **2026-08-01 / FOLLOW-752** · **What I tested:** extended the real-Redis gate
+  (`redis-shadow-round-trip.smoke.test.ts`) with two cases proving `write_shadow_intent`'s
+  `SET … NX` write-admission invariant (ADR-0020 D3/D4) is honoured by an ACTUAL Upstash instance —
+  warm-key (signal write, then empty write, assert the FIRST record survives AND TTL strictly
+  decreases rather than resetting to 86400) and cold-key (empty write on a fresh session IS stored,
+  markers intact). Both drive the PRODUCTION `write_shadow_intent` via a new parameterized
+  subprocess script (`nx_invariant_writer.py`) and read back via the PRODUCTION
+  `readShadowChatIntent` / `deleteShadowChatIntent` — nothing hand-injected. **Where a test could
+  have passed over a dead wire:** the prior state of the world, exactly — `test_intent_engine.py`'s
+  `_write()` helper proved `nx=True` was passed to a `MagicMock`, which accepts any kwarg name, so
+  an SDK rename/deprecation of `nx=` would leave that suite green while production silently reverted
+  to clobbering; the sibling real-Redis gate existed but its one fixture (8 non-null dims) never
+  reached the NX branch at all (`grep nx` on it was zero hits) — a green gate over the unchanged
+  path read as coverage of the changed one. Verified the new cases actually catch the regression by
+  removing `nx=True` from `redis_writer.py:130` against a real dockerized Redis (`redis:7-alpine` +
+  `hiett/serverless-redis-http`) and confirming the warm-key value got clobbered (red), then
+  restoring and reconfirming green — a `MagicMock`-only suite cannot produce this evidence because a
+  mock has no real "clobber" to observe. **A guardrail I'd add:** when a real-Redis/real-network CI
+  gate is filed as closing a ticket's evidence gap, require the PR to state which CODE BRANCH each
+  fixture actually reaches (grep for the differentiating call, e.g. `nx=`) — "a real-Redis gate
+  exists" is not the same claim as "a real-Redis gate exercises this branch," and the two were
+  conflated here for weeks (FOLLOW-368 → FOLLOW-736 → this ticket) before anyone grepped.

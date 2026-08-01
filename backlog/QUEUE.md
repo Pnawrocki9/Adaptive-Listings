@@ -1,5 +1,58 @@
 # Backlog Queue
 
+## ▶️ START HERE — paused 2026-08-01 (sessions 79-86, `5dbf9702`)
+
+**Nine PRs merged (#641-#649), eight tickets closed.** Working tree clean, no open PRs, no running
+workers, all local gates green.
+
+**Shipped:** the chat→intent→archetype loop runs on localhost (FOLLOW-729); a degraded extraction is
+distinguishable from a buyer who genuinely said nothing (FOLLOW-730); ADR-0020 ratified AND
+implemented, so an empty extraction no longer clobbers an accumulated prior, with both invariants
+(atomicity, TTL) holding structurally rather than by author discipline (FOLLOW-735/736); Sentry
+hardened across the whole Python tier with two CI gates (FOLLOW-738/743/744/757); and the `SET … NX`
+invariant is now gated on a REAL Redis instance instead of a `MagicMock` (FOLLOW-752).
+
+**The one pattern worth carrying forward.** Four separate defects this run were the same shape: a
+control that EXISTS and does not CONTROL. Sentry capture with no initialiser in its process; a
+spend-cap alarm with no client; a capture gate with four measured false greens; an invariant proved
+only against a mock. In every case a green signal meant "not checked", not "fine". The habit that
+caught them is red-first: show the old mechanism PASSING the bad input before claiming the new one
+works. Three `/code-review` rounds on PR #642 produced 30 findings, and rounds 2-3 were dominated by
+defects the previous round's FIXES introduced — which is why FOLLOW-730's over-fix was ultimately
+REVERTED rather than patched a fourth time (the clobber became FOLLOW-735/736, done properly).
+
+**Two corrections to the record made this run — do not re-derive from stale prose:**
+
+1. **ESC-045 item 1 ("no dev-tier Anthropic key") was FALSE and had been since it was filed.**
+   Doppler holds `ANTHROPIC_API_KEY` in `dev`, `stg` AND `prd`, all byte-identical, proven live.
+   Nothing needs provisioning. (The shared-value fact itself is FOLLOW-750.)
+2. **ESC-045 items 2-3 (Upstash) need NO cloud provisioning either.** FOLLOW-736's verification
+   proved a local `redis:7-alpine` behind `hiett/serverless-redis-http` is a working Upstash-REST
+   endpoint; point BOTH env pairs at that one shim and the parity requirement is satisfied by
+   construction. This reduces the remaining "100% on localhost" work to starting two containers.
+
+**Operational traps hit this run, all real:**
+
+- **Two Bash-capable agents in one working directory collide on a shared `.git/HEAD`** — branch
+  checkouts drag uncommitted work and whole commits onto wrong branches. It bit twice (once as the
+  PM's recovered incident, once when a retro-analyst committed RETRO-236 onto a devops branch).
+  Dispatch ONE at a time, or give each its own `git worktree`.
+- **The same applies one layer up:** the main loop must not operate on the repo while a PM runs.
+  Doing so produced ESC-046, an escalation about a "mystery merge" that was in fact authorised.
+- **Nohup'd workers fire NO completion notification** — record PID + log path, and set an explicit
+  waiter.
+- **A GitHub Actions billing block makes never-started jobs look identical to failures.** Cleared
+  2026-07-31; treat any CI reading from before `66575f5e` as suspect.
+
+**5 escalations OPEN, all blocked on Piotr as operator:** ESC-045 items 2-3 (the only thing gating
+the localhost goal), ESC-044, ESC-042 item 1, ESC-041, **ESC-020 (~25 days)**.
+
+**Suggested next:** FOLLOW-746 (sibling gate, same filter bug, opposite direction — FOLLOW-757
+already built the technique), then FOLLOW-756/758, then the un-run retrospectives for FOLLOW-757
+and 752.
+
+---
+
 ### FOLLOW-752 — status: DONE (PR #649 merged 2026-08-01 by Piotr, `a254c0f7`)
 
 **Merged.** The `SET … NX` write-admission invariant is now gated on a REAL Redis instance in

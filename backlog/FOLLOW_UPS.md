@@ -22899,7 +22899,8 @@ cross_ref: [RETRO-236 §3 HW-1c, FOLLOW-749, FOLLOW-736, ADR-0020 D3,
 ## FOLLOW-752 — the `SET … NX` invariant is proved only against a `MagicMock`, while the repo's real-Redis gate went green over the branch that did not change
 
 source_retro: RETRO-236 source_ticket: FOLLOW-736 recommended_sprint: next recommended_agent:
-qa-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: false
+qa-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue: true (2026-08-01 —
+dispatched to qa-engineer on Sonnet per Piotr)
 
 **The gap.** FOLLOW-736's whole deliverable is one invariant: _an extraction carrying no usable
 dimension must not remove a stored prior, and must not refresh its TTL._ In CI that invariant is

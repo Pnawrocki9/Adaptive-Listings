@@ -1,5 +1,36 @@
 # Backlog Queue
 
+### FOLLOW-752 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-08-01 on Piotr's "puść 752",** immediately after FOLLOW-757 merged.
+
+**assigned_to:** qa-engineer **model: Sonnet** — delegation-table row "E2E/integration/load/a11y
+tests, fixtures, golden harness". The design is settled (ADR-0020 D3/D4), the target workflow
+already provisions a real Upstash instance, and the ticket names the exact two cases and the
+mutation that must go red. Well-scoped test-harness work, not novel design. **started_at:**
+2026-08-01. **branch:** `qa-engineer/FOLLOW-752-nx-invariant-real-redis`.
+
+**The gap, and why it is the interesting kind.** FOLLOW-736's entire deliverable is one invariant:
+an extraction with no usable dimension must neither remove a stored prior nor refresh its TTL. In CI
+that invariant is asserted **only** through a `MagicMock` — which proves the kwarg `nx=True` was
+PASSED, not that Redis HONOURED it. A future `upstash_redis` bump that renames, deprecates or
+silently ignores `nx=` leaves the whole suite green while production reverts to clobbering.
+
+Meanwhile the repo's one real-Redis gate (`redis-shadow-smoke.yml`) exercises only the unconditional
+`EX` branch — its single fixture carries 8 non-null dimensions, and `grep -n "nx\|NX"` on the smoke
+test returns zero hits. **A green gate over the unchanged path was available to be read as coverage
+of the changed one.** The only real-Redis evidence for the new branch is the implementer's local
+Docker run: excellent, but unrepeatable and ungated — which is exactly why this is P2 and not P1.
+
+**AC2 is the subtle one:** the empty-dimension fixture must use `data_source == "model"` (a neutral
+success, the buyer said "thanks"), not a degraded payload. ADR-0020 D2 decided the rule is keyed on
+CONTENT, not provenance — a degraded-only fixture would let a provenance-keyed regression sail
+through.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ### FOLLOW-757 — status: DONE (PR #648 merged 2026-08-01 by Piotr, `35ecd80f`)
 
 **Merged.** The gate now tokenizes Python source and blanks COMMENT/STRING tokens before either

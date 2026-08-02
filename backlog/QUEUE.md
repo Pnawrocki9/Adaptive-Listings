@@ -1,6 +1,34 @@
 # Backlog Queue
 
-### FOLLOW-760 — status: IN_PROGRESS
+### FOLLOW-760 — status: DONE (PR #650 merged 2026-08-02 by Piotr, `e9403844`)
+
+**Merged.** A file the gate cannot tokenize is no longer reported clean. `_clean_python_source()`
+now writes nothing and exits 3 after printing the exception; the caller captures it via
+`|| clean_rc=$?` (not a bare assignment, so `set -e` is not tripped) and reports the file under a
+separate **UNPARSEABLE FILES** heading, distinct from ordinary violations, failing the gate.
+
+**PM reproduced the red-first independently**, on a fresh fixture rather than the worker's:
+unterminated triple-quoted string + a real `capture_exception` + a docstring-only `init_sentry(`
+mention. Confirmed first that the file genuinely raises `TokenError` — my initial check only pulled
+the FIRST token and would have accepted a false confirmation. Then: `main` exits 0 (the false
+green), the branch exits 1 with the UNPARSEABLE block. Verified on `main` after merge: real-tree run
+PASSes and `--self-test` passes (9 fixtures). CI 67 pass, Rule I unchanged at 192.
+
+**CB-3 deferred honestly** — the detection regex requires the literal `sentry_sdk.` prefix, so a
+bare `capture_exception(` after a from-import is unseen. Not live today (repo-wide grep), recorded
+as gap item 7 in the script header, marked **documented-and-open** rather than fully
+enumerated-and-guarded.
+
+**The fifth instance of this session's pattern, and the sharpest.** FOLLOW-757 fixed a gate that
+silently passed bad input — and its fix shipped a silent pass of its own. The old code comment
+called it "fail safe rather than crash the gate": true about the PROCESS, false about the ASSERTION.
+For a gate, quietly falling back to a weaker predicate is the unsafe direction. Note this also
+corrects my own validation of PR #648: I praised its AC6 residual list as honestly partial, but this
+hole was not on it — RETRO-238 caught what my review did not.
+
+---
+
+### FOLLOW-760 — dispatch record (was: IN_PROGRESS)
 
 **Promoted + dispatched 2026-08-02 on Piotr's "puść najpierw 760".** Sequenced ahead of FOLLOW-746
 because it is a regression in code merged yesterday (PR #648) and because FOLLOW-746 would otherwise

@@ -7,15 +7,24 @@ name: Redis shadow round-trip smoke (FOLLOW-368, FOLLOW-752)
 # kwarg to a mock. Runs on every push/PR for all agent-prefixed branches and
 # on a nightly schedule.
 #
-# Skip-loud contract (mirrors intent-weights-live-smoke / RETRO-007):
-#   secrets absent → soft-skip with ::notice:: in the spec output (safe for
-#     offline dev and forked PRs — no false-red from missing secrets).
-#   REQUIRE_REDIS_SMOKE=1 + any secret absent → spec throws (hard-fail).
-#   All secrets present + round-trip broken → assertion fails (hard-fail).
+# Hard-fail contract is a function of TRIGGER TYPE, not of whether secrets
+# currently happen to be present (FOLLOW-762 — RETRO-238 §4a LG-2; Rule Q's
+# "soft-skip must be scoped to the ONE intended condition" clause):
+#   push / schedule / workflow_dispatch / same-repo pull_request →
+#     REQUIRE_REDIS_SMOKE=1 UNCONDITIONALLY. A missing/rotated/revoked secret
+#     on any of these trusted triggers is a hard CI failure (the spec throws
+#     — see redis-shadow-round-trip.smoke.test.ts), never a silent skip.
+#   pull_request from a FORK → soft-skip with ::notice:: in the spec output.
+#     This is the ONE legitimate skip condition: GitHub Actions does not
+#     expose repository secrets to fork-originated workflow runs by design,
+#     so there is no way for a fork PR to supply them.
+#   All secrets present + round-trip broken → assertion fails (hard-fail),
+#     on any trigger.
 #
-# ESC-028 RESOLVED 2026-07-13: all four secrets are provisioned as GitHub
-# Actions secrets against the shared test Upstash instance, so this job runs
-# in hard-fail mode (REQUIRE_REDIS_SMOKE=1) on every push/PR, not soft-skip.
+# The "Negative control" step below proves the REQUIRE_REDIS_SMOKE=1 +
+# missing-secret throw actually fires in CI (Rule Q clause 4) — it is not an
+# untested claim. ESC-028 (secret provisioning) was RESOLVED 2026-07-13; see
+# backlog/ESCALATIONS.md.
 #
 # Required secrets (all four must point at the SAME Upstash instance):
 #   UPSTASH_REDIS_REST_URL   — Upstash REST endpoint (Python writer side)
@@ -106,24 +115,39 @@ jobs:
       - name: Build @estalara/shared (transitive SDK dependency)
         run: pnpm --filter @estalara/shared build
 
-      # ── Secret availability check ─────────────────────────────────────────
-      # Announce soft-skip when secrets are absent (forked PRs, not-yet-provisioned).
-      # When ALL four secrets ARE present, set REQUIRE_REDIS_SMOKE=1 so the spec
-      # hard-fails on a broken wire instead of soft-skipping.
-      - name: Check secret availability
+      # ── Trigger-trust + secret availability check ─────────────────────────
+      # REQUIRE_REDIS_SMOKE is a function of TRIGGER TYPE (FOLLOW-762): every
+      # trigger except a fork-originated pull_request is trusted and MUST
+      # hard-fail on a missing secret, not skip. A fork PR is the one
+      # legitimate soft-skip condition, because GitHub Actions withholds
+      # repository secrets from fork-originated runs by design.
+      - name: Check trigger trust + secret availability
         id: secret-check
         env:
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           UPSTASH_REDIS_URL: ${{ secrets.UPSTASH_REDIS_URL }}
           UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          IS_FORKED_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
         run: |
           if [ -z "${UPSTASH_REDIS_REST_URL}" ] || [ -z "${UPSTASH_REDIS_REST_TOKEN}" ] || \
              [ -z "${UPSTASH_REDIS_URL}" ] || [ -z "${UPSTASH_REDIS_TOKEN}" ]; then
-            echo "::notice::One or more UPSTASH_REDIS_* secrets are not set — FOLLOW-368 Redis round-trip smoke will soft-skip. Provision all four secrets per backlog/ESCALATIONS.md ESC-028 to enable live assertions."
-            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
+            SECRETS_PRESENT=false
           else
-            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
+            SECRETS_PRESENT=true
+          fi
+          echo "secrets_present=${SECRETS_PRESENT}" >> "$GITHUB_OUTPUT"
+
+          if [ "${IS_FORKED_PR}" = "true" ]; then
+            echo "hard_fail_required=false" >> "$GITHUB_OUTPUT"
+            if [ "${SECRETS_PRESENT}" = "false" ]; then
+              echo "::notice::Forked PR — UPSTASH_REDIS_* secrets are not exposed to fork-originated workflow runs by GitHub Actions design, so this is the ONE legitimate soft-skip condition (Rule Q / FOLLOW-762). FOLLOW-368/752 Redis round-trip smoke will soft-skip; see its own ::notice:: below."
+            fi
+          else
+            echo "hard_fail_required=true" >> "$GITHUB_OUTPUT"
+            if [ "${SECRETS_PRESENT}" = "false" ]; then
+              echo "::warning::Trusted trigger (push, schedule, workflow_dispatch, or same-repo pull_request) but one or more UPSTASH_REDIS_* secrets are absent. REQUIRE_REDIS_SMOKE=1 is set regardless — the spec below MUST hard-fail rather than skip. Provision all four secrets; see docs/runbooks/upstash-redis-env-parity.md."
+            fi
           fi
 
       # ── Run the round-trip smoke ─────────────────────────────────────────
@@ -134,10 +158,11 @@ jobs:
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           UPSTASH_REDIS_URL: ${{ secrets.UPSTASH_REDIS_URL }}
           UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
-          # Set REQUIRE_REDIS_SMOKE=1 only when all four secrets are present so
-          # a broken endpoint fails loud rather than silently skipping.
+          # Unconditional 1 on every trusted trigger (hard_fail_required=true);
+          # on a forked PR, only '1' if the (normally-absent) secrets happen to
+          # be present. See the "Check trigger trust" step above — FOLLOW-762.
           REQUIRE_REDIS_SMOKE: >-
-            ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
+            ${{ steps.secret-check.outputs.hard_fail_required == 'true' && '1' || (steps.secret-check.outputs.secrets_present == 'true' && '1' || '') }}
           # FOLLOW-761: namespaces the NX_WARM_*/NX_COLD_* fixture keys per run
           # (belt-and-braces alongside the concurrency group above — see the
           # spec for how this is threaded into the fixture key names and into
@@ -146,3 +171,49 @@ jobs:
           # share a fixture key even if they execute genuinely concurrently.
           NX_RUN_SUFFIX: ${{ github.run_id }}
         run: pnpm exec vitest run --config vitest.config.ts redis-shadow-round-trip.smoke
+
+      # ── Negative control (FOLLOW-762, Rule Q clause 4) ────────────────────
+      # Proves the REQUIRE_REDIS_SMOKE=1 + missing-secret hard-fail throw in
+      # redis-shadow-round-trip.smoke.test.ts actually fires — a guarantee
+      # that has never executed in CI is a claim, not a control. Runs
+      # unconditionally (every trigger, `if: always()`) with one secret
+      # deliberately blanked; independent of whether the main step above
+      # passed, failed, or ran with real or absent repo secrets.
+      - name: "Negative control: hard-fail throw fires on a blanked secret"
+        id: negative-control
+        if: always()
+        continue-on-error: true
+        working-directory: tests/integration
+        env:
+          UPSTASH_REDIS_REST_URL: "https://negative-control.invalid"
+          UPSTASH_REDIS_REST_TOKEN: "negative-control-fake-token"
+          UPSTASH_REDIS_URL: "https://negative-control.invalid"
+          UPSTASH_REDIS_TOKEN: "" # deliberately blanked — the missing secret under test
+          REQUIRE_REDIS_SMOKE: "1"
+        run: |
+          set +e
+          pnpm exec vitest run --config vitest.config.ts redis-shadow-round-trip.smoke > /tmp/negative-control.log 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat /tmp/negative-control.log
+
+      - name: "Assert negative control failed with the expected message"
+        if: always()
+        run: |
+          EXIT_CODE="${{ steps.negative-control.outputs.exit_code }}"
+          if [ -z "${EXIT_CODE}" ]; then
+            echo "::error::Negative control step did not run (an earlier setup step must have failed) — cannot prove the hard-fail throw fires."
+            exit 1
+          fi
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "::error::Negative control MUST fail — REQUIRE_REDIS_SMOKE=1 with UPSTASH_REDIS_TOKEN blanked should throw, but vitest exited 0. The gate is inert."
+            exit 1
+          fi
+          if ! grep -q "REQUIRE_REDIS_SMOKE=1 is set but the following secrets are absent" /tmp/negative-control.log; then
+            echo "::error::Negative control failed but NOT with the expected 'secrets are absent' message — investigate before trusting this gate."
+            exit 1
+          fi
+          if ! grep -q "UPSTASH_REDIS_TOKEN" /tmp/negative-control.log; then
+            echo "::error::Expected the missing-secret message to name UPSTASH_REDIS_TOKEN specifically."
+            exit 1
+          fi
+          echo "PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit ${EXIT_CODE}) with the expected message."

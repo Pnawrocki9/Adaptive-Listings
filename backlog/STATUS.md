@@ -1,3 +1,39 @@
+# Status — 2026-08-02 (session 87 — combined retro dispatched for FOLLOW-757+752; FOLLOW-746 picked next)
+
+## SESSION 87 (2026-08-02) — retro for FOLLOW-757/752, FOLLOW-746 picked next
+
+**State re-verified, not taken on trust:** `main` clean at `5b0b2c98` before bookkeeping, `db52ee32`
+after. `gh pr list --state open` → empty. No `claude --agent` worker processes running (the one live
+`claude` PID, 1222, is this main-loop session itself — cwd = repo root, no worktree).
+`git worktree list` → only the primary tree. 5 escalations OPEN (ESC-020, 041, 042-narrowed, 044,
+045 items 2-3), all re-read, none touch the files this session's two actions touch —
+non-blocking-for-dispatch per the standing 2026-07-27 ruling.
+
+**Dispatched `retrospective-analyst` (Opus) for ONE combined retro covering FOLLOW-757 (PR #648,
+`35ecd80f`) and FOLLOW-752 (PR #649, `a254c0f7`)** — both small, same "evidence-quality of a CI/test
+gate" class, merged the same day; a retro on either alone would very likely re-surface the other's
+exact defect shape as a "prior pattern," so read together. Expected output: `RETRO-238` in
+`backlog/RETROSPECTIVES.md` + any new `FOLLOW-NNN` stubs, on branch
+`retrospective-analyst/RETRO-238-follow-757-752-retro` (explicitly instructed not to touch `main`,
+not to open a PR).
+
+- Dispatch command:
+  `nohup claude --agent retrospective-analyst --model opus -p "<brief, see full text in this session's tool-call log>" --permission-mode acceptEdits > $LOG 2>&1 &`
+- **PID:** `196140`. **Log:**
+  `/tmp/claude-1000/-home-asipi-Projects-Adaptive-Listings/ff4eb2cc-757f-4543-8412-8d16f102e93c/scratchpad/retro-238-follow757-752.log`
+
+**FOLLOW-746 picked as the next ticket** (P2, devops-engineer, Sonnet — same technique FOLLOW-757
+just proved, applied to the sibling script `check-sentry-init-singleton.sh`), **not dispatched this
+turn** — one Bash-capable agent at a time into this shared cwd; the session-85 collision is the
+reason this rule exists. Full brief in `backlog/QUEUE.md` session-87 header.
+
+**CI-check counter:** n/a (no PR opened this turn). **Fix-iteration counter:** n/a.
+
+NEXT: Wait for the retrospective-analyst (PID 196140) to finish, confirm RETRO-238 landed on its own
+branch (not `main`), then dispatch devops-engineer on FOLLOW-746.
+
+---
+
 # Status — 2026-07-31 (session 86 — retro dispatched for FOLLOW-743+744; FOLLOW-752 picked as next
 
 ticket, held pending retro)

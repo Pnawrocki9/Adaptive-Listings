@@ -21,8 +21,18 @@
  *   4. Asserting the Upstash TTL for the key is within the expected 24 h window.
  *
  * Skip / hard-fail contract (mirrors intent-weights-live-smoke / RETRO-007):
- *   - Creds absent + no require flag → soft-skip (GitHub Actions ::notice::).
- *   - REQUIRE_REDIS_SMOKE=1 + any cred absent → hard-fail immediately.
+ *   - REQUIRE_REDIS_SMOKE is NOT this file's decision — the calling CI job
+ *     (redis-shadow-smoke.yml) sets it based on TRIGGER TYPE, not on whether
+ *     secrets currently happen to be present (FOLLOW-762 — RETRO-238 §4a
+ *     LG-2). push / schedule / workflow_dispatch / same-repo pull_request all
+ *     set REQUIRE_REDIS_SMOKE=1 unconditionally; only a fork-originated
+ *     pull_request may leave it unset, because GitHub Actions withholds
+ *     repository secrets from fork-originated runs by design.
+ *   - REQUIRE_REDIS_SMOKE=1 + any cred absent → hard-fail immediately (this
+ *     is proven to actually fire by the workflow's "Negative control" job —
+ *     see redis-shadow-smoke.yml — not merely asserted here).
+ *   - REQUIRE_REDIS_SMOKE unset + creds absent → soft-skip (GitHub Actions
+ *     ::notice::) — the fork-PR / local-dev case only.
  *   - Creds present + round-trip broken → hard-fail (the test catches a dead wire).
  *
  * Required env vars:
@@ -30,7 +40,7 @@
  *   UPSTASH_REDIS_REST_TOKEN — Upstash REST token for the Python writer
  *   UPSTASH_REDIS_URL        — Upstash REST endpoint for the TypeScript reader
  *   UPSTASH_REDIS_TOKEN      — Upstash REST token for the TypeScript reader
- *   REQUIRE_REDIS_SMOKE      — set to "1" in the CI job that provides the secrets
+ *   REQUIRE_REDIS_SMOKE      — set by the CI job per the trigger-type contract above
  *
  * Both URL pairs MUST point at the same Upstash database for the round-trip to
  * succeed. If they do not, AC-RT1 will fail with "readShadowChatIntent returned
@@ -38,9 +48,10 @@
  *
  * Secrets (ESC-028, RESOLVED 2026-07-13):
  *   All four secrets are provisioned as GitHub Actions secrets against a
- *   single shared "test Upstash instance", so this CI job runs in hard-fail
- *   mode (REQUIRE_REDIS_SMOKE=1), not soft-skip. See backlog/ESCALATIONS.md
- *   ESC-028 and docs/runbooks/upstash-redis-env-parity.md.
+ *   single shared "test Upstash instance". Provisioning is a PRECONDITION for
+ *   the trigger-type hard-fail contract above to succeed rather than throw —
+ *   it does not itself gate whether REQUIRE_REDIS_SMOKE is set. See
+ *   backlog/ESCALATIONS.md ESC-028 and docs/runbooks/upstash-redis-env-parity.md.
  *
  * FOLLOW-752 extends this file with a second describe block proving the
  * `SET … NX` write-admission invariant (ADR-0020 D3/D4) against this SAME

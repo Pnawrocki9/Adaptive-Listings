@@ -119,7 +119,93 @@ regression hole, the same status the four FOLLOW-757 shapes had before they were
 
 ---
 
-## ▶️ START HERE — session 88 (2026-08-02) — retro owed for FOLLOW-760 (#650) + FOLLOW-746 (#651), dispatched combined before any new ticket
+### FOLLOW-765 + FOLLOW-759 — dispatch record (was: READY, now IN_PROGRESS, combined)
+
+**Picked 2026-08-03 (session 89) after RETRO-239 landed** (`9e33bfe3`, merged to `main` by Piotr —
+docs-only, +608/+253 across `backlog/RETROSPECTIVES.md` + `backlog/FOLLOW_UPS.md`,
+`CONVENTIONS_PATCH.md` deliberately untouched, no rule promoted). Verified independently rather than
+taken on the coordinator's summary:
+
+- `git merge-base --is-ancestor 9e33bfe3 main` → true;
+  `grep -n "^## RETRO-239" backlog/RETROSPECTIVES.md` present; retro branch
+  `retrospective-analyst/RETRO-239-follow-760-746-combined` still exists locally, unmerged remnant
+  only (its commit is the same content now on `main`).
+- Read RETRO-239 §3/§4b/§7 in full and both filed stubs (`FOLLOW-765`, `FOLLOW-759` — the latter
+  re-read from RETRO-238, unchanged premise per RETRO-239 §5a) before dispatching, not from the
+  coordinator's paraphrase alone.
+
+**Why FOLLOW-765 + FOLLOW-759 together, not FOLLOW-765 alone.** RETRO-239 HW-1 names FOLLOW-765 as
+"the same organ as FOLLOW-759, one gate over, and strictly more load-bearing" — a second
+producer-with-no-consumer suppression inventory, this time counting whole excluded FILES
+(`check-sentry-init-singleton.sh:498-501`) rather than allowlisted lines
+(`check-sentry-capture-has-init.sh:394-405`). FOLLOW-765's own AC4 says explicitly: "coordinate with
+FOLLOW-759 rather than duplicating it... If both are done together, prefer ONE baseline mechanism
+used by both gates over two." Doing them as two separate, sequential dispatches risks exactly the
+FOLLOW-746-reproduces-FOLLOW-757 shape RETRO-239 itself is the retrospective on — a second worker,
+working from FOLLOW-765 alone, building a second bespoke consumer instead of the one shared baseline
+mechanism both retros are pointing at. Dispatching as one combined ticket to one worker forces the
+"one baseline, not two" decision to actually get made, not just recommended.
+
+Kept as two separate ticket IDs in the backlog (not merged into one stub) because their ACs differ
+in what they scope — 759 owns the capture gate's consumer + region-alignment (RETRO-238 CB-2: no
+`--include=*.py`, no test-file exclusion on the allowlist-hit grep); 765 owns the singleton gate's
+consumer + the CB-2 finding that a newly-registered self-consistent `.py` pair is excluded from the
+gate **by its own registration**, with no control verifying it is actually the hardened initialiser.
+One PR, two AC checklists, one shared baseline mechanism where the ACs overlap (a committed baseline
+file/threshold both gates compare against and fail on mismatch).
+
+**assigned_to:** devops-engineer **model: Opus** — the coordinator's recommendation, independently
+affirmed: this is not a mechanical transfer of FOLLOW-757's proven technique (that was
+FOLLOW-760/746 already, both dispatched Opus). It is a NEW design decision — one baseline-comparison
+mechanism shared by two gates that currently have no comparison mechanism at all — plus a
+security-shaped judgement call in FOLLOW-765 AC2 (what counts as "verified hardened" for a
+newly-registered mirror pair: byte-identity to the manifest's named canonical, or presence of the
+three hardened markers post-clean — the ticket offers both, the worker has to pick and justify). Per
+the model-fit rule's "escalate one tier for irreversible or prod-touching work when genuinely unsure
+between two tiers" — this gate blocks CI on every push, so a wrong baseline-comparison design is
+expensive to unwind. **started_at:** 2026-08-03. **branch:**
+`devops-engineer/FOLLOW-765-759-suppression-inventories`.
+
+**Scope constraints stated in the brief:** do not fold in FOLLOW-766/767/768/769 (different files/
+predicates, correctly filed separately per RETRO-239 §5a's own reasoning against an unscopeable
+merged ticket); do not touch `apps/*` source; do not change either allowlist/exclusion token
+spelling or CI job wiring beyond what the new baseline-comparison step requires; do not widen the
+singleton gate's mirror-path exclusion back to a basename match (FOLLOW-764 item 7 — load-bearing).
+
+**Learning-loop note:** the retrospective-analyst's own `lessons.d/RETRO-239.md` fragment could not
+be written by the analyst this session — the dispatch brief scoped write access to
+`backlog/RETROSPECTIVES.md` + `backlog/FOLLOW_UPS.md` + `CONVENTIONS_PATCH.md` only, so the
+in-session write to `.claude/agents/retrospective-analyst/lessons.d/` was denied. The PM persisted
+the fragment on the analyst's behalf, transcribed from RETRO-239 §6 with the provenance noted
+in-file, rather than letting the learning-loop entry go unrecorded. Next retro dispatch brief should
+include `.claude/agents/retrospective-analyst/lessons.d/**` in the allowed write scope explicitly.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**2 tickets IN_PROGRESS** (FOLLOW-765, FOLLOW-759, one PR) — within the ≤3 guardrail.
+
+---
+
+## ▶️ START HERE — session 89 (2026-08-03) — RETRO-239 merged (`9e33bfe3`), FOLLOW-765+759 dispatched combined to devops-engineer/Opus
+
+**State re-verified before acting:** `git status` clean, `main` at `9e33bfe3` before this session's
+own bookkeeping commit. `gh pr list --state open` → empty. No running workers, no stray worktrees. 5
+escalations remain `## OPEN`, unchanged from session 88 (ESC-020, ESC-041, ESC-042-narrowed,
+ESC-044, ESC-045 items 2-3) — none touch `scripts/check-sentry-*.sh` or the CI-gate shell logic;
+standing non-blocking-for-dispatch reasoning applies unchanged.
+
+**Picked FOLLOW-765 + FOLLOW-759 combined** (dispatch record above) over the other RETRO-239 stubs
+(766/767/768/769, all P2/P3, correctly filed as separate, differently-scoped tickets) because HW-1's
+"same organ, one gate over" framing plus FOLLOW-765's own AC4 make this the one place a combined
+dispatch is the retro's explicit recommendation, not just convenient batching.
+
+NEXT: Wait for devops-engineer to open a PR for FOLLOW-765+759, then run the full validation loop
+(5a-5g) — including confirming the ONE shared baseline mechanism actually covers both gates' ACs
+(the substance of FOLLOW-765 AC4), not two bespoke ones under one PR title.
+
+---
+
+## ▶️ (superseded) START HERE — session 88 (2026-08-02) — retro owed for FOLLOW-760 (#650) + FOLLOW-746 (#651), dispatched combined before any new ticket
 
 **State re-verified before acting, not taken on trust:** `git status` clean on `main` at `1f5f73c7`,
 byte-identical to `origin/main`. `gh pr list --state open` → empty.

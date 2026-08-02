@@ -721,3 +721,32 @@ counter:** n/a.
 NEXT: Wait for retrospective-analyst (expect RETRO-239 in backlog/RETROSPECTIVES.md), confirm its
 own branch, merge, then pick the next ticket (candidates: FOLLOW-759, FOLLOW-761/762/763, and older
 P2/P3 stubs — see QUEUE.md session-88 head for the full list).
+
+---
+
+# Status — 2026-08-03 (session 89 — RETRO-239 merged, FOLLOW-765+759 dispatched combined)
+
+## SESSION 89 — combined dispatch to devops-engineer/Opus
+
+**State:** RETRO-239 merged by Piotr (`9e33bfe3`, docs-only, no rule promoted). 5 escalations OPEN,
+unchanged, all non-blocking-for-dispatch. No open PRs, no running workers before this session's
+dispatch.
+
+**Action:** verified RETRO-239's findings independently (§3 HW-1/HW-2, §4b CB-1/CB-2, §7 stubs
+765-769) rather than trusting the coordinator's summary. Picked FOLLOW-765 + FOLLOW-759 as a single
+combined dispatch (same organ, two gates; FOLLOW-765 AC4 explicitly asks for coordination and one
+shared baseline mechanism if done together). Dispatched devops-engineer on Opus (model-fit:
+genuinely new design decision — a baseline-comparison mechanism neither gate has today — plus a
+security-shaped judgement call in FOLLOW-765 AC2). Branch:
+`devops-engineer/FOLLOW-765-759-suppression-inventories`.
+
+Persisted the retrospective-analyst's `lessons.d/RETRO-239.md` fragment myself (PM-authored,
+provenance noted in-file) since the analyst's own write to that path was denied this session by its
+scoped dispatch brief.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**2 tickets IN_PROGRESS** (FOLLOW-765, FOLLOW-759 — one PR) — within the ≤3 guardrail.
+
+NEXT: Wait for devops-engineer's PR, then run full validation (5a-5g), confirming ONE shared
+baseline mechanism actually covers both gates rather than two bespoke ones.

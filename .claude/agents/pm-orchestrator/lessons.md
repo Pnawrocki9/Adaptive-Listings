@@ -2701,3 +2701,28 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   for the identical ticket (FOLLOW-736) for a reason ("does not clear an open escalation") that
   still applied unchanged. A handoff's enthusiasm for a ticket is not evidence the escalation-gate
   analysis was re-run.
+
+- **Date / ticket:** 2026-08-02 — FOLLOW-760 (#650) + FOLLOW-746 (#651), retro dispatch (RETRO-239)
+- **Delegation row used:** n/a this turn (retrospective dispatch, not a delegation-table row; retro
+  goes to retrospective-analyst per CLAUDE.md's per-ticket loop, model Opus)
+- **What validation caught (or missed):** Escalation gate has 5 long-standing OPEN entries;
+  correctly distinguished "blocking" from "non-blocking-for-dispatch" using the repo's own
+  documented CEO rulings/self-scoping rather than a blanket stop — matches established multi-session
+  precedent. Caught that two DONE tickets (760, 746) had no retro yet before considering any new
+  ticket pick.
+- **A delegation/validation rule I'd add:** none — existing practice (grep `^## OPEN`, then read
+  each entry for a scope/non-blocking carve-out before treating it as a hard stop) worked cleanly
+  here.
+
+- **Date / ticket:** 2026-08-03 — FOLLOW-765 + FOLLOW-759, combined dispatch (post RETRO-239)
+- **Delegation row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks" →
+  devops-engineer
+- **What validation caught (or missed):** Independently re-verified the coordinator's summary
+  against RETRO-239 §3/§4b/§7 rather than trusting it, and independently affirmed (not just
+  accepted) the Opus recommendation on genuine model-fit grounds (new baseline-comparison design +
+  security-shaped judgement call, not a mechanical transfer). Also caught a scoped-write-brief side
+  effect: my own retro dispatch brief excluded `.claude/agents/**`, so the analyst's learning-loop
+  fragment was denied mid-session — persisted it myself rather than letting it silently drop.
+- **A delegation/validation rule I'd add:** when scoping a subagent's write access in a dispatch
+  brief, explicitly include that agent's own `lessons.d/**` path — narrowing to "backlog + docs
+  only" silently starves the learning loop the agent is supposed to feed.

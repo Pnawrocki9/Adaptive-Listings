@@ -23400,7 +23400,8 @@ RETRO-235 §4a LG-1 (the raise-hazard this PR correctly closed) / §3 HW-3 (FOLL
 
 source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: next
 recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-765 to devops-engineer on
+Opus, per FOLLOW-765 AC4's "coordinate rather than duplicate, prefer one baseline mechanism")
 
 **Priority note, stated up front so it is not silently re-priced.** P1 is the standing HALF_WIRE_P
 classification (a producer with no consumer). The **live impact today is latent**: the inventory
@@ -23762,7 +23763,8 @@ amends); FOLLOW-757 shapes 3 and 4; FOLLOW-760 (the fallback that would be copie
 
 source_retro: RETRO-239 (PR #651, FOLLOW-746) source_ticket: FOLLOW-746 recommended_sprint: next
 recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-759 to devops-engineer on
+Opus, one baseline mechanism to cover both gates' suppression inventories)
 
 **Finding 1 (HW-1) — a suppression inventory with no consumer.**
 `scripts/check-sentry-init-singleton.sh:498-501` prints

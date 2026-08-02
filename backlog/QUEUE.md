@@ -382,7 +382,57 @@ worker's own exit behavior stops relying on the PM catching it every time.
 
 ---
 
-### FOLLOW-762 — dispatch record (IN_PROGRESS)
+### FOLLOW-762 — status: READY_FOR_REVIEW (PR #654 open, `368be9a0`+`bcf800f9`, PM-validated 2026-08-03)
+
+**Housekeeping check (coordinator-raised): the branch has 2 commits, resolved as legitimate.**
+`bcf800f9` (`docs(backlog): record FOLLOW-762 worker completion + PR #654`) is the WORKER's own
+commit — `Co-Authored-By: Claude Sonnet 5` matches its own code commit, and it references "PR #654"
+by number, so it was written after the worker opened its own PR, on its own branch. **Not a
+displacement** (unlike session 89's earlier #652 incident, where the PM's own commit landed on a
+DIFFERENT agent's branch via the shared-tree collision) — this is the worker's own content on its
+own deliverable, honestly scoped (`status: worker-complete, awaiting PM validation`, does not
+overclaim DONE/READY), and consistent with CLAUDE.md's explicit "every agent writes status changes
+[to QUEUE.md]" and this repo's own precedent (PR #652 carried the same shape baked into one commit).
+**Decision: left on the branch, not cherry-picked or rewritten** — both commits will land on `main`
+verbatim on merge (rebase/ff, verified empirically via #650/#651's hash preservation), and there is
+no reason to strip sanctioned, accurate content off a worker's own PR.
+
+**Merge-order dependency with PR #653 — a REAL, isolated conflict, confirmed via `git merge-tree`,
+not assumed from "same file touched."** Both PRs modify the exact same `REQUIRE_REDIS_SMOKE: >-`
+expression line in `redis-shadow-smoke.yml` (this PR keys it off the new `hard_fail_required`
+output; #653 adds `NX_RUN_SUFFIX` on the next line in the same `env:` block). Whichever of #653/#654
+merges SECOND will hit a git conflict on this one line — mechanical resolution (combine both),
+posted verbatim as a PR comment for Piotr. No other region conflicts.
+
+**PM validation done in full (5a-5g).** 3 files, +123/-25 (`redis-shadow-smoke.yml`,
+`redis-shadow-round-trip.smoke.test.ts`, `backlog/QUEUE.md`'s worker note).
+
+**5b — CI.** 67 pass / 2 fail, both `Rule I` confirmed at 192 (job log). Non-success count for all
+REAL gates: **0**.
+
+**AC2 — negative control, independently reproduced in a worktree AND cross-checked against the real
+CI job log.** Local repro: `REQUIRE_REDIS_SMOKE=1` + `UPSTASH_REDIS_TOKEN=""` → real exit 1,
+expected message, names the missing secret. Legitimate soft-skip path (no creds, unset flag)
+unaffected — 4 skipped, exit 0. CI job log (`91560645451`) contains the literal
+`PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit 1) with the expected message.`
+— Rule Q clause 4 satisfied: the guarantee is PROVEN to have executed, not merely asserted to exist.
+
+**AC1 (boundary is genuinely fork-PR-only, confirmed from the diff and from the negative control
+itself running under a same-repo trigger), AC3 (mechanism changed to match the header's claim, not
+the header softened to match a still-weak mechanism — checked both docblocks end to end), AC4
+(`grep -n "ESC-028" backlog/STATUS.md` independently returns zero hits on both `main` and this
+branch — the worker's "already clean" claim checks out) — all confirmed.**
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted as a PR comment with full evidence, including the merge-order conflict and its exact
+resolution. **Not merged — needs Piotr.** Three PRs now open and independently validated this
+session: #652 (FOLLOW-765+759), #653 (FOLLOW-761), #654 (FOLLOW-762) — #653/#654 conflict on one
+line as described above, #652 is unrelated (different subsystem, no conflict).
+
+---
+
+### FOLLOW-762 — dispatch record (was: IN_PROGRESS)
 
 **Picked 2026-08-03 (session 89, same continuous turn) now that FOLLOW-761 (PR #653) is
 READY_FOR_REVIEW and no longer concurrently touching `redis-shadow-smoke.yml` in this session** —
@@ -412,6 +462,42 @@ numbers.
 
 **1 ticket IN_PROGRESS** (FOLLOW-762) — within the ≤3 guardrail. PR #652 and PR #653 are
 READY_FOR_REVIEW, not IN_PROGRESS, awaiting Piotr.
+
+---
+
+### FOLLOW-766 + FOLLOW-767 — dispatch record (IN_PROGRESS, combined)
+
+**Picked 2026-08-03 (session 89, continuous turn) after PR #654 validated.** Both are P2,
+`recommended_agent: devops-engineer`, both from RETRO-239, both touch
+`scripts/check-mirror-files.sh` (766 also `scripts/mirror-files.json`) in non-overlapping regions
+(766: the `basename_discovery_note` reporting/validation logic near :330-345; 767: the
+file-discovery prune list near :368-372) — combined into one dispatch to avoid a two-worker
+collision on the same file, same pattern as FOLLOW-765+759.
+
+**File-collision check done explicitly before picking this pair** (direct consequence of the #653/
+#654 conflict found this turn): confirmed `scripts/check-mirror-files.sh` and
+`scripts/mirror-files.json` are untouched by all 3 currently-open PRs (#652 touches
+`check-sentry-*.sh` + `scripts/lib/` + `scripts/baselines/`, not `check-mirror-files.sh`; #653/#654
+touch `redis-shadow-smoke.yml` + the smoke test; none touch Rule J's own script). Deferred
+FOLLOW-763 (collides with the 3-PR-deep `redis-shadow-round-trip.smoke.test.ts`) and FOLLOW-769
+(collides with #652's unmerged `check-sentry-*.sh` rewrite) for the same file-collision reason,
+alongside the already-deferred FOLLOW-768.
+
+**assigned_to:** devops-engineer **model: Sonnet** — delegation-table row "Terraform, CI/CD,
+workflows, secrets, observability, runbooks". Both tickets are mechanical: read a manifest field and
+print/validate it (766), swap a `find`-prune blacklist for `git ls-files` (767) — concrete ACs, no
+design ambiguity, same class as FOLLOW-760/762 which this repo already shipped at Sonnet.
+**started_at:** 2026-08-03. **branch:** `devops-engineer/FOLLOW-766-767-mirror-gate-hardening`.
+
+**FOLLOW-767 AC4 asks the worker to verify (not modify) whether the same environment assumption
+exists in the two Sentry gates** — read-only check against current `main`, unaffected by #652's
+unmerged changes there (the `SCAN_DIRS = apps/*/src` assumption AC4 asks about is orthogonal to
+#652's suppression-baseline additions).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (combined FOLLOW-766+767, 2 ticket IDs, 1 PR) — within the ≤3 guardrail. 3
+PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 

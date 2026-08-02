@@ -2757,3 +2757,21 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   it's plausibly available in the PM's own sandbox (docker was available here) — the substitute
   evidence can be technically sound but is still a lower evidentiary tier than the real thing, and
   checking is often cheap relative to the ticket's stakes.
+
+- **Date / ticket:** 2026-08-03 — PR #654 (FOLLOW-762) validation, FOLLOW-766+767 dispatched next
+- **Delegation row used:** validation only for #654; "Terraform, CI/CD, workflows, secrets,
+  observability, runbooks" → devops-engineer for FOLLOW-766+767
+- **What validation caught (or missed):** Used `git merge-tree` to CONFIRM (not assume) a real
+  one-line merge conflict between two independently-valid open PRs (#653/#654) that both touched the
+  same workflow file in different tickets' scope — posted the exact resolution for Piotr rather than
+  just flagging "same file, might conflict." Also correctly distinguished a worker's own legitimate
+  QUEUE.md commit (on its own PR branch, honestly scoped) from the earlier session's genuine
+  displacement incident, instead of reflexively treating "PM didn't expect this commit" as a
+  problem. Caught the coordinator's own factual error (FOLLOW-763 attributed to sdk-engineer; the
+  ticket's own stub says backend-engineer) by re-reading the source rather than trusting the
+  summary.
+- **A delegation/validation rule I'd add:** before dispatching ANY "known-ready" ticket, grep its
+  target files against every currently-open PR's file list (not just against tickets being
+  dispatched in the same turn) — the #653/#654 conflict showed this needs to be routine, not just
+  applied when a human flags it. Applied this immediately to defer FOLLOW-763/769 and clear
+  FOLLOW-766/767.

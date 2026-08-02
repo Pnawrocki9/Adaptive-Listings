@@ -809,3 +809,46 @@ exit" instruction, rather than relying on the PM catching it every session.
 
 NEXT: dispatch FOLLOW-762 (devops-engineer) now that FOLLOW-761 is no longer concurrently touching
 the same workflow file. Piotr reviews/merges PR #652 and #653 when able.
+
+---
+
+# Status — 2026-08-03 (session 89 continued — PR #654 validated, 4 PRs now open)
+
+## SESSION 89 continued — PR #654 (FOLLOW-762) validated READY_FOR_REVIEW
+
+**Validated PR #654 in full (5a-5g).** CI: 67 pass / 2 fail, both `Rule I` pre-existing-red (192,
+matched to baseline). Non-success count for all real gates: 0. Resolved the coordinator's
+housekeeping question: the branch's second commit (`bcf800f9`, a "worker completion note" in
+QUEUE.md) is the WORKER's own, not a displaced PM commit -- legitimate per CLAUDE.md's "every agent
+writes status changes to QUEUE.md", honestly scoped, left on the branch. **Found and confirmed a
+REAL merge conflict** (via `git merge-tree`, not assumed) between PR #653 and PR #654 -- both edit
+the same `REQUIRE_REDIS_SMOKE: >-` line in `redis-shadow-smoke.yml`. Posted the exact 2-line
+resolution as a PR comment for whichever merges second. Independently reproduced the negative
+control in a worktree (real exit 1, expected message) AND cross-checked the real CI job log for the
+`PASS: negative control ...` line (Rule Q proof-of-execution). Moved FOLLOW-762 to READY_FOR_REVIEW.
+**Not merged -- needs Piotr.**
+
+**4 PRs now open, all independently PM-validated, none merged:** #652 (FOLLOW-765+759), #653
+(FOLLOW-761), #654 (FOLLOW-762). #653/#654 conflict on one line (resolution posted); #652 is
+unrelated (different subsystem).
+
+**Corrected the coordinator's ticket-agent claim before dispatching:** FOLLOW-763's own stub names
+`recommended_agent: backend-engineer`, not sdk-engineer.
+
+**Checked file-collision risk before picking the next dispatch (learned from the #653/#654
+conflict):** FOLLOW-763 touches `tests/integration/redis-shadow-round-trip.smoke.test.ts` -- the
+SAME file 3 open PRs already touch or have touched (#653, #654) -- deferred. FOLLOW-769 touches
+`scripts/check-sentry-{capture-has-init,init-singleton}.sh` -- the SAME two files PR #652
+extensively rewrites, unmerged -- deferred, same reasoning as FOLLOW-768. FOLLOW-766 + FOLLOW-767
+both touch `scripts/check-mirror-files.sh` (766 also `scripts/mirror-files.json`) but in
+non-overlapping regions, and NEITHER file is touched by any of the 3 open PRs -- safe to dispatch,
+combined to one agent to avoid a two-worker collision on the same file (same pattern as
+FOLLOW-765+759).
+
+**CI-check counters:** PR #652 1/5, PR #653 1/5, PR #654 1/5 -- all awaiting Piotr.
+
+**0 tickets IN_PROGRESS before this dispatch. 3 tickets READY_FOR_REVIEW** (PR #652, #653, #654).
+
+NEXT: dispatch FOLLOW-766+767 combined (devops-engineer). FOLLOW-763 and FOLLOW-769 stay deferred
+until their respective file-conflicting PRs merge. Piotr reviews/merges the 3 open PRs (mind the
+#653/#654 conflict) when able.

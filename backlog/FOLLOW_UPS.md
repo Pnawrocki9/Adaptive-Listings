@@ -23819,7 +23819,8 @@ AE / J]
 
 source_retro: RETRO-239 (PR #651, FOLLOW-746) source_ticket: FOLLOW-746 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-767 to devops-engineer on
+Sonnet)
 
 **The finding (HW-2).** PR #651 added two keys to `scripts/mirror-files.json`. `basename_discovery`
 (bool) has a producer and a consumer. `basename_discovery_note` (string) has **only a producer**.
@@ -23864,7 +23865,8 @@ cross_ref: [RETRO-239 §3 HW-2; `scripts/mirror-files.json:14`;
 
 source_retro: RETRO-239 (PR #651, FOLLOW-746) source_ticket: FOLLOW-746 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-766 to devops-engineer on
+Sonnet)
 
 **The finding (LG-1), proven on `main` rather than reasoned about.**
 `scripts/check-mirror-files.sh:368-372` prunes `-name .worktrees` (with a leading dot). This repo's

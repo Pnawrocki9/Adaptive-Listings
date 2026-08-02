@@ -119,7 +119,70 @@ regression hole, the same status the four FOLLOW-757 shapes had before they were
 
 ---
 
-## ▶️ START HERE — session 87 (2026-08-02) — retro dispatched for FOLLOW-757+752, FOLLOW-746 picked next
+## ▶️ START HERE — session 88 (2026-08-02) — retro owed for FOLLOW-760 (#650) + FOLLOW-746 (#651), dispatched combined before any new ticket
+
+**State re-verified before acting, not taken on trust:** `git status` clean on `main` at `1f5f73c7`,
+byte-identical to `origin/main`. `gh pr list --state open` → empty.
+`ps -eo pid,lstart,cmd | grep 'claude --agent'` → none running (PID 1222 is this main-loop session
+itself, not a dispatched worker, per session-87's own finding — unchanged). `git worktree list` →
+only the primary tree. `grep -c "^## OPEN" backlog/ESCALATIONS.md` → 5, same set as every prior
+session close: ESC-020 (Rafał web-master deploy, ~27d), ESC-041 (dead npm `Release` workflow),
+ESC-042-narrowed (Modal `intent-engine` operator deploy), ESC-044 (consent-hash DPO ruling,
+self-scoped to FOLLOW-704/706/710/711/714/701), ESC-045 items 2-3 (local Upstash shim, operator).
+All five carry either the standing 2026-07-27 CEO dispatch-policy ruling (ESC-020/041/042:
+non-blocking-for-dispatch) or their own self-scoping to a named, unrelated ticket list (ESC-044) /
+narrowed scope (ESC-045) — none touch `scripts/check-sentry-*.sh`, the CI-gate shell logic, or
+backlog bookkeeping. Applied cleanly, per this repo's own multi-session precedent (session 87 and
+earlier heads, same reasoning). No new escalation.
+
+**Two tickets reached DONE since the last retro landed (RETRO-238, which covered FOLLOW-757+752) and
+neither has had its retrospective run yet:** FOLLOW-760 (PR #650, `e9403844`, merged 2026-08-02) and
+FOLLOW-746 (PR #651, `4446e69c`, merged 2026-08-02). Per CLAUDE.md's "Per-ticket retrospective loop"
+and step 6 of the operating instructions, this is owed before any new ticket is picked — same
+sequencing this repo used for 743+744 and 757+752.
+
+**Judged combined, one RETRO entry (RETRO-239):** both are the direct continuation of the same
+gate-hardening chain RETRO-238 already analyzed (757 → 760 found a hole in 757's own fix → 746 was
+760's originally-planned next step, expanded with three corrections RETRO-238 itself supplied as
+FOLLOW-764). Reading them together lets the retro trace that chain end-to-end in one pass —
+including whether FOLLOW-746's item-8 "shared helper, not a copy" decision actually closed the Rule
+J/K.1 copy hazard RETRO-238 flagged, and whether the shared `clean-python-source.sh` helper
+introduces any new single point of failure across both gates. Dispatching separately would very
+likely re-derive the same cross-reference twice.
+
+**Dispatched `retrospective-analyst` / model: Opus** — per CLAUDE.md's model-fit rule,
+retrospectives get Opus for cross-module wiring + rule-promotion judgement (the tier used for every
+prior RETRO-NNN this sprint; no reason to downgrade for two small, mechanically-similar PRs — the
+judgement work, not the diff size, is what needs the tier). Branch:
+`retrospective-analyst/RETRO-239-follow-760-746-combined`. Brief includes: PR #650 + #651 diffs,
+`docs/MASTER_DESIGN.md` §Snapshot.1, current `CONVENTIONS_PATCH.md` rules, no new
+`backlog/HANDOFFS.md` note for this pair, and instructions to read the last 5 retro entries
+(RETRO-235 through RETRO-238) before writing, per its own standing procedure.
+
+**Nohup dispatch mechanism** (no Task/Agent tool available to this PM session):
+`claude --agent retrospective-analyst -p "<brief>" --permission-mode acceptEdits --model opus` in
+the background. Per `feedback_pm_nohup_dispatch_silently_fails`, the log will buffer until the
+process exits — will confirm the real worker is alive via `pgrep -af "agent retrospective-analyst"`
+before concluding anything, not an empty/quiet log. Log path recorded in `backlog/STATUS.md`
+immediately after the dispatch command returns.
+
+**No ticket picked yet this turn** — one Bash-capable agent at a time into this shared working tree,
+per `feedback_no_concurrent_git_with_subagents`; the next PM invocation reads RETRO-239, confirms it
+landed on its own branch (not `main`, not a stray branch), merges the docs-only commit, THEN picks
+the next ticket. Candidates already surfaced for that next turn, not dispatched now: FOLLOW-759 (P1,
+devops, allowlist-inventory half-wire), FOLLOW-761/762/763 (P2/P2/P3), and the older
+738/739/740/741/747/748/749/750/751/753/754/755/756/758 stubs — none outrank the owed retro.
+
+**0 tickets IN_PROGRESS.** 5 escalations OPEN, unchanged, all non-blocking-for-dispatch per the
+reasoning above.
+
+NEXT: Wait for the retrospective-analyst to finish (expect RETRO-239 in `backlog/RETROSPECTIVES.md`
+covering FOLLOW-760 + FOLLOW-746), confirm it landed on its own branch, merge it, then pick the next
+ticket from the FOLLOW_UPS.md candidates listed above.
+
+---
+
+## ▶️ (superseded) START HERE — session 87 (2026-08-02) — retro dispatched for FOLLOW-757+752, FOLLOW-746 picked next
 
 **State re-verified before acting, not taken on trust:** `git status` clean, `main` == `origin/main`
 at `5b0b2c98`. `gh pr list --state open` → empty. `ps -eo pid,lstart,cmd | grep 'claude --agent'` →

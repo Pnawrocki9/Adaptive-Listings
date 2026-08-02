@@ -694,3 +694,30 @@ next session rather than dispatch blind).
 
 NEXT: Use the backend-engineer subagent on FOLLOW-684. (table row: control-plane/auth/onboarding
 HTTP)
+
+---
+
+# Status — 2026-08-02 (session 88 — retro dispatched for FOLLOW-760 (#650) + FOLLOW-746 (#651))
+
+## SESSION 88 — combined retro dispatched before any new ticket
+
+**State:** `main` clean at `1f5f73c7`, matches `origin/main`. No open PRs, no running workers, no
+stranded worktrees. 5 escalations OPEN (ESC-020, ESC-041, ESC-042-narrowed, ESC-044, ESC-045 items
+2-3) — all non-blocking-for-dispatch per standing rulings / self-scoping, unchanged from session 87.
+
+**Action this turn:** FOLLOW-760 (PR #650) and FOLLOW-746 (PR #651) both reached DONE today with no
+retrospective run yet (last retro was RETRO-238, covering FOLLOW-757+752). Dispatched a combined
+`retrospective-analyst` (model: Opus, per CLAUDE.md model-fit rule for retros) on branch
+`retrospective-analyst/RETRO-239-follow-760-746-combined`. Nohup'd (no Task/Agent tool in this
+session):
+`claude --agent retrospective-analyst -p "<brief>" --permission-mode acceptEdits --model opus &`.
+PID/log recorded below once confirmed alive.
+
+**CI-check counter:** n/a (docs-only retro, no code ticket dispatched this turn). **Fix-iteration
+counter:** n/a.
+
+**0 tickets IN_PROGRESS.**
+
+NEXT: Wait for retrospective-analyst (expect RETRO-239 in backlog/RETROSPECTIVES.md), confirm its
+own branch, merge, then pick the next ticket (candidates: FOLLOW-759, FOLLOW-761/762/763, and older
+P2/P3 stubs — see QUEUE.md session-88 head for the full list).

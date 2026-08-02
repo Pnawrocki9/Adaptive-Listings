@@ -382,6 +382,39 @@ worker's own exit behavior stops relying on the PM catching it every time.
 
 ---
 
+### FOLLOW-762 — dispatch record (IN_PROGRESS)
+
+**Picked 2026-08-03 (session 89, same continuous turn) now that FOLLOW-761 (PR #653) is
+READY_FOR_REVIEW and no longer concurrently touching `redis-shadow-smoke.yml` in this session** —
+the collision risk was two agents editing the same file in parallel branches within one session; two
+sequential PRs against the same file, reviewed/merged in whatever order Piotr chooses, is normal and
+not the hazard that was being avoided.
+
+**assigned_to:** devops-engineer **model: Sonnet** — delegation-table row "Terraform, CI/CD,
+workflows, secrets, observability, runbooks". Mechanical, fully-specified: scope a soft-skip
+condition, add one negative-control test, re-word two header comments, verify (not blindly fix) a
+possibly-already-stale STATUS.md claim. No design ambiguity, no prior failed attempt at this task.
+**started_at:** 2026-08-03. **branch:** `devops-engineer/FOLLOW-762-redis-smoke-hardfail-scope`.
+
+**Brief explicitly warns the worker that FOLLOW-761's `concurrency:`/`NX_RUN_SUFFIX` changes are on
+an unmerged PR and will not be visible on their branch** — different region of the same file,
+expected to need a routine rebase whenever the second of #653/this PR merges, not a defect.
+
+**Brief also flags that RETRO-238's DG-1 finding (a stale `ESC-028` claim in `backlog/STATUS.md`)
+may already be moot** — `grep -n "ESC-028" backlog/STATUS.md` on `main` today returns zero hits; the
+file has been rewritten/appended many times since RETRO-238 was filed (2026-07-22). Worker
+instructed to verify fresh and state the answer explicitly either way, not search for stale line
+numbers.
+
+**Standing dispatch-brief addition included verbatim** (return to `main` before exiting).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (FOLLOW-762) — within the ≤3 guardrail. PR #652 and PR #653 are
+READY_FOR_REVIEW, not IN_PROGRESS, awaiting Piotr.
+
+---
+
 ## ▶️ START HERE — session 89 (2026-08-03) — RETRO-239 merged (`9e33bfe3`), FOLLOW-765+759 dispatched combined to devops-engineer/Opus
 
 **State re-verified before acting:** `git status` clean, `main` at `9e33bfe3` before this session's

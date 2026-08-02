@@ -41717,3 +41717,527 @@ tests / 0 events ever delivered) with 3-part second-sighting criteria. FOLLOWS F
 UNTOUCHED (the FOLLOW-744 status-label correction, the ESC-045 pointer re-aim + its two drifted lines,
 the FOLLOW-746/747/748 AC amendments, and the ESC-042 item-1 trigger AC are all PM actions, surfaced in
 §5a/§5d). -->
+
+---
+
+## RETRO-238 — FOLLOW-757 (#648) + FOLLOW-752 (#649) — 2026-08-02
+
+**COMBINED ENTRY — why, and what the combination bought.** The PM's dispatch note (QUEUE.md session
+87) argued the pairing on class similarity: both are "evidence-quality of a gate" merges, both small,
+both merged the same day, and a retro on one alone would re-surface the other's defect shape as a
+"prior pattern" instead of as an instance. That reasoning held, and the combination paid twice in
+ways neither PR could have produced alone:
+
+1. **#648 declared a residual-gap list; #649 landed 44 minutes later and changed one of its inputs.**
+   #648's script header records deferred gap 5 as _"a capture site under `packages/`, `scripts/`,
+   `tests/integration/` … is unscanned — repo-wide grep returns zero hits today"_. #649 then added
+   `tests/integration/nx_invariant_writer.py`, a NEW Python file outside the scanned tree that
+   imports **production** intent-engine modules. The claim survives (verified by grep, §7), but the
+   population it quantifies over doubled inside the same session. Only a combined retro sees that.
+2. **The two PRs fail in opposite directions on the same axis, and each is the other's control.**
+   #648 hardens a gate that is *loud* (hard CI job, self-test first, exit non-zero) and #649 hardens
+   a gate that can go *quiet* (soft-skip on absent secrets). §4a LG-2 — a live Rule Q defect in
+   #649's workflow — is only obvious when read next to #648's insistence that a silent PASS is the
+   dangerous failure mode.
+
+Both PRs are assessed separately wherever the verdict differs (notably §3, where #649 is clean and
+#648 is not, and §8, where #649's closure trace terminates in production and #648's does not).
+
+### 1. Summary of change
+
+- **PR #648 (FOLLOW-757):** merged 2026-08-01 06:48:13 UTC, commit `35ecd80f`. 2 files
+  (+264 / −18). Modules: CI / infra (shell gate) · agent lessons.
+- **PR #649 (FOLLOW-752):** merged 2026-08-01 07:32:06 UTC, commit `a254c0f7`. 4 files
+  (+323 / −12). Modules: qa / integration tests · CI workflow · agent lessons.
+- **Combined:** 6 files, +587 / −30. `35ecd80f` is an ancestor of `a254c0f7`
+  (`git merge-base --is-ancestor 35ecd80f a254c0f7` → true), 44 minutes apart, with two
+  backlog-only commits between them. Bookkeeping follow-ons `5dbf9702` + `5b0b2c98` closed both in
+  `QUEUE.md`; `main` has since moved to `db52ee32`, so this retro is written on
+  `retrospective-analyst/RETRO-238-follow-757-752-retro`.
+- **Key contracts changed:**
+  - **#648** — `scripts/check-sentry-capture-has-init.sh`: the gate's *clearance* and *detection*
+    predicates both changed (comments/docstrings/string-literals are now blanked by a `python3
+    tokenize` pass, `_clean_python_source():122-172`); the file filter changed from the substring
+    glob `! -name "*test*.py"` to anchored `test_*.py` / `*_test.py` / `conftest.py` (`:386-392`);
+    the `! -name "observability.py"` exclusion was **removed**; a new "Allowlist inventory" line is
+    printed on every run (`:394-405`). No `apps/*` source touched. **Breaking: no** — the gate
+    passed against the real tree before and after (verified in both CI logs, §2).
+  - **#649** — no code contract. `tests/integration/nx_invariant_writer.py` (new, 110 LOC) becomes a
+    **new out-of-app consumer of two intent-engine internals** — `write_shadow_intent` and
+    `ChatIntentDetectedPayload`/`ChatIntentDimensions` — imported by `sys.path` injection
+    (`:36-38`, `:47-48`). `.github/workflows/redis-shadow-smoke.yml` gained no new step, only two
+    header claims and a name change. **Breaking: no.**
+  - **Neither PR changed a public API surface** (`@estalara/sdk` exports, ingest event schema,
+    decision-API contract). No escalation trigger under CLAUDE.md's autonomy rules. Master Design
+    alignment checked (§5d): §D.1.1 (`MASTER_DESIGN.md:1770`) already reads _"implemented by
+    FOLLOW-736 2026-07-30"_ — no divergence introduced by either merge, nothing to propagate.
+
+### 2. Verification done in PR
+
+- **#648** — test files changed: none in the conventional sense; **4 new self-test fixtures** added
+  inside the gate itself (`:275-361`), one per closed shape. Assertions added: 4 negative controls
+  (each asserts the gate now exits non-zero) on top of the 3 pre-existing controls. Coverage delta:
+  N/A (shell). **Red-first evidence: yes, and independently re-verified** — the PR body pastes the
+  pre-fix false-PASS transcript for each of the four shapes, and QUEUE.md records the PM
+  re-reproducing three of the four. CI: **67 pass / 2 fail**, both failures `Rule I — wired-or-dead`
+  (pre-existing red, duplicated across the push+PR runs).
+- **#649** — test files changed: `tests/integration/redis-shadow-round-trip.smoke.test.ts`
+  (+188/−12) and `tests/integration/nx_invariant_writer.py` (new). Assertions added: **11** across 2
+  new cases. CI: **68 pass / 2 fail** (same two `Rule I` rows).
+- **The one check that mattered, re-derived and not taken from the PR body** — the merged smoke
+  job's own log (`run 30689930449`, job `91342725760`, on the merge commit): `Test Files 1 passed
+  (1)` · `Tests 4 passed (4)`, with both FOLLOW-752 cases named and timed (`AC1(a) … 4072ms`,
+  `AC1(b) … 1013ms`). **Not skipped.** This is the fact FOLLOW-752 exists to establish, so verifying
+  it from the log rather than from the description was non-negotiable.
+- **Rule AF series — flat at 192 for the SIXTH and SEVENTH consecutive readings** (179 → 183 → 191 →
+  192 ×7). Both re-derived independently by counting `WARN:` lines in the two `Rule I` job logs
+  (`91292426077` → 192, `91341530502` → 192), not read off a summary. No action; FOLLOW-591/602 own
+  it.
+- **Rule Q compliance, #648:** self-test step ordered **before** the assertion step
+  (`ci.yml:698-702`), no `continue-on-error`, and the run log shows all seven `OK: self-test PASSED`
+  lines plus the new `Allowlist inventory … 0 occurrence(s)` line. Fourth consecutive gate-shipping
+  PR to comply. **Rule Q non-compliance, #649:** see §4a LG-2 — the *other* gate in this pair can
+  still go green without asserting anything.
+
+### 3. Wiring Audit
+
+**PR #649 — Wiring Audit — clean ✅.**
+
+- CHECK A: `tests/integration/nx_invariant_writer.py` (new file) has a real *runtime* consumer:
+  `runNxWriter()` at `tests/integration/redis-shadow-round-trip.smoke.test.ts:301-304` resolves it
+  by path and `spawnSync('python3', …)` it; called 3× (`:357`, `:371`, `:417`). It is not an import,
+  so no importer grep would find it — recorded explicitly because a mechanical CHECK A run would
+  have flagged it as orphaned. New TS helpers `runNxWriter` / `fetchTtl` / `sleep` are each consumed
+  in the same file. `deleteShadowChatIntent` is **not** new and is not test-only: it is a production
+  export (`apps/control-plane/src/lib/chat-intent-cache.ts:151`) with a production consumer
+  (`apps/control-plane/src/app/api/dsr/erase/route.ts:60,120` — the GDPR Art. 17 erase path).
+- CHECK B: no new event, env var, column, topic or SDK signal. `REQUIRE_REDIS_SMOKE` and the four
+  `UPSTASH_*` secrets are pre-existing and have both a producer (workflow `:106-113`) and a consumer
+  (spec `:86-114`, writer `:41-52`).
+
+**PR #648 — one finding.**
+
+- **HW-1 · HALF_WIRE_P · P1 · `scripts/check-sentry-capture-has-init.sh:394-405` · the "Allowlist
+  inventory" signal → FOLLOW-759.** AC5 shipped a new CI signal: a count plus `file:line` of every
+  `sentry-init-guard: allowlisted` occurrence, printed on every run. It has a producer and **no
+  consumer**: nothing compares the count to a committed baseline, nothing annotates it
+  (`::notice::`), no artefact, no threshold — and the job it prints into is **green**. The stated
+  purpose (FOLLOW-757 stub: _"an allowlist that grows is invisible"_) is therefore only half met —
+  the gap moved from _"invisible unless you grep the source"_ to _"invisible unless you open a
+  passing job's log"_. Same organ as Rule AJ (a producer-only alarm is a HALF_WIRE_P, not
+  observability), one domain over: a suppression counter rather than a failure signal. Classified P1
+  per the standing HALF_WIRE_P rule; **live impact is latent** — the inventory reads
+  `0 occurrence(s)` today (verified in the merged run log), so nothing is currently hidden. The stub
+  records both facts so the PM prices it honestly rather than inheriting the label.
+- CHECK A otherwise clean: no new files; `_clean_python_source()` (`:122-172`) is consumed at
+  `_check_file():179`; the script is wired as a hard CI job at `ci.yml:699,702` and both steps were
+  observed `pass`.
+- CHECK B otherwise clean: `SENTRY_CAPTURE_INIT_TARGET` (the self-test's scan-dir override) is
+  pre-existing and has both sides.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, #649) — the workflow has no `concurrency` group, the NX fixtures use FIXED keys, and
+  two runs on the SAME commit share ONE Upstash instance. Measured, not theorised.**
+  `redis-shadow-smoke.yml:26-45` triggers on `push` (all agent-prefixed branches) **and**
+  `pull_request` → an agent branch with an open PR fires **both**. On the FOLLOW-752 branch itself
+  this happened: runs `30689414605` (push) and `30689433455` (pull_request) started **34 seconds
+  apart** on the same commit; their smoke steps ran `07:17:26→07:17:34Z` and `07:18:00→07:18:08Z` —
+  they **missed each other by 26 seconds**. Both wrote
+  `shadow:smoke-tenant-752-warm:smoke-session-752-warm:chat_intent`
+  (`redis-shadow-round-trip.smoke.test.ts:286-289`, hard-coded), and the warm case now spans ~4 s of
+  wall clock (`:357` signal write → `:368` `sleep(2_500)` → `:371` empty write → `:377` read →
+  `:396` TTL read). **Both directions of failure are reachable and the false-GREEN one is the
+  serious half:** if `nx=True` were broken, run A's `empty` write clobbers the key, a concurrent run
+  B `signal` write restores it, and run A's value assertion (`:382-393`) **passes** — the gate whose
+  entire purpose is to prove NX would certify a broken NX. (The TTL half at `:396-405` is the more
+  robust assertion and would more likely go false-RED instead — worth stating, because it means the
+  D4 half is carrying the D3 half.) AC-RT1's older fixture is insensitive to this (it writes one
+  value and reads the same value back), so **the exposure is new with these two cases**. The nightly
+  cron adds a third writer. → **FOLLOW-761**.
+- **LG-2 (P2, #649) — a live Rule Q defect: the soft-skip is no longer scoped to its one intended
+  condition, and this PR asserted the opposite in two files.** The job computes `secrets_present`
+  (`:93-100`) and sets `REQUIRE_REDIS_SMOKE=1` only when all four secrets exist (`:110-113`); the
+  spec's hard-fail throw (`smoke.test.ts:105-119`) is gated on that same flag, and every `it` is
+  `it.skipIf(!HAS_ALL_CREDS)` (`:163,230,355,411`). That design was correct **while ESC-028 was
+  open** — "not yet provisioned" was a real, intended skip condition. ESC-028 was resolved
+  2026-07-13 (`backlog/ESCALATIONS.md:1724`), and this PR's own header now says so, in two places,
+  in the strongest possible terms: _"so this job runs in hard-fail mode (`REQUIRE_REDIS_SMOKE=1`) on
+  every push/PR, not soft-skip"_ (`redis-shadow-smoke.yml:16-18`; mirrored at `smoke.test.ts:39-43`).
+  The **mechanism** still says something weaker: hard-fail *iff* the secrets happen to be present. A
+  rotated, revoked or deleted secret silently returns the only real-Redis gate in the repo to a
+  **green badge over four tests that did not run** — the exact RETRO-007 failure mode Rule Q was
+  promoted for, in the PR whose thesis is that a green signal must not be read as "checked". The
+  remaining legitimate skip condition is narrow and expressible
+  (`github.event.pull_request.head.repo.fork == true`, or local dev). → **FOLLOW-762**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, #648) — the tokenizer's fallback silently restores the exact false-GREEN the PR
+  removed.** `_clean_python_source()` ends in a bare `except Exception:` (`:165-169`) that writes the
+  **raw, uncleaned** file to stdout. For any file `python3 tokenize` cannot process (unterminated
+  string, inconsistent dedent, an encoding the tokenizer rejects, a future-syntax file under an
+  older runner interpreter), **both** the detection regex (`:184`) and the clearance regex (`:204`)
+  revert to pre-FOLLOW-757 behaviour — a docstring or trailing-comment mention of `init_sentry(`
+  clears the file again — and the gate prints **nothing**: no warning, no counter, no exit-code
+  change. The comment above it calls this "fail safe … rather than crash the gate", which is true
+  about the process and false about the assertion: for a gate, falling back to a weaker predicate
+  **is** the unsafe direction. It is also the one shape this PR's own AC6 residual list does not
+  mention. Not live today (all repo Python tokenizes cleanly — the real-tree run is green and the
+  fallback path is unexercised). → **FOLLOW-760**.
+- **CB-2 (P3, #648) — the allowlist inventory reports on a different region than the gate scans
+  (Rule AL instance).** `FILES` (`:386-392`) is `*.py` under `apps/*/src` minus `test_*.py`,
+  `*_test.py`, `conftest.py`. The inventory grep (`:395-397`) is
+  `grep -rn "sentry-init-guard: allowlisted" "${SCAN_DIRS[@]}"` — **no `--include=*.py`, no
+  test-file exclusion**. So the count can include suppressions in files the gate never honours (a
+  `test_*.py`, a `.md`, a fixture) and can never include one outside `apps/*/src`. An inventory that
+  over- and under-counts in opposite directions is worse than none for the "is the suppression set
+  growing?" question it exists to answer. Textbook **Rule AL** ("an assertion MUST be evaluated over
+  the SAME region its consumer reads"). → folded into **FOLLOW-759** (same file, same output block).
+- **CB-3 (P3, #648, latent) — the detection side still requires the literal `sentry_sdk.` prefix,
+  and the PR's residual list does not say so.** `:184` matches only
+  `sentry_sdk\.(capture_exception|capture_message)\(`. A file using
+  `from sentry_sdk import capture_exception` (or `import sentry_sdk as s`) and calling
+  `capture_exception(e)` with no initialiser is invisible → false GREEN. Verified **zero** such
+  imports repo-wide today (`grep -rn "from sentry_sdk import\|import sentry_sdk as" --include=*.py`
+  → no hits), so this is latent exactly as shapes 3 and 4 were. It matters because AC6 asked for an
+  explicit statement of whether the class is fully enumerated, and the PR answered "PARTIALLY, the
+  residual is {unscanned dirs, unquoted word-split}" — an enumeration itself short by at least this
+  shape and CB-1's. → folded into **FOLLOW-760**.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, #648) — the four new self-test fixtures assert "the gate exited non-zero", not "the
+  gate detected this violation".** Each is
+  `if SENTRY_CAPTURE_INIT_TARGET=… bash "$0" >/dev/null 2>&1; then FAIL` (`:290`, `:311`, `:331`,
+  `:352`) — exit 1 (violation found), exit 2 (self-test failure) and 127 (`python3` missing) are
+  indistinguishable. A gate that crashed on **every** file would "pass" all four. Mitigated, and I
+  checked the mitigation rather than assuming it: the two positive controls earlier in the same
+  self-test (`:255`, `:272`) require exit **0**, so a universally-crashing gate is caught there. P3
+  for that reason. → AC in **FOLLOW-760**.
+- **TG-2 (P3, #648) — no fixture exercises the tokenizer fallback.** The one path where the fix
+  regresses to the old behaviour (CB-1) is the one path with no test. A fixture is trivial: a `.py`
+  with an unterminated string plus a docstring-only `init_sentry(` mention and a real capture.
+  → AC in **FOLLOW-760**.
+- **TG-3 (P2, #649) — no negative control for the skip path.** The suite proves the assertions pass
+  when creds are present; nothing proves the job *fails* when the creds are absent-but-required
+  (`REQUIRE_REDIS_SMOKE=1` + missing secret → the throw at `smoke.test.ts:105-119`). That throw is
+  the entire Rule Q guarantee and has never been executed in CI. → AC in **FOLLOW-762**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, #649) — `backlog/STATUS.md` still asserts the state #649 flipped (Rule AI
+  instance).** `STATUS.md:64` lists ESC-028 as `OPEN — 4 secrets … Piotr/Rafal must provision`, and
+  `:11` (inside the file's **CURRENT**, explicitly not-stale block, dated 2026-07-22) says it is
+  _"believed superseded … but not re-closed in this file"_ — false about `ESCALATIONS.md`, where
+  ESC-028 was marked `RESOLVED 2026-07-13` by commit `196d4310` (2026-07-14), eight days earlier.
+  The drift is pre-existing; #649 is the change that made the contradiction three-way by writing the
+  RESOLVED claim into two more files without carrying it to the third. Rule AI's letter ("every
+  document asserting the prior state, IN THE SAME PR") makes this the PR's to fix. → folded into
+  **FOLLOW-762**.
+- **DG-2 (P3, #649) — the reader's type contract does not admit the field the new test asserts.**
+  `ShadowChatIntent` (`apps/control-plane/src/lib/chat-intent-cache.ts:47-51`) declares exactly
+  three members: `intent_dimensions`, `archetype_hint`, `confidence`. FOLLOW-730's provenance
+  markers (`data_source`, `extraction_error`) are written by the Python producer and are **not** in
+  the TS type, so the cold-key assertion must launder them through a double cast:
+  `expect((result as unknown as { data_source?: string }).data_source).toBe('model')` (`:431`). It
+  passes only because `readShadowChatIntent` returns the parsed object unchanged (`:113,118`) rather
+  than constructing a picked object — undeclared passthrough the type deliberately does not promise.
+  **Not a duplicate of FOLLOW-754**, which corrects ADR-0020 §D6's *prose* about visibility; this is
+  the *type-level* half of the same visibility question, and it is now load-bearing for a merged CI
+  gate. It also pre-loads FOLLOW-740 (the one remaining visibility route), whose consumer will have
+  to declare these fields before it can read them. → **FOLLOW-763**.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-746 — about to be dispatched, and three of its premises moved under it.** The
+  highest-value item in this retro, because the dispatch is the PM's *next* action (QUEUE.md session
+  87: _"then dispatch devops-engineer on FOLLOW-746"_).
+  1. **The sibling gate carries a fourth hole FOLLOW-746 does not mention, and on that axis it fails
+     in the SAME silent direction — which contradicts the framing every prior artefact uses.**
+     `scripts/check-sentry-init-singleton.sh:123` is `--exclude="*test*.py"` — verbatim the
+     substring-glob shape #648 just fixed (its shape 3). FOLLOW-746's ACs cover the basename
+     exclusion (AC2), the comment filter (AC3), mirror discovery (AC1) and the CB-5 docstring (AC4);
+     **the substring glob is absent.** And the direction argument does not protect it: FOLLOW-757's
+     stub, RETRO-237 §6 and QUEUE.md's dispatch note all justify 746's lower priority with _"there a
+     trailing comment causes a false RED (loud, self-correcting); here a false GREEN (silent,
+     permanent)"_. That is **true for the comment-filter axis only**. An *exclusion* defect drops
+     files from the scan, so in the singleton guard a production module named `latest_pricing.py`
+     carrying a bare `sentry_sdk.init(` is **silently unseen** — false GREEN, exactly as in the
+     capture gate. **Explicit reconciliation:** RETRO-237 §6's direction clause is not wrong, it is
+     under-quantified — it generalised from the filter axis to the whole gate. Two of the four
+     shapes (3 and 4, both exclusions) fail silently in *both* gates. Zero such files exist today
+     (all 20 `*test*` basenames under `apps/*/src` are genuine `test_*.py`/`conftest.py`), so this
+     is a latent hole, not a live one — the same status the four closed shapes had.
+  2. **FOLLOW-746 AC2's stated rationale is now false.** It says to narrow the singleton guard's
+     exclusion to the paths registered in `mirror-files.json` _"so the two gates cannot drift
+     apart"_. #648 did not narrow the capture gate's exclusion — it **removed** it outright, after
+     empirically verifying the three registered mirrors contain zero capture call sites (I re-ran
+     that grep: confirmed). The two gates now *must* differ, and correctly so: the singleton guard's
+     exclusion is load-bearing (the mirrors are where the legitimate `sentry_sdk.init(` lives), the
+     capture gate's bought nothing. The AC should keep its mechanism and drop its symmetry
+     justification, or the implementer will chase a convergence that no longer exists.
+  3. **AC3 is now a copy decision, not a design decision — and copying is the trap.** #648 shipped
+     the technique AC3 asks for: `_clean_python_source()`, a ~50-line embedded `python3 tokenize`
+     heredoc. Transplanting it into the sibling creates a **third unregistered duplicate of shared
+     logic in the Rule J / Rule K.1 gap** — `scripts/mirror-files.json` registers only the two
+     `observability.py` pairs, and `check-mirror-files.sh`'s `strip_comments()` (`:33-40`) handles
+     `/* */` and `//`, i.e. cannot express a bash/python hybrid — and both copies would inherit
+     CB-1's silent fallback, which nobody has fixed yet. The structural options (extract to a shared
+     `scripts/lib/` helper, or register the pair) both exist; neither is in the ticket.
+     → **FOLLOW-764** carries all three as dispatch input.
+- **FOLLOW-756 (P1, `SENTRY_DSN` provisioning) — premise UNCHANGED and correctly untouched.** #648
+  hardened the gate around the signal; it did not and could not provision the channel. Verified: no
+  `SENTRY_DSN` value appears anywhere in this diff. §5d has the aggregate consequence.
+- **FOLLOW-758 (P2, `init_sentry` return contract) — unaffected.** #648 changed no `apps/*` source,
+  per its own AC6 constraint; all four call sites are byte-identical to their RETRO-237 state.
+- **FOLLOW-754 / FOLLOW-740 (shadow-intent visibility) — premise unchanged, one new input.** DG-2
+  gives FOLLOW-740's future consumer a concrete blocker (the reader type omits the markers) and
+  FOLLOW-754's AC5 a concrete example. No duplicate stub for either; FOLLOW-763 is scoped to the
+  type declaration alone and cross-refs both.
+
+#### 5b. Future sprint tickets affected
+
+- **ESC-042 item 1 (prod Modal deploy of `estalara-intent-engine`) — this merge makes it sharper,
+  not looser.** `modal-deploy.yml:90` still deploys only `apps/llm-gateway/src/main.py`. So
+  `redis_writer.py`'s `nx=True` — the invariant #649 now proves against a real Redis on every push —
+  runs in **CI and localhost only**. The proof is real; the protected path is not deployed. Rule AA
+  split, recorded in §5d.
+- **FOLLOW-368's successor work (any future real-Redis assertion)** inherits LG-1: every new case
+  added to this file shares one instance and one key namespace with every concurrent run. Fixing the
+  concurrency once (FOLLOW-761) is cheaper than per-case key namespacing forever, and the stub says
+  so.
+- **The next Modal app to adopt `observability.py`** now meets a capture gate with no basename
+  exclusion — strictly better than the RETRO-235 state — but still one that only scans `apps/*/src`
+  (residual 5) and only sees `sentry_sdk.`-prefixed calls (CB-3).
+
+#### 5c. Contracts changed others rely on
+
+- **New cross-tree consumer of intent-engine internals.** `tests/integration/nx_invariant_writer.py`
+  imports `write_shadow_intent` (`redis_writer.py`) and `ChatIntentDetectedPayload` /
+  `ChatIntentDimensions` (`schemas.py`) from **outside the app**, via `sys.path.insert` (`:36-38`).
+  Renaming either symbol, or making a constructor argument required, now breaks a CI gate that lives
+  in a different tree and that no `apps/intent-engine` test run would catch. This is the desirable
+  direction (**Rule Z** — the gate is *supposed* to exercise the production writer, and this is
+  precisely how it avoids being another MagicMock), but it is a new coupling and it is undocumented
+  in `redis_writer.py`'s header. Recorded for the architect; no stub (the coupling is correct, only
+  its discoverability is thin, and FOLLOW-761 touches the same file).
+- **CI-output "contract":** the allowlist inventory line and the `sentry-init-guard: allowlisted`
+  vocabulary. Nothing parses either (HW-1). No downstream consumer to break.
+- **No public API surface changed by either PR** — re-verified against CLAUDE.md's escalation list.
+
+#### 5d. Architectural assumptions affected
+
+- **"A gate proves the code is right" vs "the code runs" — Rule AA, on both merges at once.** #649
+  proves NX on a real Redis for an app that `modal-deploy.yml:90` does not deploy to prod. #648
+  hardens the third Sentry gate for a signal path whose DSN is still unprovisioned (FOLLOW-756).
+  Both are *correct tickets*, correctly scoped and correctly executed. The aggregate is that the two
+  best-verified subsystems in the repo this week are the two that emit nothing in production.
+- **The deferred-gap list is now a live artefact, not a footnote.** #648's header records residuals
+  5 and 6 as "verified not live". I re-verified **both on `main` today, independently**: (5)
+  repo-wide `grep -rn "sentry_sdk\.(capture_exception|capture_message)\(" --include=*.py` returns 6
+  hits, all under `apps/*/src` (`nlp.py:325,327`, `consume_embed_seed_requests.py:305,432`,
+  `schema_validation.py:491`, `generate_description.py:433`) — **still zero outside**; (6)
+  `for f in $FILES` at `:410` is still unquoted and no filename under `apps/*/src` contains
+  whitespace. Both remain latent. **But the population under assumption (5) is moving:**
+  `tests/integration/` went from one Python file to two in the same session, and the new one imports
+  production code. The assumption is not wrong; it is thinner than when it was written 44 minutes
+  earlier.
+- **Rule AG exposure, recorded not filed.** Both PRs appended to a shared per-agent `lessons.md`
+  tail (`devops-engineer/lessons.md` +33, `qa-engineer/lessons.md` +23); neither agent has a
+  `lessons.d/` fragment directory (only `retrospective-analyst` does). No collision occurred and
+  Rule AG's condition ("while other agents may be running") was not met — dispatch was strictly
+  serial this session, by explicit design after the session-85 collision. So: **compliant on the
+  rule's letter, exposed the moment parallel dispatch resumes.** No stub — tooling/process is PM
+  territory and I do not escalate on the PM's behalf.
+
+### 6. New lesson candidates
+
+- **Rule AE-as-amended — FIRST post-amendment instance, and it fires on the very script whose
+  defects promoted it. No further amendment; sighting banked.** RETRO-237 §6 amended AE 18 hours
+  before this merge, adding the **clearance-side** clause ("enumerate the shapes that make a guard
+  declare a file CLEAN"). #648 closed four such shapes and immediately left two more: **CB-1** (a
+  silent fallback to the *old* predicate — a clearance-side shape the amendment's wording covers but
+  nobody looked for, because it is created by the fix rather than surviving it) and **CB-3** (a
+  detection-side import shape AE's *original* clause always covered). The amendment is not
+  deficient — its application was. Worth banking precisely because it is the failure mode a fresh
+  rule is most prone to: the ticket enumerated the shapes **the finding named**, which is one level
+  better than "the shape the regression used" and still one level short of "every shape". No new
+  rule, no re-amendment at 1 day old.
+- **Rule AL — instance sighting, codified, no promotion needed.** CB-2: the allowlist inventory
+  greps a region (`SCAN_DIRS`, all file types, tests included) that is not the region its own gate
+  reads (`FILES`, `*.py`, tests excluded). Same organ as the P-17 sightings that promoted AL.
+- **Rule Q — instance sighting with a NEW sub-shape worth noting, still no promotion (codified).**
+  LG-2 is not "a gate that soft-skips without proof" (Q's original shape) but **"a soft-skip whose
+  one intended condition EXPIRED"**. The condition was legitimate when written (ESC-028 open) and
+  became illegitimate when the escalation resolved, with no mechanism to notice. Q's second clause
+  ("its soft-skip MUST be scoped to the ONE intended condition") already covers it on the letter;
+  what is new is that scope can rot with time rather than being wrong at authorship. Recorded for
+  the next Q sighting; not proposed as an amendment on one instance.
+- **Rule AI — instance sighting (DG-1), codified.**
+- **P-21 ("A GATE IS ACCEPTED AS A SUBSTITUTE FOR THE CHANNEL IT GUARDS") — ADVANCED to count 2
+  (1 PRIOR retro: RETRO-237 §6). THRESHOLD NOT MET → NOT PROMOTED.** RETRO-237 minted it at count 1
+  with 3 explicit second-sighting criteria; I tested this merge against all three rather than by
+  feel: (i) *≥2 CI gates or tests shipped for a signal path* — FOLLOW-736's 4 unit tests + #649's
+  real-Redis gate ✅; (ii) *the path's terminal delivery channel still unprovisioned or unverified at
+  the later merge* — the intent-engine Modal app is absent from `modal-deploy.yml:90`, so in prod the
+  shadow key is never written and `readShadowChatIntent` (`route.ts:1579`) fails open on every
+  request ✅; (iii) *a register artefact describing the work as complete* — QUEUE.md's session-pause
+  "Shipped" list: _"the `SET … NX` invariant is now gated on a REAL Redis instance"_ ✅. **Crucially
+  this is a DIFFERENT artefact from RETRO-237's** (the shadow-intent write path, not `SENTRY_DSN`),
+  which is exactly the bar RETRO-237 set when it declined the Rule AJ advance for same-artefact
+  hops. So the advance is legitimate — and it still stops at count 2, because the house convention
+  (RETRO-232 §6, re-derived here rather than inherited) requires **2 PRIOR retros** and there is one.
+  **One amendment to the criteria, pre-specified so the third sighting is not argued about:**
+  criterion (ii) says *delivery channel*, which fits a Sentry DSN and fits this case only by
+  extension (here it is the **producer** that is undeployed, not the sink). The third sighting should
+  carry the disjunction: _"…the path's terminal delivery channel is unprovisioned **or its producer
+  is not deployed in the environment the gate claims to protect**."_
+- **P-22 (MINTED at count 2, 1 PRIOR retro: RETRO-237 §4b CB-1) — "THE REMEDIATION RE-INSTANTIATES
+  ITS OWN DEFECT CLASS IN A NEW MEDIUM." THRESHOLD NOT MET → NOT PROMOTED.**
+  - **RETRO-237 §4b CB-1 (prior, count 1)** — `check-sentry-capture-has-init.sh` was written
+    specifically to close the blind spot of `check-sentry-init-singleton.sh`, and inherited that
+    sibling's comment-filter bug in the process; RETRO-237 counted it under Rule AE (a shape
+    enumeration failure) and did not name the inheritance itself as a pattern.
+  - **THIS RETRO (count 2)** — the fix for "a file is silently cleared by a docstring" contains
+    `except Exception: → raw source` (CB-1 above), which silently clears a file by a docstring for
+    any untokenizable input. Same class, same script, same PR, introduced by the remediation.
+  - **Why this is not already covered.** Rule AO governs a corrective edit that re-asserts a false
+    *claim*, re-verified against the PR's own evidence — both instances here are *behaviour*, not
+    prose, and AO's mechanical check (re-run the correction against the evidence table) would not
+    fire on a fallback branch no fixture exercises. Rule AE governs which shapes a guard enumerates,
+    not whether the fix creates new ones. Rule AL is region, not medium. My own standing meta-note
+    ("the remediation inherits the original's **region** assumption", RETRO-232 lessons) is the
+    region-specific ancestor that became Rule AL — P-22 is its generalisation to *any* defect class.
+  - **Third-sighting bar, pre-specified:** it must be (a) a different subsystem and different
+    author, (b) a defect introduced **by** a remediation rather than surviving it, and (c) of the
+    **same class** the remediation was written to remove — not merely "the fix had a bug". If it
+    arrives, the rule should ask for one thing: a fixture on the *fallback/error* path of any fix
+    whose subject is a silent failure.
+- **The Rule J / K.1 duplicate pattern — deliberately NOT advanced, and I am recording the
+  temptation.** §5a(3) predicts `_clean_python_source()` being copied into the sibling gate, which
+  would be the third sighting the pattern has been held for since RETRO-233. **A prediction is not a
+  sighting.** RETRO-236 declined to count a *compliant* instance; declining to count a *predicted*
+  one is the same discipline. Held at count 2. What I did instead: wrote the prevention into
+  FOLLOW-764 so the third sighting does not have to happen for the lesson to be applied.
+
+**PROMOTION VERDICT: no rule promoted this retro.** No pattern reached ≥2 PRIOR retros. The two live
+candidates (P-21 at count 2, P-22 at count 2) each have exactly one prior retro.
+`CONVENTIONS_PATCH.md` is deliberately untouched.
+
+### 7. Follow-ups
+
+- **FOLLOW-759:** the AC5 allowlist inventory is a producer with no consumer (a green log nobody
+  reads) **and** greps a wider region than the gate scans (Rule AL) — give it a committed
+  baseline/annotation and align its region with `FILES` (devops-engineer, 2h, **P1** by the
+  HALF_WIRE_P classification; live impact latent at 0 occurrences) [HW-1, CB-2; Rules AJ / AL / Q]
+- **FOLLOW-760:** `_clean_python_source`'s silent raw-source fallback restores the exact false-GREEN
+  FOLLOW-757 removed, the detection side still requires the `sentry_sdk.` prefix, and no fixture
+  covers either path — plus the self-test's exit-code conflation (devops-engineer, 3h, **P2**)
+  [CB-1, CB-3, TG-1, TG-2; Rule AE-as-amended, P-22]
+- **FOLLOW-761:** the Redis smoke workflow has no `concurrency` group while firing on push **and**
+  pull_request against ONE Upstash instance with hard-coded fixture keys; a concurrent signal write
+  can make the NX gate certify a broken `nx=True` (qa-engineer, 2h, **P2**) [LG-1]
+- **FOLLOW-762:** the smoke job's soft-skip is no longer scoped to its one intended condition now
+  that ESC-028 is resolved, its new header asserts a hard-fail guarantee the mechanism does not
+  provide, the `REQUIRE_REDIS_SMOKE` throw has never executed in CI, and `STATUS.md` still carries
+  the pre-resolution claim (devops-engineer, 2h, **P2**) [LG-2, TG-3, DG-1; Rules Q / AI]
+- **FOLLOW-763:** `ShadowChatIntent` omits `data_source` / `extraction_error`, so a merged CI
+  assertion reaches them through `as unknown as` and relies on undeclared passthrough
+  (backend-engineer, 1h, **P3**) [DG-2; not a duplicate of FOLLOW-754/740]
+- **FOLLOW-764:** three corrections to FOLLOW-746 **before it is dispatched** — the sibling's
+  `--exclude="*test*.py"` substring hole (missing from its ACs, and silent in the same direction,
+  not the opposite one), AC2's now-false "the two gates cannot drift apart" premise, and the
+  `_clean_python_source` copy hazard in the Rule J/K.1 gap (devops-engineer, 1h, **P1 on timing, not
+  severity**) [§5a; Rules AE / J / K.1]
+
+**Not filed, deliberately:** no duplicate of **FOLLOW-746** (FOLLOW-764 is explicitly *input to* it,
+not a replacement — fold it in and delete the stub); no duplicate of **FOLLOW-754/740** (§5a and
+DG-2 give each a concrete input; FOLLOW-763 is scoped to the type declaration alone); no stub for
+**FOLLOW-756** (premise unchanged; §5d states the aggregate); no stub for **ESC-042 item 1** or the
+**ESC-028 escalation-register cleanup** (operator/PM territory — surfaced in §5b/§5d per my
+no-escalation guardrail); no stub for **Rule AG fragment directories** for devops-engineer /
+qa-engineer (process tooling, PM's call — §5d); no stub for **Rule I** (FOLLOW-591/602 exist); no
+stub for the `nx_invariant_writer.py` cross-tree coupling (§5c — the coupling is correct and is the
+whole point of Rule Z).
+
+### 8. Cross-references
+
+- **RETRO-237 (FOLLOW-743 + FOLLOW-744, PRs #646/#647)** — the direct parent of #648. **Closure
+  trace (step 7), end-to-end on `main`, for FOLLOW-757's claims:**
+  - **Shapes 1–4: GENUINELY CLOSED, and closed at the level of the mechanism rather than the
+    instance.** Traced all four rather than sampling: (1)+(2) docstring/trailing-comment clearance —
+    the cleaning pass runs before **both** the detection (`:184`) and clearance (`:204`) regexes, so
+    the two halves cannot drift, which was the actual root cause and not merely the reported
+    symptom; (3) the substring glob is gone (`:387-389`, anchored); (4) the `observability.py`
+    exclusion is gone, and the rationale-check AC3 demanded was actually performed (I re-ran it: the
+    three registered mirrors contain zero `sentry_sdk.capture_*(` sites). *Regression proof*: all
+    four fixtures are wired into `--self-test`, which is the **first** step of the hard CI job, and
+    all four `OK: self-test PASSED (FOLLOW-757 …)` lines appear in the merged run's log (job
+    `91292058007`). A closure that terminates in a mechanism, not one hop.
+  - **AC6's PARTIAL residuals (5 unscanned dirs, 6 unquoted word-split) — STILL GENUINELY LATENT,
+    both re-verified today, not taken on the header's word** (§5d has the greps). Neither has become
+    live. **But the honest verdict on AC6 is that the residual list is incomplete, not that it is
+    stale:** CB-1 and CB-3 are two further residuals the PR did not enumerate, and CB-1 was created
+    by the fix itself. The AC6 answer should read "partially enumerated, and the enumeration is
+    itself partial".
+  - **HW-1 (allowlist visibility) — NOT CLOSED; it moved one hop.** AC5 was written because the
+    suppression vocabulary was "documented only inside the script header, and nothing surfaces it".
+    It is now surfaced — into the log of a job that is green. From "grep the source" to "open a
+    passing job's log" is a hop, not a wire (§3 HW-1). Same displacement shape as the
+    `inquiry_submit_selector` chain, and the reason the closure check exists.
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141)** — one new
+  instance in this pair (HW-1, above), and one **counter-example worth recording because negative
+  results are load-bearing**: FOLLOW-752 is the first link in months that terminates. Traced
+  producer → transport → consumer → render rather than stopping at the gate: *producer* —
+  `redis_writer.py:130` still carries `nx=True` on `main` (the FIRST thing I checked, because a
+  merged mutation would look exactly like a success); *transport* — the live Upstash instance, with
+  the production `write_shadow_intent` invoked as a subprocess rather than re-implemented
+  (`nx_invariant_writer.py:47,101`); *consumer* — the production `readShadowChatIntent`, imported
+  unmocked (`smoke.test.ts:62-65`); *render* — that same function is consumed in production at
+  `apps/control-plane/src/app/api/adapt/route.ts:1579`, whose output feeds the SDK's Rule R prior.
+  Four hops, all real. The only caveat is environmental, not structural (the producer's app is not
+  in `modal-deploy.yml:90` — §5b), and that is a Rule AA split rather than a broken wire.
+- **RETRO-236 (FOLLOW-736)** — recorded the finding FOLLOW-752 was created to fix ("a green CI gate
+  over an unchanged code path is being read as coverage of a changed one"; the round-trip gate's
+  single fixture carried 8 non-null dimensions and never reached the NX branch). **That finding is
+  now closed**: the branch is reached by a dedicated `empty` fixture, and — the detail that makes it
+  a real closure rather than a nominal one — the fixture uses `data_source="model"`
+  (`nx_invariant_writer.py:88-100`), so the gate tests ADR-0020 D2's **content** key rather than
+  provenance, which is precisely the regression (PR #642 round 1) a degraded-only fixture would have
+  let through.
+- **RETRO-235 (FOLLOW-738)** — the origin of the whole gate family: three Sentry gates now exist
+  (singleton, capture-has-init, mirror-files). §5a records that the third one's fixes have not been
+  transferred to the first.
+- **RETRO-233 / RETRO-231** — the Rule J / K.1 duplicate pattern held at count 2; §6 declines to
+  advance it on a prediction and §5a(3) records the prevention instead.
+- **RETRO-230** — the mutation-fixture method (show the old mechanism PASSING the bad input) that
+  both of these PRs used as their evidence standard, and that this retro used to price CB-1.
+
+<!-- RETRO-238 SUMMARY: 2 PRs, 6 files, +587/-30. WIRING: #649 clean; #648 HW-1 HALF_WIRE_P (allowlist
+inventory = producer with no consumer, P1, latent at 0 occurrences). GAPS: 2 logic (LG-1 concurrent runs
+share one Upstash instance + fixed keys, MEASURED 26s miss between two runs on the same commit,
+false-GREEN reachable; LG-2 live Rule Q — soft-skip condition EXPIRED with ESC-028 while the PR's new
+header asserts otherwise), 3 bugs (CB-1 tokenizer fallback silently restores the removed false-GREEN;
+CB-2 inventory region != scanned region [Rule AL]; CB-3 unenumerated `from sentry_sdk import` detection
+shape), 3 test gaps (exit-code conflation, no fallback fixture, the REQUIRE throw never executed), 2 doc
+gaps (STATUS.md ESC-028 [Rule AI]; ShadowChatIntent omits data_source, asserted via `as unknown as`).
+CASCADES: FOLLOW-746 gets THREE corrections before dispatch (missing substring-glob AC; AC2's "cannot
+drift apart" premise falsified by #648 REMOVING the exclusion; `_clean_python_source` copy hazard in the
+Rule J/K.1 gap) + explicit RECONCILIATION with RETRO-237 §6's false-RED-vs-false-GREEN direction clause,
+which holds for the filter axis and NOT for the two exclusion axes. CLOSURE: FOLLOW-757 shapes 1-4
+genuinely closed at mechanism level, residuals 5/6 re-verified still latent, but AC5 HW-1 moved one hop
+(source-grep -> green-job log) and the residual list is itself incomplete; FOLLOW-752 CLOSED end-to-end
+over 4 hops (nx=True on main :130 -> real Upstash -> unmocked reader -> prod adapt route :1579), 4 tests
+PROVEN executed not skipped from the merge-commit job log. RULES: **NONE PROMOTED** — P-21 advanced to
+count 2 (DIFFERENT artefact, all 3 RETRO-237 criteria tested + criterion (ii) extension pre-specified),
+P-22 MINTED at count 2 (remediation re-instantiates its own defect class; prior RETRO-237 CB-1), both at
+1 PRIOR retro; Rule J/K.1 pattern NOT advanced on a prediction. Instance sightings: AE-as-amended (first
+post-amendment, on the script that promoted it), AL, Q (new expired-scope sub-shape), AI, AF (192 flat,
+readings 6+7). FOLLOWS FILED: 759 (P1 devops 2h), 760 (P2 devops 3h), 761 (P2 qa 2h), 762 (P2 devops 2h),
+763 (P3 backend 1h), 764 (P1-on-timing devops 1h). QUEUE.md / ESCALATIONS.md / CONVENTIONS_PATCH.md /
+sprint files / code correctly UNTOUCHED. -->

@@ -23352,3 +23352,358 @@ RETRO-235 §4a LG-1 (the raise-hazard this PR correctly closed) / §3 HW-3 (FOLL
 `apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:198,405`;
 `apps/data-quality/src/crons/schema_validation.py:359`;
 `apps/llm-gateway/src/jobs/generate_description.py:425`; Rules AO / AI / S / AJ]
+
+---
+
+## FOLLOW-759 — the allowlist inventory FOLLOW-757 AC5 shipped is a producer with no consumer, and it counts a different region than the gate scans
+
+source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Priority note, stated up front so it is not silently re-priced.** P1 is the standing HALF_WIRE_P
+classification (a producer with no consumer). The **live impact today is latent**: the inventory
+prints `0 occurrence(s)` in the merged run (job `91292058007`), so nothing is currently being
+hidden. Price it as "cheap, do it before the allowlist is first used", not as an incident.
+
+**The finding (HW-1).** FOLLOW-757 AC5 existed because `# sentry-init-guard: allowlisted — <reason>`
+is a repo-wide suppression vocabulary that was "documented only inside the script header, and
+nothing counts allowlist entries or surfaces them in CI output — so an allowlist that grows is
+invisible". The shipped fix (`scripts/check-sentry-capture-has-init.sh:394-405`) prints a count plus
+`file:line` on every run. Nothing reads it: no committed baseline, no `::notice::` annotation, no
+artefact, no threshold, no assertion. It lands in the log of a job that is **green**, and nobody
+opens a green job's log. The gap therefore moved one hop — from _"invisible unless you grep the
+source"_ to _"invisible unless you open a passing job's log"_ — rather than closing. Same organ as
+**Rule AJ** (a producer-only alarm is a HALF_WIRE_P, not observability), applied to a suppression
+counter instead of a failure signal.
+
+**Second defect, same output block (CB-2) — the inventory reports on the wrong region (Rule AL).**
+
+- `FILES` (`:386-392`) = `*.py` under `apps/*/src`, minus `test_*.py`, `*_test.py`, `conftest.py`.
+- `ALLOWLIST_HITS` (`:395-397`) = `grep -rn "sentry-init-guard: allowlisted" "${SCAN_DIRS[@]}"` —
+  **no `--include=*.py`, no test-file exclusion**.
+
+So the count can include annotations in files the gate never honours (a `test_*.py`, a fixture, a
+`.md`) and can never include one outside `apps/*/src`. It over-counts and under-counts in opposite
+directions simultaneously, which is worse than no number for the one question it exists to answer.
+Textbook **Rule AL**: an assertion evaluated over a different region than its consumer reads.
+
+**AC:**
+
+1. Give the inventory a consumer. Cheapest shape that actually closes it: a committed expected-count
+   file (or an inline `EXPECTED_ALLOWLIST_COUNT`) that the gate **compares against and fails on
+   mismatch**, so adding or removing a suppression is a deliberate, reviewed diff rather than a log
+   line. State in the script header why the baseline is the consumer (it converts a silent growth
+   into a red gate).
+2. If (1) is judged too strict, the fallback is a GitHub `::notice::`/`::warning::` annotation so
+   the count surfaces on the run summary without opening logs — but record explicitly that this is
+   the weaker option and why it was chosen, since it leaves the signal unread on a green run.
+3. Align the inventory's region with `FILES`: same `--include`, same test-file exclusions, same scan
+   dirs — ideally by iterating `$FILES` rather than re-globbing, so the two cannot drift (the same
+   drift-proofing FOLLOW-757 applied to the detection/clearance pair).
+4. Add a self-test fixture: a scanned file with one allowlisted capture must report count 1; an
+   allowlisted annotation in an EXCLUDED file must NOT be counted. Red-first against the current
+   script.
+5. Do NOT change the allowlist token spelling, the gate's pass/fail semantics for real violations,
+   or the CI job wiring (`ci.yml:698-702` is correct).
+
+cross_ref: [RETRO-238 §3 HW-1, §4b CB-2, §8 (FOLLOW-757 closure trace — the one AC that moved
+instead of closing); RETRO-237 §6 (Rule AE amendment, the parent gate);
+`scripts/check-sentry-capture-has-init.sh:386-405`; Rules AJ / AL / Q]
+
+---
+
+## FOLLOW-760 — the tokenizer fallback FOLLOW-757 added silently restores the exact false-GREEN it removed, and two more clearance/detection shapes are unenumerated
+
+source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Defect 1 (CB-1) — the fix contains a silent instance of the failure class it removed.**
+`_clean_python_source()` ends in a bare `except Exception:` (`:165-169`) that writes the **raw,
+uncleaned** file to stdout. For any file `python3 tokenize` cannot process — unterminated string,
+inconsistent dedent, a rejected encoding, future syntax under an older runner interpreter — **both**
+the detection regex (`:184`) and the clearance regex (`:204`) revert to pre-FOLLOW-757 behaviour: a
+docstring or trailing-comment mention of `init_sentry(` clears the file again. The gate emits
+nothing: no warning, no counter, no exit-code change. The comment calls this "fail safe … rather
+than crash the gate", which is true about the **process** and false about the **assertion** — for a
+gate, falling back to a weaker predicate is the unsafe direction. Not live today (all repo Python
+tokenizes cleanly; the real-tree run is green), and **not listed in the PR's own AC6 residual set**.
+
+**Defect 2 (CB-3, latent) — the detection side still requires the literal `sentry_sdk.` prefix.**
+`:184` matches only `sentry_sdk\.(capture_exception|capture_message)\(`. A module using
+`from sentry_sdk import capture_exception` (or `import sentry_sdk as s`) and calling
+`capture_exception(e)` with no initialiser is invisible → false GREEN. Verified zero such imports
+repo-wide today (`grep -rn "from sentry_sdk import\|import sentry_sdk as" --include=*.py` → no
+hits), i.e. exactly the latency status shapes 3 and 4 had before FOLLOW-757 closed them. This
+matters because AC6 asked for an explicit "is the class fully enumerated?" answer and the shipped
+answer named only two residuals (unscanned dirs, unquoted word-split).
+
+**Defect 3 (TG-1/TG-2) — the self-test's own assertions are coarse, and the fallback has no
+fixture.** Each new fixture is
+`if SENTRY_CAPTURE_INIT_TARGET=… bash "$0" >/dev/null 2>&1; then FAIL` (`:290`, `:311`, `:331`,
+`:352`) — exit 1 (violation), exit 2 (self-test failure) and 127 (`python3` absent) are
+indistinguishable, so a gate that crashed on every file would "pass" all four. Partially mitigated
+by the positive controls at `:255` and `:272` (which require exit 0), which is why this is folded
+here rather than filed separately. Nothing at all exercises the CB-1 fallback path.
+
+**AC:**
+
+1. Make the tokenizer fallback LOUD, not silent. On any tokenize failure: print the path and the
+   exception to stderr, count it, and print an "unparseable files: N" line in the same block as the
+   allowlist inventory. Decide and record whether N > 0 should fail the gate — the default answer
+   should be yes for a file under `apps/*/src`, since a production Python file that cannot be
+   tokenized is itself a finding.
+2. Enumerate the detection-side import shapes: at minimum
+   `from sentry_sdk import capture_exception/capture_message` and `import sentry_sdk as <alias>`.
+   Either match them or state in the header, with the grep that proves it, why they are excluded —
+   do not leave them unmentioned.
+3. Tighten the four existing negative fixtures (and any new one) to assert the gate exited with the
+   **violation** code specifically, not merely non-zero.
+4. Add a red-first fixture for the fallback path: a `.py` that fails to tokenize, containing a
+   docstring-only `init_sentry(` mention and a real capture call. Against the current script it
+   PASSES (false green, silently); after the fix it must fail loudly with the unparseable-file
+   diagnosis distinct from the violation diagnosis (**Rule AM**'s "report fixture-staleness as a
+   diagnosis distinct from gate-failure", same shape).
+5. Re-state AC6 honestly in the header: list every known residual shape, including the two here, so
+   the next reader inherits a complete list rather than a partial one.
+6. Do NOT change `apps/*` source, the allowlist token spelling, or the CI job wiring.
+
+cross_ref: [RETRO-238 §4b CB-1/CB-3, §4c TG-1/TG-2, §6 (Rule AE-as-amended first post-amendment
+instance; P-22 minted at count 2); RETRO-237 §6 (the amendment itself) / §4b CB-1 (P-22's prior);
+RETRO-230 §6 (the mutation-fixture method);
+`scripts/check-sentry-capture-has-init.sh:122-172,184, 204,255,272,290,311,331,352`; Rules AE / AM /
+Q]
+
+---
+
+## FOLLOW-761 — the Redis smoke workflow has no concurrency group, so two runs of the same commit race on ONE Upstash instance with hard-coded fixture keys
+
+source_retro: RETRO-238 (PR #649, FOLLOW-752) source_ticket: FOLLOW-752 recommended_sprint: next
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Measured on the FOLLOW-752 branch itself, not theorised.** `redis-shadow-smoke.yml:26-45` triggers
+on `push` (all agent-prefixed branches) **and** `pull_request`, with **no `concurrency:` block**. An
+agent branch with an open PR therefore fires two runs of the same workflow on the same commit: runs
+`30689414605` (push) and `30689433455` (pull_request) started **34 seconds apart**, and their smoke
+steps executed `07:17:26→07:17:34Z` and `07:18:00→07:18:08Z` — **a 26-second miss**. The nightly
+cron is a third writer.
+
+**Why the new cases are exposed where AC-RT1 was not.** AC-RT1 writes one fixture and reads the same
+value back, so a concurrent identical write is harmless. The FOLLOW-752 warm case is a **sequence**
+against a hard-coded key (`redis-shadow-round-trip.smoke.test.ts:286-289`) spanning ~4 s of wall
+clock (`:357` signal → `:368` `sleep(2_500)` → `:371` empty → `:377` read → `:396` TTL).
+
+**Both directions are reachable, and the false-GREEN one is the serious half.** If `nx=True` were
+broken: run A's `empty` write clobbers the key → a concurrent run B `signal` write restores it → run
+A's value assertion (`:382-393`) **passes**. The gate whose entire purpose is to prove NX would
+certify a broken NX. (The TTL assertion at `:396-405` is the more robust half and would more likely
+go false-RED instead — i.e. the D4 assertion is currently carrying the D3 one.) The cold case is
+benign by construction (both runs write byte-identical empty fixtures), which is worth stating so
+the fix is not over-scoped.
+
+**AC:**
+
+1. Add a `concurrency:` group to the workflow keyed on the workflow + ref (e.g.
+   `group: redis-shadow-smoke-${{ github.ref }}`, `cancel-in-progress: false` — a cancelled run
+   leaves keys behind, which is the failure mode being avoided). State whether the nightly cron is
+   in or out of the group and why.
+2. **AND** namespace the fixture keys per run so the guarantee does not rest on scheduling alone —
+   `github.run_id` (or a random suffix) threaded into `NX_WARM_*`/`NX_COLD_*` and into
+   `nx_invariant_writer.py`'s argv. Belt and braces is justified here: the failure mode is a green
+   badge over an unproven invariant.
+3. Delete the fixture keys the suite creates (`deleteShadowChatIntent` already exists and is a
+   production path — `chat-intent-cache.ts:151`) in an `afterAll`, so run-scoped keys do not
+   accumulate in the shared instance at 24 h TTL each.
+4. Re-run the suite twice concurrently (two `workflow_dispatch` runs, or two local processes against
+   the same instance) and paste the transcript — the AC is not "the group exists", it is "two
+   simultaneous runs both pass".
+5. Do NOT weaken any assertion to make it concurrency-tolerant — in particular do not relax
+   `ttlAfterEmpty < ttlAfterSignal` into `<=`. The strictness is the point; the isolation is the
+   fix.
+
+cross_ref: [RETRO-238 §4a LG-1, §5b; `.github/workflows/redis-shadow-smoke.yml:26-45`;
+`tests/integration/redis-shadow-round-trip.smoke.test.ts:286-289,357-405`;
+`tests/integration/nx_invariant_writer.py`; ADR-0020 D3/D4; Rules Q / Z]
+
+---
+
+## FOLLOW-762 — the Redis smoke gate's soft-skip condition EXPIRED when ESC-028 resolved, and PR #649's new header asserts a hard-fail guarantee the mechanism does not provide
+
+source_retro: RETRO-238 (PR #649, FOLLOW-752) source_ticket: FOLLOW-752 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding (LG-2) — a live Rule Q defect.** The job computes `secrets_present`
+(`redis-shadow-smoke.yml:93-100`) and sets `REQUIRE_REDIS_SMOKE=1` only when all four secrets exist
+(`:110-113`); the spec's hard-fail throw (`redis-shadow-round-trip.smoke.test.ts:105-119`) is gated
+on that flag, and every case is `it.skipIf(!HAS_ALL_CREDS)` (`:163,230,355,411`). That design was
+**correct while ESC-028 was open** — "not yet provisioned" was a genuine, intended skip condition.
+ESC-028 was resolved 2026-07-13 (`backlog/ESCALATIONS.md:1724`), and PR #649's own header now says
+so in the strongest terms: _"so this job runs in hard-fail mode (`REQUIRE_REDIS_SMOKE=1`) on every
+push/PR, not soft-skip"_ (`:16-18`, mirrored at `smoke.test.ts:39-43`). The mechanism says something
+weaker: hard-fail **iff** the secrets happen to be present. A rotated, revoked or deleted secret
+silently returns the repo's ONLY real-Redis gate to a green badge over four tests that never ran —
+the RETRO-007 failure mode Rule Q exists for, in the PR whose thesis is that a green signal must not
+be read as "checked". Rule Q's second clause ("its soft-skip MUST be scoped to the ONE intended
+condition") is the operative one: the only condition that remains legitimate is a forked PR / local
+dev, and that is expressible.
+
+**Second half (TG-3) — the guarantee has never been executed.** Nothing in CI has ever run the
+`REQUIRE_REDIS_SMOKE=1` + missing-secret path, so the throw at `:105-119` is an untested claim.
+
+**Third half (DG-1) — a Rule AI leftover in the register.** `backlog/STATUS.md:64` still lists
+ESC-028 as `OPEN — … Piotr/Rafal must provision`, and `:11` (in the file's CURRENT block, dated
+2026-07-22) says it is "believed superseded … but not re-closed in this file" — false about
+`ESCALATIONS.md`, where it was closed by commit `196d4310` on 2026-07-14, eight days earlier. #649
+wrote the RESOLVED claim into two more files and did not carry it to the third.
+
+**AC:**
+
+1. Scope the soft-skip to the one condition that is still real. Set `REQUIRE_REDIS_SMOKE=1`
+   unconditionally for `push` and for same-repo `pull_request`, and allow the soft-skip **only** for
+   forked PRs (`github.event.pull_request.head.repo.fork == true`) — so a missing secret on a
+   trusted trigger is a RED, not a skip.
+2. Add a CI-executed negative control for the throw: a job (or a step with `continue-on-error` + an
+   explicit exit-code assertion) that runs the spec with `REQUIRE_REDIS_SMOKE=1` and one secret
+   deliberately blanked, asserting it fails with the "secrets are absent" message. A guarantee that
+   has never fired is a claim.
+3. Re-word the two header blocks so they describe the mechanism rather than the current secret
+   inventory: what makes the job hard-fail is the trigger type, not the luck of the secrets being
+   present.
+4. Correct `backlog/STATUS.md:11` and `:64` to match `ESCALATIONS.md` (ESC-028 RESOLVED 2026-07-13),
+   including the "not re-closed in this file" sentence, which is the part that would mislead a
+   future session most.
+5. Do NOT change the assertions in either describe block, and do NOT remove the soft-skip entirely —
+   forked PRs and offline dev are real and the `::notice::` path is correct for them.
+
+cross_ref: [RETRO-238 §4a LG-2, §4c TG-3, §4d DG-1, §6 (Rule Q's new expired-scope sub-shape);
+RETRO-007 (the original soft-skip incident Rule Q was promoted from);
+`.github/workflows/redis-shadow-smoke.yml:16-18,93-100,110-113`;
+`tests/integration/redis-shadow-round-trip.smoke.test.ts:39-43,105-119,163,230,355,411`;
+`backlog/ESCALATIONS.md:1724`; `backlog/STATUS.md:11,64`; Rules Q / AI / AH]
+
+---
+
+## FOLLOW-763 — `ShadowChatIntent` omits the provenance markers a merged CI assertion now reads, so the test reaches them through `as unknown as`
+
+source_retro: RETRO-238 (PR #649, FOLLOW-752) source_ticket: FOLLOW-752 recommended_sprint: next
+recommended_agent: backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding (DG-2).** `ShadowChatIntent` (`apps/control-plane/src/lib/chat-intent-cache.ts:47-51`)
+declares exactly three members: `intent_dimensions`, `archetype_hint`, `confidence`. FOLLOW-730's
+provenance markers (`data_source`, `extraction_error`) are written by the Python producer
+(`redis_writer.py` via `payload.model_dump()`) and are absent from the TS type, so FOLLOW-752's
+cold-key case must launder them through a double cast:
+
+```ts
+expect((result as unknown as { data_source?: string }).data_source).toBe('model');
+```
+
+(`tests/integration/redis-shadow-round-trip.smoke.test.ts:431`). It passes only because
+`readShadowChatIntent` returns the parsed object unchanged (`:113,118`) instead of constructing a
+picked object — **undeclared passthrough that the type deliberately does not promise** (the
+interface's own docblock says "Only the fields consumed by the bridge are declared").
+
+**Why it is worth an hour and not zero.** (a) The single most likely future refactor of that
+function — build a typed object instead of casting the parse result — is silent to `tsc` and would
+break a merged CI gate in the one repo file least likely to be re-run locally. (b) FOLLOW-740, the
+only remaining ADR-0020 §D6 visibility route, has to read exactly these fields; today its first task
+would be this declaration. (c) A `as unknown as` in a gate is the same organ as the casts Rule "zero
+`any` without a reason" exists to prevent, one notch quieter.
+
+**Explicitly NOT a duplicate of FOLLOW-754**, which corrects ADR-0020 §D6's **prose** about which
+visibility channels are real. This is the type-level half of the same question and is now
+load-bearing for merged CI.
+
+**AC:**
+
+1. Add `data_source?: string` and `extraction_error?: string | null` (match the Python schema's
+   optionality exactly — read `apps/intent-engine/src/schemas.py`, do not infer) to
+   `ShadowChatIntent`, with a one-line comment saying they are DIAGNOSTIC ONLY per ADR-0020 D2
+   (provenance never gates behaviour) so nobody wires them into the archetype path.
+2. Delete the double cast at `smoke.test.ts:431` — the assertion should read the declared field.
+3. State in the interface's docblock that `readShadowChatIntent` returns the parsed object
+   unchanged, so the passthrough the smoke test depends on is a documented property rather than an
+   accident.
+4. Do NOT change `readShadowChatIntent`'s runtime behaviour, the Redis key format, or anything in
+   the adapt route — this is a type + comment change plus one test line.
+
+cross_ref: [RETRO-238 §4d DG-2, §5a; RETRO-234 (the provenance markers' origin, FOLLOW-730);
+FOLLOW-754 (the ADR prose half — different artefact); FOLLOW-740 (the consumer that will need this);
+`apps/control-plane/src/lib/chat-intent-cache.ts:32-51,113,118`;
+`tests/integration/redis-shadow-round-trip.smoke.test.ts:431`]
+
+---
+
+## FOLLOW-764 — three corrections FOLLOW-746 needs BEFORE it is dispatched: a missing fourth hole, a premise PR #648 falsified, and a copy hazard
+
+source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: current
+recommended_agent: devops-engineer priority: P1 estimated_hours: 1 depends_on: [] blocks:
+[FOLLOW-746] promoted_to_queue: false
+
+**Read this before FOLLOW-746 is dispatched — ideally fold it into FOLLOW-746 and delete this
+stub.** P1 is **on timing, not severity**: QUEUE.md session 87 names FOLLOW-746 as the next
+dispatch. Once 746 merges without these, they become P2 defects in shipped code.
+
+**1. The sibling gate has a FOURTH hole FOLLOW-746 does not list, and on that axis it fails in the
+SAME silent direction — which contradicts the framing every prior artefact uses.**
+`scripts/check-sentry-init-singleton.sh:123` is `--exclude="*test*.py"` — verbatim the
+substring-glob shape FOLLOW-757 fixed as its shape 3 (`la-test-`, `attestation*`, `contest*`).
+FOLLOW-746's ACs cover the basename exclusion (AC2), the comment filter (AC3), mirror discovery
+(AC1) and the docstring/CB-5 defect (AC4). The glob is absent.
+
+**And the direction argument does not protect it.** FOLLOW-757's stub, RETRO-237 §6 and QUEUE.md's
+dispatch note all justify 746's lower priority with _"in the singleton guard a trailing comment
+causes a false RED (loud, self-correcting); in the capture gate a false GREEN (silent, permanent)"_.
+That is **true for the comment-filter axis only**. An **exclusion** defect drops files from the scan
+entirely, so in the singleton guard a production module named `latest_pricing.py` containing a bare
+`sentry_sdk.init(` is silently unseen — **false GREEN, exactly as in the capture gate**. Two of the
+four FOLLOW-757 shapes (3 and 4, both exclusions) fail silently in BOTH gates. Latent today: all 20
+`*test*` basenames under `apps/*/src` are genuine `test_*.py`/`conftest.py` — the same status the
+four closed shapes had.
+
+**2. FOLLOW-746 AC2's stated rationale is now false.** AC2 says to narrow the singleton guard's
+exclusion to the paths registered in `mirror-files.json` _"so the two gates cannot drift apart"_. PR
+#648 did not narrow the capture gate's exclusion — it **removed** it, after verifying the three
+registered mirrors contain zero capture call sites. The two gates now must differ, correctly: the
+singleton guard's exclusion is load-bearing (the mirrors are where the legitimate `sentry_sdk.init(`
+lives); the capture gate's bought nothing. Keep AC2's mechanism, drop its symmetry justification, or
+the implementer will chase a convergence that no longer exists.
+
+**3. AC3 is now a COPY decision, and copying is the trap.** PR #648 shipped the technique AC3 asks
+for: `_clean_python_source()` (`check-sentry-capture-has-init.sh:122-172`), a ~50-line embedded
+`python3 tokenize` heredoc. Transplanting it verbatim creates a **third unregistered duplicate of
+shared logic in the Rule J / Rule K.1 gap**: `scripts/mirror-files.json` registers only the two
+`observability.py` pairs, and `check-mirror-files.sh`'s `strip_comments()` (`:33-40`) handles
+`/* */` and `//` — it cannot express a bash/python hybrid, so nothing would detect the two copies
+drifting. Both copies would also inherit the silent tokenizer fallback (FOLLOW-760 CB-1), which is
+not yet fixed.
+
+**AC (as amendments to FOLLOW-746, not as separate work):**
+
+1. Add an AC to FOLLOW-746: replace `--exclude="*test*.py"` (`:123`) with anchored patterns
+   (`test_*.py`, `*_test.py`, `conftest.py`), with a red-first self-test fixture — a production
+   basename containing `test` and a bare `sentry_sdk.init(` must be CAUGHT. State in the ticket that
+   this shape is a false GREEN in this gate too, correcting the "opposite direction" framing.
+2. Rewrite AC2's rationale sentence: the mechanism (read registered paths from `mirror-files.json`)
+   stands; "so the two gates cannot drift apart" does not, because the capture gate no longer has an
+   exclusion to converge with.
+3. Add an AC deciding the sharing question explicitly BEFORE any code: extract
+   `_clean_python_source` into a shared `scripts/lib/` helper both gates source, OR register the two
+   copies as a `mirror-files.json` pair with a comparison strategy that works for shell
+   (`check-mirror-files.sh` cannot compare Python today). A silent third copy is not an acceptable
+   outcome; whichever is chosen, record why.
+4. Sequence FOLLOW-760 relative to 746: if 746 copies the helper first, the fallback fix must be
+   applied to both copies. Cheapest order is 760 → 746, or 764(3) → 760 → 746.
+5. Do NOT re-open FOLLOW-746's AC1 (mirror discovery), AC4 (CB-5 docstring) or AC5 (no
+   `packages/py-shared`) — those are unaffected by PR #648 and stand as written.
+
+cross_ref: [RETRO-238 §5a (all three items, with the explicit RETRO-237 §6 reconciliation), §6 (the
+Rule J/K.1 pattern deliberately NOT advanced on this prediction); FOLLOW-746 (the ticket this
+amends); FOLLOW-757 shapes 3 and 4; FOLLOW-760 (the fallback that would be copied);
+`scripts/check-sentry-init-singleton.sh:123,128`;
+`scripts/check-sentry-capture-has-init.sh:122-172,386-392`; `scripts/check-mirror-files.sh:33-40`;
+`scripts/mirror-files.json`; Rules AE / J / K.1]

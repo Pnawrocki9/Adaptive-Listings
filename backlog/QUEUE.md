@@ -1,6 +1,34 @@
 # Backlog Queue
 
-### FOLLOW-746 — status: IN_PROGRESS
+### FOLLOW-746 — status: DONE (PR #651 merged 2026-08-02 by Piotr, `4446e69c`)
+
+**Merged.** Four holes closed in the singleton gate, each with a red-first fixture. The tokenizer
+pass now lives in `scripts/lib/clean-python-source.sh`, sourced by BOTH gates.
+
+**Item 8 was decided before any code, and the reasoning is the part worth keeping:** Rule J exists
+for duplication that CANNOT be removed — each Modal app builds its own container image, so
+`observability.py` cannot become an import. `scripts/` has no such boundary: both gates run from one
+checkout on one runner, so `source` is free. Registering the copies would have meant inventing a
+comparison strategy for a bash/python hybrid, i.e. adding shared-logic surface to police a duplicate
+that need not exist. Both gates hard-fail when the helper is missing rather than degrading to
+raw-text matching, so FOLLOW-760's loud failure survived the move.
+
+**PM verified independently on `main` and on fixtures:** both gates source the helper and guard its
+absence; the item-6 shape (`latest_pricing.py` with a bare `sentry_sdk.init(`) goes exit 0 → exit 1
+between old and new, confirming the corrected framing; the inline Rule J self-test really does run
+with NO arguments (`Rule J gate self-test: PASSED (4 assertions)`), which was the point — its only
+automated callers pass none, so a `--self-test` flag alone would have been a fixture suite nothing
+runs. All three gates PASS on `main` after merge; mirrors byte-identical despite the AC4 docstring
+change. CI 67 pass, Rule I unchanged at 192.
+
+**Rule AE answered NOT fully closed**, with five residuals listed in the script headers — including
+the observation that the `sentry_sdk.`-prefix gap is now literally the SAME residual on both sides
+of the shared helper and should be one ticket for both gates. That completeness is what my review of
+PR #648 failed to demand.
+
+---
+
+### FOLLOW-746 — dispatch record (was: IN_PROGRESS)
 
 **Promoted + dispatched 2026-08-02 on Piotr's "puść 746",** now that FOLLOW-760 has merged — the
 sequencing FOLLOW-764 item 9 required (the tokenizer fallback had to be fixed BEFORE this ticket

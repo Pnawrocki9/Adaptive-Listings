@@ -22617,8 +22617,8 @@ cross_ref: [RETRO-235 §3 HW-3, §1 (contract change, signal axis);
 ## FOLLOW-746 — a 4th, unregistered `observability.py` passes BOTH the singleton guard and the Rule J mirror gate
 
 source_retro: RETRO-235 (PR #644, FOLLOW-738) source_ticket: FOLLOW-738 recommended_sprint: next
-recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] promoted_to_queue:
-false
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-760 — fix the
+tokenizer fallback BEFORE this ticket copies or shares the helper] promoted_to_queue: false
 
 **The finding.** The two gates FOLLOW-738 shipped enforce the hardening invariant only for copies
 someone remembered to register:
@@ -22673,6 +22673,46 @@ cross_ref: [RETRO-235 §3 HW-4, §4b CB-2/CB-4/CB-5, §4c TG-2, §6;
 `scripts/mirror-files.json`; Rules J / K.1 / Y; RETRO-231 §6, RETRO-233 §6]
 
 ---
+
+**FOLDED IN 2026-08-02 — FOLLOW-764's three corrections (that stub is now closed).** RETRO-238 found
+this ticket was about to be dispatched on a premise PR #648 falsified, and with one hole missing.
+Read these before the ACs above:
+
+6. **A FOURTH hole, and it fails in the SAME silent direction — the "opposite direction" framing
+   every prior artefact used is wrong on this axis.** `check-sentry-init-singleton.sh:123` is
+   `--exclude="*test*.py"` — verbatim the substring-glob shape FOLLOW-757 fixed (`la-test-`,
+   `attestation*`, `contest*`). Replace it with anchored patterns (`test_*.py`, `*_test.py`,
+   `conftest.py`) and add a red-first fixture: a production basename containing `test` and holding a
+   bare `sentry_sdk.init(` must be CAUGHT. **Correction to the record:** the "false RED here, false
+   GREEN there" justification holds only for the comment-filter axis. An EXCLUSION defect drops
+   files from the scan entirely, so shapes 3 and 4 fail silently in BOTH gates. Latent today (all 20
+   `*test*` basenames under `apps/*/src` are genuine test files) — the same status the four closed
+   shapes had.
+
+7. **AC2's rationale is now false; keep its mechanism.** AC2 justifies narrowing the exclusion to
+   the `mirror-files.json` paths "so the two gates cannot drift apart". PR #648 did not narrow the
+   capture gate's exclusion — it **removed** it, having verified the three registered mirrors hold
+   zero capture call sites. The two gates must now differ, correctly: the singleton guard's
+   exclusion is load-bearing (the mirrors are exactly where the legitimate `sentry_sdk.init(`
+   lives), the capture gate's bought nothing. Drop the symmetry justification or the implementer
+   will chase a convergence that no longer exists.
+
+8. **AC3 is now a COPY decision, and copying is the trap.** PR #648 already shipped the technique
+   AC3 asks for: `_clean_python_source()` (`check-sentry-capture-has-init.sh:122-172`), a ~50-line
+   embedded `python3 tokenize` heredoc. Transplanting it verbatim creates a THIRD unregistered
+   duplicate of shared logic in the Rule J / K.1 gap — `mirror-files.json` registers only the two
+   `observability.py` pairs, and `check-mirror-files.sh`'s `strip_comments()` handles `/* */` and
+   `//` only, so nothing would detect the copies drifting. **Decide explicitly BEFORE writing
+   code:** extract the helper into a shared `scripts/lib/` both gates source, OR register the two
+   copies as a `mirror-files.json` pair with a comparison strategy that actually works for a
+   bash/python hybrid. A silent third copy is not an acceptable outcome; record the reasoning either
+   way.
+
+9. **Sequencing:** FOLLOW-760 (the silent tokenizer fallback) lands FIRST. If this ticket copies or
+   shares the helper before that fix, the defect is duplicated into both gates.
+
+10. **Do NOT re-open** AC1 (mirror discovery), AC4 (CB-5 docstring) or AC5 (no `packages/py-shared`)
+    — PR #648 did not affect them and they stand as written.
 
 ## FOLLOW-747 — the `before_send` scrubber covers only exception values on one tag, and the test that documents the uncovered path is named as if it were handled
 
@@ -23417,7 +23457,8 @@ instead of closing); RETRO-237 §6 (Rule AE amendment, the parent gate);
 
 source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-02 — dispatched to devops-engineer on Sonnet, sequenced ahead of
+FOLLOW-746 per Piotr)
 
 **Defect 1 (CB-1) — the fix contains a silent instance of the failure class it removed.**
 `_clean_python_source()` ends in a bare `except Exception:` (`:165-169`) that writes the **raw,
@@ -23638,7 +23679,13 @@ FOLLOW-754 (the ADR prose half — different artefact); FOLLOW-740 (the consumer
 
 ---
 
-## FOLLOW-764 — three corrections FOLLOW-746 needs BEFORE it is dispatched: a missing fourth hole, a premise PR #648 falsified, and a copy hazard
+## FOLLOW-764 — three corrections FOLLOW-746 needs BEFORE it is dispatched: a missing fourth hole, a premise PR #648 falsified, and a copy hazard — **CLOSED 2026-08-02: folded into FOLLOW-746 items 6-10.**
+
+This stub existed only to carry three corrections into FOLLOW-746 before it was dispatched, exactly
+as its own text asked ("ideally fold it into FOLLOW-746 and delete this stub"). That is done; the
+content below is superseded by FOLLOW-746 items 6-10 and is kept only so the reasoning is not lost.
+
+<details><summary>Original stub text (superseded)</summary>
 
 source_retro: RETRO-238 (PR #648, FOLLOW-757) source_ticket: FOLLOW-757 recommended_sprint: current
 recommended_agent: devops-engineer priority: P1 estimated_hours: 1 depends_on: [] blocks:
@@ -23707,3 +23754,5 @@ amends); FOLLOW-757 shapes 3 and 4; FOLLOW-760 (the fallback that would be copie
 `scripts/check-sentry-init-singleton.sh:123,128`;
 `scripts/check-sentry-capture-has-init.sh:122-172,386-392`; `scripts/check-mirror-files.sh:33-40`;
 `scripts/mirror-files.json`; Rules AE / J / K.1]
+
+</details>

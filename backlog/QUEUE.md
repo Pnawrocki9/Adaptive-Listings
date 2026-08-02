@@ -1,5 +1,36 @@
 # Backlog Queue
 
+### FOLLOW-760 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-08-02 on Piotr's "puść najpierw 760".** Sequenced ahead of FOLLOW-746
+because it is a regression in code merged yesterday (PR #648) and because FOLLOW-746 would otherwise
+COPY the defect into a second gate — FOLLOW-764 item 4 reached the same conclusion independently.
+
+**assigned_to:** devops-engineer **model: Sonnet** — one bash/python heredoc in one script plus
+self-test fixtures; the analysis is done and the fix direction is named. Delegation-table row
+"Terraform, CI/CD, workflows, secrets, observability, runbooks". **started_at:** 2026-08-02.
+**branch:** `devops-engineer/FOLLOW-760-tokenizer-fallback`.
+
+**The defect, and why it is the fifth instance of this session's pattern.** FOLLOW-757 fixed a gate
+that silently passed bad input. Its fix, `_clean_python_source()`, ends in a bare
+`except Exception:` that writes the RAW, uncleaned file to stdout — so for any file
+`python3 tokenize` cannot process, BOTH the detection and clearance regexes revert to pre-FOLLOW-757
+behaviour and a docstring mention of `init_sentry(` clears the file again. No warning, no counter,
+no exit-code change. **The fix contains a silent instance of the failure class it removed.** The
+code comment calls it "fail safe … rather than crash the gate": true about the PROCESS, false about
+the ASSERTION — for a gate, falling back to a weaker predicate is the unsafe direction.
+
+**Also corrects my own validation.** I praised PR #648's AC6 answer as honestly PARTIAL. It was
+honest about what it listed — but this hole was not on the list, so the residual set was incomplete
+and my praise was premature. RETRO-238 caught it by re-deriving rather than trusting my review.
+
+**Not live today** (all repo Python tokenizes cleanly, the real-tree run is green) — a latent
+regression hole, the same status the four FOLLOW-757 shapes had before they were closed.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ## ▶️ START HERE — session 87 (2026-08-02) — retro dispatched for FOLLOW-757+752, FOLLOW-746 picked next
 
 **State re-verified before acting, not taken on trust:** `git status` clean, `main` == `origin/main`

@@ -494,6 +494,22 @@ numbers.
 **1 ticket IN_PROGRESS** (FOLLOW-762) — within the ≤3 guardrail. PR #652 and PR #653 are
 READY_FOR_REVIEW, not IN_PROGRESS, awaiting Piotr.
 
+**Worker update 2026-08-03 — PR #654 opened, status: worker-complete, awaiting PM validation.**
+`devops-engineer/FOLLOW-762-redis-smoke-hardfail-scope`, one commit `368be9a0`. Both files touched
+per brief (`redis-shadow-smoke.yml`, `redis-shadow-round-trip.smoke.test.ts`); `backlog/STATUS.md`
+confirmed already clean (`grep -n "ESC-028" backlog/STATUS.md` → zero hits) — no STATUS.md diff.
+`REQUIRE_REDIS_SMOKE` is now unconditional `1` for push/schedule/workflow_dispatch/same-repo PR;
+soft-skip scoped to `github.event.pull_request.head.repo.fork == true` only. Added a CI-executed
+negative control (blanked `UPSTASH_REDIS_TOKEN` + `REQUIRE_REDIS_SMOKE=1`) — **both the
+push-triggered run (30771796557) and the pull_request-triggered run (30771828268) executed it for
+real and it passed**:
+`PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit 1) with the expected message.`
+Full transcript pasted in the PR body + a follow-up PR comment linking both job runs.
+`gh pr checks 654` at time of this note: only `Rule I` red (pre-existing per
+`project_ci_gate_landscape` memory, same as #652/#653 this session), a handful of jobs still pending
+(Build, SDK E2E, Test Node 22 — unrelated to this diff), everything else green including
+Format/Lint/Typecheck/Redis-shadow-round-trip itself. Not yet PM-validated.
+
 ---
 
 ### FOLLOW-766 + FOLLOW-767 — status: READY_FOR_REVIEW (PR #655 open, `80dbf131`+`2076906f`, PM-validated 2026-08-03)

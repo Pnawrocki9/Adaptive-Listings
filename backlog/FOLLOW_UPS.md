@@ -22618,7 +22618,8 @@ cross_ref: [RETRO-235 §3 HW-3, §1 (contract change, signal axis);
 
 source_retro: RETRO-235 (PR #644, FOLLOW-738) source_ticket: FOLLOW-738 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-760 — fix the
-tokenizer fallback BEFORE this ticket copies or shares the helper] promoted_to_queue: false
+tokenizer fallback BEFORE this ticket copies or shares the helper] promoted_to_queue: true
+(2026-08-02 — dispatched to devops-engineer on Opus per Piotr, after FOLLOW-760 merged)
 
 **The finding.** The two gates FOLLOW-738 shipped enforce the hardening invariant only for copies
 someone remembered to register:

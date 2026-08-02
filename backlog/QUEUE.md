@@ -1,5 +1,37 @@
 # Backlog Queue
 
+### FOLLOW-746 — status: IN_PROGRESS
+
+**Promoted + dispatched 2026-08-02 on Piotr's "puść 746",** now that FOLLOW-760 has merged — the
+sequencing FOLLOW-764 item 9 required (the tokenizer fallback had to be fixed BEFORE this ticket
+copies or shares the helper, or the defect would be duplicated into a second gate).
+
+**assigned_to:** devops-engineer **model: Opus** — escalated one tier from the Sonnet used on the
+two sibling gate tickets, per the model-fit rule's "escalate when the task already failed at the
+lower tier". It did: FOLLOW-757 (Sonnet) shipped the silent tokenizer fallback that became
+FOLLOW-760, and this ticket's own framing was wrong until RETRO-238 corrected it. The work is no
+longer a mechanical transfer — item 8 is a decision that must be made BEFORE any code (shared helper
+vs registered mirror pair), and treating it mechanically is precisely the failure mode.
+**started_at:** 2026-08-02. **branch:** `devops-engineer/FOLLOW-746-singleton-gate-holes`.
+
+**The ticket now carries FOLLOW-764 folded in as items 6-10** — that stub is closed. The three
+corrections matter because two of them invalidate what every prior artefact said:
+
+- **Item 6 — a FOURTH hole, failing in the SAME silent direction.** `--exclude="*test*.py"` at
+  `:123` is the substring-glob shape FOLLOW-757 fixed. The "false RED here, false GREEN there"
+  justification used by FOLLOW-757's stub, RETRO-237 §6 and this queue's own earlier note holds only
+  for the comment-filter axis; an EXCLUSION defect drops files from the scan entirely, so shapes 3
+  and 4 fail silently in BOTH gates.
+- **Item 7 — AC2's rationale is false, its mechanism stands.** PR #648 did not narrow the capture
+  gate's exclusion, it REMOVED it. The two gates must now differ, correctly.
+- **Item 8 — AC3 became a COPY decision, and copying is the trap.** A verbatim transplant creates a
+  third unregistered duplicate of shared logic in the Rule J / K.1 gap that `check-mirror-files.sh`
+  cannot detect (it compares `/* */` and `//`, not a bash/python hybrid).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ### FOLLOW-760 — status: DONE (PR #650 merged 2026-08-02 by Piotr, `e9403844`)
 
 **Merged.** A file the gate cannot tokenize is no longer reported clean. `_clean_python_source()`

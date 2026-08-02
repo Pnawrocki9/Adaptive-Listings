@@ -42241,3 +42241,611 @@ post-amendment, on the script that promoted it), AL, Q (new expired-scope sub-sh
 readings 6+7). FOLLOWS FILED: 759 (P1 devops 2h), 760 (P2 devops 3h), 761 (P2 qa 2h), 762 (P2 devops 2h),
 763 (P3 backend 1h), 764 (P1-on-timing devops 1h). QUEUE.md / ESCALATIONS.md / CONVENTIONS_PATCH.md /
 sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-239 — FOLLOW-760 (#650) + FOLLOW-746 (#651) — 2026-08-02
+
+**COMBINED ENTRY — why, and what the combination bought.** The PM's dispatch note (QUEUE.md session
+88) argued the pairing on chain continuity rather than class similarity: 757 → 760 found a hole in
+757's own fix → 746 was 760's planned next step, expanded with three corrections RETRO-238 itself
+supplied as FOLLOW-764. The note asked two specific questions — did item 8's "shared helper, not a
+copy" decision actually close the Rule J/K.1 copy hazard, and does the shared helper introduce a new
+single point of failure. Both are answered below (§3, §5d). The combination paid three times:
+
+1. **#651 is the first merge in this chain that had to consume a prior retro's corrections as
+   dispatch input, and it is the only place to check whether that mechanism works.** RETRO-238 wrote
+   a prevention into FOLLOW-764 rather than promoting a rule on a prediction. #651 took the
+   recommended option and recorded the rejected one. **The negative result is the finding**: a
+   prevention written into a stub substituted for a rule promotion, once, verifiably (§6).
+2. **The two PRs sit on opposite sides of the same wiring question, 39 minutes apart.** #650 shipped
+   a new inventory signal (`UNPARSEABLE FILES: N`) that IS consumed — by the exit code. #651 shipped
+   one (`Registered mirror files excluded from the scan: N`) that is NOT. Same author family, same
+   session, same output-block shape. Read alone, HW-1 below looks like a capability gap; read
+   together, it is a choice that was made correctly ~40 minutes earlier and then not repeated (§3).
+3. **One displacement closed and one displacement duplicated, in the same session.** RETRO-238 found
+   FOLLOW-757 AC5's allowlist visibility had moved one hop rather than being wired (source-grep →
+   green-job log, filed as FOLLOW-759). #651 did not fix it — it **replicated the shape** into the
+   sibling gate. That sentence is the single most load-bearing output of this retro.
+
+Both PRs are assessed separately wherever the verdict differs (notably §3, where #650 is clean and
+#651 is not, and §8, where #650's closure trace is partial by design and #746's is complete).
+
+### 1. Summary of change
+
+- **PR #650 (FOLLOW-760):** merged 2026-08-02 20:52:36 UTC, commit `e9403844`. 2 files
+  (+274 / −42). Modules: CI / infra (shell gate) · agent lessons.
+- **PR #651 (FOLLOW-746):** merged 2026-08-02 21:31:55 UTC, commit `4446e69c`. 9 files
+  (+957 / −161). Modules: CI / infra (3 shell gates + 1 new shared lib + manifest) · 3 Modal-app
+  Python docstrings · agent lessons.
+- **Combined:** 10 distinct files, +1231 / −203. `e9403844` is an ancestor of `4446e69c`
+  (`git merge-base --is-ancestor` → true), **39 minutes apart**, with one backlog-only commit
+  (`979a0ffb`) between them. Bookkeeping follow-ons `979a0ffb` + `1f5f73c7` closed both in QUEUE.md;
+  `main` has since moved to `8b3f7d3b` (the dispatch note), so this retro is written on
+  `retrospective-analyst/RETRO-239-follow-760-746-combined`.
+- **Key contracts changed:**
+  - **#650** — `scripts/check-sentry-capture-has-init.sh`: `_clean_python_source()`'s **failure
+    contract inverted** — was "on any tokenizer error, write the RAW file to stdout, exit 0"; is now
+    "write nothing, print to stderr, **exit 3**". `_check_file()` gained a **tagged output
+    protocol** (first line `VIOLATION` | `UNPARSEABLE`) that the caller demultiplexes into two
+    separate accumulators (`:533-553`). New exit-code semantics: `1` now means violation **or**
+    unparseable. **Breaking: no** (real-tree run green before and after, §2).
+  - **#651** — three contracts, one of them new:
+    - **NEW SHARED SURFACE.** `scripts/lib/clean-python-source.sh` — first file in a new
+      `scripts/lib/` directory; exports `clean_python_source()`, sourced by both Sentry gates
+      (`capture:187`, `singleton:153`). The embedded heredoc was **deleted** from the capture gate
+      (−124 lines) and **not** copied into the singleton gate.
+    - **`scripts/mirror-files.json` changed from a single-consumer manifest to a TWO-consumer
+      contract.** `check-sentry-init-singleton.sh` now reads it (`_registered_mirror_py_paths()`)
+      and derives its **exclusion list** from the registered `.py` paths. Two new keys:
+      `basename_discovery` (bool) and `basename_discovery_note` (string).
+    - `scripts/check-sentry-init-singleton.sh`: detection moved from raw `grep` to the cleaned
+      source; exclusions moved from basename globs to **registered paths** + anchored test
+      conventions (`:452-454`); new `UNPARSEABLE` class; new exit-1 case (unreadable manifest).
+    - `apps/*/observability.py` ×3 — **docstring-only** (verified: every changed line in all three
+      files is inside the module docstring; `init_sentry`'s signature and body are untouched).
+      Byte-identity across the three preserved (rule-j green on the merge, §2).
+  - **Neither PR changed a public API surface** — no `@estalara/sdk` export, no ingest event schema,
+    no decision-API contract. No escalation trigger under CLAUDE.md's autonomy rules.
+  - **Master Design alignment (§Snapshot.1, v4.4):** no row covers CI shell gates; neither merge
+    changes any §Snapshot.1 verdict. **No divergence introduced, nothing to propagate.** (§4d DG-2
+    records one pre-existing §Snapshot.6 drift and declines to file it.)
+
+### 2. Verification done in PR
+
+- **#650** — no conventional test files; **1 new self-test fixture** (the untokenizable file) plus
+  **5 pre-existing fixtures tightened** from "exited non-zero" to "exited exactly 1". Total 9
+  fixtures. Red-first: the PR body pastes the pre-fix false-PASS transcript, and **QUEUE.md records
+  the PM independently reproducing it on a fresh fixture** — including the detail that the PM's
+  *first* check would have accepted a false confirmation (it pulled only the first token) and was
+  re-done. That is the mutation-fixture standard from RETRO-230, applied to the validator's own
+  validation. CI: **67 pass / 2 fail**, both `Rule I — wired-or-dead` (pre-existing red, duplicated
+  across the push+PR runs).
+- **#651** — **13 fixtures across two gates** (9 in the singleton self-test, 4 in the new mirror-gate
+  self-test), each red-first with the pre-FOLLOW-746 behaviour stated per fixture. Plus 2 positive
+  controls guarding against "fixing" an exclusion by deleting it. CI: **67 pass / 2 fail** (same two
+  `Rule I` rows).
+- **The checks that mattered, re-derived from the merged job logs and NOT from the PR bodies:**
+  - Singleton gate (`job 91548422322`): **all 9** `OK: self-test PASSED` lines present, including
+    `FOLLOW-746 AC2`, `FOLLOW-746 item 6`, `FOLLOW-760`, and `an unreadable mirror manifest fails
+    the gate loudly`. Real run: `Registered mirror files excluded from the scan: 3` ·
+    `UNPARSEABLE … 0` · `PASS`.
+  - Capture gate (`job 91548422317`): **all 8** `OK:` lines including
+    `OK: self-test PASSED (FOLLOW-760 CB-1)`. Real run: `Allowlist inventory … 0 occurrence(s)` ·
+    `UNPARSEABLE … 0` · `PASS`.
+  - Rule J (`job 91548422186`): `Rule J gate self-test: PASSED (4 assertions)` — **printed on a
+    no-argument invocation**, which is the whole point of the inline design (§6). Discovery
+    inventory: `bandit.ts: 2 file(s)` · `observability.py: 3 file(s)` ·
+    `OK: every file sharing a registered mirror basename is itself registered`.
+  - Rule J still reports `normalized content identical` for **both** observability pairs *after* the
+    AC4 docstring rewrite — the one way the AC4 edit could have silently broken byte-identity.
+- **Rule AF series — flat at 192 for the EIGHTH and NINTH consecutive readings** (179 → 183 → 191 →
+  192 ×9). Both re-derived independently by counting `WARN:` lines in the two `Rule I` job logs
+  (`91548691696` → 192, `91543542189` → 192), not read off QUEUE.md's summary. No action;
+  FOLLOW-591/602 own it.
+- **Rule Q compliance, both PRs:** self-test step ordered **before** the assertion step
+  (`ci.yml:678-681`, `:699-702`), no `continue-on-error`, positive proof printed in both. Fifth and
+  sixth consecutive gate-shipping PRs to comply. **#651 additionally solved the Rule Q problem for a
+  gate that had no self-test hook at all** — see §6.
+
+### 3. Wiring Audit
+
+**PR #650 — Wiring Audit — clean ✅.**
+
+- CHECK A: no new files. `_clean_python_source()` still consumed at `_check_file()`; the new
+  `VIOLATION`/`UNPARSEABLE` tag protocol has a producer (`_check_file:219,255`) and a consumer (the
+  `case` demultiplexer, `:537-553`), including a defensive `*)` branch so an unexpected shape is
+  still loud rather than dropped.
+- CHECK B: **the new `UNPARSEABLE FILES: N` signal is fully wired** — producer `:546`, printed
+  `:558`, and **consumed by the exit code** (`:564` makes `UNPARSEABLE_COUNT > 0` a hard failure).
+  Four hops ending in a gate verdict, not a log line. Recorded explicitly because it is the direct
+  counter-example to HW-1 below.
+
+**PR #651 — two findings.**
+
+- **HW-1 · HALF_WIRE_P · P1 · `scripts/check-sentry-init-singleton.sh:498-501` — the "Registered
+  mirror files excluded from the scan" suppression inventory is a producer with no consumer →
+  FOLLOW-765.** The gate prints the count (3 today) and the excluded paths on every run. Nothing
+  compares the count to a committed baseline, nothing annotates it (`::notice::`), no artefact, no
+  threshold — and the job is **green**. This is the *suppression set of the gate itself*: if a
+  fourth `.py` pair is registered in `mirror-files.json`, the gate's exclusion list silently grows
+  to 4, prints `4`, and passes. **Same organ as RETRO-238's HW-1 (FOLLOW-759), one gate over, and
+  strictly more load-bearing** — the allowlist inventory counts per-line suppressions, this one
+  counts whole files removed from the scan. Classified P1 per the standing HALF_WIRE_P rule (Rule
+  AJ); **live impact is latent** — the count is 3 and all three are byte-identical to the hardened
+  canonical (re-verified in the merged rule-j log). The stub records both facts so the PM prices it
+  honestly rather than inheriting the label.
+- **HW-2 · HALF_WIRE_P · P2 · `scripts/mirror-files.json:14` — `basename_discovery_note` is a new
+  manifest key that nothing reads → FOLLOW-766.** Grep that produced it:
+  `grep -rn "basename_discovery_note" --include=*.sh --include=*.json --include=*.ts --include=*.js .`
+  → three hits, and **none of them is a read**: `check-mirror-files.sh:25` (header prose),
+  `check-mirror-files.sh:340` (an `echo` telling the reader to go open the manifest), and the
+  manifest value itself. The note is never parsed, never printed, never asserted non-empty. It is
+  the *sole record* of a deliberate coverage gap (discovery OFF for the `route.ts`/`reorder.ts`
+  pair), so its being unwired is the difference between a documented decision and a comment.
+  Compounding it, the note's own text asserts _"Coverage gap is real and **is printed in the
+  discovery inventory** rather than left silent (FOLLOW-746 AC1)"_ — what is printed is the basename
+  list only (`Discovery OFF for basenames: route.ts reorder.ts`, verified in the merged log), never
+  the reason. The claim is false about its own mechanism (Rule AI shape).
+- **CHECK A otherwise clean, and one case worth recording because a mechanical run would misread
+  it.** `scripts/lib/clean-python-source.sh` is a **new file in a new directory** and is never
+  `import`ed — it is `source`d, which no importer grep would find. It has **2 real non-test
+  consumers** (`check-sentry-capture-has-init.sh:187`, `check-sentry-init-singleton.sh:153`), both
+  in production CI jobs. Not dead. Likewise `run_self_test()` in `check-mirror-files.sh` has two
+  callers (the `--self-test` flag *and* the inline check), `_registered_mirror_py_paths()` has one
+  (`singleton:~420`), and `clean_python_source()` has two (`capture:216`, `singleton:480`).
+- **CHECK B otherwise clean.** `basename_discovery` (bool) — producer manifest, consumer
+  `check-mirror-files.sh:~318,330`. `SENTRY_INIT_MIRROR_MANIFEST`, `MIRROR_FILES_ROOT`,
+  `MIRROR_FILES_SKIP_SELF_CHECK` — each produced by a self-test and consumed by the script
+  (`MIRROR_FILES_SKIP_SELF_CHECK` doubles as the recursion guard, which is a real consumer, not a
+  test-only one). The singleton gate's own `UNPARSEABLE FILES: N` is wired to the exit code
+  (`:~505`), same as #650's.
+- **The `--self-test` flag on `check-mirror-files.sh` is NOT dead, and the reason is the finding.**
+  Its only automated callers (`ci.yml:501` rule-j, `lefthook.yml:6`) invoke the script with **no
+  arguments**, so a `--self-test` flag alone would have been a fixture suite nothing runs — a
+  control that does not control, which is the exact shape this chain keeps producing. The
+  implementer saw that and ran the same function inline on every normal invocation,
+  recursion-guarded. Recorded as a **positive** wiring result (§6).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, #651) — the basename-discovery prune list encodes CI's filesystem, not the working
+  tree the same script runs against in the pre-push hook; with any agent worktree checked out the
+  Rule J gate false-REDs five times. Proven, not theorised.**
+  `check-mirror-files.sh:368-372` prunes `-name .worktrees` (leading dot). **This repo's agent
+  worktrees live at `.claude/worktrees/agent-*`** — a directory named `worktrees`, no dot. Direct
+  proof, run on `main`:
+
+  ```
+  find .claude -maxdepth 2 -name ".worktrees" -print   → (no output)
+  find .claude -maxdepth 2 -name "worktrees"  -print   → .claude/worktrees
+  ```
+
+  So `find .` (line 368, run from `$ROOT` after the `cd` at `:62`) descends into every live agent
+  worktree. Each worktree is a full checkout containing 3 `observability.py` + 2 `bandit.ts`, whose
+  `rel` paths (`.claude/worktrees/agent-x/apps/intent-engine/src/observability.py`, …) are not in
+  `REGISTERED_PATHS` → **5 `FAIL: unregistered copy of a mirrored file` findings, exit 1**.
+  `.git/info/exclude:12` ignores the directory for git, but `find` does not read gitignore — and
+  `.git/info/exclude` is machine-local and uncommitted, so it is not a control anyone else inherits.
+  **CI is unaffected** (fresh `actions/checkout`), which is precisely why this will only ever be
+  seen locally, on the blocking pre-push hook (`lefthook.yml:6`). Direction is false-RED (loud,
+  self-correcting) — but the cost is that it trains `git push --no-verify`, i.e. routing around the
+  gate, which is the failure mode **this very PR's header names** as its reason for fixing AC3.
+  Agent worktrees under that path are established repo practice (they have twice cost sessions of
+  confusion). → **FOLLOW-767**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, #650/#651, latent) — the capture gate has THREE predicates and only two were cleaned;
+  the third is a CLEARANCE predicate still matching raw text.** After FOLLOW-757 and FOLLOW-760, the
+  detection regex (`:231`) and the init-clearance regex (`:251`) both run against
+  `clean_python_source` output. The **allowlist clearance** does not: `:240` re-attaches each match
+  to its **original, uncleaned** line and `:246` clears it with
+  `grep -v "sentry-init-guard: allowlisted"`. The header justifies this at `:68-70` (_"run against
+  the file's ORIGINAL (uncleaned) line, so this annotation comment itself is never stripped"_) and
+  **the requirement is real** — the cleaner blanks comments, so the annotation would vanish. But the
+  implementation accepts the token from *any* raw context, not only from a comment. Concretely, in a
+  file with no `init_sentry(`:
+
+  ```python
+  sentry_sdk.capture_exception(RuntimeError("sentry-init-guard: allowlisted — x"))
+  ```
+
+  is silently **cleared** → false GREEN. This is the FOLLOW-757 defect class verbatim — a raw-text
+  mention clearing a real, unserved capture — surviving in the one predicate both remediations left
+  uncleaned. Neither PR's residual list mentions it, and FOLLOW-760 **AC5 explicitly asked for
+  "every known residual shape"**. Latent: 0 occurrences repo-wide (merged log:
+  `Allowlist inventory … 0 occurrence(s)`;
+  `grep -rn "sentry-init-guard: allowlisted" --include=*.py apps/` → 0), the same status every
+  closed shape had. The fix is expressible: require the token to sit in a region the cleaner blanked
+  **as a COMMENT** (diff cleaned vs original at that line), not merely to appear in the raw line.
+  → **FOLLOW-768**.
+- **CB-2 (P3, #651, latent) — residual C's stated compensating control does not cover the case it is
+  invoked for, so `mirror-files.json` is now an unguarded suppression list for the singleton gate.**
+  `scripts/check-sentry-init-singleton.sh:79-82` records that a registered mirror path is excluded
+  **wholesale** and asserts the "the init inside it is the hardened one" invariant is _"held by Rule
+  J byte-identity (`check-mirror-files.sh`) plus `apps/intent-engine/src/test_observability.py`"_.
+  Both named controls are keyed to the **existing** canonical. A **new self-consistent pair** —
+  `{canonical: apps/x/src/foo.py, mirror: apps/y/src/foo.py}`, byte-identical to *each other* and
+  containing a bare `sentry_sdk.init(` — passes Rule J (they match), is untouched by
+  `test_observability.py` (verified: 10 tests, all importing the intent-engine `observability`
+  module), and is excluded from the singleton gate **by its own registration**. So the exclusion
+  list is now editable by anyone who can edit the manifest, and the documented compensating control
+  is weaker than stated. Sharpened by the fact that the gate's own FIX text (`:~535-538`)
+  *instructs* the reader to register a new copy — the blessed remediation is the same action that
+  widens the suppression set. Latent (3 registered paths, all byte-identical to the hardened
+  canonical). → folded into **FOLLOW-765** (same suppression-visibility domain, same file).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, #651) — the one contract standing between the new two-gate SPOF and silent degradation
+  has no fixture in either gate.** Both gates ship the guard (`capture:180-191`,
+  `singleton:146-157`) and both headers promise it in the strongest terms: _"A missing helper fails
+  this gate with exit 2 — it never degrades to raw-text matching."_ Neither `--self-test` exercises
+  it. The asymmetry is what makes it visible: the **manifest**-missing path *is* fixtured
+  (`singleton` self-test, `an unreadable mirror manifest fails the gate loudly`, proven in the log),
+  by the same author, in the same file, in the same PR. Cheap to close (run a copy of the gate from
+  a directory with no `lib/`). → AC in **FOLLOW-769**.
+- **TG-2 (P3, #651) — no fixture asserts the two gates still agree about the helper's contract; but
+  I checked the mitigation rather than assuming it.** A future edit changing `clean_python_source`'s
+  exit code, or restoring a raw-source fallback, would degrade both gates at once. **Mitigated
+  twice**: each gate carries its own untokenizable fixture (`capture` FOLLOW-760 CB-1; `singleton`
+  FOLLOW-760), so a semantic regression in the shared helper fails **two independent self-tests**.
+  That is a strictly better position than the copy would have given, and it is the substantive
+  answer to the PM's SPOF question. P3, recorded in §5d rather than filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, both) — `# shellcheck` directives on a repo with no shellcheck.** `capture:186`,
+  `singleton:152`, `lib/clean-python-source.sh:50`, plus `# shellcheck disable=SC2064` in
+  `check-mirror-files.sh`. Verified: `grep -rn "shellcheck" .github/` → **no hits**, and
+  `lefthook.yml` has no shellcheck command. Harmless in effect, but each directive reads as evidence
+  of a lint control that does not exist — and `source=` directives specifically exist to make a
+  *sourced-file* analysis work, which is exactly the new construct #651 introduced. Either wire
+  shellcheck over `scripts/**/*.sh` or drop the directives. → folded into **FOLLOW-769**.
+- **DG-2 (P3, pre-existing — recorded, deliberately NOT filed).** `docs/MASTER_DESIGN.md`
+  §Snapshot.6 carries a CONVENTIONS_PATCH rule count of **27**;
+  `grep -c "^## Rule " CONVENTIONS_PATCH.md` → **41** today. Neither PR touched CONVENTIONS_PATCH,
+  so Rule AI does not make this theirs, and filing it here would be scope creep onto whichever
+  future PR promotes rule 42. Recorded so the next §Snapshot refresh has the number.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-759 (P1, allowlist inventory) — premise UNCHANGED, but its population doubled and its
+  subject gained a defect.** Verified byte-for-byte: the inventory block (`capture:512-521`) is
+  untouched by both PRs, the region-mismatch grep at `:514` still has no `--include=*.py` and no
+  test-file exclusion (RETRO-238 CB-2 intact), and the merged log still prints `0 occurrence(s)`.
+  **Two things moved under it:** (i) #651 shipped a *second* producer-only suppression inventory in
+  the sibling gate (HW-1) — the same organ, one gate over; (ii) CB-1 is a defect in the **evaluation
+  medium** of the very allowlist that inventory counts. I filed FOLLOW-765 and FOLLOW-768 separately
+  rather than growing 759, because 759's ACs are about *consumer + region* while these are about a
+  *second gate* and a *third predicate* — different mechanisms, and merging them would produce a
+  ticket no one can scope. All three cross-reference each other.
+- **FOLLOW-764 — genuinely CLOSED, and I traced the code rather than trusting the "folded in" note**
+  (§8 has the per-item trace). All three corrections changed behaviour, not just prose.
+- **FOLLOW-758 (P2, `init_sentry` return contract) — unaffected, and I checked rather than assumed**
+  because #651 *did* touch all three `observability.py` files. The diffs are docstring-only;
+  `init_sentry`'s signature and body are byte-identical to their RETRO-237 state.
+- **FOLLOW-756 (P1, `SENTRY_DSN` provisioning) — premise UNCHANGED and correctly untouched.** No
+  `SENTRY_DSN` value appears in either diff. §5d has the aggregate.
+- **FOLLOW-761 / 762 / 763 (Redis smoke + `ShadowChatIntent`) — untouched, no premise moved.**
+  Different subsystem; neither PR goes near `.github/workflows/redis-shadow-smoke.yml`,
+  `chat-intent-cache.ts` or the integration suite. Stated explicitly so the PM does not re-derive it.
+
+#### 5b. Future sprint tickets affected
+
+- **The next Modal app to adopt `observability.py` now meets a genuinely closed loop — and the same
+  loop's remediation instruction widens a suppression set.** An unregistered 4th copy now fails
+  **both** gates: the mirror gate finds it repo-wide by basename (so even a copy outside
+  `apps/*/src` is caught, which the singleton gate's residual A cannot do), and the singleton gate
+  scans it because it is not a registered path. That is FOLLOW-746's thesis and it verifiably holds.
+  But the fix the gate prints — "register it in `scripts/mirror-files.json`" — is exactly the action
+  that adds it to the singleton gate's exclusion list (CB-2). The next adopter should read
+  FOLLOW-765 first.
+- **Any future gate needing Python-source cleaning inherits a decision, not a copy.** `scripts/lib/`
+  now exists with one member and a decision record in its header. The third gate that needs it will
+  `source` it; the SPOF analysis in §5d is the thing to re-read at that point, because the "two
+  independent self-tests" mitigation (TG-2) does not automatically extend to a third caller — the
+  helper's header says as much (_"a new caller that does not [distinguish exit 3] is a bug in that
+  caller"_), which is a documented contract with no mechanical enforcement.
+- **`packages/py-shared` (FOLLOW-738 AC-5) — still correctly out of scope.** #651 honoured item 10;
+  nothing here re-opens it.
+
+#### 5c. Contracts changed others rely on
+
+- **`scripts/mirror-files.json` is now read by two gates in two different CI jobs.** Before #651 it
+  had exactly one consumer. Editing a `.py` pair now changes `check-sentry-init-singleton.sh`'s
+  exclusion list as a side effect. Only the singleton script's header records this; the manifest
+  itself does not (it is a bare JSON array with no header-comment slot). Anyone adding a pair must
+  now reason about both gates. Recorded for the architect; no separate stub — FOLLOW-765 touches the
+  same surface and carries it.
+- **New cross-script sourcing coupling.** `scripts/lib/clean-python-source.sh`'s exit-3 contract is
+  depended on by two callers at `capture:216` and `singleton:480`. Changing that number breaks both
+  — but safely-in-shape: the callers test `-ne 0`, so any non-zero still routes to UNPARSEABLE (I
+  checked; the specific value 3 is documentary, not load-bearing). Recorded as the *safe* direction.
+- **CI-output "contract":** five new inventory lines across three gates
+  (`Registered Rule J mirror paths`, `Registered mirror files excluded…`, `UNPARSEABLE FILES` ×2,
+  `Discovery ON/OFF for basenames`, `<basename>: N file(s) found`). Two are wired to exit codes; the
+  rest are read by humans only (HW-1, HW-2). No downstream parser to break.
+- **No public API surface changed by either PR** — re-verified against CLAUDE.md's escalation list.
+
+#### 5d. Architectural assumptions affected
+
+- **The new SPOF, answered directly (the PM's second dispatch question).**
+  `scripts/lib/clean-python-source.sh` is one definition behind two blocking CI gates. Assessed on
+  both axes rather than asserted:
+  - **Availability — guarded.** Both gates check `[[ ! -f "$CLEAN_LIB" ]]` and then
+    `declare -F clean_python_source`, exiting **2** on either. Deletion or a malformed helper is
+    loud in both jobs. The guard is real; it is simply **unfixtured** (TG-1).
+  - **Semantics — guarded twice.** A reintroduced raw-source fallback fails the untokenizable
+    fixture in *both* self-tests, independently.
+  - **Verdict: item 8's decision was right and the SPOF is net risk-reducing.** The rejected
+    alternative (two registered copies) fails *worse* on the axis that matters — a drifting copy is
+    undetectable by `check-mirror-files.sh`'s `strip_comments()`, which handles `/* */` and `//` and
+    therefore strips nothing from a bash/python hybrid. The residual is **blast radius**, not
+    correctness: one edit now lands in two blocking gates simultaneously with no staged rollout, and
+    the single contract nobody fixtured is the availability guard. **Close TG-1 and the SPOF is
+    strictly better than the status quo ante.**
+- **The singleton gate's correctness now depends on a control living in a DIFFERENT CI job.**
+  Residual C names `rule-j` as what keeps the excluded mirrors honest. Both jobs are blocking today,
+  so the composition is sound. But if `rule-j` were ever quarantined under Rule AF's own escape
+  hatch, the singleton gate would silently lose its exclusion-list integrity check **with no signal
+  in the singleton job**. Recorded; no stub — the condition is not met and quarantine decisions are
+  PM territory.
+- **"A gate proves the code is right" vs "the code runs" — Rule AA, third consecutive retro.** Three
+  Sentry gates now exist, all green, all self-tested, 22 fixtures between them — guarding a signal
+  path whose `SENTRY_DSN` is still unprovisioned (FOLLOW-756). The gate quality is now conspicuously
+  ahead of the channel it guards. This is not a criticism of any of the six tickets; it is the
+  aggregate the PM should see, and it is why P-21 exists (§6).
+- **Rule AG exposure — unchanged, and recorded for the second consecutive retro.** Both PRs appended
+  to `.claude/agents/devops-engineer/lessons.md` (+36, +39). Verified: `retrospective-analyst` is
+  still the **only** agent with a `lessons.d/` fragment directory. Dispatch was strictly serial this
+  session, so Rule AG's condition ("while other agents may be running") was not met — **compliant on
+  the letter, exposed the moment parallel dispatch resumes.** No stub; process tooling is the PM's
+  call and I do not escalate on the PM's behalf.
+
+### 6. New lesson candidates
+
+- **The Rule J / K.1 duplicate pattern — RESOLVED rather than sighted, and the NEGATIVE RESULT is
+  the lesson. Held at count 2.** RETRO-238 §6 declined to advance this pattern on a *prediction*
+  (that `_clean_python_source` would be copied), and instead wrote the prevention into FOLLOW-764
+  item 8 — explicitly reasoning that "the third sighting does not have to happen for the lesson to
+  be applied". **#651 took option (a), recorded the rejected option (b) with its reasoning, and the
+  predicted third copy never existed.** So: a prevention written into a stub substituted for a rule
+  promotion, once, verifiably. That is worth banking as a **process** result, not a code pattern —
+  it is evidence that the ≥2-prior-retro threshold costs the repo the codification, not the fix.
+  Still count 2. No promotion, and no new pattern minted for it.
+- **P-21 ("A GATE IS ACCEPTED AS A SUBSTITUTE FOR THE CHANNEL IT GUARDS") — NOT ADVANCED. Held at
+  count 2.** This pair meets criteria (i) and (iii) trivially (three gates, 22 fixtures; QUEUE.md's
+  DONE blocks describe the work as complete). Criterion (ii) is met on its face — `SENTRY_DSN` is
+  still unprovisioned. **But the artefact is the SAME ONE RETRO-237 used for sighting 1** (the
+  Sentry DSN path), and RETRO-238 set the bar explicitly when it *accepted* its own advance: the
+  sighting counted because it was "a DIFFERENT artefact from RETRO-237's … exactly the bar RETRO-237
+  set when it declined the Rule AJ advance for same-artefact hops". Applying that bar against
+  myself: this is a same-artefact hop and **does not count**. Held at 2. The criterion-(ii)
+  disjunction RETRO-238 pre-specified (channel unprovisioned **or** producer not deployed) remains
+  in force, unused this retro.
+- **P-22 ("THE REMEDIATION RE-INSTANTIATES ITS OWN DEFECT CLASS IN A NEW MEDIUM") — NOT ADVANCED.
+  Held at count 2.** CB-1 is superficially a perfect third sighting — a raw-text clearance predicate
+  in the very script whose raw-text clearance predicates were the original defect. **It fails the
+  bar RETRO-238 pre-specified, on two of three clauses:** (a) requires a *different subsystem and
+  different author* — this is the same script, same family; (b) requires a defect introduced **by**
+  the remediation — the raw-text allowlist **pre-dates** FOLLOW-757 (it shipped with FOLLOW-743's
+  original gate) and **survived** both remediations rather than being created by them. Only (c)
+  holds. Recording this explicitly because the pre-specification did its job: without it I would
+  have counted CB-1 and promoted P-22 on a sighting that is actually a Rule AE instance.
+- **Rule AE-as-amended — SECOND post-amendment instance, clearance-side again, and the meta-pattern
+  is now the thing to watch.** CB-1 is a clearance predicate left in raw text; CB-2 is a residual
+  whose *compensating control* is overstated. Neither is in the shipped residual lists, and
+  FOLLOW-760 **AC5 asked for a complete one**. This is the **third consecutive retro** in which a
+  gate-hardening PR's own enumeration of what remains is one shape short (RETRO-238: CB-1/CB-3 on
+  #648; here: CB-1/CB-2 on #650+#651). **The pattern is not "the fix was wrong" — every fix in this
+  chain worked. It is "the enumeration of the residual is systematically incomplete, and the
+  incompleteness is invisible because the enumeration is prose."** No amendment proposed: Rule AE
+  already demands full enumeration, so the defect is in *application*, not wording — the same
+  verdict RETRO-238 reached. **Two consecutive identical verdicts is itself the signal**, and I am
+  flagging it forward: if a fourth consecutive retro reaches it again, the right response is not a
+  fourth AE sighting but a *mechanical* residual register (a machine-checkable per-gate list), which
+  would be a new rule with a real mechanism. Pre-specified here so the next retro can test it rather
+  than re-derive it.
+- **Rule AJ — TWO instance sightings in ONE PR (HW-1, HW-2), codified, no promotion needed.** Per my
+  standing no-undercount guardrail these are listed separately in §3 rather than merged, because
+  they are different media (a CI log line vs a manifest field) and will need different fixes.
+- **Rule Q — a COMPLIANT instance worth recording, which RETRO-236's precedent says not to count.**
+  `check-mirror-files.sh`'s inline self-check is the cleanest Q-shaped solution this chain has
+  produced: the implementer noticed that a `--self-test` flag would be a fixture suite nothing
+  invokes (both automated callers pass no arguments), and made the same function run inline on every
+  normal run, recursion-guarded, printing positive proof (`Rule J gate self-test: PASSED (4
+  assertions)`, verified in the merged log). Not counted toward any promotion — but recorded,
+  because the learning loop should keep evidence that rules land, not only that they are violated.
+- **P-23 (MINTED at count 1) — "A GATE'S FILE-DISCOVERY SCAN/PRUNE LIST ENCODES THE ONE ENVIRONMENT
+  ITS AUTHOR TESTED IN, AND THE GATE RUNS IN TWO." THRESHOLD NOT MET → NOT PROMOTED.**
+  - **THIS RETRO (count 1)** — LG-1: `check-mirror-files.sh`'s prune list is exactly right for a
+    fresh `actions/checkout` and wrong for the working tree the *same script* is invoked against by
+    the pre-push hook. The defect is invisible in CI **by construction**, so no amount of CI
+    evidence would surface it.
+  - **Why this is not already covered, tested rather than asserted.** **Rule AL** is
+    assertion-region vs *consumer*-region within one run; here both regions are the gate's own and
+    the mismatch is between *environments*. **Rule Q** is about soft-skips and proof-of-execution;
+    this gate hard-fails and proves it ran. **Rule AA** splits code-axis from prod-axis for
+    *tickets*, not scan roots. **Rule AM** governs fixture provenance. None fires.
+  - **Second-sighting bar, pre-specified:** it must be (a) a file-discovery or path-filter list in a
+    gate, (b) demonstrably correct in one of {CI checkout, developer working tree, agent worktree,
+    container image} and wrong in another, and (c) the wrong environment must be one the gate is
+    **actually invoked in** (a hypothetical environment does not count). If it arrives, the rule
+    should ask for one thing: any gate wired into *both* CI and a local hook must derive its
+    discovery roots from `git ls-files` / an explicit allowlist, not from a `find` prune blacklist.
+
+**PROMOTION VERDICT: no rule promoted this retro.** No pattern reached ≥2 PRIOR retros. P-21 and
+P-22 both **declined an advance they superficially qualified for**, on bars their own prior retros
+pre-specified; the Rule J/K.1 pattern was resolved rather than sighted; P-23 is at count 1.
+`CONVENTIONS_PATCH.md` is deliberately untouched.
+
+### 7. Follow-ups
+
+- **FOLLOW-765:** the singleton gate's registered-mirror **exclusion inventory** is a producer with
+  no consumer (a green log nobody reads — the same organ as FOLLOW-759, one gate over and more
+  load-bearing), **and** residual C's stated compensating control does not cover a newly-registered
+  self-consistent `.py` pair, so `mirror-files.json` is an unguarded suppression list for this gate
+  (devops-engineer, 2h, **P1** by the HALF_WIRE_P classification; live impact latent at 3 registered
+  paths, all byte-identical to the hardened canonical) [HW-1, CB-2; Rules AJ / AE]
+- **FOLLOW-766:** `basename_discovery_note` is a manifest key nothing reads, and the note's own text
+  claims it is printed in the discovery inventory when only the basename list is (devops-engineer,
+  1h, **P2**) [HW-2; Rules AJ / AI]
+- **FOLLOW-767:** the Rule J basename-discovery prune list misses this repo's actual agent-worktree
+  path (`.claude/worktrees`, no leading dot), so the blocking pre-push hook false-REDs five times
+  whenever a worktree is checked out — invisible in CI by construction (devops-engineer, 1h, **P2**)
+  [LG-1; P-23]
+- **FOLLOW-768:** the capture gate's **allowlist clearance** still matches RAW text, so the token
+  inside a string literal on a capture line silently clears a real, unserved capture — the
+  FOLLOW-757 defect class surviving in the one predicate both remediations left uncleaned
+  (devops-engineer, 2h, **P2**) [CB-1; Rule AE-as-amended, clearance-side clause]
+- **FOLLOW-769:** the "a missing shared helper hard-fails the gate" contract — the only guard on the
+  new two-gate SPOF, and promised in both script headers — has no fixture in either gate; plus
+  `# shellcheck` directives in three files on a repo with no shellcheck anywhere (devops-engineer,
+  2h, **P3**) [TG-1, DG-1]
+
+**Not filed, deliberately:** no duplicate of **FOLLOW-759** (premise unchanged and verified
+untouched; 765/768 are scoped to a *different gate* and a *different predicate* and cross-ref it —
+merging them would produce an unscopeable ticket); no stub for **TG-2** (the two-independent-fixtures
+mitigation is real — §5d); no stub for the **`mirror-files.json` two-consumer coupling** (§5c — the
+coupling is correct and FOLLOW-765 touches the same surface); no stub for **residual A/B/D** in
+either gate (documented-and-open, re-verified latent in §8, and #651 correctly recorded that the
+`sentry_sdk.`-prefix residual should be **one ticket for both gates** — better ticket design than I
+would have imposed); no stub for **Rule AG fragment directories** for `devops-engineer` (process
+tooling, PM's call — §5d); no stub for **Rule I** (FOLLOW-591/602 exist); no stub for **§Snapshot.6's
+stale rule count** (§4d DG-2 — pre-existing, not caused by either PR); no stub for **FOLLOW-756 /
+ESC-042** (operator territory — surfaced in §5d per my no-escalation guardrail).
+
+### 8. Cross-references
+
+- **RETRO-238 (FOLLOW-757 #648 + FOLLOW-752 #649)** — the direct parent of this pair. **Closure
+  traces (step 7), end-to-end on `main`, per AC rather than per ticket:**
+
+  **FOLLOW-760 — 4 of 6 ACs closed, 1 deferred honestly, 1 PARTIAL (and the partial is a recurrence,
+  not a regression).**
+  - **AC1 (make the fallback loud) — CLOSED at the level of the mechanism, and it TERMINATES.**
+    Traced all five hops rather than stopping at the fix: producer
+    `lib/clean-python-source.sh:112-113` (writes nothing, stderr, `sys.exit(3)`) → captured
+    `capture:216` via `|| clean_rc=$?` (not a bare assignment, so `set -e` is not tripped — I checked
+    this specifically, because the obvious implementation would have crashed the gate) → tagged
+    `:219` → demultiplexed and counted `:546` → **consumed by the exit code `:564`**. The last hop
+    is what makes it a gate rather than a log line, and it is exactly the hop RETRO-238's HW-1 was
+    missing. *Regression proof*: the fixture is wired into `--self-test`, which is the **first** step
+    of the hard CI job, and `OK: self-test PASSED (FOLLOW-760 CB-1)` appears in the merged run's log
+    (`job 91548422317`).
+  - **AC2 (enumerate import shapes) — NOT closed; DEFERRED, and correctly.** AC2 permitted exactly
+    this ("either match them or state in the header, with the grep that proves it").
+    `capture:83-101` records gap 7 with the proving grep; **I re-ran it on `main` rather than
+    trusting the header**:
+    `grep -rn "from sentry_sdk import\|import sentry_sdk as" --include=*.py .` → **0 hits**. Still
+    latent. **And #651 improved on what was asked**: the singleton header records the same shape as
+    its gap B and adds the structural observation that it is now *literally one residual on both
+    sides of one shared helper* and should be one ticket for both gates. A better answer than either
+    ticket demanded.
+  - **AC3 (specific exit codes) — CLOSED.** All 5 pre-existing fixtures plus the new one now assert
+    `-ne 1` explicitly, replacing the `if bash "$0"; then FAIL` shape RETRO-238 flagged as TG-1.
+  - **AC4 (red-first fallback fixture) — CLOSED and PROVEN TO RUN** (log line above), and it asserts
+    the **diagnosis** (`grep -q "UNPARSEABLE"`), not merely the exit code — the Rule AM shape the AC
+    asked for.
+  - **AC5 (restate the residual list honestly) — PARTIAL, and this is the honest verdict.** The
+    header went from residuals {5, 6} to {5, 6, 7}. But **CB-1 is a residual it still does not
+    list** — so the enumeration is again one shape short, one ticket after RETRO-238 made precisely
+    that finding about #648's enumeration. Not a regression (nothing got worse); a **recurrence**,
+    and the basis for §6's meta-pattern flag.
+  - **AC6 (do not change `apps/*`, the allowlist spelling, or CI wiring) — HONOURED.** #650 touched
+    2 files, neither under `apps/`.
+
+  **FOLLOW-746 — all 5 original ACs and all 5 folded-in items closed; traced in code, not prose.**
+  - AC1 (basename discovery) — `check-mirror-files.sh:~305-390`, opt-in per pair, **plus** the
+    self-test the AC asked for **plus** the inline invocation that makes the self-test actually run.
+  - AC2 (narrow the exclusion to registered paths) — `_registered_mirror_py_paths()` + `grep -Fxq`
+    on the rel-path (`:~468`); fixture `FOLLOW-746 AC2` proven in the log.
+  - AC3 (comment/docstring filter) — replaced by the shared tokenizer, not a widened regex, as the
+    AC required; both AC3(a) and AC3(b) fixtures proven in the log.
+  - AC4 (truthful mirror docstring without breaking byte-identity) — applied to all three copies in
+    one commit; **byte-identity re-verified post-edit** (`normalized content identical` ×2 in the
+    merged rule-j log). This was the one way AC4 could have silently failed.
+  - AC5 (no `packages/py-shared`) — honoured.
+  - **FOLLOW-764 items 6/7/8 — all three landed as BEHAVIOUR, not just prose.** Item 6: anchored
+    `! -name "test_*.py"` / `"*_test.py"` / `"conftest.py"` (`:452-454`) + the `latest_pricing.py`
+    fixture, proven exit 0 → exit 1. Item 7: the header (`:38-45`) does not merely drop the false
+    symmetry justification — it **inverts it with a reason** and adds _"Do not 'converge' them."_
+    Item 8: the shared helper, with option (b) recorded *and* reasoned rather than silently dropped.
+    Items 9 (sequencing) and 10 (do not re-open) both honoured. **FOLLOW-764 is genuinely closed.**
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141)** — the reason
+  step 7 exists. This pair gives **one termination and one duplication**:
+  - *Termination*: FOLLOW-760 AC1's wire reaches an exit code (five hops above). FOLLOW-746 AC1/AC2
+    likewise — an unregistered 4th copy now fails two gates, proven by two fixtures in two jobs.
+  - *Duplication*: RETRO-238's HW-1 (the allowlist inventory that moved from "grep the source" to
+    "open a passing job's log") was **not** fixed here, and #651 **replicated the shape** into the
+    singleton gate as HW-1/FOLLOW-765. The gap did not move one hop this time — it **forked**. That
+    is a new mode for this chain and worth naming: a displacement left open long enough gets copied
+    along with the design it lives in.
+- **RETRO-237 (FOLLOW-743 + FOLLOW-744)** — origin of the capture gate and of the Rule AE amendment
+  whose clearance-side clause CB-1 instantiates for the second time. Its §6 direction clause
+  ("false RED here, false GREEN there"), already corrected by RETRO-238 for the exclusion axes, is
+  now corrected **in the code's own header** by #651's commit message and `singleton:22-45`. The
+  record and the mechanism agree; no further reconciliation needed.
+- **RETRO-235 (FOLLOW-738)** — minted HW-4 (the unregistered 4th `observability.py`) and CB-5 (every
+  mirror declaring itself canonical). **Both are now closed** — HW-4 by AC1+AC2, CB-5 by AC4 — three
+  days after they were filed. Recorded because RETRO-235 predicted the 4th-copy hole would close
+  only "if the mirror tooling learns discovery"; it did.
+- **RETRO-236 (FOLLOW-736)** — the precedent I applied in §6 for **not** counting a compliant
+  instance toward promotion (here: `check-mirror-files.sh`'s inline self-check).
+- **RETRO-233 / RETRO-231** — the Rule J / K.1 duplicate pattern, held at count 2 since RETRO-233.
+  §6 records that it was **resolved by prevention** rather than advanced by sighting.
+- **RETRO-230** — the mutation-fixture method (show the OLD mechanism PASSING the bad input), which
+  both PRs used as their evidence standard and which the PM independently re-executed for #650.
+
+<!-- RETRO-239 SUMMARY: 2 PRs, 10 files, +1231/-203, 39 min apart. WIRING: #650 clean (its new
+UNPARSEABLE signal IS wired — producer->tag->counter->EXIT CODE, 5 hops); #651 TWO findings — HW-1
+HALF_WIRE_P P1 (singleton gate's registered-mirror EXCLUSION inventory = producer with no consumer,
+the same organ as RETRO-238's HW-1/FOLLOW-759 one gate over and MORE load-bearing, latent at 3 paths)
+and HW-2 HALF_WIRE_P P2 (`basename_discovery_note` = manifest key nothing reads, whose own text claims
+it is printed). New file scripts/lib/clean-python-source.sh is SOURCED not imported — 2 real non-test
+consumers, NOT dead; a mechanical CHECK A would have misflagged it. GAPS: 1 logic (LG-1 the Rule J
+prune list prunes `.worktrees` but this repo's agent worktrees are `.claude/worktrees` — PROVEN by
+find on main; 5 false-RED findings on the blocking pre-push hook, invisible in CI by construction),
+2 bugs (CB-1 the capture gate's THIRD predicate — allowlist CLEARANCE — still matches RAW text, so the
+token inside a string literal silently clears a real capture = the FOLLOW-757 class surviving both
+remediations, latent at 0 occurrences; CB-2 residual C's compensating controls are keyed to the
+EXISTING canonical so a new self-consistent registered pair is unguarded, making mirror-files.json an
+editable suppression list for the singleton gate), 2 test gaps (TG-1 the "missing helper hard-fails"
+contract — the ONLY guard on the new two-gate SPOF — has no fixture in either gate, while the
+manifest-missing path DOES; TG-2 mitigated by two independent fixtures, checked not assumed), 2 doc
+gaps (DG-1 `# shellcheck` directives in 3 files with NO shellcheck in .github/ or lefthook; DG-2
+Snapshot.6 rule count 27 vs 41 actual — pre-existing, deliberately NOT filed). SPOF VERDICT (PM's
+dispatch question): item 8 was RIGHT — availability guarded (exit 2 both gates), semantics guarded
+TWICE (each gate has its own untokenizable fixture), residual is blast radius not correctness; close
+TG-1 and it is strictly better than a copy, which would have drifted undetectably. CASCADES: FOLLOW-759
+premise UNCHANGED but its population doubled and its subject gained CB-1; FOLLOW-758/756/761/762/763
+unaffected (checked, not assumed — #651 DID touch all 3 observability.py but docstring-only);
+mirror-files.json is now a TWO-consumer contract across two CI jobs; the singleton gate's correctness
+now depends on a control in a DIFFERENT job (rule-j). CLOSURE: FOLLOW-760 traced PER-AC — AC1 CLOSED
+and TERMINATES at an exit code (the hop RETRO-238's HW-1 lacked), AC2 deferred honestly with the grep
+re-run on main (0 hits), AC3/AC4 closed and PROVEN to run from the merged job log, AC5 PARTIAL — the
+residual list is AGAIN one shape short (CB-1), a recurrence not a regression; FOLLOW-746 all 5 ACs +
+all 5 FOLLOW-764 items closed in BEHAVIOUR not prose, byte-identity re-verified after the AC4 docstring
+edit; FOLLOW-764 genuinely CLOSED; RETRO-235's HW-4 and CB-5 both closed. DISPLACEMENT CHAIN: one
+TERMINATION (760 AC1 reaches an exit code) and one DUPLICATION (RETRO-238's HW-1 was not fixed — #651
+REPLICATED its shape into the sibling gate; the gap FORKED rather than moved one hop — a new mode).
+RULES: **NONE PROMOTED** — P-21 NOT advanced (met (i)+(iii) and (ii) on its face, but SAME artefact as
+RETRO-237's sighting 1; applied RETRO-238's own same-artefact bar against myself), P-22 NOT advanced
+(CB-1 fails clauses (a) and (b) of the pre-specified bar — it SURVIVED the remediation, it was not
+introduced by it; the pre-specification prevented a false promotion), Rule J/K.1 RESOLVED-by-prevention
+rather than sighted (held at 2 — the negative result: a prevention in a stub substituted for a rule),
+P-23 MINTED at count 1 with a pre-specified bar ("a gate's discovery/prune list encodes the ONE
+environment its author tested in, and the gate runs in two"; tested against AL/Q/AA/AM — none fires).
+META-PATTERN FLAGGED FORWARD: third consecutive retro where a gate-hardening PR's own residual
+enumeration is one shape short; two consecutive identical "application not wording" verdicts — if it
+recurs a 4th time the answer is a MECHANICAL residual register, pre-specified here. Instance sightings:
+AJ x2 (listed separately per no-undercount), AE-as-amended (2nd post-amendment, clearance-side again),
+AI, Q (a COMPLIANT instance — the inline self-check solving "a --self-test nobody invokes"), AF (192
+flat, readings 8+9, re-derived from both Rule I logs). FOLLOWS FILED: 765 (P1 devops 2h), 766 (P2
+devops 1h), 767 (P2 devops 1h), 768 (P2 devops 2h), 769 (P3 devops 2h). QUEUE.md / ESCALATIONS.md /
+CONVENTIONS_PATCH.md / sprint files / code correctly UNTOUCHED. -->

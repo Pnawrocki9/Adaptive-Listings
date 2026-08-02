@@ -2726,3 +2726,17 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
 - **A delegation/validation rule I'd add:** when scoping a subagent's write access in a dispatch
   brief, explicitly include that agent's own `lessons.d/**` path — narrowing to "backlog + docs
   only" silently starves the learning loop the agent is supposed to feed.
+
+- **Date / ticket:** 2026-08-03 — PR #652 (FOLLOW-765+759) validation, FOLLOW-761 dispatched next
+- **Delegation row used:** validation only for #652 (no new delegation); "E2E/integration/load/a11y
+  tests, fixtures, golden harness" → qa-engineer for FOLLOW-761
+- **What validation caught (or missed):** Building my OWN red-first fixtures (not the worker's) for
+  both FOLLOW-765 AC2 and FOLLOW-759 AC3, and running them against `main`'s pre-merge script AND the
+  PR's script, was the only way to actually confirm the "one shared baseline, not two bespoke ones"
+  and "AC2 truly catches a self-consistent pair" claims rather than trusting the PR body's own
+  transcripts. Also caught a same-file collision risk before it happened: FOLLOW-761 and FOLLOW-762
+  both touch `redis-shadow-smoke.yml`, so dispatched only one this turn instead of both in parallel.
+- **A delegation/validation rule I'd add:** when RETRO_UPS lists a follow-up whose AC textually
+  references code from a sibling PR ("must move with it in that same PR" / similar coupling
+  language), check whether that sibling PR has actually MERGED before dispatching — the referenced
+  code may only exist on an unmerged branch, which would strand the new worker on stale `main`.

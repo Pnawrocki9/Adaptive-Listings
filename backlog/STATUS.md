@@ -750,3 +750,32 @@ scoped dispatch brief.
 
 NEXT: Wait for devops-engineer's PR, then run full validation (5a-5g), confirming ONE shared
 baseline mechanism actually covers both gates rather than two bespoke ones.
+
+---
+
+# Status — 2026-08-03 (session 89 continued — PR #652 validated, FOLLOW-761 dispatched)
+
+## SESSION 89 continued — PR #652 validated READY_FOR_REVIEW, next ticket dispatched
+
+**Validated PR #652 (FOLLOW-765+759) in full (5a-5g).** CI: 67 pass / 2 fail, both `Rule I`
+pre-existing-red (192 WARN lines, matched to baseline, confirmed via job log not label). Non-success
+count for all real gates: 0. Independently re-derived, on my OWN fixtures (not the worker's): the
+ONE-shared-baseline claim (grep evidence, 2 real consumers of `compare_suppression_baseline`),
+FOLLOW-765 AC2's red-first catch (self-consistent unhardened pair, exit 0 on pre-merge main -> exit
+1 on PR branch), FOLLOW-759 AC3's region-alignment fix (same fixture, exit unchanged/0 but count
+2->0 as region now matches scan). Posted PM-validated comment with full evidence on PR #652; moved
+FOLLOW-765+759 to READY_FOR_REVIEW in QUEUE.md. **Not merged — needs Piotr.**
+
+**Continued past validation per Piotr's standing instruction.** Dispatched FOLLOW-761 (qa-engineer,
+Sonnet) — Redis smoke workflow concurrency-group + fixture-key namespacing, the RETRO-238 finding
+with a MEASURED 26s race. Deferred FOLLOW-762 (same workflow file, different AC set) to next turn to
+avoid a two-agent same-file collision. Deferred FOLLOW-768 (sentry-gate residual) until PR #652
+actually merges, since its AC explicitly couples to code that only exists on that unmerged branch.
+
+**CI-check counter (FOLLOW-765+759):** 1/5. **Fix-iteration counter:** 0/3. **CI-check counter
+(FOLLOW-761):** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (FOLLOW-761). **1 ticket READY_FOR_REVIEW** (FOLLOW-765+759, PR #652).
+
+NEXT: Piotr reviews/merges PR #652. PM waits for qa-engineer's FOLLOW-761 PR, validates, then either
+picks FOLLOW-762 or (if #652 has merged by then) FOLLOW-768.

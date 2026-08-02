@@ -119,6 +119,74 @@ regression hole, the same status the four FOLLOW-757 shapes had before they were
 
 ---
 
+### FOLLOW-765 + FOLLOW-759 — status: READY_FOR_REVIEW (PR #652 open, `2fd4d942`, PM-validated 2026-08-03)
+
+**PM validation done in full (5a-5g), not a partial check.** PR #652
+`ci(infra): baseline-check both sentry gates' suppression sets`, one commit `2fd4d942` on
+`devops-engineer/FOLLOW-765-759-suppression-inventories`. 919 additions / 61 deletions across 6
+files: `backlog/QUEUE.md`, 2 new committed baselines under `scripts/baselines/`, both gate scripts,
+and the new shared `scripts/lib/suppression-baseline.sh`.
+
+**5b — CI, watched to completion, not read once.** `gh pr checks 652 --watch` → 67 pass / 2 fail.
+Both fails are `Rule I — wired-or-dead check` — re-verified as pre-existing-red, not a regression,
+by reading the job log directly (`gh api .../jobs/91555161600/logs | grep -c "WARN:"` → **192**,
+identical to RETRO-239's own baseline reading, not read off a label). **Non-success count for all
+REAL gates: 0.**
+
+**5c — the ONE-shared-baseline question, the thing most likely to be wrong, checked from the diff
+itself:**
+
+```
+$ grep -rn "compare_suppression_baseline" scripts/ --include=*.sh | grep -v "^scripts/lib/suppression-baseline.sh"
+scripts/check-sentry-init-singleton.sh:262:if ! declare -F compare_suppression_baseline > /dev/null 2>&1; then
+scripts/check-sentry-init-singleton.sh:786:compare_suppression_baseline \
+scripts/check-sentry-capture-has-init.sh:274:if ! declare -F compare_suppression_baseline > /dev/null 2>&1; then
+scripts/check-sentry-capture-has-init.sh:726:compare_suppression_baseline \
+```
+
+One function (`scripts/lib/suppression-baseline.sh`), two real non-test production-CI-gate
+consumers. Genuinely ONE mechanism — the title's "both gates" and the code's "one mechanism" match.
+
+**FOLLOW-765 AC2 — independently reproduced on a fixture I built myself, not the worker's.** A
+self-consistent pair (`app-a/src/telemetry_boot.py`, `cp`'d to `app-b/src/jobs/telemetry_boot.py`),
+byte-identical to EACH OTHER, holding a bare `sentry_sdk.init(dsn=dsn, traces_sample_rate=1.0)` with
+none of the three hardened markers, registered in a rogue `mirror-files.json`:
+
+- Against `main`'s pre-merge script (`af5f3261`): `exit=0`,
+  `PASS: no real sentry_sdk.init( call sites found outside the registered Rule J mirror paths` — the
+  hole existed exactly as claimed.
+- Against PR #652's script, same fixture: `exit=1`,
+  `UNHARDENED REGISTERED MIRRORS ... FOLLOW-765 AC2): 2`, both paths named with their missing flags.
+
+**FOLLOW-759 AC3 — same standard, own fixture.** An allowlist annotation in a `.md` file and in a
+`test_*.py` file (both outside the gate's scanned region):
+
+- Against `main`'s pre-merge script: `Allowlist inventory: 2 occurrence(s)` — counting two files it
+  never actually scans, confirming the Rule AL region-mismatch bug.
+- Against PR #652's script, same fixture: `0 entry/entries` — region now matches scan region.
+
+**AC1 form: the strict one, not the weaker fallback.** Committed baseline compared, gate fails on
+mismatch. The rejected `::notice::` annotation option is recorded with reasoning in both the PR body
+and the script/helper headers, not silently dropped.
+
+**Residual enumeration (the third-consecutive-retro meta-pattern RETRO-239 pre-specified a test
+for).** Spot-checked the rewritten residual lists on both gates (capture items 5-11, singleton items
+A-F/C1-C3) — each states pre-existing vs. newly-introduced, 3 new items explicitly coupled forward
+to FOLLOW-768/769 rather than dropped. No obvious omission found on this pass; whether the
+enumeration is truly complete is exactly what RETRO-239 said only a fourth retro can settle, and
+that is now the next data point for it, not a defect of this PR.
+
+**Scope discipline confirmed from the file list** — no `apps/*`, no `ci.yml`, no token-spelling
+change, no `clean-python-source.sh` exit-3 change, FOLLOW-766/767/768/769 correctly not folded in.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted as a PR comment (evidence pasted in full):
+`PM-validated. CI green. Runtime wiring confirmed. Ready for human review.` **Not merged — this
+repo's PRs are merged by Piotr.** Needed from Piotr: review + merge PR #652.
+
+---
+
 ### FOLLOW-765 + FOLLOW-759 — dispatch record (was: READY, now IN_PROGRESS, combined)
 
 **Picked 2026-08-03 (session 89) after RETRO-239 landed** (`9e33bfe3`, merged to `main` by Piotr —
@@ -183,6 +251,52 @@ include `.claude/agents/retrospective-analyst/lessons.d/**` in the allowed write
 **CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
 
 **2 tickets IN_PROGRESS** (FOLLOW-765, FOLLOW-759, one PR) — within the ≤3 guardrail.
+
+---
+
+### FOLLOW-761 — dispatch record (IN_PROGRESS)
+
+**Picked 2026-08-03 (session 89, same turn as FOLLOW-765+759 validation)** on Piotr's standing
+instruction to keep driving the backlog forward past a validation verdict rather than stopping.
+FOLLOW-765+759 (PR #652) is READY_FOR_REVIEW, awaiting Piotr's merge — not a blocker for picking the
+next ticket, since PM does not merge PRs and there is no work left for the PM on that ticket until a
+human acts.
+
+**Why FOLLOW-761 over FOLLOW-762 this turn, not both.** Both are P2, both from RETRO-238, and both
+touch `.github/workflows/redis-shadow-smoke.yml` — dispatching them to two different agents in the
+same session risks exactly the same-file collision this repo's own lessons warn about
+(`feedback_no_concurrent_git_with_subagents`, generalised one layer: two _different_ branches
+touching the same CI workflow file is a merge-conflict risk even without a shared working tree).
+Picked FOLLOW-761 first: RETRO-238 named it "the false-GREEN one is the serious half" with a
+**MEASURED** 26-second race already reproduced on the FOLLOW-752 branch, not a theorised gap.
+FOLLOW-762 (Rule Q soft-skip scope + STATUS.md ESC-028 correction) is queued for the next turn,
+after FOLLOW-761 merges, to avoid the collision.
+
+**Why FOLLOW-768 (the sentry-gate residual coupled to today's PR #652) is NOT picked yet.**
+FOLLOW-759's inventory item 9 explicitly says the raw-text region alignment "must move with"
+FOLLOW-768's clearance fix "in that same PR" — but that inventory code only exists on the unmerged
+`devops-engineer/FOLLOW-765-759-suppression-inventories` branch, not yet on `main`. Dispatching
+FOLLOW-768 now would branch off stale `main` and miss the exact code FOLLOW-768 is supposed to move
+together with. Deferred until PR #652 merges.
+
+**assigned_to:** qa-engineer **model: Sonnet** — delegation-table row "E2E/integration/load/a11y
+tests, fixtures, golden harness". Mechanical test-harness hardening with concrete, fully-specified
+ACs (add a `concurrency:` group, namespace fixture keys with `github.run_id`, add `afterAll`
+cleanup, prove it with two concurrent runs) — the same shape as FOLLOW-752, which this repo already
+shipped successfully at Sonnet. No prior failed attempt at this specific task, no cross-module
+contract change. **started_at:** 2026-08-03. **branch:**
+`qa-engineer/FOLLOW-761-redis-smoke-concurrency`.
+
+**Scope constraints given to the worker:** do NOT touch FOLLOW-762's territory (the
+`secrets_present`/`REQUIRE_REDIS_SMOKE` conditional logic, or `backlog/STATUS.md`'s ESC-028 lines) —
+different AC set, dispatched separately next turn to avoid a two-agent collision on the same file.
+Do NOT relax any assertion (`ttlAfterEmpty < ttlAfterSignal` must stay strict per AC5) — isolation
+is the fix, not tolerance.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (FOLLOW-761) — within the ≤3 guardrail. FOLLOW-765+759 no longer counts
+(READY_FOR_REVIEW, awaiting human merge, not IN_PROGRESS).
 
 ---
 

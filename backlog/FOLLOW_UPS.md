@@ -23524,7 +23524,7 @@ Q]
 
 source_retro: RETRO-238 (PR #649, FOLLOW-752) source_ticket: FOLLOW-752 recommended_sprint: next
 recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched to qa-engineer on Sonnet)
 
 **Measured on the FOLLOW-752 branch itself, not theorised.** `redis-shadow-smoke.yml:26-45` triggers
 on `push` (all agent-prefixed branches) **and** `pull_request`, with **no `concurrency:` block**. An

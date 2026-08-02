@@ -1,5 +1,60 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 87 (2026-08-02) — retro dispatched for FOLLOW-757+752, FOLLOW-746 picked next
+
+**State re-verified before acting, not taken on trust:** `git status` clean, `main` == `origin/main`
+at `5b0b2c98`. `gh pr list --state open` → empty. `ps -eo pid,lstart,cmd | grep 'claude --agent'` →
+none running (the one `claude` PID 1222 alive on the box is this main-loop session itself — cwd is
+the repo root with no worktree, elapsed 2d17h, not a dispatched worker). `git worktree list` → only
+the primary tree, nothing stranded. `grep -n "^## OPEN" backlog/ESCALATIONS.md` → 5 entries,
+unchanged from the pause note: ESC-020 (~26d), ESC-041, ESC-042 (narrowed), ESC-044, ESC-045 items
+2-3. Each re-read in full: none touch `scripts/check-sentry-*.sh`, CI-gate shell logic, or the
+pytest/Upstash smoke harness — the standing 2026-07-27 ruling (operator-blocked escalations don't
+gate engineering work that doesn't compete for Piotr's attention) applies cleanly to both actions
+below. No new escalation.
+
+**Two retrospectives are owed (Step 6/7) and are dispatched first, before any new ticket is picked**
+— same binding sequencing this repo's own prior sessions used for 743+744: FOLLOW-757 (PR #648,
+`35ecd80f`, merged 2026-08-01) and FOLLOW-752 (PR #649, `a254c0f7`, merged 2026-08-01) have not had
+a retro run. **Judged combined**, one RETRO entry: both are small, both are the same
+"evidence-quality of a CI/test gate" class (757 = a shell gate with 4 measured false negatives; 752
+= a pytest invariant proved only against a `MagicMock`), both merged the same day, and — the
+stronger reason over letting them run separately — a retro on 757 alone is very likely to re-surface
+752's exact defect shape (a control that exists and does not control) as a "prior pattern," and vice
+versa; reading them together lets one retro make that cross-reference explicitly instead of two
+retros half-noticing each other. Dispatched `retrospective-analyst`/**Opus** (model-fit: per
+CLAUDE.md's "Per-ticket retrospective loop," retrospectives get Opus for cross-module wiring +
+rule-promotion judgement — the tier used for every prior RETRO-NNN this sprint, no reason to
+downgrade). Nohup'd per this session's established dispatch mechanism (no Task/Agent tool available
+in this session); PID + log path recorded in `backlog/STATUS.md` the moment it starts.
+
+**FOLLOW-746 read in full and picked as the next ticket after the retro lands**, not dispatched this
+turn (one Bash-capable agent at a time into this shared cwd — the session-85 collision is the
+reason, not a hypothetical). `scripts/check-sentry-init-singleton.sh` carries the SAME comment-token
+filter bug FOLLOW-757 just fixed in its sibling, but inverted: there it produced a false GREEN
+(silent, permanent); here a trailing comment or docstring occurrence produces a false RED (loud,
+self-correcting) which is why it sat P2 behind 757's false-GREEN version. FOLLOW-757's merged PR
+already built and proved the fix technique (tokenize Python source, blank COMMENT/STRING tokens
+before either regex runs, apply to both detection and clearance sides) — this ticket is a transfer
+of a proven solution onto the sibling script's `--exclude="observability.py"` basename hole and its
+own comment-filter bug, not new design. Delegation-table row: "Terraform, CI/CD, workflows, secrets,
+observability, runbooks" → devops-engineer (same agent who just built the technique on the sibling
+file — continuity of context, not just row-match). **Model: Sonnet** — mechanical shell-script
+hardening transfer with concrete ACs and a proven technique to copy; escalate to Opus only if the
+`mirror-files.json` discovery-step AC (FOLLOW-746 AC-1) surfaces a design question the ticket text
+doesn't answer.
+
+FOLLOW-756/758 (RETRO-237 stubs) and the older 749/750/751/753/754/755/731-740 stubs read but
+deferred — none outrank the owed retros or FOLLOW-746, and the ≤3-concurrent-tickets guardrail plus
+one-agent-at-a-time discipline bound this turn to a single dispatch.
+
+NEXT: Wait for the retrospective-analyst to finish (expect a combined RETRO-238 in
+`backlog/RETROSPECTIVES.md` covering FOLLOW-757 + FOLLOW-752), confirm it landed on its own branch
+(not `main`, not a stray branch), then dispatch devops-engineer on FOLLOW-746. (table row:
+"Terraform, CI/CD, workflows, secrets, observability, runbooks")
+
+---
+
 ## ▶️ START HERE — paused 2026-08-01 (sessions 79-86, `5dbf9702`)
 
 **Nine PRs merged (#641-#649), eight tickets closed.** Working tree clean, no open PRs, no running

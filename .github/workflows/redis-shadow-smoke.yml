@@ -22,6 +22,14 @@ name: Redis shadow round-trip smoke (FOLLOW-368, FOLLOW-752)
 #   UPSTASH_REDIS_REST_TOKEN — Upstash REST token    (Python writer side)
 #   UPSTASH_REDIS_URL        — Upstash REST endpoint (TS reader side)
 #   UPSTASH_REDIS_TOKEN      — Upstash REST token    (TS reader side)
+#
+# FOLLOW-761: `push` (agent branches) + `pull_request` fire two runs of this
+# workflow on the SAME commit (measured 34s apart, smoke windows overlapping
+# 26s — RETRO-238 §4a LG-1). The `concurrency` group below serializes runs
+# that share a branch so they never race the SAME Upstash instance; the
+# per-run key namespacing in the spec (github.run_id) is belt-and-braces so
+# the guarantee does not rest on scheduling alone (two DIFFERENT branches'
+# runs are NOT in the same group and can still be genuinely concurrent).
 
 on:
   push:
@@ -43,6 +51,25 @@ on:
     # Nightly at 04:30 UTC — production canary run
     - cron: "30 4 * * *"
   workflow_dispatch:
+
+# FOLLOW-761: group by the branch identity shared between `push` and
+# `pull_request` events (`head_ref` is only set for `pull_request`; `ref_name`
+# covers `push`/`schedule`/`workflow_dispatch`) so the two duplicate triggers
+# for one agent branch's commit queue behind each other instead of racing the
+# same Upstash instance. `cancel-in-progress: false` — a cancelled mid-flight
+# run would abandon its fixture keys in the shared instance rather than
+# cleaning them up (see the spec's `afterAll`), which is the failure mode to
+# avoid, so the second run WAITS rather than pre-empting the first.
+#
+# The nightly cron (`schedule`, ref_name=main) is IN this group: it shares
+# `redis-shadow-smoke-main` with any push/PR-merge run on `main`, which is the
+# desired behaviour (the cron is a third writer against the same instance and
+# should not race a same-ref run either). It is NOT serialized against
+# feature-branch runs, which use their own branch-scoped group — those are
+# covered by the run_id key-namespacing in the spec instead.
+concurrency:
+  group: redis-shadow-smoke-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   redis-shadow-smoke:
@@ -111,4 +138,11 @@ jobs:
           # a broken endpoint fails loud rather than silently skipping.
           REQUIRE_REDIS_SMOKE: >-
             ${{ steps.secret-check.outputs.secrets_present == 'true' && '1' || '' }}
+          # FOLLOW-761: namespaces the NX_WARM_*/NX_COLD_* fixture keys per run
+          # (belt-and-braces alongside the concurrency group above — see the
+          # spec for how this is threaded into the fixture key names and into
+          # nx_invariant_writer.py's argv). github.run_id is unique per
+          # workflow run, so two runs against the same instance can never
+          # share a fixture key even if they execute genuinely concurrently.
+          NX_RUN_SUFFIX: ${{ github.run_id }}
         run: pnpm exec vitest run --config vitest.config.ts redis-shadow-round-trip.smoke

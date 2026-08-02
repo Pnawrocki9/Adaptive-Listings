@@ -5,8 +5,8 @@
 #   - strip_comments: true  → strip JSDoc and // comments, compare normalized content
 #   - strip_comments: false → compare exported function signatures only
 #
-# BASENAME DISCOVERY (FOLLOW-746 AC1)
-# ───────────────────────────────────
+# BASENAME DISCOVERY (FOLLOW-746 AC1, hardened by FOLLOW-766 / FOLLOW-767)
+# ─────────────────────────────────────────────────────────────────────────
 # The pair loop can only police copies somebody REMEMBERED to register. RETRO-235
 # HW-4 found the resulting hole: `apps/<new-app>/src/observability.py` — a 4th,
 # unregistered copy of the hardened Sentry initialiser — was invisible to this
@@ -22,19 +22,39 @@
 # Opt-in, not automatic, because a registered basename can be a framework
 # convention: `route.ts` (the adapt/reorder pair's canonical) matches 80
 # unrelated Next.js App Router files. Pairs that opt OUT must carry a
-# `basename_discovery_note` explaining the forgone coverage, and BOTH lists are
-# printed in the discovery inventory on every run — a coverage gap that is
-# visible in CI output rather than silent (Rule Q shape).
+# non-empty `basename_discovery_note` explaining the forgone coverage — the
+# gate FAILS a pair that opts out with no note (FOLLOW-766 AC2), and the note
+# text itself is printed alongside the basenames it excuses, under "Discovery
+# OFF for basenames:", on every run (FOLLOW-766 AC1) — so the forgone coverage
+# and the reason for it travel together, visible in CI output rather than
+# silent (Rule Q shape).
 #
-# SELF-TEST (FOLLOW-746 AC1 — red-first, and PROVEN to run)
-# ─────────────────────────────────────────────────────────
+# DISCOVERY ROOTS (FOLLOW-767)
+# ─────────────────────────────
+# Candidates come from `git ls-files` (this repo's tracked-file index), NOT a
+# `find … -prune` blacklist. A `find` blacklist encodes whatever directories
+# its author happened to test against — this gate's previous list pruned
+# `.worktrees` (leading dot) while this repo's real agent worktrees live at
+# `.claude/worktrees/agent-*` (no leading dot), so `find` silently descended
+# into every live worktree and false-failed on files nobody meant to scan. A
+# nested agent worktree is its own git checkout (its own `.git`); `git
+# ls-files` run against THIS repo's index does not descend into another
+# repository's checkout at all — proven by the self-test below, not assumed.
+#
+# SELF-TEST (FOLLOW-746 AC1 / FOLLOW-766 / FOLLOW-767 — red-first, and PROVEN to run)
+# ─────────────────────────────────────────────────────────────────────────────
 #   bash scripts/check-mirror-files.sh --self-test
 #
-# Builds a synthetic repo in a temp dir (registered canonical + mirror, its own
-# manifest) and asserts: clean → 0; drifted mirror → 1 (the pair check still
-# works); synthetic UNREGISTERED 4th copy → 1, naming the path; copy removed →
-# 0. Run against the pre-FOLLOW-746 script the 4th-copy assertion FAILS (that
-# script exits 0 — the silent hole).
+# Builds a synthetic git repo in a temp dir (registered canonical + mirror, its
+# own manifest) and asserts, in order: clean → 0; drifted mirror → 1 (the pair
+# check still works); synthetic UNREGISTERED 4th copy → 1, naming the path;
+# copy removed → 0; a registered-basename copy that exists ONLY inside a
+# nested agent-worktree checkout is NOT reported → 0 (FOLLOW-767); a pair that
+# opts out of basename discovery with no note → 1, naming the missing field
+# (FOLLOW-766); the same opt-out WITH a note → 0, and the note text appears in
+# the output (FOLLOW-766). Run against the pre-fix script, the 4th-copy
+# assertion and the worktree assertion FAIL (silent hole / false-RED
+# respectively) — see the PR body for the transcript.
 #
 # The SAME self-test also runs inline at the start of every normal run (one
 # summary line, full output only on failure). That is deliberate: this script's
@@ -48,7 +68,8 @@
 #   MIRROR_FILES_SKIP_SELF_CHECK — set to 1 to skip the inline self-check
 #
 # Exit codes: 0 = all pairs in sync and no unregistered copies,
-#             1 = drift or an unregistered copy detected,
+#             1 = drift, an unregistered copy, or an unexplained
+#                 basename-discovery opt-out detected,
 #             2 = the gate's own self-test failed (the gate is broken).
 # Run: bash scripts/check-mirror-files.sh
 
@@ -113,6 +134,15 @@ def init_sentry(dsn_env_name):
 PYEOF
   cp "$tmp/app-a/src/observability.py" "$tmp/app-b/src/jobs/observability.py"
 
+  # FOLLOW-767: basename discovery now scans `git ls-files`, not the raw
+  # filesystem — the fixture root must itself be a git repo (and its files
+  # tracked) for that scan to see anything. A commit (not just a stage) is
+  # required so step 5 below can `git worktree add` a real nested checkout.
+  git -C "$tmp" init -q
+  git -C "$tmp" add -A
+  git -C "$tmp" -c user.email=self-test@example.invalid -c user.name=mirror-gate-self-test \
+    commit -q -m "self-test fixture baseline"
+
   local out rc
   _st_run() {
     rc=0
@@ -148,6 +178,8 @@ import sentry_sdk
 def init_sentry(dsn_env_name):
     sentry_sdk.init(dsn="unregistered", traces_sample_rate=1.0)
 PYEOF
+  # Must be tracked to be visible to the git-ls-files-based scan (FOLLOW-767).
+  git -C "$tmp" add -A
   _st_run
   if [[ "$rc" -ne 1 ]]; then
     echo "SELF-TEST FAIL: an UNREGISTERED copy sharing a registered mirror basename was"
@@ -164,6 +196,7 @@ PYEOF
 
   # 4. Copy removed → clean again (the check is not stuck red).
   rm -rf "$tmp/app-c"
+  git -C "$tmp" add -A
   _st_run
   if [[ "$rc" -ne 0 ]]; then
     echo "SELF-TEST FAIL: removing the unregistered copy did not restore a clean run (exit $rc)."
@@ -171,6 +204,104 @@ PYEOF
     return 1
   fi
   echo "OK: self-test — removing the unregistered copy restores a clean run."
+
+  # 5. FOLLOW-767: a registered-basename file that exists ONLY inside a
+  #    nested agent-worktree checkout (this repo's real convention:
+  #    .claude/worktrees/agent-*, no leading dot) must NOT be scanned or
+  #    reported. RED-FIRST: against the pre-FOLLOW-767 `find`-based scan this
+  #    IS reported (5 false FAILs on the real tree — see the PR body).
+  git -C "$tmp" worktree add -q -b self-test-agent-worktree \
+    "$tmp/.claude/worktrees/agent-x" >/dev/null 2>&1
+  _st_run
+  if [[ "$rc" -ne 0 ]]; then
+    echo "SELF-TEST FAIL: a registered-basename copy that exists only inside a nested"
+    echo "  agent-worktree checkout was reported as an unregistered copy (expected"
+    echo "  exit 0, got $rc) — this is the FOLLOW-767 hole."
+    echo "$out"
+    return 1
+  fi
+  if echo "$out" | grep -q '\.claude/worktrees/agent-x'; then
+    echo "SELF-TEST FAIL: the nested agent-worktree checkout was scanned and reported"
+    echo "  (it must be structurally invisible to a git-ls-files-based scan)."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a nested agent-worktree checkout is not scanned (FOLLOW-767)."
+  git -C "$tmp" worktree remove --force .claude/worktrees/agent-x >/dev/null 2>&1
+
+  # 6. FOLLOW-766: a pair that opts out of basename discovery with NO
+  #    basename_discovery_note must fail the gate — the opt-out must be a
+  #    recorded decision, not a silent default.
+  cat > "$tmp/widget.ts" <<'TSEOF'
+export function widget() {
+  return 1;
+}
+TSEOF
+  git -C "$tmp" add -A
+  cat > "$tmp/scripts/mirror-files.json" <<'JSONEOF'
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true,
+    "basename_discovery": true
+  },
+  {
+    "canonical": "widget.ts",
+    "mirror": "widget.ts",
+    "strip_comments": true,
+    "basename_discovery": false
+  }
+]
+JSONEOF
+  _st_run
+  if [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL: a pair opting out of basename discovery with no"
+    echo "  basename_discovery_note was not caught (expected exit 1, got $rc) —"
+    echo "  this is the FOLLOW-766 AC2 hole."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "basename_discovery_note"; then
+    echo "SELF-TEST FAIL: the missing-note failure did not name the missing field."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — an opted-out pair with no basename_discovery_note fails the gate (FOLLOW-766)."
+
+  # 7. FOLLOW-766: the same opt-out WITH a note must pass, and the note text
+  #    must appear in the gate's output (the reason travels with the gap).
+  cat > "$tmp/scripts/mirror-files.json" <<'JSONEOF'
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true,
+    "basename_discovery": true
+  },
+  {
+    "canonical": "widget.ts",
+    "mirror": "widget.ts",
+    "strip_comments": true,
+    "basename_discovery": false,
+    "basename_discovery_note": "SELF-TEST-NOTE-widget-reason"
+  }
+]
+JSONEOF
+  _st_run
+  if [[ "$rc" -ne 0 ]]; then
+    echo "SELF-TEST FAIL: an opted-out pair WITH a basename_discovery_note was not"
+    echo "  clean (expected exit 0, got $rc)."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "SELF-TEST-NOTE-widget-reason"; then
+    echo "SELF-TEST FAIL: the basename_discovery_note text did not appear in the"
+    echo "  gate's output."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — an opted-out pair WITH a note passes and the note text appears in the output (FOLLOW-766)."
 
   return 0
 }
@@ -303,7 +434,7 @@ for i in $(seq 0 $((pair_count - 1))); do
   echo ""
 done
 
-# ── Basename discovery (FOLLOW-746 AC1) ──────────────────────────────────────
+# ── Basename discovery (FOLLOW-746 AC1; hardened by FOLLOW-766 / FOLLOW-767) ─
 echo "=== Basename discovery — unregistered copies of mirrored files ==="
 
 REGISTERED_PATHS=$(node -e "
@@ -321,13 +452,18 @@ for (const p of m) if (p.basename_discovery === true)
 console.log([...s].join('\n'));
 ")
 
-SKIPPED_BASENAMES=$(node -e "
+# FOLLOW-766: one "basenames<TAB>note" line per pair that opts OUT of
+# basename discovery (false or omitted) — pair-level, not a deduped flat
+# basename set, because the note is a pair-level decision record and must
+# stay attached to the pair it justifies.
+OFF_PAIRS=$(node -e "
 const m=require('$MANIFEST');
-const on=new Set(), off=new Set();
-for (const p of m) for (const k of ['canonical','mirror']) if (p[k]) {
-  (p.basename_discovery === true ? on : off).add(p[k].split('/').pop());
+for (const p of m) {
+  if (p.basename_discovery === true) continue;
+  const basenames=[...new Set(['canonical','mirror'].map(k=>p[k]).filter(Boolean).map(x=>x.split('/').pop()))].join(' ');
+  const note=(p.basename_discovery_note || '').trim();
+  console.log(basenames + '\t' + note);
 }
-console.log([...off].filter(b => !on.has(b)).join('\n'));
 ")
 
 if [[ -n "$DISCOVER_BASENAMES" ]]; then
@@ -335,10 +471,22 @@ if [[ -n "$DISCOVER_BASENAMES" ]]; then
 else
   echo "Discovery ON for basenames:  (none — every pair opted out)"
 fi
-if [[ -n "$SKIPPED_BASENAMES" ]]; then
-  echo "Discovery OFF for basenames: $(echo "$SKIPPED_BASENAMES" | tr '\n' ' ')"
-  echo "  (opted out in the manifest; see each pair's basename_discovery_note"
-  echo "   for the forgone coverage — printed so the gap is visible, not silent)"
+if [[ -n "$OFF_PAIRS" ]]; then
+  echo "Discovery OFF for basenames:"
+  while IFS=$'\t' read -r off_basenames off_note; do
+    [[ -z "$off_basenames" ]] && continue
+    echo "  $off_basenames"
+    if [[ -z "$off_note" ]]; then
+      echo "    FAIL: basename_discovery is off for this pair with no (or an empty)"
+      echo "    basename_discovery_note — an opt-out must be a recorded decision,"
+      echo "    not a silent default (FOLLOW-766)."
+      echo "    Fix: add a non-empty basename_discovery_note to this pair in"
+      echo "    scripts/mirror-files.json, or set basename_discovery: true."
+      FAILURES=$((FAILURES + 1))
+    else
+      echo "    reason: $off_note"
+    fi
+  done <<< "$OFF_PAIRS"
 fi
 echo ""
 
@@ -349,7 +497,10 @@ if [[ -n "$DISCOVER_BASENAMES" ]]; then
     found_count=0
     while IFS= read -r found_path; do
       [[ -z "$found_path" ]] && continue
-      rel="${found_path#./}"
+      # A tracked-but-deleted index entry (not yet `git rm`'d) should not
+      # count — matches the previous `find -type f` semantics.
+      [[ -f "$found_path" ]] || continue
+      rel="$found_path"
       found_count=$((found_count + 1))
       if printf '%s\n' "$REGISTERED_PATHS" | grep -Fxq -- "$rel"; then
         continue
@@ -365,11 +516,10 @@ if [[ -n "$DISCOVER_BASENAMES" ]]; then
       DISCOVERY_FAILURES=$((DISCOVERY_FAILURES + 1))
       FAILURES=$((FAILURES + 1))
     done < <(
-      find . \
-        \( -name node_modules -o -name .git -o -name dist -o -name .next \
-        -o -name .turbo -o -name coverage -o -name .venv -o -name __pycache__ \
-        -o -name .worktrees \) -prune -o \
-        -type f -name "$basename_to_find" -print 2>/dev/null
+      # FOLLOW-767: candidates come from THIS repo's tracked-file index, not
+      # a `find … -prune` blacklist — see the header comment for why that
+      # blacklist false-failed on real agent worktrees.
+      git ls-files | awk -F/ -v b="$basename_to_find" '$NF==b'
     )
     echo "    $basename_to_find: $found_count file(s) found under $ROOT"
   done <<< "$DISCOVER_BASENAMES"

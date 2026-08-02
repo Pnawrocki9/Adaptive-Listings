@@ -254,7 +254,70 @@ include `.claude/agents/retrospective-analyst/lessons.d/**` in the allowed write
 
 ---
 
-### FOLLOW-761 — dispatch record (IN_PROGRESS)
+### FOLLOW-761 — status: READY_FOR_REVIEW (PR #653 open, `f98fe2c6`, PM-validated 2026-08-03)
+
+**Housekeeping caught before validation, both fixed:**
+
+1. **PR title had no Conventional-Commits scope** (`test:` not `test(qa):`; the commit itself was
+   correctly scoped). Checked whether it matters before "just fixing it": this repo's prior
+   single-commit PRs (#650 `e9403844`, #651 `4446e69c`) landed on `main` with byte-identical hashes
+   to the PR's own commit — i.e. rebase/fast-forward merge, not squash — so the title was never
+   going to become the commit subject. Fixed via `gh api .../pulls/653 -X PATCH` anyway (cheap,
+   `gh pr edit` silently no-op'd once for an unrelated GraphQL warning about deprecated Projects
+   Classic — verified the title actually changed via a follow-up read before trusting the edit).
+2. **The shared working tree was AGAIN checked out on a worker's branch** on session start
+   (`qa-engineer/FOLLOW-761-redis-smoke-concurrency`, clean, nothing uncommitted) — the exact hazard
+   that displaced last round's bookkeeping commit onto `devops-engineer/FOLLOW-765-759-...`.
+   Returned to `main` BEFORE writing any backlog file this time. **Second occurrence with two
+   different workers → durable fix, not a lessons-file-only note:** every future worker dispatch
+   brief must include an explicit last line: "Before you exit (whether you open a PR or not),
+   `git checkout main` in the shared working tree — do not leave it on your branch." Adding this to
+   the standing dispatch template below FOLLOW-761's own entry.
+
+**PM validation done in full (5a-5g).** PR #653
+`test(qa): serialize + namespace redis-shadow-smoke NX runs`, one commit `f98fe2c6` on
+`qa-engineer/FOLLOW-761-redis-smoke-concurrency`. 70 additions / 6 deletions across exactly 2 files:
+`.github/workflows/redis-shadow-smoke.yml`,
+`tests/integration/redis-shadow-round-trip.smoke.test.ts`.
+
+**5b — CI, watched to completion.** `gh pr checks 653 --watch` → 68 pass / 2 fail. Both fails are
+`Rule I`, confirmed pre-existing at **192** `WARN:` lines via the job log (not the label), identical
+to PR #652's reading the same session. **Non-success count for all REAL gates: 0.**
+
+**AC4 — independently reproduced against a REAL Redis instance, a stronger standard than the
+worker's own mock.** The worker built a ~150-line Node mock of Upstash's REST protocol (justified:
+no docker in their sandbox). Docker was available in mine, so: `redis:7-alpine` +
+`hiett/serverless-redis-http` (the shim named in `project_localhost_producer_shim_credentials_gap`),
+plus a small compatibility proxy — that image's `latest` tag does NOT implement the path-style
+`GET /get/<key>` / `GET /ttl/<key>` routes the TS reader uses, which is exactly why the worker built
+their own mock instead of reusing it; confirmed, not assumed. Ran the actual unmodified production
+code (`write_shadow_intent` subprocess, `readShadowChatIntent`, `deleteShadowChatIntent`) in a
+`git worktree` (never the shared tree) at the PR's HEAD:
+
+- Two genuinely concurrent processes (`NX_RUN_SUFFIX=pmC`/`pmD`), both started at `01:04:21`, ~5s
+  overlapping windows including the 3.3-3.4s `AC1(a)` sleep — **8/8 tests passed**. (Caught and
+  redid my own first attempt, which had a `cd`-scoping bug that accidentally ran one process against
+  `main`'s PRE-fix code instead of the worktree — verified via each log's `RUN v2.1.9 <dir>` header
+  before trusting the result.)
+- AC3 cleanup independently verified after both runs: direct `GET` on all 4 run-scoped keys → all
+  `null`.
+- Cross-checked against the real CI job log: `NX_RUN_SUFFIX: 30770907188` — a genuine
+  `github.run_id`, confirming the wiring in the actual pipeline too, not just the sandbox.
+
+**AC2 (belt-and-braces), AC1 (cron in/out, reasoned), AC5 (no assertion weakened — `git diff` shows
+zero lines touched in the `ttlAfterEmpty`/`ttlAfterSignal` assertion region, `toBeLessThan` intact)
+— all confirmed from the diff directly.** Scope discipline confirmed: exactly the 2 expected files,
+`nx_invariant_writer.py` / `redis_writer.py` / `STATUS.md` / the `secrets_present` conditional all
+untouched (FOLLOW-762's territory, undisturbed).
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted as a PR comment with full evidence. **Not merged — needs Piotr.** PR #652 (FOLLOW-765+759)
+still open/unmerged; FOLLOW-768 stays deferred until it lands.
+
+---
+
+### FOLLOW-761 — dispatch record (was: IN_PROGRESS)
 
 **Picked 2026-08-03 (session 89, same turn as FOLLOW-765+759 validation)** on Piotr's standing
 instruction to keep driving the backlog forward past a validation verdict rather than stopping.
@@ -297,6 +360,25 @@ is the fix, not tolerance.
 
 **1 ticket IN_PROGRESS** (FOLLOW-761) — within the ≤3 guardrail. FOLLOW-765+759 no longer counts
 (READY_FOR_REVIEW, awaiting human merge, not IN_PROGRESS).
+
+---
+
+## STANDING DISPATCH-BRIEF ADDITION (2026-08-03, after the SECOND shared-tree branch collision)
+
+Every worker dispatch brief from here forward MUST end with this line, verbatim or equivalent:
+
+> Before you exit — whether you opened a PR or not, whether you succeeded or got stuck — run
+> `git checkout main` in the shared working tree. Do not leave it checked out on your own branch.
+
+**Why this is now a template requirement, not a per-session reminder.** Two different workers in two
+consecutive dispatches (devops-engineer on FOLLOW-765+759, then qa-engineer on FOLLOW-761) both left
+the shared tree on their own branch on exit. The first one silently redirected the PM's next
+bookkeeping commit onto the wrong branch (caught and recovered via cherry-pick + branch reset,
+session 89). The second was caught before any commit happened only because the PM checked
+`git branch --show-current` first — which is already the documented procedure
+(`feedback_no_concurrent_git_with_subagents`) but evidently not load-bearing enough on its own
+across two independent occurrences. Moving the fix upstream, into the dispatch brief itself, so the
+worker's own exit behavior stops relying on the PM catching it every time.
 
 ---
 

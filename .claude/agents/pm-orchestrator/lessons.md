@@ -2740,3 +2740,20 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   references code from a sibling PR ("must move with it in that same PR" / similar coupling
   language), check whether that sibling PR has actually MERGED before dispatching — the referenced
   code may only exist on an unmerged branch, which would strand the new worker on stale `main`.
+
+- **Date / ticket:** 2026-08-03 — PR #653 (FOLLOW-761) validation
+- **Delegation row used:** validation only (no new delegation this entry)
+- **What validation caught (or missed):** Caught the shared-tree branch-collision hazard a SECOND
+  time (two different workers in a row), before any commit this time — escalated it from a
+  lessons-file note to a template line every dispatch brief must now carry. Independently upgraded
+  the worker's own AC4 evidence from a custom mock to a real dockerized Redis + real production code
+  path, which also surfaced a genuine environment fact (the `hiett/serverless-redis-http:latest`
+  image doesn't support Upstash's path-style REST routes) that explains, rather than second-guesses,
+  the worker's original design choice. Caught my own tooling mistake mid-verification (a
+  `cd`-scoping bug that silently ran one "concurrent" process against the wrong branch) by checking
+  each log's own `RUN v2.1.9 <dir>` header instead of trusting the wall-clock timestamps alone.
+- **A delegation/validation rule I'd add:** when validating a worker's own "no access to X, so I
+  built Y as a substitute" evidence claim, spend the few extra minutes to get real access to X if
+  it's plausibly available in the PM's own sandbox (docker was available here) — the substitute
+  evidence can be technically sound but is still a lower evidentiary tier than the real thing, and
+  checking is often cheap relative to the ticket's stakes.

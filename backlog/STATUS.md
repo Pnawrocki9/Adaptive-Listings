@@ -779,3 +779,33 @@ actually merges, since its AC explicitly couples to code that only exists on tha
 
 NEXT: Piotr reviews/merges PR #652. PM waits for qa-engineer's FOLLOW-761 PR, validates, then either
 picks FOLLOW-762 or (if #652 has merged by then) FOLLOW-768.
+
+---
+
+# Status — 2026-08-03 (session 89 continued — PR #653 validated, dispatching FOLLOW-762)
+
+## SESSION 89 continued — PR #653 (FOLLOW-761) validated READY_FOR_REVIEW
+
+**Validated PR #653 in full (5a-5g).** CI: 68 pass / 2 fail, both `Rule I` pre-existing-red (192,
+matched to baseline via job log). Non-success count for all real gates: 0. Fixed the PR title's
+missing Conventional-Commits scope (`test:` -> `test(qa):`) via the REST API after `gh pr edit`
+silently no-op'd once. Independently reproduced AC4 against a REAL Redis instance (docker
+redis:7-alpine + hiett/serverless-redis-http + a small compatibility proxy, in a git worktree, real
+unmodified production code, two genuinely concurrent processes) -- a stronger standard than the
+worker's own custom mock (justified by their sandbox lacking docker). Caught and fixed my own
+cd-scoping bug mid-verification (one process accidentally ran against main's pre-fix code) before
+trusting the result. Posted evidence on PR #653; moved FOLLOW-761 to READY_FOR_REVIEW. **Not merged
+-- needs Piotr.**
+
+**Caught the SAME shared-tree branch-collision hazard a second time**, this time before any commit
+(checked `git branch --show-current` first, per the now-standard procedure). Added a durable fix to
+QUEUE.md: every future worker dispatch brief must end with an explicit "return to main before you
+exit" instruction, rather than relying on the PM catching it every session.
+
+**CI-check counter (FOLLOW-765+759, PR #652):** 1/5, still open, awaiting Piotr. **CI-check counter
+(FOLLOW-761, PR #653):** 1/5, still open, awaiting Piotr.
+
+**0 tickets IN_PROGRESS. 2 tickets READY_FOR_REVIEW** (PR #652, PR #653).
+
+NEXT: dispatch FOLLOW-762 (devops-engineer) now that FOLLOW-761 is no longer concurrently touching
+the same workflow file. Piotr reviews/merges PR #652 and #653 when able.

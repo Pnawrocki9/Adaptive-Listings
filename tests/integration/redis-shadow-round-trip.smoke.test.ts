@@ -49,7 +49,7 @@
  * @module tests/integration/redis-shadow-round-trip.smoke
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -282,11 +282,28 @@ describe('FOLLOW-368 — cross-runtime Redis round-trip: write_shadow_intent (Py
 //
 // Uses a DIFFERENT tenant/session pair than AC-RT1/AC-RT2 (`smoke-tenant-368`)
 // so the two suites can never interfere with each other's fixture state.
+//
+// FOLLOW-761: `redis-shadow-smoke.yml` triggers on both `push` and
+// `pull_request` for one agent-branch commit, and a nightly cron is a third
+// writer — all three can target the SAME Upstash instance. A `concurrency`
+// group now serializes runs that share a branch, but that is scheduling, not
+// a guarantee: two DIFFERENT branches' runs (or a local run alongside CI) are
+// NOT in the same group and CAN execute genuinely concurrently. Fixed keys
+// were the actual exposure (RETRO-238 §4a LG-1, a MEASURED 26s overlap): if
+// `nx=True` were ever broken, one run's "empty" write could clobber the key
+// right as a concurrent run's "signal" write restored it, so THAT run's value
+// assertion would pass even though NX was broken — a false GREEN over the one
+// invariant this describe block exists to prove. Namespacing every fixture
+// key by `NX_RUN_SUFFIX` (the CI job's `github.run_id`, threaded through as an
+// env var — see redis-shadow-smoke.yml; falls back to a fixed literal for
+// local/offline runs, never `Math.random()`) makes two runs' keys disjoint by
+// construction, independent of whether the concurrency group ever fires.
+const NX_RUN_SUFFIX = process.env.NX_RUN_SUFFIX ?? 'local-dev';
 
-const NX_WARM_TENANT_ID = 'smoke-tenant-752-warm';
-const NX_WARM_SESSION_ID = 'smoke-session-752-warm';
-const NX_COLD_TENANT_ID = 'smoke-tenant-752-cold';
-const NX_COLD_SESSION_ID = 'smoke-session-752-cold';
+const NX_WARM_TENANT_ID = `smoke-tenant-752-warm-${NX_RUN_SUFFIX}`;
+const NX_WARM_SESSION_ID = `smoke-session-752-warm-${NX_RUN_SUFFIX}`;
+const NX_COLD_TENANT_ID = `smoke-tenant-752-cold-${NX_RUN_SUFFIX}`;
+const NX_COLD_SESSION_ID = `smoke-session-752-cold-${NX_RUN_SUFFIX}`;
 
 // Must match the "signal" fixture in nx_invariant_writer.py.
 const NX_SIGNAL_PURCHASE_PURPOSE = 'primary_residence';
@@ -341,6 +358,19 @@ function sleep(ms: number): Promise<void> {
 }
 
 describe('FOLLOW-752 — SET … NX write-admission invariant honoured by a REAL Redis instance', () => {
+  // FOLLOW-761 AC3: run-scoped keys (NX_RUN_SUFFIX) are never reused across
+  // runs, so — unlike AC-RT1/AC-RT2's fixed keys — nothing ever overwrites
+  // them again. Without cleanup they'd sit in the shared Upstash instance for
+  // their full 24h TTL, one extra pair per CI run. `deleteShadowChatIntent` is
+  // the production erase path (`chat-intent-cache.ts:151`, the GDPR Art. 17
+  // DSR route), reused here rather than a bespoke DEL, so cleanup can never
+  // drift from the key format the production erase path actually deletes.
+  afterAll(async () => {
+    if (!HAS_ALL_CREDS) return;
+    await deleteShadowChatIntent(NX_WARM_TENANT_ID, NX_WARM_SESSION_ID);
+    await deleteShadowChatIntent(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID);
+  });
+
   /**
    * AC1(a) — warm key. A signal-bearing payload is written first (unconditional
    * `SET`, real TTL=86400). A SECOND, empty-dimension payload

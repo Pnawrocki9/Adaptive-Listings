@@ -47,11 +47,14 @@
 # exclusion previously would have silently skipped ANY file named
 # observability.py, registered or not (a 4th, unregistered copy).
 #
-# EXPECTED COUNT: exactly 0 violations.
+# EXPECTED COUNT: exactly 0 violations AND 0 unparseable files.
 #   Every file with a capture call must also carry an init_sentry(...) call
 #   in that same file (the init may be a no-op at runtime if SENTRY_DSN is
 #   unset — that is fine; this guard only checks the CALL SHAPE is present,
 #   the DSN-gating behaviour itself is covered by init_sentry()'s own tests).
+#   A file `python3 tokenize` cannot process counts as its own finding (see
+#   "UNPARSEABLE FILES" below, FOLLOW-760) — it is never silently treated as
+#   clean.
 #
 # ALLOWLIST
 # ─────────
@@ -77,8 +80,9 @@
 # root). The --self-test mode points this env var at a temp directory so the
 # detector can be verified without touching the real source tree.
 #
-# KNOWN, DELIBERATELY UNGUARDED GAPS (FOLLOW-757 items 5 and 6 — verified
-# not live, recorded so they are not silently reintroduced as surprises):
+# KNOWN, DELIBERATELY UNGUARDED GAPS (FOLLOW-757 items 5 and 6, FOLLOW-760
+# item 7 — verified not live, recorded so they are not silently reintroduced
+# as surprises):
 #   5. SCAN_DIRS is only "$ROOT"/apps/*/src — a capture site under packages/,
 #      scripts/, tests/integration/, or apps/*/tests/ is unscanned. A repo-wide
 #      grep for `sentry_sdk\.(capture_exception|capture_message)\(` outside
@@ -86,8 +90,25 @@
 #   6. `for f in $FILES` (in the real-check loop below) is unquoted word
 #      splitting — a filename containing IFS whitespace would break it. No
 #      such filename exists in the repo today.
-#   Neither is fixed here (out of the ticket's AC); a future ticket should
-#   pick these up if the scan ever needs to widen or filenames change.
+#   7. (FOLLOW-760 CB-3, DEFERRED — NOT fixed in this ticket, judged and
+#      recorded rather than left unmentioned.) The detection regex (below,
+#      "sentry_sdk\.(capture_exception|capture_message)\(") requires the
+#      literal `sentry_sdk.` prefix. A module using
+#      `from sentry_sdk import capture_exception` (or `import sentry_sdk as
+#      <alias>`) and then calling the bare name is INVISIBLE to this gate —
+#      false GREEN if such a module also lacks init_sentry(. Verified zero
+#      such imports repo-wide today:
+#        grep -rn "from sentry_sdk import\|import sentry_sdk as" --include=*.py .
+#      returns no hits. This class is therefore NOT fully enumerated-and-
+#      guarded (Rule AE-as-amended) — it is documented-and-open, same status
+#      shapes 3/4 had before FOLLOW-757 closed them. Deferred because fixing
+#      it correctly (distinguishing a real bare `capture_exception(` call
+#      from an unrelated same-named function, and resolving the aliased-
+#      import case) is a second axis of work from CB-1's fallback-safety fix
+#      and deserves its own red-first fixture rather than riding along here.
+#   None of 5/6/7 is fixed here (out of this ticket's AC); a future ticket
+#   should pick these up if the scan ever needs to widen, filenames change,
+#   or an aliased/`from`-import capture site is introduced.
 #
 # SELF-TEST
 # ─────────
@@ -99,14 +120,27 @@
 # test-name skip, unregistered observability.py) — each asserts the FIXED
 # script now correctly flags the violation. Run against the PRE-FOLLOW-757
 # script, all four new fixtures instead PASS (clear) — see the PR body for
-# the pasted before/after transcript.
+# the pasted before/after transcript. PLUS one fixture for FOLLOW-760 CB-1 (a
+# file that FAILS TO TOKENIZE, containing a docstring-only `init_sentry(`
+# mention and a real capture call) — asserts the FIXED script reports it as a
+# LOUD, distinctly-tagged "UNPARSEABLE" finding rather than silently clearing
+# it via the raw-text fallback. Run against the PRE-FOLLOW-760 script, this
+# fixture instead PASSES (clear) — see the PR body for the pasted
+# before/after transcript. All exit-code assertions check the SPECIFIC
+# expected code (1 for a detected violation/unparseable finding), not merely
+# non-zero (FOLLOW-760 AC3).
 #
 # EXIT CODES
 # ──────────
 #   0 = pass (every capture-containing file also has an init_sentry( call, or
-#       is explicitly allow-listed)
-#   1 = violation (a capture call with no init_sentry( in the same file, and
-#       not allow-listed)
+#       is explicitly allow-listed, AND every scanned file tokenized cleanly)
+#   1 = violation — EITHER a capture call with no init_sentry( in the same
+#       file and not allow-listed, OR a file whose capture/init shape could
+#       not be verified because python3 could not tokenize it (FOLLOW-760:
+#       a gate that cannot evaluate a file must not report it clean, so this
+#       is a hard failure by default, printed under its own distinct
+#       "UNPARSEABLE" heading so it is never confused with an ordinary
+#       capture-without-init violation)
 #   2 = self-test failure (the guard itself is broken)
 
 set -euo pipefail
@@ -117,8 +151,22 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # from a Python file, replacing each stripped token with same-width whitespace
 # so line numbers (and everything else's column offsets) are preserved. This
 # is what makes both the capture-detection and init-clearance regexes see only
-# real code (FOLLOW-757 AC1). Falls back to the raw file unchanged if the file
-# cannot be tokenized (e.g. a syntax error) rather than crashing the gate.
+# real code (FOLLOW-757 AC1).
+#
+# FOLLOW-760 CB-1: on a tokenizer failure (unterminated string, inconsistent
+# dedent, rejected encoding, ...) this function writes NOTHING to stdout and
+# exits non-zero (3). It must NOT fall back to writing the raw, uncleaned
+# file — that would silently revert BOTH the detection and clearance regexes
+# to matching raw text, so a docstring/comment mention of `init_sentry(`
+# would clear a real, unserved capture call again (the exact false-GREEN
+# FOLLOW-757 removed). The caller (`_check_file`) distinguishes "cannot
+# evaluate this file" (exit 3 here) from "evaluated, no violation" (exit 0,
+# real cleaned content on stdout) and reports the former as its own LOUD,
+# counted "UNPARSEABLE" finding rather than silently clearing it. This still
+# does not crash the gate itself — the tokenizer error is caught here, not
+# left to propagate as an uncaught Python traceback or an unguarded shell
+# failure (see `_check_file` for how the non-zero exit is captured safely
+# under `set -e`).
 _clean_python_source() {
   local file="$1"
   python3 - "$file" <<'PYEOF'
@@ -162,21 +210,50 @@ try:
             lines[end_row - 1] = _blank(lines[end_row - 1], 0, end_col)
 
     sys.stdout.write("".join(lines))
-except Exception:
-    # Unparseable file (or any tokenizer error) — fail safe to raw content
-    # rather than crash the gate; real repo Python files parse cleanly.
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        sys.stdout.write(f.read())
+except Exception as exc:
+    # FOLLOW-760 CB-1: a file this tokenizer cannot process must NOT be
+    # silently treated as clean. Write nothing to stdout (no raw-content
+    # fallback) and exit non-zero so the shell caller treats this file as an
+    # "cannot evaluate" finding, distinct from a real cleared/violating file.
+    print(f"tokenize error on {path}: {exc}", file=sys.stderr)
+    sys.exit(3)
 PYEOF
 }
 
-# Scans a single file and echoes it (as a violation) if it contains a real
-# capture_exception(/capture_message( call with no init_sentry( call anywhere
-# in the file, and the capture line(s) are not all allow-listed.
+# Scans a single file and echoes a two-part report if it needs one, else
+# nothing. First line of any output is a tag ("VIOLATION" or "UNPARSEABLE",
+# FOLLOW-760) that the caller uses to sort the finding into the right
+# section of the report — the two are never merged into one undifferentiated
+# blob, so an unparseable-file finding cannot be misread as an ordinary
+# capture-without-init violation or vice versa.
+#
+#   VIOLATION   — a real capture_exception(/capture_message( call with no
+#                 init_sentry( call anywhere in the file, and the capture
+#                 line(s) are not all allow-listed.
+#   UNPARSEABLE — `python3 tokenize` could not process this file, so its
+#                 capture/init shape could NOT be verified at all (FOLLOW-760
+#                 CB-1). Treated as its own finding rather than silently
+#                 cleared or silently passed.
 _check_file() {
   local file="$1"
   local cleaned
-  cleaned=$(_clean_python_source "$file")
+  local clean_rc=0
+
+  # `_clean_python_source` exits non-zero (no stdout) when python3 cannot
+  # tokenize the file. Capture that via `||` (not a bare assignment) so a
+  # non-zero exit does not trip `set -e` — this is "cannot evaluate", not a
+  # crash, and must be reported as its own finding, not swallowed.
+  cleaned=$(_clean_python_source "$file") || clean_rc=$?
+
+  if [[ "$clean_rc" -ne 0 ]]; then
+    echo "UNPARSEABLE"
+    echo "$file"
+    echo "  python3 could not tokenize this file (exit $clean_rc) — its"
+    echo "  capture/init call shape could NOT be verified. Treated as a"
+    echo "  finding, not silently cleared (see stderr above for the tokenizer"
+    echo "  error, and FOLLOW-760 for why this is not a soft-pass)."
+    return 0
+  fi
 
   # Line numbers of REAL (non-comment, non-string) capture call sites.
   local capture_line_nums
@@ -205,6 +282,7 @@ _check_file() {
     return 0
   fi
 
+  echo "VIOLATION"
   echo "$file"
   echo "$unallowlisted" | sed 's/^/  /'
 }
@@ -228,9 +306,14 @@ def _spend_cap_exceeded():
         pass
 PYEOF
 
-  if SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     echo "SELF-TEST FAIL: a capture-without-init module was NOT detected."
     echo "  The guard is broken — check the grep patterns in this script."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL: expected the violation exit code (1), got $rc (FOLLOW-760 AC3)."
     exit 2
   fi
   echo "OK: self-test PASSED — capture-without-init was correctly detected (red-first fixture)."
@@ -289,9 +372,14 @@ def _rogue():
         pass
 PYEOF
 
-  if SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     echo "SELF-TEST FAIL (FOLLOW-757 CB-1): a capture cleared only by a DOCSTRING mention of"
     echo "  init_sentry( was NOT detected."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-757 CB-1): expected the violation exit code (1), got $rc."
     exit 2
   fi
   echo "OK: self-test PASSED (FOLLOW-757 CB-1) — a docstring mention of init_sentry( no longer"
@@ -311,9 +399,14 @@ def _rogue():
         pass
 PYEOF
 
-  if SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     echo "SELF-TEST FAIL (FOLLOW-757 TG-2): a capture cleared only by a TRAILING COMMENT mention"
     echo "  of init_sentry( was NOT detected."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-757 TG-2): expected the violation exit code (1), got $rc."
     exit 2
   fi
   echo "OK: self-test PASSED (FOLLOW-757 TG-2) — a trailing-comment mention of init_sentry( no"
@@ -331,9 +424,14 @@ def _rogue():
         pass
 PYEOF
 
-  if SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     echo "SELF-TEST FAIL (FOLLOW-757 AC2): a production file whose basename merely CONTAINS"
     echo "  'test' (latest_pricing.py) was skipped instead of scanned."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-757 AC2): expected the violation exit code (1), got $rc."
     exit 2
   fi
   echo "OK: self-test PASSED (FOLLOW-757 AC2) — a basename containing 'test' as a substring"
@@ -352,14 +450,64 @@ def _rogue():
         pass
 PYEOF
 
-  if SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     echo "SELF-TEST FAIL (FOLLOW-757 AC3): a capture inside a file literally named"
     echo "  observability.py (not one of the registered mirrors) was skipped."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-757 AC3): expected the violation exit code (1), got $rc."
     exit 2
   fi
   echo "OK: self-test PASSED (FOLLOW-757 AC3) — a bare basename match on observability.py no"
   echo "  longer blanket-excludes the file."
   rm -rf "$tmp_dir/app-a/src/rogue_helper"
+
+  # ── FOLLOW-760 CB-1: a file that FAILS TO TOKENIZE must not silently ─────
+  # clear its own real capture call via a docstring mention of init_sentry(.
+  # Against the PRE-FOLLOW-760 script this fixture PASSES (silent false
+  # green — the exact bug this ticket fixes); see the PR body for the pasted
+  # before/after transcript.
+  cat > "$tmp_dir/app-a/src/jobs/unparseable_capture.py" <<'PYEOF'
+"""
+This module's capture is served by an init_sentry("SENTRY_DSN") call, per
+this docstring -- but no such call actually exists below, and this file is
+deliberately malformed so python3 tokenize cannot process it at all.
+"""
+import sentry_sdk
+
+
+def _rogue():
+    try:
+        raise RuntimeError("boom")
+    except Exception:
+        sentry_sdk.capture_exception()
+
+
+_trailing = '''this triple-quoted string is never closed, so tokenize fails
+PYEOF
+
+  unparseable_out="$tmp_dir/.follow_760_self_test_output"
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > "$unparseable_out" 2>/dev/null || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-760 CB-1): a file that fails to tokenize was NOT"
+    echo "  treated as a finding — this is the silent false-GREEN this ticket fixes."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-760 CB-1): expected the violation exit code (1), got $rc."
+    exit 2
+  fi
+  if ! grep -q "UNPARSEABLE" "$unparseable_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-760 CB-1): the gate failed, but not under the distinct"
+    echo "  UNPARSEABLE diagnosis — it must not be conflated with an ordinary"
+    echo "  capture-without-init VIOLATION."
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-760 CB-1) — a file that fails to tokenize is now a"
+  echo "  LOUD, distinctly-tagged finding, never silently cleared by its own docstring."
+  rm -f "$tmp_dir/app-a/src/jobs/unparseable_capture.py" "$unparseable_out"
 
   echo ""
   echo "Self-test PASSED."
@@ -406,30 +554,78 @@ if [[ "$ALLOWLIST_COUNT" -gt 0 ]]; then
 fi
 echo ""
 
+# VIOLATIONS = capture-without-init findings; UNPARSEABLE = files python3
+# could not tokenize (FOLLOW-760) — kept in separate accumulators so the two
+# failure classes are never reported under the same undifferentiated heading.
 VIOLATIONS=""
+VIOLATION_COUNT=0
+UNPARSEABLE=""
+UNPARSEABLE_COUNT=0
 for f in $FILES; do
   result=$(_check_file "$f")
-  [[ -n "$result" ]] && VIOLATIONS="${VIOLATIONS}${result}"$'\n'
+  [[ -z "$result" ]] && continue
+  kind=$(printf '%s\n' "$result" | head -n1)
+  detail=$(printf '%s\n' "$result" | tail -n +2)
+  case "$kind" in
+    VIOLATION)
+      VIOLATIONS="${VIOLATIONS}${detail}"$'\n'
+      VIOLATION_COUNT=$((VIOLATION_COUNT + 1))
+      ;;
+    UNPARSEABLE)
+      UNPARSEABLE="${UNPARSEABLE}${detail}"$'\n'
+      UNPARSEABLE_COUNT=$((UNPARSEABLE_COUNT + 1))
+      ;;
+    *)
+      # Defensive: an unexpected _check_file output shape must still be a
+      # loud finding, never silently dropped.
+      VIOLATIONS="${VIOLATIONS}${result}"$'\n'
+      VIOLATION_COUNT=$((VIOLATION_COUNT + 1))
+      ;;
+  esac
 done
 
-if [[ -z "$VIOLATIONS" ]]; then
+echo "UNPARSEABLE FILES (python3 could not tokenize; treated as findings, not"
+echo "silently cleared — FOLLOW-760): $UNPARSEABLE_COUNT"
+if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
+  echo "$UNPARSEABLE" | sed 's/^/  /'
+fi
+echo ""
+
+if [[ "$VIOLATION_COUNT" -eq 0 && "$UNPARSEABLE_COUNT" -eq 0 ]]; then
   echo "PASS: every capture_exception(/capture_message( call site has an"
-  echo "init_sentry( call in the same file (or is explicitly allow-listed)."
+  echo "init_sentry( call in the same file (or is explicitly allow-listed), and"
+  echo "every scanned file tokenized cleanly."
   exit 0
 fi
 
-echo "FAIL: capture call site(s) found with no init_sentry( in the same file:"
-echo ""
-echo "$VIOLATIONS"
-echo "FIX: add, before the capture call (see apps/intent-engine/src/nlp.py:314"
-echo "or apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:198 for the"
-echo "pattern):"
-echo "  from jobs.observability import init_sentry   # or the app-local import path"
-echo "  init_sentry(\"SENTRY_DSN\")"
-echo ""
-echo "ALLOWLIST: if the capture is genuinely served by an init in a different"
-echo "process entry point, add this comment on the capture line:"
-echo "  # sentry-init-guard: allowlisted — <reason>"
-echo ""
-echo "See FOLLOW-743 / scripts/check-sentry-capture-has-init.sh header for full context."
+if [[ "$VIOLATION_COUNT" -gt 0 ]]; then
+  echo "FAIL: capture call site(s) found with no init_sentry( in the same file:"
+  echo ""
+  echo "$VIOLATIONS"
+  echo "FIX: add, before the capture call (see apps/intent-engine/src/nlp.py:314"
+  echo "or apps/llm-gateway/src/jobs/consume_embed_seed_requests.py:198 for the"
+  echo "pattern):"
+  echo "  from jobs.observability import init_sentry   # or the app-local import path"
+  echo "  init_sentry(\"SENTRY_DSN\")"
+  echo ""
+  echo "ALLOWLIST: if the capture is genuinely served by an init in a different"
+  echo "process entry point, add this comment on the capture line:"
+  echo "  # sentry-init-guard: allowlisted — <reason>"
+  echo ""
+fi
+
+if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
+  echo "FAIL: file(s) above could not be tokenized by python3 — their capture/init"
+  echo "call shape could NOT be verified, so each is treated as a finding rather"
+  echo "than silently cleared (FOLLOW-760: a gate that cannot evaluate a file must"
+  echo "not report it clean). Check the run log above for the tokenizer error on"
+  echo "each path (printed to stderr by _clean_python_source)."
+  echo ""
+  echo "FIX: make the file tokenizable (fix the syntax/encoding error), or if it is"
+  echo "intentionally non-standard Python, allowlist its capture call(s) inline:"
+  echo "  # sentry-init-guard: allowlisted — <reason>"
+  echo ""
+fi
+
+echo "See FOLLOW-743 / FOLLOW-760 / scripts/check-sentry-capture-has-init.sh header for full context."
 exit 1

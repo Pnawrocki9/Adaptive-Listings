@@ -152,3 +152,39 @@ run in CI) that parses `.claude/settings.json`, confirms every hook `command` pa
 executable, and — where feasible — asserts the hook script's expected JSON input/output shape
 against a fixture, so a hook silently going dead (wrong field name, moved file, JSON schema drift)
 fails CI instead of only being caught the next time a human happens to `cat` a debug log.
+
+---
+
+## 2026-08-02 / FOLLOW-760
+
+**What I shipped:** Fixed the tokenizer fallback in `scripts/check-sentry-capture-has-init.sh`'s
+`_clean_python_source()` (RETRO-238 CB-1): on a `python3 tokenize` failure it used to write the RAW,
+uncleaned file to stdout, silently reverting both the detection and clearance regexes to matching
+raw text — reintroducing the exact docstring/comment false-clear FOLLOW-757 had just closed,
+invisibly (no warning, no counter, no exit-code change). Now it writes nothing and exits non-zero;
+`_check_file` captures that via `||` (not a bare assignment, so `set -e` isn't tripped) and reports
+the file as its own distinctly-tagged `UNPARSEABLE` finding — a separate accumulator/heading from
+ordinary `VIOLATION` findings, and a hard failure by default (exit 1) rather than a soft pass.
+Tightened all five existing violation self-test assertions to check the specific exit code (1), not
+merely non-zero, and added a red-first fixture (unterminated triple-quoted string + docstring-only
+`init_sentry(` mention + a real `sentry_sdk.capture_exception()` call) that PASSES against the
+pre-fix script (proved) and is correctly caught, under the distinct `UNPARSEABLE` tag, against the
+fixed one. CB-3 (detection regex requires the literal `sentry_sdk.` prefix, so
+`from sentry_sdk import capture_exception` is invisible) is judged and DEFERRED — documented in the
+header with the repo-wide grep that proves it is not live today, explicitly marked
+"documented-and-open" rather than left unmentioned, per the ticket's own instruction that this is a
+second axis of work from CB-1's fallback-safety fix.
+
+**Where a green badge could have hidden a broken run path:** this is the second instance of the
+exact same shape in the exact same file — a "fix" for a silent-pass gate itself shipping a silent
+pass, because the fixture that would have proven it (a file that fails to tokenize) was never
+written. FOLLOW-757's own self-test suite was green and its header even listed two OTHER residual
+gaps (items 5/6) but not this one, because nothing in the four new fixtures ever exercised the
+`except Exception` branch. A fixture set that never reaches every branch of the function it is
+testing proves nothing about that branch, no matter how many other cases it covers.
+
+**A guardrail I'd add:** when a self-test suite for a gate is added or extended, require (as a
+review question, not yet a mechanical check) "does at least one fixture exercise every
+`except`/fallback branch in the functions under test?" — branch coverage as a checklist item for
+hand-written shell self-tests, since there is no `nyc`/coverage tool for bash+embedded-Python
+heredocs here to enforce it mechanically.

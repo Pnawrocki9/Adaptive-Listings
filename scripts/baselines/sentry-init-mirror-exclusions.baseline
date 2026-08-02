@@ -1,0 +1,29 @@
+# Sentry init singleton — registered-mirror exclusion baseline (FOLLOW-765).
+#
+# CONSUMER of the "Registered mirror files excluded from the scan" inventory
+# printed by scripts/check-sentry-init-singleton.sh. Each entry is one path
+# (relative to the scan root) that the gate SKIPS entirely because it is
+# registered as a Rule J mirror in scripts/mirror-files.json.
+#
+# This is the gate's own suppression set, and it suppresses WHOLE FILES, not
+# single lines — which is why it gets a committed baseline rather than a log
+# line. Registering a fourth `.py` pair in scripts/mirror-files.json silently
+# grew this list from 3 to 4 before FOLLOW-765; now it turns the gate RED until
+# the addition is written here, in a diff a human reads.
+#
+# NOTE: exclusion is not blind trust. Every excluded file that holds a real
+# `sentry_sdk.init(` must also carry the three FOLLOW-738 hardened markers
+# (default_integrations=False, send_default_pii=False,
+# include_local_variables=False) surviving the tokenizer pass, or the gate fails
+# with an UNHARDENED REGISTERED MIRROR finding. This baseline governs WHICH
+# files are excluded; that check governs WHETHER the exclusion is safe.
+#
+# TO CHANGE THIS FILE: only in the same PR that changes scripts/mirror-files.json.
+# The gate prints a copy-pasteable replacement body when it fails.
+#
+# Current state: the FOLLOW-738 hardened initialiser — one canonical and its two
+# Rule J mirrors.
+count: 3
+apps/data-quality/src/crons/observability.py
+apps/intent-engine/src/observability.py
+apps/llm-gateway/src/jobs/observability.py

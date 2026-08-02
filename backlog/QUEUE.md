@@ -252,6 +252,37 @@ include `.claude/agents/retrospective-analyst/lessons.d/**` in the allowed write
 
 **2 tickets IN_PROGRESS** (FOLLOW-765, FOLLOW-759, one PR) — within the ≤3 guardrail.
 
+**Worker completion note (devops-engineer, 2026-08-03) — status: READY_FOR_REVIEW, one PR.**
+
+The AC4 design decision was made and used in both gates: **one shared helper**,
+`scripts/lib/suppression-baseline.sh`, sourced by both gates exactly as
+`scripts/lib/clean-python-source.sh` already is, comparing each gate's suppression inventory against
+a committed baseline file (`scripts/baselines/*.baseline`) and failing on any difference in either
+direction. The helper is entry-agnostic — each gate normalises its own inventory into opaque
+one-per-line entries — which is what makes one mechanism cover a line-level allowlist and a
+file-level exclusion set without either gate special-casing the other.
+
+FOLLOW-765 AC2 was resolved in favour of the **hardened-marker check**, not byte-identity to the
+manifest's named canonical: the attack shape is a NEWLY registered pair whose canonical is _itself_,
+so byte-identity-to-canonical is satisfied trivially unless
+`apps/intent-engine/src/observability.py` is hard-coded into the gate (which then false-REDs any
+legitimate second hardened family and breaks when the canonical moves). Full reasoning in the PR
+body and in the singleton gate's exclusion note 1(ii).
+
+**Learning-loop note (second occurrence of the same access gap).** The worker's
+`.claude/agents/devops-engineer/lessons.md` entry could NOT be written this session — writes under
+`.claude/` were denied, exactly as they were for the retrospective-analyst's `lessons.d/` fragment
+one dispatch earlier (see the note above). The full entry text is pasted verbatim at the end of the
+PR body so it is not lost; PM should persist it on the worker's behalf, and future dispatch briefs
+should include `.claude/agents/<agent>/lessons*` in the allowed write scope explicitly.
+
+Four red-first transcripts (old gate vs new gate on identical fixture trees) are pasted in the PR
+body; all four fixtures are in the two `--self-test` suites, which are the FIRST step of both
+blocking CI jobs (`ci.yml:677-681`, `ci.yml:698-702`) — Rule Q satisfied by an existing invocation
+path, no CI wiring changed. Residual enumerations for BOTH gates were rewritten in full (Rule AE);
+the singleton gate's residual C, which asserted a compensating control that did not cover this case,
+is corrected rather than deleted.
+
 ---
 
 ### FOLLOW-761 — status: READY_FOR_REVIEW (PR #653 open, `f98fe2c6`, PM-validated 2026-08-03)

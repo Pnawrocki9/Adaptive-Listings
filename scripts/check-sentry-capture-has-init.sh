@@ -69,11 +69,41 @@
 # The allowlist check is run against the file's ORIGINAL (uncleaned) line, so
 # this annotation comment itself is never stripped by `clean_python_source`.
 #
+# ALLOWLIST INVENTORY — AND ITS CONSUMER (FOLLOW-759)
+# ───────────────────────────────────────────────────
 # Every run of the real check (not just violations) prints an ALLOWLIST
-# INVENTORY — a count plus file:line of every `sentry-init-guard: allowlisted`
-# occurrence under the scanned tree — so a growing suppression set is visible
-# in CI output, not only discoverable by grepping the source (FOLLOW-757 AC5,
-# same shape as Rule Q applied to suppressions instead of skips).
+# INVENTORY: one line per SCANNED file carrying at least one
+# `sentry-init-guard: allowlisted` annotation, with that file's occurrence
+# count. FOLLOW-757 AC5 shipped this as a bare printed number and NOTHING read
+# it — no baseline, no annotation, no threshold — so it landed in the log of a
+# GREEN job, and nobody opens a green job's log. The gap had moved one hop
+# ("invisible unless you grep the source" → "invisible unless you open a
+# passing job's log") rather than closed: a HALF_WIRE_P under Rule AJ.
+#
+# The consumer is now a COMMITTED BASELINE,
+# scripts/baselines/sentry-capture-allowlist.baseline (override:
+# SENTRY_CAPTURE_ALLOWLIST_BASELINE), compared by the shared helper
+# scripts/lib/suppression-baseline.sh — the SAME helper
+# check-sentry-init-singleton.sh uses for its own (whole-file) suppression set,
+# because the two inventories differ only in what an entry is. A baseline is the
+# right consumer because it converts silent growth into a RED gate: adding an
+# allowlist annotation fails CI until the baseline is updated in the same PR,
+# where a human reads the added line and its reason. The weaker option (a
+# `::notice::` annotation) was rejected: it still leaves the signal unread on a
+# green run, which is the defect being fixed.
+#
+# Entries are per-FILE counts, not `file:line` — line numbers churn on every
+# unrelated edit above an annotation, and a gate that reddens on changes that
+# alter no suppression trains people to route around it.
+#
+# REGION (Rule AL, FOLLOW-759 AC3). The inventory is built by iterating exactly
+# the `$FILES` list the gate scans, NOT by re-globbing the scan dirs. The
+# original `grep -rn ... "${SCAN_DIRS[@]}"` had no `--include=*.py` and no
+# test-file exclusion, so it over-counted (annotations in `test_*.py`, `.md`,
+# fixtures — files this gate never honours) and under-counted (nothing outside
+# `apps/*/src`) simultaneously. Sharing the one `$FILES` list makes the two
+# regions structurally incapable of drifting apart — the same drift-proofing
+# FOLLOW-757 applied to the detection/clearance pair.
 #
 # SCAN DIR
 # ────────
@@ -107,9 +137,31 @@
 #      from an unrelated same-named function, and resolving the aliased-
 #      import case) is a second axis of work from CB-1's fallback-safety fix
 #      and deserves its own red-first fixture rather than riding along here.
-#   None of 5/6/7 is fixed here (out of this ticket's AC); a future ticket
-#   should pick these up if the scan ever needs to widen, filenames change,
-#   or an aliased/`from`-import capture site is introduced.
+#   8. (FOLLOW-759, NEW — introduced by the inventory's region alignment.) The
+#      inventory counts the annotation token on ANY line of a scanned file,
+#      while the gate only HONOURS one that sits on a capture line. An
+#      annotation on a non-capture line is therefore COUNTED but INERT. This
+#      over-counts in the safe direction — it makes a useless suppression
+#      visible in the baseline diff, and it cannot hide a violation — so it is
+#      recorded rather than fixed.
+#   9. (FOLLOW-759, NEW.) The inventory greps RAW file text, not the cleaned
+#      source, so the literal token inside a string literal or docstring is
+#      counted. This is DELIBERATE and matches the consumer: the allowlist
+#      CLEARANCE check below is also raw-text (see `_check_file`), and Rule AL
+#      requires the assertion's region to equal its consumer's. FOLLOW-768 owns
+#      moving clearance onto cleaned text; when it does, this inventory must
+#      move with it in the same PR or the two regions diverge again.
+#  10. (FOLLOW-759, NEW.) The baseline records per-file occurrence COUNTS and
+#      paths — not line numbers and not the `— <reason>` text. Moving an
+#      annotation within a file, or rewriting its reason, does not trip the
+#      baseline. Adding, removing, or relocating one across files does.
+#  11. (FOLLOW-759, NEW.) This gate now depends on TWO shared helpers under
+#      scripts/lib/ (clean-python-source.sh, suppression-baseline.sh); a missing
+#      one exits 2 rather than degrading, but neither hard-fail has a fixture.
+#      FOLLOW-769 owns that gap and its scope is now two helpers x two gates.
+#   None of 5/6/7/8/9/10/11 is fixed here (out of this ticket's AC); a future
+#   ticket should pick these up if the scan ever needs to widen, filenames
+#   change, or an aliased/`from`-import capture site is introduced.
 #
 # SELF-TEST
 # ─────────
@@ -127,22 +179,35 @@
 # LOUD, distinctly-tagged "UNPARSEABLE" finding rather than silently clearing
 # it via the raw-text fallback. Run against the PRE-FOLLOW-760 script, this
 # fixture instead PASSES (clear) — see the PR body for the pasted
-# before/after transcript. All exit-code assertions check the SPECIFIC
-# expected code (1 for a detected violation/unparseable finding), not merely
-# non-zero (FOLLOW-760 AC3).
+# before/after transcript. PLUS four fixtures for FOLLOW-759: (a) a scanned
+# file with ONE allowlisted capture is inventoried as exactly 1 occurrence;
+# (b) that same tree against a zero-entry baseline is a LOUD, distinctly
+# diagnosed failure (against the pre-FOLLOW-759 script it exits 0 — the silent
+# growth this ticket closes); (c) a MISSING baseline fails the gate rather than
+# soft-passing; (d) an allowlist annotation inside an EXCLUDED file
+# (`test_*.py`, `.md`) is NOT counted — against the pre-FOLLOW-759 script the
+# raw `grep -rn` counted both. Every self-test run is pointed at a TEMP
+# baseline, never the repo's committed one. All exit-code assertions check the
+# SPECIFIC expected code (1 for a detected violation/unparseable/baseline
+# finding), not merely non-zero (FOLLOW-760 AC3).
 #
 # EXIT CODES
 # ──────────
 #   0 = pass (every capture-containing file also has an init_sentry( call, or
-#       is explicitly allow-listed, AND every scanned file tokenized cleanly)
-#   1 = violation — EITHER a capture call with no init_sentry( in the same
-#       file and not allow-listed, OR a file whose capture/init shape could
+#       is explicitly allow-listed, AND every scanned file tokenized cleanly,
+#       AND the allowlist inventory matches its committed baseline)
+#   1 = violation — ANY of: a capture call with no init_sentry( in the same
+#       file and not allow-listed; a file whose capture/init shape could
 #       not be verified because python3 could not tokenize it (FOLLOW-760:
 #       a gate that cannot evaluate a file must not report it clean, so this
 #       is a hard failure by default, printed under its own distinct
 #       "UNPARSEABLE" heading so it is never confused with an ordinary
-#       capture-without-init violation)
-#   2 = self-test failure (the guard itself is broken)
+#       capture-without-init violation); or the allowlist inventory differs
+#       from scripts/baselines/sentry-capture-allowlist.baseline in either
+#       direction (FOLLOW-759 — an unreviewed suppression change), also under
+#       its own heading
+#   2 = self-test failure, or a shared helper under scripts/lib/ is missing
+#       (the guard itself is broken)
 
 set -euo pipefail
 
@@ -187,6 +252,27 @@ fi
 source "$CLEAN_LIB"
 if ! declare -F clean_python_source > /dev/null 2>&1; then
   echo "FAIL: $CLEAN_LIB did not define clean_python_source()."
+  exit 2
+fi
+
+# ── Shared helper: suppression-baseline comparator (FOLLOW-759 / FOLLOW-765) ──
+# Gives the allowlist inventory a CONSUMER. Shared with
+# check-sentry-init-singleton.sh (which baselines its registered-mirror
+# exclusion set with the same function) so the two gates cannot grow two
+# divergent notions of "a suppression set changed" — the full rationale is in
+# that helper's header. Missing helper = exit 2; this gate must never skip the
+# comparison and report a green.
+BASELINE_LIB="$SCRIPT_DIR/lib/suppression-baseline.sh"
+if [[ ! -f "$BASELINE_LIB" ]]; then
+  echo "FAIL: shared helper not found: $BASELINE_LIB"
+  echo "This gate cannot verify its allowlist inventory against the committed"
+  echo "baseline without it, and must NOT skip the comparison (FOLLOW-759)."
+  exit 2
+fi
+# shellcheck source=lib/suppression-baseline.sh
+source "$BASELINE_LIB"
+if ! declare -F compare_suppression_baseline > /dev/null 2>&1; then
+  echo "FAIL: $BASELINE_LIB did not define compare_suppression_baseline()."
   exit 2
 fi
 
@@ -265,6 +351,25 @@ if [[ "${1:-}" == "--self-test" ]]; then
 
   mkdir -p "$tmp_dir/app-a/src/jobs"
 
+  # Every fixture run below is pointed at a TEMP allowlist baseline, so the
+  # self-test never compares a fixture tree against the repo's real committed
+  # baseline (FOLLOW-759). Exported once: `bash "$0"` inherits it.
+  st_baseline="$tmp_dir/allowlist.baseline"
+  export SENTRY_CAPTURE_ALLOWLIST_BASELINE="$st_baseline"
+
+  # _st_write_baseline <count> [entry ...]
+  _st_write_baseline() {
+    local n="$1"
+    shift
+    {
+      echo "# self-test temp baseline"
+      echo "count: $n"
+      local e
+      for e in "$@"; do echo "$e"; done
+    } > "$st_baseline"
+  }
+  _st_write_baseline 0
+
   # ── Negative control: capture-without-init (the exact FOLLOW-743 shape) ──
   cat > "$tmp_dir/app-a/src/jobs/rogue_capture.py" <<'PYEOF'
 import sentry_sdk
@@ -320,12 +425,105 @@ def _rare_case():
         pass
 PYEOF
 
-  if ! SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > /dev/null 2>&1; then
+  allowlist_out="$tmp_dir/.allowlist_self_test_output"
+  _st_write_baseline 1 "app-a/src/jobs/allowlisted_capture.py (1 occurrence(s))"
+  if ! SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > "$allowlist_out" 2>&1; then
     echo "SELF-TEST FAIL: an explicitly allow-listed capture was incorrectly flagged."
+    echo "--- gate output ---"
+    cat "$allowlist_out"
     exit 2
   fi
   echo "OK: self-test PASSED — explicitly allow-listed capture was correctly ignored."
-  rm -f "$tmp_dir/app-a/src/jobs/allowlisted_capture.py"
+
+  # ── FOLLOW-759 AC4 (a): a SCANNED allowlisted capture is counted as 1 ─────
+  if ! grep -q "app-a/src/jobs/allowlisted_capture.py (1 occurrence(s))" "$allowlist_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC4): a scanned file with ONE allowlisted capture was"
+    echo "  not reported as exactly one occurrence in the allowlist inventory."
+    echo "--- gate output ---"
+    cat "$allowlist_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-759 AC4) — a scanned allowlisted capture is inventoried"
+  echo "  as exactly 1 occurrence and matched against the baseline."
+
+  # ── FOLLOW-759 AC1: an UNREVIEWED allowlist change fails the gate ─────────
+  # Same tree, baseline still says zero suppressions: the gate must go RED.
+  # Against the PRE-FOLLOW-759 script this exits 0 (the inventory had no
+  # consumer at all) — that is the silent growth this ticket closes.
+  _st_write_baseline 0
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > "$allowlist_out" 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC1): an allowlist annotation absent from the committed"
+    echo "  baseline did NOT fail the gate — the inventory still has no consumer."
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC1): expected the violation exit code (1), got $rc."
+    exit 2
+  fi
+  if ! grep -q "does not match its committed baseline" "$allowlist_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC1): the gate failed, but not under the distinct"
+    echo "  baseline-mismatch diagnosis."
+    echo "--- gate output ---"
+    cat "$allowlist_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-759 AC1) — an allowlist entry missing from the committed"
+  echo "  baseline is a LOUD, distinctly-diagnosed failure."
+
+  # ── FOLLOW-759 AC1: a MISSING baseline must fail, never soft-pass ─────────
+  rm -f "$st_baseline"
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > "$allowlist_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 1 ]] || ! grep -q "committed baseline not found" "$allowlist_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-759): a MISSING baseline must fail the gate (exit 1) with a"
+    echo "  'committed baseline not found' diagnosis — it must never degrade to"
+    echo "  'assume the current suppression set is fine'. Got exit $rc."
+    echo "--- gate output ---"
+    cat "$allowlist_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-759) — a missing baseline fails the gate loudly."
+  _st_write_baseline 0
+  rm -f "$tmp_dir/app-a/src/jobs/allowlisted_capture.py" "$allowlist_out"
+
+  # ── FOLLOW-759 AC3/AC4 (b): an annotation in an EXCLUDED file is NOT ──────
+  # counted. The old inventory was a raw `grep -rn` over the scan dirs with no
+  # --include and no test-file exclusion, so a `test_*.py` (or a .md) carrying
+  # the token inflated the count for a file this gate never honours (Rule AL).
+  # The inventory now iterates the same $FILES the scan does.
+  cat > "$tmp_dir/app-a/src/test_excluded.py" <<'PYEOF'
+import sentry_sdk
+
+def test_documents_the_annotation():
+    # sentry-init-guard: allowlisted — documentation inside a TEST file
+    assert True
+PYEOF
+  cat > "$tmp_dir/app-a/src/notes.md" <<'MDEOF'
+Suppression vocabulary reference: `# sentry-init-guard: allowlisted — <reason>`
+MDEOF
+
+  region_out="$tmp_dir/.region_self_test_output"
+  rc=0
+  SENTRY_CAPTURE_INIT_TARGET="$tmp_dir" bash "$0" > "$region_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC3): an allowlist annotation inside an EXCLUDED file"
+    echo "  (test_excluded.py / notes.md) was counted, so the inventory disagreed with the"
+    echo "  zero-entry baseline. The inventory region must equal the scan region."
+    echo "--- gate output ---"
+    cat "$region_out"
+    exit 2
+  fi
+  if grep -q "test_excluded.py\|notes.md" "$region_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-759 AC3): an EXCLUDED file appeared in the allowlist"
+    echo "  inventory output."
+    echo "--- gate output ---"
+    cat "$region_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-759 AC3) — an allowlist annotation in a file the gate"
+  echo "  does not scan (test_*.py, .md) is not counted; inventory region == scan region."
+  rm -f "$tmp_dir/app-a/src/test_excluded.py" "$tmp_dir/app-a/src/notes.md" "$region_out"
 
   # ── FOLLOW-757 CB-1: a DOCSTRING mention of init_sentry( must not clear ──
   cat > "$tmp_dir/app-a/src/jobs/docstring_capture.py" <<'PYEOF'
@@ -491,11 +689,13 @@ echo "=== Sentry capture-has-init guard (FOLLOW-743) ==="
 
 if [[ -n "$TARGET" ]]; then
   SCAN_DIRS=("$TARGET")
+  SCAN_ROOT="$TARGET"
 else
   SCAN_DIRS=()
   for d in "$ROOT"/apps/*/src; do
     [[ -d "$d" ]] && SCAN_DIRS+=("$d")
   done
+  SCAN_ROOT="$ROOT"
 fi
 
 echo "Scanning: ${SCAN_DIRS[*]}"
@@ -509,19 +709,25 @@ FILES=$(
     2>/dev/null || true
 )
 
-# ── Allowlist inventory (FOLLOW-757 AC5) — always printed, pass or fail ──────
-ALLOWLIST_HITS=$(
-  grep -rn "sentry-init-guard: allowlisted" "${SCAN_DIRS[@]}" 2>/dev/null || true
-)
-if [[ -n "$ALLOWLIST_HITS" ]]; then
-  ALLOWLIST_COUNT=$(echo "$ALLOWLIST_HITS" | grep -c "sentry-init-guard: allowlisted")
-else
-  ALLOWLIST_COUNT=0
-fi
-echo "Allowlist inventory (sentry-init-guard: allowlisted): $ALLOWLIST_COUNT occurrence(s)"
-if [[ "$ALLOWLIST_COUNT" -gt 0 ]]; then
-  echo "$ALLOWLIST_HITS" | sed 's/^/  /'
-fi
+# ── Allowlist inventory + its baseline consumer (FOLLOW-757 AC5 / FOLLOW-759) ─
+# Region (Rule AL): iterate the SAME $FILES the gate scans, never a fresh
+# recursive grep of the scan dirs — the old form counted annotations in files
+# this gate does not honour (test_*.py, .md, fixtures) and could not count one
+# it does. One list, so the two cannot drift.
+ALLOWLIST_OBSERVED=$(mktemp)
+for f in $FILES; do
+  hits=$(grep -c "sentry-init-guard: allowlisted" "$f" 2>/dev/null || true)
+  [[ -z "$hits" || "$hits" -eq 0 ]] && continue
+  printf '%s (%s occurrence(s))\n' "${f#"$SCAN_ROOT"/}" "$hits" >> "$ALLOWLIST_OBSERVED"
+done
+
+ALLOWLIST_BASELINE="${SENTRY_CAPTURE_ALLOWLIST_BASELINE:-$ROOT/scripts/baselines/sentry-capture-allowlist.baseline}"
+BASELINE_MISMATCH=0
+compare_suppression_baseline \
+  "Allowlist (sentry-init-guard: allowlisted)" \
+  "$ALLOWLIST_BASELINE" \
+  "$ALLOWLIST_OBSERVED" || BASELINE_MISMATCH=1
+rm -f "$ALLOWLIST_OBSERVED"
 echo ""
 
 # VIOLATIONS = capture-without-init findings; UNPARSEABLE = files python3
@@ -561,10 +767,11 @@ if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
 fi
 echo ""
 
-if [[ "$VIOLATION_COUNT" -eq 0 && "$UNPARSEABLE_COUNT" -eq 0 ]]; then
+if [[ "$VIOLATION_COUNT" -eq 0 && "$UNPARSEABLE_COUNT" -eq 0 && "$BASELINE_MISMATCH" -eq 0 ]]; then
   echo "PASS: every capture_exception(/capture_message( call site has an"
-  echo "init_sentry( call in the same file (or is explicitly allow-listed), and"
-  echo "every scanned file tokenized cleanly."
+  echo "init_sentry( call in the same file (or is explicitly allow-listed),"
+  echo "every scanned file tokenized cleanly, and the allowlist inventory"
+  echo "matches its committed baseline."
   exit 0
 fi
 
@@ -597,5 +804,14 @@ if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
   echo ""
 fi
 
-echo "See FOLLOW-743 / FOLLOW-760 / scripts/check-sentry-capture-has-init.sh header for full context."
+if [[ "$BASELINE_MISMATCH" -ne 0 ]]; then
+  echo "FAIL: the allowlist suppression set does not match its committed baseline"
+  echo "(details and the copy-pasteable replacement are printed above, under the"
+  echo "inventory). FOLLOW-759: the inventory used to be a number in a green job's"
+  echo "log with no consumer; the baseline is that consumer, so every change to"
+  echo "what this gate stops seeing is a reviewed diff."
+  echo ""
+fi
+
+echo "See FOLLOW-743 / FOLLOW-759 / FOLLOW-760 / scripts/check-sentry-capture-has-init.sh header for full context."
 exit 1

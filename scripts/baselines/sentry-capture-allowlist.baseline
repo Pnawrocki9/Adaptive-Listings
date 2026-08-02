@@ -1,0 +1,26 @@
+# Sentry capture-has-init allowlist baseline (FOLLOW-759).
+#
+# CONSUMER of the allowlist inventory printed by
+# scripts/check-sentry-capture-has-init.sh. Each entry is:
+#
+#   <path relative to the repo root> (<N> occurrence(s))
+#
+# i.e. one line per SCANNED file that carries at least one
+# `# sentry-init-guard: allowlisted` annotation, with how many it carries.
+# Per-file counts rather than file:line, deliberately: line numbers churn on
+# every unrelated edit above an annotation, which would false-RED this gate on
+# changes that alter no suppression at all. Adding, removing or moving an
+# annotation BETWEEN files still changes this file.
+#
+# Region: exactly the files the gate scans (`*.py` under `apps/*/src`, minus
+# `test_*.py` / `*_test.py` / `conftest.py`) — Rule AL. An annotation outside
+# that region is not honoured by the gate, so it is not counted here either.
+#
+# TO CHANGE THIS FILE: only in the same PR as the annotation you added or
+# removed, with the reason visible in the diff. That is the entire point — this
+# file is the review record for the suppression set. The gate prints a
+# copy-pasteable replacement body when it fails.
+#
+# Current state: zero allowlisted captures repo-wide. The vocabulary exists and
+# is documented in the gate header; nothing uses it yet.
+count: 0

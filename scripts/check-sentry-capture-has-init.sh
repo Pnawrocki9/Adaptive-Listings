@@ -36,8 +36,9 @@
 # check-sentry-init-singleton.sh's own comment-filter bug, inverted here to
 # fail SILENTLY instead of loudly). Both the detection (capture) side and the
 # clearance (init_sentry) side are put through the SAME comment/docstring/
-# string-literal stripping pass (`_clean_python_source`) so the two halves
-# cannot drift apart again.
+# string-literal stripping pass (`clean_python_source` — shared via
+# scripts/lib/clean-python-source.sh with check-sentry-init-singleton.sh since
+# FOLLOW-746 item 8) so the two halves cannot drift apart again.
 #
 # There is no `observability.py` basename exclusion (FOLLOW-757 AC3 removed
 # it): the three registered helper mirrors (scripts/mirror-files.json —
@@ -66,7 +67,7 @@
 #
 # The comment MUST contain the literal string "sentry-init-guard: allowlisted".
 # The allowlist check is run against the file's ORIGINAL (uncleaned) line, so
-# this annotation comment itself is never stripped by `_clean_python_source`.
+# this annotation comment itself is never stripped by `clean_python_source`.
 #
 # Every run of the real check (not just violations) prints an ALLOWLIST
 # INVENTORY — a count plus file:line of every `sentry-init-guard: allowlisted`
@@ -147,78 +148,47 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-# Strips whole-line comments, trailing comments, AND string literals/docstrings
-# from a Python file, replacing each stripped token with same-width whitespace
-# so line numbers (and everything else's column offsets) are preserved. This
-# is what makes both the capture-detection and init-clearance regexes see only
-# real code (FOLLOW-757 AC1).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── Shared helper: comment/docstring/string stripper ─────────────────────────
+# `clean_python_source()` strips whole-line comments, trailing comments AND
+# string literals/docstrings from a Python file, replacing each stripped token
+# with same-width whitespace so line numbers (and column offsets) are
+# preserved. This is what makes both the capture-detection and init-clearance
+# regexes see only real code (FOLLOW-757 AC1).
 #
-# FOLLOW-760 CB-1: on a tokenizer failure (unterminated string, inconsistent
-# dedent, rejected encoding, ...) this function writes NOTHING to stdout and
-# exits non-zero (3). It must NOT fall back to writing the raw, uncleaned
-# file — that would silently revert BOTH the detection and clearance regexes
-# to matching raw text, so a docstring/comment mention of `init_sentry(`
-# would clear a real, unserved capture call again (the exact false-GREEN
-# FOLLOW-757 removed). The caller (`_check_file`) distinguishes "cannot
-# evaluate this file" (exit 3 here) from "evaluated, no violation" (exit 0,
-# real cleaned content on stdout) and reports the former as its own LOUD,
-# counted "UNPARSEABLE" finding rather than silently clearing it. This still
-# does not crash the gate itself — the tokenizer error is caught here, not
-# left to propagate as an uncaught Python traceback or an unguarded shell
-# failure (see `_check_file` for how the non-zero exit is captured safely
-# under `set -e`).
-_clean_python_source() {
-  local file="$1"
-  python3 - "$file" <<'PYEOF'
-import sys
-import tokenize
-
-path = sys.argv[1]
-
-try:
-    with open(path, "rb") as f:
-        raw = f.read()
-    lines = raw.decode("utf-8", errors="replace").splitlines(keepends=True)
-
-    with open(path, "rb") as f:
-        tokens = list(tokenize.tokenize(f.readline))
-
-    for tok in tokens:
-        if tok.type not in (tokenize.COMMENT, tokenize.STRING):
-            continue
-        start_row, start_col = tok.start
-        end_row, end_col = tok.end
-
-        def _blank(line, from_col, to_col):
-            body = line
-            newline = ""
-            if body.endswith("\r\n"):
-                newline = "\r\n"
-                body = body[:-2]
-            elif body.endswith("\n"):
-                newline = "\n"
-                body = body[:-1]
-            to_col = min(to_col, len(body))
-            return body[:from_col] + (" " * (to_col - from_col)) + body[to_col:] + newline
-
-        if start_row == end_row:
-            lines[start_row - 1] = _blank(lines[start_row - 1], start_col, end_col)
-        else:
-            lines[start_row - 1] = _blank(lines[start_row - 1], start_col, len(lines[start_row - 1]))
-            for r in range(start_row, end_row - 1):
-                lines[r] = _blank(lines[r], 0, len(lines[r]))
-            lines[end_row - 1] = _blank(lines[end_row - 1], 0, end_col)
-
-    sys.stdout.write("".join(lines))
-except Exception as exc:
-    # FOLLOW-760 CB-1: a file this tokenizer cannot process must NOT be
-    # silently treated as clean. Write nothing to stdout (no raw-content
-    # fallback) and exit non-zero so the shell caller treats this file as an
-    # "cannot evaluate" finding, distinct from a real cleared/violating file.
-    print(f"tokenize error on {path}: {exc}", file=sys.stderr)
-    sys.exit(3)
-PYEOF
-}
+# FOLLOW-746 item 8: this function used to be a ~50-line `python3 tokenize`
+# heredoc embedded HERE. FOLLOW-746 needed the same pass in
+# check-sentry-init-singleton.sh, so rather than create a third unregistered
+# duplicate of shared logic in the Rule J / K.1 gap, it was extracted to
+# scripts/lib/clean-python-source.sh and is now SOURCED by both gates — one
+# definition, drift structurally impossible. The full decision record (and why
+# a mirror-files.json pair was rejected) is in that file's header.
+#
+# FOLLOW-760 CB-1 behaviour is UNCHANGED and preserved in the shared copy: on a
+# tokenizer failure the helper writes NOTHING to stdout and exits 3; it must
+# NOT fall back to the raw, uncleaned file (that would silently revert BOTH
+# regexes to raw-text matching, so a docstring/comment mention of
+# `init_sentry(` would clear a real, unserved capture again). `_check_file`
+# below distinguishes "cannot evaluate this file" (exit 3) from "evaluated, no
+# violation" (exit 0 with cleaned content) and reports the former as its own
+# LOUD, counted "UNPARSEABLE" finding.
+#
+# A missing helper fails this gate with exit 2 — it never degrades to raw-text
+# matching.
+CLEAN_LIB="$SCRIPT_DIR/lib/clean-python-source.sh"
+if [[ ! -f "$CLEAN_LIB" ]]; then
+  echo "FAIL: shared helper not found: $CLEAN_LIB"
+  echo "This gate cannot evaluate Python sources without it, and must NOT fall"
+  echo "back to raw-text matching (FOLLOW-746 item 8 / FOLLOW-760)."
+  exit 2
+fi
+# shellcheck source=lib/clean-python-source.sh
+source "$CLEAN_LIB"
+if ! declare -F clean_python_source > /dev/null 2>&1; then
+  echo "FAIL: $CLEAN_LIB did not define clean_python_source()."
+  exit 2
+fi
 
 # Scans a single file and echoes a two-part report if it needs one, else
 # nothing. First line of any output is a tag ("VIOLATION" or "UNPARSEABLE",
@@ -239,11 +209,11 @@ _check_file() {
   local cleaned
   local clean_rc=0
 
-  # `_clean_python_source` exits non-zero (no stdout) when python3 cannot
+  # `clean_python_source` exits non-zero (no stdout) when python3 cannot
   # tokenize the file. Capture that via `||` (not a bare assignment) so a
   # non-zero exit does not trip `set -e` — this is "cannot evaluate", not a
   # crash, and must be reported as its own finding, not swallowed.
-  cleaned=$(_clean_python_source "$file") || clean_rc=$?
+  cleaned=$(clean_python_source "$file") || clean_rc=$?
 
   if [[ "$clean_rc" -ne 0 ]]; then
     echo "UNPARSEABLE"
@@ -619,7 +589,7 @@ if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
   echo "call shape could NOT be verified, so each is treated as a finding rather"
   echo "than silently cleared (FOLLOW-760: a gate that cannot evaluate a file must"
   echo "not report it clean). Check the run log above for the tokenizer error on"
-  echo "each path (printed to stderr by _clean_python_source)."
+  echo "each path (printed to stderr by clean_python_source)."
   echo ""
   echo "FIX: make the file tokenizable (fix the syntax/encoding error), or if it is"
   echo "intentionally non-standard Python, allowlist its capture call(s) inline:"

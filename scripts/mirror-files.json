@@ -2,24 +2,29 @@
   {
     "canonical": "packages/shared/src/bandit.ts",
     "mirror": "apps/decision-api/src/lib/bandit.ts",
-    "strip_comments": true
+    "strip_comments": true,
+    "basename_discovery": true
   },
   {
     "canonical": "apps/control-plane/src/app/api/adapt/route.ts",
     "mirror": "apps/decision-api/src/lib/reorder.ts",
     "strip_comments": false,
-    "note": "Mirror covers helpers only — full byte comparison is not required; function-signature comparison instead. Canonical helpers checked: deterministicScore, affinityScore, buildReorderDirective."
+    "note": "Mirror covers helpers only — full byte comparison is not required; function-signature comparison instead. Canonical helpers checked: deterministicScore, affinityScore, buildReorderDirective.",
+    "basename_discovery": false,
+    "basename_discovery_note": "OFF because the canonical basename is route.ts — a Next.js App Router filename convention with 80 unrelated files in this repo, so basename discovery would flag every API route. The mirror basename reorder.ts is unique but is not discovered either (the flag is per pair). Coverage gap is real and is printed in the discovery inventory rather than left silent (FOLLOW-746 AC1)."
   },
   {
     "canonical": "apps/intent-engine/src/observability.py",
     "mirror": "apps/llm-gateway/src/jobs/observability.py",
     "strip_comments": true,
-    "note": "FOLLOW-738 hardened Sentry initialiser — byte-identical (Python has no /* */ or // comment syntax the strip pass would treat differently, so this is effectively a raw diff). No local imports inside this module, so it is safe to place at a different relative path per app."
+    "note": "FOLLOW-738 hardened Sentry initialiser — byte-identical (Python has no /* */ or // comment syntax the strip pass would treat differently, so this is effectively a raw diff). No local imports inside this module, so it is safe to place at a different relative path per app.",
+    "basename_discovery": true
   },
   {
     "canonical": "apps/intent-engine/src/observability.py",
     "mirror": "apps/data-quality/src/crons/observability.py",
     "strip_comments": true,
-    "note": "FOLLOW-738 hardened Sentry initialiser — see llm-gateway mirror pair note."
+    "note": "FOLLOW-738 hardened Sentry initialiser — see llm-gateway mirror pair note.",
+    "basename_discovery": true
   }
 ]

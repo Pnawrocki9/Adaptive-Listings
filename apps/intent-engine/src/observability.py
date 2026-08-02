@@ -1,10 +1,21 @@
 """
 Shared hardened Sentry initialiser for the Python Modal apps (FOLLOW-738).
 
-CANONICAL COPY. This file is mirrored byte-for-byte (Rule J,
-`scripts/mirror-files.json`) into:
-  - apps/llm-gateway/src/jobs/observability.py
-  - apps/data-quality/src/crons/observability.py
+SHARED HARDENED INITIALISER — this file is one of a set of byte-identical
+copies (Rule J). The canonical path and every mirror path are listed in
+`scripts/mirror-files.json`; that manifest, not this docstring, is the
+registry. It is deliberately path-neutral so it stays TRUE in every copy:
+the previous wording declared each copy "CANONICAL" and listed itself among
+its own mirrors, a falsehood forced by the byte-identity gate (RETRO-235 CB-5,
+fixed by FOLLOW-746 AC4).
+
+The manifest is also what the two Sentry gates read:
+`scripts/check-sentry-init-singleton.sh` treats ONLY registered paths as
+legitimate `sentry_sdk.init(` sites, and `scripts/check-mirror-files.sh` fails
+on any unregistered file sharing this basename (FOLLOW-746 AC1/AC2) — so a
+4th, unregistered copy of this module is now a hard CI failure rather than a
+silent pass.
+
 Each Modal app is deployed as an independently-built container image
 (separate `modal.Image` / `pip_install` per app — see each app's `_app.py` /
 `main.py`), so a genuine cross-app `packages/py-shared` import is not
@@ -12,8 +23,8 @@ available to the deployed container without extra `add_local_*` image
 plumbing in all three apps. Mirroring a small, dependency-free module is the
 lower-risk option and reuses the mirror-sync gate this repo already runs in
 CI (`rule-j` job) rather than inventing new infra. If you edit this file,
-apply the SAME edit to both mirrors in the SAME commit — `check-mirror-files.sh`
-fails CI on drift.
+apply the SAME edit to EVERY copy listed in the manifest, in the SAME commit —
+`check-mirror-files.sh` fails CI on drift.
 
 WHY THIS EXISTS (ESC-045 item 4 / FOLLOW-738):
 Before this file, four Sentry init call sites existed across three Modal

@@ -188,3 +188,42 @@ review question, not yet a mechanical check) "does at least one fixture exercise
 `except`/fallback branch in the functions under test?" — branch coverage as a checklist item for
 hand-written shell self-tests, since there is no `nyc`/coverage tool for bash+embedded-Python
 heredocs here to enforce it mechanically.
+
+---
+
+**2026-08-02 · FOLLOW-746** (holes in `scripts/check-sentry-init-singleton.sh`, with FOLLOW-764's
+three corrections folded in)
+
+**What I shipped:** Four holes closed in the singleton guard, red-first: (1) the basename exclusion
+`--exclude="observability.py"` replaced by an exclusion list READ FROM `scripts/mirror-files.json`,
+so a 4th unregistered copy is scanned; (2) `--exclude="*test*.py"` replaced by anchored `test_*.py`
+/ `*_test.py` / `conftest.py` — the same substring-glob shape FOLLOW-757 fixed in the sibling gate,
+and on this axis it fails SILENTLY here too (`latest_pricing.py` with a bare init was unseen); (3)
+the whole-line-only comment filter replaced by the tokenizer pass, so trailing comments and
+docstrings stop producing false REDs; (4) an unparseable file is now a distinct, loud `UNPARSEABLE`
+finding. Plus AC1 basename discovery in `check-mirror-files.sh` (opt-in per pair, because `route.ts`
+matches 80 unrelated Next.js files — the opt-outs are PRINTED, not silent), and AC4's path-neutral
+docstring in all three `observability.py` copies.
+
+**The decision the ticket said to make before writing code (item 8):** the tokenizer pass already
+existed as a ~50-line heredoc in the sibling gate. I extracted it to
+`scripts/lib/clean-python-source.sh` and sourced it from both gates rather than registering the two
+copies as a Rule J pair. Reasoning: Rule J exists for duplication that CANNOT be removed (each Modal
+app builds its own container image, so `observability.py` cannot be an import); `scripts/` has no
+such boundary, both gates run from the same checkout in the same runner, so a `source` is free.
+Registering the copies would have meant inventing a NEW comparison strategy in
+`check-mirror-files.sh` for a bash/python hybrid — more shared-logic surface added in order to
+police a duplicate that need not exist. Extraction makes drift impossible instead of merely
+detectable.
+
+**Where a green badge could have hidden a broken run path:** the AC1 self-test.
+`check-mirror-files.sh` had no `--self-test` at all, and its only automated invocations (ci.yml
+`rule-j`, lefthook pre-push) call it with NO arguments — so adding a `--self-test` flag alone would
+have shipped a fixture suite that nothing ever runs, the exact "operator-runnable script nobody
+invokes" failure. I could not add a CI step (out of scope), so the self-test also runs INLINE at the
+start of every normal run (one summary line, full output only on failure, recursion-guarded by an
+env var). It is now proven to run on every push and every PR, by the job that already existed.
+
+**A guardrail I'd add:** when a gate acquires a `--self-test`, the same PR must show the automated
+path that invokes it — a CI step, or an inline pre-run self-check. "The self-test exists" and "the
+self-test runs" are different claims, and only the second one is worth a green badge.

@@ -22,6 +22,7 @@ import type { IntentState } from './intent.js';
 import { applyChatIntentPrior } from './intent.js';
 import { adaptResponseSchema } from './adapt-schema.js';
 import { buildEndpoint } from './endpoint.js';
+import { getHeadlineOwner, setHeadlineOwner, clearHeadlineOwner } from './headline-ownership.js';
 
 // ---------------------------------------------------------------------------
 // Session-level variant cache (sessionStorage, cleared on tab close)
@@ -502,13 +503,39 @@ function attachResilience(
 }
 
 /**
+ * Disconnect and remove the generic pipeline's resilience watchdog for `el`, if one is
+ * currently armed (FOLLOW-795 / RETRO-244 §4a LG-5(a)).
+ *
+ * Called by `adapt-description.ts`'s `applyAndObserveHeadlineSlot` the instant a
+ * per-listing headline becomes available, so ownership hands off cleanly BEFORE the
+ * description module arms its own observer on the same element — two independent
+ * MutationObservers on one headline element must never coexist.
+ */
+export function evictGenericHeadlineObserver(el: HTMLElement): void {
+  const s = _textResilienceMap.get(el);
+  if (s) {
+    s.obs.disconnect();
+    _textResilienceMap.delete(el);
+  }
+  clearHeadlineOwner(el);
+}
+
+/**
  * Disconnect and clear all FOLLOW-791 resilience observers (text / class / reorder).
  * Mirrors `teardownDescriptionObservers()` (adapt-description.ts) — called from
  * `resetAdaptState()` so cross-listing navigation (ADR-0014) and same-page archetype
  * changes never leave a stale observer watching a superseded/removed DOM node.
+ *
+ * FOLLOW-795: also releases headline-ownership bookkeeping for every element torn down
+ * here — a no-op for non-headline elements (they never claim a registry entry), and the
+ * matching half of the hand-off for any headline element the generic pipeline currently
+ * owns.
  */
 export function teardownAdaptObservers(): void {
-  for (const s of _textResilienceMap.values()) s.obs.disconnect();
+  for (const [el, s] of _textResilienceMap) {
+    s.obs.disconnect();
+    clearHeadlineOwner(el);
+  }
   _textResilienceMap.clear();
   for (const s of _classResilienceMap.values()) s.obs.disconnect();
   _classResilienceMap.clear();
@@ -719,22 +746,43 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
   elements.forEach((el) => {
     const resolved = interpolatePlaceholders(directive.value, el, slotName);
 
-    // FOLLOW-791: 'headline' is deliberately EXCLUDED from the generic resilience
-    // mechanism. Every playbook (packages/sdk/src/core/playbooks/archetypes/*.ts) emits a
-    // TextDirective for slot: 'headline', but ADR-0009's per-listing headline pipeline
-    // (adapt-description.ts's applyAndObserveHeadlineSlot) independently owns and observes
-    // the SAME [data-estalara-slot="headline"] element once a per-listing headline exists,
-    // attaching its OWN MutationObserver anchored to the LLM headline text. Arming a SECOND,
-    // independent observer here — anchored to THIS playbook text — would fight it: each
-    // observer would see the other's write as a "revert" of its own desired text and
-    // re-assert forever. The playbook headline write therefore stays one-shot (unchanged,
-    // pre-existing behavior, no regression): adapt-description.ts's own resilience is the
-    // correct — and only — owner of that slot's repair once a per-listing headline is
-    // available; when one is not, the headline keeps the same pre-existing (documented)
-    // unrecoverable-on-revert gap this ticket does not touch.
-    if (slotName === 'headline' || !context) {
+    if (!context) {
+      // No ApplyContext (legacy / one-shot call site) — no archetypeId/confidence/isStale
+      // available to arm resilience with. One-shot write, unchanged behavior.
       el.textContent = resolved;
       return;
+    }
+
+    // FOLLOW-795 (RETRO-244 §4a LG-5(a)): ownership HAND-OFF, not an unconditional
+    // exclusion. ADR-0009's per-listing headline pipeline (adapt-description.ts's
+    // applyAndObserveHeadlineSlot) is the correct owner of [data-estalara-slot="headline"]
+    // once a per-listing LLM headline exists — arming a second, independent observer here
+    // would fight it. But that ownership is CONDITIONAL (only once fetchDescription
+    // resolves a non-empty per-listing headline), while the OLD exclusion here was
+    // unconditional — leaving the MAJORITY case (cold start, generation failure, uncached
+    // listing, neutral archetype, opt-out) with NO observer at all, and the playbook
+    // headline permanently unrecoverable on any framework revert.
+    //
+    // Fix: arm the generic watchdog here UNLESS `adapt-description.ts` has already
+    // claimed ownership (checked live via the shared `headline-ownership.ts` registry,
+    // never memoized — so a hand-off that already happened on an earlier call is
+    // respected) — and record 'generic' as the owner so `adapt-description.ts` can evict
+    // us cleanly (`evictGenericHeadlineObserver`) the instant a per-listing headline
+    // arrives. Skip setting ownership when stale — a superseded call must not claim an
+    // element it is about to be denied writing to anyway (attachResilience below
+    // re-checks `isStale` itself and will no-op).
+    if (slotName === 'headline') {
+      if (getHeadlineOwner(el) === 'description') {
+        pushEvent({
+          type: 'adapt.skipped',
+          payload: { reason: 'headline_owned_by_description', slot_or_selector: slotName },
+          ts: Date.now(),
+        });
+        return;
+      }
+      if (!context.isStale()) {
+        setHeadlineOwner(el, 'generic');
+      }
     }
 
     attachResilience(

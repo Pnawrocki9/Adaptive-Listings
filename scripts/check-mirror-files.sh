@@ -86,11 +86,18 @@
 # outside any git work tree → 2, naming DISCOVERY SOURCE UNAVAILABLE
 # (FOLLOW-770 AC1/AC2 — against the pre-fix script this exits 0 and prints
 # "OK: every file sharing a registered mirror basename is itself registered"
-# having scanned nothing).
+# having scanned nothing); a repo whose core.excludesFile is a DIRECTORY, so
+# the availability guard still passes but entries A/B's producer dies with 128
+# behind a trailing `grep` that exits 1 → 2, naming [A]/[B] UNEVALUABLE; and
+# the gate sourced under a non-existent $0, so entry F's `$MF_SELF` cannot be
+# read → 2, naming [F] UNEVALUABLE (both FOLLOW-770 fix-iteration 1 — against
+# the pre-fix RUNNER both exit 0 and report the entries as `latent`).
 #
 # Run against the pre-fix script, the 4th-copy assertion and the worktree
-# assertion FAIL (silent hole / false-RED respectively), as do the four
-# FOLLOW-770 assertions — see the PR body for the transcripts.
+# assertion FAIL (silent hole / false-RED respectively), as do all six
+# FOLLOW-770 assertions — the last two of them against the pre-fix RUNNER of
+# THIS register, not against main — see the PR body and the fix-iteration
+# comment on PR #656 for the transcripts.
 #
 # The SAME self-test also runs inline at the start of every normal run (one
 # summary line, full output only on failure). That is deliberate: this script's
@@ -105,22 +112,46 @@
 # RESIDUAL_REGISTER array further down, and the gate EXECUTES every entry's
 # latency proof on every run, printing one status line per entry. Per entry:
 #
-#   proof exits 0 or 1, EMPTY stdout  → LATENT   (documented, still not real)
-#   proof exits 0 or 1, stdout output → GONE LIVE → gate FAILS with exit 3,
+#   EVERY pipe stage exits 0 or 1,
+#     EMPTY stdout                    → LATENT   (documented, still not real)
+#   EVERY pipe stage exits 0 or 1,
+#     stdout output                   → GONE LIVE → gate FAILS with exit 3,
 #                                       naming the entry id — a diagnosis
 #                                       DISTINCT from an ordinary finding (1)
-#   proof exits >= 2 / cannot run     → gate FAILS with exit 2. A residual
+#   ANY pipe stage exits >= 2, or the
+#     proof cannot run at all         → gate FAILS with exit 2. A residual
 #                                       whose proof cannot be evaluated is
 #                                       never "assumed still latent"
 #                                       (the FOLLOW-760 contract, applied to
 #                                       the register itself)
 #
+# PER-STAGE PROOF STATUS (FOLLOW-770 fix-iteration 1) — why `pipefail` alone is
+# NOT enough, in this gate's own register
+# ─────────────────────────────────────────────────────────────────────────────
 # Proofs run under `bash -o pipefail -c`, so a failing producer inside a pipe
-# (e.g. `git ls-files` exiting 128) surfaces as UNEVALUABLE and cannot
-# masquerade as an empty — i.e. reassuring — result. Each proof is evaluated
-# over the SAME region as the control it describes (Rule AL); the region is
-# named in the entry. Retiring an entry requires the fix that closes it in the
-# same PR (Rule AP clause 5).
+# (e.g. `git ls-files` exiting 128) cannot silently yield status 0. That is
+# necessary but NOT sufficient, and the first cut of this register got it
+# wrong: `pipefail` reports the status of the RIGHTMOST command that exited
+# non-zero — not the first, and not the worst. Entries A, B and F chain their
+# producer into a SECOND `grep`, and `grep` exits 1 ("no match") on the now-empty
+# input a dead producer leaves behind. So the pipeline reported 1, the runner's
+# `>= 2` test did not fire, and a genuinely dead producer was classified
+# `latent` — the reassuring direction Rule AP clause 2 exists to forbid,
+# reproduced inside clause 2's own enforcement mechanism:
+#   $ bash -o pipefail -c 'git ls-files --others --exclude-standard \
+#       | grep -E "observability\.py" | grep -vxF "app-a/src/observability.py"'
+#   fatal: not a git repository …          → but the pipeline's status is 1, not 128.
+# The runner therefore records ${PIPESTATUS[@]} — every stage's OWN exit status
+# — for each proof, and treats ANY stage exiting >= 2 as UNEVALUABLE regardless
+# of what later stages did. The decision is made on the WORST stage, never on
+# the pipeline's reported status. A proof that never reaches that epilogue at
+# all (syntax error, signal) is UNEVALUABLE too, never "assumed latent". This
+# lives in the RUNNER, not in three rewritten proof strings, so it also covers
+# every entry added later and every gate that copies this register — the three
+# known-bad shapes were the symptom, the runner was the defect.
+# Each proof is evaluated over the SAME region as the control it describes
+# (Rule AL); the region is named in the entry. Retiring an entry requires the
+# fix that closes it in the same PR (Rule AP clause 5).
 #
 # CONTROLS (predicates) in this gate → the entries that bound each:
 #   P1 pair byte-identity   (strip_comments:true)     → C1, C2
@@ -631,6 +662,88 @@ PYEOF
   fi
   echo "OK: self-test — a root with no readable tracked-file index hard-fails (exit 2), never a silent '0 file(s) found' (FOLLOW-770 AC1/AC2)."
 
+  # 12. FOLLOW-770 fix-iteration 1: a register proof whose PRODUCER dies while a
+  #     LATER stage of the same pipe exits non-zero for an ordinary reason must
+  #     still be UNEVALUABLE. Entries A and B are
+  #     `git ls-files … | grep -E … | grep -vxF …`; when git dies the trailing
+  #     grep returns 1 ("no match" on empty input) and `pipefail` reports THAT,
+  #     because pipefail takes the RIGHTMOST non-zero status.
+  #     The fixture must reach the register, so it cannot be step 11's non-git
+  #     root (the discovery-availability guard exits 2 first, shielding A/B by
+  #     execution order rather than by their own correctness — which is exactly
+  #     the finding). Instead: point core.excludesFile at a DIRECTORY. Plain
+  #     `git ls-files` — what the guard reads — still succeeds, so the gate runs
+  #     to completion; `git ls-files --others --exclude-standard` — what A and B
+  #     read — dies with 128 ("cannot use … as an exclude file").
+  #     RED-FIRST: against the pre-fix runner this is exit 0 with `[A] latent`
+  #     and `[B] latent` — see the PR comment for the transcript.
+  #     Step 10 deliberately left `//` in the pair, which keeps entry C1 GONE
+  #     LIVE; restore the baseline first so this step's verdict comes only from
+  #     A/B, and assert that clean baseline explicitly (a fixture that was
+  #     already failing proves nothing about the sabotage).
+  cat > "$tmp/app-a/src/observability.py" <<'PYEOF'
+def init_sentry(dsn_env_name):
+    return None
+PYEOF
+  cp "$tmp/app-a/src/observability.py" "$tmp/app-b/src/jobs/observability.py"
+  git -C "$tmp" add -A
+  _st_run
+  if [[ "$rc" -ne 0 ]]; then
+    echo "SELF-TEST FAIL: the step-12 baseline is not clean (exit $rc) — the sabotage"
+    echo "  below would prove nothing."
+    echo "$out"
+    return 1
+  fi
+  mkdir -p "$tmp/exclude-file-is-a-directory"
+  git -C "$tmp" config core.excludesFile "$tmp/exclude-file-is-a-directory"
+  _st_run
+  git -C "$tmp" config --unset core.excludesFile
+  if [[ "$rc" -ne 2 ]]; then
+    echo "SELF-TEST FAIL: a register proof whose producer died (git exit 128) but whose"
+    echo "  trailing grep exited 1 was not reported UNEVALUABLE (expected exit 2, got"
+    echo "  $rc). pipefail reports the RIGHTMOST non-zero status, so the runner must"
+    echo "  decide on PIPESTATUS, not on the pipeline's own status."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "\[A\] UNEVALUABLE" || ! echo "$out" | grep -q "\[B\] UNEVALUABLE"; then
+    echo "SELF-TEST FAIL: entries A and B were not both named UNEVALUABLE while their"
+    echo "  shared producer was dead."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "128"; then
+    echo "SELF-TEST FAIL: the UNEVALUABLE report did not surface the producer's real"
+    echo "  exit status (128) — the masked status is the whole finding."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — a dead producer masked by a trailing grep's ordinary exit 1 is UNEVALUABLE (exit 2), naming [A]/[B] and the real 128 (FOLLOW-770 fix-iteration 1)."
+
+  # 13. Same defect class, entry F's differently-shaped producer
+  #     (`grep -cE … "$MF_SELF" | grep -vx "6"`): when $MF_SELF cannot be read,
+  #     grep exits 2 — and the trailing `grep -vx` exits 1 on the empty input,
+  #     masking it. Fixture: invoke the gate SOURCED under a $0 that does not
+  #     exist, which is precisely the "MF_SELF unreadable" condition entry F's
+  #     header paragraph claims lands in UNEVALUABLE.
+  #     RED-FIRST: against the pre-fix runner this is exit 0 with `[F] latent`.
+  rc=0
+  out=$(MIRROR_FILES_ROOT="$tmp" MIRROR_FILES_SKIP_SELF_CHECK=1 \
+    bash -c '. "$1"' "$tmp/gate-was-here.sh" "$SELF" 2>&1) || rc=$?
+  if [[ "$rc" -ne 2 ]]; then
+    echo "SELF-TEST FAIL: entry F's proof could not read \$MF_SELF (grep exit 2) yet the"
+    echo "  entry was not reported UNEVALUABLE (expected exit 2, got $rc) — the trailing"
+    echo "  'grep -vx' masked it, exactly as for A/B."
+    echo "$out"
+    return 1
+  fi
+  if ! echo "$out" | grep -q "\[F\] UNEVALUABLE"; then
+    echo "SELF-TEST FAIL: entry F was not named UNEVALUABLE with an unreadable \$MF_SELF."
+    echo "$out"
+    return 1
+  fi
+  echo "OK: self-test — entry F with an unreadable \$MF_SELF is UNEVALUABLE (exit 2), not latent (FOLLOW-770 fix-iteration 1)."
+
   return 0
 }
 
@@ -965,8 +1078,9 @@ export MF_DISCOVERY_BN_RE MF_REGISTERED_PATHS MF_SELF
 
 # id | control | one-line description | latency proof
 # EMPTY stdout ⇒ the residual is still latent. Output ⇒ it has GONE LIVE.
-# Cannot be evaluated (exit ≥ 2) ⇒ the gate is broken. See the header for each
-# entry's region, scan root and unavailable-input behaviour.
+# ANY pipe stage exiting ≥ 2 — not merely the pipeline's own reported status ⇒
+# the gate is broken (see PER-STAGE PROOF STATUS in the header). See the header
+# for each entry's region, scan root and unavailable-input behaviour.
 RESIDUAL_REGISTER=(
   'A|P4-basename-discovery|discovery sees TRACKED files only: an untracked copy on disk is invisible|git ls-files --others --exclude-standard | grep -E "$MF_DISCOVERY_BN_RE" | grep -vxF "$MF_REGISTERED_PATHS"'
   'B|P4-basename-discovery|.gitignore-d paths (incl. nested agent worktrees, deliberately) are outside even A|git ls-files --others --ignored --exclude-standard --directory | grep -E "$MF_DISCOVERY_BN_RE" | grep -vxF "$MF_REGISTERED_PATHS"'
@@ -982,19 +1096,60 @@ echo "=== Rule AP residual register — ${#RESIDUAL_REGISTER[@]} documented gap(
 REGISTER_LIVE=0
 REGISTER_BROKEN=0
 reg_err=$(mktemp)
+reg_ps=$(mktemp)
+
+# Appended to EVERY proof before execution. It records each pipe stage's OWN
+# exit status (bash's PIPESTATUS) to $MF_PS_FILE, then re-exits with pipefail's
+# own rightmost-non-zero status so the diagnostic below can still report it.
+# See PER-STAGE PROOF STATUS in the header for why the pipeline's own status is
+# not sufficient. Written as an epilogue rather than baked into each proof so
+# the register keeps the one `id|control|description|proof` format (Rule AP
+# clause 6) and EVERY entry — including ones added later, and ones copied into
+# another gate — gets this for free instead of per-author discipline.
+REGISTER_PROOF_EPILOGUE='
+__mf_ps=("${PIPESTATUS[@]}")
+printf "%s\n" "${__mf_ps[@]}" >"$MF_PS_FILE"
+__mf_rc=0
+for __mf_s in "${__mf_ps[@]}"; do if [ "$__mf_s" -ne 0 ]; then __mf_rc="$__mf_s"; fi; done
+exit "$__mf_rc"
+'
+
 for entry in "${RESIDUAL_REGISTER[@]}"; do
   # Only the first three '|' delimit; the rest of the line is the proof, which
   # contains pipes of its own.
   IFS='|' read -r r_id r_control r_desc r_proof <<< "$entry"
   r_rc=0
+  : > "$reg_ps"
   # -o pipefail so a failing producer inside a pipe (e.g. git exiting 128)
-  # cannot masquerade as an empty — i.e. reassuring — result.
-  r_out=$(bash -o pipefail -c "$r_proof" 2>"$reg_err") || r_rc=$?
+  # cannot masquerade as an empty — i.e. reassuring — result, AND the epilogue
+  # so a SECOND stage's ordinary "no match" 1 cannot mask that producer either.
+  r_out=$(MF_PS_FILE="$reg_ps" bash -o pipefail -c "$r_proof$REGISTER_PROOF_EPILOGUE" 2>"$reg_err") || r_rc=$?
 
-  if [[ "$r_rc" -ge 2 ]]; then
+  r_stages=()
+  if [[ -s "$reg_ps" ]]; then mapfile -t r_stages < "$reg_ps"; fi
+  # UNEVALUABLE is decided by the WORST stage, never by the pipeline's own
+  # reported status.
+  r_worst=0
+  if [[ "${#r_stages[@]}" -gt 0 ]]; then
+    for r_st in "${r_stages[@]}"; do
+      if [[ "$r_st" =~ ^[0-9]+$ ]] && [[ "$r_st" -gt "$r_worst" ]]; then r_worst="$r_st"; fi
+    done
+    r_stages_txt="${r_stages[*]}"
+  else
+    # The proof never reached the epilogue: a syntax error, a signal, or an
+    # explicit exit inside the proof. Its stage statuses — and therefore its
+    # latency — could NOT be established, so it is UNEVALUABLE. Never "assume
+    # still latent" (Rule AP clause 2), not even when the pipeline reported 0.
+    r_worst=2
+    if [[ "$r_rc" -gt 2 ]]; then r_worst="$r_rc"; fi
+    r_stages_txt="none recorded"
+  fi
+
+  if [[ "$r_worst" -ge 2 ]]; then
     echo "  [$r_id] UNEVALUABLE ($r_control) $r_desc"
     echo "        proof:  $r_proof"
-    echo "        status: $r_rc — the residual's latency could NOT be established."
+    echo "        status: stage exit codes [$r_stages_txt] (pipeline reported $r_rc);"
+    echo "                a stage exited $r_worst — the residual's latency could NOT be established."
     if [[ -s "$reg_err" ]]; then sed 's/^/        stderr: /' "$reg_err"; fi
     REGISTER_BROKEN=$((REGISTER_BROKEN + 1))
   elif [[ -n "$r_out" ]]; then
@@ -1007,7 +1162,7 @@ for entry in "${RESIDUAL_REGISTER[@]}"; do
     echo "  [$r_id] latent      ($r_control) $r_desc"
   fi
 done
-rm -f "$reg_err"
+rm -f "$reg_err" "$reg_ps"
 echo "  ${#RESIDUAL_REGISTER[@]} entry/entries checked — $REGISTER_LIVE gone live, $REGISTER_BROKEN unevaluable."
 echo ""
 

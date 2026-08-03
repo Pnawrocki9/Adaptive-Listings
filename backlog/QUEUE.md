@@ -591,7 +591,7 @@ exists in the two Sentry gates** — read-only check against current `main`, una
 unmerged changes there (the `SCAN_DIRS = apps/*/src` assumption AC4 asks about is orthogonal to
 #652's suppression-baseline additions).
 
-**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+**CI-check counter:** 1/5. **Fix-iteration counter:** 1/3.
 
 **1 ticket IN_PROGRESS** (combined FOLLOW-766+767, 2 ticket IDs, 1 PR) — within the ≤3 guardrail. 3
 PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
@@ -673,6 +673,62 @@ NEXT: Piotr reviews and merges the 4 open PRs (any order for #652/#655; #653/#65
 resolution above on whichever lands second). PM resumes next session — validate anything Piotr
 couldn't merge cleanly, spawn retrospectives for whichever of the 4 tickets have merged, then pick
 up FOLLOW-763/768/769 once their blocking PRs are on `main`.
+
+---
+
+### FOLLOW-766 + FOLLOW-767 — worker done, PR #655 open (awaiting PM validation)
+
+**PR #655 opened** on `devops-engineer/FOLLOW-766-767-mirror-gate-hardening`, single commit
+`80dbf131` (squashed — see fix-iteration note below), targeting `main`. Both ACs implemented:
+
+- **FOLLOW-767:** basename discovery now derives candidates from `git ls-files` (tracked-file index)
+  instead of a `find … -prune` blacklist — verified empirically with a real `git worktree add`
+  fixture BEFORE writing the fix (nested worktree files are structurally invisible to `git ls-files`
+  run from the parent repo, not merely gitignored). New self-test step 5 proves it red-first against
+  `main`'s script (2 false FAILs on the real tree pattern) and green against the fix. A `[[ -f ]]`
+  existence guard preserves the old `find -type f` semantics for tracked-but-deleted index entries.
+- **FOLLOW-766:** `basename_discovery_note` is now printed under "Discovery OFF for basenames:" and
+  the gate FAILS a basename-discovery opt-out with no (or empty) note. New self-test steps 6-7 prove
+  both directions red-first against `main`'s script (silent PASS → caught FAIL; note text now
+  appears in output). Real manifest's note text corrected to describe what is now actually printed.
+- **AC4 (Sentry gates, read-only, not modified):** confirmed NOT affected — both
+  `check-sentry-capture-has-init.sh` and `check-sentry-init-singleton.sh` build `SCAN_DIRS` via a
+  single-level glob `"$ROOT"/apps/*/src`, anchored at the literal `apps` path component with no
+  globstar recursion, so it structurally cannot expand into `.claude/worktrees/...`. Neither file
+  touched (PR #652 unmerged there, per scope constraint).
+
+**Fix-iteration 1/3 — real, not cosmetic: a genuine gitleaks false positive, fixed by history
+rewrite on this own unmerged branch.** First push (`3ef247a9`) had a self-test sentinel string
+(`SELF-TEST-SENTINEL-widget-opt-out-reason`) that was **exactly 40 chars** of `[a-zA-Z0-9_-]`,
+matching `.gitleaks.toml`'s `cloudflare-api-token` rule (`{40}`, entropy≥3.0) — confirmed via the CI
+job log (`RuleID: cloudflare-api-token`, `Entropy: 4.108695`, both hits inside the self-test heredoc
+and its grep assertion, not a real secret). A follow-up commit alone did not clear the CI check
+because gitleaks scans full commit history, not just the tip — the offending string persisted in
+`3ef247a9`'s patch forever. Fixed by `git reset --soft` to the branch point + one clean recommit
+(`80dbf131`) + `git push --force-with-lease` to this same, still-unmerged, single-owner feature
+branch (not `main`, not shared with any other worker) — verified afterward that no 40+-char
+`[A-Za-z0-9_-]` run exists in any added diff line across `main..HEAD`. Shortened sentinel is
+`SELF-TEST-NOTE-widget-reason` (28 chars).
+
+**CI status at handoff (not yet fully green — PM must finish `gh pr checks 655 --watch`):**
+`Rule J — mirror-code sync check` — **PASS**, both attempts, 7/7 self-test assertions
+(`Rule J gate self-test: PASSED (7 assertions)`, verified in the pre-push hook log AND the CI job
+log). `Gitleaks secrets scan`, `Format check`, `Lint`, `Typecheck`, `Sentry capture-has-init guard`,
+`Sentry init singleton guard`, and all other previously-passing checks — **PASS** on the squashed
+commit (re-verified individually before the squash). `Rule I — wired-or-dead check` — **fail on both
+attempts, pre-existing-red, re-confirmed at the same baseline count (192 `WARN:` lines) as PR #652's
+independently-verified reading** — not a regression from this change. Still **pending** at handoff:
+`Test (Node 22)` ×2, `Build (control-plane)` ×2, `SDK E2E tests` ×2 — standard long-running monorepo
+jobs, no reason to expect a regression (no `apps/*` or `packages/*` code touched, only `scripts/`),
+but not personally watched to completion — flagging honestly rather than claiming green I didn't see
+finish.
+
+**Terraform / cost impact:** none — CI shell gate + JSON manifest only, no `infra/terraform/` files
+touched.
+
+**Worker returned to `main`** per standing requirement; no `.tmp-scratch*` debris left in the tree
+(scratch fixtures built under `.tmp-scratch/` during red-first proof work, all removed with `rm -r`
+before commit; confirmed via `git status --short` showing only the 2 intended files before staging).
 
 ---
 

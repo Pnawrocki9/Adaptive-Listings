@@ -26410,7 +26410,63 @@ docs/AGENT_WORKFLOW.md; backlog/QUEUE.md (FOLLOW-795/796 dispatch records); CONV
 Rule AG (:2228), Rule Q (:1638), Rule AP (:3242); RETRO-245 §5d / §6; FOLLOW-800; FOLLOW-673;
 FOLLOW-539; ESC-028]
 
-<!-- next free FOLLOW number: 808 (FOLLOW-801..807 filed by RETRO-245, covering PRs #662/#663/#664).
+## FOLLOW-808 — build the served SDK bundles on merge instead of hand-committing them
+
+source_retro: RETRO-245 (blast-radius assessment of FOLLOW-801) source_ticket: ESC-047
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: true (implemented directly by the main-loop session on
+Piotr's ruling "buduj sdk.js przez CI na merge'u", 2026-08-03)
+
+**Gap.** `apps/control-plane/public/sdk.js` and `public/estalara-detect.iife.js` were hand-built,
+hand-committed binaries. Verified against production, not inferred:
+`curl https://admin.estalara.com/sdk.js` returned 165 638 bytes **byte-identical** (`cmp` clean) to
+the committed file, whose last commit was `4bdaf58c` (**2026-05-29**); the detect companion last
+moved `43ad8496` (**2026-06-17**). Nothing regenerated either — `apps/control-plane`'s build was a
+bare `next build`, no script or workflow in the repo wrote them, and `release.yml` is quarantined
+(FOLLOW-626). Meanwhile `git log 4bdaf58c..HEAD -- packages/sdk` = **80 commits across ~76
+tickets**. So ~2 months of SDK work was green in CI, DONE in the queue, and **absent from
+production**; bundle gates and E2E ran against an artifact no buyer loads. A committed binary is
+indistinguishable from a fresh one, so nothing could detect it.
+
+**Fix (shipped).** `apps/control-plane/scripts/copy-sdk-bundle.mjs` copies both IIFEs from
+`packages/sdk/dist/` into `public/` as the first step of the control-plane build. Turbo already
+builds `@estalara/sdk` first (`build.dependsOn: ["^build"]`, workspace dep), so a merge to `main` →
+Vercel deploy now serves bytes built from that commit. Both artifacts `.gitignore`d and untracked.
+
+**Two traps closed, both proven by execution rather than reasoning:**
+
+1. **Turbo cache.** Root `turbo.json` outputs are `dist/**` + `.next/**` only. A cache HIT replays
+   build logs but restores no `public/` bundle → the deploy ships a control-plane whose
+   `<script src>` 404s for every tenant. Fixed with a package-level `apps/control-plane/turbo.json`
+   (`extends: ["//"]`) declaring both artifacts as outputs. Verified: delete both, re-run WITHOUT
+   `--force`, confirm the cache restores them.
+2. **Silent absence.** The copier `process.exit(1)`s on a missing source rather than copying nothing
+   — an empty or stale `public/` fails silently in production, which is the failure class being
+   removed.
+
+**Gate.** `scripts/check-served-bundles.sh` + CI job `Served SDK bundles build-generated (ESC-047)`:
+asserts neither artifact is git-tracked, the generator exists and is referenced by the build script,
+and both are declared Turbo outputs. Self-tested against all three regressions (each fails the gate;
+restoring passes it).
+
+**AC (all met at time of filing):** clean-room build from deleted artifacts produces both files
+(`turbo run build --filter=@estalara/control-plane --force` → 5/5 tasks, both copied); the generated
+`sdk.js` carries the merged FOLLOW-795/796 code and differs from the frozen live bundle; cache-hit
+path restores both; gate passes and fails correctly; MASTER_DESIGN §Snapshot "SDK serving" and
+`release.yml`'s header updated.
+
+**SEQUENCING — do not merge this before FOLLOW-801.** This PR arms delivery. The first bundle it
+builds ships FOLLOW-801's `cta` over-annotation regression to the pilot, turning a latent P1 into
+user-visible brand-safety damage (a tenant nav "Contact us" link overwritten with archetype copy and
+held there by a MutationObserver). FOLLOW-801 lands first; this merges after.
+
+cross_ref: [apps/control-plane/scripts/copy-sdk-bundle.mjs; apps/control-plane/turbo.json;
+scripts/check-served-bundles.sh; .github/workflows/ci.yml; .github/workflows/release.yml
+(FOLLOW-626); docs/MASTER_DESIGN.md §Snapshot "SDK serving"; ESC-015; ESC-047; FOLLOW-801;
+RETRO-245]
+
+<!-- next free FOLLOW number: 809 (FOLLOW-808 filed by the main-loop session for ESC-047).
+Previously 808 (FOLLOW-801..807 filed by RETRO-245, covering PRs #662/#663/#664).
 801 = P1 SHIPPED: annotateSlots annotates EVERY match document-wide page-type-blind, so FOLLOW-796's
 cta_primary→cta translation turned broad producer selectors (a[href*="contact"], [class*='button'])
 from inert into live observer-enforced textContent overwrites of every contact link/button on a

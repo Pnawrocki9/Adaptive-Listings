@@ -448,6 +448,20 @@ jobs:
           path: packages/sdk/corpus-report.json
           retention-days: 14
 
+  # ── Served SDK bundles must be built, never committed (ESC-047) ───────────
+  # public/sdk.js froze on 2026-05-29 while ~76 SDK tickets merged behind it —
+  # all green, all DONE, none reaching a tenant. A committed binary is
+  # indistinguishable from a fresh one, so this gate removes the possibility
+  # rather than trying to detect staleness. Hard gate — no continue-on-error.
+  served-bundles:
+    name: Served SDK bundles build-generated (ESC-047)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run served-bundle check
+        run: bash scripts/check-served-bundles.sh
+
   # ── Rule H hard gate: schema scaffolds must have runtime consumers ────────
   rule-h:
     name: Rule H — schema scaffold wiring

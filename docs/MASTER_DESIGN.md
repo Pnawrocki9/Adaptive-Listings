@@ -42,6 +42,18 @@ RESOLVED. SDK→ingest→ClickHouse E2E verified. Key architectural facts now in
   asset hosting (`apps/control-plane/public/sdk.js`). `cdn.estalara.com` = Phase 2 (ESC-015
   RESOLVED). `buildSnippet()` emits the `admin.estalara.com/sdk.js` src.
 
+  **The served bundles are BUILD ARTIFACTS, never committed (CEO ruling 2026-08-03, ESC-047 /
+  FOLLOW-808).** `apps/control-plane`'s build runs `scripts/copy-sdk-bundle.mjs`, which copies
+  `packages/sdk/dist/estalara-{sdk,detect}.iife.js` into `public/` — Turbo already builds
+  `@estalara/sdk` first via `build.dependsOn: ["^build"]`, so every Vercel deploy on merge to `main`
+  serves bytes built from that commit. Both files are `.gitignore`d and declared Turbo build outputs
+  in `apps/control-plane/turbo.json` (without that a cache HIT restores `.next/` but not the
+  bundles, deploying a control-plane whose `<script src>` 404s). Enforced by the
+  `Served SDK bundles build-generated (ESC-047)` CI gate. _Why:_ under the previous hand-committed
+  model `public/sdk.js` froze on 2026-05-29 and `public/estalara-detect.iife.js` on 2026-06-17 while
+  ~76 tickets touching `packages/sdk` merged behind them — all green in CI, all DONE in the queue,
+  none reaching a tenant.
+
 - **Integration tier.** Pilot runs Tier 2 — single `<script>` tag injected into `app.estalara.com`
   layout by CTO Rafał Palak (ESC-013 RESOLVED). Not Tier 3 Native. No SvelteKit DOM slot mapping
   required for shadow mode.

@@ -46398,3 +46398,521 @@ PROCESS FACT THE PM MUST SEE: the lessons.d/ write is denied for the **SEVENTH**
 `.claude/**` regardless of what the brief says. The brief has now been "fixed" three times and is still
 not the control. Fragment reproduced in this run's closing output.
 QUEUE.md / ESCALATIONS.md / sprint files / code / CONVENTIONS_PATCH.md correctly UNTOUCHED. -->
+
+---
+
+## RETRO-244 — FOLLOW-791 (#661) — 2026-08-03
+
+**THE HEADLINE IS A CONTRADICTION, AND IT IS MINE TO RECONCILE: RETRO-171 §8 WROTE THIS TICKET'S
+ENTIRE FINDING DOWN, VERBATIM, 43 DAYS EARLY — AND FILED NOTHING, BECAUSE IT WAS ANALYSING THE OTHER
+AXIS.** RETRO-171's exhaustive deferred-writer inventory says of the generic pipeline: _"adapt.ts has
+NO MutationObserver/rAF/setTimeout (grep-confirmed) — so a directive text/class/reorder has NO
+self-reinforcing loop-guard: **a framework revert is simply lost, never re-asserted with a stale
+value.** No deferred write, no persistence leg. GUARDED by `:737`. ✅ **Not in class.**"_
+(RETRO-243-adjacent text at `backlog/RETROSPECTIVES.md:26099`.) The clause that clears the file
+_is_ the defect. RETRO-171 was asking **"can a stale value be repainted onto a newer listing?"**
+(the Rule AB / staleness axis) and answered it correctly and exhaustively. Nobody asked **"can a
+correct value be lost?"** (the durability axis) — so the sentence containing the P1 was written as a
+reassurance and the ticket was found 43 days later by a PM doing dispatch-sequencing, not by the
+retro loop. This is the RETRO-003-vs-RETRO-001/002 shape exactly: a prior "clean ✅" that is clean
+**on the axis it examined** and silent on the axis it did not. Reconciled in §8.
+
+**AND THE MERGE'S USER-VISIBLE VALUE ON THE PRIMARY PROD SURFACE IS CURRENTLY ZERO, FOR TWO REASONS
+NEITHER OF WHICH THIS PR INTRODUCED.** On a FOLLOW-340 self-annotated (no-code) tenant the only text
+directive that can match is `headline` — and `headline` is the one slot FOLLOW-791 deliberately
+excludes (§4a LG-5). The other half of that is a **P1 finding RETRO-093 made, routed to FOLLOW-352 —
+a stub that was never written into `backlog/FOLLOW_UPS.md` at all** (§5, closure check). Not a wire
+that moved one hop downstream: a wire whose ticket does not exist.
+
+### 1. Summary of change
+
+- **PR:** #661 (merged **2026-08-03 15:15:10 UTC**), **rebase, no merge commit**. Three commits
+  landed on `main`: `0e5ef35b` (the code), `2d03bde4`, `33de49e6` (backlog bookkeeping); `d052c01a`
+  is the post-merge DONE record. Verified by `git log --oneline -3 main` and
+  `gh pr view 661 --json mergeCommit` (`33de49e6…`) — the brief's rebase characterisation is
+  correct, and `gh pr diff 661` (1220 lines) is the artefact I analysed, not a merge-commit diff.
+- **Files changed:** 11 (**+845 / −26**). Code: `packages/sdk/src/core/adapt.ts` (+254/−8),
+  `packages/sdk/src/index.ts` (+12), `packages/shared/src/schemas/events/adapt-events.ts` (+43/−2),
+  `packages/shared/src/schemas/events/index.ts` (+14/−2), `apps/ingest/src/consent-gate.ts` (+3).
+  Tests: NEW `packages/sdk/src/__tests__/adapt-mutation-resilience.test.ts` (+386, 8 tests),
+  `adapt.test.ts` (+38/−4), `follow-380.test.ts` (+1),
+  `packages/shared/src/schemas/events/events.test.ts` (+54/−3), `consent-gate.test.ts` (+3).
+  Backlog: `QUEUE.md` (+37/−7). **No migration** (`gh pr diff 661 --name-only` → nothing under
+  `packages/db/migrations/`).
+- **Modules touched:** SDK · shared (event contract) · ingest (consent classification) · backlog.
+  No control-plane, decision-api, Modal, ClickHouse, or Terraform change.
+- **Agent/model:** sdk-engineer, **Sonnet** (QUEUE.md `:888-891`). Routing is defensible on the
+  stated ground (mature reference implementation in the same package, no open design question) —
+  but see §4a LG-1 and §6: the three defects this retro found are all **generalisation** defects
+  (node-identity, event-emission ordering, map keying), i.e. exactly the class that appears when a
+  specialised pattern is parameterised, which is the one part of this ticket that was **not**
+  "copy the reference".
+- **Key contracts changed:**
+  - `ApplyContext.isStale: () => boolean` — **added, REQUIRED, no default** (`adapt.ts:354-370`) —
+    breaking **for in-repo callers only**. Verified NOT a public-API break: `applyDirectives` and
+    `ApplyContext` are **not** in `@estalara/sdk`'s export surface (`grep "^export"
+    packages/sdk/src/index.ts` → `mergeQuizConfig`, `detectPageType`, `detectListingId`,
+    `SDK_VERSION`, `identify`, `applyChatIntentPrior`, `DOM_ADAPT_*`, `_initForTest`, type
+    re-exports — no `applyDirectives`; `package.json` `exports` map exposes `.`, `./playbooks`,
+    `./auto-detect`, `./auto-detect/ai-vision` only). **No CLAUDE.md public-API escalation was
+    required** — recording this explicitly so the PM does not have to re-derive it.
+  - `EVENT_TYPES` 52 → **53** (`adapt.reapplied`) — additive, non-breaking.
+  - `adapt.skipped.reason` gains the value `'stale'` on the **generic** directive namespace — a new
+    VALUE, not a new type; `reason: z.string().min(1)` (`adapt-events.ts:68`) accepts it. This is
+    RETRO-170 §3's lesson holding for the second time under a new reason code.
+  - NEW export `teardownAdaptObservers()` (`adapt.ts:530-537`).
+
+### 2. Verification done in PR
+
+- **Test files changed: 5** (1 new, 4 modified). **New assertions: 8 tests in the new suite** (4
+  text / 1 class / 1 reorder / 2 teardown) + 3 schema tests + 1 consent-class entry; the 20 edits to
+  `adapt.test.ts` / `follow-380.test.ts` are `isStale: () => false` call-site repairs, not new
+  coverage. **Coverage delta: unknown** (not measured in the PR; no coverage artefact).
+- **Non-vacuity — checked by inspection, not taken from the PR's claim.** The load-bearing
+  assertions genuinely cannot pass against pre-fix `adapt.ts` (which has zero `MutationObserver`):
+  `expect(el.textContent).toBe('View ROI analysis')` after an external revert
+  (`adapt-mutation-resilience.test.ts:192`), the class-restore pair (`:357-358`), and the reorder
+  restore (`:416`). One assertion is vacuously green pre-fix
+  (`expect(countAfter - countBefore).toBeLessThanOrEqual(1)`, `:232` — `0 - 0 ≤ 1`), and one whole
+  test is a **documented-behaviour** test that passes pre-fix by construction (the headline
+  exclusion, `:236-265`) — correctly so, but it is not red-first and the file's header does not say
+  which of its tests are.
+- **CI:** PM-verified via `gh pr checks 661 --watch`; all substantive gates green on both runs, Rule
+  I `fail` with **WARN count 192/192** re-derived from the job logs against the standing baseline
+  (QUEUE.md `:906-916`). I did not re-run the API calls; the PM's method (fetch the log, count
+  WARNs, compare to `main`) is the one Rule AF requires and it was applied.
+- **Bundle:** `41.71 KB gzip / 42 KB` — **297 bytes of headroom**, flagged by the author in the PR
+  body. See §4d DG-3 / §5b / FOLLOW-800.
+
+### 3. Wiring Audit
+
+**CHECK A (dead code) — clean ✅**
+
+| new symbol                                          | non-test importer                                                                                                | verdict |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------- |
+| `teardownAdaptObservers` (`adapt.ts:530`)           | `index.ts:61` (import) → `index.ts:1720` (`destroy()` path) **and** `adapt.ts:558` (`resetAdaptState`)             | WIRED   |
+| `attachResilience` (`adapt.ts:456`)                 | file-internal; 3 call sites — `:737` (text), `:788` (class), `:892` (reorder)                                     | WIRED   |
+| `AdaptReappliedEventSchema` (`adapt-events.ts:106`) | `events/index.ts:66-70` (import) → `:205` (discriminated union member)                                            | WIRED   |
+| `AdaptReappliedPayloadSchema`                       | consumed by the event schema in the same file                                                                    | WIRED   |
+| `AdaptReappliedEvent` / `AdaptReappliedPayload`     | type-only exports — **suppressed** per CHECK A's type-only exemption                                             | exempt  |
+| `ApplyContext.isStale`                              | sole prod producer `index.ts:826` (`() => myRefreshId !== latestRefreshId`)                                       | WIRED   |
+| `adapt-mutation-resilience.test.ts`                 | test file — exempt                                                                                               | exempt  |
+
+**CHECK B (half-wire) — ONE finding.**
+
+- **`adapt.reapplied` — CONNECTED, not a half-wire.** PRODUCER: the single `pushEvent` in
+  `attachResilience`'s `reapply` closure (`adapt.ts:502-506`), shared by all three appliers.
+  CONSUMER chain traced end-to-end (the same chain RETRO-166 established for the six
+  `adapt.description.*` types, re-walked here rather than inherited): shared `EventSchema` union
+  (`events/index.ts:205`) + `EVENT_TYPES` (`:271`) → ingest `EventSchema.safeParse` **accepts**
+  (previously such a type would land in `rejected[]`) → `CONSENT_CLASS_BY_EVENT_TYPE` classifies it
+  `'operational'` (`consent-gate.ts:141`), so it ingests under `consent_state=none` exactly like
+  `adapt.applied` → `validated[]` → `pushToClickHouse` → the `events` table, generically consumed
+  (`session_summary_mv`, `clickhouse-dsr.ts` erase-by-session, ad-hoc/Grafana). **Both halves
+  present. NOT HALF_WIRE_P.** Recorded, not filed: the event has **no dedicated analytics/render
+  consumer** — but neither does `adapt.applied` itself
+  (`grep -rn "adapt\.applied" apps/ packages/` outside tests → only the shared schema and the
+  ingest consent table), so this is contract parity with its sibling, not a new gap.
+- **`adapt.skipped {reason:'stale'}` on the generic namespace — CONNECTED.** New value, not new
+  type; `z.string().min(1)` accepts it (`adapt-events.ts:68`). ✓
+- **HW-1 — PRE-EXISTING `HALF_WIRE_C` (consumer with no producer), EXTENDED by this PR:
+  `ClassDirective` is applied by code nothing produces.** `applyClassDirective` (`adapt.ts:769`)
+  just received ~25 lines of new resilience machinery on a path that **no live producer feeds**.
+  Greps: `grep -rn "type: 'class'" apps/control-plane/src apps/decision-api/src` (excl. tests) →
+  **zero**; `grep -rn "add: \[\|remove: \[" apps/control-plane/src apps/decision-api/src` (excl.
+  tests) → **zero**. `/api/adapt/route.ts` builds exactly two directive kinds: `type: 'text' as
+  const` (`:310`) and `type: 'reorder'` (`:643`). The playbooks declare the raw material —
+  `boost_class` / `suppress_class` (`playbooks/types.ts:51`, present in 17 archetype files) — and
+  **nothing converts it into a `ClassDirective`**. My algorithm's default for consumer-only is
+  **P0**; I am **downgrading to P2 and saying so explicitly** rather than silently: the leg carries
+  no live traffic, the absence is pre-existing and long-standing, and there is no user-visible
+  defect today. What IS attributable to this PR is that **FOLLOW-791 AC1 asked for each applier to
+  be "verified independently, do not assume they share the defect just because they share a file"**
+  — the PR verified the *shape* of the defect in all three and never asked whether the class path is
+  *reachable*. → **FOLLOW-794.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, SHIPPED BUG — the reorder repair re-attaches captured, possibly-detached DOM nodes,
+  and the PR's own comment claims the case it breaks on).** `applyOrder` (`adapt.ts:875-884`) closes
+  over `sorted` — the node references captured at **first-apply** time (`:866`, sorted from
+  `cards`). `attachResilience` invokes it as the deferred `write`. If the framework **re-mounts**
+  the card list (destroy + recreate nodes: a React key change, a Svelte `{#each}` re-key, a route
+  re-render) rather than merely re-ordering the same nodes, the captured references are **detached
+  orphans held alive by the closure**, and `container.prepend(...)` / `container.append(...)`
+  re-attaches them **alongside** the framework's fresh cards → the grid renders **duplicate listing
+  cards**. Worse, the repair cannot converge: `matches()` (`:895-903`) fails
+  `current.length !== desiredOrder.length` **permanently**, so every subsequent host mutation
+  re-enters `reapply` and re-appends. The PR's own comment (`adapt.ts:889-891`) asserts the opposite:
+  _"a framework re-render that re-sorts, filters, **or re-mounts** the card list drifts the DOM away
+  from that order, which is repaired the same way an initial reorder is."_ Re-sort and filter are
+  handled; **re-mount is not**, and filter is handled only in the direction that keeps node
+  identity. Fix shape: re-query `container.querySelectorAll(directive.item_selector)` inside
+  `applyOrder` and re-sort against the captured `scoreMap`/`desiredOrder`, so the repair operates on
+  whatever nodes currently exist. → **FOLLOW-792** (+ TG-1).
+- **LG-2 (P2 — the stale-at-arm path emits `adapt.applied` for a write that never happened, AND
+  poisons the fingerprint: the ticket's own defect class, re-entered through a new door).** In all
+  three appliers the fingerprint is recorded **before** the element loop (`:715-717` text, `:781-783`
+  class, `:859-861` reorder) and `adapt.applied` is pushed **after** it, gated only on
+  `if (context)` (`:755-765`, `:806-816`, `:914-924`). `attachResilience` returns early when
+  `isStale()` is true at arm time (`:777-780`), having written **nothing** and emitted
+  `adapt.skipped {reason:'stale'}`. Net on that path: **`adapt.skipped{stale}` AND `adapt.applied`
+  for the same slot in the same tick, with no DOM write**, plus a fingerprint that now permanently
+  blocks a later correct application for that `(slot, archetype)` pair. That is verbatim the failure
+  FOLLOW-791 was filed to fix (_"`adapt.applied` is emitted on a write the SDK never re-verifies"_ —
+  now it is emitted on a write the SDK never **performed**). **Reachability is narrow and I checked
+  it rather than assuming**: the sole prod call site is preceded by the synchronous latest-wins
+  checkpoint (`index.ts:758`, `if (myRefreshId !== latestRefreshId) return;`) with no `await`
+  between it and `applyDirectives` (`:823`), so `isStale()` is false **by construction** on the
+  synchronous path. The one live route is `applyDirectives`'s
+  `document.readyState === 'loading'` → `DOMContentLoaded` deferral (`adapt.ts:1195-1205`), where
+  `runApply` fires in a later task a supersession can precede. Contrast the reference
+  implementation: `adapt-description.ts:260-264` emits **only** `skipped` on this condition and never
+  a positive event. → **FOLLOW-793** (+ TG-2).
+- **LG-3 (P3, folded into FOLLOW-793 — asymmetric map bookkeeping).** `attachResilience:767` does
+  `map.get(el)?.obs.disconnect()` **without** `map.delete(el)`, then `:777-780` returns early on
+  staleness **without** `map.set` — leaving the OLD `ResilienceState` in the map, its observer
+  disconnected, its element strongly referenced, and the map falsely asserting "this element is
+  watched". The deferred path does it correctly (`:790`, `map.delete(el)`).
+- **LG-4 (P3, LATENT — one map per directive TYPE keyed by element means two directives of the SAME
+  type on one element silently un-protect the first).** `attachResilience:767` disconnects and
+  replaces whatever state the element already had. Two `ClassDirective`s whose selectors both match
+  one node (e.g. `[data-estalara-listing-id]` and `[data-estalara-slot="price"]` on the same
+  element) → only the last is repaired; the first's classes stay reverted forever while **both**
+  emitted `adapt.applied`. The module docstring (`:713-720`) reasons carefully about **cross-type**
+  collisions (why there are three maps) and never considers **intra-type** ones. Unreachable today
+  **because of HW-1** — it goes live the moment a ClassDirective producer ships. → folded into
+  **FOLLOW-794.**
+- **LG-5 (P1 — the residual that matters commercially: in production, the only slot that survives a
+  framework revert is the one this ticket excludes. Two independent chains, both pre-existing,
+  neither disclosed in the PR body).**
+  - **(a) The headline hand-off is conditional and the exclusion is unconditional.**
+    `applyTextDirective` skips resilience whenever `slotName === 'headline'` (`adapt.ts:734`), on the
+    stated ground that `adapt-description.ts` owns that element. But
+    `applyAndObserveHeadlineSlot` is invoked **only when a per-listing LLM headline exists**:
+    `const headlineText = …trim(); if (headlineText) { … }` (`adapt-description.ts:395-399`). On
+    cold-start, a generation failure, an uncached listing (`fetchDescription` → null), a `neutral`
+    archetype early-return (`:271-274`), or profiling opt-out, **no observer owns the headline slot
+    at all** — and the playbook headline is the single most visible adaptation on the page (17 of 18
+    playbooks emit one: `grep -rh "slot: '" playbooks/archetypes/ | sort | uniq -c` → 17 `cta`, 17
+    `feature`, 17 `headline`). The PR states this outcome (`adapt.ts:743-746`) — so it is disclosed,
+    not hidden — but **disclosed ≠ closed**, and it is the *majority* case at cold start, which is
+    precisely when a buyer first sees the page.
+  - **(b) On a no-code tenant the other two slots cannot match at all.** Chain verified end-to-end
+    this session: `annotateSlots` writes the tenant schema's key **verbatim**
+    (`annotate-slots.ts:61`, `el.setAttribute('data-estalara-slot', slotName)`); the control-plane
+    resolver copies keys verbatim (`tenant-schema.ts:176`, `resolved[name] = primary`); the route
+    passes the map straight through (`route.ts:1610-1613`, `:1630`); the typed key set is
+    `headline | tagline | cta_primary | cta_secondary | description | features_list`
+    (`tenant-site-schema.ts:86-93`) and **every** auto-detect technique emits `cta_primary`
+    (`grep -rn "cta_primary" packages/sdk/src/auto-detect/techniques/` → 11 files). Playbook
+    directives use `cta` and `feature`. `cta ≠ cta_primary`, `feature ≠ features_list` →
+    `adapt.skipped {no_slot_elements}`. **So on a self-annotated tenant the only text directive that
+    can land is `headline`** — which (a) excludes. **Net: the new text-directive resilience
+    mechanism can never arm on the no-code surface.** This half is RETRO-093 §4a LG-1's P1 finding,
+    still live; see §5 closure check for why it was never fixed. → **FOLLOW-795** (a) and
+    **FOLLOW-796** (b).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, Rule Y violation — the new test file cites red-run evidence that does not exist, and
+  this is the one thing the interrupted-session recovery could not have caught by re-running
+  anything).** `adapt-mutation-resilience.test.ts:110-112`: _"These tests are RED-FIRST: run against
+  `main` (before this ticket's fix) the 'after a framework revert' assertions fail … — **see the PR
+  description for the actual red-run output.**"_ **PR #661's body contains no red-run output.** Its
+  test plan lists eight green runs; its acceptance-gate line says the AC4 demonstration is _"via
+  local `pnpm test` output above"_, which is the green output. Rule Y (`CONVENTIONS_PATCH.md:1381`)
+  forbids exactly this shape: _"a docstring/test-header that cites a named test or file as proof …
+  MUST be verified against that file: the cited file must actually perform the asserted check, or
+  the citation is forbidden."_ **AC4 is therefore structurally satisfied and evidentially not**: the
+  tests are genuinely non-vacuous (§2, verified by inspection), but the artefact the file points a
+  reader at does not contain the proof. **This is the recovery's blind spot, precisely located:**
+  the resuming session re-ran every **check** the crashed session had run and did not re-verify the
+  **claims** the crashed session had written. → **FOLLOW-797.**
+- No P0. LG-1 (§4a) is the P1 shipped bug.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, pairs with LG-1) — no re-mount test anywhere in the reorder coverage.** Every reorder
+  test mutates order using the **same** nodes:
+  `container.prepend(container.lastElementChild!)` (`adapt-mutation-resilience.test.ts:410`) and the
+  pre-existing `adapt.test.ts` reorder block. Nothing replaces the container's children with fresh
+  nodes carrying the same `data-estalara-listing-id`s — the case that duplicates cards.
+- **TG-2 (P2, pairs with LG-2) — the `isStale()===true`-at-ARM-time path is untested.** The Rule AB
+  test (`:267-320`) exercises only the **deferred** stale path (it flips `stale` after the observer
+  has armed). No test asserts what is emitted when the predicate is already true on entry — which is
+  why the `adapt.applied` + `adapt.skipped{stale}` double-emit went unseen.
+- **TG-3 (P2) — `adapt.reapplied` is never round-tripped from the REAL emit path through
+  `EventSchema.safeParse`.** `events.test.ts:661-708` parses hand-built literals; the SDK suite
+  captures `testEventQueue` and asserts shape with `toMatchObject`
+  (`adapt-mutation-resilience.test.ts:196-200`). RETRO-166 set the better precedent for exactly this
+  event family — `adapt-description.test.ts` drives the actual emit sites through
+  `EventSchema.safeParse` — and it was not followed here. A payload drift (an archetype id failing
+  `.min(1)`, a confidence outside `[0,1]`) ships green on both sides and is dropped at ingest.
+- **TG-4 (P3, pairs with LG-4) — no test for two same-type directives matching one element.**
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, Rule AI instance) — `docs/MASTER_DESIGN.md:455` (§Snapshot.1 row C) still says the
+  `EVENT_TYPES` tuple _"has since grown to **52** entries"_.** It is 53 as of this merge. Rule AI
+  (`CONVENTIONS_PATCH.md:2482`) requires every document asserting the prior state to be updated **in
+  the same PR**; this row also still carries the stale "21 of 46" producer-coverage figure. →
+  **FOLLOW-799.**
+- **DG-2 (P3) — the PR edited the exact JSDoc line that is wrong and left the pre-existing hole.**
+  `adapt-events.ts:64-67` "Known values" now reads `'no_slot_elements', 'disallowed_selector',
+  'no_container', 'no_cards', 'unresolved_token_<name>', 'stale'` — and still omits **`'empty_value'`**,
+  which `adapt.ts:709` has emitted since FOLLOW-380. → folded into **FOLLOW-799**.
+- **DG-3 (P3, NOT a new stub — an existing one just went further out of date).** `FOLLOW-673`
+  (OPEN, P3, `FOLLOW_UPS.md:19135-19145`) exists to correct the bundle figure and cites **41.31 KB /
+  707 bytes** from RETRO-221. Post-merge it is **41.71 KB / 297 bytes**, and
+  `docs/MASTER_DESIGN.md` §Snapshot.1 B.2 still says **39.86 KB** — the SoT now understates
+  consumption by **1.85 KB**. I am not filing a duplicate doc stub; I am recording that FOLLOW-673's
+  own number is stale and that its P3 is arguably under-priced (§5b), and filing the **mechanism**
+  gap separately as FOLLOW-800.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **None blocked.** QUEUE.md `:883` names the next dispatches as **FOLLOW-782** then **FOLLOW-026**;
+  neither touches `packages/sdk/src/core/adapt.ts`, `ApplyContext`, or the event taxonomy, so the
+  new required `isStale` field invalidates no IN_PROGRESS/READY assumption. The P2 freeze is
+  unaffected (FOLLOW-791 was the P1 exemption).
+- **Any in-flight SDK branch cut before `0e5ef35b` that calls `applyDirectives(...)` will fail
+  typecheck** on the now-required `isStale`. Repo-wide this is closed (the PR fixed all 20 call
+  sites and I re-ran the grep: `grep -rn "applyDirectives(" packages/ apps/` outside tests →
+  `index.ts:823` + definition + 6 doc-comment mentions), but a branch is not in that grep.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-673 (bundle numbers, P3)** — now the load-bearing one. With **297 bytes** left, the gate
+  is a hard constraint on the *next* SDK feature, and the SoT row a budget conversation would start
+  from is 1.85 KB optimistic.
+- **FOLLOW-539 (event volume / aggregation)** — RETRO-166 §4a LG-2 folded the "sample vs store-raw
+  the `re` convergence events" decision into it, on the strength of **two** such events. There are
+  now **three** (`adapt.description.re`, `adapt.description.headline.re`, `adapt.reapplied`), and the
+  new one fires for **three directive types across every slot on the page**, not one description
+  slot — a strictly higher-cardinality producer than the two that motivated the concern.
+- **ESC-020 / the Rafał-side DOM-hooks work (paused)** — §4a LG-5(b) is exactly a slot-vocabulary
+  question, and RETRO-093 §5 already flagged that the canonical slot-name mapping is entangled with
+  a pending CTO/CPO decision. Whoever un-pauses that surface inherits it.
+
+#### 5c. Contracts changed others rely on
+
+- `ApplyContext` — in-repo only (public-surface check in §1; **no escalation required**).
+- `EVENT_TYPES` 52→53 and the `adapt.reapplied` schema — additive; ingest accepts; the
+  cross-language contract gate is scoped to `description-event.required.json` (`ci.yml:767-800`) and
+  does not mirror `EVENT_TYPES`, so no Python side needed updating. Verified, not assumed.
+
+#### 5d. Architectural assumptions affected
+
+- **RETRO-171 §8's deferred-host-DOM-writer inventory is SUPERSEDED, and I am saying so rather than
+  letting it stand.** It concluded _"the ONLY deferred host-DOM writers that could paint a stale
+  archetype onto a newer listing are the two `adapt-description.ts` `reapply` closures — both now
+  guarded. No 4th hop."_ There is now a **third** deferred host-DOM writer:
+  `attachResilience`'s rAF-deferred `reapply` (`adapt.ts:484-507`), reachable from all three
+  directive types. **It is Rule AB-compliant by construction** — `isStale()` is re-consulted at the
+  top of the deferred closure (`:488`), the watchdog is disconnected on stale (`:789`), and the
+  discard is observable (`adapt.skipped{stale}`, guardrail K.2). So the inventory's **count** is
+  wrong and its **verdict** (no unguarded deferred writer) still holds. Recording it because the
+  next retro that reaches for that inventory must extend it, not cite it.
+- **The SDK bundle gate is now the binding constraint on SDK feature work** (297 bytes, 0.7%).
+- **CRITICAL for the PM's escalation judgement, stated with severity and no recommendation:** the
+  combination of §4a LG-5(a)+(b) means that **on `app.estalara.com` — the only live surface — this
+  merge changes nothing a buyer can see**, because the two slots the mechanism protects cannot be
+  annotated correctly and the third is excluded. The merge is still correct and still valuable for
+  hand-instrumented pages; the gap is in what "done" implies for the pilot. Severity: **P1
+  (commercial, not correctness)**. The escalation call is the PM's/CEO's, not mine.
+
+**PRIOR-FOLLOW-UP CLOSURE CHECK (step 7) — one closure claimed, one wire found that never had a
+ticket.**
+
+- **FOLLOW-791 claims to close nothing prior.** It is a fresh PM-filed P1 (`FOLLOW_UPS.md:25527`,
+  `source_ticket: none`), so there is no "claimed-closed" hop to trace for it. What it **does** claim
+  is that the fix pattern exists one file over and should be reused — traced: `attachResilience`
+  reproduces `applyAndObserveHeadlineSlot`'s bitflag/rAF/isStale/disconnect structure faithfully
+  (§6), and the three defects found (LG-1, LG-2, LG-4) are all in the **generalisation**, not the
+  copy.
+- **AC-by-AC, traced end-to-end rather than accepted:** AC1 ✅ all three appliers (but reachability
+  unexamined → HW-1); AC2 ✅ (fingerprint purpose preserved, interaction documented at `:706-714`);
+  AC3 ✅ (`adapt.reapplied`, and its full producer→consumer chain verified in §3); AC4 **PARTIAL**
+  (structure ✅, red evidence ✗ → CB-1); AC5 ✅ (`teardownAdaptObservers` from **both**
+  `resetAdaptState()` and `destroy()`, tested `:425-483`); AC6 ✅ (localhost-only claim, no prod
+  assertion made).
+- **THE UN-CLOSED WIRE, AND IT IS WORSE THAN "MOVED ONE HOP": RETRO-093's P1 was routed to a stub
+  that does not exist.** RETRO-093 §4a LG-1 (`RETROSPECTIVES.md:18133`) found the `cta_primary`→`cta`
+  / `feature`→`features_list` namespace mismatch, rated it **P1**, folded LG-2 and CB-1 into it, and
+  §7 records _"**FOLLOW-352 (OPEN, P1, sdk-engineer, 4h)**"_ with a three-clause AC.
+  **`grep -n "^## FOLLOW-352" backlog/FOLLOW_UPS.md` → no match. `grep -rn "FOLLOW-352"` across the
+  repo → 8 hits, ALL inside RETRO-093's own text plus one incidental note at `FOLLOW_UPS.md:9913`
+  — zero stub, zero QUEUE entry.** The same is true of **FOLLOW-353** (RETRO-093 §4c TG-1). The
+  register jumps `## FOLLOW-346` (`:9572`) → `## FOLLOW-354` (`:9617`). So a P1 finding entered the
+  retro log, was assigned a number, and **never reached the artefact PM sprint-planning reads** — and
+  the defect is still live on `main` 45 days later, verified independently this session (§4a
+  LG-5(b)). This is the FOLLOW-097→114→127→141 chain's terminal form: not a gap that moved one hop
+  downstream, but a gap whose ticket was never written. → **FOLLOW-796** re-files it under a fresh
+  number (Rule AN — I do not re-mint 352, which another document already claims).
+
+### 6. New lesson candidates
+
+- **P-27 (MINTED at count 1) — "THE SPECIALISED REFERENCE IS COPIED FAITHFULLY AND THE DEFECTS ALL
+  LAND IN THE GENERALISATION." THRESHOLD NOT MET → NOT PROMOTED.** FOLLOW-791's brief was "reuse the
+  mature pattern, do not reinvent it", and the copy is faithful: `attachResilience`'s bitflag scheme
+  (`s.f & 1` re-entrancy / `s.f |= 2` rAF-dedupe), disconnect→write→re-observe loop guard,
+  microtask flag clear, `isStale` re-consult inside the deferred closure, and disconnect-on-stale all
+  reproduce `applyAndObserveHeadlineSlot` (`adapt-description.ts:220-268`) structurally. **All three
+  logic defects are in the four parameters the generalisation added**: `write` (LG-1 — the reference
+  closes over a *string*, the generic version closes over *node references*), the event emission the
+  reference does **not** have a positive-event twin for (LG-2), and `map` keying that the reference
+  never had to share (LG-4). The lesson is not "copying is bad" — copying worked. It is that **the
+  review attention a "copy the reference" ticket attracts is aimed at fidelity, and the risk has
+  moved to the parameter boundary.** _Second-sighting bar, pre-specified so the next retro TESTS
+  rather than re-derives:_ (a) a ticket whose brief names an in-repo reference implementation to
+  copy; (b) the copy is verifiably faithful on the reference's own invariants; (c) ≥1 P1/P2 defect
+  located in a parameter/abstraction the generalisation introduced, **not** in the copied logic; and
+  (d) the PR body or ticket cites the reference's maturity as its verification argument. All four
+  hold here.
+- **Rule AQ — CONSIDERED AND DECLINED ON THE LETTER; the brief asked me specifically, so here is the
+  measurement rather than the impression.** The candidate: a third implementation of the same
+  MutationObserver loop-guard now exists (`applyAndObserveSlot`, `applyAndObserveHeadlineSlot`,
+  `attachResilience`), and the new one is a **parameterised generalisation demonstrably capable of
+  subsuming the other two** — which was not extracted; the two originals were left in place.
+  **Rule AQ's normative trigger is a block "DECLARED identical"** (`CONVENTIONS_PATCH.md:3357`), and
+  its promoting evidence (RETRO-242) was an `md5sum`-identical 58-line region declared
+  _"byte-identical … do not clean it up"_. Here the declaration is _"modeled directly on"_ /
+  _"mirrors"_ (`adapt.ts:701-704`, PR body) and the code is genuinely **different** — different
+  signature, different state struct, different event names, a `matches()` indirection the reference
+  does not have, and one real behavioural divergence (`map.delete(el)` on the stale path in
+  `attachResilience:790`, absent from `adapt-description.ts:235-239`). **A "modeled on" note is not a
+  "keep in sync" claim, and AQ does not fire.** It is, however, the exact substrate AQ was promoted
+  to police, so: recorded as an AQ-adjacent **near-miss at count 1**, with the second-sighting bar
+  being _a subsequent divergence between the three implementations that a reader of one could not
+  detect from the other_ (the `map.delete` asymmetry is the first, and it is currently harmless).
+  **NO promotion, NO amendment** — AQ is one day old and RETRO-242's own discipline (do not amend a
+  fresh rule on one adjacent instance) applies.
+- **"Uncommitted work must be independently re-verified on resume" — ALREADY CODIFIED; this run is
+  its exercise, and the result is a NEGATIVE finding worth more than a rule.** The brief asked
+  whether this is a new pattern. It is not: `docs/AGENT_WORKFLOW.md:171-181` describes this exact
+  variant (edits sitting uncommitted, here on a properly-named feature branch — so FOLLOW-448's
+  branch-first guard **held**) and `:193-212` is a **mandatory "Recovered-work re-verification"
+  procedure** whose step 3 requires the recovering party to run its own verification pass _"because a
+  worker that crashed produced zero verification"_. RETRO-233 §6 established this documentation
+  exists after the PM hypothesised it did not. Prior sightings of the stranding itself: RETRO-146 §6
+  (count 1, → FOLLOW-448), RETRO-210 §6 (count 2, worktree variant → FOLLOW-645), RETRO-233 §6
+  (main-working-tree variant, documented). **Verdict on this instance: the procedure was followed and
+  HELD on every axis it covers** — full suites, typecheck, lint, prettier, bundle-size, and a
+  repo-wide `ApplyContext` / `applyDirectives(` call-site grep for the new required field (which was
+  the right grep and found the right answer: 20 call sites fixed, 2 doc-comment false positives
+  correctly discarded). **It missed exactly one thing, and the miss is structural, not sloppy:
+  re-running checks cannot re-verify a CLAIM the crashed session wrote** — CB-1's red-run citation
+  points at output the resuming session had no way to produce and no prompt to question. That is a
+  **one-clause extension** to the existing procedure, minted at **count 1, NOT promoted**: _"a
+  recovering session must re-verify the crashed session's written CLAIMS (PR body, test headers,
+  docstrings) against the artefacts they cite, not only re-run its CHECKS."_ Second sighting = any
+  future recovery whose green re-verification passes while a claim authored pre-crash is false.
+- **Rule Y — instance sighting (CB-1), codified, no promotion needed.**
+- **Rule AI — instance sighting (DG-1), codified, no promotion needed.**
+- **Rule AB — POSITIVE-COMPLIANCE sighting, and the first one that is compliant BY CONSTRUCTION
+  rather than by remediation.** Every prior Rule AB entry in this log (RETRO-169/170/171) is a
+  deferred writer that had to be *fixed*. `attachResilience` is the first deferred host-DOM writer in
+  this repo that shipped with the guard already at the last synchronous instant, in the same PR that
+  created the writer, because the ticket named Rule AB up front. Banked as evidence the rule is
+  working; no action.
+
+### 7. Follow-ups
+
+- **FOLLOW-792:** reorder repair must re-query the DOM instead of re-attaching captured node
+  references (sdk-engineer, 3h, **P1**) — §4a LG-1, §4c TG-1.
+- **FOLLOW-793:** the stale-at-arm path must not emit `adapt.applied` and must not record the
+  fingerprint; fix the asymmetric map bookkeeping (sdk-engineer, 3h, **P2**) — §4a LG-2/LG-3, §4c
+  TG-2.
+- **FOLLOW-794:** resolve the `ClassDirective` producer gap (wire `boost_class`/`suppress_class` or
+  mark the leg dormant) and fix the intra-type observer-map collision it hides (backend-engineer +
+  sdk-engineer, 4h, **P2**) — §3 HW-1, §4a LG-4, §4c TG-4.
+- **FOLLOW-795:** close the headline-slot ownership hand-off — nothing observes
+  `[data-estalara-slot="headline"]` when no per-listing LLM headline exists (sdk-engineer, 4h,
+  **P1**) — §4a LG-5(a).
+- **FOLLOW-796:** RE-FILE RETRO-093's lost FOLLOW-352/353 — the slot-name namespace mismatch that
+  makes `cta`/`feature` directives structurally unreachable on self-annotated tenants, still live
+  (sdk-engineer, 5h, **P1**) — §4a LG-5(b), §5 closure check.
+- **FOLLOW-797:** strike or substantiate the red-run citation in
+  `adapt-mutation-resilience.test.ts:110-112` (Rule Y) and record which of its 8 tests are red-first
+  (sdk-engineer, 1h, **P2**) — §4b CB-1.
+- **FOLLOW-798:** round-trip `adapt.reapplied` from the REAL emit path through
+  `EventSchema.safeParse`, per RETRO-166's precedent (qa-engineer, 2h, **P2**) — §4c TG-3.
+- **FOLLOW-799:** Rule AI doc propagation — `EVENT_TYPES` 52→53 in MASTER_DESIGN §Snapshot.1 row C,
+  and add `'empty_value'` to the `adapt.skipped` known-values JSDoc (architect, 1h, **P3**) — §4d
+  DG-1/DG-2.
+- **FOLLOW-800:** make the SDK bundle gate report headroom and warn below a threshold — a binary
+  pass/fail at 297 bytes gives the next SDK feature no ramp (devops-engineer, 2h, **P2**) — §4d
+  DG-3, §5b. (FOLLOW-673 keeps the doc-number correction; this is the mechanism.)
+
+### 8. Cross-references
+
+- **RETRO-171 — CONTRADICTION IDENTIFIED AND RECONCILED (the step-8 mandate).** RETRO-171 §8
+  (`:26099`) cleared `applyDirectives` from its deferred-writer inventory with the sentence _"a
+  framework revert is simply lost, never re-asserted with a stale value … ✅ Not in class."_ **The
+  verdict was correct on its axis and the finding was sitting inside it.** RETRO-171 was
+  enumerating writers that could paint a **stale** value onto a **newer** listing (the Rule AB /
+  staleness axis) and answered that question exhaustively and correctly — `applyDirectives` genuinely
+  is not in that class. It never asked the **durability** question ("can a correct value be lost and
+  never restored?"), and "a framework revert is simply lost" **is** the answer to that question,
+  written down as a reassurance. The gap then waited 43 days to be found by a PM during
+  dispatch-sequencing (QUEUE.md `:870-882`), not by the retro loop. **Reconciliation:** RETRO-171's
+  clean verdict is **NOT overturned** — it is **scoped**: clean on the staleness axis, silent on the
+  durability axis. Its inventory is additionally **superseded in count** by this merge's third
+  deferred writer (§5d). Append-only, per house convention: RETRO-171's text is not edited.
+- **RETRO-093 — its P1 (§4a LG-1, `cta_primary`→`cta`) is RE-CONFIRMED LIVE and its follow-up is
+  MISSING from the register** (§5 closure check). RETRO-093 §5 predicted the exposure precisely:
+  _"Whoever onboards the next tenant must apply FOLLOW-352 first or the augment tier delivers
+  headline-only."_ FOLLOW-791 has now made "headline-only" the one case it excludes.
+- **RETRO-166 / FOLLOW-461** — supplied the producer→consumer chain template for a new
+  `adapt.*` event type (re-walked, not inherited, in §3) and the real-emit round-trip test precedent
+  this PR did not follow (§4c TG-3); its §4a LG-2 volume concern now has a third, higher-cardinality
+  instance (§5b).
+- **RETRO-169 / RETRO-170 / RETRO-171 / Rule AB** — the deferred-write-guard lineage this PR's
+  `isStale` threading extends; first by-construction compliance (§6).
+- **RETRO-221 / FOLLOW-672 / FOLLOW-673** — the bundle-headroom thread; the measured figure moved
+  41.31 → 41.71 KB (§4d DG-3).
+- **RETRO-242 / Rule AQ** — considered and declined on the letter, with the measurement (§6).
+- **RETRO-146 / RETRO-210 / RETRO-233** — the stranded-uncommitted-work lineage; this run is the
+  documented recovery procedure's exercise and it held except on written claims (§6).
+
+<!-- next free FOLLOW number: 801 (FOLLOW-792..800 filed by RETRO-244). next free RETRO number: 245.
+RETRO-244 = retro for PR #661 (FOLLOW-791, MERGED 2026-08-03 15:15:10 UTC via REBASE — no merge
+commit; code commit 0e5ef35b, tip 33de49e6, DONE record d052c01a; 11 files +845/-26; branch
+sdk-engineer/FOLLOW-791-directive-mutation-resilience; SONNET). Shipped attachResilience() —
+MutationObserver-backed revert repair for text/class/reorder directives, modeled on
+adapt-description.ts; new REQUIRED ApplyContext.isStale (in-repo only, NOT a public-API break —
+applyDirectives is not in the @estalara/sdk export surface, so no escalation was owed); new
+adapt.reapplied event (EVENT_TYPES 52→53) wired producer→shared union→ingest consent-gate
+'operational'→ClickHouse; teardownAdaptObservers from BOTH resetAdaptState() and destroy().
+HEADLINE 1: RETRO-171 §8 wrote this exact finding down 43 days early ("a framework revert is simply
+lost") and filed nothing, because it was analysing the STALENESS axis, not the DURABILITY axis —
+clean verdict SCOPED not overturned, inventory superseded in count (3rd deferred writer, Rule
+AB-compliant by construction). HEADLINE 2: on the no-code prod surface this merge changes nothing a
+buyer sees — headline slot is deliberately excluded AND adapt-description only owns it when an LLM
+headline exists; cta/feature can never match because annotateSlots copies tenant keys verbatim
+(cta_primary≠cta, features_list≠feature). That second half is RETRO-093's P1 → FOLLOW-352, and
+FOLLOW-352 HAS NO STUB IN FOLLOW_UPS.md AT ALL (register jumps 346→354; 8 repo-wide hits, all inside
+RETRO-093's own text) — a gap whose ticket was never written, re-filed as FOLLOW-796. P1 SHIPPED BUG
+LG-1: reorder applyOrder closes over captured node refs, so a framework RE-MOUNT re-attaches detached
+orphans → DUPLICATE listing cards + non-converging repair; the PR's own comment claims re-mount is
+handled and no test covers it (FOLLOW-792). P2 LG-2: stale-at-arm path emits adapt.applied for a
+write never performed AND records the fingerprint (the ticket's own defect class, new door; narrow —
+only via the DOMContentLoaded deferral) (FOLLOW-793). HW-1 pre-existing HALF_WIRE_C: NO producer
+emits ClassDirective anywhere (route.ts builds text+reorder only; boost_class/suppress_class never
+converted) — algorithm default P0, DOWNGRADED to P2 with stated reasoning (FOLLOW-794). CB-1 Rule Y:
+the new test header cites "see the PR description for the actual red-run output" and PR #661 contains
+none — the ONE thing the interrupted-session recovery structurally could not catch (re-running CHECKS
+cannot re-verify CLAIMS) (FOLLOW-797). Recovery itself judged SOUND: branch-first guard held,
+AGENT_WORKFLOW.md:193-212 procedure followed, call-site grep was the right grep. Filed FOLLOW-792..800.
+CONVENTIONS_PATCH: NO PROMOTION — Rule AQ considered and DECLINED on the letter ("modeled on" is not
+"declared identical"; measured divergence already exists: map.delete asymmetry) and it is one day old;
+"re-verify uncommitted work on resume" is ALREADY codified in docs/AGENT_WORKFLOW.md:193-212 (RETRO-146/
+210/233 lineage) so nothing to promote, one-clause extension minted at count 1; P-27 minted at count 1
+("the specialised reference is copied faithfully and the defects all land in the generalisation") with
+a 4-clause second-sighting bar. Rule Y + Rule AI + Rule AB instance sightings, all codified.
+QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->

@@ -2839,3 +2839,19 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   (verify claimed-but-easy-to-skip work, diff rather than eyeball "copied verbatim" claims,
   reproduce rule-specific verification fixtures independently) generalizes cleanly across a third
   consecutive PR in this same gate-hardening chain.
+
+- **Date / ticket:** 2026-08-03 — PR #658 (FOLLOW-763) validation, retro sequencing before
+  FOLLOW-773+774
+- **Delegation row used:** validation only for #658; retros next, no ticket delegation this entry
+- **What validation caught (or missed):** Pressed on the exact question asked (cast removed vs. type
+  widened around it) by diffing the specific line, not by reading the PR's own "no output" grep
+  claim as sufficient — confirmed the type change itself is what makes the cast-free assertion
+  typecheck. Also judged a worker-surfaced Rule AP gap (proof-goes-live-on-legitimate-usage) against
+  the established ≥2-sighting bar rather than promoting it just because it was fresh and the
+  coordinator flagged it as worth considering — one real sighting, caught and self-corrected before
+  shipping, is not yet a second occurrence.
+- **A delegation/validation rule I'd add:** when a coordinator relays a merge-time incident (a stale
+  rebase base, a caught process error) that isn't visible in any diff, treat it as load-bearing
+  input for the NEXT retro explicitly, not just as session narration — write it into the retro
+  dispatch brief in the same structured way a PR's own hidden context gets fed in, since the
+  retro-analyst has no other way to discover it.

@@ -956,3 +956,32 @@ or queued.
 
 NEXT: dispatch FOLLOW-773+774 combined once FOLLOW-763 completes. Piotr merges #656/#657 when able
 (mind the one lessons.md conflict, resolution posted on #657).
+
+---
+
+# Status — 2026-08-03 (session 93 — 3 PRs merged, 2 retros owed before FOLLOW-773+774)
+
+## SESSION 93
+
+**Re-synced state per coordinator correction.** #656, #657, #658 all merged; `main` at `15c8675c`,
+local fast-forwarded. Zero open PRs (confirmed via `gh pr list`, not assumed).
+
+**Validated PR #658 (FOLLOW-763) in full.** Pressed specifically on whether the double-cast was
+removed vs. the type merely widened around it -- confirmed from the diff the cast is genuinely gone
+and the field is now truly declared, matching the actual Python schema optionality. Independently
+re-ran typecheck + the 3 named test files (22/22) + confirmed zero diff in the adapt route / SDK
+core. CI green (70/2, Rule I re-derived fresh at 192). Moved to READY_FOR_REVIEW. **Not merged --
+needs Piotr.**
+
+**Recorded the merge-time history for #656/#657** (fix-iteration for 656; two rebases for 657,
+including a stale-base error the coordinator caught and corrected) -- neither visible in any diff,
+fed into both upcoming retro briefs. Judged FOLLOW-768's worker-surfaced Rule AP gap (a
+proof-that-goes-live-on-legitimate-usage) as ONE sighting, not amendment-worthy yet -- to be
+recorded as a new candidate pattern at count 1 in RETRO-243, not promoted.
+
+**CI-check counters:** PR #658 1/5.
+
+**0 tickets IN_PROGRESS. 1 ticket READY_FOR_REVIEW** (FOLLOW-763, PR #658).
+
+NEXT: dispatch RETRO-242 (FOLLOW-770 / PR #656), then RETRO-243 (FOLLOW-768+769+771 / PR #657), both
+before FOLLOW-773+774 per Piotr's explicit order.

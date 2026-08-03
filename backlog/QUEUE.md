@@ -768,7 +768,36 @@ guardrail.
 
 ---
 
-### FOLLOW-763 — dispatch record (IN_PROGRESS)
+### FOLLOW-763 — status: READY_FOR_REVIEW (PR #658 open, `6d1f655e`, PM-validated 2026-08-03)
+
+**State correction acknowledged and re-synced.** Piotr merged PR #656 (straight rebase) and PR #657
+(two rebases — the first for the expected `backlog/QUEUE.md` collision, kept both blocks PM-first;
+the second because the coordinator rebased onto a stale `origin/main` before re-fetching #656's own
+merge, found the REAL `.claude/agents/devops-engineer/lessons.md` collision, kept both entries
+chronologically). `main` is now `15c8675c`; local `main` fast-forwarded to match. Zero open PRs
+besides #658 — confirmed via `gh pr list`, not assumed from the last reading.
+
+**Pressed specifically on whether the cast was removed, not the type merely widened around it.**
+Confirmed from the diff: `expect((result as unknown as {...}).data_source)` →
+`expect(result!.data_source)` — the cast is gone, and `result!.data_source` only typechecks because
+`ShadowChatIntent` now genuinely declares the field (`data_source: ShadowChatIntentDataSource`,
+non-optional 4-literal union; `extraction_error: string | null`, present key/nullable value) — both
+matching the actual Python schema's optionality, not the ticket stub's looser shorthand.
+
+**Independently re-verified rather than trusting the PR's own verification section:**
+`pnpm run typecheck` clean in my own worktree; the 3 named test files run myself, **22/22 passed**;
+`readShadowChatIntent`'s implementation confirmed untouched (only docblock comments changed);
+`route.ts` and `packages/sdk/src/core/adapt.ts` confirmed **zero diff lines** — provenance genuinely
+stays out of the archetype-selection path, not just claimed. Diff stat: exactly 2 files, 35/1.
+
+**5b CI:** 70 pass / 2 fail, `Rule I` **re-derived fresh at 192** (main moved substantially this
+session). Non-success count for all REAL gates: **0**.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted full evidence as a PR comment. **Not merged — needs Piotr.**
+
+---
 
 **Picked 2026-08-03 (session 92)**, third of four remaining sequential dispatches, now that PR #657
 is READY_FOR_REVIEW. Standalone — confirmed no file overlap with #656, #657, or the queued
@@ -788,7 +817,50 @@ posted).
 
 ---
 
-## ▶️ START HERE — session 92 (2026-08-03) — RETRO-241 merged, 2 new stubs folded in, collision analysis re-run across 763/773/774 before any dispatch
+## ▶️ START HERE — session 93 (2026-08-03) — 3 PRs merged (#656/#657/#658 all validated + landed), 2 retros owed before the last dispatch
+
+**All of #656, #657, #658 merged.** `main` at `15c8675c`. Zero open PRs. Retros owed for FOLLOW-770
+(PR #656) and FOLLOW-768+769+771 (PR #657) before the final queued dispatch (FOLLOW-773+774), per
+Piotr's explicit order — both cover Rule AP register work and FOLLOW-773/774 could inherit whatever
+pattern they establish, so findings must land first.
+
+**Merge-time history, not visible in any diff/PR body, fed into both retro briefs:**
+
+- **#656** merged straight (rebase, no conflict) after its own 1-fix-iteration PM round-trip (the
+  pipefail-masking defect in 3 of 8 register entries, PIPESTATUS fix).
+- **#657 required TWO rebases.** First: the expected `backlog/QUEUE.md` collision (PM's validated
+  status block vs. the worker's own handoff block — kept both, PM block first). Second: the
+  coordinator rebased onto a STALE `origin/main` (had not re-fetched after #656's own merge landed),
+  so the rebase computed its conflict resolution against a base that had already moved — a real
+  process finding, same class as the "merge-tree zero-conflicts has a shelf life" lesson from
+  RETRO-240, one level down (a computed conflict RESOLUTION can itself go stale, not just a
+  pre-computed absence-of-conflict). Re-fetched, found the REAL
+  `.claude/agents/devops-engineer/ lessons.md` collision (Rule AG append-only-log — kept both
+  entries, chronological), rebased again, gates re-verified green in an isolated worktree after EACH
+  rebase.
+- **FOLLOW-768's own worker surfaced a real Rule AP gap in its lessons entry**: a register entry
+  whose latency proof would go live on LEGITIMATE usage (a test-convention file holding a real
+  `sentry_sdk.init(`) is worse than no entry — it turned 3 passing self-tests red before being
+  caught and removed, proposing Rule AP say so explicitly (record as a proof-less bound inside a
+  neighbouring entry instead). **Judged: this is ONE sighting, not two — does not meet the amendment
+  bar on its own**, however real and however fresh Rule AP is. RETRO-243 (which owns this finding,
+  since it surfaced in PR #657) will record it as a new candidate pattern at count 1 with the
+  second-sighting bar pre-specified, per this session's own standing discipline (RETRO-239's own
+  P-21/P-22/P-23 treatment), not promote it.
+- **Confirmed for the retros, not just asserted**: PR #657 genuinely copied #656's corrected
+  `PIPESTATUS` runner byte-for-byte (diffed at PM validation time, empty diff on both gates) — the
+  reference-implementation pattern demonstrably worked, preventing the defect from FORKING into two
+  more gates, the exact failure mode RETRO-239 named and predicted would recur without one.
+
+**Dispatching RETRO-242 (PR #656 / FOLLOW-770) first.** RETRO-243 (PR #657 / FOLLOW-768+769+771)
+follows once RETRO-242 lands. FOLLOW-773+774 is NOT dispatched until both retros are in — Piotr's
+explicit ordering, since findings arriving after that dispatch would be too late to shape it.
+
+NEXT: Wait for RETRO-242, merge it, then dispatch RETRO-243, merge it, then FOLLOW-773+774.
+
+---
+
+## ▶️ (superseded) START HERE — session 92 (2026-08-03) — RETRO-241 merged, 2 new stubs folded in, collision analysis re-run across 763/773/774 before any dispatch
 
 **RETRO-241 merged** (`6221d2ea`, fast-forward). Docs-only, no rule promoted this round (correctly —
 neither of its two new findings is a 4th sighting of anything already at count 3). Filed FOLLOW-773

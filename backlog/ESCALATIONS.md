@@ -21,7 +21,34 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-047: the SDK served to tenants is a hand-committed artifact frozen since 2026-05-29 — 76 merged SDK tickets have never reached a buyer
+## RESOLVED — ESC-047: the SDK served to tenants is a hand-committed artifact frozen since 2026-05-29 — 76 merged SDK tickets have never reached a buyer
+
+**Resolved 2026-08-03 by Piotr's ruling "buduj sdk.js przez CI na merge'u", implemented as
+FOLLOW-808 (PR #665, `39d7acb7`) and verified against production.**
+
+- **(a) Release model.** CI/Vercel-built on merge, not hand-committed. `apps/control-plane`'s build
+  runs `scripts/copy-sdk-bundle.mjs`, which copies both IIFEs out of `packages/sdk/dist/`; Turbo
+  already builds the SDK first via `build.dependsOn: ["^build"]`. Both artifacts are now
+  `.gitignore`d, untracked, and declared Turbo build outputs — the last of those matters more than
+  it looks: without it a Turbo **cache hit** replays the build logs (including the copier's success
+  lines) while restoring no bundle at all, deploying a control-plane whose `<script src>` 404s.
+  Guarded by the `Served SDK bundles build-generated (ESC-047)` CI gate, self-tested against all
+  three regressions it covers.
+- **(b) Refresh sequencing.** Confirmed and followed: FOLLOW-801 (PR #666, `cdac63eb`) merged first,
+  `main` re-pulled and its suite re-run to prove the fix was present, and only then #665.
+  **Consequence: the pilot was never served the `cta` over-annotation regression** — it lived on
+  `main` while the bundle was frozen, and the first refreshed bundle already carried the fix.
+
+**Verified in production, not inferred from CI:** `admin.estalara.com/sdk.js` went 165 638 B → **157
+495 B** and now contains `ambiguous_slot_selector` and `headline_owned_by_description`;
+`estalara-detect.iife.js` went 95 093 B → **61 881 B**, byte-identical to the locally built
+artifact. Tenants load code built from `main` for the first time since 2026-05-29.
+
+**Residual, deliberately not folded in here:** every merge to `main` now ships the SDK to
+`admin.estalara.com` with no human gate, which raises the stakes on the SDK gates (bundle size, Rule
+I, the E2E suite) from "keeps the repo tidy" to "last line before production". Headroom on the 42 KB
+bundle limit is ~80 bytes (FOLLOW-800 / FOLLOW-807). If a staged/canary SDK release is wanted before
+third-party tenants onboard, that is a new decision, not a reopening of this one.
 
 **Filed by:** main-loop session (PM role) **Date:** 2026-08-03 **Affects:** `packages/sdk`,
 `apps/control-plane/public/sdk.js`, every SDK ticket merged since 2026-05-29, FOLLOW-801 **Type:**

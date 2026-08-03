@@ -1,6 +1,18 @@
 # Backlog Queue
 
-### FOLLOW-801 — status: READY_FOR_REVIEW (PR #666, 2026-08-03)
+### FOLLOW-801 — status: DONE (PR #666 merged 2026-08-03, `cdac63eb`)
+
+**Merged FIRST, ahead of PR #665, on Piotr's instruction to merge both in the correct order.**
+Between the two merges the PM re-pulled `main` and re-ran the FOLLOW-801 suite (7/7) to confirm the
+fix was actually present before arming delivery — checking only after both merges would have been
+checking too late to stop anything.
+
+**Live in production and verified there** (see FOLLOW-808 below): `admin.estalara.com/sdk.js` now
+contains `ambiguous_slot_selector`. **The pilot was never exposed to the regression** — it reached
+`main` at `675cd75f` but the served bundle stayed frozen throughout, and the first refreshed bundle
+already carried this fix. That answers the escalation trigger in the FOLLOW-801 stub (whether
+`000-app-estalara`'s activated `cta_primary` is broad) as moot for the incident window; the question
+still matters for FOLLOW-804-era work but no longer prices this ticket.
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/666 —
 `fix(sdk): annotate translated slots on a unique match only`. Closes the P1 RETRO-245 filed against
@@ -37,7 +49,31 @@ FOLLOW-804 owns the broader reconciliation, not duplicated here.
 
 ---
 
-### FOLLOW-808 — status: READY_FOR_REVIEW (PR #665, 2026-08-03) — BLOCKED ON FOLLOW-801
+### FOLLOW-808 — status: DONE (PR #665 merged 2026-08-03, `39d7acb7`)
+
+**THE DELIVERY GAP IS CLOSED, AND IT WAS VERIFIED AGAINST PRODUCTION RATHER THAN AGAINST CI.** Green
+CI proves the code is correct; it never proved the code reaches a buyer, and that exact distinction
+is what hid ~76 tickets for two months. After the merge the PM polled the live asset until it
+changed:
+
+| Asset                                        | Before (frozen)                  | After merge                                             |
+| -------------------------------------------- | -------------------------------- | ------------------------------------------------------- |
+| `admin.estalara.com/sdk.js`                  | 165 638 B, `4bdaf58c` 2026-05-29 | **157 495 B**                                           |
+| `admin.estalara.com/estalara-detect.iife.js` | 95 093 B, `43ad8496` 2026-06-17  | **61 881 B** — byte-for-byte the locally built artifact |
+
+Markers confirmed in the live bundle: `ambiguous_slot_selector` (FOLLOW-801),
+`headline_owned_by_description` (FOLLOW-795). So for the first time since 2026-05-29, tenants load
+code built from `main` — the whole FOLLOW-791/792/795/796 resilience epic included.
+
+**Merged SECOND, deliberately.** Merging it first would have shipped FOLLOW-801's `cta`
+over-annotation to the pilot; the regression was harmless only because the bundle was frozen, and
+this PR removed exactly that accidental protection.
+
+**Resolves ESC-047** — both CEO questions: (a) release model → CI/Vercel-built on merge, not
+hand-committed; (b) refresh sequencing → FOLLOW-801 first, done and verified.
+
+**PR (historical):** https://github.com/Pnawrocki9/Adaptive-Listings/pull/665 — was BLOCKED ON
+FOLLOW-801
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/665 —
 `build(control-plane): generate served SDK bundles on build`. Implements CEO ruling on ESC-047(a)

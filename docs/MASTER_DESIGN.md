@@ -1433,23 +1433,40 @@ SDK. Adaptacja strony szczegółów jest napędzana **wyłącznie detekcją** (�
 bridge poniżej. (To unieważnia podejście FIX-014, które dokładało `data-estalara-*` do szablonu —
 PORZUCONE/superseded.)
 
-**Most detekcja→adaptacja (zaimplementowany — `packages/sdk/src/core/augment.ts`).** Pipeline
+**Most detekcja→adaptacja (zaimplementowany — `packages/sdk/src/core/annotate-slots.ts`).** Pipeline
 detekcji produkuje `TenantSiteSchema.detail_schema.slot_selectors` (CSS-selektory headline/CTA/
 description na **istniejącym** DOM tenanta), ale silnik adaptacji mutuje wyłącznie elementy z
-`data-estalara-slot`. `annotateDetectedSlots(schema)` domyka tę lukę: rozwiązuje każdy
-`SelectorStrategy` (primary → fallbacks; tylko **jednoznaczne** dopasowanie; nigdy nie nadpisuje
-istniejącego `data-estalara-slot`; nigdy nie rzuca) i **self-anotuje** dopasowany element
-`data-estalara-slot` (mapowanie `headline→headline`, `cta_primary→cta`, `description→description`).
+`data-estalara-slot`. `annotateSlots(slot_selectors)` domyka tę lukę: dostaje z `/api/adapt` płaską
+mapę `{ klucz_detekcji → selektor CSS }` (projekcja `SelectorStrategy.primary`, robiona serwerowo w
+`apps/control-plane/src/lib/tenant-schema.ts`), anotuje **każdy** dopasowany element (nigdy nie
+nadpisuje istniejącego `data-estalara-slot`; nigdy nie rzuca) i **tłumaczy słownik detekcji na
+słownik adaptacji**: `headline→headline`, `cta_primary→cta`, `description→description`; klucze
+nieujęte w tabeli trafiają do DOM dosłownie. Tabela tłumaczeń `SLOT_NAME_TRANSLATION` jest
+**jedynym** punktem przekładu (11 technik auto-detekcji + kurowany schemat DB zasilają tę jedną
+funkcję).
+
+> _Historia (FOLLOW-796, 2026-08-03):_ przepisanie z FOLLOW-340 (`augment.ts` →
+> `annotate-slots.ts`) zgubiło mapowanie `cta_primary→cta`, przez co na tenantach bez ręcznego
+> markupu każda dyrektywa `cta` kończyła się `adapt.skipped {no_slot_elements}` (RETRO-093 §4a
+> LG-1). Przywrócone i objęte testem z parą **nie-pokrywającą się** (klucz `cta_primary` przeciw
+> dyrektywie `cta`).
+
 Następnie istniejące ścieżki adaptują BEZ markupu tenanta:
 
 - **headline / cta** → dyrektywy `TextDirective` z playbooka `/api/adapt` (`applyDirectives`).
 - **description** → dedykowany pipeline **`GET /api/adapt/description`** (§E.7), konsumowany przez
-  `packages/sdk/src/core/description.ts` i zapisywany jako `textContent` (bezpieczne wobec
+  `packages/sdk/src/core/adapt-description.ts` i zapisywany jako `textContent` (bezpieczne wobec
   HTML-injection) do anotowanego elementu.
 
 **Parytet producent↔konsument (wymóg):** każdy detail-slot który detekcja *wykrywa* musi być też
 *modyfikowany* w DOM (i odwrotnie). Obecny zakres parytetu: `headline`, `cta`, `description`.
 `features_list` / `tagline` — poza zakresem v1 (nie wykrywane ani nie adaptowane; AC7 FOLLOW-159).
+Konsekwencja dla playbooków: dyrektywa `feature` **nie jest osiągalna** przez self-anotację —
+`features_list` nie ma producenta (żadna technika auto-detekcji go nie emituje), a `feature` jest
+`TextDirective` nadpisującą `textContent`, więc anotowanie kontenera listy cech skasowałoby całą
+listę tenanta. Odblokowanie wymaga najpierw producenta po stronie detekcji (osobny ticket), nie
+samego przemianowania (FOLLOW-796 AC-3; zachowanie zapięte testem
+`packages/sdk/src/__tests__/follow-796-slot-name-translation.test.ts`).
 
 **Dostarczenie schematu do SDK (B1 — planowane).** Dla bespoke sajtów detekcja client-side zwraca
 `null` (poniżej), więc SDK otrzymuje `slot_selectors` **aktywowanego schematu serwerowego** jako

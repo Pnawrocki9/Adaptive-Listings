@@ -11,9 +11,62 @@
  *   - Never throws onto the host page: every DOM access is inside a try-catch.
  *   - Only annotates; never removes or rewrites existing slot attributes.
  *   - Root defaults to `document.documentElement` for full-page coverage.
+ *   - FOLLOW-796: translates the DETECTION slot vocabulary to the ADAPTATION slot
+ *     vocabulary before writing the attribute (see `SLOT_NAME_TRANSLATION`).
  *
  * @module @estalara/sdk/core/annotate-slots
  */
+
+/**
+ * Detection-vocabulary slot KEY → adaptation-vocabulary slot NAME (FOLLOW-796).
+ *
+ * Two vocabularies meet in this module and they are NOT the same set:
+ *
+ *   - PRODUCER (detection): `TenantSiteSchema.detail_schema.slot_selectors` keys, typed
+ *     in `packages/shared/src/tenant-site-schema.ts` as
+ *     `headline | tagline | cta_primary | cta_secondary | description | features_list`.
+ *     Every auto-detect technique (`packages/sdk/src/auto-detect/techniques/*.ts`) and the
+ *     curated server schema emit `cta_primary` for the primary call-to-action. The
+ *     control-plane passes these keys through VERBATIM (`lib/tenant-schema.ts` →
+ *     `api/adapt/route.ts` → `AdaptationDirectives.slot_selectors`).
+ *   - CONSUMER (adaptation): the `slot` values that `applyDirectives()` queries as
+ *     `[data-estalara-slot="<slot>"]` (`core/adapt.ts`). Playbook directives
+ *     (`core/playbooks/archetypes/*.ts`) use `headline | cta | feature` only; the
+ *     per-listing description/headline pipeline (`core/adapt-description.ts`) additionally
+ *     queries `description` and `headline`.
+ *
+ * Writing the producer key verbatim made every `cta` directive miss (`cta_primary ≠ cta`)
+ * on genuinely un-instrumented (self-annotated) tenants — only `headline` and `description`
+ * landed, because those two keys coincide across both vocabularies by naming accident.
+ * This table is the SINGLE choke-point for the rename (per-technique fixes were rejected:
+ * 11 techniques + the curated DB schema all feed this one function).
+ * See `docs/MASTER_DESIGN.md` §"Most detekcja→adaptacja" — `cta_primary→cta` was the
+ * documented mapping from 2026-06-01 that the FOLLOW-340 rewrite dropped.
+ *
+ * Keys not listed here are annotated VERBATIM (identity), which keeps `headline` and
+ * `description` working and leaves any future/unknown key harmlessly namespaced.
+ *
+ * ── `feature` is deliberately NOT in this table (FOLLOW-796 AC-1/AC-3) ──
+ * The playbook `feature` directive is OUT OF SCOPE for self-annotation, by three
+ * independent reasons, each verified against `main`:
+ *   1. NO PRODUCER. `features_list` is declared in the typed schema but nothing emits it:
+ *      no auto-detect technique writes a `features_list` selector, and no curated schema in
+ *      the repo carries one. Mapping `features_list → feature` would add a consumer for a
+ *      signal that has no production producer (the half-wire shape Rule L exists to stop).
+ *   2. ALREADY DOCUMENTED OUT OF SCOPE. `docs/MASTER_DESIGN.md` records
+ *      `features_list` / `tagline` as out of scope for v1 — "neither detected nor adapted".
+ *   3. DESTRUCTIVE SEMANTICS. `features_list` names a feature-LIST container, while a
+ *      `feature` directive is a `TextDirective` that overwrites `el.textContent`. Annotating
+ *      a list container as `feature` would collapse the tenant's entire feature list into a
+ *      single directive string — a brand-safety regression, not an adaptation.
+ * Consequence (current, documented, asserted by `follow-796-slot-name-translation.test.ts`):
+ * a `feature` directive emits `adapt.skipped {reason: 'no_slot_elements'}` on a self-annotated
+ * tenant. Making it reachable requires a detection-side producer first; that is a separate
+ * ticket, not a rename.
+ */
+const SLOT_NAME_TRANSLATION: Readonly<Record<string, string>> = {
+  cta_primary: 'cta',
+};
 
 /**
  * Annotate DOM nodes by resolving CSS selectors from `slotSelectors` and
@@ -30,7 +83,11 @@
  * is caught and logged to `console.warn`. The function never throws onto the host
  * page regardless of input.
  *
- * @param slotSelectors - Mapping `{ slotName → CSS_selector }` from
+ * Translating: the incoming keys are DETECTION-vocabulary slot names; the attribute is
+ * written using the ADAPTATION-vocabulary name (`cta_primary` → `cta`, FOLLOW-796). See
+ * `SLOT_NAME_TRANSLATION` above for the table and for why `feature` is out of scope.
+ *
+ * @param slotSelectors - Mapping `{ detectionSlotKey → CSS_selector }` from
  *   `AdaptationDirectives.slot_selectors` (FOLLOW-340). May be undefined/null —
  *   the function is a no-op in that case.
  * @param root - The subtree to search. Defaults to `document.documentElement`.
@@ -48,8 +105,11 @@ export function annotateSlots(
 
   let annotated = 0;
 
-  for (const [slotName, cssSelector] of Object.entries(slotSelectors)) {
-    if (!slotName || !cssSelector) continue;
+  for (const [schemaKey, cssSelector] of Object.entries(slotSelectors)) {
+    if (!schemaKey || !cssSelector) continue;
+
+    // FOLLOW-796: detection vocabulary → adaptation vocabulary. Unknown keys pass through.
+    const slotName = SLOT_NAME_TRANSLATION[schemaKey] ?? schemaKey;
 
     try {
       const matches = searchRoot.querySelectorAll<HTMLElement>(cssSelector);
@@ -62,7 +122,7 @@ export function annotateSlots(
     } catch (err) {
       // Invalid CSS selector, detached root, or browser restriction — log and continue.
       console.warn(
-        `[estalara] annotateSlots: failed for slot "${slotName}" selector "${cssSelector}":`,
+        `[estalara] annotateSlots: failed for slot "${schemaKey}" selector "${cssSelector}":`,
         err instanceof Error ? err.message : String(err),
       );
     }

@@ -227,6 +227,164 @@ describe('getTenantSchema() — TICKET-AB-011', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// slot_selectors extraction — FOLLOW-796 AC-4 (re-files RETRO-093 §4c TG-1)
+//
+// The extractor (tenant-schema.ts, the `detail_schema.slot_selectors` block) was shipped
+// by FOLLOW-340 with no test at all. It projects `SelectorStrategy.primary` only, skips
+// non-string / empty primaries, omits the field entirely when nothing survives, and is
+// wrapped in a fail-safe catch. These tests pin that PRE-EXISTING behaviour — none of it
+// is changed by FOLLOW-796.
+//
+// Boundary note (FOLLOW-796): the extractor deliberately keeps the DETECTION vocabulary
+// keys verbatim (`cta_primary` stays `cta_primary` on the wire). The rename to the
+// ADAPTATION vocabulary (`cta`) happens client-side in
+// packages/sdk/src/core/annotate-slots.ts, which is the single choke-point for every
+// producer (11 auto-detect techniques + the curated DB schema).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('getTenantSchema() — detail_schema.slot_selectors extraction (FOLLOW-796 AC-4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('UPSTASH_REDIS_URL', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('projects SelectorStrategy.primary only (fallbacks/type are dropped)', async () => {
+    mockDbRows([
+      {
+        schema: {
+          index_schema: { reorder_capable: true },
+          detail_schema: {
+            slot_selectors: {
+              headline: { primary: 'h1.listing-title', fallbacks: ['.title'], type: 'text' },
+              cta_primary: { primary: 'a.btn-book', fallbacks: [], type: 'text' },
+            },
+          },
+        },
+      },
+    ]);
+
+    const result = await getTenantSchema('tenant-slots-001');
+
+    expect(result?.slot_selectors).toEqual({
+      headline: 'h1.listing-title',
+      cta_primary: 'a.btn-book',
+    });
+  });
+
+  it('keeps the detection-vocabulary keys verbatim — no server-side rename', async () => {
+    mockDbRows([
+      {
+        schema: {
+          index_schema: { reorder_capable: false },
+          detail_schema: { slot_selectors: { cta_primary: { primary: 'a.btn-book' } } },
+        },
+      },
+    ]);
+
+    const result = await getTenantSchema('tenant-slots-verbatim');
+
+    // The wire contract is the detail_schema namespace (documented on
+    // AdaptationDirectives.slot_selectors). The SDK translates cta_primary → cta.
+    expect(Object.keys(result?.slot_selectors ?? {})).toEqual(['cta_primary']);
+    expect(result?.slot_selectors?.cta).toBeUndefined();
+  });
+
+  it('skips entries whose primary is not a string, or is an empty string', async () => {
+    mockDbRows([
+      {
+        schema: {
+          index_schema: { reorder_capable: true },
+          detail_schema: {
+            slot_selectors: {
+              headline: { primary: 'h1' }, // valid → kept
+              description: { primary: '' }, // empty → skipped
+              cta_primary: { primary: 42 }, // non-string → skipped
+              tagline: { primary: null }, // null → skipped
+              features_list: { primary: { nested: 'x' } }, // object → skipped
+            },
+          },
+        },
+      },
+    ]);
+
+    const result = await getTenantSchema('tenant-slots-002');
+
+    expect(result?.slot_selectors).toEqual({ headline: 'h1' });
+  });
+
+  it('skips entries whose strategy value is not an object', async () => {
+    mockDbRows([
+      {
+        schema: {
+          index_schema: { reorder_capable: true },
+          detail_schema: {
+            slot_selectors: {
+              headline: 'h1.listing-title', // bare string, not a SelectorStrategy → skipped
+              description: null, // → skipped
+              cta_primary: { primary: 'a.btn' }, // valid → kept
+            },
+          },
+        },
+      },
+    ]);
+
+    const result = await getTenantSchema('tenant-slots-003');
+
+    expect(result?.slot_selectors).toEqual({ cta_primary: 'a.btn' });
+  });
+
+  it('omits slot_selectors entirely when no entry survives the projection', async () => {
+    mockDbRows([
+      {
+        schema: {
+          index_schema: { reorder_capable: true },
+          detail_schema: { slot_selectors: { headline: { primary: '' } } },
+        },
+      },
+    ]);
+
+    const result = await getTenantSchema('tenant-slots-004');
+
+    expect(result).not.toBeNull();
+    expect(result?.reorder_capable).toBe(true);
+    expect('slot_selectors' in (result as object)).toBe(false);
+  });
+
+  it('omits slot_selectors when detail_schema (or its slot_selectors) is absent', async () => {
+    mockDbRows([{ schema: { index_schema: { reorder_capable: true } } }]);
+
+    const result = await getTenantSchema('tenant-slots-005');
+
+    expect(result?.reorder_capable).toBe(true);
+    expect(result?.slot_selectors).toBeUndefined();
+  });
+
+  it('fail-safe: a throwing detail_schema access leaves the rest of the schema intact', async () => {
+    // Simulates any hostile/unexpected shape reaching the extractor block: the catch must
+    // swallow it so a schema lookup is never blocked by slot-selector extraction.
+    const hostile: Record<string, unknown> = { index_schema: { reorder_capable: true } };
+    Object.defineProperty(hostile, 'detail_schema', {
+      enumerable: true,
+      get() {
+        throw new Error('hostile detail_schema getter');
+      },
+    });
+    mockDbRows([{ schema: hostile }]);
+
+    const result = await getTenantSchema('tenant-slots-006');
+
+    expect(result).not.toBeNull();
+    expect(result?.reorder_capable).toBe(true);
+    expect(result?.slot_selectors).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // invalidateTenantSchemaCache() — FOLLOW-018
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -898,7 +898,65 @@ NEXT: Dispatch FOLLOW-773+774 combined (localhost-gated acceptance criteria stat
 wait, validate, then FOLLOW-782, then FOLLOW-026 (Levels 1+3 scope, migration-free,
 localhost-gated).
 
-### FOLLOW-773+774 — status: IN_PROGRESS (dispatched 2026-08-03)
+### FOLLOW-773+774 — status: READY_FOR_REVIEW (PR pending, 2026-08-03)
+
+**Worker summary (devops-engineer, Sonnet).** One combined PR on
+`devops-engineer/FOLLOW-773-774-smoke-workflow-hardening`, three files:
+`.github/workflows/redis-shadow-smoke.yml`, `docs/runbooks/upstash-redis-env-parity.md` (both
+pre-existing, edited), and `scripts/check-redis-smoke-trigger-trust.sh` (new).
+
+**FOLLOW-773 AC1 — reproduced, not refuted, with real GitHub Actions evidence (the one
+GitHub-side-required AC per the dispatch brief's acceptance-gate override).** Confirmed via GitHub's
+own docs (`queue: single` default: "any existing pending job or workflow in the same concurrency
+group will be canceled and the new queued job or workflow will take its place") AND empirically:
+three `workflow_dispatch` runs queued seconds apart into `redis-shadow-smoke-main` on 2026-08-03 —
+run `30812441374` (in_progress) → run `30812458311` went `pending` then flipped to
+`completed`/`cancelled` the instant run `30812477744` was queued, which itself became the new
+`pending` run. All three runs cancelled afterward (evidence captured, no further CI spend needed).
+**AC2:** chose remedy (b) — `push` on `main` keys its concurrency group on `github.run_id` (never
+queues behind another run, cannot become the cancelled pending run); rejected (a) (only removes 1 of
+3 `main`-group members, the two push-driven runs still race each other) and (c) (makes the loss
+visible, does not restore the verdict, adds scope beyond a one-file change). **AC3:** rewrote the
+`:64-113` comment block to state the pending-cancellation mechanism, cite the GitHub doc quote, and
+cite the FOLLOW-773 AC1 run ids as empirical confirmation; also states explicitly what remains
+unfixed (feature-branch groups, lower severity, out of this ticket's measured scope) rather than
+overclaiming completeness. **AC4:** added a first-step "Proof-of-effect" step that echoes the
+byte-identical `${{ }}` group expression via GitHub's own expression evaluator (not a shell
+re-implementation), so a typo'd/constant-folded expression would be visible in every run's log.
+**AC5:** did not touch the spec, `NX_RUN_SUFFIX` in the main step, or `REQUIRE_REDIS_SMOKE`/
+`hard_fail_required` logic (only its computation moved into FOLLOW-774's extracted function, same
+inputs/outputs).
+
+**FOLLOW-774 AC1:** negative-control step now gets `NX_RUN_SUFFIX: ${{ github.run_id }}-negctl`,
+distinct from the main step's `${{ github.run_id }}` — structural fix over the
+documented-safe-because-the-guard-throws alternative, per the ticket's own preference. **AC2:**
+extracted the fork-PR trigger-trust decision into `scripts/check-redis-smoke-trigger-trust.sh`
+(`compute_hard_fail_required`), with a `--self-test` case table (5 trigger types) PLUS a mutation
+check that runs the same table against a deliberately inverted-fork-predicate variant and asserts it
+diverges — "an inverted fork predicate turns something RED", not "the branch exists" (modeled on
+`ci.yml`'s `shellcheck-sentry-gates` job, PR #657, noting and not repeating its one-of-four-files
+limitation: this script's case table covers all five trigger types the workflow's own `on:` fires
+on). Red-first proven locally (flipped the real predicate, self-test went from 6/6 PASS to 3/6 FAIL
+with the exact "would not catch RETRO-241 TG-1's failure mode" diagnostic, then reverted and
+re-confirmed 6/6 PASS — pasted in the PR). Wired into the workflow as its own step so every CI
+invocation exercises it automatically (Rule Q proof-of-execution), and the production "Check trigger
+trust" step now sources the same function instead of duplicating the `if` logic inline. **AC3:**
+rewrote runbook `:75-94` (Option C) from the secret-presence-keyed contract FOLLOW-762 deleted to
+the trigger-type contract it shipped; left `backlog/ESCALATIONS.md` and both `OPERATOR_SESSION_*.md`
+files untouched (dated history, correct as-is). **AC4:** no spec assertion changed, negative
+control's `if: always()` / `continue-on-error` shape untouched, `concurrency:` block untouched by
+this ticket's own changes (FOLLOW-773 changed it, per FOLLOW-773's own AC, not FOLLOW-774's).
+
+**Acceptance-gate override honored:** every AC except FOLLOW-773 AC1 demonstrated running locally
+(script executed directly via `bash`, not merely read) — outputs pasted in the PR description, not
+just claimed.
+
+**CI-check counter:** 0/5 (PR not yet opened at time of this note — see next commit for PR number).
+**Fix-iteration counter:** 0/3.
+
+---
+
+### FOLLOW-773+774 — dispatch record (was: IN_PROGRESS, superseded by the READY_FOR_REVIEW note above)
 
 **Pre-dispatch checks done, independently, not on the stub's own say-so:** `origin/main`
 re-confirmed at `7aacdd1d` (this session's own bookkeeping commit), zero open PRs

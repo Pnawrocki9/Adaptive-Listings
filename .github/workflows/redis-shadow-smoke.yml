@@ -65,19 +65,54 @@ on:
 # `pull_request` events (`head_ref` is only set for `pull_request`; `ref_name`
 # covers `push`/`schedule`/`workflow_dispatch`) so the two duplicate triggers
 # for one agent branch's commit queue behind each other instead of racing the
-# same Upstash instance. `cancel-in-progress: false` — a cancelled mid-flight
-# run would abandon its fixture keys in the shared instance rather than
-# cleaning them up (see the spec's `afterAll`), which is the failure mode to
-# avoid, so the second run WAITS rather than pre-empting the first.
+# same Upstash instance. `cancel-in-progress: false` protects only the
+# RUNNING job in a group from pre-emption — it does NOT protect a PENDING
+# (queued-behind-it) run. GitHub Actions' documented `queue: single` default
+# allows at most one PENDING run per group, and a THIRD run arriving while a
+# second is still pending CANCELS that pending run outright and takes its
+# place — this is documented GitHub behaviour ("any existing pending job or
+# workflow in the same concurrency group will be canceled and the new queued
+# job or workflow will take its place"), and FOLLOW-773 AC1 reproduced it
+# empirically against this exact `redis-shadow-smoke-main` group: three
+# `workflow_dispatch` runs queued seconds apart on 2026-08-03 (run
+# `30812441374`, in_progress; run `30812458311`, went `pending` then
+# `cancelled` the instant a third run was queued; run `30812477744`, the new
+# `pending` run that replaced it). On a bare `main` push there is no PR check
+# and no human watcher — a cancelled middle run produces NO verdict at all for
+# a merged commit, silently (RETRO-241 §4a LG-1, the finding this comment used
+# to understate).
 #
-# The nightly cron (`schedule`, ref_name=main) is IN this group: it shares
-# `redis-shadow-smoke-main` with any push/PR-merge run on `main`, which is the
-# desired behaviour (the cron is a third writer against the same instance and
-# should not race a same-ref run either). It is NOT serialized against
-# feature-branch runs, which use their own branch-scoped group — those are
-# covered by the run_id key-namespacing in the spec instead.
+# FOLLOW-773 remedy (chosen over the other two named in the ticket): a `push`
+# on `main` keys its group on `github.run_id` instead of branch identity, so a
+# main-line run can never have another run queued into ITS group and
+# therefore can never become the pending run that gets cancelled. This is
+# free: NX_RUN_SUFFIX (the spec's per-run fixture-key namespace, threaded
+# through below) already makes every run's Upstash keys disjoint by
+# construction (FOLLOW-761 AC3) — the concurrency group was never load-bearing
+# for correctness, only for reducing duplicate-run CI spend on feature
+# branches. Rejected: (a) dropping only the cron out of the group would leave
+# the OTHER two `main` members — the two push-driven runs themselves — still
+# able to race each other into this exact cancellation hole; (c) keeping the
+# shared group and adding a cancellation-detection step makes a lost verdict
+# visible but does not restore it — a `main`-push cancellation would still be
+# a result nobody reads by default, only now with an extra unread annotation.
+#
+# The nightly cron (`schedule`, ref_name=main) is NOT a `push`, so it falls
+# through to the literal `redis-shadow-smoke-main` group below. Because every
+# `main`-line push now uses its own unique run-id group, nothing else ever
+# lands in that literal string either — the cron effectively runs alone, which
+# is correct (it fires once daily and cannot race itself).
+#
+# Feature-branch push/pull_request pairs (any branch other than `main`) still
+# share the plain branch-identity group and are NOT covered by this remedy —
+# the same theoretical last-pending-run-cancellation risk remains there in
+# principle. It is lower-severity there (a feature branch's `pull_request` run
+# has a PR check a human is expected to watch, unlike a bare `main` push) and
+# is not the case RETRO-241 measured or FOLLOW-773 was scoped to fix. Not
+# filed as a further ticket here — recorded so a future reader does not assume
+# this remedy is complete for every branch shape.
 concurrency:
-  group: redis-shadow-smoke-${{ github.head_ref || github.ref_name }}
+  group: ${{ (github.event_name == 'push' && github.ref_name == 'main') && format('redis-shadow-smoke-main-run-{0}', github.run_id) || format('redis-shadow-smoke-{0}', github.head_ref || github.ref_name) }}
   cancel-in-progress: false
 
 jobs:
@@ -87,7 +122,27 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      # ── FOLLOW-773 AC4: proof-of-effect for the concurrency group above ──
+      # Prints the ACTUAL resolved group-name expression (not the literal
+      # string in the YAML) so a typo'd or constant-folded expression is
+      # visible in the log rather than silently wrong. This expression MUST
+      # be kept byte-identical to `concurrency.group` above.
+      - name: "Proof-of-effect: print the resolved concurrency group (FOLLOW-773 AC4)"
+        run: |
+          echo "Resolved concurrency group for this run: ${{ (github.event_name == 'push' && github.ref_name == 'main') && format('redis-shadow-smoke-main-run-{0}', github.run_id) || format('redis-shadow-smoke-{0}', github.head_ref || github.ref_name) }}"
+
       - uses: actions/checkout@v4
+
+      # ── FOLLOW-774 AC2: trigger-trust decision self-test ──────────────────
+      # Runs the case-table + mutation-divergence self-test from
+      # scripts/check-redis-smoke-trigger-trust.sh on EVERY invocation of this
+      # workflow (push/PR/schedule/workflow_dispatch alike) — not just
+      # locally — so "an inverted fork predicate turns something RED" is
+      # proven on an automated path, not merely asserted. See the script's
+      # own header for why a reachability fixture ("the branch exists") was
+      # not sufficient.
+      - name: "Self-test: trigger-trust decision case table (FOLLOW-774 AC2)"
+        run: bash scripts/check-redis-smoke-trigger-trust.sh --self-test
 
       # ── Python setup (needed for the write side) ─────────────────────────
       - uses: actions/setup-python@v5
@@ -128,8 +183,13 @@ jobs:
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           UPSTASH_REDIS_URL: ${{ secrets.UPSTASH_REDIS_URL }}
           UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
           IS_FORKED_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
         run: |
+          # FOLLOW-774 AC2: source the SAME function the self-test step above
+          # exercised, so production and self-test share one code path.
+          source scripts/check-redis-smoke-trigger-trust.sh
+
           if [ -z "${UPSTASH_REDIS_REST_URL}" ] || [ -z "${UPSTASH_REDIS_REST_TOKEN}" ] || \
              [ -z "${UPSTASH_REDIS_URL}" ] || [ -z "${UPSTASH_REDIS_TOKEN}" ]; then
             SECRETS_PRESENT=false
@@ -138,13 +198,14 @@ jobs:
           fi
           echo "secrets_present=${SECRETS_PRESENT}" >> "$GITHUB_OUTPUT"
 
-          if [ "${IS_FORKED_PR}" = "true" ]; then
-            echo "hard_fail_required=false" >> "$GITHUB_OUTPUT"
+          HARD_FAIL_REQUIRED="$(compute_hard_fail_required "${EVENT_NAME}" "${IS_FORKED_PR}")"
+          echo "hard_fail_required=${HARD_FAIL_REQUIRED}" >> "$GITHUB_OUTPUT"
+
+          if [ "${HARD_FAIL_REQUIRED}" = "false" ]; then
             if [ "${SECRETS_PRESENT}" = "false" ]; then
               echo "::notice::Forked PR — UPSTASH_REDIS_* secrets are not exposed to fork-originated workflow runs by GitHub Actions design, so this is the ONE legitimate soft-skip condition (Rule Q / FOLLOW-762). FOLLOW-368/752 Redis round-trip smoke will soft-skip; see its own ::notice:: below."
             fi
           else
-            echo "hard_fail_required=true" >> "$GITHUB_OUTPUT"
             if [ "${SECRETS_PRESENT}" = "false" ]; then
               echo "::warning::Trusted trigger (push, schedule, workflow_dispatch, or same-repo pull_request) but one or more UPSTASH_REDIS_* secrets are absent. REQUIRE_REDIS_SMOKE=1 is set regardless — the spec below MUST hard-fail rather than skip. Provision all four secrets; see docs/runbooks/upstash-redis-env-parity.md."
             fi
@@ -190,6 +251,20 @@ jobs:
           UPSTASH_REDIS_URL: "https://negative-control.invalid"
           UPSTASH_REDIS_TOKEN: "" # deliberately blanked — the missing secret under test
           REQUIRE_REDIS_SMOKE: "1"
+          # FOLLOW-774 AC1: this invocation gets ITS OWN namespace, distinct
+          # from the main step's `${{ github.run_id }}` above. There is no
+          # job-level or workflow-level `env:` NX_RUN_SUFFIX to inherit, so
+          # without this the negative control would run with
+          # NX_RUN_SUFFIX='local-dev' (the fixed fallback shared with every
+          # developer's machine — redis-shadow-round-trip.smoke.test.ts:312).
+          # Harmless today only because the module-scope credential guard
+          # throws before any fixture key is touched (RETRO-241 §4a LG-2) —
+          # this makes that safety structural instead of resting on another
+          # ticket's unstated behaviour. Rejected alternative: leave it
+          # un-namespaced, documented as safe-because-the-guard-throws — the
+          # one-line fix is cheaper than an implicit cross-ticket coupling
+          # nobody involved in either PR could see (RETRO-241 §8).
+          NX_RUN_SUFFIX: ${{ github.run_id }}-negctl
         run: |
           set +e
           pnpm exec vitest run --config vitest.config.ts redis-shadow-round-trip.smoke > /tmp/negative-control.log 2>&1

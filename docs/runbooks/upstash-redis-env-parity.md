@@ -75,9 +75,23 @@ A green run confirms both sides read/write the same instance.
 ### Option C — CI smoke workflow
 
 The `redis-shadow-smoke.yml` workflow runs on every push/PR for agent-prefixed branches and nightly
-at 04:30 UTC. When all four secrets are provisioned in GitHub Actions (per ESC-028), the workflow
-will run in hard-fail mode (`REQUIRE_REDIS_SMOKE=1`). Until then it soft-skips with a `::notice::`
-annotation.
+at 04:30 UTC. **The hard-fail contract is a function of TRIGGER TYPE, not of whether secrets
+currently happen to be present** (FOLLOW-762, replacing the secret-presence-keyed contract this
+runbook used to describe):
+
+- `push` / `schedule` / `workflow_dispatch` / same-repo `pull_request` → `REQUIRE_REDIS_SMOKE=1`
+  **unconditionally**. A missing, rotated, or revoked secret on any of these trusted triggers is a
+  hard CI failure (the spec throws), never a silent skip. All four secrets ARE provisioned in GitHub
+  Actions today (ESC-028, RESOLVED 2026-07-13) — this is a precondition for the hard-fail contract
+  to succeed rather than throw, it does not gate whether `REQUIRE_REDIS_SMOKE` is set.
+- `pull_request` from a **forked** repository → soft-skips with a `::notice::` annotation. This is
+  the ONE legitimate skip condition: GitHub Actions does not expose repository secrets to
+  fork-originated workflow runs by design, so there is no way for a fork PR to supply them,
+  regardless of provisioning state.
+
+See the workflow file's own header comment for the full contract and
+`scripts/check-redis-smoke-trigger-trust.sh --self-test` for a case-table proof of the fork-PR
+predicate (FOLLOW-774).
 
 ---
 
@@ -128,6 +142,8 @@ would never self-clean.
 - `RETRO-098 §3 HW-3` — origin of this issue
 - `backlog/ESCALATIONS.md ESC-028` — GitHub Actions secret provisioning request
 - `.github/workflows/redis-shadow-smoke.yml` — CI smoke workflow
+- `scripts/check-redis-smoke-trigger-trust.sh` — trigger-trust decision + case-table self-test
+  (FOLLOW-774)
 - `tests/integration/redis-shadow-round-trip.smoke.test.ts` — TypeScript round-trip test
 - `tests/integration/shadow_intent_writer.py` — Python write helper
 - `apps/intent-engine/src/redis_writer.py` — production Python writer

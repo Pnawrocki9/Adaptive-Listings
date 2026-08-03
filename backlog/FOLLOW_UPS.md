@@ -24255,7 +24255,9 @@ AI / AO / AP]
 
 source_retro: RETRO-240 (PR #652 + PR #655) source_ticket: — recommended_sprint: next
 recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — status: DONE, applied directly by the PM as bookkeeping per
+AC1-AC4, docs-only single-line derived-number correction, no design judgment; see backlog/QUEUE.md
+session-91 head)
 
 **The finding (DG-2).** `docs/MASTER_DESIGN.md` §Snapshot.6 records a CONVENTIONS_PATCH rule count
 of **27**. Actual: `grep -c "^## Rule " CONVENTIONS_PATCH.md` → **41** before RETRO-240 and **42**

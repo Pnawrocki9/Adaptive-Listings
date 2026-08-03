@@ -559,9 +559,9 @@ Net: an investor demo today shows a credible Tier 1 Observer + Tier 2 mutation f
 
 ### §Snapshot.6 — Retro learning loop status
 
-- 167+ retros in `backlog/RETROSPECTIVES.md` (RETRO-001..167 as of 2026-07-09; refreshed from the stale "RETRO-001..004").
-- 500+ follow-ups generated (FOLLOW-001..535+); many DONE, the open set tracked in `backlog/QUEUE.md` + `backlog/FOLLOW_UPS.md` (refreshed from the stale "40 follow-ups").
-- **27 permanent rules** in `CONVENTIONS_PATCH.md` (A–L, N–P, R–U, W–Z, M, V, Q, AA; refreshed from the stale "8 rules A–H"); several are enforced by hard CI gates — **Rule H** (no schema scaffold without runtime consumer, `scripts/check-rule-h.sh`), **Rule I** (wired-or-dead, `scripts/check-rule-i.sh`), **Rule J** (mirror-file sync), plus the adapt-schema-drift gate.
+- 228+ retros in `backlog/RETROSPECTIVES.md` (RETRO-001..228 as of 2026-08-03; refreshed from the stale "RETRO-001..167").
+- 591+ follow-ups generated (FOLLOW-001..591+); many DONE, the open set tracked in `backlog/QUEUE.md` + `backlog/FOLLOW_UPS.md` (refreshed from the stale "FOLLOW-001..535+").
+- **42 permanent rules** in `CONVENTIONS_PATCH.md` (A–L, N–P, R–U, W–Z, M, V, Q, AA–AP; refreshed from the stale "27 rules"); several are enforced by hard CI gates — **Rule H** (no schema scaffold without runtime consumer, `scripts/check-rule-h.sh`), **Rule I** (wired-or-dead, `scripts/check-rule-i.sh`), **Rule J** (mirror-file sync), **Rule AP** (gate residual enumeration must be a machine-checked register, not prose), plus the adapt-schema-drift gate. All three counts on this line are DERIVED (re-run the three greps in FOLLOW-772's AC1/AC2), not authored, and drift on every retro/follow-up/rule-promotion — not worth a dedicated automation ticket at this cadence (FOLLOW-772 AC3), but a future §Snapshot refresh should keep re-deriving them rather than copying this line forward.
 - (Historical) 2 P0 follow-ups added 2026-05-16: FOLLOW-039 (ClickHouse hard delete for DSR) and FOLLOW-040 (Doppler CI) — both long since DONE.
 
 ### §Snapshot.7 — Documented architectural risks (high → low)

@@ -598,7 +598,72 @@ PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 
-## ▶️ START HERE — session 90 (2026-08-03) — all 4 PRs MERGED by Piotr, both conflicts independently re-verified, 2 retros dispatched before any new ticket
+## ▶️ START HERE — session 91 (2026-08-03) — RETRO-240 merged, Rule AP promoted, decision 1 closed by event, collision analysis corrected before dispatch
+
+**RETRO-240 merged** (`d6d19656`, fast-forward). It promoted **Rule AP** — gate residual enumeration
+must be a machine-checked register the gate itself executes, not prose; a PR adding a new
+predicate/control must add that control's own region-and-scope entry. Independently read the
+promoted rule in full (`CONVENTIONS_PATCH.md`, search "Rule AP") rather than taking the merge
+summary on trust: confirmed the ≥4-prior-retro bar is real and cited precisely (RETRO-237 §6,
+RETRO-238 §4b CB-3+§8, RETRO-239 §6+§8 — which declined promotion and pre-specified this exact rule
+as the fourth-sighting response — then RETRO-240 §4b CB-1+§4d DG-1 firing twice independently in one
+merge pair), and confirmed clause 1-2 build a real executed consumer (a `latency proof` shell
+command per entry, the gate re-running its own register every run and failing with a distinct
+diagnosis on a live entry) rather than an inert manifest.
+
+**Decision 1 from the session-89 wind-down note — CLOSED, ANSWERED-BY-EVENT, not by a fresh CEO
+ruling.** The original open question was whether a 4th consecutive "residual list one shape short"
+verdict should trigger the mechanical register RETRO-239 pre-specified. It did, twice, in RETRO-240,
+and the register got built with a real mechanism (see above) — the pre-specification fired exactly
+as designed. A coordinator draft that would have had the PM argue for UNWINDING an
+already-correctly- promoted rule was corrected before being acted on; no part of that draft was
+executed. The one genuinely new addition from that exchange — checking whether the PM's own
+gate-hardening validation already covers "does every predicate have a register entry" adversarially
+— is **already fully specified in Rule AP's own Verification section** ("Reviewer check, mechanical:
+for every gate touched by a PR, `diff` the set of predicates against the set of register entries. A
+predicate with no entry naming it fails review."). Adding a duplicate check to a separate PM
+template would be the half-wired-producer mistake in miniature that this whole rule chain is about —
+so nothing added there; the obligation already has its one real consumer (the PM's own validation
+step, per Rule AP itself).
+
+**FOLLOW-772 (docs-only §Snapshot.6 drift, Rule AI) — folded into this session's bookkeeping
+directly**, not dispatched to the architect agent: three derived numbers on one line
+(`docs/MASTER_DESIGN.md` §Snapshot.6), no design judgment, AC4 explicitly forbids a version bump or
+section rename. Re-ran all three greps fresh rather than copying the stub's numbers (Operating
+Principle 5): 42 rules (was 27), 228 retros (was 167), 591 follow-ups (was 535+). Same edit this
+commit.
+
+**Collision analysis for the 3 new RETRO-240 stubs, corrected against the coordinator's own message
+rather than accepted as stated.** FOLLOW-770 does **NOT** collide with FOLLOW-768/769 — verified by
+reading FOLLOW-770's stub in full: every AC and every cited line is `scripts/check-mirror-files.sh`
+only (a `git ls-files`-failure-mode fix), a file neither FOLLOW-768 nor FOLLOW-769 touches.
+**FOLLOW-771 DOES collide** — it edits `scripts/check-sentry-init-singleton.sh` (the
+exclusion-inventory/marker-check region-bound fix), the same file FOLLOW-769 adds a missing-helper
+self-test fixture to and adjacent to FOLLOW-768's territory in the sibling file.
+
+**Revised dispatch plan, sequential (one Bash-capable agent at a time in the shared tree, per
+standing discipline):**
+
+1. **FOLLOW-770** (devops-engineer), standalone — P1, no collision with anything, and Rule AP clause
+   6 + FOLLOW-770 AC5 both designate it the **reference implementation** other gates should copy.
+   Dispatched BEFORE 768/769/771 so they have a merged, working register example to follow instead
+   of inventing the pattern independently in a bigger, riskier combined PR.
+2. **FOLLOW-768 + FOLLOW-769 + FOLLOW-771 combined** (devops-engineer) — all three touch
+   `scripts/check-sentry-capture-has-init.sh` and/or `scripts/check-sentry-init-singleton.sh`;
+   combining avoids three sequential header rewrites of the same residual sections and lets one PR
+   build BOTH sentry gates' Rule AP registers consistently, citing FOLLOW-770's merged pattern.
+3. **FOLLOW-763** (backend-engineer) — no collision with anything, dispatched last only because of
+   the one-agent-at-a-time rule, not because of any dependency.
+
+**RETRO-241 (PR #653 + PR #654, brief already written) dispatches first**, per Piotr's original
+instruction — retros before new ticket work.
+
+NEXT: Dispatch RETRO-241, wait, merge it, then FOLLOW-770, wait, merge it, then FOLLOW-768+769+771
+combined, wait, merge it, then FOLLOW-763.
+
+---
+
+## ▶️ (superseded) START HERE — session 90 (2026-08-03) — all 4 PRs MERGED by Piotr, both conflicts independently re-verified, 2 retros dispatched before any new ticket
 
 **All 4 PRs merged, `main` at `ff02b85e`, tree clean.** Merge order: `04833fd0` (#652
 FOLLOW-765+759) → `0d111343` (#653 FOLLOW-761) → `49ad5c04`+`c86f3b0c` (#654 FOLLOW-762) →

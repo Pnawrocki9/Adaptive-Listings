@@ -24434,6 +24434,16 @@ absorb the `ci.yml` half — that is **FOLLOW-778**. Sequence them (773 first, 7
 merging them, and do not let 778's data be used to skip AC1. **(iii)** AC4's proof-of-effect
 artefact is worth designing so `ci.yml` can reuse it.
 
+**PREMISE NOTE — RETRO-243 §5a (2026-08-03, after PR #657 merged as `15c8675c`). NO premise
+movement; recorded so the PM does not re-derive it before dispatching.** PR #657 touches
+`.github/workflows/ci.yml` only (it adds one job) and **never**
+`.github/workflows/redis-shadow-smoke.yml` — verified from the merge commit's file list, not
+assumed. So this ticket is unaffected and remains free of collisions with everything merged this
+session. One marginal widening for the ticket it is sequenced with: **FOLLOW-778's** premise grows
+slightly, because a 30th job lengthens `ci.yml`'s critical path and `cancel-in-progress: true`
+cancels against elapsed time — 4 of the last 12 `main` runs concluded `cancelled` when re-measured
+for RETRO-243.
+
 ---
 
 ## FOLLOW-774 — the negative-control step re-runs the smoke spec WITHOUT `NX_RUN_SUFFIX`; the fork-PR soft-skip branch has never executed; and the runbook the PR's own warning points at still describes the mechanism the PR replaced
@@ -24525,6 +24535,20 @@ artefact, axis unwalked); `.github/workflows/redis-shadow-smoke.yml:141-149,164-
 ticket's exemption half rhymes with); Rules AI / Q; RETRO-241 §8 ("seam" — the fourth displacement
 mode, of which finding 1 is the first instance)]
 
+**PREMISE ADDITION — RETRO-243 §5a (2026-08-03). No scope change; a WORKED EXAMPLE now exists for
+this ticket's hardest AC, in a file this ticket does not touch.** No premise movement (PR #657
+touches `ci.yml` only, never `redis-shadow-smoke.yml` — verified from the merge commit's file list).
+But finding 2 of this ticket is _"the fork-PR soft-skip branch has never executed"_ and its general
+form is _"a negative control nobody has proven can fail"_. **PR #657 shipped exactly that proof, and
+it ran:** `.github/workflows/ci.yml:749-767` (`shellcheck-sentry-gates`, step _"Assert the source=
+directives actually resolve (not silently skipped)"_) re-runs the linter in the configuration where
+it **must** fail — without `-P SCRIPTDIR` — and asserts the specific finding code `SC1091` appears,
+failing the job with a diagnosis if it does not. It executed on the merged tip: job `91657004817`
+printed `OK: the source= directives are resolved by -P SCRIPTDIR, not by luck.` at `10:15:24`.
+**Read it before designing AC1/AC2's proof** — it is the cheapest shape this repo has for "prove the
+negative control can go red", and RETRO-243 §4c TG-2 also records its one limitation (it covers one
+of the four linted files), which this ticket's own design should not copy.
+
 ## FOLLOW-775 — shellcheck runs over four files; the other ~30 shell scripts in `scripts/` are unlinted, and two of them are blocking gates
 
 source_retro: n/a (spun out of FOLLOW-769 AC4 during implementation) source_ticket: FOLLOW-769
@@ -24581,6 +24605,19 @@ file the current job does not lint. So: AC1's baseline **must expect ≥1 SC2016
 wording verbatim so all three stay byte-identical — see FOLLOW-776), and until then a third gate
 copying from the artefact Rule AP clause 6 designates as the reference copies a version that fails a
 lint its two siblings pass.
+
+**PREMISE ADDITION 2 — RETRO-243 §3 CHECK B (2026-08-03). AC3 needs one more word: DERIVED, not
+re-enumerated.** The job's four-file list is kept in sync with the Sentry gate family by a
+**comment** (`.github/workflows/ci.yml:725-727`: _"A file added to the Sentry gate family must be
+added here in the same PR"_) and by nothing else — a claim about coverage with no consumer, which is
+the artefact Rule AP exists to abolish, in YAML. It is **complete today** (RETRO-243 enumerated the
+family: the two gates plus the two `scripts/lib/` helpers = exactly the four listed), so this is a
+latent premise addition, not a defect. AC3 already forbids leaving two overlapping lists that can
+drift; it should additionally require that whatever replaces the explicit list is **derived** (a
+glob, or a list generated from the `source=` graph) rather than a second hand-maintained enumeration
+— otherwise the repo-wide job simply moves the same un-consumed claim into a bigger file. Related
+but deliberately NOT folded in: RETRO-243 §4c TG-2 records that the job's negative-control step
+lints only ONE of the four files, which AC4 already owns.
 
 ---
 
@@ -24686,6 +24723,18 @@ earlier); `scripts/check-mirror-files.sh:1101-1108,1109-1166,1138-1146`;
 `scripts/check-sentry-init-singleton.sh:1412-1415,1428-1485`; `scripts/lib/`; FOLLOW-775 (the SC2016
 half); Rules AQ / J / K.1 / AP / AM]
 
+**PREMISE CONFIRMED (not re-filed) — RETRO-243 §5a (2026-08-03).** Re-measured **post-merge**, on
+`main` at `13072895`, rather than inherited from RETRO-242's pre-merge reading: the three runner
+regions still `md5sum` to **`5fa38c527c083faf0dc83b3c8d9f6a00`** and
+`grep -rn "byte-identical to scripts/check-mirror-files" scripts/` still returns **2 hits, both in
+the copies, ZERO in the reference**. Two things RETRO-243 adds without changing scope: **(1)** PR
+#657 is the _act_ that created copies 2 and 3, and it merged (10:12 UTC) **before** Rule AQ landed
+(with RETRO-242, `0546e259`) — so the PR is not retroactively non-compliant and this ticket, not
+that PR, is where **Rule AQ clause 2 (reciprocity) is discharged for the estate**; it is unsatisfied
+on `main` today. **(2)** Sequencing: **FOLLOW-777**'s Sentry half must touch this same 58-line
+region (the two accumulators its proofs cannot see, `REGISTER_LIVE` / `REGISTER_BROKEN`, are
+declared inside the runner) — **do 776 first, or combine them.**
+
 ---
 
 ## FOLLOW-777 — the Rule AP register's own self-referential entry sees 6 of the gate's 11 failure paths, and the 5 it cannot see include the predicate the same PR added
@@ -24771,6 +24820,34 @@ cross_ref: [RETRO-242 §4b CB-2, §4e, §5b;
 `scripts/check-mirror-files.sh:242-245,757,771,985,1092,1179,1188`;
 `scripts/check-sentry-capture-has-init.sh:1228`; `scripts/check-sentry-init-singleton.sh:1402`;
 CONVENTIONS_PATCH.md Rule AP clauses 3 + 4; Rules AI / AO / AM]
+
+**PREMISE ADDITION — RETRO-243 §4b CB-3 (2026-08-03). RETRO-242's handoff discharged, with a PARTIAL
+verdict: the mechanism gap IS copy-shaped, but the Rule AI half — the half that made this a P2 on
+`check-mirror-files.sh` — does NOT recur in the two Sentry gates. Measured, not read.**
+
+- **The partiality is real and quantified.** `grep -nE "^[A-Z][A-Z_]*(COUNT|MISMATCH)=0$"` →
+  `check-sentry-capture-has-init.sh` **3** (`BASELINE_MISMATCH`, `VIOLATION_COUNT`,
+  `UNPARSEABLE_COUNT`), `check-sentry-init-singleton.sh` **5** (+ `UNHARDENED_COUNT`, `STALE_COUNT`)
+  — matching each proof's hard-coded expectation, so both correctly report `latent`. But
+  `grep -nE "^[A-Z][A-Z_]*=0$"` → **5** and **7**. The extra two in each gate are **`REGISTER_LIVE`
+  and `REGISTER_BROKEN`**, genuine failure accumulators the `*_COUNT` / `*_MISMATCH` naming
+  convention cannot see. **So: capture entry `H` sees 3 of 5; singleton entry `G` sees 5 of 7.**
+- **The claim-breadth defect does NOT recur, and AC4's "note which change they should copy" should
+  say so.** Entry F on `check-mirror-files.sh` earned P2 because its header claims it _"goes live on
+  **any** new failing predicate"_. Both Sentry gates are **correctly bounded in both halves**: the
+  array rows say _"a failure **accumulator** added to this gate without an entry"_, and the header
+  blocks (`check-sentry-capture-has-init.sh:251-255`, `check-sentry-init-singleton.sh:256-260`) name
+  the mechanism explicitly — _"The proof counts this script's `__COUNT=0`/`*\_MISMATCH=0`
+  accumulators"\*. **No Rule AI violation there.** The Sentry half of this ticket is therefore
+  mechanism-only: widen the proof (or the convention) so `REGISTER_\*` accumulators are visible; do
+  **not** rewrite claims that are already accurate.
+- **SCHEDULING CONSTRAINT, new and load-bearing: the two invisible accumulators are declared INSIDE
+  the copied 58-line runner** (`check-sentry-capture-has-init.sh:1232-1233`,
+  `check-sentry-init-singleton.sh:1407-1408`, and equivalently in `check-mirror-files.sh`). That is
+  the exact region **FOLLOW-776** owns and Rule AQ governs. A fix to entry F/H/G that also touches
+  the runner region must be **sequenced after, or combined with, FOLLOW-776** — otherwise it edits
+  one copy of a three-copy block with no mechanism to catch the other two, which is the defect
+  FOLLOW-776 exists to close.
 
 ---
 
@@ -24923,6 +25000,27 @@ cross_ref: [RETRO-242 §4d DG-1, §5d, §6, §8 (the FOLLOW-772 closure trace); 
 original filing, and the precedent for a retro filing against its own promotion); FOLLOW-772 (whose
 closing commit `7f1b2c40` introduced Finding 2); `docs/MASTER_DESIGN.md:562,563,564`; Rules AI / AN
 / AO]
+
+**PREMISE RE-VERIFIED OPEN, NOT RE-FILED — RETRO-243 §4d (2026-08-03).** All three lines are still
+stale on `main` at `13072895`: `:564` reads **42** rules / `AA–AP` against **43** / `AA–AQ` actual;
+`:562` reads `RETRO-001..228 as of 2026-08-03` against a maximum of **243** after this retro; `:563`
+reads `FOLLOW-001..591+` against **790**. RETRO-243 **promotes no rule**, so it does not move the
+rule count and deliberately does not file a second ticket for the same three lines — this stub's
+scope is unchanged and sufficient.
+
+**REINFORCING EVIDENCE for this stub's premise, deliberately NOT counted as a second occurrence
+(RETRO-243 §6 P-30).** AC3 is the clause that closes the actual hazard (_"the highest id is NOT to
+be read off this document for allocation purposes"_), and a **live collision on exactly that axis
+occurred in this session**: RETRO-242 allocated FOLLOW-776–779 against `origin/main` while PR #659
+landed citing `[FOLLOW-778]` in its commit subject, resolved by renumbering the later-landing actual
+write to FOLLOW-780. RETRO-243 judged that incident explicitly and found it is **Rule AN's clause 4
+working**, and mechanically a _different_ mechanism from this stub's (a concurrent in-flight branch,
+not a false ID range in §Snapshot.6) — so it does **not** advance this finding and the two must not
+be pooled. It is recorded here only as evidence that the namespace is now dense enough for AC3 to be
+worth writing carefully. One adjacent fact for whoever picks this up: nothing machine-checks the
+uniqueness invariant — `grep -rn "FOLLOW_UPS.md\|RETROSPECTIVES.md" .github/workflows/ lefthook.yml`
+returns one hit and it is a comment, and `uniq -d` on `main` still shows the pre-existing
+FOLLOW-309/310/311/312 duplicates (FOLLOW-789's territory, not this ticket's).
 
 ---
 
@@ -25274,3 +25372,133 @@ that deserves its own scoped ticket, not a rushed fix riding along on an unrelat
 
 cross_ref: [Rule AN; discovered 2026-08-03 while resolving the live FOLLOW-778 collision (this
 session, RETRO-242 vs. PR #659); `backlog/FOLLOW_UPS.md:8295,8317,8340,8360,8391,8433,8467,8498`]
+
+---
+
+## FOLLOW-790 — a Rule AP register entry has TWO halves and only one executes; the unexecuted half is already wrong in four places, and the definition FOLLOW-768 AC6 unified never reached its third consumer
+
+source_retro: RETRO-243 (PR #657, FOLLOW-768 + FOLLOW-769 + FOLLOW-771) source_ticket: FOLLOW-768
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Status: LATENT, and no behaviour is wrong. Stated up front so it is not re-priced as a defect.**
+Both gates are green on the real tree and in CI (run `30804613183`, `headSha 15c8675c`: capture
+`8 entry/entries checked — 0 gone live, 0 unevaluable`, singleton `10 entry/entries checked — …`,
+both `PASS`, both baselines byte-unchanged). The register runner applies its `PIPESTATUS` decision
+to **every** entry unconditionally, so the mis-stated sentences below cost nothing at runtime. The
+cost is prospective and specific: these are the sentences the **fourth** gate's author reads.
+
+---
+
+**The structural finding.** A Rule AP register entry exists in **two** artefacts:
+
+1. the **executed array row** — `id|control|description|latency-proof`, iterated by the runner; and
+2. a **header block** — `#   D. [P3 + P4] … Region: … Scan root: … UNAVAILABLE INPUT: …` — which
+   carries exactly the three fields **Rule AP clause 3 makes mandatory** (region, scan root,
+   behaviour when the input is unavailable).
+
+The runner (`scripts/check-sentry-capture-has-init.sh:1261-1310`) reads the **array only**. Nothing
+reads, checks, or cross-references the header block. So **the fields Rule AP was promoted to
+de-prose-ify are precisely the ones that remain prose** — a claim about coverage with no consumer,
+one level in from the residual list AP replaced. This is not a rule violation (clause 1 requires an
+executed _latency proof_, not an executed _region field_); it is the residual in Rule AP's own
+mechanism, and PR #657 is where it first bites.
+
+**Finding 1 — the header's PIPESTATUS-applicability sentence names the wrong entries, in BOTH gates,
+and the PR body repeats it. Measured, not read.**
+
+`scripts/check-sentry-capture-has-init.sh:155` reads _"Entries **A/D/E/F/H** chain a producer into a
+SECOND `grep`"_ — the sentence that justifies the copied runner's existence. Stage counts measured
+directly by appending `; echo ${#PIPESTATUS[@]}` to each proof under `bash -o pipefail -c`:
+
+```
+capture entry A  ->  1 stage   (named as multi-stage; it is a single `grep`, the `|` is a regex alternation)
+capture entry B  ->  2 stages  (NOT named; it is `printf … | grep`)
+singleton entry B ->  1 stage   (named as multi-stage; again a regex alternation, not a pipe)
+singleton entry D ->  2 stages
+singleton entry G ->  2 stages
+```
+
+- capture: true multi-stage set is **B/D/E/F/H**, not A/D/E/F/H — **A falsely included, B falsely
+  omitted**.
+- `scripts/check-sentry-init-singleton.sh:170` says _"Entries **B**, D and G"_ — true set is
+  **D/G**.
+- PR #657's body says _"**Five** of the eighteen new entries chain a producer into a second `grep`
+  (capture A/D/E/F/H, singleton B/D/G)"_ — a count of **five** over a list of **eight**, against a
+  true total of **seven**.
+
+The likely mechanism is worth recording because it will recur: the register format uses `|` as its
+own field delimiter **and** the proofs contain `|` both as shell pipes and inside regex alternations
+(`(capture_exception|capture_message)`), so "which entries have a pipe" is not greppable and was
+counted by eye.
+
+**Finding 2 — the `[D]` citation is ambiguous between the two halves.**
+`scripts/check-sentry-capture-has-init.sh:1103-1106` states _"UNAVAILABLE INPUT: a file python3
+cannot tokenize contributes NO inventory entry … **Register entry [D] records this bound.**"_ It
+does — in D's **header block** (`:226-229`, the `UNAVAILABLE INPUT:` field). It does **not** in D's
+**array row** (`:1224`), whose description is about an annotation on a non-capture line and
+line-scoped clearance, and whose latency proof tests only that. **There is no coverage gap and no
+false GREEN** — RETRO-243 §3 verified the compensating control is _total_: `clean_python_source` and
+`_allowlist_comment_lines` both use `tokenize.tokenize` with a catch-all `except → sys.exit(3)`, so
+their failure sets coincide, and `_check_file`'s first action is the former, guaranteeing the same
+file is reported as an `UNPARSEABLE` finding (`exit 1`). The defect is **navigational**: "entry [D]"
+names two texts of different scope and the reader lands on the one that does not carry the bound.
+**The sibling gate shows the correct shape:** `scripts/check-sentry-init-singleton.sh:64` cites
+entry `[H]`, and `[H]` records the `.py`-suffix bound in **both** halves (`:261-272` and `:1403`).
+
+**Finding 3 — the definition FOLLOW-768 AC6 unified never reached its third consumer.** AC6 made the
+allowlist **clearance** predicate and the allowlist **inventory** share one definition
+(`_allowlist_comment_lines`, a `tokenize.COMMENT` span). That definition has a third consumer: the
+committed review record it feeds, `scripts/baselines/sentry-capture-allowlist.baseline`. Its header
+still describes the pre-FOLLOW-768 world — it states the region bound (_"Region: exactly the files
+the gate scans … — Rule AL"_) but never says an entry is now a **comment token** rather than any raw
+occurrence, and it cites **no register entry**, though `[D]` and `[E]` are exactly the two that
+bound it. `git log -- scripts/baselines/sentry-capture-allowlist.baseline` → last touched by
+`04833fd0` (#652); PR #657 did not open it. **The asymmetry inside the same PR is the evidence:**
+FOLLOW-771 **AC4** required this correction on the sibling gate and it was done well —
+`scripts/baselines/sentry-init-mirror-exclusions.baseline`'s header now enumerates the four cases
+the mechanism covers, the one it does not, and **cites register entry `[H]` by id**. FOLLOW-768
+simply had no equivalent AC. Latent at `count: 0`; it matters the first time this repo adds a real
+allowlist annotation.
+
+**Finding 4 (test gap) — nothing asserts the two halves agree.** The id sets match today (capture
+`A,B,C,D,E,F,G,H` = 8 documented / 8 executed; singleton `A,B,C1,C2,C3,D,E,F,G,H` = 10 / 10 —
+verified by `grep -nE "^#   (…)\. \["` against `RESIDUAL_REGISTER`). An entry added to the array
+with no header block would ship with no region, no scan root and no unavailable-input statement, and
+nothing would say so — which is precisely the clause-3 content Rule AP's reviewer check depends on.
+
+**AC:**
+
+1. Correct `check-sentry-capture-has-init.sh:155` to name **B/D/E/F/H** and
+   `check-sentry-init-singleton.sh:170` to name **D/G**. Do not restate the count in prose without
+   deriving it — either drop the enumeration in favour of _"the runner applies this to every entry;
+   it matters for any entry whose proof is a pipeline"_, or derive the set. **Paste the
+   `${#PIPESTATUS[@]}` measurement per entry as the evidence** (Rule AO: verify the correction
+   against measurement, not against the diff).
+2. Make `:1103-1106`'s citation unambiguous — either point at _"entry `[D]`'s `UNAVAILABLE INPUT`
+   field"_ explicitly, or add the bound to `[D]`'s **array-row description** so both halves agree,
+   matching the singleton gate's `[H]`. Do **not** add a new register entry for it: RETRO-243 §4e
+   confirmed the untokenizable case is a fail-closed control, not a residual, and the gate's own
+   `P5 note` says so correctly.
+3. Bring `scripts/baselines/sentry-capture-allowlist.baseline`'s header up to the post-FOLLOW-768
+   definition: state that an entry is a `sentry-init-guard: allowlisted` token inside a
+   `tokenize.COMMENT` span (never a string literal, never ordinary code), and cite the register
+   entries that bound it (`[D]`, `[E]`) **by id**, in the shape
+   `sentry-init-mirror-exclusions.baseline` already uses. The `count: 0` line must not change.
+4. Add one `--self-test` assertion **per gate** proving the header block's id set equals
+   `RESIDUAL_REGISTER`'s ids. Red-first: add a temporary array entry with no header block in a
+   synthesized copy (Rule AM — never the live script) and show the assertion failing, then restore.
+5. Do **not** change any latency proof, any baseline `count:`, the marker set, the allowlist token
+   spelling, `apps/*` source, or the CI job wiring. This ticket is claim-accuracy and one assertion;
+   no predicate changes.
+6. State in the PR whether the two-halves structure should eventually be collapsed (one artefact,
+   generated) or kept — a recommendation only, not work. Rule AP is young; the next gate inherits
+   whatever this PR leaves.
+
+cross_ref: [RETRO-243 §4b CB-1, §4b CB-2, §4c TG-1, §5b;
+`scripts/check-sentry-capture-has-init.sh:155,226-229,1103-1106,1224,1261-1310`;
+`scripts/check-sentry-init-singleton.sh:64,170,261-272,1403`;
+`scripts/baselines/sentry-capture-allowlist.baseline`;
+`scripts/baselines/sentry-init-mirror-exclusions.baseline` (the model for AC3); FOLLOW-768 AC6 (the
+definition whose third consumer this closes); FOLLOW-771 AC4 (the correction that was required on
+the sibling gate and not here); Rules AP clause 3-4 / AI / AO / Y / AM]

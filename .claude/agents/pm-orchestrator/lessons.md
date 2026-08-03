@@ -2898,3 +2898,30 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   (never narrate or pause between them) specifically because a mid-turn kill is uncontrolled — a
   commit with no matching push is the state most likely to be misjudged as "lost work" by the next
   resumed session, or worse, silently diverge from origin.
+
+- **Date / ticket:** 2026-08-04 — FOLLOW-782 (session 97 dispatch)
+- **Delegation row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+  onboarding HTTP, billing, webhooks → backend-engineer" (P1 code-audit F-02, model escalated to
+  Opus for security-sensitive + prod-touching auto-deploy).
+- **What validation caught (or missed):** Before dispatch, caught that the session-95 CEO P2-freeze
+  standing rule ("any NEW stub lands FROZEN by default unless P1") had NOT been applied at filing
+  time to 5 stubs (FOLLOW-800/804/805/806/807) from RETRO-244/245 — no FROZEN annotation, unlike the
+  code-audit batch which correctly carries it. Would have been easy to dispatch the briefing's
+  recommended FOLLOW-805 straight off a "my recommendation" line without re-checking the freeze rule
+  against it — the briefing itself did not flag the conflict. Re-derived from QUEUE.md's own
+  session- 95 head instead of trusting the summary. **Separately, after dispatch:** a real git
+  collision happened — the worker's mandatory first action (`git checkout -b ...`) moved the SHARED
+  working tree's HEAD, and a second PM bookkeeping commit (STATUS.md) I made immediately after
+  dispatch landed on the worker's branch instead of `main`. Caught via `git push` returning
+  "Everything up-to-date" for `main` when a real commit had just been made — a mismatch worth
+  questioning, not waving through. Fixed cleanly with `git branch -f main <sha>` (a ref move, no
+  checkout, doesn't touch the worker's live working tree) rather than any reset/checkout that could
+  have disturbed the worker's in-progress state.
+- **A delegation/validation rule I'd add:** after dispatching a worker whose brief tells it to
+  `git checkout -b` as its first action, treat the shared working tree's HEAD as no longer under PM
+  control for the rest of the session — any further PM bookkeeping commit must
+  `git branch --show-current` (or equivalent) immediately before committing and re-derive the target
+  ref if HEAD has moved, rather than assuming a prior `git checkout main` / lack of explicit
+  checkout means HEAD is still on main. This is the same class of collision as the FOLLOW-605
+  HEAD-displacement incident and RETRO-236, recurring because the checkout happens inside the
+  worker's own turn, invisible to the PM until the next `git status`.

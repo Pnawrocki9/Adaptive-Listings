@@ -1051,3 +1051,56 @@ GitHub's own runner behaviour and cannot be observed on localhost by definition)
 NEXT: Wait for devops-engineer to complete FOLLOW-773+774 (coordinator holds the watchers, no
 self-armed poll), then run full 5a-5g validation, then dispatch FOLLOW-782, then FOLLOW-026 (Levels
 1+3 scope only).
+
+## Session 97 (2026-08-04)
+
+**Read state fresh, did not re-derive from narration alone:** `main` clean at `9df1c604` before this
+session's own commit, `gh pr list --state open` empty, no stray `claude --agent` processes, no
+stranded `.claude/worktrees/agent-*`. 0 tickets IN_PROGRESS at session start. All of
+FOLLOW-792/793/795/796/801/802/803/808 confirmed DONE and merged (session 96/earlier-97 work),
+consistent with the session's briefing.
+
+**Escalations checked, none newly blocking.** `ESC-046`'s stray `## OPEN` block is the preserved
+original filing inside a `<details>` block, superseded by the `## RESOLVED` entry above it —
+verified by reading both, not assumed from heading order. Five genuinely `## OPEN` escalations
+remain (ESC-020, ESC-041, ESC-042 narrowed, ESC-044, ESC-045) — all long-standing, previously
+surfaced to Piotr, each scoped to a specific future action outside this session's dispatch
+decisions; none new.
+
+**Bookkeeping gap found and fixed.** The session-95 CEO P2-freeze standing rule ("any NEW stub filed
+from this point forward lands FROZEN by default unless P1") was not applied at filing time to
+FOLLOW-800 (RETRO-244) and FOLLOW-804/805/806/807 (RETRO-245) — all P2/P3, all filed after the
+freeze took effect, none carrying the FROZEN annotation the code-audit batch (e.g. FOLLOW-783)
+correctly has. Retroactively annotated all 5 with the standard marker in `backlog/FOLLOW_UPS.md`,
+explicitly labeled a bookkeeping correction, not a new ruling. **Also flagged for Piotr, not
+blocking:** FOLLOW-793/802/803 (P2) shipped in PR #667 without an explicit freeze exemption recorded
+— the PM-of-record's reasoning was that they closed remaining doors of an already-P1-exempt defect
+(FOLLOW-792/795), which is defensible but was never stated as an exemption class at the time.
+Content independently verified correct; this is a process question for Piotr's ruling, not a defect.
+
+**Picked FOLLOW-782** (P1, code-audit F-02, backend-engineer) — the oldest non-frozen ready ticket,
+named priority at session 94 but queue-jumped five times by P1 SDK fires. Delegation-table row:
+"ingest worker, control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks
+→ backend-engineer." **Model: Opus** (escalated from the ticket's Sonnet default) — justification:
+model-fit table lists "security-sensitive changes" under Opus, and this control-plane admin route
+auto-deploys to prod on merge with no human gate; took the higher tier per the prod-touching
+tie-break rule. Full brief covered: branch-first discipline, no `gh pr merge` (ESC-046), the exact
+AC's, the Rule I 192-baseline-delta requirement (not pass/fail), and instructions to leave final
+DONE/merge to the PM/human.
+
+**Dispatched:** `nohup claude --agent backend-engineer --model opus -p ...` (PID 161640, confirmed
+alive via `ps -p`, not from an empty-log false negative — log currently shows only startup
+permission-config warnings, output buffers until the process exits per the known pattern).
+
+**QUEUE.md updated atomically BEFORE dispatch:** FOLLOW-782 status IN_PROGRESS, assigned_to
+backend-engineer, model Opus, started_at 2026-08-04, branch
+`backend-engineer/FOLLOW-782-clickhouse-param-binding`. Committed (`86667e7c`) and pushed to
+`origin/main` before dispatching the worker, per "no concurrent git ops while a subagent runs."
+
+**CI-check counter (FOLLOW-782): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
+at dispatch time.**
+
+NEXT: Wait for backend-engineer (PID 161640) to complete FOLLOW-782, then run full 5a-5g validation
+(security-relevant change — CI green via job-log delta against 192, runtime-wiring grep for the new
+`param_<name>` binding producer/consumer, AC's verified one by one, no shortcuts), then FOLLOW-026
+(Levels 1+3 scope only, migration-free, per session 95's correction).

@@ -227,3 +227,19 @@ env var). It is now proven to run on every push and every PR, by the job that al
 **A guardrail I'd add:** when a gate acquires a `--self-test`, the same PR must show the automated
 path that invokes it — a CI step, or an inline pre-run self-check. "The self-test exists" and "the
 self-test runs" are different claims, and only the second one is worth a green badge.
+
+- **2026-08-03 / FOLLOW-770 (fix-iteration 1)** · Fixed the Rule AP residual register's runner: it
+  decided UNEVALUABLE from `pipefail`'s status, which is the RIGHTMOST non-zero — so a dead producer
+  (git 128, grep 2) piped into a further `grep` was reported as that grep's ordinary "no match" 1
+  and classified `latent`. Now decides on `${PIPESTATUS[@]}` (any stage >= 2 ⇒ UNEVALUABLE), plus
+  "epilogue never reached ⇒ UNEVALUABLE". Two red-first fixtures: `core.excludesFile` pointed at a
+  directory (availability guard still passes, so entries A/B are exercised on their own merits
+  instead of being short-circuited), and the gate sourced under a non-existent `$0` (entry F's
+  `$MF_SELF` unreadable). · **Where a green badge could have hidden a broken run path:** the gate
+  was correct only BY EXECUTION ORDER — an earlier guard exited 2 before the broken entries ran.
+  Green badge, three entries that would silently misreport in any gate that copied them without that
+  guard. · **Guardrail I'd add:** for any "this check fails loud when its input is missing" claim,
+  test the check with its dependency broken _while every other guard passes_ — if the only fixture
+  that exercises it also trips an earlier guard, the check itself is unproven. And:
+  `set -o pipefail` is never sufficient evidence that a pipeline's failure is observable; assert on
+  `PIPESTATUS`.

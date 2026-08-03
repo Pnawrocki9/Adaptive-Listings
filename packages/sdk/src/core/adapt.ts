@@ -433,6 +433,9 @@ const _reorderResilienceMap = new Map<HTMLElement, ResilienceState>();
  *                       event payloads.
  * @param archetypeId    Archetype ID for the `adapt.reapplied` event payload.
  * @param confidence     Confidence for the `adapt.reapplied` event payload.
+ * @returns `true` if the initial write happened, `false` if it was declined as stale
+ *   (FOLLOW-793). Callers use this to decide whether the directive actually took effect —
+ *   `adapt.applied` and the idempotency fingerprint must both hang off a real write.
  */
 function attachResilience(
   map: Map<HTMLElement, ResilienceState>,
@@ -444,7 +447,7 @@ function attachResilience(
   slotOrSelector: string,
   archetypeId: string,
   confidence: number,
-): void {
+): boolean {
   map.get(el)?.obs.disconnect();
 
   const emitStaleSkip = (): void => {
@@ -457,7 +460,13 @@ function attachResilience(
 
   if (isStale()) {
     emitStaleSkip();
-    return;
+    // FOLLOW-793 AC2: the entry disconnected above must also LEAVE the map. Without this
+    // the map keeps a `ResilienceState` whose observer is dead and whose element is
+    // strongly referenced — it falsely asserts the element is watched, and (post-FOLLOW-795)
+    // `teardownAdaptObservers` would clear ownership for an element nothing is defending.
+    // The deferred `reapply` path below already does this correctly.
+    map.delete(el);
+    return false;
   }
 
   const s: ResilienceState = { obs: null as unknown as MutationObserver, f: 0 };
@@ -500,6 +509,7 @@ function attachResilience(
   write();
   obs.observe(el, observerInit);
   map.set(el, s);
+  return true;
 }
 
 /**
@@ -747,9 +757,20 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
     return;
   }
 
+  // FOLLOW-793 AC1/AC4 + FOLLOW-802 AC1: the fingerprint is CHECKED here but recorded only
+  // after the loop, and only if at least one element was actually written. Recording it up
+  // front meant any early return inside the loop (stale-at-arm, or FOLLOW-795's
+  // headline-owned hand-off) permanently blocked the later correct write for this
+  // (slot, archetype) pair while ALSO emitting a false `adapt.applied`.
+  //
+  // The guard's purpose — suppressing redundant repeat writes — is unchanged: a call that
+  // writes still records the fingerprint, so an identical follow-up call still short-circuits
+  // here. What changes is only the failed case, which previously poisoned the guard with a
+  // write that never happened. Counting rather than flagging keeps this correct when a
+  // directive matches several elements and only some of them are written.
   const fingerprint = `text:${slotName}:${context?.archetypeId ?? 'unknown'}`;
   if (appliedFingerprints.has(fingerprint)) return;
-  appliedFingerprints.add(fingerprint);
+  let written = 0;
 
   elements.forEach((el) => {
     const resolved = interpolatePlaceholders(directive.value, el, slotName);
@@ -758,6 +779,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
       // No ApplyContext (legacy / one-shot call site) — no archetypeId/confidence/isStale
       // available to arm resilience with. One-shot write, unchanged behavior.
       el.textContent = resolved;
+      written += 1;
       return;
     }
 
@@ -793,20 +815,27 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
       }
     }
 
-    attachResilience(
-      _textResilienceMap,
-      el,
-      { childList: true, characterData: true, subtree: true },
-      () => el.textContent === resolved,
-      () => {
-        el.textContent = resolved;
-      },
-      context.isStale,
-      slotName,
-      context.archetypeId,
-      context.confidence,
-    );
+    if (
+      attachResilience(
+        _textResilienceMap,
+        el,
+        { childList: true, characterData: true, subtree: true },
+        () => el.textContent === resolved,
+        () => {
+          el.textContent = resolved;
+        },
+        context.isStale,
+        slotName,
+        context.archetypeId,
+        context.confidence,
+      )
+    ) {
+      written += 1;
+    }
   });
+
+  if (written === 0) return;
+  appliedFingerprints.add(fingerprint);
 
   if (context) {
     pushEvent({
@@ -835,9 +864,11 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
     return;
   }
 
+  // FOLLOW-793 AC1: record the fingerprint only after a real write — see the note in
+  // `applyTextDirective`. The stale-at-arm early return reaches all three appliers.
   const fingerprint = `class:${selector}:${context?.archetypeId ?? 'unknown'}`;
   if (appliedFingerprints.has(fingerprint)) return;
-  appliedFingerprints.add(fingerprint);
+  let written = 0;
 
   const elements = document.querySelectorAll<HTMLElement>(selector);
   const applyClasses = (el: HTMLElement): void => {
@@ -849,12 +880,13 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
   elements.forEach((el) => {
     if (!context) {
       applyClasses(el);
+      written += 1;
       return;
     }
     // FOLLOW-791: desired end state is "every `add` class present AND every `remove`
     // class absent" — a framework revert could either strip a class we added or
     // re-add a class we removed, and either counts as a mismatch to repair.
-    attachResilience(
+    const ok = attachResilience(
       _classResilienceMap,
       el,
       { attributes: true, attributeFilter: ['class'] },
@@ -869,7 +901,11 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
       context.archetypeId,
       context.confidence,
     );
+    if (ok) written += 1;
   });
+
+  if (written === 0) return;
+  appliedFingerprints.add(fingerprint);
 
   if (context) {
     pushEvent({
@@ -912,10 +948,11 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
     return;
   }
 
-  // Idempotency: same container+archetype is skipped on repeat calls
+  // Idempotency: same container+archetype is skipped on repeat calls.
+  // FOLLOW-793 AC1: recorded only after a real write — see `applyTextDirective`.
   const fingerprint = `reorder:${directive.container_selector}:${directive.archetype}`;
   if (appliedFingerprints.has(fingerprint)) return;
-  appliedFingerprints.add(fingerprint);
+  let written = 0;
 
   const scoreMap = new Map(directive.scores.map((s) => [s.listing_id, s.score]));
 
@@ -932,7 +969,9 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
       return scoreB - scoreA;
     });
 
-  const sorted = sortByScore(cards);
+  // FOLLOW-803: the first-apply snapshot (`const sorted = sortByScore(cards)`) is gone —
+  // its only consumer was the frozen `desiredOrder` the new set-independent predicate
+  // replaces. `cards` is still used above for the empty-container check.
 
   // FOLLOW-792: `applyOrder` must NOT close over `sorted`/`cards` — those are the specific
   // DOM node objects captured at first-apply time, and that's fine for a framework
@@ -976,14 +1015,29 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
 
   if (!context) {
     applyOrder();
+    written += 1;
   } else {
-    // Desired end state for the `matches()` check below is "the same listing-id order as
-    // `sorted`" — the order captured from the nodes present at first-apply time. This is
-    // just a target ordering of ids, not a set of node references, so it stays valid across
-    // a re-mount; `applyOrder` itself (see above) is what re-resolves ids to whichever live
-    // nodes currently carry them.
-    const desiredOrder = sorted.map((c) => c.getAttribute('data-estalara-listing-id'));
-    attachResilience(
+    // FOLLOW-803: the predicate is SET-INDEPENDENT — "is the live set currently in score
+    // order?", not "does the live set equal the sequence captured at first apply?".
+    //
+    // The previous version closed over `desiredOrder`, the id sequence frozen from the nodes
+    // present at first apply, and short-circuited on `current.length !== desiredOrder.length`.
+    // FOLLOW-792 made the WRITE converge on the intersection, but left this check comparing
+    // against the frozen sequence — so any host change to the card COUNT (a filter, a
+    // "load more", a sold listing removed, infinite scroll: all ordinary on a listing grid)
+    // made `matches()` PERMANENTLY false. The write being idempotent meant nothing
+    // duplicated, but every later mutation inside the container re-entered `reapply`,
+    // re-appended the same nodes in the same order and emitted another `adapt.reapplied`,
+    // without bound — an event producer that never terminates (no sampling policy fixes
+    // that), plus a detach/re-insert of every card on each host mutation, which resets
+    // scroll anchoring, drops focus and cancels in-flight CSS transitions.
+    //
+    // Comparing the live list against `sortByScore(live)` is true exactly when the order is
+    // already correct, for ANY live set. `pin_top_n` needs no special case: both branches of
+    // `applyOrder` leave the ITEMS in `sortByScore` order (the pinned branch differs only in
+    // where non-item children end up), and this predicate only ever inspects `item_selector`
+    // nodes.
+    const ok = attachResilience(
       _reorderResilienceMap,
       container,
       { childList: true },
@@ -991,10 +1045,8 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
         const current = Array.from(
           container.querySelectorAll<HTMLElement>(directive.item_selector),
         );
-        if (current.length !== desiredOrder.length) return false;
-        return current.every(
-          (c, i) => c.getAttribute('data-estalara-listing-id') === desiredOrder[i],
-        );
+        const desired = sortByScore(current);
+        return current.every((c, i) => c === desired[i]);
       },
       applyOrder,
       context.isStale,
@@ -1002,7 +1054,11 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
       context.archetypeId,
       context.confidence,
     );
+    if (ok) written += 1;
   }
+
+  if (written === 0) return;
+  appliedFingerprints.add(fingerprint);
 
   if (context) {
     pushEvent({

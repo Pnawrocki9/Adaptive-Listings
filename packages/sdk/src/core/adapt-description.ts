@@ -271,6 +271,20 @@ function applyAndObserveHeadlineSlot(
   // FOLLOW-548 defense-in-depth: skip the initial headline write + observer arming when stale.
   if (isStale()) {
     pushEvent(EVT + 'skipped', { reason: 'stale' });
+    // FOLLOW-802 AC3 (Rule S sibling of FOLLOW-793 AC2): the entry disconnected at function
+    // entry must also LEAVE the map. `_headlineSlotMap` is a real Map, not a WeakMap, so a
+    // stale entry left behind keeps the element strongly referenced AND makes the map falsely
+    // assert the element is watched — the same asymmetry fixed in `attachResilience`.
+    //
+    // Ownership must go with it. `teardownDescriptionObservers()` releases ownership by
+    // iterating this map, so deleting the entry WITHOUT clearing ownership would strand an
+    // element owned by a module that no longer observes it — unreachable by either teardown,
+    // and skipped by the generic pipeline forever. That is the FOLLOW-802 gap (b) shape, and
+    // deleting the map entry here would otherwise have opened a fresh instance of it. The
+    // observer was disconnected at function entry, so by this line nothing is defending the
+    // element and no owner should be recorded.
+    _headlineSlotMap.delete(el);
+    clearHeadlineOwner(el);
     return reapply;
   }
 

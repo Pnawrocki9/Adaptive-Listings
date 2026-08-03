@@ -817,6 +817,90 @@ posted).
 
 ---
 
+## ▶️ START HERE — session 96 (2026-08-03) — PR #660 MERGED + independently re-verified, merge-scope clarified (merges OK, app.estalara.com/Rafał-work is the real pause), FOLLOW-791 (P1) filed and dispatched
+
+**Recovery note, for the record, not because anything was actually lost.** The PM session stalled
+mid-turn (harness 600s no-progress watchdog) right after committing `4332ac6d`. Independently
+re-verified on resume, not taken on the coordinator's word: `main == origin/main` at `4332ac6d`
+before the coordinator's own subsequent actions, working tree clean, no orphaned processes — the
+commit-then-push had already completed before the stall, so nothing was recovered, only confirmed.
+
+**FOLLOW-773+774 — status: DONE.** PR #660 merged by Piotr directly at `75171dd0` while the PM was
+down. **Independently re-validated after the fact, all three things the coordinator flagged as
+needing the PM's own check, not accepted on the coordinator's characterization:**
+
+1. **Gitleaks allowlist entry (`b4fbf028`) — confirmed a real, narrowly-scoped suppression, not a
+   cover-up.** Read `.gitleaks.toml:254-266` directly: the entry is the literal 40-char-truncated
+   substring of a shell function identifier (`compute_hard_fail_required_mutant_invert`),
+   token-scoped per the existing Rule V pattern (same shape as the `bypass4/5/6`/`ADR-NNNN-kebab`
+   entries already in the file). The rename-then-allowlist is NOT two fixes for one bug:
+   `gitleaks-action` scans a PR's FULL commit range, so the pre-rename identifier persists in
+   history regardless of the later rename — the rename fixes forward, the allowlist covers the
+   historical range already in the PR. Confirmed this suppression set has a real consumer (every
+   entry is a reviewed, commented diff in `.gitleaks.toml`, unlike the unconsumed-inventory shape
+   this session's whole gate-hardening chain has been finding elsewhere) — no finding here.
+2. **FOLLOW-774's three claims — verified individually against post-merge `main`, not assumed:**
+   `redis-shadow-smoke.yml:267` — `NX_RUN_SUFFIX: ${{ github.run_id }}-negctl`, confirmed present.
+   `scripts/check-redis-smoke-trigger-trust.sh` — confirmed it sources the SAME
+   `compute_hard_fail_required` function production CI calls (not a copy), with a PASS/FAIL
+   case-table AND a mutation-check (`compute_hard_fail_required_mutant`) that inverts the fork
+   predicate and asserts the self-test would catch it — this is the "an inverted predicate turns
+   something RED" bar the ticket demanded, not "the branch exists."
+   `upstash-redis-env-parity.md:77-90` — confirmed rewritten to the trigger-type contract,
+   secret-presence framing gone.
+3. **FOLLOW-773 AC1's GitHub-Actions-only carve-out — confirmed used correctly, with real evidence,
+   not a substituted weaker local argument.** The workflow's own comment
+   (`redis-shadow-smoke.yml:75-83`) cites three real `workflow_dispatch` run ids (`30812441374`
+   in_progress, `30812458311` went pending→cancelled, `30812477744` replaced it) — **spot-checked
+   one via `gh api .../actions/runs/30812458311`: `conclusion: cancelled`, confirmed real, not
+   fabricated.** AC2's remedy is option (b) from the stub (key `push`-on-`main`'s group on
+   `github.run_id`), correctly chosen and justified over (a)/(c) in the comment (`:85-98`).
+
+**Rule I baseline retroactively re-derived** (the coordinator explicitly flagged not having done
+this): both PR #660 CI runs' `Rule I — wired-or-dead check` jobs (`91692084020`, `91692010986`) —
+`gh api .../logs | grep -c "WARN:"` → **192 / 192 on both**, exactly the established
+pre-existing-red baseline, not a regression. Confirmed migration-free via
+`gh pr diff 660 --name-only` — five files, none under `packages/db/migrations/`.
+
+**CEO merge-scope clarification, already landed in the session-95 entry below, restated here for
+visibility:** merging to `main` (including migration-carrying PRs) is allowed; the actual pause is
+anything touching `app.estalara.com` or requiring Rafał. ESC-020 stays out of scope until the
+localhost loop works. Localhost-first acceptance gates are unaffected.
+
+**FOLLOW-791 filed — P1, exempt from the P2 freeze (Piotr's instruction).** DOM-resilience gap in
+the SDK's generic directive pipeline: `packages/sdk/src/core/adapt.ts` has zero `MutationObserver`
+usage; `applyTextDirective`'s fingerprint guard (`:556-557`) makes a framework-reverted directive
+permanently unrecoverable for the session while `adapt.applied` has already told the pipeline the
+write succeeded. **Verified directly, not passed through**:
+`grep -c MutationObserver packages/sdk/src/core/adapt.ts` → `0`;
+`packages/sdk/src/core/adapt-description.ts:220-270` (`applyAndObserveHeadlineSlot`) already solves
+exactly this for description/headline via a `MutationObserver` + re-apply + staleness-guard pattern
+— confirmed as the correct reference implementation to reuse, not reinvent. Number allocated fresh:
+highest prior was FOLLOW-790, re-confirmed via fresh `grep` against `origin/main`-matching tree
+immediately before writing (Rule AN) — allocated **FOLLOW-791**. Full ticket at
+`backlog/FOLLOW_UPS.md` (appended, see `## FOLLOW-791`).
+
+NEXT: Dispatch FOLLOW-791 (sdk-engineer, ahead of the frozen batch, exempt as P1), wait, validate,
+then FOLLOW-782, then FOLLOW-026 (Levels 1+3, reason: deferred on value/single-tenant).
+
+### FOLLOW-791 — status: IN_PROGRESS (dispatched 2026-08-03)
+
+**assigned_to:** sdk-engineer **model: Sonnet** — delegation table row "client SDK, Shadow DOM,
+tiers, browser code." A resilience mechanism to add is a well-specified, single-file change with a
+mature reference implementation already in the same package (`adapt-description.ts`) to model
+against; no open design question. **started_at:** 2026-08-03. **branch:**
+`sdk-engineer/FOLLOW-791-directive-mutation-resilience`.
+
+**Acceptance-gate override stated explicitly (localhost-first, CEO decision, session-95 head):** the
+red-first/green test in AC4 must be demonstrated with a local test run (`pnpm test` /
+`pnpm --filter @estalara/sdk test`), pasted output in the PR, not a prod claim. No DOM demo against
+`app.estalara.com` is in scope or permitted (that surface is paused per this session's
+clarification).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ## ▶️ START HERE — session 95 (2026-08-03) — RETRO-243 merged (no rule promoted), CEO P2 FREEZE in effect, localhost-first acceptance gate, FOLLOW-026 corrected + migration flagged
 
 **RETRO-243 merged** (`5876ff2a`, fast-forward, confirmed pre-merge not-ahead-of-origin check now

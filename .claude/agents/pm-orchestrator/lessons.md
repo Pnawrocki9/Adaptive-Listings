@@ -2884,3 +2884,17 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   (e.g. localhost-first), write the override into QUEUE.md's dispatch record itself, not just a
   general policy note — a worker reads the ticket dispatch record, not the session preamble, so the
   override must travel with the ticket.
+
+- **Date / ticket:** 2026-08-03 — FOLLOW-773+774 (session stall recovery)
+- **Delegation row used:** n/a (bookkeeping/recovery, not a delegation)
+- **What validation caught (or missed):** Session stalled mid-turn on a 600s watchdog right after a
+  commit; luck, not design, that commit-then-push had already both completed before the stall. On
+  resume, independently re-verified PR #660's three flagged concerns (gitleaks allowlist scope,
+  FOLLOW-774's three claims, FOLLOW-773 AC1's cited run-ids) rather than accepting the coordinator's
+  own characterization, and spot-checked one cited GitHub Actions run id directly via `gh api` — it
+  matched exactly, but the check was cheap and worth doing every time a subagent or coordinator
+  cites a specific run id/log line as evidence.
+- **A delegation/validation rule I'd add:** treat `git commit` and `git push` as one atomic step
+  (never narrate or pause between them) specifically because a mid-turn kill is uncontrolled — a
+  commit with no matching push is the state most likely to be misjudged as "lost work" by the next
+  resumed session, or worse, silently diverge from origin.

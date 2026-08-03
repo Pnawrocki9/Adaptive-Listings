@@ -25521,3 +25521,82 @@ cross_ref: [RETRO-243 §4b CB-1, §4b CB-2, §4c TG-1, §5b;
 `scripts/baselines/sentry-init-mirror-exclusions.baseline` (the model for AC3); FOLLOW-768 AC6 (the
 definition whose third consumer this closes); FOLLOW-771 AC4 (the correction that was required on
 the sibling gate and not here); Rules AP clause 3-4 / AI / AO / Y / AM]
+
+---
+
+## FOLLOW-791 — `adapt.applied` is emitted on a write the SDK never re-verifies; a framework-reverted directive is silently unrecoverable for the rest of the session, and the fix already exists one file over
+
+source_retro: PM-orchestrator session 95 finding, escalated by Piotr (P1, exempt from P2 freeze)
+source_ticket: none (found during dispatch-sequencing review, not from a merged PR)
+recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**Verified directly against current `main` before filing, not passed through on say-so.**
+`packages/sdk/src/core/adapt.ts` contains **zero** occurrences of `MutationObserver`
+(`grep -c MutationObserver packages/sdk/src/core/adapt.ts` → `0`). Its generic directive pipeline
+(`applyTextDirective` at `:528-575`, and the sibling class/reorder directive appliers) writes once
+and never looks again:
+
+1. `:559-562` — `el.textContent = resolved;` inside a `.forEach`, one-shot.
+2. `:555-557` — `const fingerprint = \`text:${slotName}:${context?.archetypeId ?? 'unknown'}\`; if
+   (appliedFingerprints.has(fingerprint)) return; appliedFingerprints.add(fingerprint);` — once a
+   given (slot, archetype) pair has been applied, **any subsequent call for the same pair is a
+   silent no-op**, including a call intended to REPEAT the write after something reverted it. The
+   guard was written to stop redundant re-application (a reasonable goal on its own), but it has no
+   way to distinguish "already applied and still holding" from "already applied and since reverted."
+3. `:564-574` — `adapt.applied` is pushed unconditionally after the write, with no read-back of
+   `el.textContent` to confirm the DOM still reflects it.
+
+**Consequence.** Any host page whose framework re-renders the slot element after the SDK's write
+(React/Svelte/Vue reconciliation, a client-side route re-render, a virtual-DOM diff that doesn't
+know about the SDK's out-of-band mutation) will silently revert the adaptation. The SDK has already
+told the event pipeline `adapt.applied`, and the fingerprint guard now blocks any correction for the
+rest of the session — the buyer sees the ORIGINAL copy while every downstream system (analytics, the
+decision loop, this repo's own dashboards) believes the adaptive copy is live and showing.
+
+**The fix pattern already exists, one file over, and should not be reinvented.**
+`packages/sdk/src/core/adapt-description.ts` solves precisely this for the description and headline
+slots: `applyAndObserveSlot`/`applyAndObserveHeadlineSlot` (headline shown at `:220-270`) each
+attach a `MutationObserver` (`:250` — `childList: true, characterData: true, subtree: true`) that
+detects a revert (`el.textContent === s.dt` check inverted) and re-applies via a `reapply()`
+closure, guarded against re-entrancy (`s.f` bitflags) and against staleness (`isStale()` — a
+superseding navigation disconnects the watchdog rather than fighting it forever). This is a mature,
+already-shipped, already-tested pattern (FOLLOW-548 / Rule AB references in its own comments) — the
+generic directive path in `adapt.ts` simply never received it, because description/headline were
+built as a separate LLM-generated-copy pipeline (`applyDescriptionAdaptation`, called from
+`index.ts:830`) at a different point in this repo's history, and the two pipelines have not been
+reconciled since.
+
+**Scope — what this ticket is NOT.** Not a rewrite of the fingerprint guard's purpose (redundant-
+write suppression is still correct and should stay); not a change to `adapt-description.ts` (already
+correct, serves as the reference); not a change to the reorder/class directive wire format.
+
+**AC:**
+
+1. Give `applyTextDirective` (and, if the same one-shot shape is confirmed present, the
+   class/reorder appliers — verify each independently, do not assume they share the defect just
+   because they share a file) a `MutationObserver`-backed resilience mechanism modeled on
+   `applyAndObserveHeadlineSlot`/`applyAndObserveSlot`: detect a revert of the applied text,
+   re-apply, guard against re-entrancy and staleness the same way.
+2. The fingerprint guard's PURPOSE (suppress redundant re-application while the write is still
+   holding) must be preserved — this ticket adds detection-and-repair on top of it, not a removal of
+   it. State explicitly in the PR how the two interact (the observer should fire the write path, not
+   bypass the fingerprint bookkeeping wholesale).
+3. `adapt.applied` must not be treated as a one-time terminal signal for a slot that is now being
+   watched — decide and document whether a repair re-push fires a distinguishable event (e.g.
+   `adapt.reapplied`, mirroring `adapt-description.ts`'s own `EVT + 'headline.re'` pattern at
+   `:247`) or reuses `adapt.applied`; either is acceptable, silence on a repair is not.
+4. Add a red-first test: apply a text directive, externally revert the DOM (simulate a framework
+   re-render), assert the SDK's existing behavior is a silent, permanent miss (red), then assert the
+   fix repairs it (green). Use `adapt-description.test.ts`'s existing MutationObserver-simulation
+   approach as the pattern rather than inventing a new harness.
+5. Teardown: `adapt.ts` needs its own disconnect-on-supersession path (mirroring
+   `teardownDescriptionObservers`) so the new observers don't leak across cross-listing navigation —
+   verify against ADR-0014's cross-listing SoT archetype handling, since that is exactly the moment
+   a stale observer would misfire.
+6. Acceptance gate is LOCALHOST-demonstrated per the current CEO ruling (session-95 head, QUEUE.md)
+   — not a prod-verified claim.
+
+cross_ref: [packages/sdk/src/core/adapt.ts:361,399,528-575,556-557,592-593,645-646;
+packages/sdk/src/core/adapt-description.ts:113,175,205-270,273; ADR-0014 (cross-listing SoT
+archetype); FOLLOW-548 / Rule AB (the deferred-write-guard pattern this ticket reuses)]

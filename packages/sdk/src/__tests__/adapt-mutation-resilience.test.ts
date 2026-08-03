@@ -722,5 +722,72 @@ describe('FOLLOW-795 — headline ownership hand-off', () => {
       (e) => e.type === 'adapt.skipped' && e.payload.reason === 'headline_owned_by_description',
     );
     expect(skipped.length).toBeGreaterThanOrEqual(1);
+
+    // FOLLOW-802 AC4: extended, not replaced. `>= 1` passed even while the same call ALSO
+    // emitted a false `adapt.applied` for a headline it never wrote — the skip and the
+    // success event were both true at once, and only the skip was being checked.
+    expect(skipped).toHaveLength(1);
+    expect(
+      testEventQueue.filter(
+        (e) => e.type === 'adapt.applied' && e.payload.slot_or_selector === 'headline',
+      ),
+    ).toHaveLength(0);
+  });
+
+  // FOLLOW-802 AC2 / TG-4 — the reachable sequence RETRO-245 traced. Neither shipped
+  // teardown test covers this combination: a real hand-off, then a SAME-PAGE archetype
+  // change. `index.ts` used to call `resetAdaptState()` alone there, and because the
+  // hand-off deletes the element from `_textResilienceMap`, ownership survived and the
+  // generic pipeline skipped the headline for every later archetype — permanently stuck on
+  // the first archetype's LLM copy if its own fetch then failed.
+  it('releases description ownership on a same-page archetype change (FOLLOW-802 TG-4)', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    mockFetchOk({
+      description: 'Adapted long-form description.',
+      headline: 'LLM per-listing headline',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-08-03T00:00:00.000Z',
+    });
+    await applyDescriptionAdaptation(HEADLINE_CONFIG, 'yield_hunter', () => false);
+    await flushAll();
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+
+    // Exactly what index.ts now does when the archetype changes on the SAME page.
+    resetAdaptState();
+    teardownDescriptionObservers();
+
+    testEventQueue.length = 0;
+    applyDirectives(
+      [
+        {
+          type: 'text' as const,
+          slot: 'headline',
+          value: 'Family playbook headline',
+          archetype: 'family_buyer',
+          confidence: 0.9,
+        },
+      ],
+      {
+        archetypeId: 'family_buyer',
+        confidence: 0.9,
+        sessionId: 'sess-tg4',
+        isStale: () => false,
+      },
+    );
+    await flushAll();
+
+    expect(headlineEl.textContent).toBe('Family playbook headline');
+    expect(
+      testEventQueue.filter(
+        (e) => e.type === 'adapt.skipped' && e.payload.reason === 'headline_owned_by_description',
+      ),
+    ).toHaveLength(0);
+    expect(
+      testEventQueue.filter(
+        (e) => e.type === 'adapt.applied' && e.payload.slot_or_selector === 'headline',
+      ),
+    ).toHaveLength(1);
   });
 });

@@ -786,6 +786,20 @@ async function init(): Promise<IntentState | null> {
         // On an unchanged archetype, preserve existing DOM mutations -- no flicker.
         if (resp.archetype !== previousArchetype) {
           resetAdaptState();
+          // FOLLOW-802 AC2 (option 2 of the two the ticket offered — see the PR for why this
+          // one). `resetAdaptState()` releases headline ownership only for elements still in
+          // `_textResilienceMap`, but a hand-off to the description module DELETES the element
+          // from that map, so ownership would survive an archetype change and make the generic
+          // pipeline skip the headline forever.
+          //
+          // Tearing the description observers down here is right on the merits, not merely a
+          // means to release ownership: the applied description/headline is generated PER
+          // ARCHETYPE (ADR-0009), so on an archetype change the old copy is stale content, and
+          // leaving its observer armed makes it defend that stale copy against the new
+          // archetype's directives. `applyDescriptionAdaptation` is re-invoked with the new
+          // archetype a few lines below and re-arms. This mirrors what the cross-listing path
+          // already does.
+          teardownDescriptionObservers();
           previousArchetype = resp.archetype;
           if (resp.archetype !== 'neutral') {
             startDwellTimer();

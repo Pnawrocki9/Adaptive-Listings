@@ -622,3 +622,35 @@ made a real-init-path E2E slow — solved with Playwright `page.clock.install()`
 — so route the new source to a widget that had NO prior color, or it becomes a silent producer-only
 facade despite passing tests. Verify the new signal changes a _rendered_ pixel in an E2E, not just a
 merged config object.
+
+## 2026-08-03 / FOLLOW-792
+
+**What I built:** Fixed the reorder-directive node-identity bug found in RETRO-244 §4a LG-1
+(same-day follow-up to FOLLOW-791/PR #661). `applyOrder`'s closure captured DOM node objects
+(`sorted`, from `cards`) at first-apply time; a host framework re-mount (not just re-order) leaves
+those references as detached orphans, so `attachResilience`'s deferred `reapply()` re-attached them
+ALONGSIDE the framework's fresh replacement cards — duplicate cards that then permanently broke the
+`matches()` length check, causing every later mutation to append more. Fix: `applyOrder` now
+re-queries `container.querySelectorAll(item_selector)` live at write time and re-sorts by
+`data-estalara-listing-id` (data identity), never node identity — correct for both re-order and
+re-mount. Extracted `sortByScore` helper so the initial sort and every live repair share identical
+logic. Documented the AC2 choice in-line (converge on live intersection; no need for a separate
+`adapt.skipped` since `adapt.reapplied` already makes every repair observable). Corrected the stale
+FOLLOW-791 comment that wrongly claimed re-mount was already handled.
+
+**What was uncertain:** Whether AC2's "converge on intersection OR disconnect + emit adapt.skipped"
+required a NEW distinct event for the differing-id-set case. Concluded no — once `applyOrder` always
+queries live state, a differing id set is just an ordinary re-sort outcome (vanished ids have
+nothing to reinsert, unscored live ids fall to -Infinity like the original design already did for
+score-less cards), and the existing `adapt.reapplied` emission (already required by
+AC1/attachResilience) covers observability. Would escalate if a reviewer wanted an explicit
+`adapt.skipped(reason: 'set_drift')` in addition.
+
+**A guardrail I'd add:** When a MutationObserver-repair closure is handed to `attachResilience` as
+`write`, always ask "does this closure's captured DOM references survive a framework RE-MOUNT (new
+node objects, same ids/keys), not just a re-order (same node objects moved)?" — re-order tests that
+mutate the SAME node objects (e.g. `container.prepend(container.lastElementChild!)`) cannot catch a
+remount bug; a red-first remount test must replace the actual node objects (`innerHTML = ''` + fresh
+`createElement`) to be load-bearing. Apply this check proactively to the text/class resilience paths
+too if either is ever extended to close over an element reference beyond the one MutationObserver is
+directly attached to.

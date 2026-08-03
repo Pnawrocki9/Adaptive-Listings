@@ -108,4 +108,50 @@ test.describe('SDK Adapt DOM Mutations', () => {
     });
     expect(hasGlobal).toBe(true);
   });
+
+  // FOLLOW-795 (RETRO-244 §4a LG-5(a)): this fixture's mock `/mock-decision` intercept
+  // returns the SAME response shape for BOTH the `/adapt` POST and the
+  // `/adapt/description` GET (it matches on `url.includes('mock-decision')`, not path).
+  // That response has `source: 'playbook'`, not `'ai_cached'`, so `fetchDescription`
+  // (adapt-description.ts) rejects it and adapt-description.ts NEVER claims ownership of
+  // the headline slot — this is, unmodified, the real-world cold-start case this ticket
+  // closes (no per-listing headline ever becomes available). Drives the REAL init path
+  // (real SDK bundle, real MutationObserver, real fetch interception) — not a unit test
+  // injecting a value into one module directly.
+  test('FOLLOW-795: a framework revert of the adapted headline is repaired in a real browser (cold-start leg)', async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => {
+      errors.push(err.message);
+    });
+
+    await page.addInitScript(() => {
+      localStorage.setItem('estalara_consent', 'granted');
+    });
+    await page.goto('http://localhost:4444/');
+    await page.waitForTimeout(1200);
+
+    const headline = page.locator('[data-estalara-slot="headline"]').first();
+    const adaptedText = await headline.textContent();
+    expect(adaptedText).toContain('Rental Yield:');
+
+    // Simulate a third-party framework re-render reverting the SDK's write — an ordinary
+    // DOM mutation from the page's own JS, exactly what a React/Svelte/Vue reconciliation
+    // pass would do.
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-estalara-slot="headline"]');
+      if (el) el.textContent = 'Marbella Villa';
+    });
+
+    // Give the MutationObserver callback + its rAF-deferred repair time to run in the
+    // real browser event loop (no fake timers here).
+    await page.waitForTimeout(500);
+
+    const repairedText = await headline.textContent();
+    // Before FOLLOW-795 this stayed 'Marbella Villa' forever (RETRO-244 §4a LG-5(a)).
+    expect(repairedText).toContain('Rental Yield:');
+
+    expect(errors).toHaveLength(0);
+  });
 });

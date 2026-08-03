@@ -11,8 +11,10 @@
  *
  * Description response: applied only when source === "ai_cached" AND description is non-empty.
  * Headline response: applied to [data-estalara-slot="headline"] elements when headline is
- *   a non-empty string. On null/absent, leaves headline slots untouched (playbook headline
- *   directive from /api/adapt stays in effect as the cold-start fallback).
+ *   a non-empty string. On null/absent, leaves headline slots untouched — the generic
+ *   directive pipeline's playbook headline (adapt.ts) stays in effect as the cold-start
+ *   fallback, now with its OWN resilience watchdog (FOLLOW-795) rather than a bare one-shot
+ *   write, so it is no longer permanently unrecoverable on a framework revert.
  *
  * Loop-guard (description slots): disconnect → write → reconnect pattern.
  *   The observer is disconnected before our write and immediately reconnected after, so
@@ -24,12 +26,21 @@
  * Loop-guard (headline slots): unchanged flag-based approach (single textContent write,
  *   lower mutation frequency, works reliably for static-text slots).
  *
+ * Ownership hand-off (FOLLOW-795 / RETRO-244 §4a LG-5(a)): this module and adapt.ts's
+ * generic directive pipeline can each want to observe the SAME headline element — two
+ * independent observers on one element must never coexist. `./headline-ownership.ts` is
+ * the shared registry that arbitrates: adapt.ts arms its watchdog only while this module
+ * has not claimed the element, and `applyAndObserveHeadlineSlot` below evicts adapt.ts's
+ * watchdog (`evictGenericHeadlineObserver`) the instant it takes over.
+ *
  * @module @estalara/sdk/core/adapt-description
  */
 
 import type { SdkConfig } from './config.js';
 import type { CollectedEvent } from './events.js';
 import type { ArchetypeId } from '@estalara/shared';
+import { getHeadlineOwner, setHeadlineOwner, clearHeadlineOwner } from './headline-ownership.js';
+import { evictGenericHeadlineObserver } from './adapt.js';
 
 interface DescriptionResponse {
   description: string | null;
@@ -263,17 +274,36 @@ function applyAndObserveHeadlineSlot(
     return reapply;
   }
 
+  // FOLLOW-795 (RETRO-244 §4a LG-5(a)): claim ownership from the generic pipeline
+  // (adapt.ts) the instant a per-listing headline is about to be written here — evict its
+  // watchdog FIRST so at most one observer is ever armed on `el` at any instant. Ordered
+  // after the `isStale()` check above: a superseded call must not evict a live generic
+  // watchdog it has no intention of replacing.
+  if (getHeadlineOwner(el) === 'generic') {
+    evictGenericHeadlineObserver(el);
+  }
+  setHeadlineOwner(el, 'description');
+
   renderHeadline(el, text);
   obs.observe(el, { childList: true, characterData: true, subtree: true });
   _headlineSlotMap.set(el, s);
   return reapply;
 }
 
-/** Disconnect all active description observers. Call on SDK teardown. */
+/**
+ * Disconnect all active description observers. Call on SDK teardown.
+ *
+ * FOLLOW-795: also releases headline-ownership bookkeeping for every headline element
+ * torn down here — the matching half of the hand-off for any element this module
+ * currently owns (mirrors `teardownAdaptObservers()` in adapt.ts for the 'generic' side).
+ */
 export function teardownDescriptionObservers(): void {
   for (const s of _slotMap.values()) s.obs.disconnect();
   _slotMap.clear();
-  for (const s of _headlineSlotMap.values()) s.obs.disconnect();
+  for (const [el, s] of _headlineSlotMap) {
+    s.obs.disconnect();
+    clearHeadlineOwner(el);
+  }
   _headlineSlotMap.clear();
 }
 

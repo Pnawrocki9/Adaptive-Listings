@@ -27,6 +27,12 @@ import {
   setEventQueueRef,
   teardownAdaptObservers,
 } from '../core/adapt.js';
+import {
+  applyDescriptionAdaptation,
+  setDescriptionEventQueueRef,
+  teardownDescriptionObservers,
+} from '../core/adapt-description.js';
+import type { SdkConfig } from '../core/config.js';
 import type { CollectedEvent } from '../core/events.js';
 import type { TextDirective, ClassDirective, ReorderDirective } from '@estalara/shared';
 
@@ -35,7 +41,11 @@ let testEventQueue: CollectedEvent[];
 beforeEach(() => {
   testEventQueue = [];
   setEventQueueRef(testEventQueue);
+  // FOLLOW-795: same queue for both modules so hand-off tests can assert combined
+  // event ordering/counts (adapt.reapplied vs adapt.description.headline.re) in one place.
+  setDescriptionEventQueueRef(testEventQueue);
   resetAdaptState();
+  teardownDescriptionObservers();
   vi.useFakeTimers();
 });
 
@@ -43,6 +53,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   resetAdaptState();
+  teardownDescriptionObservers();
   document.body.innerHTML = '';
 });
 
@@ -136,7 +147,7 @@ describe('applyTextDirective — MutationObserver resilience (FOLLOW-791)', () =
     expect(el.textContent).toBe('Investment Performance');
   });
 
-  it('does NOT attach resilience to the "headline" slot (owned by adapt-description.ts, ADR-0009)', async () => {
+  it('FOLLOW-795 cold-start leg: attaches resilience to the "headline" slot when adapt-description.ts has NOT taken ownership, and repairs a framework revert', async () => {
     const el = document.createElement('h1');
     el.setAttribute('data-estalara-slot', 'headline');
     document.body.appendChild(el);
@@ -156,15 +167,17 @@ describe('applyTextDirective — MutationObserver resilience (FOLLOW-791)', () =
     });
     expect(el.textContent).toBe('Playbook headline');
 
+    // Simulate a framework re-render reverting the SDK's write — no per-listing headline
+    // has ever arrived for this listing (cold start / generation failure / uncached
+    // listing / neutral archetype / opt-out — the MAJORITY case, RETRO-244 §4a LG-5(a)).
     el.textContent = 'Reverted';
     await flushAll();
 
-    // Documented, pre-existing (unchanged by this ticket) gap: the playbook headline
-    // stays one-shot because adapt-description.ts's applyAndObserveHeadlineSlot
-    // independently owns and observes this exact slot once a per-listing headline
-    // exists — a second, independent observer here would fight it.
-    expect(el.textContent).toBe('Reverted');
-    expect(testEventQueue.some((e) => e.type === 'adapt.reapplied')).toBe(false);
+    // Before FOLLOW-795 this stayed 'Reverted' forever (the playbook headline was
+    // permanently unrecoverable). The generic pipeline now owns the slot in the absence
+    // of adapt-description.ts's per-listing headline, and repairs the revert.
+    expect(el.textContent).toBe('Playbook headline');
+    expect(testEventQueue.some((e) => e.type === 'adapt.reapplied')).toBe(true);
   });
 
   it('Rule AB: a supersession in the intra-frame gap does NOT let the deferred repair repaint stale content, and disconnects the watchdog', async () => {
@@ -472,5 +485,242 @@ describe('teardownAdaptObservers (FOLLOW-791 AC5)', () => {
     await flushAll();
 
     expect(el.textContent).toBe('Reverted after resetAdaptState');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FOLLOW-795 — headline ownership hand-off (RETRO-244 §4a LG-5(a))
+//
+// Drives the REAL init paths of both modules together: `applyDirectives` (adapt.ts,
+// generic pipeline) and `applyDescriptionAdaptation` (adapt-description.ts, per-listing
+// LLM headline, ADR-0009) — not a unit test that injects a value into one module only.
+// ---------------------------------------------------------------------------
+
+const HEADLINE_CONFIG: SdkConfig = {
+  apiKey: 'test-api-key',
+  ingestUrl: 'https://ingest.estalara.com/v1/events',
+  tier: 'augment',
+  debug: false,
+  consentState: 'legitimate_interest',
+  language: 'en',
+  accentColor: '#6c5ce7',
+  decisionApiUrl: 'https://decision.estalara.com',
+  tenantId: '550e8400-e29b-41d4-a716-446655440000',
+};
+
+function buildHeadlineListing(listingId = 'listing-795'): {
+  container: HTMLElement;
+  headlineEl: HTMLElement;
+} {
+  const container = document.createElement('div');
+  container.setAttribute('data-estalara-listing', '');
+  container.setAttribute('data-estalara-listing-id', listingId);
+
+  const descSlot = document.createElement('div');
+  descSlot.setAttribute('data-estalara-slot', 'description');
+  descSlot.innerHTML = '<p>Original description</p>';
+
+  const headlineEl = document.createElement('h1');
+  headlineEl.setAttribute('data-estalara-slot', 'headline');
+
+  container.appendChild(descSlot);
+  container.appendChild(headlineEl);
+  document.body.appendChild(container);
+  return { container, headlineEl };
+}
+
+function mockFetchOk(body: unknown): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(body),
+      }),
+    ),
+  );
+}
+
+const PLAYBOOK_HEADLINE_DIRECTIVE: TextDirective = {
+  type: 'text',
+  slot: 'headline',
+  value: 'Playbook headline',
+  archetype: 'yield_hunter',
+  confidence: 0.9,
+};
+
+describe('FOLLOW-795 — headline ownership hand-off', () => {
+  it('AC2 no-fight: generic → description hand-off restores the LLM headline on revert, exactly one repair fires, and there is no observer ping-pong', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    // 1. Arm the generic headline observer — no per-listing headline yet (cold start).
+    applyDirectives([PLAYBOOK_HEADLINE_DIRECTIVE], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-handoff-1',
+      isStale: () => false,
+    });
+    expect(headlineEl.textContent).toBe('Playbook headline');
+
+    // 2. A per-listing headline arrives — ownership hands off to adapt-description.ts.
+    mockFetchOk({
+      description: 'Adapted long-form description.',
+      headline: 'LLM per-listing headline',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-08-03T00:00:00.000Z',
+    });
+    await applyDescriptionAdaptation(HEADLINE_CONFIG, 'yield_hunter', () => false);
+    await flushAll();
+
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+
+    const reappliedAfterHandoff = testEventQueue.filter((e) => e.type === 'adapt.reapplied');
+    const headlineAppliedAfterHandoff = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.headline.applied',
+    );
+    expect(headlineAppliedAfterHandoff).toHaveLength(1);
+    // The generic watchdog must be evicted, not merely inert — no adapt.reapplied fires
+    // for this element from this point on (asserted below after the revert too).
+    const reappliedBeforeRevert = reappliedAfterHandoff.length;
+
+    // 3. Externally revert the DOM (framework re-render) — assert the LLM headline is
+    // what gets restored, NOT the playbook text, and exactly one repair fires.
+    headlineEl.textContent = 'Reverted by framework';
+    await flushAll();
+
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+
+    const reEvents = testEventQueue.filter((e) => e.type === 'adapt.description.headline.re');
+    expect(reEvents).toHaveLength(1);
+    // Still zero generic adapt.reapplied events for this element — the generic
+    // watchdog was evicted at hand-off, so it never fires a repair post-handoff.
+    expect(testEventQueue.filter((e) => e.type === 'adapt.reapplied').length).toBe(
+      reappliedBeforeRevert,
+    );
+
+    // 4. No observer ping-pong: flush several more animation frames with no further
+    // external mutation — the event count must stay bounded (converged), not growing.
+    const countAfterFirstRepair = testEventQueue.filter(
+      (e) => e.type === 'adapt.description.headline.re',
+    ).length;
+    for (let frame = 0; frame < 5; frame++) {
+      await flushAll();
+    }
+    expect(testEventQueue.filter((e) => e.type === 'adapt.description.headline.re').length).toBe(
+      countAfterFirstRepair,
+    );
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+  });
+
+  it('AC3 cold-start leg: no per-listing headline ever arrives — the playbook headline is restored via the generic watchdog and adapt.reapplied fires', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    applyDirectives([PLAYBOOK_HEADLINE_DIRECTIVE], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-coldstart-1',
+      isStale: () => false,
+    });
+    expect(headlineEl.textContent).toBe('Playbook headline');
+
+    // No per-listing headline is ever fetched (generation failure / uncached listing /
+    // neutral archetype / opt-out) — applyDescriptionAdaptation is simply never called,
+    // mirroring the majority real-world case this ticket closes.
+    headlineEl.textContent = 'Reverted by framework';
+    await flushAll();
+
+    // Before FOLLOW-795 this stayed reverted forever (RETRO-244 §4a LG-5(a) primary gap).
+    expect(headlineEl.textContent).toBe('Playbook headline');
+    const reapplied = testEventQueue.filter((e) => e.type === 'adapt.reapplied');
+    expect(reapplied.length).toBeGreaterThanOrEqual(1);
+    expect(reapplied[0]!.payload).toMatchObject({
+      slot_or_selector: 'headline',
+      archetype: 'yield_hunter',
+      confidence: 0.9,
+    });
+  });
+
+  it('AC4 teardown leg: resetAdaptState()/teardownAdaptObservers() disconnects the generic watchdog when it owns the headline slot', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    applyDirectives([PLAYBOOK_HEADLINE_DIRECTIVE], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-teardown-headline-1',
+      isStale: () => false,
+    });
+    expect(headlineEl.textContent).toBe('Playbook headline');
+
+    resetAdaptState();
+
+    headlineEl.textContent = 'Reverted after teardown';
+    await flushAll();
+
+    expect(headlineEl.textContent).toBe('Reverted after teardown');
+  });
+
+  it('AC4 teardown leg: teardownDescriptionObservers() disconnects the description watchdog when it owns the headline slot (post hand-off)', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    applyDirectives([PLAYBOOK_HEADLINE_DIRECTIVE], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-teardown-headline-2',
+      isStale: () => false,
+    });
+
+    mockFetchOk({
+      description: 'Adapted long-form description.',
+      headline: 'LLM per-listing headline',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-08-03T00:00:00.000Z',
+    });
+    await applyDescriptionAdaptation(HEADLINE_CONFIG, 'yield_hunter', () => false);
+    await flushAll();
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+
+    // Mirrors index.ts's cross-listing nav handler: resetAdaptState() (generic side) +
+    // teardownDescriptionObservers() (description side) run together.
+    resetAdaptState();
+    teardownDescriptionObservers();
+
+    headlineEl.textContent = 'Reverted after teardown';
+    await flushAll();
+
+    expect(headlineEl.textContent).toBe('Reverted after teardown');
+  });
+
+  it('does not attach a generic watchdog when adapt-description.ts already owns the slot (skips with an observable event)', async () => {
+    const { headlineEl } = buildHeadlineListing();
+
+    mockFetchOk({
+      description: 'Adapted long-form description.',
+      headline: 'LLM per-listing headline',
+      source: 'ai_cached' as const,
+      locale: 'en',
+      generated_at: '2026-08-03T00:00:00.000Z',
+    });
+    await applyDescriptionAdaptation(HEADLINE_CONFIG, 'yield_hunter', () => false);
+    await flushAll();
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+
+    // A LATER /api/adapt response (e.g. a repeat call for a different signal update)
+    // tries to write the playbook headline again — must be skipped, not overwrite the
+    // LLM headline, and must not attach a second observer.
+    resetAdaptState(); // clears the fingerprint guard so applyTextDirective re-enters
+    applyDirectives([PLAYBOOK_HEADLINE_DIRECTIVE], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.9,
+      sessionId: 'sess-skip-1',
+      isStale: () => false,
+    });
+
+    expect(headlineEl.textContent).toBe('LLM per-listing headline');
+    const skipped = testEventQueue.filter(
+      (e) => e.type === 'adapt.skipped' && e.payload.reason === 'headline_owned_by_description',
+    );
+    expect(skipped.length).toBeGreaterThanOrEqual(1);
   });
 });

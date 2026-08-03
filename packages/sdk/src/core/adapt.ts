@@ -351,6 +351,23 @@ export interface ApplyContext {
   archetypeId: ArchetypeId;
   confidence: number;
   sessionId: string;
+  /**
+   * FOLLOW-791 / Rule AB: latest-wins staleness predicate for the MutationObserver-backed
+   * directive-resilience mechanism (see `attachResilience` below). Mirrors
+   * `applyDescriptionAdaptation`'s `isStale` parameter (FOLLOW-548): consulted at the LAST
+   * synchronous instant before every DOM write the mechanism performs, including the
+   * rAF-deferred `reapply` write that fires LATER — so a rapid cross-listing navigation
+   * that supersedes this adaptation cannot repaint the stale archetype's directive onto the
+   * newer listing (and the watchdog disconnects instead of fighting forever).
+   *
+   * REQUIRED, no never-stale default: FOLLOW-548 LG-2 found that a never-stale default for
+   * this exact class of guard is a latent footgun — a future prod call site that omitted it
+   * would silently lose cross-listing-navigation protection with no compile-time signal.
+   * The sole prod call site (index.ts) passes `() => myRefreshId !== latestRefreshId`;
+   * test call sites pass an explicit `() => false` to opt out (matches the
+   * adapt-description.test.ts convention).
+   */
+  isStale: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +376,145 @@ export interface ApplyContext {
 
 /** Fingerprints of directives already applied in this session (idempotency). */
 const appliedFingerprints = new Set<string>();
+
+// ---------------------------------------------------------------------------
+// FOLLOW-791 — MutationObserver-backed resilience for the generic directive pipeline
+// (text / class / reorder). Modeled on adapt-description.ts's
+// applyAndObserveSlot / applyAndObserveHeadlineSlot (see that file's module docstring
+// for the disconnect → write → reconnect loop-guard rationale).
+//
+// Interaction with `appliedFingerprints` (kept exactly as-is, per ticket AC2): the
+// fingerprint guard still gates whether a REPEAT applyXDirective() call (same
+// slot/selector + archetype) re-enters this setup at all — it suppresses redundant
+// re-application while the write is still holding. This mechanism is layered ON TOP:
+// once armed, the MutationObserver's own `reapply()` closure detects and repairs a
+// framework revert completely independently of any future applyXDirective() call — it
+// does not go through, and cannot be blocked by, the fingerprint check. The two
+// bookkeeping mechanisms answer different questions ("should THIS call redo the work?"
+// vs. "does the DOM still hold what we wrote?") and are deliberately not merged.
+//
+// Separate maps per directive type (not one shared map keyed by element) so that a
+// text, class, and reorder directive can independently track the SAME DOM element
+// without one type's disconnect() clobbering another's state — mirrors adapt-
+// description.ts's own separation of `_slotMap` (description) from `_headlineSlotMap`
+// (headline), which exists for the identical reason.
+// ---------------------------------------------------------------------------
+
+interface ResilienceState {
+  obs: MutationObserver;
+  /** flags: bit 1 = reapply write in progress (re-entrancy guard against our own
+   *  mutation), bit 2 = rAF pending (dedupes a revert burst to one repair). */
+  f: number;
+}
+
+const _textResilienceMap = new Map<HTMLElement, ResilienceState>();
+const _classResilienceMap = new Map<HTMLElement, ResilienceState>();
+const _reorderResilienceMap = new Map<HTMLElement, ResilienceState>();
+
+/**
+ * Attach MutationObserver-backed resilience to `el`: write the desired state once, then
+ * watch for a framework revert and repair it, converging (never fighting forever).
+ *
+ * @param map            Per-directive-type state map — see module docstring above for
+ *                       why text/class/reorder each get their own.
+ * @param el             Element (text/class directives) or container (reorder) to observe.
+ * @param observerInit   MutationObserverInit appropriate to what this directive mutates.
+ * @param matches        Returns true when the DOM currently reflects the desired state
+ *                       (no repair needed) — re-evaluated live, not memoized.
+ * @param write          Performs the mutation.
+ * @param isStale        FOLLOW-791 / Rule AB latest-wins predicate (ApplyContext.isStale).
+ *                       Consulted before the initial write AND inside the rAF-deferred
+ *                       `reapply` — a supersession disconnects the watchdog rather than
+ *                       repainting stale content, and emits `adapt.skipped` (reason:
+ *                       'stale') so the discard is observable, never silent (guardrail K.2).
+ * @param slotOrSelector The slot name / CSS selector / container selector being tracked —
+ *                       used for both the `adapt.skipped` (stale) and `adapt.reapplied`
+ *                       event payloads.
+ * @param archetypeId    Archetype ID for the `adapt.reapplied` event payload.
+ * @param confidence     Confidence for the `adapt.reapplied` event payload.
+ */
+function attachResilience(
+  map: Map<HTMLElement, ResilienceState>,
+  el: HTMLElement,
+  observerInit: MutationObserverInit,
+  matches: () => boolean,
+  write: () => void,
+  isStale: () => boolean,
+  slotOrSelector: string,
+  archetypeId: string,
+  confidence: number,
+): void {
+  map.get(el)?.obs.disconnect();
+
+  const emitStaleSkip = (): void => {
+    pushEvent({
+      type: 'adapt.skipped',
+      payload: { reason: 'stale', slot_or_selector: slotOrSelector },
+      ts: Date.now(),
+    });
+  };
+
+  if (isStale()) {
+    emitStaleSkip();
+    return;
+  }
+
+  const s: ResilienceState = { obs: null as unknown as MutationObserver, f: 0 };
+
+  const reapply = (): void => {
+    // FOLLOW-791 / Rule AB: re-consult staleness at the LAST synchronous instant before
+    // this deferred write — a rapid cross-listing nav that supersedes us while this
+    // repair was pending must not repaint the stale archetype's directive.
+    if (isStale()) {
+      s.obs.disconnect();
+      map.delete(el);
+      emitStaleSkip();
+      return;
+    }
+    if (s.f & 1 || matches()) return;
+    s.f |= 1;
+    s.obs.disconnect();
+    write();
+    s.obs.observe(el, observerInit);
+    void Promise.resolve().then(() => {
+      s.f &= ~1;
+    });
+    pushEvent({
+      type: 'adapt.reapplied',
+      payload: { slot_or_selector: slotOrSelector, archetype: archetypeId, confidence },
+      ts: Date.now(),
+    });
+  };
+
+  const obs = new MutationObserver(() => {
+    if (s.f || matches()) return;
+    s.f |= 2;
+    requestAnimationFrame(() => {
+      s.f &= ~2;
+      reapply();
+    });
+  });
+  s.obs = obs;
+
+  write();
+  obs.observe(el, observerInit);
+  map.set(el, s);
+}
+
+/**
+ * Disconnect and clear all FOLLOW-791 resilience observers (text / class / reorder).
+ * Mirrors `teardownDescriptionObservers()` (adapt-description.ts) — called from
+ * `resetAdaptState()` so cross-listing navigation (ADR-0014) and same-page archetype
+ * changes never leave a stale observer watching a superseded/removed DOM node.
+ */
+export function teardownAdaptObservers(): void {
+  for (const s of _textResilienceMap.values()) s.obs.disconnect();
+  _textResilienceMap.clear();
+  for (const s of _classResilienceMap.values()) s.obs.disconnect();
+  _classResilienceMap.clear();
+  for (const s of _reorderResilienceMap.values()) s.obs.disconnect();
+  _reorderResilienceMap.clear();
+}
 
 /** Reference to the SDK event queue, set via setEventQueueRef(). */
 let _eventQueue: CollectedEvent[] | null = null;
@@ -399,6 +555,10 @@ export function resetAdaptState(): void {
   appliedFingerprints.clear();
   _feedbackListenerRegistered = false;
   _chatPriorAppliedSessionId = null;
+  // FOLLOW-791 AC5: disconnect any armed resilience observers too — otherwise a
+  // cross-listing navigation (ADR-0014) or a same-page archetype change would leave a
+  // stale watchdog referencing a superseded/removed DOM node.
+  teardownAdaptObservers();
 }
 
 /**
@@ -558,7 +718,38 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
 
   elements.forEach((el) => {
     const resolved = interpolatePlaceholders(directive.value, el, slotName);
-    el.textContent = resolved;
+
+    // FOLLOW-791: 'headline' is deliberately EXCLUDED from the generic resilience
+    // mechanism. Every playbook (packages/sdk/src/core/playbooks/archetypes/*.ts) emits a
+    // TextDirective for slot: 'headline', but ADR-0009's per-listing headline pipeline
+    // (adapt-description.ts's applyAndObserveHeadlineSlot) independently owns and observes
+    // the SAME [data-estalara-slot="headline"] element once a per-listing headline exists,
+    // attaching its OWN MutationObserver anchored to the LLM headline text. Arming a SECOND,
+    // independent observer here — anchored to THIS playbook text — would fight it: each
+    // observer would see the other's write as a "revert" of its own desired text and
+    // re-assert forever. The playbook headline write therefore stays one-shot (unchanged,
+    // pre-existing behavior, no regression): adapt-description.ts's own resilience is the
+    // correct — and only — owner of that slot's repair once a per-listing headline is
+    // available; when one is not, the headline keeps the same pre-existing (documented)
+    // unrecoverable-on-revert gap this ticket does not touch.
+    if (slotName === 'headline' || !context) {
+      el.textContent = resolved;
+      return;
+    }
+
+    attachResilience(
+      _textResilienceMap,
+      el,
+      { childList: true, characterData: true, subtree: true },
+      () => el.textContent === resolved,
+      () => {
+        el.textContent = resolved;
+      },
+      context.isStale,
+      slotName,
+      context.archetypeId,
+      context.confidence,
+    );
   });
 
   if (context) {
@@ -593,10 +784,35 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
   appliedFingerprints.add(fingerprint);
 
   const elements = document.querySelectorAll<HTMLElement>(selector);
-  elements.forEach((el) => {
+  const applyClasses = (el: HTMLElement): void => {
     // remove first, then add — add wins if same class is in both
     if (directive.remove.length > 0) el.classList.remove(...directive.remove);
     if (directive.add.length > 0) el.classList.add(...directive.add);
+  };
+
+  elements.forEach((el) => {
+    if (!context) {
+      applyClasses(el);
+      return;
+    }
+    // FOLLOW-791: desired end state is "every `add` class present AND every `remove`
+    // class absent" — a framework revert could either strip a class we added or
+    // re-add a class we removed, and either counts as a mismatch to repair.
+    attachResilience(
+      _classResilienceMap,
+      el,
+      { attributes: true, attributeFilter: ['class'] },
+      () =>
+        directive.add.every((c) => el.classList.contains(c)) &&
+        directive.remove.every((c) => !el.classList.contains(c)),
+      () => {
+        applyClasses(el);
+      },
+      context.isStale,
+      selector,
+      context.archetypeId,
+      context.confidence,
+    );
   });
 
   if (context) {
@@ -656,13 +872,43 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
     return scoreB - scoreA;
   });
 
-  if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
-    const topCards = sorted.slice(0, directive.pin_top_n);
-    const restCards = sorted.slice(directive.pin_top_n);
-    container.prepend(...topCards);
-    container.append(...restCards);
+  const applyOrder = (): void => {
+    if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
+      const topCards = sorted.slice(0, directive.pin_top_n);
+      const restCards = sorted.slice(directive.pin_top_n);
+      container.prepend(...topCards);
+      container.append(...restCards);
+    } else {
+      container.append(...sorted);
+    }
+  };
+
+  if (!context) {
+    applyOrder();
   } else {
-    container.append(...sorted);
+    // FOLLOW-791: desired end state is "the SAME listing-id order as `sorted`" — a
+    // framework re-render that re-sorts, filters, or re-mounts the card list drifts the
+    // DOM away from that order, which is repaired the same way an initial reorder is.
+    const desiredOrder = sorted.map((c) => c.getAttribute('data-estalara-listing-id'));
+    attachResilience(
+      _reorderResilienceMap,
+      container,
+      { childList: true },
+      () => {
+        const current = Array.from(
+          container.querySelectorAll<HTMLElement>(directive.item_selector),
+        );
+        if (current.length !== desiredOrder.length) return false;
+        return current.every(
+          (c, i) => c.getAttribute('data-estalara-listing-id') === desiredOrder[i],
+        );
+      },
+      applyOrder,
+      context.isStale,
+      directive.container_selector,
+      context.archetypeId,
+      context.confidence,
+    );
   }
 
   if (context) {

@@ -373,6 +373,7 @@ describe('applyDirectives — TextDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: 'sess-001',
+      isStale: () => false,
     });
 
     expect(el.textContent).toBe('Find your dream home');
@@ -398,6 +399,7 @@ describe('applyDirectives — TextDirective', () => {
       archetypeId: 'family_buyer',
       confidence: 0.85,
       sessionId: 'sess-002',
+      isStale: () => false,
     });
 
     expect(el.textContent).toBe('4BR Family Home');
@@ -423,6 +425,7 @@ describe('applyDirectives — TextDirective', () => {
       archetypeId: 'family_buyer',
       confidence: 0.8,
       sessionId: 'sess-003',
+      isStale: () => false,
     });
 
     expect(el.textContent).toBe('Hello {unknown_token} World');
@@ -454,6 +457,7 @@ describe('applyDirectives — TextDirective', () => {
       archetypeId: 'family_buyer',
       confidence: 0.8,
       sessionId: 'sess-004',
+      isStale: () => false,
     });
 
     expect(el.textContent).toBe('Near 9.2/10 rated schools');
@@ -475,6 +479,7 @@ describe('applyDirectives — TextDirective', () => {
         archetypeId: 'yield_hunter',
         confidence: 0.9,
         sessionId: 'sess-005',
+        isStale: () => false,
       });
     }).not.toThrow();
 
@@ -502,6 +507,7 @@ describe('applyDirectives — TextDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: 'sess-006',
+      isStale: () => false,
     });
 
     const appliedEvents = testEventQueue.filter((e) => e.type === 'adapt.applied');
@@ -541,6 +547,7 @@ describe('applyDirectives — ClassDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: 'sess-007',
+      isStale: () => false,
     });
 
     expect(el.classList.contains('estalara-boost')).toBe(true);
@@ -569,6 +576,7 @@ describe('applyDirectives — ClassDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: 'sess-008',
+      isStale: () => false,
     });
 
     // No class mutation should have happened
@@ -597,6 +605,7 @@ describe('applyDirectives — ClassDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: 'sess-009',
+      isStale: () => false,
     });
 
     const skipEvents = testEventQueue.filter((e) => e.type === 'adapt.skipped');
@@ -624,7 +633,12 @@ describe('applyDirectives — idempotency', () => {
         confidence: 0.9,
       },
     ];
-    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.9, sessionId: 'sess-010' };
+    const ctx = {
+      archetypeId: 'yield_hunter' as const,
+      confidence: 0.9,
+      sessionId: 'sess-010',
+      isStale: () => false,
+    };
 
     applyDirectives(directives, ctx);
     // Change the DOM text directly to verify second call doesn't re-apply
@@ -656,7 +670,12 @@ describe('applyDirectives — idempotency', () => {
         confidence: 0.9,
       },
     ];
-    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.9, sessionId: 'sess-011' };
+    const ctx = {
+      archetypeId: 'yield_hunter' as const,
+      confidence: 0.9,
+      sessionId: 'sess-011',
+      isStale: () => false,
+    };
 
     applyDirectives(directives, ctx);
     expect(el.textContent).toBe('Adapted Headline');
@@ -737,7 +756,12 @@ describe('applyDirectives — edge cases', () => {
           confidence: 0.85,
         },
       ],
-      { archetypeId: 'yield_hunter', confidence: 0.85, sessionId: 'sess-012' },
+      {
+        archetypeId: 'yield_hunter',
+        confidence: 0.85,
+        sessionId: 'sess-012',
+        isStale: () => false,
+      },
     );
 
     els.forEach((el) => {
@@ -793,6 +817,7 @@ describe('applyDirectives — ReorderDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.8,
       sessionId: 'r-001',
+      isStale: () => false,
     });
 
     expect(getCardOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
@@ -825,6 +850,7 @@ describe('applyDirectives — ReorderDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.8,
       sessionId: 'r-002',
+      isStale: () => false,
     });
 
     const children = Array.from(container.children) as HTMLElement[];
@@ -855,6 +881,7 @@ describe('applyDirectives — ReorderDirective', () => {
       archetypeId: 'yield_hunter',
       confidence: 0.8,
       sessionId: 'r-003',
+      isStale: () => false,
     });
 
     const order = getCardOrder(container);
@@ -880,7 +907,12 @@ describe('applyDirectives — ReorderDirective', () => {
       archetype: 'yield_hunter',
       confidence: 0.8,
     };
-    const ctx = { archetypeId: 'yield_hunter' as const, confidence: 0.8, sessionId: 'r-004' };
+    const ctx = {
+      archetypeId: 'yield_hunter' as const,
+      confidence: 0.8,
+      sessionId: 'r-004',
+      isStale: () => false,
+    };
 
     applyDirectives([directive], ctx);
     const orderAfterFirst = getCardOrder(container);
@@ -912,6 +944,7 @@ describe('applyDirectives — ReorderDirective', () => {
         archetypeId: 'yield_hunter',
         confidence: 0.8,
         sessionId: 'r-005',
+        isStale: () => false,
       });
     }).not.toThrow();
 
@@ -940,6 +973,7 @@ describe('applyDirectives — ReorderDirective', () => {
         archetypeId: 'yield_hunter',
         confidence: 0.8,
         sessionId: 'r-006',
+        isStale: () => false,
       });
     }).not.toThrow();
 

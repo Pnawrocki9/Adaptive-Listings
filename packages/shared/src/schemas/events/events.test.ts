@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  AdaptReappliedEventSchema,
   ChatIntentDetectedEventSchema,
   ChatMessageSentEventSchema,
   ChatOpenedEventSchema,
@@ -53,7 +54,7 @@ const envelope = {
 const ev = <T extends string, P>(type: T, payload: P) => ({ ...envelope, type, payload });
 
 describe('EVENT_TYPES tuple', () => {
-  it('has exactly 52 unique event type literals', () => {
+  it('has exactly 53 unique event type literals', () => {
     // 34 original + 1 ab.assignment (TICKET-AB-001) + 2 consent audit (TICKET-041)
     // + 7 SDK observability (TICKET-RUNTIME-FIX-003):
     //   listing.viewed, cta.clicked, quiz.event, quiz.mismatch,
@@ -65,8 +66,10 @@ describe('EVENT_TYPES tuple', () => {
     // + 6 description-adaptation observability (FOLLOW-461 / audit F-04):
     //   adapt.description.applied, adapt.description.skipped, adapt.description.error,
     //   adapt.description.re, adapt.description.headline.applied, adapt.description.headline.re
-    expect(EVENT_TYPES.length).toBe(52);
-    expect(new Set<string>(EVENT_TYPES).size).toBe(52);
+    // + 1 generic-directive MutationObserver repair observability (FOLLOW-791):
+    //   adapt.reapplied
+    expect(EVENT_TYPES.length).toBe(53);
+    expect(new Set<string>(EVENT_TYPES).size).toBe(53);
   });
 });
 
@@ -653,6 +656,54 @@ describe('adapt.description.* events (FOLLOW-461 / audit F-04) — ingest round-
     expect(EventSchema.safeParse(ev('adapt.description.applied', {})).success).toBe(false);
     expect(
       EventSchema.safeParse(ev('adapt.description.applied', { listing_id: 'x' })).success,
+    ).toBe(false);
+  });
+});
+
+// ─── FOLLOW-791: adapt.reapplied — generic-directive MutationObserver repair ───
+
+describe('adapt.reapplied event (FOLLOW-791)', () => {
+  it('parses a valid event with the same shape as adapt.applied', () => {
+    expect(() =>
+      AdaptReappliedEventSchema.parse(
+        ev('adapt.reapplied', {
+          slot_or_selector: 'hero_headline',
+          archetype: 'yield_hunter',
+          confidence: 0.87,
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('is accepted by the canonical EventSchema discriminated union', () => {
+    expect(
+      EventSchema.safeParse(
+        ev('adapt.reapplied', {
+          slot_or_selector: '[data-estalara-listing-id]',
+          archetype: 'family_buyer',
+          confidence: 0.6,
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('requires slot_or_selector, archetype, and confidence in [0,1]', () => {
+    expect(
+      EventSchema.safeParse(ev('adapt.reapplied', { archetype: 'yield_hunter', confidence: 0.5 }))
+        .success,
+    ).toBe(false);
+    expect(
+      EventSchema.safeParse(ev('adapt.reapplied', { slot_or_selector: 'x', confidence: 0.5 }))
+        .success,
+    ).toBe(false);
+    expect(
+      EventSchema.safeParse(
+        ev('adapt.reapplied', {
+          slot_or_selector: 'x',
+          archetype: 'yield_hunter',
+          confidence: 1.5,
+        }),
+      ).success,
     ).toBe(false);
   });
 });

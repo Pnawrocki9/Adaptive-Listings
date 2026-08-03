@@ -138,6 +138,9 @@ const CONSENT_CLASS_BY_EVENT_TYPE: Record<EventType, ConsentClass> = {
   'adapt.description.re': 'operational',
   'adapt.description.headline.applied': 'operational',
   'adapt.description.headline.re': 'operational',
+  // FOLLOW-791 (SDK): generic-directive MutationObserver repair after a framework revert —
+  // same server-outcome shape as adapt.applied / adapt.description.re.
+  'adapt.reapplied': 'operational',
   'ab.assignment': 'operational',
   'session.quality.snapshot': 'operational',
   // discrete user-initiated conversions (business truth, not passive profiling).

@@ -319,6 +319,7 @@ describe('cross_ref (e) — applyTextDirective skips an empty value and leaves t
       archetypeId: 'yield_hunter',
       confidence: 0.9,
       sessionId: SESSION_ID,
+      isStale: () => false,
     });
 
     expect(el.textContent).toBe('Original copy');

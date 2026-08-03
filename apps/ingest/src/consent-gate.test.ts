@@ -99,6 +99,9 @@ const EXPECTED_CLASS_BY_EVENT_TYPE: Record<string, ExpectedConsentClass> = {
   'adapt.description.re': 'operational',
   'adapt.description.headline.applied': 'operational',
   'adapt.description.headline.re': 'operational',
+  // FOLLOW-791 (SDK): generic-directive MutationObserver repair — same shape as
+  // adapt.applied / adapt.description.re.
+  'adapt.reapplied': 'operational',
   'ab.assignment': 'operational',
   'session.quality.snapshot': 'operational',
   'inquiry.started': 'operational',

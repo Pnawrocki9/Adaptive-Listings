@@ -870,6 +870,21 @@ what "done" means for every dispatch from here, not which tickets get picked:
   blocks the full loop on localhost. `apps/intent-engine/src/local_dev.py` already exists as the
   local shim (per FOLLOW-729/730, merged earlier this session's own lineage).
 
+**CLARIFICATION — Piotr answered the merge-scope question directly (2026-08-03), narrower than
+either the PM or the coordinator had assumed. Recorded here so a later session does not misread
+"nothing to production" as a merge freeze and stall the queue on that misreading:**
+
+- **Merging to `main` is FINE, including PRs that carry a migration.** `db-migrate.yml` still
+  auto-applies Postgres migrations to staging→prod on merge with no human gate (FOLLOW-308,
+  2026-07-02) — that mechanism is unchanged, so any merged migration must still be strictly additive
+  and safe, but a migration is NOT a reason to hold a PR under this ruling.
+- **What is actually paused: anything touching `app.estalara.com`, and anything requiring Rafał.**
+  That is the real boundary — not "no merges," not "no migrations." **ESC-020** (Estalara-app DOM
+  hooks prod deploy) stays out of scope under this narrower, correct reading too, and must not be
+  surfaced as a next action or "the top pilot blocker" until the localhost loop actually works.
+- The localhost-first acceptance-gate override recorded above stands unchanged by this clarification
+  — work must still be demonstrated locally regardless of what merging is or isn't allowed.
+
 ### FOLLOW-026 — corrected before dispatch, one thing flagged before the worker starts
 
 **Line citations were stale — corrected, not passed through.** The original stub (RETRO-004 era,
@@ -881,18 +896,26 @@ literal on the page (`:523`, `return match; // leave literal`) with only an `ada
 emitted, and resolution is DOM-attribute-only (`:514-517`) — exactly as the coordinator described,
 confirmed independently.
 
-**Migration flag, per the standing instruction to raise this BEFORE the worker starts, not after a
-PR exists.** The stub's own AC1/AC3 ask for a "Level 2: tenant override map from
-`tenants.placeholder_overrides`" — verified via `grep -rn "placeholder_overrides"` across
-`packages/db`, `apps/control-plane`, `packages/sdk`: **zero hits, the column does not exist.**
-Implementing Level 2 as literally specified requires a NEW migration on the `tenants` table (last
-migration touching it: `0034_tenants_al_enabled.sql`). Given migrations are the one open question
-Piotr has not yet answered (whether "nothing to prod" also means "no merges," and merged Postgres
-migrations auto-apply to staging→prod with no human gate per FOLLOW-308), **this dispatch is scoped
-to Level 1 (LLM-provided `placeholder_values` on the wire, no schema change) and Level 3 (DOM
-attribute, already shipped) only.** Level 2 (tenant override, needs the migration + Piotr's answer)
-is explicitly OUT of this dispatch's scope and will be filed as its own follow-up once the migration
-question resolves. AC4/5/6 are adjusted accordingly in the dispatch brief (below).
+**Scope decision, CORRECTED reason (Piotr + PM, 2026-08-03) — Level 2 deferred on VALUE grounds,
+single-tenant model, NOT pending a migration decision.** The stub's own AC1/AC3 ask for a "Level 2:
+tenant override map from `tenants.placeholder_overrides`" — verified via
+`grep -rn "placeholder_overrides"` across `packages/db`, `apps/control-plane`, `packages/sdk`:
+**zero hits, the column does not exist**, and implementing it as literally specified would need a
+new migration on `tenants` (last migration touching it: `0034_tenants_al_enabled.sql`). That
+migration fact is now moot as a blocker — Piotr has confirmed merging (including migration-carrying
+PRs) is allowed — but it is kept here as a footnote, not the operative reason, so nobody reads this
+later and thinks "the migration got unblocked, so Level 2 should ship." **The actual reason to defer
+Level 2:** the product is single-tenant now and for the foreseeable future (Estalara is the one
+tenant; future clients are private-label re-brands of the same app, not independent tenants with
+divergent config). A tenant-scoped override map has exactly one row that could ever exist — that is
+not a real override layer, it is a hardcoded default with speculative indirection around it, the
+kind of "configurability that wasn't requested" CLAUDE.md's Simplicity First principle exists to
+block. Level 1 (LLM-provided `placeholder_values` on the wire) is where the actual buyer-visible fix
+lives — it is what stops `{school_rating}` rendering literally in adapted copy; Level 2 closes a gap
+with no buyer-visible instance today. **This dispatch is scoped to Level 1 (no schema change) and
+Level 3 (DOM attribute, already shipped) only.** Level 2 is explicitly OUT of scope and will only be
+reconsidered if the single-tenant model itself changes (a second real tenant), not on a migration
+technicality. AC4/5/6 are adjusted accordingly in the dispatch brief (below).
 
 NEXT: Dispatch FOLLOW-773+774 combined (localhost-gated acceptance criteria stated explicitly),
 wait, validate, then FOLLOW-782, then FOLLOW-026 (Levels 1+3 scope, migration-free,

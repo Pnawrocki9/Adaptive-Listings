@@ -1,6 +1,6 @@
 # Backlog Queue
 
-### FOLLOW-792 — status: IN_PROGRESS (dispatched 2026-08-03)
+### FOLLOW-792 — status: READY_FOR_REVIEW (PR #662, CI green modulo pre-existing-red Rule I, 2026-08-03)
 
 **Source:** RETRO-244 §4a LG-1 / §4c TG-1, filed against FOLLOW-791 (PR #661). **Dispatched now, at
 Piotr's explicit instruction, ahead of its siblings** FOLLOW-795/796 (same retro, same P1 priority,
@@ -23,9 +23,37 @@ comment correction needed) — a well-defined ticket scope with no open design q
 Sonnet fit criterion even though the defect it fixes shipped from Sonnet-tier work; not escalating a
 tier here because this is the first attempt at this specific fix, not a retry after this ticket
 itself failed. **started_at:** 2026-08-03. **branch:**
-`sdk-engineer/FOLLOW-792-reorder-remount-resilience`.
+`sdk-engineer/FOLLOW-792-reorder-remount-resilience`. **PR:** #662.
 
-**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+**Fix, verified independently, not taken on the worker's report alone.** `applyOrder` no longer
+closes over `sorted`/`cards`; it re-queries `container.querySelectorAll(item_selector)` live at
+write time and re-sorts by `data-estalara-listing-id` (data identity, never node identity) via an
+extracted `sortByScore` helper shared with the initial sort — read the actual diff, not just the PR
+body: confirmed `container.append`/`prepend` now only ever moves nodes that exact live query just
+found, so a detached orphan can never be re-attached. AC2 choice (converge on the live intersection
+rather than disconnect+`adapt.skipped`) is documented in-line and is sound — `adapt.reapplied`
+already makes every repair observable. Stale `:889-891` comment corrected.
+
+**Red-first test independently confirmed genuine**, not just claimed: read
+`adapt-mutation-resilience.test.ts`'s two new tests directly — the "re-mount" simulation actually
+destroys the original nodes (`container.innerHTML = ''`) and appends **freshly-created** elements
+carrying the same `data-estalara-listing-id`s, which is a real re-mount test, not a re-order test in
+disguise (the pre-existing tests in this file only ever moved the SAME node objects). PR body's
+pasted red-run (`expected 6 to be 3`, i.e. exactly 2N duplicates) matches the bug description
+exactly.
+
+**CI verified green.** `gh pr checks 662 --watch`: every check passes except **Rule I —
+wired-or-dead check** (both matrix legs) — independently re-derived the WARN count via
+`gh api .../actions/jobs/91746069127/logs` and `.../91746324029/logs`, both → **192 / 192**, the
+same standing baseline as PR #661, confirming zero new wired-or-dead regressions from this fix.
+
+**Bundle size:** 41.73 KB gzip (limit 42 KB) — up 0.02 KB from PR #661's 41.71 KB (the extracted
+`sortByScore` helper + expanded comments). Margin now ~0.27 KB. Compounding concern already tracked
+by FOLLOW-800 (filed by RETRO-244) — not re-filed here.
+
+**Awaiting Piotr to merge** (PM verifies CI, does not merge unprompted). Mark DONE once merged.
+
+**CI-check counter:** 1/5 (green on first observation). **Fix-iteration counter:** 0/3.
 
 ---
 

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-### FOLLOW-792 — status: READY_FOR_REVIEW (PR #662, CI green modulo pre-existing-red Rule I, 2026-08-03)
+### FOLLOW-792 — status: DONE (PR #662 merged 2026-08-03 by Piotr via rebase, `8d515ac6`)
 
 **Source:** RETRO-244 §4a LG-1 / §4c TG-1, filed against FOLLOW-791 (PR #661). **Dispatched now, at
 Piotr's explicit instruction, ahead of its siblings** FOLLOW-795/796 (same retro, same P1 priority,

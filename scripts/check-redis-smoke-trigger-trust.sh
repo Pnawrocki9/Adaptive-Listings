@@ -65,13 +65,13 @@ compute_hard_fail_required() {
   fi
 }
 
-# compute_hard_fail_required_mutant_inverted_fork EVENT_NAME IS_FORKED_PR
+# compute_hard_fail_required_mutant EVENT_NAME IS_FORKED_PR
 #   Simulates RETRO-241 TG-1's named failure mode: the fork-detection flag
 #   silently inverts (e.g. `== false` typo'd for `== true`, or the upstream
 #   `github.event.pull_request.head.repo.fork` context expression regresses).
 #   Used ONLY by --self-test, to prove the case table would catch it — never
 #   called by the production step.
-compute_hard_fail_required_mutant_inverted_fork() {
+compute_hard_fail_required_mutant() {
   local event_name="$1"
   local is_forked_pr="$2"
   local inverted
@@ -117,7 +117,7 @@ self_test() {
   local mutant_divergences=0
   for case_row in "${cases[@]}"; do
     IFS='|' read -r event fork expected <<<"${case_row}"
-    actual="$(compute_hard_fail_required_mutant_inverted_fork "${event}" "${fork}")"
+    actual="$(compute_hard_fail_required_mutant "${event}" "${fork}")"
     if [ "${actual}" != "${expected}" ]; then
       echo "OK (expected divergence): mutant(${event}, is_forked_pr=${fork}) = ${actual} != correct ${expected}"
       mutant_divergences=$((mutant_divergences + 1))

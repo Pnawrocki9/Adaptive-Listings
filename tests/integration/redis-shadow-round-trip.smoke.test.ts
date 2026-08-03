@@ -469,7 +469,7 @@ describe('FOLLOW-752 — SET … NX write-admission invariant honoured by a REAL
       expect(result!.intent_dimensions.purchase_purpose ?? null).toBeNull();
       expect(result!.archetype_hint).toBe('neutral');
       expect(result!.confidence).toBeCloseTo(0, 2);
-      expect((result as unknown as { data_source?: string }).data_source).toBe('model');
+      expect(result!.data_source).toBe('model');
 
       const ttl = await fetchTtl(NX_COLD_TENANT_ID, NX_COLD_SESSION_ID);
       expect(ttl).toBeGreaterThan(EXPECTED_TTL_SECONDS - 60);

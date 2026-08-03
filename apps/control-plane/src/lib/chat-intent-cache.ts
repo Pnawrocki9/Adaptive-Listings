@@ -44,10 +44,44 @@ interface ShadowChatIntentDimensions {
   tax_aware?: boolean | null;
 }
 
+/**
+ * Mirror of the Python `ChatIntentDataSource` literal union
+ * (`apps/intent-engine/src/schemas.py`, FOLLOW-730).
+ */
+type ShadowChatIntentDataSource =
+  | 'model'
+  | 'empty_input'
+  | 'empty_model_response'
+  | 'error_fallback';
+
+/**
+ * Mirror of the Python `ChatIntentDetectedPayload` Pydantic model from
+ * `apps/intent-engine/src/schemas.py`. Kept in TypeScript for the
+ * control-plane to parse the Redis value without a cross-language import.
+ *
+ * `readShadowChatIntent` (below) returns the `JSON.parse()` result of the
+ * Redis value UNCHANGED — it does not construct a picked/typed object — so
+ * any field present in the stored JSON survives on the returned value at
+ * runtime; the fields declared here are only the ones this module's
+ * consumers are guaranteed to read.
+ */
 export interface ShadowChatIntent {
   intent_dimensions: ShadowChatIntentDimensions;
   archetype_hint?: string;
   confidence?: number;
+  /**
+   * DIAGNOSTIC ONLY (ADR-0020 D2 — provenance never gates behaviour). Mirrors
+   * Python `data_source: ChatIntentDataSource = "model"` — has a default, so
+   * `payload.model_dump()` always includes it; never absent from shadow JSON
+   * written after FOLLOW-730.
+   */
+  data_source: ShadowChatIntentDataSource;
+  /**
+   * DIAGNOSTIC ONLY (ADR-0020 D2 — provenance never gates behaviour). Mirrors
+   * Python `extraction_error: str | None = None` — always present in the
+   * serialized shadow JSON, `null` when no extraction error occurred.
+   */
+  extraction_error: string | null;
 }
 
 // ─── Key builder ─────────────────────────────────────────────────────────────

@@ -61,6 +61,7 @@ from jobs.generate_description import (
     _MAX_TOKENS_CEILING,
     _MAX_TOKENS_FLOOR,
     _body_violates_contract,
+    _check_body_facts,
     _check_headline_facts,
     _generate_headline,
     _generate_with_sonnet,
@@ -2287,3 +2288,56 @@ def test_postgres_write_skipped_does_not_block_redis_write(
 
         # Only the Redis call happens — Postgres write is skipped (missing config).
         mock_httpx.assert_called_once()
+
+
+# ── FOLLOW-778: body-level numeric grounding (SHADOW MODE) ──────────────────
+
+
+def test_check_body_facts_digit_absent_returns_violation() -> None:
+    """
+    _check_body_facts returns 'hallucinated_number' when the body states a number
+    absent from both grounding sources — the class the headline check already
+    catches, applied to the description body.
+    """
+    violation = _check_body_facts(
+        body="A bright 3-bed flat delivering 7.2% gross yield in a prime block.",
+        original_description="A bright 3-bed flat in Madrid.",
+        listing_context={"bedrooms": 3},
+    )
+    assert violation == "hallucinated_number"
+
+
+def test_check_body_facts_grounded_digits_pass() -> None:
+    """Every digit present in grounding (either source) → no violation."""
+    violation = _check_body_facts(
+        body="This 3-bed home spans 95 sqm.",
+        original_description="3-bed home in Madrid.",
+        listing_context={"bedrooms": 3, "area_sqm": 95},
+    )
+    assert violation is None
+
+
+def test_check_body_facts_does_not_flag_proper_names() -> None:
+    """
+    The proper-name half of the headline rule is deliberately NOT reused: prose
+    legitimately names places, and flagging them would suppress good copy.
+    """
+    violation = _check_body_facts(
+        body="Steps from Retiro Park and the Salamanca district.",
+        original_description="Central Madrid apartment.",
+        listing_context={},
+    )
+    assert violation is None
+
+
+def test_check_body_facts_boundary_safe_no_substring_match() -> None:
+    """
+    A short token must not be cleared by appearing INSIDE a larger number in
+    grounding — the FOLLOW-272 boundary rule, carried over to the body.
+    """
+    violation = _check_body_facts(
+        body="Yours for 5 million.",
+        original_description="Listed at 425000 EUR.",
+        listing_context={},
+    )
+    assert violation == "hallucinated_number"

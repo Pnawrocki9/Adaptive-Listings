@@ -21,6 +21,60 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-047: the SDK served to tenants is a hand-committed artifact frozen since 2026-05-29 — 76 merged SDK tickets have never reached a buyer
+
+**Filed by:** main-loop session (PM role) **Date:** 2026-08-03 **Affects:** `packages/sdk`,
+`apps/control-plane/public/sdk.js`, every SDK ticket merged since 2026-05-29, FOLLOW-801 **Type:**
+architectural
+
+**Description.** Found while assessing the blast radius of RETRO-245's P1 (FOLLOW-801). Verified
+against the live production asset, not inferred:
+
+- `curl https://admin.estalara.com/sdk.js` → HTTP 200, 165 638 bytes, and **byte-identical** to the
+  committed `apps/control-plane/public/sdk.js` (`cmp` clean).
+- That file's last commit is `4bdaf58c`, **2026-05-29** — "fix(pilot): serve SDK from
+  control-plane/public — ESC-015".
+- The live bundle contains **zero** FOLLOW-795 markers and still carries the pre-FOLLOW-796 verbatim
+  `cta_primary` behaviour (10 occurrences).
+- Nothing regenerates it. `apps/control-plane`'s build script is bare `next build`; no workflow,
+  script or config anywhere in the repo writes `public/sdk.js` (verified by repo-wide grep). The
+  only other distribution path, `release.yml`, is QUARANTINED (FOLLOW-626) and has never succeeded.
+- `git log 4bdaf58c..HEAD -- packages/sdk` → **80 commits across ~76 distinct tickets**, spanning
+  2026-05-29 → 2026-08-03.
+
+So the SDK's production distribution is a manually rebuilt-and-committed binary that has not been
+refreshed in over two months. Every SDK ticket merged in that window — the whole FOLLOW-791/792/
+795/796 resilience epic included — is **green in CI, DONE in the queue, and absent from
+production**. Bundle-size gates, Rule I deltas and E2E runs have all been measured against an
+artifact no buyer loads.
+
+**Two consequences, in priority order:**
+
+1. **The delivery gap is the headline.** Roughly two months of SDK work has zero production effect.
+   Any judgement of "is the intelligence live?" made from the queue is wrong by construction; this
+   plausibly explains prior "shipped but no observable change" confusion.
+2. **FOLLOW-801's P1 is LATENT, not live** — a silver lining, and the reason no emergency revert was
+   performed. The `cta` over-annotation regression cannot reach a tenant until the bundle is
+   refreshed. **FOLLOW-801 must therefore land BEFORE the next `public/sdk.js` rebuild** — the
+   refresh is the moment it goes from latent to user-visible brand-safety damage.
+
+**Required action (CEO decision, two separate questions):**
+
+- **(a) Release model.** Should `public/sdk.js` be built and committed by CI on merge to `main`
+  (removing the human step and the staleness class permanently), or stay a deliberate manual gate? A
+  manual gate is defensible for a pilot — but then it needs an owner and a cadence, because it
+  currently has neither and silently froze for two months. If CI-built, note the artifact would then
+  auto-ship to `admin.estalara.com` on every merge, which raises the bar on the SDK gates.
+- **(b) Refresh timing.** Confirm the sequencing above: FOLLOW-801 (P1) lands, THEN the bundle is
+  refreshed. Refreshing first ships the regression to the pilot.
+
+**Not blocked on:** anything. Both merges (#663/#664) are correct and stay on `main`; this is about
+whether `main` reaches users at all.
+
+**Resolution:** <empty until resolved>
+
+---
+
 ## RESOLVED — ESC-046: the "unknown actor" that merged PR #646 was the main-loop session acting on Piotr's explicit instruction — no guardrail was bypassed
 
 **Resolved 2026-07-31 by Piotr's ruling ("zamknij jako wyjaśnioną"), on the following facts.**

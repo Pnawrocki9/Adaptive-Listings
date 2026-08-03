@@ -42849,3 +42849,830 @@ AI, Q (a COMPLIANT instance — the inline self-check solving "a --self-test nob
 flat, readings 8+9, re-derived from both Rule I logs). FOLLOWS FILED: 765 (P1 devops 2h), 766 (P2
 devops 1h), 767 (P2 devops 1h), 768 (P2 devops 2h), 769 (P3 devops 2h). QUEUE.md / ESCALATIONS.md /
 CONVENTIONS_PATCH.md / sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-240 — FOLLOW-765 + FOLLOW-759 (#652) + FOLLOW-766 + FOLLOW-767 (#655) — 2026-08-03
+
+**COMBINED ENTRY — why, and what the combination bought.** The PM batched these two PRs by SHARED
+PARENT RETRO rather than by file proximity (QUEUE.md session-90 head, `ffd62f90`): all four tickets
+are **RETRO-239's own §7 follow-ups** (HW-1→765, HW-2→766, LG-1→767; 759 rode along in #652 per
+FOLLOW-765 AC4's "prefer ONE baseline mechanism"). The organising question is therefore not "do
+these two changes interact" — they do not, and `git merge-tree` confirmed zero code conflicts before
+merge — but **"does one parent retro's entire §7 list actually close, end-to-end, in one pass?"**
+That framing paid three times:
+
+1. **Four of RETRO-239's five follow-ups closed in one session, and I could trace all four wires to
+   the same terminus.** 759 AC1, 765 AC1, 765 AC2 and 766 AC1/AC2 each terminate in a **gate exit
+   code**, not a log line (§8). RETRO-239's central complaint was that suppression signals kept
+   moving one hop instead of closing; this pair is the first in the chain where the hop count is
+   zero on every leg it touched.
+2. **RETRO-239 recorded a displacement that FORKED (its HW-1 shape replicated into a sibling gate).
+   #652 closed BOTH prongs with ONE shared mechanism.** That is the strongest closure result this
+   chain has produced, and it is only visible if you read the two gates together.
+3. **And the fork closing did not stop the displacement — it moved media again, inside #655.** #655
+   closed HW-2 (a manifest key nothing reads) and, in the same file, in the same PR, created a new
+   instance of the identical organ: a discovery source whose failure signal nothing reads (§3 HW-1).
+   **That sentence is the single most load-bearing output of this retro.**
+
+A fourth input exists that appears in **no PR body and no diff**, and a retro reading only the
+merged changes would never see it: PR #655's merge collided with the PM's own post-validation
+bookkeeping push. It is carried as an explicit process finding in §5d, evidenced independently in
+§2. Both PRs are assessed separately wherever the verdict differs (notably §3, where #652 is clean
+and #655 is not).
+
+### 1. Summary of change
+
+- **PR #652 (FOLLOW-765 + FOLLOW-759):** merged 2026-08-03 06:50:23 UTC, commit `04833fd0`. 6 files
+  (+919 / −61). Modules: CI / infra (2 shell gates + 1 new shared lib + 2 new committed baselines) ·
+  backlog. Agent: devops-engineer (Opus).
+- **PR #655 (FOLLOW-766 + FOLLOW-767):** merged 2026-08-03 06:52:58 UTC, commits `b8f2b922` (code) +
+  `ff02b85e` (worker handoff note). 3 files (+237 / −31). Modules: CI / infra (1 shell gate + the
+  Rule J manifest) · backlog. Agent: devops-engineer (Sonnet).
+- **Combined:** 8 distinct files (`backlog/QUEUE.md` shared), **+1156 / −92**, merged **2 minutes
+  35 seconds apart**. `04833fd0` is an ancestor of `b8f2b922`
+  (`git merge-base --is-ancestor` → true) with #653/#654 between them. `main` has since moved to
+  `ffd62f90` (the session-90 head note), so this retro is written on
+  `retrospective-analyst/RETRO-240-follow-765-766-767-combined`.
+- **Key contracts changed:**
+  - **#652 — NEW SHARED SURFACE, second member of `scripts/lib/`.**
+    `scripts/lib/suppression-baseline.sh` exports `compare_suppression_baseline(label, baseline,
+    observed)`, `source`d by **both** Sentry gates (`capture:273`, `singleton:261`) exactly as
+    `clean-python-source.sh` already is. Contract: return 0 = observed set equals the committed
+    baseline; return 1 = mismatch **or** unreadable **or** self-inconsistent baseline; the caller
+    MUST fail. **Deliberately entry-agnostic** so one comparator serves a line-level allowlist and a
+    file-level exclusion set.
+  - **#652 — NEW COMMITTED-STATE SURFACE.** `scripts/baselines/` (new directory, 2 files):
+    `sentry-capture-allowlist.baseline` (`count: 0`) and `sentry-init-mirror-exclusions.baseline`
+    (`count: 3` + 3 paths). These are now **review artefacts**: adding an allowlist annotation, or
+    registering a 4th `.py` mirror pair, reddens CI until the matching baseline line is added in the
+    same PR. **Breaking: no** (both gates green before and after, re-run live this session, §2).
+  - **#652 — `check-sentry-init-singleton.sh` gained a NEW ASSERTION CLASS.** `UNHARDENED
+    REGISTERED MIRRORS: N` (`:793-798`) — every excluded registered mirror holding a real
+    `sentry_sdk.init(` must carry all three FOLLOW-738 markers surviving the tokenizer pass
+    (`HARDENED_MARKERS`, `:274-278`). New exit-1 cases in **both** gates: baseline mismatch; plus
+    unhardened-mirror in the singleton gate.
+  - **#655 — `scripts/mirror-files.json` became an ENFORCED contract, not just a read one.**
+    `basename_discovery_note` moved from an unread string to a **required field**: any pair whose
+    `basename_discovery` is not literally `true` must carry a non-empty note or the gate FAILS
+    (`check-mirror-files.sh:478-489`). The note text is now printed under `Discovery OFF for
+    basenames:`. **Breaking for manifest authors: yes, deliberately** — a future pair added without
+    the flag now reddens Rule J until a note is written.
+  - **#655 — the Rule J DISCOVERY SOURCE changed from the filesystem to the git index.**
+    `find . … -prune` → `git ls-files | awk -F/ '$NF==b'` (`:518-523`). This is a **semantic
+    narrowing** (tracked files only), correct in both real invocation contexts and un-recorded
+    anywhere — §4d DG-1.
+  - **Neither PR changed a public API surface** — no `@estalara/sdk` export, no ingest event schema,
+    no decision-API contract, no migration. Re-verified against CLAUDE.md's escalation list. No
+    escalation trigger.
+  - **Master Design alignment (`head -100 docs/MASTER_DESIGN.md`, v4.4):** no §Snapshot.1 row covers
+    CI shell gates; neither merge changes any §Snapshot.1 verdict. **No divergence introduced.**
+    (§4d DG-2 records the one §Snapshot.6 number this retro *does* move, and files it, for a reason
+    RETRO-239 did not have.)
+  - **Rule AN check, run before allocating anything:** `origin/main` (= `ffd62f90` = local `main`)
+    max FOLLOW = 769, max RETRO = 239, max Rule = AO. RETRO-240 / FOLLOW-770-772 / Rule AP are
+    allocated against `origin/main` and land in this one commit before use elsewhere.
+
+### 2. Verification done in PR
+
+- **#652** — no conventional test files. **Seven NEW red-first fixtures** across the two
+  `--self-test` suites (4 in the capture gate, 3 in the singleton gate), taking the suites to **12
+  and 13 assertions** respectively (counted live this session:
+  `bash scripts/check-sentry-capture-has-init.sh --self-test | grep -c "^OK: self-test"` → 12;
+  same for the singleton gate → 13).
+- **#655** — **3 NEW red-first fixtures** in `check-mirror-files.sh`'s inline self-test, taking it
+  from 4 to **7 assertions**, including a fixture that performs a **real `git worktree add`** rather
+  than simulating one. The fixture tree itself had to become a real git repo (`git init` + a
+  commit) — a fact that matters in §3.
+- **CI at merge, re-derived from `main`'s own post-merge aggregate run (`30792848875`), NOT from the
+  PR bodies:** the only failing job is **`Rule I — wired-or-dead check`** (`91620443169`).
+  All three gates this pair touches are **green on merged `main`**: `Rule J` (`91619871116`),
+  `Sentry capture-has-init guard` (`91619871133`), `Sentry init singleton guard` (`91619871241`).
+- **The assertions that mattered, read out of the merged job logs rather than the PR bodies:**
+  - Capture gate (`91619871133`): all four FOLLOW-759 lines present —
+    `OK: self-test PASSED (FOLLOW-759 AC4) — a scanned allowlisted capture is inventoried as exactly
+    1 occurrence and matched against the baseline`, `(FOLLOW-759 AC1) — an allowlist entry missing
+    from the committed baseline is a LOUD, distinctly-diagnosed failure`,
+    `(FOLLOW-759) — a missing baseline fails the gate loudly`, and
+    `(FOLLOW-759 AC3) — an allowlist annotation in a file the gate [does not scan is not counted]`.
+    Real run: `Allowlist … suppression inventory (baseline-checked): 0 entry/entries` ·
+    `→ matches the committed baseline … 0 expected`.
+  - Singleton gate (`91619871241`): `OK: self-test PASSED (FOLLOW-765 AC2) — a registered,
+    self-consistent pair holding a [bare init is caught]`, `(FOLLOW-765 AC1) — an exclusion set that
+    differs from the committed baseline is a LOUD, distinctly-diagnosed failure`, `(FOLLOW-765) — a
+    missing baseline fails the gate loudly`, and the positive control
+    `the fixture tree is clean again once the baseline matches the exclusion set`. Real run:
+    `3 entry/entries` · `→ matches the committed baseline … 3 expected` ·
+    `UNHARDENED REGISTERED MIRRORS … 0` · `PASS`.
+  - Rule J (`91619871116`): `Rule J gate self-test: PASSED (7 assertions)` — **printed on a
+    no-argument invocation**, which is the whole point of the inline design. Discovery inventory now
+    prints `Discovery OFF for basenames:` followed by `route.ts reorder.ts` and, on its own line,
+    `reason: OFF because the canonical basename is route.ts …` — **the FOLLOW-766 wire, visible in
+    the merged log**.
+- **I re-ran all three gates and all three self-test suites on merged `main` in this working tree**
+  rather than trusting either the PR bodies or the PM's session-90 note: all exit 0, 7/12/13
+  assertions, and the exclusion inventory prints exactly the 3 baselined paths.
+- **Rule AF series — flat at 192 for the TENTH and ELEVENTH consecutive readings**
+  (179 → 183 → 191 → 192 ×11). Re-derived independently by counting `WARN:` lines in the `Rule I`
+  job log on merged `main` (`gh run view --job 91620443169 --log | grep -c "WARN:"` → **192**), not
+  read off QUEUE.md's summary. No regression from either merge. No action; FOLLOW-591/602 own it.
+- **Rule Q compliance, both PRs:** self-test step ordered **before** the assertion step
+  (`ci.yml:678-681`, `:699-702`), no `continue-on-error`, positive proof printed in all three jobs.
+  Seventh and eighth consecutive gate-shipping PRs to comply. #655 additionally kept the inline
+  no-argument invocation that makes Rule J's self-test actually run.
+- **Rule AM compliance, both PRs:** every fixture is synthesized in a temp tree; the real manifest,
+  the real baselines and `apps/*` are never mutated. Both gates' self-tests point their baseline
+  overrides at temp files (`capture:358`, `singleton:337`), so a self-test can never authorise or
+  accidentally rewrite the committed baseline.
+- **The merge itself was NOT a plain fast-forward, and that is verifiable from the object graph** —
+  see §5d. Independently established: `git patch-id --stable` for `b8f2b922` is identical to that of
+  the pre-merge `80dbf131` (`90b28f23…`), and `ff02b85e`'s is identical to pre-merge `2076906f`
+  (`efe57be1…`), while committer dates were rewritten (`08:52:57`) and author dates preserved
+  (`01:53`, `02:00`). **The conflict resolution changed no content — only hunk position.**
+
+### 3. Wiring Audit
+
+**PR #652 — Wiring Audit — clean ✅.**
+
+- **CHECK A.** One new executable file: `scripts/lib/suppression-baseline.sh`. **Not dead, and a
+  mechanical importer-grep would misflag it for the second consecutive retro** — it is `source`d,
+  not imported, with **2 real non-test consumers** in blocking CI jobs
+  (`check-sentry-capture-has-init.sh:273`, `check-sentry-init-singleton.sh:261`; grep:
+  `grep -rn "suppression-baseline\|compare_suppression_baseline" --include=*.sh --include=*.yml .`).
+  Two new data files (`scripts/baselines/*.baseline`) are read by default path in both gates
+  (`capture:724`, `singleton:268`) — **proven consumed live**, both gates printing
+  `→ matches the committed baseline (<path>)`. New functions:
+  `compare_suppression_baseline` (2 callers), `_suppression_baseline_impl` (1),
+  `_suppression_baseline_print_expected` (3), `HARDENED_MARKERS` (consumed `singleton:747`). None
+  dead.
+- **CHECK B — every new signal terminates in an exit code, and I traced each to the terminus:**
+  - Allowlist inventory: producer `capture:717-722` (iterating `$FILES`, per-file counts) →
+    `compare_suppression_baseline` `:726-729` → `BASELINE_MISMATCH=1` → **consumed by the PASS
+    predicate `:770` → `exit 1`**.
+  - Exclusion inventory: producer `singleton:720-732` → comparator `:786-789` →
+    `BASELINE_MISMATCH=1` → **consumed at `:808` → `exit 1`**.
+  - `UNHARDENED REGISTERED MIRRORS: N`: producer `singleton:753-756` → **consumed at `:808`**.
+  - Two new env vars (`SENTRY_CAPTURE_ALLOWLIST_BASELINE`, `SENTRY_INIT_EXCLUSION_BASELINE`) have a
+    producer (each gate's `--self-test`, `capture:358` / `singleton:337`) and a consumer (the gate's
+    default-with-override read). Self-contained override knobs by design — **recorded so a future
+    CHECK B does not re-flag them**, per RETRO-237's precedent for `SENTRY_CAPTURE_INIT_TARGET`.
+
+**PR #655 — one finding.**
+
+- **HW-1 · HALF_WIRE_P · P1 · `scripts/check-mirror-files.sh:518-523` — the new `git ls-files`
+  discovery source can yield ZERO candidates, and nothing consumes that fact → FOLLOW-770.**
+  **Priority stated up front so it is not silently re-priced:** P1 is the standing HALF_WIRE_P
+  classification (Rule AJ). **Live impact today is latent** — no current invocation context lacks a
+  git index. Price it as "cheap, do it before anyone containerises or re-roots the gate", not as an
+  incident. The same honest-pricing shape RETRO-238 and RETRO-239 used for FOLLOW-759/765.
+
+  The mechanism: `git ls-files` writes its failure to **stderr** and exits 128 with **empty stdout**
+  (proven directly: `git -C /home/asipi ls-files` → `fatal: not a git repository`, exit 128, nothing
+  on stdout). Inside `done < <( git ls-files | awk … )`, a process-substitution failure does not
+  propagate to the parent, so neither `set -e` nor `pipefail` fires (`:76` sets both). The loop body
+  never executes → `found_count=0` → the gate prints `<basename>: 0 file(s) found` →
+  `DISCOVERY_FAILURES=0` → **`OK: every file sharing a registered mirror basename is itself
+  registered.` → exit 0.** A diagnostic exists and the verdict never reads it. That is the Rule AJ
+  organ verbatim — a producer-only signal in a green gate — which is **the exact defect class this
+  same session spent two PRs eliminating from the two sibling gates**.
+
+  **Why it is reachable rather than theoretical, and the evidence is inside the PR itself.** The one
+  documented knob that reaches it is `MIRROR_FILES_ROOT` (`:79`, listed in the script's own env
+  section), pointing at a directory that is not inside a git work tree. **That is precisely the
+  condition the fix's own fixture hit**: PR #655 had to add `git -C "$tmp" init -q` + a commit to
+  the self-test tree (diff `b8f2b922`, `check-mirror-files.sh:+137-142`) *because the temp fixture
+  root was no longer visible to the scan*. The implementer met the failure mode, fixed it **in the
+  fixture**, and did not guard it **in the gate** — and no residual note records it. Contrast
+  `check-sentry-*`, which both hard-fail with **exit 2** when a dependency is unavailable and never
+  degrade (`capture:245-256,266-277`; `singleton:236-247,254-265`): the sibling gates in the same
+  session hold the "cannot evaluate ⇒ must not report clean" contract (FOLLOW-760) that this gate's
+  new dependency does not.
+
+- **CHECK B otherwise clean, and HW-2 from RETRO-239 is genuinely CLOSED.**
+  `basename_discovery_note` now has a producer (`mirror-files.json:14`) **and two consumers**: it is
+  printed (`:481`, `reason: $off_note`, verified in the merged rule-j log) **and** its absence
+  increments `FAILURES` (`:483-488`) which is consumed by the summary at `:534-537` → `exit 1`.
+  Producer → parser → render → **exit code**. Four hops, terminating. `OFF_PAIRS` (`:456-465`) has
+  a producer and one consumer in the same block.
+- **CHECK A clean.** No new files, no new functions; `run_self_test()` was extended, and it retains
+  its two callers (the `--self-test` flag and the recursion-guarded inline invocation).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, #655, latent) — the `basenames<TAB>note` line protocol is unescaped, so a
+  multi-line `basename_discovery_note` false-REDs the gate with a misleading diagnosis.**
+  `check-mirror-files.sh:456-465` emits one `basenames \t note` line per opted-out pair and
+  `:478` reads it with `while IFS=$'\t' read -r off_basenames off_note … <<< "$OFF_PAIRS"`. JSON
+  permits a literal newline in a string; such a note splits into a second loop iteration whose
+  `off_basenames` is the note fragment and whose `off_note` is empty → the gate reports
+  `FAIL: basename_discovery is off for this pair with no (or an empty) basename_discovery_note`
+  for a pair that has one. Direction is **false-RED** (loud, self-correcting), and latent — the one
+  real note is single-line (verified in the merged rule-j log, printed intact on one line). Cheap:
+  emit JSON or base64 rather than a bare tab. → folded into **FOLLOW-770** (same file, same PR's
+  code).
+- **Considered and NOT filed:** the OFF-pair listing lost its previous
+  `.filter(b => !on.has(b))` de-duplication, so a basename that is OFF in one pair and ON in another
+  would now be printed under "Discovery OFF" while discovery is in fact ON for it. Verified
+  impossible today (`bandit.ts`/`observability.py` are ON in every pair that names them,
+  `route.ts`/`reorder.ts` in none) and the pair-level framing is **more** correct than the old flat
+  set, because the note is a pair-level decision. Recorded so the axis is visibly walked.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, #652, latent) — FOLLOW-765's two new controls are bounded to `apps/*/src`, while the
+  suppression register they guard (`scripts/mirror-files.json`) is repo-wide; both the script header
+  and the baseline file state the guarantee unconditionally.** → **FOLLOW-771**.
+
+  Traced in code, not reasoned about. Both the exclusion inventory **and** the AC2 hardened-marker
+  check live inside one loop, `for f in $FILES` (`check-sentry-init-singleton.sh:722`), where
+  `$FILES` = `find "$ROOT"/apps/*/src -name "*.py"` minus `test_*.py` / `*_test.py` / `conftest.py`
+  (`:673,705-711`). `EXCLUDED_OBSERVED` is appended at exactly one site, `:732`, inside that loop;
+  the marker check is at `:745-757`, inside the same branch. Therefore a registered `.py` pair with
+  **both** sides outside that region enters **neither**: the observed exclusion set stays at 3, it
+  matches `count: 3`, the gate stays green — and a file the manifest has just blessed as a
+  legitimate `sentry_sdk.init(` site is never marker-verified.
+
+  **Why the language matters more than the mechanism here.** `singleton:52-55` asserts
+  *"its MEMBERSHIP is compared against a committed baseline … so registering a fourth pair reddens
+  the gate until the addition is reviewed"*, and
+  `scripts/baselines/sentry-init-mirror-exclusions.baseline` repeats it: *"Registering a fourth `.py`
+  pair in scripts/mirror-files.json silently grew this list from 3 to 4 before FOLLOW-765; now it
+  turns the gate RED until the addition is written here."* Both are **unconditional and both are
+  false for an out-of-region pair**. This is Rule AL (an assertion evaluated over a narrower region
+  than the register it guards) compounded by Rule AI (a claim broader than the mechanism that
+  backs it).
+
+  **Both readings stated, because the fair verdict is not obvious.** A generous reading says
+  residual **A** (`:136-139`, "SCAN_DIRS is only apps/\*/src — a `sentry_sdk.init(` under
+  packages/… is unscanned") already covers it. A strict reading — the one I take — says A is about
+  the **detection** axis and predates FOLLOW-765; it does not qualify the **new** positive claim
+  that registration reddens the gate. A reader who reads A and then reads (i) concludes "unscanned
+  files can hide an init, but at least *registering* one turns the gate red." That conclusion is
+  wrong, and nothing in the header corrects it.
+
+  **Not hypothetical in shape, only in file extension.** `scripts/mirror-files.json` **already**
+  contains a registered pair whose canonical sits outside `apps/*/src`
+  (`packages/shared/src/bandit.ts` ↔ `apps/decision-api/src/lib/bandit.ts`), so "register a pair
+  outside the scan region" is established practice in this repo — it simply happens to be `.ts`
+  today, which `_registered_mirror_py_paths()` filters out. Latent: 3 registered `.py` paths, all
+  in-region, all hardened (re-verified live, `UNHARDENED … 0`).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, #655) — FOLLOW-766 AC2's "or omits it" axis is implemented but NOT fixtured, and it
+  is the more likely real case.** The implementation is correct on both axes: `:457`
+  (`if (p.basename_discovery === true) continue;`) means an **omitted** key is treated exactly like
+  an explicit `false`, which is what AC2 asked for. But **both** new fixtures (self-test steps 6 and
+  7) set `"basename_discovery": false` explicitly (diff `b8f2b922`, two heredoc manifests). The
+  omitted-key path — the default for any pair a future author adds *without thinking about the
+  flag*, i.e. the exact population the enforcement exists to catch — has no red-first proof and
+  would survive a refactor to `p.basename_discovery === false`. One extra heredoc. → folded into
+  **FOLLOW-770**.
+- **TG-2 (P3, #652) — RETRO-239's TG-1 is not merely still open; its scope DOUBLED, and #652 is
+  what doubled it.** Each gate now sources **two** helpers, each with its own unfixtured
+  `[[ ! -f ]]` + `declare -F` exit-2 guard: `capture:245-256` (clean-python-source) and `:266-277`
+  (suppression-baseline); `singleton:236-247` and `:254-265`. That is **four** hard-fail paths, not
+  two, and none is exercised by any `--self-test`. The singleton gate's own residual F (`:179-182`)
+  states this honestly — *"its scope is now two helpers x two gates"* — which is a credit to #652,
+  but FOLLOW-769's stub still describes two. → **premise correction on FOLLOW-769**, §5a.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, #655) — `check-mirror-files.sh` acquired a hard `git`-index dependency and a semantic
+  narrowing, and it is the only one of the three gates with NO "known, deliberately unguarded gaps"
+  section at all.** Two unrecorded facts: (i) the availability failure mode (§3 HW-1); (ii)
+  discovery narrowed from "every file on disk" to "every **tracked** file", so an unregistered copy
+  that exists but has never been `git add`ed is now invisible where `find` saw it. **(ii) is a
+  correct trade and I checked both real invocation contexts rather than assuming**: at the lefthook
+  pre-push hook the file being pushed is committed and therefore tracked; in CI `actions/checkout`
+  makes everything tracked — so nothing being *shipped* escapes. It is nonetheless a coverage
+  change that no artefact records, and the sibling gates both carry exactly such a section
+  (`capture` gaps 5-7, `singleton` gaps A-F). → folded into **FOLLOW-770**.
+- **DG-2 (P2, mine, and unlike RETRO-239 I am filing it) — `docs/MASTER_DESIGN.md` §Snapshot.6's
+  CONVENTIONS_PATCH rule count.** It reads **27**; `grep -c "^## Rule " CONVENTIONS_PATCH.md` →
+  **41** before this retro and **42** after §6's promotion. RETRO-239 §4d DG-2 recorded the same
+  drift and **declined to file it**, correctly, on the grounds that neither PR touched
+  CONVENTIONS_PATCH so Rule AI did not make it theirs. **That reasoning does not survive this
+  retro:** this entry *is* the change that moves the number, so Rule AI ("a change that makes a
+  claim false MUST update every document asserting the prior state in the same PR") now fires on me
+  — and `docs/MASTER_DESIGN.md` is outside my write scope, so I cannot discharge it myself. Filing
+  is the only honest option. → **FOLLOW-772**.
+- **DG-3 (P2, pre-existing, fixed in this commit rather than filed).**
+  `backlog/FOLLOW_UPS.md` contained exactly one `<details>` tag, opened at `:23690` inside
+  FOLLOW-764's *"Original stub text (superseded)"* disclosure, whose `</details>` sat at **the last
+  line of the file** (`:24016`). Every stub appended after FOLLOW-764 — **FOLLOW-765, 766, 767, 768
+  and 769, i.e. RETRO-239's entire §7 output including both P1s** — therefore rendered collapsed
+  under a summary reading "superseded". Verified: `grep -c "<details"` → 1, `grep -c "</details>"` →
+  1, no intervening close. No operational harm this session (the PM read the file raw), but it would
+  have mis-presented five open tickets at sprint planning. Since I was about to append three more
+  stubs into the same block, I **moved the closing tag to its correct position** (immediately after
+  FOLLOW-764's `cross_ref`, before the `---` preceding FOLLOW-765) rather than compounding it.
+  Surgical, inside my write scope, and recorded here so the edit is auditable. Root cause is an
+  append-at-EOF convention meeting an unclosed HTML block — noted in §6 as a mechanism, not minted
+  as a pattern.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-768 (P2, capture-gate allowlist clearance) — premise CORRECTED in two ways, and the
+  second one is new work the stub does not currently ask for.**
+  1. **Line references are stale.** The stub cites `:240`/`:246`/`:231`/`:251`; #652 grew the file
+     by 284 lines. The raw-text clearance the ticket exists to fix is now
+     `check-sentry-capture-has-init.sh:332`
+     (`unallowlisted=$(echo "$capture_lines" | grep -v "sentry-init-guard: allowlisted" …)`) —
+     **verified still present and still raw**, so the finding itself stands unchanged.
+  2. **#652 created a NEW consistency obligation that FOLLOW-768's fix would otherwise break.** The
+     new allowlist inventory counts raw occurrences per file
+     (`:719`, `grep -c "sentry-init-guard: allowlisted" "$f"`) and feeds the **committed baseline**.
+     FOLLOW-768 AC1 will restrict *clearance* to tokens sitting in a comment-blanked span. After
+     that fix, a token inside a string literal would be **counted into the suppression inventory**
+     (and therefore require a baseline entry, in a reviewed diff) while **suppressing nothing** —
+     the inventory and the clearance predicate would disagree about what an allowlist entry *is*.
+     That is a fresh Rule AL exposure that exists only because #652 landed. FOLLOW-768 needs an
+     added AC: **the inventory and the clearance predicate must share one definition of "an
+     allowlist entry"**, and the baseline must be regenerated in the same PR. Recorded on the stub.
+- **FOLLOW-769 (P3, missing-helper hard-fail fixtures) — premise CORRECTED: the scope doubled and
+  the line references are stale.** Two helpers × two gates = **four** unfixtured exit-2 paths
+  (§4c TG-2), at `capture:245-256` and `:266-277`, `singleton:236-247` and `:254-265` (the stub
+  cites `capture:180-191` / `singleton:146-157`). The DG-1 half of the ticket (`# shellcheck`
+  directives on a repo with no shellcheck) also grew: `grep -rn "shellcheck" .github/` still returns
+  **no hits**, while `# shellcheck source=` directives now appear in **five** places (both new
+  `BASELINE_LIB` sources included). Recommend **2h → 3h**. Recorded on the stub.
+- **FOLLOW-763 (P2, `ShadowChatIntent` provenance markers) — unaffected, and I checked rather than
+  assumed.** Neither PR touches `packages/`, `apps/`, or any `.ts` file; the combined diff is 6
+  `scripts/` files + `backlog/QUEUE.md` + `scripts/mirror-files.json`. Different subsystem, no
+  premise moved. Stated explicitly so the PM does not re-derive it before dispatching.
+- **FOLLOW-756 / FOLLOW-758 (`SENTRY_DSN` provisioning; `init_sentry` return contract) — premises
+  UNCHANGED and correctly untouched.** No `SENTRY_DSN` value and no `apps/*/observability.py` byte
+  appears in either diff (`git show --stat` on both merge commits confirms: zero files under
+  `apps/`). §5d carries the aggregate.
+- **FOLLOW-761 / FOLLOW-762 (Redis smoke) — untouched by this pair.** They are RETRO-241's subject
+  (PRs #653/#654) and share only `backlog/QUEUE.md` with these two.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future PR that adds a Sentry allowlist annotation, or registers a 4th `.py` mirror pair, now
+  has a MANDATORY second file to edit.** That is the intended design and it is a real change in
+  authoring cost: the gate prints a copy-pasteable replacement body on failure
+  (`suppression-baseline.sh:_suppression_baseline_print_expected`), so the cost is one paste — but a
+  contributor who does not know the baseline exists will hit a red gate with no prior warning. The
+  gate's FIX text carries the instruction, which is the right place for it.
+- **The next gate that needs a suppression inventory inherits a MECHANISM, not a pattern to copy.**
+  `scripts/lib/` now has two members and an established convention (source, `declare -F`-assert,
+  exit 2 on absence). RETRO-239 §5b flagged that the "two independent self-tests" mitigation does
+  not automatically extend to a third caller; that warning now applies to **two** helpers, and
+  `suppression-baseline.sh` has **no** semantic self-test of its own in either gate beyond the
+  fixtures that exercise it end-to-end.
+- **The next author who adds a `mirror-files.json` pair meets an enforced field.** Omitting
+  `basename_discovery` now reddens Rule J (the blocking pre-push hook, before CI). This is a good
+  failure — but it means FOLLOW-763's or any other ticket's incidental manifest edit could redden a
+  gate for a reason unrelated to its own scope. Worth one line in the next manifest-touching brief.
+
+#### 5c. Contracts changed others rely on
+
+- **`scripts/mirror-files.json` is now a THREE-consumer contract**, up from two after #651 and one
+  before it: (1) `check-mirror-files.sh` pair comparison + discovery; (2)
+  `check-sentry-init-singleton.sh`'s exclusion list; and (3) — new — the committed
+  `sentry-init-mirror-exclusions.baseline`, which must be edited **in the same PR** or the singleton
+  gate fails. Editing one JSON pair now has effects in two CI jobs and one committed file. Only the
+  singleton script's header and the baseline's own comment record this; the manifest itself still
+  has no header-comment slot. Recorded for the architect; carried by FOLLOW-771, which touches the
+  same surface.
+- **`scripts/lib/` cross-script sourcing coupling doubled.** Two helpers, two callers each, four
+  source sites. `compare_suppression_baseline`'s return contract (0/1) is depended on at
+  `capture:726` and `singleton:786`; both callers use `|| BASELINE_MISMATCH=1`, so any non-zero
+  routes to failure — the **safe** direction, checked rather than assumed.
+- **CI-output "contract":** the two suppression inventory lines changed shape (they now carry
+  `— suppression inventory (baseline-checked)` and a `→ matches the committed baseline` line), and
+  `Discovery OFF for basenames:` changed from a single flat line to a multi-line block with a
+  `reason:` sub-line. **No downstream parser exists** (`grep -rn "Discovery OFF\|suppression
+  inventory" --include=*.yml --include=*.ts .` → only the gates themselves), so nothing breaks — but
+  any future log-scraping alert must be written against the new shape.
+- **No public API surface changed by either PR** — re-verified against CLAUDE.md's escalation list.
+
+#### 5d. Architectural assumptions affected
+
+- **PROCESS FINDING (the input that appears in no PR body or diff) — a `git merge-tree` "zero
+  conflicts" verdict has a shelf life that ends at the VALIDATOR'S OWN next push to `main`.**
+
+  Sequence, reconstructed from the object graph rather than from anyone's account:
+  1. The PM validated PR #655 and ran `git merge-tree` pairwise against the other three open PRs,
+     finding **zero conflicts** (QUEUE.md session-89 wind-down, `:700-703`).
+  2. The PM then pushed its **own** bookkeeping commit `51b4e2b0`
+     (*"validate PR #655, write session-89 wind-down"*, author date 02:12:35), which **touches
+     `backlog/QUEUE.md`**.
+  3. PR #655's branch was `80dbf131` → `2076906f`, whose parent is `d9507645` — i.e. **branched
+     before `51b4e2b0` existed**. Its second commit also touches `backlog/QUEUE.md`.
+  4. At merge, those two QUEUE.md edits collided. Real git conflict, docs-only, **both sides
+     additive**, resolved by keeping both.
+
+  **Independent evidence, since none of this is in the PR:**
+  - **It was a rebase-with-resolution, not a fast-forward.** Pre-merge SHAs `80dbf131`/`2076906f`
+    (still reachable locally, and cited verbatim in QUEUE.md's own PR-#655 handoff block at `:751`)
+    differ from the merged `b8f2b922`/`ff02b85e`; committer dates were rewritten to `08:52:57` while
+    author dates were preserved at `01:53:43`/`02:00:51`. `origin` still carries a **third** variant
+    of the same branch (`1390a5e5`/`1522c8f8`, parented on `c86f3b0c`) — so the branch was rebased
+    **twice** before landing.
+  - **The resolution changed no content.** `git patch-id --stable` is **identical across all three
+    variants of both commits** (`90b28f2350c4…` for the code commit, `efe57be1d86a…` for the
+    QUEUE.md handoff). The conflict was purely positional; keeping both sides was the correct and
+    only lossless resolution, and it was executed correctly. QUEUE.md on `main` has zero conflict
+    markers and both notes intact — I re-checked rather than trusting the session-90 note
+    (`grep -c "^<<<<<<<\|^=======\|^>>>>>>>" backlog/QUEUE.md` → 0).
+
+  **The lesson, and it is deliberately NOT the branch-collision lesson this repo already has.**
+  Rule AG and the shared-working-tree memories are about *concurrent agents mutating one checkout*.
+  This is a different failure: a **verification artefact going stale**. `git merge-tree` answers a
+  question about two specific commits; the moment either side moves, the answer is void — and the
+  PM's own bookkeeping push is exactly as capable of moving `main` as a second worker's PR merge.
+  The validator produced the evidence, then invalidated it itself, then filed the evidence as still
+  good. The cheap discipline: **any collision check must be re-run after every push to `main` that
+  touches a file a still-open PR also touches** — and the PM's own commits are pushes. Minted as
+  **P-24** in §6, count 1, **not promoted**.
+
+- **RETRO-239's SPOF verdict was CONDITIONAL, and #652 made the condition harder before meeting
+  it — reconciled explicitly.** RETRO-239 §5d assessed the `scripts/lib/` shared-helper decision as
+  net risk-reducing and concluded *"close TG-1 and the SPOF is strictly better than the status quo
+  ante."* #652 **doubled** the shared surface (2 helpers behind 2 blocking gates, 4 source sites)
+  **without** closing TG-1 — the availability guard is still unfixtured, now in four places. The
+  verdict is not overturned: availability is still guarded (exit 2 everywhere) and the new helper's
+  semantics are guarded by seven fixtures across the two suites. But RETRO-239's condition is now
+  twice as large and still unmet, and FOLLOW-769 is still P3. I am **not** re-pricing it (that is
+  the PM's call) — I am recording that its scope changed under it, in §5a.
+- **A contradiction with RETRO-239's own audit, which I own because RETRO-239 is my predecessor.**
+  RETRO-239 §3 examined `check-mirror-files.sh`'s discovery block and recorded CHECK B as clean; it
+  found the prune list's **environment** axis (LG-1 → FOLLOW-767) and did not walk its
+  **availability** axis. The fix it prescribed — FOLLOW-767 AC1, *"derive candidates from `git
+  ls-files`"* — is the change that introduced the availability failure mode, and neither the retro
+  nor the AC asked for a guard on it. So §3 HW-1 is not a worker miss: **the worker implemented the
+  preferred option exactly as written, and the omission is in the ticket, which is mine.** Stated
+  plainly rather than filed as an implementation defect.
+- **"A gate proves the code is right" vs "the code runs" — Rule AA, FOURTH consecutive retro.**
+  Three Sentry-family gates now carry **32 fixtures** (12 + 13 + 7) and two committed baselines,
+  guarding a signal path whose `SENTRY_DSN` is still unprovisioned (FOLLOW-756, P1, open since
+  RETRO-237). The gate estate keeps compounding ahead of the channel it guards. Not a criticism of
+  any of the eight tickets in this chain — each was correctly scoped — but it is the aggregate the
+  PM should see, and it is why P-21 exists. **P-21 is NOT advanced on it** (§6).
+- **The `lessons.d/` write scope — the PM's fix did NOT take, and this is the FOURTH consecutive
+  denial. Reported as a fact I established by trying, not as a status I assumed.** QUEUE.md's
+  session-89 wind-down (`:727-733`) recorded three denied agent `lessons` writes in one session and
+  named the PM's own dispatch template as the cause; the session-90 head (`:655-658`) states the fix
+  — *"Both retro briefs will explicitly include `.claude/agents/<name>/lessons.d/**` in the write
+  scope"* — and **this dispatch's brief does carry it, verbatim**. It still failed: three separate
+  attempts (`Write`, `mv`, `cp`) to create
+  `.claude/agents/retrospective-analyst/lessons.d/RETRO-240.md` were all refused by the permission
+  layer, which evidently denies `.claude/**` independently of what the dispatch brief says. **So the
+  PM fixed the brief and the brief is not the control.** The fragment was written in full and is
+  reproduced in this run's closing output for the PM to persist — the same salvage path the previous
+  three occurrences used, which is exactly why the count keeps rising without anyone noticing the
+  remedy does not work. Not escalated (not mine to escalate) and not filed as a FOLLOW (agent
+  process tooling is the PM's territory, per my standing guardrail) — but recorded here, in the
+  permanent log, because a fix that has been "applied" once and denied four times needs the denial
+  written down somewhere the next retro will read it.
+- **Rule AG itself — exposure unchanged, third consecutive retro.** `retrospective-analyst` is still
+  the only agent with a `lessons.d/` fragment directory; both PRs in this pair appended to the shared
+  `.claude/agents/devops-engineer/lessons.md`. Dispatch was strictly serial again this session, so
+  Rule AG's condition ("while other agents may be running") was not met — **compliant on the letter,
+  exposed the moment parallel dispatch resumes.**
+
+### 6. New lesson candidates
+
+- **THE PRE-SPECIFIED FOURTH-SIGHTING TEST — TRIGGERED. → Rule AP PROMOTED.** RETRO-239 §6
+  pre-specified: *"if a fourth consecutive retro reaches the same verdict, the right response is not
+  a fourth AE sighting but a **mechanical** residual register (a machine-checkable per-gate list),
+  which would be a new rule with a real mechanism."* I tested the bar rather than re-deriving
+  whether one was needed, and it is met — **twice, independently, in this one pair**:
+  - **#652: the enumeration is one shape short.** The singleton gate's residual list is the best in
+    the chain (A, B, C1/C2/C3, D, E, F — #652 *added* E and F and split C into three). It still does
+    not state that FOLLOW-765's two new controls inherit the `apps/*/src` bound, while the header
+    and the baseline file both assert the redden-on-a-fourth-pair guarantee unconditionally (§4b
+    CB-1).
+  - **#655: there is no enumeration at all.** `check-mirror-files.sh` is the only one of the three
+    gates with no residual section, and it just took on a hard `git`-index dependency with a
+    silent-degradation failure mode and a semantic narrowing, neither recorded (§3 HW-1, §4d DG-1).
+  - **Priors, cited exactly:** RETRO-238 §4b CB-3 (*"an enumeration itself short by at least this
+    shape and CB-1's"*) and §8 (*"the AC6 answer should read 'partially enumerated, and the
+    enumeration is itself partial'"*); RETRO-239 §6 (*"third consecutive retro in which a
+    gate-hardening PR's own enumeration of what remains is one shape short"*) and §8 (FOLLOW-760
+    AC5 = **PARTIAL**). RETRO-239 counts RETRO-237 §6 as the first of the three. **Two prior retros
+    is already ≥ the threshold; three is the honest count.**
+  - **Why a rule now, when RETRO-239 declined.** RETRO-239's stated reason for declining was that
+    *"Rule AE already demands full enumeration, so the defect is in application, not wording."* That
+    diagnosis is right and it is exactly why the remedy must be a **mechanism**, not more wording.
+    Rule AP does not restate AE; it converts the prose residual list into an executable register.
+- **P-23 ("A GATE'S FILE-DISCOVERY SCAN/PRUNE LIST ENCODES THE ONE ENVIRONMENT ITS AUTHOR TESTED
+  IN") — NOT ADVANCED. Held at count 1.** Superficially this retro delivers a perfect second
+  sighting: §3 HW-1 is a discovery-source assumption in the *same script*, found one round later.
+  **It fails clause (c) of the bar RETRO-239 pre-specified** — *"the wrong environment must be one
+  the gate is actually invoked in (a hypothetical environment does not count)"*. `git ls-files` is
+  correct in all three environments the gate is actually invoked in (CI `actions/checkout`, the
+  developer working tree, and — now — a tree containing agent worktrees); the environment it is
+  wrong in (`MIRROR_FILES_ROOT` at a non-repo path) **was** an invocation context until #655's own
+  fixture change removed it. Separately, P-23's sighting 1 was **resolved**, and RETRO-239's own
+  Rule J/K.1 precedent is that a resolved sighting is not a new sighting. **Recording this
+  explicitly because the pre-specification did its job again: without clause (c) I would have
+  advanced P-23 to 2 on a sighting that is really a Rule AJ instance** — the same trap RETRO-239
+  documented for P-22/CB-1.
+- **P-21 ("A GATE IS ACCEPTED AS A SUBSTITUTE FOR THE CHANNEL IT GUARDS") — NOT ADVANCED. Held at
+  count 2, for the second consecutive retro.** Criteria (i) and (iii) are met overwhelmingly (32
+  fixtures across three gates; QUEUE.md describes all four tickets as done) and (ii) is met on its
+  face (`SENTRY_DSN` still unprovisioned). But the artefact is **again the same one** RETRO-237 used
+  for sighting 1, and RETRO-238 set the same-artefact bar when it accepted its own advance.
+  Applying it against myself for the same reason RETRO-239 did: **held at 2.**
+- **P-22 ("THE REMEDIATION RE-INSTANTIATES ITS OWN DEFECT CLASS IN A NEW MEDIUM") — ADVANCE
+  CONSIDERED, and this one is genuinely close. NOT ADVANCED. Held at count 2.** §3 HW-1 is a
+  producer-only signal created by the PR whose sibling PR, 2 minutes earlier, existed solely to
+  eliminate producer-only signals. Against RETRO-238's three-clause bar: (b) **holds** — the defect
+  was introduced *by* the remediation, not merely survived it (this is the clause CB-1 failed in
+  RETRO-239); (c) **holds**. (a) requires *a different subsystem and a different author* — this is
+  the same script family, the same session, the same agent role, arguably a different dispatch. **I
+  judge (a) NOT met**: `check-mirror-files.sh` and the two Sentry gates are one gate estate under
+  one owner, and reading (a) loosely here would make P-22 promotable off any two PRs in a single
+  chain. Held at 2, with the note that a genuinely cross-subsystem sighting would promote it
+  immediately.
+- **P-24 (MINTED at count 1) — "A PRE-MERGE COMPATIBILITY VERDICT IS INVALIDATED BY THE VALIDATOR'S
+  OWN NEXT PUSH." THRESHOLD NOT MET → NOT PROMOTED.**
+  - **THIS RETRO (count 1)** — §5d: `git merge-tree` said zero conflicts for PR #655; the PM then
+    pushed `51b4e2b0` touching a file #655 also touches; the merge conflicted. The verdict was true
+    when produced and void when used, and the thing that voided it was the validator's own commit.
+  - **Why this is not already covered, tested rather than asserted.** **Rule AG** governs parallel
+    agents appending to a shared monotonic log — a *write* collision between concurrent workers;
+    here there was one agent, strictly serial, and the collision was between a worker's branch and
+    the coordinator's own main-line push. **Rule AH** is about a doc's claim verified at *its own*
+    merge commit — adjacent, but about documentation, not about a compatibility check. **Rule AF**
+    is about a red baseline. **Rule AO** is about a corrective edit re-verified against the same
+    PR's evidence — the nearest neighbour, and it would fire if the merge-tree result had been
+    *wrong when produced*; it was not. None fires.
+  - **Second-sighting bar, pre-specified so the next retro tests rather than re-derives:** it must
+    be (a) a mechanically-produced compatibility/conflict verdict, (b) recorded as a decision input
+    in QUEUE.md or a PR body, (c) falsified by a commit landing on the target branch **after** the
+    verdict and **before** the merge, and (d) that commit authored by the same actor that produced
+    the verdict — clause (d) is what distinguishes P-24 from ordinary merge-conflict noise. If it
+    arrives, the rule should ask for one thing: a conflict check is valid only against the current
+    `origin/main` tip at merge time, so it must be re-run — or explicitly re-attested — after any
+    push to `main` touching a file a still-open PR touches.
+- **Rule AJ — instance sighting, codified, no promotion needed (§3 HW-1).** Listed as one finding
+  because it is one mechanism in one file; per my no-undercount guardrail I checked for a second
+  instance in the same PR and found none.
+- **Rule AI — a COMPLIANT instance worth recording, and RETRO-236's precedent says not to count
+  it toward promotion.** #655 corrected `mirror-files.json`'s note text **in the same PR that made
+  the new text true**, and I verified the corrected claim against the merged rule-j log rather than
+  against the diff: the note now says it is printed under `Discovery OFF for basenames:`, and it
+  is. That is Rule AO's discipline (a correction re-verified against the same PR's own evidence)
+  applied voluntarily. Banked as evidence that rules land, not only that they are violated.
+- **Rule AL / Rule AE-as-amended — instance sighting (§4b CB-1), folded into the Rule AP promotion
+  rather than counted separately.** The clearance/region axis is exactly what AE-as-amended and AL
+  already demand; CB-1 is their **application** failing again, which is the premise of Rule AP.
+- **Rule Q, Rule AM, Rule AF — all compliant, recorded in §2, none counted.**
+- **A mechanism, deliberately NOT minted as a pattern (§4d DG-3).** "Append-at-EOF meets an unclosed
+  HTML disclosure block" swallowed five stubs in `FOLLOW_UPS.md`. One occurrence, trivially fixed,
+  and the general form ("appending to a structured document without checking the enclosing
+  context") is too broad to be actionable as a rule. Recorded so a second occurrence has a prior.
+
+**PROMOTION VERDICT: ONE rule promoted — Rule AP** (mechanical residual register), on the bar
+RETRO-239 pre-specified and with three prior retros (RETRO-237 §6, RETRO-238 §4b CB-3 / §8,
+RETRO-239 §6 / §8). Every other candidate was declined against a bar a prior retro wrote:
+**P-21** held at 2 (same artefact), **P-22** held at 2 (clause (a) — same gate estate),
+**P-23** held at 1 (clause (c) — not an environment the gate is actually invoked in),
+**P-24** minted at 1.
+
+### 7. Follow-ups
+
+- **FOLLOW-770:** the Rule J gate's new `git ls-files` discovery source can return zero candidates
+  with nothing consuming that fact — the gate prints `0 file(s) found` and `OK: every file sharing a
+  registered mirror basename is itself registered`, exit 0, while having evaluated nothing; plus
+  three smaller residuals in the same file (the unescaped `basenames\tnote` line protocol, the
+  unfixtured omitted-`basename_discovery` axis, and the absence of any residual/known-gaps section
+  recording either the availability failure mode or the tracked-files-only narrowing)
+  (devops-engineer, 3h, **P1** by the standing HALF_WIRE_P classification; live impact latent — no
+  current invocation context lacks a git index) [§3 HW-1, §4a LG-1, §4c TG-1, §4d DG-1; Rules AJ /
+  Q / AP]
+- **FOLLOW-771:** FOLLOW-765's exclusion baseline and hardened-marker check are both computed inside
+  `for f in $FILES` and are therefore bounded to `apps/*/src`, while the suppression register they
+  guard (`scripts/mirror-files.json`) is repo-wide — a `.py` pair registered with both sides outside
+  that region is in neither the observed exclusion set nor the marker check, so the baseline stays
+  at 3 and the gate stays green; the script header and the baseline file both state the
+  redden-on-a-fourth-pair guarantee unconditionally (devops-engineer, 2h, **P2**; latent — 3
+  registered `.py` paths, all in-region, all hardened) [§4b CB-1; Rules AL / AI / AP]
+- **FOLLOW-772:** `docs/MASTER_DESIGN.md` §Snapshot.6's CONVENTIONS_PATCH rule count reads 27
+  against 42 actual after this retro's Rule AP promotion; RETRO-239 correctly declined to file it as
+  pre-existing, but this entry is the change that moves the number, so Rule AI now fires — and
+  MASTER_DESIGN is outside the retro's write scope (architect, 1h, **P2**) [§4d DG-2; Rule AI]
+
+**Premise corrections applied to existing stubs (not new tickets):** **FOLLOW-768** — stale line
+refs, plus a NEW required AC (after 768's fix the raw-count allowlist inventory and the
+comment-scoped clearance predicate would disagree about what an allowlist entry is; they must share
+one definition and the baseline must be regenerated in the same PR). **FOLLOW-769** — scope doubled
+from 2 to 4 unfixtured exit-2 paths, stale line refs, `# shellcheck` directive count 4 → 5,
+recommend 2h → 3h.
+
+**One in-scope repair applied rather than filed:** `backlog/FOLLOW_UPS.md`'s stray `</details>` was
+moved from EOF to its correct position after FOLLOW-764, un-collapsing FOLLOW-765 through 769
+(§4d DG-3).
+
+**Not filed, deliberately:** no stub for the **OFF-pair de-duplication change** (§4a — verified
+impossible today and the new pair-level framing is more correct); no stub for **RETRO-239's TG-1 /
+FOLLOW-769** as a new ticket (the premise correction belongs on the existing stub, not on a
+duplicate); no stub for the **`mirror-files.json` three-consumer coupling** (§5c — the coupling is
+correct and FOLLOW-771 touches the same surface); no stub for **residual A/B/C1/C2/C3/D/E/F** in
+either Sentry gate (documented-and-open, re-verified latent, and Rule AP is the mechanism that will
+make them checkable); no stub for **`suppression-baseline.sh` lacking its own dedicated self-test**
+(it is exercised end-to-end by seven fixtures across two suites — better coverage than a unit test
+of a comparator); no stub for **Rule I** (FOLLOW-591/602 exist); no stub for **FOLLOW-756 /
+`SENTRY_DSN`** (operator territory — surfaced in §5d per my no-escalation guardrail); no
+**ESCALATIONS.md** write and no **QUEUE.md** write of any kind.
+
+### 8. Cross-references
+
+- **RETRO-239 (FOLLOW-760 #650 + FOLLOW-746 #651) — the direct parent of BOTH PRs. Its §7 list is
+  now 4 closed / 2 open, traced END-TO-END per AC rather than per ticket (step 7):**
+
+  **FOLLOW-759 — all 5 ACs closed; AC1 TERMINATES.**
+  - **AC1 (give the inventory a consumer that FAILS on mismatch) — CLOSED, and I traced all five
+    hops rather than stopping at the fix.** Producer `capture:717-722` → comparator `:726-729` →
+    `BASELINE_MISMATCH=1` → PASS predicate `:770` → **`exit 1`**. The last hop is what makes it a
+    gate rather than a log line — the exact hop RETRO-238's HW-1 was missing. *Regression proof*:
+    three FOLLOW-759 fixtures run as the **first** step of the blocking CI job and appear in the
+    merged log (`91619871133`).
+  - **AC2 (weaker `::notice::` fallback) — N/A, correctly.** AC1's stronger option was taken; the
+    fallback was for the case where AC1 was judged too strict. Recorded so it does not read as
+    skipped.
+  - **AC3 (align the inventory's region with `$FILES`, ideally by iterating it) — CLOSED, and the
+    RETRO-238 CB-2 region mismatch is gone.** `:718` is literally `for f in $FILES`; the old
+    `grep -rn … "${SCAN_DIRS[@]}"` with no `--include` and no test exclusion **no longer exists**
+    (grep of the file: the only allowlist `grep -c` is `:719`, scoped to `"$f"`). Region drift is
+    now structurally impossible, not merely fixed.
+  - **AC4 (fixtures both directions) — CLOSED and PROVEN TO RUN.** `(FOLLOW-759 AC4)` asserts a
+    scanned allowlisted capture inventories as exactly 1 and matches the baseline; `(FOLLOW-759
+    AC3)` asserts an annotation in an EXCLUDED file is NOT counted. Both in the merged log.
+  - **AC5 (do not change token spelling / pass-fail semantics / CI wiring) — HONOURED.** Token
+    unchanged; `ci.yml:699,702` unchanged (verified by grep, not by the PR's word).
+
+  **FOLLOW-765 — all 5 ACs closed; AC2 answered better than the AC asked.**
+  - **AC1 (baseline consumer) — CLOSED, terminates.** `singleton:786-789` → `:808` → `exit 1`, with
+    the missing-baseline and both-direction-drift fixtures proven in the merged log.
+  - **AC2 (verify excluded mirrors are hardened; red-first fixture) — CLOSED, and the implementer
+    resolved the judgement call RETRO-239 flagged rather than picking the AC's minimum.** The AC
+    offered byte-identity-to-canonical *or* marker survival. The header (`:62-74`) records why
+    byte-identity fails here — *"the attack is a NEWLY registered, self-consistent pair … its
+    canonical is itself, so identity is satisfied trivially"* — which is precisely RETRO-239 CB-2's
+    reasoning, independently re-derived, and picks the marker check. `HARDENED_MARKERS:274-278` →
+    check `:745-757` → `UNHARDENED_COUNT` → `:808` → `exit 1`.
+  - **AC3 (correct residual C's text) — CLOSED and EXCEEDED.** `:148-157` is rewritten to state what
+    the old controls actually covered, and **adds** sub-residuals C1/C2/C3 that nobody asked for.
+    This is the single best residual-enumeration artefact in the chain — which is why §4b CB-1's
+    finding is about a *new* claim it does not qualify, not about sloppiness.
+  - **AC4 (coordinate with 759; prefer ONE mechanism) — CLOSED.** One entry-agnostic helper, two
+    gates, with the rationale recorded at `lib/suppression-baseline.sh:35-50` naming RETRO-239's own
+    "same organ reproduced in the sibling gate" as the thing being prevented.
+  - **AC5 (do not widen the exclusion to a basename; do not remove it) — HONOURED.** Exclusion is
+    still an exact rel-path match (`grep -Fxq`, `:730`).
+
+  **FOLLOW-766 — all 4 ACs closed in BEHAVIOUR; one axis unfixtured.**
+  - **AC1 (read + print the note) — CLOSED.** `:481` prints `reason: $off_note`; verified in the
+    merged rule-j log, full text on one line.
+  - **AC2 (FAIL an opt-out with no/empty note, "false **or omitted**") — CLOSED on both axes in
+    code** (`:457`, `=== true` is the only pass; `.trim()` at `:462` makes a whitespace-only note
+    empty) and terminates (`FAILURES` → `:534-537` → `exit 1`). **Fixtured on the explicit-`false`
+    axis only** → §4c TG-1.
+  - **AC3 (correct the note text) — CLOSED, and the corrected claim is now literally true** — which
+    I verified against the merged job log, not the diff (Rule AO discipline, applied to someone
+    else's correction).
+  - **AC4 (fixtures both directions) — CLOSED.** Self-test steps 6 and 7, both proven running via
+    `Rule J gate self-test: PASSED (7 assertions)` on a **no-argument** invocation in the merged log.
+
+  **FOLLOW-767 — all 4 ACs closed; AC4 re-verified independently rather than accepted.**
+  - **AC1 (derive candidates from `git ls-files`, the preferred option) — CLOSED** (`:522`). This is
+    also the AC that introduced §3 HW-1, and §5d records that as the ticket's omission, not the
+    worker's.
+  - **AC2 (red-first nested-worktree fixture) — CLOSED and PROVEN TO RUN**, with a **real**
+    `git worktree add` rather than a simulation (`:207-224`), asserting both exit 0 **and** the
+    absence of the worktree path from the output — the diagnosis, not just the code (Rule AM shape).
+  - **AC3 (keep genuine AC1 behaviour; existing 4 assertions still pass) — CLOSED.** 4 → 7
+    assertions, all named and all passing, re-run live this session; the `[[ -f ]]` guard preserves
+    the old `find -type f` semantics for tracked-but-deleted index entries.
+  - **AC4 (confirm the same environment assumption is absent from the two Sentry gates — VERIFY, do
+    not assume) — CLOSED, and I re-verified it myself rather than trusting the PR's claim.** Both
+    gates build `SCAN_DIRS` from `"$ROOT"/apps/*/src` (`capture:695`, `singleton:673`) — a
+    single-level glob anchored at the literal `apps` path component with no globstar — so it
+    structurally cannot expand into `.claude/worktrees/…`. Neither file was touched by #655.
+
+  **FOLLOW-768 and FOLLOW-769 — STILL OPEN, out of scope here, premises corrected in §5a.** Both
+  were correctly left untouched (`promoted_to_queue: false`, and neither PR edits the predicate or
+  the guard they own).
+
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141) — the reason
+  step 7 exists. This pair gives the chain's best and worst result simultaneously.**
+  - *Four terminations.* 759 AC1, 765 AC1, 765 AC2 and 766 AC1/AC2 all reach an exit code. RETRO-239
+    recorded that RETRO-238's HW-1 had **forked** — replicated into a sibling gate rather than
+    moving one hop. **Both prongs of that fork are now closed by one shared mechanism**, which is
+    the strongest single result in this eight-ticket chain.
+  - *One fresh instance of the identical organ.* #655 closed HW-2 — a manifest field nothing
+    reads — and in the same file, in the same PR, created a discovery source whose failure signal
+    nothing reads (§3 HW-1). The gap did not move one hop and did not fork: it **re-appeared in a
+    new medium at the moment of closure**. Naming it precisely matters, because the displacement
+    modes this chain has now produced are three distinct things — *hop* (RETRO-238), *fork*
+    (RETRO-239), and *re-instantiation-at-closure* (here) — and only the third is what P-22 is
+    about (§6, where it is held at 2 anyway).
+- **RETRO-238 (FOLLOW-757 #648 + FOLLOW-752 #649)** — origin of FOLLOW-759 and of the
+  same-artefact bar that holds P-21 at 2; its §4b CB-3 is Rule AP's first cited prior.
+- **RETRO-237 (FOLLOW-743 + FOLLOW-744)** — origin of the capture gate, of the Rule AE amendment
+  whose region/clearance clause §4b CB-1 instantiates, and (per RETRO-239's count) the first of the
+  three consecutive incomplete-enumeration verdicts Rule AP is promoted on. Also the source of
+  P-21's sighting 1, the artefact that keeps blocking its advance.
+- **RETRO-235 (FOLLOW-738)** — the three hardening flags `HARDENED_MARKERS` now asserts
+  (`default_integrations=False`, `send_default_pii=False`, `include_local_variables=False`) are
+  RETRO-235's own invariant, mechanically enforced for the first time by #652 AC2 — four days after
+  it was written as prose.
+- **RETRO-236 (FOLLOW-736)** — the precedent applied in §6 for **not** counting a compliant instance
+  (here: #655's Rule AI-compliant note correction) toward promotion.
+- **RETRO-230** — the mutation-fixture standard (show the OLD mechanism accepting the bad input),
+  which all seven of #652's new fixtures and all three of #655's follow.
+
+<!-- RETRO-240 SUMMARY: 2 PRs (#652 FOLLOW-765+759, #655 FOLLOW-766+767), 8 files, +1156/-92, merged
+2m35s apart, BOTH direct §7 follow-ups of RETRO-239 (batched by shared parent retro, not file
+proximity). WIRING: #652 CLEAN — new SOURCED helper scripts/lib/suppression-baseline.sh has 2 real
+non-test consumers (a mechanical importer-grep would misflag it, 2nd consecutive retro), and ALL THREE
+new signals terminate in an EXIT CODE (allowlist baseline, exclusion baseline, UNHARDENED REGISTERED
+MIRRORS); #655 ONE finding — HW-1 HALF_WIRE_P P1: the new `git ls-files` discovery source can return
+ZERO candidates with nothing consuming that fact (fails to stderr, empty stdout, exit 128, swallowed by
+the process substitution so neither set -e nor pipefail fires) → gate prints "0 file(s) found" + "OK:
+every file sharing a registered mirror basename is itself registered" + exit 0 while having evaluated
+NOTHING. Reachable via the documented MIRROR_FILES_ROOT knob — and the PROOF is inside the PR: it had to
+add `git init` to its own fixture because the temp root became invisible; the implementer met the
+failure mode, fixed the FIXTURE, did not guard the GATE. Latent (no current invocation lacks a git
+index). GAPS: 1 logic (LG-1 P3 unescaped basenames\tnote line protocol — a multi-line note false-REDs
+with a misleading diagnosis), 1 bug (CB-1 P2 FOLLOW-765's exclusion baseline AND hardened-marker check
+are BOTH inside `for f in $FILES` = bounded to apps/*/src, while the register they guard
+(mirror-files.json) is repo-wide — a .py pair with both sides out-of-region enters NEITHER, baseline
+stays 3, gate stays green; header :52-55 and the baseline file both state the redden-on-a-4th-pair
+guarantee UNCONDITIONALLY; not hypothetical in shape — bandit.ts is already registered out-of-region),
+2 test gaps (TG-1 P3 FOLLOW-766 AC2's "or OMITS it" axis is implemented but both fixtures set false
+EXPLICITLY — the omitted-key default is the likelier real case; TG-2 P3 RETRO-239's TG-1 scope DOUBLED
+to 4 unfixtured exit-2 paths, 2 helpers x 2 gates), 3 doc gaps (DG-1 P2 check-mirror-files.sh is the
+only gate with NO residual section and just took a hard git-index dependency + a tracked-files-only
+narrowing, neither recorded; DG-2 P2 Snapshot.6 rule count 27 vs 42 — RETRO-239 declined it as
+pre-existing, but THIS retro moves the number so Rule AI now fires → FILED; DG-3 P2 FOLLOW_UPS.md's
+single </details> sat at EOF so RETRO-239's ENTIRE §7 output (765-769, both P1s) rendered collapsed
+under "Original stub text (superseded)" — REPAIRED in this commit, in scope, recorded).
+PROCESS FINDING (§5d, in NO PR body or diff): a `git merge-tree` "zero conflicts" verdict has a shelf
+life that ends at the VALIDATOR'S OWN next push. PM validated #655 clean, then pushed 51b4e2b0
+(its own wind-down) touching QUEUE.md; #655 branched off d9507645, BEFORE it; the merge conflicted on
+QUEUE.md, docs-only, both sides additive, resolved by keeping both. EVIDENCE RECONSTRUCTED FROM THE
+OBJECT GRAPH, not anyone's account: pre-merge 80dbf131/2076906f vs merged b8f2b922/ff02b85e, committer
+dates rewritten to 08:52:57 with author dates preserved, and origin STILL carries a THIRD variant
+(1390a5e5/1522c8f8) — rebased twice. `git patch-id --stable` IDENTICAL across all three variants of
+BOTH commits (90b28f23…/efe57be1…) ⇒ the resolution changed NO content, only hunk position; 0 conflict
+markers on main, re-checked. DELIBERATELY NOT the branch-collision/Rule-AG pattern — that is concurrent
+agents in one tree; this is a VERIFICATION ARTEFACT GOING STALE, and the actor that voided it was the
+one that produced it. CASCADES: FOLLOW-768 premise CORRECTED TWICE (stale line refs — the raw clearance
+is now :332 and still raw; PLUS a NEW required AC — after 768's fix the raw-count inventory and the
+comment-scoped clearance would DISAGREE about what an allowlist entry is, a fresh Rule AL exposure that
+exists only because #652 landed); FOLLOW-769 premise CORRECTED (2→4 unfixtured exit-2 paths, stale refs,
+shellcheck directives 4→5, 2h→3h); FOLLOW-763/756/758/761/762 unaffected (checked, not assumed);
+mirror-files.json is now a THREE-consumer contract; scripts/lib/ coupling doubled. RECONCILED WITH PRIOR
+RETROS: RETRO-239's SPOF verdict was CONDITIONAL on closing TG-1 — #652 DOUBLED the shared surface
+before meeting it (not overturned, but its condition is now 2x and still unmet); and RETRO-239 §3 passed
+check-mirror-files.sh's discovery block on the wiring axis while finding only its ENVIRONMENT axis — the
+fix IT prescribed (FOLLOW-767 AC1 "derive from git ls-files") is what introduced the availability
+failure mode, so §3 HW-1 is MY PARENT RETRO'S omission, not the worker's. Stated plainly.
+CLOSURE (step 7, per-AC, END-TO-END): RETRO-239's §7 list is now 4 CLOSED / 2 OPEN. FOLLOW-759 all 5
+ACs (AC1 traced 5 hops to exit 1; AC3 makes region drift STRUCTURALLY impossible — the old unscoped
+grep no longer exists; AC2 correctly N/A). FOLLOW-765 all 5 (AC2 resolved the judgement call by
+independently re-deriving RETRO-239 CB-2's own reasoning and choosing markers over byte-identity; AC3
+EXCEEDED — added C1/C2/C3 nobody asked for). FOLLOW-766 all 4 in BEHAVIOUR (AC2 correct on BOTH axes in
+code, fixtured on one). FOLLOW-767 all 4 (AC4 re-verified INDEPENDENTLY: both Sentry gates use a
+single-level anchored glob that structurally cannot expand into .claude/worktrees). DISPLACEMENT CHAIN:
+FOUR terminations — RETRO-239's FORK is closed on BOTH prongs by ONE shared mechanism, the chain's best
+result — AND one fresh instance of the identical organ at the moment of closure. Three distinct modes
+now named: HOP (238), FORK (239), RE-INSTANTIATION-AT-CLOSURE (here).
+RULES: **Rule AP PROMOTED** — "a gate's KNOWN-RESIDUAL enumeration must be a MACHINE-CHECKED register,
+not prose; and any PR adding a new control must add that control's own region/scope entry". This is
+RETRO-239's OWN pre-specified 4th-sighting action ("not a fourth AE sighting but a mechanical residual
+register"), triggered TWICE independently in this pair (#652 one shape short; #655 no register at all).
+Priors: RETRO-237 §6, RETRO-238 §4b CB-3 + §8, RETRO-239 §6 + §8 — three, threshold is two. Checked
+against AE / AE-as-amended / AL / AM / Q / AH / Y before minting. Everything else DECLINED on a bar a
+prior retro wrote: P-21 held at 2 (SAME artefact as RETRO-237's sighting 1), P-22 held at 2 (clause (b)
+HOLDS this time — the defect WAS introduced by the remediation — but clause (a) fails: same gate estate,
+same owner; reading it loosely would make P-22 promotable off any two PRs in one chain), P-23 held at 1
+(clause (c) — git ls-files is correct in ALL THREE environments the gate is actually invoked in; the
+pre-specification stopped a false advance for the second consecutive retro), P-24 MINTED at 1 with a
+4-clause bar whose clause (d) — "the falsifying commit is authored by the same actor that produced the
+verdict" — is what separates it from ordinary merge noise. Instance sightings: AJ (HW-1), AL+AE-amended
+(CB-1, folded into AP), AI (a COMPLIANT instance — #655 corrected the note text in the same PR that made
+it true, verified against the merged LOG not the diff), Q (7th+8th consecutive compliant gate PR), AM
+(all 10 new fixtures synthesized, baselines overridden to temp), AA (4th consecutive — 32 fixtures across
+3 gates guarding an unprovisioned DSN), AF (192 flat, readings 10+11, re-derived from the Rule I job log
+on merged main), AG (exposure UNCHANGED, 3rd consecutive — retrospective-analyst still the only agent
+with lessons.d/). PROCESS FACT THE PM MUST SEE (§5d): the lessons.d/ write scope fix DID NOT TAKE —
+this brief carried `.claude/agents/<name>/lessons.d/**` verbatim as the session-90 head promised, and
+all three attempts (Write, mv, cp) were still refused by the permission layer, which denies `.claude/**`
+regardless of the brief. FOURTH consecutive denial; the PM fixed the BRIEF and the brief is not the
+control. Fragment written in full and reproduced in the run's closing output for the PM to persist —
+the same salvage path the prior three used, which is why nobody has noticed the remedy does not work.
+FOLLOWS FILED: 770 (P1 devops 3h), 771 (P2 devops 2h), 772 (P2 architect 1h);
+premise corrections applied to 768 and 769; one in-scope repair (FOLLOW_UPS.md </details>). QUEUE.md /
+ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->

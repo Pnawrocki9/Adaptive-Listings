@@ -3236,3 +3236,118 @@ Rule AE (a mechanical guard must enumerate every call-shape — same ORGAN, one 
 prose, no evidence/doc axis). Clause 2 is the novel, mechanically checkable part and the reason the
 rule earns its letter. Clause 5 preserves RETRO-234's clause (a) verbatim so promotion does not drop
 the first sighting's remedy. LETTER CHOICE: AO follows AN. -->
+
+---
+
+## Rule AP — A gate's "known residual gaps" list MUST be a MACHINE-CHECKED register the gate itself executes, not prose; and every PR that adds a new predicate/control to a gate MUST add that control's OWN region-and-scope entry, not rely on the detection axis's
+
+**Pattern.** Four consecutive retrospectives found the same thing about four consecutive
+gate-hardening PRs: **every individual fix was correct, and every PR's own enumeration of what
+remained open was one shape short.** The incompleteness is systematically invisible for one reason —
+the enumeration is **prose**. A prose residual list cannot be wrong-in-CI, cannot go stale loudly,
+and cannot be diffed against the mechanism it describes. It is the only artefact in these gates that
+makes a claim about coverage and has no consumer.
+
+The second half of the rule is the sharper half, and it is what the fourth sighting added: the
+residual lists in this repo are written **per gate**, on the **detection** axis, and are then
+inherited unchanged by every control added afterwards. When a PR bolts a _new_ predicate onto a gate
+(a baseline comparator, a clearance test, a marker check, a discovery source), that predicate has
+its own region, its own scan root and its own failure modes — and none of them are covered by a
+residual written about the original detector.
+
+**Evidence (≥2 prior retros — three, with exact citations):**
+
+- **RETRO-237 §6** (the Rule AE scope-broadening + clearance-side amendment). Sighting 1 of the
+  chain: `check-sentry-capture-has-init.sh` shipped with an enumeration written about its detection
+  side while its two worst holes were on the **clearance** side. RETRO-237's own words: a guard with
+  perfect detection and a leaky clearance test "reads as _more_ trustworthy because it is
+  'specific'".
+- **RETRO-238 §4b CB-3 and §8.** PR #648's AC6 asked for an explicit statement of whether the class
+  was fully enumerated; the PR answered _"PARTIALLY, the residual is {unscanned dirs, unquoted
+  word-split}"_. RETRO-238: **_"an enumeration itself short by at least this shape and CB-1's"_**,
+  and in §8: **_"the AC6 answer should read 'partially enumerated, and the enumeration is itself
+  partial'"_**.
+- **RETRO-239 §6 and §8.** **_"This is the third consecutive retro in which a gate-hardening PR's
+  own enumeration of what remains is one shape short … The pattern is not 'the fix was wrong' —
+  every fix in this chain worked. It is 'the enumeration of the residual is systematically
+  incomplete, and the incompleteness is invisible because the enumeration is prose.'"_** RETRO-239
+  **declined** to promote — correctly, because Rule AE already demands full enumeration, so the
+  defect is in application, not wording — and **pre-specified the trigger for this rule**: _"if a
+  fourth consecutive retro reaches the same verdict, the right response is not a fourth AE sighting
+  but a **mechanical** residual register (a machine-checkable per-gate list), which would be a new
+  rule with a real mechanism."_ FOLLOW-760 AC5 was graded **PARTIAL** on the same basis.
+- **RETRO-240 §4b CB-1 and §4d DG-1 — the pre-specified fourth sighting, triggered TWICE
+  independently in one merge pair.** (a) PR #652 gave `check-sentry-init-singleton.sh` the best
+  residual list in the chain (A, B, C1/C2/C3, D, E, F) and it _still_ does not state that
+  FOLLOW-765's two **new** controls inherit the `apps/*/src` bound, while the header (`:52-55`) and
+  `scripts/baselines/sentry-init-mirror-exclusions.baseline` both assert the redden-on-a-fourth-pair
+  guarantee **unconditionally**. (b) PR #655 gave `check-mirror-files.sh` a hard `git ls-files`
+  dependency with a silent-degradation failure mode and a tracked-files-only semantic narrowing, and
+  that gate has **no residual section at all** — it is the only one of the three without one.
+
+**Rule.**
+
+1. **Every CI/pre-push gate that documents deliberately-unguarded gaps MUST express them as a
+   REGISTER, not prose.** One entry per residual, each carrying: a stable id (`A`, `B`, `C1`, …), a
+   one-line description, the **control it applies to** (which predicate — detection, clearance,
+   exclusion, discovery, inventory), and a **`latency proof`: a single shell command whose empty (or
+   zero) result means the residual is still latent**.
+2. **The gate MUST execute its own register on every run** and report per entry. A residual whose
+   latency proof now returns hits has **gone live**: the gate must fail with a diagnosis distinct
+   from an ordinary finding, naming the entry id. A residual whose proof cannot be executed is also
+   a failure — never "assume still latent" (the FOLLOW-760 contract, applied to the register).
+3. **A PR that adds a NEW predicate/control to a gate MUST add that control's own register
+   entry/entries**, stating at minimum its **region** (what it iterates), its **scan root**, and
+   what it does when its input is unavailable. It may not rely on an existing entry written about
+   the detector. A PR that adds a control and no entry is incomplete regardless of test coverage.
+4. **Any prose claim about a gate's coverage — in the script header, in a committed baseline's
+   comment, in a runbook — MUST be qualified by the register entry that bounds it**, or must be
+   written unconditionally only when no entry bounds it. An unconditional guarantee whose mechanism
+   is region-bounded is a Rule AI violation as well as this one.
+5. **Retirement is a diff, not a deletion.** Removing a register entry requires the fix that closes
+   it in the same PR, or an explicit downgrade note. Silently dropping an entry is the failure this
+   rule exists to make impossible.
+6. **Scope.** This binds gates under `scripts/` that are wired into a blocking CI job or a
+   `lefthook` hook. It does not bind application code, and it does not require a new framework — a
+   bash array of `id|control|description|proof-command` tuples iterated at the end of the run
+   satisfies it. FOLLOW-770 AC5 is designated the reference implementation.
+
+**Verification.**
+
+- Reviewer check, mechanical: for every gate touched by a PR, `diff` the set of predicates against
+  the set of register entries. A predicate with no entry naming it fails review.
+- The gate's own `--self-test` MUST include one fixture proving a **register entry going live is
+  caught** (mutate a fixture so one latency proof returns a hit; assert the distinct diagnosis and
+  the entry id in the output). Red-first against the pre-register script.
+- The register's proof commands are themselves subject to **Rule AL**: each must be evaluated over
+  the same region the control it describes reads. A proof that greps the whole repo for a residual
+  bounded to `apps/*/src` is wrong in the direction that looks reassuring.
+- Cheap grep for auditors: a gate whose header contains the words "deliberately unguarded",
+  "residual", "known gap" or "not fixed here" and which prints no per-entry status line on a normal
+  run is non-compliant.
+
+<!-- PROMOTED by RETRO-240 (2026-08-03). Pattern "A GATE'S RESIDUAL ENUMERATION IS SYSTEMATICALLY ONE
+SHAPE SHORT, AND THE INCOMPLETENESS IS INVISIBLE BECAUSE THE ENUMERATION IS PROSE", count 4, PRIOR
+RETROS: RETRO-237 §6 (count 1, clearance-side vs detection-side), RETRO-238 §4b CB-3 + §8 (count 2,
+"an enumeration itself short by at least this shape"), RETRO-239 §6 + §8 (count 3, "third consecutive
+retro … the incompleteness is invisible because the enumeration is prose" — DECLINED promotion and
+PRE-SPECIFIED this exact rule as the fourth-sighting response). Promotion trigger: RETRO-240 §4b CB-1
++ §4d DG-1 — TWO independent instances in one merge pair, in two different scripts, by two different
+dispatches (#652's best-in-chain residual list still missing its own new controls' region bound;
+#655's script having no register at all while acquiring a hard git-index dependency). CHECKED BEFORE
+MINTING: Rule AE and the Rule AE amendment (demand full enumeration of call-SHAPES for a mechanical
+guard — the ORIGIN rule and the one RETRO-239 correctly said already covers the obligation; AP does
+not restate it, it converts the obligation's ARTEFACT from prose into an executed register, which is
+the "defect is in application, not wording" diagnosis made actionable), Rule AL (assertion region ==
+consumer region — fires on individual proofs and is invoked BY clause 4 of the verification section,
+but says nothing about whether a residual list exists or is complete), Rule AM (fixture provenance —
+orthogonal), Rule Q (a soft-skippable gate must emit positive proof its assertion ran — nearest
+neighbour on the "prove it executed" axis, but Q governs the ASSERTION and AP governs the
+KNOWN-GAP LIST, which Q explicitly does not reach), Rule AH (an operator-executable doc instruction
+verified at its own merge commit — about docs for humans, not a gate's self-executed register),
+Rule Y (a citation naming a test/file must be verified against that file — a citation-accuracy rule;
+AP's clause 2 is about executing a proof, not verifying a citation), Rule AI (fires jointly with
+clause 4 and is named there rather than duplicated). LETTER CHOICE: AP follows AO. NOTE: this
+promotion moves the CONVENTIONS_PATCH rule count to 42, against docs/MASTER_DESIGN.md §Snapshot.6's
+recorded 27 — filed as FOLLOW-772 per Rule AI, since MASTER_DESIGN is outside the retro's write
+scope. -->

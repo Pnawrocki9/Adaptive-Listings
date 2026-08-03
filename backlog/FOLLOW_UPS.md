@@ -23757,6 +23757,8 @@ amends); FOLLOW-757 shapes 3 and 4; FOLLOW-760 (the fallback that would be copie
 `scripts/check-sentry-capture-has-init.sh:122-172,386-392`; `scripts/check-mirror-files.sh:33-40`;
 `scripts/mirror-files.json`; Rules AE / J / K.1]
 
+</details>
+
 ---
 
 ## FOLLOW-765 — the singleton gate's registered-mirror exclusion inventory is a producer with no consumer, and the compensating control its own header names does not cover a newly-registered pair
@@ -23960,6 +23962,28 @@ shape had.
    **three-predicate** framing rather than the two-predicate one every prior artefact used.
 5. Do NOT change the allowlist token spelling, `apps/*` source, or the CI job wiring.
 
+**PREMISE CORRECTION — RETRO-240 §5a (2026-08-03, after PR #652 merged as `04833fd0`). The finding
+stands; two things moved under it.**
+
+- **Line references are stale.** #652 grew `check-sentry-capture-has-init.sh` by 284 lines. The
+  raw-text allowlist clearance this ticket exists to fix is now at **`:332`**
+  (`unallowlisted=$(echo "$capture_lines" | grep -v "sentry-init-guard: allowlisted" || true)`) —
+  re-verified present and still raw on merged `main`. Detection and init-clearance moved
+  correspondingly; re-derive the other three line numbers before starting.
+- **NEW AC 6, required — #652 created a consistency obligation this ticket's fix would otherwise
+  break.** FOLLOW-759 shipped an allowlist **inventory** that counts RAW per-file occurrences
+  (`:719`, `grep -c "sentry-init-guard: allowlisted" "$f"`) and feeds the committed
+  `scripts/baselines/sentry-capture-allowlist.baseline`. AC1 here restricts **clearance** to tokens
+  in a comment-blanked span. After that fix, a token inside a string literal would be **counted into
+  the suppression inventory** (and so require a reviewed baseline entry) while **suppressing
+  nothing** — the inventory and the clearance predicate would disagree about what "an allowlist
+  entry" is. That is a fresh **Rule AL** exposure that exists only because #652 landed. Therefore:
+  **the inventory and the clearance predicate MUST share one definition of an allowlist entry**
+  (align the inventory's per-file count onto the same comment-blanked-span test), and
+  `scripts/baselines/sentry-capture-allowlist.baseline` must be regenerated in the same PR if the
+  count changes. Add a fixture: a token in a string literal must be neither counted nor cleared.
+- Estimate unchanged at 2h is optimistic with AC6 added; **3h** is the honest number.
+
 cross_ref: [RETRO-239 §4b CB-1, §6 (Rule AE-as-amended, 2nd post-amendment instance, clearance-side;
 P-22 explicitly NOT advanced on this — it SURVIVED the remediation rather than being introduced by
 it); RETRO-238 §4b CB-1 (the fallback this one hid behind); FOLLOW-759 (same output block, different
@@ -24009,8 +24033,262 @@ specifically exists to make sourced-file analysis work, which is the new constru
 4. If shellcheck is wired, expect pre-existing findings across `scripts/` — scope this ticket to the
    four files above plus the job, and file the rest rather than expanding here.
 
+**PREMISE CORRECTION — RETRO-240 §4c TG-2 / §5a (2026-08-03, after PR #652 merged as `04833fd0`).
+The scope DOUBLED and the line references are stale.**
+
+- **TWO helpers, not one, and therefore FOUR unfixtured exit-2 paths, not two.** #652 added a second
+  shared helper, `scripts/lib/suppression-baseline.sh`, sourced by both gates with its own
+  `[[ ! -f ]]` + `declare -F` guard. Current locations (the stub's `capture:180-191` /
+  `singleton:146-157` are both stale):
+  - `check-sentry-capture-has-init.sh:245-256` (clean-python-source) and **`:266-277`
+    (suppression-baseline — NEW)**
+  - `check-sentry-init-singleton.sh:236-247` (clean-python-source) and **`:254-265`
+    (suppression-baseline — NEW)** AC1 and AC2 must be satisfied for **each helper in each gate** —
+    4 missing-file fixtures and 4 `declare -F`-defines-nothing fixtures, or a parameterised loop
+    over the two helper paths.
+- **The singleton gate already records this honestly** at `check-sentry-init-singleton.sh:179-182`
+  (residual **F**): _"This gate now depends on TWO shared helpers under scripts/lib/ … neither
+  hard-fail has a fixture — FOLLOW-769 owns that gap, and its scope is now two helpers x two
+  gates."_ The capture gate does not carry the equivalent note — add it while you are in the file.
+- **AC3's shellcheck half grew too.** `grep -rn "shellcheck" .github/` still returns **no hits** and
+  `lefthook.yml` still has no shellcheck command, but `# shellcheck source=` directives now appear
+  in **five** places (the two new `BASELINE_LIB` source sites included) plus the
+  `# shellcheck disable=SC2064` in `check-mirror-files.sh`.
+- **Re-estimate: 2h → 3h.** Priority left at P3 for the PM to re-price — RETRO-240 §5d records that
+  RETRO-239's "close TG-1 and the SPOF is strictly better" verdict was conditional, and the
+  condition is now twice as large and still unmet.
+
 cross_ref: [RETRO-239 §4c TG-1, §4d DG-1, §5d (the SPOF assessment this ticket completes);
 `scripts/lib/clean-python-source.sh:50`; `scripts/check-sentry-capture-has-init.sh:180-191`;
 `scripts/check-sentry-init-singleton.sh:146-157`; `scripts/check-mirror-files.sh`; Rules Q / AM]
 
-</details>
+---
+
+## FOLLOW-770 — the Rule J gate's new `git ls-files` discovery source can return zero candidates and nothing consumes that fact, so the gate reports "no unregistered copies" having scanned nothing
+
+source_retro: RETRO-240 (PR #655, FOLLOW-766 + FOLLOW-767) source_ticket: FOLLOW-767
+recommended_sprint: next recommended_agent: devops-engineer priority: P1 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Priority note, stated up front so it is not silently re-priced.** P1 is the standing HALF_WIRE_P
+classification (Rule AJ). The **live impact today is latent**: every context the gate is actually
+invoked in (CI `actions/checkout`, the developer working tree via `lefthook.yml:6`) has a git index,
+and the gate currently reports `bandit.ts: 2 file(s) found` / `observability.py: 3 file(s) found`
+(verified on merged `main`). Price it as "cheap, do it before anyone containerises or re-roots the
+gate", not as an incident — the same honest-pricing shape FOLLOW-759 and FOLLOW-765 carried.
+
+**Finding 1 (HW-1) — a producer-only failure signal in a green gate, one round after two PRs
+eliminated exactly this organ from the two sibling gates.** `scripts/check-mirror-files.sh:518-523`
+sources basename-discovery candidates from
+
+```
+git ls-files | awk -F/ -v b="$basename_to_find" '$NF==b'
+```
+
+inside `done < <( … )`. When `git ls-files` cannot run it writes to **stderr** and exits **128**
+with **empty stdout** (proven directly: `git -C <non-repo> ls-files` →
+`fatal: not a git repository`, exit 128, nothing on stdout). A process-substitution failure does not
+propagate to the parent, so neither `set -e` nor `pipefail` (`:76`) fires. The loop body never
+executes → `found_count=0` → the gate prints `<basename>: 0 file(s) found` → `DISCOVERY_FAILURES=0`
+→ `OK: every file sharing a registered mirror basename is itself registered.` → **exit 0**. The
+diagnostic exists; the verdict never reads it.
+
+**Why it is reachable rather than theoretical, and the evidence is inside PR #655 itself.** The
+documented knob that reaches it is `MIRROR_FILES_ROOT` (`:79`, listed in the script's own env
+section) pointing at a directory outside any git work tree. **That is exactly the condition the
+fix's own fixture hit**: #655 had to add `git -C "$tmp" init -q` plus a commit to the self-test tree
+(`b8f2b922`, `check-mirror-files.sh:+137-142`) _because the temp fixture root became invisible to
+the new scan_. The implementer met the failure mode, fixed it in the **fixture**, and did not guard
+it in the **gate**. Contrast the two Sentry gates, which hard-fail with **exit 2** when a dependency
+is unavailable and never degrade (`check-sentry-capture-has-init.sh:245-256,266-277`;
+`check-sentry-init-singleton.sh:236-247,254-265`) — the "a gate that cannot evaluate must not report
+clean" contract (FOLLOW-760) that this gate's new dependency does not hold.
+
+**Finding 2 (LG-1, P3) — the `basenames<TAB>note` line protocol is unescaped.** `:456-465` emits one
+`basenames \t note` line per opted-out pair; `:478` reads it with
+`while IFS=$'\t' read -r off_basenames off_note … <<< "$OFF_PAIRS"`. JSON permits a literal newline
+in a string, and such a note splits into a second loop iteration whose `off_basenames` is a note
+fragment and whose `off_note` is empty → the gate emits
+`FAIL: basename_discovery is off for this pair with no (or an empty) basename_discovery_note` for a
+pair that has one. Direction is **false-RED** (loud), latent today (the one real note is
+single-line, verified in the merged `rule-j` log).
+
+**Finding 3 (TG-1, P3) — FOLLOW-766 AC2's "or omits it" axis is implemented but not fixtured, and it
+is the likelier real case.** `:457` (`if (p.basename_discovery === true) continue;`) correctly
+treats an **omitted** key like an explicit `false`. But both new fixtures (self-test steps 6 and 7)
+set `"basename_discovery": false` explicitly. The omitted-key path — the default for any pair added
+without thinking about the flag, i.e. the population the enforcement exists to catch — has no
+red-first proof and would survive a refactor to `=== false`.
+
+**Finding 4 (DG-1, P2) — this is the only one of the three gates with NO "known, deliberately
+unguarded gaps" section.** Both siblings carry one (`check-sentry-capture-has-init.sh` gaps 5-7,
+`check-sentry-init-singleton.sh` gaps A-F). Two facts introduced by #655 are recorded nowhere: (i)
+Finding 1's availability failure mode; (ii) discovery narrowed from "every file on disk" to "every
+**tracked** file", so an unregistered copy that exists but was never `git add`ed is now invisible
+where `find` saw it. **(ii) is a correct trade** — at the pre-push hook the file being pushed is
+committed and therefore tracked, and CI checkouts track everything, so nothing being _shipped_
+escapes — but it is a coverage change with no artefact.
+
+**AC:**
+
+1. Give the discovery source's failure a consumer. Capture `git ls-files`'s exit status explicitly
+   (e.g. materialise the tracked-file list once into a variable/temp file before the basename loop,
+   `|| rc=$?`) and treat a non-zero status — or an empty list when the manifest declares at least
+   one discovery-ON basename — as a **hard failure with its own distinct diagnosis**, not as "0
+   files found". Do NOT solve it by falling back to `find`; the fallback is the FOLLOW-767 defect.
+   Choose the exit code deliberately and state it in the header: **2** (the gate's own machinery is
+   broken, matching both Sentry gates' missing-helper contract) is the recommended choice, distinct
+   from 1 (a finding).
+2. Red-first fixture: run the gate with `MIRROR_FILES_ROOT` pointing at a non-git temp tree
+   containing a registered-basename copy. Against the current script it exits **0** and prints
+   `OK: every file sharing a registered mirror basename is itself registered`; after the fix it must
+   fail with the new diagnosis. Paste the before/after transcript.
+3. Escape the OFF-pair line protocol (Finding 2) — emit one JSON object per line, or base64 the
+   note, or use a NUL delimiter. Fixture: a pair whose note contains an embedded newline must pass
+   and print its note, not false-RED.
+4. Add the missing fixture for the **omitted** `basename_discovery` key (Finding 3): a manifest pair
+   with no `basename_discovery` field and no note must be CAUGHT, exit 1, naming the field.
+5. Add a `KNOWN, DELIBERATELY UNGUARDED GAPS` section to this script's header, in the same shape the
+   two Sentry gates use, recording at minimum: the tracked-files-only narrowing (Finding 4 (ii))
+   with the reasoning that both real invocation contexts see only tracked files; whatever residual
+   remains after AC1; and the `strip_comments` language coverage limits. **This is the first gate to
+   be brought under Rule AP** — write the section as the machine-checked register Rule AP specifies,
+   not as prose, and make it the reference implementation for the other two gates.
+6. Keep every existing behaviour intact: the 7 self-test assertions must still pass, an unregistered
+   tracked copy in the real tree must still fail, and a nested `.claude/worktrees/agent-*` checkout
+   must still be invisible (FOLLOW-767 must not regress).
+7. Do NOT change `scripts/mirror-files.json`'s real content, the pair-comparison logic, or
+   `lefthook.yml` / `ci.yml` wiring.
+
+cross_ref: [RETRO-240 §3 HW-1, §4a LG-1, §4c TG-1, §4d DG-1, §5d (the axis RETRO-239 did not walk —
+the omission is in FOLLOW-767's AC1, not in the worker's implementation); RETRO-239 §4a LG-1 / §6
+P-23 (P-23 explicitly NOT advanced on this — see RETRO-240 §6); FOLLOW-760 (the "cannot evaluate ⇒
+must not report clean" contract this gate does not hold);
+`scripts/check-mirror-files.sh:76,79, 456-465,478-489,518-523`; `lefthook.yml:6`;
+`.github/workflows/ci.yml:501`; Rules AJ / Q / AP]
+
+---
+
+## FOLLOW-771 — FOLLOW-765's exclusion baseline and hardened-marker check are bounded to `apps/*/src` while the suppression register they guard is repo-wide, and both the gate header and the baseline file state the guarantee unconditionally
+
+source_retro: RETRO-240 (PR #652, FOLLOW-765 + FOLLOW-759) source_ticket: FOLLOW-765
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Status: LATENT, stated up front.** 3 registered `.py` mirror paths today, all inside `apps/*/src`,
+all carrying the three FOLLOW-738 hardened markers — re-verified on merged `main`
+(`UNHARDENED REGISTERED MIRRORS … 0`, exclusion inventory
+`3 entry/entries → matches the committed baseline`). Nothing is being hidden right now. This is
+about a guarantee that is stated wider than its mechanism.
+
+**The finding (CB-1), traced in code rather than reasoned about.** Both controls FOLLOW-765 shipped
+live inside one loop, `for f in $FILES` (`scripts/check-sentry-init-singleton.sh:722`), where
+`$FILES` is `find "$ROOT"/apps/*/src -type f -name "*.py"` minus `test_*.py` / `*_test.py` /
+`conftest.py` (`:673,705-711`):
+
+- `EXCLUDED_OBSERVED` is appended at exactly one site — `:732` — inside that loop;
+- the hardened-marker check is at `:745-757`, inside the same `if registered` branch.
+
+So a registered `.py` pair with **both** sides outside that region enters **neither**. The observed
+exclusion set stays at 3, matches `count: 3` in the baseline, the gate stays green — and a file the
+manifest has just blessed as a legitimate `sentry_sdk.init(` site is never marker-verified. The
+suppression register (`scripts/mirror-files.json`) is repo-wide; the two checks over it are
+`apps/*/src`-scoped. Textbook **Rule AL** — an assertion evaluated over a narrower region than the
+register it guards.
+
+**The claim side (Rule AI), which is what makes this worth a ticket rather than a note.** Two
+artefacts state the guarantee unconditionally:
+
+- `scripts/check-sentry-init-singleton.sh:52-55` — _"its MEMBERSHIP is compared against a committed
+  baseline … so registering a fourth pair reddens the gate until the addition is reviewed"_;
+- `scripts/baselines/sentry-init-mirror-exclusions.baseline` (header comment) — _"Registering a
+  fourth `.py` pair in scripts/mirror-files.json silently grew this list from 3 to 4 before
+  FOLLOW-765; now it turns the gate RED until the addition is written here."_
+
+Both are false for an out-of-region pair. The gate's own residual **A** (`:136-139`) notes that
+`SCAN_DIRS` is only `apps/*/src`, but A is about the **detection** axis and predates FOLLOW-765 — it
+does not qualify the new positive claim. A reader who reads A and then reads exclusion-note (i)
+concludes "unscanned files can hide an init, but at least _registering_ one turns the gate red",
+which is wrong.
+
+**Not hypothetical in shape, only in file extension.** `scripts/mirror-files.json` already contains
+a registered pair whose canonical is outside the region — `packages/shared/src/bandit.ts` ↔
+`apps/decision-api/src/lib/bandit.ts` — so "register a pair outside `apps/*/src`" is established
+practice here. It happens to be `.ts` today, which `_registered_mirror_py_paths()` filters out.
+
+**AC:**
+
+1. Make the exclusion inventory and the hardened-marker check evaluate over the **registered set**,
+   not over `$FILES`. Concretely: iterate `$REGISTERED` (the manifest-derived `.py` paths) as the
+   outer loop for both controls, so every registered path is inventoried and marker-checked
+   regardless of whether the scan region happens to contain it; keep `$FILES` as the loop for
+   violation detection. A registered path that does not exist on disk must be a **distinct, loud
+   diagnosis** (a stale manifest entry), not a silent skip.
+2. Red-first fixture: a manifest registering a self-consistent `.py` pair **outside** the scan
+   region (e.g. under a `packages/`-shaped temp dir), both sides holding a bare `sentry_sdk.init(`.
+   Against the current script the gate exits **0** with
+   `3 entry/entries → matches the committed baseline`; after the fix it must fail — as a baseline
+   mismatch (the set grew) **and** as an UNHARDENED REGISTERED MIRROR. Paste the before/after
+   transcript.
+3. Second fixture for the test-name axis: a registered `.py` mirror named `test_helpers.py` (matched
+   by the gate's own `! -name "test_*.py"` exclusion) must still be inventoried and marker-checked
+   after the fix.
+4. Correct BOTH claim sites — `check-sentry-init-singleton.sh:52-55` and the baseline file's header
+   — to state what the mechanism actually covers after the fix. Per **Rule AO**, re-verify each
+   corrected sentence against this PR's own transcript before merge, not against the diff.
+5. Add the residual to the gate's `KNOWN, DELIBERATELY UNGUARDED GAPS` register (Rule AP): whatever
+   region bound survives AC1, stated per-control rather than once for the whole gate.
+6. Do NOT change the marker set (the three FOLLOW-738 flags), the token spelling, `apps/*` source,
+   or the CI job wiring. Do NOT widen `SCAN_DIRS` — that is residual A's separate question and
+   belongs in its own ticket.
+
+cross_ref: [RETRO-240 §4b CB-1, §6 (the Rule AP promotion this is one of two triggers for), §5c (the
+three-consumer `mirror-files.json` contract); RETRO-239 §3 HW-1 / §4b CB-2 (the findings FOLLOW-765
+closed — this is the region bound they left);
+`scripts/check-sentry-init-singleton.sh:52-55,136-139,673,705-711,722,732,745-757`;
+`scripts/baselines/sentry-init-mirror-exclusions.baseline`; `scripts/mirror-files.json`; Rules AL /
+AI / AO / AP]
+
+---
+
+## FOLLOW-772 — §Snapshot.6's CONVENTIONS_PATCH rule count reads 27 against 42 actual, and RETRO-240 is the change that moved the number, so Rule AI now fires on it
+
+source_retro: RETRO-240 (PR #652 + PR #655) source_ticket: — recommended_sprint: next
+recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding (DG-2).** `docs/MASTER_DESIGN.md` §Snapshot.6 records a CONVENTIONS_PATCH rule count
+of **27**. Actual: `grep -c "^## Rule " CONVENTIONS_PATCH.md` → **41** before RETRO-240 and **42**
+after its Rule AP promotion. The 27 dates from the v4.3 truth-reconciliation refresh (FOLLOW-470,
+which corrected it 8 → 27) and has drifted for 15 promotions since.
+
+**Why this is filed now when RETRO-239 correctly declined to file it.** RETRO-239 §4d DG-2 found the
+same drift and declined, reasoning that neither PR #650 nor #651 touched `CONVENTIONS_PATCH.md`, so
+**Rule AI** ("a change that makes a capability/contract claim true or false MUST update every
+document asserting the prior state IN THE SAME PR") did not make it theirs, and that filing it would
+be scope creep onto whichever future PR promoted rule 42. That reasoning was right and it has now
+expired: **RETRO-240 is the PR that promotes rule 42.** Rule AI fires on it, and the retro's write
+scope excludes `docs/MASTER_DESIGN.md`, so the obligation cannot be discharged in the same change.
+Filing is the only honest disposition — the alternative is a Rule AI violation recorded as "noted".
+
+**Scope note.** This is deliberately narrow. Do NOT open a general §Snapshot refresh; that is a
+separate, larger piece of work with its own propagation checklist (§Y.2).
+
+**AC:**
+
+1. Update `docs/MASTER_DESIGN.md` §Snapshot.6's CONVENTIONS_PATCH rule count to the value produced
+   by `grep -c "^## Rule " CONVENTIONS_PATCH.md` **at the time of the edit** — do not copy 42 from
+   this stub without re-running the grep (Operating Principle 5).
+2. Refresh the retro-count and follow-up-count figures in the same §Snapshot.6 line, from
+   `grep -c "^## RETRO-" backlog/RETROSPECTIVES.md` and
+   `grep -c "^## FOLLOW-" backlog/FOLLOW_UPS.md`, since they drift by the same mechanism and are on
+   the same line.
+3. Record in the change (commit body or a one-line §Snapshot.6 footnote) that these three numbers
+   drift on every retro and are therefore **derived, not authored** — and state whether making them
+   machine-refreshed is worth a follow-up. Do not build that automation in this ticket.
+4. Do NOT bump the Master_Design version for a derived-number correction, and do NOT rename any
+   section (§Y.2 propagation: positions 1-3, 6, 7 are no-ops for this change).
+
+cross_ref: [RETRO-240 §4d DG-2, §7; RETRO-239 §4d DG-2 (the same finding, correctly declined, with
+the reasoning this stub supersedes); `docs/MASTER_DESIGN.md` §Snapshot.6; `CONVENTIONS_PATCH.md`;
+Rule AI; Master_Design §Y.2]

@@ -921,7 +921,7 @@ NEXT: Dispatch FOLLOW-773+774 combined (localhost-gated acceptance criteria stat
 wait, validate, then FOLLOW-782, then FOLLOW-026 (Levels 1+3 scope, migration-free,
 localhost-gated).
 
-### FOLLOW-773+774 — status: READY_FOR_REVIEW (PR pending, 2026-08-03)
+### FOLLOW-773+774 — status: READY_FOR_REVIEW (PR #660 open, 2026-08-03)
 
 **Worker summary (devops-engineer, Sonnet).** One combined PR on
 `devops-engineer/FOLLOW-773-774-smoke-workflow-hardening`, three files:
@@ -974,8 +974,27 @@ this ticket's own changes (FOLLOW-773 changed it, per FOLLOW-773's own AC, not F
 (script executed directly via `bash`, not merely read) — outputs pasted in the PR description, not
 just claimed.
 
-**CI-check counter:** 0/5 (PR not yet opened at time of this note — see next commit for PR number).
-**Fix-iteration counter:** 0/3.
+**PR #660** (`devops-engineer/FOLLOW-773-774-smoke-workflow-hardening`, 4 commits). CI watched to
+completion via `gh pr checks 660 --watch`: all real checks green, including both push- and
+pull_request-triggered runs of `Redis shadow round-trip` (the workflow this PR itself edits — proof
+it runs, not just exists). Only non-success: `Rule I — wired-or-dead check` (fail, both runs),
+re-verified pre-existing-red and unchanged — `grep -c "WARN:"` on the job log → 192, identical to
+the baseline every prior session on this queue has recorded. Two fix-iterations needed before green:
+Gitleaks flagged a false positive (the mutation-test helper's original 47-char function name matched
+the `cloudflare-api-token` 40-char entropy heuristic) — fixed by shortening the name plus a
+token-scoped `.gitleaks.toml` allowlist entry (Rule V pattern, matching the repo's existing
+bypass4/5/6 / ADR-NNNN-kebab precedent) to clear the now-historical old name from the PR's commit
+range, since gitleaks-action scans the full PR commit range, not just HEAD's diff. Real-CI log
+excerpt posted as a PR comment (beyond the localhost gate the dispatch brief required): the
+proof-of-effect step resolved
+`redis-shadow-smoke-devops-engineer/FOLLOW-773-774-smoke-workflow-hardening` (correct
+branch-identity group for a non-`main` push), the FOLLOW-774 self-test printed
+`SELF-TEST PASSED: 6 assertions`, and the negative control printed its expected `PASS:` line — all
+three artefacts this PR added are confirmed to have actually executed in CI, not merely to exist.
+
+**CI-check counter:** 5/5 (green after fix-iterations; Rule I pre-existing-red, not counted
+against). **Fix-iteration counter:** 2/3 (both gitleaks-related, unrelated to either ticket's actual
+AC work).
 
 ---
 

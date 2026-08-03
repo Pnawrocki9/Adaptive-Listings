@@ -2855,3 +2855,18 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   input for the NEXT retro explicitly, not just as session narration — write it into the retro
   dispatch brief in the same structured way a PR's own hidden context gets fed in, since the
   retro-analyst has no other way to discover it.
+
+- **Date / ticket:** 2026-08-03 — Rule AN collision (FOLLOW-778) resolved, code-audit batch filed
+- **Delegation row used:** none this entry — bookkeeping, ID reconciliation, and stub filing only
+- **What validation caught (or missed):** Did not trust "main is at X" from the coordinator's
+  narration — ran `git log origin/main -1` / `git merge-base --is-ancestor` myself and found a real
+  divergence (my own local main had fast-forwarded a retro branch onto a stale base). Read Rule AN's
+  actual clause text before accepting the coordinator's own proposed resolution of the ID collision,
+  rather than rubber-stamping a ruling that happened to go against the coordinator's own interest —
+  it held up independently. Re-verified all 5 code-audit findings via direct `git show`/`grep`
+  before filing any stub, and found an EXTRA, unrelated pre-existing collision (FOLLOW-309-312) as a
+  side effect of the verification, which nobody had asked me to look for.
+- **A delegation/validation rule I'd add:** when a coordinator narrates "main is at commit X,"
+  verify it with `git log origin/main -1` before proceeding to any git-mutating step (rebase, push,
+  dispatch) -- a false premise here would have caused a rebase against the wrong base, the exact
+  defect class this whole exchange was about.

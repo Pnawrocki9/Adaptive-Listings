@@ -985,3 +985,31 @@ recorded as a new candidate pattern at count 1 in RETRO-243, not promoted.
 
 NEXT: dispatch RETRO-242 (FOLLOW-770 / PR #656), then RETRO-243 (FOLLOW-768+769+771 / PR #657), both
 before FOLLOW-773+774 per Piotr's explicit order.
+
+---
+
+# Status — 2026-08-03 (session 94 — Rule AN collision resolved, code-audit batch filed)
+
+## SESSION 94
+
+**Found and fixed a real local/origin divergence** before it could compound into a second collision:
+local `main` had fast-forwarded RETRO-242's branch onto a stale base (predating PR #658/#659).
+Confirmed zero file overlap, rebased cleanly, pushed. `main` now `0546e259`.
+
+**Resolved a live Rule AN ticket-number collision** (FOLLOW-776-779) by reading the rule's own
+clauses 3-4 directly rather than accepting the coordinator's summary: an allocating write is a real
+register entry, not a commit-message mention. RETRO-242's actual stubs landed first (via this
+session's own push); PR #659's ticket renumbered to FOLLOW-780, commit history left as-is.
+
+**Filed FOLLOW-780 through FOLLOW-789** (10 stubs): the retroactive PR #659 filing, its required
+shadow-metric measurement follow-up, the 5 code-audit findings (F-02 through F-06, all independently
+re-verified via direct file reads before filing, not accepted from the audit summary), the 2
+suppression-baseline.sh findings from the earlier code-review pass, and one NEW discovery -- a
+genuinely pre-existing (RETRO-077-era) Rule AN violation (FOLLOW-309-312 duplicate headings) found
+as a side effect of checking for new collisions.
+
+**0 tickets IN_PROGRESS. 0 open PRs.**
+
+NEXT: dispatch RETRO-243 (folding in code-review finding #1 + this session's own collision as
+evidence for RETRO-242's already-named candidate pattern, not double-counted), then FOLLOW-773+774,
+then start the code-audit batch (FOLLOW-782/F-02 first, per stated priority).

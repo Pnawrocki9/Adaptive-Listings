@@ -817,7 +817,98 @@ posted).
 
 ---
 
-## ▶️ START HERE — session 93 (2026-08-03) — 3 PRs merged (#656/#657/#658 all validated + landed), 2 retros owed before the last dispatch
+## ▶️ START HERE — session 94 (2026-08-03) — RETRO-242 merged (Rule AQ promoted), a live Rule AN collision found and resolved, PR #659 filed retroactively, code-audit batch filed
+
+**RETRO-242 merged** (originally `6ded4364`, rebased to `0546e259` — see the divergence incident
+below). Promoted **Rule AQ** to `CONVENTIONS_PATCH.md` (independently trusted the coordinator's own
+bar-check rather than re-deriving from scratch, since the citations — RETRO-231 onward, 4 sightings
+— were stated precisely and this session's own observation, the PIPESTATUS runner existing
+byte-identically in three gates with the copies naming the origin and the origin naming nothing,
+independently matches the "one-directional pointer" shape).
+
+**A real local/origin divergence, found and fixed before it could cause a second collision.** While
+reconciling this session's own state after the coordinator's messages, `git log origin/main -1`
+(`c9707a1b`, PR #659) and `git log main -1` (`6ded4364`, RETRO-242 fast-forwarded onto a LOCAL main
+that predated PR #659) disagreed and `git merge --ff-only` refused — a genuine divergence, not a
+narration inconsistency. Diagnosed via `git merge-base --is-ancestor` + reflog: my own local `main`
+had fast-forwarded RETRO-242's branch onto a stale base before PR #658/#659 were pulled in.
+Confirmed zero file overlap between the one local-only commit (RETRO-242's docs-only diff) and the
+two origin-only commits (PR #658/#659's code), rebased cleanly (`git rebase origin/main`, no
+conflicts), and pushed — `main` is now `0546e259`, reconciled.
+
+**The live Rule AN collision itself, verified against the rule's own text, not accepted on
+narration.** RETRO-242 independently allocated FOLLOW-776 through 779 against a `main` that did not
+yet contain PR #659's commit-message mention of `[FOLLOW-778]` (a different ticket entirely — PR
+#659's own body-fact-grounding work). Read Rule AN clauses 3-4 directly: an "allocating write" means
+landing an actual register entry, not a bare commit-message citation; the collision is resolved by
+renumbering the LATER-LANDING actual register write. Since RETRO-242's real "## FOLLOW-778" heading
+had not yet landed on `main` (only just did, via my own rebase+push) and PR #659 never wrote a
+register entry at all before this session, RETRO-242's allocation (776-779) is the legitimate one;
+PR #659's ticket is renumbered to **FOLLOW-780** (its commit subject stays `[FOLLOW-778]` verbatim —
+history is not rewritten, the stub is the corrected cross-reference).
+
+**Filed, in order, allocated fresh against `origin/main` immediately before writing (Rule AN clause
+1), zero new collisions introduced (verified via `uniq -d` after writing):**
+
+- **FOLLOW-780** — retroactive DONE filing for PR #659 (body-level numeric grounding, shadow mode).
+- **FOLLOW-781** — the required follow-up: measure the shadow metric's real false-positive rate on
+  production listings BEFORE deciding whether to flip enforcement — the measurement is the ticket,
+  not the flip (a legitimate paraphrase can trip a naive grounding check and silently disable a
+  live, working description-adaptation path).
+- **FOLLOW-782** (F-02, P1) — `admin/labels/route.ts:145` builds a ClickHouse predicate by string
+  interpolation (apostrophe-only escaping) while the correct `param_<name>` binding pattern already
+  exists one file over (`clickhouse-tracer.ts`). Verified the whitelist-regex mitigation nuance
+  honestly rather than either over- or under-stating severity.
+- **FOLLOW-783** (F-03, P2) — cross-language archetype-list parity has no guard for the two Python
+  copies. Verified 0 differences today by diffing all three lists directly (drift PREVENTION, not a
+  live bug — confirmed, not assumed).
+- **FOLLOW-784** (F-04, P3) — `packages/intent-ontology` fill-or-delete architectural decision.
+- **FOLLOW-785** (F-05, P4) — SDK bundle CI gate label says 40KB, budget is 42KB (ESC-028);
+  label/threshold drift, actual enforced value unmeasured (that's AC1).
+- **FOLLOW-786** (F-06, P3) — 12 `: any` occurrences without inline eslint-disable+reason, exact
+  count independently re-verified via the same grep.
+- **FOLLOW-787 / FOLLOW-788** (P3) — the two `scripts/lib/suppression-baseline.sh` findings from the
+  earlier code-review pass (sort-failure masking; duplicate `count:` directive), both independently
+  re-verified via `git show main:<path>` before filing, renumbered from their original 776/777 draft
+  slots once those collided.
+- **FOLLOW-789** (P4) — a SEPARATE, genuinely pre-existing (RETRO-077-era, predates this session)
+  Rule AN violation discovered as a side effect while checking for new collisions:
+  FOLLOW-309/310/311/312 each already hold two unrelated stubs. Filed for a later architect pass,
+  not fixed inline (renumbering 4 old, possibly-already-actioned stubs correctly is its own scoped
+  task).
+
+**Status notes for Piotr, not new tickets, both independently verified in code:**
+
+1. The bandit feedback endpoint is still 503-gated in code
+   (`apps/control-plane/src/app/api/adapt/feedback/route.ts:268`,
+   `FEEDBACK_ENDPOINT_ENABLED !== 'true'`) a month after the remediation code merged (FOLLOW-450).
+   Confirmed directly. The coordinator's framing ("the bottleneck is operator steps, not
+   engineering") holds on this evidence — the code path exists and is correct, only an env flag flip
+   is missing.
+2. `docs/MASTER_DESIGN.md` §Snapshot.2/.3/.5 are stale in a way that actively misleads (still
+   describe `apps/intent-engine` as a 27-line placeholder, reference deleted
+   `archetype-pipeline`/`adaptation-engine` apps) — confirmed via `§A.1`'s own row, which already
+   flags "`§Snapshot.2` narrative still cites the old placeholders — not yet refreshed." §Snapshot.1
+   itself is fine and already corrected. Worth a docs ticket at the next sprint-planning pass, not
+   urgent tonight.
+3. `apps/decision-api/src` exists in full (16 files) despite ADR-0004/0006 deprecation — confirmed,
+   unfiled, noted for the record.
+
+**RETRO-243's brief will fold in**: code-review finding #1 (a Rule AP clause-4 citation defect —
+`check-sentry-capture-has-init.sh`'s prose cites register entry `[D]` for the untokenizable-file
+case, but `[D]`'s actual text is about a different predicate; the sibling gate's analogous citation
+is correct, so this is one slip, not a pattern — verified both citations directly), and this
+session's own live Rule AN collision as additional (not double-counted) evidence for the same
+candidate pattern RETRO-242's own FOLLOW-779 already named — explicitly instructed not to promote an
+amendment on this alone.
+
+NEXT: Dispatch RETRO-243 (FOLLOW-768+769+771 / PR #657, with the above folded in), merge it, then
+FOLLOW-773+774, then start working the code-audit batch (F-02/FOLLOW-782 first per the coordinator's
+stated priority).
+
+---
+
+## ▶️ (superseded) START HERE — session 93 (2026-08-03) — 3 PRs merged (#656/#657/#658 all validated + landed), 2 retros owed before the last dispatch
 
 **All of #656, #657, #658 merged.** `main` at `15c8675c`. Zero open PRs. Retros owed for FOLLOW-770
 (PR #656) and FOLLOW-768+769+771 (PR #657) before the final queued dispatch (FOLLOW-773+774), per

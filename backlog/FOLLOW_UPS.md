@@ -24925,3 +24925,352 @@ closing commit `7f1b2c40` introduced Finding 2); `docs/MASTER_DESIGN.md:562,563,
 / AO]
 
 ---
+
+### FOLLOW-780 — status: DONE (merged directly to `main` by Piotr, `c9707a1b`, 2026-08-03) — retroactive filing, renumbered from a collided allocation
+
+**Renumbering note, read this before anything else.** This ticket's own merged commit subject reads
+`[FOLLOW-778]` — that citation was minted on an isolated worktree, concurrently with RETRO-242
+independently allocating its own four stubs (776-779) against the same then-current `main`. Per
+`CONVENTIONS_PATCH.md` Rule AN clause 3 ("a number minted on a feature branch is not allocated, it
+is guessed") and clause 4 ("a cross-branch collision is repaired by renumbering the LATER-LANDING
+write"): verified directly which write actually landed a genuine register entry on `main` first —
+RETRO-242's own FOLLOW-778 stub (a real "## FOLLOW-778" heading in this file) landed via commit
+`0546e259`; this ticket's only artefact before this filing was a commit-message MENTION with no
+register entry at all, which does not count as an allocating write under Rule AN's own text.
+RETRO-242 keeps 778/779; **this ticket is renumbered to FOLLOW-780.** `c9707a1b`'s commit subject
+stays exactly as merged — history on `main` is not rewritten; this stub is the corrected
+cross-reference.
+
+**What the ticket actually did.** Added `_check_body_facts` to
+`apps/llm-gateway/src/jobs/generate_description.py` — post-generation numeric grounding for the
+description BODY, in SHADOW MODE ONLY (logs `generate_description.body_fact_violation_shadow`,
+suppresses nothing). The headline has had this check since FOLLOW-169 (`_check_headline_facts:1609`,
+invoked `:1796`); the body never did — its only prior fact controls were the prompt whitelist
+(`:714`) and the model's own `<verified_facts_used>` self-report, neither of which independently
+verifies anything against the source listing data. Call site asserted inside `_generate_with_sonnet`
+via AST parse (not grep). 94/94 tests pass, 4 new.
+
+**Verified independently before filing this as DONE**: confirmed `c9707a1b` is on `main`; confirmed
+shadow-mode framing directly (no suppression/enforcement branch exists in the diff, the check only
+logs).
+
+**The enforcement flip is deliberately NOT done, and its own acceptance gate is the measurement, not
+the flip** — see FOLLOW-781.
+
+cross_ref: [commit `c9707a1b`; `apps/llm-gateway/src/jobs/generate_description.py:1609,1796`
+(`_check_headline_facts`, the FOLLOW-169 precedent); ADR-0016 (description pipeline live in prod);
+Rule AN (this ticket's own renumbering, live instance)]
+
+---
+
+## FOLLOW-781 — measure the body-grounding shadow metric's false-positive rate on real listings before deciding whether to flip FOLLOW-780 from shadow to enforcing
+
+source_retro: n/a (filed directly from a code-audit finding, 2026-08-03) source_ticket: FOLLOW-780
+recommended_sprint: next recommended_agent: data-engineer priority: P2 estimated_hours: 4
+depends_on: [FOLLOW-780] blocks: [] promoted_to_queue: false
+
+**Why this is filed as a measurement ticket, not an enforcement ticket.** A legitimate paraphrase
+("three-bedroom" → "3 bedrooms") produces a digit absent from the source listing's grounding facts,
+so a naive enforcement flip could silently disable description adaptation that is already LIVE in
+prod (ADR-0016) — suppressing a correct description because its digit representation didn't match
+byte-for-byte. The risk is not hypothetical paranoia; it is the exact shape of failure a numeric-
+grounding check produces when it can't tell "hallucinated" from "reformatted".
+
+**The acceptance gate, stated precisely so it cannot be reinterpreted as "just flip it":**
+
+1. Let the shadow metric (`generate_description.body_fact_violation_shadow`) accumulate on real
+   production listings for a stated minimum window (recommend: at least 7 days or N generations,
+   whichever is more — state which and why).
+2. Pull and read a sample of the actual logged violations, not just the aggregate rate. Classify
+   each sampled violation as a genuine hallucination vs. a legitimate paraphrase/reformatting false
+   positive.
+3. Report the measured false-positive rate with the sample size and classification methodology.
+4. ONLY THEN decide: flip to enforcing, tune the grounding check to tolerate the observed paraphrase
+   shapes first, or leave in shadow mode with a stated reason. All three are valid outcomes of this
+   ticket — "flip it" is not a foregone conclusion.
+5. Do NOT change `_check_body_facts`'s enforcement behavior in this ticket before step 4's decision
+   is recorded — this ticket is the measurement, the decision, and (if warranted) a SEPARATE
+   follow-up for the actual flip, not a combined "measure and flip" ticket.
+
+cross_ref: [FOLLOW-780 (the shadow-mode implementation this measures);
+`apps/llm-gateway/src/jobs/generate_description.py` (`_check_body_facts`,
+`body_fact_violation_shadow` log line); ADR-0016 (description pipeline live in prod — the thing this
+must not silently break)]
+
+---
+
+## FOLLOW-782 — admin ClickHouse query builds a predicate by string interpolation with apostrophe-only escaping, while the correct bound-parameter pattern already exists in the same codebase
+
+source_retro: n/a (code-audit finding F-02, 2026-08-03) source_ticket: — recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Verified directly, not accepted from the audit summary.**
+`apps/control-plane/src/app/api/admin/labels/route.ts:145`:
+
+```ts
+const mvCondition =
+  modelVersionFilter && /^[\w. -]+$/.test(modelVersionFilter)
+    ? `AND model_version = '${modelVersionFilter.replace(/'/g, "\\'")}'`
+    : '';
+```
+
+builds a ClickHouse predicate by string interpolation, escaping only the apostrophe. The correct
+pattern — ClickHouse's native HTTP `param_<name>` query-binding mechanism — already exists in the
+same codebase and was independently confirmed:
+`apps/control-plane/src/lib/clickhouse-tracer.ts:75,118` (`chTracerQuery` / its sibling) sets
+`url.searchParams.set(\`param\_${k}\`, v)` for every bound value, never interpolating user input
+into the SQL string.
+
+**Honest severity nuance, verified rather than assumed.** `modelVersionFilter` is gated by a
+whitelist regex (`/^[\w. -]+$/`) BEFORE the interpolation branch is reached — a value containing an
+apostrophe fails that test and the whole `mvCondition` clause is silently dropped (empty string),
+never reaching the interpolation at all. So the apostrophe-escaping line is, today, largely
+unreachable dead defense: the actual gate is the earlier whitelist. This does NOT make the finding
+moot — (a) the whitelist and the interpolation are two independent, uncoordinated controls; a future
+edit widening the regex (e.g. to allow more punctuation for a legitimate model-version format) would
+silently re-expose the interpolation path with no test forcing a re-review of it; (b) the route is
+admin-gated, lowering exploitability but not eliminating it; (c) this is exactly the anti-pattern
+this codebase has already solved correctly one file over — the fix is adopting an existing pattern,
+not inventing one.
+
+**AC:**
+
+1. Replace the string-interpolated `mvCondition` with the same `param_<name>` binding pattern
+   `clickhouse-tracer.ts` already uses for this exact class of query.
+2. Keep (or replace with an equivalent) the existing UUID-format whitelist on `decisionIds` — that
+   one is a defensible allowlist for an actual UUID shape, not the same anti-pattern.
+3. Add a regression test: a `modelVersionFilter` value containing a ClickHouse-meaningful character
+   the current whitelist would reject in a future widened form must not be able to alter the query
+   structure once bound as a parameter.
+4. Do not weaken the existing whitelist as a "belt and suspenders" removal — defense in depth, not
+   either/or.
+
+cross_ref: [code-audit finding F-02, 2026-08-03;
+`apps/control-plane/src/app/api/admin/labels/route.ts:145`;
+`apps/control-plane/src/lib/clickhouse-tracer.ts:75,118` (the correct pattern, same codebase)]
+
+---
+
+## FOLLOW-783 — the archetype-canonical parity guard covers only the TypeScript copies; the two Python archetype lists (`nlp.py`, `generate_description.py`) have no cross-language drift guard
+
+source_retro: n/a (code-audit finding F-03, 2026-08-03) source_ticket: — recommended_sprint: next
+recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Status: drift PREVENTION, not a live bug — verified directly, all three lists diffed.**
+`packages/shared/src/__tests__/archetype-canonical-parity.test.ts` guards
+`packages/shared/src/archetypes.ts`'s `CANONICAL_ARCHETYPE_IDS` (18 entries) against its TypeScript
+sibling copies, but `apps/intent-engine/src/nlp.py`'s `_ARCHETYPES` tuple and
+`apps/llm-gateway/src/jobs/generate_description.py`'s `_ARCHETYPE_GUIDANCE` dict each hold their own
+independent Python-side list, with nothing guarding either against the canonical TS source drifting
+out from under them.
+
+Diffed all three directly: `nlp.py`'s `_ARCHETYPES` is **byte-for-byte identical** to
+`CANONICAL_ARCHETYPE_IDS` (18/18, same order). `generate_description.py`'s `_ARCHETYPE_GUIDANCE`
+dict correctly holds all 17 NON-neutral archetypes (it omits `neutral` by design — a guidance dict
+for copywriting prompts has nothing to say about the fallback case, not an omission) — 0 unexplained
+differences today.
+
+**AC:**
+
+1. Add a cross-language parity check: either (a) a CI step that extracts both Python lists and diffs
+   them against `packages/shared/src/archetypes.ts`'s canonical array, or (b) a test in each Python
+   app's own test suite asserting its local list matches a shared fixture generated from the TS
+   canonical source. State which approach and why.
+2. For `generate_description.py`'s guidance dict specifically, assert its key set equals
+   `CANONICAL_ARCHETYPE_IDS` minus `{"neutral"}` exactly — not a subset check, an exact-set check.
+3. Red-first: temporarily add or remove one archetype from one Python list in a throwaway branch and
+   confirm the new check catches it, before merging the check itself.
+
+cross_ref: [code-audit finding F-03, 2026-08-03;
+`packages/shared/src/__tests__/archetype-canonical-parity.test.ts`;
+`packages/shared/src/archetypes.ts` (canonical); `apps/intent-engine/src/nlp.py:71-90`
+(`_ARCHETYPES`); `apps/llm-gateway/src/jobs/generate_description.py:161+` (`_ARCHETYPE_GUIDANCE`)]
+
+---
+
+## FOLLOW-784 — `packages/intent-ontology` is a 14-line placeholder with zero consumers while `packages/shared/src/archetypes.ts` is the de-facto canonical registry
+
+source_retro: n/a (code-audit finding F-04, 2026-08-03) source_ticket: — recommended_sprint: next
+recommended_agent: architect priority: P3 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Verified directly.** `packages/intent-ontology/src/index.ts` is 14 lines, exporting only
+`INTENT_ONTOLOGY_VERSION = '0.0.0'` with a docblock stating "Full implementation in TICKET-013" and
+describing a 12-dimension ontology the file does not actually contain any logic for. This is already
+independently noted in `docs/MASTER_DESIGN.md` §Snapshot.1 row D ("packages/intent-ontology is still
+a 14-line version stub (0 consumers — FOLLOW-467)") — this ticket is the architectural disposition
+FOLLOW-467 (if still open) or a fresh decision, not a new discovery.
+
+**AC (a decision ticket, not an implementation one — architect scope):**
+
+1. Decide: (a) fill it with the real 12-dimension ontology types/schema this package's docblock
+   already describes (if that logic genuinely belongs here and isn't already adequately served by
+   `packages/shared/src/archetypes.ts` + the intent classifier in
+   `packages/sdk/src/core/intent.ts`), or (b) delete the package from the workspace graph and its
+   `package.json` dependents.
+2. If deleting: confirm zero consumers first at this ticket's own execution time, not from the audit
+   snapshot.
+3. If filling: state what NEW capability the fill provides that `packages/shared/src/archetypes.ts`
+   does not.
+
+cross_ref: [code-audit finding F-04, 2026-08-03; `packages/intent-ontology/src/index.ts`;
+`docs/MASTER_DESIGN.md` §Snapshot.1 row D; `packages/shared/src/archetypes.ts`]
+
+---
+
+## FOLLOW-785 — the SDK bundle-size CI gate's name still says "<40KB gzip" a month after ESC-028 raised the budget to 42KB
+
+source_retro: n/a (code-audit finding F-05, 2026-08-03) source_ticket: — recommended_sprint: next
+recommended_agent: devops-engineer priority: P4 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Verified directly.** `.github/workflows/ci.yml:226` names the step
+`"SDK bundle size gate (<40KB gzip)"`. ESC-028 raised the budget to 42KB. Label/threshold drift only
+— the audit did not measure whether the step's actual ENFORCED threshold (as opposed to its name) is
+40KB or 42KB; that is this ticket's first AC, not an assumption.
+
+**AC:**
+
+1. Read the step's actual enforced threshold and state whether it is 40KB or 42KB.
+2. Correct the step name to match the actual enforced number.
+3. If the actual enforced number is still 40KB, that is a separate, more important finding (a real
+   regression risk, gates failing builds that are within the ESC-028 budget) — escalate rather than
+   just relabeling, and reprice this ticket's severity upward if so.
+
+cross_ref: [code-audit finding F-05, 2026-08-03; `.github/workflows/ci.yml:226`; ESC-028]
+
+---
+
+## FOLLOW-786 — 12 occurrences of `: any` without an inline eslint-disable + reason, against the CLAUDE.md quality bar
+
+source_retro: n/a (code-audit finding F-06, 2026-08-03) source_ticket: — recommended_sprint: next
+recommended_agent: architect priority: P3 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Verified directly, exact count matched.**
+`grep -rn ": any\b" packages/sdk/src apps/control-plane/src --include=*.ts --include=*.tsx` (test
+files excluded) → **12** occurrences, matching the audit's count exactly, on `main`. CLAUDE.md's
+quality bar: "Zero `any` in TypeScript without inline `// eslint-disable` + reason."
+
+**AC:**
+
+1. Enumerate all 12 occurrences with file:line (re-run the grep at execution time, the count may
+   have moved).
+2. For each: either replace `any` with a real type, or add the inline
+   `// eslint-disable-next-line @typescript-eslint/no-explicit-any -- <reason>` with a genuine
+   reason.
+3. Consider (recommend, don't require) an ESLint rule enforcing this repo-wide.
+
+cross_ref: [code-audit finding F-06, 2026-08-03; CLAUDE.md quality bar]
+
+---
+
+## FOLLOW-787 — `scripts/lib/suppression-baseline.sh`'s observed-set sort never received the PIPESTATUS treatment its own header promises, so a producer failure can be masked into an empty (matching) observed set
+
+source_retro: n/a (spotted during a code-review pass, PR #656's fix-iteration) source_ticket: —
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 1
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Origin note.** This helper shipped in PR #652 (FOLLOW-765+759), which RETRO-240 already covered.
+Filed now as a correction RETRO-240 should have caught rather than material for a later retro to
+re-derive.
+
+**The finding.** `scripts/lib/suppression-baseline.sh:114`:
+
+```bash
+LC_ALL=C sort "$observed_file" | grep -v '^[[:space:]]*$' > "$observed_sorted" || true
+```
+
+`|| true` is needed for the legitimate empty case (`grep` exits 1 on all-blank input), but it also
+swallows a `sort` failure. If `sort` cannot read `$observed_file`, the pipe still produces empty
+stdout, `grep -v` exits 1 (not an error), and `|| true` converts the line's status to 0.
+`$observed_sorted` ends up empty. Compared against a `count: 0` baseline — the real allowlist
+baseline's actual value — an empty observed set matches, and the gate **passes**. Same failure class
+FOLLOW-770 fixed in the register runner, never applied here.
+
+**Practical reachability, stated honestly.** Near-unreachable today: `$observed_file` is written by
+the calling gate script itself moments earlier. Recorded because the file's own header ("HARD-FAIL,
+NEVER DEGRADE") makes an unconditional promise this one line does not keep, and this helper is
+sourced by three gates already.
+
+**AC:**
+
+1. Capture `sort`'s own exit status explicitly rather than relying on the downstream `grep -v`'s
+   exit code, mirroring the PIPESTATUS-based fix already applied to the register runner in the same
+   gate family (FOLLOW-770).
+2. Red-first fixture: make `$observed_file` unreadable with a `count: 0` baseline present. Against
+   the current helper this passes silently; after the fix it must fail with a distinct diagnosis.
+3. Do not change the legitimate empty-case behavior.
+
+cross_ref: [code-review finding during PR #656/#657 validation, 2026-08-03;
+`scripts/lib/suppression-baseline.sh:49-56,114`; FOLLOW-770; Rules AJ / AP]
+
+---
+
+## FOLLOW-788 — `scripts/lib/suppression-baseline.sh` silently keeps the LAST of two repeated `count:` directives, which is exactly the shape a half-resolved merge conflict leaves
+
+source_retro: n/a (spotted during a code-review pass) source_ticket: — recommended_sprint: next
+recommended_agent: devops-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding.** `scripts/lib/suppression-baseline.sh:144-147` parses a baseline file line by line;
+on each line matching `^count:[[:space:]]*([0-9]+)[[:space:]]*$` it overwrites `declared_count` and
+`continue`s. Two `count:` lines in one baseline file silently resolve to the LAST one seen, with no
+detection that the directive appeared twice. The file's own header states the `count:` directive
+exists specifically to catch "a truncated or half-resolved-conflict baseline" — two `count:` lines
+are exactly what a half-resolved 3-way merge (both sides' line surviving, conflict markers edited
+out by hand) looks like.
+
+**Why this is INFO-severity.** Actual git conflict markers ARE caught: they don't match the
+`#`-comment or `count:` patterns, so they get appended to `baseline_sorted` as literal bogus
+entries, and the declared count then disagrees with the entry count — the existing
+self-inconsistency check already fires. Only a duplicated `count:` line specifically, with no other
+conflict residue, slips through. This repo resolved conflicts in baseline-adjacent files twice in
+one session, which is what makes this worth a cheap fix.
+
+**AC:**
+
+1. Fail the baseline parse if `count:` appears more than once, naming both values.
+2. Fixture: a baseline with `count: 3` and later `count: 5` (no other conflict residue) must fail
+   with a distinct diagnosis, not silently resolve to `5`.
+3. Do not change the existing self-inconsistency check — this is additive.
+
+cross_ref: [code-review finding during PR #656/#657 validation, 2026-08-03;
+`scripts/lib/suppression-baseline.sh:49-56,144-147`; Rule AP]
+
+## FOLLOW-789 — `backlog/FOLLOW_UPS.md` already has four historical Rule AN collisions (FOLLOW-309/310/311/312 each hold two unrelated stubs), discovered while resolving today's live collision
+
+source_retro: n/a (discovered while filing FOLLOW-780/787 after resolving a live Rule AN collision,
+2026-08-03) source_ticket: — recommended_sprint: next recommended_agent: architect priority: P4
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The finding.** `grep -oE "^## FOLLOW-[0-9]+" backlog/FOLLOW_UPS.md | sort | uniq -d` returns
+`FOLLOW-309`, `FOLLOW-310`, `FOLLOW-311`, `FOLLOW-312` — each number has TWO separate `## FOLLOW-N`
+headings with different titles, both dating to the RETRO-077 era (predates this session entirely;
+confirmed pre-existing on `main` before today's own filings, not introduced by this session's work).
+Each pair covers related-but-distinct tracer-admin findings (e.g. both FOLLOW-309 entries are about
+the Weight Editor's `GET /api/admin/intent/config` endpoint, described from two different
+angles/sessions).
+
+**Why this is filed now rather than fixed inline.** Discovered as a side effect of resolving today's
+own live Rule AN collision (FOLLOW-776-779 vs. this session's drafts) — not itself part of today's
+work, and renumbering four old, possibly-already-actioned stubs correctly (checking QUEUE.md /
+RETROSPECTIVES.md for every place each of the 8 headings might be cross-referenced) is real work
+that deserves its own scoped ticket, not a rushed fix riding along on an unrelated dispatch.
+
+**AC:**
+
+1. For each of the 4 colliding numbers, determine whether either or both stubs were already
+   promoted/actioned (check `promoted_to_queue`, QUEUE.md, and whether the underlying code fix
+   already shipped) — some may be moot rather than needing a live renumber.
+2. For any stub still open, renumber to the next free number at execution time (re-derive fresh
+   against `origin/main`, per Rule AN clause 1 — do not reuse this ticket's own filing-time number).
+3. Update every cross-reference to the renumbered stub (Rule AN clause 4 — the repair is not
+   complete until every cross-reference moves with it).
+4. State explicitly whether this reflects a systemic gap (no historical scan was ever run) or a
+   one-off from an earlier session's own collision, for the record.
+
+cross_ref: [Rule AN; discovered 2026-08-03 while resolving the live FOLLOW-778 collision (this
+session, RETRO-242 vs. PR #659); `backlog/FOLLOW_UPS.md:8295,8317,8340,8360,8391,8433,8467,8498`]

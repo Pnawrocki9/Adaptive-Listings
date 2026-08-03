@@ -1,5 +1,67 @@
 # Backlog Queue
 
+### FOLLOW-793 + FOLLOW-802 + FOLLOW-803 — status: READY_FOR_REVIEW (PR #667, 2026-08-03)
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/667 —
+`fix(sdk): report applied only for writes that happened`.
+
+**Why three tickets in one PR.** FOLLOW-802's own scope note requires it: _"this is the SECOND of
+THREE doors into one defect and FOLLOW-793's AC1 covers only the first… either merge this stub into
+FOLLOW-793 before dispatch, or dispatch both to the same worker in the same PR."_ Shipping 802 alone
+would have closed one door of three. FOLLOW-803 rides along because it lives in the same function of
+the same file and would otherwise conflict.
+
+**FOLLOW-793 + FOLLOW-802.** All three appliers recorded the idempotency fingerprint BEFORE the
+element loop and pushed `adapt.applied` AFTER it, gated only on `if (context)`. Any early return
+inside the loop (stale-at-arm; FOLLOW-795's headline-owned hand-off) therefore emitted
+`adapt.skipped` AND `adapt.applied` for the same slot in the same tick with zero DOM writes, and
+left the fingerprint recorded so the correct write could never happen later — the false
+`adapt.applied` reaching ClickHouse and the bandit indistinguishable from a real one. Generalised
+per AC1 rather than patched per door: `attachResilience` returns whether it wrote, each applier
+counts real writes, and both the fingerprint and `adapt.applied` hang off that count.
+Redundant-write suppression is unchanged.
+
+**AC2 decision (the ticket asked for one of two, with reasons):** option 2 — `index.ts` calls
+`teardownDescriptionObservers()` alongside `resetAdaptState()` on a same-page archetype change.
+Justified on the merits, not as a means: the description/headline is generated PER ARCHETYPE
+(ADR-0009), so on an archetype change the old copy is stale and its observer would defend it against
+the new archetype's directives. `applyDescriptionAdaptation` re-runs with the new archetype
+immediately after and re-arms — verified, not assumed. Option 1 was rejected because the ownership
+registry is a `WeakMap` and cannot be enumerated.
+
+**A defect this work introduced and its own tests caught.** AC3 asked the stale early return in
+`applyAndObserveHeadlineSlot` to `_headlineSlotMap.delete(el)`. Implemented literally that OPENS a
+fresh instance of gap (b): `teardownDescriptionObservers()` releases ownership by iterating that
+map, so deleting the entry while leaving `owner='description'` strands an element owned by a module
+no longer observing it — unreachable by either teardown. The stale path therefore clears ownership
+alongside the delete. Recorded because the literal reading of the AC was wrong and only TG-4
+surfaced it.
+
+**FOLLOW-803.** `matches()` compared live cards against a sequence frozen at first apply, so any
+change to the card COUNT made it permanently false — unbounded `adapt.reapplied` plus a
+detach/re-insert of every card on every host mutation. Predicate is now set-independent (`current`
+vs `sortByScore(current)`). `pin_top_n` needs no special case: both branches of `applyOrder` leave
+the ITEMS in `sortByScore` order and the predicate only inspects `item_selector` nodes. The orphaned
+`const sorted` is removed.
+
+**CI:** 73 pass; only the pre-existing `Rule I` at **192 = `main` baseline**, confirmed from the job
+log.
+
+**Validation:** 79 files / **1550 tests**; `tsc` clean; eslint + prettier clean; bundle **41.94KB
+gzip** (limit 42KB). Tests red-first — **7 fail against `cdac63eb`** — and the shipped FOLLOW-795
+assertion is extended, not replaced (`>= 1` passed while the same call emitted a false
+`adapt.applied`).
+
+**⚠ Bundle headroom is now ~60 bytes.** The next SDK ticket should begin with a decision on the 42KB
+limit (ESC-028 precedent) rather than discovering it on a red gate. FOLLOW-800 / FOLLOW-807.
+
+**⚠ Delivery note:** since FOLLOW-808 a merge to `main` ships the SDK to `admin.estalara.com` with
+no human gate, and these are behavioural changes to the applier that runs on every tenant page.
+
+**Next:** human merge.
+
+---
+
 ### FOLLOW-801 — status: DONE (PR #666 merged 2026-08-03, `cdac63eb`)
 
 **Merged FIRST, ahead of PR #665, on Piotr's instruction to merge both in the correct order.**

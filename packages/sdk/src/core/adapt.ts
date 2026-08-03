@@ -863,32 +863,69 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
 
   const scoreMap = new Map(directive.scores.map((s) => [s.listing_id, s.score]));
 
-  // Sort cards descending by score; cards with no listing-id match go to end (-Infinity)
-  const sorted = [...cards].sort((a, b) => {
-    const idA = a.getAttribute('data-estalara-listing-id');
-    const idB = b.getAttribute('data-estalara-listing-id');
-    const scoreA = idA !== null ? (scoreMap.get(idA) ?? -Infinity) : -Infinity;
-    const scoreB = idB !== null ? (scoreMap.get(idB) ?? -Infinity) : -Infinity;
-    return scoreB - scoreA;
-  });
+  // Sort by score, descending; cards with no listing-id match go to end (-Infinity).
+  // Extracted as a helper (rather than a one-off closure) because FOLLOW-792 requires
+  // this sort to run again, against freshly-queried live nodes, on every repair — see
+  // `applyOrder` below.
+  const sortByScore = (list: HTMLElement[]): HTMLElement[] =>
+    [...list].sort((a, b) => {
+      const idA = a.getAttribute('data-estalara-listing-id');
+      const idB = b.getAttribute('data-estalara-listing-id');
+      const scoreA = idA !== null ? (scoreMap.get(idA) ?? -Infinity) : -Infinity;
+      const scoreB = idB !== null ? (scoreMap.get(idB) ?? -Infinity) : -Infinity;
+      return scoreB - scoreA;
+    });
 
+  const sorted = sortByScore(cards);
+
+  // FOLLOW-792: `applyOrder` must NOT close over `sorted`/`cards` — those are the specific
+  // DOM node objects captured at first-apply time, and that's fine for a framework
+  // re-render that merely re-ORDERS the same nodes in place, but wrong for one that
+  // RE-MOUNTS them (React key change, Svelte `{#each}` re-key, any destroy+recreate
+  // re-render): the captured references become detached orphans, and re-attaching them via
+  // `container.prepend/append` puts them back in the DOM ALONGSIDE the framework's fresh
+  // replacement cards — duplicate listing cards, and because the duplicate count then
+  // permanently fails the length check below, every later mutation repeats the bug and
+  // appends yet another orphan (RETRO-244 §4a LG-1).
+  //
+  // Fix: re-query `container` for whatever `item_selector` nodes are LIVE right now, and
+  // sort THOSE by score (keyed by `data-estalara-listing-id`, i.e. data identity, never
+  // node identity). This is correct for a re-order (same nodes, re-sorted) and a re-mount
+  // (fresh nodes, same ids, re-sorted) alike, and it can never re-attach a node that is not
+  // currently a descendant of `container` — `container.append`/`prepend` only ever move
+  // nodes this exact query just found live.
+  //
+  // FOLLOW-792 / explicit choice for AC2: when the live id set differs from the set
+  // captured in `directive.scores` (a card was removed, or a new one appeared that we
+  // never scored), we converge on the intersection rather than disconnecting the watchdog
+  // and emitting `adapt.skipped`: an id that vanished from the live DOM has nothing to
+  // reinsert (it's simply absent from the re-sorted output), and a live id with no score
+  // falls to the end via the same -Infinity fallback the initial sort already uses for
+  // score-less cards. Both are ordinary host re-render outcomes, not a decision or
+  // telemetry failure — the existing `adapt.reapplied` event (emitted by `attachResilience`
+  // on every completed repair) is the observable signal, so no additional event is needed.
   const applyOrder = (): void => {
+    const liveSorted = sortByScore(
+      Array.from(container.querySelectorAll<HTMLElement>(directive.item_selector)),
+    );
     if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
-      const topCards = sorted.slice(0, directive.pin_top_n);
-      const restCards = sorted.slice(directive.pin_top_n);
+      const topCards = liveSorted.slice(0, directive.pin_top_n);
+      const restCards = liveSorted.slice(directive.pin_top_n);
       container.prepend(...topCards);
       container.append(...restCards);
     } else {
-      container.append(...sorted);
+      container.append(...liveSorted);
     }
   };
 
   if (!context) {
     applyOrder();
   } else {
-    // FOLLOW-791: desired end state is "the SAME listing-id order as `sorted`" — a
-    // framework re-render that re-sorts, filters, or re-mounts the card list drifts the
-    // DOM away from that order, which is repaired the same way an initial reorder is.
+    // Desired end state for the `matches()` check below is "the same listing-id order as
+    // `sorted`" — the order captured from the nodes present at first-apply time. This is
+    // just a target ordering of ids, not a set of node references, so it stays valid across
+    // a re-mount; `applyOrder` itself (see above) is what re-resolves ids to whichever live
+    // nodes currently carry them.
     const desiredOrder = sorted.map((c) => c.getAttribute('data-estalara-listing-id'));
     attachResilience(
       _reorderResilienceMap,

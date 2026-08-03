@@ -24553,7 +24553,9 @@ of the four linted files), which this ticket's own design should not copy.
 
 source_retro: n/a (spun out of FOLLOW-769 AC4 during implementation) source_ticket: FOLLOW-769
 recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 3
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt)
 
 **Context.** FOLLOW-769 AC3 required a decision on the `# shellcheck source=` directives that
 asserted a lint control which did not exist. The decision was to WIRE the job
@@ -24625,7 +24627,8 @@ lints only ONE of the four files, which AC4 already owns.
 
 source_retro: RETRO-242 (PR #656, FOLLOW-770) source_ticket: FOLLOW-770 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Status: LATENT, stated up front so it is not re-priced as an incident.** All three copies are
 identical **today** — verified this session, by measurement rather than by reading:
@@ -24741,7 +24744,8 @@ declared inside the runner) — **do 776 first, or combine them.**
 
 source_retro: RETRO-242 (PR #656, FOLLOW-770) source_ticket: FOLLOW-770 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Status: LATENT.** The register reports `[F] latent` on every run today (merged `rule-j` job log,
 run `30804335789`, job `91656144059`) and the count it asserts is correct. This is about a claim
@@ -24855,7 +24859,8 @@ verdict: the mechanism gap IS copy-shaped, but the Rule AI half — the half tha
 
 source_retro: RETRO-242 (PR #656, FOLLOW-770) source_ticket: — recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Status: REALISED, not latent — but the losses are re-runnable, so price it as "before the next
 multi-merge session", not as an incident.** Nothing has shipped broken because of this. What has
@@ -24939,7 +24944,8 @@ FOLLOW-602 (Rule I's pre-existing red, which is why no `main` run reads `success
 
 source_retro: RETRO-242 (PR #656, FOLLOW-770) source_ticket: FOLLOW-772 recommended_sprint: next
 recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Two findings, one file, one hour. The first is mine to declare and not mine to fix; the second is
 a closure that moved a gap one hop instead of closing it.**
@@ -25065,7 +25071,9 @@ Rule AN (this ticket's own renumbering, live instance)]
 
 source_retro: n/a (filed directly from a code-audit finding, 2026-08-03) source_ticket: FOLLOW-780
 recommended_sprint: next recommended_agent: data-engineer priority: P2 estimated_hours: 4
-depends_on: [FOLLOW-780] blocks: [] promoted_to_queue: false
+depends_on: [FOLLOW-780] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03**
+(see backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt)
 
 **Why this is filed as a measurement ticket, not an enforcement ticket.** A legitimate paraphrase
 ("three-bedroom" → "3 bedrooms") produces a digit absent from the source listing's grounding facts,
@@ -25154,7 +25162,8 @@ cross_ref: [code-audit finding F-02, 2026-08-03;
 
 source_retro: n/a (code-audit finding F-03, 2026-08-03) source_ticket: — recommended_sprint: next
 recommended_agent: ml-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Status: drift PREVENTION, not a live bug — verified directly, all three lists diffed.**
 `packages/shared/src/__tests__/archetype-canonical-parity.test.ts` guards
@@ -25192,7 +25201,8 @@ cross_ref: [code-audit finding F-03, 2026-08-03;
 
 source_retro: n/a (code-audit finding F-04, 2026-08-03) source_ticket: — recommended_sprint: next
 recommended_agent: architect priority: P3 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Verified directly.** `packages/intent-ontology/src/index.ts` is 14 lines, exporting only
 `INTENT_ONTOLOGY_VERSION = '0.0.0'` with a docblock stating "Full implementation in TICKET-013" and
@@ -25222,7 +25232,8 @@ cross_ref: [code-audit finding F-04, 2026-08-03; `packages/intent-ontology/src/i
 
 source_retro: n/a (code-audit finding F-05, 2026-08-03) source_ticket: — recommended_sprint: next
 recommended_agent: devops-engineer priority: P4 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Verified directly.** `.github/workflows/ci.yml:226` names the step
 `"SDK bundle size gate (<40KB gzip)"`. ESC-028 raised the budget to 42KB. Label/threshold drift only
@@ -25245,7 +25256,8 @@ cross_ref: [code-audit finding F-05, 2026-08-03; `.github/workflows/ci.yml:226`;
 
 source_retro: n/a (code-audit finding F-06, 2026-08-03) source_ticket: — recommended_sprint: next
 recommended_agent: architect priority: P3 estimated_hours: 4 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **Verified directly, exact count matched.**
 `grep -rn ": any\b" packages/sdk/src apps/control-plane/src --include=*.ts --include=*.tsx` (test
@@ -25269,7 +25281,9 @@ cross_ref: [code-audit finding F-06, 2026-08-03; CLAUDE.md quality bar]
 
 source_retro: n/a (spotted during a code-review pass, PR #656's fix-iteration) source_ticket: —
 recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 1
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt)
 
 **Origin note.** This helper shipped in PR #652 (FOLLOW-765+759), which RETRO-240 already covered.
 Filed now as a correction RETRO-240 should have caught rather than material for a later retro to
@@ -25311,7 +25325,8 @@ cross_ref: [code-review finding during PR #656/#657 validation, 2026-08-03;
 
 source_retro: n/a (spotted during a code-review pass) source_ticket: — recommended_sprint: next
 recommended_agent: devops-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt)
 
 **The finding.** `scripts/lib/suppression-baseline.sh:144-147` parses a baseline file line by line;
 on each line matching `^count:[[:space:]]*([0-9]+)[[:space:]]*$` it overwrites `declared_count` and
@@ -25342,7 +25357,9 @@ cross_ref: [code-review finding during PR #656/#657 validation, 2026-08-03;
 
 source_retro: n/a (discovered while filing FOLLOW-780/787 after resolving a live Rule AN collision,
 2026-08-03) source_ticket: — recommended_sprint: next recommended_agent: architect priority: P4
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
+2026-08-03** (see backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria;
+this ticket is P2-or-lower and not exempt)
 
 **The finding.** `grep -oE "^## FOLLOW-[0-9]+" backlog/FOLLOW_UPS.md | sort | uniq -d` returns
 `FOLLOW-309`, `FOLLOW-310`, `FOLLOW-311`, `FOLLOW-312` — each number has TWO separate `## FOLLOW-N`
@@ -25379,7 +25396,9 @@ session, RETRO-242 vs. PR #659); `backlog/FOLLOW_UPS.md:8295,8317,8340,8360,8391
 
 source_retro: RETRO-243 (PR #657, FOLLOW-768 + FOLLOW-769 + FOLLOW-771) source_ticket: FOLLOW-768
 recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 2
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt)
 
 **Status: LATENT, and no behaviour is wrong. Stated up front so it is not re-priced as a defect.**
 Both gates are green on the real tree and in CI (run `30804613183`, `headSha 15c8675c`: capture

@@ -817,7 +817,90 @@ posted).
 
 ---
 
-## ▶️ START HERE — session 94 (2026-08-03) — RETRO-242 merged (Rule AQ promoted), a live Rule AN collision found and resolved, PR #659 filed retroactively, code-audit batch filed
+## ▶️ START HERE — session 95 (2026-08-03) — RETRO-243 merged (no rule promoted), CEO P2 FREEZE in effect, localhost-first acceptance gate, FOLLOW-026 corrected + migration flagged
+
+**RETRO-243 merged** (`5876ff2a`, fast-forward, confirmed pre-merge not-ahead-of-origin check now
+standing). Docs-only, no rule promoted (Rule AQ stays at its RETRO-242 promotion; the FOLLOW-768
+proof-goes-live gap and this session's own live Rule AN collision were both correctly held at
+count-1/reinforcing-evidence rather than promoted — see RETRO-243 §6 for the exact bar applied to
+each). `main` re-confirmed at `5876ff2a`, zero open PRs.
+
+### CEO DECISION 1 — P2 FREEZE, effective 2026-08-03
+
+**Ruling:** after FOLLOW-773+774, do FOLLOW-782 (the only P1 in the current batch), then freeze
+everything else at P2-or-lower until further notice.
+
+**Frozen, with this exact reason and date recorded on each ticket's own `promoted_to_queue` line in
+`backlog/FOLLOW_UPS.md` (not just here — a reader landing on the stub directly must also see it):**
+FOLLOW-775, 776, 777, 778, 779, 781, 783, 784, 785, 786, 787, 788, 789, 790. (773/774 are NOT frozen
+— already sequenced ahead of the freeze; 782 is NOT frozen — the one P1 exemption.)
+
+**Standing rule so the freeze cannot silently rebuild itself, effective immediately for every future
+retro dispatch and PM filing:** any NEW stub filed from this point forward — by a retro, by a
+code-audit pass, by the PM directly — lands **FROZEN by default unless it is P1**. A retro dispatch
+brief must say so explicitly (added to this session's standing retro-brief template below). This is
+the only way the freeze survives more than one or two retro cycles; if new arrivals default to
+READY, the queue rebuilds itself and the CEO ruling is dead on paper within days.
+
+**What would justify unfreezing (recorded so a future session cannot innocently unfreeze without
+re-deriving this):** an explicit CEO/Piotr ruling reversing or narrowing today's freeze. Nothing
+else — not "it's been a while," not "the queue looks empty," not a worker or PM judgment call that a
+frozen ticket seems safe. If a future session is tempted to unfreeze something, it must find a NEW
+dated ruling, not just re-read this one and decide it no longer applies.
+
+### CEO DECISION 2 — localhost-first, standing goal, changes acceptance gates not sequence
+
+**Nothing is deployed to production for now; everything must work on localhost first.** This changes
+what "done" means for every dispatch from here, not which tickets get picked:
+
+- **Every dispatch brief from now must override this repo's default runtime-wired-acceptance-gate
+  convention explicitly.** The gate is "demonstrated working on localhost," never "verified in prod"
+  — a worker left to its own devices will default to writing a prod-shaped gate, since that is this
+  repo's established pattern everywhere else. State the override in the brief, do not assume it
+  carries over from context.
+- **Record correction, since this session repeated the old framing and should not repeat it again:**
+  three things previously called pilot blockers are now correctly out of scope as originally framed
+  — **ESC-020** (Estalara-app prod deploy) is a prod action, out of scope for now. **The feedback
+  503 gate** (`FEEDBACK_ENDPOINT_ENABLED`) is a LOCAL env var a developer can set directly — dev
+  config, not an operator blocker, for the localhost-first goal specifically (it remains a genuine
+  prod blocker for an actual pilot go-live, that framing does not change, only its relevance to
+  "does the loop work on localhost" does). **The CH migration operator leg (FOLLOW-449)** means a
+  LOCAL ClickHouse for the localhost goal, not the Cloud console.
+- **ESC-045 items 2-3 (local Upstash/credentials) go UP in relevance** — this is what actually
+  blocks the full loop on localhost. `apps/intent-engine/src/local_dev.py` already exists as the
+  local shim (per FOLLOW-729/730, merged earlier this session's own lineage).
+
+### FOLLOW-026 — corrected before dispatch, one thing flagged before the worker starts
+
+**Line citations were stale — corrected, not passed through.** The original stub (RETRO-004 era,
+very old) cites `packages/sdk/src/core/adapt.ts:87-100` for `interpolatePlaceholders()`. Verified
+against current `main`: the function is now at `:507-525` (docblock `:507-511`, body `:512-525`),
+called from `applyTextDirective()` at `:560`. **The underlying finding is confirmed accurate and
+CURRENT, not stale** — read the live code directly: an unresolved `{token}` is genuinely left
+literal on the page (`:523`, `return match; // leave literal`) with only an `adapt.skipped` event
+emitted, and resolution is DOM-attribute-only (`:514-517`) — exactly as the coordinator described,
+confirmed independently.
+
+**Migration flag, per the standing instruction to raise this BEFORE the worker starts, not after a
+PR exists.** The stub's own AC1/AC3 ask for a "Level 2: tenant override map from
+`tenants.placeholder_overrides`" — verified via `grep -rn "placeholder_overrides"` across
+`packages/db`, `apps/control-plane`, `packages/sdk`: **zero hits, the column does not exist.**
+Implementing Level 2 as literally specified requires a NEW migration on the `tenants` table (last
+migration touching it: `0034_tenants_al_enabled.sql`). Given migrations are the one open question
+Piotr has not yet answered (whether "nothing to prod" also means "no merges," and merged Postgres
+migrations auto-apply to staging→prod with no human gate per FOLLOW-308), **this dispatch is scoped
+to Level 1 (LLM-provided `placeholder_values` on the wire, no schema change) and Level 3 (DOM
+attribute, already shipped) only.** Level 2 (tenant override, needs the migration + Piotr's answer)
+is explicitly OUT of this dispatch's scope and will be filed as its own follow-up once the migration
+question resolves. AC4/5/6 are adjusted accordingly in the dispatch brief (below).
+
+NEXT: Dispatch FOLLOW-773+774 combined (localhost-gated acceptance criteria stated explicitly),
+wait, validate, then FOLLOW-782, then FOLLOW-026 (Levels 1+3 scope, migration-free,
+localhost-gated).
+
+---
+
+## ▶️ (superseded) START HERE — session 94 (2026-08-03) — RETRO-242 merged (Rule AQ promoted), a live Rule AN collision found and resolved, PR #659 filed retroactively, code-audit batch filed
 
 **RETRO-242 merged** (originally `6ded4364`, rebased to `0546e259` — see the divergence incident
 below). Promoted **Rule AQ** to `CONVENTIONS_PATCH.md` (independently trusted the coordinator's own

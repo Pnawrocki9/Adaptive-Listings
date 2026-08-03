@@ -24096,7 +24096,8 @@ cross_ref: [RETRO-239 §4c TG-1, §4d DG-1, §5d (the SPOF assessment this ticke
 
 source_retro: RETRO-240 (PR #655, FOLLOW-766 + FOLLOW-767) source_ticket: FOLLOW-767
 recommended_sprint: next recommended_agent: devops-engineer priority: P1 estimated_hours: 3
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: true (2026-08-03 — dispatched to devops-engineer on
+Opus, Rule AP reference implementation)
 
 **Priority note, stated up front so it is not silently re-priced.** P1 is the standing HALF_WIRE_P
 classification (Rule AJ). The **live impact today is latent**: every context the gate is actually
@@ -24329,7 +24330,9 @@ Rule AI; Master_Design §Y.2]
 
 source_retro: RETRO-241 (PR #653, FOLLOW-761) source_ticket: FOLLOW-761 recommended_sprint: next
 recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — queued for combined dispatch with FOLLOW-774 to
+devops-engineer, overriding the qa-engineer suggestion, AFTER FOLLOW-770 / 768+769+771 / 763 land --
+see backlog/QUEUE.md session-92 head for why)
 
 **The finding (LG-1) — measured preconditions, not theorised.** FOLLOW-761 added
 `.github/workflows/redis-shadow-smoke.yml:79-81`:
@@ -24413,7 +24416,8 @@ visible non-success, not a false-GREEN)]
 
 source_retro: RETRO-241 (PR #654, FOLLOW-762 — the first item is a CROSS-PR interaction with #653)
 source_ticket: FOLLOW-762 recommended_sprint: next recommended_agent: devops-engineer priority: P3
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true (2026-08-03 — queued for
+combined dispatch with FOLLOW-773 to devops-engineer, AFTER FOLLOW-770 / 768+769+771 / 763 land)
 
 **Priority note, up front so it is not mis-scheduled:** the ticket is P3 overall, but **AC3 (the
 runbook) is P2-shaped and is the part to do first** — it is a live operator-facing document that is

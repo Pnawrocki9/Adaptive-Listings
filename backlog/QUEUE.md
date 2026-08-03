@@ -598,7 +598,80 @@ PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 
-## ▶️ START HERE — session 91 (2026-08-03) — RETRO-240 merged, Rule AP promoted, decision 1 closed by event, collision analysis corrected before dispatch
+### FOLLOW-770 — dispatch record (IN_PROGRESS)
+
+**Picked 2026-08-03 (session 92)** as the first of four remaining sequential dispatches. Standalone
+— confirmed zero file overlap with FOLLOW-768/769/771 or FOLLOW-763/773/774 (touches only
+`scripts/check-mirror-files.sh`).
+
+**assigned_to:** devops-engineer **model: Opus** — independently affirmed, not just accepted from
+the coordinator's suggestion. Reasoning: FOLLOW-770 AC5 designates this ticket the Rule AP
+**reference implementation** — the register shape it produces (per-entry `latency proof`,
+execute-every-run with a distinct diagnosis, region/scan-root/input-unavailable fields per clause 3)
+will be copied verbatim by FOLLOW-768+769+771's sentry-gate registers and by every future gate this
+rule binds. This is a **shape decision made once and inherited**, not a mechanical application of an
+existing pattern — the same category of decision this repo already routed to Opus for FOLLOW-746
+item 8 (shared-helper-vs-copy). Getting clause 1-3's concrete bash shape wrong here propagates to
+every downstream register.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (FOLLOW-770) — within the ≤3 guardrail.
+
+---
+
+## ▶️ START HERE — session 92 (2026-08-03) — RETRO-241 merged, 2 new stubs folded in, collision analysis re-run across 763/773/774 before any dispatch
+
+**RETRO-241 merged** (`6221d2ea`, fast-forward). Docs-only, no rule promoted this round (correctly —
+neither of its two new findings is a 4th sighting of anything already at count 3). Filed FOLLOW-773
+(the `concurrency` group FOLLOW-761 shipped can get a **pending** `main` run cancelled rather than
+queued — GitHub Actions cancels a pending run in a group when a newer one is queued;
+`cancel-in-progress: false` only protects the _running_ one — a live gap on `main` right now, not
+theoretical) and FOLLOW-774 (the negative-control step runs without `NX_RUN_SUFFIX`, the fork-PR
+soft-skip branch has never executed, and `docs/runbooks/upstash-redis-env-parity.md` still describes
+the pre-FOLLOW-762 secret-presence-keyed contract).
+
+**Collision analysis re-run across 763/773/774 from the stubs themselves, not accepted on the
+coordinator's grouping** (coordinator flagged being wrong on this twice already — verified rather
+than assumed a third time would be fine):
+
+- **FOLLOW-773 and FOLLOW-774 DO collide with each other** — both edit
+  `.github/workflows/redis-shadow-smoke.yml`, in different regions (773: the `concurrency:` block
+  and its surrounding comment, lines ~59-81; 774: the negative-control step's env block and the
+  fork-PR exemption test, lines ~141-197) but the SAME file this session has already produced one
+  real conflict on (761↔762). Combining them is not just precedent-following — it is the same file
+  this exact defect class already bit once.
+- **Neither FOLLOW-773 nor FOLLOW-774 touches
+  `tests/integration/redis-shadow-round-trip.smoke.test.ts` as a scope item** — both stubs' ACs are
+  exclusively about the YAML file; the smoke-test file only appears in each ticket's own "do NOT
+  touch this" constraint list (773 AC5, 774 AC4), confirming by their own text that neither intends
+  to edit it.
+- **FOLLOW-763 touches `apps/control-plane/src/lib/chat-intent-cache.ts` (unique) and ONE line of
+  `redis-shadow-round-trip.smoke.test.ts`** — no overlap with 773/774's file (the workflow YAML) or
+  region (773/774 never touch the `.test.ts` file at all). **FOLLOW-763 does NOT collide with either
+  773 or 774.**
+
+**Revised dispatch plan (unchanged for 770/768+769+771, confirmed for 763, new for 773+774):**
+
+1. FOLLOW-770 (devops-engineer) — standalone, dispatching this turn. Rule AP's designated reference
+   implementation; see dispatch record below for why Opus.
+2. FOLLOW-768 + FOLLOW-769 + FOLLOW-771 combined (devops-engineer) — sentry gates, citing
+   FOLLOW-770's merged pattern.
+3. FOLLOW-763 (backend-engineer) — standalone, no collision with anything else in this batch.
+4. FOLLOW-773 + FOLLOW-774 combined (devops-engineer, not qa-engineer despite 773's own
+   `recommended_agent` — both are CI trigger/concurrency-semantics work, closer to "Terraform,
+   CI/CD, workflows, secrets, observability, runbooks" than to "E2E/integration/load/a11y tests,
+   fixtures, golden harness"; 773's AC1 requires reproducing GitHub Actions' own queue-cancellation
+   behavior, not building a test fixture).
+
+Strictly sequential, one Bash-capable agent at a time in the shared tree, per standing discipline.
+
+NEXT: Dispatch FOLLOW-770, wait, merge it, then FOLLOW-768+769+771, wait, merge it, then FOLLOW-763,
+wait, merge it, then FOLLOW-773+774.
+
+---
+
+## ▶️ (superseded) START HERE — session 91 (2026-08-03) — RETRO-240 merged, Rule AP promoted, decision 1 closed by event, collision analysis corrected before dispatch
 
 **RETRO-240 merged** (`d6d19656`, fast-forward). It promoted **Rule AP** — gate residual enumeration
 must be a machine-checked register the gate itself executes, not prose; a PR adding a new

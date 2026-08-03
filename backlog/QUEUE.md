@@ -1,9 +1,15 @@
 # Backlog Queue
 
-### FOLLOW-796 — status: READY_FOR_REVIEW (PR #664, 2026-08-03)
+### FOLLOW-796 — status: DONE (PR #664 merged 2026-08-03, `675cd75f`)
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/664 —
-`fix(sdk): translate detection slot keys to directive slots on self-annotation`.
+`fix(sdk): translate detection slot keys to directive slots on self-annotation`. Rebase-merged on
+Piotr's instruction after CI was confirmed; worktree removed, branch deleted local + remote.
+
+**Post-merge verification on the real merged `main` (not inferred from the branch runs):**
+`packages/sdk` 77 files / **1535 tests pass**, bundle **41.88KB gzip** — exactly the combined figure
+predicted from the pre-merge cross-ticket merge — and `scripts/check-rule-i.sh` reports **192**,
+unchanged from the pre-merge baseline. The `cta` directive now reaches self-annotated tenants.
 
 **CI:** green modulo the pre-existing-red `Rule I — wired-or-dead check`. Verified this branch adds
 **zero** new Rule I violations rather than assuming the gate is safe to wave through:
@@ -68,10 +74,14 @@ in an isolated git worktree** (parallel with FOLLOW-795, no file overlap between
 
 ---
 
-### FOLLOW-795 — status: READY_FOR_REVIEW (PR #663, 2026-08-03)
+### FOLLOW-795 — status: DONE (PR #663 merged 2026-08-03, `88d3d2d0` + `b9ab64a7`)
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/663 —
-`fix(sdk): hand off headline slot ownership instead of excluding it`.
+`fix(sdk): hand off headline slot ownership instead of excluding it`. Rebase-merged on Piotr's
+instruction after CI was confirmed; worktree removed, branch deleted local + remote.
+
+**Post-merge verification on the real merged `main`:** 1535 tests pass, bundle **41.88KB gzip**,
+Rule I **192** (unchanged). The playbook headline is now watchdog-backed at cold start.
 
 **CI:** first run failed `Rule I — wired-or-dead check` at **193 violations vs 192 on `main`** — the
 gate is pre-existing-red, but this branch had added **one genuinely new** violation: the exported

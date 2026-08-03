@@ -883,7 +883,7 @@ immediately before writing (Rule AN) — allocated **FOLLOW-791**. Full ticket a
 NEXT: Dispatch FOLLOW-791 (sdk-engineer, ahead of the frozen batch, exempt as P1), wait, validate,
 then FOLLOW-782, then FOLLOW-026 (Levels 1+3, reason: deferred on value/single-tenant).
 
-### FOLLOW-791 — status: READY_FOR_REVIEW (PR #661, CI green modulo pre-existing-red Rule I, 2026-08-03)
+### FOLLOW-791 — status: DONE (PR #661 merged 2026-08-03 by Piotr via rebase, `33de49e6`)
 
 **assigned_to:** sdk-engineer **model: Sonnet** — delegation table row "client SDK, Shadow DOM,
 tiers, browser code." A resilience mechanism to add is a well-specified, single-file change with a

@@ -2794,3 +2794,20 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   the PR body is evidence, but reproducing it independently on a freshly-built instance of the
   actual triggering condition is a full tier stronger, and this session's tooling made it nearly
   free to do.
+
+- **Date / ticket:** 2026-08-03 — PR #656 (FOLLOW-770), bounced back 1/3
+- **Delegation row used:** validation only, no new delegation this entry (fix-iteration on existing
+  devops-engineer dispatch)
+- **What validation caught (or missed):** Went past reproducing the PR's own claimed transcripts and
+  independently tested each register entry's proof command in isolation against realistic failure
+  conditions -- found that 3 of 8 entries' "pipefail protects us" claim only holds when the LAST
+  pipe stage doesn't itself have an ordinary non-zero exit code (grep's no-match=1 masks an upstream
+  producer's real failure under pipefail's rightmost-non-zero semantics). The bug is invisible in
+  the current gate only because an unrelated earlier guard happens to exit first in the one scenario
+  that would trigger it -- exactly the "correct by accident of execution order" shape this whole
+  session has been hunting for, now found inside the artifact meant to prevent it.
+- **A delegation/validation rule I'd add:** when a PR explains WHY a specific mechanism (e.g.
+  `pipefail`) prevents a named failure class, don't just confirm the mechanism is present -- test
+  the claim's boundary condition directly (here: what if the LAST stage in the pipe also has an
+  ordinary non-zero exit code independent of the failure being guarded against). A cited mechanism
+  can be real and still not cover 100% of the shape it's credited with fixing.

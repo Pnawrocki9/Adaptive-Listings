@@ -886,3 +886,26 @@ this session).
 NEXT: Piotr merges the 4 PRs (mind the #653/#654 conflict). PM resumes next session: validate
 anything that didn't merge cleanly, spawn retrospectives for merged tickets, then FOLLOW-763/768/769
 once unblocked.
+
+---
+
+# Status — 2026-08-03 (session 92 continued — PR #656 bounced back, 1 fix-iteration)
+
+## SESSION 92 continued — FOLLOW-770 validation found a real gap in the reference implementation
+
+**Validated PR #656 (FOLLOW-770) at the shape level, per explicit instruction (Rule AP reference
+implementation).** CI green (67/2, Rule I re-derived fresh at 192, not assumed stale). Independently
+reproduced AC1/AC2 and AC5 on fixtures I built myself, both matching the PR's claims. Found a real,
+reproducible defect in 3 of 8 register entries (A, B, F): pipefail's rightmost-non-zero semantics
+let a genuine producer failure get masked by a downstream grep's ordinary no-match exit (1), landing
+UNEVALUABLE cases in the "latent" bucket instead of failing loudly -- the exact Clause-2 violation
+the coordinator predicted. Reproduced both isolated commands with real error output, pasted
+transcripts and the requested fix shape on the PR. Bounced back to IN_PROGRESS rather than approved,
+since this is the artifact every future gate copies.
+
+**CI-check counter: 1/5. Fix-iteration counter: 1/3.**
+
+**1 ticket IN_PROGRESS** (FOLLOW-770, awaiting fix-iteration).
+
+NEXT: dispatch a fix-iteration to devops-engineer on the same branch, citing the PR comment's exact
+reproduction and requested fix shape.

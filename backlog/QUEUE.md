@@ -598,7 +598,49 @@ PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 
-### FOLLOW-770 — dispatch record (IN_PROGRESS)
+### FOLLOW-770 — status: IN_PROGRESS, bounced back for 1 fix-iteration (PR #656 open, `e9d5dc94`, PM-validated-and-returned 2026-08-03)
+
+**Weighted the shape at least as hard as the behavior, per the explicit instruction on this ticket
+(it's Rule AP's reference implementation).** Excellent work overall, independently confirmed:
+
+- **5b CI:** 67 pass / 2 fail, both `Rule I`, baseline **re-derived fresh at 192** (not asserted
+  from the earlier #652/#653/#654/#655 reading — correctly treated as possibly stale, per the
+  coordinator's explicit warning). Non-success count for all REAL gates: **0**.
+- **AC1/AC2 (discovery-source-unavailable)** and **AC5 / Rule AP's own verification clause (a
+  register entry going live is caught)** both independently reproduced on fixtures I built myself
+  (not the PR's own) — a non-git `MIRROR_FILES_ROOT`, and a `divide()`-shaped Python pair with
+  genuinely different behavior masked by the `//`-as-comment stripping bug. Both matched the PR's
+  claims exactly: exit 2 / DISCOVERY SOURCE UNAVAILABLE, and exit 3 / `[C1] GONE LIVE` naming the
+  entry id. 11/11 self-test assertions pass in my own run.
+
+**Bounced back — found a real, reproducible gap in Clause 2's core guarantee, in 3 of 8 register
+entries, in exactly the shape the coordinator predicted would be "quietly softened."** Entries A, B,
+F all chain a producer (`git ls-files`, or a `grep` over `$MF_SELF`) into a SECOND `grep` stage.
+Bash's `pipefail` reports the exit status of the **rightmost** non-zero command, not the first — so
+when the producer fails (`git`: 128, or `grep: No such file`: 2) but the trailing `grep` ALSO
+naturally returns 1 on its now-empty input (an ordinary, expected code), the pipeline's reported
+status is **1**, which does not meet the register's `-ge 2` UNEVALUABLE threshold. The failure lands
+in the `latent` bucket — the reassuring direction, and the literal shape Rule AP clause 2 exists to
+forbid ("never assume still latent"). Reproduced both entries A and F in isolation with real error
+output; pasted both transcripts on the PR. Not live today only because an earlier, unrelated guard
+(the AC1/AC2 `TRACKED_LIST` check) already exits 2 before the register loop is ever reached in the
+one scenario that would trigger it — the register's own 3 affected entries are correct **by accident
+of execution order**, not by their own design, which is exactly the "reads as trustworthy because
+something else catches it first" pattern this whole rule chain exists to close.
+
+**Why this blocks merge rather than riding as a noted residual:** this is the artifact every future
+gate copies. A future register entry shaped like A/B/F, with no earlier guard shielding it, would
+silently misreport UNEVALUABLE as latent — undermining the one guarantee Rule AP's promotion was
+built around, inside Rule AP's own first implementation.
+
+Posted full reproduction + the requested fix shape (check `${PIPESTATUS[0]}` or capture-then-check
+rather than relying on pipefail's rightmost-non-zero semantics for these 3 entries; add a red-first
+fixture proving a producer-fails-but-downstream-grep-also-fails case reports UNEVALUABLE) as a PR
+comment. Did not prescribe the exact mechanism — worker's call, within Rule AP clause 6's format.
+
+**CI-check counter: 1/5. Fix-iteration counter: 1/3.**
+
+---
 
 **Picked 2026-08-03 (session 92)** as the first of four remaining sequential dispatches. Standalone
 — confirmed zero file overlap with FOLLOW-768/769/771 or FOLLOW-763/773/774 (touches only

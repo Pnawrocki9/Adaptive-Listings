@@ -3351,3 +3351,147 @@ clause 4 and is named there rather than duplicated). LETTER CHOICE: AP follows A
 promotion moves the CONVENTIONS_PATCH rule count to 42, against docs/MASTER_DESIGN.md §Snapshot.6's
 recorded 27 — filed as FOLLOW-772 per Rule AI, since MASTER_DESIGN is outside the retro's write
 scope. -->
+
+---
+
+## Rule AQ — A block of code DECLARED identical across files MUST be extracted or machine-checked; a prose "copied verbatim, keep in sync" note is not a control, and the reference MUST name its copies as explicitly as the copies name the reference
+
+**Pattern.** Rule J was promoted because a PR body saying "kept in sync" is not a gate. The pattern
+it was promoted on has now recurred **three times in shapes Rule J's mechanism cannot express**, and
+the third recurrence is inside the gate that implements Rule J.
+
+Rule J's manifest (`scripts/mirror-files.json`) compares **whole files**, keyed by path, discovered
+by **basename**. Rule K.1 covers intra-runtime duplication of a **"function/route that computes a
+metric or business value"**. Between them sits a gap that keeps producing duplicates: a **contiguous
+REGION** of a file, copied into files with **different names and different overall content**, in the
+**same runtime**, in code that is **infrastructure rather than business value**. Neither the
+manifest nor basename discovery nor Rule K.1's grep can see it. What such duplicates always have
+instead is a **comment** — "byte-identical", "copied verbatim", "keep in sync", "do not clean it up
+per gate" — which is a claim about coverage with no consumer, i.e. the artefact Rule AP was promoted
+to abolish, in a different medium.
+
+The second half of the rule is the half the third sighting added and it is the sharper one: **the
+pointer is one-directional.** In every instance so far, each copy names its origin and **the origin
+names nothing**. That is exactly backwards. A contributor editing a copy is already reading a
+warning; the contributor most likely to make a _substantive_ change is the one working in the file
+everyone calls canonical — and that file is silent.
+
+**Evidence (≥2 prior retros — four, with exact citations):**
+
+- **RETRO-231 §6 (count 1).** Three byte-identical helpers duplicated across two `scripts/*.mjs`
+  gates, recorded as a "Rule J / Rule K.1 scope-boundary sighting, no amendment proposed yet" (→
+  FOLLOW-725). RETRO-231 established that gate/test-harness machinery does not reach Rule K.1's
+  "business value" framing.
+- **RETRO-233 §6 (count 2).** A whole Python function (`_valid_bearer`) **plus a 24-line inline
+  block** inside a larger function — intra-app and **partial**. It declined promotion at one prior
+  retro and **pre-specified what the third sighting must carry so the rule would not be
+  under-scoped**: _"**(a)** a comparison strategy that is language-agnostic … and **(b)** a strategy
+  for a REGION of a file rather than a whole file, since neither RETRO-231's nor this instance is a
+  file-level mirror."_
+- **RETRO-235 §6 (held at 2, and this is the decisive prior).** It **declined** a sighting the
+  arithmetic appeared to authorise, because the Python mirror pair in question **was registered**
+  and Rule J passed on it: _"This is the pattern's remedy being applied — the first time in Python —
+  not its recurrence. Counting a compliant instance would have inflated the arithmetic and codified
+  a rule off evidence that argues the opposite."_ It also **measured** the one candidate that would
+  have qualified and rejected it on the measurement (`check-sentry-init-singleton.sh` vs
+  `check-modal-app-singleton.sh`: 36% identical lines, largest common block **8 lines**, all of it
+  comment/echo boilerplate — _"two scripts sharing a house style, not a declared-identical
+  duplicate"_). It added clause **(c)** (an opt-in registry cannot enforce a repo-wide invariant
+  without a discovery step) and recorded the pattern as **"count 2, pre-authorised for promotion on
+  the next genuine (i.e. UNREGISTERED) sighting."**
+- **RETRO-238 §6 (held at 2).** Declined again, on a _prediction_ rather than a sighting — _"A
+  prediction is not a sighting"_ — and wrote the prevention into FOLLOW-764 instead.
+- **RETRO-242 §4b CB-1 — the promoting, pre-authorised sighting.** The Rule AP residual-register
+  runner exists **byte-identically in three blocking gates**: `check-mirror-files.sh:1109-1166`,
+  `check-sentry-capture-has-init.sh:1253-1310`, `check-sentry-init-singleton.sh:1428-1485` — all
+  three `md5sum` to **`5fa38c527c083faf0dc83b3c8d9f6a00`**, 58 lines each, against file sizes of
+  1195 / 1381 / 1600 lines. It is **declared** identical in prose in both copies (_"byte-identical
+  to scripts/check-mirror-files.sh's … Do not 'clean it up' per gate"_) and
+  **`grep -rn "byte-identical to scripts/check-mirror-files" scripts/` returns 2 hits, both in the
+  copies, ZERO in the reference**. It is registered nowhere: `scripts/mirror-files.json` holds 4
+  pairs, none of them these; the whole-file model cannot express 58-of-1195; three different
+  basenames defeat discovery; and no register entry in any of the three gates bounds it. It
+  satisfies RETRO-233's clause **(b)** — a region of a file — which **no prior sighting could**, and
+  RETRO-235's UNREGISTERED condition exactly. The stakes are recorded in the duplicated code's own
+  commit message (`faa4753b`): the fix was placed **in the runner** _"so every entry added later —
+  or copied into another gate — inherits it"_ — and the runner is now the one artefact in that
+  estate that cannot propagate a fix.
+
+**Rule.**
+
+1. **A duplication that is DECLARED identical is a contract and MUST have a mechanism.** If a PR
+   copies a contiguous block of ≥ 20 non-blank, non-comment lines into another file and any artefact
+   (comment, PR body, commit message, ticket) states that the copies are identical or must stay in
+   sync, the PR MUST do **one** of: **(a)** extract the block into a shared module the copies load
+   at runtime (for shell, the `scripts/lib/` convention: `source` + `declare -F` assertion +
+   `exit 2` when absent; for TS, a workspace package; for Python, a mirrored module already
+   registered under Rule J); **(b)** register the duplication in a machine-checked comparison that
+   runs in a blocking job and names which copies diverged; or **(c)** add a **Rule AP register
+   entry, in every file holding a copy**, whose latency proof compares that copy against the others.
+   Choose one and say why the other two are worse — do not stack them.
+2. **Reciprocity is mandatory and is the clause most often missed.** Every copy MUST name its origin
+   **and the origin MUST name every copy, by path**. A one-way pointer is not a control: it warns
+   the party least likely to make the change that matters. This clause is satisfiable in one comment
+   line and is the minimum acceptable outcome even when clause 1's option (c) is chosen.
+3. **Do not cite Rule J as coverage for a region.** `scripts/mirror-files.json`'s pair model is
+   whole-file and its discovery is basename-keyed; a duplicated region in two differently-named
+   files is invisible to **both**. A PR creating such a duplication may not record "covered by Rule
+   J", and a reviewer may not accept that answer. If the duplication genuinely is whole-file,
+   register it under Rule J and this rule is discharged.
+4. **The "canonical" designation raises the bar, it does not lower it.** If a rule, ADR or ticket
+   names one copy the reference implementation for others to copy (as Rule AP clause 6 does), that
+   designation makes clauses 1 and 2 **mandatory rather than advisory**, because the copy count is
+   expected to grow. A designated reference with no mechanism and no back-pointer is incomplete
+   regardless of test coverage.
+5. **Scope and threshold.** This binds duplication **within one runtime** and covers infrastructure,
+   gate and harness code — precisely the region Rule J (`apps/decision-api/src/lib/` cross-runtime
+   file mirrors) and Rule K.1 ("a metric or business value") leave uncovered. It does **not** bind
+   incidental similarity: a shared house style, boilerplate echo blocks, or a block nobody has
+   declared identical. RETRO-235's measurement is the operative test — **declared identical, or a
+   largest-common-block that is substantive rather than boilerplate**; 36%-similar scripts with an
+   8-line common comment block are not a duplicate.
+
+**Verification.**
+
+- Reviewer check, mechanical, cheap:
+  `grep -rn "byte-identical\|copied verbatim\|keep in sync\|kept in sync\|do not clean it up\|mirror of" --include=*.sh --include=*.ts --include=*.py --include=*.mjs . | grep -v node_modules`
+  — **every hit must resolve to a shared module, a registered pair, or a Rule AP entry with a
+  comparison proof**, and must have a reciprocal pointer at the other end. A hit whose only
+  mechanism is the sentence itself fails review.
+- Bidirectionality is a second, separate grep: for each declared duplicate, grep the **origin** for
+  the copies' paths. Zero hits in the origin is a finding on its own (clause 2).
+- If clause 1 option (b) or (c) is taken, the comparison MUST have a red-first fixture: mutate ONE
+  copy by a single character in a **synthesized** tree (Rule AM — never the live source) and show
+  the gate going red naming the diverged file, then restore and show it green.
+- The comparison itself is subject to **Rule AL**: it must compare the same region it claims to
+  compare. A checksum over a line range is only valid while the range is derived, not hard-coded.
+
+<!-- PROMOTED by RETRO-242 (2026-08-03). Pattern "SAME-RUNTIME DECLARED-IDENTICAL DUPLICATE IN THE
+Rule J / Rule K.1 GAP", count 3, PRIOR RETROS: RETRO-231 §6 (count 1, three byte-identical helpers
+across two scripts/*.mjs gates → FOLLOW-725), RETRO-233 §6 (count 2, Python _valid_bearer + a 24-line
+inline block; PRE-SPECIFIED clauses (a) language-agnostic and (b) REGION-of-a-file), RETRO-235 §6
+(HELD at 2 because its candidate was REGISTERED — "the pattern's remedy being applied, not its
+recurrence"; added clause (c); and PRE-AUTHORISED promotion on "the next genuine (i.e. UNREGISTERED)
+sighting"), RETRO-238 §6 (HELD at 2 on "a prediction is not a sighting"). Four priors; threshold is
+two. PROMOTION TRIGGER: RETRO-242 §4b CB-1 — the Rule AP register runner byte-identical in THREE
+blocking gates (md5 5fa38c527c083faf0dc83b3c8d9f6a00 on all three), DECLARED identical in prose in
+the two copies only, ZERO back-pointer in the designated reference, registered nowhere, and
+inexpressible in mirror-files.json's whole-file/basename-keyed model. This is the FIRST sighting to
+satisfy RETRO-233's clause (b), which is why the rule is built around a REGION rather than a file.
+CHECKED BEFORE MINTING: Rule J (the ORIGIN rule — its normative scope is apps/decision-api/src/lib/
+files with a top-of-file JSDoc canonical declaration, and its manifest cannot express a region; AQ
+does not restate J, it covers J's gap and clause 3 forbids citing J for it), Rule K.1 + its
+2026-06-03 amendment (scope is "a function/route that computes a metric or business value" —
+RETRO-231 §6 established gate/harness machinery does not reach it), Rule AP (governs whether a gate's
+RESIDUALS are enumerated and executed, not whether the gate's own MACHINERY is duplicated — AQ clause
+1(c) routes THROUGH AP rather than restating it, and AQ clause 4 is triggered BY AP clause 6's
+reference-implementation designation), Rule AL (assertion region == consumer region — invoked by AQ's
+verification section, says nothing about duplication), Rule AM (fixture provenance — invoked, not
+duplicated), Rule AI (claim breadth — adjacent, and it fires on the "keep in sync" sentence, but AI
+asks the claim to be narrowed while AQ asks for a mechanism), Rule AO (corrective edits — no),
+Rule Y (citation accuracy — no). LETTER CHOICE: AQ follows AP. NOTE: this promotion moves the
+CONVENTIONS_PATCH rule count to 43 and the range to AA-AQ, against docs/MASTER_DESIGN.md
+§Snapshot.6:564's recorded 42 — filed as FOLLOW-779 per Rule AI, since MASTER_DESIGN is outside the
+retro's write scope; FOLLOW-779 also carries the two FALSE ID RANGES at §Snapshot.6:562-563 that
+FOLLOW-772's own closure introduced. Rule AP was DELIBERATELY NOT AMENDED by RETRO-242: it is one
+retro old and no amendment bar was met — see RETRO-242 §6. -->

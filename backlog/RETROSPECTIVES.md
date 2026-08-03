@@ -44436,3 +44436,947 @@ and a direct Write were refused; the permission layer denies `.claude/**` regard
 PM fixed the BRIEF and the brief is not the control. Fragment written in full and reproduced in this run's
 closing output. FOLLOWS FILED: 773 (P2 qa 2h), 774 (P3 devops 2h); premise correction applied to 763.
 QUEUE.md / ESCALATIONS.md / CONVENTIONS_PATCH.md / sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-242 — FOLLOW-770 (#656) — 2026-08-03
+
+**SINGLE-PR ENTRY, and the organising question is not the usual one.** Every retro since RETRO-238
+has asked "what did this merge leave open?". That question is still asked below (§3, §4) and it
+still returns findings. But the load-bearing fact about this merge is in **no diff, no PR body and
+no commit message**: the PM's own validation independently reproduced a real semantic defect in the
+mechanism this PR ships, bounced the PR for exactly one fix-iteration, and re-verified the fix on
+fixtures it built itself — **before merge**. This is the first time in the eight-PR gate-hardening
+chain (RETRO-237 → here) that the worst defect in a merge was caught by the validator rather than
+by a retro reading the merged artefact afterwards. §5d records it as a positive process finding with
+evidence, and §6 records the precedent I set about how such a defect counts toward pattern
+promotion — because getting that wrong would make a working control read as decay.
+
+The second organising question is one my brief assigned explicitly and which no single-PR retro
+could normally answer: **is the artefact Rule AP designates as its reference implementation actually
+safe to copy?** Both PRs that copy it are now on `main`, so this is checkable rather than
+predictable. It is checkable, I checked it, and the answer produced this entry's rule promotion
+(§4b CB-1 → **Rule AQ**, §6).
+
+### 1. Summary of change
+
+- **PR #656 (FOLLOW-770):** merged **2026-08-03 10:08:14 UTC**. **3 commits on `main`:**
+  `e3f484e7` (original register + discovery guard) + `faa4753b` (fix-iteration 1 — decide
+  UNEVALUABLE on `PIPESTATUS`) + `b2bd4d31` (the worker's own `lessons.md` entry, and the merged
+  tip). Branch `devops-engineer/FOLLOW-770-mirror-gate-discovery-hardening`. Agent:
+  **devops-engineer (Opus)** — routed there because FOLLOW-770 AC5 designates this ticket Rule AP's
+  reference implementation (QUEUE.md `:678-686`).
+- **Files changed: 2** — `scripts/check-mirror-files.sh` (**+684 / −29**) and
+  `.claude/agents/devops-engineer/lessons.md` (**+16 / −0**). Total **+700 / −29**. Modules: CI /
+  infra (one shell gate) · agent lessons. **No `apps/`, no `packages/`, no `.github/`, no
+  `scripts/mirror-files.json`.**
+- **Merged straight (rebase, no conflict) — verified from the object graph, not from the account.**
+  The pre-merge SHAs cited in QUEUE.md and in my brief (`e9d5dc94` / `e6cc441f` / `f70a4b64`) are
+  still reachable locally and are **not** the merged ones. `git patch-id --stable` is **identical
+  across each pre/post pair** — `b71cdc1c…` (`e9d5dc94` ≡ `e3f484e7`), `a7c9a19d…`
+  (`e6cc441f` ≡ `faa4753b`), `8f1f9cc8…` (`f70a4b64` ≡ `b2bd4d31`) — while committer dates were
+  rewritten to `12:08:13 +0200` and author dates preserved (`10:36:19`, `11:04:09`, `11:06:12`).
+  **A content-preserving rebase; zero conflict resolution.** This matters for §6's P-25 test.
+- **Key contracts changed:**
+  - **NEW — `scripts/check-mirror-files.sh` gained TWO exit codes it never had.** `2` = the gate's
+    own machinery is broken (self-test failed, discovery source unreadable, or a register proof
+    unevaluable); `3` = a documented residual has **gone live**. Precedence stated in the header
+    (`:265-267`): `2 > 3 > 1`, all reported regardless of which sets the status. **Breaking: no** —
+    both consumers (`.github/workflows/ci.yml:501`, `lefthook.yml:6`) invoke it bare, so any
+    non-zero fails. **Both directions walked** in §3 CHECK B.
+  - **NEW — P5, a discovery-availability predicate** (`:959-986`). `git ls-files` is now
+    materialised once into a temp file with its status captured (`tracked_rc`), and a non-zero
+    status **or** an empty list while ≥1 basename is discovery-ON is a hard `exit 2` naming
+    `DISCOVERY SOURCE UNAVAILABLE`. This is the consumer RETRO-240 §3 HW-1 said did not exist. No
+    `find` fallback — grep for `find`/`-prune` in the file returns only two header comments
+    (`:38`, `:1014`) explaining why not.
+  - **CHANGED — the OFF-pair line protocol is now TOTAL.** `basenames<TAB>note` → **base64 on both
+    fields** (producer `:907-916`, consumer `:925-931`), so a note containing a literal newline can
+    no longer forge a record boundary and false-RED a pair that has a note. Multi-line notes print
+    in full (`:943-945`). **Breaking for anything parsing the raw protocol: nothing does** — the
+    producer and consumer are 20 lines apart in one file.
+  - **NEW, AND THIS IS THE ONE OTHERS RELY ON — the Rule AP residual register + its runner.** An
+    8-entry `id|control|description|latency-proof` array (`:1084-1093`) the gate **executes on
+    every run**, plus a 58-line runner (`:1109-1166`) that appends `REGISTER_PROOF_EPILOGUE` to
+    every proof, records `${PIPESTATUS[@]}`, and decides UNEVALUABLE on the **worst stage**. Rule AP
+    clause 6 names FOLLOW-770 AC5 the reference implementation, so this is a **cross-gate contract
+    by designation**, not merely by convention. §4b CB-1 is about what that designation shipped
+    without.
+  - **NEW — 7 exported `MF_*` variables** (`:1076-1077`) plus `MF_PS_FILE` (`:1126`), all consumed
+    only by register proofs and the epilogue. Traced in §3 CHECK A.
+  - **No public API surface changed** — no `@estalara/sdk` export, no ingest event schema, no
+    decision-API contract, no migration. Re-checked against CLAUDE.md's escalation list. **No
+    escalation trigger.**
+  - **Master Design alignment (`docs/MASTER_DESIGN.md` v4.4):** no §Snapshot.1 row covers CI shell
+    gates — re-derived by grep (`grep -n "check-mirror-files\|Rule J" docs/MASTER_DESIGN.md` → only
+    `:190`, `:246`, `:371`, `:564`, all historical/changelog or §Snapshot.6), not inherited from
+    RETRO-240/241's identical conclusion. **No divergence introduced by the merge.** §Snapshot.6 is
+    moved by **this entry's rule promotion** and is filed — §4d DG-1.
+  - **Rule AN allocation check, run against `origin/main` (`76bd9d21`, fetched this session — `main`
+    moved past my branch base `9afb2679` while I worked, and `76bd9d21` touches no backlog file):**
+    max FOLLOW = **775**, max RETRO = **241**, max Rule = **AP**. RETRO-242 / FOLLOW-776-779 /
+    Rule AQ are allocated against that tip.
+
+### 2. Verification done in PR
+
+- **No conventional test files.** The verification surface is the gate's own inline `--self-test`:
+  **7 → 13 assertions**, all red-first. Counted live in my own run
+  (`bash scripts/check-mirror-files.sh --self-test` → 13 `OK: self-test` lines, `Self-test PASSED.`),
+  not read off the PR body.
+- **Proven to RUN on the merged artefact, in CI, not just locally.** The `Rule J` job of run
+  `30804335789` — whose `headSha` is **`b2bd4d31`, this PR's exact merged tip** — prints
+  `Rule J gate self-test: PASSED (13 assertions)` at `10:08:59.19` on a **no-argument** invocation,
+  followed by the full 8-entry register (`[A]`…`[F]` all `latent`,
+  `8 entry/entries checked — 0 gone live, 0 unevaluable`) and
+  `✓ all mirror pairs in sync, no unregistered copies, all 8 register entries latent`. Job
+  `91656144059`. **This is the strongest verification artefact in the chain: the gate reports its
+  own residual inventory into a blocking job's log on every run.**
+- **Six of the 13 assertions are FOLLOW-770's**, and **two of those six were added by the
+  fix-iteration** (steps 12 and 13, `:665-745`) — `core.excludesFile` pointed at a directory (the
+  availability guard still passes, so entries A/B are exercised **on their own merits** rather than
+  short-circuited) and the gate sourced under a non-existent `$0` (entry F's `$MF_SELF` unreadable).
+  Both are red-first **against this PR's own pre-fix runner**, not against `main` — the harder and
+  more honest fixture to build.
+- **AC7's scope constraint verified from the diff, not the commit message.** Deletions in `e3f484e7`
+  are confined to header comments, the OFF-pair protocol (which AC3 required changing), the
+  discovery loop (AC1) and output strings. `scripts/mirror-files.json` is untouched (PR file list =
+  2 files). The `# shellcheck disable=SC2064` that `ci.yml:711` asserts this file carries **still
+  exists**, reworded, at `:320` — checked, because the diff removes a line that looks like it
+  (`- # shellcheck disable=SC2064 # expand $tmp now, not at trap time`) and replaces it with a
+  two-path version for the second temp root.
+- **Rule AM compliance:** both fixture roots are `mktemp -d` (`:315`, `:319`) under one `trap …
+  RETURN` (`:321`); the real manifest, the real tree and `apps/*` are never mutated. The step-12
+  fixture explicitly **re-asserts a clean baseline before sabotaging it** (`:684-690`) — "a fixture
+  that was already failing proves nothing about the sabotage" — which is the RETRO-230
+  mutation-fixture standard applied more strictly than the standard asks.
+- **Rule Q compliance:** the `rule-j` job has no separate self-test step and no `continue-on-error`;
+  the self-test runs **inline on the no-argument invocation** (FOLLOW-746 AC1) and emits its own
+  positive proof line into the blocking job's log. Structurally different from the two Sentry gates
+  (which order an explicit self-test step first) and **compliant on clause 4 by a different
+  mechanism**. Tenth consecutive compliant gate-shipping PR.
+- **Rule AF series — 192 flat, reading 13** (179 → 183 → 191 → 192 ×13). Re-derived independently:
+  `gh run view --job 91657954026 --log | grep -c "WARN:"` → **192**, from the `Rule I` job of run
+  `30804613183` (`headSha 15c8675c`), the first **completed** `main` run containing this merge. Not
+  read off QUEUE.md. No regression. FOLLOW-591/602 own the remediation.
+- **`b2bd4d31` (the worker's own `lessons.md` commit) — confirmed genuine and in-scope**, same
+  adjudication the PM applied to PR #654's and #657's. It records the mechanism, both fixtures, and
+  a generalised guardrail the worker derived itself: *"for any 'this check fails loud when its input
+  is missing' claim, test the check with its dependency broken while every other guard passes — if
+  the only fixture that exercises it also trips an earlier guard, the check itself is unproven."*
+  That sentence is better than the AC that produced it and is promoted into §6 as **P-26**.
+- **A CI fact that is NOT in the PR and changes how §2 should be read, in this and prior retros.**
+  Run `30804335789` — the run of this PR's merged tip — has conclusion **`cancelled`**. 27 jobs
+  completed (including `Rule J`, green, quoted above); **5 were killed** (`Test (Node 22)`, `Build`,
+  `Rule I — wired-or-dead check`, `Build (control-plane)`, `SDK E2E tests`) when PR #657's merge
+  (`15c8675c`) took the `CI-refs/heads/main` concurrency slot 3m48s later. **There is no aggregate
+  CI verdict for `b2bd4d31` and there never will be.** Harmless for *this* PR (it touches one shell
+  script and a lessons file; the job that judges it ran and passed) — but it is a repo-wide
+  property, quantified in §5d and filed as FOLLOW-778.
+
+### 3. Wiring Audit
+
+**Wiring Audit — clean ✅.** Both checks run; findings from this PR's own new symbols: none. The two
+P2 findings in §4b are **not** wiring findings and are classified where they belong (a duplication
+contract and a claim-breadth defect), per my no-misclassification discipline.
+
+- **CHECK A (dead code).** **No new files and no new functions** — `run_self_test()` was extended
+  and retains its two callers (the `--self-test` flag and the recursion-guarded inline invocation).
+  Every new top-level symbol has ≥1 non-test consumer, traced individually rather than in aggregate
+  (`grep -n "MF_STRIP_PATHS\|MF_STRIP_NONC_PATHS\|MF_SIGPAIR_CANONICALS\|MF_OFF_NOTE_LENS\|MF_DISCOVERY_BN_RE\|MF_REGISTERED_PATHS\|MF_SELF\|MF_PS_FILE\|MF_MANIFEST_FACTS" scripts/check-mirror-files.sh`):
+  `MF_MANIFEST_FACTS` → `:1060-1063`; `MF_STRIP_NONC_PATHS` → entry C1; `MF_STRIP_PATHS` → C2;
+  `MF_SIGPAIR_CANONICALS` → C3; `MF_OFF_NOTE_LENS` → E; `MF_DISCOVERY_BN_RE` + `MF_REGISTERED_PATHS`
+  → A and B; `MF_SELF` → F; `MF_PS_FILE` → the epilogue `:1111`, read back `:1129`.
+  `RESIDUAL_REGISTER` → `:1095`, `:1117`. `REGISTER_PROOF_EPILOGUE` → `:1126`. **Zero dead.**
+  **Recorded so a mechanical importer-grep does not misflag it for the third consecutive retro:**
+  these are shell variables exported into `bash -c` subshells, not module imports; a
+  `grep -rn --include=*.ts` sweep sees nothing and would report the whole set dead.
+- **CHECK B (half-wire).** Every new signal has a producer **and** a consumer, and every one
+  terminates in an **exit code** — I traced each to its terminus rather than to its first reader:
+  - `tracked_rc` / `tracked_count`: producer `:962-963` → predicate `:965` → **`exit 2`** `:985`.
+    **This is RETRO-240 §3 HW-1's terminus, and it is the whole point of the ticket** — the signal
+    that previously existed only as a printed `0 file(s) found` now decides the verdict.
+  - `REGISTER_BROKEN`: producer `:1154` → summary `:1175` → **`exit 2`** `:1179`.
+  - `REGISTER_LIVE`: producer `:1160` → summary `:1182` → **`exit 3`** `:1188`.
+  - `MF_PS_FILE` → `${PIPESTATUS[@]}` → `r_stages` → `r_worst` → the UNEVALUABLE branch `:1148`.
+    **Producer and consumer are one statement apart in the same subshell** — I verified the
+    immediacy claim myself rather than taking the PM's: `REGISTER_PROOF_EPILOGUE` begins with a
+    newline (`:1109-1110`), so the capture is the literal next statement after the proof's own pipe,
+    not a re-read after an intervening command.
+  - `OFF_PAIRS` (base64): producer `:907-916` → decoder `:927-931` → **either** printed
+    `reason:` lines **or** `FAILURES=$((FAILURES + 1))` `:940` → `:1170` → **`exit 1`**.
+  - **Axis walked and deliberately NOT filed:** the *distinction* between exit 1 / 2 / 3 has no
+    machine consumer — `ci.yml:501` and `lefthook.yml:6` both collapse every non-zero to "step
+    failed". This is **not** a half-wire: Rule AP clause 2 asks for a **diagnosis** distinct from an
+    ordinary finding, and the diagnosis is printed (`Rule AP REGISTER BROKEN` / `REGISTER ENTRY GONE
+    LIVE`, `:1176`, `:1183-1187`), naming the entry id. The intended consumer is the human reading
+    the log, and the wire reaches them. **Recorded so a future CHECK B does not re-flag it**, per
+    RETRO-237's `SENTRY_CAPTURE_INIT_TARGET` and RETRO-240's baseline-override precedents.
+  - **Second axis walked and NOT filed:** `base64 -d` (`:927`, `:930`) is GNU-flavoured and the gate
+    runs in a `lefthook` pre-push hook on developer machines as well as in CI. If it were ever
+    unavailable, the failure direction is **safe but mis-coded**: the assignment's non-zero status
+    trips `set -e` (`:76`) and aborts loudly, but with status 1 (an "ordinary finding") rather than
+    2 ("machinery broken"). Not filed, on RETRO-240's own **P-23 clause (c)** — a non-GNU `base64`
+    is not an environment this gate is demonstrably invoked in, and inventing one would be the
+    precise false-advance that clause exists to stop. Recorded so the axis is visibly walked.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A for shipped logic** — and I want to be explicit that this is a real result, not an empty
+  section. The two logic defects this PR could plausibly have had were both hunted: the
+  masked-producer defect (found by the PM, fixed pre-merge, §5d) and the `else` branch at
+  `:1138-1146` (a proof that never reaches the epilogue). **I tested the second empirically rather
+  than reading it**: `bash -o pipefail -c 'exit 0<epilogue>'` returns **0** and writes **no**
+  `MF_PS_FILE`, so `r_stages` is empty, `r_worst=2`, and the entry is UNEVALUABLE — **the safe
+  direction, correctly, even though the pipeline reported success.** The branch is right. It is
+  also unfixtured — §4c TG-1.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2, latent, and the promoting sighting for §6's rule) — the Rule AP register runner is a
+  58-line block that exists BYTE-IDENTICALLY in three gates, declared identical in prose, and
+  registered nowhere; and only the two COPIES know they are copies.** → **FOLLOW-776**, and →
+  **Rule AQ** (§6).
+
+  **Measured, not asserted**, to the standard RETRO-235 §6 set when it *declined* a sighting on
+  measurement (36% similarity, largest common block 8 lines, "two scripts sharing a house style"):
+  `sed -n '1109,1166p' scripts/check-mirror-files.sh | md5sum`,
+  `sed -n '1253,1310p' scripts/check-sentry-capture-has-init.sh | md5sum` and
+  `sed -n '1428,1485p' scripts/check-sentry-init-singleton.sh | md5sum` all return
+  **`5fa38c527c083faf0dc83b3c8d9f6a00`**. Fifty-eight lines, three files, one hash.
+
+  **It is declared identical, in prose, with an instruction not to diverge.**
+  `check-sentry-capture-has-init.sh:1237-1240` and `check-sentry-init-singleton.sh:1412-1415` both
+  read: *"RUNNER — byte-identical to `scripts/check-mirror-files.sh`'s (FOLLOW-770 fix-iteration 1).
+  Copied verbatim rather than re-derived, INCLUDING the `MF_PS_FILE` variable name, so the two
+  runners diff to zero and a future fix to one is a mechanical copy to the other. Do not 'clean it
+  up' per gate."* **That paragraph is Rule J's own Pattern section, verbatim, one directory over:**
+  *"The PR description says 'kept in sync' or 'byte-identical' but no CI gate enforces this. The
+  next person to patch one side and forget the other introduces silent divergence."*
+
+  **The direction that matters is the one nobody wrote down.**
+  `grep -rn "byte-identical to scripts/check-mirror-files" scripts/` → **2 hits, both in the
+  copies. Zero in the reference.** `check-mirror-files.sh:1101-1108` — the block Rule AP clause 6
+  designates for copying — contains no reciprocal pointer and no mention that copies exist. So the
+  contributor most likely to edit this block (someone working in the reference, which the rule tells
+  them is the canonical one) gets **no signal at all** that two other files must change. The
+  copy→origin pointer is documented; the origin→copies pointer is not. **This is exactly the
+  both-directions axis my algorithm's step 8 exists to force, and the affirmative framing of my own
+  brief ("confirm #657 copied it correctly") would have passed it.**
+
+  **No mechanism can detect the divergence, and I checked each candidate rather than assuming.**
+  (i) `scripts/mirror-files.json` holds **4 pairs** — `bandit.ts`, `route.ts`↔`reorder.ts`, and two
+  `observability.py` pairs — none of them these scripts. (ii) The pair model is **whole-file**; the
+  three gates are 1195 / 1381 / 1600 lines and share 58, so registering them as pairs is not merely
+  unused, it is **inexpressible**. (iii) Basename discovery is **basename-keyed**; the three files
+  have three different basenames, so P4 cannot see it either. (iv) **No register entry in any of the
+  three gates bounds it**: `check-mirror-files.sh` entry F bounds "a predicate added without an
+  entry"; the capture gate's H and the singleton gate's G bound "a failure accumulator added without
+  an entry". None bounds "this runner diverged from its two copies". (v) Rule J's **normative** scope
+  is `apps/decision-api/src/lib/` files with a top-of-file JSDoc canonical declaration — `scripts/*.sh`
+  is outside it. (vi) Rule K.1 governs "a function/route that computes a metric or **business
+  value**" — RETRO-231 §6 already established that gate/test-harness machinery does not reach it.
+  **Squarely in the Rule J / Rule K.1 gap**, which is the pattern §6 promotes on.
+
+  **Why it is worth a P2 rather than a note, stated with the counter-argument.** The counter is
+  strong: all three copies are identical *today* (I hashed them), the two copies point at the
+  origin, and the note says "do not clean it up" — so a reader of a copy is warned. The reason that
+  is not enough is **the PIPESTATUS fix itself**. Its whole design argument, in `faa4753b`'s own
+  message, is *"Fixed in the RUNNER rather than in three rewritten proof strings … so every entry
+  added later — or copied into another gate — inherits it."* The fix was placed in the runner
+  precisely so improvements propagate — and the runner is now the one artefact in this estate that
+  **cannot** propagate. A second PIPESTATUS-class fix, applied where Rule AP clause 6 says to apply
+  it, silently leaves two blocking gates on the old semantics. **Latent today; the mechanism that
+  would make it non-latent is the same mechanism that made this ticket necessary.**
+
+  **Boundary with RETRO-243, stated so this is not double-filed.** #656 shipped the artefact and the
+  designation; #657 performed the copying. RETRO-243 owns the copying act and the two Sentry gates'
+  own register entries. **This finding — the missing reciprocity and the absent registration — is
+  filed once, here, because my brief explicitly assigned the cross-PR check and because
+  FOLLOW-773+774 is dispatched next and must not inherit the pattern a third time.** RETRO-243
+  should cite FOLLOW-776, not re-file it.
+
+- **CB-2 (P2, latent) — register entry F's proof covers 6 of the gate's 11 failure paths while its
+  own header claims it "goes live on any new failing predicate"; the predicate it is blindest to is
+  the one THIS PR added.** → **FOLLOW-777**.
+
+  Entry F (`:1092`) is the register's self-referential guard — the entry that is supposed to make
+  Rule AP clause 3 ("a PR that adds a predicate MUST add its entry") mechanically checkable rather
+  than a reviewer's diff. Its proof is
+  `grep -cE "FAILURES=.\(\(FAILURES" "$MF_SELF" | grep -vx "6"` — i.e. *"the number of
+  FAILURES-incrementing sites is still 6"*. `grep -nE "FAILURES=.\(\(FAILURES"
+  scripts/check-mirror-files.sh` returns exactly six lines (`:789`, `:795`, `:822`, `:855`, `:940`,
+  `:1011`), which is why it reports `latent`.
+
+  **But this gate fails five other ways, and none of them touches `FAILURES`:** `:757` and `:771`
+  (self-test / inline self-check failed → `exit 2`), **`:985` (the DISCOVERY SOURCE UNAVAILABLE
+  guard → `exit 2`)**, `:1179` (register broken) and `:1188` (register gone live). **`:985` is P5 —
+  the predicate FOLLOW-770 AC1 added in this very PR.** Add a second hard-exit predicate tomorrow
+  and entry F stays `latent`, silently, because the count of `FAILURES` sites did not move.
+
+  The header states the claim without that bound (`:242-245`): *"the number of FAILURES-incrementing
+  sites in this script differs from the number this register was written against. **It goes live on
+  any new failing predicate**, forcing register maintenance in the same PR that adds the
+  predicate."* Six of eleven is not "any". This is **Rule AI** (a claim broader than the mechanism
+  behind it) compounded by **Rule AP clause 4** (a prose claim about coverage must be qualified by
+  the entry that bounds it) — and it is inside the artefact Rule AP clause 6 designates as the model
+  for every future gate.
+
+  **Both readings, because the generous one is real.** A generous reading says entry F is a
+  *heuristic tripwire* and heuristics are allowed to be partial. I accept that — the finding is not
+  that the proof should be exhaustive, it is that **the sentence describing it should not say
+  "any"**. The cheapest honest fix is a second grep stage counting `^\s*exit [23]$` sites, or one
+  qualifying clause. Either is inside 2h.
+
+  **Same shape, not filed here:** the capture gate's entry H (`grep -cE
+  "^[A-Z][A-Z_]*(COUNT|MISMATCH)=0$" … | grep -vx "3"`) and the singleton gate's entry G (same,
+  `"5"`) count *accumulator declarations*, which has the identical partiality. **RETRO-243's to
+  confirm and to fold into its own follow-up** — flagged, deliberately not filed twice. FOLLOW-777
+  is written so its fix is copy-shaped.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — the runner's "proof never reached the epilogue" branch (`:1138-1146`) is
+  UNFIXTURED, and it is the branch that catches the failure mode the register's own FORMAT
+  invites.** The 13 assertions cover the populated-`PIPESTATUS` path in both directions (steps 12
+  and 13 drive `r_worst` to 128 and 2 respectively) but **nothing drives `r_stages` empty**. That
+  branch fires when a proof has a syntax error, takes a signal, or contains its own `exit` — and the
+  register format (`id|control|description|proof`, one line, pipes allowed) makes an unbalanced
+  quote or a stray `exit` a realistic authoring slip for the next entry, in this gate or in any gate
+  that copies it. I verified the branch is **correct** (§4a) and reachable; it is simply unproven,
+  and an unproven safe-direction branch is one refactor from becoming an unsafe one. One fixture. →
+  folded into **FOLLOW-776** (same region, same file, and the fixture should be copied alongside the
+  runner).
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, mine, and I am filing it for the same reason RETRO-240 filed DG-2 against itself) —
+  `docs/MASTER_DESIGN.md` §Snapshot.6 is moved by this entry, and two of its three count lines are
+  already false in a way that invites a Rule AN violation.** → **FOLLOW-779**.
+
+  §Snapshot.6:564's rule count reads **42** and is correct *until* §6's promotion makes it 43. Rule
+  AI fires on me exactly as it fired on RETRO-240, and MASTER_DESIGN is outside my write scope, so
+  filing is the only honest option. **But tracing FOLLOW-772's closure end-to-end (step 7) turned up
+  more than the number I move.** The PM's own bookkeeping commit `7f1b2c40` rewrote all **three**
+  §Snapshot.6 count lines, not the one the stub asked for. The *counts* are correctly grepped —
+  `grep -c "^## RETRO-" backlog/RETROSPECTIVES.md` → 229, `grep -c "^## FOLLOW-"` → 594, `grep -c
+  "^## Rule "` → 42, matching "228+", "591+", "42" at that commit. The **ID ranges appended to them
+  are not**: `:562` reads *"RETRO-001..228 **as of 2026-08-03**"* when the maximum id that day was
+  **240**, and `:563` reads *"FOLLOW-001..591+"* when the maximum was **772** — the number of the
+  stub being closed. Entries ≠ ids; the counts are right and the ranges derived from them are wrong
+  by 12 and 181. **The direction of harm is specific:** anyone reading §Snapshot.6 to allocate the
+  next id — the exact use Rule AN governs — would mint `RETRO-229`, which has existed since
+  2026-07-29. §Snapshot.6 now invites the failure Rule AN was promoted to prevent.
+
+- **DG-2 (P3) — the reference implementation is the one gate NOT under shellcheck, and it is missing
+  the suppression its two copies carry.** → **premise addition to FOLLOW-775**, not a new ticket.
+  Both copies carry `# shellcheck disable=SC2016` with a three-line rationale
+  (`check-sentry-capture-has-init.sh:1250-1252`, `check-sentry-init-singleton.sh:1425-1427`);
+  `check-mirror-files.sh:1109` carries **none**, and it is the one file excluded from the
+  `shellcheck-sentry-gates` job (`ci.yml:743-747` lists exactly four paths). FOLLOW-775's own text
+  explains why — *"`check-mirror-files.sh` was deliberately left out because FOLLOW-770 (PR #656) was
+  in flight on it"* — which was correct sequencing at the time and is now stale, since #656 has
+  merged. Consequences, both real: (i) FOLLOW-775's AC1 baseline will surface an SC2016 at `:1109`
+  that is a **known, already-adjudicated deliberate construct**, and pricing the ticket without that
+  knowledge invites either a wrong "fix" or a blanket severity downgrade AC2 forbids; (ii) a third
+  gate copying from the **designated reference** copies the version that fails a lint its two
+  siblings pass.
+
+#### 4e. Considered and deliberately NOT filed
+
+- **`git config --get-regexp "core\.sparsecheckout|partialclonefilter"` (entry D)** — I checked that
+  git compiles this with `REG_EXTENDED|REG_ICASE`, so the alternation and the lowercase spelling both
+  work, and a non-repo root makes it exit 128 → UNEVALUABLE (safe). Correct as written.
+- **Entry F's proof self-matching** — the entry line itself contains the literal text
+  `FAILURES=.\(\(FAILURES`, which does **not** match the ERE it encodes (the escaped `\(\(` is not
+  `((`), which is why the count is 6 and not 7. It works, and it works by an escaping accident one
+  rewrite away from breaking. Recorded, not filed — FOLLOW-777 touches the same entry and its author
+  should see this line.
+- **The unquoted `$MF_STRIP_NONC_PATHS` in entry C1** — deliberate (multiple file operands) with a
+  documented `/dev/null` fallback at `:1064-1067` whose comment explains both the hang it prevents
+  and why it keeps the exit status meaningful. Correct.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-773 + FOLLOW-774 (queued, NOT yet dispatched — the reason Piotr ordered this retro
+  first). FOLLOW-773's premise MATERIALLY WIDENS, and the widening is realised rather than
+  theorised.** FOLLOW-773 is scoped to `redis-shadow-smoke.yml`'s group
+  (`cancel-in-progress: false`, priced *latent* on "zero non-success runs in 60"). **The same class
+  is live in `.github/workflows/ci.yml:20-22` with `cancel-in-progress: TRUE`** — strictly worse,
+  because it cancels the *running* job, not merely a pending one — and it is realised: **12 of the
+  last 30 `main` CI runs have conclusion `cancelled`**, including `b2bd4d31`, this ticket's own
+  merged tip. AC1 asks the worker to "reproduce or refute" the pending-cancellation behaviour; it
+  now has a real dataset to reason from instead of a synthetic experiment. **AC5 forbids touching
+  other workflows**, so FOLLOW-773 cannot absorb the `ci.yml` half — that is FOLLOW-778, and the two
+  should be sequenced, not merged. Recorded on the stub.
+- **FOLLOW-775 (P3, repo-wide shellcheck) — premise addition, §4d DG-2.** The `check-mirror-files.sh`
+  exclusion rationale is now stale (#656 merged), and the file carries a deliberate SC2016 construct
+  with no directive. Recorded on the stub.
+- **FOLLOW-763 — CLOSED**, merged as `76bd9d21` while this retro was being written. Confirmed from
+  the object graph, not from QUEUE.md: 2 files, +35/−1, `apps/control-plane/src/lib/chat-intent-cache.ts`
+  and one line of the smoke spec. **Touches nothing in this retro's subject.**
+- **FOLLOW-771 — CLOSED in PR #657**, out of scope here, RETRO-243's to trace end-to-end. Verified
+  only that it did not disturb this PR's subject: `scripts/check-mirror-files.sh` is not in #657's
+  file set.
+
+#### 5b. Future sprint tickets affected
+
+- **Every future gate this repo writes now inherits a 58-line copy obligation, by RULE.** Rule AP
+  clause 6 names FOLLOW-770 AC5 the reference implementation; the established practice after #657 is
+  `sed` the block across. Gate #4 will be the **fourth** copy. FOLLOW-776 exists to make that
+  decision once, deliberately, before the count grows — and the repo already has the alternative
+  built and proven: `scripts/lib/` has two members (`clean-python-source.sh`,
+  `suppression-baseline.sh`) with an established source/`declare -F`/exit-2 convention that
+  RETRO-239's FOLLOW-746 item 8 chose **on exactly this question** (shared helper vs copy), at Opus,
+  two PRs before this one. **The repo made this decision, wrote it down, built the infrastructure,
+  and then copied.**
+- **The next author who adds a predicate to any of the three gates** meets a register that will not
+  notice if the predicate hard-exits (§4b CB-2, ×3 gates). Worth one line in the FOLLOW-773+774
+  brief only if those tickets touch a gate — they do not (both are workflow YAML), so no action.
+- **The next retro that cites "the post-merge `main` run" as evidence** must first check that the
+  run exists and completed. §5d quantifies why.
+
+#### 5c. Contracts changed others rely on
+
+- **`scripts/check-mirror-files.sh`'s register runner is now a THREE-COPY, UNVERSIONED, UNREGISTERED
+  cross-gate contract** (§4b CB-1). Consumers: itself, `check-sentry-capture-has-init.sh:1253-1310`,
+  `check-sentry-init-singleton.sh:1428-1485`. Editing 58 lines in one file now has correctness
+  implications in **three blocking CI jobs**, and exactly two of the three files say so.
+- **The `id|control|description|proof` register FORMAT is now a Rule-bound contract** (Rule AP clause
+  6) with three implementations and 26 entries (8 + 8 + 10). Its epilogue mechanism silently requires
+  that a proof be a complete statement that reaches the appended lines — a requirement that is
+  correct-by-failure (§4a) but written down nowhere in the format's own documentation.
+- **Two new exit codes (2, 3) from a gate wired into a blocking CI job and a pre-push hook.** No
+  downstream parser exists — `grep -rn "check-mirror-files" .github/ lefthook.yml` returns exactly
+  two bare invocations — so nothing breaks. Any future log-scraping alert must be written against
+  the new `Rule AP REGISTER …` lines.
+- **`scripts/mirror-files.json` is unchanged** and remains the three-consumer contract RETRO-240 §5c
+  recorded. Re-verified: 4 pairs, byte-identical to pre-merge.
+
+#### 5d. Architectural assumptions affected
+
+- **POSITIVE PROCESS FINDING — the fix-iteration loop worked as designed, for the first time in this
+  chain, and it worked because the validator BUILT FIXTURES rather than read a diff.** This appears
+  in no diff, no PR body and no commit message; it lives in QUEUE.md `:601-670` and the PR #656
+  comment thread.
+
+  The sequence, reconstructed rather than accepted: (1) The PM validated the original register and
+  found that its UNEVALUABLE decision tested `pipefail`'s own reported status (`[[ "$r_rc" -ge 2 ]]`)
+  — which is the **rightmost** non-zero exit in a pipeline, not the worst. (2) For entries A, B and F
+  — the three that chain a producer into a **second** `grep` — a genuine producer failure (`git
+  ls-files` 128, `grep` on an unreadable file 2) was masked by the trailing `grep`'s ordinary
+  no-match 1, and the entry was classified **`latent`**: *the reassuring direction, inside the
+  mechanism Rule AP clause 2 exists to forbid it in.* (3) The PM **reproduced it on fixtures it built
+  from scratch**, not the worker's, and pasted both transcripts. (4) It bounced the PR with the
+  reproduction and a requested fix *shape*, explicitly **not** a prescribed mechanism (QUEUE.md
+  `:665-668`). (5) The worker fixed the **runner**, not the three proof strings — so every future
+  entry and every copying gate inherits it. (6) The PM re-verified on **its own original fixtures**,
+  confirmed the `PIPESTATUS` capture is the literal next statement in the same subshell, and
+  confirmed that the worker's "C1-E are not vulnerable" claim was **instrumented and tested rather
+  than asserted**.
+
+  **I re-derived (6) independently rather than accepting it, by classifying every proof's pipe
+  shape:** A and B are `git ls-files | grep | grep` (3 stages, producer can exit 128); F is
+  `grep -cE … | grep -vx` (2 stages, producer can exit 2 on an unreadable file); **C2, C3 and E are
+  `printf "%s" "$SHELL_VAR" | grep` — the producer is a builtin printing an already-materialised
+  shell variable and has no realistic ≥2 failure mode; C1 and D are single commands with no pipe at
+  all.** The claim holds. Exactly three of eight entries had the vulnerable shape, and exactly those
+  three were affected.
+
+  **Why this is worth as much space as a defect.** Every prior entry in this chain records a gap that
+  reached `main` and was found afterwards — by me. This one records a gap that **did not reach
+  `main`**, found by a control that ran before merge, in the artefact a permanent rule had just
+  designated as the model for every future gate. Had it landed, the copies in #657 would have carried
+  it into two more blocking gates four minutes later; the PM's own PR-#657 validation confirmed the
+  corrected runner was copied **byte-for-byte, both diffs empty**, which I re-confirmed by md5 in
+  §4b. **The reference-implementation mechanism demonstrably prevented a fork** — the exact
+  displacement mode RETRO-239 named and predicted would recur without one.
+
+  **And the honest counterweight, which I am recording against myself.** Would I have caught it? The
+  class is in my priors — RETRO-240 §3 HW-1 was *"an exit status swallowed by a process
+  substitution"*, one syntactic step away. But the defect was **invisible to reading** (the code says
+  `bash -o pipefail`, which reads as correct, and the header said so too) and visible only to a
+  **constructed environment in which every other guard passes**. I read and grep; I do not build
+  adversarial fixtures. The correct conclusion is not "the retro is redundant" but a division of
+  labour worth stating so neither side assumes the other covered it: **the validator owns adversarial
+  fixtures against one PR's ACs; the retro owns cross-PR and cross-session state that no single PR's
+  diff contains.** Both of this entry's P2s (§4b CB-1 and CB-2) come from the second column, and
+  neither was reachable from #656's diff alone.
+
+- **PROCESS FINDING — a merged commit on `main` routinely has NO aggregate CI verdict, and the whole
+  retro chain's §2 methodology assumes one exists.** → **FOLLOW-778**.
+
+  `.github/workflows/ci.yml:20-22` sets `group: ${{ github.workflow }}-${{ github.ref }}` with
+  **`cancel-in-progress: true`**. On `main`, every ref is the same ref, so the *next* merge kills the
+  *current* merge's run. Measured, not inferred
+  (`gh run list --branch main --workflow CI --limit 30`): **12 of the last 30 `main` CI runs
+  concluded `cancelled`; ZERO concluded `success`** (Rule I is pre-existing red, so completed runs
+  read `failure`). Mapping the runs to this chain's own subjects:
+
+  | merged tip  | PR   | retro that judged it | `main` CI conclusion |
+  | ----------- | ---- | -------------------- | -------------------- |
+  | `04833fd0`  | #652 | RETRO-240            | **cancelled**        |
+  | `0d111343`  | #653 | RETRO-241            | **cancelled**        |
+  | `c86f3b0c`  | #654 | RETRO-241            | **cancelled**        |
+  | `ff02b85e`  | #655 | RETRO-240            | failure (completed)  |
+  | `b2bd4d31`  | #656 | **RETRO-242 (this)** | **cancelled**        |
+  | `15c8675c`  | #657 | RETRO-243 (next)     | failure (completed)  |
+
+  **Four of six merged tips in this chain never received a completed aggregate verdict.** For
+  `b2bd4d31` specifically, 27 jobs completed and 5 were killed — `Test (Node 22)`, `Build`, `Rule I`,
+  `Build (control-plane)`, `SDK E2E tests`.
+
+  **The reconciliation I owe my predecessors, stated plainly.** RETRO-240 §2 cites run `30792848875`
+  as *"`main`'s own post-merge aggregate run"*. I checked its `headSha`: **`ffd62f90`** — the PM's
+  session-90 bookkeeping commit, **not** `b8f2b922`/`ff02b85e`. RETRO-240's *reading* was sound (the
+  tree at `ffd62f90` contains #655's merge, and RETRO-240 says so), and I am **not** overturning any
+  of its verdicts. What is unsound is the shared **method**: "read the post-merge `main` run" is
+  phrased as though a merged commit always has one, and 40% of the time on this branch it does not.
+  RETRO-241 §4a LG-1 named this exact mechanism — *"it would produce no verdict at all for a merged
+  commit, silently"* — priced it **latent** in `redis-shadow-smoke.yml`, and did not test the main CI
+  workflow, where it is **not** latent. That is not a contradiction of RETRO-241's verdict; it is the
+  axis RETRO-241 did not walk, and the omission is in FOLLOW-773's scope, not in anyone's
+  implementation.
+
+- **CLOSURE FINDING — FOLLOW-772 is recorded DONE and it closed ONE of the three axes it edited; the
+  other two moved one hop instead of closing.** Full trace in §4d DG-1 and §8. This is the
+  `inquiry_submit_selector` displacement shape applied to a closure the coordinator performed on
+  itself, which is the reason step 7 does not accept a `DONE` marker as evidence.
+
+- **RETRO-240's P-23 can never advance on this gate again, and that is a resolution rather than a
+  hold.** P-23 ("a gate's file-discovery scan/prune list encodes the one environment its author
+  tested in") was held at 1 on clause (c): `git ls-files` is correct in every environment the gate is
+  actually invoked in. FOLLOW-770 AC1 has now made the one environment where it is *wrong* a hard
+  `exit 2` with its own diagnosis. The axis is closed by construction, not by argument.
+
+- **Rule AA — the counterweight this chain needed, banked.** Three gates now carry **43 self-test
+  assertions** (13 + 18 + 12→18 per #657) and two committed baselines. RETRO-240 §5d flagged the
+  aggregate as gate-estate compounding ahead of an unprovisioned `SENTRY_DSN`. **This gate is the
+  counter-example:** Rule J's channel — mirror-pair drift — is live, real, and reported in every
+  run's log (`bandit.ts: 2 file(s) found`, `observability.py: 3 file(s) found`, 4 pairs compared).
+  P-21 is **not** advanced and structurally could not be (§6).
+
+- **The `lessons.d/` write scope — SIXTH consecutive denial, and this brief carried the fix too.**
+  Reported as a fact I established by trying, not a status I assumed: my brief scopes write access to
+  `.claude/agents/retrospective-analyst/lessons.d/**` **verbatim**, and both `mkdir -p
+  .claude/agents/retrospective-analyst/lessons.d` and a direct `Write` to
+  `.claude/agents/retrospective-analyst/lessons.d/RETRO-242.md` were **refused by the permission
+  layer**, which denies `.claude/**` regardless of what the brief says. RETRO-240 recorded denial 4
+  and named the brief as a non-control; RETRO-241 recorded denial 5. The fragment is written in full
+  and reproduced in this run's closing output for the PM to persist — the same salvage path all five
+  prior occurrences used, which is precisely why the remedy's failure keeps going unnoticed. Not
+  escalated and not filed (agent process tooling is the PM's territory) — recorded here because a
+  remedy "applied" three times and denied six times belongs in the permanent log.
+
+- **Rule AG — exposure unchanged, fourth consecutive retro.** `retrospective-analyst` remains the
+  only agent with a `lessons.d/` fragment directory (and cannot write to it); this PR appended to the
+  shared `.claude/agents/devops-engineer/lessons.md`, which is exactly the file that collided at
+  PR #657's merge. Dispatch was strictly serial again, so Rule AG's precondition was not met —
+  compliant on the letter, exposed the moment parallel dispatch resumes.
+
+### 6. New lesson candidates
+
+- **THE PRE-AUTHORISED SIGHTING — TRIGGERED. → Rule AQ PROMOTED.** Pattern **"SAME-RUNTIME
+  DECLARED-IDENTICAL DUPLICATE IN THE Rule J / Rule K.1 GAP"**, count **3**, with **four** prior
+  retros — well past the ≥2-prior threshold, and promoted on a bar my predecessors wrote, not one I
+  invented for the occasion.
+  - **RETRO-231 §6 (prior, count 1)** — three byte-identical helpers across two `scripts/*.mjs`
+    gates; recorded as a "Rule J / Rule K.1 scope-boundary sighting, no amendment proposed yet"
+    (→ FOLLOW-725).
+  - **RETRO-233 §6 (prior, count 2)** — Python `_valid_bearer` plus a 24-line inline block,
+    intra-app and **partial**. It pre-specified what the third sighting must carry so the amendment
+    would not be under-scoped: **(a)** a language-agnostic comparison strategy, and **(b)** *"a
+    strategy for a REGION of a file rather than a whole file, since neither RETRO-231's nor this
+    instance is a file-level mirror."*
+  - **RETRO-235 §6 (prior, held at 2)** — declined a sighting the arithmetic appeared to authorise,
+    because the Python mirror pair in question **was registered** in `scripts/mirror-files.json` and
+    the gate passed: *"This is the pattern's remedy being applied, not its recurrence."* It added
+    clause **(c)** (an opt-in registry needs a discovery step) and — decisively — recorded the
+    pattern as **"count 2, pre-authorised for promotion on the next genuine (i.e. UNREGISTERED)
+    sighting."**
+  - **RETRO-238 §6 (prior, held at 2)** — declined again, on a *prediction* rather than a sighting
+    (*"a prediction is not a sighting"*), and wrote the prevention into FOLLOW-764 instead.
+  - **THIS RETRO (count 3, the promoting sighting) — §4b CB-1.** Fifty-eight lines, three files, one
+    md5 (`5fa38c52…`), **declared identical in prose with an explicit do-not-diverge instruction**,
+    **unregistered**, and invisible to every mechanism this repo owns (whole-file pair model,
+    basename discovery, Rule J's `apps/decision-api/src/lib/` scope, Rule K.1's "business value"
+    scope, and all three gates' own registers). It satisfies RETRO-233's clause **(b)** — a region
+    of a file — which **no prior sighting could**, and RETRO-235's UNREGISTERED condition exactly.
+  - **Why the promotion is not premature, tested against my own brief's warning.** My brief warned
+    against conflating *"Rule AP is important"* with *"the bar is met"*, and I have **not** amended
+    Rule AP — it is one retro old and nothing here meets its bar. Rule AQ is a **different, older**
+    pattern with an independent four-retro history and an explicit pre-authorisation, and its
+    promoting evidence is a measurement, not a judgement.
+  - **CHECKED BEFORE MINTING**, each against its text rather than its reputation: **Rule J**
+    (normative scope is `apps/decision-api/src/lib/` files with a top-of-file JSDoc canonical
+    declaration — does not reach `scripts/*.sh`, and its *manifest* is structurally incapable of
+    expressing a region); **Rule K.1** and its 2026-06-03 amendment (scope is "a function/route that
+    computes a metric or business value"; RETRO-231 §6 already established gate/test-harness
+    machinery does not reach it); **Rule AP** (governs whether a gate's residuals are enumerated and
+    executed, not whether its own machinery is duplicated — and AQ's clause 3 deliberately routes
+    through AP rather than restating it); **Rule AL** (region of an assertion vs its consumer —
+    orthogonal); **Rule AM** (fixture provenance — orthogonal); **Rule AI** (claim breadth — fires on
+    §4b CB-2, not on this); **Rule AO** (corrective edits — no). None covers it.
+
+- **P-26 (MINTED at count 1) — "A GUARD IS CORRECT ONLY BY EXECUTION ORDER: THE ONLY FIXTURE THAT
+  REACHES IT TRIPS AN EARLIER GUARD, SO THE GUARD ITSELF IS NEVER EXERCISED." THRESHOLD NOT MET →
+  NOT PROMOTED.**
+  - **THIS RETRO (count 1)** — §5d: register entries A/B/F were misclassifying a dead producer as
+    `latent`, and were *not live* only because the AC1 availability guard exits 2 first in the one
+    scenario that reaches them. The gate was **correct by execution order, not by the entries' own
+    correctness** — the worker's own `lessons.md` says exactly this. The defect became visible only
+    once the PM built a fixture (`core.excludesFile` → a directory) that **passes every earlier guard
+    and breaks only the one under test**.
+  - **Why this is not already covered, tested rather than asserted.** **Rule AM** governs where a
+    fixture comes from, not what it must isolate. **Rule Q** governs whether a soft-skippable gate
+    proves its assertion ran — adjacent, but Q is satisfied here (the assertion ran; it ran on a
+    shielded path). **Rule AP clause 2** states the *requirement* the register violated; P-26 is
+    about the *fixture discipline* that would have exposed the violation. **Rule AE** is about
+    enumerating call shapes. None fires.
+  - **Second-sighting bar, pre-specified so the next retro TESTS rather than re-derives:** it must
+    be (a) a guard, predicate or register entry whose failure path is provably unreachable in the
+    fixtures that exist, (b) **because an earlier guard in the same run short-circuits it** — not
+    merely because nobody wrote a fixture, and (c) the shielding must be **incidental** (an unrelated
+    guard) rather than a documented precondition. Clause (b) is what separates P-26 from ordinary
+    missing coverage. If it arrives, the rule should ask for one cheap thing: any fixture proving "X
+    fails loud when its input is missing" must break X's input **while every other guard in the run
+    still passes**, and say in the fixture comment which earlier guard it had to route around.
+
+- **P-27 (MINTED at count 2, 1 PRIOR retro: RETRO-241 §4a LG-1) — "A MERGED COMMIT ON `main` HAS NO
+  AGGREGATE CI VERDICT BECAUSE THE NEXT MERGE CANCELS ITS RUN, WHILE THE VERIFICATION HABIT ASSUMES
+  ONE EXISTS." THRESHOLD NOT MET → NOT PROMOTED.**
+  - **RETRO-241 §4a LG-1 (prior, count 1)** — the `redis-shadow-smoke.yml` concurrency group; named
+    the consequence precisely (*"it would produce no verdict at all for a merged commit, silently"*)
+    and priced it **latent** on measurement (zero non-success runs in 60).
+  - **THIS RETRO (count 2)** — §5d: the same consequence, a different workflow, a strictly worse
+    flag (`cancel-in-progress: true`), and **realised** — 12/30 recent `main` runs cancelled,
+    including this ticket's own merged tip and three of the four prior PRs this chain's retros judged.
+  - **Why this is not P-25 and not P-24, tested rather than assumed.** **P-25** is "a *hand-resolved*
+    merge produces a commit no pre-merge run evaluated" — clause (b) requires a hand resolution and
+    #656 was a clean, content-preserving rebase (patch-ids identical, §1). **P-24** requires a
+    compatibility verdict *falsified* by a later commit; nothing was falsified. This is a third
+    thing: the commit is fine, the rebase is fine, and the **verdict simply never completes**.
+  - **Third-sighting bar, pre-specified:** (a) a merged commit on a protected/mainline ref whose CI
+    run concluded `cancelled` or never started, (b) where an artefact — a retro §2, a QUEUE
+    validation note, a PR comment — **cites that run or "the post-merge run" as evidence**, and (c)
+    the cancellation caused by the repo's own merge cadence rather than by a human cancel. Clause (b)
+    is what makes it about a *reliance*, not about wasted minutes.
+
+- **P-22 ("THE REMEDIATION RE-INSTANTIATES ITS OWN DEFECT CLASS IN A NEW MEDIUM") — ADVANCE
+  CONSIDERED TWICE AND DECLINED TWICE. Held at count 2.** Both candidates are real and I tested both
+  against RETRO-238's three-clause bar rather than the surface resemblance.
+  - **Candidate 1 — the PIPESTATUS defect itself.** A register built to guarantee *"a residual whose
+    proof cannot be evaluated is never assumed still latent"* assumed exactly that, in its own
+    runner. **(b) MET** (introduced by the remediation), **(c) MET** (same class — a failure
+    presenting as a reassuring empty result), **(a) NOT MET** (same gate, same file, same author).
+  - **Candidate 2 — FOLLOW-772's closure.** The remediation for "a §Snapshot.6 number that misstates
+    reality" introduced two new §Snapshot.6 numbers that misstate reality (§4d DG-1). **(b) MET**,
+    **(c) MET**, **(a) NOT MET** (same file, same section, same block of three lines).
+  - **A PRECEDENT I AM SETTING, because candidate 1 forces the question and no prior retro has
+    answered it: a defect corrected inside the same PR, before merge, is evidence the class persists
+    in AUTHORING but is NOT a promotion-eligible sighting of it SHIPPING.** Counting it would mean
+    every successful fix-iteration inflates the pattern register — i.e. the better the bounce-back
+    loop works, the faster the rules multiply, which is precisely backwards. A future retro wanting
+    to count a pre-merge-corrected defect toward a promotion must argue against this line first.
+  - **An observation worth recording about the bar itself.** P-22 has now failed on clause (a) in
+    RETRO-240 and twice here, and on clause (c) in RETRO-241 — the two failure modes **alternate**,
+    and all three clauses have never been met together. Either the bar is well-calibrated, or P-22 is
+    really two patterns (same-owner recursion vs. cross-owner recursion). Recorded so the next retro
+    can decide with four data points instead of re-deriving.
+
+- **P-25 ("A HAND-RESOLVED MERGE CONFLICT PRODUCES A COMMIT NO PRE-MERGE CI RUN EVER EVALUATED") —
+  NOT ADVANCED. Held at count 2.** Tested against RETRO-241's own four-clause bar: (a) a merged SHA
+  differing from the evaluated one — **MET** (`e3f484e7`/`faa4753b`/`b2bd4d31` vs
+  `e9d5dc94`/`e6cc441f`/`f70a4b64`); (b) produced by a **hand** conflict resolution rather than a
+  clean rebase — **NOT MET** (QUEUE.md session-93 records a straight rebase, and I confirmed it
+  independently: three identical `patch-id`s); (c) a code/CI artefact — met; (d) either the `^[+-]`
+  set differs **or** nothing records that it does not — **discharged by this entry**, which records
+  it. **The pre-specification did its job for the fourth consecutive retro**: without clause (b) I
+  would have advanced P-25 on "another merged SHA the CI never saw", which is true here for an
+  entirely different reason (P-27).
+
+- **P-24 ("A PRE-MERGE COMPATIBILITY VERDICT IS INVALIDATED BY THE VALIDATOR'S OWN NEXT PUSH") — NOT
+  ADVANCED. Held at count 1.** Clause (c) requires the verdict to be *falsified*; #656's collision
+  check against #657 predicted **zero conflicts in `scripts/`** and one docs-only collision on
+  `.claude/agents/devops-engineer/lessons.md` — and that is exactly what happened at #657's merge.
+  The verdict was **confirmed**. Third consecutive test, third correct decline.
+
+- **P-21 ("A GATE IS ACCEPTED AS A SUBSTITUTE FOR THE CHANNEL IT GUARDS") — NOT APPLICABLE, checked
+  rather than skipped, and this pair is a COUNTER-EXAMPLE worth banking.** P-21 turns on a gate
+  standing in for an unprovisioned channel. Rule J's channel is live: 4 mirror pairs compared on
+  every run, 2 + 3 real discovered files reported in the merged log. Held at 2, and the
+  counter-example recorded alongside RETRO-241's (`redis-shadow-smoke`), which makes two.
+
+- **P-23 — RESOLVED on this gate, not merely held (§5d).** Held at 1; the environment axis it names
+  is now a hard `exit 2`.
+
+- **Instance sightings, recorded and NOT counted toward any promotion:** **Rule AP** — the first
+  full implementation, executed in a blocking job's log, with the clause-2 guarantee proven by two
+  fixtures; **Rule AI** — one violation (§4b CB-2, entry F's "any new failing predicate") and one
+  compliant instance (the header's own exit-code table and the `mirror-files.json` note both match
+  observed behaviour, verified against the merged job log rather than the diff); **Rule AO** —
+  a violation by the PM's own FOLLOW-772 closure (§4d DG-1: a corrective edit that re-asserted false
+  precision, exactly the "fixing-mode inherits the original mental model" failure AO describes);
+  **Rule Q** — compliant, tenth consecutive; **Rule AM** — compliant, all six new fixtures
+  synthesized in temp roots, with an explicit clean-baseline pre-assertion; **Rule AF** — 192 flat,
+  reading 13; **Rule AG** — exposure unchanged, fourth consecutive; **Rule AL** — compliant, every
+  proof's region matches its control's (verified per entry against the header's region table
+  `:168-245`).
+
+**PROMOTION VERDICT: ONE rule promoted — Rule AQ** (a declared-identical duplicated REGION must be
+shared or registered; a prose "keep in sync" note is not a control), on a bar **RETRO-235
+pre-authorised** and with four prior retros (RETRO-231 §6, RETRO-233 §6, RETRO-235 §6, RETRO-238 §6)
+— threshold is two. **Rule AP is deliberately NOT amended**: it is one retro old, and nothing here
+meets an amendment bar of its own. Everything else declined on a bar a prior retro wrote: **P-22**
+held at 2 (clause (a), twice), **P-24** held at 1 (clause (c)), **P-25** held at 2 (clause (b)),
+**P-21** N/A (counter-example banked), **P-23** resolved; **P-26** minted at 1 and **P-27** minted at
+2 (one prior), both with pre-specified next-sighting bars.
+
+### 7. Follow-ups
+
+- **FOLLOW-776:** the Rule AP register runner is a 58-line block existing byte-identically
+  (md5 `5fa38c52…`) in all three gates, declared identical in prose in the two **copies** only, with
+  no reciprocal pointer in the designated reference, no registration in `scripts/mirror-files.json`
+  (whose whole-file, basename-keyed model cannot express a region), and no register entry in any
+  gate bounding the divergence — so a future fix applied where Rule AP clause 6 says to apply it
+  silently leaves two blocking gates on the old semantics; plus the runner's "proof never reached
+  the epilogue" branch is unfixtured (devops-engineer, 3h, **P2**; latent — all three copies
+  verified identical this session) [§4b CB-1, §4c TG-1, §5b, §5c; Rules AQ / J / K.1 / AP]
+- **FOLLOW-777:** register entry F's latency proof counts only `FAILURES`-incrementing sites (6 of
+  the gate's 11 failure paths) while the header claims it "goes live on any new failing predicate" —
+  the five hard-exit predicates it cannot see include **P5, the predicate this very PR added** — so
+  Rule AP clause 3's "every predicate has an entry" obligation is unenforced for exactly the class
+  of predicate this chain keeps adding; the fix must be copy-shaped because the two Sentry gates'
+  entries H and G have the identical partiality (devops-engineer, 2h, **P2**; latent) [§4b CB-2;
+  Rules AI / AP clause 4]
+- **FOLLOW-778:** `.github/workflows/ci.yml:20-22` sets `cancel-in-progress: true` on a group keyed
+  by `github.ref`, so on `main` each merge cancels the previous merge's run — **12 of the last 30
+  `main` CI runs concluded `cancelled`**, including this ticket's own merged tip `b2bd4d31` (5 jobs
+  killed) and three of the four prior PRs this chain's retros judged — while the repo's post-merge
+  verification habit ("the post-merge `main` run succeeded") assumes a verdict exists; FOLLOW-773's
+  AC5 forbids it from touching this workflow, so the two must be sequenced (devops-engineer, 2h,
+  **P2**; realised, not latent — but the losses so far are re-runnable, so price it as "before the
+  next multi-merge session", not as an incident) [§2, §5a, §5d; RETRO-241 §4a LG-1 / FOLLOW-773]
+- **FOLLOW-779:** `docs/MASTER_DESIGN.md` §Snapshot.6:564's rule count moves 42 → 43 with this
+  entry's Rule AQ promotion (Rule AI fires on me, and MASTER_DESIGN is outside my write scope);
+  **and** `:562`/`:563`'s ID ranges are false in a way FOLLOW-772's closure introduced —
+  "RETRO-001..228 as of 2026-08-03" against a maximum of 240 that day (241 now, 242 with this entry)
+  and "FOLLOW-001..591+" against 772 (775 now, 779 with this entry) — so §Snapshot.6 currently
+  invites the mis-allocation Rule AN exists to prevent (architect, 1h, **P2**) [§4d DG-1, §5d;
+  Rules AI / AN / AO]
+
+**Premise corrections applied to existing stubs (not new tickets):** **FOLLOW-773** — the same
+concurrency class is live and **realised** in `.github/workflows/ci.yml:20-22` with
+`cancel-in-progress: **true**` (strictly worse than the `false` it studies); AC1's "reproduce or
+refute" now has a real 30-run dataset; AC5's scope constraint means FOLLOW-778 owns the `ci.yml`
+half and the two should be sequenced. **FOLLOW-775** — the `check-mirror-files.sh` exclusion
+rationale ("FOLLOW-770 was in flight") is now stale; the file carries a deliberate SC2016 construct
+at `:1109` with **no** `# shellcheck disable=SC2016`, while both copies carry one with a three-line
+rationale (`capture:1250-1252`, `singleton:1425-1427`), so AC1's baseline must expect it and AC2
+must not "fix" it.
+
+**Not filed, deliberately:** no stub for the **exit-1/2/3 distinction having no machine consumer**
+(§3 — the diagnosis is printed and the intended consumer is human; recorded so a future CHECK B does
+not re-flag it); no stub for **`base64 -d` portability** (§3 — fails safe, and P-23 clause (c)
+forbids inventing an invocation environment); no stub for **entry D's git-regex flavour** or
+**entry F's escaping-accident self-exclusion** (§4e — both correct, the latter recorded on
+FOLLOW-777's territory); no stub for the **two Sentry gates' entries H/G** (same shape as CB-2,
+**RETRO-243's to confirm** — flagged, not double-filed); no stub for **register entries A-F
+themselves** (documented-and-open, re-verified latent in the merged CI log, which is Rule AP working
+as designed); no stub for **Rule I** (FOLLOW-591/602 exist); no stub for **`lessons.d/` write scope**
+(agent process tooling, the PM's territory — surfaced in §5d per my no-escalation guardrail); no
+**QUEUE.md**, **ESCALATIONS.md**, **sprint-file** or **code** write of any kind.
+
+### 8. Cross-references
+
+- **RETRO-240 (FOLLOW-765+759 #652 + FOLLOW-766+767 #655) — the direct parent. It promoted Rule AP
+  and filed all three of this session's remaining stubs. Its §7 list is now 3 CLOSED / 0 OPEN, traced
+  END-TO-END per AC rather than per ticket (step 7):**
+
+  **FOLLOW-770 — all 7 ACs closed; AC1 and AC5 TERMINATE in exit codes; AC5 exceeded.**
+  - **AC1 (give the discovery source's failure a consumer; hard failure with its own diagnosis;
+    exit 2; no `find` fallback) — CLOSED, and I traced all four hops rather than stopping at the
+    fix.** `git ls-files` materialised `:962` → `tracked_rc`/`tracked_count` `:962-963` → predicate
+    `:965` → `DISCOVERY SOURCE UNAVAILABLE` + **`exit 2`** `:966-985`. The chosen code is stated in
+    the header's exit-code table (`:255-267`) as the AC required. **No `find` fallback**: grep
+    returns only two explanatory comments (`:38`, `:1014`). *Regression proof:* self-test step 11,
+    running as part of the inline 13 in the merged `main` job log.
+  - **AC2 (red-first fixture, `MIRROR_FILES_ROOT` at a non-git tree; paste before/after) — CLOSED
+    and PROVEN TO RUN.** `:624-663`, asserting exit **2** specifically rather than "non-zero" — the
+    distinction the AC's own text turns on.
+  - **AC3 (escape the OFF-pair line protocol; a note with an embedded newline must pass and print) —
+    CLOSED, and closed with the strongest of the three options the AC offered.** Base64 on **both**
+    fields, not just the note — so a *basename* field can no longer forge a boundary either. Fixture
+    present and passing.
+  - **AC4 (fixture for the OMITTED `basename_discovery` key) — CLOSED.** This is RETRO-240 §4c
+    TG-1's exact ask; the assertion names the field, as the AC required.
+  - **AC5 (a machine-checked register in the Rule AP shape; make it the reference implementation) —
+    CLOSED and EXCEEDED, and it satisfies Rule AP's own Verification clause.** 8 entries, executed
+    every run, per-entry status line, `exit 3` with a diagnosis distinct from an ordinary finding
+    naming the id, `exit 2` for unevaluable. **Rule AP's verification requirement — "the gate's own
+    `--self-test` MUST include one fixture proving a register entry going live is caught" — is met
+    by self-test step 10** (`[C1] GONE LIVE`, exit 3). Exceeded in two ways the AC did not ask for:
+    a per-control **region table** in the header (`:156-245`) that makes Rule AP clause 3's reviewer
+    diff mechanical, and the `PIPESTATUS` runner (§5d) that makes clause 2's guarantee real rather
+    than nominal.
+  - **AC6 (keep every existing behaviour; the 7 assertions must still pass; unregistered tracked
+    copy still fails; nested worktree still invisible) — CLOSED, re-run live by me.** All seven
+    original assertions are present and passing inside the 13; the real-tree run reports 4 pairs in
+    sync and `every TRACKED file sharing a registered mirror basename is itself registered`.
+  - **AC7 (do NOT change `mirror-files.json`, the pair-comparison logic, or the `ci.yml`/`lefthook`
+    wiring) — HONOURED, verified from the diff rather than the commit message** (§2).
+
+  **FOLLOW-771 — CLOSED in PR #657**, RETRO-243's to trace. **FOLLOW-772 — recorded DONE, and step 7
+  says that is not the same as closed.** Its stated subject (the rule count, 27 → 42) **is** closed
+  and is still correct on `main`. But the closing commit `7f1b2c40` edited **three** lines, not one,
+  and the two it was not asked to edit now carry ID ranges false by 12 and 181 (§4d DG-1). **The gap
+  did not survive and did not fork — it moved one hop, from a wrong count to a wrong range, inside
+  the closure.** → FOLLOW-779.
+
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141) — the reason
+  step 7 exists. This merge gives the chain its first PRE-MERGE interception and its first
+  self-inflicted hop.**
+  - *Seven terminations, zero hops on the ticket's own ACs.* All seven FOLLOW-770 ACs close, and the
+    two that carry the ticket's weight (AC1, AC5) terminate in **exit codes**, not log lines.
+    RETRO-240 §3's HW-1 — the producer-only signal — is gone at its source, not relocated.
+  - *One interception.* The PIPESTATUS defect is the first gap in this chain caught **before** it
+    reached `main`. In displacement terms it is a **hop that did not happen**: had it merged, PR #657
+    would have carried it into two more blocking gates four minutes later — a fork, the RETRO-239
+    mode — and it is the reference-implementation designation that made the copies verifiable and the
+    fix propagable.
+  - *One hop, and it is the coordinator's own.* FOLLOW-772's closure moved a false number to a false
+    range (§4d DG-1). Naming it precisely matters because the chain's modes now number five:
+    **hop** (RETRO-238), **fork** (RETRO-239), **re-instantiation-at-closure** (RETRO-240),
+    **seam** (RETRO-241), and — here — **interception**, the first mode that is a *result* rather
+    than a defect.
+- **RETRO-241 (FOLLOW-761 #653 + FOLLOW-762 #654)** — the immediately preceding retro. Its §4a LG-1
+  is P-27's first sighting (§6), and its §5d method (`patch-id` / `^[+-]`-set comparison of a merged
+  commit against the validated one) is the technique §1 uses to establish that #656's rebase changed
+  nothing. Its P-25 bar is tested and **not** advanced here.
+- **RETRO-239 (FOLLOW-760 #650 + FOLLOW-746 #651)** — the origin of the `scripts/lib/` shared-helper
+  convention (item 8's shared-helper-vs-copy decision, routed to Opus) that §5b measures this PR's
+  copy-by-value against, and of the "same organ reproduced in the sibling gate" fork mode that the
+  reference-implementation mechanism prevented here.
+- **RETRO-238 (FOLLOW-757 #648 + FOLLOW-752 #649)** — the origin of P-22's three-clause bar, applied
+  twice against this entry's own candidates in §6, and of the "a prediction is not a sighting"
+  discipline that held Rule AQ's pattern at 2 for two extra retros.
+- **RETRO-235 (FOLLOW-738)** — the retro that **pre-authorised** Rule AQ's promotion on the next
+  unregistered sighting, and that set the *measurement* standard (largest common block, declared-vs-
+  incidental) this entry discharged with three md5s.
+- **RETRO-233 / RETRO-231** — Rule AQ's counts 2 and 1; RETRO-233's clause (b) ("a strategy for a
+  REGION of a file") is the clause this sighting is the first to satisfy and the clause AQ's rule
+  text is built around.
+- **RETRO-236 (FOLLOW-736)** — the precedent applied in §6 for not counting a compliant instance
+  toward promotion, extended here to a new case my predecessors had not faced (a defect corrected
+  pre-merge).
+- **RETRO-230** — the mutation-fixture standard (show the OLD mechanism accepting the bad input),
+  which all six new fixtures follow, two of them against this PR's **own** pre-fix runner rather
+  than against `main`.
+
+<!-- RETRO-242 SUMMARY: 1 PR (#656 FOLLOW-770), 3 commits on main (e3f484e7 register+discovery guard,
+faa4753b PIPESTATUS fix-iteration, b2bd4d31 lessons), merged 2026-08-03 10:08:14 UTC, 2 files, +700/-29,
+devops-engineer @ Opus. Rule AP's DESIGNATED REFERENCE IMPLEMENTATION (clause 6 + AC5). Merged by a
+CLEAN rebase, proven not asserted: patch-id IDENTICAL across all three pre/post pairs (b71cdc1c/a7c9a19d/
+8f1f9cc8), committer dates rewritten, author dates preserved, ZERO conflict resolution.
+WIRING: CLEAN ✅ both checks. CHECK A — no new files/functions; all 9 new exported symbols traced to a
+consumer individually (MF_STRIP_PATHS→C2, MF_SELF→F, MF_PS_FILE→the epilogue, …); recorded that a
+mechanical importer-grep sees shell exports as dead for the 3rd consecutive retro. CHECK B — EVERY new
+signal terminates in an EXIT CODE: tracked_rc→:965→exit 2 (this IS RETRO-240 HW-1's terminus), REGISTER_
+BROKEN→exit 2, REGISTER_LIVE→exit 3, base64 OFF-pairs→FAILURES→exit 1. Two axes walked and NOT filed
+(the exit-1/2/3 distinction has no MACHINE consumer but Rule AP asks for a distinct DIAGNOSIS and it is
+printed; base64 -d portability fails SAFE and P-23 clause (c) forbids inventing an environment).
+THE FACT IN NO DIFF (§5d, POSITIVE): the PM's own validation INDEPENDENTLY REPRODUCED a real defect and
+bounced the PR for exactly ONE fix-iteration BEFORE merge — the FIRST time in this 8-PR chain the worst
+defect in a merge was caught by the validator rather than by a retro afterwards. The register decided
+UNEVALUABLE from pipefail's status = the RIGHTMOST non-zero, so in entries A/B/F (producer piped into a
+2nd grep) a dead producer (git 128, grep 2) was masked by the trailing grep's ordinary no-match 1 and
+classified `latent` — the reassuring direction, inside the mechanism Rule AP clause 2 exists to forbid it
+in. Not live ONLY BY EXECUTION ORDER (the AC1 guard exits 2 first). PM reproduced on ITS OWN fixtures,
+requested a fix SHAPE not a mechanism, worker fixed the RUNNER (not 3 proof strings) so every future entry
+and every copying gate inherits it, PM re-verified on its own originals. I RE-DERIVED the "C1-E not
+vulnerable" claim independently by classifying every proof's pipe shape: A/B 3-stage, F 2-stage with a
+failable producer; C2/C3/E pipe printf-on-a-shell-variable (no realistic >=2 failure); C1/D single command.
+Exactly 3 of 8 had the shape. HONEST COUNTERWEIGHT recorded against myself: the defect was invisible to
+READING and visible only to a CONSTRUCTED environment where every other guard passes — I read and grep, I
+do not build adversarial fixtures. Division of labour stated so neither side assumes the other covered it.
+GAPS: 0 logic (and §4a explains why that is a result, not an empty section — I tested the never-reached-
+epilogue branch EMPIRICALLY: exit 0, no PS file, r_worst=2, UNEVALUABLE = safe), 2 bugs, 1 test gap, 2 doc
+gaps. CB-1 (P2) THE RULE AP REGISTER RUNNER IS A 58-LINE BLOCK EXISTING BYTE-IDENTICALLY IN THREE GATES —
+md5 5fa38c527c083faf0dc83b3c8d9f6a00 measured on all three — DECLARED identical in prose with a
+do-not-diverge instruction, and ONLY THE TWO COPIES KNOW THEY ARE COPIES (grep "byte-identical to
+scripts/check-mirror-files" → 2 hits, both in the copies, ZERO in the designated reference). No mechanism
+can detect divergence: mirror-files.json has 4 pairs and none is these; the pair model is WHOLE-FILE and
+these share 58 of 1195/1381/1600 lines so it is INEXPRESSIBLE; discovery is BASENAME-keyed and the three
+basenames differ; no register entry in any gate bounds it; Rule J's normative scope is
+apps/decision-api/src/lib/; Rule K.1's is "business value". The copies' own comment is Rule J's Pattern
+paragraph verbatim, one directory over. Damning detail: the PIPESTATUS fix was placed IN THE RUNNER
+precisely so improvements propagate — and the runner is the one artefact that cannot. CB-2 (P2) entry F's
+proof counts FAILURES-increment sites (6) but the gate has 11 failure paths; the 5 it cannot see are
+hard-exits INCLUDING :985 = P5, the predicate THIS PR ADDED — while the header claims it "goes live on ANY
+new failing predicate" (Rule AI + Rule AP clause 4). TG-1 (P3) the never-reached-epilogue branch is
+unfixtured. DG-1 (P2) §Snapshot.6 moves 42→43 by my own promotion (Rule AI fires on me) AND tracing
+FOLLOW-772 END-TO-END found its closure edited 3 lines not 1: the COUNTS are correctly grepped (229/594/42)
+but the ID RANGES are false — ":562 RETRO-001..228 as of 2026-08-03" against max 240 that day, ":563
+FOLLOW-001..591+" against 772 — so §Snapshot.6 now INVITES the Rule AN mis-allocation it should prevent.
+DG-2 (P3) the designated REFERENCE is the one gate NOT under shellcheck and the only one missing the
+`# shellcheck disable=SC2016` its two copies carry with a 3-line rationale.
+PROCESS FINDING (§5d, quantified, in no PR body): ci.yml:20-22 sets cancel-in-progress: TRUE on a
+ref-keyed group, so on main each merge KILLS the previous merge's run. 12 of the last 30 main CI runs
+concluded `cancelled`; ZERO `success`. FOUR OF SIX merged tips in this chain never got a completed
+aggregate verdict — 04833fd0 (#652/RETRO-240) cancelled, 0d111343 (#653/RETRO-241) cancelled, c86f3b0c
+(#654/RETRO-241) cancelled, b2bd4d31 (#656/THIS) cancelled with 5 jobs killed. RECONCILED WITH MY
+PREDECESSORS: RETRO-240 §2 cites run 30792848875 as "main's own post-merge aggregate run" — its headSha is
+ffd62f90, the PM's bookkeeping commit, NOT #655's tip. Its READING was sound; the shared METHOD ("read the
+post-merge main run") assumes a verdict that is absent 40% of the time. RETRO-241 §4a LG-1 named this exact
+mechanism in a SIBLING workflow, priced it latent, and did not walk the main CI workflow where it is not.
+CASCADES: FOLLOW-773 premise MATERIALLY WIDENS (same class, worse flag, REALISED not latent; its AC5
+forbids touching ci.yml so FOLLOW-778 owns that half — SEQUENCE them, and 773+774 is the NEXT dispatch);
+FOLLOW-775 premise (stale exclusion rationale + a known SC2016 its AC1 baseline must expect and AC2 must
+not "fix"); FOLLOW-763 confirmed CLOSED (76bd9d21, landed mid-retro) and confirmed irrelevant to this
+subject; the two Sentry gates' entries H/G share CB-2's shape — FLAGGED FOR RETRO-243, deliberately NOT
+double-filed. CLOSURE (step 7, per-AC, END-TO-END): RETRO-240's §7 list is 3 CLOSED / 0 OPEN. FOLLOW-770
+all 7 ACs (AC1 traced 4 hops to exit 2; AC5 EXCEEDED — it satisfies Rule AP's own Verification clause via
+self-test step 10 "[C1] GONE LIVE", and adds a per-control region table nobody asked for; AC7 verified
+from the DIFF, incl. that the SC2064 directive ci.yml:711 depends on still exists at :320). FOLLOW-771 →
+RETRO-243. FOLLOW-772 DONE-but-not-closed: the gap moved ONE HOP inside its own closure. DISPLACEMENT
+MODES now FIVE: hop (238), fork (239), re-instantiation-at-closure (240), seam (241), and — here —
+INTERCEPTION, the first mode that is a RESULT rather than a defect.
+RULES: **Rule AQ PROMOTED** — "a DECLARED-IDENTICAL duplicated REGION must be shared or registered; a
+prose 'copied verbatim, keep in sync' note is not a control, and both copies AND origin must name each
+other". Pattern "SAME-RUNTIME DECLARED-IDENTICAL DUPLICATE IN THE Rule J / Rule K.1 GAP", count 3, FOUR
+priors: RETRO-231 §6 (1), RETRO-233 §6 (2, pre-specified clauses (a) language-agnostic + (b) REGION-of-a-
+file), RETRO-235 §6 (held at 2 on a REGISTERED instance = "the remedy, not the recurrence", added clause
+(c), and **PRE-AUTHORISED promotion on the next UNREGISTERED sighting**), RETRO-238 §6 (held at 2 on "a
+prediction is not a sighting"). This sighting is the FIRST to satisfy RETRO-233's clause (b). Checked
+before minting against J / K.1 + its amendment / AP / AL / AM / AI / AO. **Rule AP DELIBERATELY NOT
+AMENDED — one retro old, no amendment bar met; I did not conflate "AP is important" with "the bar is
+met".** Everything else declined on a bar a prior retro wrote: P-22 held at 2 — TWO candidates tested
+(the PIPESTATUS defect itself; FOLLOW-772's closure), both MET (b)+(c) and both FAILED (a) — and I set a
+NEW PRECEDENT no prior retro had faced: **a defect corrected inside the same PR before merge is evidence
+the class persists in AUTHORING but is NOT a promotion-eligible sighting of it SHIPPING**, because
+counting it means the better the fix-iteration loop works the faster the rules multiply. Also recorded that
+P-22's failure clauses now ALTERNATE ((a) in 240 and twice here, (c) in 241) — either well-calibrated or
+really two patterns. P-25 held at 2 (clause (b) — clean rebase, patch-ids identical; the pre-specification
+stopped a false advance for the 4th consecutive retro). P-24 held at 1 (clause (c) — the collision verdict
+was CONFIRMED at #657's merge, not falsified). P-21 N/A + COUNTER-EXAMPLE banked (Rule J's channel is
+live: 4 pairs compared, 2+3 files discovered, in the merged log). P-23 RESOLVED on this gate, not merely
+held — AC1 made its environment axis a hard exit 2. P-26 MINTED at 1 ("a guard is correct only by
+EXECUTION ORDER: the only fixture that reaches it trips an EARLIER guard") with a 3-clause bar whose (b)
+separates it from ordinary missing coverage. P-27 MINTED at 2, 1 prior (RETRO-241 §4a LG-1) — the
+cancelled-verdict pattern — with a 3-clause bar whose (b) makes it about a RELIANCE, not wasted minutes.
+Instance sightings: AP (first full implementation, clause-2 guarantee proven by 2 fixtures), AI (one
+violation = entry F's "any", one compliant), **AO (a VIOLATION by the PM's own FOLLOW-772 closure — a
+corrective edit that re-asserted false precision, textbook "fixing-mode inherits the original mental
+model")**, Q (compliant, 10th consecutive, by a DIFFERENT mechanism — inline no-arg self-test, no separate
+step), AM (6 fixtures, temp roots, with an explicit clean-baseline PRE-assertion), AF (192 flat, reading
+13, re-derived from job 91657954026), AG (unchanged, 4th consecutive), AL (compliant per entry against the
+header's region table). PROCESS FACT THE PM MUST SEE: the lessons.d/ write is denied for the **SIXTH**
+consecutive time — this brief carried `.claude/agents/retrospective-analyst/lessons.d/**` VERBATIM and
+both `mkdir -p` and a direct Write were refused; the permission layer denies `.claude/**` regardless of
+the brief. The PM has now "fixed" the BRIEF three times and the brief is not the control. Fragment written
+in full and reproduced in this run's closing output. FOLLOWS FILED: 776 (P2 devops 3h), 777 (P2 devops 2h),
+778 (P2 devops 2h), 779 (P2 architect 1h); premise corrections applied to 773 and 775. QUEUE.md /
+ESCALATIONS.md / sprint files / code correctly UNTOUCHED; CONVENTIONS_PATCH.md touched ONLY for Rule AQ. -->

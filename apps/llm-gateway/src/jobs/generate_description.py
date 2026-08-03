@@ -1417,6 +1417,21 @@ def _generate_with_sonnet(
         )
         return "", [], "FAILED"
 
+    # FOLLOW-778: body-level numeric grounding — SHADOW MODE, observation only.
+    # The headline suppresses on this same rule (_check_headline_facts); the body
+    # does NOT suppress yet. Rule K.2: log so the signal is observable and the
+    # false-positive rate can be measured on real listings before enforcement.
+    # Deliberately placed AFTER the contract/leak guard so a body that already
+    # failed for format reasons is not double-counted in the shadow metric.
+    body_fact_violation = _check_body_facts(description, original_description or "", listing_context)
+    if body_fact_violation:
+        log.warning(
+            "generate_description.body_fact_violation_shadow archetype=%s violation=%s "
+            "(SHADOW: description served, not suppressed)",
+            archetype,
+            body_fact_violation,
+        )
+
     # FOLLOW-162 / RETRO-027: a generation truncated at max_tokens drops the trailing
     # <verified_facts_used> block (and may cut the body mid-sentence). Two truncation
     # tells: stop_reason == "max_tokens", or an opening "<verified_facts_used" tag that
@@ -1677,6 +1692,54 @@ def _check_headline_facts(
             # in the grounding — re.search with \b ensures whole-token containment.
             if not re.search(r"\b" + re.escape(clean) + r"\b", grounding, re.IGNORECASE):
                 return "hallucinated_proper_name"
+
+    return None
+
+
+def _check_body_facts(
+    body: str,
+    original_description: str,
+    listing_context: dict[str, Any],
+) -> str | None:
+    """Numeric grounding for the DESCRIPTION body — SHADOW MODE (FOLLOW-778).
+
+    The headline has had a post-generation fact check since FOLLOW-169
+    (`_check_headline_facts`); the body — the larger surface, and the one a buyer
+    reads a price off — has never had one. Its only fact controls are the system
+    prompt's whitelist (a model instruction) and `<verified_facts_used>` (the
+    model's own self-report). Neither is a verification.
+
+    This function applies the SAME boundary-safe digit rule the headline already
+    passes, over the body. It deliberately does NOT reuse the proper-name half:
+    multi-sentence prose legitimately names districts, streets and stations drawn
+    from grounding, and a capitalised-word scan over that length false-positives
+    at a rate that would suppress good copy.
+
+    SHADOW MODE: the caller LOGS the verdict and serves the description anyway.
+    Nothing is suppressed until the false-positive rate has been measured on real
+    listings — a paraphrase ("three-bedroom" -> "3 bedrooms") is a legitimate
+    generation whose digit is absent from grounding, so switching straight to
+    suppression could silently disable the description adaptation that is already
+    live in prod (ADR-0016). Flipping to enforcement is a follow-up, gated on that
+    measurement.
+
+    Args:
+        body:                 The stripped description body (audit block and
+                              verdict tags already removed).
+        original_description: Agent's original copy — factual source of truth.
+        listing_context:      Structured property data — factual source of truth.
+
+    Returns:
+        "hallucinated_number" if a digit token in the body is absent from both
+        grounding sources, else None.
+    """
+    grounding = (original_description + " " + json.dumps(listing_context)).lower()
+
+    for token in re.findall(r"\d[\d.,/%m²sqftftm-]*", body, re.IGNORECASE):
+        token_lower = token.lower()
+        boundary_pattern = re.compile(r"(?<![0-9.,])" + re.escape(token_lower) + r"(?![0-9.,])")
+        if not boundary_pattern.search(grounding):
+            return "hallucinated_number"
 
     return None
 

@@ -319,6 +319,96 @@ describe('applyReorderDirective — MutationObserver resilience (FOLLOW-791)', (
     expect(getOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
     expect(testEventQueue.some((e) => e.type === 'adapt.reapplied')).toBe(true);
   });
+
+  it('RED-FIRST (FOLLOW-792): a framework RE-MOUNT (fresh DOM nodes, same listing ids) is repaired without duplicating cards', async () => {
+    const container = buildGrid(['listing-a', 'listing-b', 'listing-c']);
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [
+        { listing_id: 'listing-a', score: 0.3 },
+        { listing_id: 'listing-b', score: 0.9 },
+        { listing_id: 'listing-c', score: 0.6 },
+      ],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    applyDirectives([directive], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.8,
+      sessionId: 'sess-remount-1',
+      isStale: () => false,
+    });
+    expect(getOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
+
+    // Simulate a framework RE-MOUNT (React key change / Svelte {#each} re-key / any
+    // destroy+recreate re-render): the ORIGINAL card elements are destroyed and REPLACED
+    // by freshly-created nodes carrying the SAME data-estalara-listing-id attributes, in a
+    // different order — not a re-order of the same node objects (that's the test above).
+    container.innerHTML = '';
+    ['listing-a', 'listing-c', 'listing-b'].forEach((id) => {
+      const card = document.createElement('div');
+      card.setAttribute('data-estalara-listing-id', id);
+      container.appendChild(card);
+    });
+
+    await flushAll();
+
+    // RED bar (pre-FOLLOW-792): `applyOrder` re-attaches the ORIGINAL (now-detached-orphan)
+    // node objects alongside these freshly-mounted ones, so the container ends up with 6
+    // children (2x the listing count) instead of 3 — this assertion fails against pre-fix
+    // adapt.ts. Post-fix, `applyOrder` re-queries the live DOM at write time and the
+    // container holds exactly the 3 live cards, correctly re-sorted.
+    expect(container.children.length).toBe(3);
+    expect(getOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
+  });
+
+  it('FOLLOW-792 AC4: after a re-mount repair converges, a further host mutation does not grow the card count', async () => {
+    const container = buildGrid(['listing-a', 'listing-b', 'listing-c']);
+    const directive: ReorderDirective = {
+      type: 'reorder',
+      container_selector: '[data-estalara-listings-grid]',
+      item_selector: '[data-estalara-listing-id]',
+      score_function: 'archetype_affinity',
+      scores: [
+        { listing_id: 'listing-a', score: 0.3 },
+        { listing_id: 'listing-b', score: 0.9 },
+        { listing_id: 'listing-c', score: 0.6 },
+      ],
+      archetype: 'yield_hunter',
+      confidence: 0.8,
+    };
+    applyDirectives([directive], {
+      archetypeId: 'yield_hunter',
+      confidence: 0.8,
+      sessionId: 'sess-remount-2',
+      isStale: () => false,
+    });
+    expect(getOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
+
+    // Re-mount, as above.
+    container.innerHTML = '';
+    ['listing-a', 'listing-c', 'listing-b'].forEach((id) => {
+      const card = document.createElement('div');
+      card.setAttribute('data-estalara-listing-id', id);
+      container.appendChild(card);
+    });
+    await flushAll();
+    expect(container.children.length).toBe(3);
+
+    // A further host mutation on the now-repaired (still-live) nodes — e.g. the framework
+    // re-orders again in place. Without the fix, the permanently-duplicated card count from
+    // the re-mount above would keep growing on every subsequent mutation (the length check
+    // in `matches()` can never converge once orphans have been appended). With the fix,
+    // `applyOrder` only ever moves the nodes it re-queries live, so the count cannot grow.
+    container.prepend(container.lastElementChild!);
+    await flushAll();
+
+    expect(container.children.length).toBe(3);
+    expect(getOrder(container)).toEqual(['listing-b', 'listing-c', 'listing-a']);
+  });
 });
 
 // ---------------------------------------------------------------------------

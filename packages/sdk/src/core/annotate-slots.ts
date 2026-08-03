@@ -17,6 +17,8 @@
  * @module @estalara/sdk/core/annotate-slots
  */
 
+import { pushEvent } from './adapt.js';
+
 /**
  * Detection-vocabulary slot KEY → adaptation-vocabulary slot NAME (FOLLOW-796).
  *
@@ -109,10 +111,46 @@ export function annotateSlots(
     if (!schemaKey || !cssSelector) continue;
 
     // FOLLOW-796: detection vocabulary → adaptation vocabulary. Unknown keys pass through.
-    const slotName = SLOT_NAME_TRANSLATION[schemaKey] ?? schemaKey;
+    // `translated` stays undefined for identity keys — FOLLOW-801 gates only on translated ones.
+    const translated = SLOT_NAME_TRANSLATION[schemaKey];
+    const slotName = translated ?? schemaKey;
 
     try {
       const matches = searchRoot.querySelectorAll<HTMLElement>(cssSelector);
+
+      // FOLLOW-801: TRANSLATED slots are annotated on an UNAMBIGUOUS match only.
+      //
+      // `ADR-0008` §Decision.1 always specified "unique-match only" for this bridge; the
+      // FOLLOW-340 rewrite dropped it, and FOLLOW-796's translation turned that omission
+      // from harmless into damaging. The producer selectors are broad by construction —
+      // `a[href*="contact"]` (wordpress/json-ld), `[class*='cta'], [class*='button']`
+      // (css-modules) — so on a real tenant page they match the nav link, the card CTA and
+      // the footer link alike. Annotating all of them hands every one to
+      // `applyTextDirective`, which overwrites `textContent` on each AND (since FOLLOW-791)
+      // arms a MutationObserver per element that re-asserts that overwrite against the host
+      // framework indefinitely. A nav "Contact us" becomes archetype copy and stays.
+      //
+      // Skipping wholesale (rather than annotating the first match) is deliberate: with >1
+      // candidate there is no evidence which one is the CTA, and picking by document order
+      // would silently overwrite an arbitrary node. Better to adapt nothing and say so.
+      //
+      // Only translated keys are gated. Identity keys (`headline`, `description`) kept
+      // every-match behaviour from before FOLLOW-796, so narrowing them here would be an
+      // unrelated behaviour change smuggled into a P1 fix — see FOLLOW-801's scope note and
+      // the pin in `follow-801-slot-scope.test.ts`.
+      if (translated !== undefined && matches.length > 1) {
+        pushEvent({
+          type: 'adapt.skipped',
+          payload: {
+            reason: 'ambiguous_slot_selector',
+            slot_or_selector: slotName,
+            match_count: matches.length,
+          },
+          ts: Date.now(),
+        });
+        continue;
+      }
+
       for (const el of Array.from(matches)) {
         // Idempotent: skip nodes that already carry a data-estalara-slot attribute
         if (el.hasAttribute('data-estalara-slot')) continue;

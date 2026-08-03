@@ -1,5 +1,88 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 97 (2026-08-04) — no open PRs, no unresolved-for-dispatch escalations, P2-freeze bookkeeping gap found + fixed, FOLLOW-782 (P1, aged) dispatched
+
+**State verified fresh, not re-derived from narration:** `main` clean at `9df1c604`,
+`gh pr list --state open` empty, `ps -eo pid,lstart,cmd | grep 'claude --agent'` empty, no stranded
+`.claude/worktrees/agent-*`. 0 tickets IN_PROGRESS at session start.
+
+**Escalations reviewed — none newly-unresolved-for-dispatch.** `ESC-046`'s `## OPEN` block at
+ESCALATIONS.md:138 is the preserved original filing inside a `<details>`; it is superseded by the
+`## RESOLVED — ESC-046` entry above it (Piotr's ruling, 2026-07-31) — confirmed by reading both, not
+assumed from heading order. Five escalations remain genuinely `## OPEN` (ESC-020, ESC-041, ESC-042
+narrowed, ESC-044, ESC-045) — all are long-standing, previously surfaced, each scoped to a specific
+future action (Rafał-side prod deploy, Release workflow E403, Modal deploy, consent-hash fabrication
+ruling, local-shim credentials) and none blocks routine backlog dispatch; none is new this session.
+Restated to Piotr in this session's report rather than silently carried forward.
+
+**Bookkeeping gap found and fixed: the session-95 CEO P2-freeze standing rule was not applied to 5
+stubs filed after it took effect.** The rule (QUEUE.md session-95 head, 2026-08-03): _"any NEW stub
+filed from this point forward ... lands FROZEN by default unless it is P1"_, annotated on the stub's
+own `promoted_to_queue` line. Checked every RETRO-244/245 stub against this: **FOLLOW-800**
+(RETRO-244, P2), **FOLLOW-804/805/806/807** (RETRO-245, P2/P2/P3/P2) were filed with no FROZEN
+annotation — unlike the code-audit batch (FOLLOW-783 etc.) which correctly carries it. Retroactively
+annotated all 5 in `backlog/FOLLOW_UPS.md` with the standing reason/date, marked explicitly as a
+bookkeeping correction, not a new ruling. **Not re-annotated:** FOLLOW-801 (P1, correctly exempt)
+and FOLLOW-793/802/803 (P2, but already dispatched+merged as closure of already-P1-exempt defects
+FOLLOW-792/795 — a defensible reading distinct from a freestanding new P2 finding, flagged for Piotr
+below rather than silently normalized).
+
+**Worth a ruling, not blocking:** FOLLOW-793/802/803 (all P2) shipped without an explicit freeze
+exemption recorded, on the reasoning that they closed remaining doors of an already-exempted P1
+defect rather than opening new scope. Content independently verified correct (CI green, runtime
+wiring confirmed, already live in prod). Flagging so Piotr can rule whether "closes a door of an
+already-exempt P1" is a standing exemption class or whether it needed its own explicit approval each
+time — this is a governance question, not a code defect.
+
+**Ticket picked: FOLLOW-782** (P1, code-audit finding F-02, backend-engineer) — the oldest
+still-open, non-frozen, ready ticket in the queue. It was named "first per the coordinator's stated
+priority" at session 94 (2026-08-03) but was queue-jumped by five rounds of P1 SDK fires
+(FOLLOW-791→792/795/796→801→793/802/803) before it could be dispatched. `depends_on: []`,
+`backend-engineer` free (0 IN_PROGRESS). Real, security-adjacent finding: an admin ClickHouse query
+builds a predicate by string interpolation while the correct bound-parameter pattern already exists
+one file over in the same codebase — see full ticket at `backlog/FOLLOW_UPS.md` `## FOLLOW-782`.
+
+**Delegation-table row used:** "ingest worker, control-plane, decision-api, Postgres/RLS, auth,
+onboarding HTTP, billing, webhooks → backend-engineer" — this route lives in
+`apps/control-plane/src/app/api/admin/labels/route.ts`.
+
+**Model: Opus**, not the ticket's own Sonnet default. Justification: the model-fit table lists
+"security-sensitive changes" explicitly under Opus fit, and this control-plane route auto-deploys to
+prod on merge with no human gate (Vercel) — per the tie-break rule ("take the higher tier for
+irreversible or prod-touching work" when genuinely unsure), the combination of a SQL/ClickHouse
+injection-adjacent fix landing straight to a live admin API tips this above the otherwise-mechanical
+Sonnet-fit implementation.
+
+**FOLLOW-026 (Levels 1+3) stays next after this** — corrected and migration-free-scoped at session
+95, never superseded, still the right next pick once FOLLOW-782 lands.
+
+**CI-check counter (FOLLOW-782): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
+at dispatch time.**
+
+NEXT: dispatch FOLLOW-782 to backend-engineer (Opus), wait for completion, run full 5a-5g validation
+(this is a security-relevant control-plane change — treat CI green + runtime-wiring grep
+
+- the new regression test as non-negotiable, no shortcuts), then FOLLOW-026 (Levels 1+3 scope only).
+
+---
+
+### FOLLOW-782 — status: IN_PROGRESS
+
+**assigned_to:** backend-engineer **model: Opus** — delegation table row "ingest worker,
+control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks →
+backend-engineer"; model escalated from the ticket's own Sonnet default because this is a
+security-sensitive fix (ClickHouse predicate built by string interpolation) landing in a
+control-plane admin API route that auto-deploys to prod on merge with no human gate — see model-fit
+justification in the session-97 head above. **started_at:** 2026-08-04. **branch:**
+`backend-engineer/FOLLOW-782-clickhouse-param-binding`.
+
+**Ticket:** `backlog/FOLLOW_UPS.md` `## FOLLOW-782` (P1, code-audit finding F-02, 2026-08-03).
+`apps/control-plane/src/app/api/admin/labels/route.ts:145` builds a ClickHouse predicate by string
+interpolation with apostrophe-only escaping; the correct `param_<name>` bound-parameter pattern
+already exists in the same codebase (`apps/control-plane/src/lib/clickhouse-tracer.ts:75,118`).
+
+---
+
 ### FOLLOW-793 + FOLLOW-802 + FOLLOW-803 — status: DONE (PR #667 merged 2026-08-03, `1a6a64ef`)
 
 **Live in production, verified by CHECKSUM rather than by marker.** Built `packages/sdk` from the

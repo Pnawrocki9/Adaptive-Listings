@@ -25968,7 +25968,10 @@ RETRO-244 §4d DG-1/DG-2]
 
 source_retro: RETRO-244 §4d DG-3 / §5b source_ticket: FOLLOW-791 (PR #661) recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95
+head for the ruling, reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt;
+annotation applied retroactively 2026-08-04 — this stub was filed after the freeze took effect but
+was not marked at filing time, a bookkeeping gap corrected here, not a new decision)
 
 **Gap.** `node scripts/check-bundle-size.js` measured **41.71 KB gzip against the 42 KB limit
 (ESC-028)** on PR #661 — **297 bytes / 0.7 % headroom**. The gate is pass/fail: a PR that consumes
@@ -26211,7 +26214,11 @@ closure check; RETRO-244 §4a LG-1; FOLLOW-792; FOLLOW-539]
 
 source_retro: RETRO-245 §4b CB-1 / CB-2 / §4d DG-4 / §3 HW-2 source_ticket: FOLLOW-796 (PR #664),
 root cause FOLLOW-340 (PR #322) recommended_sprint: next recommended_agent: architect priority: P2
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
+2026-08-03** (see backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria;
+this ticket is P2-or-lower and not exempt; annotation applied retroactively 2026-08-04 — this stub
+was filed after the freeze took effect but was not marked at filing time, a bookkeeping gap
+corrected here, not a new decision)
 
 **Gap (a) — Rule AI violation.** PR #664 corrected `docs/MASTER_DESIGN.md` §"Most
 detekcja→adaptacja" (`:1436-1455`). Still asserting the pre-FOLLOW-340 world **after** that merge:
@@ -26269,7 +26276,11 @@ apps/control-plane/src/lib/tenant-schema.ts:175-178; CONVENTIONS_PATCH.md Rule A
 
 source_retro: RETRO-245 §4b CB-3 source_ticket: FOLLOW-796 (PR #664) — surfaced by, not caused by
 recommended_sprint: next recommended_agent: backend-engineer priority: P3 estimated_hours: 2
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt; annotation applied retroactively 2026-08-04 — this stub was filed after
+the freeze took effect but was not marked at filing time, a bookkeeping gap corrected here, not a
+new decision)
 
 **Gap (pre-existing, latent, newly load-bearing).**
 `apps/control-plane/src/lib/tenant-schema.ts:126` documents the query as returning _"the **most
@@ -26313,6 +26324,10 @@ CB-3; FOLLOW-639; FOLLOW-640; FOLLOW-641; ADR-0019]
 source_retro: RETRO-245 §5d source_ticket: n/a (loop-integrity finding; trigger = PR #662)
 recommended_sprint: next recommended_agent: devops-engineer (pm-orchestrator pairs on the
 bookkeeping half) priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN -- CEO P2 freeze, 2026-08-03** (see backlog/QUEUE.md session-95 head for the ruling,
+reason, and unfreeze criteria; this ticket is P2-or-lower and not exempt; annotation applied
+retroactively 2026-08-04 — this stub was filed after the freeze took effect but was not marked at
+filing time, a bookkeeping gap corrected here, not a new decision)
 
 **Gap.** PR #662 merged 2026-08-03 16:37:22 UTC. The session that would have run the
 `retrospective-analyst` was killed when its terminal closed. **Nothing in this repository detected
@@ -26357,7 +26372,11 @@ RETRO-245 §5d; RETRO-210; RETRO-233; FOLLOW-645]
 
 source_retro: RETRO-245 §5d / §6 source_ticket: FOLLOW-795 (PR #663) + FOLLOW-796 (PR #664), run in
 parallel worktrees recommended_sprint: next recommended_agent: devops-engineer priority: P2
-estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
+2026-08-03** (see backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria;
+this ticket is P2-or-lower and not exempt; annotation applied retroactively 2026-08-04 — this stub
+was filed after the freeze took effect but was not marked at filing time, a bookkeeping gap
+corrected here, not a new decision)
 
 **Gap (measured, not hypothetical).** PRs #663 and #664 ran as isolated worktrees off the same base
 and each measured the SDK bundle against `main`'s **41.73 KB**: **41.86 KB** (#663, job log

@@ -598,7 +598,77 @@ PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 
-## ▶️ START HERE — session 89 WIND-DOWN (2026-08-03) — 4 PRs open, all PM-validated, none merged. Read this section only; details are below it.
+## ▶️ START HERE — session 90 (2026-08-03) — all 4 PRs MERGED by Piotr, both conflicts independently re-verified, 2 retros dispatched before any new ticket
+
+**All 4 PRs merged, `main` at `ff02b85e`, tree clean.** Merge order: `04833fd0` (#652
+FOLLOW-765+759) → `0d111343` (#653 FOLLOW-761) → `49ad5c04`+`c86f3b0c` (#654 FOLLOW-762) →
+`b8f2b922`+`ff02b85e` (#655 FOLLOW-766+767). All rebase-merged, commits verbatim on `main`.
+
+**Two conflicts, both independently re-verified, not taken on the coordinator's word:**
+
+1. **#653↔#654 (the predicted one).**
+   `grep -n "REQUIRE_REDIS_SMOKE:\|NX_RUN_SUFFIX\|hard_fail_required" .github/workflows/redis-shadow-smoke.yml`
+   on `main` → both mechanisms present, syntactically coherent (confirmed `49ad5c04`'s content
+   actually differs from the pre-merge `368be9a0`, i.e. the rebase genuinely rewrote this commit
+   during resolution, not merely relabeled it). **Then verified past syntax, into actual runtime
+   behavior**: `gh run list --workflow=redis-shadow-smoke.yml --branch main` → the post-merge push
+   run (`30791644750`) succeeded; its job log (`91616250694`) contains BOTH
+   `NX_RUN_SUFFIX: 30791644750` (a real `github.run_id`, FOLLOW-761's namespacing) AND
+   `PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit 1)`
+   (FOLLOW-762's mechanism) in the SAME job run — both tickets' mechanisms are live together on
+   `main`, not just non-conflicting text.
+2. **#655's QUEUE.md conflict against the PM's own wind-down commit (`51b4e2b0`) — not predicted,
+   confirmed as described.** `grep -c "^<<<<<<<\|^=======\|^>>>>>>>" backlog/QUEUE.md` → 0 (no
+   leftover conflict markers); both the wind-down note (this file, "session 89 WIND-DOWN" header)
+   and the worker's own PR #655 handoff note
+   (`### FOLLOW-766 + FOLLOW-767 — worker done, PR #655 open`) are present intact, in sequence,
+   neither truncated. **Lesson banked, not just acknowledged**: a `git merge-tree` "zero conflicts"
+   result taken BEFORE a bookkeeping push has a shelf life that ends at the next push to `main` —
+   the PM's own commits are exactly as capable of creating a collision as a second worker's, and the
+   collision-check discipline this session built needs to re-run after every push that touches a
+   file a still-open PR also touches, not just once per ticket.
+
+**Independently re-ran all three touched gates on merged `main`** (not trusting "I verified" from
+the coordinator): `check-mirror-files.sh`, `check-sentry-capture-has-init.sh`,
+`check-sentry-init-singleton.sh` — all exit 0, all `--self-test` PASSED (7/9/9 assertions
+respectively). Checked `main`'s own CI aggregate run (`30791644798`): only `Rule I` failed, WARN
+count still 192 (job log, not label) — no regression introduced by either merge/resolution.
+
+**Retro batching decision (Piotr instructed: run retros, then dispatch 763/768/769).** 6 tickets
+merged across 4 PRs. Batched by SHARED PARENT RETRO rather than by file-proximity, because the
+stronger organizing question is "does this retro trace ITS parent's own closure," and RETRO-239 and
+RETRO-238 each parented a different pair of these PRs:
+
+- **RETRO-240: PR #652 (FOLLOW-765+759) + PR #655 (FOLLOW-766+767).** Both are RETRO-239's own §7
+  follow-ups (HW-1→765, HW-2→766, LG-1→767; 759 rode along in #652 per its own combined-dispatch
+  rationale). No interaction/conflict between the two PRs' CODE (confirmed via `git merge-tree`
+  before merge — zero markers), so combining them is about tracing one parent retro's full closure
+  in one pass, not about resolving a shared defect. Must also carry the #655/wind-down QUEUE.md
+  collision as an explicit input (§2 above) — a retro reading only the merged diff would never see
+  it, since it happened after PM validation and appears in no PR body.
+- **RETRO-241: PR #653 (FOLLOW-761) + PR #654 (FOLLOW-762).** Both are RETRO-238's own §7 follow-ups
+  (759 already closed via RETRO-239, so these are RETRO-238's remaining open items). Real
+  interaction this time — an actual merge conflict on `REQUIRE_REDIS_SMOKE` requiring hand
+  resolution, confirmed above. Must carry that conflict-resolution event as an explicit input (§1
+  above) for the same reason — no PR body mentions it.
+
+**Both retro briefs will explicitly include `.claude/agents/<name>/lessons.d/**` in the write
+scope\*\* — the gap that denied 3 different workers' lessons writes this session
+(retrospective-analyst once, two other workers once each) is the PM's own dispatch-template gap per
+the wind-down note's item 2, fixable without Piotr.
+
+**Dispatching RETRO-240 first** (Opus, per the standing per-ticket-retrospective-loop model rule).
+RETRO-241 follows once RETRO-240 lands (one Bash-capable agent at a time in this shared tree).
+FOLLOW-763/768/769 are NOT dispatched this turn — Piotr's instruction is retros first, then
+dispatches; also the file-collision discipline needs one more pass now that 768/769's target files
+are finally on `main` (checking whether 768 and 769 collide with EACH OTHER, per Piotr's explicit
+ask, before either is dispatched).
+
+NEXT: Wait for RETRO-240 (PR #652 + PR #655), merge it, then dispatch RETRO-241 (PR #653 + PR #654).
+
+---
+
+## ▶️ (superseded) START HERE — session 89 WIND-DOWN (2026-08-03) — 4 PRs open, all PM-validated, none merged. Read this section only; details are below it.
 
 **Why winding down instead of dispatching a 5th ticket.** Every remaining candidate (FOLLOW-763,
 FOLLOW-768, FOLLOW-769) is deferred on a file collision with one of the 4 open PRs — dispatching any

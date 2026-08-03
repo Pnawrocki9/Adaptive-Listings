@@ -1438,12 +1438,25 @@ detekcji produkuje `TenantSiteSchema.detail_schema.slot_selectors` (CSS-selektor
 description na **istniejącym** DOM tenanta), ale silnik adaptacji mutuje wyłącznie elementy z
 `data-estalara-slot`. `annotateSlots(slot_selectors)` domyka tę lukę: dostaje z `/api/adapt` płaską
 mapę `{ klucz_detekcji → selektor CSS }` (projekcja `SelectorStrategy.primary`, robiona serwerowo w
-`apps/control-plane/src/lib/tenant-schema.ts`), anotuje **każdy** dopasowany element (nigdy nie
-nadpisuje istniejącego `data-estalara-slot`; nigdy nie rzuca) i **tłumaczy słownik detekcji na
-słownik adaptacji**: `headline→headline`, `cta_primary→cta`, `description→description`; klucze
-nieujęte w tabeli trafiają do DOM dosłownie. Tabela tłumaczeń `SLOT_NAME_TRANSLATION` jest
-**jedynym** punktem przekładu (11 technik auto-detekcji + kurowany schemat DB zasilają tę jedną
-funkcję).
+`apps/control-plane/src/lib/tenant-schema.ts`), nigdy nie nadpisuje istniejącego
+`data-estalara-slot`, nigdy nie rzuca, i **tłumaczy słownik detekcji na słownik adaptacji**:
+`headline→headline`, `cta_primary→cta`, `description→description`; klucze nieujęte w tabeli trafiają
+do DOM dosłownie. Tabela tłumaczeń `SLOT_NAME_TRANSLATION` jest **jedynym** punktem przekładu
+(11 technik auto-detekcji + kurowany schemat DB zasilają tę jedną funkcję).
+
+**Zakres anotacji — dla slotów TŁUMACZONYCH wyłącznie dopasowanie JEDNOZNACZNE (FOLLOW-801,
+2026-08-03; przywraca `ADR-0008` §Decision.1).** Gdy selektor tłumaczonego klucza (dziś: `cta`)
+dopasuje **więcej niż jeden** element, nie jest anotowany **żaden** i leci obserwowalne
+`adapt.skipped {reason: 'ambiguous_slot_selector', match_count}`. Powód: selektory producenta są
+z natury szerokie — `a[href*="contact"]` (`wordpress.ts`, `json-ld.ts`),
+`[class*='cta'], [class*='button']` (`css-modules.ts`) — więc na realnej stronie tenanta łapią link
+w nawigacji, CTA karty i link w stopce naraz; anotowanie wszystkich oddaje każdy z nich
+`applyTextDirective`, który nadpisuje `textContent` i (od FOLLOW-791) uzbraja na każdym
+MutationObserver broniący nadpisania w nieskończoność. Wybór pierwszego dopasowania byłby
+zgadywaniem po kolejności w dokumencie — lepiej nie adaptować nic i to zaraportować.
+Klucze **nietłumaczone** (`headline`, `description`) zachowują zachowanie every-match sprzed
+FOLLOW-796 — ich zawężenie to osobna, świadoma decyzja, nie skutek uboczny (zapięte testem
+`packages/sdk/src/__tests__/follow-801-slot-scope.test.ts`).
 
 > _Historia (FOLLOW-796, 2026-08-03):_ przepisanie z FOLLOW-340 (`augment.ts` →
 > `annotate-slots.ts`) zgubiło mapowanie `cta_primary→cta`, przez co na tenantach bez ręcznego

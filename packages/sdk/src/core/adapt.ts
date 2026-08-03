@@ -687,7 +687,15 @@ function registerFeedbackListener(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function pushEvent(event: CollectedEvent): void {
+/**
+ * Push onto the SDK's collected-event queue (set by `setEventQueueRef` at init).
+ *
+ * Exported for `annotate-slots.ts` (FOLLOW-801), which must make an ambiguous-selector
+ * skip observable but has no queue of its own. Sharing this one keeps annotation skips in
+ * the same stream as the `adapt.skipped` events they precede, rather than adding a third
+ * queue-ref setter. No-ops before init — a skip emitted with no queue is dropped, not thrown.
+ */
+export function pushEvent(event: CollectedEvent): void {
   _eventQueue?.push(event);
 }
 

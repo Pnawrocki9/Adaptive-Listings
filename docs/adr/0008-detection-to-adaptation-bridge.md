@@ -43,6 +43,17 @@ detection quality for bespoke sites.
 ## Decision
 
 **1. Runtime augment applicator (the bridge) — IMPLEMENTED (FOLLOW-159).**
+
+> **Status note (FOLLOW-801, 2026-08-03).** The module named below was replaced by
+> `packages/sdk/src/core/annotate-slots.ts` in FOLLOW-340, and that rewrite **silently dropped the
+> "unique-match only" clause this ADR specifies**. The omission was harmless until FOLLOW-796
+> restored the `cta_primary → cta` translation, at which point broad producer selectors
+> (`a[href*="contact"]`) began overwriting — and MutationObserver-enforcing — every contact link on
+> a tenant page. FOLLOW-801 restores the clause for **translated** slots; identity keys (`headline`,
+> `description`) still annotate every match, which this ADR did not anticipate and which remains
+> open. The decision text below stands as written; only the module name is stale. Broader
+> reconciliation of this file is owned by FOLLOW-804 — do not duplicate it here.
+
 `packages/sdk/src/core/augment.ts` `annotateDetectedSlots(schema)` resolves each
 `detail_schema.slot_selectors` entry (primary → ordered fallbacks; unique-match only; never
 overrides existing markup; never throws) and self-annotates the matched element with

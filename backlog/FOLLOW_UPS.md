@@ -25750,7 +25750,8 @@ packages/sdk/src/core/playbooks/types.ts:42-51; RETRO-244 §3 HW-1 / §4a LG-4]
 
 source_retro: RETRO-244 §4a LG-5(a) source_ticket: FOLLOW-791 (PR #661) recommended_sprint: next
 recommended_agent: sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (dispatched 2026-08-03, sdk-engineer, Sonnet, worktree-isolated — see
+QUEUE.md)
 
 **Gap.** `applyTextDirective` skips the new resilience mechanism whenever `slotName === 'headline'`
 (`packages/sdk/src/core/adapt.ts:734`), on the stated — and correct — ground that a second
@@ -25793,7 +25794,8 @@ RETRO-244 §4a LG-5(a); FOLLOW-796]
 source_retro: RETRO-244 §4a LG-5(b) / §5 closure check (re-files RETRO-093 §4a LG-1+LG-2, §4b CB-1,
 §4c TG-1) source_ticket: FOLLOW-340 (PR #322), re-surfaced by FOLLOW-791 (PR #661)
 recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 5 depends_on:
-[] blocks: [] promoted_to_queue: false
+[] blocks: [] promoted_to_queue: true (dispatched 2026-08-03, sdk-engineer, Opus, worktree-isolated
+— see QUEUE.md)
 
 **Why this is being re-filed under a new number.** RETRO-093 §4a LG-1 found this defect, rated it
 **P1**, folded LG-2 and CB-1 into it, and §7 recorded _"FOLLOW-352 (OPEN, P1, sdk-engineer, 4h)"_ —

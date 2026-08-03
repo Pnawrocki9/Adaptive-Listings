@@ -1,5 +1,61 @@
 # Backlog Queue
 
+### FOLLOW-796 — status: IN_PROGRESS (dispatched 2026-08-03)
+
+**Source:** RETRO-244 §4a LG-5(b) / §5 closure check, re-filing RETRO-093 §4a LG-1+LG-2 / §4b CB-1 /
+§4c TG-1 under a fresh number — the original `FOLLOW-352`/`FOLLOW-353` were rated P1 by RETRO-093 on
+2026-06-19 but **no `## FOLLOW-352`/`## FOLLOW-353` section was ever written** to this file
+(register jumps `## FOLLOW-346` → `## FOLLOW-354`); the defect has been live on `main` for 45+ days.
+Per Rule AN the historical numbers are not re-minted.
+
+**Gap.** `annotateSlots` (`packages/sdk/src/core/annotate-slots.ts:61`) writes the tenant schema's
+key verbatim as `data-estalara-slot`. The typed schema key set is `cta_primary`/`cta_secondary`/
+`features_list` (`packages/shared/src/tenant-site-schema.ts:86-93`); playbook directives target
+`cta`/`feature` only. `cta_primary ≠ cta`, `features_list ≠ feature` → every `cta`/`feature`
+directive silently `adapt.skipped {no_slot_elements}` on a self-annotated (un-instrumented) tenant —
+only `headline` happens to coincide. **Not a genuinely open business decision**: `MASTER_DESIGN.md`
+line 1442 already documents the intended mapping (`cta_primary→cta`) as of the 1 June 2026 changelog
+— it was simply never implemented in FOLLOW-340's rewrite of the self-annotation path. The `feature`
+side has no equivalent documented mapping; AC1 requires either implementing one or explicitly
+documenting the gap as out-of-scope, so this is not a hard blocker on dispatch.
+
+**assigned_to:** sdk-engineer **model: Opus** — escalated one tier: this is effectively the SECOND
+attempt at a P1 that silently never reached the queue the first time, spans the SDK/control-plane
+boundary (AC4 requires unit tests against `apps/control-plane/src/lib/tenant-schema.ts` and
+`.../api/adapt/route.ts`, not just the SDK-side fix), and requires reconciling a canonical slot-name
+choice against `docs/MASTER_DESIGN.md` rather than following a existing pattern verbatim. **Running
+in an isolated git worktree** (parallel with FOLLOW-795, no file overlap between the two tickets).
+**started_at:** 2026-08-03. **branch:** `sdk-engineer/FOLLOW-796-slot-name-translation`.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
+### FOLLOW-795 — status: IN_PROGRESS (dispatched 2026-08-03)
+
+**Source:** RETRO-244 §4a LG-5(a), filed against FOLLOW-791 (PR #661).
+
+**Gap.** `applyTextDirective` unconditionally skips the new FOLLOW-791 resilience mechanism whenever
+`slotName === 'headline'` (`packages/sdk/src/core/adapt.ts:734`) — correct reasoning (a second
+independent observer would fight `adapt-description.ts`'s own headline observer), but the exclusion
+is unconditional while `adapt-description.ts`'s ownership of that slot is conditional
+(`applyAndObserveHeadlineSlot` only runs when a per-listing LLM headline actually exists,
+`adapt-description.ts:395-399`). On cold-start / a generation failure / an uncached listing / a
+`neutral` archetype / profiling opt-out — the majority case at first paint — **no observer owns the
+headline slot at all**, and headline is the single most visible adaptation (17/18 playbooks emit
+one). Combined with FOLLOW-796, this makes the FOLLOW-791 mechanism inert on the no-code surface.
+
+**assigned_to:** sdk-engineer **model: Sonnet** — single-package scope (`adapt.ts` +
+`adapt-description.ts` only), and a mature reference pattern to hand off to already exists in the
+same file (`adapt-description.ts`'s own conditional-ownership logic) — no open design question, just
+an ownership hand-off instead of an unconditional exclusion. **Running in an isolated git worktree**
+(parallel with FOLLOW-796, no file overlap). **started_at:** 2026-08-03. **branch:**
+`sdk-engineer/FOLLOW-795-headline-ownership-handoff`.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ### FOLLOW-792 — status: DONE (PR #662 merged 2026-08-03 by Piotr via rebase, `8d515ac6`)
 
 **Source:** RETRO-244 §4a LG-1 / §4c TG-1, filed against FOLLOW-791 (PR #661). **Dispatched now, at

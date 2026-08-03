@@ -25605,7 +25605,7 @@ archetype); FOLLOW-548 / Rule AB (the deferred-write-guard pattern this ticket r
 
 source_retro: RETRO-244 §4a LG-1 / §4c TG-1 source_ticket: FOLLOW-791 (PR #661) recommended_sprint:
 next recommended_agent: sdk-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (dispatched 2026-08-03, sdk-engineer, Sonnet — see QUEUE.md)
 
 **Gap.** `applyOrder` (`packages/sdk/src/core/adapt.ts:875-884`) closes over `sorted` — the node
 references captured at first-apply time (`:866`, sorted from `cards`). `attachResilience` invokes it

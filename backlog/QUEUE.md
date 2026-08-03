@@ -1,5 +1,34 @@
 # Backlog Queue
 
+### FOLLOW-792 — status: IN_PROGRESS (dispatched 2026-08-03)
+
+**Source:** RETRO-244 §4a LG-1 / §4c TG-1, filed against FOLLOW-791 (PR #661). **Dispatched now, at
+Piotr's explicit instruction, ahead of its siblings** FOLLOW-795/796 (same retro, same P1 priority,
+left queued for normal sprint planning per that same instruction) — FOLLOW-792 is a real, currently
+live bug in code merged to `main` today (`33de49e6`), not a design gap on an already-inert surface.
+
+**Gap being fixed.** `applyOrder` (`packages/sdk/src/core/adapt.ts:875-884`) closes over the
+`sorted` node references captured at first-apply time. `attachResilience`'s deferred repair
+re-invokes it unchanged. A framework **re-order** of the same nodes is repaired correctly; a
+framework **re-mount** (React key change, Svelte `{#each}` re-key, destroy+recreate) leaves the
+closure holding detached orphan nodes, which `container.prepend/append` then re-attaches
+**alongside** the framework's fresh cards — duplicate listing cards, and the repair never converges
+(`matches()` permanently fails the length check, so every subsequent mutation re-enters and
+re-appends). The PR's own comment at `:889-891` claims re-mount is handled; it is not, and no test
+covers it.
+
+**assigned_to:** sdk-engineer **model: Sonnet** — delegation table row "client SDK, Shadow DOM,
+tiers, browser code." The retro's AC is exhaustively specific (exact lines, exact test scenario, the
+comment correction needed) — a well-defined ticket scope with no open design question, matching the
+Sonnet fit criterion even though the defect it fixes shipped from Sonnet-tier work; not escalating a
+tier here because this is the first attempt at this specific fix, not a retry after this ticket
+itself failed. **started_at:** 2026-08-03. **branch:**
+`sdk-engineer/FOLLOW-792-reorder-remount-resilience`.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+---
+
 ### FOLLOW-746 — status: DONE (PR #651 merged 2026-08-02 by Piotr, `4446e69c`)
 
 **Merged.** Four holes closed in the singleton gate, each with a red-first fixture. The tokenizer

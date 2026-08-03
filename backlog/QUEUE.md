@@ -1,5 +1,74 @@
 # Backlog Queue
 
+### FOLLOW-801 — status: READY_FOR_REVIEW (PR #666, 2026-08-03)
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/666 —
+`fix(sdk): annotate translated slots on a unique match only`. Closes the P1 RETRO-245 filed against
+FOLLOW-796 (PR #664).
+
+**Decision (AC1).** Of the ticket's three options, implemented **unique-match only** — because
+`ADR-0008` §Decision.1 already specified it (_"primary → ordered fallbacks; unique-match only"_) and
+the FOLLOW-340 rewrite silently dropped it. This restores a ratified decision rather than inventing
+a policy. Rejected: scoping `searchRoot` to a listing container (un-instrumented tenants may not
+have one — the whole population at risk), and gating on `page_type` (the nav is on the detail page
+too). A translated key matching >1 element annotates nothing and emits
+`adapt.skipped {reason: 'ambiguous_slot_selector', match_count}` (AC2). Skipping wholesale rather
+than taking the first match is deliberate: with >1 candidate, document order is a guess that
+overwrites an arbitrary node.
+
+**Scope boundary, deliberate and pinned.** Only translated keys are gated; `headline`/`description`
+keep the pre-FOLLOW-796 every-match behaviour, since narrowing them here would smuggle an unrelated
+change into a P1 fix. A test pins that boundary so widening it later must be a conscious edit. The
+same ambiguity does apply to `headline` — pre-existing, not this regression.
+
+**CI:** 71 pass; the only red is the pre-existing `Rule I` at **192 = `main` baseline** (confirmed
+from the job log, not the check summary — the new `pushEvent` export has a non-test importer).
+
+**Validation:** 78 files / 1542 tests; `tsc` clean; eslint + prettier clean; bundle **41.92KB gzip**
+(+41 bytes, limit 42KB — fits, so no limit raise and no ESC-028-style escalation). Tests are
+red-first: 5 of 7 fail against `675cd75f`, including the assertion that **no resilience observer is
+armed on the bystanders** — a plain `textContent` check passes as soon as the overwrite is gone and
+misses what makes the damage permanent.
+
+**Docs (AC5):** `MASTER_DESIGN.md` every-match claim replaced; `ADR-0008` status note. Both narrow —
+FOLLOW-804 owns the broader reconciliation, not duplicated here.
+
+**Next:** human merge, BEFORE PR #665.
+
+---
+
+### FOLLOW-808 — status: READY_FOR_REVIEW (PR #665, 2026-08-03) — BLOCKED ON FOLLOW-801
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/665 —
+`build(control-plane): generate served SDK bundles on build`. Implements CEO ruling on ESC-047(a)
+("buduj sdk.js przez CI na merge'u", 2026-08-03).
+
+**⚠ MERGE ORDER: #666 (FOLLOW-801) FIRST, THEN #665.** This PR arms delivery; the first bundle it
+builds would ship FOLLOW-801's `cta` over-annotation to the pilot, turning a latent P1 into
+user-visible brand-safety damage. That regression is currently harmless ONLY because the served
+bundle is frozen.
+
+**What it fixes.** `public/sdk.js` (frozen `4bdaf58c`, 2026-05-29) and
+`public/estalara-detect.iife.js` (frozen `43ad8496`, 2026-06-17) were hand-committed binaries that
+nothing regenerated, while 80 commits across ~76 tickets touched `packages/sdk`. Verified against
+production: `curl admin.estalara.com/sdk.js` was byte-identical (`cmp`) to the committed May file.
+The control-plane build now generates both from `packages/sdk/dist/`; Turbo already builds the SDK
+first (`build.dependsOn: ["^build"]`), so a merge to `main` is now the SDK release.
+
+**Two traps closed, each proven by execution not reasoning:** (1) a Turbo cache HIT replays the
+build logs — including the copier's success lines — but restores no `public/` bundle, deploying a
+control-plane that 404s; fixed via a package-level `turbo.json` declaring both as outputs, verified
+by deleting them and re-running WITHOUT `--force`. (2) the copier exits 1 on a missing source rather
+than copying nothing.
+
+**CI:** 72 pass; only the pre-existing `Rule I` at 192. The new gate
+`Served SDK bundles build-generated (ESC-047)` passes and was self-tested against all three
+regressions it guards.
+
+**Next:** merge AFTER #666.
+
+---
+
 ### FOLLOW-796 — status: DONE (PR #664 merged 2026-08-03, `675cd75f`)
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/664 —

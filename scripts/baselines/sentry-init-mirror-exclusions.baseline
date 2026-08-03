@@ -11,6 +11,22 @@
 # grew this list from 3 to 4 before FOLLOW-765; now it turns the gate RED until
 # the addition is written here, in a diff a human reads.
 #
+# EXACTLY WHAT "a fourth pair" COVERS (corrected by FOLLOW-771 — the sentence
+# above was true only for pairs inside `apps/*/src` whose basenames the gate
+# also scans). The observed set is built by iterating the manifest's `.py`
+# paths, NOT the scanned file list, so it now grows on:
+#   - a pair inside apps/*/src                                  (always did);
+#   - a pair OUTSIDE apps/*/src, e.g. under packages/           (did NOT before);
+#   - a pair whose basename matches the gate's own test-convention
+#     exclusion, e.g. test_helpers.py                            (did NOT before);
+#   - a registered path with no file on disk — which is additionally its own
+#     STALE MANIFEST ENTRY finding, because a suppression nothing can verify
+#     must not be silent.
+# It does NOT grow on a mirror registered under another Python-family suffix
+# (.pyi/.pyw/.pyx/.pxd): the registered set is filtered by the exact `.py`
+# suffix. That is the one region bound that survives, and it is register entry
+# [H] in the gate's Rule AP residual register, executed on every run.
+#
 # NOTE: exclusion is not blind trust. Every excluded file that holds a real
 # `sentry_sdk.init(` must also carry the three FOLLOW-738 hardened markers
 # (default_integrations=False, send_default_pii=False,

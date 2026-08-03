@@ -48,11 +48,22 @@
 #      legitimate `sentry_sdk.init(` lives, so this gate must exclude them and
 #      the two gates legitimately differ. Do not "converge" them.
 #      EXCLUSION IS NOT BLIND TRUST (FOLLOW-765 AC2, closing residual C). Two
-#      checks now bound this suppression set:
+#      checks now bound this suppression set, and since FOLLOW-771 BOTH are
+#      evaluated over the REGISTERED SET (`$REGISTERED`, the manifest-derived
+#      `.py` paths) rather than over the scanned file list:
 #        (i)  its MEMBERSHIP is compared against a committed baseline,
 #             scripts/baselines/sentry-init-mirror-exclusions.baseline (see
-#             "SUPPRESSION BASELINE" below), so registering a fourth pair
-#             reddens the gate until the addition is reviewed; and
+#             "SUPPRESSION BASELINE" below), so registering a fourth `.py` pair
+#             reddens the gate until the addition is reviewed — INCLUDING a
+#             pair outside `apps/*/src` and a pair whose basename matches this
+#             gate's own test-convention exclusion. Both were exempt until
+#             FOLLOW-771: the two controls lived inside `for f in $FILES`, so
+#             the register they guard (repo-wide) was wider than the assertion
+#             over it (`apps/*/src`, minus test-convention basenames) — Rule AL.
+#             The bound that REMAINS is the exact `.py` suffix filter, recorded
+#             as register entry [H]; and a registered path with no file on disk
+#             is its own loud STALE MANIFEST ENTRY finding, never a silent skip;
+#             and
 #        (ii) every excluded file that holds a real `sentry_sdk.init(` must
 #             carry all three FOLLOW-738 HARDENED MARKERS —
 #             `default_integrations=False`, `send_default_pii=False`,
@@ -131,58 +142,142 @@
 # The --self-test mode points all three at a temp directory so the detector can
 # be verified without touching the real source tree, manifest or baseline.
 #
-# KNOWN, DELIBERATELY UNGUARDED GAPS (Rule AE-as-amended — verified not live,
-# recorded so they are not silently reintroduced as surprises):
-#   A. SCAN_DIRS is only "$ROOT"/apps/*/src — a `sentry_sdk.init(` under
-#      packages/, scripts/, tests/integration/ or apps/*/tests/ is unscanned.
-#      Verified zero such call sites repo-wide today:
-#        grep -rn "sentry_sdk\.init(" --include=*.py . | grep -v apps/./src/
-#   B. The detection regex requires the literal `sentry_sdk.` prefix. A module
-#      doing `from sentry_sdk import init` (or `import sentry_sdk as s`) and
-#      calling the bare name is invisible here — the SAME residual CB-3 that
-#      check-sentry-capture-has-init.sh records as its gap 7. Verified zero
-#      such imports repo-wide today:
-#        grep -rn "from sentry_sdk import\|import sentry_sdk as" --include=*.py .
-#      Fixing it belongs in ONE ticket covering both gates (it is now literally
-#      the same residual on both sides of the shared helper), not here.
-#   C. REWRITTEN BY FOLLOW-765 — the previous text here claimed a registered
-#      mirror's init was kept honest by "Rule J byte-identity plus
-#      apps/intent-engine/src/test_observability.py". That was FALSE for the
-#      case that matters: both named controls are keyed to the EXISTING
-#      canonical, so a NEWLY registered self-consistent pair holding a bare
-#      `sentry_sdk.init(` passes Rule J (the two copies match each other), is
-#      untouched by test_observability.py (its 10 tests all import the
-#      intent-engine `observability` module), and is excluded here by its own
-#      registration. This gate NOW verifies the hardened markers itself (see
-#      exclusion note 1(ii) above) and baselines the exclusion membership.
-#      Remaining, deliberately-unguarded sub-shapes:
-#        C1. The marker check is FILE-scoped and textual, not call-scoped: a
-#            file with two inits, where the three markers sit on the other
-#            one, satisfies it. Each registered mirror holds exactly one init
-#            today, and Rule J byte-identity keeps a pair from diverging.
-#        C2. A registered `.py` mirror holding NO real init carries no marker
-#            requirement (there is nothing to harden). Registration still
-#            removes it from init scanning — but if such a file later GAINS an
-#            init, the marker check catches it at exactly that point.
-#        C3. The asserted set is the three FOLLOW-738 flags. Other hardening in
-#            the canonical (an explicit `integrations=[...]` list,
-#            `traces_sample_rate`) is NOT asserted here; Rule J byte-identity
-#            is what keeps the mirrors equal to the canonical on those.
-#   D. `for f in $FILES` (in the real-check loop below) is unquoted word
-#      splitting — a filename containing IFS whitespace would break it. No such
-#      filename exists in the repo today. Same residual as gap 6 of
-#      check-sentry-capture-has-init.sh; both would be fixed together.
-#   E. The exclusion baseline records PATHS only — not the content hash of each
-#      excluded file. Content is covered by the marker check (ii) and by Rule J,
-#      not by the baseline; the baseline answers "which files are suppressed",
-#      not "what is in them".
-#   F. This gate now depends on TWO shared helpers under scripts/lib/
-#      (clean-python-source.sh, suppression-baseline.sh). A missing one exits 2
-#      rather than degrading, but neither hard-fail has a fixture — FOLLOW-769
-#      owns that gap, and its scope is now two helpers x two gates.
-#   None of A/B/C1/C2/C3/D/E/F is fixed here (out of this ticket's AC); the
-#   class is therefore NOT fully enumerated-and-guarded — it is
-#   documented-and-open.
+# KNOWN, DELIBERATELY UNGUARDED GAPS — Rule AP RESIDUAL REGISTER (executed)
+# ─────────────────────────────────────────────────────────────────────────────
+# This section is NOT prose. Every entry below is a row of the
+# RESIDUAL_REGISTER array further down, and the gate EXECUTES every entry's
+# latency proof on every run, printing one status line per entry. Per entry:
+#
+#   EVERY pipe stage exits 0 or 1,
+#     EMPTY stdout                    → LATENT   (documented, still not real)
+#   EVERY pipe stage exits 0 or 1,
+#     stdout output                   → GONE LIVE → gate FAILS with exit 3,
+#                                       naming the entry id — a diagnosis
+#                                       DISTINCT from an ordinary finding (1)
+#   ANY pipe stage exits >= 2, or the
+#     proof cannot run at all         → gate FAILS with exit 2. A residual
+#                                       whose proof cannot be evaluated is
+#                                       never "assumed still latent"
+#                                       (the FOLLOW-760 contract, applied to
+#                                       the register itself)
+#
+# PER-STAGE PROOF STATUS — why `pipefail` alone is NOT enough
+# ─────────────────────────────────────────────────────────────────────────────
+# Proofs run under `bash -o pipefail -c`, so a failing producer inside a pipe
+# cannot silently yield status 0. That is necessary but NOT sufficient, and
+# FOLLOW-770's first cut of this mechanism got it wrong: `pipefail` reports the
+# status of the RIGHTMOST command that exited non-zero — not the first, and not
+# the worst. Entries B, D and G chain a producer into a SECOND `grep`, and
+# `grep` exits 1 ("no match") on the now-empty input a dead producer leaves
+# behind, so the pipeline reports 1, a `>= 2` test does not fire, and a
+# genuinely dead producer is classified `latent` — the reassuring direction
+# Rule AP clause 2 exists to forbid, reproduced inside clause 2's own
+# enforcement mechanism. The runner below therefore records ${PIPESTATUS[@]} —
+# every stage's OWN exit status — for each proof, and treats ANY stage exiting
+# >= 2 as UNEVALUABLE regardless of what later stages did. It is COPIED VERBATIM
+# from scripts/check-mirror-files.sh (FOLLOW-770 fix-iteration 1), variable
+# names included, so the two diff to zero; see that file for the full writeup.
+# Each proof is evaluated over the SAME region as the control it describes
+# (Rule AL); the region is named in the entry. Retiring an entry requires the
+# fix that closes it in the same PR (Rule AP clause 5).
+#
+# CONTROLS (predicates) in this gate → the entries that bound each:
+#   P1 bare-init detection      (region: $FILES)              → A, B, D
+#   P2 registered-mirror exclusion (region: $REGISTERED)      → H
+#   P3 hardened-marker check    (region: $REGISTERED)         → C1, C2, C3, H
+#   P4 exclusion inventory + baseline (region: $REGISTERED)   → E, H
+#   P5 manifest read            (hard fail, no residual)      → see P5 note
+#   P6 shared-helper availability guards                      → F
+#   P7 this register's own runner                             → G
+# Rule AP clause 3: a PR that adds a predicate to this gate MUST add that
+# predicate's OWN entry here — its region, its scan root, and what it does when
+# its input is unavailable. It may not lean on an entry written about the
+# detector. FOLLOW-771 is the ticket that had to be filed because FOLLOW-765
+# added P3 and P4 and left them leaning on entry A.
+#
+#   A. [P1] SCAN_DIRS is only "$ROOT"/apps/*/src — a `sentry_sdk.init(` under
+#      packages/, scripts/ or tests/integration/ is unscanned.
+#      Region: the COMPLEMENT of the scan region — tracked `*.py` files at
+#      $ROOT not under `apps/*/src` (in a SENTRY_INIT_TARGET run the complement
+#      is empty BY CONSTRUCTION and the proof reads /dev/null). Scan root:
+#      $ROOT. UNAVAILABLE INPUT: if `git ls-files` cannot be read the gate
+#      exits 2 ("REGISTER SOURCE UNAVAILABLE") rather than evaluating this proof
+#      over an empty — i.e. reassuring — region.
+#      SECOND, PROOF-LESS BOUND (stated, deliberately not an entry): `$FILES`
+#      also drops test-convention basenames (`test_*.py`, `*_test.py`,
+#      `conftest.py`), so a real init in one of them is unscanned. That is
+#      EXCLUSIONS item 2, a deliberate exclusion — a test file calling
+#      `sentry_sdk.init(` for real is legitimate (this gate's own fixtures do
+#      it), so any latency proof over that region would be permanently live and
+#      would train readers to ignore the register. NOTE that this bound no
+#      longer applies to P2/P3/P4: a REGISTERED test-convention mirror is
+#      inventoried and marker-checked (FOLLOW-771 AC3).
+#   B. [P1] The detection regex requires the literal `sentry_sdk.` prefix. A
+#      module doing `from sentry_sdk import init` (or `import sentry_sdk as s`)
+#      and calling the bare name is invisible here — the SAME residual
+#      check-sentry-capture-has-init.sh records as its entry C. Fixing it
+#      belongs in ONE ticket covering both gates, not here.
+#      Region: $FILES (import lines in the scanned set).
+#   C1. [P3] The marker check is FILE-scoped and textual, not call-scoped: a
+#      file with two inits, where the three markers sit on the other one,
+#      satisfies it. Rule J byte-identity keeps a registered pair from
+#      diverging, but not from holding two inits.
+#      Region: $REGISTERED (cleaned source of each registered `.py`).
+#   C2. [P3] A registered `.py` mirror holding NO real init carries no marker
+#      requirement — there is nothing to harden — so registration alone
+#      suppresses it until it later GAINS an init, at which point the marker
+#      check catches it. Region: $REGISTERED.
+#   C3. [P3] The asserted set is the three FOLLOW-738 flags. The canonical also
+#      pins an explicit `integrations=[...]` list, which this gate does not
+#      assert; Rule J byte-identity is what keeps the mirrors equal to the
+#      canonical on that. The proof watches registered files that PASS the
+#      three-flag check yet carry no explicit integrations list, so it never
+#      double-reports a file the UNHARDENED finding already names.
+#      Region: $REGISTERED, restricted to marker-clean files.
+#   D. [P1] `for f in $FILES` is unquoted word splitting — a filename
+#      containing IFS whitespace would break the scan loop AND every proof that
+#      word-splits the same list. Region: $FILES itself.
+#   E. [P4] The exclusion baseline records PATHS only — not the content of each
+#      excluded file. Content is covered by the marker check (ii) and by Rule J
+#      byte-identity, so the shape that is genuinely unguarded on both axes is a
+#      registered `.py` pair that opts OUT of byte-identity
+#      (`strip_comments` other than true) — which is what the proof watches.
+#      Region: scripts/mirror-files.json, the same file $REGISTERED comes from.
+#   F. [P6] The two shared-helper guards check PRESENCE and `declare -F`, never
+#      BEHAVIOUR. A helper that loaded, defined the name and returned raw source
+#      would pass both. Semantics are guarded separately and twice, by each
+#      gate's own untokenizable fixture; the proof watches the helper's exit-3
+#      contract, whose removal is what a raw-source fallback would look like.
+#      Region: scripts/lib/clean-python-source.sh.
+#      (The former residual F — "neither hard-fail has a fixture, FOLLOW-769
+#      owns that gap" — is CLOSED by FOLLOW-769 in this same PR: four fixtures
+#      here and four in the sibling gate. Retired as a diff, not a deletion,
+#      per Rule AP clause 5.)
+#   G. [P7] Register entries are hand-written: a failure accumulator added to
+#      this gate without a matching entry is invisible to the register. The
+#      proof counts this script's `*_COUNT=0` / `*_MISMATCH=0` accumulators and
+#      goes live when the number differs from the 5 this register was written
+#      against. Region: this script.
+#   H. [P2 + P3 + P4 — FOLLOW-771 AC5, the region bound that SURVIVES AC1]
+#      The registered set is `_registered_mirror_py_paths()`, which filters the
+#      manifest by the EXACT `.py` suffix. So the three controls now cover every
+#      registered `.py` path regardless of scan-region membership — but a
+#      Python-family mirror registered under another suffix (`.pyi`, `.pyw`,
+#      `.pyx`, `.pxd`) is in NONE of them, and a non-Python mirror (the
+#      registered `bandit.ts` pair) is correctly out of scope for a gate about
+#      Python init sites. Region: scripts/mirror-files.json. Scan root:
+#      $SCAN_ROOT, which is what each registered relative path is resolved
+#      against. UNAVAILABLE INPUT: a registered path that does not resolve to a
+#      file is a loud STALE MANIFEST ENTRY finding (exit 1), never a silent
+#      skip; an unreadable manifest is a hard failure (P5).
+#   P5 note (manifest read): P5 has no entry of its own by design — an
+#      unreadable manifest already fails the gate loudly (exit 1) rather than
+#      scanning with a guessed exclusion list, so there is no latent-vs-live
+#      question to prove.
+#   Not fixed here (out of this PR's AC): A, B, C1, C2, C3, D, E, F, G, H remain
+#   open by design and are now MACHINE-CHECKED rather than asserted in prose.
+#   Do NOT widen SCAN_DIRS to close A — that is its own ticket (FOLLOW-771 AC6
+#   explicitly scopes it out).
 #
 # SELF-TEST
 # ─────────
@@ -210,6 +305,27 @@
 # rather than soft-passing. Every self-test run is pointed at a TEMP baseline,
 # never the repo's committed one.
 #
+# PLUS, in this PR: three FOLLOW-771 fixtures, all red-first against the
+# pre-FOLLOW-771 script (where each exits 0) — (a) a registered, self-consistent
+# `.py` pair OUTSIDE the scan region holding a bare init must fail as BOTH a
+# baseline mismatch and an UNHARDENED REGISTERED MIRROR; (b) a registered path
+# with no file on disk must be its own loud STALE MANIFEST ENTRY finding; (c) a
+# registered mirror named `test_helpers.py` — dropped from the scanned set by
+# this gate's own `! -name "test_*.py"` — must still be inventoried AND
+# marker-checked. PLUS four FOLLOW-769 fixtures: each of the two shared helpers
+# under scripts/lib/, in each of its two failure shapes (missing file / present
+# but defining nothing), asserted to exit 2 with the specific diagnosis, run
+# against a COPY of this gate in a temp directory so SCRIPT_DIR resolves to a
+# lib/ tree the fixture controls. PLUS one Rule AP fixture: registering a `.py`
+# pair that holds NO init makes entry [C2]'s latency proof return hits, and the
+# gate must exit 3 with a GONE LIVE diagnosis naming [C2] while every ordinary
+# check stays clean.
+#
+# PROOF OF EXECUTION (Rule Q). `--self-test` is its own step in the
+# `sentry-init-singleton` job of .github/workflows/ci.yml, run immediately
+# before the real check on every push and PR, so every fixture above executes in
+# CI on this PR — see the green run linked in the PR body.
+#
 # EXIT CODES
 # ──────────
 #   0 = pass (zero real sentry_sdk.init( call sites outside the registered
@@ -222,9 +338,18 @@
 #       EXCLUDED registered mirror whose init is missing a hardened marker
 #       (FOLLOW-765 AC2); or the exclusion set differing from
 #       scripts/baselines/sentry-init-mirror-exclusions.baseline in either
-#       direction (FOLLOW-765 AC1). Each has its own heading.
-#   2 = self-test failure, or a shared helper under scripts/lib/ is missing
-#       (the guard itself is broken)
+#       direction (FOLLOW-765 AC1); or a registered `.py` path that does not
+#       exist on disk (FOLLOW-771 AC1 — a STALE MANIFEST ENTRY). Each has its
+#       own heading.
+#   2 = the gate itself is broken: a self-test failure, a shared helper under
+#       scripts/lib/ missing or defining nothing, a Rule AP register latency
+#       proof that could not be evaluated (ANY pipe stage exiting >= 2), or the
+#       register's own region source being unreadable. Never a verdict on the
+#       tree.
+#   3 = a Rule AP REGISTER ENTRY HAS GONE LIVE — a gap this script's register
+#       says is latent is now real. Distinct from 1 on purpose: the gate
+#       worked, and what changed is the documented residual, not the scanned
+#       code.
 
 set -euo pipefail
 
@@ -401,9 +526,12 @@ JSONEOF
   }
 
   # ── Positive control 1: the real init lives in the REGISTERED mirrors ─────
-  # The fixture carries the three FOLLOW-738 hardening flags, exactly as the
-  # real apps/intent-engine/src/observability.py does — an excluded mirror that
-  # did NOT would now be an UNHARDENED finding (FOLLOW-765 AC2 below).
+  # The fixture carries the three FOLLOW-738 hardening flags AND the explicit
+  # integrations list, exactly as the real apps/intent-engine/src/observability.py
+  # does — an excluded mirror missing a flag would be an UNHARDENED finding
+  # (FOLLOW-765 AC2 below), and one missing the explicit list makes register
+  # entry [C3] go live (the markers are not the canonical's whole hardened
+  # shape).
   cat > "$tmp_dir/app-a/src/observability.py" <<'PYEOF'
 import sentry_sdk
 
@@ -414,6 +542,7 @@ def init_sentry(dsn_env_name):
         include_local_variables=False,
         send_default_pii=False,
         default_integrations=False,
+        integrations=[],
     )
 PYEOF
   cp "$tmp_dir/app-a/src/observability.py" "$tmp_dir/app-b/src/jobs/observability.py"
@@ -655,6 +784,299 @@ PYEOF
   fi
   echo "OK: self-test PASSED — an unreadable mirror manifest fails the gate loudly."
 
+  # ── FOLLOW-771 AC2 (RED-FIRST): a registered pair OUTSIDE the scan region ──
+  # Both FOLLOW-765 controls used to live inside `for f in $FILES`, so a
+  # registered `.py` pair with BOTH sides outside `apps/*/src` entered NEITHER:
+  # the observed exclusion set never grew, the baseline matched, and a file the
+  # manifest had just blessed as a legitimate `sentry_sdk.init(` site was never
+  # marker-verified. Against the pre-FOLLOW-771 script this fixture exits 0 with
+  # a matching (zero-entry) baseline; after the fix it must fail as BOTH a
+  # baseline mismatch (the set grew) AND an UNHARDENED REGISTERED MIRROR.
+  # The fixture's shape is the real repo's shape — a root holding apps/ and
+  # packages/, with the scan region a subdirectory — and
+  # scripts/mirror-files.json already registers a pair whose canonical is under
+  # packages/, so this is established practice here, not a hypothetical.
+  f771="$tmp_dir/f771"
+  mkdir -p "$f771/apps/app-a/src" "$f771/packages/shared/src" "$f771/packages/other/src"
+  cat > "$f771/apps/app-a/src/main.py" <<'PYEOF'
+from observability import init_sentry
+
+init_sentry("SENTRY_DSN")
+PYEOF
+  cat > "$f771/packages/shared/src/telemetry.py" <<'PYEOF'
+import sentry_sdk
+
+
+def boot(dsn):
+    sentry_sdk.init(dsn=dsn, traces_sample_rate=1.0)
+PYEOF
+  cp "$f771/packages/shared/src/telemetry.py" "$f771/packages/other/src/telemetry.py"
+  f771_manifest="$f771/mirror-files.json"
+  cat > "$f771_manifest" <<'JSONEOF'
+[
+  {
+    "canonical": "packages/shared/src/telemetry.py",
+    "mirror": "packages/other/src/telemetry.py",
+    "strip_comments": true
+  }
+]
+JSONEOF
+  f771_baseline="$f771/exclusions.baseline"
+  {
+    echo "# self-test temp baseline"
+    echo "count: 0"
+  } > "$f771_baseline"
+
+  rc=0
+  SENTRY_INIT_TARGET="$f771/apps/app-a/src" \
+    SENTRY_INIT_SCAN_ROOT="$f771" \
+    SENTRY_INIT_MIRROR_MANIFEST="$f771_manifest" \
+    SENTRY_INIT_EXCLUSION_BASELINE="$f771_baseline" \
+    bash "$0" > "$st_out" 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC2): a registered, self-consistent .py pair OUTSIDE"
+    echo "  the scan region holding a BARE sentry_sdk.init( entered neither the exclusion"
+    echo "  inventory nor the hardened-marker check — the two controls are still bounded"
+    echo "  to the scan region while the register they guard is repo-wide (Rule AL)."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  elif [[ "$rc" -ne 1 ]]; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC2): expected the finding exit code (1), got $rc."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  if ! grep -q "does not match its committed" "$st_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC2): the out-of-region pair did not grow the observed"
+    echo "  exclusion set (no baseline-mismatch diagnosis)."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  if ! grep -q "UNHARDENED REGISTERED MIRRORS" "$st_out" \
+    || ! grep -q "packages/shared/src/telemetry.py" "$st_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC2): the out-of-region pair was not marker-checked"
+    echo "  (no UNHARDENED REGISTERED MIRROR finding naming its path)."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-771 AC2) — a registered pair OUTSIDE the scan region is"
+  echo "  inventoried AND marker-checked; the manifest is the region now, not apps/*/src."
+
+  # ── FOLLOW-771 AC1: a registered path with no file on disk is its OWN ─────
+  # loud diagnosis. A silent skip would restore the same hole by another route
+  # (register a path, delete the file, keep the exclusion).
+  rm -f "$f771/packages/other/src/telemetry.py"
+  rc=0
+  SENTRY_INIT_TARGET="$f771/apps/app-a/src" \
+    SENTRY_INIT_SCAN_ROOT="$f771" \
+    SENTRY_INIT_MIRROR_MANIFEST="$f771_manifest" \
+    SENTRY_INIT_EXCLUSION_BASELINE="$f771_baseline" \
+    bash "$0" > "$st_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 1 ]] || ! grep -q "STALE MANIFEST ENTRIES" "$st_out" \
+    || ! grep -q "no such file under" "$st_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC1): a registered .py path that does not exist on"
+    echo "  disk must be its own loud diagnosis (exit 1, STALE MANIFEST ENTRIES), never a"
+    echo "  silent skip. Got exit $rc."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-771 AC1) — a stale manifest entry is a distinct, loud"
+  echo "  finding rather than a suppression nothing can verify."
+  rm -rf "$f771"
+
+  # ── FOLLOW-771 AC3 (RED-FIRST): the test-name axis of the same defect ─────
+  # A registered `.py` mirror named test_helpers.py is dropped from `$FILES` by
+  # this gate's own `! -name "test_*.py"` exclusion, so before the fix it was
+  # never inventoried and never marker-checked even though it sits INSIDE the
+  # scan region. Against the pre-FOLLOW-771 script this fixture exits 0.
+  cat > "$tmp_dir/app-a/src/test_helpers.py" <<'PYEOF'
+import sentry_sdk
+
+
+def boot(dsn):
+    sentry_sdk.init(dsn=dsn, traces_sample_rate=1.0)
+PYEOF
+  cp "$tmp_dir/app-a/src/test_helpers.py" "$tmp_dir/app-b/src/jobs/test_helpers.py"
+  st_manifest_testname="$tmp_dir/mirror-files-testname.json"
+  cat > "$st_manifest_testname" <<'JSONEOF'
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true
+  },
+  {
+    "canonical": "app-a/src/test_helpers.py",
+    "mirror": "app-b/src/jobs/test_helpers.py",
+    "strip_comments": true
+  }
+]
+JSONEOF
+
+  # (a) baseline still at 2: the registered test-convention mirrors must GROW
+  #     the observed exclusion set.
+  rc=0
+  SENTRY_INIT_TARGET="$tmp_dir" \
+    SENTRY_INIT_MIRROR_MANIFEST="$st_manifest_testname" \
+    bash "$0" > "$st_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 1 ]] || ! grep -q "does not match its committed" "$st_out" \
+    || ! grep -q "app-a/src/test_helpers.py" "$st_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC3): a registered mirror matched by the gate's own"
+    echo "  test-name exclusion was not inventoried (expected exit 1 with a baseline"
+    echo "  mismatch naming it). Got exit $rc."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-771 AC3a) — a registered test_*.py mirror is inventoried"
+  echo "  even though the scan loop never sees it."
+
+  # (b) baseline updated to 4, isolating the MARKER check: the same files hold a
+  #     bare init, so they must be UNHARDENED findings.
+  _st_write_baseline 4 \
+    "app-a/src/observability.py" \
+    "app-a/src/test_helpers.py" \
+    "app-b/src/jobs/observability.py" \
+    "app-b/src/jobs/test_helpers.py"
+  rc=0
+  SENTRY_INIT_TARGET="$tmp_dir" \
+    SENTRY_INIT_MIRROR_MANIFEST="$st_manifest_testname" \
+    bash "$0" > "$st_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 1 ]] || ! grep -q "UNHARDENED REGISTERED MIRRORS" "$st_out" \
+    || ! grep -q "test_helpers.py — missing" "$st_out"; then
+    echo "SELF-TEST FAIL (FOLLOW-771 AC3): a registered test_*.py mirror holding a BARE"
+    echo "  sentry_sdk.init( was not marker-checked (expected exit 1 with an UNHARDENED"
+    echo "  REGISTERED MIRROR finding naming it). Got exit $rc."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (FOLLOW-771 AC3b) — a registered test_*.py mirror is"
+  echo "  marker-checked; registration alone no longer suppresses it."
+  rm -f "$tmp_dir/app-a/src/test_helpers.py" "$tmp_dir/app-b/src/jobs/test_helpers.py" \
+    "$st_manifest_testname"
+  _st_write_baseline 2 "app-a/src/observability.py" "app-b/src/jobs/observability.py"
+
+  # ── FOLLOW-769 AC1/AC2: the shared-helper hard-fail contract, FIXTURED ────
+  # Two helpers x two failure shapes. Same four cases as the sibling gate; both
+  # gates promise "a missing helper fails this gate with exit 2 — it never
+  # degrades to raw-text matching" and neither exercised it.
+  helper_dir="$tmp_dir/helper-fixture"
+  helper_out="$tmp_dir/.follow_769_self_test_output"
+  _st_helper_case() {
+    local label="$1" expect_needle="$2"
+    local hrc=0
+    SENTRY_INIT_TARGET="$tmp_dir" bash "$helper_dir/gate.sh" > "$helper_out" 2>&1 || hrc=$?
+    if [[ "$hrc" -ne 2 ]]; then
+      echo "SELF-TEST FAIL (FOLLOW-769): $label — expected the broken-guard exit code (2),"
+      echo "  got $hrc. A gate that cannot load its shared helper must NOT report a"
+      echo "  verdict on the tree (exit 0/1); it must say it is broken."
+      echo "--- gate output ---"
+      cat "$helper_out"
+      exit 2
+    fi
+    if ! grep -q "$expect_needle" "$helper_out"; then
+      echo "SELF-TEST FAIL (FOLLOW-769): $label — exited 2, but without the expected"
+      echo "  diagnosis '$expect_needle'."
+      echo "--- gate output ---"
+      cat "$helper_out"
+      exit 2
+    fi
+    echo "OK: self-test PASSED (FOLLOW-769) — $label"
+  }
+
+  rm -rf "$helper_dir"
+  mkdir -p "$helper_dir"
+  cp "$0" "$helper_dir/gate.sh"
+  _st_helper_case "a MISSING lib/clean-python-source.sh hard-fails the gate." \
+    "shared helper not found: $helper_dir/lib/clean-python-source.sh"
+
+  mkdir -p "$helper_dir/lib"
+  cp "$CLEAN_LIB" "$helper_dir/lib/clean-python-source.sh"
+  _st_helper_case "a MISSING lib/suppression-baseline.sh hard-fails the gate." \
+    "shared helper not found: $helper_dir/lib/suppression-baseline.sh"
+
+  : > "$helper_dir/lib/clean-python-source.sh"
+  cp "$BASELINE_LIB" "$helper_dir/lib/suppression-baseline.sh"
+  _st_helper_case "a lib/clean-python-source.sh that defines NOTHING hard-fails the gate." \
+    "did not define clean_python_source()"
+
+  cp "$CLEAN_LIB" "$helper_dir/lib/clean-python-source.sh"
+  : > "$helper_dir/lib/suppression-baseline.sh"
+  _st_helper_case "a lib/suppression-baseline.sh that defines NOTHING hard-fails the gate." \
+    "did not define compare_suppression_baseline()"
+  rm -rf "$helper_dir" "$helper_out"
+
+  # ── Rule AP verification (CONVENTIONS_PATCH Rule AP) ──────────────────────
+  # A REGISTER ENTRY GOING LIVE must fail the gate with a diagnosis DISTINCT
+  # from an ordinary finding, naming the entry id. Entry [C2] records that a
+  # registered `.py` mirror holding NO real init carries no marker requirement,
+  # so registration alone suppresses it until it later gains one. Registering
+  # exactly such a pair makes its proof return hits. The baseline is set to
+  # match on purpose, and an init-less file can produce neither an UNHARDENED
+  # nor a VIOLATION finding, so exit 3 can only come from the register.
+  # RED-FIRST: against the pre-register script this fixture exits 0.
+  cat > "$tmp_dir/app-a/src/no_init_helper.py" <<'PYEOF'
+def helper():
+    return "no sentry init here at all"
+PYEOF
+  cp "$tmp_dir/app-a/src/no_init_helper.py" "$tmp_dir/app-b/src/jobs/no_init_helper.py"
+  st_manifest_noinit="$tmp_dir/mirror-files-noinit.json"
+  cat > "$st_manifest_noinit" <<'JSONEOF'
+[
+  {
+    "canonical": "app-a/src/observability.py",
+    "mirror": "app-b/src/jobs/observability.py",
+    "strip_comments": true
+  },
+  {
+    "canonical": "app-a/src/no_init_helper.py",
+    "mirror": "app-b/src/jobs/no_init_helper.py",
+    "strip_comments": true
+  }
+]
+JSONEOF
+  _st_write_baseline 4 \
+    "app-a/src/no_init_helper.py" \
+    "app-a/src/observability.py" \
+    "app-b/src/jobs/no_init_helper.py" \
+    "app-b/src/jobs/observability.py"
+  rc=0
+  SENTRY_INIT_TARGET="$tmp_dir" \
+    SENTRY_INIT_MIRROR_MANIFEST="$st_manifest_noinit" \
+    bash "$0" > "$st_out" 2>&1 || rc=$?
+  if [[ "$rc" -ne 3 ]]; then
+    echo "SELF-TEST FAIL (Rule AP): a register entry whose latency proof now returns hits"
+    echo "  did not fail the gate with the distinct GONE LIVE exit code (expected 3, got"
+    echo "  $rc) — this is the Rule AP clause 2 contract."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  if ! grep -q "GONE LIVE" "$st_out" || ! grep -q "\[C2\]" "$st_out"; then
+    echo "SELF-TEST FAIL (Rule AP): the gone-live residual was not reported with the"
+    echo "  distinct GONE LIVE diagnosis naming its entry id (C2)."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  if ! grep -q "matches the committed baseline" "$st_out"; then
+    echo "SELF-TEST FAIL (Rule AP): the fixture was supposed to isolate the register — the"
+    echo "  exclusion baseline should have MATCHED, so exit 3 comes only from the register."
+    echo "--- gate output ---"
+    cat "$st_out"
+    exit 2
+  fi
+  echo "OK: self-test PASSED (Rule AP) — a register entry going live fails the gate (exit 3)"
+  echo "  with a distinct diagnosis naming [C2], while every ordinary check is clean."
+  rm -f "$tmp_dir/app-a/src/no_init_helper.py" "$tmp_dir/app-b/src/jobs/no_init_helper.py" \
+    "$st_manifest_noinit"
+  _st_write_baseline 2 "app-a/src/observability.py" "app-b/src/jobs/observability.py"
+
   echo ""
   echo "Self-test PASSED."
   exit 0
@@ -667,7 +1089,13 @@ echo "=== Sentry init singleton guard (FOLLOW-738 / FOLLOW-746) ==="
 
 if [[ -n "$TARGET" ]]; then
   SCAN_DIRS=("$TARGET")
-  SCAN_ROOT="$TARGET"
+  # SENTRY_INIT_SCAN_ROOT (self-test only) lets a fixture put the scan region in
+  # a SUBDIRECTORY of the root that manifest paths are relative to — which is
+  # the real repo's shape (root = repo, scan region = apps/*/src) and the only
+  # way to express a registered pair that lies OUTSIDE the scan region, i.e. the
+  # FOLLOW-771 case. Without it, TARGET is both the root and the region, so that
+  # case is inexpressible and would have gone on being untested.
+  SCAN_ROOT="${SENTRY_INIT_SCAN_ROOT:-$TARGET}"
 else
   SCAN_DIRS=()
   for d in "$ROOT"/apps/*/src; do
@@ -696,6 +1124,8 @@ fi
 
 echo "Registered Rule J mirror paths (the only legitimate sentry_sdk.init( sites):"
 if [[ -n "$REGISTERED" ]]; then
+  # shellcheck disable=SC2001  # prefixing every line of a multi-line string;
+  # a parameter-expansion replacement cannot anchor to line starts here.
   echo "$REGISTERED" | sed 's/^/  /'
 else
   echo "  (none registered — every sentry_sdk.init( call site will be flagged)"
@@ -714,23 +1144,53 @@ VIOLATIONS=""
 VIOLATION_COUNT=0
 UNPARSEABLE=""
 UNPARSEABLE_COUNT=0
-EXCLUDED_COUNT=0
 UNHARDENED=""
 UNHARDENED_COUNT=0
+STALE=""
+STALE_COUNT=0
 EXCLUDED_OBSERVED=$(mktemp)
+# Register evidence, accumulated while the registered set is walked (entries
+# C1/C2/C3 below read exactly what their controls read — Rule AL).
+SI_MULTI_INIT=""
+SI_NOINIT=""
+SI_NO_INTEGRATIONS=""
 
-for f in $FILES; do
-  rel="${f#"$SCAN_ROOT"/}"
-
-  # Registered mirror path → excluded from the init scan, but NOT trusted
-  # blindly: if it holds a real init, that init must be the hardened one
-  # (FOLLOW-765 AC2, residual C). Byte-identity to a named canonical would be
-  # satisfied trivially by a newly-registered self-consistent pair; the marker
-  # check tests the property the exclusion actually assumes.
-  if [[ -n "$REGISTERED" ]] && printf '%s\n' "$REGISTERED" | grep -Fxq -- "$rel"; then
-    EXCLUDED_COUNT=$((EXCLUDED_COUNT + 1))
+# ── Controls over the REGISTERED SET (FOLLOW-771 AC1) ────────────────────────
+# The exclusion inventory and the hardened-marker check iterate `$REGISTERED` —
+# the manifest-derived `.py` paths — NOT `$FILES`. They used to live inside the
+# `for f in $FILES` loop, which bounded them to `apps/*/src` while the
+# suppression register they guard (scripts/mirror-files.json) is repo-wide: a
+# registered pair with BOTH sides outside the scan region entered NEITHER
+# control, the observed exclusion set stayed at 3, the baseline matched, and a
+# file the manifest had just blessed as a legitimate `sentry_sdk.init(` site was
+# never marker-verified. That is Rule AL — an assertion evaluated over a
+# narrower region than the register it guards — and it made the header's and the
+# baseline file's redden-on-a-fourth-pair guarantee false for exactly the case
+# that matters. `mirror-files.json` is the region now.
+#
+# A registered path that does not exist on disk is its OWN loud diagnosis (a
+# stale manifest entry), never a silent skip: silence there would restore the
+# same hole by a different route (register a path, delete the file, the
+# exclusion is inventoried but nothing is ever checked).
+if [[ -n "$REGISTERED" ]]; then
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] && continue
+    # Membership in the suppression set is a property of the MANIFEST, so it is
+    # recorded before the file is even opened — a stale entry still suppresses.
     printf '%s\n' "$rel" >> "$EXCLUDED_OBSERVED"
 
+    f="$SCAN_ROOT/$rel"
+    if [[ ! -f "$f" ]]; then
+      STALE="${STALE}  ${rel} (registered in $MANIFEST; no such file under $SCAN_ROOT)"$'\n'
+      STALE_COUNT=$((STALE_COUNT + 1))
+      continue
+    fi
+
+    # Registered mirror path → excluded from the init scan, but NOT trusted
+    # blindly: if it holds a real init, that init must be the hardened one
+    # (FOLLOW-765 AC2, residual C). Byte-identity to a named canonical would be
+    # satisfied trivially by a newly-registered self-consistent pair; the marker
+    # check tests the property the exclusion actually assumes.
     excl_cleaned=""
     excl_rc=0
     excl_cleaned=$(clean_python_source "$f") || excl_rc=$?
@@ -742,7 +1202,9 @@ for f in $FILES; do
       continue
     fi
 
-    if printf '%s\n' "$excl_cleaned" | grep -qE "sentry_sdk\.init\("; then
+    excl_init_count=$(printf '%s\n' "$excl_cleaned" | grep -cE "sentry_sdk\.init\(" || true)
+    if [[ "$excl_init_count" -gt 0 ]]; then
+      [[ "$excl_init_count" -gt 1 ]] && SI_MULTI_INIT="${SI_MULTI_INIT}${rel} (${excl_init_count} real init call sites)"$'\n'
       missing=""
       for marker in "${HARDENED_MARKERS[@]}"; do
         if ! printf '%s\n' "$excl_cleaned" | grep -qE "$marker"; then
@@ -753,8 +1215,26 @@ for f in $FILES; do
       if [[ -n "$missing" ]]; then
         UNHARDENED="${UNHARDENED}  ${rel} — missing: ${missing}"$'\n'
         UNHARDENED_COUNT=$((UNHARDENED_COUNT + 1))
+      elif ! printf '%s\n' "$excl_cleaned" | grep -qE "(^|[^_[:alnum:]])integrations[[:space:]]*="; then
+        # Register entry C3: this file passes the three-flag marker check yet
+        # does NOT pin an explicit integrations list the way the canonical
+        # does. Evaluated only on files the marker check CLEARS, so it reports
+        # the residual (markers are not the whole hardened shape) and never
+        # double-reports a file the UNHARDENED finding already names.
+        SI_NO_INTEGRATIONS="${SI_NO_INTEGRATIONS}${rel}"$'\n'
       fi
+    else
+      SI_NOINIT="${SI_NOINIT}${rel}"$'\n'
     fi
+  done <<< "$REGISTERED"
+fi
+
+# ── Control over the SCANNED SET: bare-init detection ────────────────────────
+for f in $FILES; do
+  rel="${f#"$SCAN_ROOT"/}"
+
+  # Registered paths are handled above, over the manifest region.
+  if [[ -n "$REGISTERED" ]] && printf '%s\n' "$REGISTERED" | grep -Fxq -- "$rel"; then
     continue
   fi
 
@@ -798,6 +1278,14 @@ if [[ "$UNHARDENED_COUNT" -gt 0 ]]; then
 fi
 echo ""
 
+echo "STALE MANIFEST ENTRIES (registered as a Rule J .py mirror, but no such file"
+echo "on disk — the path is suppressed and nothing can ever be checked on it —"
+echo "FOLLOW-771 AC1): $STALE_COUNT"
+if [[ "$STALE_COUNT" -gt 0 ]]; then
+  printf '%s' "$STALE"
+fi
+echo ""
+
 echo "UNPARSEABLE FILES (python3 could not tokenize; treated as findings, not"
 echo "silently cleared — FOLLOW-760): $UNPARSEABLE_COUNT"
 if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
@@ -805,8 +1293,201 @@ if [[ "$UNPARSEABLE_COUNT" -gt 0 ]]; then
 fi
 echo ""
 
+# ── Rule AP residual register (FOLLOW-771 AC5) ───────────────────────────────
+# Region sources for the entries below, built HERE so every proof reads exactly
+# the region its control reads (Rule AL) in BOTH modes — the real scan and a
+# SENTRY_INIT_TARGET fixture run.
+if [[ -z "$FILES" ]]; then
+  # grep with no file operands would read stdin and hang; /dev/null is the
+  # empty region and keeps the proof's exit status meaningful (1, no output).
+  SI_FILES_OPERANDS="/dev/null"
+else
+  SI_FILES_OPERANDS="$FILES"
+fi
+
+# Entry [A] reads the COMPLEMENT of the scan region — the .py files this gate
+# never looks at.
+if [[ -n "$TARGET" ]]; then
+  # In TARGET mode SCAN_DIRS is the whole scan root, so the complement is empty
+  # BY CONSTRUCTION — a known-empty region, not an unreadable one.
+  SI_OUTSIDE_OPERANDS="/dev/null"
+else
+  si_ls_rc=0
+  si_tracked_py=$(git -C "$ROOT" ls-files -- '*.py') || si_ls_rc=$?
+  if [[ "$si_ls_rc" -ne 0 ]]; then
+    echo "FAIL: REGISTER SOURCE UNAVAILABLE — \`git ls-files\` exited $si_ls_rc at"
+    echo "$ROOT, so register entry [A]'s region (the .py files OUTSIDE the scan"
+    echo "region) could not be enumerated. A residual whose latency proof cannot"
+    echo "be evaluated is never assumed still latent (Rule AP clause 2), so this"
+    echo "is a hard failure rather than an empty — i.e. reassuring — region."
+    exit 2
+  fi
+  SI_OUTSIDE_OPERANDS=""
+  while IFS= read -r si_p; do
+    [[ -z "$si_p" ]] && continue
+    case "$si_p" in apps/*/src/*) continue ;; esac
+    # A tracked-but-deleted index entry is not a readable operand; skipping it
+    # keeps the proof's exit status meaningful instead of an unrelated grep 2.
+    [[ -f "$ROOT/$si_p" ]] || continue
+    SI_OUTSIDE_OPERANDS="${SI_OUTSIDE_OPERANDS}${ROOT}/${si_p}"$'\n'
+  done <<< "$si_tracked_py"
+  [[ -z "$SI_OUTSIDE_OPERANDS" ]] && SI_OUTSIDE_OPERANDS="/dev/null"
+fi
+
+# NOTE — why there is NO entry for the test-convention basename exclusion.
+# `$FILES` is narrower than SCAN_DIRS in two ways: by directory (entry [A]) and
+# by basename convention (`test_*.py`, `*_test.py`, `conftest.py`). The second
+# half is deliberately NOT a register entry, and that is a judgement, not an
+# omission: a test file calling `sentry_sdk.init(` for real is legitimate and
+# common (this gate's own self-test fixtures do it), so ANY latency proof over
+# that region would be permanently live and would train readers to ignore the
+# register — the opposite of what Rule AP is for. It is recorded as a bound with
+# no proof, in entry [A]'s header text and in EXCLUSIONS item 2, rather than
+# given a proof that means nothing.
+
+# Manifest-derived facts for entries E and H — read from the SAME manifest the
+# exclusion set comes from, so the proofs cannot drift from the register they
+# describe.
+SI_MANIFEST_FACTS=$(
+  python3 - "$MANIFEST" <<'PYEOF' || true
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        pairs = json.load(f)
+except Exception:
+    sys.exit(0)
+
+py_family = (".pyi", ".pyw", ".pyx", ".pxd")
+for pair in pairs:
+    strip = pair.get("strip_comments")
+    for key in ("canonical", "mirror"):
+        value = pair.get(key)
+        if not value:
+            continue
+        if value.endswith(".py") and strip is not True:
+            print(f"NONBYTE\t{value}")
+        if value.endswith(py_family):
+            print(f"PYFAMILY\t{value}")
+PYEOF
+)
+SI_NONBYTE_PY=$(printf '%s\n' "$SI_MANIFEST_FACTS" | awk -F'\t' '$1=="NONBYTE"{print $2}')
+SI_PYFAMILY=$(printf '%s\n' "$SI_MANIFEST_FACTS" | awk -F'\t' '$1=="PYFAMILY"{print $2}')
+
+SI_SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+SI_CLEAN_LIB="$CLEAN_LIB"
+export SI_FILES_OPERANDS SI_OUTSIDE_OPERANDS SI_SELF SI_CLEAN_LIB
+export SI_MULTI_INIT SI_NOINIT SI_NO_INTEGRATIONS SI_NONBYTE_PY SI_PYFAMILY
+export SI_FILES="$FILES"
+
+# id | control | one-line description | latency proof
+# EMPTY stdout ⇒ the residual is still latent. Output ⇒ it has GONE LIVE.
+# ANY pipe stage exiting ≥ 2 — not merely the pipeline's own reported status ⇒
+# the gate is broken (see PER-STAGE PROOF STATUS in the header). See the header
+# for each entry's region, scan root and unavailable-input behaviour.
+# shellcheck disable=SC2016  # DELIBERATE: proof strings must NOT expand here.
+# They are executed later by `bash -c`, which expands them against the exported
+# region variables. Expanding at array-definition time would bake one run's
+# file list into the register.
+RESIDUAL_REGISTER=(
+  'A|P1-init-detection|the scan region is apps/*/src only: a bare init anywhere else in the repo is never looked at|grep -HnE "sentry_sdk\.init\(" $SI_OUTSIDE_OPERANDS'
+  'B|P1-init-detection|detection requires the literal sentry_sdk. prefix, so a from-import or aliased import of init is invisible|grep -HnE "^[[:space:]]*(from sentry_sdk import|import sentry_sdk as)" $SI_FILES_OPERANDS'
+  'C1|P3-hardened-marker|the marker check is FILE-scoped, not call-scoped: a registered mirror with two inits satisfies it if the markers sit on the other one|printf "%s" "$SI_MULTI_INIT"'
+  'C2|P3-hardened-marker|a registered .py mirror holding NO real init carries no marker requirement, so registration alone suppresses it until it later gains one|printf "%s" "$SI_NOINIT"'
+  'C3|P3-hardened-marker|only the three FOLLOW-738 flags are asserted; the canonical also pins an explicit integrations list, which this gate does not check|printf "%s" "$SI_NO_INTEGRATIONS"'
+  'D|P1-init-detection|the scan loop word-splits its file list, so a scanned path containing whitespace would break it|printf "%s" "$SI_FILES" | grep -nE "[[:blank:]]"'
+  'E|P4-exclusion-baseline|the baseline records PATHS only, never content: content is covered by the marker check and by Rule J byte-identity, so a registered .py pair that opts OUT of byte-identity is unguarded on both axes|printf "%s" "$SI_NONBYTE_PY"'
+  'F|P6-shared-helper-availability|the helper guards check presence and declare -F, never behaviour: a helper that loaded, defined the name and returned raw source would pass them|grep -L "sys.exit(3)" "$SI_CLEAN_LIB"'
+  'G|P7-residual-register|entries are hand-written, so a failure accumulator added to this gate without an entry is invisible to the register|grep -cE "^[A-Z][A-Z_]*(COUNT|MISMATCH)=0$" "$SI_SELF" | grep -vx "5"'
+  'H|P2-exclusion + P3-hardened-marker + P4-exclusion-baseline|the registered set is filtered by the exact .py suffix, so a Python-family mirror (.pyi/.pyw/.pyx/.pxd) is registered, suppressed by Rule J semantics, and in none of the three controls|printf "%s" "$SI_PYFAMILY"'
+)
+
+echo "=== Rule AP residual register — ${#RESIDUAL_REGISTER[@]} documented gap(s), every latency proof EXECUTED ==="
+REGISTER_LIVE=0
+REGISTER_BROKEN=0
+reg_err=$(mktemp)
+reg_ps=$(mktemp)
+
+# ── RUNNER — byte-identical to scripts/check-mirror-files.sh's (FOLLOW-770 ────
+# fix-iteration 1). Copied verbatim rather than re-derived, INCLUDING the
+# MF_PS_FILE variable name, so the two runners diff to zero and a future fix to
+# one is a mechanical copy to the other. Do not "clean it up" per gate.
+#
+# Appended to EVERY proof before execution. It records each pipe stage's OWN
+# exit status (bash's PIPESTATUS) to $MF_PS_FILE, then re-exits with pipefail's
+# own rightmost-non-zero status so the diagnostic below can still report it.
+# See PER-STAGE PROOF STATUS in the header for why the pipeline's own status is
+# not sufficient. Written as an epilogue rather than baked into each proof so
+# the register keeps the one `id|control|description|proof` format (Rule AP
+# clause 6) and EVERY entry — including ones added later, and ones copied into
+# another gate — gets this for free instead of per-author discipline.
+# shellcheck disable=SC2016  # DELIBERATE: this epilogue is source text appended
+# to each proof and evaluated inside the proof's own `bash -c`; expanding
+# PIPESTATUS here would capture THIS shell's status, which is the bug it fixes.
+REGISTER_PROOF_EPILOGUE='
+__mf_ps=("${PIPESTATUS[@]}")
+printf "%s\n" "${__mf_ps[@]}" >"$MF_PS_FILE"
+__mf_rc=0
+for __mf_s in "${__mf_ps[@]}"; do if [ "$__mf_s" -ne 0 ]; then __mf_rc="$__mf_s"; fi; done
+exit "$__mf_rc"
+'
+
+for entry in "${RESIDUAL_REGISTER[@]}"; do
+  # Only the first three '|' delimit; the rest of the line is the proof, which
+  # contains pipes of its own.
+  IFS='|' read -r r_id r_control r_desc r_proof <<< "$entry"
+  r_rc=0
+  : > "$reg_ps"
+  # -o pipefail so a failing producer inside a pipe (e.g. git exiting 128)
+  # cannot masquerade as an empty — i.e. reassuring — result, AND the epilogue
+  # so a SECOND stage's ordinary "no match" 1 cannot mask that producer either.
+  r_out=$(MF_PS_FILE="$reg_ps" bash -o pipefail -c "$r_proof$REGISTER_PROOF_EPILOGUE" 2>"$reg_err") || r_rc=$?
+
+  r_stages=()
+  if [[ -s "$reg_ps" ]]; then mapfile -t r_stages < "$reg_ps"; fi
+  # UNEVALUABLE is decided by the WORST stage, never by the pipeline's own
+  # reported status.
+  r_worst=0
+  if [[ "${#r_stages[@]}" -gt 0 ]]; then
+    for r_st in "${r_stages[@]}"; do
+      if [[ "$r_st" =~ ^[0-9]+$ ]] && [[ "$r_st" -gt "$r_worst" ]]; then r_worst="$r_st"; fi
+    done
+    r_stages_txt="${r_stages[*]}"
+  else
+    # The proof never reached the epilogue: a syntax error, a signal, or an
+    # explicit exit inside the proof. Its stage statuses — and therefore its
+    # latency — could NOT be established, so it is UNEVALUABLE. Never "assume
+    # still latent" (Rule AP clause 2), not even when the pipeline reported 0.
+    r_worst=2
+    if [[ "$r_rc" -gt 2 ]]; then r_worst="$r_rc"; fi
+    r_stages_txt="none recorded"
+  fi
+
+  if [[ "$r_worst" -ge 2 ]]; then
+    echo "  [$r_id] UNEVALUABLE ($r_control) $r_desc"
+    echo "        proof:  $r_proof"
+    echo "        status: stage exit codes [$r_stages_txt] (pipeline reported $r_rc);"
+    echo "                a stage exited $r_worst — the residual's latency could NOT be established."
+    if [[ -s "$reg_err" ]]; then sed 's/^/        stderr: /' "$reg_err"; fi
+    REGISTER_BROKEN=$((REGISTER_BROKEN + 1))
+  elif [[ -n "$r_out" ]]; then
+    echo "  [$r_id] GONE LIVE   ($r_control) $r_desc"
+    echo "        proof:  $r_proof"
+    echo "        hits:"
+    printf '%s\n' "$r_out" | sed 's/^/          /'
+    REGISTER_LIVE=$((REGISTER_LIVE + 1))
+  else
+    echo "  [$r_id] latent      ($r_control) $r_desc"
+  fi
+done
+rm -f "$reg_err" "$reg_ps"
+echo "  ${#RESIDUAL_REGISTER[@]} entry/entries checked — $REGISTER_LIVE gone live, $REGISTER_BROKEN unevaluable."
+echo ""
+
 if [[ "$VIOLATION_COUNT" -eq 0 && "$UNPARSEABLE_COUNT" -eq 0 \
-  && "$UNHARDENED_COUNT" -eq 0 && "$BASELINE_MISMATCH" -eq 0 ]]; then
+  && "$UNHARDENED_COUNT" -eq 0 && "$BASELINE_MISMATCH" -eq 0 \
+  && "$STALE_COUNT" -eq 0 && "$REGISTER_LIVE" -eq 0 && "$REGISTER_BROKEN" -eq 0 ]]; then
   echo "PASS: no real sentry_sdk.init( call sites found outside the registered"
   echo "Rule J mirror paths, every scanned file tokenized cleanly, every excluded"
   echo "mirror's init carries the FOLLOW-738 hardening flags, and the exclusion"
@@ -881,6 +1562,39 @@ if [[ "$BASELINE_MISMATCH" -ne 0 ]]; then
   echo ""
 fi
 
-echo "See ESC-045 item 4 / FOLLOW-738 / FOLLOW-746 / FOLLOW-765 and this script's"
-echo "header for full context."
+if [[ "$STALE_COUNT" -gt 0 ]]; then
+  echo "FAIL: $STALE_COUNT registered Rule J .py mirror path(s) do not exist on disk."
+  echo ""
+  echo "A registered path is SUPPRESSED by this gate whether or not it exists, so"
+  echo "a stale manifest entry is a suppression nothing can ever verify. It is"
+  echo "reported here rather than skipped silently, because a silent skip would"
+  echo "restore the FOLLOW-771 hole by a different route (register a path, delete"
+  echo "the file, keep the exclusion)."
+  echo ""
+  echo "FIX: remove the entry from scripts/mirror-files.json (and from"
+  echo "$EXCLUSION_BASELINE) in the same PR, or restore the file."
+  echo ""
+fi
+
+if [[ "$REGISTER_BROKEN" -gt 0 ]]; then
+  echo "Rule AP REGISTER BROKEN: $REGISTER_BROKEN entry/entries could not be evaluated."
+  echo "A residual whose latency proof cannot run is NEVER assumed still latent"
+  echo "(FOLLOW-760, applied to the register itself). Fix the proof or the"
+  echo "environment it reads."
+  echo ""
+  exit 2
+fi
+
+if [[ "$REGISTER_LIVE" -gt 0 ]]; then
+  echo "Rule AP REGISTER ENTRY GONE LIVE: $REGISTER_LIVE documented residual(s) are now REAL."
+  echo "This is NOT an ordinary singleton finding — the gate worked; a gap this"
+  echo "script's register says is latent has become live, and the entry ids are"
+  echo "named above. Close the gap, or re-scope the entry and say so in the PR."
+  echo "Do not delete the entry (CONVENTIONS_PATCH.md Rule AP clause 5)."
+  echo ""
+  exit 3
+fi
+
+echo "See ESC-045 item 4 / FOLLOW-738 / FOLLOW-746 / FOLLOW-765 / FOLLOW-769 /"
+echo "FOLLOW-771 and this script's header for full context."
 exit 1

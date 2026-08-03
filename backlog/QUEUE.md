@@ -883,21 +883,36 @@ immediately before writing (Rule AN) — allocated **FOLLOW-791**. Full ticket a
 NEXT: Dispatch FOLLOW-791 (sdk-engineer, ahead of the frozen batch, exempt as P1), wait, validate,
 then FOLLOW-782, then FOLLOW-026 (Levels 1+3, reason: deferred on value/single-tenant).
 
-### FOLLOW-791 — status: IN_PROGRESS (dispatched 2026-08-03)
+### FOLLOW-791 — status: IN_PROGRESS (PR #661 opened 2026-08-03, awaiting CI)
 
 **assigned_to:** sdk-engineer **model: Sonnet** — delegation table row "client SDK, Shadow DOM,
 tiers, browser code." A resilience mechanism to add is a well-specified, single-file change with a
 mature reference implementation already in the same package (`adapt-description.ts`) to model
 against; no open design question. **started_at:** 2026-08-03. **branch:**
-`sdk-engineer/FOLLOW-791-directive-mutation-resilience`.
+`sdk-engineer/FOLLOW-791-directive-mutation-resilience`. **PR:** #661.
+
+**Recovery note.** The implementation session was interrupted mid-turn after the code was fully
+written but before it was committed (`git log` on resume showed zero commits on the branch despite
+~800 lines of working-tree diff across 10 files). Re-verified independently before committing, not
+assumed complete from the diff's shape alone: full local test suites green (`sdk` 75 files/1516
+tests, `shared` 19/323, `ingest` 17/285 — including the new red-first
+`adapt-mutation-resilience.test.ts`, 8 tests, and the new `adapt.reapplied` schema/consent-gate
+tests), `typecheck`/`lint`/`prettier --check` clean on all changed files, and
+`node scripts/check-bundle-size.js` → **41.71 KB gzip (limit 42 KB)** — passes, but margin over the
+last audited 39.86 KB baseline is now only ~0.3 KB, flagged in the PR body for visibility. Grepped
+every `applyDirectives(`/`ApplyContext` call site repo-wide to confirm the new required `isStale`
+field has no missed call site (two matches were doc-comments only, not real calls). Committed
+(`0e5ef35b`), pushed, PR #661 opened — all three pre-push gates (FOLLOW-555, Rule H, Rule J) passed
+clean.
 
 **Acceptance-gate override stated explicitly (localhost-first, CEO decision, session-95 head):** the
 red-first/green test in AC4 must be demonstrated with a local test run (`pnpm test` /
-`pnpm --filter @estalara/sdk test`), pasted output in the PR, not a prod claim. No DOM demo against
-`app.estalara.com` is in scope or permitted (that surface is paused per this session's
-clarification).
+`pnpm --filter @estalara/sdk test`), pasted output in the PR, not a prod claim — done, output pasted
+in PR #661's test-plan section. No DOM demo against `app.estalara.com` is in scope or permitted
+(that surface is paused per this session's clarification).
 
-**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+**CI-check counter:** 0/5 (checks running, not yet observed green — do not mark DONE until
+`gh pr checks 661` confirms). **Fix-iteration counter:** 0/3.
 
 ---
 

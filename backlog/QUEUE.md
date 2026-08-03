@@ -1,6 +1,43 @@
 # Backlog Queue
 
-### FOLLOW-796 — status: IN_PROGRESS (dispatched 2026-08-03)
+### FOLLOW-796 — status: READY_FOR_REVIEW (PR #664, 2026-08-03)
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/664 —
+`fix(sdk): translate detection slot keys to directive slots on self-annotation`.
+
+**CI:** green modulo the pre-existing-red `Rule I — wired-or-dead check`. Verified this branch adds
+**zero** new Rule I violations rather than assuming the gate is safe to wave through:
+`scripts/check-rule-i.sh` reports **192 on `main` and 192 on this branch**. Every other check
+passes.
+
+**Validation (all re-run by the PM on the recovered work, not taken on trust):** `packages/sdk` 77
+files / 1530 tests pass; `apps/control-plane` 23 tests pass across the two touched files;
+`tsc --noEmit` clean; prettier clean; bundle 41.75KB gzip (limit 42KB). Additionally merged locally
+against FOLLOW-795 before opening the PR — combined 1535 tests pass, tsc clean, combined bundle
+**41.88KB gzip**, so both tickets can land without breaching the size gate.
+
+**AC coverage:** AC1 `SLOT_NAME_TRANSLATION` single choke-point (`cta_primary→cta`, unlisted keys
+verbatim); AC2 integration test with a NON-coinciding pair (`slot_selectors {cta_primary}` against a
+`slot:'cta'` directive) on the real `init()` path per RETRO-093 §4b CB-1; AC3 `feature` documented
+out-of-scope in code + MASTER_DESIGN with three verified reasons (no producer emits `features_list`;
+already scoped out of v1; a `feature` `TextDirective` overwrites `textContent` and would collapse
+the tenant's whole feature list); AC4 control-plane extractor + omit-when-empty gate unit-tested;
+AC5 `docs/MASTER_DESIGN.md` §"Most detekcja→adaptacja" corrected (stale
+`augment.ts`/`description.ts` references updated, translation table + `feature` unreachability
+recorded); AC6 pilot-masking caveat asserted (hand-coded `data-estalara-slot` never overwritten).
+
+**Recovery note:** the dispatched worker session was killed when its terminal closed 2026-08-03; the
+implementation was complete but uncommitted in `.claude/worktrees/agent-a47b1be6dee0cae16`.
+Recovered and fully re-validated before commit (see
+`feedback_check_worktrees_before_concluding_agent_didnt_run`).
+
+**CI-check counter:** 1/5. **Fix-iteration counter:** 0/3.
+
+**Next:** human merge. Then retrospective-analyst.
+
+---
+
+### FOLLOW-796 — original dispatch record (2026-08-03)
 
 **Source:** RETRO-244 §4a LG-5(b) / §5 closure check, re-filing RETRO-093 §4a LG-1+LG-2 / §4b CB-1 /
 §4c TG-1 under a fresh number — the original `FOLLOW-352`/`FOLLOW-353` were rated P1 by RETRO-093 on
@@ -31,7 +68,47 @@ in an isolated git worktree** (parallel with FOLLOW-795, no file overlap between
 
 ---
 
-### FOLLOW-795 — status: IN_PROGRESS (dispatched 2026-08-03)
+### FOLLOW-795 — status: READY_FOR_REVIEW (PR #663, 2026-08-03)
+
+**PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/663 —
+`fix(sdk): hand off headline slot ownership instead of excluding it`.
+
+**CI:** first run failed `Rule I — wired-or-dead check` at **193 violations vs 192 on `main`** — the
+gate is pre-existing-red, but this branch had added **one genuinely new** violation: the exported
+`HeadlineOwner` type alias with zero non-test importers. Fixed in `83dec6a1` by dropping the
+`export` (module-local; declaration emit inlines it into the accessors' signatures; it never
+appeared in any published `.d.ts`, so **not** a public API surface change and no ESCALATION
+required). Rule I back to the 192 baseline. Re-run pending at time of writing; every other check
+passed on run 1.
+
+**Validation (all re-run by the PM on the recovered work, not taken on trust):** `packages/sdk` 75
+files / 1523 tests pass; `tsc --noEmit` clean; DTS build clean; prettier clean; bundle 41.86KB gzip
+(limit 42KB). Import direction verified one-way (`adapt-description.ts` → `adapt.ts`; `adapt.ts`
+does **not** import `adapt-description.ts`) so the new registry introduces no cycle.
+
+**Design:** replaces the unconditional `slotName === 'headline'` exclusion with an ownership
+hand-off arbitrated by the new `packages/sdk/src/core/headline-ownership.ts`
+(`WeakMap<HTMLElement, 'generic' | 'description'>`). `adapt.ts` arms the generic watchdog only while
+`adapt-description.ts` has not claimed the element (read live, never memoized; a stale call does not
+claim); `adapt-description.ts` evicts the generic watchdog before arming its own, ordered after its
+`isStale()` check. Both teardown paths release ownership. Invariant: at most one MutationObserver on
+a headline element at any instant.
+
+**Size-gate note for the next SDK ticket:** `main` baseline is 41.73KB; 795 and 796 measured
+together are **41.88KB against a 42KB limit** — 0.12KB of headroom. The next ticket that adds SDK
+code will likely need the limit raised (ESC-028 precedent) rather than shaving bytes ad hoc.
+
+**Recovery note:** the dispatched worker session was killed when its terminal closed 2026-08-03; the
+implementation was complete but uncommitted in `.claude/worktrees/agent-a15a2e7d91bed4247`.
+Recovered and fully re-validated before commit.
+
+**CI-check counter:** 2/5. **Fix-iteration counter:** 1/3.
+
+**Next:** confirm the Rule I re-run lands at 192, then human merge. Then retrospective-analyst.
+
+---
+
+### FOLLOW-795 — original dispatch record (2026-08-03)
 
 **Source:** RETRO-244 §4a LG-5(a), filed against FOLLOW-791 (PR #661).
 

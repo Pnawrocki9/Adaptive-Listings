@@ -78,8 +78,12 @@ gate is pre-existing-red, but this branch had added **one genuinely new** violat
 `HeadlineOwner` type alias with zero non-test importers. Fixed in `83dec6a1` by dropping the
 `export` (module-local; declaration emit inlines it into the accessors' signatures; it never
 appeared in any published `.d.ts`, so **not** a public API surface change and no ESCALATION
-required). Rule I back to the 192 baseline. Re-run pending at time of writing; every other check
-passed on run 1.
+required).
+
+**CI re-run CONFIRMED green modulo Rule I:** 71 pass / 1 failing gate, and that gate's own log now
+reports `Violations found : 192` with no `headline-ownership` entry — identical to the `main`
+baseline. FOLLOW-796's CI job independently reports 192 too. Both PRs are Rule I-neutral; the
+residual red is the long-standing repo-wide backlog, not these branches.
 
 **Validation (all re-run by the PM on the recovered work, not taken on trust):** `packages/sdk` 75
 files / 1523 tests pass; `tsc --noEmit` clean; DTS build clean; prettier clean; bundle 41.86KB gzip
@@ -104,7 +108,7 @@ Recovered and fully re-validated before commit.
 
 **CI-check counter:** 2/5. **Fix-iteration counter:** 1/3.
 
-**Next:** confirm the Rule I re-run lands at 192, then human merge. Then retrospective-analyst.
+**Next:** human merge (Rule I re-run confirmed at 192). Then retrospective-analyst.
 
 ---
 

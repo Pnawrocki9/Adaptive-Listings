@@ -883,7 +883,7 @@ immediately before writing (Rule AN) — allocated **FOLLOW-791**. Full ticket a
 NEXT: Dispatch FOLLOW-791 (sdk-engineer, ahead of the frozen batch, exempt as P1), wait, validate,
 then FOLLOW-782, then FOLLOW-026 (Levels 1+3, reason: deferred on value/single-tenant).
 
-### FOLLOW-791 — status: IN_PROGRESS (PR #661 opened 2026-08-03, awaiting CI)
+### FOLLOW-791 — status: READY_FOR_REVIEW (PR #661, CI green modulo pre-existing-red Rule I, 2026-08-03)
 
 **assigned_to:** sdk-engineer **model: Sonnet** — delegation table row "client SDK, Shadow DOM,
 tiers, browser code." A resilience mechanism to add is a well-specified, single-file change with a
@@ -911,8 +911,23 @@ red-first/green test in AC4 must be demonstrated with a local test run (`pnpm te
 in PR #661's test-plan section. No DOM demo against `app.estalara.com` is in scope or permitted
 (that surface is paused per this session's clarification).
 
-**CI-check counter:** 0/5 (checks running, not yet observed green — do not mark DONE until
-`gh pr checks 661` confirms). **Fix-iteration counter:** 0/3.
+**CI verified green, `gh pr checks 661 --watch`, not taken on the watch command's own summary
+line.** Every check passed except **Rule I — wired-or-dead check** (`fail` on both the initial-push
+run and the docs-commit run) — this repo's established pre-existing-red, non-blocking gate (see
+session-96 head, PR #660). Independently re-derived the WARN count rather than assuming the label
+still applies: `gh api .../actions/jobs/91726740740/logs | grep -c "WARN:"` and the same for job
+`91726641807` (the docs-commit run) both → **192 / 192**, exactly the standing baseline, confirming
+FOLLOW-791's new code (`teardownAdaptObservers`, `adapt.reapplied`, the new required
+`ApplyContext.isStale` field) introduced zero new wired-or-dead warnings. All substantive gates
+green on both runs: Test (Node 22), Typecheck, Lint, Format check, SDK E2E tests, Build, Build
+(control-plane), Cross-language event contract, Consent contract drift gate, Rule H, Rule J,
+Gitleaks.
+
+**Awaiting Piotr to merge** (per this repo's convention — the PM verifies CI, it does not merge).
+Nothing further blocks this ticket; mark DONE once merged and re-verify on `main` per the usual
+pattern.
+
+**CI-check counter:** 1/5 (green on first observation). **Fix-iteration counter:** 0/3.
 
 ---
 

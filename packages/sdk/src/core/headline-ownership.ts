@@ -25,7 +25,12 @@
  * @module @estalara/sdk/core/headline-ownership
  */
 
-export type HeadlineOwner = 'generic' | 'description';
+/**
+ * Deliberately module-local (not exported): only the three accessors below cross the
+ * module boundary, so exporting the alias would be a Rule I "zero non-test importers"
+ * violation. Declaration emit inlines it into the accessors' public signatures.
+ */
+type HeadlineOwner = 'generic' | 'description';
 
 const _owner = new WeakMap<HTMLElement, HeadlineOwner>();
 

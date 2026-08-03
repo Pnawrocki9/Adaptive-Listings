@@ -4,7 +4,7 @@
   "private": true,
   "description": "Estalara control plane — Next.js 15 App Router dashboard and management API",
   "scripts": {
-    "build": "next build",
+    "build": "node scripts/copy-sdk-bundle.mjs && next build",
     "dev": "next dev --turbo",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

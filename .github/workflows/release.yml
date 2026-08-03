@@ -17,7 +17,15 @@
 # has, so the automatic publish-on-push trigger is disabled here rather than
 # "fixed": there is no correct registry/scope to fix it to, because there is
 # no consumer. Verdict: the changeset version/publish flow is NOT expected to
-# run automatically in the current release model. If SDK distribution via a
+# run automatically in the current release model.
+#
+# UPDATE 2026-08-03 (ESC-047 / FOLLOW-808): the hosted-bundle path described
+# above is still correct, but the bundle is no longer hand-built and committed.
+# `apps/control-plane`'s build generates `public/sdk.js` from
+# `packages/sdk/dist/` on every Vercel deploy, so a merge to `main` now IS the
+# SDK release. Under the old model the served copy froze for two months while
+# ~76 SDK tickets merged behind it. This workflow stays quarantined regardless
+# — it concerns npm publication, which still has no consumer. If SDK distribution via a
 # real npm registry becomes a requirement later, re-enable the `push` trigger
 # below once the target registry/scope actually resolves, and prove one
 # green run before merging that change.

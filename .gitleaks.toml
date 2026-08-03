@@ -251,6 +251,19 @@ regexes = [
   # `[a-zA-Z0-9_-]` run (preceded by `.`, backtick, or a quote, never another matching char).
   # Token-scoped per Rule V.
   '''PLATFORM_REGISTRATION_TOS_VERSION_PREVIO''',
+  # FOLLOW-774: `scripts/check-redis-smoke-trigger-trust.sh` originally named its
+  # mutation-test helper `compute_hard_fail_required_mutant_inverted_fork` (47
+  # chars) — same class as the bypass4/5/6 and ADR-NNNN-kebab entries above (a
+  # descriptive shell function identifier, not a secret). The function was
+  # renamed to the shorter `compute_hard_fail_required_mutant` (33 chars, under
+  # the 40-char capture window) in the very next commit, but gitleaks-action
+  # scans the full commit range of a PR, so the OLD name persists in git history
+  # regardless of the fix. The `[a-zA-Z0-9_-]{40}` rule captured the first 40
+  # chars of the identifier (`compute_hard_fail_required_mutant_invert`,
+  # verified against this exact PR's finding — 3 occurrences, all truncating
+  # identically since the identifier always starts a fresh alnum/underscore run
+  # preceded by a newline, `(`, or `$(`). Token-scoped per Rule V.
+  '''compute_hard_fail_required_mutant_invert''',
 ]
 
 # JWT tokens (generic)

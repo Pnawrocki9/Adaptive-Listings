@@ -2811,3 +2811,16 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   the claim's boundary condition directly (here: what if the LAST stage in the pipe also has an
   ordinary non-zero exit code independent of the failure being guarded against). A cited mechanism
   can be real and still not cover 100% of the shape it's credited with fixing.
+
+- **Date / ticket:** 2026-08-03 — PR #656 (FOLLOW-770) fix-iteration 1 re-validation
+- **Delegation row used:** validation only (fix-iteration on existing devops-engineer dispatch)
+- **What validation caught (or missed):** Did not accept the fix shape on its face even though it
+  "looked right" (PIPESTATUS is the textbook answer) — re-ran the original A/B/F reproductions on
+  fresh fixtures, verified PIPESTATUS was read with nothing intervening (the exact fragility the
+  coordinator warned could reproduce the same defect class one layer down), and confirmed the
+  worker's "C1-E don't share the vulnerable shape" claim was actually instrumented and tested rather
+  than asserted from the brief. All three checks passed for real, not just plausibly.
+- **A delegation/validation rule I'd add:** none new — this run confirmed the existing practice
+  (independently reproduce, verify claimed-but-unstated work like "we checked X" was actually done,
+  re-derive any baseline/count rather than reuse a stale reading) generalizes cleanly to
+  fix-iteration re-validation, not just first-pass validation.

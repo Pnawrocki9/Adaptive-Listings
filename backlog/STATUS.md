@@ -909,3 +909,25 @@ since this is the artifact every future gate copies.
 
 NEXT: dispatch a fix-iteration to devops-engineer on the same branch, citing the PR comment's exact
 reproduction and requested fix shape.
+
+---
+
+# Status — 2026-08-03 (session 92 continued — PR #656 fix-iteration validated, READY_FOR_REVIEW)
+
+## SESSION 92 continued — FOLLOW-770 re-validated after fix-iteration 1
+
+**Re-validated PR #656 after the worker's PIPESTATUS fix.** Re-ran my own original A/B/F
+reproductions on fresh fixtures (not the worker's) -- both now correctly report UNEVALUABLE with the
+true masked exit codes surfaced. Verified the PIPESTATUS-immediacy concern directly from the diff
+(no intervening command between the proof's pipe and the read). Confirmed C1-E's "not vulnerable"
+claim was genuinely instrumented and checked, matching my own independent read. CI green (66/2, Rule
+I re-derived fresh at 192). 13/13 self-test, cross-checked in the real CI job log. Lessons commit
+confirmed genuine, left as-is. Moved FOLLOW-770 to READY_FOR_REVIEW. **Not merged -- needs Piotr.**
+
+**CI-check counter: 2/5. Fix-iteration counter: 1/3** (2 remaining, unused).
+
+**0 tickets IN_PROGRESS. 1 ticket READY_FOR_REVIEW** (FOLLOW-770, PR #656).
+
+NEXT: dispatch FOLLOW-768+769+771 combined (devops-engineer), explicitly citing PR #656's corrected
+register pattern -- especially the PIPESTATUS lesson, since those two sentry-gate registers will
+copy this exact shape.

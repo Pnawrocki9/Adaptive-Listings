@@ -23945,7 +23945,8 @@ cross_ref: [RETRO-239 §4a LG-1, §6 P-23 (minted at count 1, second-sighting ba
 
 source_retro: RETRO-239 (PR #650, FOLLOW-760) source_ticket: FOLLOW-760 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-769 + FOLLOW-771 to
+devops-engineer on Opus)
 
 **The finding (CB-1).** `scripts/check-sentry-capture-has-init.sh` has **three** predicates. After
 FOLLOW-757 and FOLLOW-760, two of them run against `clean_python_source` output: detection (`:231`)
@@ -24023,7 +24024,8 @@ mechanism); `scripts/check-sentry-capture-has-init.sh:68-70,231,240,246,251`; Ru
 
 source_retro: RETRO-239 (PR #651, FOLLOW-746) source_ticket: FOLLOW-746 recommended_sprint: next
 recommended_agent: devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched combined with FOLLOW-768 + FOLLOW-771 to
+devops-engineer on Opus)
 
 **Context — the SPOF is fine; its one guard is unfixtured.** FOLLOW-746 item 8 correctly extracted
 the tokenizer pass to `scripts/lib/clean-python-source.sh`, sourced by both Sentry gates. RETRO-239
@@ -24202,7 +24204,8 @@ must not report clean" contract this gate does not hold);
 
 source_retro: RETRO-240 (PR #652, FOLLOW-765 + FOLLOW-759) source_ticket: FOLLOW-765
 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
-depends_on: [] blocks: [] promoted_to_queue: false
+depends_on: [] blocks: [] promoted_to_queue: true (2026-08-03 — dispatched combined with
+FOLLOW-768 + FOLLOW-769 to devops-engineer on Opus)
 
 **Status: LATENT, stated up front.** 3 registered `.py` mirror paths today, all inside `apps/*/src`,
 all carrying the three FOLLOW-738 hardened markers — re-verified on merged `main`

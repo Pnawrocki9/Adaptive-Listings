@@ -598,7 +598,36 @@ PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
 
 ---
 
-### FOLLOW-770 — status: IN_PROGRESS, bounced back for 1 fix-iteration (PR #656 open, `e9d5dc94`, PM-validated-and-returned 2026-08-03)
+### FOLLOW-770 — status: READY_FOR_REVIEW (PR #656 open, `e9d5dc94`+`e6cc441f`+`f70a4b64`, PM re-validated 2026-08-03)
+
+**Fix-iteration 1 accepted.** Worker fixed the runner (not the 3 proof strings) to decide
+UNEVALUABLE on `${PIPESTATUS[@]}`'s worst stage rather than `pipefail`'s rightmost-non-zero status —
+the correct, general fix, applied once so every future register entry (and every gate that copies
+this pattern) inherits it for free.
+
+**Re-ran my own original A/B/F reproductions on fresh, independently-built fixtures — not the
+worker's.** Both now correctly report UNEVALUABLE with the true masked exit code surfaced
+(`stage exit codes [128 1 1] (pipeline reported 1)` for A/B; `[2 1]` for F), matching my original
+finding's exact numbers. **Checked the PIPESTATUS-immediacy concern directly** (read the epilogue
+mechanism in the diff): nothing intervenes between the proof's own pipe and the `PIPESTATUS` read —
+same subshell, same script, next line — not the fragile "read it back after a command substitution"
+pattern that would have reproduced the defect one layer down. **Confirmed C1-E's "not vulnerable"
+claim was genuinely checked** (the worker instrumented all 8 proofs and printed real stage vectors
+in healthy vs. broken mode) rather than asserted — matches my own independent read of the register
+(C1/D single-command, C2/C3/E pipe a `printf`-on-a-variable with no realistic ≥2 failure mode).
+
+**5b CI:** 66 pass / 2 fail, `Rule I` **re-derived fresh at 192** (not assumed from the earlier
+#652-#655 reading). Non-success count for all REAL gates: **0**. `--self-test`: 13/13 in my own run;
+cross-checked the real CI `rule-j` job log for `PASSED (13 assertions)`.
+
+**`f70a4b64` (worker's own lessons.md commit) — confirmed genuine and in-scope, same adjudication as
+PR #654.** Left as-is.
+
+**CI-check counter: 2/5. Fix-iteration counter: 1/3** (2 remaining, unused).
+
+Posted full re-validation evidence as a PR comment. **Not merged — needs Piotr.**
+
+---
 
 **Weighted the shape at least as hard as the behavior, per the explicit instruction on this ticket
 (it's Rule AP's reference implementation).** Excellent work overall, independently confirmed:
@@ -659,6 +688,30 @@ every downstream register.
 **CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
 
 **1 ticket IN_PROGRESS** (FOLLOW-770) — within the ≤3 guardrail.
+
+---
+
+### FOLLOW-768 + FOLLOW-769 + FOLLOW-771 — dispatch record (IN_PROGRESS, combined)
+
+**Picked 2026-08-03 (session 92)**, second of four remaining sequential dispatches, now that PR #656
+is READY_FOR_REVIEW. All three touch `scripts/check-sentry-capture-has-init.sh` and/or
+`scripts/check-sentry-init-singleton.sh` — combined per the standing same-file discipline.
+
+**assigned_to:** devops-engineer **model: Opus** — same reasoning as FOLLOW-770: building both
+sentry gates' Rule AP registers is a shape decision inherited by every future gate, not a mechanical
+transfer, and FOLLOW-768's clearance-predicate redesign is the third occurrence of the raw-text-vs-
+cleaned-text defect class in this file family.
+
+**Brief explicitly cites PR #656's corrected register pattern**, including the PIPESTATUS lesson —
+any new register entries for the two sentry gates must use the SAME epilogue-based
+`${PIPESTATUS[@]}`-worst-stage decision FOLLOW-770's fix-iteration landed, not the original
+pipefail-only version, since both gates' registers will likely include multi-stage
+producer-then-grep proofs (e.g. the missing-shared-helper check FOLLOW-769 adds).
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (combined FOLLOW-768+769+771, 3 ticket IDs, 1 PR) — within the ≤3
+guardrail.
 
 ---
 

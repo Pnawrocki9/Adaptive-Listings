@@ -25998,3 +25998,438 @@ its P3 is arguably under-priced now that the gate is the binding constraint on S
 
 cross_ref: [packages/sdk/scripts/check-bundle-size.js:16; .github/workflows/ci.yml:226; ESC-028;
 FOLLOW-469; FOLLOW-673 (FOLLOW_UPS.md:19135-19145); RETRO-214, RETRO-221, RETRO-244 §4d DG-3 / §5b]
+
+## FOLLOW-801 — `annotateSlots` writes translated adaptation slots onto EVERY match, document-wide, on every page type: `cta_primary` selectors like `a[href*="contact"]` now overwrite and observer-enforce every contact link and button on a tenant page
+
+source_retro: RETRO-245 §4a LG-1 / §4c TG-1 / §5d source_ticket: FOLLOW-796 (PR #664), blast radius
+enabled by FOLLOW-791/792 (PRs #661/#662) recommended_sprint: next recommended_agent: sdk-engineer
+priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Gap (SHIPPED on `main` at `675cd75f`; four facts, each verified independently).**
+
+1. `annotateSlots` annotates **every** match, not the unambiguous one:
+   `for (const el of Array.from(searchRoot.querySelectorAll(cssSelector)))`
+   (`packages/sdk/src/core/annotate-slots.ts:115-121`), with `searchRoot` defaulting to
+   `document.documentElement` (`:103`).
+2. It is **page-type-blind on both ends**: `packages/sdk/src/index.ts:802` calls it on every
+   `/api/adapt` response with no `page_type` guard, and the route emits `slot_selectors` with no
+   page-type condition (`apps/control-plane/src/app/api/adapt/route.ts:1610-1613`, `:1630`) — so
+   `detail_schema` selectors are shipped to `listing_list` / `home` / `search` pages too. Playbook
+   `TextDirective`s are likewise built unconditionally (`route.ts:308-318`).
+3. The producer selectors are **broad by construction**:
+   `packages/sdk/src/auto-detect/techniques/wordpress.ts:470` and `.../json-ld.ts:197` both emit
+   `cta_primary.primary = 'a[href*="contact"]'`; `.../css-modules.ts:500` emits
+   `[class*='${prefix}cta'], [class*='${prefix}button']` — every button on the page.
+4. `applyTextDirective` writes to **all** matches (`packages/sdk/src/core/adapt.ts:745`,
+   `elements.forEach`) and, since FOLLOW-791, arms `attachResilience` **per element** (`:788-800`),
+   so each overwrite is MutationObserver-enforced against the host framework indefinitely.
+
+**Composite:** on any tenant whose activated schema came from a technique other than `data-estalara`
+(whose `cta_primary` primary is the self-referential `[data-estalara-slot='cta']` and is therefore
+harmless), the first `/api/adapt` response now rewrites the label of every contact link / every
+button on the page to one archetype string and defends it. **Before PR #664 all of this was inert**
+— the same nodes were annotated `data-estalara-slot="cta_primary"` and no directive targeted that
+name. The blast radius is 100% attributable to the translation.
+
+**Also in scope — the design conflict this exposes.**
+`docs/adr/0008-detection-to-adaptation-bridge.md:46` specifies **unique-match only** for the bridge;
+the FOLLOW-340 rewrite dropped it, and PR #664's MASTER*DESIGN edit **codified the every-match
+behaviour as intent** (`docs/MASTER_DESIGN.md:1440`, *"anotuje **każdy** dopasowany element"\_)
+without noting the conflict. The correct scope is a decision, not a bug fix — but it must be made,
+not inherited.
+
+**AC:**
+
+1. Decide and implement the scope rule for **translated** adaptation slots (`cta`, and any future
+   `SLOT_NAME_TRANSLATION` entry). Options, not prescribed: (a) unique-match only — annotate when
+   `querySelectorAll` returns exactly 1, otherwise skip with an observable event; (b) scope
+   `searchRoot` to the listing-detail container (`[data-estalara-listing]`) instead of
+   `document.documentElement`; (c) gate on `page_type`. State the choice and its reasoning in the
+   PR.
+2. Whichever is chosen, a skipped/ambiguous annotation MUST be observable (an `adapt.skipped`-family
+   event or an equivalent existing signal) — a silent no-op reintroduces the invisibility this whole
+   chain exists to remove (guardrail K.2).
+3. **Test (TG-1), red-first:** a fixture with a document-wide `cta_primary` selector matching ≥3
+   nodes (e.g. `a[href*="contact"]` against a nav link, a card CTA and a footer link). Assert that
+   after `annotateSlots` + `applyDirectives({slot:'cta'})` the nav and footer links keep their
+   original `textContent`, and that no `attachResilience` observer is armed on them. This test MUST
+   fail against `675cd75f`.
+4. **Test:** a `page_type: 'listing_list'` fixture — assert the chosen policy holds there too.
+5. Reconcile `docs/adr/0008-*.md:46` and `docs/MASTER_DESIGN.md:1440` with whatever is implemented,
+   in the SAME PR (Rule AI). Coordinate with FOLLOW-804, which owns the rest of that doc set — do
+   not duplicate.
+6. Bundle: state the delta. Headroom on `main` is **123 bytes** (41.88 KB / 42 KB) — see FOLLOW-800
+   and FOLLOW-807.
+
+**Escalation trigger (for the PM, not for the worker):** whether the pilot tenant is exposed today
+turns on one query — does `000-app-estalara`'s activated
+`tenant_site_schemas.detail_schema.slot_selectors.cta_primary` carry a broad selector or the
+self-referential `data-estalara` form? That answer prices this ticket and RETRO-245 §5d's severity.
+It cannot be answered from the repo.
+
+cross_ref: [packages/sdk/src/core/annotate-slots.ts:57,103,112,115-121;
+packages/sdk/src/core/adapt.ts:745,788-800; packages/sdk/src/index.ts:802;
+apps/control-plane/src/app/api/adapt/route.ts:308-318,1610-1613,1630;
+packages/sdk/src/auto-detect/techniques/{wordpress.ts:470,json-ld.ts:197,css-modules.ts:500,data-estalara.ts:121-129};
+docs/adr/0008-detection-to-adaptation-bridge.md:46; docs/MASTER_DESIGN.md:1440; RETRO-245 §4a LG-1 /
+§4c TG-1 / §5d; RETRO-093; FOLLOW-796; FOLLOW-804; FOLLOW-807]
+
+## FOLLOW-802 — The `headline_owned_by_description` skip emits a false `adapt.applied` and poisons the fingerprint; `teardownAdaptObservers()` structurally cannot release a `'description'` ownership entry
+
+source_retro: RETRO-245 §4a LG-2 / LG-4 / §4c TG-2 / TG-4 source_ticket: FOLLOW-795 (PR #663)
+recommended_sprint: next recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on:
+[FOLLOW-793] blocks: [] promoted_to_queue: false
+
+**SCOPE NOTE, READ FIRST: this is the SECOND of THREE doors into one defect and FOLLOW-793's AC1
+covers only the first.** FOLLOW-793 AC1 is written as _"when `attachResilience` declines to write
+because `isStale()` is true at arm time"_. That is one condition. This stub adds the second (a
+per-element early return added by FOLLOW-795) and the third (the same asymmetry in the reference
+module). **Either merge this stub into FOLLOW-793 before dispatch, or dispatch both to the same
+worker in the same PR.** A fix that satisfies FOLLOW-793's AC1 literally closes one of three.
+
+**Gap (a) — false success event + poisoned fingerprint.** `applyTextDirective` records the
+idempotency fingerprint **before** the element loop (`packages/sdk/src/core/adapt.ts:741-742`) and
+pushes `adapt.applied` **after** it, gated only on `if (context)` (`:803-813`). FOLLOW-795's new
+per-element early return sits **inside** that loop (`:775-781`): when
+`getHeadlineOwner(el) === 'description'` it emits
+`adapt.skipped {reason:'headline_owned_by_description'}` and returns. Net on that path:
+**`adapt.skipped{headline_owned_by_description}` AND `adapt.applied` for the same slot in the same
+tick, with zero DOM writes**, plus `text:headline:<archetype>` permanently recorded so the correct
+write can never happen later. The false `adapt.applied` reaches ClickHouse and the bandit/analytics
+surfaces exactly like a real one.
+
+**Gap (b) — the teardown asymmetry that makes (a) reachable.** `teardownAdaptObservers()` clears
+ownership by iterating `_textResilienceMap` (`adapt.ts:530-534`). But once
+`evictGenericHeadlineObserver` hands off, the element is **deleted from that map** (`:471-474`) — so
+`teardownAdaptObservers()` is **structurally incapable** of releasing a `'description'` entry. And
+`packages/sdk/src/index.ts:788` (same-page archetype change) calls `resetAdaptState()` **alone**;
+only the cross-listing path (`:1162`/`:1171`) also calls `teardownDescriptionObservers()`.
+
+**Reachable sequence, traced not assumed:** archetype A → generic arms (owner `'generic'`) → LLM
+headline arrives → `evictGenericHeadlineObserver` + owner `'description'`, generic map entry gone →
+quiz/chat flips to archetype B → `resetAdaptState()` clears fingerprints, ownership survives →
+`applyDirectives(B)` → headline skip + **false `adapt.applied{archetype: B}`** + fingerprint
+poisoned. If B's description fetch then fails or returns a null headline, the headline is stuck on
+A's text **permanently**, with no recovery path in either module.
+
+**Gap (c) — Rule S sibling: the reference module carries the identical map-bookkeeping asymmetry
+FOLLOW-793 §LG-3 was filed to fix in the copy.** `applyAndObserveHeadlineSlot` does
+`_headlineSlotMap.get(el)?.obs.disconnect()` at entry
+(`packages/sdk/src/core/adapt-description.ts:235`) and, on the stale early return (`:270-273`),
+returns **without** `_headlineSlotMap.delete(el)` — leaving a disconnected observer in the map, the
+element strongly referenced (a real `Map`, not a `WeakMap`), and the map falsely asserting the
+element is watched.
+
+**AC:**
+
+1. Generalise the fix rather than patching the door: the applier must not emit `adapt.applied` and
+   must not leave the fingerprint recorded when **no element was written** — regardless of which
+   early return prevented the write (stale-at-arm, headline-owned, or any future one). Record the
+   fingerprint only after ≥1 successful write, or roll it back. State in the PR how this interacts
+   with the fingerprint's redundant-write-suppression purpose (this is FOLLOW-793 AC4's requirement,
+   carried forward).
+2. Make ownership release symmetric: `teardownAdaptObservers()` / `resetAdaptState()` must be able
+   to release a headline element the description module owns, OR `index.ts:788` must call
+   `teardownDescriptionObservers()` alongside `resetAdaptState()` on a same-page archetype change.
+   Pick one and say which; do not do both blindly (the second changes description-slot behaviour on
+   archetype change and needs its own justification).
+3. Fix (c): `applyAndObserveHeadlineSlot`'s stale early return must `_headlineSlotMap.delete(el)`.
+4. **Test (TG-2):** drive the hand-off, then the skip. Assert exactly one
+   `adapt.skipped{headline_owned_by_description}`, **zero** `adapt.applied` for that slot in that
+   call, and that a subsequent legitimate `applyDirectives` for a different archetype DOES apply.
+   The shipped test (`packages/sdk/src/__tests__/adapt-mutation-resilience.test.ts:361-364`) asserts
+   only `skipped.length >= 1` — extend it, do not replace it.
+5. **Test (TG-4):** the reachable path — `resetAdaptState()` **alone** (no
+   `teardownDescriptionObservers()`) while the description module owns the headline, then a new
+   archetype's `applyDirectives`. Neither shipped teardown test covers this combination.
+
+cross_ref: [packages/sdk/src/core/adapt.ts:471-474,530-534,741-742,775-781,803-813;
+packages/sdk/src/core/adapt-description.ts:235,270-280; packages/sdk/src/index.ts:788,1162,1171;
+packages/sdk/src/**tests**/adapt-mutation-resilience.test.ts:324-327,361-364; RETRO-245 §4a
+LG-2/LG-4, §4c TG-2/TG-4, §6 P-28; RETRO-244 §4a LG-2/LG-3; FOLLOW-793; FOLLOW-795]
+
+## FOLLOW-803 — The reorder repair's `matches()` still compares against a FROZEN `desiredOrder`, so any change to the live card COUNT makes it permanently false: unbounded `adapt.reapplied` plus DOM churn on every host mutation
+
+source_retro: RETRO-245 §4a LG-3 / §4c TG-3 / §5 closure check source_ticket: FOLLOW-792 (PR #662)
+recommended_sprint: next recommended_agent: sdk-engineer priority: P2 estimated_hours: 3 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**Gap (the residual half of RETRO-244 §4a LG-1 — the gap moved one hop, it did not close).**
+RETRO-244 named **two** consequences of the captured-node-reference defect: duplicate cards **and**
+_"the repair cannot converge: `matches()` fails `current.length !== desiredOrder.length`
+**permanently**"_. FOLLOW-792 fixed the first — `applyOrder` now re-queries the live DOM
+(`packages/sdk/src/core/adapt.ts:956-958`) — and left the second untouched.
+
+`matches()` still closes over `desiredOrder`, the id **sequence** frozen from the nodes present at
+first apply (`adapt.ts:977`), and still short-circuits on `current.length !== desiredOrder.length`
+(`:986`). So any host change to the card **count** — a filter, a "load more", a sold-listing
+removal, an infinite-scroll append: all ordinary on a listing grid — makes `matches()` permanently
+false. Post-#662 the write is idempotent, so nothing duplicates; but every subsequent mutation
+inside the container re-enters `reapply`, re-appends the same nodes in the same order, and **emits
+another `adapt.reapplied`**, without bound.
+
+**Two costs, both real:**
+
+1. **An unbounded-cardinality, non-terminating event producer.** RETRO-244 §5b routed the
+   `adapt.reapplied` volume question to FOLLOW-539 on the strength of it being high-cardinality. It
+   is now high-cardinality **and non-terminating**, which is a different problem: no sampling policy
+   fixes a producer that never stops.
+2. **DOM churn on every host mutation.** `container.append(...liveSorted)` on already-correctly
+   ordered nodes still detaches and re-inserts every card — resetting scroll anchoring, dropping
+   focus, and cancelling in-flight CSS transitions, once per host mutation, forever.
+
+The PR's own in-line comment claims the opposite outcome — _"we converge on the intersection rather
+than disconnecting the watchdog"_ (`adapt.ts:945-953`) — which is true of the **DOM** and false of
+**`matches()`**. The lessons entry (`.claude/agents/sdk-engineer/lessons.md`, 2026-08-03) reasons
+about the same case and reaches the same DOM-only conclusion.
+
+**AC:**
+
+1. Make the predicate **set-independent**: `matches()` should answer _"is the live set currently in
+   score order?"_ — e.g. compare `current.map(id)` against `sortByScore(current).map(id)` using the
+   `scoreMap` already captured — rather than comparing against a frozen sequence. `sortByScore` was
+   already extracted as a shared helper by FOLLOW-792 (`adapt.ts:917-925`), so this is a small
+   change to the closure at `:982-989`.
+2. Preserve the `pin_top_n` semantics in whatever predicate replaces the current one — a pinned
+   prefix is part of "correct order" and the current check happens to cover it by accident of the
+   full-sequence comparison.
+3. **Test (TG-3), red-first:** after an initial apply over N cards, have the host REMOVE one card
+   (and, separately, APPEND an unscored one), then flush several frames with no further mutation.
+   Assert the `adapt.reapplied` count **stops growing** and the remaining cards are in score order.
+   Both shipped FOLLOW-792 tests hold the count at 3 (`adapt-mutation-resilience.test.ts:352-357`,
+   `:391-395`) and therefore cannot fail on this.
+4. **Test:** assert no DOM churn once converged — e.g. capture a node reference and assert it is not
+   re-inserted (`MutationObserver` record count, or an `isConnected`/reference-identity check) after
+   the repair settles.
+
+cross_ref: [packages/sdk/src/core/adapt.ts:917-925,945-958,977,982-989;
+packages/sdk/src/**tests**/adapt-mutation-resilience.test.ts:336-410;
+.claude/agents/sdk-engineer/lessons.md (2026-08-03 / FOLLOW-792); RETRO-245 §4a LG-3 / §4c TG-3 / §5
+closure check; RETRO-244 §4a LG-1; FOLLOW-792; FOLLOW-539]
+
+## FOLLOW-804 — Rule AI / Rule AO: PR #664 corrected ONE MASTER_DESIGN paragraph and left three sibling assertions of the superseded `augment.ts` world standing, one of them 1,419 lines up in the same file — plus a re-published false claim that `tagline` is not detected
+
+source_retro: RETRO-245 §4b CB-1 / CB-2 / §4d DG-4 / §3 HW-2 source_ticket: FOLLOW-796 (PR #664),
+root cause FOLLOW-340 (PR #322) recommended_sprint: next recommended_agent: architect priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Gap (a) — Rule AI violation.** PR #664 corrected `docs/MASTER_DESIGN.md` §"Most
+detekcja→adaptacja" (`:1436-1455`). Still asserting the pre-FOLLOW-340 world **after** that merge:
+
+- **`docs/MASTER_DESIGN.md:17`** (changelog v3.8) — _"`packages/sdk/src/core/augment.ts`
+  `annotateDetectedSlots()` rozwiązuje … (primary→fallbacks, **unikalne dopasowanie**, …) …
+  konsumowanym przez `core/description.ts`"_. **Three** falsehoods — the module, the unique-match
+  property, and the consumer module — all three of which the same PR corrected 1,419 lines later in
+  the same file.
+- **`docs/MASTER_DESIGN.md:1476`** — _"SDK woła `annotateDetectedSlots` w `refreshDirectives`"_.
+- **`docs/adr/0008-detection-to-adaptation-bridge.md:46,55,63`** — the same three claims, plus
+  _"primary → ordered fallbacks"_, which the shipped path **cannot** do: the control-plane projects
+  `primary` only (`apps/control-plane/src/lib/tenant-schema.ts:175-178`) and `annotateSlots` never
+  sees a fallback.
+
+**Gap (b) — Rule AO instance: a corrective edit re-published a claim it inherited.** The rewritten
+paragraph keeps _"`features_list` / `tagline` — poza zakresem v1 (**nie wykrywane** ani nie
+adaptowane; AC7 FOLLOW-159)"_ (`docs/MASTER_DESIGN.md:1450`). `features_list` is genuinely neither
+(verified: zero producers across `packages/sdk/src/auto-detect/techniques/*.ts`). **`tagline` IS
+detected** — `packages/sdk/src/auto-detect/techniques/data-estalara.ts:136-142` emits
+`slotSelectors.tagline` whenever the `h1` contains a price. The PR verified three things about
+`features_list` rigorously and carried its sibling along untested.
+
+**Gap (c) — the structural reason RETRO-093's P1 survived 45 days while the correct behaviour was
+written down in two places.** `docs/adr/0008-detection-to-adaptation-bridge.md` is still
+**`PROPOSED` (2026-06-01, never signed off)** and the shipped bridge now diverges from **2 of its 3
+declared properties** (unique-match: dropped by the FOLLOW-340 rewrite and now codified away as
+intent; primary→ordered-fallbacks: never implemented client-side; `cta_primary→cta`: dropped,
+restored by FOLLOW-796). Nothing in this repo compares an ADR's decision clauses against the code
+they describe.
+
+**AC:**
+
+1. Update `docs/MASTER_DESIGN.md:17` and `:1476` to the shipped state (`annotate-slots.ts` /
+   `annotateSlots` / `adapt-description.ts`), and correct or remove the `tagline` clause at `:1450`
+   with the `data-estalara.ts:136-142` citation. Note in the same place that the emitted `tagline`
+   primary is self-referential (`[data-estalara-slot="tagline"]`) and therefore annotates nothing —
+   i.e. producer-only-but-inert, so it is NOT a live half-wire (RETRO-245 §3 HW-2).
+2. Resolve `docs/adr/0008-*.md`: either move it to `SUPERSEDED` with a pointer to the shipped
+   behaviour, or update its Decision clauses 1-2 to match. Its unique-match clause is the subject of
+   **FOLLOW-801** — do NOT unilaterally delete it; if FOLLOW-801 is still open, write the ADR to say
+   the clause is under active decision and cite the ticket.
+3. Do not re-litigate the `cta_primary→cta` mapping or the `features_list` exclusion: both are
+   settled (FOLLOW-796 AC-1/AC-3, verified independently by RETRO-245 §3).
+4. **Sequencing:** coordinate with FOLLOW-801 AC5, which owns the same ADR clause. One PR should
+   land the doc set; state which.
+
+cross_ref: [docs/MASTER_DESIGN.md:17,1440,1450,1476;
+docs/adr/0008-detection-to-adaptation-bridge.md:46,55,63;
+packages/sdk/src/auto-detect/techniques/data-estalara.ts:136-142;
+apps/control-plane/src/lib/tenant-schema.ts:175-178; CONVENTIONS_PATCH.md Rule AI (:2482), Rule AO
+(:3130); RETRO-245 §4b CB-1/CB-2, §4d DG-4, §3 HW-2; RETRO-093; FOLLOW-796; FOLLOW-801]
+
+## FOLLOW-805 — `lookupSchemaFromDb` selects the OLDEST `tenant_site_schemas` row while its JSDoc claims the newest, and applies no activation filter — and PR #664 added 7 tests to that function pinning only the extraction
+
+source_retro: RETRO-245 §4b CB-3 source_ticket: FOLLOW-796 (PR #664) — surfaced by, not caused by
+recommended_sprint: next recommended_agent: backend-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Gap (pre-existing, latent, newly load-bearing).**
+`apps/control-plane/src/lib/tenant-schema.ts:126` documents the query as returning _"the **most
+recently updated** schema row"_. The query is `.orderBy(tenantSiteSchemas.updatedAt).limit(1)`
+(`:135-136`) — Drizzle's bare `orderBy` is **ASC**, so it returns the **oldest** row. There is also
+**no activation filter**, despite `apps/control-plane/src/app/api/schema/activate/route.ts` existing
+and MASTER*DESIGN describing the SDK as receiving *"`slot_selectors` **aktywowanego** schematu
+serwerowego"\_.
+
+Harmless while a tenant has one row — the table is `unique(tenant_id, domain)`
+(`packages/db/src/schema/tenant_site_schemas.ts:53`), i.e. one row **per domain** — and live the
+moment the white-label epic (FOLLOW-639/640/641, ADR-0019) gives one tenant several domains, at
+which point every SDK session on every domain silently reads the oldest domain's selectors.
+
+**Why it is a finding now rather than whenever someone noticed:** PR #664 wrote 158 lines of
+brand-new tests for this exact function
+(`apps/control-plane/src/lib/__tests__/tenant-schema.test.ts`, 7 new cases) and pinned only the
+**extraction** semantics. Not one asserts **which row** is selected. A test suite that arrives at a
+function and documents everything except its selection criterion makes the criterion harder to
+revisit, not easier.
+
+**AC:**
+
+1. Decide and implement the row-selection rule: newest-by-`updatedAt` (`desc()`), activated-only, or
+   per-domain lookup keyed by the request's origin. State the reasoning; per-domain is the shape the
+   `unique(tenant_id, domain)` constraint implies and the one the white-label epic will need.
+2. Correct the JSDoc at `:126` to match whatever is implemented (Rule AI).
+3. **Test:** two rows for one tenant with different `updatedAt` and different `slot_selectors` —
+   assert the documented one is returned. Add it to the FOLLOW-796 suite rather than a new file.
+4. If per-domain selection is chosen, check the Upstash cache key (`tenant-schema.ts` cache helpers)
+   is keyed consistently — a tenant-only cache key would defeat a per-domain lookup.
+
+cross_ref: [apps/control-plane/src/lib/tenant-schema.ts:126,135-136,163-186;
+apps/control-plane/src/lib/**tests**/tenant-schema.test.ts (FOLLOW-796 AC-4 block);
+apps/control-plane/src/app/api/schema/activate/route.ts;
+packages/db/src/schema/tenant_site_schemas.ts:53; docs/MASTER_DESIGN.md:1455-1460; RETRO-245 §4b
+CB-3; FOLLOW-639; FOLLOW-640; FOLLOW-641; ADR-0019]
+
+## FOLLOW-806 — Nothing detects a merged PR with no RETRO entry: the retrospective loop has no closure check on ITSELF, which is how PR #662 was skipped
+
+source_retro: RETRO-245 §5d source_ticket: n/a (loop-integrity finding; trigger = PR #662)
+recommended_sprint: next recommended_agent: devops-engineer (pm-orchestrator pairs on the
+bookkeeping half) priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Gap.** PR #662 merged 2026-08-03 16:37:22 UTC. The session that would have run the
+`retrospective-analyst` was killed when its terminal closed. **Nothing in this repository detected
+the omission.** There is no artefact anywhere that joins merged PRs to `RETRO-NNN` entries:
+`backlog/RETROSPECTIVES.md` is append-only prose, `backlog/QUEUE.md` records _"Next:
+retrospective-analyst"_ as free text, and no CI job, git hook or `.claude/hooks/` script reads
+either. The only reason #662 appears in RETRO-245 is that a human remembered.
+
+**Why this is P2 and not bookkeeping.** `CLAUDE.md` calls this loop _"self-improving — each retro is
+more effective than the last because it reads accumulated prior findings"_, and the retro's own
+mandate is to verify that every claimed closure is wired end-to-end. **The mechanism that verifies
+everyone else's closure has no verifier.** Concretely, had the gap not been caught: #662's shipped
+P2 (RETRO-245 §4a LG-3 — the non-convergence its own ticket half-closed) would be unrecorded, and
+the next retro would have inherited a false premise (_"FOLLOW-792 closed RETRO-244 §4a LG-1"_) with
+no artefact contradicting it. That is the FOLLOW-097→114→127→141 shape applied to the loop itself.
+
+**AC:**
+
+1. A mechanical check that, for every PR merged to `main` in the last N days (suggest N=14), reports
+   whether a `RETRO-NNN` entry cites it. The cheapest reliable join is the PR number: every RETRO §1
+   already carries `**PR:** #N`, and the `<!-- next free … -->` trailer names the PRs too — pick one
+   and make it the contract, then say so in the retro template.
+2. Run it where an omission is actually seen: a scheduled workflow that opens/updates a single
+   tracking issue, or a `SubagentStop`/session-start hook that prints the unretrospected list. Do
+   **not** make it a blocking PR gate — the retro runs _after_ merge by design, so a PR-time gate
+   would be structurally wrong (and would be the Rule AF "permanently red" trap on day one).
+3. Handle the legitimate multi-PR case: RETRO-245 covers three PRs, RETRO-240/241/243 cover two
+   each. The check must accept N PRs per RETRO and M RETROs per PR is not required.
+4. Backfill once: report every merged PR since (suggest) #600 with no RETRO citation, so the
+   existing debt is visible rather than inferred. Do not auto-file retros for them — surface the
+   list.
+5. Prove it: a fixture (or a dry run against real history) in which a known-retrospected PR is
+   reported clean and a deliberately-omitted one is reported missing. Per Rule Q, the check must
+   emit positive proof its assertion executed, not just a silent zero.
+
+cross_ref: [backlog/RETROSPECTIVES.md (RETRO-244 / RETRO-245 §1 `**PR:**` lines and
+`<!-- next free … -->` trailers); backlog/QUEUE.md; .claude/hooks/; CLAUDE.md §"Per-ticket
+retrospective loop"; CONVENTIONS_PATCH.md Rule Q (:1638), Rule AF (:2163), Rule AP (:3242);
+RETRO-245 §5d; RETRO-210; RETRO-233; FOLLOW-645]
+
+## FOLLOW-807 — Global budgets (SDK bundle size, coverage floors, latency) are unprotected under parallel worktree dispatch: each PR passes in isolation and the breach only appears on `main` after the second merge
+
+source_retro: RETRO-245 §5d / §6 source_ticket: FOLLOW-795 (PR #663) + FOLLOW-796 (PR #664), run in
+parallel worktrees recommended_sprint: next recommended_agent: devops-engineer priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Gap (measured, not hypothetical).** PRs #663 and #664 ran as isolated worktrees off the same base
+and each measured the SDK bundle against `main`'s **41.73 KB**: **41.86 KB** (#663, job log
+`30841300660`) and **41.75 KB** (#664, `30841338124`). Both pass the 42 KB gate. **Neither could
+observe the other's cost**, and nothing in CI, `docs/AGENT_WORKFLOW.md`, or the branch config
+computes a combined figure — the second PR to merge would simply have failed the gate on `main`,
+after the fact, with no owner and no pre-merge signal. The combined figure is **41.88 KB** (measured
+on merged `main`), i.e. **123 bytes / 0.29% of headroom**. It landed under the limit; nothing in the
+process made that true.
+
+**The class is broader than bundle size.** Any budget whose constraint is over the **merged whole**
+rather than over the diff has the same hole, and parallel worktree dispatch is now the default for
+non-overlapping tickets:
+
+- SDK bundle `<42 KB` gzip (`packages/sdk/scripts/check-bundle-size.js:16`).
+- Coverage floors (≥80% `packages/*`, ≥70% `apps/*`, CLAUDE.md quality bars) — two PRs each adding
+  uncovered lines can each stay above the floor and land below it.
+- p95 latency budgets (<100 ms Decision API, <50 ms ingest ACK).
+- Event volume / cardinality (see FOLLOW-539).
+
+**Checked against the nearest existing rule rather than assumed novel.** `CONVENTIONS_PATCH.md`
+**Rule AG** governs parallel-worktree agents appending to a shared **append-only file**, and its
+remedy (per-ticket fragment files) is structurally inapplicable — a numeric budget cannot be
+sharded. **Rule Q** governs a gate that can soft-skip; this gate does not skip, it measures the
+wrong universe. **Rule A** requires CI green; both PRs _were_ green. None fires. Recorded in
+RETRO-245 §6 at count 1 with a four-clause second-sighting bar; this stub is the **mechanism**, not
+a rule.
+
+**AC:**
+
+1. Add a combined-budget measurement to the dispatch procedure for parallel tickets: before opening
+   the PRs (or before the second merge), merge the branches locally and measure every global budget
+   they touch. The PM did exactly this by hand for #663/#664 — **write it into
+   `docs/AGENT_WORKFLOW.md` so it is a step, not an instinct**, and name the budgets it applies to.
+2. Mechanise the cheap half: make the bundle gate also run against `main`-merged-with-the-branch
+   (e.g. a second `build:check` after `git merge --no-commit origin/main`), so a PR that is fine
+   alone and breaching after merge reds **before** the merge, not after. Coordinate with
+   **FOLLOW-800** (headroom reporting + WARN threshold) — one script change should serve both; do
+   not duplicate.
+3. Extend the dispatch record in `QUEUE.md` for parallel tickets to name the global budgets each
+   touches, so the combined check has a checklist rather than a memory.
+4. Prove it: two throwaway branches that each pass the size gate and jointly breach it — the new
+   check must red on the second.
+5. State explicitly which budgets are **out** of scope for the mechanical half (latency, event
+   volume) and why, so the procedural half in AC1 is known to be carrying them (Rule AP clause 2 —
+   an enumerated residual, not silence).
+
+cross_ref: [packages/sdk/scripts/check-bundle-size.js:16; .github/workflows/ci.yml:226;
+docs/AGENT_WORKFLOW.md; backlog/QUEUE.md (FOLLOW-795/796 dispatch records); CONVENTIONS_PATCH.md
+Rule AG (:2228), Rule Q (:1638), Rule AP (:3242); RETRO-245 §5d / §6; FOLLOW-800; FOLLOW-673;
+FOLLOW-539; ESC-028]
+
+<!-- next free FOLLOW number: 808 (FOLLOW-801..807 filed by RETRO-245, covering PRs #662/#663/#664).
+801 = P1 SHIPPED: annotateSlots annotates EVERY match document-wide page-type-blind, so FOLLOW-796's
+cta_primary→cta translation turned broad producer selectors (a[href*="contact"], [class*='button'])
+from inert into live observer-enforced textContent overwrites of every contact link/button on a
+tenant page; also forces the ADR-0008 unique-match decision. 802 = P2 the headline_owned_by_description
+early return emits a false adapt.applied + poisons the fingerprint, teardownAdaptObservers CANNOT
+release a 'description' ownership entry, + the Rule S sibling asymmetry in adapt-description.ts —
+MUST be scoped with FOLLOW-793, which covers 1 of 3 doors. 803 = P2 reorder matches() still frozen on
+desiredOrder so any card-COUNT change never converges → unbounded adapt.reapplied + DOM churn (the
+residual half of RETRO-244 LG-1 that FOLLOW-792 did not close). 804 = P2 Rule AI/AO doc propagation:
+MASTER_DESIGN:17/:1476 + ADR-0008:46/55/63 still describe augment.ts/annotateDetectedSlots/unique-match,
+and the rewritten paragraph re-published the false "tagline nie wykrywane" claim. 805 = P3
+lookupSchemaFromDb picks the OLDEST tenant_site_schemas row while its JSDoc says newest, no activation
+filter; #664 added 7 tests there and pinned only extraction. 806 = P2 nothing joins merged PRs to RETRO
+entries — the retro loop has no closure check on ITSELF (PR #662 was silently skipped). 807 = P2 global
+budgets unprotected under parallel worktree dispatch (bundle measured 41.86 + 41.75 in isolation,
+41.88 combined = 123 bytes headroom; nothing in CI or the procedure computes the combined figure).
+NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-799 (a 2nd undocumented
+adapt.skipped reason), FOLLOW-673 (bundle now 41.88KB vs SoT 39.86KB), FOLLOW-797 (its file's false
+red-run citation now vouches for 10 tests after 2 more PRs walked past it), FOLLOW-645 (FOURTH sighting
+of worktree stranding — the PM's "second occurrence" was an undercount; already correctly scoped, still
+P3/promoted_to_queue:false — a PRICING decision for the PM), FOLLOW-794 (HW-1 ClassDirective re-verified
+still zero producers), FOLLOW-793 (needs re-scoping, see 802). -->

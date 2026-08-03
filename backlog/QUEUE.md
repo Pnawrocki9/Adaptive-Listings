@@ -1,6 +1,16 @@
 # Backlog Queue
 
-### FOLLOW-793 + FOLLOW-802 + FOLLOW-803 — status: READY_FOR_REVIEW (PR #667, 2026-08-03)
+### FOLLOW-793 + FOLLOW-802 + FOLLOW-803 — status: DONE (PR #667 merged 2026-08-03, `1a6a64ef`)
+
+**Live in production, verified by CHECKSUM rather than by marker.** Built `packages/sdk` from the
+merged `main` locally and polled `admin.estalara.com/sdk.js` until its **sha256 matched that build**
+(~90s, 3 polls). A grep for a distinctive string was deliberately not used here: unlike FOLLOW-801,
+these three fixes change control flow rather than adding a new literal, so a marker grep could pass
+against the OLD bundle. Hash equality proves the served bytes are exactly this commit.
+
+**This was the first ordinary ticket to ship through the FOLLOW-808 pipeline** — the two merges
+before it proved the mechanism on itself. Ticket work now reaches tenants on merge, with no
+hand-committed artifact in between.
 
 **PR:** https://github.com/Pnawrocki9/Adaptive-Listings/pull/667 —
 `fix(sdk): report applied only for writes that happened`.

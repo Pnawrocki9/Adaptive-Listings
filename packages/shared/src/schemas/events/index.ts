@@ -65,7 +65,11 @@ import { ConsentGrantedEventSchema, ConsentDeniedEventSchema } from './consent.j
 import { ListingViewedEventSchema, CtaClickedEventSchema } from './listing-observe.js';
 import { QuizEventEventSchema, QuizMismatchEventSchema } from './quiz.js';
 import { SidebarClosedEventSchema } from './sidebar.js';
-import { AdaptAppliedEventSchema, AdaptSkippedEventSchema } from './adapt-events.js';
+import {
+  AdaptAppliedEventSchema,
+  AdaptSkippedEventSchema,
+  AdaptReappliedEventSchema,
+} from './adapt-events.js';
 import {
   AdaptDescriptionAppliedEventSchema,
   AdaptDescriptionSkippedEventSchema,
@@ -114,7 +118,11 @@ export * from './intent-snapshot.js';
  *   SDK already emits from packages/sdk/src/core/adapt-description.ts but ingest was
  *   silently rejecting): adapt.description.applied, adapt.description.skipped,
  *   adapt.description.error, adapt.description.re, adapt.description.headline.applied,
- *   adapt.description.headline.re).
+ *   adapt.description.headline.re,
+ * plus generic-directive MutationObserver repair observability — FOLLOW-791 (the
+ *   text/class/reorder directive pipeline now re-asserts a framework-reverted directive
+ *   and needs a way to distinguish a REPAIR from the original `adapt.applied`):
+ *   adapt.reapplied.
  *
  * Adding a new event type:
  *   1. Define payload + extended event schemas in the appropriate category file
@@ -194,6 +202,8 @@ export const EventSchema = z.discriminatedUnion('type', [
   AdaptDescriptionReappliedEventSchema,
   AdaptDescriptionHeadlineAppliedEventSchema,
   AdaptDescriptionHeadlineReappliedEventSchema,
+  // generic-directive MutationObserver repair observability (1) — FOLLOW-791
+  AdaptReappliedEventSchema,
 ]);
 export type Event = z.infer<typeof EventSchema>;
 
@@ -258,5 +268,7 @@ export const EVENT_TYPES = [
   'adapt.description.re',
   'adapt.description.headline.applied',
   'adapt.description.headline.re',
+  // generic-directive MutationObserver repair observability — FOLLOW-791
+  'adapt.reapplied',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];

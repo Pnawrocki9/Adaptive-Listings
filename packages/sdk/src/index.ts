@@ -58,6 +58,7 @@ import {
   applyDirectives,
   setEventQueueRef,
   resetAdaptState,
+  teardownAdaptObservers,
   postQuizCompletionPing,
 } from './core/adapt.js';
 import { annotateSlots } from './core/annotate-slots.js';
@@ -814,10 +815,16 @@ async function init(): Promise<IntentState | null> {
           currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT;
 
         if (aboveFloor) {
+          // FOLLOW-791 / Rule AB: propagate the same latest-wins staleness predicate used
+          // by applyDescriptionAdaptation (:833 below) into the generic directive pipeline's
+          // MutationObserver-backed resilience mechanism, so a rapid cross-listing nav that
+          // supersedes this adaptation cannot repaint a stale archetype's directive onto the
+          // newer listing via a deferred repair.
           applyDirectives(resp.directives, {
             archetypeId: resp.archetype as ArchetypeId,
             confidence: resp.confidence,
             sessionId: currentSession.sessionId,
+            isStale: () => myRefreshId !== latestRefreshId,
           });
 
           // Fetch + apply long-form description adaptation (FOLLOW-159).
@@ -1710,6 +1717,11 @@ async function init(): Promise<IntentState | null> {
       stopDwellTimer();
       cleanupObservers();
       teardownDescriptionObservers();
+      // FOLLOW-791 AC5: disconnect the generic directive pipeline's resilience observers
+      // too, mirroring teardownDescriptionObservers() above — resetAdaptState() (called on
+      // cross-listing nav / archetype change) already covers those cases; this covers the
+      // explicit SDK destroy() / SPA-teardown path, which does not call resetAdaptState().
+      teardownAdaptObservers();
       profilingToggle?.destroy();
       shadowHost?.destroy();
       dqsTracker.reset();

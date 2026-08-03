@@ -898,6 +898,38 @@ NEXT: Dispatch FOLLOW-773+774 combined (localhost-gated acceptance criteria stat
 wait, validate, then FOLLOW-782, then FOLLOW-026 (Levels 1+3 scope, migration-free,
 localhost-gated).
 
+### FOLLOW-773+774 — status: IN_PROGRESS (dispatched 2026-08-03)
+
+**Pre-dispatch checks done, independently, not on the stub's own say-so:** `origin/main`
+re-confirmed at `7aacdd1d` (this session's own bookkeeping commit), zero open PRs
+(`gh pr list --state open` → `[]`). Both stated dependencies (FOLLOW-770/#656,
+FOLLOW-768+769+771/#657, FOLLOW-763/#658) confirmed MERGED via
+`gh pr list --state all --search "658"` etc. Read both stubs in full (`FOLLOW_UPS.md:24332-24550`):
+FOLLOW-773 touches only `.github/workflows/redis-shadow-smoke.yml`; FOLLOW-774 touches the same
+workflow file plus `docs/runbooks/upstash-redis-env-parity.md` and the smoke test file — **no
+migration, no schema, no DB touch anywhere in either ticket.** Confirmed migration-free.
+
+**assigned_to:** devops-engineer **model: Sonnet** — this is the delegation table row "Terraform,
+CI/CD, workflows, secrets, observability, runbooks"; the work is CI-workflow YAML plus a
+proof-of-effect step plus a runbook correction, all inside a single well-specified ticket scope with
+the analysis already done in both stubs (no open design question left for the worker). Combined
+dispatch because both tickets touch the same file region (the stub's own note: "queued for combined
+dispatch with FOLLOW-774... AFTER FOLLOW-770 / 768+769+771 / 763 land"). **started_at:** 2026-08-03.
+**branch:** `devops-engineer/FOLLOW-773-774-smoke-workflow-hardening`.
+
+**Acceptance-gate override stated explicitly per CEO DECISION 2 above** (localhost-first): the
+worker must NOT write a prod-verified gate. Where the ticket's own AC calls for reproducing GitHub
+Actions run behaviour (FOLLOW-773 AC1: "queue three runs into one group... paste the run ids"), that
+is inherently a GitHub-hosted-runner action, not localhost — this is explicitly carved out in the
+dispatch brief as the one AC that must run against GitHub Actions itself (it is testing GitHub's own
+concurrency-group semantics, which cannot be observed on localhost by definition); every other AC
+(the proof-of-effect artefact, the comment corrections, the runbook fix, the negative-control
+namespacing, the fork-PR case-table self-test) must be demonstrated running locally (`act`/direct
+script invocation/`--self-test`) before any CI push, and the PR description must show that local
+run's output, not just a claim.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
 ---
 
 ## ▶️ (superseded) START HERE — session 94 (2026-08-03) — RETRO-242 merged (Rule AQ promoted), a live Rule AN collision found and resolved, PR #659 filed retroactively, code-audit batch filed

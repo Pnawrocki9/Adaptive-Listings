@@ -2870,3 +2870,17 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   verify it with `git log origin/main -1` before proceeding to any git-mutating step (rebase, push,
   dispatch) -- a false premise here would have caused a rebase against the wrong base, the exact
   defect class this whole exchange was about.
+
+- **Date / ticket:** 2026-08-03 — FOLLOW-773+774 (P2 freeze + localhost-first pivot session)
+- **Delegation row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks" →
+  devops-engineer
+- **What validation caught (or missed):** Independently re-checked "RETRO-243 is merged" before
+  doing anything else and found local `main` was 1 commit ahead of `origin/main`, unpushed — the
+  coordinator's own "merged" claim was true locally but had never reached origin. Also caught,
+  before dispatch, that FOLLOW-026's Level-2 AC requires a brand-new migration column
+  (`tenants.placeholder_overrides`) that doesn't exist anywhere in the repo — flagged and re-scoped
+  before any worker started, per standing instruction.
+- **A delegation/validation rule I'd add:** when a CEO decision changes the acceptance-gate language
+  (e.g. localhost-first), write the override into QUEUE.md's dispatch record itself, not just a
+  general policy note — a worker reads the ticket dispatch record, not the session preamble, so the
+  override must travel with the ticket.

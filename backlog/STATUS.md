@@ -1013,3 +1013,41 @@ as a side effect of checking for new collisions.
 NEXT: dispatch RETRO-243 (folding in code-review finding #1 + this session's own collision as
 evidence for RETRO-242's already-named candidate pattern, not double-counted), then FOLLOW-773+774,
 then start the code-audit batch (FOLLOW-782/F-02 first, per stated priority).
+
+## Session 95 (2026-08-03)
+
+**RETRO-243 pushed to origin** — discovered local `main` had NOT actually reached `origin/main`
+despite being reported merged (local was 1 commit ahead, unpushed); pushed directly, clean
+fast-forward, no conflict. This is the third time this session independent re-verification of a
+"main is at X" claim caught a real discrepancy rather than a narration error — worth noting to Piotr
+as a pattern, not just filing silently.
+
+**CEO P2 freeze implemented**: 14 stubs (FOLLOW-775/776/777/778/779/781/783/784/785/786/787/788/
+789/790) annotated FROZEN directly on their `promoted_to_queue` line with reason + date + pointer to
+QUEUE.md session-95 head. Standing rule recorded: future retro/audit stubs default frozen unless P1.
+Unfreeze requires a new dated CEO ruling only.
+
+**Localhost-first acceptance-gate override adopted** for all dispatch briefs from this point:
+"demonstrated on localhost," not "verified in prod." Record corrected on three previously mis-framed
+pilot blockers (ESC-020, FEEDBACK_ENDPOINT_ENABLED 503 gate, FOLLOW-449 CH migration) — see QUEUE.md
+session-95 head for the exact correction. ESC-045 items 2-3 elevated in relevance.
+
+**FOLLOW-026 corrected before dispatch**: stale line citations fixed (`adapt.ts:87-100` →
+`:507-525`), finding independently re-confirmed accurate and current. Migration conflict found and
+flagged BEFORE any worker starts: its Level 2 AC needs a new `tenants.placeholder_overrides` column,
+which does not exist in any migration; scoping the eventual dispatch to Levels 1+3 only
+(migration-free), Level 2 deferred pending Piotr's answer on whether merges (not just deploys) are
+paused.
+
+**FOLLOW-773+774 dispatched** to devops-engineer (Sonnet), combined, migration-free confirmed,
+localhost-gated acceptance criteria stated explicitly in the brief (one AC — the GitHub Actions
+concurrency-group reproduction — is explicitly carved out as the sole exception, since it tests
+GitHub's own runner behaviour and cannot be observed on localhost by definition).
+
+**CI-check counter (FOLLOW-773+774): 0/5. Fix-iteration counter: 0/3.**
+
+**1 ticket IN_PROGRESS** (FOLLOW-773+774). **0 open PRs** at dispatch time.
+
+NEXT: Wait for devops-engineer to complete FOLLOW-773+774 (coordinator holds the watchers, no
+self-armed poll), then run full 5a-5g validation, then dispatch FOLLOW-782, then FOLLOW-026 (Levels
+1+3 scope only).

@@ -23674,8 +23674,36 @@ load-bearing for merged CI.
 4. Do NOT change `readShadowChatIntent`'s runtime behaviour, the Redis key format, or anything in
    the adapt route — this is a type + comment change plus one test line.
 
-cross_ref: [RETRO-238 §4d DG-2, §5a; RETRO-234 (the provenance markers' origin, FOLLOW-730);
-FOLLOW-754 (the ADR prose half — different artefact); FOLLOW-740 (the consumer that will need this);
+**PREMISE CORRECTION — RETRO-241 §5a / §7 (2026-08-03, after PRs #653 and #654 merged as `0d111343`
+and `49ad5c04`). The finding stands unchanged; AC2's TARGET MOVED, and following it literally is now
+DESTRUCTIVE.**
+
+- **AC2's line number is stale by +41, and `:431` is no longer an innocuous wrong line.** Traced
+  across all three trees rather than only reading `main`: `3bcfc988` (before either PR) →
+  **`:431`**, the stub was correct when written; `0d111343` (#653 only) → `:461`; `368be9a0` (#654
+  only, counterfactual) → `:442`; **merged `main` → `:472`**.
+- **What is at `:431` on `main` today:**
+  `expect(result!.archetype_hint).toBe(NX_SIGNAL_ARCHETYPE_HINT);` — a **load-bearing assertion
+  inside the FOLLOW-752 warm-key `SET … NX` invariant block**, i.e. inside the exact region
+  **FOLLOW-761 AC5 forbade weakening**. An implementer who follows AC2's _"Delete the double cast at
+  `smoke.test.ts:431`"_ literally **deletes an NX assertion, leaves the actual cast in place, and
+  weakens the repo's only real-Redis invariant gate** — silently, in a green PR.
+- **AC2 is therefore restated:** delete the double cast at **`:472`**, and **locate it by search,
+  not by line number** —
+  `grep -n "as unknown as" tests/integration/redis-shadow-round-trip.smoke.test.ts` returns exactly
+  one hit. A fourth PR (FOLLOW-773 / FOLLOW-774) is queued against this same file, so the number
+  will move again before this ticket is dispatched.
+- **Everything else in this stub was re-verified and is still exact** — `chat-intent-cache.ts:32-51`
+  (the dimensions interface at `:32`, `ShadowChatIntent` at `:47-51`), `:113`, `:118`, `:151`.
+  Neither PR in RETRO-241's pair touches `apps/`.
+- **No collision blocks dispatch.** FOLLOW-773 and FOLLOW-774 touch
+  `.github/workflows/redis-shadow-smoke.yml` (and, for 774, one runbook); only 774's AC1 touches the
+  spec file, and in the env-var/import region, not the cold-key assertion block. Sequencing is still
+  the PM's call.
+
+cross_ref: [RETRO-238 §4d DG-2, §5a; RETRO-241 §5a, §7 (premise correction above); RETRO-234 (the
+provenance markers' origin, FOLLOW-730); FOLLOW-754 (the ADR prose half — different artefact);
+FOLLOW-740 (the consumer that will need this);
 `apps/control-plane/src/lib/chat-intent-cache.ts:32-51,113,118`;
 `tests/integration/redis-shadow-round-trip.smoke.test.ts:431`]
 
@@ -24294,3 +24322,177 @@ separate, larger piece of work with its own propagation checklist (§Y.2).
 cross_ref: [RETRO-240 §4d DG-2, §7; RETRO-239 §4d DG-2 (the same finding, correctly declined, with
 the reasoning this stub supersedes); `docs/MASTER_DESIGN.md` §Snapshot.6; `CONVENTIONS_PATCH.md`;
 Rule AI; Master_Design §Y.2]
+
+---
+
+## FOLLOW-773 — the Redis smoke workflow's new `concurrency` group can get a merged `main` commit's run CANCELLED rather than queued, and both the shipped comment and FOLLOW-761's own AC1 rationale describe a queue-depth-one behaviour
+
+source_retro: RETRO-241 (PR #653, FOLLOW-761) source_ticket: FOLLOW-761 recommended_sprint: next
+recommended_agent: qa-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The finding (LG-1) — measured preconditions, not theorised.** FOLLOW-761 added
+`.github/workflows/redis-shadow-smoke.yml:79-81`:
+
+```yaml
+concurrency:
+  group: redis-shadow-smoke-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: false
+```
+
+`cancel-in-progress: false` protects the **in-progress** job from pre-emption. It does **not**
+prevent GitHub Actions' documented behaviour that a run already **pending** in a concurrency group
+is **cancelled** when a newer run is queued into the same group. `main`'s group
+(`redis-shadow-smoke-main`) has **three real members**: the push run, a PR-merge push run, and the
+nightly cron — which `:73-78` deliberately places in this group. With three in flight, the
+**middle** one is dropped rather than queued.
+
+**Both artefacts assert the opposite.** The shipped comment at `:66-70` says _"a cancelled
+mid-flight run would abandon its fixture keys … so the second run WAITS rather than pre-empting the
+first"_ — true at queue depth one only. FOLLOW-761's own AC1 rationale has the same blind spot
+(_"`cancel-in-progress: false` — a cancelled run leaves keys behind, which is the failure mode being
+avoided"_): it reasoned about cancelling the **running** job and never about cancelling the
+**pending** one. **The omission is in the ticket as much as in the implementation** — recorded so
+this is not read as a worker miss.
+
+**Why it matters more than "one run is skipped".** On a `main` push there is no PR check and no
+watcher. A cancelled run is a status nobody reads, and this repo's own post-merge verification habit
+is literally _"the post-merge push run succeeded"_ (RETRO-240 §2; QUEUE.md session-90 head). The
+gate would not go green over a broken invariant — it would produce **no verdict at all** for a
+merged commit, silently.
+
+**Measured on `main`, this session** (run metadata, `createdAt` vs the job's `startedAt`):
+
+| run           | queued   | job started | pending |
+| ------------- | -------- | ----------- | ------- |
+| `30795183222` | 07:51:37 | 07:52:15    | **38s** |
+| `30791644750` | 06:53:00 | 06:53:22    | 22s     |
+| `30791570137` | 06:51:40 | 06:52:00    | 20s     |
+
+against `main` push intervals observed the same session of **6s, 54s, 69s and 80s**. The 38s window
+against the 54s interval is a **16-second margin**. **Not yet realised:**
+`gh run list --workflow=redis-shadow-smoke.yml --limit 60` → **zero non-success runs**. Price this
+as "cheap, do it before the next multi-merge session", not as an incident.
+
+**Second half (TG-2) — the group has no proof-of-effect artefact at all.** Its effect is visible
+only in run metadata, which nothing in CI records and no artefact asserts. A typo'd group expression
+would render to a constant, silently serialize the entire repo's runs of this workflow, and look
+identical in every log. The measurement above had to be done by hand by a retrospective.
+
+**AC:**
+
+1. **Establish the actual semantics before changing anything — reproduce or refute.** Queue three
+   runs into one group (two `workflow_dispatch` on the same ref plus a push, or equivalent) and
+   record whether the middle **pending** run is cancelled. Paste the run ids and statuses. If GitHub
+   does **not** cancel it, say so plainly and close this ticket with that evidence — the finding is
+   a documented-behaviour inference, and refuting it is a valid outcome.
+2. If confirmed, choose and justify ONE remedy rather than stacking them: (a) drop the cron out of
+   the ref-keyed group by giving `schedule` its own group; (b) key the group on `github.run_id` for
+   `push`-on-`main` so main-line runs never queue behind each other (they cannot race — the fixture
+   keys are already run-scoped by FOLLOW-761 AC2, which is precisely the belt-and-braces the group
+   was not supposed to be load-bearing over); or (c) keep the group and accept cancellation, with a
+   detection step. State which of the three you took and why the other two are worse.
+3. **Correct `:66-70` and `:73-78` to describe the mechanism, including the pending-cancellation
+   case** — the comment is currently a claim broader than the mechanism backs (Rule AI shape, DG-2).
+4. **Give the group a proof-of-effect artefact** (TG-2): a step that prints the group name it
+   actually resolved to, so a typo'd or constant-folded expression is visible in the log rather than
+   silent. Do NOT add a step that merely echoes the literal — print the evaluated value.
+5. Do NOT weaken any assertion in `redis-shadow-round-trip.smoke.test.ts`, do NOT remove the
+   `NX_RUN_SUFFIX` namespacing (it is the mechanism that makes option (b) safe), and do NOT touch
+   the `REQUIRE_REDIS_SMOKE` / `hard_fail_required` logic — that is FOLLOW-762's shipped territory.
+
+cross_ref: [RETRO-241 §4a LG-1, §4c TG-2, §4d DG-2, §5b;
+`.github/workflows/redis-shadow-smoke.yml:59-61,66-78,79-81`; RETRO-238 §4a LG-1 (the race this
+group was added to close); FOLLOW-761 AC1 (whose rationale carries the same blind spot); Rules Q /
+AI; RETRO-241 §6 (P-22 considered on this finding and DECLINED on clause (c) — a cancelled run is a
+visible non-success, not a false-GREEN)]
+
+---
+
+## FOLLOW-774 — the negative-control step re-runs the smoke spec WITHOUT `NX_RUN_SUFFIX`; the fork-PR soft-skip branch has never executed; and the runbook the PR's own warning points at still describes the mechanism the PR replaced
+
+source_retro: RETRO-241 (PR #654, FOLLOW-762 — the first item is a CROSS-PR interaction with #653)
+source_ticket: FOLLOW-762 recommended_sprint: next recommended_agent: devops-engineer priority: P3
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Priority note, up front so it is not mis-scheduled:** the ticket is P3 overall, but **AC3 (the
+runbook) is P2-shaped and is the part to do first** — it is a live operator-facing document that is
+now false, and it is cheap.
+
+**Finding 1 (LG-2) — the CROSS-PR one, and the reason RETRO-241 exists.**
+`.github/workflows/redis-shadow-smoke.yml:186-196` (FOLLOW-762's negative control) invokes the SAME
+spec as the main smoke step, with six env vars and **not** `NX_RUN_SUFFIX`. There is no job-level or
+workflow-level `env:` to inherit from, so that invocation runs with `NX_RUN_SUFFIX = 'local-dev'`
+(`redis-shadow-round-trip.smoke.test.ts:312`) — the fixed local fallback, shared with every
+developer's machine. **Every CI job therefore contains one un-namespaced invocation of the suite
+FOLLOW-761 exists to namespace.**
+
+**Harmless today, and the mechanism was checked rather than assumed:** the credential guard at
+`smoke.test.ts:111-127` is at **module scope**, so with `REQUIRE_REDIS_SMOKE=1` and
+`UPSTASH_REDIS_TOKEN` blanked the module throws **before any `describe` registers**, before any
+`spawnSync`, before any Redis contact — and the endpoints are `.invalid` besides. Nothing is
+written.
+
+**Why it is still worth an hour.** The invariant FOLLOW-761 bought is _"no CI invocation of this
+suite uses un-namespaced fixture keys."_ After the merge that invariant holds only as a
+**consequence** of the negative control continuing to fail fast — an unstated coupling between two
+tickets written in ignorance of each other. Anyone who later supplies the negative control real
+credentials (to exercise a different failure), or moves the guard into a `beforeAll`, gets writes to
+`smoke-tenant-752-*-local-dev` on the shared instance, colliding with any developer running the
+suite locally. **Nobody in the loop could have caught this**: #653's author never saw the
+negative-control step, #654's author never saw `NX_RUN_SUFFIX`, and the human resolver was resolving
+a one-line conflict whose interaction lives one step below it.
+
+**Finding 2 (TG-1) — the fork-PR soft-skip branch has NEVER executed and its failure direction is
+toward SKIP.** `:141-146` (`hard_fail_required=false`) is reachable only from a fork-originated
+`pull_request`; this repo takes agent-prefixed branches pushed directly, so no run has ever entered
+it, nor has the `::warning::` at `:149`. FOLLOW-762 replaced _an untested guarantee_ (RETRO-238
+TG-3) with _a tested guarantee plus an untested exemption_ — a real improvement, but the residual
+sits on the unsafe side: if the fork predicate ever silently inverted, **every trusted trigger would
+soft-skip**, which is the exact condition FOLLOW-762 was written to make impossible.
+
+**Finding 3 (DG-1) — the runbook the PR's own new warning points at still describes the mechanism
+the PR replaced.** `docs/runbooks/upstash-redis-env-parity.md:77-80` ("Option C — CI smoke
+workflow") reads: _"When all four secrets are provisioned in GitHub Actions (per ESC-028), the
+workflow **will** run in hard-fail mode (`REQUIRE_REDIS_SMOKE=1`). **Until then it soft-skips** with
+a `::notice::` annotation."_ That is the secret-presence-keyed contract FOLLOW-762 deleted — and the
+PR's new `::warning::` at `redis-shadow-smoke.yml:149` ends with _"Provision all four secrets; see
+docs/runbooks/upstash-redis-env-parity.md"_, so an operator who hits the new warning is routed to a
+document telling them the job is not hard-failing yet.
+
+**This is a walked-axis finding, and that is the lesson.** FOLLOW-762 AC4 named **one** artefact
+(`backlog/STATUS.md`); the worker verified exactly that one, correctly and independently
+(`grep -c "ESC-028" backlog/STATUS.md` → 0, re-run by RETRO-241). The full axis has **four**:
+STATUS.md (clean ✓), `backlog/ESCALATIONS.md:1763-1772` (inside the RESOLVED ESC-028 body — dated
+history, correctly left alone), `docs/runbooks/OPERATOR_SESSION_2026-07-11.md` / `-2026-07-12.md`
+(dated session logs, correctly left alone), and `docs/runbooks/upstash-redis-env-parity.md`
+(**evergreen runbook, now false**). Rule AI fires on the fourth only.
+
+**AC:**
+
+1. Decide and implement what `NX_RUN_SUFFIX` the negative-control invocation gets. Preferred: pass
+   `${{ github.run_id }}-negctl` so **no** CI invocation of the suite can ever use the local
+   fallback, regardless of what the guard does later. State the alternative you rejected (leaving
+   it, documented as safe-because-the-guard-throws) and why the structural fix is worth the one line
+   — the answer should be "because the safety currently rests on another ticket's unstated
+   behaviour".
+2. Add a fixture or assertion for the **fork-PR exemption** that does not require a real fork:
+   extract the trigger-trust decision into a shell case-table exercised by a `--self-test`-style
+   invocation, or add a `workflow_dispatch` input that simulates the fork flag and asserts
+   `hard_fail_required=false` **only** for it. The AC is not "the branch exists" — it is "an
+   inverted fork predicate turns something RED".
+3. Correct `docs/runbooks/upstash-redis-env-parity.md:77-80` to the trigger-type contract, in the
+   same PR. Do NOT touch `backlog/ESCALATIONS.md` or the two `OPERATOR_SESSION_*.md` files — those
+   are dated historical records and are correct as history (verify this yourself before editing
+   anything: the distinction between an evergreen runbook and a dated log is the whole point of the
+   finding).
+4. Do NOT change any assertion in the spec, do NOT remove the negative control or its `if: always()`
+   / `continue-on-error` shape (it is the Rule Q clause-4 proof and it works), and do NOT touch the
+   `concurrency` block — that is FOLLOW-773's territory.
+
+cross_ref: [RETRO-241 §4a LG-2, §4c TG-1, §4d DG-1, §5b, §8 (FOLLOW-762 AC4 — closed on its named
+artefact, axis unwalked); `.github/workflows/redis-shadow-smoke.yml:141-149,164-172,182-197`;
+`tests/integration/redis-shadow-round-trip.smoke.test.ts:111-127,312,314-317`;
+`docs/runbooks/upstash-redis-env-parity.md:77-80`; RETRO-238 §4c TG-3 (the untested guarantee this
+ticket's exemption half rhymes with); Rules AI / Q; RETRO-241 §8 ("seam" — the fourth displacement
+mode, of which finding 1 is the first instance)]

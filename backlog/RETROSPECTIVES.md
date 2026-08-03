@@ -43676,3 +43676,763 @@ the same salvage path the prior three used, which is why nobody has noticed the 
 FOLLOWS FILED: 770 (P1 devops 3h), 771 (P2 devops 2h), 772 (P2 architect 1h);
 premise corrections applied to 768 and 769; one in-scope repair (FOLLOW_UPS.md </details>). QUEUE.md /
 ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-241 — FOLLOW-761 (#653) + FOLLOW-762 (#654) — 2026-08-03
+
+**COMBINED ENTRY — why, and what the combination bought.** Like RETRO-240, this pair was batched by
+**shared parent retro**: both tickets are RETRO-238's own §7 follow-ups (LG-1 → 761, LG-2/TG-3/DG-1 →
+762). Unlike RETRO-240, the two PRs **did** interact — they edited the same line of the same file in
+mutually unmergeable ways, and the second to merge required a real hand resolution. So this entry has
+two organising questions instead of one:
+
+1. **Does RETRO-238's §7 list close, end-to-end?** It does, on every AC of both tickets, and one AC
+   closed **better than the AC asked** because the worker caught a defect in the AC itself (§8,
+   FOLLOW-761 AC1 — the stub's own suggested `group: ${{ github.ref }}` would have been **inert**).
+2. **What did the collision cost, what caught it, and what did the resolution NOT cover?** The
+   collision was caught by a **third party** — the PM running `git merge-tree` pairwise across all
+   open PRs — which neither PR's own CI nor either worker could have done, because **neither branch
+   ever contained the other's changes** (`git log 368be9a0` shows PR #654 branched from `3bcfc988`,
+   two commits before `0d111343` landed). The resolution combined both mechanisms correctly and
+   **losslessly** (proven below, not assumed). But it combined them **at the one line where they
+   textually collided and nowhere else** — and the semantic interaction one step below that line was
+   never examined by anyone (§4a LG-2).
+
+**This is deliberately NOT the same finding as RETRO-240 §5d.** That one was **PM-vs-worker on a docs
+file**, a collision created *after* the compatibility verdict by the validator's own push (P-24, a
+verification artefact going stale). This one is **worker-vs-worker on a code file**, a collision that
+existed *before* the verdict and that the verdict **correctly predicted and pre-solved**. RETRO-240's
+was a failure of the discipline; this one is a **genuine catch by it**. Both are recorded because the
+pair together is what makes the discipline's shape legible (§5d).
+
+**A correction to my own dispatch brief, made before using it.** The brief states FOLLOW-759 was
+"already closed via RETRO-239". It was not: FOLLOW-**760** closed via PR #650 and was traced in
+RETRO-239; FOLLOW-**759** rode along in PR #652 and was traced in **RETRO-240 §8**. Both are closed;
+the attribution is one retro off. Stated so the closure ledger in §8 is not read against a wrong
+prior.
+
+### 1. Summary of change
+
+- **PR #653 (FOLLOW-761):** merged 2026-08-03 **06:50:29 UTC**, commit `0d111343`. 2 files
+  (**+70 / −6**). Branch `qa-engineer/FOLLOW-761-redis-smoke-concurrency`. Agent: qa-engineer
+  (Sonnet). Modules: CI / infra (1 workflow) · tests (1 integration spec).
+- **PR #654 (FOLLOW-762):** merged 2026-08-03 **06:51:37 UTC**, commits `49ad5c04` (code) +
+  `c86f3b0c` (the worker's own handoff note). 3 files (**+123 / −25**). Branch
+  `devops-engineer/FOLLOW-762-redis-smoke-hardfail-scope`. Agent: devops-engineer (Sonnet). Modules:
+  CI / infra · tests · backlog.
+- **Combined:** **3 distinct files**, **+193 / −31**, merged **68 seconds apart**. `0d111343` is the
+  direct parent of `49ad5c04`. `main` has since moved to `7f1b2c40`, so this retro is written on
+  `retrospective-analyst/RETRO-241-follow-761-762-combined`, branched off `origin/main` after a
+  fetch (HEAD read, not assumed).
+- **Key contracts changed:**
+  - **NEW — workflow-level `concurrency` group** (`redis-shadow-smoke.yml:79-81`):
+    `group: redis-shadow-smoke-${{ github.head_ref || github.ref_name }}`,
+    `cancel-in-progress: false`. Serializes the `push` and `pull_request` runs of one branch, and
+    puts the nightly cron in `redis-shadow-smoke-main` with any main-ref run (documented at
+    `:73-78`). **Breaking: no** — but it introduces a new failure mode nothing records (§4a LG-1).
+  - **NEW — cross-runtime env contract `NX_RUN_SUFFIX`.** Producer `redis-shadow-smoke.yml:172`
+    (`${{ github.run_id }}`) → consumer `redis-shadow-round-trip.smoke.test.ts:312` → fixture
+    constants `:314-317` → `runNxWriter` `spawnSync` argv `:332` → `nx_invariant_writer.py:56,63`
+    (`sys.argv`) → `write_shadow_intent(tenant_id=…)` `:69,:92` → the real Redis key. Five hops,
+    two runtimes, terminating in an assertion against a live Upstash instance.
+  - **CHANGED — the FIXTURE KEY FORMAT of the FOLLOW-752 suite**, from `smoke-tenant-752-warm` to
+    `smoke-tenant-752-warm-<run_id>` (and the three siblings). **Breaking for anything hard-coding
+    the old key** — grep says nothing does
+    (`grep -rn "smoke-tenant-752\|smoke-session-752" --include=*.md --include=*.ts --include=*.py
+    --include=*.yml --include=*.sh .` → only the spec itself, plus backlog prose). Recorded because
+    it is a real format change in a shared multi-tenant test instance.
+  - **NEW — step output `hard_fail_required`** (`:142` / `:147`), consumed by the
+    `REQUIRE_REDIS_SMOKE` expression (`:165`). **`REQUIRE_REDIS_SMOKE`'s SEMANTICS CHANGED**: from
+    "1 iff all four secrets happen to be present" to "1 unconditionally on every trigger except a
+    fork-originated `pull_request`". **Breaking: no — strictly stronger** on every trigger this repo
+    actually uses. `secrets_present` survives as the fallback arm, now reachable only on a fork PR.
+  - **NEW — a two-step CI-executed negative control** (`:182-219`): a `continue-on-error` vitest
+    invocation with `UPSTASH_REDIS_TOKEN` blanked under `REQUIRE_REDIS_SMOKE=1`, plus an
+    `if: always()` assert step that fails the job on exit 0, on a missing exit code, or on a wrong
+    message. Terminates in `exit 1`.
+  - **No public API surface changed** — no `@estalara/sdk` export, no ingest event schema, no
+    decision-API contract, no migration. Re-checked against CLAUDE.md's escalation list. **No
+    escalation trigger.**
+  - **Master Design alignment (`docs/MASTER_DESIGN.md`, v4.4):** no §Snapshot.1 row covers CI
+    workflows or integration smoke harnesses; neither merge moves any §Snapshot.1 verdict. Same
+    conclusion RETRO-240 reached, re-derived rather than inherited. **No divergence introduced.**
+  - **Rule AN allocation check, run against `origin/main` (`7f1b2c40`) before allocating anything:**
+    max FOLLOW = **772**, max RETRO = **240**, max Rule = **AP**. RETRO-241 and FOLLOW-773/774 are
+    allocated against that tip; **no Rule is minted** (§6).
+
+### 2. Verification done in PR
+
+- **#653** — no new test *files*; the spec changed in three places (import of `afterAll` `:63`, the
+  key-namespacing block `:308-317`, the `afterAll` cleanup `:379-383`). **Assertions added: 0 — and
+  that is correct**, the ticket's subject is isolation, not coverage. **AC5 re-verified by me on
+  merged `main` rather than taken from the PR:** `ttlAfterEmpty` still uses `.toBeLessThan(
+  ttlAfterSignal)` at `:440` (not `toBeLessThanOrEqual`), and `expect(ttlAfterEmpty).toBeGreaterThan(0)`
+  at `:441` — nothing relaxed.
+- **#653's AC4 evidence is the strongest in this pair, and it is the PM's, not the worker's.** The
+  worker proved concurrency against a ~150-line hand-built mock of the Upstash REST protocol
+  (justified: no docker in its sandbox). The PM re-proved it against a **real** Redis
+  (`redis:7-alpine` + `hiett/serverless-redis-http` + a compatibility proxy, because that image's
+  `latest` does not implement the path-style `GET /get/<key>` routes the TS reader uses — confirmed,
+  not assumed), running the unmodified production `write_shadow_intent` / `readShadowChatIntent` /
+  `deleteShadowChatIntent` in a `git worktree`: two genuinely concurrent processes, ~5s overlapping
+  windows including the 3.3s `AC1(a)` sleep, **8/8 passing**, and all four run-scoped keys `null`
+  afterwards. It also caught and redid its own first attempt, which had a `cd`-scoping bug that ran
+  one process against `main`'s pre-fix code (QUEUE.md `:318-336`).
+- **#654** — **4 new shell assertions** in the "Assert negative control failed with the expected
+  message" step (`:203-217`): empty exit code → error; exit 0 → error; missing
+  `"…secrets are absent"` → error; missing `UPSTASH_REDIS_TOKEN` → error. This is a **control**, not
+  a unit test: it executes the production hard-fail path in CI on every trigger.
+- **CI at merge, re-derived from `main`'s own post-merge aggregate run (`30791644798`), not from the
+  PR bodies:** the only failing job is **`Rule I — wired-or-dead check`** (`91616943689`).
+  `Format check`, `Lint`, `Typecheck` all **success** — checked specifically because the resolved
+  `REQUIRE_REDIS_SMOKE` expression is a ~150-char single line inside a `>-` folded scalar, and I
+  wanted positive proof prettier does not reflow block-scalar content rather than an assumption.
+- **Rule AF series — flat at 192, TWELFTH consecutive reading.** Re-derived myself
+  (`gh run view --job 91620443169 --log | grep -c "WARN:"` → **192**). *Honest note on provenance:*
+  the same command against the merge-point Rule I job (`91616943689`) returned **0 lines** — the log
+  is not retrievable, not a count of zero — so I used the immediately-following `main` run's job and
+  say so rather than reporting a number I could not obtain.
+- **BOTH MECHANISMS PROVEN LIVE TOGETHER ON `main`, in one job run — the check this retro's brief
+  asked for, run independently.** Run `30791644750` (push of `ff02b85e`, the first `main` run at or
+  after that commit), job log:
+  - `NX_RUN_SUFFIX: 30791644750` — a **real `github.run_id`**, identical to the run's own id
+    (FOLLOW-761's namespacing, wired to the real pipeline, not just to the YAML).
+  - `PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit 1) with the
+    expected message.` (FOLLOW-762's control, proven executed).
+  - `REQUIRE_REDIS_SMOKE: 1` on the main smoke step. Corroborated on the earlier `main` run
+    `30791570137` as well.
+- **THE CONCURRENCY GROUP IS PROVEN LIVE BY MEASUREMENT, NOT BY READING YAML.** Nothing in CI
+  records that a `concurrency` group actually fired, so I measured it from run metadata:
+  - Run `30795129376` (`d6d19656`) — job `07:51:01 → 07:52:11`.
+  - Run `30795183222` (`7f1b2c40`) — **created `07:51:37`** (while the above was still running),
+    **job started `07:52:15`** — four seconds after the predecessor finished. **38 seconds pending.**
+  - Same shape twice more at the merge itself: `30791570137` created `06:51:40`, job `06:52:00`;
+    `30791644750` created `06:53:00`, job `06:53:22`. **The group is serializing `main` routinely.**
+    This is also the measurement that produces §4a LG-1.
+- **THE MERGED COMMIT `49ad5c04` WAS NEVER EVALUATED BY ANY PRE-MERGE CI RUN — and I established
+  that its content is nonetheless identical to the commit that was.** The brief says `49ad5c04`'s
+  content differs from the pre-merge `368be9a0`; that is true of the **tree** and needs one more
+  step to be useful:
+  - `git diff 368be9a0 49ad5c04 -- .github/workflows/redis-shadow-smoke.yml` shows FOLLOW-761's
+    header block, `concurrency:` block and `NX_RUN_SUFFIX` line present in `49ad5c04` and absent in
+    `368be9a0` — i.e. **the resolution kept both mechanisms**, with the merged
+    `REQUIRE_REDIS_SMOKE` expression (`hard_fail_required` first arm) as unchanged context.
+  - But the **patch each commit introduces is byte-identical**: the `^[+-]` line set of
+    `git show 368be9a0 -- <workflow>` and of `git show 49ad5c04 -- <workflow>` both hash to
+    `19cb69c5dd2e04360efdedc84c6773fe`; for the spec, both hash to `9db6e13b7b80e883b5c459d4d2ac9b4d`.
+    `git patch-id --stable` **does** differ (`d7ddd50b…` vs `caef1dd8…`) — **explained entirely by
+    context lines**, since FOLLOW-761's additions became the context surrounding #762's hunk.
+  - **Conclusion, stated precisely because it is the crux of §5d:** the resolution was **positional
+    and lossless** — it added nothing, dropped nothing, and reworded nothing on either side. #654's
+    validated diff transferred intact. **That was verified after the fact, by this retro. Nobody
+    verified it before or at merge time.**
+  - The same test on #654's second commit: `bcf800f9` → `c86f3b0c`, added lines byte-identical,
+    patch-id differs only because two PM QUEUE.md commits landed between the branch point and the
+    merge.
+
+### 3. Wiring Audit
+
+**PR #653 — Wiring Audit — clean ✅. PR #654 — Wiring Audit — clean ✅.**
+
+- **CHECK A (dead code) — clean, both PRs.** No new files, no new exported symbols, no new functions.
+  The one new import (`afterAll`, `:63`) has a use (`:379`). Both changed files are framework
+  entrypoints or specs (`.github/workflows/*.yml` is a CI entrypoint — suppressed per the standing
+  rule; the spec is invoked by name from the workflow's own `vitest run … redis-shadow-round-trip.smoke`
+  at `:173` and `:195`). `deleteShadowChatIntent` was already imported (`:75`) and gains a second
+  call site.
+- **CHECK B (half-wire) — every new signal has a producer AND a consumer, and I traced each to its
+  terminus rather than to its first reader:**
+  - **`NX_RUN_SUFFIX`** — producer `redis-shadow-smoke.yml:172` → consumer `smoke.test.ts:312` →
+    `:314-317` → `spawnSync` argv `:332` → `nx_invariant_writer.py:63` → `write_shadow_intent`
+    `:69,:92` → real Redis key → read back by the unmocked production `readShadowChatIntent`
+    (`:417`, `:460`) → **assertion**. Proven live in the merged job log with a real `run_id`.
+  - **`hard_fail_required`** — producer `:142`/`:147` → consumer `:165` → `REQUIRE_REDIS_SMOKE` →
+    `smoke.test.ts:104` → the module-level throw `:111-127` → **job exit code**. *Recorded honestly:*
+    on a trusted trigger with secrets present **both arms of the expression yield `'1'`**, so the
+    merged log does not by itself discriminate which arm fired. The discriminating case is covered
+    at the spec level by the negative control; the `::warning::` branch (`:149`) has never fired
+    (§4c TG-1).
+  - **`IS_FORKED_PR`** — producer `:131` → consumer `:141`. Walked all three trigger cases rather
+    than the obvious one: `push` → `false && …` → `"false"`; same-repo PR → `true && false` →
+    `"false"`; fork PR → `true && true` → `"true"`. Correct in all three; the shell compares against
+    the string `"true"`, which is what the expression renders.
+  - **`steps.negative-control.outputs.exit_code`** — producer `:196` → consumer `:202-210` → **exit
+    1**. The empty-value case (an earlier setup step failed) is explicitly handled at `:203-206`
+    rather than defaulting to pass — the difference between a control and a decoration.
+  - **`secrets_present`** — still produced (`:139`) and still consumed (`:165`, fallback arm).
+    **Recorded so a future CHECK B does not re-flag it as orphaned**: it is now reachable only on a
+    fork-originated PR, which is by design and is exactly what FOLLOW-762 was written to do.
+  - **The `::warning::` at `:149`** is a diagnostic that accompanies a real failure path (the spec
+    throws), not a producer-only signal. **Not a Rule AJ instance** — checked, because on its face
+    "a log line nobody reads" is the exact organ this chain keeps finding.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, #653, latent — but its precondition is met routinely and I measured it) — the
+  `concurrency` group can cause a merged `main` commit's smoke run to be CANCELLED, and both the
+  ticket's own rationale and the shipped comment describe a behaviour that only holds at queue depth
+  one.** `redis-shadow-smoke.yml:79-81`.
+
+  `cancel-in-progress: false` prevents the *running* job from being pre-empted. It does **not**
+  prevent GitHub Actions' documented behaviour that a **previously pending** run in the same
+  concurrency group is **cancelled** when a newer one is queued. So with three members of one group
+  in flight — and `main`'s group has three real members: the push run, a PR-merge run, and the
+  nightly cron, which `:73-78` deliberately puts in `redis-shadow-smoke-main` — the **middle** one
+  is dropped, not queued.
+
+  **The comment asserts the opposite, in the PR's own words:** `:66-70` — *"a cancelled mid-flight
+  run would abandon its fixture keys … so the second run WAITS rather than pre-empting the first."*
+  True for two. The stub's AC1 rationale has the same blind spot (`FOLLOW_UPS.md:23552-23554`:
+  *"`cancel-in-progress: false` — a cancelled run leaves keys behind, which is the failure mode being
+  avoided"*), so **this is my predecessor retro's omission as much as the implementation's** — the
+  AC reasoned about cancelling the in-progress run and never about cancelling the pending one.
+
+  **Measured preconditions, not theorised** (§2): pending windows on `main` of **20s, 22s and 38s**,
+  against `main` pushes observed **6s, 54s, 69s and 80s** apart in this one session. The 38s pending
+  window and the 54s push interval leave a **16-second margin**. **Not yet realised:**
+  `gh run list --workflow=redis-shadow-smoke.yml --limit 60` → **zero non-success runs**, so no
+  cancellation has occurred. Price it as "cheap, do it before the next multi-merge session", not as
+  an incident.
+
+  **Why it matters more than "one run is skipped":** on a `main` push there is no PR check and no
+  watcher; a cancelled run is a status nobody reads, and the repo's own post-merge verification
+  habit is *"the post-merge push run succeeded"* (RETRO-240 §2 and QUEUE.md `:678-684` both do
+  exactly this). §6 tests whether that makes it a P-22 instance — and declines.
+
+- **LG-2 (P3, the CROSS-PR one, and the reason this retro exists) — #654's negative-control step
+  re-invokes the SAME spec WITHOUT `NX_RUN_SUFFIX`, so every CI job now contains one un-namespaced
+  invocation of the suite #653 exists to namespace.** `redis-shadow-smoke.yml:186-196` sets six env
+  vars and **not** `NX_RUN_SUFFIX`; there is no job-level or workflow-level `env:` to inherit from.
+  That invocation therefore runs with `NX_RUN_SUFFIX = 'local-dev'` (`smoke.test.ts:312`) — the
+  fixed local fallback, shared with every developer's machine.
+
+  **Harmless today, and I checked the mechanism rather than assuming it:** the guard at
+  `smoke.test.ts:111-127` is at **module scope**, so with `REQUIRE_REDIS_SMOKE=1` and
+  `UPSTASH_REDIS_TOKEN` blanked the module throws **before any `describe` registers**, before any
+  `spawnSync`, before any Redis contact. The fake endpoints are `.invalid` besides. Nothing is
+  written.
+
+  **Why it is still a finding.** The invariant FOLLOW-761 bought is *"no CI invocation of this suite
+  uses un-namespaced fixture keys"*, and after the merge that invariant holds only **as a
+  consequence of the negative control continuing to fail fast** — an unstated coupling between two
+  tickets that were written in ignorance of each other. Anyone who later gives the negative control
+  real credentials (to exercise a different failure), or moves the guard into a `beforeAll`, gets
+  writes to `smoke-tenant-752-*-local-dev` on the shared instance, colliding with any developer
+  running the suite locally.
+
+  **Nobody in the loop could have caught this.** #653's author never saw the negative-control step;
+  #654's author never saw `NX_RUN_SUFFIX`; the resolver was resolving a **one-line** conflict and
+  the two mechanisms were correctly combined **on that line**. The conflict marker showed exactly
+  the place where the two changes touched, and the interaction is **one step below it**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+**N/A — and these are the axes I walked to say so rather than assuming it.** (i) The fork-detection
+expression, evaluated in all three trigger cases (§3). (ii) The resolved `REQUIRE_REDIS_SMOKE`
+folded-scalar YAML — the applied resolution is a single ~150-char line, whereas the resolution the
+PM posted (QUEUE.md `:758-763`) wraps it across two lines; a `>-` folded scalar renders both to the
+same string, and `Format check` is green on merged `main` (§2), so the two forms are equivalent and
+the applied one is the safer of the two. (iii) The negative control's `/tmp/negative-control.log` is
+written from a step with `working-directory: tests/integration` and read from a step with the default
+working directory — absolute path, no breakage. (iv) The `afterAll` guard (`:380`, `if (!HAS_ALL_CREDS)
+return;`) correctly no-ops on the soft-skip path. (v) The FOLLOW-368 fixed keys (`smoke-tenant-368`)
+are deliberately **not** namespaced — correct, as RETRO-238 established: AC-RT1/RT2 write and read
+back the same value, so a concurrent identical write is harmless.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, #654) — the fork-PR soft-skip branch has never executed, is unreachable in this repo,
+  and its failure direction is toward SKIP.** `:141-146` (`hard_fail_required=false`) can only be
+  taken by a fork-originated `pull_request`; this repo takes agent-prefixed branches pushed directly,
+  so no run has ever entered it (nor has the `::warning::` at `:149`). FOLLOW-762 replaced *an
+  untested guarantee* (RETRO-238 TG-3) with *a tested guarantee plus an untested exemption* — a real
+  improvement, but the residual is on the unsafe side: if the fork predicate ever silently inverted,
+  every trusted trigger would soft-skip. Cheap fix: assert the trigger-trust script's outputs
+  directly (a shell case-table, or a `workflow_dispatch` input that simulates the fork flag) rather
+  than requiring a real fork.
+- **TG-2 (P3, #653) — the concurrency group has no proof-of-effect artefact at all.** Its effect is
+  observable only in run metadata (`createdAt` vs the job's `startedAt`), which nothing in CI records
+  and no artefact asserts. I measured it (§2) because otherwise the AC's closure rests on reading the
+  YAML. A group with a typo'd expression would render to a constant, silently serialize the whole
+  repo, and look identical in every log. → folded into FOLLOW-773 alongside LG-1, since both are
+  answered by the same instrumentation.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, #654) — the runbook that the PR's OWN new warning message points at still describes
+  the mechanism the PR replaced.** `docs/runbooks/upstash-redis-env-parity.md:77-80`, "Option C — CI
+  smoke workflow": *"When all four secrets are provisioned in GitHub Actions (per ESC-028), the
+  workflow **will** run in hard-fail mode (`REQUIRE_REDIS_SMOKE=1`). **Until then it soft-skips** with
+  a `::notice::` annotation."* That is exactly the secret-presence-keyed contract FOLLOW-762 deleted,
+  and the new `::warning::` at `redis-shadow-smoke.yml:149` ends with *"Provision all four secrets;
+  see docs/runbooks/upstash-redis-env-parity.md"* — so an operator who hits the new warning is routed
+  to a document that tells them the job is not hard-failing yet.
+
+  **This is a walked-axis finding, and the axis is the point.** FOLLOW-762's AC4 named **one**
+  artefact (`backlog/STATUS.md`). The worker verified it — correctly and independently
+  (`grep -c "ESC-028" backlog/STATUS.md` → **0**, which I re-ran) — and stopped there, because the AC
+  stopped there. The full axis has four artefacts: **STATUS.md** (clean ✓), **ESCALATIONS.md:1763-1772**
+  (inside the RESOLVED ESC-028 body, a dated historical record — correctly left alone),
+  **docs/runbooks/OPERATOR_SESSION_2026-07-11/-12.md** (dated operator session logs — correctly left
+  alone), and **upstash-redis-env-parity.md** (an **evergreen runbook** — now false). Rule AI fires on
+  the fourth. → **FOLLOW-774**.
+- **DG-2 (P2, #653) — the concurrency block's rationale documents the cron-membership decision and
+  not the pending-cancellation semantics.** `:63-78` is unusually thorough about what it *did* decide;
+  the thing it does not say is the thing that bites (§4a LG-1). → folded into **FOLLOW-773**.
+- **DG-3 (P3, recorded, deliberately NOT filed) — the merged QUEUE.md worker note cites a SHA that
+  does not exist on `main`.** `c86f3b0c`'s note says *"one commit `368be9a0`"*; that commit was
+  rebased to `49ad5c04` by the very merge that landed the note. Every factual claim in the note is
+  still true of the merged code (I checked each), only the SHA is unreachable. This is inherent to
+  worker handoff notes written pre-merge; filing it would be filing against the practice, not against
+  a defect. Recorded so a second occurrence has a prior.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-763 (P3, backend-engineer, `promoted_to_queue: false`, third in the session-91 dispatch
+  plan) — PREMISE CORRECTION REQUIRED BEFORE DISPATCH, and it is not merely a stale line number: the
+  stale number now points at an assertion the ticket would DESTROY.**
+
+  FOLLOW-763 AC2 says, verbatim: *"**Delete** the double cast at `smoke.test.ts:431`."* Traced
+  through all three trees rather than just reading `main`:
+  - `3bcfc988` (before either PR) — the cast is at **`:431`**. The stub was correct when written.
+  - `0d111343` (#653 only) — **`:461`**.
+  - `368be9a0` (#654 only, counterfactual) — **`:442`**.
+  - **merged `main` — `:472`.** Drift **+41**, accumulated across both PRs.
+
+  **What is at `:431` today:** `expect(result!.archetype_hint).toBe(NX_SIGNAL_ARCHETYPE_HINT);` — a
+  **load-bearing assertion inside the FOLLOW-752 warm-key NX invariant block**, i.e. inside the exact
+  region FOLLOW-761 AC5 forbade weakening. An implementer who follows AC2's instruction literally
+  deletes an NX assertion, leaves the actual cast in place, and **weakens the repo's only real-Redis
+  invariant gate** — silently, in a green PR.
+  - **The stub's other citations are all still exactly right, and I checked each rather than
+    invalidating the stub wholesale:** `chat-intent-cache.ts:32-51` (the dimensions interface at `:32`,
+    `ShadowChatIntent` at `:47-51`), `:113,118`, `:151` (`deleteShadowChatIntent`) — no PR in this pair
+    touches `apps/`.
+  - **Correction applied to the stub** (§7): AC2's target is `:472`, and the ticket must locate it by
+    **search** (`grep -n "as unknown as" tests/integration/redis-shadow-round-trip.smoke.test.ts`),
+    not by line number, because a fourth PR is queued against this file.
+- **FOLLOW-770 (P1, next dispatch), FOLLOW-768 / 769 / 771 (combined second dispatch) — UNAFFECTED,
+  and I checked rather than assumed.** All four are scoped to `scripts/check-mirror-files.sh` and
+  `scripts/check-sentry-{capture-has-init,init-singleton}.sh`; this pair touches
+  `.github/workflows/redis-shadow-smoke.yml`, `tests/integration/redis-shadow-round-trip.smoke.test.ts`
+  and `backlog/QUEUE.md` only. No file overlap, no premise moved.
+- **The session-91 dispatch plan itself (QUEUE.md `:644-662`) is unchanged by this retro** except
+  that item 3 (FOLLOW-763) must not be dispatched until its AC2 correction is read. Flagged, not
+  actioned — dispatch is the PM's.
+
+#### 5b. Future sprint tickets affected
+
+- **Any future ticket touching `redis-shadow-smoke.yml` inherits BOTH mechanisms and a non-obvious
+  coupling between them** (§4a LG-2). The next brief for this file should say so explicitly: adding a
+  step that invokes the smoke spec means deciding what `NX_RUN_SUFFIX` it gets.
+- **The PM's validation protocol gains a new possible non-success mode.** "Non-success count for all
+  REAL gates: 0" is the standing bar; a PR whose `redis-shadow-smoke` run is **cancelled** by the
+  concurrency group (rather than failed) now reads as a non-success that is neither a defect in the PR
+  nor a flake. Worth one line in the validation template so the next occurrence costs zero debugging
+  cycles instead of one.
+- **FOLLOW-740 (the remaining ADR-0020 §D6 visibility route) and FOLLOW-754** — unchanged; neither
+  touches this workflow or this spec. Stated so it is not re-derived.
+
+#### 5c. Contracts changed others rely on
+
+- **`NX_RUN_SUFFIX` is a new CROSS-RUNTIME contract** spanning YAML → TypeScript → Python argv →
+  Redis key format. It has exactly one producer and one consumer today, but it is the second
+  cross-runtime coupling in this file after the `nx_invariant_writer.py` subprocess (Rule Z's
+  territory). The coupling is correct and is the point; recorded for the architect.
+- **The FOLLOW-752 fixture key format changed** (§1). No other consumer exists in the repo, but the
+  shared test Upstash instance now accumulates one run-scoped pair per CI run **unless the `afterAll`
+  runs** — which it does not when the module-level throw fires (i.e. on the negative-control
+  invocation, harmlessly, and on any genuine missing-secret failure, where the keys were never
+  written). Traced; no leak.
+- **`REQUIRE_REDIS_SMOKE` is now a contract about TRIGGERS, not about secrets.** The spec's own
+  docblock now says so explicitly (`smoke.test.ts:24-35`, *"REQUIRE_REDIS_SMOKE is NOT this file's
+  decision"*) — a genuinely good boundary statement, and the direct answer to RETRO-238 LG-2.
+- **No public API surface changed** — re-verified against CLAUDE.md's escalation list.
+
+#### 5d. Architectural assumptions affected
+
+- **PROCESS FINDING (the input that appears in NO PR body and NO diff) — TWO INDEPENDENTLY-VALID,
+  INDEPENDENTLY-CI-GREEN PRs WERE MUTUALLY UNMERGEABLE ON ONE LINE, AND ONLY A THIRD PARTY COULD
+  POSSIBLY HAVE KNOWN.**
+
+  Reconstructed from the object graph and QUEUE.md, not from anyone's account:
+  1. FOLLOW-761 was dispatched first with an **explicit** scope constraint telling the worker not to
+     touch the `secrets_present`/`REQUIRE_REDIS_SMOKE` conditional (QUEUE.md `:384-386`), and
+     FOLLOW-762 was deferred *"until FOLLOW-761 merges, to avoid the collision"* (`:366-367`). **The
+     hazard was correctly identified and written down before either ticket started.**
+  2. One turn later that constraint was relaxed: FOLLOW-762 was dispatched as soon as #653 was
+     READY_FOR_REVIEW, on the stated rationale that *"two sequential PRs against the same file,
+     reviewed/merged in whatever order Piotr chooses, is normal and not the hazard that was being
+     avoided"* (`:468-472`). **The outcome falsified that rationale.**
+  3. `git log 368be9a0` → parent `3bcfc988`. #654's branch was cut **before** `0d111343` existed.
+     **Neither branch ever contained the other's changes**, so neither PR's CI — 68 passing checks on
+     #653, 67 on #654 — could have seen the conflict. It is structurally invisible to per-PR CI.
+  4. The PM ran `git merge-tree` **pairwise across all four open PRs**, found the one real conflict,
+     confirmed there were no others, and posted the exact resolution as a comment on #654 with a
+     merge-order table (QUEUE.md `:743-768`).
+  5. Piotr merged #653, then #654; the predicted conflict fired; the resolution was applied. §2 proves
+     it was **lossless** — added lines byte-identical on both sides, nothing dropped, nothing reworded.
+
+  **What this is evidence FOR: the pairwise `git merge-tree` sweep as a standing gate.** It is the
+  only control in the loop positioned to see a defect that is invisible from inside either PR. It
+  cost minutes, it produced a copy-pasteable two-line answer, and the merge that would otherwise have
+  been a surprise at 06:51 UTC was a known, pre-solved step.
+
+  **What this is evidence AGAINST: a blanket "always combine tickets that touch the same CI workflow
+  file" rule.** Combining is what the PM did for FOLLOW-765+759 and FOLLOW-766+767 — and it worked,
+  because in both cases one delegation-table row owned both tickets. Here the two tickets belong to
+  **different rows**: FOLLOW-761 is *"E2E/integration/load/a11y tests, fixtures"* (qa-engineer),
+  FOLLOW-762 is *"Terraform, CI/CD, workflows, secrets"* (devops-engineer). Combining would have
+  forced one agent outside its row, on a P2, to avoid a conflict that a mechanical check both found
+  and solved. **The proportionate rule is the one the PM wrote and then relaxed, with the relaxation
+  made safe rather than forbidden:** when two open PRs touch the same file, sequencing by *merge* is
+  optional — but the pairwise merge-tree sweep before dispatching **and** before each merge becomes
+  mandatory rather than discretionary.
+
+  **And the honest limit of the discipline, which is where LG-2 comes from:** predicting the conflict
+  and pre-solving it is **not** validating the resolved tree. The check answers *"do these two texts
+  merge?"*, not *"do these two mechanisms compose?"*. Here the answer to the second question was
+  "yes on the conflicting line, and not quite one step below it".
+
+- **The merged artefact was never CI-validated as such — and its fidelity was established
+  retroactively, by the retrospective.** `49ad5c04` is a commit no pre-merge run ever evaluated. It
+  happened to be content-identical to the validated `368be9a0` (§2), which is a **property I proved
+  after the fact**, not a guarantee anyone held at merge time. RETRO-240 §2 established exactly the
+  same property, by the same method (`patch-id`), about exactly the same kind of event, one PR
+  earlier — also after the fact. Two consecutive merges, two hand resolutions, two retroactive
+  fidelity proofs, zero contemporaneous ones. → **P-25**, §6.
+- **RECONCILIATION with RETRO-240, stated explicitly because a superficial reading would merge the
+  two.** RETRO-240 §5d found *"a `git merge-tree` zero-conflicts verdict has a shelf life that ends at
+  the validator's own next push"* and minted **P-24** on it. That is the **failure** mode: the check
+  was run, went stale, and was filed as still good. This retro is the **success** mode: the check was
+  run, was true, was recorded as a decision input, and paid off. **P-24 is NOT advanced by this
+  retro** — its clause (c) requires the verdict to be *falsified* by a later commit, and here it was
+  confirmed (§6). Recording this because "another merge conflict in the very next retro" is precisely
+  the shape that would produce a false advance.
+- **Rule AA (a gate proving the code is right vs. the code running) — this pair is a COUNTER-EXAMPLE
+  worth banking.** Unlike the Sentry gate estate (§RETRO-240, 32 fixtures guarding an unprovisioned
+  `SENTRY_DSN`), `redis-shadow-smoke` guards a channel that is genuinely live: real Upstash, real
+  `write_shadow_intent`, real `readShadowChatIntent`, consumed in production at
+  `apps/control-plane/src/app/api/adapt/route.ts` (RETRO-238 §8 traced all four hops). **P-21 is not
+  advanced on this pair and could not be** — the criterion it turns on is absent here.
+- **The `lessons.d/` write scope — FIFTH consecutive denial, and this brief carried the fix too.**
+  RETRO-240 §5d recorded that the PM's remedy (adding `.claude/agents/<name>/lessons.d/**` to the
+  dispatch brief) did not take, and that the permission layer denies `.claude/**` regardless of the
+  brief. **My brief carries it verbatim, and it was denied again** — `mkdir -p
+  .claude/agents/retrospective-analyst/lessons.d` and a direct `Write` to
+  `.claude/agents/retrospective-analyst/lessons.d/RETRO-241.md` were both refused. Reported as a fact
+  I established by trying, not a status I assumed. The fragment is written in full and reproduced in
+  this run's closing output for the PM to persist. Not escalated and not filed (agent process tooling
+  is the PM's territory) — recorded here because a remedy that has now been "applied" twice and denied
+  five times needs the denial in the permanent log.
+
+### 6. New lesson candidates
+
+- **P-25 (MINTED at count 2, 1 PRIOR retro: RETRO-240 §2/§5d) — "A HAND-RESOLVED MERGE CONFLICT
+  PRODUCES A COMMIT NO PRE-MERGE CI RUN EVER EVALUATED, AND ITS FIDELITY TO THE VALIDATED DIFF IS
+  ESTABLISHED ONLY RETROACTIVELY, BY THE RETROSPECTIVE." THRESHOLD NOT MET → NOT PROMOTED.**
+  - **RETRO-240 §2 / §5d (prior, count 1)** — PR #655's QUEUE.md conflict against `51b4e2b0`. Merged
+    commits `b8f2b922`/`ff02b85e` differ from the validated `80dbf131`/`2076906f`; `git patch-id
+    --stable` identical across all three variants ⇒ resolution changed no content. **RETRO-240
+    established that fact, and did not name the general shape as a pattern** — it minted P-24 for the
+    *staleness* half instead.
+  - **THIS RETRO (count 2)** — PR #654's code conflict against `0d111343`. `49ad5c04` differs from the
+    validated `368be9a0`; the `^[+-]` line sets hash identically on both files ⇒ resolution changed no
+    content. Established here, after the fact, by me.
+  - **Why this is not already covered, tested rather than asserted.** **P-24** is about a verdict
+    going *stale* — here the verdict held. **Rule AO** governs a corrective edit re-verified against
+    the same PR's evidence; a merge resolution is not a corrective edit and has no PR evidence of its
+    own. **Rule AH** is about a document's claim verified at its own merge commit — adjacent, and
+    about documentation. **Rule AG** is about concurrent agents in one tree. **Rule Q** is about a
+    gate's skip scope. None fires.
+  - **The counter-argument, stated because it is strong.** In both sightings the resolution *was*
+    lossless, so the pattern has produced zero harm and codifying it risks ceremony over a
+    two-for-two clean record. That is exactly why it is minted and not promoted.
+  - **Third-sighting bar, pre-specified so the next retro TESTS rather than re-derives:** (a) a merged
+    commit whose SHA differs from the one any pre-merge CI run evaluated, (b) produced by a **hand**
+    conflict resolution rather than a clean rebase, (c) on a **code or CI** artefact, not documentation
+    or backlog prose, and (d) **either** the `^[+-]` line set differs from the validated commit's
+    **or** no artefact anywhere records that it does not. Clause (d) is what makes it about the
+    *absence of a check* rather than about merge noise. If it arrives, the rule should ask for one
+    cheap thing: when a merge required a hand resolution on a code artefact, record the post-merge
+    verification (the `main` run id, or a `^[+-]`-set comparison) in the same bookkeeping commit that
+    closes the ticket.
+- **P-22 ("THE REMEDIATION RE-INSTANTIATES ITS OWN DEFECT CLASS IN A NEW MEDIUM") — ADVANCE
+  CONSIDERED SERIOUSLY, clauses (a) and (b) MET FOR THE FIRST TIME. NOT ADVANCED. Held at count 2.**
+  Against RETRO-238's pre-specified three-clause bar, applied to §4a LG-1:
+  - **(a) different subsystem AND different author — MET, and this is new.** RETRO-240 held P-22 at 2
+    precisely because its candidate was *"the same gate estate, the same owner"*. Here the subsystem is
+    a GitHub Actions workflow guarding a live Redis round-trip, not the Sentry shell-gate estate, and
+    the author is **qa-engineer**, not devops-engineer. Both prior sightings were devops-engineer on
+    `check-sentry-*`.
+  - **(b) introduced BY the remediation — MET.** The `concurrency` group is FOLLOW-761's fix; the
+    pending-cancellation exposure exists only because of it.
+  - **(c) of the SAME CLASS the remediation was written to remove — NOT MET, and this is the honest
+    call.** FOLLOW-761 removed a **false-GREEN**: a run reporting `success` over an invariant a
+    concurrent writer had invalidated. What it introduced is a **cancelled** run — a distinct,
+    visible, non-success status that appears as such in `gh run list` and, on a PR, in
+    `gh pr checks`. That is a materially different direction, and it is exactly the direction
+    distinction RETRO-238 §4b and RETRO-237 §6 use to price findings (false-RED loud and
+    self-correcting; false-GREEN silent and permanent). A cancelled run is neither green nor silent;
+    it is merely **unwatched on `main`**, which is a hop, not the same organ.
+  - **Recording the near-miss deliberately.** P-22 is now one clause from promotion and its hardest
+    clause has been satisfied. **A third sighting satisfying (c) — a remediation whose new defect also
+    presents as a passing signal — should promote it.** Pre-specified so the next retro does not have
+    to re-derive the judgement.
+- **P-24 ("A PRE-MERGE COMPATIBILITY VERDICT IS INVALIDATED BY THE VALIDATOR'S OWN NEXT PUSH") — NOT
+  ADVANCED. Held at count 1.** Tested against RETRO-240's own four-clause bar rather than counted on
+  the surface similarity: (a) a mechanically-produced conflict verdict — **met** (`git merge-tree`);
+  (b) recorded as a decision input in QUEUE.md — **met** (`:743-768`); (c) **falsified** by a commit
+  landing after the verdict and before the merge — **NOT met**, the verdict was *confirmed* by the
+  merge, exactly as written; (d) that commit authored by the same actor — **N/A**. **The
+  pre-specification did its job for the third consecutive retro**: without clause (c) I would have
+  advanced P-24 to 2 on "another merge conflict, next retro", which is the opposite of what happened.
+- **P-21, P-23 — not applicable, checked rather than skipped.** P-21 turns on a gate substituting for
+  an unprovisioned channel; this gate's channel is live (§5d) — a counter-example, not a sighting.
+  P-23 is about file-discovery scan/prune lists; nothing here has one.
+- **CONSIDERED AND DELIBERATELY NOT MINTED — "the PM identified a collision constraint, wrote it
+  down, then relaxed it one turn later on a rationale the outcome falsified."** It is true (§5d, steps
+  1–2) and it is tempting. But the relaxation was **compensated** by the very control that caught the
+  result, the cost was one pre-solved hand resolution, and minting a pattern off a **successful**
+  outcome would inflate the register — RETRO-236's precedent (do not count a compliant instance toward
+  promotion) applies in its mirror form. Recorded here so a second, **uncompensated** occurrence has a
+  prior to point at.
+- **Rule Q — a COMPLIANT instance, and the strongest one this chain has produced.** FOLLOW-762's
+  negative control satisfies clause 4 (*an untested guarantee is a claim*) with a control that runs
+  **unconditionally, on every trigger, `if: always()`**, whose PASS line is in the merged `main` job
+  log. Ninth consecutive compliant gate-shipping PR. Banked as evidence that rules land; not counted
+  toward any promotion (RETRO-236 precedent).
+- **Rule AI — one VIOLATION (§4d DG-1) and one correct abstention.** The violation is the evergreen
+  runbook. The abstention is `ESCALATIONS.md` / the two `OPERATOR_SESSION_*.md` files, which are dated
+  historical records and correctly untouched. Instance sighting; Rule AI is already codified.
+- **Rule AF — 192 flat, reading 12.** Rule AM, Rule AE, Rule AL, Rule AP — no instance in this pair
+  (no fixture tree mutated, no shape enumeration, no region-bounded predicate, no gate residual
+  register; `redis-shadow-smoke.yml` is a workflow, not one of the three shell gates Rule AP governs).
+
+**PROMOTION VERDICT: NO RULE PROMOTED.** No pattern reached ≥2 **prior** retros. **P-25** minted at
+count 2 with exactly one prior (RETRO-240). **P-22** held at 2 — clauses (a) and (b) met for the first
+time, declined on (c), with the promoting third sighting pre-specified. **P-24** held at 1 on its own
+clause (c). `CONVENTIONS_PATCH.md` is deliberately untouched.
+
+### 7. Follow-ups
+
+- **FOLLOW-773:** `redis-shadow-smoke.yml`'s `concurrency` group can cause a merged `main` commit's
+  smoke run to be **cancelled** rather than queued — `cancel-in-progress: false` protects the running
+  job, not the **pending** one, and the group has three real members on `main` (push, PR-merge,
+  nightly cron) — while the shipped comment (`:66-70`) and FOLLOW-761's own AC1 rationale both
+  describe a queue-depth-one behaviour; plus the group has no proof-of-effect artefact at all
+  (qa-engineer, 2h, **P2**; latent — 38s/22s/20s pending windows measured on `main` against 6s/54s/69s
+  push intervals, zero non-success runs in 60) [§4a LG-1, §4c TG-2, §4d DG-2; Rules Q / AI]
+- **FOLLOW-774:** the negative-control step re-invokes the smoke spec **without** `NX_RUN_SUFFIX`, so
+  every CI job contains one un-namespaced invocation of the suite FOLLOW-761 exists to namespace —
+  harmless today only because the module-scope throw fires before any Redis contact, an unstated
+  coupling between two tickets written in ignorance of each other; plus the fork-PR soft-skip branch
+  has never executed and its failure direction is toward SKIP; plus
+  `docs/runbooks/upstash-redis-env-parity.md:77-80` still asserts the pre-FOLLOW-762 contract and is
+  the document the PR's own new `::warning::` points operators at (devops-engineer, 2h, **P3**; the
+  runbook half is P2-shaped and is the part to do first) [§4a LG-2, §4c TG-1, §4d DG-1; Rules AI / Q]
+
+**Premise correction applied to an existing stub (not a new ticket):** **FOLLOW-763** — AC2's *"delete
+the double cast at `smoke.test.ts:431`"* is stale by **+41 lines**; `:431` on merged `main` is now a
+load-bearing NX assertion inside the region FOLLOW-761 AC5 forbade weakening, so following the AC
+literally deletes the wrong line and weakens the gate. Target is `:472`; the stub is corrected to
+require locating it **by search, not by line number**. All of its other citations were re-verified and
+are still exact.
+
+**Not filed, deliberately:** no stub for the **`'local-dev'` fixed local fallback** (`smoke.test.ts:312`)
+as a standalone item — it is a documented, deliberate choice and FOLLOW-774 covers the CI-side
+consequence; no stub for the **stale SHA in the merged QUEUE.md worker note** (§4d DG-3 — inherent to
+pre-merge handoff notes, not a defect); no stub for **the un-namespaced FOLLOW-368 fixed keys**
+(deliberate and correct, RETRO-238 established why); no stub for **Rule I** (FOLLOW-591/602 exist); no
+stub for **`lessons.d/` write scope** (agent process tooling, the PM's territory — surfaced in §5d per
+my no-escalation guardrail); no **ESCALATIONS.md**, **QUEUE.md**, **sprint-file**, **CONVENTIONS_PATCH.md**
+or **code** write of any kind.
+
+### 8. Cross-references
+
+- **RETRO-238 (FOLLOW-757 #648 + FOLLOW-752 #649) — the direct parent of BOTH PRs. Its §7 list is now
+  5 CLOSED / 1 OPEN, traced END-TO-END per AC rather than per ticket (step 7):**
+
+  **FOLLOW-761 — all 5 ACs closed; AC1 closed BETTER than the AC, because the AC was wrong.**
+  - **AC1 (add a `concurrency:` group keyed on workflow + ref; state whether the cron is in or out and
+    why) — CLOSED, and the implementation corrected a defect in the ticket.** The stub's own suggested
+    expression was `group: redis-shadow-smoke-${{ github.ref }}` (`FOLLOW_UPS.md:23552`). **That would
+    have been inert**: on a `pull_request` event `github.ref` is `refs/pull/<n>/merge`, on `push` it is
+    `refs/heads/<branch>` — the two triggers the AC exists to serialize would have landed in
+    **different groups**, and the gate would have looked satisfied while serializing nothing. The
+    worker used `github.head_ref || github.ref_name` (`:80`) and documented the reason at `:63-65`.
+    Cron membership is stated and argued at `:73-78`. **The AC is my predecessor's; the correction is
+    the worker's, and it deserves to be in the permanent record.** This AC also introduced §4a LG-1 —
+    likewise an omission in the AC's own rationale, not in the implementation.
+  - **AC2 (namespace fixture keys per run AND thread it into `nx_invariant_writer.py`'s argv) —
+    CLOSED end-to-end, five hops, both runtimes.** `:172` → `:312` → `:314-317` → `spawnSync` argv
+    `:332` → `nx_invariant_writer.py:63` → `write_shadow_intent` `:69,:92` → real key → unmocked
+    production reader → **assertion**. *Regression proof:* `NX_RUN_SUFFIX: 30791644750` in the merged
+    `main` job log — a real `github.run_id`, not a placeholder.
+  - **AC3 (delete the suite's keys in an `afterAll` via the production `deleteShadowChatIntent`) —
+    CLOSED** (`:379-383`), reusing the GDPR Art. 17 erase path (`chat-intent-cache.ts:151`) so cleanup
+    cannot drift from the key format production actually deletes. PM verified all four keys `null`
+    after a live run.
+  - **AC4 (two simultaneous runs both pass; paste the transcript) — CLOSED to a HIGHER standard than
+    asked**, against a real Redis rather than the worker's mock (§2).
+  - **AC5 (do not relax `ttlAfterEmpty < ttlAfterSignal`) — HONOURED**, re-verified by me on merged
+    `main`: `.toBeLessThan(ttlAfterSignal)` at `:440`, `toBeGreaterThan(0)` at `:441`.
+
+  **FOLLOW-762 — all 5 ACs closed; AC1 closed WIDER than asked, AC4 closed on the artefact it named
+  and not on the axis.**
+  - **AC1 (REQUIRE=1 unconditional for `push` and same-repo PR; soft-skip only for forks) — CLOSED and
+    WIDER.** The AC named two triggers; the implementation covers **four** (`push`, `schedule`,
+    `workflow_dispatch`, same-repo `pull_request`) by inverting the predicate — the fork case is the
+    only `false` branch (`:141`). Verified in all three reachable trigger cases (§3).
+  - **AC2 (a CI-executed negative control asserting the throw actually fires) — CLOSED and PROVEN TO
+    RUN, terminating in an exit code.** `:182-197` → `:200-219` → `exit 1` on any of four failure
+    shapes. `PASS: negative control proved the REQUIRE_REDIS_SMOKE=1 hard-fail throw fires (exit 1)
+    with the expected message.` appears in the merged `main` job logs of runs `30791570137` and
+    `30791644750`. **This is the AC that closes RETRO-238's TG-3** (*"the throw at `:105-119` is an
+    untested claim"*) — and it closes it with a control, not with a fixture.
+  - **AC3 (re-word both headers to describe the mechanism, not the secret inventory) — CLOSED**, both
+    ends: `redis-shadow-smoke.yml:10-26` and `smoke.test.ts:24-35,43,50-54`. The spec's new line
+    *"REQUIRE_REDIS_SMOKE is NOT this file's decision"* is the boundary statement RETRO-238 LG-2 was
+    really asking for.
+  - **AC4 (correct `backlog/STATUS.md:11,64`) — CLOSED AS N/A, correctly, and independently
+    re-verified** (`grep -c "ESC-028" backlog/STATUS.md` → **0**, on merged `main`, run by me). **But
+    the AXIS was not walked** — the same claim is live in an evergreen runbook the PR's own new
+    warning points at (§4d DG-1). *The AC named one artefact and the worker verified exactly that one;
+    the omission is in the AC.*
+  - **AC5 (do not change the assertions; do not remove the soft-skip) — HONOURED.** Assertion bodies
+    untouched; the fork soft-skip survives at `:141-146` and in the `secrets_present` fallback arm at
+    `:165`.
+
+  **FOLLOW-759 — CLOSED, in PR #652, traced in RETRO-240 §8** (not RETRO-239, per the brief
+  correction at the head of this entry). **FOLLOW-760 — CLOSED, in PR #650, traced in RETRO-239.**
+  **FOLLOW-764 — CLOSED 2026-08-02** by being folded into FOLLOW-746 items 6-10, exactly as its own
+  text asked. **FOLLOW-763 — STILL OPEN**, `promoted_to_queue: false`, third in the session-91 dispatch
+  plan, premise corrected in §5a/§7. That is RETRO-238's entire §7 list accounted for.
+
+- **The `inquiry_submit_selector` displacement chain (FOLLOW-097 → 114 → 127 → 141) — the reason step
+  7 exists. This pair's result is TWO CLEAN TERMINATIONS AND ONE NEW MODE.**
+  - *Two terminations.* FOLLOW-761 AC2 terminates in an assertion against a live instance across two
+    runtimes; FOLLOW-762 AC2 terminates in a job exit code. Neither moved a hop: RETRO-238's TG-3
+    ("the throw has never executed") is now a control that executes on every trigger, and its LG-1
+    ("hard-coded keys race one instance") is now disjoint-by-construction keys.
+  - *One new mode, and it is not a hop, a fork, or a re-instantiation.* §4a LG-2 is a gap that exists
+    **only in the composition of two independently-correct fixes** — neither PR contains it, and it
+    appears at the seam a human resolved. The chain's modes are now four: **hop** (RETRO-238),
+    **fork** (RETRO-239), **re-instantiation-at-closure** (RETRO-240), and — here — **seam**. Naming
+    it matters because none of the existing detection disciplines look at seams: per-PR CI cannot,
+    `git merge-tree` answers a textual question, and a retro that read only the merged diff would see
+    a coherent file.
+- **RETRO-240 (FOLLOW-765+759 #652 + FOLLOW-766+767 #655)** — the immediately preceding retro and the
+  sibling of this entry's §5d. Its P-24 is tested and **not** advanced here (§6); its §2 is P-25's
+  first sighting; its finding that the `lessons.d/` remedy did not take is confirmed for the fifth
+  time (§5d). Its §5a stated *"FOLLOW-761 / FOLLOW-762 — untouched by this pair. They are RETRO-241's
+  subject."* — correct, and confirmed from the diffs.
+- **RETRO-239 (FOLLOW-760 #650 + FOLLOW-746 #651)** — closed FOLLOW-760, the other RETRO-238 §7 item,
+  and is the origin of the combined-dispatch pattern (`FOLLOW-765+759`) that §5d weighs against
+  sequencing.
+- **RETRO-236 (FOLLOW-736)** — the precedent applied twice in §6: do not count a **compliant**
+  instance toward promotion (Rule Q here), and — in its mirror form — do not mint a pattern off a
+  **successful** outcome.
+- **RETRO-007** — the original soft-skip incident Rule Q was promoted from, and the failure mode both
+  of these tickets are ultimately about: a green signal that must not be read as "checked". §4a LG-1
+  is the first candidate in this chain where the signal is neither green nor red but **absent**.
+
+<!-- RETRO-241 SUMMARY: 2 PRs (#653 FOLLOW-761, #654 FOLLOW-762), 3 files, +193/-31, merged 68 SECONDS
+apart, BOTH direct §7 follow-ups of RETRO-238 (batched by shared parent retro). THE INPUT IN NO PR BODY
+OR DIFF: these two independently-developed, independently-PM-validated, independently-CI-GREEN PRs were
+MUTUALLY UNMERGEABLE on ONE line — the `REQUIRE_REDIS_SMOKE: >-` expression (#653 added NX_RUN_SUFFIX on
+the next line of the same env: block; #654 rewrote the expression to key off a new hard_fail_required
+output). STRUCTURALLY INVISIBLE to per-PR CI: `git log 368be9a0` → parent `3bcfc988`, i.e. #654 branched
+BEFORE `0d111343` existed, so NEITHER branch ever contained the other's changes and neither worker could
+have known. Caught ONLY by a THIRD PARTY — the PM running `git merge-tree` PAIRWISE across all 4 open
+PRs — which posted the exact 2-line resolution on #654 BEFORE either merged; it fired for real and Piotr
+applied it. A GENUINE CATCH, deliberately distinguished from RETRO-240 §5d (PM-vs-worker, DOCS file, a
+verdict going STALE = P-24 = a FAILURE of the discipline); this is worker-vs-worker, CODE file, verdict
+CONFIRMED = a SUCCESS of it. VERIFIED MYSELF, NOT ASSUMED: (1) the resolution is LOSSLESS — the `^[+-]`
+line sets of pre-merge `368be9a0` and merged `49ad5c04` are BYTE-IDENTICAL (md5 19cb69c5… workflow,
+9db6e13b… spec); `git patch-id` DOES differ (d7ddd50b… vs caef1dd8…) but ONLY because FOLLOW-761's lines
+became CONTEXT — so the brief's "content differs" is true of the TREE, not of the PATCH. (2) BOTH
+mechanisms LIVE TOGETHER on main in ONE job run (30791644750, commit ff02b85e): `NX_RUN_SUFFIX:
+30791644750` (a REAL github.run_id) AND `PASS: negative control proved the REQUIRE_REDIS_SMOKE=1
+hard-fail throw fires (exit 1)…`. (3) the concurrency group PROVEN LIVE BY MEASUREMENT, since nothing in
+CI records that one fired: run 30795183222 created 07:51:37 while its predecessor's job ran to 07:52:11,
+job started 07:52:15 → 38s PENDING. WIRING: BOTH PRs CLEAN ✅ — CHECK A no new files/exports; CHECK B all
+five new signals traced to a terminus (NX_RUN_SUFFIX = 5 hops across YAML→TS→Python argv→Redis→assertion;
+hard_fail_required→REQUIRE_REDIS_SMOKE→module-scope throw→exit code; IS_FORKED_PR walked in ALL THREE
+trigger cases; negative-control exit_code→exit 1 incl. the empty-value case; secrets_present RECORDED as
+fork-only-reachable BY DESIGN so a future CHECK B doesn't re-flag it). GAPS: 2 logic (LG-1 P2 the
+concurrency group can get a merged main commit's run CANCELLED — `cancel-in-progress: false` protects the
+RUNNING job, NOT the PENDING one, and main's group has THREE real members incl. the cron; the shipped
+comment :66-70 AND FOLLOW-761's own AC1 rationale BOTH describe queue-depth-ONE behaviour, so the blind
+spot is in MY PREDECESSOR'S AC too; measured pending windows 20s/22s/38s vs main pushes 6s/54s/69s apart
+= a 16s margin; NOT realised — 0 non-success runs in 60. LG-2 P3 THE CROSS-PR ONE: #654's negative-control
+step re-invokes the SAME spec WITHOUT NX_RUN_SUFFIX, so every CI job now holds one UN-NAMESPACED
+invocation of the suite #653 exists to namespace — harmless ONLY because the guard at smoke.test.ts:111-127
+is at MODULE SCOPE and throws before any Redis contact; NOBODY could have caught it — #653's author never
+saw the negative control, #654's never saw NX_RUN_SUFFIX, and the resolver was resolving a ONE-LINE
+conflict whose interaction lives ONE STEP BELOW it), 0 bugs (5 axes walked to say so: fork expression in
+3 trigger cases, folded-scalar YAML equivalence + Format green, /tmp absolute path across working-dirs,
+afterAll soft-skip guard, FOLLOW-368 fixed keys deliberately un-namespaced), 2 test gaps (TG-1 P3 the
+fork-PR soft-skip branch has NEVER executed and is unreachable here — 762 replaced an untested guarantee
+with a tested guarantee PLUS an untested exemption whose failure direction is toward SKIP; TG-2 P3 the
+concurrency group has NO proof-of-effect artefact — a typo'd group expression would silently serialize
+the whole repo and look identical in every log), 3 doc gaps (DG-1 P2 docs/runbooks/upstash-redis-env-parity.md:77-80
+STILL asserts the pre-762 secret-presence contract — and the PR's OWN new ::warning:: at :149 points
+operators AT THAT FILE; AC4 named ONE artefact (STATUS.md, verified clean, 0 hits) and the axis has FOUR,
+two correctly left as dated history; DG-2 P2 the concurrency comment documents the cron decision and not
+the pending-cancellation semantics; DG-3 P3 the merged QUEUE.md note cites SHA 368be9a0 which the merge
+itself rebased away — recorded, NOT filed). CASCADE — THE ONE THAT MATTERS: FOLLOW-763's AC2 says "DELETE
+the double cast at smoke.test.ts:431"; traced across all 3 trees (3bcfc988 :431 → #653 :461 → #654-alone
+:442 → main :472, drift +41), and :431 on main TODAY is `expect(result!.archetype_hint).toBe(
+NX_SIGNAL_ARCHETYPE_HINT)` — a LOAD-BEARING NX ASSERTION inside the exact region FOLLOW-761 AC5 forbade
+weakening. Following the AC literally DELETES AN ASSERTION AND LEAVES THE CAST. Stub corrected: target
+:472, locate BY SEARCH not by line number. Its OTHER citations (chat-intent-cache.ts:32-51,47-51,113,118,151)
+all re-verified STILL EXACT. FOLLOW-770/768/769/771 unaffected (checked, different files). CLOSURE (step 7,
+per-AC, END-TO-END): RETRO-238's §7 list is now 5 CLOSED / 1 OPEN. FOLLOW-761 all 5 ACs — and AC1 closed
+BETTER THAN THE AC BECAUSE THE AC WAS WRONG: the stub's own suggested `group: ${{ github.ref }}` would
+have been INERT (refs/pull/N/merge vs refs/heads/branch = DIFFERENT groups, serializing nothing while
+looking satisfied); the worker used `head_ref || ref_name` and documented why. FOLLOW-762 all 5 — AC1
+WIDER than asked (4 triggers, not 2), AC2 closes RETRO-238's TG-3 with a CONTROL not a fixture, AC4
+correctly N/A on its named artefact but the AXIS unwalked. FOLLOW-759 closed in #652/RETRO-240 and
+FOLLOW-760 in #650/RETRO-239 — CORRECTING MY OWN DISPATCH BRIEF, which attributed 759 to RETRO-239.
+FOLLOW-764 closed by folding into 746. DISPLACEMENT CHAIN: two clean terminations, plus a FOURTH mode
+named — HOP (238), FORK (239), RE-INSTANTIATION-AT-CLOSURE (240), and now SEAM (a gap existing ONLY in
+the composition of two independently-correct fixes, at the line a human resolved; no existing discipline
+looks at seams — per-PR CI cannot, merge-tree answers a TEXTUAL question, and a retro reading only the
+merged diff sees a coherent file). PROCESS VERDICT ON COMBINE-vs-SEQUENCE: evidence FOR the pairwise
+merge-tree sweep as a STANDING gate (the only control positioned to see a defect invisible from inside
+either PR); evidence AGAINST a blanket "always combine same-CI-file tickets" rule — combining worked for
+765+759 and 766+767 because ONE delegation row owned both, whereas 761 (qa-engineer, "tests/fixtures") and
+762 (devops-engineer, "CI/CD/workflows/secrets") are DIFFERENT rows and combining would force an agent
+outside its row on a P2. Also documented: the PM WROTE the constraint ("dispatch 762 after 761 MERGES"),
+then relaxed it one turn later ("READY_FOR_REVIEW is enough… not the hazard being avoided") on a rationale
+the outcome falsified — but the relaxation was COMPENSATED by the control that caught it, so §6 declines to
+mint a pattern off a successful outcome (RETRO-236 precedent, mirror form). RULES: **NONE PROMOTED** — no
+pattern reached ≥2 PRIOR retros. P-25 MINTED at count 2 with exactly ONE prior (RETRO-240 §2/§5d): "a
+hand-resolved merge conflict produces a commit no pre-merge CI run ever evaluated, and its fidelity to the
+validated diff is established ONLY RETROACTIVELY, BY THE RETRO" — two consecutive merges, two hand
+resolutions, two retroactive patch-fidelity proofs, ZERO contemporaneous ones; 4-clause third-sighting bar
+pre-specified, clause (d) = "either the +/- set DIFFERS or nothing records that it does not". P-22 ADVANCE
+CONSIDERED SERIOUSLY and DECLINED, held at 2 — clauses (a) different subsystem AND different author and (b)
+introduced BY the remediation are MET FOR THE FIRST TIME (RETRO-240 declined on (a): same gate estate; here
+it is a workflow, by qa-engineer), but (c) FAILS: 761 removed a FALSE-GREEN and introduced a CANCELLED run,
+a visible non-success, which is a different DIRECTION — the exact distinction RETRO-237 §6/RETRO-238 §4b
+price findings on. P-22 is now ONE CLAUSE from promotion and the promoting sighting is pre-specified.
+P-24 TESTED against RETRO-240's own 4-clause bar and NOT advanced, held at 1 — clause (c) requires the
+verdict to be FALSIFIED and here it was CONFIRMED; the pre-specification stopped a false advance for the
+THIRD consecutive retro. P-21/P-23 N/A (this gate's channel is LIVE — a counter-example to P-21, banked).
+Instance sightings: Q (COMPLIANT, 9th consecutive, the strongest in the chain — an unconditional
+`if: always()` control whose PASS line is in the merged main log), AI (one VIOLATION = the runbook, one
+CORRECT abstention = dated escalation/operator records), AF (192 flat, reading 12, re-derived myself —
+and reported honestly that the merge-point Rule I job's log returned 0 LINES, i.e. unavailable, so the
+next run's job was used). PROCESS FACT THE PM MUST SEE: the lessons.d/ write scope is denied for the FIFTH
+consecutive time — this brief carried `.claude/agents/<name>/lessons.d/**` verbatim, and BOTH `mkdir -p`
+and a direct Write were refused; the permission layer denies `.claude/**` regardless of the brief, so the
+PM fixed the BRIEF and the brief is not the control. Fragment written in full and reproduced in this run's
+closing output. FOLLOWS FILED: 773 (P2 qa 2h), 774 (P3 devops 2h); premise correction applied to 763.
+QUEUE.md / ESCALATIONS.md / CONVENTIONS_PATCH.md / sprint files / code correctly UNTOUCHED. -->

@@ -731,6 +731,21 @@ docs-only conflict between them, resolution posted on #657.
 
 ---
 
+### FOLLOW-768 + FOLLOW-769 + FOLLOW-771 — status: READY_FOR_REVIEW (worker done 2026-08-03)
+
+**Worker update (devops-engineer, 2026-08-03).** All three ACs implemented on branch
+`devops-engineer/FOLLOW-768-769-771-sentry-gate-registers`; PR opened against `main`. Both gates now
+carry an executed Rule AP residual register (8 entries on the capture gate, 10 on the singleton
+gate) using `check-mirror-files.sh`'s corrected `PIPESTATUS`-per-stage runner, copied verbatim.
+Self-tests: capture gate 18 OK assertions (was 12), singleton gate 22 (was 13); both real-tree runs
+exit 0 and BOTH committed baselines are unchanged (allowlist `count: 0`, exclusions `count: 3`). One
+new stub filed: **FOLLOW-775** (repo-wide shellcheck; this PR's job is scoped to four files per
+FOLLOW-769 AC4). Awaiting PM CI verification + human merge.
+
+---
+
+### FOLLOW-768 + FOLLOW-769 + FOLLOW-771 — dispatch record (was: IN_PROGRESS, combined)
+
 **Picked 2026-08-03 (session 92)**, second of four remaining sequential dispatches, now that PR #656
 is READY_FOR_REVIEW. All three touch `scripts/check-sentry-capture-has-init.sh` and/or
 `scripts/check-sentry-init-singleton.sh` — combined per the standing same-file discipline.

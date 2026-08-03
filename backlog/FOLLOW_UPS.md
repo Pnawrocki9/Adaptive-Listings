@@ -24503,3 +24503,45 @@ artefact, axis unwalked); `.github/workflows/redis-shadow-smoke.yml:141-149,164-
 `docs/runbooks/upstash-redis-env-parity.md:77-80`; RETRO-238 §4c TG-3 (the untested guarantee this
 ticket's exemption half rhymes with); Rules AI / Q; RETRO-241 §8 ("seam" — the fourth displacement
 mode, of which finding 1 is the first instance)]
+
+## FOLLOW-775 — shellcheck runs over four files; the other ~30 shell scripts in `scripts/` are unlinted, and two of them are blocking gates
+
+source_retro: n/a (spun out of FOLLOW-769 AC4 during implementation) source_ticket: FOLLOW-769
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Context.** FOLLOW-769 AC3 required a decision on the `# shellcheck source=` directives that
+asserted a lint control which did not exist. The decision was to WIRE the job
+(`shellcheck-sentry-gates` in `.github/workflows/ci.yml`), and AC4 explicitly scoped it to the
+touched files plus the job, with the rest to be filed rather than fixed inline. This is that filing.
+
+**The gap.** The job's file list is exactly four paths: `scripts/check-sentry-capture-has-init.sh`,
+`scripts/check-sentry-init-singleton.sh`, `scripts/lib/clean-python-source.sh`,
+`scripts/lib/suppression-baseline.sh`. Every other `.sh` under `scripts/` is unlinted — including
+`scripts/check-mirror-files.sh` (the Rule J gate, blocking in CI and in the lefthook pre-push hook)
+and `scripts/check-modal-app-singleton.sh` (also a blocking gate). `check-mirror-files.sh` was
+deliberately left out because FOLLOW-770 (PR #656) was in flight on it at the time and a lint
+failure would have collided with that work.
+
+**Why it matters rather than being cosmetic.** The four linted files are the ones a human just read
+carefully. The unlinted ones include the gates nobody has re-read since they shipped, which is where
+an unquoted expansion or a masked exit status actually hides — the exact class FOLLOW-770's
+`PIPESTATUS` finding belongs to.
+
+**AC:**
+
+1. Run `shellcheck -x -P SCRIPTDIR` over `scripts/**/*.sh` and record the finding count per file
+   before changing anything (paste it — this is the baseline the ticket is priced against).
+2. Fix or annotate-with-a-reason every finding. A blanket `--severity=warning` downgrade is NOT
+   acceptable on its own: SC1091 (an unresolvable `source=` path) is info-level and is precisely
+   what the directives exist to make load-bearing.
+3. Replace the explicit file list in `shellcheck-sentry-gates` with the repo-wide glob and rename
+   the job, or add a second job — but do not leave two overlapping lists that can drift.
+4. Keep the "linting without `-P SCRIPTDIR` must still produce SC1091" negative-control step, or
+   state why it is no longer needed.
+
+cross_ref: [FOLLOW-769 AC3/AC4; RETRO-239 §4d DG-1; `.github/workflows/ci.yml`
+(`shellcheck-sentry-gates`); `scripts/check-mirror-files.sh`;
+`scripts/check-modal-app-singleton.sh`]
+
+---

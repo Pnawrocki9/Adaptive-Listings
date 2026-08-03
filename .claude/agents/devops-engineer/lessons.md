@@ -243,3 +243,29 @@ self-test runs" are different claims, and only the second one is worth a green b
   that exercises it also trips an earlier guard, the check itself is unproven. And:
   `set -o pipefail` is never sufficient evidence that a pipeline's failure is observable; assert on
   `PIPESTATUS`.
+- **2026-08-03 / FOLLOW-768 + FOLLOW-769 + FOLLOW-771** · Shipped: allowlist clearance in
+  `check-sentry-capture-has-init.sh` moved off raw text onto `tokenize.COMMENT` spans (and the
+  inventory that feeds its committed baseline moved with it, same function, same PR — otherwise the
+  two halves would have disagreed about what an allowlist entry is); FOLLOW-765's exclusion
+  inventory and hardened-marker check in `check-sentry-init-singleton.sh` moved off `$FILES` onto
+  the manifest-derived `$REGISTERED` set, with a stale registered path now a loud finding; Rule AP
+  residual registers (8 and 10 executed entries) added to both gates using `check-mirror-files.sh`'s
+  corrected `PIPESTATUS` runner copied verbatim; 8 shared-helper hard-fail fixtures (2 helpers x 2
+  shapes x 2 gates); a scoped `shellcheck -x -P SCRIPTDIR` CI job.
+- **Where a green badge could have hidden a broken run path:** three places. (1) The capture gate
+  was exiting 0 on a real, unserved `capture_exception(` because the allowlist token happened to sit
+  inside a string literal on that line — and the raw-counting inventory would have COUNTED that same
+  token, so the false GREEN came with a reviewed-looking baseline entry vouching for it. (2) The
+  singleton gate printed `3 entry/entries → matches the committed baseline` while a registered pair
+  outside `apps/*/src` was in neither of the two controls that baseline exists to bound. (3) Writing
+  the two new registers naively would have reproduced FOLLOW-770's own defect: five of my eighteen
+  entries chain a producer into a second `grep`, and under bare `pipefail` a dead producer is
+  reported as the trailing grep's ordinary "no match" 1 — classified `latent`, the reassuring
+  direction. Copying the corrected runner verbatim (including the `MF_PS_FILE` name, so the two
+  files diff to zero) was the whole defence; re-deriving it would have re-introduced the bug.
+- **A guardrail I'd add:** a register entry whose latency proof would go live on LEGITIMATE usage is
+  worse than no entry — I wrote one (test-convention files holding a real `sentry_sdk.init(`, which
+  every test fixture does) and it turned three passing self-tests red before I caught it. Rule AP
+  should say explicitly: if a residual has no proof that can be latent in normal operation, record
+  it as a proof-less bound inside a neighbouring entry and say so, rather than shipping a
+  permanently- live entry that trains readers to ignore the register.

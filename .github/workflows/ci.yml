@@ -701,6 +701,69 @@ jobs:
       - name: Assert every capture call site has an init_sentry( in its module
         run: bash scripts/check-sentry-capture-has-init.sh
 
+  # ── shellcheck for the Sentry gate family (FOLLOW-769 AC3/AC4) ─────────────
+  # WHY THIS EXISTS. `# shellcheck source=lib/...` directives appear in five
+  # places across the Sentry gates and their shared helpers, and NO shellcheck
+  # ran anywhere in this repo — the directives read as evidence of a lint
+  # control that did not exist (RETRO-239 §4d DG-1). FOLLOW-769 AC3 offered two
+  # ways out: wire the job, or delete the directives. Wiring it is the option
+  # that adds real coverage, and it is the only one available in practice —
+  # scripts/check-mirror-files.sh carries a `# shellcheck disable=SC2064` this
+  # PR must not touch, so "delete the directives" could not have been completed
+  # anyway.
+  #
+  # `-x` follows sourced files and `-P SCRIPTDIR` resolves the `source=` paths
+  # relative to the script, not the CWD — without BOTH, every source= directive
+  # is an unresolved SC1091 and the directives stay decorative. Default
+  # severity: info and style findings fail too, deliberately, because SC1091
+  # (an unresolvable source= path) is itself info-level, and downgrading past it
+  # would put this job straight back in the state it exists to fix.
+  #
+  # SCOPE (FOLLOW-769 AC4). Explicit file list, not scripts/**/*.sh: the rest of
+  # scripts/ has pre-existing findings that are out of this ticket's scope, and
+  # a job that starts red teaches nothing. Widening it repo-wide is filed as its
+  # own ticket in backlog/FOLLOW_UPS.md. A file added to the Sentry gate family
+  # must be added here in the same PR.
+  #
+  # Hard gate — no continue-on-error.
+  shellcheck-sentry-gates:
+    name: shellcheck (Sentry gate family, FOLLOW-769)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: shellcheck --version (proof the linter really ran)
+        run: shellcheck --version
+
+      - name: Lint the Sentry gates and their shared helpers
+        run: |
+          shellcheck -x -P SCRIPTDIR \
+            scripts/check-sentry-capture-has-init.sh \
+            scripts/check-sentry-init-singleton.sh \
+            scripts/lib/clean-python-source.sh \
+            scripts/lib/suppression-baseline.sh
+
+      - name: Assert the source= directives actually resolve (not silently skipped)
+        run: |
+          # A `# shellcheck source=` directive that cannot be resolved is
+          # reported as SC1091 and NOT followed. The step above already fails on
+          # it, but that failure would be indistinguishable from any other
+          # finding, so assert the specific condition here: linting WITHOUT
+          # -P SCRIPTDIR must produce SC1091, proving the directives are load-
+          # bearing rather than decorative.
+          if shellcheck -x scripts/check-sentry-capture-has-init.sh 2>&1 | grep -q SC1091; then
+            echo "OK: the source= directives are resolved by -P SCRIPTDIR, not by luck."
+          else
+            echo "FAIL: linting without -P SCRIPTDIR produced no SC1091, so the"
+            echo "'# shellcheck source=' directives are no longer doing anything and"
+            echo "this job's -P SCRIPTDIR flag proves nothing. Either the directives"
+            echo "were removed (update this job) or shellcheck changed behaviour."
+            exit 1
+          fi
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

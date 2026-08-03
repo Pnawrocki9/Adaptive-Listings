@@ -852,3 +852,37 @@ FOLLOW-765+759).
 NEXT: dispatch FOLLOW-766+767 combined (devops-engineer). FOLLOW-763 and FOLLOW-769 stay deferred
 until their respective file-conflicting PRs merge. Piotr reviews/merges the 3 open PRs (mind the
 #653/#654 conflict) when able.
+
+---
+
+# Status — 2026-08-03 (session 89 WIND-DOWN — 4 PRs open, all PM-validated, none merged)
+
+## SESSION 89 WIND-DOWN
+
+**Validated PR #655 (FOLLOW-766+767) in full (5a-5g).** CI 67/2 (Rule I at 192 baseline). Verified
+FOLLOW-767 against a REAL nested `.claude/worktrees/agent-x` checkout (this session's own
+verification-worktree pattern), confirming main's script false-REDs 5 violations on that exact tree
+and this PR's script is clean. Confirmed "git-tracked discovery" in the title is exactly FOLLOW-767
+AC1's own preferred option (scoped to the basename-discovery sub-scan only), not scope creep.
+Confirmed FOLLOW-766's note is a real enforcing consumer (gate fails on empty note), not reworded
+prose. Checked `git merge-tree` against all 3 other open PRs -- zero conflicts. Moved FOLLOW-766+767
+to READY_FOR_REVIEW. **Not merged -- needs Piotr.**
+
+**4 PRs open, all independently PM-validated, none merged:** #652 (FOLLOW-765+759), #653
+(FOLLOW-761), #654 (FOLLOW-762), #655 (FOLLOW-766+767). One real conflict, #653<->#654, exact
+resolution posted on #654 and in QUEUE.md's wind-down note.
+
+**Wound down rather than dispatching a 5th ticket** -- every remaining candidate (763/768/769) is
+file-collision-deferred against one of the 4 open PRs. Wrote a full wind-down note at the top of
+QUEUE.md: merge order, the one conflict + resolution, what each PR closes, what unblocks after they
+land, and two open decisions for Piotr (RETRO-239's pre-specified residual-register test, and a
+recurring dispatch-brief permission gap that denied 3 different workers' own lessons-file writes
+this session).
+
+**CI-check counters:** #652 1/5, #653 1/5, #654 1/5, #655 1/5 -- all awaiting Piotr.
+
+**0 tickets IN_PROGRESS. 4 tickets READY_FOR_REVIEW.**
+
+NEXT: Piotr merges the 4 PRs (mind the #653/#654 conflict). PM resumes next session: validate
+anything that didn't merge cleanly, spawn retrospectives for merged tickets, then FOLLOW-763/768/769
+once unblocked.

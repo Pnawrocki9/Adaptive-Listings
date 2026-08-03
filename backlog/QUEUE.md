@@ -465,7 +465,57 @@ READY_FOR_REVIEW, not IN_PROGRESS, awaiting Piotr.
 
 ---
 
-### FOLLOW-766 + FOLLOW-767 — dispatch record (IN_PROGRESS, combined)
+### FOLLOW-766 + FOLLOW-767 — status: READY_FOR_REVIEW (PR #655 open, `80dbf131`+`2076906f`, PM-validated 2026-08-03)
+
+**Branch's second commit (`2076906f`) — same pattern as PR #654, not re-litigated.** Worker's own
+honestly-scoped handoff note on its own branch; already adjudicated as legitimate on #654
+(CLAUDE.md: "every agent writes status changes to QUEUE.md"). Same conclusion, no need to re-derive
+it.
+
+**PM validation done in full (5a-5g).** 3 files, +237/-31 (`backlog/QUEUE.md`,
+`scripts/check-mirror-files.sh`, `scripts/mirror-files.json`).
+
+**5b — CI.** 67 pass / 2 fail, both `Rule I` confirmed at 192 (job log). Non-success count for all
+REAL gates: **0**. `rule-j` job's own log: `Rule J gate self-test: PASSED (7 assertions)` — proven
+to execute in CI, not just claimed.
+
+**FOLLOW-767 — verified against a REAL nested worktree, the actual bar (not "the prune list contains
+the right string").** Built a real `git worktree add .claude/worktrees/agent-x` checkout containing
+a genuine copy of the registered `observability.py` basename, ran BOTH scripts against the identical
+real tree: `main`'s pre-fix script → `Rule J FAILED: 5 drift/unregistered-copy violation(s) found`
+(the false-RED, reproduced live); this PR's script, same tree → `observability.py: 3 file(s) found`
+(only the legitimately-registered ones), clean exit 0.
+
+**"git-tracked discovery" in the title — checked against FOLLOW-767's actual AC1, confirmed NOT
+scope creep.** The `git ls-files` swap is scoped to the ONE `find` invocation inside the
+basename-discovery sub-scan — Rule J's core canonical/mirror byte-identity comparison (the pair
+loop) is untouched and was never filesystem-driven to begin with. `git ls-files` lists the git INDEX
+rather than the raw filesystem — the one genuine behavioral edge (an untracked scratch file with a
+registered basename is no longer flagged) is the semantically CORRECT boundary for a pre-push/CI
+gate, not a regression; the `[[ -f "$found_path" ]]` guard preserves old `find -type f` semantics
+for tracked-but-deleted paths.
+
+**FOLLOW-766 — confirmed wired to a real enforcing consumer, not reworded prose.** Read the diff:
+`basename_discovery_note` is parsed, printed, AND the gate fails any opted-out pair with an
+empty/missing note. Independently ran the self-test suite in a worktree — both new FOLLOW-766
+assertions passed live, not just in the PR's transcript.
+
+**FOLLOW-767 AC4 (Sentry gates unaffected) confirmed read-only, no edits to either file — scope
+honored, PR #652's unmerged territory undisturbed.**
+
+**Merge-order / collision check against all 3 other open PRs — `git merge-tree`, zero conflict
+markers in any pairing.** Neither `scripts/check-mirror-files.sh` nor `scripts/mirror-files.json` is
+touched by #652/#653/#654. Only shared file across any of the 4 PRs is `backlog/QUEUE.md`
+bookkeeping — trivial doc-only resolution expected on whichever merges last, not a code conflict.
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted as a PR comment with full evidence. **Not merged — needs Piotr.** 4 PRs now open, all
+independently PM-validated this session. Full merge-order note below.
+
+---
+
+### FOLLOW-766 + FOLLOW-767 — dispatch record (was: IN_PROGRESS, combined)
 
 **Picked 2026-08-03 (session 89, continuous turn) after PR #654 validated.** Both are P2,
 `recommended_agent: devops-engineer`, both from RETRO-239, both touch
@@ -498,6 +548,84 @@ unmerged changes there (the `SCAN_DIRS = apps/*/src` assumption AC4 asks about i
 
 **1 ticket IN_PROGRESS** (combined FOLLOW-766+767, 2 ticket IDs, 1 PR) — within the ≤3 guardrail. 3
 PRs READY_FOR_REVIEW (#652, #653, #654), not IN_PROGRESS, all awaiting Piotr.
+
+---
+
+## ▶️ START HERE — session 89 WIND-DOWN (2026-08-03) — 4 PRs open, all PM-validated, none merged. Read this section only; details are below it.
+
+**Why winding down instead of dispatching a 5th ticket.** Every remaining candidate (FOLLOW-763,
+FOLLOW-768, FOLLOW-769) is deferred on a file collision with one of the 4 open PRs — dispatching any
+of them now would just deepen the review queue without being mergeable sooner. 0 tickets
+IN_PROGRESS.
+
+### Merge order across the 4 open PRs
+
+| #        | Ticket(s)      | Title                                                 | Conflicts with       | Action needed                                                                            |
+| -------- | -------------- | ----------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
+| **#652** | FOLLOW-765+759 | baseline-check both sentry gates' suppression sets    | none of the other 3  | merge anytime                                                                            |
+| **#653** | FOLLOW-761     | serialize + namespace redis-shadow-smoke NX runs      | **#654** (see below) | merge first if you want #654 to need the fix, or second if you want to apply it yourself |
+| **#654** | FOLLOW-762     | scope redis-shadow-smoke soft-skip to forked PRs only | **#653** (see below) | whichever of #653/#654 you merge SECOND will show a git conflict on ONE line             |
+| **#655** | FOLLOW-766+767 | harden Rule J mirror gate                             | none of the other 3  | merge anytime                                                                            |
+
+**The one real conflict (#653 ↔ #654), exact resolution posted as a PR comment on #654:** both edit
+the same `REQUIRE_REDIS_SMOKE: >-` line in `.github/workflows/redis-shadow-smoke.yml` (#653 adds
+`NX_RUN_SUFFIX` on the next line in the same `env:` block; #654 changes the expression itself to key
+off `hard_fail_required`). GitHub's web conflict editor on whichever PR you merge second will show
+you this — replace it with:
+
+```yaml
+REQUIRE_REDIS_SMOKE: >-
+  ${{ steps.secret-check.outputs.hard_fail_required == 'true' && '1' ||
+  (steps.secret-check.outputs.secrets_present == 'true' && '1' || '') }}
+NX_RUN_SUFFIX: ${{ github.run_id }}
+```
+
+**#652 and #655 have zero conflicts with any of the other 3** (`git merge-tree` checked pairwise
+against all three, no `<<<<<<<` in any comparison) — the only shared file across any of the 4 PRs is
+`backlog/QUEUE.md`'s own bookkeeping, which will show a trivial doc-only conflict on whichever PR
+lands last; resolve by keeping both sides' prose (they're additive, not contradictory).
+
+**What each PR closes.** #652: two sentry-gate suppression counts nobody read (a green log line that
+could have hidden a growing exclusion list). #653: a false-GREEN race in the repo's only real-Redis
+invariant test. #654: the same gate's soft-skip could silently return to "never actually tested" on
+a rotated secret. #655: the blocking pre-push hook false-REDs whenever an agent worktree exists
+(this repo's own established practice), which trains routing around the gate with `--no-verify`.
+
+**What unblocks once all 4 land.** FOLLOW-763 (touches the smoke test file #653/#654 both touch),
+FOLLOW-768 (couples to #652's new inventory code), FOLLOW-769 (touches the exact scripts #652
+rewrites) all become dispatchable without a stale-branch or collision risk. Retrospectives are owed
+for all 4 tickets (per the per-ticket retrospective loop) once merged — not before.
+
+### Two open decisions for you, not the PM's to make
+
+1. **RETRO-239's pre-specified test, not yet triggered.** Three consecutive retros (RETRO-237,
+   RETRO-238, RETRO-239) each found a gate-hardening PR's own residual/gap enumeration was one shape
+   short of complete — every individual fix was correct, only the "here's everything still open"
+   list undercounted. RETRO-239 declined to promote a rule on this (the bar requires ≥2 PRIOR
+   retros, and the verdict itself, not a new pattern, repeated) but pre-specified: if a FOURTH
+   consecutive retro reaches the same verdict, build a mechanical, machine-checkable per-gate
+   residual register instead of writing a fifth prose finding. No action needed now — flagging so
+   the next retro (on whichever of these 4 PRs' tickets) tests the pre-specified bar rather than
+   re-deriving whether one is needed.
+2. **A recurring dispatch-brief gap: some workers' own `lessons.md`/`lessons.d/` writes were denied
+   this session** (retrospective-analyst once, a devops-engineer worker once, a qa-engineer worker
+   once — 3 separate occurrences). Each time the content was drafted in the PR/handoff body and the
+   PM persisted it afterward, so nothing was lost, but it happened three times in one session across
+   three different agents. Worth deciding whether to widen the permission scope for
+   `.claude/agents/<name>/lessons*` in the standard dispatch template, or whether there's a reason
+   it's currently restricted that the PM isn't aware of.
+
+### Escalations — unchanged, still non-blocking-for-dispatch
+
+5 `## OPEN` entries, same set all session (ESC-020 ~28d, ESC-041, ESC-042-narrowed, ESC-044, ESC-045
+items 2-3) — none touched by any of this session's work, all still awaiting an operator/CEO/DPO
+action named in `backlog/ESCALATIONS.md`. Surfaced here per every prior session's closing
+convention, not re-litigated.
+
+NEXT: Piotr reviews and merges the 4 open PRs (any order for #652/#655; #653/#654 need the one-line
+resolution above on whichever lands second). PM resumes next session — validate anything Piotr
+couldn't merge cleanly, spawn retrospectives for whichever of the 4 tickets have merged, then pick
+up FOLLOW-763/768/769 once their blocking PRs are on `main`.
 
 ---
 

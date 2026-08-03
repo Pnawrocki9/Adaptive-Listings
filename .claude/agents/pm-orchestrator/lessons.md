@@ -2775,3 +2775,22 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   dispatched in the same turn) — the #653/#654 conflict showed this needs to be routine, not just
   applied when a human flags it. Applied this immediately to defer FOLLOW-763/769 and clear
   FOLLOW-766/767.
+
+- **Date / ticket:** 2026-08-03 — PR #655 (FOLLOW-766+767) validation, session wind-down
+- **Delegation row used:** validation only (no new delegation; wound down instead per collision
+  analysis carried over from the #653/#654 finding)
+- **What validation caught (or missed):** Built a REAL nested `.claude/worktrees/agent-x` checkout
+  (not a description) to verify FOLLOW-767 at the actual bar the coordinator named ("the hook stops
+  false-REDing with a worktree present," not "the prune list contains the right string") —
+  reproduced the pre-fix false-RED (5 violations) and the post-fix clean run on the identical real
+  tree. Confirmed "git-tracked discovery" in the PR title was exactly the ticket's own preferred
+  option, not scope creep, by checking the diff's actual boundary rather than reacting to the title
+  alone. `git merge-tree` against all 3 other open PRs found zero further conflicts — the
+  collision-check discipline from the previous entry is now paying off routinely, not just once.
+- **A delegation/validation rule I'd add:** when a ticket's AC is phrased as an
+  environment-dependent behavioral claim ("the hook stops doing X when Y exists"), and the PM's own
+  sandbox can construct Y for real (as it could here, having already built verification worktrees
+  this session), always construct Y and observe the behavior directly — a red-first transcript in
+  the PR body is evidence, but reproducing it independently on a freshly-built instance of the
+  actual triggering condition is a full tier stronger, and this session's tooling made it nearly
+  free to do.

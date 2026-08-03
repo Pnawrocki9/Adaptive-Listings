@@ -691,7 +691,45 @@ every downstream register.
 
 ---
 
-### FOLLOW-768 + FOLLOW-769 + FOLLOW-771 — dispatch record (IN_PROGRESS, combined)
+### FOLLOW-768 + FOLLOW-769 + FOLLOW-771 — status: READY_FOR_REVIEW (PR #657 open, `425d0185`, PM-validated 2026-08-03)
+
+**Commit-message citation checked, not accepted at face value.** Subject cites only `[FOLLOW-768]`;
+body explicitly closes all three. Verified all three ACs genuinely delivered in the diff, not just
+claimed — **FOLLOW-769 especially** (the one flagged as most likely to be quietly dropped): both
+gates' self-tests independently run by me show all 8 fixtures (18/18 and 22/22 total assertions).
+Citation slip in the subject line only, not a scope miss.
+
+**Register pattern verified byte-identical to PR #656's corrected runner** — extracted and diffed
+the `REGISTER_PROOF_EPILOGUE`-through-summary block from both sentry gates against
+`check-mirror-files.sh`'s fix-iteration-1 version: **both diffs empty**. `PIPESTATUS` capture
+confirmed as the literal next statement after each proof's pipe, same subshell — not the fragile
+re-read pattern.
+
+**Rule AP verification fixture reproduced on a fixture I built myself**: a one-character allowlist
+reason → exit 3, `[E] GONE LIVE`, while ordinary clearance still correctly accepted the capture.
+Both real-tree runs clean (8 and 10 entries, all latent, exit 0).
+
+**Rule AL checked directly**: traced the new entries' source variables to the marker-check loop,
+confirmed it reads `$REGISTERED` (the FOLLOW-771-fixed region), not `$FILES` — the new proofs don't
+reintroduce the `apps/*/src` bound the ticket exists to remove.
+
+**5b CI:** 69 pass / 2 fail, `Rule I` **re-derived fresh at 192**. Non-success count for all REAL
+gates: **0**. New `shellcheck-sentry-gates` job: pass.
+
+**Conflict check against PR #656 (both touch `scripts/`, #656 still open):** exactly **one**
+conflict, `.claude/agents/devops-engineer/lessons.md` (Rule AG append-only-log collision — both PRs
+append at the same point). Docs-only, additive, resolved by keeping both. **Zero conflicts in
+`scripts/`** — entirely disjoint files between the two PRs.
+
+**FOLLOW-775 (shellcheck repo-wide) and the lessons commit both confirmed genuine, in-scope,
+correctly reasoned.**
+
+**CI-check counter: 1/5. Fix-iteration counter: 0/3.**
+
+Posted full evidence as a PR comment. **Not merged — needs Piotr.** Two PRs open (#656, #657), one
+docs-only conflict between them, resolution posted on #657.
+
+---
 
 **Picked 2026-08-03 (session 92)**, second of four remaining sequential dispatches, now that PR #656
 is READY_FOR_REVIEW. All three touch `scripts/check-sentry-capture-has-init.sh` and/or
@@ -712,6 +750,26 @@ producer-then-grep proofs (e.g. the missing-shared-helper check FOLLOW-769 adds)
 
 **1 ticket IN_PROGRESS** (combined FOLLOW-768+769+771, 3 ticket IDs, 1 PR) — within the ≤3
 guardrail.
+
+---
+
+### FOLLOW-763 — dispatch record (IN_PROGRESS)
+
+**Picked 2026-08-03 (session 92)**, third of four remaining sequential dispatches, now that PR #657
+is READY_FOR_REVIEW. Standalone — confirmed no file overlap with #656, #657, or the queued
+FOLLOW-773+774 (touches `apps/control-plane/src/lib/chat-intent-cache.ts` and one line of
+`tests/integration/redis-shadow-round-trip.smoke.test.ts`, neither shared with any open/queued
+work).
+
+**assigned_to:** backend-engineer **model: Sonnet** — per the ticket's own `recommended_agent`.
+Mechanical: add two fields to a TS interface matching an actual Python schema's optionality, delete
+a double-cast in one test line, add a docblock note. No design ambiguity, no prior failed attempt.
+
+**CI-check counter:** 0/5. **Fix-iteration counter:** 0/3.
+
+**1 ticket IN_PROGRESS** (FOLLOW-763) — within the ≤3 guardrail. 2 PRs READY_FOR_REVIEW (#656,
+#657), not IN_PROGRESS, both awaiting Piotr (one docs-only conflict between them, resolution
+posted).
 
 ---
 

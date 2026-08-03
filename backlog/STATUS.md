@@ -931,3 +931,28 @@ confirmed genuine, left as-is. Moved FOLLOW-770 to READY_FOR_REVIEW. **Not merge
 NEXT: dispatch FOLLOW-768+769+771 combined (devops-engineer), explicitly citing PR #656's corrected
 register pattern -- especially the PIPESTATUS lesson, since those two sentry-gate registers will
 copy this exact shape.
+
+---
+
+# Status — 2026-08-03 (session 92 continued — PR #657 validated, FOLLOW-763 dispatched)
+
+## SESSION 92 continued
+
+**Validated PR #657 (FOLLOW-768+769+771) in full.** Verified the commit-subject citation gap was a
+slip, not a scope miss -- all three ACs genuinely delivered, FOLLOW-769 (flagged as most likely to
+be dropped) confirmed present in both gates via independent self-test runs (18/18, 22/22). Register
+pattern confirmed byte-identical to PR #656's corrected PIPESTATUS runner (diffed, not assumed).
+Reproduced the Rule AP verification fixture on my own input. Confirmed Rule AL compliance by tracing
+the new entries' source variables to the FOLLOW-771-fixed registered-set loop. CI green (69/2, Rule
+I at 192 fresh). Found exactly one conflict against still-open PR #656 (lessons.md append-collision,
+docs-only, resolution posted). Moved to READY_FOR_REVIEW. **Not merged -- needs Piotr.**
+
+**Dispatched FOLLOW-763** (backend-engineer, Sonnet) -- standalone, no collision with anything open
+or queued.
+
+**CI-check counters:** PR #656 2/5, PR #657 1/5 -- both awaiting Piotr.
+
+**1 ticket IN_PROGRESS** (FOLLOW-763). **2 tickets READY_FOR_REVIEW** (PR #656, PR #657).
+
+NEXT: dispatch FOLLOW-773+774 combined once FOLLOW-763 completes. Piotr merges #656/#657 when able
+(mind the one lessons.md conflict, resolution posted on #657).

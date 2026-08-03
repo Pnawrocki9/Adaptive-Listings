@@ -2824,3 +2824,18 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   (independently reproduce, verify claimed-but-unstated work like "we checked X" was actually done,
   re-derive any baseline/count rather than reuse a stale reading) generalizes cleanly to
   fix-iteration re-validation, not just first-pass validation.
+
+- **Date / ticket:** 2026-08-03 — PR #657 (FOLLOW-768+769+771) validation, FOLLOW-763 dispatched
+- **Delegation row used:** validation only for #657; "ingest worker, control-plane, decision-api,
+  Postgres/RLS, auth, onboarding HTTP, billing, webhooks" → backend-engineer for FOLLOW-763
+- **What validation caught (or missed):** Did not accept the commit-subject's incomplete ticket
+  citation as evidence of a scope miss without checking — verified all three tickets' ACs against
+  the actual diff, especially FOLLOW-769 (the fixture-only ticket flagged as easiest to silently
+  drop). Verified the "copied verbatim" register-runner claim with an actual diff against the source
+  PR rather than eyeballing similarity. Reproduced Rule AP's own verification fixture on a fresh
+  input, and traced Rule AL compliance by following variable provenance into the actual loop that
+  computes it, not by trusting a self-test's descriptive name.
+- **A delegation/validation rule I'd add:** none new — this run confirmed the same discipline
+  (verify claimed-but-easy-to-skip work, diff rather than eyeball "copied verbatim" claims,
+  reproduce rule-specific verification fixtures independently) generalizes cleanly across a third
+  consecutive PR in this same gate-hardening chain.

@@ -23633,7 +23633,7 @@ RETRO-007 (the original soft-skip incident Rule Q was promoted from);
 
 source_retro: RETRO-238 (PR #649, FOLLOW-752) source_ticket: FOLLOW-752 recommended_sprint: next
 recommended_agent: backend-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false
+promoted_to_queue: true (2026-08-03 — dispatched to backend-engineer on Sonnet)
 
 **The finding (DG-2).** `ShadowChatIntent` (`apps/control-plane/src/lib/chat-intent-cache.ts:47-51`)
 declares exactly three members: `intent_dimensions`, `archetype_hint`, `confidence`. FOLLOW-730's

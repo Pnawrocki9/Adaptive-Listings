@@ -47614,3 +47614,418 @@ at 2 and RETIRED FROM THIS ESTATE per RETRO-243's invitation (clause (a) failed 
 Two new patterns minted at count 1 (global-budget-under-parallel-dispatch; retro-loop-has-no-self-
 closure-check), both filed as MECHANISMS not rules. Rule AI/AO/Y/S/AN instance sightings, all codified.
 Filed FOLLOW-801..807. QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+## RETRO-246 — FOLLOW-813 (#675) — the false-green gate replaced a race with a swap — 2026-08-05
+
+**THE HEADLINE: FOLLOW-813 IS CLOSED ON THE DOCUMENTATION AXIS AND NOT CLOSED ON ITS OWN AC(2).**
+AC(2) demanded "one that **cannot** report a false green". The merged
+`scripts/gh-pr-checks-verified.sh` genuinely kills the late-registered-check-run race — that half is
+real, dogfooded, and proven live (`[t=0s] 65 checks → [t=160s] 73`). But its Rule I classifier at
+`scripts/gh-pr-checks-verified.sh:216` is a **count comparison** (`pr_violations -le
+main_violations`), and `backlog/FOLLOW_UPS.md:27252-27254` — FOLLOW-821 AC(1), filed the day before,
+`source_ticket: FOLLOW-813` — rules exactly that out in advance: _"**not** a count threshold, since
+a count comparison passes when one violation is fixed and another introduced."_ The script's own
+header at `:49-50` claims it "mirrors the shape FOLLOW-821 uses … does not contradict it". It
+contradicts it. Fix one dead export, add another, and the new mandated gate prints `RESULT: all
+failing checks are documented, dynamically-verified pre-existing-red. Safe to mark
+READY_FOR_REVIEW` and exits 0. The false green did not die; it moved one hop, from _a check that
+arrives late_ to _a violation that is swapped_. → **FOLLOW-827 (P1)**.
+
+**AND THE SECOND HEADLINE IS THAT THE PM'S OWN CLOSURE NOTE MIS-NAMES BOTH PATTERNS, IN A WAY THAT
+WOULD HAVE PROMOTED THE WRONG RULE.** `backlog/QUEUE.md` session-101 head records the two
+validation-found defects as _"Rule AH — doc/code drift … Rule S — a worker sandboxed out of the one
+file it most needed to fix"_ and concludes _"at minimum the second sighting of each"_. Reconciled
+below (§6) against the actual rule text and every prior retro: defect (1) is **Rule AI**, not Rule
+AH — AH binds a doc author whose doc is false at its own merge commit (doc ahead of code); here the
+code was correct and the docs LAGGED, which is AI's explicitly-stated inverse direction
+(`CONVENTIONS_PATCH.md:2495-2496`), and AI's own "deliberately NOT counted" clause exists precisely
+to stop this double-count. And the sandbox event is **not Rule S at all** — Rule S is
+symmetric-sibling completeness (`:1068`), which does apply, but to the three worker-agent
+definitions, not to the permission system. The sandbox shape is its own pattern with exactly **one**
+prior numbered sighting (RETRO-160 §4d DG-1 / FOLLOW-516) → held, armed, **not** promoted.
+
+### 1. Summary of change
+
+- **PR:** #675 (merged 2026-08-04 22:59:44 UTC by Piotr, squash → commit `1a4233c8`; branch
+  `devops-engineer/FOLLOW-813-ci-checks-false-green`, deleted post-merge)
+- **Files changed:** 8 (+354 / −32). Three commits, and the split is the whole story of this retro:
+  - `418899e5` — the devops-engineer worker: `scripts/gh-pr-checks-verified.sh` (NEW, +247),
+    `CLAUDE.md` (+13/−5), `docs/AGENT_WORKFLOW.md` (+54/−9), `CONVENTIONS_PATCH.md` Rule A (+16/−5).
+  - `8e91e4e3` — **PM validation fix 1**,
+    `.claude/agents/{pm-orchestrator,backend-engineer,data-engineer,ml-engineer}.md` (+24/−13).
+  - `c9a765ae` — **PM validation fix 2**, `scripts/gh-pr-checks-verified.sh` mode `100644 → 100755`,
+    zero content lines.
+- **Modules touched:** repo-process only — agent definitions, root docs, `scripts/`. **Zero**
+  `apps/`, `packages/`, `infra/`, `.github/workflows/`, migrations, Python. Verified with
+  `gh pr view 675 --json files`.
+- **Key contracts changed** (all three are repo-wide procedural contracts, which is why a docs-only
+  PR earns a full retro):
+  1. **The mandated pre-`READY_FOR_REVIEW` CI gate** — `gh pr checks <pr> --watch` →
+     `scripts/gh-pr-checks-verified.sh <pr>` — **breaking: yes**, for every agent definition, session
+     header and ticket DoD that hardcoded the old string. This is the contract whose consumer side
+     was half-migrated at first push (§3 HW-2).
+  2. **The documented pre-existing-red gate set: 3 → 1.** `docs/AGENT_WORKFLOW.md:190-192` now
+     asserts _"that list has exactly one entry, `Rule I`"_ (Vercel + the Python test matrix declared
+     fixed on current `main`). FOLLOW-813's own stub AC(3) named three (_"Rule I's 192-violation
+     baseline, Vercel, Python-test"_). **breaking: yes, in the fail-closed direction** — a future
+     Vercel flake is now classified `not on the documented pre-existing-red list` → exit 1 → blocks.
+     Safe direction, un-propagated claim (§4a LG-3).
+  3. **A new exit-code contract** — 0 settled-and-acceptable / 1 genuine failure / 2 timeout / 3
+     usage-or-`gh`-error (`:60-64`). Consumed by every agent definition as "require exit 0".
+
+### 2. Verification done in PR
+
+- **Test files changed: none. Assertions added: 0. Coverage delta: n/a** (bash; no harness). A
+  247-line script that is now the merge gate for every ticket in the repo shipped with **zero
+  automated verification of its own behaviour** — no `--self-test`, no fixture, no
+  `scripts/__tests__/` entry, despite two live in-repo precedents for exactly that shape
+  (`.github/workflows/ci.yml:692` runs `bash scripts/check-sentry-init-singleton.sh --self-test`;
+  `scripts/__tests__/check-k2-consumer-swallow.test.sh` and `check-staff-write-atomicity.test.sh`
+  are both `100755` self-test harnesses). → §4c TG-1 / **FOLLOW-830**.
+- **CI checks: passed, and dogfooded** — the PM ran the PR's own script against the PR
+  (`./scripts/gh-pr-checks-verified.sh 675`, QUEUE.md session-100 block): 73 checks, 71 pass, 2 fail,
+  both `Rule I`, dynamically verified 192 ≤ 192 against `main` run `30955429305`, exit 0. The AC(1)
+  evidence reproduced itself live during that run (`checks known: 65` at t=0 → `73` at t=160s; eight
+  check-runs registered after the first poll). That is the strongest verification artefact in this PR
+  and it is worth saying plainly: the race is real and the settle-loop defeats it.
+- **What the verification did NOT cover, and this is the load-bearing gap:** both defects found
+  during validation were found by a **human reading the diff**, not by any gate. The mode bit was
+  invisible to every check in CI (nothing asserts `scripts/*.sh` permissions) and was masked in the
+  worker's own testing because every live run used `bash scripts/…`, which ignores the mode. The
+  agent-definition divergence was invisible because no gate greps `.claude/` for retired commands. A
+  PR whose entire subject is "the gate lied to us" was itself gated only by human attention.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code.** `scripts/gh-pr-checks-verified.sh` is a NEW file with **zero non-doc
+invokers** repo-wide:
+
+```
+grep -rn "gh-pr-checks-verified" --include="*.yml" --include="*.yaml" .github/   # → 0 hits
+grep -rn "gh-pr-checks-verified" --include="*.md" .                              # → CLAUDE.md:60,:125,
+#   CONVENTIONS_PATCH.md:22,:29,:38, docs/AGENT_WORKFLOW.md:182,:519, .claude/agents/{pm-orchestrator:47,
+#   backend-engineer:87,:108, data-engineer:79, ml-engineer:90}, backlog/QUEUE.md:43,:67 — all prose
+```
+
+**Classified as an accepted operator/agent CLI entrypoint → NOT DEAD_CODE**, same suppression class
+as `scripts/doppler-bootstrap.sh` and `scripts/install-hooks.sh`. The design is correct and
+unavoidable: the script waits on a PR's checks, so it cannot run as a job **inside** that PR's own
+checks without deadlocking on itself. The ticket's ACs did not require CI wiring and I do not treat
+this as blocking. **But record the asymmetry honestly:** 11 of the 12 other `scripts/check-*.sh` are
+invoked by `.github/workflows/ci.yml` (`bash scripts/check-rule-i.sh` at `ci.yml:135`, etc.); this
+one's enforcement is **entirely procedural** — nothing in the repo can detect that a session skipped
+it. There IS a mechanically-checkable slice (does the script still work? is it still executable?) and
+that slice is FOLLOW-830, not a DEAD_CODE ticket.
+
+**CHECK B — half-wire.** No new event, env var, column, topic or SDK signal was introduced, so the
+classic producer/consumer axis is N/A. The analogous axis for this PR is
+_instruction-producer → agent-consumer_, and on that axis the merge lands **half-wired in two
+directions**:
+
+- **HW-1 — a retired producer is still live and still authoritative-looking.**
+  `docs/CONVENTIONS_PATCH.md:36-46` ("Rule B — Verify CI is green before signaling completion") still
+  instructs `gh pr checks <pr-number> --watch` followed by the exact
+  `jq '[.[] | select(.state != "SUCCESS")] | length'` two-step this PR removed from the root
+  `CONVENTIONS_PATCH.md`. That file's own preamble says _"leave both files; agents read both"_, and
+  three sprint tickets list it as required reading (`backlog/sprint-0/TICKET-002.md:21`,
+  `sprint-7/TICKET-ADP-001.md:22`, `TICKET-ADP-003.md:23`). It has not been touched since `febc5041`
+  (Paczka 2 install, PR #3). An agent that reads it does exactly what FOLLOW-813 exists to stop.
+  Classification: **retired-producer survivor** (the CHECK-B shape inverted — both ends of the NEW
+  instruction are wired; the OLD instruction still has a live producer). → **FOLLOW-829 (P2)**.
+- **HW-2 — the consumer side is 4 of 9.** Post-fix, `scripts/gh-pr-checks-verified.sh` is mandated in
+  `pm-orchestrator.md:47`, `backend-engineer.md:87,:108`, `data-engineer.md:79`, `ml-engineer.md:90`.
+  The other five agent definitions — `sdk-engineer.md`, `qa-engineer.md`, **`devops-engineer.md`**,
+  `compliance-engineer.md`, `architect.md` — contain **no CI-verification instruction of any kind**
+  (`grep -n -e "gh pr checks" -e "CI green" -e "gh-pr-checks-verified" .claude/agents/*.md` returns
+  nothing for those five; their `<self_check>` blocks stop at prettier). So the fix is complete
+  against the set of agents that HAD the broken instruction, and the true symmetric set — every agent
+  that opens a PR — is 9. The agent that authored this very ticket, `devops-engineer`, has no CI gate
+  in its own definition. Classification: **HALF_WIRE_C (consumer coverage 4/9)**, P2 not P0 because
+  the PM's §5b gate is a real backstop and no agent is instructed to do the WRONG thing — they are
+  instructed to do nothing. → **FOLLOW-828 (P2)**.
+
+Residual-mandate sweep, run to confirm the PM's own claim (`8e91e4e3`: _"Remaining `--watch` mentions
+in the tree are warnings about it or historical lessons.md records — verified by grep, no residual
+mandate"_): **that claim is false by one file.** `grep -rn "gh pr checks" --include="*.md" .` returns
+`docs/CONVENTIONS_PATCH.md:39,:45` (HW-1, a live mandate), 20 historical sprint-ticket DoD lines
+(assessed in §4d DG-2 — closed tickets, no re-injection path), `.claude/agents/*.md` (all now
+negative warnings), and `backlog/` ledger prose. One live mandate survived the sweep.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the replacement gate can still print a false green, via a compensating-violation
+  swap; and the script's claim that it does not contradict FOLLOW-821 is itself false.**
+  `scripts/gh-pr-checks-verified.sh:216` accepts any `pr_violations -le main_violations`.
+  FOLLOW-821's AC(1) (`backlog/FOLLOW_UPS.md:27252-27254`, filed 2026-08-04 with
+  `source_ticket: FOLLOW-813`) pre-emptively forbids that comparison in one sentence. Three concrete
+  failure modes, all reachable today: (i) a PR that removes one dead export and adds another holds at
+  192 and is classified `pre-existing-red … Safe to mark READY_FOR_REVIEW`; (ii) the baseline is read
+  from `gh run list … --branch main --status completed -L 1` (`:200`) — `main`'s **latest** completed
+  run, so once a regression merges the baseline ratchets up to include it, and the ratchet is
+  invisible; (iii) that same `-L 1` can select a run in which the `Rule I` job never produced a count,
+  which correctly fails loud (`:209-211`) but produces a "genuine failure" verdict on a PR that is
+  fine — a false RED that will train sessions to re-run until it passes. The script header `:47-50`
+  asserts _"There is no hardcoded violation number anywhere in this script, so the classification
+  cannot rot"_ — true, and beside the point; a live count is still a count. → **FOLLOW-827**.
+- **LG-2 (P2) — the fix enumerated the sibling set as "files containing the broken string" rather
+  than "agents that must verify CI".** See §3 HW-2. Rule S's first bullet
+  (`CONVENTIONS_PATCH.md:1098`) says: _"Enumerate the full sibling set FIRST … State it in the PR
+  description."_ Neither the worker's PR body nor `8e91e4e3` states the set; the commit message says
+  _"the four agent definitions"_, which is the grep result, not the set. → **FOLLOW-828**.
+- **LG-3 (P2) — the pre-existing-red gate set was narrowed 3 → 1 in prose, and every artefact
+  recording the old set of 3 was left asserting it.** `docs/AGENT_WORKFLOW.md:190-192` and
+  `CONVENTIONS_PATCH.md:31-33` now say "exactly one entry". Still saying three, or reasoning from
+  three: memory `project_ci_gate_landscape` (out-of-repo, PM-owned — I cannot edit it and flag it
+  here for the PM), `.claude/agents/pm-orchestrator/lessons.md:101,:188,:1262`,
+  `.claude/agents/backend-engineer/lessons.md:343`, `.claude/agents/data-engineer/lessons.md:263`.
+  The narrowing itself is well-evidenced (PR #675's own run: 73 checks, only `Rule I` red) and
+  fail-closed, so this is a propagation gap, not a safety gap — **Rule AI tier 3**. Folded into
+  FOLLOW-829's AC rather than given its own number (Rule AN — no new number where one already fits).
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1) — on a host without PCRE `grep`, the false-green-proof script reports a false green.**
+  `:170-173` builds the failure list with `grep -oP` inside `mapfile … < <(…)`. `grep -P` is a GNU
+  extension: on macOS/BSD `grep` it errors (`invalid option -- P`, exit 2), on a busybox/Alpine image
+  it is absent. The script runs `set -uo pipefail` **without `-e`** (`:65`), and `mapfile` succeeds
+  with zero lines, so `failure_names` is a valid empty array → `:175` prints `failing: 0` → `:178-180`
+  prints `RESULT: all checks green. Safe to mark READY_FOR_REVIEW.` and **exits 0** — while checks are
+  failing. That is the precise defect class the ticket exists to eliminate, re-introduced through a
+  portability assumption. (The bash-3.2 axis is safer by accident: `mapfile` is a bash-4 builtin, so
+  on macOS's system bash the script dies on `${#failure_names[@]}` unbound-variable under `set -u` —
+  fail-closed. The PCRE axis is the dangerous one because it fails **open**.) `:187,:188,:191,:198,
+  :205` also use `-oP`, but those sit inside the classification loop that CB-1 skips entirely. Not
+  currently exploited — the PM and every agent run on this Linux host — which is exactly the argument
+  that was available for `--watch` before PR #668. → **FOLLOW-830**.
+- **CB-2 (P2) — the mode-bit defect that `c9a765ae` fixed has a second, still-live instance.**
+  `scripts/check-rule-i.sh` is `100644` (`git ls-files -s scripts/check-rule-i.sh`;
+  `test -x scripts/check-rule-i.sh` → false), while `backlog/HANDOFFS.md` instructs workers to run it
+  **bare, with no `bash` prefix**, at four separate delegation briefs: `:4011` (_"Run
+  `scripts/check-rule-i.sh` and confirm you did NOT add violations"_), `:4041`, `:4111`, `:4169`.
+  `ci.yml:135` and `CONVENTIONS_PATCH.md:390` both use `bash scripts/check-rule-i.sh`, which is why
+  the mode has never mattered in CI and why the defect survives. Any worker following its handoff
+  literally gets `Permission denied` and — on the evidence of how workers behave — silently switches
+  to `bash …` or skips the check. Six `scripts/*.sh` are currently `100644`
+  (`check-compliance-docs.sh`, `check-redis-smoke-trigger-trust.sh`, `check-rule-i.sh`,
+  `check-sentry-init-singleton.sh`, plus the two `lib/` files, which are `source`d and correctly
+  non-executable). → **FOLLOW-831**.
+- **CB-3 (P3) — no `gh auth` / rate-limit distinction.** `:198` and `:205` pipe `gh api … 2>/dev/null`
+  into `grep`; an auth failure, a 403 rate-limit and a log that genuinely lacks the line are
+  indistinguishable and all land in the same `WARN … treating as genuine failure` branch.
+  Fail-closed, so correct in direction, but it produces an unactionable message on the one code path
+  a session will hit at 2am. Folded into FOLLOW-827 AC(4); no separate number.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — zero self-verification on the repo's new merge gate.** See §2. The two defects this
+  PR shipped are both mechanically detectable: a mode check is one `test -x`; the agent-definition
+  divergence is one grep. A `--self-test` mode following the `check-sentry-init-singleton.sh`
+  precedent (`ci.yml:692`) would have caught the executable bit and could pin the classification
+  branches — including the compensating-swap case from LG-1, which is a pure arithmetic fixture. Per
+  **Rule AM** (`CONVENTIONS_PATCH.md:2907`) those fixtures must be **synthesized**, not produced by
+  mutating a live PR's check state. → **FOLLOW-830**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — `docs/CONVENTIONS_PATCH.md` "Rule B" is a live, contradicting mandate.** §3 HW-1. →
+  **FOLLOW-829**.
+- **DG-2 (N/A — assessed and deliberately NOT filed).** 20 sprint-ticket files still carry
+  `gh pr checks <pr> --watch` in their DoD (`backlog/sprint-0/TICKET-002.md:135` …
+  `sprint-11/FOLLOW-068.md:90`). All belong to closed tickets, and — checked, not assumed — the live
+  template `docs/TICKET_FORMAT.md:87` carries only the generic
+  `- [ ] CI green (typecheck, lint, test, build)`, so there is **no re-injection path** into new
+  tickets. Recording the assessment here so the next audit stops re-discovering it (the
+  FOLLOW-826/`dns.tf` lesson).
+- **DG-3 (N/A — pre-existing, already owned).** `docs/MASTER_DESIGN.md:576` says _"42 permanent rules
+  … (A–L, N–P, R–U, W–Z, M, V, Q, AA–AP)"_; `grep -c "^## Rule " CONVENTIONS_PATCH.md` → **43** (AQ
+  landed after that refresh). The line itself declares its counts DERIVED and drifting, and
+  FOLLOW-772 owns the re-derivation. Not caused by this PR; no ticket (Rule AN).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-812 (compliance-engineer, picked as next per QUEUE session-101) — no AC invalidated.** Its
+  scope is `apps/intent-engine/src/nlp.py`'s `print`, `ropa.md`, `C-07`; nothing in it touches the CI
+  mechanism. The only delta is that its PR will be validated through the new script — which makes
+  LG-1/CB-1 load-bearing for it, not academic. If FOLLOW-812 adds a `capsys` test (its AC(4)) it
+  cannot add a Rule I violation, so the swap hole is not reachable on this specific ticket.
+- **FOLLOW-811 (backend-engineer) — no AC invalidated**, same reasoning. One genuine interaction: if
+  811 chooses "add a `beforeSend`", it adds a symbol to three Sentry config files, which CAN move the
+  Rule I count — and if it simultaneously removes one, LG-1 is reachable.
+- **FOLLOW-821 (devops-engineer, P2, Sprint 24 HYGIENE, `promoted_to_queue: true`) — MATERIALLY
+  AFFECTED, and this is the one the PM must read.** Two directions: (i) its AC(1) has already been
+  half-implemented in a form its own AC forbids (LG-1), so the ticket must now also **replace**
+  `gh-pr-checks-verified.sh:190-220`, not merely add a CI job; (ii) if 821 ships its allowlist without
+  re-pointing the script, the repo will hold **two independent implementations of "compare Rule I
+  against a baseline"** — a symbol-set allowlist in `check-rule-i.sh` and a count comparison in
+  `gh-pr-checks-verified.sh` — a **Rule K** (duplicate decision-grade logic without a parity gate) /
+  **Rule AQ** (declared-identical logic must be extracted or machine-checked) hazard filed at birth.
+  FOLLOW-827 carries this explicitly.
+- **FOLLOW-816/817/818/819 (Sprint 24 LOCAL) — unaffected in scope**, affected only as consumers of
+  the new gate.
+
+#### 5b. Future sprint tickets affected
+
+Every future ticket, without exception: this merge changed the DoD command for all of them, and
+`docs/TICKET_FORMAT.md:87` does not name the command, so the binding runs through the agent
+definitions — which are 4/9 wired (§3 HW-2). A ticket assigned to `sdk-engineer`, `qa-engineer`,
+`devops-engineer`, `compliance-engineer` or `architect` inherits no CI-verification instruction at
+all.
+
+#### 5c. Contracts changed others rely on
+
+- The mandated CI-gate command (all agents, PM §5b, every ticket DoD) — migrated, 4/9 consumers.
+- The pre-existing-red gate set 3 → 1 — **not propagated** to the PM's own memory
+  `project_ci_gate_landscape` or to five `lessons.md` entries (§4a LG-3). Flagged for the PM; I do not
+  write memories.
+- The script's exit-code contract (0/1/2/3) — consumed as "require exit 0" in four agent files. No
+  consumer distinguishes exit **2 (timeout)** from exit **1 (genuine failure)**, and the timeout
+  default is 900s against a CI run observed to take far longer (`DB Migrate` = 83–99 min, session-76
+  memory). A session hitting exit 2 has no instruction other than "not 0". Folded into FOLLOW-828's
+  AC.
+
+#### 5d. Architectural assumptions affected
+
+**The repo's merge gate moved from an upstream, third-party-maintained tool to a 247-line in-repo bash
+script with no tests.** That is a net improvement — `gh pr checks --watch` was measurably wrong and a
+settle-loop is measurably better — but the trust root moved, and the new root is maintained by the
+same agents whose work it gates, with no gate on itself. LG-1, CB-1 and TG-1 are all consequences of
+that single structural move. The correct posture is not to revert it; it is to hold the gate to the
+standard the repo already applies to its other gates: **Rule AM** (synthesized self-test fixtures),
+**Rule AP** (residual gaps as a machine-checked register, not prose — `:105-111`'s "documented
+pre-existing-red" list is **prose in a comment**, precisely the shape AP was promoted against), and
+**Rule AF** (a permanently-red gate is a disabled gate — FOLLOW-821, still open, and which this script
+now structurally depends on remaining open).
+
+### 6. New lesson candidates
+
+- **Pattern P-29 — "the prose docs were updated and the EXECUTED instruction corpus was not."** Seen
+  in: **RETRO-246 (this)**. Prior sightings of the parent shape (a doc lagging a change that
+  falsified it): RETRO-213 §4d DOC-1, RETRO-221 §6 P-1, RETRO-222 §4d DG-1/DG-2 — all already
+  codified as **Rule AI**. **Adjudication: the parent pattern needs no promotion, it IS Rule AI, and
+  this is its 4th sighting.** What is NEW and uncovered: Rule AI's own Verification block
+  (`CONVENTIONS_PATCH.md:2554-2569`) greps `docs/`, `backlog/HANDOFFS.md` and `CONVENTIONS_PATCH.md`
+  — **`.claude/` is absent** — and its three-tier severity list (`:2533-2539`) has no tier for
+  instruction files an agent LOADS AND EXECUTES. Running Rule AI verbatim against PR #675 would have
+  reported clean. That is a demonstrated hole in an already-promoted rule, not a new pattern → handled
+  as a **Rule AI amendment**, not a new letter (see §7 / `CONVENTIONS_PATCH.md`). Corroborating and
+  pre-dating: **RETRO-160 §4d DG-1** — the same corpus (`.claude/agents/backend-engineer/lessons.md`)
+  standing wrong and actively trusted; and a precedent proving the pairing is known practice — an
+  earlier PR updated `docs/AGENT_WORKFLOW.md`'s "Sprint-close checklist" AND
+  `.claude/agents/pm-orchestrator.md` step 8 in the same change (`RETROSPECTIVES.md:1862-1863`), so
+  PR #675's omission is a regression against established practice, not a novel discovery.
+- **Pattern P-30 — "a worker flags a gap honestly, is sandbox-blocked from the one file that closes
+  it, and the gap's survival then depends entirely on whether a human reads the PR description."**
+  Seen in: **RETRO-160 §4d DG-1 / FOLLOW-516** (count 1, PRIOR — the FOLLOW-513 worker was
+  permission-blocked from correcting `lessons.md`; the wrong lesson stood on disk until a separate P1
+  ticket landed it) + **RETRO-246 (this, count 2 — promoting, does not inflate)**.
+  **Promote-threshold 2 PRIOR; current PRIOR count 1 → NOT PROMOTED. Explicitly ARMED:** the next
+  numbered retro observing a sandbox-blocked worker whose flagged gap reaches merge (in either state)
+  cites RETRO-160 + RETRO-246 → ≥2 prior → promote. **The delta between the two sightings is itself
+  the lesson and must be preserved in the rule text when it is written:** in RETRO-160 the block cost
+  a full extra ticket cycle (FOLLOW-516, P1, closed 2026-07-06 — verified end-to-end in §7); here the
+  PM closed it **inside the same PR** (`8e91e4e3`), which is the correct handling and the reason this
+  instance produced no follow-up ticket. A rule promoted from this pair should codify the PM
+  behaviour, not merely name the hazard.
+- **Pattern P-31 — "a script mandated as a bare, no-interpreter-prefix instruction ships without the
+  permission bit that instruction requires."** Seen in: **RETRO-246 (this)**. **This is a first retro
+  sighting — the class has no name in this repo**
+  (`grep -i "chmod\|executable bit\|100644\|permission denied" backlog/RETROSPECTIVES.md` → 0 hits on
+  this shape; `CONVENTIONS_PATCH.md` → 0). It is adjacent to **Rule AH** (an operator instruction that
+  cannot execute at its own merge commit) but AH's entire evidence base and verification block concern
+  the *receiving code's* semantics — a Zod key, a column write, a KV field — never whether the command
+  can be invoked at all. **Count 1 → NOT PROMOTED.** Materially strengthening but NOT counted
+  (same-retro, per the AA/AB/AC/AD/AE/V/Q/AG/AH/AI adjudication): a **second, still-live instance**
+  found in this retro's own sweep — `scripts/check-rule-i.sh` at `100644` against four bare-invocation
+  mandates in `backlog/HANDOFFS.md` (§4b CB-2). **ARMED:** the next retro observing a doc-mandated
+  bare invocation of a non-executable file cites RETRO-246 → promote, and prefer a **Rule AH
+  amendment** over a new letter unless the sighting is clearly not operator-instruction-shaped.
+- **Meta-pattern (recorded, not a rule candidate) — the defects a docs-only PR ships are exactly the
+  defects no gate can see.** Three of the four findings here (mode bit, agent-definition divergence,
+  retired-producer survivor) are invisible to every check in `ci.yml` because CI gates code, and this
+  PR changed no code. The repo's answer elsewhere is a grep-lint script (Rules AC/AD/AE/AP were all
+  promoted around exactly this insight). FOLLOW-830/831 are that answer applied here.
+
+### 7. Follow-ups
+
+- **FOLLOW-827:** Replace `gh-pr-checks-verified.sh`'s Rule I **count** comparison with a symbol-set
+  comparison (or gate it behind FOLLOW-821's allowlist) and correct the script's false "does not
+  contradict FOLLOW-821" claim (devops-engineer, 4h, **P1**)
+- **FOLLOW-828:** Give the five agent definitions with no CI-verification step one, and define the
+  exit-2 (timeout) behaviour every consumer currently conflates with exit 1 (devops-engineer, 2h, P2)
+- **FOLLOW-829:** Retire or redirect `docs/CONVENTIONS_PATCH.md` "Rule B", the last live mandate of
+  `gh pr checks --watch`; propagate the pre-existing-red-set 3 → 1 narrowing to the artefacts that
+  still assert three (devops-engineer, 2h, P2)
+- **FOLLOW-830:** Make the merge gate verify itself — PCRE/bash-version preflight that exits 3, plus a
+  `--self-test` with synthesized fixtures wired into `ci.yml` (devops-engineer, 5h, **P1**)
+- **FOLLOW-831:** Mechanical gate: every `scripts/*.sh` that any doc mandates as a bare invocation
+  must be mode `755`; `chmod +x scripts/check-rule-i.sh` (devops-engineer, 3h, P2)
+
+**Prior-follow-up closure check (algorithm step 7), traced end-to-end, not one hop:**
+
+- **FOLLOW-813 — CLOSED on AC(1), AC(3) and AC(4); NOT CLOSED on AC(2).** Chain traced: producer
+  (`scripts/gh-pr-checks-verified.sh` exists ✅, executable ✅ after `c9a765ae`) → consumer
+  (`CLAUDE.md:60,:125` ✅, `docs/AGENT_WORKFLOW.md:162-200,:519` ✅, `CONVENTIONS_PATCH.md` Rule A ✅,
+  4/9 agent definitions ⚠️, `docs/CONVENTIONS_PATCH.md` still contradicting ❌) → render/enforcement
+  (**nothing mechanical asserts the gate was run, and the gate itself can still print green on a
+  compensating swap or a non-PCRE host** ❌). AC(2)'s wording is "cannot report a false green"; it can.
+  This is the `inquiry_submit_selector` chain shape — FOLLOW-097 fixed the consumer and the gap moved
+  to the producer, then the detector, then the seed. Here the gap moved from the watcher to the
+  classifier. FOLLOW-827 + FOLLOW-830 are the next hop; a future retro must verify **both** before
+  declaring the false-green class closed.
+- **FOLLOW-516 (RETRO-160's P1, the prior P-30 instance) — VERIFIED CLOSED END-TO-END**, not taken
+  from its status field. The stub says `status: DONE (2026-07-06 … correction appended inline at
+  lessons.md:1503)`; the claim was checked against disk:
+  `grep -n "FOLLOW-513" .claude/agents/backend-engineer/lessons.md` → `:1811`, a
+  `⚠️ CORRECTION (FOLLOW-513 / RETRO-160, 2026-07-06 — point (2) above was WRONG…)` block. The line
+  number drifted 1503 → 1811 as the file grew; the content is present and the wrong lesson is flagged
+  in place. Closed.
+
+### 8. Cross-references
+
+- **RETRO-160** — the prior P-30 sighting (worker permission-blocked from `.claude/`), and the source
+  of the "a wrong lesson is worse than no lesson" framing that makes the agent-definition corpus
+  P1-grade rather than a docs nit.
+- **RETRO-222 / Rule AI** — the rule this PR's defect (1) actually instances (the PM's closure note
+  says Rule AH; reconciled in §6 P-29). Rule AI amended by this retro; no new letter minted.
+- **RETRO-220 / Rule AH** — the rule defect (2) is adjacent to but not covered by; named as the
+  preferred home if P-31 reaches threshold.
+- **RETRO-235 / Rule AM / Rule AP** — the self-testing-gate precedent
+  (`check-sentry-init-singleton.sh --self-test`) that FOLLOW-830 follows, and the "residual gaps must
+  be a machine-checked register, not prose" rule that `gh-pr-checks-verified.sh:105-111` currently
+  violates.
+- **RETRO-245 §headline / FOLLOW-806** — "the learning loop has no closure check on itself." This
+  retro is the closure check for PR #675, and it ran because the PM dispatched it in the same turn it
+  closed the ticket. FOLLOW-806 remains the mechanical answer; one PM habit is not a control.
+- **RETRO-205 / Rule AF** — the permanently-red-gate rule that FOLLOW-821 exists to satisfy and that
+  the new script now structurally depends on remaining unsatisfied.
+
+<!-- RETRO-246 (PR #675, FOLLOW-813, merge 1a4233c8, docs+scripts only, zero apps/packages). VERDICT:
+AC(2) NOT met — the false green moved from a late-registered check-run to a compensating-violation swap
+(script :216 uses a count comparison that FOLLOW-821 AC-1 forbids by name; script :49-50 falsely claims
+alignment with 821) -> FOLLOW-827 P1. Second false-green path: grep -oP at :170-173 yields an empty
+failure list on any non-PCRE grep host and the script then prints "all checks green" + exit 0 ->
+FOLLOW-830 P1. WIRING: CHECK A clean (CLI entrypoint, suppressed; noted that 11/12 other scripts/ are
+ci.yml-invoked and this one's enforcement is purely procedural). CHECK B: HW-1 docs/CONVENTIONS_PATCH.md
+:36-46 is a surviving LIVE mandate of the retired --watch two-step (the PM's "no residual mandate" grep
+claim is false by one file) -> FOLLOW-829; HW-2 consumer coverage 4/9 agent definitions, the other five
+(incl. devops-engineer, this ticket's own author) have NO CI step at all -> FOLLOW-828. RULE
+ADJUDICATION, correcting QUEUE session-101's mapping: defect (1) is Rule AI (doc LAGS code), NOT Rule AH
+(doc AHEAD of code) — AI's own "deliberately NOT counted" clause exists to prevent exactly this
+double-count; and the sandbox event is NOT Rule S (Rule S applies, but to the 3 worker-agent siblings).
+NO NEW RULE PROMOTED. Rule AI AMENDED (tier 0 + .claude/ added to its verification grep) because running
+AI verbatim against this PR reports clean — a demonstrated hole in an already-promoted rule, not a new
+pattern; amendment precedent = the Rule S amendment @ RETRO-112. P-30 (sandbox-blocked worker) HELD at 1
+PRIOR (RETRO-160) and ARMED. P-31 (bare-invocation mandate vs missing exec bit) MINTED at count 1, ARMED,
+with a second LIVE instance found but NOT counted (check-rule-i.sh 100644 vs HANDOFFS.md
+:4011/:4041/:4111/:4169) -> FOLLOW-831. DG-2 (20 sprint-ticket --watch DoD lines) and DG-3
+(MASTER_DESIGN:576 says 42 rules, actual 43) assessed and deliberately NOT filed — closed tickets with no
+re-injection path via TICKET_FORMAT.md:87, and a self-declared-derived count owned by FOLLOW-772 (Rule
+AN). LG-3 (pre-existing-red set narrowed 3->1; memory project_ci_gate_landscape + 5 lessons.md entries
+still say 3) folded into FOLLOW-829 rather than given a number. CLOSURE: FOLLOW-813 PARTIAL (gap moved one
+hop, watcher->classifier); FOLLOW-516 verified CLOSED end-to-end on disk at lessons.md:1811 (stub cited
+:1503, line drifted). Filed FOLLOW-827..831. QUEUE.md / ESCALATIONS.md / sprint files / code correctly
+UNTOUCHED. -->

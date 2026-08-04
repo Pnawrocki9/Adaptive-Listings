@@ -1,6 +1,97 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 101 (2026-08-05) — FOLLOW-813 closed DONE (PR #675 merged), retro dispatched, FOLLOW-812 next
+## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 dispatched next
+
+**Retro-analyst (Opus, PID 112651) exited clean.** Branch
+`retrospective-analyst/RETRO-246-follow-813-retro`, commit `8ab98053`, touched ONLY the three
+permitted files (`CONVENTIONS_PATCH.md` +56, `backlog/FOLLOW_UPS.md` +210,
+`backlog/RETROSPECTIVES.md` +415) — verified with `git diff --stat 1a4233c8 8ab98053`, not taken on
+trust. `main` was untouched, no PR opened, exactly as instructed. Content cherry-picked (`-n`, no
+conflicts — disjoint files from this session's own QUEUE.md/STATUS.md edits) onto `main` directly,
+matching the established convention (RETRO-238…245 all landed this way, no PR).
+
+**Self-correction — the session-101 block above mis-cited the rule.** It said "Rule AH shape ...
+Rule S shape". RETRO-246 traced both rule texts (not just titles) and corrected this: the doc-lagged
+(not doc-ahead) shape is **Rule AI**, whose own text has a "deliberately NOT counted" clause built
+for exactly this double-count risk against Rule AH; the sandboxed-worker event is **not** Rule S at
+all (Rule S governs symmetric-set siblings, not write-permission scope). No new rule letter was
+minted — RETRO-246 **amended Rule AI in place** (tier 0: executed/loaded instruction corpora
+`.claude/agents/*.md`, `.claude/hooks/*`, `.github/workflows/*.yml`, `package.json` scripts,
+`lefthook.yml` outrank prose, verified by "would the existing Verification block, run verbatim,
+report this PR clean?" — it would have, hole in a control not a new pattern). This is Rule AI's 4th
+sighting (RETRO-213/221/222 prior); RETRO-160 §4d DG-1 is corroborating on a different axis and not
+counted.
+
+**Two items the retro flagged for PM/operator, both handled or logged:**
+
+1. Its own learning-hook fragment was permission-blocked under `.claude/` (same P-30 shape as
+   FOLLOW-813's own worker sandbox event) — the retro named the intended path and full text rather
+   than silently dropping it. **Landed by this session:**
+   `.claude/agents/retrospective-analyst/lessons.d/RETRO-246.md` (per Rule AG, not the shared tail).
+2. User memory `project_ci_gate_landscape` still records **three** pre-existing-red CI gates; the
+   merged docs (FOLLOW-829 finding: the set silently narrowed 3→1) now say **one**. Agents cannot
+   write user memories — **this is an operator (Piotr) step**, flagged here, not blocking any
+   dispatch. (Whether the narrowing is itself correct or a regression is exactly what FOLLOW-829
+   AC(1) exists to establish — do not treat "1" as ground truth yet.)
+
+**5 new stubs filed, all `recommended_agent: devops-engineer`, none promoted to QUEUE this session**
+(Track HYGIENE is CEO-sequenced 813→812→811; these join that track's tail, not jump it):
+`FOLLOW-827` **P1** (Rule I classification is by COUNT, which FOLLOW-821's own AC forbids by name —
+`blocks: [FOLLOW-821 must not ship its allowlist without re-pointing this script]`), `FOLLOW-828` P2
+(5/9 agent defs have zero CI-verification step; exit-2-vs-exit-1 not distinguished anywhere),
+`FOLLOW-829` P2 (`CONVENTIONS_PATCH.md:36-46` still mandates the retired `--watch` two-step;
+pre-existing-red set narrowed 3→1 silently), `FOLLOW-830` **P1** (fail-open: `grep -oP` on a
+non-PCRE host reports all-green; the gate has zero self-test), `FOLLOW-831` P2 (a second live
+mode-bit instance: `check-rule-i.sh` is `100644` while `HANDOFFS.md` mandates 4 bare invocations of
+it). **Flagging, not escalating:** FOLLOW-827/830 are P1 findings _about the very script this
+orchestrator's own §5b gate now depends on_. Neither is a P0/security/contract-break finding (no
+ESCALATIONS.md entry warranted per step 6), and neither's trigger condition (a
+compensating-violation Rule I swap; a non-PCRE host) is plausible for FOLLOW-812's docs-only change
+on this Linux/GNU-grep environment — not a blocker for today's dispatch. They should be pulled
+forward in Track HYGIENE ordering at the next sprint-planning pass, ahead of the P2/P3 tail.
+
+**No P0/P1 before-go-live FOLLOW is newly OPEN as a gate-closer here** — none of FOLLOW-827..831 is
+marked `depends_on` a go-live gate, and no "DONE"/"closed" claim is being made for any sprint/gate
+in this session.
+
+**FOLLOW-812 dispatched next** (below) — the retro's cascading-impact check confirmed FOLLOW-811/812
+ACs are **not** invalidated by FOLLOW-813, only their validation _command_ (now
+`gh-pr-checks-verified.sh` per FOLLOW-813, unaffected by FOLLOW-827/830 for the reason above).
+
+**Ticket picked: FOLLOW-812** (P2, compliance-engineer) — CEO's explicit order 813→812→811
+(2026-08-04 ruling), unfrozen same ruling. `depends_on: []`, compliance-engineer free (0
+IN_PROGRESS).
+
+**Delegation-table row used:** "DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs →
+compliance-engineer."
+
+**Model: Sonnet.** Justification: bounded, well-specified AC set (determine Modal log
+destination/retention/access and cite the source; update two docs to match; decide
+redact-vs-accept-and-document; extend one test if redacted) with no ambiguous acceptance criteria,
+no irreversible prod-touching action, no new third-party service or pricing/billing call. This is
+record-accuracy + judgment-bounded-by-explicit-options work, not the ambiguous cross-domain
+reasoning Opus is for.
+
+**FOLLOW-812 — status: IN_PROGRESS**
+
+**assigned_to:** compliance-engineer **model:** Sonnet **started_at:** 2026-08-05 **branch:**
+`compliance-engineer/FOLLOW-812-modal-stdout-chat-leak`
+
+**Ticket:** `backlog/FOLLOW_UPS.md` `## FOLLOW-812`. This is an **assessment ticket, not a fix
+ticket** — "we looked and it is fine" is a valid, and must-be-recorded, outcome. AC (verbatim): (1)
+determine Modal log destination, retention and access, and cite the source; (2) update `ropa.md`'s
+Modal row and `C-07`'s §"where the message goes" to match whatever is found true; (3) decide whether
+to redact the `print` in `apps/intent-engine/src/nlp.py`'s primary-failure branch (cheapest fix: log
+`type(exc).__name__` + the classified kind, the same shape `extraction_error` already uses) or to
+accept-and-document the residual risk; (4) if redacted, extend `test_buyer_text_escapes_both_sinks`
+to a third sink via `capsys`.
+
+**CI-check counter (FOLLOW-812): 0/5. Fix-iteration counter: 0/3. 2 tickets IN_PROGRESS this
+session-count (FOLLOW-812 only — FOLLOW-813 is DONE). 0 open PRs at dispatch time.**
+
+---
+
+## ▶️ (superseded — see session 102 above) START HERE — session 101 (2026-08-05) — FOLLOW-813 closed DONE (PR #675 merged), retro dispatched, FOLLOW-812 next
 
 **State verified fresh:** `main` = `origin/main` = `1a4233c8`, working tree clean,
 `gh pr list --state open` empty, no running `claude --agent` processes, no stranded worktrees. PR

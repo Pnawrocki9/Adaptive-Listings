@@ -1,3 +1,58 @@
+# Status — 2026-08-05 (session 102 — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 dispatched to compliance-engineer)
+
+## SESSION 102 (2026-08-05)
+
+Retro-analyst (Opus, PID 112651) exited clean after ~6 min. Verified its commit `8ab98053` on
+`retrospective-analyst/RETRO-246-follow-813-retro` touched ONLY the three permitted files (grep-diff
+confirmed, not trusted) — `main` untouched, no PR opened. Content landed on `main` via
+`git cherry-pick -n` (clean, disjoint from this session's own QUEUE.md/STATUS.md edits, matches
+RETRO-238..245 no-PR convention).
+
+**Self-correction:** session-101's closure note mis-cited "Rule AH / Rule S"; RETRO-246 traced the
+actual rule texts and corrected it to **Rule AI amendment** (4th sighting, tier 0 added for
+executed/loaded instruction corpora incl. `.claude/agents/*.md`) — no new rule letter minted, no
+Rule S event (that's about symmetric-set siblings, not write-permission scope). Recorded in full in
+`backlog/QUEUE.md` session-102 block.
+
+**Landed the retro's own permission-blocked fragment:**
+`.claude/agents/retrospective-analyst/lessons.d/RETRO-246.md` (per Rule AG — never the shared tail).
+Same P-30 shape as FOLLOW-813's worker sandbox event; the retro named the intended path + full text
+per its own pattern's lesson rather than dropping it, and this session landed it in one copy.
+
+**Operator item flagged, not actioned (agents cannot write user memories):** memory
+`project_ci_gate_landscape` says 3 pre-existing-red CI gates; merged docs now say 1 (FOLLOW-829
+finding — whether that narrowing is correct is exactly what FOLLOW-829 AC(1) must establish, so "1"
+is NOT yet treated as ground truth). For Piotr.
+
+**5 new stubs filed** (all `recommended_agent: devops-engineer`, none promoted to QUEUE this
+session, join Track HYGIENE tail per CEO's 813→812→811 sequencing): FOLLOW-827 **P1** (Rule I
+classified by COUNT — forbidden by FOLLOW-821's own AC; `blocks: FOLLOW-821`), FOLLOW-828 P2 (5/9
+agent defs have zero CI-verification step), FOLLOW-829 P2 (`CONVENTIONS_PATCH.md` still mandates the
+retired `--watch`; pre-existing-red set silently 3→1), FOLLOW-830 **P1** (fail-open: non-PCRE grep
+host → false "all green"; zero self-test on the new gate), FOLLOW-831 P2 (2nd live mode-bit
+instance: `check-rule-i.sh` non-executable against 4 bare-invocation mandates). Two P1s are about
+the script this orchestrator's own §5b gate now depends on — flagged for next sprint-planning
+prioritization, not escalated (no P0/security/contract-break; neither trigger condition is plausible
+for today's docs-only FOLLOW-812 dispatch on this Linux/GNU-grep host).
+
+**Dispatched FOLLOW-812 to compliance-engineer.** Delegation-table row: "DPIA/ROPA/consent/DSR
+rules/fair-housing/AI-Act docs → compliance-engineer." Model: **Sonnet** (bounded AC, no ambiguity,
+no irreversible/pricing/vendor call — routine assessment-and-record work, not the ambiguous
+cross-domain reasoning Opus is for). Branch `compliance-engineer/FOLLOW-812-modal-stdout-chat-leak`.
+QUEUE.md updated atomically BEFORE dispatch (status IN_PROGRESS, assigned_to, started_at, branch).
+Committed + pushed to `main` before spawning the worker, per "no concurrent git ops while a subagent
+runs" — dispatching into a dedicated worktree this time as well, per this session's own lesson.
+
+**CI-check counter (FOLLOW-812): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
+at dispatch time.**
+
+NEXT: dispatch FOLLOW-812 to compliance-engineer (Sonnet), wait for completion, run full 5a-5g
+validation (this is a docs/assessment ticket — "we looked and it's fine" is an acceptable, but must
+be _recorded_, outcome for AC(1)/(3); if AC(3) concludes "redact", AC(4)'s new `capsys` test must
+actually assert on stdout content, not just call it).
+
+---
+
 # Status — 2026-08-05 (session 101 — FOLLOW-813 closed DONE, retro RETRO-246 dispatched (Opus), FOLLOW-812 next)
 
 ## SESSION 101 (2026-08-05)

@@ -2568,6 +2568,62 @@ sed -n '/^ \* Responses:/,/^ \*\//p' <route>.ts   # every added status must appe
 git diff --name-only origin/main | grep -q 'backlog/HANDOFFS.md' || echo 'FAIL: external contract changed, handoff not touched'
 ```
 
+### Rule AI amendment (2026-08-05 — RETRO-246 §6 P-29 — the EXECUTED instruction corpus outranks prose)
+
+**This is an AMENDMENT to an already-promoted rule, not a new rule.** No new letter was minted and
+the ≥2-PRIOR-retro promotion gate is not invoked: the pattern (a doc left asserting a state a change
+falsified) is Rule AI itself, and RETRO-246 is its **4th** sighting after RETRO-213 / RETRO-221 /
+RETRO-222. What the amendment closes is a hole **in this rule's own controls**, demonstrated rather
+than hypothesised.
+
+**Trigger (RETRO-246 / FOLLOW-813 / PR #675).** The PR replaced the mandated pre-`READY_FOR_REVIEW`
+CI gate (`gh pr checks <pr> --watch` → `scripts/gh-pr-checks-verified.sh <pr>`) and updated
+`CLAUDE.md`, `docs/AGENT_WORKFLOW.md` and Rule A above — the prose. It left the **four agent
+definition files the agents actually load and execute** hardcoding the retired, known-broken
+command, including `.claude/agents/pm-orchestrator.md` §5b, the PM's own NON-NEGOTIABLE CI gate —
+i.e. the fix updated the description of the control and not the control. Caught only by a human
+during PM validation and repaired on top of the worker's diff (`8e91e4e3`). **Run verbatim, the
+Verification block above would have reported this PR clean:** its greps cover `docs/`,
+`backlog/HANDOFFS.md` and `CONVENTIONS_PATCH.md`, and `.claude/` appears in none of them; and the
+three-tier severity list has no tier for a file whose text IS an executed instruction.
+Corroborating, pre-dating, and NOT counted (different axis — a wrong lesson rather than a falsified
+claim): **RETRO-160 §4d DG-1 / FOLLOW-516**, where the same corpus stood wrong on disk and was
+actively trusted by the next ticket.
+
+**Amendment — add a tier 0 above the existing three, and treat it as strictly higher priority than
+tier 1:**
+
+0. **Executed / loaded instruction corpora — P0-in-tier, do it FIRST.** Any file whose text is
+   consumed as an instruction by an executing agent or by automation rather than read by a human:
+   `.claude/agents/*.md`, `.claude/hooks/*`, `.github/workflows/*.yml` `run:` steps and step labels,
+   `package.json` scripts, `lefthook.yml`. When a PR changes a mandated command, flag, script path
+   or procedure, these are updated **before** the prose that describes them — prose that is right
+   while the executed instruction is wrong is strictly worse than both being wrong, because the PR
+   reads as complete. If the authoring agent is **permission-blocked** from writing the file (a real
+   and recurring condition under `.claude/`), it MUST say so in the PR description naming the exact
+   file and the exact replacement text, and the reviewer MUST land it in the same PR — not defer it
+   to a follow-up ticket.
+
+**Amended Verification (add to the block above):**
+
+```bash
+# 5. Tier 0 — the corpus that EXECUTES the instruction, not the corpus that describes it.
+#    Replace <retired-command> with the exact string the PR retires.
+grep -rn "<retired-command>" .claude/ .github/workflows/ package.json lefthook.yml 2>/dev/null \
+  | grep -v "lessons.md\|lessons.d/"      # historical self-records are exempt; mandates are not
+# Any hit that is a MANDATE (not a "do NOT use X" warning) fails this rule, green CI notwithstanding.
+
+# 6. Coverage, not just absence: every agent definition that opens PRs must carry the CURRENT command.
+grep -L "<new-command>" .claude/agents/*.md   # each listed file needs a written exemption
+```
+
+**Evidence for this amendment:** RETRO-246 §3 HW-1/HW-2, §4a LG-2, §6 P-29 (PR #675 — prose updated,
+4 agent definitions left on the retired command, incl. the PM's own §5b gate; and post-fix the
+consumer coverage is still 4 of 9 agent definitions → FOLLOW-828) + RETRO-160 §4d DG-1
+(corroborating, same corpus, different axis, NOT counted). Distinct from Rule S, which governs
+whether all siblings of a symmetric set were changed; this governs which corpus is authoritative
+when only some were.
+
 ---
 
 <!-- Rule AI added 2026-07-26 — RETRO-222 §6. Evidence (≥2 PRIOR numbered retros): RETRO-213 §4d DOC-1

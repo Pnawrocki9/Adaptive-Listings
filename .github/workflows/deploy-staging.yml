@@ -1,3 +1,19 @@
+# Deploy Staging — a BUNDLE/UPLOAD SMOKE, not a test environment.
+#
+# The staging Workers deliberately have no reachable hostname: `[env.staging]` declares no
+# KV/DO/queue bindings, and `ingest-staging.estalara.com` / `decision-staging.estalara.com`
+# have no DNS record in the zone (they fall through the `*.estalara.com` wildcard to a
+# non-Cloudflare host). See `docs/runbooks/INGEST_WORKER_DEPLOY.md` §3 — that is a design
+# decision, not a gap.
+#
+# A green `Uploaded` + `Deployed` is therefore the WHOLE signal this workflow can give.
+# The two HTTP smoke steps that used to live here probed those unreachable hostnames and
+# swallowed the failure twice over (`curl -f … || echo …` under `continue-on-error: true`),
+# so they reported success against a host that by design never answers. Removed rather than
+# repointed: a step that cannot fail is not a test, and a green run that implies coverage
+# it does not have is worse than no step at all. Do not re-add an HTTP probe here unless
+# the staging hostnames are genuinely provisioned first.
+
 name: Deploy Staging
 
 on:
@@ -43,13 +59,6 @@ jobs:
           workingDirectory: apps/ingest
           command: deploy --env staging
 
-      - name: Smoke test ingest endpoint
-        continue-on-error: true
-        run: |
-          echo "Waiting for DNS propagation..."
-          sleep 10
-          curl -f https://ingest-staging.estalara.com/health || echo "Health endpoint not ready yet"
-
   deploy-decision-api:
     name: Deploy Decision API Worker (Staging)
     runs-on: ubuntu-latest
@@ -82,10 +91,3 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/decision-api
           command: deploy --env staging
-
-      - name: Smoke test decision API endpoint
-        continue-on-error: true
-        run: |
-          echo "Waiting for DNS propagation..."
-          sleep 10
-          curl -f https://decision-staging.estalara.com/health || echo "Health endpoint not ready yet"

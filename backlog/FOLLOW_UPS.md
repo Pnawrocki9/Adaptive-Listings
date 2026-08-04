@@ -26658,7 +26658,62 @@ cross_ref: [found while validating FOLLOW-782 / PR #668, 2026-08-04;
 `apps/control-plane/src/app/api/pilot/calibration/route.ts:142`;
 `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:61`; FOLLOW-462; FOLLOW-782]
 
-<!-- next free FOLLOW number: 810 (FOLLOW-809 filed 2026-08-04 by the main-loop session while
+---
+
+## FOLLOW-810 — The staging smoke steps cannot fail, and the Cloudflare runbook documents an infrastructure that is not there
+
+source_retro: n/a (found while verifying the Cloudflare token-recovery report, 2026-08-04)
+source_ticket: FOLLOW-CF-RECOVERY (PR #669) recommended_sprint: now recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] **STATUS: DONE — filed and
+closed by the same PR** (see below); recorded rather than left as an undocumented drive-by so the
+deletion of two CI steps is discoverable.
+
+**Why this exists as a ticket at all.** Deleting CI steps and rewriting an operator runbook without
+a ticket is exactly the change a future reader cannot reconstruct. Filed so the reasoning survives.
+
+**(1) Two unfalsifiable smoke steps.** `deploy-staging.yml` ended each job with
+`curl -f https://<host>/health || echo "Health endpoint not ready yet"` under
+`continue-on-error: true`. The `|| echo` alone already guarantees exit 0, so removing
+`continue-on-error` would not have made it a gate. Worse, the hosts it probed —
+`ingest-staging.estalara.com`, `decision-staging.estalara.com` — have **no DNS record by design**
+(`docs/runbooks/INGEST_WORKER_DEPLOY.md` §3: staging declares no KV/DO/queue bindings and "a green
+`Uploaded`+`Deployed` is the whole signal"). PR #669 had just repointed these probes from `.io` to
+`.com`, i.e. aimed them precisely at a host that will never answer. Removed, with the reasoning
+written into the workflow header so they are not re-added.
+
+**(2) Runbook vs reality.** Verified live 2026-08-04, not inferred: `ingest.estalara.com/health` →
+200; `decision.estalara.com/api/health` → 200 (**different path** — `/health` on that Worker returns
+a JSON 404 and has been misread as an outage). `api.estalara.com`, `cdn.estalara.com` and both
+`*-staging` names have no record and fall through the `*.estalara.com` wildcard to a non-Cloudflare
+host presenting a self-signed `CN=TRAEFIK DEFAULT CERT`. **A resolving name proves nothing in this
+zone** — the runbook now carries a control query and the cert/IP tells instead.
+
+Corrected in the same pass, because a `.io`→`.com` rename would otherwise have certified them:
+"staging deploys automatically on merge" (it is `workflow_dispatch`-only), the "24h staging soak"
+precondition (nothing to soak), two wrong health-response fixtures, and the R2 troubleshooting
+section (R2 is not enabled — API `10042` — so its `terraform output` step has no state to read).
+
+**Left OPEN deliberately, for a separate decision:**
+
+- `infra/terraform/cloudflare/dns.tf` names the decision-API record `api` / `api-<env>`, while both
+  `wrangler.toml` files bind `decision.estalara.com` / `decision-staging.estalara.com`. Applying the
+  Terraform as written would create hostnames the Worker routes do not match. Flagged in the
+  runbook; NOT fixed here, because which name is canonical is a decision, not a typo.
+- `estalara.io` survives in `docs/MASTER_DESIGN.md:843,908,1018,1240` (the embed snippet and the CSP
+  `script-src` both name `cdn.estalara.io`, which is doubly wrong — R2 is off and no `cdn.*` host
+  exists). Not touched here: Master_Design edits carry the §Y.2 propagation checklist and should not
+  ride a cleanup PR. Also `README.md:377-379` and `docs/runbooks/vendor-accounts.md:31` carry
+  `@estalara.io` addresses — those are people's real contact details, not drift to rewrite
+  unilaterally.
+
+cross_ref: [PR #669 / FOLLOW-CF-RECOVERY; `.github/workflows/deploy-staging.yml`;
+`docs/runbooks/cloudflare.md`; `docs/runbooks/INGEST_WORKER_DEPLOY.md` §3;
+`docs/ops/DOPPLER_SECRETS_MATRIX.md`; `infra/terraform/cloudflare/dns.tf`; ESC-015; ESC-043;
+FOLLOW-808]
+
+<!-- next free FOLLOW number: 811 (FOLLOW-810 filed AND closed 2026-08-04 by the main-loop session
+— staging smoke removal + Cloudflare runbook drift).
+Previously 810 (FOLLOW-809 filed 2026-08-04 by the main-loop session while
 validating FOLLOW-782/PR #668; P2, FROZEN at filing per the session-95 standing rule).
 Previously 809 (FOLLOW-808 filed by the main-loop session for ESC-047).
 Previously 808 (FOLLOW-801..807 filed by RETRO-245, covering PRs #662/#663/#664).

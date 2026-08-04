@@ -272,7 +272,7 @@ describe('CONTRACT: auth header — ingest reads X-Estalara-API-Key', () => {
     // Regression guard for RUNTIME_READINESS_AUDIT B3 auth header drift.
     const config = {
       apiKey: 'test_key_abc',
-      ingestUrl: 'https://ingest.estalara.io/v1/events',
+      ingestUrl: 'https://ingest.estalara.com/v1/events',
       tier: 'observer' as const,
       debug: false,
       consentState: 'legitimate_interest' as const,

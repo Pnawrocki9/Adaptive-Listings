@@ -26733,8 +26733,11 @@ FOLLOW-808]
 
 source_retro: n/a (FOLLOW-739 AC2 assessment, 2026-08-04) source_ticket: FOLLOW-739
 recommended_sprint: next recommended_agent: backend-engineer priority: P3 estimated_hours: 3
-depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (P3, not
-exempt; annotated at filing)
+depends_on: [] blocks: [] promoted_to_queue: false **~~FROZEN -- CEO P2 freeze, 2026-08-03~~ →
+UNFROZEN by CEO ruling 2026-08-04 (session 98).** Piotr lifted the freeze on FOLLOW-811, 812 and 813
+specifically. This is a per-ticket exemption, NOT a repeal: the session-95 standing rule ("any NEW
+stub filed from this point forward lands FROZEN by default unless it is P1") remains in force for
+every other stub. Ready for dispatch.
 
 Filed because FOLLOW-739 AC2 requires the assessment's conclusion to be recorded as a ticket rather
 than left implicit, and explicitly forbids fixing it in that ticket.
@@ -26770,8 +26773,10 @@ cross_ref: [FOLLOW-739; FOLLOW-738 (PR #644); `apps/control-plane/sentry.server.
 
 source_retro: n/a (found while writing FOLLOW-739's C-07 correction, 2026-08-04) source_ticket:
 FOLLOW-739 recommended_sprint: next recommended_agent: compliance-engineer priority: P2
-estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
-2026-08-03** (P2, not exempt; annotated at filing)
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **~~FROZEN -- CEO P2 freeze,
+2026-08-03~~ → UNFROZEN by CEO ruling 2026-08-04 (session 98).** Piotr lifted the freeze on
+FOLLOW-811, 812 and 813 specifically. This is a per-ticket exemption, NOT a repeal: the session-95
+standing rule remains in force for every other stub. Ready for dispatch.
 
 **The gap, stated plainly.** `apps/intent-engine/src/nlp.py`'s primary-failure branch runs
 `print(f"extract_intent error model={model} source={source}: {exc}")` **before**
@@ -26808,8 +26813,11 @@ ADR-0016]
 
 source_retro: n/a (observed twice on 2026-08-04, session 98) source_ticket: FOLLOW-782 (PR #668)
 recommended_sprint: now recommended_agent: devops-engineer priority: P2 estimated_hours: 2
-depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (P2, not
-exempt; annotated at filing — but see "why this one may deserve an exemption" below)
+depends_on: [] blocks: [] promoted_to_queue: false **~~FROZEN -- CEO P2 freeze, 2026-08-03~~ →
+UNFROZEN by CEO ruling 2026-08-04 (session 98).** Piotr lifted the freeze on FOLLOW-811, 812 and 813
+specifically — the "why this one may deserve an exemption" argument below was accepted. This is a
+per-ticket exemption, NOT a repeal: the session-95 standing rule remains in force for every other
+stub. Ready for dispatch.
 
 **The defect is in the control, not in the code.** `CLAUDE.md` ("Lessons from Paczka 1", item 1) and
 `docs/AGENT_WORKFLOW.md` require the PM to run `gh pr checks <pr> --watch` and wait for completion

@@ -90,9 +90,49 @@ this jumps the queue.
 666 (test debt on the untested admin surface) → the hygiene tail (661, 663+604 residue, 670, 691,
 695).
 
-NEXT: CEO to decide (a) merge PR #668, (b) whether the `--watch` false-green gets its own ticket,
-(c) whether the audit's recommended order overrides the P2 freeze for FOLLOW-739. **Paused
-2026-08-04 at the CEO's request — he is restoring accidentally deleted Cloudflare API secrets.**
+### Session-98 close-out — everything above resolved, four PRs merged
+
+All three questions the session paused on were answered by the CEO the same day and are recorded
+here so no future session re-opens them:
+
+- **(a) Merge PR #668** — done, `5fc557b3`. Then #670 (FOLLOW-810) `62c720bb`, #671 (FOLLOW-739)
+  `244e03bf`, #672 (FOLLOW-813 stub) `66a94c39`. `main` clean, no open PRs.
+- **(b) The `--watch` false green** — yes, filed as **FOLLOW-813**.
+- **(c) FOLLOW-739 vs the P2 freeze** — approved and **DONE** (PR #671). `ropa.md` and `dpia.md` no
+  longer assert a "PII patterns regex" scrubber that does not exist; both now state per app what
+  actually runs, and that `apps/control-plane` has none.
+
+### ⚖️ CEO RULING 2026-08-04 — FOLLOW-811, FOLLOW-812 and FOLLOW-813 are UNFROZEN
+
+Piotr lifted the CEO P2 freeze on these three tickets. **Read the scope of this ruling precisely:**
+
+- It is a **per-ticket exemption for exactly 811, 812 and 813** — they are ready for dispatch.
+- It is **NOT a repeal of the freeze.** The session-95 standing rule ("any NEW stub filed from this
+  point forward lands FROZEN by default unless it is P1") remains in force for every other stub,
+  including FOLLOW-800/804/805/806/807 and FOLLOW-809. Do not read this ruling as licence to
+  dispatch other frozen work.
+
+The three, with the honest note that two of them are **assessments, not fixes** — the deliverable is
+a recorded conclusion, and "we looked and it is fine" is a valid outcome that must still be written
+down:
+
+| Ticket         | What it is                                                                                                                          | Agent               |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| **FOLLOW-813** | The `gh pr checks --watch` false green — a hole in the gate that bottlenecks every other merge. Dispatch first: it derisks the rest | devops-engineer     |
+| **FOLLOW-812** | Assessment: the chat-intent exception message still reaches Modal stdout in full; Sentry leg closed, log leg never assessed         | compliance-engineer |
+| **FOLLOW-811** | Decision: give `apps/control-plane`'s Sentry a `beforeSend`, or record accepted residual risk with a re-review trigger              | backend-engineer    |
+
+**Recommended order: 813 → 812 → 811.** 813 first because every subsequent ticket's merge is gated
+by the mechanism it repairs, and because it is the only one of the three whose cost compounds with
+each session that passes. 812 before 811 because 812 concerns data that demonstrably exists today
+(the exception string is written to stdout on every extraction failure), whereas 811 concerns a
+hypothetical future leak into an app that carries no buyer text at all.
+
+**Still genuinely open, and NOT covered by this ruling:** `infra/terraform/cloudflare/dns.tf` names
+the decision-API record `api`/`api-<env>` while both `wrangler.toml` files bind
+`decision`/`decision-staging`; applying that Terraform would create hostnames the Worker routes do
+not match. Flagged in `docs/runbooks/cloudflare.md`, unfixed, because which name is canonical is a
+decision rather than a typo.
 
 ---
 

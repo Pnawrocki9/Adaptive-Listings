@@ -2945,3 +2945,20 @@ delegation/validation rule I'd add:** Always dispatch retrospective/worker agent
 it converts a process-adherence guarantee into a filesystem guarantee. Also: never attempt
 `claude --agent` in the foreground; go straight to background+log-path, foreground always trips the
 ~120s harness timeout for anything non-trivial.
+
+---
+
+**Date / ticket:** 2026-08-05 — RETRO-246 landed / FOLLOW-812 dispatched. **Delegation row used:**
+"DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs → compliance-engineer" for FOLLOW-812; no
+table row for the retro (step 6, mandatory spawn). **What validation caught (or missed):** Verifying
+the retro's own diff (`git diff --stat 1a4233c8 8ab98053`) before trusting its "read-only outside
+permitted files" claim was worth doing — a naive `git diff main --stat` from inside the worktree
+showed spurious QUEUE.md/STATUS.md deltas that looked like a constraint violation, and were actually
+just branch divergence caused by MY OWN error (I pointed `git branch ... 1a4233c8` at the merge
+commit instead of current HEAD when creating the retro's branch, after already having pushed a newer
+main). Comparing the retro's OWN commit range (`1a4233c8..8ab98053`) instead of against a moved
+`main` gave the true answer: zero violations. **A delegation/validation rule I'd add:** When
+creating a dispatch branch explicitly pinned to a commit (rather than defaulting to HEAD), diff the
+resulting worker/retro commit against ITS OWN parent, never against a `main` that may have advanced
+since — a moved `main` manufactures phantom violations that look exactly like a real constraint
+breach and cost real verification time to rule out.

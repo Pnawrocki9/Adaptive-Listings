@@ -1,6 +1,22 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 dispatched next
+## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 picked but NOT YET dispatched
+
+> **Correction applied by the main-loop session before this header was committed.** An earlier draft
+> of this block read "FOLLOW-812 dispatched next" in a way that could be mistaken for a completed
+> dispatch. **It was not dispatched.** Verified at commit time:
+> `ps -eo pid,lstart,cmd | grep 'claude --agent'` empty, no compliance-engineer log in the
+> scratchpad, no branch. FOLLOW-812 is PICKED and briefed, nothing more. Do not open the next
+> session assuming a worker is running.
+>
+> **Also corrected:** RETRO-246's content was briefly duplicated — committed on
+> `retrospective-analyst/RETRO-246-follow-813-retro` (`8ab98053`) AND cherry-picked `-n` into
+> `main`'s index. Both were byte-identical (verified per-file against the branch commit, not by
+> diffstat shape). Resolved by following the repo's actual convention — retros land **directly on
+> `main` with no PR** (`f5deea41` RETRO-245, `0546e259` RETRO-242, `6221d2ea` RETRO-241, all
+> ancestors of `main`, none with a `(#NNN)` squash suffix) — so the index copy was committed here
+> and PR #676, opened against that convention by the main-loop session, was closed as redundant. The
+> branch and its worktree are removed. No content was lost or double-applied.
 
 **Retro-analyst (Opus, PID 112651) exited clean.** Branch
 `retrospective-analyst/RETRO-246-follow-813-retro`, commit `8ab98053`, touched ONLY the three

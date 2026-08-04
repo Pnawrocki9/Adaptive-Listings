@@ -16416,6 +16416,15 @@ cross_ref: [RETRO-189, FOLLOW-594, FOLLOW-592, FOLLOW-595, FOLLOW-598]
 
 ## FOLLOW-604 — Staff-override port for `PATCH /api/tenants/[id]` (the quiz ON/OFF toggle) + unify the agency & staff quiz editors
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): ⚠️ PARTIALLY CLOSED.** The staff port itself SHIPPED via
+FOLLOW-657: `apps/control-plane/src/app/api/tenants/[id]/route.ts:88` calls
+`resolveTenantAccess(req, { allowStaffOverride: true, tenantId })` and `:164` inserts the
+`staff_audit_log` row inside the tx — AC1 + AC2 discharged. **AC5 is NOT done:** the agency and
+staff quiz editors are still separate and the ON/OFF toggle is still absent from the staff surface.
+That residue is the same work as FOLLOW-663 item 2 — the two should be scoped together or one closed
+as a duplicate, not dispatched twice.
+
 source_retro: RETRO-190 source_ticket: FOLLOW-595 recommended_sprint: Sprint 25 recommended_agent:
 backend-engineer priority: P3 estimated_hours: 3-4 promoted_to_queue: false
 
@@ -18150,6 +18159,11 @@ per brand** — not just wording: structure, answers, and answer→archetype map
 
 ## FOLLOW-640 — Per-brand quiz-widget appearance + placement (position configurable from admin, consumed by SDK)
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): ✅ CLOSED — confirmed.** `CORNERS` / `quiz-corner` render in
+`apps/control-plane/src/app/admin/tenants/[id]/quiz/quiz-config-editor.tsx`. The stub's own STATUS
+line (PR #626) is accurate; `promoted_to_queue: false` is stale bookkeeping, not an open gap.
+
 **STATUS 2026-07-26 (session 61): ✅ DONE — PR #626 merged 2026-07-26T12:19:17Z.** Ships with
 FOLLOW-641 + FOLLOW-651 (shared `quiz-widget.ts` + one placement contract). Work was recovered from
 the session-58 terminal crash: implementation was uncommitted in a worktree, the admin picker was
@@ -18761,6 +18775,12 @@ FOLLOW-656 go-live gate). AC: refuse (or require `consent_text_hash` for) a regi
 
 ## FOLLOW-661 — Retire the orphaned `ErrorCode.STAFF_TENANT_CONTEXT_MISSING` (last producer removed by the FOLLOW-657 staff port)
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.** `packages/shared/src/errors.ts:53` still
+defines `STAFF_TENANT_CONTEXT_MISSING`; a repo-wide grep over `apps/` + `packages/` returns the
+definition, the compiled `dist/errors.d.ts` copy, and two explanatory comments in
+`detect/route.test.ts` / `schema/activate/route.test.ts` — zero non-test producers, zero consumers.
+
 source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
 promoted_to_queue: false
@@ -18809,6 +18829,14 @@ executed (Rule Q — no silent soft-skip when no runbook changed); (4) fixture t
 passing and a violating runbook, per the `scripts/__fixtures__` house pattern.
 
 ## FOLLOW-663 — Staff surface for `quiz_enabled` + correct the now-false `quiz-config-editor` doc-comment (the one hop FOLLOW-657 left open)
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, BOTH items.** (1)
+`quiz-config-editor.tsx:10-21` still asserts the toggle "writes through a DIFFERENT route
+(`PATCH /api/tenants/:id`) that has no staff-override port yet" and still defers the feature on that
+basis — the port shipped in PR #625, so this is a false comment holding a gap open. (2)
+`quiz_enabled` still has no staff producer; the only mention in that directory is `:38`, a comment
+stating the surface has no such column. See FOLLOW-604 — same residue.
 
 source_retro: RETRO-220 (PR #625, FOLLOW-657) source_ticket: FOLLOW-657 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 4 depends_on: []
@@ -18893,6 +18921,14 @@ cross_ref: [RETRO-221, FOLLOW-651, FOLLOW-623, FOLLOW-639, RETRO-214, Rule S, Ru
 
 ## FOLLOW-666 — Tests for the FOLLOW-640 placement picker and the entirely untested `optout-widget` admin surface
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.**
+`apps/control-plane/src/app/admin/tenants/[id]/optout-widget/` contains `optout-widget-editor.tsx`
+and `page.tsx` and **no test file**, while the sibling `quiz/` carries both
+`quiz-config-editor.test.tsx` and `page.test.tsx`.
+`grep -c 'placement\|quiz-corner' quiz-config-editor.test.tsx` = **0**, so the FOLLOW-640 picker is
+still untested.
+
 source_retro: RETRO-221 §4c TG-3 source_ticket: FOLLOW-640/641 (PR #626) recommended_sprint: next
 recommended_agent: backend-engineer priority: P1 estimated_hours: 2 depends_on: []
 promoted_to_queue: false
@@ -18923,6 +18959,13 @@ test that would notice it disappearing again.
 cross_ref: [RETRO-221, FOLLOW-641, FOLLOW-624, ESC-039, RETRO-205]
 
 ## FOLLOW-667 — Un-stale the three capability claims PR #626 falsified (`white_label` "has no consumer yet" is now wrong in the operator runbook)
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, all three claims still false.**
+`docs/runbooks/BRAND_PROVISIONING.md:260` still reads "`white_label` is **parsed but has no consumer
+yet**"; `docs/INTERFACES.md:99` still lists `quiz_placement` / `opt_out_widget` without the SHIPPED
+marker its siblings carry; `:108` still reads "parsed/exposed but not yet consumed". Line numbers
+drifted from the stub (221 → 260); the claims did not.
 
 source_retro: RETRO-221 §4d DG-1/DG-2 source_ticket: FOLLOW-651 (PR #626) recommended_sprint: next
 recommended_agent: backend-engineer priority: P1 estimated_hours: 1 depends_on: []
@@ -18956,6 +18999,12 @@ promoted_to_queue: false
 cross_ref: [RETRO-221, RETRO-220, RETRO-216, FOLLOW-651, FOLLOW-659, FOLLOW-656, Rule AH]
 
 ## FOLLOW-668 — Complete the opt-out label contract: a per-locale producer (`pl`/`es`) and a `title` override (today an English label silently overwrites Polish copy)
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.** `optout-widget-editor.tsx:67-69` emits
+`{ en: … }` and nothing else for on/off/aria, and `:58-60` reads back `?.en` only. `labels.*.pl` /
+`labels.*.es` remain consumer-ready with zero producer, so an English label still overwrites Polish
+copy on the live `pl` market.
 
 source_retro: RETRO-221 §3 (HALF_WIRE_C, locale axis) + §4a LG-3 source_ticket: FOLLOW-641 (PR #626)
 recommended_sprint: next recommended_agent: sdk-engineer priority: P1 estimated_hours: 2 depends_on:
@@ -19024,6 +19073,12 @@ cross_ref: [RETRO-221, FOLLOW-641, FOLLOW-372, §H.9]
 
 ## FOLLOW-670 — Staff editors mint default placement into unconfigured tenants (unset→set, one-way, defeats ADR-0019 D4's omit-when-unset)
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, both editors.** Quiz:
+`quiz-config-editor.tsx:61` puts `placement: DEFAULT_QUIZ_PLACEMENT` in `DEFAULTS`, which is spread
+into every POST. Opt-out: `optout-widget-editor.tsx:71` emits
+`placement: { corner, offset_x, offset_y }` unconditionally from `toConfig()`.
+
 source_retro: RETRO-221 §4a LG-1 source_ticket: FOLLOW-640/641 (PR #626) recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
 promoted_to_queue: false
@@ -19060,6 +19115,11 @@ variant.
 cross_ref: [RETRO-221, RETRO-205, FOLLOW-624, ESC-039, ADR-0019 D4]
 
 ## FOLLOW-671 — White-label suppression fails OPEN: any degraded config read re-brands a white-label client "Powered by Estalara"
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.** `packages/sdk/src/index.ts:1075` and
+`:1099` both still compute `showAttribution: config.brand?.whiteLabel !== true`, so every
+degraded-config path still renders the attribution on a white-label brand.
 
 source_retro: RETRO-221 §4a LG-2 source_ticket: FOLLOW-651 (PR #626) recommended_sprint: next
 recommended_agent: sdk-engineer priority: P2 estimated_hours: 2 depends_on: [FOLLOW-665]
@@ -19625,6 +19685,13 @@ cross_ref: [RETRO-224, RETRO-222, FOLLOW-674, FOLLOW-659, FOLLOW-660, Rule K.2, 
 
 ## FOLLOW-687 — A tenant's own `agency:admin` can rewrite the legal entity named in its GDPR consent attestations and DSR e-mails, through the UNAUDITED branch of `PATCH /api/config`
 
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, and the code says so in words.**
+`apps/control-plane/src/app/api/config/route.ts:458`: "Agency self-service write — UNCHANGED and NOT
+audited". The `staff_audit_log` insert lives only inside the `access.via === 'staff'` branch
+(`:386-425`), so an `agency:admin` can still rewrite `legal_entity` — read by `@/lib/brand-identity`
+into GDPR consent attestations and DSR e-mails — leaving no audit row.
+
 source_retro: RETRO-224 (PR #629, FOLLOW-659) source_ticket: FOLLOW-659 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: []
 promoted_to_queue: false
@@ -19780,6 +19847,13 @@ cross_ref: [ESC-043, ESC-020, ESC-042, FOLLOW-678, FOLLOW-642, FOLLOW-658, FOLLO
 AI]
 
 ## FOLLOW-691 — Control-plane `resolveFirstPartyTenantId` is exported with zero non-test importers: decide the two-app duplication explicitly (drop the export, or extract one canonicalizer to `@estalara/shared`)
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.**
+`apps/control-plane/src/lib/brand-identity.ts:165` still exports `resolveFirstPartyTenantId`; the
+only references are its own module-private caller `:188`, a docstring `:214`, and
+`brand-identity.test.ts`. The ingest copy (`apps/ingest/src/origin-gate.ts:176`) remains genuinely
+wired via `handlers/events.ts:31,157` — the duplication is unchanged.
 
 source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: []
@@ -19941,6 +20015,12 @@ returns only correctly-scoped sentences.
 cross_ref: [RETRO-225, RETRO-223, FOLLOW-678, FOLLOW-677, FOLLOW-658, Rule AI, Rule AH]
 
 ## FOLLOW-695 — A malformed `FIRST_PARTY_TENANT_ID` makes the consent 400 say "not configured" (it IS configured), and the control-plane never validates the pasted UUID against a real `tenants` row it already queries
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.** The sentence "consent_text_hash is
+required: FIRST_PARTY_TENANT_ID is not configured and more than one tenant exists" is live at
+`apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts:505`. The stub cited
+`:380-383`; the line moved, the defect did not.
 
 source_retro: RETRO-225 (PR #630, FOLLOW-678) source_ticket: FOLLOW-678 recommended_sprint: next
 recommended_agent: backend-engineer priority: P2 estimated_hours: 3 depends_on: [FOLLOW-674]
@@ -20702,6 +20782,13 @@ FOLLOW-712, FOLLOW-145, FOLLOW-373, FOLLOW-374, ESC-044, Rule N, Rule AH, Rule A
 ---
 
 ## FOLLOW-711 — The consent text is brand-parameterized on the identity fields and hardcoded on the one string the subject is told to act on: every white-label investor is sent to `compliance@estalara.com`
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed.**
+`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:152` still emits
+`compliance@estalara.com` inside the `${brandName}`-parameterised sentence, so a white-label
+investor is still sent to an Estalara mailbox described as their own brand's documentation contact.
+(Stub cited `:137`; line moved.)
 
 source_retro: RETRO-228 (PR #633, FOLLOW-705) source_ticket: FOLLOW-654 recommended_sprint: now
 recommended_agent: compliance-engineer (text/disclosure call) + backend-engineer (renderer)
@@ -22199,6 +22286,16 @@ cross_ref: [RETRO-234 §3 HW-3, §4b CB-2, §4c TG-2, §5d; ESC-045 item 4; Rule
 ---
 
 ## FOLLOW-739 — `ropa.md` and `dpia.md` overstate the Sentry scrubber's mechanism and scope; `apps/control-plane`'s Sentry remains fully unscrubbed
+
+**AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
+note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, and this is the sharpest finding of the
+audit.** None of `apps/control-plane/sentry.client.config.ts`, `sentry.edge.config.ts` or
+`sentry.server.config.ts` contains `beforeSend`, `scrub`, `redact` or `sendDefaultPii` — the
+control-plane Sentry is entirely unscrubbed. Meanwhile `docs/compliance/ropa.md:444` tells a
+regulator the data is "scrubbed of PII before transmission per Sentry SDK `beforeSend` hook with PII
+patterns regex; verification: CI check on scrubber config + annual audit" and
+`docs/compliance/dpia.md:157` says "scrubbed of PII via SDK `beforeSend` hook; CI-verified". Two
+regulator-facing records assert a control that does not exist for this app.
 
 source_retro: RETRO-234 (PR #642, FOLLOW-730) source_ticket: FOLLOW-730 recommended_sprint: now
 recommended_agent: compliance-engineer priority: P1 estimated_hours: 2 depends_on: [] (FOLLOW-738

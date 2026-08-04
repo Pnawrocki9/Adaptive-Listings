@@ -8,7 +8,9 @@
  *   tenant_id    — filter by tenant UUID (staff can query any tenant; agency users are
  *                  pinned to their own tenant_id from JWT — this param is ignored for them)
  *   outcome_class — one of ConversionOutcomeClass values
- *   model_version — string filter, substring match against ClickHouse model_version
+ *   model_version — exact-match filter on ClickHouse model_version (substring match on
+ *                  the offline/mock path). Restricted to [\w. -]+ (400 otherwise) and
+ *                  bound as a ClickHouse typed param — FOLLOW-782.
  *   date_from     — ISO 8601 date (inclusive), applied to conversion_labels.labeled_at
  *   date_to       — ISO 8601 date (inclusive), applied to conversion_labels.labeled_at
  *   page          — 1-based page number (default: 1)
@@ -54,6 +56,8 @@ import { ConversionOutcomeClassSchema, type ConversionOutcomeClass } from '@esta
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
 import {
   buildMockLabelsResponse,
+  buildPredictionsQuery,
+  MODEL_VERSION_FILTER_PATTERN,
   type AdminLabelsResponse,
   type JoinedLabelRow,
   type LabelRow,
@@ -65,7 +69,18 @@ import {
 const QuerySchema = z.object({
   tenant_id: z.string().uuid().optional(),
   outcome_class: ConversionOutcomeClassSchema.optional(),
-  model_version: z.string().min(1).max(128).optional(),
+  // FOLLOW-782 layer 1: the model_version allowlist is enforced here, at the
+  // validation boundary, so a value outside it fails loud with a 400 instead of
+  // silently dropping the filter clause and returning unfiltered rows.
+  model_version: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(
+      MODEL_VERSION_FILTER_PATTERN,
+      'model_version may contain only letters, digits, underscore, dot, space and hyphen',
+    )
+    .optional(),
   date_from: z.string().datetime({ offset: true }).optional(),
   date_to: z.string().datetime({ offset: true }).optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -125,43 +140,18 @@ async function fetchPredictions(
   const user = process.env.CLICKHOUSE_USER ?? 'default';
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
 
-  // Build the IN list as a parameterised array literal:
-  // ClickHouse typed params don't support array literals directly, so we
-  // construct the comma-separated quoted list from already-validated UUIDs.
-  // All decisionIds come from Postgres rows (not user input) so they are safe
-  // to interpolate here — they went through Drizzle's parameterised query first.
-  //
-  // Additional safety: each id is validated to contain only hex digits and hyphens
-  // (UUID format). We do NOT use user-supplied values here.
-  const safeIds = decisionIds
-    .filter((id) => /^[0-9a-f-]+$/i.test(id))
-    .map((id) => `'${id}'`)
-    .join(', ');
+  // FOLLOW-782 layer 2: query text + bound values are built by a pure helper —
+  // tenant_id and model_version are ClickHouse typed params, never interpolated.
+  const spec = buildPredictionsQuery(tenantId, decisionIds, modelVersionFilter);
+  if (!spec) return [];
 
-  if (!safeIds) return [];
-
-  const mvCondition =
-    modelVersionFilter && /^[\w. -]+$/.test(modelVersionFilter)
-      ? `AND model_version = '${modelVersionFilter.replace(/'/g, "\\'")}'`
-      : '';
-
-  const sql = `
-    SELECT
-      adapt_decision_id,
-      archetype,
-      toFloat64(confidence) AS confidence,
-      model_version,
-      formatDateTime(ts, '%Y-%m-%dT%H:%i:%SZ') AS ts
-    FROM adaptation_decisions
-    WHERE tenant_id = {tenant_id:String}
-      AND adapt_decision_id IN (${safeIds})
-      ${mvCondition}
-    LIMIT 1000
-  `;
-
-  const rows = await chQuery<Record<string, unknown>>(baseUrl, user, password, sql, {
-    tenant_id: tenantId,
-  });
+  const rows = await chQuery<Record<string, unknown>>(
+    baseUrl,
+    user,
+    password,
+    spec.sql,
+    spec.params,
+  );
 
   return rows.map(
     (r): PredictionRow => ({

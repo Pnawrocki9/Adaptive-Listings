@@ -20,7 +20,11 @@
 
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import type { AdminLabelsResponse } from './route-helpers';
+import {
+  buildPredictionsQuery,
+  MODEL_VERSION_FILTER_PATTERN,
+  type AdminLabelsResponse,
+} from './route-helpers';
 import type * as SessionAuthModule from '@/lib/session-auth';
 
 // ─── Mock modules ─────────────────────────────────────────────────────────────
@@ -363,6 +367,70 @@ describe('GET /api/admin/labels', () => {
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('clickhouse_query_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+
+  // ── model_version filter: allowlist + param binding (FOLLOW-782) ──────────
+
+  it('returns 400 (not a silently-dropped filter) when model_version violates the allowlist', async () => {
+    const { GET } = await import('./route.js');
+    const res = await GET(makeGetRequest({ model_version: "v1' OR 1=1 --" }));
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('validation_error');
+  });
+
+  it('FOLLOW-782 wiring: binds model_version as param_model_version, never into the SQL text', async () => {
+    process.env.DATABASE_URL_ADMIN = 'postgres://test';
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    const PRED_UUID = 'aaaabbbb-cccc-dddd-eeee-ffffffffffff';
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([
+              {
+                id: LABEL_ID,
+                tenant_id: TENANT_ID,
+                prediction_id: PRED_UUID,
+                lead_id: '',
+                outcome_class: 'viewing_booked',
+                label_source: 'system',
+                confidence: 1.0,
+                notes: null,
+                labeled_at: new Date('2026-06-01T10:00:00Z'),
+                created_at: new Date('2026-06-01T10:00:00Z'),
+                updated_at: new Date('2026-06-01T10:00:00Z'),
+              },
+            ]),
+          }),
+        }),
+      }),
+    };
+    mockCreateAdminClient.mockReturnValue(
+      mockDb as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    let capturedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown) => {
+        capturedUrl = String(input);
+        return Promise.resolve(new Response('', { status: 200 }));
+      }),
+    );
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeGetRequest({ model_version: 'rulebased-bandit v1.2' }));
+    expect(res.status).toBe(200);
+
+    const url = new URL(capturedUrl);
+    // The value travels as a bound ClickHouse param…
+    expect(url.searchParams.get('param_model_version')).toBe('rulebased-bandit v1.2');
+    // …and the SQL text carries only the placeholder, never the value.
+    const sql = url.searchParams.get('query') ?? '';
+    expect(sql).toContain('model_version = {model_version:String}');
+    expect(sql).not.toContain('rulebased-bandit v1.2');
   });
 
   // ── Staff can supply tenant_id param ──────────────────────────────────────
@@ -874,5 +942,87 @@ describe('PATCH /api/admin/labels/[id] — staff audit trail + atomicity', () =>
     expect(db.transaction).not.toHaveBeenCalled();
     // upsertConversionLabel called directly on `db` (not a tx handle) — unchanged shape.
     expect(mockUpsertConversionLabel).toHaveBeenCalledWith(db, expect.anything());
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// buildPredictionsQuery — ClickHouse param binding (FOLLOW-782)
+//
+// These drive the query builder DIRECTLY with values the current allowlist
+// would reject, i.e. they assert the property that must still hold if a future
+// edit widens MODEL_VERSION_FILTER_PATTERN: the bound value can never alter the
+// structure of the query. Layer 1 (the allowlist) is asserted separately by the
+// route-level 400 test above — defence in depth, not either/or.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('buildPredictionsQuery — model_version is bound, never interpolated', () => {
+  const DECISION_IDS = ['aaaabbbb-cccc-dddd-eeee-ffffffffffff'];
+
+  // Every one of these contains at least one ClickHouse-meaningful character.
+  const HOSTILE_VALUES = [
+    "v1' OR 1=1 --",
+    "v1'; DROP TABLE adaptation_decisions; --",
+    "v1' UNION ALL SELECT * FROM intent_events WHERE tenant_id != '",
+    // Placeholder-injection attempt (a bound value must never be re-parsed as
+    // ClickHouse param syntax). Deliberately NOT a placeholder name the query
+    // already uses, so the "value never appears in SQL" assertion is meaningful.
+    '{evil:Identifier}',
+    "v1\\' OR 1=1",
+    "v1') AND 1=1 --",
+  ];
+
+  it('the current allowlist rejects every hostile fixture (layer 1 still in place)', () => {
+    for (const value of HOSTILE_VALUES) {
+      expect(MODEL_VERSION_FILTER_PATTERN.test(value)).toBe(false);
+    }
+    // …and still accepts legitimate model versions.
+    expect(MODEL_VERSION_FILTER_PATTERN.test('rulebased-bandit-v1')).toBe(true);
+    expect(MODEL_VERSION_FILTER_PATTERN.test('intent v2.1')).toBe(true);
+  });
+
+  it.each(HOSTILE_VALUES)(
+    'produces byte-identical SQL structure for hostile value %j (layer 2)',
+    (hostile) => {
+      const benign = buildPredictionsQuery(TENANT_ID, DECISION_IDS, 'rulebased-bandit-v1');
+      const attack = buildPredictionsQuery(TENANT_ID, DECISION_IDS, hostile);
+
+      expect(benign).not.toBeNull();
+      expect(attack).not.toBeNull();
+
+      // Query structure does not depend on the filter value at all.
+      expect(attack?.sql).toBe(benign?.sql);
+      expect(attack?.sql).toContain('AND model_version = {model_version:String}');
+      // The value itself never appears in the SQL text.
+      expect(attack?.sql).not.toContain(hostile);
+      // It travels as a bound param, byte-for-byte, with no escaping applied.
+      expect(attack?.params.model_version).toBe(hostile);
+      // The tenant fence is bound too.
+      expect(attack?.params.tenant_id).toBe(TENANT_ID);
+    },
+  );
+
+  it('omits the model_version clause entirely when no filter is supplied', () => {
+    const spec = buildPredictionsQuery(TENANT_ID, DECISION_IDS);
+    expect(spec).not.toBeNull();
+    expect(spec?.sql).not.toContain('model_version = {model_version:String}');
+    expect(spec?.params).not.toHaveProperty('model_version');
+    expect(spec?.params.tenant_id).toBe(TENANT_ID);
+  });
+
+  // ── decisionIds UUID-shape allowlist is retained (AC2) ────────────────────
+
+  it('keeps the UUID-shape allowlist on decisionIds: non-UUID ids are dropped', () => {
+    const spec = buildPredictionsQuery(TENANT_ID, [
+      'aaaabbbb-cccc-dddd-eeee-ffffffffffff',
+      "not-a-uuid' OR 1=1 --",
+    ]);
+    expect(spec).not.toBeNull();
+    expect(spec?.sql).toContain("'aaaabbbb-cccc-dddd-eeee-ffffffffffff'");
+    expect(spec?.sql).not.toContain('OR 1=1');
+  });
+
+  it('returns null when no decision id survives the UUID-shape allowlist', () => {
+    expect(buildPredictionsQuery(TENANT_ID, ["'; DROP TABLE x; --"])).toBeNull();
+    expect(buildPredictionsQuery(TENANT_ID, [])).toBeNull();
   });
 });

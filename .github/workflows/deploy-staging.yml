@@ -48,7 +48,7 @@ jobs:
         run: |
           echo "Waiting for DNS propagation..."
           sleep 10
-          curl -f https://ingest-staging.estalara.io/health || echo "Health endpoint not ready yet"
+          curl -f https://ingest-staging.estalara.com/health || echo "Health endpoint not ready yet"
 
   deploy-decision-api:
     name: Deploy Decision API Worker (Staging)
@@ -88,4 +88,4 @@ jobs:
         run: |
           echo "Waiting for DNS propagation..."
           sleep 10
-          curl -f https://api-staging.estalara.io/health || echo "Health endpoint not ready yet"
+          curl -f https://decision-staging.estalara.com/health || echo "Health endpoint not ready yet"

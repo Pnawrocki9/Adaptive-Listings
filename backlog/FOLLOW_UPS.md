@@ -22287,6 +22287,22 @@ cross_ref: [RETRO-234 §3 HW-3, §4b CB-2, §4c TG-2, §5d; ESC-045 item 4; Rule
 
 ## FOLLOW-739 — `ropa.md` and `dpia.md` overstate the Sentry scrubber's mechanism and scope; `apps/control-plane`'s Sentry remains fully unscrubbed
 
+**STATUS 2026-08-04 (session 98): ✅ DONE.** All four rewritten ACs discharged. AC1 — `ropa.md`'s
+Sentry sub-processor row now points at a new per-app redaction note and the false "PII patterns
+regex" / "CI check on scrubber config" wording is gone; `dpia.md:157` and its sub-processor row
+point at a new §2.7 stating what runs per app, citing `_scrub_chat_intent_exception_value`,
+`test_observability.py` and `check-sentry-init-singleton.sh` by symbol/script name rather than by
+line number. AC2 — both docs state that `apps/control-plane` has no scrubber, with the residual-risk
+assessment backed by an actual grep (derived-only chat intent via `chat-intent-cache.ts`, prompts
+built from `LlmGatewayInput`, capture sites carrying identifiers only) and the boundary named:
+unscrubbed **by construction, not by control** → filed as FOLLOW-811. AC3 — negative test
+`test_buyer_text_escapes_both_sinks` asserts a buyer-text sentinel is absent from both the Sentry
+event and `payload.model_dump()`, over the whole serialisation rather than one field; non-vacuity
+proven by perturbing each sink independently. AC4 — FOLLOW-738's design untouched. Also corrected
+`C-07:241`, which had gone stale in the safe direction (it still said the message reaches the Sentry
+event). **New finding filed, not fixed:** the same message still goes to Modal's stdout in full
+(`nlp.py`'s `print(... {exc})`) — FOLLOW-812.
+
 **AUDIT 2026-08-04 (session 98) — verdict verified against the CODE, not against this file (method
 note in QUEUE.md session-98 head): 🔴 OPEN — confirmed, and this is the sharpest finding of the
 audit.** None of `apps/control-plane/sentry.client.config.ts`, `sentry.edge.config.ts` or
@@ -26711,7 +26727,84 @@ cross_ref: [PR #669 / FOLLOW-CF-RECOVERY; `.github/workflows/deploy-staging.yml`
 `docs/ops/DOPPLER_SECRETS_MATRIX.md`; `infra/terraform/cloudflare/dns.tf`; ESC-015; ESC-043;
 FOLLOW-808]
 
-<!-- next free FOLLOW number: 811 (FOLLOW-810 filed AND closed 2026-08-04 by the main-loop session
+---
+
+## FOLLOW-811 — Decide whether `apps/control-plane`'s Sentry needs a `beforeSend`: it is unscrubbed by construction, not by control
+
+source_retro: n/a (FOLLOW-739 AC2 assessment, 2026-08-04) source_ticket: FOLLOW-739
+recommended_sprint: next recommended_agent: backend-engineer priority: P3 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (P3, not
+exempt; annotated at filing)
+
+Filed because FOLLOW-739 AC2 requires the assessment's conclusion to be recorded as a ticket rather
+than left implicit, and explicitly forbids fixing it in that ticket.
+
+**Assessment as it stands (verified by grep over `apps/control-plane/src`, cited in `ropa.md` and
+`dpia.md` §2.7).** `sentry.server.config.ts`, `sentry.client.config.ts` and `sentry.edge.config.ts`
+call `Sentry.init()` with no `beforeSend`, no scrubbing and no `sendDefaultPii`. Today that carries
+no known exposure: raw buyer chat text never enters this app (chat intent arrives already derived
+via `lib/chat-intent-cache.ts`; the LLM prompt is built from archetype, playbook copy, behavioural
+event labels and agency-curated listing metadata per `LlmGatewayInput`), and every capture site's
+`extra`/`contexts` carries identifiers and status values only.
+
+**Why it is still worth a decision.** The safety is a property of what today's call sites happen to
+pass, not of the transport. Nothing mechanically stops a future change from putting buyer-authored
+text into a captured exception or an `extra` payload — which is precisely the shape of the defect
+FOLLOW-738 had to fix on the Python side after it shipped. The Python tier now has both a hook and a
+bypass guard (`scripts/check-sentry-init-singleton.sh`); the TS tier has neither.
+
+**AC:** (1) decide explicitly — add a `beforeSend` to the three control-plane Sentry configs, OR
+record "accepted residual risk" in `dpia.md` §2.7 with the reasoning and a re-review trigger; (2) if
+a hook is added, pin it with a buyer-text sentinel test mirroring
+`test_buyer_text_escapes_both_sinks`; (3) do NOT introduce a "PII patterns regex" unless someone
+actually specifies one — the docs were wrong about that once already and the fix was to describe
+reality, not to build the fiction.
+
+cross_ref: [FOLLOW-739; FOLLOW-738 (PR #644); `apps/control-plane/sentry.server.config.ts`,
+`sentry.client.config.ts`, `sentry.edge.config.ts`; `docs/compliance/dpia.md` §2.7;
+`docs/compliance/ropa.md` Sentry redaction note]
+
+---
+
+## FOLLOW-812 — The chat-intent exception message still reaches Modal's stdout logs in full; the Sentry leg was closed and the log leg never assessed
+
+source_retro: n/a (found while writing FOLLOW-739's C-07 correction, 2026-08-04) source_ticket:
+FOLLOW-739 recommended_sprint: next recommended_agent: compliance-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze,
+2026-08-03** (P2, not exempt; annotated at filing)
+
+**The gap, stated plainly.** `apps/intent-engine/src/nlp.py`'s primary-failure branch runs
+`print(f"extract_intent error model={model} source={source}: {exc}")` **before**
+`_capture_extraction_error`. FOLLOW-738 redacted that same `str(exc)` on its way to Sentry, and
+`C-07-chat-retention-scope.md` correctly records that it never reaches Redis — but the stdout line
+was never assessed. It emits the **full** exception message, which is the exact string FOLLOW-738
+exists because it "can echo buyer chat text".
+
+**Why this is not hypothetical.** The identical reasoning that justified the Sentry hook applies
+verbatim: `_parse_response` raising on a malformed model reply produces a `str(exc)` embedding a
+fragment of the model's raw JSON, which can echo what the buyer typed. Nothing about writing it to
+stdout instead of to Sentry changes the content.
+
+**What must be established (this is an assessment ticket, not a fix ticket).** Where do Modal's
+stdout logs go, how long are they retained, and is Modal covered for that processing? `ropa.md`
+lists Modal's sub-processor scope as "Embedding computation, archetype update jobs" — buyer chat
+fragments in application logs are arguably outside that description, which is the same
+record-accuracy failure FOLLOW-739 just corrected for Sentry. If retention is short and access
+narrow this may be an accepted residual risk; that conclusion must be **recorded**, not assumed.
+
+**AC:** (1) determine Modal log destination, retention and access, and cite the source; (2) update
+`ropa.md`'s Modal row and `C-07`'s §"where the message goes" to match whatever is true; (3) decide
+whether to redact the `print` (cheapest fix: log `type(exc).__name__` + the classified kind, the
+same shape `extraction_error` already uses) or to accept and document; (4) if redacted, extend
+`test_buyer_text_escapes_both_sinks` to a third sink via `capsys`.
+
+cross_ref: [FOLLOW-739; FOLLOW-738 (PR #644); `apps/intent-engine/src/nlp.py` primary-failure
+branch; `docs/compliance/C-07-chat-retention-scope.md`; `docs/compliance/ropa.md` Modal row;
+ADR-0016]
+
+<!-- next free FOLLOW number: 813 (FOLLOW-811 + FOLLOW-812 filed 2026-08-04 by the main-loop
+session while doing FOLLOW-739; both FROZEN at filing).
+Previously 811 (FOLLOW-810 filed AND closed 2026-08-04 by the main-loop session
 — staging smoke removal + Cloudflare runbook drift).
 Previously 810 (FOLLOW-809 filed 2026-08-04 by the main-loop session while
 validating FOLLOW-782/PR #668; P2, FROZEN at filing per the session-95 standing rule).

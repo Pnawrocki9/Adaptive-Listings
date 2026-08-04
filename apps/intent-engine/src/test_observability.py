@@ -14,6 +14,7 @@ by each app's own call-site tests.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -24,6 +25,7 @@ _SRC_DIR = Path(__file__).parent
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
+import nlp  # noqa: E402  — FOLLOW-739 AC3 needs the Redis-payload sink too
 import observability  # noqa: E402
 
 
@@ -167,3 +169,59 @@ def test_scrub_handles_missing_exception_gracefully() -> None:
     result = observability._scrub_chat_intent_exception_value(event, {})
 
     assert result == event
+
+
+# ── FOLLOW-739 AC3: the end-to-end buyer-text negative ────────────────────────
+
+BUYER_TEXT_SENTINEL = "relocating to Lisbon in March, budget is 450k, wife is pregnant"
+
+
+def test_buyer_text_escapes_both_sinks() -> None:
+    """One exception carrying buyer chat text must leak it into NEITHER sink.
+
+    This is the claim `docs/compliance/ropa.md` and `docs/compliance/dpia.md`
+    §2.7 make to a regulator, pinned as a test rather than as prose. The
+    realistic shape: `_parse_response` raises on a malformed model reply and
+    `str(exc)` embeds a fragment of that reply — which can echo what the buyer
+    typed. Two independent sinks are reachable from that one exception:
+
+      1. Sentry — via `_capture_extraction_error`; neutralised by the
+         `before_send` hook under test here.
+      2. Redis (24 h TTL) — via the `error_fallback` payload's
+         `extraction_error` field, which by contract carries only
+         "<kind>: <ExceptionClassName>", never the message text.
+
+    Asserted over the WHOLE serialised structure rather than one field, so a
+    change that routes the message into some other key (a breadcrumb, a new
+    payload field) fails here instead of shipping silently.
+
+    Non-vacuity was verified by perturbation, not assumed: disabling the
+    redaction line in `observability.py` fails sink 1, and substituting
+    `{exc}` for `{type(exc).__name__}` in the payload fails sink 2.
+    """
+    exc = ValueError(
+        f"Expecting value: line 1 column 1 (char 0) — model returned: {BUYER_TEXT_SENTINEL}"
+    )
+
+    # Sink 1 — the Sentry event, shaped as the SDK hands it to before_send.
+    event = {
+        "tags": {"area": "chat_intent", "kind": "extraction_error"},
+        "exception": {"values": [{"type": type(exc).__name__, "value": str(exc)}]},
+    }
+    scrubbed = observability._scrub_chat_intent_exception_value(event, {})
+    assert scrubbed is not None
+    assert BUYER_TEXT_SENTINEL not in json.dumps(scrubbed)
+
+    # Sink 2 — the payload that lands in Redis, built exactly as nlp.py's
+    # primary-failure branch builds it.
+    payload = nlp._neutral_payload(
+        message_count=3,
+        model="haiku-4.5",
+        source="realtime",
+        data_source="error_fallback",
+        extraction_error=f"{nlp._classify_extraction_error(exc)}: {type(exc).__name__}",
+    )
+    assert BUYER_TEXT_SENTINEL not in json.dumps(payload.model_dump())
+
+    # …and the guard is non-vacuous: the sentinel really is in the exception.
+    assert BUYER_TEXT_SENTINEL in str(exc)

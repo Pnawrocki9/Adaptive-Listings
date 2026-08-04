@@ -1,6 +1,102 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 97 (2026-08-04) — no open PRs, no unresolved-for-dispatch escalations, P2-freeze bookkeeping gap found + fixed, FOLLOW-782 (P1, aged) dispatched
+## ▶️ START HERE — session 98 (2026-08-04) — session-97 recovered from a terminal close, FOLLOW-782 shipped to PR #668, FOLLOW-809 filed, admin.estalara.com surface audited (14 stubs re-verified in code)
+
+**Recovery.** Session 97 died to a terminal close with FOLLOW-782 fully implemented but
+**uncommitted** in the working tree (3 files, +265/−40). No agent was running, no
+`.claude/worktrees/agent-*` was stranded, nothing was lost. Verified before touching anything — per
+the standing lesson, an empty `git diff main..<branch>` proves nothing on its own.
+
+### FOLLOW-782 — status: READY_FOR_REVIEW (PR #668, `96694f44`)
+
+All four ACs discharged and re-verified, not accepted from the worker's narration. AC1:
+`buildPredictionsQuery()` binds `tenant_id` + `model_version` as `{name:String}` params. AC2: the
+UUID-shape allowlist on `decisionIds` is retained. AC3: the regression tests drive the builder
+**directly** with hostile values the current allowlist would reject and assert byte-identical SQL,
+so a future widening of the pattern cannot silently re-expose the interpolation path. AC4: the
+allowlist is kept and moved to the Zod boundary.
+
+**One user-visible behaviour change, flagged rather than buried:** a `model_version` outside
+`[\w. -]+` previously returned 200 with the filter **silently dropped** (unfiltered rows under a UI
+that showed the filter as active); it now returns `400 validation_error`.
+
+**Local validation:** 35/35 tests, `tsc --noEmit` clean, `eslint` clean, `prettier --check` clean.
+
+**CI: 73 pass / 2 fail.** Both failures are the same `Rule I — wired-or-dead check` in two parallel
+runs: **192 pre-existing violations on `main`**, zero contributed by this PR (log grepped for
+`buildPredictionsQuery`, `MODEL_VERSION_FILTER_PATTERN`, `ClickHouseQuerySpec`, `admin/labels` → no
+hits). Rule I is the documented pre-existing-red gate.
+
+**PROCESS DEFECT — `gh pr checks --watch` returned exit 0 on a red gate.** The first push DID add a
+new Rule I violation (`ClickHouseQuerySpec`, exported with zero non-test importers; 193 total). It
+was found by reading the job log, **not** by the watcher: on the follow-up push the watcher exited
+**0** while two checks were `fail`, because the Rule I job had not yet been created when the watcher
+considered the run complete. CLAUDE.md makes `gh pr checks <pr> --watch` the mandatory gate before
+READY_FOR_REVIEW ("CI green is non-negotiable"). **It can return a false green.** Until this is
+fixed, verify with `gh pr checks <pr>` re-run after the watcher exits and assert the pass/fail
+counts directly. Not filed as a stub — awaiting the CEO's call on whether the mechanism itself gets
+a ticket.
+
+### FOLLOW-809 — filed (P2, FROZEN at filing per the session-95 standing rule)
+
+Found while validating FOLLOW-782, not from a retro. Six of the seven ClickHouse `param_*` binding
+sites skip the "Escaped" text-format encoding FOLLOW-462 established — **including
+`clickhouse-tracer.ts`, the very file FOLLOW-782's ticket held up as "the correct pattern already in
+this codebase"**. It is right about parameter binding and silent about escaping. Sharpest instance:
+`admin/tracer/history/route.ts:39` binds a `z.string().optional()` `session_id` — no charset, no
+format — through it. Honest severity: NOT injection (a `param_*` value never enters SQL text); it is
+decode fidelity + fail-loud. See the stub for the full AC set.
+
+### admin.estalara.com audit — 14 stubs re-verified against the code (2026-08-04)
+
+Requested by the CEO after the PM's first pass produced an unreliable list. **Result: 1 closed, 1
+partially closed, 12 genuinely open.** Every verdict is annotated on the stub itself in
+`backlog/FOLLOW_UPS.md` with file:line evidence.
+
+**Method note (this is the reusable part).** Neither of the two obvious status sources is
+trustworthy on its own, and the audit was commissioned precisely because the first attempt used
+them:
+
+- `FOLLOW_UPS.md` metadata lies in the closed direction — **FOLLOW-633 still carries
+  `promoted_to_queue: false` while it is DONE+MERGED (PR #612)**.
+- `git log --grep='[FOLLOW-NNN]'` lies in **both** directions — **FOLLOW-640 shipped under another
+  ticket's commit id** (false negative), and **FOLLOW-604's main ACs were delivered by FOLLOW-657**
+  under a different number (false negative of a different shape).
+
+Only re-derivation from the working tree is reliable. Line numbers in several stubs had drifted
+(667: 221→260, 695: 380→505, 711: 137→152) while the defects themselves stood — so a line-number
+mismatch must never be read as "already fixed".
+
+**Platform layer is done and live** (verified by request, not by document): `/` 308, `/sign-in` 200,
+`/sdk.js` 200 / 157 494 B. DNS+Vercel (ESC-014), auth (FOLLOW-326), build-on-merge SDK serving
+(FOLLOW-808/ESC-047), tracer (FOLLOW-269), model picker (FOLLOW-161), cross-brand analytics
+(FOLLOW-638), bandit learning-paused indicator (FOLLOW-637), `brand_config` (FOLLOW-623), ADR-0018
+staff port (FOLLOW-657), brand runbook (FOLLOW-652) all shipped.
+
+**The product layer is where the gap is, and it clusters.** Five of the twelve open items (666, 667,
+668, 670, 671) descend from the single PR #626, and four of those bite the **white-label launch path
+specifically — with 3 external brands 2–4 weeks from go-live**: the runbook tells the operator
+`white_label` is inert (667), suppression fails OPEN on any degraded config read (671), the
+white-label investor is sent to `compliance@estalara.com` inside a legal disclosure (711), and an
+English label overwrites Polish copy on the live `pl` market (668).
+
+**Single sharpest finding: FOLLOW-739 (P1).** Not "docs overstate" — `ropa.md:444` and `dpia.md:157`
+are regulator-facing records asserting a control (`beforeSend` PII scrubbing, "CI check on scrubber
+config") that **does not exist in any of the three `apps/control-plane` Sentry configs**. Recommend
+this jumps the queue.
+
+**Recommended order once the P2 freeze lifts:** 739 (compliance record accuracy) → 671 + 667 + 711
+(white-label go-live, 2–4 weeks) → 668 (live `pl` market) → 687 (unaudited GDPR-identity write) →
+666 (test debt on the untested admin surface) → the hygiene tail (661, 663+604 residue, 670, 691,
+695).
+
+NEXT: CEO to decide (a) merge PR #668, (b) whether the `--watch` false-green gets its own ticket,
+(c) whether the audit's recommended order overrides the P2 freeze for FOLLOW-739. **Paused
+2026-08-04 at the CEO's request — he is restoring accidentally deleted Cloudflare API secrets.**
+
+---
+
+## Session 97 (2026-08-04) — no open PRs, no unresolved-for-dispatch escalations, P2-freeze bookkeeping gap found + fixed, FOLLOW-782 (P1, aged) dispatched
 
 **State verified fresh, not re-derived from narration:** `main` clean at `9df1c604`,
 `gh pr list --state open` empty, `ps -eo pid,lstart,cmd | grep 'claude --agent'` empty, no stranded

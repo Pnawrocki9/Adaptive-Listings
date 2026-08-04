@@ -10,6 +10,95 @@
 
 import type { ArchetypeId } from '@estalara/shared';
 
+// ─── ClickHouse prediction query (parameterised) ──────────────────────────────
+
+/**
+ * Allowlist for the user-supplied `model_version` filter: word chars, dot,
+ * space, hyphen (e.g. `rulebased-bandit-v1`, `intent v2.1`).
+ *
+ * FOLLOW-782: this is the FIRST of two independent layers. It is enforced at the
+ * route's Zod validation boundary, so a value outside the allowlist is rejected
+ * with a 400 rather than silently dropping the filter clause (which returned
+ * unfiltered rows while the UI still showed the filter as active). The SECOND
+ * layer is {@link buildPredictionsQuery}, which binds the value as a ClickHouse
+ * `{name:Type}` param — so query structure is unaffected by the value even if
+ * this pattern is widened in future.
+ */
+export const MODEL_VERSION_FILTER_PATTERN = /^[\w. -]+$/;
+
+/** UUID-shaped allowlist for `adapt_decision_id` values built into the IN list. */
+const DECISION_ID_PATTERN = /^[0-9a-f-]+$/i;
+
+/**
+ * A ClickHouse HTTP query: SQL text plus the values to bind as `param_<name>`
+ * URL query parameters (same contract as `chTracerQuery` in
+ * `@/lib/clickhouse-tracer`). No user input is ever interpolated into `sql`.
+ *
+ * Deliberately not exported: it is only ever named as `buildPredictionsQuery`'s
+ * return type, and exporting it would add a Rule I `zero non-test importers`
+ * violation for a type nothing outside this file needs to name.
+ */
+interface ClickHouseQuerySpec {
+  /** SQL text using `{name:Type}` placeholders for every user-supplied value. */
+  sql: string;
+  /** Values to bind, keyed by placeholder name (sent as `param_<name>`). */
+  params: Record<string, string>;
+}
+
+/**
+ * Build the `adaptation_decisions` lookup for the label view.
+ *
+ * Structure is independent of caller-supplied values: `tenant_id` and the
+ * optional `model_version` filter are bound as typed ClickHouse params, never
+ * interpolated (FOLLOW-782).
+ *
+ * `decisionIds` are NOT user input — they are `prediction_id` values already
+ * read back from Postgres through a parameterised Drizzle query. ClickHouse
+ * typed params do not accept an array literal for an `IN` list, so they are
+ * interpolated, but only after a UUID-shape allowlist filter (defence in depth;
+ * ids failing the shape check are dropped).
+ *
+ * @param tenantId - Tenant fence, bound as `{tenant_id:String}`.
+ * @param decisionIds - Candidate `adapt_decision_id`s from Postgres.
+ * @param modelVersionFilter - Optional exact-match filter, bound as `{model_version:String}`.
+ * @returns The query spec, or null when no decision id survived the shape filter.
+ */
+export function buildPredictionsQuery(
+  tenantId: string,
+  decisionIds: string[],
+  modelVersionFilter?: string,
+): ClickHouseQuerySpec | null {
+  const safeIds = decisionIds
+    .filter((id) => DECISION_ID_PATTERN.test(id))
+    .map((id) => `'${id}'`)
+    .join(', ');
+
+  if (!safeIds) return null;
+
+  const params: Record<string, string> = { tenant_id: tenantId };
+  let mvCondition = '';
+  if (modelVersionFilter) {
+    mvCondition = 'AND model_version = {model_version:String}';
+    params.model_version = modelVersionFilter;
+  }
+
+  const sql = `
+    SELECT
+      adapt_decision_id,
+      archetype,
+      toFloat64(confidence) AS confidence,
+      model_version,
+      formatDateTime(ts, '%Y-%m-%dT%H:%i:%SZ') AS ts
+    FROM adaptation_decisions
+    WHERE tenant_id = {tenant_id:String}
+      AND adapt_decision_id IN (${safeIds})
+      ${mvCondition}
+    LIMIT 1000
+  `;
+
+  return { sql, params };
+}
+
 // ─── Row types ────────────────────────────────────────────────────────────────
 
 /**

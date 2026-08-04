@@ -87,7 +87,9 @@ auto-detect.
 ## Critical CI rules (keep — Paczka 1)
 
 `pyproject.toml` build-backend = `setuptools.build_meta` (never `.legacy`). Every Python src/ has
-`__init__.py`. prettier on every touched file. `gh pr checks <pr> --watch` before handoff.
+`__init__.py`. prettier on every touched file. `scripts/gh-pr-checks-verified.sh <pr>` (exit 0
+required) before handoff — NOT `gh pr checks --watch`, which can exit 0 while checks fail
+[FOLLOW-813].
 
 <evidence_requirements> In every PR description, paste:
 

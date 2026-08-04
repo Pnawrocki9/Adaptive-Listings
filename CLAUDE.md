@@ -57,8 +57,9 @@ Read these in order before doing anything:
 2. **`backlog/sprint-N/TICKET-XXX.md`** files — each ticket has acceptance criteria, context, and
    agent assignment.
 3. **PR descriptions** — when a worker finishes, they open a PR. The PM agent reads PRs, runs
-   validation, AND VERIFIES CI IS GREEN (gh pr checks <pr-number> --watch) before marking
-   READY_FOR_REVIEW. CI green is non-negotiable.
+   validation, AND VERIFIES CI IS GREEN (`scripts/gh-pr-checks-verified.sh <pr-number>` — NOT bare
+   `gh pr checks --watch`, which can exit 0 while a check is still failing, see "Lessons from Paczka
+   1" item 1 and FOLLOW-813) before marking READY_FOR_REVIEW. CI green is non-negotiable.
 4. **`backlog/HANDOFFS.md`** — when one worker's output is input to another, handoff notes go here.
 
 The `.claude/hooks/` scripts (notably `SubagentStop`) read the queue after each subagent finishes
@@ -117,9 +118,16 @@ accumulated prior findings. The goal: zero "forgot something fundamental" surpri
 
 These are codified in CONVENTIONS_PATCH.md. Highlights:
 
-1. **Always verify CI green before READY_FOR_REVIEW.** PM-orchestrator MUST run
-   `gh pr checks <pr-number> --watch` and wait for completion before marking any ticket ready. Local
-   tests passing ≠ CI passing.
+1. **Always verify CI green before READY_FOR_REVIEW — never with `gh pr checks --watch` alone.**
+   `--watch` can exit 0 while a check is still `fail` (observed on PR #668, #670, #671 — FOLLOW-813:
+   a check-run created mid-workflow, e.g. one gated behind `needs:`, can register after the watcher
+   has already decided every check it knows about has settled). PM-orchestrator MUST run
+   `scripts/gh-pr-checks-verified.sh <pr-number>` instead — it polls until it observes two
+   consecutive, identical, fully-settled snapshots (immune to that race), re-asserts pass/fail
+   counts from a fresh read, and classifies any failure against the documented pre-existing-red
+   gates (currently only `Rule I — wired-or-dead check`, verified dynamically against `main`'s own
+   current baseline, never a hardcoded number) before exiting. Exit 0 only when every non-success
+   check is a verified pre-existing-red gate. Local tests passing ≠ CI passing.
 
 2. **Run prettier on every file you edit, every time.** Even if you ran prettier earlier in the
    session, re-run on every file you touch. CI format check is strict.

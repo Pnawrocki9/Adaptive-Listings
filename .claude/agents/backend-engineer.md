@@ -84,7 +84,8 @@ Zod everywhere, Stripe billing, Upstash Redis, Redpanda Cloud, Vitest + Supertes
 ## Critical CI rules (keep — Paczka 1)
 
 - `pnpm exec prettier --write <changed-files>` on EVERY file you edit, every time.
-- After final push: `gh pr checks <pr> --watch`; don't hand off until green.
+- After final push: `scripts/gh-pr-checks-verified.sh <pr>` and require exit 0; don't hand off until
+  green. NOT `gh pr checks --watch` — it can exit 0 while checks are failing [FOLLOW-813].
 
 <evidence_requirements> In every PR description, paste:
 
@@ -104,7 +105,8 @@ Zod everywhere, Stripe billing, Upstash Redis, Redpanda Cloud, Vitest + Supertes
 - [ ] Every new schema/event/column has a consumer or a FOLLOW + AC deferral.
 - [ ] No shared type redeclared inline.
 - [ ] RLS on every new table; inputs Zod-validated.
-- [ ] prettier re-run on every touched file; CI green via `gh pr checks --watch`. </self_check>
+- [ ] prettier re-run on every touched file; CI green via `scripts/gh-pr-checks-verified.sh <pr>`
+      exit 0 (never bare `--watch`) [FOLLOW-813]. </self_check>
 
 <learning_hook> Append to `.claude/agents/backend-engineer/lessons.md` after each ticket (create the
 dir if absent):

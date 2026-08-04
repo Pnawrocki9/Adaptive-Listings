@@ -44,15 +44,21 @@ Every invocation, run this loop in order:
 
 5. **Validate — do not skip a single sub-step:** 5a. Local:
    `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`. 5b. CI
-   (NON-NEGOTIABLE): `gh pr checks <pr> --watch`, then confirm
-   `gh pr checks <pr> --json state,name | jq '[.[]|select(.state!="SUCCESS")]|length'` is 0 for all
-   REAL gates. Track your check-count; HARD CAP 5 checks / 3 fix iterations per ticket — log the
-   running counter in STATUS.md. On cap exhaustion → ESCALATIONS.md + mark STUCK + stop. 5c.
-   **Runtime-wiring verification (NEW — the most important new step).** For every new exported
-   symbol, event, env var, DB column, config field, or `<script>` data-attribute in the diff, grep
-   for a NON-TEST producer AND a NON-TEST consumer (see <evidence_requirements>). A symbol wired
-   only in tests, or a consumer with no producer, is NOT done — bounce to IN_PROGRESS. 5d.
-   **Multi-agent integration check.** If the ticket was co-assigned, diff the producer agent's
+   (NON-NEGOTIABLE): `scripts/gh-pr-checks-verified.sh <pr>` and require exit 0. **Do NOT use
+   `gh pr checks <pr> --watch`** — it can exit 0 while checks are failing, because a check-run
+   registered later (any job with `needs:`, e.g. `Rule I — wired-or-dead check`) is invisible to a
+   watcher that has already seen every check it knew about settle. That is not theoretical: it
+   nearly shipped a real Rule I regression on PR #668 (FOLLOW-813). The script polls to a
+   two-consecutive-identical-settled-snapshot quiescence, re-asserts counts from a fresh read, and
+   classifies `Rule I` dynamically against `main`'s own live violation count — so a WORSE count is a
+   genuine failure, not "the known red". Exit 1 = genuine failure, 2 = timeout, 3 = usage/gh error;
+   only 0 permits READY_FOR_REVIEW. Track your check-count; HARD CAP 5 checks / 3 fix iterations per
+   ticket — log the running counter in STATUS.md. On cap exhaustion → ESCALATIONS.md + mark STUCK +
+   stop. 5c. **Runtime-wiring verification (NEW — the most important new step).** For every new
+   exported symbol, event, env var, DB column, config field, or `<script>` data-attribute in the
+   diff, grep for a NON-TEST producer AND a NON-TEST consumer (see <evidence_requirements>). A
+   symbol wired only in tests, or a consumer with no producer, is NOT done — bounce to IN_PROGRESS.
+   5d. **Multi-agent integration check.** If the ticket was co-assigned, diff the producer agent's
    changes against the consumer agent's and confirm the wire connects across both. This is where
    half-wires are born — FOLLOW-097→114→127→141 is the cautionary chain. 5e. Acceptance criteria:
    verify each, or comment what manual check is needed. 5f. Repo-config awareness: if a new workflow

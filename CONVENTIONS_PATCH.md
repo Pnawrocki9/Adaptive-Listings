@@ -18,15 +18,26 @@ GitHub Actions CI to complete.
 
 **Evidence:** Paczka 1 TICKET-001 (original failure mode documented in pm-orchestrator.md)
 
-**Rule:** PM-orchestrator MUST run `gh pr checks <pr-number> --watch` and wait for completion before
-marking any ticket READY_FOR_REVIEW. Local tests passing ≠ CI passing. This step is non-negotiable
-even if the worker reports "all tests pass."
+**Rule (amended 2026-08-05 — FOLLOW-813, "soft-skip inception" class of defect in the gate
+itself):** PM-orchestrator MUST run `scripts/gh-pr-checks-verified.sh <pr-number>` and wait for
+completion before marking any ticket READY_FOR_REVIEW. Local tests passing ≠ CI passing. This step
+is non-negotiable even if the worker reports "all tests pass." **Do not use bare
+`gh pr checks <pr-number> --watch`** — it was the original wording of this rule and was found to
+exit `0` while a check was still `fail` (PR #668, #670, #671): GitHub does not register a check-run
+for a job gated behind `needs:` until that job starts, so a job like `Rule I — wired-or-dead check`
+can appear on the check list well after `--watch`'s polling loop has already decided every check-run
+it knows about has settled. `scripts/gh-pr-checks-verified.sh` polls until it observes two
+consecutive, identical, fully-settled snapshots (immune to that race), re-asserts pass/fail counts
+from a fresh read, and dynamically classifies any failure against the documented pre-existing-red
+gates (currently only `Rule I`, compared against `main`'s own live violation count — never a
+hardcoded number, so a worsening baseline is never misclassified as accepted) before exiting.
 
 **Verification:**
 
 ```bash
-gh pr checks <pr-number> --json state,name | jq '[.[] | select(.state != "SUCCESS")] | length'
-# Must return 0
+scripts/gh-pr-checks-verified.sh <pr-number>
+# Exit 0 = safe to mark READY_FOR_REVIEW. Exit 1 = genuine failure. Exit 2 = timed out — do not
+# proceed either way; investigate.
 ```
 
 ---

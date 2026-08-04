@@ -46,6 +46,11 @@ runs" — dispatching into a dedicated worktree this time as well, per this sess
 **CI-check counter (FOLLOW-812): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
 at dispatch time.**
 
+**Open-escalation ages (2026-08-05):** ESC-020 60d (filed 2026-06-06), ESC-041 13d (2026-07-23),
+ESC-042 12d narrowed (2026-07-24, narrowed 2026-07-27), ESC-044 9d (2026-07-27), ESC-045 7d
+(2026-07-29). All unchanged this session, all non-blocking-for-dispatch per the 2026-07-27 standing
+ruling.
+
 NEXT: dispatch FOLLOW-812 to compliance-engineer (Sonnet), wait for completion, run full 5a-5g
 validation (this is a docs/assessment ticket — "we looked and it's fine" is an acceptable, but must
 be _recorded_, outcome for AC(1)/(3); if AC(3) concludes "redact", AC(4)'s new `capsys` test must

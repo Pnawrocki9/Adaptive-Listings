@@ -26802,7 +26802,55 @@ cross_ref: [FOLLOW-739; FOLLOW-738 (PR #644); `apps/intent-engine/src/nlp.py` pr
 branch; `docs/compliance/C-07-chat-retention-scope.md`; `docs/compliance/ropa.md` Modal row;
 ADR-0016]
 
-<!-- next free FOLLOW number: 813 (FOLLOW-811 + FOLLOW-812 filed 2026-08-04 by the main-loop
+---
+
+## FOLLOW-813 — `gh pr checks --watch` can exit 0 while checks are failing, and CLAUDE.md makes that exact command the mandatory pre-READY_FOR_REVIEW gate
+
+source_retro: n/a (observed twice on 2026-08-04, session 98) source_ticket: FOLLOW-782 (PR #668)
+recommended_sprint: now recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (P2, not
+exempt; annotated at filing — but see "why this one may deserve an exemption" below)
+
+**The defect is in the control, not in the code.** `CLAUDE.md` ("Lessons from Paczka 1", item 1) and
+`docs/AGENT_WORKFLOW.md` require the PM to run `gh pr checks <pr> --watch` and wait for completion
+before marking any ticket READY_FOR_REVIEW — "CI green is non-negotiable". **That command returned
+exit 0 on PR #668 while two checks were in `fail`.**
+
+**Mechanism, observed rather than theorised.** The workflow's jobs are not all created at once. The
+watcher considers the run complete once the checks it currently knows about have settled; a job
+created after that moment — `Rule I — wired-or-dead check` in both observed cases — appears in the
+check list _afterwards_ and can fail without the watcher ever seeing it. A plain `gh pr checks <pr>`
+run after the watcher exits reports the true state.
+
+**This is not academic — it nearly shipped a real regression.** On PR #668's first push the author
+had introduced a genuine new Rule I violation (`ClickHouseQuerySpec`, exported with zero non-test
+importers: 193 violations vs the 192 baseline). It was caught by reading the job log, NOT by the
+watcher. Had the mandated procedure been followed literally and its exit code trusted, the PR would
+have been marked READY_FOR_REVIEW on a false green.
+
+**AC:** (1) reproduce and characterise — is this a `gh` version behaviour, a `--interval`/timing
+interaction, or specific to check-runs created mid-workflow?; (2) replace the mandated incantation
+in `CLAUDE.md` and `docs/AGENT_WORKFLOW.md` with one that cannot report a false green — the minimum
+is a re-assertion after the watcher exits (`gh pr checks <pr>` and assert the pass/fail counts, or
+`gh pr view <pr> --json statusCheckRollup`), ideally wrapped in a small script so every session runs
+the same thing; (3) state explicitly how the procedure distinguishes the documented pre-existing-red
+gates (Rule I's 192-violation baseline, Vercel, Python-test) from a genuine new failure — today that
+judgement is re-derived by hand every session, which is the second half of why a false green is
+dangerous; (4) do NOT "fix" this by relaxing the CI-green rule.
+
+**Why this one may deserve a freeze exemption (CEO call, not the agent's).** The P2 freeze exists to
+stop new scope. This is not new scope — it is a hole in the mechanism that gates every other
+ticket's merge, including the frozen ones when they resume. Its cost is paid by every future
+session, and its remediation is roughly a one-line procedural change plus a script.
+
+cross_ref: [PR #668 (`Rule I` 193→192, the near-miss); PR #670, PR #671 (same watcher behaviour
+observed again); `CLAUDE.md` "Lessons from Paczka 1" item 1; `docs/AGENT_WORKFLOW.md`;
+`backlog/QUEUE.md` session-98 head (carries the interim workaround); `scripts/check-rule-i.sh`;
+memory `project_ci_gate_landscape`]
+
+<!-- next free FOLLOW number: 814 (FOLLOW-813 filed 2026-08-04 by the main-loop session — the
+`gh pr checks --watch` false-green in the mandated CI gate).
+Previously 813 (FOLLOW-811 + FOLLOW-812 filed 2026-08-04 by the main-loop
 session while doing FOLLOW-739; both FROZEN at filing).
 Previously 811 (FOLLOW-810 filed AND closed 2026-08-04 by the main-loop session
 — staging smoke removal + Cloudflare runbook drift).

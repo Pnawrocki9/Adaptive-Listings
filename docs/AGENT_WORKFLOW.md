@@ -159,6 +159,50 @@ edit.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## CI verification — never bare `gh pr checks --watch` (mandatory — FOLLOW-813)
+
+The "validates PR" / "runs tests" box in the diagram above is not one command — CI verification is
+its own mandatory sub-step, and it is NOT `gh pr checks <pr> --watch` on its own.
+
+**Why not.** `--watch` was the mandated incantation (CLAUDE.md "Lessons from Paczka 1" item 1) until
+it was observed exiting `0` while a check was still `fail` — first on PR #668, then again on PR #670
+and #671. Root cause: GitHub Actions does not register a check-run for a job until that job is
+actually scheduled; a job gated behind `needs:` (e.g. `Rule I — wired-or-dead check`, which has
+`needs: [lint]` in `ci.yml`) can appear on the check-run list several minutes after the independent
+jobs that start at workflow dispatch. `--watch` polls the check-run list and declares the run
+complete once every check-run it has seen SO FAR has settled — it has no way to know a check-run
+registered later is still coming. Upstream `gh` tracks the identical bug class as "handle 'no
+checks' races in `pr checks --watch`" (cli/cli#7401). On PR #668's own timeline the bulk of jobs
+started 17:15:20–17:16:56Z; `Rule I` started 17:18:05Z — well past a watcher's default 10s poll
+interval.
+
+**What to run instead:**
+
+```bash
+scripts/gh-pr-checks-verified.sh <pr-number>
+```
+
+It polls `gh pr view --json statusCheckRollup` until it observes **two consecutive, identical,
+fully-settled snapshots** (this is what defeats the late-registration race — a check-run appearing
+or changing state between polls changes the snapshot and resets the stability counter, so the loop
+cannot exit while something is still pending or has not shown up yet), re-asserts the pass/fail
+counts from that fresh read (never from an exit code), and classifies every failing check against
+the repo's documented pre-existing-red gates before deciding pass/fail. Today that list has exactly
+one entry, `Rule I — wired-or-dead check` (memory `project_ci_gate_landscape`; Vercel and the Python
+test matrix were both fixed and are no longer pre-existing-red as of the current `main`) — the
+script verifies it DYNAMICALLY by diffing the PR run's own "Violations found: N" job-log line
+against `main`'s own latest completed CI run, never a hardcoded number, so a worsening baseline (the
+PR #668 near-miss: 193 vs a 192 baseline, caught only by reading the raw job log, not by `--watch`)
+is classified as a genuine new failure and fails the script. This mirrors the shape FOLLOW-821 uses
+for Rule I's own baseline comparison — do not replace this with a static allowlist that could rot
+the same way; see the script's own header comment for the full mechanism and exit codes.
+
+Exit code `0` means every non-success check is a verified pre-existing-red gate — safe to mark
+READY_FOR_REVIEW. Exit code `1` means a genuine failure. Exit code `2` means it timed out waiting
+for checks to settle (never treat that as success). This is the pm-orchestrator's 5b validation
+sub-step (`.claude/agents/pm-orchestrator.md`); the old two-command `--watch` + `jq` sequence there
+is superseded by this single script.
+
 ## Branch-first worker discipline (mandatory — FOLLOW-448 / RETRO-146)
 
 A worker's **FIRST action on any ticket, before touching a single file**, is:
@@ -467,14 +511,15 @@ agent:
 
 ## Quick reference
 
-| What                     | Command                                      |
-| ------------------------ | -------------------------------------------- |
-| Start the day            | `/sprint-status`                             |
-| Drive the queue          | `/run-pm`                                    |
-| Add a human escalation   | `/escalate`                                  |
-| See open PRs             | `gh pr list --state open`                    |
-| See last 20 commits      | `git log --oneline -20`                      |
-| See current branch state | `git status`                                 |
-| Force PM to re-pick      | edit QUEUE.md status to READY, run `/run-pm` |
+| What                          | Command                                      |
+| ----------------------------- | -------------------------------------------- |
+| Start the day                 | `/sprint-status`                             |
+| Drive the queue               | `/run-pm`                                    |
+| Add a human escalation        | `/escalate`                                  |
+| Verify CI (false-green-proof) | `scripts/gh-pr-checks-verified.sh <pr>`      |
+| See open PRs                  | `gh pr list --state open`                    |
+| See last 20 commits           | `git log --oneline -20`                      |
+| See current branch state      | `git status`                                 |
+| Force PM to re-pick           | edit QUEUE.md status to READY, run `/run-pm` |
 
 When in doubt: read `CLAUDE.md`. When still in doubt: escalate.

@@ -80,18 +80,19 @@ approval.
 
 ### Environment Configuration
 
-Add the following secrets to Doppler:
+Add the following secrets to Doppler. The project is `estalara-adaptive-listings` (see
+`doppler.yaml`) — `--project estalara` is not a project that exists:
 
 ```bash
 # Production config
-doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara --config prd
-doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara --config prd
-doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara --config prd
+doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara-adaptive-listings --config prd
+doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara-adaptive-listings --config prd
+doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara-adaptive-listings --config prd
 
 # Staging config
-doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara --config stg
-doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara --config stg
-doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara --config stg
+doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara-adaptive-listings --config stg
+doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara-adaptive-listings --config stg
+doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara-adaptive-listings --config stg
 ```
 
 Add to GitHub repository secrets (Settings > Secrets and variables > Actions):
@@ -103,22 +104,50 @@ Add to GitHub repository secrets (Settings > Secrets and variables > Actions):
 
 ### Creating an API Token
 
-Cloudflare API tokens are scoped to specific permissions. Use the "Edit Cloudflare Workers"
-template:
+> **Zone is `estalara.com`, not `estalara.io`.** `estalara.io` is legacy naming that survives in
+> parts of this runbook; the canonical domain is `estalara.com` per DECISIONS_2026-05-18_v2 — see
+> `packages/shared/src/domains.ts` and the `zone_name` in both `wrangler.toml` files. A token scoped
+> to the wrong zone deploys the script fine and then fails on route binding.
+
+Cloudflare API tokens are scoped to specific permissions. Start from the "Edit Cloudflare Workers"
+template, then add the permissions the template omits:
 
 1. Navigate to: **Profile > API Tokens > Create Token**
 2. Select template: **Edit Cloudflare Workers**
 3. Permissions:
-   - Account > Workers Scripts > Edit
-   - Account > Workers KV Storage > Edit (not used in MVP, but future-proofing)
-   - Account > Workers R2 Storage > Edit
-   - Zone > Workers Routes > Edit
-   - Zone > DNS > Edit
+   - Account > Workers Scripts > Edit — deploys, `wrangler secret put`, Durable Object migrations
+   - Account > Workers KV Storage > Edit — `KV_API_KEYS` + `KV_IDEMPOTENCY` are live bindings, and
+     `apps/control-plane/scripts/project-allowed-origins.mts --apply` writes api-key records
+   - Account > Queues > Edit — `estalara-events-retry` + `-dlq` (ADR-0017); NOT in the template, and
+     without it `wrangler queues list` fails during the deploy pre-flight
+   - Account > Account Settings > Read — account resolution (included in the template)
+   - Zone > Workers Routes > Edit — `ingest.estalara.com/*`, `decision.estalara.com/*`
+   - Zone > DNS > Edit — only needed for `infra/terraform/cloudflare/dns.tf`
+   - Account > Workers R2 Storage > Edit — only once R2 is enabled on the account (see below);
+     harmless to include ahead of time
 4. Account Resources: Include > `<Your Account>`
-5. Zone Resources: Include > Specific zone > `estalara.io`
+5. Zone Resources: Include > Specific zone > `estalara.com`
 6. IP Address Filtering: Leave empty (GitHub Actions IPs rotate)
 7. TTL: Start End (no expiry, rotate manually every 90 days)
 8. Create Token and **copy immediately** (shown only once)
+9. Verify before storing it anywhere:
+   ```bash
+   CLOUDFLARE_API_TOKEN=<token> npx wrangler whoami        # lists account + token scopes
+   CLOUDFLARE_API_TOKEN=<token> npx wrangler kv namespace list
+   CLOUDFLARE_API_TOKEN=<token> npx wrangler queues list
+   ```
+
+### R2 tokens (separate, and currently not provisioned)
+
+R2 uses **S3-compatible access keys**, minted at **R2 > Manage R2 API Tokens** — a different screen
+from the Workers token above. They back `CLOUDFLARE_R2_ACCESS_KEY_ID` /
+`CLOUDFLARE_R2_SECRET_ACCESS_KEY` for the Terragrunt remote-state bucket (`infra/terragrunt.hcl`).
+
+As of 2026-08-04 **R2 is not enabled on the account** (API returns
+`10042 Please enable R2 through the Cloudflare Dashboard`), so the `estalara-tfstate` bucket and the
+`cloudflare_r2_bucket` resources in `infra/terraform/cloudflare/r2.tf` do not exist and these keys
+have nothing to authenticate against. Enable R2 in the dashboard first if you need Terraform remote
+state.
 
 ### Token Rotation
 

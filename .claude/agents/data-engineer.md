@@ -76,7 +76,8 @@ in R2.
 ## Critical CI rules (keep — Paczka 1)
 
 `setuptools.build_meta` build-backend; `__init__.py` in every Python src/; prettier on every touched
-file (incl. .sql/.yml); `gh pr checks <pr> --watch` before handoff.
+file (incl. .sql/.yml); `scripts/gh-pr-checks-verified.sh <pr>` (exit 0 required) before handoff —
+NOT `gh pr checks --watch`, which can exit 0 while checks fail [FOLLOW-813].
 
 <evidence_requirements> In every PR description, paste:
 

@@ -1,3 +1,34 @@
+# Status — 2026-08-05 (session 101 — FOLLOW-813 closed DONE, retro RETRO-246 dispatched (Opus), FOLLOW-812 next)
+
+## SESSION 101 (2026-08-05)
+
+State verified fresh: `main` = `origin/main` = `1a4233c8`, clean tree, 0 open PRs, no running
+`claude --agent` processes, no stranded worktrees. 5 escalations OPEN (ESC-020/041/042/044/045),
+unchanged, non-blocking-for-dispatch per the 2026-07-27 standing ruling.
+
+**PR #675 (FOLLOW-813) confirmed merged** by Piotr 2026-08-04T22:59:44Z, squash, branch deleted.
+**FOLLOW-813 marked DONE** in `backlog/QUEUE.md` (`completed_at: 2026-08-04`, `merged_pr: 675`,
+`merge_commit: 1a4233c8`), with a closure note carrying forward the two validation-stage defects
+(both agent defs incl. this orchestrator's own §5b hardcoding `--watch`; script shipped
+non-executable) into the retro brief as the primary subject, per Rule AH / Rule S shapes.
+
+**Step 6 — spawned `retrospective-analyst`, model Opus** (justification: judging whether these two
+findings clear the ≥2-prior-instance promotion bar for Rule AH/Rule S is ambiguous single-domain
+reasoning, not routine bookkeeping). Branch `retrospective-analyst/RETRO-246-follow-813-retro`,
+explicitly instructed not to touch `main` and not to open a PR (session-85 collision precedent).
+
+**CI-check counter:** n/a this turn (no code touched). **Fix-iteration counter:** n/a. **Tickets
+IN_PROGRESS:** 0 (FOLLOW-812 not yet dispatched — sequencing constraint, see below).
+
+**Sequencing constraint (session-85 collision rule):** FOLLOW-812 (compliance-engineer, Sonnet — see
+justification when dispatched) is picked next but withheld until the retro process exits, since both
+would touch this one shared working tree concurrently otherwise.
+
+NEXT: wait for the retro-analyst process to exit, verify its branch/no-PR/no-`main`-touch, then
+dispatch FOLLOW-812 to compliance-engineer per the CEO's stated order (813 → 812 → 811).
+
+---
+
 # Status — 2026-08-05 (session 100 — FOLLOW-813 dispatched to devops-engineer, Sonnet; CEO-ordered head of Sprint 24 Track HYGIENE)
 
 ## SESSION 100 (2026-08-05)

@@ -1,6 +1,45 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 100 (2026-08-05) — FOLLOW-813 dispatched (Sprint 24 Track HYGIENE, CEO-ordered first)
+## ▶️ START HERE — session 101 (2026-08-05) — FOLLOW-813 closed DONE (PR #675 merged), retro dispatched, FOLLOW-812 next
+
+**State verified fresh:** `main` = `origin/main` = `1a4233c8`, working tree clean,
+`gh pr list --state open` empty, no running `claude --agent` processes, no stranded worktrees. PR
+#675 (FOLLOW-813) was merged by Piotr at 2026-08-04T22:59:44Z (squash, branch deleted). Escalations
+re-checked: ESC-020, ESC-041, ESC-042 (narrowed), ESC-044, ESC-045 remain the only `## OPEN` entries
+— all long-standing, none new, none blocking dispatch per the standing 2026-07-27 ruling.
+
+**FOLLOW-813 marked DONE below** (session-100 block, in place) with `completed_at: 2026-08-04`,
+`merged_pr: 675`, `merge_commit: 1a4233c8`. Validation was performed by the main-loop session, not
+by an orchestrator turn; two defects were found and fixed during that validation (both agent
+definitions still hardcoding `--watch`, including this orchestrator's own §5b gate; and the new
+script shipping non-executable while every doc mandates bare invocation) — both carried into the
+retro brief below as the primary subject, per the closure note in place.
+
+**Effective immediately: this orchestrator's own CI-gate step (5b) now uses
+`scripts/gh-pr-checks-verified.sh <pr>` (exit 0 required), NOT bare `gh pr checks <pr> --watch`.**
+`.claude/agents/pm-orchestrator.md` §5b already reflects this per FOLLOW-813's fix.
+
+**Step 6 (mandatory, this turn): dispatched `retrospective-analyst` for FOLLOW-813.** Model:
+**Opus** — justification: this retro's real subject is a doc/enforcement-divergence pattern (Rule AH
+shape) plus a worker sandboxed out of the exact file it needed to fix (Rule S shape), both
+candidates for promotion on a 2nd-instance threshold; that judgment call and the cross-retro pattern
+search are exactly the ambiguous, single-domain-reasoning class Opus is for, not routine
+bookkeeping. Branch: `retrospective-analyst/RETRO-246-follow-813-retro` (next free RETRO number
+after RETRO-245). **Explicitly instructed: do not touch `main`, do not open a PR** — session-85's
+stray commit + unexplained cherry-pick onto `main` is why this rule exists (see dispatch brief in
+this session's tool log for full text).
+
+**Sequencing constraint in force:** FOLLOW-812 (compliance-engineer) is picked as next but **NOT
+dispatched until the retro agent's process has exited** — one Bash-capable agent at a time in this
+shared working tree (session-85 collision). This block will be updated in place once the retro
+finishes and FOLLOW-812 is actually dispatched.
+
+**Delegation-table row to be used for FOLLOW-812:** "DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act
+docs → compliance-engineer."
+
+---
+
+## ▶️ (superseded — see session 101 above) START HERE — session 100 (2026-08-05) — FOLLOW-813 dispatched (Sprint 24 Track HYGIENE, CEO-ordered first)
 
 **State verified fresh, not re-derived from narration:** `main` = `origin/main` = `b69ef8b0`,
 working tree clean, `gh pr list --state open` empty, no running `claude --agent` processes, no
@@ -32,11 +71,28 @@ bounded, well-specified AC set (reproduce → replace the mandated incantation �
 pre-existing-red distinction). None of the Opus/Fable triggers (security-sensitive, ambiguous AC,
 irreversible prod-touching change) apply; PR-gated and fully reversible.
 
-**FOLLOW-813 — status: READY_FOR_REVIEW** (PR #675, head `c9a765ae`)
+**FOLLOW-813 — status: DONE** (PR #675 merged by Piotr 2026-08-04T22:59:44Z, squash, branch deleted)
+
+**merged_pr:** 675 **merge_commit:** `1a4233c8` **completed_at:** 2026-08-04
 
 **assigned_to:** devops-engineer **model:** Sonnet **started_at:** 2026-08-05 **branch:**
-`devops-engineer/FOLLOW-813-ci-checks-false-green` **validated_by:** main-loop session 2026-08-05
-(not the dispatching PM) **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3
+`devops-engineer/FOLLOW-813-ci-checks-false-green` (deleted post-merge) **validated_by:** main-loop
+session 2026-08-05 (not the dispatching PM, and not this session either — carried forward verbatim)
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3
+
+**Closure note (session 101):** validation of this ticket was performed by the main-loop session,
+not by this orchestrator turn. Two defects were found and fixed _during that validation_, both worth
+carrying into the retro as their own finding, not just as "the ticket's own subject matter
+recurring": (1) the prose docs (`CLAUDE.md`, `docs/AGENT_WORKFLOW.md`) were updated in the PR but
+**the four agent definitions still hardcoded the broken `--watch` command — including this
+orchestrator's own `.claude/agents/pm-orchestrator.md` §5b NON-NEGOTIABLE gate**; a fix whose
+documentation landed while the executable instruction (the agent definition machinery actually
+reads) did not. (2) `scripts/gh-pr-checks-verified.sh` shipped `100644`, not executable, while every
+doc mandates the bare, no-`bash`-prefix invocation — a mandated command that could not execute as
+written. Both are shapes the repo has hit before (Rule AH — doc/code drift where the narrated fix
+and the enforced fix diverge; Rule S — a worker sandboxed out of the one file it most needed to fix,
+silently). This is at minimum the second sighting of each; retro dispatched below to confirm and, if
+warranted, promote.
 
 **PM validation result — all four ACs met; three commits added during validation.**
 

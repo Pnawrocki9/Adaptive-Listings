@@ -1,6 +1,6 @@
 # C-07 — Chat Free-Text Retention: DPIA Scope Brief
 
-**Document ID:** ESTALARA-C-07 **Version:** 1.0 **Date:** 2026-06-19 **Author:** Compliance
+**Document ID:** ESTALARA-C-07 **Version:** 1.1 **Date:** 2026-08-05 **Author:** Compliance
 Engineering **Classification:** Internal — Restricted **Status:** PENDING CEO decision (items marked
 below) **DPIA cross-reference:** DPIA §13 (LIA series) — this brief defines the §14 scope
 **FOLLOW:** FOLLOW-346 (shadow bridge) — go-live gate on CEO decision recorded here
@@ -237,14 +237,27 @@ HEAD on branch `main`:
   `error_fallback`) and `extraction_error` (`null`, or a fixed-format
   `"<classified kind>: <ExceptionClassName>"` string such as `"missing_api_key: KeyError"`). Neither
   carries buyer content: `extraction_error` is explicitly constructed from the exception's CLASS
-  name only — the exception message, which could echo prompt text, goes to the **log line** and
-  never into Redis. No `messages` or `raw_text` field. (Since FOLLOW-738 it no longer reaches Sentry
-  either: `_scrub_chat_intent_exception_value` in `apps/intent-engine/src/observability.py`
-  overwrites the exception `value` on every event tagged `area=chat_intent`, pinned by
-  `test_buyer_text_escapes_both_sinks` in `test_observability.py`. The Modal **stdout log line** —
-  `nlp.py`'s `print(f"extract_intent error …: {exc}")` — still carries the full message; that is the
-  remaining sink for this string, and it is out of the Sentry sub-processor boundary described in
-  `ropa.md`.)
+  name only — the exception message, which could echo prompt text, never reaches Redis. No
+  `messages` or `raw_text` field. Since FOLLOW-738 it no longer reaches Sentry either:
+  `_scrub_chat_intent_exception_value` in `apps/intent-engine/src/observability.py` overwrites the
+  exception `value` on every event tagged `area=chat_intent`, pinned by
+  `test_buyer_text_escapes_both_sinks` in `test_observability.py`.
+
+  **Modal stdout log line (FOLLOW-812, resolved 2026-08-05).** `nlp.py`'s primary-failure branch
+  `print` previously carried the full exception message (`print(f"extract_intent error …: {exc}")`).
+  It has been redacted to the same "classified kind + exception class name" shape `extraction_error`
+  already uses: `print(f"...kind={kind}: {type(exc).__name__}")`. Pinned by a third sink assertion
+  added to `test_buyer_text_escapes_both_sinks` (via pytest's `capsys`, asserting on actual captured
+  stdout content rather than assuming). Destination/retention/access for this log sink (Modal's own
+  application logs; retention 1-30 days depending on the Modal plan tier, per Modal's published
+  docs; access scoped to the three named Modal workspace members) is recorded in `ropa.md`'s new
+  "Modal application (stdout) logs" note, which this brief's "no raw chat text is written to Redis,
+  ClickHouse, or Postgres" conclusion does not depend on (this sink is neither of those three
+  stores). **Known residual, not fixed by FOLLOW-812:** the multilingual-retry branch's own `print`
+  (`"extract_intent multilingual retry error: {exc}"`) still emits the raw exception message to the
+  same stdout sink — out of that ticket's literal scope, flagged rather than silently left
+  inaccurate.
+
 - `chat-intent-cache.ts` — `shadowChatIntentKey` returns
   `shadow:${tenantId}:${sessionId}:chat_intent`.
 - `redis_writer.py` — `shadow_key` returns `f"shadow:{tenant_id}:{session_id}:chat_intent"`.
@@ -292,6 +305,7 @@ CEO/legal:
 
 ## Revision History
 
-| Version | Date       | Author                 | Change                                   |
-| ------- | ---------- | ---------------------- | ---------------------------------------- |
-| 1.0     | 2026-06-19 | Compliance Engineering | Initial C-07 scoping brief (FOLLOW-346). |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-06-19 | Compliance Engineering | Initial C-07 scoping brief (FOLLOW-346).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 1.1     | 2026-08-05 | Compliance Engineering | FOLLOW-812: Implementation Evidence updated. The Modal stdout log line (`nlp.py`'s primary-failure `print`) was redacted from the full exception message to a classified-kind + exception-class-name shape (same shape `extraction_error` already uses), pinned by a new third-sink assertion in `test_buyer_text_escapes_both_sinks` (`capsys`). Destination/retention/access for this sink established from Modal's own published docs and this repo's `vendor-accounts.md`, recorded in `ropa.md`'s new Modal application-logs note (this brief's "no raw text in Redis/ClickHouse/Postgres" conclusion is unaffected — this sink is none of those three stores). Known residual flagged, not fixed: the multilingual-retry branch's own `print` in the same file still emits the raw exception message. |

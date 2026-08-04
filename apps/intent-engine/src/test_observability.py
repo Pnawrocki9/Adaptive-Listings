@@ -176,29 +176,42 @@ def test_scrub_handles_missing_exception_gracefully() -> None:
 BUYER_TEXT_SENTINEL = "relocating to Lisbon in March, budget is 450k, wife is pregnant"
 
 
-def test_buyer_text_escapes_both_sinks() -> None:
-    """One exception carrying buyer chat text must leak it into NEITHER sink.
+def test_buyer_text_escapes_both_sinks(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One exception carrying buyer chat text must leak it into NONE of three sinks.
 
     This is the claim `docs/compliance/ropa.md` and `docs/compliance/dpia.md`
     §2.7 make to a regulator, pinned as a test rather than as prose. The
     realistic shape: `_parse_response` raises on a malformed model reply and
     `str(exc)` embeds a fragment of that reply — which can echo what the buyer
-    typed. Two independent sinks are reachable from that one exception:
+    typed. Three independent sinks are reachable from that one exception:
 
       1. Sentry — via `_capture_extraction_error`; neutralised by the
          `before_send` hook under test here.
       2. Redis (24 h TTL) — via the `error_fallback` payload's
          `extraction_error` field, which by contract carries only
          "<kind>: <ExceptionClassName>", never the message text.
+      3. Modal's stdout log (FOLLOW-812) — via `extract_intent`'s
+         primary-failure `print(...)`, which by contract now carries only
+         "kind=<kind>: <ExceptionClassName>", never the message text. Unlike
+         sinks 1/2, this sink has no scrubber and no CI-verified TTL of its
+         own (see `docs/compliance/C-07-chat-retention-scope.md`), so it is
+         the log line's own wording that must never carry the exception
+         message — there is nothing downstream to catch a regression.
 
-    Asserted over the WHOLE serialised structure rather than one field, so a
-    change that routes the message into some other key (a breadcrumb, a new
-    payload field) fails here instead of shipping silently.
+    Asserted over the WHOLE serialised structure (or captured stdout, for
+    sink 3) rather than one field, so a change that routes the message into
+    some other key/line (a breadcrumb, a new payload field, a second print)
+    fails here instead of shipping silently.
 
     Non-vacuity was verified by perturbation, not assumed: disabling the
-    redaction line in `observability.py` fails sink 1, and substituting
-    `{exc}` for `{type(exc).__name__}` in the payload fails sink 2.
+    redaction line in `observability.py` fails sink 1, substituting `{exc}`
+    for `{type(exc).__name__}` in the payload fails sink 2, and reverting
+    `nlp.py`'s primary-failure `print` to interpolate `{exc}` directly (its
+    pre-FOLLOW-812 shape) fails sink 3.
     """
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
     exc = ValueError(
         f"Expecting value: line 1 column 1 (char 0) — model returned: {BUYER_TEXT_SENTINEL}"
     )
@@ -222,6 +235,26 @@ def test_buyer_text_escapes_both_sinks() -> None:
         extraction_error=f"{nlp._classify_extraction_error(exc)}: {type(exc).__name__}",
     )
     assert BUYER_TEXT_SENTINEL not in json.dumps(payload.model_dump())
+
+    # Sink 3 — Modal's stdout log, exercised through the REAL primary-failure
+    # branch of extract_intent (not re-synthesised, unlike sinks 1/2 above),
+    # so a future edit to the print statement itself is caught here.
+    # `_capture_extraction_error` is stubbed out: sinks 1/2 already pin its
+    # behaviour directly, and this block isolates the print line under test.
+    monkeypatch.setattr(nlp, "_capture_extraction_error", MagicMock())
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(side_effect=exc))
+    capsys.readouterr()  # drain anything buffered before this block
+    nlp.extract_intent(
+        [{"role": "user", "content": "irrelevant — the model call is mocked"}],
+        model="claude-haiku-4-5-20251001",
+        source="realtime",
+    )
+    captured_stdout = capsys.readouterr().out
+    assert BUYER_TEXT_SENTINEL not in captured_stdout
+    # And non-vacuous in the other direction: the log line still records
+    # something actionable (kind + exception class), it isn't just silenced.
+    assert "kind=parse_error" in captured_stdout
+    assert type(exc).__name__ in captured_stdout
 
     # …and the guard is non-vacuous: the sentinel really is in the exception.
     assert BUYER_TEXT_SENTINEL in str(exc)

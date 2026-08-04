@@ -4860,3 +4860,31 @@ FOLLOW-737, not this ticket).
 **Sonnet.** The design ambiguity is resolved and the target shape is fully specified down to the
 function body; what remains is a small, well-bounded implementation plus tests and a doc sync.
 Escalate to Opus only if the cross-runtime fixture surfaces a parity case the ADR does not answer.
+
+---
+
+## FOLLOW-812 (2026-08-05, compliance-engineer) — Modal log-retention citation is bounded, not exact; needs an operator/billing check to close fully
+
+Assessed and fixed the Modal-stdout leg of the chat-intent exception message (AC1-4 done; see PR).
+One open item this ticket could not close from the repo alone, for whoever owns the Modal account
+(devops-engineer or Piotr directly):
+
+**What's established, with a citable source:** per Modal's own docs
+(`https://modal.com/docs/guide/security`, fetched 2026-08-05), app/container log retention is 1 day
+on Starter, 30 days on Team, configurable on Enterprise. Access is scoped to workspace members —
+this repo's `docs/runbooks/vendor-accounts.md` §3.1 names three (Piotr, Rafał, Krystian) as the
+`estalara` workspace's invited members.
+
+**What's NOT established:** which of those three plan tiers the `estalara` Modal workspace is
+actually on. Nothing in this repo (`vendor-accounts.md`, `.env.example`, ADR-0016) records it, and I
+cannot check Modal's billing/workspace-settings page from here. `docs/compliance/ropa.md`'s new
+"Modal application (stdout) logs" note (Appendix A) states the retention as a _range_ (1-30 days,
+Enterprise unbounded-but-configurable) rather than a single number, precisely because of this gap —
+do not tighten that wording to a single figure without first confirming the plan tier against the
+Modal dashboard. If it turns out to be Enterprise with a long configured retention, `ropa.md`'s
+residual-risk framing (retention is "days, not months") would need re-checking.
+
+**Action needed:** whoever next has Modal dashboard access, check the workspace's plan tier
+(`https://modal.com/settings/plans` or the workspace billing page) and either confirm it against
+`vendor-accounts.md` §3 (add the plan tier there — it's currently undocumented) or flag if it's
+since changed.

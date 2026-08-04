@@ -485,7 +485,16 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
         payload = _parse_response(raw_text, message_count, model, source)
     except Exception as exc:  # noqa: BLE001 — guardrail: never raise from here.
         kind = _classify_extraction_error(exc)
-        print(f"extract_intent error model={model} source={source}: {exc}")
+        # FOLLOW-812: `str(exc)` can embed a fragment of the model's raw JSON
+        # reply (a JSONDecodeError/ValueError from _parse_response), which can
+        # itself echo buyer chat text — the identical risk FOLLOW-738 redacted
+        # on the Sentry path. Modal's stdout log has no scrubber of its own
+        # (see docs/compliance/C-07-chat-retention-scope.md), so this line
+        # must carry only the classified kind + exception class name, the same
+        # shape `extraction_error` already uses — never the message itself.
+        print(
+            f"extract_intent error model={model} source={source} kind={kind}: {type(exc).__name__}"
+        )
         _capture_extraction_error(exc, model=model, source=source, kind=kind, stage="primary")
         return _neutral_payload(
             message_count,

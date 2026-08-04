@@ -32,10 +32,42 @@ bounded, well-specified AC set (reproduce → replace the mandated incantation �
 pre-existing-red distinction). None of the Opus/Fable triggers (security-sensitive, ambiguous AC,
 irreversible prod-touching change) apply; PR-gated and fully reversible.
 
-**FOLLOW-813 — status: IN_PROGRESS**
+**FOLLOW-813 — status: READY_FOR_REVIEW** (PR #675, head `c9a765ae`)
 
 **assigned_to:** devops-engineer **model:** Sonnet **started_at:** 2026-08-05 **branch:**
-`devops-engineer/FOLLOW-813-ci-checks-false-green`
+`devops-engineer/FOLLOW-813-ci-checks-false-green` **validated_by:** main-loop session 2026-08-05
+(not the dispatching PM) **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3
+
+**PM validation result — all four ACs met; three commits added during validation.**
+
+**5b CI, dogfooded through the PR's own new script** (`./scripts/gh-pr-checks-verified.sh 675`): 73
+checks, 71 pass, 2 fail — both `Rule I` verified dynamically at **192 <= 192** against `main`'s own
+live count (run `30955429305`), exit 0. No hardcoded baseline anywhere in the script.
+
+**AC(1) evidence reproduced itself during validation, live.** The first run against this PR showed
+`[t=0s] checks known: 65` → `[t=160s] 73`. Eight check-runs registered AFTER t=0; a `--watch` that
+settled on the initial 65 would have exited 0 before `Rule I` was even created. That is the PR #668
+false green, reproduced on this PR by this PR's own tooling — not reconstructed from logs.
+
+**Fail-closed classification verified by reading the block, not the docstring:** unreadable
+violation counts → genuine failure (`:209-211`); only `pr <= main` accepted (`:216`); worse count →
+genuine (`:219`); anything not on the documented list → genuine (`:222`). Exit codes checked without
+a pipe: no-args → 3, unknown PR → 3.
+
+**Two defects found and fixed during validation** (both the ticket's own failure class — a mandated
+instruction that does not do what it says):
+
+1. `8e91e4e3` — the prose docs were updated but **the four agent definitions still hardcoded the
+   broken command**, including `.claude/agents/pm-orchestrator.md` §5b, the PM's own NON-NEGOTIABLE
+   CI gate. Merging without this would have shipped a fix that does not fix the thing. The worker
+   flagged the pm-orchestrator gap honestly and was sandbox-blocked from `.claude/` writes; the
+   three worker-agent siblings are Rule S. Residual grep confirms no `--watch` mandate remains
+   anywhere.
+2. `c9a765ae` — the script shipped **`100644`, not executable**, while every doc mandates bare
+   `scripts/gh-pr-checks-verified.sh <pr>` with no `bash` prefix → "Permission denied" for every
+   caller following the new instruction. Masked because earlier runs used `bash scripts/...`.
+
+**NOT merged** — left to Piotr per the humans-merge boundary.
 
 **Ticket:** `backlog/FOLLOW_UPS.md` `## FOLLOW-813`. AC (verbatim from the stub): (1) reproduce and
 characterise the false-green mechanism (`gh` version behaviour vs timing vs check-runs created

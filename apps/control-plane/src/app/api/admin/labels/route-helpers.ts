@@ -33,8 +33,12 @@ const DECISION_ID_PATTERN = /^[0-9a-f-]+$/i;
  * A ClickHouse HTTP query: SQL text plus the values to bind as `param_<name>`
  * URL query parameters (same contract as `chTracerQuery` in
  * `@/lib/clickhouse-tracer`). No user input is ever interpolated into `sql`.
+ *
+ * Deliberately not exported: it is only ever named as `buildPredictionsQuery`'s
+ * return type, and exporting it would add a Rule I `zero non-test importers`
+ * violation for a type nothing outside this file needs to name.
  */
-export interface ClickHouseQuerySpec {
+interface ClickHouseQuerySpec {
   /** SQL text using `{name:Type}` placeholders for every user-supplied value. */
   sql: string;
   /** Values to bind, keyed by placeholder name (sent as `param_<name>`). */

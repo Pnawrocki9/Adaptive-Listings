@@ -26484,7 +26484,86 @@ scripts/check-served-bundles.sh; .github/workflows/ci.yml; .github/workflows/rel
 (FOLLOW-626); docs/MASTER_DESIGN.md §Snapshot "SDK serving"; ESC-015; ESC-047; FOLLOW-801;
 RETRO-245]
 
-<!-- next free FOLLOW number: 809 (FOLLOW-808 filed by the main-loop session for ESC-047).
+---
+
+## FOLLOW-809 — Six of the seven ClickHouse `param_*` binding sites skip the "Escaped" text-format encoding FOLLOW-462 established, including the tracer helper FOLLOW-782 held up as the correct pattern — and one of them binds a Zod-unconstrained `session_id`
+
+source_retro: n/a (found while validating FOLLOW-782, 2026-08-04) source_ticket: FOLLOW-782 (PR
+#668) recommended_sprint: next recommended_agent: backend-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN -- CEO P2 freeze, 2026-08-03** (see
+backlog/QUEUE.md session-95 head for the ruling, reason, and unfreeze criteria; this ticket is
+P2-or-lower and not exempt; annotated at filing time)
+
+**Verified by reading every binding site, not inferred from one.**
+`grep -rn 'searchParams.set(`param\_'`over`apps/`+`packages/`returns exactly seven non-test sites. Only **one** —`apps/control-plane/src/lib/clickhouse-dsr.ts:247`— passes its values through`escapeClickHouseParamValue()`
+(same file, line 123). The other six bind the raw string:
+
+- `apps/control-plane/src/lib/clickhouse-tracer.ts:75` and `:118`
+- `apps/control-plane/src/app/api/admin/labels/route.ts:104`
+- `apps/control-plane/src/app/api/admin/labels/export/route.ts:105`
+- `apps/control-plane/src/app/api/pilot/calibration/route.ts:142`
+- `apps/control-plane/src/app/api/pilot/cta-lift/route.ts:61`
+
+**Why this is not the FOLLOW-782/FOLLOW-462 injection class, stated plainly so it is not
+over-triaged.** A `param_*` value never enters the SQL text, so no byte in it can alter query
+structure. This is a **decode-fidelity and fail-loud** defect, not an injection one.
+`clickhouse-dsr.ts:107-121` documents the actual mechanism: ClickHouse parses `param_*` using its
+"Escaped" (TabSeparated) text format, so a backslash in the value is consumed as an escape
+character. Consequences: (a) a value containing `\t`/`\n` is silently decoded into a different
+value, so the filter matches the wrong rows while the UI shows it as applied — the same
+_silently-wrong-result_ failure mode FOLLOW-782 AC4 just closed one layer up; (b) a value ending in
+a lone backslash is a malformed escape sequence, which ClickHouse rejects, surfacing as
+`ClickHouse query failed: HTTP <n>` → 500 on an admin route.
+
+**The sharpest instance, and the reason this is P2 rather than P3.**
+`apps/control-plane/src/app/api/admin/tracer/history/route.ts:39` validates the user-supplied
+`session_id` as bare `z.string().optional()` — **no charset, no length, no format** — and `:40-42`
+do the same for `from`, `to` (unconstrained, fed to `parseDateTimeBestEffort`) and `archetype`
+(`max(64)`, no charset). All four reach `chTracerQuery` (`clickhouse-tracer.ts:213-228`) and are
+bound unescaped. So there is a live path from an admin query string to an unescaped Escaped-format
+decoder. Contrast `labels/route.ts`, where the same helper is safe **only by accident of its
+callers**: `tenant_id` is `z.string().uuid()` and `model_version` is `[\w. -]+` after PR #668 —
+neither can contain a backslash or tab. That safety is a property of two unrelated Zod schemas, not
+of the binding layer, which is exactly the "two independent, uncoordinated controls" shape the
+FOLLOW-782 ticket objected to.
+
+**Second-order finding: the pattern FOLLOW-782 cited as canonical is itself missing this layer.**
+The FOLLOW-782 ticket named `clickhouse-tracer.ts:75,118` as "the correct pattern … already exists
+in the same codebase", and PR #668 duly adopted it. That is right about parameter binding and silent
+about escaping — `clickhouse-dsr.ts` (FOLLOW-462, the newer fix) is the only site that has both
+halves. Whichever file is treated as canonical should carry both, or the next ticket to "adopt the
+existing pattern" inherits the gap again. **A single shared helper is the obvious fix**: the four
+route-local `chQuery` copies listed above are near-identical 25-line duplicates that differ only in
+their JSDoc, which is how one file got fixed and six did not.
+
+**AC:**
+
+1. Route every `param_*` binding through one shared, exported helper that applies the
+   `escapeClickHouseParamValue` encoding — do not add a seventh copy of the escaping.
+2. Collapse the four route-local `chQuery` duplicates onto that helper (`labels`, `labels/export`,
+   `pilot/calibration`, `pilot/cta-lift`), preserving each route's existing auth, tenant fence and
+   error handling verbatim.
+3. Constrain `tracer/history`'s `session_id` / `archetype` / `from` / `to` at the Zod boundary, per
+   the FOLLOW-782 AC4 precedent: reject out-of-shape input with a 400 rather than letting it through
+   to be mis-decoded. Defence in depth — this does NOT replace AC1.
+4. Regression test: a bound value containing a tab, a newline, and a **trailing lone backslash**
+   must arrive at ClickHouse byte-identical after decode, and must not produce a failed query.
+   `clickhouse-tracer.test.ts:156` (CH-5) currently asserts only that the value is not interpolated
+   into the SQL text — it would pass today with zero escaping, so it does not cover this.
+5. Do NOT change `clickhouse-dsr.ts`'s behaviour; it is the reference implementation here.
+
+cross_ref: [found while validating FOLLOW-782 / PR #668, 2026-08-04;
+`apps/control-plane/src/lib/clickhouse-dsr.ts:107-133,247` (FOLLOW-462, the only correct site);
+`apps/control-plane/src/lib/clickhouse-tracer.ts:75,118,213-228`;
+`apps/control-plane/src/app/api/admin/tracer/history/route.ts:37-45` (unconstrained `session_id`);
+`apps/control-plane/src/app/api/admin/labels/route.ts:104`;
+`apps/control-plane/src/app/api/admin/labels/export/route.ts:105`;
+`apps/control-plane/src/app/api/pilot/calibration/route.ts:142`;
+`apps/control-plane/src/app/api/pilot/cta-lift/route.ts:61`; FOLLOW-462; FOLLOW-782]
+
+<!-- next free FOLLOW number: 810 (FOLLOW-809 filed 2026-08-04 by the main-loop session while
+validating FOLLOW-782/PR #668; P2, FROZEN at filing per the session-95 standing rule).
+Previously 809 (FOLLOW-808 filed by the main-loop session for ESC-047).
 Previously 808 (FOLLOW-801..807 filed by RETRO-245, covering PRs #662/#663/#664).
 801 = P1 SHIPPED: annotateSlots annotates EVERY match document-wide page-type-blind, so FOLLOW-796's
 cta_primary→cta translation turned broad producer selectors (a[href*="contact"], [class*='button'])

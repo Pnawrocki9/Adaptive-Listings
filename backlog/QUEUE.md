@@ -1,6 +1,58 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 99 (2026-08-04) — Phased Code Audit plan landed as Sprint 24; CEO reframed the stage as localhost-first; 13 tickets filed, 10 existing tickets reconciled rather than duplicated
+## ▶️ START HERE — session 100 (2026-08-05) — FOLLOW-813 dispatched (Sprint 24 Track HYGIENE, CEO-ordered first)
+
+**State verified fresh, not re-derived from narration:** `main` = `origin/main` = `b69ef8b0`,
+working tree clean, `gh pr list --state open` empty, no running `claude --agent` processes, no
+stranded `.claude/worktrees/agent-*`. Five escalations remain genuinely `## OPEN` (ESC-020, ESC-041,
+ESC-042 narrowed, ESC-044, ESC-045) — all long-standing, previously surfaced, each
+non-blocking-for-dispatch per the standing 2026-07-27 ruling; none new this session.
+
+**Bookkeeping gap found and fixed:** `### FOLLOW-782 — status: IN_PROGRESS` (below) was stale — PR
+#668 merged at `5fc557b3` (session-98 head already records this) but the marker was never flipped.
+Corrected to DONE in place with a note; no code touched, no re-validation performed (not this
+session's ticket).
+
+**Ticket picked: FOLLOW-813** (P2, devops-engineer) — `gh pr checks --watch` can exit 0 while a
+check is still `fail` (observed twice, PR #668 and again per FOLLOW-813's own cross_ref). This is
+the CEO's own explicit ordering from the 2026-08-04 ruling table (QUEUE.md session-98 head, line
+"Recommended order: 813 → 812 → 811... 813 first because every subsequent ticket's merge is gated by
+the mechanism it repairs") and Sprint 24 Track HYGIENE puts it at the head for the same reason.
+`depends_on: []`, `status: READY` (unfrozen 2026-08-04, PR #673), devops-engineer free (0
+IN_PROGRESS). Not delegating any of FOLLOW-665/816/817/560 first: none of them out-ranks a hole in
+the mechanism this very PM loop uses to validate every one of their PRs — dispatching them first
+risks re-hitting the exact false-green near-miss FOLLOW-813 documents.
+
+**Delegation-table row used:** "Terraform, CI/CD, workflows, secrets, observability, runbooks →
+devops-engineer."
+
+**Model: Sonnet** (ticket default, not escalated). Justification: this is a CI-mechanism
+investigation + doc/script fix with no prod-facing runtime change, no auth/data-model surface, and a
+bounded, well-specified AC set (reproduce → replace the mandated incantation → document the
+pre-existing-red distinction). None of the Opus/Fable triggers (security-sensitive, ambiguous AC,
+irreversible prod-touching change) apply; PR-gated and fully reversible.
+
+**FOLLOW-813 — status: IN_PROGRESS**
+
+**assigned_to:** devops-engineer **model:** Sonnet **started_at:** 2026-08-05 **branch:**
+`devops-engineer/FOLLOW-813-ci-checks-false-green`
+
+**Ticket:** `backlog/FOLLOW_UPS.md` `## FOLLOW-813`. AC (verbatim from the stub): (1) reproduce and
+characterise the false-green mechanism (`gh` version behaviour vs timing vs check-runs created
+mid-workflow); (2) replace the mandated incantation in `CLAUDE.md` ("Lessons from Paczka 1" item 1)
+and `docs/AGENT_WORKFLOW.md` with one that cannot report a false green — minimum: a re-assertion
+after the watcher exits (`gh pr checks <pr>` and assert pass/fail counts, or
+`gh pr view <pr> --json statusCheckRollup`), ideally scripted so every session runs the same thing;
+(3) state explicitly how the procedure distinguishes the documented pre-existing-red gates (Rule I's
+192-violation baseline, Vercel, Python-test) from a genuine new failure; (4) do NOT relax the
+CI-green rule to "fix" this.
+
+**CI-check counter (FOLLOW-813): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
+at dispatch time.**
+
+---
+
+## ▶️ (superseded) START HERE — session 99 (2026-08-04) — Phased Code Audit plan landed as Sprint 24; CEO reframed the stage as localhost-first; 13 tickets filed, 10 existing tickets reconciled rather than duplicated
 
 **This session wrote no feature code.** It converted the 2026-08-04 Phased Code Audit (HEAD
 `a5295ae3`, verdict 🔴 RED) into an executable plan: **`Sprint 24` at the bottom of this file**,
@@ -293,7 +345,12 @@ NEXT: dispatch FOLLOW-782 to backend-engineer (Opus), wait for completion, run f
 
 ---
 
-### FOLLOW-782 — status: IN_PROGRESS
+### FOLLOW-782 — status: DONE (bookkeeping correction — session 100)
+
+**This heading was stale.** PR #668 merged to `main` at `5fc557b3` (confirmed in `git log`, recorded
+in the session-98 head "(a) Merge PR #668 — done"). The `IN_PROGRESS` marker below was never flipped
+to `DONE` when the merge landed. No code change, no re-validation performed here — this is a
+bookkeeping fix only, found while picking the next ticket in session 100.
 
 **assigned_to:** backend-engineer **model: Opus** — delegation table row "ingest worker,
 control-plane, decision-api, Postgres/RLS, auth, onboarding HTTP, billing, webhooks →

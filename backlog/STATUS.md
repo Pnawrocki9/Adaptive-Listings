@@ -1,3 +1,36 @@
+# Status — 2026-08-05 (session 100 — FOLLOW-813 dispatched to devops-engineer, Sonnet; CEO-ordered head of Sprint 24 Track HYGIENE)
+
+## SESSION 100 (2026-08-05)
+
+State verified fresh: `main` = `origin/main` = `b69ef8b0`, clean tree, 0 open PRs, no running
+`claude --agent` processes, no stranded worktrees. 5 escalations OPEN (ESC-020/041/042/044/045), all
+long-standing and non-blocking-for-dispatch per the 2026-07-27 standing ruling — none new.
+
+Bookkeeping fix: `backlog/QUEUE.md`'s `### FOLLOW-782 — status: IN_PROGRESS` marker was stale (PR
+#668 merged `5fc557b3`); corrected to DONE in place, no code touched.
+
+**Picked FOLLOW-813** (P2, devops-engineer, Sonnet) — CEO's own explicit dispatch-first ordering
+(2026-08-04 ruling) and Sprint 24 Track HYGIENE head placement: it repairs the
+`gh pr checks --watch` false-green mechanism this very PM loop depends on for every other ticket's
+validation. Delegation-table row: "Terraform, CI/CD, workflows, secrets, observability, runbooks →
+devops-engineer." Full brief: ticket path `backlog/FOLLOW_UPS.md` `## FOLLOW-813`,
+`docs/MASTER_DESIGN.md` §Snapshot.1, current `CONVENTIONS_PATCH.md` rules, branch
+`devops-engineer/FOLLOW-813-ci-checks-false-green`.
+
+**QUEUE.md updated atomically BEFORE dispatch** (FOLLOW-813 status IN_PROGRESS, assigned_to
+devops-engineer, model Sonnet, started_at 2026-08-05, branch above). Will commit + push before
+spawning the worker, per "no concurrent git ops while a subagent runs."
+
+**CI-check counter (FOLLOW-813): 0/5. Fix-iteration counter: 0/3. 1 ticket IN_PROGRESS. 0 open PRs
+at dispatch time.**
+
+NEXT: dispatch FOLLOW-813 to devops-engineer (Sonnet), wait for completion, run full 5a-5g
+validation (CI-mechanism change — must self-test by actually watching a real PR's checks through the
+new/replaced procedure, not just reading the script), then FOLLOW-812 per the CEO's stated order
+(813 → 812 → 811).
+
+---
+
 # Status — 2026-08-02 (session 87 — combined retro dispatched for FOLLOW-757+752; FOLLOW-746 picked next)
 
 ## SESSION 87 (2026-08-02) — retro for FOLLOW-757/752, FOLLOW-746 picked next

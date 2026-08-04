@@ -27434,6 +27434,216 @@ cross_ref: [FOLLOW-810, ESC-043, `docs/runbooks/cloudflare.md`, `packages/shared
 
 ---
 
+## FOLLOW-827 — The new CI gate classifies Rule I by COUNT, which FOLLOW-821's own AC forbids by name — a compensating-violation swap still exits 0
+
+source_retro: RETRO-246 (§4a LG-1 / §4b CB-3 / §5a) source_ticket: FOLLOW-813 recommended_sprint:
+now recommended_agent: devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks:
+[FOLLOW-821 (must not ship its allowlist without re-pointing this script)] promoted_to_queue: false
+
+**The defect, in one comparison.** `scripts/gh-pr-checks-verified.sh:216` accepts any failing
+`Rule I — wired-or-dead check` when `pr_violations -le main_violations`. `backlog/FOLLOW_UPS.md`
+FOLLOW-821 AC(1) — filed 2026-08-04, `source_ticket: FOLLOW-813`, i.e. by the same chain, one day
+earlier — says: _"one entry per symbol … **not** a count threshold, since a count comparison passes
+when one violation is fixed and another introduced."_ The script's header at `:49-50` nonetheless
+claims it "mirrors the shape FOLLOW-821 uses for Rule I's own baseline comparison … does not
+contradict it". It contradicts it. A PR that deletes one dead export and adds another holds the
+count at 192 and gets
+`RESULT: all failing checks are documented, dynamically-verified pre-existing-red. Safe to mark READY_FOR_REVIEW`,
+exit 0.
+
+**Why P1 and not P2.** This is now the mandated merge gate for every ticket in the repo (CLAUDE.md,
+`CONVENTIONS_PATCH.md` Rule A, four agent definitions). FOLLOW-813 exists because the previous gate
+could report a false green; this one still can, on a narrower but entirely ordinary input. The whole
+point of AC(2) was "cannot report a false green".
+
+**Two further holes on the same code path** (both cheap to close in the same pass): (a) the baseline
+is `gh run list … --branch main --status completed -L 1` (`:200`) — `main`'s **latest** completed
+run — so once a regression merges, the baseline silently ratchets to include it, and nothing prints
+that the baseline moved; (b) `:198`/`:205` swallow `gh api` stderr, so an auth failure, a 403
+rate-limit and a genuinely count-less log are indistinguishable and all render as the same
+`WARN … treating as genuine failure` line (fail-closed, so safe, but unactionable at 2am).
+
+**AC:** (1) replace the count comparison with a **symbol-set** comparison, or make the script
+consume FOLLOW-821's allowlist file once it exists and hard-fail (not warn) until then; if the
+symbol set is not obtainable from the job log today, say so explicitly in the script and BLOCK on
+`Rule I` rather than accept-on-count; (2) delete or correct the `:47-50` claim of FOLLOW-821
+alignment — it is currently false, and a wrong claim in a gate's own header is the Rule Y/AO shape;
+(3) print the baseline run id **and** the fact that the baseline was read from `main`'s latest
+completed run, so a ratchet is visible in the output; (4) distinguish `gh` auth/rate-limit failure
+from "no count in log" in the WARN text; (5) a red-first test (see FOLLOW-830's `--self-test`) that
+pins the compensating-swap case: PR symbols `{A,B}` vs main `{A,C}`, equal counts, MUST fail.
+
+cross_ref: [RETRO-246 §4a LG-1, §5a, §5d; FOLLOW-821 AC(1) (`backlog/FOLLOW_UPS.md`); FOLLOW-813;
+`scripts/gh-pr-checks-verified.sh:47-50,:190-224`; `scripts/check-rule-i.sh`; `CONVENTIONS_PATCH.md`
+Rule AF, Rule K, Rule AQ]
+
+---
+
+## FOLLOW-828 — Five of the nine agent definitions have no CI-verification step at all, and no consumer distinguishes the new script's exit 2 from exit 1
+
+source_retro: RETRO-246 (§3 HW-2 / §4a LG-2 / §5c) source_ticket: FOLLOW-813 recommended_sprint:
+next recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What PR #675 fixed, and where it stopped.** Commit `8e91e4e3` routed the four agent definitions
+that **contained the broken string** off `gh pr checks --watch`. The symmetric set is not "files
+containing the string", it is "agents that open PRs" — nine. Verified:
+`grep -n -e "gh pr checks" -e "CI green" -e "gh-pr-checks-verified" .claude/agents/*.md` returns
+hits only for `pm-orchestrator.md`, `backend-engineer.md`, `data-engineer.md`, `ml-engineer.md`.
+`sdk-engineer.md`, `qa-engineer.md`, **`devops-engineer.md`**, `compliance-engineer.md` and
+`architect.md` have **no CI-verification instruction of any kind** — their `<self_check>` blocks
+stop at prettier. The agent that authored FOLLOW-813 has no CI gate in its own definition.
+
+**Not a P1:** none of the five is instructed to do the WRONG thing, and the PM's §5b gate is a real
+backstop. But Rule S's first bullet requires the sibling set to be enumerated and stated, and it was
+not — the commit message says "the four agent definitions", which is the grep result.
+
+**Second, smaller gap on the same contract.** All four wired consumers say "require exit 0". The
+script's exit codes are 0/1/2/3 (`:60-64`), and **2 = timed out** with a 900s default — against a
+repo where `DB Migrate` has been observed at 83–99 minutes. A session that hits exit 2 is told only
+"not 0" and has no instruction; the correct action (raise `--max-wait-seconds`, re-run, never
+proceed) is documented nowhere the agents read.
+
+**AC:** (1) add the CI-verification step to all five missing agent definitions, worded identically
+to `backend-engineer.md:87-88` (script + exit 0 required + the one-line reason `--watch` is unsafe);
+(2) state the full nine-agent sibling set in the PR description (Rule S); (3) add the exit-code
+table (0/1/2/3) and the required action for each to `docs/AGENT_WORKFLOW.md`'s CI-verification
+section and reference it from `CONVENTIONS_PATCH.md` Rule A's Verification block, which currently
+documents only 0/1/2; (4) `grep -L "gh-pr-checks-verified" .claude/agents/*.md` returns only files
+with a justified-in-writing exemption.
+
+cross_ref: [RETRO-246 §3 HW-2, §4a LG-2, §5b, §5c; FOLLOW-813 (PR #675 commit `8e91e4e3`);
+`CONVENTIONS_PATCH.md` Rule S (`:1068`, bullet `:1098`), Rule A; `.claude/agents/*.md`;
+`docs/AGENT_WORKFLOW.md:162-200`]
+
+---
+
+## FOLLOW-829 — `docs/CONVENTIONS_PATCH.md` still mandates the broken `--watch` two-step, and the pre-existing-red gate set silently went 3 → 1
+
+source_retro: RETRO-246 (§3 HW-1 / §4a LG-3 / §4d DG-1) source_ticket: FOLLOW-813
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**The last live mandate of the command FOLLOW-813 retired.** `docs/CONVENTIONS_PATCH.md:36-46` — a
+second, older "Conventions — UPDATE PATCH (Paczka 2)" file, untouched since `febc5041` (PR #3) —
+still instructs `gh pr checks <pr-number> --watch` followed by the exact
+`jq '[.[] | select(.state != "SUCCESS")] | length'` two-step the root `CONVENTIONS_PATCH.md`
+deleted. Its own preamble says _"leave both files; agents read both"_, and three sprint tickets name
+it as required reading (`backlog/sprint-0/TICKET-002.md:21`, `sprint-7/TICKET-ADP-001.md:22`,
+`TICKET-ADP-003.md:23`). PR #675's commit `8e91e4e3` claims "no residual mandate remains anywhere,
+verified by grep" — that claim is false by exactly this file.
+
+**Second, coupled item (Rule AI tier 3, deliberately not given its own number).** The same PR
+narrowed the documented pre-existing-red gate set from three to one:
+`docs/AGENT_WORKFLOW.md:190-192` now says _"that list has exactly one entry, `Rule I`"_, where
+FOLLOW-813's own AC(3) named _"Rule I's 192-violation baseline, Vercel, Python-test"_. The narrowing
+is well-evidenced and fail-closed, but the artefacts still asserting three were not updated: memory
+`project_ci_gate_landscape` (PM-owned, out-of-repo — the retro cannot write it),
+`.claude/agents/pm-orchestrator/lessons.md:101,:188,:1262`,
+`.claude/agents/backend-engineer/lessons.md:343`, `.claude/agents/data-engineer/lessons.md:263`.
+
+**AC:** (1) decide the fate of `docs/CONVENTIONS_PATCH.md` — merge its still-valid content into
+`docs/CONVENTIONS.md` and delete the file, or reduce it to a one-line pointer at the root
+`CONVENTIONS_PATCH.md`; do NOT leave two files disagreeing about the merge gate; (2) whichever is
+chosen, `grep -rn "gh pr checks .*--watch" --include="*.md" .` must return only negative warnings,
+historical `lessons.md` records and closed sprint tickets; (3) update the PM memory
+`project_ci_gate_landscape` (operator step — flag it to Piotr, an agent cannot write it) and append
+a dated correction to the three `lessons.md` files that reason from a three-gate set; (4) do NOT
+rewrite the closed sprint-ticket DoD lines — RETRO-246 §4d DG-2 established there is no re-injection
+path (`docs/TICKET_FORMAT.md:87` is generic), and churning 20 closed tickets is noise.
+
+cross_ref: [RETRO-246 §3 HW-1, §4a LG-3, §4d DG-1; FOLLOW-813 (PR #675, commit `8e91e4e3`'s residual
+grep claim); `docs/CONVENTIONS_PATCH.md:36-46`; `docs/AGENT_WORKFLOW.md:190-192`;
+`CONVENTIONS_PATCH.md` Rule A, Rule AI; memory `project_ci_gate_landscape`]
+
+---
+
+## FOLLOW-830 — The repo's new merge gate has no self-test, and reports "all checks green" on any host without PCRE grep
+
+source_retro: RETRO-246 (§4b CB-1 / §4c TG-1 / §2 / §5d) source_ticket: FOLLOW-813
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 5
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**The fail-OPEN path.** `scripts/gh-pr-checks-verified.sh:170-173` builds the failure list with
+`grep -oP` inside `mapfile … < <(…)`. `-P` is a GNU extension — absent on macOS/BSD grep and on
+busybox. The script runs `set -uo pipefail` **without `-e`** (`:65`), so the failed `grep` leaves
+`failure_names` a valid EMPTY array; `:175` then prints `failing: 0` and `:178-180` prints
+`RESULT: all checks green. Safe to mark READY_FOR_REVIEW.` and **exits 0** while checks are failing.
+That is the exact defect class FOLLOW-813 exists to eliminate, reintroduced as a portability
+assumption. (The bash-3.2 axis fails CLOSED by accident — `mapfile` is a bash-4 builtin, so
+`${#failure_names[@]}` trips `set -u` — which is why the PCRE axis is the one that matters.)
+
+**The reason it shipped: nothing tests this script.** Zero tests, no `--self-test`, no
+`scripts/__tests__/` entry — for the file that now gates every merge in the repo. Two in-repo
+precedents exist: `.github/workflows/ci.yml:692` runs
+`bash scripts/check-sentry-init-singleton.sh --self-test`, and
+`scripts/__tests__/check-{k2-consumer-swallow,staff-write-atomicity}.test.sh` are `100755`
+harnesses. Both defects PR #675 shipped (this one and the mode bit) are mechanically detectable in
+three lines of shell.
+
+**AC:** (1) a preflight at the top of the script that verifies its own hard dependencies — PCRE grep
+(`echo x | grep -qP x`), bash ≥ 4 (`mapfile`), `gh`, `gh auth status` — and exits **3** with a named
+message if any is missing; never proceed on a degraded matcher; (2) a `--self-test` mode with
+**synthesized** fixtures (Rule AM — do NOT drive it off a live PR's check state) covering at
+minimum: all-green → 0; one unclassified failure → 1; `Rule I` with `pr == main` → 0; `Rule I` with
+`pr > main` → 1; **`Rule I` equal counts, different symbol sets → 1** (the FOLLOW-827 case, so the
+two tickets are pinned by one fixture); zero checks registered → 2 not 0; (3) wire `--self-test`
+into `ci.yml` as a real blocking gate next to the sentry-singleton self-test; (4) the self-test
+asserts the script is mode `755` (this is the cheap half of FOLLOW-831 and belongs to whichever
+lands first); (5) if a dependency cannot be preflighted, the script must fail closed, never print a
+green verdict.
+
+cross_ref: [RETRO-246 §2, §4b CB-1, §4c TG-1, §5d; FOLLOW-813; FOLLOW-827 (shares the equal-count
+fixture); `scripts/gh-pr-checks-verified.sh:65,:170-181`; `.github/workflows/ci.yml:692`;
+`scripts/__tests__/check-k2-consumer-swallow.test.sh`; `CONVENTIONS_PATCH.md` Rule AM, Rule AP]
+
+---
+
+## FOLLOW-831 — A doc-mandated bare invocation of a non-executable script: `check-rule-i.sh` is 100644 and four handoffs tell workers to run it bare
+
+source_retro: RETRO-246 (§4b CB-2 / §6 P-31) source_ticket: FOLLOW-813 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**The class.** PR #675 shipped `scripts/gh-pr-checks-verified.sh` at `100644` while every doc it
+wrote mandates the bare, no-`bash`-prefix invocation — "Permission denied" for any caller following
+the new instruction literally. Fixed in `c9a765ae` during PM validation, and masked until then
+because every live test run used `bash scripts/…`, which ignores the mode. **The same defect is
+still live elsewhere:** `scripts/check-rule-i.sh` is `100644`
+(`git ls-files -s scripts/check-rule-i.sh`; `test -x` → false) while `backlog/HANDOFFS.md` tells
+workers to run it bare at four separate delegation briefs — `:4011` (_"Run `scripts/check-rule-i.sh`
+and confirm you did NOT add violations"_), `:4041`, `:4111`, `:4169`. `ci.yml:135` and
+`CONVENTIONS_PATCH.md:390` both use `bash scripts/check-rule-i.sh`, which is why CI has never
+noticed and why the defect survives. A worker following its handoff literally gets
+`Permission denied` and then either silently switches to `bash …` or skips the check — and skipping
+it is how a Rule I regression reaches a PR.
+
+**Currently `100644` under `scripts/`:** `check-compliance-docs.sh`,
+`check-redis-smoke-trigger-trust.sh`, `check-rule-i.sh`, `check-sentry-init-singleton.sh` (plus
+`lib/clean-python-source.sh` and `lib/suppression-baseline.sh`, which are `source`d and correctly
+non-executable — the gate must not flag those).
+
+**AC:** (1) `chmod +x scripts/check-rule-i.sh` and any other script a doc mandates bare; (2) a
+mechanical gate (extend an existing grep-lint rather than adding a new workflow job): for every
+`scripts/**/*.sh` referenced in any tracked `*.md` **without** a `bash `/`sh `/`source `/`. `
+prefix, assert mode `755`; (3) the gate must NOT require the exec bit on files only ever referenced
+with an interpreter prefix or only `source`d — the failure must name the doc line that mandates the
+bare invocation, so the fix can be either `chmod` or a doc edit; (4) a self-test fixture pair (one
+bare mandate + 644 → fail; one `bash`-prefixed + 644 → pass), synthesized, per Rule AM.
+
+**Pattern status:** RETRO-246 §6 minted this as **P-31 at count 1** and did NOT promote a rule (the
+instance above is materially strengthening but same-retro, so it does not inflate the count). If a
+future retro sees it again, the preferred home is a **Rule AH amendment** ("an operator instruction
+that cannot be invoked as written — including for want of a permission bit — is non-executable at
+its own merge commit"), not a new letter.
+
+cross_ref: [RETRO-246 §4b CB-2, §6 P-31; FOLLOW-813 (PR #675 commit `c9a765ae`);
+`backlog/HANDOFFS.md:4011,:4041,:4111,:4169`; `scripts/check-rule-i.sh`;
+`.github/workflows/ci.yml:135`; `CONVENTIONS_PATCH.md:390`, Rule AH, Rule AM]
+
+---
+
+<!-- next free FOLLOW number: 832 (FOLLOW-827..831 filed 2026-08-05 by RETRO-246, the post-merge retro for PR #675 / FOLLOW-813 — the replacement for the false-green `gh pr checks --watch` gate. 827 = P1 the new gate classifies Rule I by COUNT (`gh-pr-checks-verified.sh:216`), which FOLLOW-821's own AC(1) forbids by name, so a compensating-violation swap still exits 0 — the false green moved one hop, watcher -> classifier; the script's `:49-50` claim that it "does not contradict FOLLOW-821" is false. 828 = P2 five of nine agent definitions (sdk/qa/**devops**/compliance/architect) have no CI-verification step at all — PR #675 fixed the four that contained the broken string, not the symmetric set (Rule S); plus no consumer distinguishes exit 2 (timeout, 900s default) from exit 1. 829 = P2 `docs/CONVENTIONS_PATCH.md:36-46` is the last LIVE mandate of the retired `--watch` + jq two-step (the PR's own "no residual mandate" grep claim is false by one file), bundled with the un-propagated narrowing of the documented pre-existing-red gate set 3 -> 1 (Rule AI tier 3; memory `project_ci_gate_landscape` + 3 lessons.md files still reason from three). 830 = P1 the gate has NO self-test and fails OPEN on any host without PCRE grep (`:170-173` `grep -oP` inside `mapfile` + `set -uo pipefail` without `-e` -> empty failure list -> "all checks green", exit 0). 831 = P2 the mode-bit class has a second live instance: `scripts/check-rule-i.sh` is 100644 while `backlog/HANDOFFS.md:4011/:4041/:4111/:4169` mandates bare invocation. NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-821 (its AC(1) now also has to REPLACE the shipped count comparison, not merely add a CI job — carried in 827's scope + `blocks:`), FOLLOW-772 (MASTER_DESIGN:576 says 42 rules, actual 43 — the line self-declares its counts derived), FOLLOW-806 (the retro loop still has no mechanical self-closure check; this retro ran only because the PM dispatched it in the same turn). NO new CONVENTIONS_PATCH rule promoted — Rule AI AMENDED instead, see RETRO-246 §6. -->
 <!-- next free FOLLOW number: 827 (FOLLOW-814..826 filed 2026-08-04 by the main-loop session as the engineering plan for the Phased Code Audit of 2026-08-04, HEAD `a5295ae3`, under the CEO framing that the current stage is localhost-first testing rather than a production pilot. Four tracks: LEGAL 814/815 (+updates to 671/706) run immediately and do NOT wait on the stage decision; LOCAL 816/817/818/819 (+updates to 560) validate the whole differentiating loop on localhost/staging; PROD-GATE 820 converts ESC-020 into an explicit exit gate; HYGIENE 821..826 (+updates to 469/565/809) follow. NOT re-filed, recorded against existing stubs instead (Rule AN): audit F-04 -> FOLLOW-671, F-10 -> FOLLOW-560, F-12 -> FOLLOW-809, F-15 -> FOLLOW-469, F-07 -> FOLLOW-565, F-01 prod-count -> FOLLOW-706 AC-1, and the consent implementation legs -> FOLLOW-704/710/711, all three annotated as discharged by FOLLOW-815 rather than duplicated. FOLLOW-707 was checked and is already DONE (PR #634), so it is NOT a leg of 815. FOLLOW-665 promoted unchanged because the newly-P0 FOLLOW-671 depends on it.)
 <!-- (superseded) next free FOLLOW number: 814 (FOLLOW-813 filed 2026-08-04 by the main-loop session — the
 `gh pr checks --watch` false-green in the mandated CI gate).

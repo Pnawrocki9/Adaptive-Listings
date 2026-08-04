@@ -10,16 +10,36 @@
 > `compliance-engineer/FOLLOW-812-modal-stdout-chat-leak`, isolated in worktree
 > `.claude/worktrees/follow-812`, log `…/1ff58548-…/scratchpad/follow-812.log`.
 >
-> **Why the check failed, because the mechanism matters more than the mistake.** The `ps` sweep ran
-> at ~01:28:36 and the dispatch happened at 01:28:56 — the verification was accurate at the instant
-> it ran and stale twenty seconds later. **A point-in-time `ps` is not proof that no agent is
-> running; it is proof that none was running at that instant.** This is the same class as the
-> session-85 "detached child outliving the parent PID" incident: a PM process this session had
-> already received a completion notification for went on to commit `f4f03b02` and `a1d502e9` to
-> `main` and to dispatch a worker. **Before asserting "no agent is running", re-check immediately
-> before the claim is committed, and prefer a durable signal (branch existence, worktree existence,
-> scratchpad log) over a process snapshot** — all three of those would have caught this and the `ps`
-> did not.
+> **Why the check failed — and a second retraction, because the first explanation was also wrong.**
+> Two independent defects in the verification, not one:
+>
+> 1. **Staleness.** The `ps` sweep ran at ~01:28:36; the dispatch happened at 01:28:56. Accurate
+>    when it ran, stale twenty seconds later. A point-in-time `ps` proves nothing was running _at
+>    that instant_, not that nothing is running.
+> 2. **The grep was blind to the PM by construction — this is the bigger one.**
+>    `grep 'claude --agent'` only ever matches workers the PM launches via `nohup claude --agent …`.
+>    **The pm-orchestrator itself does not run that way** — it is an Agent-tool subagent inside the
+>    main session's own process tree, so it can never appear in that grep no matter when it runs.
+>    The sweep returned "no agents" while the PM was mid-flight and had ~25 minutes of work left.
+>
+> **An earlier revision of this note blamed the session-85 "detached child outliving the parent PID"
+> mechanism. That attribution is retracted too** — it was pattern-matching to a known incident
+> instead of checking. Nothing detached and nothing outlived anything: the PM was simply still
+> running, its completion notification having fired at a pause while a `nohup`'d retro it was
+> waiting on was in flight. `ps -eo pid,cmd | grep -c '[c]laude'` returned **6** at the time the
+> sweep reported "none".
+>
+> **Rule for the next session: never assert "no agent is running" from a `claude --agent` grep.** It
+> is structurally incapable of seeing an Agent-tool subagent. Use durable signals — branch
+> existence, `git worktree list`, scratchpad log, `git log` on `main` — and re-check immediately
+> before committing the claim. All four would have caught this; the process snapshot could not.
+>
+> **Mutual-observation footnote, worth knowing when two orchestrator-level actors touch one repo:**
+> this session and the PM each independently logged the other as an unexplained actor committing to
+> `main`. The PM's own summary describes "a concurrent session"; this block described a rogue
+> process. Both were describing normal, attributable work by the other. No state was lost or
+> conflicted — but the ambiguity cost real time, and it is the reason the worktree isolation the PM
+> adopted this session (one per dispatched agent) is worth keeping.
 >
 > **Also corrected:** RETRO-246's content was briefly duplicated — committed on
 > `retrospective-analyst/RETRO-246-follow-813-retro` (`8ab98053`) AND cherry-picked `-n` into

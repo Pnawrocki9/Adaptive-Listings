@@ -1,6 +1,97 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 98 (2026-08-04) — session-97 recovered from a terminal close, FOLLOW-782 shipped to PR #668, FOLLOW-809 filed, admin.estalara.com surface audited (14 stubs re-verified in code)
+## ▶️ START HERE — session 99 (2026-08-04) — Phased Code Audit plan landed as Sprint 24; CEO reframed the stage as localhost-first; 13 tickets filed, 10 existing tickets reconciled rather than duplicated
+
+**This session wrote no feature code.** It converted the 2026-08-04 Phased Code Audit (HEAD
+`a5295ae3`, verdict 🔴 RED) into an executable plan: **`Sprint 24` at the bottom of this file**,
+tickets **FOLLOW-814…826**, plus in-place corrections to ten tickets that already covered audit
+findings.
+
+### The framing change is the most important thing in this session — read it before the tickets
+
+The audit marked hop 1 of the critical path **dead** (a live `curl` of the pilot listing page
+returns zero `data-estalara` attributes and no SDK `<script>`) and read ESC-020's 60-day age as an
+overdue deploy. **The CEO corrected that reading: the current stage is localhost-first testing, not
+a production pilot.** ESC-020's own Resolution block already records the 2026-06-10 ruling — _"all
+verification must pass on localhost BEFORE Rafał deploys to production."_ The SDK's absence from
+prod is a deliberate stage decision.
+
+So the audit's must-fix list was restructured into four tracks rather than executed as written:
+
+| Track         | What it is                                                   | Waits for the stage decision? |
+| ------------- | ------------------------------------------------------------ | ----------------------------- |
+| **LEGAL**     | Consent defects + white-label attribution                    | **No** — runs immediately     |
+| **LOCAL**     | Validate the whole differentiating loop on localhost/staging | Is the stage                  |
+| **PROD-GATE** | ESC-020 as an explicit exit gate with a checklist            | Is the exit                   |
+| **HYGIENE**   | Gate quality + cleanup                                       | No, but sequenced after       |
+
+**Track LEGAL does not get the localhost defence and that is the one thing not to soften.** The
+registration consent endpoint is live in prod and has been the documented go-live flow since
+2026-06-21. Nothing about running the _adaptation_ layer on localhost changes that, and §H.8 makes
+Adaptive-Listings the legal owner of the consent umbrella for the entire Estalara platform.
+
+### Reconciled, not duplicated (Rule AN — no new number where one already exists)
+
+Ten existing tickets already covered audit findings and were **updated in place**:
+
+| Existing               | Change                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-706**         | P1→**P0**; **AC-1 carved out as a dependency-free operator leg** — a read-only `count(*)` was being held behind an expensive fix |
+| **FOLLOW-671**         | P2→**P0** (audit F-04). Evidence unchanged; the **clock** changed — 3 external brands in 2-4 weeks                               |
+| **FOLLOW-665**         | Promoted unchanged — FOLLOW-671 `depends_on` it, and a P0 behind an unpromoted P1 is the exact defect that stalled 560           |
+| **FOLLOW-560**         | P2→**P1**; **`depends_on: [FOLLOW-553]` REMOVED**; line refs corrected against HEAD                                              |
+| **FOLLOW-565**         | `depends_on` re-pointed FOLLOW-553 → **FOLLOW-819**                                                                              |
+| **FOLLOW-469**         | P3→**P2**; the "39.86KB" in its own `source` corrected to a **measured 41.86KB / 142 bytes of headroom**                         |
+| **FOLLOW-809**         | **UNFROZEN** — joins 811/812/813 on the same gate-quality reasoning                                                              |
+| **FOLLOW-704/710/711** | Annotated as **discharged by FOLLOW-815** (one text change, one TOS bump). Not superseded, not renumbered                        |
+
+**Two dependency chains were unblocked by removing deps that were never really about their target.**
+FOLLOW-560 was blocked on FOLLOW-553 only so its ClickHouse migration could ride 553's prod
+attestation flow — which coupled a telemetry ticket to a prod deploy. Under the localhost-first
+stage the migration applies to staging first. Session 29 flagged 560 as dependency-ineligible and it
+has sat that way since 2026-07-14. Same shape for FOLLOW-565, whose real dependency was "first real
+starvation data", now FOLLOW-819.
+
+### Three corrections found while writing this plan — verified, not assumed
+
+1. **`FOLLOW-707` is already DONE** (PR #634, `6958a3c1`, 2026-07-28). The planning payload listed
+   it as an open leg of the consent bundle. It is not, and it is **not** a leg of FOLLOW-815. Its
+   close note carries the fact that matters most to FOLLOW-706's count: prod has one tenant on the
+   FALLBACK identity, so #634 changed the behaviour of **zero** live requests — **every live consent
+   record still carries the placeholder.**
+2. **`CANONICAL_CONSENT_TEXT_HASH` is at `lib.ts:86`, not `:51-52`.** The payload, FOLLOW-704's
+   stub, and an in-code citation at `route.ts:564` all say `:51`. All three are stale; correcting
+   the in-code one is now a Rule Y item inside FOLLOW-815.
+3. **`FOLLOW-560`'s cited lines `:597-623,1470-1482` had drifted.** At HEAD, `affinityScore()` is
+   `:585-609`, `buildReorderDirective()` is `:626-648`, and the POST call site is `:1522-1552`. The
+   old refs now point at the cosine call and the bandit block respectively.
+
+### Sequencing (from the plan, unchanged)
+
+- **Week 1, parallel, different owners, no cross-deps:** FOLLOW-813 · FOLLOW-706 AC-1 · FOLLOW-665 →
+  FOLLOW-671 · FOLLOW-816 · FOLLOW-817 · FOLLOW-560. **FOLLOW-814 ruling requested immediately.**
+- **Week 2:** FOLLOW-815 (once 814 lands) · FOLLOW-818 · FOLLOW-819. White-label cluster
+  (671/667/711/668) rides with 815/671 on the external clock. FOLLOW-809 unfrozen alongside.
+- **Week 3:** FOLLOW-820 go/no-go. On GO: prod deploy + FOLLOW-212 calibration starts. FOLLOW-822 +
+  FOLLOW-469.
+- **Week 4:** FOLLOW-565 wave 1 · FOLLOW-821 quarantine start · FOLLOW-471 clean re-audit gate.
+  FOLLOW-823/824/825/826 as capacity allows.
+- **Standing:** FOLLOW-811 / FOLLOW-812 continue at their existing queue position.
+
+### Open for the CEO
+
+Two decision tickets block their dependents and cannot be delegated: **FOLLOW-814** (consent bundle,
+P0 — blocks FOLLOW-815, which blocks FOLLOW-820, which blocks the prod deploy) and **FOLLOW-820**
+(the gate itself). A third, **FOLLOW-824**, is a one-line ruling that unblocks an hour of cleanup.
+
+The load-bearing ordering constraint, stated once so it is not lost: **FOLLOW-820 requires
+FOLLOW-815 shipped. Do not put the SDK on a page whose consent layer is defective** — hop 1 going
+live is precisely when behavioral profiling starts on real subjects under a disclosure that is
+currently defective in two ways.
+
+---
+
+## ▶️ (superseded) START HERE — session 98 (2026-08-04) — session-97 recovered from a terminal close, FOLLOW-782 shipped to PR #668, FOLLOW-809 filed, admin.estalara.com surface audited (14 stubs re-verified in code)
 
 **Recovery.** Session 97 died to a terminal close with FOLLOW-782 fully implemented but
 **uncommitted** in the working tree (3 files, +265/−40). No agent was running, no
@@ -17522,18 +17613,32 @@ gate) closes the epic and must be last.
     Recover SDK bundle headroom below the 42KB gzip budget (F-19)
   agent: sdk-engineer
   status: READY
-  priority: P3
+  priority: P2 # raised P3→P2 2026-08-04 (audit plan, Track HYGIENE H5): the headroom is now a trip-wire, not a budget — see the corrected measurement below. FOLLOW-815's consent text change and FOLLOW-671's white-label state both add bytes to this bundle.
   estimated_hours: 4
   depends_on: []
   source: >-
-    2026-07-01 audit F-19 — estalara-sdk.iife.js is 39.86KB gzip vs the raised 42KB budget (~95%,
-    near-zero headroom).
-  spec: MASTER_DESIGN §B.2 (bundle budget, raised to 42KB ESC-028); audit report §5.4 F-19
+    2026-07-01 audit F-19 — the "39.86KB gzip" figure in this line is STALE and was already wrong
+    when FOLLOW-673 was filed. CORRECTED 2026-08-04 by direct measurement of
+    packages/sdk/dist/estalara-sdk.iife.js at HEAD a5295ae3 (`gzip -c | wc -c`): 42,866 bytes =
+    41.86KB gzip against the 43,008-byte (42KB) ceiling in
+    packages/sdk/scripts/check-bundle-size.js:16 — 142 bytes of headroom, 99.7% of budget. THREE
+    different numbers are on record (39.86KB in MASTER_DESIGN §Snapshot.1 row B.2, 41.31KB in
+    FOLLOW-673, 41.88KB combined in FOLLOW-807); reconciling them is FOLLOW-673's job, not this
+    ticket's, but no one should plan against the 39.86 figure.
+  spec:
+    MASTER_DESIGN §B.2 (bundle budget, raised to 42KB ESC-028); audit report §5.4 F-19; audit
+    2026-08-04 F-15
   notes: |
+    The gate IS wired (ci.yml:227 runs `pnpm --filter=@estalara/sdk build:check`), so this fails
+    CLOSED — the risk is not a silent overrun, it is that the next string added to the SDK turns CI
+    red and blocks every SDK merge until someone does this work under pressure. Do it first instead.
     AC:
     - [ ] Bundle gzip drops below ~90% of budget via code-split/lazy-load of quiz/chat/micro-poll
-          or dead-code removal (compose with F-12).
+          or dead-code removal (compose with F-12). The auto-detect pipeline is already split out
+          (tsup.config.ts:5, ~17KB) — quiz tree and consent strings are the next candidates.
     - [ ] CI bundle-size gate stays green with restored headroom.
+    - [ ] Coordinate with FOLLOW-807 (parallel-worktree budget breach): the combined figure, not
+          the per-branch figure, is the one that must clear.
 - id: FOLLOW-470
   title: >-
     Refresh stale status docs: Master_Design §Snapshot.1 + README + CLAUDE.md; promote orphaned
@@ -19064,21 +19169,26 @@ in-place in Sprint 22b above.
     - [x] (a-docs) record ruling in gate module doc + ROPA/DPIA if posture changes (Rule N).
 - id: FOLLOW-560
   title: >-
-    Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09)
+    Structured cosine-vs-djb2 scoring-path telemetry on /api/adapt (A3-F-09) [audit 2026-08-04 F-10]
   agent: data-engineer
   status: READY
-  priority: P2
+  priority: P1 # raised P2→P1 2026-08-04 (audit plan, Track LOCAL LOC4): this is the instrument FOLLOW-819's differentiator E2E reads to tell real ranking from a stable hash shuffle. Unusable output without it.
   estimated_hours: 3
-  depends_on: [FOLLOW-553]
+  depends_on: [] # was [FOLLOW-553] — DEPENDENCY REMOVED 2026-08-04. Rationale: the dep existed so the CH migration could ride FOLLOW-553's prod attestation flow, which coupled a telemetry ticket to a PROD deploy. Under the localhost-first stage the migration applies to STAGING first (FOLLOW-816/818 environment) and the prod apply rides FOLLOW-820. This unblocks a ticket the queue has carried as dependency-ineligible since 2026-07-14 (session 29 flagged it explicitly).
   source: >-
-    2026-07-11 audit A3-F-09 — adapt/route.ts:597-623,1470-1482 logs cosine/djb2 fallback only via
-    console.debug/warn; no structured metric. In prod today 100% of reorders are djb2 and nobody can
-    see it; after FOLLOW-553 seeds embeddings, nobody can PROVE cosine went live.
+    2026-07-11 audit A3-F-09 + 2026-08-04 audit F-10 — the cosine/djb2 fallback is visible only via
+    console.debug. LINE REFS CORRECTED 2026-08-04 against HEAD a5295ae3 (the A3 refs had drifted):
+    affinityScore() is at adapt/route.ts:585-609 with the silent djb2 fallback at :604-609;
+    buildReorderDirective() at :626-648; the POST call site with the embedding load at :1522-1552
+    (the old ":597-623,1470-1482" now points at the cosine call and the bandit block respectively).
+    In prod today 100% of reorders are djb2 and nobody can see it; once embeddings are seeded,
+    nobody can PROVE cosine went live.
   notes: |
     Model-fit: sonnet. Preferred: add scoring_path LowCardinality(String) to
-    adaptation_decisions via CH migration 0021 — Rules W (prod sort-key check) + M (no auto-apply;
-    the migration rides the FOLLOW-553-established attestation flow, hence depends_on) + extend
-    the migration-contract test. Fallback if migration friction: OTel counter only.
+    adaptation_decisions via CH migration 0021 — Rules W (prod sort-key check) + M (no auto-apply)
+    + extend the migration-contract test. Apply to STAGING under this ticket; the prod apply is a
+    FOLLOW-820 gate item and rides FOLLOW-822's drift check once that lands. Fallback if migration
+    friction: OTel counter only.
     AC:
     - [ ] Every adapt decision records scoring_path ∈ {cosine, djb2_fallback, djb2_guard} in
           adaptation_decisions (or an OTel metric if CEO defers the migration).
@@ -19204,8 +19314,12 @@ in-place in Sprint 22b above.
   status: BLOCKED
   priority: P2
   estimated_hours: 10
-  depends_on: [FOLLOW-553]
+  depends_on: [FOLLOW-819] # was [FOLLOW-553] — RE-POINTED 2026-08-04 (audit plan, Track HYGIENE H6). The dep was never about FOLLOW-553 itself; the notes below say it plainly: "pick the 4-6 types using the FIRST real per-archetype lift/starvation data, not intuition (verify-not-guess)". Under the localhost-first stage FOLLOW-819 (differentiator E2E) is what first produces that data, so the dep moves there and the ticket stops waiting on a prod deploy it never needed. The audit's suggested types (photo.opened, price.hovered, listing.compared, chat.opened) are CANDIDATE INPUT to that selection, NOT a locked list — adopting them up front would be exactly the intuition this ticket's own notes forbid.
   source: >-
+    2026-07-11 audit A3-F-07 + 2026-08-04 audit F-07 (re-confirmed at HEAD a5295ae3: the SDK emits
+    ~29 of 53 declared types; price.compared carries a full SIGNAL_LIKELIHOODS vector at
+    intent.ts:400 and a consent classification at apps/ingest/src/consent-gate.ts:105 with NO SDK
+    producer anywhere — a Rule H orphan in the opposite direction to the rest of this ticket).
     2026-07-11 audit A3-F-07 — 25 of 52 event types are schema-only (incl. photo.opened,
     chat.opened, price.hovered, mouse.exit_intent, search.query); 8 of 18 archetypes are
     quiz/chat-only per §D.6 while chat is shadow+undeployed → behavioral-only discrimination rests
@@ -19957,4 +20071,540 @@ in-place in Sprint 22b above.
     - [ ] No existing route behavior changes until routes opt in (helper + tests only).
     - [ ] Typecheck clean + all existing `session-auth` tests unchanged and still passing.
   cross_ref: [ADR-0018, FOLLOW-456, FOLLOW-555, RETRO-186]
+```
+
+## Sprint 24 — Phased Code Audit 2026-08-04 Remediation (OPEN)
+
+**Source:** Phased Code Audit, 2026-08-04 (CEO-commissioned, 6 phases: plan absorption → status
+reconciliation → system map → known-traps → plan-vs-reality → verdict) against HEAD `a5295ae3`.
+Verdict 🔴 RED **on live state and regulatory exposure, explicitly NOT on architecture** — the audit
+found the foundation sound and worth finishing (anti-hallucination guards real, analytics fail loud,
+adapt INSERT fully parameterised, tenant identity taken from the token never the body, Rule H gate
+passing clean) and concentrated its Criticals in two places: the product has never been switched on,
+and the consent layer AL legally owns is defective against real registrations. Finding IDs `F-NN`
+below are LOCAL to the 2026-08-04 audit, NOT the 2026-07-01 F-01…F-21 set nor the 2026-07-11
+`A3-F-NN` set.
+
+### ⚖️ CEO FRAMING 2026-08-04 — the current stage is localhost-first testing, not a production pilot
+
+**Read this before reading any ticket below, because it changes what the audit's findings mean.**
+The audit marked hop 1 of the critical path **dead** — a live `curl` of the pilot listing page
+returns zero `data-estalara` attributes and no SDK `<script>` tag — and read ESC-020's 60-day age as
+an overdue deploy. **That reading is wrong.** ESC-020's own Resolution block records the CEO ruling
+of 2026-06-10: _"all verification must pass on localhost BEFORE Rafał deploys to production."_ The
+absence of the SDK from `app.estalara.com` is a **deliberate stage decision**, not a defect.
+
+Three consequences, and they are the reason this sprint has the shape it does:
+
+1. Every audit finding downstream of hop 1 should be read as **"unvalidated"**, not "broken". The
+   bandit being frozen, the reorder falling back to djb2, the classifier constants being
+   uncalibrated — none of these are surprising in a system that has not been switched on. They are
+   the work of Track LOCAL.
+2. **The consent findings are the exception and do not get this defence.** The registration endpoint
+   is live in prod and has been the documented go-live flow since 2026-06-21. Nothing about running
+   the _adaptation_ layer on localhost changes that. Track LEGAL runs immediately and independently.
+3. ESC-020 becomes an explicit **exit gate** with a checklist (FOLLOW-820) instead of an open
+   escalation that every audit re-files as drift. Three consecutive audits (2026-07-11 A3-F-01,
+   2026-07-12, 2026-08-04 F-01) have now flagged it as overdue; making the hold legible stops that.
+
+### Track structure
+
+- **Track LEGAL — runs NOW, independent of the stage decision.** FOLLOW-706 (AC-1 count) →
+  FOLLOW-814 (CEO/DPO ruling) → FOLLOW-815 (one text change, one TOS bump). In parallel: FOLLOW-665
+  → FOLLOW-671 (white-label attribution; external clock — 3 brands, 2-4 weeks).
+- **Track LOCAL — validate the whole differentiating loop on localhost/staging.** FOLLOW-816 (local
+  pilot env) + FOLLOW-817 (Modal deploys) + FOLLOW-560 (scoring telemetry) run in parallel; then
+  FOLLOW-818 (staging feedback); then FOLLOW-819 (differentiator E2E) as the stage exit test.
+- **Track PROD-GATE — the deliberate exit.** FOLLOW-820, gated on FOLLOW-819 green AND FOLLOW-815
+  shipped.
+- **Track HYGIENE — gate quality and cleanup.** FOLLOW-813 stays at the head; then FOLLOW-809,
+  FOLLOW-821, FOLLOW-822, FOLLOW-469, FOLLOW-565, FOLLOW-823, FOLLOW-824, FOLLOW-825, FOLLOW-826.
+
+**Audit-finding → ticket map (complete).** F-01 (hop 1 / prod count) → FOLLOW-706 AC-1 + FOLLOW-820;
+F-01/F-02/F-03 (consent) → FOLLOW-814 (ruling) + FOLLOW-815 (impl), discharging FOLLOW-704 /
+FOLLOW-710 / FOLLOW-711; F-04 → FOLLOW-671 (+ FOLLOW-665); F-05 → FOLLOW-811 (already queued); F-06
+→ FOLLOW-817; F-07 → FOLLOW-565; F-08 → FOLLOW-824; F-09 → FOLLOW-822; F-10 → FOLLOW-560; F-11 →
+FOLLOW-821; F-12 → FOLLOW-809 (unfrozen); F-13 → FOLLOW-818 (staging) + FOLLOW-450 (prod, via
+FOLLOW-820); F-14 → FOLLOW-826; F-15 → FOLLOW-469; F-16 → FOLLOW-212 (starts after FOLLOW-820); F-17
+→ FOLLOW-823. §7.4 stale-artifact sweep → FOLLOW-825.
+
+**Tickets NOT re-filed** (Rule AN — recorded against existing numbers instead of minting new ones):
+FOLLOW-671, FOLLOW-560, FOLLOW-809, FOLLOW-469, FOLLOW-565, FOLLOW-706, FOLLOW-704, FOLLOW-710,
+FOLLOW-711, FOLLOW-665. **FOLLOW-707 was checked and is already DONE** (PR #634, `6958a3c1`,
+2026-07-28) — the planning payload listed it as open; it is not, and it is therefore NOT a leg of
+FOLLOW-815.
+
+```yaml
+# ── Track LEGAL ────────────────────────────────────────────────────────────────
+- id: FOLLOW-706
+  title: >-
+    AC-1 ONLY — count prod consent_records carrying the placeholder hash (audit F-01)
+  agent: OPERATOR (Piotr; compliance-engineer records the result)
+  status: READY_OPERATOR
+  priority: P0 # raised P1→P0 2026-08-04
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-01 / ESC-044 item 1 — CANONICAL_CONSENT_TEXT_HASH (lib.ts:86, NOT the :51-52
+    the stub cites) is a hand-typed hex sequence, not a digest of any text; route.ts:722 defaults to
+    it when the caller omits consent_text_hash, and HANDOFFS.md:2842 instructs the only caller to
+    omit it. GDPR Art. 7(1) requires demonstrating consent to a SPECIFIC text.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-706; ESC-044 required-action item 1
+  notes: |
+    NOT delegable to a worker agent — requires prod DB access. This is AC-1 of FOLLOW-706 carved out
+    as an independent leg; AC-2..5 (the remediation) stay on the parent stub and depend on
+    FOLLOW-814. Rule AA: the code axis and the prod-data axis close separately.
+    ESC-044 item 1, verbatim: "Do not assume live exposure or its absence; the number needs to be
+    pulled before scoping remediation" — with the ESC-037 precedent where an assumed-live gap turned
+    out to be zero. Counter-evidence now on record: FOLLOW-707's close note says prod has ONE tenant
+    on the FALLBACK identity and PR #634 changed the behaviour of zero live requests, i.e. every
+    live record still carries the placeholder. Likely non-zero — which is why it must be a number.
+    AC:
+    - [ ] `select count(*), consent_type, tos_version from consent_records where consent_text_hash =
+          'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' group by 2,3` run
+          against PROD; raw output pasted into the ticket close note (not summarised).
+    - [ ] Date range of affected rows recorded.
+    - [ ] Run BEFORE any PLATFORM_REGISTRATION_TOS_VERSION bump (ESC-044 item 7 — the bump moves
+          the population being counted).
+- id: FOLLOW-814
+  title: >-
+    ⚖️ DECISION (CEO + DPO) — rule the consent bundle F-01/F-02/F-03 as ONE text change and ONE
+    TOS_VERSION bump
+  agent: CEO (Piotr) + DPO # DECISION TICKET — not delegable to any worker agent
+  status: BLOCKED_ON_HUMAN
+  priority: P0
+  estimated_hours: 2
+  depends_on: [FOLLOW-706]
+  source: >-
+    2026-08-04 audit F-01/F-02/F-03; ESC-044 items 1/3/5/6 open since 2026-07-27; RETRO-228's own
+    recommendation was "one DPO round covering FOLLOW-706 + FOLLOW-710 + FOLLOW-711 + FOLLOW-145,
+    not four separate conversations."
+  spec: backlog/FOLLOW_UPS.md FOLLOW-814; ESC-044
+  notes: |
+    Three rulings, no recommendation-by-omission. (1) Art. 7(1) canonical hash source — FOLLOW-705
+    merged (47e863c6) ruling the SERVER RENDERER byte-canonical; ESC-044's 2026-07-28 update treats
+    this as answered unless overridden: CONFIRM or OVERRIDE. (2) Art. 7(3) withdrawal channel,
+    FOLLOW-710 options (a) named monitored DSR mailbox / (b) subject-facing withdrawal affordance /
+    (c) mediated model with per-brand contact from brand_config / (d) accept with recorded
+    rationale. (3) White-label privacy contact, FOLLOW-711: per-brand from brand_config with
+    fail-loud, or an explicit Estalara-as-processor sentence.
+    AC:
+    - [ ] Each of the three rulings recorded as a dated decision note or ADR, WITH reasoning.
+    - [ ] Ruling states explicitly that all three ship as ONE text change + ONE TOS bump.
+    - [ ] FOLLOW-145 (SDK consent-banner withdrawal — same right, different surface) folded in or
+          explicitly deferred with a reason.
+    - [ ] ESC-044 items 1/2/3/5/6 marked RESOLVED with a pointer to this ticket.
+- id: FOLLOW-815
+  title: >-
+    Consent bundle in ONE PR — derived hash + withdrawal channel + brand-parameterised contact
+  agent: backend-engineer (renderer/hash/route) + compliance-engineer (text)
+  status: BLOCKED
+  priority: P0
+  estimated_hours: 8
+  depends_on: [FOLLOW-814, FOLLOW-706]
+  source: >-
+    2026-08-04 audit F-01/F-02/F-03. Single delivery vehicle for FOLLOW-704 + FOLLOW-710 +
+    FOLLOW-711 (each keeps its own stub and AC set; none superseded). FOLLOW-707 is already DONE and
+    is NOT a leg.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-815; ADR pending from FOLLOW-814
+  notes: |
+    Line refs verified at HEAD a5295ae3: CANONICAL_CONSENT_TEXT_HASH is at lib.ts:86 (the stub says
+    :51-52; the in-code citation at route.ts:564 says :51 — BOTH STALE, correcting them is in scope
+    per Rule Y); placeholder default at route.ts:722; 422 refusal compare at route.ts:608;
+    compliance@estalara.com at lib.ts:152.
+    AC:
+    - [ ] CANONICAL_CONSENT_TEXT_HASH becomes DERIVED from renderPlatformConsentText(), with a test
+          that fails if constant and renderer ever diverge. This is the whole defect: a hand-typed
+          constant with no mechanical tie to any text.
+    - [ ] The FOLLOW-814 item-2 withdrawal mechanism implemented and named in the text. NOTE:
+          dpia.md §8 step 3 names POST /api/v1/dsr/request which EXISTS NOWHERE — build it or
+          correct the DPIA, do not leave both.
+    - [ ] Privacy contact renders from brand_config, fail-loud when unprovisioned.
+    - [ ] Exactly ONE PLATFORM_REGISTRATION_TOS_VERSION bump for all of the above.
+    - [ ] Prod-record remediation per the FOLLOW-814 ruling and the FOLLOW-706 count.
+    - [ ] Rule N: dpia.md, ropa.md, PRIVACY_NOTICE_TEMPLATE.md, HANDOFFS.md:2842 all updated in the
+          SAME PR.
+    - [ ] Rule AA: code axis and prod-remediation axis reported separately; not DONE on code alone.
+- id: FOLLOW-665
+  title: >-
+    Close the two untested connective hops of the ADR-0019 placement/attribution wire
+  agent: sdk-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    RETRO-221 §4c TG-1/TG-2/TG-4. Promoted 2026-08-04 unchanged in scope — pulled forward only
+    because FOLLOW-671 was raised to P0 and depends on it. Leaving a P0 blocked behind an unpromoted
+    P1 is the queue-state defect that stalled FOLLOW-560 for four sessions.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-665
+- id: FOLLOW-671
+  title: >-
+    White-label attribution fails OPEN — a degraded config read re-brands a paying client (audit
+    F-04)
+  agent: sdk-engineer
+  status: BLOCKED
+  priority: P0 # raised P2→P0 2026-08-04 — the evidence is unchanged, the CLOCK changed
+  estimated_hours: 2
+  depends_on: [FOLLOW-665]
+  source: >-
+    2026-08-04 audit F-04, re-verified at HEAD a5295ae3: packages/sdk/src/index.ts:1075 (quiz card)
+    and :1099 (opt-out toggle) both compute `showAttribution: config.brand?.whiteLabel !== true`.
+    config.brand is undefined on THREE degraded paths — fetchQuizConfig returning null, the Rule K.2
+    data_source:'fallback' response (which by contract carries no brand slice), and a brand blob
+    failing BrandConfigSchema (parsePublicBrandConfig drops the WHOLE slice). All three evaluate
+    true. PR #626 tested the two healthy axes and neither degraded one.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-671; RETRO-221 §4a LG-2; RETRO-214 §4a LG-1
+  notes: |
+    EXTERNAL CLOCK: 3 external brands land in 2-4 weeks. This fails in the direction that bills the
+    customer — a transient network blip silently renders "Powered by Estalara" on a paying
+    white-label client's site, with no error surfaced anywhere.
+    AC (from the stub, unchanged):
+    - [ ] Fail-safe direction decided + documented. Recommended: persist the resolved white_label
+          flag in session-scoped SDK state so a tenant that has EVER resolved white_label:true in
+          this browser session suppresses attribution on subsequent degraded reads — rather than
+          defaulting the whole platform to suppressed.
+    - [ ] Whichever direction: a degraded fetch must not silently flip visible attribution. If the
+          ruling is "attribution on unless proven white-label", record that in the schema docstring
+          so the fail-open is deliberate rather than incidental.
+    - [ ] Tests: fetchQuizConfig→null, data_source:'fallback', malformed-brand-blob — each asserts
+          the chosen behaviour for BOTH widgets.
+# ── Track LOCAL ────────────────────────────────────────────────────────────────
+- id: FOLLOW-816
+  title: >-
+    Local pilot environment — SDK + data-estalara-* slots on a localhost listing page, against
+    staging
+  agent: sdk-engineer (+ Rafał Palak, CTO, for the Estalara-app side)
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-01 hops 1 and 10, reframed under the CEO localhost-first ruling. The
+    committed web-master HEAD already carries the four A1 slot edits behind
+    PUBLIC_ESTALARA_SDK_ENABLED; this ticket PROVES them locally, it does not author them.
+  spec:
+    backlog/FOLLOW_UPS.md FOLLOW-816; docs/runbooks/SDK_PRODUCTION_INTEGRATION.md;
+    backlog/HANDOFFS.md FOLLOW-191 → Rafał
+  notes: |
+    Points at STAGING ingest + control-plane, never prod. ESC-020 stays OPEN and is re-scoped as the
+    FOLLOW-820 exit gate — it is NOT blocked work and NOT overdue.
+    AC:
+    - [ ] Local listing page renders ≥3 data-estalara-* attributes and loads the SDK bundle.
+    - [ ] A full scripted behavioral session produces rows in STAGING intent_events AND
+          adaptation_decisions (hops 4/5/11). This is also the first real exercise of the ClickHouse
+          schema outside CI — expect drift; that is what FOLLOW-822 is for.
+    - [ ] Hop 10 green: at least one directive observably applied to the local DOM.
+    - [ ] The localhost:9100 app.html override documented as dev-only and explicitly NOT committed
+          (ESC-020 already flags this trap).
+    - [ ] A short runbook so the environment is reproducible by someone who did not build it — it
+          is the substrate for FOLLOW-818/819 and must outlive one session.
+- id: FOLLOW-817
+  title: >-
+    Deploy intent-engine + data-quality to Modal, add CI deploy jobs, correct §Snapshot.1 §B.6
+    (audit F-06)
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-06, verified at HEAD a5295ae3: .github/workflows/modal-deploy.yml has ONE job
+    (deploy-llm-gateway, :48) and its paths filter (:39) is apps/llm-gateway/** alone. The file's
+    own header (:6) says intent-engine and data-quality "are added here as Phases B/C" — never
+    happened.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-817; ESC-042 item 1; docs/runbooks/MODAL_PROD_STANDUP.md
+  notes: |
+    Covers ESC-042 item 1 (chat NLP dark — OPEN since 2026-07-24 with no named owner) PLUS
+    data-quality, which NO existing ticket covers. The §B.6 verdict correction is the sharpest part:
+    §Snapshot.1 grades Continuous Schema Validation "✅ Shipped" for a 526-LOC cron that has never
+    run in any deployed environment. Rule AA makes that CODE_COMPLETE_OPERATOR_PENDING.
+    AC:
+    - [ ] modal-deploy.yml gains deploy-intent-engine + deploy-data-quality jobs mirroring the
+          llm-gateway job INCLUDING its hard-fail contract (a present-but-broken token fails the
+          step; there is no second skip).
+    - [ ] paths: extended to apps/intent-engine/** and apps/data-quality/**.
+    - [ ] estalara-secrets confirmed to carry INTERNAL_API_SECRET + Upstash REST creds pointing at
+          the SAME Upstash the control-plane reads (ESC-042 names this — a mismatch is a silent
+          null-read, not an error).
+    - [ ] MODAL_CHAT_NLP_URL set in the ingest Worker STAGING env; prod deferred to FOLLOW-820.
+    - [ ] §Snapshot.1 row B.6 → CODE_COMPLETE_OPERATOR_PENDING with the Rule AA rationale; the
+          stream-consumer disposition (undeployed BY DESIGN per ESC-017, Redpanda Serverless has no
+          Pandaproxy) recorded so no future audit re-files it.
+    - [ ] Chat shadow key proven to populate end-to-end in staging (ESC-042's own closure
+          condition).
+    - [ ] ESC-042 item 1 marked RESOLVED.
+- id: FOLLOW-818
+  title: >-
+    Enable the feedback endpoint in STAGING and prove a real ab_bandit_weights delta (audit F-13)
+  agent: OPERATOR (Piotr/Rafał; devops-engineer on standby)
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-816]
+  source: >-
+    2026-08-04 audit F-13, verified at HEAD:
+    apps/control-plane/src/app/api/adapt/feedback/route.ts:262 returns 503 unless
+    FEEDBACK_ENDPOINT_ENABLED === 'true'. Staging sibling of FOLLOW-450's operator leg, which
+    targets Doppler prd and is now sequenced behind FOLLOW-820.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-818; ADR-0015
+  notes: |
+    Until this is flipped, ab_bandit_weights stay at Beta(1,1), Thompson sampling is uniform-random,
+    and every variant-performance claim the product can make is UNFOUNDED — not weak, unfounded.
+    AC:
+    - [ ] Staging Doppler carries FEEDBACK_ENDPOINT_ENABLED=true + ADAPT_API_KEY + OPS_TENANT_ID +
+          DATABASE_URL_ADMIN.
+    - [ ] `doppler run --config stg -- pnpm feedback:canary` output PASTED into the close note
+          showing a real before/after weight delta. Rule Q: a green exit code is not the evidence,
+          the delta is.
+    - [ ] Rule AA: closes the STAGING axis only. FOLLOW-450's prod axis stays open → FOLLOW-820.
+- id: FOLLOW-819
+  title: >-
+    Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured
+    lift
+  agent: qa-engineer (+ backend-engineer for the assertion surface)
+  status: BLOCKED
+  priority: P1
+  estimated_hours: 10
+  depends_on: [FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-560]
+  source: >-
+    MASTER_DESIGN §Snapshot.5, verbatim: "Critical gap: no end-to-end test of intent → archetype →
+    adapt → DOM." Carried as an AC inside FOLLOW-471 since 2026-07-01 and as §Snapshot.4 priority
+    #15 since 2026-05-24; never executed because it needed an environment that did not exist.
+    FOLLOW-816 creates that environment.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-819; MASTER_DESIGN §Snapshot.5
+  notes: |
+    Does NOT supersede FOLLOW-471 — it discharges FOLLOW-471's differentiator-e2e AC on localhost.
+    FOLLOW-471 remains the epic gate and still requires the full F-01…F-21 sweep.
+    THIS TICKET IS ALLOWED TO FAIL. A red result is a successful outcome — it is the first real
+    measurement the product has ever taken, and FOLLOW-212 calibration depends on knowing the true
+    starting accuracy rather than assuming it.
+    AC — one scripted session must produce all five, each an independent assertion:
+    - [ ] A non-neutral archetype above DOM_ADAPT_CONFIDENCE_FLOOR = 0.5
+          (packages/sdk/src/core/adapt-floor.ts). Reaching this from behavioral signals ALONE is
+          itself the finding, given ~11 live behavioral discriminators (F-07). If it is only
+          reachable via quiz or chat, SAY SO in the result rather than adjusting the fixture until
+          it passes.
+    - [ ] An observably adapted DOM (hop 10).
+    - [ ] An adaptation_decisions row carrying score_function from FOLLOW-560 — without it the test
+          cannot tell real ranking from a stable hash shuffle.
+    - [ ] A feedback-driven ab_bandit_weights delta (hop 12, via FOLLOW-818).
+    - [ ] A lift number computed from real staging rows by the existing analytics path, not a
+          fixture.
+    - [ ] Runs in CI against the FOLLOW-816 environment, or a documented manual runbook with pasted
+          evidence EXPLICITLY LABELLED manual (Rule Q — no soft-skip masquerading as a pass).
+# ── Track PROD-GATE ────────────────────────────────────────────────────────────
+- id: FOLLOW-820
+  title: >-
+    ⚖️ DECISION (CEO) — ESC-020 prod-deploy gate: go/no-go checklist for exiting the localhost stage
+  agent: CEO (Piotr) # DECISION TICKET — not delegable to any worker agent
+  status: BLOCKED_ON_HUMAN
+  priority: P1
+  estimated_hours: 2
+  depends_on: [FOLLOW-819, FOLLOW-815]
+  source: >-
+    2026-08-04 audit F-01. Converts ESC-020 from "OPEN, 60 days" into a gate with a date and a
+    checklist. Three consecutive audits have flagged its age as drift; it is not drift, it is the
+    2026-06-10 localhost-first ruling still in force. An escalation that is a deliberate hold should
+    look like one.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-820; ESC-020; FOLLOW-553 Wave 0 Step 6
+  notes: |
+    GO requires all four, verified not asserted:
+      1. FOLLOW-819 green. (A failure is a NO-GO and new work — not a reason to deploy and measure
+         in prod.)
+      2. FOLLOW-815 shipped. DO NOT PUT THE SDK ON A PAGE WHOSE CONSENT LAYER IS DEFECTIVE. This is
+         the load-bearing ordering constraint in the whole plan: §H.8 makes AL the legal owner of
+         the consent umbrella, and hop 1 going live is precisely when behavioral profiling starts on
+         real subjects under a disclosure defective in two ways (Art. 7(1) hash, Art. 7(3)
+         withdrawal).
+      3. FOLLOW-817 deployed to the PROD Modal env with MODAL_CHAT_NLP_URL set in the prod ingest
+         Worker.
+      4. FOLLOW-450's prod operator leg flipped, with a pasted real weight delta.
+    On GO: execute ESC-020's required action (restore app.html, PUBLIC_ESTALARA_SDK_ENABLED=true in
+    the prod hosting env, deploy web-master HEAD, verify `curl … | grep -c "data-estalara"` ≥3 — the
+    audit re-ran that exact command at 0 on 2026-08-04). This is FOLLOW-553 Wave 0 Step 6, its last
+    open step. On completion FOLLOW-560 / FOLLOW-565 / FOLLOW-212 become dependency-eligible for the
+    first time.
+    AC:
+    - [ ] The four gate conditions recorded as a checklist with EVIDENCE LINKS, not ticks.
+    - [ ] A dated GO or NO-GO ruling.
+    - [ ] On GO: a committed deploy date from Rafał.
+    - [ ] ESC-020 updated to describe itself as a gate rather than an overdue action, whichever way
+          the ruling goes.
+    - [ ] FOLLOW-212 calibration (≥500 sessions with quiz ground truth) starts only after this gate
+          — record the start date. BEHAVIORAL_DAMPING = 0.3 and every SIGNAL_LIKELIHOODS value are
+          unvalidated constants until it completes (§D.7 says so in its own header).
+# ── Track HYGIENE ──────────────────────────────────────────────────────────────
+- id: FOLLOW-821
+  title: >-
+    Rule I is a disabled gate — quarantine the 192 violations so a NEW violation fails CI (audit
+    F-11)
+  agent: devops-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    Measured at HEAD a5295ae3: scripts/check-rule-i.sh → "Symbols scanned: 638", "Violations found:
+    192", "Rule I FAILED". CONVENTIONS_PATCH.md Rule AF — the repo's own rule — states a
+    permanently-red gate is a DISABLED gate.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-821; CONVENTIONS_PATCH.md Rule AF, Rule I, Rule AM
+  notes: |
+    Already cost a near-miss: PR #668's first push introduced a genuine new violation
+    (ClickHouseQuerySpec, 193 vs the 192 baseline), caught by reading the job log — not by the gate
+    and not by the watcher. FOLLOW-813 fixes the watcher; this fixes what it was watching.
+    AC:
+    - [ ] The 192 current violations enumerated into an explicit allowlist file (one entry per
+          symbol + defining file), generated once. NOT a count threshold — a count comparison
+          passes when one violation is fixed and another introduced.
+    - [ ] check-rule-i.sh fails on any symbol NOT in the allowlist, AND fails when an allowlisted
+          symbol no longer violates (so the allowlist cannot rot — Rule AM's
+          fixture-staleness-as-distinct-diagnosis shape).
+    - [ ] The gate goes GREEN on main at merge. That is the point of the ticket.
+    - [ ] Each allowlist entry carries a FOLLOW ref or an explicit "dead — delete" tag.
+    - [ ] CLAUDE.md / session-header guidance updated to remove "Rule I is expected red" as a
+          standing excuse. After this, red means red.
+- id: FOLLOW-822
+  title: >-
+    ClickHouse migration drift check in CI — prod DESCRIBE TABLE vs the migration journal (audit
+    F-09)
+  agent: data-engineer
+  status: READY
+  priority: P2
+  estimated_hours: 6
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-09. The asymmetry is in the dangerous direction: Postgres migrations
+    AUTO-APPLY staging→prod on merge with no human gate (db-migrate.yml, FOLLOW-308); ClickHouse
+    migrations do not auto-apply at all and CI runs migrate.sh only against a throwaway container.
+    The gated one has no runner; the ungated one has no gate.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-822; docs/runbooks/clickhouse-migrations.md
+  notes: |
+    This is the mechanism behind a real prod incident, not a hypothetical: intent_events count=0
+    (2026-07-01 audit F-02 → FOLLOW-449) was exactly this — migration 0015 merged, DONE in the
+    queue, CI green, prod silently rejecting every insert against the missing column.
+    AC:
+    - [ ] A CI job (nightly or on-merge-touching-clickhouse/**) querying prod DESCRIBE TABLE per
+          managed table and comparing against the migration journal, failing loud on drift.
+    - [ ] Fails loud on INABILITY TO CHECK too — unreachable ClickHouse or missing credential is a
+          red, not a skip (Rule Q: a soft-skip must emit positive proof and be scoped to exactly one
+          intended condition).
+    - [ ] Covers column presence AND the ORDER BY / PRIMARY KEY sort key — Rule W forbids in-place
+          key-column changes and that is where the drift that matters most lives.
+    - [ ] docs/runbooks/clickhouse-migrations.md gains an apply-then-attest step wired to this
+          check, so attestation is machine-verified rather than a pasted claim.
+- id: FOLLOW-823
+  title: >-
+    A missing <adaptation_verdict> tag defaults to FIT — close the one fail-open in the LLM chain
+    (audit F-17)
+  agent: ml-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-17: apps/llm-gateway/src/jobs/generate_description.py:76 records "A missing
+    verdict tag defaults to FIT (backward-safe)". Everything else in this chain fails closed; this
+    fails open.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-823; ADR-0010; MASTER_DESIGN §E.7.5
+  notes: |
+    CONTEXT MATTERS HERE: the audit assessed LLM-generation integrity as the STRONGEST part of the
+    codebase and raised no Critical or High finding in §6.6 — the fact whitelist is real (:692,
+    :709-725), the ADR-0010 fit-gate genuinely refuses mismatched listings (:561-571),
+    verified_facts_used reaches a ClickHouse audit trail, and adapt-description.ts:356
+    (`if (resp.source !== 'ai_cached' || !resp.description) return null`) means template_fallback
+    can never reach a buyer's DOM. This is defence-in-depth on the one remaining crack, honestly P3.
+    AC:
+    - [ ] Missing verdict tag defaults to NEUTRAL (no description, DOM keeps the agent's original).
+    - [ ] The FOLLOW-465 negative-cache path handles this case so a malformed response does not
+          re-trigger an uncapped Sonnet call loop — that regression is what FOLLOW-465 exists for.
+    - [ ] The :76 docstring corrected in the SAME PR (Rule AI).
+    - [ ] A test drives a verdict-less response and asserts NEUTRAL.
+- id: FOLLOW-824
+  title: >-
+    ⚖️ DECISION (CEO) — build or delete packages/platform-templates and packages/intent-ontology
+    (audit F-08)
+  agent: CEO (Piotr) # DECISION TICKET; then architect for a ~1h cleanup
+  status: BLOCKED_ON_HUMAN
+  priority: P3
+  estimated_hours: 1
+  depends_on: []
+  source: >-
+    Verified at HEAD a5295ae3: platform-templates/src/templates/index.ts:30 is `export const
+    templates: PlatformTemplate[] = []`; platform-templates/src/index.ts:53 matchPlatform() returns
+    null unconditionally — L3 of the five-layer pipeline is a no-op. intent-ontology/src/index.ts is
+    14 lines exporting INTENT_ONTOLOGY_VERSION = '0.0.0', zero consumers.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-824; TICKET-032; MASTER_DESIGN §B.4.4, §B.5, §Snapshot.7 risk 7
+  notes: |
+    §Snapshot.7 risk 7 already records the cost in its own words: "Future agents reading the package
+    READMEs will be misled." That has now happened at least twice, including in the brief for this
+    audit. Case for DELETE: L1+L2 run 100/100 on 24 platforms and §Snapshot.1 row B.5 already says
+    L3 is "de facto replaced by L1+L2 coverage"; TICKET-032 BLOCKED since Sprint 2.5. Case for
+    BUILD: bespoke tenants defeat text-only AI Vision (confidence 0.3 < 0.5 threshold, Changelog
+    v3.8) — though FOLLOW-160 (screenshot Vision) is the answer the Master Design favours.
+    AC:
+    - [ ] A one-line ruling: build (unblock TICKET-032) or delete.
+    - [ ] On delete: remove both packages, drop from pnpm-workspace.yaml / turbo graph / CLAUDE.md's
+          package count (says 10; would become 8), correct §Snapshot.1 rows B.4.4 and D and
+          §Snapshot.7 risk 7.
+    - [ ] On build: TICKET-032 promoted with a real sprint.
+- id: FOLLOW-825
+  title: >-
+    Stale-docs sweep — retire §Snapshot.2/.3/.5, strip retired Tier framing, remove dead
+    decision-api libs
+  agent: architect
+  status: READY
+  priority: P3
+  estimated_hours: 4
+  depends_on: []
+  source: >-
+    2026-08-04 audit §7.4. MASTER_DESIGN.md:350-352 warns §Snapshot.2/.3/.5 "are NOT yet re-verified
+    and still cite pre-2026-07-01 state" — but the warning sits 200 lines above the content and the
+    content reads as present tense. FOLLOW-470 refreshed §Snapshot.1 and explicitly left these out.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-825; MASTER_DESIGN §Y.2 propagation checklist
+  notes: |
+    MEASURED COST: the brief for the 2026-08-04 audit carried FOUR wrong figures — intent-engine as
+    a 27-line placeholder, 8-of-37 event types, a 93.3KB bundle, "3 divergent archetype sets" —
+    every one traceable to these sections. Second consecutive audit to pay that tax.
+    AC:
+    - [ ] §Snapshot.2 + §Snapshot.3: delete (recommended — §Snapshot.1 covers the ground and is
+          maintained) or rewrite against HEAD. §Snapshot.5 REFRESHED not deleted: its "no
+          end-to-end test of intent → archetype → adapt → DOM" line is still true and is now
+          FOLLOW-819.
+    - [ ] Retired Tier 1/2/3 framing removed from the §B.1 body and the §A.1 diagram's SDK box (CEO
+          2026-06-05, §E.7 — §Snapshot.1 row B.1 already flags the drift and defers the prose edit;
+          this is that edit).
+    - [ ] §A.1 diagram's "<40 KB" SDK annotation corrected to the ESC-028 42KB budget.
+    - [ ] apps/decision-api/src/lib/{ab-assignment,ab-events,consent-gate,llm-gateway,reorder}.ts —
+          unreachable since the 410, slated for removal by FOLLOW-107 — removed or explicitly
+          re-scoped; FOLLOW-107 closed either way.
+    - [ ] README.md status re-verified against §Snapshot.1 (Changelog v4.3 claims it was corrected
+          from "Sprint 0"; confirm it still holds).
+    - [ ] §Y.2 propagation checklist run.
+- id: FOLLOW-826
+  title: >-
+    Cloudflare DNS naming drift — dns.tf names the decision-API record `api`, wrangler binds
+    `decision` (audit F-14)
+  agent: devops-engineer
+  status: READY
+  priority: P3
+  estimated_hours: 2
+  depends_on: []
+  source: >-
+    2026-08-04 audit F-14. infra/terraform/cloudflare/dns.tf names the record api/api-<env>; both
+    wrangler.toml files bind decision/decision-staging. Applying that Terraform would create
+    hostnames no Worker route matches. Already surfaced in the QUEUE session-98 header under "Still
+    genuinely open" and flagged in docs/runbooks/cloudflare.md by FOLLOW-810 — left unfixed because
+    which name is canonical is a DECISION, not a typo. Filed so it stops being re-discovered.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-826
+  notes: |
+    Genuinely low severity — nothing applies this Terraform today. The risk shape is a `terraform
+    apply` during an incident producing a confusing dead hostname at exactly the wrong moment.
+    AC:
+    - [ ] Canonical name picked. NOTE packages/shared/src/domains.ts and
+          docs/ops/DOPPLER_SECRETS_MATRIX.md record the live value as decision.estalara.com, which
+          argues for `decision`.
+    - [ ] dns.tf and both wrangler.toml files aligned.
+    - [ ] docs/runbooks/cloudflare.md corrected.
+    - [ ] If the record is not meant to exist at all, DELETE it from dns.tf rather than aligning it.
 ```

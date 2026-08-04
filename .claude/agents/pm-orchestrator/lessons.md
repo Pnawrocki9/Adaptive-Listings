@@ -2925,3 +2925,23 @@ one tool call, prevents ever writing DONE off a stale or mistaken human summary.
   checkout means HEAD is still on main. This is the same class of collision as the FOLLOW-605
   HEAD-displacement incident and RETRO-236, recurring because the checkout happens inside the
   worker's own turn, invisible to the PM until the next `git status`.
+
+---
+
+**Date / ticket:** 2026-08-05 — FOLLOW-813 (post-merge closure) / RETRO-246 dispatch. **Delegation
+row used:** none this turn (no new worker dispatch — closure + retro spawn only; FOLLOW-812's row
+"DPIA/ROPA/consent/DSR rules/fair-housing/AI-Act docs → compliance-engineer" is queued but
+withheld). **What validation caught (or missed):** Nothing new caught this turn — the two defects
+(agent defs still hardcoding `--watch` incl. this orchestrator's own §5b gate; script shipped
+non-executable) were already found by the main-loop validation session, not by this orchestrator
+turn. What this turn did: (a) used a dedicated git worktree for the retro dispatch instead of
+nohup-in-main-tree, so the "one Bash-capable agent at a time" rule is satisfied by construction
+(physically separate working directories) rather than by discipline alone — cheap insurance against
+the session-85 collision class; (b) foreground `claude --agent ... -p` hit the 120s tool timeout at
+2 minutes and had to be relaunched via nohup+background — foreground invocation of a long agent call
+is not viable through this tool, always background it from the first attempt. **A
+delegation/validation rule I'd add:** Always dispatch retrospective/worker agents into a fresh
+`git worktree` on their own branch rather than relying on sequencing discipline in the shared tree —
+it converts a process-adherence guarantee into a filesystem guarantee. Also: never attempt
+`claude --agent` in the foreground; go straight to background+log-path, foreground always trips the
+~120s harness timeout for anything non-trivial.

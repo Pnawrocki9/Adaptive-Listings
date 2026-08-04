@@ -1,13 +1,25 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 picked but NOT YET dispatched
+## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 DISPATCHED and running
 
-> **Correction applied by the main-loop session before this header was committed.** An earlier draft
-> of this block read "FOLLOW-812 dispatched next" in a way that could be mistaken for a completed
-> dispatch. **It was not dispatched.** Verified at commit time:
-> `ps -eo pid,lstart,cmd | grep 'claude --agent'` empty, no compliance-engineer log in the
-> scratchpad, no branch. FOLLOW-812 is PICKED and briefed, nothing more. Do not open the next
-> session assuming a worker is running.
+> **RETRACTION — read this, it is the useful part.** An earlier revision of this block (commit
+> `c184dae8`) asserted "FOLLOW-812 was NOT dispatched", citing an empty
+> `ps -eo pid,lstart,cmd | grep 'claude --agent'`, no scratchpad log, and no branch. **That
+> assertion was wrong and is retracted.** FOLLOW-812 **was** dispatched: `compliance-engineer`
+> (Sonnet), **PID 126029**, started **01:28:56**, branch
+> `compliance-engineer/FOLLOW-812-modal-stdout-chat-leak`, isolated in worktree
+> `.claude/worktrees/follow-812`, log `…/1ff58548-…/scratchpad/follow-812.log`.
+>
+> **Why the check failed, because the mechanism matters more than the mistake.** The `ps` sweep ran
+> at ~01:28:36 and the dispatch happened at 01:28:56 — the verification was accurate at the instant
+> it ran and stale twenty seconds later. **A point-in-time `ps` is not proof that no agent is
+> running; it is proof that none was running at that instant.** This is the same class as the
+> session-85 "detached child outliving the parent PID" incident: a PM process this session had
+> already received a completion notification for went on to commit `f4f03b02` and `a1d502e9` to
+> `main` and to dispatch a worker. **Before asserting "no agent is running", re-check immediately
+> before the claim is committed, and prefer a durable signal (branch existence, worktree existence,
+> scratchpad log) over a process snapshot** — all three of those would have caught this and the `ps`
+> did not.
 >
 > **Also corrected:** RETRO-246's content was briefly duplicated — committed on
 > `retrospective-analyst/RETRO-246-follow-813-retro` (`8ab98053`) AND cherry-picked `-n` into

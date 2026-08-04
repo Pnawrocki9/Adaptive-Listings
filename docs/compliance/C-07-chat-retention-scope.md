@@ -237,8 +237,14 @@ HEAD on branch `main`:
   `error_fallback`) and `extraction_error` (`null`, or a fixed-format
   `"<classified kind>: <ExceptionClassName>"` string such as `"missing_api_key: KeyError"`). Neither
   carries buyer content: `extraction_error` is explicitly constructed from the exception's CLASS
-  name only — the exception message, which could echo prompt text, goes to the log line and the
-  Sentry event and never into Redis. No `messages` or `raw_text` field.
+  name only — the exception message, which could echo prompt text, goes to the **log line** and
+  never into Redis. No `messages` or `raw_text` field. (Since FOLLOW-738 it no longer reaches Sentry
+  either: `_scrub_chat_intent_exception_value` in `apps/intent-engine/src/observability.py`
+  overwrites the exception `value` on every event tagged `area=chat_intent`, pinned by
+  `test_buyer_text_escapes_both_sinks` in `test_observability.py`. The Modal **stdout log line** —
+  `nlp.py`'s `print(f"extract_intent error …: {exc}")` — still carries the full message; that is the
+  remaining sink for this string, and it is out of the Sentry sub-processor boundary described in
+  `ropa.md`.)
 - `chat-intent-cache.ts` — `shadowChatIntentKey` returns
   `shadow:${tenantId}:${sessionId}:chat_intent`.
 - `redis_writer.py` — `shadow_key` returns `f"shadow:{tenant_id}:{session_id}:chat_intent"`.

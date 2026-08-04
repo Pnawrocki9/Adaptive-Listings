@@ -154,7 +154,7 @@ determined at session initialization:
 | Cache                    | Upstash Redis (multi-region)                       | Session intent vector cache, adaptation cache                                                    | session_id → embedding vector (TTL-bounded)                                                                                                 |
 | LLM Provider             | Anthropic API (current-gen Claude models)          | Intent extraction prompts, adaptation reasoning                                                  | Behavioral context strings; no direct PII per DPA                                                                                           |
 | Embeddings Provider      | OpenAI API (text-embedding-3-small)                | 1024-dim embedding generation                                                                    | Behavioral signal text; no direct PII per DPA                                                                                               |
-| Error Tracking           | Sentry                                             | Error and performance monitoring                                                                 | Stack traces, request context (scrubbed of PII via SDK `beforeSend` hook; CI-verified)                                                      |
+| Error Tracking           | Sentry                                             | Error and performance monitoring                                                                 | Stack traces, request context. Redaction is partial and NOT uniform across apps — see §Sentry redaction scope (FOLLOW-739)                  |
 | CRM Outcome Ingest       | Next.js 15 control plane (`POST /api/crm/outcome`) | Receive tenant CRM outcome labels via authenticated webhook; upsert into `conversion_labels`     | `prediction_id` (UUID), `outcome_class`, `label_source`, `lead_id` (pseudonymous), `outcome_raw` (JSONB, PII-stripped per DPA), `tenant_id` |
 
 References to "current-gen Claude models" reflect the operational practice of selecting Claude Haiku
@@ -221,7 +221,7 @@ switching providers, adding self-hosted inference, removing zero-retention claus
 | Modal            | ML compute (serverless)                        | Embedding computation, archetype update jobs       | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
 | Redpanda Cloud   | Event bus                                      | Behavioral event payloads (transient)              | N/A (EU instance)                                  | DPA in place                                         |
 | Vercel           | Control plane hosting                          | Tenant admin sessions, dashboard traffic           | Certified (EU-U.S. DPF)                            | DPA in place (Vercel DPA)                            |
-| Sentry           | Error and performance tracking                 | Stack traces, scrubbed request context             | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
+| Sentry           | Error and performance tracking                 | Stack traces, request context (see redaction note) | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
 | Stripe           | Billing and payment processing                 | Tenant billing details, invoices                   | Verified annually at dataprivacyframework.gov/list | DPA in place (Stripe DPA)                            |
 
 **Transfer mechanism layering**: Where a US-based sub-processor is DPF-certified, DPF is the primary
@@ -231,6 +231,41 @@ withdrawal, or invalidation. This dual-mechanism approach is consistent with EDP
 provides continuity of lawful transfer basis. UK→US transfers use the UK Extension to the EU-U.S.
 DPF (where the sub-processor is so certified) with UK IDTA as fallback. UAE→US transfers use UAE
 PDPL Art. 22 SCCs (UAE has no DPF participation).
+
+### 2.7 Sentry redaction scope — partial, per-app, and no PII-pattern matching (FOLLOW-739)
+
+Earlier revisions of this DPIA described Sentry data as "scrubbed of PII via SDK `beforeSend` hook;
+CI-verified", which implied a uniform, pattern-based control across the whole sub-processor
+relationship. **That was inaccurate on both counts.** Corrected 2026-08-04 against the code. Four
+applications emit to Sentry and they are not treated alike:
+
+| App                                                                             | Redaction in force                                                                                            | Covers                                                     |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `apps/intent-engine` + Rule-J mirrors (`apps/llm-gateway`, `apps/data-quality`) | `_scrub_chat_intent_exception_value` (`observability.py`) — blanket overwrite of the exception `value` string | ONLY events tagged `area=chat_intent`, ONLY that one field |
+| `apps/control-plane` (Next.js)                                                  | **None** — no `beforeSend`, no scrubbing, `sendDefaultPii` not set                                            | —                                                          |
+
+Two clarifications that matter for an accurate record:
+
+1. **There is no PII-pattern regex anywhere in the estate.** The Python hook does not scan for PII
+   shapes; it unconditionally replaces one field on events carrying one tag. Breadcrumbs, `extra`,
+   `request` and `contexts` are never modified on any path, in any app.
+2. **"CI-verified" named the wrong artifact.** `scripts/check-sentry-init-singleton.sh` (wired into
+   `ci.yml`) is an init-bypass guard and does not inspect the hook's contents. The behaviour is
+   pinned by `apps/intent-engine/src/test_observability.py` (pytest, normal CI matrix), which
+   includes a buyer-text sentinel assertion.
+
+**Residual risk for `apps/control-plane` — assessed and accepted.** Raw buyer chat text does not
+enter that application, so there is no message content available for a scrubber to remove: chat
+intent arrives already **derived** (`lib/chat-intent-cache.ts` reads Modal's dimension vector from
+Redis; raw `messages` is not a field on the payload model), LLM prompts are assembled from
+archetype, playbook copy, behavioural **event labels** and agency-curated listing metadata
+(`LlmGatewayInput`), and every capture site's `extra`/`contexts` carries identifiers and status
+values only (`tenant_id`, `listing_id`, `archetype`, `session_id`, HTTP status, table, window).
+Verified by grep over `apps/control-plane/src`, not assumed.
+
+The accepted boundary: control-plane is unscrubbed **by construction, not by control** — no
+mechanism prevents a future change from routing buyer text into a captured exception. Whether it
+should get its own hook is tracked as **FOLLOW-811**, deliberately out of scope here.
 
 ---
 

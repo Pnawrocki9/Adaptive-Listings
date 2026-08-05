@@ -2232,3 +2232,32 @@ would generalize this beyond just `adapt-get-auth`.
   script) that greps `selfTest()` / `--self-test` functions for bare `.replace(` calls not wrapped
   in an asserting helper would have caught this class before RETRO-230 needed a sandboxed repro to
   find it twice.
+
+## 2026-08-05 / FOLLOW-811
+
+- **What I built**: a DECISION, not a fix. Assessed `apps/control-plane`'s three Sentry configs and
+  decided NOT to add a `beforeSend`; recorded accepted residual risk in `docs/compliance/dpia.md`
+  §2.7.1 with six named re-review triggers, propagated to `ropa.md`. Shipped alongside: explicit
+  `sendDefaultPii: false` in all three configs, the client docstring corrected to name
+  `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`, the wrong "Capture unhandled promise rejections" comment
+  on `replayIntegration()` corrected, and two pinning tests. Filed FOLLOW-836.
+- **Wiring/auth/fail-loud risks I weighed**: (1) The strongest argument AGAINST the hook is a wiring
+  argument, not a privacy one — mirroring the Python hook means gating on an `area=chat_intent` tag
+  this app never emits, i.e. shipping a control that can never fire. That is the exact fiction
+  FOLLOW-739 had to retract from the DPIA; building it to satisfy a document would have recreated
+  the defect one runtime over. (2) I re-verified the load-bearing premise (no buyer text in the app)
+  instead of inheriting it from the stub — `adapt/route.ts:187-213` schema, `chat-intent-cache.ts`,
+  `schemas.py:50-137`. If it had been false the whole priority was wrong. (3) The finding that
+  changed the record: `consoleIntegration()` is a DEFAULT integration of `@sentry/node-core@10.50.0`
+  (`build/cjs/sdk/index.js:41`), so the "Vercel logs" sink and the "Sentry" sink are ONE sink — 115
+  `console.error` sites feed unmodified breadcrumbs into every captured event. I proved it by
+  driving a real capture with a memory transport rather than asserting it from vendor docs, and
+  perturbation-checked the test (adding a scrubbing `beforeSend` fails 3 of 4 assertions). (4) I
+  refused to state Vercel log retention: it is not recorded anywhere in this repo, so I said so and
+  bounded it by the absence of a configured log drain instead of quoting a number I could not cite.
+- **A guardrail I'd add**: when a compliance record says "sink X is unredacted", require the PR to
+  name every runtime path that FEEDS sink X, not just the explicit call sites — the console →
+  breadcrumb coupling meant three prior documents described one sub-processor exposure where there
+  were two, and nothing in the repo would have surfaced it short of reading the vendor's default
+  integration list. A cheap mechanical version: fail CI if an app initialises Sentry without either
+  disabling `consoleIntegration` or declaring it in the compliance record.

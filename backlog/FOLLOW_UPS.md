@@ -27857,6 +27857,68 @@ hidden)"; `backlog/QUEUE.md` session-103 head]
 
 ---
 
+## FOLLOW-836 — `apps/control-plane`'s console sink is a Sentry sink: extend FOLLOW-834's gate to it, or accept the class explicitly
+
+source_retro: n/a (FOLLOW-811 assessment, 2026-08-05) source_ticket: FOLLOW-811 recommended_sprint:
+next recommended_agent: devops-engineer priority: P3 estimated_hours: 3 depends_on: [FOLLOW-834]
+blocks: [] promoted_to_queue: false **FROZEN — session-95 standing rule** (new stubs land FROZEN
+unless P1; this is P3).
+
+**The fact that makes this different from "another log-hygiene ticket."** FOLLOW-811 established, by
+driving a real capture rather than by reading vendor docs, that in `apps/control-plane` the platform
+log sink and the Sentry sink are **the same sink**. `consoleIntegration()` is a **default**
+integration of the installed Node SDK (`@sentry/node-core@10.50.0`, `build/cjs/sdk/index.js:41`), so
+every `console.error` / `console.warn` in that app — 115 and 33 non-test call sites — is carried
+into the next captured Sentry event as a `category: "console"` breadcrumb, and both `dpia.md` §2.7
+and `ropa.md` record that breadcrumbs are never modified on any path in any app. Evidence:
+`apps/control-plane/src/lib/__tests__/sentry-capture-path.test.ts` asserts a buyer-text sentinel
+written to `console.error` is present in the outgoing envelope.
+
+So the "unscrubbed vendor log" framing (RETRO-247 §5a, which counted the call sites and correctly
+flagged the class) undercounts the blast radius by one sub-processor: whatever is logged goes to
+Vercel **and** to Sentry.
+
+**Why this is not FOLLOW-834 as written.** 834's AC(1) scopes its grep-lint to `apps/intent-engine`
+and the chat legs of `apps/stream-consumer` — the Python tier. Nothing in it reaches
+`apps/control-plane`, and its allowlist is designed to be FOLLOW-833's output, which is also Python.
+This stub is the TypeScript half. It is filed as a separate stub rather than folded into 834 because
+834's shipping order (833 → 834) should not be blocked on a P3, and because the justification here
+is different: for the Python tier the gate protects stdout; here it protects a Sentry breadcrumb
+channel that the compliance record explicitly states is unredacted.
+
+**The likely honest outcome, stated up front so the ticket is not mis-scoped as a 148-site
+cleanup.** FOLLOW-811 found no buyer-authored text on any of these paths and accepted the residual
+risk. The plausible verdict is therefore "allowlist the existing sites wholesale, gate only NEW
+ones" — a ratchet, not a remediation. Whoever takes this should confirm or refute that before
+writing code. Fixing 148 call sites is explicitly NOT the ask.
+
+**AC:** (1) decide: extend FOLLOW-834's gate to `apps/control-plane/src` (as a ratchet with the
+existing sites allowlisted, per Rule AP: machine-checked register with a per-entry reason), or
+record "accepted, no gate" with the reasoning — either outcome is valid and must be written down;
+(2) if a gate ships, it must be self-tested on synthesized fixtures per Rule AM, never by mutating
+the live source it polices; (3) do NOT introduce a PII-pattern regex (the same prohibition
+FOLLOW-811 AC(3) carried, for the same reason — `dpia.md` §2.7 records that no such thing exists
+anywhere in the estate, and it should not be created to satisfy a doc); (4) whichever way it goes,
+re-review trigger 6 in `dpia.md` §2.7.1 refers to this ticket by number — update that section,
+because if a gate lands the phrase "unscrubbed **by construction, not by control**" stops being
+accurate.
+
+**Adjacent open gap, recorded not re-filed (Rule AN):** Vercel runtime-log retention is not recorded
+anywhere in this repo. `dpia.md` §2.7.1 and `ropa.md` both now say so explicitly and bound it by the
+absence of a configured log drain. Establishing the figure belongs with the Vercel sub-processor row
+in `ropa.md` and is compliance-engineer's, not this ticket's.
+
+cross_ref: [FOLLOW-811 (this stub's source); FOLLOW-834 (the Python half — scope-coordinate before
+starting); FOLLOW-833; RETRO-247 §5a; `docs/compliance/dpia.md` §2.7.1; `docs/compliance/ropa.md`
+"Sentry redaction — what actually runs, per app";
+`apps/control-plane/src/lib/__tests__/sentry-capture-path.test.ts`;
+`scripts/check-sentry-init-singleton.sh` (the reference shape); `CONVENTIONS_PATCH.md` Rule AM, Rule
+AP]
+
+---
+
+<!-- next free FOLLOW number: 837 (FOLLOW-836 filed 2026-08-05 by FOLLOW-811, the control-plane Sentry `beforeSend` DECISION ticket. 811's outcome: NO hook — mirroring the Python hook would gate on an `area=chat_intent` tag this app never emits (a control that can never fire, the same class of fiction FOLLOW-739 retracted), a blanket scrub would destroy triage on 95 capture sites, and AC(3) forbade inventing a PII regex; residual risk formally ACCEPTED in `dpia.md` §2.7.1 with six named re-review triggers and two pinning tests. 836 = P3 FROZEN, the TS half of FOLLOW-834: `consoleIntegration()` is a DEFAULT integration of `@sentry/node-core@10.50.0` (`build/cjs/sdk/index.js:41`), so apps/control-plane's 115 `console.error` + 33 `console.warn` non-test sites are ALSO Sentry inputs as unmodified breadcrumbs — the log leg and the Sentry leg are one sink, which widens RETRO-247 §5a's framing by a whole sub-processor; likely honest outcome is a ratchet (allowlist the existing sites, gate new ones), NOT a 148-site cleanup. NOT re-filed, recorded against existing records instead (Rule AN): Vercel runtime-log retention is NOT RECORDED anywhere in the repo — stated as such in `dpia.md` §2.7.1 and `ropa.md` and bounded by the absence of any configured log drain, rather than guessed; establishing the figure belongs to the Vercel sub-processor row and is compliance-engineer's. NO new rule promoted. -->
+
 <!-- next free FOLLOW number: 836 (FOLLOW-832..835 filed 2026-08-05 by RETRO-247, the post-merge retro for PR #677 / FOLLOW-812 — the Modal-stdout chat-intent redaction. 832 = P1 (UNFROZEN, P1 carve-out) sink 2 of test_buyer_text_escapes_both_sinks asserts on a test-authored replica of nlp.py:504's extraction_error expression, so a real regression on the Redis leg ships green — PROVEN by sandbox perturbation (11 passed while the returned payload carries the buyer sentinel), and the docstring at :208-212 claims the opposite; the fix is to assert over the payload the sink-3 block already computes and discards, plus rename the test (it says "both"/two for three sinks + four arms) and re-point its four citations per Rule Y. 833 = P2 ropa.md:539-540/:671 + C-07:313 assert "No residual raw-exception print remains on this stdout sink" while three remain on it (nlp.py:344 telemetry, batch_enrich.py:72 wrapping the batch chat loop, observability.py:175) — a sink-wide negative on branch-wide evidence, Rule AO; also adds the stdout sink to dpia.md §2.7 (third doc in the set, not falsified, just incomplete) and fixes extract_intent's "Never raises" docstring (detect_language_mix at :511-515 is outside both try blocks). 834 = P2 the mechanical gate the class has never had — a grep-lint for a raw exception message reaching an unscrubbed stdout/console sink, self-tested per Rule AM with a machine-checked allowlist per Rule AP; filed because RETRO-247 DECLINED to amend Rule S (run verbatim, its bullets 1 and 3 both fire on PR #677 — a compliance failure, not a rule-text gap). 835 = P3 DECISION (operator) on the .claude/ write block, 3 for 3; the behavioural half was promoted in place as a Rule AG amendment, this is the permission half, and an agent must never implement it for itself. NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-811 (its AC(1) should be widened to the control-plane LOG sink — 114 console.error sites landing in Vercel logs, the same class 812 just assessed — and its AC(2) now points at a test that changed shape; carried in RETRO-247 §5a, to be applied by the PM at dispatch), FOLLOW-828 (adjacent to 835, cross-referenced not merged), FOLLOW-830/827 (both confirmed unreachable on this PR, recorded not re-filed). RULE PROMOTED: Rule AG AMENDED in place (P-30, count 3, priors RETRO-160 + RETRO-246, armed by RETRO-246 §6). NO new rule letter minted; P-32 minted at count 1 and armed. -->
 
 <!-- next free FOLLOW number: 832 (FOLLOW-827..831 filed 2026-08-05 by RETRO-246, the post-merge retro for PR #675 / FOLLOW-813 — the replacement for the false-green `gh pr checks --watch` gate. 827 = P1 the new gate classifies Rule I by COUNT (`gh-pr-checks-verified.sh:216`), which FOLLOW-821's own AC(1) forbids by name, so a compensating-violation swap still exits 0 — the false green moved one hop, watcher -> classifier; the script's `:49-50` claim that it "does not contradict FOLLOW-821" is false. 828 = P2 five of nine agent definitions (sdk/qa/**devops**/compliance/architect) have no CI-verification step at all — PR #675 fixed the four that contained the broken string, not the symmetric set (Rule S); plus no consumer distinguishes exit 2 (timeout, 900s default) from exit 1. 829 = P2 `docs/CONVENTIONS_PATCH.md:36-46` is the last LIVE mandate of the retired `--watch` + jq two-step (the PR's own "no residual mandate" grep claim is false by one file), bundled with the un-propagated narrowing of the documented pre-existing-red gate set 3 -> 1 (Rule AI tier 3; memory `project_ci_gate_landscape` + 3 lessons.md files still reason from three). 830 = P1 the gate has NO self-test and fails OPEN on any host without PCRE grep (`:170-173` `grep -oP` inside `mapfile` + `set -uo pipefail` without `-e` -> empty failure list -> "all checks green", exit 0). 831 = P2 the mode-bit class has a second live instance: `scripts/check-rule-i.sh` is 100644 while `backlog/HANDOFFS.md:4011/:4041/:4111/:4169` mandates bare invocation. NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-821 (its AC(1) now also has to REPLACE the shipped count comparison, not merely add a CI job — carried in 827's scope + `blocks:`), FOLLOW-772 (MASTER_DESIGN:576 says 42 rules, actual 43 — the line self-declares its counts derived), FOLLOW-806 (the retro loop still has no mechanical self-closure check; this retro ran only because the PM dispatched it in the same turn). NO new CONVENTIONS_PATCH rule promoted — Rule AI AMENDED instead, see RETRO-246 §6. -->

@@ -190,18 +190,29 @@ counts from that fresh read (never from an exit code), and classifies every fail
 the repo's documented pre-existing-red gates before deciding pass/fail. Today that list has exactly
 one entry, `Rule I — wired-or-dead check` (memory `project_ci_gate_landscape`; Vercel and the Python
 test matrix were both fixed and are no longer pre-existing-red as of the current `main`) — the
-script verifies it DYNAMICALLY by diffing the PR run's own "Violations found: N" job-log line
-against `main`'s own latest completed CI run, never a hardcoded number, so a worsening baseline (the
-PR #668 near-miss: 193 vs a 192 baseline, caught only by reading the raw job log, not by `--watch`)
-is classified as a genuine new failure and fails the script. This mirrors the shape FOLLOW-821 uses
-for Rule I's own baseline comparison — do not replace this with a static allowlist that could rot
-the same way; see the script's own header comment for the full mechanism and exit codes.
+script verifies it DYNAMICALLY by diffing the PR run's own Rule I job log against `main`'s own
+baseline, never a hardcoded number, so a worsening baseline (the PR #668 near-miss: 193 vs a 192
+baseline, caught only by reading the raw job log, not by `--watch`) is classified as a genuine new
+failure and fails the script. That baseline is **not** "main's latest completed run":
+`--status completed` includes the `cancelled` and `skipped` conclusions, and `ci.yml`'s
+`cancel-in-progress: true` made 8 of `main`'s last 12 runs cancelled, whose Rule I job never ran and
+whose log is a 404 — which the gate reported as a blocking failure on every open PR at once
+(RETRO-250, PR #681). The script now walks `main`'s recent runs newest-first and takes the first one
+that actually produced a parseable Rule I symbol set, printing every skipped run with its reason
+(FOLLOW-846). This mirrors the shape FOLLOW-821 uses for Rule I's own baseline comparison — do not
+replace this with a static allowlist that could rot the same way; see the script's own header
+comment for the full mechanism and exit codes.
 
 Exit code `0` means every non-success check is a verified pre-existing-red gate — safe to mark
 READY_FOR_REVIEW. Exit code `1` means a genuine failure. Exit code `2` means it timed out waiting
-for checks to settle (never treat that as success). This is the pm-orchestrator's 5b validation
-sub-step (`.claude/agents/pm-orchestrator.md`); the old two-command `--watch` + `jq` sequence there
-is superseded by this single script.
+for checks to settle (never treat that as success). Exit code `3` means the gate could not run or
+could not complete its comparison — a usage error, a failed dependency preflight, a refused fixture
+seam, or a **tooling failure** (an unfetchable/unparseable Rule I log, or no usable baseline in the
+look-back window). `3` is neither a green nor a red: it means the gate never got to look, so **do
+not** mark READY_FOR_REVIEW, and equally **do not** send the ticket back to its worker or increment
+`fix_iteration_counter` on it — fix the named tooling problem and re-run. This is the
+pm-orchestrator's 5b validation sub-step (`.claude/agents/pm-orchestrator.md`); the old two-command
+`--watch` + `jq` sequence there is superseded by this single script.
 
 ## Branch-first worker discipline (mandatory — FOLLOW-448 / RETRO-146)
 

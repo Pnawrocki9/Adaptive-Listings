@@ -38,6 +38,10 @@ hardcoded number, so a worsening baseline is never misclassified as accepted) be
 scripts/gh-pr-checks-verified.sh <pr-number>
 # Exit 0 = safe to mark READY_FOR_REVIEW. Exit 1 = genuine failure. Exit 2 = timed out — do not
 # proceed either way; investigate.
+# Exit 3 = the gate could not run or could not complete its comparison (preflight, refused fixture
+# seam, unreadable Rule I log, or no usable baseline in the look-back window). NOT a green and NOT
+# a red: re-run after fixing the named tooling problem, and do not increment fix_iteration_counter
+# against the worker for it [FOLLOW-846].
 ```
 
 ---

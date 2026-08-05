@@ -39,29 +39,77 @@
 #   3. Classifies every FAILURE against the repo's DOCUMENTED pre-existing-red gate list
 #      instead of leaving "is this the known red or a new one" to be re-derived by hand
 #      every session (see memory `project_ci_gate_landscape`, CONVENTIONS_PATCH.md Rule I).
-#      The one current entry, `Rule I — wired-or-dead check`, is verified DYNAMICALLY: this
-#      script fetches `main`'s own latest completed CI run, reads that run's own
-#      "Violations found: N" line from the job log, and compares it against the PR run's
-#      own count. Only PR-count <= main-count is classified pre-existing-red; a WORSE count
-#      (the exact PR #668 near-miss: 193 vs a 192 baseline) is a genuine new failure and
-#      fails this script loudly. There is no hardcoded violation number anywhere in this
-#      script, so the classification cannot rot the way a static allowlist would — this
-#      mirrors the shape FOLLOW-821 uses for Rule I's own baseline comparison. This script
-#      does not implement FOLLOW-821; it only refuses to contradict its shape.
+#      The one current entry, `Rule I — wired-or-dead check`, is verified DYNAMICALLY by
+#      SYMBOL SET, not by count (FOLLOW-827). This script fetches `main`'s own latest
+#      completed CI run, reads every `WARN: '<symbol>' in <file>` line out of that run's
+#      Rule I job log, and compares that SET against the PR run's own set. The PR is
+#      classified pre-existing-red only when its set is a SUBSET of main's — i.e. only
+#      when it introduces no violating symbol that main does not already have.
+#
+#      This replaces a `pr_count <= main_count` comparison that shipped in PR #675 and was
+#      wrong: a PR that deletes one dead export and introduces another holds the count at
+#      192 and was accepted, exit 0. FOLLOW-821 AC(1) rules that out by name — "one entry
+#      per symbol … NOT a count threshold, since a count comparison passes when one
+#      violation is fixed and another introduced" — while this script's own header
+#      simultaneously claimed to be aligned with FOLLOW-821. It was not. That claim is
+#      deleted; the behaviour now matches the rule the claim appealed to. The counts are
+#      still read and printed, but only as a diagnostic and as a self-consistency check on
+#      the parser (a count > 0 that yields zero parsed symbols fails loudly rather than
+#      comparing against an empty set).
+#
+#      There is no hardcoded violation number and no hardcoded symbol list anywhere in
+#      this script, so the classification cannot rot the way a static allowlist would.
+#      When FOLLOW-821 ships its per-symbol allowlist file, re-point this comparison at
+#      that file instead of at main's latest run — see FOLLOW-827's `blocks:` field.
+#
+#      The baseline is main's LATEST COMPLETED run, which means it RATCHETS: a violation
+#      that has already merged into main becomes part of the accepted baseline. That is
+#      deliberate (it is what makes "pre-existing" mean anything) but it is no longer
+#      silent — the run id, head sha and creation time of the baseline are printed on
+#      every Rule I evaluation (FOLLOW-827 AC(3)).
 #   4. Exits non-zero on ANY unclassified failure, and non-zero on TIMEOUT. It never
 #      silently treats "still pending" or "no checks registered yet" as success — those are
 #      the "dependency not configured" case only when genuinely zero checks are configured
 #      on the repo, which this script does not assume; it always waits and then fails loud
 #      if nothing ever appears.
 #
+#   5. PREFLIGHTS ITS OWN DEPENDENCIES and refuses to run degraded (FOLLOW-830). The
+#      failure-list extraction below uses `grep -oP`; `-P` is a GNU extension absent on
+#      macOS/BSD and busybox grep. Because this script runs `set -uo pipefail` WITHOUT
+#      `-e`, a failing `grep -P` inside `mapfile` used to leave the failure array empty,
+#      which printed `failing: 0` and `RESULT: all checks green` and exited 0 while checks
+#      were failing — a fail-OPEN in the one gate whose entire purpose is not to do that.
+#      There is now a hard preflight (bash >= 4 for `mapfile`, PCRE grep, `gh` on PATH,
+#      `gh auth status`) that exits 3 with a named message. Degraded matcher, no verdict.
+#
 # USAGE
 #   scripts/gh-pr-checks-verified.sh <pr-number> [--max-wait-seconds N] [--interval-seconds N]
+#   scripts/gh-pr-checks-verified.sh --self-test
+#
+# SELF-TEST
+#   `--self-test` runs 11 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
+#   check state, and fully offline) through the real code path via a fixture seam:
+#   all-green -> 0; an undocumented failing check -> 1; Rule I with main's exact symbol
+#   set -> 0; Rule I with a new symbol on top of main -> 1; Rule I with EQUAL COUNTS but a
+#   swapped symbol -> 1 (the FOLLOW-827 case); zero registered checks -> 2, never 0; a
+#   grep without PCRE -> 3, never a green verdict (the FOLLOW-830 case); an unfetchable
+#   Rule I log -> 1, named as a fetch failure; an accepted Rule I beside a genuine failure
+#   -> 1; and this file's own mode == 755 on disk and in the git index.
+#
+#   Every fixture was written RED-FIRST against the pre-FOLLOW-827/830 script and observed
+#   failing there — the compensating-swap and no-PCRE fixtures both got
+#   "Safe to mark READY_FOR_REVIEW" and exit 0. Both transcripts are in the PR body, and
+#   the red state is its own commit on the branch.
+#
+#   PROOF OF EXECUTION (Rule Q): `--self-test` is a step of the `pr-checks-gate-self-test`
+#   job in .github/workflows/ci.yml, run on every push and PR. It is a hard gate.
 #
 # EXIT CODES
 #   0  settled; every FAILURE (if any) is a documented, dynamically-verified pre-existing-red gate
-#   1  at least one genuine (unclassified, or Rule I worse-than-main) failure
+#   1  at least one genuine (unclassified, or Rule I introducing a symbol main does not have) failure
 #   2  timed out waiting for checks to settle
-#   3  usage error / gh CLI error
+#   3  usage error, failed dependency preflight, or gh CLI error
+#   (in --self-test mode: 0 = every fixture passed, 1 = at least one fixture failed)
 set -uo pipefail
 
 # ── Fixture seam (self-test only — Rule AM) ───────────────────────────────────
@@ -73,6 +121,79 @@ set -uo pipefail
 # containing the failure shapes that have to be pinned (a compensating-symbol
 # swap, a rate-limited log fetch, a grep with no PCRE).
 FIXTURE_DIR="${GH_PR_CHECKS_FIXTURE_DIR:-}"
+
+# ── Dependency preflight (FOLLOW-830 AC(1)) ───────────────────────────────────
+# Every hard dependency this script has is checked up front and named on failure.
+# Exit 3, never a verdict: a gate that cannot run its own matcher must not print
+# a green result, and "the tool was missing" must not be indistinguishable from
+# "nothing was failing".
+# preflight_dependencies <need-gh: 0|1>
+preflight_dependencies() {
+  local need_gh="${1:-1}"
+
+  if [[ -z "${BASH_VERSINFO[0]:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    echo "ERROR: PREFLIGHT FAILED — bash >= 4 is required (the 'mapfile' builtin)." >&2
+    echo "  Found: ${BASH_VERSION:-unknown}. macOS ships bash 3.2 as /bin/bash;" >&2
+    echo "  install a newer bash (brew install bash) and re-run." >&2
+    exit 3
+  fi
+
+  if ! printf 'x\n' | grep -qP 'x' 2>/dev/null; then
+    echo "ERROR: PREFLIGHT FAILED — this 'grep' has no PCRE (-P) support." >&2
+    echo "  grep: $(command -v grep 2>/dev/null || echo 'not found')" >&2
+    echo "  This script extracts the failing-check list with 'grep -oP'. Without -P that" >&2
+    echo "  extraction returns NOTHING, and because this script runs without 'set -e' the" >&2
+    echo "  result would be 'failing: 0' and 'all checks green' over a failing check." >&2
+    echo "  Refusing to run degraded. Install GNU grep (brew install grep) and re-run." >&2
+    exit 3
+  fi
+
+  [[ "$need_gh" == "1" ]] || return 0
+
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "ERROR: PREFLIGHT FAILED — gh CLI not found on PATH." >&2
+    exit 3
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "ERROR: PREFLIGHT FAILED — 'gh auth status' is not OK." >&2
+    echo "  Unauthenticated reads would fail per-call and be reported as unreadable logs" >&2
+    echo "  one check at a time. Run 'gh auth login' and re-run." >&2
+    exit 3
+  fi
+}
+
+# Reads a Rule I job log on stdin; prints the trailing "Violations found: N" count.
+rule_i_count_from_log() {
+  grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1
+}
+
+# Reads a Rule I job log on stdin; prints one "<symbol> @ <file>" line per
+# violation, sorted and deduped, ready for comm(1). The source lines are
+# check-rule-i.sh's own
+#   WARN: '<symbol>' in <file> — zero non-test importers
+# prefixed by the ISO timestamp GitHub adds to every raw log line, hence the
+# unanchored match. This per-symbol identity is what makes the baseline
+# comparison a SET comparison rather than a count threshold (FOLLOW-827 AC(1)).
+rule_i_symbols_from_log() {
+  grep -oP "WARN: '\K[^']+' in \S+" | sed "s/' in / @ /" | LC_ALL=C sort -u
+}
+
+# Names WHY a gh read failed, so that an auth failure, a 403 rate-limit, an
+# expired log and a genuine API error are four distinguishable lines at 2am
+# instead of one unactionable WARN (FOLLOW-827 AC(4)).
+classify_fetch_error() {
+  local err
+  err="$(tr '\n' ' ' < "$1")"
+  case "$err" in
+    *"rate limit"*) echo "HTTP 403 — GitHub API rate limit exceeded" ;;
+    *403* | *Forbidden*) echo "HTTP 403 — forbidden; the token likely lacks the actions:read scope" ;;
+    *401* | *"Bad credentials"* | *authentication*) echo "HTTP 401 — gh is not authenticated for this repo" ;;
+    *404* | *"Not Found"*) echo "HTTP 404 — job or log not found (Actions logs expire after ~90 days)" ;;
+    "") echo "gh exited non-zero without writing any diagnosis" ;;
+    *) echo "gh API error" ;;
+  esac
+}
 
 # Prints the check-state snapshot for the PR under test.
 fetch_snapshot() {
@@ -131,6 +252,10 @@ if [[ "${1:-}" == "--self-test" ]]; then
   echo "Synthesized fixtures only (Rule AM). Nothing below reads a live PR's check"
   echo "state; the whole mode runs offline."
   echo ""
+
+  # The harness itself needs bash >= 4 and PCRE grep; it needs neither gh nor an
+  # authenticated token, which is what lets this run as an ordinary CI step.
+  preflight_dependencies 0
 
   st_tmp="$(mktemp -d)"
   # shellcheck disable=SC2064  # expand $st_tmp now, not at trap time
@@ -268,6 +393,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_nopcre="$st_tmp/nopcre"
   mkdir -p "$st_nopcre"
   st_real_grep="$(command -v grep)"
+  # shellcheck disable=SC2016  # the shim's body is literal text, not this shell's expansions
   {
     echo '#!/usr/bin/env bash'
     echo 'for a in "$@"; do'
@@ -337,6 +463,7 @@ fi
 
 usage() {
   echo "Usage: $0 <pr-number> [--max-wait-seconds N] [--interval-seconds N]" >&2
+  echo "       $0 --self-test" >&2
   exit 3
 }
 
@@ -363,12 +490,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$FIXTURE_DIR" ]]; then
+  preflight_dependencies 0
   REPO="fixture/repo"
 else
-  command -v gh >/dev/null 2>&1 || {
-    echo "ERROR: gh CLI not found on PATH" >&2
-    exit 3
-  }
+  preflight_dependencies 1
 
   REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
   if [[ -z "$REPO" ]]; then
@@ -376,6 +501,10 @@ else
     exit 3
   fi
 fi
+
+tmp_dir="$(mktemp -d)"
+# shellcheck disable=SC2064  # expand $tmp_dir now, not at trap time
+trap "rm -rf '$tmp_dir'" EXIT
 
 # Name of the one currently-documented pre-existing-red check in this repo
 # (memory `project_ci_gate_landscape`, repeated confirmation across QUEUE.md sessions).
@@ -470,28 +599,112 @@ for entry in "${failure_names[@]}"; do
       continue
     fi
 
-    pr_violations="$(fetch_job_log "$pr_job_id" pr-rule-i.log 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
-
-    main_run_id="$(fetch_main_run_meta 2>/dev/null | cut -f1)"
-    main_violations=""
-    if [[ -n "$main_run_id" ]]; then
-      main_job_id="$(fetch_main_job_id "$main_run_id" 2>/dev/null)"
-      if [[ -n "$main_job_id" ]]; then
-        main_violations="$(fetch_job_log "$main_job_id" main-rule-i.log 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
-      fi
-    fi
-
-    if [[ -z "$pr_violations" || -z "$main_violations" ]]; then
-      echo "WARN: could not read violation counts (PR job $pr_job_id / main run $main_run_id) — treating as genuine failure (fail loud, never guess)."
-      genuine_failures+=("$name — violation counts unreadable (PR job $url, main run $main_run_id)")
+    # ── PR side ──────────────────────────────────────────────────────────────
+    if ! fetch_job_log "$pr_job_id" pr-rule-i.log > "$tmp_dir/pr.log" 2> "$tmp_dir/pr.err"; then
+      diag="$(classify_fetch_error "$tmp_dir/pr.err")"
+      echo "WARN: could not FETCH the PR's Rule I job log (job $pr_job_id) — $diag."
+      echo "      This is a tooling failure, NOT a verdict; treating as a genuine failure."
+      genuine_failures+=("$name — could not FETCH the PR's Rule I job log: $diag")
       continue
     fi
 
-    echo "Rule I dynamic baseline check: PR violations=$pr_violations, main($main_run_id) violations=$main_violations"
-    if [[ "$pr_violations" -le "$main_violations" ]]; then
-      accepted_failures+=("$name — pre-existing-red, verified against main baseline ($pr_violations <= $main_violations)")
+    pr_violations="$(rule_i_count_from_log < "$tmp_dir/pr.log")"
+    if [[ -z "$pr_violations" ]]; then
+      echo "WARN: the PR's Rule I log was fetched successfully but contains no"
+      echo "      'Violations found: N' line — check-rule-i.sh's output format may have"
+      echo "      changed, or the job died before its summary. Treating as genuine failure."
+      genuine_failures+=("$name — Rule I log fetched but unparseable (no 'Violations found' line)")
+      continue
+    fi
+
+    rule_i_symbols_from_log < "$tmp_dir/pr.log" > "$tmp_dir/pr.syms"
+    pr_symbols="$(wc -l < "$tmp_dir/pr.syms" | tr -d ' ')"
+    if [[ "$pr_violations" -gt 0 && "$pr_symbols" -eq 0 ]]; then
+      echo "WARN: the PR's Rule I log reports $pr_violations violation(s) but not one"
+      echo "      \"WARN: '<symbol>' in <file>\" line could be parsed out of it. Comparing an"
+      echo "      empty set against the baseline would accept everything, so this fails loud."
+      genuine_failures+=("$name — count says $pr_violations but zero violation symbols parsed (log format or matcher mismatch)")
+      continue
+    fi
+
+    # ── main baseline ────────────────────────────────────────────────────────
+    main_meta="$(fetch_main_run_meta 2>/dev/null)"
+    main_run_id="$(printf '%s' "$main_meta" | cut -f1)"
+    main_head="$(printf '%s' "$main_meta" | cut -f2)"
+    main_created="$(printf '%s' "$main_meta" | cut -f3)"
+    if [[ -z "$main_run_id" ]]; then
+      echo "WARN: could not resolve main's latest completed ci.yml run — treating as genuine failure."
+      genuine_failures+=("$name — main baseline run unresolvable")
+      continue
+    fi
+
+    # AC(3): name the baseline, every time. A ratchet nobody prints is a ratchet
+    # nobody notices.
+    echo "Rule I baseline source: main's LATEST COMPLETED ci.yml run $main_run_id"
+    echo "  (head ${main_head:0:12}, created ${main_created:-unknown})."
+    echo "  This is read fresh from main's most recent completed run, so the baseline"
+    echo "  RATCHETS: any Rule I violation already merged into main counts as pre-existing"
+    echo "  here and will not block this PR. Check the head sha above is what you expect."
+
+    main_job_id="$(fetch_main_job_id "$main_run_id" 2>/dev/null)"
+    if [[ -z "$main_job_id" ]]; then
+      echo "WARN: main's run $main_run_id has no job named '$RULE_I_NAME' — treating as genuine failure."
+      genuine_failures+=("$name — no Rule I job in main baseline run $main_run_id")
+      continue
+    fi
+
+    if ! fetch_job_log "$main_job_id" main-rule-i.log > "$tmp_dir/main.log" 2> "$tmp_dir/main.err"; then
+      diag="$(classify_fetch_error "$tmp_dir/main.err")"
+      echo "WARN: could not FETCH main's Rule I job log (job $main_job_id) — $diag."
+      echo "      This is a tooling failure, NOT a verdict; treating as a genuine failure."
+      genuine_failures+=("$name — could not FETCH main's baseline Rule I job log: $diag")
+      continue
+    fi
+
+    main_violations="$(rule_i_count_from_log < "$tmp_dir/main.log")"
+    if [[ -z "$main_violations" ]]; then
+      echo "WARN: main's Rule I log was fetched but contains no 'Violations found: N' line —"
+      echo "      treating as genuine failure rather than comparing against an unknown baseline."
+      genuine_failures+=("$name — main baseline log fetched but unparseable (run $main_run_id)")
+      continue
+    fi
+
+    rule_i_symbols_from_log < "$tmp_dir/main.log" > "$tmp_dir/main.syms"
+    main_symbols="$(wc -l < "$tmp_dir/main.syms" | tr -d ' ')"
+    if [[ "$main_violations" -gt 0 && "$main_symbols" -eq 0 ]]; then
+      echo "WARN: main's Rule I log reports $main_violations violation(s) but zero symbols"
+      echo "      parsed — the baseline set cannot be trusted. Failing loud."
+      genuine_failures+=("$name — main baseline count says $main_violations but zero symbols parsed")
+      continue
+    fi
+
+    # ── the comparison (SET, not count) ──────────────────────────────────────
+    comm -23 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/new.syms"
+    comm -13 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/fixed.syms"
+    new_symbols="$(wc -l < "$tmp_dir/new.syms" | tr -d ' ')"
+    fixed_symbols="$(wc -l < "$tmp_dir/fixed.syms" | tr -d ' ')"
+
+    echo "Rule I symbol-set comparison: PR has $pr_symbols violating symbol(s) (count line:"
+    echo "  $pr_violations), main baseline has $main_symbols (count line: $main_violations)."
+    echo "  New on this PR: $new_symbols | fixed by this PR: $fixed_symbols"
+
+    if [[ "$new_symbols" -eq 0 ]]; then
+      accepted_failures+=("$name — pre-existing-red: all $pr_symbols violating symbol(s) are also in main's baseline (run $main_run_id); $fixed_symbols fixed by this PR")
     else
-      genuine_failures+=("$name — NEW violations: $pr_violations > main baseline $main_violations")
+      echo ""
+      echo "  NEW violating symbols (on this PR, absent from main's baseline):"
+      head -20 "$tmp_dir/new.syms" | sed 's/^/    - /'
+      if [[ "$new_symbols" -gt 20 ]]; then
+        echo "    … and $((new_symbols - 20)) more"
+      fi
+      if [[ "$pr_violations" -eq "$main_violations" ]]; then
+        echo ""
+        echo "  NOTE: the two COUNTS are equal ($pr_violations). Only the symbol SETS differ —"
+        echo "  this PR fixed $fixed_symbols violation(s) and introduced $new_symbols. A count"
+        echo "  comparison would have accepted it and exited 0; that compensating-swap case is"
+        echo "  what FOLLOW-821 AC(1) forbids by name and what FOLLOW-827 fixed here."
+      fi
+      genuine_failures+=("$name — $new_symbols NEW Rule I violation symbol(s) not in main's baseline (run $main_run_id)")
     fi
   else
     genuine_failures+=("$name ($url) — not on the documented pre-existing-red list")

@@ -7,7 +7,7 @@
  * not a hand-written replica of them, and assert over the WHOLE options object
  * passed to `Sentry.init` rather than a chosen subset — so a key added later
  * (a hook, a new integration, `sendDefaultPii: true`) fails here and forces
- * `docs/compliance/dpia.md` §2.7 to be revisited in the same PR. That is the
+ * `docs/compliance/dpia.md` §2.7.1 to be revisited in the same PR. That is the
  * assertion shape RETRO-247 §5a identified as the half of
  * `test_buyer_text_escapes_both_sinks` worth mirroring; the buyer-text sentinel
  * half lives in `sentry-capture-path.test.ts`, which drives a real capture.
@@ -164,7 +164,7 @@ describe('FOLLOW-811 — control-plane Sentry init options (client)', () => {
      * Session Replay reads the admin dashboard's DOM. Both rates at 0 is the
      * only reason it captures nothing (`@sentry-internal/replay@10.50.0`,
      * `build/npm/cjs/index.js:8685-8691` returns before creating a session).
-     * dpia.md §2.7 makes raising either rate a DPIA-amendment trigger; this
+     * dpia.md §2.7.1 makes raising either rate a DPIA-amendment trigger; this
      * assertion is the mechanical half of that trigger.
      */
     expect(options?.replaysSessionSampleRate).toBe(0);

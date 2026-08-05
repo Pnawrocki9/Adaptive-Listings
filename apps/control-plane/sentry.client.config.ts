@@ -11,7 +11,7 @@
  * variant correctly — this file was the outlier.)
  *
  * No `beforeSend` redaction hook — deliberate (FOLLOW-811). Reasoning and
- * re-review triggers: `docs/compliance/dpia.md` §2.7; long form in
+ * re-review triggers: `docs/compliance/dpia.md` §2.7.1; long form in
  * `sentry.server.config.ts`'s header. Pinned by
  * `src/lib/__tests__/sentry-config.shape.test.ts`.
  *
@@ -37,7 +37,7 @@ if (dsn) {
     release,
     environment,
     // Pinned explicitly — see sentry.server.config.ts for why the SDK default
-    // is not relied on (FOLLOW-811 / dpia.md §2.7).
+    // is not relied on (FOLLOW-811 / dpia.md §2.7.1).
     sendDefaultPii: false,
     /**
      * Session Replay, wired but INERT at the sample rates above.
@@ -53,7 +53,7 @@ if (dsn) {
      * (`@sentry-internal/replay@10.50.0`, `build/npm/cjs/index.js:8685-8691`) —
      * no DOM is read. What remains is the capability: Session Replay records
      * the admin dashboard's DOM, and it is one sample-rate line away. That is
-     * named as an explicit re-review trigger in `docs/compliance/dpia.md` §2.7
+     * named as an explicit re-review trigger in `docs/compliance/dpia.md` §2.7.1
      * — raising either rate above 0 requires a DPIA amendment first, because it
      * introduces a data category (rendered admin DOM) the DPIA does not cover.
      * Left in place rather than removed: it is pre-existing and deliberately

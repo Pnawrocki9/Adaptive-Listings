@@ -7,6 +7,11 @@
  * Sentry initialises only when `SENTRY_DSN_CONTROL_PLANE` is present —
  * absent env var = graceful no-op.
  *
+ * No `beforeSend` redaction hook — deliberate (FOLLOW-811). The reasoning and
+ * the re-review triggers live in `docs/compliance/dpia.md` §2.7; the long-form
+ * summary is in `sentry.server.config.ts`'s header. Pinned by
+ * `src/lib/__tests__/sentry-config.shape.test.ts`.
+ *
  * @see https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
@@ -22,5 +27,8 @@ if (dsn) {
     tracesSampleRate: environment === 'production' ? 0.05 : 0.1,
     release,
     environment,
+    // Pinned explicitly — see sentry.server.config.ts for why the SDK default
+    // is not relied on (FOLLOW-811 / dpia.md §2.7).
+    sendDefaultPii: false,
   });
 }

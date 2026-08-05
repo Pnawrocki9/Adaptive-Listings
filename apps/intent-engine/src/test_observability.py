@@ -256,5 +256,44 @@ def test_buyer_text_escapes_both_sinks(
     assert "kind=parse_error" in captured_stdout
     assert type(exc).__name__ in captured_stdout
 
+    # Sink 3b — the SAME stdout sink reached through the multilingual-retry
+    # branch (Rule S sibling). The block above drives only the primary-failure
+    # path: `_call_model` raises on its FIRST call, so the retry arm is never
+    # entered and its own `print` was untested — which is how it kept the
+    # unredacted `{exc}` after the primary branch was fixed. Here the first
+    # call succeeds with a low-confidence, mixed-language read (so the §C.3
+    # retry triggers) and the SECOND call raises.
+    low_conf_mixed = json.dumps(
+        {
+            "purchase_purpose": None,
+            "urgency": None,
+            "budget_band": None,
+            "family_stage": None,
+            "geo_priority": None,
+            "feature_priority": None,
+            "cross_border": None,
+            "finance_complexity": None,
+            "decision_role": None,
+            "risk_appetite": None,
+            "emotional_state": None,
+            "tax_aware": None,
+            "confidence": 0.1,
+        }
+    )
+    monkeypatch.setattr(nlp, "_call_model", MagicMock(side_effect=[low_conf_mixed, exc]))
+    monkeypatch.setattr(nlp, "detect_language_mix", MagicMock(return_value=True))
+    capsys.readouterr()  # drain
+    nlp.extract_intent(
+        [{"role": "user", "content": "mixed language input — model calls are mocked"}],
+        model="claude-haiku-4-5-20251001",
+        source="realtime",
+    )
+    retry_stdout = capsys.readouterr().out
+    assert BUYER_TEXT_SENTINEL not in retry_stdout
+    # Non-vacuous in both directions: the retry arm really was entered, and it
+    # still logs something actionable rather than being silenced.
+    assert "multilingual retry error" in retry_stdout
+    assert type(exc).__name__ in retry_stdout
+
     # …and the guard is non-vacuous: the sentinel really is in the exception.
     assert BUYER_TEXT_SENTINEL in str(exc)

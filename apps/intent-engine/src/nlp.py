@@ -533,7 +533,18 @@ def extract_intent(messages: list[Message], model: str, source: str) -> ChatInte
             payload.extraction_error = "retry_failed: empty_model_response"
         except Exception as exc:  # noqa: BLE001 — keep the Haiku result on retry failure.
             retry_kind = _classify_extraction_error(exc)
-            print(f"extract_intent multilingual retry error: {exc}")
+            # FOLLOW-812 (Rule S sibling of the primary-failure branch above):
+            # this arm carries the IDENTICAL leak. The Sonnet retry is called
+            # with the same buyer messages, so a `_parse_response` failure here
+            # produces a `str(exc)` embedding a fragment of the model's raw
+            # reply — which can echo buyer chat text — into Modal's unscrubbed
+            # stdout. Redacting only the primary branch would have left the
+            # leak open one branch over, which is the exact hole the comment
+            # 20 lines up says the fix round closed on the primary path.
+            print(
+                f"extract_intent multilingual retry error model={SONNET_MODEL} "
+                f"source={source} kind={retry_kind}: {type(exc).__name__}"
+            )
             _capture_extraction_error(
                 exc,
                 model=SONNET_MODEL,

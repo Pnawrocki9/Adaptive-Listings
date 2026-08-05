@@ -1,6 +1,68 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 103 (2026-08-05) — FOLLOW-812 DONE (PR #677 merged `8423c804`), RETRO-247 landed, FOLLOW-832 + FOLLOW-811 dispatched in parallel
+## ▶️ START HERE — session 103 (2026-08-05) — three tickets DONE (812, 832, 811), RETRO-247 landed, FOLLOW-837 filed, FOLLOW-827+830 dispatched
+
+### Session-103 closing state — read this first
+
+**Three tickets closed DONE this session**, each PR merged by Piotr after this session verified CI
+with `scripts/gh-pr-checks-verified.sh`:
+
+| Ticket     | PR   | Merge commit | Note                                                          |
+| ---------- | ---- | ------------ | ------------------------------------------------------------- |
+| FOLLOW-812 | #677 | `8423c804`   | Modal stdout chat-intent leak, both `print` arms redacted     |
+| FOLLOW-832 | #678 | `221a4f2a`   | P1 — sink 2 of the sentinel test now asserts the REAL payload |
+| FOLLOW-811 | #679 | `1b758fe1`   | No `beforeSend`; residual risk accepted in `dpia.md` §2.7.1   |
+
+**Merged content re-verified on `main` rather than assumed:**
+`apps/intent-engine/src/test_observability.py` carries `test_buyer_text_escapes_all_sinks`;
+`docs/compliance/dpia.md:270` carries the new §2.7.1 decision section;
+`apps/control-plane/src/lib/__tests__/sentry-{capture-path,config.shape}.test.ts` both exist. All
+worktrees removed, all four ticket branches deleted, `git worktree list` shows only `main`.
+
+**A correction worth recording, since it was nearly a wrong claim.** Immediately after the operator
+reported both PRs merged, `gh pr view 679` returned `state=OPEN, mergeCommit=null` while #678 showed
+`MERGED`. That was GitHub mid-propagation, not an unmerged PR — a re-read ~30s later returned
+`MERGED` with `1b758fe1`, and the merge commit is an ancestor of `main`. **A single `gh pr view` is
+not evidence of a PR's state during the minute after a merge**; re-read before asserting, exactly as
+the session-102 `ps` retraction concluded for process checks.
+
+**FOLLOW-837 filed** (P2, FROZEN, devops-engineer) — `commitlint.config.cjs` declares `rules` twice,
+so the repo's entire documented commit policy (`scope-enum`, `subject-min-length`,
+`subject-max-length: 120`, `body-max-line-length`) is dead code; what runs is config-conventional's
+defaults plus the surviving `ticket-reference`. Established by probing the linter, not by reading
+the file: an invalid scope passes, a 1-char subject passes, and a 113-char header fails on an
+undocumented 100-char cap that contradicts the repo's own 120. Same class as FOLLOW-832 and
+FOLLOW-739 — a control the repo documents, believes it has, and does not have. It was filed only
+after both PRs merged, because both touched the tail of `FOLLOW_UPS.md`. Next free is now
+**FOLLOW-838**.
+
+### Dispatched next: FOLLOW-827 + FOLLOW-830 together (both P1), and RETRO-248/249
+
+**Promoted from RETRO-246's stubs, ahead of the P2/P3 tail** — RETRO-247 recommended exactly this
+pull-forward, and both are P1 findings **about the merge gate this orchestrator's own validation now
+depends on**. Neither was FROZEN (the session-95 rule carves out P1).
+
+**Dispatched as ONE ticket to ONE worker**, because the two stubs are the same code path and
+FOLLOW-830 AC(2) explicitly says its equal-counts-different-symbols fixture is shared with
+FOLLOW-827 AC(5) — splitting them would have two workers editing `scripts/gh-pr-checks-verified.sh`
+in parallel to satisfy one fixture.
+
+**FOLLOW-827 + FOLLOW-830 — status: IN_PROGRESS** — **assigned_to:** devops-engineer **model:**
+**Opus** **started_at:** 2026-08-05 **branch:** `devops-engineer/FOLLOW-827-830-ci-gate-self-test`
+**worktree:** `.claude/worktrees/follow-827-830`. Model justification: escalated one tier. The gate
+decides every merge in the repo; the work turns on subtle `set -uo pipefail` / `mapfile` failure
+semantics, a fail-OPEN portability path, and a design call (symbol-set comparison vs consuming
+FOLLOW-821's not-yet-existing allowlist) whose wrong answer reintroduces the false green FOLLOW-813
+existed to remove.
+
+**RETRO-248 (FOLLOW-832) + RETRO-249 (FOLLOW-811)** dispatched to a **single**
+`retrospective-analyst` (Opus) covering both merges in sequence. Not two parallel analysts: they
+would both append to `RETROSPECTIVES.md`, `FOLLOW_UPS.md` and `CONVENTIONS_PATCH.md` and collide on
+all three. The single analyst also gets to see what the two tickets share — both shipped an
+assertion that was a property of something incidental (a test-authored replica; an envelope
+ordering) rather than of the thing under test.
+
+**Counters: FOLLOW-827+830 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs at dispatch time.**
 
 ### RETRO-247 landed on `main` (`10629c06`, no PR — the RETRO-238…246 convention)
 
@@ -74,7 +136,7 @@ is Opus's row, not Sonnet's.
 **CI-check counters: FOLLOW-832 0/5, FOLLOW-811 0/5. Fix-iteration counters: 0/3 each. 2 tickets
 IN_PROGRESS. 0 open PRs at dispatch time.**
 
-### FOLLOW-832 — status: READY_FOR_REVIEW (PR #678, head `7dadd86d`)
+### FOLLOW-832 — status: DONE (PR #678 merged `221a4f2a`, 2026-08-05)
 
 **ci_check_counter:** 3/5 **fix_iteration_counter:** 1/3 (both PM-side; the worker needed no rework
 on substance). **CI:** `scripts/gh-pr-checks-verified.sh 678` → 73 checks, 71 pass, 2 `Rule I` at
@@ -109,7 +171,7 @@ misled the next engineer. `test_observability.py` has always contained longer na
 Shannon entropy; the 45-char rename cleared the entropy threshold, the 50-char sibling does not. The
 docstring now states that, not the myth.
 
-### FOLLOW-811 — status: READY_FOR_REVIEW (PR #679, head `76e86586`)
+### FOLLOW-811 — status: DONE (PR #679 merged `1b758fe1`, 2026-08-05)
 
 **ci_check_counter:** 2/5 **fix_iteration_counter:** 1/3. **CI after the fix:**
 `scripts/gh-pr-checks-verified.sh 679` → 75 checks, **73 pass**, 2 `Rule I` at 192 <= 192 vs `main`

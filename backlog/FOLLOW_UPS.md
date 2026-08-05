@@ -27955,3 +27955,49 @@ red-run citation now vouches for 10 tests after 2 more PRs walked past it), FOLL
 of worktree stranding — the PM's "second occurrence" was an undercount; already correctly scoped, still
 P3/promoted_to_queue:false — a PRICING decision for the PM), FOLLOW-794 (HW-1 ClassDirective re-verified
 still zero producers), FOLLOW-793 (needs re-scoping, see 802). -->
+
+---
+
+## FOLLOW-837 — `commitlint.config.cjs` declares `rules` twice, so the repo's entire documented commit policy is dead code
+
+source_retro: n/a (found in session 103 while writing this session's own bookkeeping commits)
+source_ticket: FOLLOW-811 recommended_sprint: next recommended_agent: devops-engineer priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95
+standing rule (new stubs land FROZEN unless P1); this is P2.
+
+**The defect.** `commitlint.config.cjs` defines the object key `rules` at line 13 and again at
+line 126. In a JavaScript object literal the later key replaces the earlier one wholesale, so the
+entire first block — `type-enum`, `scope-enum`, `subject-min-length: 10`, `subject-max-length: 120`,
+`subject-case`, `subject-full-stop`, `body-max-line-length: 100`, `footer-max-line-length` — never
+reaches commitlint. What actually runs is `@commitlint/config-conventional`'s defaults plus the
+surviving `{'ticket-reference': [2, 'always']}`.
+
+**Established by probing the linter, not by reading the file** (session 103):
+
+| Probe                                         | Result                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `docs(totally-invalid-scope): … [FOLLOW-811]` | **passes** — `scope-enum` never fires                              |
+| `docs(backlog): x [FOLLOW-811]`               | **passes** — `subject-min-length: 10` never fires                  |
+| 113-char header                               | **fails** on `header-max-length` **100**, from config-conventional |
+| message with no ticket reference              | **fails** — so the surviving key does work                         |
+
+So the scope list `docs/CONVENTIONS.md` documents is enforced by nothing, while an undocumented
+100-char header cap that contradicts the repo's own `subject-max-length: 120` is what actually
+rejects commits. It rejected this session's first bookkeeping commit, which is how it was found.
+
+**Same class as FOLLOW-832 and FOLLOW-739:** a control the repo documents, believes it has, and does
+not have. Cheap to detect, and detectable the same way it was found here.
+
+**AC:** (1) merge the two `rules` objects into one so the declared policy actually runs — and expect
+this to surface pre-existing violations, so decide and record whether the repo wants its documented
+policy or the conventional defaults it has silently been living under; (2) reconcile
+`subject-max-length` with `header-max-length`, since 120 is unreachable while the header cap is 100
+— pick one number and make `docs/CONVENTIONS.md` state it; (3) pin the config with a red-first test
+that feeds commitlint a message violating each rule the repo claims to enforce (the four probes
+above are the fixture), so a future duplicate key fails CI instead of silently disarming the gate;
+(4) do NOT quietly relax a rule to make existing history pass — if a rule is not wanted, delete it
+deliberately and say so.
+
+cross_ref: [`commitlint.config.cjs:13,:126`; `docs/CONVENTIONS.md` (commit message section);
+`lefthook.yml` (commit-msg hook); FOLLOW-832 and FOLLOW-739 (same defect class); `backlog/QUEUE.md`
+session-103 head]

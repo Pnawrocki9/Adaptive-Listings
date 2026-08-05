@@ -2276,6 +2276,75 @@ for pr in $(gh pr list --state open --json number -q '.[].number'); do \
 ls .claude/agents/*/lessons.d/ 2>/dev/null   # fragment dirs should exist once FOLLOW-650 lands
 ```
 
+### Rule AG amendment (2026-08-05 — RETRO-247 §6 P-30 — the blocked-write fallback and the PM's landing obligation)
+
+**Trigger:** Rule AG tells an agent WHERE its learning entry must go
+(`.claude/agents/<name>/lessons.d/<TICKET>.md`, never the shared tail). It says nothing about what
+happens when that write is DENIED — and it has now been denied on three consecutive tickets, at
+which point the entry's survival depends entirely on whether a human reads the PR description.
+Sightings: **RETRO-160 §4d DG-1 / FOLLOW-516** (count 1 — the FOLLOW-513 worker was
+permission-blocked from correcting `backend-engineer/lessons.md`; the WRONG lesson stood on disk
+until a separate P1 ticket landed it, i.e. the failure mode is real and it cost a ticket cycle),
+**RETRO-246 §6 P-30** (count 2 — FOLLOW-813's worker and the RETRO-246 analyst, both blocked, both
+preserving the text in the PR body; the PM landed it inside the same PR, and RETRO-246 recorded that
+**the PM behaviour is the thing worth codifying** and armed the promotion on the next sighting),
+**RETRO-247 §6 P-30** (count 3, the promoting sighting, which does NOT inflate the count — same
+adjudication as Rules AA/AB/AC/AD/AE/V/Q/AG's own promotion: FOLLOW-812's worker, `Edit` and `Write`
+both denied under `.claude/`, text preserved verbatim in PR #677's "Not done in this PR (environment
+limitation, flagged not hidden)" section, pasted in by a human afterwards).
+
+**Adjudicated against the alternatives before amending, per RETRO-246's methodology (read the rule
+TEXT, not the title, and ask whether running it verbatim would report the event clean):** this is
+**not Rule S** — S governs symmetric sibling sets, not write-permission scope, and RETRO-246 §6
+already had to correct a closure note that mislabelled it; **not Rule AH** — AH binds an operator
+instruction that cannot execute at its own merge commit, not an agent that cannot write; **not Rule
+AI** — AI governs propagating a claim to every document asserting the prior state. Rule AG is the
+rule that owns the question _"how does an agent's learning entry reach the durable corpus"_, and all
+three sightings are `.claude/` learning-corpus writes, so the amendment is scoped exactly to its
+evidence and no wider. **No new letter minted.**
+
+**Amendment — when a mandated write under `.claude/` is refused by the permission system:**
+
+1. **The agent MUST NOT silently drop the entry.** It states, in its PR description AND its final
+   report: the exact intended path (`.claude/agents/<name>/lessons.d/<TICKET>.md` — never the shared
+   `lessons.md` tail, which Rule AG forbids independently) and the **full text verbatim**, in a form
+   a human can paste without editing. "I could not write my lesson" without the text is a dropped
+   entry.
+2. **The agent MUST NOT work around the block.** It does not change its own permission settings or
+   configuration, does not ask another agent to write on its behalf, and does not redirect the entry
+   to a file outside `.claude/` (which fragments the corpus and defeats the fragment convention). A
+   permission grant is an operator action by construction.
+3. **The PM MUST land the text at the named path in the SAME session, before the ticket is closed**,
+   and record in the closure note that it did. This is the clause with evidence behind it: in
+   RETRO-160 the block cost a full extra ticket cycle (FOLLOW-516, P1) because nobody landed it; in
+   RETRO-246 and RETRO-247 the PM landed it immediately and the instances produced no follow-up
+   ticket. The delta between those outcomes IS the rule.
+4. **A retro MUST record the block as an event, not as a footnote** — including its own, if it is
+   blocked. Three consecutive silent occurrences is how a "self-improving" loop quietly becomes a
+   manual one.
+
+**Verification:**
+
+```bash
+# 1. Every ticket closed in a session should have a fragment, or a closure note that says who landed it:
+ls .claude/agents/*/lessons.d/ 2>/dev/null
+git log --oneline -20 --name-only -- '.claude/agents/*/lessons.d/*'
+# 2. A PR body that says a write was blocked MUST also carry the path and the text:
+gh pr view <pr> --json body -q .body | grep -A5 -iE "permission|blocked|could not write"
+# 3. The shared tail must NOT be the target (Rule AG parent clause), even in the fallback:
+git log --oneline -20 --name-only -- '.claude/agents/*/lessons.md'
+```
+
+**Amendment evidence (≥2 PRIOR retros + the promoting retro):** RETRO-160 §4d DG-1 / FOLLOW-516
+(prior, count 1) + RETRO-246 §6 P-30 (prior, count 2, which pre-specified the promotion trigger
+_"the next numbered retro observing a sandbox-blocked worker whose flagged gap reaches merge (in
+either state) cites RETRO-160 + RETRO-246 → ≥2 prior → promote"_ and stated that the rule should
+codify the PM behaviour) + RETRO-247 §6 P-30 (the promoting sighting, not counted). The permission
+question itself — whether the block should exist at all — is **FOLLOW-835**, an operator decision no
+agent may take for itself; this amendment governs conduct while it stands.
+
+<!-- Rule AG AMENDED 2026-08-05 — RETRO-247 §6 P-30 (blocked-write fallback + PM landing obligation; NO new letter). Evidence ≥2 PRIOR numbered retros: RETRO-160 §4d DG-1 / FOLLOW-516 (a worker permission-blocked from correcting backend-engineer/lessons.md; the wrong lesson stood until a separate P1 ticket landed it, count 1) + RETRO-246 §6 P-30 (FOLLOW-813's worker + the RETRO-246 analyst, both blocked, PM landed it in-PR; count 2, and it ARMED the promotion in advance with an explicit trigger). Promoting sighting: RETRO-247 (FOLLOW-812 / PR #677 — third consecutive ticket; does NOT inflate the count, same adjudication as Rules AA/AB/AC/AD/AE/V/Q and AG's own promotion). HOME CHOICE tested against the texts, not the titles: NOT Rule S (symmetric-sibling completeness, not write-permission scope — RETRO-246 §6 had to correct a closure note that mislabelled it, and QUEUE session-102 independently agrees), NOT Rule AH (an operator instruction non-executable at its own merge commit), NOT Rule AI (claim propagation). Rule AG already owns the learning-corpus write PATH, and all three sightings are `.claude/` learning-corpus writes, so the amendment is scoped to its evidence and no wider — amendment precedent = the Rule Y scope-broadening @ RETRO-126 and the Rule S call-site-inventory amendment @ RETRO-112. The permission question itself is FOLLOW-835 (operator decision; an agent must never implement it for itself). RETRO-247 separately DECLINED to amend Rule S on its 2nd consecutive sighting: run verbatim, S's bullets 1 and 3 both fire on PR #677, so it is a compliance failure against an adequate rule, not a rule-text gap -> the remedy is a gate, FOLLOW-834. -->
+
 ---
 
 <!-- Rule AG added 2026-07-25 — RETRO-219 §6. Evidence (≥2 PRIOR numbered retros): RETRO-213 §PROCESS

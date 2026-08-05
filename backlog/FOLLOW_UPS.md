@@ -27643,6 +27643,220 @@ cross_ref: [RETRO-246 §4b CB-2, §6 P-31; FOLLOW-813 (PR #675 commit `c9a765ae`
 
 ---
 
+## FOLLOW-832 — Sink 2 of `test_buyer_text_escapes_both_sinks` asserts on the test's own replica of the production expression, so the Redis leg of the regulator-facing claim is unpinned
+
+source_retro: RETRO-247 (§4c TG-1 / §4d DG-2) source_ticket: FOLLOW-812 recommended_sprint: now
+recommended_agent: ml-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Not frozen:** the session-95 standing rule freezes new stubs "unless it is P1". This is P1, so it
+lands unfrozen and can be dispatched without a CEO exemption.
+
+**The defect, proven rather than argued.** `apps/intent-engine/src/test_observability.py:228-236`
+builds sink 2 by calling `nlp._neutral_payload(...)` with a **test-authored**
+`extraction_error=f"{nlp._classify_extraction_error(exc)}: {type(exc).__name__}"`. Its own comment
+at `:228` says so — _"built exactly as `nlp.py`'s primary-failure branch builds it"_. The assertion
+therefore measures the test's copy of the production expression, not the expression at `nlp.py:504`.
+The docstring at `:208-212` states the opposite: _"substituting `{exc}` for `{type(exc).__name__}`
+in the payload fails sink 2."_
+
+Verified in a sandboxed copy of the tree (working tree never mutated, per Rule AM):
+
+```
+# in $SCRATCH/ie, a cp -r of apps/intent-engine:
+#   nlp.py:504  extraction_error=f"{kind}: {type(exc).__name__}"  ->  f"{kind}: {exc}"
+$ python3 -m pytest src/test_observability.py -q
+11 passed in 0.13s
+
+$ python3 -c '<drive extract_intent with the sentinel-carrying ValueError>'
+extraction_error = parse_error: Expecting value: line 1 column 1 (char 0) - model returned:
+  relocating to Lisbon in March, budget is 450k, wife is pregnant
+SENTINEL IN REDIS PAYLOAD: True
+```
+
+So the one regression this assertion exists to catch ships green, and it ships into the sink with a
+24-hour TTL that `docs/compliance/C-07-chat-retention-scope.md:237-243` describes to a regulator as
+carrying _"the exception's CLASS name only"_. No live leak exists today — `nlp.py:504` is correct —
+this is a **control gap**, priced P1 for the same reason RETRO-246 priced FOLLOW-827/830 P1: the
+thing that is supposed to stop the next regression cannot.
+
+**The fix is free.** The sink-3 block three lines below already calls the REAL `extract_intent` on
+the primary-failure path and **discards its return value**. That return value IS the
+`error_fallback` payload. Capture it and assert the sentinel against
+`json.dumps(returned.model_dump())`.
+
+**AC:** (1) sink 2 asserts over the payload RETURNED by the real `extract_intent` call (the sink-3
+invocation), not over a test-constructed replica — and the assertion is proven non-vacuous by
+perturbing `nlp.py:504` itself, with the transcript in the PR body; (2) the docstring's non-vacuity
+paragraph (`:208-212`) is corrected to describe what each sink actually perturbs, and its numbered
+list (`:196-206`) gains the 3b arm it currently omits; (3) rename the test — it says "both sinks"
+(two) for an assertion that now covers three sinks and four arms — and re-point **every** citation
+in the same change, per Rule Y: `docs/compliance/ropa.md:534-539`,
+`docs/compliance/C-07-chat-retention-scope.md:250-259`, `docs/compliance/dpia.md:255-258`, and
+`backlog/FOLLOW_UPS.md` FOLLOW-811 AC(2); (4) do NOT delete the re-synthesised sink-1 block — it
+legitimately unit-tests a pure function whose registration is separately asserted
+(`test_observability.py:65`, `test_intent_engine.py:378`); only sink 2 is the false control.
+
+**Pattern status:** RETRO-247 §6 minted this as **P-32 at count 1** (a test's non-vacuity claim
+false because it asserts on its own replica of the production expression) and did NOT promote a
+rule. The pre-merge multilingual-retry `print` is the second instance of the same shape in the same
+artefact and is deliberately NOT counted separately.
+
+cross_ref: [RETRO-247 §4c TG-1, §4d DG-2, §6 P-32; FOLLOW-812 (PR #677); FOLLOW-738; FOLLOW-739;
+`apps/intent-engine/src/test_observability.py:196-236`; `apps/intent-engine/src/nlp.py:504`;
+`docs/compliance/C-07-chat-retention-scope.md:237-243`; Rule Y, Rule AM]
+
+---
+
+## FOLLOW-833 — "No residual raw-exception `print` remains on this stdout sink" is a sink-wide negative supported by branch-wide evidence; three raw-exception prints remain on that sink
+
+source_retro: RETRO-247 (§4a LG-1 / §4d DG-1 / §4d DG-3) source_ticket: FOLLOW-812
+recommended_sprint: next recommended_agent: compliance-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN — session-95 standing rule (any new stub
+below P1 lands frozen).**
+
+**The claim.** `docs/compliance/ropa.md:539-540` (narrative), `ropa.md:671` (revision row) and
+`docs/compliance/C-07-chat-retention-scope.md:313` (revision row) each state: _"No residual
+raw-exception `print` remains on this stdout sink."_ True of the two branches FOLLOW-812 touched.
+The sentence quantifies over the sink.
+
+**The survivors, on that same Modal stdout sink**
+(`grep -rn "print(" apps/intent-engine/src/*.py apps/intent-engine/src/jobs/*.py | grep -v test_`):
+
+- `apps/intent-engine/src/nlp.py:344` —
+  `print(f"_capture_extraction_error failed: {telemetry_exc}")`, inside the chat-intent capture
+  helper itself, one `except` away from the exception the ticket is about. Exposure assessed as low
+  (sentry-sdk handles `before_send` failures internally) — but **nobody has assessed it in any
+  artefact**.
+- `apps/intent-engine/src/jobs/batch_enrich.py:72` — `print(f"batch_enrich error: {e}")`, the
+  `except Exception` wrapping `extract_intent(session["messages"], …)` in the 6-hourly Sonnet tier,
+  i.e. directly around the batch tier's own buyer conversations. RETRO-247 traced the reachable
+  exceptions and found none that provably embeds buyer text — so this is an **unassessed residual,
+  not a demonstrated leak**. Say which it is, in the doc.
+- `apps/intent-engine/src/observability.py:175` — `{exc!r}` on Sentry-init failure. Listed for
+  completeness so the next sweep stops re-discovering it.
+
+**Why this is Rule AO and not a nit.** Rule AO governs a corrective edit whose purpose is to REMOVE
+a false claim: it must be re-verified against the same PR's own evidence artefacts, because a
+correction written in fixing-mode inherits the mental model that produced the original error. The
+evidence artefact here is a two-branch fixture; the sentence is a sink-wide negative. This is also
+the direction that reassures — a regulator reading it concludes the class is closed.
+
+**AC:** (1) assess each of the three survivors and either redact it to the established
+`kind=<kind>: <ExceptionClassName>` shape or record, per site, why it cannot carry buyer text — a
+per-site verdict, not a blanket one; (2) re-scope the three doc sentences to exactly what the
+evidence holds (e.g. name the two `extract_intent` branches, or state the sink-wide claim only once
+every survivor has a verdict) — and do not widen any other negative in the same edit without a
+fixture behind it; (3) add the Modal stdout sink to `docs/compliance/dpia.md` §2.7's inventory
+(`:235-269`), which is the third document in this sibling set and still treats "where can a
+chat-intent exception message go" as a Sentry-only question — nothing there is falsified, so this is
+a completeness fix, not a correction; (4) fix `extract_intent`'s "Never raises" docstring
+(`nlp.py:456-459`): `detect_language_mix(_conversation_text(messages))` at `:511-515` is evaluated
+in an `if` condition OUTSIDE both `try` blocks with the buyer transcript as its argument, so the
+contract two callers rely on (`batch_enrich.py:56`, `main.py:87`) is not literally true — either
+guard the call or document the exception; (5) do NOT re-open the Modal plan-tier question — that is
+an operator fact already routed in `backlog/HANDOFFS.md:4864-4890`.
+
+cross_ref: [RETRO-247 §4a LG-1, §4d DG-1/DG-3, §5d; FOLLOW-812 (PR #677 commit `67ace522`);
+FOLLOW-739; `docs/compliance/ropa.md:539-540,:671`;
+`docs/compliance/C-07-chat-retention-scope.md:313`; `docs/compliance/dpia.md:235-269`;
+`apps/intent-engine/src/jobs/batch_enrich.py:72`; `apps/intent-engine/src/nlp.py:344,:511-515`; Rule
+AO, Rule N, Rule S]
+
+---
+
+## FOLLOW-834 — Nothing mechanical looks for a raw exception message on its way to an unscrubbed log sink; the class has now produced three tickets and three unassessed survivors
+
+source_retro: RETRO-247 (§4c TG-2 / §6 Rule S adjudication) source_ticket: FOLLOW-812
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN — session-95 standing rule.**
+
+**Why a gate rather than another rule.** RETRO-247 adjudicated Rule S's second consecutive sighting
+and declined to amend it: run verbatim against PR #677, Rule S bullet 1
+(`CONVENTIONS_PATCH.md:1098`, enumerate the sibling set and state it in the PR description) and
+bullet 3 (`:1101-1103`, match the verification tier across siblings) BOTH fire. The rule text is
+adequate; what is missing is anything that checks it. Both sightings — FOLLOW-813's four agent
+definitions and FOLLOW-812's multilingual-retry `print` — were caught by PM validation and by
+nothing else. The class's history: FOLLOW-738 (Sentry leg), FOLLOW-812 (two stdout branches),
+FOLLOW-833 (three survivors), each found by a human reading a diff.
+
+**The mechanisable slice is narrow.** Not "enforce Rule S" (unmechanisable in general) — just: a raw
+exception object or `str(exc)`/`{exc}`/`{e}`/`err.message` interpolated into a `print(...)` or
+`console.*` call inside a module on a buyer-text path.
+
+**AC:** (1) a grep-lint script following the repo's established shape
+(`scripts/check-sentry-init-singleton.sh` is the reference), scoped to start at `apps/intent-engine`
+and the chat legs of `apps/stream-consumer`, that fails on a raw exception message interpolated into
+a stdout/`print`/`console.*` call; (2) a synthesized `--self-test` fixture pair (one violating, one
+compliant), never produced by mutating the live source the gate polices — **Rule AM**; (3) the
+allowlist of known-and-justified sites is a machine-checked register the gate itself executes, with
+a per-entry reason, not prose in a comment — **Rule AP**; (4) wire it into
+`.github/workflows/ci.yml` next to the existing gates, mode `755`, and reference it with the same
+invocation form the docs use — **FOLLOW-831**; (5) coordinate scope with FOLLOW-833: 833 decides the
+verdict per surviving site, this ticket enforces the verdict. If 833 lands first, the allowlist is
+its output.
+
+**Explicitly out of scope:** any attempt to detect Rule S violations generally, and any change to
+Rule S's text — RETRO-247 §6 decided against an amendment and the reasoning is recorded there.
+
+cross_ref: [RETRO-247 §4c TG-2, §6 (Rule S adjudication); RETRO-246 §6 (the first of the two
+consecutive Rule S sightings); FOLLOW-738; FOLLOW-812; FOLLOW-833; `CONVENTIONS_PATCH.md:1068-1120`
+(Rule S), Rule AM, Rule AP; `scripts/check-sentry-init-singleton.sh`;
+`.github/workflows/ci.yml:692`]
+
+---
+
+## FOLLOW-835 — DECISION (operator): agents have been unable to write their learning-hook entry three tickets running; grant `.claude/agents/*/lessons.d/**` or ratify the hand-off as permanent
+
+source_retro: RETRO-247 (§6 P-30) source_ticket: FOLLOW-812 recommended_sprint: next
+recommended_agent: devops-engineer (to prepare; the decision is Piotr's) priority: P3
+estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN — session-95 standing
+rule.**
+
+**The observation, now three for three.** FOLLOW-813's worker, the RETRO-246 analyst and
+FOLLOW-812's worker each attempted their mandated learning-hook write under `.claude/` and had both
+`Edit` and `Write` denied. Each preserved the intended text verbatim in its PR description; a human
+pasted it in afterwards. The learning loop — the mechanism CLAUDE.md describes as self-improving —
+has been maintained by hand for three consecutive tickets.
+
+**What it is, and what it is not.** It is **not** Rule S (session-102's own note says so correctly,
+and RETRO-246 §6 corrected the session-101 block that had mislabelled it): Rule S governs symmetric
+sibling sets, not write-permission scope. It is the failure mode of the learning-corpus write path,
+which is what **Rule AG** governs — and RETRO-247 promoted the behavioural half in place as a Rule
+AG amendment (blocked-write fallback: name the exact path, reproduce the text verbatim in the PR
+body, never silently drop it; the PM lands it before closing the ticket; the agent must never
+self-grant a permission or redirect the entry outside `.claude/`). This ticket is the other half:
+the standing decision about whether the block should exist at all.
+
+**Why it is P3 and not higher.** No entry has actually been lost — all three were landed by a human.
+The cost is friction plus a single point of failure (one human reading one paragraph), not exposure.
+That said, it is the SAME single point of failure that nearly let FOLLOW-812's Rule S sibling ship
+(RETRO-247 §6 meta-pattern), so the cheap fix is worth an explicit decision rather than a fourth
+footnote.
+
+**AC:** (1) decide explicitly — either (a) permit agent writes scoped to
+`.claude/agents/*/lessons.d/**` (fragment files only, never the shared `lessons.md` tail, so Rule
+AG's collision guarantee is preserved), or (b) record "the hand-off is the protocol" with the Rule
+AG amendment cited as the binding procedure; (2) if (a), verify the scoping actually holds by having
+one agent attempt a write to `lessons.md` (must still fail) and to `lessons.d/<TICKET>.md` (must
+succeed) — a permission change asserted but not exercised is not a change; (3) whichever way it
+goes, record it once, in `docs/AGENT_WORKFLOW.md`, so the next three sessions do not re-derive it;
+(4) an agent MUST NOT implement (a) for itself under any circumstances — this is an operator action
+by construction.
+
+**Not a duplicate of FOLLOW-828** — checked before filing. 828 is about the CONTENT of five agent
+definitions (no CI-verification step). This is about the WRITE PERMISSION on the `.claude/` tree.
+Adjacent corpus, disjoint defect; they should not be merged.
+
+cross_ref: [RETRO-247 §6 P-30; RETRO-246 §6 P-30 (count 2, armed the promotion); RETRO-160 §4d DG-1
+/ FOLLOW-516 (count 1); `CONVENTIONS_PATCH.md` Rule AG + its 2026-08-05 amendment; FOLLOW-828
+(adjacent, not a duplicate); PR #677 body "Not done in this PR (environment limitation, flagged not
+hidden)"; `backlog/QUEUE.md` session-103 head]
+
+---
+
+<!-- next free FOLLOW number: 836 (FOLLOW-832..835 filed 2026-08-05 by RETRO-247, the post-merge retro for PR #677 / FOLLOW-812 — the Modal-stdout chat-intent redaction. 832 = P1 (UNFROZEN, P1 carve-out) sink 2 of test_buyer_text_escapes_both_sinks asserts on a test-authored replica of nlp.py:504's extraction_error expression, so a real regression on the Redis leg ships green — PROVEN by sandbox perturbation (11 passed while the returned payload carries the buyer sentinel), and the docstring at :208-212 claims the opposite; the fix is to assert over the payload the sink-3 block already computes and discards, plus rename the test (it says "both"/two for three sinks + four arms) and re-point its four citations per Rule Y. 833 = P2 ropa.md:539-540/:671 + C-07:313 assert "No residual raw-exception print remains on this stdout sink" while three remain on it (nlp.py:344 telemetry, batch_enrich.py:72 wrapping the batch chat loop, observability.py:175) — a sink-wide negative on branch-wide evidence, Rule AO; also adds the stdout sink to dpia.md §2.7 (third doc in the set, not falsified, just incomplete) and fixes extract_intent's "Never raises" docstring (detect_language_mix at :511-515 is outside both try blocks). 834 = P2 the mechanical gate the class has never had — a grep-lint for a raw exception message reaching an unscrubbed stdout/console sink, self-tested per Rule AM with a machine-checked allowlist per Rule AP; filed because RETRO-247 DECLINED to amend Rule S (run verbatim, its bullets 1 and 3 both fire on PR #677 — a compliance failure, not a rule-text gap). 835 = P3 DECISION (operator) on the .claude/ write block, 3 for 3; the behavioural half was promoted in place as a Rule AG amendment, this is the permission half, and an agent must never implement it for itself. NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-811 (its AC(1) should be widened to the control-plane LOG sink — 114 console.error sites landing in Vercel logs, the same class 812 just assessed — and its AC(2) now points at a test that changed shape; carried in RETRO-247 §5a, to be applied by the PM at dispatch), FOLLOW-828 (adjacent to 835, cross-referenced not merged), FOLLOW-830/827 (both confirmed unreachable on this PR, recorded not re-filed). RULE PROMOTED: Rule AG AMENDED in place (P-30, count 3, priors RETRO-160 + RETRO-246, armed by RETRO-246 §6). NO new rule letter minted; P-32 minted at count 1 and armed. -->
+
 <!-- next free FOLLOW number: 832 (FOLLOW-827..831 filed 2026-08-05 by RETRO-246, the post-merge retro for PR #675 / FOLLOW-813 — the replacement for the false-green `gh pr checks --watch` gate. 827 = P1 the new gate classifies Rule I by COUNT (`gh-pr-checks-verified.sh:216`), which FOLLOW-821's own AC(1) forbids by name, so a compensating-violation swap still exits 0 — the false green moved one hop, watcher -> classifier; the script's `:49-50` claim that it "does not contradict FOLLOW-821" is false. 828 = P2 five of nine agent definitions (sdk/qa/**devops**/compliance/architect) have no CI-verification step at all — PR #675 fixed the four that contained the broken string, not the symmetric set (Rule S); plus no consumer distinguishes exit 2 (timeout, 900s default) from exit 1. 829 = P2 `docs/CONVENTIONS_PATCH.md:36-46` is the last LIVE mandate of the retired `--watch` + jq two-step (the PR's own "no residual mandate" grep claim is false by one file), bundled with the un-propagated narrowing of the documented pre-existing-red gate set 3 -> 1 (Rule AI tier 3; memory `project_ci_gate_landscape` + 3 lessons.md files still reason from three). 830 = P1 the gate has NO self-test and fails OPEN on any host without PCRE grep (`:170-173` `grep -oP` inside `mapfile` + `set -uo pipefail` without `-e` -> empty failure list -> "all checks green", exit 0). 831 = P2 the mode-bit class has a second live instance: `scripts/check-rule-i.sh` is 100644 while `backlog/HANDOFFS.md:4011/:4041/:4111/:4169` mandates bare invocation. NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-821 (its AC(1) now also has to REPLACE the shipped count comparison, not merely add a CI job — carried in 827's scope + `blocks:`), FOLLOW-772 (MASTER_DESIGN:576 says 42 rules, actual 43 — the line self-declares its counts derived), FOLLOW-806 (the retro loop still has no mechanical self-closure check; this retro ran only because the PM dispatched it in the same turn). NO new CONVENTIONS_PATCH rule promoted — Rule AI AMENDED instead, see RETRO-246 §6. -->
 <!-- next free FOLLOW number: 827 (FOLLOW-814..826 filed 2026-08-04 by the main-loop session as the engineering plan for the Phased Code Audit of 2026-08-04, HEAD `a5295ae3`, under the CEO framing that the current stage is localhost-first testing rather than a production pilot. Four tracks: LEGAL 814/815 (+updates to 671/706) run immediately and do NOT wait on the stage decision; LOCAL 816/817/818/819 (+updates to 560) validate the whole differentiating loop on localhost/staging; PROD-GATE 820 converts ESC-020 into an explicit exit gate; HYGIENE 821..826 (+updates to 469/565/809) follow. NOT re-filed, recorded against existing stubs instead (Rule AN): audit F-04 -> FOLLOW-671, F-10 -> FOLLOW-560, F-12 -> FOLLOW-809, F-15 -> FOLLOW-469, F-07 -> FOLLOW-565, F-01 prod-count -> FOLLOW-706 AC-1, and the consent implementation legs -> FOLLOW-704/710/711, all three annotated as discharged by FOLLOW-815 rather than duplicated. FOLLOW-707 was checked and is already DONE (PR #634), so it is NOT a leg of 815. FOLLOW-665 promoted unchanged because the newly-P0 FOLLOW-671 depends on it.)
 <!-- (superseded) next free FOLLOW number: 814 (FOLLOW-813 filed 2026-08-04 by the main-loop session — the

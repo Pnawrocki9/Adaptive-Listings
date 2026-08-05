@@ -2261,3 +2261,40 @@ would generalize this beyond just `adapt-get-auth`.
   were two, and nothing in the repo would have surfaced it short of reading the vendor's default
   integration list. A cheap mechanical version: fail CI if an app initialises Sentry without either
   disabling `consoleIntegration` or declaring it in the compliance record.
+
+## 2026-08-05 · FOLLOW-838 — `apps/ingest` chat-NLP dispatch: 500 chars of a Modal error body into two Sentry sinks
+
+- **What I built**: removed the upstream-response-body read from
+  `apps/ingest/src/handlers/chat-nlp-dispatch.ts`'s `!res.ok` arm (it fed both a `console.error`
+  breadcrumb and a `captureException` value, for a request whose body is the buyer's chat message)
+  and replaced it with `HTTP <status> (<classified kind>)`; added
+  `chat-nlp-sentry-capture-path.test.ts` driving a real `CloudflareClient` + memory transport;
+  corrected `ropa.md` / `dpia.md` from an app-scoped claim to an SDK-default-list claim and added
+  §2.7.2 with five re-review triggers.
+- **Wiring/auth/fail-loud risks I weighed**: (1) I could not drive the deployed Modal endpoint (no
+  credentials, `MODAL_CHAT_NLP_URL` unset), so I drove its in-repo mirror `local_dev.py` — same
+  route signature, same FastAPI/pydantic — and reported the result in three parts: the echo is real
+  (the 422 `dict_type`/`missing` legs return the whole request body in `detail[].input`), it is NOT
+  reachable from this caller today, and Modal's platform-level bodies are NOT established. Saying
+  "no live leak is claimed" out loud was more useful than either a scare or a shrug, and the fix
+  still stands on "the code did not depend on that analysis". (2) Rule S: I did NOT redact the
+  `.catch()` sibling. It is the structurally-similar-looking arm, but its string is a Workers
+  runtime transport error, not a request-derived upstream body; redacting by reflex would have cost
+  the diagnostic on the likeliest real failure for nothing. I made the acceptance executable — the
+  test asserts that message DOES reach the wire — so it cannot decay into an omission. (3) Assessing
+  all 10 `console.error` sites found the sharper instance OUTSIDE the ticket's own enumeration:
+  `clickhouse-producer.ts:178` → `events.ts:592-600` copies 500 chars of a ClickHouse error body for
+  a batch whose rows literally contain the chat message, and ClickHouse quotes offending input.
+  Deferred to FOLLOW-845 with the reason (that detail is the named ESC-031 schema-drift diagnostic,
+  so it needs a replacement signal, not a deletion) rather than silently widening scope. (4)
+  `logger.*` in this app resolves to `console.log`, so the coupling covers 25 more sites than a
+  `console.error` grep shows — the ticket's own count understated it.
+- **A guardrail I'd add**: a test that asserts a sentinel is ABSENT is worthless without a positive
+  control in the same file proving the harness can SEE a sentinel. I put that control first and it
+  immediately earned its keep (it is what proved the `@sentry/cloudflare` coupling). Codify it:
+  every "buyer text escapes no sink" test must contain a block asserting a different sentinel DOES
+  survive, or it is presumed vacuous. Second, smaller one: gitleaks' `cloudflare-api-token` rule
+  (40-char `[A-Za-z0-9_-]` run + entropy) eats long SCREAMING_SNAKE sentinel names — and a follow-up
+  rename does not fix the PR, because the action scans the whole commit RANGE; the branch has to be
+  squashed. Use spaces in sentinels from the start and never quote the old name in the comment
+  explaining the rename.

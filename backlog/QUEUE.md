@@ -1,6 +1,50 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 DISPATCHED and running
+## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 READY_FOR_REVIEW (PR #677)
+
+### FOLLOW-812 — status: READY_FOR_REVIEW (PR #677, head `67ace522`)
+
+**assigned_to:** compliance-engineer **model:** Sonnet **branch:**
+`compliance-engineer/FOLLOW-812-modal-stdout-chat-leak` **worktree:** `.claude/worktrees/follow-812`
+**validated_by:** main-loop session **ci_check_counter:** 2/5 **fix_iteration_counter:** 0/3
+
+**CI:** `scripts/gh-pr-checks-verified.sh 677` (the FOLLOW-813 gate, dogfooded) → 73 checks, 71
+pass, 2 `Rule I` at **192 <= 192** vs `main`'s live count (run `30960460643`), exit 0.
+
+**All four ACs met by the worker as written.** Two things it did that are worth repeating: it
+refused to invent a precise Modal retention number when the repo does not record which plan tier the
+workspace is on (documented a bounded 1–30 day range, flagged in `HANDOFFS.md`), and it proved its
+new test could fail before claiming it passed.
+
+**Two commits added during validation, both closing the same gap in different layers:**
+
+1. **`4756757d` — the Rule S sibling was still leaking.** `nlp.py`'s multilingual-retry arm still
+   ran `print(f"extract_intent multilingual retry error: {exc}")`. That branch calls Sonnet with the
+   **same buyer messages**, so it carried the identical risk; redacting one of two structurally
+   identical paths does not close the leak. The worker flagged it honestly as outside AC(3)'s
+   literal wording — which is true, and is exactly why the ticket's _purpose_ has to outrank its
+   wording here. **Why it survived:** the test drove only the primary path (`_call_model` raises on
+   its FIRST call), so the retry arm was never entered, while the docstring claimed a whole-stdout
+   assertion would catch "a second print". Added sink 3b; non-vacuity proven by perturbation
+   (reverting fails with the buyer sentinel visible: _"relocating to Lisbon in March, budget is
+   450k, wife is pregnant"_). 80 passed / 2 skipped, ruff clean.
+2. **`67ace522` — that fix falsified four documentation claims.** `ropa.md` and `C-07` each stated,
+   in a narrative section AND a revision-history row, that a residual raw-exception leak remained on
+   the retry branch. Accurate when written, false the moment the sibling was fixed. Corrected under
+   Rule AI + Rule N in the same PR — leaving them would have reintroduced the doc-lags-code
+   divergence RETRO-246 amended Rule AI for, in the PR that filed it.
+
+**Third consecutive `.claude/` sandbox block, now worth its own ticket rather than a per-PR
+footnote:** FOLLOW-813's worker, the RETRO-246 analyst, and this worker were each unable to write
+their learning-hook entry (`Edit` and `Write` both denied under `.claude/`). Each preserved the
+intended text in its PR description and a human pasted it in. The learning loop is being maintained
+by hand three times running.
+
+**Pattern worth naming across the last two tickets:** both FOLLOW-813 and FOLLOW-812 shipped a fix
+to the _named_ instance and left a structurally identical sibling untouched (four agent
+definitions + a non-executable script; the multilingual-retry `print`). Both were caught only in PM
+validation, not by CI or by the worker's own self-check. That is Rule S's exact subject and it now
+has two consecutive sightings.
 
 > **RETRACTION — read this, it is the useful part.** An earlier revision of this block (commit
 > `c184dae8`) asserted "FOLLOW-812 was NOT dispatched", citing an empty

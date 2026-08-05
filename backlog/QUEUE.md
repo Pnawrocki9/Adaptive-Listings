@@ -129,7 +129,7 @@ the shape is what matters, and it is the shape FOLLOW-812 and FOLLOW-738 both tu
 reason to know. Hence an escalation rather than only a ticket — the decision is sequence-vs-accept,
 and it is a compliance posture call. **No production action taken either way.**
 
-### FOLLOW-838 — status: READY_FOR_REVIEW (PR #681, head `46fdd12a`)
+### FOLLOW-838 — status: DONE (PR #681 merged `9d608acb`, 2026-08-05)
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:**
 `scripts/gh-pr-checks-verified.sh 681` → 75 checks, 73 pass, 2 `Rule I` at 192 <= 192 vs baseline

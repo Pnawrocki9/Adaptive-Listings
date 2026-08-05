@@ -64,7 +64,7 @@ ordering) rather than of the thing under test.
 
 **Counters: FOLLOW-827+830 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs at dispatch time.**
 
-### FOLLOW-827 + FOLLOW-830 — status: READY_FOR_REVIEW (PR #680, head `73ed0656`)
+### FOLLOW-827 + FOLLOW-830 — status: DONE (PR #680 merged `c7b17fb7`, 2026-08-05)
 
 **ci_check_counter:** 2/5 **fix_iteration_counter:** 0/3. Validated **twice, deliberately**: with
 `main`'s current gate (75 checks, 73 pass, 2 `Rule I` at 192 <= 192, exit 0) **and** with the

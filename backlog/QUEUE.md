@@ -64,6 +64,79 @@ ordering) rather than of the thing under test.
 
 **Counters: FOLLOW-827+830 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs at dispatch time.**
 
+### FOLLOW-827 + FOLLOW-830 — status: READY_FOR_REVIEW (PR #680, head `73ed0656`)
+
+**ci_check_counter:** 2/5 **fix_iteration_counter:** 0/3. Validated **twice, deliberately**: with
+`main`'s current gate (75 checks, 73 pass, 2 `Rule I` at 192 <= 192, exit 0) **and** with the
+rewritten gate the PR itself ships, run in production mode against the live PR — 192 symbols parsed
+from real GitHub logs on both sides, `New on this PR: 0 | fixed by this PR: 0`, exit 0. A gate
+change that only its own new version accepts would be unfalsifiable; both versions accept it.
+
+**AC(1) resolved as symbol-set comparison, and the "block on Rule I" fork was not needed.** The
+per-symbol data was already in the job log — `check-rule-i.sh:130` prints
+`WARN: '<symbol>' in <file> — zero non-test importers` — so the gate now parses both logs into
+sorted `<symbol> @ <file>` sets and accepts `Rule I` only when the PR's set is a **subset** of
+`main`'s. Counts survive as a diagnostic and as a parser self-consistency check: a count > 0 that
+yields zero parsed symbols now fails loudly, because comparing against an empty set would re-create
+the fail-open being fixed.
+
+**The worker rejected blocking-on-Rule-I with an argument worth keeping:** it buys strictness with
+no information — it would red-flag all 192 pre-existing violations on every PR and train reviewers
+to wave the gate through. **Operational consequence, and it is real:** the gate is now strictly
+stricter in exactly one direction — a PR that introduces a new dead export blocks even if it removes
+another. The remediation path is printed by the gate itself (the offending `symbol @ file` lines)
+plus `check-rule-i.sh`'s three documented remedies. A PR whose Rule I set is equal or smaller
+behaves exactly as before, proven on two live PRs.
+
+**Red-first was demanded and delivered.** Commit `5ae61d1b` is **deliberately red** — 4 failed / 7
+passed — and reproduces both defects through the gate's own harness, including the fail-open
+verbatim: `grep: invalid option -- 'P'` → `failing: 0` →
+`RESULT: all checks green. Safe to mark READY_FOR_REVIEW` on a snapshot containing a FAILURE check.
+`39a5430d` turns it 11/11.
+
+**The self-test is a real CI gate, verified as such rather than assumed.**
+`PR-checks gate self-test (FOLLOW-830) → SUCCESS` appears in
+`gh pr view 680 --json statusCheckRollup`; the job has no `if:`, no `continue-on-error` and no
+secret dependency, so it cannot soft-skip. Also run locally here: 11/11, including its assertions on
+the script's own filesystem mode (755) and git index mode (100755). The mode bit needed no fix — PR
+#675 shipped `100644` and a later commit had already corrected it; the fixture now pins it.
+
+**Rule S sweep was requested as a list, not a fix, and it paid.** Three stubs filed from it:
+**FOLLOW-842** (P1, **unfrozen**) — `check-rule-i.sh` carries the identical PCRE fail-open, so on a
+non-PCRE host Rule I itself passes clean with zero symbols, and it is the script this gate now reads
+its baseline from; **FOLLOW-843** (P2, FROZEN) — four CI-invoked scripts including `migrate.sh` run
+with no `set` line at all, so any command failure inside them is ignored; **FOLLOW-844** (P3,
+FROZEN) — the `shellcheck` job never covered the merge gate itself. Next free: **FOLLOW-845**.
+
+**Left deliberately undone by the worker, correctly:** replacing `grep -oP` on compact JSON with
+tab-separated `jq` output, which would remove the PCRE dependency structurally rather than guarding
+it. It declined to reshape the one code path this session needs working to review the PR, and says
+so. Worth its own ticket rather than a silent omission.
+
+### ESC-048 filed — the ingest DSN sequencing question is Piotr's, not an agent's
+
+RETRO-249 found that `apps/ingest` carries the same console→Sentry coupling
+(`@sentry/cloudflare@10.50.0` ships `consoleIntegration()` as a default; `observability.ts:71-82`
+overrides nothing) — but unlike the control plane, **that app handles raw buyer chat**.
+`handlers/chat-nlp-dispatch.ts:86-92` puts up to 500 characters of an upstream error body — from a
+request whose body is the buyer's message — into a `console.error` **and** a `captureException`.
+Whether Modal's error body echoes the message has not been observed, so no leak is being claimed;
+the shape is what matters, and it is the shape FOLLOW-812 and FOLLOW-738 both turned out to be real.
+
+**It is inert by environment, not by control:** `observability.ts:72` no-ops on an unset
+`SENTRY_DSN_INGEST`, and provisioning that variable is an already-planned operator action
+(FOLLOW-744, DONE 2026-07-31, shipped precisely to instruct it). Whoever performs it would have no
+reason to know. Hence an escalation rather than only a ticket — the decision is sequence-vs-accept,
+and it is a compliance posture call. **No production action taken either way.**
+
+**FOLLOW-838 — status: IN_PROGRESS** (P1, unfrozen) — **assigned_to:** backend-engineer **model:**
+**Opus** **started_at:** 2026-08-05 **branch:**
+`backend-engineer/FOLLOW-838-ingest-chat-sentry-coupling` **worktree:**
+`.claude/worktrees/follow-838`. Model justification: escalated one tier per the standing "take the
+higher tier for prod-touching work" rule — this edits the live ingest Worker's chat dispatch path,
+and the judgment (what may be logged from an upstream body without destroying triage) is the same
+one FOLLOW-812 needed.
+
 ### RETRO-247 landed on `main` (`10629c06`, no PR — the RETRO-238…246 convention)
 
 Analyst: `retrospective-analyst` (Opus), worktree `.claude/worktrees/retro-247`, branch commit
@@ -259,8 +332,23 @@ Established by probing the linter, not by reading the file:
 - a message with no ticket ref → fails (so `ticket-reference`, the surviving key, does work)
 
 This is the same class of defect as FOLLOW-832 and FOLLOW-739: a control the repo documents,
-believes it has, and does not have. It is also what rejected this session's first bookkeeping commit
-— an undocumented cap firing while the documented one is absent.
+believes it has, and does not have.
+
+**Correction to an earlier revision of this block, made after actually testing it.** This block
+first said the dead config "is what rejected this session's first bookkeeping commit — an
+undocumented cap firing". That attribution was **incomplete and partly wrong**, and it was written
+from inference rather than from a probe. Feeding the real headers to `npx commitlint`:
+
+- the first rejected header fired **two** rules — `header-max-length` (105 > 100) **and**
+  `subject-case`
+- every later rejection fired **`subject-case` alone**, because the subject began with
+  `FOLLOW-8NN …`, which the preset reads as upper-case
+
+Both rules come from `@commitlint/config-conventional`, i.e. from the preset that survives, not from
+the repo's dead block. So the correct statement is narrower: the repo's own policy never runs, and
+what does run is the preset — whose `subject-case` rule, not its header cap alone, is what kept
+rejecting these commits. The FOLLOW-837 finding itself is unaffected; only my account of the symptom
+was.
 
 **Stub deliberately NOT filed yet.** Both open PRs (#678, #679) touch the tail of
 `backlog/FOLLOW_UPS.md`, and appending a new stub there now would manufacture the merge conflict the

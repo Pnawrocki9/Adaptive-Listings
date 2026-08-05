@@ -27982,8 +27982,16 @@ surviving `{'ticket-reference': [2, 'always']}`.
 | message with no ticket reference              | **fails** — so the surviving key does work                         |
 
 So the scope list `docs/CONVENTIONS.md` documents is enforced by nothing, while an undocumented
-100-char header cap that contradicts the repo's own `subject-max-length: 120` is what actually
-rejects commits. It rejected this session's first bookkeeping commit, which is how it was found.
+100-char header cap that contradicts the repo's own `subject-max-length: 120` is among the rules
+that actually reject commits.
+
+**Precisely which rules bite, tested rather than inferred** (an earlier revision of this stub
+attributed the rejections to the header cap alone, which was wrong): the session-103 bookkeeping
+commit that first exposed this fired **both** `header-max-length` (105 > 100) and `subject-case`;
+every subsequent rejection fired **`subject-case` alone**, because those subjects began with
+`FOLLOW-8NN …` and the preset reads a leading all-caps token as upper-case. Both rules come from
+`@commitlint/config-conventional`. The practical rule for anyone writing commits here: **start the
+subject with a lowercase verb**, and keep the whole header ≤ 100 characters.
 
 **Same class as FOLLOW-832 and FOLLOW-739:** a control the repo documents, believes it has, and does
 not have. Cheap to detect, and detectable the same way it was found here.
@@ -28345,3 +28353,86 @@ and explicitly NOT merged with P-32 — clause (a) fails. P-34 MINTED at count 1
 only in a config comment / commit message). Rule Y's Verification block armed for an in-place repair at
 the next sighting (it greps only `packages --include='*.ts'` while its 2026-06-26 text covers "any doc").
 -->
+
+---
+
+## FOLLOW-842 — `check-rule-i.sh` has the same PCRE fail-open as the gate that reads it: on a non-PCRE host Rule I passes clean with zero symbols
+
+source_retro: n/a (Rule S sweep performed during FOLLOW-827/830, session 103) source_ticket:
+FOLLOW-827 recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours:
+3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Not frozen:** P1 carve-out to the session-95 standing rule.
+
+**The defect is the exact twin of FOLLOW-830's.** `scripts/check-rule-i.sh` runs `set -uo pipefail`
+**without `-e`** and extracts symbols with `grep -oP` (`:121`) into `mapfile`. `-P` is a GNU
+extension. On a host without PCRE grep the extraction yields zero symbols, the script reports
+`Violations found: 0`, and **Rule I passes clean** — a hard gate reporting green because its matcher
+was unavailable. FOLLOW-830 fixed this shape in `gh-pr-checks-verified.sh`; this is the same shape
+in the script that one now reads its symbol set from, so a degraded matcher here silently empties
+the baseline the gate compares against.
+
+**Found by an explicit sibling sweep, not by an incident** — the FOLLOW-827/830 worker was asked to
+enumerate rather than fix, which is why this is scoped from evidence instead of being rediscovered
+by a retro. Same sweep also produced FOLLOW-843 and FOLLOW-844.
+
+**AC:** (1) preflight PCRE grep and bash ≥ 4 at the top; exit non-zero with a named message on a
+degraded matcher, never proceed; (2) assert `TOTAL_SYMBOLS > 0` before reporting
+`Violations found: 0` — an empty parse must be an error, not a pass; (3) a red-first fixture using a
+PATH-shimmed non-PCRE `grep`, proven to fail before the fix (transcript in the PR body); (4) the
+file is still mode `100644` while every doc invokes it bare — fix it with
+`git update-index --chmod=+x` and assert the mode in the fixture (this is FOLLOW-831's instance;
+close or re-scope 831 in the same PR rather than leaving two tickets on one mode bit).
+
+cross_ref: [FOLLOW-830 (same defect, fixed in the sibling script); FOLLOW-827; FOLLOW-831 (mode
+bit); `scripts/check-rule-i.sh:121`; `scripts/gh-pr-checks-verified.sh` (consumer)]
+
+---
+
+## FOLLOW-843 — Four CI-invoked shell scripts run with no `set` line at all, so every command failure inside them is ignored
+
+source_retro: n/a (Rule S sweep during FOLLOW-827/830, session 103) source_ticket: FOLLOW-827
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+`scripts/migrate.sh`, `scripts/migration-contract-test.sh`, `scripts/smoke-test.sh` and
+`scripts/ttl-golden-test.sh` carry no `set -e` / `set -u` / `set -o pipefail` line, so a failing
+command mid-script does not stop it and does not change its exit status. **`migrate.sh` runs in
+CI.** This is a larger and different class than the PCRE holes: those need an unusual host, this
+needs only a command to fail.
+
+Also flagged in the same sweep, lower risk and listed here rather than as separate tickets:
+`scripts/check-rule-h.sh:34` uses `grep -qP` as a boolean inside a conditional (so `-e` would never
+fire and a non-PCRE grep reads as "pattern not found"); `check-privacy-notice-keys.sh`,
+`check-sentry-capture-has-init.sh`, `check-sentry-init-singleton.sh` and `check-mirror-files.sh` use
+`mapfile` with no bash-version preflight (these fail closed, so they are a diagnosis problem, not a
+correctness one).
+
+**AC:** (1) add an appropriate `set` line to each of the four, and fix whatever it then surfaces —
+expect it to surface something; (2) do NOT bulk-add `set -e` to scripts whose control flow relies on
+non-zero exits without checking each one; (3) state in the PR body which of the four changed
+behaviour once the flag was added, since that is the finding.
+
+cross_ref: [FOLLOW-830; FOLLOW-842; `scripts/migrate.sh`; `.github/workflows/`]
+
+---
+
+## FOLLOW-844 — The `shellcheck` CI job covers only the Sentry gate family; the merge gate itself was never linted
+
+source_retro: n/a (noted during FOLLOW-827/830, session 103) source_ticket: FOLLOW-827
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+The `shellcheck (Sentry gate family, FOLLOW-769)` job scopes itself to a named handful of scripts,
+and its own scope comment already defers widening to a ticket. This is that ticket.
+`scripts/gh-pr-checks-verified.sh` — the mandated merge gate — was outside it, and is
+**shellcheck-clean today** (0 findings, shellcheck 0.10.0, verified during FOLLOW-827/830), so
+adding it costs nothing right now. Widening to all of `scripts/` will surface findings in older
+files; that is the work.
+
+**AC:** (1) add `gh-pr-checks-verified.sh` and `check-rule-i.sh` to the job immediately (both should
+pass); (2) propose a staged path to all of `scripts/`, with the first stage being whatever passes
+unmodified; (3) do not add `# shellcheck disable` lines to reach green — fix or defer with a named
+ticket.
+
+cross_ref: [FOLLOW-769; FOLLOW-842; FOLLOW-843; `.github/workflows/ci.yml`]

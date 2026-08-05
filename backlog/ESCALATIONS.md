@@ -3114,3 +3114,50 @@ producer side, only the hazard of provisioning it did. **Leg (b) is now correctl
 This escalation stays `## OPEN` (not re-opened as blocking-for-dispatch; it was never closed to
 begin with) — this note only corrects the record, it changes no decision and requires no new
 operator action beyond what FOLLOW-744 already asks for.
+
+---
+
+## OPEN — ESC-048: provisioning `SENTRY_DSN_INGEST` would activate a raw-buyer-chat path into Sentry that is currently inert only because that variable is unset
+
+**Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-05 **Affects:** FOLLOW-838,
+FOLLOW-744, `apps/ingest` **Type:** compliance
+
+**Description.** RETRO-249 found that the console→Sentry coupling FOLLOW-811 established for
+`apps/control-plane` also holds for `apps/ingest`: `@sentry/cloudflare@10.50.0` ships
+`consoleIntegration()` as a **default** (`build/cjs/sdk.js:29`) and
+`apps/ingest/src/observability.ts:71-82` overrides nothing. Unlike the control plane, **this app
+handles raw buyer chat** — `src/handlers/chat-nlp-dispatch.ts:69-73` POSTs
+`message: { role: 'user', content: messageText }` to Modal, and at `:86-92` a non-ok response is
+logged and captured as:
+
+```ts
+const msg = `[chat-nlp] Modal dispatch rejected: HTTP ${status} — ${text.slice(0, 500)}`;
+console.error(msg); // → Sentry breadcrumb (default integration)
+Sentry.captureException(new Error(msg)); // → Sentry exception value
+```
+
+Whether Modal's error body echoes the submitted message has **not** been observed, so this is not a
+proven leak and is not being reported as one. What is established is the shape: up to 500 characters
+of an upstream error body, from a request whose body is the buyer's message, reaching two Sentry
+sinks with no scrubber — the same shape as FOLLOW-812 (Modal stdout) and FOLLOW-738 (the Python
+Sentry leg), both of which were real.
+
+**The reason this is an escalation and not just a ticket:** the path is inert **by environment, not
+by control**. `apps/ingest/src/observability.ts:72` no-ops when `SENTRY_DSN_INGEST` is falsy, and
+that variable is currently unset — a state several backlog notes record as a _problem_ to be fixed
+(FOLLOW-744 shipped exactly to make `init_sentry` non-fatal and instruct DSN provisioning; it is
+DONE, merged 2026-07-31). So the ordinary, already-planned operator action of provisioning the
+ingest DSN is what turns this path on. Nobody doing that would currently have any reason to know it.
+
+**Required action (CEO/DPO decision, one of):**
+
+1. **Sequence it** — hold `SENTRY_DSN_INGEST` provisioning until FOLLOW-838 (P1, filed, unfrozen)
+   lands a redaction on that call site. This is the recommended option: FOLLOW-838 is a small,
+   bounded fix of a shape this repo has now fixed twice elsewhere.
+2. **Provision anyway and accept**, recording the residual risk in `dpia.md` the way FOLLOW-811
+   §2.7.1 recorded the control-plane decision, with a named re-review trigger.
+
+**No production action is being taken on this either way** — the ingest DSN is not being set, and
+FOLLOW-838 does not require it.
+
+**Resolution:** <empty until resolved>

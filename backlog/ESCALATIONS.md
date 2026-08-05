@@ -3161,3 +3161,65 @@ ingest DSN is what turns this path on. Nobody doing that would currently have an
 FOLLOW-838 does not require it.
 
 **Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-049: C-07's load-bearing sentence says no chat text reaches ClickHouse; the SDK→ingest→ClickHouse path writes the buyer's message there, and C-07 gates a CEO sign-off
+
+**Filed by:** main-loop orchestrator (session 103), from a FOLLOW-838 finding **Date:** 2026-08-05
+**Affects:** `docs/compliance/C-07-chat-retention-scope.md`, `apps/ingest`, ESC-048, FOLLOW-845
+**Type:** compliance
+
+**Description.** `docs/compliance/C-07-chat-retention-scope.md:17` and `:274` state, twice, as the
+premise the document's own Q3/Q4 conclusions rest on:
+
+> "No raw chat text is written to Redis, ClickHouse, or Postgres in the current implementation"
+
+with the verification cited immediately after being **only**
+`apps/intent-engine/src/redis_writer.py` and `schemas.py`. The ClickHouse axis of that sentence
+appears never to have been checked.
+
+**The chain that contradicts it, verified end to end by this session rather than taken from the
+worker's report:**
+
+1. `packages/sdk/src/index.ts:1519` emits a `chat.message.sent` event — a live producer, not a
+   planned one.
+2. `packages/shared/src/schemas/events/chat.ts:38-40` defines its payload's `message` field as up to
+   **4000 characters** of message text, and `:56-57` states the design intent in as many words:
+   _"§H.8 invariant: the chat event STILL flows to ingest (ClickHouse) regardless of this flag."_
+3. `apps/ingest/src/clickhouse-producer.ts:110` writes
+   `payload: JSON.stringify(event.payload ?? {})` into the `events` table, whose
+   `payload String CODEC(ZSTD(3))` column is
+   `infra/clickhouse/migrations/0001_create_events.sql:41`.
+
+So the buyer's chat message text does reach ClickHouse, by design, through a shipped path.
+
+**The one thing that makes this a ruling rather than a bug report:** the schema comment calls
+`message` _"PII-scrubbed message text (emails/phones replaced with placeholders)"_. So a defensible
+reading of C-07 is that "raw" means "unscrubbed", and the sentence is technically true under that
+reading. The problem is that no reader — a DPO, an auditor, or the CEO signing off — would take "no
+raw chat text is written to ClickHouse" to mean "the buyer's sentences are in ClickHouse with emails
+and phone numbers masked". Two of this session's three closed tickets were exactly this failure
+mode: a document asserting a control in words its own implementation did not support.
+
+**Why it is escalated and not silently fixed.** Choosing the scoping is a compliance judgment with a
+lawful-basis consequence — C-07 §Q4's legitimate-interest conclusion and §Q3's no-new-disclosure
+conclusion are both derived from this sentence. An agent narrowing it to "unscrubbed" or widening it
+to "the text is retained in ClickHouse" would be making that call unilaterally. The FOLLOW-838
+worker flagged it and correctly declined to edit someone else's compliance document; so do I.
+
+**Required action (CEO/DPO ruling, one of):**
+
+1. **Scope the sentence** — state explicitly that it covers unscrubbed identifiers only, and add
+   what IS retained in ClickHouse (`chat.message.sent.payload.message`, ≤4000 chars, TTL per the
+   `events` table's retention), then re-derive §Q3/§Q4 against the corrected premise.
+2. **Correct the sentence** — if the intended posture is that no chat text at all should be in
+   ClickHouse, then the `events` write is the defect and needs a ticket, not the document.
+
+Either way the fix is `compliance-engineer`'s, and it should re-verify **all three** stores named in
+that sentence rather than only Redis, since only Redis was ever checked.
+
+**Related:** ESC-048 (the same app's Sentry leg) and FOLLOW-845 (the ClickHouse **error body** leg,
+which quotes offending input back into two Sentry sinks — a different defect on the same data).
+
+**Resolution:** <empty until resolved>

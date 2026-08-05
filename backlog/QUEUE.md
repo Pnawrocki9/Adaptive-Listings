@@ -129,7 +129,69 @@ the shape is what matters, and it is the shape FOLLOW-812 and FOLLOW-738 both tu
 reason to know. Hence an escalation rather than only a ticket — the decision is sequence-vs-accept,
 and it is a compliance posture call. **No production action taken either way.**
 
-**FOLLOW-838 — status: IN_PROGRESS** (P1, unfrozen) — **assigned_to:** backend-engineer **model:**
+### FOLLOW-838 — status: READY_FOR_REVIEW (PR #681, head `46fdd12a`)
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:**
+`scripts/gh-pr-checks-verified.sh 681` → 75 checks, 73 pass, 2 `Rule I` at 192 <= 192 vs baseline
+run `31045826331`, exit 0.
+
+**AC(1) came back as a three-part answer, and the split is the quality of it.** The worker could not
+reach the deployed Modal endpoint (no credentials, `MODAL_CHAT_NLP_URL` unset), so it drove
+`apps/intent-engine/src/local_dev.py` — which declares itself a line-for-line duplicate of
+`main.py`'s validation and carries the identical `body: dict[str, Any] = Body(...)` signature — on
+the same FastAPI/pydantic versions the Modal image resolves. Findings, stated separately rather than
+blended: (1) **ESTABLISHED** — a `dict_type` 422 returns the whole parsed body, buyer message
+included, in `detail[0].input`; (2) **ESTABLISHED** — not reachable from this caller today, because
+`dispatchChatNlp` sends `JSON.stringify(<object>)` which cannot fail `dict[str, Any]`, and all four
+application-level rejection legs return fixed strings; (3) **NOT ESTABLISHED** — Modal's own
+platform-level bodies (gateway 5xx, cold start, 429), explicitly not assumed safe. **No live leak is
+claimed on this path.**
+
+**Redacted the `.then()` arm; accepted the `.catch()` arm with an argument, not by omission.** The
+sibling is genuinely not structurally identical — it interpolates a Workers-runtime transport
+message, no leg of which derives from the request body — so redacting it would cost the diagnostic
+on the likeliest real failure (Modal cold starts) for nothing established. The acceptance is
+**pinned by a test asserting that message does reach the wire** and recorded in `dpia.md` §2.7.2, so
+it cannot decay into a silent omission. After three consecutive Rule S events, a sibling that is
+examined and consciously kept is the correct outcome, not a miss.
+
+**The test carries a positive control**, which is the FOLLOW-832 lesson applied one day later: a
+different sentinel is asserted to **survive** both sinks first, so the absence assertion cannot pass
+on a dead harness. That control also produced the direct proof of the coupling —
+`sdk.integrations: [… "Console"]`.
+
+**Gitleaks bit again, and the two new traps are worth keeping:** (a) the comment explaining a
+sentinel rename **must not quote the old names** — quoting them re-triggered the rule on the
+comment; (b) a follow-up commit is not enough (the action scans the whole PR commit range), so the
+branch was squashed and force-pushed. Same conclusion this session reached on PR #678, now
+independently re-derived by a worker: **on this repo a gitleaks red is rewritten out, never fixed
+forward.**
+
+**Two corrections to the ticket's own framing, from the worker:** `logger.*` is also a Sentry input
+(`packages/shared/src/observability/logger.ts:111` emits via `console.log`), and `apps/ingest/src`
+has 25 non-test `logger.*` calls — so the `console.error` count understated the surface; and the
+sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
+the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
+
+### ESC-049 filed — C-07's ClickHouse claim, verified end-to-end here before filing
+
+The FOLLOW-838 worker flagged, and declined to edit, a sentence in
+`docs/compliance/C-07-chat-retention-scope.md:17,:274`: _"No raw chat text is written to Redis,
+ClickHouse, or Postgres in the current implementation"_ — cited as verified against
+`redis_writer.py` only. **This session verified the contradicting chain itself rather than relaying
+it:** `packages/sdk/src/index.ts:1519` emits `chat.message.sent` (a live producer);
+`packages/shared/src/schemas/events/chat.ts:40` gives its payload a `message` field of up to 4000
+chars and `:56-57` states the §H.8 intent that the event "STILL flows to ingest (ClickHouse)";
+`apps/ingest/src/clickhouse-producer.ts:110` writes `JSON.stringify(event.payload)` into the
+`events` table's `payload String` column (`infra/clickhouse/migrations/0001_create_events.sql:41`).
+
+**The fair reading is recorded in the escalation too:** the schema calls `message` "PII-scrubbed
+(emails/phones replaced)", so under "raw = unscrubbed" the sentence is defensible — but no DPO,
+auditor or CEO would read "no raw chat text is written to ClickHouse" as "the buyer's sentences are
+in ClickHouse with identifiers masked". C-07 gates a CEO sign-off and its §Q3/§Q4 conclusions are
+derived from that premise, so the scoping is a ruling, not an edit an agent should make.
+
+**FOLLOW-838 — dispatch record** (P1, unfrozen) — **assigned_to:** backend-engineer **model:**
 **Opus** **started_at:** 2026-08-05 **branch:**
 `backend-engineer/FOLLOW-838-ingest-chat-sentry-coupling` **worktree:**
 `.claude/worktrees/follow-838`. Model justification: escalated one tier per the standing "take the

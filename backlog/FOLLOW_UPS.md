@@ -28436,3 +28436,46 @@ unmodified; (3) do not add `# shellcheck disable` lines to reach green — fix o
 ticket.
 
 cross_ref: [FOLLOW-769; FOLLOW-842; FOLLOW-843; `.github/workflows/ci.yml`]
+
+---
+
+## FOLLOW-845 — `apps/ingest`'s ClickHouse batch path copies 500 chars of a ClickHouse error body — for a batch whose rows contain the buyer's chat message — into the same two Sentry sinks FOLLOW-838 just closed
+
+source_retro: n/a (found during FOLLOW-838, session 103) source_ticket: FOLLOW-838
+recommended_sprint: now recommended_agent: backend-engineer priority: P1 estimated_hours: 4
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Not frozen:** P1 carve-out to the session-95 standing rule.
+
+**The defect.** `apps/ingest/src/clickhouse-producer.ts:178` slices 500 characters of the ClickHouse
+response body into `CHPushFailure.error`; `apps/ingest/src/handlers/events.ts:592-600` then puts
+that into a `logger.error` **and** a `Sentry.captureException` value. Both are Sentry inputs — the
+logger emits via `console.log` (`packages/shared/src/observability/logger.ts:111`) and
+`@sentry/cloudflare@10.50.0` ships `consoleIntegration()` as a default, which is the coupling
+FOLLOW-838 established.
+
+**Why this is the sharper of the two instances.** The rows being inserted carry
+`payload: JSON.stringify(event.payload)` (`clickhouse-producer.ts:110`), and for `chat.message.sent`
+that payload holds up to 4000 characters of buyer chat text
+(`packages/shared/src/schemas/events/chat.ts:40`). Unlike the Modal 422 leg FOLLOW-838 assessed —
+where the echo was proven possible but unreachable from that caller — **ClickHouse routinely quotes
+the offending input in parse and format errors**. This one is not theoretical.
+
+It was outside FOLLOW-838's enumeration because the call site is a `logger.error`, not a
+`console.error` — which is itself a finding: the "10 `console.error` sites" framing understates the
+surface, since `apps/ingest/src` has 25 non-test `logger.*` calls that reach the same sink.
+
+**AC:** (1) stop putting the ClickHouse response body into either sink; (2) **replace, do not
+delete, the signal** — that body is the named diagnostic for the ESC-031 / F-02 schema-drift failure
+mode (`events.ts:583-587`), so extract the ClickHouse error **code** (e.g. `Code: 27`) or classify
+by status and shape, without carrying bytes; (3) pin it with the test shape
+`apps/ingest/src/handlers/chat-nlp-sentry-capture-path.test.ts` established — real client, real
+integrations, memory transport, assertions over every serialised envelope, **and a positive control
+that proves the harness can still see a sentinel**; prove it by perturbation in both directions; (4)
+pin `sendDefaultPii: false` explicitly in `apps/ingest/src/observability.ts`, as FOLLOW-811 did for
+the three control-plane configs; (5) update `dpia.md` §2.7.2, which FOLLOW-838 left recording this
+as a known-open gap.
+
+cross_ref: [FOLLOW-838 (same coupling, chat-NLP leg); FOLLOW-811 (the control-plane decision this
+mirrors); ESC-048 (DSN sequencing); ESC-049 (C-07's ClickHouse claim, same data, different defect);
+`apps/ingest/src/clickhouse-producer.ts:110,:178`; `apps/ingest/src/handlers/events.ts:583-600`]

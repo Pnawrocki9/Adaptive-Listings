@@ -78,6 +78,21 @@ export function withSentry<TEnv extends ObservabilityEnv>(
       tracesSampleRate: env.ENVIRONMENT === 'production' ? 0.05 : 0.1,
       release: env.GIT_SHA ?? 'dev',
       environment: env.ENVIRONMENT ?? 'development',
+      /**
+       * FOLLOW-845 / FOLLOW-811 — pinned explicitly, mirroring the three
+       * `apps/control-plane/sentry.*.config.ts` files.
+       *
+       * A no-op TODAY: `@sentry/cloudflare@10.50.0` reads
+       * `options.sendDefaultPii ?? false` (`build/cjs/sdk.js:14`, and again in
+       * `build/cjs/request.js:42`), so the effective value was already `false`.
+       * It is written down anyway because the vendor's own comment two lines
+       * later — "TODO(v11): the `include` object should be defined directly in
+       * the integration based on `sendDefaultPii`" — says this default is on
+       * their list to change. This app handles raw buyer chat; the setting that
+       * governs whether headers/cookies/IP ride along should be a decision in
+       * our source, not an inherited default that a minor bump can flip.
+       */
+      sendDefaultPii: false,
     };
   }, handler);
 }

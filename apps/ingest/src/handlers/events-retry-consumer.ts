@@ -109,6 +109,9 @@ export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Pro
       continue;
     }
 
+    // FOLLOW-845: same records, same sinks, same rule as the primary insert in
+    // `handlers/events.ts` — `result.error` carries no ClickHouse response body, and
+    // `ch_query_id` is the operator's pivot into `system.query_log` for the detail.
     logger.error(
       {
         tenant_id,
@@ -117,6 +120,8 @@ export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Pro
         message_attempts: message.attempts,
         ch_attempts: result.attempts,
         upstream_status: result.status,
+        ch_error_code: result.chErrorCode,
+        ch_query_id: result.queryId,
         error: result.error,
       },
       'events_retry_reinsert_failed',
@@ -129,6 +134,8 @@ export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Pro
         queue_attempt: attempt,
         message_attempts: message.attempts,
         upstream_status: result.status,
+        ch_error_code: result.chErrorCode,
+        ch_query_id: result.queryId,
       },
     });
     message.retry();

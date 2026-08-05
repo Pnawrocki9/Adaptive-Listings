@@ -69,6 +69,28 @@ function fetchSequence(statuses: number[]): { fetchImpl: typeof fetch; calls: ()
   };
 }
 
+/** A server-generated ClickHouse query id (FOLLOW-845 fixture). */
+const CH_QUERY_ID = '53a57251-0991-4c06-b502-80e17c93dda1';
+
+/**
+ * A failing response whose `.text()` throws if anything calls it — the executable
+ * form of "the body is never read" (FOLLOW-845).
+ */
+function unreadableBodyResponse(
+  status: number,
+  headers: Record<string, string> = {},
+): { response: Response; bodyReads: () => number } {
+  let reads = 0;
+  const response = new Response('unread', { status, headers });
+  Object.defineProperty(response, 'text', {
+    value: () => {
+      reads++;
+      throw new Error('response body must not be read (FOLLOW-845)');
+    },
+  });
+  return { response, bodyReads: () => reads };
+}
+
 describe('toClickHouseRow', () => {
   it('flattens an enriched event into the events-table column shape', () => {
     const row = toClickHouseRow(validEvent);
@@ -208,6 +230,36 @@ describe('pushToClickHouse — retry semantics', () => {
     }
   });
 
+  it('reports the last attempt as a transport error when the FINAL retry is a network failure', async () => {
+    // FOLLOW-845 ordering guard: attempt 1 gets a real ClickHouse 5xx (so the
+    // header-derived fields are populated), attempt 3 rejects at the transport
+    // layer. The returned failure must describe attempt 3, not carry attempt 1's
+    // code/query id as if it explained the final outcome.
+    let call = 0;
+    const fetchImpl: typeof fetch = () => {
+      call++;
+      if (call === 1) {
+        return Promise.resolve(
+          new Response('', {
+            status: 503,
+            headers: { 'X-ClickHouse-Exception-Code': '241', 'X-ClickHouse-Query-Id': CH_QUERY_ID },
+          }),
+        );
+      }
+      return Promise.reject(new Error('network_failure_test'));
+    };
+    const result = await pushToClickHouse([validEvent], env, {
+      fetchImpl,
+      backoffMs: NO_BACKOFF,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('network_failure_test');
+      expect(result.chErrorCode).toBeUndefined();
+      expect(result.queryId).toBeUndefined();
+    }
+  });
+
   it('does NOT retry 4xx — terminal on first attempt (caller bug)', async () => {
     const seq = fetchSequence([400, 200, 200]);
     const result = await pushToClickHouse([validEvent], env, {
@@ -220,5 +272,99 @@ describe('pushToClickHouse — retry semantics', () => {
       expect(result.status).toBe(400);
     }
     expect(seq.calls()).toBe(1);
+  });
+});
+
+// ─── FOLLOW-845 — the failure descriptor comes from headers, never the body ───
+//
+// The rows this producer POSTs carry the buyer's chat message, and the caller
+// puts `error` into a `logger.error` AND a `Sentry.captureException` value. The
+// end-to-end proof (real Sentry client, real route, real captured ClickHouse
+// body) lives in `clickhouse-sentry-capture-path.test.ts`; these are the
+// unit-level properties that fix holds by construction.
+describe('pushToClickHouse — failure detail (FOLLOW-845)', () => {
+  it('never reads the response body on a 4xx', async () => {
+    const { response, bodyReads } = unreadableBodyResponse(400, {
+      'X-ClickHouse-Exception-Code': '27',
+      'X-ClickHouse-Query-Id': CH_QUERY_ID,
+    });
+    const result = await pushToClickHouse([validEvent], env, {
+      fetchImpl: () => Promise.resolve(response),
+      backoffMs: NO_BACKOFF,
+    });
+    expect(bodyReads()).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('clickhouse_status_400:ch_code_27:row_rejected');
+      expect(result.chErrorCode).toBe(27);
+      expect(result.queryId).toBe(CH_QUERY_ID);
+    }
+  });
+
+  it('classifies the error code an operator acts on', async () => {
+    const cases: [string, string][] = [
+      // 27 CANNOT_PARSE_INPUT_ASSERTION_FAILED — the ESC-031 / F-02 drift class.
+      ['27', 'clickhouse_status_400:ch_code_27:row_rejected'],
+      // 60 UNKNOWN_TABLE — a migration that never ran.
+      ['60', 'clickhouse_status_400:ch_code_60:schema_missing'],
+      // 516 AUTHENTICATION_FAILED — credential drift, not an outage.
+      ['516', 'clickhouse_status_400:ch_code_516:auth'],
+      // 241 MEMORY_LIMIT_EXCEEDED — back-pressure.
+      ['241', 'clickhouse_status_400:ch_code_241:capacity'],
+      // Unmapped: the numeric code still rides, which is the part that matters.
+      ['4242', 'clickhouse_status_400:ch_code_4242:unclassified'],
+    ];
+    for (const [header, expected] of cases) {
+      const result = await pushToClickHouse([validEvent], env, {
+        fetchImpl: () =>
+          Promise.resolve(
+            new Response('', { status: 400, headers: { 'X-ClickHouse-Exception-Code': header } }),
+          ),
+        backoffMs: NO_BACKOFF,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toBe(expected);
+    }
+  });
+
+  it('falls back to status alone when nothing in front of ClickHouse sets the headers', async () => {
+    // e.g. a Cloud load-balancer 502 that never reached ClickHouse itself.
+    const { response, bodyReads } = unreadableBodyResponse(502);
+    const result = await pushToClickHouse([validEvent], env, {
+      fetchImpl: () => Promise.resolve(response),
+      backoffMs: NO_BACKOFF,
+    });
+    expect(bodyReads()).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('clickhouse_status_502');
+      expect(result.chErrorCode).toBeUndefined();
+      expect(result.queryId).toBeUndefined();
+    }
+  });
+
+  it('ignores header values that are not a bare number / a UUID', async () => {
+    // The query id header is ECHOED when a client supplies one. This producer
+    // never does, but shape-validating means a future caller cannot turn either
+    // header into a free-text channel into Sentry.
+    const result = await pushToClickHouse([validEvent], env, {
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response('', {
+            status: 400,
+            headers: {
+              'X-ClickHouse-Exception-Code': 'Code 27: buyer typed this',
+              'X-ClickHouse-Query-Id': 'buyer typed this too',
+            },
+          }),
+        ),
+      backoffMs: NO_BACKOFF,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('clickhouse_status_400');
+      expect(result.chErrorCode).toBeUndefined();
+      expect(result.queryId).toBeUndefined();
+    }
   });
 });

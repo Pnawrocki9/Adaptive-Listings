@@ -694,6 +694,32 @@ jobs:
       - name: Assert zero sentry_sdk.init( call sites outside observability.py
         run: bash scripts/check-sentry-init-singleton.sh
 
+  # ── PR-checks gate self-test (FOLLOW-830 / FOLLOW-827) ──────────────────────
+  # WHY THIS EXISTS. scripts/gh-pr-checks-verified.sh is the mandated
+  # pre-READY_FOR_REVIEW merge gate for every ticket in this repo (CLAUDE.md,
+  # CONVENTIONS_PATCH.md Rule A, four agent definitions) and it shipped with
+  # ZERO tests. Two false-green paths reached main as a direct result: a Rule I
+  # classification by COUNT that accepted a compensating symbol swap
+  # (FOLLOW-827), and an unguarded `grep -oP` under `set -uo pipefail` without
+  # `-e` that printed "all checks green" and exited 0 on any host without PCRE
+  # grep (FOLLOW-830). A gate nothing tests is a gate nobody can trust to fail.
+  #
+  # The self-test is hermetic and offline: synthesized fixtures only (Rule AM),
+  # no live PR check state, no gh token needed. It runs on ubuntu-latest, which
+  # has both bash 5 and GNU grep, so the no-PCRE fixture simulates the degraded
+  # matcher with a PATH shim rather than needing a BSD runner.
+  #
+  # Hard gate — no continue-on-error. If the gate that validates every PR is
+  # itself broken, that is exactly when this must go red.
+  pr-checks-gate-self-test:
+    name: PR-checks gate self-test (FOLLOW-830)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the PR-checks gate self-test (validates the merge gate itself)
+        run: bash scripts/gh-pr-checks-verified.sh --self-test
+
   # ── Sentry capture-has-init guard (FOLLOW-743) ──────────────────────────────
   # The INVERSE of the guard above: asserts every capture_exception(/
   # capture_message( call site's module also contains an init_sentry( call (or

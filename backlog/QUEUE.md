@@ -178,6 +178,35 @@ descends **into `.claude/worktrees/*`**, i.e. into other agents' checkouts. It d
 pattern existed nowhere else), but it is one careless `sed` away from rewriting a concurrent
 worker's tree.
 
+### Found during this session's own bookkeeping: `commitlint.config.cjs`'s rule set is dead code
+
+`commitlint.config.cjs` defines the key `rules` **twice** — line 13 (the repo's real policy:
+`type-enum`, `scope-enum`, `subject-min-length` 10, `subject-max-length` 120, `subject-case`,
+`body-max-line-length` 100) and again at line 126 (`{'ticket-reference': [2, 'always']}`). In a JS
+object literal the later key replaces the earlier one wholesale, so **everything in the first block
+is inert**. What actually runs is `@commitlint/config-conventional`'s defaults plus the
+`ticket-reference` plugin.
+
+Established by probing the linter, not by reading the file:
+
+- `docs(totally-invalid-scope): …` → **passes** (`scope-enum` never fires; the scope list in
+  `docs/CONVENTIONS.md` is enforced by nothing)
+- `docs(backlog): x [FOLLOW-811]` → **passes** (`subject-min-length: 10` never fires)
+- a 113-char header → **fails** with `header-max-length` **100**, a limit that appears nowhere in
+  the local config and contradicts the `subject-max-length: 120` the repo believes it set
+- a message with no ticket ref → fails (so `ticket-reference`, the surviving key, does work)
+
+This is the same class of defect as FOLLOW-832 and FOLLOW-739: a control the repo documents,
+believes it has, and does not have. It is also what rejected this session's first bookkeeping commit
+— an undocumented cap firing while the documented one is absent.
+
+**Stub deliberately NOT filed yet.** Both open PRs (#678, #679) touch the tail of
+`backlog/FOLLOW_UPS.md`, and appending a new stub there now would manufacture the merge conflict the
+hunk-range check above just established does not exist. File it as **FOLLOW-837** once #678 and #679
+are merged. Recommended: `devops-engineer`, P2 — the fix is one deleted key, but deciding whether
+the repo wants its documented policy (scope enum, 120-char subject) or the conventional defaults it
+has silently been living under is a call, not a mechanical edit.
+
 **Two facts handed to the FOLLOW-811 worker that this session found in its own pre-dispatch read**
 (read-only, nothing changed): `sentry.client.config.ts` reads `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`
 while its own docstring claims it initialises on `SENTRY_DSN_CONTROL_PLANE` — a live Rule AI

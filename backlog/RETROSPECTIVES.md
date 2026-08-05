@@ -49435,3 +49435,577 @@ being path-filtered. FOLLOW-836 checked for duplication with 838 and cross-refer
 Routing recorded: the Sonnet->Opus escalation on this ticket demonstrably paid off. Filed FOLLOW-838, 841.
 QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
 .claude/agents/retrospective-analyst/lessons.d/RETRO-249.md per Rule AG. -->
+
+---
+
+## RETRO-250 — FOLLOW-827 + FOLLOW-830 (#680) — both false greens are dead and the gate now depends on an artefact no PR controls — 2026-08-05
+
+**THE HEADLINE: BOTH DEFECTS ARE GENUINELY FIXED — I RE-PROVED IT BY PERTURBATION — AND THE GATE
+BLOCKED A GOOD PR IN FRONT OF ME WHILE I WAS CHECKING.** Running the merged gate against the
+currently-open PR #681 at 21:39 UTC returned
+`GENUINE FAILURES (blocking — do NOT mark READY_FOR_REVIEW)` / `RESULT: FAIL. 2 genuine failure(s).`
+/ exit **1**. Re-running it against the **same PR at the same head commit** (`46fdd12a`) six minutes
+later returned `New on this PR: 0 | fixed by this PR: 0` / exit **0**. Nothing about the PR changed.
+The mechanism, characterised rather than guessed: `ci.yml` sets `concurrency: cancel-in-progress:
+true`, so back-to-back pushes to `main` cancel the older run — **2 of `main`'s last 5 completed
+`ci.yml` runs have `conclusion=cancelled`**; `fetch_main_run_meta` (`:234`) selects the baseline with
+`gh run list … --status completed -L 1`, and GitHub's `completed` **status** includes the `cancelled`
+and `skipped` **conclusions**; while `main`'s newest run is still `in_progress` (this repo has jobs at
+83–99 min) the newest *completed* run is precisely the cancelled one; a cancelled job's log returns
+HTTP 404; the gate renders that as _"job or log not found (Actions logs expire after ~90 days)"_ — on
+a four-minute-old run — and converts it into a blocking verdict on the PR. Baseline run
+`31048596826` (head `6d477eec`, `conclusion=cancelled`, rule-i job `92450484844`
+`conclusion=cancelled`) versus `31048670342` (head `ba8f048f`, `conclusion=failure`) is the whole
+difference between the two verdicts. **This is not a regression introduced by PR #680** — the
+pre-merge gate treated an unreadable baseline the same way — but it is the hole RETRO-246 §4a LG-1(iii)
+named in advance, that FOLLOW-827's ACs asked only to *print* rather than to fix, and that has now
+been observed firing rather than predicted. → **FOLLOW-846 (P1, unfrozen)**.
+
+**SECOND HEADLINE: THE SELF-TEST PINS THE TWO NEWEST DEFECTS AND CANNOT SEE THE ORIGINAL ONE.** In a
+scratch copy (Rule AM — the working tree was never mutated) I deleted the
+`"$snapshot" == "$prev_snapshot"` condition at `:544`, i.e. the entire two-consecutive-snapshot
+mechanism FOLLOW-813 was created to build, reducing the loop to `--watch`'s own semantics. The
+11-fixture harness reports **every fixture passing**. It cannot do otherwise: `fetch_snapshot`
+(`:200-202`) serves one static file, so no fixture can express a check-run set that *changes between
+polls*, which is the only shape the late-registration race has. The gate's own headline capability is
+unpinned by its own harness. → **FOLLOW-848 (P2)**.
+
+**THIRD HEADLINE: FOLLOW-827 AC(2) IS DISCHARGED ON ONE OF THREE ARTEFACTS, AND THE TWO SURVIVORS ARE
+THE ONES AGENTS READ.** AC(2) required the false "mirrors the shape FOLLOW-821 uses" / count-comparison
+claim corrected. It was deleted from the script header. The identical claim is still live at
+`docs/AGENT_WORKFLOW.md:193-197` (_"verifies it DYNAMICALLY by diffing the PR run's own 'Violations
+found: N' job-log line … This mirrors the shape FOLLOW-821 uses"_) and at `CONVENTIONS_PATCH.md` Rule
+A `:29-32` (_"compared against `main`'s own live violation **count**"_). Both now describe a mechanism
+the script no longer has, in the pessimistic direction — a reader concludes a compensating swap still
+passes. **Rule AI fires and, run verbatim, its Verification step 1 would have caught this** (it greps
+`docs/` and `CONVENTIONS_PATCH.md` for the changed symbol) → compliance failure, no amendment. **Rule
+Y also fires and, run verbatim, reports it clean** (its Verification greps `packages --include='*.ts'`
+only) → that is RETRO-249 §6's armed condition, met, and Rule Y's Verification block is repaired in
+place below. One sentence deserves recording for the archive: the script deleted _"mirrors the shape
+FOLLOW-821 uses"_ as false in the same commit that made it true, and left the sentence standing one
+file over.
+
+### 1. Summary of change
+
+- **PR:** #680 (merged 2026-08-05 20:48:29 UTC, squash → `c7b17fb7`, single parent `c88046e9`; branch
+  `devops-engineer/FOLLOW-827-830-ci-gate-self-test`; worker `devops-engineer` / **Opus**)
+- **Files changed: 3 (+573 / −35).** Measured with `gh pr view 680 --json files` **and** confirmed
+  per-file with `git diff --numstat c7b17fb7^ c7b17fb7` — the two agree exactly. Not measured with a
+  `--stat` across unrelated SHAs (the RETRO-247 error RETRO-248 recorded):
+
+  | file                                     |  +  |  −  |
+  | ---------------------------------------- | --- | --- |
+  | `scripts/gh-pr-checks-verified.sh`       | 523 |  35 |
+  | `.github/workflows/ci.yml`               |  26 |   0 |
+  | `.claude/agents/devops-engineer/lessons.md` |  24 |   0 |
+
+  The gate goes 247 → **735 lines**; roughly 210 of the 523 added lines are the `--self-test` block.
+- **Modules touched:** repo-process only — `scripts/`, `.github/workflows/`, `.claude/`. **Zero**
+  `apps/`, `packages/`, `infra/`, migrations, Python, **and zero `docs/`** — the last of those is §4d
+  DG-1, not a clean bill.
+- **Key contracts changed:**
+  1. **Rule I classification: violation COUNT → violating-SYMBOL SET** (`:682-708`). **Breaking: yes,
+     in the strict direction** — a PR that introduces a new dead export now blocks even if it removes
+     another. Every PR whose set is equal or smaller behaves exactly as before (proven live on #677
+     by the worker and on #681 by me).
+  2. **`scripts/check-rule-i.sh`'s human-readable output is now a machine-parsed contract.** The gate
+     reads `WARN: '<symbol>' in <file> — zero non-test importers` (emitted at `check-rule-i.sh:117`)
+     out of both job logs. Neither script says so in the other's presence. **Breaking: no today,
+     load-bearing tomorrow** — FOLLOW-842 is scheduled to edit exactly that producer (§5a).
+  3. **A new fixture seam, `GH_PR_CHECKS_FIXTURE_DIR`** (`:123`), which reroutes every network read to
+     files on disk. Breaking: no. Unguarded in production mode: yes (§4b CB-1).
+  4. **A new hard CI job, `pr-checks-gate-self-test`** (`ci.yml:709-721`). No `if:`, no
+     `continue-on-error`, no secret dependency.
+  5. Exit-code contract 0/1/2/3 unchanged in shape; exit 3 gains a new cause (dependency preflight).
+
+### 2. Verification done in PR
+
+- **Test files changed: 0 in the conventional sense; 11 fixtures added inside the gate itself.**
+  Assertions: 9 fixtures assert a **specific** exit code (never merely non-zero) plus, in 8 of 9, a
+  required substring — `_st_expect:329-335` fails a right verdict reached for the wrong reason — and 2
+  assert the file's filesystem and git-index mode. Coverage delta: from **zero** to the first
+  automated verification this file has ever had.
+- **Red-first is real and inspectable, not asserted.** `5ae61d1b` is a standalone commit on the branch
+  carrying the fixture seam on the OLD logic: **4 failed / 7 passed**, with the FOLLOW-830 fail-open
+  printed verbatim (`grep: invalid option -- 'P'` → `failing: 0` → `RESULT: all checks green` → exit 0
+  over a snapshot containing a FAILURE check). `39a5430d` turns it 11/11.
+- **CI: green, and dogfooded in both directions** — the PM validated #680 with `main`'s then-current
+  gate (75 checks / 73 pass / 2 `Rule I` / exit 0) **and** with the rewritten gate the PR ships, run
+  in production mode against the live PR. A gate change that only its own new version accepts would be
+  unfalsifiable; both versions accepted it. That is the strongest process artefact in this PR.
+- **Proof the new job RUNS, re-derived by me rather than taken from the PR body:**
+  `PR-checks gate self-test (FOLLOW-830) → completed/success` on the PR's own run (job `92430629710`)
+  **and** on `main`'s post-merge run `31045826331` **and** on `main` HEAD run `31048670342`. Three
+  runs, all `success`. It is not a no-op and it cannot soft-skip.
+- **MY OWN NON-VACUITY RUNS (three perturbations, `cp` to a scratch dir, working tree never mutated —
+  Rule AM).** The brief asked me to verify the two headline fixtures myself; I ran a third:
+
+  ```
+  # control (unmodified copy)                                              -> 10/10 pass, exit 0
+  #   (11th fixture, git-index mode, correctly degrades to a NOTE outside a git checkout — see CB-3)
+  revert FOLLOW-827: `new_symbols -eq 0` -> `pr_violations -le main_violations`
+      -> ONLY F5 fails: "Rule I compensating swap (equal counts, different symbols) exits 1"
+         expected exit 1, got 0; gate printed
+         "RESULT: all failing checks are documented … Safe to mark READY_FOR_REVIEW"   NON-VACUOUS ✅
+  revert FOLLOW-830: PCRE preflight condition -> `if false`
+      -> ONLY F7 fails: "a grep without -P support exits 3, never 'all checks green'"
+         expected exit 3, got 0; gate printed
+         "Total checks: 2 | … | failing: 0" + "RESULT: all checks green."               NON-VACUOUS ✅
+  revert FOLLOW-813: delete `"$snapshot" == "$prev_snapshot"` from the settle condition
+      -> ZERO fixtures fail; harness reports "passed"                                  BLIND ❌ (§4c TG-1)
+  ```
+
+  Each of the two headline fixtures fails **alone** when its own fix is reverted — they discriminate,
+  they do not merely co-fire. F4 (`pr ⊃ main`) passes under the reverted count logic, which is correct:
+  F5 is the discriminating fixture and F4 is not, and the PR's fixture list is right to carry both.
+- **What the verification did NOT cover:** the settle loop (§4c TG-1), the fidelity of the parsed log
+  format against its real producer (§4c TG-2), and the whole class of "the baseline is unreadable"
+  (§4a LG-1) — the last of which was live on `main` while this retro was being written.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** No new files. Thirteen new shell functions, every one with ≥1
+non-definition call site (`for f in preflight_dependencies rule_i_count_from_log
+rule_i_symbols_from_log classify_fetch_error fetch_snapshot fetch_job_log fetch_main_run_meta
+fetch_main_job_id _st_fixture _st_rule_i_log _st_run _st_fail _st_expect; do grep -c "\b$f\b" …` →
+lowest count 2, i.e. no definition-only symbol). The new `ci.yml` job is wired **and proven to
+execute** on three separate runs (§2). The gate's main path remains an operator/agent CLI entrypoint
+and stays in the suppression class RETRO-246 §3 established — but note the asymmetry has now
+*partially* closed: the mechanically-checkable slice (does the gate still work?) is a real CI job as
+of this merge, exactly as RETRO-246 scoped it.
+
+**CHECK B — half-wire. One finding.**
+
+- **New env var `GH_PR_CHECKS_FIXTURE_DIR`** — producer (`:300`, `:303`, the self-test's own child
+  invocations) and consumer (`fetch_snapshot`, `fetch_job_log`, `fetch_main_run_meta`,
+  `fetch_main_job_id`) both exist and are wired. Not a half-wire. It is an **unguarded seam**, which is
+  a different defect → §4b CB-1.
+- **HALF_WIRE_P (producer only) — the gate's new BLOCKING verdict on `Rule I` has no consumer-facing
+  instruction anywhere.** The producer is `:691-707`: a list of `NEW violating symbols`, a
+  compensating-swap NOTE, and `RESULT: FAIL`. The consumers are the documents an agent reads before
+  and after running the gate — and **none of them mentions that `Rule I` can now block, or what to do
+  about it**. `docs/AGENT_WORKFLOW.md:190-192` and `CONVENTIONS_PATCH.md` Rule A both still frame
+  `Rule I` as _the_ documented pre-existing-red entry; `CLAUDE.md:60` likewise. The gate's own output
+  never names `scripts/check-rule-i.sh` or `CONVENTIONS_PATCH.md` Rule I, where the three remediations
+  (wire it / test through its consumer / file a FOLLOW-NNN deferral referenced in the defining file's
+  header) actually live — `check-rule-i.sh:135-143` prints them, but only to whoever thinks to run
+  that other script. **This is the brief's "blocked ticket with no documented path forward" risk, and
+  the answer is that the path exists and is not connected.** P2 because the failure is loud and
+  fail-closed, and because a competent worker will find `check-rule-i.sh`; not P3 because the whole
+  point of the strictness call was that the reader must not be trained to wave the gate through. →
+  **FOLLOW-847**.
+
+No new event, DB column, topic or SDK signal was introduced; the classic producer/consumer axis is
+otherwise N/A.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — THE BASELINE IS SELECTED FROM A RUN SET THAT INCLUDES CANCELLED AND SKIPPED RUNS, SO
+  THE GATE BLOCKS EVERY PR IN THE REPO FOR A REASON NO PR CAN CAUSE OR FIX.** Reproduced live, in both
+  directions, on PR #681 at head `46fdd12a` (headline). Five compounding facts, each verified by me
+  and not inferred: (i) `:234` uses `gh run list … --status completed -L 1`, and `completed` is a
+  *status*, not a conclusion — `gh run list --branch main --status completed -L 5` returns
+  `31048596826 … conclusion=cancelled`, `31045826331 … failure`, `31044080592 … failure`,
+  `31043658899 … conclusion=cancelled`, `31041168933 … failure`; (ii) `ci.yml:19-21` sets
+  `concurrency: cancel-in-progress: true` on `${{ github.workflow }}-${{ github.ref }}`, so any two
+  pushes to `main` inside one run's duration cancel the older — which is why 2 of 5 are cancelled and
+  why the rate is a function of merge cadence, and this session merged five PRs; (iii) the *newest*
+  run is excluded from the candidate set until it completes, and this repo's CI carries jobs at 83–99
+  min, so the window in which the newest completed run is the cancelled one is long, not momentary;
+  (iv) a cancelled job's log is HTTP 404 (`rule-i` job `92450484844`, `conclusion=cancelled` →
+  `fetch_job_log` non-zero); (v) `:656-661` converts that into `genuine_failures`, printing the
+  strongest wording the script has. Consequence: the mandated merge gate is **non-deterministic across
+  time for a fixed input**, in the blocking direction, and the PM's documented response to exit 1 is to
+  treat the PR as failed and increment `fix_iteration_counter` — two phantom reds would consume a third
+  of the 3-retry escalation budget on nothing. **Not caused by this merge** (the pre-merge gate failed
+  the same way on an unparseable baseline) and **not required by FOLLOW-827's ACs**, which asked only
+  that the baseline be *printed*. → **FOLLOW-846**.
+- **LG-2 (P2, folded into FOLLOW-846) — every failing check is evaluated once per check-run, and this
+  repo produces two check-runs per job.** PR #681's rollup has **75 checks with 36 duplicated names**
+  (push-triggered run + pull_request-triggered run), including two `Rule I — wired-or-dead check`
+  entries pointing at runs `31047631722` and `31047633448`. The gate therefore ran the entire baseline
+  resolution twice — two `gh run list` calls, two job-id lookups, two full job-log downloads on each
+  side — and printed the identical diagnosis twice, reporting `RESULT: FAIL. 2 genuine failure(s).` for
+  one distinct problem. Cost is API budget and a misleading failure count, not correctness.
+- **LG-3 (P3 — assessed, deliberately NOT filed, with the reasoning recorded so the next audit stops
+  re-deriving it).** The parser self-consistency check (`:622-628`, `:674-679`) fires only when
+  `violations > 0 && symbols == 0`. A **partial** parse — some `WARN` lines matched, some not — is
+  therefore accepted, and if the unparsed lines happen to be the new ones the verdict is a false green.
+  I am not filing it, for a reason that matters to whoever is tempted to "fix" it with a strict
+  equality assertion: `rule_i_symbols_from_log` ends in `sort -u`, while `check-rule-i.sh` increments
+  `VIOLATIONS` per occurrence, so `symbols < violations` is **legitimate** whenever one file exports the
+  same identifier twice (TypeScript declaration merging, `export interface X` + `export const X`).
+  A `symbols -ne violations` guard would manufacture false REDs. The reachable half of the concern —
+  a format change breaking *all* lines — is already caught, and the format-drift half is §4c TG-2.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2) — the fixture seam is honoured in production mode, so an environment variable turns the
+  repo's merge gate into an offline replayer that prints a green verdict for a real PR.** Verified by
+  me, transcript in full:
+
+  ```
+  $ GH_PR_CHECKS_FIXTURE_DIR=<scratch>/leak bash gh-pr-checks-verified.sh 681 --max-wait-seconds 4 --interval-seconds 1
+  === gh-pr-checks-verified.sh — PR #681 (fixture/repo) ===
+  ...
+  Total checks: 2 | success: 2 | skipped: 0 | neutral: 0 | failing: 0
+  RESULT: all checks green. Safe to mark READY_FOR_REVIEW.
+  exit=0
+  ```
+
+  No network read occurs, `gh auth` is not preflighted (`:492-494` passes `need_gh=0`), and the only
+  distinguishing signal is the string `(fixture/repo)` in a header line the reader has been trained to
+  skip. The script's own comment at `:117-119` states _"It is set ONLY by this script's own --self-test
+  mode and never by a caller"_ — a property of intent asserted as a property of the code, which nothing
+  enforces; that is the Rule Y shape inside a gate whose subject is unenforced claims. Exploitability is
+  near zero (`grep -rn "GH_PR_CHECKS_FIXTURE_DIR"` returns only the script itself; it is in no workflow,
+  no `.env.example`, no agent definition), which is why this is P2 and not P1 — and is also the exact
+  argument that was available for `--watch` before PR #668. Mitigation is three lines. → **FOLLOW-848**.
+- **CB-2 (P2, folded into FOLLOW-846) — the 404 branch names the wrong cause in by far the commonest
+  case.** `classify_fetch_error:192` renders every 404 as _"job or log not found (Actions logs expire
+  after ~90 days)"_. The 404 I actually observed was on a four-minute-old cancelled job. FOLLOW-827
+  AC(4) is discharged in letter — four causes are now distinguishable where one WARN used to be — and
+  the specific goal it was written for ("actionable at 2am") is not met on the branch that fires most.
+- **CB-3 (P3, folded into FOLLOW-848) — the harness does not assert its own fixture count.** Outside a
+  git checkout the git-index fixture degrades to `NOTE: git index mode unavailable here` and the run
+  prints `RESULT: --self-test passed — 10 fixtures.` and exits 0. In CI, `actions/checkout@v4` makes it
+  11 (verified in the job log), so nothing is currently hidden — but a fixture that silently stops
+  running is indistinguishable from one that passes, which is a Rule Q shape one level down. One
+  `[[ $((st_passes + st_failures)) -eq 11 ]]` closes it.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — the self-test cannot see a regression in the mechanism the whole chain exists to
+  protect.** Proven by my own perturbation (§2): deleting the two-consecutive-snapshot condition passes
+  every fixture. `fetch_snapshot` serves a single static `snapshot.json`, so the fixture *format* — not
+  an oversight in the fixture *list* — is what makes the late-registration race inexpressible. The seam
+  already supports the fix cheaply: serve `snapshot.1.json`, `snapshot.2.json`, … in sequence and add a
+  fixture where a FAILURE check appears only on the third read. Then FOLLOW-813, FOLLOW-827 and
+  FOLLOW-830 are all pinned by one harness, which is the point of having built one. → **FOLLOW-848**.
+- **TG-2 (P2, folded into FOLLOW-848 + flagged at §5a) — the parsed log format is pinned by the test's
+  own replica of the producer's output.** `_st_rule_i_log:282-292` writes the `WARN: '<sym>' in <file>`
+  line itself (with the ISO prefix, which is careful work), and the comment at `:280-281` claims the
+  parser is _"pinned against the format it actually meets, not a tidied one"_. It is pinned against the
+  test's belief about that format. If `check-rule-i.sh` changes the line, all 11 fixtures still pass.
+  **Adjudicated against RETRO-247/248's P-32 bar rather than pattern-matched:** clause (a) requires the
+  assertion to target a value the test constructs by copying a production expression. It does not — the
+  assertion targets the **real** script's exit code, and the replica is the *input*. This is precisely
+  the boundary RETRO-248 §5a passed to this worker ("synthesize the INPUT, never re-implement the LOGIC
+  UNDER TEST"), and the worker honoured it. **P-32 does not fire.** What remains is an ordinary,
+  nameable coverage gap: a cross-script format contract with no parity fixture. Its failure direction is
+  loud (`symbols == 0` → genuine failure), so it is a false-RED risk, not a false-green one — and
+  FOLLOW-842 is about to edit the producer.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — two live documents still describe the retired COUNT mechanism, and the sibling set of
+  the correction was never enumerated.** `docs/AGENT_WORKFLOW.md:193-197` and `CONVENTIONS_PATCH.md`
+  Rule A `:29-32` (headline 3). **Rule S's first bullet applies to a corrected CLAIM exactly as it
+  applies to a corrected behaviour**, and the irony is worth recording rather than scoring: the PR
+  contains an explicit, well-executed Rule S section that enumerates nine sibling *scripts* sharing the
+  two *bugs*, and it did not enumerate the three sibling *artefacts* carrying the *claim* its own AC(2)
+  required corrected. One axis swept thoroughly, the adjacent axis not swept at all — which is the
+  multi-axis failure my own algorithm step 8 exists to catch. **Rule AO** ("a corrective edit inherits
+  the scope of the thing it corrects") and **Rule AI** both fire. → **FOLLOW-847**.
+- **DG-2 (N/A — checked and clean, recorded so it is not re-filed).** `CLAUDE.md:60-67` describes the
+  gate as classifying against _"the documented pre-existing-red gates (currently only `Rule I …`,
+  verified dynamically against `main`'s own current baseline, never a hardcoded number)"_. It never says
+  "count". It remains **true as worded** post-merge. Three artefacts carried the claim; one of the two
+  that were wrong is the repo's own rule file.
+- **DG-3 (N/A — already owned, Rule AN).** Neither `docs/AGENT_WORKFLOW.md:200-203` nor Rule A's
+  Verification block documents **exit 3**, which this PR gave a new and now-likely cause (dependency
+  preflight). `FOLLOW-828` AC(3) already owns the exit-code table. No new number.
+
+- **DG-4 (N/A — Master Design alignment checked, clean).** Algorithm step 5, run rather than assumed:
+  `grep -n "gh-pr-checks\|pr checks\|Rule I\b" docs/MASTER_DESIGN.md` returns three hits, all of which
+  survive this merge. `:576` names `scripts/check-rule-i.sh` as the hard CI gate enforcing Rule I —
+  still true, and the gate this PR changed is a *consumer* of it, not a replacement. The same line's
+  "42 permanent rules" count is unaffected because this retro mints **no letter** (a Verification-block
+  repair does not change the count), and the line self-declares its counts DERIVED with FOLLOW-772
+  owning the re-derivation — the same assessment RETRO-246 §4d DG-3 recorded and correctly declined to
+  file. No divergence, no follow-up.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-821 — NOT invalidated; materially advanced, and its `blocks:` relation is now precise.** The
+  gate no longer contradicts 821 AC(1): it compares symbol identities, which is 821's shape implemented
+  against a live baseline instead of a file. 821's remaining work is unchanged (an allowlist that makes
+  `Rule I` a *passing* gate in CI, which this PR does not attempt), and the re-pointing site is named in
+  the script at `:60-63`. **The Rule K / Rule AQ hazard RETRO-246 filed at birth is now dated rather
+  than hypothetical:** the moment 821 ships its allowlist, the repo holds two independent
+  implementations of "compare Rule I against a baseline" — one in `check-rule-i.sh`, one in
+  `gh-pr-checks-verified.sh` — and the second must be re-pointed *in that PR*, not after it.
+- **FOLLOW-842 — NOT invalidated, and SHARPENED with a coupling that did not exist 24 hours ago.** 842
+  edits `check-rule-i.sh`'s `grep -oP` symbol extraction. That script's `WARN: '<symbol>' in <file>`
+  line (`:117`) is now **the merge gate's parsed input for the entire repository**. If 842 changes the
+  emission shape, every PR's `Rule I` classification fails loud (`symbols == 0` → genuine failure) until
+  `rule_i_symbols_from_log` is updated — a repo-wide block from a P1 hygiene ticket. Neither script
+  documents the other. **The one line the PM should pass to whoever takes 842: do not change that WARN
+  line's shape without updating `gh-pr-checks-verified.sh:178-180` in the same PR, and add the parity
+  fixture (§4c TG-2) while you are in there.** 842 AC(2) ("assert `TOTAL_SYMBOLS > 0` before reporting
+  `Violations found: 0`") is also now doubly load-bearing: a degraded matcher there empties the baseline
+  the merge gate compares against.
+- **FOLLOW-831 — PARTIALLY discharged, and now double-owned.** The mode class is pinned for exactly one
+  file: the self-test asserts `$0`'s filesystem mode (755) and git index mode (100755). 831's named
+  instance is untouched and still live — `git ls-files -s scripts/check-rule-i.sh` → **`100644`**,
+  `test -x` → false — against the four bare-invocation mandates in `backlog/HANDOFFS.md`. FOLLOW-842
+  AC(4) now also claims that same mode bit and instructs whoever takes it to "close or re-scope 831 in
+  the same PR". **Two open tickets on one mode bit is a Rule AN hazard; the PM should close 831 into 842
+  or explicitly narrow 831 to the general "every doc-mandated bare invocation is 755" gate**, which is
+  the half neither ticket has built.
+- **FOLLOW-838 / PR #681 (OPEN, awaiting merge) — no AC invalidated, and there is one thing the PM must
+  know before validating it.** Its scope is `apps/ingest` TS + compliance docs; it touches nothing under
+  `scripts/` or `.github/` (`gh pr view 681 --json files` → 5 files, none). Its `Rule I` set is
+  **192 symbols, `New on this PR: 0 | fixed by this PR: 0`**, verified by me through the merged gate.
+  **But the first of my two runs blocked it (exit 1) for LG-1's reason.** If the gate exits 1 on #681
+  with `could not FETCH main's baseline Rule I job log`, that is FOLLOW-846, not the PR — re-run it and
+  check the baseline run's `conclusion` before touching the fix-iteration counter.
+- **FOLLOW-843 / FOLLOW-844 — not invalidated.** 844 gains a small correction it should carry: its AC(1)
+  says `gh-pr-checks-verified.sh` "should pass" shellcheck — that was measured on the 247-line file; the
+  file is now 735 lines with a large new heredoc-and-PATH-shim block, so re-measure rather than assume.
+- **FOLLOW-836 — unaffected in scope, and it inherits a technique.** Its AC(2) requires a Rule AM
+  self-test on synthesized fixtures; this PR contributes the reusable pattern (an env-var fixture seam
+  plus a `PATH`-shim for simulating a degraded tool) that no prior gate in the estate had. Its own
+  deliverable is a `scripts/` gate, so the stricter `Rule I` posture does not touch it unless it ships
+  exported TypeScript helpers.
+- **FOLLOW-839 / FOLLOW-840 / FOLLOW-841 / FOLLOW-845 — re-checked, none invalidated** (SDK tests,
+  gitleaks runbook, `dpia.md` parity assertion, ingest ClickHouse sink; no overlap with `scripts/` or
+  `.github/`, and none of them changes an exported symbol set in a way the new classifier would see).
+
+**⚠️ SEVERITY FLAG FOR THE PM (§5 is where my guardrails require this; I am not escalating).**
+FOLLOW-846 is live on `main` right now and its blast radius is *every* PR, not one. The two facts that
+set the priority: the merge gate can block a clean PR for a reason that lives in `main`'s CI history,
+and the documented response to exit 1 is to treat the worker as failing. Whether that warrants an
+`ESCALATIONS.md` entry alongside the P1 stub is the PM's call.
+
+#### 5b. Future sprint tickets affected
+
+Every future ticket, on two axes. (1) **Strictness:** a PR that introduces a new unwired export now
+blocks, permanently, regardless of net count — correct, intended, and un-documented anywhere a worker
+reads (§3 CHECK B). (2) **Fragility:** any ticket that touches `scripts/check-rule-i.sh`'s output
+format, or that merges while `main`'s previous run is cancelled, interacts with the merge gate for the
+whole repo. The second axis is new as of this merge and is not visible from any ticket's own scope.
+
+#### 5c. Contracts changed others rely on
+
+- The `Rule I` classification semantics (count → set) — consumed by the PM's §5b validation step, four
+  agent definitions, and every ticket DoD. Two of the three documents describing it are now wrong (§4d
+  DG-1).
+- `check-rule-i.sh`'s `WARN:` line — promoted from human-readable output to a parsed contract, with no
+  annotation on either side (§5a FOLLOW-842).
+- `main`'s CI run history — promoted from evidence to **input**. See §5d.
+- `GH_PR_CHECKS_FIXTURE_DIR` — a new environment contract, unguarded outside self-test mode (§4b CB-1).
+
+#### 5d. Architectural assumptions affected
+
+**The merge gate's verdict is now a function of two things: the PR, and `main`'s CI history.** Before
+this chain it was a function of the PR alone. The second input is outside every PR's control, is
+mutated by `cancel-in-progress`, is subject to a 90-day log retention, and has no owner — and I
+observed it flip a verdict from BLOCK to PASS on an unchanged commit inside six minutes. The right
+posture is not to revert the design: reading `main`'s own latest run is what makes "pre-existing" mean
+something without a hand-maintained number, and the ratchet is now printed rather than silent, which is
+a real improvement. The posture is to treat the baseline as **an input that must be validated before it
+is trusted** — the same discipline the script already applies to its own matcher (preflight) and to its
+own parse (`symbols == 0` fails loud), applied one level out. That is FOLLOW-846 in one sentence.
+
+Second, and the genuine good news of this merge: **the trust root now has a floor.** RETRO-246 §5d
+recorded that the repo's merge gate had moved to an in-repo script with no tests. It has tests, they
+run on every push, they are red-first, and two of them are provably non-vacuous by my own hand. The
+remaining question is no longer "is anything checking the gate" but "is the gate's *input* checked" —
+which is a better question to be left with.
+
+### 6. New lesson candidates
+
+- **P-35 ("A GATE'S VERDICT DEPENDS ON AN ARTEFACT OUTSIDE EVERY PR'S CONTROL, SO IT IS
+  NON-DETERMINISTIC FOR A FIXED INPUT") — MINTED AT COUNT 1. NOT PROMOTED.**
+  - **THIS RETRO (count 1)** — §4a LG-1, observed live in both directions on PR #681, same head commit,
+    six minutes apart.
+  - **Tested against the rule texts, not the titles.** **Rule AF** (a permanently-red gate is a disabled
+    gate) is about a gate that is always red; this one is intermittently, spuriously red — adjacent,
+    inverse. **Rule Q** governs a gate reporting a status without executing its assertion; here the
+    assertion executes and its *input* is junk. **Rule AM** governs fixture provenance — the baseline is
+    not a fixture. **Rule AL** governs the region an assertion scans. **Rule AP** governs residual-gap
+    registers. None fires.
+  - **Second-sighting bar, pre-specified so the next retro tests rather than re-derives:** (a) a gate,
+    check or classifier whose verdict is a function of state no author of the change under test can
+    observe or influence; (b) demonstrated non-determinism — the same input producing two verdicts, or a
+    verdict changing with no change to the input; (c) the failure is reported in the vocabulary of the
+    thing under test ("this PR failed") rather than in the vocabulary of the tooling ("the baseline is
+    unusable). Clause (c) is what separates this from ordinary flakiness and is the part that costs
+    sessions. **If the second sighting is a flaky test rather than a gate, do NOT promote** — flake is a
+    known category with its own remedies and folding it in would make the rule unusable.
+- **"ENUMERATE THE SIBLINGS, DO NOT FIX THEM, FILE THEM" (the brief's question) — COUNT 1, NOT
+  PROMOTED, ARMED AS A RULE S AMENDMENT.** I read Rule S's text rather than matching its title. Its
+  first bullet already says _"Enumerate the full sibling set FIRST … State it in the PR description"_
+  and its second says _"Apply the change to EVERY sibling, **or explicitly justify per-sibling why one
+  is exempt**."_ So the practice is not new; **what is new is the FORM the exemption took**: nine
+  scripts assessed against three named failure modes in a table, and the exemption discharged as
+  **three scoped, dated tickets (FOLLOW-842 P1 / 843 P2 / 844 P3)** rather than as a paragraph. That
+  conversion — unknown → tracked work — is the thing worth codifying, and it has **one** sighting: this
+  PR. (The FOLLOW-838 sibling decision in flight is a different shape — examined-and-consciously-kept,
+  pinned by a test — and the sweeps in RETRO-248/249 were performed by retros, which is the retro's own
+  job, not a worker practice. Counting any of them here would be the RETRO-122 count-inflation this
+  corpus forbids.) **ARMED:** the next retro observing a worker instructed to enumerate-not-fix, whose
+  enumeration produces filed tickets, cites RETRO-250 §6 → ≥2 → **amend Rule S's "or explicitly justify
+  per-sibling" bullet in place** to require that a deferred sibling's justification be a filed
+  FOLLOW-NNN rather than prose. Do not mint a letter; Rule S already owns the territory.
+- **"A HARD CI GATE SHIPS WITH NO SELF-TEST" — NOT PROMOTED, AND THE CENSUS IS THE REASON.** The brief
+  asked whether FOLLOW-830's "nothing tests this script" generalises. I counted rather than assumed.
+  Fifteen gate scripts are invoked from `.github/workflows/`. **Seven have a `--self-test` invoked by a
+  workflow** (`check-fire-and-forget-sinks`, `check-modal-app-singleton`, `check-sentry-init-singleton`,
+  `check-sentry-capture-has-init`, `check-migration-journal`, `check-redis-smoke-trigger-trust`, and now
+  `gh-pr-checks-verified`), **two more have external harnesses** in `scripts/__tests__/`
+  (`check-k2-consumer-swallow`, `check-staff-write-atomicity`), one has a `--self-test` that no workflow
+  runs (`check-mirror-files`), and **four have nothing** (`check-rule-i`, `check-rule-h`,
+  `check-privacy-notice-keys`, `check-served-bundles`). **Nine of fifteen self-verify; the practice is
+  the estate's norm and the merge gate was the exception** — which reframes FOLLOW-830 from "we have no
+  such practice" to "the most load-bearing gate in the repo was the one that skipped it". A rule
+  codifying the majority behaviour against a straggler list of four, three of which are already
+  ticketed (FOLLOW-842, 843, 844), would be noise. **NOT PROMOTED**, and the census is recorded here so
+  the next retro tempted by this can start from a number instead of an impression.
+- **RULE Y — VERIFICATION-BLOCK REPAIR, AMENDED IN PLACE. This is the one rule action of this retro.**
+  RETRO-249 §6 armed it with a named condition: _"the next retro that finds a Rule-Y-shaped citation in
+  a `docs/**` or config file which Rule Y's own Verification grep would miss cites RETRO-249 §6 as prior
+  1 and repairs the Verification block in place."_ §4d DG-1 is that finding, twice over
+  (`docs/AGENT_WORKFLOW.md:193-197` and `CONVENTIONS_PATCH.md` Rule A `:29-32` — **counted as one
+  sighting**, per RETRO-122). Rule Y's text has covered "any doc" since the 2026-06-26 broadening; its
+  Verification block still greps `packages --include='*.ts'` and would report both instances clean. Per
+  RETRO-246's Rule AI precedent, **repairing an already-promoted rule's own Verification block is not a
+  promotion and does not invoke the ≥2-prior gate** — the rule's text already forbids the thing its
+  check cannot see. Amendment written to `CONVENTIONS_PATCH.md`; **no new letter minted, no new rule
+  promoted.**
+- **Meta-pattern (recorded, not a candidate).** RETRO-248 §6 observed that three consecutive retros had
+  ended at _"the rule exists, the enforcement does not"_. This one ends somewhere else, and the
+  difference is worth naming: the enforcement now exists, runs, and is provably non-vacuous — and the
+  defect moved to **the enforcement's inputs** (an unvalidated baseline, an unpinned upstream log format,
+  an unguarded fixture seam). That is what progress looks like in this estate: the failure class does not
+  disappear, it moves one layer out, and the retro's job is to say which layer it is standing on now.
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus**, justified as "the wrong answer
+  reintroduces the false green FOLLOW-813 existed to remove". It paid: the AC(1) fork was resolved by
+  discovering that the per-symbol data was already in the job log — a finding, not an implementation —
+  and the decision to reject the block-on-Rule-I fork is argued from how readers behave rather than from
+  the AC's letter. The two things it missed (DG-1's doc twins, LG-1's baseline selection) are both
+  **reading** misses rather than reasoning misses, and one of them is mine: FOLLOW-827's AC(3) was
+  written by RETRO-246, which had already characterised the count-less-baseline failure mode in its own
+  §4a LG-1(iii) and then asked only that the baseline be *printed*. A worker who satisfies an AC exactly
+  cannot be faulted for the AC's scope. Recorded in my lessons fragment as my lineage's blind spot, not
+  the worker's.
+
+### 7. Follow-ups
+
+- **FOLLOW-846:** The merge gate blocks every PR whenever `main`'s latest *completed* `ci.yml` run was
+  cancelled or skipped — reproduced live on PR #681 in both directions; fix the baseline selection,
+  correct the 404 diagnosis, and stop reporting a tooling failure in the vocabulary of a PR failure
+  (devops-engineer, 4h, **P1**, **UNFROZEN** per the session-95 P1 carve-out)
+- **FOLLOW-847:** Two live documents still describe the gate's retired COUNT mechanism, and nothing
+  anywhere tells a worker what to do when `Rule I` now BLOCKS — correct the claim's sibling set and wire
+  the remediation path into the gate's own output (devops-engineer, 2h, **P2**, FROZEN)
+- **FOLLOW-848:** The 11-fixture harness cannot see a regression in the settle loop, does not assert its
+  own fixture count, and leaves the fixture seam honoured in production mode (devops-engineer, 3h,
+  **P2**, FROZEN)
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one hop:**
+
+- **FOLLOW-830 — CLOSED END-TO-END on all five ACs, and I verified the two load-bearing ones myself
+  rather than reading the PR body.** AC(1) preflight (bash ≥ 4, PCRE, `gh`, `gh auth status`, exit 3) ✅
+  — **producer** `preflight_dependencies:131-164`, **consumer** both entry paths (`:258` self-test with
+  `need_gh=0`, `:493`/`:496` main path), **render** proven by my `if false` perturbation, which turns F7
+  red and prints the fail-open verbatim. AC(2) six mandated fixtures, all present and each asserting a
+  specific exit code ✅. AC(3) wired into `ci.yml` as a hard gate ✅ — and **proven to have RUN on three
+  separate runs**, not merely to exist. AC(4) mode assertion ✅ (both filesystem and git index; the
+  failure message names `git update-index --chmod=+x`, which is the remedy a bare `chmod` misses).
+  AC(5) fail-closed ✅.
+- **FOLLOW-827 — CLOSED on AC(1), AC(3) and AC(5); AC(2) closed on ONE of THREE artefacts; AC(4) closed
+  in letter and misleading in practice.** AC(1) symbol-set comparison ✅, **producer**
+  `rule_i_symbols_from_log:178-180` → **consumer** `comm -23`/`comm -13` at `:682-685` → **render**
+  `New on this PR: N | fixed by this PR: N` at `:687-689` and the blocking branch at `:691-708`;
+  perturbation-proven by me (revert to count → F5 alone fails). AC(3) baseline identity printed ✅
+  (observed live: run id, head sha, creation time, and the ratchet warning). AC(5) red-first fixture ✅
+  (`5ae61d1b`, 4 failed / 7 passed). **AC(2) → FOLLOW-847** (§4d DG-1). **AC(4) → FOLLOW-846** (§4b CB-2).
+- **FOLLOW-813 — the chain has moved from the classifier to the classifier's INPUTS, and that is
+  progress, not a stall.** Traced hop by hop: `--watch`'s late-registration race (closed, PR #675,
+  dogfooded) → the count comparison (**closed here, perturbation-proven**) → the PCRE fail-open
+  (**closed here, perturbation-proven**) → **open: the baseline input** (FOLLOW-846, observed live), **the
+  fixture seam** (FOLLOW-848 / §4b CB-1), and **the harness's blindness to the original mechanism**
+  (FOLLOW-848 / §4c TG-1). AC(2)'s wording is "cannot report a false green". The two known paths are
+  dead and provably dead; two new ones — one exotic (CB-1), one latent (TG-1 is a regression risk, not a
+  live defect) — are open. **Verdict: materially closer than at RETRO-246, still not "cannot".** The
+  next retro in this chain must check FOLLOW-846 and FOLLOW-848 before anyone writes that the false-green
+  class is closed.
+- **FOLLOW-831 — NOT closed, and now half-owned by FOLLOW-842.** Verified on disk rather than from a
+  status field: `git ls-files -s scripts/check-rule-i.sh` → `100644`, `test -x` → false. The self-test's
+  mode assertion covers `$0` only. §5a records the double-ownership.
+- **FOLLOW-821 — still open, unblocked, and now correctly related.** The `blocks:` relation in
+  FOLLOW-827's header is discharged in the only sense it could be pre-emptively: the script names the
+  re-pointing site in its own header (`:60-63`), so 821 cannot ship the allowlist without meeting the
+  instruction. Nothing mechanical enforces that; it is a comment, and 821's PR is where a retro must
+  check it.
+
+### 8. Cross-references
+
+- **RETRO-246** — the source of both tickets, and the retro this one grades. Three of its calls are
+  confirmed: LG-1 (the count comparison, fixed and perturbation-proven), CB-1 (the PCRE fail-open, fixed
+  and perturbation-proven), TG-1 (the missing self-test, built and running). One is only partly
+  discharged by the ACs it wrote: **LG-1(iii)**, the count-less/unfetchable baseline, which RETRO-246
+  characterised correctly and then converted into an AC that asked for printing — and which I then
+  observed blocking a live PR. That is a scoping lesson about writing ACs from findings, and it is mine.
+- **RETRO-247** — its measurement correction obeyed: `gh pr view --json files` **and**
+  `git diff --numstat c7b17fb7^ c7b17fb7`, never a `--stat` across unrelated SHAs.
+- **RETRO-248** — its §5a note to this worker ("synthesize the INPUT, never re-implement the LOGIC UNDER
+  TEST and then assert on your copy of it") was honoured, and I re-derived the adjudication from P-32's
+  clause (a) rather than inheriting it (§4c TG-2). Its Rule AM discipline governed all four of my own
+  perturbation runs.
+- **RETRO-249 §6** — its armed Rule Y Verification-block repair, discharged here on the condition it
+  named. Its methodology ("read the rule's TEXT and ask whether running it verbatim would report this
+  clean") is what separates Rule AI (fires, catches it → compliance failure) from Rule Y (fires, blind →
+  repair) in §4d DG-1.
+- **RETRO-122** — the count-inflation discipline, applied twice: two Rule Y instances counted as one
+  sighting, and three sibling-sweep events in this session counted as one for the enumerate-don't-fix
+  candidate.
+- **Rule AF / Rule K / Rule AQ** — the standing hazards around FOLLOW-821 that this merge changes the
+  shape of without resolving (§5a).
+
+<!-- RETRO-250 (PR #680, FOLLOW-827 + FOLLOW-830, merge c7b17fb7, 3 files +573/-35 per gh pr view --json
+files AND git diff --numstat c7b17fb7^..c7b17fb7 — the RETRO-247/248 measurement discipline obeyed).
+VERDICT: BOTH DEFECTS GENUINELY FIXED, re-proven by MY OWN perturbations in a scratch copy (Rule AM, working
+tree never mutated): revert the symbol-set comparison to the count comparison -> ONLY F5 fails, printing
+"Safe to mark READY_FOR_REVIEW"; disable the PCRE preflight -> ONLY F7 fails, printing "failing: 0 / all
+checks green / exit 0" over a FAILURE check. Both headline fixtures DISCRIMINATE (they fail alone), i.e.
+non-vacuous. THIRD PERTURBATION, and it is a finding: deleting the two-consecutive-snapshot condition — the
+whole FOLLOW-813 mechanism — passes EVERY fixture, because fetch_snapshot serves one static file so the
+late-registration race is inexpressible -> FOLLOW-848 P2. HEADLINE DEFECT, OBSERVED LIVE NOT PREDICTED: the
+gate blocked open PR #681 (exit 1, "GENUINE FAILURES") and then passed the SAME head commit six minutes
+later (exit 0), because `gh run list --status completed -L 1` selects CANCELLED runs (2 of main's last 5 are
+conclusion=cancelled, courtesy of ci.yml's cancel-in-progress) and a cancelled job's log is a 404 that the
+gate renders as "logs expire after ~90 days" on a 4-minute-old run -> FOLLOW-846 P1 UNFROZEN, severity-
+flagged to the PM in §5a, NOT escalated (guardrail). WIRING: CHECK A clean (13 new shell functions all with
+call sites; new ci.yml job proven to RUN on 3 separate runs incl. two on main). CHECK B: HALF_WIRE_P — the
+new BLOCKING Rule I verdict has no consumer-facing instruction anywhere (AGENT_WORKFLOW, Rule A and CLAUDE.md
+all still frame Rule I as pre-existing-red; the gate's output never names check-rule-i.sh's three remedies)
+-> FOLLOW-847 P2. Also CB-1: GH_PR_CHECKS_FIXTURE_DIR is honoured in PRODUCTION mode — verified transcript,
+a real PR number prints "all checks green" exit 0 with zero network reads — against the script's own
+unenforced claim that it is "never set by a caller" -> FOLLOW-848. DOCS: FOLLOW-827 AC(2) discharged on 1 of
+3 artefacts; docs/AGENT_WORKFLOW.md:193-197 and CONVENTIONS_PATCH.md Rule A:29-32 still describe the retired
+COUNT mechanism -> FOLLOW-847; the PR ran an exemplary Rule S sweep on sibling SCRIPTS and none on sibling
+CLAIMS. RULE VERDICTS: NO NEW LETTER, NO NEW RULE PROMOTED. Rule Y's VERIFICATION BLOCK REPAIRED IN PLACE on
+RETRO-249 §6's armed condition (two docs/**-located Rule Y instances that its packages/*.ts grep reports
+clean; per RETRO-246's Rule AI precedent a Verification repair on an already-promoted rule is not a
+promotion). Rule AI fires and its own grep WOULD have caught this -> compliance failure, no amendment. P-35
+MINTED at count 1 (a gate whose verdict depends on an artefact no PR controls, hence non-deterministic for a
+fixed input) with a 3-clause second-sighting bar. "Enumerate-don't-fix" assessed against Rule S's actual TEXT:
+already covered by its first two bullets; the NEW element (discharge the exemption as filed tickets, 842/843/
+844) is count 1 -> ARMED as a Rule S amendment, not a letter. "A gate ships with no self-test" NOT promoted,
+with a census: 9 of 15 workflow-invoked gate scripts self-verify, so the practice is the norm and the merge
+gate was the exception; the 4 stragglers are check-rule-i/check-rule-h/check-privacy-notice-keys/
+check-served-bundles, three already ticketed. CASCADE: FOLLOW-821 not invalidated, advanced, Rule K/AQ hazard
+now dated; FOLLOW-842 SHARPENED — it edits check-rule-i.sh:117, whose WARN line is now the merge gate's
+parsed input for the whole repo, undocumented on both sides; FOLLOW-831 partially discharged and now double-
+owned with 842 AC(4) (check-rule-i.sh verified still 100644 / not executable); FOLLOW-838/PR #681 not
+invalidated, 192 symbols, New on this PR: 0, but its validation is exposed to FOLLOW-846; 844's "shellcheck-
+clean" claim was measured on the 247-line file and must be re-measured at 735. Filed FOLLOW-846, 847, 848.
+QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
+.claude/agents/retrospective-analyst/lessons.d/RETRO-250.md per Rule AG. -->

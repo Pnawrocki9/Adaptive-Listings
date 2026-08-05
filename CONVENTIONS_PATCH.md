@@ -1450,6 +1450,21 @@ grep -rn -iE "caught in CI|asserts the two|drift is caught|parity guard|runs in 
 grep -n 'ARCHETYPE_NAMES' packages/sdk/src/__tests__/intent-weights.test.ts        # real key↔name guard
 grep -n 'BASE_PRIOR' packages/sdk/src/__tests__/intent-weights-drift.test.ts        # real value-drift guard
 # (3) A cited file that returns ZERO hits for the symbols it supposedly reconciles is a Rule Y violation.
+
+# (4) VERIFICATION REPAIR 2026-08-05 (RETRO-250 §6, on RETRO-249 §6's armed condition). Steps 1-3
+#     grep `packages --include='*.ts'` ONLY, while this rule's TEXT has covered "any doc" since the
+#     2026-06-26 broadening — so run verbatim they report a false citation in docs/**, in a runbook,
+#     in CONVENTIONS_PATCH.md itself, or in a config comment CLEAN. Widen the corpus, always:
+grep -rn -iE "asserts|verifies|guarded|caught in CI|enforces|compares|diffing|pinned by|proven by" \
+  docs/ CONVENTIONS_PATCH.md CLAUDE.md .claude/ backlog/HANDOFFS.md --include='*.md' \
+  | grep -viE 'RETROSPECTIVES|FOLLOW_UPS|QUEUE|STATUS'
+# (5) For every hit that names a script, test, module, config key, migration or column: OPEN THAT
+#     ARTIFACT and confirm it performs the cited behavior TODAY. A citation that was true when
+#     written and was falsified by a later change is a Rule Y violation now (and a Rule AI failure
+#     in the PR that falsified it) — the two rules fire together and neither excuses the other.
+# (6) On any PR that changes HOW a named gate/script/guard decides something, this grep is
+#     MANDATORY over the corpus in (4), not optional: the sibling set of a corrected CLAIM is
+#     enumerated exactly as Rule S requires for a corrected BEHAVIOR.
 ```
 
 **Amendment (2026-06-26, RETRO-126 §6 — SCOPE BROADENING, not a new letter):** Rule Y was promoted
@@ -1488,6 +1503,43 @@ exists and does the cited thing before recording the gap closed.
   the RETRO-119 instance itself introduced `MASTER_DESIGN.md:728` "`adapt-floor` returns `[]`,"
   citing a const-only module (`adapt-floor.ts`, no function) as performing the array-drop that
   actually lives at `index.ts:720-724`. Filed FOLLOW-412.
+
+### Rule Y verification repair (2026-08-05 — RETRO-250 §6, on RETRO-249 §6's armed condition)
+
+**This repairs the rule's own Verification block. It is NOT a promotion, NOT a scope change, and no
+letter was minted** — the rule's TEXT has covered "any named symbol, file, module … cited as fact in
+a doc" since the 2026-06-26 broadening; only its check was still scoped to the pre-broadening corpus
+(`packages --include='*.ts'`). Precedent for repairing a control rather than re-promoting a pattern:
+**RETRO-246 §6**, which added tier 0 and `.claude/` to Rule AI's Verification block on a single
+demonstration, for the identical reason.
+
+**Trigger, pre-authorised by name.** RETRO-249 §6 armed this: _"the next retro that finds a
+Rule-Y-shaped citation in a `docs/**` or config file which Rule Y's own Verification grep would miss
+cites RETRO-249 §6 as prior 1 and repairs the Verification block in place."_ RETRO-250 §4d DG-1 is
+that finding, in two artefacts — counted as **one** sighting per RETRO-122's count-inflation
+discipline:
+
+- `docs/AGENT_WORKFLOW.md:193-197` cites `scripts/gh-pr-checks-verified.sh` as verifying `Rule I`
+  _"by diffing the PR run's own 'Violations found: N' job-log line"_ and as _"mirroring the shape
+  FOLLOW-821 uses"_. Since PR #680 (2026-08-05) the script compares violating-**symbol sets**; the
+  count is a printed diagnostic. The named artefact does not perform the cited behaviour.
+- `CONVENTIONS_PATCH.md` Rule A `:29-32` cites the same script as comparing against _"`main`'s own
+  live violation **count**"_. Same defect, inside this file.
+
+**Prior sighting (RETRO-249 §6, count 1):** `ropa.md` / `dpia.md` citing a `beforeSend` scrubber and
+a "CI check on scrubber config" that did not exist (FOLLOW-739), and
+`docs/runbooks/git-hooks.md:41-70` citing `commitlint.config.cjs` as enforcing a scope list and a
+subject-length minimum that its shadowed `rules` block never applies (FOLLOW-837). Both are `.md`;
+both were reported clean by steps 1-3 run verbatim.
+
+**What changed:** steps (4)-(6) above. The corpus is now `docs/`, `CONVENTIONS_PATCH.md`,
+`CLAUDE.md`, `.claude/` and `backlog/HANDOFFS.md` — the documents that instruct — and the ledgers
+(`RETROSPECTIVES`/`FOLLOW_UPS`/`QUEUE`/`STATUS`) are excluded because a dated record of what was
+true when written is not a citation. Step (6) states the obligation that both trigger instances
+failed: when a PR changes how a named gate decides something, the sibling set of the CLAIM is
+enumerated exactly as Rule S requires for the sibling set of a BEHAVIOR.
+
+<!-- Rule Y VERIFICATION REPAIRED 2026-08-05 — RETRO-250 §6 (no new letter, no promotion, no scope change: the rule's TEXT already covered "any doc" since the 2026-06-26 broadening; only its Verification grep was still pre-broadening and reported docs/**-located instances CLEAN). Armed by RETRO-249 §6 with a named condition (prior 1: FOLLOW-739's ropa/dpia scrubber citation + FOLLOW-837's git-hooks.md commitlint citation, both .md, both reported clean by steps 1-3 verbatim). Discharged by RETRO-250 §4d DG-1 (docs/AGENT_WORKFLOW.md:193-197 + CONVENTIONS_PATCH.md Rule A:29-32 both still citing gh-pr-checks-verified.sh as a COUNT diff after PR #680 replaced it with a symbol-set comparison; two artefacts counted as ONE sighting per RETRO-122) -> FOLLOW-847. Precedent for a Verification repair on a single demonstration: RETRO-246 §6's Rule AI repair (tier 0 + .claude/ added to AI's grep). CHECKED BEFORE EDITING: Rule AI also fires on the same two sentences and its OWN Verification step 1 greps docs/ + CONVENTIONS_PATCH.md, so run verbatim AI CATCHES this PR -> that is a compliance failure against an adequate control, no AI amendment (RETRO-248's Rule P adjudication, same logic). Rule S fires on the un-enumerated claim siblings and Rule AO on the corrective edit's scope; both adequate as written. -->
 
 <!-- Rule Y AMENDED 2026-06-26 — RETRO-126 §6 (SCOPE BROADENING, no new letter): from "named test/file cited as proof a guard runs in CI" to "any named symbol/file/module/migration-number/schema-column cited as fact." Evidence ≥2 PRIOR retros that INDEPENDENTLY recommended/pre-authorized this amendment — RETRO-115 §4d DG-1/FOLLOW-410 (migration-number "0017" vs "0018", broadened count 1, explicit amendment recommendation) + RETRO-119 §6/FOLLOW-398 (nonexistent-const SIDEBAR_SHOW_THRESHOLD, broadened count 2, pre-registered 2nd-sighting trigger) — plus the promoting RETRO-126 §4d DG-1 (const-only module cited as "returns []", broadened count 3, filed FOLLOW-412). RETRO-119's 2nd-sighting trigger exceeded; ≥2-prior-retro threshold firmly met. Count-inflation discipline (RETRO-122) honored: this is a confirming-instance amendment to an ALREADY-promoted rule, not a new letter, grounded in 2 prior retros that recommended it. Original promotion stands: RETRO-089 §6 (RETRO-084 + RETRO-089 CI-guard sub-shape, count 2). -->
 

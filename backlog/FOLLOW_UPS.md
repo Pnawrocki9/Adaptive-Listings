@@ -28479,3 +28479,210 @@ as a known-open gap.
 cross_ref: [FOLLOW-838 (same coupling, chat-NLP leg); FOLLOW-811 (the control-plane decision this
 mirrors); ESC-048 (DSN sequencing); ESC-049 (C-07's ClickHouse claim, same data, different defect);
 `apps/ingest/src/clickhouse-producer.ts:110,:178`; `apps/ingest/src/handlers/events.ts:583-600`]
+
+---
+
+## FOLLOW-846 — The merge gate blocks every PR whenever `main`'s latest _completed_ CI run was cancelled: `--status completed` includes cancelled runs, and `cancel-in-progress` makes that routine
+
+source_retro: RETRO-250 (§4a LG-1 / §4b CB-2 / §5a / §5d) source_ticket: FOLLOW-827
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 4
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Not frozen:** P1 carve-out to the session-95 standing rule.
+
+**Observed live, in both directions, on an open PR — not predicted.** RETRO-250 ran the merged gate
+against PR #681 at head `46fdd12a`:
+
+```
+21:39 UTC  baseline = run 31048596826 (head 6d477eec, conclusion=CANCELLED)
+           WARN: could not FETCH main's Rule I job log (job 92450484844) — HTTP 404 — job or log
+                 not found (Actions logs expire after ~90 days).
+           GENUINE FAILURES (blocking — do NOT mark READY_FOR_REVIEW)
+           RESULT: FAIL. 2 genuine failure(s).                                        exit 1
+21:45 UTC  baseline = run 31048670342 (head ba8f048f, conclusion=failure)
+           Rule I symbol-set comparison: PR has 192 … main baseline has 192
+           New on this PR: 0 | fixed by this PR: 0
+           RESULT: all failing checks are documented … Safe to mark READY_FOR_REVIEW. exit 0
+```
+
+Same PR. Same commit. Nothing changed but `main`.
+
+**The mechanism, five verified facts.** (1) `scripts/gh-pr-checks-verified.sh:234` selects the
+baseline with `gh run list … --branch main --status completed -L 1`; GitHub's `completed` is a
+**status**, and it contains the `cancelled` and `skipped` **conclusions** —
+`gh run list --branch main --status completed -L 5` currently returns two `conclusion=cancelled`
+runs out of five. (2) `.github/workflows/ci.yml:19-21` sets
+`concurrency: … cancel-in-progress: true`, so any two pushes to `main` inside one run's duration
+cancel the older one; the cancellation rate is a function of merge cadence, and this repo merged
+five PRs in one session. (3) The _newest_ run is excluded from the candidate set until it completes,
+and `ci.yml` carries jobs at 83–99 min, so the window in which the newest **completed** run is the
+cancelled one is long. (4) A cancelled job's log is HTTP 404. (5) `:656-661` converts that into
+`genuine_failures` and prints the strongest wording the script owns.
+
+**Why P1.** The blast radius is every PR in the repo simultaneously, for a reason no PR can cause or
+fix; the failure is reported in the vocabulary of the PR ("GENUINE FAILURES … do NOT mark
+READY_FOR_REVIEW") rather than of the tooling; and the PM's documented response to exit 1 is to
+treat the worker as failing and increment `fix_iteration_counter`, so two phantom reds consume a
+third of the 3-retry escalation budget. It also trains readers to re-run the gate until it passes —
+the exact habit the FOLLOW-827 worker argued against when it declined to hard-block on `Rule I`.
+
+**Not a regression from PR #680.** The pre-merge gate failed the same way on an unparseable
+baseline. This is the hole RETRO-246 §4a LG-1(iii) characterised in advance and FOLLOW-827 AC(3)
+converted into "print the baseline" rather than "validate the baseline".
+
+**AC:** (1) select the baseline from `main`'s latest completed run **whose `Rule I` job actually
+produced a usable baseline** — filter out `conclusion` values of `cancelled` / `skipped`, and walk
+back up to N recent runs until one yields a parseable symbol set; print which run was chosen **and
+how many were skipped and why**; (2) when no usable baseline exists in that window, this is a
+**tooling** outcome, not a PR verdict — exit **3** (the script's own documented "gh CLI error" code)
+with a message that says the baseline is unusable and names the runs tried, never
+`GENUINE FAILURES … do NOT mark READY_FOR_REVIEW`; (3) fix the 404 diagnosis in
+`classify_fetch_error:192` — a 404 on a run created minutes ago is a cancelled or skipped job, not a
+90-day log expiry; branch on the job's `conclusion`, which the script can read from the same jobs
+API call it already makes; (4) de-duplicate the failing-check list by name before the classification
+loop — this repo registers two check-runs per job (push + pull_request; PR #681 had **75 checks with
+36 duplicated names**), so the entire baseline resolution and both job-log downloads currently run
+twice and one problem is reported as two failures; (5) add self-test fixtures for each: a cancelled
+baseline run, a baseline window with no usable run, and a duplicated check name; red-first, with the
+transcript in the PR body.
+
+cross_ref: [RETRO-250 §4a LG-1, §4b CB-2, §5a, §5d; RETRO-246 §4a LG-1(iii) (the same hole,
+predicted); FOLLOW-827 (AC(3)/AC(4)); FOLLOW-830 (the harness this extends);
+`scripts/gh-pr-checks-verified.sh:192,:234,:656-661`; `.github/workflows/ci.yml:19-21`;
+`CONVENTIONS_PATCH.md` Rule AF]
+
+---
+
+## FOLLOW-847 — Two live documents still describe the merge gate's retired COUNT mechanism, and nothing tells a worker what to do now that `Rule I` can BLOCK
+
+source_retro: RETRO-250 (§3 CHECK B / §4d DG-1) source_ticket: FOLLOW-827 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Half of FOLLOW-827 AC(2) is undone one file over.** AC(2) required the script's false claim of
+FOLLOW-821 alignment corrected. It was deleted from the script header and left standing in the two
+documents agents actually read:
+
+- `docs/AGENT_WORKFLOW.md:193-197` — _"the script verifies it DYNAMICALLY by **diffing the PR run's
+  own 'Violations found: N' job-log line** against `main`'s own latest completed CI run … This
+  **mirrors the shape FOLLOW-821 uses**"_.
+- `CONVENTIONS_PATCH.md` Rule A `:29-32` — _"compared against `main`'s own live violation **count**
+  — never a hardcoded number, so a worsening baseline is never misclassified as accepted"_.
+
+Both now describe a mechanism the script does not have, in the **pessimistic** direction: a reader
+concludes that a compensating swap still passes. `CLAUDE.md:60-67` was checked and is **still true
+as worded** (it never says "count") — do not churn it. **Rule AI fires** (a change falsified the
+docs and the PR updated none), **Rule AO** fires (a corrective edit inherits the scope of the thing
+it corrects), and **Rule S's first bullet** applies to a corrected _claim_ exactly as it applies to
+a corrected behaviour — the PR ran an exemplary sibling sweep over sibling _scripts_ and none over
+sibling _claims_.
+
+**The second half is a real 2am problem, and it is a missing consumer, not a missing doc.** The gate
+now BLOCKS a PR that introduces a new dead export even when it removes another. Its output prints
+the offending `<symbol> @ <file>` lines and `RESULT: FAIL` — and never names
+`scripts/check-rule-i.sh` or `CONVENTIONS_PATCH.md` Rule I, where the three remediations live (wire
+it / test through its consumer / file a FOLLOW-NNN deferral referenced in the defining file's
+header; `check-rule-i.sh:135-143` prints them, but only to whoever thinks to run that other script).
+Meanwhile all three documents describing the gate still frame `Rule I` as _the_ documented
+pre-existing-red entry. A worker who hits this has a verdict, a symbol list, and no next step.
+
+**AC:** (1) correct both mechanism descriptions to "symbol-set comparison against `main`'s latest
+usable baseline run; counts are a diagnostic only" — and state the sibling set of the claim in the
+PR body (Rule S); (2) add one paragraph to `docs/AGENT_WORKFLOW.md`'s CI-verification section and to
+Rule A stating that `Rule I` is **conditionally** pre-existing-red: accepted when the PR's symbol
+set is a subset of `main`'s, **blocking** otherwise, with the three remedies named inline; (3) make
+the gate print the remediation pointer in its own `NEW violating symbols` branch — a gate that
+blocks must say what to do; (4) do NOT touch `CLAUDE.md:60-67` (verified still true) and do NOT
+rewrite closed sprint tickets (RETRO-246 §4d DG-2 established there is no re-injection path); (5) if
+FOLLOW-829 is taken first or in parallel, do these in the same PR — the file sets overlap and two
+PRs editing `docs/AGENT_WORKFLOW.md`'s CI section will collide.
+
+cross_ref: [RETRO-250 §3 CHECK B, §4d DG-1; FOLLOW-827 AC(2); FOLLOW-829 (the sibling doc ticket —
+same files, different claim); FOLLOW-828 AC(3) (owns the exit-code table; exit 3 is still
+undocumented — do not re-file it here, Rule AN); `docs/AGENT_WORKFLOW.md:190-203`;
+`CONVENTIONS_PATCH.md` Rule A, Rule AI, Rule AO, Rule S, Rule Y; `scripts/check-rule-i.sh:135-143`]
+
+---
+
+## FOLLOW-848 — The merge gate's 11-fixture harness cannot see a regression in the settle loop, does not assert its own fixture count, and leaves the fixture seam live in production mode
+
+source_retro: RETRO-250 (§2 / §4b CB-1 / §4b CB-3 / §4c TG-1 / §4c TG-2) source_ticket: FOLLOW-830
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**The harness pins the two newest defects and is blind to the original one.** RETRO-250 verified
+this by perturbation in a scratch copy (Rule AM; the working tree was never mutated): deleting the
+`"$snapshot" == "$prev_snapshot"` condition at `:544` — the entire two-consecutive-snapshot
+mechanism FOLLOW-813 exists to provide, reducing the loop to `--watch`'s own semantics — leaves
+**every fixture passing**. The cause is the fixture _format_, not an omission from the fixture list:
+`fetch_snapshot:200-202` serves one static `snapshot.json`, so no fixture can express a check-run
+set that _changes between polls_, which is the only shape the late-registration race has. (For
+contrast, the same method turns F5 red when the FOLLOW-827 fix is reverted and F7 red when the
+FOLLOW-830 preflight is disabled — those two are provably non-vacuous.)
+
+**The seam is honoured in production mode.** With `GH_PR_CHECKS_FIXTURE_DIR` set in the environment,
+the gate prints a green verdict for a real PR number with zero network reads and no `gh auth`
+preflight:
+
+```
+$ GH_PR_CHECKS_FIXTURE_DIR=<dir> bash scripts/gh-pr-checks-verified.sh 681 --max-wait-seconds 4 --interval-seconds 1
+=== gh-pr-checks-verified.sh — PR #681 (fixture/repo) ===
+Total checks: 2 | success: 2 | … | failing: 0
+RESULT: all checks green. Safe to mark READY_FOR_REVIEW.        exit 0
+```
+
+The only distinguishing signal is `(fixture/repo)` in a header line. The script's own comment at
+`:117-119` asserts _"It is set ONLY by this script's own --self-test mode and never by a caller"_ —
+a property of intent presented as a property of the code, enforced by nothing. Exploitability is
+near zero today (`grep -rn "GH_PR_CHECKS_FIXTURE_DIR"` returns only the script; it is in no
+workflow, no `.env.example`, no agent definition) — which is exactly the argument that was available
+for `--watch` before PR #668.
+
+**Two smaller items on the same file.** (a) The harness does not assert its own fixture count:
+outside a git checkout the git-index fixture degrades to a `NOTE` and the run prints
+`RESULT: --self-test passed — 10 fixtures.` and exits 0, so a fixture that stops running is
+indistinguishable from one that passes (Rule Q, one level down). In CI `actions/checkout@v4` makes
+it 11, so nothing is hidden **today**. (b) `_st_rule_i_log:282-292` builds the Rule I log from the
+test's own copy of `check-rule-i.sh`'s output format, under the comment _"pinned against the format
+it actually meets"_ — it is pinned against the test's belief about that format, so a change to
+`check-rule-i.sh:117` leaves all fixtures green. This is **not** a P-32 instance (the assertion
+targets the real script's exit code; the replica is the input, which is exactly the boundary
+RETRO-248 §5a asked for), and its failure direction is loud rather than silent — but FOLLOW-842 is
+scheduled to edit that producer.
+
+**AC:** (1) make the fixture seam serve a **sequence** — `snapshot.1.json`, `snapshot.2.json`, … ,
+last one repeating — and add a fixture in which a FAILURE check appears only on the third read;
+assert exit 1; prove it red-first against a build with the `prev_snapshot` comparison removed; (2)
+refuse to honour `GH_PR_CHECKS_FIXTURE_DIR` unless the self-test's own child invocation also sets an
+internal marker, or make production mode exit 3 when the variable is present — a gate must not print
+a verdict from a replay; (3) assert the total fixture count and fail if it is not the expected
+number; (4) add one parity fixture that runs the **real** `scripts/check-rule-i.sh` (or a committed
+golden sample of its output) through `rule_i_symbols_from_log` and asserts ≥1 symbol parses, so a
+change to the producer's line shape reddens here rather than repo-wide; (5) coordinate (4) with
+FOLLOW-842, which edits that producer.
+
+cross_ref: [RETRO-250 §2, §4b CB-1, §4b CB-3, §4c TG-1, §4c TG-2; FOLLOW-830 (the harness this
+extends); FOLLOW-813 (the mechanism left unpinned); FOLLOW-842 (edits the parsed producer);
+RETRO-248 §5a (the synthesize-the-input boundary, honoured);
+`scripts/gh-pr-checks-verified.sh:117-123, :200-202,:282-292,:432-453,:544`; `CONVENTIONS_PATCH.md`
+Rule AM, Rule Q]
+
+<!-- next free FOLLOW number: 849 (FOLLOW-846..848 filed 2026-08-05 by RETRO-250, the post-merge retro for
+PR #680 / FOLLOW-827 + FOLLOW-830 — the two false-green paths in the mandated merge gate. 846 = P1 UNFROZEN,
+observed LIVE not predicted: the gate blocked open PR #681 (exit 1, "GENUINE FAILURES") and passed the SAME
+head commit six minutes later (exit 0), because `gh run list --status completed -L 1` selects CANCELLED runs
+(2 of main's last 5) and a cancelled job's log 404s, which the gate renders as "logs expire after ~90 days"
+and converts into a PR verdict; also covers the duplicate check-run double-evaluation (75 checks / 36
+duplicated names on #681). 847 = P2 FROZEN, FOLLOW-827 AC(2) discharged on 1 of 3 artefacts —
+docs/AGENT_WORKFLOW.md:193-197 and CONVENTIONS_PATCH.md Rule A:29-32 still describe the retired COUNT
+mechanism — plus the missing consumer: nothing tells a worker what to do now that Rule I can BLOCK, and the
+gate's own output never names check-rule-i.sh's three remedies. 848 = P2 FROZEN, the 11-fixture harness is
+blind to a settle-loop regression (proven by perturbation: deleting the two-consecutive-snapshot condition
+passes every fixture), does not assert its own fixture count, and honours GH_PR_CHECKS_FIXTURE_DIR in
+production mode (verified transcript: a real PR number, "all checks green", exit 0, zero network reads). NOT
+re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-842 (SHARPENED — it edits
+check-rule-i.sh:117, now the merge gate's parsed input repo-wide; and its AC(4) double-owns FOLLOW-831's
+mode bit, verified still 100644), FOLLOW-828 (still owns the exit-code table; exit 3 remains undocumented),
+FOLLOW-829 (the sibling doc ticket — 847 says take them together), FOLLOW-844 (its "shellcheck-clean" claim
+was measured on the 247-line file; it is 735 now). NO new CONVENTIONS_PATCH letter — Rule Y's Verification
+block REPAIRED IN PLACE on RETRO-249 §6's armed condition; see RETRO-250 §6. -->

@@ -74,6 +74,81 @@ is Opus's row, not Sonnet's.
 **CI-check counters: FOLLOW-832 0/5, FOLLOW-811 0/5. Fix-iteration counters: 0/3 each. 2 tickets
 IN_PROGRESS. 0 open PRs at dispatch time.**
 
+### FOLLOW-832 — status: READY_FOR_REVIEW (PR #678, head `7dadd86d`)
+
+**ci_check_counter:** 3/5 **fix_iteration_counter:** 1/3 (both PM-side; the worker needed no rework
+on substance). **CI:** `scripts/gh-pr-checks-verified.sh 678` → 73 checks, 71 pass, 2 `Rule I` at
+192 <= 192 vs `main` baseline run `31035657108`, exit 0.
+
+**Substance validated, and the P1 claim re-proved rather than inherited.** The worker fixed both
+arms — the primary-failure arm and the multilingual-retry arm, whose own
+`extraction_error=f"retry_failed: …"` expression at `nlp.py:563` had never been asserted by
+anything. Doing only the named arm would have been the third consecutive Rule S event; it did not
+happen. `nlp.py` is byte-identical to `main` (`git diff … -- apps/intent-engine/src/nlp.py` → 0
+lines). This session re-ran the perturbation independently in a sandboxed `cp -r`: perturbing
+`nlp.py:504` fails the new test (1 failed / 10 passed) where the pre-fix assertion stayed green at
+11 passed. 80 passed / 2 skipped, ruff + black clean.
+
+**CI was genuinely red twice, and the second red is the lesson.** The worker's descriptive rename
+`test_buyer_text_escapes_three_sinks_four_arms` (45 chars, entropy 3.69) tripped gitleaks'
+`cloudflare-api-token` rule where the name is quoted in `C-07:244` and `ropa.md:535`. Renamed to
+`test_buyer_text_escapes_all_sinks` (33 chars) rather than adding a `.gitleaksignore` fingerprint —
+weakening a secrets scanner over compliance documents to accommodate an identifier is the wrong
+trade.
+
+**Then the fix-forward commit did not clear it.** On `pull_request` events gitleaks scans the whole
+PR commit range, so the finding stayed attributed to the superseded commit `f0b6da92` and the check
+stayed red on a tree that no longer contained the string. The branch was collapsed to a single
+commit (`git reset --soft main` + force-push) — PRs land as squashes here, so no history was lost.
+**Write this down: on this repo a gitleaks red cannot be fixed forward, only rewritten out.**
+
+**Self-correction, recorded because the wrong version was briefly in a commit message.** The first
+explanation ("gitleaks matches any 40-char run of `[A-Za-z0-9_-]`") is **false** and would have
+misled the next engineer. `test_observability.py` has always contained longer names that pass —
+`test_scrub_leaves_non_chat_intent_events_untouched` is 50 chars. The rule gates on length **and**
+Shannon entropy; the 45-char rename cleared the entropy threshold, the 50-char sibling does not. The
+docstring now states that, not the myth.
+
+### FOLLOW-811 — status: IN_PROGRESS (PR #679 open, CI red, fix iteration 1/3)
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 1/3. `scripts/gh-pr-checks-verified.sh 679` →
+75 checks, 71 pass, 2 `Rule I` (pre-existing, 192 <= 192) **and 2 × `Test (Node 22)` genuinely
+failing**. The failure is the worker's own new `sentry-capture-path.test.ts` (3 of 4 cases), not a
+pre-existing flake: in CI the first captured envelope is a **session** envelope, and the test's
+`firstEvent` helper hard-codes `captured[0]` before searching for a `type === 'event'` item. Local
+ordering differed, so it passed there. Sent back to the same worker with the CI evidence and a
+requirement to re-run its perturbation check after the fix — an assertion that depends on incidental
+envelope ordering is the same shape of defect FOLLOW-832 exists to fix.
+
+**The decision itself validated and is not in question** — only the test is. No `beforeSend`;
+residual risk accepted in `dpia.md` §2.7.1 with six re-review triggers. The settling argument is a
+wiring argument: mirroring the Python hook means gating on an `area=chat_intent` tag no capture site
+in this app emits, i.e. shipping a control that can never fire — the exact fiction FOLLOW-739 spent
+a ticket retracting from the DPIA and ROPA.
+
+**Finding that corrects RETRO-247 §5a, verified here rather than taken on report.** In this app the
+log sink and the Sentry sink are **one sink**: `consoleIntegration()` is a default integration of
+`@sentry/node-core@10.50.0` (confirmed at `build/cjs/sdk/index.js:41`), so the 115 non-test
+`console.error` sites (count confirmed) also arrive at Sentry as `category: "console"` breadcrumbs.
+RETRO-247 framed them as a Vercel-log-only leg; they are two sub-processors, not one. The TS half of
+FOLLOW-834's grep-lint was filed as **FOLLOW-836** (P3, FROZEN, `depends_on: [FOLLOW-834]`); next
+free is now **FOLLOW-837**.
+
+**Two operational findings from the workers, both real, neither actioned this session:**
+
+1. **The FOLLOW-448 branch guard false-positives for every worktree worker** — it reads the _main
+   checkout's_ HEAD, so it fired "HEAD == main" on every edit made from a ticket branch inside
+   `.claude/worktrees/*`. A guard that cries wolf on correct behaviour stops being read.
+2. **The `.claude/` write block is tool-scoped, not path-scoped.** Both workers landed their
+   learning-hook entries this round; the backend-engineer did it with a shell heredoc where
+   `Write`/`Edit` are denied. That is a concrete mechanism for FOLLOW-835, which currently records
+   the symptom only.
+
+**Trap worth naming for the next session:** a recursive `grep -r` / `sed -i` run from the repo root
+descends **into `.claude/worktrees/*`**, i.e. into other agents' checkouts. It did no harm here (the
+pattern existed nowhere else), but it is one careless `sed` away from rewriting a concurrent
+worker's tree.
+
 **Two facts handed to the FOLLOW-811 worker that this session found in its own pre-dispatch read**
 (read-only, nothing changed): `sentry.client.config.ts` reads `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`
 while its own docstring claims it initialises on `SENTRY_DSN_CONTROL_PLANE` — a live Rule AI

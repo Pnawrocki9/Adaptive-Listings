@@ -173,6 +173,128 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
+### FOLLOW-845 — status: READY_FOR_REVIEW (PR #682, head `eb97faa5`)
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI re-verified here**, not taken from
+the worker's report: 76 checks, 74 pass, 2 `Rule I` — symbol set 192 vs `main`'s 192, 0 new, 0
+fixed, exit 0.
+
+**AC(1): the evidence is real and graded, not a citation.** The worker ran
+`clickhouse/clickhouse-server:25.8` (the image `ci.yml` pins), loaded the real `events` DDL and
+POSTed the actual `toClickHouseRow` shape with a chat sentinel. ClickHouse quotes the input, and
+_where_ it stops decides how much: a failure at the key immediately before `payload` puts the
+buyer's **whole message verbatim** inside the first 500 characters
+(`Code: 27 … expected 'null' before: ', "payload": "{\"text\": \"szukam domu … budzet 1.2 mln\"}"'`);
+a mid-batch failure leaks a partial message; `Code: 117` quotes the value directly. Unlike the
+FOLLOW-838 Modal leg — possible but unreachable from that caller — this is the live post-ACK path.
+
+**AC(2) honoured properly: the signal was replaced, not deleted.** ClickHouse sets
+`X-ClickHouse-Exception-Code` and `X-ClickHouse-Query-Id` on every error, and `system.query_log`
+retains the full exception by query id — so the operator now gets
+`clickhouse_status_400:ch_code_27:row_rejected` plus `ch_query_id`, and recovers the quoted detail
+with one query **inside the controller's own store** rather than in a processor. All 18 code→class
+names were resolved with `SELECT errorCodeToName(c)` on a live server, not from docs. Side effect
+worth having: Sentry now groups by failure class instead of fingerprinting per failing row.
+
+**The test's positive control drives `console.log`, not `console.error`** — deliberately, because
+`console.log` is the call `@estalara/shared`'s logger actually makes, so asserting the other level
+would have left the logger sink unproven. A fourth test asserts the **fixture itself** still
+contains the sentinel in its first 500 chars, so nobody can defang the absence assertion by trimming
+the fixture. That is a sharper version of the FOLLOW-832 lesson than the ticket asked for.
+
+`sendDefaultPii: false` pinned in `apps/ingest/src/observability.ts`; verified a no-op today against
+the installed package (`@sentry/cloudflare@10.50.0` `build/cjs/sdk.js:14`), pinned anyway because
+the vendor flags that default for change in v11.
+
+### The ISO-8601 `Z` finding — worst case checked against production, and it is FALSE
+
+The worker flagged, loudly and outside its scope, that `clickhouse-producer.ts:102-103` sends
+timestamps as ISO-8601 with a trailing `Z` while a stock `clickhouse-server:25.8` defaults
+`date_time_input_format` to `basic`, which rejects them — and that **if ClickHouse Cloud shared that
+default, every Worker-side `events` insert would have been failing terminally in production.**
+
+**This session read production directly rather than escalating a hypothesis** (read-only, via
+Doppler `prd` — note that `CLICKHOUSE_URL` **is** in Doppler now, contradicting an older session
+note that said it was Vercel-only):
+
+```
+SELECT value FROM system.settings WHERE name = 'date_time_input_format'  →  best_effort
+```
+
+on ClickHouse **26.4.1.2029**. Production parses the producer's format correctly. **There is no prod
+outage and no escalation is warranted.** A `toDateTime64('…Z', 3, 'UTC')` probe does fail on that
+server, but that is the strict function path, not the JSON-insert path the setting governs —
+recorded here so nobody re-derives a false alarm from it.
+
+**What survives is still worth a ticket** (**FOLLOW-853**): the producer's correctness rests on a
+vendor default that is undocumented, pinned nowhere, asserted by no test, and **the opposite** of
+the default in the container CI runs — and nothing exercises that path at all (the CH smoke test
+inserts epoch-ms numbers, stream-consumer uses the native protocol, and `e2e-smoke.yml` runs
+`wrangler dev` without `CLICKHOUSE_URL` so the producer hits its no-credentials guard). Row counts
+could not be checked to close the loop empirically: `ingest_worker` has no `SELECT` grant on
+`default.events`, which is now AC(3) of that ticket.
+
+**Also filed: FOLLOW-852** (P2, FROZEN) — `intent-snapshot.ts:234,:337` slice 300 chars of an
+upstream error body into the same coupling; safe today only because those rows are PII-free by
+construction, which is precisely the argument that needed fixing one table over. Next free:
+**FOLLOW-854**.
+
+### FOLLOW-846 — status: READY_FOR_REVIEW (PR #683, head `d75cce09`)
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **Validated with both gates, which for
+this ticket is the whole point:** `main`'s current gate → exit 0, and the gate the PR itself ships →
+exit 0. The new one demonstrated its own fix in that run: it **skipped** run `31050249303` and
+`31050137719` (`conclusion=cancelled`) and a newer `in_progress` run, naming each with its reason,
+then chose `31050514097` and printed that `main` is ahead of it. It also collapsed the duplicated
+`Rule I` entry the old gate prints twice.
+
+**Both defects were verified by this session before dispatch, not relayed:**
+`gh run list --status completed -L 1` returned `31050137719` with `conclusion=cancelled` as `main`'s
+newest ci.yml run, and `GH_PR_CHECKS_FIXTURE_DIR` was honoured by every fetch function with nothing
+restricting it to self-test.
+
+**What shipped:** a bounded 20-run newest-first walk that accepts the first run which actually
+produced a parseable Rule I symbol set, rejecting at **four** levels — because a run can conclude
+`failure` while its Rule I job was itself cancelled behind `needs:`. Window sized off the measured
+cancellation rate (8/12, 5 consecutive) against 83–99-minute jobs; a baseline older than 72h prints
+a provisional-verdict WARN. `--status completed` was dropped from the query so an unfinished newer
+run is **named** rather than silently omitted. The fixture seam is kept but double-gated
+(`GH_PR_CHECKS_SELF_TEST=1` **and** a marker file inside the fixture dir), refusing loudly
+otherwise, and every RESULT line in that mode is prefixed
+`[FIXTURE MODE — synthetic data, not a real PR]`. The script's false "never set by a caller" comment
+was **deleted**, not softened.
+
+**The duplicate check-runs were diagnosed before being touched, which is the right order.** 75
+check-runs, 39 names, 36 duplicated — the same job registered by the `push` and the `pull_request`
+event. Verdict: double-counting, not a wrong verdict, because de-duplication runs on the failing
+list only. But the obvious fix ("keep the first URL") **is** unsafe — branch head and merge ref are
+different commits and can yield different symbol sets — so the worker unions the duplicates' symbol
+sets instead. One fixture pins all three behaviours.
+
+**Discrimination matrix, not just red-first:** six individual reverts against the final code, each
+failing **exactly** its own fixture and nothing else. That is stronger than what this session has
+been asking for (fails-before-passes) and is the standard worth keeping — a fixture that fails when
+any of six things break tells you nothing about which.
+
+**One scope extension flagged for the reviewer, and I accept it.** AC(2) mandated exit 3 only for an
+unusable baseline; the worker extended it to every "the gate could not read what it needed" outcome,
+including PR-side log failures, changing one existing fixture's expectation from exit 1 to exit 3.
+The reasoning holds: this repo's documented response to exit 1 is to send the ticket back and
+increment `fix_iteration_counter`, so reporting a **tooling** failure with that code is exactly the
+vocabulary error the ticket exists to fix, and the argument is side-independent. Exit codes were
+propagated to `docs/AGENT_WORKFLOW.md` and `CONVENTIONS_PATCH.md` Rule A in the same PR — both
+previously enumerated 0/1/2 only, so an exit 3 had no documented response at all. **Not swept:**
+`.claude/agents/*.md` may also route on this script's exit code (FOLLOW-828 already reports 5 agent
+definitions with no CI-verification step).
+
+**Three stubs filed from this round: FOLLOW-849** (the branch guard is worktree-blind — reported
+independently by three workers now, which is why it stopped being a footnote), **FOLLOW-850**
+(`lefthook` absent in agent worktrees, so those commits run **no** pre-commit hook; measured cost:
+two gitleaks findings this session that a working hook would have caught before push, each forcing a
+branch squash), **FOLLOW-851** (`ci.yml`'s `cancel-in-progress` applies to `main`, so 8 of 12 recent
+`main` runs were cancelled — the upstream cause of this whole ticket, and every consumer of "main's
+latest run" inherits it). Next free: **FOLLOW-852**.
+
 ### ESC-049 filed — C-07's ClickHouse claim, verified end-to-end here before filing
 
 The FOLLOW-838 worker flagged, and declined to edit, a sentence in

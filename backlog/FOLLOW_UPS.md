@@ -28768,3 +28768,86 @@ means afterwards, in one sentence, in `docs/AGENT_WORKFLOW.md`.
 
 cross_ref: [FOLLOW-846; FOLLOW-827; `.github/workflows/ci.yml` (concurrency block); ESC-041 (Actions
 billing history)]
+
+---
+
+## FOLLOW-852 — `intent-snapshot.ts` slices 300 chars of a ClickHouse / PostgREST error body into the same console→Sentry coupling
+
+source_retro: n/a (found during FOLLOW-845, session 103) source_ticket: FOLLOW-845
+recommended_sprint: next recommended_agent: backend-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+`apps/ingest/src/handlers/intent-snapshot.ts:234` and `:337` slice 300 characters of an upstream
+error body into `logger.error`, which reaches Sentry as a breadcrumb via the same default
+`consoleIntegration()` coupling FOLLOW-838 and FOLLOW-845 closed on the two other legs.
+
+**Safe today, and the reason matters:** the rows this path inserts are PII-free by construction
+(`:173-179` — counts, quiz leaf, archetype deltas, no chat text), so an error body quoting them
+quotes nothing sensitive. That is a property of the current payload shape, not of the logging, which
+is exactly the argument FOLLOW-811 made for the control plane and FOLLOW-845 then had to fix one
+table over. It is now cheap to fix: FOLLOW-845 established that ClickHouse returns
+`X-ClickHouse-Exception-Code` and `X-ClickHouse-Query-Id` headers on every error, so the same
+header-extraction applies here. Named as re-review trigger 1 in `dpia.md` §2.7.3.
+
+**Adjacent, different owner:** `apps/stream-consumer/src/clickhouse_client.py:124` logs
+`error=str(exc)` against the same table (data-engineer's file; inert in prod per ESC-017). Fold it
+into this ticket's scope or ticket it separately, but decide explicitly rather than leaving it.
+
+**AC:** (1) replace both body slices with the header-derived code + query id, as FOLLOW-845 did; (2)
+state in the PR whether the stream-consumer sibling is in scope and why; (3) pin with the
+capture-path test shape FOLLOW-845 established, including its positive control.
+
+cross_ref: [FOLLOW-845; FOLLOW-838; `apps/ingest/src/handlers/intent-snapshot.ts:234,:337`;
+`apps/stream-consumer/src/clickhouse_client.py:124`; `docs/compliance/dpia.md` §2.7.3]
+
+---
+
+## FOLLOW-853 — Nothing exercises the Worker→ClickHouse insert path, and its correctness in prod rests on an undocumented ClickHouse Cloud default
+
+source_retro: n/a (found during FOLLOW-845, session 103; corrected by a live prod read)
+source_ticket: FOLLOW-845 recommended_sprint: next recommended_agent: data-engineer priority: P2
+estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95
+standing rule.
+
+**What the FOLLOW-845 worker found.** `clickhouse-producer.ts:102-103` sends `ts` and
+`ingest_received_at` as `new Date(...).toISOString()`, i.e. ISO-8601 with a trailing `Z`. Against a
+stock `clickhouse/clickhouse-server:25.8` — the image `ci.yml:302,361` pins —
+`date_time_input_format` defaults to **`basic`**, which stops at the `Z`, and a valid row is
+rejected with `Code: 27 … expected '"' before: 'Z", …' (while reading the value of key ts)`. Adding
+`&date_time_input_format=best_effort` makes the identical row return 200.
+
+**The worst-case reading was checked against production and is FALSE.** The worker flagged that if
+ClickHouse Cloud also defaulted to `basic`, every Worker-side `events` insert would have been
+failing terminally. Read directly from the prod service (read-only, session 103):
+
+```
+SELECT value FROM system.settings WHERE name = 'date_time_input_format'  →  best_effort
+```
+
+on ClickHouse **26.4.1.2029**. So production parses the producer's format correctly and **there is
+no prod outage**. (A `toDateTime64('…Z', 3, 'UTC')` probe _does_ fail there, but that is the strict
+function path, not the JSON-insert path this setting governs — noted so nobody re-derives a false
+alarm from it. Row counts could **not** be checked: the `ingest_worker` user has no `SELECT` grant
+on `default.events`, which is its own gap.)
+
+**What remains a real defect.** The producer's correctness depends on a **vendor default nobody
+documented, pinned nowhere, and asserted by no test** — and it is the _opposite_ of the default in
+the container CI runs. Nothing anywhere exercises this path:
+`infra/clickhouse/scripts/smoke-test.sh` inserts epoch-ms numbers, `apps/stream-consumer` inserts
+native `datetime` objects over the native protocol, and `e2e-smoke.yml` starts `wrangler dev`
+**without** `CLICKHOUSE_URL`, so the Worker's producer hits its no-credentials guard and the
+assertion is satisfied through the Redpanda→Python path instead. A CI test of the real path would
+fail today, against a green pipeline.
+
+**AC:** (1) make the producer independent of the server default — send
+`date_time_input_format=best_effort` on the insert URL, or emit a format `basic` accepts — and say
+which and why; (2) add a test that drives `pushEventsToClickHouse` against the CI ClickHouse
+container with the real `events` DDL and a real row from `toClickHouseRow`, so this path is
+exercised at all; (3) grant the `ingest_worker` user (or a read-only companion) `SELECT` on
+`default.events` so the "are rows arriving?" question is answerable without Cloud console access —
+this blocked verification during session 103; (4) record the prod value of `date_time_input_format`
+in `docs/runbooks/` with the date it was read, since the whole path depends on it.
+
+cross_ref: [FOLLOW-845; `apps/ingest/src/clickhouse-producer.ts:102-103`;
+`infra/clickhouse/scripts/smoke-test.sh`; `.github/workflows/e2e-smoke.yml`;
+`.github/workflows/ci.yml:302,361`; FOLLOW-621 (ClickHouse 26.x compatibility)]

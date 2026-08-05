@@ -28686,3 +28686,85 @@ mode bit, verified still 100644), FOLLOW-828 (still owns the exit-code table; ex
 FOLLOW-829 (the sibling doc ticket — 847 says take them together), FOLLOW-844 (its "shellcheck-clean" claim
 was measured on the 247-line file; it is 735 now). NO new CONVENTIONS_PATCH letter — Rule Y's Verification
 block REPAIRED IN PLACE on RETRO-249 §6's armed condition; see RETRO-250 §6. -->
+
+---
+
+## FOLLOW-849 — `.claude/hooks/pre-edit-branch-guard.sh` is worktree-blind: it fires "HEAD == main" on every edit made from a ticket branch inside a worktree
+
+source_retro: n/a (reported independently by three workers, sessions 102-103) source_ticket:
+FOLLOW-846 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours:
+2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+The guard reads the **main checkout's** `HEAD`, not the HEAD of the worktree the edit is happening
+in. Every agent working in `.claude/worktrees/*` — which is now this repo's standard parallel-work
+mechanism — gets `HEAD == 'main'` on every single edit, while sitting on its correct ticket branch.
+
+**Reported independently by the FOLLOW-811, RETRO-247 and FOLLOW-846 workers**, i.e. it is not a
+one-off misreading. A guard that fires on correct behaviour every time is one workers learn to
+ignore, which is worse than no guard: the real violation it exists to catch would arrive in the same
+noise.
+
+**AC:** (1) resolve the HEAD of the worktree the edited path belongs to
+(`git -C <dir> rev-parse --abbrev-ref HEAD`, or `git rev-parse --git-dir` to detect a linked
+worktree), not the main checkout's; (2) a fixture proving it stays silent for an edit inside a
+worktree on a ticket branch AND still fires for a genuine edit on `main`; (3) if the hook cannot
+tell which worktree an edit belongs to, say so and fail silent rather than fail loud — a false alarm
+on every edit is the defect being fixed.
+
+cross_ref: [FOLLOW-846; FOLLOW-828; `.claude/hooks/pre-edit-branch-guard.sh`; FOLLOW-448 (the ticket
+that introduced the guard)]
+
+---
+
+## FOLLOW-850 — `lefthook` is not installed in the dev environment, so no pre-commit hook has been running locally
+
+source_retro: n/a (observed during FOLLOW-846, session 103) source_ticket: FOLLOW-846
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+Commits made from agent worktrees print `Can't find lefthook in PATH` and proceed with **no
+pre-commit hook run at all** — no prettier, no gitleaks. The main checkout does have it (its commits
+show the lefthook banner), so this is environment-dependent and silent about which side you are on.
+
+That is the exact class the local hooks exist to prevent, and it has a measured cost this session:
+PR #678 and PR #682 each shipped a gitleaks finding that a working local hook would have caught
+before push — and on this repo a gitleaks red cannot be fixed forward, it forces a branch squash and
+force-push.
+
+**AC:** (1) make the hook's absence loud and blocking rather than a warning, or install lefthook as
+part of the worktree/agent setup path — decide which and say why; (2) whichever is chosen, a commit
+made with no hooks available must not silently look like a commit made with hooks; (3) check whether
+`git worktree add` needs a hooks-path step at all (`core.hooksPath` is shared, so the likely gap is
+PATH, not config) — establish this before writing a fix.
+
+cross_ref: [FOLLOW-846; FOLLOW-838 (gitleaks squash); FOLLOW-832 (gitleaks squash); `lefthook.yml`]
+
+---
+
+## FOLLOW-851 — `ci.yml`'s `cancel-in-progress` applies to `main`, so roughly two thirds of `main`'s CI runs produce no usable artifacts
+
+source_retro: n/a (root-cause finding from FOLLOW-846, session 103) source_ticket: FOLLOW-846
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+FOLLOW-846 fixed the merge gate's handling of unusable baselines. This is the upstream cause it
+declined to touch, correctly, as out of its scope.
+
+`ci.yml`'s concurrency group has `cancel-in-progress: true` and it applies to pushes to `main`, so a
+run is routinely killed by the next merge. Measured during FOLLOW-846: **8 of 12** recent `main`
+runs cancelled, with **5 consecutive**. Jobs here take 83–99 minutes, so on a busy day `main` can go
+long stretches with no completed CI run at all.
+
+**Consequence beyond the gate:** anything that reasons off "main's latest CI run" inherits this —
+the Rule I baseline was simply the first consumer to be caught by it. It also means `main` itself
+frequently has no green-or-red verdict, which is a claim several backlog documents make casually.
+
+**AC:** (1) decide whether `main` should be excluded from the concurrency group — the trade is
+Actions minutes against having a real verdict for every merged commit, and the repo has a documented
+Actions-billing sensitivity, so this is a deliberate call and must be recorded with its reasoning;
+(2) if `main` stays in the group, name every consumer of "main's latest run" and make each one
+tolerate the gap (FOLLOW-846 did this for the gate); (3) state what a merged commit's CI status
+means afterwards, in one sentence, in `docs/AGENT_WORKFLOW.md`.
+
+cross_ref: [FOLLOW-846; FOLLOW-827; `.github/workflows/ci.yml` (concurrency block); ESC-041 (Actions
+billing history)]

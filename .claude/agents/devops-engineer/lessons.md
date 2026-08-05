@@ -293,3 +293,31 @@ self-test runs" are different claims, and only the second one is worth a green b
   of every collection in shell, and it is the reading that turns a tool failure into a green badge.
   Corollary worth codifying: when a fix and a self-test land together, commit the RED state
   separately, so the assertion is provably measuring the defect and not its own assumptions.
+
+## 2026-08-06 · FOLLOW-846 (PR #683)
+
+**What I shipped.** Fixed the merge gate `scripts/gh-pr-checks-verified.sh`: the Rule I baseline is
+now a bounded newest-first walk over `main`'s runs (rejecting cancelled/skipped runs, cancelled Rule
+I jobs, and unparseable logs, printing every skip with its reason) instead of
+`--status completed -L 1 | .[0]`; tooling failures exit 3 in tooling vocabulary instead of exit 1 as
+"GENUINE FAILURES"; the fixture seam now requires `GH_PR_CHECKS_SELF_TEST=1` + a `self-test.marker`
+file and banners every RESULT line when active; a 404 is classified from the job's own `conclusion`
+rather than always blamed on 90-day log expiry; the failing list is de-duplicated by name with Rule
+I symbol sets UNIONED across the push/pull_request duplicates. 5 new fixtures, 16 total.
+
+**Where a green badge could have hidden a broken run path.** Two, both live on `main`. (1)
+`GH_PR_CHECKS_FIXTURE_DIR` was honoured in production mode, so the gate printed "all checks green.
+Safe to mark READY*FOR_REVIEW" and exit 0 for a real PR number after **zero network reads** — a
+fail-open in the gate whose only job is not to do that. A seam that exists for tests must be
+\_enforced* as test-only; a comment saying "never set by a caller" enforces nothing, and the comment
+was false. (2) The inverse, which is the subtler one: the gate reported a _tooling_ failure using
+the _PR's_ vocabulary ("GENUINE FAILURES — do NOT mark READY_FOR_REVIEW"), and the documented
+response to that is to send the ticket back to its worker. A gate that can't distinguish "this PR is
+broken" from "I couldn't look" trains readers to re-run until green, which is the same corrosion as
+a false green arriving from the other direction.
+
+**A guardrail I'd add.** Any script with a test-only seam must have a fixture asserting the seam is
+_refused_ on the production path — the seam's own existence is what needs pinning, not just the
+behaviour it enables. Second: every exit code a script documents needs a consumer-facing meaning in
+the docs that route on it; I found `docs/AGENT_WORKFLOW.md` and `CONVENTIONS_PATCH.md` both
+enumerating 0/1/2 with no 3, so an exit 3 had no documented response at all.

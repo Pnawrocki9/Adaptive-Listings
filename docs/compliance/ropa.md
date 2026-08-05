@@ -532,14 +532,15 @@ stdout sink was never assessed until now.
 mirrors a pattern (`kind` + `type(exc).__name__`) already used elsewhere in the same function for
 the identical class of risk, the primary-failure branch's `print` in `nlp.py` now logs
 `kind=<classified kind>: <ExceptionClassName>` instead of the exception message — pinned by the
-third-sink assertion added to `test_buyer_text_escapes_both_sinks`
-(`apps/intent-engine/src/test_observability.py`, via `capsys`). **The multilingual-retry branch's
-sibling `print` is redacted in the same change** (Rule S): it calls Sonnet with the same buyer
-messages and carried the identical risk. Both arms now emit only `kind=<kind>: <ExceptionClassName>`
-and both are pinned by the test above (sinks 3 and 3b). No residual raw-exception `print` remains on
-this stdout sink. (The retry branch was outside FOLLOW-812's literal AC wording, which named only
-the primary-failure branch; it was fixed rather than deferred because leaving one of two identical
-paths open would not have closed the leak this activity record describes.)
+third-sink assertion in `test_buyer_text_escapes_all_sinks`
+(`apps/intent-engine/src/test_observability.py`, via `capsys`; renamed by FOLLOW-832, formerly
+`test_buyer_text_escapes_both_sinks`). **The multilingual-retry branch's sibling `print` is redacted
+in the same change** (Rule S): it calls Sonnet with the same buyer messages and carried the
+identical risk. Both arms now emit only `kind=<kind>: <ExceptionClassName>` and both are pinned by
+the test above (sinks 3 and 3b). No residual raw-exception `print` remains on this stdout sink. (The
+retry branch was outside FOLLOW-812's literal AC wording, which named only the primary-failure
+branch; it was fixed rather than deferred because leaving one of two identical paths open would not
+have closed the leak this activity record describes.)
 
 ---
 

@@ -26834,9 +26834,11 @@ bypass guard (`scripts/check-sentry-init-singleton.sh`); the TS tier has neither
 **AC:** (1) decide explicitly — add a `beforeSend` to the three control-plane Sentry configs, OR
 record "accepted residual risk" in `dpia.md` §2.7 with the reasoning and a re-review trigger; (2) if
 a hook is added, pin it with a buyer-text sentinel test mirroring
-`test_buyer_text_escapes_both_sinks`; (3) do NOT introduce a "PII patterns regex" unless someone
-actually specifies one — the docs were wrong about that once already and the fix was to describe
-reality, not to build the fiction.
+`test_buyer_text_escapes_all_sinks` (renamed by FOLLOW-832, formerly
+`test_buyer_text_escapes_both_sinks` — mirror its arm-3 pattern of asserting over the REAL return
+value of the call under test, not a test-authored replica of the payload); (3) do NOT introduce a
+"PII patterns regex" unless someone actually specifies one — the docs were wrong about that once
+already and the fix was to describe reality, not to build the fiction.
 
 cross_ref: [FOLLOW-739; FOLLOW-738 (PR #644); `apps/control-plane/sentry.server.config.ts`,
 `sentry.client.config.ts`, `sentry.edge.config.ts`; `docs/compliance/dpia.md` §2.7;

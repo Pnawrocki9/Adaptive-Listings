@@ -241,14 +241,15 @@ HEAD on branch `main`:
   `messages` or `raw_text` field. Since FOLLOW-738 it no longer reaches Sentry either:
   `_scrub_chat_intent_exception_value` in `apps/intent-engine/src/observability.py` overwrites the
   exception `value` on every event tagged `area=chat_intent`, pinned by
-  `test_buyer_text_escapes_both_sinks` in `test_observability.py`.
+  `test_buyer_text_escapes_all_sinks` in `test_observability.py` (renamed by FOLLOW-832, formerly
+  `test_buyer_text_escapes_both_sinks`).
 
   **Modal stdout log line (FOLLOW-812, resolved 2026-08-05).** `nlp.py`'s primary-failure branch
   `print` previously carried the full exception message (`print(f"extract_intent error …: {exc}")`).
   It has been redacted to the same "classified kind + exception class name" shape `extraction_error`
   already uses: `print(f"...kind={kind}: {type(exc).__name__}")`. Pinned by a third sink assertion
-  added to `test_buyer_text_escapes_both_sinks` (via pytest's `capsys`, asserting on actual captured
-  stdout content rather than assuming). Destination/retention/access for this log sink (Modal's own
+  in `test_buyer_text_escapes_all_sinks` (via pytest's `capsys`, asserting on actual captured stdout
+  content rather than assuming). Destination/retention/access for this log sink (Modal's own
   application logs; retention 1-30 days depending on the Modal plan tier, per Modal's published
   docs; access scoped to the three named Modal workspace members) is recorded in `ropa.md`'s new
   "Modal application (stdout) logs" note, which this brief's "no raw chat text is written to Redis,
@@ -256,9 +257,11 @@ HEAD on branch `main`:
   stores). **The multilingual-retry branch's sibling `print` is redacted too** (Rule S, same PR,
   PM-validation round): it calls Sonnet with the same buyer messages, so it carried the identical
   risk, and it now emits `kind=<kind>: <ExceptionClassName>` in the same shape. Both arms are pinned
-  by `test_buyer_text_escapes_both_sinks` — sink 3 drives the primary branch, sink 3b drives the
-  retry branch (first model call returns a low-confidence mixed-language read so the §C.3 retry
-  triggers, second call raises). Non-vacuity was proven by perturbation on both.
+  by `test_buyer_text_escapes_all_sinks` — arm 3 drives the primary branch, arm 3b drives the retry
+  branch (first model call returns a low-confidence mixed-language read so the §C.3 retry triggers,
+  second call raises); as of FOLLOW-832, arm 3b's assertion also covers the Redis-bound
+  `extraction_error` field the retry branch writes (`nlp.py:563`), not only its stdout print.
+  Non-vacuity was proven by perturbation on both.
 
 - `chat-intent-cache.ts` — `shadowChatIntentKey` returns
   `shadow:${tenantId}:${sessionId}:chat_intent`.

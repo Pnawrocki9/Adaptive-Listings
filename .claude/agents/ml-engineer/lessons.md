@@ -344,3 +344,29 @@ none of the semantics.
 **Also worth remembering.** `pkill -f "<pattern>"` matches the agent's own shell command line and
 kills the session — it cost me two tool calls. Use `pgrep -af` first and a pattern that cannot match
 the invoking command.
+
+- **2026-08-05 / FOLLOW-832** · Fixed `test_buyer_text_escapes_both_sinks` (renamed
+  `test_buyer_text_escapes_all_sinks`): its "sink 2" assertion built the Redis-bound payload itself
+  via
+  `nlp._neutral_payload(extraction_error=f"{nlp._classify_extraction_error(exc)}: {type(exc).__name__}")`
+  — a test-authored copy of `nlp.py:504`'s expression — so perturbing the real expression (`{exc}`
+  for `{type(exc).__name__}`) left the suite green while the real `extract_intent()` return value
+  leaked the buyer-text sentinel. The fix captures the return value the neighboring "sink 3" block
+  already computed and discarded, and asserts over `json.dumps(returned.model_dump())` instead of a
+  replica. Applied the SAME fix to the multilingual-retry arm (3b) for symmetry — its own
+  `extraction_error=f"retry_failed: {type(exc).__name__}"` at `nlp.py:563` is a DIFFERENT expression
+  from line 504's and had never been asserted by anything, primary-arm or otherwise. · **Where real
+  vs placeholder logic was a judgment call:** the ticket's AC(3) listed
+  `docs/compliance/dpia.md:255-258` as a citation to re-point, but that section doesn't name the
+  test function (verified by grep) and the concurrently-dispatched FOLLOW-811 worker's own QUEUE.md
+  scoping note explicitly assigns `dpia.md` §2.7 to itself for exactly this reason
+  (disjoint-file-set safety between the two parallel worktrees) — so I left `dpia.md` untouched
+  rather than risk a same-section collision with a worker running at the same time, and said so in
+  the PR body instead of silently doing 3/4 of the AC. Also judgment: whether arm 3b needed the same
+  returned-payload fix as arm 3 wasn't literally required by AC(1) (which only named the sink-3
+  block) — did it anyway because the ticket's own closing paragraph named the exact failure mode
+  (Rule S half-fixed pair) this would have been. · **A guardrail I'd add:** when a retro stub's
+  citation list assumes a file hasn't been touched by a sibling ticket's citations yet ("dpia.md
+  does not cite the test name" — true at filing time), a worker executing later should re-verify
+  that assumption against the CURRENT state of any file shared with a concurrently-dispatched ticket
+  before editing it, not just trust the stub's snapshot.

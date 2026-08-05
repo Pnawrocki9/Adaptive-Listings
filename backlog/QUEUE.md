@@ -1,6 +1,88 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 103 (2026-08-05) — FOLLOW-812 DONE (PR #677 merged `8423c804`), retro dispatched, FOLLOW-811 next
+## ▶️ START HERE — session 103 (2026-08-05) — FOLLOW-812 DONE (PR #677 merged `8423c804`), RETRO-247 landed, FOLLOW-832 + FOLLOW-811 dispatched in parallel
+
+### RETRO-247 landed on `main` (`10629c06`, no PR — the RETRO-238…246 convention)
+
+Analyst: `retrospective-analyst` (Opus), worktree `.claude/worktrees/retro-247`, branch commit
+`f62f129c`. **Scope verified before landing**, with `git diff --numstat 3c95b98e f62f129c` rather
+than diffstat shape: exactly the four permitted files, insertions only — `backlog/RETROSPECTIVES.md`
++463, `backlog/FOLLOW_UPS.md` +214, `CONVENTIONS_PATCH.md` +69,
+`.claude/agents/retrospective-analyst/lessons.d/RETRO-247.md` +53 (new, per Rule AG — never the
+shared tail; the `.claude/` write block did NOT recur, 4th attempt and first success). `main` was
+untouched at `3c95b98e`, no PR opened. Worktree removed, branch deleted.
+
+**The P1 finding was re-verified by this session before it was landed as P1**, by reading the test
+rather than trusting the report: sink 2 of `test_buyer_text_escapes_both_sinks`
+(`test_observability.py:228-237`) asserts on a payload the **test itself** builds, and sink 3
+(`:246-252`) calls the real `extract_intent` but **discards its return value** — asserting only on
+`capsys` stdout. So perturbing the production `extraction_error=` argument at `nlp.py:504` fails no
+assertion, which falsifies the docstring's own non-vacuity claim at `:208-212`. The analyst proved
+the same thing dynamically in a sandboxed `cp -r` (11 passed with the perturbation in place,
+sentinel visibly in the Redis payload). Two independent methods, same verdict → **FOLLOW-832, P1,
+unfrozen** (the session-95 standing freeze carves out P1 explicitly, so this needs no CEO
+exemption).
+
+**Rule S was deliberately NOT amended, and the reasoning is worth keeping.** It had its second
+consecutive sighting, but applied verbatim Rule S already **fires twice** on PR #677 (bullet 1 —
+enumerate the sibling set in the PR description; bullet 3 — verification-tier parity between
+siblings). A rule that catches the defect when actually applied needs enforcing, not widening;
+minting a 2-branch sub-shape would be count-inflation. The mechanisable slice was filed instead as
+**FOLLOW-834** (grep-lint: raw exception message reaching an unscrubbed stdout/console sink). **Rule
+AG was amended in place** instead (blocked-write fallback + the PM's obligation to land the
+fragment), 3rd P-30 sighting, priors RETRO-160 + RETRO-246.
+
+**Measurement correction the next retro must not repeat:** `git diff --stat 1a4233c8 8423c804`
+overstates PR #677 by roughly 2× (12 files/+1342 vs the real 5 files/+229−47) because RETRO-246's
+landing commits sit between those two SHAs. `gh pr view 677 --json files` is the measurement.
+
+**Stubs filed: FOLLOW-832** (P1, ml-engineer, **unfrozen**), **FOLLOW-833** (P2,
+compliance-engineer, FROZEN — `ropa.md:539-540,671` and `C-07:313` claim "no residual raw-exception
+`print` remains on this stdout sink" while three remain: `nlp.py:344`, `batch_enrich.py:72`,
+`observability.py:175`; none proven to carry buyer text, none assessed), **FOLLOW-834** (P2,
+devops-engineer, FROZEN), **FOLLOW-835** (P3, operator decision on the `.claude/` write block,
+FROZEN, cross-referenced against FOLLOW-828 rather than merged into it). Next free: FOLLOW-836.
+
+### Dispatched in parallel — FOLLOW-832 (P1) and FOLLOW-811 (P3)
+
+**Why both at once, and why that is safe here:** disjoint file sets, verified by grep before
+dispatch rather than assumed. FOLLOW-832 touches `apps/intent-engine/src/test_observability.py` plus
+the test's citations in `ropa.md` and `C-07`; FOLLOW-811 touches
+`apps/control-plane/sentry.*.config.ts` plus `dpia.md` §2.7. `dpia.md` does not cite the test name
+(`grep -rln test_buyer_text_escapes_both_sinks` → 6 files, `dpia.md` not among them). Each worker is
+isolated in its own worktree. All PM bookkeeping was committed and pushed **before** dispatch, per
+the standing rule that Agent-tool subagents share the main checkout's HEAD.
+
+**Sequencing note:** the CEO's 813→812→811 ordering is satisfied — 812 is DONE. FOLLOW-832 is a P1
+that came out of 812's own retro and outranks the P3, so it goes out alongside rather than behind
+it.
+
+**FOLLOW-832 — status: IN_PROGRESS** — **assigned_to:** ml-engineer **model:** Sonnet
+**started_at:** 2026-08-05 **branch:** `ml-engineer/FOLLOW-832-sink2-real-payload` **worktree:**
+`.claude/worktrees/follow-832`. Model justification: the defect is proven, the fix is named in the
+stub (capture the return value the sink-3 call already discards), and the non-vacuity procedure is
+prescribed — bounded implementation inside a well-defined scope, which is Sonnet's row.
+
+**FOLLOW-811 — status: IN_PROGRESS** — **assigned_to:** backend-engineer **model:** Opus
+**started_at:** 2026-08-05 **branch:** `backend-engineer/FOLLOW-811-control-plane-sentry-scrubbing`
+**worktree:** `.claude/worktrees/follow-811`. Model justification: escalated one tier above the
+default. It is a decision ticket whose "accept residual risk" arm is a compliance posture recorded
+in `dpia.md`, and RETRO-247 widened its surface from 3 config files to a judgment about ~114
+`console.error` sites — privacy-sensitive reasoning with genuinely open acceptance criteria, which
+is Opus's row, not Sonnet's.
+
+**CI-check counters: FOLLOW-832 0/5, FOLLOW-811 0/5. Fix-iteration counters: 0/3 each. 2 tickets
+IN_PROGRESS. 0 open PRs at dispatch time.**
+
+**Two facts handed to the FOLLOW-811 worker that this session found in its own pre-dispatch read**
+(read-only, nothing changed): `sentry.client.config.ts` reads `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`
+while its own docstring claims it initialises on `SENTRY_DSN_CONTROL_PLANE` — a live Rule AI
+doc-lags-code shape in the very file the ticket is about; and that file loads
+`Sentry.replayIntegration()` under a comment about unhandled promise rejections, with both replay
+sample rates at 0. Session replay reads the DOM, so it is in scope for a privacy assessment even at
+a 0 sample rate.
+
+---
 
 **Session 102 was not lost.** It ended cleanly at the READY_FOR_REVIEW handoff — verified by durable
 signals, not by `ps` (the trap the session-102 retraction below names): `main` = `origin/main` =

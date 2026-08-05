@@ -109,16 +109,45 @@ misled the next engineer. `test_observability.py` has always contained longer na
 Shannon entropy; the 45-char rename cleared the entropy threshold, the 50-char sibling does not. The
 docstring now states that, not the myth.
 
-### FOLLOW-811 — status: IN_PROGRESS (PR #679 open, CI red, fix iteration 1/3)
+### FOLLOW-811 — status: READY_FOR_REVIEW (PR #679, head `76e86586`)
 
-**ci_check_counter:** 1/5 **fix_iteration_counter:** 1/3. `scripts/gh-pr-checks-verified.sh 679` →
-75 checks, 71 pass, 2 `Rule I` (pre-existing, 192 <= 192) **and 2 × `Test (Node 22)` genuinely
-failing**. The failure is the worker's own new `sentry-capture-path.test.ts` (3 of 4 cases), not a
-pre-existing flake: in CI the first captured envelope is a **session** envelope, and the test's
-`firstEvent` helper hard-codes `captured[0]` before searching for a `type === 'event'` item. Local
-ordering differed, so it passed there. Sent back to the same worker with the CI evidence and a
-requirement to re-run its perturbation check after the fix — an assertion that depends on incidental
-envelope ordering is the same shape of defect FOLLOW-832 exists to fix.
+**ci_check_counter:** 2/5 **fix_iteration_counter:** 1/3. **CI after the fix:**
+`scripts/gh-pr-checks-verified.sh 679` → 75 checks, **73 pass**, 2 `Rule I` at 192 <= 192 vs `main`
+baseline run `31035657108`, exit 0.
+
+**The first round was genuinely red on the worker's own new test, not a flake.**
+`sentry-capture-path.test.ts` failed 3 of 4 cases in CI while passing locally: in CI the first
+captured envelope is a **session** envelope, and the test's `firstEvent` helper hard-coded
+`captured[0]` before searching it for a `type === 'event'` item. Sent back with the CI evidence and
+a requirement to re-run the perturbation check afterwards, because an assertion that holds only for
+one incidental envelope ordering is the same defect class FOLLOW-832 is open against.
+
+**Fixed in `76e86586`, and the worker named the pattern itself** — it had written the test
+specifically to avoid ordering-dependent assertions and then reintroduced that class one level up in
+the accessor. `findEventPayload()` now searches every captured envelope and the whole-structure
+sentinel assertion scans the full set (which carried the identical latent bug while passing).
+Failure messages now name the captured envelope kinds, so a future red is diagnosable from the CI
+log without a re-run.
+
+**It also declined the cheaper fix, correctly.** `autoSessionTracking: false` would have removed one
+_known_ source of extra envelopes while leaving the "the envelope I want is first" assumption intact
+for every other source (a transaction envelope once tracing is on, a client report, a future default
+integration) — and it would deviate from production defaults in the one test that exists to observe
+what the SDK does with its defaults, which is how the `consoleIntegration` finding was established
+at all.
+
+**Post-fix perturbation matrix, reported as counts rather than as a claim:** session-first ordering
+with no redaction → 4 passed; a scrubbing `beforeSend` with natural ordering → 3 failed / 1 passed;
+redaction _and_ session-first ordering → 3 failed / 1 passed. Identical to the pre-fix failure
+counts, so order-independence was restored without weakening what the test pins. Assertion 1 (an
+event envelope is sent at all) stays green under redaction by design — it pins existence, not
+content; assertions 2/3/4 are the ones that force `dpia.md` §2.7.1 to be amended in the same PR as
+any future hook.
+
+**Merge-order check for both open PRs, done on hunks rather than on filenames:** #678 and #679 both
+touch `docs/compliance/ropa.md` and `backlog/FOLLOW_UPS.md`, but not the same regions — ropa.md
+lines ~535 vs 3/476/496/661, and the two `FOLLOW_UPS.md` hunks sit ~1000 lines apart. Both report
+`MERGEABLE`; either merge order is safe.
 
 **The decision itself validated and is not in question** — only the test is. No `beforeSend`;
 residual risk accepted in `dpia.md` §2.7.1 with six re-review triggers. The settling argument is a

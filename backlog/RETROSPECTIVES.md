@@ -48492,3 +48492,946 @@ reproductions, no re-injection path (RETRO-246 DG-2 precedent). LG-2 (extract_in
 un-guarded detect_language_mix call at nlp.py:511-515) folded into 833 (Rule AN). Filed FOLLOW-832..835.
 QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Own learning-hook fragment attempted
 at .claude/agents/retrospective-analyst/lessons.d/RETRO-247.md per Rule AG. -->
+
+---
+
+## RETRO-248 — FOLLOW-832 (#678) — the false control stood 23 hours and six artefacts vouched for it — 2026-08-05
+
+**THE HEADLINE: THE FIX IS REAL ON BOTH ARMS, INDEPENDENTLY RE-PROVEN, AND THE INTERESTING PART IS
+THE 23 HOURS BEFORE IT.** The sink-2 assertion was born in `244e03bf` (PR #671, FOLLOW-739,
+2026-08-04 20:30:19 UTC) and died in `221a4f2a` (PR #678, 2026-08-05 19:46:04 UTC): **23 h 15 m** on
+`main`. In that window **six artefacts cited it as evidence while it could not fail**, and the first
+of them is the merge commit's own message. PR #671's body states _"Non-vacuity proven by perturbing
+each sink independently (disable the redaction line -> sink 1 fails; substitute `{exc}` for
+`{type(exc).__name__}` -> sink 2 fails)."_ That sentence is false and is now permanently in `main`'s
+history. Re-proven here in a sandboxed `cp -r` (working tree never mutated, Rule AM): with **both**
+`extraction_error=` expressions perturbed (`nlp.py:504` AND `:563`), the pre-merge test is **11
+passed**, while the payload `extract_intent` really returns carries the buyer sentinel
+(`SENTINEL IN RETURNED (Redis-bound) PAYLOAD: True`). Against the merged test the same two
+perturbations give **1 failed / 10 passed each**. Two directions, both arms, my own run — the fix is
+real and the control is now live.
+
+**SECOND HEADLINE: THE GITLEAKS LESSON WAS ALREADY IN THE REPO, TWICE, AND WAS PAID FOR AGAIN.** The
+session-103 record calls the commit-range behaviour something to "write down". It was written down
+on **2026-07-xx** in `.gitleaks.toml:254-266` (FOLLOW-774): _"The function was renamed to the shorter
+`compute_hard_fail_required_mutant` (33 chars …) in the very next commit, **but gitleaks-action scans
+the full commit range of a PR, so the OLD name persists in git history regardless of the fix**"_ —
+and again on **2026-08-04**, one day before, in the commit message of `244e03bf`, the very commit
+that created this ticket's false control: _"gitleaks scans the commit RANGE, not the final tree, so
+the identifier must never have existed in this branch's history. This branch is a single commit for
+the same reason."_ The cost of not finding either was a red CI cycle and a `reset --soft` +
+force-push. **Rule P fires verbatim** ("check docs + repo for prior art BEFORE proposing a
+solution"). This is a compliance failure against an adequate rule, not a rule-text gap, so **no rule
+is promoted** — but the knowledge lives in a TOML comment and a commit message, neither of which
+anybody greps. → **FOLLOW-840 (P2)**.
+
+**THIRD HEADLINE: THE SIBLING SWEEP CAME BACK THICK, NOT THIN, AND THE SHARPEST HIT IS A PRIVACY
+CONTROL.** `packages/sdk/src/__tests__/follow-383.test.ts:151-200` defines its own
+`makeObserverCallback` and asserts against it, under the written claim _"We replicate it here as a
+pure logic test **so it fails if someone moves the early-return AFTER the push** (the original
+FOLLOW-372 bug that FOLLOW-383 fixes)."_ It cannot: the file's imports are `core/adapt.js`,
+`core/config.js`, `core/session.js`, `core/events.js`, `core/intent.js` — **it never imports
+`../index.js`**, where the guard it names lives (`index.ts:1137`). And no other test pins that
+particular arm through the real path (`follow-389`/`follow-409` drive `_initForTest` but cover the
+`:1646` behavioural-signal arm and the micro-poll arm, not the `setupObservers` event-drop). This is
+the §H.9 opt-out control, CEO-ruled 2026-06-23. → **FOLLOW-839 (P2)**.
+
+### 1. Summary of change
+
+- **PR:** #678 (merged 2026-08-05 19:46:04 UTC, squash → `221a4f2a`; branch
+  `ml-engineer/FOLLOW-832-sink2-real-payload`, deleted; worktree `.claude/worktrees/follow-832`
+  removed; worker `ml-engineer` / Sonnet)
+- **Files changed:** 5 (+127 / −60). Measured with `gh pr view 678 --json files` and confirmed
+  per-file with `git diff --numstat 221a4f2a^ 221a4f2a` — **not** with a `--stat` across unrelated
+  SHAs, which is the error RETRO-247 recorded (it overstated PR #677 by ~2×):
+
+  | file                                          |  +  |  −  |
+  | --------------------------------------------- | --- | --- |
+  | `apps/intent-engine/src/test_observability.py` |  78 |  43 |
+  | `.claude/agents/ml-engineer/lessons.md`        |  26 |   0 |
+  | `docs/compliance/ropa.md`                      |   9 |   8 |
+  | `docs/compliance/C-07-chat-retention-scope.md` |   9 |   6 |
+  | `backlog/FOLLOW_UPS.md`                        |   5 |   3 |
+
+- **Modules touched:** `apps/intent-engine` (**tests only**) · `docs/compliance` · `backlog` ·
+  `.claude`. **Zero production code:** `git diff 221a4f2a^ 221a4f2a -- apps/intent-engine/src/nlp.py`
+  → **0 lines**. Zero TS, zero SDK, zero migrations, zero `.github/`, zero `scripts/`.
+- **Key contracts changed:** `test_buyer_text_escapes_both_sinks` → `test_buyer_text_escapes_all_sinks`
+  — **breaking: no** for code (pytest collects by prefix; nothing imports it), **breaking: yes** for
+  the citation graph — six artefacts name it (§5c). Four were re-pointed in this PR; three sites
+  still carry the old name and are assessed as historical (§4d DG-2).
+
+### 2. Verification done in PR
+
+- **Test files changed: 1.** Assertions added: **2 load-bearing**
+  (`BUYER_TEXT_SENTINEL not in json.dumps(primary_payload.model_dump())` and the same over
+  `retry_payload`), plus the docstring rewrite. Coverage delta: numerically unknown; qualitatively —
+  one expression (`nlp.py:504`) moves from *falsely* pinned to *really* pinned, and a second
+  (`nlp.py:563`) moves from *never pinned by anything* to pinned.
+- **CI: passed**, `scripts/gh-pr-checks-verified.sh 678` → 73 checks / 71 pass / 2 `Rule I` at
+  192 ≤ 192 vs `main` baseline run `31035657108`, exit 0. **Re-asserted by me on merged `main`:**
+  `bash scripts/check-rule-i.sh` → `Violations found : 192`. The baseline did not move (§5a).
+- **Re-run on merged `main`, not taken from the PR body:** `python3 -m pytest apps/intent-engine/src -q`
+  → **80 passed, 2 skipped**.
+- **The perturbation transcript re-run independently** (the PR gives three directions; I ran four,
+  including one the PR did not):
+
+  ```
+  # scratch copy, working tree never mutated (Rule AM)
+  MERGED test + perturb nlp.py:504  ({exc})            -> 1 failed, 10 passed   ✅ non-vacuous
+  MERGED test + perturb nlp.py:563  ({exc})            -> 1 failed, 10 passed   ✅ non-vacuous
+  PRE-MERGE test, unperturbed                          -> 11 passed
+  PRE-MERGE test + perturb BOTH :504 AND :563          -> 11 passed             ❌ false control
+  ```
+
+  The fourth line is mine and is new: RETRO-247 proved the pre-merge test blind to `:504`. It was
+  **also** blind to `:563` — though there the correct word is *absent*, not *vacuous*: that arm had
+  no assertion of any kind. Perturbing both at once and still seeing 11 passed is the cleanest
+  single statement of how much of the Redis leg was unpinned.
+- **What the verification did NOT cover:** nothing in this PR. The worker perturbed what it wrote and
+  what it kept. This is the first ticket in this chain where that is true — RETRO-247 §2 recorded the
+  inverse for PR #677 ("the worker perturbed what it wrote; nobody perturbed what it kept").
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** No new file, no new export, no new symbol.
+`git show 221a4f2a --stat` is 5 modified files, 0 added. The one renamed symbol
+(`test_buyer_text_escapes_all_sinks`) is a **pytest entrypoint** — suppressed per the standing
+framework-entrypoint carve-out — and is additionally cited by four non-test documents, so it is not
+orphaned on any reading.
+
+**CHECK B — half-wire. Clean ✅.** No new event, env var, DB column, topic or SDK signal. The
+producer/consumer sweep on the one thing that changed shape — the assertion target — is positive in
+both directions:
+
+```
+grep -rn "test_buyer_text_escapes" --include="*.md" --include="*.py" . | grep -v node_modules
+# -> producer: apps/intent-engine/src/test_observability.py:179 (the test itself)
+#    consumers: ropa.md:553-555, C-07:244-245,:251,:260, FOLLOW_UPS.md:26837-26838 (FOLLOW-811 AC2),
+#               QUEUE.md:17 — all re-pointed or newly written to the NEW name
+#    stale-but-historical: FOLLOW_UPS.md:22362 (FOLLOW-739, DONE), :26881, QUEUE.md:475 (§4d DG-2)
+```
+
+Both halves exist and both are wired. Recorded because RETRO-247 §3 had to record an asymmetry here
+and this one does not.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A.** No production code changed; the two `extraction_error` expressions are byte-identical to
+  their pre-PR shape (verified, §1), and both are now correctly pinned. There is no logic defect in
+  this merge.
+
+#### 4b. Code bugs not caught
+
+- **N/A on shipped behaviour.** The defect this PR closed was a control, and the defects it leaves
+  behind are controls and records (§4c, §4d). Saying "N/A" here rather than manufacturing a bug is
+  the honest entry.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — THE SIBLING SWEEP. Two more replica-assertion instances, one with an explicit and
+  provably false non-vacuity claim.** RETRO-247 scoped the question to the sinks tests; the brief for
+  this retro widened it to "assertions built from a test-authored replica of a production expression,
+  and assertions keyed on incidental ordering," repo-wide. The sweep
+  (`grep -rn "built exactly as\|mirrors the production\|replica\|replicat" apps/ packages/ --include='*.py' --include='*.ts'`)
+  returned **five** candidate sites; adjudicated one by one against RETRO-247's pre-specified
+  three-clause P-32 bar:
+
+  1. **`packages/sdk/src/__tests__/follow-383.test.ts:151-200` — CONFIRMED INSTANCE, strongest of the
+     set.** Clause (a) ✅ — `makeObserverCallback` (`:161-167`) re-implements `index.ts:1131-1137`'s
+     guard and the test asserts against its own copy. Clause (b) ✅ **in the strongest available
+     form** — `:157-158` claims _"so it fails if someone moves the early-return AFTER the push"_,
+     which is a direct assertion about the production file. Clause (c) ✅ — established structurally
+     rather than by mutation, which is decisive here and cheaper than a run: the test's import list
+     (`:12-18`) contains no path to `../index.js`, so no edit to `index.ts` can change its result.
+     The claimed subject is the §H.9 opt-out event-drop (CEO ruling 2026-06-23, memory
+     `project_optout_enforcement_h9_scope`), and **no sibling test covers that arm through the real
+     path** — `follow-389.test.ts` and `follow-409.test.ts` do drive `_initForTest` from
+     `../index.js`, but cover the `:1646` behavioural-signal arm and the micro-poll arm respectively;
+     `follow-389`'s own header states the opted-out case asserts `listing.bookmarked` **is present**
+     in the batch (it is pushed *before* that guard, §H.8 by design). So the `:1137` arm's only
+     claimed pin is the replica. → **FOLLOW-839 (P2)**.
+  2. **`packages/sdk/src/__tests__/follow197-lead-id.test.ts:190-230` — CONFIRMED, weaker claim.**
+     `simulateChatListener()` is declared _"This mirrors the production logic byte-for-byte; any
+     change to index.ts must be reflected here (**Rule H**: wired-or-dead, same logic path tested)."_
+     Clause (a) ✅; clause (b) ⚠️ — it asks a human to keep the copy in sync rather than claiming the
+     test catches drift, but "same logic path tested" is a coverage claim a reader will take at face
+     value, and it too never imports `../index.js`. **It also miscites the rule:** Rule H is "schema
+     scaffold MUST ship with a runtime-wired consumer" (`CONVENTIONS_PATCH.md:209`), not "same logic
+     path tested" — a Rule Y-shaped wrong-pointer inside a test header. → folded into **FOLLOW-839**.
+  3. **`packages/db/src/__tests__/dsr-crm-disclosure.test.ts:115-132` — NOT an instance, and it is
+     the model behaviour worth naming.** It replicates the route's SQL predicates and then says so:
+     _"IMPORTANT: This helper does **NOT** import the actual route handler. A WHERE-clause divergence
+     introduced directly in the production route would **NOT** break tests that call
+     `runDisclosureRead()`. For a regression guard that imports and invokes the real GET handlers
+     see: `apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts` …"_ Clause (b)
+     fails in the good direction: it declares its own vacuity **and names the artefact that is not
+     vacuous**. Recorded as the estate's existing counter-example — the shape is already understood
+     here, which is why FOLLOW-839's fix should copy this comment's form.
+  4. **`packages/db/src/__tests__/dsr-crm-erasure.test.ts:119-121` — ambiguous, NOT filed.** Same
+     replica shape, claim scoped to _"real SQL semantics, not mock behaviour"_, which is true of what
+     it does. It lacks item 3's explicit disclaimer and its named counterpart, so a reader may infer
+     route coverage — noted in FOLLOW-839's AC as a "while you are here", not as a finding.
+  5. **`apps/llm-gateway/src/jobs/test_generate_description.py:1416` — NOT an instance, positive
+     sighting.** _"function (not the test-only `_run_job` replica) — proves the real job body"_ — a
+     test that explicitly chose the real path over its own replica.
+
+  **The sweep did not come back thin, and that is the reportable result.** 2 confirmed, 1 declared-
+  and-cross-referenced, 1 ambiguous, 1 positive, out of 5 candidates in two packages and two
+  languages.
+
+- **TG-2 (assessed, NOT filed) — the incidental-ordering half of the sweep is genuinely thin.**
+  Searching for positional indexing of a captured/mock array where order is not guaranteed
+  (`captured[0]`, `mock.calls[0]`, `[0]!.` on a collected list) returns hundreds of hits across the
+  estate, nearly all on single-element collections where position is a property of the code under
+  test, not of the runtime. I am not filing a stub against that: without a mechanical way to
+  distinguish "the list has one element by construction" from "the list happens to have one element
+  on this machine", such a ticket is an invitation to churn. The one *proven* instance is
+  RETRO-249's, it was caught pre-merge by CI, and it is recorded there as pattern P-33 at count 1
+  with a bar. Reporting the negative so the next sweep does not re-derive it.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — the gitleaks knowledge exists twice in the repo and is stored where nobody looks.**
+  See headline 2. Three durable recordings now exist, all in places a person hitting a red gitleaks
+  check will not read: `.gitleaks.toml:254-266` (a TOML comment inside an allowlist entry), commit
+  `244e03bf`'s message, and — as of this PR — `test_observability.py:180-196`, an **eight-line
+  gitleaks tutorial inside a Python test docstring**. That third one is the only place in the repo
+  that carries the *corrected* explanation (length **and** Shannon entropy; the 50-char
+  `test_scrub_leaves_non_chat_intent_events_untouched` in the same file has always passed), and it is
+  in a file whose subject is buyer-text redaction. Nothing in `docs/runbooks/` mentions gitleaks at
+  all. → **FOLLOW-840 (P2)**.
+- **DG-2 (assessed, deliberately NOT filed — RETRO-247 §4d DG-4 precedent).** Three sites still carry
+  the pre-rename name: `backlog/FOLLOW_UPS.md:22362` (FOLLOW-739's stub body, ticket DONE),
+  `:26881` (a historical narrative line), `backlog/QUEUE.md:475` (FOLLOW-811's ticket record, ticket
+  DONE). All three are dated records of what was true when written, none is a live instruction, and
+  `QUEUE.md` is outside this agent's write scope in any case. Recorded so the next audit stops
+  re-discovering it.
+- **DG-3 (N/A — checked and clean).** Rule Y sweep over the four re-pointed citations: `ropa.md:553-555`
+  and `C-07:244-245,:251,:260` each name `test_buyer_text_escapes_all_sinks` **and** state which
+  sink/arm they rely on; the test performs each cited assertion (verified by reading the file, per
+  Rule Y's third bullet). `FOLLOW_UPS.md:26837-26838` (FOLLOW-811 AC(2)) was re-pointed *and*
+  annotated with the arm-3 pattern — which the FOLLOW-811 worker then actually followed
+  (`sentry-capture-path.test.ts` drives a real capture, RETRO-249 §2). The citation graph is
+  consistent end-to-end.
+- **DG-4 (N/A — the `dpia.md` non-edit was correct).** The worker declined AC(3)'s `dpia.md` leg and
+  said so. Verified independently: `dpia.md:255` says only "which includes a buyer-text sentinel
+  assertion" — **no function name** — so nothing there was stale, and the concurrently-running
+  FOLLOW-811 worker was editing that exact section. Declining was right on both counts, and the
+  worker flagging it beats silently doing 3 of 4.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-827 + FOLLOW-830 (devops-engineer, both P1, IN_PROGRESS right now against
+  `scripts/gh-pr-checks-verified.sh`) — NEITHER IS INVALIDATED. Verdict, with the measurement:**
+  - Neither PR touches `scripts/` or `.github/` —
+    `git diff --name-only 221a4f2a^ 221a4f2a 1b758fe1^ 1b758fe1 | grep -c '^scripts/\|^\.github/'` → **0**.
+  - **FOLLOW-827's compensating-swap hole was unreachable and its baseline-ratchet hole did not
+    fire.** I re-ran the gate's own input on merged `main`: `bash scripts/check-rule-i.sh` →
+    **`Violations found : 192`**, identical to the baseline both PRs were validated against (run
+    `31035657108`). Neither merge added or removed an exported symbol, so the count could not move
+    and the ratchet had nothing to ratchet onto. FOLLOW-827 AC(1)–(5) all stand as written.
+  - **FOLLOW-830's PCRE fail-open was unreachable** on this Linux/GNU-grep host, and its AC(2)
+    fixture list is unaffected. Note for the worker: AC(2)'s `Rule I with pr == main → 0` case is the
+    exact case both of these merges exercised in production, twice, on the same day.
+  - **One thing the in-flight worker should be told, because these two merges make it easy to get
+    wrong.** FOLLOW-830 AC(2) mandates **synthesized** fixtures (Rule AM); RETRO-248's finding says
+    **do not assert on a test-authored replica**. These do not conflict, and the boundary is worth
+    stating in one line: *synthesize the INPUT, never re-implement the LOGIC UNDER TEST and then
+    assert on your copy of it.* A `--self-test` that feeds fabricated check-JSON into the **real**
+    `gh-pr-checks-verified.sh` and asserts the **real** script's exit code is exactly right; a
+    `--self-test` that re-implements the classification rule inside the test harness and asserts on
+    that would be this ticket's defect one file over.
+- **FOLLOW-833 / FOLLOW-834 / FOLLOW-835 / FOLLOW-836 / FOLLOW-837 — re-checked, none invalidated,
+  one sharpened.**
+  - **833** (three surviving raw-exception `print`s) — untouched by this PR; still valid.
+    `grep -c "print(" apps/intent-engine/src/nlp.py` confirms `:344` still present.
+  - **834** (Python grep-lint) — unaffected; its allowlist input (833's output) has not been produced.
+  - **835** (`.claude/` write block) — **status changed by evidence, not by this PR.** Both workers
+    landed their `lessons.md` entries this round (`.claude/agents/ml-engineer/lessons.md` +26 in this
+    very diff), and the FOLLOW-811 worker reports doing it via a shell heredoc where `Write`/`Edit`
+    are denied. 835 currently records the symptom; it now has a mechanism (tool-scoped, not
+    path-scoped). Recorded, not re-filed.
+  - **836** (control-plane console-sink gate) — valid, and RETRO-249 §5a widens the *class* it belongs
+    to without changing its AC.
+  - **837** (commitlint) — **SHARPENED, no new number** (Rule AN: do not mint a number for an
+    extension of an open stub). 837 as filed targets `commitlint.config.cjs`. It must also carry the
+    documents that assert the dead policy as fact, or fixing the config leaves a Rule AI divergence:
+    `docs/runbooks/git-hooks.md:41-70` states _"**Rules enforced:** Scope is REQUIRED … Subject must
+    be at least 10 characters"_ and prints a 13-entry scope list, none of which runs; `:158-180`
+    tells an operator _"Edit `commitlint.config.cjs` to change rules. For example, to add a new valid
+    scope"_ — an instruction that provably does nothing, because the edit lands in the **shadowed**
+    `rules` block — and then hands them a verification command
+    (`echo "feat(new-scope): test message [TICKET-001]" | pnpm exec commitlint`) that **passes for any
+    scope**, so the operator concludes it worked. That is a Rule AH instance (an executable
+    instruction that does not execute) riding on a Rule Y instance (a named artefact cited as
+    performing behaviour it does not). Verified by resolution, not by reading:
+    `node -e "console.log(Object.keys(require('./commitlint.config.cjs').rules))"` → **`[ 'ticket-reference' ]`**.
+    Secondary detail worth one line in the AC: `CLAUDE.md` and `git-hooks.md` publish **two different
+    scope lists** (`auto-detect` in one, `decision-api`/`agents`/`deps`/`repo` in the other) and
+    neither is enforced, so the decision 837 owns has no incumbent to defend.
+
+#### 5b. Future sprint tickets affected
+
+Any future ticket instructed to "extend the buyer-text sentinel test" now inherits a **good**
+template rather than a defective one, and that is a change in kind: FOLLOW-811 was the first
+consumer of it and produced a real-capture-path test rather than a hand-built event object
+(RETRO-249 §2). The residual future risk is the one FOLLOW-839 names — the estate contains at least
+two more replica-pinned controls, and the shape reproduces whenever a test is written for logic that
+lives in a large entrypoint module (`packages/sdk/src/index.ts`, 1600+ lines) that is awkward to
+import in isolation. That awkwardness is the *cause*, and no rule will fix it; the `_initForTest`
+seam already used by `follow-389`/`follow-409` is the fix, and FOLLOW-839's AC points at it.
+
+#### 5c. Contracts changed others rely on
+
+- **The test name is a contract.** Six artefacts: `ropa.md`, `C-07` (×3 sites), `dpia.md` §2.7 (by
+  description, not by name), `FOLLOW_UPS.md` FOLLOW-811 AC(2), `FOLLOW_UPS.md` FOLLOW-739's stub,
+  `QUEUE.md`. Four re-pointed here, three historical (§4d DG-2). Post-merge the citation is TRUE for
+  all four sinks/arms — which is the first time in this chain that sentence can be written without a
+  qualifier.
+- **`nlp.py:504` and `:563` are unchanged**, so nothing downstream of the Redis payload moved. The
+  `extraction_error` contract (`schemas.py:124-137`, `"<kind>: <ExceptionClassName>"`) is now pinned
+  on both of its writers rather than on one replica of one of them.
+
+#### 5d. Architectural assumptions affected
+
+**One assumption is now visibly load-bearing across the estate: "a compliance document may cite a
+test as its regulator-facing pin."** That is a good pattern — it is what makes `ropa.md` falsifiable
+— but this ticket establishes its failure mode: the citation's truth depends on a property (non-
+vacuity) that no CI check measures and that only a perturbation run can establish. Three tickets in
+this chain (739, 812, 832) have now turned on it. Nothing in the estate perturbs a test to prove it
+can fail; it is done by hand, by whoever remembers. That is the same single-point-of-failure
+RETRO-247 §6 named for the PM reading a worker's honest paragraph, and it is why FOLLOW-834's gate
+and FOLLOW-839's real-path pins matter more than another rule about care.
+
+### 6. New lesson candidates
+
+- **P-32 ("A TEST'S NON-VACUITY CLAIM IS FALSE BECAUSE THE ASSERTION TARGETS THE TEST'S OWN REPLICA
+  OF THE PRODUCTION EXPRESSION") — COUNT 2, ONE PRIOR RETRO. NOT PROMOTED.**
+  - **RETRO-247 §6 (prior, count 1)** — minted, two instances in PR #677 deliberately counted as one.
+  - **THIS RETRO (count 2)** — `follow-383.test.ts` AC3, adjudicated against RETRO-247's own
+    three-clause bar and passing all three (§4c TG-1 item 1), plus `follow197-lead-id.test.ts` as a
+    weaker second instance. **Both found in one sweep by one retro = ONE sighting**, per the
+    RETRO-122 count-inflation discipline that RETRO-247 applied to itself.
+  - **Verdict: 1 prior retro < 2. NO PROMOTION.** The guardrail is a bar, not a suggestion, and my
+    predecessor held the same line on Rule S at the same count.
+  - **RE-ARMED, and the arming is now cheap to discharge:** RETRO-247 armed clause (c) as "demonstrated
+    by an actual perturbation run, not inferred". I am relaxing that by one notch **for import-scope
+    cases only**, with the reason stated: when the test file's import list contains no path to the
+    module whose behaviour it claims to pin, vacuity is proven by construction and a mutation run adds
+    nothing (a run cannot fail a test that cannot see the mutated file). Every other clause stands.
+    **Priors after this entry = RETRO-247 + RETRO-248 = 2.** The next numbered retro that observes a
+    qualifying instance promotes — and per RETRO-247's own steer, **prefer a Rule Y amendment if that
+    sighting is citation-shaped** (a doc naming the replica'd test as the pin); mint a new letter only
+    if it is docstring-shaped, as both of this retro's instances are.
+  - **Tested against the rule texts, not the titles, as RETRO-246 required.** **Rule Y** (`:1392`, as
+    broadened 2026-06-26) governs *a named OTHER artefact cited as fact*; `follow-383.test.ts`'s claim
+    is about its own assertion — the same adjudication RETRO-247 reached, re-derived here from the text
+    rather than inherited. (It *does* additionally miscite Rule H, which **is** a Rule Y hit; that is
+    an incidental second defect in the same comment, not P-32's home.) **Rule Q** (`:1649`) governs a
+    gate that reports a status without executing its assertion — these assertions execute, against the
+    wrong object. **Rule AL** (`:2929`) governs the byte-region a check scans. **Rule Z** (`:1496`)
+    governs cross-runtime fixture provenance; this is one runtime. **Rule AM** (`:3032`) governs where
+    a fixture comes from. None fires.
+- **P-34 ("A HARD-WON OPERATIONAL FACT IS RECORDED IN A CONFIG COMMENT OR A COMMIT MESSAGE AND IS
+  RE-PURCHASED BY THE NEXT SESSION") — MINTED AT COUNT 1. NOT PROMOTED.**
+  - Instances in this retro, counted as **one**: `.gitleaks.toml:254-266` (FOLLOW-774) and commit
+    `244e03bf` (FOLLOW-739) both recorded the gitleaks commit-range behaviour; session-103 paid for it
+    again 24 hours later with a red CI cycle and a force-push.
+  - **Not promoted, and Rule P is why.** Run verbatim, Rule P ("search the record … the relevant
+    code/fixtures … before proposing a solution") fires on this: `.gitleaks.toml` is the first file a
+    gitleaks red should send anyone to, and it holds eight precedent entries. A rule that catches the
+    defect when applied needs enforcing, not duplicating — the same reasoning RETRO-247 used to decline
+    a Rule S amendment. The actionable gap is that the fact has no greppable home → **FOLLOW-840**.
+  - **Second-sighting bar, pre-specified:** (a) a fact whose only durable recording is a config
+    comment, a commit message, or a docstring in an unrelated file; (b) a later session demonstrably
+    re-derives it at a cost (a CI cycle, a force-push, a wrong claim committed); (c) Rule P's
+    verification grep, run verbatim, would have found the prior recording — clause (c) is what
+    separates "we have a discoverability problem" (P-34) from "we have a documentation gap" (ordinary).
+- **Meta-pattern (recorded, not a candidate) — the sink-2 defect and the gitleaks defect have the same
+  shape one level up.** In both cases the *knowledge* was correct and present in the estate, and the
+  *mechanism that carries it to the next reader* was the failure: a docstring that claims non-vacuity
+  nobody re-tests; a TOML comment nobody greps. Three consecutive retros (246, 247, 248) have now
+  ended at "the rule exists, the enforcement does not". That is a stable finding about this estate and
+  it should stop being surprising.
+
+### 7. Follow-ups
+
+- **FOLLOW-839:** Pin `index.ts:1137`'s §H.9 opt-out event-drop through the real entrypoint and delete
+  the replica's false claim; fold in `follow197-lead-id.test.ts`'s `simulateChatListener` and its Rule
+  H miscitation (sdk-engineer, 3h, **P2**, FROZEN)
+- **FOLLOW-840:** Give the gitleaks operational facts a greppable home — a `docs/runbooks/` section
+  covering (i) a `pull_request`-event red cannot be fixed forward, only rewritten out, (ii) the rule
+  gates on length AND Shannon entropy, (iii) the Rule V token-scoped option that was not considered
+  (devops-engineer, 2h, **P2**, FROZEN)
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one hop:**
+
+- **FOLLOW-832 — CLOSED END-TO-END, and the gap did NOT move one hop downstream.** The obvious hop was
+  the retry arm, and it was closed in the same PR.
+  - **producer** — `nlp.py:504` (`extraction_error=f"{kind}: {type(exc).__name__}"`) ✅ and `:563`
+    (`payload.extraction_error = f"retry_failed: {type(exc).__name__}"`) ✅, both byte-identical to
+    pre-PR (`git diff … -- nlp.py` → 0 lines).
+  - **consumer** — the assertion now reads `primary_payload.model_dump()` and `retry_payload.model_dump()`,
+    i.e. the objects the producers returned. ✅ Perturbation-proven on **both** by me (§2), not accepted
+    on the PR body.
+  - **render** — the compliance citation: `ropa.md:553-555` and `C-07:244-245,:251,:260` name the new
+    test and the arms they rely on; opened and confirmed each performs the cited assertion (Rule Y). ✅
+  - AC(1) ✅ (both arms), AC(2) ✅ (docstring's false claim named and corrected), AC(3) ✅ 3 of 4
+    citations, 4th correctly declined with reasons (§4d DG-4), AC(4) ✅ (sink 1 kept, and its
+    legitimacy re-argued in the docstring rather than asserted).
+  - **What is NOT closed:** the *class*. §4c TG-1's two SDK instances are the same defect in another
+    package, and no mechanical check exists for it (FOLLOW-834 is Python-scoped, FOLLOW-836 is
+    console-scoped; neither looks for replica assertions).
+- **FOLLOW-739 (grandparent, DONE 2026-08-04) — its AC(3) is now DISCHARGED, 23 hours late.** 739's
+  PR body claimed sink-2 non-vacuity; that claim is what FOLLOW-832 falsified and this PR made true.
+  Chain verified on disk: 738 (the hook) → 739 (the record + the false pin) → 812 (the stdout leg) →
+  832 (the pin made real). Each hop confirmed by reading the artefact, not the closure note.
+- **FOLLOW-812 (parent, DONE) — re-checked, still closed.** Both `print` sites still emit
+  `type(exc).__name__` only (`grep -n "type(exc).__name__" apps/intent-engine/src/nlp.py` → `:496`,
+  `:504`, `:547`, `:563`), and sinks 3/3b still assert on captured stdout. No regression, no
+  relocation.
+
+### 8. Cross-references
+
+- **RETRO-247** — the source of FOLLOW-832 and of this retro's method. Three of its calls are confirmed
+  here: the P1 pricing (justified — the control was the defect and there was no live leak), the
+  measurement warning (obeyed; `gh pr view --json files` used, `--stat` across SHAs avoided), and its
+  §5a prediction that FOLLOW-827/830 were unreachable on a docs-and-Python PR (**confirmed a second
+  time**, with the Rule I count re-measured at 192 by me rather than carried over).
+- **RETRO-246** — the "read the rule's TEXT, not its title, and ask whether running it verbatim would
+  report this PR clean" methodology, applied here to Rule P (fires → no promotion) and to Rule Y/Q/AL/Z/AM
+  (do not fire → P-32 stays distinct).
+- **RETRO-122** — the count-inflation discipline that makes two sweep instances one sighting.
+- **RETRO-118 / RETRO-121 / RETRO-123 (Rule V)** — the gitleaks lineage. FOLLOW-840 is deliberately NOT
+  a Rule V amendment: V governs *how to suppress* a self-inflicted FP, and its three retros never
+  touched the commit-range behaviour (`grep -n "gitleaks" backlog/RETROSPECTIVES.md` → 0 hits on the
+  commit-range fact across the entire corpus).
+- **Rule AM** — followed by this retro's own method: every perturbation ran in a `cp -r` scratch copy;
+  the working tree was never mutated.
+
+<!-- RETRO-248 (PR #678, FOLLOW-832, merge 221a4f2a, 5 files +127/-60 per gh pr view --json files AND
+git diff --numstat 221a4f2a^..221a4f2a — the RETRO-247 measurement correction obeyed). VERDICT: FIX REAL
+ON BOTH ARMS, independently re-proven in a scratch cp -r (perturb nlp.py:504 -> 1 failed; perturb
+nlp.py:563 -> 1 failed; PRE-MERGE test with BOTH perturbed -> 11 passed, sentinel provably in the returned
+Redis-bound payload). Zero production code (nlp.py diff = 0 lines). 80 passed/2 skipped re-run on main.
+FALSE CONTROL LIFETIME: born 244e03bf (PR #671/FOLLOW-739, 2026-08-04 20:30 UTC), died 221a4f2a
+(2026-08-05 19:46 UTC) = 23h15m; SIX artefacts vouched for it, the first being PR #671's own merge-commit
+message ("substitute {exc} ... -> sink 2 fails" — false, permanently in main's history), then the
+docstring, ropa.md, C-07, dpia.md §2.7 (by description), FOLLOW-811 AC(2), and PR #677 which extended and
+re-cited it. WIRING: CHECK A clean (no new file/export/symbol; the renamed pytest entrypoint is
+framework-suppressed and has 4 non-test citers); CHECK B clean (no new event/env/column/topic; citation
+graph producer+consumer both wired). SIBLING SWEEP (the brief widened it repo-wide) came back THICK not
+thin: 5 candidates -> 2 CONFIRMED P-32 instances (follow-383.test.ts:151-200 — replica of index.ts:1137's
+§H.9 opt-out guard with the explicit written claim "so it fails if someone moves the early-return AFTER
+the push", proven vacuous by IMPORT SCOPE: the file never imports ../index.js; and
+follow197-lead-id.test.ts:190-230 simulateChatListener, weaker claim + a Rule H miscitation), 1
+declared-vacuous-and-cross-referenced (dsr-crm-disclosure.test.ts — the model behaviour), 1 ambiguous
+(dsr-crm-erasure), 1 positive (test_generate_description.py:1416) -> FOLLOW-839 P2. GITLEAKS: the
+commit-range fact was ALREADY recorded twice (.gitleaks.toml:254-266 FOLLOW-774, and commit 244e03bf's own
+message one day earlier) and re-purchased with a red CI cycle + force-push; Rule P fires verbatim -> NO
+rule, RUNBOOK not CONVENTIONS_PATCH -> FOLLOW-840 P2. RULE VERDICTS: NO PROMOTION, NO AMENDMENT. P-32 =
+count 2 / 1 prior (RETRO-247) -> below the >=2-prior bar, RE-ARMED with clause (c) relaxed for
+import-scope cases; priors are now 2, so the next qualifying sighting promotes (prefer a Rule Y amendment
+if citation-shaped). P-34 MINTED at count 1 (a hard-won fact recorded only in a config comment/commit
+message and re-purchased), not promoted because Rule P already fires. CASCADE: FOLLOW-827 + FOLLOW-830
+(both IN_PROGRESS) NOT invalidated — 0 files under scripts//.github/ across both merges, and
+check-rule-i.sh re-run BY ME on merged main returns 192, identical to baseline run 31035657108, so the
+compensating-swap hole was unreachable and the baseline ratchet did not fire; one note passed to that
+worker on the Rule AM "synthesize the INPUT, never re-implement the LOGIC" boundary. FOLLOW-833/834/836
+unaffected; FOLLOW-835 gains a mechanism (heredoc works where Write/Edit are denied); FOLLOW-837 SHARPENED
+with no new number (Rule AN) — docs/runbooks/git-hooks.md:41-70 asserts the dead policy as enforced and
+:158-180 gives an operator instruction that does nothing plus a verification command that always passes;
+config resolution proven by node -e -> rules keys = ['ticket-reference'] only. Filed FOLLOW-839, 840.
+QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
+.claude/agents/retrospective-analyst/lessons.d/RETRO-248.md per Rule AG. -->
+
+---
+
+## RETRO-249 — FOLLOW-811 (#679) — the decision is sound, the triggers are half-mechanical, and the coupling it found is estate-wide — 2026-08-05
+
+**THE HEADLINE: THE `consoleIntegration` FINDING IS CORRECT, VERIFIED INDEPENDENTLY, AND SCOPED ONE
+APP TOO NARROWLY.** `@sentry/node-core@10.50.0` `build/cjs/sdk/index.js:41` really does list
+`console$1.consoleIntegration()` among the Node defaults — read from the installed package, not from
+the PR body — so RETRO-247 §5a's "Vercel-log-only leg" framing is corrected exactly as `dpia.md`
+§2.7.1 and `ropa.md` now record: two sub-processors, not one. **But the same default is in the
+Cloudflare SDK.** `@sentry/cloudflare@10.50.0` `build/cjs/sdk.js:29` ends its
+`getDefaultIntegrations()` with `core.consoleIntegration()`, and `apps/ingest/src/observability.ts:71-82`
+passes **no** `integrations` key — so the coupling is not an `apps/control-plane` fact, which is how
+both compliance documents now state it. It is a property of the SDK family this estate runs.
+
+**AND THE FINDING THAT COMES OUT OF THAT, WHICH IS THE MOST SERIOUS THING IN EITHER RETRO.**
+`apps/ingest/src/handlers/chat-nlp-dispatch.ts:69-73` POSTs **raw buyer chat text** to Modal
+(`message: { role: 'user', content: messageText }`). At `:86-92`, on any non-2xx response:
+
+```ts
+const text = await res.text().catch(() => '<unreadable body>');
+const msg = `[chat-nlp] Modal dispatch rejected: HTTP ${String(res.status)} — ${text.slice(0, 500)}`;
+console.error(msg);                                  // -> Sentry breadcrumb (consoleIntegration default)
+Sentry.captureException(new Error(msg), { tags: { area: 'chat-nlp', … } });   // -> exception VALUE
+```
+
+500 characters of the upstream's error body are interpolated into **both** Sentry-bound sinks. A
+FastAPI/Pydantic 422 echoes the offending input in `detail[].input` — which for this request is the
+buyer's message object. **I am not claiming a proven live leak: I have not driven Modal to a 422 and
+I say so rather than inflating it.** What I am claiming is precise and checkable — this is a
+raw-buyer-text-carrying request whose error-response body reaches two Sentry sinks unassessed, in an
+app the FOLLOW-738 → 739 → 811 → 812 chain never looked at, tagged `area: 'chat-nlp'` so that even
+the Python tier's hook design would not match it if ported. Mitigating and stated: `withSentry`
+returns `undefined` when `SENTRY_DSN_INGEST` is unset (`observability.ts:72-75`), which the session
+record says is the case in prod today — so the Sentry leg is inert **by environment, not by
+control**, and one `wrangler secret put` reverses that. → **FOLLOW-838 (P1)**. This is exactly the
+"close the Sentry leg in one runtime, leave the sibling unassessed, file the third ticket next
+month" sequence RETRO-247 §5d predicted; it named the three Python Modal apps and Vercel, and did
+not name `apps/ingest`.
+
+**SECOND HEADLINE: §2.7.1's MECHANICAL-ENFORCEMENT CLAIM IS TRUE, AND I WENT LOOKING FOR THE
+OPPOSITE.** The brief asked whether the six triggers are a FOLLOW-739-class control (documented,
+believed, non-existent). Triggers **2 and 3 are genuinely mechanical**, verified by reading the test
+rather than the claim: `sentry-config.shape.test.ts:148-171` asserts
+`Object.keys(options).sort()` against an exact literal list (so `includeLocalVariables` cannot be
+added without a red) and asserts `replaysSessionSampleRate`/`replaysOnErrorSampleRate` `toBe(0)` and
+`sendDefaultPii` `toBe(false)`; `sentry.client.config.ts:35-36` sets those rates as **literals**, so
+raising one requires a code diff that fails that test; and `ci.yml:164` runs
+`pnpm turbo run test --filter='@estalara/control-plane'`, so it fires in CI. §2.7.1 also states
+plainly that triggers 1, 4, 5 and 6 have **no** mechanical enforcement. **That honesty is the whole
+difference from FOLLOW-739**, which asserted a CI check that did not exist. The record is sound.
+
+**THE ONE ADVERSARIAL HIT: TRIGGER 1'S STATED OWNER CANNOT SEE THE SURFACE THAT FIRES IT.** §2.7.1
+says _"Who checks the triggers: whoever changes those files"_ — the three Sentry configs. Trigger 1
+is _"any buyer-authored free text becomes readable inside `apps/control-plane`"_, and the change that
+makes it true lands in **`apps/intent-engine/src/schemas.py`**, in another language, in another app,
+owned by another agent, with **zero diff in `apps/control-plane`** and no failing test. The
+control-plane consumer is a cast, not a parse — `chat-intent-cache.ts:147-156` duck-checks for
+`intent_dimensions` and then `return parsed as ShadowChatIntent` — and `flattenIntentDimensions()`
+iterates `Object.entries(dims)` and copies **every** non-empty string value through, so it is a
+value-passthrough, not an allowlist of the twelve dimensions. A cross-runtime parity fixture does
+exist (`chat-intent-cache.test.ts:149-172`, FOLLOW-736 / ADR-0020 D2) but it pins **signal
+semantics** ("does at least one dimension survive"), not the **key set** — a new Python field passes
+it. → **FOLLOW-841 (P2)**.
+
+### 1. Summary of change
+
+- **PR:** #679 (merged 2026-08-05 19:46:24 UTC, squash → `1b758fe1`; branch
+  `backend-engineer/FOLLOW-811-control-plane-sentry-scrubbing`, deleted; worker `backend-engineer` /
+  **Opus**, escalated one tier — correctly, and §6 records why)
+- **Files changed:** 9 (+660 / −39), from `gh pr view 679 --json files`, confirmed per-file with
+  `git diff --numstat 1b758fe1^ 1b758fe1`:
+
+  | file                                                          |  +  |  −  |
+  | ------------------------------------------------------------- | --- | --- |
+  | `apps/control-plane/src/lib/__tests__/sentry-capture-path.test.ts` | 178 |  0 |
+  | `apps/control-plane/src/lib/__tests__/sentry-config.shape.test.ts` | 173 |  0 |
+  | `docs/compliance/dpia.md`                                      | 112 |  21 |
+  | `backlog/FOLLOW_UPS.md`                                        |  62 |   0 |
+  | `apps/control-plane/sentry.client.config.ts`                   |  35 |   3 |
+  | `docs/compliance/ropa.md`                                      |  34 |  15 |
+  | `.claude/agents/backend-engineer/lessons.md`                   |  29 |   0 |
+  | `apps/control-plane/sentry.server.config.ts`                   |  29 |   0 |
+  | `apps/control-plane/sentry.edge.config.ts`                     |   8 |   0 |
+
+- **Modules touched:** `apps/control-plane` (3 configs + 2 new tests) · `docs/compliance` ·
+  `backlog` · `.claude`. Zero `scripts/`, zero `.github/`, zero migrations, zero SDK, zero Python.
+- **Key contracts changed:**
+  - `sendDefaultPii: false` added to all three configs — **breaking: no** (the SDK default is already
+    falsy); it pins the posture against `@sentry/core@10.50.0`'s own
+    `// TODO(v11): Change defaults based on sendDefaultPii`.
+  - `sentry.client.config.ts`'s docstring corrected from `SENTRY_DSN_CONTROL_PLANE` to
+    `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE` — a Rule AI doc-lags-code fix, and **not cosmetic**: the
+    two readings differ on whether browser errors reach Sentry at all.
+  - `dpia.md` §2.7.1 (new section, header 2.10 → 2.12 with a retroactive `2.11a` row naming the
+    skipped bump) and `ropa.md` 2.7 → 2.8. **These are the contract**: §2.7.1 is now the single place
+    the control-plane Sentry posture may be amended, and `ropa.md` says so explicitly.
+  - **No `beforeSend`. No PII-pattern regex.** That is the decision.
+
+### 2. Verification done in PR
+
+- **Test files changed: 2, both new** (+351). Assertions: **8** in `sentry-config.shape.test.ts`
+  (3 whole-key-set equalities, 12 hook-absence checks, 3 `sendDefaultPii`, 2 replay rates, 3
+  no-init-without-DSN) and **4** in `sentry-capture-path.test.ts`. Coverage delta: qualitatively the
+  first executable statement of a compliance *decision* in this estate — previously such decisions
+  were prose only.
+- **CI: passed after one genuine red**, `scripts/gh-pr-checks-verified.sh 679` → 75 checks / 73 pass
+  / 2 `Rule I` at 192 ≤ 192 vs baseline run `31035657108`, exit 0. Re-asserted by me on merged
+  `main`: `bash scripts/check-rule-i.sh` → **192**.
+- **Both tests confirmed to run in CI, not assumed:** `ci.yml:164` is
+  `pnpm turbo run test --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api' --filter='@estalara/control-plane'`.
+  This matters because §2.7.1 cites them as the mechanical half of two triggers — a Rule Y check that
+  must be done against the workflow, not against the test file alone.
+- **The `consoleIntegration` claim re-verified against the installed package**, since the entire
+  finding rests on it: `sed -n '30,50p' …/@sentry/node-core/build/cjs/sdk/index.js` shows
+  `console$1.consoleIntegration()` at line 41, between `conversationIdIntegration()` and
+  `httpIntegration()`. Exact. And extended: `…/@sentry/cloudflare/build/cjs/sdk.js:29` carries
+  `core.consoleIntegration()` in its own default list (headline).
+- **Three things this worker did that are worth naming, because retros mostly record the inverse:**
+  (i) it **refused to guess the Vercel retention figure** and instead bounded the exposure by proving
+  no log drain is configured — the same discipline FOLLOW-812's worker showed on the Modal tier;
+  (ii) it **verified `replayIntegration()` inert by reading `@sentry-internal/replay`'s
+  `initializeSampling()` early-return** rather than asserting it from the sample rates, and then made
+  the capability a named trigger instead of deleting a pre-existing staged integration; (iii) it
+  **named its own defect** when the CI red came back (§4c TG-1) rather than describing it as a flake.
+- **What the verification did NOT cover:** the axis. Every artefact in this PR is scoped to
+  `apps/control-plane`, including the two compliance corrections, and the SDK-default fact that drives
+  the whole finding is not app-scoped (§4a LG-1).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** Two new files, both `*.test.ts` under
+`apps/control-plane/src/lib/__tests__/` — test files, suppressed from the importer requirement and
+independently confirmed to execute (`ci.yml:164`). The three config files are `@sentry/nextjs`
+framework entrypoints loaded by `withSentryConfig` in `next.config.ts` — the framework-entrypoint
+carve-out. **No new exported symbol anywhere**, corroborated mechanically rather than by reading:
+`scripts/check-rule-i.sh` returns 192 on merged `main`, unchanged from the pre-merge baseline, which
+it could not do if this PR had added an unimported export.
+
+**CHECK B — half-wire. Clean ✅ on the audit's own terms, with ONE asymmetry recorded rather than
+filed.** No new event, env var, DB column, topic or SDK signal. `sendDefaultPii` is a config key whose
+consumer is the SDK itself (producer ✅ / consumer ✅). The asymmetry: **§2.7.1 ships six re-review
+triggers, and four of them have a producer (the obligation) and no consumer (nothing detects the
+condition)** — triggers 1, 4, 5, 6. Considered and **rejected** as a HALF_WIRE_P: CHECK B's subject
+is events / env vars / columns / topics / SDK signals, and a compliance obligation is none of those;
+classifying it there would stretch the audit into something a future retro cannot apply consistently.
+It is recorded in §4a LG-2 with a stub instead. Stating the rejection because the judgment call is
+the interesting part.
+
+I also checked the axis a "log sink" finding most often gets wrong: **is the breadcrumb claim
+consistent across the doc set?** `dpia.md:297-298` and `ropa.md:506-507` both make the coupling
+finding *depend on* the pre-existing "breadcrumbs are never modified on any path in any app"
+statement from the FOLLOW-739 §2.7 paragraph, and that statement is unchanged and still true (the
+Python hook rewrites the exception `value` only). Consistent, both directions. **No third document
+still describes the two sinks as separate** — `C-07-chat-retention-scope.md` covers the chat
+retention scope and does not discuss control-plane Sentry at all
+(`grep -n "console\|breadcrumb" docs/compliance/C-07-chat-retention-scope.md` → no hits). The only
+remaining defect on this axis is scope, not consistency (§4a LG-1).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the coupling is written as an app fact and is an SDK-family fact; and the sibling app
+  it reaches carries raw buyer text.** See headline. Both compliance corrections are phrased
+  app-scoped — `ropa.md:502-505` _"in `apps/control-plane` the application-log sink and the Sentry
+  sink are **not independent**"_, `dpia.md:295-297` _"not independent **in this app**"_ — and a reader
+  correctly infers the negative for the other apps. The negative is false for `apps/ingest`
+  (`@sentry/cloudflare` default list, no `integrations` override), which has **10** non-test
+  `console.error` sites, one of which interpolates 500 characters of an upstream error body produced
+  from a request carrying raw buyer chat. The Python tier is **not** affected on this axis and I
+  checked rather than assumed: `sentry_sdk`'s `LoggingIntegration` captures `logging` records, not
+  `print()`, so FOLLOW-812's stdout sink remains a genuinely separate sink. → **FOLLOW-838 (P1)**.
+- **LG-2 (P2) — trigger 1's stated owner is scoped to three files; its trigger surface is in another
+  app.** See headline. Two compounding facts, both verified: `readShadowChatIntent`
+  (`chat-intent-cache.ts:147-156`) **casts** rather than parses, and `flattenIntentDimensions`
+  (`:190-204`) is a **value-passthrough** over `Object.entries(dims)` rather than an allowlist of the
+  twelve known keys. Third fact, which is the one §2.7.1's premise re-verification did not record:
+  `schemas.py:50-82`'s own docstring says the dimension values are _"kept as free `str` here so an
+  unexpected model token is captured for analysis rather than rejected at parse time"_, and
+  `feature_priority` is documented as a _"free-form tag"_. So the eleven string dimensions are, by the
+  producer's deliberate design, **unvalidated LLM output derived from buyer chat**. §2.7.1 verified the
+  *field-presence* axis (is there a raw-message field? no — correct) and not the *value-domain* axis.
+  This does not falsify the decision — nothing logs or captures those values today
+  (`route.ts:1584-1591` logs `dimension_count`, `session_id`, `tenant_id` only, checked) — but it means
+  "buyer-authored free text" is a spectrum that §2.7.1 does not locate itself on, and trigger 1 asks a
+  reviewer to notice a boundary the document has not drawn. → **FOLLOW-841 (P2)**.
+
+#### 4b. Code bugs not caught
+
+- **N/A on shipped behaviour.** The three config edits are `sendDefaultPii: false` (no behaviour
+  change, the default is already falsy — verified against `@sentry/core`'s own source) plus comment
+  corrections. The two new files are tests. The one real bug in this PR was caught by CI before merge
+  and fixed correctly (§4c TG-1).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (assessed, FIXED IN-PR, filed as NOTHING — recording it because the brief is right that it is
+  the strongest signal either retro has).** `findEventPayload()`'s first revision indexed `captured[0]`;
+  `Sentry.init()` with defaults also emits a `type: "session"` envelope and the flush order is not
+  deterministic, so 3 of 4 assertions failed on the CI runner and none failed locally. The
+  whole-structure assertion carried the **identical latent bug while passing** —
+  `JSON.stringify(captured[0])` under session-first ordering would have scanned the session envelope
+  and found no sentinel. Both were fixed in `76e86586`: `findEventPayload()` now iterates every
+  envelope (`:100-107`) and the whole-set assertion scans `JSON.stringify(captured)` (`:176`).
+  **Three things make this worth recording rather than filing:** (i) the worker named the class itself
+  and its own inconsistency ("I had written the test to avoid that class and reintroduced it one level
+  up, in the accessor"); (ii) it **declined the cheaper fix** (`autoSessionTracking: false`) with the
+  correct reason — that removes one known source of extra envelopes while leaving the "the envelope I
+  want is first" assumption in place for every other, and deviates from the defaults this test exists
+  to observe; (iii) it re-ran the redaction perturbation under **both** orderings afterwards and
+  reported identical counts (3 failed / 1 passed), proving order-independence was restored **without**
+  weakening what the test pins. There is no residual gap here to file.
+- **TG-2 (folded into FOLLOW-841) — trigger 1 has no mechanical half and one is cheap.** The
+  key-set-parity assertion that would give it one is a ~10-line addition to the existing
+  `chat-intent-cache.test.ts` parity block, driven off the fixture that already exists. Filed as part
+  of 841 rather than separately, because the doc change and the test change must land together or the
+  document describes a control that has not shipped — which is this chain's signature defect.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, folded into FOLLOW-838) — two compliance documents state an SDK-family property as an
+  app property.** `ropa.md:502-505` and `dpia.md:295-297`. Nothing there is *false* about
+  `apps/control-plane`; the defect is the implied negative for every other app, which is Rule AO's
+  exact subject (a corrective edit inherits the scope of the thing it was correcting — here, the
+  FOLLOW-811 ticket's app scope).
+- **DG-2 (P3, folded into FOLLOW-841) — §2.7.1's "who checks" sentence.** _"whoever changes those
+  files"_ is accurate for triggers 2, 3 and 5 and wrong for 1, 4 and 6, whose surfaces are
+  `apps/intent-engine/src/schemas.py` + any new control-plane route schema (1), `package.json` (4) and
+  the FOLLOW-836 gate (6). One sentence, three wrong attributions.
+- **DG-3 (N/A — checked and clean, recording the negative).** Trigger 4 asks a human to notice a major
+  `@sentry/nextjs` bump. I checked whether an automated bumper could land one past that obligation:
+  **no `dependabot.yml`, no `renovate.json` anywhere in the repo.** A major bump can only arrive in a
+  human-authored PR, so trigger 4 is weaker than it looks but not hollow. Recorded so the next retro
+  does not re-derive it — and so that adding Dependabot later is understood to require a §2.7.1 edit.
+- **DG-4 (N/A — the DPIA header fix was handled well).** The header said `2.10` while a `2.11` row
+  existed and FOLLOW-739's §2.7 landed with no row at all. The worker corrected to `2.12` and added a
+  retroactive `2.11a` row **naming what happened** rather than silently renumbering. That is the right
+  handling of an append-only compliance log and should be the precedent.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected — and the RETRO-247 correction, stated as a correction
+
+- **RETRO-247 §5a is CORRECTED, and I verified the correction independently before recording it.**
+  RETRO-247 wrote: _"they land in Vercel function logs — an unscrubbed, vendor-retained sink"_, and
+  counted 114 `console.error` sites. The count is now 115 (`console.warn` adds 33) and the framing was
+  a leg short: those sites are **also** Sentry inputs. My verification was reading
+  `@sentry/node-core@10.50.0`'s default list at the cited line, not accepting the PR's citation. **The
+  correction is confirmed.** It does not weaken RETRO-247 — 247 flagged the class and recommended
+  widening AC(1) before dispatch, the PM did widen it, and this is the result of that widening working.
+- **⚠️ SEVERITY FLAG FOR THE PM (not an escalation — §5 is where I am required to put this).**
+  FOLLOW-838 is the only finding across RETRO-248 and RETRO-249 that concerns a **possible disclosure
+  of buyer chat text to a sub-processor** rather than a defective control. It is unassessed, not
+  proven. Two facts bound it: `SENTRY_DSN_INGEST` appears unset in prod (so the Sentry leg is inert by
+  environment), and I have not demonstrated that Modal's error body echoes the request. The PM owns
+  whether that combination warrants an `ESCALATIONS.md` entry; I am surfacing it with severity and
+  filing it P1, per my guardrails.
+- **FOLLOW-827 + FOLLOW-830 (IN_PROGRESS) — NOT invalidated.** Same measurement as RETRO-248 §5a: 0
+  files under `scripts/` or `.github/` across both merges, and `check-rule-i.sh` re-run by me on merged
+  `main` returns **192**, identical to baseline run `31035657108`. Two additional checks specific to
+  this PR, because it is the one that *could* have moved the count: it adds two new files, and both are
+  `*.test.ts`, which `check-rule-i.sh` excludes — confirmed by the unchanged total. FOLLOW-827's
+  symbol-set AC and FOLLOW-830's fixture list both stand verbatim. **One incidental datum for that
+  worker:** the two PRs registered **73** and **75** checks respectively (path-filtered jobs), which is
+  worth knowing when writing FOLLOW-830 AC(2)'s "zero checks registered → exit 2" fixture — the check
+  count is a function of the changed paths, not a constant.
+- **FOLLOW-836 — valid, correctly scoped, and now sits inside a larger class.** 836 is the
+  control-plane TypeScript half of FOLLOW-834's gate, P3, `depends_on: [FOLLOW-834]`. FOLLOW-838 is
+  **not** a duplicate and I checked before filing: 836 asks for a *grep-lint gate* over
+  `apps/control-plane/src`; 838 asks for an *assessment and fix of one named path* in `apps/ingest`
+  plus a two-line scope correction in two compliance docs. Cross-referenced, not merged — and if 836
+  is ever taken, its AC(1) "decide: extend the gate or record accepted" should be re-read as covering
+  three apps, not one.
+- **FOLLOW-833 / 834 / 835 / 837 — re-checked, none invalidated.** 833's three Python `print`s are
+  untouched. 834's Python scope is untouched. 835 gains the mechanism datum (the block is tool-scoped:
+  this worker landed its `lessons.md` entry via a shell heredoc where `Write`/`Edit` are denied — +29
+  lines in this diff prove it). 837 is sharpened in RETRO-248 §5a, not here.
+
+#### 5b. Future sprint tickets affected
+
+Every future ticket that adds a `console.error` to `apps/control-plane` or `apps/ingest` is now adding
+a Sentry input, and the two documents that say so are scoped to one of those apps. Until FOLLOW-838
+lands, the record under-describes the estate by one app. Separately, §2.7.1 is now the **single
+amendable location** for the control-plane Sentry posture (`ropa.md:498-500` says "Do not re-argue it
+here — amend §2.7.1"), which is good design and creates one dependency: any ticket that adds a
+`beforeSend`, raises a replay rate, or extends FOLLOW-836's gate to this app must edit §2.7.1 **in the
+same PR**, and `sentry-config.shape.test.ts` will make the first two fail loudly until it does. That
+coupling — a test that forces a compliance-doc edit — is new in this estate and worth copying.
+
+#### 5c. Contracts changed others rely on
+
+- **`dpia.md` §2.7.1 is now a cited contract**: five in-code comments point at it
+  (`sentry.{client,server,edge}.config.ts` and both new tests), all re-pointed from §2.7 to §2.7.1 in
+  the fix commit — a Rule Y precision I verified (§2.7 is FOLLOW-739's parent section; §2.7.1 carries
+  the decision and the triggers, and the comments instruct a future engineer to read it before adding
+  a hook, so pointing at the parent would have been a wrong pointer).
+- **The two new tests are contracts in the unusual direction: they assert the ACCEPTED state.** Both
+  headers say that a failure is not a regression to silence but a signal that §2.7.1 is stale. Anyone
+  who "fixes" a red there by weakening the assertion silently detaches the compliance record from the
+  code.
+- **`ropa.md` Vercel sub-processor row** — an open gap is now formally recorded against it (retention
+  figure not established anywhere in this repository, deliberately not guessed).
+
+#### 5d. Architectural assumptions affected
+
+**The estate has been reasoning about "log sinks" and "error-reporting sinks" as two categories, and
+for two of the four SDK families it runs they are one.** `@sentry/node-core` and `@sentry/cloudflare`
+both default `consoleIntegration()`; `sentry_sdk` (Python) does not capture `print()`; `@sentry/nextjs`
+inherits the node-core list. Every prior assessment in this chain — FOLLOW-738, 739, 811, 812 — treated
+them as independent, which is why the Modal stdout leg needed its own ticket after the Sentry leg was
+closed. This merge is the first artefact in the estate that states the coupling; it states it for one
+app. Second assumption, and it is the one FOLLOW-841 is really about: **"no buyer text enters this app"
+is being treated as a property the app can hold, when it is a property of a cross-runtime contract the
+app does not own and does not validate.** The control-plane cannot enforce that premise; only
+`schemas.py` plus a key-set gate can.
+
+### 6. New lesson candidates
+
+- **P-33 ("AN ASSERTION IS A PROPERTY OF SOMETHING INCIDENTAL — ENVELOPE/FLUSH ORDER, ARRAY POSITION,
+  MACHINE-DEPENDENT SEQUENCING — RATHER THAN OF THE THING UNDER TEST") — MINTED AT COUNT 1. NOT
+  PROMOTED.**
+  - **THIS RETRO (count 1)** — `sentry-capture-path.test.ts`'s `captured[0]` accessor plus the
+    whole-structure assertion that carried the same bug while passing. Caught by CI **pre-merge**, fixed
+    in the same PR, perturbation re-verified under both orderings.
+  - **The brief called the same-day coincidence with FOLLOW-832 "the strongest signal either retro has",
+    and the honest answer is that it is a signal about the estate, not a count of two.** Tested against
+    RETRO-247's own pre-specified P-32 bar, clause by clause, before deciding: clause (a) requires
+    _"a test asserting on a value the TEST constructs by copying a production expression."_ `captured` is
+    produced by the **real** Sentry client through a real transport — nothing is copied, nothing is
+    re-implemented. Clause (a) **fails**, and RETRO-247 wrote that clause (a) _"is what separates P-32
+    from ordinary missing coverage"_. So this is **not** a P-32 sighting, and merging the two shapes to
+    manufacture a count of 2 would be exactly the count-inflation RETRO-122 forbids and RETRO-247
+    declined for itself. **P-32 stays at count 2 / 1 prior (RETRO-248 §6); P-33 opens at count 1.**
+  - **Tested against the rule texts, not the titles (RETRO-246 methodology).** **Rule AL** (`:2929`,
+    "an assertion MUST be evaluated over the SAME region its consumer reads") is the closest relative
+    and genuinely adjacent for the `JSON.stringify(captured[0])` half — a whole-set claim evaluated over
+    one element. But AL's subject is the byte-range a **gate** scans over a file, its evidence is
+    grep-scope defects, and — decisively — AL's failure mode is stated as _"fails in the direction that
+    looks like a real finding"_, whereas this failed in the direction that looks like a **pass** on the
+    author's machine. Different failure direction, different subject. **Rule Z** governs cross-runtime
+    fixture provenance. **Rule G's amendment** governs shape changes escaping typecheck via loose test
+    data. None fires.
+  - **Second-sighting bar, pre-specified so the next retro TESTS rather than re-derives:** (a) an
+    assertion or accessor whose correctness depends on ordering, position, timing or count that the
+    code under test does not guarantee; (b) evidence that the dependency is real, not theoretical —
+    a green-here/red-there divergence, or a demonstrated reordering that flips the result; (c) the
+    assertion's written or implied scope is **wider** than what it evaluates (e.g. "the whole envelope"
+    while indexing one). Clause (c) is what keeps this from swallowing every `mock.calls[0]` in the
+    estate — RETRO-248 §4c TG-2 explains why that sweep is unfileable without it. **If the second
+    sighting is caught pre-merge by CI as this one was, record it and do NOT promote:** a defect the
+    existing pipeline catches does not need a rule, and saying so is the point of the bar.
+- **"A DOCUMENTED CONTROL THAT DOES NOT EXIST" (the FOLLOW-739 / FOLLOW-832 / FOLLOW-837 trio) — NO NEW
+  RULE, NO AMENDMENT. The trio does not share a home, and two thirds of it is already covered.**
+  Adjudicated against the texts, per the brief's instruction not to pattern-match on titles:
+  - **FOLLOW-739** — `ropa.md`/`dpia.md` asserted _"`beforeSend` hook with PII patterns regex;
+    verification: CI check on scrubber config"_ for artefacts that did not exist. **Rule Y fires**
+    verbatim under its 2026-06-26 broadened text (_"any named symbol, file, module … cited as fact in a
+    doc … MUST exist AND MUST perform … the behavior it is cited for"_).
+  - **FOLLOW-837** — `docs/runbooks/git-hooks.md:41-70` cites `commitlint.config.cjs` as enforcing a
+    scope list and a 10-char subject minimum. **Rule Y fires.** Its `:158-180` operator instruction and
+    always-passing verification command are additionally a **Rule AH** instance. Neither is a rule gap.
+  - **FOLLOW-832** — a docstring's claim about its **own** assertion. Rule Y does not fire (RETRO-247's
+    adjudication, re-derived independently in RETRO-248 §6). That is P-32, below threshold.
+  - **Verdict: two Rule Y compliance failures plus one open sub-threshold pattern is not a trio; it is
+    a rule that is not being run.** No promotion.
+  - **But one narrow, real, mechanisable gap is worth arming, and it is inside Rule Y itself.** Rule Y's
+    text was broadened in 2026-06-26 to cover "any doc", and its **Verification block was not** — it
+    greps `packages --include='*.ts'` only (`CONVENTIONS_PATCH.md:1478-1490`). Run verbatim it reports
+    **both** the `ropa.md` and the `git-hooks.md` instances **clean**, because it never opens a `.md` or
+    a config file. That is the RETRO-246 test ("would the existing Verification block, run verbatim,
+    report this clean? — it would have: a hole in a control, not a new pattern"), which is the precise
+    condition under which RETRO-246 amended Rule AI in place. **I am not amending, because this is the
+    first retro to record that specific hole and the bar is ≥2 priors.** Armed: the next retro that
+    finds a Rule-Y-shaped citation in a `docs/**` or config file which Rule Y's own Verification grep
+    would miss cites **RETRO-249 §6** as prior 1 and repairs the Verification block in place — a
+    Verification repair on an already-promoted rule whose text already covers the case, not a new letter.
+- **Meta-pattern (recorded, not a candidate) — routing quality, since CLAUDE.md asks retros to evaluate
+  it.** FOLLOW-811 was escalated Sonnet → **Opus** with the justification "a decision ticket whose
+  'accept residual risk' arm is a compliance posture." That call paid for itself twice: the
+  `consoleIntegration` finding required reading three vendor packages' compiled sources to establish a
+  default, and the decision to *not* build the hook required arguing from FOLLOW-739's failure mode
+  rather than from the ticket's literal AC. A Sonnet-tier execution of the same AC would plausibly have
+  shipped the `area=chat_intent` hook the ticket's wording invites — the control that can never fire.
+  **Recorded as evidence that the model-fit rule is doing work**, which the retro corpus has not
+  previously measured.
+
+### 7. Follow-ups
+
+- **FOLLOW-838:** `apps/ingest` has the same console→Sentry coupling (`@sentry/cloudflare` default) and
+  its chat-NLP dispatch interpolates 500 chars of an upstream error body — produced from a request
+  carrying raw buyer chat — into both a `console.error` and a `Sentry.captureException` value; assess,
+  fix or accept in writing, and correct the two compliance documents that state the coupling as an
+  `apps/control-plane` fact (backend-engineer, 4h, **P1**, **UNFROZEN** per the session-95 P1 carve-out)
+- **FOLLOW-841:** Give `dpia.md` §2.7.1 trigger 1 a mechanical half — a cross-runtime key-set parity
+  assertion between `schemas.py`'s `ChatIntentDimensions` and `ShadowChatIntentDimensions` (Rule Z),
+  an allowlist in `flattenIntentDimensions`, and a corrected "who checks the triggers" sentence
+  (compliance-engineer + backend-engineer, 3h, **P2**, FROZEN)
+
+**Prior-follow-up closure check (algorithm step 7), traced end-to-end rather than one hop:**
+
+- **FOLLOW-811 — CLOSED on all three ACs, and the gap DID move one hop — sideways, to another app.**
+  - **AC(1)** ("add a `beforeSend` **or** assess and document") — satisfied via the second branch.
+    Traced: **decision** (`dpia.md` §2.7.1, present at `:270`, verified on merged `main`) →
+    **propagation** (`ropa.md:498-500` defers to it explicitly and its revision row 2.8 records the same
+    facts) → **executable statement** (`sentry-config.shape.test.ts` pins the no-hook state,
+    `sentry-capture-path.test.ts` pins the unredacted state) → **execution** (`ci.yml:164` runs both).
+    Four hops, all confirmed by reading the artefact.
+  - **AC(2)** ("if you add a hook, pin it with a buyer-text sentinel test") — **not triggered**, and the
+    worker shipped the sentinel test anyway in the only honest form available: asserting the accepted
+    state. It also correctly took the half of `test_buyer_text_escapes_*` that RETRO-247 §5a said was
+    worth mirroring (drive the real capture path) and avoided the half FOLLOW-832 existed to fix — the
+    FOLLOW-832 worker's re-pointed pointer at `FOLLOW_UPS.md:26837-26838` did its job. **That is a
+    cross-ticket wire that actually connected**, and it is worth recording because most of this chain's
+    entries record the opposite.
+  - **AC(3)** ("no PII-pattern regex") — honoured; `grep -rn "beforeSend" apps/control-plane` returns
+    only the tests' `REDACTION_HOOK_KEYS` absence-assertions.
+  - **What is NOT closed:** the coupling's scope (§4a LG-1 → FOLLOW-838) and trigger 1's enforceability
+    (§4a LG-2 → FOLLOW-841). **Stated precisely: the decision did not move one hop — it is genuinely
+    decided and genuinely recorded. The FINDING moved one app over, and nobody looked there.**
+- **FOLLOW-739 (grandparent) — re-checked, still closed, and this PR strengthens it.** Its central
+  correction ("no PII-pattern matching exists anywhere in this estate") remains true and is now
+  additionally true *by test*: `REDACTION_HOOK_KEYS` absence is asserted against all three configs.
+- **FOLLOW-812 (sibling) — re-checked, unaffected.** No Python touched by this PR
+  (`git diff --name-only 1b758fe1^ 1b758fe1 | grep -c '\.py$'` → 0).
+
+### 8. Cross-references
+
+- **RETRO-247 §5a** — corrected here on the sub-processor count, and confirmed on the recommendation
+  that produced this ticket's best output (widen AC(1) beyond Sentry before dispatch). Its §5d
+  prediction that the class extends beyond `apps/intent-engine` is confirmed and extended: it named
+  three Python apps and Vercel; the fourth is `apps/ingest`, and that is the one carrying buyer text.
+- **RETRO-248 (this session's sibling)** — shares the merge day, the P-32/P-33 adjudication, and the
+  FOLLOW-827/830 cascading verdict (measured once, cited twice). Read together they answer the brief's
+  question about the same-day coincidence: same *family* of defect, different *patterns* under the
+  standing bar, and neither promotes.
+- **RETRO-246** — the "read the rule's text and ask whether running it verbatim would report this clean"
+  method, applied here to Rule AL (does not fire) and to Rule Y's Verification block (would report both
+  live instances clean — armed, not amended).
+- **RETRO-233 / FOLLOW-730** — built `schemas.py`'s `extraction_error` and `data_source` provenance,
+  which is the contract §2.7.1's premise re-verification leans on.
+- **Rule AO** — §4d DG-1's shape: a corrective edit inherits the scope of the thing it corrects.
+- **Rule Z** — the home of FOLLOW-841's key-set parity assertion; the existing FOLLOW-736 / ADR-0020 D2
+  fixture is the Rule Z artefact that already exists and pins the wrong axis.
+
+<!-- RETRO-249 (PR #679, FOLLOW-811, merge 1b758fe1, 9 files +660/-39 per gh pr view --json files AND git
+diff --numstat 1b758fe1^..1b758fe1). VERDICT: DECISION SOUND (no beforeSend; residual risk accepted in
+dpia.md §2.7.1 with six triggers), RECORD SCOPED ONE APP TOO NARROWLY. (1) LG-1 P1: consoleIntegration()
+verified BY ME at @sentry/node-core@10.50.0 build/cjs/sdk/index.js:41 — the RETRO-247 §5a correction is
+CONFIRMED (two sub-processors, not one) — but the SAME default is at @sentry/cloudflare@10.50.0
+build/cjs/sdk.js:29 and apps/ingest/src/observability.ts:71-82 passes no integrations override, so the
+coupling is an SDK-FAMILY fact while both compliance docs state it as an apps/control-plane fact. The app
+it reaches carries RAW BUYER CHAT: chat-nlp-dispatch.ts:69-73 POSTs message.content, and :86-92
+interpolates text.slice(0,500) of a non-2xx body into BOTH console.error (breadcrumb) and
+Sentry.captureException value, tagged area:'chat-nlp' which no existing hook design matches. NOT claimed
+as a proven leak (Modal 422 echo not demonstrated; SENTRY_DSN_INGEST appears unset so the leg is inert BY
+ENVIRONMENT not by control) -> FOLLOW-838 P1, UNFROZEN, flagged to the PM with severity in §5a, NOT
+escalated (guardrail). Python tier checked and NOT affected — sentry_sdk LoggingIntegration captures
+logging records, not print(). (2) TRIGGER ADVERSARIAL TEST, the brief's question: triggers 2 and 3 ARE
+genuinely mechanical — sentry-config.shape.test.ts:148-171 asserts the WHOLE key set + rates toBe(0) +
+sendDefaultPii toBe(false), the rates are LITERALS in sentry.client.config.ts:35-36, and ci.yml:164 runs
+the suite; §2.7.1 states plainly that 1/4/5/6 are review-time only. NOT a FOLLOW-739-class fiction. The
+hit is trigger 1: its stated owner ("whoever changes those files") is scoped to the 3 configs while its
+trigger surface is apps/intent-engine/src/schemas.py — readShadowChatIntent CASTS (chat-intent-cache.ts
+:147-156) and flattenIntentDimensions is a VALUE-PASSTHROUGH (:190-204), the FOLLOW-736/ADR-0020 parity
+fixture pins SIGNAL SEMANTICS not the KEY SET, and schemas.py:50-82's own docstring keeps the 11 string
+dims as deliberately unvalidated free str -> FOLLOW-841 P2. No dependabot/renovate exists (trigger 4
+weaker than it looks, recorded). WIRING: CHECK A clean (2 new files both *.test.ts + 3 framework
+entrypoints; corroborated by check-rule-i.sh = 192 unchanged); CHECK B clean, with the 4-of-6
+producer-without-consumer trigger asymmetry considered and REJECTED as HALF_WIRE_P with reasons.
+Breadcrumb-claim consistency checked across the doc set: dpia:297-298 + ropa:506-507 both DEPEND on the
+unchanged FOLLOW-739 "never modified on any path" statement — consistent; C-07 does not discuss it; no
+third doc still describes the sinks as separate. RULE VERDICTS: NO PROMOTION, NO AMENDMENT. P-33 MINTED at
+count 1 (assertion keyed on incidental ordering) and explicitly NOT merged with P-32 — clause (a) of
+RETRO-247's own bar fails, `captured` is produced by the real client, nothing is copied; merging them to
+reach 2 would be RETRO-122 count-inflation. The FOLLOW-739/832/837 "documented control that does not
+exist" trio: NO new rule — 739 and 837 are Rule Y compliance failures under its 2026-06-26 broadened
+text (837 additionally Rule AH), 832 is P-32; but Rule Y's VERIFICATION block still greps only
+`packages --include='*.ts'` while its TEXT covers "any doc", so run verbatim it reports both live
+instances clean — armed as a Verification-block repair (this = prior 1, RETRO-249 §6). CASCADE:
+FOLLOW-827 + FOLLOW-830 NOT invalidated (0 scripts//.github/ files; check-rule-i.sh re-run by me = 192 =
+baseline 31035657108; both new files are *.test.ts and excluded); note passed on the 73-vs-75 check count
+being path-filtered. FOLLOW-836 checked for duplication with 838 and cross-referenced, not merged.
+Routing recorded: the Sonnet->Opus escalation on this ticket demonstrably paid off. Filed FOLLOW-838, 841.
+QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
+.claude/agents/retrospective-analyst/lessons.d/RETRO-249.md per Rule AG. -->

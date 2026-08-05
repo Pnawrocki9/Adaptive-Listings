@@ -1,4 +1,26 @@
-# Status — 2026-08-05 (session 102 — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 dispatched to compliance-engineer)
+# Status — 2026-08-05 (session 103 — FOLLOW-812 closed DONE, PR #677 merged; retro dispatched; FOLLOW-811 next)
+
+## SESSION 103 (2026-08-05)
+
+**Resumed from session 102 — which had NOT been interrupted.** Checked with durable signals rather
+than a process snapshot (the session-102 retraction says exactly why
+`ps -eo … | grep 'claude --agent'` cannot see an Agent-tool subagent): `main` = `origin/main` =
+`3bc01b17`, tree clean, the `follow-812` worktree carrying zero uncommitted and zero unpushed work,
+no scratchpad log. Session 102 had simply reached its handoff point and stopped there. Nothing was
+recovered because nothing was stranded.
+
+**FOLLOW-812 → DONE.** CI re-verified on a fresh `scripts/gh-pr-checks-verified.sh 677` run before
+the merge (73 checks / 71 pass / 2 `Rule I` at 192 <= 192 against baseline run `30984103482` — a
+newer baseline than session 102's, re-asserted rather than inherited, exit 0). Piotr squash-merged
+at 18:09:18Z → `8423c804`. Merged code re-read on `main`: both stdout sites in
+`apps/intent-engine/src/nlp.py` — primary-failure and the multilingual-retry Rule S sibling — now
+print `type(exc).__name__` only. Worktree removed, branch deleted, `git worktree list` clean.
+
+**Retrospective (RETRO-247) dispatched** to `retrospective-analyst` (Opus) on the merged diff.
+
+**Still open for Piotr, carried from session 102 (unchanged, not re-filed):** user memory
+`project_ci_gate_landscape` says 3 pre-existing-red CI gates, merged docs say 1. Whether the 3→1
+narrowing is correct is FOLLOW-829 AC(1)'s job — "1" is still not ground truth.
 
 ## SESSION 102 (2026-08-05)
 

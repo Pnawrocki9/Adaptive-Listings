@@ -1,12 +1,31 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 102 (2026-08-05) — RETRO-246 landed, FOLLOW-827..831 filed, FOLLOW-812 READY_FOR_REVIEW (PR #677)
+## ▶️ START HERE — session 103 (2026-08-05) — FOLLOW-812 DONE (PR #677 merged `8423c804`), retro dispatched, FOLLOW-811 next
 
-### FOLLOW-812 — status: READY_FOR_REVIEW (PR #677, head `67ace522`)
+**Session 102 was not lost.** It ended cleanly at the READY_FOR_REVIEW handoff — verified by durable
+signals, not by `ps` (the trap the session-102 retraction below names): `main` = `origin/main` =
+`3bc01b17`, working tree clean, worktree `.claude/worktrees/follow-812` present but with **zero**
+uncommitted and **zero** unpushed commits, no scratchpad log, no agent process. Nothing to recover.
 
-**assigned_to:** compliance-engineer **model:** Sonnet **branch:**
-`compliance-engineer/FOLLOW-812-modal-stdout-chat-leak` **worktree:** `.claude/worktrees/follow-812`
-**validated_by:** main-loop session **ci_check_counter:** 2/5 **fix_iteration_counter:** 0/3
+**PR #677 merged by Piotr at 2026-08-05T18:09:18Z** (squash, `8423c804`, branch deleted). CI
+re-verified immediately before the merge with `scripts/gh-pr-checks-verified.sh 677` on a fresh run:
+73 checks, 71 pass, 2 `Rule I` at **192 <= 192** vs `main` baseline run `30984103482` (a different,
+newer baseline run than the 2/5 check recorded below — re-asserted, not carried over), exit 0.
+
+**Merged content verified on `main`, not taken on trust.** Both `print` sites in
+`apps/intent-engine/src/nlp.py` now emit `type(exc).__name__` only — the primary-failure branch
+(`extract_intent error … kind={kind}: {type(exc).__name__}`) and its Rule S sibling on the
+multilingual-retry arm
+(`extract_intent multilingual retry error … kind={retry_kind}: {type(exc).__name__}`). Worktree
+`.claude/worktrees/follow-812` removed, local branch deleted, `git worktree list` clean.
+
+### FOLLOW-812 — status: DONE
+
+**completed_at:** 2026-08-05 **merged_pr:** 677 **merge_commit:** `8423c804` **merged_by:** Piotr
+(squash) **assigned_to:** compliance-engineer **model:** Sonnet **branch:**
+`compliance-engineer/FOLLOW-812-modal-stdout-chat-leak` (deleted) **worktree:**
+`.claude/worktrees/follow-812` (removed) **validated_by:** main-loop session **ci_check_counter:**
+2/5 **fix_iteration_counter:** 0/3
 
 **CI:** `scripts/gh-pr-checks-verified.sh 677` (the FOLLOW-813 gate, dogfooded) → 73 checks, 71
 pass, 2 `Rule I` at **192 <= 192** vs `main`'s live count (run `30960460643`), exit 0.
@@ -164,7 +183,8 @@ no irreversible prod-touching action, no new third-party service or pricing/bill
 record-accuracy + judgment-bounded-by-explicit-options work, not the ambiguous cross-domain
 reasoning Opus is for.
 
-**FOLLOW-812 — status: IN_PROGRESS**
+**FOLLOW-812 — status: IN_PROGRESS** _(superseded — closed DONE in the session-103 block at the top
+of this file: PR #677 merged `8423c804`, 2026-08-05)_
 
 **assigned_to:** compliance-engineer **model:** Sonnet **started_at:** 2026-08-05 **branch:**
 `compliance-engineer/FOLLOW-812-modal-stdout-chat-leak`

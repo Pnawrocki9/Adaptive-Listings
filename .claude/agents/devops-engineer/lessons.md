@@ -269,3 +269,27 @@ self-test runs" are different claims, and only the second one is worth a green b
   should say explicitly: if a residual has no proof that can be latent in normal operation, record
   it as a proof-less bound inside a neighbouring entry and say so, rather than shipping a
   permanently- live entry that trains readers to ignore the register.
+
+## 2026-08-05 · FOLLOW-827 + FOLLOW-830 (PR #680)
+
+- **What I shipped:** `scripts/gh-pr-checks-verified.sh` — the repo's mandated merge gate — now
+  classifies `Rule I` by SYMBOL SET (parsed from each run's own `WARN: '<sym>' in <file>` lines)
+  instead of by violation COUNT, preflights its own hard dependencies (bash >= 4, PCRE grep, `gh`,
+  `gh auth status`) with exit 3, prints the ratcheting baseline's run id/head/timestamp, names `gh`
+  fetch failures distinctly from parse failures, and carries an 11-fixture hermetic `--self-test`
+  wired into `ci.yml` as the hard gate `pr-checks-gate-self-test`.
+- **Where a green badge could have hidden a broken run path:** in the gate itself, twice over, and
+  that is the whole lesson. `grep -oP` under `set -uo pipefail` WITHOUT `-e` does not fail — it
+  returns an EMPTY array, which this script then printed as `failing: 0` → "all checks green" → exit
+  0 over a FAILURE check. Every PR validated on a non-PCRE host would have been waved through by a
+  gate reporting success. The count comparison was the same shape one level up: a true statement
+  (`192 <= 192`) standing in for the statement anyone actually cared about (no NEW dead export).
+  Both were invisible because nothing exercised the script — it had zero tests while being the thing
+  four agent definitions and CLAUDE.md point at.
+- **A guardrail I'd add:** a script that is _the_ gate for a class of work must be red-first tested
+  before it is adopted as the gate, not after — and the specific mechanical rule is: any
+  `grep -oP`/`mapfile` whose EMPTY result would be interpreted as "nothing wrong" needs either
+  `set -e`, an explicit emptiness check, or a preflight. "Empty means clean" is the default reading
+  of every collection in shell, and it is the reading that turns a tool failure into a green badge.
+  Corollary worth codifying: when a fix and a self-test land together, commit the RED state
+  separately, so the assertion is provably measuring the defect and not its own assumptions.

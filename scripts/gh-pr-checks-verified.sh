@@ -64,6 +64,277 @@
 #   3  usage error / gh CLI error
 set -uo pipefail
 
+# ── Fixture seam (self-test only — Rule AM) ───────────────────────────────────
+# When GH_PR_CHECKS_FIXTURE_DIR is set, every network read below is served from
+# a file in that directory instead of from `gh`. It is set ONLY by this script's
+# own --self-test mode and never by a caller: it exists so the gate can be
+# exercised hermetically and offline against SYNTHESIZED check states. Driving
+# the self-test off a live PR would be neither reproducible nor capable of
+# containing the failure shapes that have to be pinned (a compensating-symbol
+# swap, a rate-limited log fetch, a grep with no PCRE).
+FIXTURE_DIR="${GH_PR_CHECKS_FIXTURE_DIR:-}"
+
+# Prints the check-state snapshot for the PR under test.
+fetch_snapshot() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    cat "$FIXTURE_DIR/snapshot.json"
+    return 0
+  fi
+  gh pr view "$PR" --repo "$REPO" --json statusCheckRollup -q "$SNAPSHOT_FILTER" 2>/dev/null
+}
+
+# fetch_job_log <job-id> <fixture-basename>
+# Prints a raw job log on stdout. Returns NON-ZERO, with the underlying
+# diagnosis on stderr, when the FETCH ITSELF failed. Keeping that distinct from
+# "the log came back fine but has no Rule I output in it" is what lets the
+# caller name which of the two happened (FOLLOW-827 AC(4)) instead of rendering
+# an auth failure, a 403 rate-limit and a format change as one unactionable WARN.
+fetch_job_log() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    if [[ ! -f "$FIXTURE_DIR/$2" ]]; then
+      echo "HTTP 403: API rate limit exceeded for installation (fixture: no $2)" >&2
+      return 1
+    fi
+    cat "$FIXTURE_DIR/$2"
+    return 0
+  fi
+  gh api "repos/$REPO/actions/jobs/$1/logs"
+}
+
+# Prints "<run-id>\t<head-sha>\t<created-at>" for main's LATEST COMPLETED ci.yml
+# run — the Rule I baseline. The head sha and timestamp are fetched in the same
+# call as the id purely so the baseline's identity can be PRINTED (AC(3)): a
+# baseline that silently ratchets forward is only invisible if nobody names it.
+fetch_main_run_meta() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    cat "$FIXTURE_DIR/main-run-meta.tsv"
+    return 0
+  fi
+  gh run list --repo "$REPO" --workflow ci.yml --branch main --status completed \
+    --json databaseId,headSha,createdAt -L 1 \
+    -q '.[0] | "\(.databaseId)\t\(.headSha)\t\(.createdAt)"'
+}
+
+# fetch_main_job_id <run-id>
+fetch_main_job_id() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    cat "$FIXTURE_DIR/main-job-id"
+    return 0
+  fi
+  gh api "repos/$REPO/actions/runs/$1/jobs" --paginate \
+    -q '.jobs[] | select(.name=="'"$RULE_I_NAME"'") | .id' | head -1
+}
+
+# ── Self-test mode ────────────────────────────────────────────────────────────
+if [[ "${1:-}" == "--self-test" ]]; then
+  echo "=== gh-pr-checks-verified.sh --self-test ==="
+  echo "Synthesized fixtures only (Rule AM). Nothing below reads a live PR's check"
+  echo "state; the whole mode runs offline."
+  echo ""
+
+  st_tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064  # expand $st_tmp now, not at trap time
+  trap "rm -rf '$st_tmp'" EXIT
+  st_out="$st_tmp/out.txt"
+  st_failures=0
+  st_passes=0
+  st_job_url="https://github.com/o/r/actions/runs/30000/job"
+
+  # _st_fixture <name> — makes a fixture dir carrying the baseline metadata every
+  # Rule I fixture needs, and echoes its path.
+  _st_fixture() {
+    local d="$st_tmp/$1"
+    mkdir -p "$d"
+    printf '4242\tdeadbeefcafe1234\t2026-08-05T10:00:00Z\n' > "$d/main-run-meta.tsv"
+    echo "777" > "$d/main-job-id"
+    echo "$d"
+  }
+
+  # _st_rule_i_log <path> <count> <symbol@file>...
+  # Writes a synthetic Rule I job log in check-rule-i.sh's real output shape,
+  # including the ISO timestamp prefix GitHub puts on every raw log line (so the
+  # parser is pinned against the format it actually meets, not a tidied one).
+  _st_rule_i_log() {
+    local path="$1" count="$2"
+    shift 2
+    : > "$path"
+    local s
+    for s in "$@"; do
+      printf "2026-08-05T10:00:01.1234567Z WARN: '%s' in %s — zero non-test importers\n" \
+        "${s%%@*}" "${s##*@}" >> "$path"
+    done
+    printf '2026-08-05T10:00:09.1234567Z Violations found    : %s\n' "$count" >> "$path"
+  }
+
+  # Runs the gate against a fixture dir, returning its exit code. A PATH override
+  # (used by the degraded-grep fixture) is honoured via ST_PATH_OVERRIDE.
+  _st_run() {
+    local dir="$1"
+    local rc=0
+    if [[ -n "${ST_PATH_OVERRIDE:-}" ]]; then
+      PATH="$ST_PATH_OVERRIDE" GH_PR_CHECKS_FIXTURE_DIR="$dir" \
+        bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
+    else
+      GH_PR_CHECKS_FIXTURE_DIR="$dir" \
+        bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
+    fi
+    return "$rc"
+  }
+
+  _st_fail() {
+    st_failures=$((st_failures + 1))
+    echo "--- gate output ---"
+    cat "$st_out"
+    echo "-------------------"
+  }
+
+  # _st_expect <label> <expected-rc> <fixture-dir> [required-substring]
+  # Asserts the SPECIFIC exit code, never merely non-zero, and (when given) that
+  # the verdict was reached for the stated reason.
+  _st_expect() {
+    local label="$1" want_rc="$2" dir="$3" needle="${4:-}"
+    local rc=0
+    _st_run "$dir" || rc=$?
+    if [[ "$rc" -ne "$want_rc" ]]; then
+      echo "SELF-TEST FAIL: $label"
+      echo "  expected exit $want_rc, got $rc"
+      _st_fail
+      return 0
+    fi
+    if [[ -n "$needle" ]] && ! grep -qF -- "$needle" "$st_out"; then
+      echo "SELF-TEST FAIL: $label"
+      echo "  exited $rc as expected, but never said '$needle' — the right verdict"
+      echo "  for the wrong reason is not a pass."
+      _st_fail
+      return 0
+    fi
+    st_passes=$((st_passes + 1))
+    echo "OK: self-test PASSED — $label"
+  }
+
+  st_rule_i_entry='{"name":"Rule I — wired-or-dead check","state":"FAILURE","url":"'"$st_job_url"'/9"}'
+  st_lint_ok='{"name":"Lint","state":"SUCCESS","url":"'"$st_job_url"'/1"}'
+  st_tc_ok='{"name":"Typecheck","state":"SUCCESS","url":"'"$st_job_url"'/2"}'
+  st_tc_bad='{"name":"Typecheck","state":"FAILURE","url":"'"$st_job_url"'/2"}'
+
+  # ── F1: every check green → 0 ───────────────────────────────────────────────
+  st_d="$(_st_fixture all-green)"
+  echo "[$st_lint_ok,$st_tc_ok]" > "$st_d/snapshot.json"
+  _st_expect "all checks green exits 0" 0 "$st_d" "RESULT: all checks green."
+
+  # ── F2: one failure that is not on the pre-existing-red list → 1 ────────────
+  st_d="$(_st_fixture new-failure)"
+  echo "[$st_lint_ok,$st_tc_bad]" > "$st_d/snapshot.json"
+  _st_expect "an undocumented failing check exits 1" 1 "$st_d" \
+    "not on the documented pre-existing-red list"
+
+  # ── F3: Rule I, PR symbol set IDENTICAL to main → 0 (accepted, not hidden) ──
+  st_d="$(_st_fixture rule-i-equal)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_expect "Rule I with the same symbols as main exits 0" 0 "$st_d" \
+    "pre-existing-red"
+
+  # ── F4: Rule I, PR is a strict SUPERSET of main → 1 ────────────────────────
+  st_d="$(_st_fixture rule-i-worse)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i.log" 3 'alpha@packages/a/src/one.ts' \
+    'beta@packages/a/src/two.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_expect "Rule I with a NEW symbol on top of main exits 1" 1 "$st_d" \
+    "NEW Rule I violation"
+
+  # ── F5: THE FOLLOW-827 CASE ────────────────────────────────────────────────
+  # Equal counts, different symbol sets: the PR deleted one dead export (beta)
+  # and introduced another (gamma). 2 == 2, so a COUNT comparison accepts it and
+  # exits 0. FOLLOW-821 AC(1) forbids exactly that. This must exit 1.
+  st_d="$(_st_fixture rule-i-swap)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_expect "Rule I compensating swap (equal counts, different symbols) exits 1" 1 "$st_d" \
+    "NEW Rule I violation"
+
+  # ── F6: no checks registered at all → 2 (timeout), never 0 ─────────────────
+  st_d="$(_st_fixture no-checks)"
+  echo "[]" > "$st_d/snapshot.json"
+  _st_expect "zero registered checks times out with 2, never 0" 2 "$st_d" "TIMEOUT"
+
+  # ── F7: a grep with no PCRE support → 3, never a green verdict ─────────────
+  # THE FOLLOW-830 CASE. `grep -oP` is a GNU extension; on macOS/BSD/busybox it
+  # errors out, and under `set -uo pipefail` (no -e) that used to leave the
+  # failure list EMPTY and print "all checks green" over a failing check.
+  st_nopcre="$st_tmp/nopcre"
+  mkdir -p "$st_nopcre"
+  st_real_grep="$(command -v grep)"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'for a in "$@"; do'
+    echo '  case "$a" in'
+    echo "    -*P*) echo \"grep: invalid option -- 'P'\" >&2; exit 2 ;;"
+    echo '  esac'
+    echo 'done'
+    echo "exec $st_real_grep \"\$@\""
+  } > "$st_nopcre/grep"
+  chmod +x "$st_nopcre/grep"
+  st_d="$(_st_fixture nopcre)"
+  echo "[$st_lint_ok,$st_tc_bad]" > "$st_d/snapshot.json"
+  ST_PATH_OVERRIDE="$st_nopcre:$PATH"
+  _st_expect "a grep without -P support exits 3, never 'all checks green'" 3 "$st_d" \
+    "PREFLIGHT"
+  unset ST_PATH_OVERRIDE
+
+  # ── F8: the Rule I log fetch itself fails → 1, named as a FETCH failure ─────
+  st_d="$(_st_fixture rule-i-fetch-fail)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  # (no pr-rule-i.log in the fixture → the seam reports a 403 like gh would)
+  _st_expect "an unfetchable Rule I log exits 1 and names the fetch failure" 1 "$st_d" \
+    "could not FETCH"
+
+  # ── F9: an accepted Rule I must not mask a genuine failure beside it ───────
+  st_d="$(_st_fixture mixed)"
+  echo "[$st_lint_ok,$st_rule_i_entry,$st_tc_bad]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/main-rule-i.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "an accepted Rule I alongside a new failure still exits 1" 1 "$st_d" \
+    "GENUINE FAILURES"
+
+  # ── F10: this file's mode is 755 (FOLLOW-830 AC(4) / FOLLOW-831) ───────────
+  # Docs and four agent definitions invoke gates bare; a 100644 gate breaks the
+  # documented invocation on the day someone drops the `bash ` prefix.
+  st_mode="$(stat -c '%a' "$0" 2>/dev/null || stat -f '%Lp' "$0" 2>/dev/null || echo '')"
+  if [[ "$st_mode" == "755" ]]; then
+    st_passes=$((st_passes + 1))
+    echo "OK: self-test PASSED — this script's filesystem mode is 755"
+  else
+    st_failures=$((st_failures + 1))
+    echo "SELF-TEST FAIL: filesystem mode is '${st_mode:-unreadable}', expected 755."
+    echo "  Fix with: chmod 755 $0 && git update-index --chmod=+x $0"
+  fi
+
+  st_git_mode="$(git ls-files -s -- "$0" 2>/dev/null | awk '{print $1}')"
+  if [[ -z "$st_git_mode" ]]; then
+    echo "NOTE: git index mode unavailable here (not a git checkout, or \$0 is not a"
+    echo "  tracked path) — the filesystem assertion above is the binding one."
+  elif [[ "$st_git_mode" == "100755" ]]; then
+    st_passes=$((st_passes + 1))
+    echo "OK: self-test PASSED — this script's git index mode is 100755"
+  else
+    st_failures=$((st_failures + 1))
+    echo "SELF-TEST FAIL: git index mode is $st_git_mode, expected 100755."
+    echo "  A chmod alone does not stick: git update-index --chmod=+x $0"
+  fi
+
+  echo ""
+  if [[ "$st_failures" -gt 0 ]]; then
+    echo "RESULT: --self-test FAILED — $st_failures fixture(s) failed, $st_passes passed."
+    exit 1
+  fi
+  echo "RESULT: --self-test passed — $st_passes fixtures."
+  exit 0
+fi
+
 usage() {
   echo "Usage: $0 <pr-number> [--max-wait-seconds N] [--interval-seconds N]" >&2
   exit 3
@@ -91,15 +362,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v gh >/dev/null 2>&1 || {
-  echo "ERROR: gh CLI not found on PATH" >&2
-  exit 3
-}
+if [[ -n "$FIXTURE_DIR" ]]; then
+  REPO="fixture/repo"
+else
+  command -v gh >/dev/null 2>&1 || {
+    echo "ERROR: gh CLI not found on PATH" >&2
+    exit 3
+  }
 
-REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
-if [[ -z "$REPO" ]]; then
-  echo "ERROR: could not resolve repo via 'gh repo view'" >&2
-  exit 3
+  REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
+  if [[ -z "$REPO" ]]; then
+    echo "ERROR: could not resolve repo via 'gh repo view'" >&2
+    exit 3
+  fi
 fi
 
 # Name of the one currently-documented pre-existing-red check in this repo
@@ -123,7 +398,7 @@ elapsed=0
 settled_snapshot=""
 
 while :; do
-  snapshot="$(gh pr view "$PR" --repo "$REPO" --json statusCheckRollup -q "$SNAPSHOT_FILTER" 2>/dev/null)"
+  snapshot="$(fetch_snapshot)"
   if [[ -z "$snapshot" ]]; then
     echo "ERROR: 'gh pr view' failed for PR #$PR" >&2
     exit 3
@@ -195,14 +470,14 @@ for entry in "${failure_names[@]}"; do
       continue
     fi
 
-    pr_violations="$(gh api "repos/$REPO/actions/jobs/${pr_job_id}/logs" 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
+    pr_violations="$(fetch_job_log "$pr_job_id" pr-rule-i.log 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
 
-    main_run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --status completed --json databaseId -L 1 -q '.[0].databaseId' 2>/dev/null)"
+    main_run_id="$(fetch_main_run_meta 2>/dev/null | cut -f1)"
     main_violations=""
     if [[ -n "$main_run_id" ]]; then
-      main_job_id="$(gh api "repos/$REPO/actions/runs/${main_run_id}/jobs" --paginate -q '.jobs[] | select(.name=="'"$RULE_I_NAME"'") | .id' 2>/dev/null | head -1)"
+      main_job_id="$(fetch_main_job_id "$main_run_id" 2>/dev/null)"
       if [[ -n "$main_job_id" ]]; then
-        main_violations="$(gh api "repos/$REPO/actions/jobs/${main_job_id}/logs" 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
+        main_violations="$(fetch_job_log "$main_job_id" main-rule-i.log 2>/dev/null | grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1)"
       fi
     fi
 

@@ -99,7 +99,7 @@
 #   scripts/gh-pr-checks-verified.sh --self-test
 #
 # SELF-TEST
-#   `--self-test` runs 19 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
+#   `--self-test` runs 20 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
 #   check state, and fully offline) through the real code path via a fixture seam:
 #   all-green -> 0; an undocumented failing check -> 1; Rule I with main's exact symbol
 #   set -> 0; Rule I with a new symbol on top of main -> 1; Rule I with EQUAL COUNTS but a
@@ -115,8 +115,10 @@
 #   never 1, and the SAME fixture with that symbol on BOTH runs -> 1 (the FOLLOW-855
 #   discrimination pair); a PR that edits scripts/check-rule-i.sh -> 4; a GREEN branch-head
 #   Rule I run used as evidence -> 4; the same PR flipping 4 -> 0 when main's baseline
-#   catches up (the P-35 clause-(b) demonstration); plus the fixture COUNT itself, and this
-#   file's own mode == 755 on disk and in the git index.
+#   catches up (the P-35 clause-(b) demonstration); a Rule I job that FAILED CLOSED, whose
+#   own diagnostic prose quotes "Violations found: 0", -> 3 rather than an empty symbol set
+#   accepted as clean; plus the fixture COUNT itself, and this file's own mode == 755 on
+#   disk and in the git index.
 #
 #   Every fixture was written RED-FIRST and observed failing against the script version
 #   that lacked its fix — for FOLLOW-827/830 the compensating-swap and no-PCRE fixtures
@@ -273,9 +275,31 @@ preflight_dependencies() {
 # rather than as a clean 0. A cross-script parity fixture (running the real
 # check-rule-i.sh and feeding its output to these two functions) is FOLLOW-848.
 #
+# Strips the ISO timestamp GitHub prefixes onto every raw job-log line, so the two
+# parsers below can ANCHOR at the start of the producer's own line. Anchoring is not
+# cosmetic — see the hazard note in each.
+_strip_log_timestamp() {
+  sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z[[:space:]]*//'
+}
+
 # Reads a Rule I job log on stdin; prints the trailing "Violations found: N" count.
+#
+# ANCHORED AT LINE START AND LINE END, and that is load-bearing. check-rule-i.sh emits
+# the real verdict as `echo "Violations found    : $VIOLATIONS"` at column 0, but its
+# exit-3 DIAGNOSTICS quote the same phrase inside prose, twice:
+#   "  script runs without 'set -e' the result would be 'Violations found: 0'"
+#   "  The symbol extractor returned nothing at all. Reporting 'Violations found: 0'"
+# Both go to stderr, and a GitHub job log interleaves stderr into the same bytes this
+# gate downloads. Unanchored, this function read '0' out of that prose — so a Rule I
+# job that FAILED CLOSED with exit 3 reached the gate as "count 0, zero symbols", which
+# trips neither the empty-count guard nor the count-without-symbols guard, compares an
+# empty set against main's baseline, and is accepted as pre-existing-red: exit 0 over a
+# Rule I job that never ran. Verified against the real post-FOLLOW-842 producer with a
+# non-PCRE grep on PATH. The producer's mitigation (print no count line when it cannot
+# render a verdict) is correct and necessary but not sufficient on its own, because the
+# producer must still be able to TALK about the line it is declining to print.
 rule_i_count_from_log() {
-  grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1
+  _strip_log_timestamp | grep -oP '^Violations found\s*:\s*\K[0-9]+(?=\s*$)' | tail -1
 }
 
 # Reads a Rule I job log on stdin; prints one "<symbol> @ <file>" line per
@@ -285,8 +309,11 @@ rule_i_count_from_log() {
 # prefixed by the ISO timestamp GitHub adds to every raw log line, hence the
 # unanchored match. This per-symbol identity is what makes the baseline
 # comparison a SET comparison rather than a count threshold (FOLLOW-827 AC(1)).
+# Anchored for the same reason as the count above: the producer emits real WARN lines at
+# column 0, while its own self-test fixtures and diagnostics quote WARN-shaped text inside
+# other sentences. A symbol harvested out of prose is a phantom violation.
 rule_i_symbols_from_log() {
-  grep -oP "WARN: '\K[^']+' in \S+" | sed "s/' in / @ /" | LC_ALL=C sort -u
+  _strip_log_timestamp | grep -oP "^WARN: '\K[^']+' in \S+" | sed "s/' in / @ /" | LC_ALL=C sort -u
 }
 
 # iso_age_seconds <iso-8601-timestamp> — seconds since that instant, or "" when
@@ -573,7 +600,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # below are deliberately NOT in this number, because the git-index one is
   # legitimately unavailable outside a checkout and that is exactly the
   # legitimate degradation that made the old total untrustworthy as an assertion.
-  ST_EXPECTED_FIXTURES=19
+  ST_EXPECTED_FIXTURES=20
   st_expect_ran=0
 
   # Every fixture dir is stamped "now", so no assertion below can start drifting
@@ -904,6 +931,30 @@ if [[ "${1:-}" == "--self-test" ]]; then
   printf 'cancelled\t%s\n' "$st_now" > "$st_d/job-meta-9.tsv"
   _st_expect "a 404 on a cancelled job is diagnosed as cancellation, not log expiry" 3 "$st_d" \
     "was cancelled, so it never produced a log" "NOT log expiry"
+
+  # ── F21: a Rule I job that FAILED CLOSED must not read as a clean zero ────
+  # The cross-script contract, driven from the consumer side. Post-FOLLOW-842 the
+  # producer exits 3 and prints NO "Violations found" line when it cannot render a
+  # verdict — but its diagnostic PROSE quotes that phrase, verbatim, to explain what
+  # it is refusing to print. The log body below is byte-for-byte what the real
+  # scripts/check-rule-i.sh emits with a non-PCRE grep on PATH (captured, not
+  # invented). Unanchored, the count parser read '0' out of line 7, which trips
+  # neither the empty-count guard nor the count-without-symbols guard, compares an
+  # EMPTY symbol set against main's baseline, and accepts it: exit 0 over a Rule I
+  # job that never ran. The gate must call this an unparseable log instead.
+  st_d="$(_st_fixture rule-i-failed-closed)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  {
+    echo "2026-08-06T09:00:00.1234567Z ERROR: PREFLIGHT FAILED — this 'grep' cannot run the symbol extractor."
+    echo "2026-08-06T09:00:00.1234568Z   Probe 'export const alphaProbe = 1' | grep -oP ...\\K... returned"
+    echo "2026-08-06T09:00:00.1234569Z   '', expected 'alphaProbe'. PCRE (-P) with \\K is a GNU grep"
+    echo "2026-08-06T09:00:00.1234570Z   Without it EVERY symbol extraction returns nothing, and because this"
+    echo "2026-08-06T09:00:00.1234571Z   script runs without 'set -e' the result would be 'Violations found: 0'"
+    echo "2026-08-06T09:00:00.1234572Z   and 'Rule I passed' over a repo full of dead exports."
+  } > "$st_d/pr-rule-i-9.log"
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "a failed-closed Rule I log is unparseable, not a clean zero" 3 "$st_d" \
+    "no 'Violations found' line" "RESULT: UNDETERMINED"
 
   # ── F10: this file's mode is 755 (FOLLOW-830 AC(4) / FOLLOW-831) ───────────
   # Docs and four agent definitions invoke gates bare; a 100644 gate breaks the

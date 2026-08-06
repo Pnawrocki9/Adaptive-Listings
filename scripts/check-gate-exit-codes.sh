@@ -58,6 +58,12 @@ ROUTING_CONSUMERS=(
 declare -A NON_ROUTING=(
   ["$GATE"]="the gate itself — the source of the contract"
   ["scripts/check-gate-exit-codes.sh"]="this checker"
+  # Added when PR #684 (FOLLOW-842) merged and this cross-check caught it unprompted:
+  # check-rule-i.sh names the gate in its OUTPUT FORMAT CONTRACT header, but it is the
+  # gate's PRODUCER, not a consumer — it never reads the gate's exit code. Its half of
+  # that contract is pinned by the fixtures in gh-pr-checks-verified.sh --self-test, not
+  # by the exit-code marker.
+  ["scripts/check-rule-i.sh"]="the Rule I producer; names the gate for the log-format contract, routes on no exit code of it"
   [".github/workflows/ci.yml"]="invokes --self-test only; never reads a PR verdict"
   ["CLAUDE.md"]="names the exit-0 precondition in prose; enumerates no other code and issues no routing instruction"
   [".claude/agents/devops-engineer/lessons.md"]="append-only lessons log"

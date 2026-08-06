@@ -231,7 +231,14 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-857 — delivered as PR #686 (CI validation in progress at time of writing)
+### FOLLOW-857 — status: READY_FOR_REVIEW (PR #686, head `b3c7fe09`)
+
+**CI verified:** 192/192 symbol-set match vs baseline run `31078015081`, `New on this PR: 0`,
+exit 0. The new `Rule H gate self-test (FOLLOW-857)` job passed in 9s and its log was pulled to
+prove it ran rather than merely existed — 6 fixtures, including the two shared with Rule I. **Note
+the worker made about its own green `rule-h` job: it proves nothing on this PR**, because the gate
+is diff-scoped and this PR adds no `src/lib/*.ts`, so Pattern 2 evaluated zero symbols and would
+have been green with the bug still in. That asymmetry is written into the new job's comment block.
 
 **AC(4) answered, and the answer changes the sequencing rather than confirming the fear.** The
 84-day backlog is **24 Pattern-2 violations** over the 46 `src/lib/*.ts` files added since

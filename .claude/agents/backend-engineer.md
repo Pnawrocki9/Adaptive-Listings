@@ -85,7 +85,11 @@ Zod everywhere, Stripe billing, Upstash Redis, Redpanda Cloud, Vitest + Supertes
 
 - `pnpm exec prettier --write <changed-files>` on EVERY file you edit, every time.
 - After final push: `scripts/gh-pr-checks-verified.sh <pr>` and require exit 0; don't hand off until
-  green. NOT `gh pr checks --watch` — it can exit 0 while checks are failing [FOLLOW-813].
+  green. NOT `gh pr checks --watch` — it can exit 0 while checks are failing [FOLLOW-813]. Only exit
+  0 is green; `1` is your PR's failure, but `2`/`3`/`4` are not — the full exit-code table (and
+  which codes must NOT consume a fix iteration) is in `docs/AGENT_WORKFLOW.md` "CI verification" and
+  `CONVENTIONS_PATCH.md` Rule A. Do not re-derive it from memory.
+  <!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
 
 <evidence_requirements> In every PR description, paste:
 

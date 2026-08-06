@@ -29,8 +29,10 @@ can appear on the check list well after `--watch`'s polling loop has already dec
 it knows about has settled. `scripts/gh-pr-checks-verified.sh` polls until it observes two
 consecutive, identical, fully-settled snapshots (immune to that race), re-asserts pass/fail counts
 from a fresh read, and dynamically classifies any failure against the documented pre-existing-red
-gates (currently only `Rule I`, compared against `main`'s own live violation count — never a
-hardcoded number, so a worsening baseline is never misclassified as accepted) before exiting.
+gates (currently only `Rule I`, compared by SYMBOL SET against `main`'s own newest usable baseline
+run — never against a count and never against a hardcoded number, because a count comparison accepts
+a PR that deletes one dead export and introduces another [FOLLOW-821 AC(1) / FOLLOW-827]) before
+exiting.
 
 **Verification:**
 
@@ -39,10 +41,24 @@ scripts/gh-pr-checks-verified.sh <pr-number>
 # Exit 0 = safe to mark READY_FOR_REVIEW. Exit 1 = genuine failure. Exit 2 = timed out — do not
 # proceed either way; investigate.
 # Exit 3 = the gate could not run or could not complete its comparison (preflight, refused fixture
-# seam, unreadable Rule I log, or no usable baseline in the look-back window). NOT a green and NOT
-# a red: re-run after fixing the named tooling problem, and do not increment fix_iteration_counter
-# against the worker for it [FOLLOW-846].
+# seam, unreadable Rule I log, no usable baseline in the look-back window, or a check snapshot the
+# gate's own parser cannot read [FOLLOW-856]). NOT a green and NOT a red: re-run after fixing the
+# named tooling problem, and do not increment fix_iteration_counter against the worker for it
+# [FOLLOW-846].
+# Exit 4 = NOT ATTRIBUTABLE: the comparison completed, but a Rule I symbol is not this PR's —
+# main moved under it (the symbol is on only some of the PR's own check-runs, i.e. on the merge
+# ref and not the branch head), or the PR edits scripts/check-rule-i.sh so the two sides came from
+# different extractors [FOLLOW-855]. Also NOT a green and NOT a red, and likewise never increments
+# fix_iteration_counter: re-run once a newer main run has completed, or adjudicate by hand.
+# Precedence when several categories are present: 3 > 1 > 4 > 0.
 ```
+
+<!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
+That marker line is machine-checked by `scripts/check-gate-exit-codes.sh`, a hard gate in `ci.yml`:
+it reads the contract out of `gh-pr-checks-verified.sh` itself and fails when any routing consumer
+disagrees, so no exit code can be added or re-meant without every consumer being edited in the same
+PR (FOLLOW-854).
 
 ---
 

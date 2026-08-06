@@ -207,12 +207,30 @@ Exit code `0` means every non-success check is a verified pre-existing-red gate 
 READY_FOR_REVIEW. Exit code `1` means a genuine failure. Exit code `2` means it timed out waiting
 for checks to settle (never treat that as success). Exit code `3` means the gate could not run or
 could not complete its comparison — a usage error, a failed dependency preflight, a refused fixture
-seam, or a **tooling failure** (an unfetchable/unparseable Rule I log, or no usable baseline in the
-look-back window). `3` is neither a green nor a red: it means the gate never got to look, so **do
-not** mark READY_FOR_REVIEW, and equally **do not** send the ticket back to its worker or increment
-`fix_iteration_counter` on it — fix the named tooling problem and re-run. This is the
-pm-orchestrator's 5b validation sub-step (`.claude/agents/pm-orchestrator.md`); the old two-command
-`--watch` + `jq` sequence there is superseded by this single script.
+seam, or a **tooling failure** (an unfetchable/unparseable Rule I log, no usable baseline in the
+look-back window, or a check snapshot whose serialization the gate's own parser cannot read — the
+FOLLOW-856 false-green class). `3` is neither a green nor a red: it means the gate never got to
+look, so **do not** mark READY_FOR_REVIEW, and equally **do not** send the ticket back to its worker
+or increment `fix_iteration_counter` on it — fix the named tooling problem and re-run. Exit code `4`
+means **NOT ATTRIBUTABLE**: the gate completed its comparison, and the only thing between the PR and
+a green is a Rule I violation symbol that is not this PR's — either `main` moved underneath it (the
+symbol is present on only some of the PR's own Rule I check-runs, i.e. on the merge ref and not the
+branch head) or the PR edits `scripts/check-rule-i.sh`, so the PR side and `main`'s baseline were
+produced by different extractors (FOLLOW-855). `4` is likewise neither a green nor a red: do not
+mark READY_FOR_REVIEW, and do not send the ticket back or increment `fix_iteration_counter` — no
+worker can delete a dead export that another PR merged into `main`. Re-run once a newer `main` run
+has completed (the baseline walk then picks the symbol up and the same PR exits `0`), or adjudicate
+the named symbols against the diff by hand. Precedence when several categories are present: `3` >
+`1` > `4` > `0`. This is the pm-orchestrator's 5b validation sub-step
+(`.claude/agents/pm-orchestrator.md`); the old two-command `--watch` + `jq` sequence there is
+superseded by this single script.
+
+<!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
+The marker line above is machine-checked: `scripts/check-gate-exit-codes.sh` (a hard gate in
+`ci.yml`) reads the contract out of the gate script itself and fails CI when any routing consumer's
+marker disagrees, so an exit code cannot be added or re-meant without every consumer being edited in
+the same PR (FOLLOW-854).
 
 ## Branch-first worker discipline (mandatory — FOLLOW-448 / RETRO-146)
 

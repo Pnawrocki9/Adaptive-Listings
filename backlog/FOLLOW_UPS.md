@@ -29380,3 +29380,36 @@ new stubs), RE-ARMED with a second harm-based clause at count 1 and the exact am
 P-37 MINTED at count 1 (an `||` fallback that PRINTS, guarding a pipeline that also prints, corrupts the
 value precisely in the failure case) with a 3-clause bar; P-36 tested and HELD at count 1 (near-miss refused);
 P-35 held at count 1. -->
+
+---
+
+## FOLLOW-860 — Discharge P-35 clause (b) live: observe the merge gate flip its verdict on an unchanged PR head
+
+source_retro: RETRO-252 (P-35), carried by FOLLOW-855 source_ticket: FOLLOW-855 recommended_sprint:
+next recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+RETRO-252 minted **P-35** (a gate whose verdict depends on an artefact no PR controls) and left
+clause (b) — "demonstrated non-determinism" — undischarged, because every worker so far has **driven
+the mechanism without observing a verdict flip**. Two of them said so explicitly rather than
+claiming a reproduction they did not have, which is why the clause is still honest.
+
+**It cannot be discharged by a worker**, because the observation requires a merge and workers are
+forbidden to merge. That is the whole reason this is its own ticket rather than an AC on FOLLOW-855.
+
+**Procedure:** pin one open PR at a fixed head sha; run `scripts/gh-pr-checks-verified.sh <pr>` and
+record the verdict verbatim; let a merge land that introduces a new dead export on `main`; re-run at
+**the same head sha** and record the second verdict. A flip with the PR side byte-identical is the
+observation. It is cheap and opportunistic — any merge session can do it — and it either discharges
+clause (b) or falsifies the pattern, both of which are worth having.
+
+**Also folded in, both deferred by a PM ruling in session 103 rather than left implicit:** decide
+whether `CLAUDE.md` should join the gate's `ROUTING_CONSUMERS` list (it currently names only the
+exit-0 precondition, which is still true), and whether the
+`shellcheck (Sentry gate family, FOLLOW-769)` job should be renamed now that its contents are
+broader than its label — the rename was **declined** in session 103 because a check-run rename can
+drop a required status check and neither the orchestrator nor the worker can read this repo's
+branch-protection configuration. Whoever takes this should check that configuration first.
+
+cross_ref: [RETRO-252 (P-35); FOLLOW-855; FOLLOW-847 (remaining doc scope);
+`scripts/gh-pr-checks-verified.sh`; `scripts/check-gate-exit-codes.sh`]

@@ -231,7 +231,58 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-854 + 855 + 856 — status: IN_PROGRESS (PR #685, rebase round)
+### FOLLOW-854 + 855 + 856 — status: READY_FOR_REVIEW (PR #685, head `c488dfa2`)
+
+**Post-rebase CI:** 77 checks, 75 pass, 2 `Rule I` (union 192/192 vs baseline run `31078015081`),
+`New on this PR: 0`, exit 0. `mergeable=MERGEABLE`.
+
+### ⚠️ The rebase was not a no-op — it uncovered a live false green already on `main`
+
+Re-verifying the cross-script contract after the rebase (which is exactly why I demanded it be
+re-run _after_, not before) turned up a **third false-green path, introduced by PR #684 itself** and
+live on `main` since `fd144611`. **Verified here structurally before accepting the claim:**
+
+- `scripts/check-rule-i.sh:91` and `:450` print the string `Violations found: 0` **inside prose, on
+  stderr**, in the exit-3 diagnostics that explain what the script is declining to print;
+- the gate's `rule_i_count_from_log()` is `grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1` —
+  **unanchored**, deliberately, because GitHub prefixes an ISO timestamp onto every raw log line.
+
+GitHub interleaves stderr into the same bytes the gate downloads. So a **degraded** Rule I run —
+`check-rule-i.sh` failing closed on a non-PCRE host, exactly the FOLLOW-842 fix doing its job —
+yields `count 0, symbols 0`. Zero trips **neither** the empty-count guard **nor** the
+count-without-symbols guard, so the gate compares an **empty** symbol set against the baseline,
+finds nothing new, and exits **0 over a Rule I job that never ran**.
+
+**This does not invalidate any validation performed this session.** The path requires a degraded
+Rule I run; every run this session parsed 192 symbols on both sides, which is the healthy signature.
+But it is a fail-open sitting on `main` right now, and #685 is what closes it (both parsers strip
+the timestamp and anchor at the start of the producer's own line; fixture F21 carries the captured
+diagnostic verbatim, revert R7 shows the false green returning).
+
+**Worth logging without gloating:** #684's own lessons entry records hitting this exact hazard in
+its fixture assertions and fixing it there — and not in the consumer.
+
+**Rebase resolution, checked rather than trusted:** only `lessons.md` truly conflicted (GitHub's
+`DIRTY` was the file-set, not the lines); both entries kept, #684's first. The worker re-verified
+each auto-merge semantically — #684's `INPUT FORMAT CONTRACT` block intact, `CONVENTIONS_PATCH.md`
+carrying **both** #684's exit-3 paragraph and the exit-4 addition (a merge, not a pick-one, as
+instructed), all three CI jobs present with no `continue-on-error`.
+
+**The corpus checker earned itself on first contact:** after the rebase `check-gate-exit-codes.sh`
+went red **unprompted**, because #684 made `check-rule-i.sh` reference the gate in its new header
+and the file was in neither list. Classified as non-routing (it is the producer and reads no exit
+code), green again. A control catching a real drift nobody told it about is the first of its kind in
+this sequence.
+
+**One consistency caveat for whoever merges:** `docs/AGENT_WORKFLOW.md`, `CONVENTIONS_PATCH.md` and
+four agent definitions now describe **exit 4**, which the copy of the gate on `main` does not yet
+emit. That is consistent only once #685 lands — so it should not sit open long.
+
+**FOLLOW-860 filed** (P2, FROZEN) — discharge P-35 clause (b) live, plus the two deferred doc
+decisions. It cannot be done by a worker: the observation requires a merge. Next free:
+**FOLLOW-861**.
+
+**(historical) status when first opened: IN_PROGRESS (PR #685, rebase round)**
 
 **PR #685 opened with all three delivered, then went `CONFLICTING` because `main` moved under it.**
 The branch was cut from `9b65d372`; PR #684 (FOLLOW-842) merged as `fd144611` while the worker was

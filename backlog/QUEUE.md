@@ -173,6 +173,55 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
+### FOLLOW-842 — status: READY_FOR_REVIEW (PR #684, head `288ae07d`)
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:** 77 checks, 75 pass, 2 `Rule I`
+(the push+PR pair), symbol set 192 vs 192, new 0 / fixed 0, exit 0.
+
+**The output-format contract was the risk in this ticket, and it was checked rather than trusted.**
+`check-rule-i.sh`'s `WARN:` line became a machine-parsed interface when the merge gate started
+building its baseline from it (`c7b17fb7`), so any drift would silently empty that baseline. This
+session ran **both** scripts and diffed their first `WARN` line — byte-identical:
+`WARN: 'DemoSessionsDataSource' in apps/control-plane/src/app/admin/demo-sessions/data.ts — zero non-test importers`.
+The worker also added reciprocal named comments (`OUTPUT FORMAT CONTRACT` / `INPUT FORMAT CONTRACT`)
+so the coupling is documented on both sides, and left the cross-script parity fixture to FOLLOW-848
+rather than building it here.
+
+**The fix that actually breaks the two-fail-opens-in-series chain is not the preflight.** In all
+three no-verdict states the script now prints **no `Violations found` line at all**, so the merge
+gate meets an unparseable log and reports a named tooling failure (exit 3) instead of reading a
+degraded run as a clean `0`. The preflight is the first line of defence; this is the one that
+matters when something else degrades.
+
+**Zero symbols was split three ways rather than conflated** — D1 discovered zero source files, D2
+every discovered file barrel-skipped (a pass earned by skipping the repo), D3 files scanned but zero
+symbols parsed (the PCRE fail-open's fingerprint). All exit 3 with distinct names. Normal green is
+untouched: the real repo still reports 638 symbols / 192 violations in 18.5s.
+
+**A fourth fail-open the ticket never named:** `ROOT="$(git rev-parse --show-toplevel)"` was
+unguarded, and **`cd ""` is a successful no-op in bash** — so outside a git working tree the gate
+silently scanned the caller's cwd and passed clean. Found by the worker's own sweep, fixture S7.
+
+**Discrimination matrix met the RETRO-250 bar:** six reverts, each failing exactly one fixture and
+no other. The two positive controls (wired → 0, orphan → 1 with the exact `WARN:` line) fail under
+**no** revert — which is itself the evidence the format did not move. New CI job
+`Rule I gate self-test (FOLLOW-842)` is green on both push and pull_request events, and is a
+**separate job, not a step of `rule-i`** — deliberately, because `rule-i` is permanently red on 192
+legacy violations, so a step appended there would never be read.
+
+**Deliberately untested and named as such:** the `bash < 4` preflight leg has no fixture, because
+`BASH_VERSINFO` is read-only and faking it needs either an old bash binary (absent here and on
+`ubuntu-latest`) or a test-only seam in production code whose sole purpose is to weaken a preflight.
+Three untested lines copied verbatim from the sibling gate is the better trade, and it is stated
+rather than hidden.
+
+**FOLLOW-831 — recommendation: CLOSE as DONE-by-FOLLOW-842.** The mode bit shipped here
+(`100644 → 100755`, asserted on disk _and_ in the git index by fixture S8). RETRO-250 had flagged it
+as double-owned; it now has exactly one owner and that owner landed it. Its stub's trailing "and any
+other script a doc mandates bare" clause covers **four other scripts** — that is a new stub, not a
+re-scope, and it is being held until the concurrently-running retro reports so the two do not claim
+the same ticket number.
+
 ### FOLLOW-845 — status: DONE (PR #682 merged `360a10cc`, 2026-08-06)
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI re-verified here**, not taken from

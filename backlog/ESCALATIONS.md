@@ -3257,6 +3257,24 @@ Nobody should read them as a defect in that PR.
 names on a recent PR). That doubles the job count against whatever limit is being hit. It was filed
 as an efficiency observation; it is now also a capacity cost.
 
+**The sharpest single piece of evidence, found after this entry was first written.** The
+`Gitleaks secrets scan` job (`92677067931`) is marked `failure` — and **every one of its five steps
+is `success`**, including `Run Gitleaks` and `Complete job`. Its own log ends with:
+
+```
+2026-08-06T17:06:38.2074437Z ✅ No leaks detected
+```
+
+the SARIF artifact uploaded and finalized normally, and cleanup ran. The job's `completed_at` is
+**17:51:25** — **45 minutes after its last log line**. So GitHub recorded a failure conclusion on a
+job that demonstrably did its work and passed. This is not a secrets finding, and no gitleaks
+remediation is warranted.
+
+**The push/pull_request asymmetry points the same way:** on the `push` event `Format check` passed
+in 2m, `Test (Node 22)` in 14m and `ClickHouse migrations smoke` in 24s — the same commits, the same
+workflow. The `pull_request` copies of those jobs are the ones failing at setup. Identical code, two
+outcomes, decided by which event queued the job.
+
 **Required action (operator — I cannot check any of this):**
 
 1. Look at the Actions billing/usage page for the account. The GitHub REST billing endpoint needs

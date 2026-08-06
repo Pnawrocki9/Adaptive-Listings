@@ -50009,3 +50009,1227 @@ invalidated, 192 symbols, New on this PR: 0, but its validation is exposed to FO
 clean" claim was measured on the 247-line file and must be re-measured at 735. Filed FOLLOW-846, 847, 848.
 QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
 .claude/agents/retrospective-analyst/lessons.d/RETRO-250.md per Rule AG. -->
+
+---
+
+## RETRO-251 — FOLLOW-845 (#682) — the enumeration was one grep away for three tickets, and the moment a worker was asked for it, it came back complete — 2026-08-06
+
+**THE HEADLINE: THE FIX IS REAL, THE EVIDENCE IS THE STRONGEST IN THIS CHAIN, AND THE BRIEF'S
+PREMISE ABOUT HOW THE THREE INSTANCES WERE FOUND IS FALSE — I AM CORRECTING IT RATHER THAN
+ANSWERING IT.** The brief states that each of the three console→Sentry instances was found "by the
+_previous_ one's retro rather than by a sweep". That is true for instance 2 and **not** for instance
+3. `docs/compliance/dpia.md:430-455` — written by the **FOLLOW-838 worker**, one ticket earlier —
+carries an explicit Rule S enumeration of every diagnostic site in `apps/ingest/src`, names
+`clickhouse-producer.ts:178` as _"One site outside this ticket's fix [that] does carry the same
+shape as the one fixed"_, argues why it needed a replacement signal rather than a deletion, and
+files it as FOLLOW-845. The same paragraph names `intent-snapshot.ts` and assesses it. FOLLOW-845
+was produced by a **worker's sweep**, recorded in a compliance document at its own merge commit; and
+FOLLOW-852 was likewise produced by the FOLLOW-845 worker's own "Out of scope" section, not by this
+retro. **The finding mechanism switched from retro-driven to worker-driven between instance 2 and
+instance 3, and it has stayed there.** That is the opposite of the trend the brief assumes, and it
+is the most important thing in this entry.
+
+**SECOND HEADLINE: THE SWEEP WAS POSSIBLE AT INSTANCE ONE AND IT IS ONE GREP — MEASURED, NOT
+ASSERTED.** Run against the tree at FOLLOW-811's own merge commit (`1b758fe1`, 2026-08-05 19:46
+UTC), before any of 838/845/852 existed:
+
+```
+$ git grep -n "\.text()" 1b758fe1 -- 'apps/ingest/src' | grep -v test
+clickhouse-producer.ts:178:      detail = (await response.text()).slice(0, 500);      <- FOLLOW-845
+handlers/chat-nlp-dispatch.ts:86: const text = await res.text().catch(…)              <- FOLLOW-838
+handlers/events.ts:126:          rawBody = await c.req.text();                        (request, not upstream)
+handlers/intent-snapshot.ts:234: detail = (await response.text()).slice(0, 300);      <- FOLLOW-852
+handlers/intent-snapshot.ts:337: detail = (await response.text()).slice(0, 300);      <- FOLLOW-852
+```
+
+Five lines, one screen, every instance including both that are still open. **The cheapest complete
+enumeration is over the SOURCE — the upstream response body read — not over the SINK.** RETRO-249
+(my own predecessor) swept the sink axis instead and reported _"10 non-test `console.error` sites,
+one of which…"_; `clickhouse-producer.ts:178` is not a `console.error` site, its sinks are two files
+away in `handlers/events.ts`, and it was invisible to that axis. **A sink enumeration is not closed
+under two things this estate does everywhere: a logging wrapper (`logger.error` →
+`console.log` → breadcrumb) and a tainted value returned across a module boundary.** A source
+enumeration is closed under both. **And the grep does NOT come back clean today** —
+`intent-snapshot.ts:234,:337` survive (FOLLOW-852), which the brief correctly anticipated.
+
+**Methodological caution worth one line, because it nearly cost me the finding.** My first run used
+the pathspec `'apps/*/src/**/*.ts'` and returned 28 sites **without** `clickhouse-producer.ts` — the
+`**/` glob requires at least one directory below `src/`, so every file sitting directly in
+`apps/*/src/` was silently outside the scan. That is a **Rule AL** shape (an assertion evaluated
+over a different region than the one it claims) inside the enumeration grep itself, and it fails in
+the direction that looks like a completed sweep.
+
+**THIRD HEADLINE: FOLLOW-852 UNDER-SCOPES ITS OWN SINK SET, ON EXACTLY THE AXIS THIS CHAIN
+EXISTS FOR.** The stub (`FOLLOW_UPS.md:28778-28781`) says the two slices go _"into `logger.error`,
+which reaches Sentry as a breadcrumb"_. Enumerated on disk, the 300-character detail reaches **six**
+sinks, and two of them are `Sentry.captureException` **values**, not breadcrumbs:
+
+```
+intent-snapshot.ts:239 / :342   logger.error({… error}, 'intent_snapshot_{clickhouse,supabase}_failed')
+intent-snapshot.ts:410 / :463   console.error(JSON.stringify({… error: <the same string> }))
+intent-snapshot.ts:431 / :478   Sentry.captureException(new Error(`…_write_failed: ${…error}`), …)
+```
+
+The whole FOLLOW-811 → 838 → 845 sequence turns on _"both sinks, not one"_, and the stub that
+carries the class forward names one of three sink kinds. Not a live exposure — those rows are
+PII-free by construction and I re-verified that at `intent-snapshot.ts:173-179` rather than
+inheriting it — so this is a **stub-accuracy defect, not a leak**, and it is sharpened in §5a with
+**no new number** (Rule AN; precedent RETRO-248 §5a's treatment of FOLLOW-837).
+
+### 1. Summary of change
+
+- **PR:** #682 (merged 2026-08-06 05:19:58 UTC, squash → `360a10cc`; branch
+  `backend-engineer/FOLLOW-845-clickhouse-error-body-sentry`; worker `backend-engineer` / **Opus**)
+- **Files changed: 9 (+907 / −43).** Measured with `gh pr view 682 --json files` **and** confirmed
+  per-file with `git diff --numstat 360a10cc^ 360a10cc` — the two agree exactly. Never a `--stat`
+  across unrelated SHAs (the RETRO-247 error, obeyed for the fourth consecutive retro):
+
+  | file                                              |  +  |  −  |
+  | ------------------------------------------------- | --- | --- |
+  | `apps/ingest/src/clickhouse-sentry-capture-path.test.ts` | 418 |  0 |
+  | `apps/ingest/src/clickhouse-producer.ts`          | 154 |  10 |
+  | `apps/ingest/src/clickhouse-producer.test.ts`     | 146 |   0 |
+  | `docs/compliance/dpia.md`                         | 111 |  29 |
+  | `.claude/agents/backend-engineer/lessons.md`      |  33 |   0 |
+  | `apps/ingest/src/observability.ts`                |  15 |   0 |
+  | `apps/ingest/src/handlers/events.ts`              |  13 |   0 |
+  | `docs/compliance/ropa.md`                         |  10 |   4 |
+  | `apps/ingest/src/handlers/events-retry-consumer.ts` |   7 |   0 |
+
+  **62% of the diff is tests** (564 of 907 added lines). That ratio is the story of this PR.
+
+- **Modules touched:** `apps/ingest` (production TS + 2 new test files) · `docs/compliance` ·
+  `.claude`. **Zero** `scripts/`, `.github/`, migrations, SDK, Python, `packages/`.
+- **Key contracts changed:**
+  1. **`CHPushFailure.error`'s VOCABULARY** — `clickhouse_status_<http>:<500 chars of the response
+     body>` → `clickhouse_status_<http>[:ch_code_<n>:<class>]`. **Breaking: no** for any machine
+     consumer (§3), and the sweep for one is negative by measurement, not assumption.
+  2. **Two new optional fields on the existing `CHPushFailure`** — `chErrorCode?: number`,
+     `queryId?: string`. **Breaking: no** (optional, additive, non-exported interface members).
+  3. **`dpia.md` 2.13 → 2.14 (§2.7.3 new), `ropa.md` 2.9 → 2.10.** §2.7.3 is now the single
+     amendable location for this path's posture, mirroring the §2.7.1 pattern FOLLOW-811 established.
+  4. `sendDefaultPii: false` pinned in `apps/ingest/src/observability.ts` — a verified no-op today,
+     written down against the vendor's flagged `TODO(v11)`.
+
+### 2. Verification done in PR
+
+- **Test files changed: 2, both new (+564).** `clickhouse-sentry-capture-path.test.ts` (4 tests) and
+  `clickhouse-producer.test.ts` (+5 unit tests). Coverage delta: qualitatively, the ClickHouse
+  producer's failure path goes from asserted-through-a-mocked-SDK (`index.test.ts` does
+  `vi.mock('@sentry/cloudflare')`, so it can only see the ARGUMENTS handed to `captureException`) to
+  driven through a **real** `CloudflareClient` built from the real `getDefaultIntegrations()` with a
+  memory transport, through the **real** `POST /v1/events` route.
+- **CI: passed.** The PM's record (QUEUE session-103): 76 checks, 74 pass, 2 `Rule I`, symbol set 192
+  vs `main`'s 192, `New on this PR: 0 | fixed by this PR: 0`, exit 0. **Re-asserted by me on merged
+  `main`:** `bash scripts/check-rule-i.sh` → `Symbols scanned : 638 · Violations found : 192`.
+  Identical. The PR adds no exported symbol, so the strict symbol-set classifier could not move.
+- **`ci.yml:164` confirmed to run this suite**, not assumed:
+  `pnpm turbo run test … --filter='@estalara/ingest' …`. The two new files execute in CI.
+- **The test suite was NOT independently re-run by me, and I am saying so rather than implying it.**
+  This retro's worktree has no installed workspace links — `npx vitest run` in `apps/ingest` fails
+  12 of 19 files at import resolution (`@sentry/cloudflare`, `@estalara/shared/observability`,
+  `@opentelemetry/api` all unresolvable), an environment limitation of the worktree, not a defect in
+  the merge. `pnpm install` was deliberately not run: a devops-engineer is executing concurrently
+  against the shared pnpm store. The PR's own transcript (`19 passed / 297 tests`) and the CI run are
+  the evidence; **my verification of this PR's tests is STRUCTURAL, and the structural check is the
+  one that matters here** (§4c).
+- **The evidence quality is the highest this chain has produced, and it deserves to be named.** The
+  worker did not cite ClickHouse's behaviour, it **drove** it: `clickhouse/clickhouse-server:25.8`
+  (the image `ci.yml:302,361` pins), the real `events` DDL, the real `toClickHouseRow` shape, and
+  four graded transcripts (buyer text verbatim / partial / value-fragment / leading-columns-only).
+  All 18 code→class names resolved with `SELECT errorCodeToName(c)` **on that server**, not from a
+  doc page. Three perturbation transcripts in the PR body, each failing in a different direction
+  (restore the body slice → absence assertion fails; empty the integration list → the control fails;
+  drop the replacement signal → the presence assertion fails).
+- **What the verification did NOT cover:** the **cross-app** axis. Every artefact in this PR is
+  scoped to `apps/ingest`, and `apps/control-plane` has 26 `await res.text()` sites on the identical
+  SDK-family coupling that nothing in this chain has enumerated (§5b). That is not this ticket's
+  fault; it is the honest size of what remains.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** Two new files, both `*.test.ts` — suppressed under the standing
+test-file carve-out and independently confirmed to execute (`ci.yml:164`). **No new exported symbol
+anywhere**, established two ways rather than one: `git diff 360a10cc^ 360a10cc | grep -E '^\+ *export'`
+→ **0 hits**; and `check-rule-i.sh` on merged `main` returns **192**, unchanged from the pre-merge
+baseline, which it could not do if this PR had added an unimported export. The three new functions
+(`describeChFailure`, `readExceptionCode`, `readQueryId`) and the `CH_ERROR_CLASS` map are
+module-private and each has ≥1 non-definition call site in the same file — verified, and the
+producer's own docblock says so ("Module-private: its only consumer is `describeChFailure` below
+(Rule I)"), which is a worker pre-empting this exact audit.
+
+**CHECK B — half-wire. Clean ✅, in both directions, measured.**
+
+- **New signal `chErrorCode` / `queryId`** — **producer** `clickhouse-producer.ts:75,:84` (definition),
+  `:230-231` (4xx terminal return), `:264-265` (exhausted-retries return) → **consumer**
+  `handlers/events.ts:601-602` (`logger.error` fields) and `:618-619` (Sentry `extra`), plus
+  `handlers/events-retry-consumer.ts:123-124` and `:137-138`. Both handlers, both sinks each, all
+  non-test:
+
+  ```
+  grep -rn "chErrorCode\|queryId\|ch_error_code\|ch_query_id" --include=*.ts apps/ | grep -v "\.test\.ts"
+  # -> producer 6 lines in clickhouse-producer.ts; consumers 4 in events.ts, 4 in events-retry-consumer.ts
+  ```
+
+  Producer ✅ / consumer ✅ on **both** call sites of the producer. This is the axis a "we changed one
+  handler" fix usually fails; it did not.
+- **The retired signal's consumers** — swept for anything parsing the old body-bearing descriptor:
+  `grep -rn "clickhouse_status_\|clickhouse_push_failed_post_ack"` over `*.ts *.md *.yml *.py *.json`
+  returns only the producer, the two handlers, three test files, `dpia.md:514`, ADR-0017, and
+  **FOLLOW-495**, whose AC keys on the **tag** (`sink:clickhouse, kind:insert_failed`), not on the
+  string's contents. No alert, dashboard, runbook grep or log-drain reads the descriptor's body.
+  **Not a HALF_WIRE_P** — the descriptor's only consumer is a human in Sentry, an accepted shape for a
+  diagnostic, and the change strictly improves FOLLOW-495's design (§5a).
+- **New env-var / column / topic / SDK signal:** none.
+
+**Third axis, checked because a "log format" change most often breaks it: is the new descriptor a
+leak vector in its own right?** `describeChFailure` composes only `response.status` (a number),
+`readExceptionCode` (regex-gated to `^\d{1,5}$`, then `Number()`) and a **local** 18-entry literal
+map with an `'unclassified'` fallback. `readQueryId` is UUID-shape-gated. **No upstream bytes can
+reach the string by construction**, and the UUID gate is doing real work the worker explains: the
+ClickHouse HTTP interface **echoes** a client-supplied `query_id`, so the validation prevents a
+future caller from turning a server-generated identifier into a free-text channel. Read, not assumed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A on shipped behaviour.** The 4xx branch, the retry-exhaustion branch and the transport-catch
+  branch all carry the header-derived fields consistently, and the catch arm **clears**
+  `lastChErrorCode` / `lastQueryId` (`:250-252`) so a previous attempt's headers cannot be reported
+  as describing a failure that produced no response. That ordering guard is subtle, correct, pinned
+  by its own unit test, and would have been an easy miss. Saying N/A here rather than manufacturing
+  a defect is the honest entry.
+
+#### 4b. Code bugs not caught
+
+- **N/A.** The one behavioural risk I looked for — that the transport arm's `cause.message` could
+  carry request-derived bytes — does not hold: the ClickHouse credentials ride an `Authorization`
+  header rather than the URL (verified in `buildHeaders`), so `TypeError: Invalid URL`,
+  `Network connection lost.` and the 4s `AbortError` are all runtime-generated. The acceptance is
+  pinned in the assertive direction (a sentinel planted in a rejection message is asserted to
+  **reach** the wire), which is the FOLLOW-838 precedent applied consistently.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (assessed, NOT filed — and the assessment is the deliverable, because the brief asks
+  whether the two extra hardenings should become the repo's standard shape).**
+
+  1. **The positive control drives `console.log`, not `console.error` — and this generalises,
+     unconditionally.** Verified end-to-end rather than accepted: `packages/shared/src/observability/logger.ts:110`
+     emits via `console.log`; `apps/ingest/src` carries **20 `logger.error`**, 8 `logger.warn`, 1
+     `logger.info` and no `console.error` on this path. A control asserting `console.error` would
+     have proved that *some* console level reaches Sentry while leaving the level the code under test
+     actually uses unproven. **The general form is one sentence: a positive control must drive the
+     SAME call the code under test makes, not a sibling of it.** Cross-checked against the two
+     siblings and both are correct **by having been checked, not by luck** — `chat-nlp-dispatch.ts:145,:166`
+     really is a bare `console.error`, so FOLLOW-838's control is right for its own file; FOLLOW-811's
+     control-plane sinks are `console.error` too. Three tests, three different correct answers, no
+     copy-paste. **Belongs in the standard shape.** No rule (count 1, and §6 explains why).
+  2. **The fixture-sentinel assertion is CONDITIONAL, and the condition is what makes it worth
+     stating.** It guards an absence assertion against fixture erosion — cost 2 lines. But its
+     exposure is not uniform: FOLLOW-845's `CH_PARSE_ERROR_BODY` is a **verbatim captured upstream
+     string** with the sentinel embedded inside it, so a future "tidy the fixture" edit can silently
+     defang the assertion. FOLLOW-838's `ECHOING_422_BODY` is `JSON.stringify({… content: BUYER_SENTINEL …})`
+     — the sentinel is **interpolated by the test**, so removing it requires a visible edit to the
+     constructor. FOLLOW-811's test asserts PRESENCE, so the guard is inapplicable by direction.
+     **Verdict: the hardening belongs wherever an absence assertion runs against a verbatim captured
+     fixture, and that is exactly ONE site in the estate today — this one.** Generalising it to every
+     absence test would be ceremony. Recording the boundary so the next author does not have to
+     re-derive it, and deliberately NOT filing: the one adjacent candidate (FOLLOW-838's test) does
+     not meet the condition.
+  3. **Non-vacuity established STRUCTURALLY, since I could not run the suite (§2).** The
+     capture-path test cannot be vacuous by construction: it imports `Sentry.CloudflareClient` and
+     `Sentry.getDefaultIntegrations` from the real package (`:280-300`), drives `createApp()` from
+     the real router with real auth/consent/rate-limit middleware, and asserts over
+     `JSON.stringify(<every envelope>)` rather than a positional index. **Clause (a) of RETRO-247's
+     P-32 bar fails and clause (c) of RETRO-249's P-33 bar fails** — nothing is copied from
+     production, and nothing is keyed on ordering. It is the correct shape on both of the two bars
+     this corpus has minted, which is the first time that can be written in this chain.
+  4. **One subtlety worth preserving because it is the kind of thing that erodes:** the test drives
+     the route **once** and asserts both directions on the same captured set, with the reason stated
+     in-file — `dedupeIntegration()` is also a `@sentry/cloudflare` default, so a second identical
+     exception is dropped by the client and a split test would observe zero envelopes. Anyone
+     "improving" this file by splitting the test will produce a silent false pass.
+
+- **TG-2 (P2 in substance, folded into FOLLOW-853's §5a re-pricing, no new number).** The Worker→ClickHouse
+  insert path — the live post-ACK write for every event batch — is exercised by **no test in any
+  suite**. Confirmed independently of the worker's claim: `infra/clickhouse/scripts/smoke-test.sh`
+  inserts epoch-ms numbers, `apps/stream-consumer` uses the native protocol, and `e2e-smoke.yml`
+  starts `wrangler dev` without `CLICKHOUSE_URL` so the producer hits its no-credentials guard. The
+  new `clickhouse-producer.test.ts` stubs `fetch`, so it pins the **descriptor logic** and not the
+  **wire**.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (N/A — checked, and it is NOT the contradiction it looks like. Recording the negative so the
+  next audit stops re-deriving it.)** `dpia.md:436` names `intent-snapshot.ts:390,:410,:446,:463`
+  while §2.7.3 trigger 1 and FOLLOW-852 name `:234,:337`. I checked both against the file at the
+  commit each was written: at `9d608acb` (FOLLOW-838's merge) `:390/:410/:446/:463` were the four
+  `console.error(` **log sites** and `:234/:337` were the two **slice sites**. Both citations are
+  true; they name different hops of the same dataflow. §2.7.3's phrasing (_"the two 300-character
+  slices"_) is the more useful one. **No Rule Y violation, no ticket.**
+- **DG-2 (N/A — checked and clean).** The `apps/ingest` row of `dpia.md`'s §2.7 table (`:248`) was
+  updated in this PR to point at §2.7.2 **and** §2.7.3, and §2.7.2's deferral bullet carries an
+  explicit **`CLOSED 2026-08-06 by FOLLOW-845`** annotation rather than being silently deleted. That
+  is Rule AI applied correctly in the same PR, and it is the third consecutive ticket in this chain
+  to do it. Recorded as a positive.
+- **DG-3 (N/A — assessed, deliberately NOT filed).** Two documents carry the pre-fix framing as
+  history: `CONVENTIONS_PATCH.md:2792` and `:2871` describe `clickhouse_push_failed_post_ack` as the
+  sole signal (Rule AJ's evidence base, dated RETRO-154). Nothing there is falsified — the tag is
+  unchanged and still the sole signal; only the string it carries changed. Precedent for recording
+  rather than filing: RETRO-246 §4d DG-2, RETRO-247 §4d DG-4, RETRO-248 §4d DG-2.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-852 — NOT invalidated, and SHARPENED on the axis that defines this chain. No new number
+  (Rule AN).** Its stub names `logger.error` as the sink; the 300-char detail actually reaches six
+  sinks including **two `Sentry.captureException` values** (`intent-snapshot.ts:431`, `:478`, both
+  interpolating `<sink>Result.value.error`) and two `console.error` calls (`:410`, `:463`). Whoever
+  takes 852 must fix the producer (the two slices) and will then find four consumers, not two.
+  Also: 852's AC(1) says "replace both body slices with the header-derived code + query id, as
+  FOLLOW-845 did" — that works for the **ClickHouse** leg (`:234`) and **not** for the **PostgREST /
+  Supabase** leg (`:337`), which sets no `X-ClickHouse-*` headers. PostgREST returns a structured
+  JSON error (`code`/`message`/`details`/`hint`); the equivalent header-only signal there is the
+  status plus the `code` field, and taking `message` back would reintroduce the defect. **That
+  asymmetry is not in the stub and it is the whole difficulty of the ticket.**
+- **FOLLOW-853 — NOT invalidated, and I believe it is UNDER-PRICED at P2. This is a recommendation to
+  the PM, not a re-pricing; I do not promote tickets.** The ISO-8601 half is correctly closed by the
+  production read (`date_time_input_format = best_effort` on 26.4.1.2029) and correctly recorded as
+  FALSE. What survives is not "a vendor default is undocumented" — it is that **the controller's
+  primary event-write path has zero test coverage in any suite (§4c TG-2), its only failure detector
+  is inert, and its outcome is unobservable.** Three facts compound, and all three are already in
+  this session's record: (i) a 4xx from ClickHouse is **terminal, post-ACK** — the SDK already got
+  its 200 (`clickhouse-producer.ts` returns from the 4xx branch without retrying); (ii)
+  `SENTRY_DSN_INGEST` is **unset in prod** (ESC-048 / RETRO-249 §headline), so
+  `clickhouse_push_failed_post_ack` reaches nothing; (iii) `ingest_worker` has **no `SELECT` grant**
+  on `default.events` (853's own AC(3)), so "are rows arriving?" is unanswerable without Cloud
+  console access. The ADR-0017 retry queue softens this to *eventual* rather than *immediate* loss —
+  and only where `EVENTS_RETRY_QUEUE` is provisioned, which the code treats as optional. **A path
+  that is simultaneously untested, undetected and unobservable is P1 in this repo's own terms**
+  (compare FOLLOW-842, P1, for a script's fail-open with far smaller blast radius). Secondary
+  recommendation: **reorder its ACs** — AC(3), the `SELECT` grant, is the only one that makes the
+  others verifiable and it is listed third behind two code changes.
+- **FOLLOW-836 — unaffected in scope, and its scope is now measurably larger than its AC.** 836 asks
+  for a grep-lint over `apps/control-plane/src`'s console sink. Measured for this retro:
+  `apps/control-plane` has **26** `await res.text()` sites, at least 11 of which interpolate the body
+  into an error string or a log line (`archetype-seeder.ts:89,:111,:129,:151` throw it;
+  `llm-gateway.ts:202`, `ab-events.ts:91`, `adapt/route.ts:518`, `adapt/description/route.ts:143`,
+  `internal/description-cache/route.ts:338`, `canary/adaptation-writes/route.ts:137`,
+  `seed-listing-embeddings.ts:248` capture it). **Nobody in the 811→838→845 chain has enumerated
+  that app on the source axis** — 811 assessed its Sentry *configs*, not its bodies. Exposure is
+  genuinely lower (raw buyer chat does not enter that app; re-confirmed at
+  `chat-intent-cache.ts`, derived dimensions only), which is why this is a scope note on an existing
+  P3 stub and not a new P1. But 836 currently `depends_on: [FOLLOW-834]`, a Python-scoped ticket, so
+  the largest un-enumerated surface in the estate sits behind a dependency on a different language.
+- **FOLLOW-841 — NOT invalidated, and one datum for it.** Its subject is `dpia.md` §2.7.1 trigger 1's
+  missing mechanical half. §2.7.3 adds four more triggers on the same "a human will notice" basis;
+  trigger 1 there (_"Any read of a ClickHouse (or other upstream) response body is reintroduced
+  anywhere in `apps/ingest/src`"_) is the one that **is** cheaply mechanisable, and the mechanism is
+  in this retro's headline: a source-axis grep over `.text()`. If 841 is taken, that grep belongs in
+  the same gate.
+- **FOLLOW-495 — IMPROVED, not invalidated, and worth recording because cascades are usually
+  negative.** Its AC is a Sentry alert rule on `clickhouse_push_failed_post_ack`. Before this merge
+  the exception **value** embedded 500 body characters, so Sentry fingerprinted **per failing row**
+  and an alert threshold on issue count was meaningless during a drift incident. The descriptor is
+  now a bounded vocabulary, so those events group by failure class and `ch_error_code` is a numeric,
+  filterable field. **495 became implementable by this merge.**
+- **FOLLOW-838 / FOLLOW-811 / FOLLOW-832 — re-checked, all still closed, no regression.** Verified on
+  disk, not from status fields: `chat-nlp-dispatch.ts:145,:166` still emit status+kind with no body
+  read; `grep -rn "beforeSend" apps/control-plane` still returns only the absence-assertions;
+  `apps/intent-engine/src/nlp.py` untouched by this PR (`git diff --name-only 360a10cc^ 360a10cc | grep -c '\.py$'` → 0).
+- **FOLLOW-842 / 846 / 847 / 848 (the merge-gate family) — unaffected by this PR.** It touches no
+  `scripts/` and no `.github/`, and adds no exported symbol, so the Rule I set could not move (192,
+  re-measured by me).
+
+#### 5b. Future sprint tickets affected
+
+Any future ticket that adds an upstream `fetch` to `apps/ingest` inherits a rule that is now written
+down in three places (`dpia.md` §2.7.1/§2.7.2/§2.7.3), pinned by three tests, and enforced by
+nothing. FOLLOW-834/836 are the mechanical answer and both are still open. Separately, and this is
+the residual class in one sentence: **the estate has now closed this defect three times in the one
+app that handles buyer chat, and has never enumerated the app with 26 body reads.**
+
+#### 5c. Contracts changed others rely on
+
+- `CHPushFailure.error`'s vocabulary — no machine consumer (§3), one human consumer (Sentry), one
+  ticket improved (FOLLOW-495).
+- `dpia.md` §2.7.3 — a **cited** contract as of this merge: `clickhouse-producer.ts:20-25` and both
+  handlers' comments point a future engineer at it before touching the failure path. Rule Y checked:
+  §2.7.3 exists at `dpia.md:481` and states what the comments say it states.
+- `ropa.md` v2.10 — closes the two open FOLLOW-845 items it was carrying; downstream is the DPIA
+  cross-reference and any regulator-facing export.
+- **`X-ClickHouse-Exception-Code` / `X-ClickHouse-Query-Id` are now an upstream-vendor contract this
+  repo depends on**, which is new. §2.7.3 trigger 3 names a ClickHouse major upgrade as a re-review
+  condition, and the local class map degrades to `unclassified` plus the raw number rather than to a
+  body read — a fail-safe default, chosen deliberately.
+
+#### 5d. Architectural assumptions affected
+
+**The estate now has a general answer to the question this class kept re-asking, and it is worth
+stating as a principle rather than as three tickets: when an upstream's error detail is genuinely
+needed for triage, relocate it to a controller-side store and export only a pointer.** The
+`X-ClickHouse-Query-Id` → `system.query_log` pivot keeps ClickHouse's full quoted message inside the
+system that already holds those rows by design — in scope of the same retention and DSR machinery —
+instead of copying it to a third-party processor with separately-governed retention. That is
+strictly better than both prior outcomes in this chain (FOLLOW-812 deleted the detail; FOLLOW-838
+deleted it and accepted the loss with an argument). **It generalises exactly where an upstream offers
+a correlation id, and not otherwise** — checked against the two open siblings: ClickHouse yes
+(`intent-snapshot.ts:234`), PostgREST **no** (`:337`, §5a), Modal **no** (which is why FOLLOW-838
+could not do this and correctly did not pretend to). **Nothing in the repo documents the pattern
+outside `dpia.md` §2.7.3's own decision paragraph** — no runbook, no convention, no ADR. That is the
+honest answer to the brief's question 2: the pattern generalises to about half the sites, and it is
+recorded only inside the compliance record of the one ticket that invented it.
+
+Second assumption, and it is the one the next retro should watch: **`logger.*` at EVERY level is a
+Sentry breadcrumb source in this app**, not just `logger.error`, because the shared logger emits via
+`console.log` for all levels and `consoleIntegration()` instruments them all. I swept the
+consequence rather than leaving it as a worry: `apps/ingest/src` has 8 `logger.warn` and 1
+`logger.info` non-test call sites, and **none carries buyer text** — they carry tenant ids, batch
+ids, counts, origins and policy modes (`events.ts:160,:235,:308,:657,:695`, `intent-snapshot.ts:161,:281`,
+`clickhouse-producer.ts:164`, `redpanda-producer.ts:83`), read individually. **Clean today; the
+compliance record frames the coupling as a `logger.error` property and it is a `logger.*` property.**
+Recorded, not filed — no instance exists to fix.
+
+### 6. New lesson candidates
+
+- **P-36 ("A CLASS IS ENUMERATED BY THE SINK IT WAS NOTICED AT RATHER THAN BY THE SOURCE THAT DEFINES
+  IT, AND THE ENUMERATION IS THEREFORE NOT CLOSED UNDER WRAPPERS OR MODULE BOUNDARIES") — MINTED AT
+  COUNT 1. NOT PROMOTED.**
+  - **THIS RETRO (count 1)** — RETRO-249 enumerated `apps/ingest`'s **10 `console.error` sites** and
+    named one; the sharper instance was a `logger.error` two files downstream of the body read, and
+    the complete set is five lines of a `.text()` grep (§headline 2).
+  - **Tested against the rule texts, not the titles, per the RETRO-246 methodology.** **Rule S**
+    ("enumerate the full sibling set FIRST … state it in the PR description") is the obvious
+    candidate and it **does not fire as a violation here — it fires as a SUCCESS**, which is the
+    finding. The FOLLOW-838 worker enumerated, stated it in `dpia.md:430-455` and in the PR body, and
+    the enumeration was **complete for its app**: it produced FOLLOW-845 and the intent-snapshot
+    assessment in one pass. Rule S does not say how to DEFINE the set, and it did not need to —
+    the worker chose the right axis unprompted. **Rule AC** ("scoped by a repo-wide grep for the
+    target signature") is adjacent but its subject is a guard-authoring ticket for duplicated
+    literals. **Rule AD** ("enumerate EVERY structural shape … not just the shape the triggering grep
+    matched") is the closest relative and its subject is a value-domain literal, not a dataflow.
+    **Rule AE**'s subject is an AST guard's call shapes. **Rule AL** governs the region an assertion
+    scans — and it is the rule my own glob near-miss instances (§headline 2), which I am recording
+    against myself rather than filing.
+  - **The honest framing, which is what makes this worth minting rather than complaining about:**
+    the incomplete enumerations in this chain were all performed by **retros**, and the complete one
+    was performed by a **worker who had it as an AC**. A retro enumerates from a diff, so its natural
+    axis is the symptom; a worker enumerates from the ticket, so its axis is whatever the AC names.
+    **The actionable form is not a rule about grepping — it is that an enumeration belongs in the
+    ticket's ACs, named by SOURCE, and a retro that finds a class should write the source-axis grep
+    into the stub rather than list the instances it happened to see.** I have done that in this
+    entry's §5a for FOLLOW-852 and §5a for FOLLOW-836.
+  - **Second-sighting bar, pre-specified so the next retro TESTS rather than re-derives:** (a) a
+    class whose instances share a **source** (a tainted value, an upstream read, a config key) but
+    reach their effect through ≥2 distinct **sink** call shapes; (b) an enumeration was performed and
+    stated, and it was axis-scoped to one sink shape; (c) a later instance is found that the stated
+    enumeration structurally could not have contained — demonstrated by re-running the original
+    enumeration and showing the miss, not by asserting it. Clause (c) is what stops this from
+    swallowing every incomplete sweep. **If the second sighting is a RETRO's enumeration rather than
+    a worker's, prefer amending Rule S's first bullet in place** (add: "define the sibling set by the
+    property that makes an instance an instance, not by the call shape you noticed it at") **over
+    minting a letter** — Rule S already owns the territory and RETRO-250 has separately armed a Rule S
+    amendment on the exemption-discharge element, so a single amendment can carry both.
+- **P-32 / P-33 — NEITHER FIRES ON THIS PR, and I checked both against their own pre-specified bars
+  rather than pattern-matching.** P-32 clause (a) requires an assertion on a value the test
+  constructs by copying a production expression: `clickhouse-sentry-capture-path.test.ts` asserts
+  over envelopes produced by the **real** client through the **real** route; the fixture is the
+  INPUT, which is the boundary RETRO-248 §5a drew and this worker honoured. P-33 clause (a) requires
+  correctness to depend on ordering/position: the assertions are `JSON.stringify(<the whole
+  envelope set>)` and a `.some()` over breadcrumbs — no index anywhere. **P-32 stays at count 2 / 1
+  prior; P-33 stays at count 1.**
+- **Meta-pattern (recorded, not a candidate) — this is the first ticket in the chain where the retro
+  found nothing to file.** RETRO-247 filed 4, RETRO-248 filed 2, RETRO-249 filed 2, RETRO-250 filed
+  3; RETRO-251 files **0**. The two residues it did find (FOLLOW-852's sink set, FOLLOW-853's price)
+  are corrections to existing stubs, handled under Rule AN. That is not a sign the retro relaxed —
+  §3 ran both checks, §4c ran a structural non-vacuity adjudication against two bars, and §headline 2
+  ran the enumeration the previous three retros did not. **It is a sign the ticket was done properly**,
+  and the corpus should be able to say that plainly, because if every retro files something the
+  filing rate stops carrying information.
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus**, justified as "this edits the
+  live ingest Worker's chat dispatch path". It paid, and the specific place it paid is identifiable:
+  the ticket's obvious execution is "delete the body slice", and what shipped is "replace the signal,
+  prove the replacement exists on the wire, and locate the lost detail in a controller-side store".
+  That reframing required arguing from the ESC-031/F-02 runbook's diagnostic need against the
+  privacy requirement, which is a tradeoff, not an implementation. A Sonnet-tier execution of the
+  literal AC would plausibly have shipped the deletion and a follow-up observability ticket.
+
+### 7. Follow-ups
+
+**N/A — this retro files no new stubs, deliberately.** Both wiring checks are clean, §4a and §4b are
+genuinely N/A, and the two residues found are corrections to **existing** stubs, recorded under Rule
+AN rather than given numbers:
+
+- **FOLLOW-852** — sink set is 6, not 2, and two of them are `captureException` **values**; and its
+  AC(1) does not transfer to the PostgREST leg (§5a). Whoever takes it must read §5a of this entry.
+- **FOLLOW-853** — recommended re-price **P2 → P1** and AC reorder, with the three compounding facts
+  in §5a. **The PM owns the re-price; I am recommending it with reasons, not making it.**
+- **FOLLOW-836** — scope note: `apps/control-plane` has 26 body reads on the same coupling and sits
+  behind a `depends_on` on a Python-scoped ticket (§5a).
+
+Next free FOLLOW number after this entry: **854** (allocated by RETRO-252 below).
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one
+hop:**
+
+- **FOLLOW-845 — CLOSED END-TO-END on all five ACs, and the gap did NOT move one hop downstream
+  inside this app.** Chain traced on merged `main`, artefact by artefact:
+  - **producer** — `clickhouse-producer.ts:205-232`: no `.text()` call remains anywhere in the file
+    (`grep -n "\.text()" apps/ingest/src/clickhouse-producer.ts` → **0 hits**); the descriptor is
+    built from `readExceptionCode` + `readQueryId` + a local map ✅.
+  - **consumer** — `handlers/events.ts:595-621` **and** `handlers/events-retry-consumer.ts:112-140`,
+    both call sites, both sinks each (logger + Sentry), all four carrying `ch_error_code` and
+    `ch_query_id` ✅. **Both consumers, not one** — the obvious one-hop failure here was fixing
+    `events.ts` and leaving the retry consumer, and it did not happen.
+  - **render** — the operator pivot: `SELECT exception FROM system.query_log WHERE query_id = …`,
+    with the header's presence established by driving a real server, and the compliance record
+    (`dpia.md` §2.7.3) naming both the pivot and its lawful-basis reasoning ✅.
+  - AC(1) ✅ (driven, four graded transcripts), AC(2) ✅ (signal replaced, not deleted — 18 codes
+    resolved on the server), AC(3) ✅ (4+5 tests, three perturbation directions), AC(4) ✅
+    (`sendDefaultPii` pinned, no-op verified in the installed package), AC(5) ✅ (`dpia.md` 2.14 +
+    `ropa.md` 2.10, with the §2.7.2 deferral explicitly annotated CLOSED).
+  - **What is NOT closed:** the **class**, in two named places — `intent-snapshot.ts:234,:337`
+    (FOLLOW-852, under-scoped, §5a) and the 26 unenumerated `apps/control-plane` body reads
+    (FOLLOW-836, §5a).
+- **FOLLOW-838 (parent) — re-checked, still closed, and its Rule S sweep is the thing that produced
+  this ticket.** `chat-nlp-dispatch.ts` still reads no body; `dpia.md` §2.7.2 still carries the
+  `.catch()`-arm acceptance and its pinning test. The chain 738 → 739 → 811 → 838 → 845 verified hop
+  by hop by reading each artefact, not each closure note.
+- **FOLLOW-832 (grandparent's control) — re-checked, still closed.** `nlp.py` untouched; the
+  `test_buyer_text_escapes_all_sinks` citations in `ropa.md`/`C-07` still resolve.
+- **ESC-049 — correctly untouched.** Whether buyer chat belongs in the `events` table at all is a
+  CEO/DPO scoping ruling; the PR says so explicitly and does not pre-empt it. That restraint is
+  right and I am recording it because the temptation to fold it in was obvious.
+
+### 8. Cross-references
+
+- **RETRO-249** — corrected here on one point and confirmed on another. **Corrected:** its
+  enumeration of `apps/ingest` used the `console.error` axis and structurally could not contain
+  `clickhouse-producer.ts:178`; the FOLLOW-838 worker's own correction (_"`logger.*` is also a Sentry
+  input … the sharper instance is not a `console.error` site at all"_) is the record of that, and
+  §6 P-36 is its general form. **Confirmed:** the `consoleIntegration()` finding, re-verified by me
+  a second time at `@sentry/cloudflare@10.50.0` `build/cjs/sdk.js:29`, is the mechanism this whole
+  ticket rests on.
+- **RETRO-248** — its §5a boundary ("synthesize the INPUT, never re-implement the LOGIC UNDER TEST")
+  is honoured verbatim by this PR's tests, and its P-32 bar is what I adjudicated §4c against.
+- **RETRO-247** — its measurement discipline obeyed (`gh pr view --json files` **and**
+  `git diff --numstat 360a10cc^ 360a10cc`, never a `--stat` across unrelated SHAs), and its §5d
+  prediction that the class extends beyond `apps/intent-engine` is now confirmed for the third time.
+- **RETRO-250** — the sibling entry (RETRO-252 below) grades its subject; here it supplies the
+  cascading measurement discipline and the "the defect moves one layer out" framing, which applies
+  exactly: the code axis of this class is closed in this app, and what remains is the enumeration
+  axis and the control-plane surface.
+- **Rule AL** — instanced by my own near-miss on the enumeration glob (§headline 2), recorded against
+  myself.
+- **Rule AN** — the reason FOLLOW-852/853/836 are sharpened in §5a rather than re-filed.
+- **Rule AM** — followed: nothing in this retro mutated the working tree; every perturbation and
+  probe ran in a scratch copy.
+
+<!-- RETRO-251 (PR #682, FOLLOW-845, merge 360a10cc, 9 files +907/-43 per gh pr view --json files AND git
+diff --numstat 360a10cc^..360a10cc — the two agree; RETRO-247 measurement discipline obeyed). VERDICT: FIX
+REAL AND CLOSED END-TO-END on both consumers (events.ts AND events-retry-consumer.ts, logger + Sentry each);
+producer has zero .text() calls left; check-rule-i.sh re-run BY ME on merged main = 192 unchanged, and the
+PR adds zero exported symbols (git diff | grep '^+ *export' -> 0). BRIEF PREMISE CORRECTED: instance 3 was
+NOT found by the previous retro — dpia.md:430-455, written by the FOLLOW-838 WORKER, carries a complete
+Rule S enumeration of apps/ingest that names clickhouse-producer.ts:178 and files FOLLOW-845, and FOLLOW-852
+likewise came from the FOLLOW-845 worker's own out-of-scope section. The finding mechanism went
+retro-driven -> worker-driven at instance 3 and stayed there. SWEEP WAS POSSIBLE AT INSTANCE ONE, MEASURED:
+`git grep "\.text()" 1b758fe1 -- apps/ingest/src` returns FIVE lines containing every instance incl. both
+still-open ones; the cheapest complete enumeration is over the SOURCE (upstream body read), not the SINK —
+RETRO-249 swept `console.error` (10 sites) and could not structurally contain a logger.error site whose
+sinks are two files downstream. The grep does NOT come back clean today (intent-snapshot.ts:234,:337 =
+FOLLOW-852), as the brief anticipated. METHOD CAUTION: my first pathspec 'apps/*/src/**/*.ts' silently
+excluded files directly under src/ and dropped clickhouse-producer.ts — a Rule AL shape inside the
+enumeration itself. WIRING: CHECK A clean (2 new files both *.test.ts, zero new exports, 3 new functions all
+module-private with call sites); CHECK B clean both directions (chErrorCode/queryId producer 6 lines ->
+consumers 4+4 across BOTH handlers; retired descriptor has no machine consumer — FOLLOW-495 keys on the TAG
+not the string). Descriptor proven non-leaking by construction: status + /^\d{1,5}$/-gated header + local
+18-entry map + UUID-gated query id. 4a/4b N/A honestly (the catch arm CLEARS a prior attempt's header values
+— subtle and correct). TESTS NOT RE-RUN BY ME and I say so: the worktree has no workspace links (12/19 files
+fail at import resolution); non-vacuity established STRUCTURALLY instead — real CloudflareClient + real
+getDefaultIntegrations + real route + whole-envelope-set assertion, so P-32 clause (a) and P-33 clause (a)
+both FAIL, the correct shape on both minted bars. BRIEF Q3 ANSWERED: the console.log positive control
+generalises UNCONDITIONALLY (a control must drive the SAME call the code under test makes; verified all
+three capture-path tests chose correctly by checking, not by luck); the fixture-sentinel assertion is
+CONDITIONAL on a VERBATIM CAPTURED fixture and applies to exactly ONE site in the estate today (FOLLOW-838's
+fixture interpolates its sentinel, so it does not qualify) -> belongs in the shape, does NOT warrant a rule.
+FILED NOTHING — first retro in this chain to file zero, deliberately; two residues recorded under Rule AN
+instead: FOLLOW-852's sink set is SIX not two (incl. Sentry.captureException VALUES at intent-snapshot.ts
+:431,:478) and its AC(1) does not transfer to the PostgREST leg at :337 (no X-ClickHouse-* headers);
+FOLLOW-853 recommended P2 -> P1 to the PM with three compounding verified facts (4xx terminal post-ACK,
+SENTRY_DSN_INGEST unset so the detector is inert, no SELECT grant so the outcome is unobservable) plus an AC
+reorder. FOLLOW-836 scope note: apps/control-plane has 26 body reads never enumerated on this axis, behind a
+depends_on to a Python ticket. FOLLOW-495 IMPROVED by this merge (Sentry now groups by failure class instead
+of fingerprinting per row). RULE VERDICTS: NO PROMOTION, NO AMENDMENT, CONVENTIONS_PATCH.md UNTOUCHED. P-36
+MINTED at count 1 (a class enumerated by sink rather than source) with a 3-clause bar; Rule S tested and
+found to FIRE AS A SUCCESS here, not a violation — the worker enumerated correctly when it was an AC, which
+is the actionable form: put the source-axis enumeration in the STUB. P-32/P-33 both checked against their own
+bars and neither fires. dpia.md:436 vs §2.7.3 line-number "contradiction" checked at the historical commit
+and found to be two hops of one dataflow — no Rule Y violation, no ticket. logger.* at EVERY level is a
+Sentry breadcrumb source (not just logger.error); all 8 warn + 1 info sites swept and clean — recorded, not
+filed. QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. Learning-hook fragment at
+.claude/agents/retrospective-analyst/lessons.d/RETRO-251.md per Rule AG. -->
+
+---
+
+## RETRO-252 — FOLLOW-846 (#683) — the third gate generation is the best-verified and it still ships two false-verdict paths, and I drove both — 2026-08-06
+
+**THE HEADLINE: I FOUND A LIVE FALSE GREEN IN THE MERGE GATE AND DROVE IT THROUGH THE REAL SCRIPT.**
+The failing-check list is built by one PCRE match against the exact compact serialization of the
+snapshot object (`:826-830`, `grep -oP '\{"name":"[^"]*","state":"(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*","url":"[^"]*"\}'`),
+and **nothing cross-checks the result against the counts the script printed two lines earlier.**
+Transcript, run by me against the merged script on `main`, with a snapshot carrying two `FAILURE`
+check-runs and one extra key:
+
+```
+Total checks: 2 | success: 0 | skipped: 0 | neutral: 0 | failing: 0
+[FIXTURE MODE …] RESULT: all checks green. Safe to mark READY_FOR_REVIEW.
+exit=0
+```
+
+`2 = 0 + 0 + 0 + 0` is arithmetically impossible and the gate printed it, said "all checks green",
+and exited 0 — over a snapshot containing failures. **This is the FOLLOW-830 fail-open class,
+one function over, still live.** The same script applies exactly this guard to its *other* parse
+(`count > 0 && symbols == 0` → fail loud, `:1035-1044`, with the reason spelled out in-file:
+_"Comparing an empty set against the baseline would accept everything, so this fails loud"_) and
+does not apply it to the parse that decides whether there is anything to classify at all. One line
+closes it. → **FOLLOW-856 (P1, unfrozen).**
+
+**SECOND HEADLINE: AND A FALSE RED, ALSO DRIVEN.** The PR-side Rule I symbol set is now the **union**
+of every failing check-run for that name — deliberately, and correctly argued (`:955-961`: the push
+run is the branch head, the `pull_request` run is the merge ref, they are different commits, so
+"keep the first" could pick the friendlier). But the **baseline is a single `main` run**, so the
+comparison is `union(branch-head, merge-ref) − one-older-main-run`. A dead export that **another
+PR merged into `main`** after the chosen baseline appears in the merge-ref log, in neither the branch
+head nor the baseline, and is reported as this PR's fault. Driven through the real gate with a
+fixture where `zeta` exists only in the merge-ref log:
+
+```
+Rule I symbol-set comparison: PR has 2 violating symbol(s) … main baseline has 1
+  New on this PR: 1 | fixed by this PR: 0
+  NEW violating symbols (on this PR, absent from main's baseline):
+    - zeta @ packages/z/src/z.ts
+GENUINE FAILURES (blocking — do NOT mark READY_FOR_REVIEW)      exit=1
+```
+
+Nobody on that PR can fix `zeta`. **This is precisely the vocabulary error FOLLOW-846 exists to
+eliminate, surviving on a branch the ticket did not look at:** the gate now has a category for "the
+PR is wrong" (1) and a category for "the gate could not look" (3), and no category for "`main` is
+wrong". The documented response to exit 1 is send-the-ticket-back-and-increment
+`fix_iteration_counter`. → **FOLLOW-855 (P1, unfrozen).**
+
+**THIRD HEADLINE: THE EXIT-3 CONTRACT WAS PROPAGATED TO THE PROSE AND NOT TO THE CORPUS THAT
+EXECUTES IT — 21 HOURS AFTER RULE AI WAS AMENDED IN PLACE TO FORBID EXACTLY THAT.**
+`.claude/agents/pm-orchestrator.md:54` — the file the decision-maker loads — still reads
+`Exit 1 = genuine failure, 2 = timeout, 3 = usage/gh error; only 0 permits READY_FOR_REVIEW`, and in
+the **same paragraph** mandates `HARD CAP 5 checks / 3 fix iterations per ticket`. The one
+instruction this whole ticket exists to deliver — *do not increment `fix_iteration_counter` on an
+exit 3* — landed in `docs/AGENT_WORKFLOW.md` and `CONVENTIONS_PATCH.md` Rule A and **not** in the
+file that governs the counter. Rule AI's tier-0 amendment (`CONVENTIONS_PATCH.md:2697-2740`, landed
+by RETRO-246 on 2026-08-05) names `.claude/agents/*.md` explicitly, says _"when a PR changes a
+mandated command, flag, script path or **procedure**, these are updated **before** the prose that
+describes them"_, and ships a verification grep. **Run verbatim it catches this PR. It was not run.**
+→ **FOLLOW-854 (P1, unfrozen — HALF_WIRE_P).**
+
+### 1. Summary of change
+
+- **PR:** #683 (merged 2026-08-06 05:20:37 UTC, squash → `559b1595`; branch
+  `devops-engineer/FOLLOW-846-baseline-walk`; worker `devops-engineer` / **Opus**)
+- **Files changed: 4 (+624 / −176).** `gh pr view 683 --json files` **and**
+  `git diff --numstat 559b1595^ 559b1595` agree exactly:
+
+  | file                                        |  +  |  −  |
+  | ------------------------------------------- | --- | --- |
+  | `scripts/gh-pr-checks-verified.sh`          | 572 | 167 |
+  | `.claude/agents/devops-engineer/lessons.md` |  28 |   0 |
+  | `docs/AGENT_WORKFLOW.md`                    |  20 |   9 |
+  | `CONVENTIONS_PATCH.md`                      |   4 |   0 |
+
+  The gate goes 735 → **1140 lines**. It was 247 lines four days ago.
+
+- **Modules touched:** repo-process only — `scripts/`, `docs/`, `CONVENTIONS_PATCH.md`, `.claude/`.
+  **Zero** `apps/`, `packages/`, `infra/`, `.github/`, migrations, Python.
+- **Key contracts changed:**
+  1. **The Rule I baseline: `main`'s latest *completed* run → a bounded 20-run newest-first walk**
+     that takes the first run producing a parseable symbol set, rejecting at four levels and naming
+     every skipped run with its reason. **Breaking: no; strictly more available.**
+  2. **The exit-code contract: exit 3 widened from "usage-or-`gh`-error" to "the gate could not run
+     or could not complete its comparison", on EVERY side** — including PR-side log failures.
+     **Breaking: yes, for every consumer** (§3 CHECK B, §5a). This is the scope extension the brief
+     flags, and it is the right call for a reason the worker states and I verify below.
+  3. **The fixture seam is double-gated and now REFUSES** — `GH_PR_CHECKS_SELF_TEST=1` **and** a
+     `self-test.marker` file inside the fixture dir, else exit 3 with a named diagnosis. **Breaking:
+     no** (nothing outside the script set the variable).
+  4. **Failing check-runs are de-duplicated BY NAME, and duplicate Rule I check-runs have their
+     symbol sets UNIONED.** Breaking: no; changes the reported failure count.
+  5. The self-test harness: 11 → **16 fixtures**.
+
+### 2. Verification done in PR
+
+- **Test files changed: 0 in the conventional sense; 5 fixtures added inside the gate** (11 → 16),
+  each asserting a **specific** exit code plus a required substring.
+- **CI: passed**, validated with **both** gates — `main`'s then-current one and the one the PR ships,
+  run in production mode against the live PR. A gate change only its own new version accepts would be
+  unfalsifiable. That discipline is now three PRs old and it should be considered the standard.
+- **The new gate demonstrated its own fix during the validation run**, which is the strongest kind of
+  evidence available for this ticket: it **skipped** runs `31050249303` and `31050137719`
+  (`conclusion=cancelled`) and a newer `in_progress` run, naming each with its reason, chose
+  `31050514097`, and printed that `main` is ahead of it.
+- **MY OWN RUNS — five, all in a scratch copy or against a scratch fixture dir; the working tree was
+  never mutated (Rule AM).**
+
+  ```
+  1. control                          bash scripts/gh-pr-checks-verified.sh --self-test
+                                        -> RESULT: --self-test passed — 16 fixtures.  (15 outside a git checkout)
+  2. revert FOLLOW-846's walk         delete the `concl != success && != failure` rejection
+                                        -> EXACTLY ONE fixture fails:
+                                           "a cancelled newest run is skipped and the walk finds a real baseline
+                                            exited 0 as expected, but never said 'run conclusion=cancelled' —
+                                            the right verdict for the wrong reason is not a pass."   NON-VACUOUS +
+                                                                                                    DISCRIMINATING
+  3. RETRO-250's CB-1 exploit         GH_PR_CHECKS_FIXTURE_DIR=<dir> bash …sh 683
+                                        -> "ERROR: REFUSING TO RUN … exit=3"      CB-1 IS DEAD ✅
+                                           (and again with the marker file present but the env var unset -> exit 3)
+  4. RETRO-250's TG-1 perturbation    delete `"$snapshot" == "$prev_snapshot"` from the settle condition
+                                        -> ZERO fixtures fail; "RESULT: --self-test passed"          STILL BLIND ❌
+  5. the false-green drive            see §headline 1                                                 NEW DEFECT ❌
+  ```
+
+  Run 2's failure message is worth preserving as a standard: `_st_expect` fails a **right verdict
+  reached for the wrong reason**, which is a stronger fixture contract than "the exit code matched"
+  and is what makes the perturbation informative.
+- **What the verification did NOT cover:** the settle loop (run 4 — RETRO-250's TG-1, unchanged and
+  still unpinned), the failing-list parse (§headline 1), the PR-side/baseline provenance asymmetry
+  (§headline 2), the fixture **count** (still no `-eq 16` assertion — RETRO-250's CB-3, and I
+  observed it degrade silently to 15 outside a git checkout), and the tier-0 instruction corpus
+  (§headline 3).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** No new files. The new shell functions
+(`fetch_main_run_candidates`, `fetch_main_job_meta`, `resolve_rule_i_baseline`, `iso_age_seconds`,
+and the new `_st_*` fixtures) each have ≥1 non-definition call site in the same file; the retired
+`fetch_main_run_meta` / `fetch_main_job_id` are **removed**, not left orphaned
+(`grep -c "fetch_main_run_meta\|fetch_main_job_id" scripts/gh-pr-checks-verified.sh` → 0). The
+`pr-checks-gate-self-test` CI job is unchanged and still hard (no `if:`, no `continue-on-error`) —
+and it **executes**, which I confirmed rather than assumed by running `--self-test` myself.
+
+**CHECK B — half-wire. ONE FINDING, and it is the ticket's own headline instruction.**
+
+- **HALF_WIRE_P (producer only) — the exit-3 contract has a producer, two prose consumers, and NO
+  consumer in the corpus that makes the decision.** Producer: `:581`, `:982`, `:1055` and the seam
+  refusal at `:175` all exit 3 with named diagnoses. Consumers, enumerated by grep rather than by
+  memory (`grep -rn "gh-pr-checks-verified" --include=*.md --include=*.sh --include=*.yml .`):
+
+  | consumer                                   | routes on exit code | carries exit 3 | correct after #683 |
+  | ------------------------------------------ | ------------------- | -------------- | ------------------ |
+  | `docs/AGENT_WORKFLOW.md:200-212`           | yes                 | yes            | ✅ (this PR)       |
+  | `CONVENTIONS_PATCH.md` Rule A `:36-45`     | yes                 | yes            | ✅ (this PR)       |
+  | **`.claude/agents/pm-orchestrator.md:54`** | **yes**             | **wrongly**    | **❌**             |
+  | `.claude/agents/backend-engineer.md:87,:108` | yes ("exit 0")    | no             | ❌ (silent)        |
+  | `.claude/agents/data-engineer.md:79`       | yes ("exit 0 required") | no         | ❌ (silent)        |
+  | `.claude/agents/ml-engineer.md:90`         | yes ("exit 0 required") | no         | ❌ (silent)        |
+  | `CLAUDE.md:60,:125`                        | describes only      | no            | ⚠️ tolerable       |
+  | `.github/workflows/ci.yml:721`             | `--self-test` only  | n/a           | ✅                 |
+  | `.claude/hooks/*`                          | **no hits**         | n/a           | ✅ (checked)       |
+
+  `pm-orchestrator.md:54` is the load-bearing one and it is **actively wrong, not merely silent**: it
+  states `3 = usage/gh error`, which now describes one of four causes, and it is in the same
+  paragraph as `HARD CAP 5 checks / 3 fix iterations`. The four worker definitions are silent, which
+  is fail-closed but leaves them retrying a tooling failure against their own caps.
+  **P1 per the CHECK-B classification, not by taste** — a producer-only signal is HALF_WIRE_P and
+  HALF_WIRE_P is P1. → **FOLLOW-854.**
+
+- **`.claude/hooks/` swept explicitly, as the brief asked** — `grep -rn "gh-pr-checks-verified" .claude/hooks/`
+  → **0 hits**. Nothing in the hook layer routes on this script's exit code. Recording the negative.
+- **No new event, env var, DB column, topic or SDK signal.** `GH_PR_CHECKS_FIXTURE_DIR` is
+  pre-existing and its producer/consumer pair is unchanged; what changed is that it is now **gated**,
+  which is a fix, not a wire.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the false-green parse. §headline 1.** `:826-830` builds `failure_names` with a single
+  PCRE against the exact serialization `{"name":"…","state":"…","url":"…"}` that `SNAPSHOT_FILTER`
+  (`:778`) happens to emit today: three keys, that order, no spaces. Any change to the filter, to
+  `gh`'s `-q` output, or to `jq`'s serialization empties the array under `set -uo pipefail` **without
+  `-e`**, and `mapfile` succeeds with zero lines → `failing: 0` → `RESULT: all checks green` → exit 0.
+  **Driven, transcript in §headline 1.** The producer and the parser are in the same file 48 lines
+  apart, which is what makes this survivable — and is also exactly the "declared identical, kept in
+  sync by prose" shape **Rule AQ** governs. The fix is not a better regex; it is the arithmetic
+  cross-check the script already performs on its other parse:
+  `[[ $((success + skipped + neutral + ${#failure_names[@]})) -eq $total ]]` or fail loud.
+  → **FOLLOW-856.**
+- **LG-2 (P1) — the PR-side union and the single-run baseline have different provenance, so a symbol
+  `main` introduced is attributed to the PR. §headline 2.** Driven. Mitigations that are real and
+  are why this is P1 rather than P0: the gate **prints the offending `symbol @ file`** so a reader
+  can adjudicate, the walk takes the newest usable run so the window is bounded, and a >72h baseline
+  raises a provisional-verdict WARN. What is missing is the **category**: this is neither a PR
+  failure nor a gate-tooling failure, and exit 1 is the wrong word for it. Note the window is not
+  small in practice — this session merged five PRs and `main`'s cancellation rate is 8/12
+  (FOLLOW-851), so the newest *usable* baseline can be several merges behind the merge ref.
+  → **FOLLOW-855.**
+- **LG-3 (P2, folded into FOLLOW-855, no new number — Rule AN) — the walk's rejection ladder has no
+  floor on `BASELINE_LOOKBACK`.** With `-L 20` and the measured 8/12 cancellation rate, a run of
+  cancellations plus 83–99-minute jobs can exhaust the window; the script then exits 3 with a good
+  message, which is correct. But the window is a constant chosen from one measurement, and nothing
+  re-derives it. Folded rather than filed because FOLLOW-851 owns the upstream cause.
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P2, folded into FOLLOW-856) — the fixture-count assertion RETRO-250 asked for is still
+  absent, and I watched it degrade.** `:709` prints `RESULT: --self-test passed — $st_passes fixtures.`
+  with no expected total. In this worktree it printed **15**; in CI it prints 16, because
+  `actions/checkout@v4` makes the git-index-mode fixture runnable. A fixture that silently stops
+  running is indistinguishable from one that passes — Rule Q one level down. RETRO-250 CB-3 filed
+  this into FOLLOW-848; **it was not in FOLLOW-846's scope and correctly was not done**, recorded so
+  nobody scores it against this PR.
+- **CB-2 (assessed, NOT filed — the residual seam is honest and documented).** With **both** opt-ins
+  satisfied, a production invocation still runs offline. I drove it: the header reads
+  `=== gh-pr-checks-verified.sh — PR #683 (fixture/repo) ===` and the verdict line reads
+  `[FIXTURE MODE — synthetic data, not a real PR] RESULT: all checks green.` The script says in-file
+  that this is _"not a security boundary (whoever can set env vars can also write files)"_ and that
+  the third layer is the unmissable tag on **every** RESULT line — which is where a paste would be
+  truncated to. **That is a correctly-scoped, honestly-labelled residual and I am not filing against
+  it.** Recording the negative so the next retro does not re-open it.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2 — still open, unchanged, owned by FOLLOW-848; re-proven by me, not carried over).**
+  Deleting the two-consecutive-snapshot condition — the entire mechanism FOLLOW-813 was created to
+  build — passes **every** fixture (§2 run 4). The cause is the fixture *format*: `fetch_snapshot`
+  serves one static `snapshot.json`, so a check-run set that **changes between polls** — the only
+  shape the late-registration race has — is inexpressible. **Three gate generations have now shipped
+  a harness that cannot see generation one's mechanism**, and that is the single most predictive fact
+  in this entry (§6).
+- **TG-2 (P2, folded into FOLLOW-856) — the snapshot fixtures are the test's own replica of
+  `SNAPSHOT_FILTER`'s output**, which is the same shape RETRO-250 §4c TG-2 recorded for the Rule I
+  log format, now with a **demonstrated consequence** (LG-1) rather than a hypothesised one.
+  Adjudicated against RETRO-247's P-32 bar rather than pattern-matched: clause (a) fails — the
+  assertion targets the **real** script's exit code and the replica is the INPUT, which is the
+  boundary RETRO-248 §5a drew and this worker again honoured. **P-32 does not fire.** What remains is
+  a cross-producer format contract with no parity fixture, and the arithmetic guard (LG-1) is a
+  better fix than a parity fixture because it is producer-agnostic.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1, folded into FOLLOW-854) — §headline 3.** The tier-0 corpus. Additionally: the same
+  `pm-orchestrator.md:54` sentence still says the gate _"classifies `Rule I` dynamically against
+  `main`'s own live violation **count**"_ — the mechanism PR #680 replaced with a symbol-set
+  comparison. **So FOLLOW-847's sibling set is three artefacts, not two, and this is the third.**
+- **DG-2 (P2 — FOLLOW-847 is 1 of 3 discharged, and the surviving prose miss is in the file this PR
+  edited).** `docs/AGENT_WORKFLOW.md:193-197` — one of RETRO-250's two named artefacts — **was**
+  corrected here, incidentally, by FOLLOW-846 rather than by FOLLOW-847 (the COUNT sentence is gone;
+  the "mirrors the shape FOLLOW-821 uses" sentence survives and, per RETRO-250 §5a, is now **true**).
+  `CONVENTIONS_PATCH.md` Rule A `:30-31` still reads _"compared against `main`'s own live violation
+  **count**"_ — and **this PR added four lines to that same code block, four lines below the false
+  sentence, and did not fix it.** Not re-filed (847 owns it); recorded because "the author was
+  demonstrably in the file" changes how the next assignment should be scoped.
+- **DG-3 (N/A — Master Design alignment checked, clean).** Algorithm step 5, run:
+  `grep -n "gh-pr-checks\|Rule I\b" docs/MASTER_DESIGN.md` → three hits, all surviving. `:576` names
+  `scripts/check-rule-i.sh` as the hard gate; still true, and this script is its consumer. The "42
+  permanent rules" count is unaffected — this retro mints **no letter** and writes nothing to
+  `CONVENTIONS_PATCH.md`; `grep -c "^## Rule " CONVENTIONS_PATCH.md` → **43**, unchanged, owned by
+  FOLLOW-772 (Rule AN). Same assessment RETRO-246 §4d DG-3 and RETRO-250 §4d DG-4 recorded.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-842 (IN_PROGRESS right now, P1, against `scripts/check-rule-i.sh`) — NOT invalidated, and
+  RETRO-252's subject DOES constrain it. The constraint is real but it is NOT the one RETRO-250
+  named, and correcting that is the useful part.** RETRO-250 warned: _"do not change that WARN line's
+  shape without updating `gh-pr-checks-verified.sh:178-180` in the same PR."_ I checked the actual
+  code. The WARN line is `echo "WARN: '${sym}' in ${file} — zero non-test importers"`
+  (`check-rule-i.sh:117`) and the gate parses `grep -oP "WARN: '\K[^']+' in \S+"` (`:239`) —
+  **they match exactly today, and 842's named work does not touch that echo.** 842's two `grep -oP`
+  sites are `:41` (package-root extraction) and `:121` (the **symbol extractor** feeding the loop).
+  **The real hazard is one level deeper and sharper:**
+  - The extractor decides **which symbols** are emitted, not how the line is shaped. A non-PCRE
+    replacement that extracts a different set (loses `export default`, gains `export {x}` re-exports,
+    handles multi-declarator `const a, b` differently) changes the symbol set on **both** sides — but
+    the two sides are produced by **different versions of the script**. The PR's Rule I job runs the
+    PR's `check-rule-i.sh` (`ci.yml:129-135`, `actions/checkout@v4` on the PR ref); the baseline ran
+    `main`'s. **So on 842's own PR, and only on it, the comparison is between two different
+    producers, and every symbol the new extractor finds that the old one missed is reported as
+    "New on this PR".** The P1 hygiene ticket blocks itself, loudly, for a reason its author will not
+    expect. **This is the same provenance-asymmetry defect as LG-2**, reached from the other side.
+  - **The line the PM should pass to whoever holds 842, and it is different from RETRO-250's:**
+    before touching `:121`, run the current and the replacement extractor over the whole tree and
+    diff the symbol sets; if they differ at all, the PR must be validated with a baseline produced by
+    its **own** extractor (or the gate's Rule I classification consciously waived for that one merge,
+    in writing). Do **not** rely on the WARN line being unchanged — it will be, and it is not the
+    thing that matters.
+  - **Provisional, and labelled as such: the in-flight 842 work appears to AVOID this, by design.**
+    FOLLOW-842 is executing concurrently and its draft artefacts are visible in this session's shared
+    scratch directory — **unmerged, uncommitted, and liable to change, so this is an observation and
+    not a finding.** On that draft the worker adds a **preflight probe of the exact `grep -oP` + `\K`
+    construct** (exit 3 on a degraded matcher) rather than replacing the extractor, pins the literal
+    `WARN:` and `Violations found` lines with a fixture, and reports `638 / 192` — **identical to
+    `main`'s current symbol count, which I measured independently at §2 of RETRO-251.** If that
+    approach holds to merge, the two-producer hazard does not fire, because the extractor's output
+    set does not move. **The hazard is therefore a property of the FIX STRATEGY, not of the ticket:**
+    preflight-and-fail-loud is safe; extract-differently is not. Whoever reviews 842 should check
+    which one landed. (The draft also reaches RETRO-250's coupling conclusion independently — _"if the
+    `WARN:` or `Violations found` line had shifted by a byte, this would have been an unusable
+    baseline"_ — so that warning propagated and was acted on.)
+  - 842 AC(2) (`assert TOTAL_SYMBOLS > 0`) remains doubly load-bearing: a degraded matcher there
+    empties the baseline the merge gate compares against.
+- **FOLLOW-847 — NOT invalidated; 1 of 3 discharged, and its sibling set is one artefact larger than
+  it says** (§4d DG-1/DG-2). Recommendation to the PM: either widen 847 to name
+  `.claude/agents/pm-orchestrator.md`, or close its remaining `CONVENTIONS_PATCH.md` leg into
+  FOLLOW-854, which is the tier-0 ticket. Two tickets on one sentence is the Rule AN hazard RETRO-250
+  flagged for FOLLOW-831/842.
+- **FOLLOW-848 — NOT invalidated; PARTIALLY discharged by this PR, and the split matters.** Its three
+  legs: (i) the fixture seam live in production mode — **CLOSED**, driven by me in both refusal
+  directions (§2 run 3); (ii) the harness cannot see a settle-loop regression — **STILL OPEN**,
+  re-proven by me (§2 run 4, §4c TG-1); (iii) no fixture-count assertion — **STILL OPEN**, observed
+  degrading 16 → 15 (§4b CB-1). 848 should be re-scoped to (ii)+(iii) rather than left carrying a
+  closed leg, or the next reader will re-verify the seam.
+- **FOLLOW-851 — NOT invalidated, and UNDER-ENUMERATED BY ONE WORKFLOW. The brief asks what else
+  reasons off "main's latest run"; I swept and found two things, one of which is not in the stub.**
+  - **`.github/workflows/demo-integration.yml:38-41` has the identical defect.** It runs
+    `on: push: branches: [main]` and sets `concurrency: group: demo-integration-${{ github.ref }}` /
+    `cancel-in-progress: true`. FOLLOW-851 names only `ci.yml`. Every other workflow was checked:
+    `deploy-staging`, `db-migrate`, `modal-deploy` all set `cancel-in-progress: false` deliberately.
+  - **The fix already exists in this repo and was not applied to either sibling.**
+    `.github/workflows/redis-shadow-smoke.yml:115` carries
+    `group: ${{ (github.event_name == 'push' && github.ref_name == 'main') && format('…-main-run-{0}', github.run_id) || format('…-{0}', github.head_ref || github.ref_name) }}`
+    with `cancel-in-progress: false` — i.e. a per-run-unique group on `main` so main runs never cancel
+    each other, landed via RETRO-238. **FOLLOW-851's AC(1) frames this as an open trade ("Actions
+    minutes against having a real verdict"); the repo already made that call once and the answer is
+    in a workflow file.** That is a **P-34** shape (a hard-won fact stored where nobody greps) and it
+    should be in 851's AC.
+  - **Second consumer of "main's latest run", and it is a rule's own Verification block.**
+    `CONVENTIONS_PATCH.md` **Rule AF** step 1 (`:2280-2285`) tells any auditor to run
+    `gh run list --branch main --limit 20 --json conclusion` and, per workflow,
+    `--limit 3 --json conclusion`. With 8 of 12 `main` runs `cancelled`, a 3-run window can return
+    three conclusions that answer neither "green" nor "red" — and Rule AF's rule 3 turns on whether
+    _"a red job makes its whole workflow's conclusion `failure` on every push to `main`"_, a premise
+    `cancel-in-progress` makes unreadable. Rule AF is the rule that exists to answer "is `main`
+    healthy"; `ci.yml`'s concurrency setting is why it cannot. **Recorded against FOLLOW-851's AC(2)
+    ("name every consumer") rather than filed — that AC is exactly right and this is its second
+    entry.**
+- **FOLLOW-849 — RE-CONFIRMED LIVE, by a third-party observation I did not go looking for.** Writing
+  this retro from `.claude/worktrees/retro-251-252` on branch `retrospective-analyst/RETRO-251-252`,
+  the pre-edit hook fired: `FOLLOW-448 branch guard: about to edit '…' while HEAD == 'main'`.
+  `git rev-parse --abbrev-ref HEAD` → `retrospective-analyst/RETRO-251-252`. **Fourth independent
+  reporter.** The stub is accurate as written; nothing to add except that it now fires against the
+  retro agent too, so every agent class has hit it.
+- **FOLLOW-850 — RE-CONFIRMED LIVE.** `command -v lefthook` → not found; this worktree's `.git` is a
+  gitdir pointer file, so no hook path is installed. Every commit made from an agent worktree this
+  session ran **no** pre-commit hook, including mine.
+- **FOLLOW-828 — its AC(3) is now DISCHARGED by this PR and its AC(1)/(2)/(4) are not, so it must be
+  re-scoped rather than closed.** AC(3) asked for the exit-code table in `docs/AGENT_WORKFLOW.md`
+  plus a Rule A reference "which currently documents only 0/1/2" — both landed here. **Overlap with
+  FOLLOW-854, checked before filing:** 828 is about the **five agent definitions with NO CI step**;
+  854 is about the **four that HAVE one and whose exit-code text is now wrong**. Disjoint sets,
+  disjoint defects, same corpus. Cross-referenced, not merged — and the PM should note that closing
+  854 without 828 leaves 5 of 9 agents still uninstructed, which is RETRO-246's original HW-2.
+- **FOLLOW-821 / 843 / 844 — not invalidated.** 844's "should pass shellcheck" claim was measured at
+  247 lines, re-flagged by RETRO-250 at 735, and the file is now **1140**; re-measure, do not assume.
+- **FOLLOW-845 / 852 / 853 / 839 / 840 / 841 — unaffected.** This PR touches no `apps/`, no
+  `packages/`, and adds no exported symbol.
+
+**⚠️ SEVERITY FLAG FOR THE PM (§5 is where my guardrails require this; I am not escalating).**
+**FOLLOW-856 is a live false-green path in the merge gate on `main` right now, and its blast radius
+is every PR.** The trigger requires a change to the snapshot serialization, which is bounded — but
+that is the same argument that was available for `--watch` before PR #668 and for the PCRE fail-open
+before FOLLOW-830, and both of those were real within days. Whether the combination of 854/855/856
+warrants an `ESCALATIONS.md` entry alongside the three P1 stubs is the PM's call, not mine.
+
+#### 5b. Future sprint tickets affected
+
+Every future ticket, on the axis the last three retros keep returning to and that is now measurable:
+**the gate's verdict is a function of the PR, `main`'s CI history, the local toolchain, and two
+serialization formats produced elsewhere.** Four inputs, of which the harness validates one and a
+half. Any ticket touching `check-rule-i.sh`, `ci.yml`'s concurrency block, or `SNAPSHOT_FILTER`
+interacts with the merge gate for the whole repo, and that is not visible from any of those tickets'
+own scopes.
+
+#### 5c. Contracts changed others rely on
+
+- **The exit-code contract (0/1/2/**3**)** — consumed by four agent definitions, the PM's §5b step and
+  every ticket DoD; 2 of 3 prose consumers correct, the executing consumer wrong (§3, FOLLOW-854).
+- **`check-rule-i.sh`'s `WARN:` line** — still the parsed contract, still undocumented on both sides;
+  the sharper coupling is the **symbol extractor**, not the line (§5a FOLLOW-842).
+- **`SNAPSHOT_FILTER`'s serialization** — promoted from an implementation detail to a parsed contract
+  with a fail-OPEN failure mode (§4a LG-1). New as of this file's existence; newly load-bearing now
+  that I have driven it.
+- **`main`'s CI run history** — input, not evidence (RETRO-250 §5d); this PR makes the gate tolerate
+  its gaps and does not remove the dependency.
+
+#### 5d. Architectural assumptions affected
+
+**The gate's own verification apparatus has, three generations running, been scoped to the defect
+being fixed and never to the mechanism being inherited.** That is not an impression; it is
+measured. Generation 2 (#675) shipped no harness. Generation 3 (#680) shipped 11 fixtures pinning
+generation 2's two defects and, by RETRO-250's perturbation, **not** generation 1's settle loop.
+Generation 4 (#683) shipped 16 pinning generation 3's defects and, by **my** perturbation, still not
+generation 1's. The harness is a **changelog of past bugs**, and a changelog cannot fail on a
+regression in something that never had a bug filed against it. That is the whole of §6's answer to
+"will the fourth be different".
+
+The second, better piece of news, and it deserves equal weight: **the trust root now has a floor
+that visibly holds.** RETRO-250's CB-1 backdoor is dead and I proved it by re-running the exact
+exploit transcript. The seam refuses in both directions with a diagnosis. The fixtures discriminate
+— run 2 failed exactly one, and failed it for the *reason*, not just the exit code. This is the
+best-verified artefact in the repo's process layer, and it still has two false-verdict paths, which
+is the honest summary of both the progress and the ceiling.
+
+### 6. New lesson candidates
+
+- **THE BRIEF'S QUESTION — "three gate generations in three days, each with a false-verdict path;
+  what is common, and will the fourth be different?" Answered with the measurement, not an
+  impression.**
+
+  | gen | artefact                                | false-verdict path                       | unvalidated INPUT it rested on            | found by     |
+  | --- | --------------------------------------- | ---------------------------------------- | ----------------------------------------- | ------------ |
+  | 1   | `gh pr checks --watch`                  | GREEN on a late-registered check-run     | the check-run set's completeness           | use (PR #668) |
+  | 2   | `gh-pr-checks-verified.sh` v1 (#675)    | GREEN on a compensating swap; GREEN on a non-PCRE host | the violation *count*; the local `grep` | a retro (246) |
+  | 3   | v2 (#680)                               | RED on a cancelled baseline; GREEN via the seam | `main`'s run history; an env var       | use, live (250) |
+  | 4   | v3 (#683)                               | GREEN on a serialization mismatch; RED on a `main`-introduced symbol | the snapshot serialization; the two sides' provenance | a retro (**this**) |
+
+  **Three things are common to all four, and each is a testable property rather than a sentiment.**
+  (a) **Every defect lives in an INPUT or a DEPENDENCY the gate consumes and does not validate** — not
+  once in the gate's own decision logic, which has been correct at every generation. (b) **Every
+  generation's harness was scoped to the defects it was fixing**, so no generation can detect a
+  regression in the previous generation's mechanism — demonstrated, twice, by the same perturbation
+  (RETRO-250 §2 and §2 run 4 here). (c) **Every generation was validated by dogfooding against one
+  live PR**, and one PR exercises one path through four inputs.
+
+  **Will the fourth be different? On the evidence, no — and the evidence is specific rather than
+  gloomy.** The one property that would predict a different outcome is whether the harness's fixture
+  list is derived from the gate's **inputs** rather than from its **bug history**. Measured against
+  generation 4's 16 fixtures: the check-run stream has fixtures for *content* (green / undocumented
+  failure / zero checks) and **none for its temporal shape**, which is the input class generation 1
+  died on; the snapshot **serialization** has zero fixtures (§4a LG-1); the PR-side/baseline
+  **provenance** has zero (§4a LG-2). Three of the gate's input classes are unpinned, and two of them
+  produced this entry's headlines.
+
+  **What would have to be true, stated so the next retro can check it as a yes/no.** (1) The fixture
+  list enumerates the gate's inputs — the check-run stream, the PR Rule I log, `main`'s run list,
+  `main`'s Rule I log, the local toolchain, the snapshot serialization — with at least one fixture
+  per input for absent / late / malformed / stale, and the enumeration is **stated in the file** so
+  the next author extends it rather than appends to it. (2) `fetch_snapshot` can serve a **sequence**
+  (`snapshot.1.json`, `snapshot.2.json`, …) so the temporal input class becomes expressible at all;
+  RETRO-250 already scoped this into FOLLOW-848 and it is three lines. (3) The harness asserts its own
+  fixture count, so a silently-skipped fixture is a red (§4b CB-1). (4) Every parse in the file has an
+  arithmetic or cross-field self-consistency check, the way `rule_i_symbols_from_log`'s caller already
+  does (§4a LG-1). **All four are cheap, and none of them is a rule — which is why this is recorded as
+  an answer and not promoted.**
+
+- **P-35 ("A GATE'S VERDICT DEPENDS ON AN ARTEFACT OUTSIDE EVERY PR'S CONTROL, SO IT IS
+  NON-DETERMINISTIC FOR A FIXED INPUT") — SECOND INSTANCE FOUND, CLAUSE (b) NOT MET, **NOT
+  PROMOTED**, RE-ARMED.** RETRO-250 minted P-35 at count 1 with a pre-specified three-clause bar and
+  I tested §4a LG-2 against it clause by clause rather than pattern-matching:
+  - **(a) verdict is a function of state no author of the change under test can observe or influence**
+    — ✅. `main`'s merge history between the baseline run and the merge-ref build.
+  - **(b) demonstrated non-determinism — the same input producing two verdicts, or a verdict changing
+    with no change to the input** — ❌. I demonstrated the **comparison** (the fixture drive in
+    §headline 2) but not the **non-determinism**: I did not observe one PR flip verdicts, as RETRO-250
+    did live on #681. My evidence is a driven mechanism plus a code-read provenance argument. **My
+    predecessor chose the word "demonstrated" deliberately to stop theory-driven promotion, and I am
+    held by it.**
+  - **(c) reported in the vocabulary of the thing under test** — ✅. `GENUINE FAILURES (blocking)`,
+    exit 1.
+  - **Verdict: 2 of 3. NOT PROMOTED. P-35 stays at count 1 / 0 prior.** **RE-ARMED with the clause-(b)
+    discharge named in advance so the next retro does not re-derive it:** the cheapest possible
+    demonstration is to run the gate against any open PR twice — once before and once after any other
+    PR merges a dead export into `main` — and record both verdicts on the same head sha. FOLLOW-855's
+    AC carries that as its reproduction step.
+- **THE `.claude/` PROPAGATION MISS — RULE AI FIRES, ITS OWN AMENDED VERIFICATION CATCHES IT, SO
+  **NO PROMOTION AND NO AMENDMENT**. And the timing is the finding.** Tested by the RETRO-246
+  methodology — read the rule's text and ask whether running it verbatim would report this PR clean:
+  - Rule AI's tier-0 amendment (`CONVENTIONS_PATCH.md:2697-2740`) names `.claude/agents/*.md`
+    explicitly, covers a changed **"procedure"** as well as a command, orders tier 0 **before** the
+    prose, and ships greps (steps 5 and 6). Run verbatim it reports PR #683 **not clean**. It is
+    therefore a **compliance failure against an adequate control**, which is the adjudication
+    RETRO-247 reached for Rule S and RETRO-248 for Rule P. **No rule action.**
+  - **The timing is what makes it worth an entry rather than a footnote: the amendment landed
+    2026-08-05 with RETRO-246 and was violated 2026-08-06 by the same agent class
+    (`devops-engineer`), on the same corpus (`.claude/agents/*.md`), on the same script.** Under 24
+    hours. A rule amended in response to a defect, then violated by the next PR touching the same
+    file, is the cleanest available evidence that **this estate's binding constraint is enforcement,
+    not rule text** — which is the conclusion RETRO-248 §6 reached across three retros and RETRO-250
+    §6 said had moved one layer out. It has not moved for the doc-propagation class.
+  - **The mechanisable slice is narrow and is NOT owned by any open stub:** Rule AI's steps 5/6 are
+    greps nobody runs, and FOLLOW-828 AC(4)'s `grep -L "gh-pr-checks-verified" .claude/agents/*.md` is
+    a **coverage** grep for the command name, not a **correctness** grep for the semantics. Folded
+    into FOLLOW-854's AC(4) rather than given its own number (Rule AN).
+- **"ENUMERATE-DON'T-FIX" (RETRO-250's armed Rule S amendment) — DOES NOT FIRE HERE, recorded so the
+  arming is not spuriously discharged.** RETRO-250 armed a Rule S amendment on the *form* an
+  exemption takes (filed tickets rather than prose). PR #683 filed three stubs from its own findings
+  (849/850/851), which looks like a second sighting — but RETRO-250's own text excludes exactly this:
+  the sightings it counts are workers **instructed** to enumerate-not-fix, and #683's stubs are
+  incidental findings, not a discharged enumeration exemption. **Counting them would be the RETRO-122
+  count-inflation this corpus forbids.** The arming stands, undischarged, at count 1.
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus**, on a ticket whose wrong
+  answer re-breaks every merge. It paid twice and both are identifiable: the duplicate check-run
+  finding was **diagnosed before being fixed** (§6 below), and the exit-3 scope extension is an
+  argument the AC did not contain. It also **missed twice**, and both misses are *reading* misses of
+  the same kind — the failing-list parse and the provenance asymmetry are both in the 200 lines the
+  worker rewrote. That is the third consecutive retro to record Opus catching the reasoning and
+  missing the reading, which is a routing datum worth carrying: **the model tier is not the control
+  for enumeration completeness; the AC is** (RETRO-251 §6 P-36, same session, independently derived).
+
+- **THE DUPLICATE-CHECK-RUN DIAGNOSIS — assessed as a PRACTICE, which is the brief's question, and it
+  is the best single thing in this PR.** The sequence was: measure (75 check-runs, 39 names, 36
+  duplicated), attribute (the `push` and `pull_request` events register the same job twice), **assess
+  the consequence before choosing a fix** (double-counting, not a wrong verdict, because the collapse
+  operates on the failing list only and cannot drop the last entry for a name), and only then reject
+  the obvious fix **with a reason that is a fact about the domain rather than a preference**: branch
+  head and merge ref are different commits, so "keep the first" can silently pick the friendlier of
+  two legitimately-different symbol sets. The union is strictly more conservative and the file says
+  why (`:955-961`). **This is the inverse of the failure mode this corpus keeps recording** — the
+  usual shape is a fix applied to the shape the finder happened to see. **It should be the standard
+  and it is not new: it is Rule P plus Rule AO applied properly, so no rule.** What it demonstrates is
+  that *diagnose-then-fix* is cheap when the diagnosis is a measurement (`gh pr view --json
+  statusCheckRollup | jq` — one command). Recorded as the practice worth copying, and it is worth
+  noting that the same PR's *other* fix (the union) is what produced §4a LG-2 — a correct fix on one
+  side of an asymmetry it did not check the other side of.
+
+### 7. Follow-ups
+
+- **FOLLOW-854:** The exit-3 contract reached the prose and not the corpus that executes it —
+  `.claude/agents/pm-orchestrator.md:54` still says `3 = usage/gh error` (and still describes the
+  retired Rule I **count** mechanism) in the same paragraph as the `fix_iteration_counter` cap, and
+  four wired agent definitions say only "exit 0 required"; add the missing Rule AI step-5/6 grep to
+  the gate's own self-test so the corpus cannot drift again (devops-engineer, 2h, **P1**, **UNFROZEN**
+  per the session-95 P1 carve-out) — **HALF_WIRE_P**
+- **FOLLOW-855:** The PR-side Rule I set is the union of the branch-head and merge-ref runs while the
+  baseline is a single older `main` run, so a dead export another PR merged into `main` is reported
+  as `New on this PR` and blocks with exit 1 — driven; add the third verdict category ("`main` moved
+  under this PR") and a fixture for it (devops-engineer, 3h, **P1**, **UNFROZEN**)
+- **FOLLOW-856:** The failing-check list is a single PCRE against `SNAPSHOT_FILTER`'s exact
+  serialization with no self-consistency check, so a format mismatch yields `failing: 0` →
+  `RESULT: all checks green` → exit 0 over a snapshot containing FAILURE checks — driven; add the
+  arithmetic guard the script already applies to its other parse, plus a fixture (devops-engineer,
+  2h, **P1**, **UNFROZEN**)
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one
+hop:**
+
+- **FOLLOW-846 — CLOSED on AC(1) and AC(4); CLOSED-IN-LETTER-AND-INCOMPLETE on AC(2); CLOSED on
+  AC(3).**
+  - **AC(1) baseline selection** ✅ — **producer** `fetch_main_run_candidates:377-386` (the `--status`
+    filter dropped, `-L 20`) → **consumer** `resolve_rule_i_baseline:856-940`, a four-level rejection
+    ladder → **render** the `SKIPPED run <id> … : <reason>` / `CHOSEN run <id>` lines, observed live
+    in the PR's own validation run and pinned by two fixtures. **Perturbation-proven by me:** reverting
+    the conclusion check fails exactly one fixture, and fails it on the *reason* string (§2 run 2).
+  - **AC(2) "stop reporting a tooling failure in the vocabulary of a PR failure"** — the exit-3
+    category exists and is right, **and the vocabulary problem is not closed**: the executing consumer
+    was never told (§3, FOLLOW-854), and a third category is still missing (§4a LG-2, FOLLOW-855).
+    **Stated precisely: the gate's vocabulary improved and the decision-maker's dictionary did not.**
+  - **AC(3) the 404 diagnosis** ✅ — `classify_fetch_error:256-298` now distinguishes cancelled /
+    skipped / not-concluded / genuinely-expired (≥90 days) / recent-and-missing, pinned by the fixture
+    "a 404 on a cancelled job is diagnosed as cancellation, not log expiry". RETRO-250's CB-2 is
+    discharged.
+  - **AC(4) duplicate check-runs** ✅ — diagnosed, then collapsed by name with symbol-set union,
+    pinned by one fixture, reasoning in-file.
+- **FOLLOW-827 / FOLLOW-830 — re-checked, both still closed, and I re-proved the load-bearing half
+  rather than carrying it over.** The symbol-set comparison survives the rewrite intact
+  (`comm -23` / `comm -13` at `:1063-1064`), the PCRE preflight is intact, and the 16-fixture harness
+  still contains F5 (compensating swap) and F7 (no-PCRE) — both listed passing in my control run.
+- **FOLLOW-813 — the chain has moved from the classifier's inputs to the classifier's PARSERS, and
+  that is the same movement one layer further out, not a stall.** Traced hop by hop: `--watch`'s race
+  (closed, dogfooded) → the count comparison (closed, perturbation-proven at RETRO-250) → the PCRE
+  fail-open (closed, perturbation-proven at RETRO-250) → the unusable baseline (**closed here,
+  perturbation-proven by me**) → the fixture seam (**closed here, exploit transcript re-run by me**)
+  → **open: the failing-list parse (FOLLOW-856, a false GREEN, driven), the set provenance
+  (FOLLOW-855, a false RED, driven), and the harness's blindness to the ORIGINAL mechanism
+  (FOLLOW-848 / §4c TG-1, re-proven by me and unchanged since RETRO-250).** AC(2)'s wording is
+  "cannot report a false green". **Verdict: three known paths are dead and provably dead; one new
+  false-green path is open and I drove it. Still not "cannot" — and the next retro must check
+  FOLLOW-855, FOLLOW-856 and FOLLOW-848 before anyone writes that this class is closed.**
+- **FOLLOW-831 — NOT closed, unchanged.** `git ls-files -s scripts/check-rule-i.sh` → `100644`,
+  `test -x` → false. Still double-owned with FOLLOW-842 AC(4) (RETRO-250 §5a).
+
+### 8. Cross-references
+
+- **RETRO-250** — the retro this one grades. **Four of its calls are confirmed:** LG-1 (the baseline
+  selection, fixed and perturbation-proven by me), CB-1 (the seam, fixed — exploit transcript re-run
+  and now refused in both directions), CB-2 (the 404 diagnosis, fixed), and its §5a prediction that
+  FOLLOW-838/#681 was unaffected. **One of its calls is corrected:** its FOLLOW-842 warning named the
+  `WARN:` line's *shape* as the coupling; the shape is untouched by 842's named work and the real
+  hazard is the **symbol extractor's output set** across two script versions (§5a). **One of its
+  findings is re-proven unchanged:** TG-1, the settle-loop blindness.
+- **RETRO-249 §6** — its armed Rule Y Verification repair was discharged by RETRO-250; nothing here
+  re-opens it. Its `consoleIntegration` finding is the subject of the sibling entry above.
+- **RETRO-248 §5a** — its boundary ("synthesize the INPUT, never re-implement the LOGIC UNDER TEST")
+  honoured again by this worker, which is why §4c TG-2 adjudicates P-32 as not firing.
+- **RETRO-247** — measurement discipline obeyed: `gh pr view --json files` **and**
+  `git diff --numstat 559b1595^ 559b1595`, never a `--stat` across unrelated SHAs.
+- **RETRO-246** — the source of the Rule AI tier-0 amendment this PR violates 21 hours after it
+  landed (§6), and the source of the "read the rule's TEXT and ask whether running it verbatim would
+  report this PR clean" method, applied here to Rule AI (fires, catches → compliance failure) and to
+  P-35's bar (clause (b) unmet → no promotion).
+- **RETRO-238 / `redis-shadow-smoke.yml:115`** — the in-repo precedent for the `cancel-in-progress`
+  fix that neither `ci.yml` nor `demo-integration.yml` adopted (§5a, FOLLOW-851).
+- **RETRO-122** — the count-inflation discipline, applied twice: P-35 held at 1 despite a same-shape
+  instance, and RETRO-250's Rule S arming explicitly not discharged.
+- **Rule AQ / Rule AF / Rule Q** — the standing rules §4a LG-1, §5a FOLLOW-851 and §4b CB-1
+  respectively instance without any of them needing amendment.
+- **Rule AM** — followed: all five of my runs used a scratch copy or a scratch fixture dir; the
+  working tree was never mutated.
+
+<!-- RETRO-252 (PR #683, FOLLOW-846, merge 559b1595, 4 files +624/-176 per gh pr view --json files AND git
+diff --numstat 559b1595^..559b1595 — the two agree). VERDICT: BEST-VERIFIED GENERATION YET AND IT SHIPS TWO
+FALSE-VERDICT PATHS, BOTH DRIVEN BY ME THROUGH THE REAL SCRIPT. (1) LG-1 P1 FALSE GREEN: failure_names is one
+PCRE (:826-830) against SNAPSHOT_FILTER's exact serialization with NO cross-check against the counts printed
+two lines earlier; a serialization mismatch prints "Total checks: 2 | success: 0 | skipped: 0 | neutral: 0 |
+failing: 0" + "RESULT: all checks green. Safe to mark READY_FOR_REVIEW" + exit 0 over a snapshot containing
+two FAILURE check-runs — arithmetically impossible and unguarded, while the SAME FILE fails loud on the
+analogous Rule I parse (count>0 && symbols==0) -> FOLLOW-856. (2) LG-2 P1 FALSE RED: the PR side is the UNION
+of the push (branch head) and pull_request (merge ref) runs while the baseline is ONE older main run, so a
+dead export ANOTHER PR merged into main appears in the merge-ref log only and is reported "New on this PR:
+1 / GENUINE FAILURES (blocking)" exit 1 — driven with a fixture; nobody on that PR can fix it, and the gate
+has a category for "PR wrong" (1) and "gate could not look" (3) but none for "main moved" -> FOLLOW-855.
+(3) HALF_WIRE_P P1: exit 3 propagated to docs/AGENT_WORKFLOW.md + CONVENTIONS_PATCH.md Rule A and NOT to
+.claude/agents/pm-orchestrator.md:54, which still reads "3 = usage/gh error" AND still describes the retired
+Rule I COUNT mechanism, in the SAME paragraph as "HARD CAP 5 checks / 3 fix iterations" — i.e. the one
+instruction the ticket exists to deliver (do not increment fix_iteration_counter on a 3) never reached the
+file that governs the counter; four more agent definitions say only "exit 0 required" -> FOLLOW-854. Rule
+AI's tier-0 amendment landed 2026-08-05 (RETRO-246) naming .claude/agents/*.md and covering a changed
+"procedure"; run verbatim it CATCHES this PR -> compliance failure, NO amendment, NO promotion — and the
+21-hour gap between amendment and violation, same agent class same corpus same script, is the finding.
+MY RUNS (5, all scratch, Rule AM): control 16 fixtures pass; revert the walk's conclusion check -> EXACTLY
+ONE fixture fails and fails on the REASON string ("the right verdict for the wrong reason is not a pass") =
+discriminating; RETRO-250's CB-1 exploit -> "REFUSING TO RUN" exit 3 both directions, CB-1 IS DEAD; delete the
+two-consecutive-snapshot condition (the whole FOLLOW-813 mechanism) -> ZERO fixtures fail, STILL BLIND
+(RETRO-250 TG-1 unchanged); fixture count degrades 16 -> 15 outside a git checkout with no assertion
+(RETRO-250 CB-3 unchanged). BRIEF Q1 ANSWERED WITH A TABLE: all four generations' defects live in an INPUT or
+DEPENDENCY the gate does not validate (never in its decision logic), every harness was scoped to the defects
+being fixed so no generation can see the previous one's mechanism regress (demonstrated twice by the same
+perturbation), and every generation was dogfooded against ONE live PR. The fourth will NOT be different on
+the evidence: 3 of the gate's input classes (temporal check-run shape, snapshot serialization, set
+provenance) have zero fixtures, and two of them produced this entry's headlines; four cheap, named,
+checkable conditions are listed that would change that. BRIEF Q2 (unswept exit-3 consumers) SWEPT MYSELF:
+.claude/hooks/* = 0 hits (recorded negative); ci.yml runs only --self-test; the gap is 5 agent definitions,
+disjoint from FOLLOW-828 (which covers the five with NO CI step) — 828 AC(3) is DISCHARGED by this PR and it
+must be re-scoped, not closed. BRIEF Q4 (what else reasons off main's latest run): demo-integration.yml:38-41
+has the IDENTICAL cancel-in-progress-on-main defect and FOLLOW-851 names only ci.yml; redis-shadow-smoke.yml
+:115 already carries the in-repo FIX (per-run-unique group on main, RETRO-238) that neither adopted, so 851
+AC(1)'s "open trade" is already decided in a workflow file (P-34 shape); and CONVENTIONS_PATCH.md Rule AF's
+own Verification step 1 is a second consumer of "main's latest runs" whose premise cancel-in-progress makes
+unreadable -> both recorded into 851's AC(2), not re-filed. RULE VERDICTS: NO PROMOTION, NO AMENDMENT,
+NO NEW LETTER, CONVENTIONS_PATCH.md UNTOUCHED (43 rules, unchanged). P-35 second instance found, tested
+clause-by-clause against RETRO-250's own bar, clause (b) ("demonstrated non-determinism") NOT met — I drove
+the mechanism, I did not observe a verdict flip — HELD at count 1 and RE-ARMED with the discharge procedure
+named in FOLLOW-855's AC. RETRO-250's armed Rule S "enumerate-don't-fix" amendment explicitly NOT discharged
+(this PR's 3 stubs are incidental findings, not a discharged enumeration exemption — RETRO-122). CASCADE:
+FOLLOW-842 IS constrained but NOT by the WARN line (unchanged by 842's named work) — by the SYMBOL EXTRACTOR
+at check-rule-i.sh:121, because the PR's Rule I job runs the PR's script while the baseline ran main's, so
+842's own PR compares two different producers and blocks itself; FOLLOW-847 is 1/3 discharged (AGENT_WORKFLOW
+fixed incidentally by THIS PR, Rule A:30-31 still wrong in a code block this PR edited, pm-orchestrator.md is
+an un-named third artefact); FOLLOW-848 PARTIALLY discharged (seam CLOSED, settle-loop + fixture-count still
+OPEN) and should be re-scoped; FOLLOW-849 and FOLLOW-850 RE-CONFIRMED LIVE against this retro's own worktree
+(the branch guard fired "HEAD == main" while HEAD was retrospective-analyst/RETRO-251-252; lefthook not on
+PATH); 844's shellcheck claim now measured against 1140 lines, not 247 or 735. Severity-flagged FOLLOW-856 to
+the PM in §5a, NOT escalated (guardrail). Filed FOLLOW-854, 855, 856. QUEUE.md / ESCALATIONS.md / sprint
+files / code correctly UNTOUCHED. Learning-hook fragment at
+.claude/agents/retrospective-analyst/lessons.d/RETRO-252.md per Rule AG. -->

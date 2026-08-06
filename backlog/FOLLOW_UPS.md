@@ -28851,3 +28851,253 @@ in `docs/runbooks/` with the date it was read, since the whole path depends on i
 cross_ref: [FOLLOW-845; `apps/ingest/src/clickhouse-producer.ts:102-103`;
 `infra/clickhouse/scripts/smoke-test.sh`; `.github/workflows/e2e-smoke.yml`;
 `.github/workflows/ci.yml:302,361`; FOLLOW-621 (ClickHouse 26.x compatibility)]
+
+---
+
+## FOLLOW-854 — The merge gate's new exit-3 contract reached the prose and not the corpus that executes it: `pm-orchestrator.md` still says "3 = usage/gh error" beside the counter it must not increment
+
+source_retro: RETRO-252 (§3 CHECK B / §4d DG-1 / §6) source_ticket: FOLLOW-846 recommended_sprint:
+next recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false — **UNFROZEN** per the session-95 standing rule's explicit P1 carve-out.
+
+**Classification: HALF_WIRE_P (producer only).** PR #683 widened exit 3 from "usage-or-`gh`-error"
+to "the gate could not run or could not complete its comparison" and added the instruction that
+gives the change its value: _"do not increment `fix_iteration_counter` against the worker for it."_
+That instruction landed in `docs/AGENT_WORKFLOW.md:200-212` and `CONVENTIONS_PATCH.md` Rule A
+`:41-44`. It did **not** land in the file the decision-maker loads and executes.
+
+**The consumer table, greped rather than remembered**
+(`grep -rn "gh-pr-checks-verified" --include=*.md --include=*.sh --include=*.yml .`):
+
+| consumer                                     | routes on exit code     | exit 3    | state after #683 |
+| -------------------------------------------- | ----------------------- | --------- | ---------------- |
+| `docs/AGENT_WORKFLOW.md:200-212`             | yes                     | yes       | ✅               |
+| `CONVENTIONS_PATCH.md` Rule A `:36-45`       | yes                     | yes       | ✅               |
+| **`.claude/agents/pm-orchestrator.md:54`**   | **yes — the §5b gate**  | **WRONG** | **❌**           |
+| `.claude/agents/backend-engineer.md:87,:108` | yes ("require exit 0")  | no        | ❌ silent        |
+| `.claude/agents/data-engineer.md:79`         | yes ("exit 0 required") | no        | ❌ silent        |
+| `.claude/agents/ml-engineer.md:90`           | yes ("exit 0 required") | no        | ❌ silent        |
+| `.claude/hooks/*`                            | **no hits** (checked)   | n/a       | ✅               |
+| `.github/workflows/ci.yml:721`               | `--self-test` only      | n/a       | ✅               |
+
+**Two defects in one sentence, and it is the PM's own gate step.** `pm-orchestrator.md:54` reads:
+
+```
+Exit 1 = genuine failure, 2 = timeout, 3 = usage/gh error; only 0 permits READY_FOR_REVIEW. Track
+your check-count; HARD CAP 5 checks / 3 fix iterations per ticket
+```
+
+(1) `3 = usage/gh error` now describes one of four causes, and the paragraph that must carry "do not
+increment on a 3" is **literally the paragraph that mandates the cap**. (2) The same sentence two
+lines above says the script _"classifies `Rule I` dynamically against `main`'s own live violation
+**count**"_ — the mechanism PR #680 replaced with a symbol-set comparison. So this is also the
+**third** artefact carrying FOLLOW-847's retired-COUNT claim; 847 names two.
+
+**Rule AI fires and its own amended Verification catches it — this is a compliance failure, not a
+rule gap, and the timing is the point.** Rule AI's tier-0 amendment
+(`CONVENTIONS_PATCH.md:2697-2740`) names `.claude/agents/*.md` explicitly, covers a changed
+**"procedure"**, orders tier 0 **before** the prose, and ships greps at steps 5–6. It landed
+2026-08-05 with RETRO-246 and was violated 2026-08-06 by the same agent class on the same corpus and
+the same script. Under 24 hours. The rule text is adequate; nothing runs it.
+
+**Not a duplicate of FOLLOW-828, checked before filing.** 828 covers the **five** agent definitions
+with **no** CI-verification step (`sdk`, `qa`, `devops`, `compliance`, `architect`). This covers the
+**four** that have one and whose exit-code text is now wrong or incomplete. Disjoint sets, same
+corpus. **828's AC(3) is DISCHARGED by PR #683** (the exit-code table is in `AGENT_WORKFLOW.md` and
+referenced from Rule A) and 828 should be re-scoped, not closed.
+
+**AC:** (1) correct `.claude/agents/pm-orchestrator.md`'s §5b exit-code sentence — all four codes,
+the required action for each, and the explicit "an exit 3 does NOT increment `fix_iteration_counter`
+and does NOT send the ticket back", stated in the same paragraph as the cap; (2) fix the same
+sentence's retired "live violation **count**" wording to the symbol-set comparison, and say in the
+PR whether FOLLOW-847's remaining `CONVENTIONS_PATCH.md` Rule A `:30-31` leg is being closed here or
+left to 847 — **do not leave two tickets on one sentence** (Rule AN); (3) give the three worker
+definitions that say only "exit 0 required" a one-line exit-code pointer rather than a copy of the
+table; (4) **make it mechanical, because the rule already exists and was not run** — add a
+`--self-test` fixture (or a `scripts/check-*.sh` step wired into `ci.yml`) that fails when
+`.claude/agents/*.md` names an exit code for this script that the script's own header does not
+define, so the tier-0 corpus cannot drift silently again; (5) state the full nine-agent sibling set
+in the PR description (Rule S bullet 1) and name which are in scope here vs in FOLLOW-828.
+
+cross_ref: [RETRO-252 §3 CHECK B, §4d DG-1/DG-2, §6; RETRO-246 §6 P-29 + the Rule AI tier-0
+amendment at `CONVENTIONS_PATCH.md:2697-2740`; FOLLOW-846 (the contract this propagates); FOLLOW-847
+(owns 2 of the 3 COUNT-claim artefacts); FOLLOW-828 (disjoint — the five agents with no CI step; its
+AC(3) is discharged); `.claude/agents/pm-orchestrator.md:47-56`;
+`.claude/agents/{backend-engineer,data-engineer,ml-engineer}.md`;
+`scripts/gh-pr-checks-verified.sh:126-140`]
+
+---
+
+## FOLLOW-855 — The merge gate blocks a clean PR for a dead export another PR merged into `main`: the PR side is a union of two commits, the baseline is one older run
+
+source_retro: RETRO-252 (§4a LG-2 / §headline 2) source_ticket: FOLLOW-846 recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false — **UNFROZEN** per the session-95 standing rule's explicit P1 carve-out.
+
+**The asymmetry, in one line.** The gate compares
+`union(branch-head run, merge-ref run) − one older main run`. PR #683 introduced the union
+deliberately and argued it correctly (`scripts/gh-pr-checks-verified.sh:955-961`: the `push` run is
+the branch head, the `pull_request` run is the merge ref, they are **different commits**, so a "keep
+the first" collapse could silently pick the friendlier set). What it did not check is the other
+side: `resolve_rule_i_baseline` (`:856-940`) still takes **one** `main` run. A dead export that a
+**different PR** merged into `main` after that baseline run appears in the merge-ref log, in neither
+the branch head nor the baseline — and is attributed to this PR.
+
+**Driven through the merged gate, not argued.** Fixture: two failing Rule I check-runs; the
+branch-head log and the baseline both carry `alpha`; the merge-ref log carries `alpha` + `zeta`:
+
+```
+Rule I symbol-set comparison: PR has 2 violating symbol(s) (count line(s): 1/2),
+  main baseline has 1 (count line: 1).
+  New on this PR: 1 | fixed by this PR: 0
+  NEW violating symbols (on this PR, absent from main's baseline):
+    - zeta @ packages/z/src/z.ts
+GENUINE FAILURES (blocking — do NOT mark READY_FOR_REVIEW):
+  - Rule I — wired-or-dead check — 1 NEW Rule I violation symbol(s) not in main's baseline (run 4242)
+RESULT: FAIL. 1 genuine failure(s).                                                         exit=1
+```
+
+**Why this is the same class FOLLOW-846 existed to fix, one branch over.** The gate now has a
+vocabulary for "the PR is wrong" (exit 1) and for "the gate could not look" (exit 3). It has none
+for "`main` moved under this PR", and the documented response to exit 1 is to send the ticket back
+and increment `fix_iteration_counter` — against a worker who cannot fix `zeta`.
+
+**Window size, measured rather than assumed.** With `cancel-in-progress` making 8 of 12 `main` runs
+unusable (FOLLOW-851) and jobs at 83–99 minutes, the newest **usable** baseline can sit several
+merges behind the merge ref. Session 103 merged five PRs.
+
+**Mitigations that already exist and are why this is P1, not P0:** the gate prints the offending
+`symbol @ file` so a reader can adjudicate; the walk takes the newest usable run; a >72h baseline
+raises a provisional-verdict WARN.
+
+**A second, cheaper reachability path worth naming for the same fix:** FOLLOW-842 is IN_PROGRESS
+against `check-rule-i.sh`'s symbol extractor. The PR's Rule I job runs the **PR's** script
+(`ci.yml:129-135`, `actions/checkout@v4` on the PR ref) while the baseline ran **`main`'s** — so any
+extractor change makes the two sides different producers, and such a PR blocks itself for every
+symbol the new extractor finds that the old one missed. Same defect, reached from the other side.
+(842's in-flight draft appears to avoid this by preflighting the matcher rather than replacing it —
+provisional, see RETRO-252 §5a.)
+
+**AC:** (1) add a third verdict category — "`main` moved under this PR" — distinct from both the
+genuine-failure and the tooling-failure lists, with its own wording that names the baseline run and
+the merge-ref run and tells the reader the symbol is not theirs; decide and record whether it exits
+0 (accept, since it is pre-existing on `main` in fact if not in the chosen baseline) or a new non-1
+code, and argue the choice rather than picking one; (2) resolve the provenance asymmetry — either
+union the baseline across the same run pair, or compare the branch-head run against the baseline and
+the merge-ref run against `main`'s head, or explicitly document why the union side is allowed to be
+wider; (3) fixture: two PR-side Rule I check-runs where the merge-ref log carries a symbol the
+branch-head log and the baseline do not, asserting the new category and NOT exit 1; (4) fixture: the
+FOLLOW-842 shape — the two sides produced by extractors that disagree — asserting the same category;
+(5) **discharge P-35's clause (b) while you are here** (RETRO-250 §6, re-armed by RETRO-252 §6): run
+the gate against one open PR at a fixed head sha before and after any other PR merges a dead export
+into `main`, and record both verdicts in the PR description. That is the cheapest available
+demonstration of non-determinism and it is the one thing the pattern's promotion bar still lacks.
+
+cross_ref: [RETRO-252 §headline 2, §4a LG-2, §6 (P-35 clause-(b) discharge);
+`scripts/gh-pr-checks-verified.sh:955-961` (the union + its reasoning), `:856-940`
+(`resolve_rule_i_baseline`), `:1063-1070` (the `comm` comparison); FOLLOW-846; FOLLOW-827 (the
+symbol-set comparison this extends); FOLLOW-842 (the second reachability path); FOLLOW-851 (the
+cancellation rate that widens the window); `.github/workflows/ci.yml:129-135`]
+
+---
+
+## FOLLOW-856 — The merge gate's failing-check list is one PCRE against an exact JSON serialization with no self-consistency check, so a format mismatch prints "all checks green" and exits 0
+
+source_retro: RETRO-252 (§4a LG-1 / §headline 1) source_ticket: FOLLOW-846 recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false — **UNFROZEN** per the session-95 standing rule's explicit P1 carve-out.
+
+**This is the FOLLOW-830 fail-open class, one function over, and it is live on `main`.**
+`scripts/gh-pr-checks-verified.sh:826-830` builds the failing list with a single PCRE against the
+**exact compact serialization** `SNAPSHOT_FILTER` (`:778`) happens to emit today — three keys,
+`name`/`state`/`url`, in that order, no whitespace:
+
+```bash
+mapfile -t failure_names < <(
+  printf '%s' "$settled_snapshot" \
+    | grep -oP '\{"name":"[^"]*","state":"(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*","url":"[^"]*"\}'
+)
+```
+
+Under `set -uo pipefail` **without `-e`**, a non-matching serialization makes `mapfile` succeed with
+zero lines. Nothing then notices that the array is empty while `total` says otherwise.
+
+**Driven against the merged script on `main`, not argued:**
+
+```
+Total checks: 2 | success: 0 | skipped: 0 | neutral: 0 | failing: 0
+RESULT: all checks green. Safe to mark READY_FOR_REVIEW.
+exit=0
+```
+
+The snapshot contained **two `FAILURE` check-runs**. `2 = 0 + 0 + 0 + 0` is arithmetically
+impossible; the gate printed it and exited 0.
+
+**The fix is already in this file, applied to the other parse.** `:1035-1044` fails loud when the
+Rule I log reports violations but yields zero symbols, with the reason in-file: _"Comparing an empty
+set against the baseline would accept everything, so this fails loud."_ Exactly the same reasoning
+applies to the failing list, and it is one comparison:
+`[[ $((success + skipped + neutral + ${#failure_names[@]})) -eq $total ]]` or exit 3 naming a
+serialization mismatch.
+
+**Why it is not caught by the 16-fixture harness.** Every fixture's `snapshot.json` is hand-written
+in the correct shape — the test's own replica of `SNAPSHOT_FILTER`'s output. This is the same
+cross-producer replica RETRO-250 §4c TG-2 recorded for the Rule I log format, now with a
+**demonstrated** consequence rather than a hypothesised one. (It is **not** a P-32 instance: the
+assertion targets the real script's exit code and the replica is the INPUT — the boundary RETRO-248
+§5a drew and this worker honoured. The defect is the missing guard, not the fixture.)
+
+**Trigger realism, stated honestly.** The producer and the parser live 48 lines apart in the same
+file, so the likeliest trigger is an in-file edit to `SNAPSHOT_FILTER` — plus any change in `gh`'s
+`-q`/`jq` serialization. That is the same realism level as FOLLOW-830's non-PCRE host, which this
+repo priced P1 and which was real within days.
+
+**AC:** (1) add the arithmetic self-consistency guard after the count re-assertion; a mismatch is a
+**tooling** failure (exit 3, per FOLLOW-846's own vocabulary), never a green and never a PR failure;
+(2) fixture: a settled snapshot whose objects do not match the failure regex, asserting exit 3 and a
+message naming the serialization — and assert the message, not only the code, per the harness's
+existing `_st_expect` standard; (3) make the coupling explicit at both ends — `SNAPSHOT_FILTER` and
+the `mapfile` regex must each name the other as a contract (Rule AQ: a "copied verbatim, keep in
+sync" note is not a control, so prefer deriving the regex from the filter or asserting the shape
+once); (4) **while you are in the harness**, close the two RETRO-250 residues that are still open
+and are the same class: assert the fixture COUNT (`16`, so a silently-skipped fixture is a red —
+CB-3, observed degrading to 15 outside a git checkout) and make `fetch_snapshot` able to serve a
+**sequence** (`snapshot.1.json`, `snapshot.2.json`, …) so the late-registration race becomes
+expressible and FOLLOW-813's own mechanism is finally pinned (TG-1, re-proven still blind by
+RETRO-252 §2 run 4). Items in (4) are FOLLOW-848's; taking them here is cheaper than a second pass —
+say which you took.
+
+cross_ref: [RETRO-252 §headline 1, §4a LG-1, §4b CB-1, §4c TG-2;
+`scripts/gh-pr-checks-verified.sh:778` (`SNAPSHOT_FILTER`), `:826-830` (the parse), `:833-842` (the
+counts it contradicts), `:1035-1044` (the guard that already exists on the other parse); FOLLOW-830
+(the same fail-open class); FOLLOW-848 (owns the fixture-count and settle-loop residues in AC(4));
+FOLLOW-813 (AC(2) — "cannot report a false green"); `CONVENTIONS_PATCH.md` Rule AQ]
+
+<!-- next free FOLLOW number: 857 (FOLLOW-854..856 filed 2026-08-06 by RETRO-252, the post-merge retro for
+PR #683 / FOLLOW-846 — the third merge-gate generation in three days. RETRO-251 (PR #682 / FOLLOW-845) filed
+NOTHING, deliberately: both wiring checks clean, and its two residues were recorded against EXISTING stubs
+under Rule AN rather than given numbers — FOLLOW-852's sink set is SIX not two (it names logger.error; the
+300-char detail also reaches two console.error calls and, sharper, two Sentry.captureException VALUES at
+intent-snapshot.ts:431,:478) and its AC(1) header-extraction fix does NOT transfer to the PostgREST leg at
+:337; FOLLOW-853 recommended to the PM for re-pricing P2 -> P1 (the surviving half is not the ISO-8601
+default — it is that the controller's primary event-write path is untested in any suite, its only detector is
+inert because SENTRY_DSN_INGEST is unset, and its outcome is unobservable because ingest_worker has no SELECT
+grant) plus an AC reorder putting the grant first; FOLLOW-836 scope note (apps/control-plane has 26
+`await res.text()` sites never enumerated on the source axis, behind a depends_on to a Python-scoped ticket).
+854 = P1 HALF_WIRE_P: FOLLOW-846's exit-3 contract reached docs/AGENT_WORKFLOW.md + CONVENTIONS_PATCH.md
+Rule A and NOT .claude/agents/pm-orchestrator.md:54, which still says "3 = usage/gh error" and still describes
+the retired Rule I COUNT mechanism, in the same paragraph as the fix_iteration_counter cap the ticket exists
+to protect; Rule AI's tier-0 amendment (landed 21 hours earlier by RETRO-246) catches this run verbatim ->
+compliance failure, NO rule action; disjoint from FOLLOW-828, whose AC(3) this PR discharged. 855 = P1 false
+RED, DRIVEN: PR side = union(branch head, merge ref) vs a single older main baseline, so a dead export
+another PR merged into main is reported "New on this PR" and blocks with exit 1; carries P-35's clause-(b)
+discharge procedure. 856 = P1 false GREEN, DRIVEN: the failing-check list is one PCRE against
+SNAPSHOT_FILTER's exact serialization with no arithmetic self-consistency check, so "Total checks: 2 |
+success: 0 | ... | failing: 0" -> "all checks green" -> exit 0 over two FAILURE check-runs; the same file
+already applies this guard to its other parse. NO new CONVENTIONS_PATCH rule promoted and NO amendment by
+either retro — Rule AI fires and CATCHES (compliance failure, RETRO-247/248 precedent), Rule S fires as a
+SUCCESS on PR #682 (the worker enumerated correctly when it was an AC), P-35 held at count 1 on an unmet
+clause (b), P-32/P-33 both tested against their own bars and neither fires, and RETRO-250's armed Rule S
+"enumerate-don't-fix" amendment explicitly NOT discharged (RETRO-122 count-inflation). P-36 MINTED at count 1
+by RETRO-251 (a class enumerated by the SINK it was noticed at rather than the SOURCE that defines it) with a
+3-clause bar and a named preference for a Rule S first-bullet amendment over a new letter. -->

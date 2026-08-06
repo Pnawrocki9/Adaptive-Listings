@@ -3223,3 +3223,51 @@ that sentence rather than only Redis, since only Redis was ever checked.
 which quotes offending input back into two Sentry sinks — a different defect on the same data).
 
 **Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-050: GitHub Actions is failing jobs at `Set up job` across the repo, so no PR can be validated — operator check needed if it does not self-clear
+
+**Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-06 **Affects:** every open PR,
+`scripts/gh-pr-checks-verified.sh` **Type:** other (infrastructure / possibly billing)
+
+**Description.** Since roughly 16:20 UTC, jobs on this repo are failing at the **`Set up job`** step
+— zero workflow steps execute, after the job sits ~10 minutes. Verified per job at the API, not
+inferred from a red square:
+
+| job                       | run           | steps recorded                     |
+| ------------------------- | ------------- | ---------------------------------- |
+| `Format check`            | `31119553175` | `Set up job` → failure (only step) |
+| `Typecheck`               | `31119553175` | `Set up job` → failure (only step) |
+| `Rule H gate self-test`   | `31119549990` | `Set up job` → failure (only step) |
+| `Redis shadow round-trip` | `31119553522` | cancelled, same shape              |
+
+Repo-wide over the last 20 runs: **8 queued, 3 failed, 1 cancelled, 7 succeeded**. So this is not a
+hard stop — some jobs complete — it looks like runner capacity or a concurrency/billing limit, with
+GitHub failing job setup after a wait rather than queueing indefinitely.
+
+**Why it is escalated rather than waited out.** It makes the repo's mandated merge gate unusable:
+`scripts/gh-pr-checks-verified.sh` cannot observe a settled snapshot, so **no ticket can be honestly
+marked READY_FOR_REVIEW while it persists**. PR #686 (FOLLOW-857) is blocked on exactly this — its
+rebased head has never had a CI verdict, and the reds on it are these setup failures, **not code**.
+Nobody should read them as a defect in that PR.
+
+**A contributing factor worth seeing, from RETRO-252's measurements:** every PR registers each job
+**twice** — once for the `push` event and once for `pull_request` (75 check-runs across 39 distinct
+names on a recent PR). That doubles the job count against whatever limit is being hit. It was filed
+as an efficiency observation; it is now also a capacity cost.
+
+**Required action (operator — I cannot check any of this):**
+
+1. Look at the Actions billing/usage page for the account. The GitHub REST billing endpoint needs
+   the `user` scope, which I deliberately did not grant myself.
+2. If it is a spend cap or plan limit, decide whether to raise it or to reduce job volume — the
+   duplicate push+PR runs (above) and `cancel-in-progress` on `main` (FOLLOW-851) are the two
+   cheapest levers.
+3. **If it self-clears, close this as resolved with a one-line note** — a transient runner-capacity
+   incident is worth recording once and not carrying.
+
+**No code change is proposed and none is warranted** — nothing in the repo caused this and nothing
+in the repo can fix it.
+
+**Resolution:** <empty until resolved>

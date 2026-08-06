@@ -173,7 +173,7 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
-### FOLLOW-845 — status: READY_FOR_REVIEW (PR #682, head `eb97faa5`)
+### FOLLOW-845 — status: DONE (PR #682 merged `360a10cc`, 2026-08-06)
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI re-verified here**, not taken from
 the worker's report: 76 checks, 74 pass, 2 `Rule I` — symbol set 192 vs `main`'s 192, 0 new, 0
@@ -239,7 +239,7 @@ upstream error body into the same coupling; safe today only because those rows a
 construction, which is precisely the argument that needed fixing one table over. Next free:
 **FOLLOW-854**.
 
-### FOLLOW-846 — status: READY_FOR_REVIEW (PR #683, head `d75cce09`)
+### FOLLOW-846 — status: DONE (PR #683 merged `559b1595`, 2026-08-06)
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **Validated with both gates, which for
 this ticket is the whole point:** `main`'s current gate → exit 0, and the gate the PR itself ships →

@@ -50,21 +50,36 @@ Every invocation, run this loop in order:
    watcher that has already seen every check it knew about settle. That is not theoretical: it
    nearly shipped a real Rule I regression on PR #668 (FOLLOW-813). The script polls to a
    two-consecutive-identical-settled-snapshot quiescence, re-asserts counts from a fresh read, and
-   classifies `Rule I` dynamically against `main`'s own live violation count — so a WORSE count is a
-   genuine failure, not "the known red". Exit 1 = genuine failure, 2 = timeout, 3 = usage/gh error;
-   only 0 permits READY_FOR_REVIEW. Track your check-count; HARD CAP 5 checks / 3 fix iterations per
-   ticket — log the running counter in STATUS.md. On cap exhaustion → ESCALATIONS.md + mark STUCK +
-   stop. 5c. **Runtime-wiring verification (NEW — the most important new step).** For every new
-   exported symbol, event, env var, DB column, config field, or `<script>` data-attribute in the
-   diff, grep for a NON-TEST producer AND a NON-TEST consumer (see <evidence_requirements>). A
-   symbol wired only in tests, or a consumer with no producer, is NOT done — bounce to IN_PROGRESS.
-   5d. **Multi-agent integration check.** If the ticket was co-assigned, diff the producer agent's
-   changes against the consumer agent's and confirm the wire connects across both. This is where
-   half-wires are born — FOLLOW-097→114→127→141 is the cautionary chain. 5e. Acceptance criteria:
-   verify each, or comment what manual check is needed. 5f. Repo-config awareness: if a new workflow
-   needs Code Scanning/secrets/branch-protection that don't exist → ESCALATIONS.md BEFORE marking
-   ready. 5g. Final: comment "PM-validated. CI green. Runtime wiring confirmed. Ready for human
-   review." Move to READY_FOR_REVIEW. Do not merge.
+   classifies `Rule I` dynamically by comparing the PR's SET of violating symbols against the symbol
+   set in `main`'s own newest usable baseline run — never against a count, because a count
+   comparison accepts a PR that deletes one dead export and introduces another (FOLLOW-821 AC(1) /
+   FOLLOW-827). **The exit code is the whole instruction — read it before you act:**
+   <!-- gate-exit-contract: 0=GREEN 1=GENUINE_FAILURE 2=TIMEOUT 3=TOOLING_FAILURE 4=NOT_ATTRIBUTABLE -->
+
+   | exit | meaning                                                                                                                                                                                                                                               | what YOU do                                                                                                      | counts against the cap? |
+   | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------- |
+   | `0`  | GREEN — every non-success check is a verified pre-existing-red gate                                                                                                                                                                                   | the ONLY code that permits READY_FOR_REVIEW                                                                      | n/a                     |
+   | `1`  | GENUINE_FAILURE — this PR is red                                                                                                                                                                                                                      | bounce to IN_PROGRESS, send back to the worker with the named failures                                           | **YES**                 |
+   | `2`  | TIMEOUT — checks never settled                                                                                                                                                                                                                        | never treat as success; re-run once checks finish                                                                | no                      |
+   | `3`  | TOOLING_FAILURE — the gate could not run or could not complete its comparison (preflight, refused fixture seam, unreadable/unparseable Rule I log, no usable baseline in the look-back window, a snapshot its own parser cannot read)                 | NOT a green and NOT a red. Fix the named tooling problem and re-run                                              | **NO**                  |
+   | `4`  | NOT_ATTRIBUTABLE — the gate completed, but a Rule I symbol is not this PR's: `main` moved under it (the symbol is on only some of the PR's own check-runs), or the PR edits `scripts/check-rule-i.sh` so the two sides came from different extractors | NOT a green and NOT a red. Re-run once a newer `main` run has completed, or adjudicate the named symbols by hand | **NO**                  |
+
+   **An exit 3 or an exit 4 does NOT increment `fix_iteration_counter` and does NOT send the ticket
+   back to its worker** — no worker can fix a cancelled baseline run, a rate-limited log fetch, or a
+   dead export somebody else merged into `main` (FOLLOW-846 AC(2), FOLLOW-855). Only an exit 1 does.
+   Track your check-count; HARD CAP 5 checks / 3 fix iterations per ticket — log the running counter
+   in STATUS.md. On cap exhaustion → ESCALATIONS.md + mark STUCK + stop. 5c. **Runtime-wiring
+   verification (NEW — the most important new step).** For every new exported symbol, event, env
+   var, DB column, config field, or `<script>` data-attribute in the diff, grep for a NON-TEST
+   producer AND a NON-TEST consumer (see <evidence_requirements>). A symbol wired only in tests, or
+   a consumer with no producer, is NOT done — bounce to IN_PROGRESS. 5d. **Multi-agent integration
+   check.** If the ticket was co-assigned, diff the producer agent's changes against the consumer
+   agent's and confirm the wire connects across both. This is where half-wires are born —
+   FOLLOW-097→114→127→141 is the cautionary chain. 5e. Acceptance criteria: verify each, or comment
+   what manual check is needed. 5f. Repo-config awareness: if a new workflow needs Code
+   Scanning/secrets/branch-protection that don't exist → ESCALATIONS.md BEFORE marking ready. 5g.
+   Final: comment "PM-validated. CI green. Runtime wiring confirmed. Ready for human review." Move
+   to READY_FOR_REVIEW. Do not merge.
 
 6. **After human merge:** mark DONE, set completed_at, then spawn `retrospective-analyst` for the
    ticket. On a P0/security/contract-break retro finding → ESCALATIONS.md + pause pipeline. On

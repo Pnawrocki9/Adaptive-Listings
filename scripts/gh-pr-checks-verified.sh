@@ -99,7 +99,7 @@
 #   scripts/gh-pr-checks-verified.sh --self-test
 #
 # SELF-TEST
-#   `--self-test` runs 16 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
+#   `--self-test` runs 19 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
 #   check state, and fully offline) through the real code path via a fixture seam:
 #   all-green -> 0; an undocumented failing check -> 1; Rule I with main's exact symbol
 #   set -> 0; Rule I with a new symbol on top of main -> 1; Rule I with EQUAL COUNTS but a
@@ -107,11 +107,16 @@
 #   grep without PCRE -> 3, never a green verdict (the FOLLOW-830 case); an unfetchable
 #   Rule I log -> 3, named as a TOOLING failure; an accepted Rule I beside a genuine
 #   failure -> 1; a CANCELLED newest baseline run -> skipped, walk continues, 0; a
-#   look-back window with nothing usable in it -> 3, never 1; one check name registered
-#   twice -> collapsed to one, symbol sets unioned; the fixture seam invoked outside
-#   self-test -> 3, refused; a 404 on a cancelled job -> diagnosed as cancellation rather
-#   than log expiry (the four FOLLOW-846 cases); and this file's own mode == 755 on disk
-#   and in the git index.
+#   look-back window with nothing usable in it -> 3, never 1; the fixture seam invoked
+#   outside self-test -> 3, refused; a 404 on a cancelled job -> diagnosed as cancellation
+#   rather than log expiry (the four FOLLOW-846 cases); a snapshot whose serialization the
+#   failing-check regex does not match -> 3, never "all checks green" (the FOLLOW-856
+#   case); one check name registered twice with a symbol on only the merge-ref run -> 4,
+#   never 1, and the SAME fixture with that symbol on BOTH runs -> 1 (the FOLLOW-855
+#   discrimination pair); a PR that edits scripts/check-rule-i.sh -> 4; a GREEN branch-head
+#   Rule I run used as evidence -> 4; the same PR flipping 4 -> 0 when main's baseline
+#   catches up (the P-35 clause-(b) demonstration); plus the fixture COUNT itself, and this
+#   file's own mode == 755 on disk and in the git index.
 #
 #   Every fixture was written RED-FIRST and observed failing against the script version
 #   that lacked its fix — for FOLLOW-827/830 the compensating-swap and no-PCRE fixtures
@@ -129,14 +134,46 @@
 #   2  timed out waiting for checks to settle
 #   3  usage error, failed dependency preflight, gh CLI error, refused fixture seam, or a
 #      TOOLING failure: the gate could not read something it needed (an unfetchable or
-#      unparseable Rule I log, no usable baseline in the look-back window) and therefore
-#      rendered NO verdict. 3 is not a milder 1. Exit 1 means "this PR is red" and routes
-#      to sending the ticket back to its worker; exit 3 means "the gate did not get to
-#      look", which no worker can fix and which must not consume the 3-retry escalation
-#      budget (FOLLOW-846 AC(2)). 3 is equally not a green: do not mark READY_FOR_REVIEW
-#      on it. When both a tooling failure and a genuine failure are present, both are
-#      printed and the exit code is 3 — an incomplete verdict is not a verdict.
+#      unparseable Rule I log, no usable baseline in the look-back window, a snapshot whose
+#      serialization its own parser no longer matches) and therefore rendered NO verdict.
+#      3 is not a milder 1. Exit 1 means "this PR is red" and routes to sending the ticket
+#      back to its worker; exit 3 means "the gate did not get to look", which no worker can
+#      fix and which must not consume the 3-retry escalation budget (FOLLOW-846 AC(2)).
+#      3 is equally not a green: do not mark READY_FOR_REVIEW on it. When both a tooling
+#      failure and a genuine failure are present, both are printed and the exit code is 3 —
+#      an incomplete verdict is not a verdict.
+#   4  NOT ATTRIBUTABLE TO THIS PR (FOLLOW-855). The gate completed its comparison and the
+#      only thing standing between this PR and a green is a Rule I violation symbol it
+#      cannot attribute to this PR's own content. Two causes, both named in the output:
+#        (a) main moved underneath the PR — the symbol is present on only SOME of the PR's
+#            own Rule I check-runs. The `push` run is the branch head and the
+#            `pull_request` run is the merge ref; they are different commits, and the only
+#            thing that differs between them is main's newer content. A symbol that is not
+#            on every one of the PR's runs is therefore not stably the PR's.
+#        (b) this PR modifies the Rule I PRODUCER itself (scripts/check-rule-i.sh), so the
+#            PR side and main's baseline were extracted by different programs and the two
+#            symbol sets are not comparable at all.
+#      4 is not a green: do not mark READY_FOR_REVIEW on it. It is equally not a 1: the
+#      worker cannot delete a dead export somebody else merged into main, so an exit 4 must
+#      NOT increment fix_iteration_counter and must NOT send the ticket back. The documented
+#      response is to re-run once a newer main run has completed (the baseline walk then
+#      picks up the symbol and the same PR exits 0), or — for cause (b) — to adjudicate the
+#      named symbols by hand against the PR's own diff. Precedence when several categories
+#      are present: 3 > 1 > 4 > 0.
 #   (in --self-test mode: 0 = every fixture passed, 1 = at least one fixture failed)
+#
+# EXIT-CODE-CONTRACT (machine-readable — scripts/check-gate-exit-codes.sh parses the lines
+# below and asserts that every consumer that ROUTES on this script's exit code carries the
+# identical marker. Change a code here and CI goes red until each routing consumer is
+# updated in the same PR. FOLLOW-854 exists because a widened exit 3 reached the prose in
+# docs/ and CONVENTIONS_PATCH.md but not .claude/agents/pm-orchestrator.md, which is the
+# file the decision-maker actually executes.)
+#   0=GREEN
+#   1=GENUINE_FAILURE
+#   2=TIMEOUT
+#   3=TOOLING_FAILURE
+#   4=NOT_ATTRIBUTABLE
+# END-EXIT-CODE-CONTRACT
 set -uo pipefail
 
 # ── Fixture seam (self-test only — Rule AM) ───────────────────────────────────
@@ -411,6 +448,106 @@ fetch_main_job_meta() {
     -q '.jobs[] | select(.name=="'"$RULE_I_NAME"'") | "\(.id)\t\(.conclusion)"' | head -1
 }
 
+# Prints one changed-file path per line for the PR under test. Read lazily and
+# only when the Rule I comparison has already found NEW symbols, so a clean PR
+# never pays for it. Returns non-zero when the read itself failed — the caller
+# turns that into a TOOLING failure rather than guessing (FOLLOW-855 AC(4)).
+fetch_pr_files() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    [[ -f "$FIXTURE_DIR/pr-files.txt" ]] || return 0
+    cat "$FIXTURE_DIR/pr-files.txt"
+    return 0
+  fi
+  gh pr view "$PR" --repo "$REPO" --json files -q '.files[].path'
+}
+
+# ── Constants + the snapshot serialization contract ──────────────────────────
+# Declared ABOVE --self-test because the self-test asserts against them: the
+# fixture seam supplies snapshot.json directly, so the projection/parser
+# consistency assertion is the only place that pair can be checked at all.
+
+# Name of the one currently-documented pre-existing-red check in this repo
+# (memory `project_ci_gate_landscape`, repeated confirmation across QUEUE.md sessions).
+# If a second gate is ever documented as pre-existing-red, add its dynamic-comparison
+# logic alongside RULE_I_NAME below rather than adding a bare name to a static allowlist —
+# a static allowlist with no baseline comparison is exactly the "could itself rot" shape
+# FOLLOW-813 AC(3) forbids.
+RULE_I_NAME="Rule I — wired-or-dead check"
+
+# How many of main's recent ci.yml runs the baseline walk may inspect before
+# giving up (FOLLOW-846 AC(1)/AC(2)). Sized off the observed cancellation rate:
+# 8 of main's last 12 runs were `cancelled` during a five-merge session, and
+# ci.yml carries jobs at 83-99 min, so a short window can plausibly be all
+# cancellations. 20 is ~an hour of the busiest merge cadence this repo has had.
+# It is a BOUND, not a fallback: when nothing in the window is usable the gate
+# exits 3 and says so, rather than quietly comparing against something weaker.
+BASELINE_LOOKBACK=20
+
+# How old the chosen baseline may be before the comparison is worth doubting.
+BASELINE_STALE_HOURS=72
+
+# Path (relative to the repo root) of the program that PRODUCES the Rule I symbol
+# lines this gate parses. A PR that edits it makes the PR side and main's baseline
+# the output of two different programs (FOLLOW-855 AC(4) / FOLLOW-842).
+RULE_I_PRODUCER="scripts/check-rule-i.sh"
+
+# ── SNAPSHOT SERIALIZATION CONTRACT (FOLLOW-856) ──────────────────────────────
+# ONE declaration drives BOTH the jq projection that PRODUCES the check snapshot
+# and every PCRE that PARSES it back further down. Before this they were
+# independent literals ~50 lines apart: the projection emitted
+# {"name":…,"state":…,"url":…} and the parser matched exactly that byte shape, so
+# adding a key, renaming one, or reordering them made the parser match NOTHING.
+# Because this script runs under `set -uo pipefail` WITHOUT `-e`, `mapfile` then
+# succeeded with zero lines and the gate printed "failing: 0" beside a `total`
+# that visibly contradicted it and exited 0 over FAILURE check-runs — driven
+# against the merged script on main, RETRO-252 §4a LG-1:
+#   Total checks: 2 | success: 0 | skipped: 0 | neutral: 0 | failing: 0
+#   RESULT: all checks green. Safe to mark READY_FOR_REVIEW.        exit=0
+# Rule AQ: a "copied verbatim, keep in sync" comment is not a control. The two
+# sides are now GENERATED from one array, and the arithmetic self-consistency
+# guard at the parse site is the second layer, covering the shapes an array
+# cannot (whitespace, an escaped quote in a check name, a gh/jq serialization
+# change). The guard is the binding control; this derivation only removes the
+# most likely way to trip it.
+SNAPSHOT_FIELDS=(
+  'name:(.name // .context)'
+  'state:(if .__typename=="StatusContext" then .state elif .status!="COMPLETED" then "PENDING" else .conclusion end)'
+  'url:(.detailsUrl // .targetUrl // "")'
+)
+
+# _object_regex <name-pattern> <state-pattern> — a PCRE for ONE serialized
+# snapshot object, built from SNAPSHOT_FIELDS so that key names, key order and
+# key count are read from the same place jq wrote them.
+_object_regex() {
+  local name_pat="$1" state_pat="$2" re='\{' sep='' f k
+  for f in "${SNAPSHOT_FIELDS[@]}"; do
+    k="${f%%:*}"
+    case "$k" in
+      name) re+="$sep\"name\":\"$name_pat\"" ;;
+      state) re+="$sep\"state\":\"$state_pat\"" ;;
+      *) re+="$sep\"$k\":\"[^\"]*\"" ;;
+    esac
+    sep=','
+  done
+  re+='\}'
+  printf '%s' "$re"
+}
+
+_snapshot_filter() {
+  local IFS=,
+  printf '[.statusCheckRollup[] | {%s}] | sort_by(.name, .url)' "${SNAPSHOT_FIELDS[*]}"
+}
+
+SNAPSHOT_FILTER="$(_snapshot_filter)"
+# Everything that is not SUCCESS/SKIPPED/NEUTRAL is a failure-class state
+# (FAILURE, CANCELLED, TIMED_OUT, ACTION_REQUIRED, STALE, ERROR).
+FAILURE_REGEX="$(_object_regex '[^"]*' '(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*')"
+# Every check-run carrying the Rule I name, WHATEVER its state — the provenance
+# comparison in FOLLOW-855 needs the green ones too (a branch-head run that is
+# green has an empty symbol set, and that emptiness is exactly what proves a
+# merge-ref-only symbol is not the PR's). \Q…\E quotes the em-dash-bearing name.
+RULE_I_REGEX="$(_object_regex "\\Q${RULE_I_NAME}\\E" '[^"]*')"
+
 # ── Self-test mode ────────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--self-test" ]]; then
   echo "=== gh-pr-checks-verified.sh --self-test ==="
@@ -429,6 +566,15 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_failures=0
   st_passes=0
   st_job_url="https://github.com/o/r/actions/runs/30000/job"
+  # How many _st_expect assertions this mode must EXECUTE. A fixture that stops
+  # being reached — an early `exit`, a mis-nested `if`, a bad merge — otherwise
+  # just makes the pass total smaller, which nothing was watching: RETRO-252
+  # observed the reported figure degrade 16 -> 15 with no red. The mode checks
+  # below are deliberately NOT in this number, because the git-index one is
+  # legitimately unavailable outside a checkout and that is exactly the
+  # legitimate degradation that made the old total untrustworthy as an assertion.
+  ST_EXPECTED_FIXTURES=19
+  st_expect_ran=0
 
   # Every fixture dir is stamped "now", so no assertion below can start drifting
   # into the stale-baseline warning as the calendar moves past a hardcoded date.
@@ -495,6 +641,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   _st_expect() {
     local label="$1" want_rc="$2" dir="$3" needle="${4:-}" needle2="${5:-}"
     local rc=0 n
+    st_expect_ran=$((st_expect_ran + 1))
     _st_run "$dir" || rc=$?
     if [[ "$rc" -ne "$want_rc" ]]; then
       echo "SELF-TEST FAIL: $label"
@@ -655,16 +802,86 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # PR #681 carried 75 check-runs over 39 names. The two Rule I check-runs are
   # different commits (branch head vs merge ref) and can differ, so the gate
   # unions their symbol sets: job 9 alone matches main, job 10 adds `gamma`.
-  # Three properties in one fixture — a "keep the first" collapse exits 0 (wrong),
-  # no collapse at all reports one problem as two failures, and the union exits 1.
+  # A "keep the first" collapse exits 0 (wrong) and no collapse at all reports
+  # one problem as two failures. Since FOLLOW-855 the union is also SPLIT by
+  # provenance: `gamma` is on one run and not the other, so it is main's, not the
+  # PR's, and the verdict is 4 rather than 1 — still never a green. This is
+  # FOLLOW-855 AC(3)'s fixture: the merge-ref log carries a symbol the branch-head
+  # log and the baseline do not.
   st_rule_i_dup='{"name":"Rule I — wired-or-dead check","state":"FAILURE","url":"'"$st_job_url"'/10"}'
   st_d="$(_st_fixture rule-i-duplicate)"
   echo "[$st_lint_ok,$st_rule_i_entry,$st_rule_i_dup]" > "$st_d/snapshot.json"
   _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
   _st_rule_i_log "$st_d/pr-rule-i-10.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
   _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
-  _st_expect "duplicate check-runs collapse to one name and union their symbols" 1 "$st_d" \
-    "across 1 distinct check name" "RESULT: FAIL. 1 genuine failure(s)."
+  _st_expect "a merge-ref-only symbol is NOT attributed to this PR (exit 4, never 1)" 4 "$st_d" \
+    "across 1 distinct check name" "REASON: main moved under this PR."
+
+  # ── F16: a snapshot the failing-check regex does not match → 3, never 0 ────
+  # THE FOLLOW-856 CASE, driven against the merged script on main: four count
+  # passes said 2 checks / 0 success, the single structural PCRE matched nothing,
+  # and the gate printed "failing: 0" and "all checks green" over two FAILURE
+  # check-runs. The object below carries one extra key — the cheapest realistic
+  # serialization drift — which the pre-guard parser silently ignored.
+  st_d="$(_st_fixture snapshot-shape)"
+  echo '[{"name":"Typecheck","state":"FAILURE","url":"'"$st_job_url"'/2","startedAt":"'"$st_now"'"}]' \
+    > "$st_d/snapshot.json"
+  _st_expect "a snapshot shape the failure regex misses exits 3, never 'all checks green'" 3 "$st_d" \
+    "SNAPSHOT SERIALIZATION MISMATCH" "RESULT: UNDETERMINED"
+
+  # ── F17: DISCRIMINATION — a symbol on EVERY PR run is still the PR's → 1 ──
+  # Exit 4 must not become a blanket softening. Same two-check-run shape as F13,
+  # but `gamma` is on both runs, so it is on the branch content whatever main is
+  # doing and the verdict stays a blocking genuine failure.
+  st_d="$(_st_fixture rule-i-both-runs)"
+  echo "[$st_lint_ok,$st_rule_i_entry,$st_rule_i_dup]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-10.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "a NEW symbol present on every PR check-run is still a genuine failure" 1 "$st_d" \
+    "NEW Rule I violation" "RESULT: FAIL. 1 genuine failure(s)."
+
+  # ── F18: the PR edits the Rule I PRODUCER → 4 (FOLLOW-855 AC(4)) ───────────
+  # The FOLLOW-842 shape. ci.yml checks out the PR ref, so the PR's Rule I job
+  # runs the PR's scripts/check-rule-i.sh while main's baseline ran main's. The
+  # two sides are different programs; every symbol the new extractor finds and
+  # the old one missed would otherwise block the PR that is fixing the extractor.
+  st_d="$(_st_fixture rule-i-producer-changed)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  printf 'scripts/check-rule-i.sh\nscripts/gh-pr-checks-verified.sh\n' > "$st_d/pr-files.txt"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "a PR that edits the Rule I extractor is not blocked by its own new symbols" 4 "$st_d" \
+    "modifies scripts/check-rule-i.sh" "RESULT: NOT ATTRIBUTABLE"
+
+  # ── F19: THE BASELINE FLIP (RETRO-250 §6 P-35 clause (b)) ──────────────────
+  # Byte-identical PR side to F13. The ONLY difference is that main's baseline
+  # run now carries `gamma` — i.e. the other PR that introduced it has since been
+  # merged and a main run has completed on it. Same PR, same head, opposite
+  # verdict: 4 -> 0. That is the non-determinism the pattern's promotion bar was
+  # missing, driven through the real code path rather than argued. (Synthesized
+  # per Rule AM: the live equivalent needs a merge, which a worker must not do.)
+  st_d="$(_st_fixture baseline-flip)"
+  echo "[$st_lint_ok,$st_rule_i_entry,$st_rule_i_dup]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-10.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_expect "the same PR flips 4 -> 0 when main's baseline catches up" 0 "$st_d" \
+    "pre-existing-red"
+
+  # ── F20: a GREEN branch-head run is read too ──────────────────────────────
+  # The failing list contains only the merge-ref check-run, so a gate that reads
+  # only failing check-runs sees ONE run, has no intersection to compute, and
+  # attributes `gamma` to the PR. Reading Rule I check-runs at every state is
+  # what makes the branch head's EMPTY symbol set available as evidence.
+  st_rule_i_green='{"name":"Rule I — wired-or-dead check","state":"SUCCESS","url":"'"$st_job_url"'/8"}'
+  st_d="$(_st_fixture rule-i-green-branch-head)"
+  echo "[$st_lint_ok,$st_rule_i_green,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i-8.log" 0
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 0
+  _st_expect "a green branch-head Rule I run counts as evidence, so the merge-ref symbol is main's" 4 "$st_d" \
+    "REASON: main moved under this PR." "RESULT: NOT ATTRIBUTABLE"
 
   # ── F14: the fixture seam is refused outside --self-test → 3 ──────────────
   # Red-first evidence for this one is in the PR body: with the pre-FOLLOW-846
@@ -714,12 +931,62 @@ if [[ "${1:-}" == "--self-test" ]]; then
     echo "  A chmod alone does not stick: git update-index --chmod=+x $0"
   fi
 
+  # ── the PARSER still matches what the PROJECTION emits (FOLLOW-856) ────────
+  # The fixture seam supplies snapshot.json directly, so no fixture above ever
+  # runs the jq projection — which means no fixture can observe the two sides
+  # drifting apart. This assertion can: it builds one object from SNAPSHOT_FIELDS
+  # in jq's own key order and requires FAILURE_REGEX to match a failure-class
+  # state and to REFUSE a success one. Pin the regex to a literal, or add a
+  # field to the projection alone, and this goes red.
+  st_obj_fail='{'
+  st_obj_ok='{'
+  st_sep=''
+  for st_f in "${SNAPSHOT_FIELDS[@]}"; do
+    st_k="${st_f%%:*}"
+    case "$st_k" in
+      state)
+        st_obj_fail+="$st_sep\"state\":\"FAILURE\""
+        st_obj_ok+="$st_sep\"state\":\"SUCCESS\""
+        ;;
+      *)
+        st_obj_fail+="$st_sep\"$st_k\":\"x\""
+        st_obj_ok+="$st_sep\"$st_k\":\"x\""
+        ;;
+    esac
+    st_sep=','
+  done
+  st_obj_fail+='}'
+  st_obj_ok+='}'
+  if printf '%s' "$st_obj_fail" | grep -qP "$FAILURE_REGEX" \
+    && ! printf '%s' "$st_obj_ok" | grep -qP "$FAILURE_REGEX"; then
+    st_passes=$((st_passes + 1))
+    echo "OK: self-test PASSED — the failing-check regex matches what SNAPSHOT_FIELDS emits"
+  else
+    st_failures=$((st_failures + 1))
+    echo "SELF-TEST FAIL: the failing-check regex and the jq projection have drifted apart."
+    echo "  projection would emit: $st_obj_fail"
+    echo "  regex in use:          $FAILURE_REGEX"
+    echo "  A regex that does not match the projection returns an EMPTY failing list, and"
+    echo "  this script runs without 'set -e' — that is a false green (FOLLOW-856)."
+  fi
+
+  # ── the fixture COUNT is itself an assertion (RETRO-250 CB-3) ──────────────
+  if [[ "$st_expect_ran" -eq "$ST_EXPECTED_FIXTURES" ]]; then
+    st_passes=$((st_passes + 1))
+    echo "OK: self-test PASSED — all $ST_EXPECTED_FIXTURES declared fixtures were executed"
+  else
+    st_failures=$((st_failures + 1))
+    echo "SELF-TEST FAIL: $st_expect_ran fixture(s) executed, expected $ST_EXPECTED_FIXTURES."
+    echo "  A fixture stopped being reached, or one was added without bumping"
+    echo "  ST_EXPECTED_FIXTURES. Either way the harness is no longer testing what it claims."
+  fi
+
   echo ""
   if [[ "$st_failures" -gt 0 ]]; then
     echo "RESULT: --self-test FAILED — $st_failures fixture(s) failed, $st_passes passed."
     exit 1
   fi
-  echo "RESULT: --self-test passed — $st_passes fixtures."
+  echo "RESULT: --self-test passed — $st_passes fixtures ($st_expect_ran gate fixtures + meta-assertions)."
   exit 0
 fi
 
@@ -768,27 +1035,6 @@ tmp_dir="$(mktemp -d)"
 # shellcheck disable=SC2064  # expand $tmp_dir now, not at trap time
 trap "rm -rf '$tmp_dir'" EXIT
 
-# Name of the one currently-documented pre-existing-red check in this repo
-# (memory `project_ci_gate_landscape`, repeated confirmation across QUEUE.md sessions).
-# If a second gate is ever documented as pre-existing-red, add its dynamic-comparison
-# logic alongside RULE_I_NAME below rather than adding a bare name to a static allowlist —
-# a static allowlist with no baseline comparison is exactly the "could itself rot" shape
-# FOLLOW-813 AC(3) forbids.
-RULE_I_NAME="Rule I — wired-or-dead check"
-
-# How many of main's recent ci.yml runs the baseline walk may inspect before
-# giving up (FOLLOW-846 AC(1)/AC(2)). Sized off the observed cancellation rate:
-# 8 of main's last 12 runs were `cancelled` during a five-merge session, and
-# ci.yml carries jobs at 83-99 min, so a short window can plausibly be all
-# cancellations. 20 is ~an hour of the busiest merge cadence this repo has had.
-# It is a BOUND, not a fallback: when nothing in the window is usable the gate
-# exits 3 and says so, rather than quietly comparing against something weaker.
-BASELINE_LOOKBACK=20
-
-# How old the chosen baseline may be before the comparison is worth doubting.
-BASELINE_STALE_HOURS=72
-
-SNAPSHOT_FILTER='[.statusCheckRollup[] | {name: (.name // .context), state: (if .__typename=="StatusContext" then .state elif .status!="COMPLETED" then "PENDING" else .conclusion end), url: (.detailsUrl // .targetUrl // "")}] | sort_by(.name, .url)'
 
 echo "=== gh-pr-checks-verified.sh — PR #$PR ($REPO) ==="
 echo "Polling until two consecutive identical, fully-settled snapshots are observed."
@@ -843,15 +1089,46 @@ success=$(printf '%s' "$settled_snapshot" | grep -o '"state":"SUCCESS"' | wc -l 
 skipped=$(printf '%s' "$settled_snapshot" | grep -o '"state":"SKIPPED"' | wc -l | tr -d ' ')
 neutral=$(printf '%s' "$settled_snapshot" | grep -o '"state":"NEUTRAL"' | wc -l | tr -d ' ')
 
-# Everything that is not SUCCESS/SKIPPED/NEUTRAL is a failure-class state
-# (FAILURE, CANCELLED, TIMED_OUT, ACTION_REQUIRED, STALE, ERROR).
+# The failing list. FAILURE_REGEX is DERIVED from SNAPSHOT_FIELDS (see the
+# SNAPSHOT SERIALIZATION CONTRACT above) rather than copied from it.
 mapfile -t failure_names < <(
-  printf '%s' "$settled_snapshot" \
-    | grep -oP '\{"name":"[^"]*","state":"(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*","url":"[^"]*"\}'
+  printf '%s' "$settled_snapshot" | grep -oP "$FAILURE_REGEX"
 )
 
 echo "Total checks: $total | success: $success | skipped: $skipped | neutral: $neutral | failing: ${#failure_names[@]}"
 echo ""
+
+# ── ARITHMETIC SELF-CONSISTENCY (FOLLOW-856 AC(1)) ────────────────────────────
+# The four counts above come from four independent `grep -o | wc -l` passes; the
+# failing LIST comes from a fifth, structural pass. Nothing used to compare them,
+# so a serialization the fifth pass does not match produced "failing: 0" beside a
+# total that could not possibly be 0 — and a green verdict over FAILURE
+# check-runs. This is the same discipline this file already applies to its other
+# parse (the Rule I "count says N but zero symbols parsed" guard below): when two
+# independent reads of the same bytes disagree, the parse is wrong, and a wrong
+# parse is a TOOLING failure — exit 3 — never a green and never a verdict on the
+# PR. Exit 1 would be actively harmful: it routes to sending the ticket back to a
+# worker who cannot fix this script's regex.
+accounted=$((success + skipped + neutral + ${#failure_names[@]}))
+if [[ "$accounted" -ne "$total" ]]; then
+  echo "ERROR: SNAPSHOT SERIALIZATION MISMATCH — this gate cannot parse its own input." >&2
+  echo "  $success success + $skipped skipped + $neutral neutral + ${#failure_names[@]} failing" >&2
+  echo "  = $accounted, but $total check-run(s) are present. Those two numbers are read from" >&2
+  echo "  the same bytes by independent passes; when they disagree the failing list is" >&2
+  echo "  wrong, and an under-counted failing list is a FALSE GREEN." >&2
+  echo "  Failing-check regex in use (derived from SNAPSHOT_FIELDS):" >&2
+  echo "    $FAILURE_REGEX" >&2
+  echo "  Snapshot as read (first 2000 chars):" >&2
+  printf '    %.2000s\n' "$settled_snapshot" >&2
+  echo "  Likely cause: SNAPSHOT_FIELDS / gh / jq now serialize check-runs in a shape the" >&2
+  echo "  regex above does not match. Fix the projection or the derivation — do not relax" >&2
+  echo "  this guard." >&2
+  echo ""
+  echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+  echo "  this PR: the gate could not parse its own snapshot. Do not mark READY_FOR_REVIEW,"
+  echo "  and do not increment fix_iteration_counter — no worker can fix this."
+  exit 3
+fi
 
 if [[ "${#failure_names[@]}" -eq 0 ]]; then
   echo "${FIXTURE_TAG}RESULT: all checks green. Safe to mark READY_FOR_REVIEW."
@@ -994,6 +1271,28 @@ accepted_failures=()
 # back to its worker and increment fix_iteration_counter, and no worker can fix
 # a cancelled baseline run or a rate-limited log fetch (FOLLOW-846 AC(2)).
 tooling_failures=()
+# Things that are neither the PR's fault nor a gate malfunction: a violation
+# symbol the gate cannot ATTRIBUTE to this PR's own content, because main moved
+# under it or because the PR changed the extractor that produced one of the two
+# sides. Exit 4 (FOLLOW-855 AC(1)).
+not_attributable=()
+
+# Memoized answer to "does this PR edit the Rule I producer?" — "" unknown,
+# "yes"/"no" resolved, "err" the read itself failed.
+PR_TOUCHES_PRODUCER=""
+pr_touches_rule_i_producer() {
+  [[ -z "$PR_TOUCHES_PRODUCER" ]] || return 0
+  local files
+  if ! files="$(fetch_pr_files 2>/dev/null)"; then
+    PR_TOUCHES_PRODUCER="err"
+    return 0
+  fi
+  if printf '%s\n' "$files" | grep -qxF "$RULE_I_PRODUCER"; then
+    PR_TOUCHES_PRODUCER="yes"
+  else
+    PR_TOUCHES_PRODUCER="no"
+  fi
+}
 
 for name in "${uniq_names[@]}"; do
   urls="${urls_by_name["$name"]}"
@@ -1009,19 +1308,47 @@ for name in "${uniq_names[@]}"; do
     continue
   fi
 
-  # ── PR side: every check-run carrying this name, unioned ───────────────────
-  if [[ "$dup_n" -gt 1 ]]; then
-    echo "'$name' has $dup_n failing check-runs (push + pull_request events for the same job);"
-    echo "  reading all of them and comparing the UNION of their violating symbols against main."
+  # ── PR side: EVERY check-run carrying this name, at ANY state ──────────────
+  # Not just the failing ones. The `push` run (branch head) and the
+  # `pull_request` run (merge ref) are DIFFERENT COMMITS, and their disagreement
+  # is the only evidence this gate has about which side a symbol came from
+  # (FOLLOW-855). A branch-head run that is GREEN has an empty symbol set, and
+  # that emptiness is precisely what proves a merge-ref-only symbol is main's.
+  # Reading only the failing runs would make that case invisible.
+  mapfile -t rule_i_urls < <(
+    printf '%s' "$settled_snapshot" | grep -oP "$RULE_I_REGEX" \
+      | grep -oP '"url":"\K[^"]*' | LC_ALL=C sort -u
+  )
+  run_n="${#rule_i_urls[@]}"
+  if [[ "$run_n" -gt 1 ]]; then
+    echo "'$name' has $run_n check-runs on this PR ($dup_n of them failing) — the push event"
+    echo "  (branch head) and the pull_request event (merge ref) are different commits. Reading"
+    echo "  all of them: their UNION is compared against main, and any symbol missing from"
+    echo "  their INTERSECTION is not stably this PR's (FOLLOW-855)."
   fi
 
   : > "$tmp_dir/pr.syms.all"
   pr_ok=1
   pr_counts=""
-  while IFS= read -r one_url; do
+  read_jids=()
+  provenance_incomplete=0
+  for one_url in "${rule_i_urls[@]}"; do
     [[ -n "$one_url" ]] || continue
+    # A check-run of this name that is NOT in the failing list is a run the gate
+    # would previously never have read. It cannot be a blocking failure, so an
+    # unreadable one degrades to "left out of the provenance set" (loudly) rather
+    # than to a tooling failure that would take a whole verdict down.
+    optional=1
+    printf '%s\n' "$urls" | grep -qxF "$one_url" && optional=0
+
     jid="$(printf '%s' "$one_url" | grep -oP '/job/\K[0-9]+')"
     if [[ -z "$jid" ]]; then
+      if [[ "$optional" -eq 1 ]]; then
+        echo "WARN: could not extract a job id from non-failing Rule I check url '$one_url'"
+        echo "      — excluded from the provenance set."
+        provenance_incomplete=1
+        continue
+      fi
       echo "WARN: could not extract a job id from Rule I check url '$one_url'."
       tooling_failures+=("$name — job id unresolvable from check url '$one_url'")
       pr_ok=0
@@ -1030,6 +1357,13 @@ for name in "${uniq_names[@]}"; do
 
     if ! fetch_job_log "$jid" "pr-rule-i-$jid.log" > "$tmp_dir/pr-$jid.log" 2> "$tmp_dir/pr-$jid.err"; then
       diag="$(classify_fetch_error "$tmp_dir/pr-$jid.err" "$jid")"
+      if [[ "$optional" -eq 1 ]]; then
+        echo "WARN: could not FETCH a non-failing Rule I job log (job $jid) — $diag; excluded"
+        echo "      from the provenance set, so attribution below is less able to tell a"
+        echo "      merge-ref-only symbol from one this PR really introduced."
+        provenance_incomplete=1
+        continue
+      fi
       echo "WARN: could not FETCH the PR's Rule I job log (job $jid) — $diag."
       tooling_failures+=("$name — could not FETCH the PR's Rule I job log (job $jid): $diag")
       pr_ok=0
@@ -1038,6 +1372,12 @@ for name in "${uniq_names[@]}"; do
 
     one_count="$(rule_i_count_from_log < "$tmp_dir/pr-$jid.log")"
     if [[ -z "$one_count" ]]; then
+      if [[ "$optional" -eq 1 ]]; then
+        echo "WARN: a non-failing Rule I log (job $jid) has no 'Violations found: N' line —"
+        echo "      excluded from the provenance set."
+        provenance_incomplete=1
+        continue
+      fi
       echo "WARN: the PR's Rule I log (job $jid) was fetched successfully but contains no"
       echo "      'Violations found: N' line — check-rule-i.sh's output format may have"
       echo "      changed, or the job died before its summary."
@@ -1058,13 +1398,31 @@ for name in "${uniq_names[@]}"; do
     fi
 
     pr_counts="${pr_counts:+$pr_counts/}$one_count"
+    read_jids+=("$jid")
     cat "$tmp_dir/pr-$jid.syms" >> "$tmp_dir/pr.syms.all"
-  done <<< "$urls"
+  done
 
   [[ "$pr_ok" -eq 1 ]] || continue
 
+  if [[ "${#read_jids[@]}" -eq 0 ]]; then
+    tooling_failures+=("$name — no Rule I check-run on this PR could be read at all")
+    continue
+  fi
+
   LC_ALL=C sort -u "$tmp_dir/pr.syms.all" > "$tmp_dir/pr.syms"
   pr_symbols="$(wc -l < "$tmp_dir/pr.syms" | tr -d ' ')"
+
+  # ── PROVENANCE: the INTERSECTION of the PR's own runs ──────────────────────
+  # A symbol on every one of the PR's Rule I runs is on the branch content
+  # whatever main is doing. A symbol on only some of them exists on one commit
+  # and not another, and the only difference between those commits is main's
+  # newer content. With a single readable run the intersection collapses to the
+  # union and the behaviour is exactly what shipped before this change.
+  cp "$tmp_dir/pr-${read_jids[0]}.syms" "$tmp_dir/pr.common"
+  for jid in "${read_jids[@]:1}"; do
+    LC_ALL=C comm -12 "$tmp_dir/pr.common" "$tmp_dir/pr-$jid.syms" > "$tmp_dir/pr.common.next"
+    mv "$tmp_dir/pr.common.next" "$tmp_dir/pr.common"
+  done
 
   # ── main baseline ─────────────────────────────────────────────────────────
   if ! resolve_rule_i_baseline; then
@@ -1073,8 +1431,8 @@ for name in "${uniq_names[@]}"; do
   fi
 
   # ── the comparison (SET, not count) ───────────────────────────────────────
-  comm -23 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/new.syms"
-  comm -13 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/fixed.syms"
+  LC_ALL=C comm -23 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/new.syms"
+  LC_ALL=C comm -13 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/fixed.syms"
   new_symbols="$(wc -l < "$tmp_dir/new.syms" | tr -d ' ')"
   fixed_symbols="$(wc -l < "$tmp_dir/fixed.syms" | tr -d ' ')"
 
@@ -1084,21 +1442,100 @@ for name in "${uniq_names[@]}"; do
 
   if [[ "$new_symbols" -eq 0 ]]; then
     accepted_failures+=("$name — pre-existing-red: all $pr_symbols violating symbol(s) are also in main's baseline (run $BASELINE_RUN_ID); $fixed_symbols fixed by this PR")
+    continue
+  fi
+
+  # ── ATTRIBUTION (FOLLOW-855) ──────────────────────────────────────────────
+  # A NEW symbol is only this PR's if the gate can attribute it to the PR's own
+  # content. Two things break attribution, and both are the SAME defect seen from
+  # different sides: the two symbol sets being compared were produced from
+  # different inputs, or by different programs.
+  #
+  #  (a) main moved under the PR. The PR side is the UNION of the branch-head run
+  #      and the merge-ref run; the baseline is ONE older main run. A dead export
+  #      that a DIFFERENT PR merged into main after that baseline ran is in the
+  #      merge-ref log, in neither the branch-head log nor the baseline — and was
+  #      attributed to this PR, exit 1, "GENUINE FAILURES (blocking)", against a
+  #      worker who cannot delete it. PR #683 introduced the union deliberately
+  #      and argued it correctly; what it did not do was widen the other side.
+  #      The fix is not to shrink the union (that would silently pick the
+  #      friendlier of two commits) but to SPLIT it: symbols on every one of the
+  #      PR's runs stay this PR's, symbols on only some of them are named, shown,
+  #      and routed to exit 4.
+  #  (b) the PR edits the Rule I PRODUCER. ci.yml checks out the PR ref, so the
+  #      PR's Rule I job runs the PR's scripts/check-rule-i.sh while the baseline
+  #      ran main's. Every symbol the new extractor finds and the old one missed
+  #      then looks new, and such a PR blocks itself. FOLLOW-842 is exactly this
+  #      shape.
+  attribution=""
+  pr_touches_rule_i_producer
+  case "$PR_TOUCHES_PRODUCER" in
+    err)
+      echo "WARN: could not read this PR's changed-file list, so the gate cannot tell whether"
+      echo "      it edits $RULE_I_PRODUCER — the program that produced one side of this"
+      echo "      comparison. Refusing to guess."
+      tooling_failures+=("$name — could not read the PR's changed-file list to check whether it edits $RULE_I_PRODUCER")
+      continue
+      ;;
+    yes) attribution="producer-changed" ;;
+  esac
+
+  if [[ "$attribution" == "producer-changed" ]]; then
+    : > "$tmp_dir/new.attributable.syms"
+    cp "$tmp_dir/new.syms" "$tmp_dir/new.unattributable.syms"
   else
+    LC_ALL=C comm -12 "$tmp_dir/new.syms" "$tmp_dir/pr.common" > "$tmp_dir/new.attributable.syms"
+    LC_ALL=C comm -23 "$tmp_dir/new.syms" "$tmp_dir/pr.common" > "$tmp_dir/new.unattributable.syms"
+  fi
+  new_attributable="$(wc -l < "$tmp_dir/new.attributable.syms" | tr -d ' ')"
+  new_unattributable="$(wc -l < "$tmp_dir/new.unattributable.syms" | tr -d ' ')"
+
+  if [[ "$new_attributable" -gt 0 ]]; then
     echo ""
     echo "  NEW violating symbols (on this PR, absent from main's baseline):"
-    head -20 "$tmp_dir/new.syms" | sed 's/^/    - /'
-    if [[ "$new_symbols" -gt 20 ]]; then
-      echo "    … and $((new_symbols - 20)) more"
+    head -20 "$tmp_dir/new.attributable.syms" | sed 's/^/    - /'
+    if [[ "$new_attributable" -gt 20 ]]; then
+      echo "    … and $((new_attributable - 20)) more"
     fi
     if [[ "$pr_counts" == "$BASELINE_VIOLATIONS" ]]; then
       echo ""
       echo "  NOTE: the two COUNTS are equal ($pr_counts). Only the symbol SETS differ —"
-      echo "  this PR fixed $fixed_symbols violation(s) and introduced $new_symbols. A count"
+      echo "  this PR fixed $fixed_symbols violation(s) and introduced $new_attributable. A count"
       echo "  comparison would have accepted it and exited 0; that compensating-swap case is"
       echo "  what FOLLOW-821 AC(1) forbids by name and what FOLLOW-827 fixed here."
     fi
-    genuine_failures+=("$name — $new_symbols NEW Rule I violation symbol(s) not in main's baseline (run $BASELINE_RUN_ID)")
+    genuine_failures+=("$name — $new_attributable NEW Rule I violation symbol(s) not in main's baseline (run $BASELINE_RUN_ID)")
+  fi
+
+  if [[ "$new_unattributable" -gt 0 ]]; then
+    echo ""
+    echo "  NOT ATTRIBUTABLE TO THIS PR — $new_unattributable symbol(s):"
+    head -20 "$tmp_dir/new.unattributable.syms" | sed 's/^/    - /'
+    if [[ "$new_unattributable" -gt 20 ]]; then
+      echo "    … and $((new_unattributable - 20)) more"
+    fi
+    if [[ "$attribution" == "producer-changed" ]]; then
+      echo "  REASON: this PR modifies $RULE_I_PRODUCER, the program that emits the symbol"
+      echo "  lines on BOTH sides of this comparison. ci.yml checks out the PR ref, so the PR's"
+      echo "  Rule I job ran the PR's extractor while main's baseline (run $BASELINE_RUN_ID) ran"
+      echo "  main's. Symbols found by one and not the other are an extractor difference, not a"
+      echo "  regression. Adjudicate them against the diff by hand, or land the extractor change"
+      echo "  first and re-baseline."
+      not_attributable+=("$name — $new_unattributable symbol(s) incomparable: this PR edits $RULE_I_PRODUCER, so the PR side and main's baseline (run $BASELINE_RUN_ID) were produced by different extractors")
+    else
+      echo "  REASON: main moved under this PR. These symbols are on SOME of this PR's Rule I"
+      echo "  check-runs and not others — the push run is the branch head, the pull_request run"
+      echo "  is the merge with main, and they are different commits. main's baseline is one"
+      echo "  older run (run $BASELINE_RUN_ID), so a dead export another PR merged after that"
+      echo "  run is in the merge ref, in neither the branch head nor the baseline, and is NOT"
+      echo "  this PR's to fix. Re-run once a newer main run has completed: the baseline walk"
+      echo "  will then contain these symbols and this same PR will exit 0."
+      not_attributable+=("$name — $new_unattributable symbol(s) present on only some of this PR's Rule I check-runs (branch head vs merge ref); main moved under this PR since baseline run $BASELINE_RUN_ID")
+    fi
+    if [[ "$provenance_incomplete" -eq 1 ]]; then
+      echo "  CAVEAT: at least one of this PR's Rule I check-runs could not be read (see the"
+      echo "  WARNs above), so this attribution was computed from an incomplete run set."
+    fi
   fi
 done
 
@@ -1116,6 +1553,14 @@ fi
 # print "GENUINE FAILURES … do NOT mark READY_FOR_REVIEW" and exit 1 on PR #681
 # because main's newest completed run happened to be cancelled, then exit 0 six
 # minutes later on the same commit.
+if [[ "${#not_attributable[@]}" -gt 0 ]]; then
+  echo ""
+  echo "NOT ATTRIBUTABLE TO THIS PR (the gate completed, but these are not this PR's to fix):"
+  for f in "${not_attributable[@]}"; do
+    echo "  - $f"
+  done
+fi
+
 if [[ "${#tooling_failures[@]}" -gt 0 ]]; then
   echo ""
   echo "TOOLING FAILURES (the gate could not read what it needed — NOT a verdict on this PR):"
@@ -1146,6 +1591,20 @@ if [[ "${#genuine_failures[@]}" -gt 0 ]]; then
   echo ""
   echo "${FIXTURE_TAG}RESULT: FAIL. ${#genuine_failures[@]} genuine failure(s)."
   exit 1
+fi
+
+# Precedence 3 > 1 > 4 > 0: a gate that could not look outranks a red PR, a red
+# PR outranks an unattributable symbol, and only a clean comparison is green.
+if [[ "${#not_attributable[@]}" -gt 0 ]]; then
+  echo ""
+  echo "${FIXTURE_TAG}RESULT: NOT ATTRIBUTABLE (exit 4). This is NOT a green light — do not"
+  echo "  mark READY_FOR_REVIEW — and it is NOT a red verdict on this PR either. The gate"
+  echo "  completed its comparison and found ${#not_attributable[@]} finding(s) it cannot attribute to"
+  echo "  this PR's own content (see the reasons above). Do NOT send the ticket back to its"
+  echo "  worker and do NOT increment fix_iteration_counter: nobody on this ticket can delete"
+  echo "  a dead export that another PR merged into main. Re-run once a newer main run has"
+  echo "  completed, or adjudicate the named symbol(s) against this PR's diff by hand."
+  exit 4
 fi
 
 echo ""

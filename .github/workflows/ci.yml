@@ -749,6 +749,18 @@ jobs:
       - name: Run the PR-checks gate self-test (validates the merge gate itself)
         run: bash scripts/gh-pr-checks-verified.sh --self-test
 
+      # ── the gate's exit-code contract vs the corpus that routes on it ───────
+      # FOLLOW-854. PR #683 widened exit 3 and told readers not to increment
+      # fix_iteration_counter on it. That reached docs/ and CONVENTIONS_PATCH.md
+      # but NOT .claude/agents/pm-orchestrator.md — the file the decision-maker
+      # actually executes, which went on saying "3 = usage/gh error" in the same
+      # paragraph as the retry cap. Rule AI already ordered the tier-0 corpus
+      # first and shipped the greps; nothing ran them. This step runs them.
+      #
+      # Hard gate — no continue-on-error.
+      - name: Gate exit-code contract vs routing corpus (FOLLOW-854)
+        run: bash scripts/check-gate-exit-codes.sh
+
   # ── Sentry capture-has-init guard (FOLLOW-743) ──────────────────────────────
   # The INVERSE of the guard above: asserts every capture_exception(/
   # capture_message( call site's module also contains an init_sentry( call (or
@@ -814,6 +826,13 @@ jobs:
             scripts/check-sentry-init-singleton.sh \
             scripts/lib/clean-python-source.sh \
             scripts/lib/suppression-baseline.sh
+
+      # The merge gate and its corpus checker were shellcheck-clean only by the
+      # author's own local run — no automated path linted them, which is the
+      # "verified by a human once" shape this repo keeps finding (FOLLOW-854).
+      - name: Lint the merge gate and its exit-code corpus checker
+        run: |
+          shellcheck scripts/gh-pr-checks-verified.sh scripts/check-gate-exit-codes.sh
 
       - name: Assert the source= directives actually resolve (not silently skipped)
         run: |

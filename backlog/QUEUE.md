@@ -231,7 +231,7 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-842 — status: READY_FOR_REVIEW (PR #684, head `288ae07d`)
+### FOLLOW-842 — status: DONE (PR #684 merged `fd144611`, 2026-08-06) — and FOLLOW-831 closed with it
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:** 77 checks, 75 pass, 2 `Rule I`
 (the push+PR pair), symbol set 192 vs 192, new 0 / fixed 0, exit 0.

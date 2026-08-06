@@ -27610,6 +27610,12 @@ fixture); `scripts/gh-pr-checks-verified.sh:65,:170-181`; `.github/workflows/ci.
 
 ## FOLLOW-831 — A doc-mandated bare invocation of a non-executable script: `check-rule-i.sh` is 100644 and four handoffs tell workers to run it bare
 
+**CLOSED 2026-08-06 — done by FOLLOW-842 (PR #684, `fd144611`).** `check-rule-i.sh` is `100755` in
+the git index (verified on `main`: `git ls-files -s` → `100755`), asserted on disk and in the index
+by that PR's fixture S8, and its `--self-test` passes 9 fixtures when run from `main`. The residual
+"any other script a doc mandates bare" clause is four _other_ scripts and is a separate stub, not
+this ticket.
+
 **PM UPDATE (session 103): headline instance LANDED in PR #684 (FOLLOW-842)** — `check-rule-i.sh` is
 `100755` in the index, asserted on disk and in the git index by that PR's fixture S8. **Close this
 ticket as done-by-842 once #684 merges.** Its trailing "and any other script a doc mandates bare"

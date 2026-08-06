@@ -2298,3 +2298,36 @@ would generalize this beyond just `adapt-get-auth`.
   rename does not fix the PR, because the action scans the whole commit RANGE; the branch has to be
   squashed. Use spaces in sentinels from the start and never quote the old name in the comment
   explaining the rename.
+
+## 2026-08-06 · FOLLOW-845 — ClickHouse error body → two Sentry sinks (`apps/ingest`)
+
+- **What I built**: `clickhouse-producer.ts` stops reading the ClickHouse response body entirely.
+  The failure descriptor is now built from response HEADERS — HTTP status +
+  `X-ClickHouse-Exception-Code` (validated as 1–5 digits) run through a local code→class map —
+  giving `clickhouse_status_400:ch_code_27:row_rejected`, plus `X-ClickHouse-Query-Id` (validated as
+  a UUID) threaded through both consumers (`handlers/events.ts`,
+  `handlers/events-retry-consumer.ts`) as the operator pivot into `system.query_log`.
+  `sendDefaultPii: false` pinned in `observability.ts`. Real-client capture-path test + 4 producer
+  unit tests; `dpia.md` §2.7.3 and `ropa.md` updated.
+- **Wiring / auth / fail-loud risks I weighed**: (1) I drove a real `clickhouse-server:25.8`
+  container rather than citing the ticket. That upgraded the finding from "quotes input" to a graded
+  fact — the buyer's text lands inside the copied 500-char window when the parse fails at or after
+  the row's trailing keys, a 10-char fragment on `Code: 117`, nothing when it fails early — and it
+  produced the exact fixture the test now uses. Driving it also surfaced two things nobody asked
+  about: `X-ClickHouse-Exception-Code`/`X-ClickHouse-Query-Id` exist (which is what made "replace,
+  don't delete" cheap), and the producer's ISO-8601 `Z` timestamps are REJECTED by a stock
+  ClickHouse under `date_time_input_format=basic` — reported, not fixed. (2) Rule K.2 cuts both ways
+  here: deleting the body would have made the drift class unobservable, so the replacement had to
+  carry a class AND a pivot, and I asserted the "still loud" direction in the same test as the "no
+  longer leaky" direction. (3) The exception VALUE is the Sentry grouping key — the old body-derived
+  string gave every failing row its own fingerprint, so the bounded vocabulary is an observability
+  win, not just a privacy one. (4) The transport-rejection arm keeps `cause.message`
+  (runtime-generated, credentials ride a header not the URL) — accepted and pinned as SURVIVING,
+  same shape as FOLLOW-838.
+- **A guardrail I'd add**: when a diagnostic must be removed for privacy, check whether the upstream
+  already exposes a **structured, non-body channel** (a header, a status enum, a server-side log
+  with a correlation id) BEFORE arguing about how much of the body to keep. Twice now the answer was
+  "the operator does not need the bytes, they need a class plus an id to look the bytes up where
+  they already lawfully live". Second: prove the leak against the pinned version of the real
+  dependency when a container is one `docker run` away — a citation would have produced a weaker
+  fixture, and I would have missed both the header channel and the timestamp defect.

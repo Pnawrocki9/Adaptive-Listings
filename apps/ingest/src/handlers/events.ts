@@ -583,12 +583,23 @@ events.post('/', async (c) => {
     const waitUntilCh = getWaitUntil(c);
     const chPromise = pushToClickHouse(validated, c.env).then(async (clickhousePush) => {
       if (!clickhousePush.ok) {
+        // FOLLOW-845: `clickhousePush.error` no longer carries any ClickHouse response
+        // BODY — it is `clickhouse_status_<http>[:ch_code_<n>:<class>]`, built from
+        // response headers in `clickhouse-producer.ts`. Both diagnostics below are
+        // Sentry inputs (`logger.error` emits via `console.log`, and
+        // `consoleIntegration()` is a default of `@sentry/cloudflare`), and the batch
+        // being inserted contains buyer chat text, so nothing derived from that body
+        // may appear here. `ch_query_id` is the replacement pivot for the detail:
+        // `SELECT exception FROM system.query_log WHERE query_id = '<id>'` returns
+        // ClickHouse's full message, quoted input included, without exporting it.
         logger.error(
           {
             tenant_id: tenantId,
             batch_size: eventsField.length,
             attempts: clickhousePush.attempts,
             upstream_status: clickhousePush.status,
+            ch_error_code: clickhousePush.chErrorCode,
+            ch_query_id: clickhousePush.queryId,
             error: clickhousePush.error,
           },
           'clickhouse_push_failed_post_ack',
@@ -604,6 +615,8 @@ events.post('/', async (c) => {
               batch_size: eventsField.length,
               attempts: clickhousePush.attempts,
               upstream_status: clickhousePush.status,
+              ch_error_code: clickhousePush.chErrorCode,
+              ch_query_id: clickhousePush.queryId,
             },
           },
         );

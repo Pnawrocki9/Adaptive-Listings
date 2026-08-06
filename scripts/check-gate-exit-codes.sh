@@ -64,6 +64,12 @@ declare -A NON_ROUTING=(
   # that contract is pinned by the fixtures in gh-pr-checks-verified.sh --self-test, not
   # by the exit-code marker.
   ["scripts/check-rule-i.sh"]="the Rule I producer; names the gate for the log-format contract, routes on no exit code of it"
+  # Added when PR #686 (FOLLOW-857) rebased onto #685 and this cross-check caught it
+  # unprompted a second time: check-rule-h.sh names the gate once, in a comment citing
+  # FOLLOW-830 as the first instance of the PCRE fail-open class it also closes. Weaker
+  # than check-rule-i.sh's link — Rule H is not even a producer, nothing it prints is
+  # parsed by the gate — so there is no exit code of the gate for it to route on.
+  ["scripts/check-rule-h.sh"]="cites the gate once as a prior fail-open instance; neither produces a line it parses nor reads any exit code of it"
   [".github/workflows/ci.yml"]="invokes --self-test only; never reads a PR verdict"
   ["CLAUDE.md"]="names the exit-0 precondition in prose; enumerates no other code and issues no routing instruction"
   [".claude/agents/devops-engineer/lessons.md"]="append-only lessons log"

@@ -29479,3 +29479,33 @@ produced; (3) state whether the orchestrator's own scratchpad use needs the same
 
 cross_ref: [FOLLOW-857; FOLLOW-849 (worktree-blind branch guard); session-102 worktree isolation
 decision in `backlog/QUEUE.md`]
+
+---
+
+## FOLLOW-863 — Docs-only commits trigger the full CI matrix plus four auxiliary workflows
+
+source_retro: n/a (observed during the 2026-08-06 Actions outage, session 103) source_ticket:
+ESC-050 recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+A commit touching only `backlog/*.md` currently queues the entire `ci.yml` job matrix (~34 jobs)
+plus `Redis shadow round-trip smoke`, `Post-migrate seed archetype embeddings`,
+`K.3.6 D-1 Intent Weights Live Smoke` and `Demo integration`. Session 103 pushed roughly **twenty**
+backlog-only bookkeeping commits to `main`, i.e. on the order of 800 queued jobs for changes that
+cannot affect any of them.
+
+**Filed on efficiency merits, explicitly NOT as a cause of the 2026-08-06 outage** — that was a
+GitHub-side incident (ESC-050) and this would not have prevented it. It was simply made visible by
+it.
+
+**AC:** (1) add `paths-ignore` (or an equivalent guard) so a commit touching only `backlog/**`,
+`docs/**` markdown and `*.md` does not queue the code matrix — **but check first** whether any gate
+legitimately depends on docs (`Privacy Notice SDK key-sync`, `Registration consent-text sync`,
+`Consent contract drift gate` and the compliance-doc checks all read Markdown, so a blanket ignore
+is wrong); (2) whatever is excluded must still run on PRs that mix docs and code; (3) state the
+before/after job count for a backlog-only commit; (4) note the interaction with FOLLOW-851 — if
+`main` is also removed from `cancel-in-progress`, docs-only runs would no longer be cancelled by the
+next merge either, which makes this ticket more valuable, not less.
+
+cross_ref: [ESC-050; FOLLOW-851; `.github/workflows/ci.yml`; RETRO-252 (duplicate push+PR
+check-runs)]

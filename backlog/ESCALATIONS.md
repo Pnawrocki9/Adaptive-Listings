@@ -3226,7 +3226,7 @@ which quotes offending input back into two Sentry sinks — a different defect o
 
 ---
 
-## OPEN — ESC-050: GitHub Actions is failing jobs at `Set up job` across the repo, so no PR can be validated — operator check needed if it does not self-clear
+## RESOLVED — ESC-050: the Actions failures were a GitHub-side major outage, not a repo, billing or capacity problem
 
 **Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-06 **Affects:** every open PR,
 `scripts/gh-pr-checks-verified.sh` **Type:** other (infrastructure / possibly billing)
@@ -3274,6 +3274,32 @@ remediation is warranted.
 in 2m, `Test (Node 22)` in 14m and `ClickHouse migrations smoke` in 24s — the same commits, the same
 workflow. The `pull_request` copies of those jobs are the ones failing at setup. Identical code, two
 outcomes, decided by which event queued the job.
+
+**RESOLVED 2026-08-06 — confirmed at the source, and my own hypothesis was wrong.**
+`githubstatus.com` reports an active **major outage of GitHub Actions**, incident opened **15:22
+UTC**, impact **Critical**, status _Investigating_, with GitHub's own wording: _"Workflow runs are
+still failing, and jobs may remain queued for an extended period before starting or may time out."_
+Jobs on GitHub-hosted runners are explicitly named as constrained.
+
+That accounts for every symptom in this entry — the `Set up job` failures, the Gitleaks job marked
+failed 45 minutes after its log said `✅ No leaks detected`, the queue not draining, and the **HTTP
+502s the GitHub API returned to my own `gh run cancel` requests**.
+
+**Correction to what I did while this entry said "possibly billing".** I cancelled five queued
+`main` workflow runs to free capacity, on the theory that a concurrency or spend limit was being
+hit. Those runs were triggered by this session's own docs-only bookkeeping commits, so cancelling
+them cost nothing and lost no signal — but the theory was wrong, capacity was never the constraint,
+and the cancellations changed nothing. Recorded because acting on an unverified hypothesis is
+exactly what this session has spent the day filing tickets about.
+
+**No operator action is required.** Nothing in this repo caused it and nothing in this repo can fix
+it. The only correct response is to wait for GitHub, then re-run
+`scripts/gh-pr-checks-verified.sh 686`.
+
+**What it did surface, worth keeping after the outage clears:** this repo's docs-only commits
+trigger the full CI matrix plus four auxiliary workflows. This session pushed roughly twenty
+backlog-only commits to `main`, each queueing ~40 jobs. Filed as **FOLLOW-863** on its own
+efficiency merits, not as a cause of today's incident.
 
 **Required action (operator — I cannot check any of this):**
 

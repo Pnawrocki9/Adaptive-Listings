@@ -231,7 +231,54 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-857 — status: READY_FOR_REVIEW (PR #686, head `b3c7fe09`)
+### FOLLOW-857 — status: AWAITING_CI (PR #686, head `6c4bc984`) — do NOT merge yet
+
+**The earlier READY_FOR_REVIEW applied to head `b3c7fe09`, which no longer exists.** #685 merged
+first (`b484e566`) as sequenced, #686 conflicted exactly where the hunk-level check predicted
+(`ci.yml:817`, `lessons.md:346`), and the rebase produced a new head. **A CI verdict does not
+survive a rebase**, so the ticket is honestly back to awaiting CI rather than carrying a stale
+green.
+
+**The current two reds are NOT code.** Verified at the API rather than from the worker's report:
+`Format check` (job `92677067863`) has exactly one recorded step — `Set up job` — with
+`conclusion: failure`, after ~10 minutes. Zero workflow steps executed. `Redis shadow round-trip` is
+`CANCELLED` with the same shape. Repo-wide, 6 of the last 12 runs are `queued`; the run holding
+these jobs is still `in_progress`, which is also why `gh run rerun --failed` answers "cannot be
+rerun; its workflow file may be broken" — GitHub's message for a run that has not finished. This is
+the documented Actions runner/billing trap, not a defect in the PR.
+
+**What the worker verified locally, post-rebase:** `gh-pr-checks-verified.sh --self-test` 24
+fixtures, `check-rule-h.sh --self-test` 6, `check-rule-i.sh --self-test` 11,
+`check-gate-exit-codes.sh` exit 0, `shellcheck` rc 0 on all five scripts, and `prettier --check .` —
+the exact CI command — rc 0.
+
+**The belt-and-braces question got answered, and both halves turned out to be load-bearing.** The
+worker extracted #685's three parser functions verbatim from the merged gate, drove real degraded
+`check-rule-i.sh` runs, and re-emitted their interleaved stdout+stderr with an ISO prefix per line
+the way a raw Actions log does:
+
+| case                              | old unanchored parser | new anchored parser |
+| --------------------------------- | --------------------- | ------------------- |
+| preflight-degraded (no PCRE grep) | nothing (string gone) | nothing             |
+| **D3 parsed-zero-symbols**        | **fake clean `0`**    | nothing             |
+| healthy control                   | 192                   | 192, 192 symbols    |
+
+So #686's producer-side rewording closes the first case and **#685's anchoring is the only thing
+closing the second** — the D3 diagnostic still has to name the line it is declining to print.
+Neither half alone is sufficient; that was argued before and is now demonstrated.
+
+**The corpus checker bit again, as predicted in the dispatch:** it failed on `check-rule-h.sh`
+referencing the gate while being in neither list. Classified NON_ROUTING with its reason recorded —
+Rule H is not even a producer, so there is no exit code of the gate for it to route on — and the
+checker then returned "the gate's exit-code contract and all 6 routing consumers agree". **The
+silence was stated explicitly because it was asked for**: a checker that has just been handed new
+material and stays quiet is making a claim.
+
+**Strongest evidence available today** is the pre-rebase run `31078601474` on the same substantive
+code — 73 pass / 2 fail, both the pre-existing `Rule I` at 192, `Rule H gate self-test` green in 9s
+with all six fixtures in its log. The rebase added only two conflict resolutions and the corpus
+classification, each re-run locally. **That is not a substitute for a settled CI observation and is
+not being treated as one.**
 
 **CI verified:** 192/192 symbol-set match vs baseline run `31078015081`, `New on this PR: 0`,
 exit 0. The new `Rule H gate self-test (FOLLOW-857)` job passed in 9s and its log was pulled to

@@ -29150,3 +29150,233 @@ clause (b), P-32/P-33 both tested against their own bars and neither fires, and 
 "enumerate-don't-fix" amendment explicitly NOT discharged (RETRO-122 count-inflation). P-36 MINTED at count 1
 by RETRO-251 (a class enumerated by the SINK it was noticed at rather than the SOURCE that defines it) with a
 3-clause bar and a named preference for a Rule S first-bullet amendment over a new letter. -->
+
+---
+
+## FOLLOW-857 — Rule H's Pattern 2 has never been able to fail: `| wc -l || echo 0` under `pipefail` corrupts the consumer count precisely when it is zero, and the hard gate prints `OK:` over a genuine orphan export
+
+source_retro: RETRO-253 (§4a LG-1 / §4a LG-2 / §4d DG-1 / §6 P-37) source_ticket: FOLLOW-842
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 4
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Not frozen:** P1 carve-out to the session-95 standing rule.
+
+**The defect, and it is a false GREEN in a hard CI job that is not on the pre-existing-red list.**
+`scripts/check-rule-h.sh:70-80`:
+
+```bash
+consumer_count=$(grep -rl "\b${sym}\b" apps/ packages/ \
+  --include="*.ts" --include="*.tsx" 2>/dev/null \
+  | grep -v "__tests__" | grep -v "\.test\." | grep -v "\.spec\." \
+  | grep -v "node_modules" | grep -v "/dist/" | grep -v "^${file}$" \
+  | wc -l || echo 0)
+if [[ "$consumer_count" -lt 1 ]]; then      # the FAIL branch
+```
+
+Under `set -euo pipefail`, when the symbol has **zero** non-test importers the trailing `grep -v`
+exits 1, `pipefail` propagates that past `wc -l`'s own `0`, and `|| echo 0` prints a **second** `0`.
+`consumer_count` becomes the two-line string `0\n0`. `[[ "0\n0" -lt 1 ]]` is an arithmetic **syntax
+error** (rc 2), which inside an `if` is simply "false", so control falls to the `else` and the gate
+prints `OK: '<sym>' (<file>) — 0\n0 importer(s).` and exits 0. **The value is corrupted by exactly
+and only the condition the gate exists to detect** — a wired export produces a clean `1` and the
+pass path works, so the gate's green is anti-correlated with the truth on this pattern.
+
+**Driven red-first (RETRO-253 §headline), throwaway repo, real GNU grep, no shim, no unusual host:**
+
+```
+=== Rule H check: unwired lib/ exports ===
+scripts/check-rule-h.sh: line 80: [[: 0
+0: syntax error in expression (error token is "0")
+OK:   orphanRuleHSymbol (apps/x/src/lib/orphan.ts) — 0
+0 importer(s).
+Rule H passed — all schema scaffolds have runtime consumers or documented deferrals.
+[exit 0]
+```
+
+Positive control on the same fixture with the symbol imported: `OK: … — 1 importer(s).` — correct.
+
+**Age and blast radius.** `git show 0a0a6880:scripts/check-rule-h.sh` carries the identical
+`| wc -l || echo 0)` at its own `:25`, so this has been true since the gate shipped on
+**2026-05-14**, and `grep -rn "has no non-test consumer" backlog/ docs/` returns **zero hits across
+the entire record** — consistent with the Pattern-2 FAIL never once having fired in ~15 months.
+Patterns 1 (mock markers) and 3 (adapt enforcement) are unaffected.
+
+**The sibling already has the fix, and it is three days younger than the bug (Rule S).**
+`scripts/check-rule-i.sh:395-413` guards every pipeline stage individually (`{ grep … || true; }`,
+which is silent) and then normalises with `consumer_count=$(( consumer_count + 0 ))`. That landed
+`76bfd7d9`, 2026-05-17 — three days after `check-rule-h.sh` shipped the defect, in the other half of
+the same two-gate wired-or-dead pair, doing the same job on the same shape of pipeline. Run Rule S
+verbatim against that change and it fires on bullets 1 and 3. **Compliance failure against an
+adequate control; the remedy is the shared fixture in AC(3), not a new rule.**
+
+**Second defect in the same loop, folded in rather than given its own number (Rule AN).**
+`check-rule-h.sh:66-67` is the **third live instance** of the PCRE fail-open FOLLOW-830 closed in
+`gh-pr-checks-verified.sh` and FOLLOW-842 closed in `check-rule-i.sh`:
+
+```bash
+exports=$(grep -oP "export (?:async )?(?:function|class|const|let) \K\w+" "$file" 2>/dev/null || true)
+```
+
+The `|| true` defeats `set -e` explicitly, so on a non-PCRE host `exports` is empty, the symbol loop
+never iterates, and the gate prints `Rule H passed` / exit 0. **FOLLOW-843's stub names `:34` in
+this file** (the `grep -qP` boolean) **and grades the file "lower risk" because `:34` fails LOUD.**
+That grading is correct about `:34` and wrong about the file: `:66` is silent, and `:79` is not a
+PCRE site at all.
+
+**AC:**
+
+1. Fix `:79` — either normalise (`consumer_count=$(( consumer_count + 0 ))`, mirroring
+   `check-rule-i.sh:413`) or move the guards inside the pipeline as silent `|| true`. **Do not
+   simply delete `|| echo 0`** without checking what the pipeline then returns under `set -e`. State
+   in the PR which you chose and why.
+2. Fix `:66` and `:34` — add the same dependency preflight `check-rule-i.sh:60-98` uses (probe the
+   **exact** `grep -oP … \K …` construct, not "does `-P` exist"), exiting non-zero with a named
+   message. Reuse, do not re-derive.
+3. **A `--self-test` for `check-rule-h.sh` wired to a green-required CI job, and it MUST be shared
+   with `check-rule-i.sh`'s** — a common fixture that asserts _both_ gates FAIL on an orphan export
+   and PASS on a wired one. The two gates diverged because nothing compared them; a per-file harness
+   would let them diverge again. Prove each fixture red-first against the current script.
+4. **Measure the backlog the blind gate accumulated BEFORE landing the fix**, and report it in the
+   PR body: run the repaired gate against `main` and count Pattern-2 violations that exist today. If
+   it is non-zero, the repair will read as a regression on the next PR unless the number is on the
+   record first — handle it the way Rule I's 192 is handled, not by widening the gate.
+5. Correct `docs/MASTER_DESIGN.md:576`, which lists Rule H among the rules "enforced by hard CI
+   gates" — accurate as a citation, materially overstated as an efficacy claim while Pattern 2
+   cannot fail. Same PR (Rule AN), one sentence.
+
+cross_ref: [RETRO-253 §headline, §4a LG-1/LG-2, §4d DG-1, §5b, §6 P-37; FOLLOW-830 (instance 1);
+FOLLOW-842 (instance 2, and the preflight to reuse); FOLLOW-843 (its `:34` footnote — this
+supersedes its risk grading of the file, NOT its four-`set`-line scope); FOLLOW-858 (the sibling
+shell-hygiene axis); `scripts/check-rule-h.sh:34,:40,:66,:79`;
+`scripts/check-rule-i.sh:60-98,:395-413`; `docs/MASTER_DESIGN.md:576`; CONVENTIONS_PATCH.md Rule S,
+Rule AM, Rule AP]
+
+---
+
+## FOLLOW-858 — `check-fire-and-forget-sinks.sh` reports "all sinks registered" and exits 0 from an empty non-git directory: FOLLOW-842's `cd ""` guard has five siblings and one of them fails open
+
+source_retro: RETRO-253 (§4a LG-3 / §4b CB-2) source_ticket: FOLLOW-842 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**The defect.** Five gate scripts resolve their root as
+`ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"`. That is FOLLOW-842's fourth fail-open
+(`cd ""` is a successful no-op in bash) one syntactic step less obvious: outside a git working tree
+the scan silently runs against the caller's cwd. **Measured, not argued** — each script run from an
+empty non-git directory:
+
+| script                               | rc    | last line                                                              |
+| ------------------------------------ | ----- | ---------------------------------------------------------------------- |
+| **`check-fire-and-forget-sinks.sh`** | **0** | **`All request-path async sinks are registered via afterResponse()…`** |
+| `check-modal-app-singleton.sh`       | 1     | fails closed                                                           |
+| `check-sentry-init-singleton.sh`     | 1     | fails closed (`an unreadable manifest is a hard failure`)              |
+| `check-sentry-capture-has-init.sh`   | 2     | fails closed (`a hard failure rather than an empty … region`)          |
+| `check-migration-journal.sh`         | 1     | fails closed (`FAIL: journal not found at …`)                          |
+
+**Four of five have a region-emptiness guard and one does not.** It does not fire in CI
+(`actions/checkout@v4` always provides a tree) — it fires when an agent or a human runs the gate
+from the wrong directory, which is precisely the invocation pattern FOLLOW-831's bare-invocation
+work is about, and precisely how a "verified locally" claim becomes false.
+
+**AC:**
+
+1. Give `check-fire-and-forget-sinks.sh` the guard `check-rule-i.sh:103-121` uses — an unresolvable
+   repo root is exit 3 with a named message, never a clean pass. Reuse the sibling's wording; do not
+   re-derive it.
+2. Add a zero-discovery guard: if the scan finds no candidate files, that is exit 3 named as
+   discovery, **not** "all sinks registered". Confirm by inspection which of the other four rely on
+   a discovery guard vs a manifest read, and say so in the PR — the four fail closed for **two
+   different reasons** and only one of them generalises.
+3. `check-rule-i.sh:99`'s excellent comment documents this defect in the past tense while four
+   siblings still carry the live variant. Add a one-line pointer from that comment to whatever
+   register (or shared helper) this PR lands, so the next reader is not told the class is
+   historical.
+4. **Second axis, folded in from FOLLOW-831's tail rather than given its own number (Rule AN):**
+   FOLLOW-831 AC(1) ended _"and any other script a doc mandates bare"_ and named four further
+   scripts. That is a mode-bit sweep over the same script set this ticket already opens — do it
+   here. `git ls-files -s scripts/*.sh` and fix any `100644` a doc invokes bare, with
+   `git update-index --chmod=+x`, asserting the git index mode and not only the filesystem mode.
+
+cross_ref: [RETRO-253 §4a LG-3, §4b CB-2, §7 (the FOLLOW-831 closure trace); FOLLOW-842 (guard R1,
+the pattern to reuse); FOLLOW-831 (its AC(1) tail lands here); FOLLOW-843 (adjacent shell-hygiene
+scope, disjoint scripts); FOLLOW-857 (the other half of the gate sweep);
+`scripts/check-fire-and-forget-sinks.sh:54`; `scripts/check-migration-journal.sh:41`;
+`scripts/check-modal-app-singleton.sh:65`; `scripts/check-sentry-capture-has-init.sh:348`;
+`scripts/check-sentry-init-singleton.sh:356`; `scripts/check-rule-i.sh:99-121`]
+
+---
+
+## FOLLOW-859 — The PR #680 deferral that was promised a ticket and never got one: remove the merge gate's PCRE dependency structurally instead of guarding it
+
+source_retro: RETRO-253 (§6, the Rule S harm-based re-arming) source_ticket: FOLLOW-830
+recommended_sprint: next recommended_agent: devops-engineer priority: P3 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Why this exists.** `backlog/QUEUE.md` session-103 recorded, of PR #680: _"Left deliberately undone
+by the worker, correctly: replacing `grep -oP` on compact JSON with tab-separated `jq` output, which
+would remove the PCRE dependency structurally rather than guarding it. It declined to reshape the
+one code path this session needs working to review the PR, and says so. **Worth its own ticket
+rather than a silent omission.**"_
+`grep -n "tab-separated\|remove the PCRE dependency" backlog/FOLLOW_UPS.md` → **no hits.** The
+sentence that said "rather than a silent omission" became the silent omission. This stub is filed as
+much to close that as to do the work — it is RETRO-253 §6's count-1 evidence for the harm-based Rule
+S re-arming, and leaving it unfiled after noticing it would have been the same failure a second
+time.
+
+**The work.** `scripts/gh-pr-checks-verified.sh` parses compact `gh --json` output with `grep -oP`.
+The FOLLOW-830 preflight now refuses to run on a host whose grep lacks PCRE — so this is **no longer
+a correctness defect**, it is a dependency the script does not need. `jq` is already a hard
+dependency of the same script, and `jq -r` with tab-separated output removes the PCRE requirement
+from the JSON parsing paths entirely.
+
+**Scope discipline — read this before starting.** The two Rule I **log** parsers
+(`rule_i_count_from_log:240`, `rule_i_symbols_from_log:251`) are **OUT of scope**: their input is a
+raw Actions log, not JSON, and they are one half of a documented, byte-pinned format contract with
+`scripts/check-rule-i.sh` (see the reciprocal `INPUT FORMAT CONTRACT` / `OUTPUT FORMAT CONTRACT`
+comments). Touching them is FOLLOW-848's coordination problem, not this ticket's.
+
+**AC:** (1) convert the **JSON**-parsing `grep -oP` sites to `jq -r` with tab-separated output; (2)
+leave the two log parsers and their `grep -oP` untouched, and say so explicitly in the PR body; (3)
+**do not remove the PCRE preflight** even when the last JSON site is gone — the log parsers still
+need it, and a preflight removed because "we don't use it any more" is how the fail-open returns;
+(4) run the full `--self-test` before and after and show both transcripts, since this is a pure
+refactor of a gate and the only acceptable evidence is that the fixture set is unmoved.
+
+cross_ref: [RETRO-253 §6 (the Rule S harm-based re-arming, count 1); `backlog/QUEUE.md` session-103
+(the unfilled promise); FOLLOW-830 (the preflight that made this optional rather than urgent);
+FOLLOW-848 (owns the log-parser contract); FOLLOW-844 (shellcheck widening, same file);
+`scripts/gh-pr-checks-verified.sh:240,:251`]
+
+<!-- next free FOLLOW number: 860 (FOLLOW-857..859 filed 2026-08-06 by RETRO-253, the post-merge retro for
+PR #684 / FOLLOW-842 — the PCRE fail-open in check-rule-i.sh, the script the merge gate builds its baseline
+from. FOLLOW-842 itself CLOSED on all four ACs and re-proved independently; FOLLOW-831 CLOSED end-to-end
+(disk 755 AND git index 100755 AND the four bare HANDOFFS invocations work), its "any other script a doc
+mandates bare" tail folded into 858 AC(4) rather than numbered. 857 = P1 UNFROZEN, DRIVEN red-first and the
+headline of the retro: scripts/check-rule-h.sh Pattern 2 CANNOT FAIL — `| wc -l || echo 0` under pipefail
+makes consumer_count the two-line string "0\n0" precisely when it is zero, `[[ "0\n0" -lt 1 ]]` is an
+arithmetic syntax error (false), and the hard `rule-h` CI job prints `OK:` and exits 0 over a genuine orphan
+export; present since 0a0a6880 (2026-05-14), zero recorded Pattern-2 catches in the whole backlog; folds in
+the file's :66 `grep -oP ... || true` (the THIRD instance of FOLLOW-830/842's shape) and corrects
+MASTER_DESIGN:576's efficacy claim. The sibling check-rule-i.sh got the fix at 76bfd7d9 THREE DAYS LATER and
+nobody diffed the pair -> Rule S fires as a COMPLIANCE FAILURE against an adequate control, no rule action.
+858 = P2 FROZEN, DRIVEN: check-fire-and-forget-sinks.sh exits 0 with "All request-path async sinks are
+registered" from an empty non-git directory — the `|| pwd` sibling of FOLLOW-842's `cd ""` guard; 1 of 5
+scripts fails open, the other 4 measured at rc 1/1/2/1. 859 = P3 FROZEN, the PR #680 jq/PCRE restructure that
+QUEUE.md session-103 called "worth its own ticket rather than a silent omission" and that was never filed.
+NOT re-filed, recorded against existing stubs instead (Rule AN): FOLLOW-848 (AC(4) pins ≥1 symbol parsing and
+is structurally incapable of catching a change to the extractor's match SET — the narrowing direction is
+SILENT because the PR side and the baseline are built by two different builds of the extractor; AC(5)'s
+"coordinate with FOLLOW-842" is discharged-by-completion, so that hazard is now owned by nobody; AC(3)'s
+fixture-count assertion now applies to two harnesses), FOLLOW-854 (two scripts now define exit 3 with
+DIFFERENT meanings, so its AC(4) check must key on (script, code)), FOLLOW-855 (the PR/baseline asymmetry
+extends to check-rule-i.sh exit 3: hard tooling failure on the PR side, skip-and-walk-older on the baseline
+side; and PR #684 is NOT P-35's clause-(b) discharge event, it moved main's symbol set by zero), FOLLOW-843
+(its check-rule-h.sh risk grading is superseded; its four script paths are STALE — none of migrate.sh,
+migration-contract-test.sh, smoke-test.sh, ttl-golden-test.sh exists at scripts/), FOLLOW-844 (its "free
+today" shellcheck claim now measured against ~1140 lines, third re-measurement in four days). NO new
+CONVENTIONS_PATCH rule promoted and NO amendment — RETRO-250's armed Rule S "enumerate-don't-fix" amendment
+tested clause by clause and NOT DISCHARGED (FOLLOW-842's worker was not so instructed, and PR #684 filed ZERO
+new stubs), RE-ARMED with a second harm-based clause at count 1 and the exact amendment text written out;
+P-37 MINTED at count 1 (an `||` fallback that PRINTS, guarding a pipeline that also prints, corrupts the
+value precisely in the failure case) with a 3-clause bar; P-36 tested and HELD at count 1 (near-miss refused);
+P-35 held at count 1. -->

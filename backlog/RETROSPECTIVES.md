@@ -51233,3 +51233,762 @@ PATH); 844's shellcheck claim now measured against 1140 lines, not 247 or 735. S
 the PM in §5a, NOT escalated (guardrail). Filed FOLLOW-854, 855, 856. QUEUE.md / ESCALATIONS.md / sprint
 files / code correctly UNTOUCHED. Learning-hook fragment at
 .claude/agents/retrospective-analyst/lessons.d/RETRO-252.md per Rule AG. -->
+
+
+## RETRO-253 — FOLLOW-842 (#684) — the fix is complete and correct, and the gate standing next to it has never been able to fail — 2026-08-06
+
+**THE HEADLINE: FOLLOW-842 IS GENUINELY CLOSED — I RE-PROVED IT INDEPENDENTLY — AND THE THESIS-TEST
+THE BRIEF ASKED FOR TURNED UP A LIVE FALSE GREEN IN THE SIBLING GATE, DRIVEN RED-FIRST.**
+`scripts/check-rule-h.sh` — a hard CI job (`rule-h`), not on the pre-existing-red list, green on
+every PR in this repo — **cannot report its own Pattern 2 violation.** Its consumer count is
+
+```bash
+# scripts/check-rule-h.sh:70-80
+consumer_count=$(grep -rl "\b${sym}\b" apps/ packages/ ... | grep -v "^${file}$" | wc -l || echo 0)
+if [[ "$consumer_count" -lt 1 ]]; then     # FAIL branch
+```
+
+Under `set -euo pipefail`, when the symbol has **zero** non-test importers the trailing `grep -v`
+exits 1, `pipefail` propagates it past `wc -l`'s own `0`, `|| echo 0` prints a **second** `0`, and
+`consumer_count` becomes the two-line string `0\n0`. `[[ "0\n0" -lt 1 ]]` is an arithmetic **syntax
+error** (rc 2), which in an `if` condition is simply "false", so control falls to the `else` and the
+gate prints `OK: … — 0\n0 importer(s).` and exits 0. **The malformed value is produced by exactly
+and only the condition the gate exists to detect.** Driven in a throwaway repo with a real GNU grep,
+no shim, no unusual host:
+
+```
+=== Rule H check: unwired lib/ exports ===
+scripts/check-rule-h.sh: line 80: [[: 0
+0: syntax error in expression (error token is "0")
+OK:   orphanRuleHSymbol (apps/x/src/lib/orphan.ts) — 0
+0 importer(s).
+Rule H passed — all schema scaffolds have runtime consumers or documented deferrals.
+[exit 0]
+```
+
+Positive control on the same fixture with the symbol wired: `OK: … — 1 importer(s).` — correct, so
+the gate's *pass* path works and only its *fail* path is dead. `git show 0a0a6880:scripts/check-rule-h.sh`
+carries the identical `| wc -l || echo 0)` at its own `:25`, so this has been true **since the gate
+was introduced on 2026-05-14** — and `grep -rn "has no non-test consumer" backlog/ docs/` returns
+**zero hits across the entire record**, consistent with a Pattern-2 FAIL never once having fired.
+
+**SECOND HEADLINE: THE SIBLING WITH THE FIX IS `check-rule-i.sh`, AND THE FIX IS THREE DAYS YOUNGER
+THAN THE BUG.** `check-rule-i.sh:395-413` guards every stage individually (`{ grep … || true; }`)
+and then normalises with `consumer_count=$(( consumer_count + 0 ))` under the comment _"Strip
+leading whitespace that some wc implementations emit."_ That line landed `76bfd7d9` (2026-05-17),
+three days after `check-rule-h.sh` shipped the defect, in the file that is the other half of the
+same two-gate wired-or-dead pair, doing the same job on the same shape of pipeline. **Nobody diffed
+the pair.** Run Rule S verbatim against that 2026-05-17 change and it fires on bullet 1 — so this is
+a **compliance failure against an adequate control**, the RETRO-247/248/252 adjudication, and **no
+rule action follows from it** (§6).
+
+**THIRD HEADLINE: THE `|| echo 0` SHAPE IS UNIQUE IN THE ESTATE, AND ITS SAFE-LOOKING TWIN IS NOT
+THE SAME THING.** `grep -rn "wc -l.*|| echo" scripts/*.sh` → exactly one hit,
+`check-rule-h.sh:79`. The superficially identical `$(… | grep -cE … || true)` at
+`check-sentry-init-singleton.sh:1205` is **safe**, and the distinction is worth stating because it
+is the generalisable rule: `|| true` prints nothing, so a fallback that fires appends nothing;
+`|| echo 0` prints, so a fallback that fires **duplicates** a value the pipeline already emitted.
+**An `||` fallback is only safe when it is silent, or when the command it guards is silent on
+failure.** That is one grep and it is now enumerated.
+
+---
+
+### 1. Summary of change
+
+- **PR:** #684 (merged 2026-08-06 06:08 UTC, commit `fd14461`), branch
+  `devops-engineer/FOLLOW-842-check-rule-i-preflight`, base `main`
+- **Files changed:** 5 (+410 / −3). Measured against the PR's own merge base, not against an old
+  `main` (`gh pr view 684 --json files`; `git diff --numstat <merge-base> fd144611` agrees exactly):
+
+  | file                                       | +   | −   |
+  | ------------------------------------------ | --- | --- |
+  | `scripts/check-rule-i.sh`                  | 336 | 3   |
+  | `.github/workflows/ci.yml`                 | 29  | 0   |
+  | `.claude/agents/devops-engineer/lessons.md`| 23  | 0   |
+  | `scripts/gh-pr-checks-verified.sh`         | 13  | 0   |
+  | `CONVENTIONS_PATCH.md`                     | 9   | 0   |
+
+  Plus a mode change `100644 → 100755` on `scripts/check-rule-i.sh`, which is the whole of
+  FOLLOW-831 and shows in `git ls-tree`, not in the line counts.
+
+- **Modules touched:** infra/CI (scripts + workflow), docs/conventions, learning corpus. **No
+  application code, no package, no app, no migration, no schema.**
+- **Key contracts changed:**
+  - `scripts/check-rule-i.sh` **exit-code contract** — `3` added, meaning "no verdict rendered"
+    (preflight failure, unresolvable repo root, or a scan that produced nothing). Additive;
+    **breaking: no** for the `0`/`1` consumers, because every path that previously exited 0 or 1 on
+    a functioning host still does.
+  - `scripts/check-rule-i.sh` **stdout format contract** — declared, **not changed**. Both the
+    `WARN: '<sym>' in <file> — zero non-test importers` line and `Violations found    : <N>` are
+    byte-identical. Verified independently by me below, not taken from the PR body.
+  - **New negative half of that contract:** in the three no-verdict states the script prints **no
+    `Violations found` line at all**. This is a genuinely new consumer-visible behaviour and it is
+    the load-bearing one.
+  - `--self-test` flag added. New CI job `rule-i-gate-self-test`.
+
+### 2. Verification done in PR
+
+- **Test files changed:** none in the conventional sense — the harness is in-file
+  (`check-rule-i.sh --self-test`, 9 fixtures, ~250 lines). **Assertions added:** 9 fixtures × up to
+  3 assertions each (exit code, required needle, forbidden needle) + 2 mode assertions.
+  **Coverage delta:** N/A (shell; no instrumented coverage in this repo).
+- **CI checks:** 77 total, 75 pass, 2 failing — both the `Rule I — wired-or-dead check` push/PR
+  pair, classified pre-existing-red by symbol set 192 vs 192, 0 new / 0 fixed, gate exit 0. Recorded
+  in `backlog/QUEUE.md` session-103 and reproduced in the PR body as Evidence 7. **Verified, not
+  inherited.**
+
+**What I re-ran myself rather than reading (Rule AM — scratch copies and throwaway repos only; the
+worktree was never mutated):**
+
+1. `bash scripts/check-rule-i.sh --self-test` in this worktree → **9/9 pass, exit 0**, including
+   both mode fixtures. Reproducible outside CI, no network, no secrets.
+2. `bash scripts/check-rule-i.sh` on this branch → `Files barrel-skipped: 78 / Symbols scanned :
+   638 / Violations found : 192 / exit 1`. **Identical to the documented baseline.** The output
+   format is therefore unchanged *as measured by the only thing that matters* — a real run against
+   the real tree.
+3. The consumer's own parsers, read at `gh-pr-checks-verified.sh:240` and `:251`, against those
+   exact lines. `rule_i_count_from_log`'s `Violations found\s*:\s*\K[0-9]+` tolerates any padding;
+   `rule_i_symbols_from_log`'s `WARN: '\K[^']+' in \S+` matches the emitted line at
+   `check-rule-i.sh:415`. Both match.
+4. **The exit-3 composition, traced through the consumer's source rather than assumed** (this is
+   the brief's question 5 and it is the single most important verification here) — see §5a.
+
+**What the PR verified that I could not fault:** the six-row revert-discrimination matrix. Each
+revert fails exactly one fixture and no other, and the two positive controls (wired→0, orphan→1 with
+the exact `WARN:` line) fail under **none** of the six — which is a genuinely clever construction,
+because their staying green *is* the proof the output format did not move. This clears the RETRO-250
+bar ("fails when and only when its own fix is reverted") more cleanly than any artefact in this
+chain so far.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** No new files. New shell symbols and their non-test callers,
+greped:
+
+| new symbol                            | defined                  | called by                                          |
+| ------------------------------------- | ------------------------ | -------------------------------------------------- |
+| `preflight_dependencies()`            | `check-rule-i.sh:60`     | `:305` (self-test) and `:337` (main path)          |
+| `resolve_repo_root()`                 | `check-rule-i.sh:103`    | `:338`                                              |
+| `_st_repo()` / `_st_expect()`         | `check-rule-i.sh:~200`   | 7 fixture bodies in the same block                  |
+| `--self-test` flag                    | `check-rule-i.sh:190`    | `.github/workflows/ci.yml:164`                      |
+| job `rule-i-gate-self-test`           | `ci.yml:155`             | workflow entrypoint (suppressed per the algorithm)  |
+
+No type-only files, no barrel exports, no framework routes. Nothing added is unreachable.
+
+**CHECK B — half-wire. Clean ✅, and I say that only because I traced the one signal that could have
+been a half-wire all the way to a decision.**
+
+The one new producer-side signal is **`check-rule-i.sh` exit 3 / the absence of a `Violations found`
+line**. Its consumers:
+
+| consumer                                                | reached?                                                                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ci.yml:135` (`rule-i` job)                             | ✅ any non-zero → job `failure`                                                                                                            |
+| `gh-pr-checks-verified.sh:1039-1046` (**PR side**)      | ✅ empty count → `tooling_failures+=(… unparseable …)` → `pr_ok=0` → gate **exit 3**, never a verdict                                       |
+| `gh-pr-checks-verified.sh:914-921` (**baseline side**)  | ✅ empty count → `reason="its Rule I log has no 'Violations found: N' line"` → run SKIPPED with a printed reason → walk continues            |
+| `CONVENTIONS_PATCH.md` Rule I `:391-398`                | ✅ added in this PR                                                                                                                        |
+| `backlog/HANDOFFS.md:4011/4041/4111/4169`               | ⚠️ four bare invocations, none mention exit 3 — but the exit-3 message is self-describing (`ERROR: PREFLIGHT FAILED — …`), so a human is not misled. **§4d, not a half-wire.** |
+
+**This is the first ticket in the 813→827/830→846→842 chain whose new signal has a consumer that
+acts on it in both directions on the day it merged.** I checked for a half-wire and did not find
+one; recording that explicitly, because three of the last four retros in this chain found one.
+
+**One thing I checked because it would have been an ugly silent collision, and it is safe.** The new
+job is named `Rule I gate self-test (FOLLOW-842)`; the merge gate matches its special-cased job by
+**exact string equality** — `jq 'select(.name=="'"$RULE_I_NAME"'")'` (`:411`) and
+`[[ "$name" != "$RULE_I_NAME" ]]` (`:1003`) with `RULE_I_NAME="Rule I — wired-or-dead check"`
+(`:777`). No prefix match, no static allowlist (`:770-776` explicitly forbids one). So the new job
+is treated as an ordinary hard gate: if it ever reddens, the merge gate reports a **genuine
+failure** and blocks. That is exactly right, and it was not guaranteed — a prefix match would have
+silently excused the self-test as "the pre-existing-red Rule I".
+
+**Wiring Audit — clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, and it is this entry's reason for existing) —
+  `scripts/check-rule-h.sh:70-80`: Rule H's Pattern 2 cannot fail.** Full mechanism, driven
+  transcript and 15-month age in the headline above. Three compounding facts make it worse than a
+  dead assertion: (i) it fails **open**, in CI, on a green-required job; (ii) it fails open on
+  *precisely* the input class it exists to detect, so its green is anti-correlated with the truth;
+  (iii) `docs/MASTER_DESIGN.md:576` cites Rule H as one of the repo's hard CI gates, so the
+  architecture doc's coverage claim is materially overstated (§4d DG-1). → **FOLLOW-857**.
+- **LG-2 (P2) — the same file's Pattern 2 also carries the PCRE fail-open FOLLOW-842 just closed
+  next door, at `check-rule-h.sh:66-67`:**
+  ```bash
+  exports=$(grep -oP "export (?:async )?(?:function|class|const|let) \K\w+" "$file" 2>/dev/null || true)
+  ```
+  The `|| true` defeats `set -e` explicitly, so on a non-PCRE host `exports` is empty, the symbol
+  loop never iterates, and `Rule H passed` / exit 0. **This is the third instance of the identical
+  shape** (FOLLOW-830 in `gh-pr-checks-verified.sh`, FOLLOW-842 in `check-rule-i.sh`, this).
+  **FOLLOW-843's stub names `check-rule-h.sh:34` — the `grep -qP` boolean at line 34 — and
+  classifies the file as "lower risk", because `:34`'s failure direction is a false FAIL (loud).
+  That assessment is correct about `:34` and wrong about the file:** thirty-two lines further down
+  the same file has the silent false-GREEN variant, and the sweep did not reach it. Folded into
+  **FOLLOW-857** (same file, same loop, one fix) rather than filed separately — Rule AN.
+- **LG-3 (P2) — `scripts/check-fire-and-forget-sinks.sh` passes clean outside a git working tree,
+  which is FOLLOW-842's own guard R1 in a fifth script.** Five gate scripts resolve their root as
+  `ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"`. Run from an empty non-git directory:
+
+  | script                            | rc | last line                                                          |
+  | --------------------------------- | -- | ------------------------------------------------------------------- |
+  | `check-fire-and-forget-sinks.sh`  | **0** | **`All request-path async sinks are registered via afterResponse()…`** |
+  | `check-modal-app-singleton.sh`    | 1  | fails closed                                                         |
+  | `check-sentry-init-singleton.sh`  | 1  | fails closed (`an unreadable manifest is a hard failure`)            |
+  | `check-sentry-capture-has-init.sh`| 2  | fails closed (`a hard failure rather than an empty … region`)        |
+  | `check-migration-journal.sh`      | 1  | fails closed (`FAIL: journal not found at …`)                        |
+
+  **Four of five have a region-emptiness guard and one does not.** `|| pwd` is the same fail-open as
+  `cd ""`, one syntactic step less obvious. It does not fire in CI (`actions/checkout` always
+  provides a tree) — it fires when an agent or a human runs the gate from the wrong directory, which
+  is exactly what the `100644`/bare-invocation work in FOLLOW-831 was about. → **FOLLOW-858**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1)** — see LG-1. Classified as a logic gap because the code does what it says; the fault
+  is that what it says is not a comparison.
+- **CB-2 (P2) — `check-rule-i.sh:99` documents the old defect in a comment that no longer has a
+  referent.** The comment reads _"Previously `ROOT="$(git rev-parse --show-toplevel)"` was
+  unguarded"_ and is excellent history — but four sibling scripts still carry the live variant of
+  that same sentence and the comment points at none of them. Cosmetic; recorded, folded into
+  FOLLOW-858's AC(3), not filed separately.
+- **Nothing else.** I looked specifically for the failure modes this corpus keeps finding —
+  an over-broad guard that makes the normal green unreachable, a fixture asserting a value it
+  computed the same way the production code does (P-32), an assertion scanning a region that cannot
+  contain the thing (Rule AL) — and found none. The `TOTAL_SYMBOLS -eq 0` guard (D3) is the one that
+  could plausibly have been over-broad, and it is not: the real repo has 638, and D1/D2 fire before
+  it so a legitimately-empty tree is diagnosed as discovery, not as a broken extractor.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, and the brief asks me to grade it rather than flag it) — the `bash < 4` preflight leg
+  ships with no fixture, and the trade is correct.** The argument in the PR body is: `BASH_VERSINFO`
+  is read-only; faking it needs either an old bash binary (absent on this host and on
+  `ubuntu-latest`) or a test-only env seam in production code; and *"adding a seam whose only
+  purpose is to weaken a preflight is a worse trade than an untested branch."*
+
+  **I am grading this rather than accepting it, because the brief is right that "three lines nothing
+  covers, in a gate that exists because untested gates lie" is exactly the shape this corpus
+  punishes.** Four things decide it, and they all point the same way:
+
+  1. **The corpus has a directly-on-point precedent and it went the other way about seams.**
+     RETRO-250 CB-1 found `GH_PR_CHECKS_FIXTURE_DIR` honoured in production mode and called it a
+     bug; FOLLOW-848 AC(2) mandates refusing it. A worker who then declined to add a *second*
+     test-only seam to a gate is applying the estate's own most recent ruling, not dodging work.
+  2. **The untested branch is not load-bearing for the defect the ticket closes.** The PCRE fail-open
+     needs `grep -oP` to fail; a `bash < 4` host fails at `mapfile` — which, absent the preflight,
+     is a **noisy** failure (`mapfile: command not found`), not a silent zero. FOLLOW-843's stub
+     independently reached this conclusion for four other `mapfile` users: _"these fail closed, so
+     they are a diagnosis problem, not a correctness one."_ Consistent, and consistency across two
+     independent assessments is worth more than either alone.
+  3. **The residual behaviour if the branch is wrong is bounded and safe.** The only ways three
+     lines of `[[ -z … || … -lt 4 ]]` can be wrong are: never firing (→ the old, noisy `mapfile`
+     failure, i.e. the status quo ante), or firing spuriously on bash ≥ 4 (→ exit 3 on every run,
+     visible within one CI cycle). **Neither direction produces a false green**, which is the only
+     property this gate is required to have.
+  4. **It is stated, in the PR body and in `QUEUE.md`, under its own heading.** The failure this
+     estate keeps paying for is the *hidden* omission, not the priced one.
+
+  **Verdict: the trade is right and I would have made it.** The honest residual is that "it is
+  copied verbatim from the sibling gate" is a provenance argument, not a correctness one — the
+  sibling's copy is equally untested, so if it is wrong it is wrong in two places. That is worth one
+  line in a future ticket and not worth a P1 today. **Recorded, deliberately not filed.**
+
+- **TG-2 (P2) — the format contract is pinned on the producer side only, and I can name the change
+  that would break the gate today.** This is the brief's question 3, answered concretely rather than
+  by restating that FOLLOW-848 is open.
+
+  I enumerated what each of the 9 fixtures would do under four candidate edits to `check-rule-i.sh`:
+
+  | edit to `check-rule-i.sh`                                           | self-test | merge gate                                                                  |
+  | -------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------- |
+  | change the `WARN:` line's wording/quoting                            | **RED** (S2 pins it literally) | n/a — caught first                                          |
+  | change `Violations found    :` padding                               | green     | **safe** — the parser is `Violations found\s*:\s*\K[0-9]+`                   |
+  | **rename the summary label** (e.g. → `Dead exports    : N`)          | **green** — S1 keys on `Symbols scanned`, S2 on the `WARN` line, and S4/S5/S6's forbidden needle simply stops matching | **exit 3 on every PR in the repo** — loud, immediate, total |
+  | **change the symbol extractor's match set** (`:41`/`:121` — e.g. add `export type`, drop `export default`) | **green** — S1/S2 use `export const` only, so no fixture discriminates | **silent** — see below |
+
+  **The fourth row is the one nothing catches, and it is a false green as well as a false red.** The
+  gate compares the PR's symbol set against `main`'s baseline set, but the two sets are produced by
+  **two different builds of the extractor** (`ci.yml:129-135` checks out the PR ref; the baseline
+  ran `main`'s). Widen the extractor and every newly-matched symbol reads as `New on this PR` →
+  blocked (loud). **Narrow it** — and every symbol in the dropped class disappears from the PR side,
+  reads as `fixed by this PR`, and **a genuinely new dead export in that class never appears at
+  all.** Exit 0.
+
+  **Is it owned?** FOLLOW-848 AC(4) asks for a parity fixture that runs the real `check-rule-i.sh`
+  through `rule_i_symbols_from_log` and asserts **≥1 symbol parses** — that catches row 1 and row 3,
+  and it is structurally incapable of catching row 4, because ≥1 symbol parses in every one of these
+  scenarios. AC(5) says _"coordinate (4) with FOLLOW-842, which edits that producer"_ — and
+  FOLLOW-842 is now DONE. **So the extractor-set hazard is owned by nobody as of this merge.**
+  RETRO-252 §5a identified it precisely ("preflight-and-fail-loud is safe; extract-differently is
+  not") and correctly predicted FOLLOW-842 would avoid it — which it did, by not touching the
+  extractor at all. The prediction was right; the hazard it named outlived the ticket it was
+  attached to. → recorded against **FOLLOW-848** (Rule AN — one ticket already owns that fixture),
+  with the extractor-set clause added to its AC(4).
+
+- **TG-3 (P3) — the self-test asserts its own fixture count only implicitly.** It prints
+  `RESULT: --self-test passed — $st_passes fixtures.` where `st_passes` is a counter, not a compared
+  constant, so a fixture that stops running degrades the number silently. This is the *exact* item
+  FOLLOW-848 AC(3) raises about the sibling harness, now present in a second harness on the day it
+  was written. Folded into FOLLOW-848's AC(3) (widen from one file to both), not filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — `docs/MASTER_DESIGN.md:576` lists Rule H among the rules "enforced by hard CI
+  gates".** True in letter (`rule-h` is a hard job) and materially false in effect for the gate's
+  Pattern 2, which has been unable to fail for ~15 months (§4a LG-1). This is not a Rule Y citation
+  defect — the citation is accurate — it is an **efficacy** claim resting on a gate nobody
+  perturbation-tested. Folded into **FOLLOW-857** AC(5) rather than filed, so that whoever fixes the
+  gate corrects the claim in the same PR (Rule AN).
+- **DG-2 (P3) — `backlog/HANDOFFS.md:4011/4041/4111/4169` mandate a bare `scripts/check-rule-i.sh`
+  and enumerate no exit codes.** Now that the script has a 3, those four briefs are incomplete. The
+  practical harm is small (the exit-3 messages are self-describing), and the corpus-drift class is
+  already owned by **FOLLOW-854** — but 854's scope is `gh-pr-checks-verified.sh`'s exit 3, and
+  there are now **two** scripts in this repo defining an exit 3 with **different meanings**. See
+  §5a; recorded against FOLLOW-854 rather than re-filed.
+- **DG-3 (P3, recorded not filed) — two CI jobs now begin with "Rule I", one permanently red and
+  excused, one required green.** The precise documents are fine: `docs/AGENT_WORKFLOW.md:190-192`
+  and `CLAUDE.md:128` both name the full string `Rule I — wired-or-dead check`. The risk is the
+  session shorthand — `backlog/QUEUE.md` has a long habit of writing _"only the pre-existing
+  `Rule I`"_ (`:1371`, `:1422`, `:1486`) — under which a red `Rule I gate self-test (FOLLOW-842)`
+  could be waved through by a human skimming. The scripts cannot make this mistake (exact match,
+  §3). **No stub: this is a bookkeeping habit, and naming it here is the proportionate response.**
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+**FOLLOW-854 / 855 / 856 — IN_PROGRESS against the merge gate right now. The brief asks whether this
+merge constrains them, and specifically whether the two exit-3s interact. Traced, not assumed.**
+
+- **Do `check-rule-i.sh` exit 3 and `gh-pr-checks-verified.sh` exit 3 collide? No — they are in
+  different processes and never compared. But they COMPOSE, and the composition is correct by
+  construction, in one direction and asymmetrically in the other.**
+  - **PR side (`:1039-1046`):** a Rule I job that exited 3 produces a log with no `Violations found`
+    line → `one_count` empty → `tooling_failures+=("… fetched but unparseable …")` → `pr_ok=0` →
+    the gate's own **exit 3**. So `check-rule-i.sh` exit 3 **becomes** gate exit 3, with the right
+    vocabulary ("the gate never got to look"), automatically. **This is the single design decision
+    that makes FOLLOW-842 worth its P1, and it works.**
+  - **Baseline side (`:914-921`):** the same empty parse sets `reason="its Rule I log has no
+    'Violations found: N' line (job died early, or the format changed)"`, the run is **SKIPPED** with
+    that reason printed, and the walk continues to an **older** `main` run. Not a fault — the
+    ratchet is deliberate and the 72h staleness WARN still fires — but it **is** an asymmetry: the
+    same producer signal is a hard tooling failure on one side and a fall-back-and-continue on the
+    other. **That is the FOLLOW-855 provenance-asymmetry family, reached from a third direction.**
+    Recorded against FOLLOW-855; it does not change 855's fix, it strengthens the case that the two
+    sides need a stated symmetry policy rather than two independently-reasonable behaviours.
+  - **Verdict: no constraint on 855 or 856 beyond that note.** Neither touches the regions this PR
+    edited (`gh-pr-checks-verified.sh` gained 13 lines of **comment only**, at `:226-238`, above
+    `rule_i_count_from_log`; 855 lives at `:1039-1075`, 856 at `:820-840`/`SNAPSHOT_FILTER:790`).
+    **Merge-conflict risk: nil.**
+- **FOLLOW-854 IS constrained, in a way its stub could not have anticipated.** Its AC(4) proposes a
+  mechanical check that fails when `.claude/agents/*.md` names an exit code **"for this script that
+  the script's own header does not define."** As of `fd14461` there are **two** scripts with
+  exit-code contracts and **two different meanings for 3**: for the merge gate, "the gate could not
+  complete its comparison"; for `check-rule-i.sh`, "Rule I rendered no verdict". A check keyed on
+  "the exit code 3" rather than on "(script, exit code)" will either miss one or conflate them, and
+  its AC(1) sentence for `pm-orchestrator.md` must not describe a single exit-3 semantics.
+  **Concrete, cheap, and it must land in 854's own PR** — recorded against FOLLOW-854.
+- **FOLLOW-855's reproduction step is NOT discharged by this merge, and I checked rather than
+  assumed.** RETRO-252 armed P-35's clause (b) on "run the gate against an open PR before and after
+  another PR merges a dead export into `main`". PR #684 merged with `New on this PR: 0 | fixed by
+  this PR: 0` and I independently measured 638/192 on this branch — **this merge moved `main`'s Rule
+  I symbol set by zero symbols**, so it cannot serve as the before/after event. **P-35 stays at
+  count 1.**
+- **FOLLOW-843 — SHARPENED and partially invalidated.** Its "also flagged in the same sweep, lower
+  risk" paragraph assessed `check-rule-h.sh:34` and concluded the file was a diagnosis problem. §4a
+  LG-1/LG-2 show the same file carries a silent false green at `:66` and a structurally-dead
+  comparison at `:79`. **843's four-`set`-line scope is untouched and still valid;** only its
+  footnote's risk ordering is wrong. Recorded on the stub.
+- **FOLLOW-848 — SHARPENED twice** (§4c TG-2: AC(4) must cover the extractor **set**, not only the
+  line shape, and AC(5)'s "coordinate with FOLLOW-842" is now discharged-by-completion; §4c TG-3:
+  AC(3)'s fixture-count assertion now applies to two harnesses).
+- **FOLLOW-844 — unaffected but its cost estimate moved again.** It proposes adding
+  `check-rule-i.sh` to the `shellcheck` job. That file went 247 → 735 → **~1140 lines** across three
+  tickets; the PR re-measured `shellcheck -x` at 0.11.0 with zero findings on both files, so the
+  work is still "free today". Third re-measurement of the same claim in four days; noted so 844's
+  author re-measures rather than citing.
+- **FOLLOW-847 — unaffected.** Its two artefacts (`docs/AGENT_WORKFLOW.md:193-197`,
+  `CONVENTIONS_PATCH.md` Rule A `:29-32`) were not touched by this PR. `CONVENTIONS_PATCH.md`
+  **was** edited here (+9 lines at Rule I `:391-398`), a different rule and a different section — no
+  conflict, and no accidental discharge.
+- **FOLLOW-849 / 850 — unaffected and both independently re-confirmed by this run.** `lefthook` is
+  still absent from this worktree (850), and my own retro brief had to route around the
+  worktree-blind branch guard (849). Neither is a claim about this PR.
+- **FOLLOW-851 (`cancel-in-progress` on `main`) — unaffected, but this merge marginally worsens the
+  input it is about.** `ci.yml` gained a job on both `push` and `pull_request`, so every PR's
+  check-run snapshot grows by two entries and every `main` run has one more job to cancel. The new
+  job is ~10s, so the practical effect is nil; noted for completeness because 851's argument is
+  about run duration.
+- **FOLLOW-852 / 853 — unaffected.** Different app (`apps/ingest`), different language, no shared
+  surface. Re-checked, not assumed.
+- **FOLLOW-831 — CLOSED, and I verified the closure end-to-end rather than accepting the PM's
+  ruling. See the closure trace at the end of §7.**
+
+**No ⚠️ severity flag to the PM this time on the merge gate itself.** FOLLOW-842 introduced no new
+false-verdict path; §4a LG-1 is a **different** gate and is filed as FOLLOW-857 at P1. **I am
+surfacing it here per my guardrails and not escalating: `rule-h` has been green on every PR for
+fifteen months for a reason that has nothing to do with the repo being clean, and the PM should
+decide whether that changes the reading of any past "CI green" record.**
+
+#### 5b. Future sprint tickets affected
+
+- Any future ticket that touches `check-rule-i.sh`'s **symbol extractor** (`:41`, `:121`) inherits
+  §4c TG-2's two-producer hazard and must validate with a baseline produced by its own extractor.
+  The file now carries an `OUTPUT FORMAT CONTRACT` header naming the consumer, which is the right
+  guardrail for the *line shape* and says nothing about the *set*. **The next author will read a
+  contract that reassures them about the wrong axis.** Named here so a future retro can check it.
+- Any ticket promoting new exports in `src/lib/` currently has **no working Rule H Pattern-2 gate**
+  behind it. Once FOLLOW-857 lands, the first PR through the repaired gate may surface a backlog of
+  violations that accumulated while it was blind — the fixer should measure that set **before**
+  landing, exactly as the Rule I baseline is measured, or the repair will read as a regression.
+  Written into FOLLOW-857 AC(4).
+
+#### 5c. Contracts changed others rely on
+
+- **`check-rule-i.sh` stdout → `gh-pr-checks-verified.sh`.** Now documented reciprocally on both
+  sides (`OUTPUT FORMAT CONTRACT` / `INPUT FORMAT CONTRACT`), unchanged in bytes, pinned on the
+  producer side by fixture S2 and on the consumer side by nothing. Residual risk enumerated in §4c
+  TG-2.
+- **`check-rule-i.sh` exit codes → CI, the merge gate, and four HANDOFFS briefs.** Composition
+  verified in §5a. Doc residual in §4d DG-2.
+- **`ci.yml` job-name namespace → the merge gate's exact-match classifier.** Verified safe (§3).
+
+#### 5d. Architectural assumptions affected
+
+- **The assumption under audit in this chain — "a hard CI gate's green means what it says" — takes
+  its worst hit yet, and from the oldest gate rather than the newest.** Five consecutive tickets
+  have now examined gates written to enforce this repo's own conventions; four of the five defects
+  were in gates less than four days old, and §4a LG-1 is in one that has been green since
+  2026-05-14. **The estate's gates have been getting better *because they are being looked at*, not
+  because newer ones are written better.** The distinguishing property is attention, and attention
+  has so far followed incidents.
+- `docs/MASTER_DESIGN.md:576`'s "enforced by hard CI gates" list is a claim about efficacy that no
+  process re-derives. §4d DG-1.
+
+### 6. New lesson candidates
+
+- **THE BRIEF'S QUESTION 1 — "test the unvalidated-input thesis rather than restate it; sweep the
+  remaining gate scripts and say whether the class is enumerated or still open-ended." Answered with
+  the sweep, and the answer is: THE THESIS SURVIVES, ONE BOUNDARY IN IT IS WRONG, AND THE CLASS IS
+  NOW ENUMERATED BUT NOT CLOSED.**
+
+  RETRO-252's thesis: _"every defect lives in an INPUT or a DEPENDENCY the gate consumes and does not
+  validate — not once in the gate's own decision logic."_ I swept all 14 CI-invoked shell gate
+  scripts on the four input classes this chain has produced:
+
+  | class                                                | instances                                                                                              | live fail-**open** |
+  | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------- |
+  | PCRE `grep -P` with no preflight                     | `check-rule-h.sh` **only** (`:34`, `:40`, `:66`) — the other 12 use no PCRE at all                       | **1** (`:66`)       |
+  | repo root unvalidated (`\|\| pwd`, `cd ""`)          | 5 scripts (§4a LG-3)                                                                                    | **1**               |
+  | `mapfile` with no bash-version preflight              | 4 scripts (already enumerated in FOLLOW-843)                                                            | 0 — all fail closed |
+  | no `set` line at all                                  | 4 scripts (already enumerated in FOLLOW-843; **all four are NOT in `scripts/` — the paths in 843's stub are stale**) | not re-measured     |
+  | **`\|\| <printing-fallback>` after a printing pipeline** | `check-rule-h.sh:79` **only** — one grep, `grep -rn "wc -l.*\|\| echo" scripts/*.sh`                   | **1**               |
+
+  **Where the thesis is right.** §4a LG-3 (`|| pwd`) and §4a LG-2 (PCRE) are textbook unvalidated
+  **dependencies**, exactly as predicted — and FOLLOW-842's own fourth fail-open (`cd ""`) is the
+  same. Three more data points, zero counter-examples in that direction.
+
+  **Where the thesis's boundary is wrong, and this is the correction that makes it usable.** §4a
+  LG-1 is **not** an external input. `consumer_count` is produced by the script itself, four lines
+  above the comparison that consumes it. Under RETRO-252's wording — *"an INPUT or a DEPENDENCY the
+  gate consumes"*, contrasted against *"the gate's own decision logic"* — LG-1 sits on the wrong
+  side of the line and would be missed by anyone applying the thesis literally. **The invariant is
+  not internal-vs-external. It is: *every value the verdict is a function of, that is not validated
+  before the verdict is computed*, regardless of who produced it.** Restated that way the thesis
+  covers all five classes above, and — worth noting — RETRO-252's own item (4) of "what would have to
+  be true" already said the right thing in operational terms (_"every parse in the file has an
+  arithmetic or cross-field self-consistency check"_) while its prose framing said something
+  narrower. **The operational advice was correct and the theory around it was one notch too narrow.**
+
+  **Is the class enumerated or still open-ended? Enumerated as a register; not closed as a class,
+  and I can say exactly why.** Every one of the five rows above is now a one-line grep over
+  `scripts/*.sh` with a known instance count — that is a genuine advance over "gates keep lying",
+  and it is the register Rule AP asks for. But **the fifth row did not exist before this retro**, and
+  it was found by *running* a gate rather than by reading one: the FOLLOW-827/830 sweep had
+  `check-rule-h.sh` in its hands, named a defect in it, and graded it "lower risk". **A class
+  enumerated by reading grows a new row every time somebody executes something.** So: the *known*
+  classes are enumerated and cheap to re-check; the class *of* classes is open-ended, and the only
+  demonstrated method for finding a new row is perturbation — build the input the gate exists to
+  reject and check that it is rejected. **Six fixtures, one per gate, would settle it.** That is the
+  yes/no the next retro should check, and it is smaller than the four conditions RETRO-252 left.
+
+  **Recorded as an answer, not promoted.** It is a restatement of Rule AM (perturbation) plus Rule AP
+  (machine-checked register) applied to a new corpus, and neither needs amending.
+
+- **THE BRIEF'S QUESTION 2 — the Rule S "enumerate-don't-fix" amendment RETRO-250 armed at count 1.
+  DECISION: DOES NOT DISCHARGE. NOT PROMOTED. RE-ARMED WITH A SECOND, HARM-BASED CLAUSE. I tested
+  the actual rule text and the actual arming clause, per the RETRO-246 methodology, rather than the
+  proposition the brief describes.**
+
+  RETRO-250's arming, verbatim: _"the next retro observing **a worker instructed to
+  enumerate-not-fix, whose enumeration produces filed tickets**, cites RETRO-250 §6 → ≥2 → amend Rule
+  S's 'or explicitly justify per-sibling' bullet in place to require that a deferred sibling's
+  justification be a filed FOLLOW-NNN rather than prose."_ Two clauses; both fail here.
+
+  - **Clause "instructed to enumerate-not-fix" — NO.** The instruction belongs to FOLLOW-827/830
+    (`QUEUE.md` session-103: _"Rule S sweep was requested as a list, not a fix, and it paid"_), which
+    **is RETRO-250's own count-1 sighting.** FOLLOW-842's ACs are four named fixes; there is no
+    HANDOFFS.md brief for it and no enumerate-not-fix instruction anywhere in its scope.
+  - **Clause "whose enumeration produces filed tickets" — NO, and this is decisive.** PR #684 filed
+    **zero** new stubs. It routed two deferrals to *pre-existing* tickets (FOLLOW-844 shellcheck,
+    FOLLOW-848 parity fixture — correct, Rule AN), **fixed** the `cd ""` finding rather than filing
+    it, and *proposed* one new stub whose number collided with RETRO-252's FOLLOW-854, so it was
+    held and never written.
+  - **The brief's framing is a different proposition, and conflating them would be the RETRO-122
+    count-inflation this corpus forbids.** "Three consecutive tickets where the worker found
+    something the brief did not name" (FOLLOW-838's `logger.*`, FOLLOW-845's ISO-8601, this `cd ""`)
+    is evidence that **workers who sweep find un-briefed defects** — which is true, demonstrable, and
+    already adjudicated: RETRO-251 §6 P-36 ruled Rule S _"fires as a SUCCESS, not a violation"_ on
+    exactly that evidence, and RETRO-252 §6 explicitly refused to count incidental findings toward
+    this arming. RETRO-250 armed something narrower and different: **the FORM a deferral takes.** A
+    worker fixing an extra defect is not a worker discharging a deferral as a ticket.
+
+  **So the arming stands at count 1. But this retro supplies something RETRO-250's clause does not
+  test for and that is worth more than a second success would be: TWO DEMONSTRATED HARMS FROM PROSE
+  DEFERRALS, both from RETRO-250's own count-1 sighting.**
+
+  1. **FOLLOW-843's stub discharged three siblings as a prose footnote** (_"Also flagged in the same
+     sweep, lower risk and listed here rather than as separate tickets"_), and its risk grading of
+     `check-rule-h.sh` was wrong — §4a LG-1/LG-2. A prose deferral cannot be re-graded by anyone who
+     did not read that paragraph, and nobody did for four days.
+  2. **`QUEUE.md` session-103 promised a ticket that was never written:** _"Left deliberately undone
+     by the worker, correctly: replacing `grep -oP` on compact JSON with tab-separated `jq` output …
+     Worth its own ticket rather than a silent omission."_
+     `grep -n "tab-separated\|remove the PCRE dependency" backlog/FOLLOW_UPS.md` → **no hits.** The
+     sentence that says "rather than a silent omission" *became* the silent omission. I have filed
+     it as **FOLLOW-859**, which is both the fix and the demonstration.
+
+  **RE-ARMED, with the clause corrected so the next retro tests for the harm rather than the
+  practice.** Either of these now discharges → amend Rule S's second bullet in place, no new letter:
+  - **(a) RETRO-250's original:** a second, independent PR whose worker was instructed to
+    enumerate-not-fix and whose enumeration produced filed FOLLOW-NNNs. *(count 1: PR #680.)*
+  - **(b) NEW, harm-based:** a second, **independent** PR in which a sibling deferred in **prose**
+    (a stub footnote, a PR-body paragraph, a QUEUE note) is later found to have been under-assessed,
+    mis-graded, or never filed. *(count 1: PR #680, two instances above — **the same PR, so one
+    sighting**, and I am explicitly refusing to let two instances inside one PR read as two
+    sightings.)*
+  - **The amendment text, written now so the next retro applies it instead of re-deriving it:** Rule
+    S bullet 2 becomes _"Apply the change to EVERY sibling, or explicitly justify per-sibling why one
+    is exempt — **and a deferred sibling's justification MUST be a filed FOLLOW-NNN with its own AC,
+    never a paragraph inside another ticket's stub or a PR body. Prose deferrals are not
+    re-gradeable by anyone who did not read them.**"_
+
+- **P-37 ("A FALLBACK THAT PRINTS, GUARDING A PIPELINE THAT ALSO PRINTS, CORRUPTS THE VALUE
+  PRECISELY IN THE FAILURE CASE") — MINTED AT COUNT 1. NOT PROMOTED.** The shape:
+  `x=$(pipeline | wc -l || echo 0)` under `pipefail`. Distinct from every existing rule, tested
+  against their texts and not their titles: **Rule S** governs sibling completeness (it *does* fire
+  on §4a LG-1, as a compliance failure — see below — but it is about the missing mirror, not about
+  why the code is wrong); **Rule Q** is about a degraded run being indistinguishable from a clean one
+  (adjacent, and P-37 is a *mechanism* for Rule Q rather than a restatement of it); **Rule AM** is
+  perturbation as a verification method, which is how I *found* it, not what it *is*.
+  **Second-sighting bar, pre-specified so the next retro tests rather than re-derives:** (a) a value
+  the verdict is computed from is produced by a command substitution containing `||`; (b) the
+  fallback branch **emits output** rather than being silent; (c) the corrupted value is **shown** to
+  arise in the failure case specifically — driven, not argued. Clause (c) is what stops this
+  swallowing every `|| true`. **If the second sighting is again a shell gate, prefer folding it into
+  Rule AP's register (one grep per class) over minting a letter.**
+
+- **RULE S FIRES AS A VIOLATION ON §4a LG-1 — AND IT IS A COMPLIANCE FAILURE AGAINST AN ADEQUATE
+  CONTROL, SO NO RULE ACTION.** Tested by reading the text: `check-rule-h.sh` and `check-rule-i.sh`
+  are a symmetric pair (two wired-or-dead gates, same consumer-count logic, same repo). Rule S's
+  bullet 1 (_"Enumerate the full sibling set FIRST"_) and bullet 3 (_"Match the VERIFICATION TIER
+  across siblings"_) both fire on the 2026-05-17 change that added the normalisation to one of them.
+  **Run verbatim, Rule S reports that change not clean.** Same adjudication as RETRO-247 (Rule S),
+  RETRO-248 (Rule P), RETRO-252 (Rule AI). **This is the fourth consecutive retro to conclude that
+  this estate's binding constraint is enforcement, not rule text** — and the fourth to find the
+  mechanisable slice already scoped into an open P1 (here: FOLLOW-857's AC(3), a shared fixture for
+  both gates).
+
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus** for FOLLOW-842: correct, and
+  it paid in a way I can name. The worker (i) found a fail-open the ticket did not contain, (ii)
+  argued *against* adding `set -e` — the obvious fix — with a domain reason rather than a
+  preference, (iii) split "zero symbols" into three diagnoses when the AC asked for one assertion,
+  (iv) identified that the load-bearing change is the **absence** of a line rather than any guard,
+  and (v) priced an untested branch in public. **Five judgement calls, all right.** It also declined
+  the enumeration this retro then had to do — which is not a miss against its ACs, and is the
+  clearest statement yet of RETRO-252's routing datum: *the model tier is not the control for
+  enumeration completeness; the AC is.* Fourth consecutive retro to record it, and the fourth to
+  find the missing enumeration in a file the ticket named.
+
+### 7. Follow-ups
+
+- **FOLLOW-857:** `check-rule-h.sh`'s Pattern 2 cannot fail — `| wc -l || echo 0` under `pipefail`
+  makes the consumer count `0\n0` exactly when it is zero, the arithmetic test errors to false, and
+  the gate prints `OK:` and exits 0 over a genuine orphan export; plus the PCRE `|| true` fail-open
+  in the same loop (devops-engineer, 4h, **P1**, **UNFROZEN** per the session-95 P1 carve-out) —
+  driven red-first
+- **FOLLOW-858:** `check-fire-and-forget-sinks.sh` exits 0 with "all sinks registered" from an empty
+  non-git directory — the `|| pwd` sibling of FOLLOW-842's `cd ""` guard, 1 of 5 scripts fails open
+  (devops-engineer, 2h, **P2**, **FROZEN**) — driven
+- **FOLLOW-859:** the PR #680 deferral that was promised a ticket and never got one — replace
+  `grep -oP` over compact JSON in `gh-pr-checks-verified.sh` with tab-separated `jq`, removing the
+  PCRE dependency structurally rather than guarding it (devops-engineer, 3h, **P3**, **FROZEN**)
+
+**Recorded against existing stubs rather than re-filed (Rule AN):** FOLLOW-848 (§4c TG-2 — AC(4)
+must pin the extractor's symbol **set**, not only the line shape; AC(5)'s FOLLOW-842 coordination is
+discharged-by-completion; §4c TG-3 — AC(3)'s fixture-count assertion now applies to two harnesses),
+FOLLOW-854 (§5a — two scripts now define an exit 3 with different meanings; AC(4)'s check must key
+on (script, code)), FOLLOW-855 (§5a — the PR/baseline asymmetry extends to `check-rule-i.sh` exit 3;
+and this merge is **not** P-35's clause-(b) discharge event), FOLLOW-843 (§4a LG-2 — its
+`check-rule-h.sh` risk grading is wrong; its four-`set`-line scope is untouched, but the four paths
+in its stub are stale — none of `migrate.sh`, `migration-contract-test.sh`, `smoke-test.sh`,
+`ttl-golden-test.sh` exists at `scripts/`), FOLLOW-844 (§5a — its "free today" claim now measured
+against ~1140 lines, third re-measurement in four days), FOLLOW-857 absorbs §4d DG-1
+(MASTER_DESIGN:576's efficacy claim).
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one
+hop:**
+
+- **FOLLOW-842 — CLOSED on all four ACs, and I re-proved the two that matter rather than reading
+  them.**
+  - **AC(1) preflight** ✅ — **producer** `preflight_dependencies:60-98` (bash ≥ 4; six commands;
+    a probe of the exact `grep -oP … \K …` construct, not merely "does `-P` exist") → **consumer**
+    `:305` and `:337`, both invocation paths → **render** `ERROR: PREFLIGHT FAILED — …` + exit 3,
+    pinned by fixture S3 and re-run green by me. **The probe-the-real-construct choice is the
+    correct one and it is load-bearing:** a PCRE build without `\K` passes "does `-P` exist" and
+    still extracts nothing.
+  - **AC(2) empty parse is an error** ✅ — and split three ways (D1 `:361-372` discovery, D2
+    `:427-439` all-barrel-skipped, D3 `:441-456` zero symbols), which is more than the AC asked for
+    and is right: they are three different diagnoses with three different fixes. **Traced to the
+    render and past it:** all three print **no `Violations found` line** →
+    `gh-pr-checks-verified.sh:1041` sees an empty `one_count` → `tooling_failures` → gate exit 3.
+    **That is the full producer→consumer→render chain, and it is the first one in this series that
+    terminates in a decision rather than in a document.**
+  - **AC(3) red-first fixture** ✅ — 9 fixtures, hermetic, wired to a **green-required** CI job
+    (`ci.yml:155-164`, no `continue-on-error`, no `if:`, no secret). Separate job rather than a step
+    of `rule-i` — correct, and the reason given (a step on a permanently-red job would never be
+    read) is a fact about this repo, not a preference. Re-run by me: 9/9.
+  - **AC(4) mode bit** ✅ — see FOLLOW-831 below.
+  - **The fourth fail-open (`cd ""`)** ✅ — `resolve_repo_root:103-121`, fixture S7, re-run green.
+    Not in the ACs; found by the worker.
+- **FOLLOW-831 — CLOSED. Traced end-to-end, not one hop, because "the mode bit is fixed" is exactly
+  the kind of one-hop closure this algorithm exists to distrust.**
+  - **On disk:** `test -x scripts/check-rule-i.sh` → true; `stat -c '%a'` → `755`.
+  - **In the git index:** `git ls-files -s -- scripts/check-rule-i.sh` → `100755`. **Both, because a
+    `chmod` alone does not survive a fresh clone** — and the PR asserts both (fixture S8 + S9), which
+    is the distinction that makes this a real closure rather than a local one.
+  - **Through to the render:** the four consumers are `backlog/HANDOFFS.md:4011/4041/4111/4169`,
+    each mandating a **bare** `scripts/check-rule-i.sh`. That invocation now works. **The gap did not
+    move one hop** — there is no downstream hop for a mode bit.
+  - **The tail clause is a new ticket, not a re-scope, and it is now the PM's to number.** 831's
+    AC(1) tail said _"and any other script a doc mandates bare"_. PR #684 proposed FOLLOW-854 for it;
+    854 was taken by RETRO-252 the same night. **I have deliberately NOT filed it** — it is a
+    sweep-and-fix over four other scripts, it overlaps FOLLOW-858's `|| pwd` sibling set, and
+    filing a third overlapping shell-hygiene stub in one session is how the FOLLOW-843 footnote
+    happened. **Recommendation to the PM: fold it into FOLLOW-858's AC as a second sibling axis
+    (mode bits alongside root resolution) rather than giving it a number.**
+- **FOLLOW-830 / FOLLOW-827 — re-checked, both still closed, and I re-proved the half that this
+  merge could have broken.** `gh-pr-checks-verified.sh`'s PCRE preflight and the `comm -23`/`comm -13`
+  symbol-set comparison are untouched by this PR (its 13 added lines are comment-only, `:226-238`).
+  **But the class is not closed:** §4a LG-2 is the *third* live instance of FOLLOW-830's exact shape,
+  in a script neither ticket looked at.
+- **FOLLOW-813 — the chain has NOT moved this time, and that is the finding.** RETRO-252 traced it to
+  three open paths (FOLLOW-855 false red, FOLLOW-856 false green, FOLLOW-848 harness blindness). PR
+  #684 closed none of them and opened none. **What it did instead is make one upstream input of that
+  classifier trustworthy** — the Rule I log the gate reads. AC(2)'s wording is "cannot report a false
+  green"; on the merge gate that remains unearned, with 855/856/848 open. **On `check-rule-i.sh`
+  itself it is now earned, and it is the first artefact in this chain about which I can write that
+  sentence without a caveat.**
+
+### 8. Cross-references
+
+- **RETRO-252** — the retro this one grades. **Its central call is CONFIRMED with one boundary
+  corrected:** every defect in an unvalidated value the verdict depends on, never in decision logic —
+  three new confirming instances (§4a LG-2, LG-3, and FOLLOW-842's own `cd ""`), and one instance
+  (§4a LG-1) that sits on the *internal* side of the line RETRO-252 drew, which is why the boundary
+  needed restating rather than the thesis discarding. **Its §5a prediction about FOLLOW-842 is
+  CONFIRMED exactly:** it warned that *"preflight-and-fail-loud is safe; extract-differently is not"*
+  and asked the reviewer to check which landed. Preflight-and-fail-loud landed, the extractor is
+  untouched, and 638/192 is unmoved — I measured it. **Its FOLLOW-855 re-arming of P-35 is NOT
+  discharged here** (this merge moved `main`'s symbol set by zero).
+- **RETRO-250** — its armed Rule S "enumerate-don't-fix" amendment is **NOT discharged** (§6, clause
+  by clause) and is **re-armed with a second harm-based clause** whose count-1 evidence is two
+  failures inside RETRO-250's own sighting. Its FOLLOW-831 finding (double-owned mode bit) is
+  **closed** here, end-to-end. Its RETRO-250 bar for a discrimination matrix ("fails when and only
+  when its own fix is reverted") was **met** by PR #684 — the first artefact in the chain to clear
+  it with positive controls as well as negative ones.
+- **RETRO-251** — its P-36 (a class enumerated by the sink it was noticed at rather than the source
+  that defines it) **fires here, and this is a second sighting on clause (c), which I am recording
+  and NOT counting.** FOLLOW-843's sweep enumerated `check-rule-h.sh` by the call shape it noticed
+  (`grep -qP` as a boolean, `:34`) and structurally could not have contained `:66`'s
+  `grep -oP … || true` or `:79`'s `|| echo 0`. **I re-ran the original enumeration axis to
+  demonstrate the miss rather than assert it** (`grep -n "grep -[a-zA-Z]*P" scripts/check-rule-h.sh`
+  → `:34`, `:40`, `:66` — the axis *would* have reached `:66`; what it did not reach is `:79`, which
+  is not a PCRE site at all). **So clause (c) is met for `:79` and NOT met for `:66`** — the
+  enumeration could have contained `:66` and simply stopped at the first hit. That is a *different*
+  failure (an incomplete sweep, not a mis-defined axis), so **P-36 stays at count 1** and I am
+  refusing the near-miss. RETRO-251's own preference — that a second sighting prefer amending Rule
+  S's first bullet — remains the right home if it ever discharges.
+- **RETRO-246 → RETRO-253** — five consecutive retros on gates that reported a verdict they had not
+  earned (813, 827/830, 846, 842, and 854/855/856 in flight). **Four of the five defects were in
+  gates less than four days old; the fifth, found here, is in the oldest gate in the estate.** The
+  variable is attention, not age.
+
+<!-- RETRO-253 filed 2026-08-06 — post-merge retro for PR #684 / FOLLOW-842 (fd14461, merged 06:08 UTC),
+which also closed FOLLOW-831. FOLLOW-842 verdict: CLOSED on all four ACs, re-proved independently (self-test
+9/9 in a clean worktree; real-repo run 638 symbols / 192 violations, byte-identical output format; the
+exit-3 -> no-`Violations found`-line -> gate-tooling-failure chain traced through gh-pr-checks-verified.sh
+:1039-1046 on the PR side and :914-921 on the baseline side). FOLLOW-831 CLOSED end-to-end (disk 755 AND git
+index 100755 AND the four bare HANDOFFS invocations now work; its "any other script a doc mandates bare" tail
+deliberately NOT numbered — recommended to the PM as a second axis of FOLLOW-858). Wiring audit CHECK A + B
+both CLEAN — the first ticket in the 813 -> 827/830 -> 846 -> 842 chain whose new signal has a consumer acting
+on it in both directions on merge day. HEADLINE FINDING IS IN A DIFFERENT GATE: scripts/check-rule-h.sh:70-80
+Pattern 2 CANNOT FAIL — `| wc -l || echo 0` under pipefail makes consumer_count the two-line string "0\n0"
+precisely when the count is zero, `[[ "0\n0" -lt 1 ]]` is an arithmetic syntax error (false), control falls to
+the else branch and the hard `rule-h` CI job prints `OK:` and exits 0 over a genuine orphan export. Driven
+red-first in a throwaway repo with a real GNU grep (no shim), with a passing positive control; present at the
+gate's introduction commit 0a0a6880 (2026-05-14) and `grep -rn "has no non-test consumer" backlog/ docs/`
+returns zero hits across the whole record -> the Pattern-2 FAIL has apparently never fired -> FOLLOW-857 (P1
+UNFROZEN). Same file also carries the third instance of FOLLOW-830/842's PCRE fail-open (:66 `grep -oP ... ||
+true`), folded into 857; FOLLOW-843's stub named :34 in that file and graded it "lower risk", which is right
+about :34 and wrong about the file. Second driven finding: check-fire-and-forget-sinks.sh exits 0 with "All
+request-path async sinks are registered" from an empty non-git directory — the `|| pwd` sibling of FOLLOW-842's
+own `cd ""` guard, 1 of 5 scripts failing open (the other 4 fail closed at rc 1/1/2/1, measured) -> FOLLOW-858
+(P2 FROZEN). Third: PR #680's `QUEUE.md` promise of a ticket for the jq/PCRE structural restructure was never
+filed ("worth its own ticket rather than a silent omission" -> zero hits in FOLLOW_UPS.md) -> FOLLOW-859 (P3
+FROZEN), filed as both the fix and the demonstration. UNVALIDATED-INPUT THESIS (RETRO-252): SURVIVES with its
+boundary corrected — three new confirming instances, but check-rule-h.sh's defect is in a value the script
+produces ITSELF four lines above the comparison, so the invariant is not internal-vs-external but "every value
+the verdict is a function of, that is not validated before the verdict is computed"; RETRO-252's own
+operational item (4) already said this while its prose framing was one notch too narrow. Class ENUMERATED as a
+five-row register (one grep each over scripts/*.sh) but NOT CLOSED — the fifth row did not exist before this
+retro and was found by RUNNING a gate, not reading one; the settling test is six perturbation fixtures, one
+per gate. RULE VERDICTS: NO PROMOTION, NO AMENDMENT, CONVENTIONS_PATCH.md UNTOUCHED. RETRO-250's armed Rule S
+"enumerate-don't-fix" amendment tested clause by clause and NOT DISCHARGED — FOLLOW-842's worker was not
+instructed to enumerate-not-fix (that instruction belongs to PR #680, RETRO-250's own count-1 sighting) and
+PR #684 filed ZERO new stubs (it routed two deferrals to pre-existing tickets, FIXED the `cd ""` rather than
+filing it, and its one proposed number collided with RETRO-252's 854); the brief's "third consecutive worker
+finding an un-briefed defect" is a DIFFERENT proposition already adjudicated by RETRO-251 P-36 (Rule S fires
+as a SUCCESS) and counting it would be RETRO-122 count-inflation. RE-ARMED with a second harm-based clause
+(count 1: two prose deferrals from PR #680 that rotted — FOLLOW-843's footnote mis-grading and the never-filed
+jq ticket — recorded as ONE sighting because they are one PR) and the exact amendment text written out.
+P-37 MINTED at count 1 with a 3-clause bar: an `||` fallback that PRINTS, guarding a pipeline that also
+prints, corrupts the value precisely in the failure case. P-36 tested and held at count 1 (clause (c) met for
+:79, NOT met for :66 — the PCRE axis would have reached :66 and simply stopped at the first hit, which is an
+incomplete sweep rather than a mis-defined axis; near-miss refused). Rule S FIRES AS A VIOLATION on the
+2026-05-17 change that added `consumer_count=$(( consumer_count + 0 ))` to check-rule-i.sh and not to its
+sibling check-rule-h.sh — run verbatim it reports that change not clean, so COMPLIANCE FAILURE against an
+adequate control, no rule action (RETRO-247/248/252 precedent; fourth consecutive retro to reach it).
+FOLLOW-842's deliberately-untested `bash < 4` preflight leg GRADED, not merely flagged: the trade is CORRECT
+on four independent grounds (RETRO-250 CB-1 ruled against test-only seams in this very gate family;
+FOLLOW-843 independently graded mapfile-without-preflight as fail-CLOSED; both wrong-directions of the branch
+are bounded and neither produces a false green; and it is priced in public rather than hidden). Residual
+format-contract risk ANSWERED CONCRETELY: renaming the `Violations found` label leaves all 9 fixtures green
+and exits 3 on every PR repo-wide (loud); changing the symbol EXTRACTOR's match set leaves all 9 green and is
+SILENT in the narrowing direction, because the PR side and the baseline are produced by two different builds
+of the extractor — FOLLOW-848 AC(4) pins ≥1 symbol parsing and is structurally incapable of catching it, and
+AC(5)'s "coordinate with FOLLOW-842" is now discharged-by-completion, so that hazard is owned by NOBODY.
+CASCADE: FOLLOW-854 IS constrained (two scripts now define exit 3 with DIFFERENT meanings; its AC(4) check
+must key on (script, code)); FOLLOW-855/856 NOT constrained (this PR's 13 lines in gh-pr-checks-verified.sh
+are comment-only at :226-238; 855 lives at :1039-1075, 856 at :820-840 — merge-conflict risk nil) but this
+merge is NOT P-35's clause-(b) discharge event (it moved main's Rule I symbol set by zero); the new
+`rule-i-gate-self-test` job does NOT collide with the gate's pre-existing-red classifier (exact string
+equality at :411/:777/:1003, no prefix match, no static allowlist — verified). 843/844/847/848/849/850/851/
+852/853 all re-checked individually; 843's four script paths are STALE (none of migrate.sh,
+migration-contract-test.sh, smoke-test.sh, ttl-golden-test.sh exists at scripts/). FOLLOW-849 reproduced a
+third consecutive session (the branch guard fired "HEAD == main" while HEAD was
+retrospective-analyst/RETRO-253). Severity-surfaced FOLLOW-857 to the PM in §5a, NOT escalated (guardrail).
+QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->

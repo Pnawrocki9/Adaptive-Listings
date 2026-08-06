@@ -231,6 +231,53 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
+### FOLLOW-857 — delivered as PR #686 (CI validation in progress at time of writing)
+
+**AC(4) answered, and the answer changes the sequencing rather than confirming the fear.** The
+84-day backlog is **24 Pattern-2 violations** over the 46 `src/lib/*.ts` files added since
+`0a0a6880` (34 all-time, `UNDETERMINED: 0`, zero Pattern-1 failures). **It does not become a
+standing red:** Rule H is **diff-scoped** — it inspects only files a PR _adds_ — so the repaired
+gate, run exactly as CI runs it on `main`, evaluates zero files and exits 0. No baseline machinery,
+and no PR goes red for a violation it did not introduce. This is not Rule I's 192. Filed for triage
+as **FOLLOW-861** (P2), including the finding that **5 of the 24 can never pass** —
+`scripts/__fixtures__/staff-write-atomicity/` fixtures, because the consumer search greps only
+`apps/` and `packages/`. The worker left that exclusion undone as a scope change rather than doing
+it silently, which was right.
+
+### ⚠️ Correction: the causal story RETRO-253, this ticket's stub, and my own dispatch brief all told
+
+All three said the fix was to copy `check-rule-i.sh`'s `$(( count + 0 ))` normalisation, which the
+sibling received three days later. **The worker tested that and it is false** (revert R5): reverting
+_both_ of Rule I's guards leaves every Rule I fixture green, because **Rule I never had `|| echo 0`
+and runs without `set -e`**, so its `wc -l` printed a clean `0` regardless of `pipefail`. **The
+fatal ingredient in Rule H was `|| echo 0` combined with `set -e`, not the missing normalisation** —
+copying the sibling would not have fixed it. It also checked the other obvious repair: deleting
+`|| echo 0` alone makes the assignment fail under `set -e` and the script abort **silently
+mid-loop**. The shipped fix distinguishes grep rc 1 (no match — a real zero) from rc ≥ 2 (grep
+failed) and exits **3** on the latter: a count that cannot be produced is neither 0 nor 1, it is the
+absence of a verdict.
+
+**The same fail-open was found independently from both sides in the same hour.** #686 removed the
+literal `'Violations found: 0'` from Rule I's preflight prose; #685 anchored the merge gate's parser
+so prose can never be read as a count. Neither worker knew what the other was doing. Both changes
+are wanted — the producer-side removal is necessary but not sufficient, because a producer must
+still be able to _talk about_ the line it is declining to print.
+
+**Merge order matters here — hunk-level check, not filename-level:** #685 and #686 both insert into
+`.github/workflows/ci.yml` **at line 817** and into the devops `lessons.md` **at line 346**.
+Whichever lands second will conflict and needs a rebase. **Recommendation: #685 first** — it closes
+a false-green live on `main` and its exit-4 vocabulary is already described by merged docs, so the
+repo is inconsistent until it lands. #686 then rebases, exactly as #685 just did.
+
+**FOLLOW-862 filed from a near-miss worth more than the ticket it came from:** two workers in
+separate worktrees — the isolation adopted in session 102 — **shared one scratchpad directory**. The
+FOLLOW-857 worker's PR-body write failed because `pr.md` already existed (the other worker's), and
+it ran `rm -f pr.md` before realising the file was not its own. Nothing was lost, but had the `rm`
+landed between the other agent's write and its `gh pr create`, the PR body would have been destroyed
+with no error anywhere. Worktree isolation solved the git half of concurrency and left the
+filesystem half untouched — **including for this orchestrator, which has been writing fixed-name
+`msg*.txt` files all session.** Next free: **FOLLOW-863**.
+
 ### FOLLOW-854 + 855 + 856 — status: READY_FOR_REVIEW (PR #685, head `c488dfa2`)
 
 **Post-rebase CI:** 77 checks, 75 pass, 2 `Rule I` (union 192/192 vs baseline run `31078015081`),

@@ -29413,3 +29413,69 @@ branch-protection configuration. Whoever takes this should check that configurat
 
 cross_ref: [RETRO-252 (P-35); FOLLOW-855; FOLLOW-847 (remaining doc scope);
 `scripts/gh-pr-checks-verified.sh`; `scripts/check-gate-exit-codes.sh`]
+
+---
+
+## FOLLOW-861 — Triage the 24 Rule H Pattern-2 violations that accumulated while the gate could not fail
+
+source_retro: RETRO-253 source_ticket: FOLLOW-857 recommended_sprint: next recommended_agent:
+backend-engineer priority: P2 estimated_hours: 6 depends_on: [FOLLOW-857] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+FOLLOW-857 measured what accumulated during the 84 days Rule H's Pattern 2 could not take its FAIL
+branch: **24 violations** across the 46 `src/lib/*.ts` files added since `0a0a6880` (34 all-time,
+`UNDETERMINED: 0`, Pattern-1 failures 0). Nineteen are real orphans in `apps/control-plane/src/lib/`
+— `archetype-seeder`, `clickhouse-dsr`, `dev-cors`, `seed-listing-embeddings`, `session-auth` and
+others; the full list is in PR #686's body.
+
+**This is deliberately NOT urgent, and the reason changes the sequencing.** Rule H is
+**diff-scoped** — it only inspects files a PR _adds_ — so the repaired gate run exactly as CI runs
+it (`bash scripts/check-rule-h.sh HEAD` on `main`) evaluates zero files and exits 0. There is no
+standing red, no baseline machinery needed, and **no PR goes red for a violation it did not
+introduce**. This is not Rule I's 192. The 24 are only visible by pointing the gate at the commit
+each landed at.
+
+**Five of the 24 can never pass and are not real violations:**
+`scripts/__fixtures__/staff-write-atomicity/` fixtures, because the consumer search greps only
+`apps/` and `packages/` while the fixture lives under `scripts/`. A sixth such fixture would red a
+PR for no reason. Excluding `scripts/__fixtures__/` is almost certainly correct — the FOLLOW-857
+worker left it out as a scope change rather than doing it silently, which was the right call.
+
+**AC:** (1) triage each of the 19 real orphans into wire / test / documented-deferral, one line of
+reasoning each — do **not** bulk-exempt; (2) decide and implement the `scripts/__fixtures__/`
+exclusion, with a fixture proving a fixture-directory export does not trip the gate; (3) state the
+before/after count measured the same way FOLLOW-857 measured it, so the number is comparable; (4)
+anything deferred gets a named ticket, not a comment.
+
+cross_ref: [FOLLOW-857 (PR #686); RETRO-253; `scripts/check-rule-h.sh`; `CONVENTIONS_PATCH.md` Rule
+H]
+
+---
+
+## FOLLOW-862 — Concurrent agents share one scratchpad path, and one nearly destroyed another's PR body
+
+source_retro: n/a (near-miss observed during FOLLOW-857, session 103) source_ticket: FOLLOW-857
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+Two devops workers ran concurrently in separate git worktrees — the isolation this repo adopted in
+session 102 — but **both wrote to the same scratchpad directory**. The FOLLOW-857 worker's PR-body
+write failed because `pr.md` already existed; it was the FOLLOW-854/855/856 worker's PR body. It ran
+`rm -f pr.md` before realising the file was not its own.
+
+**Nothing was lost** — the other agent had already consumed its file and rewrote it later — but the
+window was real: had the `rm` landed between that agent's write and its `gh pr create`, the PR body
+would have been destroyed with no error anywhere.
+
+Worktree isolation solved the git half of concurrency and left the filesystem half untouched. The
+same class covers any fixed-name temp file two agents might pick: `pr.md`, `msg.txt`, `out.json`.
+
+**AC:** (1) give each agent a per-agent scratchpad subdirectory, or mandate a per-agent filename
+prefix, and put it where agents actually read it (the dispatch brief and/or the agent definitions —
+note `.claude/agents/*.md` is tier 0 under Rule AI); (2) do not rely on agents noticing collisions —
+the near-miss here was caught by an existing-file error, which a plain overwrite would not have
+produced; (3) state whether the orchestrator's own scratchpad use needs the same treatment (it does
+— this session wrote `msg*.txt` files by fixed name throughout).
+
+cross_ref: [FOLLOW-857; FOLLOW-849 (worktree-blind branch guard); session-102 worktree isolation
+decision in `backlog/QUEUE.md`]

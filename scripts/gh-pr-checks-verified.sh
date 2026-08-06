@@ -62,11 +62,23 @@
 #      When FOLLOW-821 ships its per-symbol allowlist file, re-point this comparison at
 #      that file instead of at main's latest run — see FOLLOW-827's `blocks:` field.
 #
-#      The baseline is main's LATEST COMPLETED run, which means it RATCHETS: a violation
-#      that has already merged into main becomes part of the accepted baseline. That is
-#      deliberate (it is what makes "pre-existing" mean anything) but it is no longer
-#      silent — the run id, head sha and creation time of the baseline are printed on
-#      every Rule I evaluation (FOLLOW-827 AC(3)).
+#      The baseline is main's newest run that ACTUALLY PRODUCED a Rule I symbol set,
+#      found by walking main's recent ci.yml runs newest-first and skipping every run
+#      that cannot carry a baseline. It RATCHETS: a violation that has already merged
+#      into main becomes part of the accepted baseline. That is deliberate (it is what
+#      makes "pre-existing" mean anything) but it is not silent — the chosen run's id,
+#      head sha and creation time are printed, as is every skipped run WITH ITS REASON
+#      (FOLLOW-827 AC(3), FOLLOW-846 AC(1)).
+#
+#      The walk exists because `--status completed -L 1` was wrong. GitHub's `completed`
+#      is a STATUS and includes the `cancelled` and `skipped` CONCLUSIONS, and ci.yml
+#      sets `cancel-in-progress: true`, so 8 of main's last 12 runs were cancelled when
+#      this was written — including the two newest. A cancelled run's Rule I job never
+#      ran, so its log 404s, and the gate reported that as "GENUINE FAILURES … do NOT
+#      mark READY_FOR_REVIEW" on every open PR simultaneously, for a reason no PR could
+#      cause or fix (RETRO-250, observed live on PR #681 in both directions six minutes
+#      apart on the same commit). When the whole look-back window is unusable the gate
+#      exits 3 and names the runs it tried; it never falls back to something weaker.
 #   4. Exits non-zero on ANY unclassified failure, and non-zero on TIMEOUT. It never
 #      silently treats "still pending" or "no checks registered yet" as success — those are
 #      the "dependency not configured" case only when genuinely zero checks are configured
@@ -87,19 +99,26 @@
 #   scripts/gh-pr-checks-verified.sh --self-test
 #
 # SELF-TEST
-#   `--self-test` runs 11 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
+#   `--self-test` runs 16 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
 #   check state, and fully offline) through the real code path via a fixture seam:
 #   all-green -> 0; an undocumented failing check -> 1; Rule I with main's exact symbol
 #   set -> 0; Rule I with a new symbol on top of main -> 1; Rule I with EQUAL COUNTS but a
 #   swapped symbol -> 1 (the FOLLOW-827 case); zero registered checks -> 2, never 0; a
 #   grep without PCRE -> 3, never a green verdict (the FOLLOW-830 case); an unfetchable
-#   Rule I log -> 1, named as a fetch failure; an accepted Rule I beside a genuine failure
-#   -> 1; and this file's own mode == 755 on disk and in the git index.
+#   Rule I log -> 3, named as a TOOLING failure; an accepted Rule I beside a genuine
+#   failure -> 1; a CANCELLED newest baseline run -> skipped, walk continues, 0; a
+#   look-back window with nothing usable in it -> 3, never 1; one check name registered
+#   twice -> collapsed to one, symbol sets unioned; the fixture seam invoked outside
+#   self-test -> 3, refused; a 404 on a cancelled job -> diagnosed as cancellation rather
+#   than log expiry (the four FOLLOW-846 cases); and this file's own mode == 755 on disk
+#   and in the git index.
 #
-#   Every fixture was written RED-FIRST against the pre-FOLLOW-827/830 script and observed
-#   failing there — the compensating-swap and no-PCRE fixtures both got
-#   "Safe to mark READY_FOR_REVIEW" and exit 0. Both transcripts are in the PR body, and
-#   the red state is its own commit on the branch.
+#   Every fixture was written RED-FIRST and observed failing against the script version
+#   that lacked its fix — for FOLLOW-827/830 the compensating-swap and no-PCRE fixtures
+#   both got "Safe to mark READY_FOR_REVIEW" and exit 0; for FOLLOW-846 the seam fixture
+#   got the same green with zero network reads, and the cancelled-baseline fixture got
+#   "GENUINE FAILURES (blocking)". Each FOLLOW-846 fixture was additionally shown to fail
+#   when — and only when — its own fix is reverted. Transcripts are in the PR bodies.
 #
 #   PROOF OF EXECUTION (Rule Q): `--self-test` is a step of the `pr-checks-gate-self-test`
 #   job in .github/workflows/ci.yml, run on every push and PR. It is a hard gate.
@@ -108,19 +127,60 @@
 #   0  settled; every FAILURE (if any) is a documented, dynamically-verified pre-existing-red gate
 #   1  at least one genuine (unclassified, or Rule I introducing a symbol main does not have) failure
 #   2  timed out waiting for checks to settle
-#   3  usage error, failed dependency preflight, or gh CLI error
+#   3  usage error, failed dependency preflight, gh CLI error, refused fixture seam, or a
+#      TOOLING failure: the gate could not read something it needed (an unfetchable or
+#      unparseable Rule I log, no usable baseline in the look-back window) and therefore
+#      rendered NO verdict. 3 is not a milder 1. Exit 1 means "this PR is red" and routes
+#      to sending the ticket back to its worker; exit 3 means "the gate did not get to
+#      look", which no worker can fix and which must not consume the 3-retry escalation
+#      budget (FOLLOW-846 AC(2)). 3 is equally not a green: do not mark READY_FOR_REVIEW
+#      on it. When both a tooling failure and a genuine failure are present, both are
+#      printed and the exit code is 3 — an incomplete verdict is not a verdict.
 #   (in --self-test mode: 0 = every fixture passed, 1 = at least one fixture failed)
 set -uo pipefail
 
 # ── Fixture seam (self-test only — Rule AM) ───────────────────────────────────
 # When GH_PR_CHECKS_FIXTURE_DIR is set, every network read below is served from
-# a file in that directory instead of from `gh`. It is set ONLY by this script's
-# own --self-test mode and never by a caller: it exists so the gate can be
-# exercised hermetically and offline against SYNTHESIZED check states. Driving
-# the self-test off a live PR would be neither reproducible nor capable of
-# containing the failure shapes that have to be pinned (a compensating-symbol
+# a file in that directory instead of from `gh`. The seam exists so the gate can
+# be exercised hermetically and offline against SYNTHESIZED check states.
+# Driving the self-test off a live PR would be neither reproducible nor capable
+# of containing the failure shapes that have to be pinned (a compensating-symbol
 # swap, a rate-limited log fetch, a grep with no PCRE).
-FIXTURE_DIR="${GH_PR_CHECKS_FIXTURE_DIR:-}"
+#
+# THE SEAM IS ENFORCED, NOT MERELY DOCUMENTED (FOLLOW-846). Until this block, the
+# code above this line only ASSERTED that the variable "is never set by a caller"
+# and then honoured it unconditionally. With it exported, a real PR number
+# produced "RESULT: all checks green. Safe to mark READY_FOR_REVIEW." and exit 0
+# after ZERO network reads — a fail-OPEN backdoor in the one gate whose entire
+# purpose is that it cannot report a false green. Two conditions now have to hold
+# together, and neither is satisfiable by an inherited/exported environment
+# alone:
+#   1. GH_PR_CHECKS_SELF_TEST=1 — an explicit second opt-in, and
+#   2. a `self-test.marker` file INSIDE the fixture dir, which only this script's
+#      own fixture builder writes.
+# Anything else is refused loudly with exit 3. This is not a security boundary
+# (whoever can set env vars can also write files); it is a guard against the
+# realistic failure — a stale exported variable, or an agent copying an
+# invocation out of a transcript — silently turning the gate into a no-op. The
+# third layer is that fixture mode is never quiet: every RESULT line is prefixed
+# with FIXTURE_TAG, so a fixture-mode run cannot be pasted as evidence of a green
+# PR without that prefix being visible in the paste.
+FIXTURE_DIR=""
+FIXTURE_TAG=""
+if [[ -n "${GH_PR_CHECKS_FIXTURE_DIR:-}" ]]; then
+  if [[ "${GH_PR_CHECKS_SELF_TEST:-}" == "1" && -f "${GH_PR_CHECKS_FIXTURE_DIR}/self-test.marker" ]]; then
+    FIXTURE_DIR="$GH_PR_CHECKS_FIXTURE_DIR"
+    FIXTURE_TAG="[FIXTURE MODE — synthetic data, not a real PR] "
+  else
+    echo "ERROR: REFUSING TO RUN — GH_PR_CHECKS_FIXTURE_DIR is set outside --self-test." >&2
+    echo "  dir: ${GH_PR_CHECKS_FIXTURE_DIR}" >&2
+    echo "  GH_PR_CHECKS_SELF_TEST='${GH_PR_CHECKS_SELF_TEST:-<unset>}' (must be '1')" >&2
+    echo "  self-test.marker present: $([[ -f "${GH_PR_CHECKS_FIXTURE_DIR}/self-test.marker" ]] && echo yes || echo no) (must be yes)" >&2
+    echo "  With that variable honoured, every network read is served from files and this" >&2
+    echo "  gate reports a verdict about a PR it never looked at. Unset it and re-run." >&2
+    exit 3
+  fi
+fi
 
 # ── Dependency preflight (FOLLOW-830 AC(1)) ───────────────────────────────────
 # Every hard dependency this script has is checked up front and named on failure.
@@ -179,9 +239,69 @@ rule_i_symbols_from_log() {
   grep -oP "WARN: '\K[^']+' in \S+" | sed "s/' in / @ /" | LC_ALL=C sort -u
 }
 
+# iso_age_seconds <iso-8601-timestamp> — seconds since that instant, or "" when
+# the host's `date` cannot parse it (BSD date has no -d). Never fails the caller:
+# every consumer degrades to omitting an age, never to a wrong diagnosis.
+iso_age_seconds() {
+  local at now then_s
+  at="$1"
+  [[ -n "$at" && "$at" != "null" ]] || return 0
+  now="$(date -u +%s 2>/dev/null)" || return 0
+  then_s="$(date -u -d "$at" +%s 2>/dev/null)" || return 0
+  [[ -n "$then_s" ]] || return 0
+  echo $((now - then_s))
+}
+
+# classify_missing_log <job-id> — turns "the log is a 404" into WHICH of the
+# three unrelated causes it is (FOLLOW-846 AC(3) / FOLLOW-827 AC(4), reopened).
+#
+# The shipped version rendered EVERY 404 as "Actions logs expire after ~90 days".
+# RETRO-250 caught that printed against a job four minutes old: a CANCELLED or
+# SKIPPED job never produces a log at all, which is the overwhelmingly common
+# 404 in this repo because ci.yml sets `cancel-in-progress: true`. Diagnosing a
+# routine cancellation as a 90-day retention problem sends the reader looking for
+# a nonexistent stale run. The job's own `conclusion` distinguishes them and is
+# one API read away — the same jobs API this script already talks to.
+classify_missing_log() {
+  local job_id meta concl started age
+  job_id="$1"
+  if [[ -z "$job_id" ]]; then
+    echo "HTTP 404 — job or log not found (no job id available to diagnose further)"
+    return 0
+  fi
+  meta="$(fetch_job_meta "$job_id" 2>/dev/null)"
+  if [[ -z "$meta" ]]; then
+    echo "HTTP 404 — no job $job_id is visible at all (deleted run, wrong repo, or a token without actions:read)"
+    return 0
+  fi
+  concl="$(printf '%s' "$meta" | cut -f1)"
+  started="$(printf '%s' "$meta" | cut -f2)"
+  case "$concl" in
+    cancelled | skipped)
+      echo "HTTP 404 — job $job_id was $concl, so it never produced a log; this is NOT log expiry"
+      return 0
+      ;;
+    "" | null)
+      echo "HTTP 404 — job $job_id has not concluded yet, so it has no complete log; this is NOT log expiry"
+      return 0
+      ;;
+  esac
+  local age_s
+  age=""
+  age_s="$(iso_age_seconds "$started")"
+  [[ -z "$age_s" ]] || age=$((age_s / 86400))
+  if [[ -n "$age" && "$age" -ge 90 ]]; then
+    echo "HTTP 404 — job $job_id concluded '$concl' $age days ago; Actions logs are retained ~90 days, so this IS log expiry"
+  else
+    echo "HTTP 404 — job $job_id concluded '$concl'${age:+ $age day(s) ago} and its log is missing anyway; too recent for expiry — retry, then check the token's actions:read scope"
+  fi
+}
+
+# classify_fetch_error <stderr-file> [job-id]
 # Names WHY a gh read failed, so that an auth failure, a 403 rate-limit, an
-# expired log and a genuine API error are four distinguishable lines at 2am
-# instead of one unactionable WARN (FOLLOW-827 AC(4)).
+# expired log and a genuine API error are distinguishable lines at 2am instead of
+# one unactionable WARN (FOLLOW-827 AC(4)). The optional job id is what lets the
+# 404 branch tell a cancelled job from an expired log (FOLLOW-846 AC(3)).
 classify_fetch_error() {
   local err
   err="$(tr '\n' ' ' < "$1")"
@@ -189,7 +309,7 @@ classify_fetch_error() {
     *"rate limit"*) echo "HTTP 403 — GitHub API rate limit exceeded" ;;
     *403* | *Forbidden*) echo "HTTP 403 — forbidden; the token likely lacks the actions:read scope" ;;
     *401* | *"Bad credentials"* | *authentication*) echo "HTTP 401 — gh is not authenticated for this repo" ;;
-    *404* | *"Not Found"*) echo "HTTP 404 — job or log not found (Actions logs expire after ~90 days)" ;;
+    *404* | *"Not Found"*) classify_missing_log "${2:-}" ;;
     "") echo "gh exited non-zero without writing any diagnosis" ;;
     *) echo "gh API error" ;;
   esac
@@ -213,7 +333,13 @@ fetch_snapshot() {
 fetch_job_log() {
   if [[ -n "$FIXTURE_DIR" ]]; then
     if [[ ! -f "$FIXTURE_DIR/$2" ]]; then
-      echo "HTTP 403: API rate limit exceeded for installation (fixture: no $2)" >&2
+      # A fixture may pin the EXACT stderr shape it wants classified by shipping
+      # "<basename>.err"; the default is the rate-limit shape.
+      if [[ -f "$FIXTURE_DIR/$2.err" ]]; then
+        cat "$FIXTURE_DIR/$2.err" >&2
+      else
+        echo "HTTP 403: API rate limit exceeded for installation (fixture: no $2)" >&2
+      fi
       return 1
     fi
     cat "$FIXTURE_DIR/$2"
@@ -222,28 +348,54 @@ fetch_job_log() {
   gh api "repos/$REPO/actions/jobs/$1/logs"
 }
 
-# Prints "<run-id>\t<head-sha>\t<created-at>" for main's LATEST COMPLETED ci.yml
-# run — the Rule I baseline. The head sha and timestamp are fetched in the same
-# call as the id purely so the baseline's identity can be PRINTED (AC(3)): a
-# baseline that silently ratchets forward is only invisible if nobody names it.
-fetch_main_run_meta() {
+# fetch_job_meta <job-id> — prints "<conclusion>\t<started-at>" for one job.
+# Read only on the 404 path, to tell a cancelled job from an expired log.
+fetch_job_meta() {
   if [[ -n "$FIXTURE_DIR" ]]; then
-    cat "$FIXTURE_DIR/main-run-meta.tsv"
+    [[ -f "$FIXTURE_DIR/job-meta-$1.tsv" ]] || return 0
+    cat "$FIXTURE_DIR/job-meta-$1.tsv"
     return 0
   fi
-  gh run list --repo "$REPO" --workflow ci.yml --branch main --status completed \
-    --json databaseId,headSha,createdAt -L 1 \
-    -q '.[0] | "\(.databaseId)\t\(.headSha)\t\(.createdAt)"'
+  gh api "repos/$REPO/actions/jobs/$1" \
+    -q '"\(.conclusion)\t\(.started_at)"' 2>/dev/null
 }
 
-# fetch_main_job_id <run-id>
-fetch_main_job_id() {
+# Prints one CANDIDATE baseline run per line as
+# "<run-id>\t<head-sha>\t<created-at>\t<status>\t<conclusion>", newest first, for
+# the walk in resolve_rule_i_baseline.
+#
+# WHY THIS IS A LIST AND NOT `-L 1` (FOLLOW-846 AC(1)). The shipped version took
+# `--status completed -L 1` and used `.[0]` unconditionally. GitHub's `completed`
+# is a STATUS and contains the `cancelled` and `skipped` CONCLUSIONS, and ci.yml
+# sets `cancel-in-progress: true`, so on a busy day most of main's completed runs
+# are cancelled — 8 of the last 12 when this was written, and both of the two
+# newest. A cancelled run's Rule I job never ran, so its log is a 404, which the
+# gate then reported as "GENUINE FAILURES … do NOT mark READY_FOR_REVIEW" on
+# every open PR at once. The `--status` filter is dropped entirely and the
+# filtering happens in the walk, so that an in-progress newer run can be NAMED
+# (main's baseline lags it) rather than silently omitted.
+fetch_main_run_candidates() {
   if [[ -n "$FIXTURE_DIR" ]]; then
-    cat "$FIXTURE_DIR/main-job-id"
+    cat "$FIXTURE_DIR/main-runs.tsv"
+    return 0
+  fi
+  gh run list --repo "$REPO" --workflow ci.yml --branch main \
+    --json databaseId,headSha,createdAt,status,conclusion -L "$BASELINE_LOOKBACK" \
+    -q '.[] | "\(.databaseId)\t\(.headSha)\t\(.createdAt)\t\(.status)\t\(.conclusion)"'
+}
+
+# fetch_main_job_meta <run-id> — prints "<job-id>\t<job-conclusion>" for the
+# Rule I job of that run. The conclusion comes from the SAME call as the id, so
+# the walk can reject a cancelled/skipped Rule I job without first attempting a
+# download it knows will 404.
+fetch_main_job_meta() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    [[ -f "$FIXTURE_DIR/main-job-$1.tsv" ]] || return 0
+    cat "$FIXTURE_DIR/main-job-$1.tsv"
     return 0
   fi
   gh api "repos/$REPO/actions/runs/$1/jobs" --paginate \
-    -q '.jobs[] | select(.name=="'"$RULE_I_NAME"'") | .id' | head -1
+    -q '.jobs[] | select(.name=="'"$RULE_I_NAME"'") | "\(.id)\t\(.conclusion)"' | head -1
 }
 
 # ── Self-test mode ────────────────────────────────────────────────────────────
@@ -265,13 +417,24 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_passes=0
   st_job_url="https://github.com/o/r/actions/runs/30000/job"
 
+  # Every fixture dir is stamped "now", so no assertion below can start drifting
+  # into the stale-baseline warning as the calendar moves past a hardcoded date.
+  st_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
   # _st_fixture <name> — makes a fixture dir carrying the baseline metadata every
-  # Rule I fixture needs, and echoes its path.
+  # Rule I fixture needs, and echoes its path. The default baseline is a single
+  # healthy run; fixtures that care about the WALK overwrite main-runs.tsv.
+  #
+  # `self-test.marker` is half of the fixture-seam gate (FOLLOW-846): the seam
+  # refuses to serve a run that does not carry both this file and
+  # GH_PR_CHECKS_SELF_TEST=1, so a stray exported variable cannot turn a real
+  # invocation into an offline no-op that prints "all checks green".
   _st_fixture() {
     local d="$st_tmp/$1"
     mkdir -p "$d"
-    printf '4242\tdeadbeefcafe1234\t2026-08-05T10:00:00Z\n' > "$d/main-run-meta.tsv"
-    echo "777" > "$d/main-job-id"
+    : > "$d/self-test.marker"
+    printf '4242\tdeadbeefcafe1234\t%s\tcompleted\tfailure\n' "$st_now" > "$d/main-runs.tsv"
+    printf '777\tfailure\n' > "$d/main-job-4242.tsv"
     echo "$d"
   }
 
@@ -292,17 +455,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
   }
 
   # Runs the gate against a fixture dir, returning its exit code. A PATH override
-  # (used by the degraded-grep fixture) is honoured via ST_PATH_OVERRIDE.
+  # (used by the degraded-grep fixture) is honoured via ST_PATH_OVERRIDE, and
+  # ST_OMIT_SELF_TEST_ENV=1 drops the GH_PR_CHECKS_SELF_TEST opt-in so the seam
+  # fixture can assert the refusal.
   _st_run() {
     local dir="$1"
     local rc=0
-    if [[ -n "${ST_PATH_OVERRIDE:-}" ]]; then
-      PATH="$ST_PATH_OVERRIDE" GH_PR_CHECKS_FIXTURE_DIR="$dir" \
-        bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
-    else
-      GH_PR_CHECKS_FIXTURE_DIR="$dir" \
-        bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
-    fi
+    local self_test="1"
+    [[ -z "${ST_OMIT_SELF_TEST_ENV:-}" ]] || self_test=""
+    PATH="${ST_PATH_OVERRIDE:-$PATH}" \
+      GH_PR_CHECKS_SELF_TEST="$self_test" GH_PR_CHECKS_FIXTURE_DIR="$dir" \
+      bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
     return "$rc"
   }
 
@@ -313,12 +476,12 @@ if [[ "${1:-}" == "--self-test" ]]; then
     echo "-------------------"
   }
 
-  # _st_expect <label> <expected-rc> <fixture-dir> [required-substring]
+  # _st_expect <label> <expected-rc> <fixture-dir> [substring] [substring]
   # Asserts the SPECIFIC exit code, never merely non-zero, and (when given) that
   # the verdict was reached for the stated reason.
   _st_expect() {
-    local label="$1" want_rc="$2" dir="$3" needle="${4:-}"
-    local rc=0
+    local label="$1" want_rc="$2" dir="$3" needle="${4:-}" needle2="${5:-}"
+    local rc=0 n
     _st_run "$dir" || rc=$?
     if [[ "$rc" -ne "$want_rc" ]]; then
       echo "SELF-TEST FAIL: $label"
@@ -326,13 +489,16 @@ if [[ "${1:-}" == "--self-test" ]]; then
       _st_fail
       return 0
     fi
-    if [[ -n "$needle" ]] && ! grep -qF -- "$needle" "$st_out"; then
-      echo "SELF-TEST FAIL: $label"
-      echo "  exited $rc as expected, but never said '$needle' — the right verdict"
-      echo "  for the wrong reason is not a pass."
-      _st_fail
-      return 0
-    fi
+    for n in "$needle" "$needle2"; do
+      [[ -n "$n" ]] || continue
+      if ! grep -qF -- "$n" "$st_out"; then
+        echo "SELF-TEST FAIL: $label"
+        echo "  exited $rc as expected, but never said '$n' — the right verdict"
+        echo "  for the wrong reason is not a pass."
+        _st_fail
+        return 0
+      fi
+    done
     st_passes=$((st_passes + 1))
     echo "OK: self-test PASSED — $label"
   }
@@ -356,17 +522,17 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # ── F3: Rule I, PR symbol set IDENTICAL to main → 0 (accepted, not hidden) ──
   st_d="$(_st_fixture rule-i-equal)"
   echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
-  _st_rule_i_log "$st_d/pr-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
-  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
   _st_expect "Rule I with the same symbols as main exits 0" 0 "$st_d" \
     "pre-existing-red"
 
   # ── F4: Rule I, PR is a strict SUPERSET of main → 1 ────────────────────────
   st_d="$(_st_fixture rule-i-worse)"
   echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
-  _st_rule_i_log "$st_d/pr-rule-i.log" 3 'alpha@packages/a/src/one.ts' \
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 3 'alpha@packages/a/src/one.ts' \
     'beta@packages/a/src/two.ts' 'gamma@packages/a/src/three.ts'
-  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
   _st_expect "Rule I with a NEW symbol on top of main exits 1" 1 "$st_d" \
     "NEW Rule I violation"
 
@@ -376,8 +542,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # exits 0. FOLLOW-821 AC(1) forbids exactly that. This must exit 1.
   st_d="$(_st_fixture rule-i-swap)"
   echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
-  _st_rule_i_log "$st_d/pr-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
-  _st_rule_i_log "$st_d/main-rule-i.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 2 'alpha@packages/a/src/one.ts' 'beta@packages/a/src/two.ts'
   _st_expect "Rule I compensating swap (equal counts, different symbols) exits 1" 1 "$st_d" \
     "NEW Rule I violation"
 
@@ -411,20 +577,103 @@ if [[ "${1:-}" == "--self-test" ]]; then
     "PREFLIGHT"
   unset ST_PATH_OVERRIDE
 
-  # ── F8: the Rule I log fetch itself fails → 1, named as a FETCH failure ─────
+  # ── F8: the Rule I log fetch itself fails → 3, named as a FETCH failure ─────
+  # Was exit 1 until FOLLOW-846. A rate-limited log fetch is something the GATE
+  # could not do, not something the PR did: exit 1 routes to "send the ticket
+  # back to its worker and increment fix_iteration_counter", which is the wrong
+  # instruction for every reader. It is now a TOOLING failure (exit 3), and the
+  # verdict vocabulary changes with it.
   st_d="$(_st_fixture rule-i-fetch-fail)"
   echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
-  # (no pr-rule-i.log in the fixture → the seam reports a 403 like gh would)
-  _st_expect "an unfetchable Rule I log exits 1 and names the fetch failure" 1 "$st_d" \
-    "could not FETCH"
+  # (no pr-rule-i-9.log in the fixture → the seam reports a 403 like gh would)
+  _st_expect "an unfetchable Rule I log exits 3 and names the fetch failure" 3 "$st_d" \
+    "could not FETCH" "TOOLING FAILURES"
 
   # ── F9: an accepted Rule I must not mask a genuine failure beside it ───────
   st_d="$(_st_fixture mixed)"
   echo "[$st_lint_ok,$st_rule_i_entry,$st_tc_bad]" > "$st_d/snapshot.json"
-  _st_rule_i_log "$st_d/pr-rule-i.log" 1 'alpha@packages/a/src/one.ts'
-  _st_rule_i_log "$st_d/main-rule-i.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
   _st_expect "an accepted Rule I alongside a new failure still exits 1" 1 "$st_d" \
     "GENUINE FAILURES"
+
+  # ── F11: main's newest completed run is CANCELLED → walk past it → 0 ───────
+  # THE FOLLOW-846 / RETRO-250 CASE, observed live on PR #681 in both directions
+  # six minutes apart. `gh run list --status completed` returns `cancelled` and
+  # `skipped` CONCLUSIONS too, and ci.yml's `cancel-in-progress: true` made 8 of
+  # main's last 12 runs cancelled. A cancelled run's Rule I job never ran, its
+  # log is a 404, and the shipped gate turned that into "GENUINE FAILURES … do
+  # NOT mark READY_FOR_REVIEW" on every open PR at once. The walk must skip it
+  # BY CONCLUSION — before attempting a download it knows will 404 — and take
+  # the next run that really produced a symbol set.
+  st_d="$(_st_fixture baseline-cancelled)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  {
+    printf '5001\taaaa111122223333\t%s\tin_progress\t\n' "$st_now"
+    printf '5002\tbbbb111122223333\t%s\tcompleted\tcancelled\n' "$st_now"
+    printf '5003\tcccc111122223333\t%s\tcompleted\tcancelled\n' "$st_now"
+    printf '5004\tdddd111122223333\t%s\tcompleted\tfailure\n' "$st_now"
+  } > "$st_d/main-runs.tsv"
+  printf '811\tfailure\n' > "$st_d/main-job-5004.tsv"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/main-rule-i-5004.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "a cancelled newest run is skipped and the walk finds a real baseline" 0 "$st_d" \
+    "run conclusion=cancelled" "CHOSEN  run 5004"
+
+  # ── F12: nothing usable in the whole window → 3 (tooling), never 1 ─────────
+  # The other half of AC(2): when the walk exhausts its look-back, the gate must
+  # say the BASELINE is unusable, in tooling vocabulary, and must not render a
+  # verdict on the PR in either direction.
+  st_d="$(_st_fixture baseline-none)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  {
+    printf '6001\taaaa111122223333\t%s\tcompleted\tcancelled\n' "$st_now"
+    printf '6002\tbbbb111122223333\t%s\tcompleted\tskipped\n' "$st_now"
+    printf '6003\tcccc111122223333\t%s\tcompleted\tfailure\n' "$st_now"
+  } > "$st_d/main-runs.tsv"
+  # 6003 is a plausible-looking run whose Rule I job was itself cancelled (its
+  # `needs:` dependency failed) — the shape a conclusion-only filter still misses.
+  printf '901\tcancelled\n' > "$st_d/main-job-6003.tsv"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "no usable baseline in the window exits 3, not 1" 3 "$st_d" \
+    "no usable Rule I baseline" "RESULT: UNDETERMINED"
+
+  # ── F13: the same check name registered twice (push + pull_request) ────────
+  # PR #681 carried 75 check-runs over 39 names. The two Rule I check-runs are
+  # different commits (branch head vs merge ref) and can differ, so the gate
+  # unions their symbol sets: job 9 alone matches main, job 10 adds `gamma`.
+  # Three properties in one fixture — a "keep the first" collapse exits 0 (wrong),
+  # no collapse at all reports one problem as two failures, and the union exits 1.
+  st_rule_i_dup='{"name":"Rule I — wired-or-dead check","state":"FAILURE","url":"'"$st_job_url"'/10"}'
+  st_d="$(_st_fixture rule-i-duplicate)"
+  echo "[$st_lint_ok,$st_rule_i_entry,$st_rule_i_dup]" > "$st_d/snapshot.json"
+  _st_rule_i_log "$st_d/pr-rule-i-9.log" 1 'alpha@packages/a/src/one.ts'
+  _st_rule_i_log "$st_d/pr-rule-i-10.log" 2 'alpha@packages/a/src/one.ts' 'gamma@packages/a/src/three.ts'
+  _st_rule_i_log "$st_d/main-rule-i-4242.log" 1 'alpha@packages/a/src/one.ts'
+  _st_expect "duplicate check-runs collapse to one name and union their symbols" 1 "$st_d" \
+    "across 1 distinct check name" "RESULT: FAIL. 1 genuine failure(s)."
+
+  # ── F14: the fixture seam is refused outside --self-test → 3 ──────────────
+  # Red-first evidence for this one is in the PR body: with the pre-FOLLOW-846
+  # script, `GH_PR_CHECKS_FIXTURE_DIR=<dir> … 681` printed "RESULT: all checks
+  # green. Safe to mark READY_FOR_REVIEW." and exited 0 having read nothing.
+  st_d="$(_st_fixture seam-refusal)"
+  echo "[$st_lint_ok,$st_tc_ok]" > "$st_d/snapshot.json"
+  ST_OMIT_SELF_TEST_ENV=1
+  _st_expect "the fixture seam is refused when not in self-test mode" 3 "$st_d" \
+    "REFUSING TO RUN"
+  unset ST_OMIT_SELF_TEST_ENV
+
+  # ── F15: a 404 on a CANCELLED job is not log expiry ───────────────────────
+  # AC(3). The shipped classifier rendered every 404 as "Actions logs expire
+  # after ~90 days" — RETRO-250 caught it printed against a four-minute-old run.
+  st_d="$(_st_fixture log-404-cancelled)"
+  echo "[$st_lint_ok,$st_rule_i_entry]" > "$st_d/snapshot.json"
+  echo "gh: HTTP 404: Not Found (https://api.github.com/repos/o/r/actions/jobs/9/logs)" \
+    > "$st_d/pr-rule-i-9.log.err"
+  printf 'cancelled\t%s\n' "$st_now" > "$st_d/job-meta-9.tsv"
+  _st_expect "a 404 on a cancelled job is diagnosed as cancellation, not log expiry" 3 "$st_d" \
+    "was cancelled, so it never produced a log" "NOT log expiry"
 
   # ── F10: this file's mode is 755 (FOLLOW-830 AC(4) / FOLLOW-831) ───────────
   # Docs and four agent definitions invoke gates bare; a 100644 gate breaks the
@@ -514,6 +763,18 @@ trap "rm -rf '$tmp_dir'" EXIT
 # FOLLOW-813 AC(3) forbids.
 RULE_I_NAME="Rule I — wired-or-dead check"
 
+# How many of main's recent ci.yml runs the baseline walk may inspect before
+# giving up (FOLLOW-846 AC(1)/AC(2)). Sized off the observed cancellation rate:
+# 8 of main's last 12 runs were `cancelled` during a five-merge session, and
+# ci.yml carries jobs at 83-99 min, so a short window can plausibly be all
+# cancellations. 20 is ~an hour of the busiest merge cadence this repo has had.
+# It is a BOUND, not a fallback: when nothing in the window is usable the gate
+# exits 3 and says so, rather than quietly comparing against something weaker.
+BASELINE_LOOKBACK=20
+
+# How old the chosen baseline may be before the comparison is worth doubting.
+BASELINE_STALE_HOURS=72
+
 SNAPSHOT_FILTER='[.statusCheckRollup[] | {name: (.name // .context), state: (if .__typename=="StatusContext" then .state elif .status!="COMPLETED" then "PENDING" else .conclusion end), url: (.detailsUrl // .targetUrl // "")}] | sort_by(.name, .url)'
 
 echo "=== gh-pr-checks-verified.sh — PR #$PR ($REPO) ==="
@@ -580,134 +841,251 @@ echo "Total checks: $total | success: $success | skipped: $skipped | neutral: $n
 echo ""
 
 if [[ "${#failure_names[@]}" -eq 0 ]]; then
-  echo "RESULT: all checks green. Safe to mark READY_FOR_REVIEW."
+  echo "${FIXTURE_TAG}RESULT: all checks green. Safe to mark READY_FOR_REVIEW."
   exit 0
 fi
 
-genuine_failures=()
-accepted_failures=()
+# ── the Rule I baseline walk (FOLLOW-846 AC(1)/AC(2)) ─────────────────────────
+# Resolves ONCE per invocation and memoizes, so that a check name registered
+# twice does not resolve the baseline twice.
+BASELINE_STATE=""
+BASELINE_RUN_ID=""
+BASELINE_VIOLATIONS=""
+BASELINE_SYMBOLS=""
 
+resolve_rule_i_baseline() {
+  case "$BASELINE_STATE" in
+    ok) return 0 ;;
+    unusable) return 1 ;;
+  esac
+
+  local runs id head created status concl reason skipped considered
+  local jobmeta jid jconcl count syms diag age_s age_h
+
+  runs="$(fetch_main_run_candidates 2> "$tmp_dir/runs.err")"
+  if [[ -z "$runs" ]]; then
+    echo "WARN: could not list main's recent ci.yml runs — $(classify_fetch_error "$tmp_dir/runs.err")."
+    BASELINE_STATE="unusable"
+    return 1
+  fi
+
+  echo "Rule I baseline: walking main's ci.yml runs newest-first (look-back $BASELINE_LOOKBACK),"
+  echo "  taking the FIRST run that actually produced a parseable Rule I symbol set. A"
+  echo "  cancelled or skipped run is not a baseline — its Rule I job never ran."
+  count=""
+  syms=""
+  skipped=0
+  considered=0
+  while IFS=$'\t' read -r id head created status concl; do
+    [[ -n "$id" ]] || continue
+    considered=$((considered + 1))
+    reason=""
+    if [[ "$status" != "completed" ]]; then
+      reason="run is $status — not finished, so main is AHEAD of whatever baseline is chosen below"
+    elif [[ "$concl" != "success" && "$concl" != "failure" ]]; then
+      reason="run conclusion=$concl — a $concl run's Rule I job produced no log to compare against"
+    fi
+
+    if [[ -z "$reason" ]]; then
+      jobmeta="$(fetch_main_job_meta "$id" 2>/dev/null)"
+      jid="$(printf '%s' "$jobmeta" | cut -f1)"
+      jconcl="$(printf '%s' "$jobmeta" | cut -f2)"
+      if [[ -z "$jid" ]]; then
+        reason="no job named '$RULE_I_NAME' in this run"
+      elif [[ "$jconcl" != "success" && "$jconcl" != "failure" ]]; then
+        reason="its Rule I job (id $jid) concluded '$jconcl' — no log to read"
+      elif ! fetch_job_log "$jid" "main-rule-i-$id.log" > "$tmp_dir/main.log" 2> "$tmp_dir/main.err"; then
+        diag="$(classify_fetch_error "$tmp_dir/main.err" "$jid")"
+        reason="its Rule I job log (id $jid) could not be fetched — $diag"
+      else
+        count="$(rule_i_count_from_log < "$tmp_dir/main.log")"
+        rule_i_symbols_from_log < "$tmp_dir/main.log" > "$tmp_dir/main.syms"
+        syms="$(wc -l < "$tmp_dir/main.syms" | tr -d ' ')"
+        if [[ -z "$count" ]]; then
+          reason="its Rule I log has no 'Violations found: N' line (job died early, or the format changed)"
+        elif [[ "$count" -gt 0 && "$syms" -eq 0 ]]; then
+          reason="its Rule I log reports $count violation(s) but zero symbols could be parsed out of it"
+        fi
+      fi
+    fi
+
+    if [[ -n "$reason" ]]; then
+      echo "  - SKIPPED run $id (head ${head:0:12}, ${created:-unknown}): $reason"
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    BASELINE_RUN_ID="$id"
+    BASELINE_VIOLATIONS="$count"
+    BASELINE_SYMBOLS="$syms"
+    BASELINE_STATE="ok"
+    echo "  - CHOSEN  run $id (head ${head:0:12}, ${created:-unknown}, conclusion=$concl):"
+    echo "    $syms violating symbol(s), count line $count; $skipped newer run(s) skipped above."
+    echo "  The baseline RATCHETS: any Rule I violation already merged into main counts as"
+    echo "  pre-existing here and will not block this PR. Check the head sha is what you expect."
+    age_h=""
+    age_s="$(iso_age_seconds "$created")"
+    [[ -z "$age_s" ]] || age_h=$((age_s / 3600))
+    if [[ -n "$age_h" && "$age_h" -gt "$BASELINE_STALE_HOURS" ]]; then
+      echo "  WARN: this baseline is ${age_h}h old (> ${BASELINE_STALE_HOURS}h). main has very"
+      echo "        likely moved since, and a stale baseline errs in BOTH directions — it can"
+      echo "        report symbols as NEW that main already has, and accept ones main has since"
+      echo "        fixed. Treat the verdict as provisional and re-run against a fresh main run."
+    fi
+    return 0
+  done <<< "$runs"
+
+  echo ""
+  echo "ERROR: no usable Rule I baseline in main's last $considered ci.yml run(s); all $skipped"
+  echo "  were skipped for the reasons listed above. Without a baseline the gate cannot say"
+  echo "  whether this PR's Rule I violations are new or pre-existing, and it will not guess in"
+  echo "  either direction."
+  BASELINE_STATE="unusable"
+  return 1
+}
+
+# ── de-duplicate the failing list BY NAME (FOLLOW-846 AC(4)) ──────────────────
+# This repo registers TWO check-runs per job on a PR branch — one from the `push`
+# event on the branch, one from the `pull_request` event on the merge ref. PR
+# #681 carried 75 check-runs over 39 distinct names. Un-collapsed, the gate
+# resolved main's baseline twice and downloaded four logs to answer one question,
+# and reported ONE failing job as "2 genuine failure(s)".
+#
+# The collapse operates on the FAILING list only, so it cannot drop the last
+# failing entry for a name and cannot turn a red into a green. Where one name has
+# several failing check-runs they are ALL still read: for Rule I the symbol sets
+# are UNIONED across them. That is strictly more conservative than picking one,
+# because the push run (branch head) and the pull_request run (merge with main)
+# are different commits and can legitimately differ — a "keep the first" collapse
+# could silently pick the friendlier of the two.
+declare -a uniq_names=()
+declare -A urls_by_name=()
 for entry in "${failure_names[@]}"; do
   name="$(printf '%s' "$entry" | grep -oP '"name":"\K[^"]*')"
   url="$(printf '%s' "$entry" | grep -oP '"url":"\K[^"]*')"
+  if [[ -z "${urls_by_name["$name"]+set}" ]]; then
+    uniq_names+=("$name")
+    urls_by_name["$name"]="$url"
+  else
+    urls_by_name["$name"]+=$'\n'"$url"
+  fi
+done
 
-  if [[ "$name" == "$RULE_I_NAME" ]]; then
-    pr_job_id="$(printf '%s' "$url" | grep -oP '/job/\K[0-9]+' || true)"
-    if [[ -z "$pr_job_id" ]]; then
-      echo "WARN: could not extract job id from Rule I check url '$url' — treating as genuine failure (fail loud, never guess)."
-      genuine_failures+=("$name ($url) — job id unresolvable")
+echo "${#failure_names[@]} failing check-run(s) across ${#uniq_names[@]} distinct check name(s)."
+echo ""
+
+genuine_failures=()
+accepted_failures=()
+# Things the GATE could not do, as opposed to things the PR did wrong. These
+# exit 3, never 1: the PM's documented response to exit 1 is to send the ticket
+# back to its worker and increment fix_iteration_counter, and no worker can fix
+# a cancelled baseline run or a rate-limited log fetch (FOLLOW-846 AC(2)).
+tooling_failures=()
+
+for name in "${uniq_names[@]}"; do
+  urls="${urls_by_name["$name"]}"
+  dup_n="$(printf '%s\n' "$urls" | grep -c .)"
+  first_url="$(printf '%s\n' "$urls" | head -1)"
+
+  if [[ "$name" != "$RULE_I_NAME" ]]; then
+    if [[ "$dup_n" -gt 1 ]]; then
+      genuine_failures+=("$name ($first_url) — not on the documented pre-existing-red list ($dup_n failing check-runs of this name)")
+    else
+      genuine_failures+=("$name ($first_url) — not on the documented pre-existing-red list")
+    fi
+    continue
+  fi
+
+  # ── PR side: every check-run carrying this name, unioned ───────────────────
+  if [[ "$dup_n" -gt 1 ]]; then
+    echo "'$name' has $dup_n failing check-runs (push + pull_request events for the same job);"
+    echo "  reading all of them and comparing the UNION of their violating symbols against main."
+  fi
+
+  : > "$tmp_dir/pr.syms.all"
+  pr_ok=1
+  pr_counts=""
+  while IFS= read -r one_url; do
+    [[ -n "$one_url" ]] || continue
+    jid="$(printf '%s' "$one_url" | grep -oP '/job/\K[0-9]+')"
+    if [[ -z "$jid" ]]; then
+      echo "WARN: could not extract a job id from Rule I check url '$one_url'."
+      tooling_failures+=("$name — job id unresolvable from check url '$one_url'")
+      pr_ok=0
       continue
     fi
 
-    # ── PR side ──────────────────────────────────────────────────────────────
-    if ! fetch_job_log "$pr_job_id" pr-rule-i.log > "$tmp_dir/pr.log" 2> "$tmp_dir/pr.err"; then
-      diag="$(classify_fetch_error "$tmp_dir/pr.err")"
-      echo "WARN: could not FETCH the PR's Rule I job log (job $pr_job_id) — $diag."
-      echo "      This is a tooling failure, NOT a verdict; treating as a genuine failure."
-      genuine_failures+=("$name — could not FETCH the PR's Rule I job log: $diag")
+    if ! fetch_job_log "$jid" "pr-rule-i-$jid.log" > "$tmp_dir/pr-$jid.log" 2> "$tmp_dir/pr-$jid.err"; then
+      diag="$(classify_fetch_error "$tmp_dir/pr-$jid.err" "$jid")"
+      echo "WARN: could not FETCH the PR's Rule I job log (job $jid) — $diag."
+      tooling_failures+=("$name — could not FETCH the PR's Rule I job log (job $jid): $diag")
+      pr_ok=0
       continue
     fi
 
-    pr_violations="$(rule_i_count_from_log < "$tmp_dir/pr.log")"
-    if [[ -z "$pr_violations" ]]; then
-      echo "WARN: the PR's Rule I log was fetched successfully but contains no"
+    one_count="$(rule_i_count_from_log < "$tmp_dir/pr-$jid.log")"
+    if [[ -z "$one_count" ]]; then
+      echo "WARN: the PR's Rule I log (job $jid) was fetched successfully but contains no"
       echo "      'Violations found: N' line — check-rule-i.sh's output format may have"
-      echo "      changed, or the job died before its summary. Treating as genuine failure."
-      genuine_failures+=("$name — Rule I log fetched but unparseable (no 'Violations found' line)")
+      echo "      changed, or the job died before its summary."
+      tooling_failures+=("$name — Rule I log (job $jid) fetched but unparseable (no 'Violations found' line)")
+      pr_ok=0
       continue
     fi
 
-    rule_i_symbols_from_log < "$tmp_dir/pr.log" > "$tmp_dir/pr.syms"
-    pr_symbols="$(wc -l < "$tmp_dir/pr.syms" | tr -d ' ')"
-    if [[ "$pr_violations" -gt 0 && "$pr_symbols" -eq 0 ]]; then
-      echo "WARN: the PR's Rule I log reports $pr_violations violation(s) but not one"
+    rule_i_symbols_from_log < "$tmp_dir/pr-$jid.log" > "$tmp_dir/pr-$jid.syms"
+    one_syms="$(wc -l < "$tmp_dir/pr-$jid.syms" | tr -d ' ')"
+    if [[ "$one_count" -gt 0 && "$one_syms" -eq 0 ]]; then
+      echo "WARN: the PR's Rule I log (job $jid) reports $one_count violation(s) but not one"
       echo "      \"WARN: '<symbol>' in <file>\" line could be parsed out of it. Comparing an"
       echo "      empty set against the baseline would accept everything, so this fails loud."
-      genuine_failures+=("$name — count says $pr_violations but zero violation symbols parsed (log format or matcher mismatch)")
+      tooling_failures+=("$name — count says $one_count but zero violation symbols parsed (job $jid; log format or matcher mismatch)")
+      pr_ok=0
       continue
     fi
 
-    # ── main baseline ────────────────────────────────────────────────────────
-    main_meta="$(fetch_main_run_meta 2>/dev/null)"
-    main_run_id="$(printf '%s' "$main_meta" | cut -f1)"
-    main_head="$(printf '%s' "$main_meta" | cut -f2)"
-    main_created="$(printf '%s' "$main_meta" | cut -f3)"
-    if [[ -z "$main_run_id" ]]; then
-      echo "WARN: could not resolve main's latest completed ci.yml run — treating as genuine failure."
-      genuine_failures+=("$name — main baseline run unresolvable")
-      continue
-    fi
+    pr_counts="${pr_counts:+$pr_counts/}$one_count"
+    cat "$tmp_dir/pr-$jid.syms" >> "$tmp_dir/pr.syms.all"
+  done <<< "$urls"
 
-    # AC(3): name the baseline, every time. A ratchet nobody prints is a ratchet
-    # nobody notices.
-    echo "Rule I baseline source: main's LATEST COMPLETED ci.yml run $main_run_id"
-    echo "  (head ${main_head:0:12}, created ${main_created:-unknown})."
-    echo "  This is read fresh from main's most recent completed run, so the baseline"
-    echo "  RATCHETS: any Rule I violation already merged into main counts as pre-existing"
-    echo "  here and will not block this PR. Check the head sha above is what you expect."
+  [[ "$pr_ok" -eq 1 ]] || continue
 
-    main_job_id="$(fetch_main_job_id "$main_run_id" 2>/dev/null)"
-    if [[ -z "$main_job_id" ]]; then
-      echo "WARN: main's run $main_run_id has no job named '$RULE_I_NAME' — treating as genuine failure."
-      genuine_failures+=("$name — no Rule I job in main baseline run $main_run_id")
-      continue
-    fi
+  LC_ALL=C sort -u "$tmp_dir/pr.syms.all" > "$tmp_dir/pr.syms"
+  pr_symbols="$(wc -l < "$tmp_dir/pr.syms" | tr -d ' ')"
 
-    if ! fetch_job_log "$main_job_id" main-rule-i.log > "$tmp_dir/main.log" 2> "$tmp_dir/main.err"; then
-      diag="$(classify_fetch_error "$tmp_dir/main.err")"
-      echo "WARN: could not FETCH main's Rule I job log (job $main_job_id) — $diag."
-      echo "      This is a tooling failure, NOT a verdict; treating as a genuine failure."
-      genuine_failures+=("$name — could not FETCH main's baseline Rule I job log: $diag")
-      continue
-    fi
+  # ── main baseline ─────────────────────────────────────────────────────────
+  if ! resolve_rule_i_baseline; then
+    tooling_failures+=("$name — no usable Rule I baseline on main within the last $BASELINE_LOOKBACK ci.yml run(s); see the walk above")
+    continue
+  fi
 
-    main_violations="$(rule_i_count_from_log < "$tmp_dir/main.log")"
-    if [[ -z "$main_violations" ]]; then
-      echo "WARN: main's Rule I log was fetched but contains no 'Violations found: N' line —"
-      echo "      treating as genuine failure rather than comparing against an unknown baseline."
-      genuine_failures+=("$name — main baseline log fetched but unparseable (run $main_run_id)")
-      continue
-    fi
+  # ── the comparison (SET, not count) ───────────────────────────────────────
+  comm -23 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/new.syms"
+  comm -13 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/fixed.syms"
+  new_symbols="$(wc -l < "$tmp_dir/new.syms" | tr -d ' ')"
+  fixed_symbols="$(wc -l < "$tmp_dir/fixed.syms" | tr -d ' ')"
 
-    rule_i_symbols_from_log < "$tmp_dir/main.log" > "$tmp_dir/main.syms"
-    main_symbols="$(wc -l < "$tmp_dir/main.syms" | tr -d ' ')"
-    if [[ "$main_violations" -gt 0 && "$main_symbols" -eq 0 ]]; then
-      echo "WARN: main's Rule I log reports $main_violations violation(s) but zero symbols"
-      echo "      parsed — the baseline set cannot be trusted. Failing loud."
-      genuine_failures+=("$name — main baseline count says $main_violations but zero symbols parsed")
-      continue
-    fi
+  echo "Rule I symbol-set comparison: PR has $pr_symbols violating symbol(s) (count line(s):"
+  echo "  $pr_counts), main baseline has $BASELINE_SYMBOLS (count line: $BASELINE_VIOLATIONS)."
+  echo "  New on this PR: $new_symbols | fixed by this PR: $fixed_symbols"
 
-    # ── the comparison (SET, not count) ──────────────────────────────────────
-    comm -23 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/new.syms"
-    comm -13 "$tmp_dir/pr.syms" "$tmp_dir/main.syms" > "$tmp_dir/fixed.syms"
-    new_symbols="$(wc -l < "$tmp_dir/new.syms" | tr -d ' ')"
-    fixed_symbols="$(wc -l < "$tmp_dir/fixed.syms" | tr -d ' ')"
-
-    echo "Rule I symbol-set comparison: PR has $pr_symbols violating symbol(s) (count line:"
-    echo "  $pr_violations), main baseline has $main_symbols (count line: $main_violations)."
-    echo "  New on this PR: $new_symbols | fixed by this PR: $fixed_symbols"
-
-    if [[ "$new_symbols" -eq 0 ]]; then
-      accepted_failures+=("$name — pre-existing-red: all $pr_symbols violating symbol(s) are also in main's baseline (run $main_run_id); $fixed_symbols fixed by this PR")
-    else
-      echo ""
-      echo "  NEW violating symbols (on this PR, absent from main's baseline):"
-      head -20 "$tmp_dir/new.syms" | sed 's/^/    - /'
-      if [[ "$new_symbols" -gt 20 ]]; then
-        echo "    … and $((new_symbols - 20)) more"
-      fi
-      if [[ "$pr_violations" -eq "$main_violations" ]]; then
-        echo ""
-        echo "  NOTE: the two COUNTS are equal ($pr_violations). Only the symbol SETS differ —"
-        echo "  this PR fixed $fixed_symbols violation(s) and introduced $new_symbols. A count"
-        echo "  comparison would have accepted it and exited 0; that compensating-swap case is"
-        echo "  what FOLLOW-821 AC(1) forbids by name and what FOLLOW-827 fixed here."
-      fi
-      genuine_failures+=("$name — $new_symbols NEW Rule I violation symbol(s) not in main's baseline (run $main_run_id)")
-    fi
+  if [[ "$new_symbols" -eq 0 ]]; then
+    accepted_failures+=("$name — pre-existing-red: all $pr_symbols violating symbol(s) are also in main's baseline (run $BASELINE_RUN_ID); $fixed_symbols fixed by this PR")
   else
-    genuine_failures+=("$name ($url) — not on the documented pre-existing-red list")
+    echo ""
+    echo "  NEW violating symbols (on this PR, absent from main's baseline):"
+    head -20 "$tmp_dir/new.syms" | sed 's/^/    - /'
+    if [[ "$new_symbols" -gt 20 ]]; then
+      echo "    … and $((new_symbols - 20)) more"
+    fi
+    if [[ "$pr_counts" == "$BASELINE_VIOLATIONS" ]]; then
+      echo ""
+      echo "  NOTE: the two COUNTS are equal ($pr_counts). Only the symbol SETS differ —"
+      echo "  this PR fixed $fixed_symbols violation(s) and introduced $new_symbols. A count"
+      echo "  comparison would have accepted it and exited 0; that compensating-swap case is"
+      echo "  what FOLLOW-821 AC(1) forbids by name and what FOLLOW-827 fixed here."
+    fi
+    genuine_failures+=("$name — $new_symbols NEW Rule I violation symbol(s) not in main's baseline (run $BASELINE_RUN_ID)")
   fi
 done
 
@@ -719,6 +1097,33 @@ if [[ "${#accepted_failures[@]}" -gt 0 ]]; then
   done
 fi
 
+# TOOLING outcomes take precedence over the PR verdict: a gate that could not
+# complete its own comparison must not render EITHER verdict, and must not be
+# reported in the vocabulary of the PR. RETRO-250 watched the shipped version
+# print "GENUINE FAILURES … do NOT mark READY_FOR_REVIEW" and exit 1 on PR #681
+# because main's newest completed run happened to be cancelled, then exit 0 six
+# minutes later on the same commit.
+if [[ "${#tooling_failures[@]}" -gt 0 ]]; then
+  echo ""
+  echo "TOOLING FAILURES (the gate could not read what it needed — NOT a verdict on this PR):"
+  for f in "${tooling_failures[@]}"; do
+    echo "  - $f"
+  done
+  if [[ "${#genuine_failures[@]}" -gt 0 ]]; then
+    echo ""
+    echo "Also observed, and these ARE genuine failures of this PR:"
+    for f in "${genuine_failures[@]}"; do
+      echo "  - $f"
+    done
+  fi
+  echo ""
+  echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). This is NOT a green light, and NOT a red"
+  echo "  verdict on the PR either: the gate itself could not complete. Do not send the ticket"
+  echo "  back to its worker on the strength of this run and do not increment"
+  echo "  fix_iteration_counter — fix the tooling problem named above and re-run."
+  exit 3
+fi
+
 if [[ "${#genuine_failures[@]}" -gt 0 ]]; then
   echo ""
   echo "GENUINE FAILURES (blocking — do NOT mark READY_FOR_REVIEW):"
@@ -726,10 +1131,10 @@ if [[ "${#genuine_failures[@]}" -gt 0 ]]; then
     echo "  - $f"
   done
   echo ""
-  echo "RESULT: FAIL. ${#genuine_failures[@]} genuine failure(s)."
+  echo "${FIXTURE_TAG}RESULT: FAIL. ${#genuine_failures[@]} genuine failure(s)."
   exit 1
 fi
 
 echo ""
-echo "RESULT: all failing checks are documented, dynamically-verified pre-existing-red. Safe to mark READY_FOR_REVIEW."
+echo "${FIXTURE_TAG}RESULT: all failing checks are documented, dynamically-verified pre-existing-red. Safe to mark READY_FOR_REVIEW."
 exit 0

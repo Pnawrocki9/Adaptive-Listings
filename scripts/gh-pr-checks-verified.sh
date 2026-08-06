@@ -223,6 +223,19 @@ preflight_dependencies() {
   fi
 }
 
+# ── INPUT FORMAT CONTRACT: producer is scripts/check-rule-i.sh ────────────────
+# The two parsers below are the CONSUMER half of a machine-readable interface.
+# Their producer is scripts/check-rule-i.sh, which prints
+#   WARN: '<symbol>' in <file> — zero non-test importers
+#   Violations found    : <N>
+# and carries the matching "OUTPUT FORMAT CONTRACT" note in its own header. Edit
+# either side without the other and this gate stops being able to classify any
+# PR's Rule I red, repo-wide. check-rule-i.sh deliberately prints NO
+# "Violations found" line when it could not run (exit 3), so a degraded Rule I
+# run reaches the code below as an unparseable log — a named tooling failure —
+# rather than as a clean 0. A cross-script parity fixture (running the real
+# check-rule-i.sh and feeding its output to these two functions) is FOLLOW-848.
+#
 # Reads a Rule I job log on stdin; prints the trailing "Violations found: N" count.
 rule_i_count_from_log() {
   grep -oP 'Violations found\s*:\s*\K[0-9]+' | tail -1

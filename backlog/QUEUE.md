@@ -231,6 +231,61 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
+### FOLLOW-854 + 855 + 856 — status: IN_PROGRESS (PR #685, rebase round)
+
+**PR #685 opened with all three delivered, then went `CONFLICTING` because `main` moved under it.**
+The branch was cut from `9b65d372`; PR #684 (FOLLOW-842) merged as `fd144611` while the worker was
+running, and both touch `ci.yml`, `CONVENTIONS_PATCH.md`, `gh-pr-checks-verified.sh` and the devops
+`lessons.md`. The worker's own collision analysis was correct about the _lines_ not overlapping —
+but that was a prediction made against an unmerged PR, and once #684 landed git has to merge both
+sets regardless. Sent back for a deliberate rebase with per-file resolution notes and a full
+re-verification afterwards; a rebase that silently breaks the cross-script contract is precisely
+what this PR exists to prevent. **Not counted as a fix iteration** — the conflict is a scheduling
+consequence of two gate tickets in flight at once, not a defect in the work.
+
+**What it shipped, and the two judgement calls worth recording:**
+
+- **FOLLOW-856 (false GREEN) → exit 3, argued rather than assumed.** Not 0 (that is the defect); not
+  1, because exit 1 routes to "send the ticket back and increment `fix_iteration_counter`", so a
+  worker would burn a retry on this script's own regex — the exact harm FOLLOW-846 closed; not 2
+  (nothing timed out); not 4 (4 asserts the comparison _completed_). 3 already means "the gate did
+  not get to look" and already carries the no-increment instruction.
+- **FOLLOW-855 (false RED) → keep the union, split it by provenance.** Two obvious fixes were
+  rejected first and both rejections are right: unioning the baseline over K `main` runs would
+  accept a symbol `main` has since fixed and this PR re-introduced (undoing FOLLOW-827), and
+  shrinking the PR side to one run silently picks the friendlier commit. Shipped:
+  `intersection(PR runs) − baseline` stays genuine (exit 1), while `union − intersection − baseline`
+  becomes **NOT ATTRIBUTABLE** (exit 4) printed with `symbol @ file` and the baseline run id.
+  Nothing is dropped silently. **Reading green Rule I runs is load-bearing**: with a clean branch
+  head and a red merge ref there is one failing check-run, no intersection, and the false red
+  survives.
+- A second cause in the same category, found by the worker and not in the ticket: a PR that edits
+  `check-rule-i.sh` makes the two sides **different programs**. The changed-file read is lazy —
+  proven against live PR #684, which edits that file and never triggered it because its new-symbol
+  count is 0.
+
+**Its revert matrix includes an honest zero**, which is the part I would not want smoothed over: one
+revert (pinning the literal regex instead of deriving it) fails **no** fixture, because the derived
+and literal forms are byte-identical today, so the derivation is pinned only by a meta-assertion.
+The worker said so instead of claiming discrimination it did not have.
+
+**Two escalation-bar items decided by me, so the worker does not re-raise them:** the
+`shellcheck (Sentry gate family, FOLLOW-769)` job **keeps its name** — its contents are now broader
+than the label, but a check-run rename can drop a required status check and neither of us can read
+this repo's branch-protection config; and `CLAUDE.md` **stays out** of the exit-code routing corpus,
+since it names only the exit-0 precondition, which remains true. Both belong with FOLLOW-847's
+remaining scope, not with a gate fix.
+
+**Numbering correction:** the worker proposed its follow-up as FOLLOW-857, which RETRO-253 had
+already taken. Renumbered to **FOLLOW-860** (discharge P-35 clause (b) live — pin an open PR at a
+fixed head sha, let a merge land a new dead export on `main`, re-run at the same sha; it cannot be
+done by a worker forbidden to merge). Next free after that: **FOLLOW-861**.
+
+**Also recorded:** FOLLOW-847's `CONVENTIONS_PATCH.md` Rule A leg is closed inside #685 under Rule
+AN (the retired-COUNT wording sat in the same paragraph the exit-4 addition had to edit), leaving
+847 scoped to whatever third artefact it names. FOLLOW-828 is explicitly **not** closed — its five
+agent definitions with no CI-verification step at all are a different subject.
+
 ### FOLLOW-842 — status: DONE (PR #684 merged `fd144611`, 2026-08-06) — and FOLLOW-831 closed with it
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:** 77 checks, 75 pass, 2 `Rule I`

@@ -377,3 +377,34 @@ without either making N == M or classifying the difference into its own verdict.
 fixture COUNT assertion must count the assertions that RAN, not the assertions that PASSED — folding
 in a check that is legitimately unavailable in some environments (here, the git-index mode check
 outside a checkout) is exactly what made the previous 16→15 degradation invisible.
+
+---
+
+**2026-08-06 · FOLLOW-857** — Repaired `scripts/check-rule-h.sh` Pattern 2, which **could not fail
+for 84 days**: the consumer count ended `| wc -l || echo 0`, so under `set -euo pipefail` a symbol
+with ZERO importers — the exact condition the gate exists to catch — made the trailing `grep -v`
+exit 1, pipefail carried that past `wc -l`'s own `0`, and `|| echo 0` appended a second `0`.
+`[[ "0\n0" -lt 1 ]]` is an arithmetic syntax error, which inside an `if` reads false, so the hard
+gate printed `OK:` over genuine orphan exports. Fixed the VALUE (a count that cannot be produced is
+neither 0 nor 1 — it is `UNDETERMINED` and exit 3), closed the third instance of the FOLLOW-830 /
+FOLLOW-842 PCRE fail-open, and added `scripts/lib/wired-or-dead-common.sh`: one preflight, one
+repo-root guard, and ONE orphan/wired fixture pair now asserted against BOTH gates, because the pair
+diverged precisely because nothing compared them.
+
+**Where a green badge could have hidden a broken run path.** The `rule-h` job itself, and it still
+would have without the self-test. Rule H is diff-scoped — it only inspects files the PR ADDS — so on
+this very PR it evaluated zero symbols and was green in 12s. A green `rule-h` was never evidence the
+gate worked, before or after the fix; only the new `rule-h-gate-self-test` job is. The same property
+booby-traps the backlog measurement: running the repaired gate against `main` returns a clean 0, and
+the honest number only appears when the base is the commit the gate landed at (24 violations, 46 lib
+files). A "measure it on main" instruction would have produced a confidently wrong zero.
+
+**A guardrail I'd add.** Any diff-scoped CI gate must ship a self-test job in the SAME PR, because
+its ordinary green proves nothing about the PR introducing it. Second, and this one generalises: a
+gate's own diagnostic prose must never contain the literal string its downstream parser extracts.
+Rule I's preflight message printed `'Violations found: 0'` inside an error paragraph, which the
+merge gate's own regex would have read as a real count of zero from a run that rendered no verdict —
+a fail-open built entirely out of a sentence. Third: verify the causal story you were handed.
+RETRO-253 and the ticket both said Rule I "already has the fix" (`$(( count + 0 ))`); reverting Rule
+I's guards left every fixture green, because Rule I never had `|| echo 0` and runs without `set -e`.
+Copying the normalisation would NOT have fixed Rule H.

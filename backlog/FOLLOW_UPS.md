@@ -27483,6 +27483,13 @@ Rule AF, Rule K, Rule AQ]
 
 ## FOLLOW-828 — Five of the nine agent definitions have no CI-verification step at all, and no consumer distinguishes the new script's exit 2 from exit 1
 
+**PM UPDATE (session 103, after RETRO-252): AC(3) is discharged; re-scope, do NOT close.** PR #683
+propagated the exit-code contract to `docs/AGENT_WORKFLOW.md` and `CONVENTIONS_PATCH.md` Rule A.
+What remains is disjoint from this ticket and is now **FOLLOW-854**: `pm-orchestrator.md:54` still
+says `3 = usage/gh error` and still describes the retired Rule I **count** mechanism, in the same
+paragraph as the `fix_iteration_counter` cap. This ticket keeps its own subject — the five agent
+definitions with no CI-verification step at all.
+
 source_retro: RETRO-246 (§3 HW-2 / §4a LG-2 / §5c) source_ticket: FOLLOW-813 recommended_sprint:
 next recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
 promoted_to_queue: false
@@ -27602,6 +27609,12 @@ fixture); `scripts/gh-pr-checks-verified.sh:65,:170-181`; `.github/workflows/ci.
 ---
 
 ## FOLLOW-831 — A doc-mandated bare invocation of a non-executable script: `check-rule-i.sh` is 100644 and four handoffs tell workers to run it bare
+
+**PM UPDATE (session 103): headline instance LANDED in PR #684 (FOLLOW-842)** — `check-rule-i.sh` is
+`100755` in the index, asserted on disk and in the git index by that PR's fixture S8. **Close this
+ticket as done-by-842 once #684 merges.** Its trailing "and any other script a doc mandates bare"
+clause covers four _other_ scripts and is a new stub, not a re-scope — filed as part of the
+session-103 tail once numbering settles (next free is FOLLOW-857).
 
 source_retro: RETRO-246 (§4b CB-2 / §6 P-31) source_ticket: FOLLOW-813 recommended_sprint: next
 recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
@@ -28606,6 +28619,12 @@ undocumented — do not re-file it here, Rule AN); `docs/AGENT_WORKFLOW.md:190-2
 
 ## FOLLOW-848 — The merge gate's 11-fixture harness cannot see a regression in the settle loop, does not assert its own fixture count, and leaves the fixture seam live in production mode
 
+**PM UPDATE (session 103, after RETRO-252): partially discharged, re-scope rather than leave it.**
+The fixture-seam leg is **closed** — RETRO-250's CB-1 exploit was re-run against the merged script
+and now returns `REFUSING TO RUN`, exit 3, in both directions. Still open and unchanged: the
+FOLLOW-813 settle loop has **no fixture at all** (deleting the two-consecutive-snapshot condition
+still passes every fixture), and the fixture count degrades 16→15 with no assertion.
+
 source_retro: RETRO-250 (§2 / §4b CB-1 / §4b CB-3 / §4c TG-1 / §4c TG-2) source_ticket: FOLLOW-830
 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
@@ -28743,6 +28762,14 @@ cross_ref: [FOLLOW-846; FOLLOW-838 (gitleaks squash); FOLLOW-832 (gitleaks squas
 
 ## FOLLOW-851 — `ci.yml`'s `cancel-in-progress` applies to `main`, so roughly two thirds of `main`'s CI runs produce no usable artifacts
 
+**PM UPDATE (session 103, after RETRO-252): under-enumerated by two consumers, recorded here rather
+than re-filed (Rule AN).** (1) `demo-integration.yml:38-41` carries the **identical**
+`cancel-in-progress`-on-`main` defect and is not named above. (2) `CONVENTIONS_PATCH.md` **Rule
+AF**'s own Verification step is a second consumer whose premise this makes unreadable. And AC(1)'s
+"open trade" is **already decided in a workflow file**: `redis-shadow-smoke.yml:115` uses a
+per-run-unique concurrency group on `main` (RETRO-238), which neither of the other two adopted — so
+the question is consistency with an in-repo precedent, not a fresh cost decision.
+
 source_retro: n/a (root-cause finding from FOLLOW-846, session 103) source_ticket: FOLLOW-846
 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
@@ -28772,6 +28799,12 @@ billing history)]
 ---
 
 ## FOLLOW-852 — `intent-snapshot.ts` slices 300 chars of a ClickHouse / PostgREST error body into the same console→Sentry coupling
+
+**PM UPDATE (session 103, after RETRO-252): the sink set is SIX, not two.** The stub above names
+`intent-snapshot.ts:234,:337`; the retro's source-axis sweep found six, including two
+`Sentry.captureException` **values** rather than only logger breadcrumbs. Also: **AC(1) does not
+transfer to the PostgREST leg at `:337`** — PostgREST does not return the ClickHouse headers the
+FOLLOW-845 fix relies on, so that leg needs its own replacement signal, decided rather than copied.
 
 source_retro: n/a (found during FOLLOW-845, session 103) source_ticket: FOLLOW-845
 recommended_sprint: next recommended_agent: backend-engineer priority: P2 estimated_hours: 3
@@ -28803,6 +28836,16 @@ cross_ref: [FOLLOW-845; FOLLOW-838; `apps/ingest/src/handlers/intent-snapshot.ts
 ---
 
 ## FOLLOW-853 — Nothing exercises the Worker→ClickHouse insert path, and its correctness in prod rests on an undocumented ClickHouse Cloud default
+
+**PM UPDATE (session 103, after RETRO-252): RE-PRICED P2 → P1.** The retro argued this is
+under-priced and I agree. The surviving defect is not the ISO-8601 default — production reads
+`best_effort`, so nothing is firing. It is that the controller's primary event-write path is (i)
+exercised by **no test in any suite**, (ii) has its only detector **inert** (`SENTRY_DSN_INGEST`
+unset), and (iii) is **unobservable** (`ingest_worker` has no `SELECT` grant on `default.events`). A
+4xx there is terminal post-ACK. The prod read established the path is not failing; it established
+nothing about whether anyone would find out if it started. **AC order changed: AC(3), the SELECT
+grant, goes first** — it is the only one that makes the others verifiable, and it blocked
+verification during session 103.
 
 source_retro: n/a (found during FOLLOW-845, session 103; corrected by a live prod read)
 source_ticket: FOLLOW-845 recommended_sprint: next recommended_agent: data-engineer priority: P2

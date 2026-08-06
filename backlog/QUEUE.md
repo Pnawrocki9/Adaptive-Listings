@@ -173,6 +173,64 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
+### RETRO-251 + RETRO-252 landed (`e7de4c78`) — and my ruling on whether to escalate
+
+**RETRO-251 filed zero stubs and corrected my brief instead of answering it.** I had asked why each
+instance of the console→Sentry coupling was found by the previous one's retro; that premise was
+wrong. Instance 3 was found by the **FOLLOW-838 worker's own Rule S enumeration**
+(`dpia.md:430-455`), and FOLLOW-852 came from the FOLLOW-845 worker's out-of-scope section. The
+mechanism moved from retro-driven to **worker-driven** at instance 3 and stayed there — which is the
+Rule S briefing working, not the retro loop compensating.
+
+It also answered the question I actually needed: **a complete sweep was available at instance one**
+— `git grep "\.text()" -- apps/ingest/src` returns five lines covering every instance including both
+still open. The cheap enumeration is over the **source** (where an upstream body is read), not the
+sink. RETRO-249 swept `console.error` and structurally could not see a `logger.error` site whose
+sink is two files downstream. It does **not** come back clean today.
+
+**RETRO-252 drove two live false-verdict paths through the real gate**, and I verified the more
+serious one in the merged code myself:
+
+- **False GREEN (FOLLOW-856, P1).** `:827-836` counts `total`/`success`/`skipped`/`neutral` with
+  independent greps, then builds `failure_names` with **one PCRE** matching the exact object
+  serialization — and **nothing checks that `total − success − skipped − neutral` equals that
+  array's length**. If the serialization moves, the array is empty, the script prints `failing: 0`
+  beside visibly contradictory counts, and exits 0 over FAILURE check-runs. The retro drove it:
+  `Total checks: 2 | success: 0 | … | failing: 0` → "all checks green". The same file already
+  applies this exact guard to its _other_ parse.
+- **False RED (FOLLOW-855, P1).** The PR side is the **union** of branch-head and merge-ref symbol
+  sets while the baseline is a **single older `main` run** — so a dead export merged by somebody
+  else's PR reports `New on this PR: 1` and blocks a clean PR, and nobody on that PR can fix it.
+  This one is reachable by ordinary events, not by a code change.
+- **FOLLOW-854 (P1)** — the exit-3 contract reached the prose but not the corpus that executes it:
+  `.claude/agents/pm-orchestrator.md:54` still says `3 = usage/gh error` and still describes the
+  retired Rule I **count** mechanism, in the same paragraph as the `fix_iteration_counter` cap. The
+  retro swept `.claude/hooks/*` (0 hits) and `ci.yml` (self-test only) and recorded those negatives.
+
+**Escalation ruling: no `ESCALATIONS.md` entry, and here is why.** The retro correctly flagged the
+question rather than deciding it. An escalation exists for a decision a human must make; there is no
+decision here. All three are P1, filed, deduped, and dispatched in this same session, and the fixes
+are known and cheap. FOLLOW-856's trigger requires a serialization change (bounded), FOLLOW-855's is
+reachable today but produces a **false RED** — it blocks work, it does not let bad work through.
+What would change this ruling: a false-GREEN path reachable **without** a code change, or these
+three sitting undispatched at the end of a session. Neither holds.
+
+**Stub reconciliation applied (Rule AN — recorded against existing stubs, not re-filed):**
+FOLLOW-853 **re-priced P2 → P1** with its ACs reordered (the `SELECT` grant goes first — it is the
+only one that makes the others verifiable, and its absence blocked verification this session);
+FOLLOW-851 under-enumerated by `demo-integration.yml` and Rule AF's own Verification block, with its
+"open trade" already decided in-repo by `redis-shadow-smoke.yml:115`; FOLLOW-852's sink set is
+**six**, not two, and its AC(1) does not transfer to the PostgREST leg; FOLLOW-848 partially
+discharged (seam closed, settle loop and fixture count still open); FOLLOW-828 keeps its subject but
+its AC(3) is discharged; FOLLOW-831 to be closed as done-by-842 once #684 merges.
+
+**The retro's answer on the closed-vs-filed ratio, which I asked for unhedged and got:** a genuine
+defect class is being enumerated for the first time. The evidence it used is the priority
+distribution, not a feeling — every P1 filed this session was dispatched and closed inside it, what
+accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsystem** (the merge gate:
+1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
+on one artefact, not breadth of decay.
+
 ### FOLLOW-842 — status: READY_FOR_REVIEW (PR #684, head `288ae07d`)
 
 **ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3. **CI:** 77 checks, 75 pass, 2 `Rule I`

@@ -388,6 +388,15 @@ test files import it, the ticket reverts to IN_PROGRESS and a wire-up follow-up 
 `export` declarations in `packages/*/src` and `apps/*/src` (excluding test files) and fails if any
 exported symbol has zero non-test importers anywhere in the repo.
 
+**Exit 3 = no verdict (FOLLOW-842).** Besides 0 (clean) and 1 (violations), the script exits 3 when
+it could not run: failed dependency preflight (bash < 4, a `grep` without PCRE `\K`, an unresolvable
+repo root) or a scan that produced nothing to check (zero source files discovered, every file
+barrel-skipped, or zero symbols parsed). 3 is not a milder 1 and emphatically not a 0. In that state
+the script prints **no** `Violations found` line at all, precisely so
+`scripts/gh-pr-checks-verified.sh` — which parses this job's log for its baseline — reports an
+unparseable log rather than reading a degraded run as a clean 0. Its guards are pinned by
+`bash scripts/check-rule-i.sh --self-test`, a hard CI job (`rule-i-gate-self-test`).
+
 Run locally before pushing:
 
 ```bash

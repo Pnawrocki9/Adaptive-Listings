@@ -321,3 +321,26 @@ _refused_ on the production path — the seam's own existence is what needs pinn
 behaviour it enables. Second: every exit code a script documents needs a consumer-facing meaning in
 the docs that route on it; I found `docs/AGENT_WORKFLOW.md` and `CONVENTIONS_PATCH.md` both
 enumerating 0/1/2 with no 3, so an exit 3 had no documented response at all.
+
+---
+
+**2026-08-06 · FOLLOW-842** — Closed the PCRE fail-open in `scripts/check-rule-i.sh`: a dependency
+preflight that probes the exact `grep -oP ... \K ...` construct the extractor uses (not merely "does
+-P exist"), a guarded repo-root resolution, three separately-named "nothing to check" guards
+(discovered nothing / scanned nothing / parsed nothing), the `100644 -> 100755` mode bit, and a
+9-fixture hermetic `--self-test` wired to a new green CI job.
+
+**Where a green badge could have hidden a broken run path.** Everywhere, and in series. Pre-fix, the
+gate printed `Violations found : 0` + `Rule I passed` + exit 0 in five distinct degraded states —
+including with a non-PCRE `grep` over a repo whose only export was an orphan. Worse than the local
+false green: `gh-pr-checks-verified.sh` now parses these very lines to build the baseline it
+compares every PR against, so a degraded matcher here empties that baseline silently. The fix that
+mattered most was the smallest: in the no-verdict states, print **no** `Violations found` line at
+all, so the downstream consumer meets an unparseable log (named tooling failure) instead of a clean
+zero it would happily accept.
+
+**A guardrail I'd add.** When a script's stdout becomes another script's input, that is an API — put
+a reciprocal named comment on BOTH sides in the same PR (producer names consumer, consumer names
+producer). I also stopped writing "must not contain X" fixture assertions against bare substrings:
+my first four fixtures failed because the guard's own diagnostic text quotes the forbidden line.
+Assert the literal formatted line, padding included — that is the contract anyway.

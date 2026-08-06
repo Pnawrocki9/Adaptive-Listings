@@ -134,6 +134,35 @@ jobs:
       - name: Rule I — wired-or-dead check
         run: bash scripts/check-rule-i.sh
 
+  # ── Rule I gate self-test (FOLLOW-842) ──────────────────────────────────────
+  # WHY THIS IS A SEPARATE JOB, not a step of `rule-i` above. `rule-i` is the
+  # repo's one documented pre-existing-red gate: it has been failing on ~192
+  # legacy violations for months, so a step added to it would be red on every
+  # run and nobody would ever read it. This job must be GREEN, so a regression
+  # in the gate's own guards is visible the moment it lands.
+  #
+  # WHAT IT PROTECTS. check-rule-i.sh extracts every symbol with `grep -oP`
+  # under `set -uo pipefail` WITHOUT `-e`. On a host without PCRE grep the
+  # extraction returned nothing and the gate printed "Violations found: 0" /
+  # "Rule I passed" / exit 0 — the same fail-open FOLLOW-830 closed in
+  # gh-pr-checks-verified.sh, which now parses THIS script's WARN lines to build
+  # the baseline every PR is classified against. Two fail-opens in series.
+  #
+  # The self-test is hermetic and offline: each fixture builds a throwaway git
+  # repo in a temp dir, so nothing here depends on the real repo's violation
+  # count. ubuntu-latest has bash 5 and GNU grep, so the degraded matcher is
+  # simulated with a PATH shim rather than needing a BSD runner.
+  #
+  # Hard gate — no continue-on-error.
+  rule-i-gate-self-test:
+    name: Rule I gate self-test (FOLLOW-842)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the Rule I gate self-test (validates the gate itself)
+        run: bash scripts/check-rule-i.sh --self-test
+
   # ── Unit / smoke tests ───────────────────────────────────────────────────
   test-node:
     name: Test (Node ${{ matrix.node-version }})

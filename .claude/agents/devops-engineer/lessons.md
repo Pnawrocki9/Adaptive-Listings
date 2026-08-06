@@ -344,3 +344,36 @@ a reciprocal named comment on BOTH sides in the same PR (producer names consumer
 producer). I also stopped writing "must not contain X" fixture assertions against bare substrings:
 my first four fixtures failed because the guard's own diagnostic text quotes the forbidden line.
 Assert the literal formatted line, padding included — that is the contract anyway.
+
+---
+
+**2026-08-06 · FOLLOW-854 / FOLLOW-855 / FOLLOW-856 (PR #685)** — Three RETRO-252 findings against
+`scripts/gh-pr-checks-verified.sh`, together because they are one loop. 856: the failing-check list
+was one PCRE against an exact serialization with nothing checking it against the four independent
+counts printed beside it — a shape mismatch gave `failing: 0` and exit 0 over FAILURE check-runs.
+Added the arithmetic guard (exit 3) and derived the parser from the jq projection. 855: the PR side
+was the union of two commits and the baseline was one older `main` run, so a dead export another PR
+merged became "New on this PR", exit 1, against a worker who could not fix it. Split the union by
+provenance, read Rule I check-runs at every state (not just failing ones), added the "PR edits the
+extractor" case, and gave both a new exit 4 that must not increment `fix_iteration_counter`. 854:
+`pm-orchestrator.md` still said "3 = usage/gh error" beside the retry cap — replaced with the full
+table, plus `scripts/check-gate-exit-codes.sh` as a hard CI gate so the contract cannot drift from
+the corpus again.
+
+**Where a green badge could have hidden a broken run path.** Two places, and the second is the one I
+nearly walked past. (1) The obvious one: 856 is a gate that says "all checks green" over red checks
+— a green badge that IS the hiding mechanism. (2) The one I nearly shipped: my first instinct was to
+fix 855 by comparing only the PR's failing Rule I check-runs. That works for the fixture the ticket
+asked for and silently fails the real case where the branch head is GREEN and only the merge ref is
+red — one failing check-run, no intersection, false red survives, and the fixture suite would have
+been all-green while the defect stood. I only found it by asking what the fix does when one of the
+two runs is not in the failing list at all. F20 exists because of that question.
+
+**A guardrail I'd add.** When a check's verdict depends on comparing two producers, the gate must
+name the producers and refuse to compare when they differ — different commits, different extractors,
+different serializations are all the same defect wearing three hats, and I found all three in one
+file. Concretely: never compare a set built from N sources against a set built from M sources
+without either making N == M or classifying the difference into its own verdict. Second, smaller: a
+fixture COUNT assertion must count the assertions that RAN, not the assertions that PASSED — folding
+in a check that is legitimately unavailable in some environments (here, the git-index mode check
+outside a checkout) is exactly what made the previous 16→15 degradation invisible.

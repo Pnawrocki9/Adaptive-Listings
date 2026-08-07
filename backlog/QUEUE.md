@@ -202,7 +202,7 @@ recorded because they are the review working, not going soft.
 **On merge (bookkeeping owed):** the `>= 60 registered checks` heuristic in this file's FOLLOW-857
 block is superseded by the merged guard — annotate at next session-head rewrite.
 
-### FOLLOW-866 — status: READY_FOR_REVIEW (PR #687, head `6c823019`)
+### FOLLOW-866 — status: DONE (PR #687 merged `9c8977f0`, 2026-08-07)
 
 **ci_check_counter:** 2/5 **fix_iteration_counter:** 1/3 (a PM-requested wording fix, not a defect
 in the work). **CI on the final head:** 192/192 Rule I symbol-set match vs baseline run

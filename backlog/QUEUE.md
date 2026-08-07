@@ -183,9 +183,10 @@ is extended accordingly**), 879 P2, 880 P2. Next free stub: **FOLLOW-881**.
 
 ### Dispatched: FOLLOW-875 + FOLLOW-877 together (sdk-engineer, Opus)
 
-**FOLLOW-875 — status: IN_PROGRESS** — **assigned_to:** sdk-engineer **model:** **Opus**
-**started_at:** 2026-08-07 **branch:** `sdk-engineer/FOLLOW-875-877-confidence-gate-attribution`
-**worktree:** `.claude/worktrees/follow-875`. Model justification: the finding spans `packages/sdk`
+**FOLLOW-875 — status: READY_FOR_REVIEW** (PR **#692**, CI verified 79/2, Rule I 0 new) — —
+**assigned_to:** sdk-engineer **model:** **Opus** **started_at:** 2026-08-07 **branch:**
+`sdk-engineer/FOLLOW-875-877-confidence-gate-attribution` **worktree:**
+`.claude/worktrees/follow-875`. Model justification: the finding spans `packages/sdk`
 
 - `apps/control-plane`, and AC(5) is an open judgement — whether `> 0.6` is reachable from behavior
   alone — which becomes FOLLOW-819's problem statement. Reasoning work, not a text fix.
@@ -204,8 +205,62 @@ unconditionally and _proposes_ any gate change (escalation or ADR) rather than s
 unilaterally. The pilot page is not live (FOLLOW-820), so nothing is on fire — this is a
 correctness-of-record fix plus a decision request.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 1 open PR (#691, verified green-modulo-Rule-I,
-awaiting ESC-053 + Piotr's merge).**
+### FOLLOW-875 + 877 delivered → PR #692. The 0.3655 is NOT a behavioral ceiling.
+
+CI verified independently (`gh-pr-checks-verified.sh 692`, exit 0): 79 pass / 2 fail, Rule I
+symbol-set identical to main (192/192, **0 new**). Bundle delta **0 bytes** (ESC-051 headroom
+untouched). FOLLOW-875 all 5 ACs discharged; FOLLOW-877 AC(2)(3)(4) discharged, AC(1) routed to
+ESC-054 exactly as the dispatch required.
+
+**Third correction to the same number, and this one is substantive — I recomputed it rather than
+accepting it.** `normalize(BASE_PRIOR × damped(device_type.desktop, 0.3)).neutral` =
+**0.3655466399197593**, matching the FOLLOW-816 peak to sub-ULP (5.6e-17 — JS/Python summation-order
+noise). Derived from `intent.ts:184` BASE_PRIOR and the `device_type.desktop` table at `:330-348`,
+whose `neutral: 0.95` entry I missed on the first pass; with it the value reproduces exactly.
+
+**So 0.3655 is the COLD-START PRIOR at `t=0`, reached before any behavioral event.** `neutral`'s
+BASE*PRIOR is 0.37; the desktop hint pushed it \_down* to 0.3655. Behavior did not climb to a
+ceiling — it barely moved the needle. This explains the bit-identical `PASSES=4` result far better
+than the "observer saturation" reading this queue carried: the value is set at init, so re-running
+the session cannot change it.
+
+**Corrected problem statement for FOLLOW-819:** `> 0.6` is **not reachable on the pilot page at any
+session length** — 47 `listing.viewed` events to unseat `neutral` past the 0.05 hysteresis, 139 to
+pass 0.6, before decay; plus a fixed point, since `applyDwellSignal` no-ops while
+`archetype === 'neutral'`, so the page cannot create the leader dwell would reinforce. It **is**
+reachable off this page via two events that **bypass `BEHAVIORAL_DAMPING` entirely** —
+`filter.applied` (7 events → 0.640) and `feature.expanded` (11 → 0.651), which apply their boosts to
+the already-normalized posterior. **That asymmetry is documented nowhere and is the actionable half
+of FOLLOW-819.** For the pilot page as it exists: **quiz or chat is required.**
+
+**Two things need routing (PM has NOT actioned either):**
+
+- **ESC-054 — CEO/CPO decision.** Should two scroll events bypass FOLLOW-343's cold-start guard on
+  the description axis? Worker's recommendation: keep the disjunction, raise the description-axis
+  bar to `signal_count >= 5` (the boundary the SDK already treats as "enough evidence to report").
+  Test D-1 flips to record whichever way it is ruled.
+- **FOLLOW-881 (P1, architect) — `MASTER_DESIGN.md` carries the corrected claim in three places**
+  (`:765`, `:2521-2528`, `:2692`: "sole gate", "No third SDK gate exists", and `:765` asserting
+  `adapt-floor` "returns `[]`" when it is a two-constant module returning nothing). The worker
+  correctly did **not** edit the SoT — §Y.2 propagation is architect work, the same routing
+  RETRO-259 used. **FOLLOW-819 must not start until FOLLOW-881 lands**, or its author boots from a
+  still-wrong Master_Design.
+
+**Also found:** FOLLOW-875's own stub mis-cited `intent.ts:164` for `BEHAVIORAL_DAMPING` (it is
+`core/intent.ts:549`; `:164` is the FOLLOW-212 note on `SWITCH_MARGIN`). **Four conditions empty
+`directives` before confidence is consulted** — AL OFF/suspended, `profiling_opt_out=1`,
+consent-skip, holdout arm — named by no stub; added to FOLLOW-819 AC(1). And a **mock-fidelity gap
+found by running the harness**: production `route.ts` echoes the client confidence, the mock does
+not (request 0.3655, response 0.1, `mock-decision-server.mjs:519`), so AC(2)'s literal wording would
+have asserted against the mock's fiction — the assertion now requires **both** sides to clear the
+gate.
+
+**Not discharged, stated plainly by the worker:** the full pilot stack was not brought up, so §6's
+hop table was not re-run (expect `5/9`, not `6/8`) and the negative control was not re-executed;
+FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED: the ESC-053 gate
+still reports 3 keys MISSING, verified by running it) and #692 (verified, awaiting merge).**
 
 ---
 

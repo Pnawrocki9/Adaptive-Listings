@@ -726,3 +726,32 @@ gap no amount of reading would have: the local mock does **not** echo the client
 one ignores the value `index.ts:828` reads. Requiring both is now the assertion. Same run also
 reproduced 0.3655 on a page with none of the pilot's content — which is what promoted "the peak is
 the cold-start prior" from a derivation to a measurement.
+
+---
+
+## 2026-08-07 · FOLLOW-890 — a test replica whose constants were all right and whose branch body was not
+
+**What I built:** deleted `simulateDecisionTree()` (`packages/sdk/src/__tests__/playbooks.test.ts`,
+29 lines + 6 tests) rather than repairing it, and corrected the false claim it was copying from
+`packages/shared/src/directives.ts:124` (`"Empty when source is 'default' or 'llm_full'"`). The
+replica asserted `{ directives: [], source: 'llm_full' }` green while
+`apps/control-plane/src/app/api/adapt/route.test.ts:396-408` asserted the opposite for the same
+branch.
+
+**What was uncertain:** whether to repair, machine-check, or delete. What settled it was the
+direction of the dependency: `route.ts:49` imports `getPlaybook` from **this** package, so a copy of
+the consumer's branch logic living in the dependency's tests can never be imported, never be
+type-checked against the original, and can only drift. It was also load-free — every
+non-tautological assertion in the block was already made either in section 4 of the same file (the
+playbook copy spot-checks, verbatim) or in `route.test.ts:246-453` (every branch, both edges, both
+gateway outcomes). Deleting cost 6 tests and zero coverage of any source file, because the helper
+was test-local.
+
+**A guardrail I'd add:** _Before repairing a replica, find out who imports whom. A replica pointing
+UP the dependency graph (a package asserting its consumer's behaviour) has no correct version — the
+only sound fixes are delete or read-at-runtime, and repairing it just re-arms the drift._ The second
+half is sharper and is what I nearly missed: **when a replica is wrong, look for the artefact it was
+faithful to before you call the test author careless.** `simulateDecisionTree` returned exactly what
+the shared type's own docblock instructed. Killing the echo and leaving the source alive would have
+left a producer of the falsehood in a shipped package, and the next replica would have been born
+correct-by-its-lights all over again.

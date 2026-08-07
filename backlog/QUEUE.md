@@ -173,7 +173,35 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
-### FOLLOW-865 — status: READY_FOR_REVIEW (PR #689, head `437d78ff`)
+### FOLLOW-815 — status: DONE (PR #688 merged `f560198c`, 2026-08-07) — the P0 consent bundle is live
+
+**ci_check_counter:** 1/5 **fix_iteration_counter:** 0/3 (the rebase round was scheduling, not
+rework). Validated independently before merge: exit 0. **Deploy sequence completed by the
+operator:** `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS=platform-v1.3-2026-06-21` set in Vercel
+production env (by the orchestrator, via the authenticated CLI) and Doppler prd (parity), **redeploy
+confirmed by Piotr**, and the live endpoint verified answering post-deploy with a read-only GET
+probe. The FOLLOW-715 grace window is open: v1.3 attestations are accepted-with-Sentry-warning, not
+refused. **Window close is manual** — unset the var and redeploy once Rafał's caller sends v1.4
+(`docs/runbooks/BRAND_PROVISIONING.md` §Step 3b).
+
+**One TOS bump (v1.3 → v1.4) carried all four legs:** derived hash (FOLLOW-704), named withdrawal
+mailbox `compliance@estalara.com` — **operator commitment: this mailbox must actually be monitored**
+(FOLLOW-710), the Estalara-as-processor sentence (FOLLOW-711), and the ESC-049-addendum chat-storage
+disclosure in EN+PL+ES. FOLLOW-704/710/711 are discharged; annotate their stubs at next planning
+pass.
+
+**Two findings that outrank the ticket:** prod `consent_records` is **EMPTY** — the endpoint has
+never written a row in prod, so the FOLLOW-706 remediation population is **zero**; and the worker
+caught a defect the bump itself would have created (grace-band acceptance + version-tracking derived
+hash would attest two different texts — fixed by writing `NULL`, alerted, neither refusing nor
+fabricating). It also strengthened its own too-weak `toContain` test after perturbation — the
+FOLLOW-832 discipline, self-applied.
+
+**Left open from this delivery:** ESC-051 (SDK budget exhausted at 41.99/42KB — CEO mechanism
+decision), FOLLOW-867 (MASTER_DESIGN §H.8 self-contradiction, architect), and the worker's
+HANDOFFS.md edit under AC(7) (justified scope exception — Rafał's contract now instructs v1.4).
+
+### FOLLOW-865 — status: DONE (PR #689 merged `6ab65600`, 2026-08-07)
 
 **ci_check_counter:** 3/5 **fix_iteration_counter:** 1/3 (PM-side prettier fix on the fifth Markdown
 file — the worker's format claim covered its four named files and missed its own lessons entry;

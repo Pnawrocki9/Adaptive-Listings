@@ -173,6 +173,35 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
+### FOLLOW-865 — status: READY_FOR_REVIEW (PR #689, head `437d78ff`)
+
+**ci_check_counter:** 3/5 **fix_iteration_counter:** 1/3 (PM-side prettier fix on the fifth Markdown
+file — the worker's format claim covered its four named files and missed its own lessons entry;
+`Format check` was red on both runs, caught by validation, fixed in one mechanical commit. The
+FOLLOW-850 lefthook gap would have caught it pre-push.) **CI:** 79 checks, 192/192 Rule I symbol-set
+match vs baseline run `31159610869`, exit 0. One earlier validation attempt died on a transient
+`gh pr view` failure — the gate failed loud instead of fabricating, which is the behaviour this
+session paid for.
+
+**What it ships:** the settle loop gains a three-layer cardinality guard — (A) a floor derived from
+the repo's own recent PRs' rollup sizes (reference = second-highest of 12, floor = 40%, both argued:
+the median collapses exactly during the outage this guard exists for, and 40% sits strictly below
+the smallest structurally-explicable shape, a single-run rollup); (B) never settle below the largest
+rollup already seen this run (catches partial collapse A cannot); (C) a loud
+`--accept-cardinality <n>` waiver requiring the exact observed count, so it cannot drift onto
+another run. Exit **3** for a stable-but-truncated rollup, argued against 2 ("come back later" is a
+remedy that provably does nothing there); a still-pending rollup at wait-exhaustion stays exit 2 —
+proven live on this PR's own registering checks. The 77→5 collapse observed during the outage is now
+fixture F23, red-first. **FOLLOW-848 AC(1) discharged** (sequenced snapshot seam; re-scope 848 to
+AC(2)/(4)/(5)).
+
+**The worker rejected my option 1 as stated** (counting YAML jobs measures the wrong object — a
+rollup is fed by two runs) and reported two of its own fixtures caught nearly-vacuous: both facts
+recorded because they are the review working, not going soft.
+
+**On merge (bookkeeping owed):** the `>= 60 registered checks` heuristic in this file's FOLLOW-857
+block is superseded by the merged guard — annotate at next session-head rewrite.
+
 ### FOLLOW-866 — status: READY_FOR_REVIEW (PR #687, head `6c823019`)
 
 **ci_check_counter:** 2/5 **fix_iteration_counter:** 1/3 (a PM-requested wording fix, not a defect

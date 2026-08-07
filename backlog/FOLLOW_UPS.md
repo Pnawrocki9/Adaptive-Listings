@@ -27187,10 +27187,20 @@ did not exist. FOLLOW-816 creates that environment.
 localhost. FOLLOW-471 remains the epic gate and still requires the full F-01…F-21 sweep.
 
 **AC — a single scripted session must produce all five, and each is an independent assertion:** (1)
-a **non-neutral archetype** with confidence above `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`
-(`packages/sdk/src/core/adapt-floor.ts`) — reaching this from behavioral signals alone is itself the
-finding, given only ~11 live behavioral discriminators exist (F-07); if it is only reachable via
-quiz or chat, **say so in the result rather than adjusting the fixture until it passes**; (2) an
+a **non-neutral archetype** with confidence **strictly greater than the SERVER threshold
+`CONFIDENCE_THRESHOLD = 0.6`** (`apps/control-plane/src/app/api/adapt/route.ts:86`, applied at
+`:275` as `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [] }` — so exactly 0.6 still
+returns `[]`), asserted on the `/adapt` **response**, together with `directives.length > 0`.
+**CORRECTED 2026-08-07 by FOLLOW-875** — this AC previously named the SDK's
+`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`, which is (a) the wrong number and (b) not a gate that can hold
+on its own: `index.ts:827-829` ORs it with `signal_count >= 2`, a branch true after the first
+behavioral event. A session at 0.55 clears the old wording, mutates the local mock's DOM, and still
+receives `[]` from production. Reaching `> 0.6` from behavioral signals alone is itself the finding;
+if it is only reachable via quiz or chat, **say so in the result rather than adjusting the fixture
+until it passes**. Note also that four conditions empty `directives` before confidence is consulted
+at all (AL OFF/suspended, `profiling_opt_out=1`, consent-skip, holdout arm) — the session must be
+consent-granted, AL-enabled, non-opted-out and non-holdout or the confidence question is never
+asked. Grounding for the design: `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.1/§9.2; (2) an
 observably adapted DOM (hop 10); (3) a logged `adaptation_decisions` row carrying `score_function`
 from FOLLOW-560, so cosine-vs-djb2 is distinguishable — without this the test cannot tell real
 ranking from a stable hash shuffle; (4) a feedback-driven `ab_bandit_weights` delta (hop 12, via
@@ -27205,7 +27215,8 @@ product has ever taken, and calibration (FOLLOW-212 / audit F-16) depends on kno
 starting accuracy rather than assuming it.
 
 cross_ref: [FOLLOW-471, FOLLOW-560, FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-212, FOLLOW-022,
-MASTER_DESIGN §Snapshot.5, §Snapshot.4 item 15, Rule Q, audit 2026-08-04 F-16]
+FOLLOW-875 (AC(1) correction + the reachability judgement this ticket's problem statement rests on),
+FOLLOW-876, MASTER_DESIGN §Snapshot.5, §Snapshot.4 item 15, Rule Q, audit 2026-08-04 F-16]
 
 ---
 
@@ -30083,13 +30094,18 @@ edits" is false — the older git tree's HEAD greps 0 for `data-estalara`.
 **AC:** (1) decide with Rafał: add the CTA slot, or correct every artefact claiming four slot edits
 (FOLLOW-816's stub, `SDK_PRODUCTION_INTEGRATION.md`, the HANDOFFS FOLLOW-191 contract); (2) get the
 proven `web-master` state under version control or explicitly record why it is not — a pilot
-substrate identified only by sha256 of three files is fragile; (3) hop-10 note: behavior-only
-signals saturate at confidence 0.3655 vs the 0.5 floor on this page (bit-identical peak across
-`PASSES=4`) — carry that measurement into FOLLOW-819's differentiator design rather than re-deriving
-it.
+substrate identified only by sha256 of three files is fragile; (3) hop-10 note **— AC amended
+2026-08-07 by FOLLOW-875, carry THIS framing, not the original**: behavior-only confidence on this
+page peaked at **0.3655** (bit-identical across `PASSES=4`) against the **server** gate of
+**strictly `> 0.6`** (`route.ts:86,275`) — **not** against the SDK's 0.5 floor, which is one arm of
+a disjunction (`index.ts:827-829`) that `signal_count >= 2` had already opened. Further, 0.3655 is
+not a behavioral ceiling: it reproduces bit-exactly as `BASE_PRIOR.neutral` after the single
+init-time `device_type.desktop` prior, i.e. it is the **cold-start** value, and behavior only pushed
+it down. Carry that into FOLLOW-819's differentiator design rather than re-deriving it; the full
+derivation and the reachability judgement are in `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.2.
 
-cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`;
-`backlog/HANDOFFS.md` FOLLOW-191]
+cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; FOLLOW-875 (this AC's correction);
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.1/§9.2; `backlog/HANDOFFS.md` FOLLOW-191]
 
 ---
 
@@ -30238,8 +30254,19 @@ the answer is "gate the description axis on confidence", say what happens at 0.5
 server already returns `[]` for directives — the asymmetry the docblock names is the interesting
 case and it should be tested, not just described.
 
-cross_ref: [RETRO-259 §4b CB-1; FOLLOW-343; AUDIT-2026-06-19 F-01; FOLLOW-344;
-`packages/sdk/src/core/adapt-floor.ts:26-44`; `packages/sdk/src/index.ts:827-859`;
+**UPDATE 2026-08-07 (sdk-engineer, shipped with FOLLOW-875).** AC(2), AC(3) and AC(4) are
+discharged: the `adapt-floor.ts` docblock now describes the disjunction and the description axis's
+real guard set, and `packages/sdk/src/__tests__/follow-877.test.ts` locks current behavior — it goes
+red if `||` becomes `&&` (either side), if the gate is removed, or if the description call moves
+outside it, and it asserts the 0.50–0.59 asymmetry on both axes in one run. **AC(1) is deliberately
+NOT discharged in code**: it is a behavior change on a buyer-facing surface, so it is filed as a
+decision request with a weighed recommendation in **ESC-054** (recommendation: keep the disjunction
+but raise the description-axis signal bar to 5). Flipping test D-1 is the intended record of
+whichever way it is ruled.
+
+cross_ref: [RETRO-259 §4b CB-1; FOLLOW-343; AUDIT-2026-06-19 F-01; FOLLOW-344; FOLLOW-875; ESC-054;
+`packages/sdk/src/core/adapt-floor.ts`; `packages/sdk/src/index.ts:827-859`;
+`packages/sdk/src/__tests__/follow-877.test.ts`;
 `packages/sdk/src/core/adapt-description.ts:385-392`]
 
 ---
@@ -30372,7 +30399,59 @@ dated 2026-08-07.
 cross_ref: [RETRO-259 §5a / §4b CB-2; FOLLOW-853; FOLLOW-845; RETRO-252;
 `apps/ingest/src/clickhouse-producer.ts:127-135`; `backlog/QUEUE.md` session-104 head]
 
-<!-- next free FOLLOW number: 881 (FOLLOW-875..880 filed 2026-08-07 by RETRO-259, the post-merge retro for
+## FOLLOW-881 — MASTER_DESIGN's gating ladder describes a gate the SDK does not have, in three places, and it is the document FOLLOW-819's author boots from
+
+source_retro: n/a (FOLLOW-875, session 104) source_ticket: FOLLOW-875 recommended_sprint: now
+recommended_agent: architect priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Filed by the FOLLOW-875 worker who deliberately did NOT fix it in-place.** MASTER_DESIGN edits
+carry the §Y.2 propagation checklist and are architect work — the same reason RETRO-259 DG-1 routed
+the ESC-052 Master_Design correction to FOLLOW-878 (+ architect) rather than to the ticket that
+found it. But leaving it is the exact failure RETRO-259's second headline names: a correction that
+stops one document short of the source of truth.
+
+**Three statements, all describing the same code, all wrong in the permissive direction. Verified
+against HEAD, not inferred:**
+
+1. **`docs/MASTER_DESIGN.md:765`** (§Component 1) — _"DOM adaptation is gated by
+   `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` ...; below this threshold `adapt-floor` returns `[]` and no
+   mutation is applied."_ Two errors: the gate is a **disjunction** with
+   `signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT` (`index.ts:827-829`), so "below this threshold no
+   mutation is applied" is false; and `adapt-floor` is a two-constant module that returns nothing —
+   it has no code path at all.
+2. **`docs/MASTER_DESIGN.md:2521-2528`** (the FOLLOW-354 gating-ladder note before §E.7.1) — states
+   the SDK floor is the description axis's **sole** gate and that _"No third SDK gate exists"_. The
+   `signal_count` branch is a second SDK gate on both axes and is not mentioned anywhere in the
+   ladder. The note's closing "practical implication" paragraph is also narrower than the code: it
+   describes the 0.50–0.59 band only, when the same permissiveness holds at ANY confidence once
+   `signal_count >= 2`.
+3. **`docs/MASTER_DESIGN.md:2692`** (§E.7.9 cross-reference to D.5) — repeats "sole gate".
+
+Additionally, all three describe the server gate as `0.6` without noting that `route.ts:275` is
+`confidence <= CONFIDENCE_THRESHOLD`, i.e. the bar is **strictly greater than 0.6** and exactly 0.6
+returns `[]`. That is the specific number FOLLOW-819's exit test has to design against, and
+FOLLOW-875 has already had to correct it in two live stubs.
+
+**AC:** (1) the three statements corrected to describe the shipped disjunction and the strict server
+comparison, citing `index.ts:827-829` and `route.ts:86,275`; (2) the ladder note records the
+description axis's full guard set (disjunction → `archetype !== 'neutral'` → slot/listing-id
+presence → `source === 'ai_cached'`), matching the corrected docblock in
+`packages/sdk/src/core/adapt-floor.ts`; (3) §Y.2 propagation performed and stated (expected: items
+1-3, 6, 7 are no-ops — no section renames; item 4 QUEUE.md is PM-owned; item 5 STATUS.md only if
+§Snapshot.1 moves, which this should not); (4) if the ladder's "intentional" framing survives the
+ESC-054 ruling, say so explicitly and cite the ruling — do not leave the reader to infer intent from
+a sentence written before the disjunction was visible.
+
+cross_ref: [FOLLOW-875; FOLLOW-877; ESC-054; RETRO-259 §4b CB-1 / DG-1; FOLLOW-878 (same class, the
+staging axis); `docs/MASTER_DESIGN.md:765,2521-2528,2692`; `packages/sdk/src/core/adapt-floor.ts`;
+`packages/sdk/src/__tests__/follow-877.test.ts`]
+
+---
+
+<!-- next free FOLLOW number: 882 (FOLLOW-881 filed 2026-08-07 by the FOLLOW-875 worker: MASTER_DESIGN's
+gating ladder repeats the corrected "sole gate" claim in three places and omits the strict `> 0.6` server
+comparison — architect-owned because Master_Design edits carry §Y.2. FOLLOW-875..880 filed 2026-08-07 by RETRO-259, the post-merge retro for
 PR #690 / FOLLOW-816. FOLLOW-874 is RESERVED for the devops-engineer running FOLLOW-817 concurrently in
 .claude/worktrees/follow-817 — allocated against main per Rule AN, not guessed. 875 = P1, the headline: hop
 10's red is attributed to a gate that did not fire (SDK apply gate is a DISJUNCTION whose signal_count>=2

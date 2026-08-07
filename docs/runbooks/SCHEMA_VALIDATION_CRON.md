@@ -43,8 +43,10 @@ doppler run --config prd -- bash scripts/check-cron-heartbeat.sh \
 ```
 
 The script prints the heartbeat age **and** a `schema_validation_history` digest for the same
-window, which is exactly the two facts B.6 asks for. Or run the workflow on demand:
-`gh workflow run cron-heartbeat.yml`.
+window, which is exactly the two facts B.6 asks for. The digest prints **whatever the heartbeat
+verdict is** — the one night the history digest matters most is the night the heartbeat cannot exist
+yet, so the reader is deliberately not gated behind the liveness check. Or run the workflow on
+demand: `gh workflow run cron-heartbeat.yml`.
 
 ## 3. The absence-of-signal detector (FOLLOW-893 AC2)
 

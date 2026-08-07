@@ -98,15 +98,26 @@ echo "  connection from: \$${DB_URL_SOURCE} (value not printed)"
 echo
 
 # ── 1. Does the sink itself exist? ──────────────────────────────────────────────────────
+# The verdict is decided here but ACTED ON at the very end: the digest below must print
+# even when the heartbeat is missing. The one night the history digest matters most is the
+# night the heartbeat cannot exist yet (first-ever run / migration not applied), so gating
+# the reader behind the liveness verdict would blind exactly the case it was built for.
+ALARM=0
+last_success_at="n/a"
+age_hours="n/a"
+run_detail="n/a"
+
 table_exists=$(psql "$DB_URL" -Atq -c "SELECT to_regclass('public.cron_heartbeats') IS NOT NULL;")
 if [[ "$table_exists" != "t" ]]; then
   echo "ALARM: table public.cron_heartbeats does not exist." >&2
   echo "  Migration 0037_cron_heartbeats has not been applied to this database." >&2
-  exit 1
+  ALARM=1
 fi
 
 # ── 2. Heartbeat row + age, in one round trip ───────────────────────────────────────────
-row=$(psql "$DB_URL" -Atq -F '|' -c "
+row=""
+if [[ "$ALARM" -eq 0 ]]; then
+  row=$(psql "$DB_URL" -Atq -F '|' -c "
   SELECT
     to_char(last_success_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'),
     round(EXTRACT(EPOCH FROM (NOW() - last_success_at)) / 3600.0, 2),
@@ -114,31 +125,34 @@ row=$(psql "$DB_URL" -Atq -F '|' -c "
   FROM cron_heartbeats
   WHERE job_name = '${JOB_NAME}';
 ")
+fi
 
-if [[ -z "$row" ]]; then
+if [[ "$ALARM" -eq 0 && -z "$row" ]]; then
   echo "ALARM: no heartbeat has EVER been recorded for job '${JOB_NAME}'." >&2
   echo "  The scheduled job has not completed successfully even once against this database." >&2
   echo "  Check: Modal app deployed? schedule registered? DATABASE_URL present in the" >&2
   echo "  estalara-secrets Modal secret? See docs/runbooks/SCHEMA_VALIDATION_CRON.md." >&2
-  exit 1
+  ALARM=1
 fi
 
-IFS='|' read -r last_success_at age_hours run_detail <<<"$row"
+if [[ "$ALARM" -eq 0 ]]; then
+  IFS='|' read -r last_success_at age_hours run_detail <<<"$row"
 
-echo "  last success   : ${last_success_at} (${age_hours}h ago)"
-echo "  run detail     : ${run_detail}"
-echo
+  echo "  last success   : ${last_success_at} (${age_hours}h ago)"
+  echo "  run detail     : ${run_detail}"
+  echo
 
-# Numeric comparison via awk — bash cannot compare the fractional hours directly.
-is_stale=$(awk -v a="$age_hours" -v m="$MAX_AGE_HOURS" 'BEGIN { print (a > m) ? "1" : "0" }')
-if [[ "$is_stale" == "1" ]]; then
-  echo "ALARM: job '${JOB_NAME}' has not completed successfully in ${age_hours}h" >&2
-  echo "  (allowed: ${MAX_AGE_HOURS}h). The scheduled run did not happen or did not finish." >&2
-  echo "  Runbook: docs/runbooks/SCHEMA_VALIDATION_CRON.md" >&2
-  exit 1
+  # Numeric comparison via awk — bash cannot compare the fractional hours directly.
+  is_stale=$(awk -v a="$age_hours" -v m="$MAX_AGE_HOURS" 'BEGIN { print (a > m) ? "1" : "0" }')
+  if [[ "$is_stale" == "1" ]]; then
+    echo "ALARM: job '${JOB_NAME}' has not completed successfully in ${age_hours}h" >&2
+    echo "  (allowed: ${MAX_AGE_HOURS}h). The scheduled run did not happen or did not finish." >&2
+    echo "  Runbook: docs/runbooks/SCHEMA_VALIDATION_CRON.md" >&2
+    ALARM=1
+  else
+    echo "PASS: job '${JOB_NAME}' completed successfully ${age_hours}h ago (limit ${MAX_AGE_HOURS}h)."
+  fi
 fi
-
-echo "PASS: job '${JOB_NAME}' completed successfully ${age_hours}h ago (limit ${MAX_AGE_HOURS}h)."
 
 # ── 3. Reader for the output of record (FOLLOW-893 AC3) ─────────────────────────────────
 # `schema_validation_history` was written, self-queried for dedup and typed in Drizzle,
@@ -168,7 +182,7 @@ else
   echo "  drift rows     : ${d_drift}"
   echo "  fetch-error rows: ${d_err}"
   echo "  newest run_at  : ${d_max}"
-  if [[ "${d_rows}" == "0" ]]; then
+  if [[ "${d_rows}" == "0" && "$ALARM" -eq 0 ]]; then
     echo "  NOTE: zero history rows while the heartbeat is fresh means the run executed and"
     echo "        found no active tenant with a tenant_site_schemas row — a healthy no-op,"
     echo "        NOT a missed run. This is exactly the case the heartbeat disambiguates."
@@ -177,7 +191,11 @@ fi
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {
-    echo "### cron heartbeat — \`${JOB_NAME}\`"
+    if [[ "$ALARM" -eq 0 ]]; then
+      echo "### cron heartbeat — \`${JOB_NAME}\` — OK"
+    else
+      echo "### cron heartbeat — \`${JOB_NAME}\` — ALARM"
+    fi
     echo ""
     echo "- last success: \`${last_success_at}\` (${age_hours}h ago, limit ${MAX_AGE_HOURS}h)"
     echo "- run detail: \`${run_detail}\`"
@@ -186,3 +204,6 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     fi
   } >>"$GITHUB_STEP_SUMMARY"
 fi
+
+# Verdict acted on last, after the digest has been reported.
+exit "$ALARM"

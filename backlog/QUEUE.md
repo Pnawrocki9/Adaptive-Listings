@@ -264,13 +264,14 @@ FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
 
 ### Dispatched: FOLLOW-881 (architect, Fable)
 
-**FOLLOW-881 — status: READY_FOR_REVIEW** (PR **#693**) — ~~IN_PROGRESS~~ — **assigned_to:**
-architect **model:** **Fable** **started_at:** 2026-08-07 **branch:**
-`architect/FOLLOW-881-master-design-gating-ladder` **worktree:** `.claude/worktrees/follow-881`.
-Model justification: this is a **Master_Design revision** carrying the §Y.2 propagation checklist,
-on the document every future ticket boots from — the model-fit table names Master*Design revisions
-as Fable work explicitly, and the failure mode (shipping a \_new* wrong claim into the SoT) is the
-expensive one.
+**FOLLOW-881 — status: READY_FOR_REVIEW** (PR **#693**, CI verified exit 0 — Rule I 192/192, **0
+new**; two independent runs of `gh-pr-checks-verified.sh` agreed after the initial `pending` checks
+settled) — ~~IN_PROGRESS~~ — **assigned_to:** architect **model:** **Fable** **started_at:**
+2026-08-07 **branch:** `architect/FOLLOW-881-master-design-gating-ladder` **worktree:**
+`.claude/worktrees/follow-881`. Model justification: this is a **Master_Design revision** carrying
+the §Y.2 propagation checklist, on the document every future ticket boots from — the model-fit table
+names Master*Design revisions as Fable work explicitly, and the failure mode (shipping a \_new*
+wrong claim into the SoT) is the expensive one.
 
 **Coordination — two open PRs, kept to disjoint files.** The FOLLOW-881 stub exists only in PR
 #692's branch, so it was passed to the architect in the dispatch brief rather than read from `main`.
@@ -331,7 +332,7 @@ and recorded in Changelog v4.5 so the SoT admits the drift. Its AC(4) requires a
 **FOLLOW-883**.
 
 **Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED on ESC-053, gate
-verified still reporting 3 keys MISSING) and #693 (CI verification in flight).**
+verified still reporting 3 keys MISSING) and #693 (CI VERIFIED, awaiting Piotr's merge).**
 
 ---
 

@@ -618,7 +618,33 @@ risk, not dropped, so no future audit re-files it as overdue — the ESC-020 pat
 audits re-raised a matter already settled. The decision was taken against verified facts, not an
 estimate.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
+### Dispatched: three in parallel — 878+891, 890, 893
+
+**FOLLOW-878 + FOLLOW-891 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
+`devops-engineer/FOLLOW-878-891-staging-sweep-snapshot`, worktree `.claude/worktrees/follow-878`.
+**Routing corrected against the stubs, not taken from the recommendation:** I had proposed the
+architect, since both edit `MASTER_DESIGN`. The stubs make that impossible — FOLLOW-878 AC(5)
+extends a **CI grep gate** and FOLLOW-891 AC(1) demands a **freshly executed** `modal app list` plus
+a registration probe. The architect has no Bash and could do neither. Both together because they
+edit the same document and the same propagation.
+
+**FOLLOW-890 — IN_PROGRESS** — **sdk-engineer**, **Opus**, branch
+`sdk-engineer/FOLLOW-890-playbooks-replica-contract`, worktree `.claude/worktrees/follow-890`. The
+only genuine code defect of the five: two green suites asserting opposite contracts for one branch.
+
+**FOLLOW-893 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
+`devops-engineer/FOLLOW-893-cron-first-run-observability`, worktree `.claude/worktrees/follow-893`.
+**Pulled forward on a deadline nothing else has:** the cron fires at 02:00 UTC tonight, for the
+first time in the project's history, and the highest-prior failure mode for a first-ever schedule —
+never starting — currently emits nothing anywhere.
+
+**File ownership partitioned at dispatch to prevent the tail conflict** that has now bitten twice
+(#691 vs #692, and the FOLLOW-874/875 split): `backlog/FOLLOW_UPS.md` belongs **exclusively** to the
+878+891 agent, because FOLLOW-878 AC(3) must amend durable stub texts. The other two report stubs
+back for the PM to file. `backlog/QUEUE.md` is PM-owned throughout. Next free stub: **FOLLOW-896**.
+
+**Counters: 0/5 CI, 0/3 fix. 3 tickets IN_PROGRESS across 3 PRs. 0 open PRs at dispatch. No open
+P0.**
 
 ---
 

@@ -30476,8 +30476,10 @@ are unfrozen per its own carve-out.) -->
 ## FOLLOW-882 — §E.4.6's gate pseudocode is a fourth site of the corrected claim: `<` instead of `<=`, a per-tenant tunable that does not exist, and no `signal_count` branch
 
 source_retro: n/a (FOLLOW-881, session 104) source_ticket: FOLLOW-881 recommended_sprint: next
-recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
-promoted_to_queue: false **FROZEN** — session-95 standing rule.
+recommended_agent: architect priority: P1 estimated_hours: 1 depends_on: [] blocks: [FOLLOW-819]
+promoted_to_queue: true **UNFROZEN 2026-08-07 (PM).** Re-priced P2 → P1 and dispatched WITH
+FOLLOW-887, per that stub's merge-order note: same document, same class. Splitting them is how this
+class has survived three rounds.
 
 **Found by the FOLLOW-881 architect, deliberately left in place, and independently re-verified by
 the PM before filing.** FOLLOW-881's stub named three sites; this is a fourth the stub did not name

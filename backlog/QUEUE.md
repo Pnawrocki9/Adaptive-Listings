@@ -427,8 +427,31 @@ should be unfrozen and run before FOLLOW-819 is dispatched.**
 **#691 CI re-verified after the merge-up** — exit 0, Rule I 192/192, 0 new. It is conflict-free,
 green, and held on ESC-053 alone.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #691, verified and mergeable, held
-on ESC-053.**
+### Dispatched: FOLLOW-882 + FOLLOW-887 together (architect, Fable)
+
+**FOLLOW-882 + FOLLOW-887 — status: IN_PROGRESS** — **assigned_to:** architect **model:** **Fable**
+**started_at:** 2026-08-07 **branch:** `architect/FOLLOW-882-887-gate-claim-sweep` **worktree:**
+`.claude/worktrees/follow-882`. **FOLLOW-882 UNFROZEN and re-priced P2 → P1.**
+
+**Dispatched together on FOLLOW-887's own merge-order note** — same document, same class, and
+splitting them is precisely how this class survived three rounds. Model: Fable, as with FOLLOW-881 —
+Master_Design revision carrying §Y.2, and the load-bearing deliverable is a **negative result**
+(disproving a seventh site), which is the hardest thing to do honestly.
+
+**The null hypothesis is inverted at dispatch.** This ticket does not "check for more sites"; it
+must **disprove** a seventh, publishing the per-hit adjudicated list from the three-vocabulary sweep
+the amended Rule AI now requires — (a) symbol, (b) literal value plus comparison operators, (c) the
+prose paraphrase quoted verbatim. Three rounds each found more than the last; assuming this one is
+the last is the error the ticket exists to break.
+
+**FOLLOW-888's remaining half discharged by this dispatch.** The architect has no Bash tool, so the
+PM commits and opens the PR on its behalf — and last time the _deliverable_ landed while the
+_learning_ stayed uncommitted in `lessons.md`. This brief adds an explicit final step: the agent
+hands its lesson back **in the report body**, and the PM lands it in the same commit. That step is
+now the template for every no-Bash dispatch.
+
+**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS (one PR). 1 open PR — #691, verified and
+mergeable, held on ESC-053.**
 
 ---
 

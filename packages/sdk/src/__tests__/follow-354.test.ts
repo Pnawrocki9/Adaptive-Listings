@@ -16,10 +16,16 @@
  *   the existing stub pattern.
  *
  *   The description axis is the genuine value of the floor:
- *     - /api/adapt has a server-side CONFIDENCE_THRESHOLD = 0.6 gate (returns [] below it)
- *       so the SDK floor is REDUNDANT on the directive axis.
- *     - /adapt/description has NO server-side confidence parameter. The SDK
- *       DOM_ADAPT_CONFIDENCE_FLOOR (0.5) is the SOLE gate for description fetches.
+ *     - /api/adapt has a server-side CONFIDENCE_THRESHOLD = 0.6 gate (returns [] AT or
+ *       below it — route.ts:275 is `confidence <= CONFIDENCE_THRESHOLD`, so the bar is
+ *       strictly > 0.6), so the SDK floor is REDUNDANT on the directive axis.
+ *     - /adapt/description has NO server-side confidence parameter. The client-side
+ *       `aboveFloor` DISJUNCTION — confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5) OR
+ *       signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2), index.ts:827-829 — is the only
+ *       confidence-shaped gate for description fetches. (This header previously called
+ *       the 0.5 floor the "SOLE" gate — the exact wording PR #692 withdrew from
+ *       adapt-floor.ts, contradicted by AC-1 below; corrected 2026-08-07, FOLLOW-887.
+ *       Whether the signal_count branch SHOULD hold on this axis is OPEN in ESC-054.)
  *
  * These tests use a DISTINCT stub that checks `url.includes('/adapt/description')` BEFORE
  * the generic `url.includes('/adapt')` check, isolating the two endpoints.
@@ -346,9 +352,11 @@ describe('AC-2 — at/above floor: /adapt/description fetched (FOLLOW-354)', () 
 // ===========================================================================
 
 describe('floor constants (FOLLOW-354 reference)', () => {
-  it('DOM_ADAPT_CONFIDENCE_FLOOR is 0.5 — the sole gate for /adapt/description', () => {
-    // The server-side directive gate is 0.6; the floor here is intentionally lower.
-    // See adapt-floor.ts and MASTER_DESIGN §E.7 gating ladder note.
+  it('DOM_ADAPT_CONFIDENCE_FLOOR is 0.5 — one of two disjunctive gates for /adapt/description', () => {
+    // The server-side directive gate is 0.6; the floor here is lower (value rationale
+    // in adapt-floor.ts). The other disjunctive gate is DOM_ADAPT_MIN_SIGNAL_COUNT —
+    // see adapt-floor.ts and MASTER_DESIGN §E.7 gating ladder note. (Test name
+    // previously said "the sole gate" — corrected 2026-08-07, FOLLOW-887.)
     expect(DOM_ADAPT_CONFIDENCE_FLOOR).toBe(0.5);
   });
 

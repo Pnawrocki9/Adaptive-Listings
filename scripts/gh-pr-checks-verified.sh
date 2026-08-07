@@ -85,7 +85,21 @@
 #      on the repo, which this script does not assume; it always waits and then fails loud
 #      if nothing ever appears.
 #
-#   5. PREFLIGHTS ITS OWN DEPENDENCIES and refuses to run degraded (FOLLOW-830). The
+#   5. REQUIRES THE SNAPSHOT TO BE COMPLETE, not merely stable (FOLLOW-865). Point 1
+#      defends against the check-run set CHANGING between polls. It does not defend
+#      against the set being TRUNCATED, and a truncated set is stable, non-pending and
+#      identical to itself, so it satisfied "two consecutive identical, fully-settled
+#      snapshots" on the first two polls. That printed "all checks green. Safe to mark
+#      READY_FOR_REVIEW", exit 0, over five check-runs in a repo whose PRs register ~77 —
+#      live, twice, on PR #686 during the 2026-08-06 Actions outage (ESC-050). The gate now
+#      also requires the rollup to carry at least a DERIVED floor of check-runs (40% of the
+#      second-highest of the repo's own twelve most recent PR rollups) and never to be
+#      smaller than the largest rollup this same run already saw. Below that it waits, and
+#      if it never recovers it exits 3 — UNDETERMINED, no verdict — naming observed vs
+#      expected. See "the cardinality floor" below for why the floor is derived and why the
+#      percentage is what it is.
+#
+#   6. PREFLIGHTS ITS OWN DEPENDENCIES and refuses to run degraded (FOLLOW-830). The
 #      failure-list extraction below uses `grep -oP`; `-P` is a GNU extension absent on
 #      macOS/BSD and busybox grep. Because this script runs `set -uo pipefail` WITHOUT
 #      `-e`, a failing `grep -P` inside `mapfile` used to leave the failure array empty,
@@ -96,10 +110,11 @@
 #
 # USAGE
 #   scripts/gh-pr-checks-verified.sh <pr-number> [--max-wait-seconds N] [--interval-seconds N]
+#                                               [--accept-cardinality N]
 #   scripts/gh-pr-checks-verified.sh --self-test
 #
 # SELF-TEST
-#   `--self-test` runs 20 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
+#   `--self-test` runs 27 SYNTHESIZED fixtures (Rule AM — never driven off a live PR's
 #   check state, and fully offline) through the real code path via a fixture seam:
 #   all-green -> 0; an undocumented failing check -> 1; Rule I with main's exact symbol
 #   set -> 0; Rule I with a new symbol on top of main -> 1; Rule I with EQUAL COUNTS but a
@@ -117,8 +132,16 @@
 #   Rule I run used as evidence -> 4; the same PR flipping 4 -> 0 when main's baseline
 #   catches up (the P-35 clause-(b) demonstration); a Rule I job that FAILED CLOSED, whose
 #   own diagnostic prose quotes "Violations found: 0", -> 3 rather than an empty symbol set
-#   accepted as clean; plus the fixture COUNT itself, and this file's own mode == 755 on
-#   disk and in the git index.
+#   accepted as clean; a five-check all-green rollup in a 77-check repo -> 3, never 0, and
+#   the same rollup COLLAPSING 77 -> 5 between polls -> 3, and a PARTIAL collapse 77 -> 40
+#   that stays ABOVE the derived floor -> 3 (the three FOLLOW-865 cases; the last two need
+#   the sequenced seam, and each pins a different half of the guard — see the discrimination
+#   matrix in the PR body); a FAILURE that registers only on the third
+#   read -> 1 rather than being outrun by the settle loop; a FAILURE on the third read
+#   behind a merely-CHANGED second read -> 1 (the first fixture this file has ever had for
+#   the two-consecutive-snapshot mechanism itself); a stated --accept-cardinality -> 0 with the
+#   waiver on the RESULT line; an unreadable peer sample -> 3; plus the fixture COUNT
+#   itself, and this file's own mode == 755 on disk and in the git index.
 #
 #   Every fixture was written RED-FIRST and observed failing against the script version
 #   that lacked its fix — for FOLLOW-827/830 the compensating-swap and no-PCRE fixtures
@@ -137,7 +160,14 @@
 #   3  usage error, failed dependency preflight, gh CLI error, refused fixture seam, or a
 #      TOOLING failure: the gate could not read something it needed (an unfetchable or
 #      unparseable Rule I log, no usable baseline in the look-back window, a snapshot whose
-#      serialization its own parser no longer matches) and therefore rendered NO verdict.
+#      serialization its own parser no longer matches, a check-run rollup that never became
+#      COMPLETE, or no readable sample to derive completeness from) and therefore rendered
+#      NO verdict.
+#      A truncated rollup is a 3 and specifically not a 2 (FOLLOW-865 AC(2)): 2 means the
+#      run was still moving and waiting is the remedy, whereas a stable-but-short rollup
+#      returns the identical answer however long you wait — nothing about the PR was ever
+#      observed. It is equally not a 1: an Actions incident is not a worker's bug and must
+#      not consume the 3-retry escalation budget.
 #      3 is not a milder 1. Exit 1 means "this PR is red" and routes to sending the ticket
 #      back to its worker; exit 3 means "the gate did not get to look", which no worker can
 #      fix and which must not consume the 3-retry escalation budget (FOLLOW-846 AC(2)).
@@ -394,12 +424,61 @@ classify_fetch_error() {
 }
 
 # Prints the check-state snapshot for the PR under test.
+#
+# IN FIXTURE MODE THIS SERVES A SEQUENCE (FOLLOW-848 AC(1)). A fixture dir may
+# ship snapshot.1.json, snapshot.2.json, … ; the Nth poll of a run is served the
+# Nth file, and the last file repeats for every poll after it. A dir that ships
+# a plain snapshot.json keeps the old static behaviour, so the fixtures written
+# before this seam existed are unchanged.
+#
+# WHY THE SEQUENCE HAD TO EXIST. Until it did, every fixture served one static
+# file, so no fixture could express a check-run set that CHANGES BETWEEN POLLS —
+# and "the shape of the check-run set changed between polls" is the only shape
+# the late-registration race has. RETRO-252 proved the consequence by
+# perturbation: deleting the two-consecutive-snapshot condition, the entire
+# mechanism this file exists to provide, left every fixture passing. The settle
+# loop had zero fixtures. It has some now (see F24/F25 below), and they are the
+# reason a cardinality floor could be shipped red-first at all.
+#
+# The poll index is an ARGUMENT rather than a counter this function keeps,
+# because every call site is `snapshot="$(fetch_snapshot …)"` — a command
+# substitution, i.e. a subshell, in which an incremented counter dies with the
+# subshell and every poll would be served snapshot.1.json forever. That is not a
+# hypothetical: it is what the first cut of this seam did, and three fixtures
+# caught it.
 fetch_snapshot() {
   if [[ -n "$FIXTURE_DIR" ]]; then
+    if [[ -f "$FIXTURE_DIR/snapshot.1.json" ]]; then
+      local i="${1:-1}"
+      [[ "$i" -ge 1 ]] || i=1
+      while [[ "$i" -gt 1 && ! -f "$FIXTURE_DIR/snapshot.$i.json" ]]; do
+        i=$((i - 1))
+      done
+      cat "$FIXTURE_DIR/snapshot.$i.json"
+      return 0
+    fi
     cat "$FIXTURE_DIR/snapshot.json"
     return 0
   fi
   gh pr view "$PR" --repo "$REPO" --json statusCheckRollup -q "$SNAPSHOT_FILTER" 2>/dev/null
+}
+
+# Prints ONE INTEGER PER LINE: how many check-runs are registered on each of the
+# repo's own recent pull requests, excluding the PR under test. This is the
+# observable state the cardinality floor is derived from (FOLLOW-865 AC(1)) —
+# the same quantity, measured on the same class of object, by the same API, so
+# it tracks ci.yml automatically instead of rotting like a hardcoded number.
+# Returns NON-ZERO when the read itself failed; the caller turns that into a
+# TOOLING failure rather than guessing a floor.
+fetch_peer_cardinalities() {
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    [[ -f "$FIXTURE_DIR/peer-cardinality.txt" ]] || return 1
+    cat "$FIXTURE_DIR/peer-cardinality.txt"
+    return 0
+  fi
+  gh pr list --repo "$REPO" --state all -L "$PEER_SAMPLE_SIZE" \
+    --json number,statusCheckRollup \
+    -q ".[] | select(.number != $PR) | (.statusCheckRollup | length)" 2>/dev/null
 }
 
 # fetch_job_log <job-id> <fixture-basename>
@@ -519,6 +598,57 @@ BASELINE_STALE_HOURS=72
 # the output of two different programs (FOLLOW-855 AC(4) / FOLLOW-842).
 RULE_I_PRODUCER="scripts/check-rule-i.sh"
 
+# ── the cardinality floor (FOLLOW-865) ───────────────────────────────────────
+# The settle condition below asks whether the check-run set STOPPED CHANGING. It
+# never asked whether the set was COMPLETE. A rollup that has not yet registered
+# the rest of the repo's checks is stable, non-pending and identical to itself,
+# so it satisfies "two consecutive identical, fully-settled snapshots" on the
+# first two polls. Driven with a five-check all-SUCCESS rollup against a repo
+# whose PRs register ~77, the gate printed "all checks green. Safe to mark
+# READY_FOR_REVIEW" and exited 0 — and did so LIVE, twice, on PR #686 during the
+# 2026-08-06 Actions outage (ESC-050), where recovery reruns collapsed the
+# rollup. Both verdicts were refused by hand, on a ">= 60 registered checks"
+# condition the gate itself did not contain. This is FOLLOW-813's ORIGINAL input
+# class: `gh pr checks --watch` died on "the check-run set was incomplete when I
+# looked", and two-consecutive-identical-snapshots defends against STATE changing
+# between polls, not against CARDINALITY collapsing. FOLLOW-856's arithmetic
+# guard structurally cannot see it either: 5 = 5 + 0 + 0 + 0 is self-consistent,
+# because a truncated snapshot is internally consistent by construction.
+#
+# THE FLOOR IS DERIVED, NEVER HARDCODED. A constant "minimum 60" would be wrong
+# on the first day ci.yml gains or loses a job — the same rot FOLLOW-821/827
+# removed from the Rule I classification, and the shape FOLLOW-779 caught
+# drifting 42-vs-43. Instead the gate measures the SAME quantity on the SAME
+# class of object: how many check-runs this repo's own recent PRs registered.
+# One `gh pr list` read, once per invocation.
+#
+#   reference = the SECOND-HIGHEST usable peer sample (the highest when fewer
+#               than three are usable), and
+#   floor     = ceil(reference * CARDINALITY_FLOOR_PERCENT / 100).
+#
+# Second-highest rather than the median, and rather than the max: the max is one
+# inflated peer away from over-blocking, while the median COLLAPSES as soon as
+# more than half the sample is truncated — which is precisely what a repo-wide
+# Actions outage does to it, and an outage is the condition this guard exists
+# for. Second-highest tolerates one outlier in either direction and does not
+# start falling until all but two peers are affected.
+#
+# WHY 40 PERCENT, measured rather than chosen. On 2026-08-07 the repo's twelve
+# most recent PRs registered 79/77/77/74/76/75/75/75/73/73/38/73 check-runs. Two
+# workflow runs contribute to a PR's rollup — the `push` run on the branch head
+# and the `pull_request` run on the merge ref — which is why names appear twice
+# (75 checks / 36 duplicated names on PR #681, RETRO-250). So the smallest
+# STRUCTURALLY EXPLICABLE shape is one run instead of two, about half the
+# rollup: the 38 in that sample is exactly that shape. A floor must sit strictly
+# below the smallest legitimate shape, so it sits below half, at 40%: 31 against
+# this repo's current peers. It refuses the 5 that was observed live, and admits
+# a single-run 38. It moves on its own as ci.yml does.
+CARDINALITY_FLOOR_PERCENT=40
+
+# How many recent PRs the peer sample reads. Large enough that a handful of
+# collapsed rollups during an incident cannot take out the second-highest.
+PEER_SAMPLE_SIZE=12
+
 # ── SNAPSHOT SERIALIZATION CONTRACT (FOLLOW-856) ──────────────────────────────
 # ONE declaration drives BOTH the jq projection that PRODUCES the check snapshot
 # and every PCRE that PARSES it back further down. Before this they were
@@ -576,6 +706,67 @@ FAILURE_REGEX="$(_object_regex '[^"]*' '(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*')"
 # merge-ref-only symbol is not the PR's). \Q…\E quotes the em-dash-bearing name.
 RULE_I_REGEX="$(_object_regex "\\Q${RULE_I_NAME}\\E" '[^"]*')"
 
+# Resolved once per invocation, just before the poll loop (FOLLOW-865).
+CARDINALITY_FLOOR=0
+CARDINALITY_REFERENCE=0
+CARDINALITY_SAMPLES=0
+
+# Sets CARDINALITY_FLOOR / CARDINALITY_REFERENCE / CARDINALITY_SAMPLES from the
+# peer sample, or exits 3. It never falls back to a guess: a gate that cannot
+# establish what a COMPLETE rollup looks like for this repo has no basis for
+# saying a given rollup is complete, and "I could not tell" is exit 3 —
+# UNDETERMINED, no verdict — not a green.
+derive_cardinality_floor() {
+  local raw rc=0 n
+  raw="$(fetch_peer_cardinalities)" || rc=$?
+
+  if [[ "$rc" -ne 0 ]]; then
+    echo "ERROR: could not read the peer check-run cardinality sample." >&2
+    echo "  The gate derives its completeness floor from how many check-runs this repo's" >&2
+    echo "  own recent PRs registered ('gh pr list --json statusCheckRollup'). That read" >&2
+    echo "  failed (rc=$rc), so there is no floor, so a truncated rollup would be" >&2
+    echo "  indistinguishable from a complete one — which is a FALSE GREEN (FOLLOW-865)." >&2
+    echo "  Refusing to render a verdict. Re-run when the API read succeeds, or state the" >&2
+    echo "  observed count explicitly with --accept-cardinality <n>." >&2
+    echo ""
+    echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+    echo "  this PR. Do not mark READY_FOR_REVIEW, and do not increment"
+    echo "  fix_iteration_counter — no worker can fix this."
+    exit 3
+  fi
+
+  local -a samples=()
+  while read -r n; do
+    [[ "$n" =~ ^[0-9]+$ ]] || continue
+    [[ "$n" -gt 0 ]] || continue
+    samples+=("$n")
+  done < <(printf '%s\n' "$raw" | sort -rn)
+
+  CARDINALITY_SAMPLES="${#samples[@]}"
+  if [[ "$CARDINALITY_SAMPLES" -eq 0 ]]; then
+    echo "ERROR: the peer check-run cardinality sample came back empty." >&2
+    echo "  ${PEER_SAMPLE_SIZE} recent PRs were read and not one of them carries a" >&2
+    echo "  check-run rollup, so this gate cannot say what a complete rollup looks like" >&2
+    echo "  here. Two causes, and neither is a verdict about this PR: the repo genuinely" >&2
+    echo "  has no prior PR with checks, or an incident has truncated the sample too" >&2
+    echo "  (FOLLOW-865 AC(5)). Use --accept-cardinality <n> to proceed against a stated," >&2
+    echo "  visible count." >&2
+    echo ""
+    echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+    echo "  this PR. Do not mark READY_FOR_REVIEW, and do not increment"
+    echo "  fix_iteration_counter — no worker can fix this."
+    exit 3
+  fi
+
+  if [[ "$CARDINALITY_SAMPLES" -ge 3 ]]; then
+    CARDINALITY_REFERENCE="${samples[1]}"
+  else
+    CARDINALITY_REFERENCE="${samples[0]}"
+  fi
+  CARDINALITY_FLOOR=$(((CARDINALITY_REFERENCE * CARDINALITY_FLOOR_PERCENT + 99) / 100))
+  [[ "$CARDINALITY_FLOOR" -ge 1 ]] || CARDINALITY_FLOOR=1
+}
+
 # ── Self-test mode ────────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--self-test" ]]; then
   echo "=== gh-pr-checks-verified.sh --self-test ==="
@@ -601,7 +792,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # below are deliberately NOT in this number, because the git-index one is
   # legitimately unavailable outside a checkout and that is exactly the
   # legitimate degradation that made the old total untrustworthy as an assertion.
-  ST_EXPECTED_FIXTURES=20
+  ST_EXPECTED_FIXTURES=27
   st_expect_ran=0
 
   # Every fixture dir is stamped "now", so no assertion below can start drifting
@@ -616,13 +807,42 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # refuses to serve a run that does not carry both this file and
   # GH_PR_CHECKS_SELF_TEST=1, so a stray exported variable cannot turn a real
   # invocation into an offline no-op that prints "all checks green".
+  #
+  # The default peer-cardinality sample is twelve 2-check PRs, because the
+  # synthetic repo these fixtures describe is one whose PRs register two checks:
+  # a floor derived from it is 1, which every fixture below satisfies. The
+  # cardinality fixtures overwrite it with a sample that matches the repo shape
+  # they are describing (FOLLOW-865).
   _st_fixture() {
     local d="$st_tmp/$1"
     mkdir -p "$d"
     : > "$d/self-test.marker"
     printf '4242\tdeadbeefcafe1234\t%s\tcompleted\tfailure\n' "$st_now" > "$d/main-runs.tsv"
     printf '777\tfailure\n' > "$d/main-job-4242.tsv"
+    _st_peers "$d" 12 2
     echo "$d"
+  }
+
+  # _st_peers <dir> <count> <cardinality> — writes the peer sample the floor is
+  # derived from: <count> lines, each the check-run count of one recent PR.
+  _st_peers() {
+    local d="$1" n="$2" c="$3" i
+    : > "$d/peer-cardinality.txt"
+    for ((i = 0; i < n; i++)); do
+      echo "$c" >> "$d/peer-cardinality.txt"
+    done
+  }
+
+  # _st_checks <n> <state> [name-prefix] — a serialized rollup of <n> check-runs
+  # in the snapshot's own key order, so a 77-check rollup can be written without
+  # 77 literals.
+  _st_checks() {
+    local n="$1" state="$2" prefix="${3:-Job}" i out="" sep=""
+    for ((i = 1; i <= n; i++)); do
+      out+="$sep{\"name\":\"$prefix $i\",\"state\":\"$state\",\"url\":\"$st_job_url/$i\"}"
+      sep=","
+    done
+    printf '[%s]' "$out"
   }
 
   # _st_rule_i_log <path> <count> <symbol@file>...
@@ -645,6 +865,9 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # (used by the degraded-grep fixture) is honoured via ST_PATH_OVERRIDE, and
   # ST_OMIT_SELF_TEST_ENV=1 drops the GH_PR_CHECKS_SELF_TEST opt-in so the seam
   # fixture can assert the refusal.
+  # ST_MAX_WAIT widens the poll budget for the sequenced-snapshot fixtures (a
+  # fixture that asserts something about the THIRD read needs at least three
+  # polls), and ST_EXTRA_ARGS passes flags such as --accept-cardinality.
   _st_run() {
     local dir="$1"
     local rc=0
@@ -652,9 +875,11 @@ if [[ "${1:-}" == "--self-test" ]]; then
     [[ -z "${ST_OMIT_SELF_TEST_ENV:-}" ]] || self_test=""
     PATH="${ST_PATH_OVERRIDE:-$PATH}" \
       GH_PR_CHECKS_SELF_TEST="$self_test" GH_PR_CHECKS_FIXTURE_DIR="$dir" \
-      bash "$0" 1 --max-wait-seconds 2 --interval-seconds 1 > "$st_out" 2>&1 || rc=$?
+      bash "$0" 1 --max-wait-seconds "${ST_MAX_WAIT:-2}" --interval-seconds 1 \
+      ${ST_EXTRA_ARGS[@]+"${ST_EXTRA_ARGS[@]}"} > "$st_out" 2>&1 || rc=$?
     return "$rc"
   }
+  ST_EXTRA_ARGS=()
 
   _st_fail() {
     st_failures=$((st_failures + 1))
@@ -957,6 +1182,110 @@ if [[ "${1:-}" == "--self-test" ]]; then
   _st_expect "a failed-closed Rule I log is unparseable, not a clean zero" 3 "$st_d" \
     "no 'Violations found' line" "RESULT: UNDETERMINED"
 
+  # ── F22: a rollup BORN SMALL is not a settled rollup → 3 ──────────────────
+  # The literal shape observed live on PR #686 during ESC-050, twice: five
+  # all-SUCCESS check-runs, stable from the first poll, in a repo whose PRs
+  # register ~77. Nothing in the pre-FOLLOW-865 gate could see it — the set never
+  # changed, nothing was pending, and 5 = 5+0+0+0 satisfies the arithmetic guard —
+  # so it printed "all checks green. Safe to mark READY_FOR_REVIEW" and exited 0.
+  # Only the DERIVED floor catches this one: the count never shrinks, so a
+  # shrink-detector sees nothing either.
+  st_d="$(_st_fixture cardinality-born-small)"
+  _st_peers "$st_d" 12 77
+  _st_checks 5 SUCCESS > "$st_d/snapshot.json"
+  _st_expect "a five-check rollup in a 77-check repo is UNDETERMINED, not green" 3 "$st_d" \
+    "TRUNCATED CHECK-RUN ROLLUP" "RESULT: UNDETERMINED"
+
+  # ── F23: a rollup that COLLAPSES between polls → 3 ────────────────────────
+  # The outage signature itself (74 -> 5). Needs the sequenced seam: with one
+  # static file no fixture can express a check-run set that changes shape between
+  # polls, which is why the settle loop had no fixtures at all (RETRO-252).
+  st_d="$(_st_fixture cardinality-collapse)"
+  _st_peers "$st_d" 12 77
+  _st_checks 77 SUCCESS > "$st_d/snapshot.1.json"
+  _st_checks 5 SUCCESS > "$st_d/snapshot.2.json"
+  _st_expect "a rollup that collapses 77 -> 5 mid-poll is UNDETERMINED, not green" 3 "$st_d" \
+    "TRUNCATED CHECK-RUN ROLLUP" "largest seen this run: 77"
+
+  # ── F28: a PARTIAL collapse, above the derived floor → 3 ─────────────────
+  # 77 -> 40 in a repo whose floor is 31. The derived floor accepts 40, so this
+  # fixture pins the OTHER half of the guard and only that half: a rollup is
+  # never allowed to settle smaller than the largest this same run already saw.
+  # Without it, an incident that takes out one of a PR's two workflow runs
+  # mid-poll settles green over half a check set.
+  st_d="$(_st_fixture cardinality-partial-collapse)"
+  _st_peers "$st_d" 12 77
+  _st_checks 77 SUCCESS > "$st_d/snapshot.1.json"
+  _st_checks 40 SUCCESS > "$st_d/snapshot.2.json"
+  _st_expect "a partial collapse ABOVE the derived floor still refuses to settle" 3 "$st_d" \
+    "observed: 40 check-run(s)" "RESULT: UNDETERMINED"
+
+  # ── F24: the floor keeps the gate polling until the rest registers → 1 ────
+  # FOLLOW-848 AC(1)'s shape: a FAILURE that appears only on the THIRD read. The
+  # first two reads are stable, non-pending and two checks wide — which is exactly
+  # what the pre-FOLLOW-865 gate settled on, exit 0, "all checks green", while the
+  # failing check had not been created yet. The floor (4, from an 8-check peer
+  # sample) is what makes the gate keep looking.
+  st_d="$(_st_fixture cardinality-growth)"
+  _st_peers "$st_d" 12 8
+  st_extra_ok='{"name":"Build","state":"SUCCESS","url":"'"$st_job_url"'/3"},'
+  st_extra_ok+='{"name":"Test","state":"SUCCESS","url":"'"$st_job_url"'/4"}'
+  echo "[$st_lint_ok,$st_tc_ok]" > "$st_d/snapshot.1.json"
+  cp "$st_d/snapshot.1.json" "$st_d/snapshot.2.json"
+  echo "[$st_lint_ok,$st_tc_bad,$st_extra_ok]" > "$st_d/snapshot.3.json"
+  cp "$st_d/snapshot.3.json" "$st_d/snapshot.4.json"
+  ST_MAX_WAIT=5
+  _st_expect "a failure that registers on the third read is not outrun by the settle loop" 1 "$st_d" \
+    "not on the documented pre-existing-red list"
+  unset ST_MAX_WAIT
+
+  # ── F25: a FAILURE on the THIRD read, behind a CHANGING snapshot → 1 ──────
+  # The first fixture this file has ever had for the two-consecutive-snapshot
+  # mechanism itself (FOLLOW-848 AC(1)). RETRO-252 deleted the
+  # `"$snapshot" == "$prev_snapshot"` condition — the whole reason this script
+  # exists, reducing the loop to `--watch`'s own semantics — and every one of the
+  # then-20 fixtures still passed.
+  #
+  # The shape matters. A fixture whose reads merely DIFFER does not discriminate:
+  # the surviving `-n "$prev_snapshot"` guard already forces a second poll, so a
+  # failure appearing on read 2 is caught either way (measured — the first cut of
+  # this fixture did exactly that and the perturbed build passed it). What the
+  # equality condition and only the equality condition buys is the read AFTER a
+  # change: here read 2 is green but DIFFERENT from read 1, so a build with the
+  # comparison settles on read 2, prints "all checks green" and exits 0, while
+  # the real one keeps polling and finds the FAILURE that registers on read 3.
+  st_d="$(_st_fixture settle-third-read-failure)"
+  st_build_ok='{"name":"Build","state":"SUCCESS","url":"'"$st_job_url"'/3"}'
+  echo "[$st_lint_ok,$st_tc_ok]" > "$st_d/snapshot.1.json"
+  echo "[$st_lint_ok,$st_tc_ok,$st_build_ok]" > "$st_d/snapshot.2.json"
+  echo "[$st_lint_ok,$st_tc_bad,$st_build_ok]" > "$st_d/snapshot.3.json"
+  cp "$st_d/snapshot.3.json" "$st_d/snapshot.4.json"
+  ST_MAX_WAIT=5
+  _st_expect "a failure on the third read is not settled away by a merely-changed second read" 1 "$st_d" \
+    "not on the documented pre-existing-red list"
+  unset ST_MAX_WAIT
+
+  # ── F26: the floor is refusable by name, never silently → 0 ──────────────
+  # AC(5): the failure direction must not be a permanent block. A genuinely small
+  # run is passable, but only by stating the observed count, and the waiver then
+  # rides every RESULT line so a transcript cannot be pasted without it.
+  st_d="$(_st_fixture cardinality-override)"
+  _st_peers "$st_d" 12 77
+  _st_checks 5 SUCCESS > "$st_d/snapshot.json"
+  ST_EXTRA_ARGS=(--accept-cardinality 5)
+  _st_expect "a stated --accept-cardinality waives the floor and says so on the RESULT line" 0 "$st_d" \
+    "CARDINALITY OVERRIDE" "RESULT: all checks green."
+  ST_EXTRA_ARGS=()
+
+  # ── F27: an unreadable peer sample renders NO verdict → 3 ────────────────
+  # No floor means no way to tell a truncated rollup from a complete one, and a
+  # gate that cannot tell must not guess in the green direction.
+  st_d="$(_st_fixture cardinality-no-sample)"
+  rm -f "$st_d/peer-cardinality.txt"
+  echo "[$st_lint_ok,$st_tc_ok]" > "$st_d/snapshot.json"
+  _st_expect "an unreadable peer cardinality sample is UNDETERMINED, not green" 3 "$st_d" \
+    "peer check-run cardinality sample" "RESULT: UNDETERMINED"
+
   # ── F10: this file's mode is 755 (FOLLOW-830 AC(4) / FOLLOW-831) ───────────
   # Docs and four agent definitions invoke gates bare; a 100644 gate breaks the
   # documented invocation on the day someone drops the `bash ` prefix.
@@ -1044,7 +1373,14 @@ fi
 
 usage() {
   echo "Usage: $0 <pr-number> [--max-wait-seconds N] [--interval-seconds N]" >&2
+  echo "                      [--accept-cardinality N]" >&2
   echo "       $0 --self-test" >&2
+  echo "" >&2
+  echo "  --accept-cardinality N   Waive the completeness floor for a rollup of EXACTLY N" >&2
+  echo "                           check-runs. N must equal the count the gate actually" >&2
+  echo "                           observes, so the waiver cannot be set once and left to" >&2
+  echo "                           apply to a different run. Every RESULT line then carries" >&2
+  echo "                           a [CARDINALITY OVERRIDE] prefix." >&2
   exit 3
 }
 
@@ -1054,6 +1390,7 @@ shift
 
 MAX_WAIT=900
 INTERVAL=15
+ACCEPT_CARDINALITY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --max-wait-seconds)
@@ -1062,6 +1399,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --interval-seconds)
       INTERVAL="$2"
+      shift 2
+      ;;
+    --accept-cardinality)
+      ACCEPT_CARDINALITY="${2:-}"
+      if [[ ! "$ACCEPT_CARDINALITY" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: --accept-cardinality takes the exact number of check-runs you have" >&2
+        echo "  seen registered on this PR. Got: '${ACCEPT_CARDINALITY:-<missing>}'." >&2
+        exit 3
+      fi
       shift 2
       ;;
     *)
@@ -1089,17 +1435,33 @@ trap "rm -rf '$tmp_dir'" EXIT
 
 
 echo "=== gh-pr-checks-verified.sh — PR #$PR ($REPO) ==="
-echo "Polling until two consecutive identical, fully-settled snapshots are observed."
-echo "(This is what defeats the late-registered-check-run race that made '--watch' exit 0"
-echo " on PR #668 while Rule I was still failing.)"
+echo "Polling until two consecutive identical, fully-settled snapshots are observed,"
+echo "carrying at least as many check-runs as this repo's own recent PRs registered."
+echo "(The first condition defeats the late-registered-check-run race that made '--watch'"
+echo " exit 0 on PR #668 while Rule I was still failing. The second defeats the same race's"
+echo " other half: a rollup that is stable because it is TRUNCATED — FOLLOW-865.)"
+echo ""
+
+derive_cardinality_floor
+echo "Completeness floor: ${CARDINALITY_FLOOR} check-run(s) — ${CARDINALITY_FLOOR_PERCENT}% of ${CARDINALITY_REFERENCE},"
+echo "  the second-highest of ${CARDINALITY_SAMPLES} recent-PR rollup size(s) read from this repo."
+if [[ -n "$ACCEPT_CARDINALITY" ]]; then
+  echo "  --accept-cardinality ${ACCEPT_CARDINALITY} is set: a rollup of EXACTLY that size will be"
+  echo "  accepted despite the floor, and every RESULT line will say so."
+fi
 echo ""
 
 prev_snapshot=""
 elapsed=0
 settled_snapshot=""
+max_seen=0
+cardinality_ok=0
+override_applied=0
+poll_index=0
 
 while :; do
-  snapshot="$(fetch_snapshot)"
+  poll_index=$((poll_index + 1))
+  snapshot="$(fetch_snapshot "$poll_index")"
   if [[ -z "$snapshot" ]]; then
     echo "ERROR: 'gh pr view' failed for PR #$PR" >&2
     exit 3
@@ -1111,9 +1473,35 @@ while :; do
     pending_count=$(printf '%s' "$snapshot" | grep -o '"state":"PENDING"' | wc -l | tr -d ' ')
   fi
 
-  echo "[t=${elapsed}s] checks known: $(printf '%s' "$snapshot" | grep -o '"name":' | wc -l | tr -d ' '), pending: $pending_count"
+  known=$(printf '%s' "$snapshot" | grep -o '"name":' | wc -l | tr -d ' ')
 
-  if [[ "$pending_count" -eq 0 && -n "$prev_snapshot" && "$snapshot" == "$prev_snapshot" ]]; then
+  # The effective floor is the higher of the derived one and the largest rollup
+  # THIS RUN has already seen. The second half costs nothing and catches the
+  # collapse signature directly (74 -> 5 during the ESC-050 outage): a rollup
+  # that shrinks is never a rollup that finished registering. It does not
+  # subsume the derived floor — it cannot see a rollup that was born small,
+  # which is the shape PR #686 actually presented — and the derived floor does
+  # not subsume it either, so both are kept.
+  [[ "$known" -le "$max_seen" ]] || max_seen="$known"
+  required="$CARDINALITY_FLOOR"
+  [[ "$max_seen" -le "$required" ]] || required="$max_seen"
+
+  cardinality_ok=1
+  override_applied=0
+  if [[ "$known" -lt "$required" ]]; then
+    cardinality_ok=0
+    if [[ -n "$ACCEPT_CARDINALITY" && "$known" -eq "$ACCEPT_CARDINALITY" ]]; then
+      cardinality_ok=1
+      override_applied=1
+    fi
+  fi
+
+  poll_note=""
+  [[ "$cardinality_ok" -eq 1 ]] || poll_note=" — BELOW the completeness floor of $required, refusing to settle"
+  [[ "$override_applied" -eq 0 ]] || poll_note=" — below the floor of $required, ACCEPTED by --accept-cardinality"
+  echo "[t=${elapsed}s] checks known: ${known}, pending: ${pending_count}${poll_note}"
+
+  if [[ "$pending_count" -eq 0 && "$cardinality_ok" -eq 1 && -n "$prev_snapshot" && "$snapshot" == "$prev_snapshot" ]]; then
     settled_snapshot="$snapshot"
     break
   fi
@@ -1121,6 +1509,44 @@ while :; do
   prev_snapshot="$snapshot"
 
   if [[ "$elapsed" -ge "$MAX_WAIT" ]]; then
+    # Two different things can exhaust the wait, and they are not the same
+    # verdict. Checks still PENDING is a genuine timeout: the run had not
+    # finished, waiting longer is the remedy, exit 2. A rollup that is stable,
+    # complete-looking and TOO SMALL is not a timeout — waiting longer returns
+    # the identical answer — it is the gate failing to obtain the object it
+    # needs in order to judge anything, so it is a TOOLING failure, exit 3.
+    #
+    # Exit 3 and not 2 (FOLLOW-865 AC(2)): the contract at the top of this file
+    # says 2 = TIMEOUT ("still moving, come back") and 3 = "the gate did not get
+    # to look", renders NO verdict, must not consume a worker's retry budget.
+    # A truncated rollup is precisely the second: nothing about the PR is known,
+    # and nothing the worker does changes it. Exit 1 would be actively wrong —
+    # it routes the ticket back to a worker for an Actions incident — and exit 0
+    # is the false green this guard exists to remove.
+    if [[ "$pending_count" -eq 0 && "$cardinality_ok" -ne 1 ]]; then
+      echo "" >&2
+      echo "ERROR: TRUNCATED CHECK-RUN ROLLUP — the check set never became complete." >&2
+      echo "  observed: ${known} check-run(s), stable and non-pending" >&2
+      echo "  expected: at least ${required} (derived floor ${CARDINALITY_FLOOR} = ${CARDINALITY_FLOOR_PERCENT}% of ${CARDINALITY_REFERENCE}," >&2
+      echo "            the second-highest of ${CARDINALITY_SAMPLES} recent-PR rollups; largest seen this run: ${max_seen})" >&2
+      echo "  A rollup this far below what this repo's own PRs register has NOT finished" >&2
+      echo "  registering — it is not a PR with few checks. Two consecutive identical" >&2
+      echo "  snapshots prove the set stopped CHANGING; they prove nothing about whether it" >&2
+      echo "  is COMPLETE, and a truncated snapshot is internally consistent, so the" >&2
+      echo "  arithmetic guard below cannot see it either (FOLLOW-865)." >&2
+      echo "  This is what an Actions incident looks like from here (ESC-050: recovery" >&2
+      echo "  reruns collapsed PR #686's rollup from ~74 to 5, twice)." >&2
+      echo "  Re-run once the workflows have re-registered. If this PR genuinely registers" >&2
+      echo "  only ${known} check-runs, say so explicitly: --accept-cardinality ${known}." >&2
+      echo "  Last snapshot:" >&2
+      echo "$snapshot" >&2
+      echo ""
+      echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+      echo "  this PR: the checks have not registered, so the gate never got to look at a"
+      echo "  complete check set. Do not mark READY_FOR_REVIEW, and do not increment"
+      echo "  fix_iteration_counter — no worker can fix this."
+      exit 3
+    fi
     echo "" >&2
     echo "TIMEOUT after ${elapsed}s waiting for checks to settle. Last snapshot:" >&2
     echo "$snapshot" >&2
@@ -1132,7 +1558,18 @@ while :; do
 done
 
 echo ""
-echo "Settled after ${elapsed}s (two consecutive identical, fully-completed snapshots)."
+echo "Settled after ${elapsed}s (two consecutive identical, fully-completed snapshots"
+echo "of ${known} check-run(s), against a completeness floor of ${CARDINALITY_FLOOR})."
+if [[ "$override_applied" -eq 1 ]]; then
+  FIXTURE_TAG="${FIXTURE_TAG}[CARDINALITY OVERRIDE — ${known} check-runs accepted below the floor of ${CARDINALITY_FLOOR}] "
+  echo ""
+  echo "WARNING: the completeness floor was WAIVED by --accept-cardinality ${ACCEPT_CARDINALITY}."
+  echo "  This rollup carries fewer check-runs than this repo's recent PRs registered. The"
+  echo "  verdict below is only as good as that waiver: if the checks were merely late or"
+  echo "  an incident truncated them, it is a verdict about a run that did not happen."
+  echo "  Every RESULT line below is prefixed accordingly, so this cannot be pasted as"
+  echo "  evidence without the waiver being visible."
+fi
 echo ""
 
 # Re-assert counts from the settled snapshot (never from an exit code).

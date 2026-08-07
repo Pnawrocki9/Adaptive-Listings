@@ -181,8 +181,31 @@ P1 (**ESC-052's correction set omitted `MASTER_DESIGN.md` — the SoT still asse
 staging project" and "Brak shared secrets między environments", both now false; FOLLOW-873's AC(5)
 is extended accordingly**), 879 P2, 880 P2. Next free stub: **FOLLOW-881**.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR (#691, verified
-green-modulo-Rule-I).**
+### Dispatched: FOLLOW-875 + FOLLOW-877 together (sdk-engineer, Opus)
+
+**FOLLOW-875 — status: IN_PROGRESS** — **assigned_to:** sdk-engineer **model:** **Opus**
+**started_at:** 2026-08-07 **branch:** `sdk-engineer/FOLLOW-875-877-confidence-gate-attribution`
+**worktree:** `.claude/worktrees/follow-875`. Model justification: the finding spans `packages/sdk`
+
+- `apps/control-plane`, and AC(5) is an open judgement — whether `> 0.6` is reachable from behavior
+  alone — which becomes FOLLOW-819's problem statement. Reasoning work, not a text fix.
+
+**FOLLOW-877 UNFROZEN and folded into the same PR (PM decision).** It is P2 and the session-95 rule
+would keep it frozen, but both stubs correct the **same docblock in the same file**
+(`packages/sdk/src/core/adapt-floor.ts`) about the **same disjunction**. Shipping them separately
+guarantees a merge conflict and makes two agents re-derive one analysis. FOLLOW-875 stays the
+headline; 877 rides along.
+
+**Split enforced at dispatch — docs/tests now, behavior later.** FOLLOW-877 AC(1) asks whether the
+disjunction is _intended_ on the description axis, i.e. whether two scroll events should be allowed
+to bypass FOLLOW-343's cold-start guard for LLM-generated copy. That is a **behavior change on a
+live-ish surface**, so the worker ships the docblock correction and the locking tests
+unconditionally and _proposes_ any gate change (escalation or ADR) rather than shipping it
+unilaterally. The pilot page is not live (FOLLOW-820), so nothing is on fire — this is a
+correctness-of-record fix plus a decision request.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 1 open PR (#691, verified green-modulo-Rule-I,
+awaiting ESC-053 + Piotr's merge).**
 
 ---
 

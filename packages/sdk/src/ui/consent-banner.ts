@@ -147,8 +147,18 @@ const BANNER_STYLE = `
  *   covers: chat analysis for buying intent, transfer of inferred profile to the agency/agent,
  *   buying-intent identification (12-dim vector, 24 h TTL, no raw chat text stored by AL),
  *   lead ranking by buying-intent strength, and agent-facing summaries of chat questions.
- *   Raw chat text is NOT stored in the Adaptive-Listings system — only the structured intent
- *   summary (C-07 boundary). The full registration consent text is in the account sign-up flow.
+ *   CORRECTED 2026-08-07 (FOLLOW-866 / ESC-049 addendum, ridden by FOLLOW-815): this docblock and
+ *   the three `disclosurePlatform` strings below used to assert that raw chat text is NOT stored.
+ *   That was FALSE to real data subjects. `chat.message.sent.payload.message` (≤4000 chars) is
+ *   written verbatim into the ClickHouse `events` table by deliberate §H.8 design and retained for
+ *   13 months (`infra/clickhouse/migrations/0001_create_events.sql` TTL); the PII scrubber masks
+ *   email addresses and phone numbers ONLY — names, financial detail and family composition pass
+ *   through. The 24-hour structured-intent summary claim was and remains true; it was the "and
+ *   nothing else" half that was wrong. Lawful basis stays LEGITIMATE INTEREST with full
+ *   transparency, and NO new consent checkbox was added (CEO+DPO, ESC-049 addendum Q1/Q3). These
+ *   strings are byte-synced with `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and
+ *   `platform-registration/lib.ts` — change all three together or the Rule N gates go red.
+ *   The full registration consent text is in the account sign-up flow.
  *   This disclosure is shown here for completeness so that any visitor who is also a registered
  *   investor has full transparency about the platform-wide purposes at this consent surface.
  */
@@ -163,7 +173,7 @@ const COPY = {
       'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
     // DPIA §13.4 / FOLLOW-373 — platform-wide consent umbrella (registered investors)
     disclosurePlatform:
-      'If you are a registered investor: your account sign-up consent also covers analysis of your chat messages to identify buying intent, transfer of your inferred buyer profile to the agency/agent, lead ranking by buying-intent strength, and agent-facing summaries of your chat questions. Raw chat text is not stored in the personalization system — only a structured 24-hour intent summary.',
+      'If you are a registered investor: your account sign-up consent also covers analysis of your chat messages to identify buying intent, transfer of your inferred buyer profile to the agency/agent, lead ranking by buying-intent strength, and agent-facing summaries of your chat questions. Your chat message text is stored for 13 months, with emails and phone numbers masked; the intent summary is kept for 24 hours.',
     learnMore: 'Learn more ↗',
     accept: 'Accept',
     decline: 'Decline',
@@ -178,7 +188,7 @@ const COPY = {
       'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
     // DPIA §13.4 / FOLLOW-373 — platforma: pełne cele przetwarzania (zarejestrowani inwestorzy)
     disclosurePlatform:
-      'Jeśli jesteś zarejestrowanym inwestorem: Twoja zgoda wyrażona przy rejestracji obejmuje również analizę wiadomości na czacie w celu identyfikacji intencji zakupowej, przekazanie wywnioskowanego profilu kupującego agencji/agentowi, ranking inwestorów według siły intencji zakupowej oraz podsumowania pytań z czatu widoczne dla pracowników agencji. Treść wiadomości nie jest przechowywana w systemie personalizacji — tylko strukturyzowane podsumowanie intencji przez 24 godziny.',
+      'Jeśli jesteś zarejestrowanym inwestorem: Twoja zgoda wyrażona przy rejestracji obejmuje również analizę wiadomości na czacie w celu identyfikacji intencji zakupowej, przekazanie wywnioskowanego profilu kupującego agencji/agentowi, ranking inwestorów według siły intencji zakupowej oraz podsumowania pytań z czatu widoczne dla pracowników agencji. Treść wiadomości z czatu jest przechowywana przez 13 miesięcy, z zamaskowanymi adresami e-mail i numerami telefonu; podsumowanie intencji przez 24 godziny.',
     learnMore: 'Dowiedz się więcej ↗',
     accept: 'Akceptuj',
     decline: 'Odrzuć',
@@ -193,7 +203,7 @@ const COPY = {
       'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',
     // DPIA §13.4 / FOLLOW-373 — cobertura de consentimiento de plataforma (inversores registrados)
     disclosurePlatform:
-      'Si eres un inversor registrado: tu consentimiento de registro también cubre el análisis de tus mensajes de chat para identificar la intención de compra, la transferencia de tu perfil de comprador inferido a la agencia/agente, la clasificación por intensidad de intención de compra y los resúmenes de tus preguntas de chat para el equipo de la agencia. El texto del chat no se almacena en el sistema de personalización — solo un resumen estructurado de intención durante 24 horas.',
+      'Si eres un inversor registrado: tu consentimiento de registro también cubre el análisis de tus mensajes de chat para identificar la intención de compra, la transferencia de tu perfil de comprador inferido a la agencia/agente, la clasificación por intensidad de intención de compra y los resúmenes de tus preguntas de chat para el equipo de la agencia. El texto de tus mensajes de chat se almacena durante 13 meses, con correos y teléfonos enmascarados; el resumen de intención durante 24 horas.',
     learnMore: 'Más información ↗',
     accept: 'Aceptar',
     decline: 'Rechazar',

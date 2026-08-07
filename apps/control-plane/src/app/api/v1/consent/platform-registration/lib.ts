@@ -128,7 +128,7 @@ export function renderPlatformConsentText(
 
 1. Behavioral tracking — We analyze how you browse listings (scroll depth, time spent, clicks, and searches) to personalize the listings shown to you.
 
-2. Chat analysis — Your messages in the ${brandName} AI chat are analyzed in real time to understand your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary of your intent — we do not store the full text of your messages in our personalization system.
+2. Chat analysis and message storage — Your messages in the ${brandName} AI chat are analyzed in real time to understand your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary of your intent, which we hold for 24 hours, and we also store the text of the messages themselves for 13 months. Email addresses and phone numbers are automatically masked before that text is stored; anything else you type — including names and financial or family details — is stored as you wrote it. Please do not type information into chat that you would not want stored.
 
 3. Transfer to agency/agent — Your inferred buyer profile (archetype, buying-intent score) is shared with the real estate agency or agent you interact with on this platform.
 

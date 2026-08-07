@@ -632,3 +632,71 @@ describe('renderConsentBanner — disclosure completeness across all locales', (
     },
   );
 });
+
+// ─── ESC-049 addendum / FOLLOW-866 (ridden by FOLLOW-815) — chat-storage disclosure ──
+//
+// Until 2026-08-07 the `dpia-13-4-platform` disclosure told every visitor "Raw chat text is not
+// stored in the personalization system". That was FALSE: `chat.message.sent.payload.message`
+// (≤4000 chars) is written verbatim into the ClickHouse `events` table by deliberate §H.8 design
+// and retained for 13 months, with the scrubber masking email addresses and phone numbers ONLY.
+// The CEO+DPO ruled disclose-in-notice, legitimate-interest basis, NO new consent checkbox.
+//
+// These strings are byte-synced with `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and
+// `apps/control-plane/.../platform-registration/lib.ts`. Nothing pinned this copy before, which is
+// how the false claim survived (RETRO-… FOLLOW-377 flagged the missing test axis in 2026-06).
+// Asserted per LOCALE, because a correction applied to EN only would leave PL/ES visitors lied to.
+
+describe('renderConsentBanner — chat-message storage disclosure (ESC-049 addendum)', () => {
+  let root: ShadowRoot;
+  const elements: MockElement[] = [];
+
+  beforeEach(() => {
+    elements.length = 0;
+    root = makeShadowRoot();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => {
+        const el = makeElement(tag);
+        elements.push(el);
+        return el;
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('localStorage', mockLocalStorage);
+  });
+
+  const CASES: { language: 'en' | 'pl' | 'es'; retention: RegExp; masked: RegExp }[] = [
+    { language: 'en', retention: /13 months/, masked: /emails and phone numbers masked/i },
+    { language: 'pl', retention: /13 miesięcy/, masked: /zamaskowanymi adresami e-mail/i },
+    { language: 'es', retention: /13 meses/, masked: /correos y teléfonos enmascarados/i },
+  ];
+
+  it.each(CASES)(
+    '$language banner discloses 13-month chat-message storage and what is masked',
+    ({ language, retention, masked }) => {
+      renderConsentBanner(root, {
+        language,
+        accentColor: '#6c5ce7',
+        onGranted: vi.fn(),
+        onDenied: vi.fn(),
+      });
+
+      const disclosure = elements.find(
+        (el) => el._attrs['data-estalara-disclosure'] === 'dpia-13-4-platform',
+      );
+      expect(disclosure).toBeDefined();
+      const text = disclosure!.textContent ?? '';
+
+      // The storage fact and its retention period must both be present.
+      expect(text).toMatch(retention);
+      // …and the scrubber's actual, narrow scope — masking emails/phones is NOT "anonymised".
+      expect(text).toMatch(masked);
+      // The retired false claim must not reappear in any locale.
+      expect(text).not.toMatch(/not stored in the personalization system/i);
+      expect(text).not.toMatch(/nie jest przechowywana w systemie personalizacji/i);
+      expect(text).not.toMatch(/no se almacena en el sistema de personalización/i);
+    },
+  );
+});

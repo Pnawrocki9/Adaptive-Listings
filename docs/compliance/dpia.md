@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.15 **Date:** 2026-08-07 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.16 **Date:** 2026-08-07 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -605,11 +605,11 @@ for 13 months, by deliberate §H.8 design: emitted by the SDK
 (`apps/ingest/src/clickhouse-producer.ts:142`) on a path independent of the Redis/live-adaptation
 boundary — the schema's own comment states the design intent: "§H.8 invariant: the chat event STILL
 flows to ingest (ClickHouse) regardless of this flag" (`chat.ts:56-57`). TTL:
-`infra/clickhouse/migrations/0001_create_events.sql:46`. **The §13.4 LIA below relies on the
-previous, narrower reading of this boundary (specifically its balancing-test condition (iii)); that
-reliance is flagged inline in §13.4 and is not re-derived here — see the FOLLOW-866 pull request
-description for the full re-derivation.** See also the C-07 scoping brief
-(`docs/compliance/C-07-chat-retention-scope.md`, v1.2).
+`infra/clickhouse/migrations/0001_create_events.sql:46`. **The §13.4 LIA below relies on this
+boundary (specifically its balancing-test condition (iii)); the ESC-049 addendum (CEO+DPO,
+2026-08-07) RULED that condition satisfied — legitimate interest stands for this store, conditioned
+on full transparency (the FOLLOW-815 disclosure) — recorded inline in §13.4.** See also the C-07
+scoping brief (`docs/compliance/C-07-chat-retention-scope.md`, v1.3).
 
 ### 3.2 Why Behavioral Signals Are the Minimum Required
 
@@ -1280,6 +1280,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.13    | 2026-08-05 | Backend Engineering    | FOLLOW-838: §2.7 table gains a fifth row — `apps/ingest` was absent from the per-app Sentry record entirely, and it is the only app that handles raw buyer chat. §2.7.1's console↔Sentry finding is corrected from an `apps/control-plane` fact to a property of the SDK default integration lists: `consoleIntegration()` is also a default of `@sentry/cloudflare@10.50.0` (`build/cjs/sdk.js:29`) and `apps/ingest/src/observability.ts:71-82` overrides no integrations. The Python tier is recorded as explicitly NOT affected on this axis (`sentry_sdk`'s `LoggingIntegration` reads `logging` records; the Modal diagnostics are bare `print()`), so the FOLLOW-812 stdout sink stays a genuinely separate sink. §2.7.2 added: the chat-NLP dispatch (`handlers/chat-nlp-dispatch.ts`) no longer reads the Modal response body at all — it carries `HTTP <status> (<classified kind>)`, the same convention `nlp.py` uses for `extraction_error` — with the endpoint's actual 4xx bodies DRIVEN rather than inferred (four application-level legs echo nothing; the pydantic body-validation leg echoes the whole request body in `detail[].input` but is not reachable from the Worker's current request shape; Modal platform-level bodies not established). No live leak is claimed and no PII-pattern regex was added. The `.catch()` sibling arm is explicitly assessed and left carrying `err.message` (a runtime-generated transport string, not request-derived), pinned by a test that asserts it DOES reach the wire. Five re-review triggers named, including provisioning `SENTRY_DSN_INGEST` (ESC-048) which switches the whole path on. Two items assessed and deferred to FOLLOW-845: `clickhouse-producer.ts:178`'s 500-char ClickHouse error body on a batch containing the buyer's message, and pinning `sendDefaultPii` explicitly in `observability.ts`.                                                                              |
 | 2.14    | 2026-08-06 | Backend Engineering    | FOLLOW-845: §2.7.3 added — the `apps/ingest` ClickHouse batch path (`clickhouse-producer.ts`, consumed by `handlers/events.ts` and `handlers/events-retry-consumer.ts`) no longer reads the ClickHouse response body at all, closing the item §2.7.2 assessed and deferred. Unlike the Modal leg in §2.7.2, this one was established as REAL rather than prophylactic: a `clickhouse-server:25.8` container (the version `ci.yml` pins) loaded with the real `events` DDL and fed the exact `toClickHouseRow` shape quotes a ~200-char window of the RAW INPUT in `Code: 26`/`27`/`117` errors, and when the parse fails at or after the row's trailing keys the buyer's chat text appears verbatim inside the first 500 characters — the exact window that was being copied into two Sentry sinks. The replacement signal is header-derived and carries no upstream bytes: HTTP status + `X-ClickHouse-Exception-Code` (validated as 1–5 digits) + a LOCAL code→class map, plus `X-ClickHouse-Query-Id` (validated as a UUID) so an operator pivots to `SELECT exception FROM system.query_log WHERE query_id = '<id>'` and reads the full message inside the controller-side store that already holds those rows, instead of exporting it to a processor. No PII-pattern regex added. The transport-rejection arm is explicitly assessed and left carrying `cause.message` (runtime-generated, not row-derived), pinned by a test asserting it DOES reach the wire. §2.7 table row for `apps/ingest` updated; §2.7.2 trigger 3 corrected — `sendDefaultPii: false` is now pinned explicitly in `observability.ts` (a no-op on the day it landed: `@sentry/cloudflare@10.50.0` `build/cjs/sdk.js:14` reads `options.sendDefaultPii ?? false`; written down against the vendor's flagged `TODO(v11)` default change). Four re-review triggers named. Whether chat text belongs in the ClickHouse `events` table at all is out of scope and stays open as ESC-049. |
 | 2.15    | 2026-08-07 | Compliance Engineering | FOLLOW-866 (ESC-049 CEO/DPO ruling, option 1). §2 processing-purposes table row (b) corrected. §3.1's "C-07 boundary (binding — must never be violated)" paragraph rewritten: the previous claim ("Adaptive-Listings stores only the 12-dimensional intent vector … no free text, no message content") was verified only against the Redis shadow key and was false as an ordinary reader would read it — chat message text, PII-scrubbed for email/phone only, ≤4000 chars, is retained in ClickHouse `events.payload` for 13 months by deliberate §H.8 design; full write-path citation added (SDK → schema → ingest producer → migration TTL). §13.4's restatements corrected: the "No raw chat text is stored by Adaptive-Listings at any layer" sentence re-scoped to the Redis key it actually describes; the necessity-test sentence corrected to not imply the message text is unretained; the balancing-test's condition (iii) ("the C-07 boundary … is maintained") is FLAGGED, not silently re-verified — whether Purpose (d)'s "Balancing test result: PASSES" verdict still holds under the corrected boundary is a lawful-basis judgment escalated to CEO/DPO, not resolved by this row (per this ticket's AC(2) STOP condition). No change to §8 (Data Subject Rights — out of scope for this ticket, owned by a concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2.16    | 2026-08-07 | Compliance Engineering | ESC-049 addendum (CEO+DPO ruling, "Q1/Q3 ruling", `backlog/ESCALATIONS.md`, session 103, same day as v2.15): resolves §13.4's condition-(iii) flag rather than leaving it pending. **Ruled: legitimate interest stands for the ClickHouse chat-message-text store, conditioned on full transparency** — the Privacy Notice / consent text gains an explicit storage disclosure, riding the same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815 (no second bump spent); condition (iii) is satisfied once that text lands. Named re-review trigger recorded: any widening of what `scrubMessagePii` passes through, or any lengthening of the 13-month TTL, requires re-derivation. §3.1's forward-reference to §13.4 updated from "flagged, not re-derived" to point at the ruling. No change to §8 (still owned by the concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 
@@ -1741,17 +1742,22 @@ agents, which has a practical economic significance. This significance requires 
      opt-out toggle provides an additional safeguard (see §13.5 below).
    - **Balancing test result: PASSES**, subject to three conditions: (i) the six purposes are fully
      disclosed at registration before account creation; (ii) a DSR erasure pathway is accessible to
-     the investor via the tenant; (iii) the C-07 boundary (no raw chat text in AL) is maintained.
+     the investor via the tenant; (iii) the corrected C-07 boundary (no **unscrubbed identifiers**
+     in AL) is maintained, **and** the ClickHouse chat-message-text store is disclosed per the
+     ruling below.
 
-     > **FLAGGED FOR RE-REVIEW (v2.15, 2026-08-07, FOLLOW-866 / ESC-049).** Condition (iii) as
-     > originally written ("no raw chat text in AL") is not currently true under the corrected §3.1
+     > **RULED (v2.16, CEO+DPO, ESC-049 addendum, 2026-08-07, `backlog/ESCALATIONS.md`).** Condition
+     > (iii) as originally written ("no raw chat text in AL") was not true under the corrected §3.1
      > boundary: chat message text (PII-scrubbed for email/phone only) is retained in ClickHouse for
-     > 13 months by deliberate design. Whether that satisfies a corrected reading of condition (iii)
-     > ("no unscrubbed identifiers"), and whether this Purpose (d) balancing test therefore still
-     > PASSES, is a lawful-basis judgment this correction does not resolve. This document's own §3.1
-     > correction note points here; full reasoning is in the FOLLOW-866 pull request description.
-     > **Escalated, not answered here — this PASSES verdict must not be relied on as current until a
-     > fresh CEO/DPO ruling is recorded.**
+     > 13 months by deliberate design. **Ruling: legitimate interest stands for this store**,
+     > conditioned on full transparency — the Privacy Notice / consent text gains an explicit
+     > storage disclosure, riding the same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as
+     > FOLLOW-815 (no second bump spent). Condition (iii) is therefore satisfied once FOLLOW-815's
+     > disclosure text lands (not yet shipped as of this correction — tracked there, not here).
+     > **Recorded as a judgment, not a fact:** the ruling's named re-review trigger is any widening
+     > of what `scrubMessagePii` passes through, or any lengthening of the 13-month retention —
+     > either requires this Purpose (d) balancing test to be re-derived. This PASSES verdict is
+     > current as of the ruling; it is not self-perpetuating past that trigger.
 
 **Legitimate interest test — Purpose (e):**
 

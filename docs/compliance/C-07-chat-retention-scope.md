@@ -1,19 +1,19 @@
 # C-07 — Chat Free-Text Retention: DPIA Scope Brief
 
-**Document ID:** ESTALARA-C-07 **Version:** 1.2 **Date:** 2026-08-07 **Author:** Compliance
+**Document ID:** ESTALARA-C-07 **Version:** 1.3 **Date:** 2026-08-07 **Author:** Compliance
 Engineering **Classification:** Internal — Restricted **Status:** PENDING CEO decision (items marked
-below); Q1 and Q3 additionally FLAGGED FOR RE-REVIEW as of v1.2 — see the correction notice below
-**DPIA cross-reference:** DPIA §13 (LIA series) — this brief defines the §14 scope **FOLLOW:**
-FOLLOW-346 (shadow bridge) — go-live gate on CEO decision recorded here; FOLLOW-866 (v1.2
-correction)
+below); Q1 and Q3 RULED as of v1.3 — see the correction notice below **DPIA cross-reference:** DPIA
+§13 (LIA series) — this brief defines the §14 scope **FOLLOW:** FOLLOW-346 (shadow bridge) — go-live
+gate on CEO decision recorded here; FOLLOW-866 (v1.2/v1.3 correction); FOLLOW-815 (carries the
+disclosure text change ruled below)
 
 ---
 
-## Correction notice (v1.2, 2026-08-07, FOLLOW-866 / ESC-049)
+## Correction notice (v1.2 → v1.3, 2026-08-07, FOLLOW-866 / ESC-049)
 
-**What changed.** v1.1's Context paragraph and Implementation Evidence section twice stated, without
-having checked ClickHouse or Postgres, that "No raw chat text is written to Redis, ClickHouse, or
-Postgres in the current implementation." That claim was verified only against
+**What changed (v1.2).** v1.1's Context paragraph and Implementation Evidence section twice stated,
+without having checked ClickHouse or Postgres, that "No raw chat text is written to Redis,
+ClickHouse, or Postgres in the current implementation." That claim was verified only against
 `apps/intent-engine/src/redis_writer.py` — one of the three named stores. ESC-049 (CEO/DPO ruling,
 2026-08-07, `backlog/ESCALATIONS.md`) confirmed the gap: the `chat.message.sent` event's
 PII-scrubbed-for-email/phone-only message text, up to 4000 characters, **is** written into the
@@ -22,38 +22,38 @@ ClickHouse `events` table by deliberate §H.8 design (Master Design), retained t
 re-verified below. See the corrected Context and Implementation Evidence sections for full
 citations.
 
-**What this means for this document's other conclusions.**
+**What changed (v1.3) — the Q1/Q3 flags v1.2 raised are now RULED.** The ESC-049 addendum ("ESC-049
+addendum — Q1/Q3 ruling (CEO+DPO, 2026-08-07, session 103)", `backlog/ESCALATIONS.md`) resolves both
+flags v1.2 left open:
 
-- **Q1** — its conclusion is conditioned on "if raw messages are ever persisted (today they are
-  not)". That antecedent is now known false: message text that the scrubber does not catch (names,
-  financial detail, family composition — the scrubber only matches email/phone patterns) is
-  persisted today. Whether that satisfies Q1's own "explicit consent must be obtained" trigger is a
-  lawful-basis judgment this correction does not resolve unilaterally — **flagged, not answered,
-  pending a fresh CEO/DPO ruling.**
+- **Q1 — RULED.** Scrubbed-but-textual chat message storage does **not** fire Q1's explicit-consent
+  trigger. The lawful basis for the ClickHouse-retained chat message text remains **legitimate
+  interest (GDPR Art. 6(1)(f)), conditioned on full transparency** (the Q3 disclosure below).
+  Recorded as a judgment, not a fact — see the named re-review trigger inline below.
 - **Q2** — its "Current implementation status" paragraph is corrected below (a factual restatement
-  of the same premise, not itself a judgment call).
-- **Q3** — re-derived against the corrected premise; reasoning shown in the FOLLOW-866 pull request
-  description (not duplicated here to avoid a second, driftable copy). The re-derivation concludes
-  the "No new Privacy Notice disclosure is required" claim for the current cycle **appears to
-  change**: storing actual message content, even partially scrubbed, for 13 months is a materially
-  different processing activity than the general behavioral-inference disclosure this section relies
-  on. Per this ticket's AC(2), that is a STOP condition — **this correction does not rewrite Q3's
-  conclusion. It is flagged pending CEO/DPO re-ruling**, marked inline below.
+  of the same premise, not itself a judgment call; unaffected by the Q1/Q3 ruling).
+- **Q3 — RULED.** Disclosure **is** required, and **has been issued**: the Privacy Notice / consent
+  text gains an explicit storage disclosure (buyer chat message content is retained, emails/phones
+  masked by the scrubber, `events`-table TTL 13 months), riding the same single
+  `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815. No second TOS bump is spent.
 - **Q4** — re-derived against the corrected premise; reasoning shown in the FOLLOW-866 pull request
   description. Q4's balancing test is scoped to the 12-dim vector only, which the corrected premise
   does not touch (the vector still contains no free text and is unaffected by what happens to the
   separately-stored message text). **Conclusion UNCHANGED**, confirmed inline below.
 - **Q5** — its "there is no current product requirement for storing chat messages beyond the
   in-flight extraction call" sentence is corrected below (factual, not a judgment call); the
-  recommendation itself is otherwise unresolved pending the Q1/Q3 re-ruling above.
+  raw-text-retention leg of its recommendation is now closed by the Q1/Q3 ruling above (see inline
+  note). The vector-live-activation gate table is an independent leg and remains open on its own
+  terms, unaffected by this ruling.
 
-**Not fixed by this correction (found while verifying it, out of this ticket's scope, flagged for a
-separate escalation):** `packages/sdk/src/ui/consent-banner.ts:166` and
-`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:138` — both user-facing
-consent copy, both owned by a concurrent worker on this ticket and out of scope here — assert the
-same corrected claim to real data subjects ("Raw chat text is not stored in the personalization
-system" / "we do not store the full text of your messages in our personalization system"). See the
-FOLLOW-866 pull request description.
+**Carried by FOLLOW-815, not fixed in this correction:**
+`packages/sdk/src/ui/consent-banner.ts:166`,
+`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:138`, and
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 (CI-gate-synced byte-for-byte to `lib.ts`) — all
+three currently assert the pre-correction claim to real data subjects ("Raw chat text is not stored
+in the personalization system" / "we do not store the full text of your messages in our
+personalization system"). Per the ESC-049 addendum item 3, FOLLOW-815's single text-change/TOS-bump
+corrects these to the Q3 disclosure above. Out of this ticket's scope guard — not touched here.
 
 ---
 
@@ -101,7 +101,11 @@ a concrete recommendation.
 
 **Short answer:** Consent (GDPR Art. 6(1)(a)) is the only defensible basis for retaining raw chat
 message text beyond the in-flight extraction call. Legitimate interest (Art. 6(1)(f)) is not
-available for raw chat text.
+available for raw chat text. **Carve-out ruled v1.3 (see the Conclusion below):** for the specific,
+narrower category actually shipped — text PII-scrubbed for email/phone only, ≤4000 chars, 13-month
+TTL, fully disclosed — CEO+DPO ruled legitimate interest IS available, conditioned on that
+transparency. This short answer's general framework (for text with no scrubbing and no disclosure)
+is unchanged.
 
 **Analysis.** Chat messages typed by a visitor into the Estalara AI widget are free-text personal
 communications. Unlike passive behavioral signals (scroll depth, click coordinates), the visitor is
@@ -123,13 +127,18 @@ obtained before storage**, with a clear disclosure that chat content is retained
 improvement and a specific retention period stated in the consent prompt. The consent must be freely
 given, specific, and withdrawable; its withdrawal must trigger deletion of stored messages.
 
-> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866).** This conclusion's antecedent was written as "today
-> they are not [persisted]" in v1.1. That is now known false — see the Context correction above:
-> `chat.message.sent.payload.message` (PII-scrubbed for email/phone only — names, financial detail,
-> and family composition are NOT scrubbed) is persisted in ClickHouse today. Whether that satisfies
-> "raw messages are ever persisted" in this Q1's own sense, and therefore whether the
-> explicit-consent trigger above is live now rather than hypothetical, is a lawful-basis judgment
-> this correction does **not** resolve. Escalated, not answered here.
+> **RULED (v1.3, CEO+DPO, ESC-049 addendum, 2026-08-07, `backlog/ESCALATIONS.md`).** This
+> conclusion's antecedent was written as "today they are not [persisted]" in v1.1. That was
+> corrected to false in v1.2 — see the Context correction above: `chat.message.sent.payload.message`
+> (PII-scrubbed for email/phone only — names, financial detail, and family composition are NOT
+> scrubbed) is persisted in ClickHouse today. **Ruling: scrubbed-but-textual storage of this shape
+> does NOT fire this Q1's explicit-consent trigger.** The lawful basis for the ClickHouse-retained
+> chat message text remains **legitimate interest (GDPR Art. 6(1)(f)), conditioned on full
+> transparency** — the Q3 disclosure below. This is recorded as a judgment, not a fact: the ruling's
+> **named re-review trigger** is (a) any widening of what `scrubMessagePii` passes through (i.e. if
+> PII beyond email/phone starts surviving the scrubber), or (b) any lengthening of the 13-month
+> `events`-table retention. Either trigger requires this Q1 conclusion to be re-derived, not assumed
+> to still hold.
 
 ---
 
@@ -161,24 +170,28 @@ code-verified. No additional TTL enforcement ticket is needed for the shadow-onl
 
 ## Q3 — Privacy Notice and DPIA §H disclosure requirements
 
-**For the shadow-only cycle (current):** No new Privacy Notice disclosure is required. The shadow
-key holds only the 12-dim intent vector (not raw text), it self-expires in 24 hours, and it has no
-UX effect on the visitor. The existing behavioral personalization disclosure in Privacy Notice
-Template §1 covers the general intent-inference activity. The Archetype Tracer (K.3.6) admin display
-of the shadow key is internal-only; it is not a visitor-facing disclosure surface.
+**For the shadow-only cycle, vector only (unaffected by this correction):** No new Privacy Notice
+disclosure is required for the 12-dim vector itself. The shadow key holds only the vector (not raw
+text), it self-expires in 24 hours, and it has no UX effect on the visitor. The existing behavioral
+personalization disclosure in Privacy Notice Template §1 covers the general intent-inference
+activity. The Archetype Tracer (K.3.6) admin display of the shadow key is internal-only; it is not a
+visitor-facing disclosure surface.
 
-> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866) — conclusion appears to change, not rewritten here.**
-> This paragraph's claim is scoped to "the shadow key" (Redis), which is accurate on its own terms.
-> It does not follow that "no new disclosure is required" for the current cycle overall: the
-> corrected Context section shows the buyer's actual (partially-scrubbed) chat message text is
-> separately retained in ClickHouse for 13 months today, independent of the
-> shadow-key/live-adaptation distinction this paragraph draws. Storing 13 months of real message
-> content is a materially different, higher-risk processing activity than the general
-> behavioral-personalization disclosure in Privacy Notice §1 was written to cover (per this brief's
-> own Q1 analysis of why chat free text is different from passive behavioral signals). Full
-> re-derivation and reasoning: FOLLOW-866 pull request description. Per that ticket's AC(2), this
-> correction does **not** flip "No new disclosure is required" to "a new disclosure is required" —
-> that is a compliance judgment reserved to CEO/DPO. **Escalated, not answered here.**
+> **RULED (v1.3, CEO+DPO, ESC-049 addendum, 2026-08-07, `backlog/ESCALATIONS.md`) — for the
+> ClickHouse chat-message-text store, the conclusion above does NOT extend, and a new disclosure WAS
+> required.** v1.1's original framing scoped "no new disclosure required" to the shadow-only cycle
+> overall; v1.2 showed that scoping did not hold because the buyer's actual chat message text
+> (partially-scrubbed) is separately retained in ClickHouse for 13 months, independent of the
+> shadow-key/live-adaptation distinction — a materially different, higher-risk processing activity
+> than the general behavioral-personalization disclosure in Privacy Notice §1 was written to cover.
+> **Ruling: disclosure IS required, and HAS BEEN ISSUED** — the Privacy Notice / consent text gains
+> an explicit storage disclosure (buyer chat message content is retained, emails/phones masked by
+> the scrubber, `events`-table TTL 13 months), riding the **same single
+> `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815**. No second bump is spent. Carrier:
+> `packages/sdk/src/ui/consent-banner.ts`,
+> `apps/control-plane/src/app/api/v1/consent/ platform-registration/lib.ts`, and the CI-synced
+> `PRIVACY_NOTICE_TEMPLATE.md` §6.1 mirror — all updated inside FOLLOW-815's text change, not here
+> (scope guard).
 
 **For next-cycle live adaptation (when `/api/adapt` reads the shadow key and applies
 `applyChatIntentPrior` to live directives):** The Privacy Notice Template must be updated before
@@ -276,15 +289,18 @@ implementation with this brief as the compliance gate sign-off.
 
 **Recommendation: proceed to live activation of the 12-dim intent vector as an adaptation signal.**
 
-> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866).** This recommendation and rationale, and the item
-> below titled "Do not retain raw chat text", were written on the v1.1 premise that no chat text is
-> retained anywhere. That premise is corrected above (Context, Q1, Q2). The vector-activation
-> recommendation itself does not depend on the corrected fact (Q4's re-derivation shows the vector's
-> own LI basis is unaffected), so it is left standing. The "de-risked … no raw text is stored"
-> framing immediately below, and the "no current product requirement for storing chat messages"
-> sentence further down, are factually corrected inline. The overall go/no-go recommendation for
-> live activation is not re-derived here — that call, and whether it should now also require
-> resolving the Q1/Q3 flags above, is escalated pending CEO/DPO ruling.
+> **RULED (v1.3, CEO+DPO, ESC-049 addendum, 2026-08-07, `backlog/ESCALATIONS.md`).** This
+> recommendation and rationale, and the item below titled "Do not retain raw chat text", were
+> written on the v1.1 premise that no chat text is retained anywhere. That premise was corrected in
+> v1.2 (Context, Q1, Q2). The vector-activation recommendation itself never depended on the
+> corrected fact (Q4's re-derivation shows the vector's own LI basis is unaffected), so it stands
+> unchanged. The raw-text-retention leg — whether the ClickHouse chat-message-text store itself is
+> permissible — is now **closed**: Q1 is ruled LI-with-transparency, Q3 is ruled disclose-in-notice
+> (issued via FOLLOW-815). Nothing about live-activation of the vector was blocked on that leg in
+> the first place. The gate table below (Privacy Notice §4 row, DPIA §13.4 LIA, ROPA Activity 16,
+> DPO review, AI Act Art. 50(1), FOLLOW-346 AC3) is an **independent set of legs** — none of them
+> were the Q1/Q3 flags this correction resolves — and **remains open on its own terms**, unaffected
+> by this ruling.
 
 **Rationale.** The shadow-only cycle stores only the 12-dim vector for live-adaptation purposes: the
 shadow key expires in 24 hours, and no disclosure obligation beyond the current Privacy Notice is
@@ -307,13 +323,15 @@ C-07 sign-off because no new processing occurs from a GDPR perspective: the shad
 effect and the intent vector is not a new data category (behavioral personalization inference is
 already disclosed). The C-07 sign- off gates only live adaptation.
 
-**Correction (v1.2, FOLLOW-866) — was "Do not retain raw chat text":** that heading and the sentence
+**RULED (v1.3, FOLLOW-866) — was "Do not retain raw chat text":** that heading and the sentence
 "There is no current product requirement for storing chat messages beyond the in-flight extraction
-call" are factually wrong as of this correction — chat message text (PII-scrubbed for email/phone
-only) IS retained today, in ClickHouse, for 13 months, by deliberate §H.8 design (see Context). This
-brief's original v1.1 recommendation to _avoid_ raw text storage going forward is therefore already
-overtaken by shipped, intentional behavior; it is not this document's call to decide whether that
-design should change. Flagged for CEO/DPO re-review together with Q1/Q3 above.
+call" were factually wrong as of the v1.2 correction — chat message text (PII-scrubbed for
+email/phone only) IS retained today, in ClickHouse, for 13 months, by deliberate §H.8 design (see
+Context). This brief's original v1.1 recommendation to _avoid_ raw text storage going forward is
+therefore overtaken by shipped, intentional behavior. Per the ESC-049 addendum (CEO+DPO,
+2026-08-07): that design **stands, ruled acceptable** under legitimate interest with full
+transparency (Q1) and the FOLLOW-815 disclosure (Q3) — no separate consent checkbox is required. The
+retention itself is not a defect; it was this document's premise about it that was wrong.
 
 **Scope alignment with K.3.6 DPIA reminder.** The K.3.6 chat-logging DPIA scope (noted in
 `.claude/agents/compliance-engineer/lessons.md` as a pending decision after FOLLOW-269 is done) is
@@ -435,10 +453,11 @@ HEAD on branch `main`:
 section):** No **unscrubbed identifiers** are written to Redis, ClickHouse, or Postgres in the
 current implementation. The buyer's chat message text — PII-scrubbed for emails/phones only, ≤4000
 characters — **is** written to ClickHouse (`events.payload`), retained for 13 months, by deliberate
-§H.8 design; it is not written to Redis or Postgres. This corrected fact is the premise Q3 and Q4
-were re-derived against (see the flags inline in Q3/Q4 above): Q4's LI-basis conclusion is
-unaffected; Q3's no-new-disclosure conclusion appears to change and is flagged, not resolved,
-pending CEO/DPO ruling.
+§H.8 design; it is not written to Redis or Postgres. This corrected fact is the premise Q1, Q3, and
+Q4 were re-derived against (see the inline notes in Q1/Q3/Q4 above): **Q4's LI-basis conclusion is
+unaffected; Q1 and Q3 were flagged in v1.2 and are RULED in v1.3** (CEO+DPO, ESC-049 addendum,
+2026-08-07) — Q1: legitimate interest with full transparency, explicit-consent trigger not fired;
+Q3: disclosure required and issued via FOLLOW-815, riding the existing TOS-version bump.
 
 ---
 
@@ -485,3 +504,4 @@ CEO/legal:
 | 1.0     | 2026-06-19 | Compliance Engineering | Initial C-07 scoping brief (FOLLOW-346).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 1.1     | 2026-08-05 | Compliance Engineering | FOLLOW-812: Implementation Evidence updated. The Modal stdout log line (`nlp.py`'s primary-failure `print`) was redacted from the full exception message to a classified-kind + exception-class-name shape (same shape `extraction_error` already uses), pinned by a new third-sink assertion in `test_buyer_text_escapes_both_sinks` (`capsys`). Destination/retention/access for this sink established from Modal's own published docs and this repo's `vendor-accounts.md`, recorded in `ropa.md`'s new Modal application-logs note (this brief's "no raw text in Redis/ClickHouse/Postgres" conclusion is unaffected — this sink is none of those three stores). The multilingual-retry branch's sibling `print` was redacted in the same change (Rule S) and is pinned by sink 3b of the same test; no residual raw-exception `print` remains on this sink. **Correction (v1.2, FOLLOW-866): the twice-repeated "no raw chat text is written to Redis, ClickHouse, or Postgres" sentence this row's own change note echoes was, at the time of this v1.1 revision and every revision before it, verified against only ONE of the three named stores (`redis_writer.py`) — ClickHouse and Postgres were never actually checked. The claim was false as an ordinary reader would read it: `chat.message.sent.payload.message` (PII-scrubbed for email/phone only, ≤4000 chars) has been written into ClickHouse's `events` table by deliberate §H.8 design since before this row's own date.**                                                                                                                                                                                                                                                                                                                                                                             |
 | 1.2     | 2026-08-07 | Compliance Engineering | FOLLOW-866 (ESC-049 CEO/DPO ruling, option 1 — scope the sentence to reality, the ClickHouse write is deliberate §H.8 design). Both instances of the "no raw chat text …" sentence (Context, Implementation Evidence) rewritten to: state explicitly that no **unscrubbed identifiers** reach any of the three stores, AND state what IS retained in ClickHouse (`chat.message.sent.payload.message`, ≤4000 chars, emails/phones replaced, retained per the `events` table's existing 13-month TTL, `0001_create_events.sql:46` — cited from the actual migration, not guessed). All three stores re-verified with citations (Redis: unaffected, re-confirmed; ClickHouse: corrected, full write-path citation added SDK→schema→producer→migration; Postgres: newly verified — zero `message`-bearing tables across 28 schema files / 37 migrations, and neither `apps/intent-engine` nor `apps/stream-consumer` imports a Postgres client at all). §Q3 and §Q4 re-derived against the corrected premise: **Q4 (LI basis, 12-dim vector) — conclusion UNCHANGED**, the vector's own content is untouched by the correction; **Q3 (no-new-disclosure) — conclusion APPEARS TO CHANGE**, flagged inline and in the FOLLOW-866 PR rather than rewritten, per that ticket's AC(2) STOP condition. Q1's and Q5's factual predicates (both restated the same false premise) corrected inline and similarly flagged where they feed a lawful-basis judgment. `ropa.md` and `dpia.md` swept for restatements and corrected in the same PR (dpia.md §8 excluded — owned by a concurrent worker); two live user-facing consent-copy restatements found (`packages/sdk/src/ui/consent-banner.ts`, `apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts`) are both on surfaces a concurrent worker owns and are flagged, not edited, in the FOLLOW-866 PR description. |
+| 1.3     | 2026-08-07 | Compliance Engineering | ESC-049 addendum (CEO+DPO ruling, "Q1/Q3 ruling", `backlog/ESCALATIONS.md`, session 103, same day as v1.2): resolves the two flags v1.2 left open rather than leaving them pending in the shipped PR. **Q1 RULED:** scrubbed-but-textual chat message storage does not fire the explicit-consent trigger; lawful basis remains legitimate interest (Art. 6(1)(f)) conditioned on full transparency, with a named re-review trigger (any widening of what `scrubMessagePii` passes through, or any lengthening of the 13-month retention). **Q3 RULED:** disclosure is required and has been issued — the Privacy Notice / consent text gains an explicit storage disclosure, riding the same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815 (no second bump spent). Q5's raw-text-retention leg closed consistently with Q1/Q3; its independent vector-live-activation gate table is unaffected and remains open. The three subject-facing surfaces flagged in v1.2 (`consent-banner.ts:166`, `platform-registration/lib.ts:138`, `PRIVACY_NOTICE_TEMPLATE.md` §6.1) are now pointed at FOLLOW-815 as the assigned carrier rather than left as an open, unassigned escalation — not edited here (scope guard unchanged).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

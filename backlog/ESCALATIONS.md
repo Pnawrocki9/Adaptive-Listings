@@ -3382,3 +3382,39 @@ forces future trims.
 it fits — but the next banner edit is blocked-by-construction.
 
 **Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-052: Doppler `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` — "staging Postgres" IS production, and the migrate-staging gate has never protected anything
+
+**Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-07 **Affects:** FOLLOW-818
+(BLOCKED on this ruling), `db-migrate.yml`, Doppler `stg` config **Type:** architectural
+
+**Description.** Found by the FOLLOW-816 worker and **verified independently by this session**:
+`doppler secrets get DATABASE_URL_ADMIN` for `stg` and `prd` returns the **same sha256 over the
+whole URL** — same user, host, database. Every "staging-first" Postgres step (`db-migrate.yml`'s
+staging→prod sequence) has been running against production twice. The gate has been non-protective
+for its entire life.
+
+**Why it blocks FOLLOW-818:** that ticket is about to write `FEEDBACK_ENDPOINT_ENABLED=true` into
+the `stg` config believing it is isolated. It is not — the write would flip production.
+
+**Also established by the same ticket: staging does not exist for the event path either.**
+`[env.staging]` in the ingest Worker sets `CLICKHOUSE_URL=""` (no-cred guard), declares no bindings,
+`ingest-staging.estalara.com` has no DNS record, `deploy-staging.yml` calls itself "a BUNDLE/UPLOAD
+SMOKE, not a test environment", and Doppler `stg` has no `CLICKHOUSE_*` at all. FOLLOW-816's AC(2)
+substituted a fully local ClickHouse + local ingest Worker rather than touching prod.
+
+**Required action (CEO ruling, one of):**
+
+1. **Provision a genuinely separate staging** (own Supabase project; optionally CH dev service) —
+   implementation pre-filed as FOLLOW-871, held for this ruling; or
+2. **Declare localhost-first official for the data plane too** — delete/rename the `migrate-staging`
+   job and the `stg` Doppler config so nothing _appears_ to provide isolation it does not provide,
+   and re-scope FOLLOW-818 to a local-only flag flip.
+
+Option 2 is consistent with the recorded stage ("all verification on localhost BEFORE prod") and
+costs nothing; option 1 costs a Supabase project and answers a need no current ticket actually has.
+**Recommendation: option 2**, revisit staging when FOLLOW-820's exit gate makes it real.
+
+**Resolution:** <empty until resolved>

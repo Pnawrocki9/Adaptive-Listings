@@ -28866,6 +28866,16 @@ cross_ref: [FOLLOW-845; FOLLOW-838; `apps/ingest/src/handlers/intent-snapshot.ts
 
 ## FOLLOW-853 — Nothing exercises the Worker→ClickHouse insert path, and its correctness in prod rests on an undocumented ClickHouse Cloud default
 
+**PM UPDATE (session 103, after FOLLOW-816): independently rediscovered, prod question ALREADY
+ANSWERED, and a new AC.** The FOLLOW-816 worker hit the identical Code-27 rejection on a stock local
+ClickHouse and asked for a prod probe — **that probe was already run this session**: prod reads
+`date_time_input_format = best_effort` (ClickHouse 26.4.1), so there is **no prod outage**; the
+failure is local/CI-container only, exactly as this stub records. New evidence for AC(2): the CI
+smoke fixture (`infra/clickhouse/scripts/smoke-test.sh:61`) inserts an unquoted numeric epoch — **a
+byte-shape no production writer ever produces** — which is why CI structurally cannot catch this
+class. AC(2) is sharpened accordingly: the fixture must use the exact string shape
+`clickhouse-producer.ts` emits.
+
 **PM UPDATE (session 103, after RETRO-252): RE-PRICED P2 → P1.** The retro argued this is
 under-priced and I agree. The surviving defect is not the ISO-8601 default — production reads
 `best_effort`, so nothing is firing. It is that the controller's primary event-write path is (i)
@@ -30035,3 +30045,43 @@ verdict-changing surface; --accept-cardinality is the first), 860 (no P-35 windo
 violations, seventh consecutive merge moving the violation set by zero), 850 (first QUANTIFIED cost: the
 PM-side prettier fix on a fifth Markdown file), 849, 851, 844 (fifth cost re-measurement in six days, ~2114
 lines), 847 (its AC(3) survivor was NOT incidentally discharged), 779. -->
+
+---
+
+## FOLLOW-871 — Provision a genuinely separate staging data plane (HELD for the ESC-052 ruling)
+
+source_retro: n/a (FOLLOW-816, session 103) source_ticket: ESC-052 recommended_sprint: held
+recommended_agent: devops-engineer priority: P2 estimated_hours: 4 depends_on: [ESC-052 ruling]
+blocks: [] promoted_to_queue: false **FROZEN** — and held: if ESC-052 resolves as option 2
+(recommended), CLOSE this stub unexecuted and re-scope `db-migrate.yml` instead.
+
+If option 1: own Supabase project for `stg` (new `DATABASE_URL_ADMIN`), decide whether CH staging is
+in scope, and add a CI assertion that `stg` and `prd` secrets **differ** (the sha256 identity that
+went unnoticed for the gate's whole life is a one-line check).
+
+cross_ref: [ESC-052; FOLLOW-816 (PR #690); FOLLOW-818; `db-migrate.yml`]
+
+---
+
+## FOLLOW-872 — `web-master` has no CTA slot and the slot edits are not in any committed HEAD; reconcile the four-slot claim across docs and the Rafał contract
+
+source_retro: n/a (FOLLOW-816, session 103) source_ticket: FOLLOW-816 recommended_sprint: next
+recommended_agent: sdk-engineer (+ Rafał/CTO for the app side) priority: P2 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+FOLLOW-816 proved two of its own stub's premises false: (1) the current `web-master`
+(`Estalara-app-new/web-master`, **not a git repo** — proved-state recorded by sha256 in
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`) carries `data-estalara-listing`, `-listing-id`, headline
+and description slots but **no CTA slot**; (2) "the committed web-master HEAD already contains these
+edits" is false — the older git tree's HEAD greps 0 for `data-estalara`.
+
+**AC:** (1) decide with Rafał: add the CTA slot, or correct every artefact claiming four slot edits
+(FOLLOW-816's stub, `SDK_PRODUCTION_INTEGRATION.md`, the HANDOFFS FOLLOW-191 contract); (2) get the
+proven `web-master` state under version control or explicitly record why it is not — a pilot
+substrate identified only by sha256 of three files is fragile; (3) hop-10 note: behavior-only
+signals saturate at confidence 0.3655 vs the 0.5 floor on this page (bit-identical peak across
+`PASSES=4`) — carry that measurement into FOLLOW-819's differentiator design rather than re-deriving
+it.
+
+cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`;
+`backlog/HANDOFFS.md` FOLLOW-191]

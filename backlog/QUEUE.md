@@ -1,19 +1,85 @@
 # Backlog Queue
 
-## ▶️ Track LOCAL opened (session 103 continuation, 2026-08-07) — FOLLOW-816 dispatched
+## ▶️ START HERE — session 104 (2026-08-07) — FOLLOW-816 DONE, ESC-052 filed (staging IS production), FOLLOW-817 next
 
-**FOLLOW-868 closed** on a direct CEO attestation (mailbox exists, will be monitored) — recorded in
-the stub with a re-review trigger. **Track HYGIENE and the consent P0 are fully closed;** this
-dispatch starts the CEO's standing goal (memory `project_localhost_100pct_chat_archetype_priority`):
-the full loop on localhost.
+**Session 103 was cut off by a terminal close** after PR #690 was opened. Recovery on resume found
+the work intact: **PR #690 merged as `5b2da4f2`**, worker branch and worktree survived, and the only
+loss was this orchestrator's own uncommitted bookkeeping — reconstructed below rather than redone.
+(Fifth confirmation of the standing lesson: an interrupted session strands PM bookkeeping, never the
+worker's output — check `git worktree list` and `gh pr list` before concluding anything was lost.)
 
-**FOLLOW-816 — status: IN_PROGRESS** — **assigned_to:** sdk-engineer **model:** **Opus**
-**started_at:** 2026-08-07 **branch:** `sdk-engineer/FOLLOW-816-local-pilot-environment`
-**worktree:** `.claude/worktrees/follow-816`. Model justification: environment-heavy, cross-system
-work (local Estalara-app + SDK + staging ingest + staging ClickHouse) with genuinely open discovery
-— the exact opposite of a bounded ticket; Opus per the model-fit table.
+### FOLLOW-816 — DONE
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs at dispatch time.**
+**PR #690 → `5b2da4f2`**, sdk-engineer on Opus, CI green. Merged content re-verified on `main`, not
+assumed: `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` (426 lines),
+`scripts/dev/local-pilot-session.mjs` (293 lines), `scripts/dev/README.md`, `.gitignore` guards,
+agent lessons.
+
+**6 of 8 hops green, and the two reds are findings, not failures** — every verdict in the runbook §6
+is a pasted observation with a stated failure mode, and the harness was proven falsifiable by an
+executed negative control (ingest Worker killed → 6/8 became 5/8, hop 4 flipped):
+
+| Hop                        | Verdict | Substance                                                                       |
+| -------------------------- | ------- | ------------------------------------------------------------------------------- |
+| 1 hooks / 1 bundle         | GREEN   | 4 `data-estalara-*` attrs on 3 elements; SDK bundle 200, `window.Estalara` live |
+| 4 ingest ACK               | GREEN   | 3/3 `POST /v1/events → 200`, origin asserted (not just status)                  |
+| 5 decision call            | GREEN   | 3 × `POST /adapt → 200`                                                         |
+| 11 `intent.snapshot` emit  | GREEN   | full census incl. `intent.snapshot:1`                                           |
+| **10 floor / DOM applied** | **RED** | peak confidence **0.3655** vs floor **0.5**; only hint ever sent `neutral`      |
+| **11 rows in ClickHouse**  | **RED** | `events` / `intent_events` / `adaptation_decisions` all 0 — see below           |
+
+**AC(2) is BLOCKED, not discharged, and the worker said so.** It asked for rows in _staging_; §7
+proves there is no staging data plane to write to (empty `CLICKHOUSE_URL` in `[env.staging]`, no
+bindings, no DNS, no `CLICKHOUSE_*` in Doppler `stg`). A fully **local** ClickHouse + local Worker
+was substituted rather than pointing the page at prod. That substitution is what produced §8.
+
+**§8 — first exercise of the ClickHouse schema outside CI, and every real write was rejected.** Two
+writers, one root cause, HTTP 200 throughout because both writes are post-ACK: the Worker emits
+`toISOString()` with a trailing `Z`, which `date_time_input_format=basic` rejects (Code 27). Proven
+by isolating the single variable — the byte-identical payload is accepted under `best_effort`. **CI
+structurally cannot catch this**: `infra/clickhouse/scripts/smoke-test.sh:61` inserts an unquoted
+numeric epoch, a byte-shape no production writer ever produces. **Prod is NOT affected** — this
+session had already probed prod (`date_time_input_format = best_effort`, CH 26.4.1), so the defect
+is local/CI-only. Recorded as a sharpened AC(2) on FOLLOW-853 (already P1), not re-filed.
+
+**Hop 10's red is FOLLOW-819's problem statement, measured.** Behavior-only signals saturate at
+0.3655 against the 0.5 floor — bit-identical across `PASSES=4`, so it is a ceiling, not noise. That
+measurement is carried into FOLLOW-872 for FOLLOW-819's differentiator design rather than
+re-derived.
+
+### 🔴 ESC-052 filed — "staging Postgres" IS production Postgres (CEO ruling needed)
+
+Found by the worker, **independently re-verified by this orchestrator**:
+`doppler secrets get DATABASE_URL_ADMIN` returns the **same sha256** for `stg` and `prd` — same
+user, host, database. `db-migrate.yml`'s "staging first, then prod" sequence has been running
+against production twice and has been non-protective for its entire life.
+
+**This BLOCKS FOLLOW-818**, which was about to write `FEEDBACK_ENDPOINT_ENABLED=true` into `stg`
+believing it was isolated — that write would have flipped production. FOLLOW-818's `depends_on` is
+amended accordingly. Recommendation in the escalation is **option 2** (declare localhost-first
+official for the data plane, retire the non-protective gate); FOLLOW-871 pre-files option 1 and is
+held for the ruling.
+
+### Also filed
+
+- **FOLLOW-871** (P2, HELD for ESC-052) — provision a genuinely separate staging data plane. Close
+  unexecuted if the ruling is option 2.
+- **FOLLOW-872** (P2) — FOLLOW-816 disproved two of its own stub's premises: the pilot `web-master`
+  has **no CTA slot** (three slots, not four), and "the committed web-master HEAD already carries
+  these edits" is false (that tree greps 0 for `data-estalara`). Reconcile with Rafał across the
+  stub, `SDK_PRODUCTION_INTEGRATION.md`, and the HANDOFFS FOLLOW-191 contract.
+
+Next free stub: **FOLLOW-873**.
+
+### Dispatched next: FOLLOW-817 (P1, READY, no deps) + RETRO-259
+
+FOLLOW-818 and FOLLOW-819 are both unavailable — 818 on the ESC-052 ruling, 819 on 817/818/560.
+FOLLOW-817 is the only Track LOCAL ticket with a clear path, and it carries ESC-042 item 1 (chat NLP
+dark since 2026-07-24 with no named owner). Its AC(4) — `MODAL_CHAT_NLP_URL` in the **staging**
+ingest env — must be read through ESC-052: the worker is instructed to treat any "staging" target as
+suspect and verify isolation before writing, not assume it.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS at bookkeeping time. 0 open PRs.**
 
 ---
 
@@ -21612,7 +21678,7 @@ FOLLOW-815.
     Local pilot environment — SDK + data-estalara-* slots on a localhost listing page, against
     staging
   agent: sdk-engineer (+ Rafał Palak, CTO, for the Estalara-app side)
-  status: READY
+  status: DONE # PR #690 → 5b2da4f2, session 104. 6/8 hops green; AC(2) BLOCKED (no staging data plane, ESC-052/§7), AC(3) RED by measurement (0.3655 vs 0.5 floor) → FOLLOW-819/872. Runbook docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md
   priority: P1
   estimated_hours: 6
   depends_on: []
@@ -21678,7 +21744,7 @@ FOLLOW-815.
   status: BLOCKED
   priority: P1
   estimated_hours: 2
-  depends_on: [FOLLOW-816]
+  depends_on: [ESC-052] # FOLLOW-816 DONE (PR #690). RE-POINTED session 104: the remaining blocker is the ESC-052 ruling — Doppler stg.DATABASE_URL_ADMIN is byte-identical to prd, so writing FEEDBACK_ENDPOINT_ENABLED=true into `stg` would flip PRODUCTION. Do not execute this ticket's AC(1) until that ruling lands.
   source: >-
     2026-08-04 audit F-13, verified at HEAD:
     apps/control-plane/src/app/api/adapt/feedback/route.ts:262 returns 503 unless

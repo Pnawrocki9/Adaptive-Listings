@@ -156,6 +156,7 @@ const BANNER_STYLE = `
  *   through. The 24-hour structured-intent summary claim was and remains true; it was the "and
  *   nothing else" half that was wrong. Lawful basis stays LEGITIMATE INTEREST with full
  *   transparency, and NO new consent checkbox was added (CEO+DPO, ESC-049 addendum Q1/Q3). These
+ *   Authoritative facts: `docs/compliance/C-07-chat-retention-scope.md` v1.3 (PR #687). These
  *   strings are byte-synced with `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and
  *   `platform-registration/lib.ts` — change all three together or the Rule N gates go red.
  *   The full registration consent text is in the account sign-up flow.

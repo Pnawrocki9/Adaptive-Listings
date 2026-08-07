@@ -53225,3 +53225,1791 @@ have a set line" exception; FOLLOW-850 gains a second consumer; FOLLOW-858 becom
 859/860 untouched; 833/834/836/839/840/841/852/853 unaffected. SEVERITY-FLAGGED FOLLOW-865 to the PM in §5a
 with RETRO-252's own escalation test quoted (its first clause is now MET) and the two facts that cut the other
 way, NOT escalated (guardrail). QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+## RETRO-256 — FOLLOW-866 (#687) — the stop condition fired and its twin is live — 2026-08-07
+
+**THE HEADLINE: THE AC(2) STOP CONDITION IS THE FIRST DESIGNED CONTROL IN THIS CORPUS THAT WORKED ON
+ITS FIRST USE, AND THE THING IT SAVED IS COUNTABLE.** FOLLOW-866 AC(2) said: _"§Q3 and §Q4
+**re-derived against the corrected premise**, with the reasoning shown — **if either conclusion
+changes, STOP and escalate rather than absorbing it**."_ §Q3's conclusion did change. The worker
+flagged it, shipped v1.2 with the flag standing, the CEO+DPO ruled inside the session (ESC-049
+addendum, `backlog/ESCALATIONS.md:3344`), and v1.3 resolved both flags with the ruling cited. The
+countable saving is **one `PLATFORM_REGISTRATION_TOS_VERSION` bump**: the ruling routed the required
+disclosure onto FOLLOW-815's already-in-flight bump instead of spending a second one, and a second
+bump is a registration outage in this repo (FOLLOW-712's `422 tos_version_superseded`, which is why
+FOLLOW-715 exists). Two properties made it work and neither is the worker's diligence: **(i) the
+STOP was written into the AC of the fork, not into a general policy**, so it was read at the moment
+the fork was reached; **(ii) the decision-maker was reachable inside the session**. Remove (ii) and
+the control still works — it just stalls. Remove (i) and it does not exist.
+
+**SECOND HEADLINE: THE PM CAUGHT A FIRED-AT-BIRTH RE-REVIEW TRIGGER, AND I SWEPT FOR ITS SIBLINGS
+AND FOUND A LIVE ONE THAT NOBODY HAS EVER FLAGGED — INCLUDING MY OWN PREDECESSOR, WHO READ THE
+SECTION IT IS IN.** The PM's catch: C-07 v1.2's Q1 trigger glossed _"any widening of what
+`scrubMessagePii` passes through"_ with _"(names, financial detail and family composition already
+survive it)"_ — i.e. the gloss described the status quo, so read literally the trigger fired the day
+it was written. Fixed in the fourth commit to a change condition. The sibling I found is **`docs/compliance/dpia.md:539`, §2.7.3 re-review trigger 1**, merged by PR #682 (FOLLOW-845) and live on
+`main`:
+
+> "1. Any read of a ClickHouse (or other upstream) **response body** is reintroduced anywhere in
+> `apps/ingest/src` on a path a `chat.message.sent` can reach — **including the two 300-character
+> slices in `handlers/intent-snapshot.ts`**, which are safe today only because…"
+
+The head clause's condition is "a body read is reintroduced". The `including` clause then names two
+sites **that exist right now** — verified by me, not inherited:
+`grep -n "\.text()" apps/ingest/src/handlers/intent-snapshot.ts` → `:234`, `:337`, both live
+(FOLLOW-852, open). One sentence carries two different firing conditions, and the head clause is
+already satisfied by the sites the sentence itself enumerates. **RETRO-251 read that PR's compliance
+record closely enough to correct its brief's premise from it, and RETRO-253 re-read it; neither of
+us saw this.** Recorded against FOLLOW-852 under Rule AN, and minted as **P-38** at count 1 (§6).
+
+**THIRD HEADLINE: THE CASCADE IS FOUR HOPS AND THE FOURTH IS UNOWNED.** The correction propagated
+to a consent-text change (FOLLOW-815 / PR #688), a Master_Design self-contradiction (FOLLOW-867), and
+two CEO+DPO rulings. The fourth hop — artefacts that still restate the retired claim and are **not**
+owned by 867 — is two code comments I enumerated in §5c and routed into FOLLOW-867's AC(3) rather
+than re-filing.
+
+### 1. Summary of change
+
+- **PR:** #687 (merged 2026-08-07 08:29:18 UTC, squash → `9c8977f0`, single parent `fd432ae6`;
+  branch `compliance-engineer/FOLLOW-866-c07-storage-claim`; worker `compliance-engineer` / **Fable**)
+- **Files changed: 4 (+386 / −119).** Measured with `gh pr view 687 --json files` **and**
+  `git diff --numstat 9c8977f0^ 9c8977f0` — the two agree exactly. All three PRs in this batch were
+  rebased mid-flight, so only merge-commit-vs-first-parent is meaningful (RETRO-254's correction,
+  obeyed):
+
+  | file                                            |  +  |  −  |
+  | ----------------------------------------------- | --- | --- |
+  | `docs/compliance/C-07-chat-retention-scope.md`  | 243 |  52 |
+  | `docs/compliance/dpia.md`                       |  65 |  27 |
+  | `docs/compliance/ropa.md`                       |  43 |  40 |
+  | `.claude/agents/compliance-engineer/lessons.md` |  35 |   0 |
+
+- **Modules touched:** `docs/compliance` + the learning corpus. **Zero** `apps/`, `packages/`,
+  `scripts/`, `.github/`, `infra/`, migrations, Python, SQL. Zero executable surface.
+- **Key contracts changed — all documentary, and one of them is load-bearing on a CEO gate:**
+  1. **C-07's storage premise** — "no raw chat text is written to Redis, ClickHouse, or Postgres" →
+     "no **unscrubbed identifiers** reach any of the three, AND `chat.message.sent.payload.message`
+     (≤4000 chars, emails/phones masked) IS retained in ClickHouse `events.payload` for 13 months".
+     **Breaking: yes, for every conclusion that rested on it** — which is exactly why AC(2) existed.
+  2. **C-07 v1.1 → v1.3, `dpia.md` 2.14 → 2.16, `ropa.md` 2.10 → 2.12.** Three version bumps in one
+     PR, each with a dated revision row naming the ruling.
+  3. **Two lawful-basis judgments became RULED rather than pending** — Q1 (LI, no explicit-consent
+     trigger) and Q3 (disclosure required, issued via FOLLOW-815). Both carry a named re-review
+     trigger; both are recorded as judgments, not facts.
+  4. **`ropa.md` Retention Schedule gains a row** — `Chat message text` / ClickHouse `events.payload`
+     / 13 months, citing `infra/clickhouse/migrations/0001_create_events.sql:46`. That is the first
+     time this store has appeared in the record of processing.
+
+### 2. Verification done in PR
+
+- **Test files changed: none, and none was possible** — the diff is four Markdown files. Assertions
+  added: 0. Coverage delta: N/A.
+- **CI: passed.** PM record (QUEUE session-103): `ci_check_counter` 2/5, `fix_iteration_counter` 1/3
+  (a PM-requested wording fix, correctly not charged as rework), 192/192 Rule I symbol-set match vs
+  baseline run `31159610869`, gate exit 0.
+- **The verification that matters here is CITATION verification, and I re-ran the load-bearing ones
+  myself rather than reading them.** Every one of the ClickHouse chain's citations resolves at HEAD:
+  `packages/sdk/src/index.ts:1518-1521` (emit), `packages/sdk/src/core/pii-scrub.ts:22-27`
+  (email+phone only), `packages/shared/src/schemas/events/chat.ts:39-40` (`max(4000)`) and `:56-57`
+  (the §H.8 invariant in the schema's own words), `apps/ingest/src/clickhouse-producer.ts:142`
+  (`JSON.stringify(event.payload ?? {})`), `infra/clickhouse/migrations/0001_create_events.sql:46`
+  (`TTL toDateTime(ts) + INTERVAL 13 MONTH`). **The stub's own citations were wrong and the worker
+  silently corrected them** — FOLLOW-866's stub says `clickhouse-producer.ts:110` and
+  `0001_create_events.sql:41`; the true lines are `:142` and `:46`. Recorded because a worker
+  correcting a stub's line refs without saying so is how the next reader re-derives them.
+- **Postgres was verified for the first time in this document's life**, and the method is the strong
+  one: not "no `message` column found" alone, but "neither `apps/intent-engine` nor
+  `apps/stream-consumer` — the only two backend services that touch chat text — imports a Postgres
+  client at all", i.e. an argument from absence of capability rather than absence of a match.
+- **What the verification did NOT cover:** the sibling set of the *shape* it corrected (§4d DG-1 —
+  the fired-at-birth trigger class), and the two surviving code comments in §5c. Both are enumeration
+  misses on an axis the ACs did not name, which is the fifth consecutive retro to record that
+  boundary (RETRO-251 P-36 onward).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. N/A by construction, and I am saying N/A rather than "clean".** Four Markdown
+files, zero new files, zero new exported symbols, zero executable lines. Confirmed two ways rather
+than assumed: `git diff 9c8977f0^ 9c8977f0 --name-only` returns four `.md` paths, and
+`bash scripts/check-rule-i.sh` on merged `main` returns `Symbols scanned : 639 / Violations found :
+192` — unchanged by this merge (the +1 on symbols scanned is PR #688's, §RETRO-257).
+
+**CHECK B — half-wire. Clean ✅, and the one candidate is checked rather than waved.** No new event,
+env var, DB column, topic or SDK signal. The candidate is the **named re-review trigger** on the Q1
+ruling — a control with a producer (the C-07/dpia/ropa sentences) and a consumer that is a future
+human editor. That is the accepted shape for a compliance re-review condition and it has one
+mechanical half already available (`scrubMessagePii`'s regex set), which nothing checks. **Not filed
+as a half-wire:** FOLLOW-841 already owns "trigger 1's missing mechanical half" for this document
+family, and RETRO-251 §5a already routed the source-axis grep into it. Recorded, not re-filed
+(Rule AN).
+
+**Wiring Audit — clean ✅.**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **N/A on the shipped correction, and the honest entry is to say so.** I looked specifically for the
+  failure this document class produces: a corrected premise that silently invalidates a conclusion
+  the correction did not visit. All five Q-sections were visited: Q1 ruled, Q2 factually corrected,
+  Q3 ruled, Q4 re-derived-unchanged with the scoping argument shown (the vector's content is
+  untouched by a correction about a separate store), Q5's raw-text leg closed and its
+  vector-activation gate table explicitly held open as an independent set of legs. The Q5 split is
+  the subtle one and it is right: closing the retention leg does not close the six-row activation
+  table, and the document says so.
+
+#### 4b. Code bugs not caught
+
+- **N/A.** No code changed. Recorded rather than omitted, per the template.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded, deliberately NOT filed) — `apps/stream-consumer/src/tests/test_chat_nlp_bridge.py:20` states the retired claim as a coverage
+  summary and cites C-07 as its authority.** The line reads
+  `AC-2: no raw chat text is added to the ClickHouse batch (DPIA C-07)`. The **test body is correct
+  and its own docstring is precise** (`:376-383`: _"payload.message (the PII-scrubbed text field) is
+  NOT stripped from the event before the ClickHouse insert; the ClickHouse schema stores the payload
+  blob as-is"_) and the assertion it makes — `batch[0]["type"] == "chat.message.sent"` — is the
+  opposite of what the header line claims. So the file simultaneously proves the write happens and
+  summarises itself as proving it does not, citing the document this PR corrected. **Not filed:** it
+  is a comment with no runtime effect, the body and its docstring are both right, and it is one of
+  exactly two surviving sites (§5c) which I have routed into FOLLOW-867 AC(3) under Rule AN.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2, recorded against FOLLOW-852 — Rule AN, no new number) — `dpia.md:539` §2.7.3 trigger 1
+  is fired at birth.** Full mechanism in headline 2, with the live `grep` that proves the two named
+  sites still exist. **The reason it is FOLLOW-852's and not a new stub:** 852's fix removes the two
+  slices, which silently invalidates the trigger's `including` clause; whoever takes 852 must correct
+  the trigger's wording in the same PR or leave a sentence naming sites that no longer exist. That
+  is Rule AO's shape (a corrective edit inherits the scope of the thing it corrects) applied
+  forward. **Rule S also fires**, on trigger 1's own authoring PR (#682) rather than on this one, and
+  its Verification would have caught nothing — Rule S governs sibling completeness of a *change*, and
+  this is a defect in a single sentence's internal logic. No rule action from Rule S here.
+- **DG-2 (P3, recorded against FOLLOW-867 AC(3) — Rule AN) — two code comments still restate the
+  retired claim and 867's AC(3) is scoped to Master_Design only.** Enumerated by one grep, run rather
+  than assumed:
+
+  ```
+  grep -rniE "no raw chat text|no free text, no message content|does not store the full text" \
+      --include=*.md --include=*.ts --include=*.py .   # (node_modules and the append-only backlog logs excluded)
+  ```
+
+  Twenty-eight hits. Twenty-six are either corrected, historical ("it asserted that…"), or **true as
+  scoped** — and I classified each rather than pattern-matching: `apps/stream-consumer/src/consumers/events.py:59` is scoped _"by this function"_ and C-07 v1.3
+  itself assesses it as accurate; `apps/control-plane/src/app/api/adapt/route.follow346.test.ts:18,:209` is scoped to the adapt
+  RESPONSE; `dpia.md:261` / `ropa.md:482` are scoped to `apps/control-plane`; `dpia.md:1719` was
+  corrected to "in this Redis key"; `PRIVACY_NOTICE_TEMPLATE.md:352` sits *inside* the correction
+  notice. **The two that are false as written and unowned:**
+  1. `packages/sdk/src/ui/consent-banner.ts:148` — the docblock's enumeration bullet still reads
+     _"buying-intent identification (12-dim vector, 24 h TTL, **no raw chat text stored by AL**)"_,
+     **three lines above** the corrected paragraph PR #688 added to the same docblock. The corrective
+     edit did not correct the bullet it was appended under.
+  2. `apps/stream-consumer/src/tests/test_chat_nlp_bridge.py:20` — §4c TG-1.
+
+  FOLLOW-867 AC(3) already says _"verify no other Master_Design section restates the retired claim
+  (grep for the storage-denial phrasing, not just the section)"_. **The right correction is to widen
+  its region from Master_Design to the repo and hand it the grep above with the two hits** — Rule AL's
+  own subject (an assertion evaluated over a smaller region than the thing it guards), applied to a
+  ticket's AC rather than to a check.
+- **DG-3 (N/A — Master Design alignment, algorithm step 5, run rather than assumed).**
+  `grep -n "C-07\|chat text\|H.8" docs/MASTER_DESIGN.md` → §H.8's C-07 paragraph at `:2989` is
+  **false as written and correctly FLAGGED** at `:2987` — but by PR **#688**, not this one. This PR
+  left Master_Design untouched, which is right (its scope guard is documents, and §Y.2 reserves
+  Master_Design revisions for the architect). Owned end-to-end by **FOLLOW-867**. No new number.
+- **DG-4 (N/A — checked and clean, recorded so it is not re-derived).** The worker's fourth commit
+  claims: _"Swept ropa.md and dpia.md for the same gloss (Rule S) — both already state only the head
+  clause with no gloss, so no sibling to fix there."_ **I re-ran that sweep and it is accurate.**
+  `dpia.md:1778` and `ropa.md:134` both carry only _"any widening of what `scrubMessagePii` passes
+  through, or any lengthening of the 13-month retention"_ with no status-quo gloss. A Rule S claim
+  that survives an independent re-run is worth recording as a positive, because most of this corpus's
+  Rule S entries are violations.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-815 (PR #688, merged 19 minutes later) — NOT invalidated; this merge is its scope
+  expansion and the sequencing held.** The QUEUE's merge note (_"#687 and #688 both touch `dpia.md`
+  (disjoint sections: §13.4/§3.1 vs §8). Merge #687 first; #688 is still in flight and will absorb
+  any rebase"_) was made at the section level and was correct: #688's `dpia.md` hunk is §8 only, and
+  its fourth commit is titled _"align C-07 citations with the merged v1.3 after rebase"_ — i.e. the
+  rebase was absorbed and the citations re-pointed at v1.3 rather than at the pre-merge draft.
+  **This is the second consecutive session where a hunk-level collision prediction proved right**
+  (RETRO-254 §5a recorded the first, for #685/#686).
+- **FOLLOW-867 — filed by the #688 worker, accurate as written, and its AC(3) region is too small.**
+  §4d DG-2. Recommendation to the PM: widen AC(3) from Master_Design to the repo and paste the grep.
+  No re-price; P2 architect is right.
+- **FOLLOW-852 — NOT invalidated, SHARPENED for the third consecutive retro, and now carrying a
+  documentation obligation.** RETRO-251 corrected its sink set from two to six; RETRO-251 also
+  flagged that its AC(1) does not transfer to the PostgREST leg at `:337`; this entry adds §4d DG-1
+  (its fix invalidates `dpia.md` §2.7.3 trigger 1's `including` clause, which must be corrected in
+  the same PR). **Three retros have now sharpened one FROZEN P2 stub without it being dispatched.**
+  That is worth the PM's attention as a scheduling signal, not as a defect: a stub that needs three
+  corrections before it can be worked is a stub whose scope has outgrown its price.
+- **FOLLOW-841 — NOT invalidated, and this merge adds a second mechanisable trigger to its subject.**
+  841 owns "trigger 1's missing mechanical half" for §2.7.1. C-07's new Q1 trigger — "any widening of
+  what `scrubMessagePii` passes through" — is mechanisable by exactly the same means (a fixture over
+  `pii-scrub.ts`'s regex set), and it now gates a **ruled** lawful basis rather than an accepted
+  residual risk. Recorded on the stub; no re-price, because the C-07 half is not in 841's scope today.
+- **FOLLOW-846 / 848 / 854 / 855 / 856 / 857 / 858 / 859 / 860 / 861 / 862 / 863 / 864 / 865 —
+  unaffected, re-checked rather than assumed.** This PR touches four Markdown files under
+  `docs/compliance/`; none of those stubs is scoped there.
+- **FOLLOW-833 / 834 / 836 / 839 / 840 / 843 / 844 / 847 / 849 / 850 / 851 / 853 — unaffected.**
+
+**No ⚠️ severity flag to the PM from this entry.** The document is now true, the two flags it raised
+are ruled, and the one live defect it surfaced (§4d DG-1) is inert until FOLLOW-852 is worked.
+
+#### 5b. Future sprint tickets affected
+
+Every future compliance-document ticket inherits one thing from this merge that is new and is not
+visible from any ticket's own scope: **C-07 is now a document whose conclusions are RULED rather than
+derived**, so a future correction of its premise cannot be absorbed by re-deriving — it has to go
+back to the CEO+DPO. That is the correct posture and it raises the cost of the next premise
+correction. The named re-review triggers are the mechanism that decides when that cost is paid, which
+is why §4d DG-1's class matters more than one sentence.
+
+#### 5c. Contracts changed others rely on
+
+- **C-07's storage premise** — cited by `dpia.md` §3.1/§13.4, `ropa.md` §2/Retention Schedule,
+  `PRIVACY_NOTICE_TEMPLATE.md` §6.2, `MASTER_DESIGN.md` §H.8, the SDK consent banner and
+  `platform-registration/lib.ts`. Of those, **five are now correct, one is flagged-but-false
+  (`MASTER_DESIGN.md:2989`, FOLLOW-867), and two code comments still restate it** (§4d DG-2).
+- **`ropa.md`'s Retention Schedule** — a regulator-facing export gains a row it never had. Downstream:
+  any ROPA extract, and the DPIA cross-reference.
+- **The `events` table's 13-month TTL** — promoted from an infrastructure detail to a **cited
+  retention promise in three compliance documents and, via FOLLOW-815, in the consent text a data
+  subject reads.** That is the sharpest new coupling in this merge: `0001_create_events.sql:46` is now
+  load-bearing on a disclosure. Nothing mechanical ties the two, and C-07's Q1 ruling names
+  "any lengthening of the 13-month retention" as a re-review trigger with no mechanical half.
+  **Recorded here rather than filed** — FOLLOW-841 is the natural home and §5a routes it there.
+
+#### 5d. Architectural assumptions affected
+
+**The estate's compliance documents have been carrying single-store verification behind
+three-store language, and this is the first time that gap was measured rather than suspected.** The
+sentence was verified against `redis_writer.py` in 2026-06-19 and re-asserted through v1.1 without
+either of the other two stores ever being opened. The general form, and it is the transferable part:
+**a claim quantified over N systems is only as verified as its weakest conjunct, and a document that
+records its evidence per-claim rather than per-conjunct cannot show which conjunct is unverified.**
+C-07 v1.2/v1.3 now records evidence per store, under three separate headings, which is the structural
+fix and not merely the factual one. That shape is worth copying to any other N-system claim in the
+compliance corpus; I did not find a second one, so there is nothing to file.
+
+Second, and it cuts the other way: **the correction did not change a single line of behaviour.** The
+ClickHouse write was deliberate §H.8 design before this PR and is deliberate §H.8 design after it.
+What changed is that the estate now knows what it does. Six weeks of documents, one CEO gate and two
+subject-facing surfaces were built on top of a sentence nobody had checked.
+
+### 6. New lesson candidates
+
+- **P-38 ("A CONTROL'S FIRING CONDITION IS STATED AS A PROPERTY OF THE WORLD IT WAS WRITTEN IN, SO
+  READ LITERALLY IT FIRED AT BIRTH AND THEREAFTER CARRIES NO INFORMATION") — MINTED AT COUNT 1. NOT
+  PROMOTED.**
+  - **THIS RETRO (count 1)** — `dpia.md:539` §2.7.3 trigger 1, live on `main`, whose `including`
+    clause enumerates two sites that satisfy its own head clause today (§4d DG-1, verified by grep).
+  - **Corroborating but deliberately NOT counted:** C-07 v1.2's Q1 gloss, caught by the PM before
+    merge and fixed in-flight. It is the same shape in a different document by a different worker,
+    and counting it would be defensible — I am refusing it because RETRO-254 held P-37 at count 1 on
+    the principle that an instance which never reached `main` is weaker evidence than one that did,
+    and because inflating a count inside the session that mints the pattern is the RETRO-122 error.
+    **If the next retro disagrees with that call, the honest move is to say so and promote at 2, not
+    to re-derive the reasoning.**
+  - **Tested against the rule TEXTS, not the titles, per RETRO-246's method.** **Rule AH** ("a doc
+    that gives an operator an executable instruction or asserts a capability MUST be verified against
+    the code at the doc's own merge commit") is the closest and **does not fire**: its Rule text
+    requires the author to "open the receiving code and show the accepting parse", and a re-review
+    trigger has no receiving code — it asserts neither a capability nor a runnable step, it names a
+    future condition. **Rule AF** (a permanently red gate is a disabled gate) is the inverse-adjacent
+    shape and is scoped to CI check status on `main`, with CI remedies. **Rule Q** governs a CI gate
+    reporting a status without executing its assertion. **Rule N** governs a disclosure that
+    contradicts shipped code — here the disclosure is true and the *control* is inert. **Rule S**
+    governs sibling completeness of a change, not the internal logic of one sentence. **None fires.**
+  - **Second-sighting bar, pre-specified so the next retro TESTS rather than re-derives:** (a) an
+    artefact states a condition under which a judgment, gate or review MUST be re-performed; (b) the
+    condition is satisfied by the state of the world at the artefact's own merge commit —
+    **demonstrated by running the condition as a check against that commit**, not argued from
+    reading; (c) the artefact is treated by at least one other document or ticket as an active
+    control. Clause (c) is what stops this swallowing every loosely-worded sentence. **If the second
+    sighting is a CI gate rather than a prose control, do NOT promote under this letter** — that is
+    Rule AF/Rule Q territory and folding them together would make all three unusable.
+- **"A DECISION-FORK AC MUST NAME ITS STOP CONDITION" (the brief's question 1) — ASSESSED AGAINST THE
+  ACTUAL RULE TEXTS. NOT PROMOTED, AND THE REASON IS THAT THE BAR IS NOT MET RATHER THAN THAT THE
+  IDEA IS WRONG.** The idea is good and it demonstrably paid. It has **one** sighting.
+  - **Prior art checked before assessing, not after.** **Rule AA** ("an operator-gated ticket is
+    `CODE_COMPLETE_OPERATOR_PENDING`, never `DONE` on code alone") is the nearest relative and its
+    subject is a ticket's *status* when a step is outside the agent's power — adjacent, and it does
+    not require the AC to name the fork in advance. `CLAUDE.md`'s escalation list already says
+    _"a ticket's acceptance criteria are ambiguous → block ticket, ask"_ — general prose, not an
+    AC-authoring obligation. **Rule P** governs prior-art checks before proposing. None of them says
+    what FOLLOW-866 AC(2) said.
+  - **The count is 1 and I looked for a second rather than assuming there is none.**
+    `grep -n "STOP and escalate\|STOP and\|flag rather than\|do not absorb" backlog/FOLLOW_UPS.md`
+    over the 8xx range returns FOLLOW-866 AC(2) and nothing else. FOLLOW-710 AC(3) and FOLLOW-706
+    AC(3) both say _"the PM escalates; this ticket does not self-escalate"_ — which is a **routing**
+    instruction about who escalates, not a **trigger** instruction about when. Different proposition;
+    counting them would be count-inflation.
+  - **ARMED, with the discharge condition named so the next retro tests rather than re-derives:** the
+    next retro observing a second AC that (i) anticipates a specific fork in the work, (ii) names the
+    STOP explicitly in the AC rather than in general policy, and (iii) is reached and honoured, cites
+    RETRO-256 §6 → ≥2 → **promote a new letter** (this is not an amendment to an existing rule; no
+    rule owns the territory). **If instead the second sighting is an AC that named a STOP which was
+    NOT honoured, that is a compliance failure against an adequate control and promotes nothing** —
+    the same adjudication RETRO-247/248/252/253/255 reached five times.
+- **RETRO-253's RE-ARMED RULE S AMENDMENT — TESTED CLAUSE BY CLAUSE AGAINST THIS PR. NOT DISCHARGED.
+  HELD AT COUNT 1.** Clause (a) requires _"a worker instructed to enumerate-not-fix whose enumeration
+  produces filed FOLLOW-NNNs"_: FOLLOW-866 AC(5) instructs the opposite — _"correct those in the same
+  PR (Rule S — no sibling left)"_ — i.e. enumerate-AND-fix. **NO.** Clause (b) requires _"a sibling
+  deferred in PROSE later found under-assessed, mis-graded or never filed"_: this PR's deferrals are
+  its scope guard (`dpia.md` §8 and the consent surfaces), and **both are routed to a numbered ticket
+  in flight (FOLLOW-815), not to prose**, which is the amendment's own required form. **NO.** Full
+  adjudication for all three merges, and a recommendation to retire the arming, in RETRO-258 §6.
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Fable**, on a document that gates a
+  CEO sign-off and whose correction was known in advance to fork into a lawful-basis judgment. **It
+  paid, and the place it paid is identifiable and is not the writing:** the worker (i) recognised
+  that Q3's conclusion changed and Q4's did not, which required scoping Q4's balancing test to the
+  vector and showing why the correction does not touch it; (ii) split Q5 into a retention leg that
+  closes and an activation gate table that does not; (iii) argued the Postgres negative from absence
+  of a client rather than absence of a column. A tier that absorbed the Q3 change would have shipped
+  a document that reads clean and is wrong. **What it missed is a reading miss on an axis no AC named**
+  (§4d DG-1's sibling shape), which is the **sixth** consecutive retro to record that
+  _the model tier is not the control for enumeration completeness; the AC is_ (RETRO-251 P-36,
+  RETRO-252 §6, RETRO-253 §6, RETRO-254 §6, RETRO-255 §6).
+
+### 7. Follow-ups
+
+**N/A — this retro files no new stubs, deliberately.** Both wiring checks are clean, §4a and §4b are
+genuinely N/A, and the two residues found are corrections to **existing** stubs, recorded under
+Rule AN rather than given numbers:
+
+- **FOLLOW-852** — its PR must also correct `dpia.md:539` §2.7.3 trigger 1, whose `including` clause
+  its own fix invalidates (§4d DG-1). Third consecutive retro to sharpen this stub.
+- **FOLLOW-867** — widen AC(3)'s region from Master_Design to the repo; the grep and its two live
+  hits are in §4d DG-2.
+- **FOLLOW-841** — the C-07 Q1 trigger ("any widening of what `scrubMessagePii` passes through") is
+  mechanisable by the same fixture 841 already wants, and it now gates a ruled lawful basis (§5a).
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one hop:**
+
+- **FOLLOW-866 — CLOSED on all five ACs, and I re-derived the two that carry the ticket.**
+  - **AC(1)** ✅ both instances rewritten — **producer** the corrected Context paragraph
+    (`C-07:63-96`) and Implementation Evidence (`C-07:404-...`) → **consumer** §Q1/§Q2/§Q3/§Q5's
+    inline corrections, which each restate the corrected premise rather than assuming it → **render**
+    the "Corrected conclusion (v1.2)" block. The TTL is cited from the migration, not guessed —
+    re-verified by me at `0001_create_events.sql:46`, including the negative that no later migration
+    alters it.
+  - **AC(2)** ✅ and this is the one that matters. §Q4 re-derived, conclusion UNCHANGED with the
+    scoping argument shown; §Q3 re-derived, conclusion CHANGED, **flagged and escalated rather than
+    absorbed**, then ruled and resolved in v1.3 with the ruling cited at four sites (C-07 header,
+    §Q1, §Q3, §Q5). **The STOP fired.**
+  - **AC(3)** ✅ all three stores, Postgres for the first time (§2).
+  - **AC(4)** ✅ — the v1.1 revision row itself gains a bolded correction stating that the wording it
+    describes _"was verified against only ONE of the three named stores"_. Amending a historical
+    revision row rather than only adding a new one is unusual and correct: the row is what an auditor
+    reads first.
+  - **AC(5)** ✅ `ropa.md` (Retention Schedule + §2 row (b) + the C-07 boundary assertion) and
+    `dpia.md` (§2 table, §3.1, §13.2, §13.4) swept and corrected; **§8 correctly untouched** per the
+    scope guard, and it was FOLLOW-815 that fixed §8 nineteen minutes later. **The scope guard held
+    in both directions** — I checked #687's `dpia.md` hunks and none is in §8.
+  - **What is NOT closed: the CLASS**, in the one place §4d DG-1 names.
+- **ESC-049 — RESOLVED as a ruling, and the addendum is a SECOND ruling this ticket caused.** Traced:
+  the escalation ruled option 1 → the worker executed it → executing it falsified §Q1/§Q3's premises →
+  the worker STOPPED → CEO+DPO ruled again (ESC-049 addendum) → v1.3 resolved both flags → the
+  disclosure was carried by FOLLOW-815's existing bump. **Six hops, all inside one session, and the
+  chain terminates in bytes a data subject reads** (`platform-registration/lib.ts` purpose 2). That is
+  the first time in this corpus that a closure trace has ended at a data subject rather than at a
+  document.
+- **FOLLOW-845 / FOLLOW-838 / FOLLOW-812 / FOLLOW-832 — re-checked, all still closed, none regressed
+  by this merge.** `clickhouse-producer.ts` still has zero `.text()` calls; `chat-nlp-dispatch.ts`
+  still reads no body; `nlp.py` untouched. **One of them is corrected by this merge and it is worth
+  recording:** C-07's Modal-stdout paragraph (FOLLOW-812's, v1.1) said its own conclusion _"does not
+  depend on"_ the "no raw chat text in Redis/ClickHouse/Postgres" claim; that sentence is rewritten to
+  depend on the *Redis/Postgres verification* instead, which is the narrower true thing. FOLLOW-812's
+  finding is unaffected; only the sentence that referenced the false premise moved.
+
+### 8. Cross-references
+
+- **RETRO-251** — the retro whose subject (#682, FOLLOW-845) authored `dpia.md` §2.7.3, including the
+  fired-at-birth trigger this entry found. RETRO-251 read that document closely enough to correct its
+  own brief's premise from it, and did not see this. **Recorded against my own lineage, not against
+  the worker** — §2.7.3's trigger was not in any AC, and RETRO-251's §4d checked §2.7.3's *citations*
+  (DG-1, the line-number "contradiction", correctly dismissed) rather than its triggers' *logic*.
+  The axis existed; nobody was looking down it.
+- **RETRO-253** — its re-armed Rule S amendment tested clause by clause and NOT discharged (§6).
+- **RETRO-254 / RETRO-255** — their measurement discipline applied: `gh pr view --json files` **and**
+  merge-commit-vs-**first-parent**, never a `--stat` across unrelated SHAs, because all three PRs in
+  this batch were rebased mid-flight.
+- **RETRO-122** — the count-inflation discipline, applied against myself: the C-07 gloss instance is
+  recorded as corroboration and explicitly NOT counted toward P-38 (§6).
+- **RETRO-249** — the origin of the `dpia.md` §2.7 residual-risk-with-triggers pattern that §2.7.2 and
+  §2.7.3 copied. The pattern is good; §4d DG-1 is the first defect found in an instance of it.
+- **Rule AN** — the reason FOLLOW-852/867/841 are sharpened in §5a rather than re-filed.
+- **Rule AM** — followed: this entry mutated nothing; every grep and every citation check was
+  read-only against this worktree.
+
+<!-- RETRO-256 filed 2026-08-07 — post-merge retro for PR #687 / FOLLOW-866 (merge 9c8977f0, 2026-08-07
+08:29:18 UTC, 4 files +386/-119 by `gh pr view 687 --json files` AND `git diff --numstat 9c8977f0^ 9c8977f0` —
+the two agree; all three PRs of this batch were rebased mid-flight so only merge-vs-first-parent is valid).
+FOLLOW-866 CLOSED on all five ACs; AC(1) and AC(2) re-derived by me. HEADLINE 1: the AC(2) STOP CONDITION IS
+THE FIRST DESIGNED CONTROL IN THIS CORPUS TO WORK ON FIRST USE — Q3's conclusion changed under the corrected
+premise, the worker flagged instead of absorbing, CEO+DPO ruled inside the session (ESC-049 addendum), v1.3
+resolved both flags with the ruling cited, and the countable saving is ONE PLATFORM_REGISTRATION_TOS_VERSION
+bump (a second bump is a registration outage — FOLLOW-712/715). Two properties made it work: the STOP was in
+the AC OF THE FORK (not general policy), and the decision-maker was reachable in-session; remove the second
+and it stalls, remove the first and it does not exist. HEADLINE 2 IS THE SWEEP AND IT IS THE ENTRY'S REAL
+VALUE: the PM caught C-07's Q1 gloss describing the STATUS QUO as the trigger condition (fired at birth, fixed
+in commit 4); I swept the compliance corpus for the same SHAPE and found a LIVE one nobody has flagged —
+dpia.md:539 §2.7.3 trigger 1, merged by PR #682 (FOLLOW-845), whose head clause is "a body read is
+REINTRODUCED" and whose "including" clause names the two 300-char slices at intent-snapshot.ts:234,:337 that
+EXIST TODAY (verified by grep; FOLLOW-852 open). One sentence, two firing conditions, head clause already
+satisfied by the sites it itself enumerates. RETRO-251 read that section and RETRO-253 re-read it; neither saw
+it — recorded against my own lineage. Routed into FOLLOW-852 under Rule AN (its fix invalidates the
+"including" clause) rather than re-filed. HEADLINE 3: the cascade is four hops — consent text (FOLLOW-815 /
+#688), MASTER_DESIGN §H.8 self-contradiction (FOLLOW-867), two CEO+DPO rulings, and TWO SURVIVING CODE
+COMMENTS nobody owns: consent-banner.ts:148's enumeration bullet still says "no raw chat text stored by AL"
+THREE LINES ABOVE the correction #688 appended to the same docblock, and test_chat_nlp_bridge.py:20 summarises
+AC-2 as "no raw chat text is added to the ClickHouse batch (DPIA C-07)" while its own test body asserts the
+opposite and its own docstring says so. Both routed into FOLLOW-867 AC(3), whose region must widen from
+Master_Design to the repo (Rule AL shape, applied to a ticket's AC). WIRING: CHECK A N/A by construction (4
+Markdown files, zero exports; check-rule-i.sh on merged main = 639 scanned / 192 violations, the +1 scanned is
+#688's); CHECK B CLEAN (the named re-review trigger's mechanical half is already FOLLOW-841's — recorded, not
+re-filed). 4a/4b honestly N/A; the Q5 split (retention leg closes, vector-activation gate table stays open) is
+subtle and correct. VERIFICATION NOTE: the STUB's own citations were WRONG (clickhouse-producer.ts:110 and
+0001_create_events.sql:41) and the worker silently corrected them to :142 and :46 — I re-verified all six
+citations of the ClickHouse chain at HEAD. Rule S sweep claim ("ropa/dpia carry only the head clause, no
+gloss") independently RE-RUN BY ME and ACCURATE — recorded as a positive. RULE VERDICTS: NO PROMOTION, NO
+AMENDMENT, CONVENTIONS_PATCH.md UNTOUCHED (43 rules). P-38 MINTED at count 1 with a 3-clause bar (a control
+whose firing condition is a property of the world it was written in); the C-07 gloss instance is recorded as
+corroboration and explicitly NOT counted (RETRO-122, and RETRO-254's "an instance that never reached main is
+weaker"). "Decision-fork ACs must name their STOP condition" tested against Rule AA, Rule P and CLAUDE.md's
+escalation list — none owns the territory, count is 1 (FOLLOW-710/706's "the PM escalates" is a ROUTING
+instruction, not a TRIGGER, and counting it would be inflation) -> ARMED for a NEW LETTER at 2, with the
+discharge condition and the not-honoured carve-out written out. RETRO-253's re-armed Rule S amendment tested
+clause by clause: (a) NO (AC(5) instructs enumerate-AND-FIX), (b) NO (both deferrals routed to FOLLOW-815, a
+number). HELD at count 1. CASCADE: FOLLOW-852 sharpened for the THIRD consecutive retro (a stub needing three
+corrections before it can be worked is a scheduling signal); FOLLOW-867 AC(3) region too small; FOLLOW-841
+gains a second mechanisable trigger that now gates a RULED lawful basis; the events-table 13-month TTL is
+promoted from infra detail to a cited retention promise in three compliance docs and in the consent text a
+subject reads, with nothing mechanical tying them. Filed ZERO stubs, deliberately. QUEUE.md / ESCALATIONS.md /
+sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-257 — FOLLOW-815 (#688) — the bundle is real and the population is zero — 2026-08-07
+
+**THE HEADLINE, AND IT OUTRANKS THE TICKET: PROD `consent_records` IS EMPTY, THE ENDPOINT HAS NEVER
+WRITTEN A ROW, AND THE ANSWER TO "WHY" IS IN THIS REPO IN THE FUTURE TENSE.** The worker ran
+FOLLOW-706 AC-1 — a read-only `count(*)` against the one database `DATABASE_URL_ADMIN` resolves to in
+Doppler `prd` — and got `tenants → 1`, `consent_records (all types, all versions) → 0`. The brief asks
+me to decide between three explanations: the caller is not calling, the caller is calling and
+failing, or there is no registration traffic. **The record settles it, and the decisive line is one
+nobody has cited in five weeks of tickets on this endpoint:**
+
+> `backlog/HANDOFFS.md:2973` — **"Auth secret: `PLATFORM_REGISTRATION_CONSENT_SECRET` — request from
+> Piotr (to be provisioned in Doppler). The secret is HMAC-SHA256 shared between app.estalara.com and
+> the control-plane."**
+
+That sentence is still in the **future tense** at HEAD, in a section **this PR edited**. Without the
+shared secret the caller cannot compute `X-Consent-Signature`, so it cannot pass `route.ts:155` — it
+could not write a row if it tried. Combined with a zero count and with the CEO's localhost-first
+framing (memory `project_session99_audit_plan_sprint24`), the verdict is **"the caller was never
+integrated"**, not "it fails" and not "traffic is zero". Calling-and-failing is the one I actively
+looked for and could not support: it would leave 401s, and nothing in `ESCALATIONS.md`, `QUEUE.md` or
+any Sentry-facing record mentions one. **Caveat, stated because the worker stated it and it is the
+honest boundary:** only the EU project was queried; the other regional Supabase projects were not, and
+on current evidence none is live.
+
+**WHAT THAT RETIRES, PRECISELY.** ESC-044's title reads _"…and **every default-path consent record
+since go-live attests a text that was never displayed**"_. The set is empty, so the sentence is
+vacuously true and materially misleading — and **ESC-044's own body is not at fault**: its required
+action item 1 says _"A zero result (the app.estalara.com caller may never have gone live on this
+endpoint) closes the prod-remediation axis cheaply — do not assume either way pending the count"_.
+The escalation was epistemically careful in its body and over-claimed in its title, and the title is
+what four subsequent tickets quoted. **The place the record actually went wrong is FOLLOW-706's stub**
+(`FOLLOW_UPS.md:20586-20589`), which reasons: _"FOLLOW-707's close note states prod has one tenant on
+the FALLBACK identity and that #634 changed the behaviour of **zero** live requests, **i.e.** every
+live consent record still carries the placeholder. So the count is likely non-zero."_ **The "i.e." is
+invalid.** "Zero live requests were *changed*" is exactly as consistent with "there are zero live
+requests" as with "live requests exist and were unaffected", and the stub's own AC(1) had already
+named the first reading as _"a real possible outcome"_. A stub argued against its own AC and the
+narrative won for eleven days.
+
+**SECOND HEADLINE: THE WORKER FOUND A DEFECT THE BUMP ITSELF WOULD HAVE CREATED, AND IT IS THE FIRST
+FEATURE-COMPOSITION DEFECT THIS CORPUS HAS RECORDED.** Two correct, independently-reviewed features:
+FOLLOW-715's grace band (accept the immediately-previous `tos_version`, write the row **under the
+submitted version**) and FOLLOW-704's derived canonical hash (**tracks the CURRENT text**). Compose
+them on the one path where a caller omits `consent_text_hash` — which is the documented go-live flow —
+and the row's `tos_version` and `consent_text_hash` attest **two different texts**: precisely the
+Art. 7(1) defect FOLLOW-712 closed on the refusal path and FOLLOW-704 closed for the constant. Neither
+feature is wrong; their product is. Fixed by writing `NULL` (nullable in
+`packages/db/src/schema/consent_records.ts`), never refusing (refusing is the outage FOLLOW-715
+exists to prevent), and stating it in the grace-window alert text so the state is observable. **Both
+sites are ~450 lines apart in two files and share no symbol**, so no same-line coordination clause —
+including FOLLOW-704's own AC(8) — could have reached it. §6 assesses whether anything in the repo's
+review practice looks for this class.
+
+**THIRD HEADLINE: THE MAILBOX HAS NO OWNER, AND IF IT IS NOT MONITORED THE WHOLE FOLLOW-710 FAMILY IS
+A NO-OP.** `compliance@estalara.com` now ships inside the bytes a data subject reads, as the GDPR
+Art. 7(3) withdrawal channel. Three artefacts say it is an operator commitment
+(`lib.ts` docblock, `MASTER_DESIGN.md` §H.8's new invariant, `QUEUE.md` session-103). **No ticket, no
+escalation and no runbook step verifies that the mailbox exists or is monitored** — I grepped
+`FOLLOW_UPS.md` and the only hit above FOLLOW-700 is FOLLOW-711's own line-ref correction. FOLLOW-710
+existed because _"no such contact exists in any artifact, code path or product surface"_; if the
+mailbox is not stood up, v1.4 replaced one unreachable channel with another and the family closed
+nothing. → **FOLLOW-868 (P1, UNFROZEN)**.
+
+### 1. Summary of change
+
+- **PR:** #688 (merged 2026-08-07 08:48:52 UTC, squash → `f560198c`, single parent `2284dc4b`;
+  branch `backend-engineer/FOLLOW-815-consent-bundle`; worker `backend-engineer` / **Opus**)
+- **Files changed: 15 (+969 / −185).** `gh pr view 688 --json files` **and**
+  `git diff --numstat f560198c^ f560198c` agree exactly. Rebased mid-flight, so
+  merge-vs-first-parent is the only valid measurement (RETRO-254):
+
+  | file                                                        |  +  |  −  |
+  | ----------------------------------------------------------- | --- | --- |
+  | `.../consent/platform-registration/route.test.ts`           | 327 |   6 |
+  | `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md`                 |  92 |  46 |
+  | `.../consent/platform-registration/lib.ts`                   | 107 |  55 |
+  | `scripts/check-consent-text-sync.mjs`                        |  99 |   2 |
+  | `.../consent/platform-registration/route.ts`                 |  72 |  27 |
+  | `packages/sdk/src/__tests__/consent-banner.test.ts`          |  68 |   0 |
+  | `docs/runbooks/BRAND_PROVISIONING.md`                        |  39 |  10 |
+  | `.claude/agents/backend-engineer/lessons.md`                 |  41 |   0 |
+  | `apps/control-plane/src/lib/brand-identity.ts`               |  31 |   4 |
+  | `backlog/HANDOFFS.md`                                        |  31 |  14 |
+  | `docs/compliance/dpia.md`                                    |  26 |   5 |
+  | `packages/sdk/src/ui/consent-banner.ts`                      |  16 |   5 |
+  | `.gitleaks.toml`                                             |  13 |  10 |
+  | `docs/MASTER_DESIGN.md`                                      |   4 |   0 |
+  | `docs/compliance/ropa.md`                                    |   3 |   1 |
+
+  **41% of the diff is tests** (395 of 969 added lines).
+
+- **Modules touched:** `apps/control-plane` (production TS + tests) · `packages/sdk` (production TS +
+  a new test file) · `scripts/` · `docs/compliance` · `docs/runbooks` · `docs/MASTER_DESIGN.md` ·
+  `backlog/HANDOFFS.md` · repo config · the learning corpus. **Zero** migrations, Python, SQL,
+  `.github/`, `infra/`. The widest blast radius of any merge this session.
+- **Key contracts changed — six, and four of them are consumed outside this repo:**
+  1. **`PLATFORM_REGISTRATION_TOS_VERSION`: `platform-v1.3-2026-06-21` → `platform-v1.4-2026-08-07`.**
+     **Breaking: yes, for the out-of-repo caller** — a caller sending v1.3 is refused
+     `422 tos_version_superseded` unless the FOLLOW-715 grace env is set. It was set (operator, prod
+     Vercel + Doppler `prd`, redeploy confirmed).
+  2. **`CANONICAL_CONSENT_TEXT_HASH`: hand-typed literal → `computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))`.**
+     **Breaking: yes, in the strict direction** — the `422 consent_text_hash_fabricated` refusal now
+     fires on a value a caller can actually produce, which is the whole of FOLLOW-704. Its type also
+     moves from a `const` literal to `string`.
+  3. **The consent text's DISCLOSED MEANING, in three places** — the Art. 7(3) channel became a named
+     mailbox; the closing paragraph names Estalara/Time2Show as **processor**; purpose 2 became
+     "Chat analysis and message storage" and discloses 13-month retention plus the scrubber's real
+     scope. Byte-synced across `lib.ts`, `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and the SDK banner in
+     EN/PL/ES, with both §6.1 sentinels bumped (verified by me at `:219` and `:263`).
+  4. **A new `consent_records.consent_text_hash` state: NULL**, written only on the grace band with
+     the hash omitted. New value domain on an existing column.
+  5. **New export `FIRST_PARTY_BRAND_IDENTITY`** (`brand-identity.ts:68`), one consumer.
+  6. **`scripts/check-consent-text-sync.mjs` gains a structural assertion** that the canonical hash is
+     still *derived* — a shape check, not a value check, deliberately.
+
+### 2. Verification done in PR
+
+- **Test files changed: 2 (+395).** `route.test.ts` (+327) and a new
+  `packages/sdk/src/__tests__/consent-banner.test.ts` (+68). Plus 4 new self-test cases in the
+  consent-text-sync gate (duplicated BEGIN sentinel, inverted sentinel pair, re-literalised hash, and
+  a re-anchored bracket-placeholder case).
+- **The test design is the best in this session and the reason is stated in-file rather than left to
+  be inferred.** `route.test.ts`'s new block opens with: _"the defect these tests exist to prevent
+  survived six weeks precisely because every existing assertion compared `CANONICAL_CONSENT_TEXT_HASH`
+  to ITSELF. Nothing below re-states a production expression."_ It then obtains the canonical text by
+  **calling the real `GET` handler** and hashes the bytes with `crypto.createHash` — **not** with
+  `computeConsentTextHash`, so the assertion crosses an independent SHA-256 implementation rather than
+  re-running the route's own helper. **Adjudicated against RETRO-247's P-32 bar rather than
+  pattern-matched:** clause (a) requires the assertion to target a value the test constructs by
+  copying a production expression. It does not — the value comes off a real response. **P-32 does not
+  fire**, and this is the cleanest instance of the RETRO-248 §5a boundary in the corpus.
+- **CI: passed.** PM record: `ci_check_counter` 1/5, `fix_iteration_counter` 0/3 (the rebase round was
+  scheduling, not rework), gate exit 0. **Re-asserted by me on merged `main`:**
+  `bash scripts/check-rule-i.sh` → `Symbols scanned : 639 · Violations found : 192`. The symbol count
+  moved 638 → 639 (the new export) and the **violation** count did not, which is the mechanical proof
+  that `FIRST_PARTY_BRAND_IDENTITY` has a non-test importer.
+- **The `toContain` → `toBe` strengthening, self-caught by perturbation, is in the PR's own record:**
+  the rights-paragraph assertion originally used `toContain` on the mailbox; the worker perturbed the
+  phrase _"a monitored mailbox for privacy requests"_, watched the contains-only assertion stay green
+  while only the CI text-sync gate went red, and replaced it with a whole-paragraph `toBe`. The same
+  discipline is applied to FOLLOW-711's white-label paragraph. §6 adjudicates whether this practice is
+  now codifiable.
+- **Red-first is claimed for three assertions and each names what it was red against** — the AC-2 hash
+  test against the pre-FOLLOW-815 constant; the AC-4 threat-vector test, which _"under the old
+  constant returned **201 and wrote the row**"_; and the new SDK locale test, red-first by restoring
+  the old EN string.
+- **The tests were NOT independently re-run by me, and I am saying so rather than implying otherwise.**
+  This worktree has no installed workspace links and a `pnpm install` would contend with the shared
+  store. My verification of this PR's behaviour is **structural and citation-level**; the mechanical
+  facts I did re-derive myself are the Rule I counts above, the §6.1 sentinel bump, the gitleaks tail
+  (§4d DG-1), the `.text()`/claim greps (§5c) and the HANDOFFS auth-secret line (headline).
+- **What the verification did NOT cover:** the operator axis (§4a LG-1, §5a — Rule AA), and the
+  runbook's own prose about a caller the same PR measured out of existence (§4a LG-2).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅, and measured two ways rather than one.**
+
+| new symbol / file                              | defined                    | non-test consumer                                                    |
+| ---------------------------------------------- | -------------------------- | -------------------------------------------------------------------- |
+| `FIRST_PARTY_BRAND_IDENTITY`                   | `brand-identity.ts:68`     | `platform-registration/lib.ts:20` (import) → `:213` (use)            |
+| `CANONICAL_CONSENT_TEXT_HASH` (re-declared)    | `lib.ts:212-214`           | `route.ts` (two refusal branches + the INSERT default)               |
+| `checkCanonicalHashIsDerived()`                | `check-consent-text-sync.mjs:118` | `:235` in `runCheck()` — the gate's own main path             |
+| `packages/sdk/src/__tests__/consent-banner.test.ts` | new file              | test file — suppressed per the standing carve-out                     |
+
+Independently: `git diff f560198c^ f560198c | grep -E '^\+ *export'` yields exactly one new export,
+and `check-rule-i.sh` on merged `main` reports 639 scanned / **192** violations — unchanged — which it
+could not do if that export were unimported.
+
+**CHECK B — half-wire. ONE FINDING, and it is not a code signal.**
+
+- **New DB state `consent_records.consent_text_hash = NULL`** — **producer** `route.ts:849-854`
+  (`attestedPreviousVersion ? (body.consent_text_hash ?? null) : …`). **Consumer:** none, and that is
+  **pre-existing, not new** — FOLLOW-703 established that the column has no reader anywhere in the
+  repo, including the data subject's own export. The NULL is therefore not a new half-wire; it is a
+  new value in an already-unread column. **Not filed.** Its *observability* consumer — the
+  grace-window `warning` alert, whose message this PR extended to say the hash is NULL — has no
+  registry entry: `grep -rn "tos_version_grace" docs/` returns only `BRAND_PROVISIONING.md:375,:687`
+  and no alert-rule entry. **Rule AJ fires**, and its subject (the tag) was shipped by PR #637, which
+  **FOLLOW-722 already owns** (_"a new failure-detection signal whose Rule AJ consumer … has never
+  been checked"_). Recorded against FOLLOW-722 under Rule AN, not re-filed.
+- **HALF_WIRE_P (producer only) — `compliance@estalara.com` is disclosed to data subjects as the
+  Art. 7(3) withdrawal channel and has no verified consumer anywhere.** Producer: the consent text
+  (`lib.ts:143`), the published mirror (§6.1), and — as of this merge — a **binding Master_Design
+  invariant** (`MASTER_DESIGN.md` §H.8, added here). Consumers, enumerated by grep rather than by
+  memory: a mail system nothing in this repo can see, three artefacts calling it an operator
+  commitment, **zero tickets, zero escalations, zero runbook steps, and no proof step of any kind**.
+  This is the Rule N shape FOLLOW-710's own stub invoked (_"a disclosure asserting a user-facing
+  behaviour with no non-test symbol implementing it"_) — and the estate has no mechanism for a
+  disclosure whose implementation is a human reading email. **P1 by the CHECK-B classification and by
+  Rule AA's own logic, not by taste**, and priced at 2h because AC(1) is a five-minute check.
+  → **FOLLOW-868.**
+- **New env var / event / topic / column / SDK signal:** none beyond the above.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1, → FOLLOW-868) — the ticket is marked `DONE` and its own AC(8) required Rule AA
+  treatment.** FOLLOW-815 AC(8): _"Rule AA — the code axis and the prod-remediation axis are reported
+  separately, and this ticket is not DONE on code alone."_ `QUEUE.md:176` reads
+  `### FOLLOW-815 — status: DONE`. **Rule AA clause 1 says `CODE_COMPLETE_OPERATOR_PENDING`, NOT
+  DONE.** In fairness the split was substantially honoured — the deploy leg has a proof step
+  (`PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` set in both stores, redeploy confirmed by Piotr, live
+  endpoint verified by a read-only GET probe), and FOLLOW-706's count was obtained and reported. **The
+  leg with no proof step is the mailbox**, and it is the one Rule AA clause 3 exists for. The
+  correction is a status annotation plus FOLLOW-868, not a re-open.
+- **LG-2 (P2, → FOLLOW-869) — the grace window's close condition cannot be distinguished from the
+  window never being used, and the same PR that measured the population wrote three runbook sentences
+  presupposing a live caller.** `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b step 5:
+  _"**Close the window.** Once the alert has stopped firing (no more registrations arrive on the
+  previous version), **unset** `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS`…"_, with step 4's
+  _"Verify by watching the alert stop firing"_. **The alert has never fired and cannot**, so "the
+  alert stopped" is indistinguishable from "the alert never started" — a Rule Q shape in an operator
+  runbook, with the env var now **set in prod**, indefinitely widening the accepted `tos_version`
+  band. Three adjacent sentences added by this PR assert the caller as live: _"every registration on
+  `app.estalara.com` returns `422 tos_version_superseded` from the first request until Rafał's side
+  redeploys, **because the live caller hardcodes the v1.3 string**"_; _"if the caller also omits
+  `consent_text_hash` — **which today's live caller does** —"_; and _"Those NULL-hash rows are a
+  small, dated, self-identifying population"_ (a population that will be zero). **The PR body knew
+  better** — it says _"the FOLLOW-715 outage class analysed below is **theoretical today**"_. The
+  measurement reached the PR body and the DB axis and did not reach the runbook axis the same commit
+  edited. That is precisely the multi-axis miss my algorithm step 8 exists to catch, and I am
+  recording that it is the **third** consecutive retro to find a corrective edit that did not reach an
+  artefact its own author was inside (RETRO-252 §4d DG-2, RETRO-255 §4d DG-2).
+- **LG-3 (assessed, NOT filed — recording the negative so it is not re-opened).** I checked whether
+  the NULL write can reach a *non*-grace path: `attestedPreviousVersion` is initialised `false` at
+  `route.ts:317`, set `true` at exactly one site (`:425`) inside the grace branch, and read at exactly
+  one site (`:849`). Three occurrences, one file, no other writer — verified by grep. The declaration
+  is deliberately hoisted above the branch with a comment saying why (_"so the two sites are one
+  fact"_). Correct, and easy to have got wrong.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A on behaviour, and I looked specifically for this corpus's recurring shapes in the changed
+  regions.** An over-broad guard making the normal path unreachable — the `rendersFirstPartyIdentity`
+  guard is now *redundant* rather than over-broad (the two values are equal, so the `!==` branch is
+  never entered for a first-party tenant), and the PR keeps it with an argument I agree with: it is
+  the invariant, not a workaround for the old inequality, and it must survive a future first-party
+  text variant. A fixture asserting a value it computed the production way (P-32) — §2, does not fire.
+  An assertion over the wrong region (Rule AL) — the new whole-paragraph `toBe` assertions **narrow**
+  the region, which is the good direction. None present.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2, recorded, NOT filed — and the reason is that the missing test is unwritable here).** The
+  one behaviour with no test is the composition in headline 2 at the level that matters: a row written
+  on the grace band with a NULL hash, read back and shown to attest nothing. `route.test.ts` asserts
+  the **INSERT argument** (`valuesArg.consentTextHash`), which is the right level for a mocked DB and
+  the only level available — the column has no reader (FOLLOW-703), so there is nothing downstream to
+  drive. **Not a gap the ticket could have closed**; it is FOLLOW-703's, and FOLLOW-703 is the ticket
+  that gives the column a reader. Recorded on that stub.
+- **TG-2 (P3, recorded) — the derived-hash unit test cannot fail on a *first-party text variant*.**
+  `CANONICAL_CONSENT_TEXT_HASH === sha256Hex(GET's consent_text)` holds by construction for any text
+  the renderer produces, so the assertion pins the *derivation* and not the *bytes*. That is
+  deliberate and correct (the bytes are pinned by the `consent-text-sync` gate against §6.1), and the
+  worker says so in the gate's own docblock: _"the unit test covers the value; this covers the
+  shape."_ **The two halves genuinely partition the space** — I checked rather than accepted it — and
+  the pairing is the right answer to FOLLOW-714 item 3. Recorded as a positive.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, recorded against FOLLOW-869's AC — no new number) — `.gitleaks.toml`'s corrected comment
+  block ends with two lines that instruct the reader to update a tag the block above says was
+  REMOVED.** The rewritten block (`:176-189`) states _"the `// gitleaks:allow` tag that used to sit on
+  its line has been **REMOVED** rather than updated"_. Two lines later, unchanged:
+  _"If the hash is re-pinned (FOLLOW-704) or rotated, update the gitleaks:allow tag on that line to
+  the new value so the inline suppress stays accurate."_ FOLLOW-704 AC(6) is discharged in substance
+  (the suppression is no longer needed at all, which is better than updating it) and this two-line
+  tail is the residue. **Rule AO fires** (a corrective edit inherits the scope of the thing it
+  corrects) and its own subject is exactly this: the author was inside the block. Cosmetic — no live
+  effect, since the tag does not exist for a reader to update.
+- **DG-2 (P3, recorded against FOLLOW-469 — Rule AN) — `ci.yml:255`'s step is named
+  `SDK bundle size gate (<40KB gzip)` and the enforced budget is 42KB.** Verified:
+  `packages/sdk/scripts/check-bundle-size.js:16` → `const MAX_BYTES = 42 * 1024; // 42KB (ESC-028,
+  CEO-approved 2026-06-21)`. The name has been stale since ESC-028 raised the budget. **It matters
+  more than a label normally would, and specifically because of ESC-051:** that check-run name appears
+  in every PR's 79-check rollup and is one of the names the PM reads, so the most-read surface states
+  a budget 2KB below the real one at the exact moment the real one is exhausted to ~10 bytes.
+  FOLLOW-469 owns the headroom; the label belongs in its PR.
+- **DG-3 (P3, recorded against FOLLOW-867 — see RETRO-256 §4d DG-2) — `consent-banner.ts:148`.** The
+  docblock's enumeration bullet still reads _"buying-intent identification (12-dim vector, 24 h TTL,
+  **no raw chat text stored by AL**)"_, three lines above the correction this PR appended to the same
+  docblock. Same shape as DG-1, in a second file, in the same merge. (The same docblock also carries a
+  dangling _"These Authoritative facts:"_ — one stray word, noted so it is fixed in passing.)
+- **DG-4 (N/A — Master Design alignment, algorithm step 5, run.)** This PR **adds** to §H.8 rather
+  than diverging from it: a binding withdrawal-channel invariant, and an explicit ⚠️ FLAG on the C-07
+  paragraph it does not have standing to rewrite. **The flag is the right call and the reasoning is
+  stated** (_"re-drafting a binding CEO-level design statement is an architect call, not a backend
+  worker's (§Y.2)"_). Owned by **FOLLOW-867**. The `MASTER_DESIGN.md:576` "42 permanent rules" figure
+  is still 43 (`grep -c "^## Rule "` → 43) and is still FOLLOW-779's. No new number.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-706 — its remediation ACs (2)–(5) now scope a population of ZERO and it can close on that
+  basis. AC(1) is DISCHARGED with a transcript.** The stub's own narrative paragraph (the invalid
+  "i.e." in the headline) should be struck when it closes, not left as a reasoning template. **This is
+  the ESC-037 precedent hitting for the second time**, which the stub itself predicted and then argued
+  against.
+- **ESC-044 — items 1/2/3/5/6 were already resolved by the FOLLOW-814 ruling; item 1's *premise* is
+  now measured and its headline is retired.** Recommendation to the PM, not an action I take: the
+  escalation's title asserts a population that is empty, and it is quoted in four stubs. **I do not
+  write to `ESCALATIONS.md`** (guardrail); the correction belongs with whoever closes it.
+- **FOLLOW-704 / 710 / 711 — ALL THREE DISCHARGED; the annotations are owed and I verified every AC
+  against the diff rather than against the PR body's own table.** Full trace in §7. **The ACs that are
+  NOT met, stated plainly:**
+  - **FOLLOW-710 AC(2) option (a)** — _"name a concrete address (e.g. a monitored DSR mailbox) **and
+    stand it up**"_. The naming shipped; **standing it up is unevidenced and unowned** → FOLLOW-868.
+  - **FOLLOW-704 AC(6)** — discharged in substance, with the two-line residue at §4d DG-1.
+  - **FOLLOW-704 AC(7)** — _"verify the `echo -n … | sha256sum` instruction actually reproduces it"_.
+    The rewritten docblock gives the two `check-consent-text-sync.mjs` commands and **drops the
+    previous version's dated verification claim** (_"both commands verified 2026-07-28 to print the
+    same value"_) without replacing it. Not a defect — the `echo` instruction the AC names was already
+    gone — but the AC's verification half is now unclaimed by anyone.
+  - **FOLLOW-711 AC(5)** — **N/A by the ruling** (it is conditioned on option (a); the CEO chose (b)).
+    Recorded rather than scored.
+  - **FOLLOW-815's own AC(3)** — _"the privacy contact renders from `brand_config`, fail-loud when
+    unprovisioned"_ — **NOT met, and correctly so:** the CEO explicitly declined it in FOLLOW-814
+    item 3 (_"honesty plus zero work over a speculative per-brand affordance; revisit at the first
+    external brand"_). **An AC overridden by a later ruling should be struck in the stub, not left
+    reading as an open obligation** — otherwise the next audit re-files it. Recorded on the stub.
+- **FOLLOW-703 — NOT invalidated and its premise is unchanged, but its urgency argument moves.** Its
+  subject is that `consent_text_hash` has zero readers; the population it would make readable is zero.
+  It is now a **build-before-traffic** ticket rather than a remediation one, which is a better place
+  to be. §4c TG-1 records that the untestable half of headline 2 is 703's.
+- **FOLLOW-712 / FOLLOW-715 — both re-checked, both still closed, and both were built for a caller
+  that has never called.** That is not a criticism: FOLLOW-715's grace window is free insurance and
+  the PR body says so in as many words. **What it does change is the framing that has travelled through
+  four sessions** — "the next text bump is a registration outage" (memory
+  `project_session59_crash_recovery`) is, on today's evidence, an outage of a flow with no traffic.
+  Recorded because that sentence has priced at least three tickets.
+- **FOLLOW-722 — gains its second consumer.** Its AC(2) asks for a CHECK B on `#637`'s env var and its
+  `tos_version_grace` Sentry signal; this PR extends that signal's message to carry the NULL-hash
+  state, and §3 confirms the tag still has no registry entry (Rule AJ). Its AC(3) — _"confirm whether
+  the grace-window band is reachable in prod today"_ — is now answerable: the env is set, so the band
+  is reachable, and no caller can reach it. Recorded on the stub.
+- **FOLLOW-867 — filed from this delivery, accurate, and its AC(3) region should widen** (RETRO-256
+  §4d DG-2, plus §4d DG-3 here). Two of the three surviving false restatements are in files this PR
+  touched.
+- **FOLLOW-469 (SDK headroom, P2) — sharpened by ESC-051 and by §4d DG-2.** Headroom is ~10 bytes; the
+  CI step name understates the budget by 2KB. Recommendation to the PM: **re-price P2 → P1 is
+  defensible and I am not making it** — the argument is that ESC-051's "blocked-by-construction" is
+  now literal (the next mandatory disclosure sentence cannot ship), and the counter-argument is that
+  nothing is queued to add bytes. The PM owns it.
+- **FOLLOW-379 (per-language consent versioning) — NOT invalidated and now measurably wider.** The
+  banner's `disclosurePlatform` string changed in EN, PL and ES; the canonical hash is EN-only and
+  now *version-tracking*, so the un-caught set grew from "translations" to "translations **and every
+  superseded version**". The widened `EN_ONLY_SCOPE_NOTE` says exactly this, which is FOLLOW-704
+  AC(5) doing real work.
+- **FOLLOW-816 / FOLLOW-820 (the prod-gate track) — the premise moved, and this is the cascade that
+  reaches furthest.** FOLLOW-820's gate condition is _"FOLLOW-815 shipped. DO NOT PUT THE SDK ON A
+  PAGE WHOSE CONSENT LAYER IS DEFECTIVE"_ (`QUEUE.md:21735`). That condition is now **met on the code
+  axis** and its urgency was always inferred from live exposure that does not exist. Both readings
+  survive and the PM should pick one deliberately: the consent layer is correct *before* first
+  traffic, which is the best possible ordering — or the whole LEGAL track was sequenced ahead of the
+  pilot track on a population of zero.
+- **FOLLOW-846 / 848 / 852 / 853 / 854–866 (the gate and ingest families) — unaffected, re-checked
+  rather than assumed.** No `scripts/gh-pr-checks*`, no `.github/`, no `apps/ingest`. The one
+  `scripts/` file touched is the consent gate.
+
+**⚠️ SEVERITY FLAG FOR THE PM (§5 is where my guardrails put this; I am NOT escalating).** **Two
+items, and they pull in opposite directions.** (1) `compliance@estalara.com` is live in a legal
+disclosure with no owner and no proof step; if it is not monitored, FOLLOW-710's family closed
+nothing, and the check costs five minutes (FOLLOW-868). (2) Against that: **the exposure is zero
+today** and gated on the same caller integration that has never happened, so this is a P1 by
+classification and a P2 by timing — the same shape FOLLOW-711 was priced on. Whether it warrants an
+`ESCALATIONS.md` entry is the PM's call; my read is that it does not, because there is no decision to
+make — only a check to run.
+
+#### 5b. Future sprint tickets affected
+
+Every future consent-text change inherits three things that are new as of this merge and are not
+visible from any ticket's own scope. **(1) The bytes and the hash are one expression**, so a text edit
+can no longer produce a stale digest — that class is structurally dead, not merely fixed. **(2) The
+SDK bundle is a hard constraint on legal text** (ESC-051): the next mandatory sentence cannot ship
+without a CEO mechanism decision. **(3) A version bump is now a four-artefact, two-repo, one-operator
+operation** — renderer, §6.1 with both sentinels, SDK banner in three locales, plus the §Step 3b grace
+window — and the runbook that describes it presupposes a caller that does not exist (§4a LG-2).
+
+#### 5c. Contracts changed others rely on
+
+- **`PLATFORM_REGISTRATION_TOS_VERSION`** — consumed by an out-of-repo caller with no shared release
+  train. **Rule AK's territory.** `HANDOFFS.md` was updated in the same PR with an unusually direct
+  ACTION-REQUIRED block, which is Rule AK item 2's spirit; the machine-checked half
+  (`scripts/check-consent-contract-sync.mjs`) covers status/`code` pairs and **not** the
+  `tos_version` literal, so this contract change is prose-verified only. Recorded — FOLLOW-721 owns
+  the "Rule AK item 6 has no inventory" gap and this is a second instance for it.
+- **`CANONICAL_CONSENT_TEXT_HASH`** — consumed by `route.ts`'s two refusal branches and the INSERT
+  default. Now version-tracking, which is a **new property** and is documented in the constant's own
+  docblock as the older-row verification procedure (checkout-and-recompute; git is the version store).
+- **The consent text bytes** — three byte-synced surfaces plus two CI gates. Both gates stayed green,
+  which is the strongest single fact about this merge's correctness.
+- **`MASTER_DESIGN.md` §H.8** — gains a binding invariant and a flag on a false paragraph. The flag is
+  a new kind of artefact for that document and I think it is the right one.
+- **`consent_records.consent_text_hash`'s value domain** — gains NULL, with no reader (§3).
+
+#### 5d. Architectural assumptions affected
+
+**The estate has been pricing this endpoint's defects by their code shape and not by their
+population, and the correction is worth stating once for the whole family.** Four escalation items,
+eleven FOLLOW stubs (703–715), one P0 and roughly forty engineer-hours have gone into an endpoint
+that has never written a row. **None of that work was wasted** — it is all pre-traffic, which is the
+cheapest time to be correct, and FOLLOW-704's defect would have been permanent on the first real
+registration. But the *sequencing* was argued from live exposure that did not exist, and the one
+measurement that would have settled it (`count(*)`, minutes) sat unrun behind a `depends_on` for
+eleven days until a worker ran it as a side errand. **The general form: a ticket family's priority
+argument should name the measurement that would falsify it, and that measurement should not be
+allowed to depend on the fix.** FOLLOW-706's 2026-08-04 update said exactly this — _"it had the
+effect of holding a cheap measurement behind an expensive fix, which is backwards"_ — carved AC-1 out,
+and the carve-out still did not get run until eleven days later. **Writing the correction down was not
+sufficient; a worker being asked for it was.** That is the same mechanism RETRO-251 identified for
+enumerations (retro-driven → worker-driven), reached from a second direction.
+
+Second: **this is the first merge in the session where a compliance disclosure competed with a
+performance budget and the budget won a rewrite.** The facts survived; the words did not. ESC-051 is
+the right response and the escalation names the three structural options. The assumption that changed
+is that the SDK bundle budget is a performance concern — it is now a **legal-text throughput
+constraint**.
+
+### 6. New lesson candidates
+
+- **THE BRIEF'S QUESTION 2 — "a defect class born from two correct features composing; does anything
+  in the repo's review practice look for it, and should it?" ANSWERED: ALMOST NOTHING DOES, THE ONE
+  THING THAT COMES CLOSE COULD NOT HAVE FOUND THIS ONE, AND THE REMEDY ALREADY SHIPPED IN THIS PR.**
+  - **What the repo has, checked against the rule texts rather than the titles.** **Rule K** governs
+    duplicate business logic without a parity gate; **Rule AQ** governs code *declared* identical
+    across files; **Rule S** governs siblings of one change; **Rule AI** governs documents asserting a
+    changed claim. **None of them fires on two different features writing two fields of one row.**
+    The closest thing in *practice* is the `depends_on` / "coordinate with FOLLOW-NNN" clause, and
+    FOLLOW-704's own AC(8) is a live example — _"coordinate with FOLLOW-707, which changes the same
+    `:703` default expression"_. **That clause is triggered by the same LINE.** The grace band
+    (`route.ts:396-450`) and the derived hash (`lib.ts:212`) are in different files, ~450 lines apart,
+    and share no symbol. **A same-line coordination clause could not have reached this.**
+  - **What actually found it, named precisely, because it is the transferable part.** Not a checklist:
+    the worker reasoned about **what a row MEANS** — `tos_version` and `consent_text_hash` must attest
+    the same text — and then asked which code paths write each field. **That invariant was already
+    written down**, twice: it is FOLLOW-712's entire subject (_"rows whose version field and hash
+    field attest different texts"_) and Rule K.2's fabrication class. **The estate had the invariant
+    and no trigger that made anyone consult it.**
+  - **The remedy shipped inside this PR and needs no rule.** `route.ts:849-862`'s new comment states
+    the invariant **at the line that writes the field**, names both features, and says why NULL is the
+    honest value. A future feature touching either side now meets the invariant where it works rather
+    than in a closed ticket. **That is the actionable form: an invariant discovered by a ticket belongs
+    in the code that enforces it, not only in the ticket.**
+  - **NOT PROMOTED — count 1**, and I looked for a second before saying so. The only adjacent
+    candidate in the session is FOLLOW-855's provenance asymmetry (RETRO-252 §4a LG-2), which is
+    **one** feature applied asymmetrically to two sides, not two features composing. Counting it would
+    be the RETRO-122 error. **Second-sighting bar, pre-specified:** (a) two changes, each correct in
+    isolation and each separately reviewed, produce a defect only in composition; (b) the two sites
+    share no symbol and no file, so no same-line coordination clause could link them; (c) a stated
+    invariant over the composed artefact exists in the record and was not consulted. Clause (c) is
+    what makes it actionable rather than a lament about emergent complexity.
+- **THE BRIEF'S QUESTION 5 — "fifth self-caught vacuous assertion this session; at what count does the
+  perturbation-check practice get codified?" APPLIED HONESTLY, THE ANSWER IS: IT DOES NOT, AND THE
+  REASON IS NOT THE COUNT.**
+  - **The count, measured rather than accepted, with RETRO-122's one-sighting-per-PR discipline.**
+    Instances where a worker perturbed its **own** assertion and reported that it was too weak:
+    **#685** (revert R2a fails nothing, and the worker said so), **#688** (`toContain` → whole-paragraph
+    `toBe`, perturbation transcript in the PR), **#689** (two fixtures reported as nearly-vacuous — one
+    sighting, one PR). **Three sightings, three PRs.** #686's R5 is a **different proposition** — it
+    falsified a *causal claim*, not an assertion's strength, and RETRO-255 §6 already adjudicated it.
+    Prior **retros** carrying this pattern: **RETRO-254 §2 only** (_"that refusal to claim
+    discrimination it did not have is the single most reusable thing in the PR body"_). **Prior count
+    is 1. The ≥2-prior bar is NOT met.**
+  - **And the bar is not the binding reason.** Four consecutive PRs (#684, #685, #686, #689) shipped a
+    revert/discrimination matrix, three of the four reported a revert that found nothing, and the PM's
+    dispatch briefs now ask for it. **The practice is the norm.** RETRO-254 §6 settled the principle:
+    _"a rule whose behaviour is already the norm codifies compliance, not the constraint"_ — the same
+    reasoning RETRO-247 used to decline widening Rule S. **NOT PROMOTED.**
+  - **Prior art, since a rule might already own this and RETRO-253 stated loosely that Rule AM does.**
+    It does not: **Rule AM**'s subject is fixture **provenance** (synthesize, do not mutate the live
+    source), not perturbation-as-verification — I read its Rule text, clauses 1 and 2. The one place
+    the estate HAS codified perturbation is **Rule AK item 5**, and it is scoped to out-of-repo
+    contract parity gates: _"Prove the gate is red-first before merge: deliberately falsify one side …
+    Paste both results in the PR description."_ **So the territory is genuinely uncodified for
+    ordinary tests, and the estate has already decided once that it is worth codifying for the class
+    it thought load-bearing.**
+  - **ARMED ON THE HARM, not on the practice, so the next retro tests rather than re-derives:** the
+    next retro that finds a **merged** assertion which shipped with no perturbation evidence and is
+    demonstrably vacuous cites RETRO-257 §6 as the framing → that is count **1** of a harm-based bar
+    (the historical FOLLOW-832 instance predates the practice becoming universal and is explicitly not
+    counted) → promote at 2, and prefer **widening Rule AK item 5's scope from contract gates to any
+    assertion whose subject is a compliance or gating claim** over minting a letter.
+- **P-32 / P-33 — CHECKED AGAINST THEIR OWN BARS, NEITHER FIRES.** P-32 clause (a) requires the
+  assertion to target a value the test constructs by copying a production expression: `route.test.ts`
+  takes the text off the **real GET response** and hashes it with a **different** SHA-256 path from the
+  one the route ran. P-33 clause (a) requires correctness to depend on ordering: the paragraph
+  assertions index `split('\n\n')` — which *is* positional — but the position is the assertion's
+  **subject** (the rights paragraph, the closing paragraph), not an incidental artefact of the data's
+  order, and a re-ordering of the disclosure is itself a disclosed-meaning change the sentinel gates
+  catch. **Adjudicated, not pattern-matched. P-32 stays at count 2/1 prior; P-33 stays at count 1.**
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus** for a P0 that edits a legal
+  disclosure and an out-of-repo contract. **It paid four times, each nameable:** the feature-composition
+  finding (headline 2, not in any AC); running FOLLOW-706 AC-1 as a side errand and reading the answer
+  correctly against the record's own inference; choosing DERIVED over a re-pinned literal **with the
+  argument that a re-pinned literal recreates the failure mode one text-change later**; and refusing to
+  rewrite Master_Design §H.8 while still flagging it, which is the correct read of §Y.2. **It also
+  missed once, and the miss is the same shape as the last two retros':** the measurement it obtained
+  did not reach the runbook prose in the same commit (§4a LG-2). **Sixth consecutive retro to record
+  that the model tier is not the control for enumeration completeness; the AC is.**
+
+### 7. Follow-ups
+
+- **FOLLOW-868:** `compliance@estalara.com` ships inside the consent text as the GDPR Art. 7(3)
+  withdrawal channel and nothing in the estate verifies it exists or is monitored — FOLLOW-710
+  AC(2)(a) said "name a concrete address **and stand it up**", the naming shipped, and the standing-up
+  has no ticket, no runbook step and no proof step; confirm the mailbox, name its monitor and its
+  response-time obligation, and give `MASTER_DESIGN.md` §H.8's new invariant a verification step
+  (compliance-engineer, 2h, **P1**, **UNFROZEN** per the session-95 P1 carve-out) — **HALF_WIRE_P**
+- **FOLLOW-869:** §Step 3b's grace-window close condition is "once the alert has stopped firing", the
+  alert has never fired and cannot, so the window cannot be closed on its own criterion and
+  `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` stays set in prod indefinitely; correct that criterion
+  and the three sentences in the same section that assert a live caller the same PR measured out of
+  existence, and fold in the `.gitleaks.toml` two-line tail (§4d DG-1) (backend-engineer, 2h, **P2**,
+  **FROZEN**)
+
+**Recorded against existing stubs rather than re-filed (Rule AN):** FOLLOW-706 (ACs 2–5 scope zero;
+strike the invalid "i.e." when it closes), FOLLOW-704/710/711 (discharge annotations owed; the ACs
+NOT met are named in §5a), FOLLOW-815's own AC(3) (overridden by the FOLLOW-814 ruling — strike it,
+do not leave it reading as open), FOLLOW-703 (§4c TG-1; build-before-traffic, not remediation),
+FOLLOW-722 (§3 — its AC(2) signal gained a second message and still has no registry entry; its AC(3)
+is now answerable), FOLLOW-867 (§4d DG-3 — `consent-banner.ts:148`), FOLLOW-469 (§4d DG-2 — the
+`<40KB` step name, and the ESC-051 re-price argument), FOLLOW-721 (§5c — a second Rule AK contract
+with no machine-checked inventory), FOLLOW-379 (§5a — the un-caught set widened from translations to
+translations-and-superseded-versions), FOLLOW-816/820 (§5a — the premise their sequencing rests on).
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one hop:**
+
+- **FOLLOW-704 — CLOSED on AC(1)–(5) and AC(8); AC(6) closed in substance with a two-line residue;
+  AC(7) closed on its first half.** **producer** `lib.ts:212-214` (the derived constant) → **consumer**
+  `route.ts`'s two 422 branches and the INSERT default → **render** the `422
+  consent_text_hash_fabricated` body and the written row → **next hop, which is where this stops being
+  one hop:** `route.test.ts`'s AC-4 test drives an external provisioned tenant submitting **the hash of
+  Estalara's served text** and asserts `422` + `mockInsert` not called — the exact threat vector that,
+  before this merge, **returned 201 and wrote the row**. The refusal that four merged PRs built is
+  reachable by its threat for the first time.
+- **FOLLOW-710 — CLOSED on AC(1)–(7) as documents; the operator half of AC(2)(a) is NOT closed.**
+  AC(4) verified by me item by item rather than from the PR body: renderer edited ✅; §6.1 edited
+  between the sentinels ✅; TOS version bumped ✅; **both sentinels bumped** ✅ (`PRIVACY_NOTICE_TEMPLATE.md:219` and `:263` both read `platform-v1.4-2026-08-07`);
+  hash re-pinned → superseded by derivation ✅; text-sync gate green ✅. AC(6) ✅ — `dpia.md:1118-1127`
+  now names `POST /api/dsr/initiate` and records that `POST /api/v1/dsr/request` never existed. AC(7)
+  ✅ — §H.8's withdrawal-channel invariant, with both consequences (a bump costs a version; the mailbox
+  is an operator commitment) written into it. **The chain producer → consumer → render terminates at a
+  human reading a mailbox, and that hop is unverified** → FOLLOW-868.
+- **FOLLOW-711 — CLOSED on AC(1)–(4); AC(5) N/A by the ruling.** AC(3)'s reconciliation verified on
+  both sides: `lib.ts`'s docblock now states the same boundary as `resend.ts`'s `SENDER_MAILBOX`
+  ("FIXED infrastructure, does NOT change per brand") and says the consent text says so out loud.
+  AC(4) is the strongest single test in the PR — it renders a **non-Estalara** identity and asserts the
+  **whole** closing paragraph with `toBe`, plus that the controller-facing opening still names only the
+  brand, plus `match(/Time2Show, Inc\./g)` has length **1**. Nothing in the repo had ever rendered a
+  white-label consent text, which is why the mis-attribution hid for six weeks.
+- **FOLLOW-706 — AC(1) DISCHARGED with a transcript; ACs (2)–(5) scope zero.** §5a.
+- **FOLLOW-707 / FOLLOW-712 / FOLLOW-714 / FOLLOW-715 — re-checked, all still closed.** FOLLOW-707's
+  own prediction is now fact: the two INSERT branches collapse to the same value for the first-party
+  tenant, and the PR updated its comment to say so rather than leaving a forecast. FOLLOW-714's items
+  2 and 3 are both folded in (the older-row verification story, and the derived-shape assertion in the
+  CI gate as well as the unit test).
+- **FOLLOW-866 — re-checked, still closed, and this PR is what makes its §Q3 sentence true.** C-07
+  v1.3 records that the disclosure _"HAS BEEN ISSUED"_; the bytes that issue it landed here, nineteen
+  minutes later. **Traced to the render:** `lib.ts:214` purpose 2 → `PRIVACY_NOTICE_TEMPLATE.md` §6.1
+  (byte-synced, gate green) → `consent-banner.ts` EN/PL/ES. **The scope guard held in both directions**
+  — #687 touched no consent surface, #688 touched no C-07 conclusion.
+
+### 8. Cross-references
+
+- **RETRO-256** — the sibling entry, same session, same subject matter. #687 corrected the document;
+  #688 corrected the bytes a data subject reads. **Neither is sufficient alone** and both say so. Its
+  §4d DG-2 and this entry's §4d DG-3 are the same finding reached from two directions: a corrective
+  edit that did not correct the line above it, twice, in two files, in two merges.
+- **RETRO-254 §6** — its principle (_"a rule whose behaviour is already the norm codifies compliance,
+  not the constraint"_) is the load-bearing argument in §6's answer to the perturbation question, and
+  its §2 observation about revert R2a is the sole prior sighting.
+- **RETRO-255 §6** — its adjudication of R5 as a **causal-claim** falsification is why R5 is not
+  counted toward the perturbation bar here. Different proposition, kept separate deliberately.
+- **RETRO-252 §4d DG-2 / RETRO-255 §4d DG-2** — the "the author was demonstrably inside the sentence"
+  shape, now on its third consecutive sighting (§4a LG-2, §4d DG-1, §4d DG-3). **I am not minting a
+  pattern for it**: all three are instances of **Rule AO**, which already exists and which, run
+  verbatim, reports each of them not clean. Sixth consecutive retro to reach _compliance failure
+  against an adequate control_.
+- **RETRO-247 (P-32) / RETRO-249 (P-33)** — both bars applied clause by clause in §6; neither fires.
+- **RETRO-227 / RETRO-228 / RETRO-229** — the retros that found the placeholder, the byte-canonical
+  divergence and the phantom DSR endpoint. **All three findings are now closed by one PR**, which is
+  the first time this endpoint's chain has converged rather than branched.
+- **Rule AA / Rule AJ / Rule AK / Rule AO / Rule N** — instanced; none needs amendment. Rule AA is the
+  one that fires as a **violation** (§4a LG-1) and its remedy is a status annotation.
+- **Rule AM** — followed: this entry mutated nothing. Every measurement was read-only against this
+  worktree or against the GitHub API.
+
+<!-- RETRO-257 filed 2026-08-07 — post-merge retro for PR #688 / FOLLOW-815 (merge f560198c, 2026-08-07
+08:48:52 UTC, 15 files +969/-185 by `gh pr view 688 --json files` AND `git diff --numstat f560198c^ f560198c`
+— the two agree; rebased mid-flight so merge-vs-first-parent only). HEADLINE OUTRANKS THE TICKET: prod
+consent_records is EMPTY (tenants 1, consent_records 0 on ALL three splits, SELECT-only, EU project). VERDICT
+ON THE THREE EXPLANATIONS: THE CALLER WAS NEVER INTEGRATED — decisive citation is backlog/HANDOFFS.md:2973,
+"Auth secret: PLATFORM_REGISTRATION_CONSENT_SECRET — request from Piotr (to be provisioned in Doppler)", still
+FUTURE TENSE at HEAD in a section THIS PR EDITED; without the shared secret the caller cannot sign and cannot
+pass route.ts:155. Calling-and-failing actively looked for and unsupported (no 401 record anywhere). Caveat:
+only the EU project queried. CONSEQUENCE: ESC-044's TITLE ("every default-path consent record since go-live
+attests a text never displayed") is vacuously true and materially misleading, while ESC-044's BODY was
+epistemically careful ("do not assume either way pending the count"). The record's actual error is FOLLOW-706's
+stub, which reasoned "#634 changed the behaviour of ZERO live requests, i.e. every live consent record still
+carries the placeholder, so the count is likely non-zero" — the "i.e." is INVALID (zero requests changed is
+equally consistent with zero requests existing) and the stub's own AC(1) had already named the zero outcome as
+"a real possible outcome". A stub argued against its own AC and the narrative won for 11 days. HEADLINE 2: the
+worker found a FEATURE-COMPOSITION defect the bump itself would have created — FOLLOW-715's grace band (row
+written under the SUBMITTED version) composed with FOLLOW-704's derived hash (tracks the CURRENT text) makes
+tos_version and consent_text_hash attest TWO DIFFERENT TEXTS on the documented go-live path; fixed by writing
+NULL, alerted, never refused. The two sites are ~450 lines apart in two files sharing no symbol, so no
+same-line coordination clause — including FOLLOW-704's own AC(8) — could have reached it. HEADLINE 3:
+compliance@estalara.com ships as the Art. 7(3) channel with NO owner — three artefacts call it an operator
+commitment, zero tickets/escalations/runbook steps verify it; FOLLOW-710 AC(2)(a) said "name a concrete address
+AND STAND IT UP" and only the naming shipped -> FOLLOW-868 (P1 UNFROZEN, HALF_WIRE_P). WIRING: CHECK A clean
+(one new export FIRST_PARTY_BRAND_IDENTITY with one importer, proven by check-rule-i.sh on merged main = 639
+scanned / 192 violations — the symbol count moved and the VIOLATION count did not); CHECK B one finding, the
+mailbox; the NULL hash is a new value in an already-unread column (FOLLOW-703), not a new half-wire, and its
+Sentry signal's missing registry entry is FOLLOW-722's (Rule AJ, recorded not re-filed). LG-1: the ticket is
+DONE while its own AC(8) demanded Rule AA — the deploy leg HAS a proof step, the mailbox leg has none. LG-2:
+BRAND_PROVISIONING §Step 3b's close condition is "once the alert has stopped firing", the alert has never
+fired and cannot, so the window cannot be closed on its own criterion; three sentences in the same section
+assert a live caller the same PR measured out of existence, while the PR BODY says "theoretical today" ->
+FOLLOW-869 (P2 FROZEN). AC VERIFICATION AGAINST THE DIFF (not the PR body's table): 704 AC1-5,8 MET, AC6 met
+in substance with a two-line .gitleaks.toml tail still instructing the reader to update a tag the block above
+says was REMOVED (Rule AO), AC7 met on its first half with the verification claim dropped; 710 AC1-7 MET
+including BOTH §6.1 sentinels bumped (verified at :219/:263) and dpia §8's phantom endpoint corrected, EXCEPT
+the "and stand it up" half of AC(2)(a); 711 AC1-4 MET (AC4 is the strongest test in the PR — a NON-Estalara
+render asserting the WHOLE closing paragraph with toBe plus Time2Show appearing exactly once), AC5 N/A by the
+ruling; FOLLOW-815's OWN AC(3) NOT MET and correctly so — the CEO declined per-brand brand_config rendering in
+FOLLOW-814 item 3, and an AC overridden by a ruling should be STRUCK, not left reading as open. RULE VERDICTS:
+NO PROMOTION, NO AMENDMENT, CONVENTIONS_PATCH.md UNTOUCHED (43 rules). BRIEF Q2 (feature composition):
+NOTHING in the repo looks for it — Rule K/AQ/S/AI all checked against their texts and none fires; the closest
+practice is the same-LINE coordination clause, which structurally could not reach this; what found it was
+reasoning about what a ROW MEANS, and that invariant was ALREADY written down twice (FOLLOW-712's subject and
+Rule K.2) with no trigger making anyone consult it; the remedy shipped IN THIS PR as a comment stating the
+invariant at the line that writes the field. COUNT 1, not promoted, 3-clause bar pre-specified. BRIEF Q5
+(perturbation practice): counted honestly with RETRO-122's one-per-PR discipline — THREE sightings (#685 R2a,
+#688 toContain->toBe, #689's two nearly-vacuous fixtures), #686's R5 excluded as a CAUSAL-claim falsification
+already adjudicated by RETRO-255, prior RETROS carrying it = ONE (RETRO-254 §2) so the >=2-prior bar is NOT
+met — AND the bar is not the binding reason: four consecutive PRs shipped revert matrices and the PM's briefs
+now ask for it, so a rule would codify compliance not the constraint (RETRO-254 §6). Rule AM checked and does
+NOT own this territory (its subject is fixture PROVENANCE); Rule AK item 5 DOES codify red-first perturbation
+but only for out-of-repo contract gates. ARMED ON THE HARM: the next MERGED assertion shipped without
+perturbation evidence and found vacuous = count 1 -> promote at 2, preferring to widen Rule AK item 5 over a
+new letter. P-32/P-33 both adjudicated clause by clause; neither fires. CASCADE: FOLLOW-706 ACs 2-5 scope
+ZERO; FOLLOW-703 becomes build-before-traffic; FOLLOW-816/820's sequencing premise moved (the LEGAL track ran
+ahead of the pilot track on a population of zero — both readings stated, PM picks); FOLLOW-469 sharpened by
+ESC-051 plus ci.yml:255's step name saying "<40KB gzip" while check-bundle-size.js:16 enforces 42KB, on the
+most-read surface at the moment the budget is exhausted to ~10 bytes; FOLLOW-379's un-caught set widened from
+translations to translations-AND-superseded-versions; FOLLOW-721 gains a second Rule AK contract with no
+machine-checked inventory; FOLLOW-722's AC(3) is now answerable. Severity-flagged the mailbox to the PM in §5a
+with BOTH directions stated, NOT escalated (guardrail). Filed FOLLOW-868, FOLLOW-869. QUEUE.md /
+ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+---
+
+## RETRO-258 — FOLLOW-865 (#689) — the floor is derived and it rests on a peer sample — 2026-08-07
+
+**THE HEADLINE: THE BLINDNESS THAT SURVIVED FOUR GATE GENERATIONS IS DEAD, AND I KILLED THE
+QUESTION MYSELF RATHER THAN READING THE FIXTURE LIST.** RETRO-250 §4c TG-1 found that deleting the
+`"$snapshot" == "$prev_snapshot"` condition — the entire mechanism FOLLOW-813 was created to build —
+left **every** fixture passing. RETRO-252 §2 run 4 re-proved it. RETRO-254 §4c TG-1 carried it.
+RETRO-255 §4a LG-2 made it a dependency of a P1. I ran the same perturbation against the merged
+generation-6 gate in a scratch copy (Rule AM; the worktree was never mutated):
+
+```
+delete `&& "$snapshot" == "$prev_snapshot"` from the settle condition
+  -> SELF-TEST FAIL: a failure on the third read is not settled away by a merely-changed second read
+     expected exit 1, got 0
+  -> EXACTLY ONE fixture fails.                                   NON-VACUOUS + DISCRIMINATING ✅
+```
+
+**One fixture, and the right one.** F25's own in-file comment explains why the shape is what it is,
+and the explanation is a measurement rather than an argument: a fixture whose reads merely *differ*
+does not discriminate, because the surviving `-n "$prev_snapshot"` guard already forces a second
+poll — _"measured — the first cut of this fixture did exactly that and the perturbed build passed
+it."_ What the equality condition and only the equality condition buys is **the read after a
+change**, so read 2 is green-but-different and the FAILURE arrives on read 3. **FOLLOW-848 AC(1) is
+genuinely discharged, and generation 1's mechanism has a test for the first time in the chain's
+history.**
+
+**SECOND HEADLINE: RETRO-252 PREDICTED EACH GENERATION SHIPS A FALSE-VERDICT PATH IN AN UNVALIDATED
+INPUT. GENERATION 6 DOES, IT IS THE PEER SAMPLE, AND I DROVE IT.** The floor is derived from
+`gh pr list --state all -L 12 --json number,statusCheckRollup` — a **new external input the gate
+validates for presence and never for plausibility**. `derive_cardinality_floor` exits 3 if the read
+fails and exits 3 if the sample is empty; between those two, **any** non-empty sample is trusted,
+and the reference is `samples[1]` (second-highest). Driven through the merged script against the
+exact ESC-050 shape — five all-SUCCESS check-runs — with only the peer sample changed:
+
+```
+peers = 12 x 77                       -> Completeness floor: 31   -> RESULT: UNDETERMINED   exit=3
+peers = 77 + 11 x 5   (11 of 12 down) -> Completeness floor: 2    -> "Total checks: 5 | success: 5 | ... failing: 0"
+                                                                     "RESULT: all checks green. Safe to mark READY_FOR_REVIEW."  exit=0
+peers = 77,77 + 10 x 5 (10 of 12 down)-> Completeness floor: 31   -> RESULT: UNDETERMINED   exit=3
+```
+
+**A degraded peer sample degrades the floor silently, in the false-green direction, and the only
+signal is a line the reader has been trained to skip** (`Completeness floor: 2 check-run(s) — 40% of
+5`). **This is not a worker miss and I want to be exact about that:** the in-file comment states the
+boundary precisely — _"Second-highest tolerates one outlier in either direction and does not start
+falling until all but two peers are affected."_ The worker priced it. **What is missing is that
+nothing acts on the price**: there is no floor under the floor, no dispersion check, and no refusal
+when `samples[0]` towers over `samples[1]`, which is what an internally-inconsistent sample looks
+like. → **FOLLOW-870 (P2, FROZEN)**, with the reachability argued honestly in §4a.
+
+**THIRD HEADLINE: THE TWO HALVES OF THE GUARD ARE INDEPENDENTLY DISCRIMINATING, AND I PROVED IT
+BECAUSE THE FILE CLAIMS IT.** The gate says the derived floor and the never-shrink rule _"do not
+subsume"_ each other. Two more perturbations, each neutering exactly one half:
+
+```
+neuter the max_seen half, keep the derived floor -> F23 (77->5 collapse) + F28 (77->40 partial) fail; F22 passes
+neuter the derived floor, keep max_seen          -> F22 (born small) + F24 (growth) + F26 (override) fail; F23 passes
+```
+
+Neither half covers the other's fixture. The claim in the comment is true and it is now measured.
+
+### 1. Summary of change
+
+- **PR:** #689 (merged 2026-08-07 08:49:18 UTC, squash → `6ab65600`, single parent `f560198c`;
+  branch `devops-engineer/FOLLOW-865-cardinality-floor`; worker `devops-engineer` / **Opus**)
+- **Files changed: 5 (+552 / −63).** `gh pr view 689 --json files` **and**
+  `git diff --numstat 6ab65600^ 6ab65600` agree exactly:
+
+  | file                                        |  +  |  −  |
+  | ------------------------------------------- | --- | --- |
+  | `scripts/gh-pr-checks-verified.sh`          | 465 |  14 |
+  | `docs/AGENT_WORKFLOW.md`                    |  49 |  31 |
+  | `.claude/agents/pm-orchestrator.md`         |  18 |  12 |
+  | `.claude/agents/devops-engineer/lessons.md` |  24 |   0 |
+  | `CONVENTIONS_PATCH.md`                      |  10 |   6 |
+
+  The gate goes 1663 → **~2114 lines**. It was **247** five days ago.
+
+- **Modules touched:** repo-process only — `scripts/`, `docs/`, `CONVENTIONS_PATCH.md`, `.claude/`.
+  **Zero** `apps/`, `packages/`, `infra/`, `.github/`, migrations, Python.
+- **Key contracts changed:**
+  1. **The settle condition gains a completeness predicate.** `pending==0 && snapshot==prev` →
+     `pending==0 && cardinality_ok && snapshot==prev`. **Breaking: in the strict direction** — a
+     rollup below the floor never settles and exits 3.
+  2. **A new external input: `gh pr list --json statusCheckRollup` over 12 recent PRs.** The gate's
+     verdict is now a function of the PR, `main`'s CI history, the local toolchain, two serialization
+     formats **and the repo's own recent PRs**. **Five inputs; the harness pins four.**
+  3. **A new CLI flag `--accept-cardinality N`**, requiring the exact observed count, stamping
+     `[CARDINALITY OVERRIDE]` on every RESULT line. **Breaking: no** (additive).
+  4. **The fixture seam serves a SEQUENCE** — `snapshot.1.json`, `snapshot.2.json`, …, last file
+     repeating. This is FOLLOW-848 AC(1) and it is the enabling change for the headline.
+  5. Harness 20 → **27 fixtures**, `ST_EXPECTED_FIXTURES=27`. **The exit-code SET is unchanged
+     (0/1/2/3/4)**, so `check-gate-exit-codes.sh`'s marker does not move and all six routing
+     consumers stay green without edits — verified by me (§3).
+
+### 2. Verification done in PR
+
+- **Fixtures 20 → 27** (F22 born-small, F23 collapse, F28 partial-collapse, F24 growth, F25 the
+  settle mechanism, F26 the override, F27 unreadable sample), each asserting a specific exit code plus
+  required substrings, plus the four meta-assertions.
+- **The three cardinality fixtures each pin a different half**, which the PR states and I verified by
+  perturbation rather than by reading (headline 3). F28 exists **only** to pin `max_seen` — 40 is
+  above the derived floor of 31, so the derived half accepts it.
+- **CI: passed.** PM record: 79 checks, 192/192 Rule I symbol-set match vs baseline run `31159610869`,
+  exit 0. `ci_check_counter` 3/5, `fix_iteration_counter` **1/3** — charged for a **PM-side** prettier
+  fix, which §5a records.
+- **MY OWN RUNS — six, all against a scratch copy or a scratch fixture dir; the worktree was never
+  mutated (Rule AM):**
+
+  ```
+  1. control              bash scripts/gh-pr-checks-verified.sh --self-test
+                            -> "all 27 declared fixtures were executed" / 31 fixtures (27 + meta)   PASS
+  2. settle perturbation  delete `&& "$snapshot" == "$prev_snapshot"`
+                            -> EXACTLY ONE fixture fails (F25)                    RETRO-250 TG-1 CLOSED ✅
+  3. floor perturbation   cardinality_ok forced to 1
+                            -> F22 + F23 + F28 + F24 fail                         DISCRIMINATING ✅
+  4. half-isolation A     neuter max_seen only    -> F23 + F28 fail, F22 passes   INDEPENDENT ✅
+  5. half-isolation B     force CARDINALITY_FLOOR=0 -> F22 + F24 + F26 fail, F23 passes   INDEPENDENT ✅
+  6. the peer-sample drive  11 of 12 peers collapsed -> "all checks green" exit 0  NEW DEFECT ❌ (§4a LG-1)
+  ```
+
+  (Runs 2–6 also report `filesystem mode is '644'` — an artefact of my `sed >` scratch copies, not a
+  finding. Recorded so nobody re-derives it.)
+- **The live peer sample, measured by me rather than taken from the file:**
+  `gh pr list --state all -L 12 --json number,statusCheckRollup` today returns
+  **79/81/79/79/77/77/74/76/75/75/75/73**, i.e. reference 79 → **floor 32**. The file's own recorded
+  sample (`79/77/77/74/76/75/75/75/73/73/38/73`, reference 77 → floor 31) is **one day stale and the
+  38 is gone** — not a defect, but see §4a LG-2 for the property of that window that is a finding.
+- **What the verification did NOT cover:** the plausibility of the peer sample (§4a LG-1), the
+  temporal composition of the peer window (§4a LG-2), and the policy half of the new waiver flag
+  (§4d DG-1).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code. Clean ✅.** No new files. New shell symbols, each with ≥1 non-definition call
+site, greped rather than assumed:
+
+| new symbol                    | defined | called by                                                  |
+| ----------------------------- | ------- | ---------------------------------------------------------- |
+| `fetch_peer_cardinalities()`  | `:660`  | `derive_cardinality_floor:717`                             |
+| `derive_cardinality_floor()`  | `:715`  | `:1441`, immediately before the poll loop                  |
+| `_st_peers()`                 | self-test | `_st_fixture` + 6 cardinality fixtures                   |
+| `_st_checks()`                | self-test | F22, F23, F28, F26                                       |
+| `CARDINALITY_FLOOR_PERCENT` / `PEER_SAMPLE_SIZE` / `CARDINALITY_FLOOR` / `CARDINALITY_REFERENCE` / `CARDINALITY_SAMPLES` | `:648-712` | the floor derivation, the poll loop and both diagnostics |
+| `ACCEPT_CARDINALITY` / `ST_MAX_WAIT` / `ST_EXTRA_ARGS` | arg parse / self-test | the poll loop; `_st_run` |
+
+`fetch_snapshot` gains a poll-index **argument** rather than an internal counter, and the file says
+why — every call site is a command substitution, so an incremented counter dies with the subshell.
+_"That is not a hypothetical: it is what the first cut of this seam did, and three fixtures caught
+it."_ A worker recording its own near-miss in the file is the shape this corpus keeps asking for.
+
+**CHECK B — half-wire. Clean ✅, and I checked the one thing that could have been a HALF_WIRE_P
+rather than assuming the pattern held.** The new producer-side signal is **exit 3 for a truncated
+rollup**, and it reuses an **existing** code whose six routing consumers were wired and
+machine-checked by PR #685. Verified: the exit-code SET is unchanged, so
+`check-gate-exit-codes.sh`'s marker is byte-identical and all six consumers stay valid without edits.
+The **meaning** of exit 3 widened — which is precisely the class RETRO-254 §4a LG-3 named as invisible
+to that checker — and the PR handled it the only way available: it updated the three consumers that
+carry prose (`pm-orchestrator.md`, `AGENT_WORKFLOW.md`, `CONVENTIONS_PATCH.md` Rule A) **in the same
+PR**, and it deleted the superseded human heuristic from `pm-orchestrator.md` rather than leaving the
+compensating control to outlive its replacement (FOLLOW-865 AC(6)). **RETRO-252's HALF_WIRE_P shape
+did not recur, and this is the second consecutive gate PR where it did not.**
+
+No new event, env var, DB column, topic or SDK signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2, → FOLLOW-870) — THE FLOOR'S OWN INPUT IS VULNERABLE TO THE CONDITION THE FLOOR EXISTS
+  TO DETECT, AND THE GATE VALIDATES THAT INPUT FOR PRESENCE AND NEVER FOR PLAUSIBILITY.** Driven,
+  transcript in headline 2. Mechanism, verified line by line rather than inferred:
+  `derive_cardinality_floor:717-762` has exactly two refusals — the read failed (`rc != 0`), and the
+  sample is empty after filtering non-positive integers. **Any non-empty sample is trusted**, the
+  reference is `samples[1]` when `CARDINALITY_SAMPLES >= 3`, and `CARDINALITY_FLOOR` is
+  `ceil(reference * 40 / 100)` with a floor of 1. With eleven of twelve peers collapsed to 5, the
+  reference is 5, the floor is 2, and the **exact rollup this ticket exists to refuse** settles green.
+  **Priority reasoning, argued rather than asserted, because the session's own escalation test asks
+  for a false green "reachable without a code change":** it is so reachable, which argues P1 — but the
+  reachability is materially lower than FOLLOW-865's was. FOLLOW-865 needed **one** PR's rollup to
+  collapse; this needs **eleven of twelve peers** to be simultaneously short, and the peer sample is
+  dominated by *merged* PRs whose check-runs are not re-registered by a recovery rerun. **P2, and the
+  PM owns any re-price.** The fix is cheap and is in the file's own vocabulary: refuse (exit 3) when
+  the sample is internally inconsistent — e.g. `samples[0] >= 2 * CARDINALITY_REFERENCE` — plus one
+  fixture.
+- **LG-2 (P3, folded into FOLLOW-870, no new number — Rule AN) — the peer window is a rolling ~37
+  hours in this repo, not a long-run baseline, and nothing says so.** Measured:
+  `gh pr list --state all -L 12 --json number,createdAt` spans **2026-08-05T18:50Z → 2026-08-07T07:57Z**.
+  The comment argues the sample size is _"large enough that a handful of collapsed rollups during an
+  incident cannot take out the second-highest"_ — true of the **count** and silent about the **span**.
+  At this merge cadence, `-L 12` is a day and a half, so any condition that suppresses check
+  registration for that long contaminates the whole sample rather than a corner of it. The mitigating
+  fact is real and belongs next to it: merged PRs' rollups do not move, so a live incident truncates
+  the PR under test and not its merged peers. **Both halves belong in the file**; today only the
+  favourable one is there.
+- **LG-3 (assessed, NOT filed — recording the negative so it is not re-opened).** I checked whether
+  `--accept-cardinality` can drift onto a poll it was not meant for. It requires `known -eq
+  ACCEPT_CARDINALITY` **exactly**, is re-evaluated every poll, and `override_applied` is reset to 0 at
+  the top of each iteration — so a waiver stated for 5 does not silently apply to a rollup of 6, and
+  a rollup that grows past the stated count stops being waived. Correct, and easy to have got wrong.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A, and I looked for this corpus's recurring shapes in the changed regions specifically.** An
+  over-broad guard making the normal green unreachable — the floor is 32 against a live sample whose
+  smallest member is 73, so the healthy path has 41 check-runs of headroom (measured, §2). A fixture
+  asserting a value it computed the production way (P-32) — the peer samples and snapshots are the
+  **input**, which is RETRO-248 §5a's boundary, honoured again. An assertion over the wrong region
+  (Rule AL) — the floor narrows what settles; it does not widen what is scanned. An `||` fallback that
+  prints (P-37) — `grep -rn "wc -l.*|| echo" scripts/*.sh` still returns **zero hits**. None present.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3, recorded, deliberately NOT filed) — the peer-sample fixtures are all uniform, so no
+  fixture expresses a DEGRADED-BUT-NON-EMPTY sample.** `_st_peers <dir> <count> <cardinality>` writes
+  N identical lines by construction, and all seven cardinality fixtures use it. That is exactly why
+  §4a LG-1 has no fixture and could not have: **the harness's own helper cannot express the input
+  shape the defect lives in** — the same relationship the static `snapshot.json` had to the settle
+  loop for four generations, one input over. **This is the single most predictive fact in this entry**
+  and it is the reason I am not treating LG-1 as an oversight. Folded into FOLLOW-870's AC (a
+  three-argument `_st_peers` variant that takes a list) rather than filed separately.
+- **TG-2 (P2, folded into FOLLOW-848's remaining scope, no new number) — the fixture-count assertion
+  is now present in ONE of three harnesses and the gap did not close.** `gh-pr-checks-verified.sh` has
+  `ST_EXPECTED_FIXTURES=27` plus a meta-assertion. `check-rule-i.sh` and `check-rule-h.sh` still print
+  `RESULT: --self-test passed — $st_passes fixtures.` against no compared constant — I re-ran both
+  (11 and 6 fixtures) and confirmed. RETRO-253 widened 848 AC(3) from one harness to two; RETRO-255
+  made it three; it is still 1-of-3.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3, recorded against FOLLOW-864 — Rule AN, no new number) — `--accept-cardinality` is a
+  verdict-changing affordance and it does not appear in the corpus that makes the decision.** Swept by
+  grep rather than by memory: `docs/AGENT_WORKFLOW.md:219` ✅, `.claude/agents/devops-engineer/lessons.md:417` ✅,
+  `backlog/QUEUE.md:219` ✅, the script's own usage and both exit-3 diagnostics ✅ —
+  and **`.claude/agents/pm-orchestrator.md`: zero hits.** **I assessed this against RETRO-252's own
+  HALF_WIRE_P classification and it does NOT qualify**, which is why it is a §4d and not a §3: the
+  four agent definitions RETRO-252 found silent were **fail-closed** (not knowing is the safe
+  direction), and the one it classified P1 was **actively wrong**. Here the silence is fail-closed —
+  a PM who does not know the flag exists does not waive the floor — and the gate's own exit-3 message
+  names the flag to the exact reader at the exact moment. **What is genuinely missing is a policy**:
+  nothing says who may turn a 3 into a 0 or on what evidence, in the same corpus that carries
+  `HARD CAP 5 checks / 3 fix iterations`. FOLLOW-864 AC(3) is about the marker pinning the exit-code
+  SET and not its MEANING; a verdict-changing **flag** is outside the marker's scope entirely, and
+  that is the right widening for its AC.
+- **DG-2 (P3, recorded — no new number) — the superseded ≥60-check heuristic survives in one place the
+  PR did not own.** AC(6) required deleting the human control once the gate enforces it.
+  `.claude/agents/pm-orchestrator.md:55` ✅ done, and done well (_"do not re-apply it by eye, and do
+  not accept a verdict rendered by a build that predates it"_). `backlog/QUEUE.md:335` still states it
+  as the live control, and `QUEUE.md:230` **self-declares the debt** (_"the `>= 60 registered checks`
+  heuristic in this file's FOLLOW-857 block is superseded by the merged guard — annotate at next
+  session-head rewrite"_). **A prose deferral, self-declared and owed** — the one in this batch, and
+  §6 counts it against RETRO-253's arming.
+- **DG-3 (N/A — Master Design alignment, algorithm step 5, run.)**
+  `grep -n "gh-pr-checks\|Rule I\b" docs/MASTER_DESIGN.md` → three hits, all surviving; `:576` names
+  `scripts/check-rule-i.sh` as the hard gate and this script is its consumer. **The "42 permanent
+  rules" figure is still 43** (`grep -c "^## Rule "` → 43, unchanged all session) and is still
+  FOLLOW-779's. Same assessment RETRO-246/250/252/254/255 recorded. No new number.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-848 — AC(1) DISCHARGED, proven by me, and 848 must be RE-SCOPED not closed.** AC(1) asked
+  for the sequence seam **and** a third-read fixture **and** a red-first proof against a build with the
+  `prev_snapshot` comparison removed. All three landed and I re-proved the third (headline 1). AC(2)
+  (seam refusal) was discharged at #683. **Still open: AC(3)** (fixture count, 1 of 3 harnesses) **and
+  AC(4)** (the cross-script parity fixture — still absent, still performed by hand). **AC(5)**
+  ("coordinate with FOLLOW-842") is discharged-by-completion. **Re-scope to (3)+(4)**, or the next
+  reader re-verifies a closed leg for the second time.
+- **FOLLOW-864 — NOT invalidated; its AC(3) should widen from the exit-code MEANING to any
+  verdict-changing surface** (§4d DG-1). Its four driven defects are untouched by this merge; I
+  re-confirmed the worktree one by running `check-gate-exit-codes.sh`'s subject-matter grep from this
+  worktree, which is itself one of the phantom sources.
+- **FOLLOW-860 — NOT discharged, and the premise is unchanged for the third consecutive retro.** P-35
+  clause (b) needs `main`'s Rule I **symbol set** to move under a pinned PR head. Measured by me on
+  merged `main`: `Symbols scanned : 639 · Violations found : 192`. **The scanned count moved 638 → 639
+  (PR #688's new export) and the VIOLATION set did not**, so there was again no window. RETRO-254's
+  recommendation stands and is now better-supported: attach the discharge to the next merge reporting
+  `New on this PR: > 0`, not to "any merge session". **Seven consecutive merges have moved the
+  violation set by zero.**
+- **FOLLOW-850 — RE-CONFIRMED LIVE, and this session it has a MEASURED COST for the first time.**
+  `command -v lefthook` → not found from this worktree (sixth consecutive session). The cost:
+  #689's `fix_iteration_counter` went to 1/3 for a **PM-side prettier fix on the fifth Markdown
+  file** — the worker's format claim covered its four named files and missed its own
+  `lessons.md`; `Format check` was red on **both** CI runs. **Rule B is the rule, the worker complied
+  with it on four files, and the fifth was the one nobody counted.** A working pre-push hook catches
+  this class in seconds and costs no CI cycle. Recorded on 850 as its first quantified instance; also
+  a small **Rule S** shape (the sibling set of "files I edited" was enumerated from the ticket's named
+  deliverables rather than from `git diff --name-only`).
+- **FOLLOW-849 — RE-CONFIRMED LIVE.** The FOLLOW-448 branch guard again reported `HEAD == 'main'`
+  while `git rev-parse --abbrev-ref HEAD` returns `retrospective-analyst/RETRO-256-258`. Fifth
+  independent reporter, third consecutive retro.
+- **FOLLOW-851 — NOT invalidated, and this merge gives it a second consumer of "the repo's own recent
+  runs".** The cardinality floor now reads the peer PRs' rollups; `cancel-in-progress` on `main`
+  affects `main` runs rather than PR rollups, so the coupling is weaker than the Rule I baseline's —
+  but 851's AC(2) asks to "name every consumer" and this is a new one. Recorded.
+- **FOLLOW-857 / 861 — unaffected and re-measured.** `bash scripts/check-rule-h.sh HEAD` → `Rule H
+  passed`, exit 0, no standing red (diff-scoped, as RETRO-255 established). 861's 24/19/5 backlog is
+  untouched.
+- **FOLLOW-843 / 844 / 847 / 858 / 859 / 862 / 863 — re-checked, none invalidated.** 844's cost
+  estimate moves for the **fifth** time in six days (247 → 735 → 1140 → 1663 → **~2114** lines);
+  re-measure, do not cite. 847's survivor is still its AC(3), a code change in the same file this PR
+  edited, and **this PR did not incidentally discharge it** — I checked the `NEW violating symbols`
+  branch and it still names no remediation.
+- **FOLLOW-852 / 853 / 866 / 867 / 868 / 869 — unaffected.** No `apps/`, no `packages/`, no
+  `docs/compliance/`.
+- **A process fact worth recording rather than filing: one validation attempt died on a transient
+  `gh pr view` failure and the gate failed LOUD rather than fabricating.** That is the
+  `[[ -z "$snapshot" ]] → exit 3` branch behaving exactly as designed, observed live for the first
+  time, and it corroborates this session's own earlier lesson (`QUEUE.md` session-103 head: _"a single
+  `gh pr view` is not evidence of a PR's state during the minute after a merge"_). **No stub — this is
+  owned behaviour working, and the corpus should record those as deliberately as it records failures.**
+
+**No ⚠️ severity flag to the PM on the gate itself.** §4a LG-1 is a false-green path and it is
+materially harder to reach than the one this PR closed; the PM should read the reachability argument
+in §4a rather than the classification. **The one thing I would put in front of the PM is not a
+defect:** the merge gate is now ~2114 lines with 27 fixtures and five inputs, and it has one consumer.
+
+#### 5b. Future sprint tickets affected
+
+Every future ticket, on the axis the last six retros keep returning to and that is now countable:
+**the gate's verdict is a function of five inputs — the PR, `main`'s CI history, the local toolchain,
+two serialization formats, and now the repo's own recent PRs.** The harness pins four of the five;
+the fifth is §4a LG-1. Any ticket touching `ci.yml`'s job set changes the floor for every PR in the
+repo, automatically and correctly — which is the point of deriving it — and invisibly from that
+ticket's own scope.
+
+#### 5c. Contracts changed others rely on
+
+- **The settle contract** — "two identical fully-settled snapshots" → "…carrying at least a derived
+  minimum". Consumed by three prose consumers, all updated here.
+- **The exit-3 meaning** — widened again, with the SET unchanged, which is exactly the drift
+  `check-gate-exit-codes.sh` cannot see (RETRO-254 §4a LG-3) and which this PR handled by hand.
+- **`gh pr list --json statusCheckRollup`** — a **new upstream dependency**, and the first one in this
+  chain that is a GitHub API surface rather than a repo artefact. Unvalidated for plausibility.
+- **`--accept-cardinality`** — a new operator affordance that turns a 3 into a 0, with no policy
+  consumer (§4d DG-1).
+
+#### 5d. Architectural assumptions affected
+
+- **"A gate's harness is a changelog of past bugs" (RETRO-252 §5d) is now falsified for the mechanism
+  it was coined about.** Generation 3 shipped 11 fixtures and could not see generation 1's settle
+  loop; generations 4 and 5 the same; **generation 6 can, and I proved it.** RETRO-254 recorded a
+  partial falsification via meta-assertions; this is the substantive one. The honest complement is
+  that the pattern **moved rather than ended**: the new input's fixtures are all uniform, so the
+  harness cannot express the degraded-sample shape (§4c TG-1) — a changelog of past bugs replaced by a
+  changelog of past bugs plus one input class, and the defect is in the input class nobody has failed
+  on yet.
+- **The gate now depends on a GitHub API surface that describes other people's pull requests.** Every
+  prior input was either the PR, the repo, or the local machine. The direction of travel across six
+  generations is consistent and worth stating once: **each generation bought correctness by widening
+  what the gate reads, and every widening added an input nobody validates.** That is not an argument
+  against the design — a derived floor is unambiguously better than a constant, and FOLLOW-865's own
+  stub said so — it is the standing cost, and §4a LG-1 is this generation's instalment.
+
+### 6. New lesson candidates
+
+- **THE BRIEF'S QUESTION 1 — "the brief is a hypothesis, not a spec": IS IT DE FACTO PRACTICE, AND
+  SHOULD ANYTHING SAY SO DE JURE? ANSWERED: YES DE FACTO, TWICE THIS SESSION; AND NO DE JURE, BECAUSE
+  THE OBLIGATION IS ALREADY MANDATED AND BOTH SIGHTINGS ARE COMPLIANCE SUCCESSES.**
+  - **The two sightings, stated precisely rather than gestured at.** (i) **#686 / R5** — the stub,
+    RETRO-253 and the dispatch brief all said the fix was to copy `check-rule-i.sh`'s
+    `$(( count + 0 ))`; the worker built the revert row that tests it and it is false. (ii) **#689** —
+    the dispatch brief's option 1 (derive the floor by counting `ci.yml` jobs) was rejected because it
+    _"measures the wrong object — a rollup is fed by two runs"_, which is a fact about the domain and
+    is corroborated in the record (RETRO-250 measured 75 checks / 36 duplicated names on PR #681).
+    **Both were accepted by the PM without argument.** Same shape, two PRs, one session.
+  - **Tested against the actual texts, not the titles.** `docs/ops/OPERATING_PRINCIPLES.md` **Rule 5**
+    (verify-not-guess) already governs claims, and both workers were doing exactly that. **Rule P**
+    governs checking prior art before proposing. **Rule AM** governs fixture provenance — I read its
+    Rule text, and RETRO-253's passing statement that it "mandates perturbation as the verification
+    method" is looser than the rule is. **Rule AK item 5** mandates red-first perturbation, scoped to
+    out-of-repo contract gates. **Nothing forbids a worker from disproving its brief, and Rule 5
+    requires it.**
+  - **So the de jure gap is on the PM side, not the worker side, and it is one sentence:** a dispatch
+    brief's proposed *mechanism* is a hypothesis; its *acceptance criteria* are the spec. **That is a
+    briefing convention, not a rule** — it constrains how a document is written, has no verification
+    step that could be run, and would sit oddly in a file whose other 43 entries all carry executable
+    checks. **NOT PROMOTED.** The cheap real action is to write it into the brief template, which is
+    the PM's file, not mine.
+  - **Second-sighting bar, pre-specified for the case where I am wrong about this:** a third sighting
+    in which a worker's disproof of a brief's mechanism was **rejected or ignored**, and the shipped
+    result was worse for it, converts this from "the norm works" to "the norm needs a rule". **Count
+    of that harm today: zero.**
+- **RETRO-255's "claim-time revert matrix" — I am CORRECTING THE BRIEF'S CHARACTERISATION RATHER THAN
+  ADJUDICATING IT, because it was never armed.** RETRO-255 §6 answered its own question with _"the
+  control EXISTS and is the revert matrix applied one step earlier… **no promotion**"_ and closed with
+  _"Recorded as the answer; no promotion."_ **It named no discharge condition, so there is nothing to
+  discharge.** Tested anyway: is there a second sighting of "a retro named a sibling as carrying the
+  fix and the causal claim was false"? **No.** FOLLOW-865's stub proposed a *design* ("derive from
+  `main`'s recent runs"), and the worker rejected it on the *object being measured* — a design
+  disagreement, not a falsified sufficiency claim. Conflating them is the RETRO-122 error.
+  **Recorded, count still 1, still not armed.** If a future retro wants this armed, the condition to
+  write is: _a retro asserts "sibling Y already has the fix" without running the two-grep sufficiency
+  test, and a worker later disproves it._
+- **RETRO-253's RE-ARMED RULE S AMENDMENT — TESTED CLAUSE BY CLAUSE ACROSS ALL THREE MERGES. NOT
+  DISCHARGED. HELD AT COUNT 1 — AND I AM RECOMMENDING A STOP CONDITION FOR THE ARMING ITSELF.**
+  - **Clause (a)** ("a worker *instructed* to enumerate-not-fix whose enumeration produces filed
+    FOLLOW-NNNs"): #687's AC(5) instructs enumerate-AND-fix; #688 has no enumeration instruction;
+    #689 has none. **NO on all three.**
+  - **Clause (b)** ("a sibling deferred in PROSE later found under-assessed, mis-graded or never
+    filed"): #687 routed both deferrals to FOLLOW-815 (a number); #688 routed its deferrals to
+    FOLLOW-867 and ESC-051 (a number and an escalation); **#689 produced exactly one prose
+    deferral** — `QUEUE.md:230`'s _"annotate at next session-head rewrite"_ (§4d DG-2) — and it is
+    **self-declared, dated, and owed rather than mis-graded**. The clause requires a prose deferral to
+    be found **under-assessed, mis-graded or never filed**; this one is none of those yet. **NO.**
+  - **The recommendation, which is new and is the useful part.** RETRO-250 armed this on 2026-08-05.
+    **Five consecutive PRs have now failed to discharge it, and every one of them failed by
+    COMPLYING** — routing deferrals to numbers is now universal. RETRO-254 §6 already reached the
+    principle (_"a rule whose behaviour is already the norm codifies compliance, not the
+    constraint"_). **An arming that only ever fails by compliance is measuring the wrong thing, and
+    carrying it forever costs every future retro a clause-by-clause re-test.** I am not retiring it
+    unilaterally — my predecessor set it and the corpus's discipline is to hold. **Stop condition,
+    written so the next retro can act rather than re-derive: if RETRO-259 or RETRO-260 also finds
+    clause (b) failing by compliance, RETIRE the arming with a one-line note that the practice became
+    the norm without the rule — that is a finding, not a defeat.**
+- **P-35 ("a gate's verdict depends on an artefact outside every PR's control") — A THIRD INDEPENDENT
+  INSTANCE OF CLAUSE (a), CLAUSE (b) STILL NOT MET, **NOT PROMOTED**, AND I AM RECORDING THAT THE BAR
+  IS NOW WORTH EXAMINING.** Tested clause by clause against §4a LG-1:
+  - **(a)** verdict is a function of state no author of the change under test can observe or
+    influence — ✅, and this is the **third distinct artefact** (`main`'s run history, RETRO-250;
+    `main`'s merge history, RETRO-252; **other people's PR rollups**, here).
+  - **(b)** demonstrated non-determinism — **❌, held by my predecessors' own standard.** I produced
+    two verdicts from an identical PR-side input by varying the peer sample **in a synthesized
+    fixture**. RETRO-252 was in the same position and refused (_"I drove the mechanism, I did not
+    observe a verdict flip"_); RETRO-250's live sighting on PR #681 remains the only observation.
+    **I am held by it.**
+  - **(c)** reported in the vocabulary of the thing under test — **partially**, and in the direction
+    that makes it worse: this failure is reported as `RESULT: all checks green. Safe to mark
+    READY_FOR_REVIEW`, i.e. in the vocabulary of a **passing PR**. Clause (c) was written for false
+    REDs; a false GREEN reported in the PR's vocabulary is the same defect with a worse blast radius.
+  - **Verdict: 2 of 3, NOT PROMOTED, count stays 1.** **What I am adding, because three instances of
+    clause (a) against one of clause (b) is itself information:** the bar is doing what it was
+    designed to do, and it may be designed for the wrong evidence. Clause (b) requires a *live*
+    observation of a flip, which is rare by construction because the estate keeps fixing these before
+    they fire twice. **Recommendation to the next retro, not an action I take: if a fourth instance of
+    clause (a) appears with clause (b) still unmet, propose amending the BAR — accept a driven flip on
+    an identical PR-side input as satisfying (b) — rather than continuing to hold the pattern.**
+- **P-37 ("an `||` fallback that PRINTS, guarding a pipeline that also prints") — HELD AT COUNT 1,
+  class still empty.** Re-ran the enumeration axis on merged `main`:
+  `grep -rn "wc -l.*|| echo" scripts/*.sh` → **zero hits**. RETRO-255's recommendation stands: write
+  the zero-hit grep into Rule AP's register now, at count 1, since a grep with zero hits is a fine
+  assertion. Nobody has, and it is not owned by any stub. **Recorded, not filed** — it is one line
+  inside whatever ticket next touches Rule AP.
+- **P-38 (minted by RETRO-256 §6 this same session) — DOES NOT FIRE HERE, recorded so it is not
+  spuriously discharged.** I checked the new prose for a control whose firing condition is a property
+  of the world it was written in. The nearest candidate is the completeness floor itself, and it is
+  the **opposite** shape: its condition is derived from live state and re-derived on every invocation,
+  which is exactly the anti-pattern's cure. **Count stays 1.**
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus** on a P1 whose wrong answer
+  re-opens a live false green. **It paid three times, each nameable:** rejecting the brief's option 1
+  on the object being measured; choosing exit **3** over exit 2 with an argument about what waiting
+  *does* (_"a stable-but-short rollup returns the identical answer however long you wait"_) rather
+  than about severity; and arguing second-highest over the median **because the median collapses
+  during exactly the incident the guard exists for**, which is reasoning about the failure mode rather
+  than about statistics. It also reported two of its own fixtures as nearly-vacuous. **Its one miss is
+  a reading miss of the same kind as the last five** — the peer sample is the one input it introduced
+  and the one it did not validate — which is the **seventh** consecutive retro to record that the
+  model tier is not the control for enumeration completeness; the AC is.
+
+- **SESSION-103 GRAND TOTALS, and the verdict the brief asks for.** Counted rather than estimated.
+
+  | quantity                                    | count | note                                                                                            |
+  | ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------ |
+  | PRs merged (#677–#689)                      | **13** | plus #675 (FOLLOW-813) on the session boundary                                                  |
+  | FOLLOW tickets reaching DONE on their own PR | **17** | 812, 832, 811, 827, 830, 838, 845, 846, 842, 831, 854, 855, 856, 857, 866, 815, 865             |
+  | …plus discharged without their own PR       | **3**  | 704, 710, 711 (via FOLLOW-815) → **20 total**                                                    |
+  | RETRO entries filed (247–258)               | **12** | one per merge, never batched                                                                     |
+  | FOLLOW numbers allocated (837–870)          | **34** | of which **14** were filed by retros                                                             |
+  | Escalations opened                          | **2**  | ESC-050 (Actions outage), ESC-051 (SDK budget)                                                   |
+  | Escalations resolved                        | **4**  | ESC-048, ESC-049 (+ its addendum ruling), ESC-050; ESC-044 items 1/2/3/5/6                       |
+  | Rules PROMOTED / letters minted             | **0**  | `grep -c "^## Rule "` = **43** at session start and at session end                               |
+  | Rule amendments                             | **4**  | 1 Verification-block repair by a retro (Rule Y, RETRO-250); 3 rule-TEXT edits by PRs (Rule I ×1, Rule A ×2) |
+  | Patterns minted, all held at count 1        | **4**  | P-35, P-36, P-37, P-38                                                                            |
+
+  **The verdict, in both directions, because the brief asks for fairness in both.** Track HYGIENE set
+  out to close three tickets. It closed three — in the session's **first three PRs** — and then closed
+  seventeen more, **every one of which existed because of the three**. Six of the thirteen merges
+  (46%) went to the merge gate, which grew **247 → ~2114 lines in five days**. By each retro's own
+  attribution, **at least five of the eleven gate tickets fixed defects the arc itself introduced**
+  (827, 830, 854, 855, and 856's parse). Nothing merged this session moved the product: FOLLOW-816
+  (the localhost pilot, the stage the CEO says the project is actually in) and FOLLOW-820 are
+  untouched, and the standing goal — the full chat→archetype loop on localhost — is where it was on
+  2026-07-29. **That is the case against.**
+
+  **The case for is narrower and I think it holds.** The estate's *only* mechanical answer to "is CI
+  green" was lying, and a session that ships a P0 legal change through a lying gate ships nothing
+  verifiable. Six generations killed **six distinct false-verdict paths** — four driven through the
+  real script by a retro, **two observed live on real PRs** (#681 blocked at exit 1 for a reason no PR
+  could cause; #686 printed "all checks green" over five check-runs during the outage). The mechanism
+  FOLLOW-813 was built for had **no test for four generations** and now has one, proven by
+  perturbation in §2. And the arc produced one finding no planned ticket would have: `check-rule-h.sh`,
+  the estate's **oldest** gate, had been unable to report its own Pattern-2 violation for 84 days.
+
+  **The fair summary is that the gate work was necessary and the session's shape is still wrong.** The
+  two things that will matter in a month are not gate PRs: **prod `consent_records` is empty**, which
+  retires the population behind a P0 escalation and re-prices an entire ticket family (RETRO-257), and
+  **C-07's storage claim is true for the first time since 2026-06-19**, with the disclosure reaching a
+  data subject's own bytes. Those came from the two merges that ran *alongside* the gate arc, in the
+  session's last hour. **The rabbit-hole was worth entering and it was three generations too deep
+  before anyone asked what it was costing** — and the thing that finally bounded it was not a decision
+  but the arrival of a P0 with a deadline.
+
+### 7. Follow-ups
+
+- **FOLLOW-870:** the merge gate's completeness floor is derived from a peer sample the gate validates
+  for presence and never for plausibility — with 11 of 12 recent PR rollups truncated, the derived
+  floor collapses to 2 and the exact five-check ESC-050 rollup prints
+  `RESULT: all checks green. Safe to mark READY_FOR_REVIEW` and exits 0 (driven); add an
+  internal-consistency refusal (exit 3) when the sample is implausible, state the window's ~37-hour
+  span alongside its size, and give `_st_peers` a non-uniform variant so the shape is expressible at
+  all (devops-engineer, 3h, **P2**, **FROZEN** — session-95 standing rule) — driven
+
+**Recorded against existing stubs rather than re-filed (Rule AN):** FOLLOW-848 (AC(1) **DISCHARGED**
+and re-proved by me; re-scope to AC(3)+(4), do not close), FOLLOW-864 (§4d DG-1 — AC(3) should widen
+from the exit-code MEANING to any verdict-changing surface, and `--accept-cardinality` is the first),
+FOLLOW-860 (§5a — no P-35 window again; 639 scanned / 192 violations, seventh consecutive merge moving
+the violation set by zero), FOLLOW-850 (§5a — its **first quantified cost**: a PM-side prettier fix on
+a fifth Markdown file took `fix_iteration_counter` to 1/3 and reddened `Format check` on both runs),
+FOLLOW-849 (§5a — fifth independent reporter), FOLLOW-851 (§5a — a new consumer of "the repo's own
+recent runs"), FOLLOW-844 (§5a — fifth cost re-measurement in six days, ~2114 lines), FOLLOW-847
+(§5a — its AC(3) survivor was **not** incidentally discharged; the branch still names no remediation),
+FOLLOW-779 (§4d DG-3 — 43 rules against §Snapshot.6's 42).
+
+**Prior-follow-up closure check (algorithm step 7), traced producer → consumer → render, not one hop:**
+
+- **FOLLOW-865 — CLOSED on all six ACs, and I re-proved the three that carry the ticket.**
+  - **AC(1)** derived, never hardcoded ✅ — **producer** `fetch_peer_cardinalities:660` (one
+    `gh pr list`, excluding the PR under test) → **consumer** `derive_cardinality_floor:715` (sort
+    desc, filter non-positive, second-highest, `ceil(×40%)`) → **render** the two-line
+    `Completeness floor: N — 40% of R, the second-highest of S recent-PR rollup size(s)` header,
+    printed on **every** invocation. **The derivation is documented in-file with its reasoning**, and
+    the reasoning is a measurement (the 79/77/… sample and the structural argument that a
+    single-run rollup is ~half, so the floor must sit strictly below half).
+  - **AC(2)** exit 3, never 0 and never 1 ✅ — driven by me at §2 run 1 and headline 2; the in-file
+    argument for 3-over-2 is the strongest sentence in the PR (_"a stable-but-short rollup returns the
+    identical answer however long you wait"_) → **next hop:** `pm-orchestrator.md`'s exit-3 row —
+    "NOT a green and NOT a red", "does NOT increment `fix_iteration_counter`". **The chain terminates
+    in a decision a named agent takes.**
+  - **AC(3)** red-first ✅ — F22/F23/F28, and **my own perturbation shows they discriminate**
+    (§2 runs 3–5): neutering the guard fails four fixtures, and neutering each half alone fails a
+    *different* subset. Neither half subsumes the other, which the file claims and I measured.
+  - **AC(4)** FOLLOW-848 AC(1) taken in the same PR ✅ — **and it discharges RETRO-250's TG-1, which
+    survived four generations** (headline 1, perturbation-proven).
+  - **AC(5)** the failure direction is not a permanent block ✅ — `--accept-cardinality`, requiring the
+    exact observed count, stamping every RESULT line, pinned by F26; and an unreadable sample is exit
+    3 with a named diagnosis, pinned by F27.
+  - **AC(6)** the human heuristic deleted once the gate enforces it ✅ **in the file that matters**
+    (`pm-orchestrator.md:55`), **owed in one that does not** (`QUEUE.md`, self-declared — §4d DG-2).
+- **FOLLOW-848 — AC(1) CLOSED end-to-end, AC(2) closed at #683, AC(5) closed by completion; AC(3) and
+  AC(4) OPEN.** §5a. **The gap did not move one hop:** the seam exists, a fixture uses it, the fixture
+  discriminates, and the mechanism it protects is generation 1's own. That is producer → consumer →
+  render → *and the thing being protected*, which is one hop further than this check normally reaches.
+- **FOLLOW-813 — for the first time in this chain, a path CLOSED without a new one opening in the same
+  merge, and the closed path is the original.** Ledger, traced hop by hop: `--watch`'s race (closed,
+  dogfooded) → the count comparison (closed) → the PCRE fail-open (closed) → the unusable baseline
+  (closed) → the fixture seam (closed) → the failing-list parse (closed) → the set provenance (closed)
+  → the producer-prose-as-count (closed) → **the truncated rollup (closed here, and the settle loop it
+  lives in is now PINNED)**. **Open:** §4a LG-1's peer sample (FOLLOW-870) — which is a *new* input
+  introduced by this merge, not a survivor. AC(2)'s wording is "cannot report a false green".
+  **Verdict: nine known paths dead, one new one open and it is one layer further out than any
+  previous. Still not "cannot" — and the next retro must check FOLLOW-870 before anyone writes that
+  this class is closed.**
+- **FOLLOW-842 / 830 / 827 / 831 / 856 / 855 / 854 — re-checked, all still closed.** The PCRE
+  preflight, the `comm -23`/`comm -13` symbol-set comparison, the arithmetic self-consistency guard and
+  the anchored Rule I parsers all survive the +465-line edit; `check-rule-i.sh` on merged `main` still
+  reports 192, and both sibling self-tests still pass (11 and 6 fixtures).
+
+### 8. Cross-references
+
+- **RETRO-255** — the retro that filed this ticket. **Its §4a LG-1 is CONFIRMED and CLOSED**, and I
+  re-drove the closure rather than accepting it. **Its §4a LG-2** (the harness cannot express the input
+  class) **is DISCHARGED for the settle loop and RECURS one input over** (§4c TG-1) — the same
+  relationship, one layer out, which is the movement RETRO-250 §6 first named.
+- **RETRO-252 §6** — its four-generation table extends cleanly to six and its central prediction holds
+  for the sixth time: **every defect lives in an input or a dependency the gate consumes and does not
+  validate, never in its decision logic.** Its four "what would have to be true" conditions are now
+  **3 of 4 met** — the fixture list still is not derived from an enumeration of the gate's inputs
+  *stated in the file*, which is why the fifth input arrived unfixtured.
+- **RETRO-250** — its **TG-1 is discharged here**, four generations and 1867 lines after it was filed,
+  and it is the longest-open finding in this chain to close. Its P-35 bar tested clause by clause and
+  held (§6).
+- **RETRO-253 / RETRO-254** — their re-armed Rule S amendment tested clause by clause across all three
+  of this batch's merges and NOT discharged, with a stop condition now recommended for the arming
+  itself (§6).
+- **RETRO-256 / RETRO-257** — the sibling entries. This entry carries the session totals for all three.
+- **RETRO-122** — the count-inflation discipline, applied three times: P-35 held despite a third
+  clause-(a) instance; RETRO-255's "claim-time" idea corrected as never-armed rather than adjudicated;
+  the QUEUE prose deferral counted as one, and as compliance rather than harm.
+- **Rule AM** — followed: all six of my runs used a scratch copy or a scratch fixture dir; the worktree
+  was never mutated. **Rule AN** — the reason 848/864/860/850/851/844/847/779 are sharpened rather than
+  re-filed.
+
+<!-- RETRO-258 filed 2026-08-07 — post-merge retro for PR #689 / FOLLOW-865 (merge 6ab65600, 2026-08-07
+08:49:18 UTC, 5 files +552/-63 by `gh pr view 689 --json files` AND `git diff --numstat 6ab65600^ 6ab65600` —
+the two agree). FOLLOW-865 CLOSED on all six ACs. HEADLINE 1: RETRO-250's TG-1 — the settle-loop blindness
+that survived FOUR gate generations (250, 252, 254, 255) — is DEAD, and I proved it: deleting `&& "$snapshot"
+== "$prev_snapshot"` now fails EXACTLY ONE fixture (F25, "a failure on the third read is not settled away by a
+merely-changed second read", expected 1 got 0). F25's shape is a measurement not an argument — a fixture whose
+reads merely DIFFER does not discriminate because the surviving -n "$prev_snapshot" guard already forces a
+second poll, and the worker says the first cut did exactly that and the perturbed build passed it. FOLLOW-848
+AC(1) genuinely discharged. HEADLINE 2: RETRO-252's prediction holds for the SIXTH generation and the
+unvalidated input is the PEER SAMPLE. derive_cardinality_floor refuses only on a failed read or an empty
+sample; ANY non-empty sample is trusted, reference = second-highest. DRIVEN through the merged script with the
+exact ESC-050 5-check rollup, varying only the peers: 12x77 -> floor 31 -> exit 3; 77 + 11x5 -> floor 2 ->
+"Total checks: 5 | success: 5 | ... failing: 0" + "RESULT: all checks green. Safe to mark READY_FOR_REVIEW"
+exit 0; 77,77 + 10x5 -> floor 31 -> exit 3. The worker PRICED this boundary in-file ("does not start falling
+until all but two peers are affected") — what is missing is that nothing ACTS on the price: no floor under the
+floor, no dispersion refusal -> FOLLOW-870 (P2 FROZEN, 3h, devops). P2 not P1, argued: FOLLOW-865 needed ONE
+rollup to collapse, this needs 11 of 12 peers, and the peer sample is dominated by MERGED PRs whose rollups a
+recovery rerun does not touch — PM owns any re-price. HEADLINE 3: the two halves of the guard are
+INDEPENDENTLY discriminating and I proved the file's claim — neuter max_seen only -> F23+F28 fail, F22 passes;
+force CARDINALITY_FLOOR=0 -> F22+F24+F26 fail, F23 passes. Also measured: the live peer sample today is
+79/81/79/79/77/77/74/76/75/75/75/73 (reference 79, floor 32) and the file's recorded sample is one day stale;
+and the -L 12 window spans just ~37 HOURS at this merge cadence, which the comment argues by COUNT and never
+by SPAN (§4a LG-2, folded into 870). WIRING: CHECK A clean (7 new symbols all with call sites; fetch_snapshot
+takes the poll index as an ARGUMENT because a counter dies in the command-substitution subshell — a near-miss
+the worker recorded in-file); CHECK B CLEAN and checked rather than assumed — the exit-code SET is unchanged
+so check-gate-exit-codes.sh's marker does not move and all six routing consumers stay valid, the MEANING
+widened and the three prose consumers were updated in the same PR, and AC(6)'s superseded >=60 heuristic was
+DELETED from pm-orchestrator.md. RETRO-252's HALF_WIRE_P did not recur, second consecutive gate PR. 4b N/A
+(P-37's grep still returns ZERO hits estate-wide). PROCESS FACTS: the PM-side prettier fix on the FIFTH
+Markdown file is FOLLOW-850's first QUANTIFIED cost (fix_iteration_counter 1/3, Format check red on both runs,
+a working pre-push hook catches it in seconds) and is also a small Rule S shape (the sibling set was
+enumerated from the ticket's named deliverables rather than from git diff --name-only); the transient `gh pr
+view` failure is the [[ -z "$snapshot" ]] -> exit 3 branch working, observed live for the first time — NO
+STUB, owned behaviour working. RULE VERDICTS: NO PROMOTION, NO AMENDMENT, CONVENTIONS_PATCH.md UNTOUCHED (43
+rules at session start AND end). BRIEF Q1 ("the brief is a hypothesis, not a spec"): YES de facto — TWO
+sightings this session (#686's R5, #689's option-1 rejection), both accepted by the PM — and NO de jure,
+because OPERATING_PRINCIPLES Rule 5 already requires it and both sightings are compliance SUCCESSES; the real
+gap is a PM-side BRIEFING CONVENTION with no verification step, which does not belong in a rule file whose 43
+entries all carry executable checks. Harm count zero; bar pre-specified for a rejected disproof. RETRO-255's
+"claim-time revert matrix" CORRECTED rather than adjudicated — RETRO-255 named NO discharge condition, so it
+was recorded, not armed; tested anyway and #689's design disagreement is not a falsified sufficiency claim
+(RETRO-122). RETRO-253's re-armed Rule S amendment tested clause by clause across ALL THREE merges: (a) NO
+(#687 instructs enumerate-AND-fix; 688/689 have no enumeration instruction), (b) NO (#687 -> FOLLOW-815, #688
+-> FOLLOW-867 + ESC-051, #689's single prose deferral is self-declared and OWED, not mis-graded). HELD at
+count 1 — and I RECOMMEND A STOP CONDITION FOR THE ARMING ITSELF: five consecutive PRs have failed to
+discharge it BY COMPLYING, so if RETRO-259/260 also finds clause (b) failing by compliance, RETIRE the arming
+as a finding. P-35: THIRD independent clause-(a) instance (main's run history -> main's merge history -> other
+people's PR rollups), clause (b) still NOT met by my predecessors' own standard (I drove it in a fixture, I
+did not observe a live flip), clause (c) partially and in the WORSE direction (a false GREEN reported in the
+PR's own vocabulary) -> 2 of 3, HELD at count 1, with a recommendation that a FOURTH clause-(a) instance
+should prompt amending the BAR rather than continuing to hold. P-37 held at count 1, class still EMPTY (zero
+hits), and RETRO-255's "write the zero-hit grep into Rule AP now" is still unowned. P-38 (minted by RETRO-256
+this session) does NOT fire here — the derived floor is the anti-pattern's CURE. SESSION-103 GRAND TOTALS: 13
+PRs merged (#677-689, plus #675 on the boundary); 17 FOLLOW tickets DONE on their own PR + 3 discharged
+(704/710/711) = 20; 12 RETRO entries (247-258, never batched); 34 FOLLOW numbers allocated (837-870) of which
+14 filed by retros; 2 escalations opened (ESC-050, ESC-051), 4 resolved (048, 049 + addendum, 050, and 044
+items 1/2/3/5/6); 0 rules promoted and 0 letters minted with the count held at 43 start and end; 4 rule
+amendments (1 Verification-block repair by RETRO-250, 3 rule-TEXT edits by PRs); 4 patterns minted (P-35/36/37
+/38) all held at count 1. VERDICT: Track HYGIENE set out to close three tickets, closed three in the first
+three PRs, and then closed seventeen more that all existed BECAUSE of the three; 6 of 13 merges (46%) went to
+the merge gate, which grew 247 -> ~2114 lines in five days, and at least five of the eleven gate tickets fixed
+defects the arc itself introduced. Nothing merged moved the product — FOLLOW-816/820 untouched, the localhost
+chat->archetype goal where it was on 2026-07-29. AGAINST that: the estate's ONLY mechanical answer to "is CI
+green" was lying, and a session that ships a P0 legal change through a lying gate ships nothing verifiable;
+six generations killed six distinct false-verdict paths (four driven by retros, TWO observed live on real
+PRs), generation 1's mechanism finally has a test, and the arc found the estate's OLDEST gate unable to fail
+for 84 days. The two things that will matter in a month came from the merges running ALONGSIDE the arc in the
+session's last hour: prod consent_records is empty, and C-07's storage claim is true for the first time since
+2026-06-19. The rabbit-hole was worth entering and was three generations too deep before anyone asked what it
+cost; what bounded it was not a decision but a P0 with a deadline. Filed FOLLOW-870. QUEUE.md /
+ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->

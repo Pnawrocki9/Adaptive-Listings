@@ -29784,3 +29784,247 @@ phrasing, not just the section).
 
 cross_ref: [FOLLOW-866 (C-07 v1.3); ESC-049 + addendum; FOLLOW-815 (PR #688); MASTER_DESIGN §H.8,
 §Y.2]
+
+---
+
+## FOLLOW-868 — `compliance@estalara.com` ships as the Art. 7(3) withdrawal channel and nothing verifies the mailbox exists or is monitored
+
+source_retro: RETRO-257 (§3 CHECK B, §4a LG-1, §5a) source_ticket: FOLLOW-815 recommended_sprint:
+now recommended_agent: compliance-engineer priority: **P1** estimated_hours: 2 depends_on: []
+blocks: [] promoted_to_queue: false **UNFROZEN** — the session-95 standing freeze carves out P1.
+
+**HALF_WIRE_P: a legal disclosure with a producer, three artefacts calling it an operator
+commitment, and no consumer anyone can point at.**
+
+Since `platform-v1.4-2026-08-07` (PR #688, `f560198c`) the registration consent text tells every
+data subject: _"You can withdraw this consent at any time by emailing compliance@estalara.com, a
+monitored mailbox for privacy requests"_
+(`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts`, byte-synced to
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1). Three artefacts record that this is an operator
+obligation — the constant's own docblock (_"It must actually be monitored. That is an operator
+obligation, not something this module can enforce"_), the new **binding invariant** in
+`docs/MASTER_DESIGN.md` §H.8, and `backlog/QUEUE.md` session-103. **None of them is a
+verification.**
+
+Swept rather than assumed: `grep -n "compliance@estalara.com" backlog/FOLLOW_UPS.md` above
+FOLLOW-700 returns only FOLLOW-711's line-ref correction; there is no ticket, no `ESCALATIONS.md`
+item, no runbook step, and no proof step of any kind that establishes the mailbox exists, who reads
+it, or what the response-time obligation is.
+
+**Why P1 rather than a bookkeeping note.** FOLLOW-710 existed because the previous text named _"the
+agency's DSR contact"_ and **"no such contact exists in any artifact, code path or product
+surface"**. FOLLOW-710 AC(2) option (a) is _"name a concrete address (e.g. a monitored DSR mailbox)
+**and stand it up**"_. The naming shipped; the standing-up is unevidenced. **If the mailbox is not
+monitored, v1.4 replaced one unreachable channel with another and the whole FOLLOW-704/710/711
+family closed nothing** — and `MASTER_DESIGN.md` §H.8 now asserts the guarantee as binding design.
+
+**Two facts that bound it, stated so nobody over-reacts.** (1) Prod `consent_records` is **empty** —
+the endpoint has never written a row (FOLLOW-706 AC-1, PR #688; RETRO-257 headline), so the exposed
+population today is zero and this is P1 by classification and by Rule AA, P2 by timing — the same
+shape FOLLOW-711 was priced on. (2) **AC(1) below is a five-minute check.** This ticket is cheap and
+should not be allowed to sit because its consequence is large.
+
+**Rule AA is the frame.** FOLLOW-815's own AC(8) required the code axis and the operator axis to be
+reported separately and the ticket **not** to be DONE on code alone; `backlog/QUEUE.md` marks it
+`DONE`. The deploy leg genuinely has a proof step (`PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` set
+in Vercel prod + Doppler `prd`, redeploy confirmed, live GET probe). **This leg has none, and it is
+the leg Rule AA clause 3 exists for.** The correction is a status annotation plus this ticket, not a
+re-open of FOLLOW-815.
+
+**AC:** (1) establish, in writing and with evidence an auditor could follow, that
+`compliance@estalara.com` **exists**, who monitors it, and what the response-time commitment is — if
+the answer is "nobody, yet", say that plainly rather than naming an aspiration (this is FOLLOW-710
+AC(1)'s own wording, applied to the address that replaced the one it condemned); (2) give
+`MASTER_DESIGN.md` §H.8's new withdrawal-channel invariant a **verification step** — the invariant
+currently asserts a behaviour with no check, which is the Rule N shape it was written to remove; (3)
+add the mailbox to the operator surface that already exists for this class —
+`docs/runbooks/BRAND_PROVISIONING.md`'s enforcement table or `docs/compliance/DSR_ALERTING.md` —
+with the same "confirm it, do not assume it" framing §Part C uses for the `brand_identity` alerts;
+(4) annotate FOLLOW-710 with which half of its AC(2)(a) is discharged and which is not, and annotate
+FOLLOW-815 per Rule AA (`CODE_COMPLETE_OPERATOR_PENDING` on this leg); (5) if the mailbox does
+**not** exist or cannot be monitored, do not silently re-word the consent text — that is a
+disclosed-meaning change and costs a `PLATFORM_REGISTRATION_TOS_VERSION` bump, so escalate for a
+ruling (the PM escalates; this ticket does not self-escalate).
+
+cross_ref: [RETRO-257 §3 CHECK B / §4a LG-1 / §5a; FOLLOW-710 (AC(2)(a), AC(1)), FOLLOW-711,
+FOLLOW-704, FOLLOW-815 (AC(8)), FOLLOW-814 item 2 (the ruling), FOLLOW-706 (the zero count),
+ESC-044; `MASTER_DESIGN.md` §H.8; Rule AA, Rule N, Rule AJ]
+
+---
+
+## FOLLOW-869 — The consent grace window cannot be closed on its own criterion: the alert it waits for has never fired, and the runbook asserts a live caller that has never called
+
+source_retro: RETRO-257 (§4a LG-2, §4d DG-1) source_ticket: FOLLOW-815 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**A Rule Q shape in an operator runbook, with the env var already set in prod.**
+
+`docs/runbooks/BRAND_PROVISIONING.md` §Step 3b step 5 says: _"**Close the window.** Once the alert
+has stopped firing (no more registrations arrive on the previous version), **unset**
+`PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` in Doppler `prd` AND in Vercel"_, and step 4 says
+_"Verify by watching the alert stop firing"_. The alert is the `warning`-level Sentry write tagged
+`tos_version_grace: previous_version_accepted` (`route.ts:447`), raised on every grace-band
+acceptance.
+
+**It has never fired and cannot**, because prod `consent_records` is empty and the
+`app.estalara.com` caller has never called this endpoint (FOLLOW-706 AC-1 count, PR #688; RETRO-257
+headline — the decisive supporting fact is `backlog/HANDOFFS.md:2973`, which still says the shared
+HMAC secret is _"to be provisioned in Doppler"_, in a section PR #688 edited). **"The alert stopped"
+is therefore indistinguishable from "the alert never started"**, the window's close criterion is
+unmeetable by construction, and `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS` stays set in prod
+indefinitely — permanently widening the accepted `tos_version` band that FOLLOW-712 narrowed on
+purpose.
+
+**Three sentences added by the same PR assert the caller as live**, in the same section:
+
+- _"every registration on `app.estalara.com` returns `422 tos_version_superseded` from the first
+  request until Rafał's side redeploys, **because the live caller hardcodes the v1.3 string**"_
+- _"if the caller also omits `consent_text_hash` — **which today's live caller does** —"_
+- _"Those NULL-hash rows are a small, dated, self-identifying population"_ — a population that, on
+  the same PR's own measurement, will be **zero**.
+
+**The PR body knew better** (_"the FOLLOW-715 outage class analysed below is **theoretical
+today**"_). The measurement reached the PR body and the database axis and did not reach the runbook
+axis the same commit edited — the multi-axis miss, and the third consecutive retro to find a
+corrective edit that did not reach an artefact its own author was inside (RETRO-252 §4d DG-2,
+RETRO-255 §4d DG-2, RETRO-257 §4a LG-2).
+
+**Nothing here argues for unsetting the variable.** Free insurance is the right call and the PR says
+so. What is wrong is that the runbook cannot tell an operator when the insurance stops being needed.
+
+**AC:** (1) replace §Step 3b step 5's close criterion with one that is observable in the current
+state — e.g. "close when Rafał confirms his deploy sends the current `tos_version`, verified by a
+GET probe or by a single successful POST carrying it", with the alert's absence explicitly named as
+**not** evidence; (2) correct the three sentences above to state the caller's actual status, citing
+the FOLLOW-706 count and its date, and keep the outage reasoning as a conditional (_"if and when the
+caller integrates"_) rather than as a present-tense fact; (3) fold in the `.gitleaks.toml` residue —
+the rewritten comment block (`:176-189`) says the `// gitleaks:allow` tag _"has been **REMOVED**
+rather than updated"_ and its final two lines still instruct the reader to _"update the
+gitleaks:allow tag on that line to the new value"_ (Rule AO — a corrective edit that did not reach
+two lines below itself); (4) state, in the runbook, what happens to the window if a SECOND bump is
+needed before the first window closes — §Step 3b already contains that instruction and it now
+interacts with a window that cannot close on its own terms.
+
+cross_ref: [RETRO-257 §4a LG-2 / §4d DG-1; FOLLOW-715 (the grace window), FOLLOW-712 (the 422),
+FOLLOW-706 (the zero count), FOLLOW-722 (the `tos_version_grace` signal's missing Rule AJ consumer),
+FOLLOW-815 (PR #688); `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b; `backlog/HANDOFFS.md:2973`;
+Rule Q, Rule AO, Rule AH]
+
+---
+
+## FOLLOW-870 — The merge gate's completeness floor is derived from a peer sample it validates for presence and never for plausibility
+
+source_retro: RETRO-258 (§4a LG-1, §4a LG-2, §4c TG-1) source_ticket: FOLLOW-865 recommended_sprint:
+next recommended_agent: devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Driven through the merged gate, in a scratch copy (Rule AM), varying ONLY the peer sample.**
+
+FOLLOW-865 closed a live false green by requiring the settled check-run rollup to carry at least a
+**derived** minimum. The floor is derived from
+`gh pr list --state all -L 12 --json number,statusCheckRollup` — a new external input.
+`derive_cardinality_floor` refuses on exactly two conditions: the read failed (`rc != 0`), and the
+sample is empty after filtering non-positive integers. **Between those, any non-empty sample is
+trusted**, `CARDINALITY_REFERENCE` is `samples[1]` (second-highest) and
+`CARDINALITY_FLOOR = ceil(reference * 40 / 100)`.
+
+Against the exact ESC-050 shape — five all-SUCCESS check-runs — with only the peers changed:
+
+```
+peers = 12 x 77                         -> Completeness floor: 31  -> RESULT: UNDETERMINED (exit 3)
+peers = 77 + 11 x 5  (11 of 12 short)   -> Completeness floor: 2   -> "Total checks: 5 | success: 5 | ... failing: 0"
+                                                                      "RESULT: all checks green. Safe to mark READY_FOR_REVIEW."  exit 0
+peers = 77, 77 + 10 x 5 (10 of 12)      -> Completeness floor: 31  -> RESULT: UNDETERMINED (exit 3)
+```
+
+**A degraded sample degrades the floor silently, in the false-green direction**, and the only signal
+is a header line a reader has been trained to skip
+(`Completeness floor: 2 check-run(s) — 40% of 5`).
+
+**This is not a worker miss and the ticket should not be written as one.** The boundary is stated
+in-file: _"Second-highest tolerates one outlier in either direction and does not start falling until
+all but two peers are affected."_ **What is missing is that nothing acts on the price** — there is
+no floor under the floor, no dispersion check, and no refusal when `samples[0]` towers over
+`samples[1]`, which is what an internally-inconsistent sample looks like.
+
+**Reachability, argued rather than asserted, which is why this is P2 and not P1.** FOLLOW-865's
+defect needed **one** PR's rollup to collapse. This needs **eleven of twelve peers** simultaneously
+short, and the peer sample is dominated by _merged_ PRs whose check-runs a recovery rerun does not
+re-register. It is nonetheless a false green reachable **without a code change**, which is the
+session's own escalation test — the PM owns any re-price.
+
+**Two supporting findings, both measured:**
+
+1. **The peer window is a rolling ~37 hours in this repo, not a long-run baseline.**
+   `gh pr list --state all -L 12 --json number,createdAt` spans `2026-08-05T18:50Z` →
+   `2026-08-07T07:57Z`. The in-file comment argues the sample is _"large enough that a handful of
+   collapsed rollups during an incident cannot take out the second-highest"_ — true of the
+   **count**, silent about the **span**. At this merge cadence `-L 12` is a day and a half, so a
+   condition that suppresses check registration for that long contaminates the whole sample rather
+   than a corner of it. The mitigating fact (merged peers' rollups do not move) belongs next to it;
+   today only the favourable half is in the file.
+2. **The harness cannot express the defect's input shape.** `_st_peers <dir> <count> <cardinality>`
+   writes N **identical** lines by construction, and all seven cardinality fixtures use it — so no
+   fixture can describe a degraded-but-non-empty sample. This is the same relationship the static
+   `snapshot.json` had to the settle loop for four generations (RETRO-250 §4c TG-1, discharged by
+   FOLLOW-865's sequenced seam), one input further out.
+
+**AC:** (1) refuse (**exit 3**, `UNDETERMINED`, never 0) when the peer sample is internally
+inconsistent — e.g. `samples[0] >= 2 * CARDINALITY_REFERENCE`, or any equivalent dispersion test the
+author can argue from the observed distribution — with the diagnosis naming the sample it read; (2)
+give `_st_peers` a variant that takes a **list** rather than a uniform count, and add a fixture that
+drives a degraded-but-non-empty sample, red-first against the current build (this is the whole point
+— the existing helper cannot express it); (3) state the sample window's **span** alongside its size
+in the in-file comment, with the merged-peers mitigation, so a future reader who re-derives
+`PEER_SAMPLE_SIZE` sees both properties; (4) re-measure the recorded sample in the comment — the
+committed one (`79/77/77/74/76/75/75/75/73/73/38/73`) was one day stale on the day it merged, and
+the `38` it reasons about is already gone; (5) do **not** replace the derived floor with a constant
+— the derivation is the correct design and FOLLOW-865's own stub argued why; this ticket hardens its
+input, it does not revisit it.
+
+cross_ref: [RETRO-258 §4a LG-1 / §4a LG-2 / §4c TG-1 / §2 run 6; FOLLOW-865 (the guard this
+hardens), FOLLOW-848 (the sequenced seam that made 865 provable), FOLLOW-813 (the chain), RETRO-252
+§6 (the unvalidated-input thesis, sixth confirming generation), RETRO-250 §4c TG-1 (the same
+harness-cannot-express-it shape, one input in), ESC-050 (the live sighting 865 was filed on);
+`scripts/gh-pr-checks-verified.sh` — `fetch_peer_cardinalities` / `derive_cardinality_floor`; Rule
+AM, Rule AP]
+
+<!-- next free FOLLOW number: 871 (FOLLOW-868 + FOLLOW-869 filed 2026-08-07 by RETRO-257, the post-merge retro
+for PR #688 / FOLLOW-815, and FOLLOW-870 by RETRO-258, the post-merge retro for PR #689 / FOLLOW-865.
+FOLLOW-868 = P1 UNFROZEN, HALF_WIRE_P: compliance@estalara.com ships inside the consent text as the GDPR
+Art. 7(3) withdrawal channel and NOTHING verifies the mailbox exists or is monitored — three artefacts call it
+an operator commitment (the constant's docblock, MASTER_DESIGN §H.8's new binding invariant, QUEUE.md) and
+none is a verification; FOLLOW-710 AC(2)(a) said "name a concrete address AND STAND IT UP" and only the naming
+shipped, so if the mailbox is unmonitored the whole 704/710/711 family closed nothing. Bounded by prod
+consent_records being EMPTY (exposure zero today) and by AC(1) being a five-minute check. Rule AA is the
+frame: FOLLOW-815's own AC(8) demanded the operator axis be split out and the QUEUE marks it DONE; the deploy
+leg HAS a proof step, this leg has none. FOLLOW-869 = P2 FROZEN: §Step 3b's grace-window close criterion is
+"once the alert has stopped firing", the alert has never fired and cannot (zero rows, and HANDOFFS.md:2973
+still says the shared HMAC secret is "to be provisioned"), so the window cannot be closed on its own criterion
+and PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS stays set in prod indefinitely — a Rule Q shape in an operator
+runbook; three sentences the same PR added assert a live caller the same PR measured out of existence, while
+the PR body says "theoretical today"; folds in the .gitleaks.toml two-line tail that still tells the reader to
+update a tag the block above says was REMOVED (Rule AO). FOLLOW-870 = P2 FROZEN, DRIVEN: the merge gate's new
+completeness floor is derived from a `gh pr list` peer sample it validates for presence and never for
+plausibility — with 11 of 12 peers truncated the floor collapses to 2 and the exact five-check ESC-050 rollup
+prints "all checks green. Safe to mark READY_FOR_REVIEW" and exits 0; the worker PRICED the boundary in-file
+and nothing ACTS on the price. P2 not P1 because it needs 11 of 12 peers short where FOLLOW-865 needed one,
+and merged peers' rollups do not re-register. Two supporting measurements: the -L 12 window spans ~37 HOURS at
+this merge cadence (the comment argues by COUNT, never by SPAN), and `_st_peers` writes N IDENTICAL lines so
+the harness structurally cannot express the defect's input shape — the same relationship the static
+snapshot.json had to the settle loop for four generations, one input further out. RETRO-256 filed ZERO stubs,
+deliberately; its two residues went to FOLLOW-852 (dpia.md:539 §2.7.3's fired-at-birth re-review trigger,
+whose "including" clause names the two intent-snapshot.ts slices that exist TODAY) and FOLLOW-867 (widen AC(3)
+from Master_Design to the repo — two code comments still restate the retired claim). All three retros promoted
+NO rule and left CONVENTIONS_PATCH.md untouched at 43 rules; P-38 was MINTED at count 1 by RETRO-256 (a
+control whose firing condition is a property of the world it was written in) and a NEW LETTER was ARMED at
+count 1 for "decision-fork ACs must name their STOP condition". Recorded against existing stubs rather than
+re-filed (Rule AN): 852, 867, 841, 706, 704/710/711 (discharge annotations owed, and the ACs NOT met are named
+in RETRO-257 §5a), 815's own AC(3) (overridden by the FOLLOW-814 ruling — strike it), 703, 722, 469 (ci.yml
+:255 names the SDK gate "<40KB gzip" while check-bundle-size.js:16 enforces 42KB), 721, 379, 816/820, 848
+(AC(1) DISCHARGED and re-proved — re-scope to AC(3)+(4), do not close), 864 (widen AC(3) to any
+verdict-changing surface; --accept-cardinality is the first), 860 (no P-35 window again — 639 scanned / 192
+violations, seventh consecutive merge moving the violation set by zero), 850 (first QUANTIFIED cost: the
+PM-side prettier fix on a fifth Markdown file), 849, 851, 844 (fifth cost re-measurement in six days, ~2114
+lines), 847 (its AC(3) survivor was NOT incidentally discharged), 779. -->

@@ -54,3 +54,24 @@ Without the key it serves a generic fallback copy so the demo still renders.
 - A prebuilt SDK bundle at `packages/sdk/dist/estalara-sdk.iife.js`
   (`pnpm --filter @estalara/sdk build`).
 - A local backend serving listing data at `BACKEND_URL` (optional — falls back to empty context).
+
+## `local-pilot-session.mjs`
+
+A scripted behavioral session that drives a real Chromium against the **local** Estalara-app listing
+page and asserts the critical-path hops (DOM hooks, SDK bundle load, ingest ACK, decision call,
+`intent.snapshot` emission, DOM adaptation). It is the FOLLOW-816 environment's verification step,
+and the input FOLLOW-818/819 build on.
+
+Not a CI test: it needs the SvelteKit dev server, the Spring backend, a decision endpoint and an
+ingest endpoint, none of which exist on a CI runner. Bring-up procedure, per-hop evidence and the
+failure mode of every assertion are in `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`.
+
+```bash
+SESSION_JSON=/tmp/pilot-session.json node scripts/dev/local-pilot-session.mjs
+```
+
+Env overrides: `LISTING_URL`, `INGEST_ORIGIN` (`http://localhost:8787`), `DECISION_ORIGIN`
+(`http://localhost:9100`), `PASSES` (scroll/gallery passes), `HEADLESS`, `SESSION_JSON`.
+
+Playwright is resolved from `packages/sdk`'s devDependencies, so this script adds nothing to the
+root lockfile or to CI installs.

@@ -95,6 +95,10 @@ MANIFEST
 # Cloudflare
 .wrangler/
 wrangler.toml.bak
+# Worker secrets for `wrangler dev` (CLICKHOUSE_PASSWORD etc). Local-only, never committed
+# — see docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md §3.6 [FOLLOW-816].
+.dev.vars
+.dev.vars.*
 
 # Size-limit
 .size-limit/

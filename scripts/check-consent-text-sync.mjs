@@ -96,6 +96,47 @@ function extractRendererTemplate(libSrc) {
 }
 
 /**
+ * FOLLOW-704 / FOLLOW-714 item 3 — assert `CANONICAL_CONSENT_TEXT_HASH` is still DERIVED from the
+ * renderer rather than re-literalised.
+ *
+ * Why this lives in the gate and not only in a unit test: the placeholder that made this whole
+ * ticket family necessary was a hand-typed 64-hex literal that survived six weeks and four
+ * hardening PRs because `route.test.ts` only ever compared the constant to ITSELF (RETRO-227 §4c
+ * TG-1: eleven tautological references). A unit test that recomputes the hash catches drift in the
+ * VALUE; this catches the shape that makes drift possible at all — someone "simplifying" the
+ * derived expression back into a pasted digest, which would compile, pass every existing test that
+ * imports the constant, and silently re-open FOLLOW-704.
+ *
+ * Deliberately a structural check on source text, not an import: this script is a zero-dependency
+ * `.mjs` that cannot import a TS module, and the equality it would assert is a tautology once the
+ * derivation holds. The unit test in `route.test.ts` covers the value; this covers the shape.
+ *
+ * @param {string} libSrc
+ * @returns {string[]} error messages (empty when the constant is correctly derived)
+ */
+function checkCanonicalHashIsDerived(libSrc) {
+  const decl = libSrc.match(/export const CANONICAL_CONSENT_TEXT_HASH[^=]*=\s*([\s\S]*?);\n/);
+  if (!decl) {
+    return [
+      `Could not locate the CANONICAL_CONSENT_TEXT_HASH declaration in ${LIB_PATH}. ` +
+        `If it was renamed or restructured, update this gate in the same PR — a hash constant ` +
+        `this gate cannot see is a hash constant nothing checks (FOLLOW-704).`,
+    ];
+  }
+  const initializer = decl[1];
+  if (/^\s*computeConsentTextHash\(\s*renderPlatformConsentText\(/.test(initializer)) return [];
+  return [
+    `CANONICAL_CONSENT_TEXT_HASH is no longer DERIVED from the renderer.\n` +
+      `  found initializer: ${initializer.trim().slice(0, 120)}\n` +
+      `  expected:          computeConsentTextHash(renderPlatformConsentText(<first-party identity>))\n` +
+      `  From 2026-06-21 to FOLLOW-815 this constant was a hand-typed 64-hex literal that was the\n` +
+      `  SHA-256 of NO text at all, so the 422 consent_text_hash_fabricated refusal keyed on it\n` +
+      `  fired only on a value no caller could derive. Re-literalising it re-opens FOLLOW-704.\n` +
+      `  To rotate the consent text, edit renderPlatformConsentText() — the hash follows.`,
+  ];
+}
+
+/**
  * Reads the first-party brand identity constants so the gate renders with the same values
  * production does, rather than a hardcoded copy that could drift.
  *
@@ -190,6 +231,8 @@ function runCheck({ docSrc, libSrc, identitySrc }) {
   const errors = [];
   let canonicalText;
   let canonicalHash;
+
+  errors.push(...checkCanonicalHashIsDerived(libSrc));
 
   try {
     const { template, tosVersion } = extractRendererTemplate(libSrc);
@@ -425,11 +468,17 @@ function selfTest() {
   runCase(results, 'reintroduced bracket placeholder FAILS', () => {
     const mutated = {
       ...sources,
+      // Anchor updated by FOLLOW-815: the v1.4 text replaced "the agency's DSR contact" (the
+      // prose that had itself replaced the original `[agency DSR contact]` slot) with a concrete
+      // monitored mailbox, so the old anchor stopped existing. The FOLLOW-720 machinery reported
+      // this as STALE rather than as "the gate does not detect drift" — working as designed. The
+      // case still tests exactly what it always did: reintroducing a bracket slot ON THE
+      // WITHDRAWAL-CHANNEL SENTENCE, the one place a slot was historically left unfilled.
       docSrc: mustReplaceInDocBlock(
         sources.docSrc,
-        "the agency's DSR contact",
+        'monitored mailbox for privacy requests',
         '[agency DSR contact]',
-        `${DOC_PATH} §6.1 block — "the agency's DSR contact"`,
+        `${DOC_PATH} §6.1 block — "monitored mailbox for privacy requests"`,
       ),
     };
     return runCheck(mutated).ok === false;
@@ -481,6 +530,54 @@ function selfTest() {
         currentAssignment,
         bumpedAssignment,
         `${LIB_PATH} — PLATFORM_REGISTRATION_TOS_VERSION assignment`,
+      ),
+    };
+    return runCheck(mutated).ok === false;
+  });
+
+  // FOLLOW-714 AC-2 — `extractDocBlock`'s two remaining error branches were never self-tested.
+  // Duplicated sentinels are the realistic accident (adding a second consent version to the same
+  // doc); an inverted pair is the transposition typo. Both must FAIL CLOSED, because the block
+  // boundary they define is what the whole comparison is scoped to (§6.1.1 N1).
+  runCase(results, 'DUPLICATED BEGIN sentinel FAILS CLOSED', () => {
+    const { lines, beginIdx } = locateDocSentinelLines(
+      sources.docSrc,
+      `${DOC_PATH} — BEGIN_SENTINEL line (duplication case)`,
+    );
+    const duplicated = lines.slice();
+    duplicated.splice(beginIdx, 0, lines[beginIdx]);
+    return runCheck({ ...sources, docSrc: duplicated.join('\n') }).ok === false;
+  });
+
+  runCase(results, 'INVERTED BEGIN/END sentinel pair FAILS CLOSED', () => {
+    const { lines, beginIdx, endIdx } = locateDocSentinelLines(
+      sources.docSrc,
+      `${DOC_PATH} — BEGIN/END sentinel pair (inversion case)`,
+    );
+    const swapped = lines.slice();
+    swapped[beginIdx] = lines[endIdx];
+    swapped[endIdx] = lines[beginIdx];
+    return runCheck({ ...sources, docSrc: swapped.join('\n') }).ok === false;
+  });
+
+  // FOLLOW-704 / FOLLOW-714 item 3 — the gate must reject a re-literalised canonical hash. The
+  // fixture pastes back a placeholder-shaped literal (assembled at runtime from two halves so no
+  // 64-hex constant is committed to this file and no secret-scanner suppression is needed).
+  runCase(results, 're-literalised CANONICAL_CONSENT_TEXT_HASH FAILS CLOSED', () => {
+    const decl = sources.libSrc.match(
+      /export const CANONICAL_CONSENT_TEXT_HASH[^=]*=\s*[\s\S]*?;\n/,
+    );
+    if (!decl) {
+      throw new FixtureStaleError(`${LIB_PATH} — CANONICAL_CONSENT_TEXT_HASH declaration`);
+    }
+    const fakeLiteral = `'${'0'.repeat(32)}${'f'.repeat(32)}' as const`;
+    const mutated = {
+      ...sources,
+      libSrc: mustReplace(
+        sources.libSrc,
+        decl[0],
+        `export const CANONICAL_CONSENT_TEXT_HASH = ${fakeLiteral};\n`,
+        `${LIB_PATH} — CANONICAL_CONSENT_TEXT_HASH declaration`,
       ),
     };
     return runCheck(mutated).ok === false;

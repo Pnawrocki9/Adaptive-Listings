@@ -366,6 +366,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //     "POST tos_version validation (FOLLOW-712 / FOLLOW-715)" → "costs zero DB queries" below.
   //     Keep any future reordering of this block below step 7's `createAdminClient()` call from
   //     silently making a rejected request pay a round trip.
+  //
+  //     `attestedPreviousVersion` (FOLLOW-815): set only on the grace band. It is read once more,
+  //     at the INSERT in step 9, where it suppresses the defaulted `consent_text_hash` — see the
+  //     comment there. Declared here rather than inside the block so the two sites are one fact.
+  let attestedPreviousVersion = false;
   if (body.tos_version !== undefined && body.tos_version !== PLATFORM_REGISTRATION_TOS_VERSION) {
     // FOLLOW-715 — bounded, EXPLICITLY-CONFIGURED grace window for the ONE
     // immediately-previous tos_version. Before this ticket, bumping
@@ -414,6 +419,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    attestedPreviousVersion = true;
+
     // Accepted under the grace window — NOT a fourth `brand_identity` tag value (Rule AJ /
     // coordinated with the still-unbuilt FOLLOW-700/708 registry, which owns the `brand_identity`
     // tag namespace): this is a distinct signal on a distinct axis (a stale TOS version, not a
@@ -426,7 +433,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `immediately-previous tos_version ("${body.tos_version}") — accepted under the ` +
       `explicitly-configured grace window (current: "${PLATFORM_REGISTRATION_TOS_VERSION}"). ` +
       'The record is written under the SUBMITTED version, not coerced. This caller is stale ' +
-      'and should redeploy against the current tos_version before the window closes.';
+      'and should redeploy against the current tos_version before the window closes. ' +
+      (body.consent_text_hash === undefined
+        ? 'It also omitted consent_text_hash, so the stored hash is NULL — this server no longer ' +
+          'renders the text that version names and will not default a hash it cannot stand ' +
+          'behind (FOLLOW-815).'
+        : 'It supplied an explicit consent_text_hash, which is stored as submitted.');
     console.warn(msg);
     Sentry.captureMessage(msg, {
       level: 'warning',
@@ -536,10 +548,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //           - any OTHER mismatch → ALERT ONLY, never a refusal: a legitimately TRANSLATED
   //             rendering mismatches too, and whether that may be written is a policy question
   //             this ticket does not decide (FOLLOW-701).
-  //         The `rendersFirstPartyIdentity` guard is load-bearing: `CANONICAL_CONSENT_TEXT_HASH`
-  //         is a constant pinned to the published §6.1 text and does NOT equal
-  //         `computeConsentTextHash(renderPlatformConsentText(estalara))`, so without it a tenant
-  //         provisioned AS Estalara would be accused of fabricating its own correct hash.
+  //         The `rendersFirstPartyIdentity` guard is STILL load-bearing after FOLLOW-815, for a
+  //         different reason than before. It used to be needed because the constant was a
+  //         hand-typed placeholder unequal to `computeConsentTextHash(renderPlatformConsentText(
+  //         estalara))`; now the two ARE the same value, so a tenant provisioned AS Estalara
+  //         computes `expectedHash === CANONICAL_CONSENT_TEXT_HASH` and never enters the `!==`
+  //         branch at all. The guard is kept because it is the invariant, not the workaround: it
+  //         states that the refusal applies only to a tenant rendering some OTHER identity, and
+  //         it must survive a future first-party text variant that breaks today's equality.
   //
   //     (b) FALLBACK identity (`isFallbackIdentity === true`) — nothing brand-specific is
   //         computable, so the answer depends on WHO this tenant is, and that requires the
@@ -561,10 +577,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   //           - `first_party` → EXEMPT. For Estalara the Estalara identity and the canonical
   //             hash are both CORRECT; no alert, no refusal, byte-identical response.
   //
-  //     EN-ONLY SCOPE LIMIT (FOLLOW-697 AC-4): `CANONICAL_CONSENT_TEXT_HASH` (`lib.ts:51`) is the
-  //     hash of the ENGLISH §6.1 text only. A tenant that renders a PL/ES translation of
-  //     ESTALARA's text submits a non-canonical hash and is NOT caught by either 422 branch. That
-  //     gap is FOLLOW-379's (per-language consent-text versioning); do not try to close it here.
+  //     EN-ONLY SCOPE LIMIT (FOLLOW-697 AC-4): `CANONICAL_CONSENT_TEXT_HASH` (declared in
+  //     `./lib.ts`; deliberately cited without a line number — the two prior citations of this
+  //     constant, here and in FOLLOW-704's stub, both said `:51` and were both stale by 35 lines,
+  //     Rule Y) is the hash of the ENGLISH first-party text only. A tenant that renders a PL/ES
+  //     translation of ESTALARA's text submits a non-canonical hash and is NOT caught by either
+  //     422 branch. That gap is FOLLOW-379's (per-language consent-text versioning); do not try
+  //     to close it here. Since FOLLOW-815 that constant is DERIVED from
+  //     `renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY)` rather than hand-typed, so the
+  //     comparisons below now recognise the hash a fabricating caller can actually produce by
+  //     copying Estalara's rendered text — which was the whole point of FOLLOW-704: until it
+  //     landed, this refusal fired only on a literal that appeared in no artifact any caller
+  //     reads, so the gate could not catch the fabrication it exists to catch.
   //
   //     Cost, stated per configuration rather than unqualified (FOLLOW-698 AC-4 / Rule AH):
   //       - `FIRST_PARTY_TENANT_ID` SET (the go-live shape): ZERO extra queries for EVERY tenant.
@@ -594,11 +618,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Shared tail of both 422 messages: the EN-only limit of this gate (FOLLOW-697 AC-4).
+  // Shared tail of both 422 messages: the boundary of what this gate can recognise
+  // (FOLLOW-697 AC-4, WIDENED by FOLLOW-815 AC-5 — the previous wording named only the
+  // translation axis, which stopped being the whole boundary once the constant became derived
+  // and therefore version-tracking).
   const EN_ONLY_SCOPE_NOTE =
-    ' Scope limit: this refusal recognises the canonical ENGLISH §6.1 hash only — a translated ' +
-    "rendering of Estalara's own text submits a different hash and is not caught here " +
-    '(FOLLOW-379). Nothing was written; do not retry with the same hash.';
+    ' Scope limit: this refusal recognises exactly ONE value — the hash of the ENGLISH ' +
+    'first-party (Estalara / Time2Show, Inc.) consent text as this server renders it for the ' +
+    `CURRENT tos_version ("${PLATFORM_REGISTRATION_TOS_VERSION}"). Two neighbouring shapes are ` +
+    'therefore NOT caught: (1) a translated rendering of the same text, which hashes to ' +
+    'something else (FOLLOW-379 owns per-language versioning); and (2) the hash of a PRIOR ' +
+    "version of Estalara's text — since FOLLOW-815 the canonical hash is derived from the " +
+    'current renderer, so it moves with every consent-text bump and no superseded value is ' +
+    'recognised. Nothing was written; do not retry with the same hash.';
 
   if (!brandIdentity.isFallbackIdentity) {
     // (a) PROVISIONED tenant — the correct hash is computable from the text we render for it.
@@ -825,20 +857,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         //     route renders for that tenant — never the canonical constant, which is Estalara's
         //     hash, not this brand's.
         //   - FALLBACK (`isFallbackIdentity === true`, includes Estalara's own tenant): default
-        //     to `CANONICAL_CONSENT_TEXT_HASH`, unchanged. That constant is currently a
-        //     placeholder and NOT the correct digest of the Estalara text (FOLLOW-704, not this
-        //     ticket's scope) — once FOLLOW-704 re-pins it to
-        //     `computeConsentTextHash(renderPlatformConsentText(<first-party identity>))`, this
-        //     branch and the PROVISIONED branch above collapse to the same value for the
-        //     first-party tenant, because `rendersFirstPartyIdentity` guarantees the first-party
-        //     tenant's fallback identity IS the Estalara identity. Nothing here needs to change
-        //     when that lands — this expression already reads the identity, not the constant,
-        //     for every PROVISIONED tenant.
-        consentTextHash:
-          body.consent_text_hash ??
-          (brandIdentity.isFallbackIdentity
-            ? CANONICAL_CONSENT_TEXT_HASH
-            : computeConsentTextHash(renderPlatformConsentText(brandIdentity))),
+        //     to `CANONICAL_CONSENT_TEXT_HASH`. As FOLLOW-707 predicted, FOLLOW-815 collapsed the
+        //     two branches to the SAME VALUE for the first-party tenant: that constant is now
+        //     `computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))`,
+        //     and `rendersFirstPartyIdentity` guarantees the first-party tenant's fallback
+        //     identity IS the Estalara identity. Both branches are kept because they still
+        //     differ for a NON-first-party tenant on the fallback identity.
+        //
+        //   - GRACE BAND (`attestedPreviousVersion === true`) with the hash OMITTED: write NULL,
+        //     defaulting nothing (FOLLOW-815). This is the one combination where no honest
+        //     default exists. The caller attested `PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS`,
+        //     i.e. a text this server no longer renders and whose bytes are not reachable from
+        //     this process; defaulting the CURRENT version's hash would produce a row whose
+        //     `tos_version` and `consent_text_hash` attest two DIFFERENT texts — precisely the
+        //     Art. 7(1) defect FOLLOW-712 closed for the refusal path and FOLLOW-704 closed for
+        //     the constant. A recorded absence is honest; a plausible-looking digest of the wrong
+        //     text is the fabrication class Rule K.2 exists to forbid. `consent_text_hash` is
+        //     nullable in the schema (`packages/db/src/schema/consent_records.ts`), the write is
+        //     NOT refused (refusing would be the registration outage FOLLOW-715 exists to
+        //     prevent), and the `warning`-level grace-window alert above says the hash is NULL,
+        //     so the state is observable rather than silent. A caller that ECHOES an explicit
+        //     hash is unaffected: its own value is stored as submitted.
+        consentTextHash: attestedPreviousVersion
+          ? (body.consent_text_hash ?? null)
+          : (body.consent_text_hash ??
+            (brandIdentity.isFallbackIdentity
+              ? CANONICAL_CONSENT_TEXT_HASH
+              : computeConsentTextHash(renderPlatformConsentText(brandIdentity)))),
         ...(encryptedIp !== null ? { ipAddress: encryptedIp } : {}),
         ...(userAgent !== null ? { userAgent } : {}),
         grantedAt: new Date(),

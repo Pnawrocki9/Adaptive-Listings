@@ -173,16 +173,19 @@ paths = [
 # k6 official GPG fingerprint used in apt installation instructions
 # Transcript filenames (date-slug format, e.g. 2026-05-12-15-49-14-estalara-sprint7-corpus)
 # Branch names in QUEUE.md branch: field match [a-zA-Z0-9_-]{40} (false positive)
-# FOLLOW-407/FOLLOW-411 CB-1: CANONICAL_CONSENT_TEXT_HASH (consent/platform-registration/lib.ts)
-# is a 64-char lowercase-hex constant, not a credential — its 40-char substrings false-positive on
-# this rule. FOLLOW-705 correction (Rule AH): the old wording here claimed the constant "is a
-# 64-char SHA-256 of the public consent text". It is not — it is a hand-typed placeholder that is
-# the digest of no text (RETRO-227 §4a LG-1); re-pinning it to the real SHA-256 of
-# renderPlatformConsentText(estalaraIdentity) is FOLLOW-704. Either way it is public, non-secret
-# and correctly allowlisted. Line numbers deliberately omitted here — they drifted (this block
-# said ":46" while the constant sat at :52).
-# Suppressed INLINE via the gitleaks:allow tag on the constant's own line — CB-1 (FOLLOW-411)
-# confirmed the inline suppress is sufficient (scan stays GREEN without a regexes entry here).
+# FOLLOW-407/FOLLOW-411 CB-1 → CLOSED by FOLLOW-815 (2026-08-07): CANONICAL_CONSENT_TEXT_HASH
+# (consent/platform-registration/lib.ts) no longer needs ANY suppression, inline or here, because
+# it is no longer a literal. It is now computed at module load —
+# computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY)) — so no 64-char
+# hex string is committed for this rule to match, and the `// gitleaks:allow` tag that used to sit
+# on its line has been REMOVED rather than updated. History, kept because the reasoning matters
+# more than the outcome: the constant was a HAND-TYPED placeholder that was the digest of no text
+# at all (RETRO-227 §4a LG-1), and FOLLOW-705's correction of this block noted that; deriving it
+# rather than re-pinning a new literal is FOLLOW-704's chosen fix and is what removes the
+# suppression need entirely. If a future change re-introduces a literal hash here, the
+# `consent-text-sync` CI gate fails first (it asserts the constant is still derived) — so an
+# unexplained gitleaks hit on this file means that gate was bypassed, not that a tag is missing.
+# Line numbers deliberately omitted throughout — every prior citation of this constant drifted.
 # No paths or regexes entry needed. If the hash is re-pinned (FOLLOW-704) or rotated, update the
 # gitleaks:allow tag on that line to the new value so the inline suppress stays accurate.
 regexes = [

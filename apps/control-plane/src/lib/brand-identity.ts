@@ -50,6 +50,29 @@ const ESTALARA_BRAND_NAME = 'Estalara' as const;
 const ESTALARA_LEGAL_ENTITY = 'Time2Show, Inc.' as const;
 
 /**
+ * The first-party (Estalara) display identity as a render-ready pair.
+ *
+ * Exported for ONE consumer (FOLLOW-815): the platform-registration consent module derives
+ * `CANONICAL_CONSENT_TEXT_HASH` as
+ * `computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))`, so the
+ * canonical hash and the text the first-party data subject actually reads cannot diverge —
+ * they are the same expression. Before FOLLOW-815 that constant was a hand-typed literal tied
+ * to no text at all (FOLLOW-704 / RETRO-227 §4a LG-1).
+ *
+ * Deliberately built from the two constants above rather than repeating their values: the
+ * `consent-text-sync` CI gate (`scripts/check-consent-text-sync.mjs`) reads
+ * `ESTALARA_BRAND_NAME` / `ESTALARA_LEGAL_ENTITY` out of THIS file by regex to render the
+ * published §6.1 comparison, so a second copy of either string would be a silent drift surface
+ * the gate cannot see.
+ */
+export const FIRST_PARTY_BRAND_IDENTITY: Readonly<
+  Pick<BrandIdentity, 'brandName' | 'legalEntity'>
+> = Object.freeze({
+  brandName: ESTALARA_BRAND_NAME,
+  legalEntity: ESTALARA_LEGAL_ENTITY,
+});
+
+/**
  * Resolved, render-ready brand identity. Both fields are guaranteed non-empty:
  * they fall back to the Estalara first-party identity rather than an empty
  * string in any legal / email text.
@@ -375,10 +398,14 @@ async function isTreatedAsExternalBrand(
  * it is the fail-honest fallback, or because a tenant explicitly configured those exact values.
  *
  * Used by the consent POST's canonical-hash refusal (FOLLOW-697): the canonical EN §6.1 hash is
- * only PROVABLY the wrong text for a tenant that renders some OTHER display identity. Note that
- * `CANONICAL_CONSENT_TEXT_HASH` is a constant pinned to the published §6.1 text and is NOT equal
- * to `computeConsentTextHash(renderPlatformConsentText(estalaraIdentity))`, so a
- * computed-hash comparison alone would mis-accuse a tenant provisioned AS Estalara.
+ * only PROVABLY the wrong text for a tenant that renders some OTHER display identity.
+ *
+ * Corrected 2026-08-07 (FOLLOW-815, Rule AH): this docblock used to say
+ * `CANONICAL_CONSENT_TEXT_HASH` "is NOT equal to
+ * `computeConsentTextHash(renderPlatformConsentText(estalaraIdentity))`" — true of the hand-typed
+ * placeholder, false now that the constant is DERIVED from exactly that expression. The predicate
+ * is unchanged and still load-bearing: it scopes the refusal to tenants rendering some other
+ * identity, which is the invariant rather than a workaround for the old inequality.
  *
  * @param identity - A resolved brand identity.
  */

@@ -2848,7 +2848,7 @@ const sig = createHmac('sha256', PLATFORM_REGISTRATION_CONSENT_SECRET)
   "tenant_id": "<uuid>",
   "brand_name": "Estalara",
   "legal_entity": "Time2Show, Inc.",
-  "tos_version": "platform-v1.3-2026-06-21",
+  "tos_version": "platform-v1.4-2026-08-07",
   "consent_text": "<the exact bytes to display next to the checkbox>",
   "consent_text_hash": "<sha256 of consent_text — echo this on the POST>",
   "data_source": "stored | default"
@@ -2911,7 +2911,7 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   "tenant_id": "<Estalara_tenant_UUID_for_app_estalara>",
   "session_id": "<stable_investor_account_reference_no_PII>",
   "nonce": "<random_UUID_or_32+_char_random_string_per_request>",
-  "tos_version": "<the tos_version Step 1 returned — currently platform-v1.3-2026-06-21>",
+  "tos_version": "<the tos_version Step 1 returned — currently platform-v1.4-2026-08-07>",
   "consent_text_hash": "<the consent_text_hash Step 1 returned, echoed unchanged>",
   "user_agent": "<investor_browser_user_agent>"
 }
@@ -2921,10 +2921,23 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
 - `session_id` — a stable pseudonymous investor reference (e.g. SHA-256 of their Supabase user ID).
   Must be consistent for the investor's lifetime. No raw email / name / phone.
 - `nonce` — a fresh UUID per request (prevents accidental double-submit on retry).
-- `tos_version` — use `"platform-v1.3-2026-06-21"` to match the DPO-reviewed disclosure text. Update
-  when consent text changes and a new DPO-reviewed version is published. **[FOLLOW-712,
-  2026-07-28]** A version bump is now a two-repo operation: as of this endpoint's latest deploy, a
-  `tos_version` that does not match what the server currently serves is REFUSED
+- `tos_version` — use `"platform-v1.4-2026-08-07"` to match the DPO-reviewed disclosure text. Update
+  when consent text changes and a new DPO-reviewed version is published. **[FOLLOW-815, 2026-08-07 —
+  ACTION REQUIRED ON YOUR SIDE, and the reason you were notified directly.** The consent text
+  changed and the version bumped `platform-v1.3-2026-06-21` → `platform-v1.4-2026-08-07`. **The
+  disclosed meaning changed**, in two places: withdrawal is now performed by emailing a named
+  monitored mailbox (`compliance@estalara.com`) instead of "the agency's DSR contact", and the
+  closing paragraph now names Estalara / Time2Show, Inc. as the processor. So the bytes you display
+  MUST change too — **call Step 1 and render what it returns**; do not keep displaying a cached copy
+  of the v1.3 text while sending the v1.4 version string, or the record will attest a text the
+  investor never read. Estalara ops has opened the §Step 3b grace window for
+  `platform-v1.3-2026-06-21`, so your current deploy keeps returning `201` and does NOT break the
+  moment this ships — but each such call raises a `warning` alert, the row is written under v1.3,
+  and if you also omit `consent_text_hash` the stored hash is written **NULL** (this server can no
+  longer stand behind a default for a text it no longer renders). Move to GET-then-echo and the
+  current version at your next deploy; the window is closed manually once the alert stops.**]**
+  **[FOLLOW-712, 2026-07-28]** A version bump is now a two-repo operation: as of this endpoint's
+  latest deploy, a `tos_version` that does not match what the server currently serves is REFUSED
   (`422 tos_version_superseded`, response includes `current_tos_version`) rather than written — if
   this literal is not updated in the SAME window as an Adaptive-Listings text bump, registration
   will start failing with that 422 until it is. **[FOLLOW-715, 2026-07-28]** The bump is no longer
@@ -2940,14 +2953,18 @@ where `body_json_utf8` is the exact UTF-8 bytes of the POST body (as a string).
   schema, but **omitting it is discouraged** and, for a non-first-party tenant, refused outright
   (`422`, below). **[FOLLOW-713, 2026-07-28 — correcting this line, which previously said "omit to
   use the canonical EN §6.1 SHA-256 hash"]** That was wrong in three ways and remains wrong: (a)
-  what the omission path currently writes is `CANONICAL_CONSENT_TEXT_HASH`, a hand-typed
-  **placeholder** that is the digest of no text at all (FOLLOW-704, open — an unresolved P0 against
-  every record already written on that path); (b) §6.1 of `PRIVACY_NOTICE_TEMPLATE.md` is no longer
-  the canonical artifact — PR #633 made the renderer's output canonical and §6.1 its published
-  mirror; and (c) omitting the field skips the evidence check that runs when the field IS present.
-  Since 2026-07-28 the omission path at least defaults to the tenant's **own** rendered hash when
-  that tenant's brand identity is provisioned (FOLLOW-707), instead of Estalara's constant — but
-  that is a floor, not the intended flow. Echo Step 1's value.
+  what the omission path currently writes is `CANONICAL_CONSENT_TEXT_HASH` — which **[UPDATED
+  2026-08-07, FOLLOW-815]** is no longer a hand-typed placeholder: it is now DERIVED from the
+  renderer, so on the CURRENT version it is the true digest of the text this endpoint serves for the
+  first-party identity. FOLLOW-704 is closed. Two caveats keep "echo Step 1's value" the right
+  instruction anyway: records written before that date still carry the placeholder (FOLLOW-706's
+  remediation population), and on the §Step 3b grace band an omitted hash is now written **NULL**
+  rather than defaulted; (b) §6.1 of `PRIVACY_NOTICE_TEMPLATE.md` is no longer the canonical
+  artifact — PR #633 made the renderer's output canonical and §6.1 its published mirror; and (c)
+  omitting the field skips the evidence check that runs when the field IS present. Since 2026-07-28
+  the omission path at least defaults to the tenant's **own** rendered hash when that tenant's brand
+  identity is provisioned (FOLLOW-707), instead of Estalara's constant — but that is a floor, not
+  the intended flow. Echo Step 1's value.
 
   Send a hash you computed yourself ONLY if you display text this endpoint did not serve (e.g. a
   translation). Expect it to be written but flagged: a hash that matches neither the tenant's

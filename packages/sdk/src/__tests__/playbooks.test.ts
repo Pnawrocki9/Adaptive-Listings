@@ -5,7 +5,11 @@
  *   1. getPlaybook() returns correct playbook for each of the 18 archetypes
  *   2. getPlaybook() falls back to neutral for an unknown archetype
  *   3. Every non-neutral playbook has non-empty description, signals, feature_priority
- *   4. Integration: route decision tree + playbook lookup → correct directive shape
+ *   4. Spot-checks on the copy of key archetypes' slots
+ *   5. getAllPlaybooks() covers every archetype
+ *
+ * NOT covered here, deliberately (FOLLOW-890): the /api/adapt decision tree. See the
+ * note at the foot of this file.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -168,101 +172,32 @@ describe('getAllPlaybooks()', () => {
   });
 });
 
-// ─── 6. Integration: directive shape from decision tree ──────────────────────
+// ─── 6. The decision tree is NOT tested here (FOLLOW-890) ────────────────────
 
 /**
- * Replicates the decision tree logic from route.ts to test the playbook
- * output shape without importing from the Next.js app (which has no node_modules
- * in the SDK test environment).
+ * This file used to carry `simulateDecisionTree()` — a hand-written copy of
+ * `runDecisionTree()` from `apps/control-plane/src/app/api/adapt/route.ts`, declared
+ * in its own docblock as a replication of it. It was deleted, not repaired.
+ *
+ * It had drifted into asserting a contract the route cannot honour: it returned
+ * `{ directives: [], source: 'llm_full' }`, while `route.ts:340-345` returns the
+ * gateway's directives with `'llm_full'` and empty directives ONLY with
+ * `'playbook_fallback_llm_unavailable'` (the route's own header says so at
+ * `route.ts:15`). That false pair was asserted green here while
+ * `route.test.ts:396-408` asserted the opposite for the same branch — two green
+ * suites, one branch, opposite contracts.
+ *
+ * It is deleted rather than corrected because the direction of the dependency makes
+ * a copy here permanently unsound: the control plane imports `getPlaybook` from THIS
+ * package (`route.ts:49`), so a copy of its branch logic in this package's tests can
+ * never be imported, never be type-checked against the original, and can only drift.
+ *
+ * Every branch of the tree, both boundary edges, and both gateway outcomes are
+ * covered against the REAL handler in
+ * `apps/control-plane/src/app/api/adapt/route.test.ts:246-453`. Nothing this block
+ * asserted is now unasserted: its playbook-copy claims are duplicated verbatim in
+ * section 4 above, and its branch claims were always the route suite's to make.
+ *
+ * Do not re-create the copy. To learn what the route returns, read `route.ts` or run
+ * that suite.
  */
-function simulateDecisionTree(
-  archetypeId: Archetype,
-  confidence: number,
-  similarity: number,
-): {
-  directives: {
-    type: string;
-    slot: string;
-    value: string;
-    archetype: string;
-    confidence: number;
-  }[];
-  source: string;
-} {
-  const CONFIDENCE_THRESHOLD = 0.6;
-  const HIGH_SIMILARITY_THRESHOLD = 0.85;
-  const LOW_SIMILARITY_THRESHOLD = 0.6;
-
-  if (confidence <= CONFIDENCE_THRESHOLD) {
-    return { directives: [], source: 'default' };
-  }
-  if (similarity <= LOW_SIMILARITY_THRESHOLD) {
-    return { directives: [], source: 'llm_full' };
-  }
-
-  const playbook = getPlaybook(archetypeId);
-  const directives = playbook.slots.map((s) => ({
-    type: 'text' as const,
-    slot: s.slot,
-    value: s.en,
-    archetype: archetypeId,
-    confidence,
-  }));
-
-  if (similarity > HIGH_SIMILARITY_THRESHOLD) {
-    return { directives, source: 'playbook' };
-  }
-  return { directives, source: 'llm_tweaked' };
-}
-
-describe('Integration: decision tree + playbook lookup', () => {
-  it('yield_hunter (confidence=0.75, similarity=0.90) → source=playbook, non-empty directives', () => {
-    const result = simulateDecisionTree('yield_hunter', 0.75, 0.9);
-    expect(result.source).toBe('playbook');
-    expect(result.directives.length).toBeGreaterThan(0);
-    const first = result.directives[0];
-    expect(first).toBeDefined();
-    if (first) {
-      expect(first.type).toBe('text');
-      expect(first.archetype).toBe('yield_hunter');
-      expect(first.confidence).toBe(0.75);
-    }
-    // headline slot should contain yield placeholder
-    const headlineDirective = result.directives.find((d) => d.slot === 'headline');
-    expect(headlineDirective?.value).toContain('{yield}');
-  });
-
-  it('family_buyer (confidence=0.80, similarity=0.88) → source=playbook, school district headline', () => {
-    const result = simulateDecisionTree('family_buyer', 0.8, 0.88);
-    expect(result.source).toBe('playbook');
-    expect(result.directives.length).toBeGreaterThan(0);
-    const headlineDirective = result.directives.find((d) => d.slot === 'headline');
-    expect(headlineDirective?.value).toContain('School District');
-  });
-
-  it('lifestyle_expat (confidence=0.70, similarity=0.95) → source=playbook, expat headline', () => {
-    const result = simulateDecisionTree('lifestyle_expat', 0.7, 0.95);
-    expect(result.source).toBe('playbook');
-    expect(result.directives.length).toBeGreaterThan(0);
-    const headlineDirective = result.directives.find((d) => d.slot === 'headline');
-    expect(headlineDirective?.value).toContain('Expat Community');
-  });
-
-  it('low confidence (0.4) → source=default, empty directives regardless of archetype', () => {
-    const result = simulateDecisionTree('yield_hunter', 0.4, 0.95);
-    expect(result.source).toBe('default');
-    expect(result.directives).toHaveLength(0);
-  });
-
-  it('low similarity (0.5) → source=llm_full, empty directives', () => {
-    const result = simulateDecisionTree('family_buyer', 0.75, 0.5);
-    expect(result.source).toBe('llm_full');
-    expect(result.directives).toHaveLength(0);
-  });
-
-  it('medium similarity (0.72) → source=llm_tweaked, non-empty directives', () => {
-    const result = simulateDecisionTree('lifestyle_expat', 0.7, 0.72);
-    expect(result.source).toBe('llm_tweaked');
-    expect(result.directives.length).toBeGreaterThan(0);
-  });
-});

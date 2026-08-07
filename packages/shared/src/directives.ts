@@ -121,7 +121,24 @@ export interface AdaptationDirectives {
    * (renamed from `tier` in migration 0018). Absent on legacy GET responses.
    */
   page_context?: 1 | 2;
-  /** Empty when source is 'default' or 'llm_full'. */
+  /**
+   * Adaptation directives for this response.
+   *
+   * Verified against every `source:` return in
+   * `apps/control-plane/src/app/api/adapt/route.ts` (FOLLOW-890):
+   *   - `'default'` — ALWAYS `[]` (all 8 return sites: `:276,824,859,890,1228,1283,1380,1444`)
+   *   - `'playbook_fallback_llm_unavailable'` — `[]` on the branch-4 gateway-failure path
+   *     (`:346`), the playbook directives on the branch-3 one (`:367`)
+   *   - `'playbook'` — the playbook directives (`:324`)
+   *   - `'llm_full'` / `'llm_tweaked'` — the LLM gateway's own directives, verbatim
+   *     (`:342,363`). The route NEVER pairs either with an empty-array literal.
+   *
+   * The previous text here read "Empty when source is 'default' or 'llm_full'", which
+   * `route.ts:15` has contradicted since the ADP-002 gateway wiring, and which is where
+   * the `simulateDecisionTree` replica deleted from
+   * `packages/sdk/src/__tests__/playbooks.test.ts` got the pair it asserted green.
+   * `apps/control-plane/src/app/api/adapt/route.test.ts:326-338,396-408` is the authority.
+   */
   directives: (TextDirective | ClassDirective | ReorderDirective)[];
   /**
    * - `playbook`                         — static pre-computed playbook, high-confidence match

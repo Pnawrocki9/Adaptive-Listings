@@ -86,8 +86,8 @@ Next free stub: **FOLLOW-874**.
 
 ### Dispatched: FOLLOW-817 (P1, devops-engineer, Opus)
 
-**FOLLOW-817 — status: IN_PROGRESS** — **assigned_to:** devops-engineer **model:** **Opus**
-**started_at:** 2026-08-07 **branch:**
+**FOLLOW-817 — status: READY_FOR_REVIEW** (PR **#691**, `fec4ba89`, CI verified 77/2) —
+**assigned_to:** devops-engineer **model:** **Opus** **started_at:** 2026-08-07 **branch:**
 `devops-engineer/FOLLOW-817-modal-deploy-intent-data-quality`. Model justification: cross-system
 (GitHub Actions + Modal + Doppler + the ingest Worker's env), and its sharpest AC is a **verdict
 correction** to §Snapshot.1 that requires judging shipped-vs-deployed — reasoning work, not
@@ -113,7 +113,76 @@ environment is to be treated as stale record, not as a target.
 and FOLLOW-816's retro remains outstanding). FOLLOW-873 and the re-scoped FOLLOW-818 are both READY
 and unblocked but held to keep one ticket in flight.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs.**
+### FOLLOW-817 delivered → PR #691 (READY_FOR_REVIEW, awaiting Piotr)
+
+CI verified with `scripts/gh-pr-checks-verified.sh 691`, not with the worker's word: **77 pass / 2
+fail**, both `Rule I` with a symbol set byte-identical to main's baseline (192/192, **0 new, 0
+fixed**), exit 0. **5 of 7 ACs discharged; the two open ones were left honest rather than fudged.**
+
+- **AC(3) FAILS → ESC-053 (new, operator, ~10 min).** `estalara-secrets` lacks
+  `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DATABASE_URL`. It is a **name-pair
+  mismatch**: Modal carries the control-plane's `UPSTASH_REDIS_URL`/`_TOKEN`, while
+  `redis_writer.py:40-41` reads the `_REST_` names — the same both-name-pairs trap
+  `MODAL_PROD_STANDUP.md §5` already documents for Redpanda and missed for Upstash.
+- **AC(7) NOT discharged, deliberately.** ESC-042 item 1 stays OPEN because no deploy has happened;
+  marking it RESOLVED would have been a false status (Rule AA).
+
+**ESC-042's own text is wrong in the dangerous direction.** It predicted a credential mismatch would
+be "a silent null-read, not an error". It is a hard `KeyError` — raised inside a `.spawn()`
+**after** `chat_nlp_endpoint` returned 202, so the Worker (which inspects only HTTP status) logs
+nothing and Sentry sees nothing. Measured on localhost: a `chat.message.sent` POST returned
+`{"accepted":1,"rejected":0}` / HTTP 200 with the shadow key still `null`. **A prod deploy over this
+secret would look exactly like success.**
+
+Two further contradictions the ticket fixed rather than reported: `schema_validation.py` declared no
+`image=` (the 02:00 UTC cron would have died at container import, nightly, unobserved), and
+`MODAL_PROD_STANDUP.md §7`'s deploy sketch does not work at all (`ModuleNotFoundError`, reproduced)
+— now marked SUPERSEDED.
+
+**Merge is gated on an accepted red, and the sequencing matters.** On merge the two new jobs go RED
+by design: a hard pre-deploy gate refuses to deploy over the ESC-053 gap. That red is the intended
+signal — the alternative is two apps that deploy green and are dead. It does **not** pollute other
+PRs, since `modal-deploy.yml` is `push: main`-only. **Recommended order: execute ESC-053 first (~10
+min, Modal web console, add keys individually — `modal secret create --force` WIPES the secret and
+would take the live description pipeline down), then merge #691, then `workflow_dispatch` and
+confirm `modal app list` shows all three apps `deployed`.** That closes ESC-042 item 1 and unblocks
+FOLLOW-820.
+
+### RETRO-259 landed — and it overturns this session's headline number
+
+**The 0.3655-vs-0.5 framing that FOLLOW-816, this queue, and the session report all used is
+misattributed.** Verified directly, not taken on the retro's word:
+
+- `packages/sdk/src/index.ts:827-829` is a **disjunction** —
+  `resp.confidence >= 0.5 || signal_count >= 2`. The run emitted `intent.snapshot` (which fires
+  every 5 signals), so the signal-count branch was true all session and **the 0.5 floor suppressed
+  nothing**.
+- The gate that actually decides whether directives exist is **server-side and higher**:
+  `apps/control-plane/src/app/api/adapt/route.ts:86,275` returns
+  `{directives: [], source: 'default'}` when `confidence <= CONFIDENCE_THRESHOLD = 0.6`.
+
+The conclusion survives — 0.3655 < 0.5 < 0.6, so hop 10 is still correctly red — but **the
+denominator does not**. FOLLOW-819 AC(1) names 0.5 in writing and FOLLOW-872 AC(3) tells FOLLOW-819
+to inherit that framing, so a differentiator reaching **0.55 would clear the stated bar, go green
+against the local mock, and still get `[]` from the real endpoint**. FOLLOW-819's AC is annotated in
+place with the correction; **FOLLOW-875 (P1)** owns the durable fix.
+
+**Rule promoted: one, as an amendment.** Rule S amended (2026-08-07 block) — _a deferred sibling's
+justification MUST be a filed FOLLOW-NNN, never prose_ — discharging RETRO-250's arming set on
+clause (b) at count 2. Clause (a) was tested and **refused**. Rule count stays **43** (AA–AQ). The
+interrupted-session class was **not** promoted (5th sighting, but the first with zero loss, and the
+remedy is already owned by FOLLOW-448/573/645). Minted at count 1: **P-39**.
+
+**Stubs filed: FOLLOW-874 … FOLLOW-880.** 874 (devops, from FOLLOW-817: `[env.dev]` inherits no
+KV/DO/queue bindings so `wrangler dev --env dev` 401s every `POST /v1/events`; and
+`jobs/batch_enrich.py`, the §C.3 Sonnet batch tier, is unreachable from `main.py`). 875 P1 (gate
+misattribution), 876 P1 (the run artifact captures request bodies but never responses), 877 P2, 878
+P1 (**ESC-052's correction set omitted `MASTER_DESIGN.md` — the SoT still asserts a "Supabase
+staging project" and "Brak shared secrets między environments", both now false; FOLLOW-873's AC(5)
+is extended accordingly**), 879 P2, 880 P2. Next free stub: **FOLLOW-881**.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR (#691, verified
+green-modulo-Rule-I).**
 
 ---
 
@@ -21829,6 +21898,13 @@ FOLLOW-815.
           first-and-only (the double-apply was the only reason a bad migration failed twice).
     - [ ] `stg` Doppler config deleted or renamed so nothing can point at it believing it is
           isolated (operator step; record what was done).
+    - [ ] EXTENDED by RETRO-259/FOLLOW-878: the original list below omitted the SOURCE OF TRUTH
+          itself. docs/MASTER_DESIGN.md:5387-5399 still asserts a "Supabase staging project" AND
+          "Brak shared secrets między environments" — both disproved by ESC-052 — and :5348-5349
+          says staging deploys read `config=dev`, which db-migrate.yml contradicts by using
+          `--config stg`. Under Operating Principle 1 a wrong SoT is the worst place to leave this.
+          FOLLOW-878 (P1) carries the authoritative enumerated correction set; treat it as the
+          checklist, not this line.
     - [ ] Stale records corrected too: ESC-023 (records the gate as successfully activated),
           RETRO-113's staging→prod claim, memory project_postgres_migrations_no_autoapply. Leaving
           them is how ESC-052 survived its whole life.
@@ -21855,6 +21931,15 @@ FOLLOW-815.
     measurement the product has ever taken, and FOLLOW-212 calibration depends on knowing the true
     starting accuracy rather than assuming it.
     AC — one scripted session must produce all five, each an independent assertion:
+    - [ ] ⚠️ THRESHOLD CORRECTED BY RETRO-259 (2026-08-07) — DO NOT BUILD TO 0.5. The number in
+          the next line is WRONG; FOLLOW-875 (P1) owns the fix. Verified:
+          packages/sdk/src/index.ts:827-829 is a DISJUNCTION (`resp.confidence >= 0.5 ||
+          signal_count >= 2`), so the 0.5 floor suppresses nothing once two behavioral signals
+          exist. The gate that actually decides whether directives exist is SERVER-side and higher:
+          apps/control-plane/src/app/api/adapt/route.ts:86,275 returns `{directives: [], source:
+          'default'}` when `confidence <= CONFIDENCE_THRESHOLD = 0.6`. A differentiator reaching
+          0.55 clears the bar as written below, goes green against the local mock, and still gets
+          [] from the real endpoint. Build to > 0.6, measured against the REAL /api/adapt.
     - [ ] A non-neutral archetype above DOM_ADAPT_CONFIDENCE_FLOOR = 0.5
           (packages/sdk/src/core/adapt-floor.ts). Reaching this from behavioral signals ALONE is
           itself the finding, given ~11 live behavioral discriminators (F-07). If it is only

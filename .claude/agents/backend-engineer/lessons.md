@@ -2331,3 +2331,44 @@ would generalize this beyond just `adapt-get-auth`.
   they already lawfully live". Second: prove the leak against the pinned version of the real
   dependency when a container is one `docker run` away — a citation would have produced a weaker
   fixture, and I would have missed both the header channel and the timestamp defect.
+
+## 2026-08-07 · FOLLOW-815 (consent bundle: derived hash + withdrawal mailbox + processor sentence + chat-storage disclosure)
+
+**What I built.** One consent-text change + ONE `PLATFORM_REGISTRATION_TOS_VERSION` bump (v1.3→v1.4)
+discharging FOLLOW-704/710/711 under the FOLLOW-814 ruling, then folded in the ESC-049 addendum's
+chat-storage disclosure mid-ticket without spending a second bump. `CANONICAL_CONSENT_TEXT_HASH`
+went from a hand-typed literal (the digest of no text, live 6 weeks) to
+`computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))`.
+
+**Wiring / auth / fail-loud risks I weighed.**
+
+- **Deriving a constant re-creates un-reproducibility one version later.** FOLLOW-714 called this
+  out and it is the non-obvious half of "make it derived". Chose the in-code
+  checkout-at-that-`tos_version` statement over a `tos_version → hash` map, because the map's only
+  entry would have been a lie (v1.3's default was the placeholder). A map that encodes a falsehood
+  is worse than no map.
+- **The bump + grace window + derived hash interacted in a way no stub anticipated.** Grace band
+  writes the row under the PREVIOUS version, but a defaulted hash tracks the CURRENT text → one row
+  attesting two texts. Refusing = outage; defaulting = fabrication. Wrote NULL + extended the
+  existing alert. **Lesson: when two previously-independent mechanisms both become version-sensitive
+  in the same PR, enumerate the cross-product before shipping.**
+- **A `toContain` on a legal string is not a test.** My own FOLLOW-710 test passed while I gutted
+  the disclosure it guarded — only the CI byte-sync gate noticed. Found it by running the
+  perturbation instead of assuming it. **Assert whole paragraphs with `toBe` on any text a data
+  subject reads.**
+- **Derived a fixture from the real handler, not from restated constants.** The threat-vector test
+  gets Estalara's hash by calling the real GET and hashing its bytes with `crypto.createHash` —
+  deliberately not the route's own `computeConsentTextHash`. RETRO-227's eleven tautological
+  assertions are what let the placeholder live; a test that re-runs production's expression proves
+  nothing.
+- **Read-only prod probe changed a ticket's scope.** FOLLOW-706 assumed a non-zero remediation
+  population from a reasonable inference; `consent_records` is empty. Two minutes of SELECT beat a
+  well-argued inference.
+
+**A guardrail I'd add.** A CI check that any string rendered into subject-facing legal copy is
+pinned by a whole-string equality assertion, per locale. Both defects this ticket fixed — the
+placeholder hash and the false "chat text is not stored" claim — survived because the only tests
+touching them compared a value to itself or matched a substring that stayed true while the meaning
+changed. Related: the SDK bundle budget now has ~10 bytes of headroom, so a legal disclosure is
+competing with a byte budget — a structural problem worth escalating before it forces a wording
+compromise.

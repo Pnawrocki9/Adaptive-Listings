@@ -17,15 +17,27 @@
 import { createHash } from 'crypto';
 import { z } from 'zod';
 import type { BrandIdentity } from '@/lib/brand-identity';
+import { FIRST_PARTY_BRAND_IDENTITY } from '@/lib/brand-identity';
 
 // ─── TOS / consent-text versioning ────────────────────────────────────────────
 
 /**
  * TOS version string for the platform registration consent shown to investors.
  * Matches the version in docs/compliance/PRIVACY_NOTICE_TEMPLATE.md §6.1
- * (v1.3, 2026-06-21).
+ * (v1.4, 2026-08-07).
  * Update this constant when the consent text changes and a new DPO-reviewed
  * version is published.
+ *
+ * v1.3 → v1.4 (FOLLOW-815, discharging FOLLOW-704 / FOLLOW-710 / FOLLOW-711 under the
+ * FOLLOW-814 CEO+DPO ruling of 2026-08-07): the DISCLOSED MEANING changed in exactly two
+ * places, so this is a real re-consent boundary and not a formatting pass —
+ *   1. the Art. 7(3) withdrawal channel became a concrete monitored mailbox
+ *      (`compliance@estalara.com`) instead of the un-actionable "the agency's DSR contact";
+ *   2. the closing contact paragraph now names Estalara / Time2Show, Inc. as the PROCESSOR
+ *      operating the service for `${brandName}`, instead of presenting an Estalara mailbox as
+ *      the client brand's own documentation contact.
+ * Both ride this ONE bump by design (FOLLOW-711 depends_on: "must ride the SAME TOS bump — do
+ * not spend two").
  *
  * FOLLOW-715 grace window: bumping this constant makes `POST
  * /api/v1/consent/platform-registration` refuse (`422 tos_version_superseded`,
@@ -42,49 +54,7 @@ import type { BrandIdentity } from '@/lib/brand-identity';
  * procedure, and the (deliberately manual, not time-based) window-closing
  * decision: `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b.
  */
-export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.3-2026-06-21' as const;
-
-/**
- * Intended to be the SHA-256 of the canonical English registration consent
- * disclosure, used as the default `consent_text_hash` when the caller does not
- * supply one (i.e. the caller displayed the canonical EN text). A caller that
- * displayed a translation MUST supply its own hash.
- *
- * ⚠️ THE CURRENT LITERAL IS NOT THAT DIGEST. It is a hand-typed placeholder
- * introduced with the endpoint (FOLLOW-374, `f810f72e`, 2026-06-21) and never
- * recomputed; it is the SHA-256 of no text at all (RETRO-227 §4a LG-1 hashed 60
- * normalisations of both candidate texts — zero matches). Re-pinning it is
- * **FOLLOW-704** (P0), deliberately NOT done here: FOLLOW-705 only rules WHICH
- * bytes it must be pinned to. Until FOLLOW-704 lands, this constant is not
- * evidence that any particular text was displayed, and the 422
- * `consent_text_hash_fabricated` refusal keyed on it (route.ts:495, :609) fires
- * only on a value no honest or dishonest caller can derive.
- *
- * CANONICAL BYTES (FOLLOW-705 ruling, recorded in PRIVACY_NOTICE_TEMPLATE.md
- * §6.1): the canonical text is the return value of
- * {@link renderPlatformConsentText} for the first-party identity
- * (`ESTALARA_BRAND_NAME` / `ESTALARA_LEGAL_ENTITY`) — the exact string the data
- * subject reads before clicking "I agree" and the string `GET` serves as
- * `consent_text` — NOT the markdown of the published doc. The hash is
- * lowercase-hex SHA-256 over that string's UTF-8 bytes with nothing appended:
- * no trailing `\n`, no `\r\n`, no trimming beyond what the renderer emits. The
- * doc's §6.1 block maps onto those bytes under the normalization spec'd in
- * §6.1.1 (steps N1–N8) and enforced by the `consent-text-sync` CI gate.
- *
- * To recompute (both commands verified 2026-07-28 to print the same value):
- *   node scripts/check-consent-text-sync.mjs --print-hash
- *   node scripts/check-consent-text-sync.mjs --print-text | sha256sum
- * The previous instruction here — `echo -n "<exact text>" | sha256sum` — was not
- * reproducible: it named neither the markdown stripping nor the hard-wrap
- * treatment, which is how the placeholder survived six weeks and four hardening
- * PRs unnoticed.
- */
-// Suppression: the gitleaks:allow tag below is the SOLE suppression for this hash (no regexes
-// entry in .gitleaks.toml — CB-1/FOLLOW-411 confirmed the inline suppress is sufficient).
-// If this hash changes (consent text rotation), update the gitleaks:allow comment on the next
-// line to remain the current SHA-256 value so the inline suppress stays accurate.
-export const CANONICAL_CONSENT_TEXT_HASH =
-  'a3f2e1d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2' as const; // gitleaks:allow SHA-256 of public consent text
+export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.4-2026-08-07' as const;
 
 // ─── Brand-substituting consent text (FOLLOW-654 leg 1) ───────────────────────
 
@@ -98,10 +68,29 @@ export const CANONICAL_CONSENT_TEXT_HASH =
  * so the brand's own name / legal entity render in the disclosure instead of the
  * hardcoded "Estalara" / "Time2Show, Inc.".
  *
- * SUBSTITUTED: the brand display name and legal entity only. NOT substituted: the
- * `compliance@estalara.com` contact address (shared compliance infrastructure,
- * changed by ops per-brand if a brand runs its own inbox — same boundary as the
- * DSR sending domain in leg 3).
+ * SUBSTITUTED: the brand display name and legal entity only.
+ *
+ * NOT substituted, and DELIBERATELY so since FOLLOW-815 (FOLLOW-711 AC-1 option (b), ruled by
+ * the CEO in FOLLOW-814 item 3): the `compliance@estalara.com` address, and the words
+ * "Estalara (Time2Show, Inc.)" in the closing paragraph. That paragraph now names Estalara as
+ * the PROCESSOR operating the service for `${brandName}` and identifies the mailbox as
+ * Estalara's own. The rejected alternative was rendering a per-brand address from
+ * `brand_config` with a fail-loud when unprovisioned; the CEO declined it explicitly
+ * ("honesty plus zero work over a speculative per-brand affordance; revisit at the first
+ * external brand"), so nothing here reads `brand_config` for a contact.
+ *
+ * Rule AH reconciliation (FOLLOW-711 AC-3): the previous version of this paragraph claimed the
+ * address is "changed by ops per-brand if a brand runs its own inbox — same boundary as the DSR
+ * sending domain in leg 3", while leg 3's own docblock says the opposite of ITS value
+ * (`apps/control-plane/src/lib/email/resend.ts` — `SENDER_MAILBOX`: "FIXED infrastructure — the
+ * actual sending domain is an ops concern and does NOT change per brand"). Neither value is
+ * ops-changeable without a code edit. The two docblocks now state the same boundary, and it is
+ * the true one: both strings are FIXED, first-party Estalara infrastructure, and the consent
+ * text says so out loud rather than letting a white-label reader assume otherwise.
+ *
+ * ONE OPERATIONAL COMMITMENT RIDES THIS TEXT: `compliance@estalara.com` is disclosed to every
+ * data subject as the channel for withdrawing consent under GDPR Art. 7(3). It must actually be
+ * monitored. That is an operator obligation, not something this module can enforce.
  *
  * CANONICAL (FOLLOW-705): this function's return value is the byte-canonical
  * consent text — what the data subject actually reads and what is hashed into
@@ -119,10 +108,14 @@ export const CANONICAL_CONSENT_TEXT_HASH =
  * sentinel-delimited block, paragraph unwrap, `**` strip, no trailing newline).
  * Enforced on every push by `scripts/check-consent-text-sync.mjs` (CI job
  * `consent-text-sync`, hard gate) — editing this template without editing §6.1
- * (or the reverse) turns CI red. When the text changes: edit both, bump
+ * (or the reverse) turns CI red. When the text changes: edit both, and bump
  * {@link PLATFORM_REGISTRATION_TOS_VERSION} and both §6.1 sentinels if the
- * DISCLOSED MEANING changed (a data subject cannot be retro-bound to new text),
- * and re-pin {@link CANONICAL_CONSENT_TEXT_HASH} — all in the same PR.
+ * DISCLOSED MEANING changed (a data subject cannot be retro-bound to new text) —
+ * all in the same PR. {@link CANONICAL_CONSENT_TEXT_HASH} needs no action: since
+ * FOLLOW-815 it is DERIVED from this function, so it follows the text
+ * automatically. A meaning-changing edit is also a deploy-ordering operation —
+ * `docs/runbooks/BRAND_PROVISIONING.md` §Step 3b (the `tos_version` grace window,
+ * FOLLOW-715) is not optional reading before merging one.
  *
  * @param identity - The resolved brand identity (`brandName`, `legalEntity`).
  * @returns The full disclosure text with a single trailing newline stripped.
@@ -135,7 +128,7 @@ export function renderPlatformConsentText(
 
 1. Behavioral tracking — We analyze how you browse listings (scroll depth, time spent, clicks, and searches) to personalize the listings shown to you.
 
-2. Chat analysis — Your messages in the ${brandName} AI chat are analyzed in real time to understand your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary of your intent — we do not store the full text of your messages in our personalization system.
+2. Chat analysis and message storage — Your messages in the ${brandName} AI chat are analyzed in real time to understand your buying intent (e.g., budget, urgency, preferred location). We extract a structured summary of your intent, which we hold for 24 hours, and we also store the text of the messages themselves for 13 months. Email addresses and phone numbers are automatically masked before that text is stored; anything else you type — including names and financial or family details — is stored as you wrote it. Please do not type information into chat that you would not want stored.
 
 3. Transfer to agency/agent — Your inferred buyer profile (archetype, buying-intent score) is shared with the real estate agency or agent you interact with on this platform.
 
@@ -147,9 +140,9 @@ export function renderPlatformConsentText(
 
 This consent is required to use the platform. Without granting it, you cannot create an account or access chat features.
 
-Your rights: You can withdraw this consent at any time by contacting the agency's DSR contact. Withdrawal stops new personalization processing. A data erasure request will result in deletion of your behavioral data from ${brandName}'s systems within 30 days. Withdrawal does not affect the lawfulness of processing before withdrawal.
+Your rights: You can withdraw this consent at any time by emailing compliance@estalara.com, a monitored mailbox for privacy requests; you can also contact the agency directly. Withdrawal stops new personalization processing. A data erasure request will result in deletion of your behavioral data from ${brandName}'s systems within 30 days. Withdrawal does not affect the lawfulness of processing before withdrawal.
 
-For full details, see the agency privacy policy and ${brandName}'s privacy documentation at compliance@estalara.com.`;
+For full details, see the agency privacy policy. The Adaptive Listings technology described above is operated by Estalara (Time2Show, Inc.), which processes your data for ${brandName} as a processor; compliance@estalara.com is Estalara's address and reaches Estalara's privacy team.`;
 }
 
 /**
@@ -164,6 +157,61 @@ For full details, see the agency privacy policy and ${brandName}'s privacy docum
 export function computeConsentTextHash(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
+
+// ─── Canonical hash — DERIVED, never asserted (FOLLOW-815 / FOLLOW-704) ───────
+
+/**
+ * SHA-256 of the canonical English registration consent disclosure for the FIRST-PARTY
+ * (Estalara) identity — used as the default `consent_text_hash` when the caller omits one on a
+ * tenant that renders that identity, and as the reference value the `422
+ * consent_text_hash_fabricated` refusals key on. A caller that displayed a translation MUST
+ * supply its own hash.
+ *
+ * DERIVED, NOT ASSERTED (FOLLOW-704 AC-1, chosen option; FOLLOW-714 amendment item 2). This is
+ * literally `computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))` —
+ * the same two functions the GET leg calls to serve `consent_text` / `consent_text_hash` and
+ * the same pair the POST leg's evidence check uses. There is no second expression that could
+ * drift from it.
+ *
+ * What it replaced, and why "derived" rather than a re-pinned literal: from 2026-06-21
+ * (FOLLOW-374, `f810f72e`) to FOLLOW-815 this was a HAND-TYPED 64-hex literal that was the
+ * SHA-256 of no text at all — RETRO-227 §4a LG-1 hashed 60 normalisations of both candidate
+ * texts and got zero matches. A re-pinned literal would have re-created the same failure mode
+ * one text-change later, because nothing mechanical would tie the new literal to the renderer
+ * either; the assertion test in `route.test.ts` ("CANONICAL_CONSENT_TEXT_HASH is DERIVED from
+ * the renderer") plus the `consent-text-sync` gate's structural check together make the
+ * derivation itself the thing under test.
+ *
+ * CANONICAL BYTES (FOLLOW-705 ruling, upheld by FOLLOW-814 item 1, recorded in
+ * PRIVACY_NOTICE_TEMPLATE.md §6.1): the canonical text is the return value of
+ * {@link renderPlatformConsentText} for the first-party identity — the exact string the data
+ * subject reads before clicking "I agree" and the string `GET` serves as `consent_text` — NOT
+ * the markdown of the published doc. The hash is lowercase-hex SHA-256 over that string's UTF-8
+ * bytes with nothing appended: no trailing `\n`, no `\r\n`, no trimming beyond what the renderer
+ * emits. The doc's §6.1 block maps onto those bytes under the normalization spec'd in §6.1.1
+ * (steps N1–N8) and enforced by the `consent-text-sync` CI gate.
+ *
+ * To recompute:
+ *   node scripts/check-consent-text-sync.mjs --print-hash
+ *   node scripts/check-consent-text-sync.mjs --print-text | sha256sum
+ *
+ * VERIFYING AN OLDER ROW — read this before trying to re-derive a stored
+ * `consent_records.consent_text_hash` (FOLLOW-714 amendment item 2; the alternatives considered
+ * were a `tos_version → hash` map and waiting for FOLLOW-703's snapshot columns). Because this
+ * value is derived from the CURRENT text, it tracks {@link PLATFORM_REGISTRATION_TOS_VERSION}:
+ * it is the canonical hash for THAT version and no other. To verify a row written under an
+ * earlier version, check the repo out at a commit where `PLATFORM_REGISTRATION_TOS_VERSION`
+ * equals that row's `tos_version` and run the `--print-hash` command above. Git is the version
+ * store; no map is maintained here, because a map would have to carry an entry that is a lie:
+ * for `platform-v1.3-2026-06-21` the value written on the default path was the placeholder
+ * described above, i.e. the digest of no text, so no v1.3 default-path row is verifiable against
+ * any text at all. Those rows are FOLLOW-706's remediation population, and this comment is the
+ * statement FOLLOW-714 AC-3 asks for: rows written under v1.4 and later are verifiable by
+ * checkout-and-recompute; v1.3 default-path rows are not verifiable and never were.
+ */
+export const CANONICAL_CONSENT_TEXT_HASH: string = computeConsentTextHash(
+  renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY),
+);
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 
@@ -186,7 +234,11 @@ export const PlatformRegistrationConsentSchema = z.object({
   tos_version: z.string().min(1).optional(),
   /**
    * SHA-256 hex of the exact consent text displayed to the investor.
-   * Defaults to CANONICAL_CONSENT_TEXT_HASH (EN §6.1 text) when not supplied.
+   * When not supplied, the route defaults it to the hash of the text IT renders for the
+   * tenant — CANONICAL_CONSENT_TEXT_HASH for a first-party/fallback identity, the brand's own
+   * rendered hash for a provisioned one (FOLLOW-707). One exception, added by FOLLOW-815: on
+   * the FOLLOW-715 grace band (a caller still attesting the PREVIOUS tos_version) there is no
+   * honest default, so the column is written NULL rather than defaulted — see route.ts step 9.
    * Must be supplied when a non-EN translation is displayed.
    */
   consent_text_hash: z

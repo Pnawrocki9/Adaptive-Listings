@@ -14,7 +14,7 @@
  * @module apps/control-plane/src/app/api/v1/consent/platform-registration/route.test
  */
 
-import { createHmac } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -993,10 +993,14 @@ describe('POST brand gate — provisioned brands (FOLLOW-697)', () => {
   });
 
   it('a tenant provisioned AS the Estalara identity + canonical hash → NOT refused', async () => {
-    // Guards the `rendersFirstPartyIdentity` check: CANONICAL_CONSENT_TEXT_HASH is pinned to the
-    // published §6.1 text and is NOT equal to computeConsentTextHash(renderPlatformConsentText())
-    // for the Estalara identity, so a computed-hash comparison ALONE would 422 a tenant whose
-    // configured identity is the canonical one.
+    // Guards the `rendersFirstPartyIdentity` check. FOLLOW-815 CORRECTION: this comment used to
+    // say CANONICAL_CONSENT_TEXT_HASH "is NOT equal to computeConsentTextHash(
+    // renderPlatformConsentText()) for the Estalara identity" — true of the placeholder, false
+    // now that the constant is derived from exactly that expression. The behaviour under test is
+    // unchanged and still worth pinning: a tenant explicitly provisioned AS the Estalara identity
+    // must be accepted, and its written hash must be the canonical one. It now passes because
+    // `expectedHash === CANONICAL_CONSENT_TEXT_HASH`, i.e. the `!==` branch is never entered,
+    // rather than because the guard rescued it from a spurious inequality.
     mockTenantSelectLimit.mockResolvedValue([
       {
         id: EXTERNAL_TENANT_ID,
@@ -1300,7 +1304,14 @@ describe('GET /api/v1/consent/platform-registration (FOLLOW-654 leg 1)', () => {
     expect(body.brand_name).toBe('Costa Sol Properties');
     expect(body.consent_text).toContain('Costa Sol Properties Adaptive Listings service');
     expect(body.consent_text).toContain('provided by Costa Sol S.L.');
-    expect(body.consent_text).not.toContain('Time2Show');
+    // FOLLOW-815 CORRECTION: this used to assert `not.toContain('Time2Show')`. The v1.4 text
+    // deliberately names Estalara / Time2Show, Inc. ONCE, in the closing processor sentence
+    // (FOLLOW-711 / FOLLOW-814 item 3) — the CEO chose an honest processor disclosure over a
+    // per-brand `brand_config` contact. What must still hold is that the CONTROLLER-facing
+    // opening names the brand and only the brand: the substitution is intact, and the single
+    // Estalara mention is confined to the processor sentence.
+    expect(body.consent_text.split('\n\n')[0]).not.toContain('Time2Show');
+    expect(body.consent_text.match(/Time2Show, Inc\./g)).toHaveLength(1);
     expect(body.data_source).toBe('stored');
     // The hash matches the exact rendered text.
     const { computeConsentTextHash } = await import('./lib');
@@ -1454,5 +1465,315 @@ describe('GET brand identity provisioning gate (FOLLOW-659)', () => {
     const res = await GET(makeGetRequest(TENANT_ID));
 
     expect(res.status).toBe(409);
+  });
+});
+
+// ─── FOLLOW-815 — the consent bundle: derived hash + withdrawal channel + processor sentence ──
+//
+// Discharges FOLLOW-704 (hash derived, not asserted), FOLLOW-710 (Art. 7(3) withdrawal channel
+// is a concrete monitored mailbox) and FOLLOW-711 (the one address in the text no longer
+// pretends to be the white-label brand's own), under the FOLLOW-814 CEO+DPO ruling of
+// 2026-08-07, on ONE `PLATFORM_REGISTRATION_TOS_VERSION` bump.
+//
+// TEST-DESIGN NOTE, and it is the whole point of this block (RETRO-227 §4c TG-1): the defect
+// these tests exist to prevent survived six weeks precisely because every existing assertion
+// compared `CANONICAL_CONSENT_TEXT_HASH` to ITSELF. Nothing below re-states a production
+// expression. The canonical text is obtained by calling the REAL `GET` handler and reading the
+// bytes it actually serves; the hash is then computed with `crypto.createHash` directly —
+// NOT with `computeConsentTextHash`, so the assertion crosses an independent implementation of
+// SHA-256 hex rather than re-running the same helper the route ran.
+
+describe('FOLLOW-815 — canonical hash is DERIVED from the text the subject actually receives', () => {
+  const FALLBACK_TENANT_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+  function makeGetRequest(tenantId: string): NextRequest {
+    return new NextRequest(
+      `http://localhost/api/v1/consent/platform-registration?tenant_id=${tenantId}`,
+      { method: 'GET', headers: { 'x-consent-signature': computeHmac(TEST_SECRET, tenantId) } },
+    );
+  }
+
+  /** The exact bytes the GET leg serves for a tenant, straight out of the real handler. */
+  async function servedConsentText(tenantId: string): Promise<string> {
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(tenantId));
+    expect(res.status).toBe(200);
+    const body = await parseBody<{ consent_text: string; consent_text_hash: string }>(res);
+    return body.consent_text;
+  }
+
+  /** SHA-256 hex computed WITHOUT `computeConsentTextHash` — an independent path. */
+  function sha256Hex(text: string): string {
+    return createHash('sha256').update(text, 'utf8').digest('hex');
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: FALLBACK_TENANT_ID }]);
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-815' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // FOLLOW-704 AC-2 — the one assertion that would have caught this on 2026-06-21. Red against
+  // the pre-FOLLOW-815 constant (a hand-typed literal that was the digest of no text), green
+  // now that the constant is derived from the renderer.
+  it('CANONICAL_CONSENT_TEXT_HASH equals the SHA-256 of the text GET actually serves for the first-party identity', async () => {
+    const text = await servedConsentText(FALLBACK_TENANT_ID);
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+
+    expect(CANONICAL_CONSENT_TEXT_HASH).toBe(sha256Hex(text));
+    expect(CANONICAL_CONSENT_TEXT_HASH).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  // FOLLOW-704 AC-3 — the GET leg's returned hash and the value the POST leg DEFAULTS to must
+  // be the same for the same identity. Before FOLLOW-815 the two legs disagreed (RETRO-227
+  // LG-2): GET returned the digest of the rendered text, POST wrote the placeholder constant.
+  it('the hash GET returns and the hash POST defaults to are the same value for the same identity', async () => {
+    const { GET, POST } = await import('./route');
+
+    const getRes = await GET(makeGetRequest(FALLBACK_TENANT_ID));
+    const getBody = await parseBody<{ consent_text: string; consent_text_hash: string }>(getRes);
+
+    const postRes = await POST(makeRequest(buildValidBody({ tenant_id: FALLBACK_TENANT_ID })));
+    expect(postRes.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+
+    expect(valuesArg.consentTextHash).toBe(getBody.consent_text_hash);
+    // …and both are the digest of the bytes GET served, not of anything else.
+    expect(valuesArg.consentTextHash).toBe(sha256Hex(getBody.consent_text));
+  });
+
+  // FOLLOW-704 AC-4 — the threat vector the old constant could not catch. A caller that
+  // FABRICATES by copying Estalara's rendered consent text and hashing it submits exactly this
+  // value. Pre-FOLLOW-815 it landed in the alert-only branch and was WRITTEN; now it is the
+  // canonical value and hits the refusal. The hash here is derived from the real GET output for
+  // a fallback (Estalara) tenant — no identity strings are re-stated by this test.
+  it('an external provisioned tenant submitting the hash of ESTALARA’s served text is refused 422, nothing written', async () => {
+    const estalaraText = await servedConsentText(FALLBACK_TENANT_ID);
+    const fabricatedHash = sha256Hex(estalaraText);
+
+    const EXTERNAL_TENANT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    vi.stubEnv('FIRST_PARTY_TENANT_ID', FALLBACK_TENANT_ID);
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
+      },
+    ]);
+    vi.clearAllMocks();
+    mockSelectLimit.mockResolvedValue([]);
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
+      },
+    ]);
+    mockInsertReturning.mockResolvedValue([{ id: 'must-not-be-written' }]);
+
+    const { POST } = await import('./route');
+    const res = await POST(
+      makeRequest(
+        buildValidBody({
+          tenant_id: EXTERNAL_TENANT_ID,
+          consent_text_hash: fabricatedHash,
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(422);
+    const body = await parseBody<{ code: string; error: string }>(res);
+    expect(body.code).toBe('consent_text_hash_fabricated');
+    expect(mockInsert).not.toHaveBeenCalled();
+
+    // FOLLOW-815 AC-5 — the widened scope note states the boundary that exists AFTER the
+    // constant became version-tracking, not only the translation axis it named before.
+    const { PLATFORM_REGISTRATION_TOS_VERSION } = await import('./lib');
+    expect(body.error).toContain(PLATFORM_REGISTRATION_TOS_VERSION);
+    expect(body.error).toContain('translated');
+    expect(body.error).toContain('PRIOR');
+  });
+});
+
+describe('FOLLOW-815 — the consent text names a withdrawal channel and an honest contact', () => {
+  const FALLBACK_TENANT_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+  const EXTERNAL_TENANT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const WITHDRAWAL_MAILBOX = 'compliance@estalara.com';
+
+  function makeGetRequest(tenantId: string): NextRequest {
+    return new NextRequest(
+      `http://localhost/api/v1/consent/platform-registration?tenant_id=${tenantId}`,
+      { method: 'GET', headers: { 'x-consent-signature': computeHmac(TEST_SECRET, tenantId) } },
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    mockCountLimit.mockResolvedValue([{ id: FALLBACK_TENANT_ID }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // FOLLOW-710 — Art. 7(3). The text served from 2026-06-21 to this bump said withdrawal
+  // happens "by contacting the agency's DSR contact", an address that existed in no artifact,
+  // code path or product surface. It must now name a reachable one, IN the rights sentence.
+  it('names the monitored mailbox as the withdrawal channel in the rights paragraph, not merely as a documentation contact', async () => {
+    mockTenantSelectLimit.mockResolvedValue([]);
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(FALLBACK_TENANT_ID));
+    const body = await parseBody<{ consent_text: string }>(res);
+
+    // The WHOLE paragraph is asserted, not just the address. A `toContain` on the mailbox alone
+    // still passes if a later edit weakens "a monitored mailbox for privacy requests" to
+    // something non-committal — verified by perturbing exactly that phrase and watching a
+    // contains-only assertion stay green while only the CI text-sync gate went red.
+    const rightsParagraph = body.consent_text
+      .split('\n\n')
+      .find((p) => p.startsWith('Your rights:'));
+    expect(rightsParagraph).toBe(
+      `Your rights: You can withdraw this consent at any time by emailing ${WITHDRAWAL_MAILBOX}, ` +
+        'a monitored mailbox for privacy requests; you can also contact the agency directly. ' +
+        'Withdrawal stops new personalization processing. A data erasure request will result in ' +
+        "deletion of your behavioral data from Estalara's systems within 30 days. Withdrawal " +
+        'does not affect the lawfulness of processing before withdrawal.',
+    );
+    // The un-actionable phrasing this bump replaced must be gone from the whole disclosure.
+    expect(body.consent_text).not.toContain("the agency's DSR contact");
+  });
+
+  // FOLLOW-711 AC-4 — the missing test axis: nothing in the repo asserted what a NON-Estalara
+  // identity renders, which is exactly why the mis-attribution hid. The whole final paragraph
+  // is asserted, not a substring, so a future edit that softens it cannot pass silently.
+  it('renders the Estalara-as-processor sentence for a white-label brand instead of claiming the mailbox is the brand’s own', async () => {
+    mockTenantSelectLimit.mockResolvedValue([
+      {
+        id: EXTERNAL_TENANT_ID,
+        brandConfig: { brand_name: 'Costa Sol Properties', legal_entity: 'Costa Sol S.L.' },
+      },
+    ]);
+    const { GET } = await import('./route');
+    const res = await GET(makeGetRequest(EXTERNAL_TENANT_ID));
+    const body = await parseBody<{ consent_text: string }>(res);
+
+    const paragraphs = body.consent_text.split('\n\n');
+    expect(paragraphs[paragraphs.length - 1]).toBe(
+      'For full details, see the agency privacy policy. The Adaptive Listings technology ' +
+        'described above is operated by Estalara (Time2Show, Inc.), which processes your data ' +
+        `for Costa Sol Properties as a processor; ${WITHDRAWAL_MAILBOX} is Estalara's address ` +
+        "and reaches Estalara's privacy team.",
+    );
+
+    // The pre-FOLLOW-815 wording asserted the Estalara mailbox was the CLIENT BRAND's own
+    // privacy documentation contact. That exact claim must not reappear.
+    expect(body.consent_text).not.toContain(
+      `Costa Sol Properties's privacy documentation at ${WITHDRAWAL_MAILBOX}`,
+    );
+    // The controller-facing opening still names the brand, not Estalara — the processor
+    // sentence is additive, it does not re-brand the disclosure back to Estalara.
+    expect(paragraphs[0]).toContain('Costa Sol Properties Adaptive Listings service');
+    expect(paragraphs[0]).toContain('provided by Costa Sol S.L.');
+  });
+});
+
+// ─── FOLLOW-815 — the grace band has no honest default hash ───────────────────
+//
+// Interaction the bump created and this PR closes: FOLLOW-715's grace window accepts a caller
+// still attesting the PREVIOUS `tos_version`, and writes the row under THAT version. Combined
+// with a derived `CANONICAL_CONSENT_TEXT_HASH` (which tracks the CURRENT text), defaulting a
+// hash on that path would produce a row whose `tos_version` and `consent_text_hash` attest two
+// DIFFERENT texts — the exact Art. 7(1) defect FOLLOW-712 closed for the refusal path. Refusing
+// instead is not available: that is the registration outage FOLLOW-715 exists to prevent. So
+// the column is written NULL — a recorded absence, alerted, never a plausible-looking digest of
+// the wrong text.
+
+describe('FOLLOW-815 — grace-band write does not fabricate a consent_text_hash', () => {
+  const PREVIOUS_VERSION = 'platform-v1.3-2026-06-21';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PLATFORM_REGISTRATION_CONSENT_SECRET', TEST_SECRET);
+    vi.stubEnv('CONSENT_IP_ENCRYPTION_KEY', '');
+    vi.stubEnv('PLATFORM_REGISTRATION_TOS_VERSION_PREVIOUS', PREVIOUS_VERSION);
+    mockSelectLimit.mockResolvedValue([]);
+    mockCountLimit.mockResolvedValue([{ id: TENANT_ID }]);
+    mockTenantSelectLimit.mockResolvedValue([]);
+    mockInsertReturning.mockResolvedValue([{ id: 'consent-record-uuid-815-grace' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('grace band + OMITTED hash → 201, tos_version as attested, consent_text_hash NULL (not the current version’s hash)', async () => {
+    const { POST } = await import('./route');
+    const { CANONICAL_CONSENT_TEXT_HASH } = await import('./lib');
+    const Sentry = await import('@sentry/nextjs');
+
+    const res = await POST(makeRequest(buildValidBody({ tos_version: PREVIOUS_VERSION })));
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.tosVersion).toBe(PREVIOUS_VERSION);
+    expect(valuesArg.consentTextHash).toBeNull();
+    expect(valuesArg.consentTextHash).not.toBe(CANONICAL_CONSENT_TEXT_HASH);
+
+    // The absence is observable on the wire the operator watches, not silent.
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      expect.stringContaining('the stored hash is NULL'),
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({ tos_version_grace: 'previous_version_accepted' }),
+      }),
+    );
+  });
+
+  it('grace band + EXPLICIT hash → 201, the caller’s own value stored as submitted', async () => {
+    const explicitHash = 'b'.repeat(64);
+    const { POST } = await import('./route');
+
+    const res = await POST(
+      makeRequest(
+        buildValidBody({ tos_version: PREVIOUS_VERSION, consent_text_hash: explicitHash }),
+      ),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(explicitHash);
+  });
+
+  it('CURRENT-version write is unaffected — the hash is still defaulted, never NULL', async () => {
+    const { POST } = await import('./route');
+    const { PLATFORM_REGISTRATION_TOS_VERSION, CANONICAL_CONSENT_TEXT_HASH } =
+      await import('./lib');
+
+    const res = await POST(
+      makeRequest(buildValidBody({ tos_version: PLATFORM_REGISTRATION_TOS_VERSION })),
+    );
+
+    expect(res.status).toBe(201);
+    const valuesArg = (mockInsertValues.mock.calls as unknown[][])[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(valuesArg.consentTextHash).toBe(CANONICAL_CONSENT_TEXT_HASH);
   });
 });

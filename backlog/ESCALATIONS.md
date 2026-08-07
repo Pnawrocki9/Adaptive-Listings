@@ -2805,6 +2805,29 @@ broken"). Until this escalation is executed, both new jobs go **red** on merge a
 deployed. That red is the intended, visible signal; `deploy-llm-gateway` is a separate job and is
 unaffected.
 
+**⚠️ CORRECTION (PM, 2026-08-07) — `DATABASE_URL` must NOT be Doppler's `DATABASE_URL`.** This
+escalation said "the prod Supabase pooler connection string", but Doppler `prd` holds three
+different URLs and the one named `DATABASE_URL` is **not** the pooler:
+
+| Doppler key (prd)     | Host                                       | What it actually is         |
+| --------------------- | ------------------------------------------ | --------------------------- |
+| `DATABASE_URL`        | `db.<ref>.supabase.co:5432`                | **direct host — IPv6 only** |
+| `DATABASE_URL_ADMIN`  | `aws-0-eu-west-3.pooler.supabase.com:6543` | pooler, transaction mode    |
+| `DATABASE_URL_DIRECT` | `aws-0-eu-west-3.pooler.supabase.com:5432` | pooler, **session mode**    |
+
+The naming is actively misleading — `DATABASE_URL_DIRECT` is the _pooler_, and `DATABASE_URL` is the
+_direct_ host. **Measured from inside Modal** with a credential-free reachability probe: the direct
+host resolves to **no IPv4 record** and the TCP connect **fails**; both pooler ports resolve and
+connect. Pasting Doppler's `DATABASE_URL` would therefore give `schema_validation` a connection
+string it can never open — a `psycopg2.OperationalError` at 02:00 UTC nightly, into nobody's log,
+which is the exact failure class this escalation exists to prevent. Same root cause as the 2026-06
+admin 503s (memory `project_admin_db_url_pooler_28p01`).
+
+**Use `DATABASE_URL_DIRECT`** (pooler, session mode) as the VALUE; the Modal key name stays
+`DATABASE_URL`, because `crons/schema_validation.py:227` reads that name. Session mode is the safe
+choice for `psycopg2` — transaction mode (6543) works for simple queries but breaks prepared
+statements and session-level state.
+
 **Required action (operator — Piotr; ~10 min, no code change):** In the Modal web console →
 workspace `estalara` → secret `estalara-secrets`, **add keys individually** (do NOT use
 `modal secret create --force`, which wipes the secret and would take the live description pipeline

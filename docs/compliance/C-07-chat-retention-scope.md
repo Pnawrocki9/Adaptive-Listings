@@ -136,9 +136,9 @@ given, specific, and withdrawable; its withdrawal must trigger deletion of store
 > chat message text remains **legitimate interest (GDPR Art. 6(1)(f)), conditioned on full
 > transparency** — the Q3 disclosure below. This is recorded as a judgment, not a fact: the ruling's
 > **named re-review trigger** is (a) any widening of what `scrubMessagePii` passes through (i.e. if
-> PII beyond email/phone starts surviving the scrubber), or (b) any lengthening of the 13-month
-> `events`-table retention. Either trigger requires this Q1 conclusion to be re-derived, not assumed
-> to still hold.
+> the scrubber's coverage narrows below today's email+phone masking, or a new input path bypasses
+> it), or (b) any lengthening of the 13-month `events`-table retention. Either trigger requires this
+> Q1 conclusion to be re-derived, not assumed to still hold.
 
 ---
 

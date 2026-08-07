@@ -30907,3 +30907,33 @@ adjudicated sweep. 888 P2 pm 1h — the FOLLOW-881 architect's learning entry is
 the main tree at 648a0bb9 (PR #693 carried MASTER_DESIGN.md alone) and its closing sentence IS the Rule AI
 amendment RETRO-260 re-derived ("grep the constant's NAME and its VALUE"); Rule AG's 2026-08-05
 landing-obligation amendment, first sighting since promotion. FOLLOW-874..882 all FILED. Allocated against main at 648a0bb9 per Rule AN. -->
+
+---
+
+## FOLLOW-889 — Is a per-tenant / pilot-lowered `CONFIDENCE_THRESHOLD` actually wanted? A knob the SoT advertised for ~14 months and the code never had
+
+source_retro: n/a (FOLLOW-882, session 104) source_ticket: FOLLOW-882 recommended_sprint: next
+recommended_agent: OPERATOR (CEO/CPO ruling) + backend-engineer if adopted priority: P3
+estimated_hours: 1 (ruling) depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** —
+session-95 standing rule; unfreeze on a ruling, not on an implementer's initiative.
+
+**Filed by the PM on the FOLLOW-882 architect's report, which correctly refused to resolve it.**
+§E.4.6 carried _"CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)"_.
+`apps/control-plane/src/app/api/adapt/route.ts:86` is `const CONFIDENCE_THRESHOLD = 0.6;` — a hard
+module constant with **no per-tenant mechanism anywhere in HEAD**. Provenance traced to
+`docs/AUDIT-2026-06-04.md:1118-1132`, which recommended it and assumed an `.env.example` entry that
+was never implemented. The sentence was withdrawn as a **description of state** (FOLLOW-882) rather
+than deleted, precisely so the intent behind it would not vanish unrecorded.
+
+**Why this is a ruling and not a ticket:** a reader planning a 0.4 pilot has been planning against a
+knob that does not exist for over a year. Either it is wanted — in which case it is backend work and
+it **interacts with ESC-054**, since both move the same gating ladder and a ruling on one should not
+be made blind to the other — or it is not, in which case say so, so the sentence cannot regrow.
+
+**AC:** (1) CEO/CPO rules wanted / not wanted, ideally alongside ESC-054 rather than separately; (2)
+if wanted → backend-engineer ticket for a per-tenant threshold with an explicit default and a test
+that a tenant override is actually read; (3) if not → the ruling is recorded in `MASTER_DESIGN`
+§E.4.6 next to the withdrawal, so the next reader sees a decision and not a silence.
+
+cross_ref: [FOLLOW-882 AC(2); FOLLOW-887 (PR #694); ESC-054; `MASTER_DESIGN` v4.6 changelog +
+§E.4.6; `docs/AUDIT-2026-06-04.md:1118-1132`; `apps/control-plane/src/app/api/adapt/route.ts:86`]

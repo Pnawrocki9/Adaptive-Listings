@@ -430,9 +430,10 @@ green, and held on ESC-053 alone.
 
 ### Dispatched: FOLLOW-882 + FOLLOW-887 together (architect, Fable)
 
-**FOLLOW-882 + FOLLOW-887 — status: IN_PROGRESS** — **assigned_to:** architect **model:** **Fable**
-**started_at:** 2026-08-07 **branch:** `architect/FOLLOW-882-887-gate-claim-sweep` **worktree:**
-`.claude/worktrees/follow-882`. **FOLLOW-882 UNFROZEN and re-priced P2 → P1.**
+**FOLLOW-882 + FOLLOW-887 — status: DONE** (PR **#694** → `63ec4261`) — **assigned_to:** architect
+**model:** **Fable** **started_at:** 2026-08-07 **branch:**
+`architect/FOLLOW-882-887-gate-claim-sweep` **worktree:** `.claude/worktrees/follow-882`.
+**FOLLOW-882 UNFROZEN and re-priced P2 → P1.**
 
 **Dispatched together on FOLLOW-887's own merge-order note** — same document, same class, and
 splitting them is precisely how this class survived three rounds. Model: Fable, as with FOLLOW-881 —
@@ -489,8 +490,55 @@ schema-validation cron will run for the first time in the project's history at 0
 FOLLOW-817 worker proved it on localhost with a real Haiku extraction, and prod proof needs real
 chat traffic. Rule AA: this closes the deploy axis, not the traffic axis.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #694 (FOLLOW-882 + 887, CI verified
-exit 0, awaiting merge).**
+### FOLLOW-882 + 887 DONE — the gate-claim chain is closed at seven sites
+
+**PR #694 merged as `63ec4261`.** Merged content re-verified on `main` rather than assumed:
+`**Wersja:** 4.6`; §D.7 `:2086` now reads `<= 0.6` **with the boundary explained** and noting the
+§D.1/§E.1 phrasings that were already correct; §E.1 `:2147-2148` now `0.6 < similarity <= 0.85` and
+`similarity <= 0.6`; **`grep -c "SOLE gate" follow-354.test.ts` returns 0**; and the architect's
+lesson landed as `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`.
+
+**The inverted null hypothesis is what made this round different.** The three prior rounds each
+corrected what they were pointed at and assumed they were done. This one was told to **disprove a
+seventh site** — and could not, because two exist. The decisive one is §E.1's similarity ladder:
+code is `> 0.85` and `<= 0.6` (`route.ts:323,328`), so the doc was wrong at **both** boundaries,
+three lines below the confidence gate every prior round corrected, and **perfectly correct in the
+symbol vocabulary**. Only the value sweep could see it. The generalisation is now in the amended
+Rule AI and in the architect's lesson: **the claim class travels by function, not by constant** —
+sweep the sibling constants too.
+
+**Two judgement calls worth keeping:** v4.5's changelog block was **superseded by a v4.6 bump, not
+edited**, because that block shipped in merged PR #693 and honestly recorded the residual it knew
+about — editing it would make the document's account stop matching what happened, which is this
+chain's own defect class. And the dated spec snapshot
+`docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md:963` was **annotated, not rewritten** — annotate
+history, never falsify it.
+
+**FOLLOW-888 fully discharged.** The lesson landed _with_ the deliverable this time, because the
+dispatch brief required the no-Bash agent to hand its lesson back in the report body. That step is
+now the template.
+
+**FOLLOW-889 filed (P3, FROZEN)** — the per-tenant `CONFIDENCE_THRESHOLD` knob §E.4.6 advertised for
+~14 months and the code never had. It is a **ruling**, not a ticket, and should be decided
+**alongside ESC-054**: both move the same gating ladder, and deciding one blind to the other is how
+this ladder got into three documents' worth of disagreement. Next free stub: **FOLLOW-890**.
+
+### FOLLOW-819 — still not startable, but two of four blockers are gone
+
+| Blocker (RETRO-260)                                                                                      | Status                            |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| §E.4.6 + `:2086` wrong                                                                                   | ✅ **cleared** by this PR         |
+| `depends_on` FOLLOW-817                                                                                  | ✅ **cleared** — merged, deployed |
+| AC(3) needs an `adaptation_decisions` row; its only writer (`route.ts:482`) is absent from the substrate | ❌ open                           |
+| AC(5) still says "real **staging** rows", unexecutable under the ESC-052 ruling → FOLLOW-878             | ❌ open                           |
+| `depends_on` FOLLOW-818, FOLLOW-560                                                                      | ❌ open                           |
+
+**FOLLOW-878 (P1) is now the shortest path** — it is the ESC-052 correction set, and it also
+unblocks FOLLOW-819's AC(5).
+
+**RETRO-261 for FOLLOW-882/887 is NOT written.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs.**
 
 ---
 

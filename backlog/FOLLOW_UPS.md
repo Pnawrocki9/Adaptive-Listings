@@ -29759,3 +29759,28 @@ concurrent worker owns that surface.
 cross_ref: [ESC-049 (ruling recorded); §H.8; FOLLOW-845 (the error-body leg, closed); FOLLOW-838;
 `docs/compliance/C-07-chat-retention-scope.md:17,:274`;
 `packages/shared/src/schemas/events/chat.ts`]
+
+---
+
+## FOLLOW-867 — `MASTER_DESIGN.md` §H.8 contradicts itself on the ClickHouse chat-message write; reconcile per §Y.2
+
+source_retro: n/a (found by the FOLLOW-815 worker, session 103) source_ticket: FOLLOW-815
+recommended_sprint: next recommended_agent: architect priority: P2 estimated_hours: 2 depends_on: []
+blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+The FOLLOW-815 worker found that `MASTER_DESIGN.md` §H.8's C-07 paragraph **denies** the ClickHouse
+chat-message write that §H.8's own ingest invariant **mandates** ("the chat event STILL flows to
+ingest (ClickHouse)"). The C-07 side of this contradiction was corrected repo-wide by FOLLOW-866
+(C-07 v1.3, `9c8977f0`) under the ESC-049 CEO/DPO ruling — the write is deliberate design, disclosed
+to subjects since FOLLOW-815's TOS v1.4. Master_Design is the single source of truth (OPERATING
+PRINCIPLES Rule 1), so it contradicting both itself and the now-ruled reality is the worst place for
+this divergence to live. The worker correctly flagged rather than rewrote — Master_Design revisions
+are architect/CEO territory under §Y.2.
+
+**AC:** (1) reconcile §H.8's C-07 paragraph with the invariant and the ESC-049 ruling, citing C-07
+v1.3 and the ESC-049 addendum; (2) run the §Y.2 propagation checklist for the touched section; (3)
+verify no other Master_Design section restates the retired claim (grep for the storage-denial
+phrasing, not just the section).
+
+cross_ref: [FOLLOW-866 (C-07 v1.3); ESC-049 + addendum; FOLLOW-815 (PR #688); MASTER_DESIGN §H.8,
+§Y.2]

@@ -3358,3 +3358,27 @@ now-falsified premise. **CEO+DPO ruled: disclose-in-notice, LI basis, no separat
    `platform-registration/lib.ts:138`, `PRIVACY_NOTICE_TEMPLATE.md` §6.1): the false "no chat
    content is stored" claim is corrected to the disclosure above **inside FOLLOW-815's text
    change**, keeping the Rule N byte-sync gates green.
+
+---
+
+## OPEN — ESC-051: the SDK bundle budget is exhausted (41.99KB / 42KB) and a legal disclosure just competed with a byte budget
+
+**Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-07 **Affects:**
+`@estalara/sdk`, FOLLOW-815 (PR #688), ESC-028, FOLLOW-673 **Type:** architectural
+
+**Description.** FOLLOW-815's chat-storage disclosure (CEO+DPO ruling, ESC-049 addendum) had to be
+added to the consent banner in EN+PL+ES. The first, fuller wording measured **42.03KB gzip — over
+the 42KB budget** — and was cut to 41.99KB by trimming verbosity while keeping every disclosed fact.
+Headroom is now **~10 bytes**.
+
+**Why this is an escalation:** a regulator-facing disclosure was edited to fit a performance budget.
+The worker kept the facts intact this time, but the next mandatory sentence — any new language, any
+new disclosure — cannot ship without either busting the budget or cutting substance. ESC-028 already
+raised this budget once (40→42KB). The structural options are a CEO call: raise the budget again,
+split the banner text out of the bundle (lazy-load the notice), or accept that consent-text growth
+forces future trims.
+
+**Required action:** CEO decision on the mechanism, then a ticket. No urgency for PR #688 itself —
+it fits — but the next banner edit is blocked-by-construction.
+
+**Resolution:** <empty until resolved>

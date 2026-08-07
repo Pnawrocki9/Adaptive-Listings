@@ -30132,3 +30132,38 @@ migration has been applied to production twice.
 
 cross_ref: [ESC-052 (RESOLVED, option 2); FOLLOW-871 (closed unexecuted); FOLLOW-818; FOLLOW-820;
 `.github/workflows/db-migrate.yml`; ESC-023; RETRO-113]
+
+---
+
+## FOLLOW-874 — Two verified dead declarations found while wiring the Modal deploys: `[env.dev]` cannot serve `/v1/events`, and the Sonnet batch tier is unreachable from the deploy entrypoint
+
+source_retro: n/a (found during FOLLOW-817) source_ticket: FOLLOW-817 recommended_sprint: next
+recommended_agent: devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Both measured on 2026-08-07, neither is a regression, and neither blocks FOLLOW-817 — filing so they
+are not re-discovered as surprises.
+
+1. **`apps/ingest/wrangler.toml` `[env.dev]` is a non-runnable declaration.** `kv_namespaces`,
+   `durable_objects` and `queues` are non-inheritable per-environment keys in wrangler, and
+   `[env.dev]` declares none, so `wrangler dev --env dev` starts and serves `/health` but every
+   `POST /v1/events` returns `401 unauthorized {reason: kv_error}` — wrangler itself warns
+   `"kv_namespaces" exists at the top level, but not on "env.dev"`. The documented local path
+   (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6) correctly uses the TOP-LEVEL config plus
+   `--var`, so nothing is broken today; `[env.dev]` is simply a config nobody can run. FOLLOW-817
+   added `MODAL_CHAT_NLP_URL` to it for symmetry and verified the var DOES bind under `--env dev` —
+   but the endpoint that would consume it cannot authenticate. Decide: give `[env.dev]` the three
+   binding blocks, or delete it. This is the same class as FOLLOW-873's `[env.staging]` retirement
+   and should probably be done in that ticket.
+2. **`apps/intent-engine/src/jobs/batch_enrich.py` (the §C.3 Sonnet 4.6 batch tier) is not deployed
+   and cannot be.** `modal deploy apps/intent-engine/src/main.py` registers exactly
+   `['chat_nlp_endpoint', 'process_chat_message']` (measured by importing the module with the
+   deploy-time deps installed) because `main.py` never imports `jobs.batch_enrich`. The two-tier
+   design in §C.3 / §Snapshot.1 row D is therefore single-tier by construction once the Phase-B
+   deploy lands. This is arguably correct — ADR-0016 removed the Redpanda hop that used to dispatch
+   the batch tier, and nothing in prod calls it — but §Snapshot.1 should say so rather than let a
+   reader assume both tiers ship. Fix is one load-bearing import in `main.py` (llm-gateway's
+   `main.py` uses exactly this pattern) IF the batch tier is wanted; otherwise a doc correction.
+
+cross_ref: [FOLLOW-817, FOLLOW-873, ESC-053, ESC-017, ADR-0016, MASTER_DESIGN §C.3 / §Snapshot.1 row
+D, `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6]

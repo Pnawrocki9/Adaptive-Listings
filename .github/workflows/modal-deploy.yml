@@ -1,15 +1,31 @@
 # modal-deploy.yml
 #
 # Deploys the Modal ML apps automatically on every push to main that touches
-# their source. Phase A (ESC-036 / ADR-0016): apps/llm-gateway
-# (estalara-description-generator — the description + embed-seed HTTPS web
-# endpoints). intent-engine / data-quality deploys are added here as Phases
-# B / C go live (see docs/runbooks/MODAL_PROD_STANDUP.md §7 and §1 phasing).
+# their source.
+#   Phase A (ESC-036 / ADR-0016): apps/llm-gateway
+#     (estalara-description-generator — the description + embed-seed HTTPS web
+#     endpoints). LIVE since 2026-07-03.
+#   Phase B (ESC-042 item 1 / FOLLOW-817): apps/intent-engine
+#     (estalara-intent-engine — the chat-NLP realtime endpoint whose shadow key
+#     the control-plane /api/adapt reads).
+#   Phase C (FOLLOW-458 / FOLLOW-817): apps/data-quality
+#     (estalara-schema-validation — the daily §B.6 drift-detection cron).
+#   apps/stream-consumer is deliberately NOT deployed here and never will be in
+#     this shape: ESC-017 established that Redpanda Cloud Serverless exposes no
+#     Pandaproxy, so the consumer would have nothing to consume. The ingest
+#     Worker POSTs chat events straight to the intent-engine endpoint instead
+#     (ADR-0016). Recorded in MASTER_DESIGN §Snapshot.1 row A.1 so no future
+#     audit re-files it as an oversight.
 #
 # WHY THIS EXISTS (ESC-036): the Modal layer had no deploy pipeline at all, so
-# it was never stood up in prod. This workflow makes `apps/llm-gateway`
-# redeploy on merge so a code change (e.g. FOLLOW-485's web endpoints) reaches
-# the running app instead of silently drifting.
+# it was never stood up in prod. This workflow makes the Modal apps redeploy on
+# merge so a code change reaches the running app instead of silently drifting.
+#
+# WHY `paths:` INCLUDES THIS FILE (FOLLOW-817): a change that only adds a deploy
+# JOB touches no `apps/**` path, so without this entry the newly-added job would
+# merge green and then never fire — the workflow would be wired-but-dead until
+# somebody happened to edit the app it deploys. Listing the workflow itself makes
+# "I added a deploy job" a triggering change.
 #
 # SECRETS REQUIRED:
 #   MODAL_TOKEN_ID     — Modal token id     for the `estalara` workspace
@@ -25,9 +41,22 @@
 #   estalara-secrets, import error), the deploy step exits non-zero — a HARD
 #   fail, CI goes red, and the deploy must be fixed. There is no secondary skip.
 #
+# RUNTIME-KEY GATE (FOLLOW-817, hard fail — NOT a second skip):
+#   `modal deploy` only registers functions; it cannot see whether
+#   `estalara-secrets` carries the env keys the deployed code READS. A deploy
+#   that succeeds over a secret missing `UPSTASH_REDIS_REST_URL` produces a
+#   running intent-engine whose every shadow write dies on a KeyError inside a
+#   `.spawn()` — invisible, because the ingest Worker already has its 202. So
+#   each app-specific job asserts its runtime keys FIRST, via
+#   `scripts/check-modal-secret-keys.py`, and refuses to deploy over a gap.
+#   This runs only after the token was confirmed present, so a failure here is
+#   always "dependency present but broken" — a red, by contract.
+#
 # MANUAL FALLBACK:
 #   modal token set --token-id <id> --token-secret <secret>
 #   modal deploy apps/llm-gateway/src/main.py
+#   modal deploy apps/intent-engine/src/main.py
+#   PYTHONPATH=apps/data-quality/src modal deploy apps/data-quality/src/crons/schema_validation.py
 
 name: Modal Deploy
 
@@ -37,6 +66,10 @@ on:
       - main
     paths:
       - "apps/llm-gateway/**"
+      - "apps/intent-engine/**"
+      - "apps/data-quality/**"
+      - ".github/workflows/modal-deploy.yml"
+      - "scripts/check-modal-secret-keys.py"
   workflow_dispatch:
 
 # Never let two deploys of the same app race; never cancel one already running.
@@ -88,3 +121,125 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: modal deploy apps/llm-gateway/src/main.py
+
+  deploy-intent-engine:
+    name: Deploy intent-engine (estalara-intent-engine)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # apps/intent-engine/src/main.py imports `modal` + `fastapi` at module level
+      # (nlp / redis_writer are imported INSIDE the function bodies, so they are not
+      # needed on the runner). Registration fails with ModuleNotFoundError without these.
+      - name: Install Modal CLI + deploy-time module deps
+        run: pip install modal fastapi
+
+      # Same soft-skip contract as deploy-llm-gateway above: unconfigured token only.
+      - name: Check MODAL_TOKEN_ID presence
+        id: token-check
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        run: |
+          if [ -z "${MODAL_TOKEN_ID}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MODAL_TOKEN_ID is not set — skipping Modal deploy."
+            echo "This workflow is INERT until MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are provisioned."
+            echo "See backlog/ESCALATIONS.md ESC-036 and docs/runbooks/MODAL_PROD_STANDUP.md."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # HARD GATE (no skip). Keys asserted here are exactly the ones the deployed
+      # code reads with a non-defaulting lookup:
+      #   ANTHROPIC_API_KEY        nlp.py:422           os.environ[...]
+      #   UPSTASH_REDIS_REST_URL   redis_writer.py:40   os.environ[...]
+      #   UPSTASH_REDIS_REST_TOKEN redis_writer.py:41   os.environ[...]
+      #   INTERNAL_API_SECRET      main.py:100          bearer the ingest Worker sends
+      # INTENT_REALTIME_MODEL / SENTRY_DSN are deliberately NOT listed — both have
+      # documented defaults / DSN-gated no-ops.
+      - name: Assert estalara-secrets carries the runtime keys intent-engine reads
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          modal run scripts/check-modal-secret-keys.py::check \
+            --required "ANTHROPIC_API_KEY,UPSTASH_REDIS_REST_URL,UPSTASH_REDIS_REST_TOKEN,INTERNAL_API_SECRET"
+
+      # NOTE: this registers main.py's functions only (process_chat_message +
+      # chat_nlp_endpoint). jobs/batch_enrich.py is NOT imported by main.py, so the
+      # Sonnet batch tier is not deployed by this job — deliberate: the batch tier has
+      # no dispatcher wired in prod (ADR-0016 replaced the Redpanda hop). Adding it
+      # later means importing it from main.py, the same load-bearing-import pattern
+      # llm-gateway uses.
+      - name: Deploy apps/intent-engine
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy apps/intent-engine/src/main.py
+
+  deploy-data-quality:
+    name: Deploy data-quality (estalara-schema-validation)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # crons/schema_validation.py imports httpx, psycopg2, sentry_sdk, bs4 and
+      # confluent_kafka at MODULE level, so all of them must exist on the runner for
+      # registration — independently of the container image the function runs in.
+      - name: Install Modal CLI + deploy-time module deps
+        run: |
+          pip install modal httpx psycopg2-binary sentry-sdk beautifulsoup4 lxml confluent-kafka
+
+      # Same soft-skip contract as deploy-llm-gateway above: unconfigured token only.
+      - name: Check MODAL_TOKEN_ID presence
+        id: token-check
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        run: |
+          if [ -z "${MODAL_TOKEN_ID}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MODAL_TOKEN_ID is not set — skipping Modal deploy."
+            echo "This workflow is INERT until MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are provisioned."
+            echo "See backlog/ESCALATIONS.md ESC-036 and docs/runbooks/MODAL_PROD_STANDUP.md."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # HARD GATE (no skip). DATABASE_URL is the only non-defaulting lookup in the
+      # cron (schema_validation.py:209-211 raises RuntimeError without it).
+      # REDPANDA_BROKERS/USERNAME/PASSWORD are NOT listed: :292-297 reads them with
+      # `.get("", "")` and logs "skipping Redpanda event emission" — a documented,
+      # graceful degradation, not a broken run path. SENTRY_DSN is DSN-gated.
+      - name: Assert estalara-secrets carries the runtime keys data-quality reads
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          modal run scripts/check-modal-secret-keys.py::check --required "DATABASE_URL"
+
+      # PYTHONPATH is load-bearing: schema_validation.py does `from crons.observability
+      # import ...` at module level, but `modal deploy <file>` puts the FILE's directory
+      # (apps/data-quality/src/crons) on sys.path — not the package root. Without this
+      # the registration import fails with ModuleNotFoundError: No module named 'crons'.
+      - name: Deploy apps/data-quality
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          PYTHONPATH: apps/data-quality/src
+        run: modal deploy apps/data-quality/src/crons/schema_validation.py

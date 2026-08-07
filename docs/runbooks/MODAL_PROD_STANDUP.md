@@ -180,7 +180,19 @@ Expected: functions `generate_description`, `consume_description_requests` (sche
 `generate_description.py` reads `REDPANDA_SASL_USERNAME/PASSWORD`;
 `data-quality/schema_validation.py` reads `REDPANDA_USERNAME/PASSWORD`. Until the code is unified,
 `estalara-secrets` must carry **both** name pairs with the same values (reflected in §3/§5).
-Recommend a small follow-up to standardize on one naming (candidate: fold into a P3 ticket).
+
+> **The same both-name-pairs trap applies to Upstash, and it is currently UNRESOLVED (ESC-053,
+> measured 2026-08-07).** `apps/intent-engine/src/redis_writer.py:40-41` reads
+> `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`; the control-plane
+> (`lib/chat-intent-cache.ts:103-108` and four sibling modules) reads `UPSTASH_REDIS_URL` /
+> `UPSTASH_REDIS_TOKEN`. `estalara-secrets` today carries ONLY the second pair — verified by an
+> ephemeral read-only `modal run` key inventory, not inferred. Deploying intent-engine over that
+> secret yields an app whose every shadow write raises `KeyError: 'UPSTASH_REDIS_REST_URL'` inside a
+> `.spawn()`, i.e. after the ingest Worker already has its 202: silent, and NOT the "silent
+> null-read" ESC-042 anticipated. `estalara-secrets` must carry **both** Upstash name pairs with the
+> same values, exactly as it must for Redpanda. `estalara-secrets` also has no `DATABASE_URL`, which
+> the data-quality cron requires. Recommend a small follow-up to standardize on one naming
+> (candidate: fold into a P3 ticket).
 
 ---
 
@@ -210,6 +222,27 @@ jobs:
       - run: modal deploy apps/llm-gateway/src/main.py
       # add intent-engine / data-quality deploys as Phases B/C go live
 ```
+
+> **SUPERSEDED 2026-08-07 by FOLLOW-817 — read `.github/workflows/modal-deploy.yml`, not the sketch
+> above.** The shipped workflow has three jobs (`deploy-llm-gateway`, `deploy-intent-engine`,
+> `deploy-data-quality`), lists the workflow file itself in `paths:` (otherwise adding a deploy job
+> touches no `apps/**` path and the new job merges green then never fires), and puts a **hard**
+> pre-deploy gate in front of each new job:
+> `modal run scripts/check-modal-secret-keys.py::check --required "..."`. That gate exists because
+> `modal deploy` only registers functions — it cannot see whether `estalara-secrets` carries the env
+> keys the deployed code READS, and a deploy that succeeds over a missing key produces a running app
+> whose every invocation dies where nobody is looking. Two deploy-time traps the sketch above
+> misses, both measured on 2026-08-07:
+>
+> - `apps/data-quality` must be deployed as
+>   `PYTHONPATH=apps/data-quality/src modal deploy apps/data-quality/src/crons/schema_validation.py`.
+>   `apps/data-quality/src/main.py` is a placeholder with no `modal.App`; the real app lives in
+>   `crons/schema_validation.py`, which does `from crons.observability import ...` at module level
+>   while `modal deploy <file>` only puts the FILE's directory on `sys.path`. Without `PYTHONPATH`
+>   the registration import fails with `ModuleNotFoundError: No module named 'crons'` (reproduced).
+> - `pip install modal` alone is not enough for either new app. Registration imports the module on
+>   the runner: intent-engine needs `fastapi`; data-quality needs
+>   `httpx psycopg2-binary sentry-sdk beautifulsoup4 lxml confluent-kafka`.
 
 ---
 

@@ -47,39 +47,73 @@ is local/CI-only. Recorded as a sharpened AC(2) on FOLLOW-853 (already P1), not 
 measurement is carried into FOLLOW-872 for FOLLOW-819's differentiator design rather than
 re-derived.
 
-### 🔴 ESC-052 filed — "staging Postgres" IS production Postgres (CEO ruling needed)
+### ✅ ESC-052 filed AND RULED the same day — "staging Postgres" IS production Postgres
 
 Found by the worker, **independently re-verified by this orchestrator**:
 `doppler secrets get DATABASE_URL_ADMIN` returns the **same sha256** for `stg` and `prd` — same
 user, host, database. `db-migrate.yml`'s "staging first, then prod" sequence has been running
 against production twice and has been non-protective for its entire life.
 
-**This BLOCKS FOLLOW-818**, which was about to write `FEEDBACK_ENDPOINT_ENABLED=true` into `stg`
-believing it was isolated — that write would have flipped production. FOLLOW-818's `depends_on` is
-amended accordingly. Recommendation in the escalation is **option 2** (declare localhost-first
-official for the data plane, retire the non-protective gate); FOLLOW-871 pre-files option 1 and is
-held for the ruling.
+This **would have** blocked FOLLOW-818, which was about to write `FEEDBACK_ENDPOINT_ENABLED=true`
+into `stg` believing it was isolated — that write flips production `ab_bandit_weights`.
+
+**CEO ruling (Piotr, same session): OPTION 2 — localhost-first is official for the data plane too.**
+The workflow shape confirms why: `db-migrate.yml:100` applies migrations via `--config stg`, then
+`migrate-prod` (`needs: migrate-staging`) applies the identical command to `prd`. **Every merged
+migration has been applied to production twice**, and the header's "if staging succeeds, run prod"
+has never been true.
+
+Consequences, all now carried:
+
+| Ticket         | Disposition                                                                                                                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FOLLOW-873** | **NEW, P1, READY** — retire the gate: single prod apply, drop `DOPPLER_TOKEN_STG`, retire the `stg` Doppler config, correct ESC-023 + RETRO-113 + the memory note, CI grep gate so `--config stg` cannot return |
+| **FOLLOW-871** | **CLOSED unexecuted** — on its own pre-commitment, not re-argued                                                                                                                                                |
+| **FOLLOW-818** | **UNBLOCKED and re-scoped** staging → local; `--config stg` is now a hard prohibition in its AC, and standing up a local Postgres is in scope                                                                   |
+
+FOLLOW-873 carries an explicit warning against trading one false control for another: the
+double-apply is the only reason a bad migration currently fails twice, so the header must state
+plainly that the single apply is first-and-only.
 
 ### Also filed
 
-- **FOLLOW-871** (P2, HELD for ESC-052) — provision a genuinely separate staging data plane. Close
-  unexecuted if the ruling is option 2.
 - **FOLLOW-872** (P2) — FOLLOW-816 disproved two of its own stub's premises: the pilot `web-master`
   has **no CTA slot** (three slots, not four), and "the committed web-master HEAD already carries
   these edits" is false (that tree greps 0 for `data-estalara`). Reconcile with Rafał across the
   stub, `SDK_PRODUCTION_INTEGRATION.md`, and the HANDOFFS FOLLOW-191 contract.
 
-Next free stub: **FOLLOW-873**.
+Next free stub: **FOLLOW-874**.
 
-### Dispatched next: FOLLOW-817 (P1, READY, no deps) + RETRO-259
+### Dispatched: FOLLOW-817 (P1, devops-engineer, Opus)
 
-FOLLOW-818 and FOLLOW-819 are both unavailable — 818 on the ESC-052 ruling, 819 on 817/818/560.
-FOLLOW-817 is the only Track LOCAL ticket with a clear path, and it carries ESC-042 item 1 (chat NLP
-dark since 2026-07-24 with no named owner). Its AC(4) — `MODAL_CHAT_NLP_URL` in the **staging**
-ingest env — must be read through ESC-052: the worker is instructed to treat any "staging" target as
-suspect and verify isolation before writing, not assume it.
+**FOLLOW-817 — status: IN_PROGRESS** — **assigned_to:** devops-engineer **model:** **Opus**
+**started_at:** 2026-08-07 **branch:**
+`devops-engineer/FOLLOW-817-modal-deploy-intent-data-quality`. Model justification: cross-system
+(GitHub Actions + Modal + Doppler + the ingest Worker's env), and its sharpest AC is a **verdict
+correction** to §Snapshot.1 that requires judging shipped-vs-deployed — reasoning work, not
+mechanical CI editing. Opus per the model-fit table.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS at bookkeeping time. 0 open PRs.**
+Chosen because it carries **ESC-042 item 1** (chat NLP dark since 2026-07-24 with no named owner)
+and because §Snapshot.1 currently grades Continuous Schema Validation "✅ Shipped" for a 526-LOC
+cron that has never run in any deployed environment.
+
+**Its AC was amended at dispatch by the ESC-052 ruling.** Two of its acceptance criteria named
+"staging" targets that do not exist:
+
+- AC(4) `MODAL_CHAT_NLP_URL` in the **staging** ingest env → re-scoped to the **local/dev** env,
+  with prod deferred to FOLLOW-820 as before.
+- AC(6) chat shadow key proven end-to-end in **staging** → re-scoped to **localhost**, against the
+  FOLLOW-816 substrate (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`), which is exactly what that
+  runbook was built to be.
+
+The worker is instructed that `--config stg` is prohibited and that any artefact promising a staging
+environment is to be treated as stale record, not as a target.
+
+**Not dispatched:** RETRO-259 for FOLLOW-816 (operator deferred it; the retro log ends at RETRO-258
+and FOLLOW-816's retro remains outstanding). FOLLOW-873 and the re-scoped FOLLOW-818 are both READY
+and unblocked but held to keep one ticket in flight.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs.**
 
 ---
 
@@ -21739,12 +21773,13 @@ FOLLOW-815.
     - [ ] ESC-042 item 1 marked RESOLVED.
 - id: FOLLOW-818
   title: >-
-    Enable the feedback endpoint in STAGING and prove a real ab_bandit_weights delta (audit F-13)
-  agent: OPERATOR (Piotr/Rafał; devops-engineer on standby)
-  status: BLOCKED
+    Enable the feedback endpoint LOCALLY and prove a real ab_bandit_weights delta (audit F-13,
+    re-scoped by the ESC-052 option-2 ruling)
+  agent: devops-engineer (+ OPERATOR Piotr only if a credential is missing)
+  status: READY
   priority: P1
-  estimated_hours: 2
-  depends_on: [ESC-052] # FOLLOW-816 DONE (PR #690). RE-POINTED session 104: the remaining blocker is the ESC-052 ruling — Doppler stg.DATABASE_URL_ADMIN is byte-identical to prd, so writing FEEDBACK_ENDPOINT_ENABLED=true into `stg` would flip PRODUCTION. Do not execute this ticket's AC(1) until that ruling lands.
+  estimated_hours: 3
+  depends_on: [] # UNBLOCKED session 104. FOLLOW-816 DONE (PR #690); ESC-052 RULED option 2 — localhost-first is official for the data plane, so this ticket no longer waits on a staging environment that will never exist. Its original AC(1) (write FEEDBACK_ENDPOINT_ENABLED=true into Doppler `stg`) is now FORBIDDEN, not merely deferred: `stg` IS prod.
   source: >-
     2026-08-04 audit F-13, verified at HEAD:
     apps/control-plane/src/app/api/adapt/feedback/route.ts:262 returns 503 unless
@@ -21754,13 +21789,50 @@ FOLLOW-815.
   notes: |
     Until this is flipped, ab_bandit_weights stay at Beta(1,1), Thompson sampling is uniform-random,
     and every variant-performance claim the product can make is UNFOUNDED — not weak, unfounded.
+    RE-SCOPED session 104 by the ESC-052 option-2 ruling: the target is LOCAL, never `stg`.
     AC:
-    - [ ] Staging Doppler carries FEEDBACK_ENDPOINT_ENABLED=true + ADAPT_API_KEY + OPS_TENANT_ID +
-          DATABASE_URL_ADMIN.
-    - [ ] `doppler run --config stg -- pnpm feedback:canary` output PASTED into the close note
-          showing a real before/after weight delta. Rule Q: a green exit code is not the evidence,
-          the delta is.
-    - [ ] Rule AA: closes the STAGING axis only. FOLLOW-450's prod axis stays open → FOLLOW-820.
+    - [ ] A LOCAL environment carries FEEDBACK_ENDPOINT_ENABLED=true + ADAPT_API_KEY +
+          OPS_TENANT_ID + a DATABASE_URL_ADMIN pointing at a LOCAL Postgres. Standing up that local
+          Postgres (with the migration chain applied) is IN SCOPE — this is the FOLLOW-816 pattern,
+          which substituted a local ClickHouse for the same reason. Extend
+          docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md rather than writing a second runbook.
+    - [ ] HARD CONSTRAINT: `--config stg` must not appear anywhere in this ticket's work. `stg` and
+          `prd` are byte-identical (sha256 ba5e374183a629df); a canary run against `stg` mutates
+          PRODUCTION ab_bandit_weights.
+    - [ ] `pnpm feedback:canary` output PASTED into the close note showing a real before/after
+          weight delta off Beta(1,1). Rule Q: a green exit code is not the evidence, the delta is.
+    - [ ] Rule AA: closes the LOCAL axis only. FOLLOW-450's prod axis stays open → FOLLOW-820.
+- id: FOLLOW-873
+  title: >-
+    Retire the non-protective staging gate in db-migrate.yml and the stg Doppler config (ESC-052
+    option 2)
+  agent: devops-engineer
+  status: READY
+  priority: P1
+  estimated_hours: 3
+  depends_on: []
+  source: >-
+    ESC-052 CEO ruling 2026-08-07 (option 2). Verified twice: stg and prd DATABASE_URL_ADMIN hash
+    identically (sha256 ba5e374183a629df) on the same pooler host and database. db-migrate.yml:100
+    runs `doppler run --config stg -- pnpm db:migrate`; :104-108 runs the same command against prd
+    behind `needs: migrate-staging`. Every merged migration has been applied to production twice.
+  spec: backlog/FOLLOW_UPS.md FOLLOW-873; backlog/ESCALATIONS.md ESC-052
+  notes: |
+    P1 because it touches the workflow that auto-applies migrations to PRODUCTION and removes a
+    control people believe exists. Getting it wrong is an incident, not a docs nit.
+    AC:
+    - [ ] db-migrate.yml collapses to a single prod apply; migrate-staging removed, migrate-prod
+          loses its `needs:`, DOPPLER_TOKEN_STG dropped (say whether the GitHub secret was deleted).
+    - [ ] Header rewritten: there is NO pre-prod rehearsal, migrations auto-apply to prod on merge,
+          they must be additive and backward-safe.
+    - [ ] Do not trade one false control for another — state explicitly that the single apply is now
+          first-and-only (the double-apply was the only reason a bad migration failed twice).
+    - [ ] `stg` Doppler config deleted or renamed so nothing can point at it believing it is
+          isolated (operator step; record what was done).
+    - [ ] Stale records corrected too: ESC-023 (records the gate as successfully activated),
+          RETRO-113's staging→prod claim, memory project_postgres_migrations_no_autoapply. Leaving
+          them is how ESC-052 survived its whole life.
+    - [ ] CI grep gate: no workflow may reference `--config stg` again.
 - id: FOLLOW-819
   title: >-
     Differentiator E2E on localhost — behavioral trace → ingest → intent → adapt → DOM → measured

@@ -30048,12 +30048,17 @@ lines), 847 (its AC(3) survivor was NOT incidentally discharged), 779. -->
 
 ---
 
-## FOLLOW-871 — Provision a genuinely separate staging data plane (HELD for the ESC-052 ruling)
+## FOLLOW-871 — ~~Provision a genuinely separate staging data plane~~ — CLOSED UNEXECUTED (ESC-052 ruled option 2)
 
-source_retro: n/a (FOLLOW-816, session 103) source_ticket: ESC-052 recommended_sprint: held
-recommended_agent: devops-engineer priority: P2 estimated_hours: 4 depends_on: [ESC-052 ruling]
-blocks: [] promoted_to_queue: false **FROZEN** — and held: if ESC-052 resolves as option 2
-(recommended), CLOSE this stub unexecuted and re-scope `db-migrate.yml` instead.
+source_retro: n/a (FOLLOW-816, session 103) source_ticket: ESC-052 recommended_sprint: n/a
+recommended_agent: n/a priority: n/a estimated_hours: 0 depends_on: [] blocks: [] promoted_to_queue:
+false **CLOSED 2026-08-07 (session 104) — never executed, by design.**
+
+The CEO ruled **option 2** on ESC-052: localhost-first is official for the data plane, so no
+separate staging Supabase project is provisioned. This stub was filed pre-committed to exactly this
+outcome ("if option 2, CLOSE this stub unexecuted") and is closed on that pre-commitment rather than
+re-argued. The retirement work moved to **FOLLOW-873**. Reopen only if FOLLOW-820 makes production
+traffic real and a pre-prod rehearsal is then wanted.
 
 If option 1: own Supabase project for `stg` (new `DATABASE_URL_ADMIN`), decide whether CH staging is
 in scope, and add a CI assertion that `stg` and `prd` secrets **differ** (the sha256 identity that
@@ -30085,3 +30090,45 @@ it.
 
 cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`;
 `backlog/HANDOFFS.md` FOLLOW-191]
+
+---
+
+## FOLLOW-873 — Retire the non-protective staging gate in `db-migrate.yml` and the `stg` Doppler config (ESC-052 option 2)
+
+source_retro: n/a (ESC-052 ruling, session 104) source_ticket: ESC-052 recommended_sprint: next
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: true
+
+**Why P1 despite being cleanup:** this touches the workflow that auto-applies migrations to
+production, and it removes a control that people currently believe exists. Getting it wrong is a
+prod-migration incident, not a docs nit.
+
+**Established facts (verified, do not re-derive):** `stg` and `prd` `DATABASE_URL_ADMIN` are
+byte-identical — same sha256, same `aws-0-eu-west-3.pooler.supabase.com`, same `postgres` database.
+`db-migrate.yml:100` runs `doppler run --config stg -- pnpm db:migrate`; `:104-108` declares
+`migrate-prod` with `needs: migrate-staging` and runs the same command against `prd`. Every merged
+migration has been applied to production twice.
+
+**AC:**
+
+1. `db-migrate.yml` collapses to a single production apply — `migrate-staging` removed,
+   `migrate-prod` loses its `needs:`, and `DOPPLER_TOKEN_STG` is dropped from the workflow and from
+   the repo secret list (state whether the GitHub secret itself was deleted or left).
+2. The file header is rewritten. It currently documents a staging-first sequence that does not
+   exist. The replacement must say plainly: **there is no pre-prod rehearsal**, migrations
+   auto-apply to production on merge, and they must be additive and backward-safe.
+3. **Do not silently trade one false control for another.** The double-apply is the only reason a
+   bad migration currently fails twice; note explicitly in the header that the single apply is now
+   first-and-only.
+4. The `stg` Doppler config is deleted or renamed so nothing can point at it believing it is
+   isolated (operator step — record what was done, and if it is only renamed, say why).
+5. Every artefact asserting a staging-first Postgres gate is corrected, not just the workflow:
+   `ESCALATIONS.md` ESC-023 (which records the gate as successfully activated), `RETROSPECTIVES.md`
+   RETRO-113's staging→prod claim, and the memory note `project_postgres_migrations_no_autoapply`.
+   Rule AA: leaving a stale record that contradicts the new reality is how ESC-052 survived for its
+   entire life.
+6. A CI assertion that no workflow references `--config stg` again (a one-line grep gate), so this
+   cannot silently return.
+
+cross_ref: [ESC-052 (RESOLVED, option 2); FOLLOW-871 (closed unexecuted); FOLLOW-818; FOLLOW-820;
+`.github/workflows/db-migrate.yml`; ESC-023; RETRO-113]

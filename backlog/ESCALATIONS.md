@@ -3385,7 +3385,7 @@ it fits — but the next banner edit is blocked-by-construction.
 
 ---
 
-## OPEN — ESC-052: Doppler `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` — "staging Postgres" IS production, and the migrate-staging gate has never protected anything
+## RESOLVED — ESC-052: Doppler `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` — "staging Postgres" IS production, and the migrate-staging gate has never protected anything
 
 **Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-07 **Affects:** FOLLOW-818
 (BLOCKED on this ruling), `db-migrate.yml`, Doppler `stg` config **Type:** architectural
@@ -3417,4 +3417,29 @@ Option 2 is consistent with the recorded stage ("all verification on localhost B
 costs nothing; option 1 costs a Supabase project and answers a need no current ticket actually has.
 **Recommendation: option 2**, revisit staging when FOLLOW-820's exit gate makes it real.
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO ruling, Piotr, 2026-08-07 — session 104): OPTION 2.** Localhost-first is official
+for the data plane too. Nothing may continue to _appear_ to provide isolation it does not provide.
+
+**Verified twice before the ruling was requested**, once by the FOLLOW-816 worker and once by this
+orchestrator directly: `stg` and `prd` `DATABASE_URL_ADMIN` both hash to sha256 `ba5e3741 83a629df…`
+on the same `aws-0-eu-west-3.pooler.supabase.com` / `postgres`. The workflow shape makes the
+consequence concrete — `db-migrate.yml:100` runs `doppler run --config stg -- pnpm db:migrate` and
+`migrate-prod` (`:104-108`) declares `needs: migrate-staging` before running the identical command
+against `prd`. **Every merged migration has therefore been applied to production twice**, and the
+"if staging succeeds, run prod" sentence in the file header has never been true.
+
+**Consequences, all now carried by tickets:**
+
+1. **FOLLOW-873** (filed, P1, devops-engineer) — retire the non-protective gate: collapse
+   `db-migrate.yml` to a single prod apply, drop `DOPPLER_TOKEN_STG`, and rewrite the header, which
+   currently documents a staging-first sequence that does not exist. Note for whoever takes it: the
+   double-apply is also the _only_ reason a bad migration currently fails "twice", so the
+   replacement must not quietly become a first-and-only unguarded prod write — state plainly in the
+   header that there is no pre-prod rehearsal and that migrations must be additive/safe (already the
+   standing rule, see memory `project_postgres_migrations_no_autoapply`).
+2. **FOLLOW-871 CLOSED unexecuted**, exactly as this escalation pre-committed. No separate staging
+   Supabase project will be provisioned now.
+3. **FOLLOW-818 UNBLOCKED and re-scoped** from staging to local-only.
+4. The `stg` Doppler config is retired as part of FOLLOW-873 rather than being left as a live trap.
+
+Revisit a real staging when FOLLOW-820's exit gate makes production traffic real.

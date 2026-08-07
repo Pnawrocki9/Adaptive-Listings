@@ -27187,10 +27187,20 @@ did not exist. FOLLOW-816 creates that environment.
 localhost. FOLLOW-471 remains the epic gate and still requires the full F-01…F-21 sweep.
 
 **AC — a single scripted session must produce all five, and each is an independent assertion:** (1)
-a **non-neutral archetype** with confidence above `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`
-(`packages/sdk/src/core/adapt-floor.ts`) — reaching this from behavioral signals alone is itself the
-finding, given only ~11 live behavioral discriminators exist (F-07); if it is only reachable via
-quiz or chat, **say so in the result rather than adjusting the fixture until it passes**; (2) an
+a **non-neutral archetype** with confidence **strictly greater than the SERVER threshold
+`CONFIDENCE_THRESHOLD = 0.6`** (`apps/control-plane/src/app/api/adapt/route.ts:86`, applied at
+`:275` as `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [] }` — so exactly 0.6 still
+returns `[]`), asserted on the `/adapt` **response**, together with `directives.length > 0`.
+**CORRECTED 2026-08-07 by FOLLOW-875** — this AC previously named the SDK's
+`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`, which is (a) the wrong number and (b) not a gate that can hold
+on its own: `index.ts:827-829` ORs it with `signal_count >= 2`, a branch true after the first
+behavioral event. A session at 0.55 clears the old wording, mutates the local mock's DOM, and still
+receives `[]` from production. Reaching `> 0.6` from behavioral signals alone is itself the finding;
+if it is only reachable via quiz or chat, **say so in the result rather than adjusting the fixture
+until it passes**. Note also that four conditions empty `directives` before confidence is consulted
+at all (AL OFF/suspended, `profiling_opt_out=1`, consent-skip, holdout arm) — the session must be
+consent-granted, AL-enabled, non-opted-out and non-holdout or the confidence question is never
+asked. Grounding for the design: `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.1/§9.2; (2) an
 observably adapted DOM (hop 10); (3) a logged `adaptation_decisions` row carrying `score_function`
 from FOLLOW-560, so cosine-vs-djb2 is distinguishable — without this the test cannot tell real
 ranking from a stable hash shuffle; (4) a feedback-driven `ab_bandit_weights` delta (hop 12, via
@@ -27205,7 +27215,8 @@ product has ever taken, and calibration (FOLLOW-212 / audit F-16) depends on kno
 starting accuracy rather than assuming it.
 
 cross_ref: [FOLLOW-471, FOLLOW-560, FOLLOW-816, FOLLOW-817, FOLLOW-818, FOLLOW-212, FOLLOW-022,
-MASTER_DESIGN §Snapshot.5, §Snapshot.4 item 15, Rule Q, audit 2026-08-04 F-16]
+FOLLOW-875 (AC(1) correction + the reachability judgement this ticket's problem statement rests on),
+FOLLOW-876, MASTER_DESIGN §Snapshot.5, §Snapshot.4 item 15, Rule Q, audit 2026-08-04 F-16]
 
 ---
 
@@ -28739,9 +28750,16 @@ block REPAIRED IN PLACE on RETRO-249 §6's armed condition; see RETRO-250 §6. -
 
 ## FOLLOW-849 — `.claude/hooks/pre-edit-branch-guard.sh` is worktree-blind: it fires "HEAD == main" on every edit made from a ticket branch inside a worktree
 
-source_retro: n/a (reported independently by three workers, sessions 102-103) source_ticket:
-FOLLOW-846 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours:
-2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+source_retro: n/a (reported independently by FOUR workers, sessions 102-104) source_ticket:
+FOLLOW-846 recommended_sprint: next recommended_agent: devops-engineer priority: P1 estimated_hours:
+2 depends_on: [] blocks: [] promoted_to_queue: false **UNFROZEN 2026-08-07 (P1 carve-out).**
+
+**PM UPDATE (session 104): FOURTH independent sighting.** The FOLLOW-881 architect hit it on all
+five of its in-worktree edits and re-reported it as a new finding, having no way to know it was
+already filed. Its framing is worth keeping: _"a guard that cries wolf on the sanctioned
+no-Bash-agent workflow will eventually be ignored on the day it is right."_ Four sightings across
+three sessions, each costing a worker some analysis — that cost is now larger than the 2h fix.
+**Re-priced P2 → P1** and unfrozen; the session-95 FROZEN rule carves out P1.
 
 The guard reads the **main checkout's** `HEAD`, not the HEAD of the worktree the edit is happening
 in. Every agent working in `.claude/worktrees/*` — which is now this repo's standard parallel-work
@@ -30083,13 +30101,18 @@ edits" is false — the older git tree's HEAD greps 0 for `data-estalara`.
 **AC:** (1) decide with Rafał: add the CTA slot, or correct every artefact claiming four slot edits
 (FOLLOW-816's stub, `SDK_PRODUCTION_INTEGRATION.md`, the HANDOFFS FOLLOW-191 contract); (2) get the
 proven `web-master` state under version control or explicitly record why it is not — a pilot
-substrate identified only by sha256 of three files is fragile; (3) hop-10 note: behavior-only
-signals saturate at confidence 0.3655 vs the 0.5 floor on this page (bit-identical peak across
-`PASSES=4`) — carry that measurement into FOLLOW-819's differentiator design rather than re-deriving
-it.
+substrate identified only by sha256 of three files is fragile; (3) hop-10 note **— AC amended
+2026-08-07 by FOLLOW-875, carry THIS framing, not the original**: behavior-only confidence on this
+page peaked at **0.3655** (bit-identical across `PASSES=4`) against the **server** gate of
+**strictly `> 0.6`** (`route.ts:86,275`) — **not** against the SDK's 0.5 floor, which is one arm of
+a disjunction (`index.ts:827-829`) that `signal_count >= 2` had already opened. Further, 0.3655 is
+not a behavioral ceiling: it reproduces bit-exactly as `BASE_PRIOR.neutral` after the single
+init-time `device_type.desktop` prior, i.e. it is the **cold-start** value, and behavior only pushed
+it down. Carry that into FOLLOW-819's differentiator design rather than re-deriving it; the full
+derivation and the reachability judgement are in `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.2.
 
-cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`;
-`backlog/HANDOFFS.md` FOLLOW-191]
+cross_ref: [FOLLOW-816 (PR #690); FOLLOW-819; FOLLOW-875 (this AC's correction);
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.1/§9.2; `backlog/HANDOFFS.md` FOLLOW-191]
 
 ---
 
@@ -30167,3 +30190,359 @@ are not re-discovered as surprises.
 
 cross_ref: [FOLLOW-817, FOLLOW-873, ESC-053, ESC-017, ADR-0016, MASTER_DESIGN §C.3 / §Snapshot.1 row
 D, `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6]
+
+---
+
+## FOLLOW-875 — Hop 10's red is attributed to a gate that did not fire: the SDK floor is a disjunction and the deciding threshold is server-side `> 0.6`
+
+source_retro: RETRO-259 source_ticket: FOLLOW-816 recommended_sprint: now recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-819] promoted_to_queue:
+false
+
+**The measurement is right and reproducible. The attribution is wrong on two independent axes, and
+it is already propagating into the exit test for the localhost stage.**
+
+1. **The SDK's apply gate is a DISJUNCTION.** `packages/sdk/src/index.ts:827-829` —
+   `resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR || currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT`
+   (2). The FOLLOW-816 session emitted an `intent.snapshot`, which fires every 5 behavioral signals,
+   so the second branch was true well before the last `/adapt` call. `applyDirectives()` **ran**;
+   the floor suppressed nothing. `adapt-floor.ts:36-44` says so: _"regardless of confidence level"_.
+2. **The gate that decides whether directives exist is server-side and 0.1 higher.**
+   `apps/control-plane/src/app/api/adapt/route.ts:86,275` — `CONFIDENCE_THRESHOLD = 0.6` and
+   `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [], source: 'default' }`, evaluated
+   over the client-sent `body.confidence ?? 0.5` (`:1224`, `:1278`). The SDK states this itself at
+   `index.ts:731-737`.
+
+The conclusion _"behavior alone did not adapt the DOM on this page"_ survives (0.3655 < 0.5 < 0.6).
+**The bar does not:** a differentiator that reaches 0.55 clears the runbook's stated floor, flips
+this harness green against the mock, and still receives `directives: []` from the real endpoint.
+
+**AC:** (1) `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9 restates the binding gate as the
+server-side `confidence > 0.6` (strict — the code is `<=`), records that the SDK floor was NOT the
+gate on this run, and cites `index.ts:827-829` + `route.ts:275`; (2)
+`scripts/dev/local-pilot-session.mjs` asserts against the **response** confidence and the server
+threshold, and reports **which** of the two `aboveFloor` branches was true — an assertion that
+cannot go green where production returns `[]`; (3) the "structurally unreachable" sentence is scoped
+to what was measured — one page, five interaction types that saturate by construction, under
+`BEHAVIORAL_DAMPING = 0.3` (`intent.ts:164`, §D.7), an explicitly unvalidated constant owned by
+FOLLOW-212 — and the 0.3655 is recorded there as the first empirical datum on that constant; (4)
+**FOLLOW-819 AC(1) is corrected in this ticket's PR** from `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` to the
+server threshold, and FOLLOW-872 AC(3) is amended to carry the corrected framing; (5) state plainly
+whether clearing `> 0.6` from behavior alone is believed reachable, or whether quiz/chat is required
+— that is FOLLOW-819's problem statement and it must be stated against the right number.
+
+cross_ref: [RETRO-259 §4a LG-1 / §4c TG-1; FOLLOW-816 (PR #690); FOLLOW-819 AC(1); FOLLOW-872 AC(3);
+FOLLOW-212; `packages/sdk/src/index.ts:827-829,731-737`; `packages/sdk/src/core/adapt-floor.ts`;
+`apps/control-plane/src/app/api/adapt/route.ts:86,275`]
+
+---
+
+## FOLLOW-876 — HALF_WIRE_P: the pilot-session artifact records requests only, so it cannot answer the question its own verdict turns on
+
+source_retro: RETRO-259 source_ticket: FOLLOW-816 recommended_sprint: now recommended_agent:
+qa-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-818, FOLLOW-819]
+promoted_to_queue: false
+
+**CHECK B finding (producer with no consumer, and a one-directional producer at that).**
+`scripts/dev/local-pilot-session.mjs:88-101` captures POST **request** bodies; the response listener
+(`:74-81`) stores `{method, url, status}` and never a body. So the run artifact cannot answer _"what
+did the decision endpoint return"_ — the exact question hop 10's verdict turns on (RETRO-259 §4a
+LG-1), and the input FOLLOW-818/819 need. Additionally: no ticket AC names `SESSION_JSON`, runbook
+§5 writes it to `/tmp` (ephemeral) and never documents its schema.
+
+**AC:** (1) capture response bodies for `POST <DECISION_ORIGIN>/adapt` and
+`POST <INGEST_ORIGIN>/v1/events` (bounded size, redact nothing the SDK did not already send) and
+include `resp.archetype` / `resp.confidence` / `resp.directives.length` in the hop-10 evidence
+block; (2) document the artifact's schema in the runbook and name it in FOLLOW-818 and FOLLOW-819 as
+their evidence input, with a non-`/tmp` default path; (3) assert the consent pre-grant actually took
+— `session.ts:26,35-37` accepts exactly the raw strings `'granted'`/`'denied'`, so a future key or
+shape change silently downgrades every run to `pending` — by asserting `consent_state` in the
+captured event payloads, not by re-reading `localStorage`; (4) report hops and assertions as
+distinct counts (the script has 8 assertions over 3 hop numbers, and "6/8 hops green" is now quoted
+in QUEUE.md and two stubs).
+
+cross_ref: [RETRO-259 §3 / §4c TG-2 / TG-3; FOLLOW-816 (PR #690); FOLLOW-875; FOLLOW-818;
+FOLLOW-819; `scripts/dev/local-pilot-session.mjs:74-101`]
+
+---
+
+## FOLLOW-877 — `adapt-floor.ts` documents a gate the code does not have: two behavioral signals bypass the cold-start confidence guard entirely on the description axis
+
+source_retro: RETRO-259 source_ticket: FOLLOW-816 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+**Pre-existing; surfaced by the FOLLOW-816 axis, not introduced by it.**
+`packages/sdk/src/core/adapt-floor.ts:26-32` states that the 0.5 floor is the **SOLE** gate of the
+`/adapt/description` path and that _"at confidence 0.5–0.59 the server returns [] for directives
+while the SDK may still fetch a description"_ — a sentence that reads as "below 0.5, nothing is
+fetched". `index.ts:827-829` ORs in `signal_count >= 2`, and the description call
+(`applyDescriptionAdaptation`, `:855-859`) sits inside that same block. **After two behavioral
+signals there is no confidence gate at all on the description axis**; the only remaining guard is
+`core/adapt-description.ts:390` (`archetype === 'neutral'` → skip).
+
+FOLLOW-343 / AUDIT-2026-06-19 F-01 opened this floor specifically to stop the cold-start
+wrong-archetype reshuffle at ~0.05–0.10 confidence. On the one axis with **no server-side
+threshold**, that guard is bypassed within seconds of scrolling. Blast radius is bounded today only
+because the SDK is not live on the pilot page (FOLLOW-820's gate).
+
+**AC:** (1) decide, with the FOLLOW-343 rationale in hand, whether the disjunction is intended on
+the description axis — `signal_count >= 2` is a deliberate "the buyer showed real intent" escape
+hatch for **directives**, and it may or may not be wanted for LLM-generated copy; (2) whichever way
+it goes, the `adapt-floor.ts` docblock is corrected so it describes the code (state the disjunction,
+and state the description axis's real guard set); (3) a test that fails if the two constants are
+ever consulted with `&&` / `||` swapped, or if the description call moves outside the gate; (4) if
+the answer is "gate the description axis on confidence", say what happens at 0.5–0.59 where the
+server already returns `[]` for directives — the asymmetry the docblock names is the interesting
+case and it should be tested, not just described.
+
+**UPDATE 2026-08-07 (sdk-engineer, shipped with FOLLOW-875).** AC(2), AC(3) and AC(4) are
+discharged: the `adapt-floor.ts` docblock now describes the disjunction and the description axis's
+real guard set, and `packages/sdk/src/__tests__/follow-877.test.ts` locks current behavior — it goes
+red if `||` becomes `&&` (either side), if the gate is removed, or if the description call moves
+outside it, and it asserts the 0.50–0.59 asymmetry on both axes in one run. **AC(1) is deliberately
+NOT discharged in code**: it is a behavior change on a buyer-facing surface, so it is filed as a
+decision request with a weighed recommendation in **ESC-054** (recommendation: keep the disjunction
+but raise the description-axis signal bar to 5). Flipping test D-1 is the intended record of
+whichever way it is ruled.
+
+cross_ref: [RETRO-259 §4b CB-1; FOLLOW-343; AUDIT-2026-06-19 F-01; FOLLOW-344; FOLLOW-875; ESC-054;
+`packages/sdk/src/core/adapt-floor.ts`; `packages/sdk/src/index.ts:827-859`;
+`packages/sdk/src/__tests__/follow-877.test.ts`;
+`packages/sdk/src/core/adapt-description.ts:385-392`]
+
+---
+
+## FOLLOW-878 — ESC-052's correction set stops one document short of the source of truth, and a live ticket is executing against a stub that still says "staging"
+
+source_retro: RETRO-259 source_ticket: ESC-052 recommended_sprint: now recommended_agent:
+devops-engineer (+ architect for the §Y.2 propagation) priority: P1 estimated_hours: 3 depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**This is the enumeration FOLLOW-873 AC(5) needs, produced by two greps rather than argued.**
+FOLLOW-873 AC(5) names `ESC-023`, `RETRO-113` and the memory note. The set is materially larger, and
+the omission at the top is the document every session boots from:
+
+1. **`docs/MASTER_DESIGN.md:5387-5399`** describes environment `staging` as _"pre-prod testing, real
+   schema, fake data … Supabase staging project"_ and asserts
+   **`Brak shared secrets między environments`** — the precise claim ESC-052 disproved by sha256.
+   **`:5348-5349`** adds _"Staging deploys read from `config=dev` (same token)"_, contradicted by
+   `db-migrate.yml:100` (`--config stg`). Master_Design is the SoT (OPERATING_PRINCIPLES Rule 1) and
+   edits carry the §Y.2 propagation checklist — this is the one artefact that cannot be left stale.
+2. **`apps/ingest/wrangler.toml:94-100`** `[env.staging]` (empty `CLICKHOUSE_URL`, no bindings,
+   `ingest-staging.estalara.com` route with no DNS record).
+3. **`.github/workflows/`**: `load-test.yml:22-48` (a `staging` target + `INGEST_STAGING_URL`),
+   `post-migrate-seed.yml:15` (_"requires real staging DB"_), `ci.yml:27` (_"Secret scope: dev +
+   staging configs only"_), `deploy-staging.yml` itself.
+4. **Durable stub texts**: FOLLOW-817 AC(4)/AC(6) — **IN_PROGRESS as this was written**, re-scoped
+   only in a QUEUE.md dispatch brief; FOLLOW-818 (title + AC(1)); FOLLOW-819 AC(5) (_"real staging
+   rows"_ — now unexecutable); FOLLOW-820 gate condition 3.
+5. Ten docs under `docs/runbooks/` + `docs/ops/` mention staging
+   (`grep -rln -i staging docs/runbooks docs/ops`), incl. `INGEST_WORKER_DEPLOY.md` §3 and
+   `PILOT_RUNBOOK.md`. **FOLLOW-810 (DONE, 2026-08-04)** already corrected `cloudflare.md` on
+   exactly this axis — read it first rather than re-deriving.
+
+**AC:** (1) the enumeration above is executed as a sweep, each artefact either corrected or
+explicitly exempted **with a reason** (Rule S, as amended 2026-08-07 — an exemption is a filed
+number, not prose); (2) Master_Design is corrected under §Y.2 (no section rename; state that there
+is no staging data plane and that `stg` was byte-identical to `prd` until ESC-052); (3) the durable
+stubs are amended so no ticket can be executed from a stale target — the QUEUE dispatch brief is not
+the record; (4) fold into FOLLOW-873 if that ticket is taken first, and say so in its close note
+rather than doing the work twice; (5) the `--config stg` grep gate from FOLLOW-873 AC(6) is extended
+to fail on `env.staging` route/DNS references that no longer resolve, or the residual is stated.
+
+cross_ref: [RETRO-259 §4d DG-1 / §5a; ESC-052 (RESOLVED, option 2); FOLLOW-873; FOLLOW-810 (DONE);
+FOLLOW-817; FOLLOW-818; FOLLOW-819; FOLLOW-820; `docs/MASTER_DESIGN.md:5348-5349,5387-5399`;
+`apps/ingest/wrangler.toml:94-100`; Rule S amendment 2026-08-07; Rule AI]
+
+---
+
+## FOLLOW-879 — Five corrections to `LOCAL_PILOT_ENVIRONMENT.md`, the substrate three P1 tickets now depend on
+
+source_retro: RETRO-259 source_ticket: FOLLOW-816 recommended_sprint: next recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+The runbook is the best operator document this repo has produced this month and it is now the named
+substrate for FOLLOW-817/818/819. Five defects, each cheap and each capable of costing its reader a
+session:
+
+1. **§8 poses as OPEN a P0 fork that was already closed.** _"the first thing to check … one query …
+   `basic` → P0"_ — that query had already been run against prod in the same session:
+   `date_time_input_format = best_effort` on ClickHouse **26.4.1** (FOLLOW-853's PM UPDATE). Record
+   the answer, the date, and the ClickHouse **user** it was read as (see FOLLOW-880).
+2. **§8 routes ownership to the wrong ticket.** FOLLOW-822 owns drift **detection**; **FOLLOW-853**
+   owns this exact defect, was filed in session 103 from FOLLOW-845 with the same root cause, and is
+   uncited. Rule P.
+3. **§6 mis-attributes one of its three zero counts.** The hop-11 row sends
+   `events 0, intent_events 0, adaptation_decisions 0` to "See §8", but §8 covers only the two
+   ingest writers. `adaptation_decisions` has exactly one writer in the repo —
+   `apps/control-plane/src/app/api/adapt/route.ts:482` — and the control-plane was never running.
+   **That zero would still be zero with the Code-27 defect fully fixed.** Document the control-plane
+   as the seventh process of the substrate (bring-up or explicit non-goal), because FOLLOW-819 AC(3)
+   requires a row from it.
+4. **The fidelity table omits the delta §8 itself proves matters.** §0/§3.5 establish that the local
+   ClickHouse is CI-representative (25.8, same image); they never say it is **not**
+   prod-representative (Cloud **26.4.1**, different `date_time_input_format` default). Add the
+   version/profile delta to §0 and cross-reference FOLLOW-621.
+5. **§4's restore instruction crosses two trees §1 declares non-interchangeable.** _"restore the
+   whole file from `git show 9d2df9d:src/app.html` in the sibling tree"_ takes a 2026-05-31
+   `app.html` from `Estalara-app` and offers it as the restore for `Estalara-app-new`, whose own
+   `app.html` hashes `fb1708b9f63e4378`. On a tree with no git and no remote that is an
+   unrecoverable overwrite. Replace with "keep a copy of the file's pre-edit bytes before editing"
+   plus the recorded sha256.
+
+**AC:** all five corrected in one pass; (6) each correction states its evidence inline (the
+runbook's own standard), so the document keeps its property that every claim is a pasted
+observation.
+
+cross_ref: [RETRO-259 §4a LG-3 / §4d DG-2..DG-5; FOLLOW-816 (PR #690); FOLLOW-853; FOLLOW-822;
+FOLLOW-621; FOLLOW-819 AC(3); `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §0/§4/§6/§8;
+`apps/control-plane/src/app/api/adapt/route.ts:482`; Rule P; Rule AH]
+
+---
+
+## FOLLOW-880 — FOLLOW-853's own record contradicts itself, its citation is stale, and the prod probe that closed the P0 is recorded without the user it ran as
+
+source_retro: RETRO-259 source_ticket: FOLLOW-853 recommended_sprint: next recommended_agent:
+data-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+Four record-integrity defects on the ticket that owns the Worker→ClickHouse write path. Each is one
+line to fix and each currently misleads its next reader:
+
+1. **Priority contradiction.** The stub's PM UPDATE says _"RE-PRICED P2 → P1"_ and QUEUE.md's
+   session-104 head says _"FOLLOW-853 (already P1)"_, while the machine-readable metadata line still
+   reads `priority: P2` **and** `**FROZEN** — session-95 standing rule`. The session-95 rule carves
+   out P1 (see FOLLOW-811's note), so the two fields are mutually inconsistent as well as
+   inconsistent with the prose.
+2. **Stale citation.** `cross_ref` and the body cite
+   `apps/ingest/src/clickhouse-producer.ts:102-103`; the `toISOString()` calls are at **`:134-135`**
+   and have been since PR #170
+   (`git show 054b0139:apps/ingest/src/clickhouse-producer.ts | grep -n toISOString` → 134,135),
+   i.e. the citation was wrong when written, not drifted.
+3. **The probe's verdict is recorded without its profile.** `date_time_input_format` is a
+   **per-user-profile** setting in ClickHouse; `SELECT value FROM system.settings` answers for the
+   session issuing it. The record does not name the user the probe ran as — the only inference
+   available is that the same read failed for lack of `SELECT` on `default.events`, which suggests
+   but does not establish `ingest_worker`. **AC(4) must record `currentUser()` alongside the value
+   and the date**, or the "no prod outage" verdict rests on a read that may describe a different
+   profile from the Worker's.
+4. **The producer comment argues the wrong property.** `clickhouse-producer.ts:127-133` justifies
+   ISO-8601 strings on JSON-number **precision** grounds and never mentions `date_time_input_format`
+   — the setting the choice actually depends on. Whoever executes AC(1) will read it as the
+   rationale of record; correct it in the same PR.
+
+**AC:** (1) the four items above corrected in place; (2) FOLLOW-853's `priority:` field and FROZEN
+marker reconciled with the PM's re-price, whichever way the PM rules; (3) AC(4) of FOLLOW-853
+extended to record the probe user/profile; (4) no re-derivation of the prod value — it is recorded,
+dated 2026-08-07.
+
+cross_ref: [RETRO-259 §5a / §4b CB-2; FOLLOW-853; FOLLOW-845; RETRO-252;
+`apps/ingest/src/clickhouse-producer.ts:127-135`; `backlog/QUEUE.md` session-104 head]
+
+## FOLLOW-881 — MASTER_DESIGN's gating ladder describes a gate the SDK does not have, in three places, and it is the document FOLLOW-819's author boots from
+
+source_retro: n/a (FOLLOW-875, session 104) source_ticket: FOLLOW-875 recommended_sprint: now
+recommended_agent: architect priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Filed by the FOLLOW-875 worker who deliberately did NOT fix it in-place.** MASTER_DESIGN edits
+carry the §Y.2 propagation checklist and are architect work — the same reason RETRO-259 DG-1 routed
+the ESC-052 Master_Design correction to FOLLOW-878 (+ architect) rather than to the ticket that
+found it. But leaving it is the exact failure RETRO-259's second headline names: a correction that
+stops one document short of the source of truth.
+
+**Three statements, all describing the same code, all wrong in the permissive direction. Verified
+against HEAD, not inferred:**
+
+1. **`docs/MASTER_DESIGN.md:765`** (§Component 1) — _"DOM adaptation is gated by
+   `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` ...; below this threshold `adapt-floor` returns `[]` and no
+   mutation is applied."_ Two errors: the gate is a **disjunction** with
+   `signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT` (`index.ts:827-829`), so "below this threshold no
+   mutation is applied" is false; and `adapt-floor` is a two-constant module that returns nothing —
+   it has no code path at all.
+2. **`docs/MASTER_DESIGN.md:2521-2528`** (the FOLLOW-354 gating-ladder note before §E.7.1) — states
+   the SDK floor is the description axis's **sole** gate and that _"No third SDK gate exists"_. The
+   `signal_count` branch is a second SDK gate on both axes and is not mentioned anywhere in the
+   ladder. The note's closing "practical implication" paragraph is also narrower than the code: it
+   describes the 0.50–0.59 band only, when the same permissiveness holds at ANY confidence once
+   `signal_count >= 2`.
+3. **`docs/MASTER_DESIGN.md:2692`** (§E.7.9 cross-reference to D.5) — repeats "sole gate".
+
+Additionally, all three describe the server gate as `0.6` without noting that `route.ts:275` is
+`confidence <= CONFIDENCE_THRESHOLD`, i.e. the bar is **strictly greater than 0.6** and exactly 0.6
+returns `[]`. That is the specific number FOLLOW-819's exit test has to design against, and
+FOLLOW-875 has already had to correct it in two live stubs.
+
+**AC:** (1) the three statements corrected to describe the shipped disjunction and the strict server
+comparison, citing `index.ts:827-829` and `route.ts:86,275`; (2) the ladder note records the
+description axis's full guard set (disjunction → `archetype !== 'neutral'` → slot/listing-id
+presence → `source === 'ai_cached'`), matching the corrected docblock in
+`packages/sdk/src/core/adapt-floor.ts`; (3) §Y.2 propagation performed and stated (expected: items
+1-3, 6, 7 are no-ops — no section renames; item 4 QUEUE.md is PM-owned; item 5 STATUS.md only if
+§Snapshot.1 moves, which this should not); (4) if the ladder's "intentional" framing survives the
+ESC-054 ruling, say so explicitly and cite the ruling — do not leave the reader to infer intent from
+a sentence written before the disjunction was visible.
+
+cross_ref: [FOLLOW-875; FOLLOW-877; ESC-054; RETRO-259 §4b CB-1 / DG-1; FOLLOW-878 (same class, the
+staging axis); `docs/MASTER_DESIGN.md:765,2521-2528,2692`; `packages/sdk/src/core/adapt-floor.ts`;
+`packages/sdk/src/__tests__/follow-877.test.ts`]
+
+---
+
+<!-- next free FOLLOW number: 883 — updated 2026-08-07 when PR #691 was merged up to main: FOLLOW-874
+is no longer RESERVED but FILED (the devops-engineer landed it in this branch), and FOLLOW-882 was filed by
+the PM from the FOLLOW-881 architect's fourth-site finding. The 874/875 split across two branches is exactly
+the tail-of-FOLLOW_UPS conflict Rule AN's allocation discipline is meant to survive: it did — the merge
+conflicted on content, not on a duplicated number.
+     (superseded note) next free FOLLOW number: 882 (FOLLOW-881 filed 2026-08-07 by the FOLLOW-875 worker: MASTER_DESIGN's
+gating ladder repeats the corrected "sole gate" claim in three places and omits the strict `> 0.6` server
+comparison — architect-owned because Master_Design edits carry §Y.2. FOLLOW-875..880 filed 2026-08-07 by RETRO-259, the post-merge retro for
+PR #690 / FOLLOW-816. FOLLOW-874 is RESERVED for the devops-engineer running FOLLOW-817 concurrently in
+.claude/worktrees/follow-817 — allocated against main per Rule AN, not guessed. 875 = P1, the headline: hop
+10's red is attributed to a gate that did not fire (SDK apply gate is a DISJUNCTION whose signal_count>=2
+branch was true all session; the deciding gate is route.ts:275's server-side `confidence <= 0.6 -> []`), and
+FOLLOW-819 AC(1) + FOLLOW-872 AC(3) already carry the wrong denominator. 876 = P1 HALF_WIRE_P, the run
+artifact captures requests and never responses. 877 = P2 FROZEN, adapt-floor.ts's docblock vs the disjunction
+— FOLLOW-343's cold-start guard is bypassed by two behavioral signals on the description axis. 878 = P1,
+ESC-052's correction set omits MASTER_DESIGN:5348-5349/5387-5399 and four live stubs incl. IN_PROGRESS
+FOLLOW-817. 879 = P2 FROZEN, five corrections to the substrate runbook. 880 = P2 FROZEN, FOLLOW-853 record
+integrity + the probe's unrecorded user/profile. Session-95 FROZEN rule applied to every P2; the three P1s
+are unfrozen per its own carve-out.) -->
+
+---
+
+## FOLLOW-882 — §E.4.6's gate pseudocode is a fourth site of the corrected claim: `<` instead of `<=`, a per-tenant tunable that does not exist, and no `signal_count` branch
+
+source_retro: n/a (FOLLOW-881, session 104) source_ticket: FOLLOW-881 recommended_sprint: next
+recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Found by the FOLLOW-881 architect, deliberately left in place, and independently re-verified by
+the PM before filing.** FOLLOW-881's stub named three sites; this is a fourth the stub did not name
+— the same error class, one document section away. It was recorded in Changelog v4.5 so the SoT
+admits the residual drift rather than silently carrying it.
+
+Verified at HEAD:
+
+1. **`docs/MASTER_DESIGN.md:2437`** — pseudocode reads `if confidence < CONFIDENCE_THRESHOLD (0.6)`.
+   The code is `<=` (`apps/control-plane/src/app/api/adapt/route.ts:275`), so exactly 0.6 returns
+   `[]`. The doc is permissive at the boundary; the code is not.
+2. **`:2440`** — _"CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)"_. `route.ts:86` is
+   a hard module constant (`const CONFIDENCE_THRESHOLD = 0.6;`) and grep finds no per-tenant
+   mechanism anywhere in HEAD. A reader planning a 0.4 pilot would be planning against a knob that
+   does not exist.
+3. The pseudocode shows **no `signal_count` branch at all**, so it reproduces exactly the omission
+   FOLLOW-881 corrected at the other three sites.
+
+**AC:** (1) all three corrected against HEAD, citing `route.ts:86,275` and `index.ts:827-829`; (2)
+if a per-tenant threshold is actually wanted, that is a product decision and gets its own stub or
+escalation — do NOT silently delete the sentence and leave the intent unrecorded; (3) §Y.2
+propagation stated (expected no-op — no section rename); (4) a grep sweep for any FIFTH site before
+closing: three correction rounds have each found more, so the closing evidence must be
+`grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md` with every hit
+adjudicated in the close note, not a claim that the document is now clean.
+
+cross_ref: [FOLLOW-881 (PR #693); FOLLOW-875; FOLLOW-877; ESC-054; RETRO-259;
+`docs/MASTER_DESIGN.md:2437-2440`; `apps/control-plane/src/app/api/adapt/route.ts:86,275`]

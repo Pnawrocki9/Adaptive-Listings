@@ -86,8 +86,8 @@ Next free stub: **FOLLOW-874**.
 
 ### Dispatched: FOLLOW-817 (P1, devops-engineer, Opus)
 
-**FOLLOW-817 — status: IN_PROGRESS** — **assigned_to:** devops-engineer **model:** **Opus**
-**started_at:** 2026-08-07 **branch:**
+**FOLLOW-817 — status: READY_FOR_REVIEW** (PR **#691**, `fec4ba89`, CI verified 77/2) —
+**assigned_to:** devops-engineer **model:** **Opus** **started_at:** 2026-08-07 **branch:**
 `devops-engineer/FOLLOW-817-modal-deploy-intent-data-quality`. Model justification: cross-system
 (GitHub Actions + Modal + Doppler + the ingest Worker's env), and its sharpest AC is a **verdict
 correction** to §Snapshot.1 that requires judging shipped-vs-deployed — reasoning work, not
@@ -113,7 +113,226 @@ environment is to be treated as stale record, not as a target.
 and FOLLOW-816's retro remains outstanding). FOLLOW-873 and the re-scoped FOLLOW-818 are both READY
 and unblocked but held to keep one ticket in flight.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs.**
+### FOLLOW-817 delivered → PR #691 (READY_FOR_REVIEW, awaiting Piotr)
+
+CI verified with `scripts/gh-pr-checks-verified.sh 691`, not with the worker's word: **77 pass / 2
+fail**, both `Rule I` with a symbol set byte-identical to main's baseline (192/192, **0 new, 0
+fixed**), exit 0. **5 of 7 ACs discharged; the two open ones were left honest rather than fudged.**
+
+- **AC(3) FAILS → ESC-053 (new, operator, ~10 min).** `estalara-secrets` lacks
+  `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DATABASE_URL`. It is a **name-pair
+  mismatch**: Modal carries the control-plane's `UPSTASH_REDIS_URL`/`_TOKEN`, while
+  `redis_writer.py:40-41` reads the `_REST_` names — the same both-name-pairs trap
+  `MODAL_PROD_STANDUP.md §5` already documents for Redpanda and missed for Upstash.
+- **AC(7) NOT discharged, deliberately.** ESC-042 item 1 stays OPEN because no deploy has happened;
+  marking it RESOLVED would have been a false status (Rule AA).
+
+**ESC-042's own text is wrong in the dangerous direction.** It predicted a credential mismatch would
+be "a silent null-read, not an error". It is a hard `KeyError` — raised inside a `.spawn()`
+**after** `chat_nlp_endpoint` returned 202, so the Worker (which inspects only HTTP status) logs
+nothing and Sentry sees nothing. Measured on localhost: a `chat.message.sent` POST returned
+`{"accepted":1,"rejected":0}` / HTTP 200 with the shadow key still `null`. **A prod deploy over this
+secret would look exactly like success.**
+
+Two further contradictions the ticket fixed rather than reported: `schema_validation.py` declared no
+`image=` (the 02:00 UTC cron would have died at container import, nightly, unobserved), and
+`MODAL_PROD_STANDUP.md §7`'s deploy sketch does not work at all (`ModuleNotFoundError`, reproduced)
+— now marked SUPERSEDED.
+
+**Merge is gated on an accepted red, and the sequencing matters.** On merge the two new jobs go RED
+by design: a hard pre-deploy gate refuses to deploy over the ESC-053 gap. That red is the intended
+signal — the alternative is two apps that deploy green and are dead. It does **not** pollute other
+PRs, since `modal-deploy.yml` is `push: main`-only. **Recommended order: execute ESC-053 first (~10
+min, Modal web console, add keys individually — `modal secret create --force` WIPES the secret and
+would take the live description pipeline down), then merge #691, then `workflow_dispatch` and
+confirm `modal app list` shows all three apps `deployed`.** That closes ESC-042 item 1 and unblocks
+FOLLOW-820.
+
+### RETRO-259 landed — and it overturns this session's headline number
+
+**The 0.3655-vs-0.5 framing that FOLLOW-816, this queue, and the session report all used is
+misattributed.** Verified directly, not taken on the retro's word:
+
+- `packages/sdk/src/index.ts:827-829` is a **disjunction** —
+  `resp.confidence >= 0.5 || signal_count >= 2`. The run emitted `intent.snapshot` (which fires
+  every 5 signals), so the signal-count branch was true all session and **the 0.5 floor suppressed
+  nothing**.
+- The gate that actually decides whether directives exist is **server-side and higher**:
+  `apps/control-plane/src/app/api/adapt/route.ts:86,275` returns
+  `{directives: [], source: 'default'}` when `confidence <= CONFIDENCE_THRESHOLD = 0.6`.
+
+The conclusion survives — 0.3655 < 0.5 < 0.6, so hop 10 is still correctly red — but **the
+denominator does not**. FOLLOW-819 AC(1) names 0.5 in writing and FOLLOW-872 AC(3) tells FOLLOW-819
+to inherit that framing, so a differentiator reaching **0.55 would clear the stated bar, go green
+against the local mock, and still get `[]` from the real endpoint**. FOLLOW-819's AC is annotated in
+place with the correction; **FOLLOW-875 (P1)** owns the durable fix.
+
+**Rule promoted: one, as an amendment.** Rule S amended (2026-08-07 block) — _a deferred sibling's
+justification MUST be a filed FOLLOW-NNN, never prose_ — discharging RETRO-250's arming set on
+clause (b) at count 2. Clause (a) was tested and **refused**. Rule count stays **43** (AA–AQ). The
+interrupted-session class was **not** promoted (5th sighting, but the first with zero loss, and the
+remedy is already owned by FOLLOW-448/573/645). Minted at count 1: **P-39**.
+
+**Stubs filed: FOLLOW-874 … FOLLOW-880.** 874 (devops, from FOLLOW-817: `[env.dev]` inherits no
+KV/DO/queue bindings so `wrangler dev --env dev` 401s every `POST /v1/events`; and
+`jobs/batch_enrich.py`, the §C.3 Sonnet batch tier, is unreachable from `main.py`). 875 P1 (gate
+misattribution), 876 P1 (the run artifact captures request bodies but never responses), 877 P2, 878
+P1 (**ESC-052's correction set omitted `MASTER_DESIGN.md` — the SoT still asserts a "Supabase
+staging project" and "Brak shared secrets między environments", both now false; FOLLOW-873's AC(5)
+is extended accordingly**), 879 P2, 880 P2. Next free stub: **FOLLOW-881**.
+
+### Dispatched: FOLLOW-875 + FOLLOW-877 together (sdk-engineer, Opus)
+
+**FOLLOW-875 + FOLLOW-877 — status: DONE** — PR **#692** squash-merged as `e55063b0`; merged content
+re-verified on `main` (`packages/sdk/src/__tests__/follow-877.test.ts` present, runbook §9.1/§9.2
+present, ESC-054 and the FOLLOW-881 stub now on `main`). FOLLOW-877 AC(1) is the only undischarged
+AC and it is a CEO/CPO decision (ESC-054), not work. — — **assigned_to:** sdk-engineer **model:**
+**Opus** **started_at:** 2026-08-07 **branch:**
+`sdk-engineer/FOLLOW-875-877-confidence-gate-attribution` **worktree:**
+`.claude/worktrees/follow-875`. Model justification: the finding spans `packages/sdk`
+
+- `apps/control-plane`, and AC(5) is an open judgement — whether `> 0.6` is reachable from behavior
+  alone — which becomes FOLLOW-819's problem statement. Reasoning work, not a text fix.
+
+**FOLLOW-877 UNFROZEN and folded into the same PR (PM decision).** It is P2 and the session-95 rule
+would keep it frozen, but both stubs correct the **same docblock in the same file**
+(`packages/sdk/src/core/adapt-floor.ts`) about the **same disjunction**. Shipping them separately
+guarantees a merge conflict and makes two agents re-derive one analysis. FOLLOW-875 stays the
+headline; 877 rides along.
+
+**Split enforced at dispatch — docs/tests now, behavior later.** FOLLOW-877 AC(1) asks whether the
+disjunction is _intended_ on the description axis, i.e. whether two scroll events should be allowed
+to bypass FOLLOW-343's cold-start guard for LLM-generated copy. That is a **behavior change on a
+live-ish surface**, so the worker ships the docblock correction and the locking tests
+unconditionally and _proposes_ any gate change (escalation or ADR) rather than shipping it
+unilaterally. The pilot page is not live (FOLLOW-820), so nothing is on fire — this is a
+correctness-of-record fix plus a decision request.
+
+### FOLLOW-875 + 877 delivered → PR #692. The 0.3655 is NOT a behavioral ceiling.
+
+CI verified independently (`gh-pr-checks-verified.sh 692`, exit 0): 79 pass / 2 fail, Rule I
+symbol-set identical to main (192/192, **0 new**). Bundle delta **0 bytes** (ESC-051 headroom
+untouched). FOLLOW-875 all 5 ACs discharged; FOLLOW-877 AC(2)(3)(4) discharged, AC(1) routed to
+ESC-054 exactly as the dispatch required.
+
+**Third correction to the same number, and this one is substantive — I recomputed it rather than
+accepting it.** `normalize(BASE_PRIOR × damped(device_type.desktop, 0.3)).neutral` =
+**0.3655466399197593**, matching the FOLLOW-816 peak to sub-ULP (5.6e-17 — JS/Python summation-order
+noise). Derived from `intent.ts:184` BASE_PRIOR and the `device_type.desktop` table at `:330-348`,
+whose `neutral: 0.95` entry I missed on the first pass; with it the value reproduces exactly.
+
+**So 0.3655 is the COLD-START PRIOR at `t=0`, reached before any behavioral event.** `neutral`'s
+BASE*PRIOR is 0.37; the desktop hint pushed it \_down* to 0.3655. Behavior did not climb to a
+ceiling — it barely moved the needle. This explains the bit-identical `PASSES=4` result far better
+than the "observer saturation" reading this queue carried: the value is set at init, so re-running
+the session cannot change it.
+
+**Corrected problem statement for FOLLOW-819:** `> 0.6` is **not reachable on the pilot page at any
+session length** — 47 `listing.viewed` events to unseat `neutral` past the 0.05 hysteresis, 139 to
+pass 0.6, before decay; plus a fixed point, since `applyDwellSignal` no-ops while
+`archetype === 'neutral'`, so the page cannot create the leader dwell would reinforce. It **is**
+reachable off this page via two events that **bypass `BEHAVIORAL_DAMPING` entirely** —
+`filter.applied` (7 events → 0.640) and `feature.expanded` (11 → 0.651), which apply their boosts to
+the already-normalized posterior. **That asymmetry is documented nowhere and is the actionable half
+of FOLLOW-819.** For the pilot page as it exists: **quiz or chat is required.**
+
+**Two things need routing (PM has NOT actioned either):**
+
+- **ESC-054 — CEO/CPO decision.** Should two scroll events bypass FOLLOW-343's cold-start guard on
+  the description axis? Worker's recommendation: keep the disjunction, raise the description-axis
+  bar to `signal_count >= 5` (the boundary the SDK already treats as "enough evidence to report").
+  Test D-1 flips to record whichever way it is ruled.
+- **FOLLOW-881 (P1, architect) — `MASTER_DESIGN.md` carries the corrected claim in three places**
+  (`:765`, `:2521-2528`, `:2692`: "sole gate", "No third SDK gate exists", and `:765` asserting
+  `adapt-floor` "returns `[]`" when it is a two-constant module returning nothing). The worker
+  correctly did **not** edit the SoT — §Y.2 propagation is architect work, the same routing
+  RETRO-259 used. **FOLLOW-819 must not start until FOLLOW-881 lands**, or its author boots from a
+  still-wrong Master_Design.
+
+**Also found:** FOLLOW-875's own stub mis-cited `intent.ts:164` for `BEHAVIORAL_DAMPING` (it is
+`core/intent.ts:549`; `:164` is the FOLLOW-212 note on `SWITCH_MARGIN`). **Four conditions empty
+`directives` before confidence is consulted** — AL OFF/suspended, `profiling_opt_out=1`,
+consent-skip, holdout arm — named by no stub; added to FOLLOW-819 AC(1). And a **mock-fidelity gap
+found by running the harness**: production `route.ts` echoes the client confidence, the mock does
+not (request 0.3655, response 0.1, `mock-decision-server.mjs:519`), so AC(2)'s literal wording would
+have asserted against the mock's fiction — the assertion now requires **both** sides to clear the
+gate.
+
+**Not discharged, stated plainly by the worker:** the full pilot stack was not brought up, so §6's
+hop table was not re-run (expect `5/9`, not `6/8`) and the negative control was not re-executed;
+FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
+
+### Dispatched: FOLLOW-881 (architect, Fable)
+
+**FOLLOW-881 — status: READY_FOR_REVIEW** (PR **#693**, CI verified exit 0 — Rule I 192/192, **0
+new**; two independent runs of `gh-pr-checks-verified.sh` agreed after the initial `pending` checks
+settled) — ~~IN_PROGRESS~~ — **assigned_to:** architect **model:** **Fable** **started_at:**
+2026-08-07 **branch:** `architect/FOLLOW-881-master-design-gating-ladder` **worktree:**
+`.claude/worktrees/follow-881`. Model justification: this is a **Master_Design revision** carrying
+the §Y.2 propagation checklist, on the document every future ticket boots from — the model-fit table
+names Master*Design revisions as Fable work explicitly, and the failure mode (shipping a \_new*
+wrong claim into the SoT) is the expensive one.
+
+**Coordination — two open PRs, kept to disjoint files.** The FOLLOW-881 stub exists only in PR
+#692's branch, so it was passed to the architect in the dispatch brief rather than read from `main`.
+The worker branches from `main` and edits **`docs/MASTER_DESIGN.md` only** — it must NOT touch
+`backlog/FOLLOW_UPS.md` (that would conflict with #692) and must not touch `packages/sdk` (#692 owns
+the docblock). PR #691 also edits MASTER_DESIGN but in §Snapshot.1 rows A.1/B.6, a disjoint section.
+
+**ESC-054 is UNRULED, and the dispatch forbids pre-empting it.** Stub AC(4) asks the architect to
+cite the ESC-054 ruling if the ladder's "intentional" framing survives it. No ruling exists yet, so
+the instruction is: describe what the code **does**, record ESC-054 as the open question against the
+exact sentence it would change, and assert **no** intent the ruling has not settled. Writing
+"intentional" into the SoT ahead of the decision is precisely the class of error this ticket exists
+to remove.
+
+**FOLLOW-875 + 877 MERGED (`e55063b0`).** Verified before merging, not after:
+`gh-pr-checks-verified.sh 692` exit 0, and `mergeable` re-read three times (the session-103 lesson —
+a single `gh pr view` during propagation is not evidence) returning `MERGEABLE` / `UNSTABLE`, the
+UNSTABLE being the documented pre-existing Rule I red. Squash-merged, worktree removed, branch
+deleted. **RETRO-260 for FOLLOW-875/877 is NOT yet written.**
+
+### FOLLOW-881 delivered → PR #693, and the finding got sharper
+
+**The architect has no Bash tool** (RETRO-174 §5a), so it applied the edits in the worktree and
+could not commit. PM ran the commit, push and `gh pr create` on its behalf — the sanctioned
+applied-by-orchestrator route. Only `docs/MASTER_DESIGN.md` changed; `FOLLOW_UPS.md`, `QUEUE.md`,
+`packages/sdk/**` and §Snapshot.1 untouched, so the file boundaries held against both other PRs.
+Version 4.4 → 4.5 with §Y.2 propagation stated item by item.
+
+**I reviewed the diff rather than rubber-stamping it, and verified its one NEW claim.** The text now
+asserts that the init-time `device_type` prior consumes a signal. Checked at HEAD:
+`index.ts:1031-1036` applies `device_type.*` through `applyBehavioralSignal()`, which increments
+`signal_count` (`intent.ts:1038`), and `DOM_ADAPT_MIN_SIGNAL_COUNT = 2`. **So a SINGLE real
+behavioral event opens the gate at any confidence** — sharper than FOLLOW-877's stub, which assumed
+two. FOLLOW-343's cold-start guard is bypassed by one scroll milestone. **This raises the stakes of
+ESC-054; the recommendation there (`signal_count >= 5`) should be read against one event, not two.**
+
+AC(1)(2)(3) discharged. AC(4) discharged the only honest way available: the ruling-citation half is
+**not dischargeable** because ESC-054 is unruled, so the "This is intentional" sentence is withdrawn
+_with its reason_ and every passage now names ESC-054 as the open question against the exact
+sentence a ruling would change. No intent is asserted anywhere in the SoT.
+
+**Two of the architect's three reported stubs were already covered — checked, not assumed:**
+
+- Runbook §9 reframe → **already fixed** by the merged #692 (`§9.2 "What 0.3655 actually is"`). The
+  architect branched before that merge and could not see it.
+- Worktree-blind branch guard → **already FOLLOW-849**, now its **fourth** independent sighting
+  across three sessions. Re-priced **P2 → P1 and unfrozen**: four workers have each paid analysis
+  time to rediscover it, which now exceeds the 2h fix. Its framing is worth keeping — _"a guard that
+  cries wolf on the sanctioned no-Bash-agent workflow will eventually be ignored on the day it is
+  right."_
+
+**FOLLOW-882 filed (P2, FROZEN)** — the genuinely new one, re-verified by me before filing: §E.4.6's
+pseudocode is a **fourth** site of the same claim (`<` where the code is `<=`; a
+`CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)` knob that does not exist —
+`route.ts:86` is a hard module constant; and no `signal_count` branch). Left in place deliberately
+and recorded in Changelog v4.5 so the SoT admits the drift. Its AC(4) requires a grep sweep for a
+**fifth** site before closing, since three correction rounds have each found more. Next free stub:
+**FOLLOW-883**.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED on ESC-053, gate
+verified still reporting 3 keys MISSING) and #693 (CI VERIFIED, awaiting Piotr's merge).**
 
 ---
 
@@ -21829,6 +22048,13 @@ FOLLOW-815.
           first-and-only (the double-apply was the only reason a bad migration failed twice).
     - [ ] `stg` Doppler config deleted or renamed so nothing can point at it believing it is
           isolated (operator step; record what was done).
+    - [ ] EXTENDED by RETRO-259/FOLLOW-878: the original list below omitted the SOURCE OF TRUTH
+          itself. docs/MASTER_DESIGN.md:5387-5399 still asserts a "Supabase staging project" AND
+          "Brak shared secrets między environments" — both disproved by ESC-052 — and :5348-5349
+          says staging deploys read `config=dev`, which db-migrate.yml contradicts by using
+          `--config stg`. Under Operating Principle 1 a wrong SoT is the worst place to leave this.
+          FOLLOW-878 (P1) carries the authoritative enumerated correction set; treat it as the
+          checklist, not this line.
     - [ ] Stale records corrected too: ESC-023 (records the gate as successfully activated),
           RETRO-113's staging→prod claim, memory project_postgres_migrations_no_autoapply. Leaving
           them is how ESC-052 survived its whole life.
@@ -21855,6 +22081,15 @@ FOLLOW-815.
     measurement the product has ever taken, and FOLLOW-212 calibration depends on knowing the true
     starting accuracy rather than assuming it.
     AC — one scripted session must produce all five, each an independent assertion:
+    - [ ] ⚠️ THRESHOLD CORRECTED BY RETRO-259 (2026-08-07) — DO NOT BUILD TO 0.5. The number in
+          the next line is WRONG; FOLLOW-875 (P1) owns the fix. Verified:
+          packages/sdk/src/index.ts:827-829 is a DISJUNCTION (`resp.confidence >= 0.5 ||
+          signal_count >= 2`), so the 0.5 floor suppresses nothing once two behavioral signals
+          exist. The gate that actually decides whether directives exist is SERVER-side and higher:
+          apps/control-plane/src/app/api/adapt/route.ts:86,275 returns `{directives: [], source:
+          'default'}` when `confidence <= CONFIDENCE_THRESHOLD = 0.6`. A differentiator reaching
+          0.55 clears the bar as written below, goes green against the local mock, and still gets
+          [] from the real endpoint. Build to > 0.6, measured against the REAL /api/adapt.
     - [ ] A non-neutral archetype above DOM_ADAPT_CONFIDENCE_FLOOR = 0.5
           (packages/sdk/src/core/adapt-floor.ts). Reaching this from behavioral signals ALONE is
           itself the finding, given ~11 live behavioral discriminators (F-07). If it is only

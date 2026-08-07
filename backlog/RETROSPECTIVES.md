@@ -55013,3 +55013,473 @@ session's last hour: prod consent_records is empty, and C-07's storage claim is 
 2026-06-19. The rabbit-hole was worth entering and was three generations too deep before anyone asked what it
 cost; what bounded it was not a decision but a P0 with a deadline. Filed FOLLOW-870. QUEUE.md /
 ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+## RETRO-259 — FOLLOW-816 (#690) — six of eight hops are honestly green, and the gate the headline red names is not the gate that bit — 2026-08-07
+
+**THE HEADLINE: THE 0.3655 IS REAL, REPRODUCIBLE AND LOAD-BEARING — AND IT IS MEASURED AGAINST A
+CONSTANT THE DECIDING CODE DOES NOT READ. I DROVE BOTH AXES THROUGH THE SOURCE.** The runbook (§9)
+and the harness (`scripts/dev/local-pilot-session.mjs:~232-247`) assert peak confidence against
+`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` and conclude _"structurally unreachable from behavior alone"_.
+Two independent things are wrong with the attribution, neither of which touches the number:
+
+1. **The SDK's apply gate is a DISJUNCTION and its second branch was true for essentially the whole
+   session.** `packages/sdk/src/index.ts:827-829`:
+
+   ```ts
+   const aboveFloor =
+     resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR ||
+     currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT; // 2
+   ```
+
+   The run emitted `intent.snapshot`, which the harness's own comment says fires **every 5
+   behavioral signals** — so `signal_count ≥ 2` was satisfied long before the last `/adapt` call.
+   `applyDirectives()` **ran**. The floor did not suppress anything. `adapt-floor.ts:36-44` documents
+   `DOM_ADAPT_MIN_SIGNAL_COUNT` in as many words: _"apply mutations when at least this many
+   behavioral signals have accumulated, **regardless of confidence level**"_.
+
+2. **The gate that actually decides whether directives exist is server-side and is 0.1 higher.**
+   `apps/control-plane/src/app/api/adapt/route.ts:86,275` — `const CONFIDENCE_THRESHOLD = 0.6;` and
+   `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [], source: 'default' };`, over the
+   **client-sent** `body.confidence ?? 0.5` (`:1224,:1278`). The SDK says so itself, at the line the
+   worker read to write §9 — `index.ts:731-737`: _"`body.confidence` … is sent to the Decision API,
+   which BOTH gates directives server-side (`confidence <= 0.6 → no directives`, route.ts) AND echoes
+   the value into `resp.confidence`"_.
+
+**So the DOM was byte-identical because the endpoint returned `directives: []` for a `neutral` hint,
+not because a floor held the SDK back** — and the bar the next ticket has to clear is **strictly
+greater than 0.6**, not "≥ 0.5". The conclusion _"behavior alone did not produce an adapted DOM on
+this page"_ survives intact (0.3655 < 0.5 < 0.6). The **number FOLLOW-819 must design against does
+not**: a differentiator that reaches 0.55 satisfies the runbook's stated bar, flips this harness
+green, and still receives `[]` from the real endpoint. **FOLLOW-819 AC(1) already names 0.5 in
+writing** (`FOLLOW_UPS.md:27191-27193`), and **FOLLOW-872 AC(3) — filed from this same merge —
+instructs FOLLOW-819 to inherit the measurement rather than re-derive it.** The misattribution is
+already propagating into the exit test for the entire localhost stage. → **FOLLOW-875 (P1)**.
+
+**SECOND HEADLINE: ESC-052'S BLAST RADIUS STOPS ONE DOCUMENT SHORT OF THE SOURCE OF TRUTH.**
+FOLLOW-873 AC(5) enumerates the artefacts to correct — `ESC-023`, `RETRO-113`, the memory note. Two
+greps say the set is materially larger, and the omission is at the top:
+`docs/MASTER_DESIGN.md:5387-5399` describes environment `staging` as _"pre-prod testing, real schema,
+fake data … Supabase staging project"_ and asserts **`Brak shared secrets między environments`** —
+the precise claim ESC-052 disproved by sha256. `:5348-5349` adds _"Staging deploys read from
+`config=dev` (same token)"_, which `db-migrate.yml:100` (`--config stg`) contradicts. Master_Design is
+the document every session boots from (OPERATING_PRINCIPLES Rule 1) and edits to it carry the §Y.2
+propagation checklist; it is not in the list. Neither are `apps/ingest/wrangler.toml:94-100`,
+`load-test.yml:22-48`, `post-migrate-seed.yml:15`, `ci.yml:27`, `deploy-staging.yml`, ten runbooks
+under `docs/runbooks/` + `docs/ops/`, or the **durable stub texts of FOLLOW-817/818/819/820**. →
+**FOLLOW-878 (P1)**, and note the live edge: FOLLOW-817 is IN_PROGRESS **right now** against a stub
+whose AC(4)/AC(6) still say "staging"; the re-scope exists only in a QUEUE.md dispatch brief.
+
+**THIRD HEADLINE: TWO OF THE FOUR FINDINGS ARE REDISCOVERIES OF FILED TICKETS, AND THE MERGED
+RUNBOOK ASKS THE READER TO GO ANSWER A QUESTION THIS ESTATE HAD ALREADY ANSWERED.** §8's Code-27
+defect is **FOLLOW-853**, filed in session 103 from FOLLOW-845, same root cause, same
+`best_effort` proof, and already re-priced on the strength of it. §7's items 2-3 (no bindings, no
+DNS, `deploy-staging.yml` calling itself a smoke) are **FOLLOW-810**, filed and closed 2026-08-04.
+Neither is cited anywhere in the PR, the runbook, ESC-052 or FOLLOW-873. Worse, §8 ends with _"the
+first thing to check, and it is one query"_ and a `basic → P0` fork — **that query had already been
+run against prod this session** (`best_effort`, ClickHouse 26.4.1; recorded in FOLLOW-853's PM
+UPDATE). The merged runbook therefore ships a live P0 fork that is closed, pointed at the wrong owner
+(FOLLOW-822 owns *drift detection*; FOLLOW-853 owns *this defect*). **Rule P fires as a compliance
+failure against an adequate control** — the sixth consecutive retro to reach that adjudication
+(RETRO-247, 248, 252, 253, 255). → **FOLLOW-879 (P2)**.
+
+**WHAT THE PR GOT RIGHT, STATED PLAINLY BECAUSE IT IS THE REASON THE ABOVE IS FINDABLE AT ALL.** The
+negative control was **executed, not asserted** (ingest killed → 6/8 becomes 5/8, hop 4 flips) — that
+is the discipline four prior retros have been asking workers for, applied unprompted to a
+non-CI script. AC(2) was reported **BLOCKED with the reason**, not quietly re-scoped to whatever the
+environment could produce. The `PASSES=4` re-run producing a **bit-identical** peak
+(`0.36554663991975933`) is a genuine saturation proof, and refusing to inject an archetype to make
+hop 10 green is exactly the honesty FOLLOW-819's stub asks for in advance. Every one of my findings
+above is reachable **only because** the PR published its evidence at file:line granularity.
+
+---
+
+### 1. Summary of change
+
+- **PR:** #690 (merged 2026-08-07 11:33 UTC, commit `5b2da4f`), branch
+  `sdk-engineer/FOLLOW-816-local-pilot-environment`, sdk-engineer on **Opus**
+- **Files changed:** 5 (+774 / -0) — `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` (426),
+  `scripts/dev/local-pilot-session.mjs` (293), `.claude/agents/sdk-engineer/lessons.md` (30),
+  `scripts/dev/README.md` (21), `.gitignore` (4)
+- **Modules touched:** docs / scripts (dev-only) / configs. **Zero** `packages/**` or `apps/**`
+  source → SDK bundle delta 0 bytes, `size-limit` unaffected, root lockfile untouched (Playwright
+  resolves from `packages/sdk`'s own devDependencies via `createRequire`).
+- **Key contracts changed:** none in code. **One documentary contract created:**
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` is now the named substrate for FOLLOW-817 (re-scoped
+  AC(6)), FOLLOW-818 (re-scoped) and FOLLOW-819. Its §9 causal story is therefore a contract input,
+  which is why §4a LG-1 is a P1 and not a docs nit.
+
+### 2. Verification done in PR
+
+- **Test files changed: none.** Assertions added: **8**, all inside a script no CI job and no
+  `package.json` script invokes (`grep -rn "local-pilot-session" .github/ package.json` → **0
+  hits** — by design, stated in the module docblock and §0). Coverage delta: **0**.
+- **CI checks: passed** (QUEUE session-104 head records `scripts/gh-pr-checks-verified.sh` green;
+  docs+scripts-only diff).
+- **The verification that matters here was not CI.** Falsifiability was demonstrated by an executed
+  negative control, and every hop verdict in §6 is a pasted observation with a named failure mode.
+  Two of the three highest-value facts in the PR (`PASSES=4` bit-identical peak; the byte-identical
+  payload accepted under `best_effort`) are single-variable experiments. This is a stronger evidence
+  standard than the merged diff can carry, and it is why the residual defects are all in *attribution*
+  rather than in *observation*.
+- **Not verified by the PR, and each is a §4 finding:** which SDK branch made `aboveFloor` true; what
+  the decision endpoint actually *returned* (only requests are captured); why `adaptation_decisions`
+  was 0 (attributed to §8, which cannot explain it); whether the local ClickHouse is representative
+  of prod (it is two majors behind).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean.** No new exports; no new TS/py modules. `scripts/dev/local-pilot-session.mjs`
+is an operator entrypoint (suppressed per the entrypoint carve-out) and is referenced by name in
+`scripts/dev/README.md` and runbook §5. `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` is cited by the
+script's docblock, `scripts/dev/README.md`, and the agent lessons file — i.e. it had in-repo
+referrers **at its own merge commit**, not only after the next commit's backlog updates.
+
+**CHECK B — half-wire: one finding.**
+
+- **HALF_WIRE_P (P1) — the run artifact is a producer with no consumer, and it records one
+  direction of the conversation.** `scripts/dev/local-pilot-session.mjs:88-101` captures **request**
+  bodies only; `context.on('response')` stores `{method, url, status}` and never a body. The PR body
+  bills `SESSION_JSON` as _"the input FOLLOW-818/819 need"_, but (i) no ticket AC names the artifact,
+  (ii) runbook §5 writes it to `/tmp` and never documents its schema, and (iii) it structurally
+  cannot answer _"what did the decision endpoint return"_ — the question hop 10's verdict turns on
+  (§4a LG-1). → **FOLLOW-876**.
+- Everything else wired: `LISTING_URL` / `INGEST_ORIGIN` / `DECISION_ORIGIN` / `HEADLESS` / `PASSES`
+  are consumed at `:44-52` and produced by the operator per §5; `.dev.vars` / `.dev.vars.*` are
+  produced by runbook §3.6 (`printf … > .dev.vars`) and consumed by `wrangler dev` — the ignore rule
+  has both ends. No new event type, column, topic or SDK signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — hop 10's red is attributed to a gate that did not fire, on two axes.** Full
+  derivation in the headline: `index.ts:827-829` (disjunction, `signal_count ≥ 2` satisfied),
+  `route.ts:86,275` (`confidence <= 0.6 → []`, over the client-sent value), `index.ts:731-737` (the
+  SDK's own statement of both). The harness reads `e.body.confidence` off the **request**
+  (`:234-238`) while the SDK floor reads `resp.confidence`; on this run they are the same number, but
+  the assertion is written against the wrong side of the exchange and would diverge the moment the
+  server stops echoing. **Second-order harm: this harness can manufacture a green production would
+  not honour** — at confidence 0.55 the floor assertion passes AND the mock (which returns a
+  directive for any confident non-neutral hint) mutates the DOM, so both hop-10 assertions flip green
+  while the real `/api/adapt` still returns `[]`. → FOLLOW-875.
+- **LG-2 (P2) — "structurally unreachable" is scoped narrower than it reads.** The claim rests on one
+  page, one observer set, and interactions that saturate by construction (`scroll.depth` = 4 one-shot
+  milestones + ≤4 gallery clicks). Untouched behavioral discriminators exist — cross-listing
+  `applyListingViewRate`, `filter.applied`, dwell beyond the session cap, referrer/UTM/device priors —
+  and the ceiling is a *designed* consequence of `BEHAVIORAL_DAMPING = 0.3`, an explicitly
+  **unvalidated constant** (`intent.ts:164`, §D.7, FOLLOW-212). "Behavior-only on this page with these
+  five interaction types saturates at 0.3655 under damping 0.3" is defensible and useful; the shorter
+  sentence will be read as a property of the system. Folded into FOLLOW-875 AC(3).
+- **LG-3 (P2) — prior art was not checked before publishing two findings as new** (FOLLOW-853,
+  FOLLOW-810). Rule P's own Verification block is a two-line grep over `backlog/` + `docs/`; run
+  against the finding's keywords it returns both stubs. Compliance failure against an adequate
+  control — no rule action (§6). → FOLLOW-879 AC(1)-(2).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P2) — `adapt-floor.ts`'s docblock contradicts the code it documents, in the permissive
+  direction.** `:26-32` states the 0.5 floor is _"its SOLE gate"_ for `/adapt/description` and that
+  _"at confidence 0.5–0.59 … the SDK may still fetch a description"_ — implying nothing is fetched
+  below 0.5. `index.ts:827-829` ORs in `signal_count ≥ 2`, and the description call sits inside that
+  same block (`:855-859`), so **after two behavioral signals there is no confidence gate at all on the
+  description axis** — the only remaining guard is `adapt-description.ts:390` (`archetype !==
+  'neutral'`). FOLLOW-343 opened this floor specifically to stop the cold-start wrong-archetype
+  reshuffle; on the one axis with no server-side gate, the guard is bypassed within seconds of
+  scrolling. **Pre-existing, not introduced here — surfaced by this PR's axis.** Bounded today because
+  the SDK is not on the pilot page (that is FOLLOW-820's gate). → **FOLLOW-877**.
+- **CB-2 (P3) — the producer comment that caused the Code-27 argues the wrong property.**
+  `clickhouse-producer.ts:127-133` justifies ISO-8601 strings on JSON-number **precision** grounds and
+  never names `date_time_input_format`, the setting the choice actually depends on. Whoever executes
+  FOLLOW-853 AC(1) reads that comment as the rationale of record. Folded into FOLLOW-880.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — the harness cannot fail on the axis FOLLOW-819 inherits.** See LG-1: the one
+  assertion whose subject is the adaptation decision is written against a constant the decider does
+  not read, and against a mock that emulates the server gate without being pinned to its threshold.
+  → FOLLOW-875 AC(2).
+- **TG-2 (P2) — the consent pre-grant is unasserted.** `:104-113` writes
+  `localStorage['estalara_consent'] = 'granted'`. **I traced this rather than assuming it:
+  `session.ts:26,35-37` accepts exactly the raw strings `'granted'`/`'denied'`, so the pre-grant is
+  correct today.** Nothing asserts it took effect, and nothing asserts `consent_state` in the captured
+  payloads — so a future key/shape change silently downgrades every run to `pending` and the operator
+  reads the resulting event census as a behavioral finding. One assertion over `emitted[].body.events[].consent_state`
+  closes it. → FOLLOW-876 AC(3).
+- **TG-3 (P2) — 8 assertions, 3 hops.** The script reports "N/8 hops green" while `results[]` holds
+  two hop-1 sub-checks + a global check + two hop-10 sub-checks. The negative control's "6/8 → 5/8" is
+  therefore a count of assertions, not of hops; a reader comparing it to the audit's hop numbering will
+  mis-map it. Cosmetic, but this artifact is now cited in QUEUE.md and two stubs. Folded into
+  FOLLOW-876.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — `MASTER_DESIGN.md:5387-5399` and `:5348-5349` assert a staging Supabase project and
+  "no shared secrets between environments" after ESC-052 proved otherwise.** The SoT is not in
+  FOLLOW-873's correction list. → FOLLOW-878.
+- **DG-2 (P2) — runbook §6 mis-attributes one of its three zero counts.** The hop-11 row routes
+  `events 0, intent_events 0, adaptation_decisions 0` to "See §8", and §8 covers only the two ingest
+  writers. `adaptation_decisions` has exactly one writer in the repo —
+  `apps/control-plane/src/app/api/adapt/route.ts:482` (verified: `grep -rn "INSERT INTO" apps packages
+  scripts infra` returns five writers and only that one targets the table) — and the control-plane was
+  never running. **That zero would still be zero with the Code-27 defect fully fixed.** The PR body says
+  so in prose ("out of scope here"); the runbook, which is the durable artefact, does not. → FOLLOW-879.
+- **DG-3 (P2) — the fidelity table omits the delta its own §8 proves matters.** §0 lists what the
+  environment is not (staging; CI; real decision API) and §3.5 says the local ClickHouse is _"the same
+  image CI uses, so a divergence here is a divergence CI would also see"_ — true, and exactly the
+  problem: local **25.8** is CI-representative and **not prod-representative** (prod Cloud **26.4.1**,
+  `best_effort`). The one axis where this substrate is known to diverge from production is the axis
+  §8 is about, and no line of the runbook says so. FOLLOW-621 (26.x compatibility) is unreferenced. →
+  FOLLOW-879.
+- **DG-4 (P2) — §4's restore instruction crosses two trees §1 declares non-interchangeable.**
+  _"restore the whole file from `git show 9d2df9d:src/app.html` in the sibling tree"_ takes a
+  2026-05-31 `app.html` from `Estalara-app` and offers it as the restore for `Estalara-app-new`, whose
+  own `app.html` hashes `fb1708b9f63e4378`. Applied literally on a tree with no git and no remote, that
+  is an unrecoverable overwrite of the pilot substrate. → FOLLOW-879.
+- **DG-5 (P3) — §8's ownership pointer names FOLLOW-822 (drift *detection*) rather than FOLLOW-853
+  (this *defect*), and §8's operator query is already answered.** → FOLLOW-879.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-817 — IN_PROGRESS at this moment.** Its stub AC(4)/AC(6) still name **staging** targets;
+  the ESC-052 re-scope to local/dev lives only in the QUEUE.md dispatch brief (`:100-113`). Checked
+  and **reconciled**: the PM did amend it at dispatch and did prohibit `--config stg`, so the live
+  worker is correctly briefed — the residual is that the **durable** record still says staging, which
+  is precisely the failure mode ESC-052 says kept itself alive for its entire life. → FOLLOW-878.
+- **FOLLOW-819 (P1, the exit test for the localhost stage)** — AC(1) names
+  `DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` as the bar. The bar is `> 0.6` at `route.ts:275`. AC(3) requires
+  an `adaptation_decisions` row carrying `score_function`; the substrate as documented **cannot produce
+  one** (DG-2), and nothing tells its author that. AC(5) requires "a lift number computed from real
+  **staging** rows" — that clause is now unexecutable by CEO ruling.
+- **FOLLOW-872 (filed from this merge)** — AC(3) instructs FOLLOW-819 to carry the 0.3655-vs-0.5
+  framing forward "rather than re-deriving it". Correct instinct, wrong denominator. → FOLLOW-875
+  amends it.
+- **FOLLOW-818 (unblocked, re-scoped)** — its stub still reads "Enable the feedback endpoint in
+  STAGING", AC(1) still says "staging Doppler config". Same class as 817.
+- **FOLLOW-853 (P1 per the PM, `priority: P2` in its own metadata)** — record contradicts itself;
+  the sharpened AC(2) landed but the stale `:102-103` citation did not move (the code has been at
+  `:134-135` since #170; `git show 054b0139:…` confirms it was 134-135 when the stub was written). →
+  FOLLOW-880.
+- **FOLLOW-873 (P1, READY)** — AC(5)'s sibling list is short by at least eight artefacts. →
+  FOLLOW-878.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820** — GO condition 1 is "FOLLOW-819 green". If FOLLOW-819 is designed against 0.5, a
+  green there is not evidence the prod endpoint would have adapted anything.
+- **FOLLOW-212 (calibration)** — LG-2 makes `BEHAVIORAL_DAMPING = 0.3` the proximate cause of the
+  ceiling; 0.3655 is the first empirical datum this project has ever had on that constant, and it is
+  currently recorded only as a hop-10 failure note.
+- **FOLLOW-621 (CH 26.x compat)** and **FOLLOW-822 (CH drift check)** — DG-3 gives both a concrete
+  version-delta instance to test against.
+- **FOLLOW-560 (`score_function`)** — remains FOLLOW-819's blocker and is untouched by this merge.
+
+#### 5c. Contracts changed others rely on
+
+None in code. The documentary contract (§1) is now depended on by three tickets; §4a/§4d are the
+defects in it.
+
+#### 5d. Architectural assumptions affected
+
+- **"A staging data environment exists" — dead** (ESC-052, CEO option 2). Recorded here because the
+  SoT still asserts it (DG-1).
+- **"`DOM_ADAPT_CONFIDENCE_FLOOR` is the DOM-adaptation gate" — false in two ways** (LG-1, CB-1). The
+  effective gates are the server's `> 0.6` on the directive axis, and `archetype !== 'neutral'` alone
+  on the description axis once two behavioral signals exist.
+- **"The local substrate exercises the same ClickHouse production does" — false by two majors**
+  (DG-3), and the divergence is on the axis the substrate was used to test.
+
+### 6. New lesson candidates
+
+- **RETRO-250 §6's ARMED RULE S AMENDMENT — DISCHARGED ON CLAUSE (b), AT COUNT 2. PROMOTED.** This is
+  the one rule action of this retro, and I tested it against the arming's own words rather than its
+  title.
+  - **Clause (a)** (_"a worker **instructed** to enumerate-not-fix whose enumeration produces filed
+    FOLLOW-NNNs"_) — **NO, and I refuse the near-miss.** FOLLOW-816 AC(2)'s parenthetical (_"expect
+    drift, that is what FOLLOW-822 is for"_) is a pre-authorised deferral to a number, and the dispatch
+    brief (`db50e3b2`) contains no enumeration instruction at all. RETRO-255 refused exactly this
+    conflation ("measure the blast radius" ≠ "sweep the sibling set"); counting it would be the
+    RETRO-122 error.
+  - **Clause (b)** (_"a sibling deferred in PROSE is later found under-assessed, mis-graded or never
+    filed"_) — **YES, and this is the first non-compliance in six PRs.** The PR's own "Operator steps /
+    missing pieces" item 4 defers the **control-plane** — the seventh process of a six-process
+    environment, and the *only* writer of `adaptation_decisions` (`route.ts:482`) — as _"out of scope
+    here"_, **in prose, with no number**. It is not filed anywhere: no stub covers running the
+    control-plane on this substrate; FOLLOW-818's re-scope names local Postgres only. **The harm is
+    measurable and is already booked:** FOLLOW-819 AC(3) requires an `adaptation_decisions` row from
+    this substrate, and the substrate cannot produce one. The runbook — the durable artefact — does not
+    carry the deferral at all, and §6 instead routes that zero to §8, a cause that cannot have produced
+    it (§4d DG-2). A second instance of the same shape sits in §8's ownership line (deferred to a
+    number, the **wrong** number — mis-graded); per RETRO-122 I count the PR once, and record the
+    second only as corroboration.
+  - **Why this discharges rather than retires, against RETRO-258's stop condition.** RETRO-258
+    pre-authorised me to RETIRE the arming if clause (b) failed **by compliance** a sixth time. It did
+    not fail by compliance: this PR broke the norm and the break cost a dependent P1 an unbuildable AC.
+    That is precisely the evidence RETRO-254 and RETRO-258 said was missing when they declined
+    (_"a rule whose behaviour is already the norm codifies compliance, not the constraint"_) — the norm
+    now has one measured harm from being broken, which is what converts it from compliance-codification
+    into a control.
+  - **Form: amend Rule S in place, do not mint a letter** — the arming says so explicitly, and Rule S
+    bullet 2 (_"or explicitly justify per-sibling why one is exempt"_) already owns the territory. Filed
+    as a dated amendment block under Rule S, matching the file's own precedent (the 2026-06-25 /
+    RETRO-112 block), because a block carries Evidence + Verification and an in-place bullet edit would
+    erase provenance. **Rule count 43 → 43 (no new letter); Rule S amendments 1 → 2.**
+- **THE BRIEF'S QUESTION — "the interrupted session is the FIFTH occurrence; does it now warrant a
+  rule?" ANSWERED: NO, AND THE COUNT IS NOT THE REASON.** The class is old and well-attested
+  (RETRO-146, RETRO-188 §4e, RETRO-189, RETRO-210 §6, RETRO-211, RETRO-233 — the "stranded-work
+  lineage" those retros name themselves), so the ≥2-prior bar is met on paper. Three reasons it still
+  does not promote, in descending strength:
+  1. **This occurrence is a different sub-shape, and the harm was zero.** Every prior sighting stranded
+     **worker output** uncommitted in `.claude/worktrees/agent-*`. Here the worker's output was on a
+     branch, in a PR, and merged; the only loss was the PM's own bookkeeping, which was reconstructed
+     from the merge commit rather than redone. A rule minted on "work is lost" would be minted on an
+     event where nothing was.
+  2. **The remedy is already owned, by three numbered tickets.** FOLLOW-448 (branch-first discipline +
+     mechanical guardrail), FOLLOW-573 (put the worktree-detection check in the playbook a PM reads),
+     FOLLOW-645 (extend the FOLLOW-448 guard to the isolated-worktree mode). A rule saying "check
+     `git worktree list` before concluding anything was lost" would compete with three tickets that say
+     "build the check" — the same adjudication RETRO-254 made about FOLLOW-848.
+  3. **The control that worked here was the memory note, and it worked unprompted.**
+     `feedback_check_worktrees_before_concluding_agent_didnt_run` is cited verbatim in the session-104
+     QUEUE head. **Fifth sighting, first with zero loss, and the first where the recovery procedure was
+     applied before any wrong inference was made.** That is a control succeeding, not a gap.
+  - **Bar, pre-specified so the next retro tests rather than re-derives:** promote only if a sighting
+    occurs in which (a) the recovery procedure was **not** applied and a wrong "the agent never ran"
+    inference reached a written artefact, **and** (b) FOLLOW-448/573/645 are all still open. Today (a)
+    is false. **Count of that harm: zero.**
+- **P-38 (RETRO-256) — DOES NOT FIRE, checked rather than skipped.** I looked for a control whose
+  firing condition is a property of the world it was written in. The nearest candidate is runbook §8's
+  _"the first thing to check … expect: `best_effort` → prod unaffected"_ — but that is the inverse
+  shape: its condition was already **resolved** before merge, so it carries stale information rather
+  than no information. That is Rule AH territory (an executable operator instruction not verified
+  against the record at its own merge commit) and it is filed as FOLLOW-879, not as a P-38 sighting.
+  **Count stays 1.**
+- **P-35 / P-37 — no sighting.** No gate verdict here depends on an artefact outside the PR's control
+  (P-35); `grep -rn "wc -l.*|| echo" scripts/*.sh` → **zero hits**, class still empty (P-37). RETRO-255's
+  standing recommendation — write the zero-hit grep into Rule AP's register — is **still unowned** after
+  three retros; recorded again rather than filed, since it is one line inside whatever ticket next
+  touches Rule AP.
+- **NEW PATTERN P-39 — "A HARNESS ASSERTS AGAINST A CONSTANT THE DECIDING CODE DOES NOT READ, SO ITS
+  RED IS RIGHT FOR THE WRONG REASON AND ITS FUTURE GREEN WILL BE WRONG." MINTED AT COUNT 1. NOT
+  PROMOTED.**
+  - **This retro (count 1)** — §4a LG-1: the assertion reads `DOM_ADAPT_CONFIDENCE_FLOOR` off the SDK
+    global (which is the *right* instinct — it re-tunes automatically) while the decision is made by
+    `route.ts:275`'s `0.6` over the request body, with the SDK's own branch satisfied by
+    `signal_count`.
+  - **Tested against the rule TEXTS, not the titles.** **Rule Q** governs a gate that can soft-skip and
+    reports green without executing — this assertion executes. **Rule AL** (an assertion must be
+    evaluated over the same region its consumer reads) is the closest relative and is scoped to
+    *byte regions of a file*, not to the *identity of the deciding predicate*; run verbatim it does not
+    fire. **Rule AM** governs fixture provenance. **Rule AK item 5** mandates red-first perturbation for
+    out-of-repo contract gates — and note this harness *was* proven red-first, which is exactly why the
+    misattribution survived: **perturbation proves an assertion can fail, never that it measures the
+    right thing.** That distinction is the transferable content of P-39.
+  - **Second-sighting bar, pre-specified:** (a) a merged assertion reads a threshold/constant from
+    source rather than hardcoding it (i.e. it is *better* than a literal), (b) the code that actually
+    decides the asserted outcome reads a **different** predicate — proven by citing both call sites, and
+    (c) the divergence is in the permissive direction, so a future run can go green while production
+    does not. Clause (c) is what keeps this from swallowing every off-by-one.
+- **Routing (CLAUDE.md asks retros to evaluate it).** Sonnet → **Opus** for FOLLOW-816: correct, and it
+  paid in ways that are nameable and not stylistic — the executed negative control; refusing to discharge
+  AC(2) against a substituted environment; the single-variable `best_effort` isolation; the `PASSES=4`
+  re-run that converted "not yet reached" into "saturated"; and disproving **two of its own stub's
+  premises**. **Its miss is a reading miss on the one axis no AC named** — which gate decides — and that
+  is the **eighth** consecutive retro to record that _the model tier is not the control for enumeration
+  completeness; the AC is_ (RETRO-251 P-36, 252, 253, 254, 255, 256, 258). The pattern is now stable
+  enough to be worth one sentence in the PM's brief template rather than another retro observation:
+  **name the axis, or the tier will not find it.**
+
+### 7. Follow-ups
+
+- FOLLOW-875: hop 10 is attributed to the wrong gate — correct the runbook §9, the harness assertion
+  and FOLLOW-819 AC(1)/FOLLOW-872 AC(3) to the binding server-side threshold (sdk-engineer, 3h, **P1**)
+- FOLLOW-876: HALF_WIRE_P — the run artifact records requests only and no ticket consumes it
+  (qa-engineer, 2h, **P1**)
+- FOLLOW-877: `adapt-floor.ts`'s docblock contradicts `index.ts:827-829`; the cold-start guard is
+  bypassed by two behavioral signals on the description axis (sdk-engineer, 2h, P2, FROZEN)
+- FOLLOW-878: ESC-052's sibling set stops short of Master_Design and of four live stubs
+  (devops-engineer, 3h, **P1**)
+- FOLLOW-879: five corrections to `LOCAL_PILOT_ENVIRONMENT.md`, the substrate three tickets depend on
+  (sdk-engineer, 2h, P2, FROZEN)
+- FOLLOW-880: FOLLOW-853's record contradicts itself, its citation is stale, and the prod probe's
+  verdict is recorded without the user/profile it ran as (data-engineer, 1h, P2, FROZEN)
+
+**Numbering note: FOLLOW-874 is RESERVED** for the devops-engineer working FOLLOW-817 in
+`.claude/worktrees/follow-817` concurrently with this retro; this entry allocates 875-880 against
+`main` per Rule AN.
+
+### 8. Cross-references
+
+- **RETRO-255** — "three layers of record told an untested causal story, the worker tested it". This
+  entry is the mirror image: **the worker told an untested causal story about its own measurement**,
+  and I tested it. RETRO-255's claim-time answer ("run the two greps that would falsify a sufficiency
+  claim") applies verbatim — the two greps here were `grep -rn "DOM_ADAPT_MIN_SIGNAL_COUNT"
+  packages/sdk/src` and `grep -n "CONFIDENCE_THRESHOLD" apps/control-plane/src/app/api/adapt/route.ts`,
+  and they took under a minute.
+- **RETRO-258** — its stop condition for the Rule S arming is discharged here in the *other* direction:
+  clause (b) is met, not failed-by-compliance, so the arming is promoted rather than retired. Its
+  session-103 verdict (_"nothing merged this session moved the product — FOLLOW-816 untouched"_) is
+  now superseded by this merge, which is the first product-axis merge in fourteen PRs.
+- **RETRO-257** — same shape at a different layer: a bundle that is real and a population that is zero.
+  Here: an environment that is real and three row counts that are zero, one of which has a cause nobody
+  recorded.
+- **RETRO-252 / FOLLOW-845** — the true first sighting of §8's Code-27; this merge is the second,
+  independent, and the first from a browser-driven path.
+- **FOLLOW-810 / ESC-052 / ESC-020** — the staging lineage; FOLLOW-810 established in July what §7
+  re-established in August.
+
+<!-- next free FOLLOW number: 881 (FOLLOW-875..880 filed 2026-08-07 by RETRO-259, the post-merge retro for
+PR #690 / FOLLOW-816, merged 5b2da4f2; FOLLOW-874 is RESERVED for the devops-engineer running FOLLOW-817
+concurrently in .claude/worktrees/follow-817). next free RETRO number: 260. RETRO-259 = retro for PR #690
+(FOLLOW-816, merged 2026-08-07 11:33 UTC, 5 files +774/-0, docs+scripts only, zero packages/** source ->
+bundle delta 0). HEADLINE: hop 10's 0.3655 is real, reproducible (bit-identical at PASSES=4) and
+load-bearing, and the gate it is attributed to is the wrong one on TWO axes — (i) the SDK apply gate is a
+DISJUNCTION (index.ts:827-829, `resp.confidence >= 0.5 || signal_count >= 2`) whose second branch was true
+all session, so applyDirectives DID run; (ii) the deciding gate is SERVER-side, `route.ts:86,275`
+`confidence <= 0.6 -> directives: []` over the client-sent body value, which the SDK's OWN comment states
+at index.ts:731-737. The conclusion survives (0.3655 < 0.5 < 0.6); the DENOMINATOR does not — FOLLOW-819
+AC(1) names 0.5 in writing and FOLLOW-872 AC(3) (filed from this merge) instructs FOLLOW-819 to inherit the
+framing, so the misattribution is already propagating into the exit test for the whole localhost stage.
+SECOND: ESC-052's sibling set stops one document short of the SoT — MASTER_DESIGN:5387-5399 still asserts a
+Supabase staging project and "Brak shared secrets miedzy environments", :5348-5349 still says staging reads
+config=dev; FOLLOW-873 AC(5) lists ESC-023 + RETRO-113 + a memory note and omits Master_Design, wrangler.toml
+:94-100, load-test.yml, post-migrate-seed.yml, ci.yml:27, deploy-staging.yml, ten runbooks, and the durable
+stubs of FOLLOW-817 (IN_PROGRESS on staging ACs amended only in a QUEUE dispatch brief) / 818 / 819 / 820.
+THIRD: two of four findings are rediscoveries of filed tickets (Code-27 = FOLLOW-853 via FOLLOW-845; "staging
+is not real" = FOLLOW-810, DONE 2026-08-04), neither cited, and runbook s8 still poses as OPEN a P0 fork this
+session had already closed (prod = best_effort, CH 26.4.1) while routing ownership to FOLLOW-822 instead of
+853 — Rule P fires as a COMPLIANCE failure (6th consecutive retro to that adjudication). WIRING: CHECK A
+clean (no new exports; dev entrypoint + runbook both referenced at their own merge commit); CHECK B one
+HALF_WIRE_P (P1) — the run artifact captures REQUEST bodies only (:88-101), never a response body, so it
+cannot answer "what did the decision endpoint return", the question hop 10's verdict turns on; and no ticket
+AC consumes SESSION_JSON. GAPS: LG-1 (P1) gate misattribution + the harness can manufacture a green prod
+would not honour at conf 0.55; LG-2 (P2) "structurally unreachable" is scoped to one page/one observer set
+under the unvalidated BEHAVIORAL_DAMPING=0.3; LG-3 (P2) Rule P prior-art miss; CB-1 (P2) adapt-floor.ts
+:26-32 calls 0.5 the "SOLE gate" of the description axis while index.ts ORs in signal_count>=2 — FOLLOW-343's
+cold-start guard is bypassed by two scroll milestones, only `archetype !== 'neutral'` remains; CB-2 (P3) the
+producer comment argues precision and never names date_time_input_format; TG-1/2/3; DG-1 Master_Design,
+DG-2 runbook s6 routes `adaptation_decisions 0` to s8 though its only writer (route.ts:482, control-plane)
+was never running, DG-3 the fidelity table omits local/CI CH 25.8 vs prod 26.4.1 — the very axis s8 proves
+matters, DG-4 the s4 restore instruction copies app.html across two trees s1 declares non-interchangeable,
+DG-5 wrong owner + answered query. RULE ACTION: **PROMOTED — Rule S amendment (2026-08-07), the RETRO-250 s6
+arming DISCHARGED on clause (b) at count 2.** Clause (a) refused (no enumerate-not-fix instruction in the
+stub or the db50e3b2 dispatch); clause (b) MET for the first time in six PRs — the control-plane, the only
+writer of adaptation_decisions and the seventh process of a six-process environment, is deferred in PROSE
+("out of scope here") with no number, is filed nowhere, and FOLLOW-819 AC(3) requires exactly the row that
+deferral makes unobtainable. RETRO-258's stop condition therefore resolves the OTHER way: not
+failed-by-compliance, so promote rather than retire. Form per the arming: amend Rule S in place, no new
+letter — rule count stays 43, Rule S amendments 1 -> 2. NOT promoted: the interrupted-session pattern
+(5th sighting, first with ZERO loss, remedy owned by FOLLOW-448/573/645, the memory note worked unprompted —
+bar pre-specified); P-38 does not fire (s8 is stale-information, i.e. Rule AH, not fired-at-birth); P-35/P-37
+no sighting (P-37 class still empty, RETRO-255's zero-hit-grep recommendation still unowned after 3 retros).
+MINTED: P-39 ("a harness asserts against a constant the deciding code does not read") at count 1 with a
+3-clause bar — its transferable content is that perturbation proves an assertion CAN fail, never that it
+measures the right thing. ROUTING: Opus correct, paid five nameable times (executed negative control; refused
+to discharge AC(2); single-variable best_effort isolation; PASSES=4 saturation; disproved two of its own
+stub's premises); its one miss is the axis no AC named — 8th consecutive retro to that finding. FOLLOWS
+FILED: 875 (P1 sdk 3h gate misattribution + correct FOLLOW-819 AC(1)/FOLLOW-872 AC(3)), 876 (P1 qa 2h
+HALF_WIRE_P run artifact), 877 (P2 FROZEN sdk 2h adapt-floor docblock vs disjunction), 878 (P1 devops 3h
+ESC-052 sibling set incl. Master_Design), 879 (P2 FROZEN sdk 2h five runbook corrections), 880 (P2 FROZEN
+data 1h FOLLOW-853 record integrity + probe user/profile). QUEUE.md / ESCALATIONS.md / sprint files / code
+correctly UNTOUCHED. -->

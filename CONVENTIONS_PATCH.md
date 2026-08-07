@@ -1188,6 +1188,55 @@ left unguarded incl. 2 ongoing high-frequency paths; count 2 on the shared-helpe
 RETRO-112 §6 (FOLLOW-363 / PR #351 — closed the 2 ongoing siblings + added the 13-site inventory
 comment; count 3).
 
+### Rule S amendment (2026-08-07 — RETRO-250 §6 armed, RETRO-259 §6 discharged — a deferred sibling's justification MUST be a filed FOLLOW-NNN, never prose)
+
+**Trigger:** Rule S bullet 2 says _"Apply the change to EVERY sibling, **or explicitly justify
+per-sibling why one is exempt**"_ and does not say what form the justification takes. RETRO-250 §6
+armed this amendment on PR #680, where the exemption for nine sibling scripts was discharged as
+**three scoped, dated tickets** (FOLLOW-842/843/844) instead of a paragraph — the conversion of
+_unknown_ into _tracked work_ being the thing worth codifying (count 1). Five subsequent PRs (#685,
+#686, #687, #688, #689) complied without the rule, which is why RETRO-254 and RETRO-258 declined to
+promote: every failure to discharge the arming was a failure **by compliance**.
+
+**Count 2 is a non-compliance with measured harm** (RETRO-259 §6, PR #690 / FOLLOW-816). That PR
+delivered a six-process local environment and deferred a seventh — `apps/control-plane`, the
+**only** writer of ClickHouse `adaptation_decisions`
+(`apps/control-plane/src/app/api/adapt/route.ts:482`) — in **prose**, in the PR body, as _"out of
+scope here"_, with no ticket. The deferral never reached the durable artefact
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`), whose §6 instead attributes that table's zero
+row-count to an unrelated ClickHouse defect. **FOLLOW-819 AC(3) requires an `adaptation_decisions`
+row from that substrate**, so a dependent P1 now carries an acceptance criterion the substrate
+cannot satisfy, and nothing in the record says why. A second instance in the same PR (§8's ownership
+deferred to FOLLOW-822, when FOLLOW-853 owns the defect) is recorded as corroboration only — one
+sighting per PR, per RETRO-122.
+
+**Amendment — when a sibling of the set your change defines is left out, its justification MUST be a
+filed `FOLLOW-NNN` (or an existing ticket cited by number) in the SAME PR. A prose deferral — "out
+of scope here", "left for later", "owned elsewhere" — does not satisfy Rule S bullet 2, even in a PR
+description that is otherwise exemplary.** Two corollaries, both from the count-2 instance: (a) the
+number must be cited in the **durable artefact** (runbook / module docblock / stub), not only in the
+PR body, because the PR body is not what the next operator reads; (b) citing the **wrong** ticket is
+a mis-graded deferral and fails this amendment the same way prose does — the cited ticket must
+actually own the deferred work.
+
+**Verification:**
+
+```bash
+# 1. Every deferral phrase in a PR body/runbook must sit within one line of a FOLLOW/ESC number.
+gh pr view <N> --json body -q .body |
+  grep -nEi 'out of scope|left for later|not covered here|deferred|owned elsewhere' |
+  grep -vE 'FOLLOW-[0-9]+|ESC-[0-9]+'          # any hit = Rule S violation
+# 2. Same sweep over the durable artefacts the PR added (corollary (a)):
+grep -rnEi 'out of scope|deferred|left for later' <new-or-changed docs> |
+  grep -vE 'FOLLOW-[0-9]+|ESC-[0-9]+'
+```
+
+**Evidence for this amendment:** RETRO-250 §6 (PR #680 / FOLLOW-827+830 — nine sibling scripts,
+exemptions discharged as FOLLOW-842/843/844; count 1, ARMED), RETRO-259 §6 (PR #690 / FOLLOW-816 —
+the control-plane sibling deferred in prose, never filed, and FOLLOW-819 AC(3) left unbuildable;
+count 2, DISCHARGED on the armed clause (b)). **No new letter was minted: the arming states that
+Rule S already owns the territory.** Rule count unchanged at 43.
+
 ---
 
 ## Rule T — A green pre-commit hook is NOT a typecheck pass; type/tooling regressions escape the format-only hook and surface CI-only — run `tsc --noEmit` on touched packages before declaring ready
@@ -3716,3 +3765,19 @@ CONVENTIONS_PATCH rule count to 43 and the range to AA-AQ, against docs/MASTER_D
 retro's write scope; FOLLOW-779 also carries the two FALSE ID RANGES at §Snapshot.6:562-563 that
 FOLLOW-772's own closure introduced. Rule AP was DELIBERATELY NOT AMENDED by RETRO-242: it is one
 retro old and no amendment bar was met — see RETRO-242 §6. -->
+
+<!-- RULE ACTION 2026-08-07 (RETRO-259, PR #690 / FOLLOW-816): Rule S AMENDED IN PLACE (2026-08-07 block above)
+— a deferred sibling's justification MUST be a filed FOLLOW-NNN, never prose. This DISCHARGES the arming
+RETRO-250 §6 set on 2026-08-05, on its clause (b) ("a sibling deferred in PROSE later found under-assessed,
+mis-graded or never filed"), at count 2. Clause (a) was tested and REFUSED (no enumerate-not-fix instruction
+in FOLLOW-816's stub or in the db50e3b2 dispatch brief; counting AC(2)'s pre-authorised deferral would be the
+RETRO-122 conflation RETRO-255 already refused). RETRO-258 pre-authorised RETRO-259 to RETIRE the arming if
+clause (b) failed BY COMPLIANCE a sixth time — it did not: #690 broke the norm and the break left FOLLOW-819
+AC(3) requiring a row the substrate cannot produce, which is exactly the measured harm RETRO-254/258 said was
+missing when they declined. NO NEW LETTER (the arming forbids one; Rule S owns the territory): rule count
+stays 43, range AA-AQ, Rule S amendments 1 -> 2. NOT promoted by RETRO-259: the interrupted-session /
+stranded-worktree class (5th sighting, FIRST with zero loss — worker output was merged, only PM bookkeeping
+was lost and it was reconstructed; remedy owned by FOLLOW-448/573/645; the memory note
+feedback_check_worktrees_before_concluding_agent_didnt_run worked unprompted — bar pre-specified in RETRO-259
+§6); P-39 MINTED at count 1 ("a harness asserts against a constant the deciding code does not read") with a
+3-clause bar, tested against Rule Q / Rule AL / Rule AM / Rule AK item 5 and none fires. -->

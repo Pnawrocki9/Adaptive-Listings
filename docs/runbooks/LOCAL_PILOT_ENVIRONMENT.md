@@ -341,8 +341,8 @@ Run of 2026-08-07 against the tree hashed in §1.
 | 1 (bundle)                     | **GREEN** | `GET http://localhost:9100/estalara-sdk.iife.js → 200`, 157 550 bytes; `window.Estalara` present.                                       |
 | 4 (ingest ACK)                 | **GREEN** | 3/3 `POST http://localhost:8787/v1/events → 200`, Worker logged `events_accepted`.                                                      |
 | 5 (decision call)              | **GREEN** | 3 × `POST http://localhost:9100/adapt → 200`.                                                                                           |
-| 10 (floor)                     | **RED**   | peak confidence **0.3655**, floor **0.5**, only hint ever sent: `neutral`.                                                              |
-| 10 (DOM applied)               | **RED**   | headline and description byte-identical before/after.                                                                                   |
+| 10 (server gate)               | **RED**   | peak confidence **0.3655**, server gate **> 0.6** (`route.ts:86,275`), only hint ever sent: `neutral`. **Not** the SDK floor — see §9.  |
+| 10 (DOM applied)               | **RED**   | headline and description byte-identical before/after — the endpoint returned `directives: []`.                                          |
 | 11 (`intent.snapshot` emitted) | **GREEN** | census `{page.view:1, session.started:1, listing.viewed:2, scroll.depth:4, session.quality.snapshot:1, intent.snapshot:1}`.             |
 | 11 (rows in ClickHouse)        | **RED**   | `events` 0, `intent_events` 0, `adaptation_decisions` 0. See §8.                                                                        |
 
@@ -357,9 +357,17 @@ How each hop could have failed, i.e. why these are assertions and not decoration
   `forbidden_origin`), or if `data-ingest-url` still points at the mock (then the assertion passes
   against `:9100` and the check is meaningless — this is why the origin is asserted, not just the
   status).
-- **hop 10** — fails whenever the archetype does not clear the floor; the assertion reads the floor
-  off the SDK global rather than hardcoding `0.5`, so a change to `adapt-floor.ts` re-tunes it
-  automatically.
+- **hop 10 (server gate)** — fails whenever the confidence in the decision **response** does not
+  clear the server-side `CONFIDENCE_THRESHOLD`. The assertion reads that threshold **and its
+  comparison operator** out of `apps/control-plane/src/app/api/adapt/route.ts` at run time
+  (`readServerConfidenceGate()`), and throws loudly if the constant is renamed — so it cannot
+  silently drift, and it cannot go green where production would answer `[]`. It reports the SDK's
+  own `aboveFloor` disjunction alongside as **evidence**, never as the pass condition (§9).
+- **hop 10 (directives returned)** — fails when the decision response carries zero directives. This
+  is the assertion with no threshold arithmetic in it at all, and the one a permissive mock cannot
+  manufacture a green for: a `[]` response is the red whatever the confidence was.
+- **hop 10 (DOM applied)** — fails when no `[data-estalara-slot]` text changed. Distinct from the
+  two above: it is the only one that would catch directives that arrive but are never painted.
 - **hop 11 (emitted)** — the SDK emits `intent.snapshot` only every 5 behavioral signals; a shorter
   session yields zero and the check goes red.
 
@@ -375,6 +383,14 @@ $ node scripts/dev/local-pilot-session.mjs
 ```
 
 6/8 → 5/8, and hop 4 flipped. The hop-4 assertion is load-bearing.
+
+> **Counting note (FOLLOW-875).** Those `N/8` figures are counts of **assertions**, not of hops —
+> the script carries two hop-1 sub-checks, one global check and, at the time of that run, two hop-10
+> sub-checks over three hop numbers. FOLLOW-875 added a third hop-10 assertion ("the decision
+> endpoint returned at least one directive"), so a re-run of the table above reports out of **9**,
+> and the two hop-10 reds become three. Reporting hops and assertions as distinct counts is
+> FOLLOW-876 AC(4); this note exists so the `6/8` quoted in QUEUE.md and two stubs is not read
+> against the current script.
 
 ---
 
@@ -479,17 +495,139 @@ curl -s -X POST localhost:9100/adapt -H 'content-type: application/json' \
 
 With `"archetype_hint":"neutral"` the same endpoint correctly returns `"directives":[]`.
 
-The live session **never sent anything but `neutral`**. Peak confidence was `0.3655` against
-`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5`. And it is not a matter of browsing longer: a `PASSES=4` session
-— four times the scrolling and gallery interaction — produced a **bit-identical** peak
-(`0.36554663991975933`) and an identical event census. The behavioral observers saturate:
-`scroll.depth` caps at 4 one-shot depth milestones and repeated gallery clicks contribute nothing.
+The live session **never sent anything but `neutral`**, and every `/adapt` response carried
+`directives: []`. Peak confidence was `0.3655`. And it is not a matter of browsing longer: a
+`PASSES=4` session — four times the scrolling and gallery interaction — produced a **bit-identical**
+peak (`0.36554663991975933`) and an identical event census.
 
-So on this page the archetype confidence reachable from behavioral signals alone has a ceiling of
-≈0.366 against a 0.5 floor — **structurally unreachable, not merely not-yet-reached.** That is the
-FOLLOW-819 hypothesis, measured. Do not close hop 10 by injecting an archetype into the fixture; the
-honest readings are "quiz or chat is required to cross the floor" or "the floor is miscalibrated for
-behavior-only sessions", and choosing between them is FOLLOW-819 + FOLLOW-212 work.
+### 9.1 Which gate actually bit (corrected 2026-08-07, FOLLOW-875)
+
+The measurement above is right and reproducible. The **attribution** in the first version of this
+section was wrong on two independent axes, and neither touches the number.
+
+**1. The SDK's apply gate is a DISJUNCTION, and it did not suppress anything.**
+`packages/sdk/src/index.ts:827-829`:
+
+```ts
+const aboveFloor =
+  resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR || // 0.5
+  currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT; // 2
+```
+
+`signal_count >= 2` alone opens it. It was true within the first second of the session: the
+init-time `device_type.*` prior at `index.ts:1031-1036` runs through `applyBehavioralSignal()`,
+which **increments `signal_count`**, so the session begins at 1 and the first scroll-depth milestone
+makes it 2. `applyDirectives()` ran. So did `applyDescriptionAdaptation()` — it lives inside the
+same block (`index.ts:851-856`). The floor suppressed nothing.
+
+**2. The gate that decides whether directives exist is server-side and 0.1 higher — and strict.**
+`apps/control-plane/src/app/api/adapt/route.ts:86` sets `CONFIDENCE_THRESHOLD = 0.6`, applied at
+`route.ts:275` as:
+
+```ts
+if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [], source: 'default' };
+```
+
+Note `<=`. **The bar is strictly greater than 0.6**; a session at exactly 0.6 gets `[]`. The value
+compared is the **client-sent** `body.confidence ?? 0.5` (`route.ts:1224,1278`) — i.e. this SDK's
+own intent state, echoed back into `resp.confidence`. The SDK states this itself at
+`index.ts:731-737`. The server boundary is locked by `route.test.ts:267`.
+
+**Why this matters beyond bookkeeping:** a differentiator that reaches **0.55** clears the 0.5 floor
+this section used to name, flips the local harness green against the permissive mock, and still
+receives `directives: []` from the real endpoint. The old assertion could manufacture a green
+production would not honour. That is why hop 10 now asserts, against the threshold read out of
+`route.ts` at run time, **both** sides of the exchange plus `directives.length > 0`.
+
+> **Fidelity gap, found by running the corrected harness rather than by reading it (2026-08-07).**
+> Production `route.ts` gates on the client-sent `body.confidence` and **echoes it** into
+> `resp.confidence`, so on production the request and response numbers are the same. **The local
+> mock does not echo it** — on a `neutral` hint it answers a fabricated `confidence: 0.1`
+> (`scripts/dev/mock-decision-server.mjs:519`). An observed run: request **0.3655**, response
+> **0.1**. So a response-only assertion measures the mock's fiction and a request-only assertion
+> ignores the value `index.ts:828` reads. Hop 10 requires both to clear the gate. Add this to §0's
+> "what this is not" list when reading any confidence number off a local run.
+
+The conclusion **survives intact**: `0.3655 < 0.5 < 0.6`, so behavior alone did not adapt the DOM on
+this page. Only the bar changed.
+
+**Other conditions that empty `directives` before confidence is ever consulted** — not gates that
+fired here, but load-bearing for anyone designing a session that must go green: per-tenant AL
+OFF/suspended (`route.ts:1272-1287`), `?profiling_opt_out=1` (`route.ts:1210-1232`), the A/B holdout
+arm, and the consent-skip gate for non-`granted` sessions. A FOLLOW-819 session must be
+consent-granted, on an AL-enabled tenant, not opted out, and not in the holdout arm — otherwise the
+confidence question never gets asked.
+
+### 9.2 What 0.3655 actually is, and whether `> 0.6` is reachable (FOLLOW-875 AC-5)
+
+**0.3655 is not a behavioral ceiling. It is the cold-start value, reached before the first
+behavioral event, and behavior only pushed it down.**
+
+Confidence in this engine is the posterior probability of the argmax archetype
+(`classifyFromProbabilities` returns `maxProb`, `core/intent.ts:825`), with a ×1.2 bonus applied
+only when the quiz has been answered (`withConfidenceBonus`, `:709-712`).
+`BASE_PRIOR.neutral = 0.37` (`core/intent.ts:206`). The observed peak reproduces **bit-exactly**
+from BASE_PRIOR under a single update — the `device_type.desktop` prior, damped by
+`BEHAVIORAL_DAMPING = 0.3` (`packages/sdk/src/core/intent.ts:549`; the FOLLOW-875 stub's
+`intent.ts:164` citation is a mis-reference — `:164` is the FOLLOW-212 calibration note on
+`SWITCH_MARGIN`):
+
+```
+damped[k] = 1 + (SIGNAL_LIKELIHOODS['device_type.desktop'][k] - 1) × 0.3
+posterior  = normalize(BASE_PRIOR × damped)
+posterior.neutral = 0.36445 / 0.997 = 0.36554663991975933   ← identical to all 16 digits
+```
+
+So the peak was the **argmax of `neutral`** at the very first `/adapt` call. Every subsequent
+behavioral signal lowered it: the reachable signals on a listing-detail page (`scroll.depth`,
+`listing.viewed`) carry `neutral < 1.0` and `1.0` for the other seventeen, which bleeds mass off
+`neutral` and spreads it evenly — flattening the distribution toward uniform (1/18 = 0.0556) without
+ever producing a leader. `PASSES=4` was bit-identical for a stronger reason than saturation: the
+peak is set at t=0 and more browsing cannot raise it.
+
+**Independently confirmed on a different page.** While validating the corrected harness (2026-08-07)
+the same script was pointed at a throw-away fixture page — a bare HTML file with the three slot
+attributes and none of the pilot listing's content — served on `:9200` against the same mock. It
+produced the identical peak, `0.36554663991975933`. A number that reproduces bit-for-bit across two
+unrelated pages is not a property of the pilot listing; it is the cold-start prior.
+
+**There is also a fixed point.** `applyDwellSignal` — the only real reinforcement mechanism
+available on a detail page — returns the state unchanged while `archetype === 'neutral'`
+(`core/intent.ts:1694`). Nothing on this page can create the non-neutral leader that dwell would
+then reinforce.
+
+**The judgement, stated plainly.** Clearing `> 0.6` from behavior alone is:
+
+- **Not reachable on this page, in any session length.** Simulating the damped Bayesian update over
+  the signal set this page emits: repeated `listing.viewed` needs **47** events merely to unseat
+  `neutral` past the `SWITCH_MARGIN = 0.05` hysteresis, and **139** to exceed 0.6 — before the
+  0.02/min decay toward uniform, which pulls the other way. On a single listing detail page this is
+  not a long session, it is a different product.
+- **Reachable in principle, off this page, via the two paths that bypass the damping.**
+  `filter.applied` boosts the posterior **additively and undamped** (`applyFilterBoosts`,
+  `core/intent.ts:911-966`): **7** same-facet events reach 0.640. `feature.expanded` applies an
+  undamped multiplicative boost (e.g. `remote_worker *= 1.4`, `core/intent.ts:1117`): **11** events
+  reach 0.651. Neither is emitted by a listing-detail page with no search/filter UI, which is why
+  the measured session never saw them.
+- **Therefore: for the pilot page as it exists today, quiz or chat input is required.** Quiz-leaf
+  resolves at `min(0.85 × 1.2, 1.0) = 1.0` (`core/intent.ts:1321`) and clears the bar outright.
+
+**Scope this claim precisely (FOLLOW-875 AC-3).** What was measured is: _one_ page, _five_
+interaction types, several of which saturate by construction (`scroll.depth` = 4 one-shot
+milestones; repeated gallery clicks contribute nothing), under `BEHAVIORAL_DAMPING = 0.3` — an
+explicitly **unvalidated** constant whose own docblock defers calibration to FOLLOW-212 ("calibrate
+post-pilot once ≥500 labelled sessions are available"). **`0.3655` is the first empirical datum on
+that constant**, and it says something narrower and more useful than "behavior cannot work": it says
+that under damping 0.3 the _cold-start prior itself_ out-masses anything this page's signals can
+build. Untouched discriminators exist — cross-listing `applyListingViewRate`, `filter.applied`,
+`listing.bookmarked`, dwell past the session cap, referrer/UTM priors — and FOLLOW-212 may
+legitimately conclude that 0.3 is simply too aggressive. **Do not quote "structurally unreachable"
+as a property of the system.**
+
+Do not close hop 10 by injecting an archetype into the fixture. The two honest readings remain "quiz
+or chat is required on this page" and "the damping/threshold pair is miscalibrated for behavior-only
+sessions" — choosing between them is FOLLOW-819 + FOLLOW-212 work, and it must be argued against
+`> 0.6`, not against 0.5.
 
 ---
 

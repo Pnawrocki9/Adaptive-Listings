@@ -30776,6 +30776,20 @@ cross_ref: [RETRO-260 §4d DG-1 / DG-2 / §6 (Rule AI amendment 2026-08-07); FOL
 
 ## FOLLOW-888 — The FOLLOW-881 architect's learning entry was never landed, and its closing sentence is the control RETRO-260 had to re-derive
 
+**PM UPDATE (session 104, same day): HALF DISCHARGED — the lesson is landed.** The retro
+deliberately left it unstaged so as not to silently close its own finding; that was the right call,
+and the answer is to land it _visibly_ rather than leave the learning in transit a second time.
+Committed to `.claude/agents/architect/lessons.md` (which **is** tracked — the architect believed it
+untracked, which is part of why it went unlanded). Its closing sentence is the control this whole
+chain needed: _"when correcting a numeric gate, grep the document for every occurrence of the
+constant's NAME and its VALUE — the fourth wrong statement was findable only by value (`0.6`), not
+by the constant name."_ That is now folded into the amended Rule AI.
+
+**REMAINING (the half that matters more): the no-Bash dispatch template still has no landing step.**
+The architect could not commit, the PM landed the _deliverable_ and not the _learning_, and nothing
+in the process noticed. Fix the template, not this one instance — otherwise the next no-Bash agent
+loses its lesson the same way.
+
 source_retro: RETRO-260 source_ticket: FOLLOW-881 recommended_sprint: now recommended_agent:
 pm-orchestrator priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
 

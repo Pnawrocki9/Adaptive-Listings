@@ -126,3 +126,22 @@ already there. Rule: "read the seeder and the closest working auth route before 
   the stored value at all?" — if not, forbid the read outright; the read is what manufactures the
   atomicity, TTL and validation problems. Second: a predicate that must not see field X should take
   a parameter _type_ that excludes X, rather than a comment saying not to look at it.
+
+- **2026-08-07 / FOLLOW-881** · Corrected three Master_Design statements (§A.1.5 Component 1, the
+  FOLLOW-354 ladder note before §E.7.1, §E.7.9→D.5) that described the SDK cold-start gate as a lone
+  0.5 floor when shipped code is a disjunction with `signal_count >= 2` (`index.ts:827-829`), and
+  recorded the server bar as strict `> 0.6` (`route.ts:275` is `<=`; exactly 0.6 → `[]`). Withdrew
+  the note's "This is intentional" sentence — ESC-054 is unruled, so the SoT now names the open
+  question instead of asserting intent. Found a fourth stale statement (§E.4.6: `<` vs `<=`,
+  "tunable per-tenant" with no code, no `signal_count` branch) and a fifth in
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9 (floor-as-sole-gate framing + 0.3655 "ceiling" that
+  is really the t=0 prior); reported both as stubs rather than fixing out-of-AC. Also verified the
+  FOLLOW-448 branch guard false-positives on worktree edits (it reads the main tree's HEAD, not the
+  edited file's worktree HEAD) — confirmed by reading `.git/worktrees/follow-881/HEAD` directly. ·
+  **Where a spec risked describing behavior with no owner:** the old "intentional" framing was an
+  intent claim with no ruling behind it — ownership now pinned explicitly to ESC-054 in all three
+  corrected passages. · **Guardrail I'd add:** any Master_Design sentence asserting a permissive
+  behavior is "intentional" must cite the ruling (CEO/ADR/ESC-NNN) that made it so; absent a
+  citation, write "shipped behavior, intent OPEN (ESC-NNN)". And: when correcting a numeric gate,
+  grep the document for every occurrence of the constant's NAME and its VALUE — the fourth wrong
+  statement was findable only by value (`0.6`), not by the constant name.

@@ -363,8 +363,72 @@ ESC-053 alone.** Merging it today would put the two new Modal deploy jobs into a
 would persist until the secret is provisioned. That is the operator's call to accept, not the PM's
 to assume: **ESC-053 first, then merge, then `workflow_dispatch`.**
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #691, MERGEABLE and conflict-free,
-held on ESC-053.**
+### RETRO-260 landed — a FIFTH and SIXTH site, and the repo had already written the fix
+
+**Headline: nobody was sloppy.** Every correction round swept competently and each scoped its sweep
+to _the vocabulary it happened to be thinking in_. The claim lives at three levels — symbol name,
+bare literal, prose paraphrase — and Rule AI's verification block, Rule S's sibling sweep and
+FOLLOW-882's own AC(4) all grep only the symbolic one.
+
+**Two more sites, both verified by me directly rather than taken on report:**
+
+- **FIFTH — `docs/MASTER_DESIGN.md:2086`** (§D.5 fallback):
+  `If combined_confidence < 0.6 → serve neutral playbook`. Same permissive-boundary error, and it
+  contains **neither token** FOLLOW-882's prescribed closing grep looks for. The grep as written
+  would have missed it.
+- **SIXTH, in CODE — `packages/sdk/src/__tests__/follow-354.test.ts:20-22`**: _"the SDK
+  `DOM_ADAPT_CONFIDENCE_FLOOR` (0.5) is the **SOLE** gate for description fetches"_ — the exact
+  sentence #692 withdrew from `adapt-floor.ts`, still alive in the sibling test file of the test
+  #692 added, and contradicted by its own AC-1 six lines later.
+
+**The repo generated the control hours earlier and lost it in transit.** The architect's lesson was
+sitting **uncommitted** in `.claude/agents/architect/lessons.md`, ending: _"grep the document for
+every occurrence of the constant's NAME and its VALUE — the fourth wrong statement was findable only
+by value (`0.6`), not by the constant name."_ PR #693 carried `MASTER_DESIGN.md` alone. **The
+architect cannot commit, so the PM landed the deliverable and not the learning — and nothing in the
+process noticed.** I have now landed it (FOLLOW-888 half-discharged); the template fix stays open,
+because that is the half that prevents a recurrence.
+
+**Rule AI amended in place** (second amendment, sightings 4 → 7). **No new letter — 43 rules, AA–AQ,
+unchanged.** The retro explicitly declined to mint `AR`, which would have split this class's
+evidence base. The amendment is machine-checkable: sweep at **(a)** symbol, **(b)** the literal
+VALUE plus its comparison operators, **(c)** the prose paraphrase quoted verbatim; corpus extended
+to `packages/**/__tests__/**` and `packages/**/schemas/**`; closing evidence is the per-hit
+adjudicated list, never "the document is now clean." **P-40 minted at count 1 and NOT promoted** —
+and the retro refused to count it as P-39's second sighting, which is the discipline working.
+
+### 🔴 FOLLOW-819 is NOT safe to start — `QUEUE.md`'s own gate sentence is wrong
+
+The queue said "must not start until FOLLOW-881 lands", which read literally now green-lights it.
+**Four other conditions bind:** (i) §E.4.6 still shows `<` and still advertises a per-tenant `0.4`
+knob that does not exist, and `:2086` is unfiled — FOLLOW-882 is P2/FROZEN; (ii) AC(3) needs an
+`adaptation_decisions` row whose only writer (`route.ts:482`) is still absent from the substrate;
+(iii) AC(5) still says "real **staging** rows", unexecutable under the ESC-052 ruling — FOLLOW-878
+unstarted; (iv) `depends_on` 817 / 818 / 560 all open. **FOLLOW-882 + FOLLOW-887 (~3h combined)
+should be unfrozen and run before FOLLOW-819 is dispatched.**
+
+### Corrections to figures this queue previously carried
+
+- **`feature.expanded ×11` is DISPUTED**: the runbook says `0.651`, the retro reproduced `0.6625`.
+  It reproduced cold-start to all 17 digits and `filter.applied ×7 → 0.6401` exactly, so the
+  discrepancy is specific. FOLLOW-886 owns it; **do not design against either number yet.**
+- **The undamped-boost class is FOUR, not two** —
+  `packages/shared/src/schemas/intent-weights.ts:110-114` already enumerates `listing.bookmarked`,
+  `micro_poll.answered`, `feature.expanded`, `filter.applied`. So #692's "that asymmetry is
+  documented nowhere" was false, and **`micro_poll.answered` is emitted ON the pilot page**
+  (`index.ts:1420`) — which puts a hole in §9.2's "quiz or chat is required". Verified both
+  directly. FOLLOW-883 (P1).
+- **ESC-054's premise aged inside the same session**: its title says two signals, its body proves
+  one, and `>= 5` was justified against the un-corrected count. FOLLOW-884 (P1). The retro's broader
+  point stands: escalations have **no re-validation step and no owner between `filed` and `ruled`**.
+
+**Stubs FOLLOW-883…888 filed. Next free: FOLLOW-889.**
+
+**#691 CI re-verified after the merge-up** — exit 0, Rule I 192/192, 0 new. It is conflict-free,
+green, and held on ESC-053 alone.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #691, verified and mergeable, held
+on ESC-053.**
 
 ---
 

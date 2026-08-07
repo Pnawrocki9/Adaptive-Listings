@@ -2847,6 +2847,84 @@ P1 because the reader cannot see our diff; in-file docblocks/ADRs/MASTER_DESIGN/
 changed file's OWN docblock is never exempt. LETTER CHOICE: AI is the next in the double-letter sequence
 after AH. -->
 
+### Rule AI amendment (2026-08-07 — RETRO-260 §6 — the sweep must run at THREE vocabularies, and the closing evidence is the adjudicated hit list)
+
+**This is an AMENDMENT to an already-promoted rule, not a new rule.** No new letter is minted and
+the ≥2-PRIOR-retro gate is not re-invoked: the pattern (a correction that leaves siblings asserting
+the retracted claim) **is** Rule AI, and RETRO-260 is its **7th** sighting after RETRO-213 /
+RETRO-221 / RETRO-222 / RETRO-246 / RETRO-259. A new letter for "corrections stop short" would
+duplicate AI and split its evidence base. What this amendment closes is a hole **in this rule's own
+Verification block**, demonstrated on a claim that survived four documents and three competent
+correction rounds.
+
+**Trigger (RETRO-260 — PR #692 / FOLLOW-875+877 and PR #693 / FOLLOW-881).** One claim — _"the SDK's
+`DOM_ADAPT_CONFIDENCE_FLOOR = 0.5` is the gate on the description axis"_ — was corrected three times
+and each round found more sites than the last: FOLLOW-875 corrected the code docblock and two stubs
+but not MASTER_DESIGN (→ FOLLOW-881); FOLLOW-881 corrected three MASTER_DESIGN sites but not §E.4.6
+(→ FOLLOW-882); FOLLOW-882's own closing AC prescribes
+`grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md`. **RETRO-260 ran
+the sweeps that grep cannot express and found two more:**
+
+- **`docs/MASTER_DESIGN.md:2086`** — _"If `combined_confidence < 0.6` → serve `neutral` playbook, no
+  DOM mutation"_ — the same boundary error (`<` where `route.ts:275` is `<=`), the same permissive
+  direction, containing **neither token** of the prescribed grep because it writes the threshold as
+  a **bare literal**. Found by `grep -n "confidence.*0\.6\|0\.6.*confidence" docs/MASTER_DESIGN.md`.
+- **`packages/sdk/src/__tests__/follow-354.test.ts:20-22`** — _"the SDK `DOM_ADAPT_CONFIDENCE_FLOOR`
+  (0.5) is the **SOLE** gate for description fetches"_, i.e. the exact sentence PR #692 withdrew
+  from `packages/sdk/src/core/adapt-floor.ts:26-32`, surviving in the sibling test file of the test
+  #692 added and contradicted six lines later by that file's own AC-1. Found by
+  `grep -rn "sole gate\|SOLE gate" docs/ backlog/ packages/sdk/src`.
+
+**The mechanism, stated so it generalises past this claim:** a claim exists at up to three
+vocabularies — the **symbol**, the **literal value**, and the **prose paraphrase** — and every sweep
+so far inherited the vocabulary of the round that happened to find the bug. Rule AI's Verification
+block above greps _"the ticket ID, the flag/env name, the symbol and the endpoint path"_: all four
+are the symbolic vocabulary. **A claim has as many hiding places as it has vocabularies.**
+
+**Amendment — two clauses, both non-optional:**
+
+1. **Three-vocabulary sweep.** The Rule AI sweep MUST be run at, and its output published for, all
+   three: **(a)** the symbol / constant / flag / ticket ID / endpoint path (the existing block);
+   **(b)** the **literal VALUE** the symbol holds, together with its comparison operators — for a
+   threshold, grep the number and every `<`, `<=`, `>`, `>=` near it; **(c)** the **prose
+   paraphrase**, quoted **verbatim from the sentence being retracted** (`"sole gate"`, `"no third"`,
+   `"this is intentional"`, `"optional"`). Clause (c) is free: the retracted sentence is already in
+   the diff, so its distinctive phrases are known at zero cost.
+2. **The closing evidence is the adjudicated hit list, never a cleanliness claim.** Every hit from
+   all three vocabularies is listed in the PR body / close note with a per-hit verdict (`corrected`
+   / `already correct` / `out of scope, filed as FOLLOW-NNN`). _"The document is now clean"_ is not
+   evidence and does not discharge this rule. (FOLLOW-882 AC(4) already had this half and only
+   vocabulary (a); FOLLOW-887 discharges the amendment live.)
+
+**Corpus addition, from the same evidence.** Rule AI's listed corpus (`docs/`,
+`backlog/HANDOFFS.md`, ADRs, the changed file's own docblock, and — per the 2026-08-05 amendment —
+`.claude/`) MUST also include **`packages/**/**tests**/**`and`packages/**/schemas/**`**. Both sites
+RETRO-260 found live there: a test-file header is prose that no reviewer reads as documentation and
+no compiler checks, and a schema docblock is where this repo demonstrably writes down cross-module
+invariants (`packages/shared/src/schemas/intent-weights.ts:110-114` enumerated a four-member class
+that the same correction round described as two — RETRO-260 §4a LG-1). Same corpus-hole shape the
+2026-08-05 amendment closed for `.claude/`.
+
+**Verification (run all three, publish all three):**
+
+```bash
+# (a) symbolic — the existing block, unchanged.
+grep -rn "FOLLOW-<n>\|<FLAG_NAME>\|<symbolName>" docs/ backlog/HANDOFFS.md CONVENTIONS_PATCH.md \
+  packages/*/src/__tests__ packages/*/src/schemas .claude/ | grep -viE 'RETROSPECTIVES|FOLLOW_UPS'
+# (b) the literal value the symbol holds, with its operators — the vocabulary that hid MASTER_DESIGN:2086.
+grep -rnE '(^|[^0-9.])<VALUE>([^0-9]|$)' docs/ packages/*/src | grep -iE '<subject-word>|[<>]=?'
+# (c) the retracted sentence's own distinctive phrases, taken verbatim from the diff.
+git diff origin/main -- <changed-doc> | grep '^-' | tr ' ' '\n' | sort -u   # harvest the phrases
+grep -rn "<phrase 1>\|<phrase 2>" docs/ backlog/ packages/ apps/ .claude/
+# The PR body MUST contain a per-hit verdict line for every hit above. A "now clean" claim fails.
+```
+
+**Evidence for this amendment:** RETRO-213 / RETRO-221 / RETRO-222 (the promotion set), RETRO-246 §6
+P-29 (amendment 1 — the corpus hole for `.claude/`), RETRO-259 §4d DG-1 (ESC-052's correction set
+stopped one document short of the SoT → FOLLOW-878; sighting 5), **RETRO-260 §4d DG-1/DG-2
+(sightings 6 and 7 — the fifth and sixth sites of one claim, both invisible to a symbol-scoped sweep
+→ FOLLOW-887)**. **No new letter: rule count stays 43, range AA-AQ; Rule AI amendments 1 → 2.**
+
 ## Rule AJ — A newly-shipped failure-detection signal MUST have a consumer in the SAME PR: an alert/registry entry AND a verified delivery channel in the environment it must fire in; a producer-only alarm is a HALF_WIRE_P, not observability
 
 **Pattern:** A PR closes a silent-failure gap by _emitting_ a signal — `Sentry.captureMessage` /
@@ -3781,3 +3859,37 @@ was lost and it was reconstructed; remedy owned by FOLLOW-448/573/645; the memor
 feedback_check_worktrees_before_concluding_agent_didnt_run worked unprompted — bar pre-specified in RETRO-259
 §6); P-39 MINTED at count 1 ("a harness asserts against a constant the deciding code does not read") with a
 3-clause bar, tested against Rule Q / Rule AL / Rule AM / Rule AK item 5 and none fires. -->
+
+<!-- RULE ACTION 2026-08-07 (RETRO-260, PR #692 / FOLLOW-875+877 squash e55063b0 and PR #693 / FOLLOW-881
+squash dc36740a): Rule AI AMENDED IN PLACE (2026-08-07 block, its SECOND amendment) — the Rule AI sweep MUST
+run at THREE vocabularies (symbol / literal VALUE + its comparison operators / prose paraphrase quoted
+verbatim from the retracted sentence), its corpus MUST include packages/**/__tests__/** and
+packages/**/schemas/**, and the closing evidence MUST be a per-hit adjudicated list — "the document is now
+clean" does not discharge the rule. NO NEW LETTER: the class ("a correction that leaves siblings asserting the
+retracted claim") IS Rule AI, promoted on RETRO-213/221/222 and amended on RETRO-246; minting an AR for it
+would duplicate AI and split its evidence base (RETRO-122 discipline). Rule count stays 43, range AA-AQ,
+Rule AI amendments 1 -> 2, Rule AI sightings 4 -> 7. TRIGGER: one claim ("DOM_ADAPT_CONFIDENCE_FLOOR = 0.5 is
+the description-axis gate") corrected three times, each round finding more — FOLLOW-875 missed MASTER_DESIGN
+(-> FOLLOW-881), FOLLOW-881 missed §E.4.6 (-> FOLLOW-882), and FOLLOW-882's own closing grep
+(`CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR` over MASTER_DESIGN) cannot see the FIFTH site
+(MASTER_DESIGN.md:2086, "combined_confidence < 0.6" — the same permissive-boundary error written as a BARE
+LITERAL) or the SIXTH (packages/sdk/src/__tests__/follow-354.test.ts:20-22, still "SOLE gate", contradicting
+its own AC-1 six lines later). Every sweep inherited the vocabulary of the round that found the bug.
+FOLLOW-887 discharges the amendment live. NOT promoted by RETRO-260: P-40 MINTED at count 1 ("a drift guard
+asserts a LOCAL COPY of the constant it claims to guard, so it can only detect drift in itself" —
+follow-877.test.ts:74 + D-6b) with a 3-clause bar, and RETRO-260 explicitly REFUSED to count it as P-39's
+second sighting because P-39 clause (a) requires the assertion to READ from source and this one hardcodes;
+P-39 stays at count 1. Also NOT promoted: the FROZEN-convention re-pricing gap (FOLLOW-849's FOURTH sighting)
+— the failure mode is real (priority is set once, from the first sighting; rediscovery cost accrues
+invisibly) but the remedy is stub metadata rather than an agent constraint, and the PM's manual P2->P1
+re-pricing is a control succeeding; bar pre-specified in RETRO-260 §6. RECORDED AS A CONTROL THAT WORKED:
+Rule AN held across four allocating writes on three branches (#691's FOLLOW-874 vs main's 875..882) — the
+merge conflicted on CONTENT, not on a duplicated number. RULE AG's 2026-08-05 amendment (the PM's LANDING
+OBLIGATION for a no-Bash agent's learning entry) fired for the FIRST time since promotion and is recorded as
+a COMPLIANCE failure against an adequate control, no rule action: .claude/agents/architect/lessons.md is
+MODIFIED AND UNCOMMITTED on main at 648a0bb9 (PR #693 carried docs/MASTER_DESIGN.md alone), and its closing
+sentence — "grep the document for every occurrence of the constant's NAME and its VALUE; the fourth wrong
+statement was findable only by value (0.6), not by the constant name" — IS the Rule AI amendment above,
+reached independently by the FOLLOW-881 architect hours earlier and lost in transit. That is the strongest
+corroboration available for this amendment: the estate generated the control and dropped it, rather than
+failing to conceive it. Remedy: FOLLOW-888 (P2, pm-orchestrator, 1h). -->

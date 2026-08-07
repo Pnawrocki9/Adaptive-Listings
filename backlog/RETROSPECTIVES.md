@@ -55483,3 +55483,571 @@ HALF_WIRE_P run artifact), 877 (P2 FROZEN sdk 2h adapt-floor docblock vs disjunc
 ESC-052 sibling set incl. Master_Design), 879 (P2 FROZEN sdk 2h five runbook corrections), 880 (P2 FROZEN
 data 1h FOLLOW-853 record integrity + probe user/profile). QUEUE.md / ESCALATIONS.md / sprint files / code
 correctly UNTOUCHED. -->
+
+## RETRO-260 — FOLLOW-875 + FOLLOW-877 (#692) and FOLLOW-881 (#693) — three correction rounds each swept in the vocabulary of the round that found the error, so the fifth site was never in scope — 2026-08-07
+
+**THE HEADLINE, AND IT ANSWERS THE QUESTION THE BRIEF ASKED. NOBODY WAS SLOPPY. EVERY ROUND SWEPT
+COMPETENTLY — AND EACH ONE SCOPED ITS SWEEP TO THE VOCABULARY IT HAPPENED TO BE THINKING IN, SO THE
+SITES THAT SPELL THE SAME CLAIM DIFFERENTLY WERE NEVER CANDIDATES.** Round 1 (FOLLOW-816) spoke
+_"0.3655 vs the 0.5 floor"_ and swept nothing. Round 2 (RETRO-259) spoke _"disjunction /
+`route.ts:275`"_ and swept `packages/sdk/src`. Round 3 (FOLLOW-875) spoke the **constant names** and
+swept code + the two stubs that cite them. Round 4 (FOLLOW-881) swept `MASTER_DESIGN.md` for the same
+**constant names** and found three; the architect found a fourth by reading §E.4.6, not by grepping.
+FOLLOW-882's AC(4) — the closing control the brief holds up as the machine-checkable model — is
+literally `grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md`.
+
+**I ran it. Then I ran the sweep it cannot express, and found two more sites.**
+
+- **FIFTH SITE — `docs/MASTER_DESIGN.md:2086`**, §D.5 Fallback rules item 1: _"If
+  `combined_confidence < 0.6` → serve `neutral` playbook, no DOM mutation."_ Same boundary error as
+  §E.4.6 (`<` where `route.ts:275` is `<=`), same permissive direction, and **it contains neither
+  token in FOLLOW-882's grep** because it writes the threshold as a bare literal. It sits nine lines
+  above `:2088`, which the same rounds also left. Found by
+  `grep -n "confidence.*0\.6\|0\.6.*confidence" docs/MASTER_DESIGN.md`.
+- **SIXTH SITE, AND IT IS IN CODE — `packages/sdk/src/__tests__/follow-354.test.ts:20-22`**: _"The
+  SDK `DOM_ADAPT_CONFIDENCE_FLOOR` (0.5) is the **SOLE** gate for description fetches."_ That is the
+  exact sentence #692 withdrew from `adapt-floor.ts:26-32` — surviving in the **sibling test file of
+  the test #692 added**, in the same directory, contradicted six lines later by its own AC-1
+  (`:28-29` correctly says _"confidence < FLOOR **AND** signal_count < MIN"_). Found by
+  `grep -rn "sole gate\|SOLE gate" docs/ backlog/ packages/sdk/src`, which returns it and
+  `follow-877.test.ts:6` — the new test **cites the withdrawn wording** and did not sweep for it.
+
+**AND THE REPO ALREADY HAD THE ANSWER, UNCOMMITTED, IN THE MAIN TREE.** `git status` at `648a0bb9`
+shows `.claude/agents/architect/lessons.md` **modified and unlanded** — 19 lines the FOLLOW-881
+architect wrote and PR #693 never carried (`git show dc36740a --stat` → 1 file, `MASTER_DESIGN.md`;
+`grep -rn "architect/lessons" backlog/QUEUE.md` → 0 hits; the `follow-881` worktree is already
+removed). Its last sentence is this retro's rule amendment, arrived at independently and hours
+earlier:
+
+> _"when correcting a numeric gate, grep the document for every occurrence of the constant's **NAME**
+> and its **VALUE** — the fourth wrong statement was findable only by value (`0.6`), not by the
+> constant name."_
+
+**The insight was not missing. It was written down and dropped on the floor** — because the architect
+has no Bash tool, the PM commits on its behalf, and the PM landed the deliverable and not the
+learning. Rule AG's 2026-08-05 amendment exists for exactly this ("the blocked-write fallback and the
+PM's **landing obligation**"). → **FOLLOW-888**, and it is the single best argument for the amendment
+in §6, because it shows the estate generating the right control and losing it in transit rather than
+failing to think of it.
+
+So the answer to _"what property of this repo let one wrong claim survive four documents and three
+correction rounds"_ is not culture and not care. It is that **the claim is a relationship between
+two constants in two different applications, expressed at three levels of abstraction — symbol name,
+bare literal, natural-language paraphrase — and every control this repo has (Rule AI's Verification
+block, Rule S's sibling sweep, FOLLOW-882's AC(4)) greps at exactly one of those levels: the symbol.
+A claim has as many hiding places as it has vocabularies, and the sweep inherits the vocabulary of
+the round that found the bug.** That is a mechanised hole in an already-promoted rule, demonstrated
+rather than argued → **Rule AI amendment (§6)**, and → **FOLLOW-887**.
+
+**SECOND HEADLINE: THE CORRECTION ROUND UNDER-COUNTED THE UNDAMPED-BOOST CLASS BY HALF, AGAINST A
+NOTE THIS REPO ALREADY WROTE.** #692's commit message, PR body, runbook §9.2 and the sdk-engineer
+`lessons.md` entry all say `> 0.6` is _"reachable in principle, off this page, via **the two** paths
+that bypass the damping"_ — `filter.applied` and `feature.expanded` — and the lessons entry adds
+_"that asymmetry is **not documented anywhere**"_. Both halves are wrong, and one grep settles it:
+
+- **`packages/shared/src/schemas/intent-weights.ts:110-114` enumerates the class, all four members**:
+  _"`listing.bookmarked`, `micro_poll.answered`, `feature.expanded`, and `filter.applied` have
+  payload-conditional intercepts in the SDK that run before the `SIGNAL_LIKELIHOODS` lookup … The
+  payload-conditional boosts are **not overridable in v1**."_ **Rule P** (prior art) fires — the
+  **seventh** consecutive retro to that adjudication (RETRO-247, 248, 252, 253, 255, 259).
+- **"entirely" is false for two of the four.** `feature.expanded` (`intent.ts:1099-1104`) and
+  `listing.bookmarked` (`:1007-1012`) apply the **damped** neutral-push in step 1 and only their
+  payload-conditional boosts in step 2. Only `filter.applied` (`applyFilterBoosts`, no
+  `effectiveDamping` reference at all) and `micro_poll.answered` (`:1048-1071`, `SIGNAL_LIKELIHOODS`
+  never consulted) bypass it wholly.
+- **The omitted member is the one that is ON the pilot page.** `micro_poll.answered` is emitted by
+  the SDK itself — `index.ts:1420`, a bottom-toast that fires at 90 s or on quiz-dismiss
+  (`:1370-1400`) — so §9.2's binary conclusion _"for the pilot page as it exists today, **quiz or
+  chat** is required"_ omits a third, already-implemented, in-page solicited-input path with
+  **undamped** ×1.2–1.3 boosts. That conclusion is FOLLOW-819's problem statement.
+- **Cascading, and nobody has booked it:** `overrides.behavioralDamping` — the per-tenant server
+  weight FOLLOW-212 exists to calibrate — is bypassed on all four paths, by design and by the note
+  above. FOLLOW-212 cannot tune the four highest-magnitude signals in the engine. → **FOLLOW-883**.
+
+**THIRD HEADLINE: THE "GATING LADDER DRIFT GUARD" GUARDS A COPY OF THE CONSTANT IT CLAIMS TO GUARD,
+AND THE SAME PR CONTAINS THE CORRECT READER.** `packages/sdk/src/__tests__/follow-877.test.ts:74`
+declares `const SERVER_CONFIDENCE_THRESHOLD = 0.6;` and D-6b (`:382-387`) asserts
+`expect(SERVER_CONFIDENCE_THRESHOLD).toBe(0.6)` — **a literal asserted against itself**. Change
+`apps/control-plane/src/app/api/adapt/route.ts:86` to `0.7` and D-6b stays green, D-5's mock
+(`:182`, `confidence <= SERVER_CONFIDENCE_THRESHOLD`) keeps emulating the retired gate, and the SDK's
+freshly-corrected docblock is wrong again with a green suite. **The same PR wrote the fix**:
+`scripts/dev/local-pilot-session.mjs:73-108` `readServerConfidenceGate()` reads the value **and its
+comparison operator** out of `route.ts` at run time and **throws** rather than defaulting, with a
+docblock that says in as many words _"a constant copied into this script is a constant that silently
+drifts."_ It was applied to the dev harness and not to its sibling in the same commit. → **FOLLOW-885**.
+
+**WHAT BOTH PRs GOT RIGHT, STATED FIRST BECAUSE IT IS WHY THE ABOVE IS FINDABLE.** #692 disproved its
+own stub's premise (0.3655 is the cold-start prior, not a ceiling) and **I reproduced its arithmetic
+independently, from the source constants, to all 17 significant figures** —
+`normalize(BASE_PRIOR × damped(device_type.desktop, 0.3)).neutral = 0.36554663991975933`, bit-identical
+to the measured peak; and `filter.applied ×7 → 0.6401`, matching the runbook's `0.640` exactly. It
+found a mock-fidelity gap **by executing** the harness (mock answers a fabricated `confidence: 0.1`,
+`mock-decision-server.mjs:519`) that no amount of reading produces. It routed FOLLOW-877 AC(1) to
+**ESC-054** instead of enacting a buyer-facing behavior change unilaterally. #693 withdrew _"This is
+intentional"_ **with its reason** rather than replacing one asserted intent with another, and recorded
+the fourth site it was not scoped to fix rather than quietly leaving it. Both refused to assert
+unruled intent. Every finding below sits on top of that work.
+
+---
+
+### 1. Summary of change
+
+- **PR #692** (merged 2026-08-07 14:17 UTC, squash `e55063b0`), branch
+  `sdk-engineer/FOLLOW-875-877-confidence-gate-attribution`, sdk-engineer on **Opus**. 7 files
+  (+1005 / -55): `packages/sdk/src/__tests__/follow-877.test.ts` (388, new),
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` (170), `scripts/dev/local-pilot-session.mjs` (204),
+  `backlog/FOLLOW_UPS.md` (107), `backlog/ESCALATIONS.md` (75),
+  `packages/sdk/src/core/adapt-floor.ts` (74), `.claude/agents/sdk-engineer/lessons.md` (42).
+- **PR #693** (merged 2026-08-07 16:28 UTC, squash `dc36740a`), branch
+  `architect/FOLLOW-881-master-design-gating-ladder`, architect on **Fable**. 1 file
+  (+11 / -8): `docs/MASTER_DESIGN.md` only, v4.4 → **v4.5**.
+- **Modules touched:** SDK (docblock + tests only, **zero executable lines**), scripts (dev-only),
+  docs, backlog. **SDK bundle delta 0 bytes** (42912 gzip before and after, per the worker's own
+  measurement) — `adapt-floor.ts`'s two exported constants are byte-identical at HEAD.
+- **Key contracts changed: none in code.** Three **documentary** contracts changed, all in the
+  restrictive direction (they narrow what the reader may assume): (a) `adapt-floor.ts`'s docblock no
+  longer claims the 0.5 floor is the description axis's sole gate; (b) MASTER_DESIGN §A.1.5 / the
+  FOLLOW-354 note / §E.7.9 now state the disjunction and the strict `> 0.6`; (c) **FOLLOW-819 AC(1)
+  and FOLLOW-872 AC(3) were edited in place** — a live, promoted-to-queue P1's acceptance criterion
+  changed by a different ticket's PR. Breaking: **no** for code, **yes** for any reader who quoted
+  0.5 (which is three prior sessions of QUEUE.md and this retro log up to RETRO-258).
+
+### 2. Verification done in PR
+
+- **#692 — test files changed: 1 new** (`follow-877.test.ts`, 8 `it()` blocks / 16 `expect()`).
+  Coverage delta: **0 on statements** (no executable source changed); the value is behavior-locking,
+  not coverage. **Mutation-proven, and the worker said which mutations**: `||` → `&&` in `index.ts`
+  turned 4 of 8 red — that is the only evidence a test asserts the *operator* rather than the
+  *scenario*, and it is the standard four prior retros have been asking for.
+- **#693 — test files changed: none, correctly.** Docs-only; nothing to assert.
+- **CI: verified green on both.** QUEUE session-104 records `scripts/gh-pr-checks-verified.sh` exit 0
+  for #692, and for #693 **two independent runs** agreeing after `pending` settled, with Rule I at
+  **192/192, 0 new** — i.e. the pre-existing-red baseline was compared, not assumed (Rule AF).
+- **Not verified, each stated by the worker rather than hidden — and each is a §4 finding:** #692 did
+  **not** bring the full pilot stack up, so runbook §6's hop table is **still the pre-correction
+  run** and the negative control was not re-executed (expect `5/9`, not `6/8`); the reachability
+  simulation that produced `47 / 139 / 7 / 11` is **not committed anywhere** (§4c TG-2); FOLLOW-876
+  was explicitly not absorbed. #693's author **had no Bash tool** and therefore ran no format, lint
+  or test gate on its own output (§5d).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** No new exported symbols in either PR. `adapt-floor.ts`'s two
+exports are unchanged and both have non-test importers (`grep -rn "DOM_ADAPT_CONFIDENCE_FLOOR"
+packages/sdk/src --include=*.ts | grep -v __tests__` → `index.ts:827-829`, `index.ts` re-export).
+`packages/sdk/src/__tests__/follow-877.test.ts` is a test file (suppressed per the carve-out).
+`readServerConfidenceGate()` (`local-pilot-session.mjs:73`) is module-local and called at `:329` in
+the same file — a dev-only operator entrypoint (suppressed). `docs/MASTER_DESIGN.md` is prose.
+
+**CHECK B — half-wire: clean ✅, and I checked the four axes rather than asserting it.** No new event
+type (`git show e55063b0 dc36740a | grep -E '^\+.*type: .(session|listing|scroll|intent|adapt)'` →
+0 hits), no new env var (`^\+.*process\.env\.` → 0 new names; `MAX_CAPTURED_BODY_CHARS` is a module
+constant), no new column/topic, no new SDK signal. The one new producer — the `context.on('response')`
+capture at `local-pilot-session.mjs:159-193` — has an **in-file consumer** at `:329-360` (the hop-10
+assertion) **and** a durable one (`SESSION_JSON`), so it is the *partial* discharge of RETRO-259's
+HALF_WIRE_P; the worker explicitly refused to call FOLLOW-876 done on it (`:165-168`), which is the
+correct behaviour and is why this is not a second finding.
+
+**Recorded, deliberately NOT classified as a half-wire.** `ESC-054` is a producer (a decision
+request) whose consumer is a CEO/CPO ruling, and this repo has **no register of open decisions** —
+`grep -rn "ESC-054" backlog/ docs/` returns only the escalation itself, four stub cross-refs, the
+QUEUE session head and the MASTER_DESIGN changelog. Nothing schedules it, nothing blocks on it, and
+`follow-877.test.ts` D-1 is a consumer built to be inverted by a ruling that has no due date. CHECK B
+is scoped to events/env-vars/columns/topics/SDK-signals and stretching it to escalations would
+devalue the classification, so this is carried in §5d instead. It is nonetheless the sharpest
+structural observation in this retro after the headline.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the undamped-boost class is 4, stated as 2, with the in-page member omitted, against
+  an in-repo note that already enumerates it.** Full derivation in the second headline.
+  `packages/shared/src/schemas/intent-weights.ts:110-114` vs `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
+  §9.2, the #692 commit message, and `.claude/agents/sdk-engineer/lessons.md`. The consequential half
+  is `micro_poll.answered` (`intent.ts:1048-1071`, emitted at `index.ts:1420`): §9.2 concludes _"quiz
+  or chat is required"_ on this page while a third solicited-input path with undamped ×1.2–1.3 boosts
+  is mounted on it. **Second-order harm, unbooked:** `overrides.behavioralDamping` — the per-tenant
+  knob FOLLOW-212 exists to calibrate — is bypassed on all four paths, so FOLLOW-212 cannot tune the
+  four highest-magnitude signals in the engine. → **FOLLOW-883**.
+- **LG-2 (P2) — ESC-054's recommendation inherits the exact off-by-one ESC-054 discovered.** The body
+  proves the init-time `device_type` prior already spends one `signal_count`, so the shipped bar is
+  **one real behavioral event**. The recommendation is then `signal_count >= 5`, justified as _"the
+  boundary the SDK already treats as enough evidence, since `intent.snapshot` fires every 5 signals
+  (`index.ts:1219-1225`)"_ — but with the prior consuming one, `>= 5` is **four** real events, and
+  the snapshot at `signal_count % 5 === 0` likewise fires on the fourth. The title still reads _"Two
+  behavioral signals currently bypass…"_ while the body says one. **The PM recorded the drift
+  (`QUEUE.md:310`: _"the recommendation … should be read against one event, not two"_) and the
+  escalation text was not amended**, so the artefact the CEO will read still carries the pre-sharpened
+  premise. This is the brief's question answered concretely: **an escalation's premise does age
+  silently, because an escalation has no re-validation step and no owner between filing and ruling.**
+  → **FOLLOW-884**.
+- **LG-3 (P3) — "a session starts at `signal_count = 1`" is stated unconditionally in three artefacts
+  and is conditional in code.** `index.ts:975` wraps the device prior in
+  `if (!intentStateRehydrated && !profilingOptedOut)`. Traced both branches rather than flagging it:
+  opted-out sessions never reach the gate at all (`refreshDirectives` is only wired at `:1054` under
+  `!profilingOptedOut`), and rehydrated sessions carry a persisted `signal_count` that is **≥** 1, so
+  the gate is *more* open, not less. **Over-stated, never wrong in the dangerous direction** — but it
+  is the same shape as the defect this whole chain is about (a document stating unconditionally what
+  the code does conditionally), which is why it is recorded rather than waved through. Folded into
+  FOLLOW-883 AC(4).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — the drift guard guards a copy.** `follow-877.test.ts:74` + D-6b (`:382-387`), full
+  derivation in the third headline; the correct reader exists at `local-pilot-session.mjs:73-108` in
+  the same commit. Aggravating: D-5/D-5b's mock also emulates the server gate off the same copy
+  (`:182`), so **three** of the eight new tests are anchored to a literal that the deciding code does
+  not export. Not a regression — it is a **new** control shipped un-wired to its subject. → **FOLLOW-885**.
+- **CB-2 (P3) — Rule AG's discipline was broken while Rule AG's own verification reports clean.**
+  #692 appended 42 lines to the **shared tail** of `.claude/agents/sdk-engineer/lessons.md` (`:684→726`)
+  from a worktree while PR #691 was open; `.claude/agents/sdk-engineer/lessons.d/` does not exist
+  (`.claude/agents/retrospective-analyst/lessons.d/` does). Rule AG's rule text is unconditional
+  (_"MUST NOT append … while other agents may be running"_); its Verification block is a **collision**
+  detector (`for pr in open PRs … | uniq -d`) which returns nothing because the concurrent agent is a
+  different agent writing a different file. **Harm this time: zero.** Recorded because the gap is
+  between a rule's text and its own control, which is the same species as the headline. Folded into
+  FOLLOW-886 AC(3).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1)** — see CB-1: the one new test whose subject is the cross-application ladder cannot
+  fail on the axis it names. → FOLLOW-885.
+- **TG-2 (P2) — the reachability numbers FOLLOW-819's problem statement rests on are not
+  reproducible from the repo.** `47` / `139` / `7 → 0.640` / `11 → 0.651` are asserted in
+  `LOCAL_PILOT_ENVIRONMENT.md` §9.2 and in the lessons file; **no simulation artefact was committed**
+  (`git show e55063b0 --stat` — 7 files, none of them a simulation). I re-derived them from the source
+  constants: the cold start reproduces to **all 17 digits** and `filter.applied ×7 → 0.6401` matches
+  `0.640` **exactly**, but `feature.expanded ×11 → 0.6625`, not `0.651` — a **0.012 divergence I
+  cannot reconcile without the script**, most likely a different starting state or boost/push ordering.
+  The *judgement* (11 events clears `> 0.6`) survives; the *arithmetic* is currently unfalsifiable by
+  anyone but its author, in the artefact three P1 tickets read. → **FOLLOW-886**.
+- **TG-3 (P2) — §6's hop table is still the pre-correction run.** The corrected harness reports out of
+  **9**, and the two hop-10 reds become three. The PR added a counting note (§6, _"Counting note
+  (FOLLOW-875)"_) rather than re-running — honest, correctly labelled, and still leaves the durable
+  table showing a verdict the current script cannot produce. Folded into FOLLOW-886.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P1) — the fifth site: `docs/MASTER_DESIGN.md:2086`.** §D.5 Fallback rules item 1,
+  `combined_confidence < 0.6`, permissive at the boundary, **invisible to FOLLOW-882's prescribed
+  closing grep**. Companion prose at `:1780` (_"combined confidence > threshold (default 0.6)"_) and
+  `:2139` (_"Is intent confidence > 0.6?"_) use the **correct** operator, which is what makes `:2086`
+  a genuine internal contradiction rather than a house style. → **FOLLOW-887**.
+- **DG-2 (P1) — the sixth site, in code: `packages/sdk/src/__tests__/follow-354.test.ts:20-22`**
+  still says the 0.5 floor is the **SOLE** gate of the description axis, contradicting the corrected
+  `adapt-floor.ts`, MASTER_DESIGN v4.5, and its own AC-1 at `:28-29`. It is the sibling of the test
+  file #692 created, and `follow-877.test.ts:6` **quotes the withdrawn wording** without sweeping for
+  it. → **FOLLOW-887**.
+- **DG-3 (P2) — the learning loop is now carrying the wrong generalisation.**
+  `.claude/agents/sdk-engineer/lessons.md` (added by #692) states _"those two paths … bypass
+  `BEHAVIORAL_DAMPING` **entirely**"_ and _"that asymmetry is **not documented anywhere**"_. Both are
+  false (LG-1). Every future sdk-engineer session loads this file, so an under-counted class
+  propagates into work that has not been dispatched yet — the highest-leverage wrong sentence in
+  either PR. → FOLLOW-883 AC(3).
+- **DG-5 (P2) — the architect's learning entry from #693 was never landed, and it contains the
+  control this retro promotes.** `.claude/agents/architect/lessons.md` is **modified and uncommitted**
+  on `main` at `648a0bb9`; #693 shipped `MASTER_DESIGN.md` alone. Beyond the name-and-value guardrail
+  quoted in the headline, the lost 19 lines also record a **fifth** site the architect found in
+  `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9 and the `.git/worktrees/follow-881/HEAD` evidence for
+  FOLLOW-849's fourth sighting — none of which reached a stub, a rule or `main`. **Rule AG's
+  2026-08-05 amendment (the PM's landing obligation) fires, first sighting since promotion.** →
+  **FOLLOW-888**.
+- **DG-4 (P3) — MASTER_DESIGN's own changelog v4.5 tells the truth about a residual and its §Y.2
+  block is honest, but the residual grew while it was being written.** The changelog names §E.4.6 as
+  the fourth site "left in place, stub reported to the PM" — correct and admirable. `:2086` and
+  `follow-354.test.ts` were already there and are not named. Folded into FOLLOW-887 AC(2).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 (P1, the exit test for the whole localhost stage) — NOT safe to start, and the
+  start-gate as written would say it is.** QUEUE.md:248 states the gate as a single condition —
+  _"FOLLOW-819 must not start until FOLLOW-881 lands"_ — and FOLLOW-881 has landed. **Four other
+  conditions bind and none of them is in that sentence:** (i) its AC(1) is corrected, but its author
+  boots from `docs/MASTER_DESIGN.md`, whose §E.4.6 (`:2439-2442`) still shows `<` and still advertises
+  a `CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)` knob that does not exist
+  (`route.ts:86` is a hard module constant) — FOLLOW-882 is **P2 and FROZEN**; (ii) `:2086` is a fifth
+  site nobody has filed (DG-1); (iii) **AC(3)** still requires an `adaptation_decisions` row carrying
+  `score_function`, and the only writer of that table (`route.ts:482`, control-plane) is still not in
+  the documented substrate — the exact gap RETRO-259 promoted the Rule S amendment on, still owned by
+  nothing; (iv) **AC(5)** still says _"a lift number computed from real **staging** rows"_, which is
+  unexecutable under the ESC-052 CEO ruling — FOLLOW-878 owns that sweep and is **not started**. Add
+  the dependency axis: `depends_on: [816 ✅, 817 (PR #691, held on ESC-053), 818 (READY, unstarted),
+  560 (open)]`. **Verdict: NO. Two of the four are cheap (FOLLOW-882 + FOLLOW-887, ~3h combined) and
+  should be unfrozen and executed before dispatch.**
+- **FOLLOW-872 (P2)** — AC(3) was corrected in place by #692 to carry the new framing. It now carries
+  the **2-of-4** enumeration (LG-1) forward into FOLLOW-819 by the same mechanism the correction was
+  meant to fix. → FOLLOW-883 AC(2).
+- **FOLLOW-876 (P1, qa-engineer, unstarted)** — partially pre-empted: #692 added the decision-response
+  capture its AC(1) names, for the narrow hop-10 slice only, and **said so in the code**
+  (`local-pilot-session.mjs:165-168`: _"do not treat 876 as done because this exists"_). This is Rule S
+  bullet 2 discharged correctly — a partial sibling deferral carrying its own number, in the durable
+  artefact. **Record it as compliance with the amendment RETRO-259 promoted one merge earlier.**
+- **FOLLOW-882 (P2, FROZEN)** — its AC(4) is the artefact the brief nominated as the rule model. It is
+  the right *shape* (adjudicate every hit, do not claim cleanliness) and the wrong *scope* (one
+  vocabulary). → FOLLOW-887 amends it rather than duplicating it.
+- **FOLLOW-212 (calibration)** — gains a second empirical datum and a structural constraint: `0.3655`
+  is the cold-start prior under `BEHAVIORAL_DAMPING = 0.3` (reproduced independently here), and the
+  four payload-conditional intercepts are **not reachable by `behavioral_damping` at all**
+  (`intent-weights.ts:110-114`). A calibration ticket that tunes only the scalar will move the
+  weakest signals and none of the strongest.
+- **FOLLOW-849 (re-priced P2 → P1, unfrozen)** — fourth independent sighting; see §6 for the
+  adjudication the brief asked for.
+- **FOLLOW-874 / PR #691** — untouched by both merges. Recorded here only because Rule AN held across
+  them (§6).
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-820** — GO condition 1 is "FOLLOW-819 green". Unchanged in substance; the chain of
+  inheritance from `0.5` → `> 0.6` is now correct at three of five sites, which is progress and not
+  closure.
+- **FOLLOW-343 / FOLLOW-159** — ESC-054's subject. If the ruling is (b) or (c), the SDK change lands in
+  `index.ts:827-829` and `follow-877.test.ts` D-1 is the designed inversion point. If it is (a), the
+  MASTER_DESIGN note and `adapt-floor.ts` both need the ruling cited, per #693's own AC(4) wording.
+- **FOLLOW-560 (`score_function`)** — still FOLLOW-819 AC(3)'s blocker, still untouched, now for the
+  second consecutive retro.
+
+#### 5c. Contracts changed others rely on
+
+No code contract. **Three documentary contracts** (§1) and **two live ACs edited in place**
+(FOLLOW-819 AC(1), FOLLOW-872 AC(3)) by a PR belonging to a different ticket. That is the right
+outcome and an under-controlled mechanism: nothing in this repo records that a promoted P1's
+acceptance criterion was amended by a third party except the prose inside the stub itself.
+
+#### 5d. Architectural assumptions affected
+
+- **"The gating ladder is documented in one place" — false, and now measured: six.** `adapt-floor.ts`,
+  `index.ts:820-829`, MASTER_DESIGN §A.1.5 / §E.7-FOLLOW-354 / §E.7.9 / §E.4.6 / §D.5, two SDK test
+  headers, the runbook, and `intent-weights.ts`. The ladder is a **relationship between two
+  applications** and has no owning artefact — which is precisely why it drifts and why
+  `follow-877.test.ts` D-6b was the right instinct executed against a copy (CB-1).
+- **"`BEHAVIORAL_DAMPING` governs behavioral evidence" — false for the four strongest signals**
+  (LG-1). Load-bearing for FOLLOW-212 and for any future server-side weight tuning.
+- **"An escalation's premise is stable between filing and ruling" — false, demonstrated within one
+  session** (LG-2). ESC-054's stakes doubled (one real signal, not two) hours after it was written,
+  the PM recorded it in QUEUE.md, and the escalation text did not move. **There is no mechanism that
+  would have caught it**, because escalations have no re-validation step, no register, and no owner
+  between `filed` and `ruled`. **The repo did not handle ESC-054 well; it handled the *authoring* of
+  ESC-054 exemplarily and then deferred a decision it will re-derive**: the next reader must re-run
+  the derivation to learn that the recommendation's justification no longer matches its own body.
+- **The no-Bash architect routing (brief question).** It worked and it produced the sharpest single
+  finding of the whole chain — that the `device_type` prior consumes a signal, which the PM verified
+  independently. Three costs, all structural rather than model-quality: (1) it could not run prettier,
+  lint or tests on its own output, so the PM became the format gate for a Fable-tier artefact;
+  (2) it branched before #692 merged and had **no way to read `main` moving**, so two of its three
+  reported findings were already closed — the routing has no "re-read HEAD before reporting" step
+  because the agent cannot read git; (3) it filed a fourth-sighting rediscovery (FOLLOW-849) it had
+  no means to check against `backlog/`; **and (4) its learning entry never reached `main`** (DG-5) —
+  the deliverable was committed on its behalf and the lesson was not, so the estate paid Fable rates
+  for an insight it then discarded. **Verdict: correct routing, wrong brief.** The fix is one line
+  in the dispatch template — hand a no-Bash agent the merged-state facts and the prior-art grep
+  results *in the brief* — not a re-route to an agent with worse judgement about MASTER_DESIGN.
+
+### 6. New lesson candidates
+
+- **RULE ACTION — AMEND Rule AI (2026-08-07, second amendment). No new letter. Rule count stays 43.**
+  - **Why Rule AI and not a new letter.** The brief asked whether "correction stops short" warrants a
+    permanent rule. It **already is one**: Rule AI — _"a change that makes a capability/contract claim
+    true or false MUST update every document asserting the prior state IN THE SAME PR"_ — is exactly
+    this class, promoted on RETRO-213 / RETRO-221 / RETRO-222 and amended once on RETRO-246. Minting
+    an `AR` for it would duplicate AI and split its evidence base, which is the RETRO-122 error in
+    rule form. **Sightings: RETRO-259 (ESC-052's set omitted the SoT → FOLLOW-878), this retro ×2
+    (#692's set omitted MASTER_DESIGN → FOLLOW-881; #693's set omitted §E.4.6 → FOLLOW-882) — Rule
+    AI's 5th, 6th and 7th.**
+  - **What the amendment ADDS, and it is not "check the SoT too".** The hole is demonstrated, not
+    hypothesised: **Rule AI's own Verification block greps "the ticket ID, the flag/env name, the
+    symbol and the endpoint path" — one vocabulary, the symbolic one. `MASTER_DESIGN.md:2086` and
+    `follow-354.test.ts:22` contain none of those tokens and survived four rounds.** The amendment
+    requires the sweep to be run at **three vocabularies** and every hit **adjudicated in writing**:
+    (1) the symbol/constant name; (2) **the literal VALUE** the symbol holds (`0.6`, `0.5`) plus its
+    comparison operators; (3) the **natural-language paraphrase** the claim was previously written in
+    — quoted verbatim from the sentence being retracted (`"sole gate"`, `"no third"`, `"intentional"`).
+    And the closing evidence is the **adjudicated hit list**, never the assertion that a document is
+    now clean. FOLLOW-882's AC(4) already has the adjudication half and only vocabulary (1); this
+    amendment is the missing half, and **FOLLOW-887 is the ticket that discharges it live**.
+  - **Corpus, from the same evidence:** the sweep must include `packages/**/__tests__/**` and
+    `packages/**/schemas/**`. Both sites this retro found are there, and neither is in Rule AI's
+    listed corpus (`docs/`, `backlog/HANDOFFS.md`, ADRs, the changed file's own docblock) — the same
+    corpus-hole shape the 2026-08-05 amendment closed for `.claude/`.
+- **NEW PATTERN P-40 — "A DRIFT GUARD ASSERTS A LOCAL COPY OF THE CONSTANT IT CLAIMS TO GUARD, SO IT
+  CAN ONLY DETECT DRIFT IN ITSELF." MINTED AT COUNT 1. NOT PROMOTED.**
+  - **This retro (count 1)** — §4b CB-1, `follow-877.test.ts:74` + D-6b.
+  - **Tested against P-39's pre-specified bar and REFUSED, rather than counted.** RETRO-259 minted
+    P-39 with three clauses; clause **(a)** requires that the assertion _"reads a threshold/constant
+    from source rather than hardcoding it — i.e. it is BETTER than a literal."_ This one **hardcodes
+    the literal**, so clause (a) fails and **P-39 stays at count 1**. Counting it would be exactly the
+    conflation RETRO-259 refused when it declined Rule S clause (a). P-40 is P-39's **inverse**: P-39
+    is an assertion that reads the wrong *source*; P-40 is an assertion that reads no source at all
+    while claiming to be a drift guard.
+  - **Tested against the rule TEXTS.** **Rule AQ** requires a copied contiguous block of ≥20 non-blank
+    non-comment lines — a one-line constant does not reach it. **Rule K.1** governs a
+    "function/route that computes a metric or business value" — a threshold constant is neither.
+    **Rule L** is the nearest relative ("a test that injects the value is not evidence") and is scoped
+    to the *install/snippet config path*. **Rule J** is whole-file mirrors. None fires verbatim.
+  - **Second-sighting bar, pre-specified so the next retro tests rather than re-derives:** (a) a merged
+    test/gate is **named or described as a drift/parity guard** for a value owned by another
+    module/app; (b) it asserts a **locally declared copy** of that value, provably not imported or
+    read from the owner (cite both declarations); **and** (c) the owner's value is not exported, so
+    the copy is the *only* available form — clause (c) is what distinguishes a design constraint from
+    carelessness, and it is satisfied here (`route.ts:86` is module-private), which is why this is a
+    P1 finding and not a P3 scolding.
+- **RULE AN HELD UNDER REAL PRESSURE — RECORDED AS A CONTROL THAT WORKED, WHICH THIS LOG RARELY DOES.**
+  PR #691 appended **FOLLOW-874** on a branch while `main` independently gained **875…882** from
+  RETRO-259, #692 and #693 — four allocating writes across three branches in one session. The merge
+  conflicted on `backlog/FOLLOW_UPS.md` **content** (two adjacent append blocks), not on a duplicated
+  number, and was resolved additively with `git merge-tree --write-tree` before GitHub had even
+  computed mergeability. **That is the whole point of Rule AN's "allocate against `origin/main`"
+  clause, and it is the first time this log can cite it holding against genuine concurrency.** No rule
+  action (a control succeeding is not a sighting); recorded so the next retro that considers relaxing
+  Rule AN has the counter-evidence.
+- **THE BRIEF'S QUESTION — "FOLLOW-849 IS AT FOUR SIGHTINGS; DOES THE FROZEN CONVENTION HAVE A FAILURE
+  MODE?" ANSWERED: YES, AND IT IS NOT A RULE.**
+  - **The failure mode, stated precisely:** FROZEN is keyed on **priority**, and priority is set once,
+    at filing, from the harm of the **first** sighting. Rediscovery cost accrues **linearly and
+    invisibly** — four workers × ~20–30 min of analysis each, none of it recorded against the ticket
+    until a PM manually noticed and re-priced P2 → P1. So the convention is not wrong; it is
+    **missing a re-pricing trigger**, and a human is currently doing a mechanical job.
+  - **Why no rule.** (1) The remedy is a **one-line metadata convention** — a sighting counter in the
+    stub, incremented when a worker rediscovers it — not a behavioural constraint on agents, and
+    CONVENTIONS_PATCH is for the latter. (2) **The control worked**: the PM caught it, re-priced it,
+    unfroze it, and wrote the reasoning down. A rule minted here would codify compliance, the exact
+    adjudication RETRO-254 and RETRO-258 made twice. (3) FOLLOW-849 itself is now P1 and unfrozen, so
+    the specific harm is being retired.
+  - **Bar, pre-specified:** promote only if a **fifth** sighting of any FROZEN stub occurs **after**
+    FOLLOW-849 closes, **and** the re-pricing does not happen within the same session it is reported.
+    Today the second clause is false. **Count of that harm: zero.**
+- **RULE P — SEVENTH CONSECUTIVE COMPLIANCE FAILURE AGAINST AN ADEQUATE CONTROL.** §4a LG-1: _"that
+  asymmetry is not documented anywhere"_ is refuted by one grep over `packages/shared/src/schemas/`,
+  which is inside Rule P's own two-line Verification. Same adjudication as RETRO-247/248/252/253/255/259
+  — **no rule action**, folded into FOLLOW-883 AC(3). Seven consecutive is itself now the finding: Rule
+  P's control is adequate and **is not being run**, which is a dispatch-brief problem, not a rule problem.
+- **P-35 / P-37 / P-38 — no sighting, checked rather than skipped.** P-35 (a gate verdict depending on
+  an artefact outside the PR's control): the corrected harness reads `route.ts` from another app at run
+  time, which is the *inverse* — a deliberate, throwing, in-repo cross-app read; it does not fire.
+  P-37: `grep -rn "wc -l.*|| echo" scripts/*.sh` → **0 hits**, class still empty; RETRO-255's standing
+  recommendation to write the zero-hit grep into Rule AP's register is **still unowned after four
+  retros** — recorded again, still one line inside whatever ticket next touches Rule AP. P-38 (a
+  control whose firing condition is a property of the world it was written in): the nearest candidate
+  is ESC-054's own premise (LG-2), but that is an **escalation**, not a control, and it is recorded as
+  an architectural finding in §5d rather than inflating P-38. **Count stays 1.**
+- **RULE AG'S 2026-08-05 AMENDMENT — FIRST SIGHTING SINCE PROMOTION, AND IT COST THIS ESTATE ITS OWN
+  ANSWER.** That amendment binds the PM to LAND a no-Bash agent's learning entry, precisely because
+  the agent cannot commit it. #693's architect wrote 19 lines whose closing sentence is the Rule AI
+  amendment above, arrived at independently; the PM committed `MASTER_DESIGN.md` and not the lesson,
+  and it has sat uncommitted in the main tree ever since. **No rule action** — the rule and its
+  amendment both already say this, in as many words; this is a compliance failure against an adequate
+  control (the same adjudication Rule P has drawn seven consecutive times), and its remedy is
+  FOLLOW-888 plus one line in the no-Bash dispatch template. **Recorded as the strongest corroboration
+  available for the Rule AI amendment**: two agents, working independently and hours apart, reached
+  the same name-and-value diagnosis — so the control is not this retro's invention, it is the estate's,
+  and the only thing that failed was transport.
+- **ROUTING.** #692 sdk-engineer on **Opus**: correct, and it paid in nameable ways — it disproved its
+  own stub's premise, executed a mutation proof, executed the harness against a throw-away page, and
+  refused to enact a buyer-facing change without a ruling. **Its miss is again the axis no AC named**:
+  no AC said "enumerate the full class of damping-bypassing signals", so it enumerated the two its own
+  simulation had used. #693 architect on **Fable**: correct for a §Y.2-carrying SoT revision, and it
+  produced the sharpest finding in the chain — but it also shipped the fifth site untouched because its
+  AC named three sites and its tool set could not sweep. **Ninth consecutive retro to the same
+  conclusion: the model tier is not the control for enumeration completeness; the AC is.** RETRO-259
+  proposed one sentence in the PM's brief template. It has not been written, and this merge is the
+  cost: two agents, both correctly tiered, both scoped by their ACs to a subset of the class.
+
+### 7. Follow-ups
+
+- **FOLLOW-883**: the undamped-boost class is 4, not 2, and the omitted member is emitted on the pilot
+  page — correct runbook §9.2, FOLLOW-872 AC(3) and the sdk-engineer lessons entry, and record that
+  `behavioral_damping` cannot tune any of the four (sdk-engineer, 2h, **P1**)
+- **FOLLOW-884**: ESC-054's premise aged inside its own PR — the title says two signals, the body
+  proves one, and the `>= 5` recommendation is justified against the un-corrected count; amend before
+  the CEO rules (sdk-engineer, 1h, **P1**)
+- **FOLLOW-885**: `follow-877.test.ts`'s gating-ladder drift guard asserts a hardcoded copy of
+  `CONFIDENCE_THRESHOLD`; apply the reader the same PR already wrote (sdk-engineer, 2h, **P1**)
+- **FOLLOW-886**: the reachability arithmetic FOLLOW-819 inherits is not reproducible from the repo —
+  commit the simulation, reconcile `feature.expanded ×11` (0.6625 vs 0.651), re-run §6's hop table at
+  9, and add the missing `lessons.d/` fragment dir (sdk-engineer, 2h, P2, FROZEN)
+- **FOLLOW-887**: the FIFTH and SIXTH sites of the corrected claim (`MASTER_DESIGN.md:2086`,
+  `follow-354.test.ts:20-22`), and amend FOLLOW-882 AC(4) to a three-vocabulary adjudicated sweep per
+  the Rule AI amendment (architect, 2h, **P1**)
+
+- **FOLLOW-888**: land the FOLLOW-881 architect's unlanded learning entry and close the Rule AG
+  landing-obligation gap for no-Bash agents (pm-orchestrator, 1h, P2)
+
+**Numbering: 883–888 allocated against `main` at `648a0bb9` per Rule AN. Next free FOLLOW: 889.**
+
+### 8. Cross-references
+
+- **RETRO-259** — the direct parent of both tickets. Its LG-1 is discharged correctly and completely
+  on the axis it named; this entry is the record that **the axis it named was one of three**. Its
+  Rule S amendment (promoted one merge ago) was **complied with** in this merge —
+  `local-pilot-session.mjs:165-168` defers FOLLOW-876's remainder by number, in the durable artefact.
+  First same-session compliance with a rule this log promoted.
+- **RETRO-255** — _"three layers of record told an untested causal story, the worker tested it."_
+  RETRO-259 was the mirror (the worker's own measurement). This is the third turn: **the correction
+  told a causal story about the correction**, and testing it took two greps and one 30-line simulation.
+- **RETRO-246 / Rule AI amendment 1** — the same species of hole, one axis over: that amendment closed
+  a **corpus** gap (`.claude/` was not in the sweep); this one closes a **vocabulary** gap (the bare
+  literal is not in the sweep). Two amendments, same rule, same root cause — Rule AI's Verification
+  block was written from the shape of the PR that promoted it.
+- **RETRO-174 §5a** — the no-Bash architect constraint, cited by the PM and confirmed here with three
+  measured costs (§5d).
+- **RETRO-122** — invoked twice: once to keep P-39 at count 1 rather than absorbing P-40, once to
+  refuse minting a new letter for a class Rule AI already owns.
+- **FOLLOW-343 / AUDIT-2026-06-19 F-01** — the origin of the floor this whole chain is about; ESC-054
+  is the first time its rationale has been weighed against the axis it does not protect.
+
+<!-- next free FOLLOW number: 889 (FOLLOW-883..888 filed 2026-08-07 by RETRO-260, the post-merge retro for
+PR #692 (FOLLOW-875 + FOLLOW-877, squash e55063b0) and PR #693 (FOLLOW-881, squash dc36740a); FOLLOW-874..882
+all FILED). next free RETRO number: 261. RETRO-260 = combined retro for #692 (7 files +1005/-55, SDK docblock
++ tests + dev harness + runbook, ZERO executable SDK lines, bundle delta 0) and #693 (MASTER_DESIGN.md only,
++11/-8, v4.4 -> v4.5). HEADLINE: the answer to "how did one wrong claim survive four documents and three
+correction rounds" is that the claim exists at THREE vocabularies (symbol name / bare literal / prose
+paraphrase) and every control this repo has greps only the symbolic one — Rule AI's Verification block,
+Rule S's sibling sweep, and FOLLOW-882's AC(4) (`grep 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR'
+docs/MASTER_DESIGN.md`) all inherit the vocabulary of the round that found the bug. I ran the sweeps they
+cannot express and found a FIFTH site (MASTER_DESIGN.md:2086, "combined_confidence < 0.6", permissive
+boundary, no token from the grep) and a SIXTH in CODE (packages/sdk/src/__tests__/follow-354.test.ts:20-22
+still says the 0.5 floor is the "SOLE gate", contradicting its own AC-1 six lines later and the
+adapt-floor.ts docblock #692 corrected). SECOND: #692's undamped-boost enumeration is 2 of 4 —
+packages/shared/src/schemas/intent-weights.ts:110-114 already names all four (listing.bookmarked,
+micro_poll.answered, feature.expanded, filter.applied), "entirely" is false for feature.expanded and
+listing.bookmarked (their step-1 neutral-push IS damped), and the omitted micro_poll.answered is emitted ON
+the pilot page (index.ts:1420, 90s toast) so §9.2's "quiz or chat is required" conclusion — FOLLOW-819's
+problem statement — omits an implemented in-page path; also overrides.behavioralDamping (FOLLOW-212's knob)
+is bypassed on all four. THIRD: follow-877.test.ts:74 hardcodes SERVER_CONFIDENCE_THRESHOLD = 0.6 and D-6b
+asserts the copy against its own literal, so the "gating ladder drift guard" cannot detect drift in
+route.ts:86 — while the SAME PR wrote readServerConfidenceGate() (local-pilot-session.mjs:73-108) which reads
+the value AND its operator out of route.ts at run time and throws. VERIFIED INDEPENDENTLY: cold-start
+normalize(BASE_PRIOR x damped(device_type.desktop,0.3)).neutral = 0.36554663991975933 (all 17 digits) and
+filter.applied x7 = 0.6401 (matches runbook 0.640) — but feature.expanded x11 = 0.6625, NOT the runbook's
+0.651, and no simulation artefact was committed. WIRING: CHECK A clean, CHECK B clean (no new
+event/env-var/column/topic/signal; the new response capture has an in-file consumer AND refuses to close
+FOLLOW-876 in its own code); ESC-054-has-no-consumer-register recorded in §5d rather than stretched into
+CHECK B. GAPS: LG-1 P1 undamped class 2-of-4; LG-2 P2 ESC-054's recommendation inherits the off-by-one it
+found (title says 2 signals, body proves 1, `>=5` = 4 real events) and the PM logged the drift without
+amending the escalation; LG-3 P3 "starts at signal_count=1" is unconditional in docs, conditional at
+index.ts:975; CB-1 P1 drift guard guards a copy; CB-2 P3 Rule AG appended to the shared lessons tail from a
+worktree while #691 was open AND Rule AG's own verification reports it clean; TG-1/2/3; DG-1 fifth site,
+DG-2 sixth site, DG-3 the wrong generalisation is now in the sdk-engineer lessons file that every future
+session loads, DG-4. RULE ACTION: **AMENDED Rule AI (2026-08-07, second amendment) — three-vocabulary
+adjudicated sweep + __tests__/ and schemas/ added to the corpus. NO new letter; Rule count stays 43; Rule AI
+sightings 4 -> 7.** Rejected minting a letter for "correction stops short" because Rule AI already owns it
+(RETRO-122 discipline). MINTED P-40 at count 1 ("a drift guard asserts a local copy of the constant it
+claims to guard") with a 3-clause bar, explicitly REFUSING to count it as P-39's second sighting because
+P-39 clause (a) requires the assertion to READ from source and this one hardcodes — P-39 stays at 1.
+RECORDED AS A CONTROL THAT WORKED: Rule AN held across four allocating writes on three branches — #691's
+FOLLOW-874 vs main's 875..882 conflicted on CONTENT, not on a duplicated number. ANSWERED the brief's
+FOLLOW-849 question: FROZEN's failure mode is real (priority set once from the first sighting; rediscovery
+cost accrues invisibly) but the remedy is stub metadata, not a rule, and the PM's manual re-pricing is a
+control succeeding — bar pre-specified. Rule P: 7th consecutive compliance failure. ROUTING: Opus (#692) and
+Fable (#693) both correct; both misses are the axis no AC named — 9th consecutive retro to that finding.
+FOLLOW-819 VERDICT: **NOT safe to start** — FOLLOW-881 landing satisfies the single stated gate, but four
+others bind (§E.4.6 + :2086 still wrong for its author; AC(3)'s adaptation_decisions row still unbuildable;
+AC(5) still says "staging"; depends_on 817/818/560 all open). FOLLOWS FILED: 883 (P1 sdk 2h undamped class),
+884 (P1 sdk 1h ESC-054 premise aged), 885 (P1 sdk 2h drift guard reads a copy), 886 (P2 FROZEN sdk 2h
+simulation not committed + hop table + lessons.d), 887 (P1 architect 2h fifth+sixth sites + FOLLOW-882 AC(4)
+three-vocabulary amendment), 888 (P2 pm 1h — the FOLLOW-881 architect's learning entry is MODIFIED AND
+UNCOMMITTED in the main tree at 648a0bb9 and its closing sentence IS this retro's Rule AI amendment
+("grep the constant's NAME and its VALUE"), reached independently hours earlier and lost in transit;
+Rule AG's 2026-08-05 landing-obligation amendment, first sighting since promotion). QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->

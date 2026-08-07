@@ -654,3 +654,33 @@ remount bug; a red-first remount test must replace the actual node objects (`inn
 `createElement`) to be load-bearing. Apply this check proactively to the text/class resilience paths
 too if either is ever extended to close over an element reference beyond the one MutationObserver is
 directly attached to.
+
+---
+
+## 2026-08-07 · FOLLOW-816 — local pilot environment (SDK on a localhost listing page)
+
+**What I built:** `scripts/dev/local-pilot-session.mjs` (a Playwright driver for the real init path
+on the real local listing page) and `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`. Stood up the whole
+chain locally — SvelteKit :5173 + Spring :8081 + mock decision :9100 + **real ingest Worker on :8787
+via `wrangler dev`** + **real ClickHouse 25.8 with the real migration chain**. Hops 1/4/5/11
+(emission) green with pasted observations; hops 10 and 11 (rows) red, and the redness is the
+deliverable.
+
+**What was uncertain (wiring/perf/compat):** Three things, all resolved by measuring rather than
+reasoning. (1) Which sibling tree is "web-master" — settled by dated setup artifacts
+(`Estalara-app-new`, 2026-07-11), and the ticket's premise that the edits are in a _committed_ HEAD
+turned out false in both trees. (2) Whether hop 10's redness was the SDK's apply path or upstream —
+isolated by proving the mock DOES return a directive for a confident non-neutral hint and that
+`e2e/adapt-dom-mutations.spec.ts` is 6/6 green, so the gap is that behavior alone never leaves
+`neutral` (peak 0.3655 vs floor 0.5, **bit-identical at 4x session length** — the observers
+saturate). (3) Whether "staging" existed — it does not, and `stg.DATABASE_URL_ADMIN` is
+byte-identical to `prd`.
+
+**A guardrail I'd add:** _A post-ACK write path is not proven by the ACK._ The SDK saw `200` on
+every `POST /v1/events` while 100% of the resulting ClickHouse inserts were rejected (Code 27) —
+because `clickhouse-producer.ts` serializes `DateTime64` columns with `toISOString()` (trailing `Z`)
+and ClickHouse's `date_time_input_format` defaults to `basic`, while CI's smoke test inserts an
+unquoted numeric epoch that no production writer ever emits. Generalized rule for my own evidence
+blocks: when I claim an emitted signal has a real consumer, the grep is necessary but not sufficient
+if the consumer writes **after** the response is returned — assert on the datastore, and make the CI
+fixture use the byte-shape the production writer produces, not a hand-written one.

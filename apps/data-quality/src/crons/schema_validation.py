@@ -20,6 +20,14 @@ On page-fetch failure:
   - Does NOT emit Sentry drift alert (network errors ≠ schema drift).
   - Continues to the next tenant.
 
+On success (FOLLOW-893):
+  - UPSERTs the ``cron_heartbeats`` row for job ``validate_schemas`` as the LAST
+    action, so the timestamp moves only when the whole run completed. An external
+    checker (``scripts/check-cron-heartbeat.sh``, run daily at 05:00 UTC by
+    ``.github/workflows/cron-heartbeat.yml``) alarms when that row is missing or
+    older than 26h — this is the only signal that a run which NEVER STARTED
+    produces anywhere. See docs/runbooks/SCHEMA_VALIDATION_CRON.md.
+
 Idempotency: two runs on the same day produce two rows — both are retained.
 Sentry deduplication: the most recent ``drift_detected = True`` row is checked
 before emitting; if it is within 24h the Sentry call is skipped.
@@ -83,6 +91,9 @@ DRIFT_THRESHOLD = 0.8
 FETCH_TIMEOUT_SECONDS = 10
 USER_AGENT = "Estalara-SchemaValidator/1.0"
 SENTRY_DEDUP_WINDOW_HOURS = 24
+# FOLLOW-893: job_name written to `cron_heartbeats` on every successful run. The daily
+# checker (.github/workflows/cron-heartbeat.yml) asserts this exact name.
+HEARTBEAT_JOB_NAME = "validate_schemas"
 
 
 def check_selectors(html: str, selectors: list[str]) -> dict[str, bool]:
@@ -294,6 +305,54 @@ def _was_drift_alerted_recently(
     return row is not None
 
 
+def _write_heartbeat(
+    conn: "psycopg2.extensions.connection",
+    *,
+    tenant_domain_pairs: int,
+) -> None:
+    """UPSERT the ``cron_heartbeats`` liveness row for this job. FOLLOW-893.
+
+    Called ONLY after ``_run_validation`` returns normally, so the timestamp moves
+    exclusively on success — a run that raises never reaches this write, and the
+    external checker (``scripts/check-cron-heartbeat.sh``) then sees a stale
+    heartbeat and goes red.
+
+    This exists because ``schema_validation_history`` cannot answer the liveness
+    question: ``_run_validation`` returns early and writes ZERO rows when no active
+    tenant has a site schema, so "no history row today" is ambiguous between "ran,
+    nothing to validate" and "never ran". ``tenant_domain_pairs`` carries the
+    disambiguating number.
+
+    Deliberately non-fatal: a heartbeat write failure must not turn an otherwise
+    successful validation run into a hard error. It is still LOUD — the missing
+    heartbeat is exactly what the external checker alarms on, so degrading here
+    cannot hide the failure, it surfaces it through the detector by design.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO cron_heartbeats (job_name, last_success_at, run_detail)
+                VALUES (%s, NOW(), %s)
+                ON CONFLICT (job_name) DO UPDATE
+                SET last_success_at = EXCLUDED.last_success_at,
+                    run_detail      = EXCLUDED.run_detail
+                """,
+                (
+                    HEARTBEAT_JOB_NAME,
+                    json.dumps({"tenant_domain_pairs": tenant_domain_pairs}),
+                ),
+            )
+        conn.commit()
+        logger.info(
+            "Heartbeat written: job=%s tenant_domain_pairs=%d",
+            HEARTBEAT_JOB_NAME,
+            tenant_domain_pairs,
+        )
+    except Exception as exc:  # noqa: BLE001 — never fail a good run on a liveness write.
+        logger.error("Failed to write cron heartbeat for job=%s: %s", HEARTBEAT_JOB_NAME, exc)
+
+
 def _emit_redpanda_event(
     *,
     tenant_id: str,
@@ -379,7 +438,12 @@ async def validate_schemas() -> None:
 
     conn = _get_db_connection()
     try:
-        _run_validation(conn)
+        pairs = _run_validation(conn)
+        # FOLLOW-893: absence-of-signal sink. Written LAST and only on the success
+        # path — if _run_validation raises, this line is never reached and the
+        # external 26h assertion goes red instead of a failure being visible only
+        # to whoever happens to open the Modal dashboard.
+        _write_heartbeat(conn, tenant_domain_pairs=pairs)
     finally:
         conn.close()
         # Belt to AtexitIntegration's braces (FOLLOW-738): a scheduled Modal
@@ -389,10 +453,16 @@ async def validate_schemas() -> None:
         flush_sentry(0.3)
 
 
-def _run_validation(conn: "psycopg2.extensions.connection") -> None:
+def _run_validation(conn: "psycopg2.extensions.connection") -> int:
     """Core validation loop — accepts an open DB connection (testable).
 
     Fetches active tenants + their site schemas, validates each, writes history.
+
+    Returns:
+        The number of tenant-domain pairs found (0 when there is nothing to
+        validate). FOLLOW-893: this number rides into the heartbeat's
+        ``run_detail`` so "ran, validated nothing" is distinguishable from
+        "never ran" — the history table alone cannot tell those apart.
     """
     with conn.cursor() as cur:
         cur.execute("""
@@ -410,7 +480,7 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> None:
 
     if not rows:
         logger.info("No active tenants with site schemas — nothing to validate")
-        return
+        return 0
 
     logger.info("Starting schema validation for %d tenant-domain pairs", len(rows))
 
@@ -548,3 +618,4 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> None:
         )
 
     logger.info("Schema validation complete for %d tenant-domain pairs", len(rows))
+    return len(rows)

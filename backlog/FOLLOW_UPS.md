@@ -26978,6 +26978,29 @@ and ONE `PLATFORM_REGISTRATION_TOS_VERSION` bump (FOLLOW-815); (3) FOLLOW-145 (S
 withdrawal — same right, different surface) is either folded into the same bump or explicitly
 deferred with a reason; (4) ESC-044 items 1/2/3/5/6 marked RESOLVED with a pointer to this ticket.
 
+**✅ DECISION — CEO (Piotr) + DPO ruling, 2026-08-07, recorded by the orchestrator from the CEO's
+explicit answers (AskUserQuestion, session 103):**
+
+1. **Art. 7(1) canonical hash source: CONFIRMED — the server renderer**
+   (`renderPlatformConsentText()` output), upholding FOLLOW-705 (`47e863c6`). Reasoning as filed:
+   §6.1 is hardcoded to the Estalara identity and therefore undefined for white-label brands, and
+   Art. 7(1) concerns what the subject actually read.
+2. **Art. 7(3) withdrawal channel: option (a) — a concrete monitored DSR mailbox**, named in the
+   consent text and actually stood up. Reasoning: withdrawal must be as easy as granting; at the
+   current single-tenant scale a monitored mailbox satisfies that honestly and cheapest.
+   **FOLLOW-145 (SDK consent-banner withdrawal) is DEFERRED with reason** (AC 3): same right,
+   different surface — it can ship later without spending another TOS bump, since the mailbox is the
+   named channel of record.
+3. **White-label privacy contact: the explicit Estalara-as-processor sentence** — NOT the
+   `brand_config` render. The CEO chose honesty-plus-zero-work over the speculative per-brand
+   affordance; revisit at the first external brand. **This supersedes FOLLOW-815 AC(3)** — that AC
+   is re-scoped by this ruling to: render the processor sentence, and file nothing per-brand.
+
+All three ship as **ONE consent text change and ONE `PLATFORM_REGISTRATION_TOS_VERSION` bump**
+(FOLLOW-815), per AC(2). ESC-044 items 1/2/3/5/6 marked RESOLVED with a pointer to this ruling.
+Prod-record remediation scope still awaits the FOLLOW-706 AC-1 count, which informs scope, not
+direction.
+
 cross_ref: [ESC-044, RETRO-227, RETRO-228, FOLLOW-704, FOLLOW-705, FOLLOW-706, FOLLOW-707,
 FOLLOW-710, FOLLOW-711, FOLLOW-145, FOLLOW-374, MASTER_DESIGN §H.8, Rule AA, Rule N, audit
 2026-08-04 F-01/F-02/F-03]

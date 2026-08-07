@@ -3117,7 +3117,7 @@ operator action beyond what FOLLOW-744 already asks for.
 
 ---
 
-## OPEN — ESC-048: provisioning `SENTRY_DSN_INGEST` would activate a raw-buyer-chat path into Sentry that is currently inert only because that variable is unset
+## RESOLVED — ESC-048: the sequencing question is closed — FOLLOW-838 and FOLLOW-845 both merged, so the path is redacted at source
 
 **Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-05 **Affects:** FOLLOW-838,
 FOLLOW-744, `apps/ingest` **Type:** compliance
@@ -3164,7 +3164,7 @@ FOLLOW-838 does not require it.
 
 ---
 
-## OPEN — ESC-049: C-07's load-bearing sentence says no chat text reaches ClickHouse; the SDK→ingest→ClickHouse path writes the buyer's message there, and C-07 gates a CEO sign-off
+## RESOLVED — ESC-049: CEO/DPO ruled option 1 — scope the sentence to reality; the ClickHouse write is deliberate §H.8 design, the document must state it
 
 **Filed by:** main-loop orchestrator (session 103), from a FOLLOW-838 finding **Date:** 2026-08-05
 **Affects:** `docs/compliance/C-07-chat-retention-scope.md`, `apps/ingest`, ESC-048, FOLLOW-845
@@ -3315,3 +3315,26 @@ efficiency merits, not as a cause of today's incident.
 in the repo can fix it.
 
 **Resolution:** <empty until resolved>
+
+---
+
+### ESC-044 / ESC-048 / ESC-049 — resolution notes, session 103 (2026-08-07)
+
+**ESC-044 items 1/2/3/5/6: RESOLVED by the FOLLOW-814 CEO+DPO ruling** (recorded in full in
+`backlog/FOLLOW_UPS.md` → FOLLOW-814 → DECISION block): renderer-canonical hash confirmed, a
+concrete monitored DSR mailbox as the Art. 7(3) channel, the Estalara-as-processor sentence for
+white-label contact, all delivered as ONE text change + ONE TOS bump via FOLLOW-815 (dispatched).
+Remediation of existing prod records is scoped by the FOLLOW-706 AC-1 count.
+
+**ESC-048: RESOLVED.** The escalation's own recommended option ("sequence it — hold provisioning
+until FOLLOW-838 lands a redaction") has been satisfied by events: FOLLOW-838 (PR #681) redacted the
+Modal-dispatch arm and FOLLOW-845 (PR #682) closed the ClickHouse error-body leg.
+`SENTRY_DSN_INGEST` may now be provisioned whenever the operator chooses; `sendDefaultPii: false` is
+pinned.
+
+**ESC-049: RESOLVED as a ruling; implementation ticket follows** (filed after the in-flight
+RETRO-254/255 lands, to avoid a stub-number collision). CEO/DPO chose option 1: C-07's sentence is
+scoped to what is true — "no unscrubbed identifiers" plus an explicit statement of what IS retained
+in ClickHouse (`chat.message.sent.payload.message`, ≤4000 chars, emails/phones masked,
+`events`-table retention) — §Q3/§Q4 re-derived against the corrected premise, and all three stores
+re-verified, not only Redis. The §H.8 write stands as deliberate design.

@@ -27,12 +27,16 @@ exit `0` while a check was still `fail` (PR #668, #670, #671): GitHub does not r
 for a job gated behind `needs:` until that job starts, so a job like `Rule I — wired-or-dead check`
 can appear on the check list well after `--watch`'s polling loop has already decided every check-run
 it knows about has settled. `scripts/gh-pr-checks-verified.sh` polls until it observes two
-consecutive, identical, fully-settled snapshots (immune to that race), re-asserts pass/fail counts
-from a fresh read, and dynamically classifies any failure against the documented pre-existing-red
-gates (currently only `Rule I`, compared by SYMBOL SET against `main`'s own newest usable baseline
-run — never against a count and never against a hardcoded number, because a count comparison accepts
-a PR that deletes one dead export and introduces another [FOLLOW-821 AC(1) / FOLLOW-827]) before
-exiting.
+consecutive, identical, fully-settled snapshots (immune to that race) **carrying at least a derived
+minimum number of check-runs** (two identical snapshots prove the set stopped changing, not that it
+is complete — a truncated rollup settled green twice on PR #686 during the ESC-050 Actions incident;
+the floor is 40% of the second-highest of the repo's twelve most recent PR rollups, never a
+hardcoded constant, and a rollup below it exits 3/UNDETERMINED, never 0 [FOLLOW-865]), re-asserts
+pass/fail counts from a fresh read, and dynamically classifies any failure against the documented
+pre-existing-red gates (currently only `Rule I`, compared by SYMBOL SET against `main`'s own newest
+usable baseline run — never against a count and never against a hardcoded number, because a count
+comparison accepts a PR that deletes one dead export and introduces another [FOLLOW-821 AC(1) /
+FOLLOW-827]) before exiting.
 
 **Verification:**
 

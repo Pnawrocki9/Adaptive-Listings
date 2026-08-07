@@ -185,43 +185,61 @@ scripts/gh-pr-checks-verified.sh <pr-number>
 It polls `gh pr view --json statusCheckRollup` until it observes **two consecutive, identical,
 fully-settled snapshots** (this is what defeats the late-registration race — a check-run appearing
 or changing state between polls changes the snapshot and resets the stability counter, so the loop
-cannot exit while something is still pending or has not shown up yet), re-asserts the pass/fail
-counts from that fresh read (never from an exit code), and classifies every failing check against
-the repo's documented pre-existing-red gates before deciding pass/fail. Today that list has exactly
-one entry, `Rule I — wired-or-dead check` (memory `project_ci_gate_landscape`; Vercel and the Python
-test matrix were both fixed and are no longer pre-existing-red as of the current `main`) — the
-script verifies it DYNAMICALLY by diffing the PR run's own Rule I job log against `main`'s own
-baseline, never a hardcoded number, so a worsening baseline (the PR #668 near-miss: 193 vs a 192
-baseline, caught only by reading the raw job log, not by `--watch`) is classified as a genuine new
-failure and fails the script. That baseline is **not** "main's latest completed run":
-`--status completed` includes the `cancelled` and `skipped` conclusions, and `ci.yml`'s
-`cancel-in-progress: true` made 8 of `main`'s last 12 runs cancelled, whose Rule I job never ran and
-whose log is a 404 — which the gate reported as a blocking failure on every open PR at once
-(RETRO-250, PR #681). The script now walks `main`'s recent runs newest-first and takes the first one
-that actually produced a parseable Rule I symbol set, printing every skipped run with its reason
-(FOLLOW-846). This mirrors the shape FOLLOW-821 uses for Rule I's own baseline comparison — do not
-replace this with a static allowlist that could rot the same way; see the script's own header
-comment for the full mechanism and exit codes.
+cannot exit while something is still pending or has not shown up yet), requires that snapshot to
+carry a **derived minimum number of check-runs** (see below), re-asserts the pass/fail counts from
+that fresh read (never from an exit code), and classifies every failing check against the repo's
+documented pre-existing-red gates before deciding pass/fail. Today that list has exactly one entry,
+`Rule I — wired-or-dead check` (memory `project_ci_gate_landscape`; Vercel and the Python test
+matrix were both fixed and are no longer pre-existing-red as of the current `main`) — the script
+verifies it DYNAMICALLY by diffing the PR run's own Rule I job log against `main`'s own baseline,
+never a hardcoded number, so a worsening baseline (the PR #668 near-miss: 193 vs a 192 baseline,
+caught only by reading the raw job log, not by `--watch`) is classified as a genuine new failure and
+fails the script. That baseline is **not** "main's latest completed run": `--status completed`
+includes the `cancelled` and `skipped` conclusions, and `ci.yml`'s `cancel-in-progress: true` made 8
+of `main`'s last 12 runs cancelled, whose Rule I job never ran and whose log is a 404 — which the
+gate reported as a blocking failure on every open PR at once (RETRO-250, PR #681). The script now
+walks `main`'s recent runs newest-first and takes the first one that actually produced a parseable
+Rule I symbol set, printing every skipped run with its reason (FOLLOW-846). This mirrors the shape
+FOLLOW-821 uses for Rule I's own baseline comparison — do not replace this with a static allowlist
+that could rot the same way; see the script's own header comment for the full mechanism and exit
+codes.
+
+**Two identical snapshots prove the check set stopped changing; they prove nothing about whether it
+is complete.** A rollup that has not registered the rest of the repo's checks is stable, non-pending
+and identical to itself, so it satisfied the settle condition on the first two polls — and on
+2026-08-06 the gate printed `all checks green. Safe to mark READY_FOR_REVIEW`, exit 0, over five
+check-runs on PR #686, twice, while an Actions incident (ESC-050) had collapsed the rollup. Both
+verdicts were refused by hand on a "at least ~60 registered checks" rule of thumb that existed only
+in the session log. That rule of thumb is now **in the gate**, and derived rather than hardcoded
+(FOLLOW-865): the gate reads how many check-runs this repo's twelve most recent PRs registered,
+takes 40% of the second-highest of them as a floor, and additionally never settles on a rollup
+smaller than the largest it has already seen in the same run. Below the floor it keeps polling, and
+if the set never fills in it exits **3** — `UNDETERMINED`, naming observed vs expected — never 0 and
+never 1, because an incomplete check set is not a verdict about the PR. A PR that genuinely
+registers few checks is passed with `--accept-cardinality <n>`, which requires the exact observed
+count and stamps every RESULT line with the waiver. Do not replace the derivation with a constant:
+the check count is a property of `ci.yml` and changes with every job added or removed.
 
 Exit code `0` means every non-success check is a verified pre-existing-red gate — safe to mark
 READY_FOR_REVIEW. Exit code `1` means a genuine failure. Exit code `2` means it timed out waiting
 for checks to settle (never treat that as success). Exit code `3` means the gate could not run or
 could not complete its comparison — a usage error, a failed dependency preflight, a refused fixture
 seam, or a **tooling failure** (an unfetchable/unparseable Rule I log, no usable baseline in the
-look-back window, or a check snapshot whose serialization the gate's own parser cannot read — the
-FOLLOW-856 false-green class). `3` is neither a green nor a red: it means the gate never got to
-look, so **do not** mark READY_FOR_REVIEW, and equally **do not** send the ticket back to its worker
-or increment `fix_iteration_counter` on it — fix the named tooling problem and re-run. Exit code `4`
-means **NOT ATTRIBUTABLE**: the gate completed its comparison, and the only thing between the PR and
-a green is a Rule I violation symbol that is not this PR's — either `main` moved underneath it (the
-symbol is present on only some of the PR's own Rule I check-runs, i.e. on the merge ref and not the
-branch head) or the PR edits `scripts/check-rule-i.sh`, so the PR side and `main`'s baseline were
-produced by different extractors (FOLLOW-855). `4` is likewise neither a green nor a red: do not
-mark READY_FOR_REVIEW, and do not send the ticket back or increment `fix_iteration_counter` — no
-worker can delete a dead export that another PR merged into `main`. Re-run once a newer `main` run
-has completed (the baseline walk then picks the symbol up and the same PR exits `0`), or adjudicate
-the named symbols against the diff by hand. Precedence when several categories are present: `3` >
-`1` > `4` > `0`. This is the pm-orchestrator's 5b validation sub-step
+look-back window, a check snapshot whose serialization the gate's own parser cannot read — the
+FOLLOW-856 false-green class — or a check-run rollup that never became complete, the FOLLOW-865
+class). `3` is neither a green nor a red: it means the gate never got to look, so **do not** mark
+READY_FOR_REVIEW, and equally **do not** send the ticket back to its worker or increment
+`fix_iteration_counter` on it — fix the named tooling problem and re-run. Exit code `4` means **NOT
+ATTRIBUTABLE**: the gate completed its comparison, and the only thing between the PR and a green is
+a Rule I violation symbol that is not this PR's — either `main` moved underneath it (the symbol is
+present on only some of the PR's own Rule I check-runs, i.e. on the merge ref and not the branch
+head) or the PR edits `scripts/check-rule-i.sh`, so the PR side and `main`'s baseline were produced
+by different extractors (FOLLOW-855). `4` is likewise neither a green nor a red: do not mark
+READY_FOR_REVIEW, and do not send the ticket back or increment `fix_iteration_counter` — no worker
+can delete a dead export that another PR merged into `main`. Re-run once a newer `main` run has
+completed (the baseline walk then picks the symbol up and the same PR exits `0`), or adjudicate the
+named symbols against the diff by hand. Precedence when several categories are present: `3` > `1` >
+`4` > `0`. This is the pm-orchestrator's 5b validation sub-step
 (`.claude/agents/pm-orchestrator.md`); the old two-command `--watch` + `jq` sequence there is
 superseded by this single script.
 

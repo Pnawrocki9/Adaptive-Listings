@@ -29532,3 +29532,190 @@ next merge either, which makes this ticket more valuable, not less.
 
 cross_ref: [ESC-050; FOLLOW-851; `.github/workflows/ci.yml`; RETRO-252 (duplicate push+PR
 check-runs)]
+
+---
+
+## FOLLOW-864 — The gate's exit-code corpus checker sweeps the filesystem, so any worktree reddens it; it classifies prose per-file, so a backlog file breaks other PRs' merge refs; and its marker pins the code SET, not its MEANING
+
+source_retro: RETRO-254 (§4a LG-1 / LG-2 / LG-3, §4b CB-1) source_ticket: FOLLOW-854
+recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours: 3
+depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+`scripts/check-gate-exit-codes.sh` shipped with PR #685 and earned itself three times in its first
+24 hours — it caught `check-rule-i.sh` unprompted during #685's own rebase, and `check-rule-h.sh`
+during #686's. Two of those were successes. **The three items below are defects in the checker
+itself, and all four ACs live in the same file within about forty lines of each other, which is why
+this is one ticket and not four (Rule AN).**
+
+**(1) It sweeps the FILESYSTEM, not the git index.** `:158-162` runs
+`grep -rl "gh-pr-checks-verified" --include=… .` excluding only `node_modules`. This repo's
+operating model always has at least one `.claude/worktrees/*` present, and every worktree is a
+second complete copy of the corpus. Reproduced in a scratch repo built from the 18 referencing files
+(Rule AM — nothing live mutated):
+
+```
+control (no worktrees)          -> RESULT: the gate's exit-code contract and all 6 routing
+                                   consumers agree.                                    exit 0
++ one .claude/worktrees/* copy  -> RESULT: FAIL — 18 exit-code corpus problem(s).       exit 1
+```
+
+The **33** observed at session-103 merge cleanup reconstructs exactly:
+`git grep -l "gh-pr-checks-verified" <sha>` returns **18** files at current `main` and **15** at
+`b38161bc` (pre-#685 `main`) — two worktrees of different vintage. It does **not** fire in CI
+(`actions/checkout@v4` produces no worktrees), so the entire harm lands in the environment agents
+work in: a hard gate that is red-by-default there is the **Rule AF** shape ("a permanently red gate
+is a DISABLED gate") one layer below CI, and it is how `Rule I`'s 192 became unreadable. The trap
+itself — recursive grep descends into worktrees — is already recorded in `backlog/QUEUE.md` prose
+and this is its second live instance.
+
+**(2) The per-file classification model inverts the burden for append-only prose.** Six of the
+twelve `NON_ROUTING` entries are backlog/log files whose only property is that they name the gate.
+Any future one fails the checker until somebody edits it — and it fails on the **merge ref**, i.e.
+on _other people's_ open PRs. That is not hypothetical: ESC-050's own text named the gate,
+`backlog/ESCALATIONS.md` was in neither list, and every `pull_request` copy of the job went red
+while every `push` copy passed, during an Actions outage, on the one PR that needed a verdict.
+**Position taken in RETRO-254 §4a LG-2:** keep per-file classification for `scripts/`, `.github/`,
+`docs/`, `.claude/agents/` and the repo root — that is where a new _routing_ consumer can hide — and
+replace the prose entries with one structural predicate. **The predicate must be "append-only
+record", not "is Markdown" and not "is under `backlog/`":** `QUEUE.md`'s dispatch briefs genuinely
+do issue routing instructions to workers, so both lazy formulations would exempt a file that can
+rot. Argue `QUEUE.md` explicitly either way rather than letting the predicate decide it silently.
+
+**(3) The marker pins the exit-code SET, not its MEANING — so the defect that motivated this checker
+would pass it green.** FOLLOW-854 exists because PR #683 **re-meant** exit 3 (usage-or-`gh`-error →
+"could not run or could not complete the comparison") without changing the code set. The checker
+derives its marker from the `<n>=<TOKEN>` lines and cross-checks the declared set against the codes
+the gate actually exits with. A meaning change that keeps both the number and the token is
+invisible: byte-identical marker, six green consumers, prose rots exactly as it did. The script's
+header states the adjacent limit honestly ("a marker cannot verify the PROSE around it"); this is
+one level sharper, because **the token itself is prose**, and it is not stated. Cheapest real fix:
+fold a hash of the gate's own exit-code _meaning_ lines into the marker, so any edit to what a code
+means reddens all six consumers.
+
+**(4) The STALE-marker diagnostic prints nothing.** `:137` is
+`grep -oF -m1 -- "gate-exit-contract:.*" "$f"`. `-F` makes the pattern a literal, which no file
+contains, so the checker prints `It carries a STALE marker:` followed by an empty line — losing the
+one piece of information that tells the reader _what_ the stale contract was. Observed by driving
+the stale-marker arm; cosmetic, but it is in the diagnostic path of the control this whole ticket
+family exists to add.
+
+**AC:** (1) enumerate the corpus from `git ls-files`, falling back to the filesystem sweep only when
+not inside a checkout, and add a fixture (or a self-test arm) that creates a nested directory copy
+and asserts the checker stays green; (2) replace the six append-only prose entries with one
+structural predicate, and state in the PR body which side `backlog/QUEUE.md` lands on and why; (3)
+make a change to an exit code's _meaning_ — not its number — redden every routing consumer, and
+prove it red-first by editing one meaning line and observing all six fail; (4) fix `:137` so the
+stale marker is actually printed, and assert the printed text in whatever arm exercises it; (5) do
+**not** widen the checker to `check-rule-h.sh` / `check-rule-i.sh` / its own exit-code contracts —
+RETRO-254 §4d DG-1 and RETRO-255 §4b CB-1 assessed that and deliberately left it unfiled, because no
+agent definition routes on those codes and each message is self-describing.
+
+cross_ref: [RETRO-254 §4a LG-1/LG-2/LG-3, §4b CB-1; FOLLOW-854 (the ticket that shipped this file);
+ESC-050 (the live merge-ref instance of AC(2)); FOLLOW-849 (the other worktree-blind tool);
+`scripts/check-gate-exit-codes.sh:89-103, :137, :158-162`;
+`scripts/gh-pr-checks-verified.sh:167-178`; `CONVENTIONS_PATCH.md` Rule AF, Rule AN, Rule AP, Rule
+AQ]
+
+---
+
+## FOLLOW-865 — The merge gate settles on a truncated check-run rollup and calls it green: the settle loop has no cardinality floor, and it was observed live twice during the Actions outage
+
+source_retro: RETRO-255 (§4a LG-1, §5a severity flag) source_ticket: FOLLOW-857 recommended_sprint:
+next recommended_agent: devops-engineer priority: **P1** estimated_hours: 4 depends_on: [FOLLOW-848]
+blocks: [] promoted_to_queue: false **UNFROZEN** — the session-95 standing freeze carves out P1.
+
+**This is a live false GREEN in the mandated merge gate, on `main`, reachable with no code change.**
+
+`scripts/gh-pr-checks-verified.sh:1116` settles on
+`pending_count == 0 && -n "$prev_snapshot" && "$snapshot" == "$prev_snapshot"`. **There is no
+completeness predicate anywhere in that condition.** A rollup that has not yet registered the rest
+of the repo's checks is stable, non-pending and identical to itself, so it satisfies "two
+consecutive identical, fully-settled snapshots" on the first two polls. Driven through the merged
+gate with a five-check all-SUCCESS rollup, against a repo whose PRs register **77** check-runs:
+
+```
+[t=0s] checks known: 5, pending: 0
+[t=1s] checks known: 5, pending: 0
+Settled after 1s (two consecutive identical, fully-completed snapshots).
+Total checks: 5 | success: 5 | skipped: 0 | neutral: 0 | failing: 0
+RESULT: all checks green. Safe to mark READY_FOR_REVIEW.                        exit=0
+```
+
+**Four things make this worse than a hypothetical:**
+
+1. **It was observed LIVE, twice, on PR #686** during the 2026-08-06 GitHub Actions outage
+   (ESC-050), once printing the green verdict over a rollup that had simply not re-registered the
+   other ~70 checks. Neither verdict was acted on — because the orchestrator applied a **≥60
+   registered checks** condition **the gate itself does not contain**. The compensating control is a
+   human heuristic recorded in `backlog/QUEUE.md`, not code.
+2. **It needs no code change to trigger.** Recovery reruns, a cancelled-and-restarted workflow, a
+   partial re-registration after any Actions incident — none of them require a PR to do anything.
+3. **It is FOLLOW-813's original input class.** Generation 1 (`gh pr checks --watch`) died on "the
+   check-run set was incomplete when I looked". The two-consecutive-identical-snapshot mechanism
+   defends against _state_ changing between polls and not against _cardinality_ collapsing.
+   RETRO-252 named this input class ("temporal check-run shape") and recorded that it has **zero
+   fixtures**.
+4. **FOLLOW-856's new arithmetic guard cannot see it, and that is not a fault in the guard.**
+   `5 = 5 + 0 + 0 + 0` is perfectly self-consistent; a truncated snapshot is internally consistent
+   by construction. The guard checks that the gate can parse its input, not that the input is
+   complete.
+
+**The remedy is a floor in production code, not only a fixture.** The gate already fetches `main`'s
+recent runs for the Rule I baseline walk, so a threshold can be derived rather than hardcoded (the
+median or minimum check-run count of `main`'s recent completed `ci.yml` runs, or of this PR's own
+earlier snapshots if it has any). Below the floor the gate must render **no verdict** — exit 3,
+`UNDETERMINED` — never exit 0. A hardcoded number would rot the first time the workflow gains or
+loses jobs, which is exactly the mistake FOLLOW-821/827 removed from the Rule I classification.
+
+**Sequencing, and it matters:** `depends_on: FOLLOW-848` is real. 848 AC(1) makes `fetch_snapshot`
+serve a **sequence** (`snapshot.1.json`, `snapshot.2.json`, …), and without it there is no way to
+express "the rollup grew between polls" and therefore no way to prove this fix red-first. Shipping a
+production guard with no perturbation test is the precise shape this chain has punished five times.
+Take 848 AC(1) in the same PR, or immediately before.
+
+**AC:** (1) derive a cardinality floor from observable state — never a hardcoded constant — and
+document how it is derived in-file; (2) below the floor exit **3** with a named diagnosis
+(`UNDETERMINED`), never 0 and never 1, and say in the message that the checks have not registered
+rather than that the PR is bad; (3) prove it red-first: a fixture in which a truncated rollup
+settles must exit 3, and must exit 0 once the full rollup is present — with the fixture failing
+against a build that lacks the floor; (4) take FOLLOW-848 AC(1)'s snapshot sequence in the same PR
+or immediately before it, and add a fixture in which the rollup GROWS between polls (this
+simultaneously discharges RETRO-250's TG-1, which has survived four gate generations); (5) state
+what the floor does on a legitimately small PR — e.g. a repo state where `main`'s own runs are also
+truncated — and make sure the failure direction is exit 3, not a permanent block; (6) record the
+orchestrator's ≥60-check heuristic in the PR body as the prior art it is, and delete it from the
+human procedure once the gate enforces it, so the compensating control does not silently outlive its
+replacement.
+
+cross_ref: [RETRO-255 §4a LG-1 / §5a; RETRO-252 (the "temporal check-run shape" input class, zero
+fixtures); RETRO-250 §4c TG-1 (the settle-loop blindness, unchanged across four generations);
+FOLLOW-813 (the mechanism this defeats); FOLLOW-848 (AC(1) is the seam this needs); FOLLOW-856 (the
+arithmetic guard that structurally cannot see this); ESC-050 (the live sighting);
+`scripts/gh-pr-checks-verified.sh:1101-1150`; `backlog/QUEUE.md` session-103 FOLLOW-857 block]
+
+<!-- next free FOLLOW number: 866 (FOLLOW-864 filed 2026-08-07 by RETRO-254, the post-merge retro for PR #685 /
+FOLLOW-854+855+856 — four driven defects in scripts/check-gate-exit-codes.sh, the corpus checker that PR itself
+shipped: it sweeps the filesystem not the git index so every .claude/worktrees/* adds 18 phantom FAILs (33
+observed at merge cleanup reconstructs EXACTLY as 18 at current main + 15 at b38161bc, both measured with
+`git grep -l`); its per-file classification inverts the burden for append-only prose, which is how ESC-050's
+own text reddened every open PR's merge ref during an outage; its marker pins the exit-code SET and not its
+MEANING, so PR #683's re-meaning of exit 3 — the defect FOLLOW-854 exists because of — would pass it green;
+and :137 uses `grep -oF` with a regex so the STALE-marker diagnostic prints an empty line. P2 FROZEN, 3h,
+devops-engineer. FOLLOW-865 filed 2026-08-07 by RETRO-255, the post-merge retro for PR #686 / FOLLOW-857 —
+gh-pr-checks-verified.sh:1116's settle condition has NO cardinality floor, so a truncated check-run rollup is
+"two consecutive identical, fully-settled snapshots" and the gate prints "all checks green. Safe to mark
+READY_FOR_REVIEW" and exits 0; driven with a 5-check rollup against a repo whose PRs register 77, and observed
+LIVE TWICE on PR #686 during ESC-050 with the orchestrator refusing both on a >=60-check condition the gate
+does not contain. This is FOLLOW-813's ORIGINAL input class and RETRO-252's "temporal check-run shape" class
+(zero fixtures); FOLLOW-856's new arithmetic guard structurally cannot see it because a truncated snapshot is
+internally consistent. P1 UNFROZEN (session-95 P1 carve-out), 4h, devops-engineer, depends_on FOLLOW-848
+because 848 AC(1)'s snapshot SEQUENCE is the only way to prove the fix red-first. Both retros promoted NO rule
+and left CONVENTIONS_PATCH.md untouched at 43 rules. Recorded against existing stubs rather than re-filed
+(Rule AN): 848 (AC(1) is now a dependency of a P1; AC(3) covers three harnesses), 847 (2 of 3 legs discharged,
+survivor is AC(3), a code change), 844 (AC(1) FULLY discharged across both merges), 843 (:34 footnote
+discharged; four script paths still STALE at infra/clickhouse/scripts/; add the "wired-or-dead-common.sh must
+NOT have a set line" exception), 861 (24/19/5 re-measured and confirmed; must also fix CONVENTIONS_PATCH.md
+:281's "Exit code 1 = PR blocked"), 860 (no P-35 window existed — 192 unmoved across both merges; attach the
+discharge to the next merge reporting New > 0), 850 (CONVENTIONS_PATCH.md:281 asserts a pre-push lefthook gate
+that runs nowhere), 858 (reuse wod_resolve_repo_root), 859 (cheaper via the SNAPSHOT_FIELDS derivation), 828
+(the corpus is six agent definitions, not five), 779 (43 rules against §Snapshot.6's 42). -->

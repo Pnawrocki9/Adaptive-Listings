@@ -86,8 +86,9 @@ Next free stub: **FOLLOW-874**.
 
 ### Dispatched: FOLLOW-817 (P1, devops-engineer, Opus)
 
-**FOLLOW-817 — status: READY_FOR_REVIEW** (PR **#691**, `fec4ba89`, CI verified 77/2) —
-**assigned_to:** devops-engineer **model:** **Opus** **started_at:** 2026-08-07 **branch:**
+**FOLLOW-817 — status: DONE** — PR **#691** squash-merged as `fe73e8da`; ESC-053 executed and
+verified; all three Modal apps confirmed `deployed` — **assigned_to:** devops-engineer **model:**
+**Opus** **started_at:** 2026-08-07 **branch:**
 `devops-engineer/FOLLOW-817-modal-deploy-intent-data-quality`. Model justification: cross-system
 (GitHub Actions + Modal + Doppler + the ingest Worker's env), and its sharpest AC is a **verdict
 correction** to §Snapshot.1 that requires judging shipped-vs-deployed — reasoning work, not
@@ -450,8 +451,46 @@ _learning_ stayed uncommitted in `lessons.md`. This brief adds an explicit final
 hands its lesson back **in the report body**, and the PM lands it in the same commit. That step is
 now the template for every no-Bash dispatch.
 
-**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS (one PR). 1 open PR — #691, verified and
-mergeable, held on ESC-053.**
+### 🟢 The ML layer is deployed — FOLLOW-817 DONE, ESC-053 RESOLVED, ESC-042 item 1 closed
+
+**ESC-053 executed by Piotr and verified by me rather than accepted on report.** A read-only probe
+reporting FORM only (never a value) confirms all three keys present and clean: 40 / 62 / 110 chars,
+**no stray quotes, no whitespace** — the `.env`-style quoting Upstash displays is the obvious trap
+and was checked for explicitly. **And the check that actually mattered passed:**
+`UPSTASH_REDIS_REST_URL` and the pre-existing `UPSTASH_REDIS_URL` resolve to the **same Upstash
+host** — ESC-042 item 1(b)'s real closure condition, since different databases would have made the
+Python write and the TypeScript read miss each other in silence.
+
+**A trap caught before it fired.** ESC-053 as written said "the pooler connection string", but
+Doppler `prd` names its **direct, IPv6-only** host `DATABASE_URL` and its **session-mode pooler**
+`DATABASE_URL_DIRECT` — inverted naming. I had handed Piotr the literal `DATABASE_URL`. A
+credential-free reachability probe **from inside Modal** settled it: the direct host has **no IPv4
+record and TCP connect fails**, while both pooler ports resolve and connect. Pasting the literal
+value would have given `schema_validation` a connection string it can never open — a nightly
+`OperationalError` at 02:00 UTC into nobody's log, i.e. exactly the invisible-failure class this
+whole ticket exists to prevent, and the same root cause as the 2026-06 admin 503s. ESC-053 was
+corrected in-branch before the merge.
+
+**#691 merged as `fe73e8da`** after `gh-pr-checks-verified.sh` returned exit 0 on the new head (my
+ESC-053 commit had changed it, so the earlier verification did not carry). Deploy run `31212639962`:
+**success on all three jobs**. Rule Q applied to the finish line — the green job is not the
+evidence, so `modal app list` was read directly:
+
+| App                              | State                                          |
+| -------------------------------- | ---------------------------------------------- |
+| `estalara-description-generator` | `deployed` (2026-07-03, untouched)             |
+| **`estalara-intent-engine`**     | **`deployed` — first deploy ever, 21:43 CEST** |
+| **`estalara-schema-validation`** | **`deployed` — first deploy ever, 21:43 CEST** |
+
+**ESC-042 item 1 — chat NLP dark since 2026-07-24 with no named owner — is closed.** The nightly
+schema-validation cron will run for the first time in the project's history at 02:00 UTC.
+
+**Still honestly open:** the end-to-end shadow-key population in **prod** is not proven — the
+FOLLOW-817 worker proved it on localhost with a real Haiku extraction, and prod proof needs real
+chat traffic. Rule AA: this closes the deploy axis, not the traffic axis.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #694 (FOLLOW-882 + 887, CI verified
+exit 0, awaiting merge).**
 
 ---
 

@@ -2758,7 +2758,7 @@ expiry fires loudly).
 
 ---
 
-## OPEN — ESC-053: `estalara-secrets` is missing three keys the Modal apps read at runtime — deploying intent-engine / data-quality over it produces two running-but-dead apps [FOLLOW-817]
+## RESOLVED — ESC-053: `estalara-secrets` is missing three keys the Modal apps read at runtime — deploying intent-engine / data-quality over it produces two running-but-dead apps [FOLLOW-817]
 
 **Filed by:** devops-engineer (FOLLOW-817) **Date:** 2026-08-07T12:40:00Z **Affects:** FOLLOW-817,
 ESC-042 item 1, FOLLOW-820, FOLLOW-819, `apps/intent-engine`, `apps/data-quality`, Modal workspace
@@ -2855,6 +2855,22 @@ key, so the run log is itself the attestation.
 The devops guardrails forbid it, and `modal secret create --force` is destructive to a LIVE app.
 
 ---
+
+**RESOLVED 2026-08-07 (operator: Piotr; verified by PM, not accepted on report).** All three keys
+added via the Modal web console. Verified with a read-only probe that reports FORM only, never a
+value: `UPSTASH_REDIS_REST_URL` (40 chars, `https://` prefix), `UPSTASH_REDIS_REST_TOKEN` (62
+chars), `DATABASE_URL` (110 chars, pooler host) — **no stray quotes, no whitespace** on any of them
+(the `.env`-style quoting Upstash displays is the obvious trap and was checked for explicitly).
+
+**The closure condition that actually mattered was also verified:** `UPSTASH_REDIS_REST_URL` and the
+pre-existing `UPSTASH_REDIS_URL` resolve to the **same Upstash host**. That is ESC-042 item 1(b)'s
+real check — different databases would have made the Python write and the TypeScript read miss each
+other silently, with no error anywhere.
+
+**Deployed the same session.** PR #691 merged as `fe73e8da`; `modal-deploy.yml` run `31212639962`
+completed **success** on all three jobs, and `modal app list` confirms `estalara-intent-engine` and
+`estalara-schema-validation` in state `deployed` (created 21:43 CEST) alongside the untouched
+`estalara-description-generator`. Rule Q: the app list is the evidence, not the green job.
 
 ## OPEN (narrowed) — ESC-042: Modal `intent-engine` deploy is the sole remaining chat-un-shadow blocker — design ruling (item 2) RESOLVED 2026-07-27 [FOLLOW-635]
 

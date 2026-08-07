@@ -1,0 +1,227 @@
+# cron-heartbeat.yml — absence-of-signal detector for scheduled jobs (FOLLOW-893).
+#
+# WHAT THIS CLOSES
+#   `apps/data-quality/src/crons/schema_validation.py` runs on `modal.Cron("0 2 * * *")`
+#   and fired for the first time in the project's history on 2026-08-08. Its FAILURES were
+#   visible only to whoever opened the Modal dashboard, and a run that NEVER STARTED — the
+#   highest-prior failure mode for a first-ever schedule — emitted nothing at all. Drift
+#   EVENTS already had a channel (Sentry). The gap was the ABSENCE case. This workflow is
+#   the outside observer: a process that is not the cron, asserting the cron ran.
+#
+# WHY THE SCHEDULE IS 05:00 UTC AND THE WINDOW IS 26h (load-bearing)
+#   cron fires 02:00 UTC; this checks at 05:00 UTC with --max-age-hours 26:
+#     today's run happened            → age ≈ 3h  → PASS
+#     today's run missed (yesterday ok) → age ≈ 27h → FAIL
+#   Any earlier check time makes a 26h window silently tolerate one missed run — the alarm
+#   would stop alarming while staying green. Do not move this cron earlier without
+#   shrinking the window.
+#
+# WHY THE ALARM IS A RED WORKFLOW RUN
+#   A failed GitHub Actions run is a structured sink with notifications (RETRO-010
+#   FOLLOW-111: no signal a future decision depends on may live in a console.warn). It
+#   costs nothing recurring and needs no new vendor — FOLLOW-893 asked explicitly for the
+#   cheapest thing that works over new monitoring infrastructure.
+#
+# SOFT-SKIP CONTRACT (mirrors db-migrate.yml / modal-deploy.yml)
+#   `assert-prod-heartbeat` soft-skips ONLY when DOPPLER_TOKEN_PRD is unset — "dependency
+#   not configured". If the token IS present and the heartbeat is missing, stale, or the
+#   table is absent, the job goes RED. There is no second skip gate, and the checker
+#   script itself exits 2 (not 0) when it finds no connection string, so an unconfigured
+#   environment can never be mistaken for a healthy one.
+#
+# RULE Q — THIS DETECTOR HAS OBSERVED ITS OWN FAILURE
+#   `detector-negative-control` runs on every push/PR against a throwaway Postgres and
+#   asserts the alarm FIRES in all three absence shapes (no table / no row / stale row)
+#   and stays silent on the one healthy shape. A green check that has never seen itself
+#   go red is not evidence, so that negative control is part of the pipeline, not a
+#   one-off screenshot.
+#
+# BRANCH TRIGGERS: `**` deliberately (ESC-011). PR #149 on `feat/...` got ZERO CI runs and
+#   the "lasting fix" was then violated by PR #158 on `claude/...`. An allowlist of agent
+#   prefixes has now failed twice; a detector whose own tests do not run on the branch
+#   that changes it is the exact class of bug this workflow exists to catch.
+
+name: Cron Heartbeat (FOLLOW-893)
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # 05:00 UTC — three hours after the 02:00 UTC schema-validation cron. See the
+    # window arithmetic above before changing this.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cron-heartbeat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Rule Q negative control ───────────────────────────────────────────────────────────
+  # Executes the alarm. Not a description of the alarm, not a unit test of a helper —
+  # the real script, against a real Postgres, in all four states.
+  detector-negative-control:
+    name: Detector negative control (alarm must fire on absence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: heartbeat_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/heartbeat_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # CASE 0 — the sink itself is missing. Must ALARM. This is run BEFORE the migration
+      # on purpose: "migration not applied to prod" is a real deployment state, and a
+      # checker that treats a missing table as "nothing to worry about" is worse than none.
+      - name: CASE 0 — no cron_heartbeats table at all → expect ALARM (exit 1)
+        run: |
+          set +e
+          out=$(bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 1 ]; then
+            echo "::error::expected exit 1 (alarm) with no table, got ${code}"; exit 1
+          fi
+          echo "$out" | grep -q "does not exist" || {
+            echo "::error::alarm text did not name the missing table"; exit 1; }
+          echo "OK — alarm fired on missing sink."
+
+      - name: Apply migration 0037_cron_heartbeats
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/migrations/0037_cron_heartbeats.sql
+
+      # Minimal stand-in for schema_validation_history so the AC3 digest path is exercised
+      # too. Only the columns the digest reads — this is not a schema mirror.
+      - name: Create a minimal schema_validation_history for the digest path
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            CREATE TABLE schema_validation_history (
+              id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+              tenant_id uuid NOT NULL,
+              drift_detected boolean NOT NULL DEFAULT false,
+              run_at timestamptz NOT NULL DEFAULT NOW(),
+              error text
+            );"
+
+      # CASE 1 — table exists, job has never once succeeded. Must ALARM. This is the exact
+      # state prod is in until the redeployed cron writes its first heartbeat.
+      - name: CASE 1 — table but no heartbeat row → expect ALARM (exit 1)
+        run: |
+          set +e
+          out=$(bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 1 ]; then
+            echo "::error::expected exit 1 (alarm) with no heartbeat row, got ${code}"; exit 1
+          fi
+          echo "$out" | grep -q "no heartbeat has EVER been recorded" || {
+            echo "::error::alarm text did not report a never-run job"; exit 1; }
+          echo "OK — alarm fired on never-run job."
+
+      # CASE 2 — the run that silently stopped happening. 27h old = exactly one missed
+      # 02:00 firing as observed from a 05:00 check.
+      - name: CASE 2 — heartbeat 27h stale → expect ALARM (exit 1)
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO cron_heartbeats (job_name, last_success_at, run_detail)
+            VALUES ('validate_schemas', NOW() - INTERVAL '27 hours', '{\"tenant_domain_pairs\": 1}')
+            ON CONFLICT (job_name) DO UPDATE SET last_success_at = EXCLUDED.last_success_at;"
+          set +e
+          out=$(bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 1 ]; then
+            echo "::error::expected exit 1 (alarm) on a 27h-stale heartbeat, got ${code}"; exit 1
+          fi
+          echo "$out" | grep -q "has not completed successfully" || {
+            echo "::error::alarm text did not report staleness"; exit 1; }
+          echo "OK — alarm fired on a single missed run."
+
+      # CASE 3 — the healthy shape. Must NOT alarm. Without this the detector could be
+      # trivially "passing" by always failing.
+      - name: CASE 3 — heartbeat 3h fresh → expect PASS (exit 0)
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            UPDATE cron_heartbeats SET last_success_at = NOW() - INTERVAL '3 hours'
+            WHERE job_name = 'validate_schemas';"
+          bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26
+          echo "OK — healthy heartbeat passes."
+
+      # CASE 4 — no connection string at all must be exit 2 (unconfigured), never 0.
+      # This is what keeps "nothing was checked" from ever looking like "all good".
+      - name: CASE 4 — no connection string → expect UNCONFIGURED (exit 2), never 0
+        env:
+          DATABASE_URL: ""
+        run: |
+          set +e
+          out=$(bash scripts/check-cron-heartbeat.sh --job validate_schemas 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -ne 2 ]; then
+            echo "::error::expected exit 2 (unconfigured), got ${code}"; exit 1
+          fi
+          echo "OK — unconfigured is distinguishable from healthy."
+
+  # ── The real daily assertion against prod ─────────────────────────────────────────────
+  assert-prod-heartbeat:
+    name: Assert validate_schemas ran in the last 26h (prod)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Not on every branch push: this one reads prod. Scheduled run is the load-bearing
+    # invocation; main-push and manual dispatch exist so the wire can be exercised on
+    # demand instead of waiting a day to discover it is broken.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      # Soft-skip ONLY on "dependency not configured". A present token over a missing or
+      # stale heartbeat is a hard red below — there is no second skip gate.
+      - name: Check DOPPLER_TOKEN_PRD presence
+        id: token-check
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOPPLER_TOKEN_PRD is not set — cannot read the prod heartbeat."
+            echo "This job is INERT until DOPPLER_TOKEN_PRD is provisioned. It is NOT an all-clear."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assert validate_schemas heartbeat < 26h old
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          doppler run --config prd -- bash scripts/check-cron-heartbeat.sh \
+            --job validate_schemas --max-age-hours 26

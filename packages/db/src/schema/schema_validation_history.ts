@@ -3,7 +3,13 @@
  *
  * Written by the continuous schema validation cron
  * (`apps/data-quality/src/crons/schema_validation.py`).
- * Read by the `/dashboard/site-health` panel (Sprint 10 — TICKET-VAL-002).
+ *
+ * Read by (FOLLOW-893 AC3 — this list used to claim a `/dashboard/site-health` panel from
+ * TICKET-VAL-002 that does not exist in this repo):
+ *   1. the cron's own 24h Sentry-dedup query (`_was_drift_alerted_recently`), and
+ *   2. the daily digest in `scripts/check-cron-heartbeat.sh`, reported into the
+ *      `cron-heartbeat.yml` job summary.
+ * There is no tenant-facing surface yet; see docs/runbooks/SCHEMA_VALIDATION_CRON.md §4.
  *
  * A row is written on every cron run, whether or not drift was detected.
  * `drift_detected = true` means the stored CSS selectors no longer match

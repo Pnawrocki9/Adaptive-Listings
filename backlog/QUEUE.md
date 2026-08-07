@@ -259,7 +259,29 @@ gate.
 hop table was not re-run (expect `5/9`, not `6/8`) and the negative control was not re-executed;
 FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED: the ESC-053 gate
+### Dispatched: FOLLOW-881 (architect, Fable)
+
+**FOLLOW-881 — status: IN_PROGRESS** — **assigned_to:** architect **model:** **Fable**
+**started_at:** 2026-08-07 **branch:** `architect/FOLLOW-881-master-design-gating-ladder`
+**worktree:** `.claude/worktrees/follow-881`. Model justification: this is a **Master_Design
+revision** carrying the §Y.2 propagation checklist, on the document every future ticket boots from —
+the model-fit table names Master*Design revisions as Fable work explicitly, and the failure mode
+(shipping a \_new* wrong claim into the SoT) is the expensive one.
+
+**Coordination — two open PRs, kept to disjoint files.** The FOLLOW-881 stub exists only in PR
+#692's branch, so it was passed to the architect in the dispatch brief rather than read from `main`.
+The worker branches from `main` and edits **`docs/MASTER_DESIGN.md` only** — it must NOT touch
+`backlog/FOLLOW_UPS.md` (that would conflict with #692) and must not touch `packages/sdk` (#692 owns
+the docblock). PR #691 also edits MASTER_DESIGN but in §Snapshot.1 rows A.1/B.6, a disjoint section.
+
+**ESC-054 is UNRULED, and the dispatch forbids pre-empting it.** Stub AC(4) asks the architect to
+cite the ESC-054 ruling if the ladder's "intentional" framing survives it. No ruling exists yet, so
+the instruction is: describe what the code **does**, record ESC-054 as the open question against the
+exact sentence it would change, and assert **no** intent the ruling has not settled. Writing
+"intentional" into the SoT ahead of the decision is precisely the class of error this ticket exists
+to remove.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 2 open PRs — #691 (BLOCKED: the ESC-053 gate
 still reports 3 keys MISSING, verified by running it) and #692 (verified, awaiting merge).**
 
 ---

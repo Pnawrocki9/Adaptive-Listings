@@ -173,6 +173,31 @@ has 25 non-test `logger.*` calls — so the `console.error` count understated th
 sharper instance of the defect is not a `console.error` site at all, which is why it fell outside
 the ticket's enumeration → **FOLLOW-845** (P1, unfrozen, filed).
 
+### FOLLOW-866 — status: READY_FOR_REVIEW (PR #687, head `6c823019`)
+
+**ci_check_counter:** 2/5 **fix_iteration_counter:** 1/3 (a PM-requested wording fix, not a defect
+in the work). **CI on the final head:** 192/192 Rule I symbol-set match vs baseline run
+`31159610869`, exit 0.
+
+**What it delivers.** C-07 v1.3: both instances of the false storage sentence rewritten to state
+what is true (no unscrubbed identifiers anywhere; message text ≤4000 chars, emails/phones masked,
+retained in ClickHouse `events` for its real, already-configured **13-month TTL** —
+`0001_create_events.sql:46`, cited not guessed). All three stores verified with citations — Postgres
+for the first time ever (zero message-bearing tables across 28 schema files). **The AC(2) STOP
+condition fired and worked:** §Q3's conclusion visibly changed under the corrected premise, the
+worker flagged instead of absorbing, the CEO+DPO ruled within the hour (disclose-in-notice, LI, no
+checkbox — ESC-049 addendum), and the flags were resolved with the ruling cited. §Q4 unchanged
+(scoped to the vector). §Q1 ruled not-fired, with a **change-based** re-review trigger — one round
+of PM push-back fixed a gloss that described the status quo as if it were the trigger, which would
+have been a control fired-at-birth.
+
+**Its sharpest side-finding is being fixed in flight:** the same false claim goes byte-synced to
+real data subjects via the consent banner, `lib.ts:138` and `PRIVACY_NOTICE_TEMPLATE.md` §6.1 — now
+in FOLLOW-815's scope, riding the same single TOS bump.
+
+**Merge note:** #687 and #688 both touch `dpia.md` (disjoint sections: §13.4/§3.1 vs §8). Merge #687
+first; #688 is still in flight and will absorb any rebase.
+
 ### RETRO-251 + RETRO-252 landed (`e7de4c78`) — and my ruling on whether to escalate
 
 **RETRO-251 filed zero stubs and corrected my brief instead of answering it.** I had asked why each

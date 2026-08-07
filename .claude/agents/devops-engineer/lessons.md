@@ -421,8 +421,8 @@ serve a snapshot SEQUENCE, which is what let any of it be proven red-first (FOLL
 **Where a green badge hid a broken run path.** In the gate that exists to stop exactly that. Two
 consecutive identical snapshots prove the check set stopped CHANGING; nobody had ever asked whether
 it was COMPLETE, so five all-green check-runs in a 77-check repo printed "Safe to mark
-READY_FOR_REVIEW" and exited 0 — live, twice. The compensating control was a number a human
-remembered. Note the shape: every previous generation of this gate closed a _state_ hole and left
+READY*FOR_REVIEW" and exited 0 — live, twice. The compensating control was a number a human
+remembered. Note the shape: every previous generation of this gate closed a \_state* hole and left
 the _cardinality_ hole open, because the fixture format could not express a set that changes between
 polls. A test format can be a blind spot with the same authority as missing code.
 

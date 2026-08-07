@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.14 **Date:** 2026-08-06 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.15 **Date:** 2026-08-07 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -576,24 +576,40 @@ mandatory at app.estalara.com registration; without granting consent the investo
 use chat. The Adaptive-Listings consent layer must disclose and lawfully cover all six processing
 purposes enumerated in §H.8 of the Master Design and in §13.4 of this DPIA:
 
-| #   | Purpose                      | Description                                                                             |
-| --- | ---------------------------- | --------------------------------------------------------------------------------------- |
-| (a) | Behavioral tracking          | Scroll depth, dwell time, click patterns, listing-view rate, quiz answers               |
-| (b) | Reading investor chat        | Chat messages read to extract buying-intent signals; raw text stored APP-SIDE only      |
-| (c) | Transfer to agency/agent     | Derived behavioral insights (archetype, confidence) shared with the listing agency      |
-| (d) | Buying-intent identification | 12-dimensional intent vector (24 h TTL, no free text) from behavioral signals + chat    |
-| (e) | Lead ranking                 | Investors ranked by buying-intent strength for agent prioritization                     |
-| (f) | Agent-facing chat summaries  | Summaries of questions asked in LIVE chat and Estalara AI chat surfaced to agency staff |
+| #   | Purpose                      | Description                                                                                                                                                                                                                                   |
+| --- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a) | Behavioral tracking          | Scroll depth, dwell time, click patterns, listing-view rate, quiz answers                                                                                                                                                                     |
+| (b) | Reading investor chat        | Chat messages read to extract buying-intent signals; message text (PII-scrubbed for email/phone only) also retained in Adaptive-Listings' ClickHouse `events` table for 13 months by §H.8 design — corrected v2.15/FOLLOW-866, see §3.1 below |
+| (c) | Transfer to agency/agent     | Derived behavioral insights (archetype, confidence) shared with the listing agency                                                                                                                                                            |
+| (d) | Buying-intent identification | 12-dimensional intent vector (24 h TTL, no free text) from behavioral signals + chat                                                                                                                                                          |
+| (e) | Lead ranking                 | Investors ranked by buying-intent strength for agent prioritization                                                                                                                                                                           |
+| (f) | Agent-facing chat summaries  | Summaries of questions asked in LIVE chat and Estalara AI chat surfaced to agency staff                                                                                                                                                       |
 
-**C-07 boundary (binding — must never be violated):** Raw chat text is stored APP-SIDE only
-(app.estalara.com). Adaptive-Listings stores only the 12-dimensional intent vector with a 24-hour
-TTL — no free text, no message content. This is verified in shipped code: `schemas.py`, class
-`ChatIntentDetectedPayload` (its fields contain no `messages` or `raw_text` field) and
-`redis_writer.py` (`payload.model_dump()` serializes only `ChatIntentDetectedPayload`). Since
-FOLLOW-730 that payload also carries `data_source` and `extraction_error` — extraction provenance
-(an enum, plus an exception CLASS name with the message deliberately excluded), not buyer content,
-so the boundary above is unchanged. See also the C-07 scoping brief
-(`docs/compliance/C-07-chat-retention-scope.md`).
+**C-07 boundary (binding — must never be violated), corrected v2.15/FOLLOW-866 (ESC-049 CEO/DPO
+ruling):** the boundary as previously stated here — "Raw chat text is stored APP-SIDE only …
+Adaptive-Listings stores only the 12-dimensional intent vector … no free text, no message content" —
+was verified only against the Redis shadow key path and was false as an ordinary reader would read
+it. The corrected, binding boundary is: **no unscrubbed identifiers** (raw, un-redacted email
+addresses or phone numbers) are stored by Adaptive-Listings at any layer. Within that boundary, two
+things are both true and both shipped: (1) the Redis shadow key
+(`shadow:{tenant_id}:{session_id}: chat_intent`) stores only the 12-dimensional intent vector, no
+free text — verified in `schemas.py`, class `ChatIntentDetectedPayload` (no `messages` or `raw_text`
+field) and `redis_writer.py` (`payload.model_dump()` serializes only `ChatIntentDetectedPayload`;
+since FOLLOW-730 that payload also carries `data_source` and `extraction_error` — extraction
+provenance, not buyer content); (2) separately, the buyer's chat message text — PII-scrubbed for
+email/phone only, ≤4000 characters — IS retained in ClickHouse's `events` table (`payload` column)
+for 13 months, by deliberate §H.8 design: emitted by the SDK
+(`packages/sdk/src/index.ts:1518-1521`), scrubbed (`scrubMessagePii`,
+`packages/sdk/src/core/pii-scrub.ts:22-27`), validated (`ChatMessageSentPayloadSchema.message`,
+`packages/shared/src/schemas/events/chat.ts:39-40`), and written verbatim into `events.payload`
+(`apps/ingest/src/clickhouse-producer.ts:142`) on a path independent of the Redis/live-adaptation
+boundary — the schema's own comment states the design intent: "§H.8 invariant: the chat event STILL
+flows to ingest (ClickHouse) regardless of this flag" (`chat.ts:56-57`). TTL:
+`infra/clickhouse/migrations/0001_create_events.sql:46`. **The §13.4 LIA below relies on the
+previous, narrower reading of this boundary (specifically its balancing-test condition (iii)); that
+reliance is flagged inline in §13.4 and is not re-derived here — see the FOLLOW-866 pull request
+description for the full re-derivation.** See also the C-07 scoping brief
+(`docs/compliance/C-07-chat-retention-scope.md`, v1.2).
 
 ### 3.2 Why Behavioral Signals Are the Minimum Required
 
@@ -1263,6 +1279,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.12    | 2026-08-05 | Backend Engineering    | FOLLOW-811 (decision ticket): §2.7.1 added — the `apps/control-plane` Sentry residual risk is formally ACCEPTED, with reasoning, evidence and six named re-review triggers, and NO `beforeSend` is added (mirroring the Python hook would gate on an `area=chat_intent` tag this app never emits; a blanket scrub would destroy triage on 95 capture sites; no PII-pattern regex was invented, per the ticket's AC(3)). NEW FINDING recorded: the platform log sink and the Sentry sink are NOT independent in this app — `consoleIntegration()` is a default integration of `@sentry/node-core@10.50.0` (`build/cjs/sdk/index.js:41`), so its 115 `console.error` + 33 `console.warn` non-test call sites are also Sentry inputs as unmodified breadcrumbs; proven by a real-capture-path sentinel test, not inferred. Vercel runtime-log retention is recorded as NOT RECORDED in this repo and deliberately not guessed, bounded by the absence of any configured log drain. Code in the same PR: `sendDefaultPii: false` pinned explicitly in all three configs (no behaviour change; guards against the vendor's flagged v11 default change), the `sentry.client.config.ts` docstring corrected to name `NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE`, the wrong "Capture unhandled promise rejections" comment on `replayIntegration()` corrected, and two tests pinning the decision. Header version corrected from a stale 2.10 (see row 2.11a). Log-sink gate for this app filed as FOLLOW-836.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 2.13    | 2026-08-05 | Backend Engineering    | FOLLOW-838: §2.7 table gains a fifth row — `apps/ingest` was absent from the per-app Sentry record entirely, and it is the only app that handles raw buyer chat. §2.7.1's console↔Sentry finding is corrected from an `apps/control-plane` fact to a property of the SDK default integration lists: `consoleIntegration()` is also a default of `@sentry/cloudflare@10.50.0` (`build/cjs/sdk.js:29`) and `apps/ingest/src/observability.ts:71-82` overrides no integrations. The Python tier is recorded as explicitly NOT affected on this axis (`sentry_sdk`'s `LoggingIntegration` reads `logging` records; the Modal diagnostics are bare `print()`), so the FOLLOW-812 stdout sink stays a genuinely separate sink. §2.7.2 added: the chat-NLP dispatch (`handlers/chat-nlp-dispatch.ts`) no longer reads the Modal response body at all — it carries `HTTP <status> (<classified kind>)`, the same convention `nlp.py` uses for `extraction_error` — with the endpoint's actual 4xx bodies DRIVEN rather than inferred (four application-level legs echo nothing; the pydantic body-validation leg echoes the whole request body in `detail[].input` but is not reachable from the Worker's current request shape; Modal platform-level bodies not established). No live leak is claimed and no PII-pattern regex was added. The `.catch()` sibling arm is explicitly assessed and left carrying `err.message` (a runtime-generated transport string, not request-derived), pinned by a test that asserts it DOES reach the wire. Five re-review triggers named, including provisioning `SENTRY_DSN_INGEST` (ESC-048) which switches the whole path on. Two items assessed and deferred to FOLLOW-845: `clickhouse-producer.ts:178`'s 500-char ClickHouse error body on a batch containing the buyer's message, and pinning `sendDefaultPii` explicitly in `observability.ts`.                                                                              |
 | 2.14    | 2026-08-06 | Backend Engineering    | FOLLOW-845: §2.7.3 added — the `apps/ingest` ClickHouse batch path (`clickhouse-producer.ts`, consumed by `handlers/events.ts` and `handlers/events-retry-consumer.ts`) no longer reads the ClickHouse response body at all, closing the item §2.7.2 assessed and deferred. Unlike the Modal leg in §2.7.2, this one was established as REAL rather than prophylactic: a `clickhouse-server:25.8` container (the version `ci.yml` pins) loaded with the real `events` DDL and fed the exact `toClickHouseRow` shape quotes a ~200-char window of the RAW INPUT in `Code: 26`/`27`/`117` errors, and when the parse fails at or after the row's trailing keys the buyer's chat text appears verbatim inside the first 500 characters — the exact window that was being copied into two Sentry sinks. The replacement signal is header-derived and carries no upstream bytes: HTTP status + `X-ClickHouse-Exception-Code` (validated as 1–5 digits) + a LOCAL code→class map, plus `X-ClickHouse-Query-Id` (validated as a UUID) so an operator pivots to `SELECT exception FROM system.query_log WHERE query_id = '<id>'` and reads the full message inside the controller-side store that already holds those rows, instead of exporting it to a processor. No PII-pattern regex added. The transport-rejection arm is explicitly assessed and left carrying `cause.message` (runtime-generated, not row-derived), pinned by a test asserting it DOES reach the wire. §2.7 table row for `apps/ingest` updated; §2.7.2 trigger 3 corrected — `sendDefaultPii: false` is now pinned explicitly in `observability.ts` (a no-op on the day it landed: `@sentry/cloudflare@10.50.0` `build/cjs/sdk.js:14` reads `options.sendDefaultPii ?? false`; written down against the vendor's flagged `TODO(v11)` default change). Four re-review triggers named. Whether chat text belongs in the ClickHouse `events` table at all is out of scope and stays open as ESC-049. |
+| 2.15    | 2026-08-07 | Compliance Engineering | FOLLOW-866 (ESC-049 CEO/DPO ruling, option 1). §2 processing-purposes table row (b) corrected. §3.1's "C-07 boundary (binding — must never be violated)" paragraph rewritten: the previous claim ("Adaptive-Listings stores only the 12-dimensional intent vector … no free text, no message content") was verified only against the Redis shadow key and was false as an ordinary reader would read it — chat message text, PII-scrubbed for email/phone only, ≤4000 chars, is retained in ClickHouse `events.payload` for 13 months by deliberate §H.8 design; full write-path citation added (SDK → schema → ingest producer → migration TTL). §13.4's restatements corrected: the "No raw chat text is stored by Adaptive-Listings at any layer" sentence re-scoped to the Redis key it actually describes; the necessity-test sentence corrected to not imply the message text is unretained; the balancing-test's condition (iii) ("the C-07 boundary … is maintained") is FLAGGED, not silently re-verified — whether Purpose (d)'s "Balancing test result: PASSES" verdict still holds under the corrected boundary is a lawful-basis judgment escalated to CEO/DPO, not resolved by this row (per this ticket's AC(2) STOP condition). No change to §8 (Data Subject Rights — out of scope for this ticket, owned by a concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ---
 
@@ -1677,11 +1694,13 @@ supplementary to the mandatory consent under GDPR Art. 6(1)(a) to demonstrate pr
 The 12-dimensional intent vector is derived from behavioral signals (scroll depth, dwell time, click
 patterns, listing-view rate) and from chat-message analysis (Haiku/Sonnet NLP extractions yielding
 `ChatIntentDetectedPayload` dimensions). The vector is stored in Upstash Redis shadow key
-`shadow:{tenant_id}:{session_id}:chat_intent` with a 24-hour TTL. No raw chat text is stored by
-Adaptive-Listings at any layer (C-07 boundary — see §3.1 above). The derived vector is used
-exclusively to identify the investor's likely buying intent (purchase purpose, urgency, budget band,
-family stage, geo priority, feature priority, cross-border status, finance complexity, decision
-role, risk appetite, emotional state, tax awareness).
+`shadow:{tenant_id}:{session_id}:chat_intent` with a 24-hour TTL. No raw chat text is stored in this
+Redis key (C-07 boundary — see §3.1 above, corrected v2.15/FOLLOW-866: the chat message text IS
+separately retained in ClickHouse for 13 months by §H.8 design; this vector-scoped sentence is
+unaffected by that correction — see §3.1 for the full boundary and the ClickHouse citation). The
+derived vector is used exclusively to identify the investor's likely buying intent (purchase
+purpose, urgency, budget band, family stage, geo priority, feature priority, cross-border status,
+finance complexity, decision role, risk appetite, emotional state, tax awareness).
 
 **Processing activity — Purpose (e): Lead ranking**
 
@@ -1703,8 +1722,11 @@ agents, which has a practical economic significance. This significance requires 
    platform that explicitly markets AI-driven buyer matching.
 
 2. **Necessity test:** The 12-dim vector is the minimum data needed to drive archetype-prior
-   updates. Raw chat messages are not needed (and are not retained — C-07 boundary). The 24-hour TTL
-   limits staleness. No less privacy-invasive alternative achieves the same intent-signal precision.
+   updates. Raw chat messages are not needed for this computation (the vector's own necessity does
+   not depend on the message text being retained). Corrected v2.15/FOLLOW-866: the message text IS
+   separately retained in ClickHouse (§3.1) for a different purpose (§H.8) — that retention is not
+   assessed by this necessity test, which is scoped to the vector only. The 24-hour TTL limits
+   staleness. No less privacy-invasive alternative achieves the same intent-signal precision.
 
 3. **Balancing test:**
    - The data is pseudonymous: the 12-dim vector is keyed by session_id (HMAC hash). It contains
@@ -1720,6 +1742,16 @@ agents, which has a practical economic significance. This significance requires 
    - **Balancing test result: PASSES**, subject to three conditions: (i) the six purposes are fully
      disclosed at registration before account creation; (ii) a DSR erasure pathway is accessible to
      the investor via the tenant; (iii) the C-07 boundary (no raw chat text in AL) is maintained.
+
+     > **FLAGGED FOR RE-REVIEW (v2.15, 2026-08-07, FOLLOW-866 / ESC-049).** Condition (iii) as
+     > originally written ("no raw chat text in AL") is not currently true under the corrected §3.1
+     > boundary: chat message text (PII-scrubbed for email/phone only) is retained in ClickHouse for
+     > 13 months by deliberate design. Whether that satisfies a corrected reading of condition (iii)
+     > ("no unscrubbed identifiers"), and whether this Purpose (d) balancing test therefore still
+     > PASSES, is a lawful-basis judgment this correction does not resolve. This document's own §3.1
+     > correction note points here; full reasoning is in the FOLLOW-866 pull request description.
+     > **Escalated, not answered here — this PASSES verdict must not be relied on as current until a
+     > fresh CEO/DPO ruling is recorded.**
 
 **Legitimate interest test — Purpose (e):**
 

@@ -1,9 +1,59 @@
 # C-07 — Chat Free-Text Retention: DPIA Scope Brief
 
-**Document ID:** ESTALARA-C-07 **Version:** 1.1 **Date:** 2026-08-05 **Author:** Compliance
+**Document ID:** ESTALARA-C-07 **Version:** 1.2 **Date:** 2026-08-07 **Author:** Compliance
 Engineering **Classification:** Internal — Restricted **Status:** PENDING CEO decision (items marked
-below) **DPIA cross-reference:** DPIA §13 (LIA series) — this brief defines the §14 scope
-**FOLLOW:** FOLLOW-346 (shadow bridge) — go-live gate on CEO decision recorded here
+below); Q1 and Q3 additionally FLAGGED FOR RE-REVIEW as of v1.2 — see the correction notice below
+**DPIA cross-reference:** DPIA §13 (LIA series) — this brief defines the §14 scope **FOLLOW:**
+FOLLOW-346 (shadow bridge) — go-live gate on CEO decision recorded here; FOLLOW-866 (v1.2
+correction)
+
+---
+
+## Correction notice (v1.2, 2026-08-07, FOLLOW-866 / ESC-049)
+
+**What changed.** v1.1's Context paragraph and Implementation Evidence section twice stated, without
+having checked ClickHouse or Postgres, that "No raw chat text is written to Redis, ClickHouse, or
+Postgres in the current implementation." That claim was verified only against
+`apps/intent-engine/src/redis_writer.py` — one of the three named stores. ESC-049 (CEO/DPO ruling,
+2026-08-07, `backlog/ESCALATIONS.md`) confirmed the gap: the `chat.message.sent` event's
+PII-scrubbed-for-email/phone-only message text, up to 4000 characters, **is** written into the
+ClickHouse `events` table by deliberate §H.8 design (Master Design), retained there for 13 months
+(the table's configured TTL). Redis and Postgres are unaffected by the correction — both are
+re-verified below. See the corrected Context and Implementation Evidence sections for full
+citations.
+
+**What this means for this document's other conclusions.**
+
+- **Q1** — its conclusion is conditioned on "if raw messages are ever persisted (today they are
+  not)". That antecedent is now known false: message text that the scrubber does not catch (names,
+  financial detail, family composition — the scrubber only matches email/phone patterns) is
+  persisted today. Whether that satisfies Q1's own "explicit consent must be obtained" trigger is a
+  lawful-basis judgment this correction does not resolve unilaterally — **flagged, not answered,
+  pending a fresh CEO/DPO ruling.**
+- **Q2** — its "Current implementation status" paragraph is corrected below (a factual restatement
+  of the same premise, not itself a judgment call).
+- **Q3** — re-derived against the corrected premise; reasoning shown in the FOLLOW-866 pull request
+  description (not duplicated here to avoid a second, driftable copy). The re-derivation concludes
+  the "No new Privacy Notice disclosure is required" claim for the current cycle **appears to
+  change**: storing actual message content, even partially scrubbed, for 13 months is a materially
+  different processing activity than the general behavioral-inference disclosure this section relies
+  on. Per this ticket's AC(2), that is a STOP condition — **this correction does not rewrite Q3's
+  conclusion. It is flagged pending CEO/DPO re-ruling**, marked inline below.
+- **Q4** — re-derived against the corrected premise; reasoning shown in the FOLLOW-866 pull request
+  description. Q4's balancing test is scoped to the 12-dim vector only, which the corrected premise
+  does not touch (the vector still contains no free text and is unaffected by what happens to the
+  separately-stored message text). **Conclusion UNCHANGED**, confirmed inline below.
+- **Q5** — its "there is no current product requirement for storing chat messages beyond the
+  in-flight extraction call" sentence is corrected below (factual, not a judgment call); the
+  recommendation itself is otherwise unresolved pending the Q1/Q3 re-ruling above.
+
+**Not fixed by this correction (found while verifying it, out of this ticket's scope, flagged for a
+separate escalation):** `packages/sdk/src/ui/consent-banner.ts:166` and
+`apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts:138` — both user-facing
+consent copy, both owned by a concurrent worker on this ticket and out of scope here — assert the
+same corrected claim to real data subjects ("Raw chat text is not stored in the personalization
+system" / "we do not store the full text of your messages in our personalization system"). See the
+FOLLOW-866 pull request description.
 
 ---
 
@@ -13,12 +63,34 @@ The chat NLP bridge ships **shadow-only** in the current cycle (FOLLOW-346). The
 event is routed to `process_chat_message` in `apps/intent-engine/src/main.py`. The NLP extractor
 reads the raw chat text from the `messages` list, calls Claude Haiku 4.5 (real-time) or Sonnet 4.6
 (batch), and writes the resulting 12-dimensional intent vector — not the raw text — to a Redis
-shadow key (`shadow:{tenant_id}:{session_id}:chat_intent`, TTL 24 h) in Upstash Redis. No raw chat
-text is written to Redis, ClickHouse, or Postgres in the current implementation (verified:
-`apps/intent-engine/src/redis_writer.py`, `write_shadow_intent` serializes `payload.model_dump()`
-which is `ChatIntentDetectedPayload` — no `messages` field on that model;
-`apps/intent-engine/src/schemas.py`, class `ChatIntentDetectedPayload`). Line numbers are omitted
-deliberately: FOLLOW-730 shifted them, and a citation that drifts is worse than none.
+shadow key (`shadow:{tenant_id}:{session_id}:chat_intent`, TTL 24 h) in Upstash Redis. No
+**unscrubbed identifiers** — raw, un-redacted email addresses or phone numbers — reach the Redis
+shadow key or Postgres (verified: `apps/intent-engine/src/redis_writer.py`, `write_shadow_intent`
+serializes `payload.model_dump()` which is `ChatIntentDetectedPayload` — no `messages` field on that
+model; `apps/intent-engine/src/schemas.py`, class `ChatIntentDetectedPayload`; no Postgres table
+defined in `packages/db/src/schema/` carries a chat message field, and neither `apps/intent-engine`
+nor `apps/stream-consumer` — the only two backend services that touch chat text — import a Postgres
+client at all). Line numbers for the Redis/schema citations above are omitted deliberately:
+FOLLOW-730 shifted them, and a citation that drifts is worse than none.
+
+**Correction (v1.2, FOLLOW-866): this is narrower than v1.1's claim.** The buyer's chat message TEXT
+itself — PII-scrubbed for email addresses and phone numbers only, up to 4000 characters — IS written
+to ClickHouse, on a path independent of the shadow/live boundary above, by deliberate §H.8 design
+(Master Design). `chat.message.sent.payload.message` is emitted by the SDK
+(`packages/sdk/src/index.ts:1518-1521`), validated against
+`ChatMessageSentPayloadSchema.message: z.string().min(1).max(4000)`
+(`packages/shared/src/schemas/events/chat.ts:39-40`), and written verbatim as
+`JSON.stringify(event.payload ?? {})` into the ClickHouse `events` table's
+`payload String CODEC(ZSTD(3))` column (`apps/ingest/src/clickhouse-producer.ts:142`). This happens
+on every `chat.message.sent` event regardless of whether the shadow key above is ever promoted to
+live adaptation — the schema's own comment states the design intent: "§H.8 invariant: the chat event
+STILL flows to ingest (ClickHouse) regardless of this flag." (`chat.ts:56-57`). Retention: **13
+months**, the `events` table's currently-configured TTL — `TTL toDateTime(ts) + INTERVAL 13 MONTH`
+(`infra/clickhouse/migrations/0001_create_events.sql:46`); no shorter, chat-specific TTL exists, and
+no later migration alters it (the same migration's own header comment floats a future per-tenant
+override "layered in Sprint 9" that was never shipped — `0001_create_events.sql:10-11`,
+grep-verified absent from every later migration file). See "Implementation Evidence" below for the
+full three-store verification.
 
 Live adaptation is gated on this C-07 sign-off. This brief answers the five CEO questions and makes
 a concrete recommendation.
@@ -46,11 +118,18 @@ personalization sub-processor.
 **Contract (Art. 6(1)(b))** is also unavailable: there is no contract between Time2Show and the
 visitor; the contractual relationship exists only between Time2Show and the tenant.
 
-**Conclusion for raw chat text:** If raw messages are ever persisted (today they are not — see
-verification above), **explicit consent must be obtained before storage**, with a clear disclosure
-that chat content is retained for personalization improvement and a specific retention period stated
-in the consent prompt. The consent must be freely given, specific, and withdrawable; its withdrawal
-must trigger deletion of stored messages.
+**Conclusion for raw chat text:** If raw messages are ever persisted, **explicit consent must be
+obtained before storage**, with a clear disclosure that chat content is retained for personalization
+improvement and a specific retention period stated in the consent prompt. The consent must be freely
+given, specific, and withdrawable; its withdrawal must trigger deletion of stored messages.
+
+> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866).** This conclusion's antecedent was written as "today
+> they are not [persisted]" in v1.1. That is now known false — see the Context correction above:
+> `chat.message.sent.payload.message` (PII-scrubbed for email/phone only — names, financial detail,
+> and family composition are NOT scrubbed) is persisted in ClickHouse today. Whether that satisfies
+> "raw messages are ever persisted" in this Q1's own sense, and therefore whether the
+> explicit-consent trigger above is live now rather than hypothetical, is a lawful-basis judgment
+> this correction does **not** resolve. Escalated, not answered here.
 
 ---
 
@@ -69,11 +148,14 @@ provides two full batch cycles with a safety buffer. This is the minimum retenti
 the stated purpose; the balancing test under Art. 6(1)(f) (if ever applicable) would not support
 longer retention.
 
-**Current implementation status.** No raw chat text is persisted today. The 24-hour Redis shadow key
-TTL for the intent vector is code-verified. No additional TTL enforcement ticket is needed for the
-shadow-only cycle. If the intent vector is promoted to durable storage (ClickHouse or Postgres) for
-next-cycle live adaptation, a data-engineer TTL ticket must be filed and verified before that claim
-can be made in disclosure text.
+**Current implementation status.** No _unscrubbed-identifier_ chat text is persisted today (see the
+Context correction, v1.2/FOLLOW-866). The chat message text itself — PII-scrubbed for email/phone
+only, ≤4000 chars — is already persisted today, in ClickHouse, for 13 months, on the `events`
+table's existing TTL (`infra/clickhouse/migrations/0001_create_events.sql:46`) — this is a **live**
+store, not a "next-cycle if promoted" scenario; the row above ("if promoted to ClickHouse/Postgres …
+13 months … requires a verified TTL enforcement ticket") describes the separate 12-dim _vector_,
+which has not been promoted. The 24-hour Redis shadow key TTL for the intent vector is
+code-verified. No additional TTL enforcement ticket is needed for the shadow-only cycle's vector.
 
 ---
 
@@ -84,6 +166,19 @@ key holds only the 12-dim intent vector (not raw text), it self-expires in 24 ho
 UX effect on the visitor. The existing behavioral personalization disclosure in Privacy Notice
 Template §1 covers the general intent-inference activity. The Archetype Tracer (K.3.6) admin display
 of the shadow key is internal-only; it is not a visitor-facing disclosure surface.
+
+> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866) — conclusion appears to change, not rewritten here.**
+> This paragraph's claim is scoped to "the shadow key" (Redis), which is accurate on its own terms.
+> It does not follow that "no new disclosure is required" for the current cycle overall: the
+> corrected Context section shows the buyer's actual (partially-scrubbed) chat message text is
+> separately retained in ClickHouse for 13 months today, independent of the
+> shadow-key/live-adaptation distinction this paragraph draws. Storing 13 months of real message
+> content is a materially different, higher-risk processing activity than the general
+> behavioral-personalization disclosure in Privacy Notice §1 was written to cover (per this brief's
+> own Q1 analysis of why chat free text is different from passive behavioral signals). Full
+> re-derivation and reasoning: FOLLOW-866 pull request description. Per that ticket's AC(2), this
+> correction does **not** flip "No new disclosure is required" to "a new disclosure is required" —
+> that is a compliance judgment reserved to CEO/DPO. **Escalated, not answered here.**
 
 **For next-cycle live adaptation (when `/api/adapt` reads the shadow key and applies
 `applyChatIntentPrior` to live directives):** The Privacy Notice Template must be updated before
@@ -146,6 +241,14 @@ interacting with a chat assistant is that their stated preferences are used to i
 they are currently experiencing — retention of a structured intent summary for 24 hours falls within
 that expectation.
 
+> **Re-derived (v1.2, 2026-08-07, FOLLOW-866) against the corrected ClickHouse-store premise —
+> conclusion UNCHANGED.** This Q4 analysis is scoped to the 12-dim vector alone; every sentence in
+> Purpose/Necessity/Balancing above is about the vector's own content, which the correction does not
+> touch — the vector still contains no free text, no verbatim quote, no name, and the corrected
+> Context section does not add any of that to it. What changed is a _separate_ store (the raw-ish
+> message text in ClickHouse), which this Q4 never relied on being absent. Full reasoning:
+> FOLLOW-866 pull request description.
+
 **Balancing test result: PASSES**, subject to three conditions:
 
 1. The intent vector key is scoped to the session (current: `session_id` in the Redis key — verified
@@ -171,12 +274,22 @@ implementation with this brief as the compliance gate sign-off.
 
 ## Q5 — Recommendation for next-cycle live activation
 
-**Recommendation: proceed to live activation of the 12-dim intent vector as an adaptation signal. Do
-not persist raw chat text.**
+**Recommendation: proceed to live activation of the 12-dim intent vector as an adaptation signal.**
 
-**Rationale.** The shadow-only cycle is de-risked from a compliance standpoint: no raw text is
-stored, the shadow key expires in 24 hours, and no disclosure obligation is triggered beyond the
-current Privacy Notice. The next cycle's live activation requires only:
+> **FLAGGED FOR RE-REVIEW (v1.2, FOLLOW-866).** This recommendation and rationale, and the item
+> below titled "Do not retain raw chat text", were written on the v1.1 premise that no chat text is
+> retained anywhere. That premise is corrected above (Context, Q1, Q2). The vector-activation
+> recommendation itself does not depend on the corrected fact (Q4's re-derivation shows the vector's
+> own LI basis is unaffected), so it is left standing. The "de-risked … no raw text is stored"
+> framing immediately below, and the "no current product requirement for storing chat messages"
+> sentence further down, are factually corrected inline. The overall go/no-go recommendation for
+> live activation is not re-derived here — that call, and whether it should now also require
+> resolving the Q1/Q3 flags above, is escalated pending CEO/DPO ruling.
+
+**Rationale.** The shadow-only cycle stores only the 12-dim vector for live-adaptation purposes: the
+shadow key expires in 24 hours, and no disclosure obligation beyond the current Privacy Notice is
+triggered _for the vector_. (Corrected v1.2: this no longer claims "no raw text is stored" anywhere
+— see Context.) The next cycle's live activation requires only:
 
 | Gate item                                                                          | Owner                     | Required before                                  |
 | ---------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------ |
@@ -194,11 +307,13 @@ C-07 sign-off because no new processing occurs from a GDPR perspective: the shad
 effect and the intent vector is not a new data category (behavioral personalization inference is
 already disclosed). The C-07 sign- off gates only live adaptation.
 
-**Do not retain raw chat text.** There is no current product requirement for storing chat messages
-beyond the in-flight extraction call. Adding raw text storage would require explicit consent, a new
-Privacy Notice section, and a 30-day TTL enforcement mechanism. The compliance overhead exceeds the
-marginal analytical benefit given that the 12-dim vector is already a sufficient signal for the
-adaptation use case.
+**Correction (v1.2, FOLLOW-866) — was "Do not retain raw chat text":** that heading and the sentence
+"There is no current product requirement for storing chat messages beyond the in-flight extraction
+call" are factually wrong as of this correction — chat message text (PII-scrubbed for email/phone
+only) IS retained today, in ClickHouse, for 13 months, by deliberate §H.8 design (see Context). This
+brief's original v1.1 recommendation to _avoid_ raw text storage going forward is therefore already
+overtaken by shipped, intentional behavior; it is not this document's call to decide whether that
+design should change. Flagged for CEO/DPO re-review together with Q1/Q3 above.
 
 **Scope alignment with K.3.6 DPIA reminder.** The K.3.6 chat-logging DPIA scope (noted in
 `.claude/agents/compliance-engineer/lessons.md` as a pending decision after FOLLOW-269 is done) is
@@ -252,12 +367,12 @@ HEAD on branch `main`:
   content rather than assuming). Destination/retention/access for this log sink (Modal's own
   application logs; retention 1-30 days depending on the Modal plan tier, per Modal's published
   docs; access scoped to the three named Modal workspace members) is recorded in `ropa.md`'s new
-  "Modal application (stdout) logs" note, which this brief's "no raw chat text is written to Redis,
-  ClickHouse, or Postgres" conclusion does not depend on (this sink is neither of those three
-  stores). **The multilingual-retry branch's sibling `print` is redacted too** (Rule S, same PR,
-  PM-validation round): it calls Sonnet with the same buyer messages, so it carried the identical
-  risk, and it now emits `kind=<kind>: <ExceptionClassName>` in the same shape. Both arms are pinned
-  by `test_buyer_text_escapes_all_sinks` — arm 3 drives the primary branch, arm 3b drives the retry
+  "Modal application (stdout) logs" note, which this brief's Redis/Postgres verification below does
+  not depend on (this sink is neither of the three stores named in this brief). **The
+  multilingual-retry branch's sibling `print` is redacted too** (Rule S, same PR, PM-validation
+  round): it calls Sonnet with the same buyer messages, so it carried the identical risk, and it now
+  emits `kind=<kind>: <ExceptionClassName>` in the same shape. Both arms are pinned by
+  `test_buyer_text_escapes_all_sinks` — arm 3 drives the primary branch, arm 3b drives the retry
   branch (first model call returns a low-confidence mixed-language read so the §C.3 retry triggers,
   second call raises); as of FOLLOW-832, arm 3b's assertion also covers the Redis-bound
   `extraction_error` field the retry branch writes (`nlp.py:563`), not only its stdout print.
@@ -271,9 +386,59 @@ HEAD on branch `main`:
 - `main.py` module docstring — "writes to the Redis SHADOW namespace only ... No live adaptation
   reads this in Sprint 13 — shadow-only by design."
 
-No raw chat text is written to Redis, ClickHouse, or Postgres in the current implementation. This
-fact is the foundation of the LI basis conclusion in Q4 and the no-new-disclosure conclusion in Q3
-(shadow cycle only).
+**ClickHouse (added v1.2, FOLLOW-866 — corrects the store this brief previously did not check):**
+
+- `packages/sdk/src/index.ts:1518-1521` — the SDK's `chat.message.sent` listener pushes
+  `{ type: 'chat.message.sent', payload: { message: scrubMessagePii(rawMessage), ... } }` onto the
+  event queue on every buyer chat message with non-empty text.
+- `packages/sdk/src/core/pii-scrub.ts:22-27` — `scrubMessagePii` replaces email addresses
+  (`EMAIL_RE`) and phone numbers (`PHONE_RE`, ≥7 digits) with `[email]` / `[phone]` placeholders,
+  then truncates to 4000 characters. It does not claim exhaustive PII coverage in its own doc
+  comment (`pii-scrub.ts:4-5`): names, addresses, and financial details typed in chat are not
+  scrubbed.
+- `packages/shared/src/schemas/events/chat.ts:39-40` —
+  `ChatMessageSentPayloadSchema.message: z.string().min(1).max(4000)`. `:56-57` states the design
+  intent explicitly: "§H.8 invariant: the chat event STILL flows to ingest (ClickHouse) regardless
+  of this flag" (the flag being `profiling_opt_out`).
+- `apps/ingest/src/clickhouse-producer.ts:142` — `toClickHouseRow` maps
+  `payload: JSON.stringify(event.payload ?? {})` into the row inserted by `INSERT INTO events`. The
+  same file's own module docstring (`:19-23`, FOLLOW-845) independently confirms: "The rows this
+  module POSTs carry `payload: JSON.stringify(event.payload)`, and for `chat.message.sent` that
+  payload is up to 4000 characters of buyer-authored chat text."
+- `infra/clickhouse/migrations/0001_create_events.sql:46` — `TTL toDateTime(ts) + INTERVAL 13 MONTH`
+  on the `events` table (no shorter, chat-specific TTL exists; `:10-11`'s note about a future
+  per-tenant override was never shipped — grep-verified absent from every later migration in
+  `infra/clickhouse/migrations/`).
+- `apps/stream-consumer/src/consumers/events.py:57-59` — the Modal-dispatch fire-and-forget spawn (a
+  different write path, feeding `process_chat_message`) is correctly scoped in its own comment: "No
+  raw chat text is written to ClickHouse or Postgres **by this function**." That is accurate — the
+  ClickHouse write happens via `ch.insert_events(batch)` (`:200`), a different code path in the same
+  file, not this one.
+
+**Postgres (added v1.2, FOLLOW-866 — the store ESC-049 flagged as never checked at all):**
+
+- `packages/db/src/schema/*.ts` (28 files, Drizzle table definitions) and
+  `packages/db/migrations/*.sql` (37 migration files) — grep for `message` across both returns zero
+  matches. No table defines a chat message / raw text / free text column.
+- `packages/db/src/schema/intent-sessions.ts` — the one Postgres table storing chat-adjacent state
+  (`intent_sessions`, the K.3.6 tracer's mutable head) holds `sessionId`, `crossSessionId`,
+  timestamps, and (per its own module docstring) accumulator state — no message field.
+- `apps/intent-engine/src/*.py` and `apps/stream-consumer/src/**/*.py` — the only two backend
+  services that read the buyer's chat text — contain zero imports of `psycopg`, `asyncpg`,
+  `DATABASE_URL`, or `supabase`; grep-verified absent. Neither has a Postgres client at all, so
+  neither has a code path capable of writing chat text to Postgres.
+- `apps/ingest/src/handlers/events.ts` (the Cloudflare Worker that receives `chat.message.sent`) —
+  contains no Postgres reference; it only enqueues to Redpanda / posts directly to ClickHouse
+  (`clickhouse-producer.ts`) and fires the Modal dispatch.
+
+**Corrected conclusion (v1.2, replaces the v1.1 sentence below this brief's Implementation Evidence
+section):** No **unscrubbed identifiers** are written to Redis, ClickHouse, or Postgres in the
+current implementation. The buyer's chat message text — PII-scrubbed for emails/phones only, ≤4000
+characters — **is** written to ClickHouse (`events.payload`), retained for 13 months, by deliberate
+§H.8 design; it is not written to Redis or Postgres. This corrected fact is the premise Q3 and Q4
+were re-derived against (see the flags inline in Q3/Q4 above): Q4's LI-basis conclusion is
+unaffected; Q3's no-new-disclosure conclusion appears to change and is flagged, not resolved,
+pending CEO/DPO ruling.
 
 ---
 
@@ -302,15 +467,21 @@ CEO/legal:
 - [x] No protected-class or proxy steering language in this document.
 - [x] Consent vocabulary not referenced (no new consent state required for shadow cycle; consent is
       called out as the basis for raw text storage if ever pursued).
-- [x] Every retention promise (24 h Redis TTL, 13-month ClickHouse, 30-day raw text limit) is paired
-      with a verified enforcement mechanism or explicitly flagged as requiring a TTL ticket before
-      the claim can be made in disclosure text.
+- [x] Every retention promise (24 h Redis TTL, 13-month ClickHouse vector-promotion, 30-day raw text
+      limit) is paired with a verified enforcement mechanism or explicitly flagged as requiring a
+      TTL ticket before the claim can be made in disclosure text.
+- [x] v1.2: the 13-month ClickHouse retention for `chat.message.sent.payload.message` (the newly
+      corrected store) is paired with a verified, already-shipped TTL —
+      `infra/clickhouse/migrations/0001_create_events.sql:46` — not a promise pending a future
+      ticket; no data-engineer TTL ticket is needed because the enforcement mechanism already
+      exists.
 
 ---
 
 ## Revision History
 
-| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------- | ---------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 2026-06-19 | Compliance Engineering | Initial C-07 scoping brief (FOLLOW-346).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 1.1     | 2026-08-05 | Compliance Engineering | FOLLOW-812: Implementation Evidence updated. The Modal stdout log line (`nlp.py`'s primary-failure `print`) was redacted from the full exception message to a classified-kind + exception-class-name shape (same shape `extraction_error` already uses), pinned by a new third-sink assertion in `test_buyer_text_escapes_both_sinks` (`capsys`). Destination/retention/access for this sink established from Modal's own published docs and this repo's `vendor-accounts.md`, recorded in `ropa.md`'s new Modal application-logs note (this brief's "no raw text in Redis/ClickHouse/Postgres" conclusion is unaffected — this sink is none of those three stores). The multilingual-retry branch's sibling `print` was redacted in the same change (Rule S) and is pinned by sink 3b of the same test; no residual raw-exception `print` remains on this sink. |
+| Version | Date       | Author                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2026-06-19 | Compliance Engineering | Initial C-07 scoping brief (FOLLOW-346).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 1.1     | 2026-08-05 | Compliance Engineering | FOLLOW-812: Implementation Evidence updated. The Modal stdout log line (`nlp.py`'s primary-failure `print`) was redacted from the full exception message to a classified-kind + exception-class-name shape (same shape `extraction_error` already uses), pinned by a new third-sink assertion in `test_buyer_text_escapes_both_sinks` (`capsys`). Destination/retention/access for this sink established from Modal's own published docs and this repo's `vendor-accounts.md`, recorded in `ropa.md`'s new Modal application-logs note (this brief's "no raw text in Redis/ClickHouse/Postgres" conclusion is unaffected — this sink is none of those three stores). The multilingual-retry branch's sibling `print` was redacted in the same change (Rule S) and is pinned by sink 3b of the same test; no residual raw-exception `print` remains on this sink. **Correction (v1.2, FOLLOW-866): the twice-repeated "no raw chat text is written to Redis, ClickHouse, or Postgres" sentence this row's own change note echoes was, at the time of this v1.1 revision and every revision before it, verified against only ONE of the three named stores (`redis_writer.py`) — ClickHouse and Postgres were never actually checked. The claim was false as an ordinary reader would read it: `chat.message.sent.payload.message` (PII-scrubbed for email/phone only, ≤4000 chars) has been written into ClickHouse's `events` table by deliberate §H.8 design since before this row's own date.**                                                                                                                                                                                                                                                                                                                                                                             |
+| 1.2     | 2026-08-07 | Compliance Engineering | FOLLOW-866 (ESC-049 CEO/DPO ruling, option 1 — scope the sentence to reality, the ClickHouse write is deliberate §H.8 design). Both instances of the "no raw chat text …" sentence (Context, Implementation Evidence) rewritten to: state explicitly that no **unscrubbed identifiers** reach any of the three stores, AND state what IS retained in ClickHouse (`chat.message.sent.payload.message`, ≤4000 chars, emails/phones replaced, retained per the `events` table's existing 13-month TTL, `0001_create_events.sql:46` — cited from the actual migration, not guessed). All three stores re-verified with citations (Redis: unaffected, re-confirmed; ClickHouse: corrected, full write-path citation added SDK→schema→producer→migration; Postgres: newly verified — zero `message`-bearing tables across 28 schema files / 37 migrations, and neither `apps/intent-engine` nor `apps/stream-consumer` imports a Postgres client at all). §Q3 and §Q4 re-derived against the corrected premise: **Q4 (LI basis, 12-dim vector) — conclusion UNCHANGED**, the vector's own content is untouched by the correction; **Q3 (no-new-disclosure) — conclusion APPEARS TO CHANGE**, flagged inline and in the FOLLOW-866 PR rather than rewritten, per that ticket's AC(2) STOP condition. Q1's and Q5's factual predicates (both restated the same false premise) corrected inline and similarly flagged where they feed a lawful-basis judgment. `ropa.md` and `dpia.md` swept for restatements and corrected in the same PR (dpia.md §8 excluded — owned by a concurrent worker); two live user-facing consent-copy restatements found (`packages/sdk/src/ui/consent-banner.ts`, `apps/control-plane/src/app/api/v1/consent/platform-registration/lib.ts`) are both on surfaces a concurrent worker owns and are flagged, not edited, in the FOLLOW-866 PR description. |

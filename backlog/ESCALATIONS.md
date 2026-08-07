@@ -2758,6 +2758,104 @@ expiry fires loudly).
 
 ---
 
+## OPEN — ESC-053: `estalara-secrets` is missing three keys the Modal apps read at runtime — deploying intent-engine / data-quality over it produces two running-but-dead apps [FOLLOW-817]
+
+**Filed by:** devops-engineer (FOLLOW-817) **Date:** 2026-08-07T12:40:00Z **Affects:** FOLLOW-817,
+ESC-042 item 1, FOLLOW-820, FOLLOW-819, `apps/intent-engine`, `apps/data-quality`, Modal workspace
+`estalara` **Type:** other (secret provisioning — operator-only, ~10 min in the Modal web console)
+
+**Description.** FOLLOW-817 wires the `deploy-intent-engine` + `deploy-data-quality` CI jobs. Before
+shipping them I inventoried what `estalara-secrets` actually carries, rather than trusting
+`MODAL_PROD_STANDUP.md §3` — via a read-only ephemeral `modal run` that prints key NAMES and
+`sha256[:16]` fingerprints only (never a value, never `modal deploy`, never a write). Three keys the
+deployed code reads with a **non-defaulting** lookup are absent:
+
+| Key                        | Read at                                                    | Failure without it                                                          |
+| -------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `UPSTASH_REDIS_REST_URL`   | `apps/intent-engine/src/redis_writer.py:40`                | `KeyError` inside a `.spawn()`ed function — the shadow key is never written |
+| `UPSTASH_REDIS_REST_TOKEN` | `apps/intent-engine/src/redis_writer.py:41`                | same                                                                        |
+| `DATABASE_URL`             | `apps/data-quality/src/crons/schema_validation.py:209-211` | `RuntimeError` at 02:00 UTC nightly                                         |
+
+`INTERNAL_API_SECRET` **is** present (len 64) — that half of ESC-042's item-1(b) check passes.
+
+**This is a name-pair mismatch, not a missing integration.** `estalara-secrets` carries
+`UPSTASH_REDIS_URL` + `UPSTASH_REDIS_TOKEN` (the names the **control-plane** reads —
+`lib/chat-intent-cache.ts:103-108`, `lib/description-cache.ts:53-58`, `lib/tenant-schema.ts`,
+`lib/feedback-nonce.ts`). The Python writer reads the `_REST_` names. Both name pairs already exist
+as GitHub Actions secrets — `redis-shadow-smoke.yml` requires all four precisely because the two
+runtimes disagree, and `docs/runbooks/upstash-redis-env-parity.md` documents the split. Modal simply
+never got the writer's pair. Exactly the trap `MODAL_PROD_STANDUP.md §5` already records for
+Redpanda ("must carry **both** name pairs with the same values") — applied to Redpanda, missed for
+Upstash.
+
+**Why this is worse than the failure ESC-042 predicted.** ESC-042 item 1(b) asks the operator to
+"confirm the Upstash creds point at the SAME Upstash the control-plane reads" and calls a mismatch
+"a silent null-read, not an error". It is not a null-read: it is a hard `KeyError` — but it is
+raised inside a `process_chat_message.spawn()`, i.e. **after** `chat_nlp_endpoint` has already
+returned 202 to the ingest Worker. The Worker's dispatcher only inspects the HTTP status
+(`chat-nlp-dispatch.ts:129-149`), so it logs nothing, Sentry sees nothing, and the ingest ACK
+is 200. Measured on localhost during FOLLOW-817: with the intent-engine unreachable, a
+`chat.message.sent` POST still returned `{"accepted":1,"rejected":0}` / HTTP 200 and the shadow key
+stayed `null`. A prod deploy over this secret would look exactly like success.
+
+**Guard already shipped (so this cannot merge as a fake green).** `modal-deploy.yml`'s two new jobs
+run `scripts/check-modal-secret-keys.py` as a **hard** pre-deploy gate (never a skip — it runs only
+after `MODAL_TOKEN_ID` was confirmed present, so a failure is by definition "dependency present but
+broken"). Until this escalation is executed, both new jobs go **red** on merge and neither app is
+deployed. That red is the intended, visible signal; `deploy-llm-gateway` is a separate job and is
+unaffected.
+
+**⚠️ CORRECTION (PM, 2026-08-07) — `DATABASE_URL` must NOT be Doppler's `DATABASE_URL`.** This
+escalation said "the prod Supabase pooler connection string", but Doppler `prd` holds three
+different URLs and the one named `DATABASE_URL` is **not** the pooler:
+
+| Doppler key (prd)     | Host                                       | What it actually is         |
+| --------------------- | ------------------------------------------ | --------------------------- |
+| `DATABASE_URL`        | `db.<ref>.supabase.co:5432`                | **direct host — IPv6 only** |
+| `DATABASE_URL_ADMIN`  | `aws-0-eu-west-3.pooler.supabase.com:6543` | pooler, transaction mode    |
+| `DATABASE_URL_DIRECT` | `aws-0-eu-west-3.pooler.supabase.com:5432` | pooler, **session mode**    |
+
+The naming is actively misleading — `DATABASE_URL_DIRECT` is the _pooler_, and `DATABASE_URL` is the
+_direct_ host. **Measured from inside Modal** with a credential-free reachability probe: the direct
+host resolves to **no IPv4 record** and the TCP connect **fails**; both pooler ports resolve and
+connect. Pasting Doppler's `DATABASE_URL` would therefore give `schema_validation` a connection
+string it can never open — a `psycopg2.OperationalError` at 02:00 UTC nightly, into nobody's log,
+which is the exact failure class this escalation exists to prevent. Same root cause as the 2026-06
+admin 503s (memory `project_admin_db_url_pooler_28p01`).
+
+**Use `DATABASE_URL_DIRECT`** (pooler, session mode) as the VALUE; the Modal key name stays
+`DATABASE_URL`, because `crons/schema_validation.py:227` reads that name. Session mode is the safe
+choice for `psycopg2` — transaction mode (6543) works for simple queries but breaks prepared
+statements and session-level state.
+
+**Required action (operator — Piotr; ~10 min, no code change):** In the Modal web console →
+workspace `estalara` → secret `estalara-secrets`, **add keys individually** (do NOT use
+`modal secret create --force`, which wipes the secret and would take the live description pipeline
+down):
+
+1. `UPSTASH_REDIS_REST_URL` = the same value as the existing `UPSTASH_REDIS_URL` key.
+2. `UPSTASH_REDIS_REST_TOKEN` = the same value as the existing `UPSTASH_REDIS_TOKEN` key.
+3. `DATABASE_URL` = the prod Supabase pooler connection string the control-plane uses
+   (`DATABASE_URL_ADMIN` in Doppler `prd` — note ESC-052: `stg` is byte-identical to `prd`, so there
+   is no separate staging value to pick).
+
+Then re-run **Modal Deploy** (`workflow_dispatch`). The gate prints a `present`/`MISSING` line per
+key, so the run log is itself the attestation.
+
+**Verification that closes this (not "the workflow went green"):**
+
+- `modal app list` shows `estalara-intent-engine` and `estalara-schema-validation` as `deployed`.
+- A real `chat.message.sent` produces a `shadow:{tenant}:{session}:chat_intent` key in the SAME
+  Upstash the control-plane reads (this is ESC-042 item 1's own closure condition, and is what makes
+  `/api/adapt`'s `chat_intent_dimensions` non-null for the first time).
+- One `schema_validation_history` row exists in prod Postgres after a 02:00 UTC cron run
+  (§Snapshot.1 row B.6 flips to ✅ Shipped only then — Rule AA).
+
+**Not done by this agent, deliberately:** writing to `estalara-secrets` is a production mutation.
+The devops guardrails forbid it, and `modal secret create --force` is destructive to a LIVE app.
+
+---
+
 ## OPEN (narrowed) — ESC-042: Modal `intent-engine` deploy is the sole remaining chat-un-shadow blocker — design ruling (item 2) RESOLVED 2026-07-27 [FOLLOW-635]
 
 **Filed by:** ml-engineer (FOLLOW-635) **Date:** 2026-07-24T00:00:00Z **Affects:** FOLLOW-635, chat
@@ -2854,6 +2952,28 @@ escalation was filed, per `backlog/QUEUE.md` session-57 head and `backlog/FOLLOW
 **No new ml-engineer ticket dispatched for item 2** — there is nothing left to build; the ruling
 formalizes work already merged. If a docstring/test gap is found on a future audit, re-open as a
 fresh, separately-numbered ticket rather than reusing this closed item.
+
+> **UPDATE 2026-08-07 (FOLLOW-817) — item 1 is now HALF-DISCHARGED and its remaining half is
+> ESC-053. It is NOT resolved; do not close it on this PR.** Verified at the source of truth rather
+> than inferred: `modal app list` for workspace `estalara` returns exactly ONE deployed app
+> (`estalara-description-generator`), so `estalara-intent-engine` has indeed never existed and every
+> claim of chat being dark in prod is confirmed. FOLLOW-817 discharges the CI half of (a) — the
+> `deploy-intent-engine` job now exists, with `paths:` covering `apps/intent-engine/**`, so it can
+> no longer drift. It discharges HALF of (b): `INTERNAL_API_SECRET` IS present in
+> `estalara-secrets`; the Upstash half **fails** — the secret carries `UPSTASH_REDIS_URL`/`_TOKEN`
+> (control-plane names) but not `UPSTASH_REDIS_REST_URL`/`_REST_TOKEN`, which is what
+> `redis_writer.py:40-41` reads. Filed as **ESC-053**, and a hard pre-deploy gate in
+> `modal-deploy.yml` now refuses to deploy over that gap rather than shipping a running-but-dead
+> app. (c) is unchanged and still deferred to FOLLOW-820; the ESC-052 ruling re-scoped FOLLOW-817's
+> own copy of it to the LOCAL Worker env, where the full chain WAS proven end-to-end on 2026-08-07 —
+> ingest Worker → intent-engine → `shadow:…:chat_intent` populated with a real Haiku 4.5 extraction
+> (`archetype_hint: family_buyer`, confidence 0.82), with a negative control (engine down → key
+> `null`, ACK still 200). So the code path is now demonstrated to work; only the prod secret + prod
+> URL remain.
+>
+> Correction to this escalation's own wording: it calls an Upstash mismatch "a silent null-read, not
+> an error". The actual failure is a `KeyError` raised inside `process_chat_message.spawn()` — after
+> the endpoint has already answered 202 — which is even less visible than a null-read. See ESC-053.
 
 **Item 1 (Modal Phase B operator deploy) stays OPEN, narrowed scope, re-titled above.** This is now
 a pure operator/devops task — `modal deploy apps/intent-engine/src/main.py`; confirm

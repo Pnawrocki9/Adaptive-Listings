@@ -86,9 +86,15 @@ max_batch_size = 25
 max_batch_timeout = 5
 
 # Development environment (local wrangler dev)
+# MODAL_CHAT_NLP_URL points at the LOCAL intent-engine shim
+# (`uvicorn local_dev:app --port 8090 --app-dir src`, apps/intent-engine/README.md),
+# never at Modal — FOLLOW-817 AC(4), re-scoped from "staging" by the ESC-052 ruling
+# (there is no staging data plane; `stg` Doppler IS production). The matching
+# INTERNAL_API_SECRET is a local-only value and belongs in apps/ingest/.dev.vars,
+# which is gitignored. Prod stays unset here and is deferred to FOLLOW-820.
 [env.dev]
 name = "estalara-ingest-dev"
-vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }
+vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "", MODAL_CHAT_NLP_URL = "http://localhost:8090/chat_nlp_endpoint" }
 
 # Staging environment (auto-deploy on merge to main)
 [env.staging]

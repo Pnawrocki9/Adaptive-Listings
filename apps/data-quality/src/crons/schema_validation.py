@@ -57,6 +57,24 @@ logger = logging.getLogger(__name__)
 
 app = modal.App("estalara-schema-validation")
 
+# FOLLOW-817: this function had NO `image=`, so it would have run on Modal's bare
+# default image while this module imports httpx / psycopg2 / sentry_sdk / bs4 /
+# confluent_kafka AT MODULE LEVEL — i.e. the very first scheduled run would have
+# died with ModuleNotFoundError before `validate_schemas` was entered, nightly,
+# into nobody's inbox. Being in pyproject.toml is NOT enough: the deployed
+# container only ever has what is listed here (same lesson as FOLLOW-730's
+# sentry-sdk line in apps/intent-engine/src/main.py).
+# `lxml` is not imported by name but IS required — check_selectors() calls
+# BeautifulSoup(html, "lxml"), which raises FeatureNotFound without it.
+image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "httpx>=0.27",
+    "psycopg2-binary>=2.9",
+    "sentry-sdk>=2.0",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "confluent-kafka>=2.4",
+)
+
 # ---------------------------------------------------------------------------
 # Public helpers (independently testable — no Modal context required)
 # ---------------------------------------------------------------------------
@@ -338,6 +356,7 @@ def _emit_redpanda_event(
 
 
 @app.function(
+    image=image,
     schedule=modal.Cron("0 2 * * *"),
     secrets=[modal.Secret.from_name("estalara-secrets")],
     timeout=600,

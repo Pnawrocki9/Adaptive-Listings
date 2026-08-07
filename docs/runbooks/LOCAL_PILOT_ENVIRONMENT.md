@@ -184,6 +184,93 @@ Two traps worth stating, because both fail _closed_ and look like SDK bugs:
 
 ---
 
+### 3.7 Chat hop (:8090 + :8079) — ingest Worker → intent-engine → shadow key [FOLLOW-817]
+
+Optional for the §5 behavioral session; **required** to exercise chat, which is the only
+discriminator for 8 of 17 archetypes (§D.6) and the signal hop 10's confidence ceiling is missing.
+Executed end-to-end on 2026-08-07; every command below is a run, not a proposal.
+
+Two containers stand in for Upstash. `hiett/serverless-redis-http` speaks the Upstash REST protocol
+over a plain Redis, so nothing touches the production Upstash instance:
+
+```bash
+docker network create f817
+docker run -d --name f817-redis --network f817 redis:7-alpine
+docker run -d --name f817-srh --network f817 -p 8079:80 \
+  -e SRH_MODE=env -e SRH_TOKEN=local-dev-token \
+  -e SRH_CONNECTION_STRING="redis://f817-redis:6379" \
+  hiett/serverless-redis-http:latest
+# smoke — note the Content-Type, without it SRH answers {"error":"Invalid content type."}
+curl -s -X POST http://localhost:8079 -H 'Authorization: Bearer local-dev-token' \
+  -H 'Content-Type: application/json' -d '["SET","probe","ok"]'    # → {"result":"OK"}
+```
+
+The intent-engine shim (`apps/intent-engine/src/local_dev.py`, FOLLOW-729) is the localhost stand-in
+for the Modal `chat_nlp_endpoint`; it runs `extract_intent` + `write_shadow_intent`
+**synchronously**, so the shadow key is already written when the HTTP response returns. Real Claude
+Haiku 4.5 calls — `ANTHROPIC_API_KEY` comes from Doppler `dev`:
+
+```bash
+cd apps/intent-engine
+UPSTASH_REDIS_REST_URL=http://localhost:8079 \
+UPSTASH_REDIS_REST_TOKEN=local-dev-token \
+INTERNAL_API_SECRET=local-dev-internal-secret \
+doppler run --project estalara-adaptive-listings --config dev --only-secrets ANTHROPIC_API_KEY -- \
+  uvicorn local_dev:app --port 8090 --app-dir src
+# expect: an unauthenticated POST /chat_nlp_endpoint → 401 (the bearer gate is real)
+```
+
+Then bring the Worker up as in §3.6, with two additions — `MODAL_CHAT_NLP_URL` as a `--var` and the
+matching bearer in `.dev.vars`. Pass the URL on the command line rather than using `--env dev`:
+`[env.dev]` inherits no KV/DO/queue bindings, so `--env dev` serves `/health` but 401s every
+`POST /v1/events` with `reason: kv_error` (FOLLOW-874).
+
+```bash
+printf 'INTERNAL_API_SECRET = "local-dev-internal-secret"\n' > apps/ingest/.dev.vars
+npx wrangler dev --local --port 8787 --persist-to .wrangler/state \
+  --var ENVIRONMENT:development \
+  --var MODAL_CHAT_NLP_URL:http://localhost:8090/chat_nlp_endpoint
+```
+
+Fire a `chat.message.sent` and read the shadow key back. `session_id` must be 32–64 chars
+(`EventEnvelopeBaseSchema`), and the `Origin` header must be `http://localhost:5173` or the origin
+gate 403s:
+
+```bash
+SID=$(printf 'chat%s' "$(date +%s)" | sha256sum | cut -c1-64)
+curl -s -X POST http://localhost:8787/v1/events -H 'Content-Type: application/json' \
+  -H 'X-Estalara-API-Key: pilot-key' -H 'Origin: http://localhost:5173' \
+  -d "{\"events\":[{\"event_id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"tenant_id\":\"839ecbd1-0000-4000-8000-000000000001\",\"session_id\":\"$SID\",\"ts\":$(date +%s000),\"region\":\"eu\",\"consent_state\":\"consented\",\"schema_version\":1,\"type\":\"chat.message.sent\",\"payload\":{\"message\":\"We are relocating from Warsaw with two young kids and need a family home near an international school, budget around 450k EUR.\",\"locale\":\"en\"}}]}"
+# → {"accepted":1,"rejected":0,"batch_id":"…"}
+
+curl -s -X POST http://localhost:8079 -H 'Authorization: Bearer local-dev-token' \
+  -H 'Content-Type: application/json' \
+  -d "[\"GET\",\"shadow:839ecbd1-0000-4000-8000-000000000001:$SID:chat_intent\"]"
+# → archetype_hint "family_buyer", confidence 0.82, data_source "model", model_used "haiku-4.5",
+#   purchase_purpose "relocation", family_stage "young_family", geo_priority "school_district"
+```
+
+**Run the negative control before you believe the positive one.** Kill the :8090 shim and replay the
+identical POST with a fresh `session_id`:
+
+```
+POST /v1/events                        → {"accepted":1,"rejected":0}   HTTP 200   ← unchanged!
+worker log                             → [chat-nlp] Modal dispatch failed: Network connection lost.
+GET shadow:…:<new session>:chat_intent → {"result":null}
+```
+
+That 200-with-no-key is the whole reason `modal-deploy.yml` gained a hard pre-deploy secret gate
+(ESC-053): the dispatch is fire-and-forget inside `waitUntil`, `chat_nlp_endpoint` answers 202
+before extraction runs, and the ingest ACK is 200 whether the chat pipeline works or is completely
+dead. Nothing downstream of the ACK can tell you. In prod the equivalent failure is a `KeyError` on
+a missing `UPSTASH_REDIS_REST_URL` inside a `.spawn()` — same silence, no Sentry event.
+
+Teardown: `docker rm -f f817-redis f817-srh && docker network rm f817`, kill the uvicorn and
+wrangler processes, and delete `apps/ingest/.dev.vars` (it is gitignored, but do not leave a bearer
+lying in the tree).
+
+---
+
 ## 4. The dev-only `app.html` override — NOT COMMITTED
 
 `Estalara-app-new/web-master/src/app.html` points the SDK at localhost. This is a **local dev

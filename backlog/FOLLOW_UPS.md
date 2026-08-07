@@ -30158,6 +30158,41 @@ cross_ref: [ESC-052 (RESOLVED, option 2); FOLLOW-871 (closed unexecuted); FOLLOW
 
 ---
 
+## FOLLOW-874 — Two verified dead declarations found while wiring the Modal deploys: `[env.dev]` cannot serve `/v1/events`, and the Sonnet batch tier is unreachable from the deploy entrypoint
+
+source_retro: n/a (found during FOLLOW-817) source_ticket: FOLLOW-817 recommended_sprint: next
+recommended_agent: devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+Both measured on 2026-08-07, neither is a regression, and neither blocks FOLLOW-817 — filing so they
+are not re-discovered as surprises.
+
+1. **`apps/ingest/wrangler.toml` `[env.dev]` is a non-runnable declaration.** `kv_namespaces`,
+   `durable_objects` and `queues` are non-inheritable per-environment keys in wrangler, and
+   `[env.dev]` declares none, so `wrangler dev --env dev` starts and serves `/health` but every
+   `POST /v1/events` returns `401 unauthorized {reason: kv_error}` — wrangler itself warns
+   `"kv_namespaces" exists at the top level, but not on "env.dev"`. The documented local path
+   (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6) correctly uses the TOP-LEVEL config plus
+   `--var`, so nothing is broken today; `[env.dev]` is simply a config nobody can run. FOLLOW-817
+   added `MODAL_CHAT_NLP_URL` to it for symmetry and verified the var DOES bind under `--env dev` —
+   but the endpoint that would consume it cannot authenticate. Decide: give `[env.dev]` the three
+   binding blocks, or delete it. This is the same class as FOLLOW-873's `[env.staging]` retirement
+   and should probably be done in that ticket.
+2. **`apps/intent-engine/src/jobs/batch_enrich.py` (the §C.3 Sonnet 4.6 batch tier) is not deployed
+   and cannot be.** `modal deploy apps/intent-engine/src/main.py` registers exactly
+   `['chat_nlp_endpoint', 'process_chat_message']` (measured by importing the module with the
+   deploy-time deps installed) because `main.py` never imports `jobs.batch_enrich`. The two-tier
+   design in §C.3 / §Snapshot.1 row D is therefore single-tier by construction once the Phase-B
+   deploy lands. This is arguably correct — ADR-0016 removed the Redpanda hop that used to dispatch
+   the batch tier, and nothing in prod calls it — but §Snapshot.1 should say so rather than let a
+   reader assume both tiers ship. Fix is one load-bearing import in `main.py` (llm-gateway's
+   `main.py` uses exactly this pattern) IF the batch tier is wanted; otherwise a doc correction.
+
+cross_ref: [FOLLOW-817, FOLLOW-873, ESC-053, ESC-017, ADR-0016, MASTER_DESIGN §C.3 / §Snapshot.1 row
+D, `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §3.6]
+
+---
+
 ## FOLLOW-875 — Hop 10's red is attributed to a gate that did not fire: the SDK floor is a disjunction and the deciding threshold is server-side `> 0.6`
 
 source_retro: RETRO-259 source_ticket: FOLLOW-816 recommended_sprint: now recommended_agent:
@@ -30456,7 +30491,12 @@ staging axis); `docs/MASTER_DESIGN.md:765,2521-2528,2692`; `packages/sdk/src/cor
 
 ---
 
-<!-- next free FOLLOW number: 882 (FOLLOW-881 filed 2026-08-07 by the FOLLOW-875 worker: MASTER_DESIGN's
+<!-- next free FOLLOW number: 883 — updated 2026-08-07 when PR #691 was merged up to main: FOLLOW-874
+is no longer RESERVED but FILED (the devops-engineer landed it in this branch), and FOLLOW-882 was filed by
+the PM from the FOLLOW-881 architect's fourth-site finding. The 874/875 split across two branches is exactly
+the tail-of-FOLLOW_UPS conflict Rule AN's allocation discipline is meant to survive: it did — the merge
+conflicted on content, not on a duplicated number.
+     (superseded note) next free FOLLOW number: 882 (FOLLOW-881 filed 2026-08-07 by the FOLLOW-875 worker: MASTER_DESIGN's
 gating ladder repeats the corrected "sole gate" claim in three places and omits the strict `> 0.6` server
 comparison — architect-owned because Master_Design edits carry §Y.2. FOLLOW-875..880 filed 2026-08-07 by RETRO-259, the post-merge retro for
 PR #690 / FOLLOW-816. FOLLOW-874 is RESERVED for the devops-engineer running FOLLOW-817 concurrently in

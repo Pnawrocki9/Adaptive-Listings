@@ -432,3 +432,39 @@ two-consecutive-snapshot condition deleted (the surviving `-n "$prev_snapshot"` 
 a second poll, so only the read AFTER a change discriminates), and the shrink layer had no fixture
 of its own until I built a partial collapse that stays above the derived floor. Run the matrix per
 layer, not per feature, and require each layer to own a fixture that reddens for it alone.
+
+## 2026-08-07 · FOLLOW-817 — Modal deploy jobs for intent-engine + data-quality
+
+**Shipped.** Two new `modal-deploy.yml` jobs mirroring `deploy-llm-gateway`'s hard-fail contract;
+`paths:` extended to both apps **and to the workflow file itself**; a hard pre-deploy secret-key
+gate (`scripts/check-modal-secret-keys.py`); `image=` for the data-quality cron (it had none);
+`MODAL_CHAT_NLP_URL` in the local ingest env; §Snapshot.1 B.6 → `CODE_COMPLETE_OPERATOR_PENDING` and
+the `stream-consumer` never-deploying decision recorded; ESC-053 filed; FOLLOW-874 filed.
+
+**Where a green badge could have hidden a broken run path — three, all in one ticket.**
+
+1. **The `paths:` filter would have made my own change inert.** Adding a deploy job touches no
+   `apps/**` path, so the job would have merged green and never fired until someone happened to edit
+   the app it deploys. A workflow whose trigger cannot be fired by the change that adds it is the
+   branch-trigger trap (ESC-011) wearing a different hat. Fixed by listing the workflow file in
+   `paths:`.
+2. **`modal deploy` succeeding says nothing about the deployed app working.** It only registers
+   functions. `estalara-secrets` is missing `UPSTASH_REDIS_REST_URL`/`_REST_TOKEN` and
+   `DATABASE_URL`, so both apps would have deployed green and then died on every invocation —
+   intent-engine inside a `.spawn()` **after** the endpoint returned 202, i.e. with no Sentry event
+   and a 200 ingest ACK. I measured that silence on localhost before asserting it.
+3. **The data-quality cron declared no `image=`.** Default Modal image, six module-level imports —
+   the first scheduled run would have died at container import at 02:00 UTC nightly, into nobody's
+   inbox.
+
+**Guardrail I'd add.** _Deploying a service is not a deploy step, it is a deploy step plus a proof
+that the runtime dependencies the service READS are present._ Concretely: any CI job that deploys to
+a platform with an out-of-band secret store must assert the key inventory of that store against the
+non-defaulting `os.environ[...]` / `process.env.X!` reads in the code being deployed, and hard-fail
+on a gap — the assert is cheap, and it is the only thing standing between "deploy succeeded" and
+"the thing works". Generalises past Modal: same shape as `wrangler secret` vs Worker env, and Vercel
+env vs `process.env`.
+
+**Also worth carrying.** `pkill -f <pattern>` inside a Bash tool call matches the invoking shell's
+own command line (the pattern text is in it) and kills the call — exit 144, no output, looks like a
+hang. Cost me two calls. Use `pgrep | xargs kill` from a script FILE, or split the pattern.

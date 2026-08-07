@@ -127,8 +127,9 @@ doppler secrets set CLICKHOUSE_API_SECRET="<key-secret>" --config dev
   creation. Store immediately.
 - **Trial credit tracking:** $300 credit lasts 1-3 months depending on usage. Add billing alert at
   $200 spent.
-- **Idle scaling:** Enable "idle scaling" (auto-pause after 15 minutes) to save costs in
-  dev/staging.
+- **Idle scaling:** Enable "idle scaling" (auto-pause after 15 minutes) to save costs in dev.
+  (Corrected 2026-08-07, FOLLOW-878 / ESC-052: there is no staging ClickHouse service — Doppler
+  `stg` carries no `CLICKHOUSE_*` at all.)
 - **Query timeout:** Default 30-second timeout can fail for large aggregations. Increase to 60s for
   dashboard queries.
 - **UAE region:** ClickHouse Cloud doesn't support AWS `me-central-1` yet. For UAE tenants, either
@@ -339,8 +340,12 @@ doppler secrets set UPSTASH_API_KEY="<api-key>" --config dev
 
 ## Summary: Secret Names in Doppler
 
-All secrets stored in `dev` config. Copy to `staging` and `production` configs before deploying to
-those environments.
+All secrets stored in `dev` config. Copy to the `prd` config before deploying to production.
+
+> ⚠️ **CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2).** This line read "Copy to
+> `staging` and `production` configs". **There is no staging config to copy to safely**: `stg` was
+> byte-identical to `prd`, so "copy to staging" meant "write to production". `stg` is retired by
+> FOLLOW-873.
 
 | Vendor           | Doppler Secret Name(s)                                             | Notes                      |
 | ---------------- | ------------------------------------------------------------------ | -------------------------- |

@@ -1,5 +1,12 @@
 # Deploy Staging — a BUNDLE/UPLOAD SMOKE, not a test environment.
 #
+# 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2): re-confirmed, no change
+# to behaviour. This header was already correct after FOLLOW-810; ESC-052 only
+# widened WHY. Localhost-first is now official for the data plane too, so "staging"
+# is not coming later either — the Doppler `stg` config is byte-identical to `prd`
+# and is retired by FOLLOW-873. This workflow injects no Doppler secrets, which is
+# the only reason it is harmless to keep.
+#
 # The staging Workers deliberately have no reachable hostname: `[env.staging]` declares no
 # KV/DO/queue bindings, and `ingest-staging.estalara.com` / `decision-staging.estalara.com`
 # have no DNS record in the zone (they fall through the `*.estalara.com` wildcard to a

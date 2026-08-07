@@ -468,3 +468,38 @@ env vs `process.env`.
 **Also worth carrying.** `pkill -f <pattern>` inside a Bash tool call matches the invoking shell's
 own command line (the pattern text is in it) and kills the call — exit 144, no output, looks like a
 hang. Cost me two calls. Use `pgrep | xargs kill` from a script FILE, or split the pattern.
+
+## 2026-08-07 · FOLLOW-878 + FOLLOW-891 (staging-plane sweep + §Snapshot.1 deploy-state reconciliation)
+
+**What I shipped.** Corrected 21 artefacts asserting a staging environment that ESC-052 proved does
+not exist (Master_Design §V.6.1/§V.6.3, both `wrangler.toml` `[env.staging]` blocks, four workflows,
+ten runbook/ops docs, four durable stubs), exempted five with a filed number (FOLLOW-896), and built
+`scripts/check-no-staging-plane.sh` — a register-based hard CI gate that fails on a NEW
+staging-plane reference **and** on a registered one that vanishes. Separately corrected §Snapshot.1
+rows A.1/B.6/D against a freshly executed `modal app list --json` and a read-only
+`modal.Function.from_name(...).hydrate()` registration probe.
+
+**Where a green badge could have hidden a broken run path.** Three places, and only one of them was
+in the stub. (1) `load-test.yml` offered `staging` as its **default** dispatch target, resolving to
+an unprovisioned `INGEST_STAGING_URL`; a run either exported an empty URL or aimed k6 at the
+`*.estalara.com` wildcard's Traefik default host — never at Estalara's ingest, and green either way
+if you only read the workflow name. (2) `docs/runbooks/secrets.md` instructed every operator to
+`doppler secrets set … --config staging`; since `stg` is byte-identical to `prd`, that documented
+step writes to **production** while reading as the safe one. (3) The gate I built would have gone
+green forever as a zero-count check — the honest shape was a register, because the interesting
+failure is not "someone added staging" but "FOLLOW-873 removed the last real one and nobody noticed
+the gate had nothing left to assert".
+
+**A guardrail I'd add.** When a sweep's output is a CI gate, the gate must fail on **disappearance**
+as well as on addition. A zero-count gate is a badge that gets greener the less it is doing; a
+register-diff gate goes red the moment its own subject matter changes, which is exactly when a human
+should look. Second, cheaper one: a `find`-based gate that does one `grep` per file per pattern took
+80s locally and would have been the slowest job in CI — batch the greps (one process per pattern
+over the whole file list) and prune `node_modules`/`.next`/`dist` explicitly, or the gate becomes
+the thing people want to delete.
+
+**Verified, not assumed.** `modal app list --json` returns **three** deployed apps, not one; the
+deployed `estalara-intent-engine` registers `chat_nlp_endpoint` + `process_chat_message` only, and
+`batch_enrich_conversations` raises `NotFoundError` — so §C.3's Sonnet batch tier is not in
+production, and the Master_Design row claiming it was the **inverse** of the usual drift: the
+executed corpus (`modal-deploy.yml`'s own comment) was right and the source of truth was wrong.

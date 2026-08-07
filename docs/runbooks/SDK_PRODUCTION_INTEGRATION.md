@@ -140,7 +140,12 @@ adaptation pipeline.
 
 ---
 
-## Quick verification checklist (smoke test on staging)
+## Quick verification checklist (smoke test)
+
+> **Corrected 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2):** this heading said "smoke
+> test on staging". There is no staging environment. Run this checklist on the **localhost pilot
+> substrate** (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`) before the ESC-020 / FOLLOW-820 prod
+> gate, and on the **prod origin** after it.
 
 1. Open a listing in a fresh session → accept consent → complete the quiz (or, if quiz disabled,
    browse a few listings). The headline/description should change to archetype-specific copy.

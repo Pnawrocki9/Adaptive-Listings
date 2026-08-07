@@ -2,7 +2,16 @@ name: Load Test (k6 ingest)
 
 # IMPORTANT: workflow_dispatch only — load tests are expensive and should NEVER
 # run automatically on push or pull_request. Trigger manually after coordinating
-# with the devops-engineer for staging capacity.
+# with the devops-engineer for capacity.
+#
+# CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2). The `staging`
+# target was removed: it resolved to `secrets.INGEST_STAGING_URL`, which is not
+# provisioned, and `ingest-staging.estalara.com` has no DNS record (FOLLOW-810). A
+# `staging` run therefore either exported an empty INGEST_URL or aimed k6 at the
+# `*.estalara.com` wildcard's Traefik default host — in neither case at Estalara's
+# ingest. It was also the DEFAULT choice, so the trap was one click deep.
+# `prod` is deliberately NOT offered here: a load test against production is an
+# operator decision, not a dropdown.
 on:
   workflow_dispatch:
     inputs:
@@ -19,9 +28,8 @@ on:
         required: true
         type: choice
         options:
-          - staging
           - local
-        default: staging
+        default: local
 
 jobs:
   load-test:
@@ -41,18 +49,15 @@ jobs:
 
       # Resolve the ingest URL based on the target environment.
       # For local target: spin up a mock server (useful for CI smoke only, not real perf).
-      # For staging target: use the INGEST_STAGING_URL secret.
       - name: Resolve target URL
         id: resolve-url
         run: |
-          if [ "${{ inputs.target }}" = "staging" ]; then
-            echo "INGEST_URL=${{ secrets.INGEST_STAGING_URL }}" >> "$GITHUB_ENV"
-          else
-            # Local target: use localhost placeholder. The test will fail unless
-            # a local service is available, which is not the case in CI.
-            # This path is provided for documentation purposes only.
-            echo "INGEST_URL=http://localhost:8787" >> "$GITHUB_ENV"
-          fi
+          # Local target only (FOLLOW-878 / ESC-052 — there is no staging ingest).
+          # The test will fail unless a local service is available, which is not
+          # the case on a stock GitHub runner. This path is documentation of the
+          # k6 invocation, not a gate: it is workflow_dispatch-only and nothing
+          # in CI depends on it.
+          echo "INGEST_URL=http://localhost:8787" >> "$GITHUB_ENV"
 
       - name: Run k6 baseline
         if: inputs.scenario == 'baseline'

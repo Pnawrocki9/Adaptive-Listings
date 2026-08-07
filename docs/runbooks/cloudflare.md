@@ -99,10 +99,11 @@ doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara-adaptive-l
 doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara-adaptive-listings --config prd
 doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara-adaptive-listings --config prd
 
-# Staging config
-doppler secrets set CLOUDFLARE_API_TOKEN="<token>" --project estalara-adaptive-listings --config stg
-doppler secrets set CLOUDFLARE_ACCOUNT_ID="<account-id>" --project estalara-adaptive-listings --config stg
-doppler secrets set CLOUDFLARE_ZONE_ID="<zone-id>" --project estalara-adaptive-listings --config stg
+# NOTE (FOLLOW-878, 2026-08-07): the `stg` block that used to be here has been REMOVED.
+# ESC-052 (RESOLVED, CEO option 2) established that Doppler `stg` is byte-identical to
+# `prd` — writing Cloudflare credentials to `stg` writes them to production's config,
+# and reading them back gives a false sense of a second environment. `stg` is retired
+# by FOLLOW-873. Use `dev` for local work and `prd` for production.
 ```
 
 Add to GitHub repository secrets (Settings > Secrets and variables > Actions):
@@ -203,19 +204,22 @@ terraform validate
 ### Plan Infrastructure Changes
 
 ```bash
-# For staging
-terraform plan -var="environment=staging"
-
 # For production
 terraform plan -var="environment=production"
 ```
 
+> ⚠️ **CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2).** The
+> `-var="environment=staging"` invocations that used to open these two blocks have been removed:
+> there is no staging plane for them to describe, and `infra/terraform/cloudflare/variables.tf:20`
+> still **defaults** `environment` to `"staging"`, so a bare `terraform plan` plans a staging-named
+> DNS set for hosts that have no records. **Always pass `-var="environment=..."` explicitly.**
+> Changing that default (and the `dev/staging/production` enum) is deliberately NOT done here — it
+> is entangled with the `api` vs `decision` record-naming decision FOLLOW-810 left open, and is
+> filed as **FOLLOW-896**.
+
 ### Apply Infrastructure Changes
 
 ```bash
-# Staging (auto-approved for R2 buckets and DNS)
-terraform apply -var="environment=staging" -auto-approve
-
 # Production (requires manual approval)
 terraform apply -var="environment=production"
 # Review plan carefully, type 'yes' to confirm
@@ -311,7 +315,8 @@ curl http://localhost:8787/health
 
 ### Emergency Rollback (Production)
 
-If production is broken and staging is stable:
+If production is broken (there is no staging to compare against — FOLLOW-878 / ESC-052, corrected
+2026-08-07; the rollback below is a Worker version rollback and never needed one):
 
 ```bash
 # 1. Identify last known good version

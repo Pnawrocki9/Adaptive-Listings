@@ -81,7 +81,10 @@ Until that fix is merged, do not proceed with Steps 2 and 3 of this runbook.
    succeed and `doppler secrets get INTERNAL_API_SECRET --config prd` must return a non-empty value.
 4. You know the control-plane base URL for the target environment:
    - **prod:** `https://admin.estalara.com`
-   - **staging:** check Vercel for the staging deployment URL (no trailing slash).
+   - **non-prod:** a Vercel **preview** deployment URL (no trailing slash). Corrected 2026-08-07
+     (FOLLOW-878 / ESC-052): this said "staging". There is no staging environment — a Vercel preview
+     is a preview build of the control-plane and it reads the **same** Supabase/ClickHouse as
+     production. Treat any run against it as a production write.
 
 ---
 
@@ -100,7 +103,7 @@ You need to **add** three keys to it without overwriting the existing keys.
 | Key                                 | Value                                                                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REDPANDA_TOPIC_LISTING_EMBEDDINGS` | `estalara.listing-embeddings`                                                                                                                                                         |
-| `EMBED_API_BASE_URL`                | `https://admin.estalara.com` (prod) or the staging URL — **no trailing slash**                                                                                                        |
+| `EMBED_API_BASE_URL`                | `https://admin.estalara.com` (prod) or a Vercel preview URL (**not** a staging environment — none exists, FOLLOW-878/ESC-052) — **no trailing slash**                                 |
 | `INTERNAL_API_SECRET`               | Copy from Doppler `prd`: `doppler secrets get INTERNAL_API_SECRET --config prd --plain` (do **not** mint a new value — the control-plane and the consumer must share the same secret) |
 
 5. Save. The existing Redpanda broker/credential keys (`REDPANDA_BROKERS`, `REDPANDA_SASL_USERNAME`,
@@ -176,8 +179,9 @@ absent from the output, the consumer was not registered — do not proceed to St
 ### 3a — Trigger an activation with overflow
 
 You need a tenant activation where `schema.listing_ids` carries more than 50 listing IDs. Today no
-real tenant has this field populated, so the test must be run against a staging/dev environment or
-by temporarily patching the demo tenant's schema to include >50 listing IDs.
+real tenant has this field populated, so the test must be run against the local pilot substrate
+(`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`; there is no staging environment — FOLLOW-878/ESC-052)
+or by temporarily patching the demo tenant's schema to include >50 listing IDs.
 
 **What to look for in Modal logs:**
 

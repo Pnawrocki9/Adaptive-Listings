@@ -10,5 +10,8 @@
 # Routes are defined in apps/decision-api/wrangler.toml
 
 # Workers are deployed with:
-# - wrangler deploy --env staging (auto on merge to main)
+# - wrangler deploy --env staging — a BUNDLE/UPLOAD SMOKE, workflow_dispatch-only.
+#   CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052): this line said "auto on merge to
+#   main". Nothing auto-deploys, and `ingest-staging`/`decision-staging` have no DNS
+#   record. There is no staging plane.
 # - wrangler deploy --env production (manual, gated)

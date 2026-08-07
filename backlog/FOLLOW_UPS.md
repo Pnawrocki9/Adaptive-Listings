@@ -31225,6 +31225,42 @@ ESC-053; `apps/data-quality/src/crons/schema_validation.py:225-230`; `docs/MASTE
 
 ## FOLLOW-895 — A production DB password may have been pasted into a session transcript during the ESC-053 execution; every durable artefact describes that event counterfactually and no rotation ticket exists
 
+**PM ADJUDICATION (session 104, immediately on filing) — the exposure is CONFIRMED, not
+hypothetical, and the retro was right to refuse to adjudicate it itself.** Verified rather than
+reasoned about:
+
+1. **The password is on disk.** A count-only search (the value was never printed) finds it in **1
+   transcript file**: `~/.claude/projects/-home-asipi-Projects-Adaptive-Listings/9f0e0cca-….jsonl`.
+2. **Blast radius is all three prod DB URLs.** `DATABASE_URL`, `DATABASE_URL_ADMIN` and
+   `DATABASE_URL_DIRECT` in Doppler `prd` **all carry the same password**, and it is the `postgres`
+   superuser credential. Per ESC-052, `stg.DATABASE_URL_ADMIN` is byte-identical to `prd`, so the
+   `stg` config is the same credential again.
+3. **My own records were counterfactual and are corrected by this note.** ESC-053, `QUEUE.md` and
+   commit `45fbfe23` all describe the incident as "caught before it fired". That is true of the
+   _Modal paste_ — the wrong value never reached the secret — and **false of the disclosure**: the
+   value was printed to the transcript by the command I supplied, one step earlier. Two different
+   events; my write-ups collapsed them into one. **CB-3 was a real reporting defect, not a
+   record-keeping nicety.**
+
+**What happened, exactly:** the PM read ESC-053's phrase "the prod Supabase pooler connection
+string" literally and handed the operator `doppler secrets get DATABASE_URL`, which is the direct
+IPv6-only host, not the pooler. Its plaintext output — including the password — entered the session
+transcript. The wrong _value_ was then caught by a reachability probe before it was pasted anywhere,
+and `DATABASE_URL_DIRECT` was used instead. So the deployment is correct; the disclosure stands.
+
+**Decision required (CEO — this is a credential call, not an engineering one):** rotate or accept.
+Relevant facts for the decision, stated without recommendation because the risk tolerance is the
+CEO's: the file is on Piotr's own machine, not in git (verified — the transcript directory is
+outside the repo) and not pushed anywhere; but it is a superuser credential for the production
+database, it is shared across every prod DB URL, and transcripts persist indefinitely.
+
+**If rotating, the order matters** — the credential is in more places than Doppler: (1) Supabase
+dashboard → reset the `postgres` password; (2) Doppler `prd`: all three of `DATABASE_URL`,
+`DATABASE_URL_ADMIN`, `DATABASE_URL_DIRECT`; (3) Doppler `stg` (same value, ESC-052); (4) **the
+Modal `estalara-secrets` key `DATABASE_URL`** — added today, would otherwise break the 02:00 UTC
+cron on its first-ever run; (5) Vercel prod env; (6) re-run the ESC-053 verification probe. Do NOT
+use `modal secret create --force` for step 4.
+
 source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent: **CEO /
 operator decision + pm-orchestrator** priority: **P0** estimated_hours: 2 depends_on: [] blocks: []
 promoted_to_queue: false

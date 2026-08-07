@@ -538,7 +538,83 @@ unblocks FOLLOW-819's AC(5).
 
 **RETRO-261 for FOLLOW-882/887 is NOT written.**
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs.**
+### RETRO-261 — an EIGHTH site, and a P0 I under-reported
+
+**🔴 FOLLOW-895 (P0, CEO) — the prod DB password disclosure is CONFIRMED, and my own records said
+otherwise.** Verified by count-only search (value never printed): the `postgres` **superuser**
+password is in **1 transcript file** on this machine. All three prod DB URLs (`DATABASE_URL`,
+`_ADMIN`, `_DIRECT`) carry the **same** password, and per ESC-052 the `stg` config is that
+credential again.
+
+**The reporting defect is mine and worth naming precisely.** ESC-053, this queue and commit
+`45fbfe23` all say "caught before it fired". That is true of the **Modal paste** — the wrong value
+never reached the secret — and **false of the disclosure**, which happened one step earlier when the
+command I supplied printed the value into the transcript. Two events; my write-ups collapsed them
+into one and kept only the flattering half. The retro filed it P0 rather than adjudicating, on the
+grounds that resolving an ambiguity it could not verify would convert a missing record into a false
+one — exactly the right call, and I have now adjudicated it with evidence. **Rotation is a CEO
+decision; the ordered procedure is in the stub, and it includes the Modal key added today** (missing
+it would break the 02:00 UTC cron on its first-ever run).
+
+**An EIGHTH site exists — and it was clean in all three vocabularies.**
+`packages/sdk/src/__tests__/playbooks.test.ts:199-201` returns
+`{directives: [], source: 'llm_full'}`. Verified against `route.ts:341-345`: `llm_full` **always**
+carries gateway directives; an empty result is `playbook_fallback_llm_unavailable`. So the pair is
+**unproducible by shipped code — and asserted green**, contradicting `route.test.ts:396` which
+asserts the same branch with directives. **Two green suites, opposite contracts, one branch.**
+Introduced by PR #92; RETRO-001 under-counted that merge by five.
+
+**So the natural experiment succeeded more narrowly than it looked.** The three-vocabulary sweep is
+the strongest control-validation this log has recorded — site 7 was reachable _only_ through the
+value vocabulary. But **all three vocabularies answer "how is the claim spelled?"**, and the eighth
+site was spelled perfectly; its falsity is in a branch **body** of an unfaithful replica. Run the
+amendment verbatim and it correctly returns `already correct`. That is a **subject-definition gap,
+not a compliance failure** — which is why the retro amended Rule AI (3rd amendment, 8th sighting, 43
+rules unchanged) rather than filing a new letter, and promoted **the architect's** generalisation
+into it: _the claim class travels by function, not by constant._ That insight was sitting in a
+lessons fragment binding one agent on one ticket; it is now a rule.
+
+**Clause (b) is partially fitted and the retro said so.** Tested against three other defect classes
+— wrong enum, stale endpoint path, retracted default — it degrades to the pre-amendment rule on two
+of three. Not generalised (zero sightings); armed with a pre-specified trigger instead. **P-41** (an
+escalation's premise is unverified at execution) minted at **1 prior** and **not promoted** —
+RETRO-260 recorded that class but explicitly declined to give it a P-number, so the ≥2 bar is
+genuinely unmet. **P-40 tested and refused.** That discipline is the log working.
+
+**Three records disagree about what "deployed" means, within two hours of the deploy:**
+
+- **§Snapshot.1 (the SoT) is the most wrong** — rows A.1/B.6 still assert "never been deployed to
+  any environment", "exactly ONE deployed app", "its hard pre-deploy gate currently fails", "blocked
+  on ESC-053". All five were true at `fe73e8da` and falsified at 21:43 by the operator step that PR
+  itself requested. **The status verdicts had flip conditions; the surrounding narrative did not.**
+  → FOLLOW-891 (P1, architect).
+- **Row D is stale in the opposite direction** — it claims a two-tier Haiku+Sonnet engine while the
+  deployed app registers only `['chat_nlp_endpoint','process_chat_message']` (FOLLOW-874,
+  **re-priced P3 → P1** on its own trigger, "once the Phase-B deploy lands", which landed in that
+  same PR).
+- **ESC-042** heading still says "OPEN (narrowed)" while this queue said "closed" — and its own
+  closure condition is the **traffic** axis, which remains unproven. → FOLLOW-892 (P1).
+
+**Also filed:** FOLLOW-893 (P1, devops) — the first-ever 02:00 UTC cron has **no owner and no
+absence-of-signal detector**, and its output table has no reader; FOLLOW-894 (P2) — ESC-053
+contradicts itself between `_ADMIN` and `_DIRECT` in the half an operator actually executes. **Stubs
+FOLLOW-890…895; next free FOLLOW-896.**
+
+### FOLLOW-819 — two-and-a-half blockers cleared, not two
+
+AC(3)'s blocker is sharper than recorded: `LOCAL_PILOT_ENVIRONMENT.md:18` shows the local decision
+endpoint is `scripts/dev/mock-decision-server.mjs`, so the substrate contains **no instance of
+`route.ts:482`**, the only writer of `adaptation_decisions`. That is a **missing component, not a
+config gap**. Plus a blocker no list carried: **AC(1)'s `> 0.6` target rests on arithmetic
+FOLLOW-886 says does not reproduce.** FOLLOW-878 remains the shortest path; **FOLLOW-886 should ride
+with it.**
+
+**FOLLOW-888's template held, and the evidence discriminates** — the architect's lesson names the
+mechanism it is executing ("pasted verbatim in the dispatch report **per FOLLOW-888**"). That is a
+template working, not one attentive PM. One data point; the next no-Bash dispatch is the test.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 🔴 FOLLOW-895 (P0) awaiting a CEO
+credential decision.**
 
 ---
 

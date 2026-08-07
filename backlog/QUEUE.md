@@ -231,7 +231,34 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-857 — status: AWAITING_CI (PR #686, head `6c4bc984`) — do NOT merge yet
+### FOLLOW-857 — status: READY_FOR_REVIEW (PR #686, head `0dc76160`)
+
+**ci_check_counter:** 4/5 **fix_iteration_counter:** 0/3 (the two extra commits are outage recovery
+and a PM-caused corpus classification, not worker rework). **Final CI:** full matrix on head
+`0dc76160`, 2 `Rule I` at 192/192 symbol-set match vs baseline run `31126850348`,
+`New on this PR: 0`, exit 0.
+
+**The road there, compressed — three distinct obstacles, none of them the PR's code:**
+
+1. **The 2026-08-06 GitHub Actions major outage** (ESC-050, RESOLVED) produced phantom `Set up job`
+   failures and a Gitleaks job marked failed 45 minutes after its log printed
+   `✅ No leaks detected`.
+2. **Recovery reruns reset the check rollup**, and the gate **settled on a transient 5-check
+   snapshot** — twice, once even printing "all checks green" over a rollup that simply had not
+   re-registered the other ~70 checks. Neither verdict was trusted or acted on. **This is a live
+   observation of RETRO-252's "temporal check-run shape" input class** (a settle loop that defends
+   against state changes but not against cardinality collapse) — recorded here against
+   **FOLLOW-848**, which owns the settle-loop fixtures, rather than filed as a new stub (Rule AN).
+   The eventual clean verdict came from a fresh full run on a new head, with a cardinality condition
+   (≥60 registered checks) enforced by the orchestrator's watcher, not by the gate.
+3. **The corpus checker caught this orchestrator's own commit** — its second real catch in its first
+   day. ESC-050's text names the gate, `backlog/ESCALATIONS.md` was in neither of the checker's
+   lists (no escalation had ever mentioned the gate before), so every `pull_request` copy failed on
+   the merge ref while `push` copies passed. Fixed in `0dc76160` (PM validation commit):
+   ESCALATIONS.md classified NON_ROUTING with the same "append-only backlog record" reason as
+   QUEUE.md and FOLLOW_UPS.md, verified against `main`'s tree carrying ESC-050.
+
+**Merge command:** `gh pr merge 686 --squash --delete-branch`
 
 **The earlier READY_FOR_REVIEW applied to head `b3c7fe09`, which no longer exists.** #685 merged
 first (`b484e566`) as sequenced, #686 conflicted exactly where the hunk-level check predicted

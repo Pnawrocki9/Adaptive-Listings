@@ -469,6 +469,29 @@ env vs `process.env`.
 own command line (the pattern text is in it) and kills the call — exit 144, no output, looks like a
 hang. Cost me two calls. Use `pgrep | xargs kill` from a script FILE, or split the pattern.
 
+## 2026-08-07 · FOLLOW-893 — absence-of-signal detector for the first-ever `validate_schemas` cron run
+
+**What I shipped.** `cron_heartbeats` (migration 0037) + an unconditional-on-success heartbeat
+UPSERT at the end of `validate_schemas`; `scripts/check-cron-heartbeat.sh` asserting the row is
+younger than 26h; `.github/workflows/cron-heartbeat.yml` running that assertion daily at 05:00 UTC
+against prod and running the script against a throwaway Postgres in five states on every push.
+Runbook `docs/runbooks/SCHEMA_VALIDATION_CRON.md` naming the first-run owner and date.
+
+**Where a green badge could have hidden a broken run path.** Two places, both real. (1) Deriving
+liveness from `schema_validation_history` would have been the obvious cheap design and it is
+silently wrong: `_run_validation()` returns early writing ZERO rows when no active tenant has a site
+schema, so a healthy no-op and a job that never started are the same observation. (2) The window
+arithmetic — a 26h threshold checked at 03:30 UTC would pass on a missed 02:00 run (25.5h old). The
+alarm would have looked identical, run daily, and never fired. Check time and window are one design,
+not two settings.
+
+**A guardrail I'd add.** For any dead-man's switch, the PR must state the check time, the schedule
+period and the window, and show the arithmetic for the single-miss case. "26h" alone is not a
+specification — it is only correct relative to when you look.
+
+**Also.** The negative control ran locally against a docker Postgres before it ever ran in CI; that
+caught nothing this time but cost one tool call, versus a push-and-wait loop per case.
+
 ## 2026-08-07 · FOLLOW-878 + FOLLOW-891 (staging-plane sweep + §Snapshot.1 deploy-state reconciliation)
 
 **What I shipped.** Corrected 21 artefacts asserting a staging environment that ESC-052 proved does

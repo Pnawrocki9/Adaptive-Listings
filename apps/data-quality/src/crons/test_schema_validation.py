@@ -27,9 +27,11 @@ import pytest
 
 from crons.schema_validation import (
     DRIFT_THRESHOLD,
+    HEARTBEAT_JOB_NAME,
     _emit_redpanda_event,
     _run_validation,
     _was_drift_alerted_recently,
+    _write_heartbeat,
     _write_history_row,
     check_selectors,
     compute_coverage,
@@ -468,3 +470,91 @@ class TestValidateSchemasSentryInit:
         mock_run.assert_called_once_with(mock_conn)
         mock_conn.close.assert_called_once()
         mock_flush.assert_called_once_with(0.3)
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-893: absence-of-signal heartbeat. The point of these tests is the
+# NEGATIVE direction — the heartbeat must NOT be written when the run failed,
+# because a heartbeat written unconditionally is a green badge over a dead job.
+# ---------------------------------------------------------------------------
+
+
+class TestHeartbeat:
+    def test_write_heartbeat_upserts_job_name_and_pair_count(self) -> None:
+        """_write_heartbeat UPSERTs one row keyed by job_name, carrying the pair count."""
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+
+        _write_heartbeat(conn, tenant_domain_pairs=3)
+
+        sql, params = cur.execute.call_args[0]
+        assert "INSERT INTO cron_heartbeats" in sql
+        assert "ON CONFLICT (job_name) DO UPDATE" in sql
+        assert params[0] == HEARTBEAT_JOB_NAME
+        assert json.loads(params[1]) == {"tenant_domain_pairs": 3}
+        conn.commit.assert_called_once()
+
+    def test_write_heartbeat_never_raises(self) -> None:
+        """A failing heartbeat write degrades to a log line, never a failed run.
+
+        Losing the heartbeat is already loud: the external 26h assertion goes red.
+        Escalating it here would turn a successful validation into a failed one.
+        """
+        conn = MagicMock()
+        conn.cursor.side_effect = RuntimeError("connection went away")
+
+        _write_heartbeat(conn, tenant_domain_pairs=1)  # must not raise
+
+    async def test_validate_schemas_writes_heartbeat_on_success(self) -> None:
+        """The success path reaches the heartbeat, carrying _run_validation's count."""
+        with (
+            patch("crons.schema_validation._get_db_connection") as mock_get_conn,
+            patch("crons.schema_validation._run_validation", return_value=7) as mock_run,
+            patch("crons.schema_validation.init_sentry"),
+            patch("crons.schema_validation.flush_sentry"),
+            patch("crons.schema_validation._write_heartbeat") as mock_hb,
+        ):
+            mock_conn = MagicMock()
+            mock_get_conn.return_value = mock_conn
+
+            await validate_schemas.local()
+
+        mock_run.assert_called_once_with(mock_conn)
+        mock_hb.assert_called_once_with(mock_conn, tenant_domain_pairs=7)
+
+    async def test_validate_schemas_does_not_write_heartbeat_when_run_raises(self) -> None:
+        """THE load-bearing test: a failed run must leave the heartbeat untouched.
+
+        If this ever regresses, the detector goes permanently green over a job that
+        fails every single night — precisely the failure FOLLOW-893 exists to make
+        impossible.
+        """
+        with (
+            patch("crons.schema_validation._get_db_connection") as mock_get_conn,
+            patch(
+                "crons.schema_validation._run_validation",
+                side_effect=RuntimeError("validation blew up"),
+            ),
+            patch("crons.schema_validation.init_sentry"),
+            patch("crons.schema_validation.flush_sentry"),
+            patch("crons.schema_validation._write_heartbeat") as mock_hb,
+        ):
+            mock_conn = MagicMock()
+            mock_get_conn.return_value = mock_conn
+
+            with pytest.raises(RuntimeError, match="validation blew up"):
+                await validate_schemas.local()
+
+        mock_hb.assert_not_called()
+        mock_conn.close.assert_called_once()
+
+    def test_run_validation_returns_zero_when_nothing_to_validate(self) -> None:
+        """An empty tenant set is a healthy no-op that still returns a count.
+
+        This is why the heartbeat exists at all: this run writes ZERO
+        schema_validation_history rows, so the history table cannot tell it apart
+        from a run that never happened.
+        """
+        conn = _make_mock_conn(db_rows=[])
+        assert _run_validation(conn) == 0

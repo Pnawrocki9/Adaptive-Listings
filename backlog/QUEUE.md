@@ -1,5 +1,22 @@
 # Backlog Queue
 
+## ▶️ Track LOCAL opened (session 103 continuation, 2026-08-07) — FOLLOW-816 dispatched
+
+**FOLLOW-868 closed** on a direct CEO attestation (mailbox exists, will be monitored) — recorded in
+the stub with a re-review trigger. **Track HYGIENE and the consent P0 are fully closed;** this
+dispatch starts the CEO's standing goal (memory `project_localhost_100pct_chat_archetype_priority`):
+the full loop on localhost.
+
+**FOLLOW-816 — status: IN_PROGRESS** — **assigned_to:** sdk-engineer **model:** **Opus**
+**started_at:** 2026-08-07 **branch:** `sdk-engineer/FOLLOW-816-local-pilot-environment`
+**worktree:** `.claude/worktrees/follow-816`. Model justification: environment-heavy, cross-system
+work (local Estalara-app + SDK + staging ingest + staging ClickHouse) with genuinely open discovery
+— the exact opposite of a bounded ticket; Opus per the model-fit table.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 0 open PRs at dispatch time.**
+
+---
+
 ## ▶️ START HERE — session 103 (2026-08-05) — three tickets DONE (812, 832, 811), RETRO-247 landed, FOLLOW-837 filed, FOLLOW-827+830 dispatched
 
 ### Session-103 closing state — read this first

@@ -3338,3 +3338,23 @@ scoped to what is true — "no unscrubbed identifiers" plus an explicit statemen
 in ClickHouse (`chat.message.sent.payload.message`, ≤4000 chars, emails/phones masked,
 `events`-table retention) — §Q3/§Q4 re-derived against the corrected premise, and all three stores
 re-verified, not only Redis. The §H.8 write stands as deliberate design.
+
+---
+
+### ESC-049 addendum — Q1/Q3 ruling (CEO+DPO, 2026-08-07, session 103)
+
+FOLLOW-866's correction surfaced that C-07 §Q1/§Q3's conclusions were conditioned on the
+now-falsified premise. **CEO+DPO ruled: disclose-in-notice, LI basis, no separate checkbox.**
+
+1. **Q3:** the Privacy Notice / consent text **gains an explicit storage disclosure** — buyer chat
+   message content is retained (emails/phones masked by the scrubber, `events`-table TTL 13 months)
+   — riding the **same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815**. No second
+   bump is spent.
+2. **Q1:** ruled that scrubbed-but-textual storage does **not** fire Q1's explicit-consent trigger:
+   the lawful basis remains legitimate interest **with full transparency** (the disclosure above).
+   Recorded as a judgment, not a fact — the re-review trigger is any widening of what the scrubber
+   passes through or any lengthening of retention.
+3. Consequence for the subject-facing surfaces FOLLOW-866 flagged (`consent-banner.ts:166`,
+   `platform-registration/lib.ts:138`, `PRIVACY_NOTICE_TEMPLATE.md` §6.1): the false "no chat
+   content is stored" claim is corrected to the disclosure above **inside FOLLOW-815's text
+   change**, keeping the Rule N byte-sync gates green.

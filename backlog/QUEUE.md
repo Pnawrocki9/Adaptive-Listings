@@ -183,8 +183,11 @@ is extended accordingly**), 879 P2, 880 P2. Next free stub: **FOLLOW-881**.
 
 ### Dispatched: FOLLOW-875 + FOLLOW-877 together (sdk-engineer, Opus)
 
-**FOLLOW-875 — status: READY_FOR_REVIEW** (PR **#692**, CI verified 79/2, Rule I 0 new) — —
-**assigned_to:** sdk-engineer **model:** **Opus** **started_at:** 2026-08-07 **branch:**
+**FOLLOW-875 + FOLLOW-877 — status: DONE** — PR **#692** squash-merged as `e55063b0`; merged content
+re-verified on `main` (`packages/sdk/src/__tests__/follow-877.test.ts` present, runbook §9.1/§9.2
+present, ESC-054 and the FOLLOW-881 stub now on `main`). FOLLOW-877 AC(1) is the only undischarged
+AC and it is a CEO/CPO decision (ESC-054), not work. — — **assigned_to:** sdk-engineer **model:**
+**Opus** **started_at:** 2026-08-07 **branch:**
 `sdk-engineer/FOLLOW-875-877-confidence-gate-attribution` **worktree:**
 `.claude/worktrees/follow-875`. Model justification: the finding spans `packages/sdk`
 
@@ -281,8 +284,14 @@ exact sentence it would change, and assert **no** intent the ruling has not sett
 "intentional" into the SoT ahead of the decision is precisely the class of error this ticket exists
 to remove.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS. 2 open PRs — #691 (BLOCKED: the ESC-053 gate
-still reports 3 keys MISSING, verified by running it) and #692 (verified, awaiting merge).**
+**FOLLOW-875 + 877 MERGED (`e55063b0`).** Verified before merging, not after:
+`gh-pr-checks-verified.sh 692` exit 0, and `mergeable` re-read three times (the session-103 lesson —
+a single `gh pr view` during propagation is not evidence) returning `MERGEABLE` / `UNSTABLE`, the
+UNSTABLE being the documented pre-existing Rule I red. Squash-merged, worktree removed, branch
+deleted. **RETRO-260 for FOLLOW-875/877 is NOT yet written.**
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-881). 1 open PR — #691, BLOCKED: the
+ESC-053 gate still reports 3 keys MISSING, verified by running it against the real secret.**
 
 ---
 

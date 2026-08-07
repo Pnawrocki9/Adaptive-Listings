@@ -231,7 +231,7 @@ accumulates is P2, there is **no P0**, and **8 of 14 open stubs are one subsyste
 1140 lines of bash, load-bearing for three days, zero tests four days ago). That is depth of audit
 on one artefact, not breadth of decay.
 
-### FOLLOW-857 — status: READY_FOR_REVIEW (PR #686, head `0dc76160`)
+### FOLLOW-857 — status: DONE (PR #686 merged `a0f6b78a`, 2026-08-07)
 
 **ci_check_counter:** 4/5 **fix_iteration_counter:** 0/3 (the two extra commits are outage recovery
 and a PM-caused corpus classification, not worker rework). **Final CI:** full matrix on head
@@ -359,7 +359,7 @@ with no error anywhere. Worktree isolation solved the git half of concurrency an
 filesystem half untouched — **including for this orchestrator, which has been writing fixed-name
 `msg*.txt` files all session.** Next free: **FOLLOW-863**.
 
-### FOLLOW-854 + 855 + 856 — status: READY_FOR_REVIEW (PR #685, head `c488dfa2`)
+### FOLLOW-854 + 855 + 856 — status: DONE (PR #685 merged `b484e566`, 2026-08-06)
 
 **Post-rebase CI:** 77 checks, 75 pass, 2 `Rule I` (union 192/192 vs baseline run `31078015081`),
 `New on this PR: 0`, exit 0. `mergeable=MERGEABLE`.

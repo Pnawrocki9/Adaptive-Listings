@@ -31223,7 +31223,23 @@ ESC-053; `apps/data-quality/src/crons/schema_validation.py:225-230`; `docs/MASTE
 
 ---
 
-## FOLLOW-895 — A production DB password may have been pasted into a session transcript during the ESC-053 execution; every durable artefact describes that event counterfactually and no rotation ticket exists
+## FOLLOW-895 — CLOSED (risk accepted by CEO) — A production DB password may have been pasted into a session transcript during the ESC-053 execution; every durable artefact describes that event counterfactually and no rotation ticket exists
+
+**CEO RULING (Piotr, 2026-08-07): NO ROTATION. The password stays. Risk accepted, ticket closed.**
+
+Recorded as an accepted risk rather than a silent drop, so no future audit re-files it as an overdue
+action — the ESC-020 pattern, where three audits in a row re-raised a matter the CEO had already
+settled. **This is a decision, not an omission.**
+
+The facts the decision was made against, all verified before it was taken: the `postgres` superuser
+password for the production database is present in **one** Claude Code transcript file on Piotr's
+own machine; the file is outside the git repository and was never pushed; the same credential backs
+all three prod DB URLs and, per ESC-052, the `stg` config as well.
+
+**No further action is required from anyone.** If circumstances change — the machine is shared or
+lost, transcripts are synced off-device, or the credential's blast radius grows (e.g. a genuinely
+separate staging is provisioned under ESC-052 option 1) — this ruling should be revisited, but
+nothing currently pending triggers that.
 
 **PM ADJUDICATION (session 104, immediately on filing) — the exposure is CONFIRMED, not
 hypothetical, and the retro was right to refuse to adjudicate it itself.** Verified rather than

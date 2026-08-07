@@ -613,8 +613,12 @@ with it.**
 mechanism it is executing ("pasted verbatim in the dispatch report **per FOLLOW-888**"). That is a
 template working, not one attentive PM. One data point; the next no-Bash dispatch is the test.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 🔴 FOLLOW-895 (P0) awaiting a CEO
-credential decision.**
+**FOLLOW-895 CLOSED — CEO ruled NO ROTATION, risk accepted (2026-08-07).** Recorded as an accepted
+risk, not dropped, so no future audit re-files it as overdue — the ESC-020 pattern, where three
+audits re-raised a matter already settled. The decision was taken against verified facts, not an
+estimate.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
 
 ---
 

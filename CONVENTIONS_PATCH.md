@@ -2925,6 +2925,130 @@ stopped one document short of the SoT → FOLLOW-878; sighting 5), **RETRO-260 �
 (sightings 6 and 7 — the fifth and sixth sites of one claim, both invisible to a symbol-scoped sweep
 → FOLLOW-887)**. **No new letter: rule count stays 43, range AA-AQ; Rule AI amendments 1 → 2.**
 
+### Rule AI amendment (2026-08-07 — RETRO-261 §6 — a REPLICA of the changed unit is a standing claim about EVERY axis of it, not a mention of the one axis under correction)
+
+**This is an AMENDMENT to an already-promoted rule, not a new rule.** No new letter is minted and
+the ≥2-PRIOR-retro gate is not re-invoked: the pattern (an artefact left asserting a state a change
+falsifies) **is** Rule AI, and RETRO-261 is its **8th** sighting after RETRO-213 / RETRO-221 /
+RETRO-222 / RETRO-246 / RETRO-259 / RETRO-260 ×2. Minting a letter for "a replica is a claim" would
+duplicate AI and split its evidence base — the RETRO-122 error in rule form. **Rule count stays 43,
+range AA–AQ; Rule AI amendments 2 → 3.**
+
+**Trigger (RETRO-261 — PR #694 / FOLLOW-882+887, the ticket that executed amendment 2 within hours
+of its being written).** The three-vocabulary sweep worked: it found sites 5–7 that three competent
+rounds had missed, and site 7 (`MASTER_DESIGN` §E.1's similarity ladder) was reachable **only**
+through vocabulary (b) — the code is `similarity > 0.85` / `similarity <= 0.6` (`route.ts:323,328`)
+and the doc was wrong at **both** boundaries while being perfectly correct in the symbol vocabulary.
+**RETRO-261 then found an EIGHTH site, and it was inside the corpus amendment 2 had just added, and
+inside vocabulary (a):**
+
+- **`packages/sdk/src/__tests__/playbooks.test.ts:172-267`** re-implements `runDecisionTree` under
+  the docblock _"Replicates the decision tree logic from route.ts"_. It declares **all three ladder
+  constants with the correct values and the correct operators** (`:192-194`), so vocabulary (a) hits
+  it and reports it correct, vocabulary (b) reports it correct, and vocabulary (c) finds none of the
+  retracted prose in it. **The falsity is in a branch BODY:** `:199-201` returns
+  `{ directives: [], source: 'llm_full' }`, a pair `route.ts:340-345` cannot emit (`llm_full` always
+  carries the gateway's directives; `[]` always carries
+  `source: 'playbook_fallback_llm_unavailable'`, as the route's own header says at `:15`). It is
+  **asserted and green** at `:257-261`, and it **contradicts a sibling suite in the same repo**
+  (`apps/control-plane/src/app/api/adapt/route.test.ts:396-408` asserts the same branch with
+  `directives.length > 0`). Two green suites, opposite contracts, one branch.
+
+**Why this is a rule-TEXT gap and not a compliance failure — the distinction was tested before
+amending, because amendment 2 was one retro old.** Run amendment 2 **verbatim** against PR #694:
+vocabulary (a) over its own newly-added corpus (`packages/*/src/__tests__`) **HITS**
+`playbooks.test.ts:192,196`, and clause 2 requires a written per-hit verdict for it. So the sweep is
+adequate and was complied with — which would ordinarily make this a compliance failure against an
+adequate control (the Rule P adjudication this log has drawn eight consecutive times) and **no
+amendment**. It is not, and the reason is the finding: **the verdict "already correct" is CORRECT
+under the rule as written.** Rule AI scopes adjudication to _"every sentence asserting the prior
+state"_ of the claim being retracted, and this hit asserts the prior state of a **different axis of
+the same replica**. The rule's **subject definition** — not its sweep, not its corpus, not its
+execution — is what let the eighth site through. Amendments 1 and 2 both closed corpus/vocabulary
+holes; this one closes an adjudication hole, and it is the first of that kind.
+
+**Provenance, recorded because it matters for how rules get made here.** The insight is the
+FOLLOW-882/887 architect's, written in `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`:
+_"when sweeping a numeric gate claim, sweep the SIBLING CONSTANTS of the same function too … **the
+claim class travels by function, not by constant**."_ That is the sharper of the two insights the
+FOLLOW-887 round produced, and it landed in a per-agent lessons fragment where it binds one agent on
+one ticket. The amendment below is that sentence generalised one level (from _sibling constants_ to
+_the whole replicated unit_) and moved into the rule, where it binds every corrective PR.
+
+**Amendment — the replica clause. Two parts, both non-optional:**
+
+1. **A hit that turns out to be a REPLICA of the changed unit is adjudicated on the WHOLE unit, not
+   on the axis under correction.** A replica is any artefact that re-declares, re-implements,
+   emulates, mirrors or pseudocodes the changed function / constant set / gate ladder / decision
+   tree / response contract — including test helpers, fixtures, harnesses, pseudocode blocks,
+   docblock ladders and worked examples. It is a **standing assertion about every axis of the
+   original**, so `already correct` is a verdict about the claim, never about the replica: the
+   adjudication must state, per replica, whether **the whole unit still matches**, and must name the
+   axes checked (values, operators, **branch bodies and their return shapes**, branch ORDER where
+   order is observable, the set of enumerated cases, the identity/naming of each case). If the
+   replica cannot be checked in full within the PR, say so and file it — do not mark it
+   `already correct`.
+2. **Every replica found by the sweep MUST be listed in the closing evidence with an
+   extraction/machine-check disposition.** For each: `extracted` /
+   `machine-checked against the owner at run time` /
+   `left as a hand-maintained copy, and here is why + here is the compensating control`. A replica
+   declared faithful in prose with no mechanism is the subject of **Rule AQ**; this clause is what
+   makes Rule AQ fire during a Rule AI sweep instead of at the next audit. The proven in-repo
+   mechanism for a module-private owner is a filesystem read + regex that **throws** rather than
+   defaults — `scripts/dev/local-pilot-session.mjs:73-108` `readServerConfidenceGate()` — not a
+   second hardcoded copy.
+
+**NOT amended, deliberately, and the reasoning is recorded so the next retro tests instead of
+re-deriving it.** Amendment 2's clause (b) is written **threshold-only** (_"for a threshold, grep
+the number and every `<`, `<=`, `>`, `>=` near it"_, with `<VALUE>` / `<subject-word>` placeholders
+that presume a numeric boundary). Tested against three other claim classes: a **wrong enum** — (a)
+catches the name, (b) has no analogue as written (the correct (b) would be _the member literals plus
+the set's cardinality_), (c) works; a **stale endpoint path** — (a) already lists the endpoint path,
+(b) is vacuous; a **retracted default** (`?? 0.5`) — (b) half-works and only if the author thinks to
+grep the coalescing operator. So on two of three, amendment 2 degrades to the pre-amendment rule
+plus clause (c). **The frame generalises; the letter of clause (b) does not.** It is **NOT
+generalised here, at zero sightings** — no enum / path / default miss has been observed, and
+codifying an untriggered generalisation is the "patch wearing a rule's clothes" failure applied to
+this amendment's own author. **ARMED with a pre-specified trigger:** the next numbered retro that
+observes a Rule AI miss on a **non-threshold** claim (enum member, endpoint path, retracted default,
+cardinality) where vocabulary (a) was run and vocabulary (b) was inapplicable-as-written cites
+RETRO-261 §6 plus its own finding and generalises clause (b) in the same retro. **Count today: 0.**
+
+**Amended Verification (add to the block above):**
+
+```bash
+# 7. REPLICA DETECTION — run over every hit vocabularies (a)/(b)/(c) returned.
+#    A hit is a REPLICA (not a mention) if it re-declares the changed unit rather than referring to it.
+grep -rn "const <CONST_1>\|const <CONST_2>" packages/*/src apps/*/src scripts/ \
+  --include=*.ts --include=*.mjs --include=*.py | grep -v "<owner-file>"
+#    …and for a re-implemented FUNCTION, the shape of the copy rather than its constants:
+grep -rn "eplicat\|irrors\|opied from\|emulat\|same logic as\|as in route\|per <owner-file>" \
+  packages/*/src apps/*/src docs/ | grep -iE 'test|fixture|harness|pseudo|simulate|mock'
+
+# 8. For each replica: does the WHOLE unit still match? Diff the branch bodies, not just the constants.
+#    The failure this clause exists for is a replica whose CONSTANTS are right and whose RETURN SHAPE
+#    is wrong — invisible to (a), (b) and (c) simultaneously.
+#    Cross-check every (source|status|enum) value the replica can emit against the owner's:
+grep -nE "source: '|status: |return \{" <replica-file> <owner-file>
+
+# 9. Disposition, published per replica. A replica with no mechanism is a Rule AQ finding NOW.
+#    Proven mechanism for a module-private owner (read + regex, THROWS, never defaults):
+#      scripts/dev/local-pilot-session.mjs:73-108  readServerConfidenceGate()
+```
+
+**Evidence for this amendment:** RETRO-213 / RETRO-221 / RETRO-222 (the promotion set), RETRO-246 §6
+P-29 (amendment 1 — the `.claude/` corpus hole), RETRO-259 §4d DG-1 (sighting 5), RETRO-260 §4d
+DG-1/DG-2 (sightings 6–7, amendment 2 — the vocabulary hole), **RETRO-261 §4a LG-1 / §4b CB-1 / §4c
+TG-1 (sighting 8 — the adjudication hole, demonstrated on the very sweep amendment 2 mandates →
+FOLLOW-890)**. Corroborating and **NOT counted** (different axis — a corpus that is right while the
+SoT is wrong, which is amendment 1's trigger inverted): RETRO-261 §4d DG-3, where
+`modal-deploy.yml`'s own comment correctly records the single-tier deploy while §Snapshot.1 row D
+still claims two tiers. **Distinct from Rule AQ**, which governs whether a declared-identical block
+is extracted or machine-checked at any time; this clause governs **when** AQ must be answered — at
+the moment a Rule AI sweep surfaces the copy — and forbids `already correct` as a replica's verdict.
+
+---
+
 ## Rule AJ — A newly-shipped failure-detection signal MUST have a consumer in the SAME PR: an alert/registry entry AND a verified delivery channel in the environment it must fire in; a producer-only alarm is a HALF_WIRE_P, not observability
 
 **Pattern:** A PR closes a silent-failure gap by _emitting_ a signal — `Sentry.captureMessage` /

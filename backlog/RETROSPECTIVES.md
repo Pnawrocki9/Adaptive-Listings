@@ -56051,3 +56051,600 @@ three-vocabulary amendment), 888 (P2 pm 1h — the FOLLOW-881 architect's learni
 UNCOMMITTED in the main tree at 648a0bb9 and its closing sentence IS this retro's Rule AI amendment
 ("grep the constant's NAME and its VALUE"), reached independently hours earlier and lost in transit;
 Rule AG's 2026-08-05 landing-obligation amendment, first sighting since promotion). QUEUE.md / ESCALATIONS.md / sprint files / code correctly UNTOUCHED. -->
+
+## RETRO-261 — FOLLOW-817 (#691) and FOLLOW-882 + FOLLOW-887 (#694) — the control was written, executed and validated within hours, and the eighth site was inside its corpus, inside its own vocabulary (a), and passed adjudication — 2026-08-07
+
+**THE HEADLINE, AND IT IS TWO SENTENCES BECAUSE THE MERGE IS TWO THINGS.** (1) **The natural
+experiment succeeded and its success is narrower than the celebration.** The amended Rule AI's
+three-vocabulary sweep found sites 5–7 that three competent rounds missed, and site 7 (§E.1's
+similarity ladder) was reachable ONLY through the value vocabulary — that is real and it is the
+strongest control-validation this log has ever recorded. **But I found an eighth site, and it was
+inside the corpus the same amendment added (`packages/**/__tests__/**`), inside vocabulary (a)
+(it literally declares `const CONFIDENCE_THRESHOLD = 0.6;`), and it survived the sweep anyway** —
+because the amendment tells you *where the claim is spelled* and says nothing about *what verdict a
+hit deserves when the hit turns out to be a REPLICA of the changed unit rather than a mention of it*.
+`packages/sdk/src/__tests__/playbooks.test.ts` re-implements `runDecisionTree` with all three ladder
+constants copied correctly and one branch body wrong, and asserts that wrong body in a green test
+that directly contradicts `apps/control-plane/src/app/api/adapt/route.test.ts:396-408`. **The three
+vocabularies are a search strategy; the eighth site needed an adjudication strategy.**
+(2) **The ML layer went to production for the first time, verification was excellent at the finish
+line (Rule Q applied — `modal app list` read directly, not the green job), and within two hours of
+that merge three of the repo's records disagree about what happened.** `MASTER_DESIGN` §Snapshot.1
+rows A.1 and B.6 still assert "never been deployed" / "exactly ONE deployed app" / "the gate
+currently fails"; `ESCALATIONS.md` still titles ESC-042 "OPEN (narrowed) — the sole remaining
+chat-un-shadow blocker" and its 2026-08-07 update block still says "exactly ONE deployed app";
+`QUEUE.md` says "ESC-042 item 1 … is closed" and then, six lines later, says the traffic axis is
+unproven. **The SoT is the most wrong of the three, and the least strict claim sits in the session
+head the next session boots from.**
+
+**And the sharpest thing in this retro is not a code finding.** The brief's own account states that
+the operator executed the wrong `DATABASE_URL` before the probe caught it and **the production DB
+password landed in a session transcript**. Every durable artefact in this repo — ESC-053's RESOLVED
+block, the QUEUE session head, commit `45fbfe23` — describes that event **counterfactually**
+("would have produced", "a trap caught before it fired"). **No artefact records an exposure and no
+rotation ticket exists anywhere in the repo.** Either the durable record is wrong or the brief is;
+in both readings there is no owner. §4b CB-3 / FOLLOW-895 (P0) / §5 for the PM.
+
+### 1. Summary of change
+
+- **PR:** #691 (merged 2026-08-07 19:42 UTC, commit `fe73e8da`) · #694 (merged 2026-08-07 19:51 UTC,
+  commit `63ec4261`). Combined per precedent RETRO-254 / RETRO-260. Bookkeeping commits `45fbfe23`
+  and `aa4a3d4d` are read as part of the merge because both make claims this retro must test.
+- **Files changed:** #691 — 11 files (+602 / −12). #694 — 5 files (+93 / −21).
+- **Modules touched:** #691 — CI (`.github/workflows/modal-deploy.yml`), Modal Python
+  (`apps/data-quality`), ingest config (`apps/ingest/wrangler.toml`, `.env.example`), scripts
+  (`scripts/check-modal-secret-keys.py`), docs (MASTER_DESIGN, 2 runbooks), backlog
+  (ESCALATIONS, FOLLOW_UPS), `.claude/` lessons. #694 — docs (MASTER_DESIGN, one dated spec),
+  SDK tests (`packages/sdk/src/__tests__/follow-354.test.ts`), backlog, `.claude/` lessons.
+- **Key contracts changed:**
+  - `estalara-secrets` (Modal) — gains `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
+    `DATABASE_URL`. **Breaking: no** (additive). This is an out-of-repo runtime contract executed by
+    an operator, not by a merge.
+  - `apps/ingest/wrangler.toml` `[env.dev].vars.MODAL_CHAT_NLP_URL` — added. **Breaking: no.**
+  - `apps/data-quality/src/crons/schema_validation.py` — `image=` added to the `@app.function`
+    decorator. **Breaking: no**, and load-bearing: without it the first scheduled run dies at
+    container import.
+  - `modal-deploy.yml` — two new jobs + `paths:` now covers the workflow file and the gate script.
+    **Breaking: no**; it makes a previously-inert workflow self-triggering.
+  - **No runtime code contract changed by #694** — docs + one test file's prose and one `it()` name;
+    `grep -E 'expect|assert|toBe|toEqual'` over its changed lines returns 0.
+  - **Prod state changed without a code contract changing:** `estalara-intent-engine` and
+    `estalara-schema-validation` went from *never existed* to `deployed`. That is the change with
+    the largest blast radius in this merge and it has no diff.
+
+### 2. Verification done in PR
+
+- **#691** — test files changed: `apps/data-quality/src/` suite re-run (**24 passed**, unchanged
+  file count). Assertions added: 0 (no new tests; the new artefacts are a workflow and a gate
+  script). Coverage delta: unknown/neutral. **Verification quality is nonetheless the highest in
+  this log's recent history and it is worth naming**: the PR *measured* rather than asserted —
+  workflow jobs parsed with `yaml.safe_load` instead of eyeballed; the `modal deploy` registration
+  import executed locally to prove `['chat_nlp_endpoint','process_chat_message']` and to prove
+  `ModuleNotFoundError: crons` without `PYTHONPATH`; the secret inventory read from the live secret
+  by a read-only ephemeral `modal run` printing names + `sha256[:16]` only; `wrangler dev --env dev`
+  run to prove the var binds; and an **executed negative control** (kill the shim → ACK still 200,
+  shadow key still `null`) which is the whole argument for the pre-deploy gate.
+- **#694** — 1 test file touched, **0 assertions added or changed** (verified: the diff is a
+  docblock, one `it()` name and comments). `vitest` could not run in the architect's worktree (no
+  `node_modules`); the PR said so instead of claiming a pass. **Rule Q honoured on both sides.**
+- **CI:** both PRs — 76/77 SUCCESS, **2 FAILURE, both `Rule I — wired-or-dead check`**, the
+  documented pre-existing-red gate; `gh-pr-checks-verified.sh` returned exit 0 on the re-verified
+  head of #691 after the ESC-053 correction commit changed it (the PM re-ran rather than carrying
+  the earlier verification forward — correct, and worth recording as Rule AF compliance).
+- **Post-merge verification (the part that matters here):** `modal app list` read directly rather
+  than accepting the green deploy job — Rule Q applied at the finish line, and the deploy run
+  `31212639962` green on all three jobs is explicitly *not* the evidence cited. **This is the
+  correct discipline and it is the reason this retro can be adversarial about everything else.**
+
+### 3. Wiring Audit
+
+**CHECK A — dead code (every NEW file/export has ≥1 non-test importer).**
+
+- `scripts/check-modal-secret-keys.py` — **WIRED**, two non-test call sites:
+  `.github/workflows/modal-deploy.yml` `deploy-intent-engine` step *"Assert estalara-secrets carries
+  the runtime keys intent-engine reads"* and `deploy-data-quality`'s equivalent. Additionally listed
+  in the workflow's own `paths:`, so a change to the gate re-triggers the jobs it gates. Proven to
+  have executed in prod (run `31212639962`). Clean.
+- `.claude/agents/architect/lessons.d/FOLLOW-882-887.md` (#694) — learning-corpus fragment,
+  **suppressed** per Rule AG / the standing framework-entrypoint suppression.
+- `image=` on `schema_validation.py` — consumed by the `@app.function` decorator on the same symbol.
+  Clean.
+- **No new TS exports in either PR.** Clean.
+- **CHECK A verdict: clean ✅ on NEW artefacts.**
+
+**Two pre-existing dead declarations that this merge CHANGED THE MEANING OF — recorded, and
+deliberately NOT counted as CHECK A findings, because CHECK A is scoped to NEW files/exports and
+inflating it would be dishonest:**
+
+- `apps/intent-engine/src/jobs/batch_enrich.py` — has an `@app.function(... schedule=modal.Cron("0
+  */6 * * *"))` decorator and **zero importers**; it imports `from main import app, image`, never
+  the reverse, so `modal deploy apps/intent-engine/src/main.py` cannot see it. Verified twice: by
+  the PR's own registration import (`['chat_nlp_endpoint','process_chat_message']`) and by reading
+  `main.py`'s import block. **Before this merge it was dead everywhere; now it is dead in a
+  workspace where its sibling is live** — the §C.3 Sonnet batch tier does not exist in production.
+  Owned by **FOLLOW-874** item 2 → **re-price P3 → P1**, see §7.
+- `apps/data-quality/src/main.py` — `get_service_info` imported only by `test_main.py`. The new
+  deploy job routes around it (`crons/schema_validation.py` is the target) and says so in a comment.
+  Pre-existing TICKET-012 placeholder; mentioned, not filed (CLAUDE.md §3 "mention it, don't delete
+  it").
+
+**CHECK B — half-wire (every NEW event/env-var/column/topic/SDK-signal has BOTH a producer AND a
+consumer).**
+
+- `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` in `estalara-secrets` — producer: operator
+  provisioning; consumer: `apps/intent-engine/src/redis_writer.py:40-41`. **WIRED**, and the
+  closure check that actually mattered (both name pairs resolve to the SAME Upstash host) was
+  executed rather than assumed. Clean.
+- `DATABASE_URL` in `estalara-secrets` — producer: operator; consumer:
+  `apps/data-quality/src/crons/schema_validation.py:225-230` (`os.environ.get("DATABASE_URL","")`,
+  raises `RuntimeError` when empty; note the escalation cites `:209-211`, the symbol is at
+  `:225-230` at HEAD — a stale line citation, folded into FOLLOW-894). **WIRED.**
+- **`MODAL_CHAT_NLP_URL` in `[env.dev]` — HALF_WIRE_P.** The var binds (proven), but `[env.dev]`
+  declares no `kv_namespaces` / `durable_objects` / `queues` — all non-inheritable wrangler keys,
+  declared only at top level (`wrangler.toml:33,42,50,70,77,81`) and under `[env.production]`
+  (`:117-139`) — so `POST /v1/events`, the only path that would ever read this var, returns
+  `401 {reason: kv_error}` in that env. A producer-side config declared in an environment whose
+  consumer cannot run. **Found and filed by the PR's own author** — owned by **FOLLOW-874** item 1,
+  P3. No new stub; the honest action is the re-price in §7.
+- Two new CI jobs — producers of a deploy; consumer = the Modal workspace; trigger = `push: main` +
+  `workflow_dispatch`, with the workflow file itself in `paths:` (the trap the author explicitly
+  closed: *a change that only ADDS a deploy job touches no `apps/**` path*). **WIRED and proven to
+  have fired.** Clean.
+- **#694: no new event / env-var / column / topic / SDK-signal.** Clean.
+
+**One producer-only stream that this merge TURNED ON for the first time — recorded, not counted as a
+CHECK B finding (it is not new), and it is the substance of FOLLOW-893:**
+`schema_validation_history` has exactly one writer (`schema_validation.py:252`) and its only reader
+in the entire repo is **the same cron's own 24h dedup query** (`:284`) plus a Drizzle type in
+`packages/db`. No dashboard, no API route, no alert consumes it. From 02:00 UTC tonight the project
+begins writing a table nobody reads. Drift *events* do have a channel (`sentry_sdk.capture_message`
+at `:510`, `SENTRY_DSN` present in `estalara-secrets`, hardened initialiser shared per Rule J) — but
+**cron non-execution emits nothing at all, so the failure mode with the highest prior probability on
+a first-ever scheduled run is the one with no signal.**
+
+**Wiring Audit verdict: CHECK A clean on new artefacts; CHECK B — 1 HALF_WIRE_P (P1 by
+classification, already owned by FOLLOW-874 at P3 → re-price).**
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 — THE EIGHTH SITE. `packages/sdk/src/__tests__/playbooks.test.ts:172-267`.** A fourth
+  replica of the decision ladder, whose docblock at `:174-177` states *"Replicates the decision tree
+  logic from route.ts"*. It declares all three constants locally (`:192-194`
+  `CONFIDENCE_THRESHOLD = 0.6`, `HIGH_SIMILARITY_THRESHOLD = 0.85`,
+  `LOW_SIMILARITY_THRESHOLD = 0.6`) — **all three values and all three operators are correct**,
+  which is why every vocabulary the amended Rule AI prescribes reports it clean. The falsity is in a
+  **branch body**: `:199-201` returns `{ directives: [], source: 'llm_full' }`, a pair the shipped
+  route **cannot produce**. `apps/control-plane/src/app/api/adapt/route.ts:342` returns
+  `{ directives: gatewayResult.directives, source: 'llm_full' }` and `:344-345` returns `[]` only
+  under `source: 'playbook_fallback_llm_unavailable'`; the route's own header docblock says so at
+  `:15`. **This is asserted, green, and contradicts a sibling suite in the same repo:**
+  `playbooks.test.ts:257-261` asserts `source=llm_full` **with** `directives` length 0 at
+  (conf 0.75, sim 0.5), while `apps/control-plane/src/app/api/adapt/route.test.ts:396-408` asserts
+  `source=llm_full` **with** `directives.length > 0` at (conf 0.80, sim 0.45) — the same branch.
+  Executed, not inferred: `npx vitest run src/__tests__/playbooks.test.ts` → **185 passed**.
+  Provenance: PR #92 (`b6368b6f`) — the same PR RETRO-001 under-counted by five instances, which is
+  a cross-reference this log should enjoy. → **FOLLOW-890 (P1)**.
+- **LG-2 — the flip condition was written for the STATUS and not for the NARRATIVE, and the
+  narrative was falsified two hours later by the very operator step the same PR requested.**
+  §Snapshot.1 row B.6 (`docs/MASTER_DESIGN.md:469`) is a model Rule AA row: 🟡
+  `CODE_COMPLETE_OPERATOR_PENDING` with an explicit, correct flip condition (*a green scheduled run
+  AND one `schema_validation_history` row — not "the deploy job merged"*). That status is **still
+  right**. But the same cell asserts, as present-tense fact, three things that are now false:
+  *"`estalara-schema-validation` has never been deployed to any environment"*, *"`modal app list` …
+  returns exactly ONE deployed app"*, and *"its hard pre-deploy gate **currently fails**: the
+  `estalara-secrets` Modal secret carries no `DATABASE_URL`"*. Row A.1 (`:459`) is the same shape:
+  *"`intent-engine` itself has ALSO never been deployed … FOLLOW-817 adds its CI deploy job, blocked
+  on ESC-053."* **All five sentences were TRUE at their own merge commit** — this is not a Rule AH
+  case — and were falsified at 21:43 CEST by an action the PR itself scheduled. Neither `45fbfe23`
+  nor `aa4a3d4d` touched `MASTER_DESIGN.md`. → **FOLLOW-891 (P1)**.
+- **LG-3 — ESC-042 item 1 is recorded as closed against a closure condition it does not meet, and
+  the same document says so.** `QUEUE.md` session-104 head: *"**ESC-042 item 1 — chat NLP dark since
+  2026-07-24 with no named owner — is closed.**"* ESC-042's own trailing paragraph
+  (`ESCALATIONS.md`) defines its closure as *"until an operator runs the deploy **and confirms
+  live** (chat_intent shadow key populated end-to-end)"* — the traffic axis, which is unproven in
+  prod and which the same QUEUE block concedes six lines later (*"Rule AA: this closes the deploy
+  axis, not the traffic axis"*). The register itself was never updated: the header still reads
+  **"OPEN (narrowed) — … the sole remaining chat-un-shadow blocker"** and its 2026-08-07 update
+  block still says *"`modal app list` … returns exactly ONE deployed app"* and *"item 1 is now
+  HALF-DISCHARGED"*. **Three records, three different states, and the loosest one is in the session
+  head.** Rule AA exists precisely for this. → **FOLLOW-892 (P1)**.
+- **LG-4 — the nightly cron has no first-run owner and no absence-of-signal detector.** 02:00 UTC
+  tonight is the first scheduled execution in the project's history (`schema_validation.py:360`,
+  `modal.Cron("0 2 * * *")`). A *failed* run is visible if and only if someone opens the Modal
+  dashboard; a run that never starts emits nothing anywhere; and its output of record
+  (`schema_validation_history`) has no reader (§3). §Snapshot.1 B.6's flip condition names the
+  verification but assigns **no owner and no date**, which is how a 🟡 row becomes a permanent 🟡
+  row. → **FOLLOW-893 (P1)**.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **CB-1 (P1) — a green test asserting a contract the route cannot emit.** LG-1's
+  `playbooks.test.ts:257-261`. Classified as a bug and not merely a test gap because it is *asserted*
+  and *inconsistent with a sibling suite*: whichever of the two a future reader trusts, one of them
+  is teaching them the wrong branch contract. → FOLLOW-890.
+- **CB-2 (P2) — ESC-053 contradicts itself in the half an operator executes.** Its ⚠️ CORRECTION
+  block concludes *"**Use `DATABASE_URL_DIRECT`** (pooler, **session mode**) as the VALUE"* and
+  argues session mode is the safe psycopg2 choice; its **Required action** item 3 — the numbered
+  list an operator actually reads and runs — still says *"the prod Supabase pooler connection string
+  … (`DATABASE_URL_ADMIN` in Doppler `prd`)"*, which is the **transaction-mode** pooler on :6543.
+  The RESOLVED note records only *"110 chars, pooler host"*, so the durable record **cannot say
+  which of the two was pasted**. Operationally the risk is low (`schema_validation.py` uses plain
+  `cur.execute`, no prepared statements or session state, so both ports work) — the defect is that
+  a corrected escalation was corrected in its prose and not in its instruction, which is the exact
+  tier-0-vs-prose ordering the 2026-08-05 Rule AI amendment was minted for. → **FOLLOW-894 (P2)**;
+  also carries the `:209-211` → `:225-230` line-citation drift.
+- **CB-3 (P0) — a production DB credential exposure that no artefact records and no ticket owns.**
+  The brief driving this retro states that the operator executed the wrong variable before the probe
+  caught it and **the production DB password landed in a session transcript**. Every durable record
+  in the repo describes the same event counterfactually: ESC-053 — *"Pasting Doppler's `DATABASE_URL`
+  **would therefore give** …"*; QUEUE — *"A trap caught **before** it fired"*; `45fbfe23` — *"the
+  literal value **would have** produced a nightly failure"*. `grep -rin "rotate\|rotation"` over
+  `QUEUE.md` + `ESCALATIONS.md` scoped to credentials returns nothing relevant, and
+  `OPERATOR_SESSION_2026-07-12.md:45` is the standing rule that was crossed (*"Never paste raw
+  secret values anywhere"*). **I cannot resolve which account is correct from inside the repo, and
+  that is itself the finding: there is no artefact that would let anyone else resolve it either, and
+  therefore no owner for the rotation decision.** → **FOLLOW-895 (P0)**, and surfaced in §5 for the
+  PM (I do not escalate on the PM's behalf).
+
+#### 4c. Test coverage gaps
+
+- **TG-1** — `playbooks.test.ts`'s `simulateDecisionTree` has no parity test against
+  `runDecisionTree` and cannot have one (`route.ts` is another app and the constants are
+  module-private). It is a hand-maintained replica declared in prose to be faithful — **Rule AQ's
+  subject** (*"a block of code DECLARED identical across files MUST be extracted or machine-checked;
+  a prose 'copied verbatim, keep in sync' note is not a control"*), and unlike RETRO-260's P-40
+  candidate it **does** reach AQ's ≥20-line contiguous-block bar (`:187-215` is 29 lines). Folded
+  into FOLLOW-890 AC rather than filed separately.
+- **TG-2** — the fourth hardcoded copy of `CONFIDENCE_THRESHOLD` / `HIGH_` / `LOW_SIMILARITY_
+  THRESHOLD` (`playbooks.test.ts:192-194`) is already inside **FOLLOW-885 AC(5)**'s prescribed
+  sweep (`grep -rn "0\.6\b" packages/sdk/src --include=*.ts | grep -i confid` hits `:192`). Recorded
+  so FOLLOW-885 is not surprised by it; **not double-filed**. FOLLOW-890 owns the branch-body
+  falsity, which is outside FOLLOW-885's scope entirely.
+- **TG-3** — no test anywhere asserts that `modal deploy apps/intent-engine/src/main.py` registers
+  the function set §C.3 claims. The PR *measured* it once, by hand, and wrote the result into a
+  workflow comment. Folded into the FOLLOW-874 re-price.
+
+#### 4d. Documentation gaps
+
+- **DG-1** — §Snapshot.1 rows A.1 and B.6 (LG-2). **Rule AI**, and the corpus is the SoT. → FOLLOW-891.
+- **DG-2** — ESC-042 header + 2026-08-07 update block (LG-3). **Rule AI**, corpus = the escalation
+  register. Two artefacts, **ONE sighting** per the RETRO-122 adjudication. → FOLLOW-892.
+- **DG-3 — the two-tier claim is now a PROD claim and it is false.** §Snapshot.1 row D:
+  *"`apps/intent-engine` is now a **real Modal chat-NLP service** (Haiku 4.5 real-time + Sonnet
+  batch, FOLLOW-087) making genuine LLM calls"*, and `apps/intent-engine/src/main.py:4-8`:
+  *"Two-tier chat NLP pipeline (Master Design §C.3)"*. The deployed app registers **one** tier.
+  Row D carries **no CODE-VS-PROD split at all**, so before the deploy the sentence was defensible
+  on the code axis and after it, it reads as a description of production. **The deploy did not
+  create this claim — it made a documented-but-half-false claim materially more visible**, exactly
+  as the brief anticipated. Note the one place that got this right: `modal-deploy.yml`'s own comment
+  above the deploy step states the batch tier is not deployed and calls it deliberate — the
+  **tier-0 executed corpus is correct and the SoT is not**, which is the inverse of the 2026-08-05
+  amendment's trigger and just as bad. Owned by **FOLLOW-874** item 2 → re-price, §7.
+- **DG-4** — `docs/runbooks/MODAL_PROD_STANDUP.md:12-13` still opens with *"§0. Verified reality
+  (2026-07-02) — the only Modal account … has **0 apps and 0 secrets**. There is **no CI workflow**
+  that deploys Modal (`grep 'modal deploy' .github/workflows` = 0)."* Both clauses are false and the
+  second is falsified **by this very PR**, which added two `modal deploy` lines to that workflow.
+  It is a dated §0 header, which is the annotate-don't-rewrite case (the §10 attestation below it is
+  correctly dated) — but a reader who greps the runbook for deploy state hits `:12` first. Folded
+  into FOLLOW-891 AC as a one-line dated correction note, not a rewrite.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-819 (P1, the localhost exit test) — my independent verdict: NOT startable, and RETRO-260's
+  four-blocker list is now two-and-a-half, not two.** Verified each against HEAD rather than against
+  QUEUE's table:
+  - (i) §E.4.6 `<`/phantom knob and `:2086` — **CLEARED**, verified in the merged text
+    (`MASTER_DESIGN:2088` now `<= 0.6` with the boundary explained; §E.4.6 pseudocode now
+    `if confidence <= CONFIDENCE_THRESHOLD (0.6)` plus the `signal_count` disjunction; the
+    per-tenant knob withdrawn with its provenance traced to `AUDIT-2026-06-04:1132`).
+  - (ii) `depends_on: FOLLOW-817` — **CLEARED**, merged and deployed.
+  - (iii) AC(3) needs an `adaptation_decisions` row; its only writer is
+    `apps/control-plane/src/app/api/adapt/route.ts:482` — **STILL OPEN and I re-verified WHY**:
+    `LOCAL_PILOT_ENVIRONMENT.md:18` states the local decision endpoint is
+    `scripts/dev/mock-decision-server.mjs`, **not the control-plane route**, so the substrate
+    contains no instance of the only writer. This is not a config gap, it is a missing component.
+  - (iv) AC(5) "real **staging** rows" unexecutable under ESC-052 → **FOLLOW-878 STILL OPEN**.
+  - (v) `depends_on: FOLLOW-818, FOLLOW-560` — **STILL OPEN**.
+  - **Plus one blocker no list carries:** AC(1) requires confidence **strictly > 0.6** on the
+    `/adapt` response, and FOLLOW-886 records that the reachability arithmetic underpinning that AC
+    does not reproduce from the repo (`feature.expanded ×11` disputed 0.651 vs 0.6625). Starting
+    FOLLOW-819 against an unreproducible target number is how a red result gets attributed to the
+    wrong cause — which is what FOLLOW-875 was filed to undo. **FOLLOW-878 remains the shortest
+    path; FOLLOW-886 should ride with it.**
+- **FOLLOW-820** (CEO decision, ESC-020 prod-deploy gate) — `depends_on: [FOLLOW-819, FOLLOW-815]`,
+  unchanged, but its *premise* moved: it was written when no Modal ML app existed in prod. The
+  prod `MODAL_CHAT_NLP_URL` it owns is now the ONE remaining hop between a deployed intent-engine
+  and live chat. Its priority argument is stronger than when it was filed.
+- **FOLLOW-874** — the ticket whose own text says *"once the Phase-B deploy lands"*. The deploy
+  landed. It is P3. See §7.
+- **FOLLOW-885** — will encounter `playbooks.test.ts:192-194` via its AC(5) sweep; flagged in TG-2 so
+  it is not re-derived.
+- **FOLLOW-889** (per-tenant `CONFIDENCE_THRESHOLD`, FROZEN, P3) — correctly deferred to be ruled
+  with ESC-054. No change.
+
+#### 5b. Future sprint tickets affected
+
+- **FOLLOW-471** (Sprint 22b clean re-audit gate) — F-06 (`schema_validation` never deployed) is now
+  half-closed on the deploy axis and open on the run axis; F-03 (`stream-consumer` undeployed) is now
+  formally a DECISION, correctly recorded in row A.1. A re-audit run today against §Snapshot.1 would
+  re-file both incorrectly, because the SoT rows are stale in **opposite** directions (A.1/B.6 too
+  pessimistic, row D too optimistic).
+- **FOLLOW-458 / Modal Phase C** — discharged in substance by this merge; no ticket says so.
+- **FOLLOW-736** (ADR-0020 shadow write-admission, SPEC-not-implemented) — its subject
+  (`redis_writer` write path) is now live in prod for the first time, so the un-implemented
+  admission rule is now an un-implemented rule **on a running writer** rather than on dead code.
+  Severity moved; ticket unchanged.
+
+#### 5c. Contracts changed others rely on
+
+- **`estalara-secrets` is now read by three apps instead of one.** Any future
+  `modal secret create --force` wipes it and takes down descriptions **and** chat NLP **and** the
+  drift cron. The `--force` prohibition is documented in ESC-053 and `MODAL_PROD_STANDUP.md §5`;
+  it is now three times as load-bearing and appears in no CI gate.
+- **`shadow:{tenant}:{session}:chat_intent`** now has a live producer in prod for the first time.
+  Its consumer (`route.ts:1508-1535`, attaching `chat_intent_dimensions` **unconditionally**) has
+  been live and reading `null` since 2026-07-24. The first real prod chat message will change
+  `/api/adapt` response bodies **and**, via `applyChatIntentPrior` → `archetype_hint` on the next
+  call, the served archetype — with **no server-side gate** (ESC-042 item 2, CEO ruling option A).
+  **This is the single largest un-tested behavioural change in the merge and it fires on traffic,
+  not on deploy.**
+- **`schema_validation_history`** — a producer-only table from tonight (§3).
+
+#### 5d. Architectural assumptions affected
+
+- **"Deployed" and "working" have separated, and the repo's records are now split across that seam.**
+  Rule AA's CODE-vs-PROD axis was written for *code merged, operator step pending*. This merge
+  creates a third state — **operator step done, traffic axis unproven** — and B.6/QUEUE handle it
+  well while row D and ESC-042 do not. The axis Rule AA names is binary and the world now has three
+  values.
+- **An escalation is a document with a premise, and this estate has no control that re-validates a
+  premise between `filed` and `executed`.** RETRO-260 diagnosed this one retro ago on ESC-054 (a
+  premise that *aged*). ESC-053 is the same organ failing in two further ways in a single artefact:
+  a premise that was **wrong at filing** (a value named by a label whose meaning is inverted in
+  Doppler), and a **correction that landed in the prose and not in the numbered instruction**
+  (CB-2). What caught it was **a probe, not a control** — a credential-free reachability test run
+  from inside Modal. §6 P-41.
+- **A replica is a standing assertion, and this repo makes four of them about one function.**
+  `runDecisionTree` is re-declared, in whole or in part, in `playbooks.test.ts:187-215`,
+  `llm-gateway.ts:5-15,550-559`, `follow-877.test.ts:74,182`, and `demo-override-store.ts:85-93`.
+  Three are faithful (verified: `llm-gateway.ts:559` `similarity > 0.6 && similarity <= 0.85` and
+  its docblock match the route's branch-3 window exactly; `demo-override-store.ts:91-93` correctly
+  places 0.75 between the two similarity constants). One is not. **The correct architectural read is
+  that a private module constant consumed by four out-of-module readers is a missing export, not a
+  documentation problem** — the same conclusion FOLLOW-885 reached for one of the four.
+
+**FOR THE PM, WITH SEVERITY — I do not escalate, I surface:**
+
+1. **P0 / security — CB-3.** A production Supabase DB password may have been pasted into a session
+   transcript, and no repo artefact records it, so no rotation decision has an owner. FOLLOW-895.
+   This is the one item in this retro I would not let ride to sprint planning.
+2. **P1 / truth-of-record — LG-3.** Three records disagree about whether ESC-042 item 1 is closed,
+   and the loosest lives in the session head. FOLLOW-892.
+3. **P1 / first-run — LG-4.** The 02:00 UTC cron fires tonight with no owner and no absence-of-signal
+   detector. FOLLOW-893. This one has a deadline rather than a priority.
+
+### 6. New lesson candidates
+
+- **RULE ACTION — AMEND Rule AI (2026-08-07, THIRD amendment). No new letter. Rule count stays 43,
+  range AA–AQ. Rule AI amendments 2 → 3.**
+  - **Sighting count, stated rather than assumed.** Rule AI's sightings: RETRO-213 / RETRO-221 /
+    RETRO-222 (the promotion set) / RETRO-246 (amendment 1) / RETRO-259 / RETRO-260 ×2 (amendment
+    2) — seven. **This retro is the 8th** (§4d DG-1 + DG-2 + DG-3 are three artefact families of the
+    same class; per RETRO-122 they count as sightings of one rule, not three). The ≥2-PRIOR
+    promotion gate is **not** re-invoked — the pattern *is* Rule AI, and minting a letter for
+    "a replica is a claim" would split AI's evidence base, which is the RETRO-122 error in rule form.
+  - **The test I applied before amending, because amendment 2 is one retro old and rapid re-amendment
+    is itself a failure mode.** I ran amended Rule AI **verbatim** against PR #694. Vocabulary (a)
+    over the amendment's own added corpus (`packages/*/src/__tests__`) **HITS**
+    `playbooks.test.ts:192,196`. Clause 2 requires that hit to carry a written per-hit verdict. So
+    the rule's *search* is adequate and was, on the evidence available, complied with — **which
+    would normally make this a compliance failure against an adequate control (the Rule P
+    adjudication, drawn seven consecutive times) and NOT a rule change.** It is not, and the
+    distinction is the whole finding: **the verdict "already correct" is CORRECT under the rule as
+    written**, because Rule AI scopes adjudication to *"every sentence asserting the prior state"* of
+    the claim being retracted — and this hit asserts the prior state of a **different axis of the
+    same replica**. The rule's subject definition, not its sweep and not its execution, is what let
+    the eighth site through. That is a demonstrated text gap, which is the standard both prior
+    amendments met.
+  - **What the amendment ADDS — the replica clause (extent + adjudication), and it is the architect's
+    generalisation promoted from a lessons fragment into the rule.** The FOLLOW-882/887 architect
+    wrote, in `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`: *"when sweeping a numeric gate
+    claim, sweep the SIBLING CONSTANTS of the same function too … **the claim class travels by
+    function, not by constant**."* **The brief asked whether that is the sharper of the two insights.
+    It is** — and one level up from where the architect left it. The three vocabularies answer
+    *where is this claim spelled?*; the replica clause answers *what is the unit of the claim?* They
+    are orthogonal, and only the second one has a chance of catching a hit that is spelled perfectly.
+    Left in a lessons fragment it binds one agent on one ticket; in Rule AI it binds every corrective
+    PR. See the amendment text in `CONVENTIONS_PATCH.md`.
+  - **THE BRIEF'S QUESTION — "does the amended Rule AI generalise, or was it fitted to this one
+    defect?" ANSWERED: THE FRAME GENERALISES, THE LETTER DOES NOT, AND THE GAP IS NAMEABLE.**
+    - The **frame** — *a claim has as many hiding places as it has vocabularies* — is sound for any
+      claim class and RETRO-260 stated it in exactly those words.
+    - The **letter of clause (b) is threshold-only**: *"for a threshold, grep the number and every
+      `<`, `<=`, `>`, `>=` near it"*, and its Verification placeholders are `<VALUE>` and
+      `<subject-word>` with a numeric-boundary regex. Tested against the three classes the brief
+      names: **a wrong enum** — (a) catches the enum name, (b) has no analogue (members are not
+      "values with comparison operators"; the correct (b) is *the member literals, and the set
+      cardinality*), (c) works; **a stale endpoint path** — (a) already lists "the endpoint path",
+      (b) is vacuous, (c) works; **a retracted default** (`?? 0.5`) — (b) half-works, and only if the
+      author thinks to grep the coalescing operator. So on two of three classes the amendment
+      degrades to the pre-amendment rule plus clause (c). **Verdict: partially fitted. Clause (b)
+      should be generalised to "the claim's non-symbolic FORM — for a threshold the literal plus its
+      operators; for an enum the member literals plus the set's cardinality; for a path the literal
+      string; for a default the coalesced literal" — but I am NOT writing that into the rule on
+      zero sightings.** No enum/path/default miss has been observed. Recorded here as an armed
+      generalisation with a pre-specified trigger (below) so the next retro tests rather than
+      re-derives. **Codifying it now would be exactly the "patch wearing a rule's clothes" the brief
+      warned about — applied to my own amendment.**
+    - **Armed trigger for generalising clause (b):** the next numbered retro that observes a Rule AI
+      miss on a **non-threshold** claim (enum member, endpoint path, retracted default, cardinality)
+      where vocabulary (a) was run and vocabulary (b) was inapplicable-as-written, cites RETRO-261 §6
+      plus its own finding and generalises clause (b) in the same retro. **Count today: 0.**
+- **NEW PATTERN P-41 — "AN ESCALATION'S PREMISE IS UNVERIFIED AT THE MOMENT IT IS EXECUTED: NOTHING
+  RE-VALIDATES IT BETWEEN `filed` AND `ruled`/`executed`, AND NOBODY OWNS IT IN THAT WINDOW." MINTED
+  AT COUNT 1 PRIOR. NOT PROMOTED. ARMED.**
+  - **The count, checked rather than assumed — and it is lower than the brief's framing implies.**
+    RETRO-260 recorded this as an **architectural finding in §5d** and explicitly **refused** to
+    fold it into P-38 (*"the nearest candidate is ESC-054's own premise (LG-2), but that is an
+    **escalation**, not a control … recorded as an architectural finding in §5d rather than
+    inflating P-38"*). It therefore carries **no P-number and no prior count**. Minting it now:
+    **RETRO-260 = count 1 (prior). This retro = the 2nd sighting, and the current retro does not
+    inflate the count** (the adjudication shared with Rules AA/AB/AC/AD/AE/V/Q/AG/AH/AI). **Prior
+    count = 1. Below the ≥2-PRIOR bar. NO RULE.** The brief asked whether it now meets the bar; it
+    does not, by one, and the honest answer is the useful one.
+  - **This retro's sighting (count 2), and it is a stronger instance than the first.** ESC-053's
+    premise was **wrong at filing**, not merely aged: it named the target value *"the prod Supabase
+    pooler connection string"* under a Doppler key whose name means the opposite (`DATABASE_URL` =
+    IPv6-only direct host; `DATABASE_URL_DIRECT` = session-mode pooler). The PM read it literally
+    and handed the operator the wrong variable. **What caught it was a credential-free reachability
+    probe run from inside Modal — a probe, not a control.** And the correction then landed in the
+    escalation's prose while its numbered Required-action list kept the pre-correction value (CB-2),
+    so the artefact an operator executes is *still* internally inconsistent at RESOLVED.
+  - **Tested against the rule TEXTS before minting, not after.** **Rule AH** binds a doc that gives an
+    executable instruction to be verified **at the doc's own merge commit** — closest relative, and
+    it does not fire: an escalation is not merged as a deliverable and ESC-053's premise was written
+    correctly *about a value it named ambiguously*, not about unmerged support. **Rule AI** binds the
+    author of a change to the docs that change falsifies — ESC-053's premise was falsified by nothing;
+    it was never true. **Rule AA** governs whether an operator has RUN a step. **Rule AO** governs a
+    corrective edit re-verified against the same PR's evidence — closest on CB-2 specifically, and I
+    considered folding CB-2 into an AO sighting instead; I did not, because AO's subject is a
+    correction that **removes a false claim** and inherits the fixing-mode model, whereas here the
+    correction was *right* and simply did not propagate to the sibling paragraph. Folding it would
+    inflate AO. **None fires verbatim.**
+  - **Second-sighting bar, PRE-SPECIFIED so the next retro tests rather than re-derives** — promote
+    only when all three hold: (a) an escalation or operator instruction is **executed or ruled on**
+    while a **named premise in it** is false or stale at the moment of execution; (b) the falsity was
+    detectable **from artefacts already in the repo or from a read-only probe** at that moment — i.e.
+    it was not new information; **and** (c) **no control caught it** — it was caught by a human, a
+    probe, or not at all. Clauses (a)–(c) all hold for ESC-053. Clause (b) is what distinguishes this
+    from ordinary staleness and it is deliberately strict: if the falsity required new information,
+    the escalation was fine and the world moved.
+  - **Note for whoever promotes it: the remedy is probably not a behavioural rule.** The mechanism
+    that worked here was a **probe** — cheap, credential-free, executed against the real target
+    before the irreversible step. A rule saying "re-validate the premise" restates the goal; a
+    convention saying "an escalation whose required action names a VALUE must carry a
+    credential-free probe that identifies that value" is executable. CONVENTIONS_PATCH is for the
+    former, which is an argument for a stub, not a letter — recorded so the promotion decision is
+    made with this in view.
+- **RULE Q — RECORDED AS A CONTROL THAT WORKED, TWICE, AT THE HARDEST POINT.** This log mostly
+  records controls failing. Rule Q's clause (*"a green/non-blocking status is NOT evidence the
+  assertion ran"*) was applied to a **production deploy**: the green `modal-deploy.yml` run was
+  explicitly refused as evidence and `modal app list` was read directly; and the FOLLOW-817 worker
+  executed a **negative control** (kill the shim, replay with a fresh session → ACK still 200,
+  shadow key still `null`) that is the entire argument for the pre-deploy secret gate. **No rule
+  action — a control succeeding is not a sighting** (the RETRO-260 adjudication for Rule AN).
+  Recorded so a future retro proposing to relax Rule Q at the deploy boundary has the counter-evidence.
+- **RULE AA — HELD IN TWO PLACES AND FAILED IN TWO OTHERS, IN THE SAME MERGE. NO RULE ACTION.**
+  Held: §Snapshot.1 row B.6's status + flip condition, and QUEUE's *"this closes the deploy axis, not
+  the traffic axis"*. Failed: row D (no CODE-VS-PROD split at all on a now-live app) and QUEUE's own
+  headline *"ESC-042 item 1 … is closed"*. **Run verbatim, Rule AA catches both failures** — it
+  requires the verdict to split the axes and keep the prod-measurement axis OPEN. So this is a
+  compliance failure against an adequate control, not a text gap: **the same adjudication Rule P has
+  now drawn eight consecutive times.** Remedy is FOLLOW-892 + FOLLOW-891, not a letter.
+- **RULE P — EIGHTH CONSECUTIVE COMPLIANCE FAILURE.** §4a LG-2/LG-3: the falsity of "never been
+  deployed" and "exactly ONE deployed app" is one `modal app list` away — the same command the PM
+  had **already run and pasted into QUEUE** minutes earlier. The verification existed, in the
+  session, and was not propagated to the document. Same adjudication as
+  RETRO-247/248/252/253/255/259/260 — **no rule action**, folded into FOLLOW-891 AC(1).
+- **P-40 (RETRO-260) — SECOND SIGHTING TESTED AND REFUSED, DELIBERATELY.** P-40's pre-specified bar
+  has three clauses: (a) named/described as a drift-or-parity guard, (b) asserts a locally declared
+  copy, (c) the owner's value is not exported so the copy is the only available form.
+  `playbooks.test.ts:192-194` satisfies (b) and (c) cleanly. **It fails (a):** the file describes
+  itself as replicating logic *"to test the playbook output shape"*, never as a drift or parity
+  guard — it makes no claim to guard anything. **P-40 stays at count 1.** Counting it would be
+  exactly the conflation RETRO-260 refused when it declined to fold P-40 into P-39 — and refusing it
+  is why the Rule AI replica clause is the right home instead.
+- **THE STUB-REPRICING GAP, SECOND SHAPE — NO RULE, AND TESTED AGAINST RETRO-260'S OWN BAR.**
+  RETRO-260 found that FROZEN priority is set once, at filing, from the harm of the first sighting,
+  with no re-pricing trigger. **FOLLOW-874 is the mirror**: not FROZEN, not rediscovered, priority
+  P3 set correctly at filing — and its own text names the condition that changes its severity
+  (*"once the Phase-B deploy lands"*). **The deploy landed in the same PR that filed it, and nothing
+  re-priced it.** A stub can therefore carry its own arming condition, have that condition fire in
+  its own PR, and still not move. RETRO-260 pre-specified the promotion bar as *"a fifth sighting of
+  any FROZEN stub after FOLLOW-849 closes, and the re-pricing does not happen within the same
+  session it is reported"* — **this instance is neither FROZEN nor a rediscovery, so it does not
+  count against that bar and I am not counting it.** Recorded as a distinct shape at count 1, and
+  discharged concretely by the §7 re-price rather than by a rule.
+- **FOLLOW-888 / RULE AG — THE TEMPLATE HELD, AND THE BRIEF'S QUESTION ("the template, or one
+  attentive PM?") HAS AN EVIDENCE-BASED ANSWER: THE TEMPLATE, AND IT IS ONE DATA POINT.** The
+  architect's lesson landed **with** the deliverable as
+  `.claude/agents/architect/lessons.d/FOLLOW-882-887.md`. The discriminating evidence is in the
+  fragment's own last bullet: *"AND pasted verbatim in the dispatch report **per FOLLOW-888**, so
+  the PM lands it in the same commit"* — **the agent names the mechanism and executes it**, which is
+  what a template does and what attentiveness does not. Contrast FOLLOW-881, where the same agent
+  wrote its lesson and the PM committed only the deliverable. **No rule action** — Rule AG and its
+  2026-08-05 amendment already mandate this in as many words; what changed is that the obligation
+  moved from the PM's memory into the dispatch brief, where it is executable. **One sighting is not
+  a trend**; the second no-Bash dispatch is the test.
+- **ROUTING.** #691 devops-engineer: correct tier for a prod-touching deploy, and the strongest
+  verification-quality in this log's recent history (measured, not asserted, at six separate points;
+  filed ESC-053 rather than shipping over the gap; refused to mark AC(7) RESOLVED). Its miss is
+  again **the axis no AC named**: no AC asked "what does §Snapshot.1 say about the app you are about
+  to deploy, and will that still be true after the operator step you are requesting?" — so it wrote
+  a correct flip condition for the status and left five present-tense sentences to rot two hours
+  later (LG-2). #694 architect on **Fable**: correct, and it produced the retro's spine — but its
+  scope was again its AC's, and its own sweep's adjudication criterion was the boundary value, so
+  the replica three files away passed. **Tenth consecutive retro to the same conclusion: the model
+  tier is not the control for enumeration completeness; the AC is.** RETRO-259 proposed one sentence
+  in the PM's brief template and RETRO-260 recorded that it had not been written. It still has not.
+  **This merge is the second consecutive time that omission has a named cost.**
+
+### 7. Follow-ups
+
+- **FOLLOW-890**: the EIGHTH site — `playbooks.test.ts`'s `simulateDecisionTree` is an unfaithful
+  replica of `runDecisionTree`, and its `llm_full ⇒ []` assertion is green, unproducible by shipped
+  code, and contradicts `route.test.ts:396-408` (sdk-engineer, 2h, **P1**)
+- **FOLLOW-891**: §Snapshot.1 rows A.1 and B.6 assert five present-tense facts falsified two hours
+  after their own merge commit; correct them, add the CODE-VS-PROD split row D has never had, and
+  date-annotate `MODAL_PROD_STANDUP.md §0` (architect, 2h, **P1**)
+- **FOLLOW-892**: ESC-042 item 1 is "closed" in QUEUE, "OPEN (narrowed) / HALF-DISCHARGED" in the
+  escalation register, and unmet against its own stated closure condition; reconcile all three on
+  the Rule AA axis split (pm-orchestrator, 1h, **P1**)
+- **FOLLOW-893**: the first-ever 02:00 UTC `schema_validation` run has no owner, no absence-of-signal
+  detector, and its output table has no reader — give the cron a dead-man's switch and a consumer
+  (devops-engineer, 3h, **P1**)
+- **FOLLOW-894**: ESC-053 contradicts itself in the half an operator executes (`DATABASE_URL_ADMIN`
+  vs `DATABASE_URL_DIRECT`) and its RESOLVED record cannot say which was pasted; reconcile, and fix
+  the `:209-211` → `:225-230` citation drift (pm-orchestrator, 1h, **P2**)
+- **FOLLOW-895**: a production Supabase DB password may have been pasted into a session transcript
+  during the ESC-053 execution; every durable artefact describes that event counterfactually and no
+  rotation ticket exists — establish which account is true and give the rotation decision an owner
+  (**CEO/operator decision + pm-orchestrator**, 2h, **P0**)
+
+**Re-pricings recommended, no new number (the honest action per §6's stub-repricing finding):**
+
+- **FOLLOW-874 — P3 → P1.** Its own text arms it on *"once the Phase-B deploy lands"*; the deploy
+  landed in the same PR. Item 2 (the §C.3 batch tier is unreachable from the deploy entrypoint) is
+  now a **live** single-tier prod engine against a two-tier SoT claim (§4d DG-3) and a CHECK-A
+  prod-dead declaration (§3); item 1 is a standing **HALF_WIRE_P** (§3). Both were correct at P3
+  when nothing was deployed.
+
+**Numbering: 890–895 allocated against `main` at `aa4a3d4d` per Rule AN. Next free FOLLOW: 896.**
+
+### 8. Cross-references
+
+- **RETRO-260** — the direct parent, and this entry is its natural experiment's result. Its Rule AI
+  amendment **worked on the axis it was written for** (sites 5–7, and site 7 only via vocabulary b)
+  and **did not close the class**: the eighth site is inside the corpus that amendment added and
+  inside vocabulary (a). Its P-40 bar was tested and **refused** on clause (a). Its §5d
+  escalation-premise finding is minted here as **P-41 at 1 prior — not promoted**, which is the
+  answer to the brief's question and it is a negative one. Its stub-repricing finding recurs in a
+  second shape (FOLLOW-874) that its own pre-specified bar correctly excludes.
+- **RETRO-259** — its FOLLOW-878 (ESC-052's correction set stopped one document short of the SoT) is
+  the **same defect as §4d DG-1**, one merge later, on the same document, in the opposite direction.
+  Two independent correction sets have now stopped short of `MASTER_DESIGN.md` in three merges.
+- **RETRO-257** (*"the bundle is real and the population is zero"*) — the closest structural twin in
+  this log. There, a consent bundle shipped and its consent caller was never integrated, so
+  `consent_records` stayed empty while every record said LIVE. Here, an ML layer is deployed and the
+  shadow key is unpopulated because no prod chat traffic exists. **Same shape, one axis further
+  along, and the discipline is visibly better** — QUEUE named the traffic axis unproven in the same
+  breath as the deploy. It then wrote "closed" in the headline anyway (LG-3).
+- **RETRO-001 / PR #92** — the eighth site (`playbooks.test.ts`) was introduced by PR #92, the merge
+  RETRO-001 under-counted by five Rule-H instances and RETRO-004 later re-audited. Two hundred and
+  sixty retros later the same PR is still yielding findings, and this one needed a control that
+  did not exist until yesterday.
+- **RETRO-254 / RETRO-260** — precedent for combining tickets in one entry.

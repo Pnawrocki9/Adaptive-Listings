@@ -30937,3 +30937,346 @@ that a tenant override is actually read; (3) if not → the ruling is recorded i
 
 cross_ref: [FOLLOW-882 AC(2); FOLLOW-887 (PR #694); ESC-054; `MASTER_DESIGN` v4.6 changelog +
 §E.4.6; `docs/AUDIT-2026-06-04.md:1118-1132`; `apps/control-plane/src/app/api/adapt/route.ts:86`]
+
+---
+
+## FOLLOW-890 — The EIGHTH gate-claim site: `playbooks.test.ts` re-implements `runDecisionTree` and asserts a `(source, directives)` pair the shipped route cannot emit — green, and contradicting a sibling suite
+
+source_retro: RETRO-261 source_ticket: FOLLOW-887 recommended_sprint: now recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**This is the site the three-vocabulary sweep could not see, and the reason it could not see it is
+the finding.** `packages/sdk/src/__tests__/playbooks.test.ts:172-267` declares
+`simulateDecisionTree()` under the docblock _"Replicates the decision tree logic from route.ts"_. It
+copies **all three ladder constants correctly** (`:192-194` — `CONFIDENCE_THRESHOLD = 0.6`,
+`HIGH_SIMILARITY_THRESHOLD = 0.85`, `LOW_SIMILARITY_THRESHOLD = 0.6`) with the correct operators, so
+it is clean in vocabulary (a), clean in vocabulary (b), and contains none of the retracted prose of
+vocabulary (c). **The falsity is in a branch body.**
+
+```
+playbooks.test.ts:199-201   if (similarity <= LOW_SIMILARITY_THRESHOLD) {
+                              return { directives: [], source: 'llm_full' };
+                            }
+route.ts:340-345            if (gatewayResult) {
+                              return { directives: gatewayResult.directives, source: 'llm_full' };
+                            }
+                            return { directives: [], source: 'playbook_fallback_llm_unavailable' };
+```
+
+The shipped route **never** pairs `source: 'llm_full'` with empty directives — its own header
+docblock says so at `route.ts:15` (_"llm_full: empty directives + source
+'playbook_fallback_llm_unavailable'"_). And the false pair is **asserted**:
+
+- `playbooks.test.ts:257-261` — `it('low similarity (0.5) → source=llm_full, empty directives')`,
+  `expect(result.directives).toHaveLength(0)` — **green**
+  (`npx vitest run src/__tests__/playbooks.test.ts` → 185 passed, executed 2026-08-07).
+- `apps/control-plane/src/app/api/adapt/route.test.ts:396-408` —
+  `it('Branch 4 with gateway success → source: llm_full, directives from gateway')`,
+  `expect(directives.length).toBeGreaterThan(0)`.
+
+**Two green suites in one repo assert opposite contracts for the same branch.** Whichever a future
+reader trusts, one of them teaches the wrong thing — and the SDK-side one is the one an SDK author
+reads.
+
+Introduced by **PR #92** (`b6368b6f`), the same merge RETRO-001 under-counted by five Rule-H
+instances.
+
+**AC:**
+
+1. `simulateDecisionTree`'s branch bodies match `runDecisionTree` for every branch it claims to
+   replicate — including the `playbook_fallback_llm_unavailable` source it currently omits entirely
+   — **or** the docblock stops claiming replication and the helper is renamed to what it actually is
+   (a playbook-shape fixture), with the `llm_full` assertion corrected either way. Both are
+   acceptable; silently deleting the assertion is not.
+2. **Prove it red-first:** show the corrected assertion failing against the current helper before
+   the fix, and paste both outputs. A green-to-green diff is not evidence here.
+3. Reconcile with `route.test.ts:396-408` explicitly in the close note — state which suite was wrong
+   and why the other was right.
+4. **Rule AQ applies and should be discharged, not argued around:** `:187-215` is a 29-line
+   contiguous block declared identical to another file's logic, which clears AQ's ≥20-line bar.
+   Either machine-check it (read `route.ts` at test time, as
+   `scripts/dev/local-pilot-session.mjs:73-108` already does — see FOLLOW-885, and prefer a shared
+   helper over a second reader) or state in the close note why extraction is not possible and what
+   the compensating control is.
+5. The three constant copies at `:192-194` are **also** inside FOLLOW-885 AC(5)'s sweep. Coordinate:
+   do not fix them twice and do not leave both tickets assuming the other did it.
+
+cross_ref: [RETRO-261 §4a LG-1 / §4b CB-1 / §4c TG-1 TG-2; RETRO-260; FOLLOW-885 (the same
+constants, different axis); FOLLOW-887;
+`packages/sdk/src/__tests__/playbooks.test.ts:172-267,192-194,199-201,257-261`;
+`apps/control-plane/src/app/api/adapt/route.ts:15,86-88,275,323,328,340-345`;
+`apps/control-plane/src/app/api/adapt/route.test.ts:396-408`; Rule AI (2026-08-07 replica clause);
+Rule AQ; PR #92 `b6368b6f`]
+
+---
+
+## FOLLOW-891 — §Snapshot.1 rows A.1 and B.6 assert five present-tense facts that were falsified two hours after their own merge commit, by the operator step the same PR requested
+
+source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent:
+architect priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Not a Rule AH case and not ordinary staleness — a new shape worth naming.** Every sentence below
+was **true at `fe73e8da`**. PR #691 wrote them, correctly, and in the same breath asked an operator
+to perform the action that falsifies them. The operator did, at 21:43 CEST the same evening. The
+status verdicts were written with a flip condition; **the narrative was not**, and neither
+bookkeeping commit (`45fbfe23`, `aa4a3d4d`) touched `MASTER_DESIGN.md`.
+
+**Row B.6 (`docs/MASTER_DESIGN.md:469`) — three false assertions:**
+
+1. _"`estalara-schema-validation` **has never been deployed to any environment**"_ — deployed
+   2026-08-07 21:43 CEST.
+2. _"`modal app list` for the `estalara` workspace returns exactly ONE deployed app"_ — returns
+   three.
+3. _"its **hard pre-deploy gate currently fails**: the `estalara-secrets` Modal secret carries no
+   `DATABASE_URL`"_ — ESC-053 RESOLVED; the gate passed in run `31212639962`.
+
+**The row's STATUS (🟡 `CODE_COMPLETE_OPERATOR_PENDING`) and its flip condition are CORRECT and must
+not be moved** — no scheduled run has been observed and no `schema_validation_history` row exists.
+This ticket corrects the narrative only.
+
+**Row A.1 (`:459`) — two false assertions:** _"`intent-engine` itself has ALSO never been
+deployed"_, and _"FOLLOW-817 adds its CI deploy job, **blocked on ESC-053**"_. (The
+`stream-consumer`-is-a-DECISION paragraph in the same row is correct and should be left alone.)
+
+**Row D — the opposite error, and it is the one with product consequences.** _"`apps/intent-engine`
+is now a **real Modal chat-NLP service** (Haiku 4.5 real-time **+ Sonnet batch**, FOLLOW-087) making
+genuine LLM calls"_. The deployed app registers **`['chat_nlp_endpoint','process_chat_message']`**
+only — `main.py` never imports `jobs.batch_enrich`, so the §C.3 Sonnet batch tier is not in
+production. Row D carries **no CODE-VS-PROD split at all**, so the deploy converted a
+defensible-on-the-code-axis sentence into a false statement about prod. Note the asymmetry this
+exposes: `modal-deploy.yml`'s own comment above the deploy step states the batch tier is not
+deployed and calls it deliberate — **the executed corpus is right and the SoT is wrong**, the
+inverse of the 2026-08-05 Rule AI amendment's trigger.
+
+**AC:**
+
+1. Rows A.1, B.6 and D corrected against a **freshly executed** `modal app list` and a freshly
+   executed registration probe — not against this stub, and not against the PR bodies. (Rule P: the
+   command that settles it had already been run and pasted into `QUEUE.md` minutes before the rows
+   went stale; the gap is propagation, not knowledge.)
+2. Row D gains an explicit CODE-VS-PROD split (Rule AA) naming the single-tier prod reality and
+   cross-referencing FOLLOW-874 item 2 for the "is the batch tier wanted?" question, which this
+   ticket must **not** decide.
+3. Row B.6's status and flip condition are preserved verbatim; only the falsified present-tense
+   clauses change, each with a dated correction marker rather than a silent rewrite.
+4. `docs/runbooks/MODAL_PROD_STANDUP.md:12-13` §0 _"Verified reality (2026-07-02)"_ — _"0 apps and 0
+   secrets"_ and _"There is **no CI workflow** that deploys Modal
+   (`grep 'modal deploy' .github/workflows` = 0)"_ — both false, the second falsified by PR #691
+   itself. **Annotate with a dated correction note; do not rewrite the dated block** (the FOLLOW-887
+   precedent for `TICKET-DESC-PIVOT-001-v1.7.1.md`).
+5. **Publish the adjudicated hit list** for the sweep, per Rule AI clause 2 — no "the document is
+   now clean" claim. Run all three vocabularies **and** the 2026-08-07 replica clause: the subject
+   here is a _deploy-state_ claim, so vocabulary (b) is the app names and the app count, and the
+   replica check is _every place that restates the Modal inventory_ (`MODAL_PROD_STANDUP.md`,
+   `QUEUE.md` tables, `ESCALATIONS.md`, `modal-deploy.yml`'s header).
+6. §Y.2 propagation walked and its result stated per item, including no-ops.
+
+cross_ref: [RETRO-261 §4a LG-2 / §4d DG-1 DG-3 DG-4 / §6 (Rule P 8th, Rule AA compliance);
+FOLLOW-817; FOLLOW-874 (item 2 — re-priced P3→P1); FOLLOW-878 (RETRO-259, the same document, the
+opposite direction); ESC-053; `docs/MASTER_DESIGN.md:459,469` + row D;
+`docs/runbooks/MODAL_PROD_STANDUP.md:12-13`; `.github/workflows/modal-deploy.yml`;
+`apps/intent-engine/src/main.py:4-8`; Rule AI; Rule AA; Rule P]
+
+---
+
+## FOLLOW-892 — ESC-042 item 1 is "closed" in QUEUE, "OPEN / HALF-DISCHARGED" in the escalation register, and unmet against its own written closure condition — three records, three states
+
+source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent:
+pm-orchestrator priority: P1 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The loosest of the three states is the one in the session head that the next session boots from.**
+
+| Record                                          | What it says today                                                                                                               |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `QUEUE.md` session-104 head                     | _"**ESC-042 item 1 — chat NLP dark since 2026-07-24 with no named owner — is closed.**"_                                         |
+| `QUEUE.md`, six lines later                     | _"the end-to-end shadow-key population in **prod** is not proven … Rule AA: this closes the deploy axis, not the traffic axis."_ |
+| `ESCALATIONS.md` ESC-042 heading                | _"**OPEN (narrowed)** — Modal `intent-engine` deploy is the sole remaining chat-un-shadow blocker"_                              |
+| `ESCALATIONS.md` ESC-042 update block, same day | _"item 1 is now **HALF-DISCHARGED** … `modal app list` … returns **exactly ONE deployed app**"_ (now three)                      |
+| ESC-042's own closure condition (trailing ¶)    | _"until an operator runs the deploy **and confirms live** (chat_intent shadow key populated end-to-end)"_                        |
+
+**Run verbatim, Rule AA catches this** — it requires the verdict to split the code/prod axes and
+keep the prod-measurement axis OPEN with a fail-loud proof step. So this is a compliance failure
+against an adequate control, not a rule gap, and the remedy is bookkeeping, not a letter.
+
+**The substantive point, not just the tidiness one:** ESC-042's closure condition is the **traffic**
+axis, and the traffic axis is where the untested behaviour lives. `route.ts:1508-1535` attaches
+`chat_intent_dimensions` **unconditionally**, and `applyChatIntentPrior` folds it into the client
+Bayesian state which is re-sent as `archetype_hint` on the next call (ESC-042 item 2, CEO ruling
+option A — **no server-side gate**). The first real prod chat message therefore changes served
+archetypes. Calling item 1 "closed" retires the only ticket that was watching for that.
+
+**AC:**
+
+1. One state, chosen deliberately, written in all three places with the same words. Recommended:
+   ESC-042 item 1 → **`CODE_COMPLETE_OPERATOR_PENDING` on the deploy axis, OPEN on the traffic
+   axis**, with the traffic-axis proof step named (one `shadow:{tenant}:{session}:chat_intent` key
+   written in prod Upstash by a real buyer message) and an owner.
+2. ESC-042's 2026-08-07 update block's _"exactly ONE deployed app"_ corrected in place with a dated
+   note (append, do not rewrite — it was true when written).
+3. The ESC-042 heading reflects the chosen state.
+4. State in the close note whether the traffic axis has an owner other than "whoever notices". If it
+   does not, say so rather than implying it does — that omission is what "no named owner" in
+   ESC-042's own title referred to in the first place.
+
+cross_ref: [RETRO-261 §4a LG-3 / §5c / §6 (Rule AA compliance, 8th consecutive Rule-P-shape);
+FOLLOW-817; FOLLOW-820 (owns the prod `MODAL_CHAT_NLP_URL` hop); ESC-042; ESC-053;
+`backlog/QUEUE.md` session-104 head; `apps/control-plane/src/app/api/adapt/route.ts:1508-1535,1563`;
+`packages/sdk/src/core/adapt.ts:863-888`; Rule AA]
+
+---
+
+## FOLLOW-893 — The first-ever 02:00 UTC `schema_validation` run has no owner, no absence-of-signal detector, and its output table has no reader
+
+source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Three gaps, one cron, and they compose into the exact invisible-failure class FOLLOW-817 was
+written to close.** `apps/data-quality/src/crons/schema_validation.py:360` —
+`schedule=modal.Cron("0 2 * * *")` — fires for the first time in the project's history tonight.
+
+1. **No first-run owner.** §Snapshot.1 row B.6's flip condition is correct and complete (_a green
+   scheduled run **and** one `schema_validation_history` row in prod Postgres_) and names **no owner
+   and no date**. That is how a 🟡 row becomes a permanent 🟡 row.
+2. **No absence-of-signal detector.** A _failed_ run is visible only to someone who opens the Modal
+   dashboard. A run that **never starts** — the highest-prior failure mode for a first-ever schedule
+   — emits nothing anywhere. There is no dead-man's switch, no heartbeat, no "last successful run"
+   assertion. Drift _events_ do have a channel (`sentry_sdk.capture_message` at `:510`; `SENTRY_DSN`
+   present in `estalara-secrets`; hardened shared initialiser per Rule J), so the gap is precisely
+   the **absence** case, not the alert case.
+3. **The output of record has no reader.** `grep -rn schema_validation_history` over `apps/`,
+   `packages/`, `infra/` returns: the writer (`:252`), the cron's own 24h dedup query (`:284`), its
+   tests, and a Drizzle type in `packages/db`. **No dashboard, no API route, no alert consumes it.**
+   From tonight the project writes a table nobody reads. (Recorded in RETRO-261 §3 as a
+   producer-only stream **activated** by this merge — deliberately not counted as a CHECK-B finding,
+   since neither the table nor the writer is new.)
+
+**AC:**
+
+1. A named owner and a date for the first-run verification, recorded where B.6's flip condition
+   lives — not in a session note.
+2. An absence-of-signal detector: assert _"a successful `validate_schemas` run occurred in the last
+   26h"_ somewhere that fails loudly, and prove it fires by **executing** the negative case (skip or
+   fail a run and show the alarm). Rule Q: a green check that has never observed its own failure is
+   not evidence. Prefer the cheapest thing that works — a heartbeat write plus a check against it —
+   over new infrastructure.
+3. Either a reader for `schema_validation_history` (the admin surface is the obvious home) **or** a
+   written statement of why the table is write-only and what does consume drift, so the next audit
+   does not re-file it as a half-wire.
+4. Do **not** flip §Snapshot.1 row B.6 as part of this ticket — that flip belongs to the observed
+   run plus the observed row, and pre-flipping it is the defect Rule AA exists to stop.
+
+cross_ref: [RETRO-261 §3 (CHECK B note) / §4a LG-4 / §5 item 3; FOLLOW-817; FOLLOW-891;
+`apps/data-quality/src/crons/schema_validation.py:252,284,360,510`; `docs/MASTER_DESIGN.md:469`
+(§Snapshot.1 row B.6); Rule AJ (adjacent — this is the absence-of-signal case AJ does not cover);
+Rule AA; Rule Q; Rule J]
+
+---
+
+## FOLLOW-894 — ESC-053 contradicts itself in the half an operator executes, and its RESOLVED record cannot say which value was pasted
+
+source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: next recommended_agent:
+pm-orchestrator priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
+
+**The correction landed in the prose and not in the instruction** — the exact tier-0-versus-prose
+ordering the 2026-08-05 Rule AI amendment was minted for, applied to an escalation instead of an
+agent definition.
+
+- ESC-053 ⚠️ CORRECTION block: _"**Use `DATABASE_URL_DIRECT`** (pooler, **session mode**) as the
+  VALUE"_, arguing session mode is the safe `psycopg2` choice because transaction mode _"breaks
+  prepared statements and session-level state"_.
+- ESC-053 **Required action**, item 3 — the numbered list an operator actually reads and runs —
+  still says _"the prod Supabase pooler connection string the control-plane uses
+  (`DATABASE_URL_ADMIN` in Doppler `prd`)"_, which is the **transaction-mode** pooler on `:6543`.
+- The RESOLVED note records only _"`DATABASE_URL` (110 chars, pooler host)"_. **Both candidates are
+  pooler hosts of similar length, so the durable record cannot distinguish them.**
+
+**Operational risk is low and should be stated so this is not over-escalated:**
+`schema_validation.py` uses plain `cur.execute` with a `RealDictCursor` (`:230,249,281,397`) — no
+prepared statements, no session-level state — so both ports work for what the cron does. **The
+defect is the record, not the runtime.** A future reader following ESC-053's Required action will
+paste the transaction-mode pooler while the escalation's own analysis says not to.
+
+**Second, smaller item in the same artefact:** ESC-053 cites `crons/schema_validation.py:209-211` as
+the `DATABASE_URL` read site three times. At HEAD the read is `_get_db_connection()` at
+**`:225-230`**; `:209-211` is inside `_compute_coverage()`. §Snapshot.1 row B.6 inherited the wrong
+citation. Correct both.
+
+**AC:**
+
+1. Determine which pooler value is actually in `estalara-secrets` — by a **read-only probe that
+   reports FORM only** (host suffix and port, never a value), the same technique already used to
+   verify the key set. Do not ask the operator to recall it.
+2. Reconcile ESC-053: one recommended value, stated once, in the Required-action list as well as the
+   correction block; append a dated note recording what was actually provisioned rather than
+   rewriting history.
+3. Fix the `:209-211` → `:225-230` citation in ESC-053 and in §Snapshot.1 row B.6 (coordinate with
+   FOLLOW-891, which is already editing that row — do not both edit it).
+4. One sentence in `docs/runbooks/MODAL_PROD_STANDUP.md §5`, next to the existing Redpanda and
+   Upstash both-name-pairs traps: **Doppler `prd` names the IPv6-only direct host `DATABASE_URL` and
+   the session-mode pooler `DATABASE_URL_DIRECT`.** This trap has now cost this project twice — the
+   2026-06 admin 503s and this near-miss — and it is written down in neither runbook.
+
+cross_ref: [RETRO-261 §4b CB-2 / §5d / §6 P-41 (sighting 2); FOLLOW-817; FOLLOW-891; FOLLOW-895;
+ESC-053; `apps/data-quality/src/crons/schema_validation.py:225-230`; `docs/MASTER_DESIGN.md:469`;
+`docs/runbooks/MODAL_PROD_STANDUP.md §5`; memory `project_admin_db_url_pooler_28p01`; Rule AI
+(2026-08-05 tier-0 amendment); Rule AO]
+
+---
+
+## FOLLOW-895 — A production DB password may have been pasted into a session transcript during the ESC-053 execution; every durable artefact describes that event counterfactually and no rotation ticket exists
+
+source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent: **CEO /
+operator decision + pm-orchestrator** priority: **P0** estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Filed because the repo cannot answer the question, and that is the finding.**
+
+The RETRO-261 dispatch brief states, in the PM's own account, that ESC-053's `DATABASE_URL`
+instruction was read literally, the wrong variable was handed to the operator, **"the operator ran
+it and the production DB password landed in a session transcript"**, and the error was caught only
+afterwards by a credential-free reachability probe run from inside Modal.
+
+**Every durable artefact in this repository describes the same event in the counterfactual:**
+
+- ESC-053 ⚠️ CORRECTION — _"Pasting Doppler's `DATABASE_URL` **would therefore give**
+  `schema_validation` a connection string it can never open"_.
+- `backlog/QUEUE.md` session-104 head — _"**A trap caught before it fired.** … Pasting the literal
+  value **would have** given …"_.
+- commit `45fbfe23` message — _"the literal value **would have** produced a nightly failure into
+  nobody's log"_.
+
+**No artefact records an exposure.** A credential-scoped grep for `rotate` / `rotation` across
+`QUEUE.md` and `ESCALATIONS.md` returns nothing relevant. The standing operator rule that would have
+been crossed is `docs/runbooks/OPERATOR_SESSION_2026-07-12.md:45` — _"**Never paste raw secret
+values** anywhere."_
+
+**Either the durable record is wrong or the brief is. In both readings there is no owner**, and the
+retro cannot resolve it from inside the repo — which is precisely why it is filed rather than
+adjudicated here. This ticket does not assert that a leak occurred.
+
+**AC:**
+
+1. **Establish which account is true**, from the session transcript itself, and record the answer in
+   `ESCALATIONS.md` — including "no exposure occurred", if that is the answer. An unrecorded
+   near-miss and an unrecorded exposure are indistinguishable six weeks later, and this repo has
+   already demonstrated (ESC-044) how expensive an unverifiable credential claim becomes.
+2. **If a value was exposed:** a rotation decision with a named owner and a date. Note the blast
+   radius before acting — the Supabase DB password appears in `DATABASE_URL`, `DATABASE_URL_ADMIN`
+   and `DATABASE_URL_DIRECT` in Doppler `prd`/`stg` (byte-identical per ESC-052), in Vercel prod,
+   and now in Modal `estalara-secrets`; a rotation that misses one of those takes a live surface
+   down, and `modal secret create --force` would take the description pipeline **and** chat NLP
+   **and** the drift cron down at once (ESC-053, `MODAL_PROD_STANDUP.md §5`).
+3. **If no value was exposed:** say so explicitly in ESC-053's RESOLVED block, so the counterfactual
+   wording is confirmed rather than merely inherited.
+4. **The generalisable half, and the cheap one:** an escalation whose Required action names a
+   **secret VALUE** should carry a **credential-free identifying probe** (host/port/length/prefix,
+   never a value) that lets the operator confirm they hold the right one **before** pasting.
+   ESC-053's own resolution used exactly this technique — after the fact. Write it into
+   `MODAL_PROD_STANDUP.md` / `OPERATOR_SESSION_*` as a step, not into `CONVENTIONS_PATCH.md`
+   (RETRO-261 §6 P-41: this is an executable convention, not a behavioural rule, and P-41 stands at
+   1 prior and is not promoted).
+
+cross_ref: [RETRO-261 §4b CB-3 / §5 item 1 / §6 P-41; FOLLOW-817; FOLLOW-894; ESC-053; ESC-052;
+ESC-044 (precedent: an unverifiable credential/attestation claim);
+`docs/runbooks/OPERATOR_SESSION_2026-07-12.md:45`; `docs/runbooks/MODAL_PROD_STANDUP.md §5`; memory
+`project_admin_db_url_pooler_28p01`]

@@ -73,6 +73,7 @@ declare -A NON_ROUTING=(
   [".github/workflows/ci.yml"]="invokes --self-test only; never reads a PR verdict"
   ["CLAUDE.md"]="names the exit-0 precondition in prose; enumerates no other code and issues no routing instruction"
   [".claude/agents/devops-engineer/lessons.md"]="append-only lessons log"
+  ["backlog/ESCALATIONS.md"]="append-only backlog record"
   ["backlog/FOLLOW_UPS.md"]="append-only backlog record"
   ["backlog/QUEUE.md"]="append-only backlog record"
   ["backlog/RETROSPECTIVES.md"]="append-only backlog record"

@@ -47,6 +47,22 @@
 # are. Adding it would abort on those deliberate no-match greps instead.
 set -uo pipefail
 
+# ── Shared with the sibling gate (FOLLOW-857 AC(3)) ───────────────────────────
+# The preflight helpers, the repo-root guard and the self-test FIXTURES below
+# are shared with scripts/check-rule-h.sh. The pair diverged for 84 days —
+# Rule H never got this file's count normalisation and its Pattern 2 therefore
+# could not fail at all — because nothing compared them. One definition now.
+# NOTE: nothing in the shared lib touches this file's OUTPUT FORMAT CONTRACT
+# (the WARN and "Violations found" lines above); those are unchanged, byte for
+# byte, and gh-pr-checks-verified.sh still parses them exactly as before.
+WOD_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || WOD_LIB_DIR=""
+if [[ -z "$WOD_LIB_DIR" || ! -f "$WOD_LIB_DIR/lib/wired-or-dead-common.sh" ]]; then
+  echo "ERROR: PREFLIGHT FAILED — cannot locate scripts/lib/wired-or-dead-common.sh." >&2
+  exit 3
+fi
+# shellcheck source=lib/wired-or-dead-common.sh
+source "$WOD_LIB_DIR/lib/wired-or-dead-common.sh"
+
 # ── Dependency preflight (FOLLOW-842 AC(1)) ───────────────────────────────────
 # WHY. This script extracts every exported symbol with `grep -oP` (a GNU
 # extension, absent on macOS/BSD and busybox) inside `mapfile` (bash >= 4).
@@ -58,62 +74,21 @@ set -uo pipefail
 # matcher here also silently empties the set every PR is compared against.
 # Refuse to run degraded. A named exit 3, never a verdict.
 preflight_dependencies() {
-  local cmd missing probe
-
-  if [[ -z "${BASH_VERSINFO[0]:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-    echo "ERROR: PREFLIGHT FAILED — bash >= 4 is required (the 'mapfile' builtin)." >&2
-    echo "  Found: ${BASH_VERSION:-unknown}. macOS ships bash 3.2 as /bin/bash;" >&2
-    echo "  install a newer bash (brew install bash) and re-run." >&2
-    exit 3
-  fi
-
-  missing=""
-  for cmd in git find xargs sort wc basename; do
-    command -v "$cmd" >/dev/null 2>&1 || missing="$missing $cmd"
-  done
-  if [[ -n "$missing" ]]; then
-    echo "ERROR: PREFLIGHT FAILED — required command(s) not on PATH:$missing" >&2
-    exit 3
-  fi
-
+  wod_require_bash4
+  wod_require_commands git find xargs sort wc basename
   # Probes the EXACT construct the symbol extractor uses — -P, \K, and the
   # identifier class — rather than merely "does -P exist". A grep whose PCRE
   # build lacks \K would pass a weaker probe and still extract nothing.
-  probe="$(printf 'export const alphaProbe = 1\n' \
-    | grep -oP 'export\s+const\s+\K[A-Za-z_$][A-Za-z0-9_$]*' 2>/dev/null || true)"
-  if [[ "$probe" != "alphaProbe" ]]; then
-    echo "ERROR: PREFLIGHT FAILED — this 'grep' cannot run the symbol extractor." >&2
-    echo "  grep: $(command -v grep 2>/dev/null || echo 'not found')" >&2
-    echo "  Probe 'export const alphaProbe = 1' | grep -oP ...\\K... returned" >&2
-    echo "  '${probe}', expected 'alphaProbe'. PCRE (-P) with \\K is a GNU grep" >&2
-    echo "  extension; BSD/macOS/busybox grep does not have it." >&2
-    echo "  Without it EVERY symbol extraction returns nothing, and because this" >&2
-    echo "  script runs without 'set -e' the result would be 'Violations found: 0'" >&2
-    echo "  and 'Rule I passed' over a repo full of dead exports." >&2
-    echo "  Refusing to run degraded. Install GNU grep (brew install grep) and re-run." >&2
-    exit 3
-  fi
+  wod_probe_pcre "Rule I" \
+    'export\s+const\s+\K[A-Za-z_$][A-Za-z0-9_$]*' \
+    'export const alphaProbe = 1' \
+    'alphaProbe'
 }
 
 # Guard R1: the repo root must resolve, and the cd into it must succeed.
-# Previously `ROOT="$(git rev-parse --show-toplevel)"` was unguarded: with git
-# missing or outside a working tree, ROOT became "" and `cd ""` is a SUCCESSFUL
-# no-op in bash, so the scan ran against whatever the caller's cwd happened to
-# be — typically finding no packages/ at all and reporting a clean pass.
+# Body shared with check-rule-h.sh — see wod_resolve_repo_root().
 resolve_repo_root() {
-  local root
-  root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [[ -z "$root" ]]; then
-    echo "ERROR: PREFLIGHT FAILED — not inside a git working tree." >&2
-    echo "  'git rev-parse --show-toplevel' produced nothing, so there is no repo" >&2
-    echo "  root to scan. Running from the current directory instead would report" >&2
-    echo "  a clean pass over a tree that contains none of the code this gates." >&2
-    exit 3
-  fi
-  cd "$root" || {
-    echo "ERROR: PREFLIGHT FAILED — cannot cd into repo root '$root'." >&2
-    exit 3
-  }
+  wod_resolve_repo_root
 }
 
 # ── Self-test mode (FOLLOW-842 AC(3)) ─────────────────────────────────────────
@@ -293,6 +268,19 @@ if [[ "${1:-}" == "--self-test" ]]; then
     echo "SELF-TEST FAIL: git index mode is $st_git_mode, expected 100755."
     echo "  A chmod alone does not stick: git update-index --chmod=+x $st_self"
   fi
+
+  # ── S9: THE SHARED FIXTURE (FOLLOW-857 AC(3)) ──────────────────────────────
+  # The same throwaway repos, built by the same function, are asserted against
+  # scripts/check-rule-h.sh in ITS --self-test. If either gate stops failing on
+  # an orphan lib export, the shared fixture goes red on both sides. This is the
+  # control that was missing when Rule H's Pattern 2 spent 84 days unable to
+  # fail while this file's equivalent code had been fixed three days after it
+  # shipped. Layout note: the symbol lives at packages/a/src/lib/<stem>.ts so it
+  # satisfies Rule H's added-file filter AND this file's find(1) filter at once.
+  wod_run_shared_fixtures "$st_self" "Rule I" \
+    "zero non-test importers" "Rule I passed"
+  st_failures=$((st_failures + WOD_SHARED_FAILURES))
+  st_passes=$((st_passes + WOD_SHARED_PASSES))
 
   echo ""
   if [[ "$st_failures" -gt 0 ]]; then

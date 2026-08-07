@@ -286,9 +286,10 @@ _strip_log_timestamp() {
 #
 # ANCHORED AT LINE START AND LINE END, and that is load-bearing. check-rule-i.sh emits
 # the real verdict as `echo "Violations found    : $VIOLATIONS"` at column 0, but its
-# exit-3 DIAGNOSTICS quote the same phrase inside prose, twice:
-#   "  script runs without 'set -e' the result would be 'Violations found: 0'"
-#   "  The symbol extractor returned nothing at all. Reporting 'Violations found: 0'"
+# exit-3 DIAGNOSTICS quote the same phrase inside prose. There were two; FOLLOW-857
+# reworded the preflight one away at the producer, and the D3 one necessarily remains:
+#   "  script runs without 'set -e' the result would be 'Violations found: 0'"  [removed]
+#   "  The symbol extractor returned nothing at all. Reporting 'Violations found: 0'"  [live]
 # Both go to stderr, and a GitHub job log interleaves stderr into the same bytes this
 # gate downloads. Unanchored, this function read '0' out of that prose — so a Rule I
 # job that FAILED CLOSED with exit 3 reached the gate as "count 0, zero symbols", which

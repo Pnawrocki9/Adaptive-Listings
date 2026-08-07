@@ -506,6 +506,44 @@ jobs:
       - name: Run Rule H check
         run: bash scripts/check-rule-h.sh origin/main
 
+  # ── Rule H gate self-test (FOLLOW-857) ──────────────────────────────────────
+  # WHY THIS IS A SEPARATE JOB. The `rule-h` job above only inspects files the
+  # PR's own diff ADDS (`--diff-filter=A base...HEAD`), so on the overwhelming
+  # majority of PRs — including the one that fixed this — Pattern 2 evaluates
+  # zero symbols and the job is green without having exercised a single line of
+  # the code under test. A green `rule-h` is therefore NOT evidence the gate
+  # works. This job is that evidence, and it must be GREEN on every PR.
+  #
+  # WHAT IT PROTECTS. Pattern 2's consumer count was built by a pipeline ending
+  # `| wc -l || echo 0`. Under `set -euo pipefail`, when a symbol had ZERO
+  # non-test importers — the exact condition the gate exists to catch — the
+  # trailing `grep -v` exited 1, pipefail carried that past `wc -l`'s own "0",
+  # and `|| echo 0` appended a SECOND "0". `[[ "0\n0" -lt 1 ]]` is an arithmetic
+  # syntax error, which inside an `if` reads as false, so the hard gate printed
+  # `OK: ... importer(s).` over a genuine orphan export and exited 0 — for 84
+  # days, from 0a0a6880 (2026-05-14) to this fix. The gate's green was
+  # anti-correlated with the truth on the only pattern it uniquely covers.
+  #
+  # SHARED FIXTURES. The first two fixtures come from
+  # scripts/lib/wired-or-dead-common.sh and are run against BOTH gates — here
+  # and in `rule-i-gate-self-test`. The pair diverged precisely because nothing
+  # compared them: check-rule-i.sh got the equivalent hardening three days after
+  # check-rule-h.sh shipped without it. If either gate stops failing on an
+  # orphan lib export, both self-tests go red.
+  #
+  # Hermetic and offline: every fixture builds a throwaway git repo in a temp
+  # dir, so nothing here depends on this repo's own state.
+  #
+  # Hard gate — no continue-on-error.
+  rule-h-gate-self-test:
+    name: Rule H gate self-test (FOLLOW-857)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the Rule H gate self-test (validates the gate itself)
+        run: bash scripts/check-rule-h.sh --self-test
+
   # ── Staff-write audit atomicity hard gate (ADR-0018 §3a / FOLLOW-607) ────
   # Every staff-audited WRITE (data mutation + staff_audit_log insert) must
   # commit both in ONE db.transaction() — stops FOLLOW-596/597/598 (and any
@@ -833,6 +871,20 @@ jobs:
       - name: Lint the merge gate and its exit-code corpus checker
         run: |
           shellcheck scripts/gh-pr-checks-verified.sh scripts/check-gate-exit-codes.sh
+
+      # FOLLOW-857 added scripts/lib/wired-or-dead-common.sh, a second sourced
+      # helper carrying a `# shellcheck source=` directive, so -x -P SCRIPTDIR is
+      # required here as it is for the Sentry family above. Linted in this job
+      # rather than a new one: a new job name would have to be added to branch
+      # protection before it was required, and an unrequired lint job is not a
+      # control. The job's title still says "Sentry gate family" for the sake of
+      # the required-check name; its scope is now every gate family in scripts/.
+      - name: Lint the wired-or-dead gate pair and its shared helper
+        run: |
+          shellcheck -x -P SCRIPTDIR \
+            scripts/check-rule-h.sh \
+            scripts/check-rule-i.sh \
+            scripts/lib/wired-or-dead-common.sh
 
       - name: Assert the source= directives actually resolve (not silently skipped)
         run: |

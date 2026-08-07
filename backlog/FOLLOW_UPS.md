@@ -29789,6 +29789,13 @@ cross_ref: [FOLLOW-866 (C-07 v1.3); ESC-049 + addendum; FOLLOW-815 (PR #688); MA
 
 ## FOLLOW-868 — `compliance@estalara.com` ships as the Art. 7(3) withdrawal channel and nothing verifies the mailbox exists or is monitored
 
+**CLOSED 2026-08-07 — CEO operator attestation (session 103):** Piotr confirmed directly that
+`compliance@estalara.com` **exists and will be monitored**. That is the accountable statement the
+HALF_WIRE_P finding asked for: the Art. 7(3) channel named in TOS v1.4 is real, with a named owner
+(CEO). Re-review trigger: if DSR-mailbox handling is ever delegated or the address changes, a new
+attestation (and a TOS bump for the address change) is required — FOLLOW-710's stub carries the cost
+warning.
+
 source_retro: RETRO-257 (§3 CHECK B, §4a LG-1, §5a) source_ticket: FOLLOW-815 recommended_sprint:
 now recommended_agent: compliance-engineer priority: **P1** estimated_hours: 2 depends_on: []
 blocks: [] promoted_to_queue: false **UNFROZEN** — the session-95 standing freeze carves out P1.

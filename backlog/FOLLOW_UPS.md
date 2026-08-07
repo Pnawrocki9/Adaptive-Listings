@@ -29719,3 +29719,43 @@ NOT have a set line" exception), 861 (24/19/5 re-measured and confirmed; must al
 discharge to the next merge reporting New > 0), 850 (CONVENTIONS_PATCH.md:281 asserts a pre-push lefthook gate
 that runs nowhere), 858 (reuse wod_resolve_repo_root), 859 (cheaper via the SNAPSHOT_FIELDS derivation), 828
 (the corpus is six agent definitions, not five), 779 (43 rules against §Snapshot.6's 42). -->
+
+---
+
+## FOLLOW-866 — Rewrite C-07's storage claim per the ESC-049 CEO/DPO ruling: scope the sentence to reality, re-derive §Q3/§Q4, re-verify all three stores
+
+source_retro: n/a (ESC-049 ruling, 2026-08-07) source_ticket: ESC-049 recommended_sprint: now
+recommended_agent: compliance-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: []
+promoted_to_queue: true
+
+**Not frozen:** P1 carve-out — this corrects a document that gates a CEO sign-off and whose
+load-bearing premise is currently false as read.
+
+**The ruling (CEO+DPO, 2026-08-07, ESC-049 option 1).** The `chat.message.sent` payload write to
+ClickHouse is deliberate §H.8 design; the document must state it, not hide it. C-07's twice-repeated
+sentence — "No raw chat text is written to Redis, ClickHouse, or Postgres in the current
+implementation" — was verified only against `redis_writer.py` and is false as an ordinary reader
+would read it: `packages/sdk/src/index.ts:1519` emits the event,
+`packages/shared/src/schemas/events/chat.ts:38-40` gives its payload a `message` field of ≤4000
+chars (PII-scrubbed: emails/phones masked), and `apps/ingest/src/clickhouse-producer.ts:110` writes
+`JSON.stringify(event.payload)` into `events.payload`
+(`infra/clickhouse/migrations/0001_create_events.sql:41`).
+
+**AC:** (1) both instances of the sentence (`C-07:17`, `C-07:274`) rewritten to state explicitly: no
+**unscrubbed identifiers** reach any store, AND what IS retained in ClickHouse —
+`chat.message.sent.payload.message`, ≤4000 chars, emails/phones replaced with placeholders, retained
+per the `events` table's TTL (cite the actual TTL from the migration/settings, do not guess); (2)
+§Q3 (no-new-disclosure) and §Q4 (LI basis) **re-derived against the corrected premise**, with the
+reasoning shown — if either conclusion changes, STOP and escalate rather than absorbing it; (3) all
+**three** stores re-verified with citations, not only Redis — Postgres included this time; (4) the
+revision-history row records that the previous wording was verified against one store of three; (5)
+cross-check `ropa.md` and `dpia.md` for any restatement of the old sentence and correct those in the
+same PR (Rule S — no sibling left).
+
+**Scope guard:** do NOT touch `dpia.md` §8 (the DSR-endpoint correction is FOLLOW-815's, in flight)
+and do NOT touch the consent text or anything under `apps/control-plane/src/app/api/v1/consent/` — a
+concurrent worker owns that surface.
+
+cross_ref: [ESC-049 (ruling recorded); §H.8; FOLLOW-845 (the error-body leg, closed); FOLLOW-838;
+`docs/compliance/C-07-chat-retention-scope.md:17,:274`;
+`packages/shared/src/schemas/events/chat.ts`]

@@ -1,5 +1,40 @@
 # Compliance Engineer — Lessons Learned
 
+## 2026-08-07 / FOLLOW-866
+
+**What I documented/implemented:** Corrected C-07's twice-repeated "no raw chat text is written to
+Redis, ClickHouse, or Postgres" claim (ESC-049 CEO/DPO ruling, option 1) — it had been verified
+against one of the three named stores. Rewrote both instances to state what is actually true (no
+unscrubbed identifiers; PII-scrubbed-for-email/phone-only chat message text IS retained in
+ClickHouse for 13 months by deliberate §H.8 design, TTL cited from the real migration). Re-derived
+Q3/Q4 against the corrected premise: Q4 unchanged, Q3 appears to change — flagged for CEO/DPO
+re-ruling rather than resolved unilaterally (a lawful-basis/disclosure-scope call is not mine to
+make). Swept `ropa.md` and `dpia.md` (excluding the concurrent worker's §8) for restatements — found
+and fixed three more (a Retention Schedule table row that omitted the ClickHouse store entirely, a
+ROPA Activity-16 "C-07 boundary assertion" row, and a DPIA §3.1 paragraph literally labeled "binding
+— must never be violated" that was the same false claim in its strongest wording).
+
+**Where a disclosure could have drifted from shipped behavior:** The original C-07 v1.0/v1.1 author
+verified the Redis write path in detail (function-level, with test citations) but never ran the
+equivalent grep against `clickhouse-producer.ts` or `packages/db/src/schema/`. A citation that is
+real and detailed for one of three named stores reads, to a DPO or CEO skimming for a sign-off,
+exactly like a citation that covers all three — the specificity of the true part hides the absence
+of the other two. The same failure pattern had already independently reproduced itself across
+`dpia.md` (§3.1's "binding" boundary, §13.4 twice) and `ropa.md` (a table row, an Activity's
+boundary-assertion row) — five more copies of one uninspected premise, in the same repo, discovered
+only because this ticket forced a document-wide grep rather than a single-sentence patch. It also
+reproduced a third time in live, user-facing consent copy (`consent-banner.ts`,
+`platform-registration/lib.ts`, and the CI-synced Markdown mirror of that same string) — found but
+correctly left alone, since that surface belonged to a concurrent worker on this ticket; flagged
+prominently in the PR instead of silently fixed, since a live false statement to a data subject
+outranks the internal docs this PR corrects.
+
+**A guardrail I'd add:** When a compliance sentence names N stores/mechanisms, require the citation
+list to visibly enumerate all N with a per-store verification note (even a one-line "checked,
+absent" per store) — not just cite whichever store the author happened to be working in that
+session. A sentence with three nouns and one citation should read as suspicious on its face, the
+same way a retention promise with no TTL citation already does under Rule N.
+
 ## 2026-06-08 / FOLLOW-218
 
 **What I documented/implemented:** Added DPIA §13.3 disclosure for the `estalara_intent_*`

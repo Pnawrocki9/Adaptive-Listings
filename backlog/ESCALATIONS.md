@@ -3443,3 +3443,78 @@ against `prd`. **Every merged migration has therefore been applied to production
 4. The `stg` Doppler config is retired as part of FOLLOW-873 rather than being left as a live trap.
 
 Revisit a real staging when FOLLOW-820's exit gate makes production traffic real.
+
+---
+
+## OPEN — ESC-054: should LLM-generated long-form copy ride the `signal_count >= 2` escape hatch? Two behavioral signals currently bypass the cold-start guard on the description axis
+
+**Filed by:** sdk-engineer (FOLLOW-877, session 104) **Date:** 2026-08-07 **Affects:**
+`packages/sdk/src/core/adapt-floor.ts`, `packages/sdk/src/index.ts:827-859`, FOLLOW-343, FOLLOW-819,
+FOLLOW-820 **Type:** architectural (product behavior on a buyer-facing surface)
+
+**Nothing is on fire.** The SDK is not live on the pilot page — FOLLOW-820 is that gate. This is a
+decision request filed BEFORE a behavior change, not a report of one.
+
+**Description.** `index.ts:827-829` gates all DOM adaptation behind a disjunction:
+
+```ts
+const aboveFloor =
+  resp.confidence >= DOM_ADAPT_CONFIDENCE_FLOOR || // 0.5
+  currentIntentState.signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT; // 2
+```
+
+Both `applyDirectives()` and the fire-and-forget `applyDescriptionAdaptation()` sit inside that one
+block. On the **directive** axis the disjunction is harmless: the server gates independently at
+`confidence > 0.6` (`route.ts:86,275`), so a low-confidence session gets `directives: []` no matter
+what the SDK decides. On the **description** axis there is no server-side confidence parameter at
+all (`grep confidence apps/control-plane/src/app/api/adapt/description/route.ts` → 0 hits), so
+`signal_count >= 2` is the whole gate. Its remaining guard is `archetype !== 'neutral'`
+(`core/adapt-description.ts:390`).
+
+Two signals is a lower bar than it reads: the init-time `device_type.*` prior (`index.ts:1031-1036`)
+already increments `signal_count`, so **a single scroll-depth milestone reaches 2**. FOLLOW-343 /
+AUDIT-2026-06-19 F-01 opened this floor specifically to stop the cold-start wrong-archetype
+reshuffle at ~0.05–0.10 confidence. On the one axis with no server-side threshold, that guard is
+bypassed within seconds of scrolling — and what it lets through is not a headline swap but an
+LLM-rewritten property description.
+
+**Pre-existing, not introduced here.** Shipped since FOLLOW-159/343; surfaced by FOLLOW-816's
+measurement axis (RETRO-259 §4b CB-1). Current behavior is now locked by
+`packages/sdk/src/__tests__/follow-877.test.ts` so it cannot drift silently either way.
+
+**The tension, weighed rather than asserted:**
+
+- **For keeping the disjunction.** `DOM_ADAPT_MIN_SIGNAL_COUNT` is a deliberate "the buyer showed
+  real intent" escape hatch. FOLLOW-816 measured behavior-only confidence peaking at **0.3655** on a
+  real listing page — under a confidence-only gate the description axis would essentially never fire
+  for a non-quiz, non-chat buyer, which is most buyers. Gating on confidence alone would make the
+  feature dead in exactly the cold-start case it was built for.
+- **Against.** FOLLOW-343's rationale is about the ARCHETYPE being wrong, not about the buyer being
+  disengaged, and two scroll events are not evidence that the archetype is right. The blast radius
+  differs by axis: a wrong headline is a sentence; a wrong long-form description is the whole
+  listing body rewritten for the wrong buyer, it costs an LLM call, and it is the surface with the
+  greatest misrepresentation risk (§V.4.3).
+- **The asymmetry to decide with, not around.** At confidence 0.50–0.59 the server already returns
+  `[]` for directives while the SDK fetches and applies a description. So the description axis is
+  ALREADY the more permissive one by design, at every confidence level, before `signal_count` is
+  considered. Whether that was intended is precisely the open question — it is documented in
+  MASTER_DESIGN §E.7 as intentional ("early behavioral signals can produce confident description
+  personalisation before the archetype clears the tighter directive gate"), but that text was
+  written without the disjunction in view.
+
+**My recommendation (not enacted — this ticket ships documentation, tests and a decision request
+only):** keep the disjunction, and raise its bar on the description axis only, e.g. require
+`signal_count >= 5` there — the same boundary the SDK already treats as "enough evidence to be worth
+reporting", since `intent.snapshot` fires every 5 signals (`index.ts:1219-1225`). That preserves the
+cold-start escape hatch the feature depends on while removing the one-scroll-to-LLM-rewrite path,
+and it needs one new constant rather than a redesign. A confidence -only gate on the description
+axis is the alternative, and it should only be chosen with the knowledge that 0.3655 was the
+measured behavior-only peak — i.e. it would mostly turn the feature off for non-quiz sessions.
+
+**Required action:** CEO/CPO ruling on one of: (a) keep as-is and record it as intended; (b) raise
+the description-axis signal bar (my recommendation); (c) gate the description axis on confidence
+only. Then a ticket for the SDK change, an amendment to MASTER_DESIGN §E.7's gating ladder note, and
+a deliberate inversion of `follow-877.test.ts` D-1 — which is designed so that flipping it IS the
+record of the decision.
+
+**Resolution:** <empty until resolved>

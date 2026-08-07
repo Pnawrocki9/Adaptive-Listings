@@ -684,3 +684,45 @@ unquoted numeric epoch that no production writer ever emits. Generalized rule fo
 blocks: when I claim an emitted signal has a real consumer, the grep is necessary but not sufficient
 if the consumer writes **after** the response is returned — assert on the datastore, and make the CI
 fixture use the byte-shape the production writer produces, not a hand-written one.
+
+---
+
+**2026-08-07 · FOLLOW-875 (P1) + FOLLOW-877 (P2, folded)**
+
+**What I built:** Corrected the attribution of FOLLOW-816's hop-10 red on two axes. The SDK apply
+gate at `index.ts:827-829` is a **disjunction** (`confidence >= 0.5 || signal_count >= 2`) and never
+suppressed anything; the gate that decides whether directives exist is `route.ts:275`'s server-side
+`confidence <= 0.6 → []`, i.e. the bar is **strictly greater than 0.6**. Rewrote runbook §9 into
+§9.1 (which gate bit) + §9.2 (the reachability judgement), rewrote the `adapt-floor.ts` docblock
+that claimed the 0.5 floor was the description axis's "SOLE" gate, replaced the harness's floor
+assertion with one that reads `CONFIDENCE_THRESHOLD` and its comparison operator out of `route.ts`
+at run time and asserts both sides of the exchange plus `directives.length > 0`, added
+`follow-877.test.ts` (8 mutation-proven cases), corrected FOLLOW-819 AC(1) and FOLLOW-872 AC(3),
+filed ESC-054 (gate-change decision request, not enacted) and FOLLOW-881 (Master_Design carries the
+same wrong claim in three places). Bundle delta **0 bytes** (42912 gzip before and after).
+
+**What was uncertain (wiring/perf/compat):** Whether "0.3655 is the behavior-only ceiling" was even
+the right description of the number. It was not, and the arithmetic settled it in one command:
+`normalize(BASE_PRIOR × damped(device_type.desktop))` yields `neutral = 0.36554663991975933` —
+**identical to all 16 significant digits** of the measured peak. So the peak is the cold-start prior
+after a single init-time update, reached before any behavioral event, and every behavioral signal
+afterwards pushed it _down_. The `PASSES=4` bit-identical re-run has a stronger cause than observer
+saturation: the peak is set at t=0. Simulating the reachable signal set gave hard numbers for the
+"is `> 0.6` reachable" question — 47 `listing.viewed` events to unseat `neutral` past the 0.05
+hysteresis and 139 to pass 0.6, versus 7 `filter.applied` or 11 `feature.expanded` events, because
+those two paths apply their boosts to the already-normalized posterior and **bypass
+`BEHAVIORAL_DAMPING` entirely**. That asymmetry is not documented anywhere and it is the whole
+answer to FOLLOW-819's problem statement.
+
+**A guardrail I'd add:** _When an assertion names a constant, assert that the constant is the one
+the deciding code reads — and prove it by mutating the code, not by re-reading it._ Two independent
+reviewers wrote and merged an assertion against `DOM_ADAPT_CONFIDENCE_FLOOR` for a decision that
+constant does not participate in, because the constant was real, exported, and adjacent. Two things
+caught it here, and both were cheap: (1) mutating `||` → `&&` in `index.ts` and re-running — 4 of my
+8 new tests went red, which is the only evidence that they test the operator rather than the
+scenario; (2) **actually executing the harness** against a throw-away fixture page, which surfaced a
+gap no amount of reading would have: the local mock does **not** echo the client confidence (request
+0.3655, response 0.1), so a response-only assertion measures the mock's fiction while a request-only
+one ignores the value `index.ts:828` reads. Requiring both is now the assertion. Same run also
+reproduced 0.3655 on a page with none of the pilot's content — which is what promoted "the peak is
+the cold-start prior" from a derivation to a measurement.

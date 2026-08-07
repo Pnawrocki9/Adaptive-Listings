@@ -10,6 +10,21 @@
  *   hop 4  — the SDK POSTs a real event batch to the ingest endpoint and gets a 2xx ACK
  *   hop 10 — at least one adaptation directive is observably applied to the live DOM
  *
+ * FOLLOW-875 — WHAT HOP 10 IS ASSERTED AGAINST, AND WHY IT CHANGED:
+ *   The first version of this script asserted peak REQUEST confidence against the SDK's
+ *   `DOM_ADAPT_CONFIDENCE_FLOOR` (0.5). Both halves of that were the wrong subject:
+ *     (a) the SDK gate is a DISJUNCTION (`index.ts:827-829`) — `signal_count >= 2` alone opens
+ *         it, and the init-time `device_type.*` prior already spends one count, so the second
+ *         branch is true after a single scroll milestone. The floor suppressed nothing;
+ *     (b) the gate that decides whether directives EXIST is server-side and higher:
+ *         `route.ts:275` returns `directives: []` for `confidence <= CONFIDENCE_THRESHOLD`
+ *         (0.6, `route.ts:86`) over the CLIENT-SENT `body.confidence`. The bar is strictly
+ *         greater than 0.6.
+ *   A run at confidence 0.55 therefore cleared the old assertion, mutated this mock's DOM, and
+ *   would still have received `[]` from production — a green this harness could not honour.
+ *   Hop 10 now asserts the RESPONSE, against the server threshold read out of `route.ts` at
+ *   run time, plus the directive count the response actually carried.
+ *
  * NOT a CI test, deliberately. It needs four external processes that do not exist on a CI
  * runner (SvelteKit dev server, Spring backend, a decision endpoint, an ingest endpoint), so
  * it lives in `scripts/dev/` next to `mock-decision-server.mjs`. `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`
@@ -35,7 +50,7 @@
  */
 
 import { createRequire } from 'node:module';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 // Playwright is a devDependency of `@estalara/sdk` (it owns the browser matrix), not of the repo
 // root — resolving from there keeps this dev-only script out of the root lockfile and off every
@@ -54,6 +69,47 @@ const SESSION_JSON = process.env.SESSION_JSON ?? '';
 
 /** Consent key the SDK reads (`packages/sdk/src/core/session.ts` CONSENT_STORAGE_KEY). */
 const CONSENT_STORAGE_KEY = 'estalara_consent';
+
+/** Cap on a captured response body, so a large `/adapt` payload cannot bloat SESSION_JSON. */
+const MAX_CAPTURED_BODY_CHARS = 20_000;
+
+/** The one file that defines whether a decision response carries directives at all. */
+const ADAPT_ROUTE_PATH = new URL(
+  '../../apps/control-plane/src/app/api/adapt/route.ts',
+  import.meta.url,
+);
+
+/**
+ * Read the server-side directive gate out of the control-plane source at run time.
+ *
+ * Read rather than hardcoded for the same reason the SDK floor is read off `window.Estalara`:
+ * a constant copied into this script is a constant that silently drifts. Both the VALUE and the
+ * COMPARISON are extracted, because the comparison is what makes the bar strict — `route.ts:275`
+ * is `if (confidence <= CONFIDENCE_THRESHOLD) return { directives: [], source: 'default' }`, so
+ * a session at exactly 0.6 gets `[]`.
+ *
+ * Throws rather than defaulting: a silent fallback here would reproduce the exact defect
+ * FOLLOW-875 exists to fix — an assertion measured against a number the decider does not read.
+ *
+ * @returns {Promise<{ value: number, comparison: string, source: string }>}
+ */
+async function readServerConfidenceGate() {
+  const src = await readFile(ADAPT_ROUTE_PATH, 'utf8');
+  const valueMatch = /const\s+CONFIDENCE_THRESHOLD\s*=\s*([0-9.]+)\s*;/.exec(src);
+  const compareMatch = /if\s*\(\s*confidence\s*(<=|<)\s*CONFIDENCE_THRESHOLD\s*\)/.exec(src);
+  if (!valueMatch || !compareMatch) {
+    throw new Error(
+      `Could not read CONFIDENCE_THRESHOLD / its comparison from ${ADAPT_ROUTE_PATH.pathname}. ` +
+        'The server gate moved or was renamed — fix this reader before trusting hop 10 ' +
+        '(FOLLOW-875).',
+    );
+  }
+  return {
+    value: Number(valueMatch[1]),
+    comparison: compareMatch[1],
+    source: 'apps/control-plane/src/app/api/adapt/route.ts',
+  };
+}
 
 const results = [];
 function record(hop, name, ok, evidence) {
@@ -98,6 +154,45 @@ async function main() {
       /* keep the raw string — a non-JSON body is itself the finding */
     }
     emitted.push({ url: req.url(), body });
+  });
+
+  /**
+   * Bodies of the decision endpoint's RESPONSES (FOLLOW-875 AC-2).
+   *
+   * Hop 10's verdict is a statement about what the decision endpoint DECIDED, and that lives in
+   * the response — `resp.confidence` and `resp.directives`. The request-only capture above
+   * cannot answer it: it sees the SDK's own hint, which on this stack is echoed back but is not
+   * the same value in general. `resp.confidence` is also the value `index.ts:828` reads.
+   *
+   * Bounded by MAX_CAPTURED_BODY_CHARS. A body that cannot be read is RECORDED as an error, not
+   * dropped — an unreadable decision response is itself a hop-10 finding.
+   *
+   * NOTE: FOLLOW-876 AC-1 broadens this to the ingest responses as well and documents the
+   * artifact schema. This is deliberately the narrow slice hop 10 needs; do not treat 876 as
+   * done because this exists.
+   */
+  const decided = [];
+  const pendingBodies = [];
+  context.on('response', (res) => {
+    if (res.request().method() !== 'POST') return;
+    if (!res.url().startsWith(DECISION_ORIGIN)) return;
+    if (!/\/adapt(\?|$)/.test(res.url())) return;
+    const meta = { url: res.url(), status: res.status() };
+    pendingBodies.push(
+      res.text().then(
+        (text) => {
+          const clipped = text.slice(0, MAX_CAPTURED_BODY_CHARS);
+          try {
+            decided.push({ ...meta, body: JSON.parse(clipped) });
+          } catch {
+            decided.push({ ...meta, bodyRaw: clipped });
+          }
+        },
+        (err) => {
+          decided.push({ ...meta, bodyError: String(err) });
+        },
+      ),
+    );
   });
 
   const consoleLines = [];
@@ -219,27 +314,105 @@ async function main() {
     decisionCalls.slice(0, 6),
   );
 
-  // ── the measurement hop 10 depends on: did the archetype ever clear the adapt floor? ─────
-  // `DOM_ADAPT_CONFIDENCE_FLOOR` (packages/sdk/src/core/adapt-floor.ts, re-exported on the SDK
-  // global) is the gate below which the decision endpoint is asked with a `neutral` hint and
-  // correctly answers `directives: []`. If this stays under the floor, hop 10 CANNOT go green and
-  // the cause is upstream of the SDK's DOM-apply path — which is separately covered green by
-  // packages/sdk/e2e/adapt-dom-mutations.spec.ts. Do not "fix" hop 10 by injecting an archetype.
-  const floor = await page.evaluate(() => window.Estalara?.DOM_ADAPT_CONFIDENCE_FLOOR ?? null);
+  // ── the measurement hop 10 depends on: did the DECISION clear the gate that decides? ─────
+  // FOLLOW-875. Three numbers, three different owners — keep them apart:
+  //   • DOM_ADAPT_CONFIDENCE_FLOOR / DOM_ADAPT_MIN_SIGNAL_COUNT — the SDK's DISJUNCTIVE apply
+  //     gate. Reported below, never asserted on: either branch alone opens it, so "the floor
+  //     was not cleared" says nothing about whether the DOM was adapted.
+  //   • CONFIDENCE_THRESHOLD (route.ts) — the gate that decides whether directives EXIST.
+  //     This is the bar, and it is `> threshold`, not `>=`.
+  //   • directives.length in the decision RESPONSE — the ground truth, which needs no
+  //     threshold arithmetic at all. If this is 0 the DOM cannot have been adapted, whatever
+  //     the confidence was.
+  // Do not "fix" hop 10 by injecting an archetype: the SDK's DOM-apply path is separately
+  // covered green by packages/sdk/e2e/adapt-dom-mutations.spec.ts.
+  await Promise.all(pendingBodies);
+
+  const serverGate = await readServerConfidenceGate();
+  const floors = await page.evaluate(() => ({
+    confidence: window.Estalara?.DOM_ADAPT_CONFIDENCE_FLOOR ?? null,
+    signalCount: window.Estalara?.DOM_ADAPT_MIN_SIGNAL_COUNT ?? null,
+  }));
+
   const adaptRequests = emitted
     .filter((e) => e.url.endsWith('/adapt') && typeof e.body === 'object' && e.body !== null)
     .map((e) => ({ archetype_hint: e.body.archetype_hint, confidence: e.body.confidence }));
-  const peak = adaptRequests.reduce((m, r) => Math.max(m, r.confidence ?? 0), 0);
+  const adaptResponses = decided.filter((d) => d.body && typeof d.body === 'object');
+  const peakRequest = adaptRequests.reduce((m, r) => Math.max(m, r.confidence ?? 0), 0);
+  const peakResponse = adaptResponses.reduce((m, d) => Math.max(m, d.body.confidence ?? 0), 0);
+  const totalDirectives = adaptResponses.reduce(
+    (n, d) => n + (Array.isArray(d.body.directives) ? d.body.directives.length : 0),
+    0,
+  );
+
+  // Which of the two `aboveFloor` branches was true? `signal_count` is not in the /adapt
+  // contract, so it is read from the ONE place the SDK publishes it: the `intent.snapshot`
+  // payload (core/intent-snapshot.ts:70), captured in the ingest batches above. It is only
+  // observable at multiples of 5, so this is a LOWER BOUND — which is all the branch check
+  // needs, since the branch opens at 2.
+  const observedSignalCounts = emitted
+    .flatMap((e) => e.body?.events ?? [])
+    .filter((evt) => evt.type === 'intent.snapshot')
+    .map((evt) => evt.payload?.signal_count)
+    .filter((n) => typeof n === 'number');
+  const maxSignalCount = observedSignalCounts.reduce((m, n) => Math.max(m, n), 0);
+  const aboveFloorBranch = {
+    'confidence >= DOM_ADAPT_CONFIDENCE_FLOOR':
+      floors.confidence !== null ? peakResponse >= floors.confidence : null,
+    'signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT':
+      floors.signalCount !== null ? maxSignalCount >= floors.signalCount : null,
+    maxObservedSignalCount: maxSignalCount,
+    note: 'signal_count is observable only at multiples of 5 — this is a lower bound',
+  };
+
+  // BOTH sides of the exchange are asserted, and the reason is a fidelity gap this script found
+  // by being run (2026-08-07, FOLLOW-875):
+  //   • production `route.ts:275` evaluates the CLIENT-SENT `body.confidence ?? 0.5` and then
+  //     echoes it back, so on production the two are the same number and the REQUEST side is
+  //     what actually decides;
+  //   • the local mock does NOT echo it — with a `neutral` hint it answers a fabricated
+  //     `confidence: 0.1` (mock-decision-server.mjs:519). Observed on a real run:
+  //     request 0.3655, response 0.1.
+  // Asserting only the response would measure the mock's fiction; asserting only the request
+  // would ignore the value `index.ts:828` reads. Requiring BOTH is strictly stronger than either
+  // and cannot go green where production returns [].
+  const requestCleared = peakRequest > serverGate.value;
+  const responseCleared = peakResponse > serverGate.value;
   record(
     10,
-    `archetype confidence cleared DOM_ADAPT_CONFIDENCE_FLOOR (${String(floor)}) from behavior alone`,
-    floor !== null && peak >= floor,
+    `decision confidence cleared the SERVER gate (${serverGate.comparison === '<=' ? '>' : '>='} ${String(serverGate.value)}, ${serverGate.source}) from behavior alone`,
+    requestCleared && responseCleared,
     {
-      floor,
-      peakConfidence: peak,
+      serverGate,
+      peakRequestConfidence: peakRequest,
+      requestCleared,
+      peakResponseConfidence: peakResponse,
+      responseCleared,
+      echoDivergence:
+        peakRequest !== peakResponse
+          ? 'the endpoint did NOT echo the client confidence — production route.ts does, so this ' +
+            'endpoint is not confidence-faithful (expected against the local mock)'
+          : null,
       hints: [...new Set(adaptRequests.map((r) => r.archetype_hint))],
+      sdkApplyGate: { ...floors, disjunction: true, branchTruth: aboveFloorBranch },
     },
   );
+
+  // The assertion that needs no threshold arithmetic, and the one a mock cannot manufacture a
+  // green for: production returns `directives: []` below the server gate, so a response with
+  // zero directives IS the red — regardless of what any floor says.
+  record(10, 'the decision endpoint returned at least one directive', totalDirectives > 0, {
+    responses: adaptResponses.length,
+    directivesTotal: totalDirectives,
+    perResponse: adaptResponses.map((d) => ({
+      status: d.status,
+      archetype: d.body.archetype,
+      confidence: d.body.confidence,
+      directives: Array.isArray(d.body.directives) ? d.body.directives.length : null,
+      source: d.body.source,
+    })),
+    unreadable: decided.filter((d) => d.bodyError || d.bodyRaw !== undefined),
+  });
 
   // ── hop 10: a directive is observably applied to the DOM ─────────────────────────────────
   const after = await readSlots();
@@ -271,11 +444,16 @@ async function main() {
     listingUrl: LISTING_URL,
     ingestOrigin: INGEST_ORIGIN,
     decisionOrigin: DECISION_ORIGIN,
+    serverGate,
+    sdkApplyGate: { ...floors, disjunction: true, branchTruth: aboveFloorBranch },
     results,
     eventTypes,
     ingestPosts,
     decisionCalls,
     emitted,
+    // FOLLOW-875: decision RESPONSES. `emitted` above is requests only; hop 10's verdict is a
+    // statement about what came back, so both directions are now in the artifact.
+    decided,
     consoleLines: consoleLines.slice(-80),
   };
   if (SESSION_JSON) await writeFile(SESSION_JSON, JSON.stringify(summary, null, 2));

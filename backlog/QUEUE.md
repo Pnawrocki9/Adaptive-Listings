@@ -264,10 +264,11 @@ FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
 
 ### Dispatched: FOLLOW-881 (architect, Fable)
 
-**FOLLOW-881 — status: READY_FOR_REVIEW** (PR **#693**, CI verified exit 0 — Rule I 192/192, **0
-new**; two independent runs of `gh-pr-checks-verified.sh` agreed after the initial `pending` checks
-settled) — ~~IN_PROGRESS~~ — **assigned_to:** architect **model:** **Fable** **started_at:**
-2026-08-07 **branch:** `architect/FOLLOW-881-master-design-gating-ladder` **worktree:**
+**FOLLOW-881 — status: DONE** — PR **#693** squash-merged as `dc36740a`; `MASTER_DESIGN.md` on
+`main` now reads `**Wersja:** 4.5`. (CI verified exit 0 — Rule I 192/192, **0 new**; two independent
+runs of `gh-pr-checks-verified.sh` agreed after the initial `pending` checks settled) —
+~~IN_PROGRESS~~ — **assigned_to:** architect **model:** **Fable** **started_at:** 2026-08-07
+**branch:** `architect/FOLLOW-881-master-design-gating-ladder` **worktree:**
 `.claude/worktrees/follow-881`. Model justification: this is a **Master_Design revision** carrying
 the §Y.2 propagation checklist, on the document every future ticket boots from — the model-fit table
 names Master*Design revisions as Fable work explicitly, and the failure mode (shipping a \_new*
@@ -331,8 +332,39 @@ and recorded in Changelog v4.5 so the SoT admits the drift. Its AC(4) requires a
 **fifth** site before closing, since three correction rounds have each found more. Next free stub:
 **FOLLOW-883**.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED on ESC-053, gate
-verified still reporting 3 keys MISSING) and #693 (CI VERIFIED, awaiting Piotr's merge).**
+### Merge order executed (2026-08-07)
+
+**#693 merged first, #691 deliberately NOT merged.** The order was not arbitrary — it was derived,
+and the derivation caught something:
+
+1. **ESC-053 re-checked before deciding anything.** Ran the gate against the real Modal secret:
+   `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DATABASE_URL` all still **MISSING**. #691
+   therefore stays gated regardless of git state.
+2. **The feared `**Wersja:**` conflict between #691 and #693 does not exist.** #691 touches
+   `MASTER_DESIGN.md` only at `:452` and `:462` (§Snapshot.1 rows) and never the header line, so the
+   architect's flagged risk was checked rather than assumed, and dismissed on evidence.
+3. **#693 squash-merged** as `dc36740a`.
+4. **A real conflict was found where nobody had flagged one.** GitHub reported #691 as
+   `mergeable: UNKNOWN` across four reads, so rather than wait on its computation I resolved it
+   locally with `git merge-tree --write-tree`: **`backlog/FOLLOW_UPS.md` conflicted** — #691
+   appended FOLLOW-874 while `main` gained FOLLOW-875…882 from RETRO-259, #692 and #693. Everything
+   else (including `MASTER_DESIGN.md` and the runbook that #692 rewrote heavily) auto-merged.
+
+**Conflict resolved additively, `main` merged UP into the branch rather than rebased** — the pushed
+branch is not rewritten, which also keeps the gitleaks PR-range scan from re-reading rewritten
+history. Both stub sets kept in numeric order; no stub dropped, **no number duplicated** — the
+874/875 split across two branches is exactly what Rule AN's allocate-against-`main` discipline is
+for, and it held: the merge conflicted on _content_, not on a collided number. Index comment
+corrected to **next free FOLLOW-883**, and FOLLOW-874 re-labelled from RESERVED to FILED.
+
+**#691 is now `MERGEABLE / UNSTABLE`** and CI is re-verifying against the new head. **It is held on
+ESC-053 alone.** Merging it today would put the two new Modal deploy jobs into a standing red on
+`main` — by design, since the pre-deploy gate refuses to deploy over the secret gap — and that red
+would persist until the secret is provisioned. That is the operator's call to accept, not the PM's
+to assume: **ESC-053 first, then merge, then `workflow_dispatch`.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR — #691, MERGEABLE and conflict-free,
+held on ESC-053.**
 
 ---
 

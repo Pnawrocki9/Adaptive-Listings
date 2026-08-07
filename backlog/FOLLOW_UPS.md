@@ -28750,9 +28750,16 @@ block REPAIRED IN PLACE on RETRO-249 §6's armed condition; see RETRO-250 §6. -
 
 ## FOLLOW-849 — `.claude/hooks/pre-edit-branch-guard.sh` is worktree-blind: it fires "HEAD == main" on every edit made from a ticket branch inside a worktree
 
-source_retro: n/a (reported independently by three workers, sessions 102-103) source_ticket:
-FOLLOW-846 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours:
-2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+source_retro: n/a (reported independently by FOUR workers, sessions 102-104) source_ticket:
+FOLLOW-846 recommended_sprint: next recommended_agent: devops-engineer priority: P1 estimated_hours:
+2 depends_on: [] blocks: [] promoted_to_queue: false **UNFROZEN 2026-08-07 (P1 carve-out).**
+
+**PM UPDATE (session 104): FOURTH independent sighting.** The FOLLOW-881 architect hit it on all
+five of its in-worktree edits and re-reported it as a new finding, having no way to know it was
+already filed. Its framing is worth keeping: _"a guard that cries wolf on the sanctioned
+no-Bash-agent workflow will eventually be ignored on the day it is right."_ Four sightings across
+three sessions, each costing a worker some analysis — that cost is now larger than the 2h fix.
+**Re-priced P2 → P1** and unfrozen; the session-95 FROZEN rule carves out P1.
 
 The guard reads the **main checkout's** `HEAD`, not the HEAD of the worktree the edit is happening
 in. Every agent working in `.claude/worktrees/*` — which is now this repo's standard parallel-work
@@ -30463,3 +30470,39 @@ ESC-052's correction set omits MASTER_DESIGN:5348-5349/5387-5399 and four live s
 FOLLOW-817. 879 = P2 FROZEN, five corrections to the substrate runbook. 880 = P2 FROZEN, FOLLOW-853 record
 integrity + the probe's unrecorded user/profile. Session-95 FROZEN rule applied to every P2; the three P1s
 are unfrozen per its own carve-out.) -->
+
+---
+
+## FOLLOW-882 — §E.4.6's gate pseudocode is a fourth site of the corrected claim: `<` instead of `<=`, a per-tenant tunable that does not exist, and no `signal_count` branch
+
+source_retro: n/a (FOLLOW-881, session 104) source_ticket: FOLLOW-881 recommended_sprint: next
+recommended_agent: architect priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Found by the FOLLOW-881 architect, deliberately left in place, and independently re-verified by
+the PM before filing.** FOLLOW-881's stub named three sites; this is a fourth the stub did not name
+— the same error class, one document section away. It was recorded in Changelog v4.5 so the SoT
+admits the residual drift rather than silently carrying it.
+
+Verified at HEAD:
+
+1. **`docs/MASTER_DESIGN.md:2437`** — pseudocode reads `if confidence < CONFIDENCE_THRESHOLD (0.6)`.
+   The code is `<=` (`apps/control-plane/src/app/api/adapt/route.ts:275`), so exactly 0.6 returns
+   `[]`. The doc is permissive at the boundary; the code is not.
+2. **`:2440`** — _"CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)"_. `route.ts:86` is
+   a hard module constant (`const CONFIDENCE_THRESHOLD = 0.6;`) and grep finds no per-tenant
+   mechanism anywhere in HEAD. A reader planning a 0.4 pilot would be planning against a knob that
+   does not exist.
+3. The pseudocode shows **no `signal_count` branch at all**, so it reproduces exactly the omission
+   FOLLOW-881 corrected at the other three sites.
+
+**AC:** (1) all three corrected against HEAD, citing `route.ts:86,275` and `index.ts:827-829`; (2)
+if a per-tenant threshold is actually wanted, that is a product decision and gets its own stub or
+escalation — do NOT silently delete the sentence and leave the intent unrecorded; (3) §Y.2
+propagation stated (expected no-op — no section rename); (4) a grep sweep for any FIFTH site before
+closing: three correction rounds have each found more, so the closing evidence must be
+`grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md` with every hit
+adjudicated in the close note, not a claim that the document is now clean.
+
+cross_ref: [FOLLOW-881 (PR #693); FOLLOW-875; FOLLOW-877; ESC-054; RETRO-259;
+`docs/MASTER_DESIGN.md:2437-2440`; `apps/control-plane/src/app/api/adapt/route.ts:86,275`]

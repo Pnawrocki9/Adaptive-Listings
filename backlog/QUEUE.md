@@ -264,12 +264,13 @@ FOLLOW-876 was not absorbed. Next free stub: **FOLLOW-882**.
 
 ### Dispatched: FOLLOW-881 (architect, Fable)
 
-**FOLLOW-881 — status: IN_PROGRESS** — **assigned_to:** architect **model:** **Fable**
-**started_at:** 2026-08-07 **branch:** `architect/FOLLOW-881-master-design-gating-ladder`
-**worktree:** `.claude/worktrees/follow-881`. Model justification: this is a **Master_Design
-revision** carrying the §Y.2 propagation checklist, on the document every future ticket boots from —
-the model-fit table names Master*Design revisions as Fable work explicitly, and the failure mode
-(shipping a \_new* wrong claim into the SoT) is the expensive one.
+**FOLLOW-881 — status: READY_FOR_REVIEW** (PR **#693**) — ~~IN_PROGRESS~~ — **assigned_to:**
+architect **model:** **Fable** **started_at:** 2026-08-07 **branch:**
+`architect/FOLLOW-881-master-design-gating-ladder` **worktree:** `.claude/worktrees/follow-881`.
+Model justification: this is a **Master_Design revision** carrying the §Y.2 propagation checklist,
+on the document every future ticket boots from — the model-fit table names Master*Design revisions
+as Fable work explicitly, and the failure mode (shipping a \_new* wrong claim into the SoT) is the
+expensive one.
 
 **Coordination — two open PRs, kept to disjoint files.** The FOLLOW-881 stub exists only in PR
 #692's branch, so it was passed to the architect in the dispatch brief rather than read from `main`.
@@ -290,8 +291,47 @@ a single `gh pr view` during propagation is not evidence) returning `MERGEABLE` 
 UNSTABLE being the documented pre-existing Rule I red. Squash-merged, worktree removed, branch
 deleted. **RETRO-260 for FOLLOW-875/877 is NOT yet written.**
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-881). 1 open PR — #691, BLOCKED: the
-ESC-053 gate still reports 3 keys MISSING, verified by running it against the real secret.**
+### FOLLOW-881 delivered → PR #693, and the finding got sharper
+
+**The architect has no Bash tool** (RETRO-174 §5a), so it applied the edits in the worktree and
+could not commit. PM ran the commit, push and `gh pr create` on its behalf — the sanctioned
+applied-by-orchestrator route. Only `docs/MASTER_DESIGN.md` changed; `FOLLOW_UPS.md`, `QUEUE.md`,
+`packages/sdk/**` and §Snapshot.1 untouched, so the file boundaries held against both other PRs.
+Version 4.4 → 4.5 with §Y.2 propagation stated item by item.
+
+**I reviewed the diff rather than rubber-stamping it, and verified its one NEW claim.** The text now
+asserts that the init-time `device_type` prior consumes a signal. Checked at HEAD:
+`index.ts:1031-1036` applies `device_type.*` through `applyBehavioralSignal()`, which increments
+`signal_count` (`intent.ts:1038`), and `DOM_ADAPT_MIN_SIGNAL_COUNT = 2`. **So a SINGLE real
+behavioral event opens the gate at any confidence** — sharper than FOLLOW-877's stub, which assumed
+two. FOLLOW-343's cold-start guard is bypassed by one scroll milestone. **This raises the stakes of
+ESC-054; the recommendation there (`signal_count >= 5`) should be read against one event, not two.**
+
+AC(1)(2)(3) discharged. AC(4) discharged the only honest way available: the ruling-citation half is
+**not dischargeable** because ESC-054 is unruled, so the "This is intentional" sentence is withdrawn
+_with its reason_ and every passage now names ESC-054 as the open question against the exact
+sentence a ruling would change. No intent is asserted anywhere in the SoT.
+
+**Two of the architect's three reported stubs were already covered — checked, not assumed:**
+
+- Runbook §9 reframe → **already fixed** by the merged #692 (`§9.2 "What 0.3655 actually is"`). The
+  architect branched before that merge and could not see it.
+- Worktree-blind branch guard → **already FOLLOW-849**, now its **fourth** independent sighting
+  across three sessions. Re-priced **P2 → P1 and unfrozen**: four workers have each paid analysis
+  time to rediscover it, which now exceeds the 2h fix. Its framing is worth keeping — _"a guard that
+  cries wolf on the sanctioned no-Bash-agent workflow will eventually be ignored on the day it is
+  right."_
+
+**FOLLOW-882 filed (P2, FROZEN)** — the genuinely new one, re-verified by me before filing: §E.4.6's
+pseudocode is a **fourth** site of the same claim (`<` where the code is `<=`; a
+`CONFIDENCE_THRESHOLD tunable per-tenant (pilot: może być 0.4)` knob that does not exist —
+`route.ts:86` is a hard module constant; and no `signal_count` branch). Left in place deliberately
+and recorded in Changelog v4.5 so the SoT admits the drift. Its AC(4) requires a grep sweep for a
+**fifth** site before closing, since three correction rounds have each found more. Next free stub:
+**FOLLOW-883**.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs — #691 (BLOCKED on ESC-053, gate
+verified still reporting 3 keys MISSING) and #693 (CI verification in flight).**
 
 ---
 

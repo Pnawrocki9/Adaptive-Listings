@@ -408,3 +408,27 @@ a fail-open built entirely out of a sentence. Third: verify the causal story you
 RETRO-253 and the ticket both said Rule I "already has the fix" (`$(( count + 0 ))`); reverting Rule
 I's guards left every fixture green, because Rule I never had `|| echo 0` and runs without `set -e`.
 Copying the normalisation would NOT have fixed Rule H.
+
+## 2026-08-07 · FOLLOW-865 — the merge gate settled on a truncated rollup and called it green
+
+**Shipped.** A completeness floor in `scripts/gh-pr-checks-verified.sh`'s settle loop: derived (40%
+of the second-highest of the twelve most recent PR rollups, one `gh pr list` read) rather than
+hardcoded, plus a refusal to settle below the largest rollup already seen in the same run, plus a
+`--accept-cardinality <n>` waiver that requires the exact observed count and rides every RESULT
+line. Below the floor: exit 3, UNDETERMINED, naming observed vs expected. Also made the fixture seam
+serve a snapshot SEQUENCE, which is what let any of it be proven red-first (FOLLOW-848 AC(1)).
+
+**Where a green badge hid a broken run path.** In the gate that exists to stop exactly that. Two
+consecutive identical snapshots prove the check set stopped CHANGING; nobody had ever asked whether
+it was COMPLETE, so five all-green check-runs in a 77-check repo printed "Safe to mark
+READY_FOR_REVIEW" and exited 0 — live, twice. The compensating control was a number a human
+remembered. Note the shape: every previous generation of this gate closed a _state_ hole and left
+the _cardinality_ hole open, because the fixture format could not express a set that changes between
+polls. A test format can be a blind spot with the same authority as missing code.
+
+**Guardrail I'd add.** A perturbation that reddens NO fixture is a finding, not a pass. I nearly
+shipped two vacuous ones: my first settle-loop fixture passed against a build with the
+two-consecutive-snapshot condition deleted (the surviving `-n "$prev_snapshot"` guard already forced
+a second poll, so only the read AFTER a change discriminates), and the shrink layer had no fixture
+of its own until I built a partial collapse that stays above the derived floor. Run the matrix per
+layer, not per feature, and require each layer to own a fixture that reddens for it alone.

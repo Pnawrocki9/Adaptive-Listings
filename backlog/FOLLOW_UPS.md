@@ -30501,10 +30501,21 @@ Verified at HEAD:
 **AC:** (1) all three corrected against HEAD, citing `route.ts:86,275` and `index.ts:827-829`; (2)
 if a per-tenant threshold is actually wanted, that is a product decision and gets its own stub or
 escalation — do NOT silently delete the sentence and leave the intent unrecorded; (3) §Y.2
-propagation stated (expected no-op — no section rename); (4) a grep sweep for any FIFTH site before
-closing: three correction rounds have each found more, so the closing evidence must be
-`grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md` with every hit
-adjudicated in the close note, not a claim that the document is now clean.
+propagation stated (expected no-op — no section rename); (4) **[AMENDED 2026-08-07 per FOLLOW-887
+AC(3) / Rule AI amendment 2026-08-07]** a THREE-VOCABULARY adjudicated sweep before closing, over a
+corpus that includes `docs/**`, `backlog/**`, `packages/**/src/**` (incl. `__tests__/**` and
+`schemas/**`), `apps/**/src/**` and `.claude/agents/**`: **(a)** the symbol names
+(`CONFIDENCE_THRESHOLD`, `DOM_ADAPT_CONFIDENCE_FLOOR`, `DOM_ADAPT_MIN_SIGNAL_COUNT`); **(b)** the
+literal VALUES with their comparison operators (`0.6`, `0.5`, `< 0.6`, `<= 0.6`, `>= 0.5` and the
+boundary phrasings around them); **(c)** the prose paraphrases quoted verbatim from the retracted
+sentence ("sole gate", "SOLE gate", "no third", "returns `[]`", "below this threshold", "is
+intentional"). Closing evidence = EVERY hit adjudicated line by line in the close note (correct /
+corrected-here / out-of-scope-and-why) — NEVER a claim that the document is now clean. _[Original
+AC(4) prescribed only the symbol-vocabulary grep
+`grep -n 'CONFIDENCE_THRESHOLD\|DOM_ADAPT_CONFIDENCE_FLOOR' docs/MASTER_DESIGN.md`; RETRO-260 proved
+that grep cannot see the FIFTH site (`:2086`, bare literal) or the SIXTH
+(`follow-354.test.ts:20-22`, prose) — the sweep inherits the vocabulary of the round that found the
+bug.]_
 
 cross_ref: [FOLLOW-881 (PR #693); FOLLOW-875; FOLLOW-877; ESC-054; RETRO-259;
 `docs/MASTER_DESIGN.md:2437-2440`; `apps/control-plane/src/app/api/adapt/route.ts:86,275`]

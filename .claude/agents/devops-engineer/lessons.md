@@ -580,3 +580,38 @@ checks sit on before writing it. If the new check answers the same question as t
 exist / registration succeeded / source text looks right), it is a fifth opinion, not a second axis.
 And `--attempts`-style retries on a post-deploy probe need their own negative-control case: a retry
 loop is the cheapest possible way to convert a real outage into a slow green.
+
+---
+
+## 2026-08-08 · FOLLOW-849 (FOLLOW-909 merged in) — the worktree-blind branch guard
+
+**What I shipped.** Two lines of real fix in `.claude/hooks/pre-edit-branch-guard.sh`: HEAD is now
+resolved with `git -C <dir-of-the-edited-file>` (walking up to the nearest existing ancestor, so a
+`Write` into a not-yet-created directory still resolves) instead of a bare
+`git rev-parse --show-toplevel`, which ran in the session's cwd — the main checkout — and reported
+`HEAD == 'main'` to every agent working inside `.claude/worktrees/*`. Six independent workers hit it
+across four sessions. The deliverable is the other file:
+`scripts/__tests__/pre-edit-branch-guard.test.sh`, 20 assertions, red-first (8 failures against the
+pre-fix script, 0 after), wired into the existing `shellcheck (Sentry gate family)` CI job so it is
+executed on every push, not merely present.
+
+**Where a green badge could have hidden a broken run path.** In the fix itself, twice. (1) The
+cheapest way to "fix" this guard is to make it quiet — anything from "if the path contains
+`.claude/worktrees`, allow" upward passes a fixture set drawn from the reported bug's own shape and
+guts the control. The case that catches it is a worktree whose own HEAD is `master`: the guard must
+still fire there, and a path-shortcut fix cannot. (2) The walk-up-to-an-existing-ancestor step is
+itself a silent hole if it lands on the wrong tree — a new-file `Write` on `main` would go
+unguarded, and no fixture drawn from the bug report would have noticed, because the bug report was
+about existing files. Both cases are in the harness. Separately: the pre-fix guard was ALSO wrong in
+the inverse direction, silently — cwd inside a worktree, edit landing on `main` produced no warning
+at all, which is a false negative on the exact stranded-work failure the guard exists to catch. Six
+people reported the noisy half; nobody reported the silent half, because nobody sees a warning that
+does not appear.
+
+**A guardrail I'd add.** A non-blocking guard whose false positives land only on actors who cannot
+change it has no repair path — the cost is paid by everyone and the fix is owned by no one. When a
+warning is advisory, route it to someone with commit rights over the guard (or count it), otherwise
+"agents learned to ignore it" is the design, not the accident. Second: a hook is a shell control
+like any other, and until this ticket no automated path linted or executed a single file in
+`.claude/hooks/`. Anything that runs on every tool call deserves the same lint-and-fixture treatment
+as `scripts/check-*.sh`.

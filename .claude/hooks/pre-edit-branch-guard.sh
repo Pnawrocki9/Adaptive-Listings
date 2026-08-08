@@ -29,6 +29,11 @@
 #
 # Override: set ESTALARA_ALLOW_MAIN_EDITS=1 to silence intentionally
 # (e.g. a deliberate one-off doc fix directly on main).
+#
+# Worktree resolution (FOLLOW-849): HEAD is read from the worktree containing
+# the EDITED FILE, never from the session's cwd — see the block above BRANCH.
+# The fixture proving the guard still fires after that change lives in
+# scripts/__tests__/pre-edit-branch-guard.test.sh and runs in CI.
 
 set -euo pipefail
 
@@ -51,13 +56,60 @@ if [[ "${ESTALARA_ALLOW_MAIN_EDITS:-}" == "1" ]]; then
   allow
 fi
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
-if [[ -z "$REPO_ROOT" ]]; then
-  # Not a git repo (or git unavailable) — nothing to guard.
+# FOLLOW-849 (sightings 1-6 counted in FOLLOW-909): resolve HEAD against the
+# worktree that OWNS THE EDITED FILE, not the session's cwd.
+#
+# The original line here was a bare `git rev-parse --show-toplevel`, which runs
+# in the SESSION's cwd — the main checkout — and the HEAD read below was then
+# that checkout's. Every agent editing inside `.claude/worktrees/<name>/`, this
+# repo's standard parallel-work mechanism, was told `HEAD == 'main'` while
+# sitting on its correct ticket branch. Six workers hit it independently and
+# each paid a verification cost before dismissing it. Because the guard is
+# non-blocking and the pm-orchestrator's backlog files are exempt below, the
+# only actors it ever tripped were the ones with no authority to repair it —
+# which is how a guard becomes noise, and noise is what it will be on the day
+# it is right.
+#
+# The inverse error mattered just as much and was never reported: with the cwd
+# inside a worktree and the edit landing on the main checkout, the old code was
+# SILENT — a false negative on precisely the stranded-work-on-main failure this
+# guard exists to catch.
+#
+# If the edit cannot be attributed to any worktree (no path, or a path in no
+# repository), FAIL SILENT — FOLLOW-849 AC(3). A guard that cannot be correct
+# should be quiet, not noisy.
+if [[ -z "$FILE_PATH" ]]; then
   allow
 fi
 
-BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+# A Write can create a file whose parent directories do not exist yet, and
+# `git -C` on a missing directory just errors — which would silently unguard
+# every new-file Write. Walk up to the nearest ancestor that does exist; that
+# directory is in the same worktree the new file will be created in.
+resolve_existing_dir() {
+  local dir
+  dir="$(dirname -- "$1")"
+  while [[ "$dir" != "/" && "$dir" != "." && ! -d "$dir" ]]; do
+    dir="$(dirname -- "$dir")"
+  done
+  if [[ -d "$dir" ]]; then printf '%s' "$dir"; fi
+}
+
+# A relative file_path has no worktree of its own to resolve against; `dirname`
+# bottoms out at "." and git then answers for the session cwd, which is the same
+# frame the tool itself resolves the path in.
+EDIT_DIR="$(resolve_existing_dir "$FILE_PATH")"
+if [[ -z "$EDIT_DIR" ]]; then
+  allow
+fi
+
+REPO_ROOT="$(git -C "$EDIT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "")"
+if [[ -z "$REPO_ROOT" ]]; then
+  # The edited path is in no git repo (or git is unavailable) — nothing to guard.
+  allow
+fi
+
+BRANCH="$(git -C "$EDIT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 if [[ "$BRANCH" != "main" && "$BRANCH" != "master" ]]; then
   allow
 fi

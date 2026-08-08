@@ -96,9 +96,11 @@ consumed by nothing. Its consumers now are:
 1. **The cron's own 24h dedup query** (`_was_drift_alerted_recently`) — suppresses repeat Sentry
    alerts for the same tenant.
 2. **The daily digest** in `scripts/check-cron-heartbeat.sh` — rows written, tenants covered, drift
-   rows, fetch-error rows, newest `run_at` — printed into the workflow's job summary on every
-   scheduled run. This is reporting, not gating: drift itself already alarms via Sentry
-   (`schema_validation.py:510`), and double-alarming the same event is how alarms get muted.
+   rows, fetch-error rows, **unmeasured rows**, newest `run_at` — printed into the workflow's job
+   summary on every scheduled run. This is reporting, not gating: drift itself already alarms via
+   Sentry (the `capture_message` in `_run_validation`'s drift branch), and double-alarming the same
+   event is how alarms get muted. The `unmeasured` bucket is FOLLOW-902's — rows the job could not
+   form an opinion from. See §7.
 3. **No tenant-facing surface yet.** The Drizzle docstring previously claimed a
    `/dashboard/site-health` panel (TICKET-VAL-002) reads it; that panel does not exist in this repo.
    The claim is corrected in the same PR. A real admin surface is a separate ticket — it is
@@ -166,6 +168,101 @@ line is the direct evidence the local package is in the image. Note that a manua
 source from your working tree, so it proves the code path, **not** the deployed artefact; only a
 scheduled run does that.
 
+## 7. Zero coverage is a validator error, not drift (FOLLOW-902)
+
+**Read this before treating any `coverage_score = 0.0` row as a site change.**
+
+### What was measured
+
+The cron's first two history rows in project history, both on 2026-08-08, both for tenant
+`cbc51cfa-1056-40aa-b0a9-6e982b52b1de` / `app.estalara.com`: `coverage_score = 0.0`,
+`matched_selectors = 0/10`, `drift_detected = true`. Nothing had drifted. FOLLOW-902 replayed the
+job's own fetch, with the job's own client settings and the job's own `check_selectors`:
+
+| step                                | observed                                                         |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `schema.sample_listing_url`         | **absent** (key not present in the stored JSONB)                 |
+| URL the validator therefore fetched | `https://app.estalara.com` (the old domain-root fallback)        |
+| response                            | `302 -> /en`, then `200`, `text/html`, 21 504 bytes              |
+| what that page is                   | the public marketing page — `<h1>Find a place to call home</h1>` |
+| `data-estalara*` attributes in it   | **0**                                                            |
+| replayed verdict                    | 0/10 selectors, coverage `0.0` — the prod rows exactly           |
+
+So the score was an artefact of the fallback. All four of the schema's declared `url_patterns`
+(`/listings`, `/listings/*`, `/properties`, `/properties/*`) `302` to `/en?back=...`: on this tenant
+**every listing route is behind a session**, so an anonymous fetch cannot reach one at all. The
+selectors are not stale — they were never given a chance to match.
+
+### The classification, and why
+
+A total miss is **not** evidence about the tenant's DOM. When every selector fails, this job cannot
+distinguish "the tenant replaced their whole site" from "I fetched a page that was never supposed to
+contain these selectors" — both worlds produce the identical observation. Real drift is
+**differential**: a redesign renames a class or removes a component, so some selectors survive and
+some do not. And the base rate matters: login/consent redirects, SPA shells, CDN error pages,
+geo-blocks and stale URLs are common; same-day wholesale DOM replacement is not.
+
+So the rule now enforced in `classify_outcome()`:
+
+| condition                                  | outcome         | `drift_detected` | Redpanda | Sentry fingerprint                |
+| ------------------------------------------ | --------------- | ---------------- | -------- | --------------------------------- |
+| coverage >= 0.8, all required matched      | `ok`            | `false`          | no       | —                                 |
+| **some** matched, below threshold/required | `drift`         | `true`           | yes      | `schema-drift`                    |
+| **none** matched                           | `zero_coverage` | `false`          | **no**   | `schema-validation-zero-coverage` |
+| no `sample_listing_url` stored             | `config_gap`    | `false`          | **no**   | `schema-validation-config-gap`    |
+| page unreachable                           | `fetch_failed`  | `false`          | no       | — (network errors are not drift)  |
+
+**This is routing, not suppression.** `zero_coverage` and `config_gap` still capture to Sentry under
+the same 24h dedup; they get their own message and their own fingerprint, and their history row
+carries an `error` string naming **the URL actually fetched after redirects** — so a reader can see
+which document was scored without re-running anything. What changed is only the name of the channel,
+to one that is true. The drift channel now stays silent until something is observed to drift, which
+is the only way its first message can mean anything.
+
+`compute_coverage()` is deliberately left alone: it still reports `drift_detected = True` at zero
+coverage, because that is the literal reading of the threshold. It is the numeric primitive.
+`classify_outcome()` is the alert decision and delegates the number to it, so the history row and
+the alert can never disagree about coverage.
+
+### The fallback was removed, not repaired
+
+A missing `sample_listing_url` no longer produces a guessed URL — no HTTP request is made at all,
+and a `config_gap:` row is written instead. Any fallback is a guess, and a guess that lands on the
+wrong page manufactures exactly the false signal above. Guessing `index_schema.url_patterns[0]`
+instead of the domain root was considered and rejected for the same reason, plus a second one: the
+job validates index **and** detail selectors against a **single** page, so no one URL can satisfy
+both sets — an index page legitimately has no `description` slot, a detail page legitimately has no
+`listing-grid`. Picking a smarter guess just moves the artefact.
+
+### Triage when the config-gap alert fires
+
+1. **Set `schema.sample_listing_url`** on the `tenant_site_schemas` row to a real listing-detail
+   URL.
+2. **Verify it is reachable without a session:**
+
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code} %{url_effective}\n' \
+     -L -A 'Estalara-SchemaValidator/1.0' '<url>'
+   ```
+
+   If it lands anywhere other than the listing page, this job cannot validate that tenant and the
+   alert is correct to keep firing.
+
+3. **Nothing in this repo writes `sample_listing_url` today.** It is read by this cron and nowhere
+   else (`grep -rn sample_listing_url`); the auto-detect API accepted it as an optional input in the
+   TICKET-032/033 specs, but no code path persists it. Making it required at onboarding is a product
+   decision, escalated separately — not something this cron may decide on its own.
+4. For `app.estalara.com` specifically, step 1 is **not sufficient**: every listing route is
+   auth-gated (see above). That tenant needs either a publicly reachable listing URL or an
+   authenticated fetch, and until then the config-gap alert is the honest state.
+
+### Single-tenant caveat
+
+Every number above comes from the **one** active tenant this estate has. The classification rule is
+general — it is an argument about what an observation can support, not about this site. The
+base-rate claim underneath it is not measured, and the "auth-gated, hence unvalidatable" conclusion
+is about `app.estalara.com` only and must not be generalised to a future fleet.
+
 ## 5. Related
 
 - `apps/data-quality/src/crons/schema_validation.py` — the cron
@@ -175,3 +272,4 @@ scheduled run does that.
 - `.github/workflows/modal-deploy.yml` — how the cron reaches prod
 - `scripts/check-modal-local-imports.py` — the local-source gate (FOLLOW-900)
 - `docs/MASTER_DESIGN.md` §Snapshot.1 row B.6 — the flip condition
+- §7 above — why a `0.0` coverage row is a validator error, not drift (FOLLOW-902)

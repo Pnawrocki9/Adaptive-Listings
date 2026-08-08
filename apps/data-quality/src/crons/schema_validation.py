@@ -5,14 +5,59 @@ Daily Modal job (02:00 UTC) that iterates all active tenants, fetches a sample
 listing page for each, re-runs deterministic CSS selector validation against the
 live HTML, detects drift, and writes a schema_validation_history row to Postgres.
 
+Every tenant-domain pair resolves to exactly one outcome (FOLLOW-902):
+
+  ``ok``            coverage >= 0.8 and every required selector matched.
+  ``drift``         SOME selectors matched and some did not — below threshold, or a
+                    required selector failed. A claim about the TENANT'S DOM.
+  ``zero_coverage`` NOTHING matched. A claim about the VALIDATOR'S INPUT, not about
+                    the DOM. See "Why zero coverage is not drift" below.
+  ``config_gap``    the stored schema carries no ``sample_listing_url``, so there is
+                    no page this job is entitled to measure. Never guessed around.
+  ``fetch_failed``  the page could not be retrieved (timeout / non-200).
+
 Drift is defined as:
-  - coverage_score < 0.8  (fewer than 80% of stored selectors still match), OR
+  - at least one selector matched (otherwise the outcome is ``zero_coverage``), AND
+  - coverage_score < 0.8 (fewer than 80% of stored selectors still match), OR
   - any selector marked ``required`` in the stored schema fails to match.
+
+Why zero coverage is NOT drift (FOLLOW-902)
+-------------------------------------------
+An alert must be able to name what changed. When EVERY selector misses, this job
+cannot distinguish "the tenant replaced their whole DOM" from "I fetched a page that
+was never supposed to contain these selectors" — the observation is byte-for-byte
+identical in both worlds. Real drift is DIFFERENTIAL: a redesign renames a class or
+drops a component, so some selectors survive and some do not. A total miss is
+therefore evidence about the fetch, and the base rate of the benign causes (login or
+consent redirect, SPA shell, CDN error page, geo-block, stale URL) is far higher than
+the base rate of a wholesale same-day DOM replacement.
+
+Measured, 2026-08-08 (FOLLOW-902 AC1). The only active tenant has no
+``sample_listing_url``, so this job fell back to ``https://app.estalara.com``, was
+302'd to the public marketing page ``/en`` (``<h1>Find a place to call home</h1>``,
+zero ``data-estalara`` attributes anywhere in the document), and scored 0/10 —
+reproducing the two prod rows exactly. Nothing had drifted. Under the old
+classification that would have been the drift channel's FIRST message in this
+project's history, and it would have been false.
+
+``zero_coverage`` and ``config_gap`` are NOT suppressed: they still capture to Sentry
+under the same 24h dedup. They are ROUTED — their own message, their own fingerprint,
+``drift_detected = FALSE`` on the history row, and no ``schema_drift_detected`` event
+on Redpanda, because no drift was observed. The alert keeps firing; only its name
+changes to one that is true.
 
 On drift:
   1. Emits a ``schema_drift_detected`` event to Redpanda topic ``estalara.schema``.
   2. Captures a Sentry warning — deduplicated to once per tenant per 24h window.
   3. Writes a ``schema_validation_history`` row with ``drift_detected = True``.
+
+On zero coverage or config gap:
+  1. Does NOT emit ``schema_drift_detected`` — nothing drifted, as far as anyone knows.
+  2. Captures a distinct Sentry warning, deduplicated per tenant per 24h on the
+     ``error`` prefix of the previous rows (not on ``drift_detected``).
+  3. Writes a ``schema_validation_history`` row with ``drift_detected = False`` and an
+     ``error`` string that names the URL actually fetched — so the reader can see
+     WHICH page was measured without re-running anything.
 
 On page-fetch failure:
   - Writes a ``schema_validation_history`` row with ``drift_detected = False``
@@ -110,6 +155,20 @@ SENTRY_DEDUP_WINDOW_HOURS = 24
 # FOLLOW-893: job_name written to `cron_heartbeats` on every successful run. The daily
 # checker (.github/workflows/cron-heartbeat.yml) asserts this exact name.
 HEARTBEAT_JOB_NAME = "validate_schemas"
+
+# FOLLOW-902: the outcome vocabulary. One of these per tenant-domain pair per run.
+# ``fetch_failed`` is not listed here because it is decided before any selector is
+# checked and already had its own ``error`` prefix.
+OUTCOME_OK = "ok"
+OUTCOME_DRIFT = "drift"
+OUTCOME_ZERO_COVERAGE = "zero_coverage"
+
+# FOLLOW-902: ``error`` column prefixes. These are the dedup keys for the non-drift
+# alerts (the drift dedup uses ``drift_detected``, which these outcomes deliberately
+# leave FALSE), so they are matched with LIKE '<prefix>%' — keep them stable.
+ERROR_PREFIX_FETCH_FAILED = "fetch_failed:"
+ERROR_PREFIX_CONFIG_GAP = "config_gap:"
+ERROR_PREFIX_ZERO_COVERAGE = "validator_error: zero_coverage"
 
 
 def check_selectors(html: str, selectors: list[str]) -> dict[str, bool]:
@@ -231,6 +290,13 @@ def compute_coverage(
         selector_results: Output of ``check_selectors()``.
         required_selectors: Selectors that must all match (drift if any fail).
 
+    NOTE (FOLLOW-902): this function answers the numeric question only. It still
+    reports ``drift_detected = True`` at zero coverage, because that is the literal
+    reading of the threshold. Callers must not use it as the alert decision — route
+    through :func:`classify_outcome`, which separates "some selectors moved" (drift)
+    from "no selector matched anything" (a validator error). Kept as the single
+    implementation of the coverage number so the two never diverge.
+
     Returns:
         (coverage_score, drift_detected, failed_selectors)
     """
@@ -247,6 +313,46 @@ def compute_coverage(
     drift_detected = coverage_score < DRIFT_THRESHOLD or bool(required_failures)
 
     return coverage_score, drift_detected, failed
+
+
+def classify_outcome(
+    selector_results: dict[str, bool],
+    required_selectors: list[str],
+) -> tuple[str, float, list[str]]:
+    """Turn selector results into the outcome that decides which alert fires. FOLLOW-902.
+
+    The one judgement in this module: a run where NOTHING matched is classified as
+    ``zero_coverage`` (a validator error), not as ``drift``. Full reasoning in the
+    module docstring; the short version is that "the site changed completely" and "I
+    fetched the wrong page" produce identical observations, so the observation cannot
+    carry a claim about the site. Drift is differential by definition — it needs at
+    least one surviving selector to be a statement about anything.
+
+    Delegates the number to :func:`compute_coverage` rather than recomputing it, so
+    the history row and the alert can never disagree about coverage.
+
+    Args:
+        selector_results: Output of ``check_selectors()``.
+        required_selectors: Selectors that must all match.
+
+    Returns:
+        (outcome, coverage_score, failed_selectors) where outcome is one of
+        ``OUTCOME_OK`` / ``OUTCOME_DRIFT`` / ``OUTCOME_ZERO_COVERAGE``.
+
+    Example:
+        >>> classify_outcome({"a": False, "b": False}, [])[0]
+        'zero_coverage'
+        >>> classify_outcome({"a": True, "b": False, "c": False}, [])[0]
+        'drift'
+        >>> classify_outcome({"a": True, "b": True}, [])[0]
+        'ok'
+    """
+    coverage_score, drift_detected, failed = compute_coverage(selector_results, required_selectors)
+
+    if selector_results and not any(selector_results.values()):
+        return OUTCOME_ZERO_COVERAGE, coverage_score, failed
+
+    return (OUTCOME_DRIFT if drift_detected else OUTCOME_OK), coverage_score, failed
 
 
 def _get_db_connection() -> "psycopg2.extensions.connection":
@@ -296,29 +402,62 @@ def _write_history_row(
     conn.commit()
 
 
+def _was_alerted_recently(
+    # Unquoted deliberately: `from __future__ import annotations` makes this lazy, and
+    # quoting it would add a 6th UP037 to this app's 12-error ruff baseline. The quoted
+    # neighbours are pre-existing and out of scope for FOLLOW-902.
+    conn: psycopg2.extensions.connection,
+    tenant_id: str,
+    *,
+    error_prefix: str | None = None,
+) -> bool:
+    """Return True if this tenant already produced an alerting row within 24h.
+
+    Single implementation of the dedup lookback, so the three alert kinds cannot
+    drift apart in window or ordering (FOLLOW-902).
+
+    Args:
+        error_prefix: ``None`` dedups on DRIFT rows (``drift_detected = TRUE``).
+            Otherwise dedups on rows whose ``error`` starts with that prefix — which
+            is how ``zero_coverage`` and ``config_gap`` dedup, since they deliberately
+            leave ``drift_detected`` FALSE and would otherwise never suppress.
+
+    The prefixes are module constants, never caller-supplied strings, so the LIKE
+    pattern below is not an injection surface (it is a bound parameter regardless).
+    """
+    if error_prefix is None:
+        predicate = "AND drift_detected = TRUE"
+        params: tuple[Any, ...] = (tenant_id,)
+    else:
+        predicate = "AND error LIKE %s"
+        params = (tenant_id, f"{error_prefix}%")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT run_at FROM schema_validation_history
+            WHERE tenant_id = %s
+              {predicate}
+              AND run_at > NOW() - INTERVAL '24 hours'
+            ORDER BY run_at DESC
+            LIMIT 1
+            """,  # noqa: S608 — predicate is a module-level literal, never user input.
+            params,
+        )
+        row = cur.fetchone()
+    return row is not None
+
+
 def _was_drift_alerted_recently(
     conn: "psycopg2.extensions.connection",
     tenant_id: str,
 ) -> bool:
-    """Return True if a drift alert was already written for this tenant within 24h.
+    """Return True if a DRIFT alert was already written for this tenant within 24h.
 
     Used to deduplicate Sentry alerts — we still write the history row, but skip
     the Sentry capture if one was already emitted today.
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT run_at FROM schema_validation_history
-            WHERE tenant_id = %s
-              AND drift_detected = TRUE
-              AND run_at > NOW() - INTERVAL '24 hours'
-            ORDER BY run_at DESC
-            LIMIT 1
-            """,
-            (tenant_id,),
-        )
-        row = cur.fetchone()
-    return row is not None
+    return _was_alerted_recently(conn, tenant_id)
 
 
 def _write_heartbeat(
@@ -512,21 +651,78 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
         )
         detection_confidence: float = float(row["detection_confidence"] or 0.0)
 
-        # Determine sample URL: prefer schema.sample_listing_url, fall back to domain root.
-        sample_url: str = schema_jsonb.get("sample_listing_url", "")  # type: ignore[assignment]
-        if not sample_url:
-            sample_url = f"https://{domain}"
+        # Selectors are extracted BEFORE the fetch (FOLLOW-902) for two reasons: the
+        # config-gap row below needs total_selectors, and a schema with nothing to
+        # check should not cost an HTTP request.
+        all_selectors, required_selectors = extract_selectors(schema_jsonb)
+
+        if not all_selectors:
             logger.warning(
-                "tenant=%s domain=%s: no sample_listing_url in schema JSONB — "
-                "falling back to domain root %s",
+                "tenant=%s domain=%s: no selectors found in schema — skipping",
                 tenant_id,
                 domain,
-                sample_url,
             )
+            continue
+
+        # FOLLOW-902: no sample_listing_url is a CONFIG GAP, not a licence to guess.
+        # This used to fall back to the domain root, and on 2026-08-08 that fallback
+        # fetched app.estalara.com's public marketing page and reported 0/10 coverage
+        # as drift — a page that never contained a listing selector in its life. Any
+        # fallback URL is a guess, and a guess that lands on the wrong page manufactures
+        # exactly the false signal this branch exists to prevent. So: alarm on the gap,
+        # name the missing field, and measure nothing.
+        #
+        # Deliberately NOT solved by making sample_listing_url mandatory at onboarding
+        # — nothing in this repo writes that field today (grep: it is read here and
+        # nowhere else), so that is a product decision, escalated separately, not a
+        # change this cron may make on its own.
+        sample_url: str = schema_jsonb.get("sample_listing_url") or ""  # type: ignore[assignment]
+        if not sample_url:
+            config_gap_error = (
+                f"{ERROR_PREFIX_CONFIG_GAP} stored schema has no sample_listing_url — "
+                f"no page to validate for {domain}; validation skipped (not drift)"
+            )
+            logger.error("tenant=%s domain=%s: %s", tenant_id, domain, config_gap_error)
+
+            if not _was_alerted_recently(conn, tenant_id, error_prefix=ERROR_PREFIX_CONFIG_GAP):
+                sentry_sdk.capture_message(
+                    f"Schema validation skipped — no sample_listing_url for {domain}",
+                    level="warning",
+                    extras={
+                        "tenant_id": tenant_id,
+                        "domain": domain,
+                        "outcome": "config_gap",
+                        "total_selectors": len(all_selectors),
+                        "remedy": "set schema.sample_listing_url on the tenant_site_schemas row",
+                    },
+                    fingerprint=[
+                        "schema-validation-config-gap",
+                        tenant_id,
+                        datetime.now(UTC).strftime("%Y-%m-%d"),
+                    ],
+                )
+
+            _write_history_row(
+                conn,
+                tenant_id=tenant_id,
+                domain=domain,
+                coverage_score=0.0,
+                failed_selectors=[],
+                total_selectors=len(all_selectors),
+                matched_selectors=0,
+                drift_detected=False,
+                error=config_gap_error,
+            )
+            continue
 
         # Fetch the live page
         html: str | None = None
         fetch_error: str | None = None
+        # The URL AFTER redirects — the only thing that says which document was really
+        # scored. app.estalara.com 302s the domain root to /en; without this, a reader
+        # of the history row cannot tell that the measured page was not the requested
+        # one (FOLLOW-902).
+        final_url: str = sample_url
         try:
             with httpx.Client(
                 timeout=FETCH_TIMEOUT_SECONDS,
@@ -536,12 +732,13 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
                 response = client.get(sample_url)
                 if response.status_code == 200:
                     html = response.text
+                    final_url = str(response.url)
                 else:
-                    fetch_error = f"fetch_failed: HTTP {response.status_code}"
+                    fetch_error = f"{ERROR_PREFIX_FETCH_FAILED} HTTP {response.status_code}"
         except httpx.TimeoutException:
-            fetch_error = "fetch_failed: timeout"
+            fetch_error = f"{ERROR_PREFIX_FETCH_FAILED} timeout"
         except httpx.RequestError as exc:
-            fetch_error = f"fetch_failed: {type(exc).__name__}"
+            fetch_error = f"{ERROR_PREFIX_FETCH_FAILED} {type(exc).__name__}"
 
         if fetch_error is not None:
             logger.error(
@@ -563,31 +760,71 @@ def _run_validation(conn: "psycopg2.extensions.connection") -> int:
             )
             continue
 
-        # Extract selectors from stored schema and validate against live HTML
-        all_selectors, required_selectors = extract_selectors(schema_jsonb)
-
-        if not all_selectors:
-            logger.warning(
-                "tenant=%s domain=%s: no selectors found in schema — skipping",
-                tenant_id,
-                domain,
-            )
-            continue
-
+        # Validate the stored selectors against the live HTML
         selector_results = check_selectors(html or "", all_selectors)
-        coverage_score, drift_detected, failed_selectors = compute_coverage(
+        outcome, coverage_score, failed_selectors = classify_outcome(
             selector_results, required_selectors
         )
+        drift_detected = outcome == OUTCOME_DRIFT
 
         logger.info(
-            "tenant=%s domain=%s: coverage=%.2f drift=%s failed=%d/%d",
+            "tenant=%s domain=%s: outcome=%s coverage=%.2f failed=%d/%d url=%s",
             tenant_id,
             domain,
+            outcome,
             coverage_score,
-            drift_detected,
             len(failed_selectors),
             len(all_selectors),
+            final_url,
         )
+
+        # FOLLOW-902: nothing matched. This is a statement about the fetch, not about
+        # the tenant's DOM — see the module docstring. It alarms, on its own channel,
+        # and it does NOT emit schema_drift_detected, because no drift was observed.
+        if outcome == OUTCOME_ZERO_COVERAGE:
+            zero_coverage_error = (
+                f"{ERROR_PREFIX_ZERO_COVERAGE} — 0/{len(all_selectors)} selectors matched at "
+                f"{final_url} (requested {sample_url}); classified as validator error, not drift"
+            )
+            logger.error("tenant=%s domain=%s: %s", tenant_id, domain, zero_coverage_error)
+
+            if not _was_alerted_recently(conn, tenant_id, error_prefix=ERROR_PREFIX_ZERO_COVERAGE):
+                sentry_sdk.capture_message(
+                    f"Schema validation could not measure {domain} "
+                    f"(0 of {len(all_selectors)} selectors matched)",
+                    level="warning",
+                    extras={
+                        "tenant_id": tenant_id,
+                        "domain": domain,
+                        "outcome": OUTCOME_ZERO_COVERAGE,
+                        "requested_url": sample_url,
+                        "fetched_url": final_url,
+                        "total_selectors": len(all_selectors),
+                        "remedy": (
+                            "confirm sample_listing_url points at a listing page that is "
+                            "reachable WITHOUT a session; a total miss is far more often a "
+                            "wrong/redirected page than a wholesale DOM replacement"
+                        ),
+                    },
+                    fingerprint=[
+                        "schema-validation-zero-coverage",
+                        tenant_id,
+                        datetime.now(UTC).strftime("%Y-%m-%d"),
+                    ],
+                )
+
+            _write_history_row(
+                conn,
+                tenant_id=tenant_id,
+                domain=domain,
+                coverage_score=coverage_score,
+                failed_selectors=failed_selectors,
+                total_selectors=len(all_selectors),
+                matched_selectors=0,
+                drift_detected=False,
+                error=zero_coverage_error,
+            )
+            continue
 
         # Sentry alert — deduplicated within 24h window
         if drift_detected:

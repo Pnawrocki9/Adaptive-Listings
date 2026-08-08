@@ -116,7 +116,56 @@ change through Bash and the guard never fired) stays pre-routed: `devops-enginee
 `devops-engineer/FOLLOW-910-bash-edit-guard`, row _Terraform, CI/CD, workflows, secrets_. Its value
 is a recurring per-dispatch cost, which does not expire.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-915). 0 open PRs. 0 decisions pending.**
+### FOLLOW-915 AC(0) DONE — the collision is resolved, the implementation is now unblocked-but-gated
+
+**PR #702 merged as `6fd6e330`.** Docs only, zero SDK code. Verified on `main`: ADR-0021 present,
+ADR-0011 carries its `SCOPE-CLARIFIED` note, and the architect's lesson landed as
+`lessons.d/FOLLOW-915.md` **in the same commit** — the FOLLOW-888 template holding for the second
+consecutive no-Bash dispatch.
+
+**The PM earned its Opus tier here.** It selected FOLLOW-915, then **read the seam before
+dispatching** and found the ticket unbuildable as ruled: `ADR-0011:310-312` (ACCEPTED, CTO-signed
+2026-06-11, compliance-signed 2026-06-12) forbids the exact ordering FOLLOW-915 requires. An
+sdk-engineer would have met a documented refusal written by a different ticket and either overridden
+it silently or burned a round trip. Re-routed to `architect` over the stub's own `sdk-engineer`.
+
+**Verdict: the two claims separate, and only the second falls.** The compliance rule — tenant-data
+fetches run after consent — is re-affirmed **verbatim**; what is superseded is the ordering
+_consequence_ about `fetchQuizConfig()`, misreadable as a universal ban. **ADR-0011's text is
+byte-intact**: I checked the diff, and the only deletion is a re-wrapped cross-references line.
+Supersede, not rewrite.
+
+**ESC-056 stays unspent, and the reasoning is verifiable rather than asserted.** `SDK_SERVE_URL`
+(`packages/shared/src/domains.ts:57`) resolves to the same origin, is fetched **pre-consent**, and
+**already carries the banner text** — so an identifier-free sibling asset exposes nothing new. Plus
+the ePrivacy point that decides it: delivering **the consent mechanism itself** is the paradigm
+strictly-necessary case, since a notice requiring consent to display would be circular.
+
+**The part that most deserves to be copied.** The architect **refused to self-ratify**: compliance
+signed the sentence being clarified, so **compliance-engineer countersign on §D5 gates the
+implementation PR**, and a refusal reverts ADR-0021 to PROPOSED and returns ESC-051 to the CEO. The
+outcome-(b) path was pre-wired, not improvised — and the dispatch brief had explicitly named (b) a
+success, so the agent had no incentive to bend its reading toward a ruling already taken.
+
+**The compliance foundation has an owner, not a paragraph.** Everything rests on the request
+carrying **zero identifiers**; that is now contract clause §D3 with a **byte-exact test
+obligation**, because the likeliest future erosion is someone adding `?tenant=` for branding.
+
+### Sequencing from here
+
+1. **compliance-engineer countersign of ADR-0021 §D5** — gates everything below.
+2. **FOLLOW-915 implementation half** (sdk-engineer) to §D2–D4/D7–D8. The architect asks that its
+   §D7 interface obligations be copied into that ticket's entry so they cannot be dropped, and that
+   the brief require `packages/sdk/src/index.ts:313-337`'s rationale block to cite ADR-0021 — it
+   currently generalises the superseded sentence and is the ninth-place-wrong risk.
+3. **FOLLOW-913 and FOLLOW-898 unblock** once the implementation lands and bundle headroom is
+   re-measured. Headroom today is **14–96 bytes** across two measurements (the PM built fresh; my
+   `dist` was older) — below the noise floor of any change to that package either way.
+
+**RETRO-263 now owes FOUR merged PRs** — #699, #700, #701, #702 — and #700 changed the merge gate
+this orchestrator validates with.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
 
 ---
 

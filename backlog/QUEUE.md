@@ -141,6 +141,79 @@ always wrong, which is how a channel gets muted by its readers. Next free stub: 
 
 **RETRO-262 for FOLLOW-900 is NOT written.**
 
+### RETRO-262 — the catch was design, but not the design its own header credits
+
+**The window arithmetic did NOT catch this.** RETRO-262 derived it rather than accepting the
+`cron-heartbeat.yml` header's claim: a missed firing is observed at age `24 + H − 2`, so the alarm
+fires iff `H > W − 22`. `H=5, W=26` holds and is tight — but so does the brief's counterfactual (24h
+at 03:00 → `3 > 2`), **and so does every plausible pairing**, because `cron_heartbeats` held **zero
+rows** and the detector took its never-recorded branch, which is window-independent. What fired was
+**alarm-on-absence**. The window is what makes it durable in steady state; it is not what caught
+this. The header is now mis-attributing its own success.
+
+**The property none of the three passing controls had, stated as a one-line test:** ESC-053's gate
+read _inputs_, FOLLOW-891's reconciliation read the _registry's self-report_, the deploy job read
+_registration succeeded_. All three read the artefact's **description**. Ask: _could this pass while
+every container dies at line 1?_ For all three, yes. **And `check-modal-local-imports.py` does not
+have the property either** — it is a fourth layer on the same axis. The estate's only effect-axis
+control is the FOLLOW-893 detector, covering exactly one job. → **FOLLOW-904 (P1)**.
+
+**The guard has FOUR blind spots, not the one its PR discloses** — found by importing the real gate
+and running it against synthetic trees, not by reading it. **Shape A is the worst and I verified it
+myself:** `_local_module_file()` resolves names only against the declared source root, so changing
+line 58 from `from crons.observability import …` to `from observability import …` — a bare sibling
+import, which is `apps/data-quality`'s own layout — resolves at deploy time, dies in the container,
+**and the gate says PASS**. It cannot see the cheapest regression of the defect it was written for.
+Also: the declared set is harvested root-wide rather than per-image (already load-bearing in
+`llm-gateway` today), and `add_local_dir` produces a **false red**. Rule AP and Rule AE are both
+unmet. → **FOLLOW-903 (P1)**.
+
+### 🔴 FOLLOW-901 understates its subject by 16× — and I verified the corrected figure
+
+`gh run list --workflow=e2e-smoke.yml --event schedule --limit 100`: **97 runs, conclusions
+`["failure"]` — a set of size ONE** — oldest `2026-05-04`, newest `2026-08-08`. Newest, median and
+**oldest** all fail at the identical step, `Start Docker services`. **The E2E smoke test has never
+once passed a scheduled run, in 96 days.** That reclassifies it: not ESC-041's class but a
+**born-dead scheduled artefact** — the same shape as this retro's own subject. Also found:
+`release.yml`'s reds stopped by a **trigger change, not a fix** (ESC-041 still OPEN, now
+`workflow_dispatch`-only, last run red), and `load-test.yml` has **zero runs, ever**.
+
+### Rule AR promoted — the first new letter in a long while (43 → 44, AA–AR)
+
+_A decision-gating claim of absence needs ≥2 independent search strategies, at least one lexical and
+one structural, both named with their commands pasted._ **Count 3, of which 2 are prior retros** —
+RETRO-217 §6 **armed this verbatim** ("naming variants AND import-graph/mount-point… the NEXT
+independent-subsystem sighting"), and RETRO-247 homed its remedy in Rule AO without banking it, so
+the retro **banked it retroactively and said so in the rule's own footnote**. Four alternative homes
+were tested against their texts and refused. Crucially it is **scoped to decision-gating negatives
+only** — a rule demanding re-verification of every negative claim would be unaffordable, and that
+constraint is written into the rule rather than left to judgement.
+
+**Two refusals, both argued:** Rule AF was **not** amended — the retro ran AF's own Verification
+block verbatim and it printed the E2E failures in under ten seconds. **The text is adequate;
+execution is what did not happen, for 16 days.** Compliance failure → mechanisation (FOLLOW-905),
+not more text. Rule AA was **not** amended either — it was **complied with in all four rounds**, and
+B.6 never said DONE. The fault is that **one status token absorbs a change of axis without visibly
+changing**, which is a schema defect in `MASTER_DESIGN`, not a rule gap. → **FOLLOW-906**: decompose
+`deployed` into `registered / importable / invoked / observed`, each with a named evidence _kind_.
+B.6 today reads `registered ✅ · importable ✅ · invoked ✅ (manual) · observed ⏳`.
+
+### Cascades and controls that worked
+
+**FOLLOW-897 is UNBLOCKED** (900 DONE, its ambiguity retired in both directions). FOLLOW-898 / 874 /
+885 / 819 **unaffected — checked, not assumed** (0 `.ts` files, no SDK, no ingest, no gating
+constant). **FOLLOW-892's closure evidence must be an effect, not a deploy.**
+
+**Three controls recorded as working**, which this log rarely gets to write: the FOLLOW-893
+detector; **the PM's self-correction** of its own false dispatch claim, before the worker returned;
+and `check-gate-exit-codes.sh` catching an unrelated defect unprompted for the **third** time.
+
+**§Snapshot.1 row B.6 was correctly not flipped.** `Modal Deploy` on `601c94e` succeeded for all
+three apps at 11:00 UTC, so the earliest honest flip is the **02:00 UTC firing of 2026-08-09**,
+verified by the 05:00 detector — not by the deploy job.
+
+**Stubs FOLLOW-903…906 filed. Next free: FOLLOW-907.**
+
 **Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
 
 ---

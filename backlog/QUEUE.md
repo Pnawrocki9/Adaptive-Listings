@@ -165,7 +165,26 @@ obligation**, because the likeliest future erosion is someone adding `?tenant=` 
 **RETRO-263 now owes FOUR merged PRs** — #699, #700, #701, #702 — and #700 changed the merge gate
 this orchestrator validates with.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
+### Dispatched in parallel: the ADR-0021 countersign, and RETRO-263
+
+**ADR-0021 §D5 countersign — IN_PROGRESS** — **compliance-engineer**, **Fable**, branch
+`compliance-engineer/ADR-0021-countersign`, worktree `.claude/worktrees/countersign`. Model: Fable —
+this is a **compliance sign-off on a decision that clarifies a sentence compliance itself signed**,
+and the expensive failure is ratifying a scope reading that is convenient. **A refusal is an equally
+valid outcome and the brief says so**, otherwise the countersign is theatre: ADR-0021 reverts to
+PROPOSED and ESC-051 returns to the CEO with the constraint stated.
+
+**RETRO-263 — IN_PROGRESS** — **retrospective-analyst**, **Opus**, main tree, no worktree. It owes
+**four** merged PRs (#699, #700, #701, #702), and **#700 changed the merge gate this orchestrator
+validates with** — so it audits its own instrument.
+
+**Partitioned by agent type and by file**, per the lesson that cost a CONFLICTING PR earlier:
+compliance owns `docs/adr/**` and `docs/compliance/**`; RETRO-263 owns `backlog/RETROSPECTIVES.md`,
+`backlog/FOLLOW_UPS.md`, `CONVENTIONS_PATCH.md` and its own `lessons.d/` fragment. Different agent
+types, so no shared `lessons.md`. `backlog/QUEUE.md` stays PM-owned throughout. Next free stub:
+**FOLLOW-918**; next free escalation **ESC-056**.
+
+**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS. 0 open PRs at dispatch.**
 
 ---
 

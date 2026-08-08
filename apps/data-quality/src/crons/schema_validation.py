@@ -74,13 +74,29 @@ app = modal.App("estalara-schema-validation")
 # sentry-sdk line in apps/intent-engine/src/main.py).
 # `lxml` is not imported by name but IS required — check_selectors() calls
 # BeautifulSoup(html, "lxml"), which raises FeatureNotFound without it.
-image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "httpx>=0.27",
-    "psycopg2-binary>=2.9",
-    "sentry-sdk>=2.0",
-    "beautifulsoup4>=4.12",
-    "lxml>=5.0",
-    "confluent-kafka>=2.4",
+#
+# FOLLOW-900: `.add_local_python_source("crons")` is the line whose absence killed this
+# cron for its entire life. `modal deploy .../crons/schema_validation.py` imports this
+# file BY PATH, so its `__package__` is empty; modal 1.4.2's implicit entrypoint mount
+# (modal/_utils/function_utils.py::FunctionInfo) therefore takes the FILE branch and
+# ships exactly one flattened file — /root/schema_validation.py — with no `crons/`
+# package beside it. Every container then died on line 58's
+# `from crons.observability import ...` BEFORE Sentry was initialised, so the failure had
+# no channel at all while `modal app list` kept reporting `deployed`. Automounting of
+# local source was removed in Modal 1.0; local packages must be declared. The deploy job
+# sets PYTHONPATH=apps/data-quality/src so importlib can resolve `crons` here at deploy
+# time. Enforced repo-wide by scripts/check-modal-local-imports.py.
+image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install(
+        "httpx>=0.27",
+        "psycopg2-binary>=2.9",
+        "sentry-sdk>=2.0",
+        "beautifulsoup4>=4.12",
+        "lxml>=5.0",
+        "confluent-kafka>=2.4",
+    )
+    .add_local_python_source("crons")
 )
 
 # ---------------------------------------------------------------------------

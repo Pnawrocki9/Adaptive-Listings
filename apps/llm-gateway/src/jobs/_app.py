@@ -62,4 +62,15 @@ _image = (
         "/packages/shared/contracts/listing-embed-seed-event.required.json",
         copy=True,
     )
+    # FOLLOW-900: behaviourally a no-op for THIS app — its @app.function definitions live in
+    # `jobs.generate_description` / `jobs.consume_embed_seed_requests`, i.e. modules with a
+    # truthy `__package__`, so modal 1.4.2's implicit entrypoint mount already takes the
+    # PACKAGE branch and mounts `jobs/` via the very same
+    # `_Mount._from_local_python_packages("jobs")` this line calls. It is written down
+    # anyway because that branch is chosen by an invisible property of how the entrypoint
+    # happens to be loaded: apps/data-quality had the FILE branch instead and its cron was
+    # dead in prod for its entire life, unalerted, behind a green deploy. Declaring local
+    # source explicitly is now a hard CI gate (scripts/check-modal-local-imports.py) so no
+    # Modal app in this repo can silently depend on which branch it lands on.
+    .add_local_python_source("jobs")
 )

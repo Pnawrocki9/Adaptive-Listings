@@ -52,10 +52,20 @@
 #   This runs only after the token was confirmed present, so a failure here is
 #   always "dependency present but broken" — a red, by contract.
 #
+# LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a third skip):
+#   `modal deploy` never starts a container, so a green deploy says nothing about
+#   whether the image can be IMPORTED. estalara-schema-validation deployed green on
+#   2026-08-07 and every container died on `from crons.observability import ...`
+#   (modal 1.4.2 removed automounting of local Python source; the implicit entrypoint
+#   mount shipped ONE flattened file). `scripts/check-modal-local-imports.py` runs in
+#   every deploy job, before the token check, and fails when any deployed app imports
+#   a local module its image does not declare via add_local_python_source. It has no
+#   secret dependency, so it can never soft-skip.
+#
 # MANUAL FALLBACK:
 #   modal token set --token-id <id> --token-secret <secret>
 #   modal deploy apps/llm-gateway/src/main.py
-#   modal deploy apps/intent-engine/src/main.py
+#   PYTHONPATH=apps/intent-engine/src modal deploy apps/intent-engine/src/main.py
 #   PYTHONPATH=apps/data-quality/src modal deploy apps/data-quality/src/crons/schema_validation.py
 
 name: Modal Deploy
@@ -70,6 +80,7 @@ on:
       - "apps/data-quality/**"
       - ".github/workflows/modal-deploy.yml"
       - "scripts/check-modal-secret-keys.py"
+      - "scripts/check-modal-local-imports.py"
   workflow_dispatch:
 
 # Never let two deploys of the same app race; never cancel one already running.
@@ -97,6 +108,15 @@ jobs:
       # them the deploy fails with ModuleNotFoundError during registration.
       - name: Install Modal CLI + deploy-time module deps
         run: pip install modal httpx fastapi
+
+      # LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a skip).
+      # `modal deploy` registers functions; it never starts a container, so on its own
+      # this job CANNOT fail on an image that cannot be imported. It shipped exactly that
+      # once: estalara-schema-validation deployed green and every container then died on
+      # `from crons.observability import ...`, before Sentry init, for its entire life.
+      # This step is what makes the deploy job able to go red on an unimportable image.
+      - name: Assert every deployed Modal app declares its local Python source
+        run: python3 scripts/check-modal-local-imports.py
 
       # Soft-skip ONLY when the Modal token for the estalara workspace is absent
       # (dependency not configured — ESC-036). A present-but-invalid token is a
@@ -140,6 +160,15 @@ jobs:
       - name: Install Modal CLI + deploy-time module deps
         run: pip install modal fastapi
 
+      # LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a skip).
+      # `modal deploy` registers functions; it never starts a container, so on its own
+      # this job CANNOT fail on an image that cannot be imported. It shipped exactly that
+      # once: estalara-schema-validation deployed green and every container then died on
+      # `from crons.observability import ...`, before Sentry init, for its entire life.
+      # This step is what makes the deploy job able to go red on an unimportable image.
+      - name: Assert every deployed Modal app declares its local Python source
+        run: python3 scripts/check-modal-local-imports.py
+
       # Same soft-skip contract as deploy-llm-gateway above: unconfigured token only.
       - name: Check MODAL_TOKEN_ID presence
         id: token-check
@@ -178,11 +207,17 @@ jobs:
       # no dispatcher wired in prod (ADR-0016 replaced the Redpanda hop). Adding it
       # later means importing it from main.py, the same load-bearing-import pattern
       # llm-gateway uses.
+      # PYTHONPATH (FOLLOW-900): main.py's image now declares its local modules with
+      # `.add_local_python_source("nlp", "redis_writer", "schemas", "observability")`, and
+      # Modal resolves those names with `importlib.util.find_spec` ON THIS RUNNER at deploy
+      # time. `modal deploy <file>` already puts the file's own directory on sys.path, so
+      # this is belt-and-braces — but the braces are what apps/data-quality was missing.
       - name: Deploy apps/intent-engine
         if: steps.token-check.outputs.skip == 'false'
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          PYTHONPATH: apps/intent-engine/src
         run: modal deploy apps/intent-engine/src/main.py
 
   deploy-data-quality:
@@ -203,6 +238,15 @@ jobs:
       - name: Install Modal CLI + deploy-time module deps
         run: |
           pip install modal httpx psycopg2-binary sentry-sdk beautifulsoup4 lxml confluent-kafka
+
+      # LOCAL-SOURCE GATE (FOLLOW-900, hard fail — NOT a skip).
+      # `modal deploy` registers functions; it never starts a container, so on its own
+      # this job CANNOT fail on an image that cannot be imported. It shipped exactly that
+      # once: estalara-schema-validation deployed green and every container then died on
+      # `from crons.observability import ...`, before Sentry init, for its entire life.
+      # This step is what makes the deploy job able to go red on an unimportable image.
+      - name: Assert every deployed Modal app declares its local Python source
+        run: python3 scripts/check-modal-local-imports.py
 
       # Same soft-skip contract as deploy-llm-gateway above: unconfigured token only.
       - name: Check MODAL_TOKEN_ID presence

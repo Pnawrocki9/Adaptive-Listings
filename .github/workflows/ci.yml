@@ -746,6 +746,34 @@ jobs:
       - name: Assert exactly one modal.App() instantiation in llm-gateway
         run: bash scripts/check-modal-app-singleton.sh
 
+  # ── Modal local-source gate (FOLLOW-900) ───────────────────────────────────
+  # `modal deploy` only REGISTERS functions — it never starts a container, so it
+  # cannot fail on an image that cannot be imported. That is not hypothetical:
+  # estalara-schema-validation deployed green, listed `deployed`, held a registered
+  # cron, and every container died at `from crons.observability import ...` before
+  # Sentry was initialised, so the nightly job was dead for its entire life with no
+  # signal anywhere. This gate asserts statically that every LOCAL module a deployed
+  # Modal app imports (at any nesting depth, function bodies included) is declared on
+  # that app's image via add_local_python_source.
+  #
+  # HARD GATE. No continue-on-error, no secret dependency, therefore no soft-skip.
+  # The self-test runs FIRST so a broken detector cannot pass the gate (Rule Q).
+  modal-local-imports-guard:
+    name: Modal local-source gate (FOLLOW-900)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run local-source self-test (validates the gate itself)
+        run: python3 scripts/check-modal-local-imports.py --self-test
+
+      - name: Assert every deployed Modal app declares the local modules it imports
+        run: python3 scripts/check-modal-local-imports.py
+
   # ── Staging-plane gate (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2) ────────
   # ESC-052 established that Estalara has NO staging environment: Doppler
   # `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` (a write to `stg` is a write

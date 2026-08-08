@@ -1,6 +1,129 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 105 (2026-08-08) — the FOLLOW-893 detector fired on its FIRST run and caught a dead prod cron; FOLLOW-900 + FOLLOW-898 dispatched
+## ▶️ START HERE — session 106 (2026-08-08) — FOLLOW-892 closed on an EFFECT (chat's prod blocker is now one unset variable); FOLLOW-849 selected as the highest-ratio P1
+
+**Opening state, verified not inherited:** `main` `f28ce99a`, clean, **0 open PRs, 0 worktrees, 0
+tickets IN_PROGRESS, 0 open P0.** `git worktree list` returns the main checkout only;
+`gh pr list --state open` returns empty. Open escalations: ESC-020, ESC-041, ESC-042 (see below),
+ESC-044, ESC-045, ESC-051, ESC-054, ESC-055 — **none gate this dispatch**, per the 2026-07-27
+dispatch-policy ruling, and none of them touch dev-time tooling. (ESC-046 reads `OPEN` on a grep:
+that heading lives inside a `<details>` block preserving the original text of an escalation that is
+**RESOLVED** at `ESCALATIONS.md:105`. Checked, so the next session does not re-check it.)
+
+### FOLLOW-892 — DONE (PM bookkeeping, no PR). ESC-042 item 1 now has ONE state, and it is a better one than the stub asked for
+
+The stub recommended `CODE_COMPLETE_OPERATOR_PENDING` on the deploy axis. **That was superseded by
+evidence the last session produced and did not spend.** The FOLLOW-904 effect probe (run
+`31256633000`) **invoked** `process_chat_message` in the deployed prod app and got our throwaway ids
+echoed with `model_used='haiku-4.5'`. The deploy axis is not "code complete pending an operator" —
+it is **executed in production**, and it is now a **standing daily control**
+(`cron-heartbeat.yml:329`, 05:00 UTC), not a one-off. Closure evidence is an effect, not a deploy
+status (RETRO-262).
+
+**The single state, now written identically in all three records:** ESC-042 item 1 is **DISCHARGED
+on the deploy axis, OPEN on the traffic axis.**
+
+**What the traffic axis costs is now exactly one unset variable — verified at the source, and this
+is the sharpest thing in this session.** `grep -rn MODAL_CHAT_NLP_URL apps/` returns a _value_ on
+**one** line: `apps/ingest/wrangler.toml:97`, the `development` env, `http://localhost:8090`. Prod
+carries none, so `chat-nlp-dispatch.ts:104` takes its configured-no-op branch, no shadow key is
+written, `applyChatIntentPrior` never fires. **Chat feeds zero live archetype signal in prod today —
+and everything on both sides of that variable is built, deployed and proven.** The blocker stopped
+being a deploy some time ago and nothing said so.
+
+**The traffic axis has a named owner, checked not assumed: FOLLOW-820 item 3**, whose GO checklist
+already carries "`MODAL_CHAT_NLP_URL` set in the prod ingest Worker". So it sits behind the
+localhost-first ruling **by design**. Not drift. Do not re-file it — three audits have already made
+that mistake with ESC-020.
+
+### A non-finding worth more than a finding: tomorrow's 02:00 UTC run will flip B.6 on a run that validates nothing
+
+I traced the post-FOLLOW-902 code rather than assume tomorrow repeats today's manual result, because
+the opposite was plausible and would have been misread. `schema_validation.py:679` finds no
+`sample_listing_url` → `config_gap` branch → writes a history row → **`continue`** (`:715`) →
+`_run_validation` returns normally → `validate_schemas:601` **does** write the heartbeat → the 05:00
+detector goes **GREEN**.
+
+**So B.6's flip condition is satisfied by a run whose outcome for the only active tenant is
+`config_gap`.** Honest on the liveness axis, dishonest on the coverage axis — FOLLOW-906's subject
+in the wild. Whoever flips B.6 tomorrow must write the outcome beside it, e.g.
+`observed ✅ (2026-08-09 02:00 UTC) · coverage ❌ config_gap, 1/1 tenants — ESC-055`, **never a bare
+`observed ✅`**. Recorded as a dated addendum on ESC-055 rather than a new stub (Rule AN): it is a
+new fact about two tickets that already exist. **Next free stub is still FOLLOW-910; next free
+escalation still ESC-056.**
+
+### FOLLOW-897 — unblocked, and deliberately still FROZEN
+
+RETRO-262 unblocked it (FOLLOW-900 DONE retired its ambiguity in both directions). It is **P2 and
+its AC(1) is a decision** ("is an admin surface warranted, or is the CI digest sufficient"), so the
+session-95 FROZEN rule applies — the P1 carve-out does not reach it. **Not dispatched, on purpose.**
+Its premise also just moved: the CI digest now reports `config_gap` for 1/1 tenants (ESC-055), so
+"who reads this table" should be decided after ESC-055, not before.
+
+### Selected: FOLLOW-849 (FOLLOW-909 merged into it) — best ratio in the queue
+
+**Status: IN_PROGRESS.** Assigned `devops-engineer`, **Opus**, branch
+`devops-engineer/FOLLOW-849-branch-guard-worktree`. Delegation-table row: _Terraform, CI/CD,
+workflows, secrets, observability, runbooks_. **Dispatch happens via this session's `NEXT:` line —
+the PM cannot spawn subagents, and nothing is written here as "dispatched" that has not started.**
+
+**Why this over RETRO-263, FOLLOW-898, FOLLOW-874/885/876/873/905/901 — and the argument that
+decided it.** I initially ranked **RETRO-263** first on a clock: PR #699 changed prod alert
+semantics and #700 changed the merge gate, both live at tomorrow's 02:00 UTC firing, and a retro
+that found a defect could still ship a fix inside 13 hours. **I then checked the clock instead of
+trusting it, and disproved my own premise** — the trace above shows the 02:00 run behaves correctly
+and the detector goes green. RETRO-263 has no clock; the diff is durable and it loses nothing by
+waiting one session. FOLLOW-849 does have a clock, of a different kind: **six independent sightings
+by six workers in one day**, each paying the verification cost alone, and the counter is still
+rising. A 2h fix against a cost that recurs on every future dispatch is the best ratio in the queue.
+FOLLOW-898 is the strongest runner-up and stays pre-routed below so nobody re-derives it.
+
+**The defect, confirmed at HEAD by me and not inherited:** `pre-edit-branch-guard.sh:56` resolves
+`REPO_ROOT` with a bare `git rev-parse --show-toplevel`, which runs in the **session's** cwd (the
+main checkout), then `:63` reads _that_ HEAD. Every edit made from `.claude/worktrees/*` — this
+repo's standard parallel-work mechanism — reports `HEAD == 'main'` while sitting on the correct
+ticket branch. Note the guard is non-blocking by design and PM backlog files are exempt (`:71`),
+which is **why this survived six sightings**: the only actors who trip it are the ones who cannot
+fix it.
+
+**Model — Opus, and the justification is not the fix.** The fix is two lines (resolve HEAD against
+the worktree containing `FILE_PATH`, not the session cwd). **The deliverable is AC(2): a fixture
+that proves the guard still fires.** This estate has shipped four guards in two days that could not
+fail (RETRO-262: the secret gate, `modal app list`, the deploy job, and the static import gate all
+read the artefact's _description_), and Rule AE was unmet on FOLLOW-903 precisely because every
+fixture replayed the original bug. Designing a two-sided negative control for a hook —
+worktree-on-branch silent, `main` still loud, plus the shapes nobody has enumerated (a `Write` to a
+path that does not exist yet, a path outside every worktree, a non-git path, the exemption list) —
+is the judgement here. The model-fit rule's "take the lower tier for reversible, PR-gated work"
+argues Sonnet; "escalate one tier when the task already failed once at the lower tier" wins, because
+this guard has already shipped wrong once.
+
+**Brief must carry:** ticket text of **FOLLOW-849 AND FOLLOW-909** (909 carries the count and cost;
+**the fix belongs to 849 — do not execute both**), `docs/MASTER_DESIGN.md` §Snapshot.1,
+`CONVENTIONS_PATCH.md` (Rule AE is the live constraint on AC(2)), and the branch name above. **AC(3)
+is a real option, not a fallback:** if the hook cannot tell which worktree an edit belongs to, fail
+**silent** and say so — a false alarm on every edit is the defect being fixed.
+
+**Worth telling the worker, because it is a trap it will hit within its first minute:** you will see
+this guard fire at you while you fix it. Backlog files are exempt; `.claude/hooks/**` is not.
+
+### Pre-routed for the session after (do not re-derive)
+
+**FOLLOW-898** (P1, `sdk-engineer`, **Opus**, branch
+`sdk-engineer/FOLLOW-898-intent-snapshot-replica`, row _client SDK, Shadow DOM, tiers, browser
+code_). Justification unchanged from session 105: AC(1) is an argued design call whose FOLLOW-890
+precedent may not transfer, and AC(3)'s sweep decides whether the remedy is per-file or structural.
+**RETRO-263** (retrospective-analyst, Opus) for PRs #699/#700 — no clock, but it is a skipped step 6
+and it is the control that produced the last three class findings. **If both are run in parallel
+with a devops ticket, partition by agent TYPE** — same-type agents share
+`.claude/agents/<type>/lessons.md` by construction, which is what landed a PR CONFLICTING on
+2026-08-07.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-849). 0 open PRs. RETRO-263 NOT written.**
+
+---
+
+## ▶️ (superseded — see session 106 above) START HERE — session 105 (2026-08-08) — the FOLLOW-893 detector fired on its FIRST run and caught a dead prod cron; FOLLOW-900 + FOLLOW-898 dispatched
 
 **Opening state, verified not inherited:** `main` `e9b4cd24`, clean, **0 open PRs, 0 worktrees, 0
 tickets IN_PROGRESS, 0 open P0.** Open escalations unchanged and none of them gate this work:

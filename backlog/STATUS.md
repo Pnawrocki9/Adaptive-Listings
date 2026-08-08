@@ -1,4 +1,48 @@
-# Status — 2026-08-05 (session 103 — FOLLOW-812 closed DONE, PR #677 merged; retro dispatched; FOLLOW-811 next)
+# Status — 2026-08-08 (session 106 — FOLLOW-892 DONE on an effect; FOLLOW-849 selected and dispatched via NEXT)
+
+## SESSION 106 (2026-08-08)
+
+**Opening state verified, not inherited:** `main` `f28ce99a`, clean, `git worktree list` = main
+checkout only, `gh pr list --state open` = empty, 0 tickets IN_PROGRESS, 0 open P0.
+
+**FOLLOW-892 → DONE (PM bookkeeping, no PR).** ESC-042 item 1 now carries **one** state, written
+identically in `ESCALATIONS.md` (heading + dated update block), `QUEUE.md`'s session-106 head, and
+the stub's close note: **DISCHARGED on the deploy axis, OPEN on the traffic axis.** The stub asked
+for `CODE_COMPLETE_OPERATOR_PENDING`; that was **upgraded on evidence the last session produced and
+never spent** — the FOLLOW-904 effect probe (run `31256633000`) invoked `process_chat_message` in
+the deployed prod app and got our ids echoed with `model_used='haiku-4.5'`, so the deploy axis is
+executed-in-production, and it is now a standing daily control (`cron-heartbeat.yml:329`), not a
+one-off. AC(2) correction appended, not rewritten. AC(4): the traffic axis has a **named** owner,
+FOLLOW-820 item 3 — not "whoever notices".
+
+**Substantive finding from that closure:** chat's prod blocker is now **one unset variable**.
+`MODAL_CHAT_NLP_URL` carries a value on exactly one line in `apps/` — `wrangler.toml:97`, the `dev`
+env, `http://localhost:8090`. Prod has none, so `chat-nlp-dispatch.ts:104` no-ops. Everything on
+both sides of that variable is built, deployed and proven. It stopped being a deploy problem some
+time ago and no record said so.
+
+**Non-finding, recorded because it nearly became a false alarm:** tomorrow's 02:00 UTC
+`validate_schemas` run **will** write its heartbeat and the 05:00 detector **will** go green —
+traced through the post-FOLLOW-902 `config_gap` branch (`schema_validation.py:679-715` → `:601`),
+not assumed. So §Snapshot.1 row B.6's flip condition is satisfied by a run that validated nothing.
+Whoever flips it must write `coverage ❌ config_gap, 1/1 tenants — ESC-055` beside it, never a bare
+`observed ✅`. Filed as a dated addendum on ESC-055 (Rule AN), not a new stub.
+
+**FOLLOW-849 (+FOLLOW-909) → IN_PROGRESS**, `devops-engineer`, **Opus**, branch
+`devops-engineer/FOLLOW-849-branch-guard-worktree`. Chosen over RETRO-263 after **disproving my own
+urgency premise** for RETRO-263 (see above); chosen over FOLLOW-898 on ratio — six independent
+sightings by six workers in one day against a 2h fix. Defect re-confirmed at HEAD:
+`pre-edit-branch-guard.sh:56` resolves `REPO_ROOT` from the session cwd, `:63` reads that HEAD.
+
+**Open escalations and ages (all treated non-blocking-for-dispatch per the 2026-07-27 ruling; none
+gate a dev-tooling hook):** ESC-020 (59d, deliberate hold, owned by FOLLOW-820), ESC-041 (~11d),
+ESC-042 (15d — **narrowed today to the traffic axis only**), ESC-044 (~8d), ESC-045 (~10d), ESC-051
+(1d), ESC-054 (1d, CEO-pending, rule with FOLLOW-889), ESC-055 (0d, CEO-pending). **ESC-046 is
+RESOLVED** — its `OPEN` heading is inside a preserved `<details>` block and greps as a false
+positive.
+
+**Counters: CI checks 0/5, fix iterations 0/3.** No PR was validated this session (none existed).
+**RETRO-263 is still NOT written** — pre-routed, no clock.
 
 ## SESSION 103 (2026-08-05)
 

@@ -31120,7 +31120,7 @@ opposite direction); ESC-053; `docs/MASTER_DESIGN.md:459,469` + row D;
 
 ---
 
-## FOLLOW-892 — ESC-042 item 1 is "closed" in QUEUE, "OPEN / HALF-DISCHARGED" in the escalation register, and unmet against its own written closure condition — three records, three states
+## FOLLOW-892 — DONE 2026-08-08 (PM, no PR — bookkeeping only) — ESC-042 item 1 is "closed" in QUEUE, "OPEN / HALF-DISCHARGED" in the escalation register, and unmet against its own written closure condition — three records, three states
 
 source_retro: RETRO-261 source_ticket: FOLLOW-817 recommended_sprint: now recommended_agent:
 pm-orchestrator priority: P1 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: false
@@ -31158,6 +31158,38 @@ archetypes. Calling item 1 "closed" retires the only ticket that was watching fo
 4. State in the close note whether the traffic axis has an owner other than "whoever notices". If it
    does not, say so rather than implying it does — that omission is what "no named owner" in
    ESC-042's own title referred to in the first place.
+
+**CLOSE NOTE (2026-08-08, session 106) — all four ACs met; no code changed, which is correct: the
+defect was three records disagreeing, and the remedy is one state written three times.**
+
+**AC(1) — one state, chosen deliberately.** ESC-042 item 1 is **DISCHARGED on the deploy axis, OPEN
+on the traffic axis**, and that sentence now appears verbatim in `ESCALATIONS.md` (heading + dated
+update block), in `QUEUE.md`'s session-106 head, and here. **The stub's own recommendation was
+`CODE_COMPLETE_OPERATOR_PENDING` on the deploy axis; that was superseded by better evidence and the
+upgrade is deliberate.** The FOLLOW-904 effect probe (run `31256633000`, 2026-08-08) **invoked**
+`process_chat_message` in the deployed prod app and got our ids echoed with `model_used='haiku-4.5'`
+— the deploy axis is no longer "code complete pending an operator", it is **executed in
+production**, and it is now a standing daily control at `cron-heartbeat.yml:329`, not a one-off.
+This is the closure evidence the axis should have used all along: an effect, not a deploy status
+(RETRO-262).
+
+**AC(2) — done, appended not rewritten.** The 2026-08-07 "exactly ONE deployed app" line is
+corrected in place by a dated note; the original wording is left standing because it was true when
+written.
+
+**AC(3) — done.** The heading now names both axes and their different states.
+
+**AC(4) — the traffic axis DOES have an owner, and it is not "whoever notices": FOLLOW-820 item 3.**
+Verified rather than assumed — FOLLOW-820's GO checklist already carries "`MODAL_CHAT_NLP_URL` set
+in the prod ingest Worker" as condition 3. So the traffic axis is held behind the localhost-first
+ruling **by design**.
+
+**One thing this closure verified at the source instead of inheriting, and it sharpens the
+escalation:** the traffic-axis blocker is now exactly **one unset variable**, not a deploy.
+`grep -rn MODAL_CHAT_NLP_URL apps/` returns a value on **one** line only —
+`apps/ingest/wrangler.toml:97`, the `development` env, pointing at `http://localhost:8090`. Prod has
+none, so `chat-nlp-dispatch.ts:104` takes its configured-no-op branch. Everything upstream and
+downstream of that variable is built, deployed and proven.
 
 cross_ref: [RETRO-261 §4a LG-3 / §5c / §6 (Rule AA compliance, 8th consecutive Rule-P-shape);
 FOLLOW-817; FOLLOW-820 (owns the prod `MODAL_CHAT_NLP_URL` hop); ESC-042; ESC-053;

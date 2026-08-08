@@ -2979,3 +2979,17 @@ breach and cost real verification time to rule out.
 - **A delegation/validation rule I'd add:** When a ticket's acceptance evidence is "the deploy job
   is green", reject it at dispatch and require an executed invocation plus a read-back of the row
   the job is supposed to write — every deploy-shaped defect in this repo has passed its deploy job.
+
+- **Date / ticket:** 2026-08-08 — FOLLOW-892 (closed) / FOLLOW-849 (selected)
+- **Delegation row used:** Terraform, CI/CD, workflows, secrets, observability, runbooks →
+  devops-engineer (FOLLOW-849)
+- **What validation caught (or missed):** Closing FOLLOW-892 required tracing `MODAL_CHAT_NLP_URL`
+  rather than accepting "the deploy is the blocker" — the grep showed a value on exactly ONE line
+  (`wrangler.toml:97`, the `dev` env), proving chat's prod blocker has been one unset variable, not
+  a deploy, for some time. Separately I ranked RETRO-263 first on a 13-hour clock, then traced
+  `schema_validation.py:679-715 → :601` and **disproved my own premise** (the config_gap branch
+  `continue`s, so the heartbeat is still written and tomorrow's detector goes green) — which
+  reversed the dispatch.
+- **A delegation/validation rule I'd add:** Before letting a clock decide a dispatch order, trace
+  the clock's mechanism in code — an urgency premise is a decision-gating claim and deserves the
+  same verification as a claim of absence.

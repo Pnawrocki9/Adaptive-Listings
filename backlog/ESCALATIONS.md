@@ -2872,7 +2872,7 @@ completed **success** on all three jobs, and `modal app list` confirms `estalara
 `estalara-schema-validation` in state `deployed` (created 21:43 CEST) alongside the untouched
 `estalara-description-generator`. Rule Q: the app list is the evidence, not the green job.
 
-## OPEN (narrowed) — ESC-042: Modal `intent-engine` deploy is the sole remaining chat-un-shadow blocker — design ruling (item 2) RESOLVED 2026-07-27 [FOLLOW-635]
+## OPEN (traffic axis only) — ESC-042 item 1: deploy axis DISCHARGED (proven by execution 2026-08-08), traffic axis OPEN — `MODAL_CHAT_NLP_URL` is unset in the prod ingest Worker [FOLLOW-635 / FOLLOW-892]
 
 **Filed by:** ml-engineer (FOLLOW-635) **Date:** 2026-07-24T00:00:00Z **Affects:** FOLLOW-635, chat
 NLP intent path (`apps/intent-engine`, `apps/ingest/src/handlers/chat-nlp-dispatch.ts`,
@@ -2998,6 +2998,50 @@ control-plane reads; set `MODAL_CHAT_NLP_URL` (+ matching secret) in the ingest 
 agent in this pipeline can execute it. Per 2026-07-27 dispatch-policy ruling (same treatment as
 ESC-020): **treated as non-blocking-for-dispatch**, kept OPEN, and surfaced in every session close
 until an operator runs the deploy and confirms live (chat_intent shadow key populated end-to-end).
+
+> **UPDATE 2026-08-08 (FOLLOW-892) — ONE state, chosen deliberately, written identically here, in
+> `backlog/QUEUE.md`'s session head, and in FOLLOW-892's close note. Item 1 splits into two axes and
+> they are NOT in the same state.**
+>
+> **Deploy axis — DISCHARGED, and by execution rather than by a status field.** On 2026-08-08 the
+> FOLLOW-904 effect probe (`scripts/check-modal-container-effect.py`, run `31256633000`) invoked
+> `process_chat_message` in the deployed prod app and got the throwaway tenant/session echoed back
+> with `model_used='haiku-4.5'`. That proves the container starts, that `from nlp import …` and
+> `from redis_writer import write_shadow_intent` both resolve, and that the endpoint answers — the
+> three things `modal app list` cannot tell you (RETRO-262). It is now a **standing daily control**,
+> not a one-off: `.github/workflows/cron-heartbeat.yml:329` runs
+> `check-modal-container-effect.py --app all` at 05:00 UTC. **The probe writes nothing**
+> (`profiling_opt_out=True` short-circuits `write_shadow_intent` at `redis_writer.py:121-122`,
+> §H.9), which is exactly why it does not discharge the axis below.
+>
+> **Correction to this escalation's own 2026-08-07 update block, appended not rewritten because it
+> was true when written:** it says `modal app list` "returns exactly ONE deployed app". As of
+> 2026-08-07 21:43 CEST that is **three**, including `estalara-intent-engine`
+> (`ap-MpUyBq9gCwO5sL79w6X46y`).
+>
+> **Traffic axis — OPEN, and this is where the untested behaviour lives.** Verified at the source
+> rather than inherited: `MODAL_CHAT_NLP_URL` is carried **only** by `apps/ingest/wrangler.toml:97`,
+> the `development` env, pointing at `http://localhost:8090/chat_nlp_endpoint`. Production has no
+> value, so `chat-nlp-dispatch.ts:104` takes its configured-no-op branch, no shadow key is ever
+> written, `readShadowChatIntent` returns null and `applyChatIntentPrior` never fires. **Chat feeds
+> zero live archetype signal in prod today**, and the reason is now one unset variable, not a
+> deploy.
+>
+> **Proof step that closes the traffic axis (fail-loud, named, single):** one
+> `shadow:{tenant}:{session}:chat_intent` key written in **prod** Upstash by a real buyer message —
+> not by a probe, not by a `modal run`, and not by the local chain (which was already proven
+> end-to-end on 2026-08-07 and is not evidence about prod).
+>
+> **Owner of the traffic axis — a named ticket, not "whoever notices".** It is **FOLLOW-820 item 3**
+> (the CEO prod-deploy gate ticket), which already carries "`MODAL_CHAT_NLP_URL` set in the prod
+> ingest Worker" as a GO condition. That places the traffic axis behind the localhost-first ruling
+> of 2026-06-10 **by design**, not by neglect. Do not re-file it as drift — that is the ESC-020
+> pattern FOLLOW-820 exists to stop (three audits have now made that mistake).
+>
+> **Do not close ESC-042 until that key exists in prod.** The reason is substantive, not tidiness:
+> `route.ts:1508-1535` attaches `chat_intent_dimensions` **unconditionally** and the CEO ruled
+> option A (no server-side gate), so the **first real prod chat message changes served archetypes**.
+> This escalation is the only record watching for that moment.
 
 ---
 
@@ -3698,5 +3742,32 @@ it is an onboarding change, which is why this is a ruling and not a ticket.
 auth-gated, **whether the `data-estalara` hooks are live on real listing pages has never been tested
 from outside**. That is an assumption ESC-020 / Wave-0 Step 6 rests on, and it is currently
 unverifiable anonymously. Not a claim that it is broken — a claim that nobody can currently tell.
+
+**ADDENDUM 2026-08-08 (PM, session 106) — this ruling now has a date, because §Snapshot.1 row B.6 is
+about to flip on a run that validates nothing. Read before flipping it.**
+
+Row B.6's flip condition is the **02:00 UTC scheduled run of 2026-08-09 confirmed by the 05:00 UTC
+detector**. I traced what that run will actually do, in the post-FOLLOW-902 code, rather than assume
+it repeats today's manual result:
+
+- `schema_validation.py:679` finds no `sample_listing_url`, takes the `config_gap` branch
+  (`:681-714`), writes a history row with
+  `coverage_score=0.0, drift_detected=False, error='config_gap: …'`, and **`continue`s** (`:715`).
+- `_run_validation` therefore returns normally, so `validate_schemas:601` **does** write the
+  `cron_heartbeats` row.
+- The 05:00 detector reads that heartbeat and goes **GREEN**.
+
+**So B.6's flip condition will be satisfied by a run whose outcome for the only active tenant is
+`config_gap` — the cron is alive and observed, and it has still validated nothing.** I checked this
+specifically because the opposite was plausible (an early return skipping the heartbeat would have
+reddened the detector and been misread as "the cron died again"); it does not, and that is worth
+recording as a non-finding so nobody re-derives it.
+
+The flip is honest on the **liveness** axis and would be dishonest on the **coverage** axis. This is
+FOLLOW-906's subject in the wild: one status token absorbing a change of axis without visibly
+changing. Whoever flips B.6 tomorrow must write the outcome next to it — e.g.
+`observed ✅ (2026-08-09 02:00 UTC) · coverage ❌ config_gap, 1/1 tenants — ESC-055` — and must not
+write a bare "observed ✅". **No new stub is filed for this** (Rule AN): it is a new fact about
+ESC-055 and FOLLOW-906, both of which already exist.
 
 **Resolution:** <empty until resolved>

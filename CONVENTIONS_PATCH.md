@@ -4121,3 +4121,163 @@ grep -rn "re-verify, do not inherit" backlog/ .claude/agents/   # the instructio
 ```
 
 <!-- Rule AR added 2026-08-08 — RETRO-262 §6. 44th permanent rule; range AA–AR (single letters A–Z exhausted per the Rule AA note). Evidence (≥2 PRIOR numbered retros): RETRO-217 §6 (count 1, ProfilingToggle/OptedOut absence claim wrong across three audits, falsifying FOLLOW-641's charter — held at count 1 with an explicit verbatim pre-authorization naming "naming variants AND import-graph/mount-point" and "the NEXT independent-subsystem sighting") + RETRO-247 §4d DG-1 / §5b (count 2, the mount-point half — a negative quantified over four sinks on three sinks' evidence, recorded as closure evidence in ropa.md/C-07/dpia.md; RETRO-247 homed the REMEDY in Rule AO and did not bank it against RETRO-217, so RETRO-262 banks it retroactively and says so — one degree weaker than a self-declared count, and it qualifies under RETRO-217's own two-strategy text). Promotion trigger: RETRO-262 (FOLLOW-900 / PR #698) — the PM's "apps/intent-engine imports only third-party modules", true of module-level imports and false of the import graph (main.py:82-83 imports nlp + redis_writer inside a function body, pulling observability + schemas), which scoped a P1's AC(6) audit to exclude a second app with the identical dead-image defect; it surfaced only because the dispatch brief said "re-verify, do not inherit". The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/AF/V/Q). NEW LETTER, not an amendment — four homes were tested against their TEXTS: Rule AC (scope a guard ticket by repo-wide grep, not the files the audit named) fails on MECHANISM, since a grep is exactly what produced the wrong claim and the needed second strategy is structural; Rule AD governs value-domain literals; Rule AE governs a GUARD's call-shape enumeration whereas AR governs the CLAIM (both fire on PR #698, at different objects — corroboration, not overlap); Rule AI governs propagation of a CHANGED claim to documents and its amendments 2 and 3 have already solved the document-corpus half under their own name, so folding absence-proof into AI would split AI's evidence base (the RETRO-122 error in rule form). RETRO-217 argued for a separate home in its arming and that argument is honoured. SCOPE LIMITER IS LOAD-BEARING (rule item 1): decision-gating negatives only — a rule demanding two search strategies for every "X is unaffected" sentence would be unaffordable and would be ignored. ALSO IN RETRO-262 §6, two rule actions REFUSED with reasons: (a) NO Rule AF amendment for unwatched scheduled workflows — RETRO-262 ran Rule AF's own Verification loop VERBATIM and it printed `== e2e-smoke.yml : failure,failure,failure` in under ten seconds, so the text is adequate and the failure is COMPLIANCE (16 days unexecuted since Rule AF's RETRO-205 promotion); remedy is mechanisation → FOLLOW-905; class count for the record is three (ESC-041 Release, E2E Smoke 97/97 failures since 2026-05-04 with zero successes ever, validate_schemas). (b) NO Rule AA amendment for the "deployed" vocabulary — Rule AA step 3 already mandates a fail-loud EFFECT proof ("a query transcript") and was COMPLIED WITH in all four rounds (B.6 never said DONE); the defect is that §Snapshot.1's single status token absorbs a change of axis without visibly changing (deployed ≠ configured / ≠ live / ≠ importable / works ≠ scheduled, four meanings in four days), which is a schema defect in docs/MASTER_DESIGN.md → FOLLOW-906 proposes decomposing it into registered / importable / invoked / observed with a per-axis evidence KIND. LETTER CHOICE: AR is the next in the double-letter sequence after AQ; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AS — When a control's DEFECT REPORTS drive a fix, the fix MUST also cover the control's SILENT direction: false positives are reported and false negatives are not, so a scope set by the reports is set by the half that was never dangerous — and the fixture MUST be executed against the PRE-FIX artefact to prove it is red-first
+
+**Pattern:** every control can be wrong in two directions. The **noisy** direction — it fires when
+it should not — produces reports, because a human or an agent sees a warning it did not deserve and
+pays a verification cost. The **silent** direction — it does not fire when it should — produces
+**nothing at all**, because nobody sees an absent warning. The reports therefore sample one half of
+the defect space, and the ticket authored from them inherits that sampling. The fix for the noisy
+half is real and correct; it is never evidence about the silent half, and the silent half is the one
+the control exists for. The same asymmetry explains why a self-test harness accumulates cases only
+for defects that were once filed: it becomes a changelog of past bugs, and a changelog cannot fail
+on something nobody has ever complained about.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate the
+count):**
+
+- **RETRO-252 §5d (2026-08-06, count 1, PRIOR)** — three generations of
+  `scripts/gh-pr-checks-verified.sh`'s self-test, each scoped to the defect being fixed and never to
+  the mechanism being inherited, stated in that retro's own words: _"The harness is a **changelog of
+  past bugs**, and a changelog cannot fail on a regression in something that never had a bug filed
+  against it."_ Generation 3 pinned generation 2's two defects and not generation 1's settle loop;
+  generation 4 pinned generation 3's and still not generation 1's.
+- **RETRO-237 §4b CB-1 (2026-07-31, count 2, PRIOR)** — _"FOUR MEASURED false negatives in the new
+  gate, reproduced with throwaway fixtures"_ (`check-sentry-capture-has-init.sh`). Four
+  silent-direction defects in a freshly-shipped control, **none of them reported by anyone**, all
+  found only by deliberate perturbation. Corroborating but not counted: RETRO-253 (`check-rule-h.sh`
+  Pattern 2 _"has never been able to fail"_) and RETRO-262 §3 (three blind shapes in
+  `check-modal-local-imports.py`, found by driving synthetic trees through the real gate).
+- **RETRO-263 (the promotion trigger), where the asymmetry is quantified for the first time.**
+  `.claude/hooks/pre-edit-branch-guard.sh` was reported **six times in one day by six independent
+  workers** (FOLLOW-849 → FOLLOW-881 → FOLLOW-909). **All six reports were the noisy direction** — a
+  false warning while editing inside a worktree. **Zero reported the silent direction** — cwd in a
+  worktree, edit landing on `main`, no warning at all — which is precisely the stranded-work failure
+  the guard was written for (FOLLOW-448 / RETRO-146 §4e) and which was live the entire time. It
+  entered scope only because PR #701's worker chose to write fixture cases A3/A4 for it. In the same
+  retro, the identical asymmetry was found on PRIOR 1's own artefact one generation later: the merge
+  gate's six cardinality fixtures all vary rollup SIZE and none varies rollup MEMBERSHIP, so a check
+  that is merely `SKIPPED` counts as green **and** as completeness — driven to
+  `RESULT: all checks green. Safe to mark READY_FOR_REVIEW`, exit 0, with six real gates skipped.
+  Nobody has ever filed a bug about a skipped check.
+
+**Rule:** when a ticket hardens, fixes or re-scopes a control (a hook, a CI gate, a linter, a
+detector, an alarm, a classifier) **and its scope was set by reports of that control misbehaving**:
+
+1. **Name both directions explicitly in the ticket or the PR**, in the control's own vocabulary:
+   what does a FALSE POSITIVE look like here, and what does a FALSE NEGATIVE look like here. If the
+   report set contains only one of them, say so — that sentence is the finding.
+2. **Ship a fixture for the direction that was NOT reported**, in the same PR. A fix that closes the
+   reported direction is a starting point, never coverage proof. Where the unreported direction is
+   genuinely out of reach, assert the current (wrong) verdict with the reason recorded beside it —
+   an executable disclosure, per Rule AP.
+3. **Prove the fixture is red-first by running it against the PRE-FIX artefact**
+   (`git show <fix-commit>^:<path>` into a throwaway tree) and record the pass/fail split in the PR.
+   A fixture authored after the fix, in the fix's mental model, is not evidence it can fail — this
+   is Rule AO's argument applied to fixtures instead of prose.
+4. **When adding cases to an existing self-test, ask what the harness does NOT vary**, not what it
+   covers. The accumulated cases are a changelog; enumerate the axes (size vs identity, present vs
+   absent, fires vs silent) and state which ones no case perturbs.
+5. Scope limiter, load-bearing: this rule fires on **report-driven** control work. It does not fire
+   on a brand-new control (Rule Q owns "a check that has never seen itself go red") or on feature
+   work. A rule demanding a two-direction fixture for every change would be unaffordable and would
+   be ignored, which is worse than absent.
+
+**Verification:**
+
+```bash
+# 1. Before writing the fix: collect the report set and classify each report by direction.
+grep -rn "<control-name>" backlog/FOLLOW_UPS.md backlog/QUEUE.md | head -40
+#    If every report is "it warned and it should not have", the silent direction is unscoped.
+
+# 2. After writing the fixture, prove it is red-first against the artefact as it was:
+mkdir -p /tmp/prefix && git show <fix-commit>^:<path/to/control> > /tmp/prefix/<control>
+#    run the NEW fixture against the OLD control; record "N of M assertions fail".
+
+# 3. Ask the harness what it does not vary (example: the merge gate's own fixtures):
+grep -n "_st_fixture" scripts/gh-pr-checks-verified.sh
+#    six cardinality fixtures, all varying SIZE; none varies the check-run SET.
+```
+
+<!-- Rule AS added 2026-08-09 — RETRO-263 §6. 45th permanent rule; range AA–AS. Evidence (≥2 PRIOR numbered retros): RETRO-252 §5d (count 1, "the harness is a changelog of past bugs, and a changelog cannot fail on a regression in something that never had a bug filed against it" — three generations of gh-pr-checks-verified.sh's self-test each scoped to the defect being fixed) + RETRO-237 §4b CB-1 (count 2, four MEASURED false negatives in check-sentry-capture-has-init.sh, none reported by anyone, all found by throwaway-fixture perturbation). Corroborating, not counted: RETRO-253 (check-rule-h.sh Pattern 2 could never fail) and RETRO-262 §3 (three blind shapes in check-modal-local-imports.py found by driving synthetic trees). Promotion trigger: RETRO-263 (PRs #699/#700/#701/#702) — the branch guard drew SIX independent reports in one day, ALL of them the noisy direction, ZERO of the silent direction (cwd in a worktree, edit landing on main, no warning), which is the exact stranded-work failure the guard exists for and which entered scope only because PR #701's worker volunteered fixture cases A3/A4; and in the same retro the identical asymmetry was driven on PRIOR 1's own artefact one generation later — gh-pr-checks-verified.sh printed "all checks green. Safe to mark READY_FOR_REVIEW" (exit 0) over six real gates flipped to SKIPPED, because its six cardinality fixtures vary rollup SIZE and none varies rollup MEMBERSHIP. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/AF/AR/V/Q). NEW LETTER, not an amendment — four homes tested against their TEXTS: Rule AE governs the enumeration of syntactic CALL-SHAPES of a guarded action by an AST/regex SECURITY guard (a SHAPE axis; it does not reach an application classifier in Python or a shell PreToolUse hook, both of which are Rule AS instances in RETRO-263); Rule Q governs a NEW gate emitting positive proof its assertion executed and scoping its soft-skip — the remedy for one sub-case, not the scoping principle for report-driven work; Rule AM governs how fixtures are SYNTHESIZED (not mutated from live source), an orthogonal axis; Rule AP governs DISCLOSURE of residuals as a machine-checked register, not the DIRECTION a fixture must cover. What is unpromoted is the DIRECTION axis plus the red-first-against-the-pre-fix-artefact obligation, and PR #701 is the estate's own proof both are affordable (20 assertions, ~2h, fixture as the deliverable: 8/20 fail on 5fb90e37^, 0/20 at HEAD, re-derived independently by RETRO-263). SCOPE LIMITER IS LOAD-BEARING (rule item 5): report-driven control work only. LETTER CHOICE: AS is the next in the double-letter sequence after AR; flag for human review if a different scheme is preferred. -->
+
+---
+
+## Rule AT — An escalation whose premise contains a QUANTITY or an EXISTENCE claim MUST have that premise MEASURED and the transcript pasted into the escalation, immediately before it is put to the decision-maker — a premise is a claim, it ages, and this estate has no control that re-validates one between `filed` and `ruled`
+
+**Pattern:** an escalation is a document that asks a human to decide something, and its
+recommendation rests on a premise. Premises about the world — how many rows are affected, whether a
+credential exists, whether a budget is exhausted, whether a table is empty — are cheap to measure
+and expensive to be wrong about, and they are wrong in two distinct ways: **wrong at filing** (the
+author inferred instead of measuring) and **aged** (true when written, false when ruled, because the
+intervening work changed it). Both consume the scarcest resource in the project — the CEO's decision
+attention — on a question that has already dissolved, and both have happened. There is no register,
+no owner and no re-validation step between `filed` and `ruled`, so the only thing that catches a bad
+premise is somebody choosing to measure it.
+
+**Evidence (≥2 PRIOR retros, plus the promotion trigger; this discharges pattern P-41, which
+RETRO-261 §8 minted explicitly as "at 1 prior — not promoted"):**
+
+- **RETRO-260 §5d (count 1, PRIOR)** — _"'An escalation's premise is stable between filing and
+  ruling' — false, demonstrated within one session"_. ESC-054's stakes halved hours after it was
+  written (one real signal, not two); the PM recorded the change in QUEUE.md and **the escalation
+  text did not move**. RETRO-260's own words: _"There is no mechanism that would have caught it,
+  because escalations have no re-validation step, no register, and no owner between `filed` and
+  `ruled`."_
+- **RETRO-261 §5d (count 2, PRIOR)** — _"An escalation is a document with a premise, and this estate
+  has no control that re-validates a premise between `filed` and `executed`."_ ESC-053's premise was
+  **wrong at filing** (a value named by a label whose meaning is inverted in Doppler), and
+  RETRO-261's finding on the mechanism is the rule's design input: _"What caught it was **a probe,
+  not a control**"_ — a credential-free reachability test. Minted as **P-41 at 1 prior — not
+  promoted**, i.e. armed.
+- **RETRO-263 (the promotion trigger), and it is the first sighting where the remedy was executed
+  and worked — twice, in one session, on two independent escalations.** **ESC-044:** the remediation
+  axis was measured before the ruling — prod `consent_records` = **0 rows total, 0 with the
+  placeholder hash** — so the "data subjects hold records attesting text they did not see" premise
+  had an **empty population**, and the CEO/DPO could rule on principle instead of on remediation
+  (FOLLOW-916 AC(4) even records that today's zero expires the moment the consent caller is
+  integrated). **ESC-045:** it asked for credentials that **already existed** (the Anthropic key was
+  in Doppler dev the whole time). Both escalations were re-framed by measurement **before** they
+  consumed a decision, and the measurement in each case was one command.
+
+**Rule:** before an escalation is put to the decision-maker (and again if it has been open more than
+one session):
+
+1. **Identify whether the premise contains a QUANTITY or an EXISTENCE claim.** "N records are
+   affected", "credential X is missing", "the budget is exhausted", "the table is empty", "the
+   endpoint returns 403". If it does not — the escalation is about ambiguity, an interface
+   disagreement, a policy or a product direction — **this rule does not fire.** That limiter is
+   load-bearing: a measurement demand on every escalation would be unaffordable and would be
+   ignored, which is worse than absent.
+2. **Measure it and paste the transcript into the escalation**, dated, with the command that
+   produced it — not a summary of it. A one-line `psql` count, a `modal run` probe, a `gzip` of the
+   artefact. If it cannot be measured from where you sit, say who can and what they must run.
+3. **If the measurement changes the question, rewrite the escalation before asking, not after.** A
+   premise that has dissolved makes the recommendation an artefact of history; the decision-maker
+   should meet the current question.
+4. **State the premise's expiry.** A measured zero is true on the day it is taken; record what would
+   change it ("re-take this count immediately before the consent caller is integrated"), so the next
+   reader knows whether the number is still load-bearing.
+5. Applies symmetrically to a **ruling being executed**: the ticket that implements a ruling
+   re-measures the premise before building, and reports a divergence instead of building through it.
+
+**Verification:**
+
+```bash
+# 1. Does the escalation contain a measurable premise? (quantities and existence claims)
+grep -nE '\b(0|zero|no|none|[0-9]+)\b.*(rows?|records?|bytes?|runs?|keys?|missing|unset|empty|exhausted)' \
+  backlog/ESCALATIONS.md | sed -n '1,40p'
+
+# 2. Measure it. Examples actually used in this repo, each one command:
+doppler run --config prd -- psql "$DATABASE_URL" -Atqc 'SELECT count(*) FROM consent_records;'
+modal run scripts/check-modal-secret-keys.py::check --required "SENTRY_DSN"
+node -e "console.log(require('zlib').gzipSync(require('fs').readFileSync(B)).length)"
+
+# 3. Before ruling, confirm the escalation carries a DATED transcript, not a claim:
+grep -n "measured\|transcript\|as of 20" backlog/ESCALATIONS.md | head -20
+```
+
+<!-- Rule AT added 2026-08-09 — RETRO-263 §6. 46th permanent rule; range AA–AT. Discharges pattern P-41, minted by RETRO-261 §8 as "at 1 prior — not promoted". Evidence (≥2 PRIOR numbered retros): RETRO-260 §5d (count 1, ESC-054's premise AGED — stakes halved hours after filing, the PM recorded it in QUEUE.md and the escalation text did not move; "there is no mechanism that would have caught it") + RETRO-261 §5d (count 2, ESC-053's premise was WRONG AT FILING — a value named by a label whose meaning is inverted in Doppler; "what caught it was a probe, not a control"). Promotion trigger: RETRO-263 (session 107's eight CEO rulings) — the first sighting where the remedy was EXECUTED and worked twice on independent escalations: ESC-044's remediation axis measured at zero rows before the ask (prod consent_records = 0 total, 0 with the placeholder hash), turning a remediation question into a principle question; and ESC-045 asking for credentials that already existed. Two prior failures uncaught by any control + one session in which a nameless practice caught two premises for one command each = the promotion condition, and it is the rare case where the rule codifies a remedy already demonstrated rather than a wish. The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count. NEW LETTER, not an amendment — homes tested against their TEXTS: Rule AR governs a claim of ABSENCE that scopes or closes WORK and requires two SEARCH strategies over a codebase (lexical + structural); AT governs a claim about the WORLD (a count, a credential, a budget) in a document that asks a HUMAN to decide, and its remedy is a measurement transcript, not a second grep — they fire on different objects and would split each other's evidence base (the RETRO-122 error in rule form). Rule AA governs code-vs-prod status vocabulary on a TICKET; Rule AO governs a corrective edit re-verified against its own PR's evidence; Rule AI governs propagating a CHANGED claim to documents — none reaches an escalation's premise between filed and ruled, which RETRO-260 and RETRO-261 both named as having no owner. SCOPE LIMITER IS LOAD-BEARING (rule item 1) and was the brief's explicit affordability question: quantity/existence premises ONLY; escalations about ambiguity, interface disagreement or policy have no measurable premise and are out of scope. ALSO IN RETRO-263 §6: pattern P-42 ("read the seam before dispatching" — PR #702's PM re-route of FOLLOW-915 from sdk-engineer to architect on an ADR-0011 collision, with NO mechanical backstop: grep -rln 'docs/adr' .github/workflows/ scripts/ returns zero files) is ARMED AT COUNT 1 WITH AN EXPLICIT PRE-AUTHORIZATION in the RETRO-217 form and NOT promoted; and two rule actions were REFUSED — no Rule AJ amendment for RETRO-263 §3 HW-2 and no Rule AQ amendment for §3 HW-1, both being COMPLIANCE failures against adequate texts per RETRO-258/261's standard (→ FOLLOW-920 / FOLLOW-921). LETTER CHOICE: AT is the next in the double-letter sequence after AS; flag for human review if a different scheme is preferred. -->

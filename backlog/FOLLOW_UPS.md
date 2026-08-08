@@ -32303,3 +32303,281 @@ that is FOLLOW-905's subject, cross-reference rather than duplicate) and `load-t
 runs ever**). Report, do not fix, anything beyond `Release`.
 
 cross_ref: [ESC-041 (RESOLVED); FOLLOW-626; FOLLOW-901; FOLLOW-905; Rule AF]
+
+---
+
+## FOLLOW-918 — The merge gate is green over a check that is merely ABSENT: `SKIPPED` counts as success AND as completeness, and 54 of 91 check-runs may vanish
+
+source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Driven against the merged script, not read.** Two shapes, both reproduced through the gate's own
+fixture harness (`GH_PR_CHECKS_SELF_TEST=1 GH_PR_CHECKS_FIXTURE_DIR=<dir>`), with snapshots
+synthesized from PR #702's real 91-run rollup:
+
+1. **`SKIPPED` is green and it also satisfies the floor.** `gh-pr-checks-verified.sh:702` builds
+   `FAILURE_REGEX` as `(?!SUCCESS|SKIPPED|NEUTRAL)`; `:1578` counts skips into their own bucket.
+   Flipping six real gates — `Modal local-source gate (FOLLOW-900)`,
+   `Rule H — schema scaffold wiring`, `Gitleaks secrets scan`,
+   `Consent contract drift gate (FOLLOW-716)`, `Format check`, `Test (Node 22)` — from `SUCCESS` to
+   `SKIPPED` produced verbatim:
+   `Total checks: 91 | success: 75 | skipped: 16 | neutral: 0 | failing: 0` →
+   `RESULT: all checks green. Safe to mark READY_FOR_REVIEW.` **exit 0.**
+2. **The floor tolerates 59% absence.** `floor = ceil(second_highest_peer × 40/100)`; measured live
+   the peers are `91,91,91,87,87,85,83,81,80,79,81,79` → reference 91, **floor 37**. A 37-run
+   all-`SUCCESS` rollup containing **none** of the repo's gates settles and exits 0.
+
+**And PR #700 moved the arithmetic the wrong way, which is why this is filed now.**
+`assert-modal-container-effect` is `skipped` by design on every PR and registers **two** check-runs
+(push + pull_request). A permanently-skipped run is a free unit of cardinality: **+1 reference, +0.4
+floor, +0.6 tolerated absence.** The peer sample moved 87 → 91 across this merge window, so
+tolerated absence moved 52 → 54. The two skips are individually correct; the interaction is not.
+
+**Why the fix is not a bigger percentage.** The gate reads two properties of the rollup — stability
+and size — and neither is IDENTITY. Its six cardinality fixtures (`-born-small`, `-collapse`,
+`-partial-collapse`, `-growth`, `-override`, `-no-sample`) all vary size and none varies membership,
+because nobody has ever filed a bug about a check that was merely skipped (Rule AS / RETRO-252 §5d:
+_"a changelog cannot fail on a regression in something that never had a bug filed against it"_).
+
+**AC:** (1) a **named required-check register** the gate executes — a list of check-run names that
+MUST be present and MUST NOT be `SKIPPED`, with a documented per-entry reason; (2) a `SKIPPED` state
+on a registered name is a **red**, and an unregistered name being skipped stays green (so
+`assert-prod-heartbeat` / `assert-modal-container-effect` remain correctly out of scope); (3) the
+gate prints **which named check it did not find**, not a count; (4) at least three new self-test
+fixtures: a registered check flipped to `SKIPPED`, a registered check absent from an above-floor
+rollup, and a clean rollup — the third so the register cannot pass by always failing; (5) the
+register must be maintainable — derive it from `ci.yml` job names where possible and fail when a
+registered name matches no job (the `check_registry_covers_workflow` pattern in
+`scripts/check-modal-local-imports.py` is the reference shape); (6) while you are in there:
+`scripts/__tests__/pre-edit-branch-guard.test.sh` currently reports under the check name
+`shellcheck (Sentry gate family, FOLLOW-769)` and adds zero cardinality — decide whether the
+register names that job or the fixture gets its own.
+
+cross_ref: [RETRO-263 §Headline(1), §4a LG-1/LG-2, §4c TG-2/TG-3; RETRO-252 §5d; FOLLOW-865 (the
+floor); FOLLOW-856; FOLLOW-846; FOLLOW-813; FOLLOW-912 (the `Vercel` exemption disagreement, same
+file); Rule AS]
+
+---
+
+## FOLLOW-919 — `R-F1` asserts the effect probe EXISTS; a zero-byte or un-wired probe leaves the static gate green
+
+source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**PR #700's two tickets are tied together in the artefact by residual `R-F1`, whose predicate is
+`(repo_root / "scripts/check-modal-container-effect.py").exists()`
+(`scripts/check-modal-local-imports.py:224` + `:924`). Measured in an isolated throwaway git repo**
+(the real `_repo_root()` shells out to `git rev-parse --show-toplevel`, so a probe run from inside
+the repo silently tests the real file — verify your harness before trusting a result here):
+
+| perturbation                   | verdict                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| probe **deleted**              | `SELF-TEST FAIL: residual R-F1 names artefact … does not exist` → exit 2 ✅  |
+| probe **truncated to 0 bytes** | `OK [R-F1] covered` → `Self-test PASSED (21 cases, 5 residuals)` → exit 0 ❌ |
+
+**Deletion is the shape nobody performs; un-wiring is the shape that happens.** Removing the three
+invocation sites (`cron-heartbeat.yml:329`, `modal-deploy.yml:173,267`) leaves the file on disk and
+`R-F1` green while the estate's only effect axis for two of three Modal apps is gone. The register's
+own text promises _"the EFFECT-axis complement … which invokes the deployed functions"_ — it should
+assert that, not a filename.
+
+**AC:** (1) `R-F1`'s predicate asserts the probe is **referenced by every workflow that claims to
+run it** (parse `cron-heartbeat.yml` and `modal-deploy.yml` for the invocation, the way
+`check_registry_covers_workflow` already parses `modal-deploy.yml`); (2) a self-test case that goes
+**red** when the reference is removed, and a passing case with it present; (3) `artifact`-kind
+residuals in general must assert a **property**, not a path — if you keep the field, rename it and
+require a predicate; (4) do not make `R-F1` import or execute the probe — the point is that the two
+controls are independent.
+
+cross_ref: [RETRO-263 §Headline(3), §4a LG-3; FOLLOW-903/904 (PR #700); Rule AP; Rule AS]
+
+---
+
+## FOLLOW-920 — The `ERROR_PREFIX_*` dedup contract is hand-copied into SQL in another language, and the new digest partition has no residual bucket and no fixture
+
+source_retro: RETRO-263 source_ticket: FOLLOW-902 recommended_sprint: now recommended_agent:
+data-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Three defects in one seam, all introduced by PR #699 and all in the control layer rather than the
+fix.**
+
+1. **Rule AQ violation.** `apps/data-quality/src/crons/schema_validation.py:166-168` declares
+   `ERROR_PREFIX_CONFIG_GAP = "config_gap:"` and
+   `ERROR_PREFIX_ZERO_COVERAGE = "validator_error: zero_coverage"` with the comment _"these are the
+   dedup keys … matched with `LIKE '<prefix>%'` — keep them stable"_. **The matcher is a hand-typed
+   SQL literal in a shell script**: `scripts/check-cron-heartbeat.sh:170-171`,
+   `count(*) FILTER (WHERE error LIKE 'config_gap:%' OR error LIKE 'validator_error:%')`. No import,
+   no generation, no machine check. Rule AQ in as many words: _"a prose 'copied verbatim, keep in
+   sync' note is not a control."_
+2. **The partition lost its residual bucket.** The previous expression was
+   `count(*) FILTER (WHERE error IS NOT NULL)` and could not miss a row. The new pair of
+   prefix-matched filters counts an `error` string matching **neither** prefix into **neither**
+   bucket, so `rows written` can silently exceed `drift + fetch-error + unmeasured`.
+3. **Zero test coverage for the change.** The digest's 6-field `psql` projection and its
+   `IFS='|' read -r … d_unmeasured d_max` parse are two independent literals ten lines apart — the
+   exact shape FOLLOW-856 removed from `gh-pr-checks-verified.sh` after it produced a false green.
+   `cron-heartbeat.yml`'s `detector-negative-control` creates `schema_validation_history` and
+   **never inserts a row**, so all four cases run the digest against an empty table, no digest
+   number is asserted anywhere, and the `NOTE: N row(s) could not be measured` branch has never
+   executed.
+
+**AC:** (1) one source of truth for the prefixes, machine-checked across the Python/SQL boundary (a
+generated fragment, or a gate that greps both sides and compares — the
+`Cross-language event contract` job is the reference shape); (2) an arithmetic self-consistency
+assertion in the digest: `rows = drift + fetch_error + unmeasured + ok`, or an explicit `other`
+bucket that is printed; (3) extend `detector-negative-control` with rows — at minimum one `drift`,
+one `fetch_failed:`, one `config_gap:`, one `validator_error:` and one unclassifiable — and assert
+the printed numbers and the `NOTE` branch; (4) keep the fixtures synthesized, not mutated from live
+source (Rule AM).
+
+cross_ref: [RETRO-263 §3 HW-1, §4a LG-4, §4c TG-1; FOLLOW-902 (PR #699); FOLLOW-893; FOLLOW-856;
+Rule AQ; Rule AM]
+
+---
+
+## FOLLOW-921 — The two NEW Sentry signals have a credible channel and no assertion that it stays credible
+
+source_retro: RETRO-263 source_ticket: FOLLOW-902 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+**Measured, and the measurement corrected my own hypothesis, so read this before re-deriving it.**
+PR #699 ships `zero_coverage` and `config_gap` as new failure-detection signals with their own
+fingerprints. `init_sentry("SENTRY_DSN")` (`schema_validation.py:592`) is **DSN-gated — a no-op when
+the key is absent** — and the pre-deploy key gate for data-quality asserts only
+`--required "DATABASE_URL"` (`modal-deploy.yml:323`). I ran the repo's own probe against prod:
+
+```
+modal run scripts/check-modal-secret-keys.py::check --required "DATABASE_URL,SENTRY_DSN"
+  DATABASE_URL: present
+  SENTRY_DSN: present
+```
+
+**So the channel exists today and this is NOT an outage.** What is missing is Rule AJ's second half
+— _a verified delivery channel_ — in two senses: nothing asserts `SENTRY_DSN` for this app, so a
+`modal secret create --force` wipe silences every alert this PR carefully re-routed with a green
+deploy; and **no message from `estalara-schema-validation` has ever been observed to land in
+Sentry**, so the transmit path is inferred, not seen.
+
+**AC:** (1) add `SENTRY_DSN` to the `--required` list for **data-quality and intent-engine**, and
+add the missing key-gate step to the **llm-gateway** deploy job, which has none at all; (2) observe
+one `config_gap` or `zero_coverage` event end-to-end in the Sentry project and paste the event
+id/link as closure evidence — an executed proof, not a code reading; (3) if the DSN routes to a
+project nobody watches, say so and name the owner rather than closing.
+
+cross_ref: [RETRO-263 §3 HW-2; FOLLOW-902 (PR #699); FOLLOW-817 (the key gate); ESC-053; Rule AJ;
+Rule AA step 3]
+
+---
+
+## FOLLOW-922 — The sixth outcome: a stored schema with zero selectors is a `logger.warning` and a `continue`
+
+source_retro: RETRO-263 source_ticket: FOLLOW-902 recommended_sprint: next recommended_agent:
+data-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+`apps/data-quality/src/crons/schema_validation.py:659-665`: when `extract_selectors()` yields
+nothing, the loop takes `logger.warning("… no selectors found in schema — skipping"); continue` —
+**no `schema_validation_history` row, no Sentry capture, no outcome name, no contribution to the
+digest.** A tenant whose schema loses its selectors disappears from the record silently, and the
+cron's heartbeat still reports success.
+
+**Why this is in scope for FOLLOW-902 rather than pre-existing noise.** The `continue` predates the
+PR; the **five-outcome vocabulary that makes its absence load-bearing does not**. The module
+docstring now enumerates `ok` / `drift` / `zero_coverage` / `config_gap` / `fetch_failed` as _"every
+tenant-domain pair resolves to exactly one outcome"_ — and this state resolves to none of them. The
+PR's own thesis is _"an alert must be able to name what changed"_, and it added `config_gap` for the
+adjacent absence (no URL) while leaving this absence in a log line. RETRO-010 / FOLLOW-111 is the
+governing precedent: no signal a future decision depends on may live in a `console.warn`.
+
+**Probed, for whoever fixes this:** `classify_outcome({}, [])` returns `('ok', 1.0, [])` — if the
+guard above it is ever relaxed, the state renders as **perfect coverage**, which is worse than
+silence. Fix the guard and the classifier together or neither.
+
+**AC:** (1) a sixth outcome name (`no_selectors` or similar) in the docstring's table and in the
+constant block; (2) a history row with `drift_detected = False`, `total_selectors = 0` and an
+`error` prefix that the digest counts as **unmeasured**; (3) a Sentry capture on the same 24h dedup
+as `config_gap`, since a schema that lost its selectors is a detection-pipeline defect; (4) a unit
+test for the loop branch, and a `classify_outcome({}, [])` test that asserts the chosen semantics
+explicitly rather than inheriting `compute_coverage`'s vacuous 1.0.
+
+cross_ref: [RETRO-263 §3 HW-3; FOLLOW-902 (PR #699); FOLLOW-907; RETRO-010 / FOLLOW-111; ESC-055]
+
+---
+
+## FOLLOW-923 — ADR-0021 is ACCEPTED by its own header and PROPOSED in the index, and the countersign it calls a gate has no consumer
+
+source_retro: RETRO-263 source_ticket: FOLLOW-915 recommended_sprint: next recommended_agent:
+architect priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+**Two records disagree from the moment PR #702 merged, on exactly the axis the PR's process
+innovation was about.**
+
+- `docs/adr/ADR-0021-consent-text-out-of-bundle-transport.md:3` — _"**Status:** PROPOSED → ACCEPTED
+  on merge of the FOLLOW-915 design PR (merging is the ratification act, ADR-0020 precedent)"_. **PR
+  #702 is that PR and it merged.**
+- `docs/adr/README.md:22` — status **PROPOSED**.
+
+So the ADR is simultaneously ratified and not, while §D5 — the one clause the architect
+**deliberately refused to self-ratify** — awaits a compliance countersign. Either the header's
+trigger means the _implementation_ PR (say so, and name it), or the index is stale.
+
+**And the gate is prose.** The Action Items say the countersign must land _"before the FOLLOW-915
+implementation PR merges"_, and the PR description calls a refusal a revert-to-PROPOSED path.
+**Nothing mechanical reads ADR status:** `grep -rln 'docs/adr' .github/workflows/ scripts/` returns
+**zero files**. The only enforcement is PM memory — and two P1s (FOLLOW-913, FOLLOW-898) are held
+behind FOLLOW-915's implementation, so the hold on both is transitively gated on that memory.
+
+**AC:** (1) make the Status line and the README index agree, and state the ratification trigger as a
+condition a reader can evaluate; (2) record the countersign (or the refusal) as a dated line under
+Status, per the ADR's own Action Items; (3) decide whether "an ADR whose Status names an outstanding
+countersign blocks the PR implementing it" gets a mechanical consumer — a CI grep is cheap and this
+is the second time a process gate in this estate has existed only as prose (Rule AP's principle
+applied outside a gate script); (4) do **not** re-open §D5's substance — that is compliance's call,
+and this ticket is about the record, not the ruling.
+
+cross_ref: [RETRO-263 §3 HW-4, §4d DG-1, §5d; FOLLOW-915; ADR-0021; ADR-0011; ADR-0020 (the cited
+precedent); FOLLOW-913; FOLLOW-898; Rule AP]
+
+---
+
+## FOLLOW-924 — The effect probe has no residual register, in the same PR that gave its sibling one
+
+source_retro: RETRO-263 source_ticket: FOLLOW-904 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+PR #700 converted `check-modal-local-imports.py`'s residual prose into a machine-checked `RESIDUALS`
+tuple the gate prints and self-tests (5 entries, Rule AP satisfied). Its sibling in the same PR,
+`scripts/check-modal-container-effect.py`, has a `WHAT IS *NOT* ASSERTED` docstring section and
+nothing executable. Rule AP applies to both.
+
+**Two holes not in that prose, found by reading the probe against the deployment it targets:**
+
+1. **The llm-gateway leg attributes its 401 to `_valid_bearer`, and a 401 is not uniquely
+   application-produced.** A Modal web endpoint configured with proxy auth answers 401 at the edge
+   **without starting a container**, which would satisfy the probe while the module fails to import
+   — the exact false green the probe exists to prevent. **Currently empty**
+   (`grep -rn 'requires_proxy_auth' apps/llm-gateway/src` → 0 hits), so this is an honest hole in
+   the `R-E1` mould rather than a live defect. The negative control has a case for
+   `200 on an invalid bearer` (`N10`) and none for `401 before the container starts`.
+2. **Coverage is 2 of 3 apps (stated) and 1 of 2 llm-gateway entrypoints (not stated).**
+   `jobs/batch_enrich.py` is unreachable from `main.py` — the known-dead Sonnet batch tier of
+   FOLLOW-874 — so the effect axis says nothing about it.
+
+**Also open, and not a defect: the schedule leg has never fired.** `cron-heartbeat.yml` has had
+exactly one scheduled run in its life (`31241996385`, 2026-08-08T05:34, the FOLLOW-900 catch). Every
+green observation of `assert-modal-container-effect` so far is a push-to-`main` invocation, so
+FOLLOW-904 AC(4)'s decay-detection half is **unexercised** until the 05:00 UTC firing on 2026-08-09.
+Verify it once and record the run id.
+
+**AC:** (1) a machine-checked `RESIDUALS`-style register in the probe, printed on every run, each
+entry backed by an executed negative-control case or an artefact predicate; (2) entries for the two
+holes above with their verdicts written down; (3) a negative-control case for a 401 produced without
+a container (fake backend answering 401 with no invocation recorded) — if the probe cannot
+distinguish it, say so in the register rather than pretending; (4) paste the first **scheduled** run
+id in which the job executed green.
+
+cross_ref: [RETRO-263 §4a LG-5, §4d DG-2; FOLLOW-904 (PR #700); FOLLOW-903; FOLLOW-874; RETRO-262;
+Rule AP; Rule Q]

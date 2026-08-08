@@ -57069,3 +57069,570 @@ dispatch.
   97-run E2E finding belong to. ESC-041 remains **OPEN**, and its workflow's reds have gone quiet by
   trigger change rather than by resolution — which is the failure mode Rule AF item 1 forbids
   ("quarantine with an owning FOLLOW and a restoration condition"), reached by accident.
+
+---
+
+## RETRO-263 — FOLLOW-902 (#699), FOLLOW-903 + FOLLOW-904 (#700), FOLLOW-849 + FOLLOW-909 (#701), FOLLOW-915 AC(0) (#702) — the effect axis is real and I proved it by executing it; the merge gate that admitted all four is green over a check that is merely absent, and I proved that too — 2026-08-09
+
+**THE HEADLINE, IN FOUR PARTS. EVERY ONE OF THEM WAS DRIVEN, NOT READ.**
+
+**(1) THE SPINE QUESTION, ANSWERED YES, TWICE, BY EXECUTION.
+`scripts/gh-pr-checks-verified.sh` CAN PRINT "all checks green. Safe to mark READY_FOR_REVIEW" AND
+EXIT 0 WHILE THE CHECKS THAT MATTER ARE MERELY ABSENT.** Two independent mechanisms, both driven
+against the real merged script through its own fixture harness (`GH_PR_CHECKS_SELF_TEST=1
+GH_PR_CHECKS_FIXTURE_DIR=…`, snapshots synthesized from PR #702's real 91-run rollup):
+
+- **Shape 1 — SKIPPED is classified as green and simultaneously counts toward the completeness
+  floor.** `gh-pr-checks-verified.sh:702` builds `FAILURE_REGEX` as
+  `(?!SUCCESS|SKIPPED|NEUTRAL)`, and `:1578` counts `SKIPPED` into its own bucket beside `success`.
+  Nothing anywhere in 2,101 lines asserts that a check-run with a PARTICULAR NAME is present or
+  non-skipped. I took the real rollup, flipped six gates that matter —
+  `Modal local-source gate (FOLLOW-900)`, `Rule H — schema scaffold wiring`, `Gitleaks secrets
+  scan`, `Consent contract drift gate (FOLLOW-716)`, `Format check`, `Test (Node 22)` — from
+  `SUCCESS` to `SKIPPED`, and neutralised the pre-existing Rule I red. Verbatim output:
+  `Total checks: 91 | success: 75 | skipped: 16 | neutral: 0 | failing: 0` →
+  `RESULT: all checks green. Safe to mark READY_FOR_REVIEW.` **exit 0.**
+- **Shape 2 — the floor's headroom is 59% of the rollup.** `derive_cardinality_floor` sets
+  `floor = ceil(second_highest_peer × 40 / 100)`. Measured live:
+  `gh pr list --state all -L 12 --json number,statusCheckRollup` returns
+  `91,91,91,87,87,85,83,81,80,79,81,79` → reference **91**, **floor 37**. A rollup of exactly 37
+  all-`SUCCESS` runs **containing not one of the repo's real gates** settles and exits 0 (driven;
+  `Settled after 0s … of 37 check-run(s), against a completeness floor of 37`). **54 of 91
+  check-runs may vanish outright and the gate still calls it safe.**
+
+**And #700 made shape 2 measurably worse, which is the part the brief asked me to test rather than
+assume.** `assert-modal-container-effect` carries
+`if: schedule || workflow_dispatch || (push && ref == main)`, so on a PR GitHub registers it as a
+**`skipped` check-run — twice** (push run + pull_request run). Confirmed on all three PRs: #700/#701/#702
+each show `SKIPPED: 4` (`Assert validate_schemas ran in the last 26h (prod)` ×2, pre-existing;
+`Assert intent-engine + llm-gateway containers reach their own logic (prod)` ×2, new). The peer
+sample moved **87 → 91** across this merge window. **A permanently-skipped check-run is a free unit
+of cardinality: it raises the reference by 1, the floor by 0.4, and therefore the tolerated absence
+by 0.6.** #700 added two of them, so the number of real gates that can silently disappear went from
+`87 − 35 = 52` to `91 − 37 = 54`. The floor is derived from a quantity that a skipped-by-design job
+inflates while contributing **zero** verification. It is not unsafe *today* — those two jobs are
+correctly skipped and their `if:` is right — but the interaction is the wrong sign, and the fix is
+not a bigger percentage, it is a **named required-check register** the gate executes. → **FOLLOW-918
+(P1)**. This is RETRO-252 §5d's own verdict, arriving on schedule: *"the harness is a changelog of
+past bugs, and a changelog cannot fail on a regression in something that never had a bug filed
+against it."* Nobody has ever filed a bug about a skipped check. So no generation of the gate has a
+fixture for one, and none of the six fixture families (`cardinality-born-small`,
+`-collapse`, `-partial-collapse`, `-growth`, `-override`, `-no-sample`) varies the check-run **set**
+— only its **size**.
+
+**(2) THE EFFECT AXIS IS REAL. IT IS NOT A FIFTH DESCRIPTION-AXIS CONTROL, AND I APPLIED RETRO-262'S
+OWN TEST TO IT INSTEAD OF ACCEPTING THE PR'S CLAIM.** *Could this control pass while every container
+dies at line 1?* **No — and that is demonstrated, not argued, in three independent ways.**
+
+- **Executed in production, three times.** `Cron Heartbeat` runs `31264410743` / `31283086567` /
+  `31283473331` (push→main), job `Assert intent-engine + llm-gateway containers reach their own
+  logic (prod)` = **success**. I pulled the raw job log:
+  `effect observed: payload echoed our ids, model_used='haiku-4.5'` and
+  `HTTP 401 … effect observed: application code ran _valid_bearer and refused the token` →
+  `PASS: 2 deployed Modal app(s) produced an effect only their own executing code could produce.`
+  `estalara-intent-engine` had **never been invoked in prod** before this (RETRO-262 §3 HW-1); its
+  four function-body-local imports resolved, so **PR #698's declaration is now proven by execution
+  rather than by a green deploy.** HW-1 is genuinely closed, end-to-end, producer→consumer→render.
+- **The negative control is real and I ran it.** `bash scripts/negative-control-modal-effect.sh`
+  locally: **12/12**, including `N1 container raises ModuleNotFoundError('nlp') → exit 1` — the
+  literal FOLLOW-900 traceback — `N7 --attempts 2 does not mask a persistent failure → exit 1`, and
+  two healthy shapes at exit 0 so the alarm cannot be "correct" by always firing. `N0` returns
+  **exit 2** with credentials absent, sandboxed from my real `~/.modal.toml`. This is the property
+  none of the four description-axis controls had.
+- **The distinction from `check-modal-local-imports.py` holds at source.** The static gate is
+  source-text analysis and says so in its own machine-checked register (`R-F1`, `verdict="not
+  executable here"`). The probe calls `fn.remote()` and asserts a payload only `main.py:100-101` can
+  produce. Different axes, and the PR's framing is accurate.
+
+**(3) THE COUPLING THAT TIES THE TWO TICKETS IS CLEVER AND SHALLOW, AND I MEASURED EXACTLY HOW
+SHALLOW.** `RESIDUALS` entry `R-F1` is `artifact="scripts/check-modal-container-effect.py"`, checked
+at `check-modal-local-imports.py:924` by `(repo_root / residual.artifact).exists()`. Driven in an
+isolated throwaway git repo (the real `_repo_root()` shells out to `git rev-parse --show-toplevel`,
+so a probe run from the repo would have silently tested the real file — my first attempt did exactly
+that and I discarded it):
+
+| perturbation | self-test verdict |
+| --- | --- |
+| probe **deleted** | `SELF-TEST FAIL: residual R-F1 names artefact … which does not exist` → **exit 2** ✅ |
+| probe **truncated to zero bytes** | `OK [R-F1] covered` → `Self-test PASSED (21 cases, 5 residuals)` → **exit 0** ❌ |
+
+**Deletion is the shape nobody performs. Un-wiring is the shape that actually happens** — and
+removing the three invocation sites (`cron-heartbeat.yml:329`, `modal-deploy.yml:173,267`) leaves the
+file on disk, so `R-F1` stays green while the effect axis is gone. The register asserts **existence**
+where its own text promises a **complementary control**. → **FOLLOW-919 (P1)**.
+
+**(4) THE BRANCH GUARD'S FIX IS REAL, ITS FIXTURE IS GENUINELY RED-FIRST — I RE-DERIVED THE CLAIM
+RATHER THAN CITING IT — AND THE GAP MOVED EXACTLY ONE HOP.** I extracted the pre-fix hook
+(`git show 5fb90e37^:.claude/hooks/pre-edit-branch-guard.sh`) into a throwaway repo and ran the
+merged fixture against it: **`FAIL — 20 assertions, 8 failure(s)`**, against **`PASS — 20 assertions,
+0 failures`** at HEAD. The PR's "8 failing before the fix, 12 already passing" is exact. Cases
+`A3`/`A4` — cwd in a worktree, edit landing on `main`, **silent** before #701 — are the inverse error
+**no one ever reported**, and they are the most valuable assertions in the file.
+
+**And the hop: `.claude/settings.json:112` matches `Edit|Write|MultiEdit` only, `pre-bash-guard.sh`
+greps for `git push.*\b(main|master)\b` and nothing else. I drove the same semantic edit through
+both paths on `main`:**
+
+```
+{"tool_name":"Bash","tool_input":{"command":"cat > …/packages/sdk/src/index.ts <<EOF …"}}
+  → pre-edit-branch-guard.sh : {"permissionDecision":"allow"}          (no additionalContext)
+  → pre-bash-guard.sh        : exit 0, no output
+{"tool_name":"Edit","tool_input":{"file_path":"…/packages/sdk/src/index.ts"}}
+  → pre-edit-branch-guard.sh : "FOLLOW-448 branch guard: about to edit
+                                'packages/sdk/src/index.ts' while HEAD == 'main' …"
+```
+
+FOLLOW-910 has this and is well written; my contribution is the **coverage arithmetic, and it is
+self-implicating**. This orchestrator's operating mode instructs it to prefer Bash for file
+operations. **Every edit in this retro — including this entry — went through a heredoc.** The
+guard's real coverage is `(edits on main) ∩ (non-exempt file) ∩ (Edit|Write|MultiEdit tool)`, and the
+third term is the one the estate's own instructions are actively shrinking. FOLLOW-910 is `P1` and
+`promoted_to_queue: false`; **the hop is open**, and I record it as such rather than counting
+FOLLOW-849 closed as a class.
+
+**TWO RECORDS THAT CHECKED OUT, WHICH THIS LOG ALMOST NEVER GETS TO SAY.**
+(a) The PM's bundle measurement is **exact and reproducible**: `zlib.gzipSync` at its default level
+over `packages/sdk/dist/estalara-sdk.iife.js` = **42,994 bytes** against
+`MAX_BYTES = 42 * 1024 = 43,008` — **14 bytes**, the gate's own method
+(`packages/sdk/scripts/check-bundle-size.js:16,19`). (`gzip -9` gives 42,817 and `level:9` gives
+42,910; the 14-byte figure is only correct under the gate's default level, which is the one that
+decides.) The hold on FOLLOW-913/FOLLOW-898 is correctly priced.
+(b) **I formed a hypothesis that FOLLOW-902's re-routed Sentry alerts had no channel, and I
+falsified it by measurement.** `init_sentry("SENTRY_DSN")` is DSN-gated and the pre-deploy key gate
+for data-quality asserts only `--required "DATABASE_URL"` (`modal-deploy.yml:323`). I ran the repo's
+own probe against prod — `modal run scripts/check-modal-secret-keys.py::check --required
+"DATABASE_URL,SENTRY_DSN"` → `DATABASE_URL: present`, `SENTRY_DSN: present`, `PASS`. **The channel
+exists.** What does not exist is any assertion that it keeps existing, or any observation that a
+message has ever landed — that residual is §3 HW-2, and it is a much smaller ticket than the one I
+was about to write.
+
+---
+
+### 1. Summary of change
+
+- **PR #699** (merged 2026-08-08 12:30:11 UTC, `8e138c7`) — `fix(data): classify zero selector
+  coverage as validator error, not drift [FOLLOW-902]`. 5 files, +881/−49.
+- **PR #700** (merged 2026-08-08 12:30:27 UTC, `d4fc43c`) — `ci(infra): close 3 Modal-gate blind
+  spots and add the container effect axis [FOLLOW-903]` (+FOLLOW-904). 9 files, +1529/−106.
+- **PR #701** (merged 2026-08-08 15:25:11 UTC, `5fb90e3`) — `fix(infra): resolve branch-guard HEAD
+  from the edited file's worktree [FOLLOW-849]` (+FOLLOW-909). 4 files, +419/−3.
+- **PR #702** (merged 2026-08-08 23:02:43 UTC, `6fd6e33`) — `docs(adr): ADR-0021 consent-text
+  transport, ADR-0011 scope-clarified [FOLLOW-915 AC(0)]`. 4 files, +386/−15.
+- **Modules touched:** [data-quality · infra/CI · Modal deploy · `.claude/` hooks + agent lessons ·
+  docs/adr · runbooks]. **Zero `.ts` files across all four PRs**, so the Rule I symbol set cannot
+  have grown on any of them.
+- **Key contracts changed:**
+  - `apps/data-quality/src/crons/schema_validation.py:318` — **new** `classify_outcome()`; the
+    alert decision moves off `compute_coverage()`, which still returns `drift_detected=True` at zero
+    coverage and is now documented as "not the alert decision". Breaking: no (same module).
+  - `ERROR_PREFIX_{FETCH_FAILED,CONFIG_GAP,ZERO_COVERAGE}` — **a new cross-language contract**:
+    declared in Python, consumed as hand-written SQL `LIKE` literals in
+    `scripts/check-cron-heartbeat.sh:170-171`. See §3 HW-1.
+  - `scripts/check-cron-heartbeat.sh` digest — 5 fields → **6** (`fetch-error` split into
+    `fetch-error` + `unmeasured`); the `psql` projection and the `IFS='|' read` are two independent
+    hand-written literals 10 lines apart.
+  - `scripts/check-modal-local-imports.py` — `RESIDUALS` register grew 4 → 5 entries; self-test 5 →
+    21 cases; `add_local_dir`/`add_local_file` recognised; declarations scoped to the reachable file
+    set.
+  - **New CI contract:** job `assert-modal-container-effect` + job `modal-effect-negative-control`
+    in `cron-heartbeat.yml`; two post-deploy probe steps in `modal-deploy.yml`. **+4 check-runs per
+    PR rollup, 2 of them permanently `skipped` — see §Headline (1).**
+  - `.claude/hooks/pre-edit-branch-guard.sh` — HEAD now resolved via `git -C "$EDIT_DIR"` against the
+    nearest existing ancestor of the edited path. Behavioural change for every agent in a worktree.
+  - `docs/adr/ADR-0021` **created** (`PROPOSED`, countersign pending); `ADR-0011`'s FOLLOW-278
+    addendum **scope-clarified**, original text byte-intact.
+  - **No** SDK export, API route, event schema, env var, DB column or topic changed.
+
+### 2. Verification done in PR
+
+- **#699** — `test_schema_validation.py` +457 lines; 42 test functions total; new coverage for
+  `classify_outcome` (6 cases incl. the empty-results case), the `zero_coverage` row/fingerprint/dedup
+  path, and a **replay fixture** (`test_marketing_page_reproduces_zero_of_ten_but_is_not_drift`)
+  that reproduces the two prod rows. Strong. **Gap: the `check-cron-heartbeat.sh` digest change
+  ships with ZERO new assertions** — see §4c TG-1.
+- **#700** — no unit tests, correctly; substitutes two executed harnesses:
+  `check-modal-local-imports.py --self-test` (**21 cases, 5 residuals**, re-run by me at HEAD: PASS)
+  and `negative-control-modal-effect.sh` (**12/12**, re-run by me locally: PASS). Both are hard,
+  non-skippable CI steps. Rule Q satisfied on both, and Rule AP satisfied for the static gate.
+- **#701** — `scripts/__tests__/pre-edit-branch-guard.test.sh`, 20 assertions / 18 shapes, plus
+  `shellcheck` on the hook. **Red-first independently re-derived by me: 8/20 fail on `5fb90e37^`.**
+- **#702** — docs only, no test surface. The verification that matters is procedural and is assessed
+  in §5d.
+- **CI checks:** all four PRs green except `Rule I — wired-or-dead check` (2 runs each), which is
+  `main`'s own unchanged baseline over PRs touching **0** `.ts` files. Rule AF item 2 satisfied as a
+  comparison. **#701 additionally went red on `Vercel`** for an unrelated commit-author reason,
+  correctly refused by the merge gate, diagnosed and fixed by the PM, and filed as FOLLOW-912 — the
+  gate behaving exactly as designed on the one axis it does cover.
+
+### 3. Wiring Audit
+
+**CHECK A — dead code: clean ✅.** Five new files, each with ≥1 non-test invoker, verified by grep
+(all scoped to exclude `node_modules` and `.claude/worktrees/`, per the parallel-agent constraint):
+
+- `scripts/check-modal-container-effect.py` → `cron-heartbeat.yml:329`, `modal-deploy.yml:173,267`,
+  its own `paths:` filter (`:100`), `MODAL_PROD_STANDUP.md:380-382`, and `R-F1`.
+- `scripts/negative-control-modal-effect.sh` → `cron-heartbeat.yml:280`.
+- `scripts/negative-control-fakes/{modal,status_server}.py` → `negative-control-modal-effect.sh:29`
+  (deliberately not a package; PYTHONPATH-substituted backend).
+- `scripts/__tests__/pre-edit-branch-guard.test.sh` → `ci.yml:982` (hard step, no
+  `continue-on-error`, no secret dependency).
+- #699's new symbols (`classify_outcome`, `OUTCOME_*`, `ERROR_PREFIX_*`) are all consumed by
+  `schema_validation.py` itself plus tests.
+
+**CHECK B — half-wire: FOUR findings.**
+
+- **HW-1 — HALF_WIRE_P (P1) — `apps/data-quality/src/crons/schema_validation.py:166-168` vs
+  `scripts/check-cron-heartbeat.sh:170-171`.** The producer declares
+  `ERROR_PREFIX_CONFIG_GAP = "config_gap:"` / `ERROR_PREFIX_ZERO_COVERAGE = "validator_error:
+  zero_coverage"` with the comment *"these are the dedup keys … matched with `LIKE '<prefix>%'` —
+  keep them stable"*. **The consumer is a hand-typed SQL literal in a different language in a
+  different file** (`count(*) FILTER (WHERE error LIKE 'config_gap:%' OR error LIKE
+  'validator_error:%')`), with no import, no generation and no machine check. **This is Rule AQ's
+  subject verbatim** — *"a prose 'copied verbatim, keep in sync' note is not a control"*. Renaming
+  the Python constant leaves the digest silently counting zero. → **FOLLOW-920 (P1)**.
+- **HW-2 — HALF_WIRE_P (P2) — the two NEW Sentry signals have an unasserted delivery channel.**
+  `zero_coverage` and `config_gap` are newly-shipped failure-detection signals with their own
+  fingerprints (`schema_validation.py:~510,~688`). **Rule AJ** requires *"a verified delivery channel
+  in the environment it must fire in"*. `SENTRY_DSN` is **present** in prod `estalara-secrets`
+  (measured by me, §Headline (b)) — so the channel is credible — but the pre-deploy gate for
+  data-quality asserts only `DATABASE_URL` (`modal-deploy.yml:323`), so nothing protects it, and **no
+  message from this app has ever been observed to land**. `llm-gateway` has no key gate step at all.
+  → **FOLLOW-921 (P2)**.
+- **HW-3 — HALF_WIRE_P (P2) — a sixth reachable outcome with no channel at all.**
+  `schema_validation.py:659-665`: a tenant whose stored schema yields **zero selectors** takes
+  `logger.warning(… "no selectors found in schema — skipping"); continue` — **no history row, no
+  Sentry, no outcome name, no digest contribution**. The PR's own docstring enumerates exactly five
+  outcomes (`ok`/`drift`/`zero_coverage`/`config_gap`/`fetch_failed`) and this state is none of them.
+  The `continue` is pre-existing; **the five-outcome vocabulary that makes its absence load-bearing
+  is new in this PR**, and the PR's thesis is *"an alert must be able to name what changed"*.
+  RETRO-010/FOLLOW-111 is the governing precedent: no signal a future decision depends on may live
+  in a log line. (Probed: `classify_outcome({}, [])` → `('ok', 1.0, [])`, i.e. if the guard above it
+  is ever relaxed the state renders as **perfect coverage**.) → **FOLLOW-922 (P2)**.
+- **HW-4 — HALF_WIRE_P (P2) — ADR-0021's countersign gate has no consumer.** The ADR's Action Items
+  say the compliance countersign must land *"before the FOLLOW-915 implementation PR merges"*, and
+  the PR description calls it a gate. **Nothing mechanical reads ADR status:**
+  `grep -rln 'docs/adr' .github/workflows/ scripts/` returns **zero files**. The only enforcement is
+  PM memory. Compounded by a self-contradiction in the same merge — see §4d DG-1. →
+  **FOLLOW-923 (P2)**.
+- Env vars: none added. Columns/topics/SDK signals: none.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — the merge gate has no notion of WHICH checks must be present, and `SKIPPED` is
+  green.** `gh-pr-checks-verified.sh:702,1578`. Driven to `exit 0` with six real gates flipped to
+  `SKIPPED` and again with a 37-run rollup containing none of them. The two-consecutive-snapshot
+  mechanism defends against STATE changing; the cardinality floor defends against SIZE collapsing;
+  **nothing defends against IDENTITY changing.** → FOLLOW-918.
+- **LG-2 (P1) — skipped-by-design check-runs inflate the floor's own reference.** A job that can
+  never fail on a PR contributes a full unit to `.statusCheckRollup | length`, so each one nets
+  +0.6 units of tolerated absence at `CARDINALITY_FLOOR_PERCENT=40`. #700 added two; the peer
+  reference moved 87 → 91 and tolerated absence 52 → 54. → FOLLOW-918.
+- **LG-3 (P1) — `R-F1` asserts existence where its text promises a control.** Zero-byte probe →
+  self-test PASS (driven). Un-wiring is invisible. → FOLLOW-919.
+- **LG-4 (P2) — the digest's new partition has no residual bucket.** `check-cron-heartbeat.sh:170-171`
+  replaced `count(*) FILTER (WHERE error IS NOT NULL)` with two prefix-matched filters. **An `error`
+  string matching neither prefix — a legacy row, or any future prefix — is now counted in NEITHER
+  bucket**, so `rows written` can exceed `drift + fetch-error + unmeasured` with nothing saying so.
+  The previous expression could not miss a row. → FOLLOW-920.
+- **LG-5 (P2) — the effect probe has no residual register, and Rule AP applies to it.** #700's
+  sibling artefact `check-modal-local-imports.py` ships a machine-checked `RESIDUALS` tuple;
+  `check-modal-container-effect.py`'s `WHAT IS *NOT* ASSERTED` is **prose**. Two undisclosed items I
+  found: (i) the llm-gateway leg's 401 is attributed to `_valid_bearer`, but a Modal endpoint
+  configured with proxy auth would 401 at the edge **without starting a container** — currently
+  empty (`grep -rn requires_proxy_auth apps/llm-gateway/src` → 0 hits), so this is an honest hole
+  rather than a live one, exactly the class `R-E1` is written for; (ii) the probe covers 2 of 3
+  deployed apps by design, which is stated, and 1 of 2 llm-gateway entrypoints
+  (`jobs/batch_enrich.py` is unreachable from `main.py` — FOLLOW-874's known-dead Sonnet tier),
+  which is not. → FOLLOW-924.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- **N/A for all four shipped fixes.** I attacked each root-cause narrative at source and all four
+  hold: #699's marketing-page reproduction is exact (`classify_outcome` probed directly across five
+  input shapes); #700's effect axis is proven by execution and by a 12/12 negative control; #701's
+  worktree resolution is proven red-first at 8/20; #702's two-proposition split survives reading
+  ADR-0011's addendum in full. **The defects in this merge are all in the instruments, and they are
+  LG-1…LG-5.**
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1, folded into FOLLOW-920) — #699 changed a control and shipped no test for the change.**
+  The digest's 6-field projection/parse pair and the entire `unmeasured` branch have **zero**
+  assertions. `cron-heartbeat.yml`'s `detector-negative-control` creates
+  `schema_validation_history` and then **never inserts a row into it** — all four cases run the
+  digest against an empty table, so no digest NUMBER is asserted anywhere, and the
+  `NOTE: N row(s) could not be measured` branch has never executed in any environment. **This is the
+  same defect class the PR was written to fix**, in the same PR: its own commit message says *"the
+  test suite was green on this defect: its only drift test used the same total-miss shape that
+  shipped the false positive."*
+- **TG-2 (P1, folded into FOLLOW-918) — the merge gate's fixture families vary rollup SIZE and never
+  rollup MEMBERSHIP.** Six cardinality fixtures, zero of which contains a `SKIPPED` state on a check
+  that matters, and zero of which asserts a named check is present.
+- **TG-3 (P2, recorded) — #701's fixture is exemplary and is hidden.** Its two steps were appended
+  to the existing job `shellcheck (Sentry gate family, FOLLOW-769)` (`ci.yml:904,975-982`). The
+  reasoning in the comment is sound (a new job name that nobody wires is not a control), but the
+  consequence is that **the estate's best red-first proof reports under a check name that says
+  "Sentry"**, and it adds **zero** cardinality — so it is invisible to the only completeness signal
+  the merge gate has. Recorded here rather than filed; the fix belongs with FOLLOW-918's register,
+  which would name the job.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — ADR-0021 contradicts itself about its own status, inside the merge that created
+  it.** The file's header reads *"**Status:** PROPOSED → ACCEPTED on merge of the FOLLOW-915 design
+  PR (merging is the ratification act, ADR-0020 precedent)"* — and **#702 IS that PR, and it
+  merged**. `docs/adr/README.md:22` records it as **PROPOSED**. So the two records disagree from the
+  moment of the merge, on precisely the axis the PR's process innovation was about: whether §D5's
+  scope reading is ratified while the countersign the architect deliberately refused to self-grant
+  is still outstanding. Either the header's ratification trigger means the *implementation* PR (in
+  which case say so), or the index is stale. → FOLLOW-923.
+- **DG-2 (P2) — `check-modal-container-effect.py`'s residual list is prose, in the same PR that
+  converted its sibling's prose into a machine-checked register.** Rule AP names the standard and
+  #700 met it on one of the two artefacts it shipped. → FOLLOW-924.
+- **DG-3 (P2, recorded) — `MODAL_CHAT_NLP_URL` remains unset in the prod ingest Worker, and this
+  merge changed the character of that gap.** Both sides are now proven by execution: the ingest
+  producer is deployed, and — new as of #700 — `process_chat_message` is proven to run to completion
+  in its deployed container with a real Haiku call (`model_used='haiku-4.5'`). **Chat NLP is dark
+  for exactly one environment variable, and there is now positive evidence that flipping it would
+  work.** Not re-filed (ESC-042 item 1 / FOLLOW-892's axis); surfaced with severity in §5.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-910 (P1, `promoted_to_queue: false`) — RE-PRICED BY EVIDENCE, and this is the sharpest
+  cascade in the merge.** #701 spent a P1 making the branch guard's warning trustworthy. I measured
+  what that warning now covers and the answer is `Edit|Write|MultiEdit` only, with the Bash path
+  proven silent on an identical edit. **The estate's own operating instructions push agents toward
+  the uncovered path.** FOLLOW-910 is correct as written; it should not sit unpromoted behind
+  FOLLOW-911/912, which are both `FROZEN` P2s. **The FOLLOW-448 → 849 → 909 → 910 chain has moved
+  one hop and is NOT closed**, and I record it that way per step 7 rather than accepting #701 as a
+  class closure.
+- **FOLLOW-913 (P1) and FOLLOW-898 (P1, READY) — the hold is correctly priced and I re-derived the
+  number.** 42,994 / 43,008 = **14 bytes**, reproduced with the gate's exact method. Any change to
+  `packages/sdk` is below that noise floor. The hold stands until FOLLOW-915's implementation half
+  lands. **However — FOLLOW-915's implementation is now gated on a countersign with no mechanical
+  consumer (HW-4), so the hold on two P1s is transitively gated on PM memory.** Surfaced for the PM.
+- **FOLLOW-907 / FOLLOW-914 (P2, blocked on ESC-055's operator page) — unaffected in premise,
+  strengthened in urgency.** #699 removed the domain-root fallback, so until a
+  `sample_listing_url` exists the cron writes a `config_gap:` row **every day** and measures nothing.
+  That is the right behaviour and it is also a standing daily alert. FOLLOW-907's index-vs-detail
+  threshold question is untouched.
+- **FOLLOW-905 / FOLLOW-917 (P2, Rule AF sweep + `Release` quarantine) — unaffected, and my sweep
+  adds one data point:** `cron-heartbeat.yml` has now had exactly **one** scheduled run in its life
+  (`31241996385`, 2026-08-08T05:34, **failure** — the FOLLOW-900 catch). The new
+  `assert-modal-container-effect` job has therefore **never fired on the schedule**; every green
+  observation of it is a push-to-`main` invocation. **FOLLOW-904 AC(4)'s decay-detection half is
+  unexercised until the 2026-08-09 05:00 UTC firing.** Not a defect; an open verification.
+- **FOLLOW-903/904 — genuinely DONE, traced end-to-end.** 903: 21 self-test cases, 5-entry register,
+  three blind shapes closed (I re-ran the self-test at HEAD). 904:
+  producer (`check-modal-container-effect.py`) → consumer (`cron-heartbeat.yml:329` +
+  `modal-deploy.yml:173,267`, all four executed green in runs `31257396141` / `31283473331`) →
+  render (a red GitHub Actions run, the same structured sink FOLLOW-893 uses). **No hop remains.**
+- **FOLLOW-902 — DONE with one hop remaining, named:** HW-2. The classification is right, the replay
+  fixture is real, the Sentry routing is credible (DSN measured present) and **unasserted**.
+- **FOLLOW-874 / FOLLOW-876 / FOLLOW-885 / FOLLOW-873 / FOLLOW-911 / FOLLOW-912 — checked, not
+  assumed, all unaffected.** 874 is Wrangler `[env.dev]` + the unreachable Sonnet batch tier (no
+  Python or TS touched here; the batch tier is now also confirmed **outside** the effect probe's
+  reach, LG-5(ii)); 876 is the pilot-session artefact (qa, no overlap); 885 is a hardcoded SDK
+  constant (zero `.ts` files in this merge); 873 is `db-migrate.yml`'s staging gate (untouched);
+  911 is `session-stop.sh`'s worktree blindness (**adjacent organ to #701 and explicitly NOT fixed
+  by it** — 849 resolved a path, 911 must enumerate worktrees); 912 is the commit-author/Vercel
+  reconciliation, still open and still the one documented disagreement between this repo's memory
+  and its merge gate's exemption list.
+
+#### 5b. Future sprint tickets affected
+
+- **Every future PR inherits a merge gate that is 59% absence-tolerant and blind to identity.** Any
+  future ticket whose closure evidence is *"`gh-pr-checks-verified.sh` returned exit 0"* now needs
+  the qualifier *"over a rollup containing check X"*. That includes every ticket in this session.
+- **Every future Modal app inherits a real effect axis** — the strongest structural thing shipped
+  here. `modal-deploy.yml` cannot gain a fourth app without a `REGISTRY` entry (hard), and the
+  pattern for its effect proof now exists with a 12-case negative control to copy.
+- **Every future gate inherits `R-F1`'s pattern — a residual whose closure lives in another
+  control.** It is a good pattern and it needs a stronger predicate than `.exists()` before it is
+  copied, or the estate acquires a family of registers that assert filenames.
+
+#### 5c. Contracts changed others rely on
+
+- **`ERROR_PREFIX_*` is now a cross-language contract with two hand-written sides** (HW-1). The
+  Python side calls itself a dedup key; the SQL side is a literal. Rule AQ.
+- **The `statusCheckRollup` cardinality is now a load-bearing repo-wide quantity** that any workflow
+  edit perturbs. Adding a job raises every future PR's floor; adding a *skipped* job raises the floor
+  while lowering the fraction of it that verifies anything. No document says this.
+- **`ADR-0011`'s addendum is now scope-limited by `ADR-0021` §D5**, with the compliance half
+  re-affirmed verbatim and only the latency half superseded. Any future reader of `index.ts:312-336`
+  meets the old rationale block; ADR-0021's action items assign its update to the implementation PR,
+  which has not run. **Rule AI's window is open until then** — a documented, owned lag rather than a
+  drift, but it is a lag.
+- No out-of-repo consumer contract changed (Rule AK does not fire).
+
+#### 5d. Architectural assumptions affected
+
+- **"A green merge gate means the checks ran" is dead, and it dies harder than "a green deploy means
+  the artefact works" did.** The deploy case had four description-axis controls; this case has a
+  gate that reads only two properties of the rollup — stability and size — and neither is identity.
+  Stated as an invariant for the PM: *name the checks whose absence must be a red, put the names in
+  a file the gate executes, and make the gate print which named check it did not find.*
+- **#702's process is the most interesting thing in this merge and it is only partly repeatable.**
+  Four separable acts: (i) the PM read the seam before dispatching and re-routed sdk-engineer →
+  architect; (ii) the architect refused to self-ratify its own scope reading; (iii) the refusal path
+  was pre-wired (a compliance countersign, with a stated revert-to-PROPOSED-and-return-to-CEO
+  outcome); (iv) the dispatch brief named *"this is unimplementable"* as a success outcome. **My
+  assessment: (i) is the load-bearing one and nothing in the estate would have caught the collision
+  without it.** I checked: no CI job reads `docs/adr` at all; Rule AH governs docs asserting
+  capabilities, Rule AI governs propagating a changed claim — neither fires *before* dispatch, and
+  the ADR-0011 sentence was neither changed nor false, merely *fused*. An sdk-engineer opening
+  FOLLOW-915 would have met a compliance-signed refusal of its own ticket's ordering and burned a
+  session. **(ii)–(iv) are cheap and repeatable; (i) depended on one well-written brief and one PM
+  choosing to read a seam it was not asked to read, and it is currently unrecorded as a practice.**
+  It is also the same organ as §Headline (1): *the estate is good at building controls and weak at
+  asserting that a control was consulted.*
+- **The escalation-premise organ has now failed twice and been repaired twice, in opposite
+  directions.** RETRO-260 (a premise that aged), RETRO-261 (a premise wrong at filing) — both
+  uncaught by any control. This session: **ESC-044's remediation axis measured at zero rows before
+  the ask, and ESC-045's missing credentials measured as already present.** Both re-framed the
+  question the CEO was asked. See §6, Rule AT.
+
+**FOR THE PM, WITH SEVERITY — I surface, I do not escalate:**
+
+1. **P1 — the merge gate can pass over an absent check (LG-1/LG-2).** Every "CI verified" claim in
+   this session's records, including my own reading of these four PRs, rests on a gate that asserts
+   size and stability but not membership. FOLLOW-918.
+2. **P1 — FOLLOW-910 is the open hop of a chain that has consumed four tickets** and the estate's
+   default editing path is the uncovered one.
+3. **P2 — two held P1s (913/898) are transitively gated on a countersign with no mechanical
+   consumer** (HW-4 + DG-1).
+
+### 6. New lesson candidates
+
+- **RULE ACTION — PROMOTE Rule AS (the silent-direction rule). Count 3, of which 2 are PRIOR RETROS.
+  Rule count 44 → 45.**
+  - **Pattern:** a control can be wrong in two directions. The **noisy** direction (it fires when it
+    should not) produces reports, because someone sees the warning. The **silent** direction (it does
+    not fire when it should) produces **nothing**, because nobody sees an absent warning. Every
+    defect report against a control is therefore drawn from one half of its defect space, and a fix
+    scoped by the reports is systematically scoped to the half that was never dangerous.
+  - **PRIOR 1 — RETRO-252 §5d (2026-08-06), stated in its own words:** *"The harness is a **changelog
+    of past bugs**, and a changelog cannot fail on a regression in something that never had a bug
+    filed against it."* Object: `scripts/gh-pr-checks-verified.sh`'s self-test across three
+    generations.
+  - **PRIOR 2 — RETRO-237 §4b CB-1 (2026-07-31):** *"FOUR MEASURED false negatives in the new gate,
+    reproduced with throwaway fixtures"* (`check-sentry-capture-has-init.sh`). Four silent-direction
+    defects, **none of them reported by anyone**, all found by deliberate perturbation. Corroborated
+    but not counted: RETRO-253 (Rule H Pattern 2 *"has never been able to fail"*) and RETRO-262 §3
+    (three blind shapes in a gate, found by probing).
+  - **Count 3 — THIS retro, and it is decisive because the asymmetry is quantified for once.** The
+    branch guard was reported **six times in one day by six independent workers** (FOLLOW-849 →
+    FOLLOW-881 → FOLLOW-909), **every one of them the noisy direction** (a false warning inside a
+    worktree). **Zero reported the silent direction** — cwd in a worktree, edit landing on `main`,
+    no warning — which is the *stranded-work* failure the guard exists to prevent and which was live
+    the entire time. It entered scope only because #701's worker chose to write cases A3/A4. **And
+    the same asymmetry produced §Headline (1) on the merge gate itself**, which is PRIOR 1's exact
+    artefact one generation later: six cardinality fixtures vary size, none varies membership,
+    because no one has ever filed a bug about a check that was merely skipped.
+  - **Why a new letter, tested against texts rather than titles.** **Rule AE** governs the
+    enumeration of syntactic CALL-SHAPES of a guarded action by an AST/regex security guard — a
+    *shape* axis, and it does not reach #699's application classifier or #701's shell hook. **Rule Q**
+    governs a gate that can soft-skip emitting positive proof — the remedy for one sub-case, not the
+    scoping principle. **Rule AM** governs how fixtures are *synthesized*. **Rule AP** governs
+    *disclosure* of residuals, not the *direction* a fixture must cover. **Rule AR** governs claims
+    of absence. What is unpromoted is the **direction** axis and the **red-first-against-the-pre-fix-
+    artefact** obligation, and #701 is the estate's proof that both are affordable: 20 assertions,
+    2 hours, and the fixture was the deliverable rather than the fix.
+  - **Scope limiter, load-bearing:** Rule AS fires when a ticket is authored **from reports of a
+    control misbehaving**. It does not fire on new controls (Rule Q owns those) or on feature work.
+- **RULE ACTION — PROMOTE Rule AT (measure an escalation's premise before it is put to the CEO).
+  Count 3, of which 2 are PRIOR RETROS. Rule count 45 → 46. This discharges P-41, which RETRO-261 §8
+  minted explicitly as "at 1 prior — not promoted".**
+  - **PRIOR 1 — RETRO-260 §5d:** *"'An escalation's premise is stable between filing and ruling' —
+    false, demonstrated within one session"* (ESC-054's stakes halved hours after filing; the
+    escalation text did not move; *"there is no mechanism that would have caught it"*).
+  - **PRIOR 2 — RETRO-261 §5d:** *"An escalation is a document with a premise, and this estate has no
+    control that re-validates a premise between `filed` and `executed`"* — ESC-053's premise was
+    **wrong at filing**. *"What caught it was **a probe, not a control**."* Minted as **P-41 at 1
+    prior**, i.e. armed.
+  - **Count 3 — THIS session, and it is the first sighting where the remedy was executed and worked,
+    twice.** ESC-044's remediation axis was measured before the ruling — prod `consent_records` = **0
+    rows**, so the "data subjects hold records attesting text they did not see" premise had an empty
+    population and the ruling could be about principle instead of remediation (FOLLOW-916 AC(4) even
+    records that today's zero expires). ESC-045 asked for credentials that **already existed**. Both
+    escalations were re-framed *before* consuming CEO attention. **Two failures uncaught + one
+    success caught by a practice with no name is exactly the promotion condition**, and the practice
+    costs one command.
+  - **Affordability, since the brief asked what it would cost applied to every escalation — it must
+    NOT be applied to every escalation, and the rule says so.** Rule AT fires **only** on an
+    escalation whose premise contains a **quantity** or an **existence claim** ("N records are
+    affected", "credential X is missing", "the budget is exhausted", "the table is empty"). Those are
+    cheap to measure and expensive to be wrong about. Escalations about ambiguity, interface
+    disagreement or policy have no measurable premise; demanding a measurement there would be
+    ignored, which is worse than absent — RETRO-262's own standard for scope limiters.
+- **ARMED, NOT PROMOTED — P-42: "read the seam before dispatching."** #702's re-route (§5d) is
+  count 1. The practice — before dispatching a ticket, read the ADR/contract the ticket will land on
+  and verify the ticket is buildable as written — has no prior retro sighting I could find and no
+  mechanical backstop (no CI job reads `docs/adr`). **Pre-authorization, in the RETRO-217 form:
+  promote a "a dispatch brief for a ticket that lands on an ACCEPTED ADR or a signed contract MUST
+  cite the governing clause and state that the ticket is buildable under it" rule on the NEXT
+  independent sighting**, in any subsystem. Recording it now so the next PM session can bank it
+  rather than re-derive it.
+- **RULE ACTION REFUSED — Rule AJ needs no amendment for HW-2, and Rule AQ needs none for HW-1.**
+  Both rules' texts already cover their instance exactly ("a verified delivery channel in the
+  environment it must fire in"; "a prose 'keep in sync' note is not a control"). These are
+  **compliance failures against adequate rules**, and per RETRO-258/261's standard that is a ticket,
+  not a rule change. FOLLOW-920 / FOLLOW-921.
+- **RECORDED AS CONTROLS THAT WORKED — four, and this log usually records the opposite.** (1) The
+  **effect probe caught nothing and proved something**: intent-engine executed in prod for the first
+  time and PR #698's declaration is now proven by execution. (2) The **12-case negative control** is
+  real; I ran it. (3) `gh-pr-checks-verified.sh` **correctly refused PR #701** over the `Vercel`
+  author failure and the PM diagnosed rather than waived it. (4) The **fixture-mode refusal guard**
+  in the merge gate (`ERROR: REFUSING TO RUN — GH_PR_CHECKS_FIXTURE_DIR is set outside --self-test`)
+  stopped my own first probe attempt cold — a control that fired at a retro agent doing exactly what
+  it forbids, with a diagnosis good enough to fix in one step.
+
+### 7. Follow-ups
+
+- **FOLLOW-918** — Give the merge gate a named required-check register: `SKIPPED` on a named check
+  must be a red, and the gate must print which named check it did not find (devops-engineer, 4h,
+  **P1**) [LG-1, LG-2, TG-2, TG-3].
+- **FOLLOW-919** — Make `R-F1`'s artefact predicate assert INVOCATION, not existence: the effect
+  probe must be referenced by every workflow that claims to run it, proven by a self-test case that
+  goes red when the reference is removed (devops-engineer, 3h, **P1**) [LG-3].
+- **FOLLOW-920** — Machine-check the `ERROR_PREFIX_*` contract between `schema_validation.py` and
+  `check-cron-heartbeat.sh`, give the digest a residual bucket, and add negative-control cases with
+  actual rows (data-engineer, 3h, **P1**) [HW-1, LG-4, TG-1; Rule AQ].
+- **FOLLOW-921** — Assert `SENTRY_DSN` in the pre-deploy key gate for all three Modal apps and
+  observe one `zero_coverage`/`config_gap` message end-to-end in Sentry (devops-engineer, 2h, **P2**)
+  [HW-2; Rule AJ].
+- **FOLLOW-922** — Give "stored schema yields zero selectors" an outcome name, a history row and a
+  digest bucket; it is currently a `logger.warning` and a `continue` (data-engineer, 2h, **P2**)
+  [HW-3].
+- **FOLLOW-923** — Resolve ADR-0021's status self-contradiction and give the countersign gate a
+  consumer (architect, 2h, **P2**) [HW-4, DG-1].
+- **FOLLOW-924** — Convert `check-modal-container-effect.py`'s `WHAT IS *NOT* ASSERTED` prose into a
+  machine-checked residual register, including the pre-container-401 and batch-tier holes
+  (devops-engineer, 3h, **P2**) [LG-5, DG-2; Rule AP].
+
+**Numbering: 918–924 allocated against `main` at `664f096d` per Rule AN. Next free FOLLOW: 925.**
+
+### 8. Cross-references
+
+- **RETRO-262** — the direct parent, and this retro is the result of its natural experiment. Its
+  §5d invariant (*"for every deployed artefact, name the observable effect that proves it ran, and
+  the process — not itself — that reads it"*) can now be completed for **all three** deployed Modal
+  apps: `validate_schemas` (heartbeat + history row), `intent-engine` (echoed payload,
+  `model_used='haiku-4.5'`), `llm-gateway` (401 from `_valid_bearer`). Its HW-1 is closed
+  end-to-end. **Its one-word test survived being turned on the artefact that answered it**, and the
+  answer is genuinely "no" — the first time in this log that a control has passed that test on its
+  first attempt.
+- **RETRO-252** — the artefact and the sentence that Rule AS is built on, one generation of the same
+  gate later. RETRO-252 predicted that generation 4's harness would be a changelog of past bugs;
+  §Headline (1) is that prediction confirmed on generation 5's own blind spot.
+- **RETRO-260 / RETRO-261** — the two banked priors for Rule AT, and RETRO-261 §8's explicit
+  "P-41 at 1 prior — not promoted" is the arming discharged here.
+- **RETRO-237 / RETRO-253** — the false-negatives-found-by-probing lineage feeding Rule AS.
+- **RETRO-257** (*"the bundle is real and the population is zero"*) — still the structural ancestor,
+  and this merge inverts it once: a control shipped, and its population is **not** zero — the effect
+  probe has three green production observations within 12 hours of merge. **The pattern this log has
+  recorded for 250 entries is producers without consumers; #700 is a consumer that arrived.**

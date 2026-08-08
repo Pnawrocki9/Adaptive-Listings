@@ -53,6 +53,18 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
     # permanent prod no-op. jobs/batch_enrich.py reuses this same image object.
     "sentry-sdk>=2.0",
 )
+# FOLLOW-900 (AC(6) audit of the other Modal apps — this app had the SAME latent defect as
+# apps/data-quality, one step further from view). `process_chat_message` imports `nlp` and
+# `redis_writer` INSIDE its body, and `nlp`/`redis_writer` pull `observability` and
+# `schemas`. All four are LOCAL modules. `modal deploy apps/intent-engine/src/main.py`
+# imports this file by path, so modal 1.4.2 takes the FILE branch of its implicit
+# entrypoint mount and ships /root/main.py ALONE — no siblings. Registration succeeds
+# (nothing local is imported at module level), the app lists as `deployed`, and the first
+# real invocation would die with ModuleNotFoundError inside a `.spawn()`-ed function the
+# ingest Worker has already 202'd away from. It had never been invoked in prod, so the
+# defect was still latent when FOLLOW-900 found it. Enforced by
+# scripts/check-modal-local-imports.py.
+image = image.add_local_python_source("nlp", "redis_writer", "schemas", "observability")
 
 # Required JSON keys for chat_nlp_endpoint (mirrors stream-consumer _spawn_chat_nlp args).
 _CHAT_NLP_REQUIRED = frozenset({"tenant_id", "session_id", "message"})

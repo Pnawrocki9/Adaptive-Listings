@@ -76,9 +76,11 @@ fresh / no connection string) and asserts the exit code of each, on every push a
    run.
 2. **`no heartbeat has EVER been recorded`** — the job has never once completed against this
    database. In order of likelihood: the Modal app is not deployed (check `modal-deploy.yml`'s
-   `Deploy data-quality` job), the schedule did not register, or `DATABASE_URL` is absent from the
+   `Deploy data-quality` job), the schedule did not register, `DATABASE_URL` is absent from the
    `estalara-secrets` Modal secret (the deploy's runtime-key gate asserts that key, so a green
-   deploy rules it out).
+   deploy rules it out), or — **the cause actually observed on 2026-08-08, and none of the above** —
+   the container cannot import its own module. See §6. Do not stop at "the app says `deployed`":
+   that is exactly what it said while every container was dying at line 58.
 3. **`has not completed successfully in Nh`** — the job ran before but not now. Open
    `https://modal.com/apps/estalara/main/deployed/estalara-schema-validation` and read the last
    run's logs. A raised exception never reaches the heartbeat write, by design.
@@ -103,6 +105,67 @@ consumed by nothing. Its consumers now are:
    deliberately **not** required for the table to be legitimate, because consumer (1) is a genuine
    control-flow read and consumer (2) is a genuine reported read.
 
+## 6. Failure mode: the app is `deployed` and every container dies at import (FOLLOW-900)
+
+This is the state the cron was in for its entire life until 2026-08-08, and it is the reason §3's
+alarm exists at all. It is worth reading before diagnosing anything else, because every surface a
+human would normally check said the job was fine:
+
+- `modal app list` → `estalara-schema-validation`, state **`deployed`**.
+- The `Deploy data-quality` job in `modal-deploy.yml` → **green**, including its runtime-key gate.
+- The `modal.Cron("0 2 * * *")` schedule → **registered**.
+- Sentry → **nothing**, because the import that fails IS `crons.observability.init_sentry`.
+
+The only surface that told the truth was the container log:
+
+```
+File "/root/schema_validation.py", line 58, in <module>
+    from crons.observability import flush_sentry, init_sentry
+ModuleNotFoundError: No module named 'crons'
+```
+
+**Why.** Modal removed automounting of local Python source in 1.0 (this repo runs 1.4.x). What is
+left is an _implicit entrypoint mount_ whose shape is decided in
+`modal/_utils/function_utils.py::FunctionInfo.__init__` by one thing: whether the module defining
+the `@app.function` has a truthy `__package__`.
+
+| entrypoint loaded as                        | modal branch | what reaches the container                    |
+| ------------------------------------------- | ------------ | --------------------------------------------- |
+| part of a package (`jobs.foo`)              | `PACKAGE`    | the whole top-level package (`jobs/`)         |
+| a bare file path (`modal deploy` on a file) | `FILE`       | that ONE file, flattened to `/root/<stem>.py` |
+
+`modal deploy apps/data-quality/src/crons/schema_validation.py` imports the entrypoint by path, so
+`__package__` is empty → `FILE` → `/root/schema_validation.py` alone, with no `crons/` beside it.
+`PYTHONPATH=apps/data-quality/src` in the deploy job fixes the _runner-side_ import during
+registration; it puts nothing into the image. Those are two different machines.
+
+**The fix, and the gate that keeps it fixed.** Local modules must be declared on the image:
+
+```python
+image = modal.Image.debian_slim(python_version="3.12").pip_install(...).add_local_python_source("crons")
+```
+
+`scripts/check-modal-local-imports.py` enforces this for every deployed Modal app — it walks each
+entrypoint's imports at any nesting depth (function-body imports included, which is how the same
+defect hid in `apps/intent-engine`), resolves which are local, and fails when one is not declared.
+It runs as a hard gate in `ci.yml` and as a step in every `modal-deploy.yml` deploy job. Run it
+locally with `python3 scripts/check-modal-local-imports.py`, and `--self-test` to check the gate
+itself.
+
+**How to prove a fix, since a green deploy cannot.** `modal deploy` only registers functions; it
+never starts a container. Invoke the function and read the sink:
+
+```bash
+PYTHONPATH=apps/data-quality/src modal run \
+  apps/data-quality/src/crons/schema_validation.py::validate_schemas
+doppler run --config prd -- bash scripts/check-cron-heartbeat.sh --job validate_schemas --max-age-hours 26
+```
+
+A successful invocation prints `Created mount PythonPackage:crons` while creating objects — that
+line is the direct evidence the local package is in the image. Note that a manual `modal run` mounts
+source from your working tree, so it proves the code path, **not** the deployed artefact; only a
+scheduled run does that.
+
 ## 5. Related
 
 - `apps/data-quality/src/crons/schema_validation.py` — the cron
@@ -110,4 +173,5 @@ consumed by nothing. Its consumers now are:
 - `scripts/check-cron-heartbeat.sh` — the assertion
 - `.github/workflows/cron-heartbeat.yml` — the schedule + negative control
 - `.github/workflows/modal-deploy.yml` — how the cron reaches prod
+- `scripts/check-modal-local-imports.py` — the local-source gate (FOLLOW-900)
 - `docs/MASTER_DESIGN.md` §Snapshot.1 row B.6 — the flip condition

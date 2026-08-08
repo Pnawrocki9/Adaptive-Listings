@@ -526,3 +526,27 @@ deployed `estalara-intent-engine` registers `chat_nlp_endpoint` + `process_chat_
 `batch_enrich_conversations` raises `NotFoundError` — so §C.3's Sonnet batch tier is not in
 production, and the Master_Design row claiming it was the **inverse** of the usual drift: the
 executed corpus (`modal-deploy.yml`'s own comment) was right and the source of truth was wrong.
+
+## 2026-08-08 · FOLLOW-900 — the nightly `validate_schemas` cron was dead in prod behind a green deploy
+
+**What I shipped.** `.add_local_python_source(...)` on all three deployed Modal app images
+(`apps/data-quality` — the actual defect; `apps/intent-engine` — the same defect, latent, one step
+further from view; `apps/llm-gateway` — healthy but only by accident of file layout, now explicit),
+`scripts/check-modal-local-imports.py` as a hard CI gate with a self-test, a step in every
+`modal-deploy.yml` deploy job, runbook §6, and §Snapshot.1 row B.6 corrected without flipping it.
+
+**Where a green badge hid a broken run path.** Everywhere at once. `modal deploy` only _registers_
+functions — it never starts a container, so the deploy job structurally cannot fail on an image that
+cannot be imported. `modal app list` said `deployed`, the schedule was registered, the runtime-key
+gate passed, and every container died at `from crons.observability import ...` — which is the Sentry
+init, so the failure had no channel at all. Modal 1.0 removed automounting; whether an app survives
+that removal depends on whether its `@app.function` module has a truthy `__package__`, i.e. on an
+invisible property of how the entrypoint happens to be loaded. `apps/llm-gateway` passed for years
+on the lucky branch of that coin flip. The one thing that told the truth was an outside observer
+(the FOLLOW-893 heartbeat detector) on its first-ever scheduled run.
+
+**A guardrail I'd add.** Beyond the gate shipped here: for any deploy job whose tool only
+_registers_ rather than _runs_, the ticket is not done until an automated path has INVOKED the
+artefact and read its sink. "Deploy is green" is a claim about a registration API, not about a
+process. I also caught myself about to accept `modal run` output alone as AC(3) — the row read from
+prod Postgres is the evidence; the run's stdout is just a story about it.

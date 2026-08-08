@@ -216,14 +216,14 @@ verified by the 05:00 detector — not by the deploy job.
 
 ### Dispatched: FOLLOW-903 + 904 (one PR) and FOLLOW-902 (parallel)
 
-**FOLLOW-903 + FOLLOW-904 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
-`devops-engineer/FOLLOW-903-904-effect-axis`, worktree `.claude/worktrees/follow-903`. **Together,
-because they are one subject:** 903 closes the static gate's blind spots (description axis), 904
-adds the estate's missing effect-axis proof. RETRO-262's framing is the brief's spine — _could this
-pass while every container dies at line 1?_ Opus: 904 AC(1) asks the worker to **design** the
-cheapest observable effect for two apps, which is judgement, not wiring.
+**FOLLOW-903 + FOLLOW-904 — DONE** (PR **#700** → `d4fc43c0`) — **devops-engineer**, **Opus**,
+branch `devops-engineer/FOLLOW-903-904-effect-axis`, worktree `.claude/worktrees/follow-903`.
+**Together, because they are one subject:** 903 closes the static gate's blind spots (description
+axis), 904 adds the estate's missing effect-axis proof. RETRO-262's framing is the brief's spine —
+_could this pass while every container dies at line 1?_ Opus: 904 AC(1) asks the worker to
+**design** the cheapest observable effect for two apps, which is judgement, not wiring.
 
-**FOLLOW-902 — IN_PROGRESS** — **data-engineer**, **Opus**, branch
+**FOLLOW-902 — DONE** (PR **#699** → `8e138c78`) — **data-engineer**, **Opus**, branch
 `data-engineer/FOLLOW-902-drift-zero-coverage`, worktree `.claude/worktrees/follow-902`. **Pulled
 forward on a clock nothing else has:** from the 2026-08-09 firing the estate emits one Sentry drift
 alert per day, forever, for a tenant where nothing drifted — and it would be the **first drift alert
@@ -235,7 +235,75 @@ this system has ever produced**, so the channel's first impression is a false po
 vs `apps/data-quality/src/crons/schema_validation.py`'s fetch path. The one overlap risk,
 `schema_validation.py`, is called out in both briefs: 903/904 must not touch it.
 
-**Counters: 0/5 CI, 0/3 fix. 3 tickets IN_PROGRESS across 2 PRs. 0 open PRs at dispatch.**
+### Both merged — and the estate finally has an effect axis
+
+`main` at `d4fc43c0`. **0 open PRs, 0 worktrees, 0 tickets IN_PROGRESS.** Both CI-verified
+independently by me (exit 0, Rule I 192/192, 0 new). **Zero shared files between the two PRs** — the
+partition by agent TYPE worked, which is the fix for the conflict that landed a PR CONFLICTING
+earlier today.
+
+**FOLLOW-903+904 (#700).** Before this, four controls read the artefact's **description** (secret
+gate, `modal app list`, deploy job, static import gate) and one read an **effect**, covering one of
+three apps. The worker answered the dispatch's question directly: **903 alone would have been a
+fifth control on the same axis** and changed nothing about the class. The two are now load-bearing
+on each other **in the artefact** — residual `R-F1` is machine-checked by asserting the probe
+**exists on disk**, so deleting the effect probe reddens the static gate's own self-test. Self-test
+grew 5 → 21 cases, with open holes asserting `exit 0` **and their reason recorded beside them**
+(Rule AE was unmet precisely because every fixture replayed the original bug).
+
+**`intent-engine`'s consumer half executed in production for the first time** (run `31256633000`,
+`payload echoed our ids, model_used='haiku-4.5'`). That proves PR #698's declaration **by
+execution** rather than by a green deploy — and it is the closure evidence **FOLLOW-892 / ESC-042
+item 1** should use instead of a deploy status. The probe writes nothing (`profiling_opt_out=True`
+short-circuits `write_shadow_intent`); a real `generate_description` was **rejected as polluting**
+and its replacement named in the script.
+
+**FOLLOW-902 (#699) — hypothesis 1, confirmed by measurement.** `sample_listing_url` is absent, the
+fallback fetched `app.estalara.com` → 302 → `/en`, the public marketing home, matching **0 of 10**
+selectors; replaying the cron's own extract/check/compute reproduced both prod rows exactly.
+**Decision: a `0.0` coverage score is a validator error, not drift** — _an alert must be able to
+name what changed_, and on a total miss the observation is identical whether the DOM was replaced or
+the wrong document was fetched. Real drift is **differential**. **Routed, not suppressed:**
+`zero_coverage` and `config_gap` still reach Sentry with their own fingerprint and dedup key, and
+stop claiming drift. **The fallback was removed rather than the field made mandatory**, because
+nothing in the repo writes `sample_listing_url` — making it required is an onboarding change, so it
+was escalated, not implemented.
+
+**The test suite was green ON the defect.** Its only drift test fed HTML matching **zero** of seven
+fixture selectors — the same total-miss shape that shipped the false positive. Now uses partial
+HTML.
+
+### 🔴 ESC-055 — the tenant is unmeasurable by an anonymous fetcher, and I verified it myself
+
+```
+/listings   → 302 → /en?back=%2Flistings
+/properties → 302 → /en?back=%2Fproperties
+curl -sL app.estalara.com | grep -c data-estalara  → 0
+```
+
+**All four declared `url_patterns` are behind a session.** FOLLOW-902 stops the validator lying; it
+does not give it a subject. Three options in the escalation (publish one anonymous listing page /
+authenticated fetch / re-scope B.6 and say so in §Snapshot.1).
+
+**The consequence worth surfacing on its own:** because every route that would render them is
+auth-gated, **whether the `data-estalara` hooks are live on real listing pages has never been tested
+from outside**. ESC-020 / Wave-0 Step 6 rests on that. Not a claim it is broken — a claim that
+nobody can currently tell.
+
+### Filed
+
+**ESC-055** (product ruling). **FOLLOW-907** (P2, blocked on ESC-055) — the cron scores index- and
+detail-page selectors against **one** page, so 0.8 is measured against a set no single URL can
+satisfy; also, a schema with zero extractable selectors is still **silently skipped**.
+**FOLLOW-908** (P3) — narrowing residual `R-D1` would redden `llm-gateway` on a _correct_ config.
+**FOLLOW-909 (P1)** — the worktree-blind branch guard took its **fifth and sixth** sightings in a
+single dispatch; both workers paid the verification cost independently. The stub carries the count;
+**the fix stays FOLLOW-849**. Next free stub: **FOLLOW-910**.
+
+**RETRO-263 is NOT written.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 1 open P0-adjacent ruling
+(ESC-055).**
 
 ---
 

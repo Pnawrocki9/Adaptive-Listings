@@ -31943,3 +31943,66 @@ decomposition testable rather than aspirational.
 cross_ref: [RETRO-262 §6 refusal #2 + §5d; FOLLOW-900 AC(7) (PR #698, MASTER_DESIGN v4.8);
 FOLLOW-891 (PR #697); ESC-053 (RESOLVED); FOLLOW-904; Rule AA (steps 1–4, complied with in all four
 rounds); `docs/MASTER_DESIGN.md` §Snapshot.1 rows A.1 / B.6 / D]
+
+---
+
+## FOLLOW-907 — The cron scores index-page and detail-page selectors against ONE page, so the 0.8 threshold is measured against a set no single URL can satisfy
+
+source_retro: n/a (FOLLOW-902, session 105) source_ticket: FOLLOW-902 recommended_sprint: next
+recommended_agent: data-engineer priority: P2 estimated_hours: 3 depends_on: [ESC-055] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule; and genuinely blocked, since ESC-055
+decides whether there is a measurable subject at all.
+
+**Structural, not a tuning problem.** `validate_schemas` extracts every selector in the stored
+schema and scores them against a single fetched document. But an index page has no `description`
+slot and a detail page has no `listing-grid` — **the selector set spans two page types**, so a
+correct `sample_listing_url` still yields a depressed coverage score, and the 0.8 drift threshold is
+measured against a target no single URL can reach. FOLLOW-902 made a total miss honest; it did not
+make a partial miss meaningful.
+
+**AC:** (1) score per page type — selectors grouped by the surface they belong to, each fetched from
+its own URL; (2) restate the threshold in terms of what is actually measurable, and say what a
+partial score means; (3) a schema with **zero extractable selectors is still silently skipped**
+(`continue`, no history row) — same absence-of-signal class as FOLLOW-893, currently unreachable for
+the only tenant but latent for every future one; give it a `config_gap` row rather than silence.
+
+cross_ref: [FOLLOW-902 (PR #699); ESC-055; FOLLOW-893; MASTER_DESIGN §B.6]
+
+---
+
+## FOLLOW-908 — Narrowing residual `R-D1` would redden `llm-gateway` on a correct configuration
+
+source_retro: n/a (FOLLOW-903, session 105) source_ticket: FOLLOW-903 recommended_sprint: next
+recommended_agent: devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**A trap laid for the next editor of `_walk_app`, recorded so it is not discovered from CI.** The
+gate's package-level `rglob` over-approximation is the only reason
+`apps/llm-gateway/src/jobs/_app.py` — the app's sole `add_local_python_source` declaration, at `:75`
+— stays inside the reachable file set for entrypoint `src/main.py`. Anyone "fixing" `R-D1` to exact
+reachability **must first teach the walk to resolve dotted submodule imports**
+(`from jobs._app import app`), or `llm-gateway` goes red on a configuration that is correct.
+
+cross_ref: [FOLLOW-903 / FOLLOW-904 (PR #700); `scripts/check-modal-local-imports.py` (`_walk_app`,
+`RESIDUALS[R-D1]`, self-test case D1); `apps/llm-gateway/src/jobs/_app.py:75`]
+
+---
+
+## FOLLOW-909 — `.claude/hooks/pre-edit-branch-guard.sh` — fifth and sixth independent sightings, now with a measured cost per agent
+
+source_retro: n/a (FOLLOW-902 + FOLLOW-903, session 105) source_ticket: FOLLOW-849
+recommended_sprint: now recommended_agent: devops-engineer priority: P1 estimated_hours: 2
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**Two more agents hit it in one dispatch, independently, and both re-reported it as a new finding.**
+This is **FOLLOW-849**, already re-priced P2 → P1 at its fourth sighting. Sightings five and six
+arrived the same day. The FOLLOW-902 worker re-verified with `git rev-parse --abbrev-ref HEAD`
+before concluding the warning was false; the FOLLOW-903 worker did the same by reading
+`.git/worktrees/<name>/HEAD`. **Every agent pays that verification cost, every dispatch, forever.**
+
+**This stub exists to carry the count and the cost measurement — the fix belongs to FOLLOW-849.**
+Merge it there rather than executing both. The guard resolves the edited path against the main repo
+and reads _that_ HEAD; it must resolve HEAD relative to the worktree containing the edited file.
+
+cross_ref: [FOLLOW-849 (P1, the fix); FOLLOW-902 (PR #699); FOLLOW-903/904 (PR #700); FOLLOW-881;
+RETRO-260]

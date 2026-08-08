@@ -3654,3 +3654,49 @@ a deliberate inversion of `follow-877.test.ts` D-1 — which is designed so that
 record of the decision.
 
 **Resolution:** <empty until resolved>
+
+---
+
+## OPEN — ESC-055: `app.estalara.com` cannot be validated by an anonymous fetcher at all — every listing route is behind a session, so schema validation has no reachable subject
+
+**Filed by:** data-engineer (FOLLOW-902), escalated by the PM after independent verification
+**Date:** 2026-08-08 **Affects:** FOLLOW-902 (shipped), FOLLOW-907, §B.6 Continuous Schema
+Validation, possibly ESC-020 / Wave-0 Step 6 **Type:** product decision (what a tenant must provide)
+
+**Measured, not inferred. I re-ran the probes myself after the worker reported them:**
+
+```
+https://app.estalara.com             → 302 → /en
+https://app.estalara.com/listings    → 302 → /en?back=%2Flistings
+https://app.estalara.com/properties  → 302 → /en?back=%2Fproperties
+curl -sL https://app.estalara.com | grep -c data-estalara   → 0
+```
+
+All four `url_patterns` the stored schema declares redirect to the login page. The only anonymous
+HTML surfaces on this tenant are `/en` and the legal pages. **FOLLOW-902's fix is correct and does
+not resolve this**: it stops the validator lying (a total miss is now a `config_gap`, not drift),
+but the tenant remains **unmeasurable by an anonymous fetcher**, so B.6's subject does not exist for
+the only active tenant.
+
+**Why a `sample_listing_url` alone does not fix it.** That was the obvious remedy and the evidence
+rules it out — the field would have to point at a page behind the same session gate. Note also that
+**nothing in the repo writes `sample_listing_url`**; it is read here and nowhere else, so requiring
+it is an onboarding change, which is why this is a ruling and not a ticket.
+
+**Options (CEO/CPO):**
+
+1. **Publish one anonymous listing page** (a canonical demo/sample listing) and store its URL —
+   smallest change, gives the validator a real subject, and doubles as a public reference page.
+2. **Authenticated fetch** — the validator holds a service session. Costs a credential in
+   `estalara-secrets`, a session-refresh path, and a DPIA question about a bot session against a
+   product surface.
+3. **Accept that B.6 is not measurable for first-party tenants** and re-scope it to future
+   private-label tenants with public catalogues — honest, and it should then be said in §Snapshot.1
+   rather than left as a 🟡 that can never flip.
+
+**A consequence worth surfacing separately:** because every route that would render them is
+auth-gated, **whether the `data-estalara` hooks are live on real listing pages has never been tested
+from outside**. That is an assumption ESC-020 / Wave-0 Step 6 rests on, and it is currently
+unverifiable anonymously. Not a claim that it is broken — a claim that nobody can currently tell.
+
+**Resolution:** <empty until resolved>

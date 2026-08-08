@@ -1,8 +1,12 @@
 # ADR-0011 — Quiz-config transport: SDK runtime GET replaces snippet data-attributes for post-activation-mutable flags
 
 **Status:** ACCEPTED **Date:** 2026-06-11 **Accepted:** 2026-06-11 (CTO Rafał Palak, PR #269 merged)
-**Ticket:** FOLLOW-275 **Cross-references:** FOLLOW-102, FOLLOW-209, FOLLOW-274, ADR-0004, ADR-0006,
-Rule L, Rule U
+— **SCOPE-CLARIFIED 2026-08-08 by ADR-0021 (FOLLOW-915 AC(0)):** the FOLLOW-278 addendum sentence
+"The consent banner cannot wait for the fetch" is scoped to `fetchQuizConfig()` and superseded only
+as a general claim about all fetches; the tenant-data prohibition and the quiz-config transport
+decision are re-affirmed unchanged, original text byte-intact. See the dated annotation in the
+addendum below and ADR-0021 §D1/§D5. **Ticket:** FOLLOW-275 **Cross-references:** FOLLOW-102,
+FOLLOW-209, FOLLOW-274, ADR-0004, ADR-0006, Rule L, Rule U, ADR-0021
 
 ---
 
@@ -348,6 +352,25 @@ and the FOLLOW-278 comment in `index.ts`.
 - FOLLOW-273 (PR #268) — type unification (`QuizLanguage` from `@estalara/shared`)
 - FOLLOW-278 confirms FOLLOW-273 is NOT double-closed: FOLLOW-273 = type unification; FOLLOW-278 =
   runtime rendering path. The two fixes are disjoint.
+
+### Annotation — 2026-08-08, ADR-0021 (FOLLOW-915 AC(0)): scope of "the fetch" above
+
+The paragraph ending _"The consent banner cannot wait for the fetch"_ contains two propositions with
+different subjects, and ADR-0021 clarifies their scope without altering this addendum's text:
+
+1. _"The fetch MUST run after consent … fetching tenant data before consent is resolved would be a
+   GDPR-compliance issue"_ — **stands, re-affirmed by ADR-0021 §D1.** "The fetch" is
+   `fetchQuizConfig()`, a tenant-API-key-authenticated request for tenant data. All
+   tenant-identified or credentialed requests remain strictly post-consent.
+2. _"The consent banner cannot wait for the fetch"_ — **scoped to that same `fetchQuizConfig()`**
+   (the only fetch this addendum discusses) and **superseded as a general claim by ADR-0021 §D5**:
+   the banner MAY (and under ADR-0021 MUST) wait for the identifier-free, tenant-agnostic static
+   consent-text fetch defined there. This sentence was an ordering consequence of (1), not an
+   independent compliance rule; compliance countersign of the scope reading is tracked in ADR-0021.
+
+The FOLLOW-278 locale constraint above becomes partially reversible under ADR-0021 §D6: its latency
+premise is retired, its compliance premise (tenant-configured language is tenant data) stands, and
+the `data-language` escape hatch below remains the only pre-consent tenant-locale channel.
 
 ---
 

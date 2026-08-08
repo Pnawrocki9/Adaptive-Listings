@@ -4017,3 +4017,107 @@ statement was findable only by value (0.6), not by the constant name" — IS the
 reached independently by the FOLLOW-881 architect hours earlier and lost in transit. That is the strongest
 corroboration available for this amendment: the estate generated the control and dropped it, rather than
 failing to conceive it. Remedy: FOLLOW-888 (P2, pm-orchestrator, 1h). -->
+
+---
+
+## Rule AR — A claim of ABSENCE that scopes or closes work MUST be produced by ≥2 INDEPENDENT search strategies — at least one LEXICAL and at least one STRUCTURAL — and the record MUST name both and paste their commands; a negative reached by one strategy is a hypothesis, not a verdict
+
+**Pattern (UNVERIFIED-NEGATIVE):** An agent, PM or audit writes a negative — _"X is unaffected"_,
+_"no such reference exists"_, _"nothing consumes this"_, _"it imports only third-party modules"_,
+_"the toggle does not exist"_ — and that negative is then used to **scope or close work**: to
+exclude a component from a fix, to satisfy an acceptance criterion, to close a ticket or an
+escalation. The negative is produced by **one** search: one grep for one naming token, one read of
+one file region, one enumeration of the sinks the author happened to think of. Positives get
+challenged because a reviewer can see the thing being claimed; **a negative presents no object to
+inspect, so it travels through handoffs with materially less scrutiny than a positive of the same
+weight** — and it is cheap to write and expensive to verify. When the negative is wrong, the work it
+scoped is silently narrower than the defect, and nothing goes red: the excluded component simply
+stays broken, often latently, until something invokes it.
+
+**Evidence (≥2 PRIOR retros, per the AA/AB/AC/AD/AE/AF/V/Q adjudication — the promoting retro does
+not inflate the count):**
+
+- **RETRO-217 §6 (count 1, PRIOR, and it ARMED this promotion in its own words)** — the
+  `ProfilingToggle` / `OptedOut` absence claim, **wrong across three separate audits**, which
+  falsified FOLLOW-641's entire charter (_"build the opt-out toggle UI — none exists"_; it had
+  shipped in PR #337). RETRO-217 held at count 1, distinguished the pattern from Rules AC/AD and
+  OPERATING*PRINCIPLES Rule 5 (*"those govern POSITIVE enumeration completeness; absence-proof is
+  the mirror"_), and pre-authorized promotion verbatim: _"an absence/negative claim requires ≥2
+  independent search strategies — **naming variants AND import-graph/mount-point** — before it is
+  recorded as a verdict … on the NEXT independent-subsystem sighting."\_
+- **RETRO-247 §4d DG-1 + §5b (count 2, PRIOR — the mount-point half)** — a negative quantified over
+  four sinks on evidence covering three, recorded as closure evidence in `ropa.md:534-539`,
+  `C-07:250-259` and `dpia.md:255-258`. §5b names the pattern in the arming's own terms: _"every
+  future compliance correction inherits DG-1's shape — a negative claim is cheap to write and
+  expensive to verify."_ **Weakness stated rather than hidden: RETRO-247 homed the REMEDY in Rule AO
+  and did not bank this against RETRO-217; RETRO-262 banks it retroactively, which is the retro
+  loop's designed mechanism but is one degree weaker than a self-declared count. It qualifies under
+  RETRO-217's own two-strategy text, which names mount-point enumeration as the second strategy.**
+- **Promotion trigger — RETRO-262 (FOLLOW-900 / PR #698), count 3, does NOT inflate.** The PM's
+  dispatch brief asserted `apps/intent-engine` "imports only third-party modules". **True of its
+  module-level imports; false of its import graph** — `apps/intent-engine/src/main.py:82-83` imports
+  `nlp` and `redis_writer` **inside `process_chat_message`**, which pull `observability` and
+  `schemas`; all four are local. The claim **gated a decision**: it scoped a P1's AC(6) audit to
+  exclude a second Modal app carrying the identical dead-image defect. Registration succeeds and
+  `modal app list` reports `deployed`, so the first real invocation would have died with
+  `ModuleNotFoundError` inside a `.spawn()` the ingest Worker had already 202'd away from. It was
+  wrong in the safe direction only because nothing had invoked that app in production. The dispatch
+  brief's instruction _"re-verify, do not inherit"_ — a human sentence doing a control's job — is
+  the sole reason it surfaced.
+- **Subsystem independence, tested:** SDK/control-plane symbol naming (217) · compliance docs and
+  Python observability sinks (247) · Modal/Python deploy import graph (262). Three subsystems, and
+  between them all three strategies RETRO-217 named.
+
+**Rule:**
+
+1. **SCOPE — this rule fires ONLY on a DECISION-GATING negative.** A negative used to (a) exclude a
+   file/module/app/tenant/route from the scope of a fix, audit or sweep, (b) close a ticket,
+   escalation or acceptance criterion, or (c) stand as closure evidence in a durable record (QUEUE,
+   FOLLOW*UPS, ESCALATIONS, RETROSPECTIVES, a runbook, a compliance document, a PR body's per-AC
+   status). **A negative offered as colour in prose is out of scope** — requiring two search
+   strategies for every *"X is unaffected"\_ sentence in a retro would be unaffordable and would be
+   ignored, which is worse than absent.
+2. **TWO INDEPENDENT STRATEGIES, at least one of each kind.**
+   - **LEXICAL** — a text search over **naming variants**, not one token: the symbol, its
+     casing/kebab/snake variants, its value, and the natural-language paraphrase.
+   - **STRUCTURAL** — a search that does not depend on how the thing is spelled: an import/call
+     graph walk **at any nesting depth** (function bodies, `try:` blocks, conditional imports), an
+     AST query, a mount-point / sink / route / consumer enumeration derived from a registry rather
+     than from memory, or a type-checker/compiler result.
+   - The two must be **independent**: two greps with different tokens are one strategy.
+3. **THE RECORD NAMES BOTH AND PASTES THE COMMANDS.** _"Verified: no consumers"_ is not a verdict.
+   _"`grep -rn 'foo\|Foo\|FOO_' packages apps` → 0 hits; AST import-graph walk from the 3 registered
+   entrypoints → not reachable"\_ is. A negative whose record shows one strategy is downgraded to a
+   **hypothesis** and MUST be re-verified by whoever depends on it.
+4. **A HANDOFF DOES NOT LAUNDER A NEGATIVE.** A decision-gating negative inherited from a brief,
+   stub, prior retro, PM message or prior PR carries its original evidence, not the authority of the
+   handoff. If the two strategies are not in the record, the receiving agent re-verifies or states
+   in writing that it did not. **The receiving agent's re-verification finding takes precedence over
+   the brief**, and disagreement is reported, not silently resolved.
+5. **MODULE-LEVEL IS NOT A PROGRAM.** For any negative about what code imports, calls, reads or
+   writes, the structural strategy MUST cover function bodies, methods, conditional and lazy imports
+   — the FOLLOW-900 class exists because a module-level read looked clean.
+
+**Verification:**
+
+```bash
+# 1. Decision-gating negatives in the durable record that cite no command at all.
+grep -rnE "(is|are) unaffected|no (such |other )?(reference|consumer|producer|caller|usage)s? (exist|found)|nothing (consumes|reads|imports|calls)|only third-party|does not exist" \
+  backlog/QUEUE.md backlog/FOLLOW_UPS.md backlog/ESCALATIONS.md backlog/HANDOFFS.md docs/runbooks/
+#    Each hit that SCOPES or CLOSES work must have two named strategies within its own block.
+# 2. The structural half for a code-structure negative is not a grep. Minimum bar, per language:
+python3 - <<'PY'   # Python: imports at ANY nesting depth, not just module level
+import ast,sys,pathlib
+for f in pathlib.Path(sys.argv[1] if len(sys.argv)>1 else "apps").rglob("*.py"):
+    t=ast.parse(f.read_text(encoding="utf-8"),filename=str(f))
+    for n in ast.walk(t):
+        if isinstance(n,(ast.Import,ast.ImportFrom)):
+            print(f, getattr(n,"lineno","?"), ast.dump(n)[:80])
+PY
+# TypeScript: `tsc --noEmit` / an AST pass, NOT `grep "import"` — dynamic import() and
+# re-exports are invisible to a line grep.
+# 3. A negative reused across PRs: the second use must cite the first's commands or re-run them.
+grep -rn "re-verify, do not inherit" backlog/ .claude/agents/   # the instruction this rule replaces
+```
+
+<!-- Rule AR added 2026-08-08 — RETRO-262 §6. 44th permanent rule; range AA–AR (single letters A–Z exhausted per the Rule AA note). Evidence (≥2 PRIOR numbered retros): RETRO-217 §6 (count 1, ProfilingToggle/OptedOut absence claim wrong across three audits, falsifying FOLLOW-641's charter — held at count 1 with an explicit verbatim pre-authorization naming "naming variants AND import-graph/mount-point" and "the NEXT independent-subsystem sighting") + RETRO-247 §4d DG-1 / §5b (count 2, the mount-point half — a negative quantified over four sinks on three sinks' evidence, recorded as closure evidence in ropa.md/C-07/dpia.md; RETRO-247 homed the REMEDY in Rule AO and did not bank it against RETRO-217, so RETRO-262 banks it retroactively and says so — one degree weaker than a self-declared count, and it qualifies under RETRO-217's own two-strategy text). Promotion trigger: RETRO-262 (FOLLOW-900 / PR #698) — the PM's "apps/intent-engine imports only third-party modules", true of module-level imports and false of the import graph (main.py:82-83 imports nlp + redis_writer inside a function body, pulling observability + schemas), which scoped a P1's AC(6) audit to exclude a second app with the identical dead-image defect; it surfaced only because the dispatch brief said "re-verify, do not inherit". The 2 banked occurrences are both PRIOR retros → ≥2-prior threshold met; the promoting retro does NOT inflate the count (same adjudication as Rules AA/AB/AC/AD/AE/AF/V/Q). NEW LETTER, not an amendment — four homes were tested against their TEXTS: Rule AC (scope a guard ticket by repo-wide grep, not the files the audit named) fails on MECHANISM, since a grep is exactly what produced the wrong claim and the needed second strategy is structural; Rule AD governs value-domain literals; Rule AE governs a GUARD's call-shape enumeration whereas AR governs the CLAIM (both fire on PR #698, at different objects — corroboration, not overlap); Rule AI governs propagation of a CHANGED claim to documents and its amendments 2 and 3 have already solved the document-corpus half under their own name, so folding absence-proof into AI would split AI's evidence base (the RETRO-122 error in rule form). RETRO-217 argued for a separate home in its arming and that argument is honoured. SCOPE LIMITER IS LOAD-BEARING (rule item 1): decision-gating negatives only — a rule demanding two search strategies for every "X is unaffected" sentence would be unaffordable and would be ignored. ALSO IN RETRO-262 §6, two rule actions REFUSED with reasons: (a) NO Rule AF amendment for unwatched scheduled workflows — RETRO-262 ran Rule AF's own Verification loop VERBATIM and it printed `== e2e-smoke.yml : failure,failure,failure` in under ten seconds, so the text is adequate and the failure is COMPLIANCE (16 days unexecuted since Rule AF's RETRO-205 promotion); remedy is mechanisation → FOLLOW-905; class count for the record is three (ESC-041 Release, E2E Smoke 97/97 failures since 2026-05-04 with zero successes ever, validate_schemas). (b) NO Rule AA amendment for the "deployed" vocabulary — Rule AA step 3 already mandates a fail-loud EFFECT proof ("a query transcript") and was COMPLIED WITH in all four rounds (B.6 never said DONE); the defect is that §Snapshot.1's single status token absorbs a change of axis without visibly changing (deployed ≠ configured / ≠ live / ≠ importable / works ≠ scheduled, four meanings in four days), which is a schema defect in docs/MASTER_DESIGN.md → FOLLOW-906 proposes decomposing it into registered / importable / invoked / observed with a per-axis evidence KIND. LETTER CHOICE: AR is the next in the double-letter sequence after AQ; flag for human review if a different scheme is preferred. -->

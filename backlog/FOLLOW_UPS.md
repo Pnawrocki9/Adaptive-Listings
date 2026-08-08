@@ -31549,8 +31549,9 @@ cross_ref: [FOLLOW-890 (PR #695); `packages/shared/src/directives.ts`;
 
 ---
 
-<!-- next free FOLLOW number: 902 — updated 2026-08-08 (session 105) by the PM after the
-     first-ever fire of the FOLLOW-893 detector. FOLLOW-900 and FOLLOW-901 filed below. -->
+<!-- next free FOLLOW number: 907 — updated 2026-08-08 by RETRO-262, allocated against `main`
+     at `a036dfdf` per Rule AN. The marker previously read 902 while FOLLOW-902 was already filed on
+     `main` (commit `a036dfdf`); corrected here. FOLLOW-900, 901, 902 and 903–906 are filed below. -->
 
 ## FOLLOW-900 — 🔴 The nightly `validate_schemas` cron is DEAD IN PROD: every container dies at import on `ModuleNotFoundError: No module named 'crons'`, and the app still reports `deployed`
 
@@ -31696,3 +31697,249 @@ anything" is better classified as a validator error than as drift — a signal t
 
 cross_ref: [FOLLOW-900 (PR #698); FOLLOW-893 (PR #696); FOLLOW-897;
 `apps/data-quality/src/crons/schema_validation.py:510`; RETRO-010 / FOLLOW-111]
+
+---
+
+## FOLLOW-903 — The Modal local-source gate is blind to the exact layout of the app it was written for: three false-negative shapes, proven by running the gate, and its residual-gaps list is prose
+
+source_retro: RETRO-262 source_ticket: FOLLOW-900 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**`scripts/check-modal-local-imports.py` is a good gate and it is not complete. Every shape below
+was produced by importing the real gate and running `run_checks()` against a synthetic tree — not by
+reading it.** Its docstring discloses exactly one residual (`importlib.import_module` on a computed
+name), which I verified is genuinely absent from all three deployed roots
+(`grep -rn "importlib\|__import__\|sys\.path" apps/{data-quality,intent-engine,llm-gateway}/src`
+returns only test files). That disclosure is honest. **It is also not the whole list.**
+
+**SHAPE A — bare sibling import from a NESTED entrypoint → the gate returns `exit 0`, and this is
+`apps/data-quality`'s own layout.** `_local_module_file(root, name)` resolves an imported top-level
+name **only** against the app's declared source root. For the entrypoint
+`apps/data-quality/src/crons/schema_validation.py` (root `apps/data-quality/src`), a sibling import
+written as `from observability import init_sentry` resolves to `src/crons/observability.py`, which
+is **not** at the root, so the gate classifies it third-party and skips it. Per the repo's own
+documented modal behaviour — the gate's REGISTRY comment (_"`modal deploy <file>` puts the FILE's
+directory on sys.path"_) and `modal-deploy.yml:249-252` (_"puts the FILE's directory
+(apps/data-quality/src/crons) on sys.path — not the package root"_) — **that import resolves at
+deploy time and dies in the container**, because `add_local_python_source("crons")` ships
+`/root/crons/` while `/root` is what is on `sys.path`. **A one-line "simplification" of line 58 from
+`from crons.observability import …` to `from observability import …` re-creates FOLLOW-900 in the
+same file, and the gate says PASS.**
+
+**SHAPE B — the DECLARED set is harvested per-source-root, not per-image → `exit 0`.**
+`_declared_local_sources(root)` `rglob`s every `*.py` under the root and unions **every** string
+argument to `add_local_python_source` it finds — attached to any image object, or to none. Proven:
+an entrypoint whose own image carries no declaration **passes** because an unrelated module under
+the same root builds a throwaway image that declares the name. **SHAPE B2 (same probe, separate
+case): a declaration inside a `test_*.py` file also satisfies the gate.** This is not hypothetical
+scaffolding — `apps/llm-gateway`'s REGISTRY entrypoint is `src/main.py` and its only declaration
+lives in `src/jobs/_app.py:75`. **The root-wide harvest is already load-bearing for one of the three
+production apps**, so a future split of that image is invisible to the gate.
+
+**SHAPE C — `add_local_dir` / `add_local_file` → `exit 1`, a FALSE RED with an inverted diagnosis.**
+The gate recognises one API of the family. `jobs/_app.py:55,60` already uses `add_local_file` for
+the two contract JSONs, so the family is in live use. An app that legitimately ships its source by
+directory is failed with _"the deployed container will not have it"_, which is the opposite of true.
+
+**SHAPE D (recorded, no action) — `_required_local_modules` over-approximates in the SAFE
+direction:** on a package `__init__.py` it queues every `*.py` under that package via `rglob` rather
+than the reachable set. That inflates the required set (false red), which is a defensible tradeoff,
+but it is undocumented in a gate that is otherwise scrupulous about its own limits.
+
+**Rule AP is the applicable standard and is not met:** the residual-gaps list is prose in a
+docstring, not a register the gate executes. **Rule AE is the applicable standard for the self-test
+and is not met either:** all five self-test cases are drawn from the shapes FOLLOW-900's own defect
+used; _"a fix that closes the one shape a regression happened to use is not proof the class is
+closed."_
+
+**Half of `REGISTRY` is machine-checked and half is not.** `check_registry_covers_workflow` catches
+an entrypoint present in `modal-deploy.yml` but missing from `REGISTRY`. **A REGISTRY entry whose
+`root` value is WRONG is not caught at all** — the gate then checks a different program than the one
+that ships, and the failure looks exactly like SHAPE A.
+
+**AC:** (1) close SHAPE A by resolving imported names against **both** the declared source root
+**and** the entrypoint's own directory (mirroring what `modal deploy <file>` actually does), and
+treat a name resolvable only from the entrypoint directory as a violation, since the container will
+not have it; (2) close SHAPE B by scoping the declared set to the **image object attached to the
+`@app.function` decorators reachable from the entrypoint**, or — if that is judged too fragile to do
+statically — **say so in a machine-checked residual entry and add a self-test case asserting the
+`exit 0`**, so the hole is executable rather than invisible; (3) handle SHAPE C by recognising
+`add_local_dir` (and `add_local_file` for a `.py`) as satisfying a declaration, with a test; (4)
+derive `REGISTRY`'s `root` from `modal-deploy.yml`'s `PYTHONPATH:` for each deploy job instead of
+hand-maintaining it, or assert equality between the two, so a wrong root cannot pass; (5) convert
+`WHAT IS *NOT* ASSERTED` into a machine-checked register the gate prints and the self-test verifies
+(Rule AP), including SHAPE D and the surviving parts of A/B/C; (6) every shape above becomes a
+self-test case **with its expected verdict written down**, including any deliberately left open — a
+case asserting `exit 0` with a comment naming why is a disclosure a future reader can execute (Rule
+AE). **Do NOT weaken the gate to make a shape pass; a documented, executable hole is acceptable, an
+undocumented one is not.**
+
+cross_ref: [RETRO-262 §3/§4a LG-1..LG-4/§4c TG-1/§4d DG-2/§5c; FOLLOW-900 (PR #698);
+`scripts/check-modal-local-imports.py` (`_local_module_file`, `_declared_local_sources`,
+`_required_local_modules`, `REGISTRY`, `_self_test`); `.github/workflows/modal-deploy.yml:249-252`;
+`apps/llm-gateway/src/jobs/_app.py:55,60,75`; Rule AP; Rule AE; Rule Q]
+
+---
+
+## FOLLOW-904 — `intent-engine`'s FOLLOW-900 fix is a producer with no consumer: two of three deployed Modal apps have no control that could tell you they can start
+
+source_retro: RETRO-262 source_ticket: FOLLOW-900 recommended_sprint: now recommended_agent:
+devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
+
+**HALF_WIRE_P, and it is the same wire FOLLOW-900 was filed to close, one app over.**
+`apps/intent-engine/src/main.py:67` now declares
+`.add_local_python_source("nlp", "redis_writer", "schemas", "observability")`. The producer half
+landed and `modal deploy` accepted it (`Modal Deploy` run `31254025784` on `601c94e`, job
+`Deploy intent-engine`: success). **The consumer half — a container that actually imports those four
+modules — has never executed, and nothing in the estate would notice if it still could not.**
+`modal app logs estalara-intent-engine` shows only the image build; the app **has never been invoked
+in prod**, which is the only reason its identical defect was latent rather than an incident. If the
+declaration is wrong, the failure is a `ModuleNotFoundError` inside a `.spawn()` the ingest Worker
+has already 202'd away from — **exactly FOLLOW-900's no-channel shape, one hop further from view.**
+
+**The general form, which is what makes this P1 rather than a loose end.** After PR #698 the estate
+has **four description-axis controls** (secret gate, `modal app list` probe, deploy job, the new
+static gate) and **one effect-axis control** (FOLLOW-893's `cron-heartbeat.yml`), covering **one**
+of three deployed apps. `llm-gateway`'s consumer half is proven by live production description
+traffic but is **asserted by nothing**. `intent-engine`'s is proven by neither. **Every control that
+passed while `validate_schemas` was dead shared one property: it read the artefact's DESCRIPTION —
+metadata, inputs, declared state — never an EFFECT the artefact could only produce by running its
+own code.** The static gate is a fourth control on the description axis; it does not add the missing
+axis.
+
+**AC:** (1) for `intent-engine` and `llm-gateway`, define the cheapest observable effect that proves
+a container reached its own logic — for intent-engine the natural one is a synthetic POST to
+`chat_nlp_endpoint` with a throwaway tenant/session and an assertion on the response (or on the
+shadow key it writes), for llm-gateway an equivalent on its description endpoint; (2) assert it from
+a process that is **not** the deploy job — the pattern already exists and works,
+`cron-heartbeat.yml` is the reference implementation, so prefer extending it over inventing a second
+mechanism; (3) ship a Rule Q negative control that proves the new assertion **fires** when the
+effect is absent, in the same PR — a green check that has never seen itself go red is not evidence,
+and this ticket exists because four such checks were green at once; (4) decide and **record**
+whether the synthetic invocation runs post-deploy, on a schedule, or both — a post-deploy-only probe
+cannot catch a decay, and a schedule-only probe leaves a bad deploy live until the next firing; (5)
+if a synthetic invocation is judged unacceptable against production (cost, data pollution, LLM
+spend), say so explicitly and name what replaces it — **silence here recreates the gap this ticket
+closes**; (6) note for whoever takes it: FOLLOW-892 (ESC-042 item 1) closes on the intent-engine
+**traffic** axis, and its closure evidence should be this control's output rather than a deploy
+status.
+
+cross_ref: [RETRO-262 §3 HW-1 / §4c TG-2 / §5d; FOLLOW-900 (PR #698); FOLLOW-893 (PR #696,
+`cron-heartbeat.yml` — the reference implementation); FOLLOW-892; ESC-042 item 1; ESC-053;
+`apps/intent-engine/src/main.py:67,82-83`; `.github/workflows/modal-deploy.yml`; Rule Q; Rule AJ]
+
+---
+
+## FOLLOW-905 — Rule AF item 3's "periodically sweep" is prose, and the sweep it asks for takes ten seconds and returns a workflow that has never once passed in 97 days
+
+source_retro: RETRO-262 source_ticket: FOLLOW-900 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+**FROZEN** — session-95 standing rule.
+
+**This stub carries a measurement FOLLOW-901 should not re-derive, and a correction to its
+premise.** FOLLOW-901 states the `E2E Smoke Test` "has failed every scheduled run for at least six
+days". Measured: `gh run list --workflow=e2e-smoke.yml --event schedule --limit 100` returns **97
+runs, conclusions `{'failure'}` — a set of size one** — oldest `2026-05-04T05:54:44Z`
+(`25303424837`), newest `2026-08-08T04:03:21Z` (`31238584306`). Job steps pulled for the newest, the
+median (`27897182294`, 2026-06-21) and the **oldest**: all three fail at the identical step,
+`ingest → clickhouse smoke` → **`Start Docker services`**. **The workflow has never once passed a
+scheduled run in its entire recorded history.** It is not a decayed control; it is a **born-dead
+scheduled artefact** — the same shape as FOLLOW-900's cron, not ESC-041's `Release` (which published
+and then 403'd). The record understates by 16×.
+
+**FOLLOW-901's AC(3) asks for a sweep of the remaining scheduled workflows. It is DONE — here it is,
+so 901 can spend its two hours on the Docker failure instead.** `intent-weights-live-smoke` 40/40
+success · `redis-shadow-smoke` 33 + 7 success (renamed mid-life, both names green) ·
+`cron-heartbeat` 1 scheduled run, `failure` — **the alarm, behaving correctly** · `e2e-smoke` 97/97
+failure. **`e2e-smoke.yml` is the only live recurring red besides `ci.yml`.** Three further
+workflows show reds under Rule AF's sweep and are **not** live reds: `deploy-staging.yml`,
+`seed-archetypes.yml` and `release.yml` are all `workflow_dispatch`-only, with most-recent dispatch
+green for the first two (2026-08-04, 2026-05-22). **`release.yml` is ESC-041's subject and its reds
+stopped by TRIGGER CHANGE, not by resolution — ESC-041 is still OPEN**, which is a worse state than
+a visible red and is precisely what Rule AF item 1 forbids (quarantine must carry an owning FOLLOW
+and a restoration condition). `load-test.yml` has **zero runs, ever**.
+
+**The rule action, and why this is a stub rather than a rule amendment.** Rule AF item 3 already
+mandates this sweep and its Verification block already ships the loop. RETRO-262 ran that loop
+**verbatim** and it printed `== e2e-smoke.yml : failure,failure,failure` in under ten seconds. **The
+text is adequate; the execution is what did not happen — for 16 days, since Rule AF was promoted on
+RETRO-205.** So this is a compliance failure against an adequate control, which under RETRO-258's
+and RETRO-261's standard is **not** a rule change. The remedy is Rule AP's own principle applied to
+the word "periodically": a register the gate executes, not prose.
+
+**AC:** (1) turn Rule AF item 3's sweep into a scheduled job that fails when any workflow's last N
+runs on `main` are all `failure`, with an allowlist whose entries each carry an owning `FOLLOW-NNN`
+and a restoration condition (that allowlist IS the Rule AF item-1 quarantine register, made
+executable); (2) distinguish **live recurring red** (scheduled/push-triggered, failing now) from
+**stale dispatch history** — the naive `--limit 3` reading calls `seed-archetypes.yml` red when its
+last dispatch was green, and a sweep that cries wolf will be muted exactly like the thing it
+watches; (3) hand FOLLOW-901 the corrected figure and the completed sweep above; (4) decide what to
+do about `release.yml`/ESC-041 — a workflow whose reds were silenced by removing its trigger is
+neither fixed nor quarantined, and `load-test.yml` has never run at all, so both need a verdict, not
+a status; (5) fold in RETRO-262 §4d DG-1: `cron-heartbeat.yml:14-22` credits its 26h/05:00 window
+arithmetic with catching FOLLOW-900. The arithmetic is **correct** (alarm iff `H > W − 22`; `H=5`,
+`W=26` holds, with `H=4` the exact boundary) but **window-independent** for this catch — the
+detector took its zero-row branch (`check-cron-heartbeat.sh:110`). The header should name which
+property is load-bearing for _absence of record_ (CASE 0/CASE 1 alarm-on-absence, and exit 2 for
+unconfigured) and which for _steady-state staleness_ (the window), so a future editor optimising one
+does not weaken the other.
+
+cross_ref: [RETRO-262 §4d DG-1/DG-3 + §6 refusal #1; FOLLOW-901; ESC-041 (OPEN); Rule AF items 1–3
+and its Verification block; Rule AP; RETRO-205 (Rule AF promotion);
+`.github/workflows/e2e-smoke.yml`; `.github/workflows/cron-heartbeat.yml:14-22`; runs `31238584306`
+/ `27897182294` / `25303424837`]
+
+---
+
+## FOLLOW-906 — "deployed" carried four different meanings in four days in one §Snapshot.1 row; the status vocabulary needs decomposing, and it is not a Rule AA failure
+
+source_retro: RETRO-262 source_ticket: FOLLOW-900 recommended_sprint: next recommended_agent:
+architect (CEO ruling on the vocabulary) priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Four rounds, one row, one word, four meanings — all within four days:**
+
+| round | ticket           | what "deployed" turned out not to mean                                                                        |
+| ----- | ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| 1     | ESC-053          | deployed ≠ **configured** — the app existed; `estalara-secrets` lacked three keys the code reads              |
+| 2     | FOLLOW-891       | deployed ≠ **live** — §Snapshot.1 asserted five present-tense facts falsified two hours after their own merge |
+| 3     | FOLLOW-900       | deployed ≠ **importable** — `modal app list` said `deployed` while every container died at module import      |
+| 4     | FOLLOW-900 AC(7) | works ≠ **scheduled** — rows exist, from a **manual** `modal run`; the row was deliberately NOT flipped       |
+
+**Round 4 is the one that proves the point, because it is the round that went RIGHT.** The
+FOLLOW-900 worker kept row B.6 at `CODE_COMPLETE_OPERATOR_PENDING` and kept its flip condition
+**verbatim**, reasoning that a manual `modal run` mounts source from a laptop and therefore proves
+the code path, not the deployed artefact. That is correct, it is Rule AA step 3 applied exactly as
+written, and **it required a human to notice that the axis had moved again.**
+
+**This is NOT a Rule AA gap, and the ticket should not be taken as one.** Rule AA step 3 already
+mandates _"a fail-loud proof step (a canary run, an attestation stub, a query transcript) whose
+output is pasted as the finding's closure evidence"_ — a query transcript **is** an effect. Rule AA
+was complied with in all four rounds; B.6 never once said `DONE`. **The defect is that one status
+token can absorb a change of axis without visibly changing**, so each round is an honest correction
+that leaves the next round's failure mode invisible. That is a schema problem in a document.
+
+**Proposed decomposition (a starting point to argue with, not a spec):** replace the single status
+token for any deployed artefact with four axes, each carrying the KIND of evidence that closes it —
+**`registered`** (the deploy tool accepted it; evidence: a deploy job) · **`importable`** (a
+container reached line 1 of its own logic; evidence: an executed invocation, never a green deploy) ·
+**`invoked`** (it produced an observable effect at least once; evidence: a row, a key, a response) ·
+**`observed`** (a process that is not the artefact reads that effect on its own schedule; evidence:
+a green run of that process). Under this, FOLLOW-900's B.6 today is
+`registered ✅ · importable ✅ · invoked ✅ (manual) · observed ⏳`, and **nobody has to re-derive
+why it did not flip.**
+
+**AC:** (1) CEO/architect ruling on whether §Snapshot.1 adopts a multi-axis deploy state or keeps
+one token with a stricter definition — **either answer is acceptable, silence is not**; (2) if
+adopted, apply it to the rows that already have this problem (A.1, B.6, D at minimum) and state the
+evidence KIND per axis, not just the state; (3) check whether Rule AA's text needs a pointer to the
+new vocabulary — **do not amend Rule AA's substance**, RETRO-262 refused that explicitly and gave
+the reason; (4) the axes must be cheap to fill in — a four-column state nobody maintains is worse
+than one word, so if the honest answer is "we will not keep four columns current", say so and harden
+the single word's definition instead; (5) note the adjacency: FOLLOW-904 is the ticket that makes
+the `observed` axis fillable for two of three Modal apps, so sequencing 904 first makes this
+decomposition testable rather than aspirational.
+
+cross_ref: [RETRO-262 §6 refusal #2 + §5d; FOLLOW-900 AC(7) (PR #698, MASTER_DESIGN v4.8);
+FOLLOW-891 (PR #697); ESC-053 (RESOLVED); FOLLOW-904; Rule AA (steps 1–4, complied with in all four
+rounds); `docs/MASTER_DESIGN.md` §Snapshot.1 rows A.1 / B.6 / D]

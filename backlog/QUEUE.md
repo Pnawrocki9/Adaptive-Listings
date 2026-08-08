@@ -183,7 +183,46 @@ a mechanism that does not exist here.
 
 **RETRO-263 is NOT written.**
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs.**
+### ▶️ EIGHT CEO RULINGS TAKEN (2026-08-08) — the decision backlog is now empty
+
+Every open decision was put to the CEO and answered. **Six escalations RESOLVED, one stub closed by
+ruling, one architectural change approved.** All eight went with the recommendation, but two of them
+were re-framed by measurement first and would have been asked wrongly otherwise:
+
+| Decision       | Ruling                                                                                                                                                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ESC-054**    | Raise the **description axis** to `signal_count >= 5`. Ruled against the _corrected_ premise: the init-time `device_type` prior eats one signal, so **one** real event opens the gate today, not two. → **FOLLOW-913**                                                                                                     |
+| **ESC-055**    | **Publish one anonymous listing page.** Also makes testable, for the first time, whether the `data-estalara` hooks are live on real listing pages — ESC-020 rests on that. → Rafał, then **FOLLOW-914**                                                                                                                    |
+| **ESC-051**    | **Lazy-load the banner text out of the bundle** — not a third budget raise. _Consent text grows from regulation, not engineering, and must never compete with code for a performance budget._ → **FOLLOW-915**                                                                                                             |
+| **ESC-044**    | **Server-rendered text is byte-canonical.** And the remediation axis **closed at zero by measurement** — prod `consent_records` = 0 rows, 0 with the placeholder hash. Item 3 is moot. → **FOLLOW-916**                                                                                                                    |
+| **FOLLOW-889** | **No per-tenant threshold.** Nobody noticed the knob was missing for ~14 months; a configurability nobody missed is not a requirement. **CLOSED**, ruling folded into FOLLOW-906's pass                                                                                                                                    |
+| **FOLLOW-906** | **Decompose `deployed` into four axes** — `registered / importable / invoked / observed`, each with a named evidence kind                                                                                                                                                                                                  |
+| **ESC-041**    | **Quarantine `Release` with a named owner.** The ruling is about the standing red, not npm: a workflow failing every run teaches readers that red is normal. → **FOLLOW-917**                                                                                                                                              |
+| **ESC-045**    | **Pull FOLLOW-730 forward.** Two of its stated blockers were false — `ANTHROPIC_API_KEY` **is** in Doppler `dev`, and local Upstash needs no cloud. What remains is the one that matters: the shim cannot distinguish a real neutral buyer from a failed extraction, so every local test can be green for the wrong reason |
+
+**Two measurements changed what was asked.** ESC-044 would have been a Art. 7(1) remediation ruling;
+the prod count is **zero**, so it collapsed to one narrow question. ESC-045 would have asked for
+credentials that already exist. **Neither was resolvable by reading the escalation** — both needed a
+probe, and in both cases the escalation's own text was stale in the reassuring direction for ESC-045
+and the alarming direction for ESC-044.
+
+**Filed: FOLLOW-913…917.** Next free stub: **FOLLOW-918**. **Zero open escalations awaiting a
+decision.**
+
+### What is now dispatchable
+
+**P1, ready now:** FOLLOW-913 (ESC-054 impl), FOLLOW-915 (ESC-051 impl), FOLLOW-910 (the Bash guard
+blind spot), FOLLOW-898 (the second unfaithful replica — a class), FOLLOW-874, FOLLOW-885,
+FOLLOW-876, FOLLOW-905, FOLLOW-873, FOLLOW-903-followups. **P2 ready:** FOLLOW-917 (quarantine),
+FOLLOW-906 (four axes), FOLLOW-730 (pulled forward). **Blocked on an operator/CTO step:** FOLLOW-914
+(needs the anonymous page), FOLLOW-907 (rides 914).
+
+**One operator action still outstanding and unrelated to any ruling:** `MODAL_CHAT_NLP_URL` is unset
+in the **prod** ingest Worker, so `chat-nlp-dispatch.ts:104` takes its configured-no-op branch and
+the chat shadow key is never written. Everything on both sides of that variable is built, deployed
+and proven by execution. **It is one variable, not a ticket.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
 
 ---
 

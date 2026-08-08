@@ -2723,7 +2723,7 @@ external-brand go-live gate is FOLLOW-658 + FOLLOW-659, not this escalation.
 
 ---
 
-## OPEN — ESC-041: the `Release` workflow has failed on every run for days (`@estalara/sdk` → E403) with zero record in any backlog file [FOLLOW-626]
+## RESOLVED — ESC-041: the `Release` workflow has failed on every run for days (`@estalara/sdk` → E403) with zero record in any backlog file [FOLLOW-626]
 
 **Filed by:** claude (session 56, post-RETRO-205) **Date:** 2026-07-23T22:00:00Z **Affects:**
 FOLLOW-626, `@estalara/sdk` publish path, repo CI gate credibility **Type:** other (ops — dead
@@ -2754,7 +2754,20 @@ same class of latent upstream risk as the `:latest` ClickHouse tag that broke CI
 session) and FOLLOW-629 (CI↔prod ClickHouse version-skew detection, so the FOLLOW-620 pin's hidden
 expiry fires loudly).
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO ruling, Piotr, 2026-08-08): QUARANTINE THE `Release` WORKFLOW WITH A NAMED
+OWNER.**
+
+The SDK is not published to npm today and nothing needs it — distribution is by bundle. The E403 is
+an npm org/token permission problem that no agent can fix.
+
+**The ruling is about the standing red, not about npm.** A workflow that has failed on every run for
+months teaches every reader that red is normal, which is the same corrosion that let `e2e-smoke.yml`
+fail **97 scheduled runs in a row without a single backlog entry**. Disable it explicitly, with a
+recorded "inactive until X" and an owner, rather than leaving it failing.
+
+Implementation: **FOLLOW-917** (devops-engineer). Not deletion — recreating it later costs more than
+thawing a quarantine. The `Rule I` cleanup question in the same escalation is **separate and not
+ruled here**; it stays with FOLLOW-861.
 
 ---
 
@@ -3045,7 +3058,7 @@ until an operator runs the deploy and confirms live (chat_intent shadow key popu
 
 ---
 
-## OPEN — ESC-044: the consent gate's "canonical" hash is a hand-typed placeholder — the fabrication refusal it exists to fire cannot fire, and every default-path consent record since go-live attests a text that was never displayed [FOLLOW-704 / FOLLOW-706]
+## RESOLVED — ESC-044: the consent gate's "canonical" hash is a hand-typed placeholder — the fabrication refusal it exists to fire cannot fire, and every default-path consent record since go-live attests a text that was never displayed [FOLLOW-704 / FOLLOW-706]
 
 **Filed by:** claude (session 69, post-RETRO-227) **Date:** 2026-07-27T21:00:00Z **Affects:**
 FOLLOW-704 (P0), FOLLOW-706 (P1, operator-gated),
@@ -3172,7 +3185,27 @@ separate conversations.
 
 ---
 
-## OPEN — ESC-045: the local chat-NLP shim fails GREEN on a missing Anthropic key — it returns 202 and writes a neutral archetype, and four records name the wrong cause [FOLLOW-729 / FOLLOW-730]
+**Resolution (CEO ruling, Piotr, 2026-08-08), on both remaining axes:**
+
+**1. The prod-remediation axis is CLOSED AT ZERO — measured, not assumed.** A read-only count
+against prod (`DATABASE_URL_DIRECT`) returns **`consent_records` = 0 rows total, 0 carrying the
+placeholder hash**. Item 1 asked for exactly this count before assuming either way, per the ESC-037
+precedent; the answer is that no data subject has ever been given a record attesting text they did
+not see, because **no record exists at all** — consistent with RETRO-257's finding that the consent
+caller was never integrated. Item 3 (Art. 7(1) remediation options) is therefore **moot** and needs
+no ruling.
+
+**2. Item 2 ruled: the SERVER-RENDERED TEXT is byte-canonical for the hash.** Art. 7(1) is about
+proving the consent a specific person gave, and that person saw the render, not the document. The
+two bracket-placeholder substitutions where doc and renderer diverge stop mattering, because the
+document ceases to be the source.
+
+Implementation: **FOLLOW-916** (compliance-engineer) — derive the hash from the renderer, and make
+the document reference the renderer as canonical rather than restating the text. **Take the count
+again immediately before the caller is integrated**: item 7's warning stands, the population shifts
+the moment registrations start writing.
+
+## RESOLVED — ESC-045: the local chat-NLP shim fails GREEN on a missing Anthropic key — it returns 202 and writes a neutral archetype, and four records name the wrong cause [FOLLOW-729 / FOLLOW-730]
 
 **Filed by:** claude (session 79, post-RETRO-233) **Date:** 2026-07-29T16:00:00Z **Affects:**
 Piotr's standing "100% end-to-end on localhost" priority, FOLLOW-729 (merged, PR #641), FOLLOW-730
@@ -3296,6 +3329,25 @@ begin with) — this note only corrects the record, it changes no decision and r
 operator action beyond what FOLLOW-744 already asks for.
 
 ---
+
+**Resolution (CEO ruling, Piotr, 2026-08-08): PULL FOLLOW-730 FORWARD, ahead of the remaining P2/P3
+stubs.**
+
+**Two of this escalation's stated blockers are corrected by measurement and are not blockers:**
+`ANTHROPIC_API_KEY` **is** present in Doppler `dev` (item 1's first half was false — the only
+`UPSTASH_*` keys there, `UPSTASH_API_KEY`/`UPSTASH_EMAIL`, are account-management credentials, not
+the writer's REST pair), and local Upstash needs **no cloud instance** — the `serverless-redis-http`
+shim serves it.
+
+**What remains is item 3, and it is the one that matters.** Until FOLLOW-730 lands, the local shim
+cannot distinguish _a real neutral buyer_ from _extraction failed and a neutral archetype was
+substituted_. Every local test of the chat loop can therefore be green **for the wrong reason** —
+precisely the fail-green class this estate spent session 105-106 removing from production. Proving
+the localhost goal on an instrument that cannot fail honestly would prove nothing.
+
+Item 2 (Upstash env-pair parity) is now materially resolved for prod by ESC-053's verification (the
+`_REST_` pair and the control-plane pair address the same database, checked by probe); the local
+equivalent rides the shim.
 
 ## RESOLVED — ESC-048: the sequencing question is closed — FOLLOW-838 and FOLLOW-845 both merged, so the path is redacted at source
 
@@ -3541,7 +3593,7 @@ now-falsified premise. **CEO+DPO ruled: disclose-in-notice, LI basis, no separat
 
 ---
 
-## OPEN — ESC-051: the SDK bundle budget is exhausted (41.99KB / 42KB) and a legal disclosure just competed with a byte budget
+## RESOLVED — ESC-051: the SDK bundle budget is exhausted (41.99KB / 42KB) and a legal disclosure just competed with a byte budget
 
 **Filed by:** main-loop orchestrator (session 103) **Date:** 2026-08-07 **Affects:**
 `@estalara/sdk`, FOLLOW-815 (PR #688), ESC-028, FOLLOW-673 **Type:** architectural
@@ -3561,7 +3613,16 @@ forces future trims.
 **Required action:** CEO decision on the mechanism, then a ticket. No urgency for PR #688 itself —
 it fits — but the next banner edit is blocked-by-construction.
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO ruling, Piotr, 2026-08-08): LAZY-LOAD THE BANNER TEXT OUT OF THE BUNDLE.**
+
+Not a third budget raise. The reasoning the ruling accepts: **consent text grows from regulation,
+not from engineering, and must never compete with code for a performance budget.** A budget raised
+whenever it binds is not a constraint, and this would have been the second raise (40→42KB already
+happened under ESC-028).
+
+Implementation: **FOLLOW-915** (sdk-engineer). Constraint to design against — the notice must still
+render before any profiling begins, so "lazy" cannot mean "after the first event"; the fetch has to
+be ordered ahead of the consent gate, not merely off the critical path.
 
 ---
 
@@ -3626,7 +3687,7 @@ Revisit a real staging when FOLLOW-820's exit gate makes production traffic real
 
 ---
 
-## OPEN — ESC-054: should LLM-generated long-form copy ride the `signal_count >= 2` escape hatch? Two behavioral signals currently bypass the cold-start guard on the description axis
+## RESOLVED — ESC-054: should LLM-generated long-form copy ride the `signal_count >= 2` escape hatch? Two behavioral signals currently bypass the cold-start guard on the description axis
 
 **Filed by:** sdk-engineer (FOLLOW-877, session 104) **Date:** 2026-08-07 **Affects:**
 `packages/sdk/src/core/adapt-floor.ts`, `packages/sdk/src/index.ts:827-859`, FOLLOW-343, FOLLOW-819,
@@ -3697,11 +3758,23 @@ only. Then a ticket for the SDK change, an amendment to MASTER_DESIGN §E.7's ga
 a deliberate inversion of `follow-877.test.ts` D-1 — which is designed so that flipping it IS the
 record of the decision.
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO ruling, Piotr, 2026-08-08): RAISE THE DESCRIPTION-AXIS BAR TO
+`signal_count >= 5`.** Keep the disjunction; the description axis stops riding the `>= 2` escape
+hatch.
+
+Ruled against the corrected premise, which matters: the escalation was written believing **two**
+behavioral events opened the gate. They do not — the init-time `device_type` prior consumes one
+signal (`index.ts:1031-1036` → `applyBehavioralSignal` → `intent.ts:1038`), and
+`DOM_ADAPT_MIN_SIGNAL_COUNT = 2`, so **one** real event (a single scroll milestone) currently
+bypasses FOLLOW-343's cold-start guard for LLM-generated copy. `>= 5` therefore means four real
+events, not three, and 5 is the boundary the SDK already treats as "enough evidence to report".
+
+Implementation: **FOLLOW-913**. Test D-1 flips to record the ruling. The directive axis is
+unaffected — its server gate (`> 0.6`) already dominates.
 
 ---
 
-## OPEN — ESC-055: `app.estalara.com` cannot be validated by an anonymous fetcher at all — every listing route is behind a session, so schema validation has no reachable subject
+## RESOLVED — ESC-055: `app.estalara.com` cannot be validated by an anonymous fetcher at all — every listing route is behind a session, so schema validation has no reachable subject
 
 **Filed by:** data-engineer (FOLLOW-902), escalated by the PM after independent verification
 **Date:** 2026-08-08 **Affects:** FOLLOW-902 (shipped), FOLLOW-907, §B.6 Continuous Schema
@@ -3770,4 +3843,18 @@ changing. Whoever flips B.6 tomorrow must write the outcome next to it — e.g.
 write a bare "observed ✅". **No new stub is filed for this** (Rule AN): it is a new fact about
 ESC-055 and FOLLOW-906, both of which already exist.
 
-**Resolution:** <empty until resolved>
+**Resolution (CEO ruling, Piotr, 2026-08-08): PUBLISH ONE ANONYMOUS LISTING PAGE.**
+
+A canonical, publicly reachable sample listing; its URL stored as the tenant's `sample_listing_url`.
+Smallest change of the three, gives the validator a real subject, and doubles as a public reference
+page.
+
+**It also unblocks a question nobody could answer:** because every listing route is behind a session
+(verified — `/listings` and `/properties` both 302 to `/en?back=…`, and the marketing home greps 0
+for `data-estalara`), **whether the SDK's DOM hooks are live on real listing pages has never been
+testable from outside**. ESC-020 / Wave-0 Step 6 rests on that. The anonymous page makes it
+checkable for the first time.
+
+Sequencing: the page is a Rafał/CTO action on the Estalara-app side; storing its URL and re-enabling
+validation is **FOLLOW-914**, which is blocked until the page exists. **FOLLOW-907** (per-page-type
+scoring) unblocks with it.

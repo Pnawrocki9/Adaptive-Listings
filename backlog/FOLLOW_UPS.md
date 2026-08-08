@@ -30951,7 +30951,21 @@ landing-obligation amendment, first sighting since promotion. FOLLOW-874..882 al
 
 ---
 
-## FOLLOW-889 — Is a per-tenant / pilot-lowered `CONFIDENCE_THRESHOLD` actually wanted? A knob the SoT advertised for ~14 months and the code never had
+## FOLLOW-889 — CLOSED (CEO ruled: no per-tenant threshold) — Is a per-tenant / pilot-lowered `CONFIDENCE_THRESHOLD` actually wanted? A knob the SoT advertised for ~14 months and the code never had
+
+**CEO RULING (Piotr, 2026-08-08): NOT WANTED. The threshold stays one constant for the whole
+product.** Recorded as a decision rather than a silence, so the sentence cannot regrow — which was
+the entire reason FOLLOW-882 withdrew it as a _description of state_ instead of deleting it.
+
+The argument the ruling rests on: **nobody noticed the knob did not exist for ~14 months.** A
+configurability nobody missed is not a requirement. Consistent with the single-tenant model
+([[project_single_tenant_rebrand_model]]) and with §E.7's no-Tiers ruling — per-tenant tuning is
+exactly the kind of surface those decisions retired.
+
+**Action:** the ruling is written into `MASTER_DESIGN` §E.4.6 next to FOLLOW-882's withdrawal, so
+the next reader meets a decision and not a gap — folded into **FOLLOW-906**'s architect pass rather
+than given its own ticket. Reopen only if a second tenant arrives with materially different traffic,
+and then decide it with that tenant's data rather than from intuition.
 
 source_retro: n/a (FOLLOW-882, session 104) source_ticket: FOLLOW-882 recommended_sprint: next
 recommended_agent: OPERATOR (CEO/CPO ruling) + backend-engineer if adopted priority: P3
@@ -32144,3 +32158,122 @@ it in seconds instead of diagnosing it.
 
 cross_ref: [FOLLOW-849 (PR #701); `scripts/gh-pr-checks-verified.sh`; memory
 `project_ci_gate_landscape`; FOLLOW-827 / FOLLOW-846 (the gate's rebuild)]
+
+---
+
+## FOLLOW-913 — Raise the description-axis bar to `signal_count >= 5` (ESC-054 ruled)
+
+source_retro: n/a (ESC-054 ruling) source_ticket: ESC-054 recommended_sprint: now recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: true
+
+**CEO ruled 2026-08-08: keep the disjunction, raise the description axis to `signal_count >= 5`.**
+
+Rule against the **corrected** premise: the init-time `device_type` prior consumes one signal
+(`index.ts:1031-1036` → `applyBehavioralSignal` → `intent.ts:1038`), and
+`DOM_ADAPT_MIN_SIGNAL_COUNT = 2`, so today **one** real behavioral event opens the gate. `>= 5`
+means four real events. The directive axis is untouched — its server gate (`> 0.6`) already
+dominates.
+
+**AC:** (1) the description axis uses its own constant, not a re-used `DOM_ADAPT_MIN_SIGNAL_COUNT` —
+the two axes now differ and one shared name would re-create the confusion FOLLOW-875 spent a P1
+untangling; (2) **`follow-877.test.ts` test D-1 flips** to record the ruling, and its comment cites
+this ruling rather than restating a rationale; (3) a test proving the _directive_ axis is unchanged;
+(4) `adapt-floor.ts`'s docblock and `MASTER_DESIGN` §E.7's ladder note updated — apply Rule AI's
+three-vocabulary sweep, since this claim has already been wrong in nine places; (5) bundle delta
+measured and reported (ESC-051 budget is exhausted, and its fix is FOLLOW-915, not this ticket).
+
+cross_ref: [ESC-054 (RESOLVED); FOLLOW-875; FOLLOW-877; FOLLOW-343; Rule AI]
+
+---
+
+## FOLLOW-914 — Store the anonymous listing URL and re-enable schema validation (ESC-055 ruled; BLOCKED on the page existing)
+
+source_retro: n/a (ESC-055 ruling) source_ticket: ESC-055 recommended_sprint: next
+recommended_agent: data-engineer (+ Rafał Palak, CTO, for the page itself) priority: P1
+estimated_hours: 2 depends_on: [ESC-055 operator step] blocks: [FOLLOW-907] promoted_to_queue: false
+
+**CEO ruled 2026-08-08: publish one anonymous listing page.** The page is a Rafał/CTO action on the
+Estalara-app side; this ticket is the repo half and **cannot start until the page is live**.
+
+**AC:** (1) store the URL as the tenant's `sample_listing_url` — note **nothing in the repo
+currently writes that field**, so decide and implement where it is set; (2) prove the validator now
+reaches a real listing page: paste the fetched URL and a selector-match count **> 0**; (3) confirm
+the run produces a `schema_validation_history` row that is **not** `config_gap` — that is the first
+honest coverage number this project will have; (4) **while you are there, answer the question nobody
+could answer**: does that page carry live `data-estalara` hooks? Report it either way — ESC-020 /
+Wave-0 Step 6 rests on the assumption that it does, and until this page existed it was unverifiable
+from outside.
+
+cross_ref: [ESC-055 (RESOLVED); ESC-020; FOLLOW-902; FOLLOW-907; FOLLOW-897]
+
+---
+
+## FOLLOW-915 — Lazy-load the consent banner text out of the SDK bundle (ESC-051 ruled)
+
+source_retro: n/a (ESC-051 ruling) source_ticket: ESC-051 recommended_sprint: now recommended_agent:
+sdk-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: true
+
+**CEO ruled 2026-08-08: split the banner text out of the bundle. Not a third budget raise.** The
+reasoning to preserve: **consent text grows from regulation, not from engineering, and must never
+compete with code for a performance budget.**
+
+**The constraint that makes this non-trivial, and it is the whole ticket:** the notice must render
+**before any profiling begins**, so "lazy" cannot mean "after the first event". The fetch has to be
+ordered ahead of the consent gate, not merely moved off the critical path. A design that shaves
+bytes by letting one event fire pre-notice trades a budget problem for a compliance one.
+
+**AC:** (1) banner text served out-of-bundle with the ordering guarantee above **proven by a test**,
+not asserted; (2) the failure mode is named and tested — what renders if the text fetch fails or is
+slow? (blocking, cached copy, or a conservative built-in fallback: pick and argue); (3) bundle
+measured before/after, and the ESC-051 headroom restated; (4) Rule N's privacy-notice key-sync gate
+must still pass.
+
+cross_ref: [ESC-051 (RESOLVED); ESC-028; FOLLOW-815; Rule N]
+
+---
+
+## FOLLOW-916 — Make the server-rendered text byte-canonical for the consent hash (ESC-044 item 2 ruled)
+
+source_retro: n/a (ESC-044 ruling) source_ticket: ESC-044 recommended_sprint: next
+recommended_agent: compliance-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**CEO/DPO ruled 2026-08-08: the SERVER-RENDERED text is byte-canonical.** Art. 7(1) proves the
+consent a specific person gave, and that person saw the render, not the document.
+
+**The remediation axis is closed at zero — measured, not assumed.** Prod `consent_records` = **0
+rows total, 0 with the placeholder hash**. No data subject holds a record attesting text they did
+not see, because no record exists.
+
+**AC:** (1) hash derived from the renderer; (2) the doc's §6.1 **references** the renderer as
+canonical instead of restating the text, so the two cannot diverge again; (3) the placeholder
+constant is removed or made structurally impossible to ship — a hand-typed hash is what created
+this; (4) **re-take the prod row count immediately before the consent caller is integrated**
+(ESC-044 item 7): the population shifts the moment registrations start writing, and today's zero is
+only true today.
+
+cross_ref: [ESC-044 (RESOLVED); FOLLOW-705; FOLLOW-706; RETRO-257; ESC-037 precedent]
+
+---
+
+## FOLLOW-917 — Quarantine the `Release` workflow with a named owner (ESC-041 ruled)
+
+source_retro: n/a (ESC-041 ruling) source_ticket: ESC-041 recommended_sprint: now recommended_agent:
+devops-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: [] promoted_to_queue: true
+
+**CEO ruled 2026-08-08: quarantine, do not delete, do not chase the E403 now.** The SDK is not
+published to npm today; distribution is by bundle. The E403 is an org/token permission problem
+needing a human with registry access.
+
+**The ruling is about the standing red, not about npm.** A workflow failing on every run teaches
+readers that red is normal — the same corrosion that let `e2e-smoke.yml` fail **97 consecutive
+scheduled runs** with zero backlog entries.
+
+**AC:** (1) disable it explicitly (remove the automatic trigger; `workflow_dispatch` may remain)
+with a header stating **inactive-until condition and owner** — not a comment saying "broken"; (2) a
+backlog record so a future audit meets a decision, not a mystery; (3) **while you are in there,
+apply the same test to every other scheduled workflow**: `e2e-smoke.yml` (97/97 failure, born-dead —
+that is FOLLOW-905's subject, cross-reference rather than duplicate) and `load-test.yml` (**zero
+runs ever**). Report, do not fix, anything beyond `Release`.
+
+cross_ref: [ESC-041 (RESOLVED); FOLLOW-626; FOLLOW-901; FOLLOW-905; Rule AF]

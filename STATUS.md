@@ -5,7 +5,47 @@ STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authorita
 Kept here only for historical CI-counter provenance; do not treat entries below this line as current
 state — see QUEUE.md top block instead.
 
-## CURRENT (session 52, 2026-07-22)
+## CURRENT (session 105, 2026-08-08)
+
+- **Escalations OPEN (7), none blocking this dispatch — ages from filing date:** ESC-041 (`Release`
+  workflow E403, ~44d), ESC-042 narrowed (~14d; item 1 deploy axis closed, **traffic axis genuinely
+  unproven** — FOLLOW-892 owns the three-record disagreement), ESC-044 (consent canonical hash,
+  ~26d; items 1/2/3/5/6 resolved by the FOLLOW-814 CEO+DPO ruling), ESC-045 (local chat-NLP shim
+  fails green, ~10d, narrowed to items 1-3), ESC-046 (unbidden merge of #646, ~9d), ESC-051 (SDK
+  bundle budget exhausted 41.99KB/42KB, ~1d), **ESC-054 (CEO/CPO — should LLM long-form copy ride
+  the `signal_count >= 2` escape hatch, ~1d)**. **ESC-054 must be ruled together with FOLLOW-889** —
+  both move the same gating ladder and deciding either blind to the other is how the ladder reached
+  three documents' worth of disagreement.
+- **No escalation filed this session.** One was drafted and then withdrawn on evidence: I expected
+  the newly-red `Cron Heartbeat` prod job to make `gh-pr-checks-verified.sh` return exit 1 on every
+  PR (it classifies only `Rule I` as pre-existing-red). Reading `cron-heartbeat.yml` showed the job
+  is gated `if: schedule || workflow_dispatch || (push && ref == main)` and never runs on
+  `pull_request`. The workflow's author had already closed the hole. Verify-not-guess.
+- **IN_PROGRESS (1/3 max):** FOLLOW-900 — devops-engineer/**Opus**, branch
+  `devops-engineer/FOLLOW-900-modal-image-local-source`. Not yet started; no PR opened. **CI-check
+  counter 0/5, fix-iteration counter 0/3.**
+- **Open PRs:** none (`gh pr list --state open` empty at session start and unchanged).
+- **P0 status:** zero open P0. FOLLOW-895 CLOSED with risk accepted by CEO (2026-08-07) — recorded
+  as accepted, not dropped; **do not re-file it** (the ESC-020 pattern).
+- **Live finding this session (FOLLOW-900, P1):** the FOLLOW-893 absence-of-signal detector fired on
+  its first-ever scheduled run and caught a real dead prod cron. `estalara-schema-validation` is
+  `deployed` with its schedule registered, and every container dies at import on
+  `ModuleNotFoundError: No module named 'crons'` — so `schema_validation_history` has **0 rows** and
+  `cron_heartbeats` has never recorded `validate_schemas`. Neither of the two outcomes the
+  session-104 record documented as correct occurred. Root cause: the image is
+  `debian_slim().pip_install(...)` with no local source under Modal 1.4.2, where automounting was
+  removed in 1.0; the `PYTHONPATH` in `modal-deploy.yml:244` fixes only the runner-side import.
+- **Also filed:** FOLLOW-901 (P2, FROZEN) — `E2E Smoke Test` red on every scheduled run for six days
+  with zero backlog record; second instance of ESC-041's class.
+- **Next in queue after FOLLOW-900:** FOLLOW-898 (P1, routing pre-decided: sdk-engineer/Opus),
+  FOLLOW-874 (P1, re-priced), FOLLOW-885, FOLLOW-876, FOLLOW-892, FOLLOW-873. **FOLLOW-819 remains
+  NOT startable** — `adaptation_decisions` has no writer in the local substrate (a missing
+  component, not config), plus `depends_on` 818/560 open.
+- **Retro loop:** RETRO-259/260/261 landed. **No retro is owed** — session 104 closed its own.
+
+---
+
+## (superseded) session 52, 2026-07-22
 
 - **Escalations:** none OPEN. ESC-020/028/034 remain non-blocking OPEN per project memory
   (`project_wave0_golive_2026_07_13`); ages: ESC-020 ~46d (2026-06-06), ESC-028 ~29d (2026-06-23,

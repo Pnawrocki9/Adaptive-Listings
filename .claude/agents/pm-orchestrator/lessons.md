@@ -2962,3 +2962,20 @@ creating a dispatch branch explicitly pinned to a commit (rather than defaulting
 resulting worker/retro commit against ITS OWN parent, never against a `main` that may have advanced
 since — a moved `main` manufactures phantom violations that look exactly like a real constraint
 breach and cost real verification time to rule out.
+
+- **Date / ticket:** 2026-08-08 — FOLLOW-900 (filed + dispatched), FOLLOW-901 (filed)
+- **Delegation row used:** _Terraform, CI/CD, workflows, secrets, observability, runbooks_ →
+  devops-engineer (FOLLOW-900). FOLLOW-898's row (_client SDK / browser code_ → sdk-engineer)
+  pre-decided but held.
+- **What validation caught (or missed):** The hand-off's two "cheap checks" were the whole session.
+  The FOLLOW-893 detector's first-ever scheduled fire returned a THIRD outcome outside the two
+  documented as correct — `schema_validation_history` 0 rows AND no heartbeat ever — and reading
+  `modal app logs` rather than the green deploy job found the cause: the container dies at import
+  (`No module named 'crons'`) while `modal app list` still says `deployed`. Third layer of the same
+  onion in four days: ESC-053 said "deployed ≠ configured", FOLLOW-891 said "deployed ≠ live", this
+  says "running ≠ importable". Separately, I nearly filed ESC-055 claiming the new red would break
+  the merge gate on every PR; reading `cron-heartbeat.yml`'s `if:` showed it never runs on
+  `pull_request`. A drafted escalation withdrawn on evidence is cheaper than a filed one retracted.
+- **A delegation/validation rule I'd add:** When a ticket's acceptance evidence is "the deploy job
+  is green", reject it at dispatch and require an executed invocation plus a read-back of the row
+  the job is supposed to write — every deploy-shaped defect in this repo has passed its deploy job.

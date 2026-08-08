@@ -31546,3 +31546,114 @@ ClickHouse column and any dashboard that groups by `source` before shipping.
 cross_ref: [FOLLOW-890 (PR #695); `packages/shared/src/directives.ts`;
 `apps/control-plane/src/app/api/adapt/route.ts:16`; `apps/control-plane/src/lib/llm-gateway.ts:574`;
 `apps/control-plane/src/app/api/adapt/route.test.ts:147`]
+
+---
+
+<!-- next free FOLLOW number: 902 — updated 2026-08-08 (session 105) by the PM after the
+     first-ever fire of the FOLLOW-893 detector. FOLLOW-900 and FOLLOW-901 filed below. -->
+
+## FOLLOW-900 — 🔴 The nightly `validate_schemas` cron is DEAD IN PROD: every container dies at import on `ModuleNotFoundError: No module named 'crons'`, and the app still reports `deployed`
+
+source_retro: n/a (found by the FOLLOW-893 detector's first-ever scheduled fire, session 105)
+source_ticket: FOLLOW-893 / FOLLOW-817 recommended_sprint: now recommended_agent: devops-engineer
+priority: P1 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-897] promoted_to_queue: true
+
+**The detector FOLLOW-893 shipped fired on its first-ever scheduled run and it is telling the
+truth.** Run `31241996385` (2026-08-08 05:34 UTC, `event: schedule`): the negative-control job
+passed all five cases, and `Assert validate_schemas ran in the last 26h (prod)` went RED with:
+
+```
+ALARM: no heartbeat has EVER been recorded for job 'validate_schemas'.
+schema_validation_history digest (last 26h)
+  rows written   : 0
+  tenants covered: 0
+  newest run_at  : never
+```
+
+**This is a THIRD outcome, outside the two the session-104 record documented as correct.** That
+record predicted: migration `0037` lands before 02:00 → history row **and** heartbeat; or it does
+not → heartbeat write fails non-fatally but **history is still written**. Both branches predict at
+least one `schema_validation_history` row. Zero exist.
+
+**Root cause, verified at the source rather than inferred** —
+`modal app logs estalara-schema-validation` returns, repeatedly:
+
+```
+File "/root/schema_validation.py", line 58, in <module>
+    from crons.observability import flush_sentry, init_sentry
+ModuleNotFoundError: No module named 'crons'
+Runner failed with exception: ModuleNotFoundError("No module named 'crons'")
+```
+
+The container dies at **module import**, before any of the job's own code runs. Nothing is written,
+nothing is raised into Sentry (Sentry init is the very import that fails), and `modal app list`
+still shows the app `deployed` with the schedule registered.
+
+**Why the existing mitigation does not cover it.** `.github/workflows/modal-deploy.yml:244` sets
+`PYTHONPATH: apps/data-quality/src` with a comment explaining this exact import. That is correct and
+load-bearing — but it only fixes the **local** import on the runner, where `modal deploy` imports
+the module to register the `@app.function` decorators. It puts nothing into the **container image**.
+`schema_validation.py:77-84` builds `modal.Image.debian_slim(...).pip_install(...)` with no local
+source at all. Installed Modal is **1.4.2**; automounting of local Python source was removed in
+Modal 1.0, so local packages must be added explicitly.
+
+**The repo already contains the correct pattern, one directory away:**
+`apps/stream-consumer/src/main.py:37` — `.add_local_python_source("src")`.
+
+**Two records are now wrong in the confident direction, again.** §Snapshot.1 row B.6 was reconciled
+to "deployed" by FOLLOW-891 (PR #697, `MASTER_DESIGN` v4.7) roughly ten hours before this run proved
+the deployed artefact cannot start. This is the **same class** ESC-053 and FOLLOW-891 each addressed
+one layer up: `deployed` is not `running`, and now `running` is not `importable`.
+
+**AC:** (1) add the local `crons` package to the image (`add_local_python_source`, or an equivalent
+argued in the PR) so the container can import `crons.observability`; (2) **prove the container
+imports** — a green `modal deploy` is explicitly NOT acceptance evidence, since that is exactly what
+shipped this defect. Invoke the function against prod (`modal run`) and paste the run's own output;
+(3) confirm the invocation wrote **both** a `schema_validation_history` row and a `cron_heartbeats`
+row for `validate_schemas`, read back from prod; (4) re-run `.github/workflows/cron-heartbeat.yml`
+via `workflow_dispatch` and show the `assert-prod-heartbeat` job GREEN — the detector is the
+acceptance oracle, not a screenshot; (5) add a CI-level guard that fails when a Modal app's image
+omits a local module the app imports, or state plainly why a guard is not feasible and what replaces
+it — a deploy job that cannot fail on an unimportable image is the defect, not the symptom; (6)
+audit the other two Modal apps for the same shape and record the result either way
+(`apps/intent-engine/src/main.py` was checked by the PM and imports **only** third-party modules, so
+it appears unaffected — re-verify, do not inherit); (7) correct §Snapshot.1 row B.6 to reflect
+measured state, and note in the row what its flip condition actually is.
+
+**Do not close on a green deploy job.** Rule Q: the evidence is a heartbeat row in prod and a green
+detector run.
+
+cross_ref: [FOLLOW-893 (PR #696, the detector that found this); FOLLOW-817 (PR #691, the deploy);
+FOLLOW-891 (PR #697, §Snapshot.1 row B.6); FOLLOW-897; ESC-053; ESC-042;
+`apps/data-quality/src/crons/schema_validation.py:58,77-84,417-419`;
+`apps/stream-consumer/src/main.py:37`; `.github/workflows/modal-deploy.yml:235-245`;
+`.github/workflows/cron-heartbeat.yml`; Actions run `31241996385`]
+
+---
+
+## FOLLOW-901 — The daily `E2E Smoke Test` has failed every scheduled run for at least six days and appears in no backlog record
+
+source_retro: n/a (session 105, found while triaging the cron-heartbeat red) source_ticket:
+FOLLOW-900 recommended_sprint: next recommended_agent: devops-engineer priority: P2 estimated_hours:
+2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**A second instance of ESC-041's class, and the class is what matters.** ESC-041 records the
+`Release` workflow failing on every run for days "with zero record in any backlog file". The daily
+`E2E Smoke Test` is now doing the same: `failure` on the scheduled run for 2026-08-03, -04, -05,
+-06, -07 and -08, and `grep -rn "E2E Smoke" backlog/` returns **nothing** across `FOLLOW_UPS.md`,
+`QUEUE.md` and `ESCALATIONS.md`.
+
+**It is failing on infrastructure, not on the product.** Run `31238584306`, job
+`ingest → clickhouse smoke`, failing step: **`Start Docker services`**. So this is not a caught
+regression — the smoke never reached the assertions it exists to make. A suite that cannot start is
+indistinguishable, in the runs list, from a suite that started and passed nothing.
+
+**AC:** (1) diagnose the `Start Docker services` failure and either fix it or, if the smoke is
+obsolete, delete the workflow — a permanently-red scheduled check trains everyone to ignore the runs
+list, which is the cost ESC-041 already paid once; (2) whichever way, the outcome must be recorded
+in the backlog, since the defect being filed here is the **absence of a record**, not the red
+itself; (3) check the remaining scheduled workflows for the same shape and list them with their last
+three conclusions — two instances make it worth one sweep.
+
+cross_ref: [ESC-041 (same class, `Release`); FOLLOW-900; `.github/workflows/` (E2E smoke); Actions
+run `31238584306`]

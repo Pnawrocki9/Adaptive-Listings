@@ -1,6 +1,102 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 104 (2026-08-07) — FOLLOW-816 DONE, ESC-052 filed (staging IS production), FOLLOW-817 next
+## ▶️ START HERE — session 105 (2026-08-08) — the FOLLOW-893 detector fired on its FIRST run and caught a dead prod cron; FOLLOW-900 + FOLLOW-898 dispatched
+
+**Opening state, verified not inherited:** `main` `e9b4cd24`, clean, **0 open PRs, 0 worktrees, 0
+tickets IN_PROGRESS, 0 open P0.** Open escalations unchanged and none of them gate this work:
+ESC-041, ESC-042 (narrowed), ESC-044, ESC-045, ESC-046, ESC-051, ESC-054. **ESC-054 and FOLLOW-889
+remain CEO-pending and must be ruled together** — both move the same gating ladder.
+
+### 🔴 The headline: `validate_schemas` is deployed, scheduled, and DEAD — FOLLOW-900
+
+The session-104 hand-off asked for two cheap checks: did `schema_validation_history` gain its first
+row, and did the 05:00 UTC detector behave consistently with whether migration `0037` landed before
+02:00. **The answer is neither of the two documented branches.**
+
+Detector run `31241996385` (`event: schedule`, 05:34 UTC) — negative control **passed all five
+cases**, so the alarm is trustworthy, and the prod assertion went RED:
+
+```
+ALARM: no heartbeat has EVER been recorded for job 'validate_schemas'.
+  rows written : 0 | tenants covered: 0 | newest run_at : never
+```
+
+**Both documented branches predicted at least one history row** (0037 lands → row + heartbeat; 0037
+misses → heartbeat fails non-fatally, history still written). Zero exist. And `0037` _did_ land —
+`DB Migrate` succeeded 2026-08-07 23:34 UTC, and the detector reached its no-row branch rather than
+its no-table branch (`check-cron-heartbeat.sh:110` vs `:131`), which independently proves the table
+is present.
+
+**Root cause read from the source, not inferred** — `modal app logs estalara-schema-validation`:
+
+```
+File "/root/schema_validation.py", line 58, in <module>
+    from crons.observability import flush_sentry, init_sentry
+ModuleNotFoundError: No module named 'crons'
+```
+
+The container dies at **module import**. Nothing runs, nothing writes, and **Sentry cannot report it
+because Sentry init is the import that fails**. `modal app list` still says `deployed`.
+
+**Why the existing mitigation misses it, and this is the instructive part.** `modal-deploy.yml:244`
+sets `PYTHONPATH: apps/data-quality/src` with a comment naming this exact import — correct,
+load-bearing, and **local-only**. It fixes the import on the runner, where `modal deploy` imports
+the module to register the decorators. It puts nothing in the container image.
+`schema_validation.py:77-84` is `debian_slim().pip_install(...)` with no local source, and installed
+Modal is **1.4.2** — automounting was removed in Modal 1.0. **The repo already has the right pattern
+one directory away:** `apps/stream-consumer/src/main.py:37`, `.add_local_python_source("src")`.
+
+**§Snapshot.1 row B.6 is wrong again, ten hours after FOLLOW-891 corrected it** (PR #697,
+`MASTER_DESIGN` v4.7). Same class as ESC-053, one layer deeper each time: `deployed` is not
+`running`, and now `running` is not `importable`. Folded into FOLLOW-900 AC(7).
+
+**The merge gate is NOT affected — checked before assuming it was.** `cron-heartbeat.yml`'s
+`assert-prod-heartbeat` job is gated `if: schedule || workflow_dispatch || (push && ref == main)`,
+so it never runs on `pull_request`. PR check-runs see only the negative control, which passes. I was
+about to pre-file an escalation about `gh-pr-checks-verified.sh` classifying this red as an
+undocumented exit-1; the workflow's author had already closed it. No escalation filed.
+
+### Also found: FOLLOW-901 — a second instance of ESC-041's class
+
+`E2E Smoke Test` has failed **every scheduled run for six consecutive days** (2026-08-03…08) and
+`grep -rn "E2E Smoke" backlog/` returns **nothing**. It fails at `Start Docker services`, so it is
+not catching a regression — it never reaches its assertions. Filed P2/FROZEN, not dispatched: the
+defect is the absence of a record, and the record now exists.
+
+### Dispatched: two in parallel, disjoint by construction
+
+**FOLLOW-900 (P1, devops-engineer, Opus)** — branch
+`devops-engineer/FOLLOW-900-modal-image-local-source`. Table row: _Terraform, CI/CD, workflows,
+secrets, observability, runbooks_. Model justification: the failure spans Modal's image model, the
+deploy workflow, prod Postgres and the detector, and AC(5) asks for a **guard against a class** —
+judgement, not a one-line patch. Opus per the model-fit table. Chosen over FOLLOW-898 because it is
+live prod, it has a deadline (the next fire is 02:00 UTC tomorrow), and it unblocks FOLLOW-897.
+
+**Its acceptance oracle is deliberately not a green deploy job** — that is exactly what shipped the
+defect. AC(2)(3)(4) require an executed `modal run`, both rows read back from prod, and a
+`workflow_dispatch` of the detector coming back GREEN.
+
+**FOLLOW-898 (P1, sdk-engineer, Opus)** — branch `sdk-engineer/FOLLOW-898-intent-snapshot-replica`.
+Table row: _client SDK, Shadow DOM, tiers, browser code_. Model justification: AC(1) is an argued
+design call (repair vs delete vs machine-check) whose FOLLOW-890 precedent may not transfer, and
+AC(3)'s sweep decides whether the remedy is per-file or structural. Reasoning, not a test edit.
+
+**File ownership partitioned on every append-at-tail axis, not just `FOLLOW_UPS.md`** — the
+session-104 conflict landed on `.claude/agents/devops-engineer/lessons.md` because two agents of the
+same TYPE share one lessons file by construction. Here the two agents are **different types**, so
+the lessons files are naturally disjoint. Explicit partition:
+
+| File                                                                                        | Owner                                                          |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `apps/data-quality/**`, `.github/workflows/**`, `docs/MASTER_DESIGN.md`, `docs/runbooks/**` | FOLLOW-900                                                     |
+| `packages/sdk/**`, `CONVENTIONS_PATCH.md`                                                   | FOLLOW-898                                                     |
+| `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`                                                 | **PM only** — both agents report stubs back in the report body |
+
+**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS (cap 3). 0 open PRs. No open P0.**
+
+---
+
+## ▶️ (superseded — see session 105 above) START HERE — session 104 (2026-08-07) — FOLLOW-816 DONE, ESC-052 filed (staging IS production), FOLLOW-817 next
 
 **Session 103 was cut off by a terminal close** after PR #690 was opened. Recovery on resume found
 the work intact: **PR #690 merged as `5b2da4f2`**, worker branch and worktree survived, and the only

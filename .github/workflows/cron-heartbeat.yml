@@ -36,6 +36,34 @@
 #   go red is not evidence, so that negative control is part of the pipeline, not a
 #   one-off screenshot.
 #
+# WHAT FOLLOW-904 ADDED HERE, AND WHY IT IS HERE RATHER THAN IN A NEW WORKFLOW
+#   RETRO-262 reduced the whole chain to one test: could this control pass while every
+#   container dies at line 1? After PR #698 the estate had FOUR controls over the Modal
+#   apps (secret gate, `modal app list`, the deploy job, the static local-source gate) and
+#   all four read the artefact's DESCRIPTION. This workflow was the estate's ONLY
+#   effect-axis control, and it covered ONE of the three deployed Modal apps.
+#   `assert-modal-container-effect` extends it to the other two:
+#     intent-engine — `process_chat_message.remote()` with a throwaway tenant and
+#       `profiling_opt_out=True`, asserting the returned payload echoes the ids we sent.
+#       Its four declared local modules are imported INSIDE that function body, so nothing
+#       short of running it can prove the FOLLOW-900 fix is real. It had NEVER been invoked
+#       in prod, which is the only reason its identical defect was latent.
+#     llm-gateway  — an unauthenticated POST to description_requested_endpoint asserting
+#       HTTP 401: a Modal web endpoint only answers once its module has been imported to
+#       completion, and 401 is produced by application code. No LLM spend, no writes.
+#   FOLLOW-904 AC(2) says prefer extending the working pattern to inventing a second
+#   mechanism, and this workflow already IS the "process that is not the artefact,
+#   asserting the artefact ran" — same schedule, same alarm channel, same soft-skip
+#   contract. The workflow `name:` is deliberately NOT changed: it is what branch
+#   protection and every historical run reference by, and renaming it to match the wider
+#   scope would silently orphan those references. The job names carry the scope instead.
+#
+# WHEN THE MODAL PROBE RUNS (FOLLOW-904 AC4 — decided, not left implicit)
+#   BOTH: the daily 05:00 schedule here (a post-deploy-only probe cannot catch decay — a
+#   revoked secret or a wiped `estalara-secrets` breaks a container with no deploy in
+#   sight) AND a post-deploy step in modal-deploy.yml (a schedule-only probe leaves a bad
+#   deploy live for up to 24h). Neither alone is sufficient, and they cost the same.
+#
 # BRANCH TRIGGERS: `**` deliberately (ESC-011). PR #149 on `feat/...` got ZERO CI runs and
 #   the "lasting fix" was then violated by PR #158 on `claude/...`. An allowlist of agent
 #   prefixes has now failed twice; a detector whose own tests do not run on the branch
@@ -225,3 +253,77 @@ jobs:
         run: |
           doppler run --config prd -- bash scripts/check-cron-heartbeat.sh \
             --job validate_schemas --max-age-hours 26
+
+  # ── Rule Q negative control for the Modal effect probe (FOLLOW-904 AC3) ───────────────
+  # Runs on every push/PR with NO secrets and NO network beyond 127.0.0.1. It executes the
+  # real scripts/check-modal-container-effect.py against a substituted BACKEND — a fake
+  # `modal` module on PYTHONPATH and a one-status HTTP server — in every absence shape:
+  # ModuleNotFoundError in the container (the literal FOLLOW-900 traceback), app not
+  # deployed, a payload that does not echo the ids, an empty payload, a 500, a 200 for an
+  # invalid bearer, a dead socket, and no credentials at all (exit 2, never 0). Plus the
+  # two healthy shapes, so the probe cannot be "correct" by always alarming.
+  modal-effect-negative-control:
+    name: Modal effect probe negative control (alarm must fire on absence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No `pip install modal` on purpose: the fake backend is what this job exercises, and
+      # installing the real client would let a stray import silently reach production.
+      - name: Execute the alarm in every absence shape
+        run: bash scripts/negative-control-modal-effect.sh
+
+  # ── The real assertion against prod (FOLLOW-904 AC1/AC2) ─────────────────────────────
+  # A process that is NOT the deploy job, asserting that two deployed Modal apps reach
+  # line 1 of their own logic. `environment: production` mirrors modal-deploy.yml so the
+  # MODAL_TOKEN_* secrets resolve the same way there and here.
+  assert-modal-container-effect:
+    name: Assert intent-engine + llm-gateway containers reach their own logic (prod)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    # Same trigger set as assert-prod-heartbeat: this one talks to production.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Modal client
+        run: pip install modal
+
+      # Soft-skip ONLY on "dependency not configured" (no Modal token), identical to
+      # modal-deploy.yml. A present token over a container that cannot start is a hard red
+      # below — the probe itself exits 2, never 0, when it finds no credentials, so an
+      # unconfigured runner can never be mistaken for a healthy production.
+      - name: Check MODAL_TOKEN_ID presence
+        id: modal-token-check
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        run: |
+          if [ -z "${MODAL_TOKEN_ID}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::MODAL_TOKEN_ID is not set — cannot invoke the deployed apps."
+            echo "This job is INERT until MODAL_TOKEN_ID is provisioned. It is NOT an all-clear."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Probe intent-engine and llm-gateway for an observable effect
+        if: steps.modal-token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: python3 scripts/check-modal-container-effect.py --app all

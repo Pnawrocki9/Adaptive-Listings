@@ -62,6 +62,22 @@
 #   a local module its image does not declare via add_local_python_source. It has no
 #   secret dependency, so it can never soft-skip.
 #
+# EFFECT PROBE (FOLLOW-904, hard fail — NOT a fourth skip):
+#   Everything above is on the DESCRIPTION axis (RETRO-262): the secret gate reads the
+#   inputs, `modal app list` reads the registry's self-report, the deploy job reads that
+#   registration succeeded, and the local-source gate reads source text. All four can pass
+#   while every container dies at line 1 — that is precisely what happened to
+#   estalara-schema-validation. After each successful deploy, the app-specific job now
+#   INVOKES the app it just shipped and asserts an observable effect
+#   (`scripts/check-modal-container-effect.py`): intent-engine returns a payload echoing a
+#   throwaway tenant/session (proving the four local modules its function body imports
+#   resolved), llm-gateway answers an invalid bearer with 401 (proving its module imported
+#   to completion). It runs under the SAME `skip` gate as the deploy — if there was no
+#   deploy there is nothing to probe — and is a hard red otherwise. The same probe also
+#   runs daily from cron-heartbeat.yml, because a post-deploy-only probe cannot catch a
+#   decay (a revoked key breaks a container with no deploy in sight) and a schedule-only
+#   probe leaves a bad deploy live until the next firing. FOLLOW-904 AC4: both.
+#
 # MANUAL FALLBACK:
 #   modal token set --token-id <id> --token-secret <secret>
 #   modal deploy apps/llm-gateway/src/main.py
@@ -81,6 +97,7 @@ on:
       - ".github/workflows/modal-deploy.yml"
       - "scripts/check-modal-secret-keys.py"
       - "scripts/check-modal-local-imports.py"
+      - "scripts/check-modal-container-effect.py"
   workflow_dispatch:
 
 # Never let two deploys of the same app race; never cancel one already running.
@@ -141,6 +158,19 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: modal deploy apps/llm-gateway/src/main.py
+
+      # EFFECT PROBE (FOLLOW-904). The deploy above proves REGISTRATION. This proves the
+      # container that registration produced can serve a request from its own module: an
+      # unauthenticated POST must come back 401 from `_valid_bearer`, which only runs once
+      # jobs/generate_description.py has imported to completion (jobs/ mounted AND the two
+      # contract fixtures present at import time). --attempts 3 covers a cold first image;
+      # the negative control proves retries cannot turn a persistent failure into a pass.
+      - name: Assert the deployed llm-gateway container reaches its own logic
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: python3 scripts/check-modal-container-effect.py --app llm-gateway --attempts 3
 
   deploy-intent-engine:
     name: Deploy intent-engine (estalara-intent-engine)
@@ -219,6 +249,22 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           PYTHONPATH: apps/intent-engine/src
         run: modal deploy apps/intent-engine/src/main.py
+
+      # EFFECT PROBE (FOLLOW-904) — this is the app the ticket was filed for. main.py
+      # imports NOTHING local at module level; `nlp`, `redis_writer`, `schemas` and
+      # `observability` are imported INSIDE process_chat_message, so a green deploy, a
+      # `deployed` status and even a 202 from the endpoint are all compatible with a
+      # ModuleNotFoundError in every container. This step calls that function with a
+      # throwaway tenant/session and `profiling_opt_out=True` (§H.9 short-circuit — the
+      # probe writes NOTHING: no shadow key, no analytics, no adaptation_decisions) and
+      # asserts the returned payload echoes the ids it sent, which main.py:100-101 can
+      # only do after both imports resolved.
+      - name: Assert the deployed intent-engine container reaches its own logic
+        if: steps.token-check.outputs.skip == 'false'
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: python3 scripts/check-modal-container-effect.py --app intent-engine --attempts 3
 
   deploy-data-quality:
     name: Deploy data-quality (estalara-schema-validation)

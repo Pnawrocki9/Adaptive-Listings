@@ -364,3 +364,54 @@ Modal-secret write are operator-credential actions, Rule AA).
 this instruction), `.env.example:81` (`SENTRY_PROJECT` comment now names this project for the Python
 tier), Rule AA (code-vs-prod verdict split — this ticket ships `CODE_COMPLETE_OPERATOR_PENDING`, not
 `DONE`, until steps 1-5 above are executed and attested).
+
+## 12. Effect probe — proving a deployed container reaches its own logic (FOLLOW-904)
+
+**Why this section exists.** Every other check in this runbook is on the DESCRIPTION axis: the
+secret inventory reads the inputs, `modal app list` reads Modal's self-report, the deploy job reads
+that registration succeeded, and `scripts/check-modal-local-imports.py` reads source text. All four
+can be green while every container dies at line 1 — which is exactly how
+`estalara-schema-validation` ran a nightly cron that wrote zero rows for its entire life (FOLLOW-900
+/ RETRO-262).
+
+**The probe.**
+
+```bash
+python3 scripts/check-modal-container-effect.py --app all       # both apps
+python3 scripts/check-modal-container-effect.py --app intent-engine
+python3 scripts/check-modal-container-effect.py --app llm-gateway
+```
+
+| app             | effect asserted                                                                      | writes anything?                                                      | cost               |
+| --------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ------------------ |
+| `intent-engine` | `process_chat_message.remote()` returns a payload echoing a throwaway tenant/session | **no** (`profiling_opt_out=True` → §H.9 short-circuit, no shadow key) | one Haiku call     |
+| `llm-gateway`   | an unauthenticated POST to `description_requested_endpoint` answers **HTTP 401**     | **no**                                                                | zero (no LLM call) |
+
+Exit codes: `0` effect observed · `1` ALARM, the container did not reach its own logic · `2`
+unconfigured (no Modal credentials) — never `0`.
+
+**Where it runs automatically.** Both, deliberately (FOLLOW-904 AC4):
+
+- `modal-deploy.yml` — after each successful deploy of `intent-engine` / `llm-gateway`
+  (`--attempts 3`, cold image). A schedule-only probe would leave a bad deploy live for up to 24h.
+- `cron-heartbeat.yml` job `assert-modal-container-effect` — daily at 05:00 UTC plus
+  `workflow_dispatch`. A post-deploy-only probe cannot catch a decay: a revoked key or a wiped
+  `estalara-secrets` breaks a container with no deploy in sight.
+
+**When it goes red.** A `ModuleNotFoundError` in the alarm text is the FOLLOW-900 shape: the image
+does not ship a local module the function body imports — fix `add_local_python_source(...)` in that
+app's image and re-run `python3 scripts/check-modal-local-imports.py`. A 5xx from the llm-gateway
+endpoint is the same class one layer up: the module failed to import, usually because `jobs/` is not
+mounted or the contract fixtures (`jobs/_app.py:55,60`) are missing at import time. An
+`UNCONFIGURED` (exit 2) means nothing was checked — it is not an all-clear.
+
+**Proving the alarm still works** (no secrets, no network beyond localhost):
+
+```bash
+bash scripts/negative-control-modal-effect.sh
+```
+
+12 cases: the alarm must fire on ModuleNotFoundError, a missing app, a payload that does not echo
+the probe's ids, an empty payload, a non-dict return, HTTP 500, HTTP 200 for an invalid bearer and a
+dead socket; it must stay silent on the two healthy shapes; and no credentials must be exit 2. CI
+runs this on every push, on every branch.

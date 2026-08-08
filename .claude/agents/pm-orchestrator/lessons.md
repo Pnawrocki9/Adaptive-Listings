@@ -2993,3 +2993,16 @@ breach and cost real verification time to rule out.
 - **A delegation/validation rule I'd add:** Before letting a clock decide a dispatch order, trace
   the clock's mechanism in code — an urgency premise is a decision-gating claim and deserves the
   same verification as a claim of absence.
+
+- **Date / ticket:** 2026-08-08 — FOLLOW-915 (session 107)
+- **Delegation row used:** _a contract between two modules, a new dependency, an ADR_ → `architect`
+  — overriding the stub's own `sdk-engineer` recommendation.
+- **What validation caught (or missed):** Caught pre-dispatch, not at 5c/5d: the CEO-ruled ordering
+  ("fetch the consent text before the consent gate") is the verbatim inverse of an **Accepted**
+  ADR-0011 addendum carrying a 2026-06-12 compliance sign-off, restated as a 25-line rationale block
+  in `index.ts`. Also disproved a number I was handed: bundle headroom is **14 bytes** (42,994 /
+  43,008), measured by building and gzipping, not the "~10" the escalation stated — and that 14
+  bytes is what actually re-ranked the queue, holding FOLLOW-913 and FOLLOW-898 behind 915.
+- **A delegation/validation rule I'd add:** Before dispatching any ticket born from a ruling, grep
+  `docs/adr/**` for the seam it lands on — a ruling decides _whether_, an ADR already decided _how_,
+  and when they disagree the ticket's named agent is usually the wrong one.

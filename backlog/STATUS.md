@@ -1,4 +1,53 @@
-# Status — 2026-08-08 (session 106 — FOLLOW-892 DONE on an effect; FOLLOW-849 selected and dispatched via NEXT)
+# Status — 2026-08-08 (session 107 — FOLLOW-915 re-routed to `architect`: the CEO ruling collides with an Accepted ADR; 14 bytes of bundle headroom measured)
+
+## SESSION 107 (2026-08-08)
+
+**Opening state verified, not inherited:** `main` `4b4ffa86`, clean and pushed, `git worktree list`
+= main checkout only, `gh pr list --state open` = empty, **0 tickets IN_PROGRESS, 0 open P0, 0
+decisions pending**. The two escalations that read `OPEN` on a grep were re-confirmed false
+positives **by line number**, not by memory: ESC-046 is `RESOLVED` at `ESCALATIONS.md:105` with its
+`OPEN` heading at `:138` inside a `<details>` block closing at `:190`; ESC-020 carries a CEO
+resolution dated 2026-06-10.
+
+**Selected FOLLOW-915 (P1, ESC-051 impl), then found it is not dispatchable to the agent its own
+stub names.** The ruling requires the consent-notice fetch to be ordered **ahead of** the consent
+gate. `docs/adr/ADR-0011-quiz-config-transport.md:310-312` (status **Accepted**, compliance sign-off
+2026-06-12) says: _"The fetch MUST run after consent, not before … The consent banner cannot wait
+for the fetch."_ The same decision is a 25-line rationale block at
+`packages/sdk/src/index.ts:312-336`. An `sdk-engineer` would have met a documented refusal of the
+exact ordering the ticket demands and either overridden it silently or stopped — a full round trip
+either way. **Re-routed to `architect` (Opus), branch `architect/FOLLOW-915-consent-text-transport`,
+row _a contract between two modules … an ADR_.**
+
+**The distinction that keeps it a design question rather than a CEO question:** the ADR's first
+sentence forbids fetching **tenant data** pre-consent — banner text is not tenant data. Its second
+sentence is a latency claim with **no compliance rationale attached**. Only that one must fall.
+**ESC-056 is reserved, not spent**: the architect files it only if "may the SDK fetch its own
+consent text pre-consent?" is unanswerable from the existing DPIA.
+
+**Measurement taken at HEAD, and it re-ranked the queue.** Built the SDK and gzipped the artefact
+directly: `estalara-sdk.iife.js` = **42,994 bytes** against a 43,008-byte budget — **14 bytes of
+headroom**, not the "~10" ESC-051 estimated. `consent-banner.ts` is 14,444 raw / 5,457 gzip
+standalone, the largest movable thing in the budget. Consequence written into QUEUE.md: **FOLLOW-913
+and FOLLOW-898 are held until 915 lands** — FOLLOW-913's AC(1) mandates a new named constant against
+14 bytes, which is a coin flip on a CI gate for reasons unrelated to the ticket, paid out of a
+3-iteration cap.
+
+**Retro debt, stated plainly because it is my own skipped step 6:** RETRO-263 is owed **three**
+merged PRs — #699, #700, #701 — and #700 changed the merge gate the PM validates with. It lost to
+FOLLOW-915 only on blocking (a retro unblocks nothing; 14 bytes blocks two P1s). **Parallel-safe**
+with the architect dispatch — different agent types, different worktrees — under this partition:
+RETRO-263 owns the `FOLLOW_UPS.md` tail and stubs FOLLOW-918..925; the architect files no stubs and
+owns `ESC-056` + `docs/adr/**`.
+
+**Open-escalation ages:** none awaiting a decision (all eight ruled 2026-08-08, age 0d). ESC-042
+item 1 remains OPEN on the traffic axis only — owner FOLLOW-820 item 3, by design, age 1d in this
+state. **Counters: 0/5 CI checks, 0/3 fix iterations. 1 IN_PROGRESS (FOLLOW-915). 0 open PRs.**
+
+**Still outstanding and still not a ticket:** `MODAL_CHAT_NLP_URL` unset in the prod ingest Worker —
+one variable, both sides built and proven, gated behind FOLLOW-820's localhost-first exit by design.
+
+---
 
 ## SESSION 106 (2026-08-08)
 

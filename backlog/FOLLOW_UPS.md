@@ -32228,6 +32228,32 @@ slow? (blocking, cached copy, or a conservative built-in fallback: pick and argu
 measured before/after, and the ESC-051 headroom restated; (4) Rule N's privacy-notice key-sync gate
 must still pass.
 
+**PM ANNOTATION (session 107, 2026-08-08) — AC(0), takes precedence over the ordering constraint
+above; and the agent is re-routed.** This ticket's stated ordering ("the fetch has to be ordered
+ahead of the consent gate") **directly contradicts an Accepted ADR decision carrying a compliance
+sign-off**: `docs/adr/ADR-0011-quiz-config-transport.md:310-312` — _"The fetch MUST run after
+consent, not before … The consent banner cannot wait for the fetch."_ — restated as a 25-line
+rationale block at `packages/sdk/src/index.ts:312-336`. The design half therefore goes to
+**`architect`** (row: _a contract between two modules, a new dependency, an ADR_), **Opus**, branch
+`architect/FOLLOW-915-consent-text-transport`, and the SDK implementation follows on a settled
+contract.
+
+The distinction that makes it resolvable: the ADR's first sentence forbids fetching **tenant data**
+pre-consent — banner text is not tenant data. Its second sentence ("the banner cannot wait") is a
+latency claim with **no compliance rationale attached**, and it is the one that must be overturned.
+Say which survives.
+
+**Measured at HEAD by the PM so it is not re-derived:** `estalara-sdk.iife.js` = **42,994 bytes
+gzip** against a 43,008-byte budget — **14 bytes of headroom** (ESC-051 estimated ~10).
+`packages/sdk/src/ui/consent-banner.ts` is 14,444 raw / 5,457 gzip standalone. **FOLLOW-913 and
+FOLLOW-898 must not be dispatched until this lands** — 14 bytes is below the noise floor of any
+change to this package, and FOLLOW-913's AC(1) adds a new named constant.
+
+Also state, without building it: if the banner may now wait on a fetch, FOLLOW-278's accepted
+constraint (banner always `en`) becomes reversible. If the residual question — may the SDK fetch its
+own consent text before consent resolves? — is unanswerable from the existing DPIA, file **ESC-056**
+rather than guess.
+
 cross_ref: [ESC-051 (RESOLVED); ESC-028; FOLLOW-815; Rule N]
 
 ---

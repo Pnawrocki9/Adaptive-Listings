@@ -1,5 +1,125 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 107 (2026-08-08) — FOLLOW-915 is NOT dispatchable to `sdk-engineer` as written: the CEO's ruling collides head-on with an Accepted ADR-0011 decision that carries a compliance sign-off. Routed to `architect` instead.
+
+**Opening state, verified not inherited:** `main` `4b4ffa86`, clean and pushed. **0 open PRs, 0
+worktrees, 0 tickets IN_PROGRESS, 0 open P0, 0 decisions pending.** `gh pr list --state open` is
+empty. Every escalation that reads `OPEN` on a grep is a known false positive and both were
+re-confirmed by line number this session, not by memory: **ESC-046** is `RESOLVED` at
+`ESCALATIONS.md:105` and its `OPEN` heading at `:138` sits inside a `<details>` block that closes at
+`:190`; **ESC-020** carries a CEO resolution from 2026-06-10. Neither gates anything.
+
+### The finding: the top-ranked P1 would have burned an sdk-engineer session, and the reason is in an ADR, not in the code
+
+I selected **FOLLOW-915** (ESC-051 impl — lazy-load the consent banner text out of the bundle) on a
+measured argument, then read the seam it lands on before dispatching. **It cannot be built as the
+ruling describes without overturning a written decision.**
+
+FOLLOW-915's controlling constraint, from the CEO ruling: _"the notice must render before any
+profiling begins, so \"lazy\" cannot mean \"after the first event\"; the fetch has to be ordered
+ahead of the consent gate."_
+
+**ADR-0011 §Addendum — Consent-banner locale (FOLLOW-278, 2026-06-12, status `Accepted`),
+`docs/adr/ADR-0011-quiz-config-transport.md:310-312`, says the opposite in as many words:**
+
+> "The fetch MUST run after consent, not before — fetching tenant data before consent is resolved
+> would be a GDPR-compliance issue on the data-transport level. **The consent banner cannot wait for
+> the fetch.**"
+
+The same decision is restated as a 25-line rationale block in the code at `index.ts:312-336`, right
+above the `renderConsentBanner` call. **Compliance signed it off on 2026-06-12.** An sdk-engineer
+opening this ticket meets a documented refusal of the exact ordering the ticket demands, written by
+another ticket, and would have to either override it silently or stop and escalate — a full round
+trip.
+
+**The nuance that makes it resolvable rather than deadlocked, and it is why this needs a designer
+and not a ruling.** The ADR's _first_ sentence forbids fetching **tenant data** pre-consent. Banner
+text is not tenant data — it is our own static legal copy, identical for every tenant, and fetching
+it is plausibly strictly-necessary to display the notice at all. It is the ADR's _second_ sentence —
+"the consent banner cannot wait for the fetch", a latency/ordering claim with **no compliance
+rationale attached** — that FOLLOW-915 must overturn. Those two sentences have very different
+weights and the ticket treats them as one.
+
+**Second-order consequence the architect must state either way:** if the banner may now wait on a
+fetch, FOLLOW-278's whole accepted constraint (the banner always renders in `en` unless the tenant
+hand-codes `data-language`, because it cannot learn the locale pre-consent) becomes **reversible** —
+the same fetch could carry locale-correct text. That is a bonus, not scope: say whether it is open,
+do not build it here.
+
+**Why this is not an escalation, and ESC-056 is reserved rather than spent.** The CEO ruled the
+mechanism eight hours ago and that ruling stands — this is _how_, not _whether_. An architect can
+amend an ADR whose blocking sentence carries no compliance reasoning. **Only if the residual
+question — "may the SDK make a first-party fetch of its own consent text before consent is
+resolved?" — turns out to be unanswerable from the existing DPIA does it become ESC-056**, and the
+architect is instructed to file it under that number rather than guess. Next free stub is
+**FOLLOW-918**; next free escalation **ESC-056**.
+
+### The measurement that ranked FOLLOW-915 first, taken by me at HEAD
+
+`pnpm --filter=@estalara/sdk build`, then gzip the artefact directly:
+
+| artefact                                    | gzip bytes | budget         | headroom     |
+| ------------------------------------------- | ---------- | -------------- | ------------ |
+| `packages/sdk/dist/estalara-sdk.iife.js`    | **42,994** | 43,008 (42 KB) | **14 bytes** |
+| `packages/sdk/dist/estalara-detect.iife.js` | 12,731     | not gated      | n/a          |
+
+**14 bytes, not the "~10" ESC-051 estimated — and either way it is below the noise floor of any
+change to this package.** `packages/sdk/src/ui/consent-banner.ts` is 14,444 raw bytes / 5,457 gzip
+standalone, so the text is the single largest movable thing in the budget. That is the ordering
+argument: **FOLLOW-915 does not merely implement a ruling, it is the only ticket that returns byte
+space to every other SDK ticket.**
+
+Concretely, **FOLLOW-913** (the next P1, ESC-054 impl) is required by its own AC(1) to add a _new
+named constant_ and by AC(5) to report a bundle delta. Against 14 bytes that is a coin flip on a CI
+gate for reasons that have nothing to do with the ticket's content — and it would spend fix
+iterations from a 3-iteration cap on a byte count. **Do not dispatch 913 or 898 until 915 lands.**
+
+### Selected: FOLLOW-915 — design half. **Status: IN_PROGRESS.**
+
+Assigned **`architect`**, **Opus**, branch `architect/FOLLOW-915-consent-text-transport`.
+Delegation-table row: **_a contract between two modules, a new dependency, an ADR_** — chosen over
+the `sdk-engineer` row the stub names, because the deliverable that unblocks the work is an ADR
+amendment, not TypeScript. **Dispatch happens via this session's `NEXT:` line — the PM cannot spawn
+subagents, and nothing is recorded here as dispatched that has not started.**
+
+**Model — Opus.** Not for volume; for the fact that the one-line change (delete a sentence from an
+Accepted ADR) is the highest-consequence line in the ticket, and the estate has a documented history
+of consent defects shipped by confident single-domain reasoning (ESC-044's hand-typed hash,
+FOLLOW-139's false GDPR disclosure). The model-fit rule's "escalate one tier for
+compliance-sensitive work" governs over "lower tier for reversible, PR-gated work".
+
+**Brief must carry:** FOLLOW-915's stub text, `docs/MASTER_DESIGN.md` §Snapshot.1,
+`CONVENTIONS_PATCH.md`, the branch name above, the ADR-0011 quotation and line numbers above, the
+`index.ts:312-336` rationale block, and the 42,994 / 14-byte measurement so it is not re-derived.
+
+**AC(0), added by the PM and taking precedence over the stub's ordering:** resolve the ADR-0011
+collision explicitly — amend the addendum (stating which of its two sentences survives and why), or
+show a transport that needs no pre-consent fetch at all, or file ESC-056. **Do not implement the SDK
+change in this pass**; hand `sdk-engineer` a settled contract plus the named failure mode (what
+renders if the text fetch is slow or fails — blocking, cached, or a conservative built-in fallback,
+which is the option that partially defeats the byte saving and must therefore be argued, not
+assumed).
+
+### Deliberately NOT selected this session, with the argument recorded so nobody re-derives it
+
+**RETRO-263 is owed three merged PRs — #699 (FOLLOW-902), #700 (FOLLOW-903/904), #701
+(FOLLOW-849/909) — and is the strongest runner-up.** It is a skipped mandatory step 6, now three
+deep, and #700 changed the merge gate itself, so the retro debt sits on the instrument the PM
+validates with. It loses to FOLLOW-915 only on blocking: the retro unblocks nothing, while 14 bytes
+of headroom currently blocks two P1s. **It is parallel-safe with the architect dispatch if Piotr
+wants both** — different agent types (so no shared `.claude/agents/<type>/lessons.md`), different
+worktrees. **File partition if run concurrently: RETRO-263 owns the `FOLLOW_UPS.md` tail and stubs
+FOLLOW-918..925; the architect files no stubs at all and owns `ESC-056` plus `docs/adr/**`.\*\*
+
+**FOLLOW-910** (P1, the branch guard is blind to Bash-shaped edits — this session made every file
+change through Bash and the guard never fired) stays pre-routed: `devops-engineer`, **Opus**, branch
+`devops-engineer/FOLLOW-910-bash-edit-guard`, row _Terraform, CI/CD, workflows, secrets_. Its value
+is a recurring per-dispatch cost, which does not expire.
+
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-915). 0 open PRs. 0 decisions pending.**
+
+---
+
 ## ▶️ START HERE — session 106 (2026-08-08) — FOLLOW-892 closed on an EFFECT (chat's prod blocker is now one unset variable); FOLLOW-849 selected as the highest-ratio P1
 
 **Opening state, verified not inherited:** `main` `f28ce99a`, clean, **0 open PRs, 0 worktrees, 0

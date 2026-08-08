@@ -32038,3 +32038,109 @@ and reads _that_ HEAD; it must resolve HEAD relative to the worktree containing 
 
 cross_ref: [FOLLOW-849 (P1, the fix); FOLLOW-902 (PR #699); FOLLOW-903/904 (PR #700); FOLLOW-881;
 RETRO-260]
+
+---
+
+## FOLLOW-910 — The branch guard covers three of the four shapes a file edit takes, and is blind to the one that is growing: Bash
+
+source_retro: n/a (FOLLOW-849, session 106) source_ticket: FOLLOW-849 recommended_sprint: now
+recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**Found by the FOLLOW-849 worker about its own session, and re-verified by the PM.**
+`.claude/settings.json`'s `PreToolUse` matchers are:
+
+```
+Bash                 -> pre-bash-guard.sh
+Edit|Write|MultiEdit -> pre-edit-branch-guard.sh
+```
+
+and `pre-bash-guard.sh:20` greps for exactly one thing: `git push.*\b(main|master)\b`. **So a file
+edit performed through Bash — `sed -i`, a `cat > file <<EOF` heredoc, a `python3 - <<'PY'` script,
+`tee` — is completely unguarded on `main`.**
+
+**This is not hypothetical and it is not rare.** The FOLLOW-849 worker made _every_ edit in that
+ticket through Bash and the guard never fired at it once — contrary to the trap its own dispatch
+brief warned about. The main-loop orchestrator's operating mode in this session **instructs it to
+prefer Bash for file operations**, so the dominant editing path in this repo is the one shape the
+guard cannot see. FOLLOW-849 just spent a P1 making the guard's warning trustworthy; this decides
+how much of the estate that warning actually covers.
+
+**AC:** (1) decide the mechanism — extend `pre-bash-guard.sh` to detect file-mutating commands and
+route them through the same branch check, or add a matcher, or state plainly why Bash edits cannot
+be guarded and what compensates; (2) whichever way, a **red-first fixture** proving the new coverage
+fires, in the same PR — `scripts/__tests__/pre-edit-branch-guard.test.sh` is the reference shape and
+its 18-case structure should be extended rather than duplicated; (3) beware the false-positive
+surface: a Bash guard that greps command text will see `sed` inside a quoted string, a heredoc that
+writes to `/tmp`, and `git show > /dev/null` — scope it to real writes under the repo root, and
+prove the scoping with fixture cases; (4) **do not make the guard blocking** — its value is a
+believable warning, and FOLLOW-849's whole finding was that credibility is the scarce resource.
+
+cross_ref: [FOLLOW-849 (PR #701); FOLLOW-448; `.claude/settings.json`;
+`.claude/hooks/pre-bash-guard.sh:20`; `scripts/__tests__/pre-edit-branch-guard.test.sh`]
+
+---
+
+## FOLLOW-911 — `session-stop.sh`'s uncommitted-work warning is worktree-blind: it cannot report the exact failure it exists to catch
+
+source_retro: n/a (FOLLOW-849, session 106) source_ticket: FOLLOW-448 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+`.claude/hooks/session-stop.sh:40` runs `git status --porcelain` in the **session cwd** (the main
+checkout), so work left uncommitted inside `.claude/worktrees/*` is invisible to it. **That is
+precisely the failure FOLLOW-448 was written for** — a worker stalling with correct work uncommitted
+— and the estate's standard parallel-work pattern puts every worker in a worktree.
+
+**Same organ as FOLLOW-849, one hop over, different fix:** 849 resolved a path to its worktree; this
+one must **enumerate** worktrees (`git worktree list --porcelain`) and check each. Not a variation
+of the same patch.
+
+**This is not theoretical here.** Session 104 opened by recovering exactly this — an agent's
+finished work stranded in a worktree after a terminal close. It was found by `git worktree list`,
+not by any hook. Had the session trusted this warning, it would have concluded nothing was
+outstanding.
+
+**AC:** (1) enumerate all worktrees and report uncommitted work per worktree, naming the branch; (2)
+a fixture proving it reports a dirty worktree while the main tree is clean — the shape that is
+silent today; (3) keep it non-blocking and quiet when everything is clean.
+
+cross_ref: [FOLLOW-849 (PR #701); FOLLOW-448; RETRO-146; `.claude/hooks/session-stop.sh:40`; memory
+`feedback_check_worktrees_before_concluding_agent_didnt_run`]
+
+---
+
+## FOLLOW-912 — A dispatched worker overrode its commit author against the worktree's own git config, and the symptom was a red Vercel check
+
+source_retro: n/a (session 106, PM-observed) source_ticket: FOLLOW-849 recommended_sprint: next
+recommended_agent: devops-engineer priority: P2 estimated_hours: 1 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Measured, not inferred.** PR #701's commit was authored `Piotr Nawrocki <asi.piotr@gmail.com>`
+while `git config user.email` in that worktree, and in the repo, returns `piotr@time2show.com` — the
+address every other commit on #698/#699/#700 used. The worker therefore set the identity
+**explicitly via environment variables**; it was not inherited.
+
+**The symptom is what makes this worth a ticket.** `Vercel` went RED with _"GitHub couldn't verify
+an account for the commit"_ — which reads exactly like a deployment or permissions failure and has
+nothing to do with either. `scripts/gh-pr-checks-verified.sh` correctly refused to pass the PR (exit
+1, "GENUINE FAILURES"), because that check is not on its documented pre-existing-red list. The PM
+re-authored the commit and force-pushed; `Vercel` then reported `Deployment has completed` and the
+gate returned exit 0 — so the diagnosis is confirmed by the fix, not by argument.
+
+**Two things to settle:** (1) why a worker sets `GIT_AUTHOR_*` at all — if it is the agent runtime's
+default, every future dispatch reproduces this and every PR costs a force-push; (2) **`Vercel` is
+recorded in this repo's own memory as a historically pre-existing-red, non-blocking gate, but the
+rebuilt merge gate only knows `Rule I`.** Two records disagree. Decide which is true now and make
+the script's list match it — a merge gate whose documented exemptions have drifted from the recorded
+landscape will either wave through a real failure or block on a false one, and today it did the
+second.
+
+**AC:** (1) find and remove the source of the author override, or document it as intended and make
+the repo's config match; (2) reconcile the `Vercel` disagreement between memory and
+`gh-pr-checks-verified.sh`, and record the outcome where the script's exemption list lives; (3) if
+`Vercel` is genuinely non-deterministic, say what condition makes it red so a future PM can classify
+it in seconds instead of diagnosing it.
+
+cross_ref: [FOLLOW-849 (PR #701); `scripts/gh-pr-checks-verified.sh`; memory
+`project_ci_gate_landscape`; FOLLOW-827 / FOLLOW-846 (the gate's rebuild)]

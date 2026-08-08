@@ -119,7 +119,71 @@ with a devops ticket, partition by agent TYPE** — same-type agents share
 `.claude/agents/<type>/lessons.md` by construction, which is what landed a PR CONFLICTING on
 2026-08-07.
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-849). 0 open PRs. RETRO-263 NOT written.**
+### FOLLOW-849 + FOLLOW-909 DONE — and the fixture found the half nobody reported
+
+**PR #701 merged as `5fb90e37`.** Verified on `main`: the guard now resolves with
+`git -C "$EDIT_DIR"` (2 call sites) and `scripts/__tests__/pre-edit-branch-guard.test.sh` is
+present. **909 was closed by 849, not executed separately**, as its own text instructed.
+
+**The deliverable was never the fix.** The fix is two lines; the fixture is 20 assertions over 18
+shapes, **8 failing before it and 12 already passing** — so it is not green by construction. Case
+**A5** is the falsifier: a worktree whose own HEAD is `master` must still WARN, which every
+path-matching shortcut fails. And cases **A3/A4** cover the **inverse** error: cwd in a worktree,
+edit landing on `main`, **silent before this PR** — a false negative on the exact stranded-work
+failure the guard exists to catch. Six workers reported the noisy half; **nobody reported the silent
+half, because nobody sees a warning that does not appear.**
+
+The worker also found a hole it opened itself: without the nearest-existing-ancestor walk-up,
+`git -C` on a not-yet-existing directory errors, so every `Write` creating a file in a new directory
+would have gone silently unguarded. Invisible to any fixture drawn from the bug report.
+
+**Recommendation adopted:
+`.claude/hooks/**`stays NON-exempt**, with the cost named — a hook edited directly on`main` changes
+every agent's guardrails with no branch, no PR, no review.
+
+### The Vercel red was an author-attribution failure, and the diagnosis is confirmed by its fix
+
+`scripts/gh-pr-checks-verified.sh 701` returned **exit 1** on a `Vercel` check reading _"GitHub
+couldn't verify an account for the commit"_. Measured: the commit was authored `asi.piotr@gmail.com`
+while the worktree's own `git config` — and every commit on #698/#699/#700 — uses
+`piotr@time2show.com`. **The worker set the identity explicitly via environment variables.**
+Re-authored and force-pushed with `--force-with-lease` (operator-approved; the classifier blocked
+the first attempt and the decision was routed to the CEO rather than worked around). `Vercel` then
+reported `Deployment has completed` and the gate returned **exit 0**.
+
+**I did not merge over the red.** The symptom read like a deployment fault and was not one; treating
+it as "known pre-existing" would have banked a false entry in the estate's knowledge and is the
+exact erosion this session spent a day repairing. → **FOLLOW-912**, which also carries a real
+record-vs-record conflict: **memory records `Vercel` as historically pre-existing-red and
+non-blocking, while the rebuilt gate knows only `Rule I`.**
+
+### Filed — one of them is about how this repo now writes files
+
+**FOLLOW-910 (P1)** — **the branch guard covers three of the four shapes a file edit takes and is
+blind to the growing one.** `PreToolUse` matchers are `Bash` → a guard that greps only
+`git push.*main`, and `Edit|Write|MultiEdit` → the branch guard. So `sed -i`, a `cat > file <<EOF`
+heredoc or a `python3 - <<'PY'` script on `main` is **completely unguarded**. The FOLLOW-849 worker
+made every edit that way and was never warned; **this orchestrator's operating mode instructs it to
+prefer Bash for file operations**, so the dominant path in this repo is the unguarded one.
+FOLLOW-849 just made the warning trustworthy — this decides how much it covers.
+
+**FOLLOW-911 (P2)** — `session-stop.sh:40` runs `git status --porcelain` in the session cwd, so work
+stranded in `.claude/worktrees/*` is invisible to it. **That is the failure FOLLOW-448 exists for**,
+and session 104 opened by recovering exactly it — found by `git worktree list`, not by this hook.
+Had the session trusted the warning, it would have concluded nothing was outstanding. Different fix
+from 849: enumerate worktrees, do not resolve a path.
+
+**FOLLOW-912 (P2)** — the author override plus the `Vercel` record conflict. Next free stub:
+**FOLLOW-913**.
+
+**Also recorded, not filed:** `ci.yml:934-937` justifies concentrating lints because a new job name
+"would have to be added to branch protection" — but the API returns **403, branch protection is not
+available on this plan**. The convention is still the cheaper option; the stated rationale rests on
+a mechanism that does not exist here.
+
+**RETRO-263 is NOT written.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs.**
 
 ---
 

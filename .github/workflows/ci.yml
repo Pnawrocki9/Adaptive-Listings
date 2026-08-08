@@ -960,6 +960,27 @@ jobs:
             exit 1
           fi
 
+      # FOLLOW-849: the PreToolUse branch guard is a shell control that NOTHING
+      # automated had ever linted or executed — it shipped worktree-blind and
+      # survived six independent sightings because its only victims were agents
+      # with no authority to fix it. Linted and EXERCISED here rather than in a
+      # new job, for the same reason the wired-or-dead lint above lives here: a
+      # job name that is not wired into the merge path is not a control.
+      #
+      # The fixture is the deliverable, not the fix. It asserts BOTH directions —
+      # the guard stays silent inside a worktree AND still fires on a genuine
+      # main-tree edit (including the two inverse shapes the reported defect
+      # never exercised) — so a future change that merely makes the guard quiet
+      # fails here. Hard gate, no continue-on-error, no secret dependency,
+      # therefore no soft-skip.
+      - name: Lint the PreToolUse branch guard and its fixture harness
+        run: |
+          shellcheck .claude/hooks/pre-edit-branch-guard.sh \
+            scripts/__tests__/pre-edit-branch-guard.test.sh
+
+      - name: Run the branch-guard red-first fixture proof (both directions)
+        run: bash scripts/__tests__/pre-edit-branch-guard.test.sh
+
   # ── Cross-language event contract gate (FOLLOW-198 / FOLLOW-168) ───────────
   # Asserts that the TypeScript DescriptionRequestedEventSchema required-field set
   # and the Python consumer's REQUIRED_FIELDS both match the single source of truth:

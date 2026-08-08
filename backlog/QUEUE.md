@@ -63,7 +63,7 @@ undocumented exit-1; the workflow's author had already closed it. No escalation 
 not catching a regression — it never reaches its assertions. Filed P2/FROZEN, not dispatched: the
 defect is the absence of a record, and the record now exists.
 
-### Dispatched: two in parallel, disjoint by construction
+### Dispatched: FOLLOW-900. FOLLOW-898 is READY and deliberately held.
 
 **FOLLOW-900 (P1, devops-engineer, Opus)** — branch
 `devops-engineer/FOLLOW-900-modal-image-local-source`. Table row: _Terraform, CI/CD, workflows,
@@ -76,10 +76,13 @@ live prod, it has a deadline (the next fire is 02:00 UTC tomorrow), and it unblo
 defect. AC(2)(3)(4) require an executed `modal run`, both rows read back from prod, and a
 `workflow_dispatch` of the detector coming back GREEN.
 
-**FOLLOW-898 (P1, sdk-engineer, Opus)** — branch `sdk-engineer/FOLLOW-898-intent-snapshot-replica`.
-Table row: _client SDK, Shadow DOM, tiers, browser code_. Model justification: AC(1) is an argued
-design call (repair vs delete vs machine-check) whose FOLLOW-890 precedent may not transfer, and
-AC(3)'s sweep decides whether the remedy is per-file or structural. Reasoning, not a test edit.
+**FOLLOW-898 (P1, sdk-engineer, Opus) — NOT dispatched, held to one ticket in flight.** It is the
+strongest remaining candidate and its routing is pre-decided so the next session does not re-derive
+it: branch `sdk-engineer/FOLLOW-898-intent-snapshot-replica`, table row _client SDK, Shadow DOM,
+tiers, browser code_. Model justification: AC(1) is an argued design call (repair vs delete vs
+machine-check) whose FOLLOW-890 precedent may not transfer, and AC(3)'s sweep decides whether the
+remedy is per-file or structural. Reasoning, not a test edit. **The partition below is recorded now
+so it is not re-derived when 898 runs.**
 
 **File ownership partitioned on every append-at-tail axis, not just `FOLLOW_UPS.md`** — the
 session-104 conflict landed on `.claude/agents/devops-engineer/lessons.md` because two agents of the
@@ -92,7 +95,7 @@ the lessons files are naturally disjoint. Explicit partition:
 | `packages/sdk/**`, `CONVENTIONS_PATCH.md`                                                   | FOLLOW-898                                                     |
 | `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`                                                 | **PM only** — both agents report stubs back in the report body |
 
-**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS (cap 3). 0 open PRs. No open P0.**
+**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-900). 0 open PRs. No open P0.**
 
 ---
 

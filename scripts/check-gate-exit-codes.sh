@@ -78,6 +78,12 @@ declare -A NON_ROUTING=(
   ["backlog/QUEUE.md"]="append-only backlog record"
   ["backlog/RETROSPECTIVES.md"]="append-only backlog record"
   ["backlog/STATUS.md"]="append-only backlog record"
+  # Added by FOLLOW-900: the ROOT STATUS.md (distinct file from backlog/STATUS.md, which was
+  # already classified) began naming the gate in a session note — "I expected the newly-red
+  # Cron Heartbeat prod job to make gh-pr-checks-verified.sh return exit 1 on every PR" — i.e.
+  # a narrative record of a withdrawn escalation. It reads no exit code and instructs no
+  # routing. This checker caught it unprompted, which is the point of clause 2.
+  ["STATUS.md"]="append-only session record; narrates the gate's behaviour, routes on no exit code of it"
 )
 
 # ── 1. read the contract out of the gate ──────────────────────────────────────

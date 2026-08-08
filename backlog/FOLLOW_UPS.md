@@ -30751,6 +30751,17 @@ cross_ref: [RETRO-260 §4b CB-1 / §4c TG-1 / §6 P-40; FOLLOW-875; FOLLOW-877 (
 
 ## FOLLOW-886 — The reachability arithmetic FOLLOW-819 inherits is not reproducible from the repo, and one of its four figures does not reproduce
 
+**PM UPDATE (session 104): a second, sharper instance of this hazard — and it fired.** FOLLOW-886
+documents the shared-tail collision risk for `lessons.d/`. The parallel dispatch of FOLLOW-878+891,
+890 and 893 hit it in a form the partition missed: I partitioned ownership of
+`backlog/FOLLOW_UPS.md` (where the collision had bitten twice that day) and **did not partition the
+per-agent lessons files** — but **two of the three agents were `devops-engineer`**, so both appended
+to `.claude/agents/devops-engineer/lessons.md` and PR #697 landed CONFLICTING. Resolved additively
+(both entries kept, merged up rather than rebased), but the lesson generalises past `lessons.d/`:
+**at parallel dispatch, partition every append-at-tail file, and note that two agents of the SAME
+TYPE share a lessons file by construction.** Fixing this is what `lessons.d/` is for — this is the
+second cost measurement on the same stub.
+
 source_retro: RETRO-260 source_ticket: FOLLOW-875 recommended_sprint: next recommended_agent:
 sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
 **FROZEN** — session-95 standing rule.
@@ -31430,3 +31441,108 @@ amendment 2026-08-07 clause 2; `scripts/check-no-staging-plane.sh`;
 FOLLOW-896 was allocated from the dispatch brief ("next free stub is FOLLOW-896") and filed to
 discharge Rule S as amended: the five staging-plane artefacts FOLLOW-878 exempted now carry a
 number instead of prose. -->
+
+---
+
+## FOLLOW-897 — `schema_validation_history` has an automated reader but no human surface; and the prod `tenant_site_schemas` population was never verified until now
+
+source_retro: n/a (FOLLOW-893, session 104) source_ticket: FOLLOW-893 recommended_sprint: next
+recommended_agent: backend-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**The ambiguity this stub was filed to flag is RESOLVED; what remains is narrower.** FOLLOW-893
+warned that if no active tenant has a `tenant_site_schemas` row, a perfectly healthy cron writes
+**zero** history rows (`schema_validation.py:411-414` returns early), making §Snapshot.1 B.6's flip
+condition unsatisfiable and indistinguishable from a broken cron.
+
+**PM measured it against prod before filing** (read-only count probe, no row contents):
+`tenant_site_schemas` = **1**, and **1** when joined to `tenants WHERE status='active'`.
+`schema_validation_history` = 0, which at the time of measurement was correct — the first-ever cron
+had not yet fired. **So there IS data to validate and B.6's flip condition IS satisfiable.** Do not
+re-derive this; re-measure only if the tenant set changes.
+
+**What is actually left:** FOLLOW-893 gave the table a daily CI digest, which is a real reader but
+not a tenant- or admin-facing surface. `packages/db`'s docstring previously claimed a
+`/dashboard/site-health` panel — **verified non-existent**
+(`grep -rl site-health apps/control-plane/src` → 0 files) and corrected in PR #696. That false
+docstring is why the table looked wired for months.
+
+**AC:** (1) decide whether an admin surface is warranted or the CI digest is sufficient, and
+**record which** — a decision, not a silence, so no future audit re-files it as a half-wire; (2) if
+a surface is wanted, it is backend work against the existing table, not a new pipeline; (3) if the
+tenant count is still 1, say so in the close note — a single-tenant validation cron has different
+value than a fleet-wide one, and §Snapshot.1 should not imply the latter.
+
+cross_ref: [FOLLOW-893 (PR #696); FOLLOW-891; RETRO-261;
+`apps/data-quality/src/crons/schema_validation.py:411-414`;
+`packages/db/src/schema/schema_validation_history.ts`; MASTER_DESIGN §Snapshot.1 row B.6]
+
+---
+
+## FOLLOW-898 — A SECOND unfaithful replica: `intent-snapshot.test.ts` models the snapshot boundary with two conjuncts where `index.ts` has three, and deleting the missing guard would not redden it
+
+source_retro: n/a (FOLLOW-890, session 104) source_ticket: FOLLOW-890 recommended_sprint: now
+recommended_agent: sdk-engineer priority: P1 estimated_hours: 2 depends_on: [] blocks: []
+promoted_to_queue: false
+
+**This is what makes the replica pattern a CLASS rather than an incident, and it is the reason
+FOLLOW-890's escalation clause fired.** Verified by the PM at HEAD:
+
+- `packages/sdk/src/__tests__/intent-snapshot.test.ts:90-93` — comment _"Simulate the boundary check
+  in index.ts"_, then `if (state.signal_count % 5 === 0 && state.signal_count > 0)`. **Two
+  conjuncts.**
+- `packages/sdk/src/index.ts:1219-1223` — **three**:
+  `signal_count > prevSignalCount && signal_count % 5 === 0 && signal_count > 0`. The missing one is
+  the **rising-edge guard**.
+
+It is load-bearing, not cosmetic: `core/intent.ts:980,1224` preserve `signal_count` **without
+incrementing**, so absent that guard a non-incrementing signal landing on a 5-multiple re-emits a
+duplicate `intent.snapshot`. The same shape recurs at `index.ts:1446` and `:1659`.
+
+**Milder than FOLLOW-890 in one specific way, and that is what makes it insidious:** it
+_under-claims_ rather than asserting an impossible pair, so **no sibling suite contradicts it** and
+nothing goes red. **Deleting the rising-edge guard from `index.ts` would leave this suite green.**
+
+**AC:** (1) decide the same question FOLLOW-890 answered — repair, delete, or machine-check — and
+argue it rather than defaulting to the cheapest; FOLLOW-890 chose deletion because the replica
+pointed _up_ the dependency graph, and that argument may or may not hold here; (2) whichever way,
+prove the outcome by **deleting the rising-edge guard from `index.ts` and showing a test goes red**
+(then reverting) — the current suite does not, and that negative control is the acceptance evidence;
+(3) sweep `packages/sdk/src/__tests__/**` for further replicas — two instances is a class, and a
+third would change the remedy from per-file to structural; (4) fold the result into the Rule AI
+replica clause if the sweep changes what that clause should say.
+
+cross_ref: [FOLLOW-890 (PR #695); RETRO-261; Rule AI amendment 3 (replica clause); Rule J;
+`packages/sdk/src/__tests__/intent-snapshot.test.ts:90-93`;
+`packages/sdk/src/index.ts:1219-1223,1446,1659`; `packages/sdk/src/core/intent.ts:980,1224`]
+
+---
+
+## FOLLOW-899 — `playbook_fallback_llm_capped` has no producer: a $100/day spend-cap outage is indistinguishable from an API error in decision telemetry
+
+source_retro: n/a (FOLLOW-890, session 104) source_ticket: FOLLOW-890 recommended_sprint: next
+recommended_agent: backend-engineer (+ ml-engineer for the gateway half) priority: P2
+estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95
+standing rule.
+
+**A declared-but-unreachable enum member, found while proving FOLLOW-890's fix.** The value
+`playbook_fallback_llm_capped` is declared in the shared `source` union, in the SDK's Zod enum, and
+in `route.test.ts:147`'s expected-enum list, and `route.ts:16` documents its meaning — but there is
+**no assignment anywhere** in `apps/` or `packages/`.
+
+**The consequence is operational, not cosmetic.** `llm-gateway.ts:574` returns `null` when the
+$100/day spend cap trips, which is **indistinguishable** from `null` on an API error, and both
+branches map to `'playbook_fallback_llm_unavailable'`. So a budget exhaustion — a condition with a
+billing and a product meaning — is invisible in decision telemetry, reported as a generic gateway
+failure.
+
+**AC:** (1) decide whether the distinction is wanted; if yes, make the gateway return a
+distinguishable cap signal and map it, if no, **delete the member from all four declarations** so
+nothing claims a state the system cannot reach; (2) either way there must be **some** signal that a
+spend cap tripped — if not this enum, name what does it and prove it fires; (3) note for whoever
+takes it: adding the producer changes a value that lands in `adaptation_decisions`, so check the
+ClickHouse column and any dashboard that groups by `source` before shipping.
+
+cross_ref: [FOLLOW-890 (PR #695); `packages/shared/src/directives.ts`;
+`apps/control-plane/src/app/api/adapt/route.ts:16`; `apps/control-plane/src/lib/llm-gateway.ts:574`;
+`apps/control-plane/src/app/api/adapt/route.test.ts:147`]

@@ -620,19 +620,19 @@ estimate.
 
 ### Dispatched: three in parallel — 878+891, 890, 893
 
-**FOLLOW-878 + FOLLOW-891 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
-`devops-engineer/FOLLOW-878-891-staging-sweep-snapshot`, worktree `.claude/worktrees/follow-878`.
-**Routing corrected against the stubs, not taken from the recommendation:** I had proposed the
-architect, since both edit `MASTER_DESIGN`. The stubs make that impossible — FOLLOW-878 AC(5)
-extends a **CI grep gate** and FOLLOW-891 AC(1) demands a **freshly executed** `modal app list` plus
-a registration probe. The architect has no Bash and could do neither. Both together because they
-edit the same document and the same propagation.
+**FOLLOW-878 + FOLLOW-891 — DONE** (PR **#697** → `061a827a`) — **devops-engineer**, **Opus**,
+branch `devops-engineer/FOLLOW-878-891-staging-sweep-snapshot`, worktree
+`.claude/worktrees/follow-878`. **Routing corrected against the stubs, not taken from the
+recommendation:** I had proposed the architect, since both edit `MASTER_DESIGN`. The stubs make that
+impossible — FOLLOW-878 AC(5) extends a **CI grep gate** and FOLLOW-891 AC(1) demands a **freshly
+executed** `modal app list` plus a registration probe. The architect has no Bash and could do
+neither. Both together because they edit the same document and the same propagation.
 
-**FOLLOW-890 — IN_PROGRESS** — **sdk-engineer**, **Opus**, branch
+**FOLLOW-890 — DONE** (PR **#695** → `258a2fcb`) — **sdk-engineer**, **Opus**, branch
 `sdk-engineer/FOLLOW-890-playbooks-replica-contract`, worktree `.claude/worktrees/follow-890`. The
 only genuine code defect of the five: two green suites asserting opposite contracts for one branch.
 
-**FOLLOW-893 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
+**FOLLOW-893 — DONE** (PR **#696** → `360c5582`) — **devops-engineer**, **Opus**, branch
 `devops-engineer/FOLLOW-893-cron-first-run-observability`, worktree `.claude/worktrees/follow-893`.
 **Pulled forward on a deadline nothing else has:** the cron fires at 02:00 UTC tonight, for the
 first time in the project's history, and the highest-prior failure mode for a first-ever schedule —
@@ -643,8 +643,59 @@ never starting — currently emits nothing anywhere.
 878+891 agent, because FOLLOW-878 AC(3) must amend durable stub texts. The other two report stubs
 back for the PM to file. `backlog/QUEUE.md` is PM-owned throughout. Next free stub: **FOLLOW-896**.
 
-**Counters: 0/5 CI, 0/3 fix. 3 tickets IN_PROGRESS across 3 PRs. 0 open PRs at dispatch. No open
-P0.**
+### All three merged — 878+891, 890, 893
+
+`main` at `061a827a`. **0 open PRs, 0 worktrees, 0 tickets IN_PROGRESS.** Each PR CI-verified with
+`gh-pr-checks-verified.sh` (exit 0, Rule I 192/192, 0 new) and merged content re-verified on `main`
+rather than assumed: `secrets.md`'s executable line is now `--config prd` with the old command
+preserved **inside a dated correction note** (explained, not silently deleted);
+`scripts/check-no-staging-plane.sh` present and executable; `MASTER_DESIGN` at **v4.7**; both devops
+lessons entries present.
+
+**The new staging-plane gate was confirmed to RUN on the PR that adds it** — `pass` on both
+triggers. A gate that ships with a sweep but cannot be fired by the change adding it is the ESC-011
+trap this repo has hit twice; checking it was not a formality.
+
+### The conflict I caused, and the generalisation
+
+PR #697 landed **CONFLICTING** on `.claude/agents/devops-engineer/lessons.md`. **My partition was
+one axis short.** I split ownership of `backlog/FOLLOW_UPS.md` — where the collision had bitten
+twice the same day — and did not partition the per-agent lessons files. **Two of the three agents
+were `devops-engineer`**, so they shared one lessons file by construction. Resolved additively, both
+entries kept, `main` merged up rather than rebased so no pushed history was rewritten. Recorded as a
+second cost measurement on **FOLLOW-886**: _at parallel dispatch, partition every append-at-tail
+file; two agents of the same TYPE share a lessons file by construction._ The merge order Piotr chose
+was not a factor — #697 would have conflicted regardless, because the collision was in a file the
+partition never covered.
+
+### Production, tonight
+
+The FOLLOW-893 merge landed **inside the window** and the timing was verified, not hoped for:
+`Modal Deploy` run `31227548894` succeeded at 23:34 UTC and `modal app history` shows
+`estalara-schema-validation` **v2** on commit `360c558`. **So the 02:00 UTC first-ever run executes
+the heartbeat-writing code.** `DB Migrate` (migration `0037`, `cron_heartbeats`) was still
+in-progress at 23:40 with ~2h20m of margin. If it lands first, tonight writes a history row **and**
+a heartbeat and the 05:00 detector passes; if not, the heartbeat write fails **non-fatally**
+(`try/except`, verified in the code before recommending the merge), history is still written, and
+the detector correctly reports absence and clears tomorrow. **Neither branch is a fault.**
+
+**A prod measurement worth carrying:** `tenant_site_schemas` = **1**, and **1** joined to an active
+tenant. So FOLLOW-893's worry — that a healthy cron writes zero rows and B.6's flip condition
+becomes unsatisfiable — **does not apply**. There is data to validate. Folded into FOLLOW-897 so it
+is not re-derived.
+
+### Filed
+
+**FOLLOW-897** (P2, FROZEN) — human surface for `schema_validation_history`, carrying the prod
+measurement above. **FOLLOW-898 (P1, NOT frozen)** — the **second** unfaithful replica
+(`intent-snapshot.test.ts` models the snapshot boundary with two conjuncts where `index.ts` has
+three; deleting the rising-edge guard would leave that suite **green**). **This makes the replica
+pattern a class**, which is why it is P1 and why its AC(3) requires sweeping the rest of
+`__tests__/**`. **FOLLOW-899** (P2, FROZEN) — `playbook_fallback_llm_capped` has no producer, so a
+$100/day spend-cap outage is indistinguishable from an API error in decision telemetry. Next free
+stub: **FOLLOW-900**.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
 
 ---
 

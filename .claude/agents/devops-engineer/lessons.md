@@ -550,3 +550,33 @@ _registers_ rather than _runs_, the ticket is not done until an automated path h
 artefact and read its sink. "Deploy is green" is a claim about a registration API, not about a
 process. I also caught myself about to accept `modal run` output alone as AC(3) — the row read from
 prod Postgres is the evidence; the run's stdout is just a story about it.
+
+---
+
+## 2026-08-08 · FOLLOW-903 + FOLLOW-904 — hardening a description-axis gate, and adding the axis it can never be on
+
+**What I shipped.** (903) `scripts/check-modal-local-imports.py` rewritten: SHAPE A (a bare sibling
+import from a nested entrypoint — `apps/data-quality`'s own layout — which the old gate called
+third-party and passed) now fails; declarations are harvested from the entrypoint's REACHABLE file
+set instead of an rglob of the whole root, so a throwaway image in an unrelated module or a
+`test_*.py` no longer satisfies the gate; `add_local_dir` / `add_local_file(.py)` now SATISFY a
+declaration instead of producing a false red with an inverted diagnosis; REGISTRY roots are asserted
+against `modal-deploy.yml`'s own `PYTHONPATH`; and `WHAT IS NOT ASSERTED` became a `RESIDUALS`
+register the gate prints and the self-test enforces (each residual must name a self-test case that
+executed, or an artefact that exists). 21 self-test cases, up from 5. (904)
+`scripts/check-modal-container-effect.py` invokes the two deployed Modal apps and asserts an effect
+only their own executing code can produce, wired into `cron-heartbeat.yml` (daily) AND
+`modal-deploy.yml` (post-deploy), with a 12-case negative control that runs on every push.
+
+**Where a green badge could have hidden a broken run path.** It already was. Four green controls
+over the Modal estate and every one of them read the artefact's DESCRIPTION. The sharpest instance:
+had I shipped only FOLLOW-903, I would have added a FIFTH description-axis control and closed a
+ticket whose whole premise is that the description axis is saturated. The intent-engine probe's
+first run was also the first time that app's consumer half has EVER executed in production — its
+FOLLOW-900 fix had been "verified" for a day by a green deploy of a function nobody had called.
+
+**A guardrail I'd add.** When a ticket's remedy is "another check", ask what AXIS the existing
+checks sit on before writing it. If the new check answers the same question as the old ones (inputs
+exist / registration succeeded / source text looks right), it is a fifth opinion, not a second axis.
+And `--attempts`-style retries on a post-deploy probe need their own negative-control case: a retry
+loop is the cheapest possible way to convert a real outage into a slow green.

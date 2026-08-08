@@ -214,7 +214,28 @@ verified by the 05:00 detector — not by the deploy job.
 
 **Stubs FOLLOW-903…906 filed. Next free: FOLLOW-907.**
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
+### Dispatched: FOLLOW-903 + 904 (one PR) and FOLLOW-902 (parallel)
+
+**FOLLOW-903 + FOLLOW-904 — IN_PROGRESS** — **devops-engineer**, **Opus**, branch
+`devops-engineer/FOLLOW-903-904-effect-axis`, worktree `.claude/worktrees/follow-903`. **Together,
+because they are one subject:** 903 closes the static gate's blind spots (description axis), 904
+adds the estate's missing effect-axis proof. RETRO-262's framing is the brief's spine — _could this
+pass while every container dies at line 1?_ Opus: 904 AC(1) asks the worker to **design** the
+cheapest observable effect for two apps, which is judgement, not wiring.
+
+**FOLLOW-902 — IN_PROGRESS** — **data-engineer**, **Opus**, branch
+`data-engineer/FOLLOW-902-drift-zero-coverage`, worktree `.claude/worktrees/follow-902`. **Pulled
+forward on a clock nothing else has:** from the 2026-08-09 firing the estate emits one Sentry drift
+alert per day, forever, for a tenant where nothing drifted — and it would be the **first drift alert
+this system has ever produced**, so the channel's first impression is a false positive.
+
+**Partitioned on the lesson that cost a conflict today:** two different agent TYPES, so no shared
+`lessons.md`. **Neither may touch `backlog/FOLLOW_UPS.md`** (I file the stubs) or
+`backlog/QUEUE.md`. Code areas are disjoint — `scripts/` + `.github/workflows/` + Modal entrypoints
+vs `apps/data-quality/src/crons/schema_validation.py`'s fetch path. The one overlap risk,
+`schema_validation.py`, is called out in both briefs: 903/904 must not touch it.
+
+**Counters: 0/5 CI, 0/3 fix. 3 tickets IN_PROGRESS across 2 PRs. 0 open PRs at dispatch.**
 
 ---
 

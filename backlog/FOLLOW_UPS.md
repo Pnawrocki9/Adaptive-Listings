@@ -32581,3 +32581,82 @@ id in which the job executed green.
 
 cross_ref: [RETRO-263 §4a LG-5, §4d DG-2; FOLLOW-904 (PR #700); FOLLOW-903; FOLLOW-874; RETRO-262;
 Rule AP; Rule Q]
+
+---
+
+## FOLLOW-925 — The three ADR-0021 countersign conditions have no consumer: they gate an implementation PR and nothing checks them
+
+source_retro: n/a (ADR-0021 countersign, session 106) source_ticket: FOLLOW-915 recommended_sprint:
+now recommended_agent: compliance-engineer (+ sdk-engineer for the test) priority: P1
+estimated_hours: 3 depends_on: [] blocks: [FOLLOW-915 impl] promoted_to_queue: false
+
+**Filed by the PM from the compliance countersign (PR #703).** The countersign is **GRANTED WITH
+BINDING CONDITIONS**, and the conditions are the substance of it — but they live in ADR prose and
+**RETRO-263 already found that the countersign gate has no consumer** (its FOLLOW-923). These three
+must ride the implementation PR as executable obligations, not as a paragraph someone is trusted to
+have read:
+
+1. **The §13.1/§13.2 mandated sentences** (`dpia.md:1439-1445, 1514-1519`; verified live in
+   `consent-banner.ts:171,174`) must appear **byte-identical per locale** in `consent-text.json`,
+   asserted by the D7 artifact-validation test. This is the clause that stops the out-of-bundle move
+   from quietly dropping a legally required sentence — exactly the risk ESC-051's byte pressure
+   created in the first place.
+2. **AC(1)'s byte-exact §D3 request-shape test** — zero identifiers, `credentials: 'omit'`, no query
+   params, no `Authorization`, URL byte-identical for every visitor. §D3 is the **entire compliance
+   foundation**; the countersign rests on it.
+3. **`dpia.md` §13.1/§13.2 COPY-constant cross-references** updated when the strings move out of the
+   bundle, or the DPIA points at a constant that no longer holds the text.
+
+**AC:** (1) all three expressed as tests or gates in the FOLLOW-915 implementation PR; (2) a
+red-first demonstration for at least condition 1 — remove a mandated sentence from one locale and
+show the test fails; (3) if any condition cannot be mechanised, say so and name what replaces it —
+do not let it degrade to prose.
+
+cross_ref: [FOLLOW-915; ADR-0021 §D5; FOLLOW-923 (RETRO-263 — the gate has no consumer);
+`docs/compliance/dpia.md:1439-1445,1514-1519`; `packages/sdk/src/ui/consent-banner.ts:171,174`]
+
+---
+
+## FOLLOW-926 — Vercel runtime-log retention is unestablished, and it now bounds PRE-CONSENT visitor IPs
+
+source_retro: n/a (ADR-0021 countersign, session 106) source_ticket: FOLLOW-915 recommended_sprint:
+next recommended_agent: compliance-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks:
+[] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**The countersign explicitly did NOT attest to this, and the omission has grown teeth.** The
+`dpia.md` §2.7.1 open gap on Vercel runtime-log retention was previously bounded by tenant admin
+traffic. After the ADR-0021 countersign widened the Vercel sub-processor and EU→US transfer rows to
+include **transient visitor IPs from static-asset serving** (`ropa.md` v2.14, `dpia.md` §2.8), the
+same unestablished retention figure now bounds **pre-consent visitor** IPs — a different data
+subject class with a different expectation.
+
+**AC:** (1) establish the actual retention period from Vercel's documentation or account settings —
+a figure, not a range; (2) record it in `dpia.md` §2.7.1 and the ROPA retention column; (3) if it
+exceeds what the pre-consent basis can carry, say what changes — the strictly-necessary basis covers
+_delivering the notice_, not retaining a log of who was shown one.
+
+cross_ref: [ADR-0021 §D5 (not-attested list); `docs/compliance/dpia.md` §2.7.1, §2.8;
+`docs/compliance/ropa.md` v2.14; FOLLOW-915]
+
+---
+
+## FOLLOW-927 — `dpia.md` §2.2 says Mode A needs no consent banner; the shipped SDK gates everything on one
+
+source_retro: n/a (ADR-0021 countersign, session 106) source_ticket: FOLLOW-915 recommended_sprint:
+next recommended_agent: compliance-engineer priority: P3 estimated_hours: 1 depends_on: [] blocks:
+[] promoted_to_queue: false **FROZEN** — session-95 standing rule.
+
+**Observed by the compliance-engineer during the ADR-0021 countersign; deliberately not acted on,
+and correctly so.** `dpia.md` §2.2 describes Mode A as not requiring a consent banner, while the
+shipped SDK gates all profiling on the banner.
+
+**This is the rare drift in the safe direction: shipped reality is MORE conservative than the
+record**, so it is not a false disclosure and nothing is at risk today. It is filed because a record
+that understates what the product does will eventually be used to justify doing less — and because
+this estate has spent two sessions proving that a stale record is a liability regardless of which
+way it leans.
+
+**AC:** refresh §2.2 to describe what ships, or state why the Mode A carve-out is retained and under
+what conditions it would apply.
+
+cross_ref: [ADR-0021 countersign (PR #703); `docs/compliance/dpia.md` §2.2; FOLLOW-915]

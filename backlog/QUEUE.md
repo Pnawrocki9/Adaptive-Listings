@@ -167,16 +167,17 @@ this orchestrator validates with.
 
 ### Dispatched in parallel: the ADR-0021 countersign, and RETRO-263
 
-**ADR-0021 §D5 countersign — IN_PROGRESS** — **compliance-engineer**, **Fable**, branch
-`compliance-engineer/ADR-0021-countersign`, worktree `.claude/worktrees/countersign`. Model: Fable —
-this is a **compliance sign-off on a decision that clarifies a sentence compliance itself signed**,
-and the expensive failure is ratifying a scope reading that is convenient. **A refusal is an equally
-valid outcome and the brief says so**, otherwise the countersign is theatre: ADR-0021 reverts to
-PROPOSED and ESC-051 returns to the CEO with the constraint stated.
+**ADR-0021 §D5 countersign — GRANTED WITH BINDING CONDITIONS** (PR **#703**, awaiting merge) —
+**compliance-engineer**, **Fable**, branch `compliance-engineer/ADR-0021-countersign`, worktree
+`.claude/worktrees/countersign`. Model: Fable — this is a **compliance sign-off on a decision that
+clarifies a sentence compliance itself signed**, and the expensive failure is ratifying a scope
+reading that is convenient. **A refusal is an equally valid outcome and the brief says so**,
+otherwise the countersign is theatre: ADR-0021 reverts to PROPOSED and ESC-051 returns to the CEO
+with the constraint stated.
 
-**RETRO-263 — IN_PROGRESS** — **retrospective-analyst**, **Opus**, main tree, no worktree. It owes
-**four** merged PRs (#699, #700, #701, #702), and **#700 changed the merge gate this orchestrator
-validates with** — so it audits its own instrument.
+**RETRO-263 — DONE** (`149d9b9a`) — **retrospective-analyst**, **Opus**, main tree, no worktree. It
+owes **four** merged PRs (#699, #700, #701, #702), and **#700 changed the merge gate this
+orchestrator validates with** — so it audits its own instrument.
 
 **Partitioned by agent type and by file**, per the lesson that cost a CONFLICTING PR earlier:
 compliance owns `docs/adr/**` and `docs/compliance/**`; RETRO-263 owns `backlog/RETROSPECTIVES.md`,
@@ -184,7 +185,88 @@ compliance owns `docs/adr/**` and `docs/compliance/**`; RETRO-263 owns `backlog/
 types, so no shared `lessons.md`. `backlog/QUEUE.md` stays PM-owned throughout. Next free stub:
 **FOLLOW-918**; next free escalation **ESC-056**.
 
-**Counters: 0/5 CI, 0/3 fix. 2 tickets IN_PROGRESS. 0 open PRs at dispatch.**
+### 🔴 RETRO-263 — the merge gate I validate every PR with is green over checks that are merely ABSENT
+
+**This is the finding that matters most, and it is about this orchestrator's own instrument.** I
+verified both mechanisms myself rather than taking the retro's word:
+
+1. **`SKIPPED` is treated as green.** `scripts/gh-pr-checks-verified.sh:702` builds `FAILURE_REGEX`
+   as `(?!SUCCESS|SKIPPED|NEUTRAL)`, with a comment saying exactly that. The retro drove it:
+   flipping six real gates (`Modal local-source`, `Rule H`, `Gitleaks`, `Consent contract drift`,
+   `Format check`, `Test (Node 22)`) to `SKIPPED` produced `failing: 0` → **exit 0, "Safe to mark
+   READY_FOR_REVIEW"**.
+2. **The completeness floor tolerates 59% absence.** Live peers give reference 91, **floor 37** — a
+   37-run all-`SUCCESS` rollup containing none of the repo's gates settles and exits 0.
+
+**And PR #700 moved it the wrong way.** `assert-modal-container-effect` registers **two
+permanently-`SKIPPED` check-runs per PR** — I confirmed `skipped: 4` on #700, #701, #702 and #703. A
+permanently-skipped run is a **free unit of cardinality**: +1 reference, +0.4 floor, +0.6 tolerated
+absence. The peer sample moved 87 → 91. **The gate reads stability and size; never identity.** Its
+six cardinality fixtures all vary size and none varies membership — RETRO-252's own prediction
+landing on its own artefact one generation later.
+
+**What this means for every "CI verified, exit 0" in this session's record — stated plainly:** those
+verifications proved that **the checks which ran were green**. They did **not** prove the right
+checks ran. No merge is retroactively suspect (the four skipped runs are the documented
+prod-touching jobs, skipped by design), but the instrument is weaker than the phrase implies, and
+**FOLLOW-918 (P1) is the fix**: a named required-check register where `SKIPPED` on a registered name
+is red.
+
+### The effect axis is real — and its coupling is shallow
+
+RETRO-262's test (_could this pass while every container dies at line 1?_) is **failed** by the new
+probe: it executed green in prod three times, and `estalara-intent-engine` had **never been invoked
+in prod** before, so PR #698's declaration is now proven by execution rather than by a deploy
+status. **RETRO-262 HW-1 is closed end-to-end.**
+
+But the R-F1 coupling I praised is clever and shallow: probe **deleted** → self-test fails ✅; probe
+**truncated to zero bytes** → **`OK`, exit 0** ❌. Deletion is the shape nobody performs; un-wiring
+is the shape that happens. → **FOLLOW-919 (P1)**: assert **invocation**, not `.exists()`.
+
+**The retro also falsified its own P1 by probing** — it had written up "the re-routed Sentry alerts
+have no channel", then ran the key gate and found `SENTRY_DSN: present`. Finding survived at one
+third the size, P1 → P2. That is the discipline working against its author's own draft.
+
+### Two rules promoted — 44 → 46
+
+**Rule AS** (count 3, 2 prior retros) — _the silent direction is never reported_; a report-driven
+control fix must cover the false-negative direction and prove it red-first. Trigger: the branch
+guard drew **six independent reports in one day, all the noisy half, zero the silent half** — and
+the silent half was the stranded-work failure the guard exists for.
+
+**Rule AT** (count 3, 2 prior retros; discharges P-41) — **measure an escalation's premise before
+putting it to the CEO.** My affordability objection is answered inside the rule text by a scope
+limiter: it fires only on premises containing a **quantity or existence claim**. Ambiguity,
+interface and policy escalations are out of scope, because a measurement demand on all of them would
+be ignored — which is worse than absent. Triggered by ESC-044 (zero rows) and ESC-045 (credentials
+already present), both from today.
+
+**P-42 armed at count 1, not promoted** — _read the seam before dispatching_. #702's re-route is the
+only sighting, and **nothing in the estate would have caught the ADR collision**:
+`grep -rln 'docs/adr' .github/workflows/ scripts/` returns **zero files**.
+
+### The countersign — granted, and my press point was right
+
+**ADR-0021 §D5: GRANTED WITH BINDING CONDITIONS** (PR #703, CI verified exit 0;
+`Consent contract drift` and `Privacy Notice SDK key-sync` both green — the two gates that matter
+when DPIA and ROPA move).
+
+**The pre-consent `sdk.js` request was merely UNMENTIONED, not covered.** I asked compliance to
+press there precisely because "we already do X" is not "X is lawful", and the record confirms it:
+ROPA's EU→US row read _"Tenant admin sessions, API logs"_ and now reads _"…, transient visitor IPs
+(static-asset serving, dpia.md §2.8)"_. **The countersign rests on the amended record, not on the
+absence of mention** — `dpia.md` v2.18 §2.8 and `ropa.md` v2.14 landed in the same PR.
+
+Compliance also **narrowed what was signed on 2026-06-12**: banner-_locale_ sufficiency, not a
+universal pre-consent-fetch ban — so §D5 weakens nothing previously signed. And it ruled §D4's
+fail-closed **compliance-superior**, not merely engineering-preferable: a trimmed fallback would
+make consent not _informed_ under Art. 4(11)/Art. 7, invalidating everything downstream.
+
+**Stubs FOLLOW-918…924 (retro) + FOLLOW-925…927 (countersign) filed. Next free: FOLLOW-928.**
+FOLLOW-925 (P1) is the one that matters — the three binding conditions currently have **no
+consumer**, which is RETRO-263's FOLLOW-923 finding pointed at this specific gate.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR (#703, verified, awaiting merge).**
 
 ---
 

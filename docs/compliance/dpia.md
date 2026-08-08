@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.17 **Date:** 2026-08-07 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.18 **Date:** 2026-08-09 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -210,19 +210,19 @@ switching providers, adding self-hosted inference, removing zero-retention claus
 
 ### 2.6 Third-Party Processors
 
-| Processor        | Role                                           | Data Category                                      | DPF Status                                         | DPA Status                                           |
-| ---------------- | ---------------------------------------------- | -------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------- |
-| Anthropic        | LLM inference (current-gen Claude models)      | Behavioral context prompts (no PII)                | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
-| OpenAI           | Embedding computation (text-embedding-3-small) | Behavioral context text (no PII)                   | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
-| Cloudflare       | Edge ingest, CDN, Workers                      | Event payloads, session_id, IP address (transient) | Certified (EU-U.S. DPF + UK Extension)             | DPA in place (Cloudflare Enterprise DPA)             |
-| Supabase         | Postgres (per-region projects)                 | All Postgres tables listed in 2.5                  | Verified annually at dataprivacyframework.gov/list | DPA in place — per-region projects (EU, US, UK, UAE) |
-| ClickHouse Cloud | Event store                                    | adaptation_decisions, llm_calls                    | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Upstash          | Redis cache (multi-region)                     | Session intent vectors (TTL-bounded)               | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Modal            | ML compute (serverless)                        | Embedding computation, archetype update jobs       | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Redpanda Cloud   | Event bus                                      | Behavioral event payloads (transient)              | N/A (EU instance)                                  | DPA in place                                         |
-| Vercel           | Control plane hosting                          | Tenant admin sessions, dashboard traffic           | Certified (EU-U.S. DPF)                            | DPA in place (Vercel DPA)                            |
-| Sentry           | Error and performance tracking                 | Stack traces, request context (see redaction note) | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
-| Stripe           | Billing and payment processing                 | Tenant billing details, invoices                   | Verified annually at dataprivacyframework.gov/list | DPA in place (Stripe DPA)                            |
+| Processor        | Role                                           | Data Category                                                                                                        | DPF Status                                         | DPA Status                                           |
+| ---------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------- |
+| Anthropic        | LLM inference (current-gen Claude models)      | Behavioral context prompts (no PII)                                                                                  | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
+| OpenAI           | Embedding computation (text-embedding-3-small) | Behavioral context text (no PII)                                                                                     | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
+| Cloudflare       | Edge ingest, CDN, Workers                      | Event payloads, session_id, IP address (transient)                                                                   | Certified (EU-U.S. DPF + UK Extension)             | DPA in place (Cloudflare Enterprise DPA)             |
+| Supabase         | Postgres (per-region projects)                 | All Postgres tables listed in 2.5                                                                                    | Verified annually at dataprivacyframework.gov/list | DPA in place — per-region projects (EU, US, UK, UAE) |
+| ClickHouse Cloud | Event store                                    | adaptation_decisions, llm_calls                                                                                      | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Upstash          | Redis cache (multi-region)                     | Session intent vectors (TTL-bounded)                                                                                 | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Modal            | ML compute (serverless)                        | Embedding computation, archetype update jobs                                                                         | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Redpanda Cloud   | Event bus                                      | Behavioral event payloads (transient)                                                                                | N/A (EU instance)                                  | DPA in place                                         |
+| Vercel           | Control plane hosting                          | Tenant admin sessions, dashboard traffic; pre-consent static-asset serving to visitor browsers (transient IP — §2.8) | Certified (EU-U.S. DPF)                            | DPA in place (Vercel DPA)                            |
+| Sentry           | Error and performance tracking                 | Stack traces, request context (see redaction note)                                                                   | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
+| Stripe           | Billing and payment processing                 | Tenant billing details, invoices                                                                                     | Verified annually at dataprivacyframework.gov/list | DPA in place (Stripe DPA)                            |
 
 **Transfer mechanism layering**: Where a US-based sub-processor is DPF-certified, DPF is the primary
 transfer mechanism for EU→US flows. SCCs (Module 2 Controller-to-Processor) and a Transfer Impact
@@ -554,6 +554,50 @@ merges:**
 
 **Time-based re-review:** at the next mandatory DPIA review (2027-05-15) or on any trigger above,
 whichever is sooner.
+
+---
+
+### 2.8 Pre-consent static-asset requests to the control-plane origin (ADR-0021 countersign, 2026-08-09)
+
+**What this records.** Before any consent state exists, the visitor's browser fetches the Estalara
+SDK bundle from the control-plane origin: the tenant page embeds
+`<script src="https://admin.estalara.com/sdk.js">` (`SDK_SERVE_URL`,
+`packages/shared/src/domains.ts:57`; snippet emitted by
+`apps/control-plane/src/components/onboarding/DetectionPreview.tsx:184`). This is structurally
+unavoidable — the consent gate itself (`getConsentState()`, `packages/sdk/src/core/session.ts`)
+ships inside that script; a consent mechanism cannot be gated on the consent it exists to collect.
+Versions of this DPIA prior to 2.18 (and of the ROPA prior to 2.14) described Vercel's data category
+as tenant-admin sessions and dashboard traffic only; this pre-consent, visitor-facing request class
+was **unmentioned, not assessed**. This section closes that gap.
+
+**Data processed.** Transient visitor IP address and standard HTTP request metadata, received by
+Vercel Inc. (DPF-certified, DPA in place — §2.6 table). The request carries no Estalara-assigned
+identifier: the SDK assigns identifiers only after consent resolution (§13.2 cross-session
+identifier post-grant, §13.3 sessionStorage intent state gated on `granted`), and Estalara sets no
+cookie on visitor-facing static responses (Supabase Auth cookies on this origin arise only from
+authenticated dashboard sessions). Server-side persistence of the request is bounded by Vercel
+runtime logs, whose retention figure is **NOT RECORDED in this repository** (§2.7.1); that open gap
+now bounds pre-consent visitor traffic as well, which raises its priority — closing it belongs with
+the Vercel sub-processor row.
+
+**Lawful basis.** ePrivacy Art. 5(3) / PECR Rule 6(4) strictly-necessary exemption (§6.1): delivery
+of the interactive listing service the visitor explicitly requested, including the consent mechanism
+itself — a notice whose display required prior consent would be circular. GDPR: Art. 6(1)(f) for the
+transient-IP processing inherent to serving an HTTP asset, reinforced (for consent/notice content)
+by the Arts. 12–13 transparency obligations the asset exists to discharge.
+
+**Specified addition — `consent-text.json` (ADR-0021; NOT YET IMPLEMENTED).** ADR-0021 (§D2–§D4,
+compliance-countersigned 2026-08-09) adds one member to this request class: an identifier-free
+`GET {CONTROL_PLANE_URL}/consent-text.json` carrying the consent-banner disclosure text, fetched
+only when consent is `pending`, awaited before the banner renders, and fail-closed (fetch failure ⇒
+no banner, zero events, zero storage writes, consent remains `pending`). Implementation gate: the
+FOLLOW-915 implementation PR — until it merges, the `COPY` constant in
+`packages/sdk/src/ui/consent-banner.ts` remains the shipped source of the banner text and this
+paragraph is forward-looking. The countersign's binding conditions (including byte-identical
+carriage of the §13.1/§13.2 mandated disclosure sentences in every locale of the served document)
+are recorded in ADR-0021 §D5. Any parameterization of this request (tenant, locale, experiment arm)
+exits this section's analysis and re-opens the ADR-0011 pre-consent prohibition — a new ADR plus
+compliance review is required first (ADR-0021 §D3).
 
 ---
 
@@ -1219,17 +1263,17 @@ logging.
 
 ## 9. Cross-Border Transfer Mechanisms
 
-| Transfer Route                 | Data Type                            | Primary Mechanism                                          | Fallback Mechanism                   |
-| ------------------------------ | ------------------------------------ | ---------------------------------------------------------- | ------------------------------------ |
-| EU (fra) → US (Anthropic)      | Behavioral context prompts           | EU-U.S. DPF                                                | SCCs Module 2 + zero-retention DPA   |
-| UK (lhr) → US (Anthropic)      | Behavioral context prompts           | UK Extension to EU-U.S. DPF                                | UK IDTA + zero-retention DPA         |
-| EU (fra) → US (OpenAI)         | Embedding computation inputs         | EU-U.S. DPF                                                | SCCs Module 2 + zero-retention DPA   |
-| UK (lhr) → US (OpenAI)         | Embedding computation inputs         | UK Extension to EU-U.S. DPF                                | UK IDTA + zero-retention DPA         |
-| EU/UK → US (Stripe)            | Billing contact + billing data       | EU-U.S. DPF                                                | SCCs Module 2 / UK IDTA + Stripe DPA |
-| EU → US (Cloudflare)           | Edge transient + tenant_id           | EU-U.S. DPF                                                | SCCs Module 2                        |
-| EU → US (Vercel)               | Tenant admin sessions, API logs      | EU-U.S. DPF                                                | SCCs Module 2                        |
-| UAE → EU (global archetype)    | DP-anonymized aggregate vectors only | Not a personal data transfer (k-anon ≥50 + DP ε≤2 applied) | N/A                                  |
-| UAE → US (Anthropic inference) | Behavioral context prompts           | UAE PDPL Art. 22 SCCs + zero-retention DPA                 | (UAE has no DPF participation)       |
+| Transfer Route                 | Data Type                                                                           | Primary Mechanism                                          | Fallback Mechanism                   |
+| ------------------------------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------ |
+| EU (fra) → US (Anthropic)      | Behavioral context prompts                                                          | EU-U.S. DPF                                                | SCCs Module 2 + zero-retention DPA   |
+| UK (lhr) → US (Anthropic)      | Behavioral context prompts                                                          | UK Extension to EU-U.S. DPF                                | UK IDTA + zero-retention DPA         |
+| EU (fra) → US (OpenAI)         | Embedding computation inputs                                                        | EU-U.S. DPF                                                | SCCs Module 2 + zero-retention DPA   |
+| UK (lhr) → US (OpenAI)         | Embedding computation inputs                                                        | UK Extension to EU-U.S. DPF                                | UK IDTA + zero-retention DPA         |
+| EU/UK → US (Stripe)            | Billing contact + billing data                                                      | EU-U.S. DPF                                                | SCCs Module 2 / UK IDTA + Stripe DPA |
+| EU → US (Cloudflare)           | Edge transient + tenant_id                                                          | EU-U.S. DPF                                                | SCCs Module 2                        |
+| EU → US (Vercel)               | Tenant admin sessions, API logs, transient visitor IPs (static-asset serving, §2.8) | EU-U.S. DPF                                                | SCCs Module 2                        |
+| UAE → EU (global archetype)    | DP-anonymized aggregate vectors only                                                | Not a personal data transfer (k-anon ≥50 + DP ε≤2 applied) | N/A                                  |
+| UAE → US (Anthropic inference) | Behavioral context prompts                                                          | UAE PDPL Art. 22 SCCs + zero-retention DPA                 | (UAE has no DPF participation)       |
 
 The DPF was upheld by the European General Court on 3 September 2025 (T-553/23 Latombe). DPF status
 of each sub-processor is verified at https://www.dataprivacyframework.gov/list and tracked in
@@ -1302,6 +1346,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.15    | 2026-08-07 | Compliance Engineering | FOLLOW-866 (ESC-049 CEO/DPO ruling, option 1). §2 processing-purposes table row (b) corrected. §3.1's "C-07 boundary (binding — must never be violated)" paragraph rewritten: the previous claim ("Adaptive-Listings stores only the 12-dimensional intent vector … no free text, no message content") was verified only against the Redis shadow key and was false as an ordinary reader would read it — chat message text, PII-scrubbed for email/phone only, ≤4000 chars, is retained in ClickHouse `events.payload` for 13 months by deliberate §H.8 design; full write-path citation added (SDK → schema → ingest producer → migration TTL). §13.4's restatements corrected: the "No raw chat text is stored by Adaptive-Listings at any layer" sentence re-scoped to the Redis key it actually describes; the necessity-test sentence corrected to not imply the message text is unretained; the balancing-test's condition (iii) ("the C-07 boundary … is maintained") is FLAGGED, not silently re-verified — whether Purpose (d)'s "Balancing test result: PASSES" verdict still holds under the corrected boundary is a lawful-basis judgment escalated to CEO/DPO, not resolved by this row (per this ticket's AC(2) STOP condition). No change to §8 (Data Subject Rights — out of scope for this ticket, owned by a concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2.16    | 2026-08-07 | Compliance Engineering | ESC-049 addendum (CEO+DPO ruling, "Q1/Q3 ruling", `backlog/ESCALATIONS.md`, session 103, same day as v2.15): resolves §13.4's condition-(iii) flag rather than leaving it pending. **Ruled: legitimate interest stands for the ClickHouse chat-message-text store, conditioned on full transparency** — the Privacy Notice / consent text gains an explicit storage disclosure, riding the same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815 (no second bump spent); condition (iii) is satisfied once that text lands. Named re-review trigger recorded: any widening of what `scrubMessagePii` passes through, or any lengthening of the 13-month TTL, requires re-derivation. §3.1's forward-reference to §13.4 updated from "flagged, not re-derived" to point at the ruling. No change to §8 (still owned by the concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2.17    | 2026-08-07 | Compliance Engineering | FOLLOW-815 (implementing the FOLLOW-814 CEO+DPO ruling; discharges FOLLOW-710 AC-6). §8 (Data Subject Rights): (1) **corrected the phantom intake endpoint** — step 3 named `POST /api/v1/dsr/request` from this document's creation, a route that has never existed in the repo; the real route is `POST /api/dsr/initiate` (Rule AH; three consecutive retros re-derived this finding independently); (2) added the **direct subject-facing withdrawal channel** for the §7 platform-registration consent — `compliance@estalara.com`, the mailbox now named in the §6.1 disclosure text itself under `platform-v1.4-2026-08-07`, satisfying GDPR Art. 7(3) ("as easy to withdraw as to give") without requiring the tenant's cooperation. Texts served under `platform-v1.3-2026-06-21` and earlier named no concrete address. The mailbox is an operator commitment: it must be monitored.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2.18    | 2026-08-09 | Compliance Engineering | FOLLOW-915 (ADR-0021 §D5 compliance countersign). §2.8 added: the pre-consent static-asset request class to the control-plane origin (visitor browser → `sdk.js` on Vercel) is recorded as a processing activity for the first time — prior versions' Vercel rows scoped the sub-processor to tenant-admin traffic, so the class was unmentioned, not covered; ADR-0021's leg-1 claim ("answerable from the existing DPIA") is corrected on the record in the §D5 countersign block, with legs 2+3 (ePrivacy 5(3)/PECR 6(4) strictly-necessary + §D3 identifier-free constraint) carrying the conclusion. §2.6 Vercel row and §9 EU→US (Vercel) transfer row data categories widened accordingly. `consent-text.json` is recorded as a SPECIFIED, NOT YET IMPLEMENTED member of the class, gated on the FOLLOW-915 implementation PR, with byte-identical carriage of the §13.1/§13.2 mandated banner sentences as a binding countersign condition. Open gap cross-referenced, not closed: Vercel runtime-log retention remains NOT RECORDED (§2.7.1) and now bounds pre-consent visitor traffic.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ---
 

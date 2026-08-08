@@ -95,7 +95,53 @@ the lessons files are naturally disjoint. Explicit partition:
 | `packages/sdk/**`, `CONVENTIONS_PATCH.md`                                                   | FOLLOW-898                                                     |
 | `backlog/FOLLOW_UPS.md`, `backlog/QUEUE.md`                                                 | **PM only** — both agents report stubs back in the report body |
 
-**Counters: 0/5 CI, 0/3 fix. 1 ticket IN_PROGRESS (FOLLOW-900). 0 open PRs. No open P0.**
+### FOLLOW-900 DONE — the cron is alive, and the class is guarded
+
+**PR #698 merged as `601c94e9`.** Redeploy queued automatically (`31254025784`).
+
+**Verified in prod before the merge, not claimed:** `cron_heartbeats` holds one row
+(`validate_schemas`, 09:37:31 UTC, `tenant_domain_pairs: 1`) and `schema_validation_history` holds
+one row (09:37:28 UTC) — **the first in the project's history**. The acceptance oracle was
+deliberately not the deploy job, because a green deploy job is exactly what shipped the defect: the
+evidence is an executed `modal run`, two prod row reads, and a **green detector run**
+(`workflow_dispatch` `31251166877`).
+
+**The second app was affected too, and only the instruction not to inherit caught it.** The PM read
+`apps/intent-engine` as importing only third-party modules. That is true of its **module-level**
+imports; `main.py:82-83` imports `nlp` and `redis_writer` **inside a function body**, pulling local
+`observability` and `schemas`. Registration succeeds, `modal app list` says `deployed`, and the
+first real invocation would have died on `ModuleNotFoundError` **inside a `.spawn()` the ingest
+Worker had already 202'd away from** — invisible, exactly like the defect we were fixing. Latent
+only because nothing had invoked it in prod. `llm-gateway` is healthy **by accident of file layout**
+(its module has a truthy `__package__`, so Modal takes a different branch); now declared explicitly
+so the gate can demand a declaration rather than model Modal's implicit behaviour.
+
+**AC(5) is the part that outlives the ticket.** `scripts/check-modal-local-imports.py` AST-walks
+entrypoints **at any nesting depth**, resolves local imports transitively, and fails on an
+undeclared one — wired both as a CI job **and** as a step in all three deploy jobs, which is what
+lets a job that merely _registers_ functions go red on a dead image. Confirmed to run and pass on
+the PR that adds it (the ESC-011 trap, checked rather than assumed). Run against the **unfixed**
+tree it exits 1 and statically reproduces the production defect in three apps — a gate that has
+observed its own failure.
+
+**Row B.6 corrected but deliberately NOT flipped.** Today's rows come from a **manual** invocation:
+they prove the code works, not that the schedule works. Only the 02:00 UTC scheduled run after this
+redeploy, confirmed by the 05:00 UTC detector, satisfies the flip condition. That distinction is
+what this session cost, and it is not being blurred at the finish line.
+
+**A PM bookkeeping artefact, resolved:** PR #698 appeared to carry four PM-owned files. Local `main`
+was three commits ahead of `origin` (the PM committed without pushing), so the diff was computed
+against a stale base. After pushing, the branch's real diff is **10 files, none PM-owned**.
+
+**FOLLOW-902 filed (P2, FROZEN)** — the first successful run reports
+`drift_detected=true, coverage_score=0.0` for the only active tenant. Real data, and the leading
+hypothesis is the domain-root fallback fetching an SPA shell rather than genuine drift. It matters
+because the Sentry drift path is **now live**: a permanently-0.0 tenant emits a daily alert that is
+always wrong, which is how a channel gets muted by its readers. Next free stub: **FOLLOW-903**.
+
+**RETRO-262 for FOLLOW-900 is NOT written.**
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. No open P0.**
 
 ---
 

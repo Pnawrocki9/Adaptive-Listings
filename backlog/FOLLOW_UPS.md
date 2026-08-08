@@ -31657,3 +31657,42 @@ three conclusions — two instances make it worth one sweep.
 
 cross_ref: [ESC-041 (same class, `Release`); FOLLOW-900; `.github/workflows/` (E2E smoke); Actions
 run `31238584306`]
+
+---
+
+## FOLLOW-902 — The first successful `validate_schemas` run reports 100% selector miss for the only active tenant: real data, probably the wrong page
+
+source_retro: n/a (FOLLOW-900, session 105) source_ticket: FOLLOW-900 recommended_sprint: next
+recommended_agent: data-engineer (+ ml-engineer if the fallback URL logic changes) priority: P2
+estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false **FROZEN** — session-95
+standing rule.
+
+**The cron works now; its first real output says something is wrong upstream of it.** Read back from
+prod after FOLLOW-900's proving invocation: `schema_validation_history` holds exactly one row —
+tenant `cbc51cfa…`, domain `app.estalara.com`, **`drift_detected = true`, `coverage_score = 0.0`**.
+Every stored selector missed.
+
+**This is real data, not a bug in the run.** It is also the first time this signal has ever existed,
+so nothing is "regressing" — the question is whether 0.0 means the site changed or means the
+validator fetched the wrong bytes.
+
+**Leading hypothesis, from the FOLLOW-900 worker:** the stored schema has no `sample_listing_url`,
+so the validator falls back to the domain root and fetches the **SPA shell** — a page that
+legitimately contains none of the listing-detail selectors. If so the score is an artefact of the
+fallback, not of drift, and every future run will report the same 0.0 forever.
+
+**Why this matters beyond one row:** `schema_validation.py:510` emits a Sentry `capture_message` on
+drift, with a 24h dedup window. **That path is now live.** A permanently-0.0 tenant produces a daily
+drift alert that is always wrong, which is how an alerting channel gets muted by its readers — the
+same corrosion RETRO-010/FOLLOW-111 named for signals that live in the wrong sink.
+
+**AC:** (1) determine which it is by fetching what the validator fetched — paste the URL and enough
+of the response to show whether it is a listing page or a shell; (2) if it is the fallback, fix the
+fallback or require `sample_listing_url`, and say which and why; (3) if it is genuine drift, the
+selectors are stale and that is a different ticket — file it rather than fixing it here; (4) either
+way, decide whether a 0.0 coverage score should alert at all, or whether "no selector matched
+anything" is better classified as a validator error than as drift — a signal that cannot distinguish
+"the site changed" from "I looked at the wrong page" is not yet an alert.
+
+cross_ref: [FOLLOW-900 (PR #698); FOLLOW-893 (PR #696); FOLLOW-897;
+`apps/data-quality/src/crons/schema_validation.py:510`; RETRO-010 / FOLLOW-111]

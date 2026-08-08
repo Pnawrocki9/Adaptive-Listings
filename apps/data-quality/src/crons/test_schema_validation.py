@@ -14,26 +14,44 @@ Test inventory (maps to TICKET-VAL-001 AC item 9 + spec test expectations):
   7. _run_validation: drift detected — Sentry called once + Redpanda emitted
   8. _run_validation: no drift — Sentry NOT called, Redpanda NOT emitted
   9. _run_validation: Sentry deduplication within 24h window
+
+FOLLOW-902 additions (the zero-coverage classification):
+ 10. classify_outcome: total miss → zero_coverage, partial miss → drift
+ 11. classify_outcome: coverage number is identical to compute_coverage (K.1 parity)
+ 12. _run_validation: zero coverage writes drift_detected=FALSE + a validator_error row
+     naming the fetched URL, alerts on its own fingerprint, emits NO Redpanda event
+ 13. _run_validation: missing sample_listing_url makes NO HTTP request and writes a
+     config_gap row (the domain-root fallback that caused the prod false positive)
+ 14. Golden regression against the measured prod condition (app.estalara.com, 0/10)
 """
 
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from crons import schema_validation as schema_validation_module
 from crons.schema_validation import (
     DRIFT_THRESHOLD,
+    ERROR_PREFIX_CONFIG_GAP,
+    ERROR_PREFIX_FETCH_FAILED,
+    ERROR_PREFIX_ZERO_COVERAGE,
     HEARTBEAT_JOB_NAME,
+    OUTCOME_DRIFT,
+    OUTCOME_OK,
+    OUTCOME_ZERO_COVERAGE,
     _emit_redpanda_event,
     _run_validation,
     _was_drift_alerted_recently,
     _write_heartbeat,
     _write_history_row,
     check_selectors,
+    classify_outcome,
     compute_coverage,
     extract_selectors,
     validate_schemas,
@@ -48,6 +66,11 @@ _PROPERTY_TITLE_HTML = '<h1 class="property-title">House</h1><span class="price"
 _MINIMAL_SCHEMA: dict[str, Any] = {
     "tenant_id": "tenant-abc",
     "domain": "example.com",
+    # FOLLOW-902: present here on purpose. A schema WITHOUT this field no longer gets a
+    # guessed fallback URL — it is a config gap and is never fetched — so a fixture
+    # missing it would silently stop exercising the fetch path at all. The
+    # config-gap branch has its own fixture (_PROD_SCHEMA_NO_SAMPLE_URL) below.
+    "sample_listing_url": "https://example.com/property/123",
     "detected_at": "2026-05-01T00:00:00Z",
     "detection_source": "data_testid",
     "detection_confidence": 0.92,
@@ -97,6 +120,77 @@ _MINIMAL_SCHEMA: dict[str, Any] = {
 }
 
 
+# FOLLOW-902: the real prod row for tenant cbc51cfa-1056-40aa-b0a9-6e982b52b1de /
+# app.estalara.com, read out of prod Postgres on 2026-08-08 and transcribed here.
+# detection_confidence 1.0, detection_source "data_estalara", and — the load-bearing
+# property — NO `sample_listing_url` key at all. Note every strategy has empty
+# `fallbacks`: unlike _MINIMAL_SCHEMA there is no bare-tag selector like `h1` that
+# would accidentally match an arbitrary page, which is exactly why the live run
+# scored 0/10 rather than 1/10.
+_PROD_SCHEMA_NO_SAMPLE_URL: dict[str, Any] = {
+    "domain": "app.estalara.com",
+    "tenant_id": "cbc51cfa-1056-40aa-b0a9-6e982b52b1de",
+    "detected_at": "2026-05-29T17:46:51.646Z",
+    "detection_source": "data_estalara",
+    "detection_confidence": 1,
+    "archetype_hints": [],
+    "inquiry_submit_selector": "[data-estalara-slot='inquiry-submit']",
+    "index_schema": {
+        "url_patterns": ["/listings", "/listings/*", "/properties", "/properties/*"],
+        "reorder_capable": True,
+        "listing_count_expected": 12,
+        "container_selector": "[data-estalara-slot='listing-grid']",
+        "listing_card_selector": "[data-estalara-listing-id]",
+        "card_field_mappings": {
+            "area": {"type": "number", "unit": "sqm", "primary": "[data-estalara-slot='area']"},
+            "image": {"type": "url", "primary": "[data-estalara-slot='photo']"},
+            "price": {
+                "type": "currency",
+                "currency": "EUR",
+                "primary": "[data-estalara-slot='price']",
+            },
+            "bedrooms": {"type": "number", "primary": "[data-estalara-slot='bedrooms']"},
+            "headline": {"type": "text", "primary": "[data-estalara-slot='headline']"},
+        },
+        "data_extractors_per_card": {
+            "price": {
+                "type": "currency",
+                "currency": "EUR",
+                "primary": "[data-estalara-slot='price']",
+            },
+            "area_sqm": {"type": "number", "unit": "sqm", "primary": "[data-estalara-slot='area']"},
+            "bedrooms": {"type": "number", "primary": "[data-estalara-slot='bedrooms']"},
+        },
+    },
+    "detail_schema": {
+        "h1_is_price": True,
+        "url_patterns": ["/listings/*", "/properties/*"],
+        "similar_listings_selector": "[data-estalara-slot='similar-listings']",
+        "slot_selectors": {
+            "headline": {"type": "text", "primary": "[data-estalara-slot='headline']"},
+            "cta_primary": {"type": "text", "primary": "[data-estalara-slot='cta']"},
+            "description": {"type": "text", "primary": "[data-estalara-slot='description']"},
+        },
+        "data_extractors": {
+            "area": {"type": "number", "unit": "sqm", "primary": "[data-estalara-slot='area']"},
+            "price": {
+                "type": "currency",
+                "currency": "EUR",
+                "primary": "[data-estalara-slot='price']",
+            },
+            "bedrooms": {"type": "number", "primary": "[data-estalara-slot='bedrooms']"},
+            "bathrooms": {"type": "number", "primary": "[data-estalara-slot='bathrooms']"},
+        },
+    },
+}
+
+# Same schema, but configured — used to exercise the fetch + zero-coverage path.
+_PROD_SCHEMA_WITH_SAMPLE_URL: dict[str, Any] = {
+    **_PROD_SCHEMA_NO_SAMPLE_URL,
+    "sample_listing_url": "https://app.estalara.com/en/listings/abc123",
+}
+
+
 def _make_db_row(
     *,
     tenant_id: str = "aaaaaaaa-0000-0000-0000-000000000001",
@@ -130,6 +224,19 @@ def _make_mock_conn(
         cur.fetchone.return_value = None
 
     return conn
+
+
+def _only_history_insert_args(conn: MagicMock) -> tuple[Any, ...]:
+    """Return the bound params of the single schema_validation_history INSERT.
+
+    Positional layout (mirrors ``_write_history_row``):
+      0 tenant_id · 1 domain · 2 coverage_score · 3 failed_selectors
+      4 total_selectors · 5 matched_selectors · 6 drift_detected · 7 error
+    """
+    execute_calls = conn.cursor.return_value.__enter__.return_value.execute.call_args_list
+    inserts = [c for c in execute_calls if "INSERT INTO schema_validation_history" in str(c)]
+    assert len(inserts) == 1, f"expected exactly one history INSERT, got {len(inserts)}"
+    return inserts[0][0][1]
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +404,14 @@ class TestRunValidation:
         assert "fetch_failed: timeout" in (insert_args[7] or "")  # error
 
     def test_drift_detected_emits_sentry_and_redpanda(self) -> None:
-        """When drift is detected, Sentry capture_message and Redpanda emit are called."""
+        """When drift is detected, Sentry capture_message and Redpanda emit are called.
+
+        FOLLOW-902: this test used to feed ``<p>nothing here</p>``, which matches ZERO
+        of the seven selectors — i.e. the only "drift" this suite ever exercised was
+        the total-miss case that is now classified as a validator error. That is
+        exactly why the prod false positive shipped green. It now uses PARTIAL_HTML,
+        where 2 of 7 selectors survive: genuine differential drift.
+        """
         tenant_id = "aaaaaaaa-0000-0000-0000-000000000002"
         conn = _make_mock_conn(
             db_rows=[_make_db_row(tenant_id=tenant_id)],
@@ -315,15 +429,20 @@ class TestRunValidation:
         ):
             mock_client_instance = MagicMock()
             mock_http_cls.return_value.__enter__.return_value = mock_client_instance
-            # Return page with very minimal HTML — most selectors will fail
+            # 2 of 7 selectors survive — below the 0.8 threshold AND a required
+            # selector (div.listing-card) fails. Differential: real drift.
             mock_client_instance.get.return_value = MagicMock(
-                status_code=200, text="<html><body><p>nothing here</p></body></html>"
+                status_code=200,
+                text=PARTIAL_HTML,
+                url="https://example.com/property/123",
             )
 
             _run_validation(conn)
 
-        # With almost no selectors matching, drift must be detected
+        # Partial survival below threshold must be reported as drift
         mock_sentry.assert_called_once()
+        assert "Schema drift detected" in mock_sentry.call_args[0][0]
+        assert mock_sentry.call_args.kwargs["fingerprint"][0] == "schema-drift"
         mock_redpanda.assert_called_once()
 
     def test_no_drift_does_not_emit_sentry_or_redpanda(self) -> None:
@@ -362,8 +481,12 @@ class TestRunValidation:
         ):
             mock_client_instance = MagicMock()
             mock_http_cls.return_value.__enter__.return_value = mock_client_instance
+            # PARTIAL_HTML = real drift (2/7 match). FOLLOW-902: was zero-match HTML,
+            # which no longer reaches the drift dedup path at all.
             mock_client_instance.get.return_value = MagicMock(
-                status_code=200, text="<html><body><p>nothing</p></body></html>"
+                status_code=200,
+                text=PARTIAL_HTML,
+                url="https://example.com/property/123",
             )
 
             _run_validation(conn)
@@ -410,6 +533,330 @@ class TestRunValidation:
         # execute args: (tenant_id, domain, coverage_score, failed_selectors,
         #                total_selectors, matched_selectors, drift_detected, error)
         assert "fetch_failed: HTTP 404" in (insert_args[7] or "")
+
+
+# ---------------------------------------------------------------------------
+# FOLLOW-902 — zero coverage is a validator error, not drift
+# ---------------------------------------------------------------------------
+
+# The document the validator ACTUALLY scored in prod on 2026-08-08: the public
+# marketing page app.estalara.com/en, reached by a 302 from the domain-root fallback.
+# Trimmed to its load-bearing property — a real, server-rendered page with content and
+# zero listing markup. Every stored selector misses, and nothing has drifted.
+MARKETING_PAGE_HTML = """
+<!doctype html><html lang="en"><head><title>Estalara</title></head><body>
+  <h1 class="text-2xl font-bold">Find a place to call home</h1>
+  <a href="/auth">Log in</a>
+</body></html>
+"""
+
+
+class TestZeroCoverageIsNotDrift:
+    """The AC(4) judgement, pinned: a total miss must not enter the drift channel."""
+
+    def test_classify_outcome_zero_match_is_validator_error(self) -> None:
+        """No selector matched → zero_coverage, even though coverage < threshold."""
+        results = {"a": False, "b": False, "c": False}
+        outcome, coverage, failed = classify_outcome(results, [])
+        assert outcome == OUTCOME_ZERO_COVERAGE
+        assert outcome != OUTCOME_DRIFT
+        assert coverage == 0.0
+        assert len(failed) == 3
+
+    def test_classify_outcome_partial_match_is_drift(self) -> None:
+        """At least one survivor below threshold → drift. Drift is differential."""
+        results = {"a": True, "b": False, "c": False, "d": False, "e": False}
+        outcome, coverage, _ = classify_outcome(results, [])
+        assert outcome == OUTCOME_DRIFT
+        assert coverage < DRIFT_THRESHOLD
+
+    def test_classify_outcome_required_failure_with_survivors_is_drift(self) -> None:
+        """A required selector failing is drift only while something else matched."""
+        results = {"req": False, "other": True, "third": True, "fourth": True, "fifth": True}
+        outcome, _, _ = classify_outcome(results, ["req"])
+        assert outcome == OUTCOME_DRIFT
+
+    def test_classify_outcome_all_match_is_ok(self) -> None:
+        outcome, coverage, failed = classify_outcome({"a": True, "b": True}, ["a"])
+        assert outcome == OUTCOME_OK
+        assert coverage == 1.0
+        assert failed == []
+
+    def test_classify_outcome_empty_results_is_ok(self) -> None:
+        """No selectors checked is not a total miss — it is nothing to say."""
+        assert classify_outcome({}, [])[0] == OUTCOME_OK
+
+    def test_classify_outcome_agrees_with_compute_coverage_number(self) -> None:
+        """Parity: the classifier must never report a different coverage number.
+
+        Rule K.1 — one implementation of the metric, not two that can drift apart.
+        """
+        for results in (
+            {"a": False, "b": False},
+            {"a": True, "b": False, "c": False},
+            {"a": True, "b": True},
+            {},
+        ):
+            expected_coverage, _, expected_failed = compute_coverage(results, [])
+            _, actual_coverage, actual_failed = classify_outcome(results, [])
+            assert actual_coverage == expected_coverage
+            assert actual_failed == expected_failed
+
+    def test_zero_coverage_writes_error_row_and_no_drift(self) -> None:
+        """Total miss: drift_detected FALSE, error names the fetched URL, no Redpanda."""
+        tenant_id = "aaaaaaaa-0000-0000-0000-00000000090a"
+        conn = _make_mock_conn(
+            db_rows=[_make_db_row(tenant_id=tenant_id, schema_jsonb=_PROD_SCHEMA_WITH_SAMPLE_URL)]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client") as mock_http_cls,
+            patch("crons.schema_validation.sentry_sdk.capture_message"),
+            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
+            patch("crons.schema_validation._was_alerted_recently", return_value=False),
+        ):
+            mock_client_instance = MagicMock()
+            mock_http_cls.return_value.__enter__.return_value = mock_client_instance
+            # Requested a listing URL, got redirected to the marketing page.
+            mock_client_instance.get.return_value = MagicMock(
+                status_code=200,
+                text=MARKETING_PAGE_HTML,
+                url="https://app.estalara.com/en",
+            )
+
+            _run_validation(conn)
+
+        # The drift channel stays silent — nothing was observed to drift.
+        mock_redpanda.assert_not_called()
+
+        insert_args = _only_history_insert_args(conn)
+        assert insert_args[6] is False, "zero coverage must not set drift_detected"
+        error = insert_args[7] or ""
+        assert error.startswith(ERROR_PREFIX_ZERO_COVERAGE)
+        # The reader must be able to see WHICH page was scored without re-running.
+        assert "https://app.estalara.com/en" in error
+        assert "https://app.estalara.com/en/listings/abc123" in error
+
+    def test_zero_coverage_alerts_on_its_own_fingerprint_not_the_drift_one(self) -> None:
+        """Not suppressed — routed. A distinct Sentry signal with a distinct fingerprint."""
+        tenant_id = "aaaaaaaa-0000-0000-0000-00000000090b"
+        conn = _make_mock_conn(
+            db_rows=[_make_db_row(tenant_id=tenant_id, schema_jsonb=_PROD_SCHEMA_WITH_SAMPLE_URL)]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client") as mock_http_cls,
+            patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
+            patch("crons.schema_validation._emit_redpanda_event"),
+            patch("crons.schema_validation._was_alerted_recently", return_value=False),
+        ):
+            mock_client_instance = MagicMock()
+            mock_http_cls.return_value.__enter__.return_value = mock_client_instance
+            mock_client_instance.get.return_value = MagicMock(
+                status_code=200, text=MARKETING_PAGE_HTML, url="https://app.estalara.com/en"
+            )
+
+            _run_validation(conn)
+
+        mock_sentry.assert_called_once()
+        message = mock_sentry.call_args[0][0]
+        kwargs = mock_sentry.call_args.kwargs
+        assert "could not measure" in message
+        assert "drift" not in message.lower(), "must not read as a drift alert"
+        assert kwargs["fingerprint"][0] == "schema-validation-zero-coverage"
+        assert kwargs["extras"]["outcome"] == OUTCOME_ZERO_COVERAGE
+        assert kwargs["extras"]["fetched_url"] == "https://app.estalara.com/en"
+
+    def test_zero_coverage_alert_dedups_on_its_own_error_prefix(self) -> None:
+        """Dedup must key on the error prefix — these rows leave drift_detected FALSE."""
+        tenant_id = "aaaaaaaa-0000-0000-0000-00000000090c"
+        conn = _make_mock_conn(
+            db_rows=[_make_db_row(tenant_id=tenant_id, schema_jsonb=_PROD_SCHEMA_WITH_SAMPLE_URL)]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client") as mock_http_cls,
+            patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
+            patch("crons.schema_validation._emit_redpanda_event"),
+            patch("crons.schema_validation._was_alerted_recently", return_value=True) as mock_dedup,
+        ):
+            mock_client_instance = MagicMock()
+            mock_http_cls.return_value.__enter__.return_value = mock_client_instance
+            mock_client_instance.get.return_value = MagicMock(
+                status_code=200, text=MARKETING_PAGE_HTML, url="https://app.estalara.com/en"
+            )
+
+            _run_validation(conn)
+
+        mock_sentry.assert_not_called()
+        assert mock_dedup.call_args.kwargs["error_prefix"] == ERROR_PREFIX_ZERO_COVERAGE
+        # …and the row is still written, so the dedup silences the alert, not the record.
+        assert _only_history_insert_args(conn)[7].startswith(ERROR_PREFIX_ZERO_COVERAGE)
+
+
+class TestMissingSampleUrlIsConfigGap:
+    """A tenant that cannot be validated fails loudly as config, not silently as drift."""
+
+    def test_missing_sample_url_never_fetches_anything(self) -> None:
+        """No sample_listing_url → no guessed URL, no HTTP request at all."""
+        conn = _make_mock_conn(
+            db_rows=[
+                _make_db_row(
+                    tenant_id="aaaaaaaa-0000-0000-0000-00000000090d",
+                    schema_jsonb=_PROD_SCHEMA_NO_SAMPLE_URL,
+                )
+            ]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client") as mock_http_cls,
+            patch("crons.schema_validation.sentry_sdk.capture_message"),
+            patch("crons.schema_validation._emit_redpanda_event"),
+            patch("crons.schema_validation._was_alerted_recently", return_value=False),
+        ):
+            _run_validation(conn)
+
+        # THE regression: the domain-root fallback that manufactured the prod 0.0.
+        mock_http_cls.assert_not_called()
+
+    def test_missing_sample_url_writes_config_gap_row_not_drift(self) -> None:
+        conn = _make_mock_conn(
+            db_rows=[
+                _make_db_row(
+                    tenant_id="aaaaaaaa-0000-0000-0000-00000000090e",
+                    schema_jsonb=_PROD_SCHEMA_NO_SAMPLE_URL,
+                )
+            ]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client"),
+            patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
+            patch("crons.schema_validation._emit_redpanda_event") as mock_redpanda,
+            patch("crons.schema_validation._was_alerted_recently", return_value=False),
+        ):
+            _run_validation(conn)
+
+        mock_redpanda.assert_not_called()
+
+        insert_args = _only_history_insert_args(conn)
+        assert insert_args[6] is False, "a config gap is not drift"
+        assert (insert_args[7] or "").startswith(ERROR_PREFIX_CONFIG_GAP)
+        assert "sample_listing_url" in insert_args[7]
+        # total_selectors is still recorded — the schema is fine, the config is not.
+        assert insert_args[4] > 0
+
+        mock_sentry.assert_called_once()
+        kwargs = mock_sentry.call_args.kwargs
+        assert kwargs["fingerprint"][0] == "schema-validation-config-gap"
+        assert "drift" not in mock_sentry.call_args[0][0].lower()
+
+    def test_config_gap_alert_dedups_on_its_own_prefix(self) -> None:
+        conn = _make_mock_conn(
+            db_rows=[
+                _make_db_row(
+                    tenant_id="aaaaaaaa-0000-0000-0000-00000000090f",
+                    schema_jsonb=_PROD_SCHEMA_NO_SAMPLE_URL,
+                )
+            ]
+        )
+
+        with (
+            patch("crons.schema_validation.httpx.Client"),
+            patch("crons.schema_validation.sentry_sdk.capture_message") as mock_sentry,
+            patch("crons.schema_validation._was_alerted_recently", return_value=True) as mock_dedup,
+        ):
+            _run_validation(conn)
+
+        mock_sentry.assert_not_called()
+        assert mock_dedup.call_args.kwargs["error_prefix"] == ERROR_PREFIX_CONFIG_GAP
+
+
+class TestProdRegressionAppEstalara:
+    """Golden regression on the exact prod condition measured on 2026-08-08.
+
+    Model: RETRO-014 — assert the canonical tokens are present and the stale ones
+    absent, so a future refactor cannot quietly restore the false-positive shape.
+
+    Measured facts this pins (FOLLOW-902 AC1):
+      tenant cbc51cfa-1056-40aa-b0a9-6e982b52b1de / app.estalara.com
+      schema has NO sample_listing_url  →  old code fetched https://app.estalara.com
+      →  302 to /en (public marketing page, 0 data-estalara attributes)
+      →  0/10 selectors matched  →  coverage 0.0  →  drift_detected = TRUE (false)
+    """
+
+    # The exact `failed_selectors` array of the two prod rows, in order.
+    _PROD_FAILED_SELECTORS = [
+        "[data-estalara-listing-id]",
+        "[data-estalara-slot='listing-grid']",
+        "[data-estalara-slot='area']",
+        "[data-estalara-slot='photo']",
+        "[data-estalara-slot='price']",
+        "[data-estalara-slot='bedrooms']",
+        "[data-estalara-slot='headline']",
+        "[data-estalara-slot='cta']",
+        "[data-estalara-slot='description']",
+        "[data-estalara-slot='bathrooms']",
+    ]
+
+    def test_extract_selectors_reproduces_the_prod_selector_set(self) -> None:
+        """The transcribed fixture must yield the 10 selectors prod actually stored.
+
+        If this drifts, every other assertion in this class is measuring a schema
+        that prod does not have.
+        """
+        all_selectors, required = extract_selectors(_PROD_SCHEMA_NO_SAMPLE_URL)
+        assert all_selectors == self._PROD_FAILED_SELECTORS
+        assert required == [
+            "[data-estalara-listing-id]",
+            "[data-estalara-slot='headline']",
+        ]
+
+    def test_marketing_page_reproduces_zero_of_ten_but_is_not_drift(self) -> None:
+        """The prod numbers, reproduced from the prod page, with the new verdict."""
+        results = check_selectors(MARKETING_PAGE_HTML, self._PROD_FAILED_SELECTORS)
+
+        # The measurement is unchanged — this ticket did not move the numbers.
+        assert len(results) == 10
+        assert sum(results.values()) == 0
+
+        outcome, coverage, failed = classify_outcome(
+            results, ["[data-estalara-listing-id]", "[data-estalara-slot='headline']"]
+        )
+        assert coverage == 0.0
+        assert len(failed) == 10
+
+        # Only the classification moved.
+        assert outcome == OUTCOME_ZERO_COVERAGE
+        assert outcome != OUTCOME_DRIFT
+        # compute_coverage still says "drift" in isolation — that is precisely why
+        # callers must not read it directly.
+        assert compute_coverage(results, [])[1] is True
+
+    def test_canonical_outcome_vocabulary_is_stable(self) -> None:
+        """The error prefixes are dedup keys and runbook grep targets — pin them."""
+        assert OUTCOME_ZERO_COVERAGE == "zero_coverage"
+        assert OUTCOME_DRIFT == "drift"
+        assert OUTCOME_OK == "ok"
+        assert ERROR_PREFIX_CONFIG_GAP == "config_gap:"
+        assert ERROR_PREFIX_ZERO_COVERAGE == "validator_error: zero_coverage"
+        assert ERROR_PREFIX_FETCH_FAILED == "fetch_failed:"
+
+    def test_no_domain_root_fallback_survives_in_source(self) -> None:
+        """The stale token: an f-string building a URL out of a bare domain.
+
+        This is the line that produced the prod false positive. If it comes back,
+        so does the artefact, and this suite would otherwise still be green.
+        """
+        source = Path(schema_validation_module.__file__).read_text(encoding="utf-8")
+        code_lines = [
+            line
+            for line in source.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        assert not [line for line in code_lines if 'f"https://{domain}"' in line], (
+            "domain-root fallback restored — see FOLLOW-902"
+        )
 
 
 # ---------------------------------------------------------------------------

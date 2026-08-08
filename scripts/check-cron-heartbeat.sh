@@ -167,7 +167,8 @@ digest=$(psql "$DB_URL" -Atq -F '|' -c "
     count(*),
     count(DISTINCT tenant_id),
     count(*) FILTER (WHERE drift_detected),
-    count(*) FILTER (WHERE error IS NOT NULL),
+    count(*) FILTER (WHERE error LIKE 'fetch_failed:%'),
+    count(*) FILTER (WHERE error LIKE 'config_gap:%' OR error LIKE 'validator_error:%'),
     coalesce(to_char(max(run_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), 'never')
   FROM schema_validation_history
   WHERE run_at > NOW() - INTERVAL '${MAX_AGE_HOURS} hours';
@@ -176,12 +177,25 @@ digest=$(psql "$DB_URL" -Atq -F '|' -c "
 if [[ -z "$digest" ]]; then
   echo "  (digest unavailable — schema_validation_history unreadable from this connection)"
 else
-  IFS='|' read -r d_rows d_tenants d_drift d_err d_max <<<"$digest"
-  echo "  rows written   : ${d_rows}"
-  echo "  tenants covered: ${d_tenants}"
-  echo "  drift rows     : ${d_drift}"
+  IFS='|' read -r d_rows d_tenants d_drift d_err d_unmeasured d_max <<<"$digest"
+  echo "  rows written    : ${d_rows}"
+  echo "  tenants covered : ${d_tenants}"
+  echo "  drift rows      : ${d_drift}"
   echo "  fetch-error rows: ${d_err}"
-  echo "  newest run_at  : ${d_max}"
+  echo "  unmeasured rows : ${d_unmeasured}"
+  echo "  newest run_at   : ${d_max}"
+  # FOLLOW-902: `unmeasured` counts rows where the job could not form an opinion about
+  # the tenant's DOM at all — no `sample_listing_url` to fetch (`config_gap:`), or a
+  # fetch that matched zero of the stored selectors (`validator_error: zero_coverage`),
+  # which is far more often the wrong page than a wholesale redesign. These are NOT
+  # drift and must never be read as drift: on 2026-08-08 the domain-root fallback
+  # scored app.estalara.com's marketing page 0/10 and called it drift. Non-zero here
+  # means the validator needs configuring, not that a tenant's site changed.
+  if [[ -n "${d_unmeasured}" && "${d_unmeasured}" != "0" ]]; then
+    echo "  NOTE: ${d_unmeasured} row(s) could not be measured (missing sample_listing_url,"
+    echo "        or zero selectors matched the fetched page). Not drift — see"
+    echo "        docs/runbooks/SCHEMA_VALIDATION_CRON.md §7."
+  fi
   if [[ "${d_rows}" == "0" && "$ALARM" -eq 0 ]]; then
     echo "  NOTE: zero history rows while the heartbeat is fresh means the run executed and"
     echo "        found no active tenant with a tenant_site_schemas row — a healthy no-op,"
@@ -200,7 +214,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "- last success: \`${last_success_at}\` (${age_hours}h ago, limit ${MAX_AGE_HOURS}h)"
     echo "- run detail: \`${run_detail}\`"
     if [[ -n "${digest:-}" ]]; then
-      echo "- \`schema_validation_history\` last ${MAX_AGE_HOURS}h: ${d_rows} rows, ${d_tenants} tenants, ${d_drift} drift, ${d_err} fetch-error (newest \`${d_max}\`)"
+      echo "- \`schema_validation_history\` last ${MAX_AGE_HOURS}h: ${d_rows} rows, ${d_tenants} tenants, ${d_drift} drift, ${d_err} fetch-error, ${d_unmeasured} unmeasured (newest \`${d_max}\`)"
     fi
   } >>"$GITHUB_STEP_SUMMARY"
 fi

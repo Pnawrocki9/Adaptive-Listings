@@ -402,3 +402,39 @@ validates the regex extraction against a fixture string before running against t
 would prevent a refactor of the INSERT format from silently passing CI due to an empty-COLS false
 negative that doesn't hit ClickHouse at all. Currently the empty-COLS guard exits with an error, so
 it's loud — but a fixture-driven self-test would make the extraction logic independently verifiable.
+
+---
+
+## 2026-08-08 · FOLLOW-902 — zero coverage is a validator error, not drift
+
+**What I built:** Replayed the schema-validation cron's own fetch against prod and found the
+project's first-ever drift alert was an artefact: the stored schema for the one active tenant has no
+`sample_listing_url`, so the validator fell back to `https://app.estalara.com`, was 302'd to the
+public marketing page `/en` (zero `data-estalara` attributes), and scored 0/10 — reproducing the two
+prod rows exactly. Removed the domain-root fallback (missing config is now a loud `config_gap:` row,
+no HTTP request), added `classify_outcome()` on top of `compute_coverage()` so a total miss becomes
+`zero_coverage` instead of `drift`, gave both non-drift outcomes their own Sentry fingerprint and
+their own dedup key, recorded the post-redirect URL in the `error` string, and split the heartbeat
+digest's error bucket so `unmeasured` never reads as drift.
+
+**Vocabulary/seed/retention risks I weighed:** No new table or column — deliberately. The
+post-redirect URL is the one fact a reader needs, and adding a `fetched_url` column would have meant
+a Postgres migration I do not own; it goes in the existing `error` text instead. The three `error`
+prefixes are now dedup keys AND the heartbeat digest's `LIKE` patterns AND runbook grep targets, so
+they are pinned by a test — three consumers of one string is exactly how vocabulary drifts. Kept one
+coverage implementation: `classify_outcome` delegates the number rather than recomputing it, with a
+parity test, because two functions answering "what is the coverage" is the K.1 failure I keep
+finding in other people's code. `sample_listing_url` turns out to be **read here and written
+nowhere** — a Rule-H hole in reverse, which is why "just require it" was escalated rather than
+implemented.
+
+**A guardrail I'd add:** A test-fixture faithfulness check. The pre-existing drift tests fed
+`<p>nothing here</p>` — zero matches — so the only "drift" this suite ever exercised was the exact
+total-miss case that shipped the false positive; the suite was green on the defect it should have
+caught. The fixture also carried a bare-tag `h1` fallback that the real prod schema does not have,
+which quietly changed the outcome when I reused it. Guardrail: for any cron whose input is a stored
+row, keep a fixture transcribed from the real prod row, assert the extraction against it, and treat
+"the fixture and prod disagree" as a test failure rather than a detail. Corollary I'd promote: an
+alert must be able to name what changed — if a signal cannot distinguish "the world changed" from "I
+measured the wrong thing", it is a measurement error and belongs on a different channel, never
+silenced.

@@ -557,7 +557,9 @@ What the script guarantees, and why you should not hand-write the JSON instead:
 > decision (it reverses part of FOLLOW-622 Option B) — out of FOLLOW-658's scope.
 
 Origins must be **scheme+host+port, no path** (e.g. `https://listings.clientx.com`). Include every
-origin the SDK actually posts from — apex vs `www`, and any staging host used during §Part C.
+origin the SDK actually posts from — apex vs `www`, and any non-production host used during §Part C.
+(There is no Estalara staging environment — FOLLOW-878 / ESC-052; a brand's own staging host, if it
+has one, still needs its origin allow-listed.)
 
 ### Step 7 — Intent weights (defaults vs per-tenant override)
 
@@ -610,9 +612,10 @@ tell this repo the domain before Steps 1-5 and 7 run — only §Step 6 needs it,
 ## Part C — Per-brand verification checklist
 
 Run this on every new brand after Part A + the deploy side confirms the live URL. Items marked
-**[OPERATOR-GATED]** require prod/staging access this runbook's author does not have (real
-Supabase/ClickHouse/Vercel prod credentials) and could not be executed as part of authoring this
-document — the local dry-run below (§Dry-run log) is the closest verification possible without them.
+**[OPERATOR-GATED]** require prod access this runbook's author does not have (corrected 2026-08-07,
+FOLLOW-878 / ESC-052 — there is no staging access to have) (real Supabase/ClickHouse/Vercel prod
+credentials) and could not be executed as part of authoring this document — the local dry-run below
+(§Dry-run log) is the closest verification possible without them.
 
 1. **SDK loads.** [OPERATOR-GATED] Open the live URL, DevTools → Network: confirm
    `estalara-detect.iife.js` and `sdk.js` both load 200 from `admin.estalara.com` (never the brand's
@@ -793,7 +796,8 @@ Server killed after the run (`pkill -f "next dev --turbo"`); no state was left r
 in Part A and Part C behaves exactly as documented, on the real route code, today. **What it does
 NOT prove:** anything requiring a real Postgres row, a real ClickHouse event, a real Vercel prod
 deploy, or a real Cloudflare Worker — those are the [OPERATOR-GATED] items in Part C and must be run
-for real against staging/prod before the first external brand goes live.
+for real against the localhost pilot substrate and then prod before the first external brand goes
+live (corrected 2026-08-07, FOLLOW-878 / ESC-052 — "staging" is not an option that exists).
 
 ---
 

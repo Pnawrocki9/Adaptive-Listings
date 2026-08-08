@@ -60,6 +60,10 @@ doppler run --project estalara-adaptive-listings --config prd -- npx wrangler de
 doppler run --project estalara-adaptive-listings --config prd -- npx wrangler deploy --env production
 ```
 
+- **2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2):** re-verified, still accurate — and
+  now permanent. Localhost-first is official for the data plane, so a real staging is not coming;
+  Doppler `stg` was byte-identical to `prd` and is retired by FOLLOW-873. Note the `--config prd` in
+  the command above is not a typo: it is the only config that carries `CLOUDFLARE_*`.
 - Staging is a **bundle/API smoke only**: `[env.staging]` deliberately declares no KV/DO/queue
   bindings (wrangler envs do NOT inherit them — the warnings are expected), and
   `ingest-staging.estalara.com` has no DNS record. A green `Uploaded`+`Deployed` is the whole

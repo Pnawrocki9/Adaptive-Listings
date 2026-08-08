@@ -17,7 +17,14 @@ LLM_DAILY_CAP_USD = "1.00"
 name = "estalara-decision-api-dev"
 vars = { ENVIRONMENT = "development", LLM_DAILY_CAP_USD = "1.00" }
 
-# Staging environment (auto-deploy on merge to main)
+# "Staging" environment — NOT an environment. A wrangler BUILD/UPLOAD SMOKE target.
+#
+# CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2). Sibling of the
+# identical stale comment in apps/ingest/wrangler.toml (Rule S: the sweep applies to
+# every sibling, not only the one the stub happened to name). Nothing auto-deploys —
+# `.github/workflows/deploy-staging.yml` is `workflow_dispatch`-only — and
+# `decision-staging.estalara.com` has NO DNS record (FOLLOW-810, verified live
+# 2026-08-04). Enforced by scripts/check-no-staging-plane.sh.
 [env.staging]
 name = "estalara-decision-api-staging"
 vars = { ENVIRONMENT = "staging", LLM_DAILY_CAP_USD = "1.00" }

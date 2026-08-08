@@ -646,6 +646,7 @@ Leave the Estalara-app tree's `app.html` restored per §4.
 
 ## Cross-references
 
-ESC-020 · FOLLOW-818 (staging feedback flip) · FOLLOW-819 (differentiator E2E) · FOLLOW-820 (prod
-gate) · FOLLOW-822 (schema drift) · `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` ·
-`scripts/dev/README.md` · `Estalara-app-new/infrastructure-master/dev/LOCAL_DEV_RESUME.md`
+ESC-020 · FOLLOW-818 (feedback flip — **local-only**, re-scoped from staging by ESC-052; corrected
+here 2026-08-07 by FOLLOW-878) · FOLLOW-819 (differentiator E2E) · FOLLOW-820 (prod gate) ·
+FOLLOW-822 (schema drift) · `docs/runbooks/SDK_PRODUCTION_INTEGRATION.md` · `scripts/dev/README.md`
+· `Estalara-app-new/infrastructure-master/dev/LOCAL_DEV_RESUME.md`

@@ -12,7 +12,10 @@
 #     continue-on-error: true and logs a clear message rather than failing the
 #     post-merge pipeline.  The job is present so it activates the moment
 #     FOLLOW-040 lands and the secret is added to GitHub.
-#   - Does NOT run on pull_request events — it requires real staging DB
+#   - Does NOT run on pull_request events — it requires a real DB
+#     (CORRECTED 2026-08-07, FOLLOW-878 / ESC-052: this read "real staging DB".
+#      There is no staging DB. Doppler `stg` was byte-identical to `prd`, so the
+#      only real DB this job can reach is PRODUCTION.)
 #     credentials and a real OPENAI_API_KEY, which must not be exposed on
 #     untrusted forks.
 #   - The manual workflow_dispatch entry in seed-archetypes.yml is retained as

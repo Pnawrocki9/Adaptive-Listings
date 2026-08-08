@@ -12,6 +12,31 @@
 
 ## 0. Verified reality (2026-07-02)
 
+> ⚠️ **CORRECTION NOTE — 2026-08-07 (FOLLOW-891). The dated block below is left VERBATIM as a record
+> of what was true on 2026-07-02; two of its claims are now false.** (Precedent: FOLLOW-887's
+> treatment of `docs/specs/TICKET-DESC-PIVOT-001-v1.7.1.md` — annotate a dated snapshot, never
+> rewrite it.)
+>
+> 1. _"**0 apps and 0 secrets**"_ — false. Freshly executed `modal app list --json` (2026-08-07,
+>    workspace `estalara`) returns **THREE deployed apps**: `estalara-description-generator`
+>    (`ap-ZAP1kNyU93r8YeF41F6XK7`, 2026-07-03 13:52 CEST), `estalara-intent-engine`
+>    (`ap-MpUyBq9gCwO5sL79w6X46y`, 2026-08-07 21:43 CEST) and `estalara-schema-validation`
+>    (`ap-YHoXtVM7ZnF5uMbqpRlzbd`, 2026-08-07 21:43 CEST), plus four `stopped` ephemeral apps from
+>    the same operator session. The `estalara-secrets` Modal secret exists and carries
+>    `DATABASE_URL` (ESC-053, RESOLVED).
+> 2. _"There is **no CI workflow** that deploys Modal (`grep 'modal deploy' .github/workflows` =
+>    0)"_ — false, and falsified by PR #691 itself: `.github/workflows/modal-deploy.yml` carries
+>    `deploy-llm-gateway`, `deploy-intent-engine` and `deploy-data-quality`.
+> 3. Still true, and worth keeping in view: **nothing here is auto-run**, and a scheduled
+>    `validate_schemas` execution has still never been **observed** (§Snapshot.1 row B.6 remains 🟡
+>    `CODE_COMPLETE_OPERATOR_PENDING`; the observation is FOLLOW-893).
+>
+> Registration probe, same date (`modal.Function.from_name(app, fn).hydrate()`, read-only):
+> `estalara-intent-engine` → `chat_nlp_endpoint`, `process_chat_message` **only**
+> (`batch_enrich_conversations` → `NotFoundError`); `estalara-schema-validation` →
+> `validate_schemas`; `estalara-description-generator` → `generate_description`,
+> `description_requested_endpoint`.
+
 - The only Modal account available (CEO `pnawrocki9`, sole profile in `~/.modal.toml`) has **0 apps
   and 0 secrets**. There is **no CI workflow** that deploys Modal
   (`grep 'modal deploy' .github/workflows` = 0).

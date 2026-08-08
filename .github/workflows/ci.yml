@@ -24,7 +24,11 @@ concurrency:
 jobs:
   # ── Doppler service token verification ──────────────────────────────────
   # Verifies that DOPPLER_TOKEN_DEV is provisioned and authenticates to Doppler.
-  # Secret scope: dev + staging configs only. Production token is NOT in repo
+  # Secret scope: `dev` config only. Production token is NOT in repo
+  # (CORRECTED 2026-08-07, FOLLOW-878 / ESC-052: this line said "dev + staging
+  # configs only". There is no staging config worth naming — Doppler `stg` was
+  # byte-identical to `prd`, i.e. "staging scope" meant PRODUCTION scope. `stg` is
+  # retired by FOLLOW-873.)
   # secrets — it lives in the Vercel-only path.
   #
   # Soft-degradation contract (forked PRs / token not yet provisioned):
@@ -741,6 +745,30 @@ jobs:
 
       - name: Assert exactly one modal.App() instantiation in llm-gateway
         run: bash scripts/check-modal-app-singleton.sh
+
+  # ── Staging-plane gate (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2) ────────
+  # ESC-052 established that Estalara has NO staging environment: Doppler
+  # `stg.DATABASE_URL_ADMIN` is byte-identical to `prd` (a write to `stg` is a write
+  # to PRODUCTION), Doppler `stg` carries no CLICKHOUSE_*, and both
+  # `*-staging.estalara.com` hostnames have no DNS record. The ruling's operative
+  # sentence — "nothing may continue to APPEAR to provide isolation it does not
+  # provide" — cannot be enforced by prose, so this gate enforces it mechanically
+  # against a register of the exact surviving references.
+  #
+  # HARD GATE. No `continue-on-error`, no secret dependency, therefore no soft-skip:
+  # it runs on every push to an agent branch and every PR, always against the real
+  # tree. The self-test runs FIRST so a broken detector cannot pass the gate.
+  staging-plane-guard:
+    name: Staging-plane gate (FOLLOW-878 / ESC-052)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run staging-plane self-test (validates the gate itself)
+        run: bash scripts/check-no-staging-plane.sh --self-test
+
+      - name: Assert the staging-plane reference set matches the register
+        run: bash scripts/check-no-staging-plane.sh
 
   # ── Sentry init singleton guard (FOLLOW-738 / ESC-045 item 4) ───────────────
   # Asserts that every sentry_sdk.init( call site across the Python Modal apps

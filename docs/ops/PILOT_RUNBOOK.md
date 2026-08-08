@@ -59,11 +59,16 @@ AI Council session `20260525_143939`.
 - [ ] **DPO sign-off on DPIA §13.2 LIA received.** DPO has reviewed and approved the cross-session
       identifier legitimate interest assessment. Gate in
       `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 updated to DONE.
-- [ ] **§13.2 staging localStorage QA complete (owner: Compliance Engineering).** A QA engineer has
-      manually confirmed on a staging session that clicking "Deny" or "Withdraw" on the Estalara
-      consent banner removes the cross-session `localStorage` key set by `renderConsentBanner`'s
-      `onDenied` callback. This is a manual browser verification; it cannot be executed from CI.
-      Status: **PENDING** — awaiting FOLLOW-128 staging deployment.
+- [ ] **§13.2 localStorage QA complete (owner: Compliance Engineering).** A QA engineer has manually
+      confirmed on a **localhost pilot** session (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`) that
+      clicking "Deny" or "Withdraw" on the Estalara consent banner removes the cross-session
+      `localStorage` key set by `renderConsentBanner`'s `onDenied` callback. This is a manual
+      browser verification; it cannot be executed from CI. Status: **PENDING**. > ⚠️ **CORRECTED
+      2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2).** This item said > "confirmed on a
+      **staging** session … awaiting FOLLOW-128 **staging deployment**". There is > no staging
+      environment and none is coming, so as written this checklist item was > **unexecutable** and
+      would have blocked the pilot on an event that cannot occur. Re-targeted > at the localhost
+      substrate.
 
 ## 2. Shadow-mode quality thresholds (answers B4) — RATIFIED
 
@@ -90,11 +95,19 @@ Measured during the ≥3-day shadow window before going live:
 
 ### Migration sequencing (ESC-012 — Path 1, CEO decision 2026-05-28)
 
-> **FOLLOW-308 (2026-06-14):** `.github/workflows/db-migrate.yml` now auto-applies `pnpm db:migrate`
-> to staging then prod on every push to `main` that touches `packages/db/migrations/**`. This
-> eliminates the operator-driven-only gap that caused prod to drift 14 migrations behind (ESC-022 /
-> RETRO-076 OG-1). The workflow is inert until `DOPPLER_TOKEN_STG` / `DOPPLER_TOKEN_PRD` are
-> provisioned (ESC-023). Manual fallback: `doppler run --config prd -- pnpm db:migrate`.
+> **FOLLOW-308 (2026-06-14):** `.github/workflows/db-migrate.yml` auto-applies `pnpm db:migrate` on
+> every push to `main` that touches `packages/db/migrations/**`. This eliminates the
+> operator-driven-only gap that caused prod to drift 14 migrations behind (ESC-022 / RETRO-076
+> OG-1). Manual fallback: `doppler run --config prd -- pnpm db:migrate`.
+>
+> ⚠️ **CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2).** This note said the
+> workflow applies "**to staging then prod**" and was "inert until `DOPPLER_TOKEN_STG` /
+> `DOPPLER_TOKEN_PRD` are provisioned". Both tokens ARE provisioned, and the staging-first sequence
+> never protected anything: `stg.DATABASE_URL_ADMIN` is byte-identical to `prd`, so **every merged
+> migration has been applied to production twice**. Treat every merged migration as an unrehearsed
+> production write — it must be additive and safe. Collapsing the workflow to a single prod apply
+> and dropping `DOPPLER_TOKEN_STG` is **FOLLOW-873**, deliberately not done here (FOLLOW-878 AC(4):
+> do not do that ticket's work twice).
 
 **Mandatory order:** wizard creates tenant row → `pnpm db:migrate` → verify selector via SELECT.
 

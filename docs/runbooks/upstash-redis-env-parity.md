@@ -105,7 +105,9 @@ predicate (FOLLOW-774).
    the control-plane project.
 3. Redeploy the control-plane (Vercel picks up new env vars only after redeploy).
 4. Re-run Option B / Option C above to verify.
-5. Update Doppler (`--config dev`, `--config staging`, `--config prd`) to match:
+5. Update Doppler (`--config dev`, `--config prd`) to match — **not `--config stg`**: it was
+   byte-identical to `prd` and is retired (ESC-052 RESOLVED 2026-08-07 / FOLLOW-873; corrected here
+   by FOLLOW-878):
    ```bash
    doppler secrets set UPSTASH_REDIS_URL=<url> --project estalara-adaptive-listings --config prd
    doppler secrets set UPSTASH_REDIS_TOKEN=<token> --project estalara-adaptive-listings --config prd

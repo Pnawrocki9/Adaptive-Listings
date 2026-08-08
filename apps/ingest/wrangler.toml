@@ -96,7 +96,23 @@ max_batch_timeout = 5
 name = "estalara-ingest-dev"
 vars = { ENVIRONMENT = "development", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "", MODAL_CHAT_NLP_URL = "http://localhost:8090/chat_nlp_endpoint" }
 
-# Staging environment (auto-deploy on merge to main)
+# "Staging" environment — NOT an environment. A wrangler BUILD/UPLOAD SMOKE target.
+#
+# CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2). This comment
+# previously read "Staging environment (auto-deploy on merge to main)". Both halves
+# were false and had been for the block's entire life:
+#   - There is no staging data plane. CLICKHOUSE_URL is deliberately "" (the no-cred
+#     guard), no KV/DO/queue bindings are declared, and Doppler `stg` carries no
+#     CLICKHOUSE_* at all. This Worker writes zero rows by configuration.
+#   - Nothing auto-deploys. `.github/workflows/deploy-staging.yml` is
+#     `workflow_dispatch`-only and its own header calls itself a bundle/upload smoke.
+#   - `ingest-staging.estalara.com` has NO DNS record (FOLLOW-810, verified live
+#     2026-08-04): it falls through the `*.estalara.com` wildcard to a non-Cloudflare
+#     host presenting a self-signed `CN=TRAEFIK DEFAULT CERT`. A green
+#     `Uploaded`+`Deployed` is the whole signal.
+# Do not add secrets, bindings or a Doppler `stg` reference here expecting isolation:
+# a write to `stg` is a write to production. Enforced by
+# scripts/check-no-staging-plane.sh. See docs/runbooks/INGEST_WORKER_DEPLOY.md §3.
 [env.staging]
 name = "estalara-ingest-staging"
 vars = { ENVIRONMENT = "staging", REDPANDA_REST_URL = "", REDPANDA_TOPIC_EVENTS = "events-staging", CLICKHOUSE_URL = "", CLICKHOUSE_DATABASE = "default", OTEL_EXPORTER_URL = "", OTEL_EXPORTER_HEADERS = "" }

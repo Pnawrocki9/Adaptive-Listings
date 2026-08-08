@@ -27131,40 +27131,59 @@ the llm-gateway job, including its hard-fail contract (a present-but-broken toke
 there is no second skip); (2) `paths:` extended to `apps/intent-engine/**` and
 `apps/data-quality/**`; (3) `estalara-secrets` confirmed to carry `INTERNAL_API_SECRET` + Upstash
 REST creds **pointing at the same Upstash the control-plane reads** (ESC-042 names this specifically
-— an Upstash mismatch is a silent null-read, not an error); (4) `MODAL_CHAT_NLP_URL` set in the
-ingest Worker **staging** env; prod is deferred to FOLLOW-820; (5) `§Snapshot.1` row B.6 corrected
-to `CODE_COMPLETE_OPERATOR_PENDING` with the Rule AA rationale, and the `stream-consumer`
-disposition recorded; (6) proof the chat shadow key populates end-to-end in staging (ESC-042's own
-closure condition); (7) ESC-042 item 1 marked RESOLVED.
+— an Upstash mismatch is a silent null-read, not an error); (4) ~~`MODAL_CHAT_NLP_URL` set in the
+ingest Worker **staging** env~~ **CORRECTED 2026-08-07 by FOLLOW-878 (ESC-052 RESOLVED, CEO option
+2): there is no staging ingest Worker to set it in** — `[env.staging]` has no bindings,
+`ingest-staging.estalara.com` has no DNS record, and Doppler `stg` is byte-identical to `prd`.
+Re-scoped to: set it in the **local** ingest Worker (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`);
+prod is deferred to FOLLOW-820. (This re-scope was previously recorded only in a `QUEUE.md` dispatch
+brief — RETRO-259 §4d DG-1; the stub is the record.) (5) `§Snapshot.1` row B.6 corrected to
+`CODE_COMPLETE_OPERATOR_PENDING` with the Rule AA rationale, and the `stream-consumer` disposition
+recorded; (6) ~~proof the chat shadow key populates end-to-end in staging~~ **CORRECTED 2026-08-07
+by FOLLOW-878: substitute "on the localhost substrate, then in prod"** — ESC-042's own closure
+condition is the traffic axis and there is no staging to prove it on (ESC-052). (7) ESC-042 item 1
+marked RESOLVED — **NOTE (FOLLOW-891/FOLLOW-892, 2026-08-07): the deploy axis is discharged (three
+deployed Modal apps, verified by a freshly executed `modal app list`), the TRAFFIC axis is not.**
+ESC-042's heading still reads "OPEN (narrowed)"; FOLLOW-892 reconciles the three records.
 
 cross_ref: [ESC-042, ESC-036, ESC-017, FOLLOW-458, FOLLOW-635, FOLLOW-346, MASTER_DESIGN §Snapshot.1
 rows A.1/B.6/D, §A.1, Rule AA, Rule M, audit 2026-08-04 F-06]
 
 ---
 
-## FOLLOW-818 — Enable the feedback endpoint in STAGING and prove a real `ab_bandit_weights` delta
+## FOLLOW-818 — Enable the feedback endpoint LOCALLY and prove a real `ab_bandit_weights` delta
+
+> ⚠️ **TITLE AND ACs CORRECTED 2026-08-07 by FOLLOW-878 (ESC-052 RESOLVED, CEO option 2).** This
+> ticket read "in STAGING" and asked for a write to the Doppler `stg` config.
+> **`stg.DATABASE_URL_ADMIN` is byte-identical to `prd`, so executing it as originally written would
+> have flipped `FEEDBACK_ENDPOINT_ENABLED=true` in PRODUCTION** — the exact hazard ESC-052 was filed
+> to stop. Re-scoped to local-only. The re-scope was previously recorded only in a `QUEUE.md`
+> dispatch brief; per FOLLOW-878 AC(3) the durable stub is the record.
 
 source_retro: n/a (Phased Code Audit 2026-08-04 — F-13) source_ticket: FOLLOW-450
 recommended_sprint: now recommended_agent: OPERATOR (Piotr/Rafał; devops-engineer on standby)
 priority: P1 estimated_hours: 2 depends_on: [FOLLOW-816 (needs local/staging traffic to feed the
 loop)] blocks: [FOLLOW-819] promoted_to_queue: true
 
-**This is the staging sibling of FOLLOW-450's operator leg, not a duplicate of it.** FOLLOW-450 is
+**This is the LOCAL sibling of FOLLOW-450's operator leg, not a duplicate of it.** FOLLOW-450 is
 `CODE_COMPLETE_OPERATOR_PENDING` and its `operator_action` block targets **Doppler prd**; that flip
-is now sequenced behind the prod gate (FOLLOW-820). This ticket does the same thing in staging so
-the loop can be validated before prod, which is the entire point of the localhost-first stage.
+is now sequenced behind the prod gate (FOLLOW-820). This ticket does the same thing on the localhost
+substrate so the loop can be validated before prod, which is the entire point of the localhost-first
+stage.
 
 **Verified against HEAD:** `apps/control-plane/src/app/api/adapt/feedback/route.ts:262` —
 `if (process.env.FEEDBACK_ENDPOINT_ENABLED !== 'true')` returns 503. Until it is flipped,
 `ab_bandit_weights` stay at Beta(1,1), Thompson sampling is uniform-random, and **every
 variant-performance claim the product can make is unfounded** — not weak, unfounded.
 
-**AC:** (1) staging Doppler config carries `FEEDBACK_ENDPOINT_ENABLED=true` + `ADAPT_API_KEY` +
-`OPS_TENANT_ID` + `DATABASE_URL_ADMIN`; (2) `doppler run --config stg -- pnpm feedback:canary`
-output **pasted into the ticket close note**, showing a real before/after `ab_bandit_weights` delta
-— a green exit code is not the evidence, the delta is (Rule Q: a gate that can soft-skip must emit
-positive proof its assertion executed); (3) Rule AA — this ticket closes the STAGING axis only;
-FOLLOW-450's prod axis stays open and is discharged by FOLLOW-820.
+**AC (as re-scoped 2026-08-07 — FOLLOW-878 / ESC-052):** (1) the **local** environment carries
+`FEEDBACK_ENDPOINT_ENABLED=true` + `ADAPT_API_KEY` + `OPS_TENANT_ID` + a **local** Postgres
+`DATABASE_URL_ADMIN` (`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md`). **Do NOT write to Doppler `stg`:
+it is byte-identical to `prd` and that write flips production.** (2) `pnpm feedback:canary` run
+against the local stack, output **pasted into the ticket close note**, showing a real before/after
+`ab_bandit_weights` delta — a green exit code is not the evidence, the delta is (Rule Q: a gate that
+can soft-skip must emit positive proof its assertion executed); (3) Rule AA — this ticket closes the
+LOCAL axis only; FOLLOW-450's prod axis stays open and is discharged by FOLLOW-820.
 
 cross_ref: [FOLLOW-450, FOLLOW-553, ADR-0015, FOLLOW-820, Rule AA, Rule Q, audit 2026-08-04 F-13]
 
@@ -27204,10 +27223,15 @@ asked. Grounding for the design: `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §9.
 observably adapted DOM (hop 10); (3) a logged `adaptation_decisions` row carrying `score_function`
 from FOLLOW-560, so cosine-vs-djb2 is distinguishable — without this the test cannot tell real
 ranking from a stable hash shuffle; (4) a feedback-driven `ab_bandit_weights` delta (hop 12, via
-FOLLOW-818); (5) a lift number computed from real staging rows by the existing analytics path, not a
-fixture. (6) The test runs in CI against the FOLLOW-816 environment, or — if that is not yet
-automatable — a documented manual runbook with pasted evidence, explicitly labelled as manual (Rule
-Q: do not let a soft-skip masquerade as a pass).
+FOLLOW-818); (5) a lift number computed from real rows **produced by the localhost substrate** by
+the existing analytics path, not a fixture. **CORRECTED 2026-08-07 by FOLLOW-878 (ESC-052 RESOLVED,
+CEO option 2):** this AC said "real staging rows", which was unexecutable — there is no staging
+ClickHouse (Doppler `stg` has no `CLICKHOUSE_*`) and no staging Postgres distinct from prod. See
+`docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §7. Note also FOLLOW-879 / Rule S count-2: the
+`adaptation_decisions` writer is `apps/control-plane`, which the FOLLOW-816 substrate did **not**
+bring up — AC(3) needs it running. (6) The test runs in CI against the FOLLOW-816 environment, or —
+if that is not yet automatable — a documented manual runbook with pasted evidence, explicitly
+labelled as manual (Rule Q: do not let a soft-skip masquerade as a pass).
 
 **Honest scope note:** this is the exit test for the localhost stage, and it is allowed to FAIL. A
 red result here is a successful outcome for this ticket — it is the first real measurement the
@@ -27243,7 +27267,13 @@ it.
    moment behavioral profiling starts on real subjects under a disclosure that is currently
    defective in two ways (Art. 7(1) hash, Art. 7(3) withdrawal).
 3. **FOLLOW-817 deployed to the prod Modal env** with `MODAL_CHAT_NLP_URL` set in the prod ingest
-   Worker.
+   Worker. **UPDATED 2026-08-07 (FOLLOW-878 + FOLLOW-891):** the Modal deploy half is **DONE** — a
+   freshly executed `modal app list --json` returns three deployed apps including
+   `estalara-intent-engine` (`ap-MpUyBq9gCwO5sL79w6X46y`, 2026-08-07 21:43 CEST). What remains is
+   `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker **and the traffic proof** (a `chat_intent`
+   shadow key populated end-to-end — ESC-042's own closure condition, still unmet; FOLLOW-892).
+   There is no staging step in between: ESC-052 (CEO option 2) retired the idea of one, so this gate
+   is the FIRST time any of it runs against a real backend. Weigh it accordingly.
 4. **FOLLOW-450's prod operator leg** flipped (`FEEDBACK_ENDPOINT_ENABLED=true` in Doppler prd) with
    a pasted real weight delta.
 
@@ -31332,3 +31362,71 @@ cross_ref: [RETRO-261 §4b CB-3 / §5 item 1 / §6 P-41; FOLLOW-817; FOLLOW-894;
 ESC-044 (precedent: an unverifiable credential/attestation claim);
 `docs/runbooks/OPERATOR_SESSION_2026-07-12.md:45`; `docs/runbooks/MODAL_PROD_STANDUP.md §5`; memory
 `project_admin_db_url_pooler_28p01`]
+
+---
+
+## FOLLOW-896 — The staging-plane residual: five artefacts FOLLOW-878 exempted rather than corrected, each because the correction is a decision or app-code surgery
+
+source_retro: n/a (filed by the FOLLOW-878 devops-engineer, session 105, to discharge Rule S as
+amended 2026-08-07 — an exemption is a filed number, never prose) source_ticket: FOLLOW-878
+recommended_sprint: next recommended_agent: devops-engineer (items 1-2, 5) + backend-engineer
+(item 3) priority: P3 estimated_hours: 2 depends_on: [FOLLOW-873] blocks: [] promoted_to_queue:
+false **FROZEN** — session-95 standing rule (P3).
+
+**This ticket exists so that "left as historical" is never the whole justification.** FOLLOW-878
+swept the staging plane after ESC-052 (RESOLVED, CEO option 2) and corrected 21 artefacts. Five were
+deliberately NOT corrected. Each reason is recorded here with a number attached, so the residual is
+tracked work rather than an omission.
+
+1. **`infra/terraform/cloudflare/variables.tf:18-23`** — `environment` still **defaults to
+   `"staging"`** and its `validation` enum still accepts `staging`. A bare `terraform plan`
+   therefore plans a staging-named DNS/Worker set for a plane that does not exist. NOT changed by
+   FOLLOW-878 because it is entangled with the record-naming decision **FOLLOW-810 left explicitly
+   open** (`dns.tf` names the decision-API record `api`/`api-<env>` while both `wrangler.toml` files
+   bind `decision.estalara.com`; applying as written creates hostnames the Worker routes do not
+   match). Deciding the default without deciding the naming would bake in the wrong one. Annotated
+   in place.
+2. **`packages/shared/src/domains.ts:79-81`** — `INGEST_STAGING_DOMAIN`,
+   `DECISION_API_STAGING_DOMAIN`, `CDN_STAGING_DOMAIN` are **dead exports**: zero consumers
+   repo-wide (`grep -rn <name> apps packages scripts infra` = 0 outside the declaring file) naming
+   hosts with no DNS record. Deleting exports from a shared package is app-code surgery outside a
+   docs/infra sweep, and it interacts with the Rule I allowlist work (FOLLOW-821). Annotated in
+   place.
+3. **`apps/ingest/src/origin-gate.ts:64` + `apps/ingest/src/observability.ts:31`** — both branch on
+   `ENVIRONMENT === 'staging'` as a live runtime value. These are **not false claims** (the upload
+   smoke really does set `ENVIRONMENT = "staging"`), so FOLLOW-878 left the code alone. Worth a
+   decision anyway: if `[env.staging]` is ever deleted, these branches become unreachable.
+4. **Dated historical records** — `docs/AUDIT-2026-06-19.md`,
+   `docs/audits/RUNTIME_READINESS_AUDIT.md`, `docs/decisions/DECISIONS_2026-05-18_v2.md`,
+   `docs/ai-council/CHECKPOINT_2026-05-24_SPRINT_12.md`, `docs/adr/ADR-0012`, `docs/adr/ADR-0017`,
+   `docs/compliance/dpia.md` and `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` revision rows, plus
+   every `staging` mention in `backlog/RETROSPECTIVES.md` / `backlog/ESCALATIONS.md`. **Left
+   verbatim on purpose** (the FOLLOW-887 precedent: annotate a dated snapshot, never rewrite it),
+   and excluded from the `scripts/check-no-staging-plane.sh` corpus for the same reason — a gate
+   that forced them to change would be a gate that rewrites history. **One item here is NOT purely
+   historical and should be checked first:** `docs/compliance/dpia.md` — if it asserts an
+   environment separation as a current control, that is a compliance claim, not a record of an
+   epoch.
+5. **`infra/clickhouse/README.md:97`, `infra/clickhouse/scripts/migrate.sh:22`,
+   `infra/clickhouse/profiles.yml.example:19`, `infra/observability/otel-collector.yaml:56`,
+   `infra/terragrunt.hcl:61`, `infra/README.md:153`** — enumerate `staging` as one of the
+   environments in comments/examples. Cheap to correct, but they sit in files whose surrounding
+   claims FOLLOW-878 did not verify, and correcting a list without verifying its neighbours is how
+   the "correction stops one document short" class (Rule AI) reproduces.
+
+**AC:** (1) items 1-3 and 5 either corrected or re-exempted with a fresh reason and a date; (2) item
+1 only after the FOLLOW-810 naming decision, and it must state the ruling it acted on; (3) item 4's
+`dpia.md` line checked specifically for a live-control claim and escalated if it makes one; (4) if
+any item is corrected, `scripts/baselines/staging-plane.register` is updated in the SAME PR — the
+gate fails on a vanished line by design; (5) no "the repo is now clean" claim: publish the
+adjudicated hit list (Rule AI amendment 2026-08-07, clause 2).
+
+cross_ref: [FOLLOW-878; FOLLOW-873; FOLLOW-810 (the open `api` vs `decision` naming decision);
+FOLLOW-821 (Rule I allowlist); ESC-052 (RESOLVED, option 2); Rule S amendment 2026-08-07; Rule AI
+amendment 2026-08-07 clause 2; `scripts/check-no-staging-plane.sh`;
+`scripts/baselines/staging-plane.register`]
+
+<!-- next free FOLLOW number: 897 — updated 2026-08-07 by the FOLLOW-878+891 devops-engineer.
+FOLLOW-896 was allocated from the dispatch brief ("next free stub is FOLLOW-896") and filed to
+discharge Rule S as amended: the five staging-plane artefacts FOLLOW-878 exempted now carry a
+number instead of prose. -->

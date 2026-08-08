@@ -131,13 +131,16 @@ All secrets require a PR + peer review before being added to Doppler. The proces
 1. **Open a PR** describing the new secret: its name, which service needs it, what it controls, and
    its sensitivity level (public, internal, secret, restricted).
 2. **Get approval** from at least one other team member.
-3. **Add the secret** to Doppler (all three configs — dev, staging, prod — unless it genuinely only
-   applies to one):
+3. **Add the secret** to Doppler (`dev` and `prd` — unless it genuinely only applies to one):
    ```bash
    doppler secrets set MY_NEW_SECRET --project estalara-adaptive-listings --config dev
-   doppler secrets set MY_NEW_SECRET --project estalara-adaptive-listings --config staging
-   doppler secrets set MY_NEW_SECRET --project estalara-adaptive-listings --config prod
+   doppler secrets set MY_NEW_SECRET --project estalara-adaptive-listings --config prd
    ```
+   > ⚠️ **CORRECTED 2026-08-07 (FOLLOW-878 / ESC-052 RESOLVED, CEO option 2).** This step used to
+   > say "all three configs — dev, staging, prod" and shipped a `--config staging` line. **Do not
+   > write to `stg`.** `stg.DATABASE_URL_ADMIN` was verified byte-identical to `prd` (same sha256
+   > over the whole URL, same user/host/database), so a write to `stg` is a write to **production**.
+   > The `stg` config is retired by FOLLOW-873.
 4. **Update `.env.example`** with the variable name and a one-line description (no value). Open a
    follow-up commit in the same branch.
 5. **Update any service** that consumes the new secret (usually covered by the feature ticket that
@@ -224,8 +227,8 @@ and re-run `bash scripts/doppler-bootstrap.sh`.
 ### Secret is present in Doppler but not visible in the process
 
 Check which config is active: `doppler configure`. Make sure it matches the environment you expect
-(`dev`, `staging`, or `prod`). If you recently added the secret, wait a few seconds for Doppler's
-CDN to propagate.
+(`dev` or `prd`; `stg` is retired — ESC-052 / FOLLOW-873). If you recently added the secret, wait a
+few seconds for Doppler's CDN to propagate.
 
 ### CI `doppler-verify` job fails
 

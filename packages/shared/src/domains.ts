@@ -75,6 +75,15 @@ export const DETECT_SERVE_URL = `${CONTROL_PLANE_URL}/estalara-detect.iife.js` a
 /**
  * Staging subdomain prefixes follow the pattern: <service>-staging.estalara.com
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
+ *
+ * ⚠️ NOTE (FOLLOW-878, 2026-08-07 / ESC-052 RESOLVED, CEO option 2): these three
+ * constants describe hostnames that have NO DNS record (verified live 2026-08-04,
+ * FOLLOW-810 — they fall through the `*.estalara.com` wildcard to a non-Cloudflare
+ * host presenting a self-signed `CN=TRAEFIK DEFAULT CERT`) and they have ZERO
+ * consumers in the repo (`grep -rn INGEST_STAGING_DOMAIN apps packages scripts infra`
+ * = 0 outside this file). They are kept, not deleted, because deleting exports from
+ * a shared package is app-code surgery outside this docs/infra sweep; deletion is
+ * filed as FOLLOW-896.
  */
 export const INGEST_STAGING_DOMAIN = 'ingest-staging.estalara.com' as const;
 export const DECISION_API_STAGING_DOMAIN = 'decision-staging.estalara.com' as const;

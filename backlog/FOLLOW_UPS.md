@@ -32061,6 +32061,10 @@ source_retro: n/a (FOLLOW-849, session 106) source_ticket: FOLLOW-849 recommende
 recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
 promoted_to_queue: false
 
+**PM UPDATE (session 108, 2026-08-09): BUILT — PR #707, CI-verified `exit 0`.** Sixth non-blocking
+guard in `pre-bash-guard.sh`; harness extended 18 → 37 assertions; red-first against the pre-910
+hook = 6 failures. AC(1) mechanism: extend the existing hook, not a new matcher.
+
 **Found by the FOLLOW-849 worker about its own session, and re-verified by the PM.**
 `.claude/settings.json`'s `PreToolUse` matchers are:
 
@@ -32368,6 +32372,10 @@ file); Rule AS]
 
 source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
 devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**PM UPDATE (session 108, 2026-08-09): BUILT — PR #706, CI-verified `exit 0`.** All three
+perturbations were green under `.exists()` and are red now; the `artifact` FIELD is gone, replaced
+by `external_control` (property + predicate) per AC(3). Self-test 25 cases (was 21).
 
 **PR #700's two tickets are tied together in the artefact by residual `R-F1`, whose predicate is
 `(repo_root / "scripts/check-modal-container-effect.py").exists()`

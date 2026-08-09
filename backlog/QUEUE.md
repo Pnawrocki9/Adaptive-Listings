@@ -12,6 +12,8 @@ nothing was stranded, `.claude/worktrees/` was empty and no `claude --agent` pro
 | -------- | ---------- | ---------------- | ------------------------------------------- |
 | **#704** | FOLLOW-918 | READY_FOR_REVIEW | 91 runs, 46/46 registered present, `exit 0` |
 | **#705** | FOLLOW-925 | READY_FOR_REVIEW | 47 runs, 47/47 registered present, `exit 0` |
+| **#706** | FOLLOW-919 | READY_FOR_REVIEW | 90 runs, `exit 0`                           |
+| **#707** | FOLLOW-910 | READY_FOR_REVIEW | 91 runs, `exit 0`                           |
 
 Only failure on either is `Rule I — wired-or-dead check`, the documented pre-existing-red gate,
 dynamically classified against `main`'s own baseline. **#705 is stacked on #704's branch** because
@@ -73,16 +75,47 @@ also matched `retired_disclosure13_1:`, so retiring a key by prefixing it left t
 cases failed on the first run. **Same asymmetry FOLLOW-919 found a day earlier: deletion is the
 shape nobody performs; renaming is the shape people use.**
 
+### FOLLOW-919 and FOLLOW-910 — both DONE, both independent of the stack
+
+**#706 (FOLLOW-919)** — `R-F1` asserted the effect probe `.exists()`. Measured on identical
+fixtures: probe truncated to zero bytes → **green**; one invocation site deleted → **green**;
+invocation left only in a comment → **green**. All three are red now, the wired control stays green.
+The register's `artifact: str` FIELD is replaced by `external_control` (a described property plus a
+predicate), because an artefact-kind residual claims a hole is closed by another control and a
+filename is not evidence of that. Self-test 25 cases (was 21).
+
+**#707 (FOLLOW-910)** — a sixth, non-blocking guard inside `pre-bash-guard.sh`. `sed -i`, heredoc
+redirects, `tee` and interpreter heredocs are now seen; the whole false-positive surface AC(3) named
+is proven silent by eight fixtures. Harness extended 18 → **37 assertions**. Red-first against the
+pre-910 hook: **6 failures**, with F and G passing on both — the old guard was silent everywhere.
+**`pre-bash-guard.sh` had five blocking rules and ZERO test coverage before this**; G1/G2 and the
+shellcheck job now cover it.
+
+**The bug caught in smoke testing, before the fixtures:** a `sed` SCRIPT (`s/a/b/`) contains a
+slash, so the first target filter collected it as a path — making every `sed -i` warn, **including
+on the exempt backlog files the exemption list exists to silence.** A guard whose first behaviour is
+to cry wolf on the pm's own routine edits would have been dead on arrival.
+
+### The FOLLOW-915 implementation half is deliberately NOT started, and this is the reasoning
+
+It is next in value, and it is the one thing here that would have to route around its own gate.
+FOLLOW-925's whole purpose is that the countersign's three binding conditions gate that PR; the gate
+lives in **#705, unmerged**. Building the implementation now means either stacking it three deep on
+two unreviewed PRs — where any change Piotr asks for on #704 churns the whole tower — or landing the
+estate's **highest-stakes surface** (the consent path, with a documented history of shipped consent
+defects) **ungated by the control built specifically to gate it**. Neither is worth the day saved.
+**It starts the moment #704 and #705 merge.**
+
 ### Next, in order
 
-1. **Piotr merges #704, then #705.** Order is load-bearing.
-2. **FOLLOW-915 implementation half** (`sdk-engineer`) to ADR-0021 §D2–D4/D7–D8 — now gated by a
-   real consumer. Copy §D7's interface obligations into the ticket, and require
+1. **Piotr merges #704, then #705.** Order is load-bearing. #706 and #707 are independent and can
+   merge in any order, before or after.
+2. **FOLLOW-915 implementation half** (`sdk-engineer`) to ADR-0021 §D2–D4/D7–D8 — gated by a real
+   consumer once #705 lands. Copy §D7's interface obligations into the ticket, and require
    `packages/sdk/src/index.ts:313-337`'s rationale block to cite ADR-0021.
-3. **FOLLOW-919** (the effect probe asserts existence, not invocation), **FOLLOW-910** (the branch
-   guard is blind to Bash-shaped edits — this session made every file change through Bash again).
-4. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and headroom is re-measured.
-5. **RETRO-264 is owed #704 and #705** — the retro loop is a mandatory step 6.
+3. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and headroom is re-measured.
+4. **RETRO-264 is owed #704, #705, #706 and #707** — the retro loop is a mandatory step 6, and three
+   of those four PRs changed controls the PM validates with.
 
 **Observation worth a stub, not filed to avoid inventing scope:** `intent-weights-live-smoke.yml`'s
 push branch list names three agent prefixes out of nine. Stale relative to the roster.
@@ -90,7 +123,7 @@ push branch list names three agent prefixes out of nine. Stale relative to the r
 **Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page
 (ESC-055). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs. 0 decisions pending.**
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 4 open PRs. 0 decisions pending.**
 
 ---
 

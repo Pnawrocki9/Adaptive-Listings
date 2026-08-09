@@ -107,6 +107,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -126,6 +127,63 @@ REGISTRY: dict[str, str] = {
 }
 
 DEPLOY_WORKFLOW = ".github/workflows/modal-deploy.yml"
+
+# ── The EFFECT-axis complement, and what "it is in place" means (FOLLOW-919) ─────────────
+# R-F1 originally asserted `Path("scripts/check-modal-container-effect.py").exists()`.
+# Measured: probe DELETED -> caught; probe TRUNCATED TO ZERO BYTES -> "OK [R-F1] covered",
+# exit 0. Deletion is the shape nobody performs; un-wiring is the shape that happens —
+# removing the three invocation sites leaves the file on disk and this register green while
+# the estate's only effect axis for two of three Modal apps is gone.
+EFFECT_PROBE = "scripts/check-modal-container-effect.py"
+# Every workflow step that CLAIMS to run the probe, with the app selector it must carry.
+# Parsed, never imported or executed: the whole value of R-F1 is that the description-axis
+# and effect-axis controls are INDEPENDENT (FOLLOW-919 AC(4)).
+EFFECT_PROBE_CALLERS: tuple[tuple[str, str], ...] = (
+    (".github/workflows/modal-deploy.yml", "--app llm-gateway"),
+    (".github/workflows/modal-deploy.yml", "--app intent-engine"),
+    (".github/workflows/cron-heartbeat.yml", "--app all"),
+)
+
+
+def _invokes_effect_probe(text: str, selector: str) -> bool:
+    """True if an un-commented `run:` step invokes the probe with *selector*.
+
+    A comment mentioning the probe, and the `paths:` filter entry that merely names the
+    file, must not count — the same discipline case W2 already applies to `modal deploy`.
+    """
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("#"):
+            continue
+        if "run:" in line and EFFECT_PROBE in line and selector in line:
+            return True
+    return False
+
+
+def _effect_probe_wiring(repo_root: Path) -> list[str]:
+    """Problems with the effect-axis control being IN PLACE. Empty list == satisfied."""
+    probe = repo_root / EFFECT_PROBE
+    if not probe.is_file():
+        return [f"{EFFECT_PROBE} does not exist"]
+    text = probe.read_text(encoding="utf-8", errors="replace")
+    problems: list[str] = []
+    if "--app" not in text:
+        problems.append(
+            f"{EFFECT_PROBE} exists ({len(text)} bytes) but does not declare the `--app` "
+            "selector every caller passes it — a truncated or gutted probe is not a control"
+        )
+    for workflow, selector in EFFECT_PROBE_CALLERS:
+        path = repo_root / workflow
+        if not path.is_file():
+            problems.append(f"{workflow}: not found — cannot verify it still invokes {EFFECT_PROBE}")
+            continue
+        if not _invokes_effect_probe(path.read_text(encoding="utf-8"), selector):
+            problems.append(
+                f"{workflow}: no un-commented `run:` step invokes {EFFECT_PROBE} with "
+                f"'{selector}' — the file may still be on disk, but nothing runs it"
+            )
+    return problems
+
 _DEPLOY_RE = re.compile(r"modal\s+deploy\s+(\S+\.py)")
 _STEP_RE = re.compile(r"^-\s+(name|uses|id)\s*:")
 _PYTHONPATH_RE = re.compile(r"^PYTHONPATH\s*:\s*(\S+)")
@@ -141,21 +199,40 @@ _DECLARES_EVERYTHING = "*"
 
 # ── Residual register (Rule AP — machine-checked, printed, self-test-covered) ────────────
 @dataclass(frozen=True)
+class ExternalControl:
+    """A residual whose closure lives in a DIFFERENT control, asserted as a PROPERTY.
+
+    ``describe`` states the property in words; ``probe`` asserts it and returns the
+    problems found (empty == satisfied).
+
+    A PATH is deliberately not accepted here. R-F1 shipped as
+    ``artifact="scripts/check-modal-container-effect.py"``, i.e. ``.exists()`` — and a
+    probe truncated to zero bytes, or one whose every invocation site had been deleted,
+    left this register printing "OK [R-F1] covered" while the estate's only effect axis
+    for two of three Modal apps was gone (FOLLOW-919). An artefact-kind residual asserts
+    that a control IS IN PLACE, and a filename is not evidence of that.
+    """
+
+    describe: str
+    probe: Callable[[Path], list[str]]
+
+
+@dataclass(frozen=True)
 class Residual:
     """One thing this gate does NOT assert, with the proof that the hole is real.
 
-    Exactly one of ``self_test_case`` / ``artifact`` must be set:
+    Exactly one of ``self_test_case`` / ``external_control`` must be set:
       * ``self_test_case`` — a case id in ``_self_test`` that executes the shape and
         asserts its verdict (including ``exit 0`` for a deliberately open hole).
-      * ``artifact`` — a repo-relative path that must exist, for a residual whose closure
-        lives in a different control rather than in a code path this gate can exercise.
+      * ``external_control`` — for a residual whose closure lives in a different control
+        rather than in a code path this gate can exercise.
     """
 
     rid: str
     title: str
     verdict: str
     self_test_case: str | None = None
-    artifact: str | None = None
+    external_control: ExternalControl | None = None
 
 
 RESIDUALS: tuple[Residual, ...] = (
@@ -220,8 +297,14 @@ RESIDUALS: tuple[Residual, ...] = (
             "passing while every container dies is possible and that is the whole point "
             "of shipping both."
         ),
-        verdict="not executable here — the complementary control must EXIST on disk",
-        artifact="scripts/check-modal-container-effect.py",
+        verdict="not executable here — the complementary control must be WIRED, not merely present",
+        external_control=ExternalControl(
+            describe=(
+                f"{EFFECT_PROBE} is invoked by every workflow that claims to run it "
+                f"({len(EFFECT_PROBE_CALLERS)} sites) and still declares the `--app` selector"
+            ),
+            probe=_effect_probe_wiring,
+        ),
     ),
 )
 
@@ -506,7 +589,7 @@ def print_residuals() -> None:
         covered = (
             f"self-test case {residual.self_test_case}"
             if residual.self_test_case
-            else f"artefact {residual.artifact}"
+            else f"external control — {residual.external_control.describe}"
         )
         print(f"  [{residual.rid}] {residual.verdict}  ({covered})")
         print(f"        {residual.title}")
@@ -908,23 +991,87 @@ def _self_test() -> int:  # noqa: PLR0915 - one linear script of cases, delibera
             1,
         )
 
+    # ── FOLLOW-919: R-F1 asserts WIRING, not a filename ────────────────────────────────
+    # Every case below returned "OK [R-F1] covered" under the previous `.exists()`
+    # predicate. F1-TRUNCATED is the exact perturbation RETRO-263 measured: the probe cut
+    # to zero bytes while the register stayed green.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def _wire(probe_body: str, *, drop: tuple[str, str] | None = None,
+                  comment_only: tuple[str, str] | None = None) -> None:
+            """Build a repo where the probe is wired, minus whatever is dropped."""
+            _write(root / EFFECT_PROBE, probe_body)
+            steps: dict[str, list[str]] = {w: [] for w, _ in EFFECT_PROBE_CALLERS}
+            for caller in EFFECT_PROBE_CALLERS:
+                workflow, selector = caller
+                if caller == drop:
+                    continue
+                prefix = "# " if caller == comment_only else ""
+                steps[workflow].append(
+                    f"      - name: effect probe\n"
+                    f"        {prefix}run: python3 {EFFECT_PROBE} {selector} --attempts 3\n"
+                )
+            for workflow, lines in steps.items():
+                _write(root / workflow, "".join(lines) or "      - name: unrelated\n        run: true\n")
+
+        probe = "parser.add_argument('--app', choices=('intent-engine', 'llm-gateway', 'all'))\n"
+
+        _wire(probe)
+        cases.expect(
+            "F1-OK",
+            "R-F1: a fully wired effect probe satisfies the external control",
+            1 if _effect_probe_wiring(root) else 0,
+            0,
+        )
+
+        _wire(probe, drop=EFFECT_PROBE_CALLERS[2])
+        cases.expect(
+            "F1-UNWIRED",
+            "R-F1: probe on disk but cron-heartbeat no longer invokes it",
+            1 if _effect_probe_wiring(root) else 0,
+            1,
+        )
+
+        _wire("")
+        cases.expect(
+            "F1-TRUNCATED",
+            "R-F1: probe truncated to zero bytes (was 'OK [R-F1] covered', exit 0)",
+            1 if _effect_probe_wiring(root) else 0,
+            1,
+        )
+
+        _wire(probe, comment_only=EFFECT_PROBE_CALLERS[0])
+        cases.expect(
+            "F1-COMMENT",
+            "R-F1: an invocation that survives only inside a COMMENT is not an invocation",
+            1 if _effect_probe_wiring(root) else 0,
+            1,
+        )
+
     # ── Rule AP: every residual must be executable or artefact-backed ───────────────────
     print("=== Residual coverage (Rule AP) ===")
     executed = set(cases.executed)
     repo_root = _repo_root()
     for residual in RESIDUALS:
-        if bool(residual.self_test_case) == bool(residual.artifact):
+        if bool(residual.self_test_case) == bool(residual.external_control):
             print(f"SELF-TEST FAIL: residual {residual.rid} must set exactly one of "
-                  "self_test_case / artifact")
+                  "self_test_case / external_control")
             cases.failed = True
         elif residual.self_test_case and residual.self_test_case not in executed:
             print(f"SELF-TEST FAIL: residual {residual.rid} names self-test case "
                   f"'{residual.self_test_case}', which did not execute")
             cases.failed = True
-        elif residual.artifact and not (repo_root / residual.artifact).exists():
-            print(f"SELF-TEST FAIL: residual {residual.rid} names artefact "
-                  f"'{residual.artifact}', which does not exist")
-            cases.failed = True
+        elif residual.external_control:
+            problems = residual.external_control.probe(repo_root)
+            if problems:
+                print(f"SELF-TEST FAIL: residual {residual.rid}'s external control is not in "
+                      f"place — {residual.external_control.describe}")
+                for problem in problems:
+                    print(f"    - {problem}")
+                cases.failed = True
+            else:
+                print(f"OK [{residual.rid}] covered")
         else:
             print(f"OK [{residual.rid}] covered")
 

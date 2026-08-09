@@ -3613,3 +3613,56 @@ this file were permission-blocked in session 61; folded in by the RETRO-225 run,
   worker nor RETRO-230 nor I looked there until the repo-wide P-16 scan the PM explicitly asked for.
   **Before filing a fix-the-symptom follow-up, grep the repo for a sibling that does not have the
   problem; the structural answer is often already a precedent rather than a proposal.**
+
+## 2026-08-09 · RETRO-264 (#704/#705/#706/#707/#708/#709)
+
+**A finding I almost missed and why.** The P0. I had already written "consent text is
+byte-identical, only transport changed — nothing to report" in my head, because the brief told me so
+and it was true. The transport is where the whole ticket lives, and I nearly treated "transport
+unchanged in content" as "transport verified." What broke it open was one habit: when a new URL
+constant appears, resolve it to a literal and compare it to the origin the consumer actually runs
+on. `CONTROL_PLANE_URL` = `admin.estalara.com`; the SDK runs on `app.estalara.com`; the repo's own
+`CORS_PROD_ORIGINS` constant existed to prove those are different origins. **The mitigating fact I
+went looking for (`sdk.js` is served from the same place and works) was the trap** — `<script src>`
+is not `fetch()`, and the ADR had made exactly that substitution in its rationale. Next time: for
+any NEW cross-origin `fetch()`, the precedent I reach for must be another `fetch()`, never a
+`<script>`/`<img>`/`<link>`.
+
+**An axis/chain I had to trace twice.** The byte budget. First pass I measured with
+`gzip -c | wc -c`, got 41,575, saw it match `docs/INTERFACES.md` exactly, and nearly wrote
+"INTERFACES.md is right, QUEUE.md is wrong." Then I ran the gate itself and got 41,652 — **neither
+record**. Three honest measurements of one file, spread over 164 bytes, because three people used
+three tools. **The lesson is not "measure"; it is "measure with the instrument that enforces the
+thing."** A number without its instrument is not a measurement. I now treat any byte/size/count
+figure in a doc as unverified until I have run the _enforcing_ artefact, not a plausible equivalent
+— and the retro should print the instrument in the same sentence as the number.
+
+**A meta-pattern in how gaps recur across agents.** Two shapes, and they compound. (1) **A lesson is
+applied to the file being written and not to the file next to it.** #709's new schema cites
+FOLLOW-273 ("never restate the canonical language union") and honours it — while
+`events/consent.ts:28`, two directories away, has restated that union minus `es` the whole time.
+Session 109 named this shape ("applying a lesson to the instance that taught it is not applying the
+lesson") for the DPIA fixture and did not sweep for siblings. **My own correction: when a PR's
+docstring cites a rule by number, grep the repo for other violations of that same rule in the same
+PR's blast radius. It cost one grep and produced a P1.** (2) **A test double that supplies the
+property production omits converts a P0 into 28/28 green.** Rule L has governed this since
+RETRO-075, RETRO-077 found it with a fabricated server contract, and it landed again here on a
+compliance surface. The tell is syntactic and greppable: a mock/route handler that sets a **response
+header** rather than a body. Bodies are usually copied from something real; headers are almost
+always invented at the keyboard. **New habit: in any wiring audit, grep the PR's test diff for
+`headers:` and ask, for each one, which production artefact emits it.**
+
+**On auditing my own instruments, third retro running.** The thing that worked was refusing to
+accept "the gate is green" as evidence about the gate. Three of my four hard findings came from
+_executing_ something — `check-rule-i.sh` (192, and no consent symbol in the list), the ADR-0021
+`--self-test` (13/13, so the fix is real), and a full SDK build (the byte figures). The one I did
+NOT need to execute — the CORS gap — came from reading a constant to its literal value. **Neither is
+the "read the diff" mode, and the diff would not have surfaced either.**
+
+**Refusal worth recording.** I declined to promote a rule, twice, and both refusals were the correct
+output. Every pattern this merge produced already has a rule (L, AO, AM); promoting a fourth would
+have been noise, and the interesting finding is precisely that **Rule AM was violated by a gate
+written after Rule AM existed** — which is an argument for making a rule executable, not for writing
+another one. And on the brief's fusion question, the honest answer was "no, and here is why fusing
+them yields an unfalsifiable rule." **A retro that promotes nothing but explains exactly why is
+doing the ledger's job.**

@@ -1,5 +1,76 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 IN_PROGRESS. `main` = `31cab8b4`, clean, **0 open PRs.**
+
+**Opening state, verified not assumed:** `main` `31cab8b4`, working tree clean, 0 open PRs, 0
+worktrees, 0 live `claude --agent` processes, 0 tickets IN_PROGRESS. Session 109 merged #708
+(FOLLOW-928 docs), #709 (FOLLOW-915 impl), #710 (FOLLOW-929 P0 CORS), #711 (FOLLOW-931 `es` locale).
+RETRO-264 is filed over #704-#709.
+
+### ESC-056 FILED — the `es` consent-drop count is UNMEASURABLE, and the failed query looks like good news
+
+FOLLOW-931's AC(4) could not close and it is not a code gap. `ingest_worker` holds
+`INSERT, ALTER DELETE` on `default.events` and **no `SELECT`** (`SHOW GRANTS` verified; `SELECT 1`
+succeeds, so this is a grant boundary, not an outage). **A first attempt returned an EMPTY body that
+reads exactly like "zero `es` consent events in production" — it was access-denied.** An unreadable
+table and an empty table are indistinguishable from the caller, and the failure direction is toward
+a false all-clear. Per Rule AT the remediation premise is **UNVERIFIED, not zero**. Filed as
+**ESC-056** (options: read-only grant / one console query / explicit DPO-owned disclosure of the
+gap; recommendation is grant-then-query). **Any query run must carry a positive control** — an `en`
+count in the same statement — so a zero for `es` is distinguishable from an unreadable table.
+Non-blocking for dispatch; blocking for any claim about the size of the gap.
+
+### Dispatched: FOLLOW-932 (sdk-engineer, Sonnet) — the headroom records
+
+**Picked on priority rule (a): it is the only ready ticket that declares `blocks:`** — FOLLOW-913
+(P1) and FOLLOW-898 (P1) both scope against the number it corrects. Three of its six ACs are already
+discharged by session 109 (`docs/INTERFACES.md` and the QUEUE/FOLLOW-915 records now carry **1,356
+B** measured with `zlib.gzipSync`); **the open ones are AC(3), AC(5), AC(6) and the FOLLOW-913/898
+scope lines in AC(4)**, and the worker is briefed to verify each rather than redo it.
+
+Sequencing note, and it is the reason this goes before FOLLOW-913 rather than after: **AC(6) — make
+`check-bundle-size.js` print bytes and headroom, not two decimal places of KB — is the instrument
+FOLLOW-913's own AC(5) needs.** Every wrong number in RETRO-264 DG-1 exists because the gate reports
+KB and somebody needed bytes. Fixing the instrument before the next ticket has to read it is worth
+one hour. It also keeps two bundle-touching SDK tickets from racing on a 1,356-byte budget.
+
+### Ticket status
+
+| ticket     | status          | agent        | branch                                     | started    |
+| ---------- | --------------- | ------------ | ------------------------------------------ | ---------- |
+| FOLLOW-932 | **IN_PROGRESS** | sdk-engineer | `sdk-engineer/FOLLOW-932-headroom-records` | 2026-08-09 |
+
+### Next, in order, after FOLLOW-932
+
+1. **FOLLOW-913** (P1, CEO-ruled ESC-054) — description axis to `signal_count >= 5`. Unblocked;
+   scope against **1,356 bytes**, and its AC(1) adds a new named constant, so measure with
+   `@estalara/shared` rebuilt too.
+2. **FOLLOW-898** (P1) — the unfaithful `intent-snapshot.test.ts` replica.
+3. **FOLLOW-933** (P2, devops) — Rule AM has no executable consumer; the sharpest RETRO-264 stub.
+4. **FOLLOW-930** (P2) — `text_version` is produced, documented as an audit trail, read by nothing.
+   Touches the same event payload as FOLLOW-931; sequence after it (931 is merged, so it is clear).
+5. **FOLLOW-928** (P1) — fail loud on a missing `data-privacy-url`, or is the runbook the whole
+   control? "An operator step nothing checks" is the 658/659/660 class.
+6. **FOLLOW-934** (P3, devops) — the branch-prefix drift that de-registered a real gate.
+
+**Waiting on a human, none blocking dispatch:** Rafał — publish one anonymous listing page (ESC-055;
+unblocks FOLLOW-914/907). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker (ESC-042
+item 1). Piotr — ESC-056 above. ESC-020 (Wave-0 Step 6) remains OPEN and non-blocking-for-dispatch
+per the FOLLOW-820 gate: the stage is localhost-first testing, not a stalled pilot.
+
+**Counters: 0/5 CI, 0/3 fix (FOLLOW-932). 1 ticket IN_PROGRESS. 0 open PRs. Next free escalation
+ESC-057; next free FOLLOW-935.**
+
+**Traps carried into this session, all cost CI round-trips on 2026-08-09:** commitlint rejects an
+upper-case-initial subject and `[ESC-NNN]` refs · `lefthook.yml` pre-commit is `parallel: true` so
+`prettier --write` and `eslint --fix` RACE — verify `prettier --check .` AFTER committing · a
+red-first proof crossing a package boundary is VACUOUS unless the dependency is rebuilt (`apps/*`
+resolve `@estalara/shared` through `dist`) · one `Typecheck` failure reads as four via `needs:`
+SKIPPED · `Rule I` is pre-existing-red at **192**, never a regression signal at 192 · verify CI only
+with `scripts/gh-pr-checks-verified.sh <pr>`.
+
+---
+
 ## ▶️ START HERE — session 109 (2026-08-09) — FOLLOW-915 is DONE, both halves merged. `main` = `4801a845`, clean, **0 open PRs.**
 
 **Opening state:** session 108 ended mid-flight — PR #708 open and unmerged, and the FOLLOW-915

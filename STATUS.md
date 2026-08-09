@@ -5,6 +5,40 @@ STALE snapshot from 2026-06-26; QUEUE.md's "START HERE" blocks are the authorita
 Kept here only for historical CI-counter provenance; do not treat entries below this line as current
 state — see QUEUE.md top block instead.
 
+## CURRENT (session 110, 2026-08-09)
+
+- **Escalations OPEN (4), none blocking this dispatch — ages from filing date:** ESC-020
+  (Estalara-app DOM hooks committed but not deployed, ~29d — held non-blocking-for-dispatch by the
+  FOLLOW-820 gate: the stage is localhost-first testing, and three audits have now wrongly re-filed
+  it as overdue), ESC-042 item 1 traffic axis (`MODAL_CHAT_NLP_URL` unset in the prod ingest Worker,
+  ~19d — one variable, both sides built), ESC-046 (unbidden merge of #646, ~14d, process/forensic),
+  **ESC-056 (NEW, filed this session, 0d)**.
+- **ESC-056 filed this session.** FOLLOW-931's AC(4) cannot close from inside the repo:
+  `ingest_worker` holds `INSERT, ALTER DELETE` on `default.events` and **no `SELECT`**, so the
+  question "how many `es` consent decisions did production drop before `31cab8b4`?" is unmeasurable.
+  **The trap that makes it an escalation rather than a note: the access-denied query returns an
+  EMPTY body indistinguishable from "zero rows", so the failure direction is a false all-clear.**
+  Per Rule AT the remediation premise is UNVERIFIED, not zero. Recommendation: read-only grant, then
+  run the count with an `en` positive control in the same statement.
+- **IN_PROGRESS (1/3 max):** FOLLOW-932 — sdk-engineer/**Sonnet**, branch
+  `sdk-engineer/FOLLOW-932-headroom-records`. **CI-check counter 0/5, fix-iteration counter 0/3.**
+- **Open PRs:** none (`gh pr list --state open` empty at session start).
+- **Why FOLLOW-932 (P2) went before FOLLOW-913 (P1):** priority rule (a) — it is the only ready
+  ticket declaring `blocks:`, and both blocked tickets are the P1s. Its AC(6) (make
+  `check-bundle-size.js` print bytes and headroom) is the instrument FOLLOW-913's AC(5) has to read,
+  and dispatching two bundle-touching SDK tickets against a 1,356-byte budget concurrently is how a
+  budget race is born. Three of six ACs are already discharged by session 109 — the worker is
+  briefed to verify, not redo.
+- **P0 status:** zero open P0. FOLLOW-929 (the P0 CORS defect RETRO-264 found in what session 109
+  had just merged) is DONE, merged as `da99e220`.
+- **Retro loop:** RETRO-264 filed over #704-#709. **A retro is owed for #710 and #711** once the
+  current ticket clears — do not let it slide to a four-PR backlog again.
+- **Numbers not to re-derive:** SDK headroom **1,356 B** (`zlib.gzipSync`, the compressor the gate
+  enforces — CLI `gzip -9` reads 1,520 B and `gzip -c` reads 1,433 B and BOTH overstate it).
+  `Rule I` pre-existing-red at **192**, unmoved for many sessions.
+
+---
+
 ## CURRENT (session 105, 2026-08-08)
 
 - **Escalations OPEN (7), none blocking this dispatch — ages from filing date:** ESC-041 (`Release`

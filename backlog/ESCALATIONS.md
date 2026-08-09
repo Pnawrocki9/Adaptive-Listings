@@ -3858,3 +3858,49 @@ checkable for the first time.
 Sequencing: the page is a Rafał/CTO action on the Estalara-app side; storing its URL and re-enabling
 validation is **FOLLOW-914**, which is blocked until the page exists. **FOLLOW-907** (per-page-type
 scoring) unblocks with it.
+
+---
+
+## OPEN — ESC-056: nobody can read `default.events`, so the one compliance question FOLLOW-931 exists to answer — did production drop any `es` consent decisions? — is unmeasurable, and the failed query looks exactly like a clean bill of health
+
+**Filed by:** pm-orchestrator (session 110, from FOLLOW-931 AC(4)) **Date:** 2026-08-09 **Affects:**
+FOLLOW-931 AC(4), DPIA §13.1 (consent-refusal record), any remediation scoped off the `es` drop
+count **Type:** operator access / compliance evidence
+
+**What shipped and what did not.** PR #711 (`31cab8b4`) fixed the code: the consent payload schemas
+now derive `language` from `QuizLanguageSchema`, so a Spanish visitor's accept/refuse survives
+ingest instead of being rejected by a hand-written `z.enum(['en','pl'])`. That is the forward fix
+and it is done. **AC(4) — establish how many `es` consent decisions production already dropped — is
+not, and cannot be from inside this repo.**
+
+**The blocker, verified at the source rather than inferred** (`SHOW GRANTS`, run during FOLLOW-931):
+the `ingest_worker` ClickHouse role holds `INSERT, ALTER DELETE` on `default.events` and **no
+`SELECT`**. `SELECT 1` succeeds, so the service is up — this is a grant boundary, not an outage.
+
+**The trap, and it is the reason this is an escalation and not a backlog note.** A first attempt
+returned an **empty body**, which reads exactly like "zero consent events in production." It was
+access-denied. **An unreadable table and an empty table are indistinguishable from the caller**, so
+the failure direction here is toward a false all-clear: the natural reading of the failed query is
+the reassuring one. Per Rule AT the remediation premise is therefore **UNVERIFIED, not zero** — do
+not scope, close, or waive any `es`-consent remediation off that empty result, and do not record a
+count anywhere until it comes from a query that proved it could read a non-empty result first.
+
+**Options (Piotr / whoever holds ClickHouse Cloud admin):**
+
+1. **Grant `SELECT ON default.events` to a read-only role** (not to `ingest_worker` — a writer that
+   can also read is a wider blast radius than this needs) and record it in the CH runbook. Makes
+   this and every future consent-evidence question answerable from CI/scripts.
+2. **Run the count once from the ClickHouse Cloud console** and paste the result into FOLLOW-931.
+   Cheapest, closes AC(4), leaves the next question equally blocked.
+3. **Accept the gap explicitly** and say in the DPIA that pre-`31cab8b4` `es` consent decisions are
+   unquantified — honest, but it is a disclosure change and therefore a DPO call, not a default.
+
+**Recommendation:** option 1, with option 2 run immediately after it as the first query. Option 3
+should not be taken by silence.
+
+**Whichever query is run, it must carry its own positive control** — a count over a language the
+schema always accepted (`en`) in the same statement — so that a zero for `es` is distinguishable
+from an unreadable table. That control is the whole lesson of this entry.
+
+**Status:** OPEN. Non-blocking for dispatch (no ticket's implementation waits on it); blocking for
+any claim about the size of the `es` consent gap.

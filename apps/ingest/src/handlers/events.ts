@@ -334,12 +334,22 @@ events.post('/', async (c) => {
   const rejected: RejectedEvent[] = [];
 
   let consentRejectedCount = 0;
+  /** Schema-rejected events, aggregated per batch — see the Sentry signal after the loop. */
+  let schemaRejectedCount = 0;
+  const schemaRejectedTypes = new Set<string>();
 
   for (let i = 0; i < eventsField.length; i++) {
     const incoming: unknown = eventsField[i];
     const parsed = EventSchema.safeParse(incoming);
     if (!parsed.success) {
       rejected.push({ index: i, errors: parsed.error.flatten() });
+      // FOLLOW-931 — a schema rejection was the ONLY drop path here with no observability, and
+      // that blindness is what let `consent.granted { language: 'es' }` be discarded unnoticed:
+      // rejection is per-event, the batch still returns 200, and nothing anywhere went red. Rule
+      // K.2 applies to this drop exactly as it does to the consent gate below.
+      schemaRejectedCount += 1;
+      const rejectedType = (incoming as { type?: unknown } | null)?.type;
+      if (typeof rejectedType === 'string') schemaRejectedTypes.add(rejectedType);
       continue;
     }
 
@@ -402,6 +412,31 @@ events.post('/', async (c) => {
       tenant_id: tenantId,
       region,
       ingest_received_at: ingestReceivedAt,
+    });
+  }
+
+  // Schema rejections, reported ONCE per batch rather than once per event: a client sending a
+  // malformed payload sends many, and a per-event capture would turn a client bug into a Sentry
+  // flood. Tags stay low-cardinality (the event types come from a closed set); counts and the
+  // distinct type list ride in `extra`.
+  if (schemaRejectedCount > 0) {
+    Sentry.captureMessage('schema_rejected', {
+      level: 'warning',
+      tags: {
+        area: 'events',
+        gate: 'schema',
+        // An audit event failing schema validation is a compliance signal, not a client bug:
+        // the visitor's consent decision is being discarded (DPIA §13.1).
+        has_consent_event: String(
+          schemaRejectedTypes.has('consent.granted') || schemaRejectedTypes.has('consent.denied'),
+        ),
+      },
+      extra: {
+        tenant_id: tenantId,
+        rejected_count: schemaRejectedCount,
+        batch_size: eventsField.length,
+        event_types: [...schemaRejectedTypes].sort(),
+      },
     });
   }
 

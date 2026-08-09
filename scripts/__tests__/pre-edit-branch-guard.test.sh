@@ -108,6 +108,28 @@ run_guard() {
   CODE=$?
 }
 
+# run_bash_guard <cwd> <command> [ENV=VALUE ...] — FOLLOW-910.
+# The Bash guard takes a different payload shape ({command}) and has no file to
+# attribute against, so it resolves HEAD from the cwd. Everything downstream —
+# exit 0, permissionDecision "allow", additionalContext present/absent — is the
+# SAME hook contract, so expect_case and the assert_context_* helpers are reused
+# rather than duplicated (FOLLOW-910 AC(2)).
+BASH_GUARD="${BASH_GUARD_UNDER_TEST:-$ROOT/.claude/hooks/pre-bash-guard.sh}"
+run_bash_guard() {
+  local cwd="$1" command="$2"
+  shift 2
+  local payload
+  payload="$(jq -nc --arg c "$command" '{tool_name: "Bash", command: $c}')"
+  OUT="$(cd "$cwd" && printf '%s' "$payload" | env "$@" bash "$BASH_GUARD" 2>&1)"
+  CODE=$?
+  # A silent Bash guard prints NOTHING (it is not a JSON-always hook), whereas
+  # expect_case requires a decision object. Normalise the silent case here so the
+  # two guards can share one set of assertions.
+  if [[ -z "$OUT" ]]; then
+    OUT='{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'
+  fi
+}
+
 # expect_case <label> <WARN|SILENT>
 expect_case() {
   local label="$1" expected="$2"
@@ -298,6 +320,100 @@ expect_case "D1 path outside any git repository" SILENT
 #     quiet rather than guess from the session cwd.
 run_guard "$MAIN" Edit ""
 expect_case "D2 empty file_path" SILENT
+
+# ── E. the Bash-shaped edit (FOLLOW-910) ───────────────────────────────────────
+# Every WARN case below was SILENT before FOLLOW-910: `.claude/settings.json`
+# routes Bash to pre-bash-guard.sh, which grepped for `git push` to main and
+# nothing else. The FOLLOW-849 worker made every edit in its ticket through Bash
+# and the guard never fired once.
+#
+# RED-FIRST REPRODUCTION for this half:
+#   git show <pre-910-sha>:.claude/hooks/pre-bash-guard.sh > /tmp/old-bash-guard.sh
+#   BASH_GUARD_UNDER_TEST=/tmp/old-bash-guard.sh bash scripts/__tests__/pre-edit-branch-guard.test.sh
+echo ""
+echo "--- E. Bash-shaped edits on main are seen (FOLLOW-910) ---"
+
+run_bash_guard "$MAIN" "sed -i s/a/b/ docs/app.md"
+expect_case "E1 sed -i on a repo file" WARN
+assert_context_contains "E1 names the repo-relative path" "docs/app.md"
+
+run_bash_guard "$MAIN" "cat > docs/app.md <<'EOF'
+new content
+EOF"
+expect_case "E2 heredoc redirected into a repo file" WARN
+
+run_bash_guard "$MAIN" "python3 - <<'PY'
+open('docs/app.md', 'w').write('x')
+PY"
+expect_case "E3 interpreter heredoc writing a repo file (this session's own editing shape)" WARN
+assert_context_contains "E3 names the path found inside the heredoc" "docs/app.md"
+
+run_bash_guard "$MAIN" "echo x | tee docs/app.md"
+expect_case "E4 tee into a repo file" WARN
+
+run_bash_guard "$WT" "sed -i s/a/b/ apps/ingest/src/handler.ts"
+expect_case "E5 the same edit from a worktree on a ticket branch" SILENT
+
+# ── F. the false-positive surface named in FOLLOW-910 AC(3) ────────────────────
+# A guard that greps command text will see a verb inside a string, a write that
+# never touches the repo, and a redirection to /dev/null. Each must stay SILENT
+# or the warning stops being believable — which is the whole finding of FOLLOW-849.
+echo ""
+echo "--- F. scoped to real writes under the repo root (AC(3)) ---"
+
+run_bash_guard "$MAIN" 'echo "sed -i s/a/b/ docs/app.md"'
+expect_case "F1 a write verb inside a quoted string is not a write" SILENT
+
+run_bash_guard "$MAIN" "git show > /dev/null"
+expect_case "F2 redirection to /dev/null" SILENT
+
+run_bash_guard "$MAIN" "cat > /tmp/scratch.txt <<'EOF'
+data
+EOF"
+expect_case "F3 heredoc writing outside the repository" SILENT
+
+run_bash_guard "$MAIN" "grep -rn foo docs/"
+expect_case "F4 a pure read" SILENT
+
+run_bash_guard "$MAIN" "sed -i s/a/b.c/ backlog/QUEUE.md"
+expect_case "F5 a sed SCRIPT containing a dot is not a second target" SILENT
+
+run_bash_guard "$MAIN" "sed -i s/a/b/ backlog/QUEUE.md"
+expect_case "F6 the pm-orchestrator's exempt backlog files, edited through Bash" SILENT
+
+run_bash_guard "$MAIN" "sed -i s/a/b/ docs/app.md" ESTALARA_ALLOW_MAIN_EDITS=1
+expect_case "F7 ESTALARA_ALLOW_MAIN_EDITS=1 silences the Bash guard too" SILENT
+
+run_bash_guard "$OUTSIDE" "sed -i s/a/b/ notes.md"
+expect_case "F8 a cwd in no git repository" SILENT
+
+# ── G. the blocking guards are untouched ───────────────────────────────────────
+# pre-bash-guard.sh had FIVE blocking rules and zero test coverage before this
+# ticket. Adding a non-blocking warning must not disturb them, and the guard's
+# blocking half must not be quietly converted into a warning.
+echo ""
+echo "--- G. the pre-existing blocking guards still block ---"
+
+CASES=$((CASES + 1))
+BLOCK_OUT="$(cd "$MAIN" && jq -nc '{tool_name:"Bash", command:"git push origin main"}' | bash "$BASH_GUARD" 2>&1)"
+BLOCK_CODE=$?
+if [[ $BLOCK_CODE -eq 0 ]]; then
+  echo "FAIL: G1 — 'git push origin main' exited 0; guard 1 must BLOCK (exit non-zero)."
+  echo "$BLOCK_OUT"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "PASS: G1 direct push to main is still blocked (exit $BLOCK_CODE)"
+fi
+
+CASES=$((CASES + 1))
+BLOCK_OUT="$(cd "$MAIN" && jq -nc '{tool_name:"Bash", command:"cat .env"}' | bash "$BASH_GUARD" 2>&1)"
+BLOCK_CODE=$?
+if [[ $BLOCK_CODE -eq 0 ]]; then
+  echo "FAIL: G2 — 'cat .env' exited 0; guard 4 must BLOCK."
+  FAILURES=$((FAILURES + 1))
+else
+  echo "PASS: G2 reading .env is still blocked (exit $BLOCK_CODE)"
+fi
 
 echo ""
 if [[ $FAILURES -eq 0 ]]; then

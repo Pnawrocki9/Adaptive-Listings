@@ -49,6 +49,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# PM dispatch scratch: nohup worker logs and the per-ticket brief handed to them.
+# Transient by construction — the durable content lands in backlog/QUEUE.md and
+# backlog/FOLLOW_UPS.md. Ignored as a directory because only the .log half was covered
+# above, so a `git add -A` would otherwise sweep the un-prettier-ed brief into CI.
+.pm-logs/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*

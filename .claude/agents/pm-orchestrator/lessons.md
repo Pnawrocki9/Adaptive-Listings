@@ -3006,3 +3006,18 @@ breach and cost real verification time to rule out.
 - **A delegation/validation rule I'd add:** Before dispatching any ticket born from a ruling, grep
   `docs/adr/**` for the seam it lands on — a ruling decides _whether_, an ADR already decided _how_,
   and when they disagree the ticket's named agent is usually the wrong one.
+
+- **Date / ticket:** 2026-08-09 — FOLLOW-932 (dispatch), ESC-056 (filed)
+- **Delegation row used:** "client SDK, Shadow DOM, tiers, browser code" → sdk-engineer (Sonnet).
+  Chose the P2 over two ready P1s on priority rule (a): FOLLOW-932 is the only ready ticket
+  declaring `blocks:`, and its AC(6) fixes the measuring instrument FOLLOW-913's AC(5) must then
+  read.
+- **What validation caught (or missed):** Caught before dispatch that 3 of the stub's 6 ACs were
+  already discharged by the previous session — dispatching the stub verbatim would have sent a
+  worker to re-edit `docs/INTERFACES.md` and re-derive a number that is already correct. Also caught
+  that FOLLOW-931's "zero `es` consent events in prod" was an access-denied empty body, not a
+  measurement, and filed ESC-056 rather than letting an unreadable table stand in as a clean bill of
+  health.
+- **A delegation/validation rule I'd add:** Before dispatching any stub written by a retro, diff its
+  ACs against HEAD and mark each DONE / OPEN in the brief — a retro stub is a snapshot of the repo
+  at retro time, and the session that follows it usually discharges part of it in passing.

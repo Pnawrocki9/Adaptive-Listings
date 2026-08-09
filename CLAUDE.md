@@ -124,10 +124,16 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
    has already decided every check it knows about has settled). PM-orchestrator MUST run
    `scripts/gh-pr-checks-verified.sh <pr-number>` instead — it polls until it observes two
    consecutive, identical, fully-settled snapshots (immune to that race), re-asserts pass/fail
-   counts from a fresh read, and classifies any failure against the documented pre-existing-red
-   gates (currently only `Rule I — wired-or-dead check`, verified dynamically against `main`'s own
-   current baseline, never a hardcoded number) before exiting. Exit 0 only when every non-success
-   check is a verified pre-existing-red gate. Local tests passing ≠ CI passing.
+   counts from a fresh read, asserts that every name in the `.github/required-checks.txt` register
+   is PRESENT in the rollup and green where required (FOLLOW-918 — a registered gate that is merely
+   `SKIPPED`, or simply absent, is exit 3 and never green; before that register the gate read only
+   stability and size, never identity, so it could confirm that the checks WHICH RAN were green
+   while saying nothing about whether the right ones ran), and classifies any failure against the
+   documented pre-existing-red gates (currently only `Rule I — wired-or-dead check`, verified
+   dynamically against `main`'s own current baseline, never a hardcoded number) before exiting. Exit
+   0 only when every non-success check is a verified pre-existing-red gate AND every registered
+   check actually ran. **A PR that adds or renames a required gate must edit
+   `.github/required-checks.txt` in the same PR.** Local tests passing ≠ CI passing.
 
 2. **Run prettier on every file you edit, every time.** Even if you ran prettier earlier in the
    session, re-run on every file you touch. CI format check is strict.

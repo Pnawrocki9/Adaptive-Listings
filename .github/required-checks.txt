@@ -1,0 +1,109 @@
+# Named required-check register — FOLLOW-918 (RETRO-263).
+#
+# WHY THIS FILE EXISTS. scripts/gh-pr-checks-verified.sh read two properties of a
+# PR's check-run rollup — stability (two identical settled snapshots) and size (a
+# completeness floor derived from peer PRs) — and never IDENTITY. So both of these
+# exited 0 with "all checks green. Safe to mark READY_FOR_REVIEW":
+#
+#   1. Six real gates flipped SUCCESS -> SKIPPED. `SKIPPED` was in the regex's
+#      success class, and it also counted toward the completeness floor.
+#   2. A 37-run all-SUCCESS rollup containing NONE of this repo's gates. The floor
+#      is ceil(second_highest_peer x 40/100) = 37 against a reference of 91, so 59%
+#      of the rollup could be absent and the gate still settled.
+#
+# Every "CI verified, exit 0" before this register proved that the checks WHICH RAN
+# were green. It did not prove the right checks ran. This file is the identity
+# axis: a name listed here must be PRESENT in the settled rollup, and (unless
+# marked `any-state`) every check-run carrying it must be SUCCESS. Absent, SKIPPED
+# or NEUTRAL on a registered name is exit 3 — UNDETERMINED, not green, and not a
+# red verdict on the PR either (the same class as a truncated rollup: the gate
+# could not look, so it renders no verdict).
+#
+# FORMAT
+#   <check name>              must be present, and every run of it must be SUCCESS
+#   any-state <check name>    must be present in ANY state
+#   # comment / blank line    ignored
+#
+# `any-state` is for gates whose non-SUCCESS state is the documented norm — the
+# pre-existing-red Rule I gate, and prod-touching jobs skipped by design on PRs.
+# Registering them anyway means they cannot silently DISAPPEAR, which is the half
+# of this defect that has nothing to do with SKIPPED.
+#
+# HOW THIS LIST WAS DERIVED (reproducible, not hand-picked):
+#
+#   for pr in $(gh pr list --state merged --limit 5 --json number --jq '.[].number'); do
+#     gh pr view "$pr" --json statusCheckRollup \
+#       --jq '.statusCheckRollup[] | "\(.state // .conclusion)\t\(.name // .context)"'
+#   done
+#
+# then: every name present in ALL 5 sampled PRs, split by whether it was SUCCESS in
+# all of them. Sample taken 2026-08-09 against PRs #699-#703 (HEAD f80f41b7).
+#
+# WHY A FIVE-PR WINDOW AND NOT A LONGER ONE. A twelve-PR window drops any gate
+# younger than twelve merges — it excluded `Modal local-source gate (FOLLOW-900)`,
+# one of the six RETRO-263 actually flipped to SKIPPED, purely because PR #698
+# introduced it. A short window registers new gates as soon as they stabilise. The
+# cost is an explicit lag: a gate introduced in the last few merges is NOT here
+# until it has run five times, so THE PR THAT ADDS A REQUIRED GATE MUST ADD ITS
+# NAME HERE IN THE SAME PR. Renaming a check without editing this file is exit 3
+# on the next PR, by design — that is the register doing its job.
+#
+# The two Modal effect-probe entries below are exactly that manual case: PR #700
+# introduced them, so they were 4/5 in the sample and are registered by inspection.
+
+Archetype embeddings not-NULL check
+Archetype seeds completeness check
+Auto-Detection corpus gate
+Build
+Build (control-plane)
+ClickHouse migrations smoke
+Consent contract drift gate (FOLLOW-716)
+Cross-language event contract
+Detector negative control (alarm must fire on absence)
+Doppler verify
+Fire-and-forget sink guard (FOLLOW-433)
+Format check
+Gitleaks secrets scan
+K.3.6 D-1 live-network smoke (fetchIntentWeights → GET /api/intent/config)
+Lint
+Migration journal monotonicity check
+Modal App singleton guard (FOLLOW-438)
+Modal local-source gate (FOLLOW-900)
+PR-checks gate self-test (FOLLOW-830)
+Privacy Notice SDK key-sync (Rule N / FOLLOW-230)
+Redis shadow round-trip (write_shadow_intent → readShadowChatIntent)
+Registration consent-text sync (Rule N / FOLLOW-705)
+Rule H gate self-test (FOLLOW-857)
+Rule H — schema scaffold wiring
+Rule I gate self-test (FOLLOW-842)
+Rule J — mirror-code sync check
+Rule K.2 consumer-side swallow guard (FOLLOW-625)
+SDK E2E tests
+Sentry capture-has-init guard (FOLLOW-743)
+Sentry init singleton guard (FOLLOW-738)
+Served SDK bundles build-generated (ESC-047)
+Staff-write audit atomicity (ADR-0018 §3a / FOLLOW-607)
+Staging-plane gate (FOLLOW-878 / ESC-052)
+Test (Node 22)
+Test (Python) (3.12, data-quality)
+Test (Python) (3.12, intent-engine)
+Test (Python) (3.12, llm-gateway)
+Test (Python) (3.12, stream-consumer)
+Tracer query-builders live ClickHouse guard
+Typecheck
+Vercel
+Vercel Preview Comments
+shellcheck (Sentry gate family, FOLLOW-769)
+Modal effect probe negative control (alarm must fire on absence)
+
+# ── presence-only ────────────────────────────────────────────────────────────
+any-state Assert validate_schemas ran in the last 26h (prod)
+any-state Rule I — wired-or-dead check
+any-state Assert intent-engine + llm-gateway containers reach their own logic (prod)
+
+# NOTE ON HISTORICAL PRs. This register describes the set required TODAY, so
+# re-running the gate against a PR that predates a gate's introduction exits 3
+# and names it as ABSENT. Verified against PR #695 (81 check-runs), which is
+# correctly reported as missing six gates introduced by #696-#700. That is the
+# register working, not a false red — a verdict on an old rollup was never
+# evidence about today's main.

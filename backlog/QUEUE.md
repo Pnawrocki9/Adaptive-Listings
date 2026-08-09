@@ -1,5 +1,84 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 109 (2026-08-09) — FOLLOW-915 is DONE, both halves merged. `main` = `4801a845`, clean, **0 open PRs.**
+
+**Opening state:** session 108 ended mid-flight — PR #708 open and unmerged, and the FOLLOW-915
+implementation sitting **uncommitted in the working tree** on
+`sdk-engineer/FOLLOW-915-consent-text-impl` with no commit, no worktree and no live agent. Nothing
+was stranded; it was recovered as-is.
+
+### Two PRs merged
+
+| PR   | ticket     | merged as  | gate verdict before merge                                   |
+| ---- | ---------- | ---------- | ----------------------------------------------------------- |
+| #708 | FOLLOW-928 | `5b56f84f` | 93 runs, 47/47 registered present, `exit 0`                 |
+| #709 | FOLLOW-915 | `4801a845` | 95 runs, 47/47 registered present, `exit 0` (after 2 fixes) |
+
+**Post-merge state of `main`, re-verified rather than assumed:** ADR-0021 gate **ARMED** and green ·
+`--self-test` **13/13** · Rule I **192**, unmoved · bundle **40.68KB**.
+
+### FOLLOW-915 — the consent text now lives outside the bundle
+
+ESC-051's ruling is honoured mechanically: the `COPY` constant left `consent-banner.ts` and is
+served as one identifier-free static document, fetched on the `pending` path only and awaited before
+the banner renders. Granted/denied paths are byte-unchanged and pay no extra request.
+
+**Bundle: 41.99KB → 40.68KB gzip; headroom ~10 bytes → 1,520 bytes. FOLLOW-913 and FOLLOW-898 are
+unblocked.** Carry this correction with them: ADR-0021 §D2 predicted ~5.5KB of savings and the real
+figure is **1.31KB** — a raw-size estimate applied to a gzip budget. **Scope both against 1.5KB.**
+And measure with **`@estalara/shared` rebuilt too**: a first pass that rebuilt only the SDK read
+42.13KB for `main` and was wrong.
+
+### The through-line of this session: a control is only as good as its fixtures
+
+Both defects found this session came from **building against a control rather than reading it** —
+the same shape as session 108's four tickets, one level down:
+
+1. **The ADR-0021 gate's `--self-test` had silently stopped proving C3.** Its "DPIA still points at
+   COPY" fixture read `dpia.md` **from disk**; correcting those cross-references (binding condition
+   3 — required by this very PR) made the stale fixture un-stale, so **T9 reported PASS where it
+   demanded VIOLATION**. The live check stayed green throughout, so only running `--self-test`
+   surfaced it. **The failure direction is the dangerous one: the self-test went green as the repo
+   became correct** — loudest when needed least, silent once the artefacts it guards existed. Every
+   fixture input is now synthesized; **no fixture reads a repo file.** Added T9b for C3's second
+   branch, which had no red-first case at all. Two `C2` widenings ride along, both red-first proven
+   (T7 runtime-interpolation red, T7b compile-time-composition green).
+2. **The E2E harness could not serve the document** — absolute URL, and `serve.js` only mocks
+   same-origin. Un-mocked, the SDK **correctly** failed closed and three tests went red. The SDK was
+   right; the harness was incomplete.
+
+**The rule worth carrying:** _a fixture describing a state must CONSTRUCT that state, never borrow
+it from HEAD._ The gate had already written that rule for the banner one commit earlier and then
+left the DPIA borrowing — **applying a lesson to the instance that taught it is not applying the
+lesson.** Recorded in `.claude/agents/compliance-engineer/lessons.d/FOLLOW-925.md`.
+
+### Also measured, so nobody re-derives it
+
+- **Rule I counts non-test importers only.** `CONSENT_TEXT_TIMEOUT_MS` was the one new violation:
+  exported, consumed only inside its own module. Made module-local → back to 192 exactly.
+- **`gh-pr-checks-verified.sh` earned its keep twice** on #709: it caught `SDK E2E tests` as a
+  **registered** gate failing (exit 3, not a green light), and its snapshot log shows the
+  late-registering race live — `checks known` jumped 87 → 93 at t=225s. `--watch` would have settled
+  on 87.
+
+### Next, in order
+
+1. **RETRO-264 is owed SIX merged PRs** — #704, #705, #706, #707, #708, #709 — and **four of them
+   changed controls the PM validates with**. Third retro running that must audit its own instrument.
+2. **FOLLOW-913 / FOLLOW-898** — now unblocked, but scope against **1.5KB**, not 5.5KB.
+3. **FOLLOW-928** (filed by #708, P1) — decide whether the SDK should **fail loud** when
+   `data-privacy-url` is absent on a non-first-party tenant, or whether the runbook is the whole
+   control. "An operator step nothing checks" is the 658/659/660 class.
+4. **The stale branch-prefix list** on `K.3.6 D-1 live-network smoke` (session 108, item 2) still
+   has no owner — worth a stub.
+
+**Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page
+(ESC-055; unblocks FOLLOW-914/907). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
+
+---
+
 ## ▶️ START HERE — session 108 (2026-08-09) — FOLLOW-918, 925, 919, 910 all MERGED. `main` = `9a378532`, clean, **0 open PRs.**
 
 **Opening state, verified not inherited:** `main` `f80f41b7`, clean, 0 open PRs, 0 worktrees, 0

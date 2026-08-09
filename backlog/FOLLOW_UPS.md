@@ -32258,7 +32258,40 @@ constraint (banner always `en`) becomes reversible. If the residual question —
 own consent text before consent resolves? — is unanswerable from the existing DPIA, file **ESC-056**
 rather than guess.
 
-cross_ref: [ESC-051 (RESOLVED); ESC-028; FOLLOW-815; Rule N]
+**STATUS: DONE — 2026-08-09, session 109. Both halves merged.** Design half PR #702 (`6fd6e330`,
+ADR-0021 + ADR-0011 scope clarification), countersign PR #703, gate PR #705 (FOLLOW-925),
+implementation half **PR #709 (`4801a845`)**. All four ACs met: AC(1) the ordering invariant is
+proven through the real `init()` (Rule Q), not asserted; AC(2) fail-closed with **no** fallback text
+(§D4 — the option the stub invited us to "pick and argue" was picked on compliance grounds, not
+engineering ones); AC(3) measured both sides; AC(4) satisfied structurally by §D8 (no new storage
+key).
+
+**Bundle, measured with BOTH packages rebuilt on each side — the number to carry forward:**
+**41.99KB → 40.68KB gzip**, headroom **~10 bytes → 1,520 bytes**. **FOLLOW-913 and FOLLOW-898 are
+unblocked.** But note the correction: ADR-0021 §D2 predicted _"~5.5KB gzip leaves the bundle"_ and
+the real figure is **1.31KB** — a raw-size estimate applied to a gzip budget, and repetitive locale
+prose compresses extremely well. Scope those two against 1.5KB, not 5.5KB. A first measurement that
+rebuilt only the SDK read 42.13KB for `main` and was wrong; rebuild `@estalara/shared` too.
+
+**Two defects this ticket found by BUILDING against its own controls, both worth copying:**
+
+1. **`check-adr-0021-conditions.mjs --self-test` had silently stopped proving C3.** Its "DPIA still
+   points at COPY" fixture read `dpia.md` **from disk**, so the moment this ticket corrected those
+   cross-references (binding condition 3) the stale fixture stopped being stale and **T9 reported
+   PASS where it demanded VIOLATION**. The live check was green throughout. The rule, now applied to
+   every fixture input: _a fixture describing a state must CONSTRUCT that state, never borrow it
+   from HEAD._ The gate had already written that rule for the banner one commit earlier and left the
+   DPIA borrowing — **applying a lesson to the instance that taught it is not applying the lesson.**
+   Recorded in `.claude/agents/compliance-engineer/lessons.d/FOLLOW-925.md`.
+2. **The E2E harness could not serve the document,** because the URL is absolute and `e2e/serve.js`
+   only mocks same-origin endpoints. Un-mocked, the SDK **correctly** failed closed and three
+   `pending`-path tests went red — the SDK was right, the harness was incomplete. Fulfilled from the
+   checked-in artifact via `page.route`, so the E2E exercises the bytes that ship. The
+   granted/denied tests stayed green throughout, which is §D2's "returning visitors pay no extra
+   request" demonstrated in a real browser rather than asserted.
+
+cross_ref: [ESC-051 (RESOLVED); ESC-028; FOLLOW-815; Rule N; ADR-0021; FOLLOW-925; FOLLOW-913;
+FOLLOW-898]
 
 ---
 

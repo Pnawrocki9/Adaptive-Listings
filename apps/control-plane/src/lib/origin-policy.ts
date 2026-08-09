@@ -72,12 +72,18 @@ function toCanonicalOrigin(value: string): string | null {
  *   and say so distinctly: inheriting Estalara's own domains here would silently grant an
  *   external brand the first party's allow-list (the FOLLOW-658 failure, one layer over).
  */
-export type OriginDecision =
+/**
+ * Module-local by Rule I: callers read `.verdict` structurally and never name this type, and an
+ * exported symbol with no non-test importer is dead surface. Third instance of that shape in this
+ * session — the others were `CONSENT_TEXT_TIMEOUT_MS` and `toCanonicalOrigin`.
+ */
+type OriginDecision =
   | { verdict: 'allow'; origin: string; source: 'api_key' | 'tenant' | 'platform' }
   | { verdict: 'deny'; reason: string }
   | { verdict: 'unconfigured'; reason: string };
 
-export interface OriginPolicyInput {
+/** Module-local by Rule I — callers pass an object literal, never the named type. */
+interface OriginPolicyInput {
   /** The browser's `Origin` header. Absent for server-side callers. */
   requestOrigin: string | null;
   /** `api_keys.allowed_origins` — nullable; `null` or `[]` means "no per-key override". */

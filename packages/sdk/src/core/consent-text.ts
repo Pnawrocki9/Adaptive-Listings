@@ -36,8 +36,13 @@ import {
   type QuizLanguage,
 } from '@estalara/shared';
 
-/** §D4 budget. Beyond this the fetch is abandoned and the page view fails closed. */
-export const CONSENT_TEXT_TIMEOUT_MS = 3000;
+/**
+ * §D4 budget. Beyond this the fetch is abandoned and the page view fails closed.
+ *
+ * Module-local by Rule I: nothing outside this file consumes it, and an exported constant with
+ * no non-test importer is dead surface. The 3000 ms figure is asserted by the AC(2) hang case.
+ */
+const CONSENT_TEXT_TIMEOUT_MS = 3000;
 
 /**
  * Fetch and validate the consent-banner copy for one locale.

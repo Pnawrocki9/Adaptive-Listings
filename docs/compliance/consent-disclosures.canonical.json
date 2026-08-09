@@ -1,0 +1,35 @@
+{
+  "_why": [
+    "ADR-0021 §D5 compliance countersign, binding condition 1 (FOLLOW-925).",
+    "The DPIA §13.1 (denial-log) and §13.2 (cross-session identifier) disclosure sentences,",
+    "BYTE-IDENTICAL as compliance signed them. These are the bytes the countersign rests on,",
+    "and ESC-051 is byte pressure on exactly the file that holds them — the failure mode this",
+    "record exists to prevent is a legally mandated sentence being trimmed, retyped or dropped",
+    "for one locale while the text moves out of the SDK bundle.",
+    "",
+    "Captured 2026-08-09 at f80f41b7 from packages/sdk/src/ui/consent-banner.ts COPY — the",
+    "shipped state compliance signed on 2026-06-12 and countersigned in PR #703.",
+    "",
+    "A Zod schema (ADR-0021 §D7) locks the SHAPE of consent-text.json; it cannot express byte",
+    "identity of one specific sentence. That is this record, and only this record.",
+    "",
+    "Enforced by scripts/check-adr-0021-conditions.mjs. Editing a sentence here is a compliance",
+    "change, not a copy edit: it needs the sign-off path the original text had."
+  ],
+  "captured_from": "packages/sdk/src/ui/consent-banner.ts (COPY)",
+  "captured_at_commit": "f80f41b7",
+  "locales": {
+    "en": {
+      "disclosure13_1": "We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 7 days and is then permanently deleted.",
+      "disclosure13_2": "To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent."
+    },
+    "pl": {
+      "disclosure13_1": "Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 7 dni, po czym jest trwale usuwany.",
+      "disclosure13_2": "Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody."
+    },
+    "es": {
+      "disclosure13_1": "Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma permanente.",
+      "disclosure13_2": "Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento."
+    }
+  }
+}

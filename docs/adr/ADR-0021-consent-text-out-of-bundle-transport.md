@@ -5,6 +5,9 @@ act, ADR-0020 precedent). The **mechanism** — banner text out of the bundle, o
 consent gate — is pre-ratified by CEO ruling ESC-051 (Piotr, 2026-08-08); this ADR records the
 design that makes the mechanism compliant. **Compliance countersign requested**
 (compliance-engineer) on §D5 only — the scope clarification of ADR-0011's addendum sentence.
+**Compliance countersign: GRANTED WITH BINDING CONDITIONS, 2026-08-09 (compliance-engineer,
+FOLLOW-915)** — attestation scope, one record correction, and three testable conditions are in the
+countersign block at the end of §D5; the implementation PR does not merge with any condition unmet.
 **Date:** 2026-08-08 **Proposed by:** architect (FOLLOW-915 AC(0)) **Implementing ticket:**
 FOLLOW-915 (sdk-engineer half, follows this contract) **Cross-references:** ESC-051 (RESOLVED),
 ESC-028, ADR-0011 (addendum scope-clarified, quiz-config decision unchanged), ADR-0019, FOLLOW-278,
@@ -179,6 +182,69 @@ countersign on this D5 scope reading is required before FOLLOW-915's implementat
 (action item below). If compliance rejects the reading, this ADR reverts to PROPOSED and ESC-056 is
 filed with the CEO stating that ESC-051 as ruled is unimplementable without a compliance-posture
 change.
+
+#### Compliance countersign — GRANTED WITH BINDING CONDITIONS (compliance-engineer, 2026-08-09, FOLLOW-915)
+
+**Attested.**
+
+1. **The two-proposition reading of the ADR-0011 FOLLOW-278 addendum is correct.** Verified against
+   the addendum text itself: "the fetch" denotes `fetchQuizConfig()` in every occurrence (it is the
+   only fetch the addendum discusses; init-sequence step 3 is its referent); the compliance
+   rationale attaches to _tenant data_; and the sentence "The consent banner cannot wait for the
+   fetch" states an ordering consequence and carries no compliance rationale of its own. What
+   compliance confirmed on 2026-06-12 inside that addendum was banner-locale legal sufficiency ("no
+   locale-specific legal text"), not a universal prohibition on pre-consent fetches — nothing
+   compliance previously signed is weakened by §D5. The tenant-data rule survives byte-intact via
+   §D1.
+2. **A pre-consent GET of Estalara's own static, identifier-free consent text is lawful, conditional
+   on §D3 exactly as written.** ePrivacy Art. 5(3) / PECR Rule 6(4) strictly-necessary exemption
+   (`docs/compliance/dpia.md` §6.1, lines 903–906 and 925–929): delivering the consent mechanism
+   itself is the paradigm strictly-necessary case — a notice whose display required consent would be
+   circular. GDPR: Art. 6(1)(f) covers the transient-IP processing inherent to serving an HTTP
+   asset, reinforced by the Arts. 12–13 transparency obligations this asset exists to discharge. The
+   analysis collapses the moment the request carries any identifier — §D3 is the entire compliance
+   foundation, as this ADR itself states.
+3. **§D4 fail-closed is endorsed on compliance grounds, not merely engineering grounds.**
+   Transparency duties attach to processing; the fail-closed path processes nothing, so a visitor
+   un-noticed on a failed fetch is also un-profiled — GDPR does not require notifying people about
+   processing that does not occur. The rejected alternative (a trimmed built-in fallback) is
+   compliance-worse: consent obtained on an incomplete disclosure is not "informed" under Art. 4(11)
+   / Art. 7 GDPR, which would invalidate the lawful basis of everything downstream. The engineering
+   rationale ("a trimmed fallback recreates the ESC-051 defect") survives the compliance reading and
+   is strengthened by it: less-processing-on-failure is the correct failure mode for a consent
+   surface.
+
+**Correction placed on the record.** The Context section's claim that leg 1 is "answerable from the
+existing DPIA" was overstated. At countersign time, dpia.md's Vercel sub-processor row (line 223)
+and ropa.md's (line 444) scoped Vercel's data category to _tenant admin sessions / dashboard
+traffic_; the pre-consent visitor-browser fetch of `sdk.js` was an existing practice the DPIA
+**failed to mention, not one it covered**, and the "Cloudflare transient-IP precedent" (line 217) is
+a different sub-processor on the ingest path. "We already do X" is not "X is assessed." Legs 2 and 3
+carry the conclusion on their own, so this does not make ESC-051 unimplementable and does not force
+ESC-056 — but the countersign rests on the corrected record, not on absence-of-mention: DPIA v2.18
+§2.8 and ROPA v2.14 (same PR as this countersign) now record the pre-consent static-asset request
+class, its lawful basis, and its one open gap (Vercel runtime-log retention, dpia.md §2.7.1).
+
+**Binding conditions (testable; the FOLLOW-915 implementation PR does not merge without them).**
+
+1. Every locale of the checked-in `consent-text.json` carries the DPIA-mandated disclosure sentences
+   **byte-identical** to the shipped `COPY` strings — the §13.1 denial-log sentence (dpia.md lines
+   1439–1445) and the §13.2 cross-session-identifier sentence (dpia.md lines 1514–1519) — and the
+   same test that validates the artifact against `ConsentTextDocumentSchema` (§D7) asserts the
+   presence of both sentences per locale.
+2. AC(1) asserts the §D3 request shape **byte-exactly**: the compile-time `CONSENT_TEXT_URL`
+   constant, no query string, no `Authorization` header, `credentials: 'omit'`. This is already an
+   obligation of this ADR; the countersign is void if it is dropped or weakened.
+3. The implementation PR updates dpia.md §13.1/§13.2's cross-references stating the disclosure
+   strings "are defined in the `COPY` constant" in `consent-banner.ts` — true today, false the
+   moment the strings move (Rule N: a compliance document may not describe a source of record that
+   no longer exists).
+
+**Not attested.** The §13.1/§13.2 LIA DPO gates (still PENDING — this is an engineering-compliance
+countersign, not DPO sign-off, and it does not advance the EU-pilot DPO gate); the quiz-config
+transport decision (unchanged, ADR-0011); the Vercel runtime-log retention figure (open gap, dpia.md
+§2.7.1/§2.8); any parameterized variant of this fetch (per §D3, a new ADR plus compliance review is
+required before one exists).
 
 ### D6 — FOLLOW-278 constraint status (stated, not built)
 

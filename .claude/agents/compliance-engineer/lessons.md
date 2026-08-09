@@ -190,3 +190,17 @@ being written to Redis without any disclosure review. The schema contract should
   with the executable comparison in the same PR, and the normalization must be precise enough to
   reproduce ("trailing newline stripped" said nothing about markdown or hard wraps — that gap is
   exactly where a placeholder hash hid for a month).
+
+- **2026-08-09 / FOLLOW-915 (ADR-0021 §D5 countersign).** Countersigned the scope reading of a
+  sentence compliance itself signed in 2026-06-12 (ADR-0011 FOLLOW-278 addendum), with three binding
+  testable conditions; refused to let the countersign rest on the ADR's leg-1 argument ("the request
+  class already exists"), because the DPIA's Vercel row covered only tenant-admin traffic — the
+  pre-consent `sdk.js` fetch was unmentioned, not assessed. Cured in the same PR (dpia.md §2.8
+  v2.18, ropa.md v2.14) instead of refusing, since ePrivacy 5(3) strictly-necessary + the
+  identifier-free §D3 constraint carry the conclusion without leg 1. **Where a disclosure could have
+  drifted:** dpia.md §13.1/§13.2 assert the banner strings live in the `COPY` constant — true today,
+  false the moment the implementation PR moves them to `consent-text.json`; made updating those
+  cross-references a binding countersign condition rather than trusting it to happen. **Guardrail
+  I'd add:** when an ADR justifies new processing by citing an existing practice, verify the
+  practice is _recorded_ in the DPIA/ROPA, not merely _existing_ — "already deployed" and "already
+  assessed" diverge silently, and the sub-processor row's data-category column is where to check.

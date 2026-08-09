@@ -3666,3 +3666,58 @@ written after Rule AM existed** — which is an argument for making a rule execu
 another one. And on the brief's fusion question, the honest answer was "no, and here is why fusing
 them yields an unfalsifiable rule." **A retro that promotes nothing but explains exactly why is
 doing the ledger's job.**
+
+---
+
+## 2026-08-09 · RETRO-265 (#710 FOLLOW-929, #711 FOLLOW-931, #712 FOLLOW-932) — auditing my own predecessor's output
+
+**A finding I almost missed, and why.** I nearly wrote "FOLLOW-929 closed" off the diff plus a
+config test. What stopped me was the brief naming the gap explicitly — so I curled the production
+origin, and it was green. **Then I nearly stopped there too.** The finding that mattered was one
+level up: FOLLOW-929 had **five** acceptance criteria and I had only been asked to check the effect
+of AC(1). Reading the AC list myself found that **AC(5) — "is this the only one?" — was never
+performed**, and performing it turned up `POST /api/quiz/completion` returning a 204 preflight with
+zero CORS headers, live. **The generalisation clause of an AC is the one that gets dropped under
+time pressure, and it is the one carrying the second instance.** Minted as P-44. New habit: when a
+retro audits a follow-up it filed, **re-read that follow-up's own AC list and score each clause
+individually** — do not score the ticket. Three of twelve ACs across these three PRs were satisfied
+in wording, and all three of the residuals were real.
+
+**An axis I had to trace twice.** The `es` locale. First pass: the schema is widened, the tests are
+generated from the canonical tuple, the ingest boundary is asserted — closed. Second pass, forced by
+the "verify end-to-end, not one hop" mandate: **the code is merged and the Worker is not deployed.**
+There is no ingest deploy workflow (`deploy-staging.yml` is `workflow_dispatch` + staging-only), and
+`/health` exposes no `GIT_SHA`, so the question is not merely unanswered — **it is unanswerable by
+any probe.** I had already built the habit of curling for effect; what I lacked was the prior step:
+_which deploy mechanism does this surface use, and does merging trigger it?_ **New habit: for every
+merged fix, name the deploy path before assessing the effect.** Vercel and Cloudflare Workers sit in
+the same monorepo, close tickets on identical evidence, and mean opposite things by "merged."
+
+**A meta-pattern in how gaps recur across agents.** Two, and they compound.
+
+1. **Every promoted rule that nothing executes gets violated on its next opportunity.** RETRO-264
+   found it for Rule AM (a gate written _after_ AM violated AM on day one). RETRO-265 found it for
+   Rule AJ — `schema_rejected` shipped with no registry entry, a documented-unset DSN and no
+   logpush, **260 lines below `first_party_tenant_id_malformed`, the signal whose identical failure
+   promoted Rule AJ in the first place.** Two rules, two consecutive merge windows, same mechanism.
+   This is the strongest argument in the ledger for FOLLOW-933, and its charter should widen from
+   Rule AM to _rules_.
+2. **A wrong identifier in a PR body becomes permanent code.** #710's body said "LG-4 → FOLLOW-924"
+   for what RETRO-264 filed as **LG-2 → FOLLOW-931** — wrong finding, wrong ticket — and #711
+   inherited it into three shipped source comments, from which the session-110 brief inherited it
+   again. **PR bodies are drafted fast and read as authoritative by the next agent.** New habit:
+   when a PR body cites one of MY findings, check the citation resolves; it costs one grep and it is
+   the only point in the chain where the error is still cheap.
+
+**A refusal, and a correction of my predecessor.** RETRO-264 armed P-43 with _"promote on the NEXT
+independent sighting … citing RETRO-264 §6 as prior 1."_ I found a clean independent sighting and
+**did not promote**, because Rules AR/AS/AT all state _"≥2 PRIOR retros, plus the promotion trigger;
+the promoting retro does NOT inflate the count"_, and the RETRO-217 form RETRO-264 invoked by name
+does not work the way RETRO-264 described it (P-41 ran RETRO-260=1, RETRO-261=2, RETRO-263=trigger).
+**Following my predecessor's own text would have made me promote a rule one sighting early.** The
+lesson generalises past this instance: **a pre-authorization written by a prior retro is evidence,
+not authority — check it against the standard the corpus actually uses before acting on it.** I also
+had to contradict RETRO-264's P0 impact sentence: it described a latent defect in the present tense
+("every first-time visitor fails closed") when the realized population was zero, because
+`app.estalara.com/en` embeds no SDK at all. The severity call was still right. **Describing latent
+defects in the grammar of active outages is how a P0 gets spent.**

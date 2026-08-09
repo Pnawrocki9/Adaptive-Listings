@@ -338,14 +338,18 @@ Privacy Notice §4 row, and an amendment here.
     `packages/sdk/scripts/check-bundle-size.js` enforces** — a **4.1× miss**. _Two quantities are
     easy to swap here and one revision of this annotation did swap them: the **delta** is what left
     the bundle (~1,345 B), the **headroom** is what remains under the 42KB ceiling (1,356 B at
-    `25cff8bc`, 1,367 B at `31cab8b4`). They differ by the pre-move headroom of ~11 B and they drift
-    independently on every merge — run the gate, which now prints both, rather than quoting either
-    from here._ Cause: the estimate applied the `consent-banner.ts` module's own _standalone_
-    raw/gzip size (see the ~5.5KB figures at line 29 and in References below) as if it were the
-    bundle's _marginal_ gzip delta after removal — gzip shares a dictionary with the rest of the
-    bundle, so the incremental contribution of one module is routinely smaller than that module's
-    isolated compressed size. Authoritative before/after bytes: `docs/INTERFACES.md` (Consent-Banner
-    Text Document section).
+    `25cff8bc`, 1,367 B at `9afa0a46`). **Two DIFFERENT elevens appear above and they are causally
+    unrelated — do not merge them** (RETRO-265): `1,356 − 1,345 = 11` is the **pre-move headroom**,
+    the slack that already existed before anything was removed; `1,367 − 1,356 = 11` is **#711
+    independently shrinking the bundle**, a later and unconnected event. Their coincidence is the
+    third generation of the same number-confusion this annotation exists to correct. Delta and
+    headroom drift independently on every merge — **run the gate**, which prints both, rather than
+    quoting either from here._ Cause: the estimate applied the `consent-banner.ts` module's own
+    _standalone_ raw/gzip size (see the ~5.5KB figures at line 29 and in References below) as if it
+    were the bundle's _marginal_ gzip delta after removal — gzip shares a dictionary with the rest
+    of the bundle, so the incremental contribution of one module is routinely smaller than that
+    module's isolated compressed size. Authoritative before/after bytes: `docs/INTERFACES.md`
+    (Consent-Banner Text Document section).
 - Text updates propagate to all visitors within the 5-minute cache TTL — today they wait on every
   tenant's visitors re-fetching the SDK bundle, which is strictly worse for disclosure freshness.
 - The failure mode of the consent path is provably "less processing," never "profiling without

@@ -69,8 +69,9 @@ today.
 ### Next, in order, after FOLLOW-932
 
 1. **FOLLOW-913** (P1, CEO-ruled ESC-054) — description axis to `signal_count >= 5`. Unblocked;
-   scope against **1,356 bytes**, and its AC(1) adds a new named constant, so measure with
-   `@estalara/shared` rebuilt too.
+   scope against **1,367 bytes at `9afa0a46`** (not the 1,356 measured at `25cff8bc` — #711 shrank
+   the bundle), and its AC(1) adds a new named constant, so measure with `@estalara/shared` rebuilt
+   too. Better: **run the gate**, which prints bytes and signed headroom since FOLLOW-932.
 2. **FOLLOW-898** (P1) — the unfaithful `intent-snapshot.test.ts` replica.
 3. **FOLLOW-933** (P2, devops) — Rule AM has no executable consumer; the sharpest RETRO-264 stub.
 4. **FOLLOW-930** (P2) — `text_version` is produced, documented as an audit trail, read by nothing.

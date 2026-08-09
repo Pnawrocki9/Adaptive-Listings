@@ -411,8 +411,13 @@ measured at `25cff8bc`. **These are dated observations, not standing facts** —
 same measurement reads 41,641 B / **1,367 B** headroom, because FOLLOW-931 touched
 `packages/shared`. Single-digit-byte drift on any merge is normal; the gate now prints bytes and
 headroom itself (FOLLOW-932), so **run it rather than quoting this line**. The `42,997` before-
-figure is derived from a KB-only gate output and is good to ±5 B — that imprecision is the very
-defect FOLLOW-932 closed. Those figures are `zlib.gzipSync`, which is what
+figure is derived from a KB-only gate output, so its true value lies in **`[42,993, 43,002]`**
+(**−4/+5** around the quoted 42,997) — enumerated by brute force over every integer byte count that
+`(x / 1024).toFixed(2)` renders as `41.99`. _RETRO-265 proposed `−4/+0` on the premise that the
+reading was truncated; `toFixed` **rounds**, so that correction was wrong in both the mechanism and
+the upper bound, and the original `±5` was substantially right._ This imprecision is the very defect
+FOLLOW-932 closed: the gate now prints the byte count, so nothing downstream has to invert a
+rounding. Those figures are `zlib.gzipSync`, which is what
 `packages/sdk/scripts/check-bundle-size.js` actually enforces. An earlier revision of this line
 quoted CLI `gzip -c` (level 6) and read 1,433 — measuring a budget with a different compressor than
 the gate uses overstates the headroom, and this line had been held up as the number to scope

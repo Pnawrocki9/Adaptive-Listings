@@ -58063,3 +58063,537 @@ example field-for-field — the contract-vs-bytes drift control, present on day 
   its producer"* (`BRAND_PROVISIONING.md:854`, a file this very merge edited). HW-1 is the fourth.
 
 <!-- RETRO-264 = retro for SIX merged PRs: #704 (FOLLOW-918, c6942f40), #705 (FOLLOW-925, 5899e6e4), #706 (FOLLOW-919, d5d804c1), #707 (FOLLOW-910, 9a378532), #708 (FOLLOW-928, 5b56f84f), #709 (FOLLOW-915, 4801a845). main at retro time 25cff8bc. HEADLINE = HW-1/LG-1 P0: consent-text.json is the estate's FIRST cross-origin fetch() of a control-plane static asset and NOTHING sets Access-Control-Allow-Origin (next.config.mjs no headers(), vercel.json no headers, middleware SDK_CORS_PREFIXES=['/api/adapt'] only) -> §D4 fail-closed -> no banner, init() returns null, for every first-visit prod browser. The E2E cannot catch it: consent.spec.ts route.fulfill INJECTS 'access-control-allow-origin': '*' + the Cache-Control nothing produces = Rule L verbatim. Also: text_version HALF_WIRE_P (producer-only, "audit trail" with no consumer); es-locale LG-2 (events/consent.ts:28,50 z.enum(['en','pl']) vs QUIZ_LANGUAGE_VALUES ['en','pl','es'] vs handlers/events.ts:340 per-event safeParse reject -> Spanish consent decisions never stored -> DPIA §13.1/13.2 false to those data subjects); headroom DG-1 (MEASURED 3 ways from a real build: zlib.gzipSync=41,652 B/1,356 headroom = THE GATE; gzip -c=41,575/1,433 = INTERFACES.md; gzip -9=41,488/1,520 = QUEUE.md — both records overstate, Rule AO). RE-RAN not trusted: Rule I 192 unmoved (no consent symbol in list), ADR-0021 --self-test 13/13, bundle 40.68KB. FIXTURE AUDIT (the brief's highest-value ask) = CLEAN: all 16 self-testing gates in scripts/ checked; shell+python gates synthesize into temp dirs; check-consent-text-sync.mjs:453 and check-consent-contract-sync.mjs:483 read live sources but MUTATE with mustReplace/FixtureStaleError anchors AND carry an 'unmodified repo state PASSES' baseline case = Rule AM's own escape hatch; check-adr-0021-conditions.mjs was the SOLE violator and #709 fixed it. NO RULE PROMOTED (count stays 46): every pattern is a compliance failure against an existing rule (L, AO, AM). BRIEF'S CENTRAL QUESTION ANSWERED NO — session-108's name-vs-behaviour is a PREDICATE defect (Rule Q/AS/AP/AE family), session-109's fixture defect is an INPUT defect (Rule AM/L/Z family); fusing them yields an unfalsifiable rule, refused per RETRO-262's scope-limiter standard. ARMED P-43 = the name-vs-behaviour predicate pattern at count 1 (4 instances in ONE merge window = ONE retro sighting per RETRO-228/Rule AM provenance); promote on next independent sighting citing RETRO-264 §6 as prior 1; distinguishing test vs Q/AS recorded in §6. P-42 NOT incremented (the practice worked on #709). FOLLOWS FILED: 929 (P0 backend 4h CORS+cache producer + foreign-origin proof), 930 (P1 text_version consumer-or-delete), 931 (P1 es consent event), 932 (P2 headroom re-measure + name the instrument), 933 (P2 make Rule AM executable), 934 (P3 stale branch-prefix list). PM ACTION: FOLLOW-929 is P0 and gates ESC-055's listing-page hand-off to Rafał — this retro records the dependency and does NOT escalate. Next free FOLLOW: 935. Next free RETRO: 265. -->
+
+## RETRO-265 — FOLLOW-929 (#710), FOLLOW-931 (#711), FOLLOW-932 (#712) — the P0 is genuinely closed and I am the first to have observed it; the AC that was skipped is the one that would have found the second severed origin, and I found it live — 2026-08-09
+
+**THIS RETRO AUDITS RETRO-264'S OWN OUTPUT.** All three PRs are RETRO-264's children. The brief's
+question was whether its findings were correct as stated, whether the fixes discharged them or
+merely satisfied their wording, and whether the loop is converging. **Answers, in order: correct
+(one impact sentence overstated); wording on three of the twelve ACs; converging on the instance
+axis and NOT converging on the generalisation axis.** Every headline below was executed against the
+live production origin, not reasoned about.
+
+### THE HEADLINE, IN FOUR PARTS
+
+**(1) THE P0 IS REALLY FIXED — AND NOBODY HAD LOOKED. I LOOKED.** The brief named this as the gap it
+could not verify itself: `#710`'s whole fix rests on Next's `headers()` applying to a `public/` asset
+on Vercel, and only the config had been tested. Probed, transcript verbatim:
+
+```
+$ curl -sS -D - -o /dev/null -H "Origin: https://app.estalara.com" \
+    https://admin.estalara.com/consent-text.json
+HTTP/2 200
+access-control-allow-origin: *
+cache-control: public, max-age=300, stale-while-revalidate=60
+content-type: application/json; charset=utf-8
+x-matched-path: /consent-text.json
+server: Vercel
+```
+
+Both headers are live, with the exact §D2 TTL, and Vercel did **not** override `Cache-Control` on a
+static asset (a real risk that had been assumed away). The chain is verified further than that:
+
+- **The served document is byte-identical to the repo artefact** — 3,502 B both sides, `IDENTICAL:
+  true`, `schema_version 1`, `text_version 2026-08-09.1`, `locales ['en','pl','es']`. So
+  `ConsentTextDocumentSchema`'s `superRefine` will not fail-close on the deployed bytes.
+- **The deployed SDK actually contains the fetch.** `https://admin.estalara.com/sdk.js` is **155,022
+  bytes and `cmp`-identical to my own build of `main` at `1d9e2183`** — so the served bundle is
+  current through #711, and it carries `consent-text.json`. (Mechanism: `apps/control-plane/package.json`
+  `"build": "node scripts/copy-sdk-bundle.mjs && next build"`, FOLLOW-808 — the asset is regenerated
+  at deploy, not served from the checked-in copy.)
+- **The one hop I could NOT observe is render**, and the reason is itself a finding — see (1b).
+
+**(1b) CALIBRATION AGAINST RETRO-264, STATED PLAINLY BECAUSE IT IS A CONTRADICTION OF MY OWN PRIOR
+VERDICT.** RETRO-264 wrote *"IN PRODUCTION, EVERY FIRST-TIME VISITOR FAILS CLOSED"* and *"every
+first-visit production browser: no banner, null `init()`"*. **The realized population was zero.**
+`https://app.estalara.com/en` returns 21,516 bytes of real HTML containing **zero** occurrences of
+`sdk.js`, `estalara-detect`, `admin.estalara.com` or any `data-estalara-*` attribute — the SDK is not
+embedded on the live app at all, consistent with ESC-020/ESC-055 and the FOLLOW-820 localhost-first
+gate. The **latent** defect was exactly as RETRO-264 described and its **P0 severity was right** as a
+pre-launch blocker — its own §5a said so (*"fix FOLLOW-929 before that hand-off"*), and that
+sequencing was honoured. What was wrong was the present tense. This is **RETRO-257's inversion for
+the third time** (*"the bundle is real and the population is zero"*): the estate keeps describing
+latent defects in the grammar of active outages, which inflates P0s and, worse, spends the word.
+
+**(2) FOLLOW-929's AC(5) WAS NEVER PERFORMED, AND IT IS THE ONE THAT WOULD HAVE FOUND THE SECOND
+SEVERED ORIGIN. I PERFORMED IT AND FOUND ONE, LIVE.** AC(5) reads: *"Re-check whether any OTHER SDK
+`fetch()` targets a control-plane path outside `SDK_CORS_PREFIXES` … enumerate the rest and state the
+verdict."* #710's PR body contains a three-row table — but it enumerates the three **producer
+candidates for the one path**, not the other consumers. No enumeration, no verdict, nothing in the
+diff. The full sweep (`grep -rn "fetch(" packages/sdk/src --include=*.ts | grep -v test` → 8 sites;
+`packages/sdk-loader|sdk-react|sdk-vue` → 0; deployed `estalara-detect.iife.js` → **0** occurrences
+of `fetch(`):
+
+| # | consumer | target | producer | verdict |
+| --- | --- | --- | --- | --- |
+| 1 | `core/consent-text.ts:63` | `/consent-text.json` | `next.config.mjs headers()` | **live-probed ✅** |
+| 2 | `core/adapt.ts:1191` | `/api/adapt` | middleware `SDK_CORS_PREFIXES` | ✅ (prefix) |
+| 3 | `core/adapt.ts:166` | `/api/adapt/feedback` | middleware | **live-probed ✅** |
+| 4 | `core/adapt-description.ts:334` | `/api/adapt/description` | middleware | ✅ (prefix) |
+| 5 | `core/intent-weights.ts:94` | `/api/intent/config` | route inline `*` + `OPTIONS` at `route.ts:64` | **live-probed ✅** |
+| 6 | `core/quiz-config.ts:160` | `/api/quiz/public-config` | route inline `*` + `OPTIONS` at `route.ts:184` | **live-probed ✅** |
+| 7 | **`core/adapt.ts:264`** | **`POST /api/quiz/completion`** | **NONE** | **live-probed BROKEN ❌** |
+| 8 | `core/events.ts:85` | ingest Worker `/v1/events` | ingest origin-gate | **live-probed ✅** |
+
+Site 7, verbatim:
+
+```
+$ curl -sS -X OPTIONS -D - -H "Origin: https://app.estalara.com" \
+    -H "Access-Control-Request-Method: POST" \
+    -H "Access-Control-Request-Headers: authorization,content-type,x-estalara-signature" \
+    https://admin.estalara.com/api/quiz/completion
+HTTP/2 204
+allow: OPTIONS, POST
+        ← no access-control-allow-origin, no -methods, no -headers
+```
+
+That 204 is Next's auto-generated `OPTIONS`; `apps/control-plane/src/app/api/quiz/completion/route.ts`
+exports only `POST` (no `OPTIONS`, no CORS headers — `grep -n "OPTIONS\|Access-Control"` → 0 hits) and
+`middleware.ts:59 SDK_CORS_PREFIXES = ['/api/adapt']` does not match `/api/quiz/completion`. The POST
+carries `Authorization` + `X-Estalara-Signature` + `Content-Type: application/json` — **three
+non-safelisted headers, so a preflight is mandatory** — and it fails. The browser never sends the
+POST. **This is HW-1 exactly, on a second path, and it persists after the PR that was written to
+close HW-1.** Blast radius: `resolved_archetype` never reaches `quiz_completions` (the MOAT training
+table) for any cross-origin visitor; the failure is invisible because `postQuizCompletion` is
+fire-and-forget behind `.catch(console.warn)`. **AC(4) is likewise undischarged** —
+`packages/sdk/e2e/consent.spec.ts` has not been touched since `4801a845` (#709), so the `route.fulfill`
+that supplies `access-control-allow-origin: '*'` still carries no annotation. The AC's own words were
+*"a fixture that supplies a header must say so where the next reader will look"*; it was said in a PR
+body, which is precisely not where the next reader looks.
+
+**(3) FOLLOW-931 IS MERGED, MARKED DONE — AND NOT LIVE. FOUR INDEPENDENT LOCKS SIT BETWEEN THE FIX
+AND ANY EVIDENCE OF IT.** The contrast with #710 is the whole lesson: #710 rode Vercel's
+merge-triggered deploy and was live in minutes (I saw it). #711 landed in the **ingest Worker**, and:
+
+1. **There is no automated deploy.** `ls .github/workflows/` has no ingest deploy job;
+   `deploy-staging.yml` is `on: workflow_dispatch` and its only job is `deploy-ingest` **(staging)**;
+   production is the manual runbook `docs/runbooks/INGEST_WORKER_DEPLOY.md:59-60` (`wrangler deploy
+   --env production` by hand). ESCALATIONS.md:279 already records it as *"manual/staging-only/never-green"*.
+2. **Nothing can tell you which commit is live.** `GET https://ingest.estalara.com/health` →
+   `{"status":"ok","service":"estalara-ingest","environment":"production"}`. `GIT_SHA` is declared in
+   `apps/ingest/src/types.ts:20` and surfaced nowhere. **"Is FOLLOW-931 live?" is currently
+   unanswerable by anyone, including a probe.**
+3. **The new `schema_rejected` signal is a Rule AJ HALF_WIRE_P on all three legs** — see §3 HW-2.
+4. **ESC-056** blocks the count (`ingest_worker` has no `SELECT`), so the drop cannot be measured
+   either. Correctly filed, not re-filed here.
+
+So the fix, the signal that would show the fix mattered, the version marker that would show the fix
+shipped, and the query that would size it are **all** unavailable, and the ticket is closed DONE on
+the strength of a merge commit. Mitigating and stated for honesty: because no page loads the SDK
+(headline 1b), the *realized* `es` drop is also ~zero right now. This is a P1, not a P0 — the same
+calibration I just applied to RETRO-264.
+
+**(4) THE #712 ARITHMETIC IS RIGHT. I RE-DERIVED IT FROM A CLEAN BUILD RATHER THAN READING IT.**
+`pnpm turbo run build --filter='@estalara/shared' --filter='@estalara/sdk' --force`, then:
+
+```
+$ node packages/sdk/scripts/check-bundle-size.js
+Bundle size: 40.67KB gzip (41,641 B) — limit 42KB (43,008 B) — headroom 1,367 B
+$ node -e "…gzipSync(readFileSync('packages/sdk/dist/estalara-sdk.iife.js'))…"
+raw 155022 gzip 41641 headroom 1367
+```
+
+**Ground truth confirmed independently; the new instrument is byte-accurate.** On the two PM
+corrections the brief asked me to check:
+
+- **(a) The category correction is CORRECT and it is the important one.** `1,356 B` is the headroom,
+  not the delta; `delta = headroom_after − headroom_before`, so `1,356 − 11 = 1,345`. Internally
+  consistent. **One nit, one hazard.** *Nit:* the `~11 B` pre-move headroom is derived from a
+  two-decimal KB readout (`41.99KB`), which pins the byte count to `[42,993, 42,997]` and the
+  headroom to `[11, 15]` — so `42,997` is the **top** of the interval, not its centre, and
+  `docs/INTERFACES.md:412`'s *"good to ±5 B"* should be `−4/+0`; the delta is `1,341–1,345`, of which
+  `~1,345` is the maximum. Session 108's independently recorded `14 B` sits inside that interval and
+  is arguably the better estimate. Immaterial to any decision, and the line already says *"run the
+  gate"*. *Hazard, and this one is real:* **there are two numerically identical, causally unrelated
+  `11`s in the same paragraph.** `1,356 − 1,345 = 11` is the pre-move headroom. `1,367 − 1,356 = 11`
+  is **#711 shrinking the bundle** (verified by elimination: #710 and #712 touch no file that enters
+  the bundle — control-plane, docs, CI, `.gitignore`, `scripts/` — so the entire −11 B is #711's
+  `z.enum(['en','pl'])` → `QuizLanguageSchema` de-duplication in `packages/shared`). ADR-0021:341
+  prints `1,356 B at 25cff8bc, 1,367 B at 31cab8b4` and then says *"They differ by the pre-move
+  headroom of ~11 B"* — a reader will take the 11 as explaining the drift it does not explain. **An
+  annotation written to fix a number-confusion has reproduced a number-confusion one level down;
+  that is Rule AO at the third generation, and RETRO-264 already caught the second.**
+- **(b) The historical-vs-forward-looking distinction is SOUND, and it is applied to one of two
+  sibling sites in its own diff.** `FOLLOW-913`'s note (`FOLLOW_UPS.md:32198-32202`) carries the
+  commit and the pointer: *"Measured at `25cff8bc`; at `31cab8b4` it is 1,367 B. Do not scope off
+  either number without re-running the gate."* `FOLLOW-898`'s note, **added in the same hunk-set**
+  (`FOLLOW_UPS.md:31562-31564`), carries a bare **`1,356 B`** with no commit and no instrument
+  pointer. Mitigating and stated: FOLLOW-898's own text says the ticket *"is not expected to move the
+  SDK bundle"*, so the figure is not load-bearing there. `backlog/QUEUE.md:72` and `:196` likewise
+  say *"scope against 1,356 bytes"* forward-looking while `:46` of the same document records
+  `1,367 B` as the merged fact. **This is RETRO-260's finding verbatim — a correction sweeps in the
+  vocabulary of the round that found the error — with the round's own brand-new rule as the thing
+  not swept.**
+- **(4b) THE OVERRIDE WAS RIGHT, AND THE TIEBREAK SHOULD NEVER WIN.** The worker disclosed the
+  1,356/1,367 drift and chose `1,356` for *"corpus consistency"*. Overriding that was correct, and
+  the reason is stronger than the ruling stated: **consistency-with-an-existing-record is the exact
+  mechanism that produced RETRO-264 DG-1.** Three records held three different figures, each one
+  internally consistent with the instrument that produced it, and consistency is what kept all three
+  alive. A corpus of agreeing numbers is evidence of copying, not of measurement. The legitimate
+  residue of the worker's instinct is *"do not rewrite history"* — which is precisely the half the PM
+  preserved. **Recorded as a control that worked: the worker surfaced the conflict instead of
+  silently picking one, which is the behaviour that made the override possible at all.**
+
+### 1. Summary of change
+
+- **PR:** #710 (merged 2026-08-09 18:00:15 UTC, `da99e220`) · #711 (19:28:49 UTC, `31cab8b4`) · #712
+  (20:18:35 UTC, `9afa0a46`). `main` at retro time: `1d9e2183` (FOLLOW-932 bookkeeping).
+- **Files changed:** 23 file-changes across three PRs (20 distinct paths; `backlog/FOLLOW_UPS.md`
+  touched by all three, `docs/adr/ADR-0021-…md` by #710 and #712). **+1,342 / −39.**
+- **Modules touched:** control-plane (config + one API route), ingest, shared, SDK build script, CI,
+  ADR/INTERFACES docs, agent lessons, backlog.
+- **Key contracts changed:**
+  - **`GET {CONTROL_PLANE_URL}/consent-text.json` response headers — NEW PRODUCER, breaking: no.**
+    `apps/control-plane/next.config.mjs` `headers()` emits `Access-Control-Allow-Origin: *`,
+    `Cache-Control: public, max-age=300, stale-while-revalidate=60`, `Content-Type: application/json;
+    charset=utf-8`. **Both axes verified: producer present in config AND observed on the deployed
+    origin.** The third header (`Content-Type`) is new relative to ADR-0021 §D2's stated contract and
+    is documented nowhere — harmless (it matches Vercel's default for `.json`) and noted, not filed.
+  - **`ConsentGrantedPayloadSchema.language` / `ConsentDeniedPayloadSchema.language`:
+    `z.enum(['en','pl'])` → `QuizLanguageSchema`. WIDENING, breaking: no** (every previously-valid
+    value stays valid). Consumer sweep: `EventSchema` → `apps/ingest/src/handlers/events.ts:340`
+    (sole runtime consumer); no dashboard, DSR export, ETL job or SQL reads
+    `payload.language` off a consent event (`grep -rn "consent.granted\|consent.denied"` over
+    `apps/ packages/ --include=*.ts,*.sql,*.py` minus tests → the gate classifier at
+    `consent-gate.ts:129-130` and nothing else). **All three locale axes checked, not just the `es`
+    one that was reported** — and the producer axis holds: `core/config.ts:244-254` narrows through
+    `isSupportedLanguage()` at level 2 and level 3, `mergeQuizConfig`'s level-1 override is
+    `QuizLanguageSchema`-validated (`quiz-config.ts:64,150`), so the SDK cannot emit a fourth locale.
+    **The `de`-browser fail-closed hypothesis was tested and DISPROVEN.**
+  - **`QuizCompletionBodySchema.language`** (`api/quiz/completion/route.ts:52`) — same literal→constant
+    derivation. Breaking: no.
+  - **`schema_rejected`** — **NEW Sentry signal** (`handlers/events.ts:423`). See §3 HW-2.
+  - **`check-bundle-size.js` stdout format** — now prints bytes and **signed** headroom. This is a
+    consumed contract: FOLLOW-913's AC(5) reads it. Breaking for anything parsing the old string;
+    nothing does (`grep -rn "Bundle size:"` → the script and its CI step only).
+  - **`.github/workflows/ci.yml:259`** step renamed `SDK bundle size gate (<40KB gzip)` →
+    `(<42KB gzip, ESC-028)`. **A step rename, not a job rename** — no `.github/required-checks.txt`
+    edit was owed, and none was made. Correct.
+
+### 2. Verification done in PR
+
+- **Test files changed:** `apps/control-plane/src/consent-text-headers.test.ts` (**NEW**, 65 lines, 3
+  cases, red-first proven 3/3 against the shipped state), `apps/control-plane/src/app/api/quiz/completion/route.test.ts`
+  (+26/−13), `apps/ingest/src/index.test.ts` (+80, 4 cases), `packages/shared/src/schemas/events/consent.test.ts`
+  (**NEW**, 53 lines, 8 cases). #712 changed no test file.
+- **Assertions added:** ~35. **Quality note, and it is high:** #711's cases are **generated from
+  `QUIZ_LANGUAGE_VALUES`**, not hand-listed, and carry a vacuity guard (*"covers the whole canonical
+  tuple, so this file cannot silently under-test"*) — the only test shape that would have caught the
+  original defect rather than restating it. #711's ingest case asserts at the **real `EventSchema`
+  boundary**, and its FOLLOW_UPS record discloses that the cross-package red-first proof was
+  initially **vacuous** until `@estalara/shared` was rebuilt. That disclosure is worth more than the
+  test.
+- **Coverage delta:** unknown (no coverage report in any of the three PR bodies).
+- **CI checks:** re-read rather than trusted. #710 `pass=48 fail=1 skipping=4`; #711 and #712
+  `pass=89 fail=2 skipping=4`. **Every non-success is registered `any-state`** in
+  `.github/required-checks.txt` (`Rule I — wired-or-dead check` at :101, the two prod-effect probes at
+  :100/:102). The register's present-vs-green distinction — FOLLOW-918's second-order design — held
+  on its third and fourth uses. **Recorded as a control that worked.**
+- **I re-ran, rather than trusted:** `bash scripts/check-rule-i.sh` → **192 violations, unmoved**.
+  `node scripts/check-adr-0021-conditions.mjs --self-test` → **13/13, exit 0**. Clean forced build +
+  `check-bundle-size.js` → **41,641 B / headroom 1,367 B**, matching an independent `zlib.gzipSync`
+  call byte-for-byte. Five live HTTPS probes against production (§Headline 1, 2, 3).
+
+### 3. Wiring Audit
+
+**CHECK A — dead code.** Three new files; **clean, with two documented suppressions.**
+
+- `apps/control-plane/src/consent-text-headers.test.ts` — test file, suppressed by rule. ✅
+- `apps/control-plane/src/next-config.d.ts` — **type-only ambient declaration, suppressed.** Its
+  stated scope limiter is accurate: `declare module '*next.config.mjs'` carries a single `*`, so it
+  matches only specifiers ending in that name and does not loosen `.mjs` imports generally. **Noted,
+  not filed:** the shape is hand-declared, so `headers()` returning something else would still
+  typecheck — a declared-vs-actual seam, mitigated by Next validating `headers()` at build time and,
+  now, by the live probe.
+- `.claude/agents/sdk-engineer/lessons.d/FOLLOW-932.md` — agent-lesson artefact; the `lessons.d/`
+  convention is consumed by dispatch briefs (`.claude/agents/pm-orchestrator/lessons.md:2727`).
+  Suppressed as a process artefact. ✅
+- **No new exported code symbol** was added by any of the three PRs. `next.config.mjs`'s `headers()`
+  is a framework entrypoint (suppressed by the framework-route rule) and is in any case consumed by
+  Vercel's route table — **verified by effect**, which is stronger than an importer.
+- Rule I re-run: **192, unmoved**; no symbol from these three PRs appears in the violation list.
+
+**CHECK B — half-wire.** **Two findings.**
+
+- **HW-1 — `Access-Control-Allow-Origin` / preflight on `POST {CONTROL_PLANE_URL}/api/quiz/completion`:
+  HALF_WIRE_C, P1.** Consumer: `packages/sdk/src/core/adapt.ts:264` (cross-origin POST with three
+  non-safelisted headers → mandatory preflight). Producer: **none** — `route.ts` exports only `POST`;
+  `middleware.ts:59 SDK_CORS_PREFIXES = ['/api/adapt']` does not match; `next.config.mjs headers()`
+  scopes to `/consent-text.json` only. **Verified live: `OPTIONS` → `HTTP/2 204`, `allow: OPTIONS,
+  POST`, zero CORS headers.** Pre-existing, and in scope because FOLLOW-929's AC(5) commissioned
+  exactly this enumeration and it was not done. → **FOLLOW-936.**
+- **HW-2 — `schema_rejected`: HALF_WIRE_P, P1, and a verbatim Rule AJ violation.** Producer:
+  `apps/ingest/src/handlers/events.ts:423`. Consumers, all three legs of Rule AJ's text checked:
+  (i) **alert/registry entry — none** (`grep -rn "schema_rejected"` over `*.md|*.yml|*.tf|*.json`
+  outside `node_modules` returns only the code and FOLLOW-931's own AC note); (ii) **verified
+  delivery channel in the environment it must fire in — absent**, `SENTRY_DSN_INGEST` is unset in prod
+  (`docs/runbooks/INGEST_WORKER_DEPLOY.md:127`, *"the Sentry alerting channel is mute"*),
+  `apps/ingest/src/observability.ts:72` returns the un-instrumented handler when the DSN is falsy, and
+  `apps/ingest/wrangler.toml` has **neither `logpush` nor `tail_consumers`** (grep → 0 hits), so even
+  the `logger` fallback needs a live `wrangler tail`; (iii) **the Worker carrying it is not deployed**
+  (§Headline 3). **Rule AJ's own promotion trigger was `first_party_tenant_id_malformed` — a signal
+  produced 260 lines above this one, in the same file, with the same three legs missing, still open as
+  FOLLOW-693.** → **FOLLOW-937.**
+
+**CLOSED BY THIS MERGE, verified rather than assumed — RETRO-264 HW-1 and HW-2.** Producer now
+exists **and is observed on the deployed origin** (§Headline 1). This is the only wire in the last
+four retros whose closure was confirmed by an effect rather than by a diff.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — `POST /api/quiz/completion` is unreachable cross-origin.** `adapt.ts:264` ↔
+  `route.ts` (no `OPTIONS`) ↔ `middleware.ts:59`. Impact: `resolved_archetype` never reaches
+  `quiz_completions`; the SDK's `.catch(console.warn)` makes it silent; the archetype-SoT and MOAT
+  training paths lose their server-side record for every cross-origin visitor. See HW-1.
+- **LG-2 (P1) — "DONE" means "live" on one origin and "not live" on the other, and the closure record
+  does not say which.** #710 (Vercel, merge-triggered) and #711 (Cloudflare Worker, manual runbook)
+  were both marked DONE by the identical criterion — merged, gate exit 0 — with opposite deployment
+  outcomes. Nothing in the ticket schema, the gate, or `/health` distinguishes them. This is the
+  `deployed ≠ configured ≠ live` axis FOLLOW-906 was filed for, hitting a ticket-closure criterion
+  rather than a status token. See §Headline 3. → **FOLLOW-938.**
+- **LG-3 (P2) — a config-object assertion was accepted where the AC asked for a handler or a
+  deployment.** FOLLOW-929 AC(3) offered exactly two forms: *"(a) a control-plane integration test
+  that asserts both headers on the real handler/route output, or (b) a post-deploy smoke that curls
+  the live URL."* `consent-text-headers.test.ts` is neither — it `await`s `nextConfig.headers()` and
+  inspects the returned array. It is a good test (path derived from `CONSENT_TEXT_URL`, red-first
+  3/3) and it is **one hop short of the AC's own text**, which is why the effect went unobserved for
+  two hours and three PRs until this retro. → **FOLLOW-935.**
+- **LG-4 (P3) — three shipped source files cite the wrong RETRO-264 finding.**
+  `packages/shared/src/schemas/events/consent.ts:35`,
+  `packages/shared/src/schemas/events/consent.test.ts:2` and `apps/ingest/src/index.test.ts:463` all
+  say **"RETRO-264 LG-4"**. RETRO-264's LG-4 is the `EFFECT_PROBE_CALLERS` register
+  (`RETROSPECTIVES.md:57855`); the `es` defect is **LG-2** (`:57845`). Provenance traced: #710's PR
+  body wrote *"LG-4 → FOLLOW-924"* — wrong on both the finding **and** the ticket (it is FOLLOW-931,
+  not FOLLOW-924) — and #711 inherited the label into code comments, from which the session-110
+  dispatch brief inherited it again. **One wrong identifier in a PR body became three permanent code
+  comments and two briefs**, inside a docblock whose subject is *"never repeat the literal set."*
+  (`handlers/events.ts:452` also says "LG-4" — that is an unrelated pre-existing FOLLOW-286 reference;
+  checked, not counted.) → **FOLLOW-939.**
+
+#### 4b. Code bugs not caught
+
+- **CB-1 (P1)** = LG-1. Shipped green through 89 check-runs on the PR that was written to close the
+  identical defect on a sibling path.
+- **CB-2 (P1)** = HW-2 / Rule AJ.
+- **CB-3 (P3) — `apps/control-plane/public/sdk.js` is a tracked build artefact that is stale.**
+  155,056 B in git vs 155,022 B built from `main`; regenerated at deploy by
+  `scripts/copy-sdk-bundle.mjs` (FOLLOW-808), so **not a production defect** — but anyone who greps
+  the checked-in copy to answer *"what is deployed?"* gets a stale answer, in a repo whose last four
+  retros are all about declared-vs-effective. Recorded, folded into FOLLOW-938's AC rather than
+  filed separately.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P1) — no test, at any level, observes a real HTTP response for `consent-text.json`.** The
+  new test reads a config object; the E2E fabricates the response; nothing curls anything. My probe is
+  a one-time observation by an agent, not a standing control — **exactly the FOLLOW-919 / RETRO-262
+  shape the brief named.** → FOLLOW-935.
+- **TG-2 (P2) — FOLLOW-929 AC(4) undischarged.** `consent.spec.ts` untouched since `4801a845`; the
+  `route.fulfill` header injection still carries no note saying what it does not prove. → folded into
+  FOLLOW-935 AC.
+- **TG-3 (P2) — no test asserts CORS on any control-plane SDK-facing route.** Sites 2–7 of the
+  §Headline-2 table have zero coverage; site 7's absence therefore cost nothing to introduce and
+  nothing to keep. → FOLLOW-936 AC.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3)** — `docs/adr/ADR-0021-…md:341`'s two unrelated `11`s (§Headline 4a).
+- **DG-2 (P3)** — `backlog/FOLLOW_UPS.md:31564` (FOLLOW-898) carries `1,356 B` bare while its sibling
+  at `:32198` carries commit + instrument; `backlog/QUEUE.md:72` and `:196` say *"scope against 1,356
+  bytes"* forward-looking against `:46`'s own `1,367 B`. → **FOLLOW-940.** (QUEUE.md is not mine to
+  edit; recorded for the PM.)
+- **DG-3 (P3)** — `docs/INTERFACES.md:412`'s *"±5 B"* is one-sided; the interval is `−4/+0`.
+  Folded into FOLLOW-940.
+- **DG-4 (P3)** — `Content-Type: application/json; charset=utf-8` is now produced but appears in
+  neither ADR-0021 §D2's response block nor `docs/INTERFACES.md`. Harmless; folded into FOLLOW-935.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-913 (P1, next in the QUEUE order) — scope it against `1,367 B` at `9afa0a46`, not `1,356`.**
+  QUEUE:72 says 1,356; the same document's :46 says 1,367; FOLLOW-898's stub says 1,356 bare. The
+  gate now prints both — **run it.** The 11-byte error is not material to FOLLOW-913's constant, but
+  the pattern of a dispatcher reading a stale forward-looking figure is exactly what FOLLOW-932
+  existed to end.
+- **FOLLOW-898 (P1)** — same; its budget note is the un-swept sibling (DG-2).
+- **ESC-055 / FOLLOW-914 / FOLLOW-907 (Rafał's listing page).** RETRO-264 made FOLLOW-929 a
+  precondition and was right; **that precondition is now met and observed.** But **LG-1 is a second
+  precondition on the same hand-off**: the moment a real page loads the SDK, the quiz-completion ping
+  fails in the browser for the same reason the banner would have. Fix FOLLOW-936 before that hand-off
+  or the first live quiz test loses its archetype write for a reason that has nothing to do with the
+  quiz.
+- **FOLLOW-930 (`text_version`)** — unblocked (FOLLOW-931 merged, as QUEUE sequenced). Unaffected.
+- **FOLLOW-933 (make Rule AM executable)** — **its charter should widen.** Rule AJ has now failed the
+  same way Rule AM did, in the same estate, one merge later. Whatever gate-of-gates FOLLOW-933 builds
+  should be shaped to take a second rule, not hard-coded to `--self-test` fixtures. Recorded for the
+  PM at promotion; not re-filed.
+- **FOLLOW-693** — HW-2 is its second instance in the same file. Should absorb `schema_rejected` at
+  promotion, or FOLLOW-937 should be merged into it.
+
+#### 5b. Future sprint tickets affected
+
+- **Multi-brand go-live (FOLLOW-653 family) / FOLLOW-928.** The two CORS models in this estate now
+  diverge deliberately: `consent-text.json` uses `*` (correct — §D3 forbids varying by tenant),
+  while `/api/adapt*` reflects a **hardcoded two-entry allowlist** (`middleware.ts:41
+  CORS_PROD_ORIGINS`). **A third-party brand origin cannot call `/api/adapt` at all.** Correct under
+  the single-tenant model (memory `project_single_tenant_rebrand_model`), and a hard precondition
+  the moment it changes. Recorded, not filed — it is FOLLOW-928's axis.
+- Any future ingest-Worker fix inherits LG-2: merging it does not ship it.
+
+#### 5c. Contracts changed others rely on
+
+- `GET /consent-text.json` response headers — **now honoured end-to-end**, out-of-repo consumers
+  (Rule AK) get what `docs/INTERFACES.md` promises. Two of four documented properties were
+  unimplemented at RETRO-264; **zero are now**, verified on the wire.
+- Consent audit payload `language` — widened, non-breaking, single runtime consumer, swept.
+- `check-bundle-size.js` stdout — consumed by FOLLOW-913 AC(5).
+
+#### 5d. Architectural assumptions affected
+
+- **"A merged PR is a shipped PR" is true for the control plane and false for the ingest Worker, and
+  the estate's closure ritual does not distinguish them.** Vercel deploys on merge; the Worker waits
+  for a human with `wrangler`. Both surfaces close tickets with the same evidence (merge commit +
+  gate exit 0). Until `/health` carries `GIT_SHA` there is no probe that can even settle the
+  question — **the effect axis RETRO-262/263 built is unavailable on this surface for want of a
+  four-line handler change.**
+- **"The next PR closes the finding" is not the same as "the next PR closes the class."** Three of
+  this round's four headline findings are residuals of FOLLOW-929's own acceptance criteria
+  (AC(3) partially, AC(4) not at all, AC(5) not at all) rather than new territory. The fix converged
+  on the instance in two hours; the generalisation the AC explicitly commissioned was the part
+  dropped under time pressure — and it was the part carrying the second live defect.
+- **PM-side validator corrections are now a real source of contract text and nothing reviews them.**
+  #712's two corrections (§Headline 4) were made after the worker's PR, by the validator, and landed
+  in an ADR and a public interface document. One is right with a nit; one is right and half-applied.
+  The estate has Rule AO for a *worker's* correction re-verified against its own PR's evidence; a
+  validator's post-hoc correction has no equivalent checkpoint. **Recorded as an observation, not
+  filed and not promoted — one sighting.**
+
+### 6. New lesson candidates
+
+**RULE ACTION — NO PROMOTION. Rule count stays 46** (`grep -c "^## Rule " CONVENTIONS_PATCH.md` → 46,
+re-run). **RETRO-264's restraint held up over three follow-on PRs and this retro extends it.** Every
+pattern found here is a compliance failure against an adequate promoted rule, which per
+RETRO-258/261's standard makes it a ticket, not a rule change:
+
+- **The second severed cross-origin producer → Rule L** (*"verify the production path PRODUCES the
+  config a consumer reads"*) plus FOLLOW-658/659/660's *"a live consumer shipped without its
+  producer"*. → FOLLOW-936.
+- **`schema_rejected` → Rule AJ**, verbatim, all three legs, in the file whose earlier signal
+  promoted it. → FOLLOW-937.
+- **The un-swept sibling budget note → Rule AI amendment 3 / Rule S.** → FOLLOW-940.
+- **The two `11`s → Rule AO**, third generation. → FOLLOW-940.
+- **The LG-4 mis-citation → Rule N** (cross-references must name the actual source of record). →
+  FOLLOW-939.
+
+**P-43 — "A CONTROL ASSERTS THE PRESENCE OF A NAME WHERE IT MEANS THE COVERAGE OF A BEHAVIOUR" —
+INCREMENTED TO COUNT 2 (PRIOR). NOT PROMOTED.** The sighting is independent and in a new subsystem:
+`apps/control-plane/src/consent-text-headers.test.ts` asserts the **presence of a header rule in a
+config object** where it means **the deployed origin sends the header**. It passes P-43's own
+distinguishing test as RETRO-264 wrote it — *does the control's assertion, if it passed, permit the
+failure the control exists to prevent?* — **yes**: it passed on #710 and would have passed unchanged
+had Vercel dropped `headers()` on `public/` assets, or had the deploy never run. It is a **predicate**
+defect, not an input defect: the input (the real `next.config.mjs`) is genuine; the proposition is
+weaker than the claim. Distinct from Rule Q (did the assertion *run*?) and Rule AS (does the fixture
+cover the *silent* direction?). Per RETRO-228's discipline, the other instances in this window
+(#711's schema-accepts-`es` tests standing in for "a Spanish decision is recorded"; the DONE criterion
+of LG-2) are **instances inside one sighting, not extra sightings**.
+
+**AND HERE I MUST CONTRADICT RETRO-264 EXPLICITLY, BECAUSE FOLLOWING ITS TEXT WOULD HAVE MADE ME
+PROMOTE A RULE ONE SIGHTING EARLY.** RETRO-264 §6 wrote: *"Pre-authorization, in the RETRO-217 form:
+promote on the NEXT independent sighting in any subsystem, citing RETRO-264 §6 as prior 1."* Read
+literally that licenses promotion at **one prior plus the trigger**. **Every rule from AA through AT
+states the opposite standard in its own evidence block** — *"Evidence (≥2 PRIOR retros, plus the
+promotion trigger; the promoting retro does NOT inflate the count)"* (Rules AR, AS, AT verbatim;
+same adjudication cited for AA/AB/AC/AD/AE/AF/V/Q). **And the RETRO-217 form that RETRO-264 invoked
+by name did not work that way either:** P-41 was minted by RETRO-261 *"at 1 prior — not promoted"*,
+banked RETRO-260 and RETRO-261 as the two priors, and was promoted only at RETRO-263 as trigger; Rule
+AR likewise banked RETRO-217 (prior 1) and RETRO-247 (prior 2) with RETRO-262 as trigger. **RETRO-264
+invoked the precedent and stated a threshold the precedent does not use.** Corrected here:
+**P-43 = 2 priors (RETRO-264, RETRO-265). Promotion becomes available at the next independent
+sighting, with RETRO-266+ as the trigger and neither of these two retros inflating the count.**
+Left as an arming, not a rule — and the distinguishing test RETRO-264 recorded is good and should be
+carried forward unchanged.
+
+**P-44 — MINTED AT 1 PRIOR, NOT PROMOTED: "THE GENERALISATION CLAUSE OF AN ACCEPTANCE CRITERION IS
+THE ONE THAT GETS DROPPED, AND IT IS THE ONE CARRYING THE SECOND INSTANCE."** FOLLOW-929 shipped four
+of five ACs; the one skipped was AC(5), *"is it the only one?"*, and it was the one hiding a live
+break. Distinct from Rule AI (propagating a *changed claim* across documents) and Rule S
+(sibling-completeness of *code sites*) because the object here is an **AC clause inside a ticket the
+retro itself wrote**, and the remedy is a dispatch/validation practice, not a code sweep.
+**Distinguishing test for a future sighting:** *did the ticket contain an explicit "check whether
+this is the only instance" clause, and did the PR discharge it with an enumeration and a stated
+verdict?* Count 1. No promotion.
+
+**P-42 ("read the seam before dispatching") — NOT incremented.** All three dispatches were
+well-scoped; #712's brief correctly identified AC(6) as FOLLOW-913's instrument and sequenced on it.
+The practice worked again. Count stays 1.
+
+**RECORDED AS CONTROLS THAT WORKED — five.** (1) The `.github/required-checks.txt` register's
+**present-vs-green** distinction: three prod-effect gates were `SKIPPED` on all three PRs and the
+merge gate correctly exited 0 because they are registered `any-state` (:100/:101/:102) — the
+second-order design working on its third use. (2) `#711`'s **generated-from-the-canonical-tuple**
+tests with an explicit vacuity guard — the only shape that would have caught the original defect.
+(3) `#711`'s disclosure that its own cross-package red-first proof was **vacuous until
+`@estalara/shared` was rebuilt** — a worker reporting that its evidence was worthless before fixing
+it. (4) The `#712` worker **disclosing the 1,356/1,367 drift instead of resolving it silently**,
+which is the only reason the override in §Headline 4b was possible. (5) `packages/shared/src/schemas/consent-text.test.ts`'s
+byte-for-byte artefact assertion — I confirmed it holds **against the deployed document**, not just
+the repo one.
+
+### 7. Follow-ups
+
+- **FOLLOW-935** — Turn the one-time CORS observation into a standing post-deploy effect probe:
+  curl the live `consent-text.json` from a foreign `Origin` and assert both headers; discharges
+  FOLLOW-929 AC(3) option (b) and AC(4) (devops-engineer, 3h, **P1**) [LG-3, TG-1, TG-2, DG-4;
+  Rule L, RETRO-262 §5d].
+- **FOLLOW-936** — `POST /api/quiz/completion` has no CORS producer: the preflight returns 204 with
+  zero CORS headers and the SDK's archetype ping is blocked in every cross-origin browser
+  (backend-engineer, 3h, **P1**) [HW-1, LG-1, CB-1, TG-3; FOLLOW-929 AC(5); Rule L].
+- **FOLLOW-937** — `schema_rejected` is a producer-only alarm on a channel the repo documents as
+  absent: give it a registry entry and a verified delivery channel, or record it as inert
+  (backend-engineer + devops-engineer, 3h, **P1**) [HW-2, CB-2; Rule AJ; FOLLOW-693].
+- **FOLLOW-938** — "Merged" is not "deployed" for the ingest Worker and nothing can tell the
+  difference: surface `GIT_SHA` in `GET /health` and make a deploy step part of Worker-ticket closure
+  (devops-engineer, 3h, **P1**) [LG-2, CB-3, §5d; FOLLOW-906].
+- **FOLLOW-939** — Three shipped source files cite `RETRO-264 LG-4` for a finding filed as LG-2 /
+  FOLLOW-931; correct them and the provenance note (sdk-engineer, 1h, **P3**) [LG-4; Rule N].
+- **FOLLOW-940** — Apply FOLLOW-932's own historical-vs-forward-looking rule to the three sites it
+  missed, and de-collide the two unrelated `11`s in the ADR annotation (sdk-engineer, 2h, **P3**)
+  [DG-1, DG-2, DG-3; Rule AO, Rule AI amendment 3].
+
+**Numbering: 935–940 allocated against `main` at `1d9e2183` per Rule AN. Next free FOLLOW: 941.**
+**No escalation filed. ESC-057 remains free** — ESC-056 already owns the ClickHouse grant, and the
+two operator actions this retro surfaces (deploy the ingest Worker; decide whether the quiz-completion
+break blocks ESC-055) are recorded in §5a/§5d for the PM to escalate or not.
+
+### 8. Cross-references
+
+- **RETRO-264** — the direct parent and the subject of this audit. **Verdict: its four headline
+  findings were all correct as stated and all four are now closed or ticketed.** Two corrections to
+  its text, both recorded above rather than buried: its P0 impact sentence described a latent defect
+  in the present tense against a realized population of zero (§Headline 1b), and its P-43
+  pre-authorization stated a promotion threshold one sighting below the standard every rule in
+  `CONVENTIONS_PATCH.md` uses (§6). Its restraint on promotion was right and holds.
+- **RETRO-262** — its §5d invariant (*"for every deployed artefact, name the observable effect that
+  proves it ran, and the process — not itself — that reads it"*) is the test #710 fails on the
+  **process** clause: the effect exists and is observable, and the process that reads it is a
+  retrospective agent running curl once. FOLLOW-935 is the answer. The same invariant is
+  **unavailable** on the ingest Worker for want of a version in `/health` (§5d).
+- **RETRO-263 / FOLLOW-919** — the effect-axis discipline it established is what made §Headline 1
+  possible; this is the first retro to apply it to a Vercel static asset rather than a Modal
+  container.
+- **RETRO-260** — *"three correction rounds each swept in the vocabulary of the round that found the
+  error, so the fifth site was never in scope."* Fourth round, and the un-swept site is the
+  **sibling of the ticket whose own note introduced the sweeping rule** (§Headline 4b).
+- **RETRO-257** (*"the bundle is real and the population is zero"*) — third sighting, and this time
+  the zero population is what **rescued** the estate rather than embarrassed it.
+- **RETRO-232 / Rule AM and RETRO-225 / Rule AJ** — two promoted rules, two consecutive merge
+  windows, each violated on its next opportunity because nothing executes either. FOLLOW-933's
+  charter should widen to take both (§5a).
+- **FOLLOW-658 / 659 / 660 / FOLLOW-929** — *"a live consumer shipped without its producer."*
+  HW-1 here is the **fifth**, and the first found by enumerating rather than by stumbling.
+
+<!-- RETRO-265 = retro for THREE merged PRs, all children of RETRO-264: #710 (FOLLOW-929, da99e220, 18:00:15Z), #711 (FOLLOW-931, 31cab8b4, 19:28:49Z), #712 (FOLLOW-932, 9afa0a46, 20:18:35Z). main at retro time 1d9e2183. THIS RETRO AUDITS RETRO-264'S OUTPUT QUALITY. VERDICT: findings correct as stated (one impact sentence overstated), fixes discharged the wording on 3 of 12 ACs, loop converging on the INSTANCE axis and NOT on the GENERALISATION axis. HEADLINE 1: the P0 IS genuinely closed and I am the first to observe it — live probe of https://admin.estalara.com/consent-text.json returns access-control-allow-origin: * AND cache-control: public, max-age=300, stale-while-revalidate=60 (Vercel did NOT override cache-control on a public/ asset); served doc is byte-identical to repo (3,502 B, IDENTICAL: true, locales en/pl/es); deployed sdk.js is 155,022 B and cmp-identical to my own build of main, so the fetch is really shipped (regenerated at deploy by copy-sdk-bundle.mjs, FOLLOW-808 — the CHECKED-IN public/sdk.js is 155,056 B and stale). CALIBRATION: RETRO-264's "every first-time visitor fails closed" was true of the LATENT defect and false of the REALIZED population — app.estalara.com/en is 21,516 B of HTML with ZERO sdk.js / data-estalara / admin.estalara.com hits, the SDK is on no live page (ESC-020/ESC-055). P0 severity still right as a pre-launch blocker. HEADLINE 2: FOLLOW-929 AC(5) ("is it the only one?") was NEVER PERFORMED and it is the AC carrying the second instance — full sweep of 8 browser-side fetch sites (sdk-loader/react/vue = 0; deployed estalara-detect.iife.js = 0 fetch()) found POST /api/quiz/completion has NO CORS producer: live OPTIONS returns HTTP/2 204 + `allow: OPTIONS, POST` and ZERO CORS headers (Next's auto-OPTIONS; route.ts exports only POST; SDK_CORS_PREFIXES=['/api/adapt'] doesn't match), and the POST carries Authorization + X-Estalara-Signature + Content-Type so a preflight is MANDATORY -> resolved_archetype never reaches quiz_completions, silently (.catch(console.warn)). AC(4) also undischarged: consent.spec.ts untouched since 4801a845. 5 of 8 sites live-probed green (/api/adapt/feedback, /api/intent/config, /api/quiz/public-config, ingest /v1/events, consent-text.json). HEADLINE 3: FOLLOW-931 IS MERGED AND NOT LIVE — no ingest deploy workflow exists (deploy-staging.yml is workflow_dispatch + STAGING only; prod is the manual wrangler runbook INGEST_WORKER_DEPLOY.md:59-60), /health returns no version (GIT_SHA declared in types.ts:20, surfaced nowhere) so "is it live?" is UNANSWERABLE, the new schema_rejected signal is a verbatim Rule AJ HALF_WIRE_P on all three legs (no registry entry, SENTRY_DSN_INGEST unset per runbook:127, no logpush/tail_consumers in wrangler.toml) whose own promotion trigger was first_party_tenant_id_malformed 260 lines above in the SAME FILE (FOLLOW-693 still open), and ESC-056 blocks the count. Realized impact ~0 because no page loads the SDK -> P1 not P0. HEADLINE 4: #712 arithmetic RE-DERIVED FROM A CLEAN BUILD — 41,641 B / headroom 1,367 B confirmed by the gate AND an independent zlib.gzipSync call. PM correction (a) CORRECT: 1,356 = headroom not delta, delta = headroom_after - headroom_before = 1,345. NIT: ~11 B pre-move headroom is derived from a 2-decimal KB readout so the true interval is [11,15] B and delta is 1,341-1,345 (INTERFACES.md's "±5 B" should be -4/+0; session 108's 14 B sits inside the interval). HAZARD (real): TWO CAUSALLY UNRELATED 11s in one ADR paragraph — 1,356-1,345=11 is the pre-move headroom, 1,367-1,356=11 is #711 SHRINKING the bundle (verified by elimination: #710/#712 touch no file entering the bundle, so the -11 B is #711's z.enum -> QuizLanguageSchema dedup in packages/shared). PM correction (b) SOUND but applied to ONE OF TWO SIBLINGS in its own diff: FOLLOW-913's note carries commit+instrument, FOLLOW-898's note (FOLLOW_UPS.md:31564, same hunk-set) carries a bare 1,356 B; QUEUE.md:72/:196 say "scope against 1,356" against :46's own 1,367. Override on "corpus consistency" was RIGHT — consistency-with-an-existing-record is the exact mechanism that produced DG-1 (three records, three instruments, each internally consistent). WIRING: CHECK A clean (3 new files: 1 test, 1 type-only ambient decl, 1 lessons.d artefact; no new exported code symbol; Rule I 192 unmoved). CHECK B two findings: HW-1 quiz/completion CORS HALF_WIRE_C P1 -> FOLLOW-936; HW-2 schema_rejected HALF_WIRE_P P1 Rule AJ -> FOLLOW-937. RETRO-264 HW-1/HW-2 CLOSED AND VERIFIED BY EFFECT. RE-RAN not trusted: Rule I 192, ADR-0021 --self-test 13/13, clean forced build + bundle gate, 5 live HTTPS probes. CI: #710 pass=48 fail=1 skip=4, #711/#712 pass=89 fail=2 skip=4 — every non-success is a REGISTERED any-state entry (.github/required-checks.txt:100/101/102), the FOLLOW-918 register's present-vs-green design working on its 3rd/4th use. NO RULE PROMOTED, count stays 46 (re-counted). P-43 INCREMENTED TO 2 PRIORS (RETRO-264, RETRO-265) — the consent-text-headers.test.ts config-object assertion is an independent new-subsystem PREDICATE sighting — BUT NOT PROMOTED, AND RETRO-264 IS EXPLICITLY CONTRADICTED: its pre-authorization ("promote on the NEXT independent sighting, citing RETRO-264 as prior 1") licenses promotion at 1 prior + trigger, one short of the "≥2 PRIOR retros, plus the promotion trigger; the promoting retro does NOT inflate" standard stated verbatim in Rules AR/AS/AT and one short of the RETRO-217 form it invoked by name (P-41: RETRO-260=1, RETRO-261=2, RETRO-263=trigger; Rule AR: RETRO-217=1, RETRO-247=2, RETRO-262=trigger). Promotion available at RETRO-266+. P-44 MINTED AT 1 PRIOR, NOT PROMOTED: "the generalisation clause of an AC is the one that gets dropped, and it is the one carrying the second instance" (FOLLOW-929 AC(5)); distinguishing test recorded. P-42 not incremented. LG-4 MIS-CITATION: three shipped files (shared/schemas/events/consent.ts:35, consent.test.ts:2, ingest/index.test.ts:463) cite "RETRO-264 LG-4" for what RETRO-264 filed as LG-2 (LG-4 is EFFECT_PROBE_CALLERS at RETROSPECTIVES.md:57855); provenance = #710's PR body ("LG-4 -> FOLLOW-924", wrong finding AND wrong ticket), inherited into code and into two dispatch briefs. FOLLOWS FILED: 935 (P1 standing foreign-origin effect probe = FOLLOW-929 AC(3)b + AC(4)), 936 (P1 quiz/completion CORS), 937 (P1 schema_rejected Rule AJ), 938 (P1 GIT_SHA in /health + Worker-deploy closure criterion), 939 (P3 LG-4 mis-citation), 940 (P3 the un-swept sibling budget note + the two 11s). Next free FOLLOW: 941. Next free ESC: 057 (UNUSED — nothing escalated). Next free RETRO: 266. PM ACTIONS, not escalated: (1) the prod ingest Worker needs a manual wrangler deploy before FOLLOW-931 is real; (2) FOLLOW-936 is a second precondition on the ESC-055 listing-page hand-off alongside the now-satisfied FOLLOW-929. -->

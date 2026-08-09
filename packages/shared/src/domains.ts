@@ -73,6 +73,23 @@ export const SDK_SERVE_URL = `${CONTROL_PLANE_URL}/sdk.js` as const;
 export const DETECT_SERVE_URL = `${CONTROL_PLANE_URL}/estalara-detect.iife.js` as const;
 
 /**
+ * Consent-banner text document — control-plane static asset. [ADR-0021 §D2/§D3, FOLLOW-915]
+ *
+ * ESC-051 ruled the banner copy out of the SDK bundle: consent text grows from regulation, not
+ * from engineering, and must never compete with code for a performance budget. The document is
+ * served from the same origin as `sdk.js`, which the browser already fetches pre-consent.
+ *
+ * COMPILE-TIME CONSTANT BY CONTRACT. ADR-0021 §D3 forbids deriving this URL from any snippet
+ * dataset value (`data-decision-url` and friends): a tenant-controlled attribute must not be
+ * able to redirect the consent-text fetch. It also forbids query parameters, per-tenant paths
+ * and locale-in-URL — the document ships every locale and the SDK selects client-side, so the
+ * request is byte-identical for every tenant and every visitor. Parameterizing it re-opens the
+ * ADR-0011 compliance question and requires a NEW ADR plus compliance review before
+ * implementation; `scripts/check-adr-0021-conditions.mjs` enforces the request shape.
+ */
+export const CONSENT_TEXT_URL = `${CONTROL_PLANE_URL}/consent-text.json` as const;
+
+/**
  * Staging subdomain prefixes follow the pattern: <service>-staging.estalara.com
  * e.g. ingest-staging.estalara.com, api-staging.estalara.com
  *

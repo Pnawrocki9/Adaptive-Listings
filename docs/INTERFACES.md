@@ -396,6 +396,50 @@ PR #308 (`sdk-engineer/FOLLOW-324-sdk-bundle-size`) — this interface is PENDIN
 and `packages/sdk/dist/estalara-detect.iife.js` is copied to
 `apps/control-plane/public/estalara-detect.iife.js`.
 
+## Consent-Banner Text Document (ACCEPTED — ADR-0021 / FOLLOW-915)
+
+```
+GET {CONTROL_PLANE_URL}/consent-text.json
+→ 200 OK, application/json
+Cache-Control: public, max-age=300, stale-while-revalidate=60
+```
+
+The banner copy is served OUT OF THE SDK BUNDLE. ESC-051's ruling states why: **consent text grows
+from regulation, not from engineering, and must never compete with code for a performance budget.**
+Moving it returned 1,337 gzip bytes to the SDK (42,912 → 41,575; headroom 96 → 1,433).
+
+- **Schema:** `ConsentTextDocumentSchema` / `ConsentTextLocaleSchema` in
+  `packages/shared/src/schemas/consent-text.ts` (11 test cases). Locale-entry fields are derived
+  field-for-field from the `COPY` constant that shipped in the SDK before FOLLOW-915.
+- **Wire example:** `packages/shared/src/examples/consent-text.ts`. The served artefact
+  (`apps/control-plane/public/consent-text.json`) is validated against the schema AND asserted
+  field-for-field equal to the example by `packages/shared/src/schemas/consent-text.test.ts`, so the
+  contract and the bytes a visitor receives cannot drift.
+- **URL:** `CONSENT_TEXT_URL` in `packages/shared/src/domains.ts` — compile-time constant, never
+  derived from a snippet dataset value.
+- **Forward compatibility:** unknown top-level fields are stripped, not rejected. A missing required
+  field or a wrong `schema_version` fails validation. Every `QuizLanguage` locale is REQUIRED
+  (`z.record` with an enum key rejects unknown keys but does not require known ones — an explicit
+  refinement does).
+
+**The request shape is a compliance contract, not a style choice (ADR-0021 §D3).** No tenant id, api
+key or `Authorization`; no session, visitor or consent-state identifier; no query parameters;
+`credentials: 'omit'`; a URL byte-identical for every tenant and every visitor. The lawfulness
+analysis that permits this fetch BEFORE consent — ePrivacy Art. 5(3) / PECR 6(4) strictly-necessary,
+since a notice whose display required consent would be circular — collapses the moment the request
+carries any identifier. Parameterizing it (per-tenant text, locale in the URL, A/B arms) requires a
+NEW ADR plus compliance review. `scripts/check-adr-0021-conditions.mjs` asserts the shape on every
+PR.
+
+**Ordering and failure (§D2/§D4).** Fetched on the `pending` consent path ONLY — a returning visitor
+pays no extra request — and AWAITED before the banner renders, so no event, storage write or
+tenant-identified request can precede the visitor's decision. On error, non-2xx, 3000 ms timeout or
+validation failure the SDK FAILS CLOSED: no banner, nothing processed, consent stays `pending` and
+the next page load retries. **No fallback text ships in the bundle** — a trimmed fallback would
+recreate the ESC-051 defect, and consent obtained on an incomplete disclosure is not "informed"
+under GDPR Art. 4(11)/Art. 7. Proven by `packages/sdk/src/__tests__/follow-915.test.ts`, which
+drives the real `init()`.
+
 ## DSR Endpoint
 
 `POST /api/v1/dsr/:tenant_id` — implemented in TICKET-GDPR-002. Input/output schema documented in

@@ -13,8 +13,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import type { ConsentTextLocale } from '@estalara/shared';
+
 import { getConsentState, setConsentState } from '../core/session.js';
 import { renderConsentBanner } from '../ui/consent-banner.js';
+
+// jsdom does not give `import.meta.url` a file: scheme, so the served artefact is
+// resolved from the package root (vitest's cwd) instead.
+const SERVED_CONSENT_TEXT_PATH = resolve(
+  process.cwd(),
+  '../../apps/control-plane/public/consent-text.json',
+);
 
 // ─── localStorage mock ────────────────────────────────────────────────────────
 
@@ -128,6 +140,23 @@ function makeElement(tag: string): MockElement {
 
 // ─── getConsentState / setConsentState ───────────────────────────────────────
 
+/**
+ * FOLLOW-915: the banner no longer carries its own copy — ESC-051 moved the strings out of the
+ * bundle, so every caller supplies the fetched locale entry.
+ *
+ * These tests read the artefact the control plane ACTUALLY SERVES rather than a hand-written
+ * fixture. A fixture would let the banner's tests pass against copy no visitor ever receives,
+ * which is the drift ADR-0021 §D7 exists to prevent; and it is read here rather than imported
+ * from `@estalara/shared` so that 3.5 KB of legal text cannot reach the SDK bundle through a
+ * test-only import.
+ */
+const CONSENT_TEXT_DOC = JSON.parse(readFileSync(SERVED_CONSENT_TEXT_PATH, 'utf8')) as {
+  locales: Record<string, ConsentTextLocale>;
+};
+
+const copyFor = (language: 'en' | 'pl' | 'es'): ConsentTextLocale =>
+  CONSENT_TEXT_DOC.locales[language]!;
+
 describe('getConsentState', () => {
   beforeEach(() => {
     mockLocalStorage.clear();
@@ -220,6 +249,7 @@ describe('renderConsentBanner', () => {
 
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -235,6 +265,7 @@ describe('renderConsentBanner', () => {
 
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -253,6 +284,7 @@ describe('renderConsentBanner', () => {
 
     renderConsentBanner(root, {
       language: 'pl',
+      copy: copyFor('pl'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -267,6 +299,7 @@ describe('renderConsentBanner', () => {
   it('includes a "Learn more" link when privacyPolicyUrl is provided', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       privacyPolicyUrl: 'https://example.com/privacy',
       onGranted: vi.fn(),
@@ -281,6 +314,7 @@ describe('renderConsentBanner', () => {
   it('does NOT render a "Learn more" link when privacyPolicyUrl is omitted', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -296,6 +330,7 @@ describe('renderConsentBanner', () => {
 
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -315,6 +350,7 @@ describe('renderConsentBanner', () => {
 
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -336,6 +372,7 @@ describe('renderConsentBanner', () => {
 
     const teardown = renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted,
       onDenied,
@@ -351,6 +388,7 @@ describe('renderConsentBanner', () => {
   it('sets data-estalara-consent attribute on Accept button', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -363,6 +401,7 @@ describe('renderConsentBanner', () => {
   it('sets data-estalara-consent attribute on Decline button', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -408,6 +447,7 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
   it('EN banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -426,6 +466,7 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
   it('PL banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
     renderConsentBanner(root, {
       language: 'pl',
+      copy: copyFor('pl'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -444,6 +485,7 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
   it('ES banner contains §13.1 denial-logging disclosure with 7-day retention', () => {
     renderConsentBanner(root, {
       language: 'es',
+      copy: copyFor('es'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -462,6 +504,7 @@ describe('renderConsentBanner — DPIA §13.1 denial-logging disclosure', () => 
   it('§13.1 disclosure element uses data-estalara-disclosure="dpia-13-1" attribute', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -497,6 +540,7 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
   it('EN banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -517,6 +561,7 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
   it('PL banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
     renderConsentBanner(root, {
       language: 'pl',
+      copy: copyFor('pl'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -536,6 +581,7 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
   it('ES banner contains §13.2 cross-session identifier disclosure with 90-day retention', () => {
     renderConsentBanner(root, {
       language: 'es',
+      copy: copyFor('es'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -555,6 +601,7 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
   it('§13.2 disclosure element uses data-estalara-disclosure="dpia-13-2" attribute', () => {
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -570,6 +617,7 @@ describe('renderConsentBanner — DPIA §13.2 cross-session identifier disclosur
     // ensuring a visitor sees the disclosure before making a choice.
     renderConsentBanner(root, {
       language: 'en',
+      copy: copyFor('en'),
       accentColor: '#6c5ce7',
       onGranted: vi.fn(),
       onDenied: vi.fn(),
@@ -617,6 +665,7 @@ describe('renderConsentBanner — disclosure completeness across all locales', (
     (lang) => {
       renderConsentBanner(root, {
         language: lang,
+        copy: copyFor(lang),
         accentColor: '#6c5ce7',
         onGranted: vi.fn(),
         onDenied: vi.fn(),
@@ -678,6 +727,7 @@ describe('renderConsentBanner — chat-message storage disclosure (ESC-049 adden
     ({ language, retention, masked }) => {
       renderConsentBanner(root, {
         language,
+        copy: copyFor(language),
         accentColor: '#6c5ce7',
         onGranted: vi.fn(),
         onDenied: vi.fn(),

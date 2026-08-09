@@ -25,3 +25,24 @@
   test the RENAMED form, not only the deleted form. Deletion is the shape nobody performs; renaming
   and prefixing is the shape people actually use — the same asymmetry FOLLOW-919 found in the Modal
   effect probe (deleted → caught, zero-byte → green) one day earlier.
+
+## Addendum — 2026-08-09, found while BUILDING FOLLOW-915 against this gate
+
+- **The second self-test defect, and it outlived the first review.** `--self-test` synthesized the
+  pre-move `COPY` banner but still read `dpia.md` **from disk** for its "DPIA left pointing at COPY"
+  fixture. FOLLOW-915's condition-3 work corrected those very cross-references, so the "stale"
+  fixture stopped being stale, C3 found nothing to report, and **T9 — C3's only red-first proof —
+  reported PASS where it demanded VIOLATION.** The live check stayed green throughout, so nothing
+  surfaced it except running `--self-test`.
+- **The rule, stated once and generally:** _a fixture describing a state must CONSTRUCT that state,
+  never borrow it from HEAD._ The gate's own comments had already written this rule for the banner,
+  one commit earlier — and then left the DPIA borrowing. **Applying a lesson to the instance that
+  taught it is not applying the lesson.** Every fixture input is now synthesized (`dpiaPreMove` /
+  `dpiaPostMove`); no fixture reads a repo file.
+- **The failure direction is the dangerous one.** This defect made a self-test go GREEN as the repo
+  became correct — so the gate would have been loudest exactly when it was needed least, and silent
+  once the artifacts it guards actually existed. A red self-test is noisy and gets fixed; a
+  self-test that quietly stops asserting is indistinguishable from a passing one.
+- **Also added:** C3's second branch (DPIA dropped the COPY reference but never names the new source
+  of record) had no red-first case at all — T9b. Deleting a wrong cross-reference is not writing a
+  right one, and Rule N wants the latter.

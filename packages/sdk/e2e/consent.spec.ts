@@ -14,10 +14,27 @@
  * Mapping: SDK 'granted'→'granted', 'denied'→'denied', 'pending'→'unknown' (safe conservative).
  * Unit-level coverage for this mapping is in packages/sdk/src/__tests__/adapt.test.ts.
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { test, expect } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:4444/';
+
+/**
+ * The consent copy is fetched, not bundled (ADR-0021 §D2 / FOLLOW-915), from an ABSOLUTE
+ * control-plane URL — so `serve.js` cannot mock it the way it mocks the same-origin endpoints,
+ * and an un-mocked run fails closed (§D4) and renders no banner at all. That is the SDK behaving
+ * correctly; it is the harness that must serve the document.
+ *
+ * Fulfilled from the CHECKED-IN artifact rather than an inline copy, so this E2E exercises the
+ * bytes that actually ship. A fixture that restated the text would pass while the real document
+ * was malformed.
+ */
+const CONSENT_TEXT_DOC = readFileSync(
+  fileURLToPath(new URL('../../../apps/control-plane/public/consent-text.json', import.meta.url)),
+  'utf8',
+);
 
 /** Clear localStorage so each test starts with a fresh consent state. */
 async function clearConsent(page: Page): Promise<void> {
@@ -31,6 +48,25 @@ async function clearConsent(page: Page): Promise<void> {
 }
 
 test.describe('Consent banner — TICKET-041', () => {
+  /** URLs the SDK actually requested for the consent text, as seen by the browser. */
+  let consentTextRequests: string[] = [];
+
+  test.beforeEach(async ({ page }) => {
+    consentTextRequests = [];
+    await page.route('**/consent-text.json*', async (route) => {
+      consentTextRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*',
+          'cache-control': 'public, max-age=300, stale-while-revalidate=60',
+        },
+        body: CONSENT_TEXT_DOC,
+      });
+    });
+  });
+
   test('consent banner appears on fresh page load before any events are sent', async ({ page }) => {
     await page.goto(BASE_URL);
     await clearConsent(page);
@@ -54,6 +90,15 @@ test.describe('Consent banner — TICKET-041', () => {
     // Filter out any non-ingest requests
     const ingestReqs = captured.filter((r) => (r as { url: string }).url.includes('mock-ingest'));
     expect(ingestReqs).toHaveLength(0);
+
+    // §D3, asserted where it is hardest to fake — in a real browser, on the wire. The unit
+    // tests pin the fetch options; only this level proves what the URL actually became after
+    // the bundle was built. A query string here is the erosion ADR-0021 §D3 exists to prevent.
+    expect(consentTextRequests.length).toBeGreaterThan(0);
+    for (const url of consentTextRequests) {
+      expect(url).not.toContain('?');
+      expect(url.endsWith('/consent-text.json')).toBe(true);
+    }
   });
 
   test('Accept → banner removed and events start flowing', async ({ page }) => {

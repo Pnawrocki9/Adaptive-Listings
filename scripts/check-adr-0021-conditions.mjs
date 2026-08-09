@@ -56,6 +56,7 @@ const P = {
   schema: 'packages/shared/src/schemas/consent-text.ts',
   dpia: 'docs/compliance/dpia.md',
   sdkSrc: 'packages/sdk/src',
+  sharedSrc: 'packages/shared/src',
 };
 
 const MANDATED = ['disclosure13_1', 'disclosure13_2'];
@@ -128,6 +129,63 @@ function servedDisclosures(servedRaw, problems) {
 // ── the check ────────────────────────────────────────────────────────────────
 
 /**
+ * Resolve a compile-time URL constant to its literal value.
+ *
+ * §D3's requirement is that the URL is **byte-identical for every tenant and every visitor** —
+ * i.e. fully determined at build time. That is NOT the same as "written as one quoted string":
+ * `packages/shared/src/domains.ts` composes every service URL from other `as const` constants
+ * (`SDK_SERVE_URL`, `DETECT_SERVE_URL`), and ADR-0021 §D2 cites that very file as where the
+ * constant belongs. The first version of this check rejected the composed form and would have
+ * forced the implementation to hard-code a hostname the rest of the module derives — found by
+ * building FOLLOW-915 against it.
+ *
+ * So: a template literal is allowed IF every `${…}` is a SCREAMING_SNAKE identifier declared as
+ * a const in the same module and itself resolvable this way. Anything else — a function call, a
+ * dataset read, a lower-case variable — is a runtime value and is exactly the shape §D3 forbids,
+ * because that is how a tenant id or locale reaches the URL.
+ *
+ * @returns {{ value: string } | { problem: string }}
+ */
+function resolveCompileTimeUrl(src, name, depth = 0) {
+  if (depth > 5) return { problem: `${name}: constant resolution exceeded 5 levels` };
+  const decl = src.match(new RegExp(`const\\s+${name}\\s*(?::[^=]+)?=\\s*([\\s\\S]*?);\\n`));
+  if (!decl) return { problem: `${name} is not declared as a const in this module` };
+
+  let rhs = decl[1]
+    .trim()
+    .replace(/\s+as\s+const$/, '')
+    .trim();
+
+  const quoted = rhs.match(/^'([^']*)'$|^"([^"]*)"$/);
+  if (quoted) return { value: quoted[1] ?? quoted[2] ?? '' };
+
+  if (!rhs.startsWith('`') || !rhs.endsWith('`')) {
+    return {
+      problem:
+        `${name} is neither a string literal nor a template of compile-time constants ` +
+        `(found: ${rhs})`,
+    };
+  }
+
+  let body = rhs.slice(1, -1);
+  const refs = [...body.matchAll(/\$\{([^}]*)\}/g)];
+  for (const [whole, expr] of refs) {
+    const ident = expr.trim();
+    if (!/^[A-Z][A-Z0-9_]*$/.test(ident)) {
+      return {
+        problem:
+          `${name} interpolates \`${ident}\`, which is not a compile-time constant. §D3 forbids ` +
+          `it — a runtime value is how a tenant id, locale or experiment arm reaches the URL.`,
+      };
+    }
+    const inner = resolveCompileTimeUrl(src, ident, depth + 1);
+    if ('problem' in inner) return inner;
+    body = body.replace(whole, inner.value);
+  }
+  return { value: body };
+}
+
+/**
  * @param base repo root (or a fixture root, for --self-test)
  * @returns {{problems: string[], notes: string[], armed: boolean}}
  */
@@ -150,15 +208,22 @@ function check(base) {
   const servedRaw = read(base, P.served);
   const schemaSrc = read(base, P.schema);
   const sdkFiles = walkTs(path.join(base, P.sdkSrc));
-  const urlConstFile = sdkFiles.find((f) =>
-    /\bCONSENT_TEXT_URL\b/.test(fs.readFileSync(f, 'utf8')),
+  // ADR-0021 §D2 puts the constant in `packages/shared/src/domains.ts` and the FETCH in the SDK.
+  // The first version of this gate searched the SDK only and reported "referenced but never
+  // declared as a const" against a CORRECT implementation — found by building FOLLOW-915 against
+  // it. Declaration and call site are located independently now.
+  const urlConstFile = [...walkTs(path.join(base, P.sharedSrc)), ...sdkFiles].find((f) =>
+    /const\s+CONSENT_TEXT_URL\b/.test(fs.readFileSync(f, 'utf8')),
+  );
+  const urlCallFile = sdkFiles.find((f) =>
+    /fetch\s*\(\s*CONSENT_TEXT_URL/.test(fs.readFileSync(f, 'utf8')),
   );
 
   // ── arming ────────────────────────────────────────────────────────────────
   const probes = [
     [`${P.served} present`, servedRaw !== null],
     [`${P.schema} present`, schemaSrc !== null],
-    ['CONSENT_TEXT_URL referenced in packages/sdk/src', urlConstFile !== undefined],
+    ['CONSENT_TEXT_URL declared (shared or sdk)', urlConstFile !== undefined],
   ];
   const armed = probes.some(([, hit]) => hit);
   notes.push('Arming probes (ADR-0021 §D7 artifacts):');
@@ -222,38 +287,38 @@ function check(base) {
   } else {
     const src = fs.readFileSync(urlConstFile, 'utf8');
     const rel = path.relative(base, urlConstFile);
-    const decl = src.match(/const\s+CONSENT_TEXT_URL\s*(?::[^=]+)?=\s*([^;\n]+)/);
-    if (!decl) {
-      problems.push(`C2: CONSENT_TEXT_URL is referenced in ${rel} but never declared as a const.`);
+    const resolved = resolveCompileTimeUrl(src, 'CONSENT_TEXT_URL');
+    if ('problem' in resolved) {
+      problems.push(`C2: ${resolved.problem} (${rel}).`);
+    } else if (resolved.value.includes('?')) {
+      problems.push(
+        `C2: CONSENT_TEXT_URL resolves to '${resolved.value}', which carries a query string; ` +
+          `§D3 forbids query parameters of any kind.`,
+      );
     } else {
-      const rhs = decl[1].trim();
-      if (!/^'[^']*'$|^"[^"]*"$/.test(rhs)) {
-        problems.push(
-          `C2: CONSENT_TEXT_URL in ${rel} is not a plain string literal (found: ${rhs}). §D3 forbids ` +
-            `interpolation — a template literal is how a tenant id or locale reaches the URL.`,
-        );
-      } else if (rhs.includes('?')) {
-        problems.push(
-          `C2: CONSENT_TEXT_URL in ${rel} carries a query string (${rhs}); §D3 forbids query parameters of any kind.`,
-        );
-      }
+      notes.push(`C2: CONSENT_TEXT_URL resolves at compile time to '${resolved.value}'.`);
     }
-    const call = src.match(/fetch\s*\(\s*CONSENT_TEXT_URL[\s\S]{0,400}?\)/);
+    const callSrc = urlCallFile ? fs.readFileSync(urlCallFile, 'utf8') : '';
+    const callRel = urlCallFile ? path.relative(base, urlCallFile) : '(no call site)';
+    const call = callSrc.match(/fetch\s*\(\s*CONSENT_TEXT_URL[\s\S]{0,400}?\)/);
     if (!call) {
-      problems.push(`C2: no \`fetch(CONSENT_TEXT_URL…)\` call site found in ${rel}.`);
+      problems.push(
+        `C2: no \`fetch(CONSENT_TEXT_URL…)\` call site found under ${P.sdkSrc}. The constant ` +
+          `exists but nothing fetches it, so the §D3 request shape is unassertable.`,
+      );
     } else {
       if (!/credentials\s*:\s*'omit'|credentials\s*:\s*"omit"/.test(call[0])) {
         problems.push(
-          `C2: the fetch of CONSENT_TEXT_URL in ${rel} does not pass \`credentials: 'omit'\` (§D3).`,
+          `C2: the fetch of CONSENT_TEXT_URL in ${callRel} does not pass \`credentials: 'omit'\` (§D3).`,
         );
       }
       if (/[Aa]uthorization/.test(call[0])) {
         problems.push(
-          `C2: the fetch of CONSENT_TEXT_URL in ${rel} sets an Authorization header; §D3 forbids it.`,
+          `C2: the fetch of CONSENT_TEXT_URL in ${callRel} sets an Authorization header; §D3 forbids it.`,
         );
       }
     }
-    notes.push(`C2: request shape checked in ${rel}.`);
+    notes.push(`C2: URL constant in ${rel}; request shape in ${callRel}.`);
   }
 
   // ── C3 — Rule N: the DPIA may not name a source of record that moved ──────
@@ -302,15 +367,53 @@ function selfTest() {
   };
 
   const canonicalDoc = JSON.parse(fs.readFileSync(path.join(ROOT, P.canonical), 'utf8'));
-  const realBanner = fs.readFileSync(path.join(ROOT, P.banner), 'utf8');
-  const realDpia = fs.readFileSync(path.join(ROOT, P.dpia), 'utf8');
+  // The DPIA fixtures are SYNTHESIZED for the same reason the banner above is: a fixture
+  // describing a state must construct that state, never borrow it from HEAD. Reading the real
+  // dpia.md made T9 — C3's only red-first proof — silently green the moment FOLLOW-915 corrected
+  // the very cross-references T9 exists to catch: the "stale" fixture was no longer stale, so
+  // C3 passed and the case reported PASS where it demanded VIOLATION. The live check still reads
+  // the real dpia.md; that is where the repo's actual state belongs.
+  const dpiaPreMove =
+    '## 13.1\n\nThe disclosure strings for EN, PL, and ES locales are defined in the `COPY`\n' +
+    'constant in that file.\n\n## 13.2\n\nThe banner copy is implemented in\n' +
+    '`packages/sdk/src/ui/consent-banner.ts` (`COPY` constant, `renderConsentBanner` function).\n';
 
-  /** A fixture repo in the DISARMED (today's) state: COPY holds the strings. */
+  const dpiaPostMove =
+    '## 13.1\n\nThe disclosure strings are served out-of-bundle from `consent-text.json`;\n' +
+    'the byte record is `docs/compliance/consent-disclosures.canonical.json`.\n\n' +
+    '## 13.2\n\nThe banner is rendered by `renderConsentBanner`; the copy itself is served\n' +
+    'from `consent-text.json` and passed in.\n';
+
+  // The PRE-move banner is SYNTHESIZED, not read from disk. It used to be read from the real
+  // file, which worked only while `COPY` still shipped in the bundle — FOLLOW-915 moved those
+  // strings out, and every disarmed fixture went red on a repo that is perfectly correct. A
+  // fixture describing a past state must construct that state, never borrow it from HEAD.
+  // Single-quoted, because the real pre-move file was — and `copyDisclosures` parses the shape
+  // the source actually had, not a tidied one. A double-quoted fixture silently parses as "COPY
+  // carries nothing", which is a different state entirely.
+  const sq = (value) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+
+  const bannerWithCopy = (locales) =>
+    'const COPY = {\n' +
+    Object.entries(locales)
+      .map(
+        ([loc, entry]) =>
+          `  ${loc}: {\n` +
+          `    disclosure13_1: ${sq(entry.disclosure13_1)},\n` +
+          `    disclosure13_2: ${sq(entry.disclosure13_2)},\n` +
+          '  },\n',
+      )
+      .join('') +
+    '} as const;\n';
+
+  const realBanner = bannerWithCopy(canonicalDoc.locales);
+
+  /** A fixture repo in the PRE-FOLLOW-915 (disarmed) state: COPY holds the strings. */
   const fixture = (name) => {
     const base = path.join(tmp, name);
     write(base, P.canonical, JSON.stringify(canonicalDoc, null, 2) + '\n');
     write(base, P.banner, realBanner);
-    write(base, P.dpia, realDpia);
+    write(base, P.dpia, dpiaPreMove);
     return base;
   };
 
@@ -332,20 +435,7 @@ function selfTest() {
     );
     // post-move: COPY no longer carries the sentences
     write(base, P.banner, realBanner.replace(/disclosure13_[12]:/g, 'retired_$&'));
-    write(
-      base,
-      P.dpia,
-      dpia ??
-        realDpia
-          .replace(
-            /are defined in the `COPY`/g,
-            'are served from `consent-text.json` and were defined in the former',
-          )
-          .replace(
-            /\(`COPY` constant, `renderConsentBanner` function\)/g,
-            '(served from `consent-text.json`)',
-          ),
-    );
+    write(base, P.dpia, dpia ?? dpiaPostMove);
     return base;
   };
 
@@ -373,7 +463,7 @@ function selfTest() {
   };
 
   // T1 — today's real repo state passes, disarmed.
-  expect('the repo as it stands today passes (disarmed, C1 against COPY)', fixture('t1'), true);
+  expect('the PRE-move state passes (disarmed, C1 against COPY)', fixture('t1'), true);
 
   // T2 — C1 red-first, DISARMED: a mandated sentence edited in COPY.
   {
@@ -436,16 +526,34 @@ function selfTest() {
     );
   }
 
-  // T7 — C2: an interpolated URL (the same erosion, one layer less obvious).
+  // T7 — C2: a RUNTIME value interpolated into the URL. The §D3 erosion path one layer less
+  //      obvious than `?tenant=` — the call site still looks static.
   {
     const url =
-      'const CONSENT_TEXT_URL = `${BASE}/consent-text.json`;\n' +
+      'const base = window.location.origin;\n' +
+      'const CONSENT_TEXT_URL = `${base}/consent-text.json`;\n' +
       "export const load = () => fetch(CONSENT_TEXT_URL, { credentials: 'omit' });\n";
     expect(
-      'C2 catches an interpolated URL constant',
+      'C2 catches a RUNTIME value interpolated into the URL',
       arm(fixture('t7'), { url }),
       false,
-      'not a plain string literal',
+      'not a compile-time constant',
+    );
+  }
+
+  // T7b — C2, the GREEN direction. Composing from other compile-time constants is how
+  //       `packages/shared/src/domains.ts` writes every service URL, and ADR-0021 §D2 names that
+  //       file as where this constant belongs. Rejecting it would force the implementation to
+  //       hard-code a hostname the rest of the module derives — a fix worse than the defect.
+  {
+    const url =
+      "const CONTROL_PLANE_URL = 'https://admin.example.com';\n" +
+      'const CONSENT_TEXT_URL = `${CONTROL_PLANE_URL}/consent-text.json` as const;\n' +
+      "export const load = () => fetch(CONSENT_TEXT_URL, { credentials: 'omit' });\n";
+    expect(
+      'C2 ACCEPTS a URL composed from compile-time constants',
+      arm(fixture('t7b'), { url }),
+      true,
     );
   }
 
@@ -468,9 +576,21 @@ function selfTest() {
   // T9 — C3: the DPIA left pointing at the COPY constant after the move.
   expect(
     'C3 catches a DPIA cross-reference left pointing at COPY',
-    arm(fixture('t9'), { dpia: realDpia }),
+    arm(fixture('t9'), { dpia: dpiaPreMove }),
     false,
     'no longer carries them',
+  );
+
+  // T9b — C3's SECOND branch, which had no red-first proof of its own: the stale COPY references
+  //       are gone, but the DPIA never names where the strings actually went. Deleting a wrong
+  //       cross-reference is not the same as writing a right one, and Rule N wants the latter.
+  expect(
+    'C3 catches a DPIA that dropped COPY but never names the new source of record',
+    arm(fixture('t9b'), {
+      dpia: '## 13.1\n\nThe disclosure strings are defined elsewhere.\n',
+    }),
+    false,
+    'never names',
   );
 
   // T10 — the both-homes-empty state: strings in flight with no home.

@@ -32679,3 +32679,57 @@ way it leans.
 what conditions it would apply.
 
 cross_ref: [ADR-0021 countersign (PR #703); `docs/compliance/dpia.md` §2.2; FOLLOW-915]
+
+## FOLLOW-928 — `data-privacy-url` is a per-brand REQUIRED snippet attribute that no generator emits and the deploy handoff does not name
+
+source_retro: n/a (CEO multi-brand readiness question, session 108) source_ticket: FOLLOW-653
+recommended_sprint: now recommended_agent: compliance-engineer priority: P1 estimated_hours: 2
+depends_on: [] blocks: [first external-brand go-live] promoted_to_queue: false
+
+**Found by tracing what a `app.vesteri.com` visitor actually sees.** The consent banner's "Learn
+more" link is per-deployment: `data-privacy-url` → `packages/sdk/src/core/config.ts:257`
+(`script.dataset.privacyUrl`) → `privacyPolicyUrl` →
+`packages/sdk/src/ui/consent-banner.ts:258-264`. It is **optional in the SDK by construction** —
+`if (options.privacyPolicyUrl)` — so an omitted attribute renders a banner with **no policy link at
+all**, silently.
+
+**Three grep-verified facts that make this a provisioning defect rather than an SDK one:**
+
+1. **No snippet generator in this repo emits it.** `grep -rn "data-privacy-url" apps/control-plane`
+   = 0 hits. Every other snippet attribute the SDK reads (`data-api-key`, `data-accent-color`,
+   `data-decision-url`, …) appears in control-plane surfaces; this one does not.
+2. **The deploy-side HANDOFF table does not name it.** `docs/runbooks/BRAND_PROVISIONING.md` §Part B
+   lists `tenant_id`, `api_key`, branding assets and domain as the inputs the deploy side needs.
+   `data-privacy-url` is absent, so the one artefact that carries it is the one place a reader would
+   look and not find it.
+3. **Compliance already classified the consequence, and it is not cosmetic.**
+   `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` Axis 1 is **PARTIAL / OPERATOR-GATED**,
+   and its guardrail says the go-live QA gate for "privacy policy + consent text are brand-correct"
+   must be marked **UNSATISFIABLE-PENDING-HANDOFF**, not silently passed — _"this is a disguised P0
+   (a false disclosure would be a false statement to data subjects)"_.
+
+**Why it was invisible until now:** at ONE first-party tenant a missing link degraded to "no link on
+Estalara's own banner", which is a UX nit. At an external brand it becomes a GDPR Art. 13
+transparency defect on someone else's domain, under someone else's controller identity — the same
+one-tenant-masks-it shape as FOLLOW-658/659/660, all three of which also failed silently.
+
+**Note what this ticket is NOT.** The per-brand consent TEXT is deliberately not parameterizable:
+ADR-0021 §D3 requires the consent-text request to be byte-identical for every tenant and names a new
+ADR plus compliance review as the price of changing that. The policy LINK is a different surface — a
+snippet attribute, not a fetched document — so nothing here re-opens §D3.
+
+**AC:** (1) `docs/runbooks/BRAND_PROVISIONING.md` §Part B names `data-privacy-url` as a REQUIRED
+input to the deploy side, with the brand's own policy URL as its value, and §Part C verifies the
+rendered link points at the brand's domain; (2) decide and record whether the SDK should FAIL LOUD
+(console error / Sentry) when `data-privacy-url` is absent on a non-first-party tenant, or whether
+the runbook + verification step is the whole control — if the latter, say why, because "an operator
+step nothing checks" is the exact class FOLLOW-658/659/660 were filed for; (3) if a snippet
+generator surface exists or is added, it emits the attribute rather than leaving it hand-typed.
+
+cross_ref: [`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` Axis 1 + the
+UNSATISFIABLE-PENDING-HANDOFF guardrail; `docs/runbooks/BRAND_PROVISIONING.md` §Part B/§Part C;
+`packages/sdk/src/core/config.ts:257`; `packages/sdk/src/ui/consent-banner.ts:258-264`; ADR-0021 §D3
+(why the TEXT stays un-parameterized); FOLLOW-653; FOLLOW-658/659/660 (same silent-operator-step
+class)]
+
+---

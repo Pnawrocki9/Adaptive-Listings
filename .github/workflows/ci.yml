@@ -1003,9 +1003,14 @@ jobs:
       # never exercised) — so a future change that merely makes the guard quiet
       # fails here. Hard gate, no continue-on-error, no secret dependency,
       # therefore no soft-skip.
-      - name: Lint the PreToolUse branch guard and its fixture harness
+      # FOLLOW-910 added the Bash half of the same guard. pre-bash-guard.sh had
+      # FIVE blocking rules and ZERO test coverage until then, so it is linted and
+      # exercised here for the first time — by the same harness, because the hook
+      # contract it must satisfy is identical.
+      - name: Lint the PreToolUse branch guards and their fixture harness
         run: |
           shellcheck .claude/hooks/pre-edit-branch-guard.sh \
+            .claude/hooks/pre-bash-guard.sh \
             scripts/__tests__/pre-edit-branch-guard.test.sh
 
       - name: Run the branch-guard red-first fixture proof (both directions)

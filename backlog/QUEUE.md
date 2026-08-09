@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 IN_PROGRESS. `main` = `31cab8b4`, clean, **0 open PRs.**
+## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 DONE and merged. `main` = `9afa0a46`, clean, **0 open PRs.**
 
 **Opening state, verified not assumed:** `main` `31cab8b4`, working tree clean, 0 open PRs, 0
 worktrees, 0 live `claude --agent` processes, 0 tickets IN_PROGRESS. Session 109 merged #708
@@ -36,9 +36,35 @@ one hour. It also keeps two bundle-touching SDK tickets from racing on a 1,356-b
 
 ### Ticket status
 
-| ticket     | status          | agent        | branch                                     | started    |
-| ---------- | --------------- | ------------ | ------------------------------------------ | ---------- |
-| FOLLOW-932 | **IN_PROGRESS** | sdk-engineer | `sdk-engineer/FOLLOW-932-headroom-records` | 2026-08-09 |
+| ticket     | status                     | agent        | branch                                     | started    |
+| ---------- | -------------------------- | ------------ | ------------------------------------------ | ---------- |
+| FOLLOW-932 | **DONE** (#712 `9afa0a46`) | sdk-engineer | `sdk-engineer/FOLLOW-932-headroom-records` | 2026-08-09 |
+
+### FOLLOW-932 merged — #712 `9afa0a46`, gate verdict `exit 0`, 47/47 registered present
+
+**The gate now reports what people were reaching for CLI `gzip` to get:**
+`Bundle size: 40.67KB gzip (41,641 B) — limit 42KB (43,008 B) — headroom 1,367 B`. Headroom is
+signed, so an over-budget run reads as a deficit rather than a suspiciously small positive.
+
+**Three PM-side additions on top of the worker's PR, none of them a rewrite of its work:**
+
+1. **Landed `.claude/agents/sdk-engineer/lessons.d/FOLLOW-932.md`,** which Rule AG had denied the
+   worker. It carries a trap worth more than the ticket: **`rm -rf dist` without also deleting the
+   sibling `tsconfig.build.tsbuildinfo` makes `tsc` emit NOTHING with zero errors**, silently
+   handing a broken `@estalara/shared` to the next build.
+2. **Corrected a category error in the ADR annotation** — it labelled `1,356 B` as the marginal
+   DELTA. The delta is **~1,345 B**; 1,356 B is the **HEADROOM**. They differ by the ~11 B pre-move
+   headroom and drift independently, which is why they are easy to swap. An annotation written to
+   fix number-confusion had reproduced it: **Rule AO one level down.**
+3. **Resolved the 1,356 vs 1,367 drift the worker disclosed rather than hid.** It chose consistency
+   with an already-stale record; the durable answer is that **neither is a standing fact**.
+   Forward-looking figures — the ones FOLLOW-913/898 will read — now carry the commit they were
+   measured at and point at the gate. Historical records keep their measured values. The distinction
+   is the rule worth reusing.
+
+**Also:** `.pm-logs/` is now gitignored. Only its `*.log` half was covered, so a `git add -A` would
+have swept an un-prettier-ed dispatch brief into CI — the same shape that cost a round-trip earlier
+today.
 
 ### Next, in order, after FOLLOW-932
 
@@ -58,8 +84,8 @@ unblocks FOLLOW-914/907). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ing
 item 1). Piotr — ESC-056 above. ESC-020 (Wave-0 Step 6) remains OPEN and non-blocking-for-dispatch
 per the FOLLOW-820 gate: the stage is localhost-first testing, not a stalled pilot.
 
-**Counters: 0/5 CI, 0/3 fix (FOLLOW-932). 1 ticket IN_PROGRESS. 0 open PRs. Next free escalation
-ESC-057; next free FOLLOW-935.**
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. A retro is owed for #710, #711 and
+#712. Next free escalation ESC-057; next free FOLLOW-935.**
 
 **Traps carried into this session, all cost CI round-trips on 2026-08-09:** commitlint rejects an
 upper-case-initial subject and `[ESC-NNN]` refs · `lefthook.yml` pre-commit is `parallel: true` so

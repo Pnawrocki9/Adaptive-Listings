@@ -19,8 +19,17 @@ const bundle = readFileSync(BUNDLE_PATH);
 const gzipped = gzipSync(bundle);
 const sizeKB = (gzipped.length / 1024).toFixed(2);
 const maxKB = (MAX_BYTES / 1024).toFixed(0);
+// Headroom is signed so an over-budget run reports a negative deficit instead
+// of a misleadingly-positive-looking number (FOLLOW-932 / RETRO-264 — three
+// honest gzip measurements of one artefact, taken with three instruments,
+// differed by up to 164 bytes; report bytes here, not just two decimals of KB).
+const headroomBytes = MAX_BYTES - gzipped.length;
 
-console.log(`Bundle size: ${sizeKB}KB gzip (limit: ${maxKB}KB)`);
+console.log(
+  `Bundle size: ${sizeKB}KB gzip (${gzipped.length.toLocaleString('en-US')} B) — ` +
+    `limit ${maxKB}KB (${MAX_BYTES.toLocaleString('en-US')} B) — ` +
+    `headroom ${headroomBytes.toLocaleString('en-US')} B`,
+);
 
 if (gzipped.length > MAX_BYTES) {
   console.error(`Bundle too large: ${sizeKB}KB > ${maxKB}KB limit`);

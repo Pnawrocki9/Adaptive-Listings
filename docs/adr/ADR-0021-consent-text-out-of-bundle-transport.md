@@ -27,7 +27,9 @@ profiling begins** — the text fetch must be ordered ahead of the consent gate,
 critical path.
 
 `packages/sdk/src/ui/consent-banner.ts` (~14.4KB raw / ~5.5KB gzip standalone, EN+PL+ES `COPY`
-strings plus render code) is the largest movable object in the budget.
+strings plus render code) is the largest movable object in the budget. _(This is the module's
+isolated compressed size, not its marginal contribution to the bundle after removal — those two
+numbers diverged 4.1×; see the §Consequences/Positive annotation, FOLLOW-932.)_
 
 **The collision (FOLLOW-915 AC(0)).** ADR-0011's FOLLOW-278 addendum (Accepted 2026-06-11/12,
 compliance-confirmed 2026-06-12) states:
@@ -330,6 +332,20 @@ Privacy Notice §4 row, and an amendment here.
   mechanically, not by discipline). Copy edits in any locale ship with zero bundle delta.
 - ~5.5KB gzip leaves the bundle (banner strings; render code stays). Restores real headroom under
   the 42KB budget and unblocks FOLLOW-913 / FOLLOW-898 from coin-flip CI.
+  - **Measured outcome (2026-08-09, FOLLOW-932 / RETRO-264) — do not silently correct the estimate
+    above; this is an annotation, not a rewrite.** The actual marginal bundle delta was **~1,345 B
+    (~1.31KB), measured with `zlib.gzipSync` — the instrument the gate at
+    `packages/sdk/scripts/check-bundle-size.js` enforces** — a **4.1× miss**. _Two quantities are
+    easy to swap here and one revision of this annotation did swap them: the **delta** is what left
+    the bundle (~1,345 B), the **headroom** is what remains under the 42KB ceiling (1,356 B at
+    `25cff8bc`, 1,367 B at `31cab8b4`). They differ by the pre-move headroom of ~11 B and they drift
+    independently on every merge — run the gate, which now prints both, rather than quoting either
+    from here._ Cause: the estimate applied the `consent-banner.ts` module's own _standalone_
+    raw/gzip size (see the ~5.5KB figures at line 29 and in References below) as if it were the
+    bundle's _marginal_ gzip delta after removal — gzip shares a dictionary with the rest of the
+    bundle, so the incremental contribution of one module is routinely smaller than that module's
+    isolated compressed size. Authoritative before/after bytes: `docs/INTERFACES.md` (Consent-Banner
+    Text Document section).
 - Text updates propagate to all visitors within the 5-minute cache TTL — today they wait on every
   tenant's visitors re-fetching the SDK bundle, which is strictly worse for disclosure freshness.
 - The failure mode of the consent path is provably "less processing," never "profiling without
@@ -406,7 +422,9 @@ compliance review per D3 anyway).
   post-consent)
 - `docs/compliance/dpia.md` — §2.2 (consent modes), §6.1 (ePrivacy Art. 5(3) / PECR), §13.1/§13.2
   (banner disclosure mandates), sub-processor table (Vercel line 223, Cloudflare line 217)
-- `packages/sdk/src/ui/consent-banner.ts` — current `COPY` source (~14.4KB raw / ~5.5KB gzip)
+- `packages/sdk/src/ui/consent-banner.ts` — current `COPY` source (~14.4KB raw / ~5.5KB gzip
+  standalone — module-isolated size, not the ~1.31KB marginal bundle delta actually measured;
+  FOLLOW-932)
 - `packages/sdk/src/index.ts:286–380` — consent gate + FOLLOW-278 rationale block (to be updated by
   the implementation PR to cite this ADR)
 - `packages/shared/src/domains.ts:57` — `SDK_SERVE_URL` (the pre-existing pre-consent request to the

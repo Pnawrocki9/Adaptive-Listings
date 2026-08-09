@@ -256,7 +256,7 @@ jobs:
       - name: Build all TypeScript packages
         run: pnpm turbo run build --filter='./packages/*' --filter='@estalara/ingest' --filter='@estalara/decision-api'
 
-      - name: SDK bundle size gate (<40KB gzip)
+      - name: SDK bundle size gate (<42KB gzip, ESC-028)
         run: pnpm --filter=@estalara/sdk build:check
 
   # ── Control-plane build (Next.js, separate job — takes longer) ───────────

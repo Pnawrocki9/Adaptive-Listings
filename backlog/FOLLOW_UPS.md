@@ -31558,9 +31558,16 @@ prove the outcome by **deleting the rising-edge guard from `index.ts` and showin
 third would change the remedy from per-file to structural; (4) fold the result into the Rule AI
 replica clause if the sweep changes what that clause should say.
 
+**Budget note (2026-08-09, FOLLOW-932).** This ticket's AC is a test file, not `dist/`, so it is not
+expected to move the SDK bundle. It was held alongside FOLLOW-913 purely for dispatch-ordering
+caution while headroom was ~11-14 B (pre-FOLLOW-915). FOLLOW-915 (PR #709) restored headroom to
+**1,356 B** against `MAX_BYTES = 42 * 1024 = 43,008`, measured with `zlib.gzipSync` (not CLI `gzip`,
+which reads 77-164 B higher; RETRO-264) — dispatch is no longer noise-floor-constrained.
+
 cross_ref: [FOLLOW-890 (PR #695); RETRO-261; Rule AI amendment 3 (replica clause); Rule J;
 `packages/sdk/src/__tests__/intent-snapshot.test.ts:90-93`;
-`packages/sdk/src/index.ts:1219-1223,1446,1659`; `packages/sdk/src/core/intent.ts:980,1224`]
+`packages/sdk/src/index.ts:1219-1223,1446,1659`; `packages/sdk/src/core/intent.ts:980,1224`;
+FOLLOW-915; FOLLOW-932]
 
 ---
 
@@ -32184,9 +32191,19 @@ untangling; (2) **`follow-877.test.ts` test D-1 flips** to record the ruling, an
 this ruling rather than restating a rationale; (3) a test proving the _directive_ axis is unchanged;
 (4) `adapt-floor.ts`'s docblock and `MASTER_DESIGN` §E.7's ladder note updated — apply Rule AI's
 three-vocabulary sweep, since this claim has already been wrong in nine places; (5) bundle delta
-measured and reported (ESC-051 budget is exhausted, and its fix is FOLLOW-915, not this ticket).
+measured and reported.
 
-cross_ref: [ESC-054 (RESOLVED); FOLLOW-875; FOLLOW-877; FOLLOW-343; Rule AI]
+**Budget note (2026-08-09, FOLLOW-932) — supersedes the "ESC-051 budget is exhausted" framing
+above.** FOLLOW-915 landed (PR #709) and moved the consent-banner text out of the bundle. Headroom
+against `MAX_BYTES = 42 * 1024 = 43,008` is **1,356 B**, measured with `zlib.gzipSync` — the
+instrument `packages/sdk/scripts/check-bundle-size.js` enforces (not CLI `gzip`, which reads 77-164
+B higher on the same artefact; see RETRO-264). Scope this ticket's new named constant against
+**1,356 B**, not the earlier ~11 B / ~5.5KB figures. **Measured at `25cff8bc`; at `31cab8b4` it is
+1,367 B.** Do not scope off either number without re-running the gate — it prints bytes and signed
+headroom since FOLLOW-932, and the figure moves by single-digit bytes on any merge that touches a
+package the bundle imports.
+
+cross_ref: [ESC-054 (RESOLVED); FOLLOW-875; FOLLOW-877; FOLLOW-343; Rule AI; FOLLOW-915; FOLLOW-932]
 
 ---
 

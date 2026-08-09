@@ -23,13 +23,11 @@ import nextConfig from '../next.config.mjs';
 /** The §D2 wire contract, restated here so a silent weakening of the TTL fails. */
 const EXPECTED_CACHE_CONTROL = 'public, max-age=300, stale-while-revalidate=60';
 
-interface HeaderRule {
-  source: string;
-  headers: { key: string; value: string }[];
-}
+/** Shape declared in `src/next-config.d.ts`. */
+interface HeaderRule { source: string; headers: { key: string; value: string }[] }
 
 async function rules(): Promise<HeaderRule[]> {
-  const headers = (nextConfig as { headers?: () => Promise<HeaderRule[]> }).headers;
+  const headers = nextConfig.headers;
   expect(typeof headers, 'next.config.mjs defines no headers() at all').toBe('function');
   return await headers!();
 }

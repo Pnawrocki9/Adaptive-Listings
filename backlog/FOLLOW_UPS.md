@@ -32971,6 +32971,32 @@ cross_ref: [`packages/shared/src/schemas/events/consent.ts:28,50`;
 `apps/control-plane/public/consent-text.json` (`es` locale); DPIA §13.1/§13.2; CONVENTIONS_PATCH
 Rule N, Rule K.2; FOLLOW-273; FOLLOW-930]
 
+**STATUS: DONE — 2026-08-09, session 109 (PR pending).**
+
+- **AC(1) DONE.** Both occurrences now read `language: QuizLanguageSchema`.
+- **AC(2) DONE, and the first attempt at it was VACUOUS — worth carrying.** The red-first proof runs
+  at the ingest boundary through the real `EventSchema`. Reverting `consent.ts` alone left the test
+  GREEN, because `@estalara/ingest` resolves `@estalara/shared` through its BUILT `dist`: a
+  cross-package red-first proof must rebuild the dependency or it proves nothing. With
+  `pnpm --filter @estalara/shared build` in the loop, exactly the `es` case fails and only it.
+- **AC(3) DONE (swept, not spot-fixed).** No other INCOMPLETE restatement exists. Four complete ones
+  remain: `api/quiz/completion/route.ts:52` was the same concept (quiz-widget `language`) and is now
+  `QuizLanguageSchema`; `api/adapt/route.ts:229`, `api/adapt/description/route.ts:70` and
+  `api/internal/description-cache/route.ts:79` are **NAMED, not fixed** — they type a content
+  `locale`, and binding that to the quiz-widget union is a design decision that deserves its own
+  call rather than riding in on a P1 bugfix.
+- **AC(5) DONE.** Schema rejections now emit `schema_rejected` to Sentry, **once per batch** (a
+  malformed client sends many; per-event capture would turn a client bug into a flood), tagged
+  `has_consent_event` when the dropped batch carried a consent decision. That path previously fired
+  nothing at all, which is precisely why this defect survived undetected.
+- **AC(4) NOT CLOSED — operator step, and the failure mode is instructive.** The prod population
+  cannot be measured with the available credential: `ingest_worker` holds `INSERT, ALTER DELETE` on
+  `default.events` and **no `SELECT`** (verified via `SHOW GRANTS`; `SELECT 1` succeeds, so
+  connectivity is fine and this is a grant boundary). **The first query returned an EMPTY body,
+  which reads exactly like "zero consent events in production" — it was access-denied.** Per Rule AT
+  the remediation premise is recorded as UNVERIFIED, not as zero. Unblocks with a read grant or a
+  run from the ClickHouse Cloud console.
+
 ## FOLLOW-932 — The SDK's remaining byte headroom is written down in two places, both measured with an instrument the budget is not enforced with, and both overstate it
 
 source_retro: RETRO-264 source_ticket: FOLLOW-915 recommended_sprint: now recommended_agent:

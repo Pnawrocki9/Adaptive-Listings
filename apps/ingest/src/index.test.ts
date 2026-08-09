@@ -460,6 +460,86 @@ describe('POST /v1/events — happy path', () => {
   });
 });
 
+// ─── FOLLOW-931 / RETRO-264 LG-4 — a Spanish visitor's consent decision must SURVIVE ingest ──
+// The bug this pins: `ConsentGrantedPayloadSchema.language` was a hand-written `z.enum(['en',
+// 'pl'])` while the banner shipped `en`, `pl` AND `es`. `EventSchema.safeParse` therefore
+// rejected `{ language: 'es' }` per-event, the batch still returned 200, and the visitor's
+// decision — which our own `es` disclosure text promises we record — was discarded in silence.
+// Asserted at the INGEST boundary, through the real `EventSchema`, because that is where the
+// event actually died; a payload-schema unit test alone would not have proven the drop.
+describe('POST /v1/events — consent audit events in every banner locale (FOLLOW-931)', () => {
+  const authHeaders = { 'Content-Type': 'application/json', 'X-Estalara-API-Key': 'k1' };
+
+  for (const language of ['en', 'pl', 'es'] as const) {
+    it(`accepts consent.granted and consent.denied in '${language}'`, async () => {
+      const stub = stubFetch('ok');
+      try {
+        const app = createApp();
+        const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+        const events = (
+          [
+            ['consent.granted', '01928f00-7000-7000-8000-123456789001'],
+            ['consent.denied', '01928f00-7000-7000-8000-123456789002'],
+          ] as const
+        ).map(([type, eventId]) => ({
+          ...validEvent,
+          event_id: eventId,
+          type,
+          payload: { language, method: 'banner' as const },
+        }));
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ events }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+        const body = await readJson<{ accepted: number; rejected: number }>(res);
+        expect(body.rejected, `'${language}' consent decisions were dropped at ingest`).toBe(0);
+        expect(body.accepted).toBe(2);
+      } finally {
+        stub.restore();
+      }
+    });
+  }
+
+  it('a schema rejection now emits a Sentry signal, flagged when it carries a consent event', async () => {
+    const stub = stubFetch('ok');
+    try {
+      vi.mocked(Sentry.captureMessage).mockClear();
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD } });
+      // `de` is outside the canonical language tuple — still correctly rejected.
+      const events = [
+        { ...validEvent, type: 'consent.denied', payload: { language: 'de', method: 'banner' } },
+      ];
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      expect((await readJson<{ rejected: number }>(res)).rejected).toBe(1);
+      // Rule K.2 — the drop is observable. Before FOLLOW-931 this path fired nothing at all,
+      // which is precisely why the `es` defect survived undetected.
+      expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
+        'schema_rejected',
+        expect.objectContaining({
+          level: 'warning',
+          tags: expect.objectContaining({ gate: 'schema', has_consent_event: 'true' }),
+        }),
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
 // ─── FOLLOW-559 / audit A3-F-08 — server-side consent gate at the storage boundary ───────────
 // End-to-end proof that the gate runs INSIDE the events handler (not just as a pure unit): a
 // profiling event with consent_state=none is rejected per-event and never reaches Redpanda,

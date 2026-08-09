@@ -37,7 +37,7 @@ import { sql, and, eq, isNull, or, gt } from 'drizzle-orm';
 
 import { createAdminClient, quizCompletions, apiKeys } from '@estalara/db';
 import type { Database } from '@estalara/db';
-import { errorBody, ErrorCode } from '@estalara/shared';
+import { errorBody, ErrorCode, QuizLanguageSchema } from '@estalara/shared';
 import { sha256Hex, constantTimeEqual } from '@/lib/api-key-auth';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -49,7 +49,11 @@ const QuizCompletionBodySchema = z.object({
   q1_answer: z.number().int().min(0).max(3).optional(),
   q2_answer: z.number().int().min(0).max(3).nullable().optional(),
   q3_answer: z.number().int().min(0).max(3).nullable().optional(),
-  language: z.enum(['en', 'pl', 'es']).default('en'),
+  // FOLLOW-931 — derived, not restated. This IS the quiz-widget language, and
+  // `QUIZ_LANGUAGE_VALUES` requires every API surface to reference the constant. The identical
+  // literal one directory away drifted to `['en', 'pl']` and silently dropped Spanish visitors'
+  // consent decisions; correct-today is what that site was too.
+  language: QuizLanguageSchema.default('en'),
 });
 
 type QuizCompletionBody = z.infer<typeof QuizCompletionBodySchema>;

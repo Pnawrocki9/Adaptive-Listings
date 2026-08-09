@@ -98,9 +98,15 @@ Verify with `prettier --check` AFTER committing; the hook's own green is not evi
    **FOLLOW-929…934** filed; 929 already merged.
 2. **FOLLOW-913 / FOLLOW-898** — unblocked; scope against **1,356 bytes** (`zlib.gzipSync`), not
    5.5KB and not 1,520 B.
-3. **FOLLOW-924 must absorb LG-4:** `ConsentGrantedPayloadSchema.language` is `z.enum(['en','pl'])`
-   while the banner ships `es` — **a Spanish visitor's consent event is rejected**, so their denial
-   is not recorded as DPIA §13.1 requires. Pre-existing, verified, unrelated to #709.
+3. ~~**FOLLOW-931 (LG-4)**~~ **DONE** — the consent payload schemas now derive `language` from
+   `QuizLanguageSchema` instead of a hand-written `z.enum(['en','pl'])`, so a Spanish visitor's
+   decision survives ingest and DPIA §13.1 gets the refusal it requires. **AC(4) is the one that did
+   not close and it is an operator step, not a code gap:** the prod population cannot be measured
+   from here — `ingest_worker` holds `INSERT, ALTER DELETE` on `default.events` and **no `SELECT`**
+   (`SHOW GRANTS` verified; `SELECT 1` succeeds, so this is a grant, not an outage). **A first
+   attempt returned an EMPTY result that reads exactly like "zero consent events in prod" — it was
+   access-denied.** Do not record a remediation premise off that (Rule AT). Needs a read grant or a
+   query from the ClickHouse console.
 4. **FOLLOW-928** (filed by #708, P1) — decide whether the SDK should **fail loud** when
    `data-privacy-url` is absent on a non-first-party tenant, or whether the runbook is the whole
    control. "An operator step nothing checks" is the 658/659/660 class.

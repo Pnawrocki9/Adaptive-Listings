@@ -38,6 +38,7 @@ import {
 import type { ResolvedArchetype } from './core/session.js';
 import { setupObservers } from './core/observer.js';
 import { createShadowHost } from './ui/shadow-host.js';
+import { fetchConsentText } from './core/consent-text.js';
 import { renderConsentBanner } from './ui/consent-banner.js';
 import { renderProfilingToggle } from './ui/profiling-toggle.js';
 import type { ProfilingToggleController } from './ui/profiling-toggle.js';
@@ -310,11 +311,21 @@ async function init(): Promise<IntentState | null> {
         // Show banner and wait for the user's decision.
         // Returns true if consent was granted, false if denied.
         //
-        // FOLLOW-278 / ADR-0011 (§Consent-banner locale) — Accepted constraint:
+        // FOLLOW-278 / ADR-0011 (§Consent-banner locale) — Accepted constraint, SCOPED by
+        // ADR-0021 §D5 (FOLLOW-915, compliance-countersigned 2026-08-09):
         // The consent banner renders here, BEFORE fetchQuizConfig() resolves (step 3
-        // in the ADR-0011 init sequence).  By design, the fetch runs AFTER consent is
-        // resolved — the consent gate must precede any network call that reads tenant
-        // data, so the banner can never receive the server-fetched language/accentColor.
+        // in the ADR-0011 init sequence).  By design, THAT fetch runs AFTER consent is
+        // resolved — the consent gate must precede any network call that reads TENANT
+        // DATA, so the banner can never receive the server-fetched language/accentColor.
+        //
+        // READ THE SCOPE CAREFULLY. ADR-0011's addendum sentence "the consent banner
+        // cannot wait for the fetch" denotes fetchQuizConfig() and is superseded as a
+        // general claim by ADR-0021 §D5: the banner DOES wait for one fetch — the
+        // identifier-free consent-text GET immediately below — and under ADR-0021 it
+        // MUST. The tenant-data prohibition above is re-affirmed byte-intact (§D1); what
+        // fell was an ordering consequence that carried no compliance rationale of its
+        // own. Do not re-generalise it: a future reader who reads the paragraph above as
+        // "no fetch may precede consent" will delete a legally required disclosure fetch.
         //
         // `config.language` at this point is sourced from the `data-language` snippet
         // attribute (level 2) or the browser's navigator.language (level 3) or the
@@ -335,9 +346,37 @@ async function init(): Promise<IntentState | null> {
         //     (a new feature, not a re-introduction) and update ADR-0011 accordingly.
         //     See the "Consent-banner locale" addendum section added to
         //     docs/adr/ADR-0011-quiz-config-transport.md by FOLLOW-278.
+        // ADR-0021 §D2 — the banner copy is fetched, not bundled (ESC-051 / FOLLOW-915).
+        // Identifier-free static GET, awaited HERE so that everything capable of profiling
+        // is sequenced behind it: a slow fetch delays the banner and the product equally,
+        // never the banner alone. Skipped entirely on the granted/denied paths above, so a
+        // returning visitor pays no extra request.
+        const consentCopy = await fetchConsentText(config.language);
+
+        if (consentCopy === null) {
+          // §D4 FAIL CLOSED — no banner, no events, no storage writes, no tenant-identified
+          // request; consent remains 'pending' (NOT recorded as denied) and the fetch is
+          // retried naturally on the next page load.
+          //
+          // There is deliberately NO built-in fallback text. A trimmed fallback recreates
+          // the ESC-051 defect — disclosure content degraded by an engineering constraint —
+          // and consent obtained on an incomplete disclosure is not "informed" under GDPR
+          // Art. 4(11)/Art. 7, which would invalidate the lawful basis of everything
+          // downstream. Compliance ruled this fail-closed path COMPLIANCE-SUPERIOR, not
+          // merely engineering-preferable (ADR-0021 §D5 countersign, item 3): the visitor
+          // who is not noticed is also not profiled, and GDPR does not require notifying
+          // people about processing that does not occur.
+          //
+          // Availability cost accepted per §D4: if the control-plane origin cannot serve a
+          // static file, the adapt endpoint on that same origin is down too.
+          earlyHost.destroy();
+          return null;
+        }
+
         const granted = await new Promise<boolean>((resolve) => {
           renderConsentBanner(earlyHost.root, {
             language: config.language,
+            copy: consentCopy,
             accentColor: config.accentColor,
             ...(config.privacyPolicyUrl !== undefined
               ? { privacyPolicyUrl: config.privacyPolicyUrl }

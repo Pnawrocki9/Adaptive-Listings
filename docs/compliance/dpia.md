@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.18 **Date:** 2026-08-09 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.19 **Date:** 2026-08-09 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -590,14 +590,14 @@ by the Arts. 12–13 transparency obligations the asset exists to discharge.
 compliance-countersigned 2026-08-09) adds one member to this request class: an identifier-free
 `GET {CONTROL_PLANE_URL}/consent-text.json` carrying the consent-banner disclosure text, fetched
 only when consent is `pending`, awaited before the banner renders, and fail-closed (fetch failure ⇒
-no banner, zero events, zero storage writes, consent remains `pending`). Implementation gate: the
-FOLLOW-915 implementation PR — until it merges, the `COPY` constant in
-`packages/sdk/src/ui/consent-banner.ts` remains the shipped source of the banner text and this
-paragraph is forward-looking. The countersign's binding conditions (including byte-identical
-carriage of the §13.1/§13.2 mandated disclosure sentences in every locale of the served document)
-are recorded in ADR-0021 §D5. Any parameterization of this request (tenant, locale, experiment arm)
-exits this section's analysis and re-opens the ADR-0011 pre-consent prohibition — a new ADR plus
-compliance review is required first (ADR-0021 §D3).
+no banner, zero events, zero storage writes, consent remains `pending`). **Implemented 2026-08-09**
+(FOLLOW-915): the document is served, the SDK fetches and validates it on the `pending` path only,
+and the `COPY` constant has been removed from `packages/sdk/src/ui/consent-banner.ts`. This
+paragraph describes shipped behaviour, no longer a specification. The countersign's binding
+conditions (including byte-identical carriage of the §13.1/§13.2 mandated disclosure sentences in
+every locale of the served document) are recorded in ADR-0021 §D5. Any parameterization of this
+request (tenant, locale, experiment arm) exits this section's analysis and re-opens the ADR-0011
+pre-consent prohibition — a new ADR plus compliance review is required first (ADR-0021 §D3).
 
 ---
 
@@ -1347,6 +1347,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.16    | 2026-08-07 | Compliance Engineering | ESC-049 addendum (CEO+DPO ruling, "Q1/Q3 ruling", `backlog/ESCALATIONS.md`, session 103, same day as v2.15): resolves §13.4's condition-(iii) flag rather than leaving it pending. **Ruled: legitimate interest stands for the ClickHouse chat-message-text store, conditioned on full transparency** — the Privacy Notice / consent text gains an explicit storage disclosure, riding the same single `PLATFORM_REGISTRATION_TOS_VERSION` bump as FOLLOW-815 (no second bump spent); condition (iii) is satisfied once that text lands. Named re-review trigger recorded: any widening of what `scrubMessagePii` passes through, or any lengthening of the 13-month TTL, requires re-derivation. §3.1's forward-reference to §13.4 updated from "flagged, not re-derived" to point at the ruling. No change to §8 (still owned by the concurrent FOLLOW-815 worker).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2.17    | 2026-08-07 | Compliance Engineering | FOLLOW-815 (implementing the FOLLOW-814 CEO+DPO ruling; discharges FOLLOW-710 AC-6). §8 (Data Subject Rights): (1) **corrected the phantom intake endpoint** — step 3 named `POST /api/v1/dsr/request` from this document's creation, a route that has never existed in the repo; the real route is `POST /api/dsr/initiate` (Rule AH; three consecutive retros re-derived this finding independently); (2) added the **direct subject-facing withdrawal channel** for the §7 platform-registration consent — `compliance@estalara.com`, the mailbox now named in the §6.1 disclosure text itself under `platform-v1.4-2026-08-07`, satisfying GDPR Art. 7(3) ("as easy to withdraw as to give") without requiring the tenant's cooperation. Texts served under `platform-v1.3-2026-06-21` and earlier named no concrete address. The mailbox is an operator commitment: it must be monitored.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2.18    | 2026-08-09 | Compliance Engineering | FOLLOW-915 (ADR-0021 §D5 compliance countersign). §2.8 added: the pre-consent static-asset request class to the control-plane origin (visitor browser → `sdk.js` on Vercel) is recorded as a processing activity for the first time — prior versions' Vercel rows scoped the sub-processor to tenant-admin traffic, so the class was unmentioned, not covered; ADR-0021's leg-1 claim ("answerable from the existing DPIA") is corrected on the record in the §D5 countersign block, with legs 2+3 (ePrivacy 5(3)/PECR 6(4) strictly-necessary + §D3 identifier-free constraint) carrying the conclusion. §2.6 Vercel row and §9 EU→US (Vercel) transfer row data categories widened accordingly. `consent-text.json` is recorded as a SPECIFIED, NOT YET IMPLEMENTED member of the class, gated on the FOLLOW-915 implementation PR, with byte-identical carriage of the §13.1/§13.2 mandated banner sentences as a binding countersign condition. Open gap cross-referenced, not closed: Vercel runtime-log retention remains NOT RECORDED (§2.7.1) and now bounds pre-consent visitor traffic.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 2.19    | 2026-08-09 | Compliance Engineering | FOLLOW-915 implementation (ADR-0021 §D2/§D4/§D7). The banner disclosure strings LEFT the SDK bundle: they are served as an identifier-free static document (`apps/control-plane/public/consent-text.json`), fetched pre-consent on the `pending` path only, awaited before the banner renders, and fail-closed on any error (no banner, zero events, zero storage writes, consent stays `pending`). **Rule N corrections, the reason this row exists:** §13.1 and §13.2 both named the `COPY` constant in `packages/sdk/src/ui/consent-banner.ts` as the source of record for the mandated disclosure sentences — true when written, false the moment the strings moved. Both cross-references now name the served document and the canonical byte record (`docs/compliance/consent-disclosures.canonical.json`), which `scripts/check-adr-0021-conditions.mjs` asserts per locale on every PR. §2.8's forward-looking paragraph is restated as shipped behaviour. No change to the disclosure TEXT itself: every sentence is byte-identical to the state countersigned in PR #703, and the test that validates the artefact asserts that byte-for-byte.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ---
 
@@ -1490,10 +1491,17 @@ go-live.
 
 **Cross-reference — SDK implementation:** The banner copy and the `onDenied` callback that triggers
 the `consent.denied` dispatch are implemented in `packages/sdk/src/ui/consent-banner.ts`
-(`renderConsentBanner`). The disclosure strings for EN, PL, and ES locales are defined in the `COPY`
-constant in that file. The mandated disclosure sentence above must appear in those locale strings.
-**FOLLOW-128** owns the SDK code change to add the §13.1 disclosure sentence to the banner copy. The
-tenant-facing disclosure paragraph is in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2.
+(`renderConsentBanner`). **The disclosure strings for EN, PL and ES no longer live in the SDK
+bundle** (FOLLOW-915 / ADR-0021, merged 2026-08-09): they are served as an identifier-free static
+document, `apps/control-plane/public/consent-text.json`, fetched and validated before the banner
+renders. The mandated disclosure sentence above must appear in every locale of THAT document; the
+byte record it is checked against is `docs/compliance/consent-disclosures.canonical.json`, enforced
+on every PR by `scripts/check-adr-0021-conditions.mjs` (ADR-0021 §D5 countersign, binding condition
+1). If the fetch fails, no banner renders and nothing is processed (§D4 fail-closed) — there is no
+built-in fallback text, deliberately: consent obtained on an incomplete disclosure would not be
+"informed" under Art. 4(11)/Art. 7. **FOLLOW-128** owns the SDK code change to add the §13.1
+disclosure sentence to the banner copy. The tenant-facing disclosure paragraph is in
+`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §2.
 
 **DPO gate:** DPO review of this LIA is required before EU pilot go-live. Status: **PENDING** — DPO
 sign-off not yet received. Gate is tracked in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §4 (DPO
@@ -1563,11 +1571,14 @@ to 90 days. This identifier is refreshed every 90 days and is deleted if you wit
 This disclosure must appear in the consent banner — not only in the Privacy Policy — because the
 identifier is set at first page load before the visitor navigates to the policy.
 
-**Cross-reference — SDK implementation:** The banner copy is implemented in
-`packages/sdk/src/ui/consent-banner.ts` (`COPY` constant, `renderConsentBanner` function).
-**FOLLOW-128** owns the code change to add the §13.2 cross-session disclosure sentence to the `COPY`
-locale strings for EN, PL, and ES. The tenant-facing disclosure paragraph is in
-`docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §3.
+**Cross-reference — SDK implementation:** The banner is rendered by `renderConsentBanner` in
+`packages/sdk/src/ui/consent-banner.ts`; **the copy itself is served out-of-bundle** from
+`apps/control-plane/public/consent-text.json` and passed in (FOLLOW-915 / ADR-0021 §D2, merged
+2026-08-09). The §13.2 sentence below must appear in every locale of that document — byte record in
+`docs/compliance/consent-disclosures.canonical.json`, enforced by
+`scripts/check-adr-0021-conditions.mjs`. **FOLLOW-128** owns the code change to add the §13.2
+cross-session disclosure sentence to the `COPY` locale strings for EN, PL, and ES. The tenant-facing
+disclosure paragraph is in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §3.
 
 **Action owner:** Compliance Engineering (banner copy, DPIA/Privacy Notice docs) + SDK Engineer
 (consent-withdrawal `localStorage` erasure). **Status: COMPLETE** — FOLLOW-128 delivered the

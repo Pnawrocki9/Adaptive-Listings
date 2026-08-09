@@ -13,7 +13,7 @@
  * @module @estalara/sdk/ui/consent-banner
  */
 
-import type { QuizLanguage } from '@estalara/shared';
+import type { ConsentTextLocale, QuizLanguage } from '@estalara/shared';
 
 export interface ConsentBannerOptions {
   /**
@@ -24,6 +24,17 @@ export interface ConsentBannerOptions {
   language: QuizLanguage;
   /** Accent color for the primary "Accept" button (hex, rgb, or CSS color). */
   accentColor: string;
+  /**
+   * Banner copy for {@link ConsentBannerOptions.language}, fetched and validated by
+   * `fetchConsentText()` before this function is called (ADR-0021 §D2, FOLLOW-915).
+   *
+   * REQUIRED, and deliberately has no default: ESC-051 moved these strings out of the bundle,
+   * and a built-in fallback would either re-create the byte cost the ruling removed or ship a
+   * TRIMMED disclosure — consent obtained on an incomplete disclosure is not "informed" under
+   * GDPR Art. 4(11)/Art. 7 (§D4). If the text could not be fetched, the caller must fail
+   * closed and never reach this function.
+   */
+  copy: ConsentTextLocale;
   /** Optional URL for the tenant's privacy policy — shown as a "Learn more" link. */
   privacyPolicyUrl?: string;
   /** Called when the user clicks "Accept". */
@@ -131,87 +142,6 @@ const BANNER_STYLE = `
 `;
 
 /**
- * Per-locale copy for the consent banner.
- *
- * disclosure13_1 — DPIA §13.1: audit-log retention notice for consent-denied dispatch.
- *   Source: dpia.md §13.1 "Consent banner disclosure" paragraph. Retention = 7 days.
- *
- * disclosure13_2 — DPIA §13.2: cross-session pseudonymous identifier notice.
- *   Source: dpia.md §13.2 "Required consent banner update" paragraph. Retention = 90 days,
- *   refreshed every 90 days. Must appear in the banner (not only in the Privacy Policy) because
- *   the identifier is set at first page load before the visitor navigates to the policy.
- *
- * disclosurePlatform — DPIA §13.4 / FOLLOW-373: platform-wide consent umbrella notice.
- *   Source: dpia.md §13.4 "Platform-wide consent umbrella" and Master Design §H.8.
- *   For registered investors (app.estalara.com Mode B), the registration consent additionally
- *   covers: chat analysis for buying intent, transfer of inferred profile to the agency/agent,
- *   buying-intent identification (12-dim vector, 24 h TTL, no raw chat text stored by AL),
- *   lead ranking by buying-intent strength, and agent-facing summaries of chat questions.
- *   CORRECTED 2026-08-07 (FOLLOW-866 / ESC-049 addendum, ridden by FOLLOW-815): this docblock and
- *   the three `disclosurePlatform` strings below used to assert that raw chat text is NOT stored.
- *   That was FALSE to real data subjects. `chat.message.sent.payload.message` (≤4000 chars) is
- *   written verbatim into the ClickHouse `events` table by deliberate §H.8 design and retained for
- *   13 months (`infra/clickhouse/migrations/0001_create_events.sql` TTL); the PII scrubber masks
- *   email addresses and phone numbers ONLY — names, financial detail and family composition pass
- *   through. The 24-hour structured-intent summary claim was and remains true; it was the "and
- *   nothing else" half that was wrong. Lawful basis stays LEGITIMATE INTEREST with full
- *   transparency, and NO new consent checkbox was added (CEO+DPO, ESC-049 addendum Q1/Q3). These
- *   Authoritative facts: `docs/compliance/C-07-chat-retention-scope.md` v1.3 (PR #687). These
- *   strings are byte-synced with `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and
- *   `platform-registration/lib.ts` — change all three together or the Rule N gates go red.
- *   The full registration consent text is in the account sign-up flow.
- *   This disclosure is shown here for completeness so that any visitor who is also a registered
- *   investor has full transparency about the platform-wide purposes at this consent surface.
- */
-const COPY = {
-  en: {
-    text: 'We personalize this page based on your browsing behavior.',
-    // DPIA §13.1 — denial-logging audit retention (7 days)
-    disclosure13_1:
-      'We record the fact of your consent decision — including a denial — for compliance and debugging purposes. This log is retained for 7 days and is then permanently deleted.',
-    // DPIA §13.2 — cross-session pseudonymous identifier (90 days, refreshed every 90 days)
-    disclosure13_2:
-      'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
-    // DPIA §13.4 / FOLLOW-373 — platform-wide consent umbrella (registered investors)
-    disclosurePlatform:
-      'If you are a registered investor: your account sign-up consent also covers analysis of your chat messages to identify buying intent, transfer of your inferred buyer profile to the agency/agent, lead ranking by buying-intent strength, and agent-facing summaries of your chat questions. Your chat message text is stored for 13 months, with emails and phone numbers masked; the intent summary is kept for 24 hours.',
-    learnMore: 'Learn more ↗',
-    accept: 'Accept',
-    decline: 'Decline',
-  },
-  pl: {
-    text: 'Personalizujemy tę stronę na podstawie Twojego zachowania.',
-    // DPIA §13.1 — informacja o rejestracji decyzji dot. zgody (7 dni)
-    disclosure13_1:
-      'Rejestrujemy fakt Twojej decyzji dotyczącej zgody — w tym odmowę — w celach zgodności i debugowania. Dziennik ten jest przechowywany przez 7 dni, po czym jest trwale usuwany.',
-    // DPIA §13.2 — pseudonimowy identyfikator cross-session (90 dni, odświeżany co 90 dni)
-    disclosure13_2:
-      'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
-    // DPIA §13.4 / FOLLOW-373 — platforma: pełne cele przetwarzania (zarejestrowani inwestorzy)
-    disclosurePlatform:
-      'Jeśli jesteś zarejestrowanym inwestorem: Twoja zgoda wyrażona przy rejestracji obejmuje również analizę wiadomości na czacie w celu identyfikacji intencji zakupowej, przekazanie wywnioskowanego profilu kupującego agencji/agentowi, ranking inwestorów według siły intencji zakupowej oraz podsumowania pytań z czatu widoczne dla pracowników agencji. Treść wiadomości z czatu jest przechowywana przez 13 miesięcy, z zamaskowanymi adresami e-mail i numerami telefonu; podsumowanie intencji przez 24 godziny.',
-    learnMore: 'Dowiedz się więcej ↗',
-    accept: 'Akceptuj',
-    decline: 'Odrzuć',
-  },
-  es: {
-    text: 'Personalizamos esta página según tu comportamiento de navegación.',
-    // DPIA §13.1 — aviso de retención del registro de auditoría de denegación de consentimiento (7 días)
-    disclosure13_1:
-      'Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma permanente.',
-    // DPIA §13.2 — identificador pseudónimo entre sesiones (90 días, renovado cada 90 días)
-    disclosure13_2:
-      'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',
-    // DPIA §13.4 / FOLLOW-373 — cobertura de consentimiento de plataforma (inversores registrados)
-    disclosurePlatform:
-      'Si eres un inversor registrado: tu consentimiento de registro también cubre el análisis de tus mensajes de chat para identificar la intención de compra, la transferencia de tu perfil de comprador inferido a la agencia/agente, la clasificación por intensidad de intención de compra y los resúmenes de tus preguntas de chat para el equipo de la agencia. El texto de tus mensajes de chat se almacena durante 13 meses, con correos y teléfonos enmascarados; el resumen de intención durante 24 horas.',
-    learnMore: 'Más información ↗',
-    accept: 'Aceptar',
-    decline: 'Rechazar',
-  },
-} as const;
-
-/**
  * Render a GDPR/CCPA consent banner inside the provided Shadow Root.
  *
  * The banner is positioned at the bottom of the viewport and waits for the user
@@ -228,7 +158,7 @@ export function renderConsentBanner(
   shadowRoot: ShadowRoot,
   options: ConsentBannerOptions,
 ): () => void {
-  const copy = COPY[options.language];
+  const copy = options.copy;
 
   // Inject scoped styles
   const style = document.createElement('style');

@@ -167,13 +167,12 @@ this orchestrator validates with.
 
 ### Dispatched in parallel: the ADR-0021 countersign, and RETRO-263
 
-**ADR-0021 §D5 countersign — GRANTED WITH BINDING CONDITIONS** (PR **#703**, awaiting merge) —
-**compliance-engineer**, **Fable**, branch `compliance-engineer/ADR-0021-countersign`, worktree
-`.claude/worktrees/countersign`. Model: Fable — this is a **compliance sign-off on a decision that
-clarifies a sentence compliance itself signed**, and the expensive failure is ratifying a scope
-reading that is convenient. **A refusal is an equally valid outcome and the brief says so**,
-otherwise the countersign is theatre: ADR-0021 reverts to PROPOSED and ESC-051 returns to the CEO
-with the constraint stated.
+**ADR-0021 §D5 countersign — DONE** (PR **#703** → `515b7af6`) — **compliance-engineer**, **Fable**,
+branch `compliance-engineer/ADR-0021-countersign`, worktree `.claude/worktrees/countersign`. Model:
+Fable — this is a **compliance sign-off on a decision that clarifies a sentence compliance itself
+signed**, and the expensive failure is ratifying a scope reading that is convenient. **A refusal is
+an equally valid outcome and the brief says so**, otherwise the countersign is theatre: ADR-0021
+reverts to PROPOSED and ESC-051 returns to the CEO with the constraint stated.
 
 **RETRO-263 — DONE** (`149d9b9a`) — **retrospective-analyst**, **Opus**, main tree, no worktree. It
 owes **four** merged PRs (#699, #700, #701, #702), and **#700 changed the merge gate this
@@ -266,7 +265,43 @@ make consent not _informed_ under Art. 4(11)/Art. 7, invalidating everything dow
 FOLLOW-925 (P1) is the one that matters — the three binding conditions currently have **no
 consumer**, which is RETRO-263's FOLLOW-923 finding pointed at this specific gate.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 1 open PR (#703, verified, awaiting merge).**
+### Countersign merged — the FOLLOW-915 implementation is unblocked, and gated
+
+**PR #703 merged as `515b7af6`.** Verified on `main`: ADR-0021 carries the
+`GRANTED WITH BINDING CONDITIONS` block, `dpia.md` §2.8 exists (v2.18), and `ropa.md` names
+_transient visitor IPs_ in three places (v2.14).
+
+**The chain that produced this is worth keeping as a pattern.** The PM read the seam before
+dispatching and re-routed the ticket off `sdk-engineer`; the architect refused to self-ratify and
+pre-wired the refusal path; the dispatch brief named "this is unimplementable" an explicit success
+so the agent had no incentive to bend its reading toward a ruling already taken; and compliance was
+told where to press hardest — **"we already do X" is not "X is lawful"** — which is exactly what it
+found.
+
+**Zero open PRs, zero worktrees, zero tickets IN_PROGRESS, zero decisions pending.**
+
+### Next, in order
+
+1. **FOLLOW-925 (P1)** — the three binding conditions have **no consumer**. They gate an
+   implementation PR and nothing checks them. This should land _with_ or _before_ the
+   implementation, not after.
+2. **FOLLOW-918 (P1)** — the merge gate's named required-check register. Until it lands, every
+   `exit 0` means _the checks that ran were green_, not _the right checks ran_.
+3. **FOLLOW-915 implementation half** (sdk-engineer) to ADR-0021 §D2–D4/D7–D8. Copy §D7's interface
+   obligations into the ticket, and require `packages/sdk/src/index.ts:313-337`'s rationale block to
+   cite ADR-0021 — it currently generalises the superseded sentence.
+4. **FOLLOW-919** (R-F1 asserts invocation, not existence), **FOLLOW-910** (the guard is blind to
+   Bash-shaped edits — the mode this estate actually writes files in).
+5. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and bundle headroom is
+   re-measured (**14 bytes** under the gate's own `zlib.gzipSync` default — RETRO-263 confirmed the
+   PM's figure exact).
+
+**Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page
+(ESC-055 ruling; unblocks FOLLOW-914/907 **and** makes it testable for the first time whether the
+`data-estalara` hooks are live). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker; one
+variable, both sides built and proven by execution.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
 
 ---
 

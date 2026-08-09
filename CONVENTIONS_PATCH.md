@@ -38,6 +38,17 @@ usable baseline run — never against a count and never against a hardcoded numb
 comparison accepts a PR that deletes one dead export and introduces another [FOLLOW-821 AC(1) /
 FOLLOW-827]) before exiting.
 
+It also asserts IDENTITY, which the two properties above do not cover: every name in
+`.github/required-checks.txt` must be present in the settled rollup, and green unless marked
+`any-state`. Stability and size were both satisfiable while the checks that matter were `SKIPPED` —
+which the failure regex counts as success — or simply absent; measured on the merged script, six
+real gates flipped to `SKIPPED` produced `failing: 0` and `RESULT: all checks green`, and the
+completeness floor tolerated 59% of the rollup vanishing [FOLLOW-918 / RETRO-263]. A registered gate
+that is absent or not green is exit 3/UNDETERMINED, never 0 — and never exit 1, because an
+untriggered workflow is not a red verdict on the PR's content and must not increment
+`fix_iteration_counter`. **A PR that adds or renames a required gate must add or update its name in
+that register in the same PR; a rename without the edit is exit 3 on the next PR, by design.**
+
 **Verification:**
 
 ```bash

@@ -86,6 +86,18 @@ declare -A NON_ROUTING=(
   ["STATUS.md"]="append-only session record; narrates the gate's behaviour, routes on no exit code of it"
 )
 
+# Classified by CLASS, not by filename. `.claude/agents/<agent>/lessons.d/<TICKET>.md` is the
+# per-ticket lesson fragment introduced by FOLLOW-888 to stop workers colliding on one shared
+# lessons.md. Every such fragment is a narrative record by construction — it says what the
+# author decided and what they would guard next time — and none of them routes on an exit
+# code; the already-classified `.claude/agents/devops-engineer/lessons.md` is the same class,
+# one file per agent instead of one per ticket. Listing them individually would mean this
+# checker goes red on any ticket whose lesson happens to name the gate, i.e. exactly the
+# tickets that improved it (FOLLOW-918 was the first, and caught this).
+NON_ROUTING_PREFIXES=(
+  ".claude/agents/:/lessons.d/=per-ticket lesson fragment (FOLLOW-888); narrative record, routes on no exit code"
+)
+
 # ── 1. read the contract out of the gate ──────────────────────────────────────
 if [[ ! -f "$GATE" ]]; then
   echo "ERROR: $GATE not found from repo root $repo_root" >&2
@@ -157,6 +169,12 @@ while IFS= read -r f; do
   if [[ -n "${NON_ROUTING[$f]+set}" ]]; then
     continue
   fi
+  for rule in "${NON_ROUTING_PREFIXES[@]}"; do
+    prefix="${rule%%:*}"
+    rest="${rule#*:}"
+    infix="${rest%%=*}"
+    [[ "$f" == "$prefix"*"$infix"* ]] && continue 2
+  done
   echo "FAIL: '$f' references $GATE but is in neither list in this script."
   echo "  If it routes on the exit code, add it to ROUTING_CONSUMERS and give it the marker."
   echo "  If it does not, add it to NON_ROUTING with the reason it does not."

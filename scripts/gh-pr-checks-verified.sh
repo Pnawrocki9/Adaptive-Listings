@@ -706,6 +706,137 @@ FAILURE_REGEX="$(_object_regex '[^"]*' '(?!SUCCESS|SKIPPED|NEUTRAL)[^"]*')"
 # merge-ref-only symbol is not the PR's). \Q…\E quotes the em-dash-bearing name.
 RULE_I_REGEX="$(_object_regex "\\Q${RULE_I_NAME}\\E" '[^"]*')"
 
+# ── the named required-check register (FOLLOW-918 / RETRO-263) ────────────────
+# This gate reads two properties of a rollup — stability (two identical settled
+# snapshots) and size (a completeness floor from peer PRs) — and never IDENTITY.
+# So a rollup could satisfy both while the checks that matter were SKIPPED (the
+# success class below includes SKIPPED and NEUTRAL by design, for the many
+# legitimately-conditional jobs) or simply absent: measured, 59% of the rollup
+# could vanish and the gate still settled and exited 0. The register is the
+# identity axis. See .github/required-checks.txt for the list and its derivation.
+REQUIRED_CHECKS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/.github/required-checks.txt"
+
+# _registered_states <snapshot> <check-name> — every state carried by a check-run
+# of exactly this name, one per line. \Q…\E quotes names containing em-dashes,
+# arrows and parentheses, exactly as RULE_I_REGEX above does.
+_registered_states() {
+  local re
+  re="$(_object_regex "\\Q$2\\E" '[^"]*')"
+  printf '%s' "$1" | grep -oP "$re" 2>/dev/null | grep -oP '"state":"\K[^"]*' 2>/dev/null
+  return 0
+}
+
+# assert_required_checks <settled-snapshot>
+#
+# Exits 3 (UNDETERMINED) when a registered check is ABSENT from the settled
+# rollup, or when a registered check carries any state other than SUCCESS.
+#
+# Exit 3 and deliberately NOT exit 1: "a required gate did not run" is not a red
+# verdict on this PR's content. It must not send a ticket back to a worker and
+# must not increment fix_iteration_counter — it is the same class as the
+# truncated-rollup refusal (FOLLOW-865), a gate that could not look. Called
+# BEFORE any verdict is rendered, so the documented 3 > 1 > 4 > 0 precedence
+# holds without a second call site on the pre-existing-red path below.
+assert_required_checks() {
+  local snapshot="$1"
+  local register="$REQUIRED_CHECKS_FILE"
+
+  if [[ -n "$FIXTURE_DIR" ]]; then
+    register="$FIXTURE_DIR/required-checks.txt"
+    # Fixtures written before this register assert other axes and supply none;
+    # they must keep asserting exactly what they were written to assert. The
+    # fixture seam is itself gated on self-test.marker + GH_PR_CHECKS_SELF_TEST=1
+    # (FOLLOW-846), so this branch is unreachable in a real invocation.
+    [[ -f "$register" ]] || return 0
+  fi
+
+  if [[ ! -f "$register" ]]; then
+    echo "ERROR: the named required-check register is MISSING." >&2
+    echo "  expected at: $register" >&2
+    echo "  Without it this gate has no identity axis: it would confirm that the checks" >&2
+    echo "  WHICH RAN were green while saying nothing about whether the right ones ran." >&2
+    echo "  That is the FOLLOW-918 defect, so its absence is a refusal, not a default." >&2
+    echo ""
+    echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+    echo "  this PR: the gate cannot establish which checks were required."
+    exit 3
+  fi
+
+  local -a required_success=() required_any=()
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ ! "$line" =~ ^[[:space:]]*$ ]] || continue
+    [[ ! "$line" =~ ^[[:space:]]*# ]] || continue
+    if [[ "$line" == "any-state "* ]]; then
+      required_any+=("${line#any-state }")
+    else
+      required_success+=("$line")
+    fi
+  done < "$register"
+
+  local registered=$((${#required_success[@]} + ${#required_any[@]}))
+  if [[ "$registered" -eq 0 ]]; then
+    echo "ERROR: the named required-check register is EMPTY: $register" >&2
+    echo "  A register with no entries is indistinguishable from no register at all —" >&2
+    echo "  it would pass every rollup, including one with none of this repo's gates in" >&2
+    echo "  it. Populate it or delete the control deliberately; do not leave it inert." >&2
+    echo ""
+    echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+    echo "  this PR: the gate cannot establish which checks were required."
+    exit 3
+  fi
+
+  local -a absent=() not_green=()
+  local name state
+  local -a states=()
+
+  for name in ${required_success[@]+"${required_success[@]}"}; do
+    mapfile -t states < <(_registered_states "$snapshot" "$name")
+    if [[ "${#states[@]}" -eq 0 ]]; then
+      absent+=("$name")
+      continue
+    fi
+    for state in "${states[@]}"; do
+      if [[ "$state" != "SUCCESS" ]]; then
+        not_green+=("$name — $state")
+        break
+      fi
+    done
+  done
+
+  for name in ${required_any[@]+"${required_any[@]}"}; do
+    mapfile -t states < <(_registered_states "$snapshot" "$name")
+    [[ "${#states[@]}" -gt 0 ]] || absent+=("$name (presence-only)")
+  done
+
+  if [[ "${#absent[@]}" -eq 0 && "${#not_green[@]}" -eq 0 ]]; then
+    echo "Required-check register: all $registered registered check(s) present, and green where required."
+    return 0
+  fi
+
+  echo "ERROR: REQUIRED CHECKS DID NOT RUN GREEN — the rollup settled without them." >&2
+  echo "  Register: $register ($registered entries)" >&2
+  if [[ "${#absent[@]}" -gt 0 ]]; then
+    echo "  ABSENT from the settled rollup (${#absent[@]}):" >&2
+    for name in "${absent[@]}"; do echo "    - $name" >&2; done
+  fi
+  if [[ "${#not_green[@]}" -gt 0 ]]; then
+    echo "  PRESENT but not SUCCESS (${#not_green[@]}):" >&2
+    for name in "${not_green[@]}"; do echo "    - $name" >&2; done
+  fi
+  echo "  A SKIPPED or missing required gate is not evidence of anything. Either the" >&2
+  echo "  workflow that owns it stopped triggering, or the check was renamed and" >&2
+  echo "  .github/required-checks.txt was not updated in the same PR. Resolve which," >&2
+  echo "  then re-run: do NOT mark READY_FOR_REVIEW on this output." >&2
+  echo ""
+  echo "${FIXTURE_TAG}RESULT: UNDETERMINED (exit 3). NOT a green light and NOT a verdict on"
+  echo "  this PR: ${#absent[@]} required check(s) absent and ${#not_green[@]} not green. Do not increment"
+  echo "  fix_iteration_counter — a worker on this ticket cannot make an untriggered"
+  echo "  workflow run."
+  exit 3
+}
+
 # Resolved once per invocation, just before the poll loop (FOLLOW-865).
 CARDINALITY_FLOOR=0
 CARDINALITY_REFERENCE=0
@@ -792,7 +923,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # below are deliberately NOT in this number, because the git-index one is
   # legitimately unavailable outside a checkout and that is exactly the
   # legitimate degradation that made the old total untrustworthy as an assertion.
-  ST_EXPECTED_FIXTURES=27
+  ST_EXPECTED_FIXTURES=32
   st_expect_ran=0
 
   # Every fixture dir is stamped "now", so no assertion below can start drifting
@@ -1286,6 +1417,68 @@ if [[ "${1:-}" == "--self-test" ]]; then
   _st_expect "an unreadable peer cardinality sample is UNDETERMINED, not green" 3 "$st_d" \
     "peer check-run cardinality sample" "RESULT: UNDETERMINED"
 
+  # ── F28-F32: the named required-check register (FOLLOW-918 / RETRO-263) ───
+  # The identity axis. Every fixture below exits 0 on the PRE-FOLLOW-918 gate —
+  # that is the point of them: each reproduces a rollup the old gate called
+  # "all checks green. Safe to mark READY_FOR_REVIEW."
+
+  # _st_register <dir> <entry>... — writes a fixture-local register. A fixture
+  # that writes none keeps the pre-register behaviour, so F1-F27 still assert
+  # exactly what they were written to assert.
+  _st_register() {
+    local d="$1"
+    shift
+    printf '# fixture register\n' > "$d/required-checks.txt"
+    printf '%s\n' "$@" >> "$d/required-checks.txt"
+  }
+
+  # F28: THE RETRO-263 SHAPE. A registered gate flipped to SKIPPED. SKIPPED is in
+  # the failure regex's success class, so failing: 0 — the old gate exited 0 here
+  # over six real gates (Format check, Test (Node 22), Gitleaks, Rule H, Modal
+  # local-source, Consent contract drift) that had simply stopped running.
+  st_d="$(_st_fixture register-skipped)"
+  _st_checks 2 SKIPPED > "$st_d/snapshot.json"
+  _st_register "$st_d" "Job 1"
+  _st_expect "a registered check that is merely SKIPPED is UNDETERMINED, not green" 3 "$st_d" \
+    "PRESENT but not SUCCESS" "RESULT: UNDETERMINED"
+
+  # F29: the other half, and the one that has nothing to do with SKIPPED — a
+  # registered gate simply not in the rollup at all. Size and stability both
+  # satisfied; identity not.
+  st_d="$(_st_fixture register-absent)"
+  _st_checks 2 SUCCESS > "$st_d/snapshot.json"
+  _st_register "$st_d" "Job 1" "Job 99"
+  _st_expect "a registered check absent from a stable, complete rollup is UNDETERMINED" 3 "$st_d" \
+    "ABSENT from the settled rollup" "RESULT: UNDETERMINED"
+
+  # F30: the green direction, so the register cannot be a permanent block
+  # (Rule AS — a control fix must prove BOTH directions).
+  st_d="$(_st_fixture register-green)"
+  _st_checks 2 SUCCESS > "$st_d/snapshot.json"
+  _st_register "$st_d" "Job 1" "Job 2"
+  _st_expect "every registered check present and SUCCESS exits 0" 0 "$st_d" \
+    "all 2 registered check(s) present" "RESULT: all checks green."
+
+  # F31: an inert register is a register-shaped hole. It would pass a rollup
+  # containing none of this repo's gates, which is the defect wearing the
+  # control's name.
+  st_d="$(_st_fixture register-empty)"
+  _st_checks 2 SUCCESS > "$st_d/snapshot.json"
+  printf '# every line a comment\n\n   \n' > "$st_d/required-checks.txt"
+  _st_expect "an empty register is UNDETERMINED, not a pass" 3 "$st_d" \
+    "register is EMPTY" "RESULT: UNDETERMINED"
+
+  # F32: `any-state` registers PRESENCE only — for the pre-existing-red Rule I
+  # gate and the prod jobs skipped by design on PRs. It must still be green when
+  # they carry their documented non-SUCCESS state, or the register would be
+  # unusable for exactly the checks whose disappearance matters most.
+  st_d="$(_st_fixture register-any-state)"
+  printf '[{"name":"Job 1","state":"SKIPPED","url":"%s/1"},{"name":"Job 2","state":"SUCCESS","url":"%s/2"}]' \
+    "$st_job_url" "$st_job_url" > "$st_d/snapshot.json"
+  _st_register "$st_d" "any-state Job 1" "Job 2"
+  _st_expect "an any-state registered check is satisfied by presence alone" 0 "$st_d" \
+    "all 2 registered check(s) present" "RESULT: all checks green."
+
   # ── F10: this file's mode is 755 (FOLLOW-830 AC(4) / FOLLOW-831) ───────────
   # Docs and four agent definitions invoke gates bare; a 100644 gate breaks the
   # documented invocation on the day someone drops the `bash ` prefix.
@@ -1618,6 +1811,12 @@ if [[ "$accounted" -ne "$total" ]]; then
   echo "  and do not increment fix_iteration_counter — no worker can fix this."
   exit 3
 fi
+
+# ── IDENTITY (FOLLOW-918) ─────────────────────────────────────────────────────
+# Runs before ANY verdict, so it takes precedence over both green exits: the one
+# below and the documented-pre-existing-red one at the end of this file.
+assert_required_checks "$settled_snapshot"
+echo ""
 
 if [[ "${#failure_names[@]}" -eq 0 ]]; then
   echo "${FIXTURE_TAG}RESULT: all checks green. Safe to mark READY_FOR_REVIEW."

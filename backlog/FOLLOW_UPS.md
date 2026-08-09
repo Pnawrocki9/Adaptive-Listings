@@ -32766,3 +32766,359 @@ UNSATISFIABLE-PENDING-HANDOFF guardrail; `docs/runbooks/BRAND_PROVISIONING.md` �
 class)]
 
 ---
+
+## FOLLOW-929 — `consent-text.json` is a cross-origin `fetch()` and its origin sends no `Access-Control-Allow-Origin`: in production every first-visit browser fails closed and renders no banner
+
+source_retro: RETRO-264 source_ticket: FOLLOW-915 recommended_sprint: now recommended_agent:
+backend-engineer priority: **P0** estimated_hours: 4 depends_on: [] blocks: [ESC-055 listing-page
+hand-off, FOLLOW-914, FOLLOW-907, FOLLOW-928, any external-brand go-live] promoted_to_queue: false
+
+**The SDK is correct. The origin is not holding up its half of the contract.**
+`packages/sdk/src/core/consent-text.ts:63-68` issues
+`fetch(CONSENT_TEXT_URL, { method: 'GET', credentials: 'omit', mode: 'cors', signal })`, and
+`packages/shared/src/domains.ts:88` resolves that to `https://admin.estalara.com/consent-text.json`.
+The SDK runs on `app.estalara.com`. The repo itself proves these are different origins:
+`apps/control-plane/src/middleware.ts:41` maintains
+`CORS_PROD_ORIGINS = ['https://app.estalara.com', 'https://admin.estalara.com']` exactly because the
+SDK calls the control plane cross-origin for `/api/adapt`.
+
+**Three greps, no producer:**
+
+1. `apps/control-plane/next.config.mjs` — **no `headers()` block exists**
+   (`grep -n "headers()\|async headers\|Access-Control" apps/control-plane/next.config.mjs` → 0
+   hits).
+2. `apps/control-plane/vercel.json` — keys are `framework`, `buildCommand`, `installCommand`,
+   `outputDirectory`, `regions`, `crons`. **No `headers`.** No root `vercel.json` exists.
+3. `apps/control-plane/src/middleware.ts:59` — `SDK_CORS_PREFIXES = ['/api/adapt']`.
+   `isSdkCorsRoute('/consent-text.json')` is `false`. The middleware **does** run on this path
+   (`config.matcher` at `:363` excludes only `_next/static`, `_next/image`, `favicon.ico` and six
+   image extensions — `.json` is not excluded), falls past `isPublicRoute` at `:354`
+   (`PUBLIC_PREFIXES` matches `pathname === '/'` or `startsWith('//')`, neither of which this is)
+   and returns a bare `NextResponse.next()` at `:359`, adding nothing.
+
+**Consequence, traced to the line:** the browser discards the response → `fetch` rejects → the
+`catch` at `consent-text.ts:76` returns `null` → `packages/sdk/src/index.ts:353-370` executes
+ADR-0021 §D4 exactly as designed: `earlyHost.destroy(); return null;`. **No banner, zero events,
+zero storage writes, consent stays `pending`, and `init()` returns `null` — so nothing downstream of
+consent runs either.** This is not a degraded experience; it is the whole SDK off, for every visitor
+who has not previously decided.
+
+**§D4's accepted-cost sentence does not cover this.** `ADR-0021:167` accepts availability risk on
+the grounds that _"if the control-plane origin cannot serve a static file, the adapt endpoint on
+that same origin is down too."_ Here the origin serves the file perfectly, with a 200 and the right
+bytes, and the browser throws it away. The premise of the accepted cost is false in this failure
+mode.
+
+**Second missing header, same producer, same one-file fix.**
+`Cache-Control: public, max-age=300, stale-while-revalidate=60` is declared as the served contract
+in **three** places — `ADR-0021 §D2` (line 101), `docs/INTERFACES.md` (added by PR #709), and
+`packages/sdk/e2e/consent.spec.ts`'s `route.fulfill({ headers: … })` — and produced in **none**. A
+Next.js `public/` asset on Vercel is served with the framework default. ADR-0021 §D2's stated
+consequence _"text updates propagate to all visitors within the 5-minute cache TTL"_ has no
+mechanism behind it.
+
+**Why 95 green check-runs and 28/28 E2E did not catch either.** `packages/sdk/e2e/consent.spec.ts`
+intercepts with `page.route('**/consent-text.json*')` and fulfils the request **inside the
+browser**, supplying `'access-control-allow-origin': '*'` and the `cache-control` string itself. No
+cross-origin request is ever made; no real response is ever observed. **The test injects the exact
+response properties the production path does not produce — Rule L, verbatim, on a compliance
+surface.** The PR's own commit message gets the other half right (_"fulfilled from the CHECKED-IN
+artifact … so the E2E exercises the bytes that actually ship"_) — the **bytes** are real, the
+**response** is fabricated.
+
+**Root cause worth writing down, because it is a reasoning error and not an oversight.**
+`packages/shared/src/domains.ts:81-83` and ADR-0021 §D2 both justify the design with _"served from
+the same origin as `sdk.js`, which the browser already fetches pre-consent."_ True — and it does not
+transfer. `sdk.js` and `estalara-detect.iife.js` are loaded by `<script src>`, which is **not**
+subject to CORS. `consent-text.json` is loaded by `fetch()`, which is. Same origin, same lifecycle
+moment, different security model. **This is the estate's first cross-origin `fetch()` of a
+control-plane static asset**, so there was no precedent to inherit — and the one that was inherited
+does not apply.
+
+**AC:**
+
+1. `GET https://admin.estalara.com/consent-text.json` responds with `Access-Control-Allow-Origin: *`
+   — `*`, not a reflected allow-list: the document is identifier-free by ADR-0021 §D3, the request
+   carries `credentials: 'omit'`, and an origin allow-list would silently break every future brand
+   (the FOLLOW-928 axis). Implement in `apps/control-plane/next.config.mjs` `headers()` or
+   `vercel.json` `headers` — **not** in `middleware.ts`, so the header survives if the matcher
+   changes. State which you chose and why in the PR.
+2. The same response carries `Cache-Control: public, max-age=300, stale-while-revalidate=60`,
+   matching ADR-0021 §D2:101 and `docs/INTERFACES.md` byte-for-byte.
+3. **A test that would have failed before this ticket.** The E2E's `page.route` interception CANNOT
+   express this — it must be either (a) a control-plane integration test that asserts both headers
+   on the real handler/route output, or (b) a post-deploy smoke that curls the live URL with an
+   `Origin: https://app.estalara.com` header and asserts both. Prove it red-first against `main` at
+   `25cff8bc`.
+4. Add a **cross-origin** E2E case, or a comment at `consent.spec.ts`'s `beforeEach` naming exactly
+   what the interception does not prove and pointing at the AC(3) artefact. A fixture that supplies
+   a header must say so where the next reader will look.
+5. Re-check whether any OTHER SDK `fetch()` targets a control-plane path outside
+   `SDK_CORS_PREFIXES`. `/api/intent/config` and `/api/quiz/public-config` set
+   `Access-Control-Allow-Origin: *` inline (`middleware.ts:56` documents this); enumerate the rest
+   and state the verdict.
+
+cross*ref: [`packages/sdk/src/core/consent-text.ts:63-68`; `packages/shared/src/domains.ts:81-88`;
+`apps/control-plane/src/middleware.ts:41,56,59,354,359,363`; `apps/control-plane/next.config.mjs`;
+`apps/control-plane/vercel.json`; `packages/sdk/src/index.ts:353-370`;
+`packages/sdk/e2e/consent.spec.ts`; ADR-0021 §D2:101 / §D4:167; `docs/INTERFACES.md` (Consent-Banner
+Text Document); CONVENTIONS_PATCH Rule L; FOLLOW-658/659/660 (`BRAND_PROVISIONING.md:854` — *"a live
+consumer shipped without its producer"\_); FOLLOW-928; ESC-055]
+
+## FOLLOW-930 — `text_version` is produced, documented as "the audit trail for what text a visitor was shown", and read by nothing
+
+source_retro: RETRO-264 source_ticket: FOLLOW-915 recommended_sprint: next recommended_agent:
+compliance-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue:
+false
+
+**HALF_WIRE_P.** Producer: `apps/control-plane/public/consent-text.json:3` carries
+`"text_version": "2026-08-09.1"`, and `packages/shared/src/schemas/consent-text.ts:73` makes it a
+required field whose docstring reads _"Bumped on every copy change; **the audit trail for what text
+a visitor was shown**."_
+
+Consumer: **none.** `fetchConsentText` returns `parsed.data.locales[language] ?? null`
+(`packages/sdk/src/core/consent-text.ts:73`) and discards everything else — the value never leaves
+that function. `ConsentGrantedPayloadSchema` and `ConsentDeniedPayloadSchema`
+(`packages/shared/src/schemas/events/consent.ts:26-36, :46-56`) carry `{ language, method }` and
+nothing else. Repo-wide `grep -rn "text_version\|textVersion"` excluding
+`node_modules`/`.next`/`dist` returns **five hits: the schema, the example, the served document, one
+SDK test fixture, and one gate fixture.** Every one is producer- or test-side.
+
+**Why this is a compliance item and not hygiene.** The registration-consent side of this estate
+already learned that a version field with no carriage is a liability, not an asset — FOLLOW-715
+exists because a `tos_version` bump became a registration outage. Here the field is the opposite
+failure: present, versioned, and never attached to the decision it is supposed to date. If the
+banner copy is corrected (which ESC-051's whole premise says will happen, because _"consent text
+grows from regulation"_), there is no way to determine which text any stored consent decision was
+given against — the exact question a regulator asks first.
+
+**AC:** (1) Decide, and record the decision, between two honest outcomes: **(a)** carry it — add
+`text_version` to the consent event payload, populate it from the fetched document, and confirm the
+ingest → ClickHouse path stores it; or **(b)** drop the claim — remove "the audit trail for what
+text a visitor was shown" from `consent-text.ts:73` and say what the field is actually for (a
+cache-busting / diagnostic marker), so no future reader relies on an audit trail that does not
+exist. (2) If (a), the DPIA §13.1 retention statement should say what is retained alongside the
+decision. (3) If (b), state in the ADR-0021 §D7 record why the version is not carried, so the next
+copy change does not re-open it. **Note the ordering constraint:** option (a) touches the consent
+event payload, which FOLLOW-931 also touches — sequence them or merge them.
+
+cross_ref: [`packages/shared/src/schemas/consent-text.ts:73`;
+`apps/control-plane/public/consent-text.json:3`; `packages/sdk/src/core/consent-text.ts:73`;
+`packages/shared/src/schemas/events/consent.ts:26-36,46-56`; ADR-0021 §D7; DPIA §13.1; FOLLOW-715
+(the `tos_version` precedent); FOLLOW-931]
+
+## FOLLOW-931 — A Spanish-speaking visitor is shown a consent banner that promises their decision is recorded, and the event carrying it is rejected at ingest
+
+source_retro: RETRO-264 source_ticket: FOLLOW-915 recommended_sprint: next recommended_agent:
+backend-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Three files, one contradiction, verified by reading each:**
+
+1. `packages/shared/src/schemas/quiz-config.ts:47` —
+   `export const QUIZ_LANGUAGE_VALUES = ['en', 'pl', 'es'] as const;` with the docstring _"API,
+   dashboard, and SDK must all reference this constant — **never repeat the literal set**."_
+2. `packages/shared/src/schemas/events/consent.ts:28` **and** `:50` —
+   `language: z.enum(['en', 'pl'])`. The literal set, repeated, minus `es`.
+3. `apps/ingest/src/handlers/events.ts:340-344` — `EventSchema.safeParse(incoming)`; on failure the
+   event is pushed to `rejected` and `continue`d past persistence. Rejection is **per-event by
+   design** (the comment at `:349-353` explains why), so the batch succeeds and the consent audit
+   event alone is dropped.
+
+**The `es` path is now structurally guaranteed reachable, which is what makes this a FOLLOW-915
+cascade rather than a dormant pre-existing bug.** `ConsentTextDocumentSchema`'s `superRefine`
+(`packages/shared/src/schemas/consent-text.ts:82-92`) makes a served document **missing** `es`
+invalid, so `es` copy is mandatory; the SDK's level-2/3/4 locale chain (`data-language` →
+`navigator.language` → `'en'`) selects it from any Spanish browser; the banner renders; the visitor
+clicks; `packages/sdk/src/index.ts:391` / `:407` push
+`payload: { language: 'es', method: 'banner' }`; ingest rejects it.
+
+**What the visitor was told, in the bytes we ship** (`consent-text.json`, `es.disclosure13_1`):
+_"Registramos el hecho de tu decisión de consentimiento — incluida una denegación — con fines de
+cumplimiento y depuración. Este registro se conserva durante 7 días y luego se elimina de forma
+permanente."_ **We do not record it.** DPIA §13.1 and §13.2 are false statements to that data
+subject — a Rule N defect on a live disclosure surface.
+
+**TypeScript cannot catch this and did not.** `packages/sdk/src/core/events.ts:13-17` types the
+queue as `interface CollectedEvent { type: string; payload: Record<string, unknown>; ts: number }`,
+so `config.language` of type `'en' | 'pl' | 'es'` flows into an untyped payload without complaint.
+**The compliance gate cannot catch it either:** `scripts/check-adr-0021-conditions.mjs` condition C1
+checks that the mandated sentences are **carried in every locale of the document**. They are. What
+C1 means is _the disclosure is true for a visitor served that locale_, which on the `es` axis it is
+not.
+
+**AC:** (1) Replace both `z.enum(['en', 'pl'])` occurrences in
+`packages/shared/src/schemas/events/consent.ts` with `QuizLanguageSchema` — the FOLLOW-273 rule the
+neighbouring new file already honours (`consent-text.ts:88`: _"The locale set is read from
+QuizLanguageSchema rather than repeated here (FOLLOW-273 — never restate the canonical language
+union)"_). **The lesson was applied to the file being written and not to the file next to it.** (2)
+A red-first test that pushes a `consent.granted` with `language: 'es'` through `EventSchema` and
+fails against `main` at `25cff8bc`. (3) **Sweep, do not spot-fix**: `grep -rn "\['en', *'pl'\]"` and
+`z.enum(\['en'` across `packages/shared/src/schemas/` and `apps/` — report every other site that
+repeats the language literal, and either fix or name each. (4) Determine and record whether any `es`
+consent decisions were lost in production; if the prod consent population is still zero (RETRO-263
+measured `consent_records` = 0 rows for the registration surface), say so with the query, and state
+what would change it — Rule AT applies to the remediation premise. (5) Consider whether the
+`rejected` array returned by ingest deserves a Sentry signal for **schema** rejections the way
+`consent_gate_rejected` already gets one at `handlers/events.ts:369` — a silently dropped audit
+event is the Rule K.2 class.
+
+cross_ref: [`packages/shared/src/schemas/events/consent.ts:28,50`;
+`packages/shared/src/schemas/quiz-config.ts:47`;
+`apps/ingest/src/handlers/events.ts:340-344,349-353,369`; `packages/sdk/src/index.ts:391,407`;
+`packages/sdk/src/core/events.ts:13-17`; `packages/shared/src/schemas/consent-text.ts:82-92`;
+`apps/control-plane/public/consent-text.json` (`es` locale); DPIA §13.1/§13.2; CONVENTIONS_PATCH
+Rule N, Rule K.2; FOLLOW-273; FOLLOW-930]
+
+## FOLLOW-932 — The SDK's remaining byte headroom is written down in two places, both measured with an instrument the budget is not enforced with, and both overstate it
+
+source_retro: RETRO-264 source_ticket: FOLLOW-915 recommended_sprint: now recommended_agent:
+sdk-engineer priority: P2 estimated_hours: 2 depends_on: [] blocks: [FOLLOW-913, FOLLOW-898]
+promoted_to_queue: false
+
+**Measured this retro from a real build of `main` `25cff8bc`
+(`pnpm --filter @estalara/shared build && pnpm --filter @estalara/sdk build`), three ways, same
+artefact:**
+
+| instrument                                                                         | bytes gzip | headroom vs `42 * 1024 = 43,008` | which record carries it        |
+| ---------------------------------------------------------------------------------- | ---------- | -------------------------------- | ------------------------------ |
+| `zlib.gzipSync` — **the gate** (`packages/sdk/scripts/check-bundle-size.js:16-19`) | **41,652** | **1,356 B**                      | _nothing_                      |
+| `gzip -c` (CLI, default level 6)                                                   | 41,575     | 1,433 B                          | `docs/INTERFACES.md` (PR #709) |
+| `gzip -9` (CLI, max)                                                               | 41,488     | 1,520 B                          | `backlog/QUEUE.md` session 109 |
+
+Verbatim gate output: `node packages/sdk/scripts/check-bundle-size.js` →
+`Bundle size: 40.68KB gzip (limit: 42KB)` → `Bundle size OK: 40.68KB`.
+
+**Both written records are honest measurements taken with the wrong instrument, and both overstate
+the headroom the enforcing gate would compute — by 77 and 164 bytes.** FOLLOW-913 and FOLLOW-898 are
+explicitly to be scoped against this number; the larger error is **12% of the entire budget the
+FOLLOW-915 move freed**, on a budget whose pre-merge headroom was under a hundred bytes.
+
+**The failure mode, which is the reusable part.** ADR-0021 §D2 predicted _"~5.5KB gzip leaves the
+bundle."_ Reality: **1.31KB** — a 4.1× miss, caused by applying raw-size reasoning to a gzip budget.
+The correction to that claim was then measured with `gzip -9`, an instrument the budget is not
+enforced with. **The correction inherited the error's mode.** That is Rule AO's text (_"a correction
+written in fixing-mode inherits the mental model that produced the original error"_), and the
+generalisation the brief asked for is narrower and more useful than "ADRs should verify their
+numbers": **a byte figure is meaningless without its instrument, and three honest measurements of
+one file differed by 164 bytes.**
+
+**Third defect, same family, in the log every engineer reads.** `.github/workflows/ci.yml:259` —
+`- name: SDK bundle size gate (<40KB gzip)` — runs `check-bundle-size.js` whose
+`MAX_BYTES = 42 * 1024` per ESC-028 (CEO-approved 2026-06-21). The step reports **green on a 40.68KB
+bundle under a name asserting a 40KB ceiling**. The job name (`Build`) is what the required-check
+register holds, so this is cosmetic to the gate and misleading to every human.
+
+**AC:** (1) Correct `docs/INTERFACES.md`'s figures to the gate's, and name the instrument inline
+(`zlib.gzipSync`, `42 * 1024 = 43,008`). (2) Correct the QUEUE session-109 headroom figure **or**
+annotate it — the PM owns QUEUE.md, so raise it rather than editing it if that is the boundary; the
+retro records the correct number either way. (3) Rename `ci.yml:259` to state the real budget and
+cite ESC-028. (4) Amend FOLLOW-913 and FOLLOW-898's scope lines to **1,356 bytes**. (5) Add one
+sentence to ADR-0021 §D2 recording the measured outcome against its `~5.5KB` estimate — the ADR is
+the artefact a future reader will trust, and an unmarked 4.1× miss is a trap. (6) Consider making
+`check-bundle-size.js` print the byte count and the headroom, not just KB — every wrong number in
+this ticket exists because the gate reports two decimal places of KB and somebody needed bytes.
+
+cross_ref: [`packages/sdk/scripts/check-bundle-size.js:16-19`; `.github/workflows/ci.yml:259`;
+`docs/INTERFACES.md` (Consent-Banner Text Document); `backlog/QUEUE.md` session 109; ADR-0021 §D2;
+ESC-028; ESC-051; CONVENTIONS_PATCH Rule AO; FOLLOW-913; FOLLOW-898]
+
+## FOLLOW-933 — Rule AM is a promoted rule that nothing executes, and the gate written one session after it violated it on day one
+
+source_retro: RETRO-264 source_ticket: FOLLOW-925 recommended_sprint: next recommended_agent:
+devops-engineer priority: P2 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Rule AM** (promoted RETRO-232): _"A self-testing gate's fixtures MUST NOT be produced by mutating
+the live source the gate polices — synthesize them; if a live-source mutation is unavoidable it MUST
+be region-scoped AND report fixture-staleness as a diagnosis distinct from gate-failure."_
+
+`scripts/check-adr-0021-conditions.mjs` was written in PR #705 — **after** Rule AM existed — and its
+T9 fixture ("DPIA still points at COPY") read `docs/compliance/dpia.md` **from disk, unmutated**.
+When PR #709 corrected those cross-references (binding condition 3, which #709 was **required** to
+do), the stale fixture stopped being stale and **T9 reported PASS where it demanded VIOLATION**,
+while the live check stayed green. #709 fixed it — every fixture input is now synthesized, and T9b
+was added for C3's second branch, which had no red-first case at all.
+
+**The failure direction is the dangerous one and deserves stating plainly: the self-test went GREEN
+as the repository became correct.** It was loudest when least needed and silent the moment the
+artefacts it guards existed. Only a human choosing to run `--self-test` surfaced it.
+
+**I audited the generalizable question this retro and the answer is CLEAN — which is what makes this
+ticket about the rule, not about a second instance.** All 16 self-testing gates in `scripts/` were
+checked:
+
+- **Shell and Python gates synthesize entirely into temp dirs.** Sampled in full:
+  `check-mirror-files.sh` (`mkdir -p "$tmp/..."` + heredocs + a `MIRROR_FILES_ROOT` override),
+  `check-sentry-init-singleton.sh` (temp manifest, temp baseline, 12 heredoc fixtures),
+  `check-rule-i.sh`, `check-rule-h.sh`, `check-modal-local-imports.py`. **Zero** read a live repo
+  file as a fixture input.
+- **`check-consent-text-sync.mjs` and `check-consent-contract-sync.mjs` read live sources but MUTATE
+  them**, and carry both halves of Rule AM's escape hatch: `mustReplace` / `locateDocSentinelLines`
+  raise `FixtureStaleError` when the anchor is gone (a diagnosis distinct from gate-failure), and
+  each self-test opens with an anchoring positive case — `check-consent-text-sync.mjs:453` and
+  `check-consent-contract-sync.mjs:483`, both
+  `runCase(results, 'unmodified repo state PASSES', () => runCheck(sources).ok === true)` — without
+  which every negative case would pass vacuously the moment the base sources drifted. **These are
+  Rule AM compliant by its own text.**
+- **`check-adr-0021-conditions.mjs` was the sole violator**, and it is fixed:
+  `node scripts/check-adr-0021-conditions.mjs --self-test` → **13/13, exit 0**, re-run this retro.
+
+**So the gap is not another bad fixture. The gap is that Rule AM is prose in `CONVENTIONS_PATCH.md`
+and the only thing that enforced it was a retro reading a diff.** The estate already has the shape
+for the fix: `scripts/check-gate-exit-codes.sh` is a gate over gates, and PR #704 extended it — its
+`NON_ROUTING_PREFIXES` mechanism is the precedent for classifying files a gate-of-gates should not
+police.
+
+**AC:** (1) A check that fails when a `--self-test` / self-test region in `scripts/` supplies a
+fixture read from a live repo path **without** either a mutation step or a staleness diagnosis.
+Start narrow — `scripts/*.mjs` and `scripts/*.cjs`, where the pattern is expressible — and name the
+un-covered surface rather than pretending to cover it (Rule AP). (2) Prove it red-first by restoring
+`check-adr-0021-conditions.mjs`'s pre-#709 T9 fixture in a throwaway copy and showing the new check
+goes red on it. (3) Add the "anchoring positive case" requirement: a self-test whose cases are all
+negative assertions (`.ok === false`) passes vacuously if the base state is already broken — require
+at least one `unmodified repo state PASSES` case, which both consent gates already have and which is
+the cheapest half of this rule to check mechanically. (4) Register the new check in
+`.github/required-checks.txt` **in the same PR** (FOLLOW-918's obligation). (5) Record in
+`CONVENTIONS_PATCH.md` Rule AM's Verification section that the rule now has an executable consumer —
+**do not promote a new rule**; RETRO-264 §6 explicitly declines that.
+
+cross_ref: [CONVENTIONS_PATCH Rule AM (promoted RETRO-232, first raised RETRO-230);
+`scripts/check-adr-0021-conditions.mjs` (T9/T9b, fixed in PR #709);
+`scripts/check-consent-text-sync.mjs:453`; `scripts/check-consent-contract-sync.mjs:483`;
+`scripts/check-gate-exit-codes.sh` (the gate-of-gates precedent, extended by PR #704);
+`.claude/agents/compliance-engineer/lessons.d/FOLLOW-925.md`; FOLLOW-925; FOLLOW-918]
+
+## FOLLOW-934 — `K.3.6 D-1 live-network smoke` fires for 3 of 9 agent branch prefixes; its sibling smoke lists 7, and nothing tracks the drift
+
+source_retro: RETRO-264 source_ticket: FOLLOW-918 recommended_sprint: backlog recommended_agent:
+devops-engineer priority: P3 estimated_hours: 2 depends_on: [] blocks: [] promoted_to_queue: false
+
+**Raised as a residual in session 108, ownerless since, and QUEUE session 109 says explicitly it is
+"worth a stub".** Filing it so it stops being re-derived.
+
+`.github/workflows/intent-weights-live-smoke.yml:21-24` triggers on `push` for `main`,
+`qa-engineer/**`, `backend-engineer/**`, `sdk-engineer/**` — **three** of the nine agent prefixes in
+the roster. Its sibling `.github/workflows/redis-shadow-smoke.yml:46-53` lists **seven**
+(`devops-engineer`, `backend-engineer`, `sdk-engineer`, `data-engineer`, `ml-engineer`,
+`qa-engineer`, `compliance-engineer`). Two smokes, two different answers to the same question, and
+no artefact reconciles them.
+
+**Why it matters beyond tidiness — this is what de-registered a real gate.** FOLLOW-918's register
+(`.github/required-checks.txt`) had to **de-register** `K.3.6 D-1 live-network smoke` and name the
+forgone coverage in the file, because the check is absent on branches outside that three-prefix list
+and an absent registered name is exit 3. **A stale trigger list therefore converts directly into
+forgone merge-gate coverage** — the branch-prefix drift is upstream of the identity axis #704
+shipped.
+
+**AC:** (1) Reconcile the two prefix lists against the current nine-agent roster in `CLAUDE.md`, or
+replace both with a pattern that cannot drift (e.g. `'*/**'` with a job-level guard, or a single
+reusable workflow both call). (2) State whether `K.3.6 D-1 live-network smoke` can be
+**re**-registered in `.github/required-checks.txt` once its trigger covers every agent prefix, and
+if so do it in the same PR and remove the forgone-coverage note. (3) If any prefix is deliberately
+excluded, say which and why **in the workflow file**, so the next reader does not treat it as drift.
+(4) Check whether any other workflow carries a hand-maintained branch-prefix list;
+`grep -rn '\-engineer/\*\*' .github/workflows/` is the sweep.
+
+cross_ref: [`.github/workflows/intent-weights-live-smoke.yml:21-24`;
+`.github/workflows/redis-shadow-smoke.yml:46-53`; `.github/required-checks.txt` (forgone-coverage
+note, Rule AS); `CLAUDE.md` (the nine-agent roster); QUEUE session 108 item 2 / session 109 item 4;
+FOLLOW-918]

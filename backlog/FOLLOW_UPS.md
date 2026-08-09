@@ -32311,6 +32311,11 @@ cross_ref: [ESC-041 (RESOLVED); FOLLOW-626; FOLLOW-901; FOLLOW-905; Rule AF]
 source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
 devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
 
+**PM UPDATE (session 108, 2026-08-09): BUILT — PR #704, CI-verified `exit 0`.**
+`.github/required-checks.txt` plus the identity assertion in `gh-pr-checks-verified.sh`; self-test
+32/32 (was 27), five new fixtures all red-first against the pre-918 gate. Awaiting Piotr's merge.
+**Merge #704 before #705** — #705 is stacked on this branch.
+
 **Driven against the merged script, not read.** Two shapes, both reproduced through the gate's own
 fixture harness (`GH_PR_CHECKS_SELF_TEST=1 GH_PR_CHECKS_FIXTURE_DIR=<dir>`), with snapshots
 synthesized from PR #702's real 91-run rollup:
@@ -32589,6 +32594,12 @@ Rule AP; Rule Q]
 source_retro: n/a (ADR-0021 countersign, session 106) source_ticket: FOLLOW-915 recommended_sprint:
 now recommended_agent: compliance-engineer (+ sdk-engineer for the test) priority: P1
 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-915 impl] promoted_to_queue: false
+
+**PM UPDATE (session 108, 2026-08-09): BUILT — PR #705 (stacked on #704), CI-verified `exit 0`.**
+`scripts/check-adr-0021-conditions.mjs` enforces all three conditions, armed by presence of any
+ADR-0021 §D7 artifact so it cannot pass merely because FOLLOW-915 has not landed; C1 enforced in
+both states against `docs/compliance/consent-disclosures.canonical.json`. Self-test 11/11 red-first.
+AC(3) answer: **all three mechanised, none degraded to prose.**
 
 **Filed by the PM from the compliance countersign (PR #703).** The countersign is **GRANTED WITH
 BINDING CONDITIONS**, and the conditions are the substance of it — but they live in ADR prose and

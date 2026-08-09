@@ -1,5 +1,99 @@
 # Backlog Queue
 
+## ▶️ START HERE — session 108 (2026-08-09) — FOLLOW-918 and FOLLOW-925 built and CI-verified; **2 PRs open, merge #704 BEFORE #705** (stacked)
+
+**Opening state, verified not inherited:** `main` `f80f41b7`, clean and pushed, 0 open PRs, 0
+worktrees, 0 tickets IN_PROGRESS, 0 decisions pending. Session 107 ended on a clean boundary —
+nothing was stranded, `.claude/worktrees/` was empty and no `claude --agent` process was alive.
+
+### Both tickets DONE and CI-verified. Neither is merged — that is Piotr's call.
+
+| PR       | ticket     | status           | gate verdict                                |
+| -------- | ---------- | ---------------- | ------------------------------------------- |
+| **#704** | FOLLOW-918 | READY_FOR_REVIEW | 91 runs, 46/46 registered present, `exit 0` |
+| **#705** | FOLLOW-925 | READY_FOR_REVIEW | 47 runs, 47/47 registered present, `exit 0` |
+
+Only failure on either is `Rule I — wired-or-dead check`, the documented pre-existing-red gate,
+dynamically classified against `main`'s own baseline. **#705 is stacked on #704's branch** because
+it edits `.github/required-checks.txt`, which does not exist on `main` until #704 merges. Merging
+#705 first will fail.
+
+### FOLLOW-918 — the merge gate now reads IDENTITY, which it never did
+
+`.github/required-checks.txt`: a registered name must be PRESENT in the settled rollup and SUCCESS
+unless marked `any-state`. Violation is **exit 3**, never 0 — and deliberately never 1, because an
+untriggered workflow is not a red verdict on a PR's content and must not increment
+`fix_iteration_counter`.
+
+**The red-first reproduction is sharper than RETRO-263's.** Through the gate's own fixture harness,
+the pre-FOLLOW-918 gate printed:
+
+```
+Total checks: 2 | success: 0 | skipped: 2 | neutral: 0 | failing: 0
+RESULT: all checks green. Safe to mark READY_FOR_REVIEW.
+```
+
+**Zero checks succeeded and it said green.** All five new fixtures fail against the old gate;
+F30/F32 prove the green direction so the register cannot become a permanent block (Rule AS).
+Self-test 32/32 (was 27). Verified on live data too: #703 (91 runs) `exit 0`; #695 (81 runs,
+predating gates added by #696–#700) correctly `exit 3` naming the six absent gates.
+
+**Two defects I nearly shipped inside the fix, both worth copying as method:**
+
+1. **A twelve-PR derivation window excluded `Modal local-source gate (FOLLOW-900)`** — one of the
+   six gates RETRO-263 actually flipped — purely because #698 had introduced it six merges earlier.
+   **A long window under-registers exactly the gates most likely to be mis-wired: the new ones.**
+   Switched to a five-PR window, with the residual lag written into the register header as an
+   obligation: the PR that adds or renames a required gate updates the register in the same PR.
+2. **The register's first false red, found by running the gate against the STACKED PR #705 rather
+   than only main-based ones.** `K.3.6 D-1 live-network smoke` is genuinely conditional —
+   `intent-weights-live-smoke.yml` fires on `pull_request` only when base is `main`, and on `push`
+   only for `main` plus `qa-engineer/**`, `backend-engineer/**`, `sdk-engineer/**`: **three of this
+   repo's nine agent prefixes.** De-registered, with the forgone coverage named in the file rather
+   than dropped silently (Rule AS).
+
+### FOLLOW-925 — the countersign's three binding conditions now have a consumer
+
+`scripts/check-adr-0021-conditions.mjs` (C1 byte-identical DPIA §13.1/§13.2 sentences per locale; C2
+the §D3 identifier-free request shape; C3 Rule N cross-references), hard CI gate, self-test 11/11
+red-first.
+
+**Armed by presence, not by a date.** All three conditions attach to artifacts FOLLOW-915 has not
+created. A gate that passes while they are absent is green-over-absence — **the FOLLOW-918 defect
+wearing this control's name.** So it arms on any §D7 artifact and then demands all three: a
+HALF-landed implementation is red. While disarmed it prints every probe it ran.
+
+C1 is enforced in **both** states against `docs/compliance/consent-disclosures.canonical.json` — the
+bytes captured from the shipped `COPY` at `f80f41b7`, the state compliance signed. A Zod schema
+locks the document's SHAPE and cannot express byte identity of one mandated sentence.
+
+**The self-test caught a real bug in the gate before it shipped:** the key regex `disclosure13_1:`
+also matched `retired_disclosure13_1:`, so retiring a key by prefixing it left the gate believing
+`COPY` was still the source of record — silently disarming C3 and the no-home check. Two of eleven
+cases failed on the first run. **Same asymmetry FOLLOW-919 found a day earlier: deletion is the
+shape nobody performs; renaming is the shape people use.**
+
+### Next, in order
+
+1. **Piotr merges #704, then #705.** Order is load-bearing.
+2. **FOLLOW-915 implementation half** (`sdk-engineer`) to ADR-0021 §D2–D4/D7–D8 — now gated by a
+   real consumer. Copy §D7's interface obligations into the ticket, and require
+   `packages/sdk/src/index.ts:313-337`'s rationale block to cite ADR-0021.
+3. **FOLLOW-919** (the effect probe asserts existence, not invocation), **FOLLOW-910** (the branch
+   guard is blind to Bash-shaped edits — this session made every file change through Bash again).
+4. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and headroom is re-measured.
+5. **RETRO-264 is owed #704 and #705** — the retro loop is a mandatory step 6.
+
+**Observation worth a stub, not filed to avoid inventing scope:** `intent-weights-live-smoke.yml`'s
+push branch list names three agent prefixes out of nine. Stale relative to the roster.
+
+**Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page
+(ESC-055). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker.
+
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 2 open PRs. 0 decisions pending.**
+
+---
+
 ## ▶️ START HERE — session 107 (2026-08-08) — FOLLOW-915 is NOT dispatchable to `sdk-engineer` as written: the CEO's ruling collides head-on with an Accepted ADR-0011 decision that carries a compliance sign-off. Routed to `architect` instead.
 
 **Opening state, verified not inherited:** `main` `4b4ffa86`, clean and pushed. **0 open PRs, 0

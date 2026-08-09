@@ -102,10 +102,23 @@ Cache-Control: public, max-age=300, stale-while-revalidate=60   (ADR-0011 cache 
 ```
 
 Recommended artifact location: `apps/control-plane/public/consent-text.json` (same serving path as
-the checked-in `estalara-detect.iife.js` companion, FOLLOW-325 precedent). The URL is a new shared
-constant `CONSENT_TEXT_URL` in `packages/shared/src/domains.ts` — compile-time inlined, never
-derived from snippet dataset values (derivation from `data-decision-url` is forbidden: a
-tenant-controlled attribute must not be able to redirect the consent-text fetch).
+the checked-in `estalara-detect.iife.js` companion, FOLLOW-325 precedent).
+
+> **CORRECTION — 2026-08-09 (FOLLOW-929), appended not rewritten.** The sentence above and the §D2
+> premise _"the same origin already serving `sdk.js`"_ substituted one transport for another and
+> shipped a P0. `sdk.js` is loaded by `<script src>`, which is **not subject to CORS**; this
+> document is read by `fetch(…, { mode: 'cors' })`, which **is** — and the SDK executes on the
+> TENANT's origin, not the control plane's. Nothing set `Access-Control-Allow-Origin`, so every
+> first-visit browser would have discarded the response and failed closed per §D4: no banner, null
+> `init()`. The header is now produced by `apps/control-plane/next.config.mjs` `headers()` and
+> asserted by `apps/control-plane/src/consent-text-headers.test.ts`, which derives the path from
+> `CONSENT_TEXT_URL` rather than hardcoding it. **`Access-Control-Allow-Origin: *` is required by
+> §D3, not merely tolerated:** a reflected-origin allowlist would make the response vary by tenant,
+> which is the tenant-distinguishing behaviour §D3 forbids, and the request carries no credentials.
+> The `Cache-Control` line above likewise had no producer until the same commit. The URL is a new
+> shared constant `CONSENT_TEXT_URL` in `packages/shared/src/domains.ts` — compile-time inlined,
+> never derived from snippet dataset values (derivation from `data-decision-url` is forbidden: a
+> tenant-controlled attribute must not be able to redirect the consent-text fetch).
 
 **Updated init sequence** (replaces the ADR-0011 §"SDK init sequence" diagram _for the pending path
 only_; granted/denied paths are byte-unchanged):

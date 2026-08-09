@@ -32061,7 +32061,7 @@ source_retro: n/a (FOLLOW-849, session 106) source_ticket: FOLLOW-849 recommende
 recommended_agent: devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: []
 promoted_to_queue: false
 
-**PM UPDATE (session 108, 2026-08-09): BUILT — PR #707, CI-verified `exit 0`.** Sixth non-blocking
+**PM UPDATE (session 108, 2026-08-09): DONE — PR #707 merged as `9a378532`.** Sixth non-blocking
 guard in `pre-bash-guard.sh`; harness extended 18 → 37 assertions; red-first against the pre-910
 hook = 6 failures. AC(1) mechanism: extend the existing hook, not a new matcher.
 
@@ -32315,10 +32315,10 @@ cross_ref: [ESC-041 (RESOLVED); FOLLOW-626; FOLLOW-901; FOLLOW-905; Rule AF]
 source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
 devops-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [] promoted_to_queue: false
 
-**PM UPDATE (session 108, 2026-08-09): BUILT — PR #704, CI-verified `exit 0`.**
+**PM UPDATE (session 108, 2026-08-09): DONE — PR #704 merged as `c6942f40`.**
 `.github/required-checks.txt` plus the identity assertion in `gh-pr-checks-verified.sh`; self-test
-32/32 (was 27), five new fixtures all red-first against the pre-918 gate. Awaiting Piotr's merge.
-**Merge #704 before #705** — #705 is stacked on this branch.
+32/32 (was 27), five new fixtures all red-first against the pre-918 gate. Merged 2026-08-09; #705
+rebased onto the squashed `main` with `git rebase --onto` before merging.
 
 **Driven against the merged script, not read.** Two shapes, both reproduced through the gate's own
 fixture harness (`GH_PR_CHECKS_SELF_TEST=1 GH_PR_CHECKS_FIXTURE_DIR=<dir>`), with snapshots
@@ -32373,7 +32373,7 @@ file); Rule AS]
 source_retro: RETRO-263 source_ticket: FOLLOW-903 recommended_sprint: now recommended_agent:
 devops-engineer priority: P1 estimated_hours: 3 depends_on: [] blocks: [] promoted_to_queue: false
 
-**PM UPDATE (session 108, 2026-08-09): BUILT — PR #706, CI-verified `exit 0`.** All three
+**PM UPDATE (session 108, 2026-08-09): DONE — PR #706 merged as `d5d804c1`.** All three
 perturbations were green under `.exists()` and are red now; the `artifact` FIELD is gone, replaced
 by `external_control` (property + predicate) per AC(3). Self-test 25 cases (was 21).
 
@@ -32603,7 +32603,7 @@ source_retro: n/a (ADR-0021 countersign, session 106) source_ticket: FOLLOW-915 
 now recommended_agent: compliance-engineer (+ sdk-engineer for the test) priority: P1
 estimated_hours: 3 depends_on: [] blocks: [FOLLOW-915 impl] promoted_to_queue: false
 
-**PM UPDATE (session 108, 2026-08-09): BUILT — PR #705 (stacked on #704), CI-verified `exit 0`.**
+**PM UPDATE (session 108, 2026-08-09): DONE — PR #705 merged as `5899e6e4`.**
 `scripts/check-adr-0021-conditions.mjs` enforces all three conditions, armed by presence of any
 ADR-0021 §D7 artifact so it cannot pass merely because FOLLOW-915 has not landed; C1 enforced in
 both states against `docs/compliance/consent-disclosures.canonical.json`. Self-test 11/11 red-first.

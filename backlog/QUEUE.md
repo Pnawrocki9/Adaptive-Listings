@@ -1,129 +1,80 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 108 (2026-08-09) — FOLLOW-918 and FOLLOW-925 built and CI-verified; **2 PRs open, merge #704 BEFORE #705** (stacked)
+## ▶️ START HERE — session 108 (2026-08-09) — FOLLOW-918, 925, 919, 910 all MERGED. `main` = `9a378532`, clean, **0 open PRs.**
 
-**Opening state, verified not inherited:** `main` `f80f41b7`, clean and pushed, 0 open PRs, 0
-worktrees, 0 tickets IN_PROGRESS, 0 decisions pending. Session 107 ended on a clean boundary —
-nothing was stranded, `.claude/worktrees/` was empty and no `claude --agent` process was alive.
+**Opening state, verified not inherited:** `main` `f80f41b7`, clean, 0 open PRs, 0 worktrees, 0
+tickets IN_PROGRESS, 0 decisions pending. Session 107 ended on a clean boundary — nothing stranded,
+`.claude/worktrees/` empty, no `claude --agent` process alive.
 
-### Both tickets DONE and CI-verified. Neither is merged — that is Piotr's call.
+### Four tickets DONE and merged
 
-| PR       | ticket     | status           | gate verdict                                |
-| -------- | ---------- | ---------------- | ------------------------------------------- |
-| **#704** | FOLLOW-918 | READY_FOR_REVIEW | 91 runs, 46/46 registered present, `exit 0` |
-| **#705** | FOLLOW-925 | READY_FOR_REVIEW | 47 runs, 47/47 registered present, `exit 0` |
-| **#706** | FOLLOW-919 | READY_FOR_REVIEW | 90 runs, `exit 0`                           |
-| **#707** | FOLLOW-910 | READY_FOR_REVIEW | 91 runs, `exit 0`                           |
+| PR   | ticket     | merged as  | gate verdict before merge                   |
+| ---- | ---------- | ---------- | ------------------------------------------- |
+| #704 | FOLLOW-918 | `c6942f40` | 91 runs, 46/46 registered present, `exit 0` |
+| #705 | FOLLOW-925 | `5899e6e4` | 93 runs, 47/47 registered present, `exit 0` |
+| #706 | FOLLOW-919 | `d5d804c1` | 93 runs, 47/47 registered present, `exit 0` |
+| #707 | FOLLOW-910 | `9a378532` | 93 runs, 47/47 registered present, `exit 0` |
 
-Only failure on either is `Rule I — wired-or-dead check`, the documented pre-existing-red gate,
-dynamically classified against `main`'s own baseline. **#705 is stacked on #704's branch** because
-it edits `.github/required-checks.txt`, which does not exist on `main` until #704 merges. Merging
-#705 first will fail.
+**Post-merge state of `main`, verified rather than assumed** — every gate re-run against the MERGED
+combination, because four PRs green individually are not the same artefact: merge-gate self-test
+32/32 · ADR-0021 conditions 11/11 + live DISARMED pass · modal local-source 25 cases / 5 residuals ·
+branch-guard fixtures 37/37 · exit-code corpus 6/6 consumers · prettier clean. `main`'s own CI:
+**only `Rule I — wired-or-dead check` red, at 192 violations — identical to the four pre-merge
+baseline runs.** No merge moved it.
 
-### FOLLOW-918 — the merge gate now reads IDENTITY, which it never did
+### What the four tickets actually were: one defect at four altitudes
 
-`.github/required-checks.txt`: a registered name must be PRESENT in the settled rollup and SUCCESS
-unless marked `any-state`. Violation is **exit 3**, never 0 — and deliberately never 1, because an
-untriggered workflow is not a red verdict on a PR's content and must not increment
-`fix_iteration_counter`.
+**Controls in this estate assert the presence of a NAME where they mean the coverage of a
+BEHAVIOUR.** That is the through-line, and it is worth watching for in the next retro rather than
+re-deriving:
 
-**The red-first reproduction is sharper than RETRO-263's.** Through the gate's own fixture harness,
-the pre-FOLLOW-918 gate printed:
+- **FOLLOW-918** — the merge gate read STABILITY and SIZE, never IDENTITY. Six real gates flipped to
+  `SKIPPED` produced `failing: 0` → `all checks green`, and the completeness floor tolerated 59%
+  absence. The register (`.github/required-checks.txt`, 47 entries) is the identity axis; a
+  registered name absent or non-`SUCCESS` is exit 3, never 0 — and never 1, because an untriggered
+  workflow is not a red verdict on a PR's content.
+- **FOLLOW-925** — the ADR-0021 countersign's three binding conditions "gated the FOLLOW-915
+  implementation PR" as PROSE. `scripts/check-adr-0021-conditions.mjs` arms on the presence of any
+  §D7 artefact, so it cannot pass merely because FOLLOW-915 has not landed, and a HALF-landed
+  implementation is red.
+- **FOLLOW-919** — `R-F1` asserted `Path(probe).exists()`. Probe truncated to zero bytes, one
+  invocation site deleted, invocation left only in a comment: **all three green**. The `artifact`
+  FIELD is now `external_control` — a described property plus a predicate.
+- **FOLLOW-910** — the branch guard covered `Edit|Write|MultiEdit`: three of the four shapes a file
+  edit takes, missing the one the operating mode actively encourages. Bash-shaped edits are now
+  seen; the false-positive surface is proven silent by eight fixtures.
 
-```
-Total checks: 2 | success: 0 | skipped: 2 | neutral: 0 | failing: 0
-RESULT: all checks green. Safe to mark READY_FOR_REVIEW.
-```
+### Three things measured this session that nobody should re-derive
 
-**Zero checks succeeded and it said green.** All five new fixtures fail against the old gate;
-F30/F32 prove the green direction so the register cannot become a permanent block (Rule AS).
-Self-test 32/32 (was 27). Verified on live data too: #703 (91 runs) `exit 0`; #695 (81 runs,
-predating gates added by #696–#700) correctly `exit 3` naming the six absent gates.
-
-**Two defects I nearly shipped inside the fix, both worth copying as method:**
-
-1. **A twelve-PR derivation window excluded `Modal local-source gate (FOLLOW-900)`** — one of the
-   six gates RETRO-263 actually flipped — purely because #698 had introduced it six merges earlier.
-   **A long window under-registers exactly the gates most likely to be mis-wired: the new ones.**
-   Switched to a five-PR window, with the residual lag written into the register header as an
-   obligation: the PR that adds or renames a required gate updates the register in the same PR.
-2. **The register's first false red, found by running the gate against the STACKED PR #705 rather
-   than only main-based ones.** `K.3.6 D-1 live-network smoke` is genuinely conditional —
-   `intent-weights-live-smoke.yml` fires on `pull_request` only when base is `main`, and on `push`
-   only for `main` plus `qa-engineer/**`, `backend-engineer/**`, `sdk-engineer/**`: **three of this
-   repo's nine agent prefixes.** De-registered, with the forgone coverage named in the file rather
-   than dropped silently (Rule AS).
-
-### FOLLOW-925 — the countersign's three binding conditions now have a consumer
-
-`scripts/check-adr-0021-conditions.mjs` (C1 byte-identical DPIA §13.1/§13.2 sentences per locale; C2
-the §D3 identifier-free request shape; C3 Rule N cross-references), hard CI gate, self-test 11/11
-red-first.
-
-**Armed by presence, not by a date.** All three conditions attach to artifacts FOLLOW-915 has not
-created. A gate that passes while they are absent is green-over-absence — **the FOLLOW-918 defect
-wearing this control's name.** So it arms on any §D7 artifact and then demands all three: a
-HALF-landed implementation is red. While disarmed it prints every probe it ran.
-
-C1 is enforced in **both** states against `docs/compliance/consent-disclosures.canonical.json` — the
-bytes captured from the shipped `COPY` at `f80f41b7`, the state compliance signed. A Zod schema
-locks the document's SHAPE and cannot express byte identity of one mandated sentence.
-
-**The self-test caught a real bug in the gate before it shipped:** the key regex `disclosure13_1:`
-also matched `retired_disclosure13_1:`, so retiring a key by prefixing it left the gate believing
-`COPY` was still the source of record — silently disarming C3 and the no-home check. Two of eleven
-cases failed on the first run. **Same asymmetry FOLLOW-919 found a day earlier: deletion is the
-shape nobody performs; renaming is the shape people use.**
-
-### FOLLOW-919 and FOLLOW-910 — both DONE, both independent of the stack
-
-**#706 (FOLLOW-919)** — `R-F1` asserted the effect probe `.exists()`. Measured on identical
-fixtures: probe truncated to zero bytes → **green**; one invocation site deleted → **green**;
-invocation left only in a comment → **green**. All three are red now, the wired control stays green.
-The register's `artifact: str` FIELD is replaced by `external_control` (a described property plus a
-predicate), because an artefact-kind residual claims a hole is closed by another control and a
-filename is not evidence of that. Self-test 25 cases (was 21).
-
-**#707 (FOLLOW-910)** — a sixth, non-blocking guard inside `pre-bash-guard.sh`. `sed -i`, heredoc
-redirects, `tee` and interpreter heredocs are now seen; the whole false-positive surface AC(3) named
-is proven silent by eight fixtures. Harness extended 18 → **37 assertions**. Red-first against the
-pre-910 hook: **6 failures**, with F and G passing on both — the old guard was silent everywhere.
-**`pre-bash-guard.sh` had five blocking rules and ZERO test coverage before this**; G1/G2 and the
-shellcheck job now cover it.
-
-**The bug caught in smoke testing, before the fixtures:** a `sed` SCRIPT (`s/a/b/`) contains a
-slash, so the first target filter collected it as a path — making every `sed -i` warn, **including
-on the exempt backlog files the exemption list exists to silence.** A guard whose first behaviour is
-to cry wolf on the pm's own routine edits would have been dead on arrival.
-
-### The FOLLOW-915 implementation half is deliberately NOT started, and this is the reasoning
-
-It is next in value, and it is the one thing here that would have to route around its own gate.
-FOLLOW-925's whole purpose is that the countersign's three binding conditions gate that PR; the gate
-lives in **#705, unmerged**. Building the implementation now means either stacking it three deep on
-two unreviewed PRs — where any change Piotr asks for on #704 churns the whole tower — or landing the
-estate's **highest-stakes surface** (the consent path, with a documented history of shipped consent
-defects) **ungated by the control built specifically to gate it**. Neither is worth the day saved.
-**It starts the moment #704 and #705 merge.**
+1. **A twelve-PR derivation window under-registers exactly the gates most likely to be mis-wired:
+   the new ones.** It excluded `Modal local-source gate (FOLLOW-900)` — one of the six RETRO-263
+   actually flipped — because #698 had introduced it six merges earlier. Register seeded from a
+   five-PR window instead; the residual lag is an obligation in the file header.
+2. **The register's first false red came from a STACKED PR, not a main-based one.**
+   `K.3.6 D-1 live-network smoke` fires on `pull_request` only when base is `main`, and on `push`
+   only for `main` + `qa-engineer/**`, `backend-engineer/**`, `sdk-engineer/**` — **three of nine
+   agent prefixes.** De-registered, forgone coverage named in the file (Rule AS). **That branch list
+   is stale relative to the roster and nothing tracks it — worth a stub.**
+3. **A squash-merged stacked PR conflicts on rebase.** #705 carried #704's original commits; #704
+   landed squashed. Fix is `git rebase --onto main <old-base>`, not a merge. Cost ~10 minutes.
 
 ### Next, in order
 
-1. **Piotr merges #704, then #705.** Order is load-bearing. #706 and #707 are independent and can
-   merge in any order, before or after.
-2. **FOLLOW-915 implementation half** (`sdk-engineer`) to ADR-0021 §D2–D4/D7–D8 — gated by a real
-   consumer once #705 lands. Copy §D7's interface obligations into the ticket, and require
+1. **FOLLOW-915 implementation half** (`sdk-engineer`) to ADR-0021 §D2–D4/D7–D8 — **now genuinely
+   unblocked**: its gate is on `main` and currently reports DISARMED, so it will arm the moment the
+   first §D7 artefact appears. Copy §D7's interface obligations into the ticket, and require
    `packages/sdk/src/index.ts:313-337`'s rationale block to cite ADR-0021.
-3. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and headroom is re-measured.
-4. **RETRO-264 is owed #704, #705, #706 and #707** — the retro loop is a mandatory step 6, and three
-   of those four PRs changed controls the PM validates with.
-
-**Observation worth a stub, not filed to avoid inventing scope:** `intent-weights-live-smoke.yml`'s
-push branch list names three agent prefixes out of nine. Stale relative to the roster.
+2. **FOLLOW-913 / FOLLOW-898** unblock once the implementation lands and bundle headroom is
+   re-measured (**14 bytes** at last measurement).
+3. **RETRO-264 is owed FOUR merged PRs** — #704, #705, #706, #707 — and **three of them changed
+   controls the PM validates with**. It audits its own instrument for the second retro running.
 
 **Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page
-(ESC-055). Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker.
+(ESC-055; unblocks FOLLOW-914/907 and makes the `data-estalara` hooks testable for the first time).
+Piotr — set `MODAL_CHAT_NLP_URL` in the **prod** ingest Worker; one variable, both sides built and
+proven by execution.
 
-**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 4 open PRs. 0 decisions pending.**
+**Counters: 0/5 CI, 0/3 fix. 0 tickets IN_PROGRESS. 0 open PRs. 0 decisions pending.**
 
 ---
 

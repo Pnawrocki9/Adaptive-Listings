@@ -406,11 +406,17 @@ Cache-Control: public, max-age=300, stale-while-revalidate=60
 
 The banner copy is served OUT OF THE SDK BUNDLE. ESC-051's ruling states why: **consent text grows
 from regulation, not from engineering, and must never compete with code for a performance budget.**
-Moving it returned ~1,345 gzip bytes to the SDK: **42,997 → 41,652 bytes, headroom ~11 → 1,356**.
-Those figures are `zlib.gzipSync`, which is what `packages/sdk/scripts/check-bundle-size.js`
-actually enforces. An earlier revision of this line quoted CLI `gzip -c` (level 6) and read 1,433 —
-measuring a budget with a different compressor than the gate uses overstates the headroom, and this
-line had been held up as the number to scope FOLLOW-913/898 against (RETRO-264 DG-1).
+Moving it returned ~1,345 gzip bytes to the SDK: **42,997 → 41,652 bytes, headroom ~11 → 1,356**,
+measured at `25cff8bc`. **These are dated observations, not standing facts** — at `31cab8b4` the
+same measurement reads 41,641 B / **1,367 B** headroom, because FOLLOW-931 touched
+`packages/shared`. Single-digit-byte drift on any merge is normal; the gate now prints bytes and
+headroom itself (FOLLOW-932), so **run it rather than quoting this line**. The `42,997` before-
+figure is derived from a KB-only gate output and is good to ±5 B — that imprecision is the very
+defect FOLLOW-932 closed. Those figures are `zlib.gzipSync`, which is what
+`packages/sdk/scripts/check-bundle-size.js` actually enforces. An earlier revision of this line
+quoted CLI `gzip -c` (level 6) and read 1,433 — measuring a budget with a different compressor than
+the gate uses overstates the headroom, and this line had been held up as the number to scope
+FOLLOW-913/898 against (RETRO-264 DG-1).
 
 - **Schema:** `ConsentTextDocumentSchema` / `ConsentTextLocaleSchema` in
   `packages/shared/src/schemas/consent-text.ts` (11 test cases). Locale-entry fields are derived

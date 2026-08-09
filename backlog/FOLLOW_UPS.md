@@ -32198,7 +32198,10 @@ above.** FOLLOW-915 landed (PR #709) and moved the consent-banner text out of th
 against `MAX_BYTES = 42 * 1024 = 43,008` is **1,356 B**, measured with `zlib.gzipSync` — the
 instrument `packages/sdk/scripts/check-bundle-size.js` enforces (not CLI `gzip`, which reads 77-164
 B higher on the same artefact; see RETRO-264). Scope this ticket's new named constant against
-**1,356 B**, not the earlier ~11 B / ~5.5KB figures.
+**1,356 B**, not the earlier ~11 B / ~5.5KB figures. **Measured at `25cff8bc`; at `31cab8b4` it is
+1,367 B.** Do not scope off either number without re-running the gate — it prints bytes and signed
+headroom since FOLLOW-932, and the figure moves by single-digit bytes on any merge that touches a
+package the bundle imports.
 
 cross_ref: [ESC-054 (RESOLVED); FOLLOW-875; FOLLOW-877; FOLLOW-343; Rule AI; FOLLOW-915; FOLLOW-932]
 

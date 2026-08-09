@@ -23,11 +23,12 @@ ESC-051's ruling is honoured mechanically: the `COPY` constant left `consent-ban
 served as one identifier-free static document, fetched on the `pending` path only and awaited before
 the banner renders. Granted/denied paths are byte-unchanged and pay no extra request.
 
-**Bundle: 41.99KB → 40.68KB gzip; headroom ~10 bytes → 1,520 bytes. FOLLOW-913 and FOLLOW-898 are
-unblocked.** Carry this correction with them: ADR-0021 §D2 predicted ~5.5KB of savings and the real
-figure is **1.31KB** — a raw-size estimate applied to a gzip budget. **Scope both against 1.5KB.**
-And measure with **`@estalara/shared` rebuilt too**: a first pass that rebuilt only the SDK read
-42.13KB for `main` and was wrong.
+**Bundle: 41.99KB → 40.68KB gzip; headroom ~11 bytes → 1,356 bytes** (`zlib.gzipSync`, the
+compressor the gate enforces — an earlier `gzip -9` reading of 1,520 B is CORRECTED, RETRO-264
+DG-1). **FOLLOW-913 and FOLLOW-898 are unblocked.** Carry this correction with them: ADR-0021 §D2
+predicted ~5.5KB of savings and the real figure is **1.31KB** — a raw-size estimate applied to a
+gzip budget. **Scope both against 1.5KB.** And measure with **`@estalara/shared` rebuilt too**: a
+first pass that rebuilt only the SDK read 42.13KB for `main` and was wrong.
 
 ### The through-line of this session: a control is only as good as its fixtures
 
@@ -61,15 +62,49 @@ lesson.** Recorded in `.claude/agents/compliance-engineer/lessons.d/FOLLOW-925.m
   late-registering race live — `checks known` jumped 87 → 93 at t=225s. `--watch` would have settled
   on 87.
 
+### RETRO-264 filed, and it found a P0 in what this session had just merged
+
+**PR #710 (`da99e220`) — FOLLOW-929, merged.** `consent-text.json` is read with
+`fetch(…, { mode: 'cors' })` from the TENANT's origin, and **no producer set
+`Access-Control-Allow-Origin`** (`next.config.mjs` had no `headers()`, `vercel.json` has no
+`headers`, `middleware.ts:58` is `['/api/adapt']`). The browser discarded the response, §D4 fired
+exactly as designed, and **every first-visit production browser got no banner and a null `init()`.**
+The SDK was right; the origin was not holding up its half of the contract. Root cause is a
+substitution in ADR-0021 §D2 — _"the same origin already serving `sdk.js`"_ — but `sdk.js` loads via
+`<script src>`, which is **not subject to CORS**. Annotated on the ADR, appended not rewritten.
+
+**The E2E could not have caught it: `consent.spec.ts` fulfils the request via `page.route` and
+SUPPLIES the header itself** — a fixture standing in for the producer it is meant to exercise. The
+new `apps/control-plane/src/consent-text-headers.test.ts` derives the path from `CONSENT_TEXT_URL`
+rather than hardcoding it, and is proven red-first (3/3 fail against the shipped state).
+
+**The retro's most valuable output is the negative result:** a fixture audit across **all 16
+self-testing gates in `scripts/`** came back **CLEAN** — `check-adr-0021-conditions.mjs` was the
+sole violator and #709 had already fixed it. The upstream finding is sharper than the instance:
+**Rule AM was promoted in RETRO-232 for exactly this defect and nothing executes it** (FOLLOW-933).
+**No rule promoted, count stays 46** — session 108's through-line is a PREDICATE defect and session
+109's is an INPUT defect, and fusing them yields something unfalsifiable.
+
+Two CI round-trips on #710, both worth knowing: `TS7016` (importing a plain `.mjs` from TypeScript)
+took `Typecheck` red and dragged `Build`, `Build (control-plane)` and `SDK E2E tests` to `SKIPPED`
+behind `needs:` — **one failure reading as four**; and **`lefthook.yml`'s pre-commit is
+`parallel: true`, so `prettier --write` and `eslint --fix` RACE on the same staged files** — an
+eslint autofix landed after prettier and pushed a GREEN pre-commit into a red CI `Format check`.
+Verify with `prettier --check` AFTER committing; the hook's own green is not evidence.
+
 ### Next, in order
 
-1. **RETRO-264 is owed SIX merged PRs** — #704, #705, #706, #707, #708, #709 — and **four of them
-   changed controls the PM validates with**. Third retro running that must audit its own instrument.
-2. **FOLLOW-913 / FOLLOW-898** — now unblocked, but scope against **1.5KB**, not 5.5KB.
-3. **FOLLOW-928** (filed by #708, P1) — decide whether the SDK should **fail loud** when
+1. ~~**RETRO-264 is owed SIX merged PRs**~~ **DONE** — filed over #704-#709; see above. Stubs
+   **FOLLOW-929…934** filed; 929 already merged.
+2. **FOLLOW-913 / FOLLOW-898** — unblocked; scope against **1,356 bytes** (`zlib.gzipSync`), not
+   5.5KB and not 1,520 B.
+3. **FOLLOW-924 must absorb LG-4:** `ConsentGrantedPayloadSchema.language` is `z.enum(['en','pl'])`
+   while the banner ships `es` — **a Spanish visitor's consent event is rejected**, so their denial
+   is not recorded as DPIA §13.1 requires. Pre-existing, verified, unrelated to #709.
+4. **FOLLOW-928** (filed by #708, P1) — decide whether the SDK should **fail loud** when
    `data-privacy-url` is absent on a non-first-party tenant, or whether the runbook is the whole
    control. "An operator step nothing checks" is the 658/659/660 class.
-4. **The stale branch-prefix list** on `K.3.6 D-1 live-network smoke` (session 108, item 2) still
+5. **The stale branch-prefix list** on `K.3.6 D-1 live-network smoke` (session 108, item 2) still
    has no owner — worth a stub.
 
 **Waiting on a human, neither blocking the above:** Rafał — publish one anonymous listing page

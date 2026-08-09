@@ -32267,11 +32267,13 @@ engineering ones); AC(3) measured both sides; AC(4) satisfied structurally by §
 key).
 
 **Bundle, measured with BOTH packages rebuilt on each side — the number to carry forward:**
-**41.99KB → 40.68KB gzip**, headroom **~10 bytes → 1,520 bytes**. **FOLLOW-913 and FOLLOW-898 are
-unblocked.** But note the correction: ADR-0021 §D2 predicted _"~5.5KB gzip leaves the bundle"_ and
-the real figure is **1.31KB** — a raw-size estimate applied to a gzip budget, and repetitive locale
-prose compresses extremely well. Scope those two against 1.5KB, not 5.5KB. A first measurement that
-rebuilt only the SDK read 42.13KB for `main` and was wrong; rebuild `@estalara/shared` too.
+**41.99KB → 40.68KB gzip**, headroom **~11 bytes → 1,356 bytes** (`zlib.gzipSync`, the compressor
+`check-bundle-size.js` enforces; an earlier `gzip -9` reading of 1,520 B is CORRECTED per RETRO-264
+DG-1). **FOLLOW-913 and FOLLOW-898 are unblocked.** But note the correction: ADR-0021 §D2 predicted
+_"~5.5KB gzip leaves the bundle"_ and the real figure is **1.31KB** — a raw-size estimate applied to
+a gzip budget, and repetitive locale prose compresses extremely well. Scope those two against 1.5KB,
+not 5.5KB. A first measurement that rebuilt only the SDK read 42.13KB for `main` and was wrong;
+rebuild `@estalara/shared` too.
 
 **Two defects this ticket found by BUILDING against its own controls, both worth copying:**
 

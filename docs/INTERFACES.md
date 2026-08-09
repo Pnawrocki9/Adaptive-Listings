@@ -406,7 +406,11 @@ Cache-Control: public, max-age=300, stale-while-revalidate=60
 
 The banner copy is served OUT OF THE SDK BUNDLE. ESC-051's ruling states why: **consent text grows
 from regulation, not from engineering, and must never compete with code for a performance budget.**
-Moving it returned 1,337 gzip bytes to the SDK (42,912 → 41,575; headroom 96 → 1,433).
+Moving it returned ~1,345 gzip bytes to the SDK: **42,997 → 41,652 bytes, headroom ~11 → 1,356**.
+Those figures are `zlib.gzipSync`, which is what `packages/sdk/scripts/check-bundle-size.js`
+actually enforces. An earlier revision of this line quoted CLI `gzip -c` (level 6) and read 1,433 —
+measuring a budget with a different compressor than the gate uses overstates the headroom, and this
+line had been held up as the number to scope FOLLOW-913/898 against (RETRO-264 DG-1).
 
 - **Schema:** `ConsentTextDocumentSchema` / `ConsentTextLocaleSchema` in
   `packages/shared/src/schemas/consent-text.ts` (11 test cases). Locale-entry fields are derived

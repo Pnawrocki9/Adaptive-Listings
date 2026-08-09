@@ -64,7 +64,6 @@ Doppler verify
 Fire-and-forget sink guard (FOLLOW-433)
 Format check
 Gitleaks secrets scan
-K.3.6 D-1 live-network smoke (fetchIntentWeights → GET /api/intent/config)
 Lint
 Migration journal monotonicity check
 Modal App singleton guard (FOLLOW-438)
@@ -100,6 +99,22 @@ Modal effect probe negative control (alarm must fire on absence)
 any-state Assert validate_schemas ran in the last 26h (prod)
 any-state Rule I — wired-or-dead check
 any-state Assert intent-engine + llm-gateway containers reach their own logic (prod)
+
+# DELIBERATELY NOT REGISTERED — forgone coverage, stated rather than silent (Rule AS).
+#
+#   K.3.6 D-1 live-network smoke (fetchIntentWeights → GET /api/intent/config)
+#
+# It was present and green in all five sampled PRs, so the mechanical derivation picked it up —
+# and it produced this register's first false red, on PR #705. It is genuinely CONDITIONAL:
+# .github/workflows/intent-weights-live-smoke.yml triggers on `pull_request` only when the base
+# is `main`, and on `push` only for `main` and the `qa-engineer/**`, `backend-engineer/**`,
+# `sdk-engineer/**` prefixes — three of this repo's nine agent prefixes. So a stacked PR (base =
+# another feature branch) and a push on any other agent prefix structurally cannot run it.
+#
+# A register entry that goes red on a legitimate branch shape teaches people to ignore the gate,
+# which costs more than the coverage it buys. The coverage forgone is real and bounded: on a
+# normal main-based PR that job DOES run, and nothing here would notice if it silently stopped.
+# Re-register it if the workflow's triggers are widened to every agent prefix and every base.
 
 # NOTE ON HISTORICAL PRs. This register describes the set required TODAY, so
 # re-running the gate against a PR that predates a gate's introduction exits 3

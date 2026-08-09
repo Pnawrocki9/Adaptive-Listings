@@ -33312,6 +33312,36 @@ this is the fifth); FOLLOW-928; ESC-055; RETRO-265 §Headline 2 / HW-1 / LG-1 / 
 
 ---
 
+**STATUS: DONE — 2026-08-09, session 110 (PR pending).**
+
+- **AC(1)/(2) DONE.** `/api/quiz/completion` added to `SDK_CORS_PREFIXES` — a prefix, not a second
+  inline CORS block (Rule AQ), so it inherits the existing preflight handler and
+  `CORS_PROD_ORIGINS`. **Reflected allow-list, not wildcard**, and the axis is stated in the code:
+  whether the response is tenant-identified. This route is HMAC-signed and writes tenant-scoped
+  rows, so it takes `/api/adapt`'s answer; `consent-text.json` takes `*` because ADR-0021 §D3
+  positively REQUIRES its response to be identical for every tenant. Verified the middleware already
+  allows exactly the three headers the consumer sends (`Authorization`, `Content-Type`,
+  `X-Estalara-Signature`), and that the branch cannot bypass auth: it returns `NextResponse.next()`,
+  and the only guards below it are `/admin` and `/dashboard`.
+- **AC(3) DONE, red-first.** Four preflight cases in `middleware.test.ts`; all four fail against the
+  shipped `['/api/adapt']`.
+- **AC(4) DONE — the clause the stub calls the whole point.**
+  `apps/control-plane/src/sdk-cors-coverage.test.ts` **derives the consumer list from the SDK source
+  on every run**: every `fetch(` under `packages/sdk/src` must appear in a registry naming its
+  producer, every registry entry's producer must still exist, and stale entries fail too. Proven red
+  in **both** directions — deleting the producer yields
+  `"/api/quiz/completion — not matched by SDK_CORS_PREFIXES"`, and adding a ninth call site yields
+  `"core/events.ts :: fetch(someNewUrl"`. A gate that only ever went green would have been
+  decoration.
+- **AC(5) — verdict: YES, it blocks, and the asymmetry is the sharp part.** `CORS_PROD_ORIGINS` is a
+  hardcoded two-entry list (`app.` / `admin.estalara.com`), while `BRAND_PROVISIONING.md:16` states
+  external brands run **"on the client's own domain"**. So on first external-brand go-live, all four
+  middleware-gated routes — `/api/adapt`, `/api/adapt/feedback`, `/api/adapt/description` and now
+  `/api/quiz/completion` — refuse that origin. **The ingest Worker already solved this per tenant**
+  (`api_keys.allowed_origins ?? tenants.allowed_origins`, FOLLOW-642); the control plane did not, so
+  the two halves of the same request path disagree about who may call them. Not fixed here, per the
+  AC → **FOLLOW-941**.
+
 ## FOLLOW-937 — `schema_rejected` is a producer-only alarm on a channel this repo already documents as ABSENT: no registry entry, `SENTRY_DSN_INGEST` unset, no logpush, and the Worker carrying it is not deployed — Rule AJ, in the file whose earlier signal promoted Rule AJ
 
 source_retro: RETRO-265 source_ticket: FOLLOW-931 recommended_sprint: next recommended_agent:
@@ -33516,3 +33546,37 @@ cross_ref: [`backlog/FOLLOW_UPS.md:31562-31564` (FOLLOW-898), `:32191-32202` (FO
 `packages/sdk/scripts/check-bundle-size.js:19-32`; `backlog/QUEUE.md:46,72,196` (PM-owned);
 FOLLOW-932; FOLLOW-913; FOLLOW-898; RETRO-264 DG-1; RETRO-265 §Headline 4 / DG-1 / DG-2 / DG-3;
 Rules AO, AI amendment 3, S]
+
+---
+
+## FOLLOW-941 — the control plane's CORS allow-list is hardcoded to two Estalara origins while the ingest Worker resolves origins per tenant: the first external brand on its own domain is refused by one half of the same request path
+
+source_retro: RETRO-265 (via FOLLOW-936 AC(5)) source_ticket: FOLLOW-936 recommended_sprint: next
+recommended_agent: backend-engineer priority: P1 estimated_hours: 4 depends_on: [] blocks: [first
+external-brand go-live; FOLLOW-928 axis] promoted_to_queue: false
+
+**Two mechanisms for one question, and they disagree.**
+
+| layer         | how an origin is authorised                                                      | per-tenant? |
+| ------------- | -------------------------------------------------------------------------------- | ----------- |
+| ingest Worker | `api_keys.allowed_origins ?? tenants.allowed_origins` (FOLLOW-642/658)           | **yes**     |
+| control plane | `CORS_PROD_ORIGINS = ['https://app.estalara.com', 'https://admin.estalara.com']` | **no**      |
+
+`docs/runbooks/BRAND_PROVISIONING.md:16` — external brands are _"`app.estalara.com` on the client's
+own domain"_. That domain is in neither entry, so `resolveCorsOrigin()` returns `null` and the four
+middleware-gated routes (`/api/adapt`, `/api/adapt/feedback`, `/api/adapt/description`,
+`/api/quiz/completion`) answer the preflight without an allow-origin header. **The events stream
+would keep flowing while every adaptation and the archetype write are refused** — a half-working
+integration is harder to diagnose than a dead one.
+
+**AC:** (1) resolve the control-plane allow-list per tenant from the same source of record the
+ingest Worker uses, or state on the record why the two layers should stay different. (2) Preserve
+the `[]`-means-inherit vs `[]`-means-deny-all distinction that already bit this estate once
+(Postgres `[]` = inherit, KV `[]` = deny-all). (3) A red-first test with a non-Estalara origin
+against all four routes. (4) Extend `sdk-cors-coverage.test.ts` so a route whose producer exists but
+whose ALLOW-LIST cannot admit an external brand is distinguishable from one that is wired correctly
+— this ticket is a producer that exists and still refuses the caller.
+
+cross_ref: [`apps/control-plane/src/middleware.ts:41,56,73`;
+`packages/shared/src/api-key-record.ts`; `docs/runbooks/BRAND_PROVISIONING.md:16`; FOLLOW-642/658;
+FOLLOW-928; FOLLOW-936 AC(5); ESC-055]

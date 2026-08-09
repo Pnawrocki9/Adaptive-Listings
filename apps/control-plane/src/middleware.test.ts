@@ -161,6 +161,57 @@ describe('CORS OPTIONS preflight — /api/adapt routes', () => {
 
 // ─── Non-preflight inject tests ───────────────────────────────────────────────
 
+describe('CORS preflight — POST /api/quiz/completion (FOLLOW-936)', () => {
+  // This route had NO CORS producer. The SDK POSTs it with three non-safelisted headers
+  // (`packages/sdk/src/core/adapt.ts:264`), so a preflight is MANDATORY, and Next's
+  // auto-generated OPTIONS answered 204 with zero CORS headers — the browser never sent the POST,
+  // so `resolved_archetype` never reached `quiz_completions` for any cross-origin visitor. Silent:
+  // the call is fire-and-forget behind `.catch(console.warn)`.
+  //
+  // Red-first: every case here fails with `SDK_CORS_PREFIXES = ['/api/adapt']`.
+
+  it('answers the preflight with the reflected origin, not a wildcard', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/quiz/completion', 'OPTIONS', 'https://app.estalara.com');
+    const res = await middleware(req);
+    expect(res.status).toBe(204);
+    // Reflected, NOT `*` — this route is HMAC-signed and writes tenant-scoped rows, so it takes
+    // /api/adapt's allow-list. `consent-text.json` uses `*` for the opposite reason (ADR-0021 §D3
+    // requires its response to be identical for every tenant). Two answers, one axis.
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
+  });
+
+  it('allows POST and every non-safelisted header the SDK actually sends', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/quiz/completion', 'OPTIONS', 'https://app.estalara.com');
+    const res = await middleware(req);
+    expect(res.headers.get('Access-Control-Allow-Methods')).toContain('POST');
+    const allowed = res.headers.get('Access-Control-Allow-Headers') ?? '';
+    // Derived from the consumer, not guessed: adapt.ts:264 sends exactly these three.
+    for (const header of ['Authorization', 'Content-Type', 'X-Estalara-Signature']) {
+      expect(
+        allowed,
+        `preflight does not allow ${header}, so the POST never leaves the browser`,
+      ).toContain(header);
+    }
+  });
+
+  it('carries the CORS header on the actual POST, not only on the preflight', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/quiz/completion', 'POST', 'https://app.estalara.com');
+    const res = await middleware(req);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
+  });
+
+  it('still refuses an origin outside the allow-list', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const req = makeRequest('/api/quiz/completion', 'OPTIONS', 'https://evil.example.com');
+    const res = await middleware(req);
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});
+
 describe('CORS header injection — GET/POST to /api/adapt routes', () => {
   it('CORS-GET-1: GET /api/adapt from localhost:5173 injects Allow-Origin header in dev', async () => {
     vi.stubEnv('NODE_ENV', 'development');

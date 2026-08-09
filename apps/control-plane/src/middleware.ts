@@ -54,8 +54,23 @@ const CORS_DEV_EXTRA_ORIGINS = ['http://localhost:5173', 'http://localhost:3000'
  *
  * /api/intent/config and /api/quiz/public-config already return
  * `Access-Control-Allow-Origin: *` directly and are intentionally omitted.
+ *
+ * `/api/quiz/completion` joined this list in FOLLOW-936. It had **no CORS producer at all**: the
+ * SDK POSTs it with `Authorization`, `Content-Type` and `X-Estalara-Signature`
+ * (`packages/sdk/src/core/adapt.ts:264`) — three non-safelisted headers, so a preflight is
+ * mandatory — and Next's auto-generated `OPTIONS` answered 204 with zero CORS headers. The browser
+ * therefore never sent the POST, so `resolved_archetype` never reached `quiz_completions` for any
+ * cross-origin visitor, silently: the call is fire-and-forget behind `.catch(console.warn)`.
+ *
+ * **Reflected allow-list, deliberately NOT the wildcard `consent-text.json` uses.** The two answers
+ * in this estate differ on one axis: whether the response is tenant-identified. `consent-text.json`
+ * is byte-identical for every tenant and carries no credentials, so `*` is correct there and an
+ * allow-list would actually violate ADR-0021 §D3 by making the response vary by origin. This route
+ * is HMAC-signed and writes tenant-scoped rows, so it takes `/api/adapt`'s reflected allow-list.
+ * Added as a PREFIX here rather than as a second inline CORS block in the route (Rule AQ), which
+ * also means it inherits the preflight handler and `CORS_PROD_ORIGINS` for free.
  */
-const SDK_CORS_PREFIXES = ['/api/adapt'] as const;
+const SDK_CORS_PREFIXES = ['/api/adapt', '/api/quiz/completion'] as const;
 
 /**
  * Returns the set of allowed origins for CORS on SDK-facing routes,

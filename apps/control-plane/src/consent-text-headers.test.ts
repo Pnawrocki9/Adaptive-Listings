@@ -24,7 +24,10 @@ import nextConfig from '../next.config.mjs';
 const EXPECTED_CACHE_CONTROL = 'public, max-age=300, stale-while-revalidate=60';
 
 /** Shape declared in `src/next-config.d.ts`. */
-interface HeaderRule { source: string; headers: { key: string; value: string }[] }
+interface HeaderRule {
+  source: string;
+  headers: { key: string; value: string }[];
+}
 
 async function rules(): Promise<HeaderRule[]> {
   const headers = nextConfig.headers;

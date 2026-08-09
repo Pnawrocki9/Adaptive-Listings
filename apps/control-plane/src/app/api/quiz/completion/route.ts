@@ -35,10 +35,12 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sql, and, eq, isNull, or, gt } from 'drizzle-orm';
 
-import { createAdminClient, quizCompletions, apiKeys } from '@estalara/db';
+import { createAdminClient, quizCompletions, apiKeys, tenants } from '@estalara/db';
 import type { Database } from '@estalara/db';
 import { errorBody, ErrorCode, QuizLanguageSchema } from '@estalara/shared';
 import { sha256Hex, constantTimeEqual } from '@/lib/api-key-auth';
+import { isFirstPartyTenant } from '@/lib/brand-identity';
+import { CORS_PROD_ORIGINS, resolveOriginDecision } from '@/lib/origin-policy';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -99,7 +101,8 @@ interface AuthResult {
 
 interface AuthFailure {
   ok: false;
-  status: 401;
+  /** 403 is the FOLLOW-941 per-tenant origin refusal; 401 is every auth failure. */
+  status: 401 | 403;
   code: ErrorCode;
   message: string;
 }
@@ -118,8 +121,18 @@ async function verifyAndResolveTenant(
   bearerToken: string,
   signatureHeader: string | null,
   rawBody: string,
+  /** The browser's `Origin`, for the FOLLOW-941 per-tenant gate. `null` = server-side caller. */
+  requestOrigin: string | null,
 ): Promise<AuthResult | AuthFailure> {
   // ── Ops / integration-test fallback ──────────────────────────────────────
+  //
+  // NOT subject to the FOLLOW-941 origin gate, deliberately and worth stating rather than
+  // leaving as an accident of control flow: this path returns before any DB lookup, so there is
+  // no tenant row to consult, and `ADAPT_API_KEY` is a server-side ops credential that is never
+  // shipped to a browser. A browser calling with it would in any case send an `Origin`, while
+  // real ops callers send none — and the gate below already treats a missing `Origin` as a
+  // server-side caller. If this key is ever distributed to browser code, this exemption becomes
+  // a hole and must be closed with it.
   const adaptApiKey = process.env.ADAPT_API_KEY;
   const adaptTenantId = process.env.ADAPT_TENANT_ID;
   if (adaptApiKey && bearerToken === adaptApiKey) {
@@ -183,7 +196,10 @@ async function verifyAndResolveTenant(
   const now = new Date();
 
   const rows = await db
-    .select({ tenantId: apiKeys.tenantId })
+    // FOLLOW-941 — this route authenticates inline rather than via `resolveApiKey`, so the
+    // per-tenant origin gate has to be applied here too. A gate wired at one of two auth paths
+    // is the shape this estate keeps finding; both are wired.
+    .select({ tenantId: apiKeys.tenantId, keyOrigins: apiKeys.allowedOrigins })
     .from(apiKeys)
     .where(
       and(
@@ -200,6 +216,36 @@ async function verifyAndResolveTenant(
       status: 401,
       code: ErrorCode.FORBIDDEN,
       message: 'API key not found or revoked',
+    };
+  }
+
+  // No `Origin` → a server-side caller; nothing to police, and no extra query. (See the same
+  // short-circuit in `resolveApiKey`.)
+  if (!requestOrigin) {
+    return { ok: true, tenantId: rows[0].tenantId };
+  }
+
+  const tenantRows = await db
+    .select({ allowedOrigins: tenants.allowedOrigins })
+    .from(tenants)
+    .where(eq(tenants.id, rows[0].tenantId))
+    .limit(1);
+
+  const decision = resolveOriginDecision({
+    requestOrigin,
+    keyOrigins: rows[0].keyOrigins,
+    tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
+    isFirstParty: isFirstPartyTenant(rows[0].tenantId),
+    platformOrigins: CORS_PROD_ORIGINS,
+  });
+  if (decision.verdict !== 'allow') {
+    // 403, not a silently-omitted CORS header: this route WRITES. Omitting the header only stops
+    // the browser reading the response — the row would already be in `quiz_completions`.
+    return {
+      ok: false,
+      status: 403,
+      code: ErrorCode.FORBIDDEN,
+      message: decision.reason,
     };
   }
 
@@ -313,7 +359,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const signatureHeader = req.headers.get('X-Estalara-Signature');
-  const authResult = await verifyAndResolveTenant(bearerToken, signatureHeader, rawBody);
+  const authResult = await verifyAndResolveTenant(
+    bearerToken,
+    signatureHeader,
+    rawBody,
+    req.headers.get('Origin'),
+  );
 
   if (!authResult.ok) {
     return NextResponse.json(

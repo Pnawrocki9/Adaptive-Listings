@@ -36,13 +36,24 @@
 import type { NextRequest } from 'next/server';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 
-import { createAdminClient, apiKeys } from '@estalara/db';
+import { createAdminClient, apiKeys, tenants } from '@estalara/db';
+
+import { isFirstPartyTenant } from './brand-identity';
+import { CORS_PROD_ORIGINS, resolveOriginDecision } from './origin-policy';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ApiKeyAuthResult =
-  | { ok: true; tenantId: string }
-  | { ok: false; status: 401 | 404; error: string };
+  | {
+      ok: true;
+      tenantId: string;
+      /**
+       * The origin to echo in `Access-Control-Allow-Origin`, or `''` for a server-side caller
+       * that sent no `Origin`. [FOLLOW-941]
+       */
+      allowedOrigin: string;
+    }
+  | { ok: false; status: 401 | 403 | 404; error: string };
 
 // ─── Crypto helpers ───────────────────────────────────────────────────────────
 
@@ -120,7 +131,13 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
   const now = new Date();
 
   const rows = await db
-    .select({ tenantId: apiKeys.tenantId, hashedKey: apiKeys.hashedKey })
+    .select({
+      tenantId: apiKeys.tenantId,
+      hashedKey: apiKeys.hashedKey,
+      // FOLLOW-941 — Postgres is the SOURCE OF TRUTH for the origin policy; the KV copy the
+      // ingest Worker reads is a projection of this column and the tenant's.
+      keyOrigins: apiKeys.allowedOrigins,
+    })
     .from(apiKeys)
     .where(
       and(
@@ -141,5 +158,41 @@ export async function resolveApiKey(req: NextRequest): Promise<ApiKeyAuthResult>
     return { ok: false, status: 401, error: 'Invalid API key' };
   }
 
-  return { ok: true, tenantId: keyRow.tenantId };
+  // ── Per-tenant browser-origin gate [FOLLOW-941] ────────────────────────────
+  // Enforced HERE, at the authenticated layer, rather than in middleware: the preflight carries
+  // no API key, so middleware cannot know the tenant (the ingest Worker documents the same
+  // two-layer split). Refusing with 403 rather than merely omitting the CORS header is the
+  // stronger half — omitting a header stops the BROWSER reading the response, but the request
+  // already ran and any write already happened.
+  //
+  // **Short-circuits when there is no `Origin`,** BEFORE the tenant lookup. That is not just an
+  // optimisation: a server-side caller (curl, an HMAC-signed adapter, another service) is not a
+  // browser and has no origin to police, and skipping the query keeps this gate off the hot path
+  // for every non-browser caller.
+  const requestOrigin = req.headers.get('Origin');
+  if (!requestOrigin) {
+    return { ok: true, tenantId: keyRow.tenantId, allowedOrigin: '' };
+  }
+
+  // Deliberately a SECOND query rather than a join on the lookup above: the join changed the
+  // shape of a query six routes' tests mock, and a gate that forces eight unrelated test files
+  // to be rewritten is a gate that will be reverted.
+  const tenantRows = await db
+    .select({ allowedOrigins: tenants.allowedOrigins })
+    .from(tenants)
+    .where(eq(tenants.id, keyRow.tenantId))
+    .limit(1);
+
+  const decision = resolveOriginDecision({
+    requestOrigin,
+    keyOrigins: keyRow.keyOrigins,
+    tenantOrigins: tenantRows[0]?.allowedOrigins ?? [],
+    isFirstParty: isFirstPartyTenant(keyRow.tenantId),
+    platformOrigins: CORS_PROD_ORIGINS,
+  });
+  if (decision.verdict !== 'allow') {
+    return { ok: false, status: 403, error: decision.reason };
+  }
+
+  return { ok: true, tenantId: keyRow.tenantId, allowedOrigin: decision.origin };
 }

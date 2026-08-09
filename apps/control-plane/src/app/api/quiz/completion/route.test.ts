@@ -16,6 +16,8 @@
  */
 
 import { NextRequest } from 'next/server';
+import { createHmac } from 'node:crypto';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ─── Mock @estalara/db ────────────────────────────────────────────────────────
@@ -39,6 +41,13 @@ vi.mock('@estalara/db', () => ({
     hashedKey: 'hashed_key',
     revokedAt: 'revoked_at',
     expiresAt: 'expires_at',
+    // FOLLOW-941 — the per-key origin override.
+    allowedOrigins: 'allowed_origins',
+  },
+  // FOLLOW-941 — the tenant-level origin list, the second half of the source of truth.
+  tenants: {
+    id: 'id',
+    allowedOrigins: 'allowed_origins',
   },
 }));
 
@@ -202,5 +211,78 @@ describe('FOLLOW-385 AC-2: POST /api/quiz/completion profiling_opt_out gate', ()
     // Must be 401 AUTH_REQUIRED, not 200 { skipped: true }
     expect(res.status).toBe(401);
     expect(res.status).not.toBe(200);
+  });
+});
+
+// ─── FOLLOW-941 — per-tenant origin gate on the DB auth path ──────────────────
+describe('FOLLOW-941 — a foreign browser Origin is refused with 403, not silently written', () => {
+  /**
+   * Exercises the REAL key-lookup path (not the `ADAPT_API_KEY` ops fallback the other cases
+   * use), because that is where the origin gate lives.
+   *
+   * Why 403 and not merely "omit the CORS header": this route WRITES. Omitting the header stops
+   * the browser reading the response, but `quiz_completions` would already hold the row. The
+   * refusal has to happen before the write or it is not a refusal.
+   */
+  function mockDb(tenantOrigins: string[]): void {
+    // Two sequential selects: api_keys (with its origin override), then tenants.allowed_origins.
+    const keyRows = [{ tenantId: TEST_TENANT_ID, keyOrigins: null }];
+    const tenantRows = [{ allowedOrigins: tenantOrigins }];
+    let call = 0;
+    const select = vi.fn().mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(call++ === 0 ? keyRows : tenantRows),
+        }),
+      }),
+    }));
+    vi.mocked(createAdminClient).mockReturnValue({
+      select,
+      insert: vi.fn(),
+      transaction: vi.fn(),
+    } as unknown as ReturnType<typeof createAdminClient>);
+  }
+
+  const DB_KEY = 'real-db-key';
+
+  /** HMAC-SHA256(apiKey, rawBody), lower-case hex — the shape the route verifies. */
+  function sign(apiKey: string, rawBody: string): string {
+    return createHmac('sha256', apiKey).update(rawBody).digest('hex');
+  }
+
+  function requestFrom(origin: string): NextRequest {
+    // A REAL signature: HMAC is verified before the key lookup, so a fake one short-circuits to
+    // 401 and never reaches the origin gate this block exists to test.
+    const rawBody = JSON.stringify(makeBody());
+    return new NextRequest('http://localhost/api/quiz/completion', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${DB_KEY}`,
+        'X-Estalara-Signature': sign(DB_KEY, rawBody),
+        Origin: origin,
+      },
+      body: rawBody,
+    });
+  }
+
+  beforeEach(() => {
+    // Disable the ops fallback so the DB path runs.
+    delete process.env.ADAPT_API_KEY;
+    delete process.env.ADAPT_TENANT_ID;
+    process.env.DATABASE_URL_ADMIN = 'postgresql://localhost/test';
+  });
+
+  it('refuses an origin the tenant did not configure', async () => {
+    mockDb(['https://homes.clientbrand.com']);
+    const res = await POST(requestFrom('https://evil.example.com'));
+    expect(res.status).toBe(403);
+  });
+
+  it('admits the external brand on its OWN domain — the point of the ticket', async () => {
+    mockDb(['https://homes.clientbrand.com']);
+    const res = await POST(requestFrom('https://homes.clientbrand.com'));
+    // Anything other than the origin refusal: the gate let it through to the write path.
+    expect(res.status).not.toBe(403);
   });
 });

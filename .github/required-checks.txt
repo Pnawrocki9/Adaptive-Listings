@@ -94,6 +94,7 @@ Vercel
 Vercel Preview Comments
 shellcheck (Sentry gate family, FOLLOW-769)
 Modal effect probe negative control (alarm must fire on absence)
+ADR-0021 §D5 binding conditions (FOLLOW-925)
 
 # ── presence-only ────────────────────────────────────────────────────────────
 any-state Assert validate_schemas ran in the last 26h (prod)

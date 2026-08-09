@@ -240,6 +240,16 @@ class, its lawful basis, and its one open gap (Vercel runtime-log retention, dpi
    moment the strings move (Rule N: a compliance document may not describe a source of record that
    no longer exists).
 
+**Enforcement (FOLLOW-925, added 2026-08-09).** All three conditions above have a consumer:
+`scripts/check-adr-0021-conditions.mjs`, CI job `ADR-0021 §D5 binding conditions (FOLLOW-925)`, a
+hard gate with a `--self-test` that proves each condition red-first. It ARMS on the presence of any
+§D7 artifact (`consent-text.json`, the Zod schema, `CONSENT_TEXT_URL`) rather than passing while
+they are absent, so a half-landed implementation is red and the byte-identity obligation cannot be
+dropped by doing part of the work. Condition 1's canonical bytes are checked in at
+`docs/compliance/consent-disclosures.canonical.json`, captured from the shipped `COPY` constant at
+`f80f41b7` — the state compliance signed. Editing a sentence there is a compliance change, not a
+copy edit.
+
 **Not attested.** The §13.1/§13.2 LIA DPO gates (still PENDING — this is an engineering-compliance
 countersign, not DPO sign-off, and it does not advance the EU-pilot DPO gate); the quiz-config
 transport decision (unchanged, ADR-0011); the Vercel runtime-log retention figure (open gap, dpia.md

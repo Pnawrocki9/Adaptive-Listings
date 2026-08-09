@@ -665,6 +665,36 @@ jobs:
       - name: Assert route.ts status/code contract == HANDOFFS.md FOLLOW-374 spec
         run: node scripts/check-consent-contract-sync.mjs
 
+  # ── ADR-0021 §D5 binding conditions (FOLLOW-925) ────────────────────────────
+  # The compliance countersign of ADR-0021 (PR #703) was GRANTED WITH BINDING
+  # CONDITIONS, and the conditions are the substance of it: byte-identical
+  # carriage of the DPIA §13.1/§13.2 mandated disclosure sentences in every
+  # locale, the §D3 identifier-free request shape, and Rule N cross-references
+  # in dpia.md. They "gate the FOLLOW-915 implementation PR" — and nothing
+  # checked them. RETRO-263 found the same shape independently (FOLLOW-923).
+  #
+  # The gate ARMS on the presence of any FOLLOW-915 artifact rather than passing
+  # while they are absent, because "green because the thing is not built yet" is
+  # the FOLLOW-918 defect wearing this control's name. Condition 1 is enforced in
+  # both states: the mandated sentences must always have a live home.
+  #
+  # Hard gate — no continue-on-error.
+  adr-0021-conditions:
+    name: ADR-0021 §D5 binding conditions (FOLLOW-925)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-test the gate (proves it catches each condition, red-first)
+        run: node scripts/check-adr-0021-conditions.mjs --self-test
+
+      - name: Assert the ADR-0021 §D5 binding conditions hold
+        run: node scripts/check-adr-0021-conditions.mjs
+
   # ── Fire-and-forget sink guard (FOLLOW-433 / ESC-033) ──────────────────────
   # Asserts that no bare `void fn(` / `void (async` request-path sinks exist in
   # apps/control-plane/src (excluding *.test.ts).  These patterns are silently

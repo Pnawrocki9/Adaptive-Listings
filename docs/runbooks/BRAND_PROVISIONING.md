@@ -589,12 +589,13 @@ assumed on either side.
 
 **Inputs the deploy side needs from this runbook (produced by Part A):**
 
-| Input                         | Produced by                | Notes                                                                                                                                                                                                                                                                                                              |
-| ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tenant_id`                   | Step 1                     | UUID; not secret, but is the fence for every per-tenant lookup.                                                                                                                                                                                                                                                    |
-| `api_key` (raw, `est_pub_…`)  | Step 2                     | **Visible only once** on first activation — capture it immediately; re-running Step 2 for an existing key returns only `<prefix>...<last4>`. Baked into the deployed instance's SDK snippet config, NOT the domain.                                                                                                |
-| Branding assets (logo, color) | Client, applied via Step 3 | `primary_color` / `logo_url` are ALSO stored in `tenants.brand_config` for the SDK-runtime consumer (§Step 3) — the deploy side's static branding (page chrome, favicon, etc.) and the AL runtime branding (widget color/logo) are two independent surfaces that should visually match but are not the same write. |
-| Domain (once known)           | Client                     | Needed for §Step 6 (ingest CORS) — **not** needed for §Steps 1-5, 7 (domain-independence).                                                                                                                                                                                                                         |
+| Input                         | Produced by                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tenant_id`                   | Step 1                     | UUID; not secret, but is the fence for every per-tenant lookup.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `api_key` (raw, `est_pub_…`)  | Step 2                     | **Visible only once** on first activation — capture it immediately; re-running Step 2 for an existing key returns only `<prefix>...<last4>`. Baked into the deployed instance's SDK snippet config, NOT the domain.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Branding assets (logo, color) | Client, applied via Step 3 | `primary_color` / `logo_url` are ALSO stored in `tenants.brand_config` for the SDK-runtime consumer (§Step 3) — the deploy side's static branding (page chrome, favicon, etc.) and the AL runtime branding (widget color/logo) are two independent surfaces that should visually match but are not the same write.                                                                                                                                                                                                                                                                                                                 |
+| `data-privacy-url` (REQUIRED) | Client (their policy page) | The brand's OWN Privacy Policy URL, set as `data-privacy-url` on the `sdk.js` script tag. **No generator in this repo emits it — it is hand-set per deployment, and the SDK treats it as optional (`if (options.privacyPolicyUrl)`, `packages/sdk/src/ui/consent-banner.ts:258`), so omitting it renders a consent banner with NO policy link and no error.** At one first-party tenant that was a UX nit; on a client domain under a client controller identity it is a GDPR Art. 13 transparency defect. Compliance classifies the consequence as a disguised P0 — `EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` Axis 1. [FOLLOW-928] |
+| Domain (once known)           | Client                     | Needed for §Step 6 (ingest CORS) — **not** needed for §Steps 1-5, 7 (domain-independence).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 **Outputs the deploy side must send back:**
 
@@ -602,6 +603,7 @@ assumed on either side.
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Live URL                                                                                                                                                                                                                     | §Part C verification (SDK-load check, origin-allow-list entry for §Step 6). |
 | Confirmation the snippet (`estalara-detect.iife.js` + `sdk.js`, both served from `admin.estalara.com` per `packages/shared/src/domains.ts:41,57,73` — **never** the client's own domain) is installed on every listing page. | §Part C SDK-load verification.                                              |
+| Confirmation `data-privacy-url` on that snippet resolves to the BRAND's policy page (not Estalara's, not absent).                                                                                                            | §Part C step 8 — the consent banner's "Learn more" target. [FOLLOW-928]     |
 
 **Explicit non-requirement (domain-independence, re-stated):** the deploy side does **not** need to
 tell this repo the domain before Steps 1-5 and 7 run — only §Step 6 needs it, to seed the brand's
@@ -698,6 +700,24 @@ credentials) and could not be executed as part of authoring this document — th
    - **Both look correct but §Step 0's `FIRST_PARTY_TENANT_ID` is unset** → the gate cannot tell
      first-party from external while only one tenant row exists. Still fix §Step 0 before the second
      brand goes live (FOLLOW-660).
+
+8. **The consent banner links the BRAND's privacy policy.** [OPERATOR-GATED] [FOLLOW-928] On the
+   live URL, trigger the consent banner and inspect the "Learn more ↗" link.
+   - **Link present and points at the client's own policy page** → correct.
+   - **No "Learn more" link at all** → `data-privacy-url` is missing from the snippet. The SDK
+     treats the attribute as optional (`if (options.privacyPolicyUrl)`,
+     `packages/sdk/src/ui/consent-banner.ts:258`), so this fails SILENTLY — there is no console
+     error and no Sentry event. Send it back to the deploy side (§Part B). **Do not pass the go-live
+     gate on the grounds that the banner rendered:** compliance marks this axis
+     UNSATISFIABLE-PENDING-HANDOFF, not passed
+     (`docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` Axis 1).
+   - **Link points at an Estalara page** → the snippet was copied from the first-party deployment
+     without re-pointing it. Worse than absent: the visitor is told a third party's policy governs
+     processing performed under the client's controller identity.
+
+   The disclosure TEXT itself is deliberately identical for every brand and is not part of this
+   check (ADR-0021 §D3 — the consent-text request is byte-identical per tenant by design). Only the
+   LINK is per-brand.
 
 ---
 

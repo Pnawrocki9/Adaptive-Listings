@@ -1,6 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 DONE and merged. `main` = `9afa0a46`, clean, **0 open PRs.**
+## ▶️ START HERE — session 110 (2026-08-09) — FOLLOW-932 + RETRO-265 + FOLLOW-936 all merged. `main` = `04b9ef13`, clean, **0 open PRs.**
+
+### FOLLOW-936 merged (#713 `04b9ef13`) — and this time the fix was verified on the DEPLOYED origin
+
+`POST /api/quiz/completion` had **no CORS producer at all** — the second instance of the shape
+FOLLOW-929 fixed, and the older one. Three non-safelisted request headers make its preflight
+mandatory; Next's auto-generated `OPTIONS` answered 204 with zero CORS headers, so the browser never
+sent the POST and `resolved_archetype` never reached `quiz_completions` for any cross-origin
+visitor. Fire-and-forget behind `.catch(console.warn)`, so **no 4xx, no Sentry event, no server-side
+trace** — a missing CORS producer is unobservable from the server by construction.
+
+**Live-probed after merge, which is the step FOLLOW-929 skipped and RETRO-265 caught:**
+
+```
+access-control-allow-origin: https://app.estalara.com
+access-control-allow-headers: Authorization, Content-Type, X-Estalara-Signature
+access-control-allow-methods: GET, POST, OPTIONS
+```
+
+…and a foreign origin gets **no** allow-origin header, so the allow-list genuinely holds in prod
+rather than degrading to a wildcard. `consent-text.json` still returns `*` — no regression on the
+deliberately different answer.
+
+**AC(4) is the durable part.** `apps/control-plane/src/sdk-cors-coverage.test.ts` derives the
+consumer list from the SDK source on every run: all 8 `fetch(` sites must be registered with a
+producer, every producer must still exist, stale entries fail. **Proven red in both directions** —
+remove the producer and it names the path; add a ninth call site and it names the site. Two
+instances of one shape found a round apart is a class, and a class needs a gate rather than a third
+patch.
+
+**AC(5) verdict → FOLLOW-941 (P1).** `CORS_PROD_ORIGINS` is hardcoded to two Estalara origins while
+`BRAND_PROVISIONING.md:16` puts external brands on the client's own domain. **The ingest Worker
+already resolves origins per tenant; the control plane does not** — so on first external-brand
+go-live the events stream keeps flowing while every adaptation and the archetype write are refused.
+A half-working integration is harder to diagnose than a dead one.
+
+### RETRO-265 filed — it audited RETRO-264's own output, and mine
+
+Converging on the instance axis (all four of RETRO-264's headline findings correct and closed) but
+**not on the generalisation axis: three of its four headline findings were residuals of FOLLOW-929's
+own acceptance criteria.** I fixed the P0 instance and never ran its AC(5) sweep — the skipped
+clause is the one that carried the second instance. **Rule count stays 46**; RETRO-265 found a clean
+P-43 sighting and declined, having caught RETRO-264 setting itself a promotion threshold one
+sighting below the standard every rule from AA to AT uses.
+
+One correction to the retro, verified by brute force rather than argued: it proposed the KB-readout
+interval was `−4/+0` on a truncation premise, but `toFixed` **rounds** — the byte counts printing
+`41.99` are `[42,993, 43,002]`, i.e. **−4/+5**.
 
 **Opening state, verified not assumed:** `main` `31cab8b4`, working tree clean, 0 open PRs, 0
 worktrees, 0 live `claude --agent` processes, 0 tickets IN_PROGRESS. Session 109 merged #708

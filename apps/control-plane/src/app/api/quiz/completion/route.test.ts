@@ -51,19 +51,32 @@ vi.mock('drizzle-orm', () => ({
   gt: vi.fn((col: unknown, val: unknown) => ({ col, val, gt: true })),
 }));
 
-vi.mock('@estalara/shared', () => ({
-  // errorBody is used by the route to build error responses. Return a serializable
-  // object so NextResponse.json can serialize it without throwing.
-  errorBody: (args: { code: string; message: string; requestId?: string }) => ({
-    error: { code: args.code, message: args.message, request_id: args.requestId ?? '' },
-  }),
-  ErrorCode: {
-    AUTH_REQUIRED: 'AUTH_REQUIRED',
-    FORBIDDEN: 'FORBIDDEN',
-    VALIDATION_ERROR: 'VALIDATION_ERROR',
-    INTERNAL_ERROR: 'INTERNAL_ERROR',
-  },
-}));
+// Type-only (erased at runtime, so it cannot disturb vi.mock hoisting); the linter forbids an
+// inline `import()` type annotation.
+import type * as EstalaraShared from '@estalara/shared';
+
+// PARTIAL mock (FOLLOW-931). This used to replace the module wholesale, so the moment the route
+// imported one more real export — `QuizLanguageSchema` — the suite died at import time with
+// "No export is defined on the mock", not on an assertion. Spreading `importOriginal()` keeps the
+// two hand-built overrides while letting every genuine export through, so a schema this route
+// validates with is the REAL one rather than a stand-in that cannot drift-check anything.
+vi.mock('@estalara/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof EstalaraShared>();
+  return {
+    ...actual,
+    // errorBody is used by the route to build error responses. Return a serializable
+    // object so NextResponse.json can serialize it without throwing.
+    errorBody: (args: { code: string; message: string; requestId?: string }) => ({
+      error: { code: args.code, message: args.message, request_id: args.requestId ?? '' },
+    }),
+    ErrorCode: {
+      AUTH_REQUIRED: 'AUTH_REQUIRED',
+      FORBIDDEN: 'FORBIDDEN',
+      VALIDATION_ERROR: 'VALIDATION_ERROR',
+      INTERNAL_ERROR: 'INTERNAL_ERROR',
+    },
+  };
+});
 
 import { createAdminClient } from '@estalara/db';
 import { POST } from './route';

@@ -33577,6 +33577,36 @@ against all four routes. (4) Extend `sdk-cors-coverage.test.ts` so a route whose
 whose ALLOW-LIST cannot admit an external brand is distinguishable from one that is wired correctly
 — this ticket is a producer that exists and still refuses the caller.
 
+**STATUS: DONE — 2026-08-10, session 110 (PR pending).**
+
+- **AC(1) — resolved per tenant, and the two layers stay different for a reason the estate had
+  already written down.** The preflight carries **no API key** (browsers strip it), so the tenant
+  cannot be resolved there and a per-tenant answer is impossible at that layer — the ingest Worker
+  reached the same conclusion and calls it the DOMAIN-INDEPENDENCE requirement
+  (`apps/ingest/src/router.ts`). So: **preflight REFLECTS; the authenticated layer enforces
+  with 403.** Enforcing a hardcoded list at the preflight was the defect — it refused every external
+  brand at the one layer that cannot know whether they are legitimate.
+- **403, not a silently-omitted CORS header.** Omitting the header only stops the BROWSER reading
+  the response; the request already ran. On a write route the row would already exist — the
+  red-first proof shows exactly this, failing with `expected 201 to be 403`.
+- **AC(2) — the `[]` trap is preserved and pinned by tests in both directions.** The new
+  `lib/origin-policy.ts` reads **Postgres**, where `[]` means NOT CONFIGURED; the ingest gate reads
+  **KV**, where `[]` means DENY-ALL. Reading Postgres with KV semantics would lock out every
+  unprovisioned tenant. A third resolver now exists and its docblock carries the table saying why
+  the three are different jobs rather than three copies (Rule AQ).
+- **An unconfigured NON-first-party tenant gets its own verdict** (`origin_policy_unconfigured`),
+  not a silent inherit — inheriting would hand an external brand Estalara's own allow-list, which is
+  the FOLLOW-658 failure one layer up.
+- **AC(3) DONE, red-first at two levels.** 12 decision cases in `lib/origin-policy.test.ts`, plus
+  route-level cases on the WRITE route driving the real HMAC + DB path.
+- **AC(4) DONE.** `sdk-cors-coverage.test.ts` now distinguishes _a producer exists_ from _a producer
+  that can admit an external brand_: each entry names where its per-tenant decision is enforced, and
+  the test verifies the claim against source — the preflight must reflect, and the named file must
+  actually CALL the decision. Red-first both ways.
+- **Named, not fixed:** the `ADAPT_API_KEY` ops fallback in `quiz/completion` returns before any DB
+  lookup and is exempt. Documented in place with the condition that would make it a hole (that key
+  reaching browser code).
+
 cross_ref: [`apps/control-plane/src/middleware.ts:41,56,73`;
 `packages/shared/src/api-key-record.ts`; `docs/runbooks/BRAND_PROVISIONING.md:16`; FOLLOW-642/658;
 FOLLOW-928; FOLLOW-936 AC(5); ESC-055]

@@ -118,12 +118,20 @@ describe('CORS OPTIONS preflight — /api/adapt routes', () => {
     expect(res.headers.get('Access-Control-Allow-Methods')).toContain('GET');
   });
 
-  it('CORS-OPTIONS-2: localhost:5173 preflight returns 204 + NO Allow-Origin in prod', async () => {
+  it('CORS-OPTIONS-2: the preflight REFLECTS any origin, including one the platform list omits', async () => {
+    // BEHAVIOUR CHANGED DELIBERATELY IN FOLLOW-941 — this case previously asserted a null header.
+    //
+    // The preflight carries no API key (browsers strip it), so the tenant cannot be resolved and
+    // a per-tenant answer is impossible at this layer. Refusing here refused every external brand
+    // on its own domain, which is the defect FOLLOW-941 fixed. Reflecting grants nothing: the
+    // actual request is authenticated and `resolveApiKey` answers a non-allow-listed origin with
+    // 403 before any handler runs. The refusal did not disappear — it moved to the only layer
+    // that can make it correctly, and `lib/origin-policy.test.ts` proves it there.
     vi.stubEnv('NODE_ENV', 'production');
     const req = makeRequest('/api/adapt', 'OPTIONS', 'http://localhost:5173');
     const res = await middleware(req);
     expect(res.status).toBe(204);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
   });
 
   it('CORS-OPTIONS-3: app.estalara.com preflight returns Allow-Origin in prod', async () => {
@@ -134,12 +142,17 @@ describe('CORS OPTIONS preflight — /api/adapt routes', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
   });
 
-  it('CORS-OPTIONS-4: evil.example.com preflight returns NO Allow-Origin in dev', async () => {
+  it('CORS-OPTIONS-4: a hostile origin also clears the preflight, and is refused at the gate', async () => {
+    // Also changed by FOLLOW-941, and this is the case worth being uncomfortable about, so state
+    // the security argument rather than assuming it: a cleared preflight authorises NOTHING. The
+    // attacker still needs a valid API key, and even holding one, `resolveApiKey` refuses the
+    // origin with 403 before the handler runs — so no read, and for a write route no row. The
+    // ingest Worker made the same trade and documents it as DOMAIN-INDEPENDENCE.
     vi.stubEnv('NODE_ENV', 'development');
     const req = makeRequest('/api/adapt', 'OPTIONS', 'https://evil.example.com');
     const res = await middleware(req);
     expect(res.status).toBe(204);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://evil.example.com');
   });
 
   it('OPTIONS preflight matches /api/adapt/description in dev', async () => {
@@ -203,12 +216,15 @@ describe('CORS preflight — POST /api/quiz/completion (FOLLOW-936)', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.estalara.com');
   });
 
-  it('still refuses an origin outside the allow-list', async () => {
+  it('reflects on the preflight — the origin decision belongs to the authenticated layer', async () => {
+    // Written in FOLLOW-936 to assert a preflight refusal; FOLLOW-941 moved that decision. This
+    // route WRITES, so the refusal has to be a 403 anyway: omitting a CORS header only stops the
+    // browser READING the response, and the row would already be in `quiz_completions`.
     vi.stubEnv('NODE_ENV', 'production');
     const req = makeRequest('/api/quiz/completion', 'OPTIONS', 'https://evil.example.com');
     const res = await middleware(req);
     expect(res.status).toBe(204);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://evil.example.com');
   });
 });
 

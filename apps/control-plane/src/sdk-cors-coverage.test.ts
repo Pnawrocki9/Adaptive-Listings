@@ -47,6 +47,18 @@ interface Site {
   producer: Producer;
   /** For `inline`: the route file that must set the header. */
   routeFile?: string;
+  /**
+   * Where the PER-TENANT origin decision is enforced, relative to the repo root. [FOLLOW-941]
+   *
+   * A producer that exists is not the same as a producer that can admit an external brand: the
+   * control plane had a working CORS producer for `/api/adapt` all along and still refused every
+   * client on its own domain, because the allow-list was two hardcoded Estalara origins. This
+   * field is the difference, and the test below verifies the claim against source.
+   *
+   * `null` = admits every origin by construction (a wildcard producer), so no per-tenant
+   * enforcement applies or could.
+   */
+  enforcedIn: string | null;
   /** Why, when the answer is not the default. */
   note?: string;
 }
@@ -57,6 +69,7 @@ const REGISTRY: Site[] = [
     expr: 'fetch(CONSENT_TEXT_URL',
     path: '/consent-text.json',
     producer: 'next-config',
+    enforcedIn: null,
     note: 'FOLLOW-929. Wildcard is REQUIRED here, not tolerated: ADR-0021 §D3 forbids the response varying by tenant, and the request carries no credentials.',
   },
   {
@@ -64,18 +77,22 @@ const REGISTRY: Site[] = [
     expr: 'fetch(buildEndpoint(',
     path: '/api/adapt',
     producer: 'middleware',
+    enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
   },
   {
     file: 'core/adapt.ts',
     expr: 'fetch(feedbackUrl',
     path: '/api/adapt/feedback',
     producer: 'middleware',
+    enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
   },
   {
     file: 'core/adapt.ts',
     expr: 'fetch(completionUrl',
     path: '/api/quiz/completion',
     producer: 'middleware',
+    // This route authenticates inline, so its gate lives in the route, not the shared helper.
+    enforcedIn: 'apps/control-plane/src/app/api/quiz/completion/route.ts',
     note: 'FOLLOW-936 — the second instance. Reflected allow-list, not wildcard: HMAC-signed, writes tenant-scoped rows.',
   },
   {
@@ -83,6 +100,7 @@ const REGISTRY: Site[] = [
     expr: 'fetch(url',
     path: '/api/adapt/description',
     producer: 'middleware',
+    enforcedIn: 'apps/control-plane/src/lib/api-key-auth.ts',
   },
   {
     file: 'core/intent-weights.ts',
@@ -90,6 +108,7 @@ const REGISTRY: Site[] = [
     path: '/api/intent/config',
     producer: 'inline',
     routeFile: 'apps/control-plane/src/app/api/intent/config/route.ts',
+    enforcedIn: null,
   },
   {
     file: 'core/quiz-config.ts',
@@ -97,12 +116,14 @@ const REGISTRY: Site[] = [
     path: '/api/quiz/public-config',
     producer: 'inline',
     routeFile: 'apps/control-plane/src/app/api/quiz/public-config/route.ts',
+    enforcedIn: null,
   },
   {
     file: 'core/events.ts',
     expr: 'fetch(config.ingestUrl',
     path: '(ingest Worker origin)',
     producer: 'not-control-plane',
+    enforcedIn: 'apps/ingest/src/handlers/events.ts',
     note: 'Cloudflare Worker, not Vercel. Its own origin gate answers CORS (FOLLOW-642/658).',
   },
 ];
@@ -187,6 +208,36 @@ describe('FOLLOW-936 AC(4) — SDK→control-plane CORS coverage', () => {
     }
 
     expect(broken, 'a registered CORS producer has disappeared').toEqual([]);
+  });
+
+  it('no route can admit only Estalara: every producer is external-brand capable', () => {
+    // FOLLOW-941. The distinction this asserts, which FOLLOW-936 could not: `/api/adapt` HAD a
+    // working CORS producer and still refused every external brand, because the allow-list was
+    // two hardcoded Estalara origins. A producer that exists is not a producer that admits the
+    // caller — so `enforcedIn` is verified against source rather than believed.
+    const middlewareSrc = readFileSync(MIDDLEWARE, 'utf8');
+    const preflight = /function sdkCorsPreflightResponse[\s\S]*?\n}/.exec(middlewareSrc)?.[0] ?? '';
+    expect(preflight, 'could not locate the preflight builder').not.toBe('');
+
+    // Domain independence: the preflight must REFLECT, because it cannot know the tenant. A
+    // preflight that consults a static allow-list is the FOLLOW-941 defect by construction.
+    expect(
+      /Access-Control-Allow-Origin['"],\s*requestOrigin/.test(preflight),
+      'the preflight does not reflect the requested origin — an external brand on its own domain ' +
+        'cannot clear it, and no per-tenant decision downstream can rescue that',
+    ).toBe(true);
+
+    const unenforced = REGISTRY.filter((site) => {
+      if (site.enforcedIn === null) return false;
+      const src = readFileSync(join(REPO_ROOT, site.enforcedIn), 'utf8');
+      // The per-tenant decision must actually be CALLED there, not merely imported.
+      return !/resolveOriginDecision\(|resolveOriginPolicy\(/.test(src);
+    });
+
+    expect(
+      unenforced.map((s) => `${s.path} → ${s.enforcedIn ?? '(wildcard)'}`),
+      'a route claims per-tenant origin enforcement that its named file does not perform',
+    ).toEqual([]);
   });
 
   it('the registry has no stale entries pointing at deleted call sites', () => {

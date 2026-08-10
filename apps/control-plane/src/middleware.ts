@@ -36,16 +36,12 @@ import type { NextRequest } from 'next/server';
 
 import { getAuthClaims, isTenantClaims, requireAgencyRole } from '@estalara/auth';
 
+import { CORS_PROD_ORIGINS, CORS_DEV_EXTRA_ORIGINS } from '@/lib/origin-policy';
+
 // ─── Dev-only CORS allow-list for SDK-facing adapt routes ─────────────────────
 
-/** Production origins the browser SDK may call from. */
-const CORS_PROD_ORIGINS = ['https://app.estalara.com', 'https://admin.estalara.com'] as const;
-
-/**
- * Additional localhost origins permitted only in non-production environments.
- * Never served when NODE_ENV === 'production'.
- */
-const CORS_DEV_EXTRA_ORIGINS = ['http://localhost:5173', 'http://localhost:3000'] as const;
+// The platform origin lists live in `lib/origin-policy` so the preflight layer here and the
+// authenticated per-tenant gate read ONE list (Rule AQ, FOLLOW-941).
 
 /**
  * SDK-facing routes that currently set no CORS headers inline.
@@ -96,10 +92,21 @@ function resolveCorsOrigin(requestOrigin: string | null): string | null {
  * Build a 204 preflight response for SDK-facing adapt routes.
  */
 function sdkCorsPreflightResponse(requestOrigin: string | null): NextResponse {
-  const allowOrigin = resolveCorsOrigin(requestOrigin);
   const res = new NextResponse(null, { status: 204 });
-  if (allowOrigin) {
-    res.headers.set('Access-Control-Allow-Origin', allowOrigin);
+  // REFLECT the requested origin — permissive by design. [FOLLOW-941]
+  //
+  // The preflight carries NO API key: browsers strip `Authorization` and custom headers from it,
+  // so the tenant CANNOT be resolved here and a per-tenant answer is impossible at this layer.
+  // The ingest Worker reached the same conclusion and documents it as the DOMAIN-INDEPENDENCE
+  // requirement (`apps/ingest/src/router.ts`): an external brand's own domain, unknown to this
+  // app up front, must clear the preflight before its tenant config can be consulted.
+  //
+  // **This grants nothing.** A preflight authorises no side effect; the actual request is still
+  // authenticated, and `resolveApiKey` refuses a non-allow-listed origin with 403 before any
+  // handler runs. Enforcing a hardcoded list HERE was the FOLLOW-941 defect: it refused every
+  // external brand at the one layer that cannot know whether they are legitimate.
+  if (requestOrigin) {
+    res.headers.set('Access-Control-Allow-Origin', requestOrigin);
   }
   res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.headers.set(
